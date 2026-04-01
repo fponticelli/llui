@@ -18,9 +18,9 @@ The foundation everything else builds on.
 - [x] `portal()` — out-of-tree rendering with binding participation
 - [x] `memo()` — two-level cache (bitmask + output stability)
 - [x] `onMount()` — microtask callback with scope cancellation
-- [ ] `errorBoundary()` — three-zone error protection
+- [x] `errorBoundary()` — three-zone error protection (view construction zone)
 - [ ] `child()` — Level 2 composition boundary, propsMsg, onMsg
-- [ ] `foreign()` — imperative library bridge with typed sync
+- [x] `foreign()` — imperative library bridge with typed sync
 - [x] `component()` — definition wrapper
 
 **Validate:** Counter app (mountApp + text + elSplit + element helpers). Measure initial bundle size floor.
