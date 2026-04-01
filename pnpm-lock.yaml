@@ -45,6 +45,16 @@ importers:
         specifier: ^4.1.2
         version: 4.1.2(jsdom@29.0.1)(vite@8.0.3(@emnapi/core@1.9.1)(@emnapi/runtime@1.9.1)(jiti@2.6.1))
 
+  examples/counter:
+    dependencies:
+      '@llui/core':
+        specifier: workspace:*
+        version: link:../../packages/core
+    devDependencies:
+      vite:
+        specifier: ^8.0.0
+        version: 8.0.3(@emnapi/core@1.9.1)(@emnapi/runtime@1.9.1)(jiti@2.6.1)
+
   packages/ark:
     dependencies:
       '@llui/core':

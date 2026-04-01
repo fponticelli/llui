@@ -1,0 +1,16 @@
+{
+  "name": "@llui/example-counter",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "measure": "vite build && node measure.js"
+  },
+  "dependencies": {
+    "@llui/core": "workspace:*"
+  },
+  "devDependencies": {
+    "vite": "^8.0.0"
+  }
+}
