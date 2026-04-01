@@ -1,6 +1,39 @@
 import type { PortalOptions } from '../types'
+import { getRenderContext, setRenderContext, clearRenderContext } from '../render-context'
+import { createScope, disposeScope } from '../scope'
 
-export function portal(_opts: PortalOptions): Node[] {
-  // TODO: implement
-  throw new Error('portal not yet implemented')
+export function portal(opts: PortalOptions): Node[] {
+  const ctx = getRenderContext()
+  const parentScope = ctx.rootScope
+
+  const target =
+    typeof opts.target === 'string' ? document.querySelector(opts.target) : opts.target
+
+  if (!target) {
+    return []
+  }
+
+  const portalScope = createScope(parentScope)
+  const buildCtx = { rootScope: portalScope, state: ctx.state, container: target as Element }
+  setRenderContext(buildCtx)
+  const nodes = opts.render()
+  clearRenderContext()
+  // Restore parent context
+  setRenderContext(ctx)
+
+  for (const node of nodes) {
+    target.appendChild(node)
+  }
+
+  // On scope disposal, remove portal nodes from target
+  portalScope.disposers.push(() => {
+    for (const node of nodes) {
+      if (node.parentNode === target) {
+        target.removeChild(node)
+      }
+    }
+  })
+
+  // Portal returns nothing to the parent DOM — nodes live in the target
+  return []
 }

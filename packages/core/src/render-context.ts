@@ -3,6 +3,7 @@ import type { Scope } from './types'
 export interface RenderContext {
   rootScope: Scope
   state: unknown
+  container?: Element
 }
 
 let currentContext: RenderContext | null = null

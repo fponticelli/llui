@@ -15,9 +15,9 @@ The foundation everything else builds on.
 - [x] `branch()` — discriminant-keyed conditional rendering with scope swap
 - [x] `show()` — boolean conditional (two-case branch)
 - [x] `each()` — keyed list reconciliation, scoped accessor, `eachItemStable` optimization
-- [ ] `portal()` — out-of-tree rendering with binding participation
+- [x] `portal()` — out-of-tree rendering with binding participation
 - [x] `memo()` — two-level cache (bitmask + output stability)
-- [ ] `onMount()` — microtask callback with scope cancellation
+- [x] `onMount()` — microtask callback with scope cancellation
 - [ ] `errorBoundary()` — three-zone error protection
 - [ ] `child()` — Level 2 composition boundary, propsMsg, onMsg
 - [ ] `foreign()` — imperative library bridge with typed sync
