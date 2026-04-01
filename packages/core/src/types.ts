@@ -73,7 +73,10 @@ export interface ShowOptions<S> extends TransitionOptions {
 export interface EachOptions<S, T> extends TransitionOptions {
   items: (s: S) => T[]
   key: (item: T) => string | number
-  render: (item: <R>(selector: (t: T) => R) => R, index: () => number) => Node[]
+  render: (
+    item: <R>(selector: (t: T) => R) => (() => R),
+    index: () => number,
+  ) => Node[]
 }
 
 export interface PortalOptions {

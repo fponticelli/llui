@@ -14,7 +14,7 @@ The foundation everything else builds on.
 - [x] Element helpers — uncompiled runtime path (`div`, `span`, `button`, etc.)
 - [x] `branch()` — discriminant-keyed conditional rendering with scope swap
 - [x] `show()` — boolean conditional (two-case branch)
-- [ ] `each()` — keyed list reconciliation, scoped accessor, `eachItemStable` optimization
+- [x] `each()` — keyed list reconciliation, scoped accessor, `eachItemStable` optimization
 - [ ] `portal()` — out-of-tree rendering with binding participation
 - [x] `memo()` — two-level cache (bitmask + output stability)
 - [ ] `onMount()` — microtask callback with scope cancellation

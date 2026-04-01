@@ -237,7 +237,7 @@ function each<S, T>(opts: {
   items: (s: S) => T[]
   key: (item: T) => string | number
   render: (
-    item: <R>(selector: (t: T) => R) => Binding<R>,
+    item: <R>(selector: (t: T) => R) => (() => R),
     index: () => number
   ) => Node[]
   enter?: (nodes: Node[]) => void | Promise<void>
