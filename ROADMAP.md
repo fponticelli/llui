@@ -19,7 +19,7 @@ The foundation everything else builds on.
 - [x] `memo()` — two-level cache (bitmask + output stability)
 - [x] `onMount()` — microtask callback with scope cancellation
 - [x] `errorBoundary()` — three-zone error protection (view construction zone)
-- [ ] `child()` — Level 2 composition boundary, propsMsg, onMsg
+- [x] `child()` — Level 2 composition boundary, propsMsg, onMsg
 - [x] `foreign()` — imperative library bridge with typed sync
 - [x] `component()` — definition wrapper
 

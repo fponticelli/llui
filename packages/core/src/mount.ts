@@ -11,7 +11,7 @@ export function mountApp<S, M, E>(
   const inst = createComponentInstance(def, data)
 
   // Run view() within a render context so primitives can register bindings
-  setRenderContext({ ...inst, container })
+  setRenderContext({ ...inst, container, send: inst.send as (msg: unknown) => void })
   const nodes = def.view(inst.state, inst.send)
   clearRenderContext()
 

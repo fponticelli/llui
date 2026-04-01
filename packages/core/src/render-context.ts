@@ -4,6 +4,7 @@ export interface RenderContext {
   rootScope: Scope
   state: unknown
   container?: Element
+  send?: (msg: unknown) => void
 }
 
 let currentContext: RenderContext | null = null
