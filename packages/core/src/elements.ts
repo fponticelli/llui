@@ -1,12 +1,96 @@
+import type { BindingKind } from './types'
+import { getRenderContext } from './render-context'
+import { createBinding, applyBinding } from './binding'
+
 type ElementProps = Record<string, unknown>
+
+const FULL_MASK = 0xffffffff
+
+// DOM properties set via elem[key] = value rather than setAttribute
+const PROP_KEYS = new Set([
+  'value',
+  'checked',
+  'selected',
+  'disabled',
+  'readOnly',
+  'multiple',
+  'indeterminate',
+  'defaultValue',
+  'defaultChecked',
+  'innerHTML',
+  'textContent',
+])
+
+function classifyKind(key: string): BindingKind {
+  if (key === 'class' || key === 'className') return 'class'
+  if (key.startsWith('style.')) return 'style'
+  if (PROP_KEYS.has(key)) return 'prop'
+  return 'attr'
+}
+
+function resolveKey(key: string, kind: BindingKind): string | undefined {
+  if (kind === 'class') return undefined
+  if (kind === 'style') return key.slice(6) // strip 'style.'
+  if (kind === 'prop') return key
+  // attr
+  if (key === 'className') return 'class'
+  return key
+}
 
 function createElement<K extends keyof HTMLElementTagNameMap>(
   tag: K,
-  _props?: ElementProps,
-  _children?: Node[],
+  props?: ElementProps,
+  children?: Node[],
 ): HTMLElementTagNameMap[K] {
-  // TODO: implement full prop classification at runtime (uncompiled path)
-  return document.createElement(tag)
+  const el = document.createElement(tag)
+  const ctx = getRenderContext()
+
+  if (props) {
+    for (const [rawKey, value] of Object.entries(props)) {
+      if (rawKey === 'key') continue
+
+      // Event handler
+      if (/^on[A-Z]/.test(rawKey)) {
+        const eventName = rawKey.slice(2).toLowerCase()
+        el.addEventListener(eventName, value as EventListener)
+        continue
+      }
+
+      // Reactive binding — value is a function
+      if (typeof value === 'function') {
+        const kind = classifyKind(rawKey)
+        const key = resolveKey(rawKey, kind)
+        const accessor = value as (state: never) => unknown
+
+        const binding = createBinding(ctx.rootScope, {
+          mask: FULL_MASK, // uncompiled — no mask info, re-evaluate every time
+          accessor,
+          kind,
+          node: el,
+          key,
+          perItem: false,
+        })
+
+        const initialValue = accessor(ctx.state as never)
+        binding.lastValue = initialValue
+        applyBinding({ kind, node: el, key }, initialValue)
+        continue
+      }
+
+      // Static prop
+      const kind = classifyKind(rawKey)
+      const key = resolveKey(rawKey, kind)
+      applyBinding({ kind, node: el, key }, value)
+    }
+  }
+
+  if (children) {
+    for (const child of children) {
+      el.appendChild(child)
+    }
+  }
+
+  return el
 }
 
 // prettier-ignore

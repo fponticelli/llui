@@ -27,6 +27,13 @@ pnpm --filter @llui/core check
 cd packages/core && pnpm vitest run src/some.test.ts
 ```
 
+## Development Approach
+
+- **Test-driven development:** Define the type/shape first, write one or more failing tests, then implement until they pass.
+- **Tests live in a separate `test/` folder** within each package (e.g. `packages/core/test/`), not alongside source files.
+- **No `any` types** unless strictly unavoidable. `as unknown as X` is a code smell — find a better type or restructure.
+- **Nothing is sacred.** There is no legacy code or backward compatibility concern. When changing assumptions, update the design docs in `docs/designs/` to match.
+
 ## Code Style
 
 - Single quotes, no semicolons, trailing commas
