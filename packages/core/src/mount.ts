@@ -4,13 +4,23 @@ import { disposeScope } from './scope'
 import { setRenderContext, clearRenderContext } from './render-context'
 import { setFlatBindings } from './binding'
 import { registerInstance, unregisterInstance } from './runtime'
+import { installDevTools } from './devtools'
+
+export interface MountOptions {
+  devTools?: boolean
+}
 
 export function mountApp<S, M, E>(
   container: HTMLElement,
   def: ComponentDef<S, M, E>,
   data?: unknown,
+  options?: MountOptions,
 ): AppHandle {
   const inst = createComponentInstance(def, data)
+
+  if (options?.devTools) {
+    installDevTools(inst)
+  }
 
   // Run view() within a render context so primitives can register bindings
   setFlatBindings(inst.allBindings)

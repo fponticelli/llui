@@ -8,8 +8,7 @@
   },
   "dependencies": {
     "@llui/core": "workspace:*",
-    "@llui/effects": "workspace:*",
-    "@llui/ark": "workspace:*"
+    "@llui/effects": "workspace:*"
   },
   "devDependencies": {
     "@llui/vite-plugin": "workspace:*",

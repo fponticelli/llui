@@ -8,6 +8,7 @@ import {
   each,
   show,
   memo,
+  portal,
   table,
   thead,
   tbody,
@@ -16,7 +17,6 @@ import {
   td,
   type Send,
 } from '@llui/core'
-import { dialogView, type DialogMsg, dialogUpdate, type DialogSlice } from '@llui/ark'
 
 type Contact = { id: number; name: string; email: string; company: string; tag: string }
 type ContactForm = { name: string; email: string; company: string; tag: string }
@@ -37,7 +37,6 @@ export type ContactsMsg =
   | { type: 'setField'; field: keyof ContactForm; value: string }
   | { type: 'save' }
   | { type: 'delete'; id: number }
-  | DialogMsg
 
 let nextId = 100
 
@@ -61,11 +60,7 @@ export function contactsUpdate(slice: ContactsSlice, msg: ContactsMsg): Contacts
       return { ...slice, dialogOpen: true, editingId: msg.id, form: { name: contact.name, email: contact.email, company: contact.company, tag: contact.tag } }
     }
     case 'closeDialog':
-    case 'dialog:close':
       return { ...slice, dialogOpen: false, editingId: null }
-    case 'dialog:open':
-    case 'dialog:toggle':
-      return { ...slice, ...dialogUpdate({ open: slice.dialogOpen }, msg as DialogMsg) }
     case 'setField':
       return { ...slice, form: { ...slice.form, [msg.field]: msg.value } }
     case 'save': {
@@ -175,20 +170,38 @@ export function contactsView<S>(
     ]),
 
     // Add/Edit dialog
-    ...dialogView<S>(
-      {
-        open: (s) => props.contacts(s).dialogOpen,
-        trigger: () => [],
-        title: 'Contact',
-        content: () => [
-          formField('Name', 'name', send, props),
-          formField('Email', 'email', send, props),
-          formField('Company', 'company', send, props),
-        ],
-        onConfirm: () => send({ type: 'save' }),
-      },
-      send,
-    ),
+    ...show<S>({
+      when: (s) => props.contacts(s).dialogOpen,
+      render: () =>
+        portal({
+          target: document.body,
+          render: () => [
+            div({ class: 'dialog-backdrop', onClick: () => send({ type: 'closeDialog' }) }),
+            div({ class: 'dialog-positioner' }, [
+              div({ class: 'dialog-content', role: 'dialog', 'aria-modal': 'true' }, [
+                div({ class: 'dialog-header' }, [
+                  text((s: S) => props.contacts(s).editingId ? 'Edit Contact' : 'New Contact'),
+                ]),
+                div({ class: 'dialog-body' }, [
+                  formField('Name', 'name', send, props),
+                  formField('Email', 'email', send, props),
+                  formField('Company', 'company', send, props),
+                ]),
+                div({ class: 'dialog-footer' }, [
+                  button(
+                    { class: 'btn btn-ghost', onClick: () => send({ type: 'closeDialog' }) },
+                    [text('Cancel')],
+                  ),
+                  button(
+                    { class: 'btn btn-primary', onClick: () => send({ type: 'save' }) },
+                    [text('Save')],
+                  ),
+                ]),
+              ]),
+            ]),
+          ],
+        }),
+    }),
   ]
 }
 

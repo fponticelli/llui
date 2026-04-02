@@ -134,6 +134,29 @@ td:last-child { text-align: right; }
 .section { margin-bottom: 36px; }
 .section-title { font-size: 16px; font-weight: 600; margin-bottom: 16px; color: var(--text); }
 
+/* ── Toast ──────────────────────────────────────────── */
+.toast-container { position: fixed; top: 20px; right: 20px; z-index: 200; display: flex; flex-direction: column; gap: 8px; min-width: 300px; }
+.toast { display: flex; align-items: center; gap: 12px; padding: 14px 18px; border-radius: var(--radius-sm); box-shadow: var(--shadow-lg); animation: slideIn 200ms ease; font-size: 14px; }
+.toast-success { background: #ecfdf5; border: 1px solid #a7f3d0; color: #065f46; }
+.toast-error { background: #fef2f2; border: 1px solid #fecaca; color: #991b1b; }
+.toast-info { background: #eff6ff; border: 1px solid #bfdbfe; color: #1e40af; }
+.toast-text { flex: 1; }
+.toast-close { background: none; border: none; font-size: 18px; cursor: pointer; color: inherit; opacity: .5; padding: 0 4px; }
+.toast-close:hover { opacity: 1; }
+@keyframes slideIn { from { opacity: 0; transform: translateX(20px); } to { opacity: 1; transform: translateX(0); } }
+
+/* ── Stepper ───────────────────────────────────────── */
+.stepper { display: flex; gap: 0; }
+.step { display: flex; align-items: center; gap: 10px; flex: 1; position: relative; }
+.step:not(:last-child)::after { content: ''; position: absolute; top: 16px; left: 42px; right: 0; height: 2px; background: var(--border); }
+.step.done:not(:last-child)::after { background: var(--accent); }
+.step-dot { width: 32px; height: 32px; border-radius: 50%; border: 2px solid var(--border); display: flex; align-items: center; justify-content: center; font-size: 13px; font-weight: 600; color: var(--text-muted); background: var(--surface); position: relative; z-index: 1; transition: all var(--transition); }
+.step.active .step-dot { border-color: var(--accent); color: var(--accent); background: var(--accent-light); }
+.step.done .step-dot { border-color: var(--accent); background: var(--accent); color: #fff; }
+.step-label { font-size: 13px; font-weight: 500; color: var(--text-muted); }
+.step.active .step-label { color: var(--accent); font-weight: 600; }
+.step.done .step-label { color: var(--text); }
+
 /* ── Responsive ─────────────────────────────────────── */
 @media (max-width: 768px) {
   .app { flex-direction: column; }

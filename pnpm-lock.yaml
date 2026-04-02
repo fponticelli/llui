@@ -102,9 +102,6 @@ importers:
 
   examples/demo:
     dependencies:
-      '@llui/ark':
-        specifier: workspace:*
-        version: link:../../packages/ark
       '@llui/core':
         specifier: workspace:*
         version: link:../../packages/core

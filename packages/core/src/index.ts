@@ -22,7 +22,8 @@ export { component } from './component'
 
 // ── Mount ─────────────────────────────────────────────────────────
 
-export { mountApp, hydrateApp } from './mount'
+export { mountApp, hydrateApp, type MountOptions } from './mount'
+export { installDevTools, type LluiDebugAPI } from './devtools'
 
 // ── Runtime ───────────────────────────────────────────────────────
 

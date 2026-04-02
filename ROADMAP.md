@@ -86,10 +86,9 @@ Runtime and bundle size improvements, tracked against benchmarks.
 
 ## Phase 5 — Ecosystem
 
-- [x] `@llui/ark` — native LLui headless components (Dialog, Tabs, Accordion) as TEA view functions
-- [ ] Additional Ark components — Select, Combobox, Menu, Tooltip, Popover (Tier 2)
-- [ ] `@llui/devtools` — `window.__lluiDevTools` hook, per-transition recording
-- [ ] `@llui/mcp` — MCP server, `window.__lluiDebug` API, WebSocket debug channel
-- [x] Multi-page demo app — Dashboard, Contacts CRUD with search/dialog, Component showcase
+- [x] `@llui/ark` — headless components (Dialog, Tabs, Accordion) as TEA view functions
+- [x] `window.__lluiDebug` DevTools API — getState, send, evalUpdate, message history, exportTrace
+- [ ] `@llui/mcp` — MCP server wrapping __lluiDebug via WebSocket
+- [x] Multi-page demo app — Dashboard, Contacts CRUD, Component showcase (Tabs, Accordion, Dialog, Toast, Stepper)
 
-**Validate:** Ark component accessibility audit (axe-core). Full LLM evaluation suite (15 tasks). Bundle size per-component breakdown.
+**Validate:** Full LLM evaluation suite (15 tasks). Bundle size per-component breakdown.
