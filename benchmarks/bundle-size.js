@@ -7,7 +7,10 @@ import { join, dirname } from 'node:path'
 const ROOT = dirname(import.meta.dirname)
 const BASELINE_PATH = join(import.meta.dirname, 'baseline.json')
 
-const apps = [{ name: 'counter', dir: join(ROOT, 'examples/counter') }]
+const apps = [
+  { name: 'counter', dir: join(ROOT, 'examples/counter') },
+  { name: 'todomvc', dir: join(ROOT, 'examples/todomvc') },
+]
 
 function measure(dir) {
   execSync('pnpm build', { cwd: dir, stdio: 'pipe' })

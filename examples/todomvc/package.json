@@ -1,0 +1,17 @@
+{
+  "name": "@llui/example-todomvc",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "measure": "vite build && node measure.js"
+  },
+  "dependencies": {
+    "@llui/core": "workspace:*"
+  },
+  "devDependencies": {
+    "@llui/vite-plugin": "workspace:*",
+    "vite": "^8.0.0"
+  }
+}

@@ -1,6 +1,16 @@
 import ts from 'typescript'
 import { collectDeps } from './collect-deps.js'
 
+function createMaskLiteral(f: ts.NodeFactory, mask: number): ts.Expression {
+  if (mask >= 0) return f.createNumericLiteral(mask)
+  // -1 (0xFFFFFFFF | 0) — emit as bitwise OR: 0xFFFFFFFF | 0
+  return f.createBinaryExpression(
+    f.createNumericLiteral(0xffffffff),
+    ts.SyntaxKind.BarToken,
+    f.createNumericLiteral(0),
+  )
+}
+
 // HTML element helper names that the compiler can transform
 const ELEMENT_HELPERS = new Set([
   'a', 'abbr', 'article', 'aside', 'b', 'blockquote', 'br', 'button',
@@ -209,7 +219,7 @@ function tryTransformElementCall(
 
         bindings.push(
           f.createArrayLiteralExpression([
-            f.createNumericLiteral(mask),
+            createMaskLiteral(f, mask),
             f.createStringLiteral(kind),
             f.createStringLiteral(resolvedKey),
             prop.initializer,
@@ -330,7 +340,7 @@ function tryInjectTextMask(
 
   return f.createCallExpression(node.expression, node.typeArguments, [
     firstArg,
-    f.createNumericLiteral(mask),
+    createMaskLiteral(f, mask),
   ])
 }
 

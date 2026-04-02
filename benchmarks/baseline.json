@@ -3,5 +3,10 @@
     "chunks": 1,
     "raw": 4347,
     "gzip": 1857
+  },
+  "todomvc": {
+    "chunks": 1,
+    "raw": 9226,
+    "gzip": 3459
   }
 }
