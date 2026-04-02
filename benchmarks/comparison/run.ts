@@ -162,6 +162,9 @@ async function main() {
   console.log()
 
   const names = Object.keys(allResults)
+  const baseline = allResults['llui']
+
+  // Median table
   const header = 'Operation'.padEnd(16) + names.map((n) => n.padStart(12)).join('')
   console.log(header)
   console.log('-'.repeat(header.length))
@@ -173,6 +176,34 @@ async function main() {
       line += r ? r.median.toFixed(1).padStart(12) : '         N/A'
     }
     console.log(line)
+  }
+
+  // Percent difference table (LLui as baseline)
+  if (baseline) {
+    console.log()
+    console.log('=== Relative to LLui (positive = slower than LLui) ===')
+    console.log()
+    const pctHeader = 'Operation'.padEnd(16) + names.map((n) => n.padStart(12)).join('')
+    console.log(pctHeader)
+    console.log('-'.repeat(pctHeader.length))
+
+    for (const op of OPS) {
+      let line = op.label.padEnd(16)
+      const base = baseline[op.id]?.median
+      for (const name of names) {
+        const r = allResults[name]?.[op.id]
+        if (!r || !base) {
+          line += '         N/A'
+        } else if (name === 'llui') {
+          line += '       ——'.padStart(12)
+        } else {
+          const pct = ((r.median - base) / base) * 100
+          const sign = pct >= 0 ? '+' : ''
+          line += `${sign}${pct.toFixed(0)}%`.padStart(12)
+        }
+      }
+      console.log(line)
+    }
   }
 
   console.log()
