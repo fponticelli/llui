@@ -1,29 +1,36 @@
 import { div, h2, p, button, text, portal } from '@llui/core'
-import { useMachine } from '@llui/zag'
+import { useMachine, type ZagMachineConstructor, type ZagConnectFn } from '@llui/zag'
 
-type Props = Record<string, unknown>
+interface DialogApi {
+  getTriggerProps(): Record<string, unknown>
+  getBackdropProps(): Record<string, unknown>
+  getPositionerProps(): Record<string, unknown>
+  getContentProps(): Record<string, unknown>
+  getTitleProps(): Record<string, unknown>
+  getDescriptionProps(): Record<string, unknown>
+  getCloseTriggerProps(): Record<string, unknown>
+}
 
-export function dialogPage(VM: unknown, mod: { machine: unknown; connect: unknown }): Node[] {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { api } = useMachine(VM as any, mod.machine, mod.connect as any, { id: 'dlg' })
+export function dialogPage(VM: ZagMachineConstructor, mod: { machine: unknown; connect: ZagConnectFn<DialogApi> }): Node[] {
+  const z = useMachine(VM, mod.machine, mod.connect, { id: 'dlg' })
   return [
     h2({ class: 'page-title' }, [text('Dialog')]),
     p({ class: 'page-desc' }, [text('Modal dialog powered by @zag-js/dialog. Focus trap, backdrop dismiss, Escape key, and full ARIA support.')]),
     div({ class: 'demo-box' }, [
-      button({ ...api.getTriggerProps() as Props, class: 'btn btn-primary' }, [text('Open Dialog')]),
+      z.render('button', a => ({ ...a.getTriggerProps(), class: 'btn btn-primary' }), [text('Open Dialog')]),
       ...portal({
         target: document.body,
         render: () => [
-          div(api.getBackdropProps() as Props),
-          div(api.getPositionerProps() as Props, [
-            div(api.getContentProps() as Props, [
-              div(api.getTitleProps() as Props, [text('Dialog Title')]),
-              div(api.getDescriptionProps() as Props, [
+          z.render('div', a => a.getBackdropProps()),
+          z.render('div', a => a.getPositionerProps(), [
+            z.render('div', a => a.getContentProps(), [
+              z.render('div', a => a.getTitleProps(), [text('Dialog Title')]),
+              z.render('div', a => a.getDescriptionProps(), [
                 p({}, [text('This dialog demonstrates @zag-js/dialog with automatic focus trapping, backdrop click dismiss, Escape key handling, and correct ARIA attributes.')]),
               ]),
               div({ class: 'dialog-footer' }, [
-                button({ ...api.getCloseTriggerProps() as Props, class: 'btn btn-ghost' }, [text('Cancel')]),
-                button({ ...api.getCloseTriggerProps() as Props, class: 'btn btn-primary' }, [text('Confirm')]),
+                z.render('button', a => ({ ...a.getCloseTriggerProps(), class: 'btn btn-ghost' }), [text('Cancel')]),
+                z.render('button', a => ({ ...a.getCloseTriggerProps(), class: 'btn btn-primary' }), [text('Confirm')]),
               ]),
             ]),
           ]),

@@ -1,32 +1,33 @@
-import { div, h2, p, button, text } from '@llui/core'
-import { useMachine } from '@llui/zag'
+import { div, h2, p, text } from '@llui/core'
+import { useMachine, type ZagMachineConstructor, type ZagConnectFn } from '@llui/zag'
 
-type Props = Record<string, unknown>
+interface TabsApi {
+  getRootProps(): Record<string, unknown>
+  getListProps(): Record<string, unknown>
+  getTriggerProps(opts: { value: string }): Record<string, unknown>
+  getContentProps(opts: { value: string }): Record<string, unknown>
+}
 
-export function tabsPage(VM: unknown, mod: { machine: unknown; connect: unknown }): Node[] {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { api } = useMachine(VM as any, mod.machine, mod.connect as any, { id: 'tabs', value: 'overview' })
+export function tabsPage(VM: ZagMachineConstructor, mod: { machine: unknown; connect: ZagConnectFn<TabsApi> }): Node[] {
+  const z = useMachine(VM, mod.machine, mod.connect, { id: 'tabs', value: 'overview' })
   return [
     h2({ class: 'page-title' }, [text('Tabs')]),
-    p({ class: 'page-desc' }, [text('Keyboard-navigable tabbed interface powered by @zag-js/tabs. Try arrow keys to switch tabs.')]),
+    p({ class: 'page-desc' }, [text('Keyboard-navigable tabbed interface. Try arrow keys to switch tabs.')]),
     div({ class: 'demo-box' }, [
-      div(api.getRootProps() as Props, [
-        div(api.getListProps() as Props, [
-          button(api.getTriggerProps({ value: 'overview' }) as Props, [text('Overview')]),
-          button(api.getTriggerProps({ value: 'features' }) as Props, [text('Features')]),
-          button(api.getTriggerProps({ value: 'perf' }) as Props, [text('Performance')]),
+      z.render('div', a => a.getRootProps(), [
+        z.render('div', a => a.getListProps(), [
+          z.render('button', a => a.getTriggerProps({ value: 'overview' }), [text('Overview')]),
+          z.render('button', a => a.getTriggerProps({ value: 'features' }), [text('Features')]),
+          z.render('button', a => a.getTriggerProps({ value: 'perf' }), [text('Performance')]),
         ]),
-        div(api.getContentProps({ value: 'overview' }) as Props, [
-          p({}, [text('LLui is a compile-time-optimized web framework built on The Elm Architecture. It uses bitmask dirty tracking to surgically update only the DOM nodes that changed.')]),
+        z.render('div', a => a.getContentProps({ value: 'overview' }), [
+          p({}, [text('LLui uses bitmask dirty tracking to surgically update only the DOM nodes that changed.')]),
         ]),
-        div(api.getContentProps({ value: 'features' }) as Props, [
-          p({}, [text('• No virtual DOM — view() runs once at mount')]),
-          p({}, [text('• Bitmask dirty tracking — O(1) skip per binding')]),
-          p({}, [text('• Effects as data — pure update(), testable without DOM')]),
-          p({}, [text('• Compile-time optimization via Vite plugin')]),
+        z.render('div', a => a.getContentProps({ value: 'features' }), [
+          p({}, [text('• No virtual DOM  • Bitmask tracking  • Effects as data  • Compile-time optimization')]),
         ]),
-        div(api.getContentProps({ value: 'perf' }) as Props, [
-          p({}, [text('Competitive with Solid.js across all benchmarks. Fastest on update and swap operations. TodoMVC: 4.2 kB gzip including the full runtime.')]),
+        z.render('div', a => a.getContentProps({ value: 'perf' }), [
+          p({}, [text('Competitive with Solid.js. Fastest on update and swap. TodoMVC: 4.2 kB gzip.')]),
         ]),
       ]),
     ]),

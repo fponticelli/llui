@@ -1,26 +1,30 @@
-import { div, h2, p, button, text } from '@llui/core'
-import { useMachine } from '@llui/zag'
+import { div, h2, p, text } from '@llui/core'
+import { useMachine, type ZagMachineConstructor, type ZagConnectFn } from '@llui/zag'
 
-type Props = Record<string, unknown>
+interface AccordionApi {
+  getRootProps(): Record<string, unknown>
+  getItemProps(opts: { value: string }): Record<string, unknown>
+  getItemTriggerProps(opts: { value: string }): Record<string, unknown>
+  getItemContentProps(opts: { value: string }): Record<string, unknown>
+}
 
 const items = [
-  { value: 'what', label: 'What is LLui?', body: 'A compile-time-optimized web framework designed for LLM-first authoring, combining TEA with surgical DOM updates via bitmask dirty tracking.' },
-  { value: 'why', label: 'Why not React/Vue/Svelte?', body: 'LLui optimizes for LLM code generation — one canonical pattern per concept, discriminated unions for exhaustive checking, and no hook rules to violate.' },
-  { value: 'how', label: 'How does the compiler work?', body: 'The Vite plugin performs 3 passes: prop classification (static/event/reactive), dependency analysis with bitmask injection, and import cleanup with element helper elision.' },
+  { value: 'what', label: 'What is LLui?', body: 'A compile-time-optimized web framework for LLM-first authoring.' },
+  { value: 'why', label: 'Why not React?', body: 'One canonical pattern per concept. No hook rules. Discriminated unions.' },
+  { value: 'how', label: 'How does the compiler work?', body: '3 passes: prop classification, bitmask injection, import cleanup.' },
 ]
 
-export function accordionPage(VM: unknown, mod: { machine: unknown; connect: unknown }): Node[] {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { api } = useMachine(VM as any, mod.machine, mod.connect as any, { id: 'acc', value: ['what'] })
+export function accordionPage(VM: ZagMachineConstructor, mod: { machine: unknown; connect: ZagConnectFn<AccordionApi> }): Node[] {
+  const z = useMachine(VM, mod.machine, mod.connect, { id: 'acc', value: ['what'] })
   return [
     h2({ class: 'page-title' }, [text('Accordion')]),
-    p({ class: 'page-desc' }, [text('Collapsible sections powered by @zag-js/accordion. Manages focus, aria-expanded, and data-state attributes.')]),
+    p({ class: 'page-desc' }, [text('Collapsible sections. Manages focus, aria-expanded, and data-state.')]),
     div({ class: 'demo-box' }, [
-      div(api.getRootProps() as Props,
-        items.map((item) =>
-          div(api.getItemProps({ value: item.value }) as Props, [
-            button(api.getItemTriggerProps({ value: item.value }) as Props, [text(item.label)]),
-            div(api.getItemContentProps({ value: item.value }) as Props, [
+      z.render('div', a => a.getRootProps(),
+        items.map(item =>
+          z.render('div', a => a.getItemProps({ value: item.value }), [
+            z.render('button', a => a.getItemTriggerProps({ value: item.value }), [text(item.label)]),
+            z.render('div', a => a.getItemContentProps({ value: item.value }), [
               p({}, [text(item.body)]),
             ]),
           ]),

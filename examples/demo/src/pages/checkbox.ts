@@ -1,21 +1,25 @@
-import { div, h2, p, span, input, label, text } from '@llui/core'
-import { useMachine } from '@llui/zag'
+import { div, h2, p, span, text } from '@llui/core'
+import { useMachine, type ZagMachineConstructor, type ZagConnectFn } from '@llui/zag'
 
-type Props = Record<string, unknown>
+interface CheckboxApi {
+  getRootProps(): Record<string, unknown>
+  getHiddenInputProps(): Record<string, unknown>
+  getControlProps(): Record<string, unknown>
+  getLabelProps(): Record<string, unknown>
+}
 
-export function checkboxPage(VM: unknown, mod: { machine: unknown; connect: unknown }): Node[] {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { api } = useMachine(VM as any, mod.machine, mod.connect as any, { id: 'cb' })
+export function checkboxPage(VM: ZagMachineConstructor, mod: { machine: unknown; connect: ZagConnectFn<CheckboxApi> }): Node[] {
+  const z = useMachine(VM, mod.machine, mod.connect, { id: 'cb' })
   return [
     h2({ class: 'page-title' }, [text('Checkbox')]),
     p({ class: 'page-desc' }, [text('Checkbox powered by @zag-js/checkbox. Manages checked/unchecked/indeterminate states with correct ARIA.')]),
     div({ class: 'demo-box' }, [
-      label(api.getRootProps() as Props, [
-        input(api.getHiddenInputProps() as Props),
-        div(api.getControlProps() as Props, [
+      z.render('label', a => a.getRootProps(), [
+        z.render('input', a => a.getHiddenInputProps()),
+        z.render('div', a => a.getControlProps(), [
           span({}, [text('✓')]),
         ]),
-        span(api.getLabelProps() as Props, [text('Accept terms and conditions')]),
+        z.render('span', a => a.getLabelProps(), [text('Accept terms and conditions')]),
       ]),
     ]),
   ]

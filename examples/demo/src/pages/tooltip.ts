@@ -1,21 +1,24 @@
-import { div, h2, p, button, text, portal } from '@llui/core'
-import { useMachine } from '@llui/zag'
+import { div, h2, p, text, portal } from '@llui/core'
+import { useMachine, type ZagMachineConstructor, type ZagConnectFn } from '@llui/zag'
 
-type Props = Record<string, unknown>
+interface TooltipApi {
+  getTriggerProps(): Record<string, unknown>
+  getPositionerProps(): Record<string, unknown>
+  getContentProps(): Record<string, unknown>
+}
 
-export function tooltipPage(VM: unknown, mod: { machine: unknown; connect: unknown }): Node[] {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { api } = useMachine(VM as any, mod.machine, mod.connect as any, { id: 'tip' })
+export function tooltipPage(VM: ZagMachineConstructor, mod: { machine: unknown; connect: ZagConnectFn<TooltipApi> }): Node[] {
+  const z = useMachine(VM, mod.machine, mod.connect, { id: 'tip' })
   return [
     h2({ class: 'page-title' }, [text('Tooltip')]),
     p({ class: 'page-desc' }, [text('Hover tooltip powered by @zag-js/tooltip. Handles positioning, open/close delays, and ARIA describedby.')]),
     div({ class: 'demo-box' }, [
-      button({ ...api.getTriggerProps() as Props, class: 'btn btn-primary' }, [text('Hover me for tooltip')]),
+      z.render('button', a => ({ ...a.getTriggerProps(), class: 'btn btn-primary' }), [text('Hover me for tooltip')]),
       ...portal({
         target: document.body,
         render: () => [
-          div(api.getPositionerProps() as Props, [
-            div({ ...api.getContentProps() as Props, class: 'tooltip-content' }, [
+          z.render('div', a => a.getPositionerProps(), [
+            z.render('div', a => ({ ...a.getContentProps(), class: 'tooltip-content' }), [
               text('This tooltip is powered by @zag-js/tooltip'),
             ]),
           ]),

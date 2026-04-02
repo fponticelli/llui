@@ -1,21 +1,26 @@
-import { div, h2, p, span, input, label, text } from '@llui/core'
-import { useMachine } from '@llui/zag'
+import { div, h2, p, text } from '@llui/core'
+import { useMachine, type ZagMachineConstructor, type ZagConnectFn } from '@llui/zag'
 
-type Props = Record<string, unknown>
+interface SwitchApi {
+  getRootProps(): Record<string, unknown>
+  getHiddenInputProps(): Record<string, unknown>
+  getControlProps(): Record<string, unknown>
+  getThumbProps(): Record<string, unknown>
+  getLabelProps(): Record<string, unknown>
+}
 
-export function switchPage(VM: unknown, mod: { machine: unknown; connect: unknown }): Node[] {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { api } = useMachine(VM as any, mod.machine, mod.connect as any, { id: 'sw', label: 'Dark mode' })
+export function switchPage(VM: ZagMachineConstructor, mod: { machine: unknown; connect: ZagConnectFn<SwitchApi> }): Node[] {
+  const z = useMachine(VM, mod.machine, mod.connect, { id: 'sw', label: 'Dark mode' })
   return [
     h2({ class: 'page-title' }, [text('Switch')]),
     p({ class: 'page-desc' }, [text('Toggle switch powered by @zag-js/switch. Accessible with keyboard (Space) and proper ARIA role.')]),
     div({ class: 'demo-box' }, [
-      label(api.getRootProps() as Props, [
-        input(api.getHiddenInputProps() as Props),
-        span(api.getControlProps() as Props, [
-          span(api.getThumbProps() as Props),
+      z.render('label', a => a.getRootProps(), [
+        z.render('input', a => a.getHiddenInputProps()),
+        z.render('span', a => a.getControlProps(), [
+          z.render('span', a => a.getThumbProps()),
         ]),
-        span(api.getLabelProps() as Props, [text('Dark mode')]),
+        z.render('span', a => a.getLabelProps(), [text('Dark mode')]),
       ]),
     ]),
   ]
