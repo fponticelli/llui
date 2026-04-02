@@ -103,29 +103,30 @@ function processMessages<S, M, E>(inst: ComponentInstance<S, M, E>): void {
     block.reconcile(state, combinedDirty)
   }
 
+  // Compact dead bindings before Phase 2 (Phase 1 may have disposed scopes)
+  const bindings = inst.allBindings
+  if (bindings.length > 0 && bindings[0]!.dead) {
+    // Fast check: if first binding is dead, likely bulk disposal — compact now
+    let w = 0
+    for (let r = 0; r < bindings.length; r++) {
+      if (!bindings[r]!.dead) bindings[w++] = bindings[r]!
+    }
+    bindings.length = w
+  }
+
   // Phase 2 — binding updates (flat array, no tree walk)
   setCurrentDirtyMask(combinedDirty)
   if (combinedDirty !== 0) {
-    const bindings = inst.allBindings
     const state = inst.state
-    let deadCount = 0
     for (let i = 0; i < bindings.length; i++) {
       const binding = bindings[i]!
-      if (binding.dead) { deadCount++; continue }
+      if (binding.dead) continue
       if ((binding.mask & combinedDirty) === 0) continue
       if (binding.perItem && binding.ownerScope.eachItemStable) continue
       const newValue = binding.accessor(state)
       if (Object.is(newValue, binding.lastValue)) continue
       binding.lastValue = newValue
       applyBinding(binding, newValue)
-    }
-    // Compact when >25% dead
-    if (deadCount > 0 && deadCount > bindings.length >> 2) {
-      let w = 0
-      for (let r = 0; r < bindings.length; r++) {
-        if (!bindings[r]!.dead) bindings[w++] = bindings[r]!
-      }
-      bindings.length = w
     }
   }
 

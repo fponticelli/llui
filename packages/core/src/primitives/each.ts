@@ -108,12 +108,19 @@ function reconcileEntries<S, T>(
   const oldLen = entries.length
   const newLen = newItems.length
 
-  // Fast path 1: clear all
+  // Fast path 1: clear all — bulk DOM removal
   if (newLen === 0) {
-    for (const entry of entries) {
-      for (const node of entry.nodes) parent.removeChild(node)
-      disposeScope(entry.scope)
+    // Remove all DOM nodes in one operation using Range
+    if (entries.length > 0) {
+      const range = document.createRange()
+      range.setStartAfter(anchor)
+      const lastEntry = entries[entries.length - 1]!
+      const lastNode = lastEntry.nodes[lastEntry.nodes.length - 1]!
+      range.setEndAfter(lastNode)
+      range.deleteContents()
     }
+    // Dispose scopes (no DOM work — nodes already removed)
+    for (const entry of entries) disposeScope(entry.scope)
     entries.length = 0
     return
   }
@@ -168,8 +175,8 @@ function reconcileEntries<S, T>(
   }
 
   // Fast path 4: full replace — no shared keys between old and new
-  // Quick check: if oldLen > 0 and first new key isn't in old entries, likely full replace
-  if (oldLen > 0) {
+  // Quick check: first key mismatch → likely full replace, verify with Set
+  if (oldLen > 0 && opts.key(newItems[0]!) !== entries[0]!.key) {
     const oldKeys = new Set<string | number>()
     for (const entry of entries) oldKeys.add(entry.key)
     let anyShared = false
@@ -177,11 +184,13 @@ function reconcileEntries<S, T>(
       if (oldKeys.has(opts.key(newItems[i]!))) { anyShared = true; break }
     }
     if (!anyShared) {
-      // Clear all old entries
-      for (const entry of entries) {
-        for (const node of entry.nodes) parent.removeChild(node)
-        disposeScope(entry.scope)
-      }
+      // Bulk DOM removal using Range
+      const range = document.createRange()
+      range.setStartAfter(anchor)
+      const lastEntry = entries[entries.length - 1]!
+      range.setEndAfter(lastEntry.nodes[lastEntry.nodes.length - 1]!)
+      range.deleteContents()
+      for (const entry of entries) disposeScope(entry.scope)
       entries.length = 0
       // Build all new entries into a fragment
       const frag = document.createDocumentFragment()

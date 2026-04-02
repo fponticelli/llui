@@ -16,6 +16,7 @@
     "build": "tsc -p tsconfig.build.json",
     "check": "tsc --noEmit -p tsconfig.check.json",
     "lint": "eslint src",
-    "test": "vitest run"
+    "test": "vitest run",
+    "test:coverage": "vitest run --coverage"
   }
 }
