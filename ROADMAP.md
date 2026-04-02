@@ -42,9 +42,9 @@ The foundation everything else builds on.
 
 - [x] `testComponent()` — zero-DOM harness
 - [x] `assertEffects()` — partial deep matching
-- [ ] `testView()` — lightweight DOM shim + query API
-- [ ] `propertyTest()` — generative invariant testing with shrinking
-- [ ] `replayTrace()` — deterministic trace replay
+- [x] `testView()` — mounts component with given state, returns query/queryAll
+- [x] `propertyTest()` — generative invariant testing with random message sequences
+- [x] `replayTrace()` — deterministic trace replay with state + effects comparison
 - [x] `handleEffects()` — http, cancel, debounce consumption chain with AbortSignal cleanup
 - [x] Effect builders — `http()`, `cancel()`, `debounce()`, `sequence()`, `race()`
 
