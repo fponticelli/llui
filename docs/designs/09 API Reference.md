@@ -505,25 +505,6 @@ interface LluiTrace<S, M, E> {
 
 See: 04 Test Strategy.md
 
----
-
-## `@llui/zag`
-
-Adapter bridging Zag.js finite state machines into LLui's reactivity model.
-
-```typescript
-function useMachine<Api>(
-  machine: { start: () => ZagService },
-  connect: (service: ZagService, normalize: NormalizeFn) => Api,
-  normalize: NormalizeFn,
-): { api: Api; service: ZagService }
-
-function createNormalizeProps(): (props: Record<string, unknown>) => Record<string, unknown>
-
-function mergeProps(...sources: Record<string, unknown>[]): Record<string, unknown>
-```
-
-See: 08 Ecosystem Integration.md
 
 ---
 

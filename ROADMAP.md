@@ -86,9 +86,7 @@ Runtime and bundle size improvements, tracked against benchmarks.
 
 ## Phase 5 — Ecosystem
 
-- [x] `@llui/zag` — Zag.js adapter: useMachine, createNormalizeProps, mergeProps
 - [x] `window.__lluiDebug` DevTools API — getState, send, evalUpdate, message history, exportTrace
 - [ ] `@llui/mcp` — MCP server wrapping __lluiDebug via WebSocket
-- [x] Multi-page demo app — Dashboard, Contacts CRUD, Component showcase (Tabs, Accordion, Dialog, Toast, Stepper)
 
-**Validate:** Full LLM evaluation suite (15 tasks). Bundle size per-component breakdown.
+**Validate:** Full LLM evaluation suite (15 tasks).

@@ -49,7 +49,7 @@ pnpm -w run bench:size:save   # Save current sizes as the new baseline
 
 ## Monorepo Structure
 
-Six packages under `packages/`, managed by pnpm workspaces + Turborepo:
+Five packages under `packages/`, managed by pnpm workspaces + Turborepo:
 
 | Package | Purpose | Dependencies |
 |---------|---------|-------------|
@@ -57,10 +57,9 @@ Six packages under `packages/`, managed by pnpm workspaces + Turborepo:
 | `@llui/vite-plugin` | Compiler: 3-pass TypeScript transform (prop split → mask injection → import cleanup) | peer: vite |
 | `@llui/test` | Test harness: testComponent, assertEffects, testView, propertyTest, replayTrace | @llui/core |
 | `@llui/effects` | Effect builders: http, cancel, debounce, sequence, race + handleEffects chain | — |
-| `@llui/zag` | Zag.js adapter: useMachine, normalizeProps, mergeProps | @llui/core |
 | `@llui/vike` | Vike SSR adapter: onRenderHtml, onRenderClient | @llui/core |
 
-Build order: `@llui/core` and `@llui/effects` first (no deps), then `@llui/test`, `@llui/zag`, `@llui/vike` (depend on core). Turbo handles this via `"dependsOn": ["^build"]`.
+Build order: `@llui/core` and `@llui/effects` first (no deps), then `@llui/test`, `@llui/vike` (depend on core). Turbo handles this via `"dependsOn": ["^build"]`.
 
 ## Architecture Concepts
 
@@ -87,5 +86,5 @@ Comprehensive specs live in `docs/designs/`. These are the authoritative referen
 - `05 Performance.md` — benchmarking methodology (Playwright + 4× CPU throttle)
 - `06 Bundle Size.md` — per-primitive cost analysis, tree-shaking requirements
 - `07 LLM Friendliness.md` — system prompt design, evaluation tasks, LLM debug protocol
-- `08 Ecosystem Integration.md` — Zag.js headless components, Vike SSR, foreign() for imperative libs
+- `08 Ecosystem Integration.md` — Vike SSR, foreign() for imperative libs
 - `09 API Reference.md` — authoritative type signatures for all public exports

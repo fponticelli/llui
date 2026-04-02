@@ -153,9 +153,6 @@ This is the floor. Every application pays it.
 **+ `@llui/effects` package** (estimate: +500–800 bytes gzip, tree-shakeable)
 The `@llui/effects` package provides two things: (1) composable effect description builders — `http`, `cancel` (overloaded: `cancel(token)` for cancel-only, `cancel(token, inner)` for cancel-and-replace), `debounce`, `sequence`, `race` — which are small factory functions that produce plain data objects, and (2) `handleEffects<Effect>()`, a chain that interprets those descriptions at runtime inside `onEffect`. The chain includes a cancellation token registry, debounce timer map, and `AbortSignal` integration for cleanup on unmount. Each builder is independently tree-shakeable — an application that uses only `http` and `cancel` pays only for those builders plus the shared chain runtime (~200–300 bytes gzip). The `.else()` and `.on()` methods add negligible overhead. The `.done()` terminal is compile-time only (zero runtime cost). This package is versioned separately from the core runtime.
 
-**+ `@llui/zag` adapter** (estimate: ~3KB gzip shared, plus per-machine cost)
-The `@llui/zag` package provides `useMachine` and `normalizeProps` (the bridge between Zag finite state machines and LLui's reactivity model) plus LLui-idiomatic wrappers around each component. This is a shared cost paid once regardless of how many Zag components are used. Individual Zag machines are independently tree-shakeable: Dialog ~3KB, Select ~4KB, Combobox ~5KB, Tooltip ~2KB. An app using Dialog and Select pays ~3KB (adapter) + ~3KB (Dialog machine) + ~4KB (Select machine) = ~10KB gzip total. See 08 Ecosystem Integration §1.
-
 **+ `@llui/vike` adapter** (estimate: ~1.5KB gzip)
 The Vike integration adapter configures `onRenderHtml` and `onRenderClient` hooks. The Vike client runtime adds ~5KB gzip. Both are tree-shakeable in SPA mode (where Vike is not used). See 08 Ecosystem Integration §2.
 

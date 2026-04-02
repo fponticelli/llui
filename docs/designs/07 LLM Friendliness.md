@@ -712,26 +712,6 @@ export function toolbarView<S>(
 toolbarView({ tools: s => s.tools, toolbar: s => s.toolbar }, msg => send({ type: 'toolbar', msg }))
 ```
 
-For tasks involving Zag.js components (Dialog, Select, Combobox, etc.), add:
-
-```typescript
-// Zag.js headless components — powered by Zag.js state machines:
-import { useMachine, normalizeProps } from '@llui/zag'
-import { dialog } from '@zag-js/dialog'    // or select, combobox, menu, tabs, etc.
-
-// In view(): initialize the machine, spread props onto elements:
-const { api } = useMachine(dialog.machine, { context: { /* config */ } })
-button({ ...api.getTriggerProps() }, [text('Open')])
-show({ when: () => api.isOpen, render: () =>
-  portal({ target: document.body, render: () =>
-    div({ ...api.getContentProps() }, [ /* dialog content */ ])
-  })
-})
-
-// Zag components are styled via data attributes, not classes:
-// [data-scope="dialog"][data-part="content"][data-state="open"] { ... }
-// Callback props (onOpenChange, onValueChange) should dispatch LLui messages.
-```
 
 See 08 Ecosystem Integration §1 for the full `@llui/zag` adapter specification, component anatomy, and the `foreign()` vs Ark distinction.
 
