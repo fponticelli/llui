@@ -7,7 +7,7 @@ const HERE = import.meta.dirname
 
 const CPU_THROTTLE = 4
 const N_WARMUP = 5
-const N_RUNS = 10
+const N_RUNS = parseInt(process.env.BENCH_RUNS ?? '25', 10)
 
 const OPS = [
   { id: 'run', pre: 'clear', label: 'Create 1k' },
