@@ -228,6 +228,12 @@ function tryTransformElementCall(
         continue
       }
 
+      // Call expression (e.g. item((t) => t.checked)) — might return a function
+      // at runtime. Bail out to the uncompiled element helper for this call.
+      if (ts.isCallExpression(prop.initializer)) {
+        return null
+      }
+
       // Static prop
       const kind = classifyKind(key)
       const resolvedKey = resolveKey(key, kind)
