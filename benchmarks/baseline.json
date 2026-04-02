@@ -1,12 +1,12 @@
 {
   "counter": {
     "chunks": 1,
-    "raw": 5294,
-    "gzip": 2287
+    "raw": 6021,
+    "gzip": 2625
   },
   "todomvc": {
     "chunks": 1,
-    "raw": 11284,
-    "gzip": 4195
+    "raw": 12033,
+    "gzip": 4537
   }
 }

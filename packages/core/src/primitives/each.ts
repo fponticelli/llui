@@ -336,13 +336,3 @@ function survivorsInOrder<T>(
   }
   return true
 }
-
-function moveEntryNodes<T>(parent: Node, entries: Entry<T>[], index: number): void {
-  const entry = entries[index]!
-  // Find the reference node: the first node of the next entry, or null
-  const nextEntry = entries[index + 1]
-  const ref = nextEntry ? nextEntry.nodes[0]! : null
-  for (const node of entry.nodes) {
-    parent.insertBefore(node, ref)
-  }
-}

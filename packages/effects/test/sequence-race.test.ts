@@ -1,19 +1,14 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { handleEffects, http, sequence, race } from '../src/index'
+import { describe, it, expect, vi, beforeEach, type Mock } from 'vitest'
+import { handleEffects, http, sequence, race, type Effect } from '../src/index'
 
-type Msg = { type: string; payload?: unknown; error?: unknown }
-type Eff =
-  | ReturnType<typeof http>
-  | ReturnType<typeof sequence>
-  | ReturnType<typeof race>
-  | { type: 'custom'; data: string }
+type Send = (msg: Record<string, unknown>) => void
 
 describe('sequence', () => {
-  let send: ReturnType<typeof vi.fn>
+  let send: Mock<Send>
   let signal: AbortSignal
 
   beforeEach(() => {
-    send = vi.fn()
+    send = vi.fn<Send>()
     signal = new AbortController().signal
   })
 
@@ -27,7 +22,7 @@ describe('sequence', () => {
       }),
     )
 
-    const handler = handleEffects<Eff>().else(() => {})
+    const handler = handleEffects<Effect>().else(() => {})
 
     handler(
       sequence([
@@ -48,11 +43,11 @@ describe('sequence', () => {
 })
 
 describe('race', () => {
-  let send: ReturnType<typeof vi.fn>
+  let send: Mock<Send>
   let controller: AbortController
 
   beforeEach(() => {
-    send = vi.fn()
+    send = vi.fn<Send>()
     controller = new AbortController()
   })
 
@@ -68,7 +63,7 @@ describe('race', () => {
       ),
     )
 
-    const handler = handleEffects<Eff>().else(() => {})
+    const handler = handleEffects<Effect>().else(() => {})
 
     handler(
       race([

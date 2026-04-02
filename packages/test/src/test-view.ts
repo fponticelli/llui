@@ -16,17 +16,10 @@ export function testView<S, M, E>(def: ComponentDef<S, M, E>, state: S): ViewQue
     init: () => [state, []],
   }
 
-  const handle = mountApp(container, testDef)
+  mountApp(container, testDef)
 
   return {
     query: (selector: string) => container.querySelector(selector),
     queryAll: (selector: string) => Array.from(container.querySelectorAll(selector)),
-
-    // Cleanup is automatic — the container is GC'd when ViewQuery goes out of scope
-    // If needed, callers can hold a reference to prevent GC
   }
-
-  // Note: we intentionally don't dispose — the query results reference live DOM nodes.
-  // The container is detached so it won't leak into the document.
-  void handle
 }

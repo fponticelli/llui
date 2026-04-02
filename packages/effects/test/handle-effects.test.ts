@@ -1,30 +1,23 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { handleEffects, http, cancel, debounce } from '../src/index'
+import { describe, it, expect, vi, beforeEach, type Mock } from 'vitest'
+import { handleEffects, http, cancel, debounce, type Effect } from '../src/index'
 
-type Msg =
-  | { type: 'results'; payload: unknown }
-  | { type: 'error'; error: unknown }
-  | { type: 'custom'; data: string }
-
-type Eff =
-  | ReturnType<typeof http>
-  | ReturnType<typeof cancel>
-  | { type: 'debounce'; key: string; ms: number; inner: Eff }
-  | { type: 'custom'; data: string }
+type CustomEffect = { type: 'custom'; data: string }
+type AllEffects = Effect | CustomEffect
+type Send = (msg: Record<string, unknown>) => void
 
 describe('handleEffects()', () => {
-  let send: ReturnType<typeof vi.fn>
+  let send: Mock<Send>
   let signal: AbortSignal
   let controller: AbortController
 
   beforeEach(() => {
-    send = vi.fn()
+    send = vi.fn<Send>()
     controller = new AbortController()
     signal = controller.signal
   })
 
   it('passes custom effects to .else()', () => {
-    const handler = handleEffects<Eff>().else((eff, send) => {
+    const handler = handleEffects<AllEffects>().else((eff, send) => {
       if (eff.type === 'custom') {
         send({ type: 'custom', data: eff.data })
       }
@@ -38,7 +31,7 @@ describe('handleEffects()', () => {
     const mockResponse = { ok: true, json: () => Promise.resolve({ items: [] }) }
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(mockResponse))
 
-    const handler = handleEffects<Eff>().else(() => {})
+    const handler = handleEffects<AllEffects>().else(() => {})
 
     handler(
       http({ url: '/api/data', onSuccess: 'results', onError: 'error' }),
@@ -58,7 +51,7 @@ describe('handleEffects()', () => {
   it('handles http error', async () => {
     vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('network')))
 
-    const handler = handleEffects<Eff>().else(() => {})
+    const handler = handleEffects<AllEffects>().else(() => {})
 
     handler(
       http({ url: '/api/data', onSuccess: 'results', onError: 'error' }),
@@ -91,7 +84,7 @@ describe('handleEffects()', () => {
       ),
     )
 
-    const handler = handleEffects<Eff>().else(() => {})
+    const handler = handleEffects<AllEffects>().else(() => {})
 
     // Start an http request with token 'search'
     handler(
@@ -121,7 +114,7 @@ describe('handleEffects()', () => {
       }),
     )
 
-    const handler = handleEffects<Eff>().else(() => {})
+    const handler = handleEffects<AllEffects>().else(() => {})
 
     // First request
     handler(
@@ -140,7 +133,7 @@ describe('handleEffects()', () => {
     await vi.waitFor(() => expect(send).toHaveBeenCalled())
 
     // Only the second request's result should arrive
-    const lastCall = send.mock.calls[send.mock.calls.length - 1]![0] as Msg
+    const lastCall = send.mock.calls[send.mock.calls.length - 1]![0] as Record<string, unknown>
     expect(lastCall.type).toBe('results')
 
     vi.unstubAllGlobals()
@@ -157,7 +150,7 @@ describe('handleEffects()', () => {
       ),
     )
 
-    const handler = handleEffects<Eff>().else(() => {})
+    const handler = handleEffects<AllEffects>().else(() => {})
 
     handler(
       cancel('search', http({ url: '/api/data', onSuccess: 'results', onError: 'error' })),
