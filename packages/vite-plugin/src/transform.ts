@@ -65,8 +65,9 @@ export function transformLlui(source: string, _filename: string): string | null 
   // Pass 2 pre-scan: collect all state access paths
   const fieldBits = collectDeps(source)
 
-  // Track which helpers were actually compiled
+  // Track which helpers were compiled vs bailed out
   const compiledHelpers = new Set<string>()
+  const bailedHelpers = new Set<string>()
 
   // Apply transforms
   const f = ts.factory
@@ -74,7 +75,7 @@ export function transformLlui(source: string, _filename: string): string | null 
   function visitor(node: ts.Node): ts.Node {
     // Pass 1: Transform element helper calls to elSplit
     if (ts.isCallExpression(node)) {
-      const transformed = tryTransformElementCall(node, importedHelpers, fieldBits, compiledHelpers, f)
+      const transformed = tryTransformElementCall(node, importedHelpers, fieldBits, compiledHelpers, bailedHelpers, f)
       if (transformed) {
         return ts.visitEachChild(transformed, visitor, undefined!)
       }
@@ -100,7 +101,9 @@ export function transformLlui(source: string, _filename: string): string | null 
   let transformed = ts.visitNode(sourceFile, visitor) as ts.SourceFile
 
   // Pass 3: Clean up imports
-  transformed = cleanupImports(transformed, lluiImport, importedHelpers, compiledHelpers, f)
+  // Only remove helpers that were fully compiled (no bail-outs)
+  const safeToRemove = new Set([...compiledHelpers].filter((h) => !bailedHelpers.has(h)))
+  transformed = cleanupImports(transformed, lluiImport, importedHelpers, safeToRemove, f)
 
   // Print
   const printer = ts.createPrinter({ newLine: ts.NewLineKind.LineFeed })
@@ -171,6 +174,7 @@ function tryTransformElementCall(
   helpers: Map<string, string>,
   fieldBits: Map<string, number>,
   compiled: Set<string>,
+  bailed: Set<string>,
   f: ts.NodeFactory,
 ): ts.CallExpression | null {
   if (!ts.isIdentifier(node.expression)) return null
@@ -181,8 +185,6 @@ function tryTransformElementCall(
   // First arg must be an object literal (or absent)
   const propsArg = node.arguments[0]
   if (propsArg && !ts.isObjectLiteralExpression(propsArg)) return null
-
-  compiled.add(localName)
 
   const tag = f.createStringLiteral(originalName)
 
@@ -231,6 +233,7 @@ function tryTransformElementCall(
       // Call expression (e.g. item((t) => t.checked)) — might return a function
       // at runtime. Bail out to the uncompiled element helper for this call.
       if (ts.isCallExpression(prop.initializer)) {
+        bailed.add(localName)
         return null
       }
 
@@ -308,6 +311,8 @@ function tryTransformElementCall(
     bindings.length > 0 ? f.createArrayLiteralExpression(bindings) : f.createNull()
 
   const children = node.arguments[1] ?? f.createNull()
+
+  compiled.add(localName)
 
   return f.createCallExpression(f.createIdentifier('elSplit'), undefined, [
     tag,
