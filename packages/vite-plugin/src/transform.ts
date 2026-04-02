@@ -167,6 +167,63 @@ function isComponentCall(node: ts.CallExpression, lluiImport: ts.ImportDeclarati
   )
 }
 
+function emitStaticProp(
+  staticProps: ts.Statement[],
+  f: ts.NodeFactory,
+  kind: BindingKind,
+  resolvedKey: string,
+  value: ts.Expression,
+): void {
+  switch (kind) {
+    case 'class':
+      staticProps.push(
+        f.createExpressionStatement(
+          f.createBinaryExpression(
+            f.createPropertyAccessExpression(f.createIdentifier('__e'), 'className'),
+            ts.SyntaxKind.EqualsToken,
+            value,
+          ),
+        ),
+      )
+      break
+    case 'prop':
+      staticProps.push(
+        f.createExpressionStatement(
+          f.createBinaryExpression(
+            f.createPropertyAccessExpression(f.createIdentifier('__e'), resolvedKey),
+            ts.SyntaxKind.EqualsToken,
+            value,
+          ),
+        ),
+      )
+      break
+    case 'style':
+      staticProps.push(
+        f.createExpressionStatement(
+          f.createCallExpression(
+            f.createPropertyAccessExpression(
+              f.createPropertyAccessExpression(f.createIdentifier('__e'), 'style'),
+              'setProperty',
+            ),
+            undefined,
+            [f.createStringLiteral(resolvedKey), value],
+          ),
+        ),
+      )
+      break
+    default: // attr
+      staticProps.push(
+        f.createExpressionStatement(
+          f.createCallExpression(
+            f.createPropertyAccessExpression(f.createIdentifier('__e'), 'setAttribute'),
+            undefined,
+            [f.createStringLiteral(resolvedKey), value],
+          ),
+        ),
+      )
+  }
+}
+
 // ── Pass 1: Element → elSplit ────────────────────────────────────
 
 function tryTransformElementCall(
@@ -217,7 +274,13 @@ function tryTransformElementCall(
       if (ts.isArrowFunction(prop.initializer) || ts.isFunctionExpression(prop.initializer)) {
         const kind = classifyKind(key)
         const resolvedKey = resolveKey(key, kind)
-        const mask = computeAccessorMask(prop.initializer, fieldBits)
+        const { mask, readsState } = computeAccessorMask(prop.initializer, fieldBits)
+
+        // Zero-mask constant folding: accessor doesn't read state → treat as static
+        if (mask === 0 && !readsState) {
+          emitStaticProp(staticProps, f, kind, resolvedKey, f.createCallExpression(prop.initializer, undefined, []))
+          continue
+        }
 
         bindings.push(
           f.createArrayLiteralExpression([
@@ -254,54 +317,7 @@ function tryTransformElementCall(
       // Static prop
       const kind = classifyKind(key)
       const resolvedKey = resolveKey(key, kind)
-      switch (kind) {
-        case 'class':
-          staticProps.push(
-            f.createExpressionStatement(
-              f.createBinaryExpression(
-                f.createPropertyAccessExpression(f.createIdentifier('__e'), 'className'),
-                ts.SyntaxKind.EqualsToken,
-                prop.initializer,
-              ),
-            ),
-          )
-          break
-        case 'prop':
-          staticProps.push(
-            f.createExpressionStatement(
-              f.createBinaryExpression(
-                f.createPropertyAccessExpression(f.createIdentifier('__e'), resolvedKey),
-                ts.SyntaxKind.EqualsToken,
-                prop.initializer,
-              ),
-            ),
-          )
-          break
-        case 'style':
-          staticProps.push(
-            f.createExpressionStatement(
-              f.createCallExpression(
-                f.createPropertyAccessExpression(
-                  f.createPropertyAccessExpression(f.createIdentifier('__e'), 'style'),
-                  'setProperty',
-                ),
-                undefined,
-                [f.createStringLiteral(resolvedKey), prop.initializer],
-              ),
-            ),
-          )
-          break
-        default: // attr
-          staticProps.push(
-            f.createExpressionStatement(
-              f.createCallExpression(
-                f.createPropertyAccessExpression(f.createIdentifier('__e'), 'setAttribute'),
-                undefined,
-                [f.createStringLiteral(resolvedKey), prop.initializer],
-              ),
-            ),
-          )
-      }
+      emitStaticProp(staticProps, f, kind, resolvedKey, prop.initializer)
     }
   }
 
@@ -327,6 +343,15 @@ function tryTransformElementCall(
   const children = node.arguments[1] ?? f.createNull()
 
   compiled.add(localName)
+
+  // Static subtree prerendering: if no events, no bindings, and children
+  // are all static text, emit a <template> clone
+  if (events.length === 0 && bindings.length === 0 && isStaticChildren(children)) {
+    const html = buildStaticHTML(originalName, staticProps, children, f)
+    if (html) {
+      return emitTemplateClone(html, f) as ts.CallExpression
+    }
+  }
 
   const call = f.createCallExpression(f.createIdentifier('elSplit'), undefined, [
     tag,
@@ -363,11 +388,11 @@ function tryInjectTextMask(
   // Don't inject if mask already provided
   if (node.arguments.length >= 2) return null
 
-  const mask = computeAccessorMask(firstArg, fieldBits)
+  const { mask } = computeAccessorMask(firstArg, fieldBits)
 
   return f.createCallExpression(node.expression, node.typeArguments, [
     firstArg,
-    createMaskLiteral(f, mask),
+    createMaskLiteral(f, mask === 0 ? 0xffffffff | 0 : mask),
   ])
 }
 
@@ -495,6 +520,132 @@ function cleanupImports(
 
 // ── Per-item accessor detection ──────────────────────────────────
 
+// ── Static subtree detection ─────────────────────────────────────
+
+function isStaticChildren(children: ts.Expression): boolean {
+  if (children.kind === ts.SyntaxKind.NullKeyword) return true
+  if (!ts.isArrayLiteralExpression(children)) return false
+  return children.elements.every((child) => {
+    // text('literal') — static text
+    if (ts.isCallExpression(child) && ts.isIdentifier(child.expression) && child.expression.text === 'text') {
+      return child.arguments.length === 1 && ts.isStringLiteral(child.arguments[0]!)
+    }
+    // Another elSplit or element helper that was already determined static
+    // For now, only handle text() children
+    return false
+  })
+}
+
+function buildStaticHTML(
+  tag: string,
+  staticProps: ts.Statement[],
+  children: ts.Expression,
+  _f: ts.NodeFactory,
+): string | null {
+  // Extract static attributes from staticFn statements
+  let attrs = ''
+  for (const stmt of staticProps) {
+    if (!ts.isExpressionStatement(stmt)) return null
+    const expr = stmt.expression
+    // __e.className = 'value'
+    if (ts.isBinaryExpression(expr) && ts.isPropertyAccessExpression(expr.left)) {
+      const prop = expr.left.name.text
+      if (prop === 'className' && ts.isStringLiteral(expr.right)) {
+        attrs += ` class="${escapeAttr(expr.right.text)}"`
+      }
+    }
+    // __e.setAttribute('key', 'value')
+    if (ts.isCallExpression(expr) && ts.isPropertyAccessExpression(expr.expression)) {
+      if (expr.expression.name.text === 'setAttribute' && expr.arguments.length === 2) {
+        const key = expr.arguments[0]
+        const val = expr.arguments[1]
+        if (key && val && ts.isStringLiteral(key) && ts.isStringLiteral(val)) {
+          attrs += ` ${key.text}="${escapeAttr(val.text)}"`
+        } else {
+          return null // non-literal attribute
+        }
+      }
+    }
+  }
+
+  // Extract text children
+  let inner = ''
+  if (ts.isArrayLiteralExpression(children)) {
+    for (const child of children.elements) {
+      if (ts.isCallExpression(child) && ts.isIdentifier(child.expression) && child.expression.text === 'text') {
+        if (ts.isStringLiteral(child.arguments[0]!)) {
+          inner += escapeHTML(child.arguments[0]!.text)
+        } else {
+          return null
+        }
+      } else {
+        return null
+      }
+    }
+  }
+
+  return `<${tag}${attrs}>${inner}</${tag}>`
+}
+
+function escapeHTML(s: string): string {
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+}
+
+function escapeAttr(s: string): string {
+  return s.replace(/&/g, '&amp;').replace(/"/g, '&quot;')
+}
+
+let templateCounter = 0
+
+function emitTemplateClone(html: string, f: ts.NodeFactory): ts.Expression {
+  const varName = `__tmpl${templateCounter++}`
+  // Emit: (() => { const t = document.createElement('template'); t.innerHTML = 'html'; return t.content.cloneNode(true).firstChild })()
+  // Simplified: we use an IIFE that creates and caches a template
+  // Actually, for simplicity, just emit the cloneNode inline
+  const tmplCreate = f.createCallExpression(
+    f.createPropertyAccessExpression(f.createIdentifier('document'), 'createElement'),
+    undefined,
+    [f.createStringLiteral('template')],
+  )
+  const iife = f.createCallExpression(
+    f.createParenthesizedExpression(
+      f.createArrowFunction(
+        undefined,
+        undefined,
+        [],
+        undefined,
+        f.createToken(ts.SyntaxKind.EqualsGreaterThanToken),
+        f.createBlock([
+          f.createVariableStatement(undefined, f.createVariableDeclarationList([
+            f.createVariableDeclaration(varName, undefined, undefined, tmplCreate),
+          ], ts.NodeFlags.Const)),
+          f.createExpressionStatement(
+            f.createBinaryExpression(
+              f.createPropertyAccessExpression(f.createIdentifier(varName), 'innerHTML'),
+              ts.SyntaxKind.EqualsToken,
+              f.createStringLiteral(html),
+            ),
+          ),
+          f.createReturnStatement(
+            f.createCallExpression(
+              f.createPropertyAccessExpression(
+                f.createPropertyAccessExpression(f.createIdentifier(varName), 'content'),
+                'cloneNode',
+              ),
+              undefined,
+              [f.createTrue()],
+            ),
+          ),
+        ], true),
+      ),
+    ),
+    undefined,
+    [],
+  )
+
+  return iife
+}
+
 function isPerItemCall(node: ts.CallExpression): boolean {
   // Matches: item(t => t.field) or item(t => expr)
   // where item is an identifier (the scoped accessor from each() render)
@@ -507,21 +658,28 @@ function isPerItemCall(node: ts.CallExpression): boolean {
 
 // ── Mask computation ─────────────────────────────────────────────
 
+// Returns { mask, readsState }
+// mask = 0 + readsState = false → constant (can fold to static)
+// mask = 0 + readsState = true → unresolvable state access (FULL_MASK)
+// mask > 0 → precise mask
 function computeAccessorMask(
   accessor: ts.ArrowFunction | ts.FunctionExpression,
   fieldBits: Map<string, number>,
-): number {
-  if (accessor.parameters.length === 0) return 0xffffffff | 0
+): { mask: number; readsState: boolean } {
+  if (accessor.parameters.length === 0) return { mask: 0xffffffff | 0, readsState: false }
 
   const paramName = accessor.parameters[0]!.name
-  if (!ts.isIdentifier(paramName)) return 0xffffffff | 0
+  if (!ts.isIdentifier(paramName)) return { mask: 0xffffffff | 0, readsState: false }
 
   const stateParam = paramName.text
   let mask = 0
+  let readsState = false
 
   function walk(node: ts.Node): void {
+    if (ts.isIdentifier(node) && node.text === stateParam && !ts.isParameter(node.parent)) {
+      readsState = true
+    }
     if (ts.isPropertyAccessExpression(node)) {
-      // Only process leaf accesses (not intermediate in a chain)
       if (!ts.isPropertyAccessExpression(node.parent)) {
         const chain = resolveChain(node, stateParam)
         if (chain) {
@@ -529,7 +687,6 @@ function computeAccessorMask(
           if (bit !== undefined) {
             mask |= bit
           } else {
-            // Parent path — union of all child bits
             for (const [path, b] of fieldBits) {
               if (path.startsWith(chain + '.') || path === chain) {
                 mask |= b
@@ -543,7 +700,11 @@ function computeAccessorMask(
   }
 
   walk(accessor.body)
-  return mask === 0 ? 0xffffffff | 0 : mask
+
+  if (mask === 0 && readsState) {
+    return { mask: 0xffffffff | 0, readsState: true }
+  }
+  return { mask, readsState }
 }
 
 function resolveChain(node: ts.PropertyAccessExpression, paramName: string): string | null {

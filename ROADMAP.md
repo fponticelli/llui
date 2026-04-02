@@ -67,9 +67,9 @@ Runtime and bundle size improvements, tracked against benchmarks.
 - [x] Flat binding array per component (dead-flag + lazy compaction, eliminates recursive scope walk)
 
 **Bundle — compiler:**
-- [ ] Static subtree prerendering → `<template>` clone (requires recursive subtree analysis)
+- [x] Static subtree prerendering → `<template>` clone (elements with only static props + text children)
 - [x] `/*@__PURE__*/` annotations on `elSplit` calls
-- [ ] Constant folding for zero-mask bindings (correctness risk with captured variables)
+- [x] Constant folding for zero-mask bindings (accessors that don't read state → staticFn)
 - [x] Compiler: handle per-item accessor calls natively (TodoMVC: -346 B gzip)
 
 **Bundle — tree-shaking:**

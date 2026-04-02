@@ -11,17 +11,29 @@ function clean(s: string): string {
 }
 
 describe('Pass 1 — element helper → elSplit', () => {
-  it('transforms div() with static props to elSplit', () => {
+  it('transforms fully static div() to template clone', () => {
     const src = `
       import { div } from '@llui/core'
       const el = div({ class: 'foo', id: 'bar' })
     `
     const out = t(src)
-    expect(out).toContain('elSplit')
-    expect(out).toMatch(/["']div["']/)
-    // Static props should be in a staticFn
-    expect(out).toContain('class')
+    // Fully static — should emit template clone
+    expect(out).toContain('cloneNode')
     expect(out).toContain('foo')
+  })
+
+  it('transforms div() with reactive props to elSplit', () => {
+    const src = `
+      import { component, div } from '@llui/core'
+      export const C = component({
+        name: 'C',
+        init: () => [{ title: '' }, []],
+        update: (s, m) => [s, []],
+        view: () => [div({ title: s => s.title, class: 'static' })],
+      })
+    `
+    const out = t(src)
+    expect(out).toContain('elSplit')
   })
 
   it('transforms event handlers into events array', () => {
@@ -208,6 +220,84 @@ describe('per-item accessor calls', () => {
     expect(out).toContain('elSplit')
     // The binding should contain the item() call
     expect(out).toContain('item(')
+  })
+})
+
+describe('static subtree prerendering', () => {
+  it('emits template clone for fully static subtree', () => {
+    const src = `
+      import { component, div, span, text } from '@llui/core'
+      export const C = component({
+        name: 'C',
+        init: () => [{ x: 0 }, []],
+        update: (s, m) => [s, []],
+        view: () => [
+          div({ class: 'header' }, [
+            span({}, [text('Hello')]),
+          ]),
+        ],
+      })
+    `
+    const out = t(src)
+    // Fully static subtree should use template cloning
+    expect(out).toContain('cloneNode')
+    expect(out).toContain('template')
+  })
+
+  it('does not use template for subtrees with reactive bindings', () => {
+    const src = `
+      import { component, div, text } from '@llui/core'
+      export const C = component({
+        name: 'C',
+        init: () => [{ label: '' }, []],
+        update: (s, m) => [s, []],
+        view: () => [
+          div({ class: 'header' }, [
+            text(s => s.label),
+          ]),
+        ],
+      })
+    `
+    const out = t(src)
+    expect(out).not.toContain('cloneNode')
+  })
+
+  it('does not use template for subtrees with event handlers', () => {
+    const src = `
+      import { component, button, text } from '@llui/core'
+      export const C = component({
+        name: 'C',
+        init: () => [{ x: 0 }, []],
+        update: (s, m) => [s, []],
+        view: (s, send) => [
+          button({ onClick: () => send({ type: 'click' }) }, [text('Go')]),
+        ],
+      })
+    `
+    const out = t(src)
+    expect(out).not.toContain('cloneNode')
+  })
+})
+
+describe('zero-mask constant folding', () => {
+  it('folds accessor that does not read state into staticFn', () => {
+    const src = `
+      import { component, div } from '@llui/core'
+      const THEME = 'dark'
+      export const C = component({
+        name: 'C',
+        init: () => [{ x: 0 }, []],
+        update: (s, m) => [s, []],
+        view: () => [
+          div({ class: s => THEME }),
+        ],
+      })
+    `
+    const out = t(src)
+    // The accessor reads no state — should be in staticFn, not bindings
+    expect(out).toContain('elSplit')
+    // Should NOT have a binding tuple for this prop
+    expect(out).not.toMatch(/\[\s*-?\d+.*class.*THEME/)
   })
 })
 
