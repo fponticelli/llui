@@ -314,13 +314,15 @@ function tryTransformElementCall(
 
   compiled.add(localName)
 
-  return f.createCallExpression(f.createIdentifier('elSplit'), undefined, [
+  const call = f.createCallExpression(f.createIdentifier('elSplit'), undefined, [
     tag,
     staticFn,
     eventsArr,
     bindingsArr,
     children,
   ])
+  ts.addSyntheticLeadingComment(call, ts.SyntaxKind.MultiLineCommentTrivia, '@__PURE__', false)
+  return call
 }
 
 // ── Pass 2: Mask injection ───────────────────────────────────────

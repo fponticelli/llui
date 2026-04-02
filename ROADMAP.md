@@ -67,13 +67,14 @@ Runtime and bundle size improvements, tracked against benchmarks.
 - [x] Flat binding array per component (dead-flag + lazy compaction, eliminates recursive scope walk)
 
 **Bundle — compiler:**
-- [ ] Static subtree prerendering → `<template>` clone
-- [ ] `/*@__PURE__*/` annotations on factory calls
-- [ ] Constant folding for zero-mask bindings
+- [ ] Static subtree prerendering → `<template>` clone (requires recursive subtree analysis)
+- [x] `/*@__PURE__*/` annotations on `elSplit` calls
+- [ ] Constant folding for zero-mask bindings (correctness risk with captured variables)
+- [ ] Compiler: handle per-item accessor calls natively (recover bail-out gzip regression)
 
 **Bundle — tree-shaking:**
-- [ ] Verify `sideEffects: false` works end-to-end
-- [ ] Barrel file uses named re-exports, not `export *`
+- [x] `sideEffects: false` on all packages, no module-level side effects
+- [x] Barrel file uses named re-exports, not `export *`
 
 ## Phase 4 — SSR & Hydration
 
