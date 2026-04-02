@@ -50,6 +50,28 @@ The foundation everything else builds on.
 
 **Validate:** Run LLM evaluation tasks 04, 09, 14 (async fetch, debounced search, async validation). Performance benchmarks: run, replace, update, select, swap, remove, clear (Playwright + 4× throttle).
 
+## Optimizations (continuous)
+
+Runtime and bundle size improvements, tracked against benchmarks.
+
+**Runtime — `each()` reconciler fast paths:**
+- [ ] Same array reference → skip entirely
+- [ ] Append-only (no reordering, new items at end) → single fragment insert
+- [ ] Two-element swap detection → two targeted DOM moves instead of full reorder
+- [ ] Bulk clear → `textContent = ''` instead of per-node removal
+
+**Runtime — binding evaluation:**
+- [ ] Flat binding array per component (avoid recursive scope walk in Phase 2)
+
+**Bundle — compiler:**
+- [ ] Static subtree prerendering → `<template>` clone
+- [ ] `/*@__PURE__*/` annotations on factory calls
+- [ ] Constant folding for zero-mask bindings
+
+**Bundle — tree-shaking:**
+- [ ] Verify `sideEffects: false` works end-to-end
+- [ ] Barrel file uses named re-exports, not `export *`
+
 ## Phase 4 — SSR & Hydration
 
 - [ ] `__renderToString()` — compiler-generated static HTML emission
