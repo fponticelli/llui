@@ -1,0 +1,21 @@
+{
+  "name": "js-framework-benchmark-keyed-llui",
+  "version": "1.0.0",
+  "type": "module",
+  "js-framework-benchmark": {
+    "frameworkVersionFromPackage": "@llui/core",
+    "frameworkHomeURL": "https://github.com/fponticelli/llui",
+    "language": "TypeScript"
+  },
+  "scripts": {
+    "dev": "vite",
+    "build-prod": "vite build"
+  },
+  "dependencies": {
+    "@llui/core": "workspace:*"
+  },
+  "devDependencies": {
+    "@llui/vite-plugin": "workspace:*",
+    "vite": "^8.0.0"
+  }
+}

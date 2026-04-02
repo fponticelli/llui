@@ -90,6 +90,19 @@ importers:
         specifier: ^4.1.2
         version: 4.1.2(jsdom@29.0.1)(vite@8.0.3(@emnapi/core@1.9.1)(@emnapi/runtime@1.9.1)(esbuild@0.27.5)(jiti@2.6.1)(tsx@4.21.0))
 
+  benchmarks/js-framework-benchmark:
+    dependencies:
+      '@llui/core':
+        specifier: workspace:*
+        version: link:../../packages/core
+    devDependencies:
+      '@llui/vite-plugin':
+        specifier: workspace:*
+        version: link:../../packages/vite-plugin
+      vite:
+        specifier: ^8.0.0
+        version: 8.0.3(@emnapi/core@1.9.1)(@emnapi/runtime@1.9.1)(esbuild@0.27.5)(jiti@2.6.1)(tsx@4.21.0)
+
   examples/counter:
     dependencies:
       '@llui/core':

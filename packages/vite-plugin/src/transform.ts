@@ -279,10 +279,20 @@ function tryTransformElementCall(
 
   if (propsArg && ts.isObjectLiteralExpression(propsArg)) {
     for (const prop of propsArg.properties) {
-      if (!ts.isPropertyAssignment(prop)) continue
-      if (!ts.isIdentifier(prop.name) && !ts.isStringLiteral(prop.name)) continue
+      // Handle both PropertyAssignment (key: value) and ShorthandPropertyAssignment ({ id })
+      let key: string
+      let value: ts.Expression
 
-      const key = ts.isIdentifier(prop.name) ? prop.name.text : prop.name.text
+      if (ts.isPropertyAssignment(prop)) {
+        if (!ts.isIdentifier(prop.name) && !ts.isStringLiteral(prop.name)) continue
+        key = ts.isIdentifier(prop.name) ? prop.name.text : prop.name.text
+        value = prop.initializer
+      } else if (ts.isShorthandPropertyAssignment(prop)) {
+        key = prop.name.text
+        value = prop.name // The identifier itself is the value
+      } else {
+        continue
+      }
       if (key === 'key') continue
 
       // Event handler
@@ -291,21 +301,21 @@ function tryTransformElementCall(
         events.push(
           f.createArrayLiteralExpression([
             f.createStringLiteral(eventName),
-            prop.initializer,
+            value,
           ]),
         )
         continue
       }
 
       // Reactive binding — value is an arrow function or function expression
-      if (ts.isArrowFunction(prop.initializer) || ts.isFunctionExpression(prop.initializer)) {
+      if (ts.isArrowFunction(value) || ts.isFunctionExpression(value)) {
         const kind = classifyKind(key)
         const resolvedKey = resolveKey(key, kind)
-        const { mask, readsState } = computeAccessorMask(prop.initializer, fieldBits)
+        const { mask, readsState } = computeAccessorMask(value, fieldBits)
 
         // Zero-mask constant folding: accessor doesn't read state → treat as static
         if (mask === 0 && !readsState) {
-          emitStaticProp(staticProps, f, kind, resolvedKey, f.createCallExpression(prop.initializer, undefined, []))
+          emitStaticProp(staticProps, f, kind, resolvedKey, f.createCallExpression(value, undefined, []))
           continue
         }
 
@@ -314,15 +324,15 @@ function tryTransformElementCall(
             createMaskLiteral(f, mask),
             f.createStringLiteral(kind),
             f.createStringLiteral(resolvedKey),
-            prop.initializer,
+            value,
           ]),
         )
         continue
       }
 
       // Call expression — check if it's a per-item accessor: item(t => t.field)
-      if (ts.isCallExpression(prop.initializer)) {
-        if (isPerItemCall(prop.initializer)) {
+      if (ts.isCallExpression(value)) {
+        if (isPerItemCall(value)) {
           // Emit as a binding with FULL_MASK — the accessor is the item() call itself
           const kind = classifyKind(key)
           const resolvedKey = resolveKey(key, kind)
@@ -331,7 +341,7 @@ function tryTransformElementCall(
               createMaskLiteral(f, 0xffffffff | 0),
               f.createStringLiteral(kind),
               f.createStringLiteral(resolvedKey),
-              prop.initializer,
+              value,
             ]),
           )
           continue
@@ -344,7 +354,7 @@ function tryTransformElementCall(
       // Static prop
       const kind = classifyKind(key)
       const resolvedKey = resolveKey(key, kind)
-      emitStaticProp(staticProps, f, kind, resolvedKey, prop.initializer)
+      emitStaticProp(staticProps, f, kind, resolvedKey, value)
     }
   }
 
