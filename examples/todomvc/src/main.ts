@@ -1,6 +1,7 @@
 import {
   component,
   mountApp,
+  a,
   div,
   h1,
   input,
@@ -141,7 +142,7 @@ const App = component<State, Msg, never>({
                         button({
                           class: 'destroy',
                           onClick: () => send({ type: 'remove', id: item((t) => t.id)() }),
-                        }),
+                        }, [text('×')]),
                       ],
                     ),
                   ],
@@ -187,18 +188,20 @@ const App = component<State, Msg, never>({
 
 function filterLink(
   filter: Filter,
-  label: string,
+  linkLabel: string,
   send: (msg: Msg) => void,
 ): HTMLElement {
   return li({}, [
-    span(
+    a(
       {
         class: (s: State) => (s.filter === filter ? 'selected' : ''),
-        onClick: () => send({ type: 'setFilter', filter }),
-        role: 'button',
-        tabIndex: '0',
+        onClick: (e: Event) => {
+          e.preventDefault()
+          send({ type: 'setFilter', filter })
+        },
+        href: '#',
       },
-      [text(label)],
+      [text(linkLabel)],
     ),
   ])
 }
