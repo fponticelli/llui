@@ -120,7 +120,7 @@ const App = component<State, Msg, never>({
                 checked: (s: State) => s.todos.every((t) => t.completed),
                 onClick: () => send({ type: 'toggleAll' }),
               }),
-              label({ for: 'toggle-all' }, [text('Mark all as complete')]),
+              label({ for: 'toggle-all', class: 'toggle-all-label' }, [text('Mark all as complete')]),
               ul(
                 { class: 'todo-list' },
                 each<State, Todo>({
