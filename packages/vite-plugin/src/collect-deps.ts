@@ -71,6 +71,14 @@ function isReactiveAccessor(node: ts.ArrowFunction | ts.FunctionExpression): boo
 
   // text(s => s.count) — first arg to a call
   if (ts.isCallExpression(parent) && parent.arguments[0] === node) {
+    // Skip item(t => t.id) — per-item selectors inside each() render
+    if (ts.isIdentifier(parent.expression) && parent.expression.text === 'item') {
+      return false
+    }
+    // Skip array method callbacks: .filter(t => ...), .map(t => ...), .some(t => ...), etc.
+    if (ts.isPropertyAccessExpression(parent.expression)) {
+      return false
+    }
     return true
   }
 
@@ -79,9 +87,9 @@ function isReactiveAccessor(node: ts.ArrowFunction | ts.FunctionExpression): boo
     const key = parent.name
     if (ts.isIdentifier(key)) {
       // Skip event handlers (onClick, onInput, etc.)
-      if (/^on[A-Z]/.test(key.text)) {
-        return false
-      }
+      if (/^on[A-Z]/.test(key.text)) return false
+      // Skip each() key function and other non-reactive props
+      if (key.text === 'key' || key.text === 'name') return false
       return true
     }
   }
@@ -102,8 +110,19 @@ function extractPaths(
   paths: Set<string>,
 ): void {
   if (ts.isPropertyAccessExpression(node)) {
-    // Only record if this is a leaf — not the expression of another property access
-    if (!ts.isPropertyAccessExpression(node.parent)) {
+    // Skip if this is an intermediate in a deeper chain
+    if (ts.isPropertyAccessExpression(node.parent)) {
+      // handled when the leaf is visited
+    }
+    // Skip if this is the callee of a method call: s.todos.filter(...)
+    else if (ts.isCallExpression(node.parent) && node.parent.expression === node) {
+      // It's a method call — record the object, not the method
+      // e.g. s.todos.filter(...) → record 'todos', not 'todos.filter'
+      if (ts.isPropertyAccessExpression(node.expression)) {
+        const chain = resolvePropertyChain(node.expression, paramName)
+        if (chain) paths.add(chain)
+      }
+    } else {
       const chain = resolvePropertyChain(node, paramName)
       if (chain) {
         paths.add(chain)
