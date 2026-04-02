@@ -8,7 +8,12 @@
   },
   "dependencies": {
     "@llui/core": "workspace:*",
-    "@llui/effects": "workspace:*"
+    "@llui/effects": "workspace:*",
+    "@llui/zag": "workspace:*",
+    "@zag-js/dialog": "^1.38.2",
+    "@zag-js/tabs": "^1.38.2",
+    "@zag-js/accordion": "^1.38.2",
+    "@zag-js/vanilla": "^1.38.2"
   },
   "devDependencies": {
     "@llui/vite-plugin": "workspace:*",

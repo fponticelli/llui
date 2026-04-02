@@ -77,12 +77,12 @@ td:last-child { text-align: right; }
 .btn-ghost:hover { background: var(--border-light); color: var(--text); }
 .btn-sm { padding: 5px 12px; font-size: 13px; }
 
-/* ── Dialog ─────────────────────────────────────────── */
-.dialog-backdrop { position: fixed; inset: 0; background: rgba(0,0,0,.5); backdrop-filter: blur(4px); z-index: 100; animation: fadeIn 150ms ease; }
-.dialog-positioner { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; z-index: 101; animation: slideUp 200ms ease; }
-.dialog-content { background: var(--surface); border-radius: 16px; padding: 28px; min-width: 440px; max-width: 520px; box-shadow: var(--shadow-lg); }
-.dialog-header { font-size: 18px; font-weight: 600; margin-bottom: 20px; color: var(--text); }
-.dialog-body { margin-bottom: 24px; color: var(--text-secondary); line-height: 1.6; }
+/* ── Dialog (Zag data attributes + fallback classes) ── */
+[data-scope="dialog"][data-part="backdrop"], .dialog-backdrop { position: fixed; inset: 0; background: rgba(0,0,0,.5); backdrop-filter: blur(4px); z-index: 100; animation: fadeIn 150ms ease; }
+[data-scope="dialog"][data-part="positioner"], .dialog-positioner { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; z-index: 101; animation: slideUp 200ms ease; }
+[data-scope="dialog"][data-part="content"], .dialog-content { background: var(--surface); border-radius: 16px; padding: 28px; min-width: 440px; max-width: 520px; box-shadow: var(--shadow-lg); }
+[data-scope="dialog"][data-part="title"], .dialog-header { font-size: 18px; font-weight: 600; margin-bottom: 20px; color: var(--text); }
+[data-scope="dialog"][data-part="description"], .dialog-body { margin-bottom: 24px; color: var(--text-secondary); line-height: 1.6; }
 .dialog-footer { display: flex; gap: 10px; justify-content: flex-end; }
 
 @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
@@ -95,23 +95,26 @@ td:last-child { text-align: right; }
 .form-group input:focus, .form-group textarea:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-light); }
 .form-group textarea { resize: vertical; min-height: 80px; }
 
-/* ── Tabs ───────────────────────────────────────────── */
-.tabs { display: flex; gap: 0; border-bottom: 1px solid var(--border); margin-bottom: 24px; }
-.tab-trigger { padding: 12px 20px; border: none; background: none; font-size: 14px; cursor: pointer; color: var(--text-muted); font-weight: 500; border-bottom: 2px solid transparent; margin-bottom: -1px; transition: all var(--transition); }
-.tab-trigger:hover { color: var(--text-secondary); }
-.tab-trigger.active { color: var(--accent); border-bottom-color: var(--accent); font-weight: 600; }
+/* ── Tabs (Zag data attributes) ────────────────────── */
+[data-scope="tabs"][data-part="list"] { display: flex; gap: 0; border-bottom: 1px solid var(--border); margin-bottom: 24px; }
+[data-scope="tabs"][data-part="trigger"] { padding: 12px 20px; border: none; background: none; font-size: 14px; cursor: pointer; color: var(--text-muted); font-weight: 500; border-bottom: 2px solid transparent; margin-bottom: -1px; transition: all var(--transition); }
+[data-scope="tabs"][data-part="trigger"]:hover { color: var(--text-secondary); }
+[data-scope="tabs"][data-part="trigger"][data-selected] { color: var(--accent); border-bottom-color: var(--accent); font-weight: 600; }
+[data-scope="tabs"][data-part="content"] { padding: 8px 0; color: var(--text-secondary); line-height: 1.7; }
+[data-scope="tabs"][data-part="content"][hidden] { display: none; }
 .tab-content { padding: 8px 0; color: var(--text-secondary); line-height: 1.7; }
 
-/* ── Accordion ──────────────────────────────────────── */
-.accordion { border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; background: var(--surface); }
-.accordion-item { border-bottom: 1px solid var(--border-light); }
-.accordion-item:last-child { border-bottom: none; }
-.accordion-trigger { width: 100%; text-align: left; padding: 16px 24px; border: none; background: none; font-size: 15px; cursor: pointer; font-weight: 500; color: var(--text); display: flex; align-items: center; justify-content: space-between; transition: all var(--transition); }
-.accordion-trigger:hover { background: rgba(99,102,241,.02); }
-.accordion-trigger::after { content: '▸'; transition: transform var(--transition); color: var(--text-muted); }
-.accordion-trigger.open { color: var(--accent); }
-.accordion-trigger.open::after { transform: rotate(90deg); color: var(--accent); }
-.accordion-content { padding: 0 24px 20px; color: var(--text-secondary); line-height: 1.7; }
+/* ── Accordion (Zag data attributes) ───────────────── */
+[data-scope="accordion"][data-part="root"] { border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; background: var(--surface); }
+[data-scope="accordion"][data-part="item"] { border-bottom: 1px solid var(--border-light); }
+[data-scope="accordion"][data-part="item"]:last-child { border-bottom: none; }
+[data-scope="accordion"][data-part="item-trigger"] { width: 100%; text-align: left; padding: 16px 24px; border: none; background: none; font-size: 15px; cursor: pointer; font-weight: 500; color: var(--text); display: flex; align-items: center; justify-content: space-between; transition: all var(--transition); }
+[data-scope="accordion"][data-part="item-trigger"]:hover { background: rgba(99,102,241,.02); }
+[data-scope="accordion"][data-part="item-trigger"]::after { content: '▸'; transition: transform var(--transition); color: var(--text-muted); }
+[data-scope="accordion"][data-part="item-trigger"][data-state="open"] { color: var(--accent); }
+[data-scope="accordion"][data-part="item-trigger"][data-state="open"]::after { transform: rotate(90deg); color: var(--accent); }
+[data-scope="accordion"][data-part="item-content"] { padding: 0 24px 20px; color: var(--text-secondary); line-height: 1.7; }
+[data-scope="accordion"][data-part="item-content"][hidden] { display: none; }
 
 /* ── Activity ───────────────────────────────────────── */
 .activity-list { list-style: none; padding: 8px 24px; }

@@ -1,68 +1,46 @@
 import { onMount } from '@llui/core'
+import { normalizeProps } from './normalize-props'
 
 /**
- * Minimal Zag service interface — matches what Zag v1 machines produce.
- */
-export interface ZagService {
-  state: Record<string, unknown>
-  send: (event: Record<string, unknown>) => void
-  subscribe: (cb: () => void) => () => void
-  start: () => void
-  stop: () => void
-}
-
-export interface UseMachineReturn<Api> {
-  api: Api
-  service: ZagService
-}
-
-/**
- * Bridge a Zag.js machine into LLui's reactivity model.
+ * Bridge a Zag.js v1 machine into LLui's reactivity model.
  *
- * Starts the machine on mount, subscribes to state changes, and returns
- * a live API proxy. When the machine transitions, all LLui bindings that
- * read from the API automatically get fresh values on the next Phase 2
- * pass (because the proxy delegates to the latest connect() output).
- *
- * Usage in view():
- *   const { api } = useMachine(dialog.machine({ id: 'dlg' }), dialog.connect, normalizeProps)
- *   return [
- *     button({ ...spread(api.getTriggerProps()) }, [text('Open')]),
- *   ]
+ * Usage:
+ *   import * as dialog from '@zag-js/dialog'
+ *   import { VanillaMachine } from '@zag-js/vanilla'
+ *   import { useMachine } from '@llui/zag'
+ *   const { api } = useMachine(VanillaMachine, dialog.machine, dialog.connect, { id: 'dlg' })
  */
-export function useMachine<Api extends Record<string, unknown>>(
-  machine: { start: () => ZagService },
-  connect: (service: ZagService, normalize: (props: Record<string, unknown>) => Record<string, unknown>) => Api,
-  normalize: (props: Record<string, unknown>) => Record<string, unknown>,
-): UseMachineReturn<Api> {
-  const service = machine.start()
+export function useMachine(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  MachineClass: new (config: any, props?: any) => any,
+  machineConfig: unknown,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  connect: (service: any, normalize: any) => Record<string, unknown>,
+  props?: Record<string, unknown>,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+): { api: Record<string, unknown>; send: (event: any) => void } {
+  const machine = new MachineClass(machineConfig, props)
+  machine.start()
 
-  let currentApi = connect(service, normalize)
+  let currentApi = connect(machine.service, normalizeProps)
 
-  // Subscribe to state changes — refresh the API on each transition
-  const unsubscribe = service.subscribe(() => {
-    currentApi = connect(service, normalize)
+  machine.subscribe(() => {
+    currentApi = connect(machine.service, normalizeProps)
   })
 
-  // Clean up on scope disposal
   onMount(() => {
-    return () => {
-      unsubscribe()
-      service.stop()
-    }
+    return () => machine.stop()
   })
 
-  // Proxy that always reads from the latest API
-  const proxy = new Proxy({} as Api, {
+  const proxy = new Proxy({} as Record<string, unknown>, {
     get(_, prop: string | symbol) {
-      const value = currentApi[prop as keyof Api]
-      // If it's a function (prop getter), wrap it to always read fresh
+      const value = currentApi[prop as string]
       if (typeof value === 'function') {
-        return (...args: unknown[]) => (value as Function)(...args)
+        return (...args: unknown[]) => (value as (...a: unknown[]) => unknown)(...args)
       }
       return value
     },
   })
 
-  return { api: proxy, service }
+  return { api: proxy, send: (event) => machine.send(event) }
 }
