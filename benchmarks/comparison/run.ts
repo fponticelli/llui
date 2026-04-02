@@ -64,6 +64,10 @@ const frameworks: FrameworkConfig[] = [
       return [svelte()]
     },
   },
+  {
+    name: 'elm',
+    root: resolve(HERE, 'elm'),
+  },
 ]
 
 // Filter to only requested frameworks
