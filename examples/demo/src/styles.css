@@ -102,7 +102,6 @@ td:last-child { text-align: right; }
 [data-scope="tabs"][data-part="trigger"][data-selected] { color: var(--accent); border-bottom-color: var(--accent); font-weight: 600; }
 [data-scope="tabs"][data-part="content"] { padding: 8px 0; color: var(--text-secondary); line-height: 1.7; }
 [data-scope="tabs"][data-part="content"][hidden] { display: none; }
-.tab-content { padding: 8px 0; color: var(--text-secondary); line-height: 1.7; }
 
 /* ── Accordion (Zag data attributes) ───────────────── */
 [data-scope="accordion"][data-part="root"] { border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; background: var(--surface); }
@@ -132,6 +131,41 @@ td:last-child { text-align: right; }
 .tag.vip { background: #fef3c7; color: #92400e; }
 .tag.new { background: #dbeafe; color: #1e40af; }
 .tag.active { background: #dcfce7; color: #166534; }
+
+/* ── Tooltip ────────────────────────────────────────── */
+[data-scope="tooltip"][data-part="content"], .tooltip-content { background: var(--sidebar-bg); color: #fff; padding: 6px 12px; border-radius: 6px; font-size: 13px; box-shadow: var(--shadow-lg); }
+[data-scope="tooltip"][data-part="positioner"] { z-index: 200; }
+[data-scope="tooltip"][data-part="content"][data-state="closed"] { display: none; }
+
+/* ── Switch ─────────────────────────────────────────── */
+[data-scope="switch"][data-part="root"] { display: flex; align-items: center; gap: 12px; cursor: pointer; }
+[data-scope="switch"][data-part="control"] { width: 44px; height: 24px; border-radius: 12px; background: var(--border); position: relative; transition: background var(--transition); }
+[data-scope="switch"][data-part="control"][data-state="checked"] { background: var(--accent); }
+[data-scope="switch"][data-part="thumb"] { width: 20px; height: 20px; border-radius: 50%; background: #fff; position: absolute; top: 2px; left: 2px; transition: transform var(--transition); box-shadow: 0 1px 3px rgba(0,0,0,.2); }
+[data-scope="switch"][data-part="thumb"][data-state="checked"] { transform: translateX(20px); }
+[data-scope="switch"][data-part="label"] { font-size: 14px; font-weight: 500; }
+
+/* ── Checkbox ───────────────────────────────────────── */
+[data-scope="checkbox"][data-part="root"] { display: flex; align-items: center; gap: 10px; cursor: pointer; }
+[data-scope="checkbox"][data-part="control"] { width: 20px; height: 20px; border: 2px solid var(--border); border-radius: 4px; display: flex; align-items: center; justify-content: center; font-size: 12px; color: transparent; transition: all var(--transition); }
+[data-scope="checkbox"][data-part="control"][data-state="checked"] { background: var(--accent); border-color: var(--accent); color: #fff; }
+[data-scope="checkbox"][data-part="label"] { font-size: 14px; }
+
+/* ── Slider ─────────────────────────────────────────── */
+[data-scope="slider"][data-part="root"] { padding: 8px 0; }
+[data-scope="slider"][data-part="label"] { font-size: 14px; font-weight: 500; margin-bottom: 8px; display: block; }
+[data-scope="slider"][data-part="control"] { position: relative; height: 24px; display: flex; align-items: center; }
+[data-scope="slider"][data-part="track"] { width: 100%; height: 6px; background: var(--border); border-radius: 3px; position: relative; }
+[data-scope="slider"][data-part="range"] { height: 100%; background: var(--accent); border-radius: 3px; position: absolute; top: 0; left: 0; }
+[data-scope="slider"][data-part="thumb"] { width: 20px; height: 20px; border-radius: 50%; background: var(--accent); border: 2px solid #fff; box-shadow: 0 1px 4px rgba(0,0,0,.2); position: absolute; top: 50%; transform: translateY(-50%); cursor: grab; z-index: 1; }
+[data-scope="slider"][data-part="thumb"]:active { cursor: grabbing; transform: translateY(-50%) scale(1.1); }
+.slider-output { font-size: 14px; color: var(--text-muted); margin-bottom: 4px; }
+
+/* ── Progress ───────────────────────────────────────── */
+[data-scope="progress"][data-part="root"] { padding: 4px 0; }
+.progress-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; font-size: 14px; }
+[data-scope="progress"][data-part="track"] { width: 100%; height: 8px; background: var(--border); border-radius: 4px; overflow: hidden; }
+[data-scope="progress"][data-part="range"] { height: 100%; background: var(--accent); border-radius: 4px; transition: width 300ms ease; }
 
 /* ── Section ────────────────────────────────────────── */
 .section { margin-bottom: 36px; }
