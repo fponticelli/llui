@@ -1,5 +1,6 @@
 import ts from 'typescript'
 import { collectDeps } from './collect-deps.js'
+import { extractMsgSchema } from './msg-schema.js'
 
 function createMaskLiteral(f: ts.NodeFactory, mask: number): ts.Expression {
   if (mask >= 0) return f.createNumericLiteral(mask)
@@ -50,7 +51,7 @@ function resolveKey(key: string, kind: BindingKind): string {
  * Transform a source file containing @llui/core imports.
  * Returns the transformed source or null if no transformation needed.
  */
-export function transformLlui(source: string, _filename: string): string | null {
+export function transformLlui(source: string, _filename: string, devMode = false): string | null {
   const sourceFile = ts.createSourceFile('input.ts', source, ts.ScriptTarget.Latest, true)
 
   // Find the @llui/core import
@@ -87,11 +88,17 @@ export function transformLlui(source: string, _filename: string): string | null 
       }
     }
 
-    // Pass 2: Inject __dirty into component() calls
+    // Pass 2: Inject __dirty and __msgSchema into component() calls
     if (ts.isCallExpression(node) && isComponentCall(node, lluiImport)) {
-      const withDirty = tryInjectDirty(node, fieldBits, f)
-      if (withDirty) {
-        return ts.visitEachChild(withDirty, visitor, undefined!)
+      let result = tryInjectDirty(node, fieldBits, f)
+      if (devMode) {
+        const schema = extractMsgSchema(source)
+        if (schema) {
+          result = injectMsgSchema(result ?? node, schema, f)
+        }
+      }
+      if (result) {
+        return ts.visitEachChild(result, visitor, undefined!)
       }
     }
 
@@ -107,7 +114,24 @@ export function transformLlui(source: string, _filename: string): string | null 
 
   // Print
   const printer = ts.createPrinter({ newLine: ts.NewLineKind.LineFeed })
-  return printer.printFile(transformed)
+  let output = printer.printFile(transformed)
+
+  // HMR: append self-accept code in dev mode
+  if (devMode) {
+    output += '\n' + generateHmrCode(_filename)
+  }
+
+  return output
+}
+
+// ── HMR ──────────────────────────────────────────────────────────
+
+function generateHmrCode(_filename: string): string {
+  return `
+if (import.meta.hot) {
+  import.meta.hot.accept()
+}
+`.trim()
 }
 
 // ── Helpers ──────────────────────────────────────────────────────
@@ -516,6 +540,70 @@ function cleanupImports(
   })
 
   return f.updateSourceFile(sf, statements as unknown as ts.Statement[])
+}
+
+// ── __msgSchema injection ────────────────────────────────────────
+
+function injectMsgSchema(
+  node: ts.CallExpression,
+  schema: { discriminant: string; variants: Record<string, Record<string, string | { enum: string[] }>> },
+  f: ts.NodeFactory,
+): ts.CallExpression {
+  const configArg = node.arguments[0]
+  if (!configArg || !ts.isObjectLiteralExpression(configArg)) return node
+
+  // Don't inject if already present
+  for (const prop of configArg.properties) {
+    if (ts.isPropertyAssignment(prop) && ts.isIdentifier(prop.name) && prop.name.text === '__msgSchema') {
+      return node
+    }
+  }
+
+  // Build the schema object literal
+  const variantProps: ts.PropertyAssignment[] = []
+  for (const [variant, fields] of Object.entries(schema.variants)) {
+    const fieldProps: ts.PropertyAssignment[] = []
+    for (const [field, type] of Object.entries(fields)) {
+      if (typeof type === 'string') {
+        fieldProps.push(f.createPropertyAssignment(field, f.createStringLiteral(type)))
+      } else {
+        fieldProps.push(
+          f.createPropertyAssignment(
+            field,
+            f.createObjectLiteralExpression([
+              f.createPropertyAssignment(
+                'enum',
+                f.createArrayLiteralExpression(type.enum.map((v) => f.createStringLiteral(v))),
+              ),
+            ]),
+          ),
+        )
+      }
+    }
+    variantProps.push(
+      f.createPropertyAssignment(
+        f.createStringLiteral(variant),
+        f.createObjectLiteralExpression(fieldProps),
+      ),
+    )
+  }
+
+  const schemaObj = f.createObjectLiteralExpression([
+    f.createPropertyAssignment('discriminant', f.createStringLiteral(schema.discriminant)),
+    f.createPropertyAssignment('variants', f.createObjectLiteralExpression(variantProps, true)),
+  ], true)
+
+  const schemaProp = f.createPropertyAssignment('__msgSchema', schemaObj)
+
+  const newConfig = f.createObjectLiteralExpression(
+    [...configArg.properties, schemaProp],
+    true,
+  )
+
+  return f.createCallExpression(node.expression, node.typeArguments, [
+    newConfig,
+    ...node.arguments.slice(1),
+  ])
 }
 
 // ── Per-item accessor detection ──────────────────────────────────

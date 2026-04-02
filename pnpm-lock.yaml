@@ -44,6 +44,9 @@ importers:
       jsdom:
         specifier: ^29.0.1
         version: 29.0.1
+      magic-string:
+        specifier: ^0.30.21
+        version: 0.30.21
       playwright:
         specifier: ^1.59.1
         version: 1.59.1
@@ -134,6 +137,9 @@ importers:
 
   packages/vite-plugin:
     dependencies:
+      magic-string:
+        specifier: ^0.30.21
+        version: 0.30.21
       typescript:
         specifier: ^6.0.2
         version: 6.0.2

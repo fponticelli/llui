@@ -32,9 +32,9 @@ The foundation everything else builds on.
 - [x] Pass 2 — per-accessor mask computation, `__dirty` injection, `text()` mask injection
 - [x] Pass 3 — import cleanup, element helper elision, `elSplit` addition
 - [x] Diagnostics — `each()` scoped accessor misuse, `.map()` on state arrays, exhaustive `update()`, accessibility (img alt, onClick role), controlled input without handler
-- [ ] `__msgSchema` emission (dev mode)
-- [ ] HMR with state preservation
-- [ ] Source map generation
+- [x] `__msgSchema` emission (dev mode) — extracts Msg type variants for runtime validation
+- [x] HMR — self-accept in dev mode via `import.meta.hot.accept()`
+- [x] Source map generation — via magic-string for transformed output
 
 **Validate:** TodoMVC subset (compiled). Measure gzip bundle size vs Solid/Svelte/React. Run LLM evaluation tasks 01–03 (counter, char counter, filterable list).
 
