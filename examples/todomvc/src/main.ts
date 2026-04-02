@@ -180,10 +180,6 @@ const App = component<State, Msg, never>({
       ]),
     ]
   },
-  __dirty: (o, n) =>
-    (Object.is(o.todos, n.todos) ? 0 : 0b01) |
-    (Object.is(o.filter, n.filter) ? 0 : 0b10) |
-    (Object.is(o.nextId, n.nextId) ? 0 : 0b100),
 })
 
 function filterLink(

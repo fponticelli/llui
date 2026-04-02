@@ -9,9 +9,8 @@
       .todoapp { background: #fff; margin: 0 auto; max-width: 550px; box-shadow: 0 2px 4px rgba(0,0,0,.2); }
       .todoapp h1 { font-size: 80px; font-weight: 200; text-align: center; color: #b83f45; margin: 0; padding: 10px 0; }
       .new-todo { width: 100%; font-size: 24px; padding: 16px 16px 16px 60px; border: none; border-bottom: 1px solid #ededed; box-sizing: border-box; }
-      .toggle-all { position: absolute; top: 0; left: -12px; width: 60px; height: 34px; opacity: 0; cursor: pointer; }
-      .toggle-all + label { position: absolute; top: -8px; left: 0; width: 45px; height: 34px; text-align: center; font-size: 0; cursor: pointer; }
-      .toggle-all + label:before { content: '❯'; font-size: 22px; color: #949494; padding: 6px 27px; display: block; transform: rotate(90deg); }
+      .toggle-all { position: absolute; top: -55px; left: -12px; width: 60px; height: 34px; opacity: 0; cursor: pointer; }
+      .toggle-all + label { display: none; }
       .todo-list { list-style: none; margin: 0; padding: 0; }
       .todo-list li { position: relative; font-size: 24px; border-bottom: 1px solid #ededed; }
       .todo-list li label { display: block; padding: 15px 15px 15px 60px; line-height: 1.2; word-break: break-all; }
@@ -28,7 +27,7 @@
       .filters li a { color: inherit; margin: 3px; padding: 3px 7px; text-decoration: none; border: 1px solid transparent; border-radius: 3px; cursor: pointer; }
       .filters li a.selected { border-color: #ce4646; }
       .clear-completed { float: right; position: relative; line-height: 19px; cursor: pointer; border: none; background: none; font-size: inherit; }
-      .main { position: relative; }
+      .main { position: relative; z-index: 2; border-top: 1px solid #e6e6e6; }
     </style>
   </head>
   <body>

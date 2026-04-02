@@ -29,7 +29,6 @@ const Counter = component<State, Msg, never>({
       ],
     }),
   ],
-  __dirty: (o, n) => (Object.is(o.count, n.count) ? 0 : 1),
 })
 
 mountApp(document.getElementById('app')!, Counter)
