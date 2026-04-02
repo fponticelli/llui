@@ -715,13 +715,16 @@ function emitTemplateClone(html: string, f: ts.NodeFactory): ts.Expression {
             ),
           ),
           f.createReturnStatement(
-            f.createCallExpression(
-              f.createPropertyAccessExpression(
-                f.createPropertyAccessExpression(f.createIdentifier(varName), 'content'),
-                'cloneNode',
+            f.createPropertyAccessExpression(
+              f.createCallExpression(
+                f.createPropertyAccessExpression(
+                  f.createPropertyAccessExpression(f.createIdentifier(varName), 'content'),
+                  'cloneNode',
+                ),
+                undefined,
+                [f.createTrue()],
               ),
-              undefined,
-              [f.createTrue()],
+              'firstChild',
             ),
           ),
         ], true),
