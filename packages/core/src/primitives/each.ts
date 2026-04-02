@@ -26,12 +26,22 @@ export function each<S, T>(opts: EachOptions<S, T>): Node[] {
     entries.push(entry)
   }
 
+  let lastItemsRef = initialItems
+
   const block: StructuralBlock = {
     reconcile(state: unknown) {
       const parent = anchor.parentNode
       if (!parent) return
 
       const newItems = opts.items(state as S)
+
+      // Fast path: same array reference → skip entirely
+      if (newItems === lastItemsRef) {
+        for (const entry of entries) entry.scope.eachItemStable = true
+        return
+      }
+      lastItemsRef = newItems
+
       reconcileEntries(entries, newItems, opts, parentScope, parent, anchor, ctx, state)
     },
   }
@@ -92,6 +102,67 @@ function reconcileEntries<S, T>(
   ctx: ReturnType<typeof getRenderContext>,
   state: unknown,
 ): void {
+  const oldLen = entries.length
+  const newLen = newItems.length
+
+  // Fast path 1: clear all
+  if (newLen === 0) {
+    for (const entry of entries) {
+      for (const node of entry.nodes) parent.removeChild(node)
+      disposeScope(entry.scope)
+    }
+    entries.length = 0
+    return
+  }
+
+  // Fast path 2: append-only — old keys are a prefix of new keys
+  if (newLen > oldLen && isAppendOnly(entries, newItems, opts)) {
+    // Update existing entries' refs (items may have new references)
+    for (let i = 0; i < oldLen; i++) {
+      updateEntry(entries[i]!, newItems[i]!, i)
+    }
+    // Build and append new entries
+    const ref = entries.length > 0
+      ? entries[entries.length - 1]!.nodes[entries[entries.length - 1]!.nodes.length - 1]!.nextSibling
+      : anchor.nextSibling
+    for (let i = oldLen; i < newLen; i++) {
+      const entry = buildEntry(newItems[i]!, i, opts, parentScope, ctx, state)
+      entries.push(entry)
+      for (const node of entry.nodes) parent.insertBefore(node, ref)
+    }
+    return
+  }
+
+  // Fast path 3: two-element swap — same keys, exactly two positions differ
+  if (newLen === oldLen && oldLen >= 2) {
+    const swapResult = detectSwap(entries, newItems, opts)
+    if (swapResult) {
+      const [i, j] = swapResult
+      const entryI = entries[i]!
+      const entryJ = entries[j]!
+
+      // Capture reference nodes before any DOM mutation
+      const refI = entryI.nodes[0]!
+      const refAfterJ = entryJ.nodes[entryJ.nodes.length - 1]!.nextSibling
+
+      // Move J's nodes to where I was
+      for (const node of entryJ.nodes) parent.insertBefore(node, refI)
+      // Move I's nodes to where J was (after J's last node's original position)
+      for (const node of entryI.nodes) parent.insertBefore(node, refAfterJ)
+
+      // Swap entries in the array
+      entries[i] = entryJ
+      entries[j] = entryI
+
+      // Update all entries' refs
+      for (let k = 0; k < oldLen; k++) {
+        updateEntry(entries[k]!, newItems[k]!, k)
+      }
+      return
+    }
+  }
+
+  // General path: full keyed reconciliation
   const oldByKey = new Map<string | number, Entry<T>>()
   for (const entry of entries) {
     oldByKey.set(entry.key, entry)
@@ -100,18 +171,14 @@ function reconcileEntries<S, T>(
   const newEntries: Entry<T>[] = []
   const usedKeys = new Set<string | number>()
 
-  for (let i = 0; i < newItems.length; i++) {
+  for (let i = 0; i < newLen; i++) {
     const item = newItems[i]!
     const key = opts.key(item)
     usedKeys.add(key)
 
     const existing = oldByKey.get(key)
     if (existing) {
-      const itemChanged = !Object.is(existing.item, item)
-      existing.item = item
-      existing.ref.current = item
-      existing.ref.index = i
-      existing.scope.eachItemStable = !itemChanged
+      updateEntry(existing, item, i)
       newEntries.push(existing)
     } else {
       const entry = buildEntry(item, i, opts, parentScope, ctx, state)
@@ -119,15 +186,15 @@ function reconcileEntries<S, T>(
     }
   }
 
+  // Remove entries not in the new list
   for (const entry of entries) {
     if (!usedKeys.has(entry.key)) {
-      for (const node of entry.nodes) {
-        parent.removeChild(node)
-      }
+      for (const node of entry.nodes) parent.removeChild(node)
       disposeScope(entry.scope)
     }
   }
 
+  // Reorder DOM
   let insertBefore = anchor.nextSibling
   for (const entry of newEntries) {
     for (const node of entry.nodes) {
@@ -138,11 +205,72 @@ function reconcileEntries<S, T>(
       }
     }
     const lastNode = entry.nodes[entry.nodes.length - 1]
-    if (lastNode) {
-      insertBefore = lastNode.nextSibling
-    }
+    if (lastNode) insertBefore = lastNode.nextSibling
   }
 
   entries.length = 0
   entries.push(...newEntries)
+}
+
+function updateEntry<T>(entry: Entry<T>, item: T, index: number): void {
+  const changed = !Object.is(entry.item, item)
+  entry.item = item
+  entry.ref.current = item
+  entry.ref.index = index
+  entry.scope.eachItemStable = !changed
+}
+
+function isAppendOnly<S, T>(
+  entries: Entry<T>[],
+  newItems: T[],
+  opts: EachOptions<S, T>,
+): boolean {
+  for (let i = 0; i < entries.length; i++) {
+    if (entries[i]!.key !== opts.key(newItems[i]!)) return false
+  }
+  return true
+}
+
+function detectSwap<S, T>(
+  entries: Entry<T>[],
+  newItems: T[],
+  opts: EachOptions<S, T>,
+): [number, number] | null {
+  let diff1 = -1
+  let diff2 = -1
+  let diffCount = 0
+
+  for (let i = 0; i < entries.length; i++) {
+    const newKey = opts.key(newItems[i]!)
+    if (entries[i]!.key !== newKey) {
+      diffCount++
+      if (diffCount === 1) diff1 = i
+      else if (diffCount === 2) diff2 = i
+      else return null // more than 2 differences
+    }
+  }
+
+  if (diffCount !== 2) return null
+
+  // Verify it's actually a swap (keys are exchanged)
+  const oldKey1 = entries[diff1]!.key
+  const oldKey2 = entries[diff2]!.key
+  const newKey1 = opts.key(newItems[diff1]!)
+  const newKey2 = opts.key(newItems[diff2]!)
+
+  if (oldKey1 === newKey2 && oldKey2 === newKey1) {
+    return [diff1, diff2]
+  }
+
+  return null
+}
+
+function moveEntryNodes<T>(parent: Node, entries: Entry<T>[], index: number): void {
+  const entry = entries[index]!
+  // Find the reference node: the first node of the next entry, or null
+  const nextEntry = entries[index + 1]
+  const ref = nextEntry ? nextEntry.nodes[0]! : null
+  for (const node of entry.nodes) {
+    parent.insertBefore(node, ref)
+  }
 }
