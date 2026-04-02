@@ -507,21 +507,20 @@ See: 04 Test Strategy.md
 
 ---
 
-## `@llui/ark`
+## `@llui/zag`
 
-Framework adapter bridging Zag.js finite state machines into LLui's reactivity model and LLui-idiomatic component wrappers.
+Adapter bridging Zag.js finite state machines into LLui's reactivity model.
 
 ```typescript
-function useMachine<C extends Record<string, unknown>>(
-  machine: Machine<C>,
-  options?: { context?: Partial<C> }
-): {
-  state: MachineState<C>
-  send: (event: MachineEvent) => void
-  api: ConnectAPI
-}
+function useMachine<Api>(
+  machine: { start: () => ZagService },
+  connect: (service: ZagService, normalize: NormalizeFn) => Api,
+  normalize: NormalizeFn,
+): { api: Api; service: ZagService }
 
-function normalizeProps(props: Record<string, any>): Record<string, any>
+function createNormalizeProps(): (props: Record<string, unknown>) => Record<string, unknown>
+
+function mergeProps(...sources: Record<string, unknown>[]): Record<string, unknown>
 ```
 
 See: 08 Ecosystem Integration.md

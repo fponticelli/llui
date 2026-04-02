@@ -211,7 +211,7 @@ function section(title: string, children: Node[]): HTMLElement {
   ])
 }
 
-// ── Tabs (inline, no Ark) ────────────────────────────
+// ── Tabs (inline, no external deps) ────────────────────────────
 
 function tabsComponent(
   tabIds: string[],
@@ -238,7 +238,7 @@ function tabsComponent(
   ]
 }
 
-// ── Accordion (inline, no Ark) ───────────────────────
+// ── Accordion (inline, no external deps) ───────────────────────
 
 function accordionComponent(
   items: Array<{ id: string; label: string; content: string }>,

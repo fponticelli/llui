@@ -712,11 +712,11 @@ export function toolbarView<S>(
 toolbarView({ tools: s => s.tools, toolbar: s => s.toolbar }, msg => send({ type: 'toolbar', msg }))
 ```
 
-For tasks involving Ark UI components (Dialog, Select, Combobox, etc.), add:
+For tasks involving Zag.js components (Dialog, Select, Combobox, etc.), add:
 
 ```typescript
-// Ark UI headless components — powered by Zag.js state machines:
-import { useMachine, normalizeProps } from '@llui/ark'
+// Zag.js headless components — powered by Zag.js state machines:
+import { useMachine, normalizeProps } from '@llui/zag'
 import { dialog } from '@zag-js/dialog'    // or select, combobox, menu, tabs, etc.
 
 // In view(): initialize the machine, spread props onto elements:
@@ -728,12 +728,12 @@ show({ when: () => api.isOpen, render: () =>
   })
 })
 
-// Ark components are styled via data attributes, not classes:
+// Zag components are styled via data attributes, not classes:
 // [data-scope="dialog"][data-part="content"][data-state="open"] { ... }
 // Callback props (onOpenChange, onValueChange) should dispatch LLui messages.
 ```
 
-See 08 Ecosystem Integration §1 for the full `@llui/ark` adapter specification, component anatomy, and the `foreign()` vs Ark distinction.
+See 08 Ecosystem Integration §1 for the full `@llui/zag` adapter specification, component anatomy, and the `foreign()` vs Ark distinction.
 
 Task-specific context injected into the system prompt produces measurably better results than a single universal system prompt. Keep the core system prompt under 300 words; add task-specific type definitions to bring the total under 450 words.
 

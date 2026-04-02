@@ -40,7 +40,7 @@ export const Counter = component<State, Msg, never>({
 | `@llui/vite-plugin` | Compiler — 3-pass TypeScript transform via Vite plugin |
 | `@llui/test` | Test harness — testComponent, assertEffects, propertyTest, replayTrace |
 | `@llui/effects` | Effect builders — http, cancel, debounce, sequence, race |
-| `@llui/ark` | Ark UI adapter — headless components via Zag.js state machines |
+| `@llui/zag` | Zag.js adapter — useMachine, normalizeProps, mergeProps |
 | `@llui/vike` | Vike adapter — SSR, SSG, routing |
 
 ## Development

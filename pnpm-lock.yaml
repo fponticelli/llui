@@ -129,12 +129,6 @@ importers:
         specifier: ^8.0.0
         version: 8.0.3(@emnapi/core@1.9.1)(@emnapi/runtime@1.9.1)(esbuild@0.27.5)(jiti@2.6.1)(tsx@4.21.0)
 
-  packages/ark:
-    dependencies:
-      '@llui/core':
-        specifier: workspace:*
-        version: link:../core
-
   packages/core: {}
 
   packages/effects: {}
@@ -162,6 +156,12 @@ importers:
       vite:
         specifier: ^8.0.0
         version: 8.0.3(@emnapi/core@1.9.1)(@emnapi/runtime@1.9.1)(esbuild@0.27.5)(jiti@2.6.1)(tsx@4.21.0)
+
+  packages/zag:
+    dependencies:
+      '@llui/core':
+        specifier: workspace:*
+        version: link:../core
 
 packages:
 

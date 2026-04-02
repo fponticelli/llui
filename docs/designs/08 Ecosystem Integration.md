@@ -4,27 +4,25 @@ LLui does not exist in isolation. Two integration axes determine whether develop
 
 ---
 
-## 1. Component Library: Ark UI via `@llui/ark`
+## 1. Headless Components: Zag.js via `@llui/zag`
 
-### Why Ark UI
+### Why Zag.js
 
-The headless component library landscape divides into two camps: framework-locked libraries (Radix/React, Kobalte/Solid, Melt+Bits/Svelte, Headless UI/React+Vue, Base UI/React) and framework-agnostic libraries built on state machines. Ark UI is the only production-grade option in the second camp with meaningful adoption. It provides 45+ accessible components — Dialog, Select, Combobox, Menu, Tooltip, Tabs, Accordion, DatePicker, TreeView, and more — each powered by a Zag.js finite state machine underneath.
+The headless component library landscape divides into two camps: framework-locked libraries (Radix/React, Kobalte/Solid, Melt+Bits/Svelte, Headless UI/React+Vue, Base UI/React) and framework-agnostic libraries built on state machines. Zag.js provides 45+ accessible component state machines — Dialog, Select, Combobox, Menu, Tooltip, Tabs, Accordion, DatePicker, TreeView, and more — each usable from any framework via a thin adapter.
 
 The FSM architecture is a natural fit for TEA. A Zag machine is a pure `(state, event) → state` transition function with a `connect` layer that maps machine state to DOM attributes, ARIA props, and event handlers. This is structurally identical to how LLui's `update()` maps `(State, Msg) → [State, Effect[]]`. The adapter layer is thin because both systems share the same fundamental model: immutable state, explicit transitions, derived DOM.
-
-Ark UI already ships framework adapters for React, Solid, Vue, and Svelte. The LLui adapter (`@llui/ark`) becomes the fifth target.
 
 ### Architecture
 
 The integration stack has two layers:
 
 ```
-@llui/ark                    Component wrappers + framework adapter (useMachine, normalizeProps)
+@llui/zag                    Framework adapter (useMachine, normalizeProps, mergeProps)
     ↓
 @zag-js/dialog, /select...  Individual state machines (unchanged)
 ```
 
-**`@llui/ark` — the framework adapter and component wrappers.** This package provides two low-level functions (`useMachine`, `normalizeProps`) for bridging Zag machines into LLui's reactivity model, plus pre-built LLui view functions for each component.
+**`@llui/zag` — the framework adapter.** This package provides three functions for bridging Zag machines into LLui's reactivity model: `useMachine` (lifecycle management), `createNormalizeProps` (prop name translation), and `mergeProps` (prop composition).
 
 ```typescript
 function useMachine<C extends Record<string, unknown>>(
@@ -41,7 +39,7 @@ function normalizeProps(props: Record<string, any>): Record<string, any>
 
 `normalizeProps` translates Zag's framework-neutral prop names into LLui's element helper conventions. The mapping is straightforward: `onClick` → LLui's `onClick` parameter, `className` → `class`, `style` objects → style strings. Data attributes (`data-state`, `data-part`, `data-scope`, `data-disabled`) and ARIA attributes (`role`, `aria-expanded`, `aria-modal`, `aria-labelledby`) pass through unchanged — LLui's element helpers accept arbitrary attributes.
 
-Each Ark component becomes a LLui view function that:
+Each Zag component becomes a LLui view function that:
 
 1. Calls `useMachine` with the component's Zag machine and user-provided config.
 2. Calls `connect` to get the API object with part-specific prop getters (`getRootProps()`, `getTriggerProps()`, `getContentProps()`).
@@ -53,7 +51,7 @@ Each Ark component becomes a LLui view function that:
 
 ```typescript
 import { dialog } from '@zag-js/dialog'
-import { useMachine, normalizeProps } from '@llui/ark'
+import { useMachine, normalizeProps } from '@llui/zag'
 import { div, button, h2, p, text, portal, show } from '@llui/core'
 
 type DialogConfig = {
@@ -92,11 +90,11 @@ function dialogView<S>(
 
 ### Component Anatomy: Combobox Example
 
-Combobox is the most complex Ark component — it exercises text input, filtering, keyboard navigation, floating positioning, and selection state simultaneously.
+Combobox is the most complex Zag component — it exercises text input, filtering, keyboard navigation, floating positioning, and selection state simultaneously.
 
 ```typescript
 import { combobox } from '@zag-js/combobox'
-import { useMachine } from '@llui/ark'
+import { useMachine } from '@llui/zag'
 import { div, input, button, label, text, ul, li, portal, each, show } from '@llui/core'
 
 function comboboxView<S, T extends { value: string; label: string }>(
@@ -146,9 +144,9 @@ function comboboxView<S, T extends { value: string; label: string }>(
 
 ### Integration with LLui Primitives
 
-**Portal.** Ark's floating components (Dialog, Select, Tooltip, Popover, Menu, Combobox, FloatingPanel) render content outside the normal DOM hierarchy. LLui's `portal()` primitive handles this directly — it renders to `document.body` or any target element, with bindings participating in the same update cycle. No special adapter logic needed.
+**Portal.** Zag's floating components (Dialog, Select, Tooltip, Popover, Menu, Combobox, FloatingPanel) render content outside the normal DOM hierarchy. LLui's `portal()` primitive handles this directly — it renders to `document.body` or any target element, with bindings participating in the same update cycle. No special adapter logic needed.
 
-**Transitions.** Ark uses CSS-based animations driven by `data-state` attributes (`data-state="open"` / `data-state="closed"`). LLui's `show()` with `enter`/`leave` callbacks can coordinate with these, but the primary mechanism is pure CSS — Ark delays DOM removal while close animations complete via internal transition-end listeners. This means LLui's `show({ when: () => api.isOpen })` must respect Ark's unmount timing rather than immediately disposing the scope. The adapter wraps this: `show` disposes only after the machine signals the exit animation is complete (the machine transitions from `closing` → `closed`, not from `open` → `closed` directly).
+**Transitions.** Zag uses CSS-based animations driven by `data-state` attributes (`data-state="open"` / `data-state="closed"`). LLui's `show()` with `enter`/`leave` callbacks can coordinate with these, but the primary mechanism is pure CSS — Zag delays DOM removal while close animations complete via internal transition-end listeners. This means LLui's `show({ when: () => api.isOpen })` must respect Zag's unmount timing rather than immediately disposing the scope. The adapter wraps this: `show` disposes only after the machine signals the exit animation is complete (the machine transitions from `closing` → `closed`, not from `open` → `closed` directly).
 
 **Focus management.** Zag machines handle focus trapping (Dialog), focus restoration (Dialog close → trigger), and arrow-key navigation (Menu, Select, Combobox) internally via DOM API calls. These are imperative side effects that Zag executes in its own effect layer. LLui does not need to manage focus — the machine does it. The adapter's only responsibility is ensuring the correct elements are in the DOM when the machine fires focus commands.
 
@@ -156,7 +154,7 @@ function comboboxView<S, T extends { value: string; label: string }>(
 
 ### Styling Surface
 
-Ark components emit no CSS. All styling is via data attributes set by the Zag machines:
+Zag components emit no CSS. All styling is via data attributes set by the Zag machines:
 
 ```css
 /* Target by scope + part */
@@ -178,32 +176,32 @@ Ark components emit no CSS. All styling is via data attributes set by the Zag ma
 
 This is fully compatible with LLui's approach — no framework-specific styling solution required. Developers use CSS files, Tailwind with arbitrary selectors (`data-[state=open]:opacity-100`), or any CSS methodology.
 
-### `foreign()` vs `@llui/ark`
+### `foreign()` vs `@llui/zag`
 
 These solve different problems and compose cleanly:
 
-- **`@llui/ark`** wraps state-machine-driven components that produce standard DOM. The Zag machine manages behavior; LLui manages rendering. The machine's output is declarative attributes, not imperative DOM manipulation.
+- **`@llui/zag`** wraps state-machine-driven components that produce standard DOM. The Zag machine manages behavior; LLui manages rendering. The machine's output is declarative attributes, not imperative DOM manipulation.
 - **`foreign()`** wraps imperative libraries that own their own DOM (ProseMirror, Monaco, MapboxGL). These libraries create and mutate DOM nodes directly; LLui cannot and should not manage their internals.
 
-An Ark Select inside a `foreign()` ProseMirror toolbar is a valid composition: the toolbar is a LLui view function containing `@llui/ark` components, and the entire toolbar is a LLui subtree — not a foreign boundary. `foreign()` applies only to the ProseMirror editor itself.
+A Zag Select inside a `foreign()` ProseMirror toolbar is a valid composition: the toolbar is a LLui view function containing `@llui/zag` components, and the entire toolbar is a LLui subtree — not a foreign boundary. `foreign()` applies only to the ProseMirror editor itself.
 
 ### Package Structure
 
 ```
-@llui/ark             ~3KB gzip    Framework adapter + component wrappers
+@llui/zag             ~3KB gzip    Framework adapter + component wrappers
 @zag-js/dialog        ~3KB gzip    Individual machine (only what you import)
 @zag-js/select        ~4KB gzip    Individual machine
 @zag-js/combobox      ~5KB gzip    Individual machine
 ...                                Each machine is independently tree-shakeable
 ```
 
-Total cost for a Dialog: `@llui/ark` (3KB) + `@zag-js/dialog` (3KB) ≈ **6KB gzip**. Each additional component adds only the machine's weight — the adapter is shared.
+Total cost for a Dialog: `@llui/zag` (3KB) + `@zag-js/dialog` (3KB) ≈ **6KB gzip**. Each additional component adds only the machine's weight — the adapter is shared.
 
 ### Component Coverage (v1 Priority)
 
-Ark UI ships 45+ components. For LLui v1, prioritize the components that appear in virtually every application:
+Zag.js ships 45+ components. For LLui v1, prioritize the components that appear in virtually every application:
 
-**Tier 1 — ship with `@llui/ark` v1:**
+**Tier 1 — ship with `@llui/zag` v1:**
 Dialog, Menu, Select, Combobox, Tabs, Accordion, Tooltip, Popover, Toast, Checkbox, Radio Group, Switch, Slider, Toggle Group, Pagination
 
 **Tier 2 — ship shortly after:**
@@ -216,9 +214,9 @@ Angle Slider, Floating Panel, Signature Pad, Steps, Timer, Tour, QR Code, Frame,
 
 **1. Controlled vs. uncontrolled state ownership.** Zag machines maintain their own internal state (e.g., `isOpen` for Dialog). In TEA, all state lives in the component's `State` type managed by `update()`. Two options: (a) let Zag own behavioral state and expose it to LLui via read-only accessors — simpler adapter, but state lives outside the TEA cycle; (b) drive Zag from LLui state by passing controlled props on every update — pure TEA, but requires the adapter to sync bidirectionally. Recommendation: option (a) for v1 with an opt-in controlled mode for components where the developer needs `isOpen` in their `update()` logic.
 
-**2. Message bridging.** When an Ark component fires a callback (`onOpenChange`, `onValueChange`), the adapter must convert it to a LLui `Msg`. Two options: (a) the developer provides a message factory in the component config (`onOpenChange: (open) => ({ type: 'dialogToggled', open })`); (b) the adapter emits a generic `ArkEvent` message type. Recommendation: option (a) — explicit message factories are idiomatic TEA and the compiler can type-check them.
+**2. Message bridging.** When a Zag component fires a callback (`onOpenChange`, `onValueChange`), the adapter must convert it to a LLui `Msg`. Two options: (a) the developer provides a message factory in the component config (`onOpenChange: (open) => ({ type: 'dialogToggled', open })`); (b) the adapter emits a generic `ZagEvent` message type. Recommendation: option (a) — explicit message factories are idiomatic TEA and the compiler can type-check them.
 
-**3. SSR rendering of Ark components.** Zag machines are client-side JavaScript. During SSR (`__renderToString`), the compiler needs to emit the initial HTML for Ark components without running the machine. The adapter must provide a static render path that reads the initial machine context and emits the correct `data-state`, `data-part`, and ARIA attributes for the initial state (typically `closed`/`idle`). On hydration, `useMachine` starts the machine and attaches event handlers to the existing DOM.
+**3. SSR rendering of Zag components.** Zag machines are client-side JavaScript. During SSR (`__renderToString`), the compiler needs to emit the initial HTML for Zag components without running the machine. The adapter must provide a static render path that reads the initial machine context and emits the correct `data-state`, `data-part`, and ARIA attributes for the initial state (typically `closed`/`idle`). On hydration, `useMachine` starts the machine and attaches event handlers to the existing DOM.
 
 ---
 
@@ -477,7 +475,7 @@ HMR with state preservation (02 Compiler.md) works within Vike pages: when a LLu
 
 `@llui/test` (04 Test Strategy.md) tests components in isolation — no Vike, no server. The `testComponent` harness calls `init()`, `update()`, and asserts on state and effects. Integration tests that exercise SSR use Vike's test utilities to render a full page and verify the HTML output matches expected hydration markers.
 
-For `@llui/ark` components, the Zag machine's state transitions are testable independently (Zag provides its own test utilities). The LLui adapter's correctness reduces to: "does `normalizeProps` produce the right attributes, and does `useMachine` subscribe correctly?" Both are unit-testable without a browser.
+For `@llui/zag` components, the Zag machine's state transitions are testable independently (Zag provides its own test utilities). The LLui adapter's correctness reduces to: "does `normalizeProps` produce the right attributes, and does `useMachine` subscribe correctly?" Both are unit-testable without a browser.
 
 ### Bundle Size Impact
 
@@ -485,7 +483,7 @@ Detailed in 06 Bundle Size.md. Summary:
 
 | Addition | Estimated gzip cost |
 |----------|-------------------|
-| `@llui/ark` adapter + wrappers | ~3KB (shared, not per-component) |
+| `@llui/zag` adapter + wrappers | ~3KB (shared, not per-component) |
 | Per Zag machine (Dialog) | ~3KB |
 | Per Zag machine (Combobox) | ~5KB |
 | `@llui/vike` adapter | ~1.5KB |
@@ -497,10 +495,10 @@ All packages are tree-shakeable. An app using Dialog and Select pays for those t
 
 ## 4. Resolved Questions
 
-**Why not shadcn/ui?** shadcn is a distribution model (copy-paste React components) built on Radix (React-only hooks). Neither the distribution model nor the React dependency translates to LLui. Ark UI provides the same class of components with a framework-agnostic FSM core.
+**Why not shadcn/ui?** shadcn is a distribution model (copy-paste React components) built on Radix (React-only hooks). Neither the distribution model nor the React dependency translates to LLui. Zag.js provides the same class of components with a framework-agnostic FSM core.
 
 **Why not Astro?** Astro's island architecture assumes independent, isolated components with separate hydration boundaries. LLui's single-state-tree model does not decompose into independent islands without losing the primary benefit of TEA — a single `update()` that sees all state transitions. Vike lets LLui own the full page render. Astro integration is not ruled out for the island use case but is not the primary server-side story.
 
-**Why not build our own components?** Accessible UI components are extraordinarily hard to get right. Focus management, keyboard navigation, screen reader announcements, ARIA attribute state machines, and cross-browser quirks represent years of iteration. Ark UI (via Zag.js) has this iteration built in. Building from scratch would delay LLui's usability by 12+ months for no architectural benefit.
+**Why not build our own components?** Accessible UI components are extraordinarily hard to get right. Focus management, keyboard navigation, screen reader announcements, ARIA attribute state machines, and cross-browser quirks represent years of iteration. Zag.js (via Zag.js) has this iteration built in. Building from scratch would delay LLui's usability by 12+ months for no architectural benefit.
 
 **Why not Vinxi / TanStack Start?** Vinxi is the framework-agnostic server layer under SolidStart. It is architecturally promising but still pre-1.0 and tightly coupled to SolidStart's development cycle. TanStack Start targets React. Both are less mature than Vike for the "bring your own framework" use case.
