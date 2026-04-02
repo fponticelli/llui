@@ -131,4 +131,100 @@ describe('foreign()', () => {
     expect(el!.className).toBe('editor')
     expect(el!.getAttribute('data-type')).toBe('code')
   })
+
+  it('calls per-key sync handlers on initial mount', () => {
+    const themeFn = vi.fn()
+    const readonlyFn = vi.fn()
+
+    const def: ComponentDef<State, Msg, never> = {
+      name: 'PerKeySync',
+      init: () => [{ theme: 'dark', readonly: false }, []],
+      update: (state, msg) => {
+        switch (msg.type) {
+          case 'setTheme':
+            return [{ ...state, theme: msg.value }, []]
+          case 'toggleReadonly':
+            return [{ ...state, readonly: !state.readonly }, []]
+        }
+      },
+      view: () =>
+        foreign<State, { theme: string; readonly: boolean }, FakeEditor>({
+          mount: (container): FakeEditor => ({
+            container,
+            destroyed: false,
+            options: {},
+          }),
+          props: (s) => ({ theme: s.theme, readonly: s.readonly }),
+          sync: {
+            theme: themeFn,
+            readonly: readonlyFn,
+          },
+          destroy: () => {},
+        }),
+      __dirty: (o, n) =>
+        (Object.is(o.theme, n.theme) ? 0 : 0b01) |
+        (Object.is(o.readonly, n.readonly) ? 0 : 0b10),
+    }
+
+    const container = document.createElement('div')
+    mountApp(container, def)
+
+    expect(themeFn).toHaveBeenCalledTimes(1)
+    expect(themeFn).toHaveBeenCalledWith(expect.anything(), 'dark', undefined)
+    expect(readonlyFn).toHaveBeenCalledTimes(1)
+    expect(readonlyFn).toHaveBeenCalledWith(expect.anything(), false, undefined)
+  })
+
+  it('calls only changed per-key sync handlers on update', () => {
+    const themeFn = vi.fn()
+    const readonlyFn = vi.fn()
+    let localSend: (msg: Msg) => void
+
+    const def: ComponentDef<State, Msg, never> = {
+      name: 'PerKeySyncUpdate',
+      init: () => [{ theme: 'dark', readonly: false }, []],
+      update: (state, msg) => {
+        switch (msg.type) {
+          case 'setTheme':
+            return [{ ...state, theme: msg.value }, []]
+          case 'toggleReadonly':
+            return [{ ...state, readonly: !state.readonly }, []]
+        }
+      },
+      view: (state, send) => {
+        localSend = send
+        return foreign<State, { theme: string; readonly: boolean }, FakeEditor>({
+          mount: (container): FakeEditor => ({
+            container,
+            destroyed: false,
+            options: {},
+          }),
+          props: (s) => ({ theme: s.theme, readonly: s.readonly }),
+          sync: {
+            theme: themeFn,
+            readonly: readonlyFn,
+          },
+          destroy: () => {},
+        })
+      },
+      __dirty: (o, n) =>
+        (Object.is(o.theme, n.theme) ? 0 : 0b01) |
+        (Object.is(o.readonly, n.readonly) ? 0 : 0b10),
+    }
+
+    const container = document.createElement('div')
+    const handle = mountApp(container, def)
+
+    themeFn.mockClear()
+    readonlyFn.mockClear()
+
+    // Only change theme
+    localSend!({ type: 'setTheme', value: 'light' })
+    handle.flush()
+
+    expect(themeFn).toHaveBeenCalledTimes(1)
+    expect(themeFn).toHaveBeenCalledWith(expect.anything(), 'light', 'dark')
+    // readonly didn't change, should not be called
+    expect(readonlyFn).not.toHaveBeenCalled()
+  })
 })

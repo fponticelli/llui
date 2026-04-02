@@ -93,6 +93,7 @@ function createElement<K extends keyof HTMLElementTagNameMap>(
   return el
 }
 
+/* v8 ignore start — mechanical tag wrappers */
 // prettier-ignore
 export const a = (props?: ElementProps, children?: Node[]) => createElement('a', props, children)
 // prettier-ignore
@@ -225,3 +226,4 @@ export const tr = (props?: ElementProps, children?: Node[]) => createElement('tr
 export const ul = (props?: ElementProps, children?: Node[]) => createElement('ul', props, children)
 // prettier-ignore
 export const video = (props?: ElementProps, children?: Node[]) => createElement('video', props, children)
+/* v8 ignore stop */

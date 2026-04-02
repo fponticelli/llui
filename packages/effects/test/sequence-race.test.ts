@@ -51,6 +51,40 @@ describe('race', () => {
     controller = new AbortController()
   })
 
+  it('aborts all racers when parent signal aborts', async () => {
+    const abortedUrls: string[] = []
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockImplementation(
+        (url: string, opts: { signal: AbortSignal }) =>
+          new Promise<Response>((_resolve, reject) => {
+            opts.signal.addEventListener('abort', () => {
+              abortedUrls.push(url)
+              reject(new DOMException('Aborted', 'AbortError'))
+            })
+          }),
+      ),
+    )
+
+    const handler = handleEffects<Effect>().else(() => {})
+
+    handler(
+      race([
+        http({ url: '/a', onSuccess: 'a', onError: 'e' }),
+        http({ url: '/b', onSuccess: 'b', onError: 'e' }),
+      ]),
+      send,
+      controller.signal,
+    )
+
+    controller.abort()
+
+    await vi.waitFor(() => expect(abortedUrls.length).toBe(2))
+    expect(send).not.toHaveBeenCalled()
+
+    vi.unstubAllGlobals()
+  })
+
   it('only delivers the first result', async () => {
     let resolvers: Array<(v: Response) => void> = []
     vi.stubGlobal(

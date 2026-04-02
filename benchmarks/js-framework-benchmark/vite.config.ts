@@ -7,10 +7,10 @@ export default defineConfig({
     target: 'es2022',
     minify: true,
     modulePreload: { polyfill: false },
-    rollupOptions: {
-      output: {
-        entryFileNames: 'main.js',
-      },
+    lib: {
+      entry: 'src/main.ts',
+      formats: ['es'],
+      fileName: () => 'main.js',
     },
     outDir: 'dist',
   },

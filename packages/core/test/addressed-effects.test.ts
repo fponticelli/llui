@@ -4,7 +4,7 @@ import { child } from '../src/primitives/child'
 import { text } from '../src/primitives/text'
 import { div } from '../src/elements'
 import { component } from '../src/component'
-import { addressOf, dispatchAddressed } from '../src/addressed'
+import { addressOf, isAddressedEffect } from '../src/addressed'
 import type { ComponentDef } from '../src/types'
 
 type ChildState = { value: string }
@@ -55,6 +55,29 @@ describe('addressed effects', () => {
       __msg: { type: 'setValue', value: 'hello' },
     })
   })
+
+  it('addressOf returns empty object when def has no receives', () => {
+    const noReceives = component<{ x: number }, { type: 'noop' }, never>({
+      name: 'NoReceives',
+      init: () => [{ x: 0 }, []],
+      update: (s) => [s, []],
+      view: () => [text('hi')],
+      __dirty: () => 0,
+    })
+    const addr = addressOf(noReceives, 'key')
+    expect(addr).toEqual({})
+  })
+
+  it('isAddressedEffect correctly identifies addressed effects', () => {
+    expect(isAddressedEffect({ __addressed: true, __targetKey: 'x', __msg: {} })).toBe(true)
+    expect(isAddressedEffect({ __addressed: false })).toBe(false)
+    expect(isAddressedEffect(null)).toBe(false)
+    expect(isAddressedEffect(undefined)).toBe(false)
+    expect(isAddressedEffect('string')).toBe(false)
+    expect(isAddressedEffect(42)).toBe(false)
+    expect(isAddressedEffect({ type: 'http' })).toBe(false)
+  })
+
 
   it('dispatches addressed effect to the target child component', async () => {
     type ParentState = { x: number }

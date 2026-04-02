@@ -149,3 +149,95 @@ describe('bulk clear', () => {
     expect(getIds(container)).toEqual([])
   })
 })
+
+describe('detectSwap edge cases', () => {
+  it('falls back to general path when 3+ positions differ', () => {
+    const { container, handle, send } = mount(items3)
+
+    // Reverse all 3 — 3 positions differ, not a swap
+    send({
+      type: 'setItems',
+      items: [items3[2]!, items3[0]!, items3[1]!],
+    })
+    handle.flush()
+
+    expect(getIds(container)).toEqual(['3', '1', '2'])
+  })
+
+  it('falls back when 2 positions differ but keys are not exchanged', () => {
+    const items4: Item[] = [
+      { id: '1', label: 'one' },
+      { id: '2', label: 'two' },
+      { id: '3', label: 'three' },
+      { id: '4', label: 'four' },
+    ]
+    const { container, handle, send } = mount(items4)
+
+    // Positions 1 and 2 differ but keys rotate (2→3, 3→4) — not a swap
+    send({
+      type: 'setItems',
+      items: [
+        { id: '1', label: 'one' },
+        { id: '3', label: 'three' },
+        { id: '4', label: 'four' },
+        { id: '2', label: 'two' },
+      ],
+    })
+    handle.flush()
+
+    expect(getIds(container)).toEqual(['1', '3', '4', '2'])
+  })
+})
+
+describe('survivors in order — batch insert new entries between survivors', () => {
+  it('inserts new items between existing ones without full rebuild', () => {
+    const { container, handle, send } = mount(items3)
+    const node1 = container.querySelector('[data-id="1"]')!
+    const node2 = container.querySelector('[data-id="2"]')!
+    const node3 = container.querySelector('[data-id="3"]')!
+
+    // Insert new items between existing survivors (order preserved)
+    send({
+      type: 'setItems',
+      items: [
+        items3[0]!,
+        { id: 'a', label: 'alpha' },
+        items3[1]!,
+        { id: 'b', label: 'beta' },
+        items3[2]!,
+      ],
+    })
+    handle.flush()
+
+    expect(getIds(container)).toEqual(['1', 'a', '2', 'b', '3'])
+    // Original nodes preserved
+    expect(container.querySelector('[data-id="1"]')).toBe(node1)
+    expect(container.querySelector('[data-id="2"]')).toBe(node2)
+    expect(container.querySelector('[data-id="3"]')).toBe(node3)
+  })
+
+  it('appends new items after all survivors', () => {
+    const items2: Item[] = [
+      { id: '1', label: 'one' },
+      { id: '3', label: 'three' },
+    ]
+    const { container, handle, send } = mount(items3)
+    const node1 = container.querySelector('[data-id="1"]')!
+    const node3 = container.querySelector('[data-id="3"]')!
+
+    // Remove item 2, add new item at end — survivors (1, 3) stay in order
+    send({
+      type: 'setItems',
+      items: [
+        items3[0]!,
+        items3[2]!,
+        { id: 'c', label: 'gamma' },
+      ],
+    })
+    handle.flush()
+
+    expect(getIds(container)).toEqual(['1', '3', 'c'])
+    expect(container.querySelector('[data-id="1"]')).toBe(node1)
+    expect(container.querySelector('[data-id="3"]')).toBe(node3)
+  })
+})
