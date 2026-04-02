@@ -1,6 +1,6 @@
 import type { PortalOptions } from '../types'
 import { getRenderContext, setRenderContext, clearRenderContext } from '../render-context'
-import { createScope } from '../scope'
+import { createScope, addDisposer } from '../scope'
 
 export function portal(opts: PortalOptions): Node[] {
   const ctx = getRenderContext()
@@ -26,7 +26,7 @@ export function portal(opts: PortalOptions): Node[] {
   }
 
   // On scope disposal, remove portal nodes from target
-  portalScope.disposers.push(() => {
+  addDisposer(portalScope, () => {
     for (const node of nodes) {
       if (node.parentNode === target) {
         target.removeChild(node)

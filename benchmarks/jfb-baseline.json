@@ -1,0 +1,80 @@
+{
+  "llui": {
+    "01_run1k": 38.1,
+    "02_replace1k": 42.4,
+    "03_update10th1k_x16": 16.6,
+    "04_select1k": 4,
+    "05_swap1k": 16.7,
+    "06_remove-one-1k": 11.7,
+    "07_create10k": 362.2,
+    "08_create1k-after1k_x2": 43,
+    "09_clear1k_x8": 13.5,
+    "size_gz": null,
+    "memory_run": null
+  },
+  "vanillajs": {
+    "01_run1k": 21.6,
+    "02_replace1k": 23.5,
+    "03_update10th1k_x16": 11.7,
+    "04_select1k": 3.4,
+    "05_swap1k": 13.5,
+    "06_remove-one-1k": 10.3,
+    "07_create10k": 219,
+    "08_create1k-after1k_x2": 25.5,
+    "09_clear1k_x8": 9.7,
+    "size_gz": null,
+    "memory_run": null
+  },
+  "react": {
+    "01_run1k": 26.7,
+    "02_replace1k": 32.2,
+    "03_update10th1k_x16": 16.7,
+    "04_select1k": 5.6,
+    "05_swap1k": 106.5,
+    "06_remove-one-1k": 14.5,
+    "07_create10k": 420.4,
+    "08_create1k-after1k_x2": 31.4,
+    "09_clear1k_x8": 19.1,
+    "size_gz": null,
+    "memory_run": null
+  },
+  "solid": {
+    "01_run1k": 22.7,
+    "02_replace1k": 25.6,
+    "03_update10th1k_x16": 14,
+    "04_select1k": 4.2,
+    "05_swap1k": 17.3,
+    "06_remove-one-1k": 12.7,
+    "07_create10k": 233.8,
+    "08_create1k-after1k_x2": 26.6,
+    "09_clear1k_x8": 12.6,
+    "size_gz": null,
+    "memory_run": null
+  },
+  "svelte": {
+    "01_run1k": 23,
+    "02_replace1k": 26.1,
+    "03_update10th1k_x16": 14.5,
+    "04_select1k": 5.9,
+    "05_swap1k": 16.5,
+    "06_remove-one-1k": 13.1,
+    "07_create10k": 235.3,
+    "08_create1k-after1k_x2": 27,
+    "09_clear1k_x8": 11.8,
+    "size_gz": null,
+    "memory_run": null
+  },
+  "elm": {
+    "01_run1k": 30.9,
+    "02_replace1k": 29.4,
+    "03_update10th1k_x16": 17.6,
+    "04_select1k": 5.2,
+    "05_swap1k": 18.1,
+    "06_remove-one-1k": 30,
+    "07_create10k": 611.8,
+    "08_create1k-after1k_x2": 39.6,
+    "09_clear1k_x8": 22.2,
+    "size_gz": null,
+    "memory_run": null
+  }
+}

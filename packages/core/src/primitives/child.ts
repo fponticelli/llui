@@ -1,6 +1,6 @@
 import type { ChildOptions, ComponentDef } from '../types'
 import { getRenderContext, setRenderContext, clearRenderContext } from '../render-context'
-import { createScope, disposeScope } from '../scope'
+import { createScope, disposeScope, addDisposer } from '../scope'
 import { createComponentInstance, flushInstance } from '../update-loop'
 import { createBinding, setFlatBindings } from '../binding'
 import { registerChild, unregisterChild } from '../addressed'
@@ -75,7 +75,7 @@ export function child<S, ChildM>(opts: ChildOptions<S, ChildM>): Node[] {
   registerChild(opts.key, { send: childInst.send as (msg: unknown) => void })
 
   // Cleanup: dispose child instance when parent scope disposes
-  childScope.disposers.push(() => {
+  addDisposer(childScope, () => {
     unregisterChild(opts.key)
     disposeScope(childInst.rootScope)
   })

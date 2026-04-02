@@ -1,8 +1,16 @@
 import type { EachOptions, Scope } from '../types'
-import { getRenderContext, setRenderContext, clearRenderContext } from '../render-context'
-import { createScope, disposeScope } from '../scope'
+import { getRenderContext, setRenderContext, clearRenderContext, type RenderContext } from '../render-context'
+import { createScope, disposeScope, addDisposer } from '../scope'
 import { setFlatBindings } from '../binding'
 import type { StructuralBlock } from '../structural'
+
+// Reusable render context for buildEntry — avoids object allocation per entry
+const buildCtx: RenderContext = {
+  rootScope: null as unknown as Scope,
+  state: null,
+  allBindings: [],
+  structuralBlocks: [],
+}
 
 interface Entry<T> {
   key: string | number
@@ -49,7 +57,7 @@ export function each<S, T>(opts: EachOptions<S, T>): Node[] {
 
   blocks.push(block)
 
-  parentScope.disposers.push(() => {
+  addDisposer(parentScope, () => {
     const idx = blocks.indexOf(block)
     if (idx !== -1) blocks.splice(idx, 1)
     for (const entry of entries) {
@@ -85,8 +93,13 @@ function buildEntry<S, T>(
 
   const indexAccessor = (): number => ref.index
 
+  // Reuse a single context object to avoid allocation per entry
+  buildCtx.rootScope = scope
+  buildCtx.state = state ?? ctx.state
+  buildCtx.allBindings = ctx.allBindings
+  buildCtx.structuralBlocks = ctx.structuralBlocks
   setFlatBindings(ctx.allBindings)
-  setRenderContext({ ...ctx, rootScope: scope, state: state ?? ctx.state })
+  setRenderContext(buildCtx)
   const nodes = opts.render(itemAccessor, indexAccessor)
   clearRenderContext()
   setFlatBindings(null)

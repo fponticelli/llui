@@ -1,7 +1,7 @@
 import type { ForeignOptions, Send } from '../types'
 import { getRenderContext } from '../render-context'
 import { createBinding } from '../binding'
-import { createScope } from '../scope'
+import { createScope, addDisposer } from '../scope'
 
 const FULL_MASK = 0xffffffff
 
@@ -82,7 +82,7 @@ export function foreign<S, T extends Record<string, unknown>, Instance>(
   })
 
   // Destroy on scope disposal
-  foreignScope.disposers.push(() => {
+  addDisposer(foreignScope, () => {
     opts.destroy(instance)
   })
 

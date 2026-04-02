@@ -1,6 +1,6 @@
 import type { BranchOptions, Scope } from '../types'
 import { getRenderContext, setRenderContext, clearRenderContext } from '../render-context'
-import { createScope, disposeScope } from '../scope'
+import { createScope, disposeScope, addDisposer } from '../scope'
 import { setFlatBindings } from '../binding'
 import type { StructuralBlock } from '../structural'
 
@@ -90,7 +90,7 @@ export function branch<S>(opts: BranchOptions<S>): Node[] {
 
   blocks.push(block)
 
-  parentScope.disposers.push(() => {
+  addDisposer(parentScope, () => {
     const idx = blocks.indexOf(block)
     if (idx !== -1) blocks.splice(idx, 1)
     if (currentScope) {

@@ -1,4 +1,5 @@
 import { getRenderContext } from '../render-context'
+import { addDisposer } from '../scope'
 
 export function onMount(callback: (el: Element) => (() => void) | void): void {
   const ctx = getRenderContext()
@@ -6,7 +7,7 @@ export function onMount(callback: (el: Element) => (() => void) | void): void {
   const container = ctx.container ?? document.body
   let cancelled = false
 
-  scope.disposers.push(() => {
+  addDisposer(scope, () => {
     cancelled = true
   })
 
@@ -14,7 +15,7 @@ export function onMount(callback: (el: Element) => (() => void) | void): void {
     if (cancelled) return
     const cleanup = callback(container)
     if (typeof cleanup === 'function') {
-      scope.disposers.push(cleanup)
+      addDisposer(scope, cleanup)
     }
   })
 }

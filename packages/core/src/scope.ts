@@ -2,17 +2,23 @@ import type { Scope, Binding } from './types'
 
 let nextId = 1
 
+// Shared empty arrays — avoid allocating per scope when unused
+const EMPTY_SCOPES: Scope[] = []
+const EMPTY_DISPOSERS: Array<() => void> = []
+const EMPTY_BINDINGS: Binding[] = []
+
 export function createScope(parent: Scope | null): Scope {
   const scope: Scope = {
     id: nextId++,
     parent,
-    children: [],
-    disposers: [],
-    bindings: [],
+    children: EMPTY_SCOPES,
+    disposers: EMPTY_DISPOSERS,
+    bindings: EMPTY_BINDINGS,
     eachItemStable: false,
   }
 
   if (parent) {
+    if (parent.children === EMPTY_SCOPES) parent.children = []
     parent.children.push(scope)
   }
 
@@ -48,7 +54,13 @@ export function disposeScope(scope: Scope): void {
 
 export function addBinding(scope: Scope, binding: Binding): void {
   binding.ownerScope = scope
+  if (scope.bindings === EMPTY_BINDINGS) scope.bindings = []
   scope.bindings.push(binding)
+}
+
+export function addDisposer(scope: Scope, disposer: () => void): void {
+  if (scope.disposers === EMPTY_DISPOSERS) scope.disposers = []
+  scope.disposers.push(disposer)
 }
 
 function removeFromParent(scope: Scope): void {
