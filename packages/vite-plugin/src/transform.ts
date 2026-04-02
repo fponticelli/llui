@@ -265,7 +265,10 @@ function tryTransformElementCall(
 
   // First arg must be an object literal (or absent)
   const propsArg = node.arguments[0]
-  if (propsArg && !ts.isObjectLiteralExpression(propsArg)) return null
+  if (propsArg && !ts.isObjectLiteralExpression(propsArg)) {
+    bailed.add(localName)
+    return null
+  }
 
   const tag = f.createStringLiteral(originalName)
 
