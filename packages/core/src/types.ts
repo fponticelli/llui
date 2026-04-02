@@ -50,6 +50,7 @@ export interface Binding {
   key?: string
   ownerScope: Scope
   perItem: boolean
+  dead: boolean
 }
 
 // ── Structural Primitives ─────────────────────────────────────────

@@ -1,6 +1,6 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, afterEach } from 'vitest'
 import { createComponentInstance, flushInstance } from '../src/update-loop'
-import { createBinding } from '../src/binding'
+import { createBinding, setFlatBindings } from '../src/binding'
 import { createScope, disposeScope } from '../src/scope'
 import type { ComponentDef } from '../src/types'
 
@@ -20,15 +20,23 @@ function twoPropDef(): ComponentDef<State, Msg, never> {
       }
     },
     view: () => [],
-    // name = bit 0, age = bit 1
     __dirty: (o, n) =>
       (Object.is(o.name, n.name) ? 0 : 0b01) | (Object.is(o.age, n.age) ? 0 : 0b10),
   }
 }
 
+function wireFlat(inst: ReturnType<typeof createComponentInstance>) {
+  setFlatBindings(inst.allBindings)
+}
+
 describe('Phase 2 — binding iteration', () => {
+  afterEach(() => {
+    setFlatBindings(null)
+  })
+
   it('updates text bindings whose mask matches the dirty mask', () => {
     const inst = createComponentInstance(twoPropDef())
+    wireFlat(inst)
     const nameNode = document.createTextNode('')
     const ageNode = document.createTextNode('')
 
@@ -47,20 +55,19 @@ describe('Phase 2 — binding iteration', () => {
       perItem: false,
     })
 
-    // Initial evaluation
     nameNode.nodeValue = 'Alice'
     ageNode.nodeValue = '30'
 
-    // Change only name
     inst.send({ type: 'setName', value: 'Bob' })
     flushInstance(inst)
 
     expect(nameNode.nodeValue).toBe('Bob')
-    expect(ageNode.nodeValue).toBe('30') // unchanged — mask didn't match
+    expect(ageNode.nodeValue).toBe('30')
   })
 
   it('skips binding when accessor returns same value (Object.is)', () => {
     const inst = createComponentInstance(twoPropDef())
+    wireFlat(inst)
     const nameNode = document.createTextNode('Alice')
 
     const binding = createBinding(inst.rootScope, {
@@ -70,19 +77,17 @@ describe('Phase 2 — binding iteration', () => {
       node: nameNode,
       perItem: false,
     })
-    // Pre-set lastValue so the Object.is check kicks in
     binding.lastValue = 'Alice'
 
-    // Send a message that changes name to same value
     inst.send({ type: 'setName', value: 'Alice' })
     flushInstance(inst)
 
-    // Mask matches (dirty bit 0 set), but Object.is('Alice', 'Alice') → skip
     expect(nameNode.nodeValue).toBe('Alice')
   })
 
   it('updates attr bindings correctly', () => {
     const inst = createComponentInstance(twoPropDef())
+    wireFlat(inst)
     const el = document.createElement('div')
 
     createBinding(inst.rootScope, {
@@ -102,6 +107,7 @@ describe('Phase 2 — binding iteration', () => {
 
   it('handles multiple bindings on different masks in one update cycle', () => {
     const inst = createComponentInstance(twoPropDef())
+    wireFlat(inst)
     const nameNode = document.createTextNode('')
     const ageNode = document.createTextNode('')
 
@@ -120,7 +126,6 @@ describe('Phase 2 — binding iteration', () => {
       perItem: false,
     })
 
-    // Change both in one batch
     inst.send({ type: 'setName', value: 'Dana' })
     inst.send({ type: 'setAge', value: 25 })
     flushInstance(inst)
@@ -131,6 +136,7 @@ describe('Phase 2 — binding iteration', () => {
 
   it('skips bindings on disposed child scopes', () => {
     const inst = createComponentInstance(twoPropDef())
+    wireFlat(inst)
     const childScope = createScope(inst.rootScope)
     const node = document.createTextNode('')
 
@@ -142,13 +148,11 @@ describe('Phase 2 — binding iteration', () => {
       perItem: false,
     })
 
-    // Dispose the child scope — its bindings should be removed
     disposeScope(childScope)
 
     inst.send({ type: 'setName', value: 'Ghost' })
     flushInstance(inst)
 
-    // The binding was removed during scope disposal, so node is untouched
     expect(node.nodeValue).toBe('')
   })
 })

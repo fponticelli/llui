@@ -2,7 +2,7 @@ import type { ChildOptions, ComponentDef } from '../types'
 import { getRenderContext, setRenderContext, clearRenderContext } from '../render-context'
 import { createScope, disposeScope } from '../scope'
 import { createComponentInstance, flushInstance } from '../update-loop'
-import { createBinding } from '../binding'
+import { createBinding, setFlatBindings } from '../binding'
 
 const FULL_MASK = 0xffffffff
 
@@ -63,9 +63,11 @@ export function child<S, ChildM>(opts: ChildOptions<S, ChildM>): Node[] {
   })
 
   // Run the child's view within the child's render context
+  setFlatBindings(childInst.allBindings)
   setRenderContext({ ...childInst, send: childInst.send as (msg: unknown) => void })
   const nodes = childDef.view(childInst.state, childInst.send)
   clearRenderContext()
+  setFlatBindings(parentCtx.allBindings)
   setRenderContext(parentCtx)
 
   // Cleanup: dispose child instance when parent scope disposes

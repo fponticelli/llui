@@ -1,6 +1,7 @@
 import type { BranchOptions, Scope } from '../types'
 import { getRenderContext, setRenderContext, clearRenderContext } from '../render-context'
 import { createScope, disposeScope } from '../scope'
+import { setFlatBindings } from '../binding'
 import type { StructuralBlock } from '../structural'
 
 export function branch<S>(opts: BranchOptions<S>): Node[] {
@@ -46,9 +47,11 @@ export function branch<S>(opts: BranchOptions<S>): Node[] {
       const newBuilder = opts.cases[newCaseKey]
       if (newBuilder) {
         currentScope = createScope(parentScope)
+        setFlatBindings(ctx.allBindings)
         setRenderContext({ ...ctx, rootScope: currentScope, state })
         currentNodes = newBuilder()
         clearRenderContext()
+        setFlatBindings(null)
 
         const ref = anchor.nextSibling
         for (const node of currentNodes) {

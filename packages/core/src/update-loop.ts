@@ -1,4 +1,4 @@
-import type { ComponentDef, Scope } from './types'
+import type { ComponentDef, Scope, Binding } from './types'
 import type { StructuralBlock } from './structural'
 import { createScope } from './scope'
 import { applyBinding } from './binding'
@@ -10,6 +10,7 @@ export interface ComponentInstance<S = unknown, M = unknown, E = unknown> {
   state: S
   initialEffects: E[]
   rootScope: Scope
+  allBindings: Binding[]
   structuralBlocks: StructuralBlock[]
   queue: M[]
   microtaskScheduled: boolean
@@ -29,6 +30,7 @@ export function createComponentInstance<S, M, E>(
     state: initialState,
     initialEffects,
     rootScope: createScope(null),
+    allBindings: [],
     structuralBlocks: [],
     queue: [],
     microtaskScheduled: false,
@@ -84,28 +86,28 @@ function processMessages<S, M, E>(inst: ComponentInstance<S, M, E>): void {
     block.reconcile(state, combinedDirty)
   }
 
-  // Phase 2 — binding updates
+  // Phase 2 — binding updates (flat array, no tree walk)
   if (combinedDirty !== 0) {
-    runPhase2(inst.rootScope, inst.state, combinedDirty)
-  }
-}
-
-function runPhase2(rootScope: Scope, state: unknown, dirtyMask: number): void {
-  collectBindings(rootScope, (binding) => {
-    if ((binding.mask & dirtyMask) === 0) return
-    if (binding.perItem && binding.ownerScope.eachItemStable) return
-    const newValue = binding.accessor(state)
-    if (Object.is(newValue, binding.lastValue)) return
-    binding.lastValue = newValue
-    applyBinding(binding, newValue)
-  })
-}
-
-function collectBindings(scope: Scope, cb: (binding: Scope['bindings'][number]) => void): void {
-  for (const binding of scope.bindings) {
-    cb(binding)
-  }
-  for (const child of scope.children) {
-    collectBindings(child, cb)
+    const bindings = inst.allBindings
+    const state = inst.state
+    let deadCount = 0
+    for (let i = 0; i < bindings.length; i++) {
+      const binding = bindings[i]!
+      if (binding.dead) { deadCount++; continue }
+      if ((binding.mask & combinedDirty) === 0) continue
+      if (binding.perItem && binding.ownerScope.eachItemStable) continue
+      const newValue = binding.accessor(state)
+      if (Object.is(newValue, binding.lastValue)) continue
+      binding.lastValue = newValue
+      applyBinding(binding, newValue)
+    }
+    // Compact when >25% dead
+    if (deadCount > 0 && deadCount > bindings.length >> 2) {
+      let w = 0
+      for (let r = 0; r < bindings.length; r++) {
+        if (!bindings[r]!.dead) bindings[w++] = bindings[r]!
+      }
+      bindings.length = w
+    }
   }
 }

@@ -61,7 +61,7 @@ Runtime and bundle size improvements, tracked against benchmarks.
 - [x] Bulk clear → remove all + dispose without key lookup
 
 **Runtime — binding evaluation:**
-- [ ] Flat binding array per component (avoid recursive scope walk in Phase 2)
+- [x] Flat binding array per component (dead-flag + lazy compaction, eliminates recursive scope walk)
 
 **Bundle — compiler:**
 - [ ] Static subtree prerendering → `<template>` clone

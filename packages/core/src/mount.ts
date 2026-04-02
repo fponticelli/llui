@@ -2,6 +2,7 @@ import type { ComponentDef, AppHandle } from './types'
 import { createComponentInstance, flushInstance } from './update-loop'
 import { disposeScope } from './scope'
 import { setRenderContext, clearRenderContext } from './render-context'
+import { setFlatBindings } from './binding'
 
 export function mountApp<S, M, E>(
   container: HTMLElement,
@@ -11,9 +12,11 @@ export function mountApp<S, M, E>(
   const inst = createComponentInstance(def, data)
 
   // Run view() within a render context so primitives can register bindings
+  setFlatBindings(inst.allBindings)
   setRenderContext({ ...inst, container, send: inst.send as (msg: unknown) => void })
   const nodes = def.view(inst.state, inst.send)
   clearRenderContext()
+  setFlatBindings(null)
 
   for (const node of nodes) {
     container.appendChild(node)

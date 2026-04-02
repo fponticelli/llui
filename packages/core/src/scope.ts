@@ -21,12 +21,10 @@ export function createScope(parent: Scope | null): Scope {
 
 export function disposeScope(scope: Scope): void {
   if (scope.disposers.length === 0 && scope.children.length === 0 && scope.bindings.length === 0) {
-    // Already disposed or empty — remove from parent and bail
     removeFromParent(scope)
     return
   }
 
-  // Depth-first: dispose children before own disposers
   const children = scope.children.slice()
   for (const child of children) {
     disposeScope(child)
@@ -34,6 +32,11 @@ export function disposeScope(scope: Scope): void {
 
   for (const disposer of scope.disposers) {
     disposer()
+  }
+
+  // Mark bindings as dead — Phase 2 will skip them
+  for (const binding of scope.bindings) {
+    binding.dead = true
   }
 
   scope.disposers.length = 0

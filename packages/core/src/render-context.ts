@@ -1,9 +1,10 @@
-import type { Scope } from './types'
+import type { Scope, Binding } from './types'
 import type { StructuralBlock } from './structural'
 
 export interface RenderContext {
   rootScope: Scope
   state: unknown
+  allBindings: Binding[]
   structuralBlocks: StructuralBlock[]
   container?: Element
   send?: (msg: unknown) => void

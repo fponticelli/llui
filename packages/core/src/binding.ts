@@ -10,6 +10,12 @@ export interface CreateBindingOpts {
   perItem: boolean
 }
 
+let flatBindings: Binding[] | null = null
+
+export function setFlatBindings(arr: Binding[] | null): void {
+  flatBindings = arr
+}
+
 export function createBinding(scope: Scope, opts: CreateBindingOpts): Binding {
   const binding: Binding = {
     mask: opts.mask,
@@ -20,9 +26,12 @@ export function createBinding(scope: Scope, opts: CreateBindingOpts): Binding {
     key: opts.key,
     ownerScope: scope,
     perItem: opts.perItem,
+    dead: false,
   }
 
   addBinding(scope, binding)
+  if (flatBindings) flatBindings.push(binding)
+
   return binding
 }
 
@@ -37,7 +46,6 @@ export function applyBinding(
 
     case 'prop': {
       const el = target.node as HTMLElement
-      // DOM properties are set directly (value, checked, disabled, etc.)
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       ;(el as any)[target.key!] = value
       break

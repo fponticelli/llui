@@ -1,6 +1,7 @@
 import type { EachOptions, Scope } from '../types'
 import { getRenderContext, setRenderContext, clearRenderContext } from '../render-context'
 import { createScope, disposeScope } from '../scope'
+import { setFlatBindings } from '../binding'
 import type { StructuralBlock } from '../structural'
 
 interface Entry<T> {
@@ -84,9 +85,11 @@ function buildEntry<S, T>(
 
   const indexAccessor = (): number => ref.index
 
+  setFlatBindings(ctx.allBindings)
   setRenderContext({ ...ctx, rootScope: scope, state: state ?? ctx.state })
   const nodes = opts.render(itemAccessor, indexAccessor)
   clearRenderContext()
+  setFlatBindings(null)
   setRenderContext(ctx)
 
   return { key, item, ref, scope, nodes }
