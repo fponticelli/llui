@@ -70,7 +70,7 @@ Runtime and bundle size improvements, tracked against benchmarks.
 - [ ] Static subtree prerendering → `<template>` clone (requires recursive subtree analysis)
 - [x] `/*@__PURE__*/` annotations on `elSplit` calls
 - [ ] Constant folding for zero-mask bindings (correctness risk with captured variables)
-- [ ] Compiler: handle per-item accessor calls natively (recover bail-out gzip regression)
+- [x] Compiler: handle per-item accessor calls natively (TodoMVC: -346 B gzip)
 
 **Bundle — tree-shaking:**
 - [x] `sideEffects: false` on all packages, no module-level side effects

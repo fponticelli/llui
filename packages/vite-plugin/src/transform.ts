@@ -230,9 +230,23 @@ function tryTransformElementCall(
         continue
       }
 
-      // Call expression (e.g. item((t) => t.checked)) — might return a function
-      // at runtime. Bail out to the uncompiled element helper for this call.
+      // Call expression — check if it's a per-item accessor: item(t => t.field)
       if (ts.isCallExpression(prop.initializer)) {
+        if (isPerItemCall(prop.initializer)) {
+          // Emit as a binding with FULL_MASK — the accessor is the item() call itself
+          const kind = classifyKind(key)
+          const resolvedKey = resolveKey(key, kind)
+          bindings.push(
+            f.createArrayLiteralExpression([
+              createMaskLiteral(f, 0xffffffff | 0),
+              f.createStringLiteral(kind),
+              f.createStringLiteral(resolvedKey),
+              prop.initializer,
+            ]),
+          )
+          continue
+        }
+        // Unknown call expression — bail out
         bailed.add(localName)
         return null
       }
@@ -477,6 +491,18 @@ function cleanupImports(
   })
 
   return f.updateSourceFile(sf, statements as unknown as ts.Statement[])
+}
+
+// ── Per-item accessor detection ──────────────────────────────────
+
+function isPerItemCall(node: ts.CallExpression): boolean {
+  // Matches: item(t => t.field) or item(t => expr)
+  // where item is an identifier (the scoped accessor from each() render)
+  if (!ts.isIdentifier(node.expression)) return false
+  // Check that the first argument is an arrow function (the selector)
+  if (node.arguments.length !== 1) return false
+  const arg = node.arguments[0]!
+  return ts.isArrowFunction(arg) || ts.isFunctionExpression(arg)
 }
 
 // ── Mask computation ─────────────────────────────────────────────

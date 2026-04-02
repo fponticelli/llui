@@ -164,6 +164,53 @@ describe('Pass 3 — import cleanup', () => {
   })
 })
 
+describe('per-item accessor calls', () => {
+  it('compiles item() calls as perItem bindings instead of bailing out', () => {
+    const src = `
+      import { component, input, each } from '@llui/core'
+      export const C = component({
+        name: 'C',
+        init: () => [{ items: [] }, []],
+        update: (s, m) => [s, []],
+        view: () => each({
+          items: s => s.items,
+          key: t => t.id,
+          render: (item) => [
+            input({ checked: item(t => t.done), class: item(t => t.active ? 'on' : '') }),
+          ],
+        }),
+      })
+    `
+    const out = t(src)
+    // Should compile to elSplit, not bail out to uncompiled input()
+    expect(out).toContain('elSplit')
+    // input should be removed from imports (fully compiled)
+    expect(out).not.toMatch(/import\s*\{[^}]*\binput\b/)
+  })
+
+  it('emits item() call expression in the binding tuple', () => {
+    const src = `
+      import { component, div, each } from '@llui/core'
+      export const C = component({
+        name: 'C',
+        init: () => [{ items: [] }, []],
+        update: (s, m) => [s, []],
+        view: () => each({
+          items: s => s.items,
+          key: t => t.id,
+          render: (item) => [
+            div({ class: item(t => t.active ? 'on' : '') }),
+          ],
+        }),
+      })
+    `
+    const out = t(src)
+    expect(out).toContain('elSplit')
+    // The binding should contain the item() call
+    expect(out).toContain('item(')
+  })
+})
+
 describe('returns null for non-llui files', () => {
   it('returns null when no @llui/core import', () => {
     const src = `export const x = 42`
