@@ -27,7 +27,9 @@ pnpm --filter @llui/core check
 cd packages/core && pnpm vitest run test/scope.test.ts
 
 # Benchmarks
-pnpm -w run bench             # Runtime performance (jsdom, 1k rows)
+pnpm -w run bench             # Runtime performance — fast, jsdom (CI)
+pnpm -w run bench:browser     # Runtime performance — real Chromium, 4× CPU throttle
+pnpm -w run bench:browser:save  # Save browser benchmark baseline
 pnpm -w run bench:size        # Bundle size vs baseline (gzip, regression check)
 pnpm -w run bench:size:save   # Save current sizes as the new baseline
 ```
