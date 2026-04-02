@@ -26,12 +26,9 @@ pnpm --filter @llui/core check
 # Single test file (from package dir)
 cd packages/core && pnpm vitest run test/scope.test.ts
 
-# Benchmarks
-pnpm -w run bench             # Runtime performance — fast, jsdom (CI)
-pnpm -w run bench:browser     # Runtime performance — real Chromium, 4× CPU throttle
-pnpm -w run bench:browser:save  # Save browser benchmark baseline
-pnpm -w run bench:size        # Bundle size vs baseline (gzip, regression check)
-pnpm -w run bench:size:save   # Save current sizes as the new baseline
+# Benchmarks (js-framework-benchmark)
+pnpm -w run bench             # Run jfb for LLui + compare against saved baselines
+pnpm -w run bench:build       # Build jfb app only (no benchmark run)
 ```
 
 ## Development Approach
@@ -83,7 +80,7 @@ Comprehensive specs live in `docs/designs/`. These are the authoritative referen
 - `02 Compiler.md` — the 3-pass Vite plugin, TypeScript Compiler API, correctness invariants
 - `03 Runtime DOM.md` — two-phase update, message queue, binding system, scope lifecycle
 - `04 Test Strategy.md` — testComponent, propertyTest, replayTrace, testing philosophy
-- `05 Performance.md` — benchmarking methodology (Playwright + 4× CPU throttle)
+- `05 Performance.md` — benchmarking via js-framework-benchmark (krausest)
 - `06 Bundle Size.md` — per-primitive cost analysis, tree-shaking requirements
 - `07 LLM Friendliness.md` — system prompt design, evaluation tasks, LLM debug protocol
 - `08 Ecosystem Integration.md` — Vike SSR, foreign() for imperative libs

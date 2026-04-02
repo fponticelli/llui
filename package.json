@@ -11,21 +11,11 @@
     "format:check": "prettier --check .",
     "test": "turbo run test",
     "test:coverage": "turbo run test:coverage",
-    "bench": "vitest run --config benchmarks/vitest.config.ts --reporter=verbose",
-    "bench:browser": "tsx benchmarks/runtime-browser.ts",
-    "bench:browser:save": "tsx benchmarks/runtime-browser.ts --save",
-    "bench:sync": "tsx benchmarks/sync-timing.ts",
-    "bench:compare": "tsx benchmarks/comparison/run.ts",
-    "bench:size": "node benchmarks/bundle-size.js",
-    "bench:size:save": "node benchmarks/bundle-size.js --save"
+    "bench": "tsx benchmarks/run-jfb.ts",
+    "bench:build": "pnpm --filter js-framework-benchmark-keyed-llui build-prod"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
-    "@playwright/test": "^1.59.1",
-    "@sveltejs/vite-plugin-svelte": "^7.0.0",
-    "@types/react": "^19.2.14",
-    "@types/react-dom": "^19.2.3",
-    "@vitejs/plugin-react": "^6.0.1",
     "@vitest/coverage-v8": "^4.1.2",
     "@vitest/runner": "^4.1.2",
     "eslint": "^10.1.0",
@@ -36,16 +26,11 @@
     "magic-string": "^0.30.21",
     "playwright": "^1.59.1",
     "prettier": "^3.8.1",
-    "react": "^19.2.4",
-    "react-dom": "^19.2.4",
-    "solid-js": "^1.9.12",
-    "svelte": "^5.55.1",
     "tsx": "^4.21.0",
     "turbo": "^2.9.3",
     "typescript": "^6.0.2",
     "typescript-eslint": "^8.58.0",
     "vite": "^8.0.3",
-    "vite-plugin-solid": "^2.11.11",
     "vitest": "^4.1.2"
   }
 }
