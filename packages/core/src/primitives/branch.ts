@@ -23,6 +23,11 @@ export function branch<S>(opts: BranchOptions<S>): Node[] {
     currentNodes = builder()
     clearRenderContext()
     setRenderContext(ctx)
+
+    // Fire enter on initial mount
+    if (opts.enter && currentNodes.length > 0) {
+      opts.enter(currentNodes)
+    }
   }
 
   const block: StructuralBlock = {
@@ -33,14 +38,12 @@ export function branch<S>(opts: BranchOptions<S>): Node[] {
       const parent = anchor.parentNode
       if (!parent) return
 
-      for (const node of currentNodes) {
-        parent.removeChild(node)
-      }
-      if (currentScope) {
-        disposeScope(currentScope)
-        currentScope = null
-      }
+      const leavingNodes = currentNodes
+      const leavingScope = currentScope
+
+      // Build new arm first (before removing old — for FLIP animations)
       currentNodes = []
+      currentScope = null
       currentKey = newKey
 
       const newCaseKey = String(newKey)
@@ -57,6 +60,30 @@ export function branch<S>(opts: BranchOptions<S>): Node[] {
         for (const node of currentNodes) {
           parent.insertBefore(node, ref)
         }
+      }
+
+      // Fire enter for new nodes
+      if (opts.enter && currentNodes.length > 0) {
+        opts.enter(currentNodes)
+      }
+
+      // Handle leave — may be deferred via Promise
+      const removeOld = () => {
+        for (const node of leavingNodes) {
+          if (node.parentNode) node.parentNode.removeChild(node)
+        }
+        if (leavingScope) disposeScope(leavingScope)
+      }
+
+      if (leavingNodes.length > 0 && opts.leave) {
+        const result = opts.leave(leavingNodes)
+        if (result && typeof (result as Promise<void>).then === 'function') {
+          (result as Promise<void>).then(removeOld)
+        } else {
+          removeOld()
+        }
+      } else {
+        removeOld()
       }
     },
   }

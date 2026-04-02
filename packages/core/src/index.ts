@@ -27,6 +27,7 @@ export { mountApp, hydrateApp } from './mount'
 // ── Runtime ───────────────────────────────────────────────────────
 
 export { flush } from './runtime'
+export { addressOf } from './addressed'
 
 // ── View Primitives ───────────────────────────────────────────────
 

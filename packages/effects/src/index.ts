@@ -139,6 +139,12 @@ function dispatchEffect(
     case 'debounce':
       runDebounce(effect as DebounceEffect, send, signal, cancelControllers, debounceTimers, custom)
       break
+    case 'sequence':
+      runSequence(effect as SequenceEffect, send, signal, cancelControllers, debounceTimers, custom)
+      break
+    case 'race':
+      runRace(effect as RaceEffect, send, signal, cancelControllers, debounceTimers, custom)
+      break
     default:
       custom(effect, send, signal)
   }
@@ -211,4 +217,55 @@ function runDebounce(
   }, effect.ms)
 
   debounceTimers.set(effect.key, timer)
+}
+
+function runSequence(
+  effect: SequenceEffect,
+  send: Send,
+  signal: AbortSignal,
+  cancelControllers: Map<string, AbortController>,
+  debounceTimers: Map<string, ReturnType<typeof setTimeout>>,
+  custom: CustomHandler,
+): void {
+  const effects = effect.effects.slice()
+
+  function next(): void {
+    if (signal.aborted || effects.length === 0) return
+    const current = effects.shift()!
+
+    // Wrap send to detect when this effect completes (delivers a message)
+    const wrappedSend: Send = (msg) => {
+      send(msg)
+      // After delivering, start the next effect
+      next()
+    }
+
+    dispatchEffect(current, wrappedSend, signal, cancelControllers, debounceTimers, custom)
+  }
+
+  next()
+}
+
+function runRace(
+  effect: RaceEffect,
+  send: Send,
+  signal: AbortSignal,
+  cancelControllers: Map<string, AbortController>,
+  debounceTimers: Map<string, ReturnType<typeof setTimeout>>,
+  custom: CustomHandler,
+): void {
+  const ctrl = new AbortController()
+  signal.addEventListener('abort', () => ctrl.abort(), { once: true })
+  let settled = false
+
+  const raceSend: Send = (msg) => {
+    if (settled) return
+    settled = true
+    ctrl.abort() // cancel all other racers
+    send(msg)
+  }
+
+  for (const inner of effect.effects) {
+    dispatchEffect(inner, raceSend, ctrl.signal, cancelControllers, debounceTimers, custom)
+  }
 }

@@ -3,6 +3,7 @@ import { getRenderContext, setRenderContext, clearRenderContext } from '../rende
 import { createScope, disposeScope } from '../scope'
 import { createComponentInstance, flushInstance } from '../update-loop'
 import { createBinding, setFlatBindings } from '../binding'
+import { registerChild, unregisterChild } from '../addressed'
 
 const FULL_MASK = 0xffffffff
 
@@ -70,8 +71,12 @@ export function child<S, ChildM>(opts: ChildOptions<S, ChildM>): Node[] {
   setFlatBindings(parentCtx.allBindings)
   setRenderContext(parentCtx)
 
+  // Register in component registry for addressed effects
+  registerChild(opts.key, { send: childInst.send as (msg: unknown) => void })
+
   // Cleanup: dispose child instance when parent scope disposes
   childScope.disposers.push(() => {
+    unregisterChild(opts.key)
     disposeScope(childInst.rootScope)
   })
 

@@ -3,6 +3,7 @@ import { createComponentInstance, flushInstance } from './update-loop'
 import { disposeScope } from './scope'
 import { setRenderContext, clearRenderContext } from './render-context'
 import { setFlatBindings } from './binding'
+import { registerInstance, unregisterInstance } from './runtime'
 
 export function mountApp<S, M, E>(
   container: HTMLElement,
@@ -22,12 +23,15 @@ export function mountApp<S, M, E>(
     container.appendChild(node)
   }
 
+  registerInstance(inst)
   let disposed = false
 
   return {
     dispose() {
       if (disposed) return
       disposed = true
+      inst.abortController.abort()
+      unregisterInstance(inst)
       disposeScope(inst.rootScope)
       container.textContent = ''
     },

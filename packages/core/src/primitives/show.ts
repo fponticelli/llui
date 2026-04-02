@@ -7,5 +7,8 @@ export function show<S>(opts: ShowOptions<S>): Node[] {
   return branch({
     on: opts.when,
     cases: { true: opts.render, false: EMPTY },
+    enter: opts.enter,
+    leave: opts.leave,
+    onTransition: opts.onTransition,
   })
 }

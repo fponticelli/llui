@@ -5,6 +5,16 @@ import { applyBinding } from './binding'
 
 export const FULL_MASK = 0xffffffff | 0
 
+// Addressed effect dispatcher — set by addressed.ts when imported
+let addressedDispatcher: ((eff: { __targetKey: string | number; __msg: unknown }) => void) | null =
+  null
+
+export function setAddressedDispatcher(
+  fn: (eff: { __targetKey: string | number; __msg: unknown }) => void,
+): void {
+  addressedDispatcher = fn
+}
+
 export interface ComponentInstance<S = unknown, M = unknown, E = unknown> {
   def: ComponentDef<S, M, E>
   state: S
@@ -17,6 +27,8 @@ export interface ComponentInstance<S = unknown, M = unknown, E = unknown> {
   lastDirtyMask: number
   lastEffects: E[]
   send: (msg: M) => void
+  signal: AbortSignal
+  abortController: AbortController
 }
 
 export function createComponentInstance<S, M, E>(
@@ -24,6 +36,8 @@ export function createComponentInstance<S, M, E>(
   data?: unknown,
 ): ComponentInstance<S, M, E> {
   const [initialState, initialEffects] = def.init(data)
+
+  const controller = new AbortController()
 
   const inst: ComponentInstance<S, M, E> = {
     def,
@@ -36,6 +50,8 @@ export function createComponentInstance<S, M, E>(
     microtaskScheduled: false,
     lastDirtyMask: 0,
     lastEffects: [],
+    signal: controller.signal,
+    abortController: controller,
 
     send(msg: M) {
       inst.queue.push(msg)
@@ -109,5 +125,42 @@ function processMessages<S, M, E>(inst: ComponentInstance<S, M, E>): void {
       }
       bindings.length = w
     }
+  }
+
+  // Dispatch effects after DOM updates
+  for (const effect of allEffects) {
+    dispatchEffect(inst, effect)
+  }
+}
+
+function dispatchEffect<S, M, E>(
+  inst: ComponentInstance<S, M, E>,
+  effect: E,
+): void {
+  const eff = effect as Record<string, unknown>
+
+  // Addressed effects — dispatch to target component
+  if (eff.__addressed === true && typeof eff.__targetKey !== 'undefined') {
+    addressedDispatcher?.(eff as { __targetKey: string | number; __msg: unknown })
+    return
+  }
+
+  // Built-in: delay
+  if (eff.type === 'delay') {
+    const ms = eff.ms as number
+    const onDone = eff.onDone as M
+    setTimeout(() => inst.send(onDone), ms)
+    return
+  }
+
+  // Built-in: log
+  if (eff.type === 'log') {
+    console.log(eff.message)
+    return
+  }
+
+  // User onEffect handler
+  if (inst.def.onEffect) {
+    inst.def.onEffect(effect, inst.send, inst.signal)
   }
 }

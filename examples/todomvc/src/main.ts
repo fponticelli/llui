@@ -2,7 +2,6 @@ import {
   component,
   mountApp,
   a,
-  div,
   h1,
   input,
   ul,
