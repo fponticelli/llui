@@ -1,11 +1,9 @@
 import type { BindingKind } from './types'
 import { getRenderContext } from './render-context'
 import { createBinding, applyBinding } from './binding'
-import { isPerItemAccessor } from './primitives/each'
+import { FULL_MASK } from './update-loop'
 
 type ElementProps = Record<string, unknown>
-
-const FULL_MASK = 0xffffffff
 
 // DOM properties set via elem[key] = value rather than setAttribute
 const PROP_KEYS = new Set([
@@ -62,7 +60,7 @@ function createElement<K extends keyof HTMLElementTagNameMap>(
         const kind = classifyKind(rawKey)
         const key = resolveKey(rawKey, kind)
         const accessor = value as (state: never) => unknown
-        const perItem = isPerItemAccessor(value)
+        const perItem = value.length === 0
 
         const binding = createBinding(ctx.rootScope, {
           mask: FULL_MASK,

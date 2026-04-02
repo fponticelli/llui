@@ -1,8 +1,6 @@
 import { getRenderContext } from '../render-context'
 import { createBinding } from '../binding'
-import { isPerItemAccessor } from './each'
-
-const FULL_MASK = 0xffffffff
+import { FULL_MASK } from '../update-loop'
 
 export function text<S>(
   accessor: ((s: S) => string) | (() => string) | string,
@@ -15,8 +13,8 @@ export function text<S>(
   const ctx = getRenderContext()
   const node = document.createTextNode('')
 
-  // Per-item accessor from each() — zero-arg function tagged __perItem
-  if (isPerItemAccessor(accessor)) {
+  // Per-item accessor from each() — zero-arg function (length === 0)
+  if (accessor.length === 0) {
     const binding = createBinding(ctx.rootScope, {
       mask: FULL_MASK,
       accessor: accessor as (state: never) => unknown,
@@ -24,7 +22,7 @@ export function text<S>(
       node,
       perItem: true,
     })
-    const initialValue = accessor()
+    const initialValue = (accessor as () => string)()
     node.nodeValue = String(initialValue)
     binding.lastValue = initialValue
     return node

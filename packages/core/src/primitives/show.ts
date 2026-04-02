@@ -1,15 +1,11 @@
 import type { ShowOptions } from '../types'
 import { branch } from './branch'
 
+const EMPTY: () => Node[] = () => []
+
 export function show<S>(opts: ShowOptions<S>): Node[] {
   return branch({
-    on: (s: S) => opts.when(s),
-    cases: {
-      true: opts.render,
-      false: () => [],
-    },
-    enter: opts.enter,
-    leave: opts.leave,
-    onTransition: opts.onTransition,
+    on: opts.when,
+    cases: { true: opts.render, false: EMPTY },
   })
 }

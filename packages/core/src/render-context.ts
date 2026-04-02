@@ -1,8 +1,10 @@
 import type { Scope } from './types'
+import type { StructuralBlock } from './structural'
 
 export interface RenderContext {
   rootScope: Scope
   state: unknown
+  structuralBlocks: StructuralBlock[]
   container?: Element
   send?: (msg: unknown) => void
 }
@@ -19,10 +21,7 @@ export function clearRenderContext(): void {
 
 export function getRenderContext(): RenderContext {
   if (!currentContext) {
-    throw new Error(
-      'NO_RENDER_CONTEXT: view primitives (text, branch, each, show, etc.) ' +
-        'can only be called inside a view() function during mount.',
-    )
+    throw new Error('LLUI: primitives can only be called inside view()')
   }
   return currentContext
 }

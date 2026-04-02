@@ -1,15 +1,16 @@
 import type { ComponentDef, Scope } from './types'
+import type { StructuralBlock } from './structural'
 import { createScope } from './scope'
 import { applyBinding } from './binding'
-import { runPhase1 } from './structural'
 
-const FULL_MASK = 0xffffffff
+export const FULL_MASK = 0xffffffff | 0
 
 export interface ComponentInstance<S = unknown, M = unknown, E = unknown> {
   def: ComponentDef<S, M, E>
   state: S
   initialEffects: E[]
   rootScope: Scope
+  structuralBlocks: StructuralBlock[]
   queue: M[]
   microtaskScheduled: boolean
   lastDirtyMask: number
@@ -28,6 +29,7 @@ export function createComponentInstance<S, M, E>(
     state: initialState,
     initialEffects,
     rootScope: createScope(null),
+    structuralBlocks: [],
     queue: [],
     microtaskScheduled: false,
     lastDirtyMask: 0,
@@ -76,8 +78,11 @@ function processMessages<S, M, E>(inst: ComponentInstance<S, M, E>): void {
   inst.lastDirtyMask = combinedDirty
   inst.lastEffects = allEffects
 
-  // Phase 1 — structural reconciliation
-  runPhase1(state, combinedDirty)
+  // Phase 1 — structural reconciliation (instance-local blocks)
+  const snapshot = inst.structuralBlocks.slice()
+  for (const block of snapshot) {
+    block.reconcile(state, combinedDirty)
+  }
 
   // Phase 2 — binding updates
   if (combinedDirty !== 0) {

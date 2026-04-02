@@ -14,7 +14,7 @@ export function portal(opts: PortalOptions): Node[] {
   }
 
   const portalScope = createScope(parentScope)
-  const buildCtx = { rootScope: portalScope, state: ctx.state, container: target as Element }
+  const buildCtx = { ...ctx, rootScope: portalScope, container: target as Element }
   setRenderContext(buildCtx)
   const nodes = opts.render()
   clearRenderContext()
