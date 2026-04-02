@@ -3,7 +3,9 @@ import {
   mountApp,
   div,
   a,
+  span,
   h2,
+  nav,
   text,
   branch,
   onMount,
@@ -62,25 +64,29 @@ const App = component<State, Msg, never>({
     return [
       div({ class: 'app' }, [
         div({ class: 'sidebar' }, [
-          div({ class: 'sidebar' }, [
+          div({ class: 'sidebar-brand' }, [
+            div({ class: 'logo' }, [text('L')]),
+            span({ class: 'name' }, [text('LLui Demo')]),
+          ]),
+          nav({ class: 'sidebar-nav' }, [
             a({
-              class: (s: State) => s.route === 'dashboard' ? 'active' : '',
+              class: (s: State) => `${s.route === 'dashboard' ? 'active' : ''}`,
               onClick: () => send({ type: 'navigate', route: 'dashboard' }),
               role: 'button',
               tabIndex: '0',
-            }, [text('📊 Dashboard')]),
+            }, [span({ class: 'icon' }, [text('📊')]), text('Dashboard')]),
             a({
-              class: (s: State) => s.route === 'contacts' ? 'active' : '',
+              class: (s: State) => `${s.route === 'contacts' ? 'active' : ''}`,
               onClick: () => send({ type: 'navigate', route: 'contacts' }),
               role: 'button',
               tabIndex: '0',
-            }, [text('👥 Contacts')]),
+            }, [span({ class: 'icon' }, [text('👥')]), text('Contacts')]),
             a({
-              class: (s: State) => s.route === 'showcase' ? 'active' : '',
+              class: (s: State) => `${s.route === 'showcase' ? 'active' : ''}`,
               onClick: () => send({ type: 'navigate', route: 'showcase' }),
               role: 'button',
               tabIndex: '0',
-            }, [text('🧩 Components')]),
+            }, [span({ class: 'icon' }, [text('🧩')]), text('Components')]),
           ]),
         ]),
         div({ class: 'main' }, [
@@ -89,7 +95,7 @@ const App = component<State, Msg, never>({
             cases: {
               dashboard: () => {
                 return [
-                  h2({}, [text('Dashboard')]),
+                  h2({ class: 'page-title' }, [text('Dashboard')]),
                   ...dashboardView(
                     { dashboard: (s: State) => s.dashboard },
                     (msg) => send({ type: 'dashboard', msg }),
@@ -98,7 +104,7 @@ const App = component<State, Msg, never>({
               },
               contacts: () => {
                 return [
-                  h2({}, [text('Contacts')]),
+                  h2({ class: 'page-title' }, [text('Contacts')]),
                   ...contactsView(
                     {
                       contacts: (s: State) => s.contacts,
@@ -109,7 +115,7 @@ const App = component<State, Msg, never>({
               },
               showcase: () => {
                 return [
-                  h2({}, [text('Component Showcase')]),
+                  h2({ class: 'page-title' }, [text('Component Showcase')]),
                   ...showcaseView(),
                 ]
               },

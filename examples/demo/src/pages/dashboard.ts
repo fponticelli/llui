@@ -31,9 +31,9 @@ export function dashboardView<S>(
 ): Node[] {
   return [
     div({ class: 'stats' }, [
-      statCard('Total Contacts', (s: S) => String(props.dashboard(s).totalContacts), 'blue'),
-      statCard('Active Deals', (s: S) => String(props.dashboard(s).activeDeals), 'green'),
-      statCard('Revenue', (s: S) => `$${props.dashboard(s).revenue.toLocaleString()}`, 'purple'),
+      statCard('👥', 'Total Contacts', (s: S) => String(props.dashboard(s).totalContacts), 'blue'),
+      statCard('📈', 'Active Deals', (s: S) => String(props.dashboard(s).activeDeals), 'green'),
+      statCard('💰', 'Revenue', (s: S) => `$${props.dashboard(s).revenue.toLocaleString()}`, 'purple'),
     ]),
     div({ class: 'table-container' }, [
       div({ class: 'table-header' }, [
@@ -52,9 +52,10 @@ export function dashboardView<S>(
   ]
 }
 
-function statCard<S>(label: string, value: (s: S) => string, color: string): HTMLElement {
+function statCard<S>(icon: string, label: string, value: (s: S) => string, color: string): HTMLElement {
   return div({ class: 'stat-card' }, [
+    div({ class: `icon-wrap ${color}` }, [text(icon)]),
     div({ class: 'label' }, [text(label)]),
-    div({ class: `value ${color}` }, [text(value)]),
+    div({ class: 'value' }, [text(value)]),
   ])
 }
