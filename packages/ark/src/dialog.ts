@@ -102,7 +102,7 @@ export function dialogView<S>(
                     div({ class: 'dialog-footer' }, [
                       button(
                         {
-                          class: 'dialog-close',
+                          class: 'btn btn-ghost dialog-close',
                           'data-scope': 'dialog',
                           'data-part': 'close-trigger',
                           onClick: () => send({ type: 'dialog:close' }),
@@ -113,7 +113,7 @@ export function dialogView<S>(
                         ? [
                             button(
                               {
-                                class: 'dialog-confirm',
+                                class: 'btn btn-primary dialog-confirm',
                                 onClick: () => {
                                   props.onConfirm!()
                                   send({ type: 'dialog:close' })
