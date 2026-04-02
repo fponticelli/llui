@@ -100,6 +100,25 @@ importers:
         specifier: ^8.0.0
         version: 8.0.3(@emnapi/core@1.9.1)(@emnapi/runtime@1.9.1)(esbuild@0.27.5)(jiti@2.6.1)(tsx@4.21.0)
 
+  examples/demo:
+    dependencies:
+      '@llui/ark':
+        specifier: workspace:*
+        version: link:../../packages/ark
+      '@llui/core':
+        specifier: workspace:*
+        version: link:../../packages/core
+      '@llui/effects':
+        specifier: workspace:*
+        version: link:../../packages/effects
+    devDependencies:
+      '@llui/vite-plugin':
+        specifier: workspace:*
+        version: link:../../packages/vite-plugin
+      vite:
+        specifier: ^8.0.0
+        version: 8.0.3(@emnapi/core@1.9.1)(@emnapi/runtime@1.9.1)(esbuild@0.27.5)(jiti@2.6.1)(tsx@4.21.0)
+
   examples/todomvc:
     dependencies:
       '@llui/core':

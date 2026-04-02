@@ -86,9 +86,10 @@ Runtime and bundle size improvements, tracked against benchmarks.
 
 ## Phase 5 — Ecosystem
 
-- [ ] `@llui/ark` — `useMachine`, `normalizeProps`, Zag machine bridge
-- [ ] Ark component wrappers — Dialog, Select, Combobox, Menu, Tooltip, Tabs (Tier 1)
+- [x] `@llui/ark` — native LLui headless components (Dialog, Tabs, Accordion) as TEA view functions
+- [ ] Additional Ark components — Select, Combobox, Menu, Tooltip, Popover (Tier 2)
 - [ ] `@llui/devtools` — `window.__lluiDevTools` hook, per-transition recording
 - [ ] `@llui/mcp` — MCP server, `window.__lluiDebug` API, WebSocket debug channel
+- [x] Multi-page demo app — Dashboard, Contacts CRUD with search/dialog, Component showcase
 
 **Validate:** Ark component accessibility audit (axe-core). Full LLM evaluation suite (15 tasks). Bundle size per-component breakdown.
