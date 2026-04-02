@@ -1,17 +1,14 @@
 import type { Plugin } from 'vite'
+import { transformLlui } from './transform.js'
 
 export default function llui(): Plugin {
   return {
     name: 'llui',
     enforce: 'pre',
 
-    transform(_code, id) {
+    transform(code, id) {
       if (!id.endsWith('.ts') && !id.endsWith('.tsx')) return
-      // TODO: implement the 3-pass compiler
-      // Pass 1: Static/Dynamic Prop Split
-      // Pass 2: Dependency Analysis and Mask Injection
-      // Pass 3: Import Cleanup
-      return undefined
+      return transformLlui(code, id) ?? undefined
     },
   }
 }

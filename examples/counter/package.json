@@ -11,6 +11,7 @@
     "@llui/core": "workspace:*"
   },
   "devDependencies": {
+    "@llui/vite-plugin": "workspace:*",
     "vite": "^8.0.0"
   }
 }

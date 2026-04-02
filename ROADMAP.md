@@ -27,10 +27,10 @@ The foundation everything else builds on.
 
 ## Phase 2 — Compiler (`@llui/vite-plugin`)
 
-- [ ] Pass 2 pre-scan — `collectAllDeps`, access path extraction, `fieldBits` map
-- [ ] Pass 1 — static/dynamic prop split, `elSplit()` emission
-- [ ] Pass 2 — per-accessor mask computation, `__dirty` injection, `text()` mask injection
-- [ ] Pass 3 — import cleanup, element helper elision, `elSplit` addition
+- [x] Pass 2 pre-scan — `collectAllDeps`, access path extraction, `fieldBits` map
+- [x] Pass 1 — static/dynamic prop split, `elSplit()` emission
+- [x] Pass 2 — per-accessor mask computation, `__dirty` injection, `text()` mask injection
+- [x] Pass 3 — import cleanup, element helper elision, `elSplit` addition
 - [ ] Diagnostics — `each()` scoped accessor misuse, `.map()` on state arrays, exhaustive `update()`, exhaustive `branch()`, accessibility checks, controlled input without handler
 - [ ] `__msgSchema` emission (dev mode)
 - [ ] HMR with state preservation

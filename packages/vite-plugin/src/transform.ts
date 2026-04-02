@@ -1,0 +1,512 @@
+import ts from 'typescript'
+import { collectDeps } from './collect-deps.js'
+
+// HTML element helper names that the compiler can transform
+const ELEMENT_HELPERS = new Set([
+  'a', 'abbr', 'article', 'aside', 'b', 'blockquote', 'br', 'button',
+  'canvas', 'code', 'dd', 'details', 'dialog', 'div', 'dl', 'dt', 'em',
+  'fieldset', 'figcaption', 'figure', 'footer', 'form',
+  'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'header', 'hr', 'i', 'iframe',
+  'img', 'input', 'label', 'legend', 'li', 'main', 'mark', 'nav', 'ol',
+  'optgroup', 'option', 'output', 'p', 'pre', 'progress',
+  'section', 'select', 'small', 'span', 'strong', 'sub', 'summary',
+  'sup', 'table', 'tbody', 'td', 'textarea', 'tfoot', 'th', 'thead',
+  'time', 'tr', 'ul', 'video',
+])
+
+const PROP_KEYS = new Set([
+  'value', 'checked', 'selected', 'disabled', 'readOnly', 'multiple',
+  'indeterminate', 'defaultValue', 'defaultChecked', 'innerHTML', 'textContent',
+])
+
+type BindingKind = 'text' | 'prop' | 'attr' | 'class' | 'style'
+
+function classifyKind(key: string): BindingKind {
+  if (key === 'class' || key === 'className') return 'class'
+  if (key.startsWith('style.')) return 'style'
+  if (PROP_KEYS.has(key)) return 'prop'
+  return 'attr'
+}
+
+function resolveKey(key: string, kind: BindingKind): string {
+  if (kind === 'class') return 'class'
+  if (kind === 'style') return key.slice(6)
+  if (kind === 'prop') return key
+  if (key === 'className') return 'class'
+  return key
+}
+
+/**
+ * Transform a source file containing @llui/core imports.
+ * Returns the transformed source or null if no transformation needed.
+ */
+export function transformLlui(source: string, _filename: string): string | null {
+  const sourceFile = ts.createSourceFile('input.ts', source, ts.ScriptTarget.Latest, true)
+
+  // Find the @llui/core import
+  const imp = findLluiImport(sourceFile)
+  if (!imp) return null
+  const lluiImport = imp
+
+  // Collect imported element helper names (local → original)
+  const importedHelpers = getImportedHelpers(lluiImport)
+  if (importedHelpers.size === 0 && !hasReactiveAccessors(sourceFile)) return null
+
+  // Pass 2 pre-scan: collect all state access paths
+  const fieldBits = collectDeps(source)
+
+  // Track which helpers were actually compiled
+  const compiledHelpers = new Set<string>()
+
+  // Apply transforms
+  const f = ts.factory
+
+  function visitor(node: ts.Node): ts.Node {
+    // Pass 1: Transform element helper calls to elSplit
+    if (ts.isCallExpression(node)) {
+      const transformed = tryTransformElementCall(node, importedHelpers, fieldBits, compiledHelpers, f)
+      if (transformed) {
+        return ts.visitEachChild(transformed, visitor, undefined!)
+      }
+
+      // Pass 2: Inject mask into text() calls
+      const textTransformed = tryInjectTextMask(node, lluiImport, fieldBits, f)
+      if (textTransformed) {
+        return textTransformed
+      }
+    }
+
+    // Pass 2: Inject __dirty into component() calls
+    if (ts.isCallExpression(node) && isComponentCall(node, lluiImport)) {
+      const withDirty = tryInjectDirty(node, fieldBits, f)
+      if (withDirty) {
+        return ts.visitEachChild(withDirty, visitor, undefined!)
+      }
+    }
+
+    return ts.visitEachChild(node, visitor, undefined!)
+  }
+
+  let transformed = ts.visitNode(sourceFile, visitor) as ts.SourceFile
+
+  // Pass 3: Clean up imports
+  transformed = cleanupImports(transformed, lluiImport, importedHelpers, compiledHelpers, f)
+
+  // Print
+  const printer = ts.createPrinter({ newLine: ts.NewLineKind.LineFeed })
+  return printer.printFile(transformed)
+}
+
+// ── Helpers ──────────────────────────────────────────────────────
+
+function findLluiImport(sf: ts.SourceFile): ts.ImportDeclaration | null {
+  for (const stmt of sf.statements) {
+    if (
+      ts.isImportDeclaration(stmt) &&
+      ts.isStringLiteral(stmt.moduleSpecifier) &&
+      stmt.moduleSpecifier.text === '@llui/core'
+    ) {
+      return stmt
+    }
+  }
+  return null
+}
+
+function getImportedHelpers(imp: ts.ImportDeclaration): Map<string, string> {
+  const map = new Map<string, string>()
+  const clause = imp.importClause
+  if (!clause || !clause.namedBindings || !ts.isNamedImports(clause.namedBindings)) return map
+
+  for (const spec of clause.namedBindings.elements) {
+    const original = (spec.propertyName ?? spec.name).text
+    const local = spec.name.text
+    if (ELEMENT_HELPERS.has(original)) {
+      map.set(local, original)
+    }
+  }
+  return map
+}
+
+function hasReactiveAccessors(sf: ts.SourceFile): boolean {
+  let found = false
+  function visit(node: ts.Node): void {
+    if (found) return
+    if (ts.isCallExpression(node) && ts.isIdentifier(node.expression)) {
+      if (node.expression.text === 'text' || node.expression.text === 'component') {
+        found = true
+      }
+    }
+    ts.forEachChild(node, visit)
+  }
+  visit(sf)
+  return found
+}
+
+function isComponentCall(node: ts.CallExpression, lluiImport: ts.ImportDeclaration): boolean {
+  if (!ts.isIdentifier(node.expression)) return false
+  const name = node.expression.text
+  if (name !== 'component') return false
+  // Verify it's from the llui import
+  const clause = lluiImport.importClause
+  if (!clause?.namedBindings || !ts.isNamedImports(clause.namedBindings)) return false
+  return clause.namedBindings.elements.some(
+    (s) => s.name.text === 'component' || (s.propertyName && s.propertyName.text === 'component'),
+  )
+}
+
+// ── Pass 1: Element → elSplit ────────────────────────────────────
+
+function tryTransformElementCall(
+  node: ts.CallExpression,
+  helpers: Map<string, string>,
+  fieldBits: Map<string, number>,
+  compiled: Set<string>,
+  f: ts.NodeFactory,
+): ts.CallExpression | null {
+  if (!ts.isIdentifier(node.expression)) return null
+  const localName = node.expression.text
+  const originalName = helpers.get(localName)
+  if (!originalName) return null
+
+  // First arg must be an object literal (or absent)
+  const propsArg = node.arguments[0]
+  if (propsArg && !ts.isObjectLiteralExpression(propsArg)) return null
+
+  compiled.add(localName)
+
+  const tag = f.createStringLiteral(originalName)
+
+  // Classify props
+  const staticProps: ts.Statement[] = []
+  const events: ts.ArrayLiteralExpression[] = []
+  const bindings: ts.ArrayLiteralExpression[] = []
+
+  if (propsArg && ts.isObjectLiteralExpression(propsArg)) {
+    for (const prop of propsArg.properties) {
+      if (!ts.isPropertyAssignment(prop)) continue
+      if (!ts.isIdentifier(prop.name) && !ts.isStringLiteral(prop.name)) continue
+
+      const key = ts.isIdentifier(prop.name) ? prop.name.text : prop.name.text
+      if (key === 'key') continue
+
+      // Event handler
+      if (/^on[A-Z]/.test(key)) {
+        const eventName = key.slice(2).toLowerCase()
+        events.push(
+          f.createArrayLiteralExpression([
+            f.createStringLiteral(eventName),
+            prop.initializer,
+          ]),
+        )
+        continue
+      }
+
+      // Reactive binding — value is an arrow function or function expression
+      if (ts.isArrowFunction(prop.initializer) || ts.isFunctionExpression(prop.initializer)) {
+        const kind = classifyKind(key)
+        const resolvedKey = resolveKey(key, kind)
+        const mask = computeAccessorMask(prop.initializer, fieldBits)
+
+        bindings.push(
+          f.createArrayLiteralExpression([
+            f.createNumericLiteral(mask),
+            f.createStringLiteral(kind),
+            f.createStringLiteral(resolvedKey),
+            prop.initializer,
+          ]),
+        )
+        continue
+      }
+
+      // Static prop
+      const kind = classifyKind(key)
+      const resolvedKey = resolveKey(key, kind)
+      switch (kind) {
+        case 'class':
+          staticProps.push(
+            f.createExpressionStatement(
+              f.createBinaryExpression(
+                f.createPropertyAccessExpression(f.createIdentifier('__e'), 'className'),
+                ts.SyntaxKind.EqualsToken,
+                prop.initializer,
+              ),
+            ),
+          )
+          break
+        case 'prop':
+          staticProps.push(
+            f.createExpressionStatement(
+              f.createBinaryExpression(
+                f.createPropertyAccessExpression(f.createIdentifier('__e'), resolvedKey),
+                ts.SyntaxKind.EqualsToken,
+                prop.initializer,
+              ),
+            ),
+          )
+          break
+        case 'style':
+          staticProps.push(
+            f.createExpressionStatement(
+              f.createCallExpression(
+                f.createPropertyAccessExpression(
+                  f.createPropertyAccessExpression(f.createIdentifier('__e'), 'style'),
+                  'setProperty',
+                ),
+                undefined,
+                [f.createStringLiteral(resolvedKey), prop.initializer],
+              ),
+            ),
+          )
+          break
+        default: // attr
+          staticProps.push(
+            f.createExpressionStatement(
+              f.createCallExpression(
+                f.createPropertyAccessExpression(f.createIdentifier('__e'), 'setAttribute'),
+                undefined,
+                [f.createStringLiteral(resolvedKey), prop.initializer],
+              ),
+            ),
+          )
+      }
+    }
+  }
+
+  // Build elSplit args
+  const staticFn =
+    staticProps.length > 0
+      ? f.createArrowFunction(
+          undefined,
+          undefined,
+          [f.createParameterDeclaration(undefined, undefined, '__e')],
+          undefined,
+          f.createToken(ts.SyntaxKind.EqualsGreaterThanToken),
+          f.createBlock(staticProps, true),
+        )
+      : f.createNull()
+
+  const eventsArr =
+    events.length > 0 ? f.createArrayLiteralExpression(events) : f.createNull()
+
+  const bindingsArr =
+    bindings.length > 0 ? f.createArrayLiteralExpression(bindings) : f.createNull()
+
+  const children = node.arguments[1] ?? f.createNull()
+
+  return f.createCallExpression(f.createIdentifier('elSplit'), undefined, [
+    tag,
+    staticFn,
+    eventsArr,
+    bindingsArr,
+    children,
+  ])
+}
+
+// ── Pass 2: Mask injection ───────────────────────────────────────
+
+function tryInjectTextMask(
+  node: ts.CallExpression,
+  lluiImport: ts.ImportDeclaration,
+  fieldBits: Map<string, number>,
+  f: ts.NodeFactory,
+): ts.CallExpression | null {
+  if (!ts.isIdentifier(node.expression) || node.expression.text !== 'text') return null
+  // Verify text is from @llui/core
+  const clause = lluiImport.importClause
+  if (!clause?.namedBindings || !ts.isNamedImports(clause.namedBindings)) return null
+  const hasText = clause.namedBindings.elements.some(
+    (s) => s.name.text === 'text' || s.propertyName?.text === 'text',
+  )
+  if (!hasText) return null
+
+  const firstArg = node.arguments[0]
+  if (!firstArg) return null
+  // Only inject mask for accessor functions, not static strings
+  if (!ts.isArrowFunction(firstArg) && !ts.isFunctionExpression(firstArg)) return null
+  // Don't inject if mask already provided
+  if (node.arguments.length >= 2) return null
+
+  const mask = computeAccessorMask(firstArg, fieldBits)
+
+  return f.createCallExpression(node.expression, node.typeArguments, [
+    firstArg,
+    f.createNumericLiteral(mask),
+  ])
+}
+
+function tryInjectDirty(
+  node: ts.CallExpression,
+  fieldBits: Map<string, number>,
+  f: ts.NodeFactory,
+): ts.CallExpression | null {
+  if (fieldBits.size === 0) return null
+  const configArg = node.arguments[0]
+  if (!configArg || !ts.isObjectLiteralExpression(configArg)) return null
+
+  // Check if __dirty already exists
+  for (const prop of configArg.properties) {
+    if (ts.isPropertyAssignment(prop) && ts.isIdentifier(prop.name) && prop.name.text === '__dirty') {
+      return null
+    }
+  }
+
+  // Build __dirty: (o, n) => (Object.is(o.path, n.path) ? 0 : bit) | ...
+  const comparisons: ts.Expression[] = []
+  for (const [path, bit] of fieldBits) {
+    const parts = path.split('.')
+    const oAccess = buildAccess(f, 'o', parts)
+    const nAccess = buildAccess(f, 'n', parts)
+
+    comparisons.push(
+      f.createParenthesizedExpression(
+        f.createConditionalExpression(
+          f.createCallExpression(
+            f.createPropertyAccessExpression(f.createIdentifier('Object'), 'is'),
+            undefined,
+            [oAccess, nAccess],
+          ),
+          f.createToken(ts.SyntaxKind.QuestionToken),
+          f.createNumericLiteral(0),
+          f.createToken(ts.SyntaxKind.ColonToken),
+          f.createNumericLiteral(bit),
+        ),
+      ),
+    )
+  }
+
+  let dirtyBody: ts.Expression = comparisons[0]!
+  for (let i = 1; i < comparisons.length; i++) {
+    dirtyBody = f.createBinaryExpression(dirtyBody, ts.SyntaxKind.BarToken, comparisons[i]!)
+  }
+
+  const dirtyFn = f.createArrowFunction(
+    undefined,
+    undefined,
+    [
+      f.createParameterDeclaration(undefined, undefined, 'o'),
+      f.createParameterDeclaration(undefined, undefined, 'n'),
+    ],
+    undefined,
+    f.createToken(ts.SyntaxKind.EqualsGreaterThanToken),
+    dirtyBody,
+  )
+
+  const dirtyProp = f.createPropertyAssignment('__dirty', dirtyFn)
+
+  const newConfig = f.createObjectLiteralExpression(
+    [...configArg.properties, dirtyProp],
+    true,
+  )
+
+  return f.createCallExpression(node.expression, node.typeArguments, [
+    newConfig,
+    ...node.arguments.slice(1),
+  ])
+}
+
+function buildAccess(f: ts.NodeFactory, root: string, parts: string[]): ts.Expression {
+  let expr: ts.Expression = f.createIdentifier(root)
+  for (const part of parts) {
+    // Use optional chaining for nested paths
+    if (parts.length > 1) {
+      expr = f.createPropertyAccessChain(
+        expr,
+        f.createToken(ts.SyntaxKind.QuestionDotToken),
+        part,
+      )
+    } else {
+      expr = f.createPropertyAccessExpression(expr, part)
+    }
+  }
+  return expr
+}
+
+// ── Pass 3: Import cleanup ───────────────────────────────────────
+
+function cleanupImports(
+  sf: ts.SourceFile,
+  lluiImport: ts.ImportDeclaration,
+  _helpers: Map<string, string>,
+  compiled: Set<string>,
+  f: ts.NodeFactory,
+): ts.SourceFile {
+  if (compiled.size === 0) return sf
+
+  const statements = sf.statements.map((stmt) => {
+    if (stmt !== lluiImport) return stmt
+
+    const clause = lluiImport.importClause
+    if (!clause?.namedBindings || !ts.isNamedImports(clause.namedBindings)) return stmt
+
+    const remaining = clause.namedBindings.elements.filter(
+      (spec) => !compiled.has(spec.name.text),
+    )
+
+    // Add elSplit if not already imported
+    const hasElSplit = clause.namedBindings.elements.some((s) => s.name.text === 'elSplit')
+    if (!hasElSplit) {
+      remaining.push(f.createImportSpecifier(false, undefined, f.createIdentifier('elSplit')))
+    }
+
+    const newBindings = f.createNamedImports(remaining)
+    const newClause = f.createImportClause(false, undefined, newBindings)
+    return f.createImportDeclaration(undefined, newClause, lluiImport.moduleSpecifier)
+  })
+
+  return f.updateSourceFile(sf, statements as unknown as ts.Statement[])
+}
+
+// ── Mask computation ─────────────────────────────────────────────
+
+function computeAccessorMask(
+  accessor: ts.ArrowFunction | ts.FunctionExpression,
+  fieldBits: Map<string, number>,
+): number {
+  if (accessor.parameters.length === 0) return 0xffffffff | 0
+
+  const paramName = accessor.parameters[0]!.name
+  if (!ts.isIdentifier(paramName)) return 0xffffffff | 0
+
+  const stateParam = paramName.text
+  let mask = 0
+
+  function walk(node: ts.Node): void {
+    if (ts.isPropertyAccessExpression(node)) {
+      // Only process leaf accesses (not intermediate in a chain)
+      if (!ts.isPropertyAccessExpression(node.parent)) {
+        const chain = resolveChain(node, stateParam)
+        if (chain) {
+          const bit = fieldBits.get(chain)
+          if (bit !== undefined) {
+            mask |= bit
+          } else {
+            // Parent path — union of all child bits
+            for (const [path, b] of fieldBits) {
+              if (path.startsWith(chain + '.') || path === chain) {
+                mask |= b
+              }
+            }
+          }
+        }
+      }
+    }
+    ts.forEachChild(node, walk)
+  }
+
+  walk(accessor.body)
+  return mask === 0 ? 0xffffffff | 0 : mask
+}
+
+function resolveChain(node: ts.PropertyAccessExpression, paramName: string): string | null {
+  const parts: string[] = []
+  let current: ts.Expression = node
+
+  while (ts.isPropertyAccessExpression(current)) {
+    parts.unshift(current.name.text)
+    current = current.expression
+  }
+
+  if (!ts.isIdentifier(current) || current.text !== paramName) return null
+  if (parts.length > 2) return parts.slice(0, 2).join('.')
+  return parts.join('.')
+}
