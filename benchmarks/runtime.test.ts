@@ -174,6 +174,12 @@ describe('runtime benchmarks', () => {
 
     list1kFresh.handle.dispose()
 
+    measure('mount 10,000 rows', 5, () => {
+      const container = document.createElement('div')
+      const handle = mountApp(container, listDef(makeItems(10000)))
+      handle.dispose()
+    })
+
     console.log()
     expect(true).toBe(true)
   })

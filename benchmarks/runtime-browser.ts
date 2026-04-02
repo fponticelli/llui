@@ -22,6 +22,7 @@ const OPS = [
   { id: 'remove', pre: 'run', label: 'Remove one row' },
   { id: 'add', pre: 'run', label: 'Append 1k to 1k rows' },
   { id: 'clear', pre: 'run', label: 'Clear all rows' },
+  { id: 'runlots', pre: 'clear', label: 'Create 10k rows' },
 ]
 
 async function main() {
