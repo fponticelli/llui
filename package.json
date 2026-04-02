@@ -9,7 +9,10 @@
     "lint": "turbo run lint",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "test": "turbo run test"
+    "test": "turbo run test",
+    "bench": "vitest run --config benchmarks/vitest.config.ts --reporter=verbose",
+    "bench:size": "node benchmarks/bundle-size.js",
+    "bench:size:save": "node benchmarks/bundle-size.js --save"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",

@@ -1,12 +1,9 @@
 import { defineConfig } from 'vitest/config'
+import { resolve } from 'node:path'
 
 export default defineConfig({
   test: {
-    include: ['test/**/*.test.ts'],
-    environment: 'jsdom',
-  },
-  bench: {
-    include: ['test/**/*.bench.ts'],
+    include: [resolve(import.meta.dirname, '*.test.ts')],
     environment: 'jsdom',
   },
 })

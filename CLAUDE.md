@@ -24,7 +24,12 @@ pnpm --filter @llui/core test
 pnpm --filter @llui/core check
 
 # Single test file (from package dir)
-cd packages/core && pnpm vitest run src/some.test.ts
+cd packages/core && pnpm vitest run test/scope.test.ts
+
+# Benchmarks
+pnpm -w run bench             # Runtime performance (jsdom, 1k rows)
+pnpm -w run bench:size        # Bundle size vs baseline (gzip, regression check)
+pnpm -w run bench:size:save   # Save current sizes as the new baseline
 ```
 
 ## Development Approach

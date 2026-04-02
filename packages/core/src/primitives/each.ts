@@ -77,6 +77,7 @@ function buildEntry<S, T>(
   setRenderContext({ ...ctx, rootScope: scope, state: state ?? ctx.state })
   const nodes = opts.render(itemAccessor, indexAccessor)
   clearRenderContext()
+  setRenderContext(ctx)
 
   return { key, item, ref, scope, nodes }
 }
