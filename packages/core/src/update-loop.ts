@@ -2,6 +2,7 @@ import type { ComponentDef, Scope, Binding } from './types'
 import type { StructuralBlock } from './structural'
 import { createScope } from './scope'
 import { applyBinding } from './binding'
+import { setCurrentDirtyMask } from './primitives/memo'
 
 export const FULL_MASK = 0xffffffff | 0
 
@@ -103,6 +104,7 @@ function processMessages<S, M, E>(inst: ComponentInstance<S, M, E>): void {
   }
 
   // Phase 2 — binding updates (flat array, no tree walk)
+  setCurrentDirtyMask(combinedDirty)
   if (combinedDirty !== 0) {
     const bindings = inst.allBindings
     const state = inst.state
