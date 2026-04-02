@@ -43,9 +43,47 @@ export function mountApp<S, M, E>(
 }
 
 export function hydrateApp<S, M, E>(
-  _container: HTMLElement,
-  _def: ComponentDef<S, M, E>,
-  _serverState: S,
+  container: HTMLElement,
+  def: ComponentDef<S, M, E>,
+  serverState: S,
 ): AppHandle {
-  throw new Error('hydrateApp not yet implemented')
+  // Override init to use the server-provided state
+  const hydrateDef: ComponentDef<S, M, E> = {
+    ...def,
+    init: () => [serverState, []],
+  }
+
+  const inst = createComponentInstance(hydrateDef)
+
+  // Clear server HTML and mount fresh — the view produces identical DOM
+  // A true walk-and-attach hydration is a v2 optimization
+  container.textContent = ''
+
+  setFlatBindings(inst.allBindings)
+  setRenderContext({ ...inst, container, send: inst.send as (msg: unknown) => void })
+  const nodes = hydrateDef.view(inst.state, inst.send)
+  clearRenderContext()
+  setFlatBindings(null)
+
+  for (const node of nodes) {
+    container.appendChild(node)
+  }
+
+  registerInstance(inst)
+  let disposed = false
+
+  return {
+    dispose() {
+      if (disposed) return
+      disposed = true
+      inst.abortController.abort()
+      unregisterInstance(inst)
+      disposeScope(inst.rootScope)
+      container.textContent = ''
+    },
+    flush() {
+      if (disposed) return
+      flushInstance(inst)
+    },
+  }
 }

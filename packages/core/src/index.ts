@@ -28,6 +28,7 @@ export { mountApp, hydrateApp } from './mount'
 
 export { flush } from './runtime'
 export { addressOf } from './addressed'
+export { renderToString } from './ssr'
 
 // ── View Primitives ───────────────────────────────────────────────
 

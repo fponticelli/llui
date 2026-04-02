@@ -78,9 +78,9 @@ Runtime and bundle size improvements, tracked against benchmarks.
 
 ## Phase 4 — SSR & Hydration
 
-- [ ] `__renderToString()` — compiler-generated static HTML emission
-- [ ] `hydrateApp()` — DOM walk, `data-llui-hydrate` marker attachment
-- [ ] `@llui/vike` — `onRenderHtml`, `onRenderClient`, Vite plugin composition
+- [x] `renderToString()` — runtime SSR with `data-llui-hydrate` markers
+- [x] `hydrateApp()` — client takeover with server state (v2: true DOM reuse)
+- [x] `@llui/vike` — `onRenderHtml` + `onRenderClient` hooks
 
 **Validate:** SSR round-trip test (render → hydrate → interact). Measure TTFB and hydration cost.
 
