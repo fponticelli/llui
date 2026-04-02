@@ -27,9 +27,11 @@ const OPS = [
 
 async function main() {
   // Start Vite dev server
+  const { default: llui } = await import(resolve(ROOT, 'packages/vite-plugin/src/index.ts'))
   const server = await createServer({
     root: APP_DIR,
     server: { port: 0 },
+    plugins: [llui()],
     resolve: {
       alias: { '@llui/core': resolve(ROOT, 'packages/core/src/index.ts') },
     },

@@ -31,7 +31,7 @@ The foundation everything else builds on.
 - [x] Pass 1 — static/dynamic prop split, `elSplit()` emission
 - [x] Pass 2 — per-accessor mask computation, `__dirty` injection, `text()` mask injection
 - [x] Pass 3 — import cleanup, element helper elision, `elSplit` addition
-- [ ] Diagnostics — `each()` scoped accessor misuse, `.map()` on state arrays, exhaustive `update()`, exhaustive `branch()`, accessibility checks, controlled input without handler
+- [x] Diagnostics — `each()` scoped accessor misuse, `.map()` on state arrays, exhaustive `update()`, accessibility (img alt, onClick role), controlled input without handler
 - [ ] `__msgSchema` emission (dev mode)
 - [ ] HMR with state preservation
 - [ ] Source map generation
