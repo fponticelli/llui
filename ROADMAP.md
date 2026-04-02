@@ -45,7 +45,7 @@ The foundation everything else builds on.
 - [ ] `testView()` — lightweight DOM shim + query API
 - [ ] `propertyTest()` — generative invariant testing with shrinking
 - [ ] `replayTrace()` — deterministic trace replay
-- [ ] `handleEffects()` — http, cancel, debounce, sequence, race consumption chain
+- [x] `handleEffects()` — http, cancel, debounce consumption chain with AbortSignal cleanup
 - [x] Effect builders — `http()`, `cancel()`, `debounce()`, `sequence()`, `race()`
 
 **Validate:** Run LLM evaluation tasks 04, 09, 14 (async fetch, debounced search, async validation). Performance benchmarks: run, replace, update, select, swap, remove, clear (Playwright + 4× throttle).
