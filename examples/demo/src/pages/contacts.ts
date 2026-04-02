@@ -176,7 +176,7 @@ export function contactsView<S>(
         portal({
           target: document.body,
           render: () => [
-            div({ class: 'dialog-backdrop', onClick: () => send({ type: 'closeDialog' }) }),
+            div({ class: 'dialog-backdrop', onClick: () => send({ type: 'closeDialog' }), role: 'presentation' }),
             div({ class: 'dialog-positioner' }, [
               div({ class: 'dialog-content', role: 'dialog', 'aria-modal': 'true' }, [
                 div({ class: 'dialog-header' }, [
