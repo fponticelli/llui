@@ -113,28 +113,25 @@ const App = component<State, Msg, never>({
             key: (r) => r.id,
             render: (item) => [
               tr(
-                {
-                  class: (s: State) =>
-                    s.selected === item((r) => r.id)() ? 'danger' : '',
-                },
+                { class: (s: State) => s.selected === item((r) => r.id)() ? 'danger' : '' },
                 [
-                  td({ class: 'col-md-1' }, [
-                    text(item((r) => String(r.id))),
-                  ]),
+                  td({ class: 'col-md-1' }, [text(item((r) => String(r.id)))]),
                   td({ class: 'col-md-4' }, [
-                    a({
-                      onClick: () => send({ type: 'select', id: item((r) => r.id)() }),
-                    }, [text(item((r) => r.label))]),
+                    a(
+                      { onClick: () => send({ type: 'select', id: item((r) => r.id)() }) },
+                      [text(item((r) => r.label))],
+                    ),
                   ]),
                   td({ class: 'col-md-1' }, [
-                    a({
-                      onClick: () => send({ type: 'remove', id: item((r) => r.id)() }),
-                    }, [
-                      span({
-                        class: 'glyphicon glyphicon-remove',
-                        'aria-hidden': 'true',
-                      }),
-                    ]),
+                    a(
+                      { onClick: () => send({ type: 'remove', id: item((r) => r.id)() }) },
+                      [
+                        span({
+                          class: 'glyphicon glyphicon-remove',
+                          'aria-hidden': 'true',
+                        }),
+                      ],
+                    ),
                   ]),
                   td({ class: 'col-md-6' }),
                 ],
@@ -145,9 +142,6 @@ const App = component<State, Msg, never>({
       ]),
     ]),
   ],
-  __dirty: (o, n) =>
-    (Object.is(o.rows, n.rows) ? 0 : 0b01) |
-    (Object.is(o.selected, n.selected) ? 0 : 0b10),
 })
 
 function actionButton(

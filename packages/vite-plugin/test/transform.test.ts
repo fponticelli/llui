@@ -68,7 +68,7 @@ describe('Pass 1 — element helper → elSplit', () => {
   it('passes children through', () => {
     const src = `
       import { div, text } from '@llui/core'
-      const el = div({}, [text('hi')])
+      const el = div({ class: 'box' }, [text(s => s.label)])
     `
     const out = t(src)
     expect(out).toContain('elSplit')
@@ -159,8 +159,8 @@ describe('Pass 3 — import cleanup', () => {
     // text and component should remain
     expect(out).toMatch(/import\s*\{[^}]*\btext\b/)
     expect(out).toMatch(/import\s*\{[^}]*\bcomponent\b/)
-    // elSplit should be added
-    expect(out).toMatch(/import\s*\{[^}]*\belSplit\b/)
+    // elTemplate or elSplit should be added
+    expect(out).toMatch(/import\s*\{[^}]*\b(elSplit|elTemplate)\b/)
   })
 
   it('keeps element helpers that bailed out (non-literal props)', () => {
@@ -239,9 +239,10 @@ describe('static subtree prerendering', () => {
       })
     `
     const out = t(src)
-    // Fully static subtree should use template cloning
-    expect(out).toContain('cloneNode')
-    expect(out).toContain('template')
+    // Fully static subtree with nested elements → elTemplate
+    expect(out).toContain('elTemplate')
+    expect(out).toContain('header')
+    expect(out).toContain('Hello')
   })
 
   it('does not use template for subtrees with reactive bindings', () => {
@@ -294,10 +295,238 @@ describe('zero-mask constant folding', () => {
       })
     `
     const out = t(src)
-    // The accessor reads no state — should be in staticFn, not bindings
-    expect(out).toContain('elSplit')
+    // The accessor reads no state — should be folded to static
     // Should NOT have a binding tuple for this prop
     expect(out).not.toMatch(/\[\s*-?\d+.*class.*THEME/)
+    expect(out).not.toContain('__bind')
+  })
+})
+
+describe('subtree collapse — nested elements → elTemplate', () => {
+  it('collapses nested static elements into a single elTemplate call', () => {
+    const src = `
+      import { component, div, span, text } from '@llui/core'
+      export const C = component({
+        name: 'C',
+        init: () => [{ x: 0 }, []],
+        update: (s, m) => [s, []],
+        view: () => [
+          div({ class: 'container' }, [
+            span({ class: 'label' }, [text('Hello')]),
+            span({ class: 'value' }),
+          ]),
+        ],
+      })
+    `
+    const out = t(src)
+    // Should collapse into elTemplate, not nested elSplit calls
+    expect(out).toContain('elTemplate')
+    // HTML should include both spans
+    expect(out).toContain('container')
+    expect(out).toContain('label')
+    expect(out).toContain('Hello')
+    expect(out).toContain('<span')
+    // Should NOT have elSplit (everything is in the template)
+    expect(out).not.toContain('elSplit')
+  })
+
+  it('collapses elements with events into elTemplate with patch function', () => {
+    const src = `
+      import { component, div, button, text } from '@llui/core'
+      export const C = component({
+        name: 'C',
+        init: () => [{ x: 0 }, []],
+        update: (s, m) => [s, []],
+        view: (s, send) => [
+          div({ class: 'row' }, [
+            button({ onClick: () => send({ type: 'click' }) }, [text('Go')]),
+          ]),
+        ],
+      })
+    `
+    const out = t(src)
+    // Should use elTemplate since there are nested elements
+    expect(out).toContain('elTemplate')
+    expect(out).toMatch(/<div[^>]*row[^>]*><button>Go<\/button><\/div>/)
+    // Patch function should set up click event
+    expect(out).toContain('addEventListener')
+    expect(out).toContain('"click"')
+  })
+
+  it('collapses elements with reactive bindings into elTemplate with bind calls', () => {
+    const src = `
+      import { component, div, span, text } from '@llui/core'
+      export const C = component({
+        name: 'C',
+        init: () => [{ label: 'hi', active: false }, []],
+        update: (s, m) => [s, []],
+        view: () => [
+          div({ class: 'wrapper' }, [
+            span({ class: s => s.active ? 'on' : 'off' }, [text('x')]),
+          ]),
+        ],
+      })
+    `
+    const out = t(src)
+    expect(out).toContain('elTemplate')
+    // HTML should have the static structure
+    expect(out).toMatch(/<div[^>]*wrapper[^>]*><span>x<\/span><\/div>/)
+    // Patch function should call __bind for the reactive class
+    expect(out).toContain('__bind')
+    expect(out).toContain('"class"')
+  })
+
+  it('collapses elements with reactive text children', () => {
+    const src = `
+      import { component, div, span, text } from '@llui/core'
+      export const C = component({
+        name: 'C',
+        init: () => [{ label: 'hi' }, []],
+        update: (s, m) => [s, []],
+        view: () => [
+          div({}, [
+            span({}, [text(s => s.label)]),
+          ]),
+        ],
+      })
+    `
+    const out = t(src)
+    expect(out).toContain('elTemplate')
+    // HTML should have empty span (text is reactive, not in template)
+    expect(out).toContain('<div><span></span></div>') // no escaped quotes needed here
+    // Should create a text node and bind it
+    expect(out).toContain('createTextNode')
+    expect(out).toContain('__bind')
+    expect(out).toContain('"text"')
+  })
+
+  it('handles per-item accessors in collapsed templates', () => {
+    const src = `
+      import { component, tr, td, text, each } from '@llui/core'
+      export const C = component({
+        name: 'C',
+        init: () => [{ items: [] }, []],
+        update: (s, m) => [s, []],
+        view: () => each({
+          items: s => s.items,
+          key: t => t.id,
+          render: (item) => [
+            tr({}, [
+              td({ class: 'id' }, [text(item(t => String(t.id)))]),
+              td({ class: 'label' }, [text(item(t => t.label))]),
+            ]),
+          ],
+        }),
+      })
+    `
+    const out = t(src)
+    expect(out).toContain('elTemplate')
+    expect(out).toMatch(/<tr><td[^>]*id[^>]*><\/td><td[^>]*label[^>]*><\/td><\/tr>/)
+    // Per-item text should create text nodes with bind calls
+    expect(out).toContain('createTextNode')
+    expect(out).toContain('__bind')
+  })
+
+  it('does not collapse when children include structural primitives', () => {
+    const src = `
+      import { component, div, each, text } from '@llui/core'
+      export const C = component({
+        name: 'C',
+        init: () => [{ items: [] }, []],
+        update: (s, m) => [s, []],
+        view: () => [
+          div({}, each({
+            items: s => s.items,
+            key: t => t.id,
+            render: (item) => [text('x')],
+          })),
+        ],
+      })
+    `
+    const out = t(src)
+    // Should NOT collapse — each() is a structural primitive, not an element
+    expect(out).toContain('elSplit')
+    expect(out).not.toContain('elTemplate')
+  })
+
+  it('does not collapse single elements without nested children', () => {
+    const src = `
+      import { component, div, text } from '@llui/core'
+      export const C = component({
+        name: 'C',
+        init: () => [{ x: 0 }, []],
+        update: (s, m) => [s, []],
+        view: () => [
+          div({ class: 'single' }, [text('hi')]),
+        ],
+      })
+    `
+    const out = t(src)
+    // Single element with only text children — no benefit from template collapse
+    // Should use the existing static subtree template or elSplit
+    expect(out).not.toContain('__bind')
+  })
+
+  it('adds elTemplate to imports when used', () => {
+    const src = `
+      import { component, div, span, text } from '@llui/core'
+      export const C = component({
+        name: 'C',
+        init: () => [{ x: 0 }, []],
+        update: (s, m) => [s, []],
+        view: () => [
+          div({ class: 'c' }, [
+            span({}, [text('a')]),
+          ]),
+        ],
+      })
+    `
+    const out = t(src)
+    expect(out).toMatch(/import\s*\{[^}]*\belTemplate\b/)
+  })
+
+  it('handles void elements (br, hr, img, input) in templates', () => {
+    const src = `
+      import { component, div, br, hr } from '@llui/core'
+      export const C = component({
+        name: 'C',
+        init: () => [{ x: 0 }, []],
+        update: (s, m) => [s, []],
+        view: () => [
+          div({}, [
+            br({}),
+            hr({ class: 'sep' }),
+          ]),
+        ],
+      })
+    `
+    const out = t(src)
+    expect(out).toContain('elTemplate')
+    expect(out).toContain('<br>')
+    expect(out).toMatch(/<hr[^>]*sep[^>]*>/)
+  })
+
+  it('marks all descendant helpers as compiled for import cleanup', () => {
+    const src = `
+      import { component, div, span, p, text } from '@llui/core'
+      export const C = component({
+        name: 'C',
+        init: () => [{ x: 0 }, []],
+        update: (s, m) => [s, []],
+        view: () => [
+          div({}, [
+            span({}, [text('a')]),
+            p({}, [text('b')]),
+          ]),
+        ],
+      })
+    `
+    const out = t(src)
+    expect(out).toContain('elTemplate')
+    // div, span, p should all be removed from imports
+    expect(out).not.toMatch(/import\s*\{[^}]*\bdiv\b/)
+    expect(out).not.toMatch(/import\s*\{[^}]*\bspan\b/)
+    expect(out).not.toMatch(/import\s*\{[^}]*\bp\b/)
   })
 })
 

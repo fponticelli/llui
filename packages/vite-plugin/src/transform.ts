@@ -69,15 +69,22 @@ export function transformLlui(source: string, _filename: string, devMode = false
   // Track which helpers were compiled vs bailed out
   const compiledHelpers = new Set<string>()
   const bailedHelpers = new Set<string>()
+  let usesElTemplate = false
+  let usesElSplit = false
 
   // Apply transforms
   const f = ts.factory
 
   function visitor(node: ts.Node): ts.Node {
-    // Pass 1: Transform element helper calls to elSplit
+    // Pass 1: Transform element helper calls to elSplit or elTemplate
     if (ts.isCallExpression(node)) {
       const transformed = tryTransformElementCall(node, importedHelpers, fieldBits, compiledHelpers, bailedHelpers, f)
       if (transformed) {
+        // Track which runtime helper was used
+        if (ts.isIdentifier(transformed.expression)) {
+          if (transformed.expression.text === 'elTemplate') usesElTemplate = true
+          else if (transformed.expression.text === 'elSplit') usesElSplit = true
+        }
         return ts.visitEachChild(transformed, visitor, undefined!)
       }
 
@@ -110,7 +117,7 @@ export function transformLlui(source: string, _filename: string, devMode = false
   // Pass 3: Clean up imports
   // Only remove helpers that were fully compiled (no bail-outs)
   const safeToRemove = new Set([...compiledHelpers].filter((h) => !bailedHelpers.has(h)))
-  transformed = cleanupImports(transformed, lluiImport, importedHelpers, safeToRemove, f)
+  transformed = cleanupImports(transformed, lluiImport, importedHelpers, safeToRemove, usesElSplit, usesElTemplate, f)
 
   // Print
   const printer = ts.createPrinter({ newLine: ts.NewLineKind.LineFeed })
@@ -381,6 +388,16 @@ function tryTransformElementCall(
 
   compiled.add(localName)
 
+  // Subtree collapse: if children contain nested element helpers,
+  // collapse the entire tree into a single elTemplate() call
+  const analyzed = analyzeSubtree(node, helpers, fieldBits, [])
+  if (analyzed && hasNestedElements(analyzed)) {
+    // Mark all descendant helpers as compiled for import cleanup
+    collectUsedHelpers(analyzed, compiled)
+    const templateCall = emitSubtreeTemplate(analyzed, fieldBits, f)
+    return templateCall
+  }
+
   // Static subtree prerendering: if no events, no bindings, and children
   // are all static text, emit a <template> clone
   if (events.length === 0 && bindings.length === 0 && isStaticChildren(children)) {
@@ -527,9 +544,11 @@ function cleanupImports(
   lluiImport: ts.ImportDeclaration,
   _helpers: Map<string, string>,
   compiled: Set<string>,
+  usesElSplit: boolean,
+  usesElTemplate: boolean,
   f: ts.NodeFactory,
 ): ts.SourceFile {
-  if (compiled.size === 0) return sf
+  if (compiled.size === 0 && !usesElTemplate) return sf
 
   const statements = sf.statements.map((stmt) => {
     if (stmt !== lluiImport) return stmt
@@ -541,10 +560,16 @@ function cleanupImports(
       (spec) => !compiled.has(spec.name.text),
     )
 
-    // Add elSplit if not already imported
+    // Add elSplit if not already imported and it was used
     const hasElSplit = clause.namedBindings.elements.some((s) => s.name.text === 'elSplit')
-    if (!hasElSplit) {
+    if (!hasElSplit && usesElSplit) {
       remaining.push(f.createImportSpecifier(false, undefined, f.createIdentifier('elSplit')))
+    }
+
+    // Add elTemplate if not already imported and subtree collapse was used
+    const hasElTemplate = clause.namedBindings.elements.some((s) => s.name.text === 'elTemplate')
+    if (!hasElTemplate && usesElTemplate) {
+      remaining.push(f.createImportSpecifier(false, undefined, f.createIdentifier('elTemplate')))
     }
 
     const newBindings = f.createNamedImports(remaining)
@@ -620,6 +645,448 @@ function injectMsgSchema(
 }
 
 // ── Per-item accessor detection ──────────────────────────────────
+
+// ── Subtree collapse: nested elements → elTemplate ──────────────
+
+const VOID_ELEMENTS = new Set([
+  'area', 'base', 'br', 'col', 'embed', 'hr', 'img', 'input',
+  'link', 'meta', 'param', 'source', 'track', 'wbr',
+])
+
+interface AnalyzedNode {
+  tag: string
+  localName: string
+  /** Static HTML attributes (class, id, etc.) */
+  staticAttrs: Array<[string, string]>
+  /** Event handlers: [eventName, handlerExpression] */
+  events: Array<[string, ts.Expression]>
+  /** Reactive bindings: [mask, kind, key, accessor] */
+  bindings: Array<[number, string, string, ts.Expression]>
+  /** Children: analyzed elements, static text, or reactive text */
+  children: AnalyzedChild[]
+  /** Path from template root as childNodes indices */
+  path: number[]
+}
+
+type AnalyzedChild =
+  | { type: 'element'; node: AnalyzedNode }
+  | { type: 'staticText'; value: string }
+  | { type: 'reactiveText'; accessor: ts.Expression; mask: number }
+
+/**
+ * Try to analyze an element call and all its descendants as a collapsible subtree.
+ * Returns null if any part of the tree is not eligible for collapse.
+ */
+function analyzeSubtree(
+  node: ts.CallExpression,
+  helpers: Map<string, string>,
+  fieldBits: Map<string, number>,
+  path: number[],
+): AnalyzedNode | null {
+  if (!ts.isIdentifier(node.expression)) return null
+  const localName = node.expression.text
+  const tag = helpers.get(localName)
+  if (!tag) return null
+
+  const propsArg = node.arguments[0]
+  if (propsArg && !ts.isObjectLiteralExpression(propsArg)) return null
+
+  const staticAttrs: Array<[string, string]> = []
+  const events: Array<[string, ts.Expression]> = []
+  const bindings: Array<[number, string, string, ts.Expression]> = []
+
+  if (propsArg && ts.isObjectLiteralExpression(propsArg)) {
+    for (const prop of propsArg.properties) {
+      let key: string
+      let value: ts.Expression
+
+      if (ts.isPropertyAssignment(prop)) {
+        if (!ts.isIdentifier(prop.name) && !ts.isStringLiteral(prop.name)) return null
+        key = ts.isIdentifier(prop.name) ? prop.name.text : prop.name.text
+        value = prop.initializer
+      } else if (ts.isShorthandPropertyAssignment(prop)) {
+        key = prop.name.text
+        value = prop.name
+      } else {
+        return null
+      }
+      if (key === 'key') continue
+
+      // Event handler
+      if (/^on[A-Z]/.test(key)) {
+        events.push([key.slice(2).toLowerCase(), value])
+        continue
+      }
+
+      // Reactive binding
+      if (ts.isArrowFunction(value) || ts.isFunctionExpression(value)) {
+        const kind = classifyKind(key)
+        const resolvedKey = resolveKey(key, kind)
+        const { mask, readsState } = computeAccessorMask(value, fieldBits)
+        if (mask === 0 && !readsState) {
+          // Constant fold — treat as static if we can extract a string
+          const staticVal = tryExtractStaticString(value)
+          if (staticVal !== null) {
+            const attrKey = kind === 'class' ? 'class' : resolvedKey
+            staticAttrs.push([attrKey, staticVal])
+            continue
+          }
+        }
+        bindings.push([mask === 0 && readsState ? 0xffffffff | 0 : mask, kind, resolvedKey, value])
+        continue
+      }
+
+      // Per-item accessor call
+      if (ts.isCallExpression(value) && isPerItemCall(value)) {
+        const kind = classifyKind(key)
+        const resolvedKey = resolveKey(key, kind)
+        bindings.push([0xffffffff | 0, kind, resolvedKey, value])
+        continue
+      }
+
+      // Static literal prop
+      if (ts.isStringLiteral(value)) {
+        const kind = classifyKind(key)
+        const attrKey = kind === 'class' ? 'class' : resolveKey(key, kind)
+        staticAttrs.push([attrKey, value.text])
+        continue
+      }
+      if (ts.isNumericLiteral(value)) {
+        const kind = classifyKind(key)
+        const attrKey = kind === 'class' ? 'class' : resolveKey(key, kind)
+        staticAttrs.push([attrKey, value.text])
+        continue
+      }
+      if (value.kind === ts.SyntaxKind.TrueKeyword) {
+        const kind = classifyKind(key)
+        const attrKey = kind === 'class' ? 'class' : resolveKey(key, kind)
+        staticAttrs.push([attrKey, ''])
+        continue
+      }
+
+      // Non-literal prop — can't collapse
+      return null
+    }
+  }
+
+  // Analyze children
+  const childrenArg = node.arguments[1]
+  const children: AnalyzedChild[] = []
+
+  if (childrenArg && ts.isArrayLiteralExpression(childrenArg)) {
+    let childIdx = 0
+    for (const child of childrenArg.elements) {
+      // text('literal') — static text
+      if (ts.isCallExpression(child) && ts.isIdentifier(child.expression) && child.expression.text === 'text') {
+        if (child.arguments.length >= 1 && ts.isStringLiteral(child.arguments[0]!)) {
+          children.push({ type: 'staticText', value: child.arguments[0]!.text })
+          childIdx++ // static text creates a text node in the template DOM
+          continue
+        }
+        // Reactive text — accessor is first arg
+        const accessor = child.arguments[0]!
+        if (ts.isArrowFunction(accessor) || ts.isFunctionExpression(accessor)) {
+          const { mask, readsState } = computeAccessorMask(accessor, fieldBits)
+          children.push({
+            type: 'reactiveText',
+            accessor,
+            mask: mask === 0 && readsState ? 0xffffffff | 0 : mask,
+          })
+          // NOT in template — patch function creates and appends the text node
+          continue
+        }
+        // Per-item text: text(item(t => t.label))
+        if (ts.isCallExpression(accessor) && isPerItemCall(accessor)) {
+          children.push({
+            type: 'reactiveText',
+            accessor,
+            mask: 0xffffffff | 0,
+          })
+          // NOT in template — patch function creates and appends the text node
+          continue
+        }
+        return null // unsupported text() form
+      }
+
+      // Element helper call — recurse
+      if (ts.isCallExpression(child) && ts.isIdentifier(child.expression) && helpers.has(child.expression.text)) {
+        const childNode = analyzeSubtree(child, helpers, fieldBits, [...path, childIdx])
+        if (!childNode) return null
+        children.push({ type: 'element', node: childNode })
+        childIdx++
+        continue
+      }
+
+      // Anything else (each, branch, show, arbitrary expressions) — bail
+      return null
+    }
+  } else if (childrenArg && childrenArg.kind !== ts.SyntaxKind.NullKeyword) {
+    // Non-array children (e.g., spread, variable) — bail
+    return null
+  }
+
+  return { tag, localName, staticAttrs, events, bindings, children, path }
+}
+
+function tryExtractStaticString(accessor: ts.ArrowFunction | ts.FunctionExpression): string | null {
+  const body = ts.isArrowFunction(accessor) ? accessor.body : null
+  if (body && ts.isStringLiteral(body)) return body.text
+  return null
+}
+
+/**
+ * Check if a subtree has any nested element children (worth collapsing).
+ */
+function hasNestedElements(node: AnalyzedNode): boolean {
+  return node.children.some((c) => c.type === 'element')
+}
+
+/**
+ * Collect all local helper names used in the subtree for import cleanup.
+ */
+function collectUsedHelpers(node: AnalyzedNode, out: Set<string>): void {
+  out.add(node.localName)
+  for (const child of node.children) {
+    if (child.type === 'element') collectUsedHelpers(child.node, out)
+  }
+}
+
+/**
+ * Build the static HTML string from an analyzed subtree.
+ */
+function buildTemplateHTML(node: AnalyzedNode): string {
+  let html = `<${node.tag}`
+  for (const [key, value] of node.staticAttrs) {
+    html += ` ${key}="${escapeAttr(value)}"`
+  }
+  html += '>'
+
+  if (VOID_ELEMENTS.has(node.tag)) return html
+
+  for (const child of node.children) {
+    if (child.type === 'staticText') {
+      html += escapeHTML(child.value)
+    } else if (child.type === 'element') {
+      html += buildTemplateHTML(child.node)
+    }
+    // reactiveText: nothing in HTML — patch function handles it
+  }
+
+  html += `</${node.tag}>`
+  return html
+}
+
+interface PatchOp {
+  /** Variable name for this node (e.g., __n0) */
+  varName: string
+  /** Expression to walk to this node from root */
+  walkExpr: ts.Expression
+  /** Event listeners to attach */
+  events: Array<[string, ts.Expression]>
+  /** Bindings to register via __bind */
+  bindings: Array<[number, string, string, ts.Expression]>
+  /** Reactive text children to create */
+  reactiveTexts: Array<{ accessor: ts.Expression; mask: number }>
+}
+
+/**
+ * Collect all patch operations from an analyzed subtree.
+ */
+function collectPatchOps(
+  node: AnalyzedNode,
+  f: ts.NodeFactory,
+  rootExpr: ts.Expression,
+  ops: PatchOp[],
+  counter: { n: number; t: number },
+): void {
+  const hasDynamic =
+    node.events.length > 0 ||
+    node.bindings.length > 0 ||
+    node.children.some((c) => c.type === 'reactiveText')
+
+  let nodeExpr = rootExpr
+
+  if (hasDynamic) {
+    const varName = `__n${counter.n++}`
+    // Build walk expression: root.childNodes[i].childNodes[j]...
+    nodeExpr = f.createIdentifier(varName)
+    ops.push({
+      varName,
+      walkExpr: buildWalkExpr(node.path, f),
+      events: node.events,
+      bindings: node.bindings,
+      reactiveTexts: node.children
+        .filter((c): c is Extract<AnalyzedChild, { type: 'reactiveText' }> => c.type === 'reactiveText'),
+    })
+  }
+
+  // Recurse into element children
+  for (const child of node.children) {
+    if (child.type === 'element') {
+      collectPatchOps(child.node, f, nodeExpr, ops, counter)
+    }
+  }
+}
+
+function buildWalkExpr(path: number[], f: ts.NodeFactory): ts.Expression {
+  let expr: ts.Expression = f.createIdentifier('root')
+  for (const idx of path) {
+    expr = f.createElementAccessExpression(
+      f.createPropertyAccessExpression(expr, 'childNodes'),
+      f.createNumericLiteral(idx),
+    )
+  }
+  return expr
+}
+
+/**
+ * Emit elTemplate(htmlString, (root, __bind) => { ... }) call.
+ */
+function emitSubtreeTemplate(
+  analyzed: AnalyzedNode,
+  fieldBits: Map<string, number>,
+  f: ts.NodeFactory,
+): ts.CallExpression {
+  const html = buildTemplateHTML(analyzed)
+  const ops: PatchOp[] = []
+  const counter = { n: 0, t: 0 }
+
+  // Collect root-level patches
+  const rootHasDynamic =
+    analyzed.events.length > 0 ||
+    analyzed.bindings.length > 0 ||
+    analyzed.children.some((c) => c.type === 'reactiveText')
+
+  if (rootHasDynamic) {
+    ops.push({
+      varName: '',  // use 'root' directly
+      walkExpr: f.createIdentifier('root'),
+      events: analyzed.events,
+      bindings: analyzed.bindings,
+      reactiveTexts: analyzed.children
+        .filter((c): c is Extract<AnalyzedChild, { type: 'reactiveText' }> => c.type === 'reactiveText'),
+    })
+  }
+
+  // Collect child patches
+  for (const child of analyzed.children) {
+    if (child.type === 'element') {
+      collectPatchOps(child.node, f, f.createIdentifier('root'), ops, counter)
+    }
+  }
+
+  // Build patch function body
+  const stmts: ts.Statement[] = []
+
+  for (const op of ops) {
+    const nodeRef = op.varName
+      ? f.createIdentifier(op.varName)
+      : f.createIdentifier('root')
+
+    // Variable declaration for walking to node
+    if (op.varName) {
+      stmts.push(
+        f.createVariableStatement(
+          undefined,
+          f.createVariableDeclarationList([
+            f.createVariableDeclaration(op.varName, undefined, undefined, op.walkExpr),
+          ], ts.NodeFlags.Const),
+        ),
+      )
+    }
+
+    // Event listeners
+    for (const [eventName, handler] of op.events) {
+      stmts.push(
+        f.createExpressionStatement(
+          f.createCallExpression(
+            f.createPropertyAccessExpression(nodeRef, 'addEventListener'),
+            undefined,
+            [f.createStringLiteral(eventName), handler],
+          ),
+        ),
+      )
+    }
+
+    // Reactive text children — create text node, append, bind
+    for (const rt of op.reactiveTexts) {
+      const tVar = `__t${counter.t++}`
+      // const __t0 = document.createTextNode('')
+      stmts.push(
+        f.createVariableStatement(
+          undefined,
+          f.createVariableDeclarationList([
+            f.createVariableDeclaration(tVar, undefined, undefined,
+              f.createCallExpression(
+                f.createPropertyAccessExpression(f.createIdentifier('document'), 'createTextNode'),
+                undefined,
+                [f.createStringLiteral('')],
+              ),
+            ),
+          ], ts.NodeFlags.Const),
+        ),
+      )
+      // nodeRef.appendChild(__t0)
+      stmts.push(
+        f.createExpressionStatement(
+          f.createCallExpression(
+            f.createPropertyAccessExpression(nodeRef, 'appendChild'),
+            undefined,
+            [f.createIdentifier(tVar)],
+          ),
+        ),
+      )
+      // __bind(__t0, mask, 'text', undefined, accessor)
+      stmts.push(
+        f.createExpressionStatement(
+          f.createCallExpression(f.createIdentifier('__bind'), undefined, [
+            f.createIdentifier(tVar),
+            createMaskLiteral(f, rt.mask),
+            f.createStringLiteral('text'),
+            f.createIdentifier('undefined'),
+            rt.accessor,
+          ]),
+        ),
+      )
+    }
+
+    // Reactive bindings — __bind(node, mask, kind, key, accessor)
+    for (const [mask, kind, key, accessor] of op.bindings) {
+      stmts.push(
+        f.createExpressionStatement(
+          f.createCallExpression(f.createIdentifier('__bind'), undefined, [
+            nodeRef,
+            createMaskLiteral(f, mask),
+            f.createStringLiteral(kind),
+            key ? f.createStringLiteral(key) : f.createIdentifier('undefined'),
+            accessor,
+          ]),
+        ),
+      )
+    }
+  }
+
+  // (root, __bind) => { ... }
+  const patchFn = f.createArrowFunction(
+    undefined,
+    undefined,
+    [
+      f.createParameterDeclaration(undefined, undefined, 'root'),
+      f.createParameterDeclaration(undefined, undefined, '__bind'),
+    ],
+    undefined,
+    f.createToken(ts.SyntaxKind.EqualsGreaterThanToken),
+    f.createBlock(stmts, true),
+  )
+
+  const call = f.createCallExpression(
+    f.createIdentifier('elTemplate'),
+    undefined,
+    [f.createStringLiteral(html), patchFn],
+  )
+
+  return call
+}
 
 // ── Static subtree detection ─────────────────────────────────────
 

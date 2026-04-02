@@ -118,3 +118,4 @@ export {
 // ── Compiler Target ───────────────────────────────────────────────
 
 export { elSplit } from './el-split'
+export { elTemplate } from './el-template'
