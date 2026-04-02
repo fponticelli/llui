@@ -118,11 +118,11 @@ function processMessages<S, M, E>(inst: ComponentInstance<S, M, E>): void {
   setCurrentDirtyMask(combinedDirty)
   if (combinedDirty !== 0) {
     const state = inst.state
-    for (let i = 0; i < bindings.length; i++) {
+    for (let i = 0, len = bindings.length; i < len; i++) {
       const binding = bindings[i]!
-      if (binding.dead) continue
-      if ((binding.mask & combinedDirty) === 0) continue
+      // Fast path: per-item bindings on stable items skip without mask check
       if (binding.perItem && binding.ownerScope.eachItemStable) continue
+      if (binding.dead || (binding.mask & combinedDirty) === 0) continue
       const newValue = binding.accessor(state)
       if (Object.is(newValue, binding.lastValue)) continue
       binding.lastValue = newValue
