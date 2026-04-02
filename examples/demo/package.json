@@ -8,7 +8,6 @@
   },
   "dependencies": {
     "@llui/core": "workspace:*",
-    "@llui/effects": "workspace:*",
     "@llui/zag": "workspace:*",
     "@zag-js/accordion": "^1.38.2",
     "@zag-js/checkbox": "^1.38.2",

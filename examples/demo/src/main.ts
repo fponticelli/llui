@@ -10,48 +10,56 @@ import {
   branch,
   onMount,
 } from '@llui/core'
-import { dashboardView, type DashboardSlice, type DashboardMsg, dashboardUpdate } from './pages/dashboard'
-import { contactsView, contactsUpdate, type ContactsSlice, type ContactsMsg, initialContacts } from './pages/contacts'
-import { showcaseView } from './pages/showcase'
+import { useMachine } from '@llui/zag'
+import { VanillaMachine } from '@zag-js/vanilla'
+import * as dialog from '@zag-js/dialog'
+import * as tabs from '@zag-js/tabs'
+import * as accordion from '@zag-js/accordion'
+import * as tooltip from '@zag-js/tooltip'
+import * as switchMachine from '@zag-js/switch'
+import * as checkbox from '@zag-js/checkbox'
+import * as slider from '@zag-js/slider'
+import * as progress from '@zag-js/progress'
 
-type Route = 'dashboard' | 'contacts' | 'showcase'
+import { tabsPage } from './pages/tabs'
+import { accordionPage } from './pages/accordion'
+import { dialogPage } from './pages/dialog'
+import { tooltipPage } from './pages/tooltip'
+import { switchPage } from './pages/switch'
+import { checkboxPage } from './pages/checkbox'
+import { sliderPage } from './pages/slider'
+import { progressPage } from './pages/progress'
 
-type State = {
-  route: Route
-  dashboard: DashboardSlice
-  contacts: ContactsSlice
-}
+type Route = 'tabs' | 'accordion' | 'dialog' | 'tooltip' | 'switch' | 'checkbox' | 'slider' | 'progress'
 
-type Msg =
-  | { type: 'navigate'; route: Route }
-  | { type: 'dashboard'; msg: DashboardMsg }
-  | { type: 'contacts'; msg: ContactsMsg }
+const routes: { id: Route; icon: string; label: string }[] = [
+  { id: 'tabs', icon: '📑', label: 'Tabs' },
+  { id: 'accordion', icon: '🪗', label: 'Accordion' },
+  { id: 'dialog', icon: '💬', label: 'Dialog' },
+  { id: 'tooltip', icon: '💡', label: 'Tooltip' },
+  { id: 'switch', icon: '🔘', label: 'Switch' },
+  { id: 'checkbox', icon: '☑️', label: 'Checkbox' },
+  { id: 'slider', icon: '🎚️', label: 'Slider' },
+  { id: 'progress', icon: '📊', label: 'Progress' },
+]
+
+type State = { route: Route }
+type Msg = { type: 'navigate'; route: Route }
 
 function routeFromHash(): Route {
-  const hash = location.hash.slice(1)
-  if (hash === 'contacts' || hash === 'showcase') return hash
-  return 'dashboard'
+  const hash = location.hash.slice(1) as Route
+  if (routes.some((r) => r.id === hash)) return hash
+  return 'tabs'
 }
 
 const App = component<State, Msg, never>({
   name: 'App',
-  init: () => [
-    {
-      route: routeFromHash(),
-      dashboard: { totalContacts: 12, activeDeals: 5, revenue: 48200 },
-      contacts: { items: initialContacts, search: '', editingId: null, dialogOpen: false, form: { name: '', email: '', company: '', tag: 'active' } },
-    },
-    [],
-  ],
+  init: () => [{ route: routeFromHash() }, []],
   update: (state, msg) => {
     switch (msg.type) {
       case 'navigate':
         history.replaceState(null, '', `#${msg.route}`)
         return [{ ...state, route: msg.route }, []]
-      case 'dashboard':
-        return [{ ...state, dashboard: dashboardUpdate(state.dashboard, msg.msg) }, []]
-      case 'contacts':
-        return [{ ...state, contacts: contactsUpdate(state.contacts, msg.msg) }, []]
     }
   },
   view: (_state, send) => {
@@ -66,59 +74,31 @@ const App = component<State, Msg, never>({
         div({ class: 'sidebar' }, [
           div({ class: 'sidebar-brand' }, [
             div({ class: 'logo' }, [text('L')]),
-            span({ class: 'name' }, [text('LLui Demo')]),
+            span({ class: 'name' }, [text('LLui + Zag')]),
           ]),
-          nav({ class: 'sidebar-nav' }, [
-            a({
-              class: (s: State) => `${s.route === 'dashboard' ? 'active' : ''}`,
-              onClick: () => send({ type: 'navigate', route: 'dashboard' }),
-              role: 'button',
-              tabIndex: '0',
-            }, [span({ class: 'icon' }, [text('📊')]), text('Dashboard')]),
-            a({
-              class: (s: State) => `${s.route === 'contacts' ? 'active' : ''}`,
-              onClick: () => send({ type: 'navigate', route: 'contacts' }),
-              role: 'button',
-              tabIndex: '0',
-            }, [span({ class: 'icon' }, [text('👥')]), text('Contacts')]),
-            a({
-              class: (s: State) => `${s.route === 'showcase' ? 'active' : ''}`,
-              onClick: () => send({ type: 'navigate', route: 'showcase' }),
-              role: 'button',
-              tabIndex: '0',
-            }, [span({ class: 'icon' }, [text('🧩')]), text('Components')]),
-          ]),
+          nav({ class: 'sidebar-nav' },
+            routes.map((r) =>
+              a({
+                class: (s: State) => s.route === r.id ? 'active' : '',
+                onClick: () => send({ type: 'navigate', route: r.id }),
+                role: 'button',
+                tabIndex: '0',
+              }, [span({ class: 'icon' }, [text(r.icon)]), text(r.label)]),
+            ),
+          ),
         ]),
         div({ class: 'main' }, [
           ...branch<State>({
             on: (s) => s.route,
             cases: {
-              dashboard: () => {
-                return [
-                  h2({ class: 'page-title' }, [text('Dashboard')]),
-                  ...dashboardView(
-                    { dashboard: (s: State) => s.dashboard },
-                    (msg) => send({ type: 'dashboard', msg }),
-                  ),
-                ]
-              },
-              contacts: () => {
-                return [
-                  h2({ class: 'page-title' }, [text('Contacts')]),
-                  ...contactsView(
-                    {
-                      contacts: (s: State) => s.contacts,
-                    },
-                    (msg) => send({ type: 'contacts', msg }),
-                  ),
-                ]
-              },
-              showcase: () => {
-                return [
-                  h2({ class: 'page-title' }, [text('Component Showcase')]),
-                  ...showcaseView(),
-                ]
-              },
+              tabs: () => tabsPage(VanillaMachine, tabs),
+              accordion: () => accordionPage(VanillaMachine, accordion),
+              dialog: () => dialogPage(VanillaMachine, dialog),
+              tooltip: () => tooltipPage(VanillaMachine, tooltip),
+              switch: () => switchPage(VanillaMachine, switchMachine),
+              checkbox: () => checkboxPage(VanillaMachine, checkbox),
+              slider: () => sliderPage(VanillaMachine, slider),
+              progress: () => progressPage(VanillaMachine, progress),
             },
           }),
         ]),

@@ -123,9 +123,6 @@ importers:
       '@llui/core':
         specifier: workspace:*
         version: link:../../packages/core
-      '@llui/effects':
-        specifier: workspace:*
-        version: link:../../packages/effects
       '@llui/zag':
         specifier: workspace:*
         version: link:../../packages/zag
