@@ -6,7 +6,7 @@
   },
   "todomvc": {
     "chunks": 1,
-    "raw": 10324,
-    "gzip": 3922
+    "raw": 11171,
+    "gzip": 4135
   }
 }

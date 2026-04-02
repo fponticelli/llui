@@ -59,6 +59,9 @@ Runtime and bundle size improvements, tracked against benchmarks.
 - [x] Append-only (no reordering, new items at end) → insert only new entries
 - [x] Two-element swap detection → two targeted DOM moves (swap: 55ms → 12ms)
 - [x] Bulk clear → remove all + dispose without key lookup
+- [x] DocumentFragment batching — append, replace, and reorder use fragments for single-reflow insertion
+- [x] Full-replace fast path — skip Map/Set when no keys survive (replace: 77ms → 63ms)
+- [x] Survivors-in-order check — only insert new nodes when existing ones are already correctly positioned
 
 **Runtime — binding evaluation:**
 - [x] Flat binding array per component (dead-flag + lazy compaction, eliminates recursive scope walk)

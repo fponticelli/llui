@@ -120,19 +120,21 @@ function reconcileEntries<S, T>(
 
   // Fast path 2: append-only — old keys are a prefix of new keys
   if (newLen > oldLen && isAppendOnly(entries, newItems, opts)) {
-    // Update existing entries' refs (items may have new references)
     for (let i = 0; i < oldLen; i++) {
       updateEntry(entries[i]!, newItems[i]!, i)
     }
-    // Build and append new entries
-    const ref = entries.length > 0
-      ? entries[entries.length - 1]!.nodes[entries[entries.length - 1]!.nodes.length - 1]!.nextSibling
+    // Find insertion point: after last existing entry's last node, or after anchor
+    const lastEntry = oldLen > 0 ? entries[oldLen - 1]! : null
+    const ref = lastEntry
+      ? lastEntry.nodes[lastEntry.nodes.length - 1]!.nextSibling
       : anchor.nextSibling
+    const frag = document.createDocumentFragment()
     for (let i = oldLen; i < newLen; i++) {
       const entry = buildEntry(newItems[i]!, i, opts, parentScope, ctx, state)
       entries.push(entry)
-      for (const node of entry.nodes) parent.insertBefore(node, ref)
+      for (const node of entry.nodes) frag.appendChild(node)
     }
+    parent.insertBefore(frag, ref)
     return
   }
 
@@ -165,7 +167,35 @@ function reconcileEntries<S, T>(
     }
   }
 
-  // General path: full keyed reconciliation
+  // Fast path 4: full replace — no shared keys between old and new
+  // Quick check: if oldLen > 0 and first new key isn't in old entries, likely full replace
+  if (oldLen > 0) {
+    const oldKeys = new Set<string | number>()
+    for (const entry of entries) oldKeys.add(entry.key)
+    let anyShared = false
+    for (let i = 0; i < newLen; i++) {
+      if (oldKeys.has(opts.key(newItems[i]!))) { anyShared = true; break }
+    }
+    if (!anyShared) {
+      // Clear all old entries
+      for (const entry of entries) {
+        for (const node of entry.nodes) parent.removeChild(node)
+        disposeScope(entry.scope)
+      }
+      entries.length = 0
+      // Build all new entries into a fragment
+      const frag = document.createDocumentFragment()
+      for (let i = 0; i < newLen; i++) {
+        const entry = buildEntry(newItems[i]!, i, opts, parentScope, ctx, state)
+        entries.push(entry)
+        for (const node of entry.nodes) frag.appendChild(node)
+      }
+      parent.insertBefore(frag, anchor.nextSibling)
+      return
+    }
+  }
+
+  // General path: keyed reconciliation
   const oldByKey = new Map<string | number, Entry<T>>()
   for (const entry of entries) {
     oldByKey.set(entry.key, entry)
@@ -198,17 +228,33 @@ function reconcileEntries<S, T>(
   }
 
   // Reorder DOM
-  let insertBefore = anchor.nextSibling
-  for (const entry of newEntries) {
-    for (const node of entry.nodes) {
-      if (node !== insertBefore) {
-        parent.insertBefore(node, insertBefore)
+  const hasSurvivors = newEntries.some((e) => oldByKey.has(e.key))
+
+  if (!hasSurvivors || !survivorsInOrder(entries, newEntries, usedKeys)) {
+    // Full fragment rebuild — one reflow
+    const frag = document.createDocumentFragment()
+    for (const entry of newEntries) {
+      for (const node of entry.nodes) frag.appendChild(node)
+    }
+    parent.insertBefore(frag, anchor.nextSibling)
+  } else {
+    // Survivors in order — batch-insert new entries between survivors
+    let frag: DocumentFragment | null = null
+    let insertRef: ChildNode | null = anchor.nextSibling
+    for (const entry of newEntries) {
+      if (oldByKey.has(entry.key)) {
+        // Flush any pending fragment before this survivor
+        if (frag) { parent.insertBefore(frag, insertRef); frag = null }
+        // Skip past survivor's nodes
+        const lastNode = entry.nodes[entry.nodes.length - 1]
+        insertRef = lastNode ? lastNode.nextSibling : insertRef
       } else {
-        insertBefore = insertBefore?.nextSibling ?? null
+        // Batch new entries into a fragment
+        if (!frag) frag = document.createDocumentFragment()
+        for (const node of entry.nodes) frag.appendChild(node)
       }
     }
-    const lastNode = entry.nodes[entry.nodes.length - 1]
-    if (lastNode) insertBefore = lastNode.nextSibling
+    if (frag) parent.insertBefore(frag, insertRef)
   }
 
   entries.length = 0
@@ -266,6 +312,29 @@ function detectSwap<S, T>(
   }
 
   return null
+}
+
+function survivorsInOrder<T>(
+  oldEntries: Entry<T>[],
+  newEntries: Entry<T>[],
+  usedKeys: Set<string | number>,
+): boolean {
+  // Build old-index map for survivors
+  const oldIndexMap = new Map<string | number, number>()
+  for (let i = 0; i < oldEntries.length; i++) {
+    if (usedKeys.has(oldEntries[i]!.key)) {
+      oldIndexMap.set(oldEntries[i]!.key, i)
+    }
+  }
+  // Check that survivors appear in increasing old-index order in newEntries
+  let maxOldIndex = -1
+  for (const entry of newEntries) {
+    const oldIdx = oldIndexMap.get(entry.key)
+    if (oldIdx === undefined) continue // new entry, skip
+    if (oldIdx < maxOldIndex) return false
+    maxOldIndex = oldIdx
+  }
+  return true
 }
 
 function moveEntryNodes<T>(parent: Node, entries: Entry<T>[], index: number): void {
