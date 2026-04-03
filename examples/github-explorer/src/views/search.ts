@@ -1,6 +1,7 @@
-import { div, h3, p, a, span, ul, li, text, button, each, branch, peek } from '@llui/dom'
+import { div, h3, p, span, ul, li, text, button, each, branch, peek } from '@llui/dom'
 import type { State, Msg, Repo, SearchData } from '../types'
 import type { Send } from '@llui/dom'
+import { routing } from '../router'
 
 const LANG_COLORS: Record<string, string> = {
   TypeScript: '#3178c6', JavaScript: '#f1e05a', Python: '#3572A5', Rust: '#dea584',
@@ -90,13 +91,12 @@ function repoItem(
   const name = item((r) => r.name)()
   return li({ class: 'repo-item' }, [
     h3({}, [
-      a({
-        href: `/${owner}/${name}`,
-        onClick: (e: Event) => {
-          e.preventDefault()
-          send({ type: 'navigate', route: { page: 'repo', owner, name, tab: 'code', data: { type: 'loading' } } })
-        },
-      }, [text(item((r) => r.full_name))]),
+      routing.link(
+        send,
+        { page: 'repo', owner, name, tab: 'code', data: { type: 'loading' } },
+        {},
+        [text(item((r) => r.full_name))],
+      ),
     ]),
     p({}, [text(item((r) => r.description ?? ''))]),
     div({ class: 'repo-meta' }, [

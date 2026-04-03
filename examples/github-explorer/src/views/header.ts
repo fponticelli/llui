@@ -1,10 +1,11 @@
-import { div, a, input, form, text } from '@llui/dom'
+import { div, input, form, text } from '@llui/dom'
 import type { State, Msg } from '../types'
 import type { Send } from '@llui/dom'
+import { routing } from '../router'
 
 export function header(_s: State, send: Send<Msg>): HTMLElement {
   return div({ class: 'header' }, [
-    a({ href: '/', onClick: (e: Event) => { e.preventDefault(); send({ type: 'navigate', route: { page: 'search', q: '', data: { type: 'idle' } } }) } }, [text('GitHub Explorer')]),
+    routing.link(send, { page: 'search', q: '', data: { type: 'idle' } }, {}, [text('GitHub Explorer')]),
     div({ class: 'search' }, [
       form({
         onSubmit: (e: Event) => { e.preventDefault(); send({ type: 'submitSearch' }) },
