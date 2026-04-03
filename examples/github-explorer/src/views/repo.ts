@@ -1,7 +1,9 @@
-import { div, h1, h3, a, p, pre, code, span, text, each, branch, show, peek } from '@llui/dom'
+import { div, h1, h3, a, p, span, text, each, branch, show, peek } from '@llui/dom'
 import type { State, Msg, Repo, TreeEntry, Issue } from '../types'
 import type { Send } from '@llui/dom'
 import { routing } from '../router'
+import { readmeView } from './foreign-readme'
+import { codeView } from './foreign-code'
 
 function repoFromState(s: State): Repo | null {
   const r = s.route
@@ -92,11 +94,11 @@ export function repoPage(s: State, send: Send<Msg>): Node[] {
           code: (s, send) => [
             ...breadcrumb(s, send),
             ...fileTree(send),
-            ...readmeSection(),
+            ...readmeView(),
           ],
           file: (s, send) => [
             ...breadcrumb(s, send),
-            ...fileView(),
+            ...codeView(),
           ],
           issues: () => issuesList(),
         },
@@ -179,49 +181,6 @@ function fileTree(send: Send<Msg>): Node[] {
       }),
     ]),
   ]
-}
-
-function fileView(): Node[] {
-  return [
-    div({ class: 'file-view' }, [
-      div({ class: 'file-header' }, [
-        span({}, [text((s: State) => {
-          const r = s.route
-          if (r.page === 'tree' && r.data.type === 'success' && 'file' in r.data.data) return r.data.data.file.name
-          return ''
-        })]),
-        span({}, [text((s: State) => {
-          const r = s.route
-          if (r.page === 'tree' && r.data.type === 'success' && 'file' in r.data.data) return formatSize(r.data.data.file.size)
-          return ''
-        })]),
-      ]),
-      pre({}, [
-        code({}, [
-          text((s: State) => {
-            const r = s.route
-            if (r.page !== 'tree' || r.data.type !== 'success' || !('file' in r.data.data)) return ''
-            try { return atob(r.data.data.file.content) } catch { return r.data.data.file.content }
-          }),
-        ]),
-      ]),
-    ]),
-  ]
-}
-
-function readmeSection(): Node[] {
-  return show<State, Msg>({
-    when: (s) => s.route.page === 'repo' && s.route.tab === 'code' && s.route.data.type === 'success' && s.route.data.data.readme.length > 0,
-    render: () => [
-      div({ class: 'readme' }, [
-        div({ innerHTML: (s: State) => {
-          const r = s.route
-          if (r.page === 'repo' && r.tab === 'code' && r.data.type === 'success') return r.data.data.readme
-          return ''
-        } }),
-      ]),
-    ],
-  })
 }
 
 function issuesList(): Node[] {
