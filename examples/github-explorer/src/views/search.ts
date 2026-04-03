@@ -91,7 +91,7 @@ function repoItem(
   return li({ class: 'repo-item' }, [
     h3({}, [
       a({
-        href: `#/${owner}/${name}`,
+        href: `/${owner}/${name}`,
         onClick: (e: Event) => {
           e.preventDefault()
           send({ type: 'navigate', route: { page: 'repo', owner, name, tab: 'code', data: { type: 'loading' } } })

@@ -1,6 +1,7 @@
 import { div, h1, h3, a, p, pre, code, span, text, each, branch, show, peek } from '@llui/dom'
 import type { State, Msg, Repo, TreeEntry, Issue } from '../types'
 import type { Send } from '@llui/dom'
+import { routing } from '../router'
 
 function repoFromState(s: State): Repo | null {
   const r = s.route
@@ -9,24 +10,33 @@ function repoFromState(s: State): Repo | null {
   return null
 }
 
-export function repoPage(_s: State, send: Send<Msg>): Node[] {
+/** Extract owner/name from route — always available (from URL, not API) */
+function routeOwnerName(s: State): { owner: string; name: string } | null {
+  const r = s.route
+  if (r.page === 'repo') return { owner: r.owner, name: r.name }
+  if (r.page === 'tree') return { owner: r.owner, name: r.name }
+  return null
+}
+
+export function repoPage(s: State, send: Send<Msg>): Node[] {
+  // owner/name from route (always available)
+  const rp = routeOwnerName(s)
+  const owner = rp?.owner ?? ''
+  const name = rp?.name ?? ''
+
   return [
     div({ class: 'repo-header' }, [
       div({ class: 'container' }, [
         h1({}, [
-          text((s: State) => repoFromState(s)?.owner?.login ?? ''),
+          text((s: State) => routeOwnerName(s)?.owner ?? ''),
           text(' / '),
-          a({
-            href: (s: State) => {
-              const r = repoFromState(s)
-              return r ? `#/${r.owner.login}/${r.name}` : '#/'
-            },
-          }, [text((s: State) => repoFromState(s)?.name ?? '')]),
+          routing.link(send, { page: 'repo', owner, name, tab: 'code', data: { type: 'loading' } }, {},
+            [text((s: State) => routeOwnerName(s)?.name ?? '')]),
         ]),
         div({ class: 'stats' }, [
-          span({}, [text((s: State) => `★ ${repoFromState(s)?.stargazers_count?.toLocaleString() ?? '0'}`)]),
-          span({}, [text((s: State) => `🍴 ${repoFromState(s)?.forks_count?.toLocaleString() ?? '0'}`)]),
-          span({}, [text((s: State) => `Issues: ${repoFromState(s)?.open_issues_count ?? 0}`)]),
+          span({}, [text((s: State) => `★ ${repoFromState(s)?.stargazers_count?.toLocaleString() ?? '—'}`)]),
+          span({}, [text((s: State) => `🍴 ${repoFromState(s)?.forks_count?.toLocaleString() ?? '—'}`)]),
+          span({}, [text((s: State) => `Issues: ${repoFromState(s)?.open_issues_count ?? '—'}`)]),
         ]),
         ...show<State, Msg>({
           when: (s) => !!repoFromState(s)?.description,
@@ -34,24 +44,24 @@ export function repoPage(_s: State, send: Send<Msg>): Node[] {
         }),
       ]),
     ]),
+    // Tab nav
     div({ class: 'tab-nav' }, [
       div({ class: 'container' }, [
-        a({
-          class: (s: State) => s.route.page !== 'repo' || s.route.tab === 'code' ? 'active' : '',
-          href: (s: State) => {
-            const r = repoFromState(s)
-            return r ? `#/${r.owner.login}/${r.name}` : '#/'
-          },
-        }, [text('Code')]),
-        a({
-          class: (s: State) => s.route.page === 'repo' && s.route.tab === 'issues' ? 'active' : '',
-          href: (s: State) => {
-            const r = repoFromState(s)
-            return r ? `#/${r.owner.login}/${r.name}/issues` : '#/'
-          },
-        }, [text('Issues')]),
+        routing.link(
+          send,
+          { page: 'repo', owner, name, tab: 'code', data: { type: 'loading' } },
+          { class: (s: State) => s.route.page !== 'repo' || s.route.tab === 'code' ? 'active' : '' },
+          [text('Code')],
+        ),
+        routing.link(
+          send,
+          { page: 'repo', owner, name, tab: 'issues', data: { type: 'loading' } },
+          { class: (s: State) => s.route.page === 'repo' && s.route.tab === 'issues' ? 'active' : '' },
+          [text('Issues')],
+        ),
       ]),
     ]),
+    // Content
     div({ class: 'container' }, [
       ...branch<State, Msg>({
         on: (s) => {
@@ -90,14 +100,13 @@ function breadcrumb(s: State, send: Send<Msg>): Node[] {
   if (!path) return []
 
   const parts = path.split('/')
-  const crumbs: HTMLElement[] = [
-    a({
-      href: `#/${owner}/${name}`,
-      onClick: (e: Event) => {
-        e.preventDefault()
-        send({ type: 'navigate', route: { page: 'repo', owner, name, tab: 'code', data: { type: 'loading' } } })
-      },
-    }, [text(name)]),
+  const crumbs: Node[] = [
+    routing.link(
+      send,
+      { page: 'repo', owner, name, tab: 'code', data: { type: 'loading' } },
+      {},
+      [text(name)],
+    ),
   ]
 
   for (let i = 0; i < parts.length; i++) {
@@ -108,13 +117,12 @@ function breadcrumb(s: State, send: Send<Msg>): Node[] {
       crumbs.push(span({}, [text(parts[i]!)]))
     } else {
       crumbs.push(
-        a({
-          href: `#/${owner}/${name}/tree/${partial}`,
-          onClick: (e: Event) => {
-            e.preventDefault()
-            send({ type: 'navigate', route: { page: 'tree', owner, name, path: partial, data: { type: 'loading' } } })
-          },
-        }, [text(parts[i]!)]),
+        routing.link(
+          send,
+          { page: 'tree', owner, name, path: partial, data: { type: 'loading' } },
+          {},
+          [text(parts[i]!)],
+        ),
       )
     }
   }
