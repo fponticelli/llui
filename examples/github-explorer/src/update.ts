@@ -23,7 +23,7 @@ export function update(state: State, msg: Msg): [State, Effect[]] {
 
     case 'submitSearch': {
       if (!state.query.trim()) return [state, []]
-      const route: Route = { page: 'search', q: state.query, p: 0, data: { type: 'loading' } }
+      const route: Route = { page: 'search', q: state.query, p: 1, data: { type: 'loading' } }
       return [
         { ...state, route },
         [
@@ -103,7 +103,7 @@ function loadRoute(state: State, route: Route): [State, Effect[]] {
   switch (r.page) {
     case 'search':
       if (r.q) {
-        effects.push(http({ url: searchUrl(r.q, r.p), headers: JSON_HEADERS, onSuccess: 'searchOk', onError: 'apiError' }))
+        effects.push(http({ url: searchUrl(r.q, r.p - 1), headers: JSON_HEADERS, onSuccess: 'searchOk', onError: 'apiError' }))
         return [{ ...state, route: r, query: r.q }, effects]
       }
       return [{ ...state, route: { ...r, data: { type: 'idle' } }, query: '' }, []]
@@ -194,13 +194,13 @@ function withIssuesLoaded(state: State, issues: Issue[]): [State, Effect[]] {
 function changePage(state: State, delta: number): [State, Effect[]] {
   const r = state.route
   if (r.page !== 'search' || r.data.type !== 'success') return [state, []]
-  const p = Math.max(0, r.p + delta)
+  const p = Math.max(1, r.p + delta)
   const newRoute: Route = { ...r, p, data: { type: 'loading', stale: r.data.data } }
   return [
     { ...state, route: newRoute },
     [
       routing.replace(newRoute),
-      http({ url: searchUrl(r.q, p), headers: JSON_HEADERS, onSuccess: 'searchOk', onError: 'apiError' }),
+      http({ url: searchUrl(r.q, p - 1), headers: JSON_HEADERS, onSuccess: 'searchOk', onError: 'apiError' }),
     ],
   ]
 }

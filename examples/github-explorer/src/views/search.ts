@@ -26,8 +26,8 @@ function searchTotal(s: State): number {
   return 0
 }
 
-function searchPage(s: State): number {
-  return s.route.page === 'search' ? s.route.p : 0
+function currentPage(s: State): number {
+  return s.route.page === 'search' ? s.route.p : 1
 }
 
 export function searchView(_s: State, send: Send<Msg>): Node[] {
@@ -72,16 +72,16 @@ export function searchView(_s: State, send: Send<Msg>): Node[] {
             ]),
             div({ class: 'pagination' }, [
               button({
-                disabled: (s: State) => searchPage(s) === 0,
+                disabled: (s: State) => currentPage(s) <= 1,
                 onClick: () => send({ type: 'prevPage' }),
               }, [text('← Previous')]),
               text((s: State) => {
                 const total = searchTotal(s)
                 if (total <= 10) return ''
-                return ` Page ${searchPage(s) + 1} of ${Math.ceil(total / 10)} `
+                return ` Page ${currentPage(s)} of ${Math.ceil(total / 10)} `
               }),
               button({
-                disabled: (s: State) => (searchPage(s) + 1) * 10 >= searchTotal(s),
+                disabled: (s: State) => currentPage(s) * 10 >= searchTotal(s),
                 onClick: () => send({ type: 'nextPage' }),
               }, [text('Next →')]),
             ]),
