@@ -1,15 +1,16 @@
 import { div, h1, h3, a, p, pre, code, span, text, each, branch, show, peek } from '@llui/dom'
-import type { State, Msg, TreeEntry, Issue } from '../types'
+import type { State, Msg, Repo, TreeEntry, Issue } from '../types'
 import type { Send } from '@llui/dom'
 
-function repoFromState(s: State) {
-  const ps = s.pageState
-  return ps.page === 'repo' || ps.page === 'tree' ? ps.repo : null
+function repoFromState(s: State): Repo | null {
+  const r = s.route
+  if (r.page === 'repo' && r.data.type === 'success') return r.data.data.repo
+  if (r.page === 'tree' && r.data.type === 'success') return r.data.data.repo
+  return null
 }
 
 export function repoPage(_s: State, send: Send<Msg>): Node[] {
   return [
-    // Repo header
     div({ class: 'repo-header' }, [
       div({ class: 'container' }, [
         h1({}, [
@@ -33,7 +34,6 @@ export function repoPage(_s: State, send: Send<Msg>): Node[] {
         }),
       ]),
     ]),
-    // Tab nav
     div({ class: 'tab-nav' }, [
       div({ class: 'container' }, [
         a({
@@ -52,17 +52,21 @@ export function repoPage(_s: State, send: Send<Msg>): Node[] {
         }, [text('Issues')]),
       ]),
     ]),
-    // Content
     div({ class: 'container' }, [
       ...branch<State, Msg>({
         on: (s) => {
-          if (s.loading) return 'loading'
-          if (s.pageState.page === 'repo' && s.pageState.tab === 'issues') return 'issues'
-          if (s.pageState.page === 'tree' && s.pageState.file) return 'file'
+          const r = s.route
+          if (r.data.type === 'loading') return 'loading'
+          if (r.data.type === 'failure') return 'error'
+          if (r.page === 'repo' && r.tab === 'issues') return 'issues'
+          if (r.page === 'tree' && r.data.type === 'success' && 'file' in r.data.data) return 'file'
           return 'code'
         },
         cases: {
           loading: () => [div({ class: 'loading' }, [text('Loading...')])],
+          error: () => [div({ class: 'error' }, [
+            text((s: State) => s.route.data.type === 'failure' ? `Error: ${s.route.data.error.kind}` : ''),
+          ])],
           code: (s, send) => [
             ...breadcrumb(s, send),
             ...fileTree(send),
@@ -72,14 +76,12 @@ export function repoPage(_s: State, send: Send<Msg>): Node[] {
             ...breadcrumb(s, send),
             ...fileView(),
           ],
-          issues: (_s, _send) => issuesList(),
+          issues: () => issuesList(),
         },
       }),
     ]),
   ]
 }
-
-// ── Breadcrumb ───────────────────────────────────────────────────
 
 function breadcrumb(s: State, send: Send<Msg>): Node[] {
   const route = s.route
@@ -93,7 +95,7 @@ function breadcrumb(s: State, send: Send<Msg>): Node[] {
       href: `#/${owner}/${name}`,
       onClick: (e: Event) => {
         e.preventDefault()
-        send({ type: 'navigate', route: { page: 'repo', owner, name, tab: 'code' } })
+        send({ type: 'navigate', route: { page: 'repo', owner, name, tab: 'code', data: { type: 'loading' } } })
       },
     }, [text(name)]),
   ]
@@ -110,7 +112,7 @@ function breadcrumb(s: State, send: Send<Msg>): Node[] {
           href: `#/${owner}/${name}/tree/${partial}`,
           onClick: (e: Event) => {
             e.preventDefault()
-            send({ type: 'navigate', route: { page: 'tree', owner, name, path: partial } })
+            send({ type: 'navigate', route: { page: 'tree', owner, name, path: partial, data: { type: 'loading' } } })
           },
         }, [text(parts[i]!)]),
       )
@@ -120,13 +122,16 @@ function breadcrumb(s: State, send: Send<Msg>): Node[] {
   return [div({ class: 'breadcrumb' }, crumbs)]
 }
 
-// ── File Tree ────────────────────────────────────────────────────
-
 function fileTree(send: Send<Msg>): Node[] {
   return [
     div({ class: 'file-tree' }, [
       ...each<State, TreeEntry, Msg>({
-        items: (s) => s.pageState.page === 'repo' || s.pageState.page === 'tree' ? s.pageState.tree : [],
+        items: (s) => {
+          const r = s.route
+          if (r.page === 'repo' && r.tab === 'code' && r.data.type === 'success') return r.data.data.tree
+          if (r.page === 'tree' && r.data.type === 'success' && 'tree' in r.data.data) return r.data.data.tree
+          return []
+        },
         key: (e) => e.sha,
         render: ({ item, send }) => {
           const isDir = item((e) => e.type)() === 'dir'
@@ -151,20 +156,27 @@ function fileTree(send: Send<Msg>): Node[] {
   ]
 }
 
-// ── File View ────────────────────────────────────────────────────
-
 function fileView(): Node[] {
   return [
     div({ class: 'file-view' }, [
       div({ class: 'file-header' }, [
-        span({}, [text((s: State) => s.pageState.page === 'tree' && s.pageState.file ? s.pageState.file.name : '')]),
-        span({}, [text((s: State) => s.pageState.page === 'tree' && s.pageState.file ? formatSize(s.pageState.file.size) : '')]),
+        span({}, [text((s: State) => {
+          const r = s.route
+          if (r.page === 'tree' && r.data.type === 'success' && 'file' in r.data.data) return r.data.data.file.name
+          return ''
+        })]),
+        span({}, [text((s: State) => {
+          const r = s.route
+          if (r.page === 'tree' && r.data.type === 'success' && 'file' in r.data.data) return formatSize(r.data.data.file.size)
+          return ''
+        })]),
       ]),
       pre({}, [
         code({}, [
           text((s: State) => {
-            if (s.pageState.page !== 'tree' || !s.pageState.file) return ''
-            try { return atob(s.pageState.file.content) } catch { return s.pageState.file.content }
+            const r = s.route
+            if (r.page !== 'tree' || r.data.type !== 'success' || !('file' in r.data.data)) return ''
+            try { return atob(r.data.data.file.content) } catch { return r.data.data.file.content }
           }),
         ]),
       ]),
@@ -172,25 +184,29 @@ function fileView(): Node[] {
   ]
 }
 
-// ── README ───────────────────────────────────────────────────────
-
 function readmeSection(): Node[] {
   return show<State, Msg>({
-    when: (s) => s.pageState.page === 'repo' && s.pageState.readme.length > 0,
+    when: (s) => s.route.page === 'repo' && s.route.tab === 'code' && s.route.data.type === 'success' && s.route.data.data.readme.length > 0,
     render: () => [
       div({ class: 'readme' }, [
-        div({ innerHTML: (s: State) => s.pageState.page === 'repo' ? s.pageState.readme : '' }),
+        div({ innerHTML: (s: State) => {
+          const r = s.route
+          if (r.page === 'repo' && r.tab === 'code' && r.data.type === 'success') return r.data.data.readme
+          return ''
+        } }),
       ]),
     ],
   })
 }
 
-// ── Issues ───────────────────────────────────────────────────────
-
 function issuesList(): Node[] {
   return [
     ...each<State, Issue, Msg>({
-      items: (s) => s.pageState.page === 'repo' ? s.pageState.issues : [],
+      items: (s) => {
+        const r = s.route
+        if (r.page === 'repo' && r.tab === 'issues' && r.data.type === 'success') return r.data.data.issues
+        return []
+      },
       key: (i) => i.id,
       render: ({ item }) => [
         div({ class: 'issue-row' }, [
@@ -215,8 +231,6 @@ function labelSpans(item: <R>(sel: (i: Issue) => R) => () => R): Node[] {
     }, [text(label.name)]),
   )
 }
-
-// ── Utilities ────────────────────────────────────────────────────
 
 function formatSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`

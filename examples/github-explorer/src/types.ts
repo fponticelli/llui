@@ -45,24 +45,28 @@ export interface Issue {
 
 // ── Route ────────────────────────────────────────────────────────
 
+export type SearchData = { repos: Repo[]; total: number; pageNum: number }
+export type RepoCodeData = { repo: Repo; tree: TreeEntry[]; readme: string }
+export type RepoIssuesData = { repo: Repo; issues: Issue[] }
+export type TreeDirData = { repo: Repo; tree: TreeEntry[] }
+export type TreeFileData = { repo: Repo; file: FileContent }
+
 export type Route =
-  | { page: 'search'; q: string }
-  | { page: 'repo'; owner: string; name: string; tab: 'code' | 'issues' }
-  | { page: 'tree'; owner: string; name: string; path: string }
+  | { page: 'search'; q: string; data: Async<SearchData, ApiError> }
+  | { page: 'repo'; owner: string; name: string; tab: 'code'; data: Async<RepoCodeData, ApiError> }
+  | { page: 'repo'; owner: string; name: string; tab: 'issues'; data: Async<RepoIssuesData, ApiError> }
+  | { page: 'tree'; owner: string; name: string; path: string; data: Async<TreeDirData | TreeFileData, ApiError> }
 
 // ── State ────────────────────────────────────────────────────────
 
-export type PageState =
-  | { page: 'search'; repos: Repo[]; total: number; pageNum: number }
-  | { page: 'repo'; repo: Repo | null; tab: 'code' | 'issues'; tree: TreeEntry[]; readme: string; issues: Issue[] }
-  | { page: 'tree'; repo: Repo | null; tree: TreeEntry[]; file: FileContent | null }
+import type { Async, ApiError, Effect as BuiltinEffect } from '@llui/effects'
+import type { RouterEffect } from '@llui/router/connect'
+
+export type { Async, ApiError }
 
 export interface State {
   route: Route
   query: string
-  pageState: PageState
-  loading: boolean
-  error: string | null
 }
 
 // ── Messages ─────────────────────────────────────────────────────
@@ -76,14 +80,11 @@ export type Msg =
   | { type: 'contentsOk'; payload: TreeEntry[] | FileContent }
   | { type: 'readmeOk'; payload: string }
   | { type: 'issuesOk'; payload: Issue[] }
-  | { type: 'apiError'; error: string }
+  | { type: 'apiError'; error: ApiError }
   | { type: 'nextPage' }
   | { type: 'prevPage' }
   | { type: 'openPath'; path: string; isDir: boolean }
 
 // ── Effects ──────────────────────────────────────────────────────
-
-import type { Effect as BuiltinEffect } from '@llui/effects'
-import type { RouterEffect } from '@llui/router/connect'
 
 export type Effect = BuiltinEffect | RouterEffect

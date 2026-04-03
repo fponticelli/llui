@@ -1,5 +1,5 @@
-import { div, h3, p, a, span, ul, li, text, button, each, branch, show, peek } from '@llui/dom'
-import type { State, Msg, Repo } from '../types'
+import { div, h3, p, a, span, ul, li, text, button, each, branch, peek } from '@llui/dom'
+import type { State, Msg, Repo, SearchData } from '../types'
 import type { Send } from '@llui/dom'
 
 const LANG_COLORS: Record<string, string> = {
@@ -7,34 +7,74 @@ const LANG_COLORS: Record<string, string> = {
   Go: '#00ADD8', Java: '#b07219', Ruby: '#701516', C: '#555555', 'C++': '#f34b7d',
   'C#': '#178600', PHP: '#4F5D95', Swift: '#F05138', Kotlin: '#A97BFF', Dart: '#00B4AB',
   HTML: '#e34c26', CSS: '#563d7c', Shell: '#89e051', Lua: '#000080', Zig: '#ec915c',
-  Elm: '#60B5CC', Haskell: '#5e5086', Scala: '#c22d40', Elixir: '#6e4a7e',
+}
+
+function searchData(s: State): SearchData | undefined {
+  const r = s.route
+  if (r.page !== 'search') return undefined
+  if (r.data.type === 'success') return r.data.data
+  if (r.data.type === 'loading' && r.data.stale) return r.data.stale
+  return undefined
 }
 
 export function searchPage(_s: State, send: Send<Msg>): Node[] {
   return [
     div({ class: 'container' }, [
-      ...errorBox(),
+      // Error
+      ...branch<State, Msg>({
+        on: (s) => s.route.page === 'search' && s.route.data.type === 'failure' ? 'error' : 'ok',
+        cases: {
+          error: () => [div({ class: 'error' }, [
+            text((s: State) => {
+              const r = s.route
+              if (r.page === 'search' && r.data.type === 'failure') return r.data.error.kind
+              return ''
+            }),
+          ])],
+          ok: () => [],
+        },
+      }),
+      // Content
       ...branch<State, Msg>({
         on: (s) => {
-          if (s.loading) return 'loading'
-          if (s.pageState.page !== 'search') return 'welcome'
-          if (s.pageState.repos.length > 0) return 'results'
-          if (s.route.page === 'search' && s.route.q) return 'empty'
-          return 'welcome'
+          const r = s.route
+          if (r.page !== 'search') return 'welcome'
+          if (r.data.type === 'idle') return 'welcome'
+          if (r.data.type === 'loading' && !r.data.stale) return 'loading'
+          const d = searchData(s)
+          if (!d || d.repos.length === 0) return r.q ? 'empty' : 'welcome'
+          return 'results'
         },
         cases: {
+          welcome: () => [div({ class: 'loading' }, [text('Search for GitHub repositories to get started.')])],
           loading: () => [div({ class: 'loading' }, [text('Searching...')])],
           empty: () => [div({ class: 'loading' }, [text('No repositories found.')])],
-          welcome: () => [div({ class: 'loading' }, [text('Search for GitHub repositories to get started.')])],
           results: (_s, send) => [
             ul({ class: 'repo-list' }, [
               ...each<State, Repo, Msg>({
-                items: (s) => s.pageState.page === 'search' ? s.pageState.repos : [],
+                items: (s) => searchData(s)?.repos ?? [],
                 key: (r) => r.id,
                 render: ({ item, send }) => [repoItem(item, send)],
               }),
             ]),
-            ...paginationControls(send),
+            div({ class: 'pagination' }, [
+              button({
+                disabled: (s: State) => (searchData(s)?.pageNum ?? 0) === 0,
+                onClick: () => send({ type: 'prevPage' }),
+              }, [text('← Previous')]),
+              text((s: State) => {
+                const d = searchData(s)
+                if (!d) return ''
+                return ` Page ${d.pageNum + 1} of ${Math.ceil(d.total / 10)} `
+              }),
+              button({
+                disabled: (s: State) => {
+                  const d = searchData(s)
+                  return !d || (d.pageNum + 1) * 10 >= d.total
+                },
+                onClick: () => send({ type: 'nextPage' }),
+              }, [text('Next →')]),
+            ]),
           ],
         },
       }),
@@ -54,7 +94,7 @@ function repoItem(
         href: `#/${owner}/${name}`,
         onClick: (e: Event) => {
           e.preventDefault()
-          send({ type: 'navigate', route: { page: 'repo', owner, name, tab: 'code' } })
+          send({ type: 'navigate', route: { page: 'repo', owner, name, tab: 'code', data: { type: 'loading' } } })
         },
       }, [text(item((r) => r.full_name))]),
     ]),
@@ -73,33 +113,4 @@ function repoItem(
       span({}, [text(item((r) => `Updated ${new Date(r.updated_at).toLocaleDateString()}`))]),
     ]),
   ])
-}
-
-function errorBox(): Node[] {
-  return show<State, Msg>({
-    when: (s) => s.error !== null,
-    render: () => [div({ class: 'error' }, [text((s: State) => s.error ?? '')])],
-  })
-}
-
-function paginationControls(send: Send<Msg>): Node[] {
-  return show<State, Msg>({
-    when: (s) => s.pageState.page === 'search' && s.pageState.total > 10,
-    render: () => [
-      div({ class: 'pagination' }, [
-        button({
-          disabled: (s: State) => s.pageState.page === 'search' && s.pageState.pageNum === 0,
-          onClick: () => send({ type: 'prevPage' }),
-        }, [text('← Previous')]),
-        text((s: State) => {
-          if (s.pageState.page !== 'search') return ''
-          return `Page ${s.pageState.pageNum + 1} of ${Math.ceil(s.pageState.total / 10)}`
-        }),
-        button({
-          disabled: (s: State) => s.pageState.page === 'search' && (s.pageState.pageNum + 1) * 10 >= s.pageState.total,
-          onClick: () => send({ type: 'nextPage' }),
-        }, [text('Next →')]),
-      ]),
-    ],
-  })
 }
