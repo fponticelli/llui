@@ -101,14 +101,26 @@ The foundation everything else builds on.
 
 ## Next Steps
 
+### 0. Rename `@llui/core` → `@llui/dom`
+
+The current `@llui/core` package is DOM-specific. Renaming to `@llui/dom` reserves `@llui/core` for shared abstractions if native platform targets (iOS, Android, terminal) are added in the future.
+
+- [ ] Rename package directory `packages/core` → `packages/dom`
+- [ ] Update `package.json` name to `@llui/dom`
+- [ ] Update all workspace references (`@llui/core` → `@llui/dom`) across packages, benchmarks, examples, and docs
+- [ ] Update compiler: `'@llui/core'` import detection → `'@llui/dom'`
+- [ ] Update CLAUDE.md, design docs, evaluation suite, and lint-idiomatic
+- [ ] Verify all tests, build, and benchmarks pass after rename
+
 ### 1. Real App Validation
 
-Build a non-trivial application (TodoMVC, dashboard, or form-heavy app) using idiomatic LLui to validate the full developer experience end-to-end. This surfaces API gaps, compiler edge cases, and documentation holes that benchmarks don't reveal.
+Build a [Realworld (Conduit)](https://github.com/gothinkster/realworld) app — the standardized "medium.com clone" that exercises auth, routing, CRUD, forms, pagination, and API integration. This validates the full surface area: effects, composition (Level 1 + Level 2), `each()`, `branch()`, `portal()`, and async patterns against a real API backend.
 
-- [ ] TodoMVC with full spec compliance (routing, persistence, filters)
+- [ ] Implement Conduit spec: articles, comments, auth, profiles, feed, pagination
 - [ ] Verify all element helpers work correctly in compiled mode
 - [ ] Stress-test `branch()`, `show()`, `portal()` in realistic combinations
 - [ ] Validate Level 1 and Level 2 composition patterns in a real component hierarchy
+- [ ] Exercise `@llui/effects` (http, cancel, debounce) against the Conduit API
 
 ### 2. SSR/Hydration Hardening
 
