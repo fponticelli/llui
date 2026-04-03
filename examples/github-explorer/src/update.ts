@@ -55,6 +55,19 @@ export function update(state: State, msg: Msg): [State, Effect[]] {
       return withIssuesLoaded(state, msg.payload)
 
     case 'apiError':
+      // Only set failure if data hasn't already loaded successfully
+      if (state.route.data.type !== 'success') {
+        return [setRouteData(state, { type: 'failure', error: msg.error }), []]
+      }
+      return [state, []]
+
+    case 'readmeError':
+      // README is optional — a 404 just means no readme, not an error
+      return [state, []]
+
+    case 'contentsError':
+      // Contents error on an otherwise loaded page — don't destroy repo data
+      if (state.route.data.type === 'success') return [state, []]
       return [setRouteData(state, { type: 'failure', error: msg.error }), []]
 
     case 'nextPage':
@@ -90,8 +103,8 @@ function navigateTo(state: State, route: Route): [State, Effect[]] {
     case 'repo':
       effects.push(http({ url: repoUrl(r.owner, r.name), headers: JSON_HEADERS, onSuccess: 'repoOk', onError: 'apiError' }))
       if (r.tab === 'code') {
-        effects.push(http({ url: contentsUrl(r.owner, r.name, ''), headers: JSON_HEADERS, onSuccess: 'contentsOk', onError: 'apiError' }))
-        effects.push(http({ url: readmeUrl(r.owner, r.name), headers: HTML_HEADERS, onSuccess: 'readmeOk', onError: 'apiError' }))
+        effects.push(http({ url: contentsUrl(r.owner, r.name, ''), headers: JSON_HEADERS, onSuccess: 'contentsOk', onError: 'contentsError' }))
+        effects.push(http({ url: readmeUrl(r.owner, r.name), headers: HTML_HEADERS, onSuccess: 'readmeOk', onError: 'readmeError' }))
       } else {
         effects.push(http({ url: issuesUrl(r.owner, r.name), headers: JSON_HEADERS, onSuccess: 'issuesOk', onError: 'apiError' }))
       }
@@ -99,7 +112,7 @@ function navigateTo(state: State, route: Route): [State, Effect[]] {
 
     case 'tree':
       effects.push(http({ url: repoUrl(r.owner, r.name), headers: JSON_HEADERS, onSuccess: 'repoOk', onError: 'apiError' }))
-      effects.push(http({ url: contentsUrl(r.owner, r.name, r.path), headers: JSON_HEADERS, onSuccess: 'contentsOk', onError: 'apiError' }))
+      effects.push(http({ url: contentsUrl(r.owner, r.name, r.path), headers: JSON_HEADERS, onSuccess: 'contentsOk', onError: 'contentsError' }))
       return [{ ...state, route: r }, effects]
   }
 }

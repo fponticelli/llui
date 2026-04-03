@@ -81,6 +81,8 @@ export type Msg =
   | { type: 'readmeOk'; payload: string }
   | { type: 'issuesOk'; payload: Issue[] }
   | { type: 'apiError'; error: ApiError }
+  | { type: 'readmeError'; error: ApiError }
+  | { type: 'contentsError'; error: ApiError }
   | { type: 'nextPage' }
   | { type: 'prevPage' }
   | { type: 'openPath'; path: string; isDir: boolean }
