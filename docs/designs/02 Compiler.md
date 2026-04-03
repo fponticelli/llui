@@ -528,3 +528,65 @@ These are the guarantees that must hold for every transformed file. A compiler c
 **7. The `key` prop is never emitted as a DOM binding.** It is silently dropped from all three output arrays (staticFn, events, bindings). The `key` prop is a framework identity hint with no DOM semantics.
 
 **8. Children are passed through unmodified.** The compiler does not inspect or transform the children argument. It is taken as-is and passed as the last argument to `elSplit`. Child nodes may be other `elSplit` calls (which will be transformed by the visitor when encountered), but the compiler does not need to know this — the visitor handles nesting through `ts.visitEachChild`.
+
+---
+
+## Additional Compiler Passes (Implemented)
+
+The following passes were added after the initial three-pass design. They run as part of the existing visitor pipeline.
+
+### Pass 0: Item Selector Deduplication
+
+Before element transformation, the compiler scans `each()` render callbacks for repeated `item(selector)` calls. When the same selector appears multiple times (matched by printed source text), the compiler hoists the selector to a local constant and caches the `item()` result:
+
+```typescript
+// Before:
+render: (item) => [
+  tr({ class: (s) => s.selected === item((r) => r.id)() ? 'danger' : '' }, [
+    td({}, [text(item((r) => String(r.id)))]),
+    a({ onClick: () => send({ type: 'select', id: item((r) => r.id)() }) }, [...]),
+  ]),
+]
+
+// After:
+render: (item) => {
+  const __s0 = (r) => r.id
+  const __a0 = item(__s0)
+  return [
+    tr({ class: (s) => s.selected === __a0() ? 'danger' : '' }, [
+      td({}, [text(item((r) => String(r.id)))]),
+      a({ onClick: () => send({ type: 'select', id: __a0() }) }, [...]),
+    ]),
+  ]
+}
+```
+
+This eliminates redundant selector closure allocations and `item()` accessor closures per row.
+
+### Subtree Collapse: Nested Elements → `elTemplate`
+
+When the compiler detects nested element helper calls (e.g., `tr` containing `td` containing `a`), it collapses the entire subtree into a single `elTemplate(html, patchFn)` call. This replaces N `createElement` calls with 1 `cloneNode(true)`.
+
+The analysis (`analyzeSubtree`) recursively checks eligibility:
+- All children must be element helpers, `text('literal')`, or `text(accessor)`
+- No structural primitives (`each`, `branch`, `show`)
+- All props must be classifiable (literals, arrows, per-item calls)
+
+The emission generates:
+- A static HTML string with placeholder spaces for reactive text positions
+- A patch function that walks to dynamic nodes via `childNodes[idx]`, attaches events, and calls `__bind` for reactive bindings
+
+Reactive text uses **placeholder text nodes** embedded in the template HTML (a space character). The patch function references these existing text nodes via `parentNode.childNodes[idx]` rather than creating new ones with `document.createTextNode()`, saving 2 DOM operations per reactive text child.
+
+### Event Delegation in Templates
+
+When multiple child elements within a collapsed template have event handlers of the same type (e.g., two `onClick` handlers), the compiler emits a single delegated listener on the template root using `element.contains(e.target)` dispatch:
+
+```typescript
+root.addEventListener("click", (__e) => {
+  if (__n1.contains(__e.target)) { handler1(__e); return }
+  if (__n2.contains(__e.target)) { handler2(__e); return }
+})
+```
+
+This replaces N `addEventListener` calls with 1, reducing per-row DOM setup cost.

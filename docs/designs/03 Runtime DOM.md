@@ -508,3 +508,41 @@ The consequence is that "forgot to unsubscribe" is structurally impossible. Ther
 **Tree view.** A recursive `each()` where each entry may itself contain an `each()` for children creates a scope hierarchy of arbitrary depth. Collapsing a node disposes its child each scope depth-first, removing all descendant entry scopes before the parent scope's nodes are detached. For a tree with 500 visible nodes, collapsing the root disposes 499 entry scopes in depth-first order. The disposal is synchronous and O(total descendants), which is correct but may be slow for very deep trees; incremental disposal is an open question here.
 
 **Data table with frequent full replacement.** A table where the entire dataset is replaced on every sort or filter operation (common in server-driven tables) discards all existing entry scopes and creates new ones in Phase 1. The full fragment rebuild path appends all new entry nodes to a DocumentFragment and inserts it in one operation. Phase 2 then evaluates all bindings for all new entries (no `eachItemStable` since all are new). For a table with 100 rows and 10 bindings per row, Phase 2 does 1000 accessor calls and 1000 DOM writes on a full replace. This is the worst case for the binding model; the optimization available is to minimize binding count per row by collapsing multiple related fields into a single binding where possible.
+
+---
+
+## Runtime Optimizations (Implemented)
+
+### Per-Item Direct Updaters
+
+Per-item bindings (those with `accessor.length === 0`, created by `item(selector)` calls in `each()` render callbacks) bypass the `allBindings` array entirely. Instead, they are registered as **item updaters** on the scope via `scope.itemUpdaters`. When `each()`'s reconciler detects an item change (`!Object.is(oldItem, newItem)`), it directly invokes the updaters:
+
+```typescript
+function updateEntry(entry, item, index) {
+  const changed = !Object.is(entry.item, item)
+  entry.current = item
+  entry.scope.eachItemStable = !changed
+  if (changed) {
+    for (const updater of entry.scope.itemUpdaters) updater()
+  }
+}
+```
+
+This eliminates per-item binding objects from `allBindings`, reducing Phase 2 scan cost from O(all bindings) to O(state-level bindings only). For a 1000-row list with 3 bindings per row (1 state-level class + 2 per-item text), Phase 2 scans 1000 bindings instead of 3000.
+
+### Fresh Binding Skip
+
+Bindings created during Phase 1 (structural reconciliation) already have their initial values set at creation time. Phase 2 should not re-evaluate them. The update loop snapshots `allBindings.length` before Phase 1 and only iterates up to that length in Phase 2:
+
+```typescript
+const bindingsBeforePhase1 = bindings.length
+// Phase 1 — creates new entries and bindings...
+// Phase 2 — only iterate pre-existing bindings
+for (let i = 0; i < bindingsBeforePhase1; i++) { ... }
+```
+
+This eliminates wasted accessor evaluations on create/replace operations where thousands of bindings are freshly created.
+
+### Scope Disposal Reference Cleanup
+
+When a scope is disposed, binding objects have their `accessor`, `node`, and `lastValue` fields nulled immediately. This breaks closure and DOM retention chains, ensuring that disposed DOM trees become eligible for GC without waiting for Phase 2 compaction to remove dead bindings from `allBindings`.
