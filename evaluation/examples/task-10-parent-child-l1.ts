@@ -69,7 +69,7 @@ export const ParentChild = component<State, Msg, Effect>({
       ...each<State, CounterSlice>({
         items: (s) => s.counters,
         key: (c) => c.id,
-        render: (item) => counterView({ item }, send),
+        render: ({ item, send }) => counterView({ item }, send),
       }),
     ]),
   ],

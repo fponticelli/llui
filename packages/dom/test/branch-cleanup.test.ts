@@ -25,15 +25,15 @@ describe('branch cleanup with template-cloned nodes', () => {
         return branch<State>({
           on: (s) => s.page,
           cases: {
-            a: () => [
+            a: (_s, _send) => [
               div({ class: 'page-a' }, [text('Page A')]),
               div({}, [text('A content')]),
             ],
-            b: () => [
+            b: (_s, _send) => [
               div({ class: 'page-b' }, [text('Page B')]),
               div({}, [text('B content')]),
             ],
-            c: () => [
+            c: (_s, _send) => [
               div({ class: 'page-c' }, [text('Page C')]),
             ],
           },
@@ -94,8 +94,8 @@ describe('branch cleanup with template-cloned nodes', () => {
         return branch<State>({
           on: (s) => s.page,
           cases: {
-            x: () => [div({ class: 'px' }, [text('X')])],
-            y: () => [div({ class: 'py' }, [text('Y')])],
+            x: (_s, _send) => [div({ class: 'px' }, [text('X')])],
+            y: (_s, _send) => [div({ class: 'py' }, [text('Y')])],
           },
         })
       },

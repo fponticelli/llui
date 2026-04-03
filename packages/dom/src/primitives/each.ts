@@ -21,7 +21,7 @@ interface Entry<T> {
   nodes: Node[]
 }
 
-export function each<S, T>(opts: EachOptions<S, T>): Node[] {
+export function each<S, T, M = unknown>(opts: EachOptions<S, T, M>): Node[] {
   const ctx = getRenderContext()
   const parentScope = ctx.rootScope
   const blocks = ctx.structuralBlocks
@@ -74,16 +74,18 @@ export function each<S, T>(opts: EachOptions<S, T>): Node[] {
   return result
 }
 
-function buildEntry<S, T>(
+function buildEntry<S, T, M>(
   item: T,
   index: number,
-  opts: EachOptions<S, T>,
+  opts: EachOptions<S, T, M>,
   parentScope: Scope,
   ctx: ReturnType<typeof getRenderContext>,
   state?: unknown,
 ): Entry<T> {
   const key = opts.key(item)
   const scope = createScope(parentScope)
+  const currentState = (state ?? ctx.state) as S
+  const send = ctx.send as (msg: M) => void
 
   // Create entry before render so itemAccessor closures can capture it
   const entry: Entry<T> = { key, item, current: item, index, scope, nodes: null! }
@@ -98,12 +100,12 @@ function buildEntry<S, T>(
 
   // Reuse a single context object to avoid allocation per entry
   buildCtx.rootScope = scope
-  buildCtx.state = state ?? ctx.state
+  buildCtx.state = currentState
   buildCtx.allBindings = ctx.allBindings
   buildCtx.structuralBlocks = ctx.structuralBlocks
   setFlatBindings(ctx.allBindings)
   setRenderContext(buildCtx)
-  entry.nodes = opts.render(itemAccessor, indexAccessor)
+  entry.nodes = opts.render({ state: currentState, send, item: itemAccessor, index: indexAccessor })
   clearRenderContext()
   setFlatBindings(null)
   setRenderContext(ctx)

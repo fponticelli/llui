@@ -211,7 +211,7 @@ Conditional rendering keyed on a discriminant. When the discriminant changes, th
 ```typescript
 function branch<S>(opts: {
   on: (s: S) => string | number | boolean
-  cases: Record<string | number, () => Node[]>
+  cases: Record<string | number, (s: S, send: Send<M>) => Node[]>
   enter?: (nodes: Node[]) => void | Promise<void>
   leave?: (nodes: Node[]) => void | Promise<void>
   onTransition?: (ctx: {
@@ -265,7 +265,7 @@ Boolean conditional rendering. Implemented as a two-case `branch` — the scope 
 ```typescript
 function show<S>(opts: {
   when: (s: S) => boolean
-  render: () => Node[]
+  render: (_s, _send) => Node[]
   enter?: (nodes: Node[]) => void | Promise<void>
   leave?: (nodes: Node[]) => void | Promise<void>
   onTransition?: (ctx: {
@@ -287,7 +287,7 @@ Renders a subtree outside the component's natural DOM position (e.g., to `docume
 ```typescript
 function portal(opts: {
   target: HTMLElement | string
-  render: () => Node[]
+  render: (_s, _send) => Node[]
 }): Node[]
 ```
 
@@ -360,7 +360,7 @@ Wraps a scoped builder in a try/catch. Renders fallback subtree on error. Indepe
 
 ```typescript
 function errorBoundary(opts: {
-  render: () => Node[]
+  render: (_s, _send) => Node[]
   fallback: (error: Error) => Node[]
   onError?: (error: Error) => void
 }): Node[]

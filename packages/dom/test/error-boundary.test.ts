@@ -13,7 +13,7 @@ describe('errorBoundary()', () => {
       update: (s) => [s, []],
       view: () =>
         errorBoundary({
-          render: () => [div({ class: 'ok' }, [text('working')])],
+          render: (_s, _send) => [div({ class: 'ok' }, [text('working')])],
           fallback: () => [text('error')],
         }),
     }
@@ -30,7 +30,7 @@ describe('errorBoundary()', () => {
       update: (s) => [s, []],
       view: () =>
         errorBoundary({
-          render: () => {
+          render: (_s, _send) => {
             throw new Error('boom')
           },
           fallback: (err) => [text(`caught: ${err.message}`)],
@@ -49,7 +49,7 @@ describe('errorBoundary()', () => {
       update: (s) => [s, []],
       view: () =>
         errorBoundary({
-          render: () => {
+          render: (_s, _send) => {
             throw new Error('oops')
           },
           fallback: () => [text('fallback')],
@@ -70,7 +70,7 @@ describe('errorBoundary()', () => {
       update: (s) => [s, []],
       view: () =>
         errorBoundary({
-          render: () => {
+          render: (_s, _send) => {
             throw 'string error'
           },
           fallback: (err) => [text(err.message)],

@@ -4,10 +4,11 @@ import { createScope, disposeScope, addDisposer } from '../scope'
 import { setFlatBindings } from '../binding'
 import type { StructuralBlock } from '../structural'
 
-export function branch<S>(opts: BranchOptions<S>): Node[] {
+export function branch<S, M = unknown>(opts: BranchOptions<S, M>): Node[] {
   const ctx = getRenderContext()
   const parentScope = ctx.rootScope
   const blocks = ctx.structuralBlocks
+  const send = ctx.send as (msg: M) => void
 
   const anchor = document.createComment('branch')
 
@@ -20,7 +21,7 @@ export function branch<S>(opts: BranchOptions<S>): Node[] {
   if (builder) {
     currentScope = createScope(parentScope)
     setRenderContext({ ...ctx, rootScope: currentScope })
-    currentNodes = builder()
+    currentNodes = builder(ctx.state as S, send)
     clearRenderContext()
     setRenderContext(ctx)
 
@@ -52,7 +53,7 @@ export function branch<S>(opts: BranchOptions<S>): Node[] {
         currentScope = createScope(parentScope)
         setFlatBindings(ctx.allBindings)
         setRenderContext({ ...ctx, rootScope: currentScope, state })
-        currentNodes = newBuilder()
+        currentNodes = newBuilder(state as S, send)
         clearRenderContext()
         setFlatBindings(null)
 

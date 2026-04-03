@@ -51,7 +51,7 @@ export const FilterableList = component<State, Msg, Effect>({
       ...each<State, Item>({
         items: filteredItems,
         key: (item) => item.id,
-        render: (item) => [
+        render: ({ item }) => [
           div({ class: 'item', 'data-testid': 'item' }, [
             text(item((t) => t.text)),
           ]),

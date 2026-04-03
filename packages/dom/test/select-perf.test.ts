@@ -27,7 +27,7 @@ describe('select performance — only 2 rows should update', () => {
         return each<State, Item>({
           items: (s) => s.items,
           key: (item) => item.id,
-          render: (item) => [
+          render: ({ item }) => [
             div(
               {
                 'data-id': item((t) => String(t.id)),

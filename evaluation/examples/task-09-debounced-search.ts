@@ -59,12 +59,12 @@ export const DebouncedSearch = component<State, Msg, Effect>({
       }),
       ...show<State>({
         when: (s) => s.searching,
-        render: () => [text('Searching...')],
+        render: (_s, _send) => [text('Searching...')],
       }),
       ...each<State, SearchResult>({
         items: (s) => s.results,
         key: (r) => r.id,
-        render: (item) => [
+        render: ({ item }) => [
           div({ class: 'result' }, [text(item((r) => r.title))]),
         ],
       }),

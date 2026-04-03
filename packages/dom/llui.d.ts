@@ -34,14 +34,14 @@ export declare function text<S>(accessor: (s: S) => string, mask?: number): Node
 
 export declare function branch<S>(opts: {
   on: (s: S) => string | number | boolean
-  cases: Record<string | number, () => Node[]>
+  cases: Record<string | number, (s: S, send: Send<M>) => Node[]>
   enter?: (nodes: Node[]) => void | Promise<void>
   leave?: (nodes: Node[]) => void | Promise<void>
 }): Node[]
 
 export declare function show<S>(opts: {
   when: (s: S) => boolean
-  render: () => Node[]
+  render: (_s, _send) => Node[]
   enter?: (nodes: Node[]) => void | Promise<void>
   leave?: (nodes: Node[]) => void | Promise<void>
 }): Node[]
@@ -63,7 +63,7 @@ export declare function peek<T, R>(
   selector: (t: T) => R,
 ): R
 
-export declare function portal(opts: { target: HTMLElement | string; render: () => Node[] }): Node[]
+export declare function portal(opts: { target: HTMLElement | string; render: (_s, _send) => Node[] }): Node[]
 
 export declare function foreign<S, T extends Record<string, unknown>, Instance>(opts: {
   mount: (container: HTMLElement, send: Send<unknown>) => Instance
@@ -85,7 +85,7 @@ export declare function child<S, ChildM>(opts: {
 export declare function memo<S, T>(accessor: (s: S) => T): (s: S) => T
 export declare function onMount(callback: (el: Element) => (() => void) | void): void
 export declare function errorBoundary(opts: {
-  render: () => Node[]
+  render: (_s, _send) => Node[]
   fallback: (error: Error) => Node[]
   onError?: (error: Error) => void
 }): Node[]

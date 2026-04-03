@@ -26,7 +26,7 @@ function each<S, T>(opts: {
   render: (item: <R>(sel: (t: T) => R) => () => R, index: () => number) => Node[]
 }): Node[]
 
-function show<S>(opts: { when: (s: S) => boolean, render: () => Node[] }): Node[]
+function show<S>(opts: { when: (s: S) => boolean, render: (_s, _send) => Node[] }): Node[]
 function branch<S>(opts: { on: (s: S) => string | number, cases: Record<string, () => Node[]> }): Node[]
 function memo<S, T>(accessor: (s: S) => T): (s: S) => T
 function onMount(callback: (el: Element) => (() => void) | void): void

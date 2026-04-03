@@ -83,8 +83,12 @@ function isInsideEachRender(node: ts.Node): boolean {
       current.parameters.length >= 1
     ) {
       const param = current.parameters[0]!
-      if (ts.isIdentifier(param.name) && param.name.text === 'item') {
-        // Check parent is a property assignment with name 'render' in an each() call
+      // Options bag: ({ item, ... }) => ...
+      const hasItemParam = ts.isObjectBindingPattern(param.name) &&
+        param.name.elements.some((el) =>
+          ts.isBindingElement(el) && ts.isIdentifier(el.name) && el.name.text === 'item',
+        )
+      if (hasItemParam) {
         const propAssign = current.parent
         if (
           ts.isPropertyAssignment(propAssign) &&

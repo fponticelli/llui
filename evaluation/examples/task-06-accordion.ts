@@ -42,7 +42,7 @@ export const Accordion = component<State, Msg, Effect>({
           }, [text(panel.title)]),
           ...show<State>({
             when: (s) => s.openId === panel.id,
-            render: () => [
+            render: (_s, _send) => [
               div({ class: 'panel-body' }, [text(panel.body)]),
             ],
           }),

@@ -20,8 +20,8 @@ function phaseDef(): ComponentDef<State, Msg, never> {
       }
     },
     view: () =>
-      branch({
-        on: (s: State) => s.phase,
+      branch<State, Msg>({
+        on: (s) => s.phase,
         cases: {
           idle: () => [text('waiting...')],
           loading: () => [text('loading...')],
@@ -73,7 +73,6 @@ describe('branch()', () => {
     handle.flush()
     sendFn({ type: 'setPhase', phase: 'done' })
     handle.flush()
-    // Only 'done!' should be in the DOM, not 'loading...'
     expect(container.textContent).toBe('done!')
   })
 
@@ -95,8 +94,8 @@ describe('show()', () => {
       init: () => [{ visible: false }, []],
       update: (state) => [{ ...state, visible: !state.visible }, []],
       view: () =>
-        show({
-          when: (s: ShowState) => s.visible,
+        show<ShowState, ShowMsg>({
+          when: (s) => s.visible,
           render: () => [div({ class: 'panel' }, [text('content')])],
         }),
       __dirty: (o, n) => (Object.is(o.visible, n.visible) ? 0 : 1),

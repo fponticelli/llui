@@ -87,7 +87,7 @@ export const ParentChildL2 = component<ParentState, ParentMsg, ParentEffect>({
       ...each<ParentState, CounterEntry>({
         items: (s) => s.counters,
         key: (c) => c.id,
-        render: (item) => [
+        render: ({ item }) => [
           ...child<ParentState, ChildState, ChildMsg, ChildEffect>({
             def: CounterChild,
             key: peek(item, (c) => c.id),

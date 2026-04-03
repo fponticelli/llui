@@ -63,23 +63,25 @@ export interface TransitionOptions {
   onTransition?: (ctx: { entering: Node[]; leaving: Node[]; parent: Node }) => void | Promise<void>
 }
 
-export interface BranchOptions<S> extends TransitionOptions {
+export interface BranchOptions<S, M = unknown> extends TransitionOptions {
   on: (s: S) => string | number | boolean
-  cases: Record<string | number, () => Node[]>
+  cases: Record<string | number, (state: S, send: Send<M>) => Node[]>
 }
 
-export interface ShowOptions<S> extends TransitionOptions {
+export interface ShowOptions<S, M = unknown> extends TransitionOptions {
   when: (s: S) => boolean
-  render: () => Node[]
+  render: (state: S, send: Send<M>) => Node[]
 }
 
-export interface EachOptions<S, T> extends TransitionOptions {
+export interface EachOptions<S, T, M = unknown> extends TransitionOptions {
   items: (s: S) => T[]
   key: (item: T) => string | number
-  render: (
-    item: <R>(selector: (t: T) => R) => (() => R),
-    index: () => number,
-  ) => Node[]
+  render: (opts: {
+    state: S
+    send: Send<M>
+    item: <R>(selector: (t: T) => R) => (() => R)
+    index: () => number
+  }) => Node[]
 }
 
 export interface PortalOptions {

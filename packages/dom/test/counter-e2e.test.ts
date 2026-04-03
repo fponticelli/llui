@@ -26,7 +26,7 @@ describe('Counter app (end-to-end)', () => {
       ]),
       ...show<State>({
         when: (s) => s.count > 0,
-        render: () => [
+        render: (_s, _send) => [
           button({ class: 'reset', onClick: () => send({ type: 'reset' }) }, [text('Reset')]),
         ],
       }),

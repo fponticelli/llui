@@ -78,7 +78,7 @@ export const Stopwatch = component<State, Msg, Effect>({
       ]),
       ...show<State>({
         when: (s) => s.bestLap !== null,
-        render: () => [
+        render: (_s, _send) => [
           div({ class: 'best-lap' }, [
             text((s: State) => `Best lap: ${formatTime(s.bestLap!)}`),
           ]),

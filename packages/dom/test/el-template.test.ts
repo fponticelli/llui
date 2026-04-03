@@ -17,7 +17,7 @@ describe('elTemplate', () => {
         each<State, { id: number; label: string }>({
           items: (s) => s.items,
           key: (t) => t.id,
-          render: (item) => [
+          render: ({ item }) => [
             elTemplate(
               '<tr><td class="col-md-1"></td><td class="col-md-4"><a></a></td></tr>',
               (root) => {
@@ -57,7 +57,7 @@ describe('elTemplate', () => {
         each<State, number>({
           items: (s) => s.items,
           key: (n) => n,
-          render: (item) => [
+          render: ({ item }) => [
             elTemplate(html, (root) => {
               nodes.push(root as HTMLElement)
               ;(root as HTMLElement).querySelector('span')!.textContent = String(item((n) => n)())
@@ -90,11 +90,11 @@ describe('elTemplate', () => {
         if (msg.type === 'select') return [{ ...s, selected: msg.id }, []]
         return [s, []]
       },
-      view: (_s, send) =>
+      view: () =>
         each<State, { id: number; label: string }>({
           items: (s) => s.items,
           key: (t) => t.id,
-          render: (item) => {
+          render: ({ item, send }) => {
             const rowId = item((t) => t.id)()
             return [
               elTemplate(

@@ -16,7 +16,7 @@ describe('multiple mountApp instances', () => {
       view: (_state, send) => [
         ...show<State>({
           when: (s) => s.visible,
-          render: () => [text(label)],
+          render: (_s, _send) => [text(label)],
         }),
       ],
       __dirty: (o, n) => (Object.is(o.visible, n.visible) ? 0 : 1),

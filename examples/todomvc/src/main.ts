@@ -110,7 +110,7 @@ const App = component<State, Msg, never>({
 
         ...show<State>({
           when: (s) => s.todos.length > 0,
-          render: () => [
+          render: (_s, _send) => [
             section({ class: 'main' }, [
               input({
                 class: 'toggle-all',
@@ -125,7 +125,7 @@ const App = component<State, Msg, never>({
                 each<State, Todo>({
                   items: filteredTodos,
                   key: (t) => t.id,
-                  render: (item) => [
+                  render: ({ item }) => [
                     li(
                       {
                         class: item((t) => (t.completed ? 'completed' : '')),
@@ -163,7 +163,7 @@ const App = component<State, Msg, never>({
               ]),
               ...show<State>({
                 when: hasCompleted,
-                render: () => [
+                render: (_s, _send) => [
                   button(
                     {
                       class: 'clear-completed',

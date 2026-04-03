@@ -24,7 +24,7 @@ const Counter = component<State, Msg, never>({
     ]),
     ...show<State>({
       when: (s) => s.count > 0,
-      render: () => [
+      render: (_s, _send) => [
         button({ onClick: () => send({ type: 'reset' }) }, [text('Reset')]),
       ],
     }),

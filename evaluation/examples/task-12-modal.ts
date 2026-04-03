@@ -37,13 +37,13 @@ export const Modal = component<State, Msg, Effect>({
       }, [text('Open Modal')]),
       ...show<State>({
         when: (s) => s.confirmed,
-        render: () => [
+        render: (_s, _send) => [
           div({ class: 'confirmation' }, [text('Confirmed!')]),
         ],
       }),
       ...show<State>({
         when: (s) => s.open,
-        render: () => {
+        render: (_s, _send) => {
           onMount((el) => {
             const modal = el as HTMLElement
             const focusableSelector =

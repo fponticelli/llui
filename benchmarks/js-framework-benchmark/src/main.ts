@@ -111,7 +111,7 @@ const App = component<State, Msg, never>({
           each<State, Row>({
             items: (s) => s.rows,
             key: (r) => r.id,
-            render: (item) => [
+            render: ({ item, send }) => [
               tr(
                 { class: (s: State) => s.selected === item((r) => r.id)() ? 'danger' : '' },
                 [

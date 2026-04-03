@@ -53,7 +53,7 @@ export const ReorderableList = component<State, Msg, Effect>({
       ...each<State, Item>({
         items: (s) => s.items,
         key: (item) => item.id,
-        render: (item) => [
+        render: ({ item }) => [
           div({ class: 'item', 'data-testid': item((t) => String(t.id)) }, [
             text(item((t) => t.label)),
             button({

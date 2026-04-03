@@ -145,7 +145,7 @@ An LLM that sees this and tries to write it directly will produce uncompilable c
 each({
   items: s => s.todos,
   key: todo => todo.id,
-  render: (item, index) => {
+  render: ({ item, index }) => {
     return li({}, [
       text(item(t => t.text)),  // correct: scoped accessor with selector
     ]);
@@ -159,12 +159,12 @@ The remaining LLM error pattern is direct property access on the accessor functi
 
 ```typescript
 // WRONG — item is a function, not a value; item.text is undefined:
-each({ items: s => s.todos, key: t => t.id, render: (item, index) => {
+each({ items: s => s.todos, key: t => t.id, render: ({ item, index }) => {
   return li({}, [text(item.text)]);  // TypeScript error: no 'text' on function type
 }})
 
 // ALSO WRONG — accessing state directly, bypassing the scoped accessor:
-each({ items: s => s.todos, key: t => t.id, render: (item, index) => {
+each({ items: s => s.todos, key: t => t.id, render: ({ item, index }) => {
   return li({}, [text(s => s.todos[0].text)]);  // hardcoded index, not per-item
 }})
 ```
@@ -218,7 +218,7 @@ LLMs trained on React will use `.map()` for list rendering. In LLui, `.map()` in
 div({}, state.items.map(item => div({}, [text(item.name)])))
 
 // CORRECT — reactive keyed list:
-each({ items: s => s.items, key: t => t.id, render: (item, index) =>
+each({ items: s => s.items, key: t => t.id, render: ({ item, index }) =>
   div({}, [text(item(t => t.name))])
 })
 ```
@@ -250,7 +250,7 @@ branch({ on: s => s.open ? 'shown' : 'hidden', cases: {
 }})
 
 // Canonical form:
-show({ when: s => s.open, render: () => modal() })
+show({ when: s => s.open, render: (_s, _send) => modal() })
 ```
 
 The inverse error — using `show` when a named discriminant is correct — is harder to detect because `show` offers no structural signal that only two states exist.
@@ -327,7 +327,7 @@ Prose descriptions require the LLM to parse natural language and map it to code 
 function each<S, T>(opts: {
   items: (state: S) => T[],
   key: (item: T) => string | number,
-  render: (item: <R>(selector: (t: T) => R) => Binding<R>, index: () => number) => Node[],
+  render: (opts: { state: S, send: Send<M>, item: <R>(selector: (t: T) => R) => Binding<R>, index: () => number }) => Node[],
 }): Node[]
 ```
 
@@ -555,23 +555,23 @@ function handleEffects<E extends { type: string }>(): EffectChain<E>;
 // Structural primitives (call only inside view()) — all use object parameters:
 function branch<S>(opts: {
   on: (s: S) => string | number | boolean,
-  cases: Record<string, () => Node[]>,
+  cases: Record<string, (s: S, send: Send<M>) => Node[]>,
   enter?: (nodes: Node[]) => void | Promise<void>,
   leave?: (nodes: Node[]) => void | Promise<void>,
   onTransition?: (ctx: { entering: Node[], leaving: Node[], parent: Node }) => void | Promise<void>,
 }): Node[];
 function show<S>(opts: {
   when: (s: S) => boolean,
-  render: () => Node[],
+  render: (_s, _send) => Node[],
   enter?: ..., leave?: ..., onTransition?: ...,
 }): Node[];
 function each<S, T>(opts: {
   items: (s: S) => T[],
   key: (item: T) => string | number,
-  render: (item: <R>(sel: (t: T) => R) => Binding<R>, index: () => number) => Node[],
+  render: (opts: { state: S, send: Send<M>, item: <R>(sel: (t: T) => R) => Binding<R>, index: () => number }) => Node[],
   enter?: ..., leave?: ..., onTransition?: ...,
 }): Node[];
-function portal(opts: { target: Element | string, render: () => Node[] }): Node[];
+function portal(opts: { target: Element | string, render: (_s, _send) => Node[] }): Node[];
 function foreign<S, T extends Record<string, unknown>, Instance>(opts: {
   mount: (container: HTMLElement, send: (msg: Msg) => void) => Instance,
   props: (s: S) => T,
@@ -618,10 +618,10 @@ export const Counter = component<State, Msg, Effect>({
 - Static values are literals: `div({ class: 'container' })`.
 - Never use `.map()` on state arrays in `view()`. Always use `each()` for reactive lists.
 - Structural primitives use object parameters:
-  `each({ items: s => s.todos, key: t => t.id, render: (item, index) => ... })`
+  `each({ items: s => s.todos, key: t => t.id, render: ({ item, index }) => ... })`
   `branch({ on: s => s.phase, cases: { idle: () => ..., loading: () => ... } })`
-  `show({ when: s => s.open, render: () => ... })`
-  `portal({ target: document.body, render: () => ... })`
+  `show({ when: s => s.open, render: (_s, _send) => ... })`
+  `portal({ target: document.body, render: (_s, _send) => ... })`
 - In `each()`, `render` receives `item` (a scoped accessor) and `index` (a getter).
   Read item properties via selector: `item(t => t.text)`, not `item.text`.
 - Wrap derived values used in multiple places in `memo()`:
@@ -746,7 +746,7 @@ The remaining LLM error patterns are: (1) calling `item()` without a selector, w
 function each<S, T>(opts: {
   items: (state: S) => T[],
   key: (item: T) => string | number,
-  render: (item: <R>(sel: (t: T) => R) => Binding<R>, index: () => number) => Node[],
+  render: (opts: { state: S, send: Send<M>, item: <R>(sel: (t: T) => R) => Binding<R>, index: () => number }) => Node[],
 }): Node[]
 ```
 
@@ -764,7 +764,7 @@ The scoped accessor pattern eliminates the need for a separate `list()` primitiv
 
 ```typescript
 // System prompt example for list tasks:
-each({ items: s => s.items, key: t => t.id, render: (item, index) => {
+each({ items: s => s.items, key: t => t.id, render: ({ item, index }) => {
   return li({}, [
     text(item(t => t.label)),
     span({ class: item(t => t.done ? 'done' : '') }),

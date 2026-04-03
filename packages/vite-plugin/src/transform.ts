@@ -686,10 +686,24 @@ function tryDeduplicateItemSelectors(
   const renderFn = renderProp.initializer
   if (!ts.isArrowFunction(renderFn) && !ts.isFunctionExpression(renderFn)) return null
 
-  // Get the item parameter name (first param)
-  const itemParam = renderFn.parameters[0]
-  if (!itemParam || !ts.isIdentifier(itemParam.name)) return null
-  const itemName = itemParam.name.text
+  // Get the item parameter name from the options bag: ({ item, ... }) => ...
+  const renderParam = renderFn.parameters[0]
+  if (!renderParam) return null
+
+  let itemName: string | null = null
+  if (ts.isIdentifier(renderParam.name)) {
+    // Old style: (item) => ... or (item, index) => ...
+    itemName = renderParam.name.text
+  } else if (ts.isObjectBindingPattern(renderParam.name)) {
+    // New style: ({ item, send, ... }) => ...
+    for (const el of renderParam.name.elements) {
+      if (ts.isBindingElement(el) && ts.isIdentifier(el.name) && el.name.text === 'item') {
+        itemName = 'item'
+        break
+      }
+    }
+  }
+  if (!itemName) return null
 
   // Collect all item(selector) calls with their selector source text
   const selectorCalls: Array<{ node: ts.CallExpression; selectorText: string; selector: ts.Expression }> = []

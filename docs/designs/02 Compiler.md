@@ -541,7 +541,7 @@ Before element transformation, the compiler scans `each()` render callbacks for 
 
 ```typescript
 // Before:
-render: (item) => [
+render: ({ item }) => [
   tr({ class: (s) => s.selected === item((r) => r.id)() ? 'danger' : '' }, [
     td({}, [text(item((r) => String(r.id)))]),
     a({ onClick: () => send({ type: 'select', id: item((r) => r.id)() }) }, [...]),
@@ -549,7 +549,7 @@ render: (item) => [
 ]
 
 // After:
-render: (item) => {
+render: ({ item }) => {
   const __s0 = (r) => r.id
   const __a0 = item(__s0)
   return [

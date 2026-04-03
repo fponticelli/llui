@@ -187,7 +187,7 @@ describe('per-item accessor calls', () => {
         view: () => each({
           items: s => s.items,
           key: t => t.id,
-          render: (item) => [
+          render: ({ item }) => [
             input({ checked: item(t => t.done), class: item(t => t.active ? 'on' : '') }),
           ],
         }),
@@ -210,7 +210,7 @@ describe('per-item accessor calls', () => {
         view: () => each({
           items: s => s.items,
           key: t => t.id,
-          render: (item) => [
+          render: ({ item }) => [
             div({ class: item(t => t.active ? 'on' : '') }),
           ],
         }),
@@ -411,7 +411,7 @@ describe('subtree collapse — nested elements → elTemplate', () => {
         view: () => each({
           items: s => s.items,
           key: t => t.id,
-          render: (item) => [
+          render: ({ item }) => [
             tr({}, [
               td({ class: 'id' }, [text(item(t => String(t.id)))]),
               td({ class: 'label' }, [text(item(t => t.label))]),
@@ -440,7 +440,7 @@ describe('subtree collapse — nested elements → elTemplate', () => {
           div({}, each({
             items: s => s.items,
             key: t => t.id,
-            render: (item) => [text('x')],
+            render: ({ item }) => [text('x')],
           })),
         ],
       })

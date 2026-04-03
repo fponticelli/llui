@@ -16,7 +16,7 @@ const ListComponent = component<State, never, never>({
         each<State, string>({
           items: (s) => s.items,
           key: (item) => item,
-          render: (item) => [li({ 'data-testid': 'item' }, [text(item((t) => t))])],
+          render: ({ item }) => [li({ 'data-testid': 'item' }, [text(item((t) => t))])],
         }),
       ),
     ]),

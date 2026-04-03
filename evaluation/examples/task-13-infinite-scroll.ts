@@ -58,7 +58,7 @@ export const InfiniteScroll = component<State, Msg, Effect>({
       ...each<State, Item>({
         items: (s) => s.items,
         key: (item) => item.id,
-        render: (item) => [
+        render: ({ item }) => [
           div({
             class: 'item',
             'data-testid': item((t) => String(t.id)),
@@ -69,19 +69,19 @@ export const InfiniteScroll = component<State, Msg, Effect>({
       }),
       ...show<State>({
         when: (s) => s.loading,
-        render: () => [
+        render: (_s, _send) => [
           div({ class: 'loading' }, [text('Loading...')]),
         ],
       }),
       ...show<State>({
         when: (s) => s.exhausted,
-        render: () => [
+        render: (_s, _send) => [
           div({ class: 'exhausted' }, [text('No more items')]),
         ],
       }),
       ...show<State>({
         when: (s) => !s.loading && !s.exhausted,
-        render: () => [
+        render: (_s, _send) => [
           button({
             class: 'load-more',
             onClick: () => send({ type: 'loadMore' }),

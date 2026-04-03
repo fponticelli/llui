@@ -24,8 +24,8 @@ describe('branch transitions', () => {
         return branch<State>({
           on: (s) => s.phase,
           cases: {
-            a: () => [div({ class: 'arm-a' }, [text('A')])],
-            b: () => [div({ class: 'arm-b' }, [text('B')])],
+            a: (_s, _send) => [div({ class: 'arm-a' }, [text('A')])],
+            b: (_s, _send) => [div({ class: 'arm-b' }, [text('B')])],
           },
           enter: opts.enter,
           leave: opts.leave,
@@ -124,7 +124,7 @@ describe('show transitions', () => {
         sendFn = send
         return show<State>({
           when: (s) => s.visible,
-          render: () => [div({ class: 'content' }, [text('hi')])],
+          render: (_s, _send) => [div({ class: 'content' }, [text('hi')])],
           enter: () => { log.push('enter') },
           leave: () => { log.push('leave') },
         })

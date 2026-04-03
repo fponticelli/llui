@@ -58,7 +58,7 @@ export const DragDropList = component<State, Msg, Effect>({
       ...each<State, Item>({
         items: (s) => s.items,
         key: (item) => item.id,
-        render: (item) => [
+        render: ({ item }) => [
           div({
             class: 'drag-item',
             draggable: 'true',

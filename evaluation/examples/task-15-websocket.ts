@@ -63,7 +63,7 @@ export const WebSocketList = component<State, Msg, Effect>({
       div({ class: 'controls' }, [
         ...show<State>({
           when: (s) => !s.paused,
-          render: () => [
+          render: (_s, _send) => [
             button({
               onClick: () => send({ type: 'pause' }),
             }, [text('Pause')]),
@@ -71,7 +71,7 @@ export const WebSocketList = component<State, Msg, Effect>({
         }),
         ...show<State>({
           when: (s) => s.paused,
-          render: () => [
+          render: (_s, _send) => [
             button({
               onClick: () => send({ type: 'resume' }),
             }, [text('Resume')]),
@@ -79,7 +79,7 @@ export const WebSocketList = component<State, Msg, Effect>({
         }),
         ...show<State>({
           when: (s) => s.paused && s.buffer.length > 0,
-          render: () => [
+          render: (_s, _send) => [
             text((s: State) => `(${s.buffer.length} buffered)`),
           ],
         }),
@@ -87,7 +87,7 @@ export const WebSocketList = component<State, Msg, Effect>({
       ...each<State, Item>({
         items: (s) => s.items,
         key: (item) => item.id,
-        render: (item) => [
+        render: ({ item }) => [
           div({
             class: 'item',
             'data-testid': item((t) => String(t.id)),

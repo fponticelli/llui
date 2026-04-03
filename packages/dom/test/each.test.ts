@@ -55,7 +55,7 @@ function listDef(): ComponentDef<State, Msg, never> {
       each<State, Item>({
         items: (s) => s.items,
         key: (item) => item.id,
-        render: (item) => [
+        render: ({ item }) => [
           div({ 'data-id': item((t) => t.id) }, [text(item((t) => t.label))]),
         ],
       }),
