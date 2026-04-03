@@ -10,7 +10,8 @@
   },
   "dependencies": {
     "@llui/dom": "workspace:*",
-    "@llui/effects": "workspace:*"
+    "@llui/effects": "workspace:*",
+    "@llui/router": "workspace:*"
   },
   "devDependencies": {
     "@llui/vite-plugin": "workspace:*",

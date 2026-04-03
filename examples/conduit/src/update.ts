@@ -1,12 +1,13 @@
 import type { State, Msg, Effect, Route, User } from './types'
 import { http } from '@llui/effects'
 import { apiUrl, authHeaders, publicHeaders } from './api'
+import { router, routing } from './router'
 
 const LIMIT = 10
 
 export function initState(): State {
   return {
-    route: parseHash(location.hash),
+    route: router.match(location.hash),
     user: loadUser(),
     articles: [],
     articlesCount: 0,
@@ -59,7 +60,7 @@ export function update(state: State, msg: Msg): [State, Effect[]] {
     case 'loginOk':
       return [
         { ...state, user: msg.payload.user, loading: false, authEmail: '', authPassword: '' },
-        [{ type: 'saveUser', user: msg.payload.user }, { type: 'navigateTo', hash: '#/' }],
+        [{ type: 'saveUser', user: msg.payload.user }, routing.push({ page: 'home', tab: 'global' })],
       ]
 
     case 'submitRegister':
@@ -78,7 +79,7 @@ export function update(state: State, msg: Msg): [State, Effect[]] {
     case 'registerOk':
       return [
         { ...state, user: msg.payload.user, loading: false, authEmail: '', authPassword: '', authUsername: '' },
-        [{ type: 'saveUser', user: msg.payload.user }, { type: 'navigateTo', hash: '#/' }],
+        [{ type: 'saveUser', user: msg.payload.user }, routing.push({ page: 'home', tab: 'global' })],
       ]
 
     case 'apiError': {
@@ -92,7 +93,7 @@ export function update(state: State, msg: Msg): [State, Effect[]] {
     case 'logout':
       return [
         { ...state, user: null },
-        [{ type: 'clearUser' }, { type: 'navigateTo', hash: '#/' }],
+        [{ type: 'clearUser' }, routing.push({ page: 'home', tab: 'global' })],
       ]
 
     case 'submitSettings':
@@ -182,7 +183,7 @@ export function update(state: State, msg: Msg): [State, Effect[]] {
     case 'articleSaved':
       return [
         { ...state, loading: false },
-        [{ type: 'navigateTo', hash: `#/article/${msg.payload.article.slug}` }],
+        [routing.push({ page: 'article', slug: msg.payload.article.slug })],
       ]
 
     case 'deleteArticle':
@@ -195,7 +196,7 @@ export function update(state: State, msg: Msg): [State, Effect[]] {
       })]]
 
     case 'articleDeleted':
-      return [state, [{ type: 'navigateTo', hash: '#/' }]]
+      return [state, [routing.push({ page: 'home', tab: 'global' })]]
 
     // ── Comments ──────────────────────────────────────────────
     case 'submitComment': {
@@ -327,26 +328,6 @@ function loadProfileArticlesFx(username: string, tab: 'authored' | 'favorited', 
   if (tab === 'authored') params.author = username
   else params.favorited = username
   return [http({ url: apiUrl('/articles', params), headers, onSuccess: 'profileArticlesLoaded', onError: 'apiError' })]
-}
-
-// ── Hash Routing ─────────────────────────────────────────────────
-
-export function parseHash(hash: string): Route {
-  const h = hash.replace(/^#\/?/, '')
-  if (h === '' || h === '/') return { page: 'home', tab: 'global' }
-  if (h === 'login') return { page: 'login' }
-  if (h === 'register') return { page: 'register' }
-  if (h === 'settings') return { page: 'settings' }
-  if (h === 'editor') return { page: 'editor' }
-  if (h.startsWith('editor/')) return { page: 'editor', slug: h.slice(7) }
-  if (h.startsWith('article/')) return { page: 'article', slug: h.slice(8) }
-  if (h.startsWith('profile/')) {
-    const rest = h.slice(8)
-    const slash = rest.indexOf('/')
-    if (slash === -1) return { page: 'profile', username: rest, tab: 'authored' }
-    return { page: 'profile', username: rest.slice(0, slash), tab: rest.slice(slash + 1) === 'favorites' ? 'favorited' : 'authored' }
-  }
-  return { page: 'home', tab: 'global' }
 }
 
 function loadUser(): User | null {

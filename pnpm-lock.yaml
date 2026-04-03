@@ -81,6 +81,9 @@ importers:
       '@llui/effects':
         specifier: workspace:*
         version: link:../../packages/effects
+      '@llui/router':
+        specifier: workspace:*
+        version: link:../../packages/router
     devDependencies:
       '@llui/vite-plugin':
         specifier: workspace:*

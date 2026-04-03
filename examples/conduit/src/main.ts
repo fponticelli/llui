@@ -1,7 +1,8 @@
-import { component, mountApp, div, text, flush, onMount } from '@llui/dom'
+import { component, mountApp, branch, flush } from '@llui/dom'
 import { handleEffects } from '@llui/effects'
 import type { State, Msg, Effect } from './types'
-import { initState, update, parseHash } from './update'
+import { initState, update } from './update'
+import { routing } from './router'
 import { navbar } from './views/nav'
 import { appFooter } from './views/footer'
 import { homePage } from './views/home'
@@ -19,48 +20,40 @@ const App = component<State, Msg, Effect>({
     return [s, effects]
   },
   update,
-  view: (s, send) => [
-    navbar(s, send),
-    ...pageContent(s, send),
-    appFooter(),
-    // Hash routing — listen for URL changes
-    (() => {
-      onMount(() => {
-        const handler = () => {
-          send({ type: 'navigate', route: parseHash(location.hash) })
-          flush()
-        }
-        window.addEventListener('hashchange', handler)
-        return () => window.removeEventListener('hashchange', handler)
-      })
-      return document.createComment('hashchange')
-    })(),
-  ],
-  onEffect: handleEffects<Effect>().else((effect, send) => {
-    switch (effect.type) {
-      case 'navigateTo':
-        location.hash = effect.hash
-        break
-      case 'saveUser':
-        localStorage.setItem('conduit-user', JSON.stringify(effect.user))
-        break
-      case 'clearUser':
-        localStorage.removeItem('conduit-user')
-        break
-    }
-  }),
-})
+  view: (_s, send) => [
+    navbar(_s, send),
 
-function pageContent(s: State, send: (msg: Msg) => void): Node[] {
-  switch (s.route.page) {
-    case 'home': return homePage(s, send)
-    case 'login': return loginPage(s, send)
-    case 'register': return registerPage(s, send)
-    case 'settings': return settingsPage(s, send)
-    case 'editor': return editorPage(s, send)
-    case 'article': return articlePage(s, send)
-    case 'profile': return profilePage(s, send)
-  }
-}
+    // URL change listener
+    ...routing.listener(send),
+
+    // Page routing via branch — cases receive (state, send)
+    ...branch<State, Msg>({
+      on: (s) => s.route.page,
+      cases: {
+        home: (s, send) => homePage(s, send),
+        login: (s, send) => loginPage(s, send),
+        register: (s, send) => registerPage(s, send),
+        settings: (s, send) => settingsPage(s, send),
+        editor: (s, send) => editorPage(s, send),
+        article: (s, send) => articlePage(s, send),
+        profile: (s, send) => profilePage(s, send),
+      },
+    }),
+
+    appFooter(),
+  ],
+  onEffect: handleEffects<Effect>()
+    .use(routing.handleEffect)
+    .else((effect, send) => {
+      switch (effect.type) {
+        case 'saveUser':
+          if ('user' in effect) localStorage.setItem('conduit-user', JSON.stringify(effect.user))
+          break
+        case 'clearUser':
+          localStorage.removeItem('conduit-user')
+          break
+      }
+    }),
+})
 
 mountApp(document.getElementById('app')!, App)

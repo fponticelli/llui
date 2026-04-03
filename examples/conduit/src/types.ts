@@ -126,6 +126,6 @@ export type Msg =
 
 export type Effect =
   | { type: 'http'; url: string; method?: string; body?: unknown; headers?: Record<string, string>; onSuccess: string; onError: string }
-  | { type: 'navigateTo'; hash: string }
+  | { type: '__router'; action: string; path?: string; x?: number; y?: number }
   | { type: 'saveUser'; user: User }
   | { type: 'clearUser' }
