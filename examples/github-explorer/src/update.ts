@@ -23,7 +23,7 @@ export function update(state: State, msg: Msg): [State, Effect[]] {
 
     case 'submitSearch': {
       if (!state.query.trim()) return [state, []]
-      const route: Route = { page: 'search', q: state.query, data: { type: 'loading' } }
+      const route: Route = { page: 'search', q: state.query, p: 0, data: { type: 'loading' } }
       return [
         { ...state, route },
         [
@@ -39,9 +39,9 @@ export function update(state: State, msg: Msg): [State, Effect[]] {
     }
 
     case 'searchOk':
-      return withSearchData(state, (prev) => ({
+      return withSearchData(state, () => ({
         type: 'success',
-        data: { repos: msg.payload.items, total: msg.payload.total_count, pageNum: prev?.pageNum ?? 0 },
+        data: { repos: msg.payload.items, total: msg.payload.total_count },
       }))
 
     case 'repoOk':
@@ -103,7 +103,7 @@ function loadRoute(state: State, route: Route): [State, Effect[]] {
   switch (r.page) {
     case 'search':
       if (r.q) {
-        effects.push(http({ url: searchUrl(r.q, 0), headers: JSON_HEADERS, onSuccess: 'searchOk', onError: 'apiError' }))
+        effects.push(http({ url: searchUrl(r.q, r.p), headers: JSON_HEADERS, onSuccess: 'searchOk', onError: 'apiError' }))
         return [{ ...state, route: r, query: r.q }, effects]
       }
       return [{ ...state, route: { ...r, data: { type: 'idle' } }, query: '' }, []]
@@ -133,12 +133,11 @@ function setRouteData(state: State, data: { type: string; [k: string]: unknown }
 
 function withSearchData(
   state: State,
-  build: (prev: SearchData | undefined) => { type: 'success'; data: SearchData },
+  build: () => { type: 'success'; data: SearchData },
 ): [State, Effect[]] {
   const r = state.route
   if (r.page !== 'search') return [state, []]
-  const prev = r.data.type === 'success' ? r.data.data : undefined
-  return [{ ...state, route: { ...r, data: build(prev) } }, []]
+  return [{ ...state, route: { ...r, data: build() } }, []]
 }
 
 function withRepoLoaded(state: State, repo: Repo): [State, Effect[]] {
@@ -195,11 +194,13 @@ function withIssuesLoaded(state: State, issues: Issue[]): [State, Effect[]] {
 function changePage(state: State, delta: number): [State, Effect[]] {
   const r = state.route
   if (r.page !== 'search' || r.data.type !== 'success') return [state, []]
-  const pageNum = Math.max(0, r.data.data.pageNum + delta)
-  const stale = r.data.data
-  const newRoute: Route = { ...r, data: { type: 'loading', stale: { ...stale, pageNum } } }
+  const p = Math.max(0, r.p + delta)
+  const newRoute: Route = { ...r, p, data: { type: 'loading', stale: r.data.data } }
   return [
     { ...state, route: newRoute },
-    [http({ url: searchUrl(r.q, pageNum), headers: JSON_HEADERS, onSuccess: 'searchOk', onError: 'apiError' })],
+    [
+      routing.replace(newRoute),
+      http({ url: searchUrl(r.q, p), headers: JSON_HEADERS, onSuccess: 'searchOk', onError: 'apiError' }),
+    ],
   ]
 }

@@ -4,7 +4,7 @@ import type { State, Msg, Effect } from './types'
 import { initState, update } from './update'
 import { routing } from './router'
 import { header } from './views/header'
-import { searchPage } from './views/search'
+import { searchView } from './views/search'
 import { repoPage } from './views/repo'
 
 const App = component<State, Msg, Effect>({
@@ -23,7 +23,7 @@ const App = component<State, Msg, Effect>({
     ...branch<State, Msg>({
       on: (s) => s.route.page,
       cases: {
-        search: (s, send) => searchPage(s, send),
+        search: (s, send) => searchView(s, send),
         repo: (s, send) => repoPage(s, send),
         tree: (s, send) => repoPage(s, send),
       },

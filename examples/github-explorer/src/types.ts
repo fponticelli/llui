@@ -45,14 +45,14 @@ export interface Issue {
 
 // ── Route ────────────────────────────────────────────────────────
 
-export type SearchData = { repos: Repo[]; total: number; pageNum: number }
+export type SearchData = { repos: Repo[]; total: number }
 export type RepoCodeData = { repo: Repo; tree: TreeEntry[]; readme: string }
 export type RepoIssuesData = { repo: Repo; issues: Issue[] }
 export type TreeDirData = { repo: Repo; tree: TreeEntry[] }
 export type TreeFileData = { repo: Repo; file: FileContent }
 
 export type Route =
-  | { page: 'search'; q: string; data: Async<SearchData, ApiError> }
+  | { page: 'search'; q: string; p: number; data: Async<SearchData, ApiError> }
   | { page: 'repo'; owner: string; name: string; tab: 'code'; data: Async<RepoCodeData, ApiError> }
   | { page: 'repo'; owner: string; name: string; tab: 'issues'; data: Async<RepoIssuesData, ApiError> }
   | { page: 'tree'; owner: string; name: string; path: string; data: Async<TreeDirData | TreeFileData, ApiError> }

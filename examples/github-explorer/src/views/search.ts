@@ -1,5 +1,5 @@
 import { div, h3, p, span, ul, li, text, button, each, branch, peek } from '@llui/dom'
-import type { State, Msg, Repo, SearchData } from '../types'
+import type { State, Msg, Repo } from '../types'
 import type { Send } from '@llui/dom'
 import { routing } from '../router'
 
@@ -10,15 +10,27 @@ const LANG_COLORS: Record<string, string> = {
   HTML: '#e34c26', CSS: '#563d7c', Shell: '#89e051', Lua: '#000080', Zig: '#ec915c',
 }
 
-function searchData(s: State): SearchData | undefined {
+function searchRepos(s: State): Repo[] {
   const r = s.route
-  if (r.page !== 'search') return undefined
-  if (r.data.type === 'success') return r.data.data
-  if (r.data.type === 'loading' && r.data.stale) return r.data.stale
-  return undefined
+  if (r.page !== 'search') return []
+  if (r.data.type === 'success') return r.data.data.repos
+  if (r.data.type === 'loading' && r.data.stale) return r.data.stale.repos
+  return []
 }
 
-export function searchPage(_s: State, send: Send<Msg>): Node[] {
+function searchTotal(s: State): number {
+  const r = s.route
+  if (r.page !== 'search') return 0
+  if (r.data.type === 'success') return r.data.data.total
+  if (r.data.type === 'loading' && r.data.stale) return r.data.stale.total
+  return 0
+}
+
+function searchPage(s: State): number {
+  return s.route.page === 'search' ? s.route.p : 0
+}
+
+export function searchView(_s: State, send: Send<Msg>): Node[] {
   return [
     div({ class: 'container' }, [
       // Error
@@ -42,8 +54,8 @@ export function searchPage(_s: State, send: Send<Msg>): Node[] {
           if (r.page !== 'search') return 'welcome'
           if (r.data.type === 'idle') return 'welcome'
           if (r.data.type === 'loading' && !r.data.stale) return 'loading'
-          const d = searchData(s)
-          if (!d || d.repos.length === 0) return r.q ? 'empty' : 'welcome'
+          const repos = searchRepos(s)
+          if (repos.length === 0) return r.q ? 'empty' : 'welcome'
           return 'results'
         },
         cases: {
@@ -53,26 +65,23 @@ export function searchPage(_s: State, send: Send<Msg>): Node[] {
           results: (_s, send) => [
             ul({ class: 'repo-list' }, [
               ...each<State, Repo, Msg>({
-                items: (s) => searchData(s)?.repos ?? [],
+                items: (s) => searchRepos(s),
                 key: (r) => r.id,
                 render: ({ item, send }) => [repoItem(item, send)],
               }),
             ]),
             div({ class: 'pagination' }, [
               button({
-                disabled: (s: State) => (searchData(s)?.pageNum ?? 0) === 0,
+                disabled: (s: State) => searchPage(s) === 0,
                 onClick: () => send({ type: 'prevPage' }),
               }, [text('← Previous')]),
               text((s: State) => {
-                const d = searchData(s)
-                if (!d) return ''
-                return ` Page ${d.pageNum + 1} of ${Math.ceil(d.total / 10)} `
+                const total = searchTotal(s)
+                if (total <= 10) return ''
+                return ` Page ${searchPage(s) + 1} of ${Math.ceil(total / 10)} `
               }),
               button({
-                disabled: (s: State) => {
-                  const d = searchData(s)
-                  return !d || (d.pageNum + 1) * 10 >= d.total
-                },
+                disabled: (s: State) => (searchPage(s) + 1) * 10 >= searchTotal(s),
                 onClick: () => send({ type: 'nextPage' }),
               }, [text('Next →')]),
             ]),

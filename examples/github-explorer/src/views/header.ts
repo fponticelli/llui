@@ -5,7 +5,7 @@ import { routing } from '../router'
 
 export function header(_s: State, send: Send<Msg>): HTMLElement {
   return div({ class: 'header' }, [
-    routing.link(send, { page: 'search', q: '', data: { type: 'idle' } }, {}, [text('GitHub Explorer')]),
+    routing.link(send, { page: 'search', q: '', p: 0, data: { type: 'idle' } }, {}, [text('GitHub Explorer')]),
     div({ class: 'search' }, [
       form({
         onSubmit: (e: Event) => { e.preventDefault(); send({ type: 'submitSearch' }) },
