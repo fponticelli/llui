@@ -2,7 +2,7 @@
  * Task 14 — Async Validation (Tier 3)
  * Idiomatic score: 6/6
  */
-import { component, div, button, input, label, text, show, branch } from '@llui/core'
+import { component, div, button, input, label, text, show, branch } from '@llui/dom'
 import { handleEffects, http, cancel, debounce } from '@llui/effects'
 
 type ValidationStatus = 'idle' | 'checking' | 'available' | 'taken'

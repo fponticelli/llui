@@ -3,7 +3,7 @@
 A compile-time-optimized web framework built on [The Elm Architecture](https://guide.elm-lang.org/architecture/), designed for LLM-first authoring.
 
 ```typescript
-import { component, div, button, text } from '@llui/core'
+import { component, div, button, text } from '@llui/dom'
 
 type State = { count: number }
 type Msg = { type: 'inc' } | { type: 'dec' }
@@ -36,7 +36,7 @@ export const Counter = component<State, Msg, never>({
 
 | Package | Description |
 |---------|-------------|
-| `@llui/core` | Runtime — component, mount, scope tree, bindings, structural primitives, element helpers |
+| `@llui/dom` | Runtime — component, mount, scope tree, bindings, structural primitives, element helpers |
 | `@llui/vite-plugin` | Compiler — 3-pass TypeScript transform via Vite plugin |
 | `@llui/test` | Test harness — testComponent, assertEffects, propertyTest, replayTrace |
 | `@llui/effects` | Effect builders — http, cancel, debounce, sequence, race |

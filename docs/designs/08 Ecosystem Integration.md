@@ -101,7 +101,7 @@ The state serialization constraint (01 Architecture.md) guarantees `JSON.stringi
 
 ```typescript
 // @llui/vike/onRenderClient.ts
-import { hydrateApp, mountApp } from '@llui/core'
+import { hydrateApp, mountApp } from '@llui/dom'
 import type { OnRenderClientAsync } from 'vike/types'
 
 export const onRenderClient: OnRenderClientAsync = async (pageContext) => {
@@ -164,7 +164,7 @@ The data is passed to the LLui component's `init()`:
 
 ```typescript
 // pages/users/@id/+Page.ts
-import { component } from '@llui/core'
+import { component } from '@llui/dom'
 
 type Data = { user: User }
 type State = { user: User; editing: boolean }

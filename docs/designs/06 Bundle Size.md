@@ -49,7 +49,7 @@ The Vite plugin does three distinct things that reduce the final bundle. Underst
 `elements.ts` exports approximately fifty functions — `div`, `span`, `button`, `input`, `ul`, `li`, and so on. Each is a thin wrapper around `document.createElement(tag)` that applies the LLui prop and child conventions. In source code, a developer writes:
 
 ```ts
-import { div, span, button } from '@llui/core';
+import { div, span, button } from '@llui/dom';
 
 view: (state, send) => div({ class: 'container' }, [
   span({}, [text(() => state.label)]),
@@ -97,7 +97,7 @@ Rollup (and therefore Vite) performs tree-shaking by constructing a module graph
 
 **`elSplit` is always included.** The compiler replaces all element helper calls with `elSplit` calls. `elSplit` is therefore always referenced in compiled output. It is a small function — a few dozen bytes — but it cannot be eliminated. This is the cost of the element helper elision optimization: you replace ~50 individually-reachable functions with one always-reachable function. The net result is a large win, but `elSplit` is fixed overhead in every app.
 
-**Barrel file imports break tree-shaking for some bundlers.** An import like `import { div, span, each, branch } from '@llui/core'` re-exports everything from `llui/index.ts`. If `index.ts` is a barrel that re-exports from sub-modules, Rollup handles it correctly. But some environments (Jest with `moduleNameMapper`, older webpack configurations, Parcel 1) treat barrel files as atomic and include everything. The Vite plugin's template for generated code should use direct sub-module imports where possible. User-facing imports from `'llui'` are fine for development; the build output should not contain them verbatim after the compiler runs.
+**Barrel file imports break tree-shaking for some bundlers.** An import like `import { div, span, each, branch } from '@llui/dom'` re-exports everything from `llui/index.ts`. If `index.ts` is a barrel that re-exports from sub-modules, Rollup handles it correctly. But some environments (Jest with `moduleNameMapper`, older webpack configurations, Parcel 1) treat barrel files as atomic and include everything. The Vite plugin's template for generated code should use direct sub-module imports where possible. User-facing imports from `'llui'` are fine for development; the build output should not contain them verbatim after the compiler runs.
 
 ---
 
@@ -264,7 +264,7 @@ export default defineConfig({
 });
 ```
 
-After building, open the generated `stats.html`. `elements.ts` must not appear in the treemap. If it does, the compiler's import-cleanup pass failed to remove all references to element helpers. Common causes: the compiler missed a renamed import (`import { div as d } from '@llui/core'`), a call site was in a position the AST visitor did not traverse (e.g., inside a type assertion), or the user has a local file also named `elements.ts` that shadows the LLui import. Fix the compiler; do not work around it.
+After building, open the generated `stats.html`. `elements.ts` must not appear in the treemap. If it does, the compiler's import-cleanup pass failed to remove all references to element helpers. Common causes: the compiler missed a renamed import (`import { div as d } from '@llui/dom'`), a call site was in a position the AST visitor did not traverse (e.g., inside a type assertion), or the user has a local file also named `elements.ts` that shadows the LLui import. Fix the compiler; do not work around it.
 
 ### 2. Audit the core runtime for unused branches
 

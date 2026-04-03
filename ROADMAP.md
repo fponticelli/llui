@@ -1,6 +1,6 @@
 # Roadmap
 
-## Phase 1 — Core Runtime (`@llui/core`) ✅
+## Phase 1 — Core Runtime (`@llui/dom`) ✅
 
 The foundation everything else builds on.
 
@@ -101,16 +101,9 @@ The foundation everything else builds on.
 
 ## Next Steps
 
-### 0. Rename `@llui/core` → `@llui/dom`
+### 0. ~~Rename `@llui/core` → `@llui/dom`~~ ✅
 
-The current `@llui/core` package is DOM-specific. Renaming to `@llui/dom` reserves `@llui/core` for shared abstractions if native platform targets (iOS, Android, terminal) are added in the future.
-
-- [ ] Rename package directory `packages/core` → `packages/dom`
-- [ ] Update `package.json` name to `@llui/dom`
-- [ ] Update all workspace references (`@llui/core` → `@llui/dom`) across packages, benchmarks, examples, and docs
-- [ ] Update compiler: `'@llui/core'` import detection → `'@llui/dom'`
-- [ ] Update CLAUDE.md, design docs, evaluation suite, and lint-idiomatic
-- [ ] Verify all tests, build, and benchmarks pass after rename
+Completed. The DOM-specific package is now `@llui/dom`, reserving `@llui/core` for shared abstractions if native platform targets are added.
 
 ### 1. Real App Validation
 

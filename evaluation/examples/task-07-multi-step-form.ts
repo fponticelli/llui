@@ -2,8 +2,8 @@
  * Task 07 — Multi-Step Form (Tier 2)
  * Idiomatic score: 6/6
  */
-import { component, div, button, text, input, label, branch } from '@llui/core'
-import { applyField, type FieldMsg } from '@llui/core'
+import { component, div, button, text, input, label, branch } from '@llui/dom'
+import { applyField, type FieldMsg } from '@llui/dom'
 
 type Fields = {
   name: string

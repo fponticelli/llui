@@ -12,7 +12,7 @@ function bits(source: string): Map<string, number> {
 describe('collectDeps', () => {
   it('extracts direct property access on the state param', () => {
     const src = `
-      import { component, text } from '@llui/core'
+      import { component, text } from '@llui/dom'
       export const C = component({
         name: 'C',
         init: () => [{ count: 0 }, []],
@@ -25,7 +25,7 @@ describe('collectDeps', () => {
 
   it('extracts nested property access up to depth 2', () => {
     const src = `
-      import { component, div, text } from '@llui/core'
+      import { component, div, text } from '@llui/dom'
       export const C = component({
         name: 'C',
         init: () => [{ user: { name: '', email: '' } }, []],
@@ -41,7 +41,7 @@ describe('collectDeps', () => {
 
   it('assigns unique bit positions to each path', () => {
     const src = `
-      import { component, text } from '@llui/core'
+      import { component, text } from '@llui/dom'
       export const C = component({
         name: 'C',
         init: () => [{ a: 0, b: 0, c: 0 }, []],
@@ -61,7 +61,7 @@ describe('collectDeps', () => {
 
   it('handles reactive prop values in element helpers', () => {
     const src = `
-      import { component, div } from '@llui/core'
+      import { component, div } from '@llui/dom'
       export const C = component({
         name: 'C',
         init: () => [{ title: '', active: false }, []],
@@ -76,7 +76,7 @@ describe('collectDeps', () => {
 
   it('ignores static prop values', () => {
     const src = `
-      import { component, div } from '@llui/core'
+      import { component, div } from '@llui/dom'
       export const C = component({
         name: 'C',
         init: () => [{ x: 0 }, []],
@@ -91,7 +91,7 @@ describe('collectDeps', () => {
 
   it('ignores event handler props', () => {
     const src = `
-      import { component, button } from '@llui/core'
+      import { component, button } from '@llui/dom'
       export const C = component({
         name: 'C',
         init: () => [{ x: 0 }, []],
@@ -106,7 +106,7 @@ describe('collectDeps', () => {
 
   it('handles parent path as union of child bits', () => {
     const src = `
-      import { component, text, div } from '@llui/core'
+      import { component, text, div } from '@llui/dom'
       export const C = component({
         name: 'C',
         init: () => [{ user: { name: '', email: '' }, count: 0 }, []],
@@ -127,14 +127,14 @@ describe('collectDeps', () => {
     // (the accessor s => JSON.stringify(s.user) reads 'user' as a whole)
   })
 
-  it('returns empty map for files without @llui/core imports', () => {
+  it('returns empty map for files without @llui/dom imports', () => {
     const src = `export const x = 42`
     expect(paths(src)).toEqual([])
   })
 
   it('extracts paths from bracket notation with string literal', () => {
     const src = `
-      import { component, text } from '@llui/core'
+      import { component, text } from '@llui/dom'
       export const C = component({
         name: 'C',
         init: () => [{ count: 0 }, []],

@@ -1,5 +1,5 @@
-import { renderToString } from '@llui/core'
-import type { ComponentDef } from '@llui/core'
+import { renderToString } from '@llui/dom'
+import type { ComponentDef } from '@llui/dom'
 
 export interface PageContext {
   Page: ComponentDef<unknown, unknown, unknown>

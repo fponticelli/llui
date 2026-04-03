@@ -8,7 +8,7 @@
     "measure": "vite build && node measure.js"
   },
   "dependencies": {
-    "@llui/core": "workspace:*"
+    "@llui/dom": "workspace:*"
   },
   "devDependencies": {
     "@llui/vite-plugin": "workspace:*",

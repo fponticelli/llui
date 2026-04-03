@@ -2,7 +2,7 @@
  * Task 01 — Counter (Tier 1)
  * Idiomatic score: 6/6
  */
-import { component, div, button, text } from '@llui/core'
+import { component, div, button, text } from '@llui/dom'
 
 type State = { count: number }
 type Msg = { type: 'inc' } | { type: 'dec' }

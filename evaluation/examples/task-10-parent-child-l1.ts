@@ -2,8 +2,8 @@
  * Task 10 — Parent-Child Communication Level 1 (Tier 5)
  * Idiomatic score: 6/6
  */
-import { component, div, button, text, each, peek } from '@llui/core'
-import type { Send } from '@llui/core'
+import { component, div, button, text, each, peek } from '@llui/dom'
+import type { Send } from '@llui/dom'
 
 // ── Counter slice view function (Level 1) ───────────────────────
 

@@ -8,7 +8,7 @@ function warnings(source: string): string[] {
 describe('each() scoped accessor misuse', () => {
   it('warns on direct property access: item.text', () => {
     const src = `
-      import { each } from '@llui/core'
+      import { each } from '@llui/dom'
       each({ items: s => s.items, key: t => t.id, render: (item, index) => {
         return [text(item.text)]
       }})
@@ -21,7 +21,7 @@ describe('each() scoped accessor misuse', () => {
 describe('.map() on state arrays', () => {
   it('warns on .map() inside view function body', () => {
     const src = `
-      import { component, div } from '@llui/core'
+      import { component, div } from '@llui/dom'
       export const C = component({
         name: 'C',
         init: () => [{ items: [] }, []],
@@ -39,7 +39,7 @@ describe('.map() on state arrays', () => {
 describe('exhaustive update()', () => {
   it('warns when switch is missing a case from Msg union', () => {
     const src = `
-      import { component } from '@llui/core'
+      import { component } from '@llui/dom'
       type Msg = { type: 'inc' } | { type: 'dec' } | { type: 'reset' }
       export const C = component<{ count: number }, Msg, never>({
         name: 'C',
@@ -59,7 +59,7 @@ describe('exhaustive update()', () => {
 
   it('does not warn when all cases are handled', () => {
     const src = `
-      import { component } from '@llui/core'
+      import { component } from '@llui/dom'
       type Msg = { type: 'inc' } | { type: 'dec' }
       export const C = component<{ count: number }, Msg, never>({
         name: 'C',
@@ -79,7 +79,7 @@ describe('exhaustive update()', () => {
 
   it('does not warn when default case exists', () => {
     const src = `
-      import { component } from '@llui/core'
+      import { component } from '@llui/dom'
       type Msg = { type: 'inc' } | { type: 'dec' } | { type: 'reset' }
       export const C = component<{ count: number }, Msg, never>({
         name: 'C',
@@ -101,7 +101,7 @@ describe('exhaustive update()', () => {
 describe('accessibility', () => {
   it('warns on img without alt', () => {
     const src = `
-      import { img } from '@llui/core'
+      import { img } from '@llui/dom'
       const el = img({ src: 'photo.jpg' })
     `
     const w = warnings(src)
@@ -110,7 +110,7 @@ describe('accessibility', () => {
 
   it('does not warn on img with alt', () => {
     const src = `
-      import { img } from '@llui/core'
+      import { img } from '@llui/dom'
       const el = img({ src: 'photo.jpg', alt: 'A photo' })
     `
     const w = warnings(src)
@@ -119,7 +119,7 @@ describe('accessibility', () => {
 
   it('warns on onClick on non-interactive element without role', () => {
     const src = `
-      import { div } from '@llui/core'
+      import { div } from '@llui/dom'
       const el = div({ onClick: handler })
     `
     const w = warnings(src)
@@ -128,7 +128,7 @@ describe('accessibility', () => {
 
   it('does not warn on onClick on button', () => {
     const src = `
-      import { button } from '@llui/core'
+      import { button } from '@llui/dom'
       const el = button({ onClick: handler })
     `
     const w = warnings(src)
@@ -139,7 +139,7 @@ describe('accessibility', () => {
 describe('controlled input without handler', () => {
   it('warns on input with reactive value but no onInput', () => {
     const src = `
-      import { input } from '@llui/core'
+      import { input } from '@llui/dom'
       const el = input({ value: s => s.name })
     `
     const w = warnings(src)
@@ -148,7 +148,7 @@ describe('controlled input without handler', () => {
 
   it('does not warn when onInput is present', () => {
     const src = `
-      import { input } from '@llui/core'
+      import { input } from '@llui/dom'
       const el = input({ value: s => s.name, onInput: handler })
     `
     const w = warnings(src)
@@ -159,7 +159,7 @@ describe('controlled input without handler', () => {
 describe('no warnings for clean code', () => {
   it('returns empty array for well-formed component', () => {
     const src = `
-      import { component, div, text } from '@llui/core'
+      import { component, div, text } from '@llui/dom'
       type Msg = { type: 'inc' }
       export const C = component<{ count: number }, Msg, never>({
         name: 'C',

@@ -1,4 +1,4 @@
-import type { ComponentDef } from '@llui/core'
+import type { ComponentDef } from '@llui/dom'
 
 export interface TestHarness<S, M, E> {
   state: S

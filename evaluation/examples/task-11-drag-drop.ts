@@ -2,7 +2,7 @@
  * Task 11 — Drag and Drop List (Tier 6)
  * Idiomatic score: 6/6
  */
-import { component, div, text, each, peek } from '@llui/core'
+import { component, div, text, each, peek } from '@llui/dom'
 
 type Item = { id: number; label: string }
 

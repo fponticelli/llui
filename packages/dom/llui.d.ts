@@ -1,14 +1,14 @@
 /**
  * LLui — Consolidated Type Reference for LLM Context Injection
  *
- * This file contains the complete public API surface of @llui/core,
+ * This file contains the complete public API surface of @llui/dom,
  * @llui/effects, and @llui/test in under 150 lines. Include this
  * in an LLM's system prompt for accurate code generation.
  *
  * Auto-generated from source types — do not edit manually.
  */
 
-// ── @llui/core ────────────────────────────────────────────────────
+// ── @llui/dom ────────────────────────────────────────────────────
 
 export interface ComponentDef<S, M, E> {
   name: string

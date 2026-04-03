@@ -13,7 +13,7 @@ function clean(s: string): string {
 describe('Pass 1 — element helper → elSplit', () => {
   it('transforms fully static div() to template clone', () => {
     const src = `
-      import { div } from '@llui/core'
+      import { div } from '@llui/dom'
       const el = div({ class: 'foo', id: 'bar' })
     `
     const out = t(src)
@@ -24,7 +24,7 @@ describe('Pass 1 — element helper → elSplit', () => {
 
   it('transforms div() with reactive props to elSplit', () => {
     const src = `
-      import { component, div } from '@llui/core'
+      import { component, div } from '@llui/dom'
       export const C = component({
         name: 'C',
         init: () => [{ title: '' }, []],
@@ -38,7 +38,7 @@ describe('Pass 1 — element helper → elSplit', () => {
 
   it('transforms event handlers into events array', () => {
     const src = `
-      import { button } from '@llui/core'
+      import { button } from '@llui/dom'
       const el = button({ onClick: handler })
     `
     const out = t(src)
@@ -49,7 +49,7 @@ describe('Pass 1 — element helper → elSplit', () => {
 
   it('transforms reactive props into bindings array with masks', () => {
     const src = `
-      import { component, div, text } from '@llui/core'
+      import { component, div, text } from '@llui/dom'
       export const C = component({
         name: 'C',
         init: () => [{ title: '' }, []],
@@ -67,7 +67,7 @@ describe('Pass 1 — element helper → elSplit', () => {
 
   it('passes children through', () => {
     const src = `
-      import { div, text } from '@llui/core'
+      import { div, text } from '@llui/dom'
       const el = div({ class: 'box' }, [text(s => s.label)])
     `
     const out = t(src)
@@ -77,7 +77,7 @@ describe('Pass 1 — element helper → elSplit', () => {
 
   it('bails out on non-literal props (variable)', () => {
     const src = `
-      import { div } from '@llui/core'
+      import { div } from '@llui/dom'
       const props = { class: 'foo' }
       const el = div(props)
     `
@@ -90,7 +90,7 @@ describe('Pass 1 — element helper → elSplit', () => {
 describe('Pass 2 — mask injection + __dirty', () => {
   it('injects mask into text() calls', () => {
     const src = `
-      import { component, text } from '@llui/core'
+      import { component, text } from '@llui/dom'
       export const C = component({
         name: 'C',
         init: () => [{ count: 0 }, []],
@@ -105,7 +105,7 @@ describe('Pass 2 — mask injection + __dirty', () => {
 
   it('synthesizes __dirty function', () => {
     const src = `
-      import { component, text } from '@llui/core'
+      import { component, text } from '@llui/dom'
       export const C = component({
         name: 'C',
         init: () => [{ count: 0, label: '' }, []],
@@ -126,7 +126,7 @@ describe('Pass 2 — mask injection + __dirty', () => {
 
   it('does not overwrite existing __dirty', () => {
     const src = `
-      import { component, text } from '@llui/core'
+      import { component, text } from '@llui/dom'
       export const C = component({
         name: 'C',
         init: () => [{ count: 0 }, []],
@@ -144,7 +144,7 @@ describe('Pass 2 — mask injection + __dirty', () => {
 describe('Pass 3 — import cleanup', () => {
   it('removes compiled element helpers from imports', () => {
     const src = `
-      import { div, span, text, component } from '@llui/core'
+      import { div, span, text, component } from '@llui/dom'
       export const C = component({
         name: 'C',
         init: () => [{ x: 0 }, []],
@@ -165,7 +165,7 @@ describe('Pass 3 — import cleanup', () => {
 
   it('keeps element helpers that bailed out (non-literal props)', () => {
     const src = `
-      import { div } from '@llui/core'
+      import { div } from '@llui/dom'
       const props = { class: 'foo' }
       const el = div(props)
     `
@@ -179,7 +179,7 @@ describe('Pass 3 — import cleanup', () => {
 describe('per-item accessor calls', () => {
   it('compiles item() calls as perItem bindings instead of bailing out', () => {
     const src = `
-      import { component, input, each } from '@llui/core'
+      import { component, input, each } from '@llui/dom'
       export const C = component({
         name: 'C',
         init: () => [{ items: [] }, []],
@@ -202,7 +202,7 @@ describe('per-item accessor calls', () => {
 
   it('emits item() call expression in the binding tuple', () => {
     const src = `
-      import { component, div, each } from '@llui/core'
+      import { component, div, each } from '@llui/dom'
       export const C = component({
         name: 'C',
         init: () => [{ items: [] }, []],
@@ -226,7 +226,7 @@ describe('per-item accessor calls', () => {
 describe('static subtree prerendering', () => {
   it('emits template clone for fully static subtree', () => {
     const src = `
-      import { component, div, span, text } from '@llui/core'
+      import { component, div, span, text } from '@llui/dom'
       export const C = component({
         name: 'C',
         init: () => [{ x: 0 }, []],
@@ -247,7 +247,7 @@ describe('static subtree prerendering', () => {
 
   it('does not use template for subtrees with reactive bindings', () => {
     const src = `
-      import { component, div, text } from '@llui/core'
+      import { component, div, text } from '@llui/dom'
       export const C = component({
         name: 'C',
         init: () => [{ label: '' }, []],
@@ -265,7 +265,7 @@ describe('static subtree prerendering', () => {
 
   it('does not use template for subtrees with event handlers', () => {
     const src = `
-      import { component, button, text } from '@llui/core'
+      import { component, button, text } from '@llui/dom'
       export const C = component({
         name: 'C',
         init: () => [{ x: 0 }, []],
@@ -283,7 +283,7 @@ describe('static subtree prerendering', () => {
 describe('zero-mask constant folding', () => {
   it('folds accessor that does not read state into staticFn', () => {
     const src = `
-      import { component, div } from '@llui/core'
+      import { component, div } from '@llui/dom'
       const THEME = 'dark'
       export const C = component({
         name: 'C',
@@ -305,7 +305,7 @@ describe('zero-mask constant folding', () => {
 describe('subtree collapse — nested elements → elTemplate', () => {
   it('collapses nested static elements into a single elTemplate call', () => {
     const src = `
-      import { component, div, span, text } from '@llui/core'
+      import { component, div, span, text } from '@llui/dom'
       export const C = component({
         name: 'C',
         init: () => [{ x: 0 }, []],
@@ -332,7 +332,7 @@ describe('subtree collapse — nested elements → elTemplate', () => {
 
   it('collapses elements with events into elTemplate with patch function', () => {
     const src = `
-      import { component, div, button, text } from '@llui/core'
+      import { component, div, button, text } from '@llui/dom'
       export const C = component({
         name: 'C',
         init: () => [{ x: 0 }, []],
@@ -355,7 +355,7 @@ describe('subtree collapse — nested elements → elTemplate', () => {
 
   it('collapses elements with reactive bindings into elTemplate with bind calls', () => {
     const src = `
-      import { component, div, span, text } from '@llui/core'
+      import { component, div, span, text } from '@llui/dom'
       export const C = component({
         name: 'C',
         init: () => [{ label: 'hi', active: false }, []],
@@ -378,7 +378,7 @@ describe('subtree collapse — nested elements → elTemplate', () => {
 
   it('collapses elements with reactive text children', () => {
     const src = `
-      import { component, div, span, text } from '@llui/core'
+      import { component, div, span, text } from '@llui/dom'
       export const C = component({
         name: 'C',
         init: () => [{ label: 'hi' }, []],
@@ -403,7 +403,7 @@ describe('subtree collapse — nested elements → elTemplate', () => {
 
   it('handles per-item accessors in collapsed templates', () => {
     const src = `
-      import { component, tr, td, text, each } from '@llui/core'
+      import { component, tr, td, text, each } from '@llui/dom'
       export const C = component({
         name: 'C',
         init: () => [{ items: [] }, []],
@@ -431,7 +431,7 @@ describe('subtree collapse — nested elements → elTemplate', () => {
 
   it('does not collapse when children include structural primitives', () => {
     const src = `
-      import { component, div, each, text } from '@llui/core'
+      import { component, div, each, text } from '@llui/dom'
       export const C = component({
         name: 'C',
         init: () => [{ items: [] }, []],
@@ -453,7 +453,7 @@ describe('subtree collapse — nested elements → elTemplate', () => {
 
   it('does not collapse single elements without nested children', () => {
     const src = `
-      import { component, div, text } from '@llui/core'
+      import { component, div, text } from '@llui/dom'
       export const C = component({
         name: 'C',
         init: () => [{ x: 0 }, []],
@@ -471,7 +471,7 @@ describe('subtree collapse — nested elements → elTemplate', () => {
 
   it('adds elTemplate to imports when used', () => {
     const src = `
-      import { component, div, span, text } from '@llui/core'
+      import { component, div, span, text } from '@llui/dom'
       export const C = component({
         name: 'C',
         init: () => [{ x: 0 }, []],
@@ -489,7 +489,7 @@ describe('subtree collapse — nested elements → elTemplate', () => {
 
   it('handles void elements (br, hr, img, input) in templates', () => {
     const src = `
-      import { component, div, br, hr } from '@llui/core'
+      import { component, div, br, hr } from '@llui/dom'
       export const C = component({
         name: 'C',
         init: () => [{ x: 0 }, []],
@@ -510,7 +510,7 @@ describe('subtree collapse — nested elements → elTemplate', () => {
 
   it('marks all descendant helpers as compiled for import cleanup', () => {
     const src = `
-      import { component, div, span, p, text } from '@llui/core'
+      import { component, div, span, p, text } from '@llui/dom'
       export const C = component({
         name: 'C',
         init: () => [{ x: 0 }, []],
@@ -533,7 +533,7 @@ describe('subtree collapse — nested elements → elTemplate', () => {
 })
 
 describe('returns null for non-llui files', () => {
-  it('returns null when no @llui/core import', () => {
+  it('returns null when no @llui/dom import', () => {
     const src = `export const x = 42`
     expect(transformLlui(src, 'test.ts')).toBeNull()
   })

@@ -17,6 +17,6 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@llui/core": "workspace:*"
+    "@llui/dom": "workspace:*"
   }
 }

@@ -2,7 +2,7 @@
  * Task 12 — Modal Dialog (Tier 6)
  * Idiomatic score: 6/6
  */
-import { component, div, button, text, show, onMount } from '@llui/core'
+import { component, div, button, text, show, onMount } from '@llui/dom'
 
 type State = {
   open: boolean

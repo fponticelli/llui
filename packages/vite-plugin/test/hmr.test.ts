@@ -4,7 +4,7 @@ import { transformLlui } from '../src/transform'
 describe('HMR', () => {
   it('injects HMR accept code in dev mode', () => {
     const src = `
-      import { component, div, text } from '@llui/core'
+      import { component, div, text } from '@llui/dom'
       export const Counter = component({
         name: 'Counter',
         init: () => [{ count: 0 }, []],
@@ -19,7 +19,7 @@ describe('HMR', () => {
 
   it('does not inject HMR code in production mode', () => {
     const src = `
-      import { component, div, text } from '@llui/core'
+      import { component, div, text } from '@llui/dom'
       export const Counter = component({
         name: 'Counter',
         init: () => [{ count: 0 }, []],

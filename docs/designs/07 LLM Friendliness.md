@@ -118,7 +118,7 @@ LLMs are excellent at filling in object literal fields. Given `ComponentDef<S, M
 
 ### 2.8 Plain `.ts` Files
 
-LLui components are TypeScript files. There is no `.llui` extension, no `.svelte` format, no Vue SFCs. The LLM needs no knowledge of custom file formats. It writes TypeScript; it imports from `'@llui/core'`; it exports a component definition. This is the smallest possible conceptual footprint.
+LLui components are TypeScript files. There is no `.llui` extension, no `.svelte` format, no Vue SFCs. The LLM needs no knowledge of custom file formats. It writes TypeScript; it imports from `'@llui/dom'`; it exports a component definition. This is the smallest possible conceptual footprint.
 
 ---
 
@@ -588,7 +588,7 @@ function onMount(callback: (el: Element) => (() => void) | void): void;
 ## Example
 
 ```typescript
-import { component, div, button, text } from '@llui/core';
+import { component, div, button, text } from '@llui/dom';
 
 type State = { count: number };
 type Msg = { type: 'inc' } | { type: 'dec' };

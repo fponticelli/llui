@@ -1,4 +1,4 @@
-import { component, mountApp, div, button, text, show } from '@llui/core'
+import { component, mountApp, div, button, text, show } from '@llui/dom'
 
 type State = { count: number }
 type Msg = { type: 'inc' } | { type: 'dec' } | { type: 'reset' }

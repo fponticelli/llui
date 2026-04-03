@@ -36,7 +36,7 @@ function peek<T, R>(item: <V>(sel: (t: T) => V) => () => V, sel: (t: T) => R): R
 ## Example
 
 ```typescript
-import { component, div, button, text } from '@llui/core'
+import { component, div, button, text } from '@llui/dom'
 
 type State = { count: number }
 type Msg = { type: 'inc' } | { type: 'dec' }
@@ -74,7 +74,7 @@ export const Counter = component<State, Msg, Effect>({
   Only use `child()` for library components with encapsulated internals or 30+ state paths.
 - For forms with many fields, use a single `setField` message:
   `{ type: 'setField'; field: keyof Fields; value: string }` instead of one message per field.
-  Use `applyField(state, msg.field, msg.value)` from `@llui/core` to apply updates.
+  Use `applyField(state, msg.field, msg.value)` from `@llui/dom` to apply updates.
 - Effects are dispatched via `onEffect(effect, send, signal)`.
   For `http`, `cancel`, `debounce`: import `handleEffects` from `@llui/effects`.
 - `send()` batches via microtask. Use `flush()` only when reading DOM state immediately.

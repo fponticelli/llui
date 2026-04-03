@@ -13,7 +13,7 @@ import {
   text,
   each,
   flush,
-} from '@llui/core'
+} from '@llui/dom'
 
 // ── Data generation (matches krausest spec exactly) ──
 

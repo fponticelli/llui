@@ -2,7 +2,7 @@
  * Task 10b — Parent-Child Communication Level 2 (Tier 5)
  * Idiomatic score: 6/6
  */
-import { component, div, button, text, each, child, peek } from '@llui/core'
+import { component, div, button, text, each, child, peek } from '@llui/dom'
 
 // ── Child component (Level 2) ──────────────────────────────────
 

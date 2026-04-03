@@ -2,7 +2,7 @@
  * Task 03 — Filterable List (Tier 2)
  * Idiomatic score: 6/6
  */
-import { component, div, input, text, each, memo } from '@llui/core'
+import { component, div, input, text, each, memo } from '@llui/dom'
 
 type Item = { id: number; text: string }
 

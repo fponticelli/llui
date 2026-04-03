@@ -230,7 +230,7 @@ After disposal: no lingering listeners, no `onMount` callbacks fire, no bindings
 
 ### Framework DOM Test Infrastructure
 
-The framework's own test suite uses `MutationObserver` for mutation counting, Vitest browser mode with Playwright for real-browser DOM tests, and Playwright standalone for transitions/animations. This infrastructure is **not exposed to application developers** — it is internal to the `@llui/core` package. Application developers use `@llui/test` instead.
+The framework's own test suite uses `MutationObserver` for mutation counting, Vitest browser mode with Playwright for real-browser DOM tests, and Playwright standalone for transitions/animations. This infrastructure is **not exposed to application developers** — it is internal to the `@llui/dom` package. Application developers use `@llui/test` instead.
 
 ```typescript
 // Framework-internal test helper (not exported to apps):

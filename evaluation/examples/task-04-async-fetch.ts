@@ -2,7 +2,7 @@
  * Task 04 — Async Data Fetch (Tier 3)
  * Idiomatic score: 6/6
  */
-import { component, div, button, text, each, show } from '@llui/core'
+import { component, div, button, text, each, show } from '@llui/dom'
 import { handleEffects, http } from '@llui/effects'
 
 type Item = { id: number; name: string }

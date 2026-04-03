@@ -1,5 +1,5 @@
-import type { ComponentDef } from '@llui/core'
-import { mountApp } from '@llui/core'
+import type { ComponentDef } from '@llui/dom'
+import { mountApp } from '@llui/dom'
 
 export interface ViewQuery {
   query: (selector: string) => Element | null

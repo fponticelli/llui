@@ -2,7 +2,7 @@
  * Task 05 — Stopwatch (Tier 6)
  * Idiomatic score: 6/6
  */
-import { component, div, button, text, show } from '@llui/core'
+import { component, div, button, text, show } from '@llui/dom'
 
 type State = {
   running: boolean

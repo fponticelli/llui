@@ -1,5 +1,5 @@
-import { hydrateApp, mountApp } from '@llui/core'
-import type { ComponentDef } from '@llui/core'
+import { hydrateApp, mountApp } from '@llui/dom'
+import type { ComponentDef } from '@llui/dom'
 
 declare global {
   interface Window {

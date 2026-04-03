@@ -48,13 +48,13 @@ function resolveKey(key: string, kind: BindingKind): string {
 }
 
 /**
- * Transform a source file containing @llui/core imports.
+ * Transform a source file containing @llui/dom imports.
  * Returns the transformed source or null if no transformation needed.
  */
 export function transformLlui(source: string, _filename: string, devMode = false): string | null {
   const sourceFile = ts.createSourceFile('input.ts', source, ts.ScriptTarget.Latest, true)
 
-  // Find the @llui/core import
+  // Find the @llui/dom import
   const imp = findLluiImport(sourceFile)
   if (!imp) return null
   const lluiImport = imp
@@ -157,7 +157,7 @@ function findLluiImport(sf: ts.SourceFile): ts.ImportDeclaration | null {
     if (
       ts.isImportDeclaration(stmt) &&
       ts.isStringLiteral(stmt.moduleSpecifier) &&
-      stmt.moduleSpecifier.text === '@llui/core'
+      stmt.moduleSpecifier.text === '@llui/dom'
     ) {
       return stmt
     }
@@ -436,7 +436,7 @@ function tryInjectTextMask(
   f: ts.NodeFactory,
 ): ts.CallExpression | null {
   if (!ts.isIdentifier(node.expression) || node.expression.text !== 'text') return null
-  // Verify text is from @llui/core
+  // Verify text is from @llui/dom
   const clause = lluiImport.importClause
   if (!clause?.namedBindings || !ts.isNamedImports(clause.namedBindings)) return null
   const hasText = clause.namedBindings.elements.some(

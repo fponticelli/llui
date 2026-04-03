@@ -4,7 +4,7 @@ import { lintIdiomatic } from '../src/index'
 describe('lintIdiomatic', () => {
   it('detects state mutation via assignment', () => {
     const source = `
-      import { component } from '@llui/core'
+      import { component } from '@llui/dom'
       type State = { count: number }
       type Msg = { type: 'inc' }
       const C = component<State, Msg, never>({
@@ -26,7 +26,7 @@ describe('lintIdiomatic', () => {
 
   it('detects state mutation via push', () => {
     const source = `
-      import { component } from '@llui/core'
+      import { component } from '@llui/dom'
       type State = { items: string[] }
       type Msg = { type: 'add'; item: string }
       const C = component<State, Msg, never>({
@@ -47,7 +47,7 @@ describe('lintIdiomatic', () => {
 
   it('detects state mutation via compound assignment', () => {
     const source = `
-      import { component } from '@llui/core'
+      import { component } from '@llui/dom'
       type State = { count: number }
       type Msg = { type: 'inc' }
       const C = component<State, Msg, never>({
@@ -73,7 +73,7 @@ describe('lintIdiomatic', () => {
 
   it('detects state mutation via increment', () => {
     const source = `
-      import { component } from '@llui/core'
+      import { component } from '@llui/dom'
       type State = { count: number }
       type Msg = { type: 'inc' }
       const C = component<State, Msg, never>({
@@ -100,7 +100,7 @@ describe('lintIdiomatic', () => {
 
   it('detects .map() on state arrays in view', () => {
     const source = `
-      import { component, div, text } from '@llui/core'
+      import { component, div, text } from '@llui/dom'
       type State = { items: string[] }
       type Msg = never
       const C = component<State, Msg, never>({
@@ -147,7 +147,7 @@ describe('lintIdiomatic', () => {
 
   it('reports perfect score for clean code', () => {
     const source = `
-      import { component, div, button, text, each, memo } from '@llui/core'
+      import { component, div, button, text, each, memo } from '@llui/dom'
       type State = { count: number; items: { id: number; text: string }[] }
       type Msg = { type: 'inc' } | { type: 'dec' }
       const C = component<State, Msg, never>({
@@ -173,7 +173,7 @@ describe('lintIdiomatic', () => {
 
   it('score decreases by unique violated rule categories', () => {
     const source = `
-      import { component, div, text } from '@llui/core'
+      import { component, div, text } from '@llui/dom'
       type State = { items: string[]; count: number }
       type Msg =
         | { type: 'setA'; value: string }

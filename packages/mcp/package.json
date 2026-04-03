@@ -19,7 +19,7 @@
     "lint": "eslint src"
   },
   "dependencies": {
-    "@llui/core": "workspace:*"
+    "@llui/dom": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "^22.0.0"

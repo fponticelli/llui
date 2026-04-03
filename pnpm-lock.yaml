@@ -62,9 +62,9 @@ importers:
 
   benchmarks/js-framework-benchmark:
     dependencies:
-      '@llui/core':
+      '@llui/dom':
         specifier: workspace:*
-        version: link:../../packages/core
+        version: link:../../packages/dom
     devDependencies:
       '@llui/vite-plugin':
         specifier: workspace:*
@@ -75,9 +75,9 @@ importers:
 
   examples/counter:
     dependencies:
-      '@llui/core':
+      '@llui/dom':
         specifier: workspace:*
-        version: link:../../packages/core
+        version: link:../../packages/dom
     devDependencies:
       '@llui/vite-plugin':
         specifier: workspace:*
@@ -88,9 +88,9 @@ importers:
 
   examples/todomvc:
     dependencies:
-      '@llui/core':
+      '@llui/dom':
         specifier: workspace:*
-        version: link:../../packages/core
+        version: link:../../packages/dom
     devDependencies:
       '@llui/vite-plugin':
         specifier: workspace:*
@@ -99,7 +99,7 @@ importers:
         specifier: ^8.0.0
         version: 8.0.3(@emnapi/core@1.9.1)(@emnapi/runtime@1.9.1)(@types/node@22.19.15)(esbuild@0.27.5)(jiti@2.6.1)(tsx@4.21.0)
 
-  packages/core: {}
+  packages/dom: {}
 
   packages/effects: {}
 
@@ -111,9 +111,9 @@ importers:
 
   packages/mcp:
     dependencies:
-      '@llui/core':
+      '@llui/dom':
         specifier: workspace:*
-        version: link:../core
+        version: link:../dom
     devDependencies:
       '@types/node':
         specifier: ^22.0.0
@@ -121,15 +121,15 @@ importers:
 
   packages/test:
     dependencies:
-      '@llui/core':
+      '@llui/dom':
         specifier: workspace:*
-        version: link:../core
+        version: link:../dom
 
   packages/vike:
     dependencies:
-      '@llui/core':
+      '@llui/dom':
         specifier: workspace:*
-        version: link:../core
+        version: link:../dom
 
   packages/vite-plugin:
     dependencies:

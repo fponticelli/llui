@@ -1,4 +1,4 @@
-import type { ComponentDef } from '@llui/core'
+import type { ComponentDef } from '@llui/dom'
 
 export function propertyTest<S, M, E>(
   def: ComponentDef<S, M, E>,

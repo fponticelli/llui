@@ -8,7 +8,7 @@ import ts from 'typescript'
 export function collectDeps(source: string): Map<string, number> {
   const sourceFile = ts.createSourceFile('input.ts', source, ts.ScriptTarget.Latest, true)
 
-  // Check if file imports from @llui/core
+  // Check if file imports from @llui/dom
   if (!hasLluiImport(sourceFile)) {
     return new Map()
   }
@@ -54,7 +54,7 @@ function hasLluiImport(sourceFile: ts.SourceFile): boolean {
     if (
       ts.isImportDeclaration(stmt) &&
       ts.isStringLiteral(stmt.moduleSpecifier) &&
-      stmt.moduleSpecifier.text === '@llui/core'
+      stmt.moduleSpecifier.text === '@llui/dom'
     ) {
       return true
     }

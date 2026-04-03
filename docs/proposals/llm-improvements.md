@@ -169,7 +169,7 @@ Warning: Component 'Dashboard' has 28 unique state access paths.
 
 LLMs frequently generate one message type per form field (`SetName`, `SetEmail`, `SetPhone`). The system prompt tells them to use `setField`, but there's no framework-level support.
 
-**Proposal:** Provide a type utility in `@llui/core`:
+**Proposal:** Provide a type utility in `@llui/dom`:
 
 ```typescript
 // Type utility for form field messages

@@ -2,7 +2,7 @@
  * Task 15 — WebSocket Real-Time Updates (Tier 5)
  * Idiomatic score: 6/6
  */
-import { component, div, button, text, each, show } from '@llui/core'
+import { component, div, button, text, each, show } from '@llui/dom'
 
 type Item = { id: number; content: string }
 

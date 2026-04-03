@@ -2,7 +2,7 @@
  * Task 02 — Character Counter (Tier 1)
  * Idiomatic score: 6/6
  */
-import { component, div, textarea, text } from '@llui/core'
+import { component, div, textarea, text } from '@llui/dom'
 
 type State = { content: string }
 type Msg = { type: 'setContent'; value: string }

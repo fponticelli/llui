@@ -2,7 +2,7 @@
  * Task 08 — Reorderable List (Tier 4)
  * Idiomatic score: 6/6
  */
-import { component, div, button, text, each, peek } from '@llui/core'
+import { component, div, button, text, each, peek } from '@llui/dom'
 
 type Item = { id: number; label: string }
 

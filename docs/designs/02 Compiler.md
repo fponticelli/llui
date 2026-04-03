@@ -1,6 +1,6 @@
 # LLui Vite Plugin Compiler
 
-The LLui Vite plugin is a compile-time transformation that converts high-level component authoring syntax into a lower-level representation optimised for surgical DOM updates. It runs inside Vite's `transform()` hook, operates on `.ts` and `.tsx` files that import from `'@llui/core'`, and produces output that is semantically identical but structurally pre-classified for the runtime update loop.
+The LLui Vite plugin is a compile-time transformation that converts high-level component authoring syntax into a lower-level representation optimised for surgical DOM updates. It runs inside Vite's `transform()` hook, operates on `.ts` and `.tsx` files that import from `'@llui/dom'`, and produces output that is semantically identical but structurally pre-classified for the runtime update loop.
 
 This document describes the technology choice, the three compiler passes and their ordering rationale, what genuinely benefits from compile-time analysis, what should not be attempted, common patterns that appear valuable but are not, and directions worth exploring.
 
@@ -197,13 +197,13 @@ After the main transform, the llui import declaration is rewritten:
 **Before:**
 
 ```typescript
-import { div, span, text, branch } from '@llui/core';
+import { div, span, text, branch } from '@llui/dom';
 ```
 
 **After:**
 
 ```typescript
-import { text, branch, elSplit } from '@llui/core';
+import { text, branch, elSplit } from '@llui/dom';
 ```
 
 The consequence is that `elements.ts` — the module that defines the uncompiled `div`, `span`, etc. helpers — has no references in the bundle. Rollup/Vite's tree-shaker eliminates it entirely. This is not a micro-optimisation: `elements.ts` contains all HTML element helper implementations. For a large application using many elements, eliminating the module removes dead code that would otherwise inflate the bundle.

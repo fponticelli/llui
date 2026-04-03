@@ -19,12 +19,12 @@ pnpm format               # Prettier format everything
 pnpm format:check         # Check formatting without writing
 
 # Single package
-pnpm --filter @llui/core build
-pnpm --filter @llui/core test
-pnpm --filter @llui/core check
+pnpm --filter @llui/dom build
+pnpm --filter @llui/dom test
+pnpm --filter @llui/dom check
 
 # Single test file (from package dir)
-cd packages/core && pnpm vitest run test/scope.test.ts
+cd packages/dom && pnpm vitest run test/scope.test.ts
 
 # Benchmarks (js-framework-benchmark)
 pnpm -w run bench             # Run jfb for LLui + compare against saved baselines
@@ -50,13 +50,13 @@ Five packages under `packages/`, managed by pnpm workspaces + Turborepo:
 
 | Package | Purpose | Dependencies |
 |---------|---------|-------------|
-| `@llui/core` | Runtime: component, mount, scope tree, bindings, element helpers, structural primitives | — |
+| `@llui/dom` | Runtime: component, mount, scope tree, bindings, element helpers, structural primitives | — |
 | `@llui/vite-plugin` | Compiler: 3-pass TypeScript transform (prop split → mask injection → import cleanup) | peer: vite |
-| `@llui/test` | Test harness: testComponent, assertEffects, testView, propertyTest, replayTrace | @llui/core |
+| `@llui/test` | Test harness: testComponent, assertEffects, testView, propertyTest, replayTrace | @llui/dom |
 | `@llui/effects` | Effect builders: http, cancel, debounce, sequence, race + handleEffects chain | — |
-| `@llui/vike` | Vike SSR adapter: onRenderHtml, onRenderClient | @llui/core |
+| `@llui/vike` | Vike SSR adapter: onRenderHtml, onRenderClient | @llui/dom |
 
-Build order: `@llui/core` and `@llui/effects` first (no deps), then `@llui/test`, `@llui/vike` (depend on core). Turbo handles this via `"dependsOn": ["^build"]`.
+Build order: `@llui/dom` and `@llui/effects` first (no deps), then `@llui/test`, `@llui/vike` (depend on core). Turbo handles this via `"dependsOn": ["^build"]`.
 
 ## Architecture Concepts
 

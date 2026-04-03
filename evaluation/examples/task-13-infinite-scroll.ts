@@ -2,7 +2,7 @@
  * Task 13 — Infinite Scroll (Tier 4)
  * Idiomatic score: 6/6
  */
-import { component, div, button, text, each, show } from '@llui/core'
+import { component, div, button, text, each, show } from '@llui/dom'
 import { handleEffects, http } from '@llui/effects'
 
 type Item = { id: number; title: string }

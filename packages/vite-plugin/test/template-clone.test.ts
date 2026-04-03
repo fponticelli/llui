@@ -4,7 +4,7 @@ import { transformLlui } from '../src/transform'
 describe('template clone output', () => {
   it('returns firstChild (Element), not the DocumentFragment', () => {
     const src = `
-      import { component, div, text } from '@llui/core'
+      import { component, div, text } from '@llui/dom'
       export const C = component({
         name: 'C',
         init: () => [{ x: 0 }, []],

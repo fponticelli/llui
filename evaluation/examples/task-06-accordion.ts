@@ -2,7 +2,7 @@
  * Task 06 — Accordion (Tier 2)
  * Idiomatic score: 6/6
  */
-import { component, div, button, text, show } from '@llui/core'
+import { component, div, button, text, show } from '@llui/dom'
 
 type Panel = { id: number; title: string; body: string }
 

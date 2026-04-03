@@ -1,4 +1,4 @@
-import type { LluiDebugAPI } from '@llui/core'
+import type { LluiDebugAPI } from '@llui/dom'
 
 // ── MCP Protocol Types ──────────────────────────────────────────
 

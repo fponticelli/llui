@@ -2,7 +2,7 @@
  * Task 09 — Debounced Search (Tier 3)
  * Idiomatic score: 6/6
  */
-import { component, div, input, text, each, show } from '@llui/core'
+import { component, div, input, text, each, show } from '@llui/dom'
 import { handleEffects, http, cancel, debounce } from '@llui/effects'
 
 type SearchResult = { id: number; title: string }
