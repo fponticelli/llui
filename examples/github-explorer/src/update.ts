@@ -4,9 +4,10 @@ import { searchUrl, repoUrl, contentsUrl, readmeUrl, issuesUrl, JSON_HEADERS, HT
 import { router, routing } from './router'
 
 export function initState(): State {
+  const route = router.match(location.pathname + location.search)
   return {
-    route: { page: 'search', q: '', data: { type: 'idle' } },
-    query: '',
+    route,
+    query: route.page === 'search' ? route.q : '',
   }
 }
 

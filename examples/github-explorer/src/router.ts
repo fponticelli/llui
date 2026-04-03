@@ -9,6 +9,7 @@ export const router = createRouter<Route>([
   route([param('owner'), param('name'), 'issues'], ({ owner, name }) => ({ page: 'repo', owner, name, tab: 'issues', data: { type: 'loading' } })),
   route([param('owner'), param('name'), 'tree', rest('path')], ({ owner, name, path }) => ({ page: 'tree', owner, name, path, data: { type: 'loading' } })),
 ], {
+  mode: 'history',
   fallback: { page: 'search', q: '', data: { type: 'idle' } },
 })
 
