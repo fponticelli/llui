@@ -4,14 +4,6 @@ import { disposeScope } from './scope'
 import { setRenderContext, clearRenderContext } from './render-context'
 import { setFlatBindings } from './binding'
 import { registerInstance, unregisterInstance } from './runtime'
-// Static import — tree-shaken in prod when __DEV__ branch is eliminated
-import { installDevTools } from './devtools'
-
-// Vite replaces import.meta.env.DEV at build time; safe fallback for non-Vite
-const __DEV__ =
-  typeof import.meta !== 'undefined' &&
-  !!(import.meta as unknown as Record<string, unknown>).env &&
-  !!((import.meta as unknown as Record<string, unknown>).env as Record<string, boolean>).DEV
 
 export interface MountOptions {
   devTools?: boolean
@@ -25,13 +17,10 @@ export function mountApp<S, M, E>(
 ): AppHandle {
   const inst = createComponentInstance(def, data)
 
-  // Dev: always on (unless explicitly disabled)
-  // Prod: off by default, lazy-loaded on opt-in
-  if (__DEV__) {
-    if (options?.devTools !== false) {
-      installDevTools(inst)
-    }
-  } else if (options?.devTools) {
+  // Devtools: always dynamic import to avoid bundling in production.
+  // In dev mode, auto-enabled unless explicitly disabled.
+  if (options?.devTools || (options?.devTools !== false && typeof import.meta !== 'undefined' &&
+      (import.meta as unknown as Record<string, Record<string, boolean>>).env?.DEV)) {
     void import('./devtools').then((m) => m.installDevTools(inst))
   }
 
