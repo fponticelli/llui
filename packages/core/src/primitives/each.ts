@@ -15,7 +15,8 @@ const buildCtx: RenderContext = {
 interface Entry<T> {
   key: string | number
   item: T
-  ref: { current: T; index: number }
+  current: T
+  index: number
   scope: Scope
   nodes: Node[]
 }
@@ -83,15 +84,17 @@ function buildEntry<S, T>(
 ): Entry<T> {
   const key = opts.key(item)
   const scope = createScope(parentScope)
-  const ref = { current: item, index }
+
+  // Create entry before render so itemAccessor closures can capture it
+  const entry: Entry<T> = { key, item, current: item, index, scope, nodes: null! }
 
   const itemAccessor = <R>(selector: (t: T) => R): (() => R) => {
-    const accessor = () => selector(ref.current)
+    const accessor = () => selector(entry.current)
     accessor.__perItem = true as const
     return accessor
   }
 
-  const indexAccessor = (): number => ref.index
+  const indexAccessor = (): number => entry.index
 
   // Reuse a single context object to avoid allocation per entry
   buildCtx.rootScope = scope
@@ -100,12 +103,12 @@ function buildEntry<S, T>(
   buildCtx.structuralBlocks = ctx.structuralBlocks
   setFlatBindings(ctx.allBindings)
   setRenderContext(buildCtx)
-  const nodes = opts.render(itemAccessor, indexAccessor)
+  entry.nodes = opts.render(itemAccessor, indexAccessor)
   clearRenderContext()
   setFlatBindings(null)
   setRenderContext(ctx)
 
-  return { key, item, ref, scope, nodes }
+  return entry
 }
 
 function reconcileEntries<S, T>(
@@ -286,8 +289,8 @@ function reconcileEntries<S, T>(
 function updateEntry<T>(entry: Entry<T>, item: T, index: number): void {
   const changed = !Object.is(entry.item, item)
   entry.item = item
-  entry.ref.current = item
-  entry.ref.index = index
+  entry.current = item
+  entry.index = index
   entry.scope.eachItemStable = !changed
   // Directly run per-item updaters when item changed — bypasses Phase 2
   if (changed) {

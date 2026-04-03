@@ -392,10 +392,11 @@ describe('subtree collapse — nested elements → elTemplate', () => {
     `
     const out = t(src)
     expect(out).toContain('elTemplate')
-    // HTML should have empty span (text is reactive, not in template)
-    expect(out).toContain('<div><span></span></div>') // no escaped quotes needed here
-    // Should create a text node and bind it
-    expect(out).toContain('createTextNode')
+    // HTML should have placeholder space for reactive text
+    expect(out).toContain('<div><span> </span></div>')
+    // Should reference placeholder text node, not create new one
+    expect(out).not.toContain('createTextNode')
+    expect(out).toContain('childNodes')
     expect(out).toContain('__bind')
     expect(out).toContain('"text"')
   })
@@ -421,9 +422,10 @@ describe('subtree collapse — nested elements → elTemplate', () => {
     `
     const out = t(src)
     expect(out).toContain('elTemplate')
-    expect(out).toMatch(/<tr><td[^>]*id[^>]*><\/td><td[^>]*label[^>]*><\/td><\/tr>/)
-    // Per-item text should create text nodes with bind calls
-    expect(out).toContain('createTextNode')
+    // Template should have placeholder spaces for reactive text
+    expect(out).toMatch(/<tr><td[^>]*id[^>]*> <\/td><td[^>]*label[^>]*> <\/td><\/tr>/)
+    // Should reference placeholder nodes, not create new ones
+    expect(out).not.toContain('createTextNode')
     expect(out).toContain('__bind')
   })
 

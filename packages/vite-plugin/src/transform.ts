@@ -829,7 +829,7 @@ interface AnalyzedNode {
 type AnalyzedChild =
   | { type: 'element'; node: AnalyzedNode }
   | { type: 'staticText'; value: string }
-  | { type: 'reactiveText'; accessor: ts.Expression; mask: number }
+  | { type: 'reactiveText'; accessor: ts.Expression; mask: number; childIdx: number }
 
 /**
  * Try to analyze an element call and all its descendants as a collapsible subtree.
@@ -949,8 +949,9 @@ function analyzeSubtree(
             type: 'reactiveText',
             accessor,
             mask: mask === 0 && readsState ? 0xffffffff | 0 : mask,
+            childIdx,
           })
-          // NOT in template — patch function creates and appends the text node
+          childIdx++ // placeholder text node in template
           continue
         }
         // Per-item text: text(item(t => t.label))
@@ -959,8 +960,9 @@ function analyzeSubtree(
             type: 'reactiveText',
             accessor,
             mask: 0xffffffff | 0,
+            childIdx,
           })
-          // NOT in template — patch function creates and appends the text node
+          childIdx++ // placeholder text node in template
           continue
         }
         return null // unsupported text() form
@@ -1026,8 +1028,10 @@ function buildTemplateHTML(node: AnalyzedNode): string {
       html += escapeHTML(child.value)
     } else if (child.type === 'element') {
       html += buildTemplateHTML(child.node)
+    } else if (child.type === 'reactiveText') {
+      // Placeholder text node — patch sets nodeValue instead of createTextNode
+      html += ' '
     }
-    // reactiveText: nothing in HTML — patch function handles it
   }
 
   html += `</${node.tag}>`
@@ -1043,8 +1047,8 @@ interface PatchOp {
   events: Array<[string, ts.Expression]>
   /** Bindings to register via __bind */
   bindings: Array<[number, string, string, ts.Expression]>
-  /** Reactive text children to create */
-  reactiveTexts: Array<{ accessor: ts.Expression; mask: number }>
+  /** Reactive text children — reference existing placeholder text nodes */
+  reactiveTexts: Array<{ accessor: ts.Expression; mask: number; childIdx: number }>
 }
 
 /**
@@ -1133,6 +1137,21 @@ function emitSubtreeTemplate(
     }
   }
 
+  // Collect delegatable events: group by event type across all ops
+  // Events on child nodes with the same type are delegated to the root
+  const delegatableEvents = new Map<string, Array<{ nodeVar: string; handler: ts.Expression }>>()
+  for (const op of ops) {
+    for (const [eventName, handler] of op.events) {
+      if (!op.varName) {
+        // Root-level events — can't delegate further up
+        continue
+      }
+      const list = delegatableEvents.get(eventName)
+      if (list) list.push({ nodeVar: op.varName, handler })
+      else delegatableEvents.set(eventName, [{ nodeVar: op.varName, handler }])
+    }
+  }
+
   // Build patch function body
   const stmts: ts.Statement[] = []
 
@@ -1153,8 +1172,10 @@ function emitSubtreeTemplate(
       )
     }
 
-    // Event listeners
+    // Non-delegatable events (root-level or single-use event types)
     for (const [eventName, handler] of op.events) {
+      const delegated = delegatableEvents.get(eventName)
+      if (op.varName && delegated && delegated.length >= 2) continue // handled below
       stmts.push(
         f.createExpressionStatement(
           f.createCallExpression(
@@ -1166,32 +1187,21 @@ function emitSubtreeTemplate(
       )
     }
 
-    // Reactive text children — create text node, append, bind
+    // Reactive text children — reference placeholder text nodes from template
     for (const rt of op.reactiveTexts) {
       const tVar = `__t${counter.t++}`
-      // const __t0 = document.createTextNode('')
+      // const __t0 = nodeRef.childNodes[idx]  (placeholder text node from template)
       stmts.push(
         f.createVariableStatement(
           undefined,
           f.createVariableDeclarationList([
             f.createVariableDeclaration(tVar, undefined, undefined,
-              f.createCallExpression(
-                f.createPropertyAccessExpression(f.createIdentifier('document'), 'createTextNode'),
-                undefined,
-                [f.createStringLiteral('')],
+              f.createElementAccessExpression(
+                f.createPropertyAccessExpression(nodeRef, 'childNodes'),
+                f.createNumericLiteral(rt.childIdx),
               ),
             ),
           ], ts.NodeFlags.Const),
-        ),
-      )
-      // nodeRef.appendChild(__t0)
-      stmts.push(
-        f.createExpressionStatement(
-          f.createCallExpression(
-            f.createPropertyAccessExpression(nodeRef, 'appendChild'),
-            undefined,
-            [f.createIdentifier(tVar)],
-          ),
         ),
       )
       // __bind(__t0, mask, 'text', undefined, accessor)
@@ -1222,6 +1232,53 @@ function emitSubtreeTemplate(
         ),
       )
     }
+  }
+
+  // Emit delegated event listeners on root
+  for (const [eventName, entries] of delegatableEvents) {
+    if (entries.length < 2) continue
+    // root.onclick = (e) => { if (n1.contains(e.target)) { h1(); return } if (n2.contains(e.target)) { h2(); return } }
+    const eParam = f.createIdentifier('__e')
+    const eTarget = f.createPropertyAccessExpression(eParam, 'target')
+
+    const ifStmts: ts.Statement[] = []
+    for (const { nodeVar, handler } of entries) {
+      // if (nodeVar.contains(e.target)) { handler(e); return }
+      ifStmts.push(
+        f.createIfStatement(
+          f.createCallExpression(
+            f.createPropertyAccessExpression(f.createIdentifier(nodeVar), 'contains'),
+            undefined,
+            [eTarget],
+          ),
+          f.createBlock([
+            f.createExpressionStatement(
+              f.createCallExpression(handler, undefined, [eParam]),
+            ),
+            f.createReturnStatement(),
+          ], true),
+        ),
+      )
+    }
+
+    const delegateHandler = f.createArrowFunction(
+      undefined, undefined,
+      [f.createParameterDeclaration(undefined, undefined, '__e')],
+      undefined,
+      f.createToken(ts.SyntaxKind.EqualsGreaterThanToken),
+      f.createBlock(ifStmts, true),
+    )
+
+    // root.addEventListener(eventName, handler)
+    stmts.push(
+      f.createExpressionStatement(
+        f.createCallExpression(
+          f.createPropertyAccessExpression(f.createIdentifier('root'), 'addEventListener'),
+          undefined,
+          [f.createStringLiteral(eventName), delegateHandler],
+        ),
+      ),
+    )
   }
 
   // (root, __bind) => { ... }
