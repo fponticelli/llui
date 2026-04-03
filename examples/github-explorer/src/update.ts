@@ -14,6 +14,7 @@ export function initState(): State {
     tree: [],
     readme: '',
     issues: [],
+    file: null,
     loading: false,
     error: null,
   }
@@ -50,8 +51,12 @@ export function update(state: State, msg: Msg): [State, Effect[]] {
     case 'repoOk':
       return [{ ...state, repo: msg.payload, loading: false }, []]
 
-    case 'treeOk':
-      return [{ ...state, tree: msg.payload, loading: false }, []]
+    case 'contentsOk':
+      // GitHub contents API returns array for dirs, object for files
+      if (Array.isArray(msg.payload)) {
+        return [{ ...state, tree: msg.payload, file: null, loading: false }, []]
+      }
+      return [{ ...state, file: msg.payload, tree: [], loading: false }, []]
 
     case 'readmeOk':
       return [{ ...state, readme: msg.payload }, []]
@@ -119,9 +124,12 @@ function navigateTo(state: State, route: Route): [State, Effect[]] {
       break
 
     case 'repo':
+      s.file = null
+      s.tree = []
+      s.readme = ''
       effects.push(http({ url: repoUrl(route.owner, route.name), headers: JSON_HEADERS, onSuccess: 'repoOk', onError: 'apiError' }))
       if (route.tab === 'code') {
-        effects.push(http({ url: contentsUrl(route.owner, route.name, ''), headers: JSON_HEADERS, onSuccess: 'treeOk', onError: 'apiError' }))
+        effects.push(http({ url: contentsUrl(route.owner, route.name, ''), headers: JSON_HEADERS, onSuccess: 'contentsOk', onError: 'apiError' }))
         effects.push(http({ url: readmeUrl(route.owner, route.name), headers: HTML_HEADERS, onSuccess: 'readmeOk', onError: 'apiError' }))
       } else {
         effects.push(http({ url: issuesUrl(route.owner, route.name), headers: JSON_HEADERS, onSuccess: 'issuesOk', onError: 'apiError' }))
@@ -129,8 +137,10 @@ function navigateTo(state: State, route: Route): [State, Effect[]] {
       break
 
     case 'tree':
+      s.file = null
+      s.tree = []
       effects.push(http({ url: repoUrl(route.owner, route.name), headers: JSON_HEADERS, onSuccess: 'repoOk', onError: 'apiError' }))
-      effects.push(http({ url: contentsUrl(route.owner, route.name, route.path), headers: JSON_HEADERS, onSuccess: 'treeOk', onError: 'apiError' }))
+      effects.push(http({ url: contentsUrl(route.owner, route.name, route.path), headers: JSON_HEADERS, onSuccess: 'contentsOk', onError: 'apiError' }))
       break
   }
 

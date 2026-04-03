@@ -23,6 +23,15 @@ export interface TreeEntry {
   sha: string
 }
 
+export interface FileContent {
+  name: string
+  path: string
+  content: string
+  encoding: string
+  size: number
+  html_url: string
+}
+
 export interface Issue {
   id: number
   number: number
@@ -55,6 +64,7 @@ export interface State {
   tree: TreeEntry[]
   readme: string
   issues: Issue[]
+  file: FileContent | null
   // Loading / errors
   loading: boolean
   error: string | null
@@ -68,7 +78,7 @@ export type Msg =
   | { type: 'submitSearch' }
   | { type: 'searchOk'; payload: { total_count: number; items: Repo[] } }
   | { type: 'repoOk'; payload: Repo }
-  | { type: 'treeOk'; payload: TreeEntry[] }
+  | { type: 'contentsOk'; payload: TreeEntry[] | FileContent }
   | { type: 'readmeOk'; payload: string }
   | { type: 'issuesOk'; payload: Issue[] }
   | { type: 'apiError'; error: string }

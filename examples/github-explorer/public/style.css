@@ -85,3 +85,20 @@ a:hover { text-decoration: underline; }
 }
 .pagination button:disabled { opacity: 0.5; cursor: default; }
 .pagination button:hover:not(:disabled) { background: #f3f4f6; }
+
+/* Breadcrumb */
+.breadcrumb { padding: 8px 0; margin-bottom: 8px; font-size: 14px; }
+.breadcrumb a { color: #0969da; }
+.breadcrumb span { color: #57606a; }
+
+/* File view */
+.file-view { background: #fff; border: 1px solid #d0d7de; border-radius: 6px; overflow: hidden; }
+.file-header {
+  display: flex; justify-content: space-between; padding: 8px 16px;
+  background: #f6f8fa; border-bottom: 1px solid #d0d7de; font-size: 13px; color: #57606a;
+}
+.file-view pre {
+  margin: 0; padding: 16px; overflow-x: auto; font-size: 13px; line-height: 1.6;
+  background: #fff; tab-size: 4;
+}
+.file-view code { background: none; padding: 0; font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace; }

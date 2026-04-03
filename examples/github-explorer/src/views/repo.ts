@@ -1,4 +1,4 @@
-import { div, h1, h3, a, p, span, text, each, branch, show, peek } from '@llui/dom'
+import { div, h1, h3, a, p, pre, code, span, text, each, branch, show, peek } from '@llui/dom'
 import type { State, Msg, TreeEntry, Issue } from '../types'
 import type { Send } from '@llui/dom'
 
@@ -8,9 +8,7 @@ export function repoPage(_s: State, send: Send<Msg>): Node[] {
     div({ class: 'repo-header' }, [
       div({ class: 'container' }, [
         h1({}, [
-          a({
-            href: (s: State) => `#/${s.repo?.owner?.login ?? ''}`,
-          }, [text((s: State) => s.repo?.owner?.login ?? '')]),
+          text((s: State) => s.repo?.owner?.login ?? ''),
           text(' / '),
           a({
             href: (s: State) => `#/${s.repo?.owner?.login ?? ''}/${s.repo?.name ?? ''}`,
@@ -22,7 +20,7 @@ export function repoPage(_s: State, send: Send<Msg>): Node[] {
           span({}, [text((s: State) => `Issues: ${s.repo?.open_issues_count ?? 0}`)]),
         ]),
         ...show<State, Msg>({
-          when: (s) => s.repo?.description !== null && s.repo?.description !== undefined,
+          when: (s) => !!s.repo?.description,
           render: () => [p({}, [text((s: State) => s.repo?.description ?? '')])],
         }),
       ]),
@@ -31,7 +29,7 @@ export function repoPage(_s: State, send: Send<Msg>): Node[] {
     div({ class: 'tab-nav' }, [
       div({ class: 'container' }, [
         a({
-          class: (s: State) => s.route.page === 'repo' && s.route.tab === 'code' ? 'active' : '',
+          class: (s: State) => s.route.page !== 'repo' || s.route.tab === 'code' ? 'active' : '',
           href: (s: State) => `#/${s.repo?.owner?.login ?? ''}/${s.repo?.name ?? ''}`,
         }, [text('Code')]),
         a({
@@ -46,13 +44,19 @@ export function repoPage(_s: State, send: Send<Msg>): Node[] {
         on: (s) => {
           if (s.loading) return 'loading'
           if (s.route.page === 'repo' && s.route.tab === 'issues') return 'issues'
+          if (s.file) return 'file'
           return 'code'
         },
         cases: {
           loading: () => [div({ class: 'loading' }, [text('Loading...')])],
-          code: () => [
+          code: (s, send) => [
+            ...breadcrumb(s, send),
             ...fileTree(send),
             ...readmeSection(),
+          ],
+          file: (s, send) => [
+            ...breadcrumb(s, send),
+            ...fileView(),
           ],
           issues: (_s, send) => issuesList(send),
         },
@@ -60,6 +64,52 @@ export function repoPage(_s: State, send: Send<Msg>): Node[] {
     ]),
   ]
 }
+
+// ── Breadcrumb ───────────────────────────────────────────────────
+
+function breadcrumb(s: State, send: Send<Msg>): Node[] {
+  const route = s.route
+  if (route.page !== 'tree' && route.page !== 'repo') return []
+  const owner = route.owner
+  const name = route.name
+  const path = route.page === 'tree' ? route.path : ''
+
+  if (!path) return [] // root — no breadcrumb needed
+
+  const parts = path.split('/')
+  const crumbs: HTMLElement[] = [
+    a({
+      href: `#/${owner}/${name}`,
+      onClick: (e: Event) => {
+        e.preventDefault()
+        send({ type: 'navigate', route: { page: 'repo', owner, name, tab: 'code' } })
+      },
+    }, [text(name)]),
+  ]
+
+  for (let i = 0; i < parts.length; i++) {
+    const partial = parts.slice(0, i + 1).join('/')
+    const isLast = i === parts.length - 1
+    crumbs.push(span({}, [text(' / ')]))
+    if (isLast) {
+      crumbs.push(span({}, [text(parts[i]!)]))
+    } else {
+      crumbs.push(
+        a({
+          href: `#/${owner}/${name}/tree/${partial}`,
+          onClick: (e: Event) => {
+            e.preventDefault()
+            send({ type: 'navigate', route: { page: 'tree', owner, name, path: partial } })
+          },
+        }, [text(parts[i]!)]),
+      )
+    }
+  }
+
+  return [div({ class: 'breadcrumb' }, crumbs)]
+}
+
+// ── File Tree ────────────────────────────────────────────────────
 
 function fileTree(send: Send<Msg>): Node[] {
   return [
@@ -90,6 +140,33 @@ function fileTree(send: Send<Msg>): Node[] {
   ]
 }
 
+// ── File View ────────────────────────────────────────────────────
+
+function fileView(): Node[] {
+  return [
+    div({ class: 'file-view' }, [
+      div({ class: 'file-header' }, [
+        span({}, [text((s: State) => s.file?.name ?? '')]),
+        span({}, [text((s: State) => s.file ? formatSize(s.file.size) : '')]),
+      ]),
+      pre({}, [
+        code({}, [
+          text((s: State) => {
+            if (!s.file) return ''
+            try {
+              return atob(s.file.content)
+            } catch {
+              return s.file.content
+            }
+          }),
+        ]),
+      ]),
+    ]),
+  ]
+}
+
+// ── README ───────────────────────────────────────────────────────
+
 function readmeSection(): Node[] {
   return show<State, Msg>({
     when: (s) => s.readme.length > 0,
@@ -101,6 +178,8 @@ function readmeSection(): Node[] {
   })
 }
 
+// ── Issues ───────────────────────────────────────────────────────
+
 function issuesList(send: Send<Msg>): Node[] {
   return [
     ...each<State, Issue, Msg>({
@@ -108,9 +187,7 @@ function issuesList(send: Send<Msg>): Node[] {
       key: (i) => i.id,
       render: ({ item }) => [
         div({ class: 'issue-row' }, [
-          h3({}, [
-            text(item((i) => i.title)),
-          ]),
+          h3({}, [text(item((i) => i.title))]),
           div({ class: 'issue-meta' }, [
             text(item((i) => `#${i.number} opened by ${i.user.login} on ${new Date(i.created_at).toLocaleDateString()}`)),
             text(item((i) => i.comments > 0 ? ` · ${i.comments} comments` : '')),
@@ -123,8 +200,6 @@ function issuesList(send: Send<Msg>): Node[] {
 }
 
 function labelSpans(item: <R>(sel: (i: Issue) => R) => () => R): Node[] {
-  // Labels are rendered statically from the item at build time
-  // This is fine because each() rebuilds entries when items change
   const labels = item((i) => i.labels)()
   return labels.map((label) =>
     span({
@@ -133,6 +208,8 @@ function labelSpans(item: <R>(sel: (i: Issue) => R) => () => R): Node[] {
     }, [text(label.name)]),
   )
 }
+
+// ── Utilities ────────────────────────────────────────────────────
 
 function formatSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`
