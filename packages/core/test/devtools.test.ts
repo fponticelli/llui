@@ -21,9 +21,10 @@ const Counter = component<State, Msg, never>({
 })
 
 describe('DevTools', () => {
-  it('exposes __lluiDebug on globalThis when devTools option is set', () => {
+  // In test (DEV=true), devtools auto-enables unless devTools: false
+  it('auto-enables devtools in dev mode', () => {
     const container = document.createElement('div')
-    const handle = mountApp(container, Counter, undefined, { devTools: true })
+    const handle = mountApp(container, Counter)
 
     expect(globalThis.__lluiDebug).toBeDefined()
 
@@ -31,9 +32,18 @@ describe('DevTools', () => {
     delete globalThis.__lluiDebug
   })
 
+  it('can be disabled in dev mode with devTools: false', () => {
+    const container = document.createElement('div')
+    const handle = mountApp(container, Counter, undefined, { devTools: false })
+
+    expect(globalThis.__lluiDebug).toBeUndefined()
+
+    handle.dispose()
+  })
+
   it('getState returns current state', () => {
     const container = document.createElement('div')
-    const handle = mountApp(container, Counter, undefined, { devTools: true })
+    const handle = mountApp(container, Counter)
 
     expect(globalThis.__lluiDebug!.getState()).toEqual({ count: 0 })
 
@@ -48,13 +58,12 @@ describe('DevTools', () => {
 
   it('evalUpdate dry-runs without modifying state', () => {
     const container = document.createElement('div')
-    const handle = mountApp(container, Counter, undefined, { devTools: true })
+    const handle = mountApp(container, Counter)
 
     const result = globalThis.__lluiDebug!.evalUpdate({ type: 'inc' })
     expect(result.state).toEqual({ count: 1 })
     expect(result.effects).toEqual([])
 
-    // State unchanged
     expect(globalThis.__lluiDebug!.getState()).toEqual({ count: 0 })
 
     handle.dispose()
@@ -63,7 +72,7 @@ describe('DevTools', () => {
 
   it('records message history', () => {
     const container = document.createElement('div')
-    const handle = mountApp(container, Counter, undefined, { devTools: true })
+    const handle = mountApp(container, Counter)
 
     globalThis.__lluiDebug!.send({ type: 'inc' })
     globalThis.__lluiDebug!.flush()
@@ -81,7 +90,7 @@ describe('DevTools', () => {
 
   it('exportTrace produces valid LluiTrace format', () => {
     const container = document.createElement('div')
-    const handle = mountApp(container, Counter, undefined, { devTools: true })
+    const handle = mountApp(container, Counter)
 
     globalThis.__lluiDebug!.send({ type: 'inc' })
     globalThis.__lluiDebug!.flush()

@@ -4,7 +4,14 @@ import { disposeScope } from './scope'
 import { setRenderContext, clearRenderContext } from './render-context'
 import { setFlatBindings } from './binding'
 import { registerInstance, unregisterInstance } from './runtime'
+// Static import — tree-shaken in prod when __DEV__ branch is eliminated
 import { installDevTools } from './devtools'
+
+// Vite replaces import.meta.env.DEV at build time; safe fallback for non-Vite
+const __DEV__ =
+  typeof import.meta !== 'undefined' &&
+  !!(import.meta as unknown as Record<string, unknown>).env &&
+  !!((import.meta as unknown as Record<string, unknown>).env as Record<string, boolean>).DEV
 
 export interface MountOptions {
   devTools?: boolean
@@ -18,8 +25,14 @@ export function mountApp<S, M, E>(
 ): AppHandle {
   const inst = createComponentInstance(def, data)
 
-  if (options?.devTools) {
-    installDevTools(inst)
+  // Dev: always on (unless explicitly disabled)
+  // Prod: off by default, lazy-loaded on opt-in
+  if (__DEV__) {
+    if (options?.devTools !== false) {
+      installDevTools(inst)
+    }
+  } else if (options?.devTools) {
+    void import('./devtools').then((m) => m.installDevTools(inst))
   }
 
   // Run view() within a render context so primitives can register bindings
@@ -57,7 +70,6 @@ export function hydrateApp<S, M, E>(
   def: ComponentDef<S, M, E>,
   serverState: S,
 ): AppHandle {
-  // Override init to use the server-provided state
   const hydrateDef: ComponentDef<S, M, E> = {
     ...def,
     init: () => [serverState, []],
@@ -65,8 +77,6 @@ export function hydrateApp<S, M, E>(
 
   const inst = createComponentInstance(hydrateDef)
 
-  // Clear server HTML and mount fresh — the view produces identical DOM
-  // A true walk-and-attach hydration is a v2 optimization
   container.textContent = ''
 
   setFlatBindings(inst.allBindings)
