@@ -97,6 +97,11 @@ function processMessages<S, M, E>(inst: ComponentInstance<S, M, E>): void {
   inst.lastDirtyMask = combinedDirty
   inst.lastEffects = allEffects
 
+  // Snapshot binding count before Phase 1 — bindings added during
+  // Phase 1 already have correct initial values and skip Phase 2.
+  const bindings = inst.allBindings
+  const bindingsBeforePhase1 = bindings.length
+
   // Phase 1 — structural reconciliation (instance-local blocks)
   const snapshot = inst.structuralBlocks.slice()
   for (const block of snapshot) {
@@ -104,24 +109,26 @@ function processMessages<S, M, E>(inst: ComponentInstance<S, M, E>): void {
   }
 
   // Compact dead bindings before Phase 2 (Phase 1 may have disposed scopes)
-  const bindings = inst.allBindings
-  if (bindings.length > 0 && bindings[0]!.dead) {
+  let phase2Len = bindingsBeforePhase1
+  if (phase2Len > 0 && bindings[0]!.dead) {
     // Fast check: if first binding is dead, likely bulk disposal — compact now
     let w = 0
     for (let r = 0; r < bindings.length; r++) {
       if (!bindings[r]!.dead) bindings[w++] = bindings[r]!
     }
     bindings.length = w
+    // After compaction, all surviving pre-Phase1 bindings are packed at front
+    phase2Len = Math.min(w, bindingsBeforePhase1)
   }
 
   // Phase 2 — binding updates (flat array, no tree walk)
+  // Only iterate bindings that existed before Phase 1.
+  // Fresh bindings (created during Phase 1) already have initial values set.
   setCurrentDirtyMask(combinedDirty)
   if (combinedDirty !== 0) {
     const state = inst.state
-    for (let i = 0, len = bindings.length; i < len; i++) {
+    for (let i = 0, len = phase2Len; i < len; i++) {
       const binding = bindings[i]!
-      // Fast path: per-item bindings on stable items skip without mask check
-      if (binding.perItem && binding.ownerScope.eachItemStable) continue
       if (binding.dead || (binding.mask & combinedDirty) === 0) continue
       const newValue = binding.accessor(state)
       if (Object.is(newValue, binding.lastValue)) continue

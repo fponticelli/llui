@@ -75,7 +75,17 @@ export function transformLlui(source: string, _filename: string, devMode = false
   // Apply transforms
   const f = ts.factory
 
+  const printer = ts.createPrinter({ newLine: ts.NewLineKind.LineFeed })
+
   function visitor(node: ts.Node): ts.Node {
+    // Pass 0: Deduplicate item() selectors in each() render callbacks
+    if (ts.isCallExpression(node) && ts.isIdentifier(node.expression) && node.expression.text === 'each') {
+      const rewritten = tryDeduplicateItemSelectors(node, f, printer, sourceFile)
+      if (rewritten) {
+        return ts.visitEachChild(rewritten, visitor, undefined!)
+      }
+    }
+
     // Pass 1: Transform element helper calls to elSplit or elTemplate
     if (ts.isCallExpression(node)) {
       const transformed = tryTransformElementCall(node, importedHelpers, fieldBits, compiledHelpers, bailedHelpers, f)
@@ -120,7 +130,6 @@ export function transformLlui(source: string, _filename: string, devMode = false
   transformed = cleanupImports(transformed, lluiImport, importedHelpers, safeToRemove, usesElSplit, usesElTemplate, f)
 
   // Print
-  const printer = ts.createPrinter({ newLine: ts.NewLineKind.LineFeed })
   let output = printer.printFile(transformed)
 
   // HMR: append self-accept code in dev mode
@@ -645,6 +654,155 @@ function injectMsgSchema(
 }
 
 // ── Per-item accessor detection ──────────────────────────────────
+
+// ── Item selector deduplication ──────────────────────────────────
+
+/**
+ * In each() render callbacks, deduplicate repeated item(selector) calls.
+ *
+ * Before: item((r) => r.id) appears 4 times → 4 selector closures + 4 accessor closures
+ * After:  const __s0 = (r) => r.id; const __a0 = item(__s0); → 1 selector + 1 accessor
+ */
+function tryDeduplicateItemSelectors(
+  eachCall: ts.CallExpression,
+  f: ts.NodeFactory,
+  printer: ts.Printer,
+  sourceFile: ts.SourceFile,
+): ts.CallExpression | null {
+  // each() takes a single object literal argument
+  const arg = eachCall.arguments[0]
+  if (!arg || !ts.isObjectLiteralExpression(arg)) return null
+
+  // Find the render property
+  let renderProp: ts.PropertyAssignment | null = null
+  for (const prop of arg.properties) {
+    if (ts.isPropertyAssignment(prop) && ts.isIdentifier(prop.name) && prop.name.text === 'render') {
+      renderProp = prop
+      break
+    }
+  }
+  if (!renderProp) return null
+
+  const renderFn = renderProp.initializer
+  if (!ts.isArrowFunction(renderFn) && !ts.isFunctionExpression(renderFn)) return null
+
+  // Get the item parameter name (first param)
+  const itemParam = renderFn.parameters[0]
+  if (!itemParam || !ts.isIdentifier(itemParam.name)) return null
+  const itemName = itemParam.name.text
+
+  // Collect all item(selector) calls with their selector source text
+  const selectorCalls: Array<{ node: ts.CallExpression; selectorText: string; selector: ts.Expression }> = []
+
+  function collectItemCalls(node: ts.Node): void {
+    if (
+      ts.isCallExpression(node) &&
+      ts.isIdentifier(node.expression) &&
+      node.expression.text === itemName &&
+      node.arguments.length === 1
+    ) {
+      const sel = node.arguments[0]!
+      if (ts.isArrowFunction(sel) || ts.isFunctionExpression(sel)) {
+        const text = printer.printNode(ts.EmitHint.Expression, sel, sourceFile)
+        selectorCalls.push({ node, selectorText: text, selector: sel })
+      }
+    }
+    ts.forEachChild(node, collectItemCalls)
+  }
+  collectItemCalls(renderFn.body)
+
+  if (selectorCalls.length < 2) return null // nothing to deduplicate
+
+  // Group by selector text
+  const groups = new Map<string, typeof selectorCalls>()
+  for (const call of selectorCalls) {
+    const existing = groups.get(call.selectorText)
+    if (existing) existing.push(call)
+    else groups.set(call.selectorText, [call])
+  }
+
+  // Only proceed if there are duplicates
+  const duplicateGroups = [...groups.entries()].filter(([, calls]) => calls.length > 1)
+  if (duplicateGroups.length === 0) return null
+
+  // Build hoisted declarations and replacement map
+  const hoistedStmts: ts.Statement[] = []
+  const replacements = new Map<ts.CallExpression, ts.Identifier>()
+  let sIdx = 0
+
+  for (const [, calls] of duplicateGroups) {
+    const selVar = `__s${sIdx}`
+    const accVar = `__a${sIdx}`
+    sIdx++
+
+    // const __s0 = (r) => r.id
+    hoistedStmts.push(
+      f.createVariableStatement(undefined,
+        f.createVariableDeclarationList([
+          f.createVariableDeclaration(selVar, undefined, undefined, calls[0]!.selector),
+        ], ts.NodeFlags.Const),
+      ),
+    )
+    // const __a0 = item(__s0)
+    hoistedStmts.push(
+      f.createVariableStatement(undefined,
+        f.createVariableDeclarationList([
+          f.createVariableDeclaration(accVar, undefined, undefined,
+            f.createCallExpression(f.createIdentifier(itemName), undefined, [f.createIdentifier(selVar)]),
+          ),
+        ], ts.NodeFlags.Const),
+      ),
+    )
+
+    // Map all occurrences to the cached accessor identifier
+    for (const call of calls) {
+      replacements.set(call.node, f.createIdentifier(accVar))
+    }
+  }
+
+  // Rewrite the render function body to replace item(sel) calls with cached refs
+  function replaceVisitor(node: ts.Node): ts.Node {
+    if (ts.isCallExpression(node) && replacements.has(node)) {
+      return replacements.get(node)!
+    }
+    return ts.visitEachChild(node, replaceVisitor, undefined!)
+  }
+
+  const newBody = ts.visitNode(renderFn.body, replaceVisitor)!
+
+  // Prepend hoisted declarations to the body
+  let finalBody: ts.ConciseBody
+  if (ts.isBlock(newBody)) {
+    finalBody = f.createBlock([...hoistedStmts, ...(newBody as ts.Block).statements], true)
+  } else {
+    // Arrow with expression body → convert to block with return
+    finalBody = f.createBlock([
+      ...hoistedStmts,
+      f.createReturnStatement(newBody as ts.Expression),
+    ], true)
+  }
+
+  // Build new render function
+  const newRenderFn = ts.isArrowFunction(renderFn)
+    ? f.createArrowFunction(
+        renderFn.modifiers, renderFn.typeParameters, renderFn.parameters,
+        renderFn.type, f.createToken(ts.SyntaxKind.EqualsGreaterThanToken), finalBody,
+      )
+    : f.createFunctionExpression(
+        renderFn.modifiers, renderFn.asteriskToken, renderFn.name,
+        renderFn.typeParameters, renderFn.parameters, renderFn.type, finalBody as ts.Block,
+      )
+
+  // Rebuild the each() call with the new render property
+  const newProps = arg.properties.map((prop) =>
+    prop === renderProp ? f.createPropertyAssignment('render', newRenderFn) : prop,
+  )
+  const newArg = f.createObjectLiteralExpression(newProps, true)
+
+  return f.createCallExpression(eachCall.expression, eachCall.typeArguments, [
+    newArg, ...eachCall.arguments.slice(1),
+  ])
+}
 
 // ── Subtree collapse: nested elements → elTemplate ──────────────
 

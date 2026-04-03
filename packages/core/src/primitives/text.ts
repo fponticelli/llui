@@ -1,5 +1,6 @@
 import { getRenderContext } from '../render-context'
 import { createBinding } from '../binding'
+import { addItemUpdater } from '../scope'
 import { FULL_MASK } from '../update-loop'
 
 export function text<S>(
@@ -14,17 +15,13 @@ export function text<S>(
   const node = document.createTextNode('')
 
   // Per-item accessor from each() — zero-arg function (length === 0)
+  // Register as direct updater, bypassing Phase 2 binding scan
   if (accessor.length === 0) {
-    const binding = createBinding(ctx.rootScope, {
-      mask: FULL_MASK,
-      accessor: accessor as (state: never) => unknown,
-      kind: 'text',
-      node,
-      perItem: true,
+    const get = accessor as () => string
+    node.nodeValue = String(get())
+    addItemUpdater(ctx.rootScope, () => {
+      node.nodeValue = String(get())
     })
-    const initialValue = (accessor as () => string)()
-    node.nodeValue = String(initialValue)
-    binding.lastValue = initialValue
     return node
   }
 

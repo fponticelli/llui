@@ -6,6 +6,7 @@ let nextId = 1
 const EMPTY_SCOPES: Scope[] = []
 const EMPTY_DISPOSERS: Array<() => void> = []
 const EMPTY_BINDINGS: Binding[] = []
+const EMPTY_UPDATERS: Array<() => void> = []
 
 export function createScope(parent: Scope | null): Scope {
   const scope: Scope = {
@@ -15,6 +16,7 @@ export function createScope(parent: Scope | null): Scope {
     disposers: EMPTY_DISPOSERS,
     bindings: EMPTY_BINDINGS,
     eachItemStable: false,
+    itemUpdaters: EMPTY_UPDATERS,
   }
 
   if (parent) {
@@ -48,6 +50,7 @@ export function disposeScope(scope: Scope): void {
   scope.disposers.length = 0
   scope.bindings.length = 0
   scope.children.length = 0
+  scope.itemUpdaters.length = 0
 
   removeFromParent(scope)
 }
@@ -56,6 +59,11 @@ export function addBinding(scope: Scope, binding: Binding): void {
   binding.ownerScope = scope
   if (scope.bindings === EMPTY_BINDINGS) scope.bindings = []
   scope.bindings.push(binding)
+}
+
+export function addItemUpdater(scope: Scope, updater: () => void): void {
+  if (scope.itemUpdaters === EMPTY_UPDATERS) scope.itemUpdaters = []
+  scope.itemUpdaters.push(updater)
 }
 
 export function addDisposer(scope: Scope, disposer: () => void): void {

@@ -289,6 +289,13 @@ function updateEntry<T>(entry: Entry<T>, item: T, index: number): void {
   entry.ref.current = item
   entry.ref.index = index
   entry.scope.eachItemStable = !changed
+  // Directly run per-item updaters when item changed — bypasses Phase 2
+  if (changed) {
+    const updaters = entry.scope.itemUpdaters
+    for (let i = 0; i < updaters.length; i++) {
+      updaters[i]!()
+    }
+  }
 }
 
 function isAppendOnly<S, T>(

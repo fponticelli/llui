@@ -1,6 +1,7 @@
 import type { BindingKind } from './types'
 import { getRenderContext } from './render-context'
 import { createBinding, applyBinding } from './binding'
+import { addItemUpdater } from './scope'
 
 // Cache: HTML string → template element (created once, cloned per use)
 const templateCache = new Map<string, HTMLTemplateElement>()
@@ -20,6 +21,10 @@ export type TemplateBind = (
  * The patch function receives the cloned root element and a `bind` helper
  * that registers reactive bindings in the current render context.
  *
+ * Per-item bindings (accessor.length === 0) are registered as direct
+ * updaters on the scope — called by each() when item changes, bypassing
+ * the Phase 2 binding scan entirely.
+ *
  * Fast path for each() rows — 1 cloneNode instead of N createElement.
  */
 export function elTemplate(
@@ -38,19 +43,30 @@ export function elTemplate(
 
   const bind: TemplateBind = (node, mask, kind, key, accessor) => {
     const perItem = accessor.length === 0
-    const binding = createBinding(ctx.rootScope, {
-      mask,
-      accessor,
-      kind,
-      node,
-      key,
-      perItem,
-    })
-    const initialValue = perItem
-      ? (accessor as unknown as () => unknown)()
-      : accessor(ctx.state as never)
-    binding.lastValue = initialValue
-    applyBinding({ kind, node, key }, initialValue)
+    if (perItem) {
+      // Per-item: set initial value and register direct updater
+      const get = accessor as unknown as () => unknown
+      const initialValue = get()
+      applyBinding({ kind, node, key }, initialValue)
+      // Updater called by each() when item changes — no binding object needed
+      addItemUpdater(ctx.rootScope, () => {
+        const v = get()
+        applyBinding({ kind, node, key }, v)
+      })
+    } else {
+      // State-level: use the binding system for Phase 2
+      const binding = createBinding(ctx.rootScope, {
+        mask,
+        accessor,
+        kind,
+        node,
+        key,
+        perItem: false,
+      })
+      const initialValue = accessor(ctx.state as never)
+      binding.lastValue = initialValue
+      applyBinding({ kind, node, key }, initialValue)
+    }
   }
 
   patch(root, bind)
