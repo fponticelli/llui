@@ -75,7 +75,19 @@ export function repoPage(s: State, send: Send<Msg>): Node[] {
         cases: {
           loading: () => [div({ class: 'loading' }, [text('Loading...')])],
           error: () => [div({ class: 'error' }, [
-            text((s: State) => s.route.data.type === 'failure' ? `Error: ${s.route.data.error.kind}` : ''),
+            text((s: State) => {
+              if (s.route.data.type !== 'failure') return ''
+              const err = s.route.data.error
+              switch (err.kind) {
+                case 'notfound': return 'Repository not found.'
+                case 'ratelimit': return `GitHub API rate limit exceeded. ${err.retryAfter ? `Try again in ${err.retryAfter}s.` : 'Try again later.'}`
+                case 'unauthorized': return 'Authentication required.'
+                case 'forbidden': return 'Access denied.'
+                case 'network': return `Network error: ${err.message}`
+                case 'server': return `Server error (${err.status}): ${err.message}`
+                default: return 'An error occurred.'
+              }
+            }),
           ])],
           code: (s, send) => [
             ...breadcrumb(s, send),
@@ -136,9 +148,14 @@ function fileTree(send: Send<Msg>): Node[] {
       ...each<State, TreeEntry, Msg>({
         items: (s) => {
           const r = s.route
-          if (r.page === 'repo' && r.tab === 'code' && r.data.type === 'success') return r.data.data.tree
-          if (r.page === 'tree' && r.data.type === 'success' && 'tree' in r.data.data) return r.data.data.tree
-          return []
+          let tree: TreeEntry[] = []
+          if (r.page === 'repo' && r.tab === 'code' && r.data.type === 'success') tree = r.data.data.tree
+          else if (r.page === 'tree' && r.data.type === 'success' && 'tree' in r.data.data) tree = r.data.data.tree
+          // Sort: directories first, then alphabetical
+          return [...tree].sort((a, b) => {
+            if (a.type !== b.type) return a.type === 'dir' ? -1 : 1
+            return a.name.localeCompare(b.name)
+          })
         },
         key: (e) => e.sha,
         render: ({ item, send }) => {
@@ -209,6 +226,10 @@ function readmeSection(): Node[] {
 
 function issuesList(): Node[] {
   return [
+    ...show<State, Msg>({
+      when: (s) => s.route.page === 'repo' && s.route.tab === 'issues' && s.route.data.type === 'success' && s.route.data.data.issues.length === 0,
+      render: () => [div({ class: 'loading' }, [text('No open issues.')])],
+    }),
     ...each<State, Issue, Msg>({
       items: (s) => {
         const r = s.route

@@ -40,8 +40,11 @@ export function searchView(_s: State, send: Send<Msg>): Node[] {
           error: () => [div({ class: 'error' }, [
             text((s: State) => {
               const r = s.route
-              if (r.page === 'search' && r.data.type === 'failure') return r.data.error.kind
-              return ''
+              if (r.page !== 'search' || r.data.type !== 'failure') return ''
+              const err = r.data.error
+              if (err.kind === 'ratelimit') return `GitHub API rate limit exceeded. ${err.retryAfter ? `Try again in ${err.retryAfter}s.` : 'Try again later.'}`
+              if (err.kind === 'network') return `Network error: ${err.message}`
+              return `Error: ${err.kind}`
             }),
           ])],
           ok: () => [],

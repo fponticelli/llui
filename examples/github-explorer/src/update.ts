@@ -1,5 +1,5 @@
 import type { State, Msg, Effect, Route, ApiError, SearchData, RepoCodeData, RepoIssuesData, TreeDirData, TreeFileData, Repo, TreeEntry, FileContent, Issue } from './types'
-import { http, cancel } from '@llui/effects'
+import { http, cancel, debounce } from '@llui/effects'
 import { searchUrl, repoUrl, contentsUrl, readmeUrl, issuesUrl, JSON_HEADERS, HTML_HEADERS } from './api'
 import { router, routing } from './router'
 
@@ -18,8 +18,28 @@ export function update(state: State, msg: Msg): [State, Effect[]] {
       // router.link already calls pushState, so no push needed here
       return loadRoute(state, msg.route)
 
-    case 'setQuery':
-      return [{ ...state, query: msg.value }, []]
+    case 'setQuery': {
+      const q = msg.value
+      if (!q.trim()) {
+        const route: Route = state.route.page === 'search'
+          ? { ...state.route, q: '', data: { type: 'idle' } }
+          : state.route
+        return [{ ...state, query: q, route }, [cancel('search')]]
+      }
+      // Debounce: set route to loading, fire delayed search
+      const route: Route = state.route.page === 'search'
+        ? { ...state.route, q, p: 1, data: { type: 'loading', stale: state.route.data.type === 'success' ? state.route.data.data : undefined } }
+        : { page: 'search', q, p: 1, data: { type: 'loading' } }
+      return [
+        { ...state, query: q, route },
+        [debounce('search', 300, http({
+          url: searchUrl(q, 0),
+          headers: JSON_HEADERS,
+          onSuccess: 'searchOk',
+          onError: 'apiError',
+        }))],
+      ]
+    }
 
     case 'submitSearch': {
       if (!state.query.trim()) return [state, []]
@@ -38,11 +58,16 @@ export function update(state: State, msg: Msg): [State, Effect[]] {
       ]
     }
 
-    case 'searchOk':
-      return withSearchData(state, () => ({
-        type: 'success',
-        data: { repos: msg.payload.items, total: msg.payload.total_count },
-      }))
+    case 'searchOk': {
+      const q = state.query
+      const route: Route = state.route.page === 'search'
+        ? { ...state.route, q, data: { type: 'success', data: { repos: msg.payload.items, total: msg.payload.total_count } } }
+        : state.route
+      const effects: Effect[] = []
+      // Update URL to reflect search query (from debounce or submit)
+      if (route.page === 'search' && route.q) effects.push(routing.replace(route))
+      return [{ ...state, route }, effects]
+    }
 
     case 'repoOk':
       return withRepoLoaded(state, msg.payload)
