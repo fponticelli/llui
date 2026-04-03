@@ -47,6 +47,7 @@ export function mountApp<S, M, E>(
   }
 
   registerInstance(inst)
+  dispatchInitialEffects(inst)
   let disposed = false
 
   return {
@@ -63,6 +64,16 @@ export function mountApp<S, M, E>(
       flushInstance(inst)
     },
   }
+}
+
+function dispatchInitialEffects<S, M, E>(
+  inst: ReturnType<typeof createComponentInstance<S, M, E>>,
+): void {
+  if (inst.initialEffects.length === 0 || !inst.def.onEffect) return
+  for (const effect of inst.initialEffects) {
+    inst.def.onEffect(effect, inst.send, inst.signal)
+  }
+  inst.initialEffects = []
 }
 
 export function hydrateApp<S, M, E>(
