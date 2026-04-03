@@ -30,6 +30,7 @@ export function createScope(parent: Scope | null): Scope {
 export function disposeScope(scope: Scope): void {
   if (scope.disposers.length === 0 && scope.children.length === 0 && scope.bindings.length === 0) {
     removeFromParent(scope)
+    scope.parent = null
     return
   }
 
@@ -42,9 +43,12 @@ export function disposeScope(scope: Scope): void {
     disposer()
   }
 
-  // Mark bindings as dead — Phase 2 will skip them
+  // Mark bindings as dead and break closure/DOM retention
   for (const binding of scope.bindings) {
     binding.dead = true
+    binding.accessor = null!
+    binding.node = null!
+    binding.lastValue = undefined
   }
 
   scope.disposers.length = 0
@@ -53,6 +57,7 @@ export function disposeScope(scope: Scope): void {
   scope.itemUpdaters.length = 0
 
   removeFromParent(scope)
+  scope.parent = null
 }
 
 export function addBinding(scope: Scope, binding: Binding): void {

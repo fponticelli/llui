@@ -110,14 +110,13 @@ function processMessages<S, M, E>(inst: ComponentInstance<S, M, E>): void {
 
   // Compact dead bindings before Phase 2 (Phase 1 may have disposed scopes)
   let phase2Len = bindingsBeforePhase1
-  if (phase2Len > 0 && bindings[0]!.dead) {
-    // Fast check: if first binding is dead, likely bulk disposal — compact now
+  if (bindings.length > bindingsBeforePhase1 || (phase2Len > 0 && bindings[0]!.dead)) {
+    // Compact: remove dead bindings to free closure/DOM references
     let w = 0
     for (let r = 0; r < bindings.length; r++) {
       if (!bindings[r]!.dead) bindings[w++] = bindings[r]!
     }
     bindings.length = w
-    // After compaction, all surviving pre-Phase1 bindings are packed at front
     phase2Len = Math.min(w, bindingsBeforePhase1)
   }
 
