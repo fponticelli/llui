@@ -107,13 +107,14 @@ Completed. The DOM-specific package is now `@llui/dom`, reserving `@llui/core` f
 
 ### 1. Real App Validation
 
-Build a [Realworld (Conduit)](https://github.com/gothinkster/realworld) app — the standardized "medium.com clone" that exercises auth, routing, CRUD, forms, pagination, and API integration. This validates the full surface area: effects, composition (Level 1 + Level 2), `each()`, `branch()`, `portal()`, and async patterns against a real API backend.
+Build a GitHub Explorer app using the public GitHub API (reliable, CORS-enabled, no auth for reads). Exercises routing, search with debounce/cancel effects, `foreign()` for markdown rendering, style bindings for issue label colors, `rest()` path routing for file trees, and error handling for rate limits.
 
-- [ ] Implement Conduit spec: articles, comments, auth, profiles, feed, pagination
-- [ ] Verify all element helpers work correctly in compiled mode
-- [ ] Stress-test `branch()`, `show()`, `portal()` in realistic combinations
-- [ ] Validate Level 1 and Level 2 composition patterns in a real component hierarchy
-- [ ] Exercise `@llui/effects` (http, cancel, debounce) against the Conduit API
+- [ ] Search with debounce/cancel effects
+- [ ] Repo detail with file tree, README (foreign/innerHTML), issues
+- [ ] Style bindings for issue label colors
+- [ ] `foreign()` for markdown/syntax highlighting
+- [ ] Rate limit error handling
+- [ ] Verify `branch()`, `show()`, `each()` in realistic combinations
 
 ### 2. SSR/Hydration Hardening
 
