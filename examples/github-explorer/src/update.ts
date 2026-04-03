@@ -1,5 +1,5 @@
-import type { State, Msg, Effect, Route } from './types'
-import { http, cancel, debounce } from '@llui/effects'
+import type { State, Msg, Effect, Route, PageState } from './types'
+import { http, cancel } from '@llui/effects'
 import { searchUrl, repoUrl, contentsUrl, readmeUrl, issuesUrl, JSON_HEADERS, HTML_HEADERS } from './api'
 import { router, routing } from './router'
 
@@ -7,14 +7,7 @@ export function initState(): State {
   return {
     route: router.match(location.hash),
     query: '',
-    repos: [],
-    searchTotal: 0,
-    searchPage: 0,
-    repo: null,
-    tree: [],
-    readme: '',
-    issues: [],
-    file: null,
+    pageState: { page: 'search', repos: [], total: 0, pageNum: 0 },
     loading: false,
     error: null,
   }
@@ -32,7 +25,7 @@ export function update(state: State, msg: Msg): [State, Effect[]] {
       if (!state.query.trim()) return [state, []]
       const route: Route = { page: 'search', q: state.query }
       return [
-        { ...state, route, loading: true, error: null, searchPage: 0 },
+        { ...state, route, loading: true, error: null, pageState: { page: 'search', repos: [], total: 0, pageNum: 0 } },
         [
           routing.push(route),
           cancel('search', http({
@@ -45,88 +38,97 @@ export function update(state: State, msg: Msg): [State, Effect[]] {
       ]
     }
 
-    case 'searchOk':
-      return [{ ...state, repos: msg.payload.items, searchTotal: msg.payload.total_count, loading: false }, []]
+    case 'searchOk': {
+      const ps = state.pageState
+      if (ps.page !== 'search') return [state, []]
+      return [{ ...state, loading: false, pageState: { ...ps, repos: msg.payload.items, total: msg.payload.total_count } }, []]
+    }
 
-    case 'repoOk':
-      return [{ ...state, repo: msg.payload, loading: false }, []]
+    case 'repoOk': {
+      const ps = state.pageState
+      if (ps.page === 'repo') return [{ ...state, loading: false, pageState: { ...ps, repo: msg.payload } }, []]
+      if (ps.page === 'tree') return [{ ...state, pageState: { ...ps, repo: msg.payload } }, []]
+      return [state, []]
+    }
 
-    case 'contentsOk':
-      // GitHub contents API returns array for dirs, object for files
+    case 'contentsOk': {
+      const ps = state.pageState
       if (Array.isArray(msg.payload)) {
-        return [{ ...state, tree: msg.payload, file: null, loading: false }, []]
+        if (ps.page === 'repo') return [{ ...state, loading: false, pageState: { ...ps, tree: msg.payload } }, []]
+        if (ps.page === 'tree') return [{ ...state, loading: false, pageState: { ...ps, tree: msg.payload, file: null } }, []]
+      } else {
+        if (ps.page === 'tree') return [{ ...state, loading: false, pageState: { ...ps, file: msg.payload, tree: [] } }, []]
       }
-      return [{ ...state, file: msg.payload, tree: [], loading: false }, []]
+      return [{ ...state, loading: false }, []]
+    }
 
-    case 'readmeOk':
-      return [{ ...state, readme: msg.payload }, []]
+    case 'readmeOk': {
+      const ps = state.pageState
+      if (ps.page === 'repo') return [{ ...state, pageState: { ...ps, readme: msg.payload } }, []]
+      return [state, []]
+    }
 
-    case 'issuesOk':
-      return [{ ...state, issues: msg.payload, loading: false }, []]
+    case 'issuesOk': {
+      const ps = state.pageState
+      if (ps.page === 'repo') return [{ ...state, loading: false, pageState: { ...ps, issues: msg.payload } }, []]
+      return [state, []]
+    }
 
     case 'apiError': {
-      const errMsg = typeof msg.error === 'string' ? msg.error
-        : (msg.error as Record<string, unknown>)?.message
-          ? String((msg.error as Record<string, unknown>).message)
+      const raw = msg.error
+      const errMsg = typeof raw === 'string' ? raw
+        : (raw as Record<string, unknown>)?.message
+          ? String((raw as Record<string, unknown>).message)
           : 'API request failed'
-      // Check for rate limiting
-      if (errMsg.includes('rate limit') || errMsg.includes('API rate')) {
-        return [{ ...state, error: 'GitHub API rate limit exceeded (60 requests/hour). Try again later.', loading: false }, []]
-      }
       return [{ ...state, error: errMsg, loading: false }, []]
     }
 
     case 'nextPage': {
-      const page = state.searchPage + 1
-      const q = state.route.page === 'search' ? state.route.q : state.query
+      const ps = state.pageState
+      if (ps.page !== 'search') return [state, []]
+      const page = ps.pageNum + 1
       return [
-        { ...state, searchPage: page, loading: true },
-        [http({ url: searchUrl(q, page), headers: JSON_HEADERS, onSuccess: 'searchOk', onError: 'apiError' })],
+        { ...state, loading: true, pageState: { ...ps, pageNum: page } },
+        [http({ url: searchUrl(state.query, page), headers: JSON_HEADERS, onSuccess: 'searchOk', onError: 'apiError' })],
       ]
     }
 
     case 'prevPage': {
-      const page = Math.max(0, state.searchPage - 1)
-      const q = state.route.page === 'search' ? state.route.q : state.query
+      const ps = state.pageState
+      if (ps.page !== 'search') return [state, []]
+      const page = Math.max(0, ps.pageNum - 1)
       return [
-        { ...state, searchPage: page, loading: true },
-        [http({ url: searchUrl(q, page), headers: JSON_HEADERS, onSuccess: 'searchOk', onError: 'apiError' })],
+        { ...state, loading: true, pageState: { ...ps, pageNum: page } },
+        [http({ url: searchUrl(state.query, page), headers: JSON_HEADERS, onSuccess: 'searchOk', onError: 'apiError' })],
       ]
     }
 
     case 'openPath': {
-      // Resolve owner/name from current state — event handler only sent the path
       const r = state.route
       const owner = r.page === 'repo' || r.page === 'tree' ? r.owner : ''
       const name = r.page === 'repo' || r.page === 'tree' ? r.name : ''
       if (!owner) return [state, []]
-      const route: Route = msg.isDir
-        ? { page: 'tree', owner, name, path: msg.path }
-        : { page: 'tree', owner, name, path: msg.path }
-      return navigateTo({ ...state, route }, route)
+      const route: Route = { page: 'tree', owner, name, path: msg.path }
+      return navigateTo(state, route)
     }
   }
 }
 
 function navigateTo(state: State, route: Route): [State, Effect[]] {
-  const s: State = { ...state, route, error: null, loading: true }
-  const effects: Effect[] = []
+  const effects: Effect[] = [routing.push(route)]
 
+  let pageState: PageState
   switch (route.page) {
     case 'search':
-      s.query = route.q
+      pageState = { page: 'search', repos: [], total: 0, pageNum: 0 }
       if (route.q) {
         effects.push(http({ url: searchUrl(route.q, 0), headers: JSON_HEADERS, onSuccess: 'searchOk', onError: 'apiError' }))
-      } else {
-        s.loading = false
-        s.repos = []
+        return [{ ...state, route, query: route.q, pageState, loading: true, error: null }, effects]
       }
-      break
+      return [{ ...state, route, query: route.q, pageState, loading: false, error: null }, []]
 
     case 'repo':
-      s.file = null
-      s.tree = []
-      s.readme = ''
+      pageState = { page: 'repo', repo: null, tab: route.tab, tree: [], readme: '', issues: [] }
       effects.push(http({ url: repoUrl(route.owner, route.name), headers: JSON_HEADERS, onSuccess: 'repoOk', onError: 'apiError' }))
       if (route.tab === 'code') {
         effects.push(http({ url: contentsUrl(route.owner, route.name, ''), headers: JSON_HEADERS, onSuccess: 'contentsOk', onError: 'apiError' }))
@@ -134,15 +136,12 @@ function navigateTo(state: State, route: Route): [State, Effect[]] {
       } else {
         effects.push(http({ url: issuesUrl(route.owner, route.name), headers: JSON_HEADERS, onSuccess: 'issuesOk', onError: 'apiError' }))
       }
-      break
+      return [{ ...state, route, pageState, loading: true, error: null }, effects]
 
     case 'tree':
-      s.file = null
-      s.tree = []
+      pageState = { page: 'tree', repo: null, tree: [], file: null }
       effects.push(http({ url: repoUrl(route.owner, route.name), headers: JSON_HEADERS, onSuccess: 'repoOk', onError: 'apiError' }))
       effects.push(http({ url: contentsUrl(route.owner, route.name, route.path), headers: JSON_HEADERS, onSuccess: 'contentsOk', onError: 'apiError' }))
-      break
+      return [{ ...state, route, pageState, loading: true, error: null }, effects]
   }
-
-  return [s, effects]
 }

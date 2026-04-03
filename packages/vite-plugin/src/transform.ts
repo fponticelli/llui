@@ -994,6 +994,12 @@ function analyzeSubtree(
       // Anything else (each, branch, show, arbitrary expressions) — bail
       return null
     }
+
+    // Bail if mixed static + reactive text in same parent — HTML parser
+    // merges adjacent text nodes, making childIdx indices unreliable
+    const hasStatic = children.some((c) => c.type === 'staticText')
+    const hasReactive = children.some((c) => c.type === 'reactiveText')
+    if (hasStatic && hasReactive) return null
   } else if (childrenArg && childrenArg.kind !== ts.SyntaxKind.NullKeyword) {
     // Non-array children (e.g., spread, variable) — bail
     return null

@@ -1,4 +1,4 @@
-import { div, h3, p, a, span, ul, li, text, button, each, branch, show } from '@llui/dom'
+import { div, h3, p, a, span, ul, li, text, button, each, branch, show, peek } from '@llui/dom'
 import type { State, Msg, Repo } from '../types'
 import type { Send } from '@llui/dom'
 
@@ -15,7 +15,13 @@ export function searchPage(_s: State, send: Send<Msg>): Node[] {
     div({ class: 'container' }, [
       ...errorBox(),
       ...branch<State, Msg>({
-        on: (s) => s.loading ? 'loading' : s.repos.length > 0 ? 'results' : s.route.page === 'search' && s.route.q ? 'empty' : 'welcome',
+        on: (s) => {
+          if (s.loading) return 'loading'
+          if (s.pageState.page !== 'search') return 'welcome'
+          if (s.pageState.repos.length > 0) return 'results'
+          if (s.route.page === 'search' && s.route.q) return 'empty'
+          return 'welcome'
+        },
         cases: {
           loading: () => [div({ class: 'loading' }, [text('Searching...')])],
           empty: () => [div({ class: 'loading' }, [text('No repositories found.')])],
@@ -23,12 +29,12 @@ export function searchPage(_s: State, send: Send<Msg>): Node[] {
           results: (_s, send) => [
             ul({ class: 'repo-list' }, [
               ...each<State, Repo, Msg>({
-                items: (s) => s.repos,
+                items: (s) => s.pageState.page === 'search' ? s.pageState.repos : [],
                 key: (r) => r.id,
                 render: ({ item, send }) => [repoItem(item, send)],
               }),
             ]),
-            ...pagination(send),
+            ...paginationControls(send),
           ],
         },
       }),
@@ -50,21 +56,18 @@ function repoItem(
           e.preventDefault()
           send({ type: 'navigate', route: { page: 'repo', owner, name, tab: 'code' } })
         },
-      }, [
-        text(item((r) => r.full_name)),
-      ]),
+      }, [text(item((r) => r.full_name))]),
     ]),
     p({}, [text(item((r) => r.description ?? ''))]),
     div({ class: 'repo-meta' }, [
-      ...show<State, Msg>({
-        when: () => item((r) => r.language)() !== null,
-        render: () => [
-          span({}, [
-            span({ class: 'lang-dot', style: `background-color: ${LANG_COLORS[item((r) => r.language)()!] ?? '#ccc'}` }),
-            text(item((r) => r.language ?? '')),
-          ]),
-        ],
-      }),
+      ...(() => {
+        const lang = item((r) => r.language)()
+        if (!lang) return []
+        return [span({}, [
+          span({ class: 'lang-dot', style: `background-color: ${LANG_COLORS[lang] ?? '#ccc'}` }),
+          text(item((r) => r.language ?? '')),
+        ])]
+      })(),
       span({}, [text(item((r) => `★ ${r.stargazers_count.toLocaleString()}`))]),
       span({}, [text(item((r) => `🍴 ${r.forks_count.toLocaleString()}`))]),
       span({}, [text(item((r) => `Updated ${new Date(r.updated_at).toLocaleDateString()}`))]),
@@ -79,18 +82,21 @@ function errorBox(): Node[] {
   })
 }
 
-function pagination(send: Send<Msg>): Node[] {
+function paginationControls(send: Send<Msg>): Node[] {
   return show<State, Msg>({
-    when: (s) => s.searchTotal > 10,
-    render: (s) => [
+    when: (s) => s.pageState.page === 'search' && s.pageState.total > 10,
+    render: () => [
       div({ class: 'pagination' }, [
         button({
-          disabled: (s: State) => s.searchPage === 0,
+          disabled: (s: State) => s.pageState.page === 'search' && s.pageState.pageNum === 0,
           onClick: () => send({ type: 'prevPage' }),
         }, [text('← Previous')]),
-        text((s: State) => `Page ${s.searchPage + 1} of ${Math.ceil(s.searchTotal / 10)}`),
+        text((s: State) => {
+          if (s.pageState.page !== 'search') return ''
+          return `Page ${s.pageState.pageNum + 1} of ${Math.ceil(s.pageState.total / 10)}`
+        }),
         button({
-          disabled: (s: State) => (s.searchPage + 1) * 10 >= s.searchTotal,
+          disabled: (s: State) => s.pageState.page === 'search' && (s.pageState.pageNum + 1) * 10 >= s.pageState.total,
           onClick: () => send({ type: 'nextPage' }),
         }, [text('Next →')]),
       ]),

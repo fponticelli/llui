@@ -52,20 +52,15 @@ export type Route =
 
 // ── State ────────────────────────────────────────────────────────
 
+export type PageState =
+  | { page: 'search'; repos: Repo[]; total: number; pageNum: number }
+  | { page: 'repo'; repo: Repo | null; tab: 'code' | 'issues'; tree: TreeEntry[]; readme: string; issues: Issue[] }
+  | { page: 'tree'; repo: Repo | null; tree: TreeEntry[]; file: FileContent | null }
+
 export interface State {
   route: Route
   query: string
-  // Search results
-  repos: Repo[]
-  searchTotal: number
-  searchPage: number
-  // Repo detail
-  repo: Repo | null
-  tree: TreeEntry[]
-  readme: string
-  issues: Issue[]
-  file: FileContent | null
-  // Loading / errors
+  pageState: PageState
   loading: boolean
   error: string | null
 }
