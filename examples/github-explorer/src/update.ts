@@ -14,7 +14,9 @@ export function initState(): State {
 export function update(state: State, msg: Msg): [State, Effect[]] {
   switch (msg.type) {
     case 'navigate':
-      return navigateTo(state, msg.route)
+      // From popstate (browser back/forward) or router.link click
+      // router.link already calls pushState, so no push needed here
+      return loadRoute(state, msg.route)
 
     case 'setQuery':
       return [{ ...state, query: msg.value }, []]
@@ -81,15 +83,21 @@ export function update(state: State, msg: Msg): [State, Effect[]] {
       const owner = r.page === 'repo' || r.page === 'tree' ? r.owner : ''
       const name = r.page === 'repo' || r.page === 'tree' ? r.name : ''
       if (!owner) return [state, []]
-      return navigateTo(state, { page: 'tree', owner, name, path: msg.path, data: { type: 'loading' } })
+      const route: Route = { page: 'tree', owner, name, path: msg.path, data: { type: 'loading' } }
+      const [s, effects] = loadRoute(state, route)
+      return [s, [routing.push(route), ...effects]]
     }
   }
 }
 
 // ── Navigation ───────────────────────────────────────────────────
 
-function navigateTo(state: State, route: Route): [State, Effect[]] {
-  const effects: Effect[] = [routing.push(route)]
+/**
+ * Load data for a route. Does NOT push to history — the caller
+ * decides whether to push (user action) or not (popstate).
+ */
+function loadRoute(state: State, route: Route): [State, Effect[]] {
+  const effects: Effect[] = []
   const r = { ...route, data: { type: 'loading' as const } }
 
   switch (r.page) {
@@ -98,7 +106,7 @@ function navigateTo(state: State, route: Route): [State, Effect[]] {
         effects.push(http({ url: searchUrl(r.q, 0), headers: JSON_HEADERS, onSuccess: 'searchOk', onError: 'apiError' }))
         return [{ ...state, route: r, query: r.q }, effects]
       }
-      return [{ ...state, route: { ...r, data: { type: 'idle' } }, query: '' }, [routing.push(r)]]
+      return [{ ...state, route: { ...r, data: { type: 'idle' } }, query: '' }, []]
 
     case 'repo':
       effects.push(http({ url: repoUrl(r.owner, r.name), headers: JSON_HEADERS, onSuccess: 'repoOk', onError: 'apiError' }))

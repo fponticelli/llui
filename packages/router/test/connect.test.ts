@@ -126,10 +126,27 @@ describe('connectRouter', () => {
       })
     })
 
-    it('sends navigate message on click and prevents default', () => {
+    it('prevents default on click', () => {
       withView(() => {
         const send = vi.fn()
         const el = routing.link(send, { page: 'article', slug: 'test' }, {}, [])
+        const event = new MouseEvent('click', { bubbles: true, cancelable: true, button: 0 })
+        el.dispatchEvent(event)
+        expect(event.defaultPrevented).toBe(true)
+        // In hash mode, location.hash is set and the hashchange listener
+        // handles sending the navigate message — send is not called directly
+      })
+    })
+
+    it('sends navigate message on click in history mode', () => {
+      withView(() => {
+        const historyRouter = createRouter<Route>([
+          route([], () => ({ page: 'home' })),
+          route(['article', param('slug')], ({ slug }) => ({ page: 'article', slug })),
+        ], { mode: 'history' })
+        const historyRouting = connectRouter(historyRouter)
+        const send = vi.fn()
+        const el = historyRouting.link(send, { page: 'article', slug: 'test' }, {}, [])
         const event = new MouseEvent('click', { bubbles: true, cancelable: true, button: 0 })
         el.dispatchEvent(event)
         expect(event.defaultPrevented).toBe(true)
@@ -159,10 +176,15 @@ describe('connectRouter', () => {
       })
     })
 
-    it('uses custom message factory', () => {
+    it('uses custom message factory in history mode', () => {
       withView(() => {
+        const historyRouter = createRouter<Route>([
+          route([], () => ({ page: 'home' })),
+          route(['article', param('slug')], ({ slug }) => ({ page: 'article', slug })),
+        ], { mode: 'history' })
+        const historyRouting = connectRouter(historyRouter)
         const send = vi.fn()
-        const el = routing.link(send, { page: 'article', slug: 'x' }, {}, [], (r) => ({ type: 'goto', route: r }))
+        const el = historyRouting.link(send, { page: 'article', slug: 'x' }, {}, [], (r) => ({ type: 'goto', route: r }))
         el.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, button: 0 }))
         expect(send).toHaveBeenCalledWith({ type: 'goto', route: { page: 'article', slug: 'x' } })
       })

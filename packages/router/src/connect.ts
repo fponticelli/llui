@@ -146,10 +146,16 @@ export function connectRouter<R>(router: Router<R>): ConnectedRouter<R> {
           ...attrs,
           href: router.href(route),
           onClick: (e: Event) => {
-            // Only handle left-click without modifiers
             const me = e as MouseEvent
             if (me.ctrlKey || me.metaKey || me.shiftKey || me.altKey || me.button !== 0) return
             e.preventDefault()
+            // Push history — pushState doesn't fire popstate, so no double-nav
+            if (router.mode === 'hash') {
+              // hashchange will fire the listener, which sends the navigate message
+              location.hash = router.href(route)
+              return
+            }
+            history.pushState(null, '', router.href(route))
             send(factory(route))
           },
         },
