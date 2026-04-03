@@ -5,6 +5,18 @@ type CustomEffect = { type: 'custom'; data: string }
 type AllEffects = Effect | CustomEffect
 type Send = (msg: Record<string, unknown>) => void
 
+function mockResponse(body: unknown, opts?: { ok?: boolean; status?: number; contentType?: string }) {
+  const ok = opts?.ok ?? true
+  return {
+    ok,
+    status: opts?.status ?? (ok ? 200 : 500),
+    statusText: ok ? 'OK' : 'Error',
+    headers: new Headers({ 'content-type': opts?.contentType ?? 'application/json' }),
+    json: () => Promise.resolve(body),
+    text: () => Promise.resolve(typeof body === 'string' ? body : JSON.stringify(body)),
+  }
+}
+
 describe('handleEffects()', () => {
   let send: Mock<Send>
   let signal: AbortSignal
@@ -28,8 +40,7 @@ describe('handleEffects()', () => {
   })
 
   it('handles http effects via fetch', async () => {
-    const mockResponse = { ok: true, json: () => Promise.resolve({ items: [] }) }
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(mockResponse))
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(mockResponse({ items: [] })))
 
     const handler = handleEffects<AllEffects>().else(() => {})
 
@@ -39,7 +50,6 @@ describe('handleEffects()', () => {
       signal,
     )
 
-    // Wait for the fetch promise to resolve
     await vi.waitFor(() => expect(send).toHaveBeenCalled())
 
     expect(send).toHaveBeenCalledWith({ type: 'results', payload: { items: [] } })
@@ -48,8 +58,8 @@ describe('handleEffects()', () => {
     vi.unstubAllGlobals()
   })
 
-  it('handles http error', async () => {
-    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('network')))
+  it('handles http error with typed ApiError', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new TypeError('Failed to fetch')))
 
     const handler = handleEffects<AllEffects>().else(() => {})
 
@@ -63,8 +73,46 @@ describe('handleEffects()', () => {
 
     expect(send).toHaveBeenCalledWith({
       type: 'error',
-      error: expect.objectContaining({ message: 'network' }),
+      error: { kind: 'network', message: expect.stringContaining('fetch') },
     })
+
+    vi.unstubAllGlobals()
+  })
+
+  it('maps 404 to notfound ApiError', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(mockResponse({}, { ok: false, status: 404 })))
+
+    const handler = handleEffects<AllEffects>().else(() => {})
+    handler(http({ url: '/api/x', onSuccess: 'ok', onError: 'err' }), send, signal)
+
+    await vi.waitFor(() => expect(send).toHaveBeenCalled())
+    expect(send).toHaveBeenCalledWith({ type: 'err', error: { kind: 'notfound' } })
+
+    vi.unstubAllGlobals()
+  })
+
+  it('maps 429 to ratelimit ApiError with retryAfter', async () => {
+    const resp = mockResponse({}, { ok: false, status: 429 })
+    resp.headers.set('retry-after', '60')
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(resp))
+
+    const handler = handleEffects<AllEffects>().else(() => {})
+    handler(http({ url: '/api/x', onSuccess: 'ok', onError: 'err' }), send, signal)
+
+    await vi.waitFor(() => expect(send).toHaveBeenCalled())
+    expect(send).toHaveBeenCalledWith({ type: 'err', error: { kind: 'ratelimit', retryAfter: 60 } })
+
+    vi.unstubAllGlobals()
+  })
+
+  it('parses text responses when content-type is not json', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(mockResponse('<h1>Hello</h1>', { contentType: 'text/html' })))
+
+    const handler = handleEffects<AllEffects>().else(() => {})
+    handler(http({ url: '/api/readme', onSuccess: 'ok', onError: 'err' }), send, signal)
+
+    await vi.waitFor(() => expect(send).toHaveBeenCalled())
+    expect(send).toHaveBeenCalledWith({ type: 'ok', payload: '<h1>Hello</h1>' })
 
     vi.unstubAllGlobals()
   })
@@ -86,19 +134,15 @@ describe('handleEffects()', () => {
 
     const handler = handleEffects<AllEffects>().else(() => {})
 
-    // Start an http request with token 'search'
     handler(
       cancel('search', http({ url: '/api/search', onSuccess: 'results', onError: 'error' })),
       send,
       signal,
     )
 
-    // Cancel it
     handler(cancel('search'), send, signal)
 
     await vi.waitFor(() => expect(fetchAborted).toBe(true))
-
-    // No success or error message should have been sent
     expect(send).not.toHaveBeenCalled()
 
     vi.unstubAllGlobals()
@@ -110,20 +154,18 @@ describe('handleEffects()', () => {
       'fetch',
       vi.fn().mockImplementation(() => {
         callCount++
-        return Promise.resolve({ ok: true, json: () => Promise.resolve({ n: callCount }) })
+        return Promise.resolve(mockResponse({ n: callCount }))
       }),
     )
 
     const handler = handleEffects<AllEffects>().else(() => {})
 
-    // First request
     handler(
       cancel('search', http({ url: '/api/1', onSuccess: 'results', onError: 'error' })),
       send,
       signal,
     )
 
-    // Replace with second request
     handler(
       cancel('search', http({ url: '/api/2', onSuccess: 'results', onError: 'error' })),
       send,
@@ -132,7 +174,6 @@ describe('handleEffects()', () => {
 
     await vi.waitFor(() => expect(send).toHaveBeenCalled())
 
-    // Only the second request's result should arrive
     const lastCall = send.mock.calls[send.mock.calls.length - 1]![0] as Record<string, unknown>
     expect(lastCall.type).toBe('results')
 
@@ -145,7 +186,7 @@ describe('handleEffects()', () => {
       vi.fn().mockImplementation(
         () =>
           new Promise((resolve) => {
-            setTimeout(() => resolve({ ok: true, json: () => Promise.resolve({}) }), 100)
+            setTimeout(() => resolve(mockResponse({})), 100)
           }),
       ),
     )
@@ -158,10 +199,8 @@ describe('handleEffects()', () => {
       signal,
     )
 
-    // Abort the component
     controller.abort()
 
-    // Wait a bit — no messages should arrive
     await new Promise((r) => setTimeout(r, 50))
     expect(send).not.toHaveBeenCalled()
 

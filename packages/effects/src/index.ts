@@ -1,3 +1,23 @@
+// ── Async State ──────────────────────────────────────────────────
+
+/** Models the lifecycle of an async operation. */
+export type Async<T, E> =
+  | { type: 'idle' }
+  | { type: 'loading'; stale?: T }
+  | { type: 'success'; data: T }
+  | { type: 'failure'; error: E }
+
+/** Standard API error type produced by the http() effect. */
+export type ApiError =
+  | { kind: 'network'; message: string }
+  | { kind: 'timeout' }
+  | { kind: 'notfound' }
+  | { kind: 'unauthorized' }
+  | { kind: 'forbidden' }
+  | { kind: 'ratelimit'; retryAfter?: number }
+  | { kind: 'validation'; fields: Record<string, string[]> }
+  | { kind: 'server'; status: number; message: string }
+
 // ── Effect Types ──────────────────────────────────────────────────
 
 export interface HttpEffect {
@@ -182,17 +202,54 @@ function runHttp(effect: HttpEffect, send: InternalSend, signal: AbortSignal): v
   if (effect.headers) opts.headers = effect.headers
 
   fetch(effect.url, opts)
-    .then((res) => res.json())
-    .then((data: unknown) => {
-      if (!signal.aborted) {
+    .then(async (res) => {
+      if (signal.aborted) return
+
+      if (res.ok) {
+        // Success — parse response based on content type
+        const ct = res.headers.get('content-type') ?? ''
+        const data = ct.includes('application/json') ? await res.json() : await res.text()
         send({ type: effect.onSuccess, payload: data })
+        return
       }
+
+      // Map HTTP status to ApiError
+      const error = await httpStatusToApiError(res)
+      send({ type: effect.onError, error })
     })
     .catch((err: unknown) => {
       if (signal.aborted) return
       if (err instanceof DOMException && err.name === 'AbortError') return
-      send({ type: effect.onError, error: err })
+      const error: ApiError = err instanceof TypeError && err.message.includes('fetch')
+        ? { kind: 'network', message: err.message }
+        : { kind: 'network', message: String(err) }
+      send({ type: effect.onError, error })
     })
+}
+
+async function httpStatusToApiError(res: Response): Promise<ApiError> {
+  switch (res.status) {
+    case 401: return { kind: 'unauthorized' }
+    case 403: return { kind: 'forbidden' }
+    case 404: return { kind: 'notfound' }
+    case 429: {
+      const retry = res.headers.get('retry-after')
+      return { kind: 'ratelimit', retryAfter: retry ? parseInt(retry, 10) : undefined }
+    }
+    case 400:
+    case 422: {
+      try {
+        const body = await res.json()
+        if (body && typeof body === 'object' && 'errors' in body) {
+          const errors = body.errors as Record<string, string[]>
+          return { kind: 'validation', fields: errors }
+        }
+      } catch { /* fall through */ }
+      return { kind: 'server', status: res.status, message: res.statusText }
+    }
+    default:
+      return { kind: 'server', status: res.status, message: res.statusText }
+  }
 }
 
 function runCancel(

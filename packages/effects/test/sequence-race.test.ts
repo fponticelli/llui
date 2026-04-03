@@ -3,6 +3,17 @@ import { handleEffects, http, sequence, race, type Effect } from '../src/index'
 
 type Send = (msg: Record<string, unknown>) => void
 
+function mockResponse(body: unknown) {
+  return {
+    ok: true,
+    status: 200,
+    statusText: 'OK',
+    headers: new Headers({ 'content-type': 'application/json' }),
+    json: () => Promise.resolve(body),
+    text: () => Promise.resolve(JSON.stringify(body)),
+  }
+}
+
 describe('sequence', () => {
   let send: Mock<Send>
   let signal: AbortSignal
@@ -13,12 +24,10 @@ describe('sequence', () => {
   })
 
   it('runs effects in order — second starts after first resolves', async () => {
-    let callOrder: string[] = []
     vi.stubGlobal(
       'fetch',
       vi.fn().mockImplementation((url: string) => {
-        callOrder.push(url)
-        return Promise.resolve({ ok: true, json: () => Promise.resolve({ url }) })
+        return Promise.resolve(mockResponse({ url }))
       }),
     )
 
@@ -86,13 +95,13 @@ describe('race', () => {
   })
 
   it('only delivers the first result', async () => {
-    let resolvers: Array<(v: Response) => void> = []
+    const resolvers: Array<(v: unknown) => void> = []
     vi.stubGlobal(
       'fetch',
       vi.fn().mockImplementation(
         () =>
-          new Promise<Response>((resolve) => {
-            resolvers.push(resolve as (v: Response) => void)
+          new Promise((resolve) => {
+            resolvers.push(resolve)
           }),
       ),
     )
@@ -109,17 +118,16 @@ describe('race', () => {
     )
 
     // Resolve the second (fast) first
-    resolvers[1]!({ ok: true, json: () => Promise.resolve({ winner: true }) } as Response)
+    resolvers[1]!(mockResponse({ winner: true }))
 
     await vi.waitFor(() => expect(send).toHaveBeenCalledTimes(1))
 
     expect(send.mock.calls[0]![0]).toEqual({ type: 'fast', payload: { winner: true } })
 
     // Resolve the slow one — should be ignored
-    resolvers[0]!({ ok: true, json: () => Promise.resolve({ loser: true }) } as Response)
+    resolvers[0]!(mockResponse({ loser: true }))
     await new Promise((r) => setTimeout(r, 50))
 
-    // Still only 1 call
     expect(send).toHaveBeenCalledTimes(1)
 
     vi.unstubAllGlobals()
