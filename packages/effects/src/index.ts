@@ -89,18 +89,36 @@ export function race(effects: BuiltinEffect[]): RaceEffect {
 type Send = (msg: Record<string, unknown>) => void
 type CustomHandler = (effect: { type: string }, send: Send, signal: AbortSignal) => void
 
-export function handleEffects<E extends { type: string }>(): {
-  else(
-    handler: (effect: E, send: Send, signal: AbortSignal) => void,
-  ): (effect: E, send: Send, signal: AbortSignal) => void
-} {
+/** Plugin handler — returns true if the effect was handled, false to pass through. */
+export type EffectPlugin<E> = (effect: E, send: Send, signal: AbortSignal) => boolean
+
+interface EffectChain<E extends { type: string }> {
+  /** Add a plugin that handles specific effects. Returns true if handled, false to pass through. */
+  use(plugin: EffectPlugin<E>): EffectChain<E>
+  /** Terminal handler for remaining effects. Returns the final onEffect function. */
+  else(handler: (effect: E, send: Send, signal: AbortSignal) => void): (effect: E, send: Send, signal: AbortSignal) => void
+}
+
+export function handleEffects<E extends { type: string }>(): EffectChain<E> {
   const cancelControllers = new Map<string, AbortController>()
   const debounceTimers = new Map<string, ReturnType<typeof setTimeout>>()
+  const plugins: EffectPlugin<E>[] = []
   let cleanupRegistered = false
 
-  return {
+  const chain: EffectChain<E> = {
+    use(plugin) {
+      plugins.push(plugin)
+      return chain
+    },
     else(handler) {
-      const custom: CustomHandler = handler as CustomHandler
+      const custom: CustomHandler = (effect, send, signal) => {
+        // Try plugins first
+        for (const plugin of plugins) {
+          if (plugin(effect as E, send, signal)) return
+        }
+        // Fall through to user handler
+        handler(effect as E, send, signal)
+      }
       return (effect, send, signal) => {
         if (!cleanupRegistered) {
           signal.addEventListener(
@@ -119,6 +137,8 @@ export function handleEffects<E extends { type: string }>(): {
       }
     },
   }
+
+  return chain
 }
 
 function dispatchEffect(
