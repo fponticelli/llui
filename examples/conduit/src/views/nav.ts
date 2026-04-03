@@ -1,40 +1,54 @@
-import { nav, div, a, ul, li, text, img } from '@llui/dom'
+import { nav, div, a, ul, li, text, img, show, branch } from '@llui/dom'
 import type { State, Msg } from '../types'
 import type { Send } from '@llui/dom'
+import { routing } from '../router'
 
-export function navbar(s: State, send: Send<Msg>): HTMLElement {
+export function navbar(_s: State, send: Send<Msg>): HTMLElement {
   return nav({ class: 'navbar navbar-light' }, [
     div({ class: 'container' }, [
-      a({ class: 'navbar-brand', href: '#/' }, [text('conduit')]),
+      routing.link(send, { page: 'home', tab: 'global' }, { class: 'navbar-brand' }, [text('conduit')]),
       ul({ class: 'nav navbar-nav pull-xs-right' }, [
-        navItem('#/', 'Home', 'ion-compose', s),
-        ...(s.user
-          ? [
-              navItem('#/editor', 'New Article', 'ion-compose', s),
-              navItem('#/settings', 'Settings', 'ion-gear-a', s),
-              li({ class: 'nav-item' }, [
-                a({
-                  class: 'nav-link',
-                  href: `#/profile/${s.user.username}`,
-                }, [
-                  ...(s.user.image
-                    ? [img({ alt: '', class: 'user-pic', src: s.user.image })]
-                    : []),
-                  text(s.user.username),
-                ]),
-              ]),
-            ]
-          : [
-              navItem('#/login', 'Sign in', '', s),
-              navItem('#/register', 'Sign up', '', s),
+        li({ class: 'nav-item' }, [
+          routing.link(send, { page: 'home', tab: 'global' }, { class: 'nav-link' }, [text('Home')]),
+        ]),
+        // Logged-in nav items
+        ...show<State, Msg>({
+          when: (s) => s.user !== null,
+          render: (_s, send) => [
+            li({ class: 'nav-item' }, [
+              routing.link(send, { page: 'editor' }, { class: 'nav-link' }, [text('New Article')]),
             ]),
+            li({ class: 'nav-item' }, [
+              routing.link(send, { page: 'settings' }, { class: 'nav-link' }, [text('Settings')]),
+            ]),
+            li({ class: 'nav-item' }, [
+              a({
+                class: 'nav-link',
+                href: (s: State) => `#/profile/${s.user?.username ?? ''}`,
+                onClick: (e: Event) => {
+                  e.preventDefault()
+                  const username = _s.user?.username
+                  if (username) send({ type: 'navigate', route: { page: 'profile', username, tab: 'authored' } })
+                },
+              }, [
+                text((s: State) => s.user?.username ?? ''),
+              ]),
+            ]),
+          ],
+        }),
+        // Logged-out nav items
+        ...show<State, Msg>({
+          when: (s) => s.user === null,
+          render: (_s, send) => [
+            li({ class: 'nav-item' }, [
+              routing.link(send, { page: 'login' }, { class: 'nav-link' }, [text('Sign in')]),
+            ]),
+            li({ class: 'nav-item' }, [
+              routing.link(send, { page: 'register' }, { class: 'nav-link' }, [text('Sign up')]),
+            ]),
+          ],
+        }),
       ]),
     ]),
-  ])
-}
-
-function navItem(href: string, label: string, _icon: string, _s: State): HTMLElement {
-  return li({ class: 'nav-item' }, [
-    a({ class: 'nav-link', href }, [text(label)]),
   ])
 }
