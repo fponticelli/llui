@@ -247,7 +247,6 @@ export class LluiMcpServer {
 
   /** Start the MCP server on stdin/stdout */
   start(): void {
-    const server = this
     let buffer = ''
 
     process.stdin.setEncoding('utf8')
@@ -260,7 +259,7 @@ export class LluiMcpServer {
         if (!line.trim()) continue
         try {
           const request = JSON.parse(line) as JsonRpcRequest
-          server.handleRequest(request).then((response) => {
+          this.handleRequest(request).then((response) => {
             process.stdout.write(JSON.stringify(response) + '\n')
           })
         } catch {
