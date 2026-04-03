@@ -64,7 +64,11 @@ export function transformLlui(source: string, _filename: string, devMode = false
   if (importedHelpers.size === 0 && !hasReactiveAccessors(sourceFile)) return null
 
   // Pass 2 pre-scan: collect all state access paths
-  const fieldBits = collectDeps(source)
+  // Only use precise masks in files that define a component() — the __dirty
+  // function is generated per-component, so bit assignments in other files
+  // won't match. Files without component() get FULL_MASK on all bindings.
+  const fileHasComponent = hasComponentDef(sourceFile, lluiImport)
+  const fieldBits = fileHasComponent ? collectDeps(source) : new Map<string, number>()
 
   // Track which helpers were compiled vs bailed out
   const compiledHelpers = new Set<string>()
@@ -188,6 +192,20 @@ function hasReactiveAccessors(sf: ts.SourceFile): boolean {
       if (node.expression.text === 'text' || node.expression.text === 'component') {
         found = true
       }
+    }
+    ts.forEachChild(node, visit)
+  }
+  visit(sf)
+  return found
+}
+
+function hasComponentDef(sf: ts.SourceFile, lluiImport: ts.ImportDeclaration): boolean {
+  let found = false
+  function visit(node: ts.Node): void {
+    if (found) return
+    if (ts.isCallExpression(node) && isComponentCall(node, lluiImport)) {
+      found = true
+      return
     }
     ts.forEachChild(node, visit)
   }
