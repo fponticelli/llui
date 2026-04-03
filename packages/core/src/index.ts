@@ -35,7 +35,7 @@ export { renderToString } from './ssr'
 
 export { text } from './primitives/text'
 export { branch } from './primitives/branch'
-export { each } from './primitives/each'
+export { each, peek } from './primitives/each'
 export { show } from './primitives/show'
 export { portal } from './primitives/portal'
 export { foreign } from './primitives/foreign'
@@ -114,6 +114,10 @@ export {
   ul,
   video,
 } from './elements'
+
+// ── Form Utilities ────────────────────────────────────────────────
+
+export { applyField, type FieldMsg } from './form'
 
 // ── Compiler Target ───────────────────────────────────────────────
 
