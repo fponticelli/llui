@@ -123,7 +123,7 @@ export function connectRouter<R>(router: Router<R>): ConnectedRouter<R> {
       onMount(() => {
         const event = router.mode === 'hash' ? 'hashchange' : 'popstate'
         const handler = () => {
-          const input = router.mode === 'hash' ? location.hash : location.pathname
+          const input = router.mode === 'hash' ? location.hash : location.pathname + location.search
           const route = router.match(input)
           send(factory(route))
         }
