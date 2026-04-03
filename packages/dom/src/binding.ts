@@ -12,6 +12,10 @@ export interface CreateBindingOpts {
 
 let flatBindings: Binding[] | null = null
 
+export function getFlatBindings(): Binding[] | null {
+  return flatBindings
+}
+
 export function setFlatBindings(arr: Binding[] | null): void {
   flatBindings = arr
 }
