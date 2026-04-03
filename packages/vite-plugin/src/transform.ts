@@ -493,12 +493,20 @@ function tryInjectDirty(
     }
   }
 
-  // Build __dirty: (o, n) => (Object.is(o.path, n.path) ? 0 : bit) | ...
-  const comparisons: ts.Expression[] = []
+  // Build __dirty: (o, n) => (Object.is(o.field, n.field) ? 0 : bit) | ...
+  // Compare at top-level field (depth 1) — nested path changes within a
+  // field must trigger the bit even if the specific sub-path isn't tracked.
+  // e.g., route.page tracked but route.data changes → must fire.
+  const topLevelBits = new Map<string, number>()
   for (const [path, bit] of fieldBits) {
-    const parts = path.split('.')
-    const oAccess = buildAccess(f, 'o', parts)
-    const nAccess = buildAccess(f, 'n', parts)
+    const topField = path.split('.')[0]!
+    topLevelBits.set(topField, (topLevelBits.get(topField) ?? 0) | bit)
+  }
+
+  const comparisons: ts.Expression[] = []
+  for (const [field, bit] of topLevelBits) {
+    const oAccess = buildAccess(f, 'o', [field])
+    const nAccess = buildAccess(f, 'n', [field])
 
     comparisons.push(
       f.createParenthesizedExpression(

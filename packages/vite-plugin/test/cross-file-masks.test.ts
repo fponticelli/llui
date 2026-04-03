@@ -47,6 +47,27 @@ describe('cross-file mask safety', () => {
     expect(out).not.toMatch(/4294967295.*"class"/)
   })
 
+  it('__dirty compares at top-level field, not nested path', () => {
+    const src = `
+      import { component, text } from '@llui/dom'
+      export const App = component({
+        name: 'App',
+        init: () => [{ route: { page: 'home', data: null }, query: '' }, []],
+        update: (s, m) => [s, []],
+        view: (s) => [
+          text(s => s.route.page),
+          text(s => s.query),
+        ],
+      })
+    `
+    const out = t(src)
+    // __dirty should compare o.route vs n.route (top-level),
+    // NOT o.route.page vs n.route.page (nested)
+    // This ensures route.data changes trigger the dirty bit
+    expect(out).toContain('Object.is(o.route, n.route)')
+    expect(out).not.toContain('o.route.page')
+  })
+
   it('injects __dirty only in component files', () => {
     const viewSrc = `
       import { div, text } from '@llui/dom'
