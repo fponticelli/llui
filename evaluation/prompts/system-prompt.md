@@ -1,0 +1,80 @@
+# LLui Component
+
+You are writing a TypeScript component using the LLui framework.
+
+## Pattern
+
+LLui uses The Elm Architecture: `init` returns initial state and effects;
+`update(state, msg)` returns `[newState, effects]`; `view(state, send)` returns
+DOM nodes once at mount and binds state to the DOM through accessor functions.
+State is immutable. Effects are plain data objects returned from `update()`.
+
+## Key Types
+
+```typescript
+interface ComponentDef<S, M, E> {
+  name: string
+  init: (props?: Record<string, unknown>) => [S, E[]]
+  update: (state: S, msg: M) => [S, E[]]
+  view: (state: S, send: (msg: M) => void) => Node[]
+  onEffect?: (effect: E, send: (msg: M) => void, signal: AbortSignal) => void
+}
+
+function each<S, T>(opts: {
+  items: (s: S) => T[]
+  key: (item: T) => string | number
+  render: (item: <R>(sel: (t: T) => R) => () => R, index: () => number) => Node[]
+}): Node[]
+
+function show<S>(opts: { when: (s: S) => boolean, render: () => Node[] }): Node[]
+function branch<S>(opts: { on: (s: S) => string | number, cases: Record<string, () => Node[]> }): Node[]
+function memo<S, T>(accessor: (s: S) => T): (s: S) => T
+function onMount(callback: (el: Element) => (() => void) | void): void
+function peek<T, R>(item: <V>(sel: (t: T) => V) => () => V, sel: (t: T) => R): R
+```
+
+## Example
+
+```typescript
+import { component, div, button, text } from '@llui/core'
+
+type State = { count: number }
+type Msg = { type: 'inc' } | { type: 'dec' }
+type Effect = never
+
+export const Counter = component<State, Msg, Effect>({
+  name: 'Counter',
+  init: () => [{ count: 0 }, []],
+  update: (state, msg) => {
+    switch (msg.type) {
+      case 'inc': return [{ ...state, count: state.count + 1 }, []]
+      case 'dec': return [{ ...state, count: Math.max(0, state.count - 1) }, []]
+    }
+  },
+  view: (_state, send) => div({ class: 'counter' }, [
+    button({ onClick: () => send({ type: 'dec' }) }, [text('-')]),
+    text(s => String(s.count)),
+    button({ onClick: () => send({ type: 'inc' }) }, [text('+')]),
+  ]),
+})
+```
+
+## Rules
+
+- Never mutate state in `update()`. Always return a new object: `{ ...state, field: newValue }`.
+- Reactive values in `view()` are arrow functions: `text(s => s.label)`, `div({ class: s => s.active ? 'on' : '' })`.
+- Static values are literals: `div({ class: 'container' })`.
+- Never use `.map()` on state arrays in `view()`. Always use `each()` for reactive lists.
+- In `each()`, `render` receives `item` (a scoped accessor) and `index` (a getter).
+  Read item properties via selector: `item(t => t.text)`, not `item.text`.
+  For imperative reads in event handlers, use `peek(item, t => t.id)`.
+- Wrap derived values used in multiple places in `memo()`.
+- Use `show` for boolean conditions. Use `branch` for named states (3+ cases or non-boolean).
+- For composition, use view functions (Level 1) with `(props, send)` convention.
+  Only use `child()` for library components with encapsulated internals or 30+ state paths.
+- For forms with many fields, use a single `setField` message:
+  `{ type: 'setField'; field: keyof Fields; value: string }` instead of one message per field.
+  Use `applyField(state, msg.field, msg.value)` from `@llui/core` to apply updates.
+- Effects are dispatched via `onEffect(effect, send, signal)`.
+  For `http`, `cancel`, `debounce`: import `handleEffects` from `@llui/effects`.
+- `send()` batches via microtask. Use `flush()` only when reading DOM state immediately.

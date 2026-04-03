@@ -346,6 +346,21 @@ function detectSwap<S, T>(
   return null
 }
 
+/**
+ * Read the current value from a scoped accessor imperatively.
+ * Use inside event handlers within each() render callbacks
+ * where you need the value, not a reactive binding.
+ *
+ * Instead of: item(t => t.id)()
+ * Write:      peek(item, t => t.id)
+ */
+export function peek<T, R>(
+  item: <V>(selector: (t: T) => V) => () => V,
+  selector: (t: T) => R,
+): R {
+  return item(selector)()
+}
+
 function survivorsInOrder<T>(
   oldEntries: Entry<T>[],
   newEntries: Entry<T>[],

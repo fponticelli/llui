@@ -1,4 +1,5 @@
 import { flushInstance, type ComponentInstance } from './update-loop'
+import type { Binding } from './types'
 
 export interface MessageRecord {
   index: number
@@ -8,6 +9,33 @@ export interface MessageRecord {
   stateAfter: unknown
   effects: unknown[]
   dirtyMask: number
+}
+
+export interface BindingDebugInfo {
+  index: number
+  mask: number
+  lastValue: unknown
+  kind: string
+  key: string | undefined
+  dead: boolean
+  perItem: boolean
+}
+
+export interface UpdateExplanation {
+  bindingIndex: number
+  bindingMask: number
+  lastDirtyMask: number
+  matched: boolean
+  accessorResult: unknown
+  lastValue: unknown
+  changed: boolean
+}
+
+export interface ValidationError {
+  path: string
+  expected: string
+  received: string
+  message: string
 }
 
 export interface LluiDebugAPI {
@@ -24,6 +52,10 @@ export interface LluiDebugAPI {
     entries: Array<{ msg: unknown; expectedState: unknown; expectedEffects: unknown[] }>
   }
   clearLog(): void
+  validateMessage(msg: unknown): ValidationError[] | null
+  getBindings(): BindingDebugInfo[]
+  whyDidUpdate(bindingIndex: number): UpdateExplanation
+  searchState(query: string): unknown
 }
 
 const MAX_HISTORY = 1000
@@ -32,6 +64,7 @@ export function installDevTools(inst: object): void {
   const ci = inst as ComponentInstance
   const history: MessageRecord[] = []
   let idx = 0
+  let lastDirtyMask = 0
 
   const api: LluiDebugAPI = {
     getState: () => ci.state,
@@ -62,6 +95,133 @@ export function installDevTools(inst: object): void {
       history.length = 0
       idx = 0
     },
+
+    validateMessage(msg: unknown): ValidationError[] | null {
+      const schema = ci.def.__msgSchema as
+        | { discriminant: string; variants: Record<string, Record<string, unknown>> }
+        | undefined
+      if (!schema) return null
+
+      if (msg == null || typeof msg !== 'object') {
+        return [{ path: '', expected: 'object', received: typeof msg, message: 'Message must be an object' }]
+      }
+
+      const msgObj = msg as Record<string, unknown>
+      const discriminant = schema.discriminant
+      const typeValue = msgObj[discriminant]
+
+      if (typeValue === undefined) {
+        return [{
+          path: `.${discriminant}`,
+          expected: `one of: ${Object.keys(schema.variants).map((v) => `'${v}'`).join(', ')}`,
+          received: 'undefined',
+          message: `Missing discriminant field '${discriminant}'`,
+        }]
+      }
+
+      if (typeof typeValue !== 'string') {
+        return [{
+          path: `.${discriminant}`,
+          expected: 'string',
+          received: typeof typeValue,
+          message: `Discriminant field '${discriminant}' must be a string`,
+        }]
+      }
+
+      const variant = schema.variants[typeValue]
+      if (!variant) {
+        return [{
+          path: `.${discriminant}`,
+          expected: `one of: ${Object.keys(schema.variants).map((v) => `'${v}'`).join(', ')}`,
+          received: `'${typeValue}'`,
+          message: `Unknown message type '${typeValue}'`,
+        }]
+      }
+
+      // Validate fields of the matched variant
+      const errors: ValidationError[] = []
+      for (const [field, expectedType] of Object.entries(variant)) {
+        if (field === discriminant) continue
+        const value = msgObj[field]
+        if (value === undefined) {
+          errors.push({
+            path: `.${field}`,
+            expected: String(expectedType),
+            received: 'undefined',
+            message: `Missing required field '${field}'`,
+          })
+        } else if (typeof expectedType === 'string' && expectedType !== 'unknown') {
+          if (typeof value !== expectedType) {
+            errors.push({
+              path: `.${field}`,
+              expected: expectedType,
+              received: typeof value,
+              message: `Field '${field}' has wrong type`,
+            })
+          }
+        }
+      }
+
+      return errors.length > 0 ? errors : null
+    },
+
+    getBindings(): BindingDebugInfo[] {
+      const bindings: Binding[] = ci.allBindings ?? []
+      return bindings.map((b, i) => ({
+        index: i,
+        mask: b.mask,
+        lastValue: b.lastValue,
+        kind: b.kind,
+        key: b.key,
+        dead: b.dead,
+        perItem: b.perItem,
+      }))
+    },
+
+    whyDidUpdate(bindingIndex: number): UpdateExplanation {
+      const bindings: Binding[] = ci.allBindings ?? []
+      const binding = bindings[bindingIndex]
+      if (!binding) {
+        return {
+          bindingIndex,
+          bindingMask: 0,
+          lastDirtyMask: 0,
+          matched: false,
+          accessorResult: undefined,
+          lastValue: undefined,
+          changed: false,
+        }
+      }
+
+      const matched = (binding.mask & lastDirtyMask) !== 0
+      let accessorResult: unknown
+      try {
+        accessorResult = binding.accessor(ci.state)
+      } catch {
+        accessorResult = '<error>'
+      }
+      const changed = !Object.is(accessorResult, binding.lastValue)
+
+      return {
+        bindingIndex,
+        bindingMask: binding.mask,
+        lastDirtyMask,
+        matched,
+        accessorResult,
+        lastValue: binding.lastValue,
+        changed,
+      }
+    },
+
+    searchState(query: string): unknown {
+      const parts = query.split('.')
+      let current: unknown = ci.state
+      for (const part of parts) {
+        if (current == null || typeof current !== 'object') return undefined
+        current = (current as Record<string, unknown>)[part]
+      }
+      return current
+    },
   }
 
   // Intercept update to record transitions
@@ -75,6 +235,8 @@ export function installDevTools(inst: object): void {
       ? (ci.def.__dirty as (o: unknown, n: unknown) => number)(state, newState)
       : -1
 
+    lastDirtyMask = typeof dirty === 'number' ? dirty : -1
+
     const record: MessageRecord = {
       index: idx++,
       timestamp: Date.now(),
@@ -82,7 +244,7 @@ export function installDevTools(inst: object): void {
       stateBefore: state,
       stateAfter: newState,
       effects,
-      dirtyMask: typeof dirty === 'number' ? dirty : -1,
+      dirtyMask: lastDirtyMask,
     }
 
     if (history.length >= MAX_HISTORY) history.shift()

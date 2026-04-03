@@ -29,12 +29,17 @@ export function diagnose(source: string): Diagnostic[] {
   // Collect Msg type variants for exhaustive update() check
   const msgVariants = collectMsgVariants(sf)
 
+  // Collect state access paths for bitmask warning
+  const statePathCount = countStateAccessPaths(sf)
+
   function visit(node: ts.Node): void {
     checkEachMisuse(node, sf, diagnostics)
     checkMapOnState(node, sf, diagnostics)
     checkExhaustiveUpdate(node, sf, diagnostics, msgVariants)
     checkAccessibility(node, sf, diagnostics)
     checkControlledInput(node, sf, diagnostics)
+    checkChildStaticProps(node, sf, diagnostics)
+    checkBitmaskTierWarning(node, sf, diagnostics, statePathCount)
 
     ts.forEachChild(node, visit)
   }
@@ -314,4 +319,114 @@ function getProps(obj: ts.ObjectLiteralExpression): Map<string, ts.Expression> {
     }
   }
   return map
+}
+
+// ── child() static props ────────────────────────────────────────
+
+function checkChildStaticProps(
+  node: ts.Node,
+  sf: ts.SourceFile,
+  diagnostics: Diagnostic[],
+): void {
+  if (!ts.isCallExpression(node)) return
+  if (!ts.isIdentifier(node.expression) || node.expression.text !== 'child') return
+
+  const arg = node.arguments[0]
+  if (!arg || !ts.isObjectLiteralExpression(arg)) return
+
+  for (const prop of arg.properties) {
+    if (!ts.isPropertyAssignment(prop)) continue
+    if (!ts.isIdentifier(prop.name) || prop.name.text !== 'props') continue
+
+    // props must be a function, not an object literal
+    if (ts.isObjectLiteralExpression(prop.initializer)) {
+      const { line, column } = pos(node, sf)
+      diagnostics.push({
+        message: `child() at line ${line}: 'props' is a static object literal. It must be a reactive accessor function (s => ({ ... })) so props update when parent state changes.`,
+        line,
+        column,
+      })
+    }
+  }
+}
+
+// ── Bitmask tier boundary warning ───────────────────────────────
+
+function countStateAccessPaths(sf: ts.SourceFile): number {
+  const paths = new Set<string>()
+
+  function visit(node: ts.Node): void {
+    if (
+      (ts.isArrowFunction(node) || ts.isFunctionExpression(node)) &&
+      node.parameters.length === 1
+    ) {
+      const param = node.parameters[0]!.name
+      if (ts.isIdentifier(param)) {
+        // Check if this looks like a reactive accessor
+        const parent = node.parent
+        if (ts.isPropertyAssignment(parent)) {
+          const key = parent.name
+          if (ts.isIdentifier(key) && !/^on[A-Z]/.test(key.text)) {
+            extractAccessPaths(node.body, param.text, paths)
+          }
+        } else if (ts.isCallExpression(parent) && parent.arguments[0] === node) {
+          extractAccessPaths(node.body, param.text, paths)
+        }
+      }
+    }
+    ts.forEachChild(node, visit)
+  }
+
+  visit(sf)
+  return paths.size
+}
+
+function extractAccessPaths(node: ts.Node, paramName: string, paths: Set<string>): void {
+  if (ts.isPropertyAccessExpression(node)) {
+    const chain = resolveSimpleChain(node, paramName)
+    if (chain) paths.add(chain)
+  }
+  ts.forEachChild(node, (child) => extractAccessPaths(child, paramName, paths))
+}
+
+function resolveSimpleChain(
+  node: ts.PropertyAccessExpression,
+  paramName: string,
+): string | null {
+  const parts: string[] = []
+  let current: ts.Expression = node
+  while (ts.isPropertyAccessExpression(current)) {
+    parts.unshift(current.name.text)
+    current = current.expression
+  }
+  if (!ts.isIdentifier(current) || current.text !== paramName) return null
+  if (parts.length > 2) return parts.slice(0, 2).join('.')
+  return parts.join('.')
+}
+
+function checkBitmaskTierWarning(
+  node: ts.Node,
+  sf: ts.SourceFile,
+  diagnostics: Diagnostic[],
+  pathCount: number,
+): void {
+  // Only emit once, on the component() call
+  if (!ts.isCallExpression(node)) return
+  if (!ts.isIdentifier(node.expression) || node.expression.text !== 'component') return
+
+  if (pathCount >= 28 && pathCount <= 31) {
+    const { line, column } = pos(node, sf)
+    diagnostics.push({
+      message: `Component at line ${line} has ${pathCount} unique state access paths, approaching the 31-path single-mask tier limit. Consider decomposing into child components.`,
+      line,
+      column,
+    })
+  } else if (pathCount > 31) {
+    const { line, column } = pos(node, sf)
+    diagnostics.push({
+      message: `Component at line ${line} has ${pathCount} unique state access paths, exceeding the 31-path single-mask tier. Decompose into child components for optimal performance.`,
+      line,
+      column,
+    })
+  }
 }

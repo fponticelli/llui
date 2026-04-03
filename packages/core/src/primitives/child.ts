@@ -8,6 +8,15 @@ import { registerChild, unregisterChild } from '../addressed'
 const FULL_MASK = 0xffffffff
 
 export function child<S, ChildM>(opts: ChildOptions<S, ChildM>): Node[] {
+  // Dev-mode guard: props must be a function, not a static object
+  if (typeof opts.props !== 'function') {
+    throw new Error(
+      `child("${String(opts.key)}"): props must be a reactive accessor function ` +
+        `(s => ({ ... })), not a static object. Static props are captured once at mount ` +
+        `and never update.`,
+    )
+  }
+
   const parentCtx = getRenderContext()
   const parentScope = parentCtx.rootScope
   const childScope = createScope(parentScope)
