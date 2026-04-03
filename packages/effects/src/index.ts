@@ -86,40 +86,41 @@ export function race(effects: BuiltinEffect[]): RaceEffect {
 
 // ── Handler Chain ─────────────────────────────────────────────────
 
-type Send = (msg: Record<string, unknown>) => void
-type CustomHandler = (effect: { type: string }, send: Send, signal: AbortSignal) => void
+// Internal send type — widened for dynamic message creation (http onSuccess/onError)
+type InternalSend = (msg: Record<string, unknown>) => void
+type InternalHandler = (effect: { type: string }, send: InternalSend, signal: AbortSignal) => void
 
 /** Plugin handler — returns true if the effect was handled, false to pass through. */
-export type EffectPlugin<E> = (effect: E, send: Send, signal: AbortSignal) => boolean
+export type EffectPlugin<E, M> = (effect: E, send: (msg: M) => void, signal: AbortSignal) => boolean
 
-interface EffectChain<E extends { type: string }> {
+interface EffectChain<E extends { type: string }, M> {
   /** Add a plugin that handles specific effects. Returns true if handled, false to pass through. */
-  use(plugin: EffectPlugin<E>): EffectChain<E>
+  use<E2, M2>(plugin: EffectPlugin<E2, M2>): EffectChain<E, M>
   /** Terminal handler for remaining effects. Returns the final onEffect function. */
-  else(handler: (effect: E, send: Send, signal: AbortSignal) => void): (effect: E, send: Send, signal: AbortSignal) => void
+  else(
+    handler: (effect: E, send: (msg: M) => void, signal: AbortSignal) => void,
+  ): (effect: E, send: (msg: M) => void, signal: AbortSignal) => void
 }
 
-export function handleEffects<E extends { type: string }>(): EffectChain<E> {
+export function handleEffects<E extends { type: string }, M = never>(): EffectChain<E, M> {
   const cancelControllers = new Map<string, AbortController>()
   const debounceTimers = new Map<string, ReturnType<typeof setTimeout>>()
-  const plugins: EffectPlugin<E>[] = []
+  const plugins: Array<(effect: unknown, send: InternalSend, signal: AbortSignal) => boolean> = []
   let cleanupRegistered = false
 
-  const chain: EffectChain<E> = {
+  const chain: EffectChain<E, M> = {
     use(plugin) {
-      plugins.push(plugin)
+      plugins.push(plugin as (effect: unknown, send: InternalSend, signal: AbortSignal) => boolean)
       return chain
     },
     else(handler) {
-      const custom: CustomHandler = (effect, send, signal) => {
-        // Try plugins first
+      const custom: InternalHandler = (effect, send, signal) => {
         for (const plugin of plugins) {
-          if (plugin(effect as E, send, signal)) return
+          if (plugin(effect, send, signal)) return
         }
-        // Fall through to user handler
-        handler(effect as E, send, signal)
+        handler(effect as E, send as unknown as (msg: M) => void, signal)
       }
-      return (effect, send, signal) => {
+      return ((effect: E, send: (msg: M) => void, signal: AbortSignal) => {
         if (!cleanupRegistered) {
           signal.addEventListener(
             'abort',
@@ -133,21 +134,25 @@ export function handleEffects<E extends { type: string }>(): EffectChain<E> {
           )
           cleanupRegistered = true
         }
-        dispatchEffect(effect, send, signal, cancelControllers, debounceTimers, custom)
-      }
+        // Widen send for internal dispatch — built-in effects create dynamic messages
+        const internalSend = send as unknown as InternalSend
+        dispatchEffect(effect, internalSend, signal, cancelControllers, debounceTimers, custom)
+      })
     },
   }
 
   return chain
 }
 
+// ── Internal dispatch ────────────────────────────────────────────
+
 function dispatchEffect(
   effect: { type: string },
-  send: Send,
+  send: InternalSend,
   signal: AbortSignal,
   cancelControllers: Map<string, AbortController>,
   debounceTimers: Map<string, ReturnType<typeof setTimeout>>,
-  custom: CustomHandler,
+  custom: InternalHandler,
 ): void {
   switch (effect.type) {
     case 'http':
@@ -170,7 +175,7 @@ function dispatchEffect(
   }
 }
 
-function runHttp(effect: HttpEffect, send: Send, signal: AbortSignal): void {
+function runHttp(effect: HttpEffect, send: InternalSend, signal: AbortSignal): void {
   const opts: RequestInit = { signal }
   if (effect.method) opts.method = effect.method
   if (effect.body) opts.body = JSON.stringify(effect.body)
@@ -192,11 +197,11 @@ function runHttp(effect: HttpEffect, send: Send, signal: AbortSignal): void {
 
 function runCancel(
   effect: CancelEffect | CancelReplaceEffect,
-  send: Send,
+  send: InternalSend,
   componentSignal: AbortSignal,
   cancelControllers: Map<string, AbortController>,
   debounceTimers: Map<string, ReturnType<typeof setTimeout>>,
-  custom: CustomHandler,
+  custom: InternalHandler,
 ): void {
   const existing = cancelControllers.get(effect.token)
   if (existing) {
@@ -220,11 +225,11 @@ function runCancel(
 
 function runDebounce(
   effect: DebounceEffect,
-  send: Send,
+  send: InternalSend,
   componentSignal: AbortSignal,
   cancelControllers: Map<string, AbortController>,
   debounceTimers: Map<string, ReturnType<typeof setTimeout>>,
-  custom: CustomHandler,
+  custom: InternalHandler,
 ): void {
   const existing = debounceTimers.get(effect.key)
   if (existing !== undefined) clearTimeout(existing)
@@ -241,11 +246,11 @@ function runDebounce(
 
 function runSequence(
   effect: SequenceEffect,
-  send: Send,
+  send: InternalSend,
   signal: AbortSignal,
   cancelControllers: Map<string, AbortController>,
   debounceTimers: Map<string, ReturnType<typeof setTimeout>>,
-  custom: CustomHandler,
+  custom: InternalHandler,
 ): void {
   const effects = effect.effects.slice()
 
@@ -253,10 +258,8 @@ function runSequence(
     if (signal.aborted || effects.length === 0) return
     const current = effects.shift()!
 
-    // Wrap send to detect when this effect completes (delivers a message)
-    const wrappedSend: Send = (msg) => {
+    const wrappedSend: InternalSend = (msg) => {
       send(msg)
-      // After delivering, start the next effect
       next()
     }
 
@@ -268,20 +271,20 @@ function runSequence(
 
 function runRace(
   effect: RaceEffect,
-  send: Send,
+  send: InternalSend,
   signal: AbortSignal,
   cancelControllers: Map<string, AbortController>,
   debounceTimers: Map<string, ReturnType<typeof setTimeout>>,
-  custom: CustomHandler,
+  custom: InternalHandler,
 ): void {
   const ctrl = new AbortController()
   signal.addEventListener('abort', () => ctrl.abort(), { once: true })
   let settled = false
 
-  const raceSend: Send = (msg) => {
+  const raceSend: InternalSend = (msg) => {
     if (settled) return
     settled = true
-    ctrl.abort() // cancel all other racers
+    ctrl.abort()
     send(msg)
   }
 

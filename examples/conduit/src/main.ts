@@ -42,7 +42,7 @@ const App = component<State, Msg, Effect>({
 
     appFooter(),
   ],
-  onEffect: handleEffects<Effect>()
+  onEffect: handleEffects<Effect, Msg>()
     .use(routing.handleEffect)
     .else((effect, send) => {
       switch (effect.type) {

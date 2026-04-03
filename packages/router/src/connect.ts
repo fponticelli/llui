@@ -1,10 +1,6 @@
 import type { Router } from './index'
 import { a, onMount } from '@llui/dom'
 
-type Send = (msg: Record<string, unknown>) => void
-/** Effect plugin handler — returns true if handled, false to pass through. */
-type EffectPlugin<E> = (effect: E, send: Send, signal: AbortSignal) => boolean
-
 // ── Router Effects ───────────────────────────────────────────────
 
 export interface RouterEffect {
@@ -28,7 +24,7 @@ export interface ConnectedRouter<R> {
   scroll(x: number, y: number): RouterEffect
 
   /** Plugin for handleEffects().use() — handles RouterEffect */
-  handleEffect: EffectPlugin<{ type: string }>
+  handleEffect: (effect: { type: string }, send: unknown, signal: AbortSignal) => boolean
 
   /**
    * View helper: attach URL change listener via onMount.
