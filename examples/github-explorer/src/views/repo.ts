@@ -1,4 +1,4 @@
-import { div, h1, h3, a, p, span, text, each, branch, show } from '@llui/dom'
+import { div, h1, h3, a, p, span, text, each, branch, show, peek } from '@llui/dom'
 import type { State, Msg, TreeEntry, Issue } from '../types'
 import type { Send } from '@llui/dom'
 
@@ -68,26 +68,20 @@ function fileTree(send: Send<Msg>): Node[] {
         items: (s) => s.tree,
         key: (e) => e.sha,
         render: ({ item, send }) => {
-          const type = item((e) => e.type)()
-          const name = item((e) => e.name)()
-          const path = item((e) => e.path)()
+          const isDir = item((e) => e.type)() === 'dir'
           return [
             div({ class: 'file-row' }, [
-              span({ class: 'icon' }, [text(type === 'dir' ? '📁' : '📄')]),
+              span({ class: 'icon' }, [text(isDir ? '📁' : '📄')]),
               a({
                 href: '#',
                 onClick: (e: Event) => {
                   e.preventDefault()
-                  // Read owner/name from current route context
-                  // The send will trigger navigation
+                  send({ type: 'openPath', path: peek(item, (e) => e.path), isDir })
                 },
               }, [text(item((e) => e.name))]),
-              ...show<State, Msg>({
-                when: () => type === 'file',
-                render: () => [
-                  span({}, [text(item((e) => e.size ? formatSize(e.size) : ''))]),
-                ],
-              }),
+              ...(!isDir
+                ? [span({}, [text(item((e) => e.size ? formatSize(e.size) : ''))])]
+                : []),
             ]),
           ]
         },

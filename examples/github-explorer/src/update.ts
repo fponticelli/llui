@@ -88,6 +88,18 @@ export function update(state: State, msg: Msg): [State, Effect[]] {
         [http({ url: searchUrl(q, page), headers: JSON_HEADERS, onSuccess: 'searchOk', onError: 'apiError' })],
       ]
     }
+
+    case 'openPath': {
+      // Resolve owner/name from current state — event handler only sent the path
+      const r = state.route
+      const owner = r.page === 'repo' || r.page === 'tree' ? r.owner : ''
+      const name = r.page === 'repo' || r.page === 'tree' ? r.name : ''
+      if (!owner) return [state, []]
+      const route: Route = msg.isDir
+        ? { page: 'tree', owner, name, path: msg.path }
+        : { page: 'tree', owner, name, path: msg.path }
+      return navigateTo({ ...state, route }, route)
+    }
   }
 }
 

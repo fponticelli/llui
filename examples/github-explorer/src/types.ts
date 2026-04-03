@@ -74,6 +74,7 @@ export type Msg =
   | { type: 'apiError'; error: string }
   | { type: 'nextPage' }
   | { type: 'prevPage' }
+  | { type: 'openPath'; path: string; isDir: boolean }
 
 // ── Effects ──────────────────────────────────────────────────────
 
