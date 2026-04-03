@@ -126,9 +126,13 @@ export function createRouter<R>(
       // Try to extract params from the Route and build the path
       const path = tryFormat(def, r)
       if (path !== null) {
-        // Round-trip check: parse the formatted path and verify it matches
+        // Round-trip check: parse the formatted path and verify URL-relevant
+        // fields match. Ignore extra fields (like runtime `data`) that aren't
+        // part of the URL — they would break the comparison since the route
+        // builder produces default values that differ from the actual state.
         const roundTrip = matchPathname(path)
-        if (deepEqual(roundTrip, r)) return path
+        const urlKeys = getUrlKeys(def)
+        if (partialEqual(roundTrip as Record<string, unknown>, r as Record<string, unknown>, urlKeys)) return path
       }
     }
 
@@ -236,6 +240,38 @@ function parseQuery(qs: string): Record<string, string> {
     if (key) params[decodeURIComponent(key)] = decodeURIComponent(val ?? '')
   }
   return params
+}
+
+/** Extract URL-relevant field names from a route definition */
+function getUrlKeys<R>(def: RouteDef<R>): Set<string> {
+  const keys = new Set<string>()
+  for (const seg of def.segments) {
+    if (typeof seg === 'string') continue
+    keys.add(seg.name)
+  }
+  for (const key of def.queryKeys) {
+    keys.add(key)
+  }
+  // Also include 'page' / 'tab' or any fixed field from the builder
+  // by running the builder with empty params and collecting its keys
+  const sample = def.build({}) as Record<string, unknown>
+  for (const key of Object.keys(sample)) {
+    // Include all keys from the builder EXCEPT those with object/array values
+    // (which are likely runtime state like `data`)
+    const val = sample[key]
+    if (val === null || val === undefined || typeof val !== 'object') {
+      keys.add(key)
+    }
+  }
+  return keys
+}
+
+/** Compare two objects only on the specified keys */
+function partialEqual(a: Record<string, unknown>, b: Record<string, unknown>, keys: Set<string>): boolean {
+  for (const key of keys) {
+    if (!deepEqual(a[key], b[key])) return false
+  }
+  return true
 }
 
 function deepEqual(a: unknown, b: unknown): boolean {
