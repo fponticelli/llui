@@ -148,10 +148,10 @@ export function createRouter<R>(
 
   return {
     match(input: string) {
-      // Strip hash prefix
+      // Strip hash prefix, preserve query string
       const pathname = mode === 'hash'
         ? input.replace(/^#\/?/, '/')
-        : input.split('?')[0]!
+        : input
       return matchPathname(pathname)
     },
     toPath: formatPath,

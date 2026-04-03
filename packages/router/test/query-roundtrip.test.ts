@@ -17,6 +17,11 @@ describe('query param preservation in routes with extra fields', () => {
     fallback: { page: 'search', q: '', data: { type: 'idle' } },
   })
 
+  it('match preserves query params in history mode', () => {
+    const result = router.match('/search?q=tempo')
+    expect(result).toMatchObject({ page: 'search', q: 'tempo' })
+  })
+
   it('toPath preserves query params when data field differs', () => {
     // The route being formatted has data: { type: 'loading' } but the
     // round-trip match produces data: { type: 'loading' } too — should match
