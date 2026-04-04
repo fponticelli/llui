@@ -31,7 +31,7 @@ export type { LluiDebugAPI } from './devtools'
 
 export { flush } from './runtime'
 export { addressOf } from './addressed'
-export { renderToString } from './ssr'
+export { renderToString, initSsrDom } from './ssr'
 export { chainUpdate } from './chain-update'
 export { replaceComponent } from './hmr'
 

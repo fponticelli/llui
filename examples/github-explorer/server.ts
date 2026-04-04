@@ -23,8 +23,11 @@ async function main() {
   const server = createHttpServer(async (req, res) => {
     const url = req.url ?? '/'
 
-    // Let Vite handle static assets
-    if (url.startsWith('/@') || url.startsWith('/node_modules') || url.startsWith('/src') || url.includes('.')) {
+    // Let Vite handle its own routes and static assets
+    const pathname = url.split('?')[0]!
+    if (pathname.startsWith('/@') || pathname.startsWith('/node_modules') || pathname.startsWith('/src/') ||
+        pathname.endsWith('.js') || pathname.endsWith('.css') || pathname.endsWith('.map') ||
+        pathname.endsWith('.ico') || pathname.endsWith('.png') || pathname.endsWith('.svg')) {
       vite.middlewares(req, res)
       return
     }
