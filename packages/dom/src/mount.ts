@@ -5,6 +5,7 @@ import { setRenderContext, clearRenderContext } from './render-context'
 import { setFlatBindings } from './binding'
 import { registerInstance, unregisterInstance } from './runtime'
 import { registerForHmr, unregisterForHmr, replaceComponent } from './hmr'
+import { startHydration, endHydration } from './hydrate'
 
 // Vite injects import.meta.env.DEV — declare the shape for TypeScript
 declare global {
@@ -103,17 +104,14 @@ export function hydrateApp<S, M, E>(
 
   const inst = createComponentInstance(hydrateDef)
 
-  container.textContent = ''
-
+  // Walk existing server HTML instead of clearing and re-creating
+  startHydration(container)
   setFlatBindings(inst.allBindings)
   setRenderContext({ ...inst, container, send: inst.send as (msg: unknown) => void })
-  const nodes = hydrateDef.view(inst.state, inst.send)
+  hydrateDef.view(inst.state, inst.send)
   clearRenderContext()
   setFlatBindings(null)
-
-  for (const node of nodes) {
-    container.appendChild(node)
-  }
+  endHydration()
 
   registerInstance(inst)
   let disposed = false

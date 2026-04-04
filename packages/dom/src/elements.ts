@@ -2,6 +2,7 @@ import type { BindingKind } from './types'
 import { getRenderContext } from './render-context'
 import { createBinding, applyBinding } from './binding'
 import { FULL_MASK } from './update-loop'
+import { isHydrating, claimElement, pushCursor, popCursor } from './hydrate'
 
 type ElementProps = Record<string, unknown>
 
@@ -41,7 +42,8 @@ function createElement<K extends keyof HTMLElementTagNameMap>(
   props?: ElementProps,
   children?: Node[],
 ): HTMLElementTagNameMap[K] {
-  const el = document.createElement(tag)
+  const el = isHydrating() ? claimElement(tag) as HTMLElementTagNameMap[K] : document.createElement(tag)
+  const hydrate = isHydrating()
   const ctx = getRenderContext()
 
   if (props) {
@@ -85,9 +87,11 @@ function createElement<K extends keyof HTMLElementTagNameMap>(
   }
 
   if (children) {
+    if (hydrate) pushCursor(el)
     for (const child of children) {
-      el.appendChild(child)
+      if (!hydrate) el.appendChild(child)
     }
+    if (hydrate) popCursor()
   }
 
   return el

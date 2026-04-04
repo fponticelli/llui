@@ -2,6 +2,7 @@ import type { BindingKind } from './types'
 import { getRenderContext } from './render-context'
 import { createBinding, applyBinding } from './binding'
 import { addItemUpdater } from './scope'
+import { isHydrating, claimElement, pushCursor, popCursor } from './hydrate'
 
 export function elSplit(
   tag: string,
@@ -10,7 +11,8 @@ export function elSplit(
   bindings: Array<[number, BindingKind, string, (state: never) => unknown]> | null,
   children: Node[] | null,
 ): HTMLElement {
-  const el = document.createElement(tag)
+  const hydrate = isHydrating()
+  const el = hydrate ? claimElement(tag) as HTMLElement : document.createElement(tag)
 
   if (staticFn) {
     staticFn(el)
@@ -51,9 +53,11 @@ export function elSplit(
   }
 
   if (children) {
+    if (hydrate) pushCursor(el)
     for (const child of children) {
-      el.appendChild(child)
+      if (!hydrate) el.appendChild(child)
     }
+    if (hydrate) popCursor()
   }
 
   return el
