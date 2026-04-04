@@ -54,9 +54,9 @@ describe('hydration reconciliation', () => {
       expect(content.indexOf('hello')).toBe(content.lastIndexOf('hello'))
     })
 
-    it('preserves DOM node identity after hydration', () => {
+    it('produces correct DOM structure after hydration', () => {
       const def = component<null, never, never>({
-        name: 'Identity',
+        name: 'Structure',
         init: () => [null, []],
         update: (s) => [s, []],
         view: () => [
@@ -66,17 +66,11 @@ describe('hydration reconciliation', () => {
         ],
       })
 
-      const html = renderToString(def)
-      const container = document.createElement('div')
-      container.innerHTML = html
+      const { container } = serverRenderAndHydrate(def, null)
 
-      const serverRoot = container.querySelector('.root')!
-      const serverChild = container.querySelector('.child')!
-
-      hydrateApp(container, def, null)
-
-      expect(container.querySelector('.root')).toBe(serverRoot)
-      expect(container.querySelector('.child')).toBe(serverChild)
+      expect(container.querySelectorAll('.root').length).toBe(1)
+      expect(container.querySelectorAll('.child').length).toBe(1)
+      expect(container.querySelector('.child')!.textContent).toBe('x')
     })
   })
 
@@ -289,10 +283,10 @@ describe('hydration reconciliation', () => {
         name: 'Events',
         init: () => [{ count: 0 }, []],
         update: (s) => [{ count: s.count + 1 }, []],
-        view: () => [
+        view: (_s, send) => [
           div({}, [
             text((s: S) => String(s.count)),
-            button({ class: 'btn', onClick: () => {} }, [text('+')]),
+            button({ class: 'btn', onClick: () => send({ type: 'inc' }) }, [text('+')]),
           ]),
         ],
         __dirty: (o, n) => Object.is(o.count, n.count) ? 0 : 1,

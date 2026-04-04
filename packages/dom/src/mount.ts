@@ -4,7 +4,6 @@ import { disposeScope } from './scope'
 import { setRenderContext, clearRenderContext } from './render-context'
 import { setFlatBindings } from './binding'
 import { registerInstance, unregisterInstance } from './runtime'
-import { startHydration, endHydration } from './hydrate'
 
 // Vite injects import.meta.env.DEV — declare the shape for TypeScript
 declare global {
@@ -99,14 +98,16 @@ export function hydrateApp<S, M, E>(
 
   const inst = createComponentInstance(hydrateDef)
 
-  // Walk existing server HTML instead of clearing and re-creating
-  startHydration(container)
+  // Build the component DOM and swap atomically with server HTML.
+  // Server HTML remains visible until JS finishes — no flash.
   setFlatBindings(inst.allBindings)
   setRenderContext({ ...inst, container, send: inst.send as (msg: unknown) => void })
-  hydrateDef.view(inst.state, inst.send)
+  const nodes = hydrateDef.view(inst.state, inst.send)
   clearRenderContext()
   setFlatBindings(null)
-  endHydration()
+
+  // Atomic swap — replaces server HTML with client DOM in one operation
+  container.replaceChildren(...nodes)
 
   registerInstance(inst)
   let disposed = false
