@@ -94,3 +94,11 @@
 ### 6. ~~Documentation~~ ✅
 
 README rewritten. Getting-started guide with project setup + first component tutorial. Cookbook covering forms, async (Async/ApiError/debounce), composition (view functions, chainUpdate), routing, SSR (resolveEffects, hydration), foreign libraries, and testing.
+
+### 7. ~~Animation/transition helpers~~ ✅
+
+New `@llui/transitions` package: `transition()` core + `fade`/`slide`/`scale`/`collapse` presets. Values can be CSS class strings, style objects, or mixed arrays. Wired `each()`'s inherited `enter`/`leave` as per-item hooks — `each({...opts, ...fade()})` works uniformly with `branch`/`show`. Bulk-clear/full-replace fast paths fall back to per-item removal only when `leave` is set.
+
+### 8. Headless components package (`@llui/components`)
+
+Replicate zag.js components (accordion, dialog, menu, tabs, combobox, tooltip, popover, switch, checkbox, slider, toast). Headless, no zag dependency, state-machine-driven with solid styling customization strategies. Use `@llui/transitions` for enter/leave animations.

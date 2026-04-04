@@ -48,6 +48,7 @@ mountApp(document.getElementById('app')!, Counter)
 | [`@llui/vite-plugin`](packages/vite-plugin)       | Compiler — 3-pass TypeScript transform, template cloning, source maps                    |
 | [`@llui/effects`](packages/effects)               | Effect system — http, cancel, debounce, sequence, race + `Async<T,E>`, `ApiError`        |
 | [`@llui/router`](packages/router)                 | Routing — structured path matching, history/hash mode, link helper                       |
+| [`@llui/transitions`](packages/transitions)       | Animation helpers for `branch`/`show`/`each` — `transition()`, `fade`, `slide`, `scale`, `collapse` |
 | [`@llui/test`](packages/test)                     | Test harness — testComponent, testView, propertyTest, replayTrace                        |
 | [`@llui/vike`](packages/vike)                     | Vike SSR adapter — onRenderHtml, onRenderClient                                          |
 | [`@llui/mcp`](packages/mcp)                       | MCP server — LLM debug tools via Model Context Protocol                                  |

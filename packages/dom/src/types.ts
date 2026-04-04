@@ -74,6 +74,13 @@ export interface ShowOptions<S, M = unknown> extends TransitionOptions {
   fallback?: (send: Send<M>) => Node[]
 }
 
+/**
+ * Options for `each()`. The inherited `enter` / `leave` callbacks fire **per item**:
+ * `enter(nodes)` runs after an item's DOM is inserted (including initial mount);
+ * `leave(nodes)` runs before an item's DOM is removed and may return a Promise
+ * to hold the DOM until the animation resolves. Setting `leave` disables the
+ * bulk-clear / full-replace fast paths.
+ */
 export interface EachOptions<S, T, M = unknown> extends TransitionOptions {
   items: (s: S) => T[]
   key: (item: T) => string | number

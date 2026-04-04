@@ -33,12 +33,22 @@ export function each<S, T, M = unknown>(opts: EachOptions<S, T, M>): Node[] {
 
   const anchor = document.createComment('each')
   const entries: Entry<T>[] = []
+  // Entries whose leave animation is still in progress. Their DOM nodes
+  // remain in the parent until the leave Promise resolves.
+  const leaving: Entry<T>[] = []
 
   const initialItems = opts.items(ctx.state as S)
   for (let i = 0; i < initialItems.length; i++) {
     const item = initialItems[i]!
     const entry = buildEntry(item, i, opts, parentScope, ctx)
     entries.push(entry)
+  }
+
+  // Fire initial enter for mount-time items
+  if (opts.enter) {
+    for (const entry of entries) {
+      if (entry.nodes.length > 0) opts.enter(entry.nodes)
+    }
   }
 
   let lastItemsRef = initialItems
@@ -57,7 +67,7 @@ export function each<S, T, M = unknown>(opts: EachOptions<S, T, M>): Node[] {
       }
       lastItemsRef = newItems
 
-      reconcileEntries(entries, newItems, opts, parentScope, parent, anchor, ctx, state)
+      reconcileEntries(entries, newItems, opts, parentScope, parent, anchor, ctx, state, leaving)
     },
   }
 
@@ -70,6 +80,14 @@ export function each<S, T, M = unknown>(opts: EachOptions<S, T, M>): Node[] {
       disposeScope(entry.scope)
     }
     entries.length = 0
+    // Force-remove any mid-leave entries immediately
+    for (const entry of leaving) {
+      for (const node of entry.nodes) {
+        if (node.parentNode) node.parentNode.removeChild(node)
+      }
+      disposeScope(entry.scope)
+    }
+    leaving.length = 0
   })
 
   const result: Node[] = [anchor]
@@ -77,6 +95,44 @@ export function each<S, T, M = unknown>(opts: EachOptions<S, T, M>): Node[] {
     result.push(...entry.nodes)
   }
   return result
+}
+
+/**
+ * Remove an entry's DOM + dispose its scope, running opts.leave first if
+ * provided. When leave returns a Promise, the DOM removal is deferred until
+ * resolution (entry is tracked in `leaving`).
+ */
+function removeEntry<T>(
+  entry: Entry<T>,
+  opts: { leave?: (nodes: Node[]) => void | Promise<void> },
+  leaving: Entry<T>[],
+): void {
+  const removeNow = (): void => {
+    for (const node of entry.nodes) {
+      if (node.parentNode) node.parentNode.removeChild(node)
+    }
+    disposeScope(entry.scope)
+    const idx = leaving.indexOf(entry)
+    if (idx !== -1) leaving.splice(idx, 1)
+  }
+  if (opts.leave && entry.nodes.length > 0) {
+    const result = opts.leave(entry.nodes)
+    if (result && typeof (result as Promise<void>).then === 'function') {
+      leaving.push(entry)
+      ;(result as Promise<void>).then(removeNow)
+      return
+    }
+  }
+  removeNow()
+}
+
+function fireEnter<T>(
+  entry: Entry<T>,
+  opts: { enter?: (nodes: Node[]) => void | Promise<void> },
+): void {
+  if (opts.enter && entry.nodes.length > 0) {
+    void opts.enter(entry.nodes)
+  }
 }
 
 function buildEntry<S, T, M>(
@@ -128,12 +184,22 @@ function reconcileEntries<S, T>(
   anchor: Node,
   ctx: ReturnType<typeof getRenderContext>,
   state: unknown,
+  leaving: Entry<T>[],
 ): void {
   const oldLen = entries.length
   const newLen = newItems.length
+  const hasLeave = !!opts.leave
 
-  // Fast path 1: clear all — bulk DOM removal
+  // Fast path 1: clear all — bulk DOM removal.
+  // When opts.leave is set, each item needs its own leave animation, so
+  // fall through to per-item removal instead of Range.deleteContents().
   if (newLen === 0) {
+    if (hasLeave) {
+      const toRemove = entries.slice()
+      entries.length = 0
+      for (const entry of toRemove) removeEntry(entry, opts, leaving)
+      return
+    }
     // Remove all DOM nodes in one operation using Range
     if (entries.length > 0) {
       const range = document.createRange()
@@ -160,12 +226,15 @@ function reconcileEntries<S, T>(
       ? lastEntry.nodes[lastEntry.nodes.length - 1]!.nextSibling
       : anchor.nextSibling
     const frag = document.createDocumentFragment()
+    const newlyAdded: Entry<T>[] = []
     for (let i = oldLen; i < newLen; i++) {
       const entry = buildEntry(newItems[i]!, i, opts, parentScope, ctx, state)
       entries.push(entry)
+      newlyAdded.push(entry)
       for (const node of entry.nodes) frag.appendChild(node)
     }
     parent.insertBefore(frag, ref)
+    for (const entry of newlyAdded) fireEnter(entry, opts)
     return
   }
 
@@ -198,9 +267,9 @@ function reconcileEntries<S, T>(
     }
   }
 
-  // Fast path 4: full replace — no shared keys between old and new
-  // Quick check: first key mismatch → likely full replace, verify with Set
-  if (oldLen > 0 && opts.key(newItems[0]!) !== entries[0]!.key) {
+  // Fast path 4: full replace — no shared keys between old and new.
+  // Skipped when opts.leave is set so departing items can animate individually.
+  if (!hasLeave && oldLen > 0 && opts.key(newItems[0]!) !== entries[0]!.key) {
     const oldKeys = new Set<string | number>()
     for (const entry of entries) oldKeys.add(entry.key)
     let anyShared = false
@@ -221,12 +290,15 @@ function reconcileEntries<S, T>(
       entries.length = 0
       // Build all new entries into a fragment
       const frag = document.createDocumentFragment()
+      const newlyAdded: Entry<T>[] = []
       for (let i = 0; i < newLen; i++) {
         const entry = buildEntry(newItems[i]!, i, opts, parentScope, ctx, state)
         entries.push(entry)
+        newlyAdded.push(entry)
         for (const node of entry.nodes) frag.appendChild(node)
       }
       parent.insertBefore(frag, anchor.nextSibling)
+      for (const entry of newlyAdded) fireEnter(entry, opts)
       return
     }
   }
@@ -239,6 +311,7 @@ function reconcileEntries<S, T>(
 
   const newEntries: Entry<T>[] = []
   const usedKeys = new Set<string | number>()
+  const newlyAdded: Entry<T>[] = []
 
   for (let i = 0; i < newLen; i++) {
     const item = newItems[i]!
@@ -252,14 +325,19 @@ function reconcileEntries<S, T>(
     } else {
       const entry = buildEntry(item, i, opts, parentScope, ctx, state)
       newEntries.push(entry)
+      newlyAdded.push(entry)
     }
   }
 
   // Remove entries not in the new list
   for (const entry of entries) {
     if (!usedKeys.has(entry.key)) {
-      for (const node of entry.nodes) parent.removeChild(node)
-      disposeScope(entry.scope)
+      if (hasLeave) {
+        removeEntry(entry, opts, leaving)
+      } else {
+        for (const node of entry.nodes) parent.removeChild(node)
+        disposeScope(entry.scope)
+      }
     }
   }
 
@@ -298,6 +376,11 @@ function reconcileEntries<S, T>(
 
   entries.length = 0
   entries.push(...newEntries)
+
+  // Fire enter for newly-added entries (after DOM insertion)
+  if (opts.enter) {
+    for (const entry of newlyAdded) fireEnter(entry, opts)
+  }
 }
 
 function updateEntry<T>(entry: Entry<T>, item: T, index: number): void {
