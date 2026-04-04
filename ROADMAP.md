@@ -118,15 +118,9 @@ GitHub Explorer app built and validated. Surfaced and fixed 8 framework bugs (fl
 - [ ] Verify Vike integration end-to-end (server render → client hydrate → interact)
 - [ ] Measure TTFB and hydration cost vs full client render
 
-### 3. HMR State Preservation
+### 3. ~~HMR State Preservation~~ ✅
 
-The compiler emits `import.meta.hot.accept()` but the mount system doesn't re-run `view()` with preserved state on module replacement.
-
-- [ ] Implement HMR handler: replace `update()`, `view()`, `onEffect()` functions on hot update
-- [ ] Re-run `view(currentState, send)` to rebuild DOM with new view logic
-- [ ] Dispose old scope tree, register new bindings, run Phase 2
-- [ ] Preserve in-flight effects via AbortSignal transfer
-- [ ] Test with Vite dev server on a multi-component app
+HMR registry maps component names to live instances. On hot update, `replaceComponent` swaps view/update/onEffect/__dirty, disposes old scope tree, re-runs view with preserved state. `enableHmr()` called by compiler-generated dev code.
 
 ### 4. ~~Source Maps~~ ✅
 
