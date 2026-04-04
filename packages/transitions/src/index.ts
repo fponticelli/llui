@@ -11,5 +11,9 @@ export type {
   CollapseOptions,
 } from './presets'
 
+// Reorder animation + composition
+export { flip, mergeTransitions } from './flip'
+export type { FlipOptions } from './flip'
+
 // Types
 export type { TransitionSpec, TransitionValue, Styles } from './types'

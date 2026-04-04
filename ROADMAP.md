@@ -97,7 +97,7 @@ README rewritten. Getting-started guide with project setup + first component tut
 
 ### 7. ~~Animation/transition helpers~~ ✅
 
-New `@llui/transitions` package: `transition()` core + `fade`/`slide`/`scale`/`collapse` presets. Values can be CSS class strings, style objects, or mixed arrays. Wired `each()`'s inherited `enter`/`leave` as per-item hooks — `each({...opts, ...fade()})` works uniformly with `branch`/`show`. Bulk-clear/full-replace fast paths fall back to per-item removal only when `leave` is set.
+New `@llui/transitions` package: `transition()` core + `fade`/`slide`/`scale`/`collapse` presets. Values can be CSS class strings, style objects, or mixed arrays. Wired `each()`'s inherited `enter`/`leave` as per-item hooks — `each({...opts, ...fade()})` works uniformly with `branch`/`show`. Bulk-clear/full-replace fast paths fall back to per-item removal only when `leave` is set. Added `flip()` (FLIP reorder via WAAPI) + `mergeTransitions()` for combining — wired `onTransition` hook on `each` (fires after each reconcile with entering/leaving nodes).
 
 ### 8. Headless components package (`@llui/components`)
 

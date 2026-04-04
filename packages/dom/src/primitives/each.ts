@@ -67,7 +67,22 @@ export function each<S, T, M = unknown>(opts: EachOptions<S, T, M>): Node[] {
       }
       lastItemsRef = newItems
 
-      reconcileEntries(entries, newItems, opts, parentScope, parent, anchor, ctx, state, leaving)
+      const report = opts.onTransition ? { entering: [] as Node[], leaving: [] as Node[] } : null
+      reconcileEntries(
+        entries,
+        newItems,
+        opts,
+        parentScope,
+        parent,
+        anchor,
+        ctx,
+        state,
+        leaving,
+        report,
+      )
+      if (opts.onTransition && report) {
+        opts.onTransition({ entering: report.entering, leaving: report.leaving, parent })
+      }
     },
   }
 
@@ -175,6 +190,15 @@ function buildEntry<S, T, M>(
   return entry
 }
 
+interface TransitionReport {
+  entering: Node[]
+  leaving: Node[]
+}
+
+function collectNodes(target: Node[], nodes: Node[]): void {
+  for (const n of nodes) target.push(n)
+}
+
 function reconcileEntries<S, T>(
   entries: Entry<T>[],
   newItems: T[],
@@ -185,6 +209,7 @@ function reconcileEntries<S, T>(
   ctx: ReturnType<typeof getRenderContext>,
   state: unknown,
   leaving: Entry<T>[],
+  report: TransitionReport | null,
 ): void {
   const oldLen = entries.length
   const newLen = newItems.length
@@ -194,6 +219,9 @@ function reconcileEntries<S, T>(
   // When opts.leave is set, each item needs its own leave animation, so
   // fall through to per-item removal instead of Range.deleteContents().
   if (newLen === 0) {
+    if (report) {
+      for (const entry of entries) collectNodes(report.leaving, entry.nodes)
+    }
     if (hasLeave) {
       const toRemove = entries.slice()
       entries.length = 0
@@ -234,6 +262,9 @@ function reconcileEntries<S, T>(
       for (const node of entry.nodes) frag.appendChild(node)
     }
     parent.insertBefore(frag, ref)
+    if (report) {
+      for (const entry of newlyAdded) collectNodes(report.entering, entry.nodes)
+    }
     for (const entry of newlyAdded) fireEnter(entry, opts)
     return
   }
@@ -280,6 +311,9 @@ function reconcileEntries<S, T>(
       }
     }
     if (!anyShared) {
+      if (report) {
+        for (const entry of entries) collectNodes(report.leaving, entry.nodes)
+      }
       // Bulk DOM removal using Range
       const range = document.createRange()
       range.setStartAfter(anchor)
@@ -298,6 +332,9 @@ function reconcileEntries<S, T>(
         for (const node of entry.nodes) frag.appendChild(node)
       }
       parent.insertBefore(frag, anchor.nextSibling)
+      if (report) {
+        for (const entry of newlyAdded) collectNodes(report.entering, entry.nodes)
+      }
       for (const entry of newlyAdded) fireEnter(entry, opts)
       return
     }
@@ -332,6 +369,7 @@ function reconcileEntries<S, T>(
   // Remove entries not in the new list
   for (const entry of entries) {
     if (!usedKeys.has(entry.key)) {
+      if (report) collectNodes(report.leaving, entry.nodes)
       if (hasLeave) {
         removeEntry(entry, opts, leaving)
       } else {
@@ -376,6 +414,10 @@ function reconcileEntries<S, T>(
 
   entries.length = 0
   entries.push(...newEntries)
+
+  if (report) {
+    for (const entry of newlyAdded) collectNodes(report.entering, entry.nodes)
+  }
 
   // Fire enter for newly-added entries (after DOM insertion)
   if (opts.enter) {

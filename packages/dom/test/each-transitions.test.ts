@@ -173,6 +173,83 @@ describe('each() per-item enter/leave', () => {
     expect(left.sort()).toEqual(['a', 'b'])
   })
 
+  it('fires onTransition after reconcile with entering+leaving nodes', async () => {
+    const container = document.createElement('div')
+    const events: Array<{ entering: number; leaving: number }> = []
+    const onTransition = (ctx: { entering: Node[]; leaving: Node[]; parent: Node }) => {
+      events.push({ entering: ctx.entering.length, leaving: ctx.leaving.length })
+    }
+    const def: ComponentDef<State, Msg, never> = {
+      ...makeDef(undefined, undefined),
+      view: () =>
+        each<State, Item>({
+          items: (s) => s.items,
+          key: (item) => item.id,
+          onTransition,
+          render: ({ item }) => [div({ 'data-id': item((t) => t.id) }, [])],
+        }),
+    }
+    let sendRef: ((m: Msg) => void) | null = null
+    const wrapped: ComponentDef<State, Msg, never> = {
+      ...def,
+      view: (send) => {
+        sendRef = send
+        return def.view(send)
+      },
+    }
+    mountApp(container, wrapped)
+    // Initial mount does NOT fire onTransition (no prior state to transition from)
+    expect(events).toEqual([])
+
+    // Append c
+    sendRef!({ type: 'append', id: 'c' })
+    await new Promise((r) => setTimeout(r, 0))
+    expect(events).toEqual([{ entering: 1, leaving: 0 }])
+
+    // Remove a
+    sendRef!({ type: 'remove', id: 'a' })
+    await new Promise((r) => setTimeout(r, 0))
+    expect(events[1]).toEqual({ entering: 0, leaving: 1 })
+
+    // Full replace
+    sendRef!({ type: 'set', items: [{ id: 'x' }, { id: 'y' }] })
+    await new Promise((r) => setTimeout(r, 0))
+    expect(events[2]).toEqual({ entering: 2, leaving: 2 })
+
+    // Clear all
+    sendRef!({ type: 'set', items: [] })
+    await new Promise((r) => setTimeout(r, 0))
+    expect(events[3]).toEqual({ entering: 0, leaving: 2 })
+  })
+
+  it('onTransition fires on swap with no entering/leaving', async () => {
+    const container = document.createElement('div')
+    const events: Array<{ entering: number; leaving: number }> = []
+    const def: ComponentDef<State, Msg, never> = {
+      ...makeDef(undefined, undefined, [{ id: 'a' }, { id: 'b' }]),
+      view: () =>
+        each<State, Item>({
+          items: (s) => s.items,
+          key: (item) => item.id,
+          onTransition: (ctx) =>
+            events.push({ entering: ctx.entering.length, leaving: ctx.leaving.length }),
+          render: ({ item }) => [div({ 'data-id': item((t) => t.id) }, [])],
+        }),
+    }
+    let sendRef: ((m: Msg) => void) | null = null
+    const wrapped: ComponentDef<State, Msg, never> = {
+      ...def,
+      view: (send) => {
+        sendRef = send
+        return def.view(send)
+      },
+    }
+    mountApp(container, wrapped)
+    sendRef!({ type: 'set', items: [{ id: 'b' }, { id: 'a' }] })
+    await new Promise((r) => setTimeout(r, 0))
+    expect(events).toEqual([{ entering: 0, leaving: 0 }])
+  })
+
   it('without leave, bulk clear still works (no perf regression)', async () => {
     const container = document.createElement('div')
     const def = makeDef(undefined, undefined)
