@@ -12,6 +12,26 @@
     "./utils": {
       "import": "./dist/utils/index.js",
       "types": "./dist/utils/index.d.ts"
+    },
+    "./toggle": {
+      "import": "./dist/components/toggle.js",
+      "types": "./dist/components/toggle.d.ts"
+    },
+    "./checkbox": {
+      "import": "./dist/components/checkbox.js",
+      "types": "./dist/components/checkbox.d.ts"
+    },
+    "./accordion": {
+      "import": "./dist/components/accordion.js",
+      "types": "./dist/components/accordion.d.ts"
+    },
+    "./tabs": {
+      "import": "./dist/components/tabs.js",
+      "types": "./dist/components/tabs.d.ts"
+    },
+    "./slider": {
+      "import": "./dist/components/slider.js",
+      "types": "./dist/components/slider.d.ts"
     }
   },
   "scripts": {
