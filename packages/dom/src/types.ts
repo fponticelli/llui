@@ -71,6 +71,7 @@ export interface BranchOptions<S, M = unknown> extends TransitionOptions {
 export interface ShowOptions<S, M = unknown> extends TransitionOptions {
   when: (s: S) => boolean
   render: (send: Send<M>) => Node[]
+  fallback?: (send: Send<M>) => Node[]
 }
 
 export interface EachOptions<S, T, M = unknown> extends TransitionOptions {

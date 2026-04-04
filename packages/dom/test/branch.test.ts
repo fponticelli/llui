@@ -138,3 +138,64 @@ describe('show()', () => {
     expect(container.querySelector('.panel')).toBeNull()
   })
 })
+
+describe('show() with fallback', () => {
+  type FbState = { loaded: boolean }
+  type FbMsg = { type: 'toggle' }
+
+  function fbDef(): ComponentDef<FbState, FbMsg, never> {
+    return {
+      name: 'ShowFallback',
+      init: () => [{ loaded: false }, []],
+      update: (state) => [{ ...state, loaded: !state.loaded }, []],
+      view: () =>
+        show<FbState, FbMsg>({
+          when: (s) => s.loaded,
+          render: () => [div({ class: 'content' }, [text('ready')])],
+          fallback: () => [div({ class: 'spinner' }, [text('loading...')])],
+        }),
+      __dirty: (o, n) => (Object.is(o.loaded, n.loaded) ? 0 : 1),
+    }
+  }
+
+  let sendFn: (msg: FbMsg) => void
+
+  function mount() {
+    const def = fbDef()
+    const origView = def.view
+    def.view = (send) => {
+      sendFn = send
+      return origView(send)
+    }
+    const container = document.createElement('div')
+    const handle = mountApp(container, def)
+    return { container, handle }
+  }
+
+  it('renders fallback when condition is false', () => {
+    const { container } = mount()
+    expect(container.querySelector('.spinner')).not.toBeNull()
+    expect(container.querySelector('.content')).toBeNull()
+    expect(container.textContent).toBe('loading...')
+  })
+
+  it('swaps fallback for render when condition flips true', () => {
+    const { container, handle } = mount()
+    sendFn({ type: 'toggle' })
+    handle.flush()
+    expect(container.querySelector('.spinner')).toBeNull()
+    expect(container.querySelector('.content')).not.toBeNull()
+    expect(container.textContent).toBe('ready')
+  })
+
+  it('swaps back to fallback when condition flips false again', () => {
+    const { container, handle } = mount()
+    sendFn({ type: 'toggle' })
+    handle.flush()
+    sendFn({ type: 'toggle' })
+    handle.flush()
+    expect(container.querySelector('.content')).toBeNull()
+    expect(container.querySelector('.spinner')).not.toBeNull()
+    expect(container.textContent).toBe('loading...')
+  })
+})

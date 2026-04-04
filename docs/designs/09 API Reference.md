@@ -262,6 +262,7 @@ Boolean conditional rendering. Implemented as a two-case `branch` — the scope 
 function show<S, M>(opts: {
   when: (s: S) => boolean
   render: (send: (msg: M) => void) => Node[]
+  fallback?: (send: (msg: M) => void) => Node[]
   enter?: (nodes: Node[]) => void | Promise<void>
   leave?: (nodes: Node[]) => void | Promise<void>
   onTransition?: (ctx: { entering: Node[]; leaving: Node[]; parent: Node }) => void | Promise<void>

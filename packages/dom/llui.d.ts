@@ -49,6 +49,7 @@ export declare function branch<S, M>(opts: {
 export declare function show<S, M>(opts: {
   when: (s: S) => boolean
   render: (send: Send<M>) => Node[]
+  fallback?: (send: Send<M>) => Node[]
   enter?: (nodes: Node[]) => void | Promise<void>
   leave?: (nodes: Node[]) => void | Promise<void>
 }): Node[]
