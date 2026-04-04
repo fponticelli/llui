@@ -3,6 +3,7 @@ export * as checkbox from './checkbox'
 export * as accordion from './accordion'
 export * as tabs from './tabs'
 export * as slider from './slider'
+export * as dialog from './dialog'
 
 export type { ToggleState, ToggleMsg, ToggleInit, ToggleParts } from './toggle'
 export type {
@@ -34,3 +35,10 @@ export type {
   SliderParts,
   SliderThumbParts,
 } from './slider'
+export type {
+  DialogState,
+  DialogMsg,
+  DialogInit,
+  DialogParts,
+  OverlayOptions,
+} from './dialog'

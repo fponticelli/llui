@@ -32,6 +32,10 @@
     "./slider": {
       "import": "./dist/components/slider.js",
       "types": "./dist/components/slider.d.ts"
+    },
+    "./dialog": {
+      "import": "./dist/components/dialog.js",
+      "types": "./dist/components/dialog.d.ts"
     }
   },
   "scripts": {
