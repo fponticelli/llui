@@ -14,7 +14,7 @@
     "build": "tsc -p tsconfig.build.json",
     "check": "tsc --noEmit",
     "lint": "eslint src",
-    "test": "echo 'no tests yet'",
+    "test": "vitest run",
     "test:coverage": "vitest run --coverage"
   },
   "dependencies": {

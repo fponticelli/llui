@@ -13,6 +13,7 @@ import {
   text,
   each,
   flush,
+  selector,
 } from '@llui/dom'
 
 // ── Data generation (matches krausest spec exactly) ──
@@ -108,13 +109,14 @@ const App = component<State, Msg, never>({
       table({ class: 'table table-hover table-striped test-data' }, [
         tbody(
           { id: 'tbody' },
-          each<State, Row>({
-            items: (s) => s.rows,
-            key: (r) => r.id,
-            render: ({ item, send }) => [
-              tr(
-                { class: (s: State) => s.selected === item((r) => r.id)() ? 'danger' : '' },
-                [
+          (() => {
+            const sel = selector<State, number>((s) => s.selected)
+            return each<State, Row>({
+              items: (s) => s.rows,
+              key: (r) => r.id,
+              render: ({ item, send }) => {
+                const rowId = item((r) => r.id)()
+                const row = tr({}, [
                   td({ class: 'col-md-1' }, [text(item((r) => String(r.id)))]),
                   td({ class: 'col-md-4' }, [
                     a(
@@ -134,10 +136,12 @@ const App = component<State, Msg, never>({
                     ),
                   ]),
                   td({ class: 'col-md-6' }),
-                ],
-              ),
-            ],
-          }),
+                ])
+                sel.bind(row, rowId, 'class', 'class', (match) => match ? 'danger' : '')
+                return [row]
+              },
+            })
+          })(),
         ),
       ]),
     ]),

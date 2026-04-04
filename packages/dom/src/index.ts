@@ -44,6 +44,7 @@ export { portal } from './primitives/portal'
 export { foreign } from './primitives/foreign'
 export { child } from './primitives/child'
 export { memo } from './primitives/memo'
+export { selector } from './primitives/selector'
 export { onMount } from './primitives/on-mount'
 export { errorBoundary } from './primitives/error-boundary'
 
