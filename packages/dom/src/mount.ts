@@ -5,6 +5,13 @@ import { setRenderContext, clearRenderContext } from './render-context'
 import { setFlatBindings } from './binding'
 import { registerInstance, unregisterInstance } from './runtime'
 
+// Vite injects import.meta.env.DEV — declare the shape for TypeScript
+declare global {
+  interface ImportMeta {
+    env?: { DEV?: boolean }
+  }
+}
+
 export interface MountOptions {
   devTools?: boolean
 }
@@ -17,12 +24,10 @@ export function mountApp<S, M, E>(
 ): AppHandle {
   const inst = createComponentInstance(def, data)
 
-  // Devtools: always dynamic import to avoid bundling in production.
-  // In dev mode (import.meta.env.DEV), auto-enabled unless explicitly disabled.
-  const meta = typeof import.meta !== 'undefined' ? import.meta : undefined
-  // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
-  const isDev = meta && 'env' in meta && !!(meta as { env: { DEV?: boolean } }).env.DEV
-  if (options?.devTools || (options?.devTools !== false && isDev)) {
+  // Devtools: auto-enabled in dev, opt-in in production.
+  // Uses import.meta.env.DEV directly so Vite can dead-code-eliminate
+  // the dynamic import('./devtools') in production builds.
+  if (import.meta.env?.DEV ? options?.devTools !== false : options?.devTools) {
     void import('./devtools').then((m) => m.installDevTools(inst))
   }
 

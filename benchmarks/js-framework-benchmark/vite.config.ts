@@ -13,5 +13,10 @@ export default defineConfig({
       fileName: () => 'main.js',
     },
     outDir: 'dist',
+    rollupOptions: {
+      output: { inlineDynamicImports: true },
+      // Exclude devtools — it's behind import.meta.env.DEV which is false in prod
+      external: [/devtools/],
+    },
   },
 })
