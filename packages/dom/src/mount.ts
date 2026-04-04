@@ -4,12 +4,20 @@ import { disposeScope } from './scope'
 import { setRenderContext, clearRenderContext } from './render-context'
 import { setFlatBindings } from './binding'
 import { registerInstance, unregisterInstance } from './runtime'
+import { registerForHmr, unregisterForHmr, replaceComponent } from './hmr'
 
 // Vite injects import.meta.env.DEV — declare the shape for TypeScript
 declare global {
   interface ImportMeta {
     env?: { DEV?: boolean }
   }
+}
+
+let hmrEnabled = false
+
+/** Enable HMR state preservation. Called by the compiler's generated HMR code. */
+export function enableHmr(): void {
+  hmrEnabled = true
 }
 
 export interface MountOptions {
@@ -22,6 +30,13 @@ export function mountApp<S, M, E>(
   data?: unknown,
   options?: MountOptions,
 ): AppHandle {
+  // HMR: if this component is already mounted (module re-execution
+  // during hot update), swap the definition instead of creating a new instance.
+  if (hmrEnabled && def.name) {
+    const swapped = replaceComponent(def.name, def)
+    if (swapped) return swapped
+  }
+
   const inst = createComponentInstance(def, data)
 
   // Devtools: auto-enabled in dev, opt-in in production.
@@ -43,6 +58,9 @@ export function mountApp<S, M, E>(
   }
 
   registerInstance(inst)
+  if (hmrEnabled && def.name) {
+    registerForHmr(def.name, inst, container)
+  }
   dispatchInitialEffects(inst)
   let disposed = false
 
@@ -50,6 +68,7 @@ export function mountApp<S, M, E>(
     dispose() {
       if (disposed) return
       disposed = true
+      if (hmrEnabled && def.name) unregisterForHmr(def.name, inst)
       inst.abortController.abort()
       unregisterInstance(inst)
       disposeScope(inst.rootScope)

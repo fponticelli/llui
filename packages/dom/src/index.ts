@@ -22,7 +22,7 @@ export { component } from './component'
 
 // ── Mount ─────────────────────────────────────────────────────────
 
-export { mountApp, hydrateApp, type MountOptions } from './mount'
+export { mountApp, hydrateApp, enableHmr, type MountOptions } from './mount'
 // installDevTools is NOT re-exported here to keep it out of production bundles.
 // Import directly: import { installDevTools } from '@llui/dom/devtools'
 export type { LluiDebugAPI } from './devtools'
@@ -33,6 +33,7 @@ export { flush } from './runtime'
 export { addressOf } from './addressed'
 export { renderToString } from './ssr'
 export { chainUpdate } from './chain-update'
+export { replaceComponent } from './hmr'
 
 // ── View Primitives ───────────────────────────────────────────────
 

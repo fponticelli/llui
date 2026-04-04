@@ -168,7 +168,7 @@ export function transformLlui(source: string, _filename: string, devMode = false
       xfText = printer.printNode(ts.EmitHint.Unspecified, xfStmts[i]!, transformed)
     } catch {
       // Synthetic nodes may fail to print individually — fall back to full reprint
-      const output = printer.printFile(transformed) + (devMode ? '\n' + generateHmrCode(_filename) : '')
+      const output = printer.printFile(transformed) + (devMode ? '\n' + generateHmrCode() : '')
       return { output, edits: [{ start: 0, end: source.length, replacement: output }] }
     }
 
@@ -186,7 +186,7 @@ export function transformLlui(source: string, _filename: string, devMode = false
 
   // HMR: append at end
   if (devMode) {
-    finalEdits.push({ start: source.length, end: source.length, replacement: '\n' + generateHmrCode(_filename) })
+    finalEdits.push({ start: source.length, end: source.length, replacement: '\n' + generateHmrCode() })
   }
 
   if (finalEdits.length === 0) return null
@@ -204,13 +204,19 @@ export function transformLlui(source: string, _filename: string, devMode = false
 
 // ── HMR ──────────────────────────────────────────────────────────
 
-function generateHmrCode(_filename: string): string {
+function generateHmrCode(): string {
+  // Enable HMR registry in mountApp, then accept hot updates.
+  // On module re-execution, mountApp detects the live instance
+  // and hot-swaps the definition (preserving state).
   return `
+import { enableHmr as __enableHmr } from '@llui/dom'
+__enableHmr()
 if (import.meta.hot) {
   import.meta.hot.accept()
 }
 `.trim()
 }
+
 
 // ── Helpers ──────────────────────────────────────────────────────
 
