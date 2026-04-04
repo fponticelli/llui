@@ -38,10 +38,10 @@ async function main() {
 
       // Load the server entry
       const { render } = await vite.ssrLoadModule('/src/entry-server.ts') as {
-        render: (url: string) => { html: string; state: string }
+        render: (url: string) => Promise<{ html: string; state: string }>
       }
 
-      const { html: appHtml, state } = render(url)
+      const { html: appHtml, state } = await render(url)
 
       // Inject the rendered HTML and state into the template
       const page = html

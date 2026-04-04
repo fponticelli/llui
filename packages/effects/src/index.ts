@@ -349,3 +349,7 @@ function runRace(
     dispatchEffect(inner, raceSend, ctrl.signal, cancelControllers, debounceTimers, custom)
   }
 }
+
+// ── SSR Effect Resolution ────────────────────────────────────────
+
+export { resolveEffects } from "./resolve"
