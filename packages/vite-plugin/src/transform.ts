@@ -151,12 +151,54 @@ export function transformLlui(source: string, _filename: string, devMode = false
 
   if (edits.length === 0) return null
 
-  let output = printer.printFile(transformed)
-  if (devMode) {
-    output += '\n' + generateHmrCode(_filename)
+  // Build per-statement edits by comparing original vs transformed.
+  // Only emit edits for statements that actually changed.
+  // Untouched code keeps its original positions → accurate source maps.
+  const finalEdits: TransformEdit[] = []
+  const origStmts = sourceFile.statements
+  const xfStmts = transformed.statements
+
+  for (let i = 0; i < origStmts.length && i < xfStmts.length; i++) {
+    const origStart = origStmts[i]!.getStart(sourceFile)
+    const origEnd = origStmts[i]!.getEnd()
+    const origText = source.slice(origStart, origEnd)
+
+    let xfText: string
+    try {
+      xfText = printer.printNode(ts.EmitHint.Unspecified, xfStmts[i]!, transformed)
+    } catch {
+      // Synthetic nodes may fail to print individually — fall back to full reprint
+      const output = printer.printFile(transformed) + (devMode ? '\n' + generateHmrCode(_filename) : '')
+      return { output, edits: [{ start: 0, end: source.length, replacement: output }] }
+    }
+
+    // Compare ignoring trailing semicolons and whitespace (printer adds them)
+    const origNorm = origText.trim().replace(/;$/, '')
+    const xfNorm = xfText.trim().replace(/;$/, '')
+    if (origNorm !== xfNorm) {
+      // Match the original style: if the original didn't end with a semicolon,
+      // strip the one the printer added
+      const origHasSemi = origText.trimEnd().endsWith(';')
+      const replacement = origHasSemi ? xfText : xfText.replace(/;(\s*)$/, '$1')
+      finalEdits.push({ start: origStart, end: origEnd, replacement })
+    }
   }
 
-  return { output, edits }
+  // HMR: append at end
+  if (devMode) {
+    finalEdits.push({ start: source.length, end: source.length, replacement: '\n' + generateHmrCode(_filename) })
+  }
+
+  if (finalEdits.length === 0) return null
+
+  // Build the full output by applying edits (for backward compat)
+  const sorted = [...finalEdits].sort((a, b) => b.start - a.start)
+  let output = source
+  for (const edit of sorted) {
+    output = output.slice(0, edit.start) + edit.replacement + output.slice(edit.end)
+  }
+
+  return { output, edits: finalEdits }
 }
 
 

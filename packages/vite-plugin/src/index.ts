@@ -24,18 +24,20 @@ export default function llui(): Plugin {
       const result = transformLlui(code, id, devMode)
       if (!result) return undefined
 
-      // Use MagicString for source map generation.
-      // The transform produces a fully reprinted output, so we overwrite
-      // the entire source — but MagicString tracks the replacement and
-      // generates a source map that maps the output back to position 0
-      // of the original. This is coarse but gives Vite enough to show
-      // the original file in devtools.
+      // Apply per-statement edits via MagicString for accurate source maps.
+      // Untouched statements keep their original positions.
       const s = new MagicString(code)
-      s.overwrite(0, code.length, result.output)
+      for (const edit of result.edits) {
+        if (edit.start === edit.end) {
+          s.append(edit.replacement)
+        } else {
+          s.overwrite(edit.start, edit.end, edit.replacement)
+        }
+      }
 
       return {
-        code: result.output,
-        map: s.generateMap({ source: id, includeContent: true }),
+        code: s.toString(),
+        map: s.generateMap({ source: id, includeContent: true, hires: true }),
       }
     },
   }
