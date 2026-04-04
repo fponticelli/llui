@@ -101,12 +101,12 @@ a:hover { text-decoration: underline; }
 .code-table { width: 100%; border-collapse: collapse; font-size: 13px; line-height: 1.45; tab-size: 4; }
 .code-table td { padding: 0; vertical-align: top; }
 .line-num {
-  width: 1%; min-width: 50px; padding: 2px 16px; text-align: right;
+  width: 1%; min-width: 50px; padding: 0 12px 0 16px; text-align: right;
   color: #8b949e; user-select: none; white-space: nowrap; cursor: pointer;
   border-right: 1px solid #d0d7de;
 }
 .line-num:hover { color: #0969da; }
-.line-content { padding: 2px 16px; white-space: pre; overflow-x: auto; }
+.line-content { padding: 0 16px 0 24px; white-space: pre; overflow-x: auto; }
 .line-content code {
   font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
   background: none; padding: 0;
