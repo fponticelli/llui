@@ -5,7 +5,6 @@ export interface RenderContext {
   rootScope: Scope
   state: unknown
   allBindings: Binding[]
-  bindingsByBit?: Map<number, Binding[]>
   structuralBlocks: StructuralBlock[]
   container?: Element
   send?: (msg: unknown) => void

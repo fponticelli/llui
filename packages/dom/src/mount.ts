@@ -42,11 +42,11 @@ export function mountApp<S, M, E>(
   const inst = createComponentInstance(def, data)
 
   // Run view() within a render context so primitives can register bindings
-  setFlatBindings(inst.allBindings, inst.bindingsByBit)
-  setRenderContext({ ...inst, bindingsByBit: inst.bindingsByBit, container, send: inst.send as (msg: unknown) => void })
+  setFlatBindings(inst.allBindings)
+  setRenderContext({ ...inst, container, send: inst.send as (msg: unknown) => void })
   const nodes = def.view(inst.state, inst.send)
   clearRenderContext()
-  setFlatBindings(null, null)
+  setFlatBindings(null)
 
   for (const node of nodes) {
     container.appendChild(node)
@@ -100,11 +100,11 @@ export function hydrateApp<S, M, E>(
 
   // Build the component DOM and swap atomically with server HTML.
   // Server HTML remains visible until JS finishes — no flash.
-  setFlatBindings(inst.allBindings, inst.bindingsByBit)
+  setFlatBindings(inst.allBindings)
   setRenderContext({ ...inst, container, send: inst.send as (msg: unknown) => void })
   const nodes = hydrateDef.view(inst.state, inst.send)
   clearRenderContext()
-  setFlatBindings(null, null)
+  setFlatBindings(null)
 
   // Atomic swap — replaces server HTML with client DOM in one operation
   container.replaceChildren(...nodes)

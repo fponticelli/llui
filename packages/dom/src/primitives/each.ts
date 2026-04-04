@@ -103,12 +103,12 @@ function buildEntry<S, T, M>(
   buildCtx.state = currentState
   buildCtx.allBindings = ctx.allBindings
   buildCtx.structuralBlocks = ctx.structuralBlocks
-  const prev = getFlatBindings()
-  setFlatBindings(ctx.allBindings, prev.byBit)
+  const prevFlatBindings = getFlatBindings()
+  setFlatBindings(ctx.allBindings)
   setRenderContext(buildCtx)
   entry.nodes = opts.render({ state: currentState, send, item: itemAccessor, index: indexAccessor })
   clearRenderContext()
-  setFlatBindings(prev.arr, prev.byBit)
+  setFlatBindings(prevFlatBindings)
   setRenderContext(ctx)
 
   return entry

@@ -2,140 +2,99 @@
 
 ## Phase 1 — Core Runtime (`@llui/dom`) ✅
 
-The foundation everything else builds on.
-
-- [x] Scope tree — `createScope`, `disposeScope`, child registration, disposer management
-- [x] Binding system — `createBinding`, `applyBinding`, flat binding array, kind dispatch
-- [x] Message queue — `send()`, `processMessages()`, microtask batching, `flush()`
-- [x] Two-phase update — Phase 1 structural reconciliation + Phase 2 binding iteration with bitmask gating
-- [x] `mountApp()` — init → view → Phase 2, returns `AppHandle`
-- [x] `text()` — reactive text node with mask
-- [x] `elSplit()` — compiled element constructor (staticFn, events, bindings, children)
-- [x] Element helpers — uncompiled runtime path (`div`, `span`, `button`, etc.)
-- [x] `branch()` — discriminant-keyed conditional rendering with scope swap
-- [x] `show()` — boolean conditional (two-case branch)
-- [x] `each()` — keyed list reconciliation, scoped accessor, `eachItemStable` optimization
-- [x] `portal()` — out-of-tree rendering with binding participation
-- [x] `memo()` — two-level cache (bitmask + output stability)
-- [x] `onMount()` — microtask callback with scope cancellation
-- [x] `errorBoundary()` — three-zone error protection (view construction zone)
-- [x] `child()` — Level 2 composition boundary, propsMsg, onMsg
-- [x] `foreign()` — imperative library bridge with typed sync
-- [x] `component()` — definition wrapper
+- [x] Scope tree, binding system, message queue, two-phase update
+- [x] `mountApp()`, `hydrateApp()`, `component()`, `flush()`
+- [x] View primitives: `text`, `branch`, `show`, `each`, `portal`, `memo`, `onMount`, `errorBoundary`, `child`, `foreign`
+- [x] Element helpers: `div`, `span`, `button`, etc. (45+ tags)
+- [x] `elSplit()` / `elTemplate()` compiled constructors
+- [x] `chainUpdate()` for composable update handlers
+- [x] `peek()` for imperative item accessor reads in event handlers
+- [x] Structural primitive builders receive `(state, send)` — consistent with `view()`
+- [x] `each()` render uses options bag `({ state, send, item, index })`
 
 ## Phase 2 — Compiler (`@llui/vite-plugin`) ✅
 
-- [x] Pass 2 pre-scan — `collectAllDeps`, access path extraction, `fieldBits` map
-- [x] Pass 1 — static/dynamic prop split, `elSplit()` emission
-- [x] Pass 2 — per-accessor mask computation, `__dirty` injection, `text()` mask injection
-- [x] Pass 3 — import cleanup, element helper elision, `elSplit` addition
-- [x] Diagnostics — `each()` scoped accessor misuse, `.map()` on state arrays, exhaustive `update()`, accessibility (img alt, onClick role), controlled input without handler
-- [x] `__msgSchema` emission (dev mode) — extracts Msg type variants for runtime validation
-- [x] HMR — self-accept in dev mode via `import.meta.hot.accept()`
+- [x] 3-pass transform: prop split → mask injection → import cleanup
+- [x] Subtree collapse: nested elements → `elTemplate(html, patchFn)`
+- [x] Placeholder text nodes, event delegation, selector dedup
+- [x] Cross-file safety: FULL_MASK for bindings in non-component files
+- [x] `__dirty` compares at top-level field (not nested paths)
+- [x] Static subtree prerendering, constant folding, `@__PURE__` annotations
+- [x] Diagnostics: accessibility, `each()` misuse, exhaustive `update()`
+- [x] Source maps: per-statement edits via MagicString
+- [x] HMR: `replaceComponent` in `accept()` callback, tree-shaken in production
 
 ## Phase 3 — Test & Effects ✅
 
-- [x] `testComponent()` — zero-DOM harness
-- [x] `assertEffects()` — partial deep matching
-- [x] `testView()` — mounts component with given state, returns query/queryAll
-- [x] `propertyTest()` — generative invariant testing with random message sequences
-- [x] `replayTrace()` — deterministic trace replay with state + effects comparison
-- [x] `handleEffects()` — http, cancel, debounce consumption chain with AbortSignal cleanup
-- [x] Effect builders — `http()`, `cancel()`, `debounce()`, `sequence()`, `race()`
+- [x] `@llui/test`: testComponent, testView, propertyTest, replayTrace, assertEffects
+- [x] `@llui/effects`: http, cancel, debounce, sequence, race, handleEffects().use()
+- [x] `Async<T, E>` type + `ApiError` union (network, timeout, notfound, unauthorized, etc.)
+- [x] `resolveEffects()` for server-side HTTP effect execution (SSR data loading)
 
-## Phase 4 — SSR & Hydration ✅ (partial)
+## Phase 4 — SSR & Hydration ✅
 
-- [x] `renderToString()` — runtime SSR with `data-llui-hydrate` markers
-- [x] `hydrateApp()` — client takeover with server state (clears + re-mounts)
-- [x] `@llui/vike` — `onRenderHtml` + `onRenderClient` hooks
+- [x] `renderToString()` with `data-llui-hydrate` markers
+- [x] `hydrateApp()` — atomic DOM swap (server HTML visible until JS loads)
+- [x] `initSsrDom()` from `@llui/dom/ssr` (jsdom setup, server-only sub-path)
+- [x] `resolveEffects()` — pre-load data server-side before rendering
+- [x] Hydration code tree-shaken from SPA builds (zero bytes)
+- [x] `@llui/vike` — onRenderHtml + onRenderClient hooks (untested)
 
-## Phase 5 — Ecosystem ✅ (partial)
+## Phase 5 — Ecosystem ✅
 
-- [x] `window.__lluiDebug` DevTools API — getState, send, evalUpdate, message history, exportTrace
+- [x] DevTools: `installDevTools()` from `@llui/dom/devtools` (sub-path, tree-shaken)
+- [x] `@llui/router`: createRouter, route, param, rest, connectRouter, routing.link/listener
 - [x] `@llui/mcp` — MCP server exposing debug API as LLM tools
-- [x] `@llui/lint-idiomatic` — AST linter for 6 anti-pattern rules + scoring
+- [x] `@llui/lint-idiomatic` — AST linter for 6 anti-pattern rules
 - [x] Evaluation suite — 15-task runner with reference implementations
 
 ## Optimizations ✅
 
-**Runtime — `each()` reconciler fast paths:**
-- [x] Same array reference → skip entirely
-- [x] Append-only (no reordering, new items at end) → insert only new entries
-- [x] Two-element swap detection → two targeted DOM moves
-- [x] Bulk clear → Range.deleteContents + dispose without key lookup
-- [x] DocumentFragment batching — append, replace, and reorder use fragments
-- [x] Full-replace fast path — skip Map/Set when no keys survive
-- [x] Survivors-in-order check — only insert new nodes when existing are correctly positioned
+**Runtime:**
+- [x] `each()` fast paths: same-ref skip, append-only, swap detection, bulk clear, full-replace
+- [x] Per-item direct updaters (bypass Phase 2 allBindings scan)
+- [x] Fresh binding skip (Phase 1 bindings skip Phase 2 on same tick)
+- [x] Scope disposal nulls binding references for prompt GC
 
-**Runtime — binding evaluation:**
-- [x] Flat binding array per component (dead-flag + lazy compaction)
-- [x] Per-item direct updaters — bypass allBindings, called by each() on item change
-- [x] Fresh binding skip — bindings created during Phase 1 skip Phase 2 on same tick
-- [x] Scope disposal nulls binding references (accessor, node, lastValue) for prompt GC
+**Compiler:**
+- [x] Template cloning: subtree collapse, placeholder text, event delegation
+- [x] Selector dedup, constant folding, static subtree prerendering
 
-**Compiler — template cloning:**
-- [x] Subtree collapse — nested element helpers → single `elTemplate(html, patchFn)` call
-- [x] Placeholder text nodes — template HTML includes spaces for reactive text positions
-- [x] Event delegation — multiple same-type handlers → single delegated listener on root
-- [x] Item selector deduplication — repeated `item(sel)` calls hoisted + cached
+**Bundle:**
+- [x] Sub-path exports: `@llui/dom/hmr`, `@llui/dom/ssr`, `@llui/dom/devtools`
+- [x] All dev-only code tree-shaken from production builds
+- [x] `sideEffects: false`, named re-exports
 
-**Compiler — bundle:**
-- [x] Static subtree prerendering → `<template>` clone
-- [x] `/*@__PURE__*/` annotations on `elSplit` calls
-- [x] Constant folding for zero-mask bindings
-- [x] Per-item accessor calls compiled natively
-- [x] DevTools tree-shaken from production bundles (auto-enabled in dev, lazy in prod)
-
-**Bundle — tree-shaking:**
-- [x] `sideEffects: false` on all packages
-- [x] Barrel file uses named re-exports
-
-**js-framework-benchmark results (vs Solid/Svelte):**
+**jfb results (vs Solid/Svelte):**
 - Create 1k: within 5-10%
-- Update 10th: on par or faster
-- Select: faster
-- Swap: faster
-- Bundle: 4.0 KB gzip (17% smaller than Solid)
+- Update/Select/Swap: on par or faster
+- Bundle: 4.0 KB gzip (smaller than Solid)
+
+## GitHub Explorer (validation app) ✅
+
+- [x] Search with debounce/cancel, pagination with URL params
+- [x] Repo detail: file tree, README (foreign + shadow DOM), issues with label colors
+- [x] File viewer with line numbers (foreign)
+- [x] History-mode routing with `@llui/router`
+- [x] SSR with server-side data loading via `resolveEffects()`
+- [x] `Async<T, ApiError>` state modeling
 
 ---
 
-## Next Steps
-
-### 0. ~~Rename `@llui/core` → `@llui/dom`~~ ✅
-
-Completed. The DOM-specific package is now `@llui/dom`, reserving `@llui/core` for shared abstractions if native platform targets are added.
-
-### 1. ~~Real App Validation~~ ✅
-
-GitHub Explorer app built and validated. Surfaced and fixed 8 framework bugs (flatBindings, cross-file masks, __dirty depth, init effects, history-mode query, popstate double-push, toPath non-URL fields, template mixed text). Exercises: `branch()`, `show()`, `each()`, `foreign()` (shadow DOM README, line-numbered code viewer), `debounce()`/`cancel()`/`http()`, `Async<T, ApiError>`, `@llui/router` with history mode, `routing.link()`, `routing.listener()`.
-
-### 2. ~~SSR/Hydration Hardening~~ ✅
-
-`hydrateApp()` builds client DOM and atomically swaps server HTML via `replaceChildren()` — no flash. `resolveEffects()` in `@llui/effects` pre-loads data server-side by executing HTTP effects before rendering. `initSsrDom()` from `@llui/dom/ssr` sets up jsdom for server rendering. Hydration code fully tree-shaken from SPA builds (zero bytes when `hydrateApp` not imported).
-
-### 3. ~~HMR State Preservation~~ ✅
-
-Compiler generates `replaceComponent("Name", Var)` in `import.meta.hot.accept()` callback. On hot update: module re-executes → accept fires → swaps view/update/__dirty on live instance → disposes old DOM → rebuilds with preserved state. Works for component files and view files (bubble up). HMR code fully tree-shaken from production (`@llui/dom/hmr` sub-path).
-
-### 4. ~~Source Maps~~ ✅
-
-Per-statement edits via MagicString. Only changed statements (import, component) are replaced — untouched code keeps original positions. Hires source maps generated.
+## Remaining
 
 ### 5. Package Polish
 
-Verify `@llui/effects` and `@llui/test` match the API Reference design doc. Fill in gaps.
-
-- [ ] Audit `@llui/effects` exports against `09 API Reference.md` — verify http, cancel, debounce, sequence, race
-- [ ] Audit `@llui/test` exports — verify testComponent, testView, propertyTest, replayTrace, assertEffects
-- [ ] Add missing tests for any gaps found
-- [ ] Verify `@llui/mcp` and `@llui/lint-idiomatic` (from PR #1) work end-to-end
+- [ ] Audit `@llui/effects` exports against API Reference doc
+- [ ] Audit `@llui/test` exports — verify all 5 utilities work
+- [ ] Verify `@llui/mcp` end-to-end
+- [ ] Verify `@llui/lint-idiomatic` end-to-end
+- [ ] Verify `@llui/vike` integration
 
 ### 6. Documentation & Developer Experience
 
-Design docs are comprehensive but developer-facing docs don't exist.
-
-- [ ] Getting-started guide — project setup with Vite, first component, basic patterns
-- [ ] API cookbook — common patterns (forms, async, lists, composition) with examples
-- [ ] Migration guide — how LLui differs from React/Solid/Svelte for developers coming from those
-- [ ] Project template — `create-llui-app` or Vite template with recommended structure
-- [ ] Document `peek()`, `FieldMsg<T>`, and other utilities added in recent PRs
+- [ ] Getting-started guide — project setup, first component
+- [ ] API cookbook — forms, async, lists, composition, routing
+- [ ] Migration guide — differences from React/Solid/Svelte
+- [ ] Project template — `create-llui-app` or Vite template
+- [ ] Document new APIs: `peek()`, `Async<T,E>`, `ApiError`, `chainUpdate`, `routing.link()`, `resolveEffects()`

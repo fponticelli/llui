@@ -51,11 +51,11 @@ export function branch<S, M = unknown>(opts: BranchOptions<S, M>): Node[] {
       const newBuilder = opts.cases[newCaseKey]
       if (newBuilder) {
         currentScope = createScope(parentScope)
-        setFlatBindings(ctx.allBindings, ctx.bindingsByBit)
+        setFlatBindings(ctx.allBindings)
         setRenderContext({ ...ctx, rootScope: currentScope, state })
         currentNodes = newBuilder(state as S, send)
         clearRenderContext()
-        setFlatBindings(null, null)
+        setFlatBindings(null)
 
         const ref = anchor.nextSibling
         for (const node of currentNodes) {

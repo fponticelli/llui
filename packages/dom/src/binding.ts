@@ -11,15 +11,13 @@ export interface CreateBindingOpts {
 }
 
 let flatBindings: Binding[] | null = null
-let flatBindingsByBit: Map<number, Binding[]> | null = null
 
-export function getFlatBindings(): { arr: Binding[] | null; byBit: Map<number, Binding[]> | null } {
-  return { arr: flatBindings, byBit: flatBindingsByBit }
+export function getFlatBindings(): Binding[] | null {
+  return flatBindings
 }
 
-export function setFlatBindings(arr: Binding[] | null, byBit?: Map<number, Binding[]> | null): void {
+export function setFlatBindings(arr: Binding[] | null): void {
   flatBindings = arr
-  flatBindingsByBit = byBit ?? null
 }
 
 export function createBinding(scope: Scope, opts: CreateBindingOpts): Binding {
@@ -37,28 +35,8 @@ export function createBinding(scope: Scope, opts: CreateBindingOpts): Binding {
 
   addBinding(scope, binding)
   if (flatBindings) flatBindings.push(binding)
-  if (flatBindingsByBit) indexBinding(flatBindingsByBit, binding)
 
   return binding
-}
-
-function indexBinding(byBit: Map<number, Binding[]>, binding: Binding): void {
-  const mask = binding.mask
-  if (mask === (0xffffffff | 0) || mask === -1) {
-    // FULL_MASK → bucket 0 (always checked)
-    let bucket = byBit.get(0)
-    if (!bucket) { bucket = []; byBit.set(0, bucket) }
-    bucket.push(binding)
-  } else {
-    // Index into each bit bucket
-    for (let bit = 1; bit !== 0; bit <<= 1) {
-      if (mask & bit) {
-        let bucket = byBit.get(bit)
-        if (!bucket) { bucket = []; byBit.set(bit, bucket) }
-        bucket.push(binding)
-      }
-    }
-  }
 }
 
 export function applyBinding(
