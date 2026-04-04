@@ -22,9 +22,6 @@ export interface ComponentInstance<S = unknown, M = unknown, E = unknown> {
   initialEffects: E[]
   rootScope: Scope
   allBindings: Binding[]
-  /** Bindings indexed by single mask bit for fast Phase 2 lookup.
-   *  Key 0 = FULL_MASK bindings (always checked). Key 1,2,4,... = per-bit. */
-  bindingsByBit: Map<number, Binding[]>
   structuralBlocks: StructuralBlock[]
   queue: M[]
   microtaskScheduled: boolean
@@ -49,7 +46,6 @@ export function createComponentInstance<S, M, E>(
     initialEffects,
     rootScope: createScope(null),
     allBindings: [],
-    bindingsByBit: new Map(),
     structuralBlocks: [],
     queue: [],
     microtaskScheduled: false,

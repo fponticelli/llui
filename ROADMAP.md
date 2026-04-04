@@ -111,11 +111,11 @@ GitHub Explorer app built and validated. Surfaced and fixed 8 framework bugs (fl
 
 ### 2. ~~SSR/Hydration Hardening~~ ✅
 
-`hydrateApp()` now walks existing server HTML and reuses DOM nodes. Hydration cursor tracks position in the server DOM tree. `claimElement`/`claimText`/`claimComment` return existing nodes instead of creating new ones. Bindings and event listeners attach to reused nodes. Verified with DOM identity test (same node references before and after hydration).
+`hydrateApp()` builds client DOM and atomically swaps server HTML via `replaceChildren()` — no flash. `resolveEffects()` in `@llui/effects` pre-loads data server-side by executing HTTP effects before rendering. `initSsrDom()` from `@llui/dom/ssr` sets up jsdom for server rendering. Hydration code fully tree-shaken from SPA builds (zero bytes when `hydrateApp` not imported).
 
 ### 3. ~~HMR State Preservation~~ ✅
 
-HMR registry maps component names to live instances. On hot update, `replaceComponent` swaps view/update/onEffect/__dirty, disposes old scope tree, re-runs view with preserved state. `enableHmr()` called by compiler-generated dev code.
+Compiler generates `replaceComponent("Name", Var)` in `import.meta.hot.accept()` callback. On hot update: module re-executes → accept fires → swaps view/update/__dirty on live instance → disposes old DOM → rebuilds with preserved state. Works for component files and view files (bubble up). HMR code fully tree-shaken from production (`@llui/dom/hmr` sub-path).
 
 ### 4. ~~Source Maps~~ ✅
 
