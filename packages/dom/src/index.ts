@@ -23,7 +23,9 @@ export { component } from './component'
 // ── Mount ─────────────────────────────────────────────────────────
 
 export { mountApp, hydrateApp, type MountOptions } from './mount'
-export { installDevTools, type LluiDebugAPI } from './devtools'
+// installDevTools is NOT re-exported here to keep it out of production bundles.
+// Import directly: import { installDevTools } from '@llui/dom/devtools'
+export type { LluiDebugAPI } from './devtools'
 
 // ── Runtime ───────────────────────────────────────────────────────
 

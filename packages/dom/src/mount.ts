@@ -18,9 +18,11 @@ export function mountApp<S, M, E>(
   const inst = createComponentInstance(def, data)
 
   // Devtools: always dynamic import to avoid bundling in production.
-  // In dev mode, auto-enabled unless explicitly disabled.
-  if (options?.devTools || (options?.devTools !== false && typeof import.meta !== 'undefined' &&
-      (import.meta as unknown as Record<string, Record<string, boolean>>).env?.DEV)) {
+  // In dev mode (import.meta.env.DEV), auto-enabled unless explicitly disabled.
+  const meta = typeof import.meta !== 'undefined' ? import.meta : undefined
+  // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
+  const isDev = meta && 'env' in meta && !!(meta as { env: { DEV?: boolean } }).env.DEV
+  if (options?.devTools || (options?.devTools !== false && isDev)) {
     void import('./devtools').then((m) => m.installDevTools(inst))
   }
 

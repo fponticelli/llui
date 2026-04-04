@@ -14,9 +14,8 @@ describe('template clone output', () => {
         ],
       })
     `
-    const out = transformLlui(src, 'test.ts')!
+    const out = transformLlui(src, 'test.ts')!.output
     expect(out).toContain('cloneNode')
-    // Must extract firstChild from the fragment to get the actual element
     expect(out).toContain('firstChild')
   })
 })

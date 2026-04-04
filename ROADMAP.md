@@ -105,16 +105,9 @@ The foundation everything else builds on.
 
 Completed. The DOM-specific package is now `@llui/dom`, reserving `@llui/core` for shared abstractions if native platform targets are added.
 
-### 1. Real App Validation
+### 1. ~~Real App Validation~~ ✅
 
-Build a GitHub Explorer app using the public GitHub API (reliable, CORS-enabled, no auth for reads). Exercises routing, search with debounce/cancel effects, `foreign()` for markdown rendering, style bindings for issue label colors, `rest()` path routing for file trees, and error handling for rate limits.
-
-- [ ] Search with debounce/cancel effects
-- [ ] Repo detail with file tree, README (foreign/innerHTML), issues
-- [ ] Style bindings for issue label colors
-- [ ] `foreign()` for markdown/syntax highlighting
-- [ ] Rate limit error handling
-- [ ] Verify `branch()`, `show()`, `each()` in realistic combinations
+GitHub Explorer app built and validated. Surfaced and fixed 8 framework bugs (flatBindings, cross-file masks, __dirty depth, init effects, history-mode query, popstate double-push, toPath non-URL fields, template mixed text). Exercises: `branch()`, `show()`, `each()`, `foreign()` (shadow DOM README, line-numbered code viewer), `debounce()`/`cancel()`/`http()`, `Async<T, ApiError>`, `@llui/router` with history mode, `routing.link()`, `routing.listener()`.
 
 ### 2. SSR/Hydration Hardening
 

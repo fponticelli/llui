@@ -3,7 +3,7 @@ import { transformLlui } from '../src/transform'
 
 function t(source: string): string {
   const result = transformLlui(source, 'test.ts')
-  return result ?? source
+  return result?.output ?? source
 }
 
 function clean(s: string): string {

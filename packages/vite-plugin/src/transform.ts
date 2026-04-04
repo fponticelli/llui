@@ -51,7 +51,13 @@ function resolveKey(key: string, kind: BindingKind): string {
  * Transform a source file containing @llui/dom imports.
  * Returns the transformed source or null if no transformation needed.
  */
-export function transformLlui(source: string, _filename: string, devMode = false): string | null {
+export interface TransformEdit {
+  start: number
+  end: number
+  replacement: string
+}
+
+export function transformLlui(source: string, _filename: string, devMode = false): { output: string; edits: TransformEdit[] } | null {
   const sourceFile = ts.createSourceFile('input.ts', source, ts.ScriptTarget.Latest, true)
 
   // Find the @llui/dom import
@@ -76,17 +82,25 @@ export function transformLlui(source: string, _filename: string, devMode = false
   let usesElTemplate = false
   let usesElSplit = false
 
-  // Apply transforms
   const f = ts.factory
-
   const printer = ts.createPrinter({ newLine: ts.NewLineKind.LineFeed })
 
+  // Collect source positions of transformed nodes for source mapping
+  const edits: TransformEdit[] = []
+
   function visitor(node: ts.Node): ts.Node {
+    // Synthetic nodes (created by ts.factory) don't have real positions
+    const hasPos = node.pos >= 0 && node.end >= 0
+    const origStart = hasPos ? node.getStart(sourceFile) : -1
+    const origEnd = hasPos ? node.getEnd() : -1
+
     // Pass 0: Deduplicate item() selectors in each() render callbacks
     if (ts.isCallExpression(node) && ts.isIdentifier(node.expression) && node.expression.text === 'each') {
       const rewritten = tryDeduplicateItemSelectors(node, f, printer, sourceFile)
       if (rewritten) {
-        return ts.visitEachChild(rewritten, visitor, undefined!)
+        const result = ts.visitEachChild(rewritten, visitor, undefined!)
+        if (hasPos) edits.push({ start: origStart, end: origEnd, replacement: '' })
+        return result
       }
     }
 
@@ -94,17 +108,18 @@ export function transformLlui(source: string, _filename: string, devMode = false
     if (ts.isCallExpression(node)) {
       const transformed = tryTransformElementCall(node, importedHelpers, fieldBits, compiledHelpers, bailedHelpers, f)
       if (transformed) {
-        // Track which runtime helper was used
         if (ts.isIdentifier(transformed.expression)) {
           if (transformed.expression.text === 'elTemplate') usesElTemplate = true
           else if (transformed.expression.text === 'elSplit') usesElSplit = true
         }
+        if (hasPos) edits.push({ start: origStart, end: origEnd, replacement: '' })
         return ts.visitEachChild(transformed, visitor, undefined!)
       }
 
       // Pass 2: Inject mask into text() calls
       const textTransformed = tryInjectTextMask(node, lluiImport, fieldBits, f)
       if (textTransformed) {
+        if (hasPos) edits.push({ start: origStart, end: origEnd, replacement: '' })
         return textTransformed
       }
     }
@@ -119,6 +134,7 @@ export function transformLlui(source: string, _filename: string, devMode = false
         }
       }
       if (result) {
+        if (hasPos) edits.push({ start: origStart, end: origEnd, replacement: '' })
         return ts.visitEachChild(result, visitor, undefined!)
       }
     }
@@ -128,21 +144,21 @@ export function transformLlui(source: string, _filename: string, devMode = false
 
   let transformed = ts.visitNode(sourceFile, visitor) as ts.SourceFile
 
-  // Pass 3: Clean up imports
-  // Only remove helpers that were fully compiled (no bail-outs)
+  // Pass 3: Clean up imports — use the old cleanupImports approach
+  // which operates on the transformed SourceFile safely
   const safeToRemove = new Set([...compiledHelpers].filter((h) => !bailedHelpers.has(h)))
   transformed = cleanupImports(transformed, lluiImport, importedHelpers, safeToRemove, usesElSplit, usesElTemplate, f)
 
-  // Print
-  let output = printer.printFile(transformed)
+  if (edits.length === 0) return null
 
-  // HMR: append self-accept code in dev mode
+  let output = printer.printFile(transformed)
   if (devMode) {
     output += '\n' + generateHmrCode(_filename)
   }
 
-  return output
+  return { output, edits }
 }
+
 
 // ── HMR ──────────────────────────────────────────────────────────
 
@@ -583,37 +599,42 @@ function cleanupImports(
   usesElTemplate: boolean,
   f: ts.NodeFactory,
 ): ts.SourceFile {
-  if (compiled.size === 0 && !usesElTemplate) return sf
+  if (compiled.size === 0 && !usesElTemplate && !usesElSplit) return sf
 
+  const clause = lluiImport.importClause
+  if (!clause?.namedBindings || !ts.isNamedImports(clause.namedBindings)) return sf
+
+  const remaining = clause.namedBindings.elements.filter(
+    (spec) => !compiled.has(spec.name.text),
+  )
+
+  const hasElSplit = clause.namedBindings.elements.some((s) => s.name.text === 'elSplit')
+  if (!hasElSplit && usesElSplit) {
+    remaining.push(f.createImportSpecifier(false, undefined, f.createIdentifier('elSplit')))
+  }
+
+  const hasElTemplate = clause.namedBindings.elements.some((s) => s.name.text === 'elTemplate')
+  if (!hasElTemplate && usesElTemplate) {
+    remaining.push(f.createImportSpecifier(false, undefined, f.createIdentifier('elTemplate')))
+  }
+
+  const newBindings = f.createNamedImports(remaining)
+  const newClause = f.createImportClause(false, undefined, newBindings)
+  const newImportDecl = f.createImportDeclaration(undefined, newClause, lluiImport.moduleSpecifier)
+
+  let replaced = false
   const statements = sf.statements.map((stmt) => {
-    if (stmt !== lluiImport) return stmt
-
-    const clause = lluiImport.importClause
-    if (!clause?.namedBindings || !ts.isNamedImports(clause.namedBindings)) return stmt
-
-    const remaining = clause.namedBindings.elements.filter(
-      (spec) => !compiled.has(spec.name.text),
-    )
-
-    // Add elSplit if not already imported and it was used
-    const hasElSplit = clause.namedBindings.elements.some((s) => s.name.text === 'elSplit')
-    if (!hasElSplit && usesElSplit) {
-      remaining.push(f.createImportSpecifier(false, undefined, f.createIdentifier('elSplit')))
+    if (!replaced && ts.isImportDeclaration(stmt) && ts.isStringLiteral(stmt.moduleSpecifier) &&
+        stmt.moduleSpecifier.text === '@llui/dom' && !stmt.importClause?.isTypeOnly) {
+      replaced = true
+      return newImportDecl
     }
-
-    // Add elTemplate if not already imported and subtree collapse was used
-    const hasElTemplate = clause.namedBindings.elements.some((s) => s.name.text === 'elTemplate')
-    if (!hasElTemplate && usesElTemplate) {
-      remaining.push(f.createImportSpecifier(false, undefined, f.createIdentifier('elTemplate')))
-    }
-
-    const newBindings = f.createNamedImports(remaining)
-    const newClause = f.createImportClause(false, undefined, newBindings)
-    return f.createImportDeclaration(undefined, newClause, lluiImport.moduleSpecifier)
+    return stmt
   })
 
   return f.updateSourceFile(sf, statements as unknown as ts.Statement[])
 }
+
 
 // ── __msgSchema injection ────────────────────────────────────────
 

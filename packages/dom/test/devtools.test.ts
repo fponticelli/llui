@@ -24,7 +24,7 @@ const Counter = component<State, Msg, never>({
 async function mountWithDevTools(opts?: { devTools?: boolean }) {
   const container = document.createElement('div')
   const handle = mountApp(container, Counter, undefined, opts)
-  await new Promise((r) => setTimeout(r, 0))
+  await new Promise((r) => setTimeout(r, 50))
   return { container, handle }
 }
 

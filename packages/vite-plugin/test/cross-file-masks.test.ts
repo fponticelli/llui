@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest'
 import { transformLlui } from '../src/transform'
 
 function t(source: string): string {
-  return transformLlui(source, 'test.ts') ?? source
+  return transformLlui(source, 'test.ts')?.output ?? source
 }
 
 describe('cross-file mask safety', () => {

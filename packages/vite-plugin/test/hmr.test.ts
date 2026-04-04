@@ -12,7 +12,7 @@ describe('HMR', () => {
         view: () => [div({}, [text('hi')])],
       })
     `
-    const out = transformLlui(src, 'counter.ts', true)!
+    const out = transformLlui(src, 'counter.ts', true)!.output
     expect(out).toContain('import.meta.hot')
     expect(out).toContain('accept')
   })
@@ -27,7 +27,7 @@ describe('HMR', () => {
         view: () => [div({}, [text('hi')])],
       })
     `
-    const out = transformLlui(src, 'counter.ts', false)!
+    const out = transformLlui(src, 'counter.ts', false)!.output
     expect(out).not.toContain('import.meta.hot')
   })
 })
