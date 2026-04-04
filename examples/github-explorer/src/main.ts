@@ -1,39 +1,18 @@
-import { component, mountApp, branch } from '@llui/dom'
-import { handleEffects } from '@llui/effects'
-import type { State, Msg, Effect } from './types'
-import { initState, update } from './update'
-import { routing } from './router'
-import { header } from './views/header'
-import { searchView } from './views/search'
-import { repoPage } from './views/repo'
+/**
+ * Client entry point.
+ * Hydrates server-rendered HTML when present, otherwise mounts fresh.
+ */
+import { mountApp, hydrateApp } from '@llui/dom'
+import type { State } from './types'
+import { appDef, initialState } from './app'
 
-const App = component<State, Msg, Effect>({
-  name: 'GitHubExplorer',
-  init: () => {
-    const state = initState()
-    const [s, effects] = update(state, { type: 'navigate', route: state.route })
-    return [s, effects]
-  },
-  update,
-  view: (_s, send) => [
-    header(_s, send),
+const container = document.getElementById('app')!
 
-    ...routing.listener(send),
-
-    ...branch<State, Msg>({
-      on: (s) => s.route.page,
-      cases: {
-        search: (s, send) => searchView(s, send),
-        repo: (s, send) => repoPage(s, send),
-        tree: (s, send) => repoPage(s, send),
-      },
-    }),
-  ],
-  onEffect: handleEffects<Effect, Msg>()
-    .use(routing.handleEffect)
-    .else((_effect, _send) => {
-      // No app-specific effects to handle
-    }),
-})
-
-mountApp(document.getElementById('app')!, App)
+// Check if server rendered HTML exists (SSR hydration path)
+const serverStateEl = document.getElementById('__llui_state')
+if (serverStateEl && container.children.length > 0) {
+  const serverState = JSON.parse(serverStateEl.textContent!) as State
+  hydrateApp(container, appDef, serverState)
+} else {
+  mountApp(container, appDef)
+}

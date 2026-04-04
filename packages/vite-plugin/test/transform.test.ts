@@ -394,9 +394,9 @@ describe('subtree collapse — nested elements → elTemplate', () => {
     expect(out).toContain('elTemplate')
     // HTML should have placeholder space for reactive text
     expect(out).toContain('<div><span> </span></div>')
-    // Should reference placeholder text node, not create new one
+    // Should reference placeholder text node via firstChild, not create new one
     expect(out).not.toContain('createTextNode')
-    expect(out).toContain('childNodes')
+    expect(out).toContain('firstChild')
     expect(out).toContain('__bind')
     expect(out).toContain('"text"')
   })

@@ -1208,10 +1208,12 @@ function collectPatchOps(
 function buildWalkExpr(path: number[], f: ts.NodeFactory): ts.Expression {
   let expr: ts.Expression = f.createIdentifier('root')
   for (const idx of path) {
-    expr = f.createElementAccessExpression(
-      f.createPropertyAccessExpression(expr, 'childNodes'),
-      f.createNumericLiteral(idx),
-    )
+    // Use firstChild + nextSibling chain instead of childNodes[n]
+    // firstChild/nextSibling are direct pointer lookups, childNodes is a live NodeList
+    expr = f.createPropertyAccessExpression(expr, 'firstChild')
+    for (let i = 0; i < idx; i++) {
+      expr = f.createPropertyAccessExpression(expr, 'nextSibling')
+    }
   }
   return expr
 }
@@ -1305,16 +1307,16 @@ function emitSubtreeTemplate(
     // Reactive text children — reference placeholder text nodes from template
     for (const rt of op.reactiveTexts) {
       const tVar = `__t${counter.t++}`
-      // const __t0 = nodeRef.childNodes[idx]  (placeholder text node from template)
+      // const __t0 = nodeRef.firstChild[.nextSibling...]  (placeholder text node)
+      let textWalk: ts.Expression = f.createPropertyAccessExpression(nodeRef, 'firstChild')
+      for (let i = 0; i < rt.childIdx; i++) {
+        textWalk = f.createPropertyAccessExpression(textWalk, 'nextSibling')
+      }
       stmts.push(
         f.createVariableStatement(
           undefined,
           f.createVariableDeclarationList([
-            f.createVariableDeclaration(tVar, undefined, undefined,
-              f.createElementAccessExpression(
-                f.createPropertyAccessExpression(nodeRef, 'childNodes'),
-                f.createNumericLiteral(rt.childIdx),
-              ),
+            f.createVariableDeclaration(tVar, undefined, undefined, textWalk,
             ),
           ], ts.NodeFlags.Const),
         ),

@@ -1,15 +1,7 @@
-import type { State, Msg, Effect, Route, ApiError, SearchData, RepoCodeData, RepoIssuesData, TreeDirData, TreeFileData, Repo, TreeEntry, FileContent, Issue } from './types'
+import type { State, Msg, Effect, Route, SearchData, Repo, TreeEntry, FileContent, Issue } from './types'
 import { http, cancel, debounce } from '@llui/effects'
 import { searchUrl, repoUrl, contentsUrl, readmeUrl, issuesUrl, JSON_HEADERS, HTML_HEADERS } from './api'
-import { router, routing } from './router'
-
-export function initState(): State {
-  const route = router.match(location.pathname + location.search)
-  return {
-    route,
-    query: route.page === 'search' ? route.q : '',
-  }
-}
+import { routing } from './router'
 
 export function update(state: State, msg: Msg): [State, Effect[]] {
   switch (msg.type) {

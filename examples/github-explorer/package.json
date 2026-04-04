@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "dev:ssr": "tsx server.ts",
     "build": "vite build",
     "preview": "vite preview",
     "check": "tsc --noEmit"
