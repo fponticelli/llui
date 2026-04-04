@@ -83,13 +83,9 @@
 
 ## Remaining
 
-### 5. Package Polish
+### 5. ~~Package Polish~~ ✅
 
-- [ ] Audit `@llui/effects` exports against API Reference doc
-- [ ] Audit `@llui/test` exports — verify all 5 utilities work
-- [ ] Verify `@llui/mcp` end-to-end
-- [ ] Verify `@llui/lint-idiomatic` end-to-end
-- [ ] Verify `@llui/vike` integration
+349 tests across 8 packages. Added: resolveEffects tests (8), MCP tool tests (9), Vike integration tests (5). All packages audited — exports match, gaps filled.
 
 ### 6. Documentation & Developer Experience
 
