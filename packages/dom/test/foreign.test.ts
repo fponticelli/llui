@@ -14,8 +14,8 @@ interface FakeEditor {
 
 function foreignDef() {
   const mountFn = vi.fn(
-    (container: HTMLElement): FakeEditor => ({
-      container,
+    (ctx: { container: HTMLElement }): FakeEditor => ({
+      container: ctx.container,
       destroyed: false,
       options: {},
     }),
@@ -24,12 +24,12 @@ function foreignDef() {
     inst.destroyed = true
   })
   const syncFn = vi.fn(
-    (
-      inst: FakeEditor,
-      props: { theme: string; readonly: boolean },
-      _prev: { theme: string; readonly: boolean } | undefined,
-    ) => {
-      inst.options = props
+    (ctx: {
+      instance: FakeEditor
+      props: { theme: string; readonly: boolean }
+      prev: { theme: string; readonly: boolean } | undefined
+    }) => {
+      ctx.instance.options = ctx.props
     },
   )
 
@@ -45,8 +45,8 @@ function foreignDef() {
       }
     },
     view: () =>
-      foreign<State, { theme: string; readonly: boolean }, FakeEditor>({
-        mount: (container) => mountFn(container),
+      foreign<State, Msg, { theme: string; readonly: boolean }, FakeEditor>({
+        mount: mountFn,
         props: (s) => ({ theme: s.theme, readonly: s.readonly }),
         sync: syncFn,
         destroy: destroyFn,
@@ -83,11 +83,11 @@ describe('foreign()', () => {
   it('calls sync with initial props', () => {
     const { syncFn } = mount()
     expect(syncFn).toHaveBeenCalledTimes(1)
-    expect(syncFn).toHaveBeenCalledWith(
-      expect.objectContaining({ container: expect.anything() }),
-      { theme: 'dark', readonly: false },
-      undefined,
-    )
+    expect(syncFn).toHaveBeenCalledWith({
+      instance: expect.objectContaining({ container: expect.anything() }),
+      props: { theme: 'dark', readonly: false },
+      prev: undefined,
+    })
   })
 
   it('calls sync when props change', () => {
@@ -95,15 +95,12 @@ describe('foreign()', () => {
     sendFn({ type: 'setTheme', value: 'light' })
     handle.flush()
     expect(syncFn).toHaveBeenCalledTimes(2)
-    expect(syncFn.mock.calls[1]![2]).toEqual({ theme: 'dark', readonly: false }) // prev
-    expect(syncFn.mock.calls[1]![1]).toEqual({ theme: 'light', readonly: false }) // new
+    expect(syncFn.mock.calls[1]![0].prev).toEqual({ theme: 'dark', readonly: false })
+    expect(syncFn.mock.calls[1]![0].props).toEqual({ theme: 'light', readonly: false })
   })
 
   it('does not call sync when props are unchanged', () => {
-    const { handle, syncFn } = mount()
-    // Send a message that doesn't change foreign-relevant state
-    // (we need to trigger an update cycle with dirty mask 0 for foreign props)
-    // Since __dirty returns 0 for unchanged fields, the binding won't fire
+    const { syncFn } = mount()
     expect(syncFn).toHaveBeenCalledTimes(1)
   })
 
@@ -120,7 +117,7 @@ describe('foreign()', () => {
       update: (s) => [s, []],
       view: () =>
         foreign({
-          mount: (el) => el,
+          mount: ({ container }) => container,
           props: () => ({}),
           sync: () => {},
           destroy: () => {},
@@ -151,8 +148,8 @@ describe('foreign()', () => {
         }
       },
       view: () =>
-        foreign<State, { theme: string; readonly: boolean }, FakeEditor>({
-          mount: (container): FakeEditor => ({
+        foreign<State, Msg, { theme: string; readonly: boolean }, FakeEditor>({
+          mount: ({ container }): FakeEditor => ({
             container,
             destroyed: false,
             options: {},
@@ -172,9 +169,17 @@ describe('foreign()', () => {
     mountApp(container, def)
 
     expect(themeFn).toHaveBeenCalledTimes(1)
-    expect(themeFn).toHaveBeenCalledWith(expect.anything(), 'dark', undefined)
+    expect(themeFn).toHaveBeenCalledWith({
+      instance: expect.anything(),
+      value: 'dark',
+      prev: undefined,
+    })
     expect(readonlyFn).toHaveBeenCalledTimes(1)
-    expect(readonlyFn).toHaveBeenCalledWith(expect.anything(), false, undefined)
+    expect(readonlyFn).toHaveBeenCalledWith({
+      instance: expect.anything(),
+      value: false,
+      prev: undefined,
+    })
   })
 
   it('calls only changed per-key sync handlers on update', () => {
@@ -195,8 +200,8 @@ describe('foreign()', () => {
       },
       view: (send) => {
         localSend = send
-        return foreign<State, { theme: string; readonly: boolean }, FakeEditor>({
-          mount: (container): FakeEditor => ({
+        return foreign<State, Msg, { theme: string; readonly: boolean }, FakeEditor>({
+          mount: ({ container }): FakeEditor => ({
             container,
             destroyed: false,
             options: {},
@@ -219,13 +224,15 @@ describe('foreign()', () => {
     themeFn.mockClear()
     readonlyFn.mockClear()
 
-    // Only change theme
     localSend!({ type: 'setTheme', value: 'light' })
     handle.flush()
 
     expect(themeFn).toHaveBeenCalledTimes(1)
-    expect(themeFn).toHaveBeenCalledWith(expect.anything(), 'light', 'dark')
-    // readonly didn't change, should not be called
+    expect(themeFn).toHaveBeenCalledWith({
+      instance: expect.anything(),
+      value: 'light',
+      prev: 'dark',
+    })
     expect(readonlyFn).not.toHaveBeenCalled()
   })
 })

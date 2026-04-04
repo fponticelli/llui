@@ -49,13 +49,21 @@ describe('connectRouter', () => {
   describe('handleEffect', () => {
     it('returns true for router effects', () => {
       const effect = { type: '__router', action: 'scroll', x: 0, y: 0 } as { type: string }
-      const result = routing.handleEffect(effect, vi.fn(), new AbortController().signal)
+      const result = routing.handleEffect({
+        effect,
+        send: vi.fn(),
+        signal: new AbortController().signal,
+      })
       expect(result).toBe(true)
     })
 
     it('returns false for non-router effects', () => {
       const effect = { type: 'http' } as { type: string }
-      const result = routing.handleEffect(effect, vi.fn(), new AbortController().signal)
+      const result = routing.handleEffect({
+        effect,
+        send: vi.fn(),
+        signal: new AbortController().signal,
+      })
       expect(result).toBe(false)
     })
   })

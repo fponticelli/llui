@@ -13,7 +13,7 @@ export function testComponent<S, M, E>(
   def: ComponentDef<S, M, E>,
   initialData?: unknown,
 ): TestHarness<S, M, E> {
-  const [initState, initEffects] = def.init(initialData)
+  const [initState, initEffects] = (def.init as (data: unknown) => [S, E[]])(initialData)
 
   const harness: TestHarness<S, M, E> = {
     state: initState,

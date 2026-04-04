@@ -1,4 +1,4 @@
-import { div, h3, p, span, ul, li, text, button, each, branch, peek } from '@llui/dom'
+import { div, h3, p, span, ul, li, text, button, each, branch } from '@llui/dom'
 import type { State, Msg, Repo } from '../types'
 import type { Send } from '@llui/dom'
 import { routing } from '../router'

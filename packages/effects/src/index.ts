@@ -107,37 +107,46 @@ export function race(effects: BuiltinEffect[]): RaceEffect {
 type InternalSend = (msg: Record<string, unknown>) => void
 type InternalHandler = (effect: { type: string }, send: InternalSend, signal: AbortSignal) => void
 
+export interface EffectCtx<E, M> {
+  effect: E
+  send: (msg: M) => void
+  signal: AbortSignal
+}
+
 /** Plugin handler — returns true if the effect was handled, false to pass through. */
-export type EffectPlugin<E, M> = (effect: E, send: (msg: M) => void, signal: AbortSignal) => boolean
+export type EffectPlugin<E, M> = (ctx: EffectCtx<E, M>) => boolean
 
 interface EffectChain<E extends { type: string }, M> {
   /** Add a plugin that handles specific effects. Returns true if handled, false to pass through. */
   use<E2, M2>(plugin: EffectPlugin<E2, M2>): EffectChain<E, M>
   /** Terminal handler for remaining effects. Returns the final onEffect function. */
-  else(
-    handler: (effect: E, send: (msg: M) => void, signal: AbortSignal) => void,
-  ): (effect: E, send: (msg: M) => void, signal: AbortSignal) => void
+  else(handler: (ctx: EffectCtx<E, M>) => void): (ctx: EffectCtx<E, M>) => void
 }
 
 export function handleEffects<E extends { type: string }, M = never>(): EffectChain<E, M> {
   const cancelControllers = new Map<string, AbortController>()
   const debounceTimers = new Map<string, ReturnType<typeof setTimeout>>()
-  const plugins: Array<(effect: unknown, send: InternalSend, signal: AbortSignal) => boolean> = []
+  const plugins: Array<(ctx: EffectCtx<unknown, unknown>) => boolean> = []
   let cleanupRegistered = false
 
   const chain: EffectChain<E, M> = {
     use(plugin) {
-      plugins.push(plugin as (effect: unknown, send: InternalSend, signal: AbortSignal) => boolean)
+      plugins.push(plugin as (ctx: EffectCtx<unknown, unknown>) => boolean)
       return chain
     },
     else(handler) {
       const custom: InternalHandler = (effect, send, signal) => {
+        const ctx = { effect, send: send as unknown as (msg: unknown) => void, signal }
         for (const plugin of plugins) {
-          if (plugin(effect, send, signal)) return
+          if (plugin(ctx)) return
         }
-        handler(effect as E, send as unknown as (msg: M) => void, signal)
+        handler({
+          effect: effect as E,
+          send: send as unknown as (msg: M) => void,
+          signal,
+        })
       }
-      return (effect: E, send: (msg: M) => void, signal: AbortSignal) => {
+      return ({ effect, send, signal }: EffectCtx<E, M>) => {
         if (!cleanupRegistered) {
           signal.addEventListener(
             'abort',

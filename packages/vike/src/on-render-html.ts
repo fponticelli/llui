@@ -2,7 +2,7 @@ import { renderToString } from '@llui/dom'
 import type { ComponentDef } from '@llui/dom'
 
 export interface PageContext {
-  Page: ComponentDef<unknown, unknown, unknown>
+  Page: ComponentDef<unknown, unknown, unknown, unknown>
   data?: unknown
 }
 

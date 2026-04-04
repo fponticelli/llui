@@ -10,8 +10,8 @@ import type { State, Msg } from '../types'
  * lines from a string that changes when navigating between files).
  */
 export function codeView(): Node[] {
-  return foreign<State, { content: string; filename: string }, { container: HTMLElement }>({
-    mount: (container) => {
+  return foreign<State, Msg, { content: string; filename: string }, { container: HTMLElement }>({
+    mount: ({ container }) => {
       container.className = 'code-viewer'
       return { container }
     },
@@ -29,7 +29,7 @@ export function codeView(): Node[] {
       }
       return { content: '', filename: '' }
     },
-    sync: (instance, { content, filename }) => {
+    sync: ({ instance, props: { content, filename } }) => {
       const el = instance.container
       el.innerHTML = ''
 

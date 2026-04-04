@@ -77,10 +77,7 @@ export function flip(opts: FlipOptions = {}): TransitionOptions {
           const dy = prev.top - next.top
           if (typeof el.animate === 'function') {
             el.animate(
-              [
-                { transform: `translate(${dx}px, ${dy}px)` },
-                { transform: 'translate(0, 0)' },
-              ],
+              [{ transform: `translate(${dx}px, ${dy}px)` }, { transform: 'translate(0, 0)' }],
               { duration, easing, fill: 'backwards' },
             )
           }

@@ -32,13 +32,13 @@ export type { LluiDebugAPI } from './devtools'
 export { flush } from './runtime'
 export { addressOf } from './addressed'
 export { renderToString } from './ssr'
-export { chainUpdate } from './chain-update'
+export { mergeHandlers } from './merge-handlers'
 
 // ── View Primitives ───────────────────────────────────────────────
 
 export { text } from './primitives/text'
 export { branch } from './primitives/branch'
-export { each, peek } from './primitives/each'
+export { each } from './primitives/each'
 export { show } from './primitives/show'
 export { portal } from './primitives/portal'
 export { foreign } from './primitives/foreign'

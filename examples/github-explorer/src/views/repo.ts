@@ -1,4 +1,4 @@
-import { div, h1, h3, a, p, span, text, each, branch, show, peek } from '@llui/dom'
+import { div, h1, h3, a, p, span, text, each, branch, show } from '@llui/dom'
 import type { State, Msg, Repo, TreeEntry, Issue } from '../types'
 import type { Send } from '@llui/dom'
 import { routing } from '../router'
@@ -188,7 +188,7 @@ function fileTree(send: Send<Msg>): Node[] {
                   href: '#',
                   onClick: (e: Event) => {
                     e.preventDefault()
-                    send({ type: 'openPath', path: peek(item, (e) => e.path), isDir })
+                    send({ type: 'openPath', path: item.path(), isDir })
                   },
                 },
                 [text(item((e) => e.name))],

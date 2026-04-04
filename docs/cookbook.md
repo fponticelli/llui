@@ -133,7 +133,7 @@ Event handlers inside `each()` send minimal data — `update()` resolves the res
 
 ```typescript
 // In each() render — only sends the item id
-onClick: () => send({ type: 'selectItem', id: peek(item, (t) => t.id) })
+onClick: () => send({ type: 'selectItem', id: item.id() })
 
 // In update() — has full state access
 case 'selectItem':
@@ -141,12 +141,12 @@ case 'selectItem':
   return [{ ...state, selected: fullItem }, []]
 ```
 
-### Composable Update with `chainUpdate`
+### Composable Update with `mergeHandlers`
 
 ```typescript
-import { chainUpdate } from '@llui/dom'
+import { mergeHandlers } from '@llui/dom'
 
-const update = chainUpdate<State, Msg, Effect>(
+const update = mergeHandlers<State, Msg, Effect>(
   routerHandler,     // handles 'navigate' messages
   authHandler,       // handles 'login', 'logout'
   (state, msg) => {  // everything else

@@ -10,8 +10,8 @@ import type { State, Msg } from '../types'
  * inside a managed container with style isolation.
  */
 export function readmeView(): Node[] {
-  return foreign<State, { html: string }, { root: ShadowRoot }>({
-    mount: (container) => {
+  return foreign<State, Msg, { html: string }, { root: ShadowRoot }>({
+    mount: ({ container }) => {
       // Use shadow DOM for style isolation — GitHub's rendered HTML
       // includes class names that could conflict with the app's CSS
       const root = container.attachShadow({ mode: 'open' })
@@ -30,7 +30,7 @@ export function readmeView(): Node[] {
       }
       return { html: '' }
     },
-    sync: (instance, props) => {
+    sync: ({ instance, props }) => {
       const content = instance.root.querySelector('.readme-body')
       if (content) content.innerHTML = props.html
     },

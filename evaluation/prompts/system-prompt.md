@@ -36,7 +36,7 @@ function branch<S>(opts: {
 }): Node[]
 function memo<S, T>(accessor: (s: S) => T): (s: S) => T
 function onMount(callback: (el: Element) => (() => void) | void): void
-function peek<T, R>(item: <V>(sel: (t: T) => V) => () => V, sel: (t: T) => R): R
+// item accessor: item.field (shorthand) or item(t => t.expr) (computed) — both return () => V
 ```
 
 ## Example
@@ -74,9 +74,10 @@ export const Counter = component<State, Msg, Effect>({
 - Reactive values in `view()` are arrow functions: `text(s => s.label)`, `div({ class: s => s.active ? 'on' : '' })`.
 - Static values are literals: `div({ class: 'container' })`.
 - Never use `.map()` on state arrays in `view()`. Always use `each()` for reactive lists.
-- In `each()`, `render` receives `item` (a scoped accessor) and `index` (a getter).
-  Read item properties via selector: `item(t => t.text)`, not `item.text`.
-  For imperative reads in event handlers, use `peek(item, t => t.id)`.
+- In `each()`, `render` receives `item` (a scoped accessor proxy) and `index` (a getter).
+  Read item properties via property access: `item.text` (returns a reactive accessor).
+  Use `item(t => t.expr)` for computed expressions.
+  Invoke the accessor to read imperatively: `item.id()` (e.g. inside event handlers).
 - Wrap derived values used in multiple places in `memo()`.
 - Use `show` for boolean conditions. Use `branch` for named states (3+ cases or non-boolean).
 - For composition, use view functions (Level 1) with `(props, send)` convention.

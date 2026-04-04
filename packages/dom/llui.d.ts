@@ -10,12 +10,12 @@
 
 // ── @llui/dom ────────────────────────────────────────────────────
 
-export interface ComponentDef<S, M, E> {
+export interface ComponentDef<S, M, E = never, D = void> {
   name: string
-  init: (data?: unknown) => [S, E[]]
+  init: (data: D) => [S, E[]]
   update: (state: S, msg: M) => [S, E[]]
   view: (send: Send<M>) => Node[]
-  onEffect?: (effect: E, send: Send<M>, signal: AbortSignal) => void
+  onEffect?: (ctx: { effect: E; send: Send<M>; signal: AbortSignal }) => void
   propsMsg?: (props: Record<string, unknown>) => M
   receives?: Record<string, (params: unknown) => M>
 }
@@ -59,30 +59,30 @@ export declare function each<S, T, M>(opts: {
   key: (item: T) => string | number
   render: (opts: {
     send: Send<M>
-    item: <R>(selector: (t: T) => R) => () => R
+    /**
+     * Per-item accessor. Two forms:
+     * - `item.field` — shorthand for `(t: T) => t.field`
+     * - `item(t => t.expr)` — computed expressions
+     * Both return `() => V`. Invoke (`item.field()`) to read imperatively.
+     */
+    item: (<R>(selector: (t: T) => R) => () => R) & { [K in keyof T]-?: () => T[K] }
     index: () => number
   }) => Node[]
   enter?: (nodes: Node[]) => void | Promise<void>
   leave?: (nodes: Node[]) => void | Promise<void>
 }): Node[]
 
-/** Read the current value from a scoped accessor imperatively (in event handlers). */
-export declare function peek<T, R>(
-  item: <V>(selector: (t: T) => V) => () => V,
-  selector: (t: T) => R,
-): R
-
 export declare function portal(opts: { target: HTMLElement | string; render: () => Node[] }): Node[]
 
-export declare function foreign<S, T extends Record<string, unknown>, Instance>(opts: {
-  mount: (container: HTMLElement, send: Send<unknown>) => Instance
+export declare function foreign<S, M, T extends Record<string, unknown>, Instance>(opts: {
+  mount: (ctx: { container: HTMLElement; send: Send<M> }) => Instance
   props: (s: S) => T
   sync:
-    | ((inst: Instance, props: T, prev: T | undefined) => void)
+    | ((ctx: { instance: Instance; props: T; prev: T | undefined }) => void)
     | {
-        [K in keyof T]?: (inst: Instance, value: T[K], prev: T[K] | undefined) => void
+        [K in keyof T]?: (ctx: { instance: Instance; value: T[K]; prev: T[K] | undefined }) => void
       }
-  destroy: (inst: Instance) => void
+  destroy: (instance: Instance) => void
   container?: { tag?: string; attrs?: Record<string, string> }
 }): Node[]
 

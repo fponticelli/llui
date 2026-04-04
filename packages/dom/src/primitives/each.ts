@@ -1,4 +1,4 @@
-import type { EachOptions, Scope } from '../types'
+import type { EachOptions, ItemAccessor, Scope } from '../types'
 import {
   getRenderContext,
   setRenderContext,
@@ -166,11 +166,24 @@ function buildEntry<S, T, M>(
   // Create entry before render so itemAccessor closures can capture it
   const entry: Entry<T> = { key, item, current: item, index, scope, nodes: null! }
 
-  const itemAccessor = <R>(selector: (t: T) => R): (() => R) => {
+  // Base callable: item(selector) for computed expressions
+  const itemFn = <R>(selector: (t: T) => R): (() => R) => {
     const accessor = () => selector(entry.current)
     accessor.__perItem = true as const
     return accessor
   }
+
+  // Proxy: item.field returns a field-accessor (shorthand for item(t => t.field))
+  const itemAccessor = new Proxy(itemFn as object, {
+    get(target, prop) {
+      if (typeof prop === 'symbol' || prop === 'then' || prop === 'prototype') {
+        return Reflect.get(target, prop)
+      }
+      const accessor = () => (entry.current as Record<string, unknown>)[prop as string]
+      accessor.__perItem = true as const
+      return accessor
+    },
+  }) as ItemAccessor<T>
 
   const indexAccessor = (): number => entry.index
 
@@ -479,18 +492,6 @@ function detectSwap<S, T>(
   }
 
   return null
-}
-
-/**
- * Read the current value from a scoped accessor imperatively.
- * Use inside event handlers within each() render callbacks
- * where you need the value, not a reactive binding.
- *
- * Instead of: item(t => t.id)()
- * Write:      peek(item, t => t.id)
- */
-export function peek<T, R>(item: <V>(selector: (t: T) => V) => () => V, selector: (t: T) => R): R {
-  return item(selector)()
 }
 
 function survivorsInOrder<T>(

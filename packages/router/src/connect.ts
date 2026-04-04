@@ -24,7 +24,7 @@ export interface ConnectedRouter<R> {
   scroll(x: number, y: number): RouterEffect
 
   /** Plugin for handleEffects().use() — handles RouterEffect */
-  handleEffect: (effect: { type: string }, send: unknown, signal: AbortSignal) => boolean
+  handleEffect: (ctx: { effect: { type: string }; send: unknown; signal: AbortSignal }) => boolean
 
   /**
    * View helper: attach URL change listener via onMount.
@@ -45,7 +45,7 @@ export interface ConnectedRouter<R> {
   ): HTMLElement
 
   /**
-   * Create an update handler for chainUpdate.
+   * Create an update handler for mergeHandlers.
    * Returns [newState, Effect[]] for navigate messages, null for others.
    */
   createHandler<S, M, E>(config: {
@@ -106,7 +106,7 @@ export function connectRouter<R>(router: Router<R>): ConnectedRouter<R> {
       return { type: '__router', action: 'scroll', x, y }
     },
 
-    handleEffect(effect) {
+    handleEffect({ effect }) {
       if (effect.type !== '__router') return false
       applyEffect(effect as RouterEffect)
       return true

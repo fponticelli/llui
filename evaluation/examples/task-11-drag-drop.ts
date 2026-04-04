@@ -2,7 +2,7 @@
  * Task 11 — Drag and Drop List (Tier 6)
  * Idiomatic score: 6/6
  */
-import { component, div, text, each, peek } from '@llui/dom'
+import { component, div, text, each } from '@llui/dom'
 
 type Item = { id: number; label: string }
 
@@ -65,7 +65,7 @@ export const DragDropList = component<State, Msg, Effect>({
               draggable: 'true',
               'data-testid': item((t) => String(t.id)),
               onDragstart: (e: DragEvent) => {
-                const id = peek(item, (t) => t.id)
+                const id = item.id()
                 e.dataTransfer?.setData('text/plain', String(id))
                 send({ type: 'dragStart', id })
               },
@@ -74,7 +74,7 @@ export const DragDropList = component<State, Msg, Effect>({
               },
               onDrop: (e: DragEvent) => {
                 e.preventDefault()
-                send({ type: 'drop', targetId: peek(item, (t) => t.id) })
+                send({ type: 'drop', targetId: item.id() })
               },
               onDragend: () => {
                 send({ type: 'dragEnd' })

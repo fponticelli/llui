@@ -1,11 +1,11 @@
 import { describe, it, expect } from 'vitest'
-import { chainUpdate } from '../src/chain-update'
+import { mergeHandlers } from '../src/merge-handlers'
 
 type State = { count: number; label: string }
 type Msg = { type: 'inc' } | { type: 'setLabel'; value: string }
 type Effect = { type: 'log'; message: string }
 
-describe('chainUpdate', () => {
+describe('mergeHandlers', () => {
   it('calls the first handler that returns non-null', () => {
     const countHandler = (s: State, m: Msg): [State, Effect[]] | null => {
       if (m.type === 'inc') return [{ ...s, count: s.count + 1 }, []]
@@ -17,7 +17,7 @@ describe('chainUpdate', () => {
       return null
     }
 
-    const update = chainUpdate<State, Msg, Effect>(countHandler, labelHandler)
+    const update = mergeHandlers<State, Msg, Effect>(countHandler, labelHandler)
 
     const [s1] = update({ count: 0, label: '' }, { type: 'inc' })
     expect(s1.count).toBe(1)
@@ -27,7 +27,7 @@ describe('chainUpdate', () => {
   })
 
   it('returns unchanged state when no handler matches', () => {
-    const update = chainUpdate<State, Msg, Effect>(
+    const update = mergeHandlers<State, Msg, Effect>(
       () => null,
       () => null,
     )
@@ -38,7 +38,7 @@ describe('chainUpdate', () => {
   })
 
   it('preserves effects from the matching handler', () => {
-    const update = chainUpdate<State, Msg, Effect>((s, m) => {
+    const update = mergeHandlers<State, Msg, Effect>((s, m) => {
       if (m.type === 'inc')
         return [{ ...s, count: s.count + 1 }, [{ type: 'log', message: 'incremented' }]]
       return null

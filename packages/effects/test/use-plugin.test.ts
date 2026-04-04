@@ -7,7 +7,7 @@ describe('handleEffects().use()', () => {
     const send = vi.fn()
 
     const handler = handleEffects<Effect | { type: 'custom'; data: string }>()
-      .use((effect) => {
+      .use(({ effect }) => {
         if (effect.type === 'custom') {
           send({ type: 'handled', data: (effect as { data: string }).data })
           return true
@@ -16,11 +16,11 @@ describe('handleEffects().use()', () => {
       })
       .else(elseFn)
 
-    handler(
-      { type: 'custom', data: 'hello' } as Effect | { type: 'custom'; data: string },
+    handler({
+      effect: { type: 'custom', data: 'hello' } as Effect | { type: 'custom'; data: string },
       send,
-      new AbortController().signal,
-    )
+      signal: new AbortController().signal,
+    })
 
     expect(send).toHaveBeenCalledWith({ type: 'handled', data: 'hello' })
     expect(elseFn).not.toHaveBeenCalled()
@@ -34,23 +34,27 @@ describe('handleEffects().use()', () => {
       .use(() => false) // never handles
       .else(elseFn)
 
-    handler({ type: 'unknown' }, send, new AbortController().signal)
+    handler({ effect: { type: 'unknown' }, send, signal: new AbortController().signal })
 
-    expect(elseFn).toHaveBeenCalledWith({ type: 'unknown' }, send, expect.anything())
+    expect(elseFn).toHaveBeenCalledWith({
+      effect: { type: 'unknown' },
+      send,
+      signal: expect.anything(),
+    })
   })
 
   it('chains multiple plugins — first match wins', () => {
     const calls: string[] = []
 
     const handler = handleEffects<{ type: string; id: number }>()
-      .use((effect) => {
+      .use(({ effect }) => {
         if ((effect as { id: number }).id === 1) {
           calls.push('plugin1')
           return true
         }
         return false
       })
-      .use((effect) => {
+      .use(({ effect }) => {
         if ((effect as { id: number }).id === 2) {
           calls.push('plugin2')
           return true
@@ -62,9 +66,9 @@ describe('handleEffects().use()', () => {
     const send = vi.fn()
     const signal = new AbortController().signal
 
-    handler({ type: 'x', id: 1 }, send, signal)
-    handler({ type: 'x', id: 2 }, send, signal)
-    handler({ type: 'x', id: 3 }, send, signal)
+    handler({ effect: { type: 'x', id: 1 }, send, signal })
+    handler({ effect: { type: 'x', id: 2 }, send, signal })
+    handler({ effect: { type: 'x', id: 3 }, send, signal })
 
     expect(calls).toEqual(['plugin1', 'plugin2', 'else'])
   })

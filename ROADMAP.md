@@ -7,8 +7,8 @@
 - [x] View primitives: `text`, `branch`, `show`, `each`, `portal`, `memo`, `onMount`, `errorBoundary`, `child`, `foreign`
 - [x] Element helpers: `div`, `span`, `button`, etc. (45+ tags)
 - [x] `elSplit()` / `elTemplate()` compiled constructors
-- [x] `chainUpdate()` for composable update handlers
-- [x] `peek()` for imperative item accessor reads in event handlers
+- [x] `mergeHandlers()` for composable update handlers
+- [x] Per-item proxy accessor: `item.id` (shorthand) + `item(fn)` (computed) — invoke to read imperatively
 - [x] `view(send)` and structural render callbacks take `send` only — state reads flow through accessor closures
 - [x] `each()` render uses options bag `({ send, item, index })`
 
@@ -93,7 +93,7 @@
 
 ### 6. ~~Documentation~~ ✅
 
-README rewritten. Getting-started guide with project setup + first component tutorial. Cookbook covering forms, async (Async/ApiError/debounce), composition (view functions, chainUpdate), routing, SSR (resolveEffects, hydration), foreign libraries, and testing.
+README rewritten. Getting-started guide with project setup + first component tutorial. Cookbook covering forms, async (Async/ApiError/debounce), composition (view functions, mergeHandlers), routing, SSR (resolveEffects, hydration), foreign libraries, and testing.
 
 ### 7. ~~Animation/transition helpers~~ ✅
 

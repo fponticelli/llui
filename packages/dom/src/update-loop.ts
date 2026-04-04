@@ -36,7 +36,7 @@ export function createComponentInstance<S, M, E>(
   def: ComponentDef<S, M, E>,
   data?: unknown,
 ): ComponentInstance<S, M, E> {
-  const [initialState, initialEffects] = def.init(data)
+  const [initialState, initialEffects] = (def.init as (data: unknown) => [S, E[]])(data)
 
   const controller = new AbortController()
 
@@ -166,6 +166,6 @@ function dispatchEffect<S, M, E>(inst: ComponentInstance<S, M, E>, effect: E): v
 
   // User onEffect handler
   if (inst.def.onEffect) {
-    inst.def.onEffect(effect, inst.send, inst.signal)
+    inst.def.onEffect({ effect, send: inst.send, signal: inst.signal })
   }
 }

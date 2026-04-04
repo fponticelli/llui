@@ -104,7 +104,7 @@ export const WebSocketList = component<State, Msg, Effect>({
       }),
     ]),
   ],
-  onEffect: (effect, send, signal) => {
+  onEffect: ({ effect, send, signal }) => {
     switch (effect.type) {
       case 'ws-connect': {
         const ws = new WebSocket(effect.url)

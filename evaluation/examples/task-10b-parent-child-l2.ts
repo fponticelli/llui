@@ -2,7 +2,7 @@
  * Task 10b — Parent-Child Communication Level 2 (Tier 5)
  * Idiomatic score: 6/6
  */
-import { component, div, button, text, each, child, peek } from '@llui/dom'
+import { component, div, button, text, each, child } from '@llui/dom'
 
 // ── Child component (Level 2) ──────────────────────────────────
 
@@ -89,14 +89,14 @@ export const ParentChildL2 = component<ParentState, ParentMsg, ParentEffect>({
         render: ({ item }) => [
           ...child<ParentState, ChildState, ChildMsg, ChildEffect>({
             def: CounterChild,
-            key: peek(item, (c) => c.id),
+            key: item.id(),
             props: (s) => {
-              const c = s.counters.find((x) => x.id === peek(item, (t) => t.id))!
+              const c = s.counters.find((x) => x.id === item.id())!
               return { id: c.id, value: c.value }
             },
             onMsg: (childMsg) => {
               if (childMsg.type === 'increment') {
-                return { type: 'childIncremented', id: peek(item, (c) => c.id) }
+                return { type: 'childIncremented', id: item.id() }
               }
               return null
             },

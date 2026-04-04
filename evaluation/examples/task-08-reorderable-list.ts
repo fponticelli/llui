@@ -2,7 +2,7 @@
  * Task 08 — Reorderable List (Tier 4)
  * Idiomatic score: 6/6
  */
-import { component, div, button, text, each, peek } from '@llui/dom'
+import { component, div, button, text, each } from '@llui/dom'
 
 type Item = { id: number; label: string }
 
@@ -56,13 +56,13 @@ export const ReorderableList = component<State, Msg, Effect>({
             text(item((t) => t.label)),
             button(
               {
-                onClick: () => send({ type: 'moveUp', id: peek(item, (t) => t.id) }),
+                onClick: () => send({ type: 'moveUp', id: item.id() }),
               },
               [text('Up')],
             ),
             button(
               {
-                onClick: () => send({ type: 'moveDown', id: peek(item, (t) => t.id) }),
+                onClick: () => send({ type: 'moveDown', id: item.id() }),
               },
               [text('Down')],
             ),

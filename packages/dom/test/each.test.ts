@@ -161,3 +161,84 @@ describe('each()', () => {
     expect(getIds(container)).toEqual([])
   })
 })
+
+describe('each() item proxy', () => {
+  type P = { id: string; label: string }
+
+  it('item.field returns a reactive accessor (shorthand for item(t => t.field))', () => {
+    const def: ComponentDef<{ items: P[] }, never, never> = {
+      name: 'Proxy',
+      init: () => [
+        {
+          items: [
+            { id: 'x', label: 'alpha' },
+            { id: 'y', label: 'beta' },
+          ],
+        },
+        [],
+      ],
+      update: (s) => [s, []],
+      view: () =>
+        each<{ items: P[] }, P, never>({
+          items: (s) => s.items,
+          key: (i) => i.id,
+          render: ({ item }) => [div({ class: 'row', 'data-id': item.id }, [text(item.label)])],
+        }),
+    }
+    const container = document.createElement('div')
+    mountApp(container, def)
+    const rows = container.querySelectorAll('.row')
+    expect(rows.length).toBe(2)
+    expect(rows[0]!.getAttribute('data-id')).toBe('x')
+    expect(rows[0]!.textContent).toBe('alpha')
+    expect(rows[1]!.getAttribute('data-id')).toBe('y')
+    expect(rows[1]!.textContent).toBe('beta')
+  })
+
+  it('item.field() reads the current value imperatively (replaces peek)', () => {
+    const clicks: string[] = []
+    type S = { items: P[] }
+    type M = { type: 'click'; id: string }
+    const def: ComponentDef<S, M, never> = {
+      name: 'ProxyPeek',
+      init: () => [{ items: [{ id: 'a', label: 'A' }] }, []],
+      update: (s, m) => {
+        if (m.type === 'click') clicks.push(m.id)
+        return [s, []]
+      },
+      view: (send) =>
+        each<S, P, M>({
+          items: (s) => s.items,
+          key: (i) => i.id,
+          render: ({ item, send }) => [
+            div({
+              class: 'row',
+              onClick: () => send({ type: 'click', id: item.id() }),
+            }),
+          ],
+        }),
+    }
+    const container = document.createElement('div')
+    const handle = mountApp(container, def)
+    ;(container.querySelector('.row') as HTMLElement).click()
+    handle.flush()
+    expect(clicks).toEqual(['a'])
+  })
+
+  it('item(fn) still works for computed expressions', () => {
+    const def: ComponentDef<{ items: P[] }, never, never> = {
+      name: 'Computed',
+      init: () => [{ items: [{ id: 'x', label: 'hi' }] }, []],
+      update: (s) => [s, []],
+      view: () =>
+        each<{ items: P[] }, P, never>({
+          items: (s) => s.items,
+          key: (i) => i.id,
+          render: ({ item }) => [div([text(item((t) => `${t.id}:${t.label}`))])],
+        }),
+    }
+    const container = document.createElement('div')
+    mountApp(container, def)
+    expect(container.textContent).toBe('x:hi')
+  })
+})

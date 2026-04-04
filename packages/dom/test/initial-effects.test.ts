@@ -17,7 +17,7 @@ describe('initial effects from init()', () => {
         return [s, []]
       },
       view: () => [div({}, [text((s: State) => s.label)])],
-      onEffect: (effect, send) => {
+      onEffect: ({ effect, send }) => {
         effectLog.push(effect.type)
         if (effect.type === 'load') {
           send({ type: 'loaded', payload: 'done' })
@@ -46,7 +46,7 @@ describe('initial effects from init()', () => {
       init: () => [null, [{ type: 'a' }, { type: 'b' }, { type: 'c' }]],
       update: (s) => [s, []],
       view: () => [text('')],
-      onEffect: (effect) => {
+      onEffect: ({ effect }) => {
         effectLog.push(effect.type)
       },
     })
@@ -71,7 +71,7 @@ describe('initial effects from init()', () => {
         return [s, []]
       },
       view: () => [text((s: State) => (s.items.length > 0 ? s.items.join(',') : 'empty'))],
-      onEffect: (effect, send) => {
+      onEffect: ({ effect, send }) => {
         // Simulate async API response
         if (effect.type === 'http') {
           setTimeout(() => send({ type: 'dataLoaded', payload: { items: ['a', 'b'] } } as Msg), 10)

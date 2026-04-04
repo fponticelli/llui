@@ -33,14 +33,14 @@ describe('sequence', () => {
 
     const handler = handleEffects<Effect>().else(() => {})
 
-    handler(
-      sequence([
+    handler({
+      effect: sequence([
         http({ url: '/first', onSuccess: 'r1', onError: 'e1' }),
         http({ url: '/second', onSuccess: 'r2', onError: 'e2' }),
       ]),
       send,
       signal,
-    )
+    })
 
     await vi.waitFor(() => expect(send).toHaveBeenCalledTimes(2))
 
@@ -77,14 +77,14 @@ describe('race', () => {
 
     const handler = handleEffects<Effect>().else(() => {})
 
-    handler(
-      race([
+    handler({
+      effect: race([
         http({ url: '/a', onSuccess: 'a', onError: 'e' }),
         http({ url: '/b', onSuccess: 'b', onError: 'e' }),
       ]),
       send,
-      controller.signal,
-    )
+      signal: controller.signal,
+    })
 
     controller.abort()
 
@@ -108,14 +108,14 @@ describe('race', () => {
 
     const handler = handleEffects<Effect>().else(() => {})
 
-    handler(
-      race([
+    handler({
+      effect: race([
         http({ url: '/slow', onSuccess: 'slow', onError: 'e' }),
         http({ url: '/fast', onSuccess: 'fast', onError: 'e' }),
       ]),
       send,
-      controller.signal,
-    )
+      signal: controller.signal,
+    })
 
     // Resolve the second (fast) first
     resolvers[1]!(mockResponse({ winner: true }))

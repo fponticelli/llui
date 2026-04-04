@@ -28,7 +28,7 @@ interface SelectorEntry {
  * sel.bind() creates and manages the DOM binding directly.
  * Returns Node[] to spread into the element's children (empty — no visible output).
  */
-export function selector<S, V>(field: (s: S) => V): SelectorInstance<S, V> {
+export function selector<S, V>(field: (s: S) => V): SelectorInstance<V> {
   const ctx = getRenderContext()
   const scope = ctx.rootScope
 
@@ -126,7 +126,7 @@ export function selector<S, V>(field: (s: S) => V): SelectorInstance<S, V> {
   }
 }
 
-export interface SelectorInstance<_S, V> {
+export interface SelectorInstance<V> {
   bind(
     node: Node,
     key: V | (() => V),

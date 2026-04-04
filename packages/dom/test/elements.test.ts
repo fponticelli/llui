@@ -84,6 +84,50 @@ describe('element helpers (uncompiled path)', () => {
     expect(spanEl.className).toBe('on')
   })
 
+  it('supports children-only overload (no props object)', () => {
+    const def: ComponentDef<object, never, never> = {
+      name: 'ChildrenOnly',
+      init: () => [{}, []],
+      update: (s) => [s, []],
+      view: () => [div([span([text('a')]), span([text('b')])])],
+    }
+    const container = document.createElement('div')
+    mountApp(container, def)
+    const spans = container.querySelectorAll('span')
+    expect(spans.length).toBe(2)
+    expect(spans[0]!.textContent).toBe('a')
+    expect(spans[1]!.textContent).toBe('b')
+  })
+
+  it('accepts strings directly as children', () => {
+    const def: ComponentDef<object, never, never> = {
+      name: 'StringChild',
+      init: () => [{}, []],
+      update: (s) => [s, []],
+      view: () => [div({ class: 'greet' }, ['Hello ', span([text('World')]), '!'])],
+    }
+    const container = document.createElement('div')
+    mountApp(container, def)
+    expect(container.textContent).toBe('Hello World!')
+  })
+
+  it('accepts Node[] directly in children (no spread)', () => {
+    function widget(): Node[] {
+      return [span([text('one')]), span([text('two')])]
+    }
+    const def: ComponentDef<object, never, never> = {
+      name: 'NodeArrayChild',
+      init: () => [{}, []],
+      update: (s) => [s, []],
+      view: () => [div([widget(), span([text('three')])])],
+    }
+    const container = document.createElement('div')
+    mountApp(container, def)
+    const spans = container.querySelectorAll('span')
+    expect(spans.length).toBe(3)
+    expect(container.textContent).toBe('onetwothree')
+  })
+
   it('handles void elements like input', () => {
     const def: ComponentDef<{ val: string }, never, never> = {
       name: 'Input',

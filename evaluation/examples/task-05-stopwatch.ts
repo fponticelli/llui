@@ -82,7 +82,7 @@ export const Stopwatch = component<State, Msg, Effect>({
       }),
     ]),
   ],
-  onEffect: (effect, send) => {
+  onEffect: ({ effect, send }) => {
     if (effect.type === 'delay') {
       setTimeout(() => send(effect.onDone), effect.ms)
     }

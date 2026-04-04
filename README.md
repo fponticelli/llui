@@ -42,17 +42,17 @@ mountApp(document.getElementById('app')!, Counter)
 
 ## Packages
 
-| Package                                           | Description                                                                              |
-| ------------------------------------------------- | ---------------------------------------------------------------------------------------- |
-| [`@llui/dom`](packages/dom)                       | Runtime — component, mount, scope tree, bindings, structural primitives, element helpers |
-| [`@llui/vite-plugin`](packages/vite-plugin)       | Compiler — 3-pass TypeScript transform, template cloning, source maps                    |
-| [`@llui/effects`](packages/effects)               | Effect system — http, cancel, debounce, sequence, race + `Async<T,E>`, `ApiError`        |
-| [`@llui/router`](packages/router)                 | Routing — structured path matching, history/hash mode, link helper                       |
+| Package                                           | Description                                                                                         |
+| ------------------------------------------------- | --------------------------------------------------------------------------------------------------- |
+| [`@llui/dom`](packages/dom)                       | Runtime — component, mount, scope tree, bindings, structural primitives, element helpers            |
+| [`@llui/vite-plugin`](packages/vite-plugin)       | Compiler — 3-pass TypeScript transform, template cloning, source maps                               |
+| [`@llui/effects`](packages/effects)               | Effect system — http, cancel, debounce, sequence, race + `Async<T,E>`, `ApiError`                   |
+| [`@llui/router`](packages/router)                 | Routing — structured path matching, history/hash mode, link helper                                  |
 | [`@llui/transitions`](packages/transitions)       | Animation helpers for `branch`/`show`/`each` — `transition()`, `fade`, `slide`, `scale`, `collapse` |
-| [`@llui/test`](packages/test)                     | Test harness — testComponent, testView, propertyTest, replayTrace                        |
-| [`@llui/vike`](packages/vike)                     | Vike SSR adapter — onRenderHtml, onRenderClient                                          |
-| [`@llui/mcp`](packages/mcp)                       | MCP server — LLM debug tools via Model Context Protocol                                  |
-| [`@llui/lint-idiomatic`](packages/lint-idiomatic) | Linter — 6 anti-pattern rules for idiomatic LLui                                         |
+| [`@llui/test`](packages/test)                     | Test harness — testComponent, testView, propertyTest, replayTrace                                   |
+| [`@llui/vike`](packages/vike)                     | Vike SSR adapter — onRenderHtml, onRenderClient                                                     |
+| [`@llui/mcp`](packages/mcp)                       | MCP server — LLM debug tools via Model Context Protocol                                             |
+| [`@llui/lint-idiomatic`](packages/lint-idiomatic) | Linter — 6 anti-pattern rules for idiomatic LLui                                                    |
 
 ## Quick Start
 

@@ -39,11 +39,11 @@ describe('ApiError mapping from HTTP status', () => {
     )
 
     const handler = handleEffects().else(() => {})
-    handler(
-      http({ url: '/x', onSuccess: 'ok', onError: 'err' }),
+    handler({
+      effect: http({ url: '/x', onSuccess: 'ok', onError: 'err' }),
       send,
-      new AbortController().signal,
-    )
+      signal: new AbortController().signal,
+    })
 
     await vi.waitFor(() => expect(send).toHaveBeenCalled())
     expect(send).toHaveBeenCalledWith({ type: 'err', error: { kind: 'notfound' } })
@@ -64,11 +64,11 @@ describe('ApiError mapping from HTTP status', () => {
     )
 
     const handler = handleEffects().else(() => {})
-    handler(
-      http({ url: '/x', onSuccess: 'ok', onError: 'err' }),
+    handler({
+      effect: http({ url: '/x', onSuccess: 'ok', onError: 'err' }),
       send,
-      new AbortController().signal,
-    )
+      signal: new AbortController().signal,
+    })
 
     await vi.waitFor(() => expect(send).toHaveBeenCalled())
     expect(send).toHaveBeenCalledWith({ type: 'err', error: { kind: 'unauthorized' } })
@@ -89,11 +89,11 @@ describe('ApiError mapping from HTTP status', () => {
     )
 
     const handler = handleEffects().else(() => {})
-    handler(
-      http({ url: '/x', onSuccess: 'ok', onError: 'err' }),
+    handler({
+      effect: http({ url: '/x', onSuccess: 'ok', onError: 'err' }),
       send,
-      new AbortController().signal,
-    )
+      signal: new AbortController().signal,
+    })
 
     await vi.waitFor(() => expect(send).toHaveBeenCalled())
     expect(send).toHaveBeenCalledWith({ type: 'err', error: { kind: 'forbidden' } })
@@ -114,11 +114,11 @@ describe('ApiError mapping from HTTP status', () => {
     )
 
     const handler = handleEffects().else(() => {})
-    handler(
-      http({ url: '/x', onSuccess: 'ok', onError: 'err' }),
+    handler({
+      effect: http({ url: '/x', onSuccess: 'ok', onError: 'err' }),
       send,
-      new AbortController().signal,
-    )
+      signal: new AbortController().signal,
+    })
 
     await vi.waitFor(() => expect(send).toHaveBeenCalled())
     expect(send).toHaveBeenCalledWith({
@@ -142,11 +142,11 @@ describe('ApiError mapping from HTTP status', () => {
     )
 
     const handler = handleEffects().else(() => {})
-    handler(
-      http({ url: '/x', onSuccess: 'ok', onError: 'err' }),
+    handler({
+      effect: http({ url: '/x', onSuccess: 'ok', onError: 'err' }),
       send,
-      new AbortController().signal,
-    )
+      signal: new AbortController().signal,
+    })
 
     await vi.waitFor(() => expect(send).toHaveBeenCalled())
     expect(send).toHaveBeenCalledWith({
@@ -161,11 +161,11 @@ describe('ApiError mapping from HTTP status', () => {
     vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new TypeError('Failed to fetch')))
 
     const handler = handleEffects().else(() => {})
-    handler(
-      http({ url: '/x', onSuccess: 'ok', onError: 'err' }),
+    handler({
+      effect: http({ url: '/x', onSuccess: 'ok', onError: 'err' }),
       send,
-      new AbortController().signal,
-    )
+      signal: new AbortController().signal,
+    })
 
     await vi.waitFor(() => expect(send).toHaveBeenCalled())
     expect(send).toHaveBeenCalledWith({

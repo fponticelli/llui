@@ -4,6 +4,8 @@ import { createBinding, applyBinding } from './binding'
 import { FULL_MASK } from './update-loop'
 
 type ElementProps = Record<string, unknown>
+type Child = Node | string | Node[]
+type Children = Child[]
 
 // DOM properties set via elem[key] = value rather than setAttribute
 const PROP_KEYS = new Set([
@@ -38,11 +40,19 @@ function resolveKey(key: string, kind: BindingKind): string | undefined {
 
 function createElement<K extends keyof HTMLElementTagNameMap>(
   tag: K,
-  props?: ElementProps,
-  children?: Node[],
+  propsOrChildren?: ElementProps | Children,
+  maybeChildren?: Children,
 ): HTMLElementTagNameMap[K] {
   const el = document.createElement(tag)
   const ctx = getRenderContext()
+
+  // Distinguish (props, children) from (children,) — if first arg is an Array, it's children
+  const props: ElementProps | undefined = Array.isArray(propsOrChildren)
+    ? undefined
+    : propsOrChildren
+  const children: Children | undefined = Array.isArray(propsOrChildren)
+    ? propsOrChildren
+    : maybeChildren
 
   if (props) {
     for (const [rawKey, value] of Object.entries(props)) {
@@ -86,144 +96,163 @@ function createElement<K extends keyof HTMLElementTagNameMap>(
 
   if (children) {
     for (const child of children) {
-      el.appendChild(child)
+      if (typeof child === 'string') {
+        el.appendChild(document.createTextNode(child))
+      } else if (Array.isArray(child)) {
+        for (const node of child) el.appendChild(node)
+      } else {
+        el.appendChild(child)
+      }
     }
   }
 
   return el
 }
 
+// Element helper signature — accepts (props, children?), (children,), or no args
+type ElFn<K extends keyof HTMLElementTagNameMap> = {
+  (): HTMLElementTagNameMap[K]
+  (props: ElementProps, children?: Children): HTMLElementTagNameMap[K]
+  (children: Children): HTMLElementTagNameMap[K]
+}
+
+// Void-element helper signature — no children allowed
+type VoidElFn<K extends keyof HTMLElementTagNameMap> = {
+  (): HTMLElementTagNameMap[K]
+  (props: ElementProps): HTMLElementTagNameMap[K]
+}
+
 /* v8 ignore start — mechanical tag wrappers */
 // prettier-ignore
-export const a = (props?: ElementProps, children?: Node[]) => createElement('a', props, children)
+export const a = ((p?: ElementProps | Children, c?: Children) => createElement('a', p, c)) as ElFn<'a'>
 // prettier-ignore
-export const abbr = (props?: ElementProps, children?: Node[]) => createElement('abbr', props, children)
+export const abbr = ((p?: ElementProps | Children, c?: Children) => createElement('abbr', p, c)) as ElFn<'abbr'>
 // prettier-ignore
-export const article = (props?: ElementProps, children?: Node[]) => createElement('article', props, children)
+export const article = ((p?: ElementProps | Children, c?: Children) => createElement('article', p, c)) as ElFn<'article'>
 // prettier-ignore
-export const aside = (props?: ElementProps, children?: Node[]) => createElement('aside', props, children)
+export const aside = ((p?: ElementProps | Children, c?: Children) => createElement('aside', p, c)) as ElFn<'aside'>
 // prettier-ignore
-export const b = (props?: ElementProps, children?: Node[]) => createElement('b', props, children)
+export const b = ((p?: ElementProps | Children, c?: Children) => createElement('b', p, c)) as ElFn<'b'>
 // prettier-ignore
-export const blockquote = (props?: ElementProps, children?: Node[]) => createElement('blockquote', props, children)
+export const blockquote = ((p?: ElementProps | Children, c?: Children) => createElement('blockquote', p, c)) as ElFn<'blockquote'>
 // prettier-ignore
-export const br = (props?: ElementProps) => createElement('br', props)
+export const br = ((p?: ElementProps) => createElement('br', p)) as VoidElFn<'br'>
 // prettier-ignore
-export const button = (props?: ElementProps, children?: Node[]) => createElement('button', props, children)
+export const button = ((p?: ElementProps | Children, c?: Children) => createElement('button', p, c)) as ElFn<'button'>
 // prettier-ignore
-export const canvas = (props?: ElementProps, children?: Node[]) => createElement('canvas', props, children)
+export const canvas = ((p?: ElementProps | Children, c?: Children) => createElement('canvas', p, c)) as ElFn<'canvas'>
 // prettier-ignore
-export const code = (props?: ElementProps, children?: Node[]) => createElement('code', props, children)
+export const code = ((p?: ElementProps | Children, c?: Children) => createElement('code', p, c)) as ElFn<'code'>
 // prettier-ignore
-export const dd = (props?: ElementProps, children?: Node[]) => createElement('dd', props, children)
+export const dd = ((p?: ElementProps | Children, c?: Children) => createElement('dd', p, c)) as ElFn<'dd'>
 // prettier-ignore
-export const details = (props?: ElementProps, children?: Node[]) => createElement('details', props, children)
+export const details = ((p?: ElementProps | Children, c?: Children) => createElement('details', p, c)) as ElFn<'details'>
 // prettier-ignore
-export const dialog = (props?: ElementProps, children?: Node[]) => createElement('dialog', props, children)
+export const dialog = ((p?: ElementProps | Children, c?: Children) => createElement('dialog', p, c)) as ElFn<'dialog'>
 // prettier-ignore
-export const div = (props?: ElementProps, children?: Node[]) => createElement('div', props, children)
+export const div = ((p?: ElementProps | Children, c?: Children) => createElement('div', p, c)) as ElFn<'div'>
 // prettier-ignore
-export const dl = (props?: ElementProps, children?: Node[]) => createElement('dl', props, children)
+export const dl = ((p?: ElementProps | Children, c?: Children) => createElement('dl', p, c)) as ElFn<'dl'>
 // prettier-ignore
-export const dt = (props?: ElementProps, children?: Node[]) => createElement('dt', props, children)
+export const dt = ((p?: ElementProps | Children, c?: Children) => createElement('dt', p, c)) as ElFn<'dt'>
 // prettier-ignore
-export const em = (props?: ElementProps, children?: Node[]) => createElement('em', props, children)
+export const em = ((p?: ElementProps | Children, c?: Children) => createElement('em', p, c)) as ElFn<'em'>
 // prettier-ignore
-export const fieldset = (props?: ElementProps, children?: Node[]) => createElement('fieldset', props, children)
+export const fieldset = ((p?: ElementProps | Children, c?: Children) => createElement('fieldset', p, c)) as ElFn<'fieldset'>
 // prettier-ignore
-export const figcaption = (props?: ElementProps, children?: Node[]) => createElement('figcaption', props, children)
+export const figcaption = ((p?: ElementProps | Children, c?: Children) => createElement('figcaption', p, c)) as ElFn<'figcaption'>
 // prettier-ignore
-export const figure = (props?: ElementProps, children?: Node[]) => createElement('figure', props, children)
+export const figure = ((p?: ElementProps | Children, c?: Children) => createElement('figure', p, c)) as ElFn<'figure'>
 // prettier-ignore
-export const footer = (props?: ElementProps, children?: Node[]) => createElement('footer', props, children)
+export const footer = ((p?: ElementProps | Children, c?: Children) => createElement('footer', p, c)) as ElFn<'footer'>
 // prettier-ignore
-export const form = (props?: ElementProps, children?: Node[]) => createElement('form', props, children)
+export const form = ((p?: ElementProps | Children, c?: Children) => createElement('form', p, c)) as ElFn<'form'>
 // prettier-ignore
-export const h1 = (props?: ElementProps, children?: Node[]) => createElement('h1', props, children)
+export const h1 = ((p?: ElementProps | Children, c?: Children) => createElement('h1', p, c)) as ElFn<'h1'>
 // prettier-ignore
-export const h2 = (props?: ElementProps, children?: Node[]) => createElement('h2', props, children)
+export const h2 = ((p?: ElementProps | Children, c?: Children) => createElement('h2', p, c)) as ElFn<'h2'>
 // prettier-ignore
-export const h3 = (props?: ElementProps, children?: Node[]) => createElement('h3', props, children)
+export const h3 = ((p?: ElementProps | Children, c?: Children) => createElement('h3', p, c)) as ElFn<'h3'>
 // prettier-ignore
-export const h4 = (props?: ElementProps, children?: Node[]) => createElement('h4', props, children)
+export const h4 = ((p?: ElementProps | Children, c?: Children) => createElement('h4', p, c)) as ElFn<'h4'>
 // prettier-ignore
-export const h5 = (props?: ElementProps, children?: Node[]) => createElement('h5', props, children)
+export const h5 = ((p?: ElementProps | Children, c?: Children) => createElement('h5', p, c)) as ElFn<'h5'>
 // prettier-ignore
-export const h6 = (props?: ElementProps, children?: Node[]) => createElement('h6', props, children)
+export const h6 = ((p?: ElementProps | Children, c?: Children) => createElement('h6', p, c)) as ElFn<'h6'>
 // prettier-ignore
-export const header = (props?: ElementProps, children?: Node[]) => createElement('header', props, children)
+export const header = ((p?: ElementProps | Children, c?: Children) => createElement('header', p, c)) as ElFn<'header'>
 // prettier-ignore
-export const hr = (props?: ElementProps) => createElement('hr', props)
+export const hr = ((p?: ElementProps) => createElement('hr', p)) as VoidElFn<'hr'>
 // prettier-ignore
-export const i = (props?: ElementProps, children?: Node[]) => createElement('i', props, children)
+export const i = ((p?: ElementProps | Children, c?: Children) => createElement('i', p, c)) as ElFn<'i'>
 // prettier-ignore
-export const iframe = (props?: ElementProps, children?: Node[]) => createElement('iframe', props, children)
+export const iframe = ((p?: ElementProps | Children, c?: Children) => createElement('iframe', p, c)) as ElFn<'iframe'>
 // prettier-ignore
-export const img = (props?: ElementProps) => createElement('img', props)
+export const img = ((p?: ElementProps) => createElement('img', p)) as VoidElFn<'img'>
 // prettier-ignore
-export const input = (props?: ElementProps) => createElement('input', props)
+export const input = ((p?: ElementProps) => createElement('input', p)) as VoidElFn<'input'>
 // prettier-ignore
-export const label = (props?: ElementProps, children?: Node[]) => createElement('label', props, children)
+export const label = ((p?: ElementProps | Children, c?: Children) => createElement('label', p, c)) as ElFn<'label'>
 // prettier-ignore
-export const legend = (props?: ElementProps, children?: Node[]) => createElement('legend', props, children)
+export const legend = ((p?: ElementProps | Children, c?: Children) => createElement('legend', p, c)) as ElFn<'legend'>
 // prettier-ignore
-export const li = (props?: ElementProps, children?: Node[]) => createElement('li', props, children)
+export const li = ((p?: ElementProps | Children, c?: Children) => createElement('li', p, c)) as ElFn<'li'>
 // prettier-ignore
-export const main = (props?: ElementProps, children?: Node[]) => createElement('main', props, children)
+export const main = ((p?: ElementProps | Children, c?: Children) => createElement('main', p, c)) as ElFn<'main'>
 // prettier-ignore
-export const mark = (props?: ElementProps, children?: Node[]) => createElement('mark', props, children)
+export const mark = ((p?: ElementProps | Children, c?: Children) => createElement('mark', p, c)) as ElFn<'mark'>
 // prettier-ignore
-export const nav = (props?: ElementProps, children?: Node[]) => createElement('nav', props, children)
+export const nav = ((p?: ElementProps | Children, c?: Children) => createElement('nav', p, c)) as ElFn<'nav'>
 // prettier-ignore
-export const ol = (props?: ElementProps, children?: Node[]) => createElement('ol', props, children)
+export const ol = ((p?: ElementProps | Children, c?: Children) => createElement('ol', p, c)) as ElFn<'ol'>
 // prettier-ignore
-export const optgroup = (props?: ElementProps, children?: Node[]) => createElement('optgroup', props, children)
+export const optgroup = ((p?: ElementProps | Children, c?: Children) => createElement('optgroup', p, c)) as ElFn<'optgroup'>
 // prettier-ignore
-export const option = (props?: ElementProps, children?: Node[]) => createElement('option', props, children)
+export const option = ((p?: ElementProps | Children, c?: Children) => createElement('option', p, c)) as ElFn<'option'>
 // prettier-ignore
-export const output = (props?: ElementProps, children?: Node[]) => createElement('output', props, children)
+export const output = ((p?: ElementProps | Children, c?: Children) => createElement('output', p, c)) as ElFn<'output'>
 // prettier-ignore
-export const p = (props?: ElementProps, children?: Node[]) => createElement('p', props, children)
+export const p = ((p?: ElementProps | Children, c?: Children) => createElement('p', p, c)) as ElFn<'p'>
 // prettier-ignore
-export const pre = (props?: ElementProps, children?: Node[]) => createElement('pre', props, children)
+export const pre = ((p?: ElementProps | Children, c?: Children) => createElement('pre', p, c)) as ElFn<'pre'>
 // prettier-ignore
-export const progress = (props?: ElementProps, children?: Node[]) => createElement('progress', props, children)
+export const progress = ((p?: ElementProps | Children, c?: Children) => createElement('progress', p, c)) as ElFn<'progress'>
 // prettier-ignore
-export const section = (props?: ElementProps, children?: Node[]) => createElement('section', props, children)
+export const section = ((p?: ElementProps | Children, c?: Children) => createElement('section', p, c)) as ElFn<'section'>
 // prettier-ignore
-export const select = (props?: ElementProps, children?: Node[]) => createElement('select', props, children)
+export const select = ((p?: ElementProps | Children, c?: Children) => createElement('select', p, c)) as ElFn<'select'>
 // prettier-ignore
-export const small = (props?: ElementProps, children?: Node[]) => createElement('small', props, children)
+export const small = ((p?: ElementProps | Children, c?: Children) => createElement('small', p, c)) as ElFn<'small'>
 // prettier-ignore
-export const span = (props?: ElementProps, children?: Node[]) => createElement('span', props, children)
+export const span = ((p?: ElementProps | Children, c?: Children) => createElement('span', p, c)) as ElFn<'span'>
 // prettier-ignore
-export const strong = (props?: ElementProps, children?: Node[]) => createElement('strong', props, children)
+export const strong = ((p?: ElementProps | Children, c?: Children) => createElement('strong', p, c)) as ElFn<'strong'>
 // prettier-ignore
-export const sub = (props?: ElementProps, children?: Node[]) => createElement('sub', props, children)
+export const sub = ((p?: ElementProps | Children, c?: Children) => createElement('sub', p, c)) as ElFn<'sub'>
 // prettier-ignore
-export const summary = (props?: ElementProps, children?: Node[]) => createElement('summary', props, children)
+export const summary = ((p?: ElementProps | Children, c?: Children) => createElement('summary', p, c)) as ElFn<'summary'>
 // prettier-ignore
-export const sup = (props?: ElementProps, children?: Node[]) => createElement('sup', props, children)
+export const sup = ((p?: ElementProps | Children, c?: Children) => createElement('sup', p, c)) as ElFn<'sup'>
 // prettier-ignore
-export const table = (props?: ElementProps, children?: Node[]) => createElement('table', props, children)
+export const table = ((p?: ElementProps | Children, c?: Children) => createElement('table', p, c)) as ElFn<'table'>
 // prettier-ignore
-export const tbody = (props?: ElementProps, children?: Node[]) => createElement('tbody', props, children)
+export const tbody = ((p?: ElementProps | Children, c?: Children) => createElement('tbody', p, c)) as ElFn<'tbody'>
 // prettier-ignore
-export const td = (props?: ElementProps, children?: Node[]) => createElement('td', props, children)
+export const td = ((p?: ElementProps | Children, c?: Children) => createElement('td', p, c)) as ElFn<'td'>
 // prettier-ignore
-export const textarea = (props?: ElementProps, children?: Node[]) => createElement('textarea', props, children)
+export const textarea = ((p?: ElementProps | Children, c?: Children) => createElement('textarea', p, c)) as ElFn<'textarea'>
 // prettier-ignore
-export const tfoot = (props?: ElementProps, children?: Node[]) => createElement('tfoot', props, children)
+export const tfoot = ((p?: ElementProps | Children, c?: Children) => createElement('tfoot', p, c)) as ElFn<'tfoot'>
 // prettier-ignore
-export const th = (props?: ElementProps, children?: Node[]) => createElement('th', props, children)
+export const th = ((p?: ElementProps | Children, c?: Children) => createElement('th', p, c)) as ElFn<'th'>
 // prettier-ignore
-export const thead = (props?: ElementProps, children?: Node[]) => createElement('thead', props, children)
+export const thead = ((p?: ElementProps | Children, c?: Children) => createElement('thead', p, c)) as ElFn<'thead'>
 // prettier-ignore
-export const time = (props?: ElementProps, children?: Node[]) => createElement('time', props, children)
+export const time = ((p?: ElementProps | Children, c?: Children) => createElement('time', p, c)) as ElFn<'time'>
 // prettier-ignore
-export const tr = (props?: ElementProps, children?: Node[]) => createElement('tr', props, children)
+export const tr = ((p?: ElementProps | Children, c?: Children) => createElement('tr', p, c)) as ElFn<'tr'>
 // prettier-ignore
-export const ul = (props?: ElementProps, children?: Node[]) => createElement('ul', props, children)
+export const ul = ((p?: ElementProps | Children, c?: Children) => createElement('ul', p, c)) as ElFn<'ul'>
 // prettier-ignore
-export const video = (props?: ElementProps, children?: Node[]) => createElement('video', props, children)
+export const video = ((p?: ElementProps | Children, c?: Children) => createElement('video', p, c)) as ElFn<'video'>
 /* v8 ignore stop */

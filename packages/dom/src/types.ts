@@ -1,19 +1,21 @@
 // ── Component Definition ──────────────────────────────────────────
 
-export interface ComponentDef<S, M, E> {
+export interface ComponentDef<S, M, E = never, D = void> {
   name: string
-  init: (data?: unknown) => [S, E[]]
+  init: (data: D) => [S, E[]]
   update: (state: S, msg: M) => [S, E[]]
   view: (send: Send<M>) => Node[]
-  onEffect?: (effect: E, send: Send<M>, signal: AbortSignal) => void
+  onEffect?: (ctx: { effect: E; send: Send<M>; signal: AbortSignal }) => void
 
   // Level 2 composition
   propsMsg?: (props: Record<string, unknown>) => M
   receives?: Record<string, (params: unknown) => M>
 
-  // Compiler-injected
+  /** @internal Compiler-injected */
   __dirty?: (oldState: S, newState: S) => number | [number, number]
+  /** @internal Compiler-injected */
   __renderToString?: (state: S) => string
+  /** @internal Compiler-injected */
   __msgSchema?: object
 }
 
@@ -81,14 +83,24 @@ export interface ShowOptions<S, M = unknown> extends TransitionOptions {
  * to hold the DOM until the animation resolves. Setting `leave` disables the
  * bulk-clear / full-replace fast paths.
  */
+/**
+ * Per-item accessor. Two access forms:
+ * - `item.field` — shorthand, returns accessor for `item.current[field]`
+ * - `item(t => t.expr)` — computed expressions
+ *
+ * In both cases the returned value is a `() => V` accessor.
+ * Invoke it (`item.field()`) to read the current value imperatively.
+ */
+export type ItemAccessor<T> = {
+  <R>(selector: (t: T) => R): () => R
+} & {
+  [K in keyof T]-?: () => T[K]
+}
+
 export interface EachOptions<S, T, M = unknown> extends TransitionOptions {
   items: (s: S) => T[]
   key: (item: T) => string | number
-  render: (opts: {
-    send: Send<M>
-    item: <R>(selector: (t: T) => R) => () => R
-    index: () => number
-  }) => Node[]
+  render: (opts: { send: Send<M>; item: ItemAccessor<T>; index: () => number }) => Node[]
 }
 
 export interface PortalOptions {
@@ -96,13 +108,13 @@ export interface PortalOptions {
   render: () => Node[]
 }
 
-export interface ForeignOptions<S, T extends Record<string, unknown>, Instance> {
-  mount: (container: HTMLElement, send: Send<unknown>) => Instance
+export interface ForeignOptions<S, M, T extends Record<string, unknown>, Instance> {
+  mount: (ctx: { container: HTMLElement; send: Send<M> }) => Instance
   props: (s: S) => T
   sync:
-    | ((instance: Instance, props: T, prev: T | undefined) => void)
+    | ((ctx: { instance: Instance; props: T; prev: T | undefined }) => void)
     | {
-        [K in keyof T]?: (instance: Instance, value: T[K], prev: T[K] | undefined) => void
+        [K in keyof T]?: (ctx: { instance: Instance; value: T[K]; prev: T[K] | undefined }) => void
       }
   destroy: (instance: Instance) => void
   container?: { tag?: string; attrs?: Record<string, string> }

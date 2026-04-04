@@ -81,7 +81,7 @@ function dispatchInitialEffects<S, M, E>(
 ): void {
   if (inst.initialEffects.length === 0 || !inst.def.onEffect) return
   for (const effect of inst.initialEffects) {
-    inst.def.onEffect(effect, inst.send, inst.signal)
+    inst.def.onEffect({ effect, send: inst.send, signal: inst.signal })
   }
   inst.initialEffects = []
 }

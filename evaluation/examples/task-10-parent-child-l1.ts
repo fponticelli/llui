@@ -2,7 +2,7 @@
  * Task 10 — Parent-Child Communication Level 1 (Tier 5)
  * Idiomatic score: 6/6
  */
-import { component, div, button, text, each, peek } from '@llui/dom'
+import { component, div, button, text, each } from '@llui/dom'
 import type { Send } from '@llui/dom'
 
 // ── Counter slice view function (Level 1) ───────────────────────
@@ -19,7 +19,7 @@ function counterView<S>(
       text(props.item((c) => String(c.value))),
       button(
         {
-          onClick: () => send({ type: 'increment', id: peek(props.item, (c) => c.id) }),
+          onClick: () => send({ type: 'increment', id: props.item.id() }),
         },
         [text('+')],
       ),

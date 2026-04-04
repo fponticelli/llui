@@ -183,18 +183,18 @@ each<State, Todo, Msg>({
     div({ class: 'todo' }, [
       input({
         type: 'checkbox',
-        checked: item((t) => t.done),
-        onChange: () => send({ type: 'toggle', id: peek(item, (t) => t.id) }),
+        checked: item.done,
+        onChange: () => send({ type: 'toggle', id: item.id() }),
       }),
-      text(item((t) => t.text)),
+      text(item.text),
     ]),
   ],
 })
 ```
 
-`item((t) => t.text)` returns a **per-item accessor** — a zero-arg function that reads the current item's field. It updates automatically when the item changes.
+`item.text` returns a **per-item accessor** — a zero-arg function that reads the current item's field. It updates automatically when the item changes. Use `item(t => t.expr)` for computed expressions.
 
-Use `peek(item, (t) => t.id)` to read the current value imperatively (for event handlers).
+Invoke the accessor (`item.id()`) to read the current value imperatively — e.g. inside event handlers.
 
 ## Effects
 

@@ -8,7 +8,7 @@ declare global {
 }
 
 export interface ClientPageContext {
-  Page: ComponentDef<unknown, unknown, unknown>
+  Page: ComponentDef<unknown, unknown, unknown, unknown>
   data?: unknown
   isHydration?: boolean
 }
