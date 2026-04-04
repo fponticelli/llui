@@ -107,42 +107,53 @@ const App = component<State, Msg, never>({
         ]),
       ]),
       table({ class: 'table table-hover table-striped test-data' }, [
-        tbody(
-          { id: 'tbody' },
-          (() => {
-            const sel = selector<State, number>((s) => s.selected)
-            return each<State, Row>({
+        (() => {
+          const sel = selector<State, number>((s) => s.selected)
+          const tbodyEl = tbody({ id: 'tbody' },
+            each<State, Row>({
               items: (s) => s.rows,
               key: (r) => r.id,
-              render: ({ item, send }) => {
+              render: ({ item }) => {
                 const rowId = item((r) => r.id)()
                 const row = tr({}, [
                   td({ class: 'col-md-1' }, [text(item((r) => String(r.id)))]),
                   td({ class: 'col-md-4' }, [
-                    a(
-                      { onClick: () => send({ type: 'select', id: item((r) => r.id)() }) },
-                      [text(item((r) => r.label))],
-                    ),
+                    a({}, [text(item((r) => r.label))]),
                   ]),
                   td({ class: 'col-md-1' }, [
-                    a(
-                      { onClick: () => send({ type: 'remove', id: item((r) => r.id)() }) },
-                      [
-                        span({
-                          class: 'glyphicon glyphicon-remove',
-                          'aria-hidden': 'true',
-                        }),
-                      ],
-                    ),
+                    a({}, [
+                      span({
+                        class: 'glyphicon glyphicon-remove',
+                        'aria-hidden': 'true',
+                      }),
+                    ]),
                   ]),
                   td({ class: 'col-md-6' }),
                 ])
                 sel.bind(row, rowId, 'class', 'class', (match) => match ? 'danger' : '')
+                // Store row ID on the element for delegated event lookup
+                ;(row as { _id?: number })._id = rowId
                 return [row]
               },
-            })
-          })(),
-        ),
+            }),
+          )
+          // Single delegated click listener for all rows
+          tbodyEl.addEventListener('click', (e) => {
+            const target = e.target as Element
+            const tr = target.closest('tr')
+            if (!tr) return
+            const id = (tr as { _id?: number })._id
+            if (id === undefined) return
+            if (target.closest('td.col-md-4')) {
+              send({ type: 'select', id })
+              flush()
+            } else if (target.closest('td.col-md-1 a')) {
+              send({ type: 'remove', id })
+              flush()
+            }
+          })
+          return tbodyEl
+        })(),
       ]),
     ]),
   ],
