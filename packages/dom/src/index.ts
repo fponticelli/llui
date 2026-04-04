@@ -33,6 +33,7 @@ export { flush } from './runtime'
 export { addressOf } from './addressed'
 export { renderToString } from './ssr'
 export { mergeHandlers } from './merge-handlers'
+export { sliceHandler } from './slice-handler'
 
 // ── View Primitives ───────────────────────────────────────────────
 
