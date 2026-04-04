@@ -4,26 +4,6 @@ import { setRenderContext, clearRenderContext } from './render-context'
 import { setFlatBindings } from './binding'
 
 /**
- * Set up a minimal DOM environment for server-side rendering.
- * Must be called (and awaited) once before renderToString on the server.
- * Uses jsdom — the calling package must have jsdom as a dependency.
- *
- * No-op if `document` is already defined (browser or jsdom already loaded).
- */
-export async function initSsrDom(): Promise<void> {
-  if (typeof document !== 'undefined') return
-
-  // @ts-expect-error — jsdom is an optional peer dependency, not typed
-  const jsdom: { JSDOM: new (html: string) => { window: Record<string, unknown> } } = await import('jsdom')
-  const dom = new jsdom.JSDOM('<!DOCTYPE html><html><body></body></html>')
-  const g = globalThis as Record<string, unknown>
-  const win = dom.window
-  for (const key of ['document', 'HTMLElement', 'Element', 'Node', 'Text', 'Comment', 'MouseEvent', 'ShadowRoot', 'DocumentFragment', 'HTMLTemplateElement']) {
-    if (win[key] !== undefined) g[key] = win[key]
-  }
-}
-
-/**
  * Render a component to an HTML string for SSR.
  * Evaluates view() against the initial state (or provided data),
  * serializes the DOM to HTML, and adds data-llui-hydrate markers

@@ -1,10 +1,10 @@
 /**
  * SSR entry point — renders the initial page to HTML string.
  */
-import { renderToString, initSsrDom } from '@llui/dom'
+import { initSsrDom } from '@llui/dom/ssr'
+import { renderToString } from '@llui/dom'
 import { appDef, initialState } from './app'
 
-// Set up DOM environment once (jsdom)
 await initSsrDom()
 
 export function render(url: string): { html: string; state: string } {
