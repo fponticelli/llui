@@ -151,6 +151,9 @@ export function transformLlui(source: string, _filename: string, devMode = false
 
   if (edits.length === 0) return null
 
+  // Find component declarations for HMR
+  const componentDecls = devMode ? findComponentDeclarations(sourceFile, lluiImport) : []
+
   // Build per-statement edits by comparing original vs transformed.
   // Only emit edits for statements that actually changed.
   // Untouched code keeps its original positions → accurate source maps.
@@ -168,7 +171,7 @@ export function transformLlui(source: string, _filename: string, devMode = false
       xfText = printer.printNode(ts.EmitHint.Unspecified, xfStmts[i]!, transformed)
     } catch {
       // Synthetic nodes may fail to print individually — fall back to full reprint
-      const output = printer.printFile(transformed) + (devMode ? '\n' + generateHmrCode() : '')
+      const output = printer.printFile(transformed) + (devMode ? '\n' + generateHmrCode(componentDecls) : '')
       return { output, edits: [{ start: 0, end: source.length, replacement: output }] }
     }
 
@@ -186,7 +189,7 @@ export function transformLlui(source: string, _filename: string, devMode = false
 
   // HMR: append at end
   if (devMode) {
-    finalEdits.push({ start: source.length, end: source.length, replacement: '\n' + generateHmrCode() })
+    finalEdits.push({ start: source.length, end: source.length, replacement: '\n' + generateHmrCode(componentDecls) })
   }
 
   if (finalEdits.length === 0) return null
@@ -204,17 +207,55 @@ export function transformLlui(source: string, _filename: string, devMode = false
 
 // ── HMR ──────────────────────────────────────────────────────────
 
-function generateHmrCode(): string {
-  // Enable HMR registry in mountApp, then accept hot updates.
-  // On module re-execution, mountApp detects the live instance
-  // and hot-swaps the definition (preserving state).
-  return `
-import { enableHmr as __enableHmr } from '@llui/dom/hmr'
-__enableHmr()
+function generateHmrCode(components: Array<{ varName: string; componentName: string }>): string {
+  if (components.length === 0) {
+    // No component() calls in this file — just accept for view file hot reload
+    return `
 if (import.meta.hot) {
   import.meta.hot.accept()
 }
 `.trim()
+  }
+
+  // Generate replaceComponent calls for each component in this file
+  const replaceCalls = components.map(({ varName, componentName }) =>
+    `      __replaceComponent("${componentName}", ${varName})`,
+  ).join('\n')
+
+  return `
+import { enableHmr as __enableHmr, replaceComponent as __replaceComponent } from '@llui/dom/hmr'
+__enableHmr()
+if (import.meta.hot) {
+  import.meta.hot.accept(() => {
+${replaceCalls}
+  })
+}
+`.trim()
+}
+
+/** Find all component() calls and extract the variable name and component name */
+function findComponentDeclarations(sf: ts.SourceFile, lluiImport: ts.ImportDeclaration): Array<{ varName: string; componentName: string }> {
+  const result: Array<{ varName: string; componentName: string }> = []
+
+  function visit(node: ts.Node): void {
+    // Match: const Foo = component({ name: 'Foo', ... })
+    if (ts.isVariableDeclaration(node) && ts.isIdentifier(node.name) && node.initializer &&
+        ts.isCallExpression(node.initializer) && isComponentCall(node.initializer, lluiImport)) {
+      const varName = node.name.text
+      const config = node.initializer.arguments[0]
+      if (config && ts.isObjectLiteralExpression(config)) {
+        for (const prop of config.properties) {
+          if (ts.isPropertyAssignment(prop) && ts.isIdentifier(prop.name) && prop.name.text === 'name' && ts.isStringLiteral(prop.initializer)) {
+            result.push({ varName, componentName: prop.initializer.text })
+          }
+        }
+      }
+    }
+    ts.forEachChild(node, visit)
+  }
+
+  visit(sf)
+  return result
 }
 
 
