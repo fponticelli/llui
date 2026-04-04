@@ -99,7 +99,7 @@ a:hover { text-decoration: underline; }
   font-size: 13px; color: #57606a; font-weight: 500;
 }
 .code-table { width: 100%; border-collapse: collapse; font-size: 13px; line-height: 1.45; tab-size: 4; }
-.code-table td { padding: 0; vertical-align: top; }
+.code-table td { vertical-align: top; }
 .line-num {
   width: 1%; min-width: 50px; padding: 0 24px; text-align: right;
   color: #8b949e; user-select: none; white-space: nowrap; cursor: pointer;
