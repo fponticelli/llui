@@ -209,7 +209,7 @@ function generateHmrCode(): string {
   // On module re-execution, mountApp detects the live instance
   // and hot-swaps the definition (preserving state).
   return `
-import { enableHmr as __enableHmr } from '@llui/dom'
+import { enableHmr as __enableHmr } from '@llui/dom/hmr'
 __enableHmr()
 if (import.meta.hot) {
   import.meta.hot.accept()

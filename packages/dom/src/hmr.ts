@@ -5,6 +5,15 @@ import { createScope, disposeScope } from './scope'
 import { setRenderContext, clearRenderContext } from './render-context'
 import { setFlatBindings } from './binding'
 import { unregisterInstance } from './runtime'
+import { _setHmrModule } from './mount'
+
+/**
+ * Enable HMR state preservation. Called by compiler-generated dev code.
+ * Importing this module registers it with mountApp for hot-swapping.
+ */
+export function enableHmr(): void {
+  _setHmrModule({ enableHmr, registerForHmr, unregisterForHmr, replaceComponent })
+}
 
 // ── HMR Registry ─────────────────────────────────────────────────
 

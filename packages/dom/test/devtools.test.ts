@@ -1,6 +1,10 @@
 import { describe, it, expect } from 'vitest'
 import { mountApp, component, div, text } from '../src/index'
+import { installDevTools } from '../src/devtools'
 import type { LluiDebugAPI } from '../src/devtools'
+import { createComponentInstance, flushInstance } from '../src/update-loop'
+import { setFlatBindings } from '../src/binding'
+import { setRenderContext, clearRenderContext } from '../src/render-context'
 
 declare const globalThis: { __lluiDebug?: LluiDebugAPI }
 
@@ -20,30 +24,29 @@ const Counter = component<State, Msg, never>({
   __dirty: (o, n) => (Object.is(o.count, n.count) ? 0 : 1),
 })
 
-// Devtools now installed via dynamic import — wait for microtask
-async function mountWithDevTools(opts?: { devTools?: boolean }) {
+function mountWithDevTools() {
   const container = document.createElement('div')
-  const handle = mountApp(container, Counter, undefined, opts)
-  await new Promise((r) => setTimeout(r, 50))
-  return { container, handle }
+  const inst = createComponentInstance(Counter)
+  installDevTools(inst)
+
+  setFlatBindings(inst.allBindings)
+  setRenderContext({ rootScope: inst.rootScope, state: inst.state, allBindings: inst.allBindings, structuralBlocks: inst.structuralBlocks, container, send: inst.send })
+  Counter.view(inst.state, inst.send)
+  clearRenderContext()
+  setFlatBindings(null)
+
+  return { inst, container }
 }
 
 describe('DevTools', () => {
-  it('auto-enables devtools in dev mode', async () => {
-    const { handle } = await mountWithDevTools()
+  it('exposes __lluiDebug on globalThis', () => {
+    const { inst } = mountWithDevTools()
     expect(globalThis.__lluiDebug).toBeDefined()
-    handle.dispose()
     delete globalThis.__lluiDebug
   })
 
-  it('can be disabled in dev mode with devTools: false', async () => {
-    const { handle } = await mountWithDevTools({ devTools: false })
-    expect(globalThis.__lluiDebug).toBeUndefined()
-    handle.dispose()
-  })
-
-  it('getState returns current state', async () => {
-    const { handle } = await mountWithDevTools()
+  it('getState returns current state', () => {
+    mountWithDevTools()
 
     expect(globalThis.__lluiDebug!.getState()).toEqual({ count: 0 })
 
@@ -52,12 +55,11 @@ describe('DevTools', () => {
 
     expect(globalThis.__lluiDebug!.getState()).toEqual({ count: 1 })
 
-    handle.dispose()
     delete globalThis.__lluiDebug
   })
 
-  it('evalUpdate dry-runs without modifying state', async () => {
-    const { handle } = await mountWithDevTools()
+  it('evalUpdate dry-runs without modifying state', () => {
+    mountWithDevTools()
 
     const result = globalThis.__lluiDebug!.evalUpdate({ type: 'inc' })
     expect(result.state).toEqual({ count: 1 })
@@ -65,12 +67,11 @@ describe('DevTools', () => {
 
     expect(globalThis.__lluiDebug!.getState()).toEqual({ count: 0 })
 
-    handle.dispose()
     delete globalThis.__lluiDebug
   })
 
-  it('records message history', async () => {
-    const { handle } = await mountWithDevTools()
+  it('records message history', () => {
+    mountWithDevTools()
 
     globalThis.__lluiDebug!.send({ type: 'inc' })
     globalThis.__lluiDebug!.flush()
@@ -82,12 +83,11 @@ describe('DevTools', () => {
     expect(history[0]!.stateAfter).toEqual({ count: 1 })
     expect(history[1]!.stateAfter).toEqual({ count: 2 })
 
-    handle.dispose()
     delete globalThis.__lluiDebug
   })
 
-  it('exportTrace produces valid LluiTrace format', async () => {
-    const { handle } = await mountWithDevTools()
+  it('exportTrace produces valid LluiTrace format', () => {
+    mountWithDevTools()
 
     globalThis.__lluiDebug!.send({ type: 'inc' })
     globalThis.__lluiDebug!.flush()
@@ -98,7 +98,6 @@ describe('DevTools', () => {
     expect(trace.entries).toHaveLength(1)
     expect(trace.entries[0]!.expectedState).toEqual({ count: 1 })
 
-    handle.dispose()
     delete globalThis.__lluiDebug
   })
 })

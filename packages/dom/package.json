@@ -15,6 +15,10 @@
     "./ssr": {
       "types": "./dist/ssr-dom.d.ts",
       "import": "./dist/ssr-dom.js"
+    },
+    "./hmr": {
+      "types": "./dist/hmr.d.ts",
+      "import": "./dist/hmr.js"
     }
   },
   "files": [

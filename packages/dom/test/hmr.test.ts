@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
-import { component, div, text, mountApp, enableHmr } from '../src/index'
-import { replaceComponent, registerForHmr } from '../src/hmr'
+import { component, div, text, mountApp } from '../src/index'
+import { replaceComponent, registerForHmr, enableHmr } from '../src/hmr'
 import { createComponentInstance, flushInstance } from '../src/update-loop'
 import { setFlatBindings } from '../src/binding'
 import { setRenderContext, clearRenderContext } from '../src/render-context'
