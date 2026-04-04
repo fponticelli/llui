@@ -101,6 +101,9 @@ importers:
       '@llui/vite-plugin':
         specifier: workspace:*
         version: link:../../packages/vite-plugin
+      jsdom:
+        specifier: ^29.0.1
+        version: 29.0.1
       vite:
         specifier: ^8.0.0
         version: 8.0.3(@emnapi/core@1.9.1)(@emnapi/runtime@1.9.1)(@types/node@22.19.15)(esbuild@0.27.5)(jiti@2.6.1)(tsx@4.21.0)
