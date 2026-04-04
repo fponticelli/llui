@@ -84,10 +84,7 @@ export function http(opts: {
 
 export function cancel(token: string): CancelEffect
 export function cancel(token: string, inner: BuiltinEffect): CancelReplaceEffect
-export function cancel(
-  token: string,
-  inner?: BuiltinEffect,
-): CancelEffect | CancelReplaceEffect {
+export function cancel(token: string, inner?: BuiltinEffect): CancelEffect | CancelReplaceEffect {
   if (inner) return { type: 'cancel', token, inner }
   return { type: 'cancel', token }
 }
@@ -140,7 +137,7 @@ export function handleEffects<E extends { type: string }, M = never>(): EffectCh
         }
         handler(effect as E, send as unknown as (msg: M) => void, signal)
       }
-      return ((effect: E, send: (msg: M) => void, signal: AbortSignal) => {
+      return (effect: E, send: (msg: M) => void, signal: AbortSignal) => {
         if (!cleanupRegistered) {
           signal.addEventListener(
             'abort',
@@ -157,7 +154,7 @@ export function handleEffects<E extends { type: string }, M = never>(): EffectCh
         // Widen send for internal dispatch — built-in effects create dynamic messages
         const internalSend = send as unknown as InternalSend
         dispatchEffect(effect, internalSend, signal, cancelControllers, debounceTimers, custom)
-      })
+      }
     },
   }
 
@@ -179,7 +176,14 @@ function dispatchEffect(
       runHttp(effect as HttpEffect, send, signal)
       break
     case 'cancel':
-      runCancel(effect as CancelEffect | CancelReplaceEffect, send, signal, cancelControllers, debounceTimers, custom)
+      runCancel(
+        effect as CancelEffect | CancelReplaceEffect,
+        send,
+        signal,
+        cancelControllers,
+        debounceTimers,
+        custom,
+      )
       break
     case 'debounce':
       runDebounce(effect as DebounceEffect, send, signal, cancelControllers, debounceTimers, custom)
@@ -220,18 +224,22 @@ function runHttp(effect: HttpEffect, send: InternalSend, signal: AbortSignal): v
     .catch((err: unknown) => {
       if (signal.aborted) return
       if (err instanceof DOMException && err.name === 'AbortError') return
-      const error: ApiError = err instanceof TypeError && err.message.includes('fetch')
-        ? { kind: 'network', message: err.message }
-        : { kind: 'network', message: String(err) }
+      const error: ApiError =
+        err instanceof TypeError && err.message.includes('fetch')
+          ? { kind: 'network', message: err.message }
+          : { kind: 'network', message: String(err) }
       send({ type: effect.onError, error })
     })
 }
 
 async function httpStatusToApiError(res: Response): Promise<ApiError> {
   switch (res.status) {
-    case 401: return { kind: 'unauthorized' }
-    case 403: return { kind: 'forbidden' }
-    case 404: return { kind: 'notfound' }
+    case 401:
+      return { kind: 'unauthorized' }
+    case 403:
+      return { kind: 'forbidden' }
+    case 404:
+      return { kind: 'notfound' }
     case 429: {
       const retry = res.headers.get('retry-after')
       return { kind: 'ratelimit', retryAfter: retry ? parseInt(retry, 10) : undefined }
@@ -244,7 +252,9 @@ async function httpStatusToApiError(res: Response): Promise<ApiError> {
           const errors = body.errors as Record<string, string[]>
           return { kind: 'validation', fields: errors }
         }
-      } catch { /* fall through */ }
+      } catch {
+        /* fall through */
+      }
       return { kind: 'server', status: res.status, message: res.statusText }
     }
     default:
@@ -352,4 +362,4 @@ function runRace(
 
 // ── SSR Effect Resolution ────────────────────────────────────────
 
-export { resolveEffects } from "./resolve"
+export { resolveEffects } from './resolve'

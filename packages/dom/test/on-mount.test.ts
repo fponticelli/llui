@@ -66,11 +66,11 @@ describe('onMount()', () => {
             return [{ ...state, visible: false }, []]
         }
       },
-      view: (_state, send) => {
+      view: (send) => {
         sendFn = send
         return show({
           when: (s: State) => s.visible,
-          render: (_s, _send) => {
+          render: (_send) => {
             onMount(() => cleanup)
             return [text('content')]
           },
@@ -106,11 +106,11 @@ describe('onMount()', () => {
             return [{ ...state, visible: false }, []]
         }
       },
-      view: (_state, send) => {
+      view: (send) => {
         sendFn = send
         return show({
           when: (s: State) => s.visible,
-          render: (_s, _send) => {
+          render: (_send) => {
             onMount(callback)
             return [text('temp')]
           },

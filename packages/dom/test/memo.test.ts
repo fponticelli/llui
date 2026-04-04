@@ -10,7 +10,7 @@ type Msg = { type: 'inc' } | { type: 'setLabel'; value: string }
 
 describe('memo()', () => {
   it('caches result when output is unchanged', () => {
-    const compute = vi.fn((s: State) => s.count > 0 ? 'positive' : 'zero')
+    const compute = vi.fn((s: State) => (s.count > 0 ? 'positive' : 'zero'))
     const memoized = memo(compute)
 
     const state1: State = { count: 1, label: 'a' }
@@ -52,19 +52,13 @@ describe('memo()', () => {
             return [{ ...state, label: msg.value }, []]
         }
       },
-      view: (_state, send) => {
+      view: (send) => {
         sendFn = send
-        return [
-          div({}, [
-            text((s: State) => memoized(s)),
-            text((s: State) => s.label),
-          ]),
-        ]
+        return [div({}, [text((s: State) => memoized(s)), text((s: State) => s.label)])]
       },
       // count = bit 0, label = bit 1
       __dirty: (o, n) =>
-        (Object.is(o.count, n.count) ? 0 : 0b01) |
-        (Object.is(o.label, n.label) ? 0 : 0b10),
+        (Object.is(o.count, n.count) ? 0 : 0b01) | (Object.is(o.label, n.label) ? 0 : 0b10),
     }
 
     const container = document.createElement('div')

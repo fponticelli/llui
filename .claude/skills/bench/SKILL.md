@@ -17,12 +17,14 @@ Run the js-framework-benchmark (jfb) for LLui, collect speed/memory/bundle resul
 ## Prerequisites
 
 The jfb repo must be cloned at `benchmarks/js-framework-benchmark-repo/`. If missing, tell the user:
+
 ```
 git clone https://github.com/krausest/js-framework-benchmark.git benchmarks/js-framework-benchmark-repo
 cd benchmarks/js-framework-benchmark-repo && npm ci && cd webdriver-ts && npm ci && npm run compile
 ```
 
 The jfb server must be running on port 8080. Check with `curl -sf http://localhost:8080/ls`. If not running, start it:
+
 ```
 cd benchmarks/js-framework-benchmark-repo && npm start &
 sleep 3
@@ -50,12 +52,14 @@ Ensure `package.json` exists in the jfb framework dir. If not, create one with `
 ### 3. Run the benchmark
 
 Run ONLY LLui by default:
+
 ```bash
 cd /private/tmp/js-framework-benchmark/webdriver-ts
 node dist/benchmarkRunner.js --framework keyed/llui --headless
 ```
 
 If `--all` was passed, also run each competitor:
+
 ```bash
 for fw in vanillajs solid svelte react-hooks elm; do
   node dist/benchmarkRunner.js --framework keyed/$fw --headless
@@ -69,6 +73,7 @@ If `--framework <name>` was passed, run only that competitor additionally.
 Read result JSON files from `webdriver-ts/results/`:
 
 **Speed benchmarks** (read `values.total.median`):
+
 - `01_run1k` — Create 1k
 - `02_replace1k` — Replace 1k
 - `03_update10th1k_x16` — Update 10th
@@ -80,6 +85,7 @@ Read result JSON files from `webdriver-ts/results/`:
 - `09_clear1k_x8` — Clear
 
 **Memory benchmarks** (read `values.DEFAULT.median`):
+
 - `21_ready-memory` — Ready (MB)
 - `22_run-memory` — After 1k rows (MB)
 - `25_run-clear-memory` — After run+clear (MB)
@@ -115,6 +121,7 @@ Create 1k          -9%      -2%      +2%     +15%     +65%
 Show memory comparison if available.
 
 Show bundle size comparison:
+
 ```
 === Bundle Size (gzip) ===
 

@@ -9,10 +9,7 @@ type State = {
   confirmed: boolean
 }
 
-type Msg =
-  | { type: 'openModal' }
-  | { type: 'closeModal' }
-  | { type: 'confirm' }
+type Msg = { type: 'openModal' } | { type: 'closeModal' } | { type: 'confirm' }
 
 type Effect = never
 
@@ -29,21 +26,22 @@ export const Modal = component<State, Msg, Effect>({
         return [{ ...state, open: false, confirmed: true }, []]
     }
   },
-  view: (_state, send) => [
+  view: (send) => [
     div({ class: 'modal-container' }, [
-      button({
-        class: 'open-btn',
-        onClick: () => send({ type: 'openModal' }),
-      }, [text('Open Modal')]),
+      button(
+        {
+          class: 'open-btn',
+          onClick: () => send({ type: 'openModal' }),
+        },
+        [text('Open Modal')],
+      ),
       ...show<State>({
         when: (s) => s.confirmed,
-        render: (_s, _send) => [
-          div({ class: 'confirmation' }, [text('Confirmed!')]),
-        ],
+        render: () => [div({ class: 'confirmation' }, [text('Confirmed!')])],
       }),
       ...show<State>({
         when: (s) => s.open,
-        render: (_s, _send) => {
+        render: () => {
           onMount((el) => {
             const modal = el as HTMLElement
             const focusableSelector =
@@ -75,32 +73,42 @@ export const Modal = component<State, Msg, Effect>({
           })
 
           return [
-            div({
-              class: 'overlay',
-              onClick: () => send({ type: 'closeModal' }),
-            }, [
-              div({
-                class: 'modal',
-                onClick: (e: Event) => e.stopPropagation(),
-              }, [
-                div({ class: 'modal-header' }, [
-                  text('Modal Title'),
-                  button({
-                    class: 'close-btn',
-                    onClick: () => send({ type: 'closeModal' }),
-                  }, [text('\u00d7')]),
-                ]),
-                div({ class: 'modal-body' }, [
-                  text('This is the modal body content.'),
-                ]),
-                div({ class: 'modal-footer' }, [
-                  button({
-                    class: 'confirm-btn',
-                    onClick: () => send({ type: 'confirm' }),
-                  }, [text('Confirm')]),
-                ]),
-              ]),
-            ]),
+            div(
+              {
+                class: 'overlay',
+                onClick: () => send({ type: 'closeModal' }),
+              },
+              [
+                div(
+                  {
+                    class: 'modal',
+                    onClick: (e: Event) => e.stopPropagation(),
+                  },
+                  [
+                    div({ class: 'modal-header' }, [
+                      text('Modal Title'),
+                      button(
+                        {
+                          class: 'close-btn',
+                          onClick: () => send({ type: 'closeModal' }),
+                        },
+                        [text('\u00d7')],
+                      ),
+                    ]),
+                    div({ class: 'modal-body' }, [text('This is the modal body content.')]),
+                    div({ class: 'modal-footer' }, [
+                      button(
+                        {
+                          class: 'confirm-btn',
+                          onClick: () => send({ type: 'confirm' }),
+                        },
+                        [text('Confirm')],
+                      ),
+                    ]),
+                  ],
+                ),
+              ],
+            ),
           ]
         },
       }),

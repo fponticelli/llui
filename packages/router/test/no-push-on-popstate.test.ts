@@ -3,15 +3,16 @@ import { createRouter, route, param } from '../src/index'
 import { connectRouter } from '../src/connect'
 
 describe('navigation should not double-push on popstate', () => {
-  type Route =
-    | { page: 'search'; q: string }
-    | { page: 'repo'; owner: string; name: string }
+  type Route = { page: 'search'; q: string } | { page: 'repo'; owner: string; name: string }
 
-  const router = createRouter<Route>([
-    route([], () => ({ page: 'search', q: '' })),
-    route(['search'], { query: ['q'] }, ({ q }) => ({ page: 'search', q: q ?? '' })),
-    route([param('owner'), param('name')], ({ owner, name }) => ({ page: 'repo', owner, name })),
-  ], { mode: 'history' })
+  const router = createRouter<Route>(
+    [
+      route([], () => ({ page: 'search', q: '' })),
+      route(['search'], { query: ['q'] }, ({ q }) => ({ page: 'search', q: q ?? '' })),
+      route([param('owner'), param('name')], ({ owner, name }) => ({ page: 'repo', owner, name })),
+    ],
+    { mode: 'history' },
+  )
 
   const routing = connectRouter(router)
 

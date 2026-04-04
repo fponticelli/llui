@@ -19,16 +19,8 @@ export interface LintResult {
  * Lint a single source file for LLui idiomatic anti-patterns.
  * Returns violations and a numeric score (6 = perfect).
  */
-export function lintIdiomatic(
-  source: string,
-  filename = 'input.ts',
-): LintResult {
-  const sf = ts.createSourceFile(
-    filename,
-    source,
-    ts.ScriptTarget.Latest,
-    true,
-  )
+export function lintIdiomatic(source: string, filename = 'input.ts'): LintResult {
+  const sf = ts.createSourceFile(filename, source, ts.ScriptTarget.Latest, true)
   const violations: LintViolation[] = []
 
   checkStateMutation(sf, filename, violations)
@@ -47,20 +39,14 @@ export function lintIdiomatic(
 
 // ── Helpers ─────────────────────────────────────────────────────────
 
-function pos(
-  node: ts.Node,
-  sf: ts.SourceFile,
-): { line: number; column: number } {
-  const { line, character } = sf.getLineAndCharacterOfPosition(
-    node.getStart(sf),
-  )
+function pos(node: ts.Node, sf: ts.SourceFile): { line: number; column: number } {
+  const { line, character } = sf.getLineAndCharacterOfPosition(node.getStart(sf))
   return { line: line + 1, column: character + 1 }
 }
 
 function isStatePropertyAccess(node: ts.Node, stateName: string): boolean {
   if (ts.isPropertyAccessExpression(node)) {
-    if (ts.isIdentifier(node.expression) && node.expression.text === stateName)
-      return true
+    if (ts.isIdentifier(node.expression) && node.expression.text === stateName) return true
     return isStatePropertyAccess(node.expression, stateName)
   }
   return false
@@ -125,10 +111,7 @@ function checkMutationsInBody(
   violations: LintViolation[],
 ): void {
   // Check for direct assignment: state.x = y
-  if (
-    ts.isBinaryExpression(node) &&
-    node.operatorToken.kind === ts.SyntaxKind.EqualsToken
-  ) {
+  if (ts.isBinaryExpression(node) && node.operatorToken.kind === ts.SyntaxKind.EqualsToken) {
     if (isStatePropertyAccess(node.left, stateName)) {
       const { line, column } = pos(node, sf)
       violations.push({
@@ -155,8 +138,7 @@ function checkMutationsInBody(
       const { line, column } = pos(node, sf)
       violations.push({
         rule: 'state-mutation',
-        message:
-          'Compound assignment on state in update(). State is immutable.',
+        message: 'Compound assignment on state in update(). State is immutable.',
         file: filename,
         line,
         column,
@@ -165,37 +147,23 @@ function checkMutationsInBody(
   }
   // Check for prefix/postfix increment/decrement: state.x++, ++state.x
   if (
-    (ts.isPostfixUnaryExpression(node) ||
-      ts.isPrefixUnaryExpression(node)) &&
+    (ts.isPostfixUnaryExpression(node) || ts.isPrefixUnaryExpression(node)) &&
     isStatePropertyAccess(node.operand, stateName)
   ) {
     const { line, column } = pos(node, sf)
     violations.push({
       rule: 'state-mutation',
-      message:
-        'Increment/decrement on state in update(). State is immutable.',
+      message: 'Increment/decrement on state in update(). State is immutable.',
       file: filename,
       line,
       column,
     })
   }
   // Check for mutating method calls: state.items.push(...)
-  if (
-    ts.isCallExpression(node) &&
-    ts.isPropertyAccessExpression(node.expression)
-  ) {
+  if (ts.isCallExpression(node) && ts.isPropertyAccessExpression(node.expression)) {
     const methodName = node.expression.name.text
     if (
-      [
-        'push',
-        'pop',
-        'shift',
-        'unshift',
-        'splice',
-        'sort',
-        'reverse',
-        'fill',
-      ].includes(methodName)
+      ['push', 'pop', 'shift', 'unshift', 'splice', 'sort', 'reverse', 'fill'].includes(methodName)
     ) {
       if (isStatePropertyAccess(node.expression.expression, stateName)) {
         const { line, column } = pos(node, sf)
@@ -213,24 +181,15 @@ function checkMutationsInBody(
       }
     }
   }
-  ts.forEachChild(node, (child) =>
-    checkMutationsInBody(child, stateName, sf, filename, violations),
-  )
+  ts.forEachChild(node, (child) => checkMutationsInBody(child, stateName, sf, filename, violations))
 }
 
 // ── Rule 2: missing-memo ────────────────────────────────────────────
 
-function checkMissingMemo(
-  sf: ts.SourceFile,
-  filename: string,
-  violations: LintViolation[],
-): void {
+function checkMissingMemo(sf: ts.SourceFile, filename: string, violations: LintViolation[]): void {
   // Collect arrow functions used as arguments in binding positions (text(), prop values)
   // Group by printed source text. Flag groups with count >= 2 not wrapped in memo().
-  const arrowsByText = new Map<
-    string,
-    { node: ts.ArrowFunction; inMemo: boolean }[]
-  >()
+  const arrowsByText = new Map<string, { node: ts.ArrowFunction; inMemo: boolean }[]>()
 
   function isInMemoCall(node: ts.Node): boolean {
     const parent = node.parent
@@ -317,10 +276,7 @@ function checkEachClosureViolation(
             prop.name.text === 'render'
           ) {
             const renderFn = prop.initializer
-            if (
-              ts.isArrowFunction(renderFn) ||
-              ts.isFunctionExpression(renderFn)
-            ) {
+            if (ts.isArrowFunction(renderFn) || ts.isFunctionExpression(renderFn)) {
               checkClosureCaptures(renderFn, sf, filename, violations)
             }
           }
@@ -421,22 +377,12 @@ function checkClosureCaptures(
     if (ts.isIdentifier(node)) {
       const name = node.text
       // Skip if it's a parameter, local, or safe name
-      if (paramNames.has(name) || localNames.has(name) || safeNames.has(name))
-        return
+      if (paramNames.has(name) || localNames.has(name) || safeNames.has(name)) return
       // Skip if it's a property name in a property access (rhs of dot)
-      if (
-        node.parent &&
-        ts.isPropertyAccessExpression(node.parent) &&
-        node.parent.name === node
-      )
+      if (node.parent && ts.isPropertyAccessExpression(node.parent) && node.parent.name === node)
         return
       // Skip if it's a property name in a property assignment
-      if (
-        node.parent &&
-        ts.isPropertyAssignment(node.parent) &&
-        node.parent.name === node
-      )
-        return
+      if (node.parent && ts.isPropertyAssignment(node.parent) && node.parent.name === node) return
       // Skip type references
       if (node.parent && ts.isTypeReferenceNode(node.parent)) return
 
@@ -449,8 +395,7 @@ function checkClosureCaptures(
           file: filename,
           line,
           column,
-          suggestion:
-            'Access data through the item/index parameters provided by each().',
+          suggestion: 'Access data through the item/index parameters provided by each().',
         })
       }
     }
@@ -522,13 +467,11 @@ function checkMapOnStateArrays(
     const { line, column } = pos(node, sf)
     violations.push({
       rule: 'map-on-state-array',
-      message:
-        'Array .map() on state-derived value in view(). Use each() for reactive lists.',
+      message: 'Array .map() on state-derived value in view(). Use each() for reactive lists.',
       file: filename,
       line,
       column,
-      suggestion:
-        'Replace .map() with each({ source: ..., key: ..., render: ... }).',
+      suggestion: 'Replace .map() with each({ source: ..., key: ..., render: ... }).',
     })
 
     ts.forEachChild(node, visit)
@@ -565,17 +508,11 @@ function checkUnnecessaryChild(
         let stateAccessCount = 0
 
         for (const prop of arg.properties) {
-          if (
-            ts.isPropertyAssignment(prop) &&
-            ts.isIdentifier(prop.name)
-          ) {
+          if (ts.isPropertyAssignment(prop) && ts.isIdentifier(prop.name)) {
             if (prop.name.text === 'receives') {
               hasReceives = true
             }
-            if (
-              prop.name.text === 'view' ||
-              prop.name.text === 'update'
-            ) {
+            if (prop.name.text === 'view' || prop.name.text === 'update') {
               // Count unique state property accesses
               const accesses = new Set<string>()
               countStateAccesses(prop.initializer, accesses)
@@ -623,8 +560,7 @@ function checkUnnecessaryChild(
                   file: filename,
                   line,
                   column,
-                  suggestion:
-                    'Use Level 1 composition (view function) for simple components.',
+                  suggestion: 'Use Level 1 composition (view function) for simple components.',
                 })
               }
             }
@@ -639,10 +575,7 @@ function checkUnnecessaryChild(
 }
 
 function countStateAccesses(node: ts.Node, accesses: Set<string>): void {
-  if (
-    ts.isPropertyAccessExpression(node) &&
-    ts.isIdentifier(node.expression)
-  ) {
+  if (ts.isPropertyAccessExpression(node) && ts.isIdentifier(node.expression)) {
     const name = node.expression.text
     if (name === 'state' || name === 's' || name === '_state') {
       accesses.add(node.name.text)
@@ -682,7 +615,12 @@ function checkFormBoilerplate(
         const { line, column } = pos(stmt, sf)
         violations.push({
           rule: 'form-boilerplate',
-          message: `Msg type has ${group.length} variants with identical shapes (${group.slice(0, 3).map((g) => `'${g}'`).join(', ')}${group.length > 3 ? ', ...' : ''}). Consider using a generic field-update message pattern.`,
+          message: `Msg type has ${group.length} variants with identical shapes (${group
+            .slice(0, 3)
+            .map((g) => `'${g}'`)
+            .join(
+              ', ',
+            )}${group.length > 3 ? ', ...' : ''}). Consider using a generic field-update message pattern.`,
           file: filename,
           line,
           column,

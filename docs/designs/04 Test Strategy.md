@@ -117,7 +117,11 @@ it('search dispatches cancel + debounce + http', () => {
   const t = testComponent(Search)
   t.send({ type: 'setQuery', value: 'hello' })
   assertEffects(t.effects, [
-    { type: 'cancel', token: 'search', inner: { type: 'debounce', inner: { type: 'http', url: '/api?q=hello' } } },
+    {
+      type: 'cancel',
+      token: 'search',
+      inner: { type: 'debounce', inner: { type: 'http', url: '/api?q=hello' } },
+    },
     { type: 'analytics', event: 'search_typed' },
   ])
 })
@@ -144,16 +148,17 @@ propertyTest(TodoApp, {
     (state) => state.todos.length >= 0,
     (state) => state.todos.length <= 100,
     (state) => state.filter === 'all' || state.filter === 'active' || state.filter === 'completed',
-    (state) => state.todos.every(t => typeof t.id === 'string' && t.id.length > 0),
-    (state, effects) => effects.every(e => e.type !== 'http' || state.loading),
+    (state) => state.todos.every((t) => typeof t.id === 'string' && t.id.length > 0),
+    (state, effects) => effects.every((e) => e.type !== 'http' || state.loading),
   ],
   messageGenerators: {
     addTodo: () => ({ type: 'addTodo' as const, text: randomString(1, 50) }),
     toggleTodo: (state) => ({
       type: 'toggleTodo' as const,
-      id: state.todos.length > 0
-        ? state.todos[Math.floor(Math.random() * state.todos.length)].id
-        : 'nonexistent',
+      id:
+        state.todos.length > 0
+          ? state.todos[Math.floor(Math.random() * state.todos.length)].id
+          : 'nonexistent',
     }),
     setFilter: () => ({
       type: 'setFilter' as const,
@@ -189,6 +194,7 @@ it('checkout trace from user session 2024-03-15 still produces same transitions'
 A trace file is a JSON array of `{ msg, expectedState, expectedEffects }` entries. `replayTrace()` feeds each message through `update()` and asserts the output matches. When a code change causes a divergence, the error reports exactly which message caused it and what the expected vs actual state was.
 
 Traces can be captured from:
+
 - Manual testing sessions (a dev tool records transitions as the developer interacts)
 - Production sessions (opt-in, with PII scrubbing)
 - `testComponent()` runs (export a test's history as a trace)
@@ -236,16 +242,30 @@ The framework's own test suite uses `MutationObserver` for mutation counting, Vi
 // Framework-internal test helper (not exported to apps):
 export function observeMutations(root: Node) {
   const log: MutationRecord[] = []
-  const obs = new MutationObserver(recs => log.push(...recs))
+  const obs = new MutationObserver((recs) => log.push(...recs))
   obs.observe(root, { subtree: true, childList: true, attributes: true, characterData: true })
   return {
-    get childListCount() { return log.filter(r => r.type === 'childList').length },
-    get attributeCount() { return log.filter(r => r.type === 'attributes').length },
-    get characterDataCount() { return log.filter(r => r.type === 'characterData').length },
-    get total() { return log.length },
-    reset() { log.length = 0 },
-    records() { return [...log] },
-    stop() { obs.disconnect() },
+    get childListCount() {
+      return log.filter((r) => r.type === 'childList').length
+    },
+    get attributeCount() {
+      return log.filter((r) => r.type === 'attributes').length
+    },
+    get characterDataCount() {
+      return log.filter((r) => r.type === 'characterData').length
+    },
+    get total() {
+      return log.length
+    },
+    reset() {
+      log.length = 0
+    },
+    records() {
+      return [...log]
+    },
+    stop() {
+      obs.disconnect()
+    },
   }
 }
 ```
@@ -289,14 +309,22 @@ describe('Form update()', () => {
   })
 
   it('submitSuccess clears form and transitions to success', () => {
-    const t = testComponent(Form, { phase: 'loading', fields: { name: 'Alice', email: 'a@b.com' }, errors: {} })
+    const t = testComponent(Form, {
+      phase: 'loading',
+      fields: { name: 'Alice', email: 'a@b.com' },
+      errors: {},
+    })
     t.send({ type: 'submitSuccess', data: { id: 1 } })
     expect(t.state.phase).toBe('success')
     expect(t.state.fields.name).toBe('')
   })
 
   it('submitError preserves form data and shows error', () => {
-    const t = testComponent(Form, { phase: 'loading', fields: { name: 'Alice', email: 'a@b.com' }, errors: {} })
+    const t = testComponent(Form, {
+      phase: 'loading',
+      fields: { name: 'Alice', email: 'a@b.com' },
+      errors: {},
+    })
     t.send({ type: 'submitError', error: 'Network error' })
     expect(t.state.phase).toBe('error')
     expect(t.state.fields.name).toBe('Alice') // preserved
@@ -320,11 +348,14 @@ propertyTest(Wizard, {
     // Can never go past step 4 or below step 1
     (state) => state.step >= 1 && state.step <= 4,
     // Loading state always has an in-flight effect
-    (state, effects) => state.phase !== 'loading' || effects.some(e => e.type === 'http'),
+    (state, effects) => state.phase !== 'loading' || effects.some((e) => e.type === 'http'),
     // Data from previous steps is never lost when going back
-    (state) => state.step > 1 ? state.collectedData.step1 !== undefined : true,
+    (state) => (state.step > 1 ? state.collectedData.step1 !== undefined : true),
     // Errors clear when the user modifies the field
-    (state) => Object.keys(state.errors).every(field => state.fields[field] === state.lastValidated[field]),
+    (state) =>
+      Object.keys(state.errors).every(
+        (field) => state.fields[field] === state.lastValidated[field],
+      ),
   ],
   messageGenerators: {
     next: () => ({ type: 'next' as const }),
@@ -364,10 +395,13 @@ it('error state shows error message and retry button', () => {
 })
 
 it('each() renders correct number of rows', () => {
-  const v = testView(TodoList, { todos: [
-    { id: '1', text: 'Buy milk', done: false },
-    { id: '2', text: 'Walk dog', done: true },
-  ], filter: 'all' })
+  const v = testView(TodoList, {
+    todos: [
+      { id: '1', text: 'Buy milk', done: false },
+      { id: '2', text: 'Walk dog', done: true },
+    ],
+    filter: 'all',
+  })
   expect(v.queryAll('[data-testid="todo-item"]')).toHaveLength(2)
 })
 ```
@@ -454,17 +488,13 @@ import { transform } from '../vite-plugin-llui/transform'
 it('warns on direct property access on item parameter', () => {
   const source = `each(state.items, (item, index) => { text(item.name) })`
   const result = transform(source, 'test.ts')
-  expect(result.diagnostics).toContainEqual(
-    expect.objectContaining({ code: 'each-direct-access' })
-  )
+  expect(result.diagnostics).toContainEqual(expect.objectContaining({ code: 'each-direct-access' }))
 })
 
 it('warns on .map() with state-derived array in view()', () => {
-  const source = `view: (state, send) => div({}, state.items.map(i => text(i.name)))`
+  const source = `view: (send) => div({}, state.items.map(i => text(i.name)))`
   const result = transform(source, 'test.ts')
-  expect(result.diagnostics).toContainEqual(
-    expect.objectContaining({ code: 'view-map-on-state' })
-  )
+  expect(result.diagnostics).toContainEqual(expect.objectContaining({ code: 'view-map-on-state' }))
 })
 
 it('assigns separate bits to depth-2 paths', () => {
@@ -490,7 +520,11 @@ it('toolbar message delegated correctly', () => {
 })
 
 it('background click closes toolbar directly', () => {
-  const t = testComponent(Dashboard, { toolbar: { menuOpen: true }, sidebar: { openSectionId: null }, tools: [] })
+  const t = testComponent(Dashboard, {
+    toolbar: { menuOpen: true },
+    sidebar: { openSectionId: null },
+    tools: [],
+  })
   t.send({ type: 'backgroundClick' })
   expect(t.state.toolbar.menuOpen).toBe(false)
 })
@@ -546,11 +580,19 @@ it('setQuery returns cancel + debounce + http', () => {
   const t = testComponent(Search)
   t.send({ type: 'setQuery', value: 'test' })
   assertEffects(t.effects, [
-    { type: 'cancel', token: 'search', inner: {
-      type: 'debounce', key: 'search', ms: 300, inner: {
-        type: 'http', url: '/api?q=test',
-      }
-    }},
+    {
+      type: 'cancel',
+      token: 'search',
+      inner: {
+        type: 'debounce',
+        key: 'search',
+        ms: 300,
+        inner: {
+          type: 'http',
+          url: '/api?q=test',
+        },
+      },
+    },
   ])
 })
 
@@ -565,6 +607,7 @@ it('clearSearch returns cancel-only', () => {
 **Level 2 — Handler integration (browser, for framework testing).** The `handleEffects` chain runtime — cancellation registry, debounce timer management, `AbortSignal` cleanup — is tested in the framework's own test suite, not in application tests. Applications trust that `handleEffects` works, just as they trust that `fetch` works.
 
 The framework's handler tests verify:
+
 - `cancel(token, inner)` aborts the previous request and starts a new one
 - `cancel(token)` aborts without replacement and clears pending debounce timers
 - `debounce(key, ms, inner)` delays dispatch until the idle period
@@ -723,7 +766,10 @@ describe('LiveFeed', () => {
   })
 
   it('list capped at 50 items', () => {
-    const t = testComponent(LiveFeed, { items: Array.from({ length: 50 }, (_, i) => ({ id: String(i), text: `item ${i}` })), paused: false })
+    const t = testComponent(LiveFeed, {
+      items: Array.from({ length: 50 }, (_, i) => ({ id: String(i), text: `item ${i}` })),
+      paused: false,
+    })
     t.send({ type: 'wsMessage', item: { id: '999', text: 'overflow' } })
     expect(t.state.items).toHaveLength(50) // oldest removed
     expect(t.state.items[0].id).toBe('999')
@@ -740,7 +786,10 @@ describe('LiveFeed', () => {
     const t = testComponent(LiveFeed, {
       items: [{ id: '0', text: 'existing' }],
       paused: true,
-      buffer: [{ id: '1', text: 'a' }, { id: '2', text: 'b' }],
+      buffer: [
+        { id: '1', text: 'a' },
+        { id: '2', text: 'b' },
+      ],
     })
     t.send({ type: 'resume' })
     expect(t.state.paused).toBe(false)

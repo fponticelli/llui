@@ -12,10 +12,7 @@ export interface LluiTrace<S, M, E> {
   }>
 }
 
-export function replayTrace<S, M, E>(
-  def: ComponentDef<S, M, E>,
-  trace: LluiTrace<S, M, E>,
-): void {
+export function replayTrace<S, M, E>(def: ComponentDef<S, M, E>, trace: LluiTrace<S, M, E>): void {
   const [initState] = def.init()
   let state = initState
 

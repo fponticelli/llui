@@ -20,22 +20,20 @@ describe('branch cleanup with template-cloned nodes', () => {
             return [{ ...state, page: msg.page }, []]
         }
       },
-      view: (_state, send) => {
+      view: (send) => {
         sendFn = send
         return branch<State>({
           on: (s) => s.page,
           cases: {
-            a: (_s, _send) => [
+            a: (_send) => [
               div({ class: 'page-a' }, [text('Page A')]),
               div({}, [text('A content')]),
             ],
-            b: (_s, _send) => [
+            b: (_send) => [
               div({ class: 'page-b' }, [text('Page B')]),
               div({}, [text('B content')]),
             ],
-            c: (_s, _send) => [
-              div({ class: 'page-c' }, [text('Page C')]),
-            ],
+            c: (_send) => [div({ class: 'page-c' }, [text('Page C')])],
           },
         })
       },
@@ -89,13 +87,13 @@ describe('branch cleanup with template-cloned nodes', () => {
       name: 'Toggle',
       init: () => [{ page: 'x' }, []],
       update: (state) => [{ ...state, page: state.page === 'x' ? 'y' : 'x' }, []],
-      view: (_state, send) => {
+      view: (send) => {
         sendFn = send
         return branch<State>({
           on: (s) => s.page,
           cases: {
-            x: (_s, _send) => [div({ class: 'px' }, [text('X')])],
-            y: (_s, _send) => [div({ class: 'py' }, [text('Y')])],
+            x: (_send) => [div({ class: 'px' }, [text('X')])],
+            y: (_send) => [div({ class: 'py' }, [text('Y')])],
           },
         })
       },

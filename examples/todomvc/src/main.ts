@@ -65,10 +65,7 @@ const App = component<State, Msg, never>({
         return [{ ...state, todos: state.todos.filter((t) => t.id !== msg.id) }, []]
       case 'toggleAll': {
         const allDone = state.todos.every((t) => t.completed)
-        return [
-          { ...state, todos: state.todos.map((t) => ({ ...t, completed: !allDone })) },
-          [],
-        ]
+        return [{ ...state, todos: state.todos.map((t) => ({ ...t, completed: !allDone })) }, []]
       }
       case 'setFilter':
         return [{ ...state, filter: msg.filter }, []]
@@ -76,7 +73,7 @@ const App = component<State, Msg, never>({
         return [{ ...state, todos: state.todos.filter((t) => !t.completed) }, []]
     }
   },
-  view: (_state, send) => {
+  view: (send) => {
     const filteredTodos = memo((s: State) => {
       switch (s.filter) {
         case 'all':
@@ -110,7 +107,7 @@ const App = component<State, Msg, never>({
 
         ...show<State>({
           when: (s) => s.todos.length > 0,
-          render: (_s, _send) => [
+          render: () => [
             section({ class: 'main' }, [
               input({
                 class: 'toggle-all',
@@ -119,7 +116,9 @@ const App = component<State, Msg, never>({
                 checked: (s: State) => s.todos.every((t) => t.completed),
                 onClick: () => send({ type: 'toggleAll' }),
               }),
-              label({ for: 'toggle-all', class: 'toggle-all-label' }, [text('Mark all as complete')]),
+              label({ for: 'toggle-all', class: 'toggle-all-label' }, [
+                text('Mark all as complete'),
+              ]),
               ul(
                 { class: 'todo-list' },
                 each<State, Todo>({
@@ -138,10 +137,13 @@ const App = component<State, Msg, never>({
                           onClick: () => send({ type: 'toggle', id: item((t) => t.id)() }),
                         }),
                         label({}, [text(item((t) => t.text))]),
-                        button({
-                          class: 'destroy',
-                          onClick: () => send({ type: 'remove', id: item((t) => t.id)() }),
-                        }, [text('×')]),
+                        button(
+                          {
+                            class: 'destroy',
+                            onClick: () => send({ type: 'remove', id: item((t) => t.id)() }),
+                          },
+                          [text('×')],
+                        ),
                       ],
                     ),
                   ],
@@ -163,7 +165,7 @@ const App = component<State, Msg, never>({
               ]),
               ...show<State>({
                 when: hasCompleted,
-                render: (_s, _send) => [
+                render: () => [
                   button(
                     {
                       class: 'clear-completed',
@@ -181,11 +183,7 @@ const App = component<State, Msg, never>({
   },
 })
 
-function filterLink(
-  filter: Filter,
-  linkLabel: string,
-  send: (msg: Msg) => void,
-): HTMLElement {
+function filterLink(filter: Filter, linkLabel: string, send: (msg: Msg) => void): HTMLElement {
   return li({}, [
     a(
       {

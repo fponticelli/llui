@@ -16,11 +16,7 @@ export async function render(url: string): Promise<{ html: string; state: string
   const [routeState, effects] = update(state, { type: 'navigate', route: state.route })
 
   // 2. Execute HTTP effects server-side (fetch data before rendering)
-  const loadedState = await resolveEffects<State, Msg, Effect>(
-    routeState,
-    effects,
-    update,
-  )
+  const loadedState = await resolveEffects<State, Msg, Effect>(routeState, effects, update)
 
   // 3. Render with fully-loaded state
   const html = renderToString(appDef, loadedState)

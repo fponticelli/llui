@@ -141,10 +141,7 @@ function processMessages<S, M, E>(inst: ComponentInstance<S, M, E>): void {
   }
 }
 
-function dispatchEffect<S, M, E>(
-  inst: ComponentInstance<S, M, E>,
-  effect: E,
-): void {
+function dispatchEffect<S, M, E>(inst: ComponentInstance<S, M, E>, effect: E): void {
   const eff = effect as Record<string, unknown>
 
   // Addressed effects — dispatch to target component

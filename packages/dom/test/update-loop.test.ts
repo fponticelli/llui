@@ -82,8 +82,7 @@ describe('send and flush', () => {
         }
       },
       view: () => [],
-      __dirty: (o, n) =>
-        (Object.is(o.a, n.a) ? 0 : 0b01) | (Object.is(o.b, n.b) ? 0 : 0b10),
+      __dirty: (o, n) => (Object.is(o.a, n.a) ? 0 : 0b01) | (Object.is(o.b, n.b) ? 0 : 0b10),
     }
 
     const inst = createComponentInstance(def)

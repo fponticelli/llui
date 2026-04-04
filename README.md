@@ -15,11 +15,13 @@ const Counter = component<State, Msg, never>({
   init: () => [{ count: 0 }, []],
   update: (state, msg) => {
     switch (msg.type) {
-      case 'inc': return [{ ...state, count: state.count + 1 }, []]
-      case 'dec': return [{ ...state, count: state.count - 1 }, []]
+      case 'inc':
+        return [{ ...state, count: state.count + 1 }, []]
+      case 'dec':
+        return [{ ...state, count: state.count - 1 }, []]
     }
   },
-  view: (_state, send) => [
+  view: (send) => [
     div({ class: 'counter' }, [
       button({ onClick: () => send({ type: 'dec' }) }, [text('-')]),
       text((s: State) => String(s.count)),
@@ -40,16 +42,16 @@ mountApp(document.getElementById('app')!, Counter)
 
 ## Packages
 
-| Package | Description |
-|---------|-------------|
-| [`@llui/dom`](packages/dom) | Runtime — component, mount, scope tree, bindings, structural primitives, element helpers |
-| [`@llui/vite-plugin`](packages/vite-plugin) | Compiler — 3-pass TypeScript transform, template cloning, source maps |
-| [`@llui/effects`](packages/effects) | Effect system — http, cancel, debounce, sequence, race + `Async<T,E>`, `ApiError` |
-| [`@llui/router`](packages/router) | Routing — structured path matching, history/hash mode, link helper |
-| [`@llui/test`](packages/test) | Test harness — testComponent, testView, propertyTest, replayTrace |
-| [`@llui/vike`](packages/vike) | Vike SSR adapter — onRenderHtml, onRenderClient |
-| [`@llui/mcp`](packages/mcp) | MCP server — LLM debug tools via Model Context Protocol |
-| [`@llui/lint-idiomatic`](packages/lint-idiomatic) | Linter — 6 anti-pattern rules for idiomatic LLui |
+| Package                                           | Description                                                                              |
+| ------------------------------------------------- | ---------------------------------------------------------------------------------------- |
+| [`@llui/dom`](packages/dom)                       | Runtime — component, mount, scope tree, bindings, structural primitives, element helpers |
+| [`@llui/vite-plugin`](packages/vite-plugin)       | Compiler — 3-pass TypeScript transform, template cloning, source maps                    |
+| [`@llui/effects`](packages/effects)               | Effect system — http, cancel, debounce, sequence, race + `Async<T,E>`, `ApiError`        |
+| [`@llui/router`](packages/router)                 | Routing — structured path matching, history/hash mode, link helper                       |
+| [`@llui/test`](packages/test)                     | Test harness — testComponent, testView, propertyTest, replayTrace                        |
+| [`@llui/vike`](packages/vike)                     | Vike SSR adapter — onRenderHtml, onRenderClient                                          |
+| [`@llui/mcp`](packages/mcp)                       | MCP server — LLM debug tools via Model Context Protocol                                  |
+| [`@llui/lint-idiomatic`](packages/lint-idiomatic) | Linter — 6 anti-pattern rules for idiomatic LLui                                         |
 
 ## Quick Start
 
@@ -100,12 +102,12 @@ pnpm -w run bench         # js-framework-benchmark
 
 Competitive with Solid and Svelte on [js-framework-benchmark](https://github.com/krausest/js-framework-benchmark):
 
-| Operation | LLui | Solid | Svelte | React |
-|-----------|-----:|------:|-------:|------:|
-| Create 1k | ~25ms | 23ms | 23ms | 27ms |
-| Update 10th | ~14ms | 14ms | 15ms | 17ms |
-| Select | ~4ms | 4ms | 6ms | 6ms |
-| Swap | ~14ms | 17ms | 17ms | 107ms |
+| Operation     |       LLui |  Solid |  Svelte |   React |
+| ------------- | ---------: | -----: | ------: | ------: |
+| Create 1k     |      ~25ms |   23ms |    23ms |    27ms |
+| Update 10th   |      ~14ms |   14ms |    15ms |    17ms |
+| Select        |       ~4ms |    4ms |     6ms |     6ms |
+| Swap          |      ~14ms |   17ms |    17ms |   107ms |
 | Bundle (gzip) | **4.0 KB** | 4.8 KB | 13.6 KB | 61.3 KB |
 
 ## License

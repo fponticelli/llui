@@ -55,9 +55,7 @@ function listDef(): ComponentDef<State, Msg, never> {
       each<State, Item>({
         items: (s) => s.items,
         key: (item) => item.id,
-        render: ({ item }) => [
-          div({ 'data-id': item((t) => t.id) }, [text(item((t) => t.label))]),
-        ],
+        render: ({ item }) => [div({ 'data-id': item((t) => t.id) }, [text(item((t) => t.label))])],
       }),
     __dirty: (o, n) => (Object.is(o.items, n.items) ? 0 : 1),
   }
@@ -79,9 +77,9 @@ describe('each()', () => {
   function mount() {
     const def = listDef()
     const origView = def.view
-    def.view = (state, send) => {
+    def.view = (send) => {
       sendFn = send
-      return origView(state, send)
+      return origView(send)
     }
     const container = document.createElement('div')
     const handle = mountApp(container, def)

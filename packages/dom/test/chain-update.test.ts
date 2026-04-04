@@ -38,12 +38,11 @@ describe('chainUpdate', () => {
   })
 
   it('preserves effects from the matching handler', () => {
-    const update = chainUpdate<State, Msg, Effect>(
-      (s, m) => {
-        if (m.type === 'inc') return [{ ...s, count: s.count + 1 }, [{ type: 'log', message: 'incremented' }]]
-        return null
-      },
-    )
+    const update = chainUpdate<State, Msg, Effect>((s, m) => {
+      if (m.type === 'inc')
+        return [{ ...s, count: s.count + 1 }, [{ type: 'log', message: 'incremented' }]]
+      return null
+    })
     const [, effects] = update({ count: 0, label: '' }, { type: 'inc' })
     expect(effects).toEqual([{ type: 'log', message: 'incremented' }])
   })

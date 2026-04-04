@@ -17,17 +17,18 @@ export const CharCounter = component<State, Msg, Effect>({
         return [{ ...state, content: msg.value }, []]
     }
   },
-  view: (_state, send) => [
+  view: (send) => [
     div({ class: 'char-counter' }, [
       textarea({
         onInput: (e: Event) =>
           send({ type: 'setContent', value: (e.target as HTMLTextAreaElement).value }),
       }),
-      div({
-        class: (s: State) => (s.content.length > 260 ? 'counter over-limit' : 'counter'),
-      }, [
-        text((s: State) => `${s.content.length} / 280`),
-      ]),
+      div(
+        {
+          class: (s: State) => (s.content.length > 260 ? 'counter over-limit' : 'counter'),
+        },
+        [text((s: State) => `${s.content.length} / 280`)],
+      ),
     ]),
   ],
 })

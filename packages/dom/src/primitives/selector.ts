@@ -28,9 +28,7 @@ interface SelectorEntry {
  * sel.bind() creates and manages the DOM binding directly.
  * Returns Node[] to spread into the element's children (empty — no visible output).
  */
-export function selector<S, V>(
-  field: (s: S) => V,
-): SelectorInstance<S, V> {
+export function selector<S, V>(field: (s: S) => V): SelectorInstance<S, V> {
   const ctx = getRenderContext()
   const scope = ctx.rootScope
 
@@ -112,7 +110,10 @@ export function selector<S, V>(
       }
 
       let bucket = registry.get(currentKey)
-      if (!bucket) { bucket = new Set(); registry.set(currentKey, bucket) }
+      if (!bucket) {
+        bucket = new Set()
+        registry.set(currentKey, bucket)
+      }
       bucket.add(entry)
 
       // Cleanup when row scope is disposed

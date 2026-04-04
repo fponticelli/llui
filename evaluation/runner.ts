@@ -57,88 +57,208 @@ interface Scorecard {
 
 const TASKS: TaskDef[] = [
   {
-    id: '01', name: 'Counter', tier: 1,
-    description: 'Build a counter that shows a number and has +/- buttons. Clicking + increments; clicking - decrements; the value never goes below 0.',
-    assertions: ['initial value shows 0', 'after 3 clicks of +, shows 3', 'after clicking - once, shows 2', 'clicking - when showing 0 leaves value at 0'],
+    id: '01',
+    name: 'Counter',
+    tier: 1,
+    description:
+      'Build a counter that shows a number and has +/- buttons. Clicking + increments; clicking - decrements; the value never goes below 0.',
+    assertions: [
+      'initial value shows 0',
+      'after 3 clicks of +, shows 3',
+      'after clicking - once, shows 2',
+      'clicking - when showing 0 leaves value at 0',
+    ],
   },
   {
-    id: '02', name: 'Character counter', tier: 1,
-    description: 'A textarea paired with a character counter below it. The counter shows "N / 280". The counter element gains the class over-limit when the character count exceeds 260.',
-    assertions: ['initial counter shows "0 / 280"', 'typing 5 chars shows "5 / 280"', 'at 260 chars, over-limit absent', 'at 261 chars, over-limit present'],
+    id: '02',
+    name: 'Character counter',
+    tier: 1,
+    description:
+      'A textarea paired with a character counter below it. The counter shows "N / 280". The counter element gains the class over-limit when the character count exceeds 260.',
+    assertions: [
+      'initial counter shows "0 / 280"',
+      'typing 5 chars shows "5 / 280"',
+      'at 260 chars, over-limit absent',
+      'at 261 chars, over-limit present',
+    ],
   },
   {
-    id: '03', name: 'Filterable list', tier: 2,
-    description: 'A static list of 10 hardcoded items. A text input filters the list by substring (case-insensitive). The visible list updates as the user types.',
-    assertions: ['all 10 items visible initially', 'typing "an" filters correctly', 'clearing input restores all 10'],
+    id: '03',
+    name: 'Filterable list',
+    tier: 2,
+    description:
+      'A static list of 10 hardcoded items. A text input filters the list by substring (case-insensitive). The visible list updates as the user types.',
+    assertions: [
+      'all 10 items visible initially',
+      'typing "an" filters correctly',
+      'clearing input restores all 10',
+    ],
   },
   {
-    id: '04', name: 'Async data fetch', tier: 3,
-    description: 'On mount, fetch a list of items from a URL. Show a loading spinner while fetching. Show the list on success. Show an error message and a Retry button on failure.',
-    assertions: ['loading visible immediately', 'mock fetch resolves -> items visible', 'mock fetch rejects -> error + Retry visible', 'clicking Retry triggers new fetch'],
+    id: '04',
+    name: 'Async data fetch',
+    tier: 3,
+    description:
+      'On mount, fetch a list of items from a URL. Show a loading spinner while fetching. Show the list on success. Show an error message and a Retry button on failure.',
+    assertions: [
+      'loading visible immediately',
+      'mock fetch resolves -> items visible',
+      'mock fetch rejects -> error + Retry visible',
+      'clicking Retry triggers new fetch',
+    ],
     systemPromptVariant: 'async',
   },
   {
-    id: '05', name: 'Stopwatch', tier: 6,
-    description: 'Start, Stop, and Reset buttons. Display MM:SS:ms. Best lap field records shortest elapsed time at each Stop press.',
-    assertions: ['initially shows 00:00:000', 'after Start + ~500ms + Stop shows ~500ms', 'Reset returns to 00:00:000', 'shortest lap shown in Best lap'],
+    id: '05',
+    name: 'Stopwatch',
+    tier: 6,
+    description:
+      'Start, Stop, and Reset buttons. Display MM:SS:ms. Best lap field records shortest elapsed time at each Stop press.',
+    assertions: [
+      'initially shows 00:00:000',
+      'after Start + ~500ms + Stop shows ~500ms',
+      'Reset returns to 00:00:000',
+      'shortest lap shown in Best lap',
+    ],
   },
   {
-    id: '06', name: 'Accordion', tier: 2,
-    description: 'Three panels, each with a title and body text. Clicking a title toggles that panel. Only one panel open at a time.',
-    assertions: ['all panels closed initially', 'clicking panel 1 opens it', 'clicking panel 2 closes 1 and opens 2', 'clicking panel 2 again closes it'],
+    id: '06',
+    name: 'Accordion',
+    tier: 2,
+    description:
+      'Three panels, each with a title and body text. Clicking a title toggles that panel. Only one panel open at a time.',
+    assertions: [
+      'all panels closed initially',
+      'clicking panel 1 opens it',
+      'clicking panel 2 closes 1 and opens 2',
+      'clicking panel 2 again closes it',
+    ],
   },
   {
-    id: '07', name: 'Multi-step form', tier: 2,
-    description: 'Four steps: name -> email -> summary -> confirm. Each step validates before allowing advancement.',
-    assertions: ['starts on step 1', 'empty name -> Next disabled', 'valid name -> Next enabled', 'reaching step 4 shows entered data'],
+    id: '07',
+    name: 'Multi-step form',
+    tier: 2,
+    description:
+      'Four steps: name -> email -> summary -> confirm. Each step validates before allowing advancement.',
+    assertions: [
+      'starts on step 1',
+      'empty name -> Next disabled',
+      'valid name -> Next enabled',
+      'reaching step 4 shows entered data',
+    ],
   },
   {
-    id: '08', name: 'Reorderable list', tier: 4,
+    id: '08',
+    name: 'Reorderable list',
+    tier: 4,
     description: 'A list of 5 items. Each item has Up and Down buttons. Items must be keyed by ID.',
-    assertions: ['initial order correct', 'Up on item 2 swaps with item 1', 'DOM identity preserved after swap', 'Down on last item is no-op'],
+    assertions: [
+      'initial order correct',
+      'Up on item 2 swaps with item 1',
+      'DOM identity preserved after swap',
+      'Down on last item is no-op',
+    ],
   },
   {
-    id: '09', name: 'Debounced search', tier: 3,
-    description: 'A text input. After 300ms of inactivity, fetch results. Cancel in-flight fetch on new input.',
-    assertions: ['rapid typing -> no fetch', '300ms pause -> one fetch', 'new char cancels in-flight', 'empty query -> no fetch'],
+    id: '09',
+    name: 'Debounced search',
+    tier: 3,
+    description:
+      'A text input. After 300ms of inactivity, fetch results. Cancel in-flight fetch on new input.',
+    assertions: [
+      'rapid typing -> no fetch',
+      '300ms pause -> one fetch',
+      'new char cancels in-flight',
+      'empty query -> no fetch',
+    ],
     systemPromptVariant: 'async',
   },
   {
-    id: '10', name: 'Parent-child Level 1', tier: 5,
-    description: 'Parent owns array of counter slices. Each counter rendered by counterView() function. Parent shows total.',
-    assertions: ['total shows 0 initially', 'increment counter 1 -> total 1', 'add counter -> total unchanged', 'increment new counter -> total 2'],
+    id: '10',
+    name: 'Parent-child Level 1',
+    tier: 5,
+    description:
+      'Parent owns array of counter slices. Each counter rendered by counterView() function. Parent shows total.',
+    assertions: [
+      'total shows 0 initially',
+      'increment counter 1 -> total 1',
+      'add counter -> total unchanged',
+      'increment new counter -> total 2',
+    ],
   },
   {
-    id: '10b', name: 'Parent-child Level 2', tier: 5,
+    id: '10b',
+    name: 'Parent-child Level 2',
+    tier: 5,
     description: 'Same as Task 10, but each counter is a child() component with own state machine.',
     assertions: ['same as Task 10 plus independent state'],
     systemPromptVariant: 'child',
   },
   {
-    id: '11', name: 'Drag and drop list', tier: 6,
+    id: '11',
+    name: 'Drag and drop list',
+    tier: 6,
     description: 'Five items. Drag to reorder using HTML5 drag events. No external libraries.',
-    assertions: ['dragstart sets item ID', 'dragover prevents default', 'drop reorders correctly', 'DOM nodes preserved'],
+    assertions: [
+      'dragstart sets item ID',
+      'dragover prevents default',
+      'drop reorders correctly',
+      'DOM nodes preserved',
+    ],
   },
   {
-    id: '12', name: 'Modal dialog', tier: 6,
-    description: 'A button opens a modal overlay with close, confirm, focus trap, and click-outside-to-close.',
-    assertions: ['modal absent initially', 'Open -> modal present', 'x -> modal absent', 'Escape -> modal absent', 'focus trapped'],
+    id: '12',
+    name: 'Modal dialog',
+    tier: 6,
+    description:
+      'A button opens a modal overlay with close, confirm, focus trap, and click-outside-to-close.',
+    assertions: [
+      'modal absent initially',
+      'Open -> modal present',
+      'x -> modal absent',
+      'Escape -> modal absent',
+      'focus trapped',
+    ],
   },
   {
-    id: '13', name: 'Infinite scroll', tier: 4,
-    description: 'A list of items. Load more button appends 20 more. No more items text when source exhausted.',
-    assertions: ['20 items initially', 'Load more -> 40 items', 'first 20 DOM nodes unchanged', 'source exhausted -> No more items'],
+    id: '13',
+    name: 'Infinite scroll',
+    tier: 4,
+    description:
+      'A list of items. Load more button appends 20 more. No more items text when source exhausted.',
+    assertions: [
+      '20 items initially',
+      'Load more -> 40 items',
+      'first 20 DOM nodes unchanged',
+      'source exhausted -> No more items',
+    ],
   },
   {
-    id: '14', name: 'Form async validation', tier: 3,
-    description: 'Email field checks uniqueness via API after 500ms idle. Shows checking/available/taken. Submit disabled while checking or taken.',
-    assertions: ['typing + 500ms -> checking shown', 'mock returns taken -> taken shown + Submit disabled', 'mock returns available -> available + Submit enabled', 'typing while checking cancels previous'],
+    id: '14',
+    name: 'Form async validation',
+    tier: 3,
+    description:
+      'Email field checks uniqueness via API after 500ms idle. Shows checking/available/taken. Submit disabled while checking or taken.',
+    assertions: [
+      'typing + 500ms -> checking shown',
+      'mock returns taken -> taken shown + Submit disabled',
+      'mock returns available -> available + Submit enabled',
+      'typing while checking cancels previous',
+    ],
     systemPromptVariant: 'async',
   },
   {
-    id: '15', name: 'Real-time WebSocket', tier: 5,
-    description: 'List receives items from WebSocket. Prepend new items. Max 50 shown. Pause/Resume buffering.',
-    assertions: ['WebSocket message -> item prepended', 'after 50 items, 51st removes oldest', 'Pause -> no visible update', 'Resume -> buffered messages applied'],
+    id: '15',
+    name: 'Real-time WebSocket',
+    tier: 5,
+    description:
+      'List receives items from WebSocket. Prepend new items. Max 50 shown. Pause/Resume buffering.',
+    assertions: [
+      'WebSocket message -> item prepended',
+      'after 50 items, 51st removes oldest',
+      'Pause -> no visible update',
+      'Resume -> buffered messages applied',
+    ],
   },
 ]
 
@@ -146,10 +266,13 @@ const TASKS: TaskDef[] = [
 
 function checkCompile(filePath: string): { pass: boolean; errors: string[] } {
   try {
-    execSync(`npx tsc --noEmit --strict --module ESNext --moduleResolution bundler --target ES2022 "${filePath}" 2>&1`, {
-      encoding: 'utf8',
-      cwd: resolve(join(__dirname, '..')),
-    })
+    execSync(
+      `npx tsc --noEmit --strict --module ESNext --moduleResolution bundler --target ES2022 "${filePath}" 2>&1`,
+      {
+        encoding: 'utf8',
+        cwd: resolve(join(__dirname, '..')),
+      },
+    )
     return { pass: true, errors: [] }
   } catch (e: unknown) {
     const stdout = (e as { stdout?: string }).stdout ?? String(e)
@@ -260,11 +383,7 @@ function main(): void {
   const outputDir = resolve(join(__dirname, 'results'))
   mkdirSync(outputDir, { recursive: true })
 
-  const tasks = runAll
-    ? TASKS
-    : taskArg
-      ? TASKS.filter((t) => t.id === taskArg)
-      : []
+  const tasks = runAll ? TASKS : taskArg ? TASKS.filter((t) => t.id === taskArg) : []
 
   if (tasks.length === 0 && !fileArg) {
     console.log('Usage:')

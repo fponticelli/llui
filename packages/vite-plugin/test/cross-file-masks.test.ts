@@ -33,7 +33,7 @@ describe('cross-file mask safety', () => {
         name: 'App',
         init: () => [{ label: '', active: false }, []],
         update: (s, m) => [s, []],
-        view: (s, send) => [
+        view: (send) => [
           div({ class: s => s.active ? 'on' : 'off' }, [
             text(s => s.label),
           ]),
@@ -54,7 +54,7 @@ describe('cross-file mask safety', () => {
         name: 'App',
         init: () => [{ route: { page: 'home', data: null }, query: '' }, []],
         update: (s, m) => [s, []],
-        view: (s) => [
+        view: () => [
           text(s => s.route.page),
           text(s => s.query),
         ],
@@ -79,7 +79,7 @@ describe('cross-file mask safety', () => {
         name: 'App',
         init: () => [{ name: '' }, []],
         update: (s, m) => [s, []],
-        view: (s) => [text(s => s.name)],
+        view: () => [text(s => s.name)],
       })
     `
     expect(t(viewSrc)).not.toContain('__dirty')

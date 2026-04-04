@@ -17,7 +17,7 @@ describe('collectDeps', () => {
         name: 'C',
         init: () => [{ count: 0 }, []],
         update: (s, m) => [s, []],
-        view: (s, send) => [text(s => s.count)],
+        view: (send) => [text(s => s.count)],
       })
     `
     expect(paths(src)).toEqual(['count'])
@@ -30,7 +30,7 @@ describe('collectDeps', () => {
         name: 'C',
         init: () => [{ user: { name: '', email: '' } }, []],
         update: (s, m) => [s, []],
-        view: (s, send) => [
+        view: (send) => [
           text(s => s.user.name),
           text(s => s.user.email),
         ],
@@ -46,7 +46,7 @@ describe('collectDeps', () => {
         name: 'C',
         init: () => [{ a: 0, b: 0, c: 0 }, []],
         update: (s, m) => [s, []],
-        view: (s, send) => [
+        view: (send) => [
           text(s => s.a),
           text(s => s.b),
           text(s => s.c),
@@ -66,7 +66,7 @@ describe('collectDeps', () => {
         name: 'C',
         init: () => [{ title: '', active: false }, []],
         update: (s, m) => [s, []],
-        view: (s, send) => [
+        view: (send) => [
           div({ title: s => s.title, class: s => s.active ? 'on' : 'off' }),
         ],
       })
@@ -81,7 +81,7 @@ describe('collectDeps', () => {
         name: 'C',
         init: () => [{ x: 0 }, []],
         update: (s, m) => [s, []],
-        view: (s, send) => [
+        view: (send) => [
           div({ class: 'static', id: 'fixed' }),
         ],
       })
@@ -96,7 +96,7 @@ describe('collectDeps', () => {
         name: 'C',
         init: () => [{ x: 0 }, []],
         update: (s, m) => [s, []],
-        view: (s, send) => [
+        view: (send) => [
           button({ onClick: () => send({ type: 'click' }) }),
         ],
       })
@@ -111,7 +111,7 @@ describe('collectDeps', () => {
         name: 'C',
         init: () => [{ user: { name: '', email: '' }, count: 0 }, []],
         update: (s, m) => [s, []],
-        view: (s, send) => [
+        view: (send) => [
           text(s => s.user.name),
           text(s => s.user.email),
           text(s => JSON.stringify(s.user)),
@@ -139,7 +139,7 @@ describe('collectDeps', () => {
         name: 'C',
         init: () => [{ count: 0 }, []],
         update: (s, m) => [s, []],
-        view: (s, send) => [text(s => s['count'])],
+        view: (send) => [text(s => s['count'])],
       })
     `
     expect(paths(src)).toEqual(['count'])

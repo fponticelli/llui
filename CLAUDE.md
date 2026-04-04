@@ -48,13 +48,13 @@ pnpm -w run bench:build       # Build jfb app only (no benchmark run)
 
 Five packages under `packages/`, managed by pnpm workspaces + Turborepo:
 
-| Package | Purpose | Dependencies |
-|---------|---------|-------------|
-| `@llui/dom` | Runtime: component, mount, scope tree, bindings, element helpers, structural primitives | — |
-| `@llui/vite-plugin` | Compiler: 3-pass TypeScript transform (prop split → mask injection → import cleanup) | peer: vite |
-| `@llui/test` | Test harness: testComponent, assertEffects, testView, propertyTest, replayTrace | @llui/dom |
-| `@llui/effects` | Effect builders: http, cancel, debounce, sequence, race + handleEffects chain | — |
-| `@llui/vike` | Vike SSR adapter: onRenderHtml, onRenderClient | @llui/dom |
+| Package             | Purpose                                                                                 | Dependencies |
+| ------------------- | --------------------------------------------------------------------------------------- | ------------ |
+| `@llui/dom`         | Runtime: component, mount, scope tree, bindings, element helpers, structural primitives | —            |
+| `@llui/vite-plugin` | Compiler: 3-pass TypeScript transform (prop split → mask injection → import cleanup)    | peer: vite   |
+| `@llui/test`        | Test harness: testComponent, assertEffects, testView, propertyTest, replayTrace         | @llui/dom    |
+| `@llui/effects`     | Effect builders: http, cancel, debounce, sequence, race + handleEffects chain           | —            |
+| `@llui/vike`        | Vike SSR adapter: onRenderHtml, onRenderClient                                          | @llui/dom    |
 
 Build order: `@llui/dom` and `@llui/effects` first (no deps), then `@llui/test`, `@llui/vike` (depend on core). Turbo handles this via `"dependsOn": ["^build"]`.
 
@@ -63,6 +63,7 @@ Build order: `@llui/dom` and `@llui/effects` first (no deps), then `@llui/test`,
 **Component shape:** `component<State, Msg, Effect>({ name, init, update, view, onEffect? })`. State must be JSON-serializable. Msg and Effect are discriminated unions with a `type` field.
 
 **Two composition levels:**
+
 - **Level 1 (default):** View functions — modules exporting `update()` and `view()` functions. Parent owns state; child operates on a slice. Use `(props, send)` convention.
 - **Level 2 (opt-in):** `child()` — full component boundary with own bitmask, update cycle, and scope tree. Only for 30+ state paths, library components, or independent effect lifecycle.
 

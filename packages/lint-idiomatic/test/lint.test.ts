@@ -14,13 +14,11 @@ describe('lintIdiomatic', () => {
           state.count = state.count + 1
           return [state, []]
         },
-        view: (s, send) => [],
+        view: (send) => [],
       })
     `
     const result = lintIdiomatic(source)
-    expect(result.violations.some((v) => v.rule === 'state-mutation')).toBe(
-      true,
-    )
+    expect(result.violations.some((v) => v.rule === 'state-mutation')).toBe(true)
     expect(result.score).toBeLessThan(6)
   })
 
@@ -36,13 +34,11 @@ describe('lintIdiomatic', () => {
           state.items.push(msg.item)
           return [state, []]
         },
-        view: (s, send) => [],
+        view: (send) => [],
       })
     `
     const result = lintIdiomatic(source)
-    expect(result.violations.some((v) => v.rule === 'state-mutation')).toBe(
-      true,
-    )
+    expect(result.violations.some((v) => v.rule === 'state-mutation')).toBe(true)
   })
 
   it('detects state mutation via compound assignment', () => {
@@ -57,17 +53,13 @@ describe('lintIdiomatic', () => {
           state.count += 1
           return [state, []]
         },
-        view: (s, send) => [],
+        view: (send) => [],
       })
     `
     const result = lintIdiomatic(source)
-    expect(result.violations.some((v) => v.rule === 'state-mutation')).toBe(
-      true,
-    )
+    expect(result.violations.some((v) => v.rule === 'state-mutation')).toBe(true)
     expect(
-      result.violations.some(
-        (v) => v.rule === 'state-mutation' && v.message.includes('Compound'),
-      ),
+      result.violations.some((v) => v.rule === 'state-mutation' && v.message.includes('Compound')),
     ).toBe(true)
   })
 
@@ -83,18 +75,13 @@ describe('lintIdiomatic', () => {
           state.count++
           return [state, []]
         },
-        view: (s, send) => [],
+        view: (send) => [],
       })
     `
     const result = lintIdiomatic(source)
-    expect(result.violations.some((v) => v.rule === 'state-mutation')).toBe(
-      true,
-    )
+    expect(result.violations.some((v) => v.rule === 'state-mutation')).toBe(true)
     expect(
-      result.violations.some(
-        (v) =>
-          v.rule === 'state-mutation' && v.message.includes('Increment'),
-      ),
+      result.violations.some((v) => v.rule === 'state-mutation' && v.message.includes('Increment')),
     ).toBe(true)
   })
 
@@ -107,15 +94,13 @@ describe('lintIdiomatic', () => {
         name: 'C',
         init: () => [{ items: [] }, []],
         update: (s, m) => [s, []],
-        view: (state, send) => [
+        view: (send) => [
           div({}, state.items.map(item => text(item)))
         ],
       })
     `
     const result = lintIdiomatic(source)
-    expect(
-      result.violations.some((v) => v.rule === 'map-on-state-array'),
-    ).toBe(true)
+    expect(result.violations.some((v) => v.rule === 'map-on-state-array')).toBe(true)
   })
 
   it('detects form boilerplate', () => {
@@ -127,9 +112,7 @@ describe('lintIdiomatic', () => {
         | { type: 'submit' }
     `
     const result = lintIdiomatic(source)
-    expect(
-      result.violations.some((v) => v.rule === 'form-boilerplate'),
-    ).toBe(true)
+    expect(result.violations.some((v) => v.rule === 'form-boilerplate')).toBe(true)
   })
 
   it('does not flag form boilerplate with fewer than 3 similar variants', () => {
@@ -140,9 +123,7 @@ describe('lintIdiomatic', () => {
         | { type: 'submit' }
     `
     const result = lintIdiomatic(source)
-    expect(
-      result.violations.some((v) => v.rule === 'form-boilerplate'),
-    ).toBe(false)
+    expect(result.violations.some((v) => v.rule === 'form-boilerplate')).toBe(false)
   })
 
   it('reports perfect score for clean code', () => {
@@ -159,7 +140,7 @@ describe('lintIdiomatic', () => {
             case 'dec': return [{ ...state, count: state.count - 1 }, []]
           }
         },
-        view: (s, send) => [
+        view: (send) => [
           div({}, [
             text(s => String(s.count)),
             button({ onClick: () => send({ type: 'inc' }) }, [text('+')]),
@@ -186,7 +167,7 @@ describe('lintIdiomatic', () => {
           state.count = 0
           return [state, []]
         },
-        view: (state, send) => [
+        view: (send) => [
           div({}, state.items.map(item => text(item)))
         ],
       })
@@ -207,9 +188,7 @@ describe('lintIdiomatic', () => {
   view: () => [],
 })`
     const result = lintIdiomatic(source, 'myfile.ts')
-    const violation = result.violations.find(
-      (v) => v.rule === 'state-mutation',
-    )
+    const violation = result.violations.find((v) => v.rule === 'state-mutation')
     expect(violation).toBeDefined()
     expect(violation!.file).toBe('myfile.ts')
     expect(violation!.line).toBe(3)

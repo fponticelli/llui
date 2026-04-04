@@ -23,10 +23,7 @@ export function extractMsgSchema(source: string): MsgSchema | null {
   return null
 }
 
-function collectVariants(
-  type: ts.TypeNode,
-  variants: MsgSchema['variants'],
-): void {
+function collectVariants(type: ts.TypeNode, variants: MsgSchema['variants']): void {
   if (ts.isUnionTypeNode(type)) {
     for (const member of type.types) {
       collectVariants(member, variants)
@@ -39,8 +36,7 @@ function collectVariants(
     const fields: Record<string, string | { enum: string[] }> = {}
 
     for (const member of type.members) {
-      if (!ts.isPropertySignature(member) || !member.name || !ts.isIdentifier(member.name))
-        continue
+      if (!ts.isPropertySignature(member) || !member.name || !ts.isIdentifier(member.name)) continue
 
       const name = member.name.text
       const memberType = member.type

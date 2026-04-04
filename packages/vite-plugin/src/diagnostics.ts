@@ -7,19 +7,82 @@ export interface Diagnostic {
 }
 
 const INTERACTIVE_ELEMENTS = new Set([
-  'button', 'a', 'input', 'select', 'textarea', 'details', 'summary',
+  'button',
+  'a',
+  'input',
+  'select',
+  'textarea',
+  'details',
+  'summary',
 ])
 
 const ELEMENT_HELPERS = new Set([
-  'a', 'abbr', 'article', 'aside', 'b', 'blockquote', 'br', 'button',
-  'canvas', 'code', 'dd', 'details', 'dialog', 'div', 'dl', 'dt', 'em',
-  'fieldset', 'figcaption', 'figure', 'footer', 'form',
-  'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'header', 'hr', 'i', 'iframe',
-  'img', 'input', 'label', 'legend', 'li', 'main', 'mark', 'nav', 'ol',
-  'optgroup', 'option', 'output', 'p', 'pre', 'progress',
-  'section', 'select', 'small', 'span', 'strong', 'sub', 'summary',
-  'sup', 'table', 'tbody', 'td', 'textarea', 'tfoot', 'th', 'thead',
-  'time', 'tr', 'ul', 'video',
+  'a',
+  'abbr',
+  'article',
+  'aside',
+  'b',
+  'blockquote',
+  'br',
+  'button',
+  'canvas',
+  'code',
+  'dd',
+  'details',
+  'dialog',
+  'div',
+  'dl',
+  'dt',
+  'em',
+  'fieldset',
+  'figcaption',
+  'figure',
+  'footer',
+  'form',
+  'h1',
+  'h2',
+  'h3',
+  'h4',
+  'h5',
+  'h6',
+  'header',
+  'hr',
+  'i',
+  'iframe',
+  'img',
+  'input',
+  'label',
+  'legend',
+  'li',
+  'main',
+  'mark',
+  'nav',
+  'ol',
+  'optgroup',
+  'option',
+  'output',
+  'p',
+  'pre',
+  'progress',
+  'section',
+  'select',
+  'small',
+  'span',
+  'strong',
+  'sub',
+  'summary',
+  'sup',
+  'table',
+  'tbody',
+  'td',
+  'textarea',
+  'tfoot',
+  'th',
+  'thead',
+  'time',
+  'tr',
+  'ul',
+  'video',
 ])
 
 export function diagnose(source: string): Diagnostic[] {
@@ -84,9 +147,10 @@ function isInsideEachRender(node: ts.Node): boolean {
     ) {
       const param = current.parameters[0]!
       // Options bag: ({ item, ... }) => ...
-      const hasItemParam = ts.isObjectBindingPattern(param.name) &&
-        param.name.elements.some((el) =>
-          ts.isBindingElement(el) && ts.isIdentifier(el.name) && el.name.text === 'item',
+      const hasItemParam =
+        ts.isObjectBindingPattern(param.name) &&
+        param.name.elements.some(
+          (el) => ts.isBindingElement(el) && ts.isIdentifier(el.name) && el.name.text === 'item',
         )
       if (hasItemParam) {
         const propAssign = current.parent
@@ -273,11 +337,7 @@ function checkAccessibility(node: ts.Node, sf: ts.SourceFile, diagnostics: Diagn
 
 // ── Controlled input ─────────────────────────────────────────────
 
-function checkControlledInput(
-  node: ts.Node,
-  sf: ts.SourceFile,
-  diagnostics: Diagnostic[],
-): void {
+function checkControlledInput(node: ts.Node, sf: ts.SourceFile, diagnostics: Diagnostic[]): void {
   if (!ts.isCallExpression(node)) return
   if (!ts.isIdentifier(node.expression)) return
 
@@ -327,11 +387,7 @@ function getProps(obj: ts.ObjectLiteralExpression): Map<string, ts.Expression> {
 
 // ── child() static props ────────────────────────────────────────
 
-function checkChildStaticProps(
-  node: ts.Node,
-  sf: ts.SourceFile,
-  diagnostics: Diagnostic[],
-): void {
+function checkChildStaticProps(node: ts.Node, sf: ts.SourceFile, diagnostics: Diagnostic[]): void {
   if (!ts.isCallExpression(node)) return
   if (!ts.isIdentifier(node.expression) || node.expression.text !== 'child') return
 
@@ -393,10 +449,7 @@ function extractAccessPaths(node: ts.Node, paramName: string, paths: Set<string>
   ts.forEachChild(node, (child) => extractAccessPaths(child, paramName, paths))
 }
 
-function resolveSimpleChain(
-  node: ts.PropertyAccessExpression,
-  paramName: string,
-): string | null {
+function resolveSimpleChain(node: ts.PropertyAccessExpression, paramName: string): string | null {
   const parts: string[] = []
   let current: ts.Expression = node
   while (ts.isPropertyAccessExpression(current)) {

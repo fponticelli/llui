@@ -17,7 +17,7 @@ function counterDef(): ComponentDef<State, Msg, never> {
           return [{ ...state, count: state.count + 1 }, []]
       }
     },
-    view: (_state, send) => {
+    view: (send) => {
       return [
         div({ class: 'counter' }, [
           text((s: State) => String(s.count)),
@@ -34,9 +34,9 @@ describe('flush()', () => {
     let sendFn: (msg: Msg) => void
     const def = counterDef()
     const origView = def.view
-    def.view = (state, send) => {
+    def.view = (send) => {
       sendFn = send
-      return origView(state, send)
+      return origView(send)
     }
 
     const container = document.createElement('div')
@@ -66,16 +66,16 @@ describe('flush()', () => {
 
     const defA = counterDef()
     const origViewA = defA.view
-    defA.view = (state, send) => {
+    defA.view = (send) => {
       sendA = send
-      return origViewA(state, send)
+      return origViewA(send)
     }
 
     const defB = counterDef()
     const origViewB = defB.view
-    defB.view = (state, send) => {
+    defB.view = (send) => {
       sendB = send
-      return origViewB(state, send)
+      return origViewB(send)
     }
 
     const containerA = document.createElement('div')

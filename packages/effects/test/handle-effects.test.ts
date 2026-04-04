@@ -5,7 +5,10 @@ type CustomEffect = { type: 'custom'; data: string }
 type AllEffects = Effect | CustomEffect
 type Send = (msg: Record<string, unknown>) => void
 
-function mockResponse(body: unknown, opts?: { ok?: boolean; status?: number; contentType?: string }) {
+function mockResponse(
+  body: unknown,
+  opts?: { ok?: boolean; status?: number; contentType?: string },
+) {
   const ok = opts?.ok ?? true
   return {
     ok,
@@ -44,11 +47,7 @@ describe('handleEffects()', () => {
 
     const handler = handleEffects<AllEffects>().else(() => {})
 
-    handler(
-      http({ url: '/api/data', onSuccess: 'results', onError: 'error' }),
-      send,
-      signal,
-    )
+    handler(http({ url: '/api/data', onSuccess: 'results', onError: 'error' }), send, signal)
 
     await vi.waitFor(() => expect(send).toHaveBeenCalled())
 
@@ -63,11 +62,7 @@ describe('handleEffects()', () => {
 
     const handler = handleEffects<AllEffects>().else(() => {})
 
-    handler(
-      http({ url: '/api/data', onSuccess: 'results', onError: 'error' }),
-      send,
-      signal,
-    )
+    handler(http({ url: '/api/data', onSuccess: 'results', onError: 'error' }), send, signal)
 
     await vi.waitFor(() => expect(send).toHaveBeenCalled())
 
@@ -106,7 +101,10 @@ describe('handleEffects()', () => {
   })
 
   it('parses text responses when content-type is not json', async () => {
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(mockResponse('<h1>Hello</h1>', { contentType: 'text/html' })))
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(mockResponse('<h1>Hello</h1>', { contentType: 'text/html' })),
+    )
 
     const handler = handleEffects<AllEffects>().else(() => {})
     handler(http({ url: '/api/readme', onSuccess: 'ok', onError: 'err' }), send, signal)

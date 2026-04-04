@@ -61,7 +61,9 @@ function checkInvariants<S, M, E>(
   }
 }
 
-function shrinkSequence<M>(sequence: Array<{ name: string; msg: M }>): Array<{ name: string; msg: M }> {
+function shrinkSequence<M>(
+  sequence: Array<{ name: string; msg: M }>,
+): Array<{ name: string; msg: M }> {
   // Simple shrinking: try removing each element from the end
   // A full implementation would do binary search shrinking
   // For now, just return the sequence as-is (no shrinking)

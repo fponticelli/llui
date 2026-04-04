@@ -14,7 +14,7 @@ const Counter = component<State, Msg, never>({
         return [{ ...state, count: state.count + 1 }, []]
     }
   },
-  view: (_state, send) => [
+  view: (send) => [
     div({ class: 'counter', id: 'main' }, [
       span({}, [text((s: State) => s.label)]),
       text((s: State) => String(s.count)),
@@ -22,12 +22,11 @@ const Counter = component<State, Msg, never>({
     ]),
     ...show<State>({
       when: (s) => s.count > 0,
-      render: (_s, _send) => [span({ class: 'badge' }, [text('active')])],
+      render: (_send) => [span({ class: 'badge' }, [text('active')])],
     }),
   ],
   __dirty: (o, n) =>
-    (Object.is(o.count, n.count) ? 0 : 0b01) |
-    (Object.is(o.label, n.label) ? 0 : 0b10),
+    (Object.is(o.count, n.count) ? 0 : 0b01) | (Object.is(o.label, n.label) ? 0 : 0b10),
 })
 
 describe('renderToString', () => {

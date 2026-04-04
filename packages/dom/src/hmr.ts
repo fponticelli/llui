@@ -88,7 +88,7 @@ export function replaceComponent<S, M, E>(
       container,
       send: typedInst.send as (msg: unknown) => void,
     })
-    const nodes = typedInst.def.view(typedInst.state, typedInst.send)
+    const nodes = typedInst.def.view(typedInst.send)
     clearRenderContext()
     setFlatBindings(null)
 
@@ -113,7 +113,6 @@ export function replaceComponent<S, M, E>(
     }
   }
 
-  // eslint-disable-next-line no-console
   console.log(`[LLui HMR] ${name} updated — state preserved`)
 
   return handle

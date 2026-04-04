@@ -16,20 +16,24 @@ describe('filter highlight', () => {
       init: () => [{ filter: 'all' }, []],
       update: (state, msg) => {
         switch (msg.type) {
-          case 'setFilter': return [{ ...state, filter: msg.filter }, []]
+          case 'setFilter':
+            return [{ ...state, filter: msg.filter }, []]
         }
       },
-      view: (_state, send) => {
+      view: (send) => {
         sendFn = send
         return show<State>({
           when: () => true,
           render: () => [
-            a({ class: (s: State) => s.filter === 'all' ? 'selected' : '', 'data-f': 'all' }),
-            a({ class: (s: State) => s.filter === 'active' ? 'selected' : '', 'data-f': 'active' }),
+            a({ class: (s: State) => (s.filter === 'all' ? 'selected' : ''), 'data-f': 'all' }),
+            a({
+              class: (s: State) => (s.filter === 'active' ? 'selected' : ''),
+              'data-f': 'active',
+            }),
           ],
         })
       },
-      __dirty: (o, n) => Object.is(o.filter, n.filter) ? 0 : 1,
+      __dirty: (o, n) => (Object.is(o.filter, n.filter) ? 0 : 1),
     }
 
     const container = document.createElement('div')

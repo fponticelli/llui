@@ -103,12 +103,7 @@ function isReactiveAccessor(node: ts.ArrowFunction | ts.FunctionExpression): boo
  * - Direct property access: param.field, param.field.subfield
  * - Bracket notation with string literal: param['field']
  */
-function extractPaths(
-  node: ts.Node,
-  paramName: string,
-  _prefix: string,
-  paths: Set<string>,
-): void {
+function extractPaths(node: ts.Node, paramName: string, _prefix: string, paths: Set<string>): void {
   if (ts.isPropertyAccessExpression(node)) {
     // Skip if this is an intermediate in a deeper chain
     if (ts.isPropertyAccessExpression(node.parent)) {
@@ -170,10 +165,7 @@ function resolvePropertyChain(node: ts.PropertyAccessExpression, paramName: stri
 /**
  * Resolve bracket access with string literal: s['count'] → "count"
  */
-function resolveElementAccess(
-  node: ts.ElementAccessExpression,
-  paramName: string,
-): string | null {
+function resolveElementAccess(node: ts.ElementAccessExpression, paramName: string): string | null {
   if (!ts.isIdentifier(node.expression) || node.expression.text !== paramName) {
     return null
   }

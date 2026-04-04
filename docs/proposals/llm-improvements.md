@@ -12,11 +12,13 @@ Based on a deep analysis of the codebase, design docs, and the gap between what'
 The `window.__lluiDebug` API is fully implemented (`packages/core/src/devtools.ts`) with `getState()`, `send()`, `evalUpdate()`, `exportTrace()`, and message history. What's missing is the MCP server that exposes these as native LLM tools over WebSocket.
 
 **What to build:**
+
 - New package `packages/mcp/` with MCP tool definitions for `llui_get_state`, `llui_send_message`, `llui_eval_update`, `llui_replay_trace`, `llui_why_did_update`, `llui_search_state`, etc.
 - WebSocket bridge to the Vite dev server's HMR channel (extend with `llui:debug` channel)
 - Auto-discovery of running LLui dev servers on localhost
 
 **Why it matters for LLMs:**
+
 - `evalUpdate()` lets an LLM test hypothetical state transitions without side effects — no other framework offers this
 - `validateMessage()` gives structured feedback on malformed messages before they enter the queue
 - `replayTrace()` enables binary-search debugging of user-filed bug reports
@@ -34,6 +36,7 @@ The `window.__lluiDebug` API is fully implemented (`packages/core/src/devtools.t
 Currently, type information is scattered across source files. An LLM agent or system prompt must either include the full source or rely on prose descriptions. A single `llui.d.ts` under 150 lines would give LLMs the complete API surface in minimal tokens.
 
 **What to include:**
+
 - `ComponentDef<S, M, E>`, `Send<M>`, `AppHandle`
 - All structural primitives: `each`, `branch`, `show`, `portal`, `foreign`, `child`, `memo`, `onMount`, `errorBoundary`
 - `text()` and a representative subset of element helpers
@@ -59,6 +62,7 @@ The six anti-patterns to detect are already specified:
 6. **Form boilerplate** — N message types for N form fields instead of `setField`
 
 **Implementation approach:**
+
 - TypeScript AST visitor using `ts-morph` or the raw TS Compiler API (already used by the Vite plugin)
 - Runnable as both a standalone lint tool and as part of the evaluation pipeline
 - Each violation produces a structured diagnostic with file, line, rule ID, and suggested fix
@@ -76,6 +80,7 @@ The six anti-patterns to detect are already specified:
 The 15-task canonical evaluation set is specified (counter through WebSocket real-time), with clear metrics (compile rate, render rate, full pass rate, assertion score, console clean, idiomatic score). What's missing is the automation.
 
 **What to build:**
+
 - A runner script that takes a model, system prompt variant, and task ID
 - Calls the LLM API with the system prompt + task description
 - Writes the output to a `.ts` file
@@ -100,7 +105,7 @@ The scoped accessor `item(t => t.field)` is a significant improvement over the p
 
 ```typescript
 // Current — confusing double parens:
-button({ onClick: () => send({ type: 'remove', id: item(t => t.id)() }) })
+button({ onClick: () => send({ type: 'remove', id: item((t) => t.id)() }) })
 ```
 
 The `item(selector)` returns a `Binding<R>`, but inside event handlers the LLM needs the current value, requiring `item(selector)()`. This double-invocation is unintuitive.
@@ -109,10 +114,10 @@ The `item(selector)` returns a `Binding<R>`, but inside event handlers the LLM n
 
 ```typescript
 // Option A: peek() function
-button({ onClick: () => send({ type: 'remove', id: peek(item, t => t.id) }) })
+button({ onClick: () => send({ type: 'remove', id: peek(item, (t) => t.id) }) })
 
 // Option B: item.get() method
-button({ onClick: () => send({ type: 'remove', id: item.get(t => t.id) }) })
+button({ onClick: () => send({ type: 'remove', id: item.get((t) => t.id) }) })
 ```
 
 ### 5b: Strengthen the type to prevent bare `item()` calls
@@ -188,11 +193,7 @@ type FieldMsg<Fields extends Record<string, unknown>> = {
 And a helper for the update function:
 
 ```typescript
-function applyField<S, F extends keyof S>(
-  state: S,
-  field: F,
-  value: S[F],
-): S {
+function applyField<S, F extends keyof S>(state: S, field: F, value: S[F]): S {
   return { ...state, [field]: value }
 }
 ```
@@ -207,12 +208,14 @@ This gives LLMs a concrete import to reach for rather than reinventing the patte
 **Impact:** Medium — few-shot examples measurably improve generation quality for complex tasks.
 
 **What to build:**
+
 - LLM-generated solutions for all 15 canonical tasks that pass compilation + all assertions + idiomatic score = 1
 - Organized by tier with metadata (task ID, model used, system prompt version, scores)
 - Located at `examples/evaluation/` or similar
 - Usable as few-shot examples in system prompts for related task types
 
 **Priority examples to create first:**
+
 - Tier 3: Async fetch with loading/error/retry (demonstrates `handleEffects`, `http`, `cancel`)
 - Tier 4: Reorderable list (demonstrates `each()` with keyed reconciliation and DOM identity)
 - Tier 5: Parent-child Level 1 and Level 2 (demonstrates both composition patterns)
@@ -260,11 +263,13 @@ TypeScript doesn't catch this because both forms satisfy the type.
 **Proposal options:**
 
 **Option A: Type-level enforcement.** Make `props` only accept functions, not plain objects:
+
 ```typescript
 interface ChildOptions<S, ...> {
   props: (state: S) => Record<string, unknown>  // function required, not union with object
 }
 ```
+
 This would be a breaking change if anyone passes static props intentionally, but static props in `child()` are always a bug (if props never change, they should be passed via `init`).
 
 **Option B: Runtime dev warning.** In dev mode, check if `typeof props !== 'function'` and emit a warning.
@@ -277,17 +282,17 @@ Recommend Option A (type-level) combined with Option C (compiler diagnostic for 
 
 ## Implementation Priority
 
-| Priority | Proposal | Effort | Impact |
-|----------|----------|--------|--------|
-| 1 | P4: Evaluation pipeline | Medium | Enables measuring everything else |
-| 2 | P2: `.d.ts` reference file | Small | Immediate system prompt improvement |
-| 3 | P3: Lint-idiomatic | Medium | Automated feedback for LLM loops |
-| 4 | P1: `@llui/mcp` server | Medium | Category shift in LLM debugging |
-| 5 | P6: Compiler diagnostics | Small | Better self-correction signals |
-| 6 | P10: `child()` props fix | Small | Eliminates a common silent bug |
-| 7 | P5: `each()` peek helper | Small | Reduces double-call confusion |
-| 8 | P7: `setFields` utility | Small | Standardizes form patterns |
-| 9 | P8: Scored examples | Medium | Few-shot quality boost |
-| 10 | P9: DevTools enrichment | Medium | Deeper debugging capability |
+| Priority | Proposal                   | Effort | Impact                              |
+| -------- | -------------------------- | ------ | ----------------------------------- |
+| 1        | P4: Evaluation pipeline    | Medium | Enables measuring everything else   |
+| 2        | P2: `.d.ts` reference file | Small  | Immediate system prompt improvement |
+| 3        | P3: Lint-idiomatic         | Medium | Automated feedback for LLM loops    |
+| 4        | P1: `@llui/mcp` server     | Medium | Category shift in LLM debugging     |
+| 5        | P6: Compiler diagnostics   | Small  | Better self-correction signals      |
+| 6        | P10: `child()` props fix   | Small  | Eliminates a common silent bug      |
+| 7        | P5: `each()` peek helper   | Small  | Reduces double-call confusion       |
+| 8        | P7: `setFields` utility    | Small  | Standardizes form patterns          |
+| 9        | P8: Scored examples        | Medium | Few-shot quality boost              |
+| 10       | P9: DevTools enrichment    | Medium | Deeper debugging capability         |
 
 The recommended order is: **P4 → P2 → P3 → P1**, then the rest in any order. P4 (evaluation pipeline) comes first because it creates the measurement infrastructure that validates whether every other change actually improves LLM generation quality.

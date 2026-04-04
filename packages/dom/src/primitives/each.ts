@@ -1,5 +1,10 @@
 import type { EachOptions, Scope } from '../types'
-import { getRenderContext, setRenderContext, clearRenderContext, type RenderContext } from '../render-context'
+import {
+  getRenderContext,
+  setRenderContext,
+  clearRenderContext,
+  type RenderContext,
+} from '../render-context'
 import { createScope, disposeScope, addDisposer } from '../scope'
 import { getFlatBindings, setFlatBindings } from '../binding'
 import type { StructuralBlock } from '../structural'
@@ -106,7 +111,7 @@ function buildEntry<S, T, M>(
   const prevFlatBindings = getFlatBindings()
   setFlatBindings(ctx.allBindings)
   setRenderContext(buildCtx)
-  entry.nodes = opts.render({ state: currentState, send, item: itemAccessor, index: indexAccessor })
+  entry.nodes = opts.render({ send, item: itemAccessor, index: indexAccessor })
   clearRenderContext()
   setFlatBindings(prevFlatBindings)
   setRenderContext(ctx)
@@ -200,7 +205,10 @@ function reconcileEntries<S, T>(
     for (const entry of entries) oldKeys.add(entry.key)
     let anyShared = false
     for (let i = 0; i < newLen; i++) {
-      if (oldKeys.has(opts.key(newItems[i]!))) { anyShared = true; break }
+      if (oldKeys.has(opts.key(newItems[i]!))) {
+        anyShared = true
+        break
+      }
     }
     if (!anyShared) {
       // Bulk DOM removal using Range
@@ -272,7 +280,10 @@ function reconcileEntries<S, T>(
     for (const entry of newEntries) {
       if (oldByKey.has(entry.key)) {
         // Flush any pending fragment before this survivor
-        if (frag) { parent.insertBefore(frag, insertRef); frag = null }
+        if (frag) {
+          parent.insertBefore(frag, insertRef)
+          frag = null
+        }
         // Skip past survivor's nodes
         const lastNode = entry.nodes[entry.nodes.length - 1]
         insertRef = lastNode ? lastNode.nextSibling : insertRef
@@ -304,11 +315,7 @@ function updateEntry<T>(entry: Entry<T>, item: T, index: number): void {
   }
 }
 
-function isAppendOnly<S, T>(
-  entries: Entry<T>[],
-  newItems: T[],
-  opts: EachOptions<S, T>,
-): boolean {
+function isAppendOnly<S, T>(entries: Entry<T>[], newItems: T[], opts: EachOptions<S, T>): boolean {
   for (let i = 0; i < entries.length; i++) {
     if (entries[i]!.key !== opts.key(newItems[i]!)) return false
   }
@@ -357,10 +364,7 @@ function detectSwap<S, T>(
  * Instead of: item(t => t.id)()
  * Write:      peek(item, t => t.id)
  */
-export function peek<T, R>(
-  item: <V>(selector: (t: T) => V) => () => V,
-  selector: (t: T) => R,
-): R {
+export function peek<T, R>(item: <V>(selector: (t: T) => V) => () => V, selector: (t: T) => R): R {
   return item(selector)()
 }
 

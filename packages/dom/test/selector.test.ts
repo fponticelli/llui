@@ -10,24 +10,32 @@ describe('selector()', () => {
 
     const App = component<State, Msg, never>({
       name: 'SelectorTest',
-      init: () => [{
-        items: [
-          { id: 1, label: 'one' },
-          { id: 2, label: 'two' },
-          { id: 3, label: 'three' },
-        ],
-        selected: 0,
-      }, []],
+      init: () => [
+        {
+          items: [
+            { id: 1, label: 'one' },
+            { id: 2, label: 'two' },
+            { id: 3, label: 'three' },
+          ],
+          selected: 0,
+        },
+        [],
+      ],
       update: (s, msg) => {
         switch (msg.type) {
-          case 'select': return [{ ...s, selected: msg.id }, []]
-          case 'updateLabel': return [{
-            ...s,
-            items: s.items.map((i) => i.id === msg.id ? { ...i, label: msg.label } : i),
-          }, []]
+          case 'select':
+            return [{ ...s, selected: msg.id }, []]
+          case 'updateLabel':
+            return [
+              {
+                ...s,
+                items: s.items.map((i) => (i.id === msg.id ? { ...i, label: msg.label } : i)),
+              },
+              [],
+            ]
         }
       },
-      view: (_s, send) => {
+      view: (send) => {
         sendFn = send
         const sel = selector<State, number>((s) => s.selected)
 
@@ -36,17 +44,14 @@ describe('selector()', () => {
           key: (i) => i.id,
           render: ({ item, send }) => {
             const rowId = item((i) => i.id)()
-            const el = div({ class: 'row' }, [
-              text(item((i) => i.label)),
-            ])
-            sel.bind(el, rowId, 'class', 'class', (match) => match ? 'row selected' : 'row')
+            const el = div({ class: 'row' }, [text(item((i) => i.label))])
+            sel.bind(el, rowId, 'class', 'class', (match) => (match ? 'row selected' : 'row'))
             return [el]
           },
         })
       },
       __dirty: (o, n) =>
-        (Object.is(o.items, n.items) ? 0 : 0b01) |
-        (Object.is(o.selected, n.selected) ? 0 : 0b10),
+        (Object.is(o.items, n.items) ? 0 : 0b01) | (Object.is(o.selected, n.selected) ? 0 : 0b10),
     })
 
     const container = document.createElement('div')

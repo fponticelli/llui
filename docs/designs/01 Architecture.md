@@ -4,7 +4,7 @@
 
 LLui is a compile-time-optimized web framework built around The Elm Architecture (TEA). The core loop is identical to Elm's: state is immutable, the only way to change it is to dispatch a `Msg`, `update()` folds the message over the current state and returns a new state plus a list of effects, and the runtime executes those effects outside the pure function boundary.
 
-The critical departure from Elm — and from virtually every other TEA-inspired framework — is what happens when state changes arrive at the DOM. Traditional approaches re-run a virtual DOM diffing pass over the entire tree. LLui does not have a virtual DOM. `view()` is a one-shot imperative call that runs exactly once at mount time, building real DOM nodes and recording *where* state is consumed. Every arrow function passed to an element helper or `text()` is a *binding*: an accessor `(state: S) => T` attached to a specific DOM node. After mount, state changes skip `view()` entirely. The runtime instead drives two subsequent phases:
+The critical departure from Elm — and from virtually every other TEA-inspired framework — is what happens when state changes arrive at the DOM. Traditional approaches re-run a virtual DOM diffing pass over the entire tree. LLui does not have a virtual DOM. `view()` is a one-shot imperative call that runs exactly once at mount time, building real DOM nodes and recording _where_ state is consumed. Every arrow function passed to an element helper or `text()` is a _binding_: an accessor `(state: S) => T` attached to a specific DOM node. After mount, state changes skip `view()` entirely. The runtime instead drives two subsequent phases:
 
 **Phase 1 — Structural reconciliation.** `branch`, `each`, and `show` are structural primitives. They own comment-node markers and lists of scopes. When the discriminant or item array changes, Phase 1 surgically removes old DOM subtrees (disposing their scopes), creates new ones by re-invoking the case or item builder functions, and splices them into the live DOM. Transitions hook in here via `enter`/`leave`/`onTransition` fields on the primitive's object parameter. `foreign()` creates an opaque container for third-party imperative components (ProseMirror, Monaco, etc.) — LLui owns the container but not its contents; a typed `sync` bridge handles state propagation.
 
@@ -62,16 +62,17 @@ export const Counter = component<State, Msg, Effect>({
   init: () => [{ count: 0 }, []],
   update: (state, msg) => {
     switch (msg.type) {
-      case 'increment': return [{ count: state.count + 1 }, []];
+      case 'increment':
+        return [{ count: state.count + 1 }, []]
     }
   },
-  view: (_state, send) => {
+  view: (send) => {
     return div({}, [
       text((s: State) => String(s.count)),
       button({ onClick: () => send({ type: 'increment' }) }, [text('+')]),
-    ]);
+    ])
   },
-});
+})
 ```
 
 For a component with effects:
@@ -85,9 +86,9 @@ type Msg =
   | { type: 'clearSearch' }
   | { type: 'results'; items: Item[] }
   | { type: 'error'; msg: string }
-  | { type: 'analytics'; event: string }  // custom effect
+  | { type: 'analytics'; event: string } // custom effect
 type Effect =
-  | { type: 'http'; url: string; onSuccess: string; onError: string }  // string tags: runtime wraps response into { type: tag, payload: responseData } or { type: tag, error: errorData }
+  | { type: 'http'; url: string; onSuccess: string; onError: string } // string tags: runtime wraps response into { type: tag, payload: responseData } or { type: tag, error: errorData }
   | { type: 'cancel'; token: string; inner?: Effect }
   | { type: 'debounce'; key: string; ms: number; inner: Effect }
   | { type: 'analytics'; event: string }
@@ -99,12 +100,20 @@ export const Search = component<State, Msg, Effect>({
   update: (state, msg) => {
     switch (msg.type) {
       case 'setQuery':
-        return [{ ...state, query: msg.value, loading: true }, [
-          cancel('search', debounce('search', 300,
-            http({ url: `/api?q=${msg.value}`, onSuccess: 'results', onError: 'error' })
-          )),
-          { type: 'analytics', event: 'search_typed' },
-        ]]
+        return [
+          { ...state, query: msg.value, loading: true },
+          [
+            cancel(
+              'search',
+              debounce(
+                'search',
+                300,
+                http({ url: `/api?q=${msg.value}`, onSuccess: 'results', onError: 'error' }),
+              ),
+            ),
+            { type: 'analytics', event: 'search_typed' },
+          ],
+        ]
       case 'clearSearch':
         // cancel-only: abort any in-flight or debounced search, no replacement
         return [{ ...state, query: '', results: [], loading: false }, [cancel('search')]]
@@ -116,7 +125,9 @@ export const Search = component<State, Msg, Effect>({
   // .else() receives only the remaining types — here, just 'analytics'.
   onEffect: handleEffects<Effect>().else((effect, send, signal) => {
     switch (effect.type) {
-      case 'analytics': window.analytics?.track(effect.event); break
+      case 'analytics':
+        window.analytics?.track(effect.event)
+        break
     }
   }),
 })
@@ -149,24 +160,32 @@ export type ToolbarProps<S> = {
 
 export function toolbarUpdate(slice: ToolbarSlice, msg: ToolbarMsg): ToolbarSlice {
   switch (msg.type) {
-    case 'toggleMenu': return { ...slice, menuOpen: !slice.menuOpen }
-    case 'closeMenu': return { ...slice, menuOpen: false }
-    case 'selectTool': return { ...slice, menuOpen: false }
+    case 'toggleMenu':
+      return { ...slice, menuOpen: !slice.menuOpen }
+    case 'closeMenu':
+      return { ...slice, menuOpen: false }
+    case 'selectTool':
+      return { ...slice, menuOpen: false }
   }
 }
 
-export function toolbarView<S>(
-  props: ToolbarProps<S>,
-  send: (msg: ToolbarMsg) => void,
-) {
+export function toolbarView<S>(props: ToolbarProps<S>, send: (msg: ToolbarMsg) => void) {
   div({}, [
     button({ onClick: () => send({ type: 'toggleMenu' }) }, [text('Tools')]),
-    show({ when: s => props.toolbar(s).menuOpen, render: (_s, _send) =>
-      each({ items: props.tools, key: t => t.id, render: ({ item, index }) =>
-        button({
-          onClick: () => send({ type: 'selectTool', id: item(t => t.id) }),
-        }, [text(item(t => t.name))])
-      })
+    show({
+      when: (s) => props.toolbar(s).menuOpen,
+      render: () =>
+        each({
+          items: props.tools,
+          key: (t) => t.id,
+          render: ({ item, index }) =>
+            button(
+              {
+                onClick: () => send({ type: 'selectTool', id: item((t) => t.id) }),
+              },
+              [text(item((t) => t.name))],
+            ),
+        }),
     }),
   ])
 }
@@ -189,7 +208,10 @@ type Msg =
   | { type: 'backgroundClick' }
 
 export const Dashboard = component<State, Msg, Effect>({
-  init: () => [{ toolbar: { menuOpen: false }, sidebar: { openSectionId: null }, tools: defaultTools }, []],
+  init: () => [
+    { toolbar: { menuOpen: false }, sidebar: { openSectionId: null }, tools: defaultTools },
+    [],
+  ],
 
   update: (state, msg) => {
     switch (msg.type) {
@@ -203,21 +225,24 @@ export const Dashboard = component<State, Msg, Effect>({
     }
   },
 
-  view: (state, send) =>
+  view: (send) =>
     div({ onClick: () => send({ type: 'backgroundClick' }) }, [
-      toolbarView({ tools: s => s.tools, toolbar: s => s.toolbar }, msg => send({ type: 'toolbar', msg })),
-      sidebarView({ sidebar: s => s.sidebar }, msg => send({ type: 'sidebar', msg })),
+      toolbarView({ tools: (s) => s.tools, toolbar: (s) => s.toolbar }, (msg) =>
+        send({ type: 'toolbar', msg }),
+      ),
+      sidebarView({ sidebar: (s) => s.sidebar }, (msg) => send({ type: 'sidebar', msg })),
     ]),
 })
 ```
 
-No `child()` call, no `PropsWatcher`, no `propsMsg`, no `onMsg`. The parent's `Msg` union namespaces child messages: `{ type: 'toolbar'; msg: ToolbarMsg }`. The compiler traces depth-2 paths through the slices (`s.toolbar.menuOpen`). A human reviewer sees every possible state transition in one flat `update()` switch. An LLM generates this mechanically from the types. View functions use the `(props, send)` convention: a typed props object as the first argument (generic over the parent's state `<S>`), and `send` as the second. This mirrors the `view(state, send)` signature on components and makes every call site self-documenting — named fields eliminate positional ambiguity.
+No `child()` call, no `PropsWatcher`, no `propsMsg`, no `onMsg`. The parent's `Msg` union namespaces child messages: `{ type: 'toolbar'; msg: ToolbarMsg }`. The compiler traces depth-2 paths through the slices (`s.toolbar.menuOpen`). A human reviewer sees every possible state transition in one flat `update()` switch. An LLM generates this mechanically from the types. View functions use the `(props, send)` convention: a typed props object as the first argument (generic over the parent's state `<S>`), and `send` as the second. This mirrors the `view(send)` signature on components and makes every call site self-documenting — named fields eliminate positional ambiguity.
 
 **When to use Level 1:** Always, unless one of the Level 2 criteria applies. Most LLui applications should never use `child()`.
 
 ### Level 2 — Isolated Components (Opt-in)
 
 Use `child()` when:
+
 - The child has 32+ state paths of its own (parent bitmask would overflow)
 - The child is a library component with encapsulated internals (DataTable, RichTextEditor)
 - The child manages its own effect lifecycle (WebSocket connection, timer management)
@@ -233,10 +258,15 @@ type Msg =
   | { type: 'prevPage' }
 
 export const DataTable = component<State, Msg, Effect>({
-  init: (props: Props) => [{
-    rows: props.rows, columns: props.columns,
-    sortBy: null, page: 0,
-  }, []],
+  init: (props: Props) => [
+    {
+      rows: props.rows,
+      columns: props.columns,
+      sortBy: null,
+      page: 0,
+    },
+    [],
+  ],
 
   propsMsg: (props: Props): Msg => ({ type: 'propsChanged', props }),
 
@@ -257,7 +287,9 @@ export const DataTable = component<State, Msg, Effect>({
     }
   },
 
-  view: (state, send) => { /* ... */ },
+  view: (send) => {
+    /* ... */
+  },
 })
 
 // Typed effect builder — derived from the component definition.
@@ -341,7 +373,7 @@ assertEffects(t.effects, [{ type: 'http', url: '/api/data' }])
 
 **Calling `view()` primitives outside `view()`.** The render context is a module-level singleton set up by `withRenderContext` during the one-shot `view()` call. Calling `text()`, `branch()`, `each()`, `onMount()`, etc. outside this window throws a `NO_RENDER_CONTEXT` error. There is no equivalent of React's hooks dependency array to defer effects — side-effectful view work that needs to happen after mount belongs in `onMount`.
 
-**Storing DOM references across re-renders.** Because `view()` runs once, the DOM nodes it returns are stable for the component's lifetime — *except* inside `branch` and `each` subtrees. Nodes inside a branch arm are created fresh when the arm activates and destroyed when it deactivates. Holding a reference to such a node past the arm's lifetime is a leak and a logic error. If you need a stable reference, hoist the node outside the structural primitive or use `onMount` within the arm's builder.
+**Storing DOM references across re-renders.** Because `view()` runs once, the DOM nodes it returns are stable for the component's lifetime — _except_ inside `branch` and `each` subtrees. Nodes inside a branch arm are created fresh when the arm activates and destroyed when it deactivates. Holding a reference to such a node past the arm's lifetime is a leak and a logic error. If you need a stable reference, hoist the node outside the structural primitive or use `onMount` within the arm's builder.
 
 **Using `branch` keys that change identity on every render.** `branch` uses `Object.is(newKey, currentKey)` to detect arm changes. If the discriminant accessor returns a new object or string on every call even when logically equal, every update triggers a full DOM tear-down and rebuild. Discriminants should return primitive values (`string | number | boolean`), which is what the type signature enforces.
 
@@ -410,24 +442,25 @@ The hook is inert when DevTools are not connected — no allocation, no recordin
 ```typescript
 function foreign<S, T extends Record<string, unknown>, Instance>(opts: {
   /** Create the third-party instance. Runs once at mount time. */
-  mount: (container: HTMLElement, send: (msg: Msg) => void) => Instance;
+  mount: (container: HTMLElement, send: (msg: Msg) => void) => Instance
   /** Accessor for the state slice relevant to this foreign component.
    *  Participates in bitmask tracking — sync only fires when props change. */
-  props: (s: S) => T;
+  props: (s: S) => T
   /** Push state changes to the imperative instance.
    *  Function form: called with full props and prev on any change.
    *  Record form: per-field handlers, each called only when that field changes. */
   sync:
     | ((instance: Instance, props: T, prev: T | undefined) => void)
-    | { [K in keyof T]?: (instance: Instance, value: T[K], prev: T[K] | undefined) => void };
+    | { [K in keyof T]?: (instance: Instance, value: T[K], prev: T[K] | undefined) => void }
   /** Clean up the instance. Runs when the owning scope is disposed. */
-  destroy: (instance: Instance) => void;
+  destroy: (instance: Instance) => void
   /** Optional container configuration. Defaults to a plain div. */
-  container?: { tag?: string; attrs?: Record<string, string> };
-}): Node[];
+  container?: { tag?: string; attrs?: Record<string, string> }
+}): Node[]
 ```
 
 The three generic parameters are fully inferred and type-checked:
+
 - `S` — parent state type (inferred from the component context)
 - `T` — the props type (inferred from the `props` accessor return type, constrained to `Record<string, unknown>`)
 - `Instance` — the third-party instance type (inferred from `mount`'s return type)
@@ -456,16 +489,16 @@ The function form is appropriate when fields interact (e.g., setting `readonly` 
 
 **Runtime behavior of record sync.** When `sync` is a record, the runtime calls the `props` accessor, shallow-diffs each key of the result against the previous props object (using `Object.is`), and for each key where the value changed, calls `sync[key](instance, newValue, prevValue)`. Keys not present in the `sync` record are ignored — the developer can track fields that are read by the library without writing a handler. On the first call after mount (where `prev` is `undefined`), all handlers fire with `prev` as `undefined`.
 
-**Source of truth semantics.** The critical design principle for `foreign()` is that the foreign library often owns its own content state. A ProseMirror editor's document state lives inside ProseMirror, not in LLui state. The LLui state may hold a *snapshot* of the content (for persistence, validation, or derived computations), but the editor is authoritative during active editing. This means the `sync` flow is asymmetric:
+**Source of truth semantics.** The critical design principle for `foreign()` is that the foreign library often owns its own content state. A ProseMirror editor's document state lives inside ProseMirror, not in LLui state. The LLui state may hold a _snapshot_ of the content (for persistence, validation, or derived computations), but the editor is authoritative during active editing. This means the `sync` flow is asymmetric:
 
-- **LLui → library** (via `sync`): configuration changes — readonly flag, theme, language mode, external cursor position. These are *metadata*, not content.
+- **LLui → library** (via `sync`): configuration changes — readonly flag, theme, language mode, external cursor position. These are _metadata_, not content.
 - **Library → LLui** (via `send` in `mount`): content changes — the editor dispatches messages when the user types, selects, or formats text. These become `Msg` values in the parent component's `update()`.
 
 Content is typically NOT pushed from LLui → library during active editing. If external state forces a content reset (e.g., loading a new document), the `sync` function handles it explicitly — the developer checks whether the content actually changed from an external source vs. from the editor itself.
 
 **Runtime behavior.** `foreign()` creates a container element (default: `<div>`) and registers it with the current scope. On mount, it calls `mount(container, send)` and stores the returned instance. The `props` accessor is registered as a binding with a mask derived by the compiler — it participates in the same bitmask dirty-tracking as any other binding. When the mask matches and the accessor's result differs from the previous value (by shallow equality), the runtime calls `sync(instance, newProps, prevProps)`. On scope disposal (the `foreign()` node leaves the DOM), the runtime calls `destroy(instance)`, then removes the container from the DOM.
 
-**No transitions on `foreign()` itself.** The foreign component manages its own DOM, so LLui's `enter`/`leave`/`onTransition` don't apply to its internals. To animate the container's appearance, wrap `foreign()` in `show({ when, render: (_s, _send) => foreign(...), enter, leave })`. The container element receives the CSS classes; the library inside is unaware.
+**No transitions on `foreign()` itself.** The foreign component manages its own DOM, so LLui's `enter`/`leave`/`onTransition` don't apply to its internals. To animate the container's appearance, wrap `foreign()` in `show({ when, render: () => foreign(...), enter, leave })`. The container element receives the CSS classes; the library inside is unaware.
 
 **No Phase 2 bindings inside the container.** LLui does not walk the foreign component's DOM subtree during Phase 2. No bindings, no structural blocks, no scope children exist inside the container. The container is an opaque boundary — the only communication is through `sync` (LLui → library) and `send` (library → LLui). This is enforced at the type level: `mount`'s `container` parameter is a plain `HTMLElement`, not a LLui render context. Calling `text()`, `div()`, `each()`, etc. inside `mount` would throw `NO_RENDER_CONTEXT`.
 
@@ -519,17 +552,20 @@ case 'popstate':
   return [{ ...state, route: msg.route, routeParams: msg.params ?? {} }, []]
 ```
 
-The URL is an *effect*, not state. `update()` returns a `pushUrl` effect; the effect handler calls `history.pushState()`. The browser's `popstate` event is captured in `onMount` and dispatched as a `popstate` message. This keeps URL manipulation outside `update()` while keeping route state fully in the TEA cycle.
+The URL is an _effect_, not state. `update()` returns a `pushUrl` effect; the effect handler calls `history.pushState()`. The browser's `popstate` event is captured in `onMount` and dispatched as a `popstate` message. This keeps URL manipulation outside `update()` while keeping route state fully in the TEA cycle.
 
 Route rendering is `branch()`:
 
 ```typescript
-branch({ on: s => s.route, cases: {
-  home: () => homeView(homeProps, send),
-  about: () => aboutView(aboutProps, send),
-  users: () => usersView(usersProps, send),
-  userDetail: () => userDetailView(userDetailProps, send),
-}})
+branch({
+  on: (s) => s.route,
+  cases: {
+    home: () => homeView(homeProps, send),
+    about: () => aboutView(aboutProps, send),
+    users: () => usersView(usersProps, send),
+    userDetail: () => userDetailView(userDetailProps, send),
+  },
+})
 ```
 
 The compiler's exhaustive `branch()` diagnostic ensures all routes are handled. Code splitting for inactive `branch()` cases is an open compiler optimization (see 02 Compiler.md — "Code splitting for `branch()` cases"): the compiler could emit dynamic imports for cases that are not active at initial load. The mechanism for this — how a synchronous case builder integrates with an async `import()` — requires framework-level support for lazy case loading, which is not yet specified. Route transitions use `onTransition` on the `branch()` for page-level animations.
@@ -571,8 +607,9 @@ const isValid = memo((s: State) => Object.keys(validate(s.fields)).length === 0)
 const isDirty = memo((s: State) => !deepEqual(s.fields, initialFields))
 
 // In view:
-button({ disabled: s => !isValid(s) || !isDirty(s), onClick: () => send({ type: 'submit' }) },
-  [text('Submit')])
+button({ disabled: (s) => !isValid(s) || !isDirty(s), onClick: () => send({ type: 'submit' }) }, [
+  text('Submit'),
+])
 ```
 
 The compiler's controlled-input diagnostic (02 Compiler.md) catches the most common form bug: an `input({ value: s => s.fields.name })` without an `onInput` handler. Per-field rendering follows the standard element pattern — no special form primitive needed.
@@ -583,13 +620,13 @@ The compiler's controlled-input diagnostic (02 Compiler.md) catches the most com
 
 **Multi-step wizard.** A `phase` discriminant field drives `branch({ on: s => s.phase, cases: { ... } })` with one arm per step. Each step is a scope; navigating forward disposes the current scope, creates the next, and carries forward any collected data in the state object. State accumulates across steps because `update()` always receives the full current state. Validation for each step runs in `update()` before the phase transition — if invalid, `update()` returns the same state with error fields populated.
 
-**Modal / dialog.** `show({ when: s => s.modalOpen, render: (_s, _send) => portal({ target: document.body, render: (_s, _send) => div({ class: 'modal' }, [...]) }) })` is the canonical form. The portal renders into `document.body`, escaping any `overflow: hidden` container. Focus trap and initial focus go in `onMount` inside the portal builder. When `modalOpen` becomes false, `show` disposes its scope, which disposes the portal scope, which removes the modal nodes from `document.body` and fires the focus-trap's cleanup disposer.
+**Modal / dialog.** `show({ when: s => s.modalOpen, render: () => portal({ target: document.body, render: () => div({ class: 'modal' }, [...]) }) })` is the canonical form. The portal renders into `document.body`, escaping any `overflow: hidden` container. Focus trap and initial focus go in `onMount` inside the portal builder. When `modalOpen` becomes false, `show` disposes its scope, which disposes the portal scope, which removes the modal nodes from `document.body` and fires the focus-trap's cleanup disposer.
 
 **Tooltip / popover.** Same as modal but typically triggered by `mouseenter`/`mouseleave` events on a trigger element rather than an explicit message. The trigger element's event handler sends `{ type: 'showTooltip' }` / `{ type: 'hideTooltip' }`. The tooltip itself lives in a `show`-guarded `portal({ target, render })` call. Positioning logic (e.g., using `getBoundingClientRect`) runs in `onMount`. Because `onMount` fires asynchronously, the tooltip is positioned after it is in the DOM and measurable.
 
 **Drag and drop with reordering.** The drag state (`{ dragging: id | null, overIndex: number | null }`) lives in the component state. `each` uses the item key to preserve DOM node identity during reorder; the `updateEach` swap-detection fast path handles the common case of dragging one item past one other (exactly two positions change) with two DOM moves. Drag events dispatch messages that update the order in the `todos` array. The enter/leave transitions on `each` can animate items sliding into position.
 
-**Typeahead / autocomplete.** Keystrokes send `setQuery` messages. `update()` returns a composed effect: `cancel('search', debounce('search', 300, http({ url: \`/api/search?q=\${state.query}\`, onSuccess: 'results', onError: 'searchError' })))`. The `cancel` wrapper discards any pending search when a new keystroke arrives; the `debounce` wrapper delays the HTTP request by 300ms; the `http` wrapper performs the fetch. No generation counter, no manual cancellation tracking. The component state is just `{ query, results, loading }`. Results render via `each` keyed by result id.
+**Typeahead / autocomplete.** Keystrokes send `setQuery` messages. `update()` returns a composed effect: `cancel('search', debounce('search', 300, http({ url: \`/api/search?q=\${state.query}\`, onSuccess: 'results', onError: 'searchError' })))`. The `cancel`wrapper discards any pending search when a new keystroke arrives; the`debounce`wrapper delays the HTTP request by 300ms; the`http`wrapper performs the fetch. No generation counter, no manual cancellation tracking. The component state is just`{ query, results, loading }`. Results render via `each` keyed by result id.
 
 **Infinite scroll.** State holds `{ items: T[], cursor: string | null, loading: boolean }`. An `onMount` (or an event listener disposer registered via a scope disposer) observes an intersection observer on the sentinel element at the list bottom. When the sentinel is visible, it sends `loadMore`. `update()` returns the http effect and sets `loading: true`. On success, `update()` appends to `items` and updates `cursor`. `each` with key-by-id appends new entries at the tail; `updateEach` detects the append-at-end fast path and inserts a single fragment.
 
@@ -612,13 +649,18 @@ foreign<State, { readonly: boolean; placeholder: string }, EditorView>({
         const newState = view.state.apply(tr)
         view.updateState(newState)
         if (tr.docChanged) {
-          send({ type: 'contentChanged',
+          send({
+            type: 'contentChanged',
             html: serializer.serializeFragment(newState.doc.content),
-            text: newState.doc.textContent })
+            text: newState.doc.textContent,
+          })
         }
         if (tr.selectionSet) {
-          send({ type: 'selectionChanged',
-            from: newState.selection.from, to: newState.selection.to })
+          send({
+            type: 'selectionChanged',
+            from: newState.selection.from,
+            to: newState.selection.to,
+          })
         }
       },
     })
@@ -626,7 +668,7 @@ foreign<State, { readonly: boolean; placeholder: string }, EditorView>({
     view.dom.addEventListener('blur', () => send({ type: 'blurred' }))
     return view
   },
-  props: s => ({ readonly: s.document.locked, placeholder: s.document.placeholder }),
+  props: (s) => ({ readonly: s.document.locked, placeholder: s.document.placeholder }),
   // Record sync — each field fires independently when it changes.
   // Content is NOT a prop — ProseMirror is the source of truth during editing.
   sync: {
@@ -643,10 +685,16 @@ The `props` accessor tracks `s.document.locked` and `s.document.placeholder` —
 **Code editor (Monaco) — function sync.** Uses the function sync form because `readOnly` and `theme` interact (both go through `updateOptions` or global API calls, and the developer may want to batch them).
 
 ```typescript
-foreign<State, { language: string; readOnly: boolean; theme: string }, editor.IStandaloneCodeEditor>({
+foreign<
+  State,
+  { language: string; readOnly: boolean; theme: string },
+  editor.IStandaloneCodeEditor
+>({
   mount: (container, send) => {
     const ed = monaco.editor.create(container, {
-      value: '', language: 'typescript', automaticLayout: true,
+      value: '',
+      language: 'typescript',
+      automaticLayout: true,
     })
     ed.onDidChangeModelContent(() => {
       send({ type: 'codeChanged', value: ed.getValue() })
@@ -656,16 +704,18 @@ foreign<State, { language: string; readOnly: boolean; theme: string }, editor.IS
     })
     return ed
   },
-  props: s => ({ language: s.editor.language, readOnly: s.editor.readOnly, theme: s.editor.theme }),
+  props: (s) => ({
+    language: s.editor.language,
+    readOnly: s.editor.readOnly,
+    theme: s.editor.theme,
+  }),
   // Function sync — manual diffing, needed because language uses a global API
   // while readOnly uses instance options.
   sync: (ed, props, prev) => {
     if (!prev || props.language !== prev.language)
       monaco.editor.setModelLanguage(ed.getModel()!, props.language)
-    if (!prev || props.readOnly !== prev.readOnly)
-      ed.updateOptions({ readOnly: props.readOnly })
-    if (!prev || props.theme !== prev.theme)
-      monaco.editor.setTheme(props.theme)
+    if (!prev || props.readOnly !== prev.readOnly) ed.updateOptions({ readOnly: props.readOnly })
+    if (!prev || props.theme !== prev.theme) monaco.editor.setTheme(props.theme)
   },
   destroy: (ed) => ed.dispose(),
   container: { attrs: { style: 'width:100%;height:400px' } },
@@ -682,7 +732,7 @@ The two examples demonstrate both sync forms. Record sync is cleaner when fields
 
 **Data table with sort, filter, paginate.** All three dimensions live in state. `memo(applyFiltersAndSort)` produces the filtered+sorted array; `memo(currentPage)` slices it for display. Column header clicks send `setSort` messages; filter inputs send `setFilter` messages; page controls send `setPage`. The `__dirty` bitmask for a table with these fields will assign separate bits to `sortField`, `sortDir`, `filters`, `page`, and `rows`; a page change touches only `page`, so the filter/sort computation — if already memoized — is not re-run.
 
-**Form validation (sync + async).** Synchronous validation runs inside `update()`: the new state carries `errors` derived from the submitted values. Async validation (e.g., username availability check) returns a cancellable http effect: `cancel('validate-username', http({ url: \`/api/check?name=\${state.username}\`, onSuccess: 'usernameAvailable', onError: 'validationError' }))`. The `cancel` wrapper discards any pending validation when the user types again. The form is in a `validating` phase while the check is in flight; the submit button is disabled via a binding `(s) => s.phase === 'validating'` with the appropriate mask.
+**Form validation (sync + async).** Synchronous validation runs inside `update()`: the new state carries `errors` derived from the submitted values. Async validation (e.g., username availability check) returns a cancellable http effect: `cancel('validate-username', http({ url: \`/api/check?name=\${state.username}\`, onSuccess: 'usernameAvailable', onError: 'validationError' }))`. The `cancel`wrapper discards any pending validation when the user types again. The form is in a`validating`phase while the check is in flight; the submit button is disabled via a binding`(s) => s.phase === 'validating'` with the appropriate mask.
 
 **Animated transitions.** `branch`, `each`, and `show` all accept transition fields on their object parameter: `enter?`, `leave?`, and `onTransition?`. `leave` is called with the departing nodes before removal; if it returns a Promise, removal is deferred until the promise resolves. `enter` is called immediately after insertion. CSS class-based transitions work naturally: `each({ items: ..., key: ..., render: ..., enter: nodes => { nodes.forEach(n => n.classList.add('entering')); return waitForTransition(nodes[0]) } })`. For coordinated enter/leave (cross-fades, FLIP animations), `onTransition({ entering, leaving, parent })` fires first, followed by individual `enter`/`leave` handlers — they compose rather than override.
 
@@ -690,6 +740,6 @@ The two examples demonstrate both sync forms. Record sync is cleaner when fields
 
 **Tab panels.** `branch({ on: s => s.activeTab, cases: { home: () => HomePanel(), settings: () => SettingsPanel() } })`. The tab button group uses per-tab class bindings `(s) => s.activeTab === 'home' ? 'active' : ''` — each gets a mask for `activeTab` only. Switching tabs swaps the branch arm, disposing the leaving panel's scope (and any active effects within it) and creating the entering panel's scope (firing its `onMount`). Panel state resets on tab switch unless persisted in the parent's state before the transition.
 
-**Accordion.** Multiple independent `show` primitives, one per section. `show({ when: s => s.openSection === 'faq', render: (_s, _send) => FaqContent() })`. `show` is a two-case `branch` — when the condition becomes false, the scope is disposed and nodes are removed; when it becomes true again, the builder re-runs from scratch. Mutual exclusion (only one section open) is enforced by `update()` if the accordion is single-open. For multi-open accordions, `s.openSections: string[]` with per-section `show({ when: s => s.openSections.includes('faq'), render: ... })` bindings, each with mask for `openSections`. (State must be JSON-serializable — use `string[]` with uniqueness enforced in `update()`, not `Set<string>`.)
+**Accordion.** Multiple independent `show` primitives, one per section. `show({ when: s => s.openSection === 'faq', render: () => FaqContent() })`. `show` is a two-case `branch` — when the condition becomes false, the scope is disposed and nodes are removed; when it becomes true again, the builder re-runs from scratch. Mutual exclusion (only one section open) is enforced by `update()` if the accordion is single-open. For multi-open accordions, `s.openSections: string[]` with per-section `show({ when: s => s.openSections.includes('faq'), render: ... })` bindings, each with mask for `openSections`. (State must be JSON-serializable — use `string[]` with uniqueness enforced in `update()`, not `Set<string>`.)
 
 **Collaborative editing.** Multiple message sources — local user actions, WebSocket messages from other users, and periodic sync operations — all flow through `send()`. The effect handler receives `ws:subscribe` and pipes remote operations as messages. `update()` applies operational transforms or CRDT merges and returns new state. Because all updates go through the same pure `update()` function, the order of application is deterministic and testable. Conflict resolution logic is entirely in `update()`, isolated from DOM and network concerns.

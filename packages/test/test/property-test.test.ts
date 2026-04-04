@@ -20,10 +20,7 @@ describe('propertyTest', () => {
 
     // Should not throw
     propertyTest(Counter, {
-      invariants: [
-        (state) => state.count >= 0,
-        (state) => typeof state.count === 'number',
-      ],
+      invariants: [(state) => state.count >= 0, (state) => typeof state.count === 'number'],
       messageGenerators: {
         inc: () => ({ type: 'inc' as const }),
         dec: () => ({ type: 'dec' as const }),

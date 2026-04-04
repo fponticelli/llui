@@ -20,6 +20,9 @@ function routeOwnerName(s: State): { owner: string; name: string } | null {
   return null
 }
 
+// TODO(view-signature-migration): `s` was mount-time snapshot; these reads
+// were already a footgun. routing.link needs a literal owner/name at mount.
+// Consider inlining the link builder into the reactive path.
 export function repoPage(s: State, send: Send<Msg>): Node[] {
   // owner/name from route (always available)
   const rp = routeOwnerName(s)
@@ -32,12 +35,20 @@ export function repoPage(s: State, send: Send<Msg>): Node[] {
         h1({}, [
           text((s: State) => routeOwnerName(s)?.owner ?? ''),
           text(' / '),
-          routing.link(send, { page: 'repo', owner, name, tab: 'code', data: { type: 'loading' } }, {},
-            [text((s: State) => routeOwnerName(s)?.name ?? '')]),
+          routing.link(
+            send,
+            { page: 'repo', owner, name, tab: 'code', data: { type: 'loading' } },
+            {},
+            [text((s: State) => routeOwnerName(s)?.name ?? '')],
+          ),
         ]),
         div({ class: 'stats' }, [
-          span({}, [text((s: State) => `★ ${repoFromState(s)?.stargazers_count?.toLocaleString() ?? '—'}`)]),
-          span({}, [text((s: State) => `🍴 ${repoFromState(s)?.forks_count?.toLocaleString() ?? '—'}`)]),
+          span({}, [
+            text((s: State) => `★ ${repoFromState(s)?.stargazers_count?.toLocaleString() ?? '—'}`),
+          ]),
+          span({}, [
+            text((s: State) => `🍴 ${repoFromState(s)?.forks_count?.toLocaleString() ?? '—'}`),
+          ]),
           span({}, [text((s: State) => `Issues: ${repoFromState(s)?.open_issues_count ?? '—'}`)]),
         ]),
         ...show<State, Msg>({
@@ -52,13 +63,19 @@ export function repoPage(s: State, send: Send<Msg>): Node[] {
         routing.link(
           send,
           { page: 'repo', owner, name, tab: 'code', data: { type: 'loading' } },
-          { class: (s: State) => s.route.page !== 'repo' || s.route.tab === 'code' ? 'active' : '' },
+          {
+            class: (s: State) =>
+              s.route.page !== 'repo' || s.route.tab === 'code' ? 'active' : '',
+          },
           [text('Code')],
         ),
         routing.link(
           send,
           { page: 'repo', owner, name, tab: 'issues', data: { type: 'loading' } },
-          { class: (s: State) => s.route.page === 'repo' && s.route.tab === 'issues' ? 'active' : '' },
+          {
+            class: (s: State) =>
+              s.route.page === 'repo' && s.route.tab === 'issues' ? 'active' : '',
+          },
           [text('Issues')],
         ),
       ]),
@@ -76,30 +93,32 @@ export function repoPage(s: State, send: Send<Msg>): Node[] {
         },
         cases: {
           loading: () => [div({ class: 'loading' }, [text('Loading...')])],
-          error: () => [div({ class: 'error' }, [
-            text((s: State) => {
-              if (s.route.data.type !== 'failure') return ''
-              const err = s.route.data.error
-              switch (err.kind) {
-                case 'notfound': return 'Repository not found.'
-                case 'ratelimit': return `GitHub API rate limit exceeded. ${err.retryAfter ? `Try again in ${err.retryAfter}s.` : 'Try again later.'}`
-                case 'unauthorized': return 'Authentication required.'
-                case 'forbidden': return 'Access denied.'
-                case 'network': return `Network error: ${err.message}`
-                case 'server': return `Server error (${err.status}): ${err.message}`
-                default: return 'An error occurred.'
-              }
-            }),
-          ])],
-          code: (s, send) => [
-            ...breadcrumb(s, send),
-            ...fileTree(send),
-            ...readmeView(),
+          error: () => [
+            div({ class: 'error' }, [
+              text((s: State) => {
+                if (s.route.data.type !== 'failure') return ''
+                const err = s.route.data.error
+                switch (err.kind) {
+                  case 'notfound':
+                    return 'Repository not found.'
+                  case 'ratelimit':
+                    return `GitHub API rate limit exceeded. ${err.retryAfter ? `Try again in ${err.retryAfter}s.` : 'Try again later.'}`
+                  case 'unauthorized':
+                    return 'Authentication required.'
+                  case 'forbidden':
+                    return 'Access denied.'
+                  case 'network':
+                    return `Network error: ${err.message}`
+                  case 'server':
+                    return `Server error (${err.status}): ${err.message}`
+                  default:
+                    return 'An error occurred.'
+                }
+              }),
+            ]),
           ],
-          file: (s, send) => [
-            ...breadcrumb(s, send),
-            ...codeView(),
-          ],
+          code: (send) => [...breadcrumb(s, send), ...fileTree(send), ...readmeView()],
+          file: (send) => [...breadcrumb(s, send), ...codeView()],
           issues: () => issuesList(),
         },
       }),
@@ -115,12 +134,9 @@ function breadcrumb(s: State, send: Send<Msg>): Node[] {
 
   const parts = path.split('/')
   const crumbs: Node[] = [
-    routing.link(
-      send,
-      { page: 'repo', owner, name, tab: 'code', data: { type: 'loading' } },
-      {},
-      [text(name)],
-    ),
+    routing.link(send, { page: 'repo', owner, name, tab: 'code', data: { type: 'loading' } }, {}, [
+      text(name),
+    ]),
   ]
 
   for (let i = 0; i < parts.length; i++) {
@@ -151,8 +167,10 @@ function fileTree(send: Send<Msg>): Node[] {
         items: (s) => {
           const r = s.route
           let tree: TreeEntry[] = []
-          if (r.page === 'repo' && r.tab === 'code' && r.data.type === 'success') tree = r.data.data.tree
-          else if (r.page === 'tree' && r.data.type === 'success' && 'tree' in r.data.data) tree = r.data.data.tree
+          if (r.page === 'repo' && r.tab === 'code' && r.data.type === 'success')
+            tree = r.data.data.tree
+          else if (r.page === 'tree' && r.data.type === 'success' && 'tree' in r.data.data)
+            tree = r.data.data.tree
           // Sort: directories first, then alphabetical
           return [...tree].sort((a, b) => {
             if (a.type !== b.type) return a.type === 'dir' ? -1 : 1
@@ -165,15 +183,18 @@ function fileTree(send: Send<Msg>): Node[] {
           return [
             div({ class: 'file-row' }, [
               span({ class: 'icon' }, [text(isDir ? '📁' : '📄')]),
-              a({
-                href: '#',
-                onClick: (e: Event) => {
-                  e.preventDefault()
-                  send({ type: 'openPath', path: peek(item, (e) => e.path), isDir })
+              a(
+                {
+                  href: '#',
+                  onClick: (e: Event) => {
+                    e.preventDefault()
+                    send({ type: 'openPath', path: peek(item, (e) => e.path), isDir })
+                  },
                 },
-              }, [text(item((e) => e.name))]),
+                [text(item((e) => e.name))],
+              ),
               ...(!isDir
-                ? [span({}, [text(item((e) => e.size ? formatSize(e.size) : ''))])]
+                ? [span({}, [text(item((e) => (e.size ? formatSize(e.size) : '')))])]
                 : []),
             ]),
           ]
@@ -186,13 +207,18 @@ function fileTree(send: Send<Msg>): Node[] {
 function issuesList(): Node[] {
   return [
     ...show<State, Msg>({
-      when: (s) => s.route.page === 'repo' && s.route.tab === 'issues' && s.route.data.type === 'success' && s.route.data.data.issues.length === 0,
+      when: (s) =>
+        s.route.page === 'repo' &&
+        s.route.tab === 'issues' &&
+        s.route.data.type === 'success' &&
+        s.route.data.data.issues.length === 0,
       render: () => [div({ class: 'loading' }, [text('No open issues.')])],
     }),
     ...each<State, Issue, Msg>({
       items: (s) => {
         const r = s.route
-        if (r.page === 'repo' && r.tab === 'issues' && r.data.type === 'success') return r.data.data.issues
+        if (r.page === 'repo' && r.tab === 'issues' && r.data.type === 'success')
+          return r.data.data.issues
         return []
       },
       key: (i) => i.id,
@@ -200,8 +226,13 @@ function issuesList(): Node[] {
         div({ class: 'issue-row' }, [
           h3({}, [text(item((i) => i.title))]),
           div({ class: 'issue-meta' }, [
-            text(item((i) => `#${i.number} opened by ${i.user.login} on ${new Date(i.created_at).toLocaleDateString()}`)),
-            text(item((i) => i.comments > 0 ? ` · ${i.comments} comments` : '')),
+            text(
+              item(
+                (i) =>
+                  `#${i.number} opened by ${i.user.login} on ${new Date(i.created_at).toLocaleDateString()}`,
+              ),
+            ),
+            text(item((i) => (i.comments > 0 ? ` · ${i.comments} comments` : ''))),
           ]),
           ...labelSpans(item),
         ]),
@@ -213,10 +244,13 @@ function issuesList(): Node[] {
 function labelSpans(item: <R>(sel: (i: Issue) => R) => () => R): Node[] {
   const labels = item((i) => i.labels)()
   return labels.map((label) =>
-    span({
-      class: 'label',
-      style: `background-color: #${label.color}; color: ${isLightColor(label.color) ? '#24292f' : '#fff'}`,
-    }, [text(label.name)]),
+    span(
+      {
+        class: 'label',
+        style: `background-color: #${label.color}; color: ${isLightColor(label.color) ? '#24292f' : '#fff'}`,
+      },
+      [text(label.name)],
+    ),
   )
 }
 

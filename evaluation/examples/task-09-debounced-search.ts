@@ -31,16 +31,24 @@ export const DebouncedSearch = component<State, Msg, Effect>({
       case 'setQuery': {
         const query = msg.value
         if (query === '') {
-          return [
-            { ...state, query, results: [], searching: false },
-            [cancel('search')],
-          ]
+          return [{ ...state, query, results: [], searching: false }, [cancel('search')]]
         }
         return [
           { ...state, query, searching: true },
-          [cancel('search', debounce('search', 300,
-            http({ url: `/api/search?q=${encodeURIComponent(query)}`, onSuccess: 'searchResults', onError: 'searchError' }),
-          ))],
+          [
+            cancel(
+              'search',
+              debounce(
+                'search',
+                300,
+                http({
+                  url: `/api/search?q=${encodeURIComponent(query)}`,
+                  onSuccess: 'searchResults',
+                  onError: 'searchError',
+                }),
+              ),
+            ),
+          ],
         ]
       }
       case 'searchResults':
@@ -49,24 +57,23 @@ export const DebouncedSearch = component<State, Msg, Effect>({
         return [{ ...state, searching: false }, []]
     }
   },
-  view: (_state, send) => [
+  view: (send) => [
     div({ class: 'search' }, [
       input({
         type: 'text',
         placeholder: 'Search...',
         value: (s: State) => s.query,
-        onInput: (e: Event) => send({ type: 'setQuery', value: (e.target as HTMLInputElement).value }),
+        onInput: (e: Event) =>
+          send({ type: 'setQuery', value: (e.target as HTMLInputElement).value }),
       }),
       ...show<State>({
         when: (s) => s.searching,
-        render: (_s, _send) => [text('Searching...')],
+        render: () => [text('Searching...')],
       }),
       ...each<State, SearchResult>({
         items: (s) => s.results,
         key: (r) => r.id,
-        render: ({ item }) => [
-          div({ class: 'result' }, [text(item((r) => r.title))]),
-        ],
+        render: ({ item }) => [div({ class: 'result' }, [text(item((r) => r.title))])],
       }),
     ]),
   ],

@@ -15,7 +15,7 @@ function counterDef(): ComponentDef<State, Msg, never> {
           return [{ ...state, count: state.count + 1 }, []]
       }
     },
-    view: (_state, send) => {
+    view: (send) => {
       const btn = document.createElement('button')
       btn.addEventListener('click', () => send({ type: 'inc' }))
       btn.textContent = '+'
@@ -62,7 +62,7 @@ describe('mountApp', () => {
       name: 'WithData',
       init: (data) => [{ value: (data as { v: number }).v }, []],
       update: (s) => [s, []],
-      view: (_state) => {
+      view: () => {
         const span = document.createElement('span')
         return [span]
       },

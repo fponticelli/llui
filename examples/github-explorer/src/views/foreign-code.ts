@@ -20,7 +20,11 @@ export function codeView(): Node[] {
       if (r.page === 'tree' && r.data.type === 'success' && 'file' in r.data.data) {
         const file = r.data.data.file
         let content: string
-        try { content = atob(file.content) } catch { content = file.content }
+        try {
+          content = atob(file.content)
+        } catch {
+          content = file.content
+        }
         return { content, filename: file.name }
       }
       return { content: '', filename: '' }

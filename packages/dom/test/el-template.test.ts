@@ -11,7 +11,15 @@ describe('elTemplate', () => {
 
     const def = component<State, Msg, never>({
       name: 'TemplateTest',
-      init: () => [{ items: [{ id: 1, label: 'one' }, { id: 2, label: 'two' }] }, []],
+      init: () => [
+        {
+          items: [
+            { id: 1, label: 'one' },
+            { id: 2, label: 'two' },
+          ],
+        },
+        [],
+      ],
       update: (s) => [s, []],
       view: () =>
         each<State, { id: number; label: string }>({
@@ -85,7 +93,16 @@ describe('elTemplate', () => {
 
     const def = component<State, Msg, never>({
       name: 'BindTest',
-      init: () => [{ items: [{ id: 1, label: 'one' }, { id: 2, label: 'two' }], selected: 0 }, []],
+      init: () => [
+        {
+          items: [
+            { id: 1, label: 'one' },
+            { id: 2, label: 'two' },
+          ],
+          selected: 0,
+        },
+        [],
+      ],
       update: (s, msg) => {
         if (msg.type === 'select') return [{ ...s, selected: msg.id }, []]
         return [s, []]
@@ -97,34 +114,30 @@ describe('elTemplate', () => {
           render: ({ item, send }) => {
             const rowId = item((t) => t.id)()
             return [
-              elTemplate(
-                '<tr><td></td></tr>',
-                (root, bind) => {
-                  const td = root.childNodes[0] as HTMLElement
-                  td.textContent = String(rowId)
+              elTemplate('<tr><td></td></tr>', (root, bind) => {
+                const td = root.childNodes[0] as HTMLElement
+                td.textContent = String(rowId)
 
-                  // Click handler to trigger selection
-                  ;(root as HTMLElement).onclick = () => {
-                    send({ type: 'select', id: rowId })
-                    flush()
-                  }
+                // Click handler to trigger selection
+                ;(root as HTMLElement).onclick = () => {
+                  send({ type: 'select', id: rowId })
+                  flush()
+                }
 
-                  // Register a class binding on the tr
-                  bind(root, -1, 'class', 'class', ((s: State) =>
-                    s.selected === rowId ? 'danger' : '') as (s: never) => unknown)
+                // Register a class binding on the tr
+                bind(root, -1, 'class', 'class', ((s: State) =>
+                  s.selected === rowId ? 'danger' : '') as (s: never) => unknown)
 
-                  // Register a per-item text binding
-                  const t = document.createTextNode(item((r) => r.label)())
-                  td.appendChild(t)
-                  bind(t, -1, 'text', undefined, item((r) => r.label) as (s: never) => unknown)
-                },
-              ),
+                // Register a per-item text binding
+                const t = document.createTextNode(item((r) => r.label)())
+                td.appendChild(t)
+                bind(t, -1, 'text', undefined, item((r) => r.label) as (s: never) => unknown)
+              }),
             ]
           },
         }),
       __dirty: (o, n) =>
-        (Object.is(o.items, n.items) ? 0 : 0b01) |
-        (Object.is(o.selected, n.selected) ? 0 : 0b10),
+        (Object.is(o.items, n.items) ? 0 : 0b01) | (Object.is(o.selected, n.selected) ? 0 : 0b10),
     })
 
     const container = document.createElement('div')

@@ -19,7 +19,7 @@ function elSplitDef(): ComponentDef<State, Msg, never> {
           return [{ ...state, active: !state.active }, []]
       }
     },
-    view: (_state, send) => [
+    view: (send) => [
       elSplit(
         'div',
         (el) => {
@@ -56,9 +56,9 @@ describe('elSplit', () => {
     let sendFn: (msg: Msg) => void
     const def = elSplitDef()
     const originalView = def.view
-    def.view = (state, send) => {
+    def.view = (send) => {
       sendFn = send
-      return originalView(state, send)
+      return originalView(send)
     }
 
     const container = document.createElement('div')
@@ -73,9 +73,9 @@ describe('elSplit', () => {
     let sendFn: (msg: Msg) => void
     const def = elSplitDef()
     const originalView = def.view
-    def.view = (state, send) => {
+    def.view = (send) => {
       sendFn = send
-      return originalView(state, send)
+      return originalView(send)
     }
 
     const container = document.createElement('div')

@@ -10,9 +10,7 @@ type State = {
   items: Item[]
 }
 
-type Msg =
-  | { type: 'moveUp'; id: number }
-  | { type: 'moveDown'; id: number }
+type Msg = { type: 'moveUp'; id: number } | { type: 'moveDown'; id: number }
 
 type Effect = never
 
@@ -48,7 +46,7 @@ export const ReorderableList = component<State, Msg, Effect>({
       }
     }
   },
-  view: (_state, send) => [
+  view: (send) => [
     div({ class: 'reorderable-list' }, [
       ...each<State, Item>({
         items: (s) => s.items,
@@ -56,12 +54,18 @@ export const ReorderableList = component<State, Msg, Effect>({
         render: ({ item }) => [
           div({ class: 'item', 'data-testid': item((t) => String(t.id)) }, [
             text(item((t) => t.label)),
-            button({
-              onClick: () => send({ type: 'moveUp', id: peek(item, (t) => t.id) }),
-            }, [text('Up')]),
-            button({
-              onClick: () => send({ type: 'moveDown', id: peek(item, (t) => t.id) }),
-            }, [text('Down')]),
+            button(
+              {
+                onClick: () => send({ type: 'moveUp', id: peek(item, (t) => t.id) }),
+              },
+              [text('Up')],
+            ),
+            button(
+              {
+                onClick: () => send({ type: 'moveDown', id: peek(item, (t) => t.id) }),
+              },
+              [text('Down')],
+            ),
           ]),
         ],
       }),

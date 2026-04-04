@@ -13,10 +13,10 @@ describe('multiple mountApp instances', () => {
       name: label,
       init: () => [{ visible: false }, []],
       update: (state) => [{ ...state, visible: !state.visible }, []],
-      view: (_state, send) => [
+      view: (send) => [
         ...show<State>({
           when: (s) => s.visible,
-          render: (_s, _send) => [text(label)],
+          render: (_send) => [text(label)],
         }),
       ],
       __dirty: (o, n) => (Object.is(o.visible, n.visible) ? 0 : 1),
@@ -29,16 +29,16 @@ describe('multiple mountApp instances', () => {
 
     const defA = toggleDef('A')
     const origViewA = defA.view
-    defA.view = (state, send) => {
+    defA.view = (send) => {
       sendA = send
-      return origViewA(state, send)
+      return origViewA(send)
     }
 
     const defB = toggleDef('B')
     const origViewB = defB.view
-    defB.view = (state, send) => {
+    defB.view = (send) => {
       sendB = send
-      return origViewB(state, send)
+      return origViewB(send)
     }
 
     const containerA = document.createElement('div')

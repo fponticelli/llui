@@ -11,6 +11,7 @@ LLui does not exist in isolation. A server-side framework providing SSR, routing
 Vike (formerly vite-plugin-ssr) is explicitly designed for the "build your own framework" use case. Unlike Astro (which integrates frameworks as islands within its own rendering model), Next.js (React-only), Nuxt (Vue-only), or SvelteKit (Svelte-only), Vike is a Vite-based server framework that provides routing, SSR orchestration, data loading, and deployment — then gets out of the way. The UI framework provides the actual rendering via two hooks: `onRenderHtml` (server) and `onRenderClient` (client).
 
 This matches LLui's architecture precisely. LLui already has:
+
 - A Vite plugin for compilation (composes with Vike's Vite plugin).
 - `__renderToString(state)` for SSR (maps to `onRenderHtml`).
 - `hydrateApp()` with `data-llui-hydrate` markers (maps to `onRenderClient` with `isHydration` check).
@@ -30,8 +31,8 @@ import vike from 'vike/plugin'
 
 export default defineConfig({
   plugins: [
-    llui(),   // Compiles LLui components, generates __dirty, __renderToString
-    vike(),   // Handles routing, SSR orchestration, data loading
+    llui(), // Compiles LLui components, generates __dirty, __renderToString
+    vike(), // Handles routing, SSR orchestration, data loading
   ],
 })
 ```
@@ -173,8 +174,12 @@ type Msg = { type: 'toggleEdit' } | { type: 'save' }
 export default component<State, Msg, Effect>({
   name: 'UserDetail',
   init: (data: Data) => [{ user: data.user, editing: false }, []],
-  update: (state, msg) => { /* ... */ },
-  view: (state, send) => { /* ... */ },
+  update: (state, msg) => {
+    /* ... */
+  },
+  view: (send) => {
+    /* ... */
+  },
 })
 ```
 
@@ -220,12 +225,12 @@ The adapter is minimal. LLui's Vite plugin and Vike's Vite plugin do the heavy l
 
 `@llui/vike` supports all four Vike rendering modes:
 
-| Mode | `+ssr` | `+prerender` | Behavior |
-|------|--------|-------------|----------|
-| **SSR** | `true` (default) | `false` | Server renders HTML per request, client hydrates |
-| **SSG** | `true` | `true` | Build-time HTML generation, client hydrates |
-| **SPA** | `false` | `false` | No server rendering, client mounts from scratch |
-| **HTML-only** | `true` | `true`, no JS | Static HTML, no client JavaScript |
+| Mode          | `+ssr`           | `+prerender`  | Behavior                                         |
+| ------------- | ---------------- | ------------- | ------------------------------------------------ |
+| **SSR**       | `true` (default) | `false`       | Server renders HTML per request, client hydrates |
+| **SSG**       | `true`           | `true`        | Build-time HTML generation, client hydrates      |
+| **SPA**       | `false`          | `false`       | No server rendering, client mounts from scratch  |
+| **HTML-only** | `true`           | `true`, no JS | Static HTML, no client JavaScript                |
 
 Per-page overrides are supported via `+config.ts` in the page directory.
 
@@ -265,13 +270,13 @@ For `removed` components, the component's state transitions are testable indepen
 
 Detailed in 06 Bundle Size.md. Summary:
 
-| Addition | Estimated gzip cost |
-|----------|-------------------|
+| Addition                     | Estimated gzip cost              |
+| ---------------------------- | -------------------------------- |
 | `removed` adapter + wrappers | ~3KB (shared, not per-component) |
-| Per component (Dialog) | ~3KB |
-| Per component (Combobox) | ~5KB |
-| `@llui/vike` adapter | ~1.5KB |
-| Vike client runtime | ~5KB |
+| Per component (Dialog)       | ~3KB                             |
+| Per component (Combobox)     | ~5KB                             |
+| `@llui/vike` adapter         | ~1.5KB                           |
+| Vike client runtime          | ~5KB                             |
 
 All packages are tree-shakeable. An app using Dialog and Select pays for those two machines plus the shared adapter — unused machines add zero bytes.
 

@@ -30,10 +30,7 @@ export interface ConnectedRouter<R> {
    * View helper: attach URL change listener via onMount.
    * Returns an empty comment node. Sends { type: 'navigate', route } on URL change.
    */
-  listener<M>(
-    send: (msg: M) => void,
-    msgFactory?: (route: R) => M,
-  ): Node[]
+  listener<M>(send: (msg: M) => void, msgFactory?: (route: R) => M): Node[]
 
   /**
    * View helper: render a navigation link.
@@ -115,10 +112,7 @@ export function connectRouter<R>(router: Router<R>): ConnectedRouter<R> {
       return true
     },
 
-    listener<M>(
-      send: (msg: M) => void,
-      msgFactory?: (route: R) => M,
-    ): Node[] {
+    listener<M>(send: (msg: M) => void, msgFactory?: (route: R) => M): Node[] {
       const factory = msgFactory ?? ((r: R) => ({ type: 'navigate', route: r }) as M)
       onMount(() => {
         const event = router.mode === 'hash' ? 'hashchange' : 'popstate'

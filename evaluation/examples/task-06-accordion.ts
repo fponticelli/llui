@@ -26,25 +26,23 @@ export const Accordion = component<State, Msg, Effect>({
   update: (state, msg) => {
     switch (msg.type) {
       case 'toggle':
-        return [
-          { ...state, openId: state.openId === msg.id ? null : msg.id },
-          [],
-        ]
+        return [{ ...state, openId: state.openId === msg.id ? null : msg.id }, []]
     }
   },
-  view: (_state, send) => [
+  view: (send) => [
     div({ class: 'accordion' }, [
       ...PANELS.flatMap((panel) => [
         div({ class: 'panel' }, [
-          button({
-            class: 'panel-title',
-            onClick: () => send({ type: 'toggle', id: panel.id }),
-          }, [text(panel.title)]),
+          button(
+            {
+              class: 'panel-title',
+              onClick: () => send({ type: 'toggle', id: panel.id }),
+            },
+            [text(panel.title)],
+          ),
           ...show<State>({
             when: (s) => s.openId === panel.id,
-            render: (_s, _send) => [
-              div({ class: 'panel-body' }, [text(panel.body)]),
-            ],
+            render: () => [div({ class: 'panel-body' }, [text(panel.body)])],
           }),
         ]),
       ]),

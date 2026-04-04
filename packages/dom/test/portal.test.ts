@@ -19,7 +19,7 @@ describe('portal()', () => {
       view: () =>
         portal({
           target,
-          render: (_s, _send) => [div({ class: 'modal' }, [text('portal content')])],
+          render: () => [div({ class: 'modal' }, [text('portal content')])],
         }),
     }
 
@@ -46,7 +46,7 @@ describe('portal()', () => {
       view: () =>
         portal({
           target: '#string-target',
-          render: (_s, _send) => [text('found it')],
+          render: () => [text('found it')],
         }),
     }
 
@@ -75,14 +75,14 @@ describe('portal()', () => {
             return [{ ...state, open: false }, []]
         }
       },
-      view: (_state, send) => {
+      view: (send) => {
         sendFn = send
         return show({
           when: (s: State) => s.open,
-          render: (_s, _send) =>
+          render: (_send) =>
             portal({
               target,
-              render: (_s, _send) => [div({ class: 'overlay' }, [text('modal')])],
+              render: () => [div({ class: 'overlay' }, [text('modal')])],
             }),
         })
       },
@@ -119,11 +119,11 @@ describe('portal()', () => {
             return [{ ...state, count: state.count + 1 }, []]
         }
       },
-      view: (_state, send) => {
+      view: (send) => {
         sendFn = send
         return portal({
           target,
-          render: (_s, _send) => [text((s: State) => String(s.count))],
+          render: () => [text((s: State) => String(s.count))],
         })
       },
       __dirty: (o, n) => (Object.is(o.count, n.count) ? 0 : 1),

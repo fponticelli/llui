@@ -78,7 +78,6 @@ describe('addressed effects', () => {
     expect(isAddressedEffect({ type: 'http' })).toBe(false)
   })
 
-
   it('dispatches addressed effect to the target child component', async () => {
     type ParentState = { x: number }
     type ParentMsg = { type: 'sendToChild' }
@@ -95,7 +94,7 @@ describe('addressed effects', () => {
             return [state, [addr.setValue({ value: 'from parent' })]]
         }
       },
-      view: (_state, send) => [
+      view: (send) => [
         div({}, [
           ...child<ParentState, ChildMsg>({
             def: ChildComp,
@@ -109,9 +108,9 @@ describe('addressed effects', () => {
     let parentSend: (msg: ParentMsg) => void
     const defWithSend = { ...def }
     const origView = def.view
-    defWithSend.view = (state, send) => {
+    defWithSend.view = (send) => {
       parentSend = send
-      return origView(state, send)
+      return origView(send)
     }
 
     const container = document.createElement('div')

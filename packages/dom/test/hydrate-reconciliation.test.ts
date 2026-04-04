@@ -12,10 +12,7 @@ import type { Send } from '../src/types'
 
 describe('hydration reconciliation', () => {
   // Helper: render + hydrate + return container
-  function serverRenderAndHydrate<S, M>(
-    def: ReturnType<typeof component<S, M, never>>,
-    state: S,
-  ) {
+  function serverRenderAndHydrate<S, M>(def: ReturnType<typeof component<S, M, never>>, state: S) {
     const html = renderToString(def, state)
     const container = document.createElement('div')
     container.innerHTML = html
@@ -32,10 +29,7 @@ describe('hydration reconciliation', () => {
         init: () => [{ label: 'hello' }, []],
         update: (s) => [s, []],
         view: () => [
-          div({ class: 'wrapper' }, [
-            span({}, [text('static')]),
-            text((s: S) => s.label),
-          ]),
+          div({ class: 'wrapper' }, [span({}, [text('static')]), text((s: S) => s.label)]),
         ],
       })
 
@@ -59,11 +53,7 @@ describe('hydration reconciliation', () => {
         name: 'Structure',
         init: () => [null, []],
         update: (s) => [s, []],
-        view: () => [
-          div({ class: 'root' }, [
-            span({ class: 'child' }, [text('x')]),
-          ]),
-        ],
+        view: () => [div({ class: 'root' }, [span({ class: 'child' }, [text('x')])])],
       })
 
       const { container } = serverRenderAndHydrate(def, null)
@@ -91,7 +81,7 @@ describe('hydration reconciliation', () => {
               b: () => [div({ class: 'page-b' }, [text('Page B')])],
             },
           }),
-        __dirty: (o, n) => Object.is(o.mode, n.mode) ? 0 : 1,
+        __dirty: (o, n) => (Object.is(o.mode, n.mode) ? 0 : 1),
       })
 
       const { container } = serverRenderAndHydrate(def, { mode: 'a' })
@@ -161,24 +151,33 @@ describe('hydration reconciliation', () => {
 
       const def = component<S, never, never>({
         name: 'EachList',
-        init: () => [{ items: [{ id: 1, label: 'one' }, { id: 2, label: 'two' }] }, []],
+        init: () => [
+          {
+            items: [
+              { id: 1, label: 'one' },
+              { id: 2, label: 'two' },
+            ],
+          },
+          [],
+        ],
         update: (s) => [s, []],
         view: () => [
           div({ class: 'list' }, [
             ...each<S, { id: number; label: string }>({
               items: (s) => s.items,
               key: (t) => t.id,
-              render: ({ item }) => [
-                div({ class: 'item' }, [text(item((t) => t.label))]),
-              ],
+              render: ({ item }) => [div({ class: 'item' }, [text(item((t) => t.label))])],
             }),
           ]),
         ],
-        __dirty: (o, n) => Object.is(o.items, n.items) ? 0 : 1,
+        __dirty: (o, n) => (Object.is(o.items, n.items) ? 0 : 1),
       })
 
       const { container } = serverRenderAndHydrate(def, {
-        items: [{ id: 1, label: 'one' }, { id: 2, label: 'two' }],
+        items: [
+          { id: 1, label: 'one' },
+          { id: 2, label: 'two' },
+        ],
       })
 
       const items = container.querySelectorAll('.item')
@@ -212,9 +211,7 @@ describe('hydration reconciliation', () => {
                 ...each<S, string, M>({
                   items: (s) => s.items,
                   key: (item) => item,
-                  render: ({ item }) => [
-                    span({ class: 'tag' }, [text(item((i) => i))]),
-                  ],
+                  render: ({ item }) => [span({ class: 'tag' }, [text(item((i) => i))])],
                 }),
               ]),
             ],
@@ -259,11 +256,11 @@ describe('hydration reconciliation', () => {
         name: 'Reactive',
         init: () => [{ label: 'initial' }, []],
         update: (s, m) => [{ label: m.value }, []],
-        view: (_s, send) => {
+        view: (send) => {
           sendFn = send
           return [div({}, [text((s: S) => s.label)])]
         },
-        __dirty: (o, n) => Object.is(o.label, n.label) ? 0 : 1,
+        __dirty: (o, n) => (Object.is(o.label, n.label) ? 0 : 1),
       })
 
       const { container, handle } = serverRenderAndHydrate(def, { label: 'initial' })
@@ -283,13 +280,13 @@ describe('hydration reconciliation', () => {
         name: 'Events',
         init: () => [{ count: 0 }, []],
         update: (s) => [{ count: s.count + 1 }, []],
-        view: (_s, send) => [
+        view: (send) => [
           div({}, [
             text((s: S) => String(s.count)),
             button({ class: 'btn', onClick: () => send({ type: 'inc' }) }, [text('+')]),
           ]),
         ],
-        __dirty: (o, n) => Object.is(o.count, n.count) ? 0 : 1,
+        __dirty: (o, n) => (Object.is(o.count, n.count) ? 0 : 1),
       })
 
       const { container, handle } = serverRenderAndHydrate(def, { count: 0 })

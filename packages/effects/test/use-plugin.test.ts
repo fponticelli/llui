@@ -16,7 +16,11 @@ describe('handleEffects().use()', () => {
       })
       .else(elseFn)
 
-    handler({ type: 'custom', data: 'hello' } as Effect | { type: 'custom'; data: string }, send, new AbortController().signal)
+    handler(
+      { type: 'custom', data: 'hello' } as Effect | { type: 'custom'; data: string },
+      send,
+      new AbortController().signal,
+    )
 
     expect(send).toHaveBeenCalledWith({ type: 'handled', data: 'hello' })
     expect(elseFn).not.toHaveBeenCalled()
@@ -40,11 +44,17 @@ describe('handleEffects().use()', () => {
 
     const handler = handleEffects<{ type: string; id: number }>()
       .use((effect) => {
-        if ((effect as { id: number }).id === 1) { calls.push('plugin1'); return true }
+        if ((effect as { id: number }).id === 1) {
+          calls.push('plugin1')
+          return true
+        }
         return false
       })
       .use((effect) => {
-        if ((effect as { id: number }).id === 2) { calls.push('plugin2'); return true }
+        if ((effect as { id: number }).id === 2) {
+          calls.push('plugin2')
+          return true
+        }
         return false
       })
       .else(() => calls.push('else'))

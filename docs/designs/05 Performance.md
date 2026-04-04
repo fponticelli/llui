@@ -15,8 +15,8 @@ Serve the benchmark application from a **localhost static HTTP server** built fr
 Apply **4× CPU throttling** via the CDP `Emulation.setCPUThrottlingRate` command. This matches the js-framework-benchmark official methodology and is essential for cross-machine comparability: a developer laptop and a CI server have radically different clock speeds, but a 4× slowdown proportionally exposes algorithmic complexity differences that are invisible on fast hardware. At native speed, a framework with O(n) reconciliation and one with O(n²) reconciliation may differ by only a few milliseconds for n=1000; at 4× throttle the difference is measurable.
 
 ```typescript
-const cdpSession = await page.context().newCDPSession(page);
-await cdpSession.send('Emulation.setCPUThrottlingRate', { rate: 4 });
+const cdpSession = await page.context().newCDPSession(page)
+await cdpSession.send('Emulation.setCPUThrottlingRate', { rate: 4 })
 ```
 
 Network is irrelevant after the page loads. Do not simulate network conditions.
@@ -32,8 +32,8 @@ Warmup serves two distinct purposes that require different throttle states:
 2. **State reset** — each warmup iteration must execute the same prerequisite operations as the measured runs. If measured runs begin with a `clear` operation, warmup must also execute `clear`. Skipping prerequisites in warmup means the JIT never compiles the clear-then-create path, so the first measured run pays compilation cost.
 
 ```typescript
-const N_WARMUP = 5;   // iterations at 1× throttle
-const N_RUNS   = 10;  // iterations at 4× throttle for measurement
+const N_WARMUP = 5 // iterations at 1× throttle
+const N_RUNS = 10 // iterations at 4× throttle for measurement
 ```
 
 Five warmup iterations is sufficient for V8 to tier up to TurboFan for hot functions. Ten measurement runs gives adequate sample size for min/stdev statistics without excessive runtime. Do not reduce N_RUNS below 10; a sample size of 5 is statistically meaningless for stable min/stdev statistics.
@@ -48,14 +48,14 @@ The timing window closes inside a **double requestAnimationFrame** callback:
 
 ```typescript
 // Inside the benchmark application, after triggering the operation:
-const t0 = performance.now();
-triggerOperation();
+const t0 = performance.now()
+triggerOperation()
 requestAnimationFrame(() => {
   requestAnimationFrame(() => {
-    window.__benchDuration = performance.now() - t0;
-    window.__benchDone = true;
-  });
-});
+    window.__benchDuration = performance.now() - t0
+    window.__benchDone = true
+  })
+})
 ```
 
 The double-rAF pattern is mandatory. A single rAF fires before the browser has committed the layout and paint triggered by the DOM mutations. A double-rAF guarantees the browser has processed the style recalculation and layout pass that follows the mutation. Measuring before layout completes gives times that are unrealistically fast — the browser has deferred work to the next frame.
@@ -63,9 +63,11 @@ The double-rAF pattern is mandatory. A single rAF fires before the browser has c
 Signal completion with `window.__benchDone = true`. Poll for it via Playwright's `waitForFunction`:
 
 ```typescript
-await page.waitForFunction(() => window.__benchDone === true);
-const duration = await page.evaluate(() => window.__benchDuration as number);
-await page.evaluate(() => { window.__benchDone = false; });
+await page.waitForFunction(() => window.__benchDone === true)
+const duration = await page.evaluate(() => window.__benchDuration as number)
+await page.evaluate(() => {
+  window.__benchDone = false
+})
 ```
 
 Reset `window.__benchDone = false` after reading the result, not before. Resetting before reading creates a race condition where a subsequent operation could overwrite `__benchDuration` before you read it.
@@ -77,10 +79,10 @@ Memory measurement uses the CDP `Performance.getMetrics` API, which reports `JSH
 Before measuring memory, trigger garbage collection explicitly via CDP and wait for it to complete:
 
 ```typescript
-await cdpSession.send('HeapProfiler.collectGarbage');
-await page.waitForTimeout(200); // allow GC to finish
-const metrics = await cdpSession.send('Performance.getMetrics');
-const jsHeapUsedSize = metrics.metrics.find(m => m.name === 'JSHeapUsedSize')?.value ?? 0;
+await cdpSession.send('HeapProfiler.collectGarbage')
+await page.waitForTimeout(200) // allow GC to finish
+const metrics = await cdpSession.send('Performance.getMetrics')
+const jsHeapUsedSize = metrics.metrics.find((m) => m.name === 'JSHeapUsedSize')?.value ?? 0
 ```
 
 The 200ms wait is not arbitrary polling — GC is an asynchronous operation in V8's incremental collector. Without the wait, `Performance.getMetrics` can return a value that reflects an in-progress collection where some unreachable objects are still counted. The 200ms window is conservative; in practice V8 finishes a forced minor + major GC within 50–100ms even at 4× throttle, but the extra headroom is cheap.
@@ -91,30 +93,30 @@ To measure per-row marginal cost, use a **warm-empty baseline** protocol that el
 
 ```typescript
 // Step 1: Warm baseline — create rows, clear, GC, measure empty heap
-await triggerRun();       // create 1000 rows (warms up allocation paths)
-await triggerClear();     // clear all rows
-await cdpSession.send('HeapProfiler.collectGarbage');
-await page.waitForTimeout(200);
-const emptyHeap = getJSHeapUsedSize(await cdpSession.send('Performance.getMetrics'));
+await triggerRun() // create 1000 rows (warms up allocation paths)
+await triggerClear() // clear all rows
+await cdpSession.send('HeapProfiler.collectGarbage')
+await page.waitForTimeout(200)
+const emptyHeap = getJSHeapUsedSize(await cdpSession.send('Performance.getMetrics'))
 
 // Step 2: Measure with N rows
-await triggerRun();       // create 1000 rows again
-await cdpSession.send('HeapProfiler.collectGarbage');
-await page.waitForTimeout(200);
-const fullHeap = getJSHeapUsedSize(await cdpSession.send('Performance.getMetrics'));
+await triggerRun() // create 1000 rows again
+await cdpSession.send('HeapProfiler.collectGarbage')
+await page.waitForTimeout(200)
+const fullHeap = getJSHeapUsedSize(await cdpSession.send('Performance.getMetrics'))
 
-const perRowBytes = (fullHeap - emptyHeap) / 1000;
+const perRowBytes = (fullHeap - emptyHeap) / 1000
 ```
 
 The warm-empty baseline (create→clear→GC→measure, then create→GC→measure) ensures both measurements share the same module initialization state, JIT compilation artifacts, and V8 internal bookkeeping. The delta isolates per-row allocation cost.
 
 Report memory as:
 
-| Metric | Value | Notes |
-|--------|-------|-------|
-| Total heap (1k rows) | X kB | Absolute cost including framework baseline |
-| Empty heap (warmed) | Y kB | Framework baseline after create+clear cycle |
-| Per-row marginal | Z bytes | `(total - empty) / 1000` — the scaling-relevant number |
+| Metric               | Value   | Notes                                                  |
+| -------------------- | ------- | ------------------------------------------------------ |
+| Total heap (1k rows) | X kB    | Absolute cost including framework baseline             |
+| Empty heap (warmed)  | Y kB    | Framework baseline after create+clear cycle            |
+| Per-row marginal     | Z bytes | `(total - empty) / 1000` — the scaling-relevant number |
 
 ---
 
@@ -122,17 +124,17 @@ Report memory as:
 
 The following operations form the benchmark suite. They are derived from the js-framework-benchmark (krausest) suite with extensions specific to append-heavy patterns.
 
-| id | label | prerequisite | rationale |
-|----|-------|--------------|-----------|
-| `run` | Create 1k rows | `clear` | Tests `each()` full initial reconciliation. Must `clear` first — see Keyed Reuse Inflation in §5. |
-| `replace` | Replace 1k rows | `run` | Tests full teardown + rebuild. A framework that is fast at create but slow at replace has an expensive clear-or-key path. |
-| `update` | Update every 10th row | `run` active | Tests the binding update hot path. Every 10th row label changes — 100 DOM writes out of 1000 rows. This is the most representative real-world workload: changes arrive incrementally to existing state. |
-| `select` | Select one row | `run` active | Tests targeted class toggle. A single `.selected` class changes on one row. Measures how cheaply a framework can handle a change that affects a tiny fraction of the tree. |
-| `swap` | Swap rows 1 ↔ 998 | `run` active | Tests the reconciliation algorithm's ability to detect a transposition without rebuilding the entire list. A framework that re-renders all 1000 rows on a 2-element swap has a broken key strategy. |
-| `remove` | Remove one row | `run` active | Tests single-item scope disposal + DOM removal. The remaining 999 rows must be untouched. |
-| `runlots` | Create 10k rows | `clear` | Tests `each()` at scale. Exposes O(n²) algorithms that are hidden at 1k. |
-| `add` | Append 1k to 1k | `run` active | Tests incremental append: 1k existing rows, add 1k more. A framework that reconciles from scratch on every array change will be 2× slower here than on `run`. |
-| `clear` | Clear all rows | `run` active | Tests bulk scope disposal + bulk DOM removal. `textContent = ''` on the container is the canonical fast path; a framework that disposes scopes one by one will be proportionally slower. |
+| id           | label                           | prerequisite                         | rationale                                                                                                                                                                                                   |
+| ------------ | ------------------------------- | ------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `run`        | Create 1k rows                  | `clear`                              | Tests `each()` full initial reconciliation. Must `clear` first — see Keyed Reuse Inflation in §5.                                                                                                           |
+| `replace`    | Replace 1k rows                 | `run`                                | Tests full teardown + rebuild. A framework that is fast at create but slow at replace has an expensive clear-or-key path.                                                                                   |
+| `update`     | Update every 10th row           | `run` active                         | Tests the binding update hot path. Every 10th row label changes — 100 DOM writes out of 1000 rows. This is the most representative real-world workload: changes arrive incrementally to existing state.     |
+| `select`     | Select one row                  | `run` active                         | Tests targeted class toggle. A single `.selected` class changes on one row. Measures how cheaply a framework can handle a change that affects a tiny fraction of the tree.                                  |
+| `swap`       | Swap rows 1 ↔ 998               | `run` active                         | Tests the reconciliation algorithm's ability to detect a transposition without rebuilding the entire list. A framework that re-renders all 1000 rows on a 2-element swap has a broken key strategy.         |
+| `remove`     | Remove one row                  | `run` active                         | Tests single-item scope disposal + DOM removal. The remaining 999 rows must be untouched.                                                                                                                   |
+| `runlots`    | Create 10k rows                 | `clear`                              | Tests `each()` at scale. Exposes O(n²) algorithms that are hidden at 1k.                                                                                                                                    |
+| `add`        | Append 1k to 1k                 | `run` active                         | Tests incremental append: 1k existing rows, add 1k more. A framework that reconciles from scratch on every array change will be 2× slower here than on `run`.                                               |
+| `clear`      | Clear all rows                  | `run` active                         | Tests bulk scope disposal + bulk DOM removal. `textContent = ''` on the container is the canonical fast path; a framework that disposes scopes one by one will be proportionally slower.                    |
 | `transition` | Swap 2 rows with `onTransition` | `run` active, `onTransition` enabled | Tests the cost of transition setup — FLIP position capture, rect reads, callback scheduling — not animation duration. Measures to rAF, not to `transitionend`. Reported separately from the geometric mean. |
 
 **Why these operations matter:** `update` is the operation that dominates real applications. Users rarely create 1000 rows — they see incremental state changes. `run` and `clear` matter because they bound the cost of mounting and unmounting components. `swap` is a canary for reconciliation algorithm quality. `select` is a canary for false-positive binding evaluation: a framework that re-evaluates all row bindings on a selection change has a dirty-tracking failure. `transition` isolates the framework's overhead for setting up coordinated animations — it measures the synchronous bookkeeping cost that the framework pays before the browser begins the animation, ensuring that FLIP-style patterns do not introduce hidden latency.
@@ -145,13 +147,13 @@ The `transition` benchmark requires special treatment because it measures setup 
 
 ```typescript
 // Transition benchmark timing:
-const t0 = performance.now();
-triggerSwapWithTransition();
+const t0 = performance.now()
+triggerSwapWithTransition()
 requestAnimationFrame(() => {
   // Single rAF — capture cost of FLIP rect reads + callback scheduling
-  window.__benchDuration = performance.now() - t0;
-  window.__benchDone = true;
-});
+  window.__benchDuration = performance.now() - t0
+  window.__benchDone = true
+})
 ```
 
 Note the single-rAF pattern here, unlike the double-rAF used for mutation benchmarks. The transition benchmark measures the synchronous work (position capture, `getComputedStyle` reads, callback registration) that precedes the animation. The double-rAF would include the first frame of the animation itself, which varies with CSS transition configuration and is not framework cost.
@@ -169,9 +171,9 @@ The benchmark application must expose the following on `window` before any measu
 ```typescript
 declare global {
   interface Window {
-    __benchReady: boolean;       // set to true after mount
-    __benchDone: boolean;        // set to true inside double-rAF after each op
-    __benchDuration: number;     // ms, set alongside __benchDone
+    __benchReady: boolean // set to true after mount
+    __benchDone: boolean // set to true inside double-rAF after each op
+    __benchDuration: number // ms, set alongside __benchDone
   }
 }
 ```
@@ -198,9 +200,7 @@ For `select`, the harness clicks `.lbl` in the first `tr` directly rather than a
 The table must use a `<tbody>` containing `<tr>` elements directly. The harness verifies row count with:
 
 ```typescript
-const rowCount = await page.evaluate(
-  () => document.querySelectorAll('tbody tr').length
-);
+const rowCount = await page.evaluate(() => document.querySelectorAll('tbody tr').length)
 ```
 
 This is the authoritative row count. If the framework renders into a shadow DOM, virtualized container, or non-`tbody` structure, the harness cannot validate correctness. The `tbody` requirement is non-negotiable for cross-framework comparability.
@@ -208,10 +208,13 @@ This is the authoritative row count. If the framework renders into a shadow DOM,
 Each row must have the following structure:
 
 ```html
-<tr class="">                         <!-- class="selected" when selected -->
+<tr class="">
+  <!-- class="selected" when selected -->
   <td class="col-md-1">{ id }</td>
   <td class="col-md-4"><a class="lbl">{ label }</a></td>
-  <td class="col-md-1"><a class="remove"><span class="glyphicon glyphicon-remove"></span></a></td>
+  <td class="col-md-1">
+    <a class="remove"><span class="glyphicon glyphicon-remove"></span></a>
+  </td>
   <td class="col-md-6"></td>
 </tr>
 ```
@@ -221,15 +224,15 @@ The `.lbl` anchor must be clickable to select the row. The `.remove` anchor must
 ### Row Data Model
 
 ```typescript
-type Row = { id: number; label: string; selected: boolean };
+type Row = { id: number; label: string; selected: boolean }
 ```
 
 **IDs must increment globally and never reset.** A module-level counter is correct:
 
 ```typescript
-let nextId = 1;
+let nextId = 1
 function createRow(): Row {
-  return { id: nextId++, label: buildLabel(), selected: false };
+  return { id: nextId++, label: buildLabel(), selected: false }
 }
 ```
 
@@ -239,23 +242,64 @@ If `nextId` resets to 1 on each `run` call, keyed frameworks reuse existing DOM 
 
 ```typescript
 export const ADJECTIVES = [
-  'pretty', 'large', 'big', 'small', 'tall', 'short', 'long', 'handsome',
-  'plain', 'quaint', 'clean', 'elegant', 'easy', 'angry', 'crazy',
-  'helpful', 'mushy', 'odd', 'unsightly', 'adorable', 'important', 'inexpensive',
-  'cheap', 'expensive', 'fancy',
-];
+  'pretty',
+  'large',
+  'big',
+  'small',
+  'tall',
+  'short',
+  'long',
+  'handsome',
+  'plain',
+  'quaint',
+  'clean',
+  'elegant',
+  'easy',
+  'angry',
+  'crazy',
+  'helpful',
+  'mushy',
+  'odd',
+  'unsightly',
+  'adorable',
+  'important',
+  'inexpensive',
+  'cheap',
+  'expensive',
+  'fancy',
+]
 export const COLOURS = [
-  'red', 'yellow', 'blue', 'green', 'pink', 'brown', 'purple', 'grey',
-  'white', 'black', 'orange',
-];
+  'red',
+  'yellow',
+  'blue',
+  'green',
+  'pink',
+  'brown',
+  'purple',
+  'grey',
+  'white',
+  'black',
+  'orange',
+]
 export const NOUNS = [
-  'table', 'chair', 'house', 'bbq', 'desk', 'car', 'pony', 'cookie',
-  'sandwich', 'burger', 'pizza', 'mouse', 'keyboard',
-];
+  'table',
+  'chair',
+  'house',
+  'bbq',
+  'desk',
+  'car',
+  'pony',
+  'cookie',
+  'sandwich',
+  'burger',
+  'pizza',
+  'mouse',
+  'keyboard',
+]
 
 export function buildLabel(): string {
-  const pick = <T>(arr: T[]) => arr[Math.floor(Math.random() * arr.length)];
-  return `${pick(ADJECTIVES)} ${pick(COLOURS)} ${pick(NOUNS)}`;
+  const pick = <T>(arr: T[]) => arr[Math.floor(Math.random() * arr.length)]
+  return `${pick(ADJECTIVES)} ${pick(COLOURS)} ${pick(NOUNS)}`
 }
 ```
 
@@ -265,11 +309,9 @@ After every operation the harness must assert that the row count matches expecta
 
 ```typescript
 async function assertRowCount(page: Page, expected: number, op: string): Promise<void> {
-  const actual = await page.evaluate(
-    () => document.querySelectorAll('tbody tr').length
-  );
+  const actual = await page.evaluate(() => document.querySelectorAll('tbody tr').length)
   if (actual !== expected) {
-    throw new Error(`[${op}] expected ${expected} rows, got ${actual}`);
+    throw new Error(`[${op}] expected ${expected} rows, got ${actual}`)
   }
 }
 ```
@@ -306,52 +348,57 @@ The unweighted geometric mean treats all operations equally. It is the standard 
 
 ```typescript
 function geoMean(values: number[]): number {
-  const logSum = values.reduce((acc, v) => acc + Math.log(v), 0);
-  return Math.exp(logSum / values.length);
+  const logSum = values.reduce((acc, v) => acc + Math.log(v), 0)
+  return Math.exp(logSum / values.length)
 }
 
 // Unweighted: all valid operations contribute equally
-const validOps = ops.filter(op => baseline[op].mean > 0.5);
-const unweightedGeoMean = geoMean(validOps.map(op => llui[op].mean));
+const validOps = ops.filter((op) => baseline[op].mean > 0.5)
+const unweightedGeoMean = geoMean(validOps.map((op) => llui[op].mean))
 ```
 
-The geometric mean is the correct aggregation when comparing ratios across heterogeneous magnitudes (some operations take 5ms, others take 200ms). The arithmetic mean would be dominated by `runlots`. The geometric mean weights each operation's *relative* contribution equally.
+The geometric mean is the correct aggregation when comparing ratios across heterogeneous magnitudes (some operations take 5ms, others take 200ms). The arithmetic mean would be dominated by `runlots`. The geometric mean weights each operation's _relative_ contribution equally.
 
 #### Weighted "Interactive Profile" Score
 
 The weighted score reflects the frequency distribution of operations in a typical interactive application. The weights are:
 
-| Operation | Weight | Rationale |
-|-----------|--------|-----------|
-| `update` | 40% | Dominates real-world workloads: incremental state changes on every user interaction. |
-| `select` | 25% | Every click, hover, or focus change triggers a targeted class/attribute toggle. |
-| `swap` | 10% | Drag-to-reorder, sort-by-column, and list manipulation. |
-| `run` | 10% | Initial page load, route transitions that mount a new list. |
-| `add` | 5% | Infinite scroll, paginated loading, adding items to a list. |
-| `remove` | 5% | Deleting items, filtering, closing tabs. |
-| `clear` | 5% | Route transitions that unmount a list, reset-to-empty patterns. |
+| Operation | Weight | Rationale                                                                            |
+| --------- | ------ | ------------------------------------------------------------------------------------ |
+| `update`  | 40%    | Dominates real-world workloads: incremental state changes on every user interaction. |
+| `select`  | 25%    | Every click, hover, or focus change triggers a targeted class/attribute toggle.      |
+| `swap`    | 10%    | Drag-to-reorder, sort-by-column, and list manipulation.                              |
+| `run`     | 10%    | Initial page load, route transitions that mount a new list.                          |
+| `add`     | 5%     | Infinite scroll, paginated loading, adding items to a list.                          |
+| `remove`  | 5%     | Deleting items, filtering, closing tabs.                                             |
+| `clear`   | 5%     | Route transitions that unmount a list, reset-to-empty patterns.                      |
 
 `runlots`, `replace`, and `transition` are excluded from the weighted score. `runlots` is a scaling diagnostic (see below). `replace` is a synthetic worst-case. `transition` is reported separately.
 
 ```typescript
 const INTERACTIVE_WEIGHTS: Record<string, number> = {
-  update: 0.40, select: 0.25, swap: 0.10, run: 0.10,
-  add: 0.05, remove: 0.05, clear: 0.05,
-};
+  update: 0.4,
+  select: 0.25,
+  swap: 0.1,
+  run: 0.1,
+  add: 0.05,
+  remove: 0.05,
+  clear: 0.05,
+}
 
 function weightedGeoMean(
   results: Record<string, { mean: number }>,
   weights: Record<string, number>,
 ): number {
-  let logSum = 0;
-  let weightSum = 0;
+  let logSum = 0
+  let weightSum = 0
   for (const [op, w] of Object.entries(weights)) {
     if (results[op] && results[op].mean > 0.5) {
-      logSum += w * Math.log(results[op].mean);
-      weightSum += w;
+      logSum += w * Math.log(results[op].mean)
+      weightSum += w
     }
   }
-  return Math.exp(logSum / weightSum);
+  return Math.exp(logSum / weightSum)
 }
 ```
 
@@ -401,13 +448,15 @@ The scaling factor is the actionable diagnostic: it reveals algorithmic complexi
 
 ```typescript
 for (let i = 0; i < N_RUNS; i++) {
-  await cdpSession.send('HeapProfiler.collectGarbage');
-  await page.waitForTimeout(200);
+  await cdpSession.send('HeapProfiler.collectGarbage')
+  await page.waitForTimeout(200)
   // ... setup prerequisite state ...
   // ... trigger operation ...
-  await page.waitForFunction(() => window.__benchDone === true);
-  samples.push(await page.evaluate(() => window.__benchDuration));
-  await page.evaluate(() => { window.__benchDone = false; });
+  await page.waitForFunction(() => window.__benchDone === true)
+  samples.push(await page.evaluate(() => window.__benchDuration))
+  await page.evaluate(() => {
+    window.__benchDone = false
+  })
 }
 ```
 
@@ -492,7 +541,7 @@ The compiler tracks nested paths up to depth 2 and supports destructuring and si
 When `each()` reconciliation determines that a particular item reference is unchanged (same object identity), it can set `eachItemStable = true` on that item's scope. Phase 2 skips all bindings belonging to stable scopes:
 
 ```typescript
-if (binding.perItem && binding.ownerScope.eachItemStable) continue;
+if (binding.perItem && binding.ownerScope.eachItemStable) continue
 ```
 
 For `update` (every 10th row changes), this means 900 of 1000 row scopes are stable. All bindings in those 900 scopes are skipped at the `eachItemStable` check, which is cheaper than even the mask check. This optimization is only valid if items are replaced by reference (new object created for each changed item), not mutated in place. The benchmark application must never mutate row objects.
@@ -507,16 +556,15 @@ Level 2 composition (`child()`) adds per-parent-update cost: the props accessor 
 
 ### 5. Array Reference Identity Fast Path
 
-
 **Impact: Moderate for `select`, `swap` at very large list sizes.**
 
 If the accessor passed to `each()` returns the same array reference as the previous call, no reconciliation is needed. This is true for `select` — the row array is unchanged, only `selectedId` changes. The fast path:
 
 ```typescript
-const newItems = getItems(state);
+const newItems = getItems(state)
 if (newItems === this.lastItems) {
   // Skip Phase 1 reconciliation entirely for this each() block
-  return;
+  return
 }
 ```
 
@@ -530,16 +578,16 @@ This is only valid for the structural phase. Phase 2 still runs bindings that de
 
 ```typescript
 // Slower
-textNode.nodeValue = String(value);
+textNode.nodeValue = String(value)
 
 // Faster for mixed types
-textNode.nodeValue = typeof value === 'string' ? value : '' + value;
+textNode.nodeValue = typeof value === 'string' ? value : '' + value
 ```
 
 For numbers specifically, text nodes accept numeric `nodeValue` directly without String conversion:
 
 ```typescript
-textNode.nodeValue = value; // works if value is a number
+textNode.nodeValue = value // works if value is a number
 ```
 
 ### 7. Batch Attribute Writes
@@ -582,7 +630,7 @@ When benchmarking, use `flush()` to force the update cycle synchronously after t
 
 ```typescript
 await page.evaluate(() => {
-  (window as any).__app.send({ type: 'run' })
+  ;(window as any).__app.send({ type: 'run' })
   ;(window as any).__app.flush()
 })
 ```
@@ -639,17 +687,17 @@ The `handleEffects<Effect>().else((eff, send, signal) => { ... })` pattern is th
 
 ```typescript
 // Internal cancel registry (simplified)
-const cancelRegistry = new Map<string, AbortController>();
+const cancelRegistry = new Map<string, AbortController>()
 
 function handleCancel(token: string, inner?: Effect): void {
-  const existing = cancelRegistry.get(token);
-  if (existing) existing.abort();
+  const existing = cancelRegistry.get(token)
+  if (existing) existing.abort()
   if (inner) {
-    const controller = new AbortController();
-    cancelRegistry.set(token, controller);
-    dispatchEffect(inner, controller.signal);
+    const controller = new AbortController()
+    cancelRegistry.set(token, controller)
+    dispatchEffect(inner, controller.signal)
   } else {
-    cancelRegistry.delete(token);
+    cancelRegistry.delete(token)
   }
 }
 ```
@@ -673,10 +721,10 @@ When `each()` appears inside another `each()`'s render callback, the runtime det
 ```typescript
 // Phase 1 tree walk (simplified)
 function processEachScope(scope: EachScope, dirtyMask: number): void {
-  if (!(scope.mask & dirtyMask)) return;  // prune entire subtree
-  reconcileItems(scope);
+  if (!(scope.mask & dirtyMask)) return // prune entire subtree
+  reconcileItems(scope)
   for (const child of scope.children) {
-    processEachScope(child, dirtyMask);  // recurse into nested each
+    processEachScope(child, dirtyMask) // recurse into nested each
   }
 }
 ```
@@ -699,33 +747,37 @@ function processEachScope(scope: EachScope, dirtyMask: number): void {
 // Batched onTransition (simplified)
 function batchTransitions(pending: TransitionScope[]): void {
   // Step 1: Read old positions (one layout pass)
-  const oldRects = new Map<Element, DOMRect>();
+  const oldRects = new Map<Element, DOMRect>()
   for (const scope of pending) {
     for (const el of scope.elements) {
-      oldRects.set(el, el.getBoundingClientRect());
+      oldRects.set(el, el.getBoundingClientRect())
     }
   }
 
   // Step 2: Apply DOM mutations (reconciliation)
-  applyDOMMutations();
+  applyDOMMutations()
 
   // Step 3: Read new positions (one layout pass)
-  const newRects = new Map<Element, DOMRect>();
+  const newRects = new Map<Element, DOMRect>()
   for (const scope of pending) {
     for (const el of scope.elements) {
-      newRects.set(el, el.getBoundingClientRect());
+      newRects.set(el, el.getBoundingClientRect())
     }
   }
 
   // Step 4: Fire callbacks with computed deltas
   for (const scope of pending) {
-    const entering = scope.entering.map(el => ({
-      el, from: oldRects.get(el), to: newRects.get(el),
-    }));
-    const leaving = scope.leaving.map(el => ({
-      el, from: oldRects.get(el), to: newRects.get(el),
-    }));
-    scope.onTransition({ entering, leaving, parent: scope.parent });
+    const entering = scope.entering.map((el) => ({
+      el,
+      from: oldRects.get(el),
+      to: newRects.get(el),
+    }))
+    const leaving = scope.leaving.map((el) => ({
+      el,
+      from: oldRects.get(el),
+      to: newRects.get(el),
+    }))
+    scope.onTransition({ entering, leaving, parent: scope.parent })
   }
 }
 ```

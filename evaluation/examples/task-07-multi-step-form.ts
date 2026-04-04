@@ -15,11 +15,7 @@ type State = Fields & {
   step: 1 | 2 | 3 | 4
 }
 
-type Msg =
-  | FieldMsg<Fields>
-  | { type: 'next' }
-  | { type: 'back' }
-  | { type: 'submit' }
+type Msg = FieldMsg<Fields> | { type: 'next' } | { type: 'back' } | { type: 'submit' }
 
 type Effect = never
 
@@ -53,11 +49,9 @@ export const MultiStepForm = component<State, Msg, Effect>({
         return [state, []]
     }
   },
-  view: (_state, send) => [
+  view: (send) => [
     div({ class: 'multi-step-form' }, [
-      div({ class: 'step-indicator' }, [
-        text((s: State) => `Step ${s.step} of 4`),
-      ]),
+      div({ class: 'step-indicator' }, [text((s: State) => `Step ${s.step} of 4`)]),
       ...branch<State>({
         on: (s) => s.step,
         cases: {
@@ -68,7 +62,11 @@ export const MultiStepForm = component<State, Msg, Effect>({
                 type: 'text',
                 value: (s: State) => s.name,
                 onInput: (e: Event) =>
-                  send({ type: 'setField', field: 'name', value: (e.target as HTMLInputElement).value }),
+                  send({
+                    type: 'setField',
+                    field: 'name',
+                    value: (e.target as HTMLInputElement).value,
+                  }),
               }),
             ]),
           ],
@@ -79,7 +77,11 @@ export const MultiStepForm = component<State, Msg, Effect>({
                 type: 'email',
                 value: (s: State) => s.email,
                 onInput: (e: Event) =>
-                  send({ type: 'setField', field: 'email', value: (e.target as HTMLInputElement).value }),
+                  send({
+                    type: 'setField',
+                    field: 'email',
+                    value: (e.target as HTMLInputElement).value,
+                  }),
               }),
             ]),
           ],
@@ -90,7 +92,11 @@ export const MultiStepForm = component<State, Msg, Effect>({
                 type: 'text',
                 value: (s: State) => s.summary,
                 onInput: (e: Event) =>
-                  send({ type: 'setField', field: 'summary', value: (e.target as HTMLInputElement).value }),
+                  send({
+                    type: 'setField',
+                    field: 'summary',
+                    value: (e.target as HTMLInputElement).value,
+                  }),
               }),
             ]),
           ],
@@ -104,18 +110,27 @@ export const MultiStepForm = component<State, Msg, Effect>({
         },
       }),
       div({ class: 'controls' }, [
-        button({
-          onClick: () => send({ type: 'back' }),
-          disabled: (s: State) => s.step === 1,
-        }, [text('Back')]),
-        button({
-          onClick: () => send({ type: 'next' }),
-          disabled: (s: State) => s.step >= 4 || !isStepValid(s),
-        }, [text('Next')]),
-        button({
-          onClick: () => send({ type: 'submit' }),
-          disabled: (s: State) => s.step !== 4,
-        }, [text('Submit')]),
+        button(
+          {
+            onClick: () => send({ type: 'back' }),
+            disabled: (s: State) => s.step === 1,
+          },
+          [text('Back')],
+        ),
+        button(
+          {
+            onClick: () => send({ type: 'next' }),
+            disabled: (s: State) => s.step >= 4 || !isStepValid(s),
+          },
+          [text('Next')],
+        ),
+        button(
+          {
+            onClick: () => send({ type: 'submit' }),
+            disabled: (s: State) => s.step !== 4,
+          },
+          [text('Submit')],
+        ),
       ]),
     ]),
   ],

@@ -132,7 +132,10 @@ export function createRouter<R>(
         // builder produces default values that differ from the actual state.
         const roundTrip = matchPathname(path)
         const urlKeys = getUrlKeys(def)
-        if (partialEqual(roundTrip as Record<string, unknown>, r as Record<string, unknown>, urlKeys)) return path
+        if (
+          partialEqual(roundTrip as Record<string, unknown>, r as Record<string, unknown>, urlKeys)
+        )
+          return path
       }
     }
 
@@ -149,9 +152,7 @@ export function createRouter<R>(
   return {
     match(input: string) {
       // Strip hash prefix, preserve query string
-      const pathname = mode === 'hash'
-        ? input.replace(/^#\/?/, '/')
-        : input
+      const pathname = mode === 'hash' ? input.replace(/^#\/?/, '/') : input
       return matchPathname(pathname)
     },
     toPath: formatPath,
@@ -167,10 +168,7 @@ export function createRouter<R>(
 
 // ── Matching ─────────────────────────────────────────────────────
 
-function matchDef<R>(
-  def: RouteDef<R>,
-  pathSegments: string[],
-): Record<string, string> | null {
+function matchDef<R>(def: RouteDef<R>, pathSegments: string[]): Record<string, string> | null {
   const params: Record<string, string> = {}
   let si = 0
 
@@ -267,7 +265,11 @@ function getUrlKeys<R>(def: RouteDef<R>): Set<string> {
 }
 
 /** Compare two objects only on the specified keys */
-function partialEqual(a: Record<string, unknown>, b: Record<string, unknown>, keys: Set<string>): boolean {
+function partialEqual(
+  a: Record<string, unknown>,
+  b: Record<string, unknown>,
+  keys: Set<string>,
+): boolean {
   for (const key of keys) {
     if (!deepEqual(a[key], b[key])) return false
   }
@@ -281,7 +283,8 @@ function deepEqual(a: unknown, b: unknown): boolean {
   const kb = Object.keys(b as Record<string, unknown>)
   if (ka.length !== kb.length) return false
   for (const key of ka) {
-    if (!deepEqual((a as Record<string, unknown>)[key], (b as Record<string, unknown>)[key])) return false
+    if (!deepEqual((a as Record<string, unknown>)[key], (b as Record<string, unknown>)[key]))
+      return false
   }
   return true
 }

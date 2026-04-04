@@ -24,7 +24,11 @@ function foreignDef() {
     inst.destroyed = true
   })
   const syncFn = vi.fn(
-    (inst: FakeEditor, props: { theme: string; readonly: boolean }, _prev: { theme: string; readonly: boolean } | undefined) => {
+    (
+      inst: FakeEditor,
+      props: { theme: string; readonly: boolean },
+      _prev: { theme: string; readonly: boolean } | undefined,
+    ) => {
       inst.options = props
     },
   )
@@ -48,8 +52,7 @@ function foreignDef() {
         destroy: destroyFn,
       }),
     __dirty: (o, n) =>
-      (Object.is(o.theme, n.theme) ? 0 : 0b01) |
-      (Object.is(o.readonly, n.readonly) ? 0 : 0b10),
+      (Object.is(o.theme, n.theme) ? 0 : 0b01) | (Object.is(o.readonly, n.readonly) ? 0 : 0b10),
   }
 
   return { def, mountFn, destroyFn, syncFn }
@@ -61,9 +64,9 @@ describe('foreign()', () => {
   function mount() {
     const fns = foreignDef()
     const origView = fns.def.view
-    fns.def.view = (state, send) => {
+    fns.def.view = (send) => {
       sendFn = send
-      return origView(state, send)
+      return origView(send)
     }
     const container = document.createElement('div')
     const handle = mountApp(container, fns.def)
@@ -162,8 +165,7 @@ describe('foreign()', () => {
           destroy: () => {},
         }),
       __dirty: (o, n) =>
-        (Object.is(o.theme, n.theme) ? 0 : 0b01) |
-        (Object.is(o.readonly, n.readonly) ? 0 : 0b10),
+        (Object.is(o.theme, n.theme) ? 0 : 0b01) | (Object.is(o.readonly, n.readonly) ? 0 : 0b10),
     }
 
     const container = document.createElement('div')
@@ -191,7 +193,7 @@ describe('foreign()', () => {
             return [{ ...state, readonly: !state.readonly }, []]
         }
       },
-      view: (state, send) => {
+      view: (send) => {
         localSend = send
         return foreign<State, { theme: string; readonly: boolean }, FakeEditor>({
           mount: (container): FakeEditor => ({
@@ -208,8 +210,7 @@ describe('foreign()', () => {
         })
       },
       __dirty: (o, n) =>
-        (Object.is(o.theme, n.theme) ? 0 : 0b01) |
-        (Object.is(o.readonly, n.readonly) ? 0 : 0b10),
+        (Object.is(o.theme, n.theme) ? 0 : 0b01) | (Object.is(o.readonly, n.readonly) ? 0 : 0b10),
     }
 
     const container = document.createElement('div')

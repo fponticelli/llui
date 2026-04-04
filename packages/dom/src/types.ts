@@ -4,7 +4,7 @@ export interface ComponentDef<S, M, E> {
   name: string
   init: (data?: unknown) => [S, E[]]
   update: (state: S, msg: M) => [S, E[]]
-  view: (state: S, send: Send<M>) => Node[]
+  view: (send: Send<M>) => Node[]
   onEffect?: (effect: E, send: Send<M>, signal: AbortSignal) => void
 
   // Level 2 composition
@@ -65,21 +65,20 @@ export interface TransitionOptions {
 
 export interface BranchOptions<S, M = unknown> extends TransitionOptions {
   on: (s: S) => string | number | boolean
-  cases: Record<string | number, (state: S, send: Send<M>) => Node[]>
+  cases: Record<string | number, (send: Send<M>) => Node[]>
 }
 
 export interface ShowOptions<S, M = unknown> extends TransitionOptions {
   when: (s: S) => boolean
-  render: (state: S, send: Send<M>) => Node[]
+  render: (send: Send<M>) => Node[]
 }
 
 export interface EachOptions<S, T, M = unknown> extends TransitionOptions {
   items: (s: S) => T[]
   key: (item: T) => string | number
   render: (opts: {
-    state: S
     send: Send<M>
-    item: <R>(selector: (t: T) => R) => (() => R)
+    item: <R>(selector: (t: T) => R) => () => R
     index: () => number
   }) => Node[]
 }

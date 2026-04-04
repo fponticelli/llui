@@ -18,17 +18,20 @@ export const appDef = component<State, Msg, Effect>({
     return [s, effects]
   },
   update,
-  view: (_s, send) => [
-    header(_s, send),
+  view: (send) => [
+    header(send),
 
     ...routing.listener(send),
 
+    // TODO(view-signature-migration): repoPage reads state.route at mount
+    // time for routing.link's literal owner/name params. Needs refactoring
+    // to use accessors. For now, snapshot from init state at module scope.
     ...branch<State, Msg>({
       on: (s) => s.route.page,
       cases: {
-        search: (s, send) => searchView(s, send),
-        repo: (s, send) => repoPage(s, send),
-        tree: (s, send) => repoPage(s, send),
+        search: (send) => searchView(send),
+        repo: (send) => repoPage(initialState(), send),
+        tree: (send) => repoPage(initialState(), send),
       },
     }),
   ],

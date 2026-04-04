@@ -8,14 +8,26 @@ describe('query param preservation in routes with extra fields', () => {
     | { page: 'search'; q: string; data: { type: string } }
     | { page: 'repo'; owner: string; name: string; data: { type: string } }
 
-  const router = createRouter<Route>([
-    route([], () => ({ page: 'search', q: '', data: { type: 'idle' } })),
-    route(['search'], { query: ['q'] }, ({ q }) => ({ page: 'search', q: q ?? '', data: { type: 'loading' } })),
-    route([param('owner'), param('name')], ({ owner, name }) => ({ page: 'repo', owner, name, data: { type: 'loading' } })),
-  ], {
-    mode: 'history',
-    fallback: { page: 'search', q: '', data: { type: 'idle' } },
-  })
+  const router = createRouter<Route>(
+    [
+      route([], () => ({ page: 'search', q: '', data: { type: 'idle' } })),
+      route(['search'], { query: ['q'] }, ({ q }) => ({
+        page: 'search',
+        q: q ?? '',
+        data: { type: 'loading' },
+      })),
+      route([param('owner'), param('name')], ({ owner, name }) => ({
+        page: 'repo',
+        owner,
+        name,
+        data: { type: 'loading' },
+      })),
+    ],
+    {
+      mode: 'history',
+      fallback: { page: 'search', q: '', data: { type: 'idle' } },
+    },
+  )
 
   it('match preserves query params in history mode', () => {
     const result = router.match('/search?q=tempo')

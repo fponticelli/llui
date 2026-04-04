@@ -39,15 +39,15 @@ export const AsyncFetch = component<State, Msg, Effect>({
         ]
     }
   },
-  view: (_state, send) => [
+  view: (send) => [
     div({ class: 'async-fetch' }, [
       ...show<State>({
         when: (s) => s.phase === 'loading',
-        render: (_s, _send) => [div({ class: 'spinner' }, [text('Loading...')])],
+        render: () => [div({ class: 'spinner' }, [text('Loading...')])],
       }),
       ...show<State>({
         when: (s) => s.phase === 'error',
-        render: (_s, _send) => [
+        render: () => [
           div({ class: 'error' }, [
             text((s: State) => `Error: ${s.errorMsg}`),
             button({ onClick: () => send({ type: 'retry' }) }, [text('Retry')]),
@@ -56,13 +56,11 @@ export const AsyncFetch = component<State, Msg, Effect>({
       }),
       ...show<State>({
         when: (s) => s.phase === 'success',
-        render: (_s, _send) => [
+        render: () => [
           ...each<State, Item>({
             items: (s) => s.items,
             key: (item) => item.id,
-            render: ({ item }) => [
-              div({ class: 'item' }, [text(item((t) => t.name))]),
-            ],
+            render: ({ item }) => [div({ class: 'item' }, [text(item((t) => t.name))])],
           }),
         ],
       }),

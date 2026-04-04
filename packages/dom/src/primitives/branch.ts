@@ -21,7 +21,7 @@ export function branch<S, M = unknown>(opts: BranchOptions<S, M>): Node[] {
   if (builder) {
     currentScope = createScope(parentScope)
     setRenderContext({ ...ctx, rootScope: currentScope })
-    currentNodes = builder(ctx.state as S, send)
+    currentNodes = builder(send)
     clearRenderContext()
     setRenderContext(ctx)
 
@@ -53,7 +53,7 @@ export function branch<S, M = unknown>(opts: BranchOptions<S, M>): Node[] {
         currentScope = createScope(parentScope)
         setFlatBindings(ctx.allBindings)
         setRenderContext({ ...ctx, rootScope: currentScope, state })
-        currentNodes = newBuilder(state as S, send)
+        currentNodes = newBuilder(send)
         clearRenderContext()
         setFlatBindings(null)
 
@@ -79,7 +79,7 @@ export function branch<S, M = unknown>(opts: BranchOptions<S, M>): Node[] {
       if (leavingNodes.length > 0 && opts.leave) {
         const result = opts.leave(leavingNodes)
         if (result && typeof (result as Promise<void>).then === 'function') {
-          (result as Promise<void>).then(removeOld)
+          ;(result as Promise<void>).then(removeOld)
         } else {
           removeOld()
         }

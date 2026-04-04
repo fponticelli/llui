@@ -44,7 +44,7 @@ export function mountApp<S, M, E>(
   // Run view() within a render context so primitives can register bindings
   setFlatBindings(inst.allBindings)
   setRenderContext({ ...inst, container, send: inst.send as (msg: unknown) => void })
-  const nodes = def.view(inst.state, inst.send)
+  const nodes = def.view(inst.send)
   clearRenderContext()
   setFlatBindings(null)
 
@@ -102,7 +102,7 @@ export function hydrateApp<S, M, E>(
   // Server HTML remains visible until JS finishes — no flash.
   setFlatBindings(inst.allBindings)
   setRenderContext({ ...inst, container, send: inst.send as (msg: unknown) => void })
-  const nodes = hydrateDef.view(inst.state, inst.send)
+  const nodes = hydrateDef.view(inst.send)
   clearRenderContext()
   setFlatBindings(null)
 

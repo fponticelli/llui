@@ -31,34 +31,41 @@ export const AsyncValidation = component<State, Msg, Effect>({
       case 'setEmail': {
         const email = msg.value
         if (email.trim() === '' || !email.includes('@')) {
-          return [
-            { ...state, email, status: 'idle' },
-            [cancel('email-check')],
-          ]
+          return [{ ...state, email, status: 'idle' }, [cancel('email-check')]]
         }
         return [
           { ...state, email, status: 'checking' },
-          [cancel('email-check', debounce('email-check', 500,
-            http({
-              url: `/api/check-email?email=${encodeURIComponent(email)}`,
-              onSuccess: 'checkResult',
-              onError: 'checkError',
-            }),
-          ))],
+          [
+            cancel(
+              'email-check',
+              debounce(
+                'email-check',
+                500,
+                http({
+                  url: `/api/check-email?email=${encodeURIComponent(email)}`,
+                  onSuccess: 'checkResult',
+                  onError: 'checkError',
+                }),
+              ),
+            ),
+          ],
         ]
       }
       case 'checkResult':
-        return [{
-          ...state,
-          status: msg.payload.available ? 'available' : 'taken',
-        }, []]
+        return [
+          {
+            ...state,
+            status: msg.payload.available ? 'available' : 'taken',
+          },
+          [],
+        ]
       case 'checkError':
         return [{ ...state, status: 'idle' }, []]
       case 'submit':
         return [state, []]
     }
   },
-  view: (_state, send) => [
+  view: (send) => [
     div({ class: 'async-validation' }, [
       label({}, [text('Email')]),
       input({
@@ -71,22 +78,19 @@ export const AsyncValidation = component<State, Msg, Effect>({
         on: (s) => s.status,
         cases: {
           idle: () => [],
-          checking: () => [
-            div({ class: 'status checking' }, [text('checking...')]),
-          ],
-          available: () => [
-            div({ class: 'status available' }, [text('available')]),
-          ],
-          taken: () => [
-            div({ class: 'status taken' }, [text('taken')]),
-          ],
+          checking: () => [div({ class: 'status checking' }, [text('checking...')])],
+          available: () => [div({ class: 'status available' }, [text('available')])],
+          taken: () => [div({ class: 'status taken' }, [text('taken')])],
         },
       }),
-      button({
-        class: 'submit-btn',
-        onClick: () => send({ type: 'submit' }),
-        disabled: (s: State) => s.status !== 'available',
-      }, [text('Submit')]),
+      button(
+        {
+          class: 'submit-btn',
+          onClick: () => send({ type: 'submit' }),
+          disabled: (s: State) => s.status !== 'available',
+        },
+        [text('Submit')],
+      ),
     ]),
   ],
   onEffect: handleEffects<Effect>().else(() => {

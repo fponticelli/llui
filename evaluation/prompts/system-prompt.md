@@ -5,7 +5,7 @@ You are writing a TypeScript component using the LLui framework.
 ## Pattern
 
 LLui uses The Elm Architecture: `init` returns initial state and effects;
-`update(state, msg)` returns `[newState, effects]`; `view(state, send)` returns
+`update(state, msg)` returns `[newState, effects]`; `view(send)` returns
 DOM nodes once at mount and binds state to the DOM through accessor functions.
 State is immutable. Effects are plain data objects returned from `update()`.
 
@@ -16,7 +16,7 @@ interface ComponentDef<S, M, E> {
   name: string
   init: (props?: Record<string, unknown>) => [S, E[]]
   update: (state: S, msg: M) => [S, E[]]
-  view: (state: S, send: (msg: M) => void) => Node[]
+  view: (send: (msg: M) => void) => Node[]
   onEffect?: (effect: E, send: (msg: M) => void, signal: AbortSignal) => void
 }
 
@@ -26,8 +26,14 @@ function each<S, T>(opts: {
   render: (item: <R>(sel: (t: T) => R) => () => R, index: () => number) => Node[]
 }): Node[]
 
-function show<S>(opts: { when: (s: S) => boolean, render: (_s, _send) => Node[] }): Node[]
-function branch<S>(opts: { on: (s: S) => string | number, cases: Record<string, () => Node[]> }): Node[]
+function show<S, M>(opts: {
+  when: (s: S) => boolean
+  render: (send: (msg: M) => void) => Node[]
+}): Node[]
+function branch<S>(opts: {
+  on: (s: S) => string | number
+  cases: Record<string, () => Node[]>
+}): Node[]
 function memo<S, T>(accessor: (s: S) => T): (s: S) => T
 function onMount(callback: (el: Element) => (() => void) | void): void
 function peek<T, R>(item: <V>(sel: (t: T) => V) => () => V, sel: (t: T) => R): R
@@ -47,15 +53,18 @@ export const Counter = component<State, Msg, Effect>({
   init: () => [{ count: 0 }, []],
   update: (state, msg) => {
     switch (msg.type) {
-      case 'inc': return [{ ...state, count: state.count + 1 }, []]
-      case 'dec': return [{ ...state, count: Math.max(0, state.count - 1) }, []]
+      case 'inc':
+        return [{ ...state, count: state.count + 1 }, []]
+      case 'dec':
+        return [{ ...state, count: Math.max(0, state.count - 1) }, []]
     }
   },
-  view: (_state, send) => div({ class: 'counter' }, [
-    button({ onClick: () => send({ type: 'dec' }) }, [text('-')]),
-    text(s => String(s.count)),
-    button({ onClick: () => send({ type: 'inc' }) }, [text('+')]),
-  ]),
+  view: (send) =>
+    div({ class: 'counter' }, [
+      button({ onClick: () => send({ type: 'dec' }) }, [text('-')]),
+      text((s) => String(s.count)),
+      button({ onClick: () => send({ type: 'inc' }) }, [text('+')]),
+    ]),
 })
 ```
 

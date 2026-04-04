@@ -103,7 +103,14 @@ export function installDevTools(inst: object): void {
       if (!schema) return null
 
       if (msg == null || typeof msg !== 'object') {
-        return [{ path: '', expected: 'object', received: typeof msg, message: 'Message must be an object' }]
+        return [
+          {
+            path: '',
+            expected: 'object',
+            received: typeof msg,
+            message: 'Message must be an object',
+          },
+        ]
       }
 
       const msgObj = msg as Record<string, unknown>
@@ -111,31 +118,41 @@ export function installDevTools(inst: object): void {
       const typeValue = msgObj[discriminant]
 
       if (typeValue === undefined) {
-        return [{
-          path: `.${discriminant}`,
-          expected: `one of: ${Object.keys(schema.variants).map((v) => `'${v}'`).join(', ')}`,
-          received: 'undefined',
-          message: `Missing discriminant field '${discriminant}'`,
-        }]
+        return [
+          {
+            path: `.${discriminant}`,
+            expected: `one of: ${Object.keys(schema.variants)
+              .map((v) => `'${v}'`)
+              .join(', ')}`,
+            received: 'undefined',
+            message: `Missing discriminant field '${discriminant}'`,
+          },
+        ]
       }
 
       if (typeof typeValue !== 'string') {
-        return [{
-          path: `.${discriminant}`,
-          expected: 'string',
-          received: typeof typeValue,
-          message: `Discriminant field '${discriminant}' must be a string`,
-        }]
+        return [
+          {
+            path: `.${discriminant}`,
+            expected: 'string',
+            received: typeof typeValue,
+            message: `Discriminant field '${discriminant}' must be a string`,
+          },
+        ]
       }
 
       const variant = schema.variants[typeValue]
       if (!variant) {
-        return [{
-          path: `.${discriminant}`,
-          expected: `one of: ${Object.keys(schema.variants).map((v) => `'${v}'`).join(', ')}`,
-          received: `'${typeValue}'`,
-          message: `Unknown message type '${typeValue}'`,
-        }]
+        return [
+          {
+            path: `.${discriminant}`,
+            expected: `one of: ${Object.keys(schema.variants)
+              .map((v) => `'${v}'`)
+              .join(', ')}`,
+            received: `'${typeValue}'`,
+            message: `Unknown message type '${typeValue}'`,
+          },
+        ]
       }
 
       // Validate fields of the matched variant
@@ -227,10 +244,9 @@ export function installDevTools(inst: object): void {
   // Intercept update to record transitions
   const originalUpdate = ci.def.update
   ci.def.update = ((state: unknown, msg: unknown) => {
-    const [newState, effects] = (originalUpdate as (s: unknown, m: unknown) => [unknown, unknown[]])(
-      state,
-      msg,
-    )
+    const [newState, effects] = (
+      originalUpdate as (s: unknown, m: unknown) => [unknown, unknown[]]
+    )(state, msg)
     const dirty = ci.def.__dirty
       ? (ci.def.__dirty as (o: unknown, n: unknown) => number)(state, newState)
       : -1

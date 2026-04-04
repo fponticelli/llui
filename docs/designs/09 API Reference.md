@@ -17,7 +17,7 @@ interface ComponentDef<S, M, E> {
   name: string
   init: (data?: any) => [S, E[]]
   update: (state: S, msg: M) => [S, E[]]
-  view: (state: S, send: (msg: M) => void) => Node[]
+  view: (send: (msg: M) => void) => Node[]
   onEffect?: (effect: E, send: (msg: M) => void, signal: AbortSignal) => void
 
   // Level 2 composition only:
@@ -27,11 +27,12 @@ interface ComponentDef<S, M, E> {
   // Compiler-injected (do not write manually unless overriding):
   __dirty?: (oldState: S, newState: S) => number | [number, number]
   __renderToString?: (state: S) => string
-  __msgSchema?: object  // dev-mode only
+  __msgSchema?: object // dev-mode only
 }
 ```
 
 **Constraints:**
+
 - `S` must be JSON-serializable (no `Map`, `Set`, `Date`, class instances, functions).
 - `M` should be a discriminated union with a `type` field.
 - `E` should be a discriminated union with a `type` field.
@@ -50,12 +51,12 @@ Mounts a component into the DOM. Runs `init(data)`, then `view()`, then Phase 2.
 function mountApp<S, M, E>(
   container: HTMLElement,
   def: ComponentDef<S, M, E>,
-  data?: any
+  data?: any,
 ): AppHandle
 
 interface AppHandle {
-  dispose(): void   // Disposes the root scope, removes all DOM, cancels all effects.
-  flush(): void     // Alias for the global flush() scoped to this app.
+  dispose(): void // Disposes the root scope, removes all DOM, cancels all effects.
+  flush(): void // Alias for the global flush() scoped to this app.
 }
 ```
 
@@ -73,7 +74,7 @@ Hydrates server-rendered HTML. Walks existing DOM, attaches bindings to `data-ll
 function hydrateApp<S, M, E>(
   container: HTMLElement,
   def: ComponentDef<S, M, E>,
-  serverState: S
+  serverState: S,
 ): AppHandle
 ```
 
@@ -127,7 +128,7 @@ See: 01 Architecture.md
 
 ### Event Listeners
 
-Event handlers are the second argument category in element props (keys matching `/^on[A-Z]/`). The `send` function is captured from the enclosing `view(state, send)` closure — handlers call `send()` to dispatch messages.
+Event handlers are the second argument category in element props (keys matching `/^on[A-Z]/`). The `send` function is captured from the enclosing `view(send)` closure — handlers call `send()` to dispatch messages.
 
 ```typescript
 button({ onClick: () => send({ type: 'increment' }) }, [text('+')])
@@ -192,6 +193,7 @@ function input<S>(props?: ElementProps<S>): HTMLInputElement
 ```
 
 **Props are classified by the compiler into three categories:**
+
 - **Static** — literal values applied once at mount: `{ class: 'container', id: 'root' }`
 - **Event handlers** — keys matching `/^on[A-Z]/`: `{ onClick: () => send({ type: 'click' }) }`
 - **Reactive bindings** — arrow functions re-evaluated on state changes: `{ class: s => s.active ? 'on' : 'off' }`
@@ -209,16 +211,12 @@ See: 02 Compiler.md, 06 Bundle Size.md
 Conditional rendering keyed on a discriminant. When the discriminant changes, the old arm's scope is disposed depth-first (removing all bindings, listeners, and nested structural blocks) and the new arm's builder runs from scratch.
 
 ```typescript
-function branch<S>(opts: {
+function branch<S, M>(opts: {
   on: (s: S) => string | number | boolean
-  cases: Record<string | number, (s: S, send: Send<M>) => Node[]>
+  cases: Record<string | number, (send: Send<M>) => Node[]>
   enter?: (nodes: Node[]) => void | Promise<void>
   leave?: (nodes: Node[]) => void | Promise<void>
-  onTransition?: (ctx: {
-    entering: Node[]
-    leaving: Node[]
-    parent: Node
-  }) => void | Promise<void>
+  onTransition?: (ctx: { entering: Node[]; leaving: Node[]; parent: Node }) => void | Promise<void>
 }): Node[]
 ```
 
@@ -233,24 +231,22 @@ See: 03 Runtime DOM.md, 01 Architecture.md
 Reactive keyed list rendering with reconciliation.
 
 ```typescript
-function each<S, T>(opts: {
+function each<S, T, M>(opts: {
   items: (s: S) => T[]
   key: (item: T) => string | number
-  render: (
-    item: <R>(selector: (t: T) => R) => (() => R),
+  render: (opts: {
+    send: Send<M>
+    item: <R>(selector: (t: T) => R) => () => R
     index: () => number
-  ) => Node[]
+  }) => Node[]
   enter?: (nodes: Node[]) => void | Promise<void>
   leave?: (nodes: Node[]) => void | Promise<void>
-  onTransition?: (ctx: {
-    entering: Node[]
-    leaving: Node[]
-    parent: Node
-  }) => void | Promise<void>
+  onTransition?: (ctx: { entering: Node[]; leaving: Node[]; parent: Node }) => void | Promise<void>
 }): Node[]
 ```
 
 **Parameter types differ intentionally:**
+
 - `key` receives the **raw item value** `T` — it is a pure identity function evaluated during Phase 1.
 - `render` receives a **scoped accessor** `item` (a function, not the value) and an index accessor. Use `item(t => t.field)` to create reactive per-item bindings.
 
@@ -263,16 +259,12 @@ See: 03 Runtime DOM.md, 01 Architecture.md
 Boolean conditional rendering. Implemented as a two-case `branch` — the scope is disposed when the condition becomes false and rebuilt when it becomes true.
 
 ```typescript
-function show<S>(opts: {
+function show<S, M>(opts: {
   when: (s: S) => boolean
-  render: (_s, _send) => Node[]
+  render: (send: (msg: M) => void) => Node[]
   enter?: (nodes: Node[]) => void | Promise<void>
   leave?: (nodes: Node[]) => void | Promise<void>
-  onTransition?: (ctx: {
-    entering: Node[]
-    leaving: Node[]
-    parent: Node
-  }) => void | Promise<void>
+  onTransition?: (ctx: { entering: Node[]; leaving: Node[]; parent: Node }) => void | Promise<void>
 }): Node[]
 ```
 
@@ -285,10 +277,7 @@ See: 03 Runtime DOM.md
 Renders a subtree outside the component's natural DOM position (e.g., to `document.body` for modals). Bindings participate in the same update cycle. The portal's scope is a child of the originating scope — disposal removes portal nodes from the target.
 
 ```typescript
-function portal(opts: {
-  target: HTMLElement | string
-  render: (_s, _send) => Node[]
-}): Node[]
+function portal(opts: { target: HTMLElement | string; render: () => Node[] }): Node[]
 ```
 
 When `target` is a `string`, it is resolved via `document.querySelector(target)` at mount time. If the target element is not found, a development-mode warning is emitted and the portal renders nothing. If the target element is removed from the DOM after mount, portal nodes are removed with it — the scope's disposers still fire on the next parent scope disposal.
@@ -360,7 +349,7 @@ Wraps a scoped builder in a try/catch. Renders fallback subtree on error. Indepe
 
 ```typescript
 function errorBoundary(opts: {
-  render: (_s, _send) => Node[]
+  render: () => Node[]
   fallback: (error: Error) => Node[]
   onError?: (error: Error) => void
 }): Node[]
@@ -384,8 +373,8 @@ function http(opts: {
   method?: string
   body?: any
   headers?: Record<string, string>
-  onSuccess: string   // tag name: runtime wraps response into { type: tag, payload: responseData }
-  onError: string     // tag name: runtime wraps error into { type: tag, error: errorData }
+  onSuccess: string // tag name: runtime wraps response into { type: tag, payload: responseData }
+  onError: string // tag name: runtime wraps error into { type: tag, error: errorData }
 }): HttpEffect
 
 function cancel(token: string): CancelEffect
@@ -405,7 +394,7 @@ All builders return plain data objects (JSON-serializable). They are returned fr
 ```typescript
 function handleEffects<E extends { type: string }>(): {
   else<R extends E>(
-    handler: (effect: R, send: Send<Msg>, signal: AbortSignal) => void
+    handler: (effect: R, send: Send<Msg>, signal: AbortSignal) => void,
   ): OnEffectHandler<E>
 }
 ```
@@ -427,7 +416,7 @@ Zero-DOM component harness. Runs in Node, no browser needed.
 ```typescript
 function testComponent<S, M, E>(
   def: ComponentDef<S, M, E>,
-  initialData?: any
+  initialData?: any,
 ): {
   state: S
   effects: E[]
@@ -445,7 +434,7 @@ Runs `view()` once against a lightweight DOM shim.
 ```typescript
 function testView<S, M, E>(
   def: ComponentDef<S, M, E>,
-  state: S
+  state: S,
 ): {
   query: (selector: string) => Element | null
   queryAll: (selector: string) => Element[]
@@ -472,9 +461,9 @@ function propertyTest<S, M, E>(
   config: {
     invariants: Array<(state: S, effects: E[]) => boolean>
     messageGenerators: Record<string, ((state: S) => M) | (() => M)>
-    runs?: number          // default: 1000
-    maxSequenceLength?: number  // default: 50
-  }
+    runs?: number // default: 1000
+    maxSequenceLength?: number // default: 50
+  },
 ): void
 ```
 
@@ -485,10 +474,7 @@ On failure, shrinks to minimal reproduction.
 Regression testing from recorded sessions. Canonical import from `@llui/test`; implementation lives in `llui/trace`.
 
 ```typescript
-function replayTrace<S, M, E>(
-  def: ComponentDef<S, M, E>,
-  trace: LluiTrace<S, M, E>
-): void
+function replayTrace<S, M, E>(def: ComponentDef<S, M, E>, trace: LluiTrace<S, M, E>): void
 
 interface LluiTrace<S, M, E> {
   lluiTrace: 1
@@ -504,7 +490,6 @@ interface LluiTrace<S, M, E> {
 ```
 
 See: 04 Test Strategy.md
-
 
 ---
 
@@ -529,13 +514,13 @@ See: 03 Runtime DOM.md
 
 ```typescript
 interface Binding {
-  mask: number                    // single-word tier
+  mask: number // single-word tier
   // mask0: number; mask1: number // two-word tier (32–62 paths)
   accessor: (state: any) => any
   lastValue: any
   kind: 'text' | 'prop' | 'attr' | 'class' | 'style'
   node: Node
-  key?: string                    // for prop, attr, style kinds
+  key?: string // for prop, attr, style kinds
   ownerScope: Scope
   perItem: boolean
 }

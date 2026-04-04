@@ -55,8 +55,8 @@ export async function resolveEffects<S, M extends { type: string }, E extends { 
 
     const { effect, ok } = result.value
     const msg = ok
-      ? { type: effect.onSuccess, payload: result.value.data } as unknown as M
-      : { type: effect.onError, error: result.value.error } as unknown as M
+      ? ({ type: effect.onSuccess, payload: result.value.data } as unknown as M)
+      : ({ type: effect.onError, error: result.value.error } as unknown as M)
 
     const [nextState, moreEffects] = update(currentState, msg)
     currentState = nextState
@@ -73,9 +73,12 @@ export async function resolveEffects<S, M extends { type: string }, E extends { 
 
 async function mapStatusToError(res: Response): Promise<ApiError> {
   switch (res.status) {
-    case 401: return { kind: 'unauthorized' }
-    case 403: return { kind: 'forbidden' }
-    case 404: return { kind: 'notfound' }
+    case 401:
+      return { kind: 'unauthorized' }
+    case 403:
+      return { kind: 'forbidden' }
+    case 404:
+      return { kind: 'notfound' }
     case 429: {
       const retry = res.headers.get('retry-after')
       return { kind: 'ratelimit', retryAfter: retry ? parseInt(retry, 10) : undefined }
@@ -87,7 +90,9 @@ async function mapStatusToError(res: Response): Promise<ApiError> {
         if (body && typeof body === 'object' && 'errors' in body) {
           return { kind: 'validation', fields: body.errors as Record<string, string[]> }
         }
-      } catch { /* fall through */ }
+      } catch {
+        /* fall through */
+      }
       return { kind: 'server', status: res.status, message: res.statusText }
     }
     default:

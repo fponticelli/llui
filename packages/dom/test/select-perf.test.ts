@@ -22,7 +22,7 @@ describe('select performance — only 2 rows should update', () => {
             return [{ ...state, selected: msg.id }, []]
         }
       },
-      view: (_state, send) => {
+      view: (send) => {
         sendFn = send
         return each<State, Item>({
           items: (s) => s.items,
@@ -39,8 +39,7 @@ describe('select performance — only 2 rows should update', () => {
         })
       },
       __dirty: (o, n) =>
-        (Object.is(o.items, n.items) ? 0 : 0b01) |
-        (Object.is(o.selected, n.selected) ? 0 : 0b10),
+        (Object.is(o.items, n.items) ? 0 : 0b01) | (Object.is(o.selected, n.selected) ? 0 : 0b10),
     })
 
     const container = document.createElement('div')

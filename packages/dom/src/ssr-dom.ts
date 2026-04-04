@@ -12,11 +12,23 @@ export async function initSsrDom(): Promise<void> {
   if (typeof document !== 'undefined') return
 
   // @ts-expect-error — jsdom is an optional peer dependency, not typed
-  const jsdom: { JSDOM: new (html: string) => { window: Record<string, unknown> } } = await import('jsdom')
+  const jsdomMod = await import('jsdom')
+  const jsdom = jsdomMod as { JSDOM: new (html: string) => { window: Record<string, unknown> } }
   const dom = new jsdom.JSDOM('<!DOCTYPE html><html><body></body></html>')
   const g = globalThis as Record<string, unknown>
   const win = dom.window
-  for (const key of ['document', 'HTMLElement', 'Element', 'Node', 'Text', 'Comment', 'MouseEvent', 'ShadowRoot', 'DocumentFragment', 'HTMLTemplateElement']) {
+  for (const key of [
+    'document',
+    'HTMLElement',
+    'Element',
+    'Node',
+    'Text',
+    'Comment',
+    'MouseEvent',
+    'ShadowRoot',
+    'DocumentFragment',
+    'HTMLTemplateElement',
+  ]) {
     if (win[key] !== undefined) g[key] = win[key]
   }
 }

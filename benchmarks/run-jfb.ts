@@ -62,8 +62,14 @@ const extraFrameworks = args
 
 if (!existsSync(JFB_REPO)) {
   console.error('ERROR: js-framework-benchmark repo not found.')
-  console.error(`Clone it:\n  git clone https://github.com/krausest/js-framework-benchmark.git ${JFB_REPO}`)
-  console.error('Then install:\n  cd ' + JFB_REPO + ' && npm ci && cd webdriver-ts && npm ci && npm run compile')
+  console.error(
+    `Clone it:\n  git clone https://github.com/krausest/js-framework-benchmark.git ${JFB_REPO}`,
+  )
+  console.error(
+    'Then install:\n  cd ' +
+      JFB_REPO +
+      ' && npm ci && cd webdriver-ts && npm ci && npm run compile',
+  )
   process.exit(1)
 }
 
@@ -154,7 +160,9 @@ for (const fw of frameworksToRun) {
     try {
       const file = resolve(resultsDir, `${fwName}-v*_${b.id}.json`)
       // Find the actual file (version in name varies)
-      const matches = runCapture(`ls ${resultsDir}/${fwName}-*_${b.id}.json 2>/dev/null`).trim().split('\n')
+      const matches = runCapture(`ls ${resultsDir}/${fwName}-*_${b.id}.json 2>/dev/null`)
+        .trim()
+        .split('\n')
       if (matches[0]) {
         const data = JSON.parse(readFileSync(matches[0], 'utf8'))
         baseline[fwName][b.id] = data.values?.total?.median ?? null

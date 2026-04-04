@@ -27,14 +27,23 @@ describe('Async type', () => {
 describe('ApiError mapping from HTTP status', () => {
   it('maps 404 to notfound', async () => {
     const send = vi.fn()
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
-      ok: false, status: 404, statusText: 'Not Found',
-      headers: new Headers({ 'content-type': 'application/json' }),
-      json: () => Promise.resolve({}),
-    }))
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({
+        ok: false,
+        status: 404,
+        statusText: 'Not Found',
+        headers: new Headers({ 'content-type': 'application/json' }),
+        json: () => Promise.resolve({}),
+      }),
+    )
 
     const handler = handleEffects().else(() => {})
-    handler(http({ url: '/x', onSuccess: 'ok', onError: 'err' }), send, new AbortController().signal)
+    handler(
+      http({ url: '/x', onSuccess: 'ok', onError: 'err' }),
+      send,
+      new AbortController().signal,
+    )
 
     await vi.waitFor(() => expect(send).toHaveBeenCalled())
     expect(send).toHaveBeenCalledWith({ type: 'err', error: { kind: 'notfound' } })
@@ -43,14 +52,23 @@ describe('ApiError mapping from HTTP status', () => {
 
   it('maps 401 to unauthorized', async () => {
     const send = vi.fn()
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
-      ok: false, status: 401, statusText: 'Unauthorized',
-      headers: new Headers(),
-      json: () => Promise.resolve({}),
-    }))
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({
+        ok: false,
+        status: 401,
+        statusText: 'Unauthorized',
+        headers: new Headers(),
+        json: () => Promise.resolve({}),
+      }),
+    )
 
     const handler = handleEffects().else(() => {})
-    handler(http({ url: '/x', onSuccess: 'ok', onError: 'err' }), send, new AbortController().signal)
+    handler(
+      http({ url: '/x', onSuccess: 'ok', onError: 'err' }),
+      send,
+      new AbortController().signal,
+    )
 
     await vi.waitFor(() => expect(send).toHaveBeenCalled())
     expect(send).toHaveBeenCalledWith({ type: 'err', error: { kind: 'unauthorized' } })
@@ -59,14 +77,23 @@ describe('ApiError mapping from HTTP status', () => {
 
   it('maps 403 to forbidden', async () => {
     const send = vi.fn()
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
-      ok: false, status: 403, statusText: 'Forbidden',
-      headers: new Headers(),
-      json: () => Promise.resolve({}),
-    }))
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({
+        ok: false,
+        status: 403,
+        statusText: 'Forbidden',
+        headers: new Headers(),
+        json: () => Promise.resolve({}),
+      }),
+    )
 
     const handler = handleEffects().else(() => {})
-    handler(http({ url: '/x', onSuccess: 'ok', onError: 'err' }), send, new AbortController().signal)
+    handler(
+      http({ url: '/x', onSuccess: 'ok', onError: 'err' }),
+      send,
+      new AbortController().signal,
+    )
 
     await vi.waitFor(() => expect(send).toHaveBeenCalled())
     expect(send).toHaveBeenCalledWith({ type: 'err', error: { kind: 'forbidden' } })
@@ -75,14 +102,23 @@ describe('ApiError mapping from HTTP status', () => {
 
   it('maps 422 with errors field to validation', async () => {
     const send = vi.fn()
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
-      ok: false, status: 422, statusText: 'Unprocessable',
-      headers: new Headers({ 'content-type': 'application/json' }),
-      json: () => Promise.resolve({ errors: { email: ['is invalid'] } }),
-    }))
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({
+        ok: false,
+        status: 422,
+        statusText: 'Unprocessable',
+        headers: new Headers({ 'content-type': 'application/json' }),
+        json: () => Promise.resolve({ errors: { email: ['is invalid'] } }),
+      }),
+    )
 
     const handler = handleEffects().else(() => {})
-    handler(http({ url: '/x', onSuccess: 'ok', onError: 'err' }), send, new AbortController().signal)
+    handler(
+      http({ url: '/x', onSuccess: 'ok', onError: 'err' }),
+      send,
+      new AbortController().signal,
+    )
 
     await vi.waitFor(() => expect(send).toHaveBeenCalled())
     expect(send).toHaveBeenCalledWith({
@@ -94,14 +130,23 @@ describe('ApiError mapping from HTTP status', () => {
 
   it('maps 500 to server error', async () => {
     const send = vi.fn()
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
-      ok: false, status: 500, statusText: 'Internal Server Error',
-      headers: new Headers(),
-      json: () => Promise.resolve({}),
-    }))
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({
+        ok: false,
+        status: 500,
+        statusText: 'Internal Server Error',
+        headers: new Headers(),
+        json: () => Promise.resolve({}),
+      }),
+    )
 
     const handler = handleEffects().else(() => {})
-    handler(http({ url: '/x', onSuccess: 'ok', onError: 'err' }), send, new AbortController().signal)
+    handler(
+      http({ url: '/x', onSuccess: 'ok', onError: 'err' }),
+      send,
+      new AbortController().signal,
+    )
 
     await vi.waitFor(() => expect(send).toHaveBeenCalled())
     expect(send).toHaveBeenCalledWith({
@@ -116,7 +161,11 @@ describe('ApiError mapping from HTTP status', () => {
     vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new TypeError('Failed to fetch')))
 
     const handler = handleEffects().else(() => {})
-    handler(http({ url: '/x', onSuccess: 'ok', onError: 'err' }), send, new AbortController().signal)
+    handler(
+      http({ url: '/x', onSuccess: 'ok', onError: 'err' }),
+      send,
+      new AbortController().signal,
+    )
 
     await vi.waitFor(() => expect(send).toHaveBeenCalled())
     expect(send).toHaveBeenCalledWith({

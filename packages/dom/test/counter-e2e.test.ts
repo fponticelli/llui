@@ -18,7 +18,7 @@ describe('Counter app (end-to-end)', () => {
           return [{ count: 0 }, []]
       }
     },
-    view: (_state, send) => [
+    view: (send) => [
       div({ class: 'counter' }, [
         button({ class: 'dec', onClick: () => send({ type: 'dec' }) }, [text('-')]),
         text((s: State) => String(s.count)),
@@ -26,7 +26,7 @@ describe('Counter app (end-to-end)', () => {
       ]),
       ...show<State>({
         when: (s) => s.count > 0,
-        render: (_s, _send) => [
+        render: () => [
           button({ class: 'reset', onClick: () => send({ type: 'reset' }) }, [text('Reset')]),
         ],
       }),

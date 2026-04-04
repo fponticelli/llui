@@ -17,10 +17,8 @@ describe('HMR state preservation', () => {
         if (msg.type === 'inc') return [{ count: s.count + 1 }, []]
         return [s, []]
       },
-      view: () => [
-        div({ class: 'v1' }, [text((s: State) => `v1:${s.count}`)]),
-      ],
-      __dirty: (o, n) => Object.is(o.count, n.count) ? 0 : 1,
+      view: () => [div({ class: 'v1' }, [text((s: State) => `v1:${s.count}`)])],
+      __dirty: (o, n) => (Object.is(o.count, n.count) ? 0 : 1),
     })
 
     const container = document.createElement('div')
@@ -61,10 +59,8 @@ describe('HMR state preservation', () => {
         if (msg.type === 'inc') return [{ count: s.count + 1 }, []]
         return [s, []]
       },
-      view: () => [
-        div({ class: 'v2' }, [text((s: State) => `v2:${s.count}`)]),
-      ],
-      __dirty: (o, n) => Object.is(o.count, n.count) ? 0 : 1,
+      view: () => [div({ class: 'v2' }, [text((s: State) => `v2:${s.count}`)])],
+      __dirty: (o, n) => (Object.is(o.count, n.count) ? 0 : 1),
     })
 
     replaceComponent('HmrComp', v2Def)

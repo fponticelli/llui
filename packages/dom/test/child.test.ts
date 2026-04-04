@@ -26,7 +26,7 @@ const ChildCounter = component<ChildState, ChildMsg, never>({
     type: 'propsChanged' as const,
     props: props as { initial: number },
   }),
-  view: (_state, send) => [
+  view: (send) => [
     div({ class: 'child' }, [
       text((s: ChildState) => String(s.value)),
       button({ onClick: () => send({ type: 'increment' }) }, [text('+')]),
@@ -38,9 +38,7 @@ const ChildCounter = component<ChildState, ChildMsg, never>({
 // ── Parent component ─────────────────────────────────────────────
 
 type ParentState = { base: number; childClicks: number }
-type ParentMsg =
-  | { type: 'setBase'; value: number }
-  | { type: 'childIncremented' }
+type ParentMsg = { type: 'setBase'; value: number } | { type: 'childIncremented' }
 
 function parentDef(): ComponentDef<ParentState, ParentMsg, never> {
   return {
@@ -54,21 +52,19 @@ function parentDef(): ComponentDef<ParentState, ParentMsg, never> {
           return [{ ...state, childClicks: state.childClicks + 1 }, []]
       }
     },
-    view: (_state, _send) => [
+    view: (_send) => [
       div({ class: 'parent' }, [
         text((s: ParentState) => `clicks: ${s.childClicks}`),
         ...child<ParentState, ChildMsg>({
           def: ChildCounter,
           key: 'counter',
           props: (s) => ({ initial: s.base }),
-          onMsg: (msg) =>
-            msg.type === 'increment' ? { type: 'childIncremented' as const } : null,
+          onMsg: (msg) => (msg.type === 'increment' ? { type: 'childIncremented' as const } : null),
         }),
       ]),
     ],
     __dirty: (o, n) =>
-      (Object.is(o.base, n.base) ? 0 : 0b01) |
-      (Object.is(o.childClicks, n.childClicks) ? 0 : 0b10),
+      (Object.is(o.base, n.base) ? 0 : 0b01) | (Object.is(o.childClicks, n.childClicks) ? 0 : 0b10),
   }
 }
 
@@ -78,9 +74,9 @@ describe('child()', () => {
   function mount() {
     const def = parentDef()
     const origView = def.view
-    def.view = (state, send) => {
+    def.view = (send) => {
       parentSend = send
-      return origView(state, send)
+      return origView(send)
     }
     const container = document.createElement('div')
     const handle = mountApp(container, def)

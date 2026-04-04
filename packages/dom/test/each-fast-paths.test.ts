@@ -23,9 +23,7 @@ function listDef(initial: Item[]): ComponentDef<State, Msg, never> {
       each<State, Item>({
         items: (s) => s.items,
         key: (item) => item.id,
-        render: ({ item }) => [
-          div({ 'data-id': item((t) => t.id) }, [text(item((t) => t.label))]),
-        ],
+        render: ({ item }) => [div({ 'data-id': item((t) => t.id) }, [text(item((t) => t.label))])],
       }),
     __dirty: (o, n) => (Object.is(o.items, n.items) ? 0 : 1),
   }
@@ -41,9 +39,9 @@ function mount(items: Item[]) {
   let sendFn!: (msg: Msg) => void
   const def = listDef(items)
   const origView = def.view
-  def.view = (state, send) => {
+  def.view = (send) => {
     sendFn = send
-    return origView(state, send)
+    return origView(send)
   }
   const container = document.createElement('div')
   const handle = mountApp(container, def)
@@ -228,11 +226,7 @@ describe('survivors in order — batch insert new entries between survivors', ()
     // Remove item 2, add new item at end — survivors (1, 3) stay in order
     send({
       type: 'setItems',
-      items: [
-        items3[0]!,
-        items3[2]!,
-        { id: 'c', label: 'gamma' },
-      ],
+      items: [items3[0]!, items3[2]!, { id: 'c', label: 'gamma' }],
     })
     handle.flush()
 

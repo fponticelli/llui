@@ -12,14 +12,9 @@ type State = {
   buffer: Item[]
 }
 
-type Msg =
-  | { type: 'receive'; item: Item }
-  | { type: 'pause' }
-  | { type: 'resume' }
+type Msg = { type: 'receive'; item: Item } | { type: 'pause' } | { type: 'resume' }
 
-type Effect =
-  | { type: 'ws-connect'; url: string }
-  | { type: 'ws-disconnect' }
+type Effect = { type: 'ws-connect'; url: string } | { type: 'ws-disconnect' }
 
 const MAX_ITEMS = 50
 
@@ -38,15 +33,21 @@ export const WebSocketList = component<State, Msg, Effect>({
     switch (msg.type) {
       case 'receive':
         if (state.paused) {
-          return [{
-            ...state,
-            buffer: [...state.buffer, msg.item],
-          }, []]
+          return [
+            {
+              ...state,
+              buffer: [...state.buffer, msg.item],
+            },
+            [],
+          ]
         }
-        return [{
-          ...state,
-          items: prependAndLimit(state.items, msg.item),
-        }, []]
+        return [
+          {
+            ...state,
+            items: prependAndLimit(state.items, msg.item),
+          },
+          [],
+        ]
       case 'pause':
         return [{ ...state, paused: true }, []]
       case 'resume': {
@@ -58,42 +59,47 @@ export const WebSocketList = component<State, Msg, Effect>({
       }
     }
   },
-  view: (_state, send) => [
+  view: (send) => [
     div({ class: 'websocket-list' }, [
       div({ class: 'controls' }, [
         ...show<State>({
           when: (s) => !s.paused,
-          render: (_s, _send) => [
-            button({
-              onClick: () => send({ type: 'pause' }),
-            }, [text('Pause')]),
+          render: () => [
+            button(
+              {
+                onClick: () => send({ type: 'pause' }),
+              },
+              [text('Pause')],
+            ),
           ],
         }),
         ...show<State>({
           when: (s) => s.paused,
-          render: (_s, _send) => [
-            button({
-              onClick: () => send({ type: 'resume' }),
-            }, [text('Resume')]),
+          render: () => [
+            button(
+              {
+                onClick: () => send({ type: 'resume' }),
+              },
+              [text('Resume')],
+            ),
           ],
         }),
         ...show<State>({
           when: (s) => s.paused && s.buffer.length > 0,
-          render: (_s, _send) => [
-            text((s: State) => `(${s.buffer.length} buffered)`),
-          ],
+          render: () => [text((s: State) => `(${s.buffer.length} buffered)`)],
         }),
       ]),
       ...each<State, Item>({
         items: (s) => s.items,
         key: (item) => item.id,
         render: ({ item }) => [
-          div({
-            class: 'item',
-            'data-testid': item((t) => String(t.id)),
-          }, [
-            text(item((t) => t.content)),
-          ]),
+          div(
+            {
+              class: 'item',
+              'data-testid': item((t) => String(t.id)),
+            },
+            [text(item((t) => t.content))],
+          ),
         ],
       }),
     ]),

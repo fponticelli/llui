@@ -35,57 +35,62 @@ export const InfiniteScroll = component<State, Msg, Effect>({
         if (state.loading || state.exhausted) return [state, []]
         return [
           { ...state, loading: true },
-          [http({
-            url: `/api/items?page=${state.page + 1}&size=${PAGE_SIZE}`,
-            onSuccess: 'loadSuccess',
-            onError: 'loadError',
-          })],
+          [
+            http({
+              url: `/api/items?page=${state.page + 1}&size=${PAGE_SIZE}`,
+              onSuccess: 'loadSuccess',
+              onError: 'loadError',
+            }),
+          ],
         ]
       case 'loadSuccess':
-        return [{
-          ...state,
-          items: [...state.items, ...msg.payload],
-          page: state.page + 1,
-          loading: false,
-          exhausted: msg.payload.length < PAGE_SIZE,
-        }, []]
+        return [
+          {
+            ...state,
+            items: [...state.items, ...msg.payload],
+            page: state.page + 1,
+            loading: false,
+            exhausted: msg.payload.length < PAGE_SIZE,
+          },
+          [],
+        ]
       case 'loadError':
         return [{ ...state, loading: false }, []]
     }
   },
-  view: (_state, send) => [
+  view: (send) => [
     div({ class: 'infinite-scroll' }, [
       ...each<State, Item>({
         items: (s) => s.items,
         key: (item) => item.id,
         render: ({ item }) => [
-          div({
-            class: 'item',
-            'data-testid': item((t) => String(t.id)),
-          }, [
-            text(item((t) => t.title)),
-          ]),
+          div(
+            {
+              class: 'item',
+              'data-testid': item((t) => String(t.id)),
+            },
+            [text(item((t) => t.title))],
+          ),
         ],
       }),
       ...show<State>({
         when: (s) => s.loading,
-        render: (_s, _send) => [
-          div({ class: 'loading' }, [text('Loading...')]),
-        ],
+        render: () => [div({ class: 'loading' }, [text('Loading...')])],
       }),
       ...show<State>({
         when: (s) => s.exhausted,
-        render: (_s, _send) => [
-          div({ class: 'exhausted' }, [text('No more items')]),
-        ],
+        render: () => [div({ class: 'exhausted' }, [text('No more items')])],
       }),
       ...show<State>({
         when: (s) => !s.loading && !s.exhausted,
-        render: (_s, _send) => [
-          button({
-            class: 'load-more',
-            onClick: () => send({ type: 'loadMore' }),
-          }, [text('Load more')]),
+        render: () => [
+          button(
+            {
+              class: 'load-more',
+              onClick: () => send({ type: 'loadMore' }),
+            },
+            [text('Load more')],
+          ),
         ],
       }),
     ]),

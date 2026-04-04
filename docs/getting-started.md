@@ -10,6 +10,7 @@ npm install -D @llui/vite-plugin vite typescript
 ```
 
 **vite.config.ts:**
+
 ```typescript
 import { defineConfig } from 'vite'
 import llui from '@llui/vite-plugin'
@@ -20,19 +21,21 @@ export default defineConfig({
 ```
 
 **index.html:**
+
 ```html
 <!DOCTYPE html>
 <html>
-<body>
-  <div id="app"></div>
-  <script type="module" src="/src/main.ts"></script>
-</body>
+  <body>
+    <div id="app"></div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
 </html>
 ```
 
 ## Your First Component
 
 **src/main.ts:**
+
 ```typescript
 import { component, mountApp, div, button, text, flush } from '@llui/dom'
 
@@ -52,14 +55,17 @@ const Counter = component<State, Msg, never>({
   // Pure state transitions
   update: (state, msg) => {
     switch (msg.type) {
-      case 'inc': return [{ ...state, count: state.count + 1 }, []]
-      case 'dec': return [{ ...state, count: state.count - 1 }, []]
-      case 'reset': return [{ count: 0 }, []]
+      case 'inc':
+        return [{ ...state, count: state.count + 1 }, []]
+      case 'dec':
+        return [{ ...state, count: state.count - 1 }, []]
+      case 'reset':
+        return [{ count: 0 }, []]
     }
   },
 
   // View — runs once, creates DOM with reactive bindings
-  view: (_state, send) => [
+  view: (send) => [
     div({ class: 'counter' }, [
       button({ onClick: () => send({ type: 'dec' }) }, [text('-')]),
       text((s: State) => String(s.count)),
@@ -107,17 +113,21 @@ type Msg =
 update: (state, msg) => {
   switch (msg.type) {
     case 'addTodo':
-      return [{
-        ...state,
-        todos: [...state.todos, { id: Date.now(), text: msg.text, done: false }],
-      }, []]
+      return [
+        {
+          ...state,
+          todos: [...state.todos, { id: Date.now(), text: msg.text, done: false }],
+        },
+        [],
+      ]
     case 'toggleTodo':
-      return [{
-        ...state,
-        todos: state.todos.map(t =>
-          t.id === msg.id ? { ...t, done: !t.done } : t
-        ),
-      }, []]
+      return [
+        {
+          ...state,
+          todos: state.todos.map((t) => (t.id === msg.id ? { ...t, done: !t.done } : t)),
+        },
+        [],
+      ]
   }
 }
 ```
@@ -149,15 +159,15 @@ Use `branch()` for multi-way and `show()` for boolean:
 branch<State, Msg>({
   on: (s) => s.page,
   cases: {
-    home: (s, send) => [text('Home page')],
-    about: (s, send) => [text('About page')],
+    home: (send) => [text('Home page')],
+    about: (send) => [text('About page')],
   },
 })
 
 // Boolean conditional
 show<State, Msg>({
   when: (s) => s.isVisible,
-  render: (s, send) => [div({}, [text('I am visible')])],
+  render: (send) => [div({}, [text('I am visible')])],
 })
 ```
 
@@ -169,12 +179,12 @@ Use `each()` with a key function and the options bag pattern:
 each<State, Todo, Msg>({
   items: (s) => s.todos,
   key: (t) => t.id,
-  render: ({ state, send, item, index }) => [
+  render: ({ send, item, index }) => [
     div({ class: 'todo' }, [
       input({
         type: 'checkbox',
         checked: item((t) => t.done),
-        onChange: () => send({ type: 'toggle', id: peek(item, t => t.id) }),
+        onChange: () => send({ type: 'toggle', id: peek(item, (t) => t.id) }),
       }),
       text(item((t) => t.text)),
     ]),
@@ -224,25 +234,29 @@ onEffect: handleEffects<Effect, Msg>()
 import { createRouter, route, param } from '@llui/router'
 import { connectRouter } from '@llui/router/connect'
 
-const router = createRouter<Route>([
-  route([], () => ({ page: 'home' })),
-  route(['about'], () => ({ page: 'about' })),
-  route(['user', param('id')], ({ id }) => ({ page: 'user', id })),
-], { mode: 'history' })
+const router = createRouter<Route>(
+  [
+    route([], () => ({ page: 'home' })),
+    route(['about'], () => ({ page: 'about' })),
+    route(['user', param('id')], ({ id }) => ({ page: 'user', id })),
+  ],
+  { mode: 'history' },
+)
 
 const routing = connectRouter(router)
 ```
 
 In the view:
+
 ```typescript
-view: (_s, send) => [
+view: (send) => [
   routing.link(send, { page: 'home' }, {}, [text('Home')]),
   ...routing.listener(send),
   ...branch<State, Msg>({
     on: (s) => s.route.page,
     cases: {
-      home: (s, send) => homePage(s, send),
-      user: (s, send) => userPage(s, send),
+      home: (send) => homePage(send),
+      user: (send) => userPage(send),
     },
   }),
 ]

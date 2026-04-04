@@ -13,20 +13,12 @@ describe('cross-file bindings', () => {
 
   // Simulates an imported view function — bindings here use FULL_MASK
   // in production because there's no component() in the view file
-  function pageA(_s: State, _send: (msg: Msg) => void): Node[] {
-    return [
-      div({ class: 'page-a' }, [
-        text((s: State) => s.label),
-      ]),
-    ]
+  function pageA(_send: (msg: Msg) => void): Node[] {
+    return [div({ class: 'page-a' }, [text((s: State) => s.label)])]
   }
 
-  function pageB(_s: State, _send: (msg: Msg) => void): Node[] {
-    return [
-      div({ class: 'page-b' }, [
-        text((s: State) => `Page B: ${s.label}`),
-      ]),
-    ]
+  function pageB(_send: (msg: Msg) => void): Node[] {
+    return [div({ class: 'page-b' }, [text((s: State) => `Page B: ${s.label}`)])]
   }
 
   it('updates text in branch case when state changes', () => {
@@ -37,23 +29,24 @@ describe('cross-file bindings', () => {
       init: () => [{ page: 'a', label: 'initial' }, []],
       update: (s, msg) => {
         switch (msg.type) {
-          case 'setLabel': return [{ ...s, label: msg.value }, []]
-          case 'switchPage': return [{ ...s, page: s.page === 'a' ? 'b' : 'a' }, []]
+          case 'setLabel':
+            return [{ ...s, label: msg.value }, []]
+          case 'switchPage':
+            return [{ ...s, page: s.page === 'a' ? 'b' : 'a' }, []]
         }
       },
-      view: (_s, send) => {
+      view: (send) => {
         sendFn = send
         return branch<State, Msg>({
           on: (s) => s.page,
           cases: {
-            a: (s, send) => pageA(s, send),
-            b: (s, send) => pageB(s, send),
+            a: (send) => pageA(send),
+            b: (send) => pageB(send),
           },
         })
       },
       __dirty: (o, n) =>
-        (Object.is(o.page, n.page) ? 0 : 0b01) |
-        (Object.is(o.label, n.label) ? 0 : 0b10),
+        (Object.is(o.page, n.page) ? 0 : 0b01) | (Object.is(o.label, n.label) ? 0 : 0b10),
     })
 
     const container = document.createElement('div')

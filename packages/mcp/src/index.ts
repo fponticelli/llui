@@ -90,8 +90,7 @@ const TOOLS: McpToolDefinition[] = [
   },
   {
     name: 'llui_get_message_history',
-    description:
-      'Get the chronological message history with state transitions and effects.',
+    description: 'Get the chronological message history with state transitions and effects.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -112,8 +111,7 @@ const TOOLS: McpToolDefinition[] = [
   },
   {
     name: 'llui_get_bindings',
-    description:
-      'Get all active reactive bindings with their masks, last values, and DOM targets.',
+    description: 'Get all active reactive bindings with their masks, last values, and DOM targets.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -148,8 +146,7 @@ const TOOLS: McpToolDefinition[] = [
       properties: {
         query: {
           type: 'string',
-          description:
-            'Dot-separated path to search. E.g., "user.name", "items"',
+          description: 'Dot-separated path to search. E.g., "user.name", "items"',
         },
       },
       required: ['query'],
@@ -186,15 +183,10 @@ export class LluiMcpServer {
   }
 
   /** Handle an MCP tool call */
-  async handleToolCall(
-    name: string,
-    args: Record<string, unknown>,
-  ): Promise<unknown> {
+  async handleToolCall(name: string, args: Record<string, unknown>): Promise<unknown> {
     const api = this.debugApi
     if (!api) {
-      throw new Error(
-        'Not connected to LLui debug API. Start a dev server first.',
-      )
+      throw new Error('Not connected to LLui debug API. Start a dev server first.')
     }
 
     switch (name) {
@@ -269,9 +261,7 @@ export class LluiMcpServer {
     })
   }
 
-  private async handleRequest(
-    request: JsonRpcRequest,
-  ): Promise<JsonRpcResponse> {
+  private async handleRequest(request: JsonRpcRequest): Promise<JsonRpcResponse> {
     try {
       switch (request.method) {
         case 'initialize':
@@ -297,17 +287,12 @@ export class LluiMcpServer {
             name: string
             arguments: Record<string, unknown>
           }
-          const result = await this.handleToolCall(
-            params.name,
-            params.arguments ?? {},
-          )
+          const result = await this.handleToolCall(params.name, params.arguments ?? {})
           return {
             jsonrpc: '2.0',
             id: request.id,
             result: {
-              content: [
-                { type: 'text', text: JSON.stringify(result, null, 2) },
-              ],
+              content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
             },
           }
         }

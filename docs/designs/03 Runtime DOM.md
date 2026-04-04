@@ -12,7 +12,7 @@ Every update cycle runs in two strictly ordered phases. The ordering is not arbi
 
 **Phase 2 — Bindings.** Iterate the flat binding array from start to finish. For each binding, check `(binding.mask & dirtyMask) === 0`; if true, skip immediately. If the binding belongs to an each entry and `ownerScope.eachItemStable` is true, skip. Otherwise call the accessor, compare to `binding.lastValue` with `Object.is`, and call `applyBinding()` only if the value changed.
 
-The invariant that makes this ordering correct: Phase 2 iterates the binding array as it exists *after* Phase 1 finishes. If Phase 2 ran first, it would encounter bindings belonging to scopes that Phase 1 is about to destroy — either wasting work on bindings about to be discarded or, worse, writing to DOM nodes that are simultaneously being removed. Running structural reconciliation first means the binding array in Phase 2 is always coherent: every entry belongs to a live scope, every DOM node it references is in the document.
+The invariant that makes this ordering correct: Phase 2 iterates the binding array as it exists _after_ Phase 1 finishes. If Phase 2 ran first, it would encounter bindings belonging to scopes that Phase 1 is about to destroy — either wasting work on bindings about to be discarded or, worse, writing to DOM nodes that are simultaneously being removed. Running structural reconciliation first means the binding array in Phase 2 is always coherent: every entry belongs to a live scope, every DOM node it references is in the document.
 
 The two phases also keep the hot path in Phase 2 branchless for the common case. The mask check is a single bitwise AND and a branch-predicted zero comparison. The `Object.is` check on the result of a cheap accessor is usually a pointer comparison. The actual DOM write (`textNode.nodeValue = ...`, `element.setAttribute(...)`) executes only when something genuinely changed. On a typical update where a few fields in a 50-binding component change, Phase 2 does 48 mask checks, 2 accessor calls, 2 value comparisons, and 2 DOM writes. There is no tree traversal, no snapshot, no diffing.
 
@@ -310,6 +310,7 @@ When the array reference is identical to the previous cycle, no item could have 
 **Stage 1 — Key-based entry matching.**
 
 Build a map from key to existing entry. Iterate `newItems`:
+
 - If the key exists in the map: reuse the entry; update item and index closures; set `eachItemStable = (newItem === entry.lastItem)`.
 - If the key does not exist: allocate a new scope, execute the item builder, record nodes; add to additions list.
 
@@ -319,7 +320,7 @@ Entries whose keys are absent from `newItems`: dispose scope, record for DOM rem
 
 This is where the algorithm earns its keep. Two sub-cases:
 
-*No additions or removals (same key set, possibly reordered):*
+_No additions or removals (same key set, possibly reordered):_
 
 ```
 const diffs = survivingEntries.filter(
@@ -348,7 +349,7 @@ parent.insertBefore(frag, block.endPlaceholder)
 
 The 2-diff swap is motivated by drag-and-drop: in a typical drag operation, the user moves one item to a new position. The reconciler identifies exactly two entries out of place and swaps only those two DOM fragments. For a list of 100 items where one was moved, this is 2 DOM operations instead of 100.
 
-*Additions or removals present:*
+_Additions or removals present:_
 
 Check whether the surviving entries are already in their correct relative order using an O(n) longest-increasing-subsequence length check:
 

@@ -46,7 +46,9 @@ describe('initial effects from init()', () => {
       init: () => [null, [{ type: 'a' }, { type: 'b' }, { type: 'c' }]],
       update: (s) => [s, []],
       view: () => [text('')],
-      onEffect: (effect) => { effectLog.push(effect.type) },
+      onEffect: (effect) => {
+        effectLog.push(effect.type)
+      },
     })
 
     mountApp(document.createElement('div'), App)
@@ -68,7 +70,7 @@ describe('initial effects from init()', () => {
         if (msg.type === 'dataLoaded') return [{ items: msg.payload.items }, []]
         return [s, []]
       },
-      view: () => [text((s: State) => s.items.length > 0 ? s.items.join(',') : 'empty')],
+      view: () => [text((s: State) => (s.items.length > 0 ? s.items.join(',') : 'empty'))],
       onEffect: (effect, send) => {
         // Simulate async API response
         if (effect.type === 'http') {

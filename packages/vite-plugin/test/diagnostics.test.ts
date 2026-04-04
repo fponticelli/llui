@@ -26,7 +26,7 @@ describe('.map() on state arrays', () => {
         name: 'C',
         init: () => [{ items: [] }, []],
         update: (s, m) => [s, []],
-        view: (state, send) => [
+        view: (send) => [
           div({}, state.items.map(item => div({}, [text(item.name)]))),
         ],
       })
@@ -169,7 +169,7 @@ describe('no warnings for clean code', () => {
             case 'inc': return [{ count: state.count + 1 }, []]
           }
         },
-        view: (s, send) => [
+        view: (send) => [
           div({}, [text(s => String(s.count))]),
         ],
       })

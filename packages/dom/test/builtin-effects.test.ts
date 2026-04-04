@@ -23,7 +23,7 @@ describe('built-in delay effect', () => {
             return [{ value: 'done' }, []]
         }
       },
-      view: (_state, send) => {
+      view: (send) => {
         sendFn = send
         return [text((s: State) => s.value)]
       },
@@ -61,7 +61,7 @@ describe('built-in log effect', () => {
             return [{}, [{ type: 'log', message: 'hello world' }]]
         }
       },
-      view: (_state, send) => {
+      view: (send) => {
         sendFn = send
         return [text('x')]
       },

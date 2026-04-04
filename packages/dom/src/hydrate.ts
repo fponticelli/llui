@@ -47,8 +47,9 @@ export function claimElement(tag: string): HTMLElement {
 
   // Mismatch — create a new element (hydration mismatch warning)
   if (typeof console !== 'undefined') {
-    // eslint-disable-next-line no-console
-    console.warn(`[LLui hydration] expected <${tag}> at index ${cursor.index}, got ${child ? `<${(child as Element).tagName?.toLowerCase?.() ?? child.nodeType}>` : 'nothing'}`)
+    console.warn(
+      `[LLui hydration] expected <${tag}> at index ${cursor.index}, got ${child ? `<${(child as Element).tagName?.toLowerCase?.() ?? child.nodeType}>` : 'nothing'}`,
+    )
   }
   const el = document.createElement(tag)
   cursor.parent.insertBefore(el, child ?? null)

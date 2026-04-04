@@ -7,7 +7,14 @@ import { mountApp, component, div, text, button, branch, each, flush } from '../
  */
 describe('text binding updates inside stable branch case', () => {
   type State = {
-    route: { page: 'search'; p: number; data: { type: 'idle' } | { type: 'loading'; stale?: { items: string[] } } | { type: 'success'; data: { items: string[] } } }
+    route: {
+      page: 'search'
+      p: number
+      data:
+        | { type: 'idle' }
+        | { type: 'loading'; stale?: { items: string[] } }
+        | { type: 'success'; data: { items: string[] } }
+    }
   }
   type Msg = { type: 'nextPage' } | { type: 'loaded'; items: string[] }
 
@@ -16,31 +23,41 @@ describe('text binding updates inside stable branch case', () => {
 
     const App = component<State, Msg, never>({
       name: 'PagTest',
-      init: () => [{ route: { page: 'search', p: 1, data: { type: 'success', data: { items: ['a', 'b'] } } } }, []],
+      init: () => [
+        { route: { page: 'search', p: 1, data: { type: 'success', data: { items: ['a', 'b'] } } } },
+        [],
+      ],
       update: (s, msg) => {
         switch (msg.type) {
           case 'nextPage': {
             const r = s.route
             if (r.data.type !== 'success') return [s, []]
-            return [{ route: { ...r, p: r.p + 1, data: { type: 'loading', stale: r.data.data } } }, []]
+            return [
+              { route: { ...r, p: r.p + 1, data: { type: 'loading', stale: r.data.data } } },
+              [],
+            ]
           }
           case 'loaded':
-            return [{ route: { ...s.route, data: { type: 'success', data: { items: msg.items } } } }, []]
+            return [
+              { route: { ...s.route, data: { type: 'success', data: { items: msg.items } } } },
+              [],
+            ]
         }
       },
-      view: (_s, send) => {
+      view: (send) => {
         sendFn = send
         return branch<State, Msg>({
           on: (s) => {
             const r = s.route
             if (r.data.type === 'loading' && !r.data.stale) return 'loading'
-            if (r.data.type === 'success' || (r.data.type === 'loading' && r.data.stale)) return 'results'
+            if (r.data.type === 'success' || (r.data.type === 'loading' && r.data.stale))
+              return 'results'
             return 'empty'
           },
           cases: {
             loading: () => [text('Loading...')],
             empty: () => [text('No results')],
-            results: (_s, send) => [
+            results: (send) => [
               div({ class: 'items' }, [
                 ...each<State, string, Msg>({
                   items: (s) => {
@@ -53,15 +70,13 @@ describe('text binding updates inside stable branch case', () => {
                   render: ({ item }) => [text(item((i) => i))],
                 }),
               ]),
-              div({ class: 'page-info' }, [
-                text((s: State) => `Page ${s.route.p}`),
-              ]),
+              div({ class: 'page-info' }, [text((s: State) => `Page ${s.route.p}`)]),
               button({ class: 'next', onClick: () => send({ type: 'nextPage' }) }, [text('Next')]),
             ],
           },
         })
       },
-      __dirty: (o, n) => Object.is(o.route, n.route) ? 0 : 1,
+      __dirty: (o, n) => (Object.is(o.route, n.route) ? 0 : 1),
     })
 
     const container = document.createElement('div')

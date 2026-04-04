@@ -19,13 +19,13 @@ describe('branch transitions', () => {
       name: 'Phase',
       init: () => [{ phase: 'a' }, []],
       update: (state) => [{ ...state, phase: state.phase === 'a' ? 'b' : 'a' }, []],
-      view: (_state, send) => {
+      view: (send) => {
         sendFn = send
         return branch<State>({
           on: (s) => s.phase,
           cases: {
-            a: (_s, _send) => [div({ class: 'arm-a' }, [text('A')])],
-            b: (_s, _send) => [div({ class: 'arm-b' }, [text('B')])],
+            a: (_send) => [div({ class: 'arm-a' }, [text('A')])],
+            b: (_send) => [div({ class: 'arm-b' }, [text('B')])],
           },
           enter: opts.enter,
           leave: opts.leave,
@@ -43,7 +43,10 @@ describe('branch transitions', () => {
       phaseDef({
         enter: (nodes) => {
           entered.push(
-            nodes.filter((n) => n instanceof Element).map((n) => (n as Element).className).join(','),
+            nodes
+              .filter((n) => n instanceof Element)
+              .map((n) => (n as Element).className)
+              .join(','),
           )
         },
       }),
@@ -67,7 +70,10 @@ describe('branch transitions', () => {
       phaseDef({
         leave: (nodes) => {
           left.push(
-            nodes.filter((n) => n instanceof Element).map((n) => (n as Element).className).join(','),
+            nodes
+              .filter((n) => n instanceof Element)
+              .map((n) => (n as Element).className)
+              .join(','),
           )
         },
       }),
@@ -85,7 +91,10 @@ describe('branch transitions', () => {
     const handle = mountApp(
       container,
       phaseDef({
-        leave: () => new Promise<void>((r) => { resolveLeave = r }),
+        leave: () =>
+          new Promise<void>((r) => {
+            resolveLeave = r
+          }),
       }),
     )
 
@@ -120,13 +129,17 @@ describe('show transitions', () => {
       name: 'Show',
       init: () => [{ visible: false }, []],
       update: (state) => [{ ...state, visible: !state.visible }, []],
-      view: (_state, send) => {
+      view: (send) => {
         sendFn = send
         return show<State>({
           when: (s) => s.visible,
-          render: (_s, _send) => [div({ class: 'content' }, [text('hi')])],
-          enter: () => { log.push('enter') },
-          leave: () => { log.push('leave') },
+          render: (_send) => [div({ class: 'content' }, [text('hi')])],
+          enter: () => {
+            log.push('enter')
+          },
+          leave: () => {
+            log.push('leave')
+          },
         })
       },
       __dirty: (o, n) => (Object.is(o.visible, n.visible) ? 0 : 1),

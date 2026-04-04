@@ -25,9 +25,17 @@ async function main() {
 
     // Let Vite handle its own routes and static assets
     const pathname = url.split('?')[0]!
-    if (pathname.startsWith('/@') || pathname.startsWith('/node_modules') || pathname.startsWith('/src/') ||
-        pathname.endsWith('.js') || pathname.endsWith('.css') || pathname.endsWith('.map') ||
-        pathname.endsWith('.ico') || pathname.endsWith('.png') || pathname.endsWith('.svg')) {
+    if (
+      pathname.startsWith('/@') ||
+      pathname.startsWith('/node_modules') ||
+      pathname.startsWith('/src/') ||
+      pathname.endsWith('.js') ||
+      pathname.endsWith('.css') ||
+      pathname.endsWith('.map') ||
+      pathname.endsWith('.ico') ||
+      pathname.endsWith('.png') ||
+      pathname.endsWith('.svg')
+    ) {
       vite.middlewares(req, res)
       return
     }
@@ -37,15 +45,17 @@ async function main() {
       const html = await vite.transformIndexHtml(url, template)
 
       // Load the server entry
-      const { render } = await vite.ssrLoadModule('/src/entry-server.ts') as {
+      const { render } = (await vite.ssrLoadModule('/src/entry-server.ts')) as {
         render: (url: string) => Promise<{ html: string; state: string }>
       }
 
       const { html: appHtml, state } = await render(url)
 
       // Inject the rendered HTML and state into the template
-      const page = html
-        .replace('<div id="app"></div>', `<div id="app">${appHtml}</div><script id="__llui_state" type="application/json">${state}</script>`)
+      const page = html.replace(
+        '<div id="app"></div>',
+        `<div id="app">${appHtml}</div><script id="__llui_state" type="application/json">${state}</script>`,
+      )
 
       res.writeHead(200, { 'Content-Type': 'text/html' })
       res.end(page)

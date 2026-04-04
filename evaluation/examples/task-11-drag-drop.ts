@@ -53,34 +53,35 @@ export const DragDropList = component<State, Msg, Effect>({
       }
     }
   },
-  view: (_state, send) => [
+  view: (send) => [
     div({ class: 'drag-drop-list' }, [
       ...each<State, Item>({
         items: (s) => s.items,
         key: (item) => item.id,
         render: ({ item }) => [
-          div({
-            class: 'drag-item',
-            draggable: 'true',
-            'data-testid': item((t) => String(t.id)),
-            onDragstart: (e: DragEvent) => {
-              const id = peek(item, (t) => t.id)
-              e.dataTransfer?.setData('text/plain', String(id))
-              send({ type: 'dragStart', id })
+          div(
+            {
+              class: 'drag-item',
+              draggable: 'true',
+              'data-testid': item((t) => String(t.id)),
+              onDragstart: (e: DragEvent) => {
+                const id = peek(item, (t) => t.id)
+                e.dataTransfer?.setData('text/plain', String(id))
+                send({ type: 'dragStart', id })
+              },
+              onDragover: (e: DragEvent) => {
+                e.preventDefault()
+              },
+              onDrop: (e: DragEvent) => {
+                e.preventDefault()
+                send({ type: 'drop', targetId: peek(item, (t) => t.id) })
+              },
+              onDragend: () => {
+                send({ type: 'dragEnd' })
+              },
             },
-            onDragover: (e: DragEvent) => {
-              e.preventDefault()
-            },
-            onDrop: (e: DragEvent) => {
-              e.preventDefault()
-              send({ type: 'drop', targetId: peek(item, (t) => t.id) })
-            },
-            onDragend: () => {
-              send({ type: 'dragEnd' })
-            },
-          }, [
-            text(item((t) => t.label)),
-          ]),
+            [text(item((t) => t.label))],
+          ),
         ],
       }),
     ]),

@@ -18,9 +18,61 @@ import {
 
 // ── Data generation (matches krausest spec exactly) ──
 
-const adjectives = ['pretty', 'large', 'big', 'small', 'tall', 'short', 'long', 'handsome', 'plain', 'quaint', 'clean', 'elegant', 'easy', 'angry', 'crazy', 'helpful', 'mushy', 'odd', 'unsightly', 'adorable', 'important', 'inexpensive', 'cheap', 'expensive', 'fancy']
-const colors = ['red', 'yellow', 'blue', 'green', 'pink', 'brown', 'purple', 'brown', 'white', 'black', 'orange']
-const nouns = ['table', 'chair', 'house', 'bbq', 'desk', 'car', 'pony', 'cookie', 'sandwich', 'burger', 'pizza', 'mouse', 'keyboard']
+const adjectives = [
+  'pretty',
+  'large',
+  'big',
+  'small',
+  'tall',
+  'short',
+  'long',
+  'handsome',
+  'plain',
+  'quaint',
+  'clean',
+  'elegant',
+  'easy',
+  'angry',
+  'crazy',
+  'helpful',
+  'mushy',
+  'odd',
+  'unsightly',
+  'adorable',
+  'important',
+  'inexpensive',
+  'cheap',
+  'expensive',
+  'fancy',
+]
+const colors = [
+  'red',
+  'yellow',
+  'blue',
+  'green',
+  'pink',
+  'brown',
+  'purple',
+  'brown',
+  'white',
+  'black',
+  'orange',
+]
+const nouns = [
+  'table',
+  'chair',
+  'house',
+  'bbq',
+  'desk',
+  'car',
+  'pony',
+  'cookie',
+  'sandwich',
+  'burger',
+  'pizza',
+  'mouse',
+  'keyboard',
+]
 
 const random = (max: number) => Math.round(Math.random() * 1000) % max
 
@@ -87,13 +139,11 @@ const App = component<State, Msg, never>({
         return [{ ...state, rows: state.rows.filter((r) => r.id !== msg.id) }, []]
     }
   },
-  view: (_state, send) => [
+  view: (send) => [
     div({ class: 'container' }, [
       div({ class: 'jumbotron' }, [
         div({ class: 'row' }, [
-          div({ class: 'col-md-6' }, [
-            h1({}, [text('LLui-keyed')]),
-          ]),
+          div({ class: 'col-md-6' }, [h1({}, [text('LLui-keyed')])]),
           div({ class: 'col-md-6' }, [
             div({ class: 'row' }, [
               actionButton('run', 'Create 1,000 rows', send),
@@ -109,7 +159,8 @@ const App = component<State, Msg, never>({
       table({ class: 'table table-hover table-striped test-data' }, [
         (() => {
           const sel = selector<State, number>((s) => s.selected)
-          const tbodyEl = tbody({ id: 'tbody' },
+          const tbodyEl = tbody(
+            { id: 'tbody' },
             each<State, Row>({
               items: (s) => s.rows,
               key: (r) => r.id,
@@ -117,9 +168,7 @@ const App = component<State, Msg, never>({
                 const rowId = item((r) => r.id)()
                 const row = tr({}, [
                   td({ class: 'col-md-1' }, [text(item((r) => String(r.id)))]),
-                  td({ class: 'col-md-4' }, [
-                    a({}, [text(item((r) => r.label))]),
-                  ]),
+                  td({ class: 'col-md-4' }, [a({}, [text(item((r) => r.label))])]),
                   td({ class: 'col-md-1' }, [
                     a({}, [
                       span({
@@ -130,7 +179,7 @@ const App = component<State, Msg, never>({
                   ]),
                   td({ class: 'col-md-6' }),
                 ])
-                sel.bind(row, rowId, 'class', 'class', (match) => match ? 'danger' : '')
+                sel.bind(row, rowId, 'class', 'class', (match) => (match ? 'danger' : ''))
                 // Store row ID on the element for delegated event lookup
                 ;(row as { _id?: number })._id = rowId
                 return [row]
@@ -159,14 +208,8 @@ const App = component<State, Msg, never>({
   ],
 })
 
-function actionButton(
-  id: string,
-  label: string,
-  send: (msg: Msg) => void,
-): HTMLElement {
-  const msg: Msg = id === 'swaprows'
-    ? { type: 'swaprows' }
-    : { type: id as Msg['type'] }
+function actionButton(id: string, label: string, send: (msg: Msg) => void): HTMLElement {
+  const msg: Msg = id === 'swaprows' ? { type: 'swaprows' } : { type: id as Msg['type'] }
   return div({ class: 'col-sm-6 smallpad' }, [
     button(
       {

@@ -11,10 +11,7 @@ import { setFlatBindings } from './binding'
  *
  * Call initSsrDom() once before using this on the server.
  */
-export function renderToString<S, M, E>(
-  def: ComponentDef<S, M, E>,
-  initialState?: S,
-): string {
+export function renderToString<S, M, E>(def: ComponentDef<S, M, E>, initialState?: S): string {
   const inst = createComponentInstance(def)
   if (initialState !== undefined) {
     inst.state = initialState
@@ -22,7 +19,7 @@ export function renderToString<S, M, E>(
 
   setFlatBindings(inst.allBindings)
   setRenderContext({ ...inst, send: inst.send as (msg: unknown) => void })
-  const nodes = def.view(inst.state, inst.send)
+  const nodes = def.view(inst.send)
   clearRenderContext()
   setFlatBindings(null)
 
@@ -123,8 +120,20 @@ function escapeAttr(s: string): string {
 }
 
 const VOID_ELEMENTS = new Set([
-  'area', 'base', 'br', 'col', 'embed', 'hr', 'img', 'input',
-  'link', 'meta', 'param', 'source', 'track', 'wbr',
+  'area',
+  'base',
+  'br',
+  'col',
+  'embed',
+  'hr',
+  'img',
+  'input',
+  'link',
+  'meta',
+  'param',
+  'source',
+  'track',
+  'wbr',
 ])
 
 function isVoidElement(tag: string): boolean {

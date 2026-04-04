@@ -9,8 +9,8 @@
 - [x] `elSplit()` / `elTemplate()` compiled constructors
 - [x] `chainUpdate()` for composable update handlers
 - [x] `peek()` for imperative item accessor reads in event handlers
-- [x] Structural primitive builders receive `(state, send)` — consistent with `view()`
-- [x] `each()` render uses options bag `({ state, send, item, index })`
+- [x] `view(send)` and structural render callbacks take `send` only — state reads flow through accessor closures
+- [x] `each()` render uses options bag `({ send, item, index })`
 
 ## Phase 2 — Compiler (`@llui/vite-plugin`) ✅
 
@@ -51,21 +51,25 @@
 ## Optimizations ✅
 
 **Runtime:**
+
 - [x] `each()` fast paths: same-ref skip, append-only, swap detection, bulk clear, full-replace
 - [x] Per-item direct updaters (bypass Phase 2 allBindings scan)
 - [x] Fresh binding skip (Phase 1 bindings skip Phase 2 on same tick)
 - [x] Scope disposal nulls binding references for prompt GC
 
 **Compiler:**
+
 - [x] Template cloning: subtree collapse, placeholder text, event delegation
 - [x] Selector dedup, constant folding, static subtree prerendering
 
 **Bundle:**
+
 - [x] Sub-path exports: `@llui/dom/hmr`, `@llui/dom/ssr`, `@llui/dom/devtools`
 - [x] All dev-only code tree-shaken from production builds
 - [x] `sideEffects: false`, named re-exports
 
 **jfb results (vs Solid/Svelte):**
+
 - Create 1k: within 5-10%
 - Update/Select/Swap: on par or faster
 - Bundle: 4.0 KB gzip (smaller than Solid)

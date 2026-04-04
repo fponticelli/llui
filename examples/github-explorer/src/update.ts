@@ -1,6 +1,24 @@
-import type { State, Msg, Effect, Route, SearchData, Repo, TreeEntry, FileContent, Issue } from './types'
+import type {
+  State,
+  Msg,
+  Effect,
+  Route,
+  SearchData,
+  Repo,
+  TreeEntry,
+  FileContent,
+  Issue,
+} from './types'
 import { http, cancel, debounce } from '@llui/effects'
-import { searchUrl, repoUrl, contentsUrl, readmeUrl, issuesUrl, JSON_HEADERS, HTML_HEADERS } from './api'
+import {
+  searchUrl,
+  repoUrl,
+  contentsUrl,
+  readmeUrl,
+  issuesUrl,
+  JSON_HEADERS,
+  HTML_HEADERS,
+} from './api'
 import { routing } from './router'
 
 export function update(state: State, msg: Msg): [State, Effect[]] {
@@ -13,23 +31,39 @@ export function update(state: State, msg: Msg): [State, Effect[]] {
     case 'setQuery': {
       const q = msg.value
       if (!q.trim()) {
-        const route: Route = state.route.page === 'search'
-          ? { ...state.route, q: '', data: { type: 'idle' } }
-          : state.route
+        const route: Route =
+          state.route.page === 'search'
+            ? { ...state.route, q: '', data: { type: 'idle' } }
+            : state.route
         return [{ ...state, query: q, route }, [cancel('search')]]
       }
       // Debounce: set route to loading, fire delayed search
-      const route: Route = state.route.page === 'search'
-        ? { ...state.route, q, p: 1, data: { type: 'loading', stale: state.route.data.type === 'success' ? state.route.data.data : undefined } }
-        : { page: 'search', q, p: 1, data: { type: 'loading' } }
+      const route: Route =
+        state.route.page === 'search'
+          ? {
+              ...state.route,
+              q,
+              p: 1,
+              data: {
+                type: 'loading',
+                stale: state.route.data.type === 'success' ? state.route.data.data : undefined,
+              },
+            }
+          : { page: 'search', q, p: 1, data: { type: 'loading' } }
       return [
         { ...state, query: q, route },
-        [debounce('search', 300, http({
-          url: searchUrl(q, 0),
-          headers: JSON_HEADERS,
-          onSuccess: 'searchOk',
-          onError: 'apiError',
-        }))],
+        [
+          debounce(
+            'search',
+            300,
+            http({
+              url: searchUrl(q, 0),
+              headers: JSON_HEADERS,
+              onSuccess: 'searchOk',
+              onError: 'apiError',
+            }),
+          ),
+        ],
       ]
     }
 
@@ -40,21 +74,32 @@ export function update(state: State, msg: Msg): [State, Effect[]] {
         { ...state, route },
         [
           routing.push(route),
-          cancel('search', http({
-            url: searchUrl(state.query, 0),
-            headers: JSON_HEADERS,
-            onSuccess: 'searchOk',
-            onError: 'apiError',
-          })),
+          cancel(
+            'search',
+            http({
+              url: searchUrl(state.query, 0),
+              headers: JSON_HEADERS,
+              onSuccess: 'searchOk',
+              onError: 'apiError',
+            }),
+          ),
         ],
       ]
     }
 
     case 'searchOk': {
       const q = state.query
-      const route: Route = state.route.page === 'search'
-        ? { ...state.route, q, data: { type: 'success', data: { repos: msg.payload.items, total: msg.payload.total_count } } }
-        : state.route
+      const route: Route =
+        state.route.page === 'search'
+          ? {
+              ...state.route,
+              q,
+              data: {
+                type: 'success',
+                data: { repos: msg.payload.items, total: msg.payload.total_count },
+              },
+            }
+          : state.route
       const effects: Effect[] = []
       // Update URL to reflect search query (from debounce or submit)
       if (route.page === 'search' && route.q) effects.push(routing.replace(route))
@@ -120,24 +165,73 @@ function loadRoute(state: State, route: Route): [State, Effect[]] {
   switch (r.page) {
     case 'search':
       if (r.q) {
-        effects.push(http({ url: searchUrl(r.q, r.p - 1), headers: JSON_HEADERS, onSuccess: 'searchOk', onError: 'apiError' }))
+        effects.push(
+          http({
+            url: searchUrl(r.q, r.p - 1),
+            headers: JSON_HEADERS,
+            onSuccess: 'searchOk',
+            onError: 'apiError',
+          }),
+        )
         return [{ ...state, route: r, query: r.q }, effects]
       }
       return [{ ...state, route: { ...r, data: { type: 'idle' } }, query: '' }, []]
 
     case 'repo':
-      effects.push(http({ url: repoUrl(r.owner, r.name), headers: JSON_HEADERS, onSuccess: 'repoOk', onError: 'apiError' }))
+      effects.push(
+        http({
+          url: repoUrl(r.owner, r.name),
+          headers: JSON_HEADERS,
+          onSuccess: 'repoOk',
+          onError: 'apiError',
+        }),
+      )
       if (r.tab === 'code') {
-        effects.push(http({ url: contentsUrl(r.owner, r.name, ''), headers: JSON_HEADERS, onSuccess: 'contentsOk', onError: 'contentsError' }))
-        effects.push(http({ url: readmeUrl(r.owner, r.name), headers: HTML_HEADERS, onSuccess: 'readmeOk', onError: 'readmeError' }))
+        effects.push(
+          http({
+            url: contentsUrl(r.owner, r.name, ''),
+            headers: JSON_HEADERS,
+            onSuccess: 'contentsOk',
+            onError: 'contentsError',
+          }),
+        )
+        effects.push(
+          http({
+            url: readmeUrl(r.owner, r.name),
+            headers: HTML_HEADERS,
+            onSuccess: 'readmeOk',
+            onError: 'readmeError',
+          }),
+        )
       } else {
-        effects.push(http({ url: issuesUrl(r.owner, r.name), headers: JSON_HEADERS, onSuccess: 'issuesOk', onError: 'apiError' }))
+        effects.push(
+          http({
+            url: issuesUrl(r.owner, r.name),
+            headers: JSON_HEADERS,
+            onSuccess: 'issuesOk',
+            onError: 'apiError',
+          }),
+        )
       }
       return [{ ...state, route: r }, effects]
 
     case 'tree':
-      effects.push(http({ url: repoUrl(r.owner, r.name), headers: JSON_HEADERS, onSuccess: 'repoOk', onError: 'apiError' }))
-      effects.push(http({ url: contentsUrl(r.owner, r.name, r.path), headers: JSON_HEADERS, onSuccess: 'contentsOk', onError: 'contentsError' }))
+      effects.push(
+        http({
+          url: repoUrl(r.owner, r.name),
+          headers: JSON_HEADERS,
+          onSuccess: 'repoOk',
+          onError: 'apiError',
+        }),
+      )
+      effects.push(
+        http({
+          url: contentsUrl(r.owner, r.name, r.path),
+          headers: JSON_HEADERS,
+          onSuccess: 'contentsOk',
+          onError: 'contentsError',
+        }),
+      )
       return [{ ...state, route: r }, effects]
   }
 }
@@ -177,15 +271,36 @@ function withRepoLoaded(state: State, repo: Repo): [State, Effect[]] {
 function withContentsLoaded(state: State, payload: TreeEntry[] | FileContent): [State, Effect[]] {
   const r = state.route
   if (r.page === 'repo' && r.tab === 'code' && Array.isArray(payload)) {
-    const prev = r.data.type === 'success' ? r.data.data : { repo: null as unknown as Repo, tree: [], readme: '' }
-    return [{ ...state, route: { ...r, data: { type: 'success', data: { ...prev, tree: payload } } } }, []]
+    const prev =
+      r.data.type === 'success'
+        ? r.data.data
+        : { repo: null as unknown as Repo, tree: [], readme: '' }
+    return [
+      { ...state, route: { ...r, data: { type: 'success', data: { ...prev, tree: payload } } } },
+      [],
+    ]
   }
   if (r.page === 'tree') {
-    const prevRepo = r.data.type === 'success' && 'repo' in r.data.data ? r.data.data.repo : null as unknown as Repo
+    const prevRepo =
+      r.data.type === 'success' && 'repo' in r.data.data
+        ? r.data.data.repo
+        : (null as unknown as Repo)
     if (Array.isArray(payload)) {
-      return [{ ...state, route: { ...r, data: { type: 'success', data: { repo: prevRepo, tree: payload } } } }, []]
+      return [
+        {
+          ...state,
+          route: { ...r, data: { type: 'success', data: { repo: prevRepo, tree: payload } } },
+        },
+        [],
+      ]
     }
-    return [{ ...state, route: { ...r, data: { type: 'success', data: { repo: prevRepo, file: payload } } } }, []]
+    return [
+      {
+        ...state,
+        route: { ...r, data: { type: 'success', data: { repo: prevRepo, file: payload } } },
+      },
+      [],
+    ]
   }
   return [state, []]
 }
@@ -193,7 +308,10 @@ function withContentsLoaded(state: State, payload: TreeEntry[] | FileContent): [
 function withReadmeLoaded(state: State, readme: string): [State, Effect[]] {
   const r = state.route
   if (r.page === 'repo' && r.tab === 'code') {
-    const prev = r.data.type === 'success' ? r.data.data : { repo: null as unknown as Repo, tree: [], readme: '' }
+    const prev =
+      r.data.type === 'success'
+        ? r.data.data
+        : { repo: null as unknown as Repo, tree: [], readme: '' }
     return [{ ...state, route: { ...r, data: { type: 'success', data: { ...prev, readme } } } }, []]
   }
   return [state, []]
@@ -202,7 +320,8 @@ function withReadmeLoaded(state: State, readme: string): [State, Effect[]] {
 function withIssuesLoaded(state: State, issues: Issue[]): [State, Effect[]] {
   const r = state.route
   if (r.page === 'repo' && r.tab === 'issues') {
-    const prev = r.data.type === 'success' ? r.data.data : { repo: null as unknown as Repo, issues: [] }
+    const prev =
+      r.data.type === 'success' ? r.data.data : { repo: null as unknown as Repo, issues: [] }
     return [{ ...state, route: { ...r, data: { type: 'success', data: { ...prev, issues } } } }, []]
   }
   return [state, []]
@@ -217,7 +336,12 @@ function changePage(state: State, delta: number): [State, Effect[]] {
     { ...state, route: newRoute },
     [
       routing.replace(newRoute),
-      http({ url: searchUrl(r.q, p - 1), headers: JSON_HEADERS, onSuccess: 'searchOk', onError: 'apiError' }),
+      http({
+        url: searchUrl(r.q, p - 1),
+        headers: JSON_HEADERS,
+        onSuccess: 'searchOk',
+        onError: 'apiError',
+      }),
     ],
   ]
 }

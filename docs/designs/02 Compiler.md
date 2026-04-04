@@ -76,12 +76,12 @@ Pass 1 classifies every property in a literal props object into one of three cat
 
 **Classification of binding kind:**
 
-| Key pattern | Kind | DOM mutation in runtime |
-|---|---|---|
-| `class` or `className` | `'class'` | `elem.className = value` |
-| `style.X` | `'style'` | `elem.style.setProperty('X', value)` |
-| `value`, `checked`, `selected`, `disabled`, `readOnly`, `multiple`, `indeterminate`, `defaultValue`, `defaultChecked`, `innerHTML`, `textContent` | `'prop'` | `elem[key] = value` |
-| anything else | `'attr'` | `elem.setAttribute(key, value)` / `removeAttribute` |
+| Key pattern                                                                                                                                       | Kind      | DOM mutation in runtime                             |
+| ------------------------------------------------------------------------------------------------------------------------------------------------- | --------- | --------------------------------------------------- |
+| `class` or `className`                                                                                                                            | `'class'` | `elem.className = value`                            |
+| `style.X`                                                                                                                                         | `'style'` | `elem.style.setProperty('X', value)`                |
+| `value`, `checked`, `selected`, `disabled`, `readOnly`, `multiple`, `indeterminate`, `defaultValue`, `defaultChecked`, `innerHTML`, `textContent` | `'prop'`  | `elem[key] = value`                                 |
+| anything else                                                                                                                                     | `'attr'`  | `elem.setAttribute(key, value)` / `removeAttribute` |
 
 The `key` in the tuple for `style.X` is stripped to just `X` (the CSS property name), since that is what `style.setProperty` expects.
 
@@ -149,7 +149,7 @@ The 31-path-per-word cap is a hard constraint of JavaScript's 32-bit signed inte
 **Mask injection into binding tuples.** The mask is placed as the first element of the `[mask, kind, key, accessor]` tuple. The runtime update loop uses it as:
 
 ```typescript
-if ((binding.mask & dirty) === 0) continue;
+if ((binding.mask & dirty) === 0) continue
 ```
 
 Where `dirty` is the bitmask computed by `__dirty` comparing old and new state. If no bits overlap, the accessor cannot produce a new value, and the binding is skipped with a single bitwise AND — no function call, no DOM access.
@@ -197,18 +197,18 @@ After the main transform, the llui import declaration is rewritten:
 **Before:**
 
 ```typescript
-import { div, span, text, branch } from '@llui/dom';
+import { div, span, text, branch } from '@llui/dom'
 ```
 
 **After:**
 
 ```typescript
-import { text, branch, elSplit } from '@llui/dom';
+import { text, branch, elSplit } from '@llui/dom'
 ```
 
 The consequence is that `elements.ts` — the module that defines the uncompiled `div`, `span`, etc. helpers — has no references in the bundle. Rollup/Vite's tree-shaker eliminates it entirely. This is not a micro-optimisation: `elements.ts` contains all HTML element helper implementations. For a large application using many elements, eliminating the module removes dead code that would otherwise inflate the bundle.
 
-Note that only helpers that were *actually compiled* are removed. If a helper was imported but called with a non-literal props object (bail-out condition), the compiler leaves the import intact because the runtime `div()` implementation is still needed.
+Note that only helpers that were _actually compiled_ are removed. If a helper was imported but called with a non-literal props object (bail-out condition), the compiler leaves the import intact because the runtime `div()` implementation is still needed.
 
 **Why Pass 3 runs last.** It rewrites the `ImportDeclaration` node. If it ran first, the visitor in Pass 1/2 would lose track of which local names map to which element helpers (since those names could be aliased or renamed). Running it last, after the visitor has accumulated the set of `transformedHelpers`, makes it a simple filter over the import specifier list.
 
@@ -228,7 +228,7 @@ The update loop in `update.ts` is:
 
 ```typescript
 for (const binding of instance.bindings) {
-  if ((binding.mask & dirty) === 0) continue;
+  if ((binding.mask & dirty) === 0) continue
   // ...
 }
 ```
@@ -282,6 +282,7 @@ The compiler identifies the `update` property of the `ComponentDef` object liter
 `"update() does not handle message type 'removeItem' at line 25. All Msg variants must be handled. Missing: 'removeItem', 'clearCompleted'."`
 
 **Scope of analysis:** The compiler handles the common patterns:
+
 - `switch (msg.type)` with `case` clauses — enumerate handled string literals.
 - `if (msg.type === 'x')` / `else if` chains — enumerate compared string literals.
 - `default` clause or final `else` — treated as covering all remaining variants, suppressing the diagnostic. The `default` may still be flagged by TypeScript's `noImplicitReturns` if it doesn't return, but the LLui compiler considers coverage satisfied.
@@ -392,7 +393,13 @@ An earlier design considered emitting the DOM mutation directly into the accesso
 
 ```typescript
 // hypothetical — not the current design
-[1, __e => { __e.setAttribute('title', String(s.title ?? '')); }, s => s.title]
+;[
+  1,
+  (__e) => {
+    __e.setAttribute('title', String(s.title ?? ''))
+  },
+  (s) => s.title,
+]
 ```
 
 This would eliminate the `applyBinding` switch at runtime. However, it bloats the emitted code significantly (each binding carries its own mutation logic), defeats the `applyBinding` optimisations (boolean → `removeAttribute`, `true` → `setAttribute('')`), and makes the tuple format opaque. The current `[mask, kind, key, accessor]` format is compact and the `applyBinding` switch is a negligible cost compared to the DOM mutation itself.
@@ -420,7 +427,7 @@ The cost is constructing a `ts.Program` (which requires a `CompilerHost` and ful
 If the same accessor expression appears in multiple bindings within a component's view — for example, `s => s.todos.filter(t => !t.done)` used both for a count display and a list render — the compiler could recognise the duplication and emit a single memoised value:
 
 ```typescript
-const __m0 = memo(s => s.todos.filter(t => !t.done), mask);
+const __m0 = memo((s) => s.todos.filter((t) => !t.done), mask)
 // bindings use () => __m0.value
 ```
 
@@ -436,10 +443,10 @@ A component subtree with no reactive bindings, no event handlers, and no structu
 
 ```typescript
 const __static0 = (() => {
-  const t = document.createElement('template');
-  t.innerHTML = '<div class="footer"><p>Version 1.0</p></div>';
-  return t.content;
-})();
+  const t = document.createElement('template')
+  t.innerHTML = '<div class="footer"><p>Version 1.0</p></div>'
+  return t.content
+})()
 // at mount: container.appendChild(__static0.cloneNode(true))
 ```
 
@@ -450,10 +457,13 @@ This eliminates the recursive element construction at mount time for static subt
 `branch()` factory functions for inactive cases are included in the initial bundle even if they will never render on first load. If a `branch()` discriminant starts in state `'list'`, the `'detail'` case's view factory does not need to be in the initial chunk. The compiler could emit:
 
 ```typescript
-branch({ on: s => s.view, cases: {
-  list: () => renderList(s, send),
-  detail: () => import('./detail-view.js').then(m => m.render(s, send)),
-}})
+branch({
+  on: (s) => s.view,
+  cases: {
+    list: () => renderList(send),
+    detail: () => import('./detail-view.js').then((m) => m.render(send)),
+  },
+})
 ```
 
 This requires the compiler to understand which cases are "hot" at startup (either via annotation or heuristic) and to cooperate with Rollup's dynamic import chunking.
@@ -473,11 +483,11 @@ type Msg =
 MyComponent.__msgSchema = {
   discriminant: 'type',
   variants: {
-    'addItem': { id: 'string', text: 'string' },
-    'removeItem': { id: 'string' },
-    'setFilter': { filter: { enum: ['all', 'active', 'completed'] } },
+    addItem: { id: 'string', text: 'string' },
+    removeItem: { id: 'string' },
+    setFilter: { filter: { enum: ['all', 'active', 'completed'] } },
   },
-};
+}
 ```
 
 The schema extraction is syntactic: the compiler reads the `Msg` type alias from the component file, identifies discriminated union members by the discriminant field (`type` by convention), and maps each variant's fields to primitive type names or `{ enum: [...] }` for string literal unions. Complex types (generics, mapped types, conditional types, intersection types) fall back to `'unknown'` in the schema, which passes validation unconditionally. This coverage is sufficient for the common case — discriminated unions with literal and primitive fields — which is exactly what well-structured LLui components use.
@@ -568,11 +578,13 @@ This eliminates redundant selector closure allocations and `item()` accessor clo
 When the compiler detects nested element helper calls (e.g., `tr` containing `td` containing `a`), it collapses the entire subtree into a single `elTemplate(html, patchFn)` call. This replaces N `createElement` calls with 1 `cloneNode(true)`.
 
 The analysis (`analyzeSubtree`) recursively checks eligibility:
+
 - All children must be element helpers, `text('literal')`, or `text(accessor)`
 - No structural primitives (`each`, `branch`, `show`)
 - All props must be classifiable (literals, arrows, per-item calls)
 
 The emission generates:
+
 - A static HTML string with placeholder spaces for reactive text positions
 - A patch function that walks to dynamic nodes via `childNodes[idx]`, attaches events, and calls `__bind` for reactive bindings
 
@@ -583,9 +595,15 @@ Reactive text uses **placeholder text nodes** embedded in the template HTML (a s
 When multiple child elements within a collapsed template have event handlers of the same type (e.g., two `onClick` handlers), the compiler emits a single delegated listener on the template root using `element.contains(e.target)` dispatch:
 
 ```typescript
-root.addEventListener("click", (__e) => {
-  if (__n1.contains(__e.target)) { handler1(__e); return }
-  if (__n2.contains(__e.target)) { handler2(__e); return }
+root.addEventListener('click', (__e) => {
+  if (__n1.contains(__e.target)) {
+    handler1(__e)
+    return
+  }
+  if (__n2.contains(__e.target)) {
+    handler2(__e)
+    return
+  }
 })
 ```
 

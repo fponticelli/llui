@@ -10,14 +10,15 @@ Common patterns and recipes.
 type State = { name: string }
 type Msg = { type: 'setName'; value: string }
 
-view: (_s, send) => [
+view: (send) => [
   input({
     type: 'text',
     value: (s: State) => s.name,
-    onInput: (e: Event) => send({
-      type: 'setName',
-      value: (e.target as HTMLInputElement).value,
-    }),
+    onInput: (e: Event) =>
+      send({
+        type: 'setName',
+        value: (e.target as HTMLInputElement).value,
+      }),
   }),
 ]
 ```
@@ -42,9 +43,7 @@ form({
 each<State, string, Msg>({
   items: (s) => s.errors,
   key: (e) => e,
-  render: ({ item }) => [
-    li({ class: 'error' }, [text(item((e) => e))]),
-  ],
+  render: ({ item }) => [li({ class: 'error' }, [text(item((e) => e))])],
 })
 ```
 
@@ -63,16 +62,14 @@ branch<State, Msg>({
   cases: {
     idle: () => [text('Click to load')],
     loading: () => [text('Loading...')],
-    success: (s) => [
+    success: () => [
       each<State, User, Msg>({
-        items: (s) => s.users.type === 'success' ? s.users.data : [],
+        items: (s) => (s.users.type === 'success' ? s.users.data : []),
         key: (u) => u.id,
         render: ({ item }) => [text(item((u) => u.name))],
       }),
     ],
-    failure: () => [text((s: State) =>
-      s.users.type === 'failure' ? s.users.error.kind : ''
-    )],
+    failure: () => [text((s: State) => (s.users.type === 'failure' ? s.users.error.kind : ''))],
   },
 })
 ```
@@ -117,7 +114,7 @@ Split views into separate modules. Parent owns state, child operates on a slice.
 
 ```typescript
 // views/header.ts
-export function header(s: State, send: Send<Msg>): Node[] {
+export function header(send: Send<Msg>): Node[] {
   return [
     nav({}, [
       text((s: State) => s.user?.name ?? 'Guest'),
@@ -127,10 +124,7 @@ export function header(s: State, send: Send<Msg>): Node[] {
 }
 
 // main component view:
-view: (s, send) => [
-  ...header(s, send),
-  ...mainContent(s, send),
-]
+view: (send) => [...header(send), ...mainContent(send)]
 ```
 
 ### Minimal Intent Pattern
@@ -170,12 +164,18 @@ import { createRouter, route, param, rest } from '@llui/router'
 
 const router = createRouter<Route>([
   route([], () => ({ page: 'home' })),
-  route(['search'], { query: ['q', 'p'] },
-    ({ q, p }) => ({ page: 'search', q: q ?? '', p: p ? parseInt(p) : 1 })),
-  route([param('owner'), param('name')],
-    ({ owner, name }) => ({ page: 'repo', owner, name })),
-  route([param('owner'), param('name'), 'tree', rest('path')],
-    ({ owner, name, path }) => ({ page: 'tree', owner, name, path })),
+  route(['search'], { query: ['q', 'p'] }, ({ q, p }) => ({
+    page: 'search',
+    q: q ?? '',
+    p: p ? parseInt(p) : 1,
+  })),
+  route([param('owner'), param('name')], ({ owner, name }) => ({ page: 'repo', owner, name })),
+  route([param('owner'), param('name'), 'tree', rest('path')], ({ owner, name, path }) => ({
+    page: 'tree',
+    owner,
+    name,
+    path,
+  })),
 ])
 ```
 
@@ -196,14 +196,14 @@ routing.link(send, { page: 'home' }, { class: 'nav-link' }, [text('Home')])
 ### Page Switching
 
 ```typescript
-view: (_s, send) => [
-  ...routing.listener(send),  // listens for popstate/hashchange
+view: (send) => [
+  ...routing.listener(send), // listens for popstate/hashchange
   ...branch<State, Msg>({
     on: (s) => s.route.page,
     cases: {
-      home: (s, send) => homePage(s, send),
-      search: (s, send) => searchPage(s, send),
-      repo: (s, send) => repoPage(s, send),
+      home: (send) => homePage(send),
+      search: (send) => searchPage(send),
+      repo: (send) => repoPage(send),
     },
   }),
 ]

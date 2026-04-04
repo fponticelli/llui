@@ -16,8 +16,16 @@ const router = createRouter<Route>([
   route(['article', param('slug')], ({ slug }) => ({ page: 'article', slug })),
   route(['editor'], () => ({ page: 'editor' })),
   route(['editor', param('slug')], ({ slug }) => ({ page: 'editor', slug })),
-  route(['profile', param('username')], ({ username }) => ({ page: 'profile', username, tab: 'authored' })),
-  route(['profile', param('username'), 'favorites'], ({ username }) => ({ page: 'profile', username, tab: 'favorited' })),
+  route(['profile', param('username')], ({ username }) => ({
+    page: 'profile',
+    username,
+    tab: 'authored',
+  })),
+  route(['profile', param('username'), 'favorites'], ({ username }) => ({
+    page: 'profile',
+    username,
+    tab: 'favorited',
+  })),
   route(['search'], { query: ['q'] }, ({ q }) => ({ page: 'search', q: q ?? '' })),
   route(['docs', rest('path')], ({ path }) => ({ page: 'docs', path })),
 ])
@@ -43,12 +51,23 @@ describe('match', () => {
   })
 
   it('matches multi-segment paths with shared prefix', () => {
-    expect(router.match('#/profile/bob')).toEqual({ page: 'profile', username: 'bob', tab: 'authored' })
-    expect(router.match('#/profile/bob/favorites')).toEqual({ page: 'profile', username: 'bob', tab: 'favorited' })
+    expect(router.match('#/profile/bob')).toEqual({
+      page: 'profile',
+      username: 'bob',
+      tab: 'authored',
+    })
+    expect(router.match('#/profile/bob/favorites')).toEqual({
+      page: 'profile',
+      username: 'bob',
+      tab: 'favorited',
+    })
   })
 
   it('matches rest segments', () => {
-    expect(router.match('#/docs/getting-started/install')).toEqual({ page: 'docs', path: 'getting-started/install' })
+    expect(router.match('#/docs/getting-started/install')).toEqual({
+      page: 'docs',
+      path: 'getting-started/install',
+    })
     expect(router.match('#/docs/api')).toEqual({ page: 'docs', path: 'api' })
   })
 
@@ -57,7 +76,10 @@ describe('match', () => {
   })
 
   it('decodes URI components', () => {
-    expect(router.match('#/article/hello%20world')).toEqual({ page: 'article', slug: 'hello world' })
+    expect(router.match('#/article/hello%20world')).toEqual({
+      page: 'article',
+      slug: 'hello world',
+    })
   })
 })
 
@@ -75,12 +97,18 @@ describe('toPath', () => {
   })
 
   it('formats routes with shared prefix using round-trip', () => {
-    expect(router.toPath({ page: 'profile', username: 'bob', tab: 'authored' })).toBe('/profile/bob')
-    expect(router.toPath({ page: 'profile', username: 'bob', tab: 'favorited' })).toBe('/profile/bob/favorites')
+    expect(router.toPath({ page: 'profile', username: 'bob', tab: 'authored' })).toBe(
+      '/profile/bob',
+    )
+    expect(router.toPath({ page: 'profile', username: 'bob', tab: 'favorited' })).toBe(
+      '/profile/bob/favorites',
+    )
   })
 
   it('formats rest routes', () => {
-    expect(router.toPath({ page: 'docs', path: 'getting-started/install' })).toBe('/docs/getting-started/install')
+    expect(router.toPath({ page: 'docs', path: 'getting-started/install' })).toBe(
+      '/docs/getting-started/install',
+    )
   })
 
   it('formats editor without slug', () => {
@@ -104,10 +132,13 @@ describe('href', () => {
 
 describe('history mode', () => {
   it('matches without hash prefix', () => {
-    const r = createRouter<Route>([
-      route([], () => ({ page: 'home' })),
-      route(['article', param('slug')], ({ slug }) => ({ page: 'article', slug })),
-    ], { mode: 'history' })
+    const r = createRouter<Route>(
+      [
+        route([], () => ({ page: 'home' })),
+        route(['article', param('slug')], ({ slug }) => ({ page: 'article', slug })),
+      ],
+      { mode: 'history' },
+    )
 
     expect(r.match('/article/hello')).toEqual({ page: 'article', slug: 'hello' })
     expect(r.href({ page: 'article', slug: 'x' })).toBe('/article/x')

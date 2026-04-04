@@ -54,7 +54,7 @@ describe('Pass 1 — element helper → elSplit', () => {
         name: 'C',
         init: () => [{ title: '' }, []],
         update: (s, m) => [s, []],
-        view: (s, send) => [
+        view: (send) => [
           div({ title: s => s.title }),
         ],
       })
@@ -62,7 +62,7 @@ describe('Pass 1 — element helper → elSplit', () => {
     const out = t(src)
     expect(out).toContain('elSplit')
     // Should have a binding tuple with mask
-    expect(out).toMatch(/\[\s*1\s*,/)  // mask = 1 (first path)
+    expect(out).toMatch(/\[\s*1\s*,/) // mask = 1 (first path)
   })
 
   it('passes children through', () => {
@@ -95,7 +95,7 @@ describe('Pass 2 — mask injection + __dirty', () => {
         name: 'C',
         init: () => [{ count: 0 }, []],
         update: (s, m) => [s, []],
-        view: (s, send) => [text(s => String(s.count))],
+        view: (send) => [text(s => String(s.count))],
       })
     `
     const out = t(src)
@@ -110,7 +110,7 @@ describe('Pass 2 — mask injection + __dirty', () => {
         name: 'C',
         init: () => [{ count: 0, label: '' }, []],
         update: (s, m) => [s, []],
-        view: (s, send) => [
+        view: (send) => [
           text(s => String(s.count)),
           text(s => s.label),
         ],
@@ -131,7 +131,7 @@ describe('Pass 2 — mask injection + __dirty', () => {
         name: 'C',
         init: () => [{ count: 0 }, []],
         update: (s, m) => [s, []],
-        view: (s, send) => [text(s => String(s.count))],
+        view: (send) => [text(s => String(s.count))],
         __dirty: (o, n) => o.count !== n.count ? 1 : 0,
       })
     `
@@ -270,7 +270,7 @@ describe('static subtree prerendering', () => {
         name: 'C',
         init: () => [{ x: 0 }, []],
         update: (s, m) => [s, []],
-        view: (s, send) => [
+        view: (send) => [
           button({ onClick: () => send({ type: 'click' }) }, [text('Go')]),
         ],
       })
@@ -337,7 +337,7 @@ describe('subtree collapse — nested elements → elTemplate', () => {
         name: 'C',
         init: () => [{ x: 0 }, []],
         update: (s, m) => [s, []],
-        view: (s, send) => [
+        view: (send) => [
           div({ class: 'row' }, [
             button({ onClick: () => send({ type: 'click' }) }, [text('Go')]),
           ]),

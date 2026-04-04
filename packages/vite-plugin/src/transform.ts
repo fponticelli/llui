@@ -14,20 +14,86 @@ function createMaskLiteral(f: ts.NodeFactory, mask: number): ts.Expression {
 
 // HTML element helper names that the compiler can transform
 const ELEMENT_HELPERS = new Set([
-  'a', 'abbr', 'article', 'aside', 'b', 'blockquote', 'br', 'button',
-  'canvas', 'code', 'dd', 'details', 'dialog', 'div', 'dl', 'dt', 'em',
-  'fieldset', 'figcaption', 'figure', 'footer', 'form',
-  'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'header', 'hr', 'i', 'iframe',
-  'img', 'input', 'label', 'legend', 'li', 'main', 'mark', 'nav', 'ol',
-  'optgroup', 'option', 'output', 'p', 'pre', 'progress',
-  'section', 'select', 'small', 'span', 'strong', 'sub', 'summary',
-  'sup', 'table', 'tbody', 'td', 'textarea', 'tfoot', 'th', 'thead',
-  'time', 'tr', 'ul', 'video',
+  'a',
+  'abbr',
+  'article',
+  'aside',
+  'b',
+  'blockquote',
+  'br',
+  'button',
+  'canvas',
+  'code',
+  'dd',
+  'details',
+  'dialog',
+  'div',
+  'dl',
+  'dt',
+  'em',
+  'fieldset',
+  'figcaption',
+  'figure',
+  'footer',
+  'form',
+  'h1',
+  'h2',
+  'h3',
+  'h4',
+  'h5',
+  'h6',
+  'header',
+  'hr',
+  'i',
+  'iframe',
+  'img',
+  'input',
+  'label',
+  'legend',
+  'li',
+  'main',
+  'mark',
+  'nav',
+  'ol',
+  'optgroup',
+  'option',
+  'output',
+  'p',
+  'pre',
+  'progress',
+  'section',
+  'select',
+  'small',
+  'span',
+  'strong',
+  'sub',
+  'summary',
+  'sup',
+  'table',
+  'tbody',
+  'td',
+  'textarea',
+  'tfoot',
+  'th',
+  'thead',
+  'time',
+  'tr',
+  'ul',
+  'video',
 ])
 
 const PROP_KEYS = new Set([
-  'value', 'checked', 'selected', 'disabled', 'readOnly', 'multiple',
-  'indeterminate', 'defaultValue', 'defaultChecked', 'innerHTML', 'textContent',
+  'value',
+  'checked',
+  'selected',
+  'disabled',
+  'readOnly',
+  'multiple',
+  'indeterminate',
+  'defaultValue',
+  'defaultChecked',
+  'innerHTML',
+  'textContent',
 ])
 
 type BindingKind = 'text' | 'prop' | 'attr' | 'class' | 'style'
@@ -57,7 +123,11 @@ export interface TransformEdit {
   replacement: string
 }
 
-export function transformLlui(source: string, _filename: string, devMode = false): { output: string; edits: TransformEdit[] } | null {
+export function transformLlui(
+  source: string,
+  _filename: string,
+  devMode = false,
+): { output: string; edits: TransformEdit[] } | null {
   const sourceFile = ts.createSourceFile('input.ts', source, ts.ScriptTarget.Latest, true)
 
   // Find the @llui/dom import
@@ -95,7 +165,11 @@ export function transformLlui(source: string, _filename: string, devMode = false
     const origEnd = hasPos ? node.getEnd() : -1
 
     // Pass 0: Deduplicate item() selectors in each() render callbacks
-    if (ts.isCallExpression(node) && ts.isIdentifier(node.expression) && node.expression.text === 'each') {
+    if (
+      ts.isCallExpression(node) &&
+      ts.isIdentifier(node.expression) &&
+      node.expression.text === 'each'
+    ) {
       const rewritten = tryDeduplicateItemSelectors(node, f, printer, sourceFile)
       if (rewritten) {
         const result = ts.visitEachChild(rewritten, visitor, undefined!)
@@ -106,7 +180,14 @@ export function transformLlui(source: string, _filename: string, devMode = false
 
     // Pass 1: Transform element helper calls to elSplit or elTemplate
     if (ts.isCallExpression(node)) {
-      const transformed = tryTransformElementCall(node, importedHelpers, fieldBits, compiledHelpers, bailedHelpers, f)
+      const transformed = tryTransformElementCall(
+        node,
+        importedHelpers,
+        fieldBits,
+        compiledHelpers,
+        bailedHelpers,
+        f,
+      )
       if (transformed) {
         if (ts.isIdentifier(transformed.expression)) {
           if (transformed.expression.text === 'elTemplate') usesElTemplate = true
@@ -147,7 +228,15 @@ export function transformLlui(source: string, _filename: string, devMode = false
   // Pass 3: Clean up imports — use the old cleanupImports approach
   // which operates on the transformed SourceFile safely
   const safeToRemove = new Set([...compiledHelpers].filter((h) => !bailedHelpers.has(h)))
-  transformed = cleanupImports(transformed, lluiImport, importedHelpers, safeToRemove, usesElSplit, usesElTemplate, f)
+  transformed = cleanupImports(
+    transformed,
+    lluiImport,
+    importedHelpers,
+    safeToRemove,
+    usesElSplit,
+    usesElTemplate,
+    f,
+  )
 
   if (edits.length === 0) return null
 
@@ -171,7 +260,8 @@ export function transformLlui(source: string, _filename: string, devMode = false
       xfText = printer.printNode(ts.EmitHint.Unspecified, xfStmts[i]!, transformed)
     } catch {
       // Synthetic nodes may fail to print individually — fall back to full reprint
-      const output = printer.printFile(transformed) + (devMode ? '\n' + generateHmrCode(componentDecls) : '')
+      const output =
+        printer.printFile(transformed) + (devMode ? '\n' + generateHmrCode(componentDecls) : '')
       return { output, edits: [{ start: 0, end: source.length, replacement: output }] }
     }
 
@@ -189,7 +279,11 @@ export function transformLlui(source: string, _filename: string, devMode = false
 
   // HMR: append at end
   if (devMode) {
-    finalEdits.push({ start: source.length, end: source.length, replacement: '\n' + generateHmrCode(componentDecls) })
+    finalEdits.push({
+      start: source.length,
+      end: source.length,
+      replacement: '\n' + generateHmrCode(componentDecls),
+    })
   }
 
   if (finalEdits.length === 0) return null
@@ -204,7 +298,6 @@ export function transformLlui(source: string, _filename: string, devMode = false
   return { output, edits: finalEdits }
 }
 
-
 // ── HMR ──────────────────────────────────────────────────────────
 
 function generateHmrCode(components: Array<{ varName: string; componentName: string }>): string {
@@ -218,9 +311,9 @@ if (import.meta.hot) {
   }
 
   // Generate replaceComponent calls for each component in this file
-  const replaceCalls = components.map(({ varName, componentName }) =>
-    `      __replaceComponent("${componentName}", ${varName})`,
-  ).join('\n')
+  const replaceCalls = components
+    .map(({ varName, componentName }) => `      __replaceComponent("${componentName}", ${varName})`)
+    .join('\n')
 
   return `
 import { enableHmr as __enableHmr, replaceComponent as __replaceComponent } from '@llui/dom/hmr'
@@ -234,18 +327,31 @@ ${replaceCalls}
 }
 
 /** Find all component() calls and extract the variable name and component name */
-function findComponentDeclarations(sf: ts.SourceFile, lluiImport: ts.ImportDeclaration): Array<{ varName: string; componentName: string }> {
+function findComponentDeclarations(
+  sf: ts.SourceFile,
+  lluiImport: ts.ImportDeclaration,
+): Array<{ varName: string; componentName: string }> {
   const result: Array<{ varName: string; componentName: string }> = []
 
   function visit(node: ts.Node): void {
     // Match: const Foo = component({ name: 'Foo', ... })
-    if (ts.isVariableDeclaration(node) && ts.isIdentifier(node.name) && node.initializer &&
-        ts.isCallExpression(node.initializer) && isComponentCall(node.initializer, lluiImport)) {
+    if (
+      ts.isVariableDeclaration(node) &&
+      ts.isIdentifier(node.name) &&
+      node.initializer &&
+      ts.isCallExpression(node.initializer) &&
+      isComponentCall(node.initializer, lluiImport)
+    ) {
       const varName = node.name.text
       const config = node.initializer.arguments[0]
       if (config && ts.isObjectLiteralExpression(config)) {
         for (const prop of config.properties) {
-          if (ts.isPropertyAssignment(prop) && ts.isIdentifier(prop.name) && prop.name.text === 'name' && ts.isStringLiteral(prop.initializer)) {
+          if (
+            ts.isPropertyAssignment(prop) &&
+            ts.isIdentifier(prop.name) &&
+            prop.name.text === 'name' &&
+            ts.isStringLiteral(prop.initializer)
+          ) {
             result.push({ varName, componentName: prop.initializer.text })
           }
         }
@@ -257,7 +363,6 @@ function findComponentDeclarations(sf: ts.SourceFile, lluiImport: ts.ImportDecla
   visit(sf)
   return result
 }
-
 
 // ── Helpers ──────────────────────────────────────────────────────
 
@@ -437,12 +542,7 @@ function tryTransformElementCall(
       // Event handler
       if (/^on[A-Z]/.test(key)) {
         const eventName = key.slice(2).toLowerCase()
-        events.push(
-          f.createArrayLiteralExpression([
-            f.createStringLiteral(eventName),
-            value,
-          ]),
-        )
+        events.push(f.createArrayLiteralExpression([f.createStringLiteral(eventName), value]))
         continue
       }
 
@@ -454,7 +554,13 @@ function tryTransformElementCall(
 
         // Zero-mask constant folding: accessor doesn't read state → treat as static
         if (mask === 0 && !readsState) {
-          emitStaticProp(staticProps, f, kind, resolvedKey, f.createCallExpression(value, undefined, []))
+          emitStaticProp(
+            staticProps,
+            f,
+            kind,
+            resolvedKey,
+            f.createCallExpression(value, undefined, []),
+          )
           continue
         }
 
@@ -510,8 +616,7 @@ function tryTransformElementCall(
         )
       : f.createNull()
 
-  const eventsArr =
-    events.length > 0 ? f.createArrayLiteralExpression(events) : f.createNull()
+  const eventsArr = events.length > 0 ? f.createArrayLiteralExpression(events) : f.createNull()
 
   const bindingsArr =
     bindings.length > 0 ? f.createArrayLiteralExpression(bindings) : f.createNull()
@@ -593,7 +698,11 @@ function tryInjectDirty(
 
   // Check if __dirty already exists
   for (const prop of configArg.properties) {
-    if (ts.isPropertyAssignment(prop) && ts.isIdentifier(prop.name) && prop.name.text === '__dirty') {
+    if (
+      ts.isPropertyAssignment(prop) &&
+      ts.isIdentifier(prop.name) &&
+      prop.name.text === '__dirty'
+    ) {
       return null
     }
   }
@@ -649,10 +758,7 @@ function tryInjectDirty(
 
   const dirtyProp = f.createPropertyAssignment('__dirty', dirtyFn)
 
-  const newConfig = f.createObjectLiteralExpression(
-    [...configArg.properties, dirtyProp],
-    true,
-  )
+  const newConfig = f.createObjectLiteralExpression([...configArg.properties, dirtyProp], true)
 
   return f.createCallExpression(node.expression, node.typeArguments, [
     newConfig,
@@ -665,11 +771,7 @@ function buildAccess(f: ts.NodeFactory, root: string, parts: string[]): ts.Expre
   for (const part of parts) {
     // Use optional chaining for nested paths
     if (parts.length > 1) {
-      expr = f.createPropertyAccessChain(
-        expr,
-        f.createToken(ts.SyntaxKind.QuestionDotToken),
-        part,
-      )
+      expr = f.createPropertyAccessChain(expr, f.createToken(ts.SyntaxKind.QuestionDotToken), part)
     } else {
       expr = f.createPropertyAccessExpression(expr, part)
     }
@@ -693,9 +795,7 @@ function cleanupImports(
   const clause = lluiImport.importClause
   if (!clause?.namedBindings || !ts.isNamedImports(clause.namedBindings)) return sf
 
-  const remaining = clause.namedBindings.elements.filter(
-    (spec) => !compiled.has(spec.name.text),
-  )
+  const remaining = clause.namedBindings.elements.filter((spec) => !compiled.has(spec.name.text))
 
   const hasElSplit = clause.namedBindings.elements.some((s) => s.name.text === 'elSplit')
   if (!hasElSplit && usesElSplit) {
@@ -713,8 +813,13 @@ function cleanupImports(
 
   let replaced = false
   const statements = sf.statements.map((stmt) => {
-    if (!replaced && ts.isImportDeclaration(stmt) && ts.isStringLiteral(stmt.moduleSpecifier) &&
-        stmt.moduleSpecifier.text === '@llui/dom' && !stmt.importClause?.isTypeOnly) {
+    if (
+      !replaced &&
+      ts.isImportDeclaration(stmt) &&
+      ts.isStringLiteral(stmt.moduleSpecifier) &&
+      stmt.moduleSpecifier.text === '@llui/dom' &&
+      !stmt.importClause?.isTypeOnly
+    ) {
       replaced = true
       return newImportDecl
     }
@@ -724,12 +829,14 @@ function cleanupImports(
   return f.updateSourceFile(sf, statements as unknown as ts.Statement[])
 }
 
-
 // ── __msgSchema injection ────────────────────────────────────────
 
 function injectMsgSchema(
   node: ts.CallExpression,
-  schema: { discriminant: string; variants: Record<string, Record<string, string | { enum: string[] }>> },
+  schema: {
+    discriminant: string
+    variants: Record<string, Record<string, string | { enum: string[] }>>
+  },
   f: ts.NodeFactory,
 ): ts.CallExpression {
   const configArg = node.arguments[0]
@@ -737,7 +844,11 @@ function injectMsgSchema(
 
   // Don't inject if already present
   for (const prop of configArg.properties) {
-    if (ts.isPropertyAssignment(prop) && ts.isIdentifier(prop.name) && prop.name.text === '__msgSchema') {
+    if (
+      ts.isPropertyAssignment(prop) &&
+      ts.isIdentifier(prop.name) &&
+      prop.name.text === '__msgSchema'
+    ) {
       return node
     }
   }
@@ -771,17 +882,17 @@ function injectMsgSchema(
     )
   }
 
-  const schemaObj = f.createObjectLiteralExpression([
-    f.createPropertyAssignment('discriminant', f.createStringLiteral(schema.discriminant)),
-    f.createPropertyAssignment('variants', f.createObjectLiteralExpression(variantProps, true)),
-  ], true)
+  const schemaObj = f.createObjectLiteralExpression(
+    [
+      f.createPropertyAssignment('discriminant', f.createStringLiteral(schema.discriminant)),
+      f.createPropertyAssignment('variants', f.createObjectLiteralExpression(variantProps, true)),
+    ],
+    true,
+  )
 
   const schemaProp = f.createPropertyAssignment('__msgSchema', schemaObj)
 
-  const newConfig = f.createObjectLiteralExpression(
-    [...configArg.properties, schemaProp],
-    true,
-  )
+  const newConfig = f.createObjectLiteralExpression([...configArg.properties, schemaProp], true)
 
   return f.createCallExpression(node.expression, node.typeArguments, [
     newConfig,
@@ -812,7 +923,11 @@ function tryDeduplicateItemSelectors(
   // Find the render property
   let renderProp: ts.PropertyAssignment | null = null
   for (const prop of arg.properties) {
-    if (ts.isPropertyAssignment(prop) && ts.isIdentifier(prop.name) && prop.name.text === 'render') {
+    if (
+      ts.isPropertyAssignment(prop) &&
+      ts.isIdentifier(prop.name) &&
+      prop.name.text === 'render'
+    ) {
       renderProp = prop
       break
     }
@@ -842,7 +957,11 @@ function tryDeduplicateItemSelectors(
   if (!itemName) return null
 
   // Collect all item(selector) calls with their selector source text
-  const selectorCalls: Array<{ node: ts.CallExpression; selectorText: string; selector: ts.Expression }> = []
+  const selectorCalls: Array<{
+    node: ts.CallExpression
+    selectorText: string
+    selector: ts.Expression
+  }> = []
 
   function collectItemCalls(node: ts.Node): void {
     if (
@@ -887,20 +1006,31 @@ function tryDeduplicateItemSelectors(
 
     // const __s0 = (r) => r.id
     hoistedStmts.push(
-      f.createVariableStatement(undefined,
-        f.createVariableDeclarationList([
-          f.createVariableDeclaration(selVar, undefined, undefined, calls[0]!.selector),
-        ], ts.NodeFlags.Const),
+      f.createVariableStatement(
+        undefined,
+        f.createVariableDeclarationList(
+          [f.createVariableDeclaration(selVar, undefined, undefined, calls[0]!.selector)],
+          ts.NodeFlags.Const,
+        ),
       ),
     )
     // const __a0 = item(__s0)
     hoistedStmts.push(
-      f.createVariableStatement(undefined,
-        f.createVariableDeclarationList([
-          f.createVariableDeclaration(accVar, undefined, undefined,
-            f.createCallExpression(f.createIdentifier(itemName), undefined, [f.createIdentifier(selVar)]),
-          ),
-        ], ts.NodeFlags.Const),
+      f.createVariableStatement(
+        undefined,
+        f.createVariableDeclarationList(
+          [
+            f.createVariableDeclaration(
+              accVar,
+              undefined,
+              undefined,
+              f.createCallExpression(f.createIdentifier(itemName), undefined, [
+                f.createIdentifier(selVar),
+              ]),
+            ),
+          ],
+          ts.NodeFlags.Const,
+        ),
       ),
     )
 
@@ -926,21 +1056,30 @@ function tryDeduplicateItemSelectors(
     finalBody = f.createBlock([...hoistedStmts, ...(newBody as ts.Block).statements], true)
   } else {
     // Arrow with expression body → convert to block with return
-    finalBody = f.createBlock([
-      ...hoistedStmts,
-      f.createReturnStatement(newBody as ts.Expression),
-    ], true)
+    finalBody = f.createBlock(
+      [...hoistedStmts, f.createReturnStatement(newBody as ts.Expression)],
+      true,
+    )
   }
 
   // Build new render function
   const newRenderFn = ts.isArrowFunction(renderFn)
     ? f.createArrowFunction(
-        renderFn.modifiers, renderFn.typeParameters, renderFn.parameters,
-        renderFn.type, f.createToken(ts.SyntaxKind.EqualsGreaterThanToken), finalBody,
+        renderFn.modifiers,
+        renderFn.typeParameters,
+        renderFn.parameters,
+        renderFn.type,
+        f.createToken(ts.SyntaxKind.EqualsGreaterThanToken),
+        finalBody,
       )
     : f.createFunctionExpression(
-        renderFn.modifiers, renderFn.asteriskToken, renderFn.name,
-        renderFn.typeParameters, renderFn.parameters, renderFn.type, finalBody as ts.Block,
+        renderFn.modifiers,
+        renderFn.asteriskToken,
+        renderFn.name,
+        renderFn.typeParameters,
+        renderFn.parameters,
+        renderFn.type,
+        finalBody as ts.Block,
       )
 
   // Rebuild the each() call with the new render property
@@ -950,15 +1089,28 @@ function tryDeduplicateItemSelectors(
   const newArg = f.createObjectLiteralExpression(newProps, true)
 
   return f.createCallExpression(eachCall.expression, eachCall.typeArguments, [
-    newArg, ...eachCall.arguments.slice(1),
+    newArg,
+    ...eachCall.arguments.slice(1),
   ])
 }
 
 // ── Subtree collapse: nested elements → elTemplate ──────────────
 
 const VOID_ELEMENTS = new Set([
-  'area', 'base', 'br', 'col', 'embed', 'hr', 'img', 'input',
-  'link', 'meta', 'param', 'source', 'track', 'wbr',
+  'area',
+  'base',
+  'br',
+  'col',
+  'embed',
+  'hr',
+  'img',
+  'input',
+  'link',
+  'meta',
+  'param',
+  'source',
+  'track',
+  'wbr',
 ])
 
 interface AnalyzedNode {
@@ -1085,7 +1237,11 @@ function analyzeSubtree(
     let childIdx = 0
     for (const child of childrenArg.elements) {
       // text('literal') — static text
-      if (ts.isCallExpression(child) && ts.isIdentifier(child.expression) && child.expression.text === 'text') {
+      if (
+        ts.isCallExpression(child) &&
+        ts.isIdentifier(child.expression) &&
+        child.expression.text === 'text'
+      ) {
         if (child.arguments.length >= 1 && ts.isStringLiteral(child.arguments[0]!)) {
           children.push({ type: 'staticText', value: child.arguments[0]!.text })
           childIdx++ // static text creates a text node in the template DOM
@@ -1119,7 +1275,11 @@ function analyzeSubtree(
       }
 
       // Element helper call — recurse
-      if (ts.isCallExpression(child) && ts.isIdentifier(child.expression) && helpers.has(child.expression.text)) {
+      if (
+        ts.isCallExpression(child) &&
+        ts.isIdentifier(child.expression) &&
+        helpers.has(child.expression.text)
+      ) {
         const childNode = analyzeSubtree(child, helpers, fieldBits, [...path, childIdx])
         if (!childNode) return null
         children.push({ type: 'element', node: childNode })
@@ -1233,8 +1393,9 @@ function collectPatchOps(
       walkExpr: buildWalkExpr(node.path, f),
       events: node.events,
       bindings: node.bindings,
-      reactiveTexts: node.children
-        .filter((c): c is Extract<AnalyzedChild, { type: 'reactiveText' }> => c.type === 'reactiveText'),
+      reactiveTexts: node.children.filter(
+        (c): c is Extract<AnalyzedChild, { type: 'reactiveText' }> => c.type === 'reactiveText',
+      ),
     })
   }
 
@@ -1279,12 +1440,13 @@ function emitSubtreeTemplate(
 
   if (rootHasDynamic) {
     ops.push({
-      varName: '',  // use 'root' directly
+      varName: '', // use 'root' directly
       walkExpr: f.createIdentifier('root'),
       events: analyzed.events,
       bindings: analyzed.bindings,
-      reactiveTexts: analyzed.children
-        .filter((c): c is Extract<AnalyzedChild, { type: 'reactiveText' }> => c.type === 'reactiveText'),
+      reactiveTexts: analyzed.children.filter(
+        (c): c is Extract<AnalyzedChild, { type: 'reactiveText' }> => c.type === 'reactiveText',
+      ),
     })
   }
 
@@ -1314,18 +1476,17 @@ function emitSubtreeTemplate(
   const stmts: ts.Statement[] = []
 
   for (const op of ops) {
-    const nodeRef = op.varName
-      ? f.createIdentifier(op.varName)
-      : f.createIdentifier('root')
+    const nodeRef = op.varName ? f.createIdentifier(op.varName) : f.createIdentifier('root')
 
     // Variable declaration for walking to node
     if (op.varName) {
       stmts.push(
         f.createVariableStatement(
           undefined,
-          f.createVariableDeclarationList([
-            f.createVariableDeclaration(op.varName, undefined, undefined, op.walkExpr),
-          ], ts.NodeFlags.Const),
+          f.createVariableDeclarationList(
+            [f.createVariableDeclaration(op.varName, undefined, undefined, op.walkExpr)],
+            ts.NodeFlags.Const,
+          ),
         ),
       )
     }
@@ -1356,10 +1517,10 @@ function emitSubtreeTemplate(
       stmts.push(
         f.createVariableStatement(
           undefined,
-          f.createVariableDeclarationList([
-            f.createVariableDeclaration(tVar, undefined, undefined, textWalk,
-            ),
-          ], ts.NodeFlags.Const),
+          f.createVariableDeclarationList(
+            [f.createVariableDeclaration(tVar, undefined, undefined, textWalk)],
+            ts.NodeFlags.Const,
+          ),
         ),
       )
       // __bind(__t0, mask, 'text', undefined, accessor)
@@ -1409,18 +1570,20 @@ function emitSubtreeTemplate(
             undefined,
             [eTarget],
           ),
-          f.createBlock([
-            f.createExpressionStatement(
-              f.createCallExpression(handler, undefined, [eParam]),
-            ),
-            f.createReturnStatement(),
-          ], true),
+          f.createBlock(
+            [
+              f.createExpressionStatement(f.createCallExpression(handler, undefined, [eParam])),
+              f.createReturnStatement(),
+            ],
+            true,
+          ),
         ),
       )
     }
 
     const delegateHandler = f.createArrowFunction(
-      undefined, undefined,
+      undefined,
+      undefined,
       [f.createParameterDeclaration(undefined, undefined, '__e')],
       undefined,
       f.createToken(ts.SyntaxKind.EqualsGreaterThanToken),
@@ -1452,11 +1615,10 @@ function emitSubtreeTemplate(
     f.createBlock(stmts, true),
   )
 
-  const call = f.createCallExpression(
-    f.createIdentifier('elTemplate'),
-    undefined,
-    [f.createStringLiteral(html), patchFn],
-  )
+  const call = f.createCallExpression(f.createIdentifier('elTemplate'), undefined, [
+    f.createStringLiteral(html),
+    patchFn,
+  ])
 
   return call
 }
@@ -1468,7 +1630,11 @@ function isStaticChildren(children: ts.Expression): boolean {
   if (!ts.isArrayLiteralExpression(children)) return false
   return children.elements.every((child) => {
     // text('literal') — static text
-    if (ts.isCallExpression(child) && ts.isIdentifier(child.expression) && child.expression.text === 'text') {
+    if (
+      ts.isCallExpression(child) &&
+      ts.isIdentifier(child.expression) &&
+      child.expression.text === 'text'
+    ) {
       return child.arguments.length === 1 && ts.isStringLiteral(child.arguments[0]!)
     }
     // Another elSplit or element helper that was already determined static
@@ -1513,7 +1679,11 @@ function buildStaticHTML(
   let inner = ''
   if (ts.isArrayLiteralExpression(children)) {
     for (const child of children.elements) {
-      if (ts.isCallExpression(child) && ts.isIdentifier(child.expression) && child.expression.text === 'text') {
+      if (
+        ts.isCallExpression(child) &&
+        ts.isIdentifier(child.expression) &&
+        child.expression.text === 'text'
+      ) {
         if (ts.isStringLiteral(child.arguments[0]!)) {
           inner += escapeHTML(child.arguments[0]!.text)
         } else {
@@ -1556,31 +1726,38 @@ function emitTemplateClone(html: string, f: ts.NodeFactory): ts.Expression {
         [],
         undefined,
         f.createToken(ts.SyntaxKind.EqualsGreaterThanToken),
-        f.createBlock([
-          f.createVariableStatement(undefined, f.createVariableDeclarationList([
-            f.createVariableDeclaration(varName, undefined, undefined, tmplCreate),
-          ], ts.NodeFlags.Const)),
-          f.createExpressionStatement(
-            f.createBinaryExpression(
-              f.createPropertyAccessExpression(f.createIdentifier(varName), 'innerHTML'),
-              ts.SyntaxKind.EqualsToken,
-              f.createStringLiteral(html),
-            ),
-          ),
-          f.createReturnStatement(
-            f.createPropertyAccessExpression(
-              f.createCallExpression(
-                f.createPropertyAccessExpression(
-                  f.createPropertyAccessExpression(f.createIdentifier(varName), 'content'),
-                  'cloneNode',
-                ),
-                undefined,
-                [f.createTrue()],
+        f.createBlock(
+          [
+            f.createVariableStatement(
+              undefined,
+              f.createVariableDeclarationList(
+                [f.createVariableDeclaration(varName, undefined, undefined, tmplCreate)],
+                ts.NodeFlags.Const,
               ),
-              'firstChild',
             ),
-          ),
-        ], true),
+            f.createExpressionStatement(
+              f.createBinaryExpression(
+                f.createPropertyAccessExpression(f.createIdentifier(varName), 'innerHTML'),
+                ts.SyntaxKind.EqualsToken,
+                f.createStringLiteral(html),
+              ),
+            ),
+            f.createReturnStatement(
+              f.createPropertyAccessExpression(
+                f.createCallExpression(
+                  f.createPropertyAccessExpression(
+                    f.createPropertyAccessExpression(f.createIdentifier(varName), 'content'),
+                    'cloneNode',
+                  ),
+                  undefined,
+                  [f.createTrue()],
+                ),
+                'firstChild',
+              ),
+            ),
+          ],
+          true,
+        ),
       ),
     ),
     undefined,

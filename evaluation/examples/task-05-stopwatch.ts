@@ -10,11 +10,7 @@ type State = {
   bestLap: number | null
 }
 
-type Msg =
-  | { type: 'start' }
-  | { type: 'stop' }
-  | { type: 'reset' }
-  | { type: 'tick' }
+type Msg = { type: 'start' } | { type: 'stop' } | { type: 'reset' } | { type: 'tick' }
 
 type Effect = { type: 'delay'; ms: number; onDone: Msg }
 
@@ -45,9 +41,7 @@ export const Stopwatch = component<State, Msg, Effect>({
         ]
       case 'stop': {
         const bestLap =
-          state.bestLap === null
-            ? state.elapsed
-            : Math.min(state.bestLap, state.elapsed)
+          state.bestLap === null ? state.elapsed : Math.min(state.bestLap, state.elapsed)
         return [{ ...state, running: false, bestLap }, []]
       }
       case 'reset':
@@ -60,28 +54,30 @@ export const Stopwatch = component<State, Msg, Effect>({
         ]
     }
   },
-  view: (_state, send) => [
+  view: (send) => [
     div({ class: 'stopwatch' }, [
-      div({ class: 'display' }, [
-        text((s: State) => formatTime(s.elapsed)),
-      ]),
+      div({ class: 'display' }, [text((s: State) => formatTime(s.elapsed))]),
       div({ class: 'controls' }, [
-        button({
-          onClick: () => send({ type: 'start' }),
-          disabled: (s: State) => s.running,
-        }, [text('Start')]),
-        button({
-          onClick: () => send({ type: 'stop' }),
-          disabled: (s: State) => !s.running,
-        }, [text('Stop')]),
+        button(
+          {
+            onClick: () => send({ type: 'start' }),
+            disabled: (s: State) => s.running,
+          },
+          [text('Start')],
+        ),
+        button(
+          {
+            onClick: () => send({ type: 'stop' }),
+            disabled: (s: State) => !s.running,
+          },
+          [text('Stop')],
+        ),
         button({ onClick: () => send({ type: 'reset' }) }, [text('Reset')]),
       ]),
       ...show<State>({
         when: (s) => s.bestLap !== null,
-        render: (_s, _send) => [
-          div({ class: 'best-lap' }, [
-            text((s: State) => `Best lap: ${formatTime(s.bestLap!)}`),
-          ]),
+        render: () => [
+          div({ class: 'best-lap' }, [text((s: State) => `Best lap: ${formatTime(s.bestLap!)}`)]),
         ],
       }),
     ]),

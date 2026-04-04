@@ -30,7 +30,14 @@ function mountWithDevTools() {
   installDevTools(inst)
 
   setFlatBindings(inst.allBindings)
-  setRenderContext({ rootScope: inst.rootScope, state: inst.state, allBindings: inst.allBindings, structuralBlocks: inst.structuralBlocks, container, send: inst.send })
+  setRenderContext({
+    rootScope: inst.rootScope,
+    state: inst.state,
+    allBindings: inst.allBindings,
+    structuralBlocks: inst.structuralBlocks,
+    container,
+    send: inst.send,
+  })
   Counter.view(inst.state, inst.send)
   clearRenderContext()
   setFlatBindings(null)

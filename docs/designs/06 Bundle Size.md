@@ -26,7 +26,7 @@ brotli --best -c dist/assets/index-*.js | wc -c
 Raw bytes tell you what the minifier (terser, esbuild) sees before any compression. A large gap between minified and gzip indicates high repetition — text that compresses well, which is usually good. A small gap indicates the code is already entropy-dense (short variable names, few repeated patterns), which is characteristic of well-minified output. Track raw bytes when diagnosing whether a size regression is in the minifier output or only in the compressed output.
 
 **4. Number of JS chunks**
-Code splitting affects *perceived* load time independently of total size. A 10 kB app in one chunk loads faster on a cold HTTP/1.1 connection than 10 kB spread across four chunks. Under HTTP/2 the tradeoff shifts: more chunks means finer cache granularity. Report chunk count alongside byte counts. For a typical LLui app without route-level splitting, the output should be one chunk (the component code) plus Vite's preload helper if applicable.
+Code splitting affects _perceived_ load time independently of total size. A 10 kB app in one chunk loads faster on a cold HTTP/1.1 connection than 10 kB spread across four chunks. Under HTTP/2 the tradeoff shifts: more chunks means finer cache granularity. Report chunk count alongside byte counts. For a typical LLui app without route-level splitting, the output should be one chunk (the component code) plus Vite's preload helper if applicable.
 
 **5. Per-primitive cost delta**
 Import one feature at a time, build, measure. The delta from a baseline (core runtime only, no view logic) to the next measurement is the cost of that feature. This is the only way to distinguish "the core runtime grew" from "branch() grew." Maintain a spreadsheet of deltas across releases and treat regressions in any individual delta as a bug.
@@ -49,12 +49,13 @@ The Vite plugin does three distinct things that reduce the final bundle. Underst
 `elements.ts` exports approximately fifty functions — `div`, `span`, `button`, `input`, `ul`, `li`, and so on. Each is a thin wrapper around `document.createElement(tag)` that applies the LLui prop and child conventions. In source code, a developer writes:
 
 ```ts
-import { div, span, button } from '@llui/dom';
+import { div, span, button } from '@llui/dom'
 
-view: (state, send) => div({ class: 'container' }, [
-  span({}, [text(() => state.label)]),
-  button({ onClick: () => send({ type: 'click' }) }, [text('Go')]),
-])
+view: (send) =>
+  div({ class: 'container' }, [
+    span({}, [text(() => state.label)]),
+    button({ onClick: () => send({ type: 'click' }) }, [text('Go')]),
+  ])
 ```
 
 After the compiler runs, every call to `div(...)`, `span(...)`, `button(...)` is rewritten to `elSplit(tag, ...)` where `tag` is the string literal for the element name. The compiler simultaneously removes those names from the import statement. The resulting code imports nothing from `elements.ts`. Rollup's module graph analysis sees no remaining references to any export of `elements.ts` and eliminates the entire module. Without the compiler, all ~50 element helpers are included in every bundle regardless of which elements the app actually uses.
@@ -106,6 +107,7 @@ Rollup (and therefore Vite) performs tree-shaking by constructing a module graph
 The following is a conceptual breakdown of what each primitive contributes to the bundle when imported and used. All figures must be measured empirically against the actual implementation and reported as gzip delta from the previous baseline. These are estimates based on functional complexity; treat them as hypotheses to verify, not as guarantees.
 
 **Core runtime** (always included, ~3–4 kB gzip)
+
 - `mountApp` and the component initialization path
 - `processMessages`: the message queue drain loop (microtask-batched `send()`)
 - `flush()`: synchronous update cycle trigger (~5 lines, negligible addition)
@@ -127,7 +129,6 @@ This is the floor. Every application pays it.
 
 **+ `each()`** (estimate: +800–1200 bytes gzip)
 `each` adds: key-based reconciliation, entry management (creation, keyed lookup, reuse), and the DOM reordering algorithm. The reordering algorithm — deciding whether to insert, move, or remove DOM nodes to match a new array — is the largest single piece of code in the structural primitives. It dominates `each`'s cost.
-
 
 **+ `child()`** (estimate: +300–500 bytes gzip) — Level 2 composition only
 `child` adds: props watcher (shallow-diff of props accessor output, `propsMsg` conversion and enqueue), child component registry, recursive mount into a `<llui-child>` wrapper, and disposer registration. If the application uses typed addressed effects, the global component registry and address builder infrastructure are also pulled in. Applications that use only Level 1 composition (view functions) do not import `child()` and pay zero cost for it — it is fully tree-shakeable.
@@ -254,14 +255,11 @@ This is a prerequisite, not an optimization. Use `rollup-plugin-visualizer`:
 
 ```ts
 // vite.config.ts
-import { visualizer } from 'rollup-plugin-visualizer';
+import { visualizer } from 'rollup-plugin-visualizer'
 
 export default defineConfig({
-  plugins: [
-    llui(),
-    visualizer({ open: true, gzipSize: true, brotliSize: true }),
-  ],
-});
+  plugins: [llui(), visualizer({ open: true, gzipSize: true, brotliSize: true })],
+})
 ```
 
 After building, open the generated `stats.html`. `elements.ts` must not appear in the treemap. If it does, the compiler's import-cleanup pass failed to remove all references to element helpers. Common causes: the compiler missed a renamed import (`import { div as d } from '@llui/dom'`), a call site was in a position the AST visitor did not traverse (e.g., inside a type assertion), or the user has a local file also named `elements.ts` that shadows the LLui import. Fix the compiler; do not work around it.
@@ -297,14 +295,12 @@ If an entire subtree has no reactive bindings — no accessor functions, no `bra
 
 ```ts
 // Source: a static header with no bindings
-header({ class: 'app-header' }, [
-  h1({}, [text('My App')]),
-])
+header({ class: 'app-header' }, [h1({}, [text('My App')])])
 
 // Emitted:
-const _tmpl = document.createElement('template');
-_tmpl.innerHTML = '<header class="app-header"><h1>My App</h1></header>';
-const el = _tmpl.content.cloneNode(true);
+const _tmpl = document.createElement('template')
+_tmpl.innerHTML = '<header class="app-header"><h1>My App</h1></header>'
+const el = _tmpl.content.cloneNode(true)
 ```
 
 Template cloning is faster than imperative construction and the emitted code is smaller. The compiler must prove that no binding exists anywhere in the subtree — including deeply nested children. This is a conservative analysis; any dynamic expression anywhere in the subtree disqualifies the optimization. Expected impact: meaningful for apps with large static layout shells; negligible for apps where most nodes are reactive.

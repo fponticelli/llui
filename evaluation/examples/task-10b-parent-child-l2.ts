@@ -8,9 +8,7 @@ import { component, div, button, text, each, child, peek } from '@llui/dom'
 
 type ChildState = { id: number; value: number }
 
-type ChildMsg =
-  | { type: 'increment' }
-  | { type: 'propsChanged'; id: number; value: number }
+type ChildMsg = { type: 'increment' } | { type: 'propsChanged'; id: number; value: number }
 
 type ChildEffect = never
 
@@ -30,7 +28,7 @@ const CounterChild = component<ChildState, ChildMsg, ChildEffect>({
         return [{ ...state, id: msg.id, value: msg.value }, []]
     }
   },
-  view: (_state, send) => [
+  view: (send) => [
     div({ class: 'counter-child' }, [
       text((s: ChildState) => String(s.value)),
       button({ onClick: () => send({ type: 'increment' }) }, [text('+')]),
@@ -48,39 +46,40 @@ type ParentState = {
   total: number
 }
 
-type ParentMsg =
-  | { type: 'addCounter' }
-  | { type: 'childIncremented'; id: number }
+type ParentMsg = { type: 'addCounter' } | { type: 'childIncremented'; id: number }
 
 type ParentEffect = never
 
 export const ParentChildL2 = component<ParentState, ParentMsg, ParentEffect>({
   name: 'ParentChildL2',
-  init: () => [
-    { counters: [{ id: 1, value: 0 }], nextId: 2, total: 0 },
-    [],
-  ],
+  init: () => [{ counters: [{ id: 1, value: 0 }], nextId: 2, total: 0 }, []],
   update: (state, msg) => {
     switch (msg.type) {
       case 'addCounter':
-        return [{
-          ...state,
-          counters: [...state.counters, { id: state.nextId, value: 0 }],
-          nextId: state.nextId + 1,
-        }, []]
+        return [
+          {
+            ...state,
+            counters: [...state.counters, { id: state.nextId, value: 0 }],
+            nextId: state.nextId + 1,
+          },
+          [],
+        ]
       case 'childIncremented': {
         const counters = state.counters.map((c) =>
           c.id === msg.id ? { ...c, value: c.value + 1 } : c,
         )
-        return [{
-          ...state,
-          counters,
-          total: counters.reduce((sum, c) => sum + c.value, 0),
-        }, []]
+        return [
+          {
+            ...state,
+            counters,
+            total: counters.reduce((sum, c) => sum + c.value, 0),
+          },
+          [],
+        ]
       }
     }
   },
-  view: (_state, send) => [
+  view: (send) => [
     div({ class: 'parent' }, [
       text((s: ParentState) => `Total: ${s.total}`),
       button({ onClick: () => send({ type: 'addCounter' }) }, [text('Add counter')]),

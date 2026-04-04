@@ -38,9 +38,9 @@ describe('branch()', () => {
   function mount() {
     const def = phaseDef()
     const origView = def.view
-    def.view = (state, send) => {
+    def.view = (send) => {
       sendFn = send
-      return origView(state, send)
+      return origView(send)
     }
     const container = document.createElement('div')
     const handle = mountApp(container, def)
@@ -107,9 +107,9 @@ describe('show()', () => {
   function mount() {
     const def = showDef()
     const origView = def.view
-    def.view = (state, send) => {
+    def.view = (send) => {
       sendFn = send
-      return origView(state, send)
+      return origView(send)
     }
     const container = document.createElement('div')
     const handle = mountApp(container, def)

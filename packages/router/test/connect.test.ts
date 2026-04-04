@@ -3,10 +3,7 @@ import { createRouter, route, param } from '../src/index'
 import { connectRouter } from '../src/connect'
 import { mountApp, component, text } from '@llui/dom'
 
-type Route =
-  | { page: 'home' }
-  | { page: 'article'; slug: string }
-  | { page: 'search'; q: string }
+type Route = { page: 'home' } | { page: 'article'; slug: string } | { page: 'search'; q: string }
 
 const router = createRouter<Route>([
   route([], () => ({ page: 'home' })),
@@ -71,10 +68,7 @@ describe('connectRouter', () => {
 
       const handler = routing.createHandler<State, Msg, Effect>({
         getRoute: (msg) => (msg as { route: Route }).route,
-        onNavigate: (state, route) => [
-          { ...state, route },
-          [routing.push(route)],
-        ],
+        onNavigate: (state, route) => [{ ...state, route }, [routing.push(route)]],
       })
 
       const state: State = { route: { page: 'home' }, count: 0 }
@@ -112,14 +106,27 @@ describe('connectRouter', () => {
     /** Run callback inside a mounted component's view to get a render context */
     function withView(fn: () => void) {
       const container = document.createElement('div')
-      const App = component({ name: 'T', init: () => [null, []], update: (s) => [s, []], view: () => { fn(); return [text('')] } })
+      const App = component({
+        name: 'T',
+        init: () => [null, []],
+        update: (s) => [s, []],
+        view: () => {
+          fn()
+          return [text('')]
+        },
+      })
       const handle = mountApp(container, App)
       handle.dispose()
     }
 
     it('renders an anchor with the correct href', () => {
       withView(() => {
-        const el = routing.link(vi.fn(), { page: 'article', slug: 'hello' }, { class: 'my-link' }, [])
+        const el = routing.link(
+          vi.fn(),
+          { page: 'article', slug: 'hello' },
+          { class: 'my-link' },
+          [],
+        )
         expect(el.tagName).toBe('A')
         expect(el.getAttribute('href')).toBe('#/article/hello')
         expect(el.className).toBe('my-link')
@@ -140,17 +147,23 @@ describe('connectRouter', () => {
 
     it('sends navigate message on click in history mode', () => {
       withView(() => {
-        const historyRouter = createRouter<Route>([
-          route([], () => ({ page: 'home' })),
-          route(['article', param('slug')], ({ slug }) => ({ page: 'article', slug })),
-        ], { mode: 'history' })
+        const historyRouter = createRouter<Route>(
+          [
+            route([], () => ({ page: 'home' })),
+            route(['article', param('slug')], ({ slug }) => ({ page: 'article', slug })),
+          ],
+          { mode: 'history' },
+        )
         const historyRouting = connectRouter(historyRouter)
         const send = vi.fn()
         const el = historyRouting.link(send, { page: 'article', slug: 'test' }, {}, [])
         const event = new MouseEvent('click', { bubbles: true, cancelable: true, button: 0 })
         el.dispatchEvent(event)
         expect(event.defaultPrevented).toBe(true)
-        expect(send).toHaveBeenCalledWith({ type: 'navigate', route: { page: 'article', slug: 'test' } })
+        expect(send).toHaveBeenCalledWith({
+          type: 'navigate',
+          route: { page: 'article', slug: 'test' },
+        })
       })
     })
 
@@ -158,7 +171,12 @@ describe('connectRouter', () => {
       withView(() => {
         const send = vi.fn()
         const el = routing.link(send, { page: 'home' }, {}, [])
-        const event = new MouseEvent('click', { bubbles: true, cancelable: true, button: 0, ctrlKey: true })
+        const event = new MouseEvent('click', {
+          bubbles: true,
+          cancelable: true,
+          button: 0,
+          ctrlKey: true,
+        })
         el.dispatchEvent(event)
         expect(event.defaultPrevented).toBe(false)
         expect(send).not.toHaveBeenCalled()
@@ -169,7 +187,12 @@ describe('connectRouter', () => {
       withView(() => {
         const send = vi.fn()
         const el = routing.link(send, { page: 'home' }, {}, [])
-        const event = new MouseEvent('click', { bubbles: true, cancelable: true, button: 0, metaKey: true })
+        const event = new MouseEvent('click', {
+          bubbles: true,
+          cancelable: true,
+          button: 0,
+          metaKey: true,
+        })
         el.dispatchEvent(event)
         expect(event.defaultPrevented).toBe(false)
         expect(send).not.toHaveBeenCalled()
@@ -178,13 +201,19 @@ describe('connectRouter', () => {
 
     it('uses custom message factory in history mode', () => {
       withView(() => {
-        const historyRouter = createRouter<Route>([
-          route([], () => ({ page: 'home' })),
-          route(['article', param('slug')], ({ slug }) => ({ page: 'article', slug })),
-        ], { mode: 'history' })
+        const historyRouter = createRouter<Route>(
+          [
+            route([], () => ({ page: 'home' })),
+            route(['article', param('slug')], ({ slug }) => ({ page: 'article', slug })),
+          ],
+          { mode: 'history' },
+        )
         const historyRouting = connectRouter(historyRouter)
         const send = vi.fn()
-        const el = historyRouting.link(send, { page: 'article', slug: 'x' }, {}, [], (r) => ({ type: 'goto', route: r }))
+        const el = historyRouting.link(send, { page: 'article', slug: 'x' }, {}, [], (r) => ({
+          type: 'goto',
+          route: r,
+        }))
         el.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, button: 0 }))
         expect(send).toHaveBeenCalledWith({ type: 'goto', route: { page: 'article', slug: 'x' } })
       })
@@ -193,30 +222,41 @@ describe('connectRouter', () => {
 
   describe('history mode', () => {
     it('generates clean paths without hash prefix', () => {
-      const historyRouter = createRouter<Route>([
-        route([], () => ({ page: 'home' })),
-        route(['article', param('slug')], ({ slug }) => ({ page: 'article', slug })),
-        route(['search'], { query: ['q'] }, ({ q }) => ({ page: 'search', q: q ?? '' })),
-      ], { mode: 'history' })
+      const historyRouter = createRouter<Route>(
+        [
+          route([], () => ({ page: 'home' })),
+          route(['article', param('slug')], ({ slug }) => ({ page: 'article', slug })),
+          route(['search'], { query: ['q'] }, ({ q }) => ({ page: 'search', q: q ?? '' })),
+        ],
+        { mode: 'history' },
+      )
       const historyRouting = connectRouter(historyRouter)
 
       expect(historyRouting.push({ page: 'article', slug: 'x' }).path).toBe('/article/x')
     })
 
     it('link href uses clean paths', () => {
-      const historyRouter = createRouter<Route>([
-        route([], () => ({ page: 'home' })),
-        route(['search'], { query: ['q'] }, ({ q }) => ({ page: 'search', q: q ?? '' })),
-      ], { mode: 'history' })
+      const historyRouter = createRouter<Route>(
+        [
+          route([], () => ({ page: 'home' })),
+          route(['search'], { query: ['q'] }, ({ q }) => ({ page: 'search', q: q ?? '' })),
+        ],
+        { mode: 'history' },
+      )
       const historyRouting = connectRouter(historyRouter)
 
       const container = document.createElement('div')
       let href = ''
-      const App = component({ name: 'T', init: () => [null, []], update: (s) => [s, []], view: () => {
-        const el = historyRouting.link(vi.fn(), { page: 'search', q: 'test' }, {}, [])
-        href = el.getAttribute('href') ?? ''
-        return [el]
-      } })
+      const App = component({
+        name: 'T',
+        init: () => [null, []],
+        update: (s) => [s, []],
+        view: () => {
+          const el = historyRouting.link(vi.fn(), { page: 'search', q: 'test' }, {}, [])
+          href = el.getAttribute('href') ?? ''
+          return [el]
+        },
+      })
       const handle = mountApp(container, App)
       expect(href).toBe('/search?q=test')
       handle.dispose()

@@ -41,20 +41,19 @@ export const FilterableList = component<State, Msg, Effect>({
         return [{ ...state, query: msg.value }, []]
     }
   },
-  view: (_state, send) => [
+  view: (send) => [
     div({ class: 'filterable-list' }, [
       input({
         type: 'text',
         placeholder: 'Filter...',
-        onInput: (e: Event) => send({ type: 'setQuery', value: (e.target as HTMLInputElement).value }),
+        onInput: (e: Event) =>
+          send({ type: 'setQuery', value: (e.target as HTMLInputElement).value }),
       }),
       ...each<State, Item>({
         items: filteredItems,
         key: (item) => item.id,
         render: ({ item }) => [
-          div({ class: 'item', 'data-testid': 'item' }, [
-            text(item((t) => t.text)),
-          ]),
+          div({ class: 'item', 'data-testid': 'item' }, [text(item((t) => t.text))]),
         ],
       }),
     ]),
