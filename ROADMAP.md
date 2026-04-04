@@ -128,13 +128,9 @@ The compiler emits `import.meta.hot.accept()` but the mount system doesn't re-ru
 - [ ] Preserve in-flight effects via AbortSignal transfer
 - [ ] Test with Vite dev server on a multi-component app
 
-### 4. Source Maps
+### 4. ~~Source Maps~~ ✅
 
-The compiler uses `ts.createPrinter` which doesn't produce source maps. Stack traces in transformed code point to generated line numbers.
-
-- [ ] Integrate `magic-string` for targeted string patches with offset tracking
-- [ ] Emit `.map` files alongside transformed output
-- [ ] Verify error stack traces point to original source in Vite dev + production
+Per-statement edits via MagicString. Only changed statements (import, component) are replaced — untouched code keeps original positions. Hires source maps generated.
 
 ### 5. Package Polish
 
