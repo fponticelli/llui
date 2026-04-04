@@ -87,10 +87,6 @@
 
 349 tests across 8 packages. Added: resolveEffects tests (8), MCP tool tests (9), Vike integration tests (5). All packages audited — exports match, gaps filled.
 
-### 6. Documentation & Developer Experience
+### 6. ~~Documentation~~ ✅
 
-- [ ] Getting-started guide — project setup, first component
-- [ ] API cookbook — forms, async, lists, composition, routing
-- [ ] Migration guide — differences from React/Solid/Svelte
-- [ ] Project template — `create-llui-app` or Vite template
-- [ ] Document new APIs: `peek()`, `Async<T,E>`, `ApiError`, `chainUpdate`, `routing.link()`, `resolveEffects()`
+README rewritten. Getting-started guide with project setup + first component tutorial. Cookbook covering forms, async (Async/ApiError/debounce), composition (view functions, chainUpdate), routing, SSR (resolveEffects, hydration), foreign libraries, and testing.
