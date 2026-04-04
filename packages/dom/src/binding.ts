@@ -13,8 +13,8 @@ export interface CreateBindingOpts {
 let flatBindings: Binding[] | null = null
 let flatBindingsByBit: Map<number, Binding[]> | null = null
 
-export function getFlatBindings(): Binding[] | null {
-  return flatBindings
+export function getFlatBindings(): { arr: Binding[] | null; byBit: Map<number, Binding[]> | null } {
+  return { arr: flatBindings, byBit: flatBindingsByBit }
 }
 
 export function setFlatBindings(arr: Binding[] | null, byBit?: Map<number, Binding[]> | null): void {

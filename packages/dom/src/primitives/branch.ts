@@ -3,7 +3,6 @@ import { getRenderContext, setRenderContext, clearRenderContext } from '../rende
 import { createScope, disposeScope, addDisposer } from '../scope'
 import { setFlatBindings } from '../binding'
 import type { StructuralBlock } from '../structural'
-import { isHydrating, claimComment } from '../hydrate'
 
 export function branch<S, M = unknown>(opts: BranchOptions<S, M>): Node[] {
   const ctx = getRenderContext()
@@ -11,7 +10,7 @@ export function branch<S, M = unknown>(opts: BranchOptions<S, M>): Node[] {
   const blocks = ctx.structuralBlocks
   const send = ctx.send as (msg: M) => void
 
-  const anchor = isHydrating() ? claimComment('branch') : document.createComment('branch')
+  const anchor = document.createComment('branch')
 
   let currentKey = opts.on(ctx.state as S)
   let currentScope: Scope | null = null
@@ -52,11 +51,11 @@ export function branch<S, M = unknown>(opts: BranchOptions<S, M>): Node[] {
       const newBuilder = opts.cases[newCaseKey]
       if (newBuilder) {
         currentScope = createScope(parentScope)
-        setFlatBindings(ctx.allBindings)
+        setFlatBindings(ctx.allBindings, ctx.bindingsByBit)
         setRenderContext({ ...ctx, rootScope: currentScope, state })
         currentNodes = newBuilder(state as S, send)
         clearRenderContext()
-        setFlatBindings(null)
+        setFlatBindings(null, null)
 
         const ref = anchor.nextSibling
         for (const node of currentNodes) {

@@ -2,18 +2,17 @@ import { getRenderContext } from '../render-context'
 import { createBinding } from '../binding'
 import { addItemUpdater } from '../scope'
 import { FULL_MASK } from '../update-loop'
-import { isHydrating, claimText } from '../hydrate'
 
 export function text<S>(
   accessor: ((s: S) => string) | (() => string) | string,
   mask?: number,
 ): Text {
   if (typeof accessor === 'string') {
-    return isHydrating() ? claimText(accessor) : document.createTextNode(accessor)
+    return document.createTextNode(accessor)
   }
 
   const ctx = getRenderContext()
-  const node = isHydrating() ? claimText('') : document.createTextNode('')
+  const node = document.createTextNode('')
 
   // Per-item accessor from each() — zero-arg function (length === 0)
   // Register as direct updater, bypassing Phase 2 binding scan

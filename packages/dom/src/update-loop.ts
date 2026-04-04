@@ -115,28 +115,64 @@ function processMessages<S, M, E>(inst: ComponentInstance<S, M, E>): void {
   // Compact dead bindings before Phase 2 (Phase 1 may have disposed scopes)
   let phase2Len = bindingsBeforePhase1
   if (bindings.length > bindingsBeforePhase1 || (phase2Len > 0 && bindings[0]!.dead)) {
-    // Compact: remove dead bindings to free closure/DOM references
+    // Compact flat array
     let w = 0
     for (let r = 0; r < bindings.length; r++) {
       if (!bindings[r]!.dead) bindings[w++] = bindings[r]!
     }
     bindings.length = w
     phase2Len = Math.min(w, bindingsBeforePhase1)
+    // Compact bit index — remove dead bindings from all buckets
+    for (const [key, bucket] of inst.bindingsByBit) {
+      let bw = 0
+      for (let br = 0; br < bucket.length; br++) {
+        if (!bucket[br]!.dead) bucket[bw++] = bucket[br]!
+      }
+      bucket.length = bw
+      if (bw === 0) inst.bindingsByBit.delete(key)
+    }
   }
 
-  // Phase 2 — binding updates (flat array, no tree walk)
-  // Only iterate bindings that existed before Phase 1.
-  // Fresh bindings (created during Phase 1) already have initial values set.
+  // Phase 2 — binding updates
+  // Use partitioned index when available: only visit buckets whose bits are dirty.
+  // Falls back to flat scan for simplicity when index is empty.
   setCurrentDirtyMask(combinedDirty)
   if (combinedDirty !== 0) {
     const state = inst.state
-    for (let i = 0, len = phase2Len; i < len; i++) {
-      const binding = bindings[i]!
-      if (binding.dead || (binding.mask & combinedDirty) === 0) continue
-      const newValue = binding.accessor(state)
-      if (Object.is(newValue, binding.lastValue)) continue
-      binding.lastValue = newValue
-      applyBinding(binding, newValue)
+    const byBit = inst.bindingsByBit
+
+    if (byBit.size > 0) {
+      // Partitioned: visit FULL_MASK bucket (key 0) + each dirty bit bucket
+      const visited = new Set<Binding>()
+      const evalBinding = (binding: Binding) => {
+        if (visited.has(binding) || binding.dead) return
+        visited.add(binding)
+        const newValue = binding.accessor(state)
+        if (Object.is(newValue, binding.lastValue)) return
+        binding.lastValue = newValue
+        applyBinding(binding, newValue)
+      }
+
+      // Always check FULL_MASK bindings (bucket 0)
+      const fullMask = byBit.get(0)
+      if (fullMask) for (const b of fullMask) evalBinding(b)
+
+      // Check per-bit buckets for dirty bits
+      for (let bit = 1; bit !== 0; bit <<= 1) {
+        if (!(combinedDirty & bit)) continue
+        const bucket = byBit.get(bit)
+        if (bucket) for (const b of bucket) evalBinding(b)
+      }
+    } else {
+      // Fallback: flat scan (pre-Phase1 bindings only)
+      for (let i = 0, len = phase2Len; i < len; i++) {
+        const binding = bindings[i]!
+        if (binding.dead || (binding.mask & combinedDirty) === 0) continue
+        const newValue = binding.accessor(state)
+        if (Object.is(newValue, binding.lastValue)) continue
+        binding.lastValue = newValue
+        applyBinding(binding, newValue)
+      }
     }
   }
 

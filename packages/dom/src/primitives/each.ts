@@ -3,7 +3,6 @@ import { getRenderContext, setRenderContext, clearRenderContext, type RenderCont
 import { createScope, disposeScope, addDisposer } from '../scope'
 import { getFlatBindings, setFlatBindings } from '../binding'
 import type { StructuralBlock } from '../structural'
-import { isHydrating, claimComment } from '../hydrate'
 
 // Reusable render context for buildEntry — avoids object allocation per entry
 const buildCtx: RenderContext = {
@@ -27,7 +26,7 @@ export function each<S, T, M = unknown>(opts: EachOptions<S, T, M>): Node[] {
   const parentScope = ctx.rootScope
   const blocks = ctx.structuralBlocks
 
-  const anchor = isHydrating() ? claimComment('each') : document.createComment('each')
+  const anchor = document.createComment('each')
   const entries: Entry<T>[] = []
 
   const initialItems = opts.items(ctx.state as S)
@@ -104,12 +103,12 @@ function buildEntry<S, T, M>(
   buildCtx.state = currentState
   buildCtx.allBindings = ctx.allBindings
   buildCtx.structuralBlocks = ctx.structuralBlocks
-  const prevFlatBindings = getFlatBindings()
-  setFlatBindings(ctx.allBindings)
+  const prev = getFlatBindings()
+  setFlatBindings(ctx.allBindings, prev.byBit)
   setRenderContext(buildCtx)
   entry.nodes = opts.render({ state: currentState, send, item: itemAccessor, index: indexAccessor })
   clearRenderContext()
-  setFlatBindings(prevFlatBindings)
+  setFlatBindings(prev.arr, prev.byBit)
   setRenderContext(ctx)
 
   return entry
