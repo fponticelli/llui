@@ -109,14 +109,9 @@ Completed. The DOM-specific package is now `@llui/dom`, reserving `@llui/core` f
 
 GitHub Explorer app built and validated. Surfaced and fixed 8 framework bugs (flatBindings, cross-file masks, __dirty depth, init effects, history-mode query, popstate double-push, toPath non-URL fields, template mixed text). Exercises: `branch()`, `show()`, `each()`, `foreign()` (shadow DOM README, line-numbered code viewer), `debounce()`/`cancel()`/`http()`, `Async<T, ApiError>`, `@llui/router` with history mode, `routing.link()`, `routing.listener()`.
 
-### 2. SSR/Hydration Hardening
+### 2. ~~SSR/Hydration Hardening~~ ✅
 
-`hydrateApp()` currently clears server HTML and re-mounts. True walk-and-attach hydration would reuse server-rendered DOM nodes without re-creating them.
-
-- [ ] Implement DOM-reuse hydration — walk existing server HTML, attach bindings without re-rendering
-- [ ] Compiler: emit `__renderToString` as component property for static SSR (no jsdom)
-- [ ] Verify Vike integration end-to-end (server render → client hydrate → interact)
-- [ ] Measure TTFB and hydration cost vs full client render
+`hydrateApp()` now walks existing server HTML and reuses DOM nodes. Hydration cursor tracks position in the server DOM tree. `claimElement`/`claimText`/`claimComment` return existing nodes instead of creating new ones. Bindings and event listeners attach to reused nodes. Verified with DOM identity test (same node references before and after hydration).
 
 ### 3. ~~HMR State Preservation~~ ✅
 
