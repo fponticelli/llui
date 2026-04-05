@@ -44,6 +44,10 @@ export * as presence from './presence'
 export * as signaturePad from './signature-pad'
 export * as toc from './toc'
 export * as tour from './tour'
+export * as dateInput from './date-input'
+export * as asyncList from './async-list'
+export * as cascadeSelect from './cascade-select'
+export * as scrollArea from './scroll-area'
 
 export type {
   TimerState,
@@ -82,6 +86,36 @@ export type {
 } from './signature-pad'
 export type { TocState, TocMsg, TocInit, TocParts, TocEntry } from './toc'
 export type { TourState, TourMsg, TourInit, TourParts, TourStep } from './tour'
+export type {
+  DateInputState,
+  DateInputMsg,
+  DateInputInit,
+  DateInputParts,
+  DateError,
+} from './date-input'
+export type {
+  AsyncListState,
+  AsyncListMsg,
+  AsyncListInit,
+  AsyncListParts,
+  AsyncStatus,
+} from './async-list'
+export type {
+  CascadeSelectState,
+  CascadeSelectMsg,
+  CascadeSelectInit,
+  CascadeSelectParts,
+  CascadeLevel,
+  CascadeLevelParts,
+} from './cascade-select'
+export type {
+  ScrollAreaState,
+  ScrollAreaMsg,
+  ScrollAreaInit,
+  ScrollAreaParts,
+  ScrollbarVisibility,
+  ScrollDims,
+} from './scroll-area'
 export type { ToggleState, ToggleMsg, ToggleInit, ToggleParts } from './toggle'
 export type {
   CheckboxState,

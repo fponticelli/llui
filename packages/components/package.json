@@ -193,6 +193,22 @@
       "import": "./dist/components/tour.js",
       "types": "./dist/components/tour.d.ts"
     },
+    "./date-input": {
+      "import": "./dist/components/date-input.js",
+      "types": "./dist/components/date-input.d.ts"
+    },
+    "./async-list": {
+      "import": "./dist/components/async-list.js",
+      "types": "./dist/components/async-list.d.ts"
+    },
+    "./cascade-select": {
+      "import": "./dist/components/cascade-select.js",
+      "types": "./dist/components/cascade-select.d.ts"
+    },
+    "./scroll-area": {
+      "import": "./dist/components/scroll-area.js",
+      "types": "./dist/components/scroll-area.d.ts"
+    },
     "./carousel": {
       "import": "./dist/components/carousel.js",
       "types": "./dist/components/carousel.d.ts"
