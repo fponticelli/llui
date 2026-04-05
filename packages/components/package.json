@@ -181,6 +181,18 @@
       "import": "./dist/components/presence.js",
       "types": "./dist/components/presence.d.ts"
     },
+    "./signature-pad": {
+      "import": "./dist/components/signature-pad.js",
+      "types": "./dist/components/signature-pad.d.ts"
+    },
+    "./toc": {
+      "import": "./dist/components/toc.js",
+      "types": "./dist/components/toc.d.ts"
+    },
+    "./tour": {
+      "import": "./dist/components/tour.js",
+      "types": "./dist/components/tour.d.ts"
+    },
     "./carousel": {
       "import": "./dist/components/carousel.js",
       "types": "./dist/components/carousel.d.ts"

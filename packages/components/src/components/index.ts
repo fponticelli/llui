@@ -41,6 +41,9 @@ export * as timer from './timer'
 export * as angleSlider from './angle-slider'
 export * as marquee from './marquee'
 export * as presence from './presence'
+export * as signaturePad from './signature-pad'
+export * as toc from './toc'
+export * as tour from './tour'
 
 export type {
   TimerState,
@@ -69,6 +72,16 @@ export type {
   PresenceParts,
   PresenceStatus,
 } from './presence'
+export type {
+  SignaturePadState,
+  SignaturePadMsg,
+  SignaturePadInit,
+  SignaturePadParts,
+  Point as SignaturePadPoint,
+  Stroke as SignatureStroke,
+} from './signature-pad'
+export type { TocState, TocMsg, TocInit, TocParts, TocEntry } from './toc'
+export type { TourState, TourMsg, TourInit, TourParts, TourStep } from './tour'
 export type { ToggleState, ToggleMsg, ToggleInit, ToggleParts } from './toggle'
 export type {
   CheckboxState,
