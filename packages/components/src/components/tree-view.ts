@@ -13,14 +13,22 @@ import {
  * which items are selected, and which item has keyboard focus.
  */
 
+export type SelectionMode = 'single' | 'multiple' | 'checkbox'
+
 export interface TreeViewState {
   /** Ids of expanded branches. */
   expanded: string[]
   /** Ids of selected items. */
   selected: string[]
+  /** Ids of checked items (checkbox selection mode). */
+  checked: string[]
+  /** Ids known to be in the indeterminate tri-state (some-but-not-all
+   *  descendants checked). Consumer-computed via propagation logic or the
+   *  `toggleChecked` message's `descendantIds` parameter. */
+  indeterminate: string[]
   /** Currently focused item id. */
   focused: string | null
-  selectionMode: 'single' | 'multiple'
+  selectionMode: SelectionMode
   /** Ordered list of currently-visible item ids (updated by consumer via setVisible). */
   visibleItems: string[]
   /** Parallel array of visible-item labels for typeahead. If empty, typeahead
@@ -31,6 +39,10 @@ export interface TreeViewState {
   /** Typeahead accumulator buffer. */
   typeahead: string
   typeaheadExpiresAt: number
+  /** Id of item currently being renamed, or null. */
+  renaming: string | null
+  /** Draft value during rename. */
+  renameDraft: string
 }
 
 export type TreeViewMsg =
@@ -50,11 +62,20 @@ export type TreeViewMsg =
   | { type: 'typeahead'; char: string; now: number }
   | { type: 'arrowLeftFrom'; id: string; isBranch: boolean; parentId: string | null }
   | { type: 'arrowRightFrom'; id: string }
+  | { type: 'toggleChecked'; id: string; descendantIds?: string[] }
+  | { type: 'setChecked'; ids: string[] }
+  | { type: 'setIndeterminate'; ids: string[] }
+  | { type: 'renameStart'; id: string; initial: string }
+  | { type: 'renameChange'; value: string }
+  | { type: 'renameCommit' }
+  | { type: 'renameCancel' }
 
 export interface TreeViewInit {
   expanded?: string[]
   selected?: string[]
-  selectionMode?: 'single' | 'multiple'
+  checked?: string[]
+  indeterminate?: string[]
+  selectionMode?: SelectionMode
   disabled?: boolean
   visibleItems?: string[]
   visibleLabels?: string[]
@@ -64,6 +85,8 @@ export function init(opts: TreeViewInit = {}): TreeViewState {
   return {
     expanded: opts.expanded ?? [],
     selected: opts.selected ?? [],
+    checked: opts.checked ?? [],
+    indeterminate: opts.indeterminate ?? [],
     focused: null,
     selectionMode: opts.selectionMode ?? 'single',
     visibleItems: opts.visibleItems ?? [],
@@ -71,6 +94,8 @@ export function init(opts: TreeViewInit = {}): TreeViewState {
     disabled: opts.disabled ?? false,
     typeahead: '',
     typeaheadExpiresAt: 0,
+    renaming: null,
+    renameDraft: '',
   }
 }
 
@@ -170,6 +195,33 @@ export function update(state: TreeViewState, msg: TreeViewMsg): [TreeViewState, 
         [],
       ]
     }
+    case 'toggleChecked': {
+      // Toggle the item's checked state, propagating to descendants if any.
+      // The caller passes `descendantIds` for branches; for leaves, pass
+      // an empty list or omit. Indeterminate flag is cleared on the id
+      // (a deliberate toggle is a definite state). The caller is
+      // responsible for recomputing `indeterminate` on ancestors via
+      // setIndeterminate after this message.
+      const desc = msg.descendantIds ?? []
+      const all = [msg.id, ...desc]
+      const isChecked = state.checked.includes(msg.id)
+      const next = isChecked
+        ? state.checked.filter((id) => !all.includes(id))
+        : Array.from(new Set([...state.checked, ...all]))
+      const indeterminate = state.indeterminate.filter((id) => !all.includes(id))
+      return [{ ...state, checked: next, indeterminate }, []]
+    }
+    case 'setChecked':
+      return [{ ...state, checked: msg.ids }, []]
+    case 'setIndeterminate':
+      return [{ ...state, indeterminate: msg.ids }, []]
+    case 'renameStart':
+      return [{ ...state, renaming: msg.id, renameDraft: msg.initial }, []]
+    case 'renameChange':
+      return [{ ...state, renameDraft: msg.value }, []]
+    case 'renameCommit':
+    case 'renameCancel':
+      return [{ ...state, renaming: null, renameDraft: '' }, []]
   }
 }
 
@@ -179,6 +231,18 @@ export function isExpanded(state: TreeViewState, id: string): boolean {
 
 export function isSelected(state: TreeViewState, id: string): boolean {
   return state.selected.includes(id)
+}
+
+export function isChecked(state: TreeViewState, id: string): boolean {
+  return state.checked.includes(id)
+}
+
+export function isIndeterminate(state: TreeViewState, id: string): boolean {
+  return state.indeterminate.includes(id)
+}
+
+export function isRenaming(state: TreeViewState, id: string): boolean {
+  return state.renaming === id
 }
 
 export interface TreeItemParts<S> {
@@ -205,6 +269,21 @@ export interface TreeItemParts<S> {
     'data-part': 'branch-trigger'
     'data-state': (s: S) => 'open' | 'closed'
     onClick: (e: MouseEvent) => void
+  }
+  /**
+   * Checkbox element (only meaningful when `selectionMode === 'checkbox'`).
+   * `aria-checked` is the tri-state string ('true' | 'false' | 'mixed').
+   * The consumer must render a checkbox input or a visual proxy and
+   * dispatch `toggleChecked` via the `onClick` binding. For branches,
+   * pass the branch's descendant ids via `descendantIds` on the message
+   * so children are propagated in a single reducer step.
+   */
+  checkbox: {
+    role: 'checkbox'
+    'aria-checked': (s: S) => 'true' | 'false' | 'mixed'
+    'data-scope': 'tree-view'
+    'data-part': 'checkbox'
+    'data-state': (s: S) => 'checked' | 'unchecked' | 'indeterminate'
   }
 }
 
@@ -326,8 +405,30 @@ export function connect<S>(
           send({ type: 'toggleBranch', id })
         },
       },
+      checkbox: {
+        role: 'checkbox',
+        'aria-checked': (s) => {
+          if (isIndeterminate(get(s), id)) return 'mixed'
+          return isChecked(get(s), id) ? 'true' : 'false'
+        },
+        'data-scope': 'tree-view',
+        'data-part': 'checkbox',
+        'data-state': (s) => {
+          if (isIndeterminate(get(s), id)) return 'indeterminate'
+          return isChecked(get(s), id) ? 'checked' : 'unchecked'
+        },
+      },
     }),
   }
 }
 
-export const treeView = { init, update, connect, isExpanded, isSelected }
+export const treeView = {
+  init,
+  update,
+  connect,
+  isExpanded,
+  isSelected,
+  isChecked,
+  isIndeterminate,
+  isRenaming,
+}

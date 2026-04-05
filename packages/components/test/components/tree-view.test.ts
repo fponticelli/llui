@@ -193,6 +193,67 @@ describe('tree-view.connect', () => {
     expect(s.focused).toBeNull()
   })
 
+  it('checkbox aria-checked reflects checked/indeterminate', () => {
+    const pc = connect<Ctx>((s) => s.t, vi.fn(), { id: 'x' })
+    const cb = pc.item('a', 0, false).checkbox
+    expect(cb['aria-checked'](wrap(init({ checked: ['a'] })))).toBe('true')
+    expect(cb['aria-checked'](wrap(init({ indeterminate: ['a'] })))).toBe('mixed')
+    expect(cb['aria-checked'](wrap(init()))).toBe('false')
+  })
+
+  it('toggleChecked propagates to descendants', () => {
+    const [s] = update(init(), {
+      type: 'toggleChecked',
+      id: 'parent',
+      descendantIds: ['child1', 'child2'],
+    })
+    expect(s.checked.sort()).toEqual(['child1', 'child2', 'parent'])
+  })
+
+  it('toggleChecked unchecks parent + descendants', () => {
+    const s0 = init({ checked: ['parent', 'child1', 'child2', 'other'] })
+    const [s] = update(s0, {
+      type: 'toggleChecked',
+      id: 'parent',
+      descendantIds: ['child1', 'child2'],
+    })
+    expect(s.checked).toEqual(['other'])
+  })
+
+  it('toggleChecked clears indeterminate on touched ids', () => {
+    const s0 = init({ indeterminate: ['parent', 'other'] })
+    const [s] = update(s0, {
+      type: 'toggleChecked',
+      id: 'parent',
+      descendantIds: ['child'],
+    })
+    expect(s.indeterminate).toEqual(['other'])
+    expect(s.checked.sort()).toEqual(['child', 'parent'])
+  })
+
+  it('setIndeterminate replaces the list', () => {
+    const [s] = update(init(), { type: 'setIndeterminate', ids: ['a', 'b'] })
+    expect(s.indeterminate).toEqual(['a', 'b'])
+  })
+
+  it('renameStart + renameChange + renameCommit cycle', () => {
+    const [s1] = update(init(), { type: 'renameStart', id: 'x', initial: 'foo' })
+    expect(s1.renaming).toBe('x')
+    expect(s1.renameDraft).toBe('foo')
+    const [s2] = update(s1, { type: 'renameChange', value: 'bar' })
+    expect(s2.renameDraft).toBe('bar')
+    const [s3] = update(s2, { type: 'renameCommit' })
+    expect(s3.renaming).toBeNull()
+    expect(s3.renameDraft).toBe('')
+  })
+
+  it('renameCancel clears rename state', () => {
+    const s0 = init({})
+    const [s1] = update(s0, { type: 'renameStart', id: 'x', initial: 'foo' })
+    const [s2] = update(s1, { type: 'renameCancel' })
+    expect(s2.renaming).toBeNull()
+  })
+
   it('branchTrigger click sends toggleBranch', () => {
     const send = vi.fn()
     const pc = connect<Ctx>((s) => s.t, send, { id: 'x' })

@@ -188,6 +188,19 @@ export interface TabsParts<S> {
     'data-part': 'root'
     'data-orientation': (s: S) => Orientation
   }
+  /**
+   * A movable underline/highlight element. Position tracks the active
+   * trigger via CSS custom properties written by `watchTabIndicator()`:
+   *   `--indicator-left`, `--indicator-top`, `--indicator-width`,
+   *   `--indicator-height` — all in pixels.
+   * The consumer styles the indicator using these properties (e.g.
+   * `transform: translateX(var(--indicator-left))`).
+   */
+  indicator: {
+    'data-scope': 'tabs'
+    'data-part': 'indicator'
+    'data-orientation': (s: S) => Orientation
+  }
   list: {
     role: 'tablist'
     'aria-orientation': (s: S) => Orientation
@@ -227,6 +240,11 @@ export function connect<S>(
       'aria-orientation': (s) => get(s).orientation,
       'data-scope': 'tabs',
       'data-part': 'list',
+    },
+    indicator: {
+      'data-scope': 'tabs',
+      'data-part': 'indicator',
+      'data-orientation': (s) => get(s).orientation,
     },
     item: (value: string): TabsItemParts<S> => ({
       trigger: {
@@ -301,4 +319,53 @@ export function connect<S>(
   }
 }
 
-export const tabs = { init, update, connect }
+/**
+ * Track the active tab trigger and update CSS custom properties on the
+ * indicator element so it can be animated into position. Call from
+ * `onMount` with the tabs root element; the returned function removes
+ * the observers.
+ *
+ * Sets `--indicator-left`, `--indicator-top`, `--indicator-width`,
+ * `--indicator-height` on the indicator element every time the active
+ * trigger changes or the list resizes. Style the indicator with:
+ *   transform: translate(var(--indicator-left), var(--indicator-top));
+ *   width: var(--indicator-width);
+ *   height: var(--indicator-height);
+ */
+export function watchTabIndicator(root: HTMLElement): () => void {
+  const indicator = root.querySelector<HTMLElement>(
+    '[data-scope="tabs"][data-part="indicator"]',
+  )
+  const list = root.querySelector<HTMLElement>('[data-scope="tabs"][data-part="list"]')
+  if (!indicator || !list) return () => {}
+
+  const sync = (): void => {
+    const active = list.querySelector<HTMLElement>(
+      '[data-scope="tabs"][data-part="trigger"][data-state="active"]',
+    )
+    if (!active) return
+    indicator.style.setProperty('--indicator-left', `${active.offsetLeft}px`)
+    indicator.style.setProperty('--indicator-top', `${active.offsetTop}px`)
+    indicator.style.setProperty('--indicator-width', `${active.offsetWidth}px`)
+    indicator.style.setProperty('--indicator-height', `${active.offsetHeight}px`)
+  }
+
+  sync()
+
+  const mo = new MutationObserver(sync)
+  mo.observe(list, { attributes: true, attributeFilter: ['data-state'], subtree: true })
+
+  // ResizeObserver may be absent in older environments or jsdom — skip
+  // gracefully; layout changes that don't involve a data-state flip just
+  // won't reposition the indicator until the next attribute change.
+  const ro =
+    typeof ResizeObserver !== 'undefined' ? new ResizeObserver(sync) : null
+  ro?.observe(list)
+
+  return () => {
+    mo.disconnect()
+    ro?.disconnect()
+  }
+}
+
+export const tabs = { init, update, connect, watchTabIndicator }

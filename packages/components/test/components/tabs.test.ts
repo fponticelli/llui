@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest'
-import { init, update, connect } from '../../src/components/tabs'
+import { init, update, connect, watchTabIndicator } from '../../src/components/tabs'
 
 type Ctx = { tabs: ReturnType<typeof init> }
 const wrap = (t: ReturnType<typeof init>): Ctx => ({ tabs: t })
@@ -171,6 +171,46 @@ describe('tabs.connect', () => {
     const s0 = init({ items: ['a', 'b', 'c'] })
     const [s1] = update(s0, { type: 'focusNext', from: 'c' })
     expect(s1.focused).toBe('a')
+  })
+
+  it('indicator part exposes data attrs', () => {
+    const p = connect<Ctx>((s) => s.tabs, vi.fn(), { id: 'x' })
+    expect(p.indicator['data-scope']).toBe('tabs')
+    expect(p.indicator['data-part']).toBe('indicator')
+    expect(p.indicator['data-orientation'](wrap(init({ items: ['a'] })))).toBe('horizontal')
+  })
+
+  it('watchTabIndicator writes CSS custom properties from active trigger', () => {
+    const root = document.createElement('div')
+    root.setAttribute('data-scope', 'tabs')
+    root.setAttribute('data-part', 'root')
+    root.innerHTML = `
+      <div data-scope="tabs" data-part="list">
+        <button data-scope="tabs" data-part="trigger" data-state="inactive">A</button>
+        <button data-scope="tabs" data-part="trigger" data-state="active">B</button>
+      </div>
+      <div data-scope="tabs" data-part="indicator"></div>
+    `
+    // jsdom doesn't do layout so offsetLeft/Width stay at 0 — stub them.
+    const triggers = root.querySelectorAll('button')
+    Object.defineProperty(triggers[0], 'offsetLeft', { value: 0 })
+    Object.defineProperty(triggers[0], 'offsetTop', { value: 0 })
+    Object.defineProperty(triggers[0], 'offsetWidth', { value: 50 })
+    Object.defineProperty(triggers[0], 'offsetHeight', { value: 40 })
+    Object.defineProperty(triggers[1], 'offsetLeft', { value: 50 })
+    Object.defineProperty(triggers[1], 'offsetTop', { value: 0 })
+    Object.defineProperty(triggers[1], 'offsetWidth', { value: 60 })
+    Object.defineProperty(triggers[1], 'offsetHeight', { value: 40 })
+    document.body.appendChild(root)
+
+    const dispose = watchTabIndicator(root)
+    const indicator = root.querySelector<HTMLElement>('[data-part="indicator"]')!
+    expect(indicator.style.getPropertyValue('--indicator-left')).toBe('50px')
+    expect(indicator.style.getPropertyValue('--indicator-width')).toBe('60px')
+    expect(indicator.style.getPropertyValue('--indicator-height')).toBe('40px')
+
+    dispose()
+    document.body.removeChild(root)
   })
 
   it('onNavigate fires on click', () => {
