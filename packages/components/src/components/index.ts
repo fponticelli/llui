@@ -32,7 +32,7 @@ export * as fileUpload from './file-upload'
 export * as treeView from './tree-view'
 export * as contextMenu from './context-menu'
 export * as passwordInput from './password-input'
-export * as stepper from './stepper'
+export * as steps from './steps'
 export * as timePicker from './time-picker'
 export * as carousel from './carousel'
 export * as datePicker from './date-picker'
@@ -334,13 +334,13 @@ export type {
   PasswordInputParts,
 } from './password-input'
 export type {
-  StepperState,
-  StepperMsg,
-  StepperInit,
-  StepperParts,
-  StepperItemParts,
+  StepsState,
+  StepsMsg,
+  StepsInit,
+  StepsParts,
+  StepsItemParts,
   StepStatus,
-} from './stepper'
+} from './steps'
 export type {
   TimePickerState,
   TimePickerMsg,

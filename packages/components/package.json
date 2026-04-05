@@ -149,9 +149,9 @@
       "import": "./dist/components/password-input.js",
       "types": "./dist/components/password-input.d.ts"
     },
-    "./stepper": {
-      "import": "./dist/components/stepper.js",
-      "types": "./dist/components/stepper.d.ts"
+    "./steps": {
+      "import": "./dist/components/steps.js",
+      "types": "./dist/components/steps.d.ts"
     },
     "./time-picker": {
       "import": "./dist/components/time-picker.js",

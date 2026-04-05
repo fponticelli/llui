@@ -1,14 +1,14 @@
 import type { Send } from '@llui/dom'
 
 /**
- * Stepper — progress indicator for multi-step flows (wizards, checkouts).
+ * Steps — progress indicator for multi-step flows (wizards, checkouts).
  * Tracks current step and completed steps; supports linear and non-linear
  * navigation.
  */
 
 export type StepStatus = 'pending' | 'current' | 'completed' | 'error'
 
-export interface StepperState {
+export interface StepsState {
   current: number
   completed: number[]
   errors: number[]
@@ -18,7 +18,7 @@ export interface StepperState {
   disabled: boolean
 }
 
-export type StepperMsg =
+export type StepsMsg =
   | { type: 'goTo'; step: number }
   | { type: 'next' }
   | { type: 'prev' }
@@ -27,7 +27,7 @@ export type StepperMsg =
   | { type: 'clearError'; step: number }
   | { type: 'reset' }
 
-export interface StepperInit {
+export interface StepsInit {
   current?: number
   completed?: number[]
   steps?: string[]
@@ -35,7 +35,7 @@ export interface StepperInit {
   disabled?: boolean
 }
 
-export function init(opts: StepperInit = {}): StepperState {
+export function init(opts: StepsInit = {}): StepsState {
   return {
     current: opts.current ?? 0,
     completed: opts.completed ?? [],
@@ -46,7 +46,7 @@ export function init(opts: StepperInit = {}): StepperState {
   }
 }
 
-function canGoTo(state: StepperState, step: number): boolean {
+function canGoTo(state: StepsState, step: number): boolean {
   if (step < 0 || step >= state.steps.length) return false
   if (!state.linear) return true
   // Linear: only previous, current, or next-if-current-completed
@@ -55,7 +55,7 @@ function canGoTo(state: StepperState, step: number): boolean {
   return false
 }
 
-export function update(state: StepperState, msg: StepperMsg): [StepperState, never[]] {
+export function update(state: StepsState, msg: StepsMsg): [StepsState, never[]] {
   if (state.disabled) return [state, []]
   switch (msg.type) {
     case 'goTo':
@@ -95,16 +95,16 @@ export function update(state: StepperState, msg: StepperMsg): [StepperState, nev
   }
 }
 
-export function stepStatus(state: StepperState, step: number): StepStatus {
+export function stepStatus(state: StepsState, step: number): StepStatus {
   if (state.errors.includes(step)) return 'error'
   if (step === state.current) return 'current'
   if (state.completed.includes(step)) return 'completed'
   return 'pending'
 }
 
-export interface StepperItemParts<S> {
+export interface StepsItemParts<S> {
   item: {
-    'data-scope': 'stepper'
+    'data-scope': 'steps'
     'data-part': 'item'
     'data-status': (s: S) => StepStatus
     'data-index': string
@@ -114,42 +114,42 @@ export interface StepperItemParts<S> {
     type: 'button'
     'aria-label': string
     disabled: (s: S) => boolean
-    'data-scope': 'stepper'
+    'data-scope': 'steps'
     'data-part': 'trigger'
     'data-status': (s: S) => StepStatus
     onClick: (e: MouseEvent) => void
   }
   separator: {
-    'data-scope': 'stepper'
+    'data-scope': 'steps'
     'data-part': 'separator'
     'data-status': (s: S) => StepStatus
     'aria-hidden': 'true'
   }
 }
 
-export interface StepperParts<S> {
+export interface StepsParts<S> {
   root: {
     role: 'group'
     'aria-label': string
-    'data-scope': 'stepper'
+    'data-scope': 'steps'
     'data-part': 'root'
     'data-disabled': (s: S) => '' | undefined
   }
   nextTrigger: {
     type: 'button'
     disabled: (s: S) => boolean
-    'data-scope': 'stepper'
+    'data-scope': 'steps'
     'data-part': 'next-trigger'
     onClick: (e: MouseEvent) => void
   }
   prevTrigger: {
     type: 'button'
     disabled: (s: S) => boolean
-    'data-scope': 'stepper'
+    'data-scope': 'steps'
     'data-part': 'prev-trigger'
     onClick: (e: MouseEvent) => void
   }
-  item: (index: number) => StepperItemParts<S>
+  item: (index: number) => StepsItemParts<S>
 }
 
 export interface ConnectOptions {
@@ -157,16 +157,16 @@ export interface ConnectOptions {
 }
 
 export function connect<S>(
-  get: (s: S) => StepperState,
-  send: Send<StepperMsg>,
+  get: (s: S) => StepsState,
+  send: Send<StepsMsg>,
   opts: ConnectOptions = {},
-): StepperParts<S> {
+): StepsParts<S> {
   const label = opts.label ?? 'Progress'
   return {
     root: {
       role: 'group',
       'aria-label': label,
-      'data-scope': 'stepper',
+      'data-scope': 'steps',
       'data-part': 'root',
       'data-disabled': (s) => (get(s).disabled ? '' : undefined),
     },
@@ -176,7 +176,7 @@ export function connect<S>(
         const st = get(s)
         return st.disabled || st.current >= st.steps.length - 1
       },
-      'data-scope': 'stepper',
+      'data-scope': 'steps',
       'data-part': 'next-trigger',
       onClick: () => send({ type: 'next' }),
     },
@@ -186,13 +186,13 @@ export function connect<S>(
         const st = get(s)
         return st.disabled || st.current === 0
       },
-      'data-scope': 'stepper',
+      'data-scope': 'steps',
       'data-part': 'prev-trigger',
       onClick: () => send({ type: 'prev' }),
     },
-    item: (index: number): StepperItemParts<S> => ({
+    item: (index: number): StepsItemParts<S> => ({
       item: {
-        'data-scope': 'stepper',
+        'data-scope': 'steps',
         'data-part': 'item',
         'data-status': (s) => stepStatus(get(s), index),
         'data-index': String(index),
@@ -202,13 +202,13 @@ export function connect<S>(
         type: 'button',
         'aria-label': `Step ${index + 1}`,
         disabled: (s) => !canGoTo(get(s), index),
-        'data-scope': 'stepper',
+        'data-scope': 'steps',
         'data-part': 'trigger',
         'data-status': (s) => stepStatus(get(s), index),
         onClick: () => send({ type: 'goTo', step: index }),
       },
       separator: {
-        'data-scope': 'stepper',
+        'data-scope': 'steps',
         'data-part': 'separator',
         'data-status': (s) => stepStatus(get(s), index),
         'aria-hidden': 'true',
@@ -217,4 +217,4 @@ export function connect<S>(
   }
 }
 
-export const stepper = { init, update, connect, stepStatus }
+export const steps = { init, update, connect, stepStatus }

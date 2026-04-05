@@ -18,7 +18,7 @@ import {
   type CollapsibleMsg,
 } from '@llui/components/collapsible'
 import { pagination, type PaginationState, type PaginationMsg } from '@llui/components/pagination'
-import { stepper, type StepperState, type StepperMsg } from '@llui/components/stepper'
+import { steps, type StepsState, type StepsMsg } from '@llui/components/steps'
 import { carousel, type CarouselState, type CarouselMsg } from '@llui/components/carousel'
 import { avatar, type AvatarState, type AvatarMsg } from '@llui/components/avatar'
 import { treeView, type TreeViewState, type TreeViewMsg } from '@llui/components/tree-view'
@@ -30,7 +30,7 @@ type State = {
   accordion: AccordionState
   collapsible: CollapsibleState
   pagination: PaginationState
-  stepper: StepperState
+  steps: StepsState
   carousel: CarouselState
   avatar: AvatarState
   treeView: TreeViewState
@@ -41,7 +41,7 @@ type Msg =
   | { type: 'accordion'; msg: AccordionMsg }
   | { type: 'collapsible'; msg: CollapsibleMsg }
   | { type: 'pagination'; msg: PaginationMsg }
-  | { type: 'stepper'; msg: StepperMsg }
+  | { type: 'steps'; msg: StepsMsg }
   | { type: 'carousel'; msg: CarouselMsg }
   | { type: 'avatar'; msg: AvatarMsg }
   | { type: 'treeView'; msg: TreeViewMsg }
@@ -57,7 +57,7 @@ const init = (): [State, never[]] => [
     }),
     collapsible: collapsible.init({ open: false }),
     pagination: pagination.init({ total: 100, pageSize: 10, page: 3 }),
-    stepper: stepper.init({ steps: ['Account', 'Profile', 'Review'], current: 0, linear: true }),
+    steps: steps.init({ steps: ['Account', 'Profile', 'Review'], current: 0, linear: true }),
     carousel: carousel.init({ count: 4, current: 0, loop: true }),
     avatar: avatar.init(),
     treeView: treeView.init({
@@ -100,10 +100,10 @@ const update = mergeHandlers<State, Msg, never>(
     sub: pagination.update,
   }),
   sliceHandler({
-    get: (s) => s.stepper,
-    set: (s, v) => ({ ...s, stepper: v }),
-    narrow: (m) => (m.type === 'stepper' ? m.msg : null),
-    sub: stepper.update,
+    get: (s) => s.steps,
+    set: (s, v) => ({ ...s, steps: v }),
+    narrow: (m) => (m.type === 'steps' ? m.msg : null),
+    sub: steps.update,
   }),
   sliceHandler({
     get: (s) => s.carousel,
@@ -155,9 +155,9 @@ const App = component<State, Msg, never>({
       (s) => s.pagination,
       (m) => send({ type: 'pagination', msg: m }),
     )
-    const st = stepper.connect<State>(
-      (s) => s.stepper,
-      (m) => send({ type: 'stepper', msg: m }),
+    const st = steps.connect<State>(
+      (s) => s.steps,
+      (m) => send({ type: 'steps', msg: m }),
       { label: 'Progress' },
     )
     const cr = carousel.connect<State>(

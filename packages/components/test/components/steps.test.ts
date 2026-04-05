@@ -1,11 +1,11 @@
 import { describe, it, expect, vi } from 'vitest'
-import { init, update, connect, stepStatus } from '../../src/components/stepper'
-import type { StepperState } from '../../src/components/stepper'
+import { init, update, connect, stepStatus } from '../../src/components/steps'
+import type { StepsState } from '../../src/components/steps'
 
-type Ctx = { s: StepperState }
-const wrap = (s: StepperState): Ctx => ({ s })
+type Ctx = { s: StepsState }
+const wrap = (s: StepsState): Ctx => ({ s })
 
-describe('stepper reducer', () => {
+describe('steps reducer', () => {
   it('initializes at step 0', () => {
     expect(init({ steps: ['a', 'b', 'c'] })).toMatchObject({
       current: 0,
@@ -77,7 +77,7 @@ describe('stepStatus', () => {
   })
 })
 
-describe('stepper.connect', () => {
+describe('steps.connect', () => {
   const p = connect<Ctx>((s) => s.s, vi.fn())
 
   it('next disabled at last step', () => {
