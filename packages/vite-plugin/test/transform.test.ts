@@ -103,6 +103,20 @@ describe('Pass 2 — mask injection + __dirty', () => {
     expect(out).toMatch(/text\(s\s*=>\s*String\(s\.count\)\s*,\s*1\)/)
   })
 
+  it('injects mask into h.text() calls via view-helpers binding', () => {
+    const src = `
+      import { component } from '@llui/dom'
+      export const C = component({
+        name: 'C',
+        init: () => [{ count: 0 }, []],
+        update: (s, m) => [s, []],
+        view: (send, h) => [h.text(s => String(s.count))],
+      })
+    `
+    const out = t(src)
+    expect(out).toMatch(/h\.text\(s\s*=>\s*String\(s\.count\)\s*,\s*1\)/)
+  })
+
   it('synthesizes __dirty function', () => {
     const src = `
       import { component, text } from '@llui/dom'

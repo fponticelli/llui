@@ -119,7 +119,7 @@ const App = component<State, Msg, never>({
               ]),
               ul(
                 { class: 'todo-list' },
-                h.each<Todo>({
+                h.each({
                   items: filteredTodos,
                   key: (t) => t.id,
                   render: ({ item }) => [

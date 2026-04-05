@@ -3,6 +3,8 @@ import { show as _show } from './primitives/show'
 import { branch as _branch } from './primitives/branch'
 import { each as _each } from './primitives/each'
 import { text as _text } from './primitives/text'
+import { memo as _memo } from './primitives/memo'
+import { selector as _selector, type SelectorInstance } from './primitives/selector'
 import { useContext, type Context } from './primitives/context'
 
 /**
@@ -31,7 +33,9 @@ export interface View<S, M> {
   show(opts: ShowOptions<S, M>): Node[]
   branch(opts: BranchOptions<S, M>): Node[]
   each<T>(opts: EachOptions<S, T, M>): Node[]
-  text(accessor: ((s: S) => string) | string): Text
+  text(accessor: ((s: S) => string) | string, mask?: number): Text
+  memo<T>(accessor: (s: S) => T): (s: S) => T
+  selector<V>(field: (s: S) => V): SelectorInstance<V>
   ctx<T>(c: Context<T>): (s: S) => T
   slice<Sub>(selector: (s: S) => Sub): View<Sub, M>
 }
@@ -47,8 +51,10 @@ export function createView<S, M>(send: Send<M>): View<S, M> {
     show: (opts) => _show<S, M>(opts),
     branch: (opts) => _branch<S, M>(opts),
     each: <T>(opts: EachOptions<S, T, M>) => _each<S, T, M>(opts),
-    text: (accessor) =>
-      typeof accessor === 'string' ? _text(accessor) : _text<S>(accessor),
+    text: (accessor, mask) =>
+      typeof accessor === 'string' ? _text(accessor) : _text<S>(accessor, mask),
+    memo: <T>(accessor: (s: S) => T) => _memo<S, T>(accessor),
+    selector: <V>(field: (s: S) => V) => _selector<S, V>(field),
     ctx: <T>(c: Context<T>) => useContext<S, T>(c),
     slice: <Sub>(selector: (s: S) => Sub) => createSlicedView<S, Sub, M>(send, selector),
   }
@@ -80,10 +86,15 @@ function createSlicedView<Root, Sub, M>(
         ...opts,
         items: (r) => opts.items(lift(r)),
       }),
-    text: (accessor) => {
+    text: (accessor, mask) => {
       if (typeof accessor === 'string') return _text(accessor)
-      return _text<Root>((r) => accessor(lift(r)))
+      return _text<Root>((r) => accessor(lift(r)), mask)
     },
+    memo: <T>(accessor: (s: Sub) => T) => {
+      const m = _memo<Root, T>((r) => accessor(lift(r)))
+      return (s: Sub) => m(s as unknown as Root)
+    },
+    selector: <V>(field: (s: Sub) => V) => _selector<Root, V>((r) => field(lift(r))),
     ctx: <T>(c: Context<T>) => {
       const root = useContext<Root, T>(c)
       return (s: Sub) => root(s as unknown as Root)

@@ -1,7 +1,7 @@
 /**
  * Shared app definition — used by both client and server entry points.
  */
-import { component, branch } from '@llui/dom'
+import { component } from '@llui/dom'
 import { handleEffects } from '@llui/effects'
 import type { State, Msg, Effect } from './types'
 import { update } from './update'
@@ -18,7 +18,7 @@ export const appDef = component<State, Msg, Effect>({
     return [s, effects]
   },
   update,
-  view: (send) => [
+  view: (send, h) => [
     header(send),
 
     ...routing.listener(send),
@@ -26,12 +26,12 @@ export const appDef = component<State, Msg, Effect>({
     // TODO(view-signature-migration): repoPage reads state.route at mount
     // time for routing.link's literal owner/name params. Needs refactoring
     // to use accessors. For now, snapshot from init state at module scope.
-    ...branch<State, Msg>({
+    ...h.branch({
       on: (s) => s.route.page,
       cases: {
         search: (send) => searchView(send),
-        repo: (send) => repoPage(initialState(), send),
-        tree: (send) => repoPage(initialState(), send),
+        repo: (send) => repoPage(h, initialState(), send),
+        tree: (send) => repoPage(h, initialState(), send),
       },
     }),
   ],

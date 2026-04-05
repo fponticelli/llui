@@ -85,7 +85,12 @@ function isReactiveAccessor(node: ts.ArrowFunction | ts.FunctionExpression): boo
       return false
     }
     // Skip array method callbacks: .filter(t => ...), .map(t => ...), .some(t => ...), etc.
+    // Allow view-helper primitive calls: h.text(s => ...), h.memo(s => ...)
     if (ts.isPropertyAccessExpression(parent.expression)) {
+      const methodName = parent.expression.name.text
+      if (methodName === 'text' || methodName === 'memo') {
+        return true
+      }
       return false
     }
     return true

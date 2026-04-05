@@ -148,6 +148,11 @@ export function transformLlui(
   const fileHasComponent = hasComponentDef(sourceFile, lluiImport)
   const fieldBits = fileHasComponent ? collectDeps(source) : new Map<string, number>()
 
+  // Identifier names bound to the View<S,M> helpers parameter of a `view` callback.
+  // When the user writes `h.text(...)` / `h.show(...)` / `h.each(...)`, the
+  // compiler treats the call as if it were a bare import call.
+  const viewHelperNames = collectViewHelperNames(sourceFile, lluiImport)
+
   // Track which helpers were compiled vs bailed out
   const compiledHelpers = new Set<string>()
   const bailedHelpers = new Set<string>()
@@ -168,11 +173,7 @@ export function transformLlui(
     const origEnd = hasPos ? node.getEnd() : -1
 
     // Pass 0: each() optimizations — dedup item() selectors + auto-wrap items in memo
-    if (
-      ts.isCallExpression(node) &&
-      ts.isIdentifier(node.expression) &&
-      node.expression.text === 'each'
-    ) {
+    if (ts.isCallExpression(node) && isHelperCall(node.expression, 'each', viewHelperNames)) {
       let current: ts.CallExpression = node
       let changed = false
       const memoWrapped = tryWrapEachItemsWithMemo(current, fieldBits, f)
@@ -213,7 +214,7 @@ export function transformLlui(
       }
 
       // Pass 2: Inject mask into text() calls
-      const textTransformed = tryInjectTextMask(node, lluiImport, fieldBits, f)
+      const textTransformed = tryInjectTextMask(node, lluiImport, viewHelperNames, fieldBits, f)
       if (textTransformed) {
         if (hasPos) edits.push({ start: origStart, end: origEnd, replacement: '' })
         return textTransformed
@@ -460,6 +461,45 @@ function hasComponentDef(sf: ts.SourceFile, lluiImport: ts.ImportDeclaration): b
   }
   visit(sf)
   return found
+}
+
+/**
+ * Scan for `component({ view: (send, h) => ... })` arrow functions and collect
+ * the identifier name used as the second (view-helpers) parameter. When the
+ * user writes `h.show(...)` / `h.text(...)` inside the view, the compiler
+ * treats it the same as bare `show(...)` / `text(...)` for mask injection.
+ */
+function collectViewHelperNames(
+  sf: ts.SourceFile,
+  lluiImport: ts.ImportDeclaration,
+): Set<string> {
+  const names = new Set<string>()
+  function visit(node: ts.Node): void {
+    if (ts.isCallExpression(node) && isComponentCall(node, lluiImport)) {
+      const arg = node.arguments[0]
+      if (arg && ts.isObjectLiteralExpression(arg)) {
+        for (const prop of arg.properties) {
+          if (
+            ts.isPropertyAssignment(prop) &&
+            ts.isIdentifier(prop.name) &&
+            prop.name.text === 'view' &&
+            (ts.isArrowFunction(prop.initializer) || ts.isFunctionExpression(prop.initializer))
+          ) {
+            const params = prop.initializer.parameters
+            if (params.length >= 2) {
+              const second = params[1]!
+              if (ts.isIdentifier(second.name)) {
+                names.add(second.name.text)
+              }
+            }
+          }
+        }
+      }
+    }
+    ts.forEachChild(node, visit)
+  }
+  visit(sf)
+  return names
 }
 
 function isComponentCall(node: ts.CallExpression, lluiImport: ts.ImportDeclaration): boolean {
@@ -729,20 +769,52 @@ function tryTransformElementCall(
 
 // ── Pass 2: Mask injection ───────────────────────────────────────
 
+/**
+ * Match `name(...)` or `<h>.name(...)` where `<h>` is a known view-helpers
+ * binding. Used so the compiler treats `h.text(...)` identically to `text(...)`.
+ */
+function isHelperCall(
+  expr: ts.Expression,
+  name: string,
+  helperNames: Set<string>,
+): boolean {
+  if (ts.isIdentifier(expr)) return expr.text === name
+  if (
+    ts.isPropertyAccessExpression(expr) &&
+    ts.isIdentifier(expr.expression) &&
+    helperNames.has(expr.expression.text) &&
+    ts.isIdentifier(expr.name) &&
+    expr.name.text === name
+  ) {
+    return true
+  }
+  return false
+}
+
 function tryInjectTextMask(
   node: ts.CallExpression,
   lluiImport: ts.ImportDeclaration,
+  viewHelperNames: Set<string>,
   fieldBits: Map<string, number>,
   f: ts.NodeFactory,
 ): ts.CallExpression | null {
-  if (!ts.isIdentifier(node.expression) || node.expression.text !== 'text') return null
-  // Verify text is from @llui/dom
-  const clause = lluiImport.importClause
-  if (!clause?.namedBindings || !ts.isNamedImports(clause.namedBindings)) return null
-  const hasText = clause.namedBindings.elements.some(
-    (s) => s.name.text === 'text' || s.propertyName?.text === 'text',
-  )
-  if (!hasText) return null
+  const isMember =
+    ts.isPropertyAccessExpression(node.expression) &&
+    ts.isIdentifier(node.expression.expression) &&
+    viewHelperNames.has(node.expression.expression.text) &&
+    ts.isIdentifier(node.expression.name) &&
+    node.expression.name.text === 'text'
+
+  if (!isMember) {
+    if (!ts.isIdentifier(node.expression) || node.expression.text !== 'text') return null
+    // Verify text is from @llui/dom
+    const clause = lluiImport.importClause
+    if (!clause?.namedBindings || !ts.isNamedImports(clause.namedBindings)) return null
+    const hasText = clause.namedBindings.elements.some(
+      (s) => s.name.text === 'text' || s.propertyName?.text === 'text',
+    )
+    if (!hasText) return null
+  }
 
   const firstArg = node.arguments[0]
   if (!firstArg) return null
