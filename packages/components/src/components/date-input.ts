@@ -53,10 +53,7 @@ export interface DateInputInit {
  *   - DD/MM/YYYY (EU)
  * Returns null for anything else.
  */
-export function parseDate(
-  input: string,
-  format: 'iso' | 'us' | 'eu' = 'iso',
-): Date | null {
+export function parseDate(input: string, format: 'iso' | 'us' | 'eu' = 'iso'): Date | null {
   const trimmed = input.trim()
   if (!trimmed) return null
   const parts = trimmed.split(/[-/]/).map((p) => p.trim())
@@ -64,7 +61,7 @@ export function parseDate(
   const nums = parts.map((p) => parseInt(p, 10))
   if (nums.some((n) => isNaN(n))) return null
   let year: number, month: number, day: number
-  if (format === 'iso' || (parts[0]!.length === 4)) {
+  if (format === 'iso' || parts[0]!.length === 4) {
     ;[year, month, day] = nums as [number, number, number]
   } else if (format === 'us') {
     ;[month, day, year] = nums as [number, number, number]
@@ -122,7 +119,9 @@ export function update(
     case 'setInput': {
       const parsed = parseDate(msg.value, format)
       const error: DateError = msg.value.trim()
-        ? (parsed === null ? 'invalid' : validate(parsed, state.min, state.max))
+        ? parsed === null
+          ? 'invalid'
+          : validate(parsed, state.min, state.max)
         : null
       return [{ ...state, input: msg.value, value: parsed, error }, []]
     }

@@ -20,11 +20,7 @@ import {
   type CascadeSelectState,
   type CascadeSelectMsg,
 } from '@llui/components/cascade-select'
-import {
-  asyncList,
-  type AsyncListState,
-  type AsyncListMsg,
-} from '@llui/components/async-list'
+import { asyncList, type AsyncListState, type AsyncListMsg } from '@llui/components/async-list'
 import { presence, type PresenceState, type PresenceMsg } from '@llui/components/presence'
 import { qrCode, type QrCodeState, type QrCodeMsg } from '@llui/components/qr-code'
 import { encode as uqrEncode } from 'uqr'
@@ -348,19 +344,20 @@ export const App = component<State, Msg, never>({
                 },
                 [text('Rome')],
               ),
-              span({
-                class: 'text-xs text-slate-400 italic',
-                style: (s: State) =>
-                  s.cascade.values[0] === null ? '' : 'display:none;',
-              }, [text('(pick a country first)')]),
+              span(
+                {
+                  class: 'text-xs text-slate-400 italic',
+                  style: (s: State) => (s.cascade.values[0] === null ? '' : 'display:none;'),
+                },
+                [text('(pick a country first)')],
+              ),
             ]),
             // Current selection readout
             div({ class: 'text-sm font-mono text-slate-700 bg-slate-50 px-2 py-1 rounded' }, [
               text('Selection: '),
               text(
                 (s: State) =>
-                  s.cascade.values.filter((v): v is string => v !== null).join(' → ') ||
-                  '(none)',
+                  s.cascade.values.filter((v): v is string => v !== null).join(' → ') || '(none)',
               ),
             ]),
             div({ class: 'flex gap-2' }, [
@@ -419,9 +416,7 @@ export const App = component<State, Msg, never>({
         card('QR Code', [
           div({ class: 'flex flex-col gap-3' }, [
             p({ class: 'text-xs text-slate-500' }, [
-              text(
-                'Type in the box to re-encode. llui\'s qr-code component holds the matrix; ',
-              ),
+              text("Type in the box to re-encode. llui's qr-code component holds the matrix; "),
               text('this demo uses '),
               span({ class: 'font-mono' }, [text('uqr')]),
               text(' for the encoding.'),
@@ -442,9 +437,7 @@ export const App = component<State, Msg, never>({
                 alt: 'QR code',
                 class: 'w-32 h-32 border border-slate-200 rounded bg-white',
                 src: (s: State) =>
-                  s.qr.matrix.length > 0
-                    ? qrCode.toDataUrl(s.qr.matrix, '#0f172a', '#ffffff')
-                    : '',
+                  s.qr.matrix.length > 0 ? qrCode.toDataUrl(s.qr.matrix, '#0f172a', '#ffffff') : '',
               }),
               div({ class: 'flex flex-col gap-1 text-xs text-slate-600' }, [
                 div({}, [

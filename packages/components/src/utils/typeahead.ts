@@ -25,7 +25,12 @@ export const TYPEAHEAD_TIMEOUT_MS = 500
  * expiration time. Returns the new query string; callers combine this with
  * `typeaheadMatch()` to produce a new highlight index.
  */
-export function typeaheadAccumulate(prev: string, char: string, now: number, expiresAt: number): string {
+export function typeaheadAccumulate(
+  prev: string,
+  char: string,
+  now: number,
+  expiresAt: number,
+): string {
   return now < expiresAt ? prev + char : char
 }
 

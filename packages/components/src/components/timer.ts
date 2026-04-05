@@ -71,10 +71,7 @@ export function update(state: TimerState, msg: TimerMsg): [TimerState, never[]] 
       const elapsed = state.elapsedMs + (msg.now - state.startedAt)
       // Countdown: auto-stop at target.
       if (state.direction === 'down' && state.targetMs > 0 && elapsed >= state.targetMs) {
-        return [
-          { ...state, running: false, elapsedMs: state.targetMs, startedAt: null },
-          [],
-        ]
+        return [{ ...state, running: false, elapsedMs: state.targetMs, startedAt: null }, []]
       }
       return [{ ...state, elapsedMs: elapsed, startedAt: msg.now }, []]
     }

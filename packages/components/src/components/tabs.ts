@@ -273,8 +273,9 @@ export function connect<S>(
           // handler can dispatch the correct arrow keys per WAI-ARIA.
           // Horizontal tabs: ArrowLeft/Right navigate; vertical: Up/Down.
           const target = e.currentTarget as HTMLElement | null
-          const list =
-            target?.closest('[data-scope="tabs"][data-part="list"]') as HTMLElement | null
+          const list = target?.closest(
+            '[data-scope="tabs"][data-part="list"]',
+          ) as HTMLElement | null
           const orientation =
             (list?.getAttribute('aria-orientation') as Orientation | null) ?? 'horizontal'
           const nextKey = orientation === 'vertical' ? 'ArrowDown' : 'ArrowRight'
@@ -333,9 +334,7 @@ export function connect<S>(
  *   height: var(--indicator-height);
  */
 export function watchTabIndicator(root: HTMLElement): () => void {
-  const indicator = root.querySelector<HTMLElement>(
-    '[data-scope="tabs"][data-part="indicator"]',
-  )
+  const indicator = root.querySelector<HTMLElement>('[data-scope="tabs"][data-part="indicator"]')
   const list = root.querySelector<HTMLElement>('[data-scope="tabs"][data-part="list"]')
   if (!indicator || !list) return () => {}
 
@@ -358,8 +357,7 @@ export function watchTabIndicator(root: HTMLElement): () => void {
   // ResizeObserver may be absent in older environments or jsdom — skip
   // gracefully; layout changes that don't involve a data-state flip just
   // won't reposition the indicator until the next attribute change.
-  const ro =
-    typeof ResizeObserver !== 'undefined' ? new ResizeObserver(sync) : null
+  const ro = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(sync) : null
   ro?.observe(list)
 
   return () => {

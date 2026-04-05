@@ -106,7 +106,7 @@ export function connect<S>(
       'data-scope': 'presence',
       'data-part': 'root',
       'data-state': (s) => get(s).status,
-      hidden: (s) => get(s).status === 'closed' && !get(s).unmountOnExit ? true : false,
+      hidden: (s) => (get(s).status === 'closed' && !get(s).unmountOnExit ? true : false),
       onAnimationEnd: onEnd,
       onTransitionEnd: onEnd,
     },

@@ -73,11 +73,7 @@ export function update(
 ): [SignaturePadState, never[]] {
   if (state.disabled || state.readOnly) {
     // Allow reads (undo/clear are still useful for clearing a disabled pad).
-    if (
-      msg.type === 'strokeStart' ||
-      msg.type === 'strokePoint' ||
-      msg.type === 'strokeEnd'
-    ) {
+    if (msg.type === 'strokeStart' || msg.type === 'strokePoint' || msg.type === 'strokeEnd') {
       return [state, []]
     }
   }
@@ -94,8 +90,7 @@ export function update(
     case 'strokeEnd': {
       if (!state.drawing || state.current === null) return [state, []]
       // Drop 1-point strokes (accidental taps).
-      const strokes =
-        state.current.length > 1 ? [...state.strokes, state.current] : state.strokes
+      const strokes = state.current.length > 1 ? [...state.strokes, state.current] : state.strokes
       return [{ ...state, strokes, current: null, drawing: false }, []]
     }
     case 'strokeCancel':

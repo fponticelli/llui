@@ -1,12 +1,5 @@
 import { describe, it, expect, vi } from 'vitest'
-import {
-  init,
-  update,
-  connect,
-  isLoading,
-  isError,
-  isEmpty,
-} from '../../src/components/async-list'
+import { init, update, connect, isLoading, isError, isEmpty } from '../../src/components/async-list'
 import type { AsyncListState } from '../../src/components/async-list'
 
 type Item = { id: number; name: string }

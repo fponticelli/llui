@@ -100,9 +100,9 @@ describe('cascade-select.connect', () => {
   it('level select disabled until prior level is set', () => {
     const p = connect<Ctx>((s) => s.c, vi.fn(), { id: 'x' })
     expect(p.level(1).select.disabled(wrap(init({ levels })))).toBe(true)
-    expect(
-      p.level(1).select.disabled(wrap(init({ levels, values: ['US', null, null] }))),
-    ).toBe(false)
+    expect(p.level(1).select.disabled(wrap(init({ levels, values: ['US', null, null] })))).toBe(
+      false,
+    )
   })
 
   it('level select value reflects state', () => {
@@ -130,16 +130,12 @@ describe('cascade-select.connect', () => {
   it('clearTrigger disabled when nothing selected', () => {
     const p = connect<Ctx>((s) => s.c, vi.fn(), { id: 'x' })
     expect(p.clearTrigger.disabled(wrap(init({ levels })))).toBe(true)
-    expect(
-      p.clearTrigger.disabled(wrap(init({ levels, values: ['US', null, null] }))),
-    ).toBe(false)
+    expect(p.clearTrigger.disabled(wrap(init({ levels, values: ['US', null, null] })))).toBe(false)
   })
 
   it('root data-complete reflects isComplete', () => {
     const p = connect<Ctx>((s) => s.c, vi.fn(), { id: 'x' })
     expect(p.root['data-complete'](wrap(init({ levels })))).toBeUndefined()
-    expect(
-      p.root['data-complete'](wrap(init({ levels, values: ['US', 'CA', 'SF'] }))),
-    ).toBe('')
+    expect(p.root['data-complete'](wrap(init({ levels, values: ['US', 'CA', 'SF'] })))).toBe('')
   })
 })

@@ -62,10 +62,7 @@ export function init(opts: AngleSliderInit = {}): AngleSliderState {
   }
 }
 
-export function update(
-  state: AngleSliderState,
-  msg: AngleSliderMsg,
-): [AngleSliderState, never[]] {
+export function update(state: AngleSliderState, msg: AngleSliderMsg): [AngleSliderState, never[]] {
   if (state.disabled || state.readOnly) {
     if (msg.type === 'setValue' || msg.type === 'increment' || msg.type === 'decrement') {
       return [state, []]

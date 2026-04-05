@@ -16,11 +16,7 @@ import {
   type AngleSliderState,
   type AngleSliderMsg,
 } from '@llui/components/angle-slider'
-import {
-  dateInput,
-  type DateInputState,
-  type DateInputMsg,
-} from '@llui/components/date-input'
+import { dateInput, type DateInputState, type DateInputMsg } from '@llui/components/date-input'
 import { marquee, type MarqueeState, type MarqueeMsg } from '@llui/components/marquee'
 import { sectionGroup, card } from '../shared/ui'
 
@@ -158,44 +154,44 @@ export const App = component<State, Msg, never>({
                 'flex items-center gap-4 rounded focus:outline focus:outline-2 focus:outline-blue-300',
             },
             [
-            div(
-              {
-                ...ag.control,
-                class:
-                  'relative h-20 w-20 rounded-full border-2 border-slate-300 flex items-center justify-center cursor-pointer touch-none',
-                onPointerDown: onControlDown,
-              },
-              [
-                div(
-                  {
-                    ...ag.thumb,
-                    class: 'absolute h-3 w-3 bg-blue-600 rounded-full',
-                    // Absolute center + radial offset via translate. 32px
-                    // radius on a 76px inner circle keeps the thumb on the
-                    // rim. CSS `left:50%;top:50%` centers the thumb's own
-                    // origin, then translate offsets the corner back by
-                    // half + adds the radial vector.
-                    style: (s: State) => {
-                      const { x, y } = angleSlider.pointFromAngle(s.angle.value)
-                      const r = 32
-                      return (
-                        `left:50%;top:50%;` +
-                        `transform:translate(calc(-50% + ${(x * r).toFixed(2)}px),calc(-50% + ${(y * r).toFixed(2)}px));`
-                      )
+              div(
+                {
+                  ...ag.control,
+                  class:
+                    'relative h-20 w-20 rounded-full border-2 border-slate-300 flex items-center justify-center cursor-pointer touch-none',
+                  onPointerDown: onControlDown,
+                },
+                [
+                  div(
+                    {
+                      ...ag.thumb,
+                      class: 'absolute h-3 w-3 bg-blue-600 rounded-full',
+                      // Absolute center + radial offset via translate. 32px
+                      // radius on a 76px inner circle keeps the thumb on the
+                      // rim. CSS `left:50%;top:50%` centers the thumb's own
+                      // origin, then translate offsets the corner back by
+                      // half + adds the radial vector.
+                      style: (s: State) => {
+                        const { x, y } = angleSlider.pointFromAngle(s.angle.value)
+                        const r = 32
+                        return (
+                          `left:50%;top:50%;` +
+                          `transform:translate(calc(-50% + ${(x * r).toFixed(2)}px),calc(-50% + ${(y * r).toFixed(2)}px));`
+                        )
+                      },
                     },
-                  },
-                  [],
-                ),
-                div(
-                  { ...ag.valueText, class: 'text-xs font-mono text-slate-600' },
-                  [text((s: State) => `${Math.round(s.angle.value)}°`)],
-                ),
-              ],
-            ),
-            span({ class: 'text-xs text-slate-500' }, [
-              text('Focus, then Arrow/PageUp/Down/Home/End'),
-            ]),
-          ]),
+                    [],
+                  ),
+                  div({ ...ag.valueText, class: 'text-xs font-mono text-slate-600' }, [
+                    text((s: State) => `${Math.round(s.angle.value)}°`),
+                  ]),
+                ],
+              ),
+              span({ class: 'text-xs text-slate-500' }, [
+                text('Focus, then Arrow/PageUp/Down/Home/End'),
+              ]),
+            ],
+          ),
         ]),
         card('Date Input', [
           div({ ...di.root, class: 'flex flex-col gap-2' }, [
@@ -204,11 +200,10 @@ export const App = component<State, Msg, never>({
             ]),
             input({
               ...di.input,
-              class: 'w-full px-3 py-2 border rounded font-mono text-sm focus:outline-none focus:ring-2 focus:ring-blue-200',
+              class:
+                'w-full px-3 py-2 border rounded font-mono text-sm focus:outline-none focus:ring-2 focus:ring-blue-200',
               style: (s: State) =>
-                s.date.error
-                  ? 'border-color:rgb(239 68 68);'
-                  : 'border-color:rgb(203 213 225);',
+                s.date.error ? 'border-color:rgb(239 68 68);' : 'border-color:rgb(203 213 225);',
             }),
             div({ class: 'flex items-center justify-between text-xs' }, [
               span({ class: 'text-slate-500' }, [
@@ -219,21 +214,18 @@ export const App = component<State, Msg, never>({
                   ),
                 ]),
               ]),
-              span(
-                { ...di.errorText, class: 'text-red-600 font-medium' },
-                [
-                  text((s: State) => {
-                    const e = s.date.error
-                    return e === 'invalid'
-                      ? 'Invalid format'
-                      : e === 'before-min'
-                        ? 'Before 2026-01-01'
-                        : e === 'after-max'
-                          ? 'After 2026-12-31'
-                          : ''
-                  }),
-                ],
-              ),
+              span({ ...di.errorText, class: 'text-red-600 font-medium' }, [
+                text((s: State) => {
+                  const e = s.date.error
+                  return e === 'invalid'
+                    ? 'Invalid format'
+                    : e === 'before-min'
+                      ? 'Before 2026-01-01'
+                      : e === 'after-max'
+                        ? 'After 2026-12-31'
+                        : ''
+                }),
+              ]),
             ]),
           ]),
         ]),

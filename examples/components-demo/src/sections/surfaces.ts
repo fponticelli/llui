@@ -21,11 +21,7 @@ import {
   type NavMenuState,
   type NavMenuMsg,
 } from '@llui/components/navigation-menu'
-import {
-  scrollArea,
-  type ScrollAreaState,
-  type ScrollAreaMsg,
-} from '@llui/components/scroll-area'
+import { scrollArea, type ScrollAreaState, type ScrollAreaMsg } from '@llui/components/scroll-area'
 import { sectionGroup, card } from '../shared/ui'
 
 const tourSteps: TourStep[] = [
@@ -43,7 +39,7 @@ const tourSteps: TourStep[] = [
   },
   {
     id: 'done',
-    title: 'That\'s a wrap',
+    title: "That's a wrap",
     description: 'Explore the other sections for more patterns.',
     target: '#tour-target',
   },
@@ -179,7 +175,10 @@ export const App = component<State, Msg, never>({
           ]),
           div({ class: 'flex gap-2' }, [
             button(
-              { class: 'btn btn-primary text-xs', onClick: () => send({ type: 'tour', msg: { type: 'start' } }) },
+              {
+                class: 'btn btn-primary text-xs',
+                onClick: () => send({ type: 'tour', msg: { type: 'start' } }),
+              },
               [text('Start tour')],
             ),
           ]),
@@ -203,7 +202,9 @@ export const App = component<State, Msg, never>({
                     return `${p.current} / ${p.total}`
                   }),
                 ]),
-                button({ ...tr.prevTrigger, class: 'btn btn-secondary text-xs ml-auto' }, [text('Prev')]),
+                button({ ...tr.prevTrigger, class: 'btn btn-secondary text-xs ml-auto' }, [
+                  text('Prev'),
+                ]),
                 button({ ...tr.nextTrigger, class: 'btn btn-primary text-xs' }, [
                   text((s: State) => (tour.isLast(s.tour) ? 'Finish' : 'Next')),
                 ]),
@@ -222,39 +223,45 @@ export const App = component<State, Msg, never>({
             ),
           ]),
           p({ class: 'text-xs text-slate-500' }, [
-            text('Click Open → panel appears (static position — drag/resize needs pointer wiring).'),
+            text(
+              'Click Open → panel appears (static position — drag/resize needs pointer wiring).',
+            ),
           ]),
-          div(
-            { ...fp.root, class: 'border border-slate-300 bg-white shadow-xl rounded' },
-            [
-              div(
-                {
-                  ...fp.dragHandle,
-                  class: 'flex items-center justify-between px-2 py-1 bg-slate-100 rounded-t cursor-move text-xs',
-                },
-                [
-                  span({}, [text('Floating Panel')]),
-                  div({ class: 'flex gap-1' }, [
-                    button({ ...fp.minimizeTrigger, class: 'px-1 hover:bg-slate-200 rounded' }, [text('–')]),
-                    button({ ...fp.maximizeTrigger, class: 'px-1 hover:bg-slate-200 rounded' }, [text('□')]),
-                    button({ ...fp.closeTrigger, class: 'px-1 hover:bg-red-200 rounded' }, [text('×')]),
+          div({ ...fp.root, class: 'border border-slate-300 bg-white shadow-xl rounded' }, [
+            div(
+              {
+                ...fp.dragHandle,
+                class:
+                  'flex items-center justify-between px-2 py-1 bg-slate-100 rounded-t cursor-move text-xs',
+              },
+              [
+                span({}, [text('Floating Panel')]),
+                div({ class: 'flex gap-1' }, [
+                  button({ ...fp.minimizeTrigger, class: 'px-1 hover:bg-slate-200 rounded' }, [
+                    text('–'),
                   ]),
-                ],
-              ),
-              div({ ...fp.content, class: 'p-3 text-xs' }, [
-                text('Drag the title bar to move. Resize from the bottom-right corner.'),
-              ]),
-              div(
-                {
-                  ...fp.resizeHandle('se'),
-                  class: 'absolute bottom-0 right-0 w-4 h-4 cursor-se-resize',
-                  style:
-                    'background: linear-gradient(135deg, transparent 50%, rgb(148 163 184) 50%);',
-                },
-                [],
-              ),
-            ],
-          ),
+                  button({ ...fp.maximizeTrigger, class: 'px-1 hover:bg-slate-200 rounded' }, [
+                    text('□'),
+                  ]),
+                  button({ ...fp.closeTrigger, class: 'px-1 hover:bg-red-200 rounded' }, [
+                    text('×'),
+                  ]),
+                ]),
+              ],
+            ),
+            div({ ...fp.content, class: 'p-3 text-xs' }, [
+              text('Drag the title bar to move. Resize from the bottom-right corner.'),
+            ]),
+            div(
+              {
+                ...fp.resizeHandle('se'),
+                class: 'absolute bottom-0 right-0 w-4 h-4 cursor-se-resize',
+                style:
+                  'background: linear-gradient(135deg, transparent 50%, rgb(148 163 184) 50%);',
+              },
+              [],
+            ),
+          ]),
         ]),
         card('Navigation Menu', [
           div(
@@ -310,7 +317,9 @@ export const App = component<State, Msg, never>({
                       class: 'p-3 text-sm text-slate-700',
                     },
                     Array.from({ length: 30 }, (_, i) =>
-                      div({ class: 'py-1 border-b border-slate-100' }, [text(`Scrollable item ${i + 1}`)]),
+                      div({ class: 'py-1 border-b border-slate-100' }, [
+                        text(`Scrollable item ${i + 1}`),
+                      ]),
                     ),
                   ),
                 ],

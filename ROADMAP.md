@@ -111,6 +111,7 @@ All 15 zag.js machines now shipped. 54 headless components total.
 - **Niche:** ~~async-list~~, ~~cascade-select~~, ~~date-input~~, ~~floating-panel~~, ~~image-cropper~~, ~~marquee~~, ~~presence~~, ~~timer~~, ~~toc~~
 
 **Renames to align with zag naming** (still open):
+
 - `stepper` → `steps`
 - Decide whether to merge `alert-dialog` into `dialog` (zag does this via `role="alertdialog"`) or keep separate
 

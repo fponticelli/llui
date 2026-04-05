@@ -192,9 +192,7 @@ export function connect<S>(
         // State isn't accessible here; caller should use the current value
         // in a DOM query or run this inside a closure with state access.
         // We dispatch a best-effort via the document for now.
-        const root = document.querySelector<HTMLElement>(
-          '[data-scope="qr-code"][data-part="svg"]',
-        )
+        const root = document.querySelector<HTMLElement>('[data-scope="qr-code"][data-part="svg"]')
         if (!root) return
         const xml = new XMLSerializer().serializeToString(root)
         const blob = new Blob([xml], { type: 'image/svg+xml' })

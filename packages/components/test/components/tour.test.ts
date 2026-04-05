@@ -89,7 +89,7 @@ describe('tour reducer', () => {
     expect(s2.index).toBe(0) // no change
   })
 
-  it('visited doesn\'t accumulate duplicates', () => {
+  it("visited doesn't accumulate duplicates", () => {
     let s: TourState = init({ steps })
     ;[s] = update(s, { type: 'start' })
     ;[s] = update(s, { type: 'next' })

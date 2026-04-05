@@ -1,12 +1,5 @@
 import { describe, it, expect, vi } from 'vitest'
-import {
-  init,
-  update,
-  connect,
-  size,
-  toSvgPath,
-  toDataUrl,
-} from '../../src/components/qr-code'
+import { init, update, connect, size, toSvgPath, toDataUrl } from '../../src/components/qr-code'
 import type { QrCodeState } from '../../src/components/qr-code'
 
 type Ctx = { q: QrCodeState }

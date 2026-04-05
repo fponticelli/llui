@@ -59,8 +59,7 @@ export function startRelay(port = 5200): void {
         const keys = g.__lluiComponents ? Object.keys(g.__lluiComponents) : []
         const active =
           g.__lluiDebug && g.__lluiComponents
-            ? (Object.entries(g.__lluiComponents).find(([, v]) => v === g.__lluiDebug)?.[0] ??
-              null)
+            ? (Object.entries(g.__lluiComponents).find(([, v]) => v === g.__lluiDebug)?.[0] ?? null)
             : null
         ws.send(JSON.stringify({ id: req.id, result: { components: keys, active } }))
         return

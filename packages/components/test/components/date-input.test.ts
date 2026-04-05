@@ -1,11 +1,5 @@
 import { describe, it, expect, vi } from 'vitest'
-import {
-  init,
-  update,
-  connect,
-  parseDate,
-  formatDate,
-} from '../../src/components/date-input'
+import { init, update, connect, parseDate, formatDate } from '../../src/components/date-input'
 import type { DateInputState } from '../../src/components/date-input'
 
 type Ctx = { d: DateInputState }

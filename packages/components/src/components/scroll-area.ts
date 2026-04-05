@@ -76,10 +76,7 @@ export function init(opts: ScrollAreaInit = {}): ScrollAreaState {
   }
 }
 
-export function update(
-  state: ScrollAreaState,
-  msg: ScrollAreaMsg,
-): [ScrollAreaState, never[]] {
+export function update(state: ScrollAreaState, msg: ScrollAreaMsg): [ScrollAreaState, never[]] {
   switch (msg.type) {
     case 'setScroll':
       return [
@@ -132,13 +129,9 @@ export function thumbPosition(state: ScrollAreaState, axis: 'x' | 'y'): number {
 /** Thumb size as a proportion (0..1) of the track. */
 export function thumbSize(state: ScrollAreaState, axis: 'x' | 'y'): number {
   if (axis === 'x') {
-    return state.scrollWidth > 0
-      ? Math.max(0.05, state.clientWidth / state.scrollWidth)
-      : 0
+    return state.scrollWidth > 0 ? Math.max(0.05, state.clientWidth / state.scrollWidth) : 0
   }
-  return state.scrollHeight > 0
-    ? Math.max(0.05, state.clientHeight / state.scrollHeight)
-    : 0
+  return state.scrollHeight > 0 ? Math.max(0.05, state.clientHeight / state.scrollHeight) : 0
 }
 
 export interface ScrollAreaParts<S> {

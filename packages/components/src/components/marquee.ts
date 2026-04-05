@@ -110,10 +110,7 @@ export interface MarqueeParts<S> {
   }
 }
 
-export function connect<S>(
-  get: (s: S) => MarqueeState,
-  send: Send<MarqueeMsg>,
-): MarqueeParts<S> {
+export function connect<S>(get: (s: S) => MarqueeState, send: Send<MarqueeMsg>): MarqueeParts<S> {
   return {
     root: {
       'data-scope': 'marquee',

@@ -63,7 +63,11 @@ function resolve(type: ts.TypeNode, aliases: Map<string, ts.TypeNode>): StateTyp
     return { kind: 'array', of: resolve(type.elementType, aliases) }
   }
   // Array<T>
-  if (ts.isTypeReferenceNode(type) && ts.isIdentifier(type.typeName) && type.typeName.text === 'Array') {
+  if (
+    ts.isTypeReferenceNode(type) &&
+    ts.isIdentifier(type.typeName) &&
+    type.typeName.text === 'Array'
+  ) {
     const arg = type.typeArguments?.[0]
     return { kind: 'array', of: arg ? resolve(arg, aliases) : 'unknown' }
   }

@@ -84,7 +84,10 @@ describe('typeaheadMatchByItems', () => {
 })
 
 describe('isTypeaheadKey', () => {
-  const make = (key: string, mods: { ctrl?: boolean; meta?: boolean; alt?: boolean } = {}): KeyboardEvent =>
+  const make = (
+    key: string,
+    mods: { ctrl?: boolean; meta?: boolean; alt?: boolean } = {},
+  ): KeyboardEvent =>
     ({
       key,
       ctrlKey: mods.ctrl ?? false,

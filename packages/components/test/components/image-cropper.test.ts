@@ -55,7 +55,10 @@ describe('image-cropper reducer', () => {
 
   it('dragMove adds deltas + clamps', () => {
     const s0 = {
-      ...init({ image: { width: 200, height: 200 }, crop: { x: 0, y: 0, width: 100, height: 100 } }),
+      ...init({
+        image: { width: 200, height: 200 },
+        crop: { x: 0, y: 0, width: 100, height: 100 },
+      }),
       dragging: true,
     } as ImageCropperState
     const [s] = update(s0, { type: 'dragMove', dx: 50, dy: 50 })
@@ -68,7 +71,10 @@ describe('image-cropper reducer', () => {
 
   it('resize east grows width', () => {
     const s0 = {
-      ...init({ image: { width: 200, height: 200 }, crop: { x: 0, y: 0, width: 100, height: 100 } }),
+      ...init({
+        image: { width: 200, height: 200 },
+        crop: { x: 0, y: 0, width: 100, height: 100 },
+      }),
       resizing: 'e' as const,
     } as ImageCropperState
     const [s] = update(s0, { type: 'resizeMove', dx: 50, dy: 0 })

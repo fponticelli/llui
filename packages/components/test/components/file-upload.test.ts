@@ -268,9 +268,7 @@ describe('connect: new parts + attrs', () => {
       expect.objectContaining({
         type: 'addFiles',
         files: [ok],
-        customRejected: [
-          { file: bad, errors: [{ code: 'CUSTOM', message: 'banned name' }] },
-        ],
+        customRejected: [{ file: bad, errors: [{ code: 'CUSTOM', message: 'banned name' }] }],
       }),
     )
   })

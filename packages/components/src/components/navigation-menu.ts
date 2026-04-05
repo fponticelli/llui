@@ -158,10 +158,7 @@ export function connect<S>(
         if (closeOnLeave) send({ type: 'closeAll' })
       },
     },
-    item: (
-      id: string,
-      options: { isBranch: boolean; ancestorIds?: string[] },
-    ): NavItemParts<S> => {
+    item: (id: string, options: { isBranch: boolean; ancestorIds?: string[] }): NavItemParts<S> => {
       const ancestorIds = options.ancestorIds ?? []
       return {
         trigger: {
@@ -169,8 +166,7 @@ export function connect<S>(
           role: 'menuitem',
           id: triggerId(id),
           'aria-haspopup': options.isBranch ? 'menu' : undefined,
-          'aria-expanded': (s) =>
-            options.isBranch ? isOpen(get(s), id) : undefined,
+          'aria-expanded': (s) => (options.isBranch ? isOpen(get(s), id) : undefined),
           'data-scope': 'navigation-menu',
           'data-part': 'trigger',
           'data-state': (s) => (isOpen(get(s), id) ? 'open' : 'closed'),

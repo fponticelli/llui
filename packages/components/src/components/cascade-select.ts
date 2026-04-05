@@ -38,8 +38,7 @@ export interface CascadeSelectInit {
 
 export function init(opts: CascadeSelectInit = {}): CascadeSelectState {
   const levels = opts.levels ?? []
-  const values =
-    opts.values ?? new Array<string | null>(levels.length).fill(null)
+  const values = opts.values ?? new Array<string | null>(levels.length).fill(null)
   // Normalize: pad or trim values array to match levels length
   const normalized: (string | null)[] = []
   for (let i = 0; i < levels.length; i++) {

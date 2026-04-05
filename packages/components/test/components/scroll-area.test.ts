@@ -64,9 +64,9 @@ describe('showScrollbars', () => {
 
   it('hover requires hovered=true', () => {
     expect(showScrollbars(dims({ overflowY: true, visibility: 'hover' }), 'y')).toBe(false)
-    expect(
-      showScrollbars(dims({ overflowY: true, visibility: 'hover', hovered: true }), 'y'),
-    ).toBe(true)
+    expect(showScrollbars(dims({ overflowY: true, visibility: 'hover', hovered: true }), 'y')).toBe(
+      true,
+    )
   })
 
   it('scroll requires scrolling=true', () => {
@@ -79,9 +79,9 @@ describe('showScrollbars', () => {
 
 describe('thumbPosition / thumbSize', () => {
   it('thumbPosition returns 0 when no scroll', () => {
-    expect(
-      thumbPosition(dims({ scrollTop: 0, scrollHeight: 1000, clientHeight: 300 }), 'y'),
-    ).toBe(0)
+    expect(thumbPosition(dims({ scrollTop: 0, scrollHeight: 1000, clientHeight: 300 }), 'y')).toBe(
+      0,
+    )
   })
 
   it('thumbPosition returns proportional position', () => {
