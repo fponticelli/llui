@@ -31,6 +31,12 @@ export * as splitter from './splitter'
 export * as fileUpload from './file-upload'
 export * as treeView from './tree-view'
 export * as contextMenu from './context-menu'
+export * as passwordInput from './password-input'
+export * as stepper from './stepper'
+export * as timePicker from './time-picker'
+export * as carousel from './carousel'
+export * as datePicker from './date-picker'
+export * as colorPicker from './color-picker'
 
 export type { ToggleState, ToggleMsg, ToggleInit, ToggleParts } from './toggle'
 export type {
@@ -205,3 +211,47 @@ export type {
   ContextMenuItemParts,
   OverlayOptions as ContextMenuOverlayOptions,
 } from './context-menu'
+export type {
+  PasswordInputState,
+  PasswordInputMsg,
+  PasswordInputInit,
+  PasswordInputParts,
+} from './password-input'
+export type {
+  StepperState,
+  StepperMsg,
+  StepperInit,
+  StepperParts,
+  StepperItemParts,
+  StepStatus,
+} from './stepper'
+export type {
+  TimePickerState,
+  TimePickerMsg,
+  TimePickerInit,
+  TimePickerParts,
+  TimeValue,
+  TimeFormat,
+} from './time-picker'
+export type {
+  CarouselState,
+  CarouselMsg,
+  CarouselInit,
+  CarouselParts,
+  CarouselSlideParts,
+} from './carousel'
+export type {
+  DatePickerState,
+  DatePickerMsg,
+  DatePickerInit,
+  DatePickerParts,
+  DayCellParts,
+  DayCell,
+} from './date-picker'
+export type {
+  ColorPickerState,
+  ColorPickerMsg,
+  ColorPickerInit,
+  ColorPickerParts,
+  Hsl,
+} from './color-picker'

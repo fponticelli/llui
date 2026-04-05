@@ -144,6 +144,14 @@
     "./context-menu": {
       "import": "./dist/components/context-menu.js",
       "types": "./dist/components/context-menu.d.ts"
+    },
+    "./patterns": {
+      "import": "./dist/patterns/index.js",
+      "types": "./dist/patterns/index.d.ts"
+    },
+    "./patterns/confirm-dialog": {
+      "import": "./dist/patterns/confirm-dialog.js",
+      "types": "./dist/patterns/confirm-dialog.d.ts"
     }
   },
   "scripts": {
