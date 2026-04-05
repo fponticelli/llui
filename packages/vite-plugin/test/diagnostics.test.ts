@@ -221,6 +221,33 @@ describe('no warnings for clean code', () => {
     expect(w.some((m) => m.includes('Spread in children'))).toBe(false)
   })
 
+  it('warns on empty props object passed to element helper', () => {
+    const src = `
+      import { h1, text } from '@llui/dom'
+      export const el = h1({}, [text('todos')])
+    `
+    const w = warnings(src)
+    expect(w.some((m) => m.includes('Empty props') && m.includes('h1'))).toBe(true)
+  })
+
+  it('does not warn when props object has entries', () => {
+    const src = `
+      import { h1, text } from '@llui/dom'
+      export const el = h1({ class: 'title' }, [text('todos')])
+    `
+    const w = warnings(src)
+    expect(w.some((m) => m.includes('Empty props'))).toBe(false)
+  })
+
+  it('does not warn when attrs argument is omitted', () => {
+    const src = `
+      import { h1, text } from '@llui/dom'
+      export const el = h1([text('todos')])
+    `
+    const w = warnings(src)
+    expect(w.some((m) => m.includes('Empty props'))).toBe(false)
+  })
+
   it('returns empty array for well-formed component', () => {
     const src = `
       import { component, div, text } from '@llui/dom'
@@ -234,7 +261,7 @@ describe('no warnings for clean code', () => {
           }
         },
         view: (send) => [
-          div({}, [text(s => String(s.count))]),
+          div([text(s => String(s.count))]),
         ],
       })
     `

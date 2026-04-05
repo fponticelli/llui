@@ -104,6 +104,7 @@ export function diagnose(source: string): Diagnostic[] {
     checkBitmaskOverflow(node, sf, diagnostics, statePaths)
     checkNamespaceImport(node, sf, diagnostics)
     checkSpreadChildren(node, sf, diagnostics)
+    checkEmptyProps(node, sf, diagnostics)
 
     ts.forEachChild(node, visit)
   }
@@ -188,6 +189,23 @@ function isStructuralSpread(expr: ts.Expression): boolean {
   }
   // Identifier spread (`...arr`) — suspect
   return false
+}
+
+// Warns when an element helper is called with an empty props object — the
+// attrs argument is optional, so `h1({}, [...])` should be `h1([...])`.
+function checkEmptyProps(node: ts.Node, sf: ts.SourceFile, diagnostics: Diagnostic[]): void {
+  if (!ts.isCallExpression(node)) return
+  if (!ts.isIdentifier(node.expression)) return
+  if (!ELEMENT_HELPERS.has(node.expression.text)) return
+  const firstArg = node.arguments[0]
+  if (!firstArg || !ts.isObjectLiteralExpression(firstArg)) return
+  if (firstArg.properties.length !== 0) return
+  const { line, column } = pos(firstArg, sf)
+  diagnostics.push({
+    message: `Empty props object passed to '${node.expression.text}()' at line ${line}. The attrs argument is optional — omit it: ${node.expression.text}([...]).`,
+    line,
+    column,
+  })
 }
 
 function pos(node: ts.Node, sf: ts.SourceFile): { line: number; column: number } {
