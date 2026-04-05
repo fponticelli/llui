@@ -9,7 +9,8 @@
   },
   "dependencies": {
     "@llui/components": "workspace:*",
-    "@llui/dom": "workspace:*"
+    "@llui/dom": "workspace:*",
+    "uqr": "^0.1.3"
   },
   "devDependencies": {
     "@llui/vite-plugin": "workspace:*",

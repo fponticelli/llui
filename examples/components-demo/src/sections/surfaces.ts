@@ -8,6 +8,7 @@ import {
   text,
   h3,
   p,
+  onMount,
 } from '@llui/dom'
 import { tour, type TourState, type TourMsg, type TourStep } from '@llui/components/tour'
 import {
@@ -126,6 +127,50 @@ export const App = component<State, Msg, never>({
       (m) => send({ type: 'scroll', msg: m }),
     )
 
+    // Wire drag-move/resize-move to the document so the panel keeps
+    // following the pointer even when it leaves the handle (dragMove
+    // sends deltas, so we track last position).
+    onMount(() => {
+      let last: { x: number; y: number } | null = null
+      let mode: 'drag' | 'resize' | null = null
+      const down = (e: PointerEvent): void => {
+        const el = e.target as HTMLElement | null
+        const dragHandle = el?.closest('[data-scope="floating-panel"][data-part="drag-handle"]')
+        const resizeHandle = el?.closest('[data-scope="floating-panel"][data-part="resize-handle"]')
+        if (dragHandle) {
+          mode = 'drag'
+          last = { x: e.clientX, y: e.clientY }
+        } else if (resizeHandle) {
+          mode = 'resize'
+          last = { x: e.clientX, y: e.clientY }
+        }
+      }
+      const move = (e: PointerEvent): void => {
+        if (last === null || mode === null) return
+        const dx = e.clientX - last.x
+        const dy = e.clientY - last.y
+        last = { x: e.clientX, y: e.clientY }
+        if (mode === 'drag') send({ type: 'panel', msg: { type: 'dragMove', dx, dy } })
+        else if (mode === 'resize') send({ type: 'panel', msg: { type: 'resizeMove', dx, dy } })
+      }
+      const up = (): void => {
+        if (mode === 'drag') send({ type: 'panel', msg: { type: 'dragEnd' } })
+        else if (mode === 'resize') send({ type: 'panel', msg: { type: 'resizeEnd' } })
+        last = null
+        mode = null
+      }
+      document.addEventListener('pointerdown', down)
+      document.addEventListener('pointermove', move)
+      document.addEventListener('pointerup', up)
+      document.addEventListener('pointercancel', up)
+      return () => {
+        document.removeEventListener('pointerdown', down)
+        document.removeEventListener('pointermove', move)
+        document.removeEventListener('pointerup', up)
+        document.removeEventListener('pointercancel', up)
+      }
+    })
+
     return [
       sectionGroup('Surfaces + navigation', [
         card('Tour', [
@@ -197,8 +242,17 @@ export const App = component<State, Msg, never>({
                 ],
               ),
               div({ ...fp.content, class: 'p-3 text-xs' }, [
-                text('Panel body — minimize/maximize/close buttons work. Dragging would need pointermove tracking.'),
+                text('Drag the title bar to move. Resize from the bottom-right corner.'),
               ]),
+              div(
+                {
+                  ...fp.resizeHandle('se'),
+                  class: 'absolute bottom-0 right-0 w-4 h-4 cursor-se-resize',
+                  style:
+                    'background: linear-gradient(135deg, transparent 50%, rgb(148 163 184) 50%);',
+                },
+                [],
+              ),
             ],
           ),
         ]),

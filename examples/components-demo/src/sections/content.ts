@@ -6,10 +6,12 @@ import {
   button,
   span,
   text,
+  p,
   a,
   ul,
   li,
   img,
+  input,
   each,
 } from '@llui/dom'
 import { toc, type TocState, type TocMsg } from '@llui/components/toc'
@@ -25,6 +27,7 @@ import {
 } from '@llui/components/async-list'
 import { presence, type PresenceState, type PresenceMsg } from '@llui/components/presence'
 import { qrCode, type QrCodeState, type QrCodeMsg } from '@llui/components/qr-code'
+import { encode as uqrEncode } from 'uqr'
 import { sectionGroup, card } from '../shared/ui'
 
 type Item = { id: number; label: string }
@@ -42,29 +45,17 @@ type Msg =
   | { type: 'list'; msg: AsyncListMsg<Item> }
   | { type: 'presence'; msg: PresenceMsg }
   | { type: 'qr'; msg: QrCodeMsg }
+  | { type: 'qrInput'; value: string }
   | { type: 'loadPage' }
 
-// Simulated QR matrix — in a real app this comes from a QR encoder library.
-// Here we draw a recognizable pattern so the demo has something to show.
-const demoQrMatrix: boolean[][] = (() => {
-  const n = 21
-  const m: boolean[][] = []
-  for (let y = 0; y < n; y++) {
-    const row: boolean[] = []
-    for (let x = 0; x < n; x++) {
-      // Finder patterns at corners
-      const finder =
-        (x < 7 && y < 7) || (x >= n - 7 && y < 7) || (x < 7 && y >= n - 7)
-      const onFinder =
-        finder &&
-        ((x === 0 || x === 6 || y === 0 || y === 6 || (x >= 2 && x <= 4 && y >= 2 && y <= 4)) &&
-          !((x === n - 7 && x >= 0) || (y === n - 7 && y >= 0)))
-      row.push(onFinder || (!finder && ((x * 7 + y * 13) % 3 === 0)))
-    }
-    m.push(row)
-  }
-  return m
-})()
+// uqr returns { data: boolean[][], size, version } — we just need the 2D
+// array in llui's matrix shape.
+function encodeQr(value: string): boolean[][] {
+  if (!value) return []
+  const result = uqrEncode(value, { ecc: 'M' })
+  // result.data is boolean[][] already
+  return result.data
+}
 
 const init = (): [State, never[]] => [
   {
@@ -88,16 +79,9 @@ const init = (): [State, never[]] => [
             { value: 'IT', label: 'Italy' },
           ],
         },
-        {
-          id: 'region',
-          label: 'Region',
-          options: [
-            { value: 'CA', label: 'California' },
-            { value: 'NY', label: 'New York' },
-            { value: 'MI', label: 'Milan' },
-            { value: 'RM', label: 'Rome' },
-          ],
-        },
+        // Region options are swapped in by the consumer based on the
+        // currently-selected country — see the view for the filtering.
+        { id: 'region', label: 'Region', options: [] },
       ],
     }),
     list: asyncList.init({
@@ -108,7 +92,7 @@ const init = (): [State, never[]] => [
       ],
     }),
     presence: presence.init({ present: true, unmountOnExit: false }),
-    qr: qrCode.init({ value: 'https://llui.dev', matrix: demoQrMatrix }),
+    qr: qrCode.init({ value: 'https://llui.dev', matrix: encodeQr('https://llui.dev') }),
   },
   [],
 ]
@@ -144,6 +128,13 @@ const update = mergeHandlers<State, Msg, never>(
     narrow: (m) => (m.type === 'qr' ? m.msg : null),
     sub: qrCode.update,
   }),
+  // Typing in the input box: re-encode on every keystroke and update
+  // both value + matrix in one step.
+  (state, msg) => {
+    if (msg.type !== 'qrInput') return null
+    const matrix = encodeQr(msg.value)
+    return [{ ...state, qr: { ...state.qr, value: msg.value, matrix } }, []]
+  },
   // Simulate an async page load by transitioning through loading then
   // pageLoaded synchronously. In a real app this would fire an effect
   // and dispatch pageLoaded from the response handler.
@@ -243,44 +234,137 @@ export const App = component<State, Msg, never>({
           ]),
         ]),
         card('Cascade Select', [
-          div({ ...cs.root, class: 'flex flex-col gap-2' }, [
-            span({ class: 'text-xs text-slate-600' }, [
-              text('Country → Region (selecting a country resets the region)'),
+          div({ ...cs.root, class: 'flex flex-col gap-3' }, [
+            p({ class: 'text-xs text-slate-500' }, [
+              text(
+                'Region options depend on the selected country; choosing a new country resets the region.',
+              ),
             ]),
-            div({ class: 'text-sm text-slate-700' }, [
-              text('Selected: '),
-              text((s: State) => s.cascade.values.filter(Boolean).join(' → ') || '(none)'),
-            ]),
-            div({ class: 'flex gap-2' }, [
+            // Country buttons
+            div({ class: 'flex items-center gap-2' }, [
+              span({ class: 'text-xs font-semibold text-slate-600 w-16' }, [text('Country:')]),
               button(
                 {
-                  class: 'btn btn-secondary text-xs',
+                  class: 'btn text-xs',
+                  style: (s: State) =>
+                    s.cascade.values[0] === 'US'
+                      ? 'background:rgb(37 99 235);color:white;'
+                      : 'background:rgb(241 245 249);',
                   onClick: () =>
-                    send({ type: 'cascade', msg: { type: 'setValue', levelIndex: 0, value: 'US' } }),
+                    send({
+                      type: 'cascade',
+                      msg: { type: 'setValue', levelIndex: 0, value: 'US' },
+                    }),
                 },
-                [text('US')],
+                [text('United States')],
               ),
               button(
                 {
-                  class: 'btn btn-secondary text-xs',
+                  class: 'btn text-xs',
+                  style: (s: State) =>
+                    s.cascade.values[0] === 'IT'
+                      ? 'background:rgb(37 99 235);color:white;'
+                      : 'background:rgb(241 245 249);',
                   onClick: () =>
-                    send({ type: 'cascade', msg: { type: 'setValue', levelIndex: 0, value: 'IT' } }),
+                    send({
+                      type: 'cascade',
+                      msg: { type: 'setValue', levelIndex: 0, value: 'IT' },
+                    }),
                 },
                 [text('Italy')],
               ),
+            ]),
+            // Region buttons — filtered by country
+            div({ class: 'flex items-center gap-2 flex-wrap' }, [
+              span({ class: 'text-xs font-semibold text-slate-600 w-16' }, [text('Region:')]),
+              // Branch-per-country so the visible button set depends on
+              // the value. Buttons without a country get data-ready=false.
               button(
                 {
-                  class: 'btn btn-secondary text-xs',
+                  class: 'btn text-xs',
+                  style: (s: State) => {
+                    const country = s.cascade.values[0]
+                    if (country !== 'US') return 'display:none;'
+                    return s.cascade.values[1] === 'CA'
+                      ? 'background:rgb(37 99 235);color:white;'
+                      : 'background:rgb(241 245 249);'
+                  },
                   onClick: () =>
-                    send({ type: 'cascade', msg: { type: 'setValue', levelIndex: 1, value: 'MI' } }),
-                  disabled: (s: State) => !cascadeSelect.isLevelReady(s.cascade, 1),
+                    send({
+                      type: 'cascade',
+                      msg: { type: 'setValue', levelIndex: 1, value: 'CA' },
+                    }),
+                },
+                [text('California')],
+              ),
+              button(
+                {
+                  class: 'btn text-xs',
+                  style: (s: State) => {
+                    if (s.cascade.values[0] !== 'US') return 'display:none;'
+                    return s.cascade.values[1] === 'NY'
+                      ? 'background:rgb(37 99 235);color:white;'
+                      : 'background:rgb(241 245 249);'
+                  },
+                  onClick: () =>
+                    send({
+                      type: 'cascade',
+                      msg: { type: 'setValue', levelIndex: 1, value: 'NY' },
+                    }),
+                },
+                [text('New York')],
+              ),
+              button(
+                {
+                  class: 'btn text-xs',
+                  style: (s: State) => {
+                    if (s.cascade.values[0] !== 'IT') return 'display:none;'
+                    return s.cascade.values[1] === 'MI'
+                      ? 'background:rgb(37 99 235);color:white;'
+                      : 'background:rgb(241 245 249);'
+                  },
+                  onClick: () =>
+                    send({
+                      type: 'cascade',
+                      msg: { type: 'setValue', levelIndex: 1, value: 'MI' },
+                    }),
                 },
                 [text('Milan')],
               ),
               button(
-                { ...cs.clearTrigger, class: 'btn btn-secondary text-xs' },
-                [text('Clear')],
+                {
+                  class: 'btn text-xs',
+                  style: (s: State) => {
+                    if (s.cascade.values[0] !== 'IT') return 'display:none;'
+                    return s.cascade.values[1] === 'RM'
+                      ? 'background:rgb(37 99 235);color:white;'
+                      : 'background:rgb(241 245 249);'
+                  },
+                  onClick: () =>
+                    send({
+                      type: 'cascade',
+                      msg: { type: 'setValue', levelIndex: 1, value: 'RM' },
+                    }),
+                },
+                [text('Rome')],
               ),
+              span({
+                class: 'text-xs text-slate-400 italic',
+                style: (s: State) =>
+                  s.cascade.values[0] === null ? '' : 'display:none;',
+              }, [text('(pick a country first)')]),
+            ]),
+            // Current selection readout
+            div({ class: 'text-sm font-mono text-slate-700 bg-slate-50 px-2 py-1 rounded' }, [
+              text('Selection: '),
+              text(
+                (s: State) =>
+                  s.cascade.values.filter((v): v is string => v !== null).join(' → ') ||
+                  '(none)',
+              ),
+            ]),
+            div({ class: 'flex gap-2' }, [
+              button({ ...cs.clearTrigger, class: 'btn btn-secondary text-xs' }, [text('Clear')]),
             ]),
           ]),
         ]),
@@ -333,17 +417,49 @@ export const App = component<State, Msg, never>({
           ]),
         ]),
         card('QR Code', [
-          div({ class: 'flex items-center gap-4' }, [
-            img({
-              alt: 'QR code',
-              class: 'w-24 h-24',
-              src: () => qrCode.toDataUrl(demoQrMatrix, '#0f172a', '#f8fafc'),
+          div({ class: 'flex flex-col gap-3' }, [
+            p({ class: 'text-xs text-slate-500' }, [
+              text(
+                'Type in the box to re-encode. llui\'s qr-code component holds the matrix; ',
+              ),
+              text('this demo uses '),
+              span({ class: 'font-mono' }, [text('uqr')]),
+              text(' for the encoding.'),
+            ]),
+            // Text input — encodes on every keystroke.
+            input({
+              type: 'text',
+              class:
+                'w-full px-3 py-2 border border-slate-300 rounded font-mono text-sm ' +
+                'focus:outline-none focus:ring-2 focus:ring-blue-200',
+              placeholder: 'Type URL or text…',
+              value: (s: State) => s.qr.value,
+              onInput: (e: Event) =>
+                send({ type: 'qrInput', value: (e.target as HTMLInputElement).value }),
             }),
-            div({ class: 'flex flex-col gap-1 text-xs text-slate-600' }, [
-              text('Matrix: '),
-              text((s: State) => `${qrCode.size(s.qr)}×${qrCode.size(s.qr)}`),
-              text('Value: '),
-              span({ class: 'font-mono' }, [text((s: State) => s.qr.value)]),
+            div({ class: 'flex items-center gap-4' }, [
+              img({
+                alt: 'QR code',
+                class: 'w-32 h-32 border border-slate-200 rounded bg-white',
+                src: (s: State) =>
+                  s.qr.matrix.length > 0
+                    ? qrCode.toDataUrl(s.qr.matrix, '#0f172a', '#ffffff')
+                    : '',
+              }),
+              div({ class: 'flex flex-col gap-1 text-xs text-slate-600' }, [
+                div({}, [
+                  text('Size: '),
+                  span({ class: 'font-mono text-slate-700' }, [
+                    text((s: State) => `${qrCode.size(s.qr)}×${qrCode.size(s.qr)}`),
+                  ]),
+                ]),
+                div({}, [
+                  text('Value: '),
+                  span({ class: 'font-mono text-slate-700 break-all' }, [
+                    text((s: State) => s.qr.value || '(empty)'),
+                  ]),
+                ]),
+              ]),
             ]),
           ]),
         ]),
