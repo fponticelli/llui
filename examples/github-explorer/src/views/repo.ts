@@ -1,4 +1,4 @@
-import { div, h1, h3, a, p, span, text } from '@llui/dom'
+import { div, h1, h3, a, p, span, text, slice } from '@llui/dom'
 import type { State, Msg, Repo, TreeEntry, Issue } from '../types'
 import type { Send, View } from '@llui/dom'
 import { routing } from '../router'
@@ -25,9 +25,9 @@ function routeOwnerName(s: State): { owner: string; name: string } | null {
 // Consider inlining the link builder into the reactive path.
 export function repoPage(h: View<State, Msg>, s: State, send: Send<Msg>): Node[] {
   const { show } = h
-  // Sub-view bound to s.route — demonstrates h.slice for view-functions
+  // Sub-view bound to s.route — demonstrates `slice()` for view-functions
   // that only read a sub-slice of the parent component's state.
-  const { branch } = h.slice((s) => s.route)
+  const { branch } = slice(h, (s) => s.route)
   // owner/name from route (always available)
   const rp = routeOwnerName(s)
   const owner = rp?.owner ?? ''

@@ -120,22 +120,34 @@ function processMessages<S, M, E>(inst: ComponentInstance<S, M, E>): void {
   let combinedDirty = 0
   const allEffects: E[] = []
 
-  while (inst.queue.length > 0) {
-    const msg = inst.queue.shift()!
-    const [newState, effects] = inst.def.update(state, msg)
-    const dirty = inst.def.__dirty ? inst.def.__dirty(state, newState) : FULL_MASK
+  // Drain the message queue. Index-based cursor rather than queue.shift()
+  // so N messages cost O(N) instead of O(N²) from repeated array shifts.
+  const queue = inst.queue
+  const defUpdate = inst.def.update
+  const dirtyFn = inst.def.__dirty
+  for (let qi = 0; qi < queue.length; qi++) {
+    const msg = queue[qi]!
+    const [newState, effects] = defUpdate(state, msg)
+    const dirty = dirtyFn ? dirtyFn(state, newState) : FULL_MASK
     if (typeof dirty === 'number') {
       combinedDirty |= dirty
     } else {
       combinedDirty |= dirty[0] | dirty[1]
     }
     state = newState
-    allEffects.push(...effects)
+    // Avoid spread — allocates an iterator per call. For typical effect
+    // arrays (0-2 elements) this is a minor saving; for bursts it matters.
+    for (let ei = 0; ei < effects.length; ei++) allEffects.push(effects[ei]!)
   }
+  queue.length = 0
 
   inst.state = state
-  inst.lastDirtyMask = combinedDirty
-  inst.lastEffects = allEffects
+  // Dev-only bookkeeping — tests read lastDirtyMask/lastEffects, prod
+  // doesn't. Gating here keeps two writes out of the prod hot path.
+  if (import.meta.env?.DEV) {
+    inst.lastDirtyMask = combinedDirty
+    inst.lastEffects = allEffects
+  }
 
   // Snapshot binding count before Phase 1 — bindings added during
   // Phase 1 already have correct initial values and skip Phase 2.
@@ -146,10 +158,14 @@ function processMessages<S, M, E>(inst: ComponentInstance<S, M, E>): void {
   // structural primitives (e.g. each.items) can use the bitmask fast path.
   setCurrentDirtyMask(combinedDirty)
 
-  // Phase 1 — structural reconciliation (instance-local blocks)
-  const snapshot = inst.structuralBlocks.slice()
-  for (const block of snapshot) {
-    block.reconcile(state, combinedDirty)
+  // Phase 1 — structural reconciliation (instance-local blocks).
+  // Iterate with a fixed-length snapshot index so newly-added blocks
+  // (from nested each/show/branch) are deferred to the next cycle but
+  // we don't allocate a slice() on every flush.
+  const blocks = inst.structuralBlocks
+  const blocksLen = blocks.length
+  for (let bi = 0; bi < blocksLen; bi++) {
+    blocks[bi]!.reconcile(state, combinedDirty)
   }
 
   // Compact dead bindings before Phase 2 (Phase 1 may have disposed scopes)
@@ -163,32 +179,47 @@ function processMessages<S, M, E>(inst: ComponentInstance<S, M, E>): void {
     phase2Len = Math.min(w, bindingsBeforePhase1)
   }
 
-  // Phase 2 — binding updates (flat array, no tree walk)
-  // Only iterate bindings that existed before Phase 1.
-  // Fresh bindings (created during Phase 1) already have initial values set.
+  // Phase 2 — binding updates (flat array, no tree walk).
+  // Only iterate bindings that existed before Phase 1; fresh bindings
+  // (created during Phase 1) already have initial values set.
   if (combinedDirty !== 0) {
-    const state = inst.state
-    for (let i = 0, len = phase2Len; i < len; i++) {
-      const binding = bindings[i]!
-      if (binding.dead || (binding.mask & combinedDirty) === 0) continue
-      let newValue: unknown
-      try {
-        newValue = binding.accessor(state)
-      } catch (e) {
-        if (import.meta.env?.DEV) {
+    const s = inst.state
+    if (import.meta.env?.DEV) {
+      // Dev build: wrap accessor calls so errors reveal the binding path.
+      for (let i = 0, len = phase2Len; i < len; i++) {
+        const binding = bindings[i]!
+        if (binding.dead || (binding.mask & combinedDirty) === 0) continue
+        let newValue: unknown
+        try {
+          newValue = binding.accessor(s)
+        } catch (e) {
           throw enhanceBindingError(e, binding, inst.def.name)
         }
-        throw e
+        const last = binding.lastValue
+        // `===` is inline and 2-3× faster than Object.is for the common
+        // case. The NaN guard (v !== v means NaN) preserves Object.is's
+        // NaN-equals-NaN semantics. −0 vs +0 we treat as equal, which
+        // matches what users typically want for DOM updates.
+        if (newValue === last || (newValue !== newValue && last !== last)) continue
+        binding.lastValue = newValue
+        applyBinding(binding, newValue)
       }
-      if (Object.is(newValue, binding.lastValue)) continue
-      binding.lastValue = newValue
-      applyBinding(binding, newValue)
+    } else {
+      for (let i = 0, len = phase2Len; i < len; i++) {
+        const binding = bindings[i]!
+        if (binding.dead || (binding.mask & combinedDirty) === 0) continue
+        const newValue = binding.accessor(s)
+        const last = binding.lastValue
+        if (newValue === last || (newValue !== newValue && last !== last)) continue
+        binding.lastValue = newValue
+        applyBinding(binding, newValue)
+      }
     }
   }
 
   // Dispatch effects after DOM updates
-  for (const effect of allEffects) {
-    dispatchEffect(inst, effect)
+  for (let i = 0; i < allEffects.length; i++) {
+    dispatchEffect(inst, allEffects[i]!)
   }
 }
 

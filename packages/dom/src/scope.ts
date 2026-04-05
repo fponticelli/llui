@@ -27,9 +27,20 @@ export function createScope(parent: Scope | null): Scope {
   return scope
 }
 
-export function disposeScope(scope: Scope): void {
+/**
+ * Dispose a scope and all its children. By default, detaches the scope
+ * from its parent's `children` array via `indexOf + splice` — O(N) per
+ * call, which becomes O(N²) when disposing many sibling scopes in bulk
+ * (e.g. `each` clearing 1000 rows).
+ *
+ * Pass `skipParentRemoval = true` when the caller will batch-remove
+ * children afterwards (see `removeOrphanedFromParent`). The scope's
+ * `parent` pointer is still set to `null` so the caller can identify
+ * orphaned entries.
+ */
+export function disposeScope(scope: Scope, skipParentRemoval = false): void {
   if (scope.disposers.length === 0 && scope.children.length === 0 && scope.bindings.length === 0) {
-    removeFromParent(scope)
+    if (!skipParentRemoval) removeFromParent(scope)
     scope.parent = null
     return
   }
@@ -56,8 +67,22 @@ export function disposeScope(scope: Scope): void {
   scope.children.length = 0
   scope.itemUpdaters.length = 0
 
-  removeFromParent(scope)
+  if (!skipParentRemoval) removeFromParent(scope)
   scope.parent = null
+}
+
+/**
+ * Batch-remove children with `parent === null` from `parent.children`.
+ * Called after a bulk `disposeScope(child, true)` pass to collapse the
+ * individual O(N) splice operations into one O(N) scan.
+ */
+export function removeOrphanedChildren(parent: Scope): void {
+  const children = parent.children
+  let w = 0
+  for (let r = 0; r < children.length; r++) {
+    if (children[r]!.parent !== null) children[w++] = children[r]!
+  }
+  children.length = w
 }
 
 export function addBinding(scope: Scope, binding: Binding): void {

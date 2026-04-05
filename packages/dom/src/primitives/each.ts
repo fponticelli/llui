@@ -5,7 +5,7 @@ import {
   clearRenderContext,
   type RenderContext,
 } from '../render-context'
-import { createScope, disposeScope, addDisposer } from '../scope'
+import { createScope, disposeScope, addDisposer, removeOrphanedChildren } from '../scope'
 import { getFlatBindings, setFlatBindings } from '../binding'
 import type { StructuralBlock } from '../structural'
 
@@ -91,8 +91,11 @@ export function each<S, T, M = unknown>(opts: EachOptions<S, T, M>): Node[] {
   addDisposer(parentScope, () => {
     const idx = blocks.indexOf(block)
     if (idx !== -1) blocks.splice(idx, 1)
+    // parentScope is being disposed — its children array is about to be
+    // cleared by the recursive dispose pass, so skip per-entry parent
+    // removal (avoids O(N²) indexOf+splice).
     for (const entry of entries) {
-      disposeScope(entry.scope)
+      disposeScope(entry.scope, true)
     }
     entries.length = 0
     // Force-remove any mid-leave entries immediately
@@ -100,7 +103,7 @@ export function each<S, T, M = unknown>(opts: EachOptions<S, T, M>): Node[] {
       for (const node of entry.nodes) {
         if (node.parentNode) node.parentNode.removeChild(node)
       }
-      disposeScope(entry.scope)
+      disposeScope(entry.scope, true)
     }
     leaving.length = 0
   })
@@ -173,14 +176,26 @@ function buildEntry<S, T, M>(
     return accessor
   }
 
-  // Proxy: item.field returns a field-accessor (shorthand for item(t => t.field))
+  // Proxy: item.field returns a field-accessor (shorthand for item(t => t.field)).
+  // Cache the per-field accessor so repeated `item.name` reads across the
+  // view's binding sites return the SAME function identity. For 10k rows
+  // with 3 field reads each, this turns 30k closure allocations into 3k.
+  let fieldCache: Map<string, () => unknown> | null = null
   const itemAccessor = new Proxy(itemFn as object, {
     get(target, prop) {
       if (typeof prop === 'symbol' || prop === 'then' || prop === 'prototype') {
         return Reflect.get(target, prop)
       }
-      const accessor = () => (entry.current as Record<string, unknown>)[prop as string]
-      accessor.__perItem = true as const
+      const key = prop as string
+      if (fieldCache) {
+        const cached = fieldCache.get(key)
+        if (cached) return cached
+      } else {
+        fieldCache = new Map()
+      }
+      const accessor = () => (entry.current as Record<string, unknown>)[key]
+      ;(accessor as unknown as { __perItem: true }).__perItem = true
+      fieldCache.set(key, accessor)
       return accessor
     },
   }) as ItemAccessor<T>
@@ -255,8 +270,12 @@ function reconcileEntries<S, T>(
       range.setEndAfter(lastNode)
       range.deleteContents()
     }
-    // Dispose scopes (no DOM work — nodes already removed)
-    for (const entry of entries) disposeScope(entry.scope)
+    // Dispose scopes in bulk. Individual disposeScope → removeFromParent
+    // does parent.children.indexOf+splice per scope, which is O(N²) when
+    // clearing 1000 sibling entries. Pass skipParentRemoval=true and
+    // collapse all detachments into one O(N) scan.
+    for (const entry of entries) disposeScope(entry.scope, true)
+    removeOrphanedChildren(parentScope)
     entries.length = 0
     return
   }
@@ -338,7 +357,9 @@ function reconcileEntries<S, T>(
       const lastEntry = entries[entries.length - 1]!
       range.setEndAfter(lastEntry.nodes[lastEntry.nodes.length - 1]!)
       range.deleteContents()
-      for (const entry of entries) disposeScope(entry.scope)
+      // Bulk detach — see comment at the clear-all path above.
+      for (const entry of entries) disposeScope(entry.scope, true)
+      removeOrphanedChildren(parentScope)
       entries.length = 0
       // Build all new entries into a fragment
       const frag = document.createDocumentFragment()
@@ -384,7 +405,10 @@ function reconcileEntries<S, T>(
     }
   }
 
-  // Remove entries not in the new list
+  // Remove entries not in the new list. Use bulk-detach pattern so
+  // disposing K removals costs O(K+P) rather than O(K*P) where P is
+  // parentScope.children.length (avoids K * indexOf+splice).
+  let didBulkDetach = false
   for (const entry of entries) {
     if (!usedKeys.has(entry.key)) {
       if (report) collectNodes(report.leaving, entry.nodes)
@@ -392,10 +416,12 @@ function reconcileEntries<S, T>(
         removeEntry(entry, opts, leaving)
       } else {
         for (const node of entry.nodes) parent.removeChild(node)
-        disposeScope(entry.scope)
+        disposeScope(entry.scope, true)
+        didBulkDetach = true
       }
     }
   }
+  if (didBulkDetach) removeOrphanedChildren(parentScope)
 
   // Reorder DOM
   const hasSurvivors = newEntries.some((e) => oldByKey.has(e.key))
