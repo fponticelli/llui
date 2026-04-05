@@ -101,4 +101,45 @@ New `@llui/transitions` package: `transition()` core + `fade`/`slide`/`scale`/`c
 
 ### 8. Headless components package (`@llui/components`)
 
-Replicate zag.js components (accordion, dialog, menu, tabs, combobox, tooltip, popover, switch, checkbox, slider, toast). Headless, no zag dependency, state-machine-driven with solid styling customization strategies. Use `@llui/transitions` for enter/leave animations.
+39 headless components shipped, state-machine-driven, no zag dependency, using `@llui/transitions` for enter/leave: accordion, alert-dialog, avatar, carousel, checkbox, clipboard, collapsible, color-picker, combobox, context-menu, date-picker, dialog, drawer, editable, file-upload, hover-card, listbox, menu, number-input, pagination, password-input, pin-input, popover, progress, radio-group, rating-group, select, slider, splitter, stepper, switch, tabs, tags-input, time-picker, toast, toggle-group, toggle, tooltip, tree-view. Demo app at `examples/components-demo` exercises 34 + `confirm-dialog` pattern.
+
+### 9. Zag.js parity — missing components
+
+Add the remaining Zag.js machines (naming aligned with zag):
+
+- **Broadly useful:** `qr-code`, `scroll-area`, `signature-pad`, `navigation-menu`, `angle-slider`, `tour`
+- **Niche but include for parity:** `async-list`, `cascade-select`, `date-input` (keyboard-only field, separate from date-picker), `floating-panel`, `image-cropper`, `marquee`, `presence` (primitive), `timer`, `toc`
+
+**Renames to align with zag naming:**
+- `stepper` → `steps`
+- Decide whether to merge `alert-dialog` into `dialog` (zag does this via `role="alertdialog"`) or keep separate
+
+### 10. Zag.js parity — cross-cutting patterns
+
+- **Controlled/uncontrolled split.** Add `defaultValue` vs `value` distinction + `onValueChange` hook to components that carry a single value field. Today llui only carries one field in state — consumer owns controlled-ness via the outer TEA loop.
+- **Collections abstraction.** Introduce `TreeCollection` / `ListCollection` helpers to centralize indexing/traversal for tree-view, listbox, combobox, select. Today consumers feed `visibleItems`/`items` arrays manually.
+- **i18n / RTL layer.** Universal `translations` object + `dir` prop flipping arrow-key semantics. Today labels are hardcoded English with per-connect overrides in spots.
+- **Validator / transform callbacks.** `validate(value) → error | null` and `transform(value) → value` hooks on file-upload, editable, number-input, tags-input, pin-input.
+
+(`ids?: ElementIds` override for SSR id collisions — explicitly not pursuing, single `opts.id` prefix is adequate.)
+
+### 11. Zag.js parity — accessibility
+
+- **Typeahead first-letter search** across menu, listbox, select, tree-view, combobox.
+- **Tri-state `aria-checked`** for hierarchical checkboxes in tree-view.
+- **`aria-busy`** during async operations + `aria-owns` for virtualized/async children.
+- **Orientation-aware keyboard** — wire up state access in keydown handlers so tabs/toolbar flip ArrowUp↔ArrowLeft based on orientation (current comment at tabs.ts: "we don't have state here").
+- **Localized `aria-label`** strings via `translations`.
+- **Tab `indicator` part** with measured `Rect` for animated underlines.
+- **Tree-view ArrowLeft**: "collapse-then-jump-to-parent" WAI-ARIA semantics.
+- **Async load-children + in-place rename** for tree-view.
+
+### 12. Zag.js parity — per-component gaps
+
+**file-upload:** `minFileSize`, per-file `validate()`, `transformFiles`, rejected-file tracking with `FileError` codes, `capture`/`directory`/`required`/`readOnly`/`invalid` attrs, `preventDocumentDrop` safety, MIME-object `accept`, parts: `itemName`, `itemSizeText`, `itemPreview`, `itemDeleteTrigger`, `itemGroup`.
+
+**tree-view:** tri-state checkbox selection, typeahead, async lazy-load children, in-place rename flow, `expandOnClick`, `TreeCollection` abstraction.
+
+**tabs:** `indicator` part (measured rect for animated selection bar), `loopFocus` opt-out, `deselectable` mode, anchor-tab `navigate` hook, orientation-aware keyboard.
+
+**combobox / select / menu:** typeahead search.
