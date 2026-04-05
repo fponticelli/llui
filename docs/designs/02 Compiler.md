@@ -545,7 +545,7 @@ Before element transformation, the compiler scans `each()` render callbacks for 
 // Before:
 render: ({ item }) => [
   tr({ class: (s) => s.selected === item((r) => r.id)() ? 'danger' : '' }, [
-    td({}, [text(item((r) => String(r.id)))]),
+    td([text(item((r) => String(r.id)))]),
     a({ onClick: () => send({ type: 'select', id: item((r) => r.id)() }) }, [...]),
   ]),
 ]
@@ -556,7 +556,7 @@ render: ({ item }) => {
   const __a0 = item(__s0)
   return [
     tr({ class: (s) => s.selected === __a0() ? 'danger' : '' }, [
-      td({}, [text(item((r) => String(r.id)))]),
+      td([text(item((r) => String(r.id)))]),
       a({ onClick: () => send({ type: 'select', id: __a0() }) }, [...]),
     ]),
   ]

@@ -184,9 +184,9 @@ const App = component<State, Msg, never>({
     const accItem = (v: string, title: string, body: string): Node => {
       const p = ac.item(v)
       return div({ ...p.item }, [
-        h3({}, [
+        h3([
           button({ ...p.trigger }, [
-            span({}, [text(title)]),
+            span([text(title)]),
             span(
               {
                 class: 'ml-2 transition-transform',
@@ -227,7 +227,7 @@ const App = component<State, Msg, never>({
 
     const treeBranch = (id: string, label: string, depth: number, children: Node[]): Node => {
       const p = tv.item(id, depth, true)
-      return div({}, [
+      return div([
         div({ ...p.item, class: 'tree-item' }, [
           button({ ...p.branchTrigger, class: 'tree-caret' }, [text('▸')]),
           span({ class: 'tree-label' }, [text(label)]),
@@ -354,7 +354,7 @@ const App = component<State, Msg, never>({
         card('Collapsible', [
           div({ ...cl.root }, [
             button({ ...cl.trigger, class: 'btn btn-secondary' }, [
-              span({}, [text((s: State) => (s.collapsible.open ? 'Hide details' : 'Show details'))]),
+              span([text((s: State) => (s.collapsible.open ? 'Hide details' : 'Show details'))]),
             ]),
             div({ ...cl.content, class: 'mt-2 text-sm text-slate-600' }, [
               text(

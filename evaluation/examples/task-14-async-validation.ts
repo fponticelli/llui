@@ -67,7 +67,7 @@ export const AsyncValidation = component<State, Msg, Effect>({
   },
   view: (send) => [
     div({ class: 'async-validation' }, [
-      label({}, [text('Email')]),
+      label([text('Email')]),
       input({
         type: 'email',
         value: (s: State) => s.email,

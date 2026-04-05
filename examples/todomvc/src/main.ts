@@ -90,8 +90,8 @@ const App = component<State, Msg, never>({
 
     return [
       section({ class: 'todoapp' }, [
-        header({}, [
-          h1({}, [text('todos')]),
+        header([
+          h1([text('todos')]),
           input({
             class: 'new-todo',
             placeholder: 'What needs to be done?',
@@ -136,7 +136,7 @@ const App = component<State, Msg, never>({
                           checked: item((t) => t.completed),
                           onClick: () => send({ type: 'toggle', id: item((t) => t.id)() }),
                         }),
-                        label({}, [text(item((t) => t.text))]),
+                        label([text(item((t) => t.text))]),
                         button(
                           {
                             class: 'destroy',
@@ -184,7 +184,7 @@ const App = component<State, Msg, never>({
 })
 
 function filterLink(filter: Filter, linkLabel: string, send: (msg: Msg) => void): HTMLElement {
-  return li({}, [
+  return li([
     a(
       {
         class: (s: State) => (s.filter === filter ? 'selected' : ''),

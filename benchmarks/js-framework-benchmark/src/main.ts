@@ -143,7 +143,7 @@ const App = component<State, Msg, never>({
     div({ class: 'container' }, [
       div({ class: 'jumbotron' }, [
         div({ class: 'row' }, [
-          div({ class: 'col-md-6' }, [h1({}, [text('LLui-keyed')])]),
+          div({ class: 'col-md-6' }, [h1([text('LLui-keyed')])]),
           div({ class: 'col-md-6' }, [
             div({ class: 'row' }, [
               actionButton('run', 'Create 1,000 rows', send),
@@ -166,11 +166,11 @@ const App = component<State, Msg, never>({
               key: (r) => r.id,
               render: ({ item }) => {
                 const rowId = item.id()
-                const row = tr({}, [
+                const row = tr([
                   td({ class: 'col-md-1' }, [text(item((r) => String(r.id)))]),
-                  td({ class: 'col-md-4' }, [a({}, [text(item.label)])]),
+                  td({ class: 'col-md-4' }, [a([text(item.label)])]),
                   td({ class: 'col-md-1' }, [
-                    a({}, [
+                    a([
                       span({
                         class: 'glyphicon glyphicon-remove',
                         'aria-hidden': 'true',
