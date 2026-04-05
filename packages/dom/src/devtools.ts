@@ -1,4 +1,4 @@
-import { flushInstance, type ComponentInstance } from './update-loop'
+import { flushInstance, _forceState, type ComponentInstance } from './update-loop'
 import { _setDevToolsInstall } from './mount'
 import type { Binding } from './types'
 
@@ -20,7 +20,7 @@ let relayStarted = false
 
 interface RelayRequest {
   id: string
-  method: keyof LluiDebugAPI
+  method: keyof LluiDebugAPI | '__listComponents' | '__selectComponent'
   args: unknown[]
 }
 
@@ -52,7 +52,32 @@ export function startRelay(port = 5200): void {
         return
       }
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const api = (globalThis as any).__lluiDebug as LluiDebugAPI | undefined
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const g = globalThis as any
+      // Registry introspection methods work even when __lluiDebug isn't set
+      if (req.method === '__listComponents') {
+        const keys = g.__lluiComponents ? Object.keys(g.__lluiComponents) : []
+        const active =
+          g.__lluiDebug && g.__lluiComponents
+            ? (Object.entries(g.__lluiComponents).find(([, v]) => v === g.__lluiDebug)?.[0] ??
+              null)
+            : null
+        ws.send(JSON.stringify({ id: req.id, result: { components: keys, active } }))
+        return
+      }
+      if (req.method === '__selectComponent') {
+        const key = (req.args?.[0] as string | undefined) ?? ''
+        const entry = g.__lluiComponents?.[key]
+        if (!entry) {
+          ws.send(JSON.stringify({ id: req.id, error: `unknown component: ${key}` }))
+          return
+        }
+        g.__lluiDebug = entry
+        ws.send(JSON.stringify({ id: req.id, result: { active: key } }))
+        return
+      }
+
+      const api = g.__lluiDebug as LluiDebugAPI | undefined
       if (!api) {
         ws.send(JSON.stringify({ id: req.id, error: '__lluiDebug not available' }))
         return
@@ -124,7 +149,7 @@ export interface LluiDebugAPI {
   getState(): unknown
   send(msg: unknown): void
   flush(): void
-  getMessageHistory(): MessageRecord[]
+  getMessageHistory(opts?: { since?: number; limit?: number }): MessageRecord[]
   evalUpdate(msg: unknown): { state: unknown; effects: unknown[] }
   exportTrace(): {
     lluiTrace: 1
@@ -150,6 +175,22 @@ export interface LluiDebugAPI {
   getStateSchema(): object | null
   /** Returns the compiled Effect schema (from TypeScript `type Effect = { … }` union). */
   getEffectSchema(): object | null
+  /** Deep-clone the current state. Pair with restoreState() to checkpoint before risky operations. */
+  snapshotState(): unknown
+  /** Overwrite the current state with a previously-captured snapshot. Triggers a full re-render. */
+  restoreState(snap: unknown): void
+  /** Find all bindings whose target node matches or is a child of the selector. */
+  getBindingsFor(selector: string): BindingLocation[]
+}
+
+export interface BindingLocation {
+  bindingIndex: number
+  kind: string
+  key: string | undefined
+  mask: number
+  lastValue: unknown
+  /** How the binding's node relates to the matched element: 'self' (binding on the element itself) or 'text-child' (text node inside). */
+  relation: 'self' | 'text-child' | 'comment-child'
 }
 
 export interface ComponentInfo {
@@ -175,7 +216,17 @@ export function installDevTools(inst: object): void {
     getState: () => ci.state,
     send: (msg) => ci.send(msg as never),
     flush: () => flushInstance(ci),
-    getMessageHistory: () => history.slice(),
+    getMessageHistory: (opts) => {
+      let result = history
+      if (opts?.since !== undefined) {
+        const since = opts.since
+        result = result.filter((r) => r.index > since)
+      }
+      if (opts?.limit !== undefined && opts.limit > 0) {
+        result = result.slice(-opts.limit)
+      }
+      return result.slice()
+    },
 
     evalUpdate(msg) {
       const [state, effects] = ci.def.update(ci.state, msg as never)
@@ -379,6 +430,47 @@ export function installDevTools(inst: object): void {
     getEffectSchema(): object | null {
       return (ci.def.__effectSchema as object | undefined) ?? null
     },
+
+    snapshotState(): unknown {
+      return JSON.parse(JSON.stringify(ci.state))
+    },
+
+    restoreState(snap: unknown): void {
+      _forceState(ci, snap)
+    },
+
+    getBindingsFor(selector: string): BindingLocation[] {
+      if (typeof document === 'undefined') return []
+      const elements = Array.from(document.querySelectorAll(selector))
+      if (elements.length === 0) return []
+      const elementSet = new Set<Element>(elements)
+      const results: BindingLocation[] = []
+      for (let i = 0; i < ci.allBindings.length; i++) {
+        const b = ci.allBindings[i]!
+        if (b.dead) continue
+        const node = b.node
+        let relation: 'self' | 'text-child' | 'comment-child' | null = null
+        if (node.nodeType === 1 && elementSet.has(node as Element)) {
+          relation = 'self'
+        } else if (
+          (node.nodeType === 3 || node.nodeType === 8) &&
+          node.parentElement &&
+          elementSet.has(node.parentElement)
+        ) {
+          relation = node.nodeType === 3 ? 'text-child' : 'comment-child'
+        }
+        if (!relation) continue
+        results.push({
+          bindingIndex: i,
+          kind: b.kind,
+          key: b.key,
+          mask: b.mask,
+          lastValue: b.lastValue,
+          relation,
+        })
+      }
+      return results
+    },
   }
 
   // Intercept update to record transitions
@@ -409,6 +501,24 @@ export function installDevTools(inst: object): void {
     return [newState, effects]
   }) as typeof ci.def.update
 
+  // Register in the multi-component registry and point __lluiDebug at the
+  // newest mount (so single-component apps keep working unchanged). Tools
+  // can switch the active pointer via llui_select_component.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  ;(globalThis as any).__lluiDebug = api
+  const g = globalThis as any
+  if (!g.__lluiComponents) g.__lluiComponents = {} as Record<string, LluiDebugAPI>
+  const componentKey = uniqueName(g.__lluiComponents, ci.def.name)
+  g.__lluiComponents[componentKey] = api
+  g.__lluiDebug = api
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  ;(api as any).__componentKey = componentKey
+}
+
+// Generate a unique key for a component name if it's already taken
+// (e.g. same component mounted into multiple containers).
+function uniqueName(registry: Record<string, unknown>, name: string): string {
+  if (!(name in registry)) return name
+  let i = 2
+  while (`${name}#${i}` in registry) i++
+  return `${name}#${i}`
 }

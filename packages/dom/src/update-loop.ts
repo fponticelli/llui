@@ -75,6 +75,46 @@ export function flushInstance<S, M, E>(inst: ComponentInstance<S, M, E>): void {
   processMessages(inst)
 }
 
+/**
+ * Dev-only: overwrite instance state and re-run both phases with FULL_MASK
+ * so every binding re-evaluates. Bypasses update() — use for devtools
+ * snapshot/restore, not in app code.
+ */
+export function _forceState<S, M, E>(inst: ComponentInstance<S, M, E>, newState: S): void {
+  inst.state = newState
+  inst.lastDirtyMask = FULL_MASK
+
+  const bindings = inst.allBindings
+  const bindingsBeforePhase1 = bindings.length
+
+  setCurrentDirtyMask(FULL_MASK)
+
+  const snapshot = inst.structuralBlocks.slice()
+  for (const block of snapshot) {
+    block.reconcile(newState, FULL_MASK)
+  }
+
+  let phase2Len = bindingsBeforePhase1
+  if (bindings.length > bindingsBeforePhase1 || (phase2Len > 0 && bindings[0]!.dead)) {
+    let w = 0
+    for (let r = 0; r < bindings.length; r++) {
+      if (!bindings[r]!.dead) bindings[w++] = bindings[r]!
+    }
+    bindings.length = w
+    phase2Len = Math.min(w, bindingsBeforePhase1)
+  }
+
+  const state = inst.state
+  for (let i = 0, len = phase2Len; i < len; i++) {
+    const binding = bindings[i]!
+    if (binding.dead) continue
+    const newValue = binding.accessor(state)
+    if (Object.is(newValue, binding.lastValue)) continue
+    binding.lastValue = newValue
+    applyBinding(binding, newValue)
+  }
+}
+
 function processMessages<S, M, E>(inst: ComponentInstance<S, M, E>): void {
   let state = inst.state
   let combinedDirty = 0

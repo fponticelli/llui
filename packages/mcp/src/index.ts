@@ -92,13 +92,18 @@ const TOOLS: McpToolDefinition[] = [
   },
   {
     name: 'llui_get_message_history',
-    description: 'Get the chronological message history with state transitions and effects.',
+    description:
+      'Get the chronological message history with state transitions, effects, and dirty masks. Supports pagination via `since` (exclusive, return entries with index > since) and `limit` (return at most N most-recent entries). Use both together for tail-fetching.',
     inputSchema: {
       type: 'object',
       properties: {
         since: {
           type: 'number',
-          description: 'Return entries after this index',
+          description: 'Return entries with index strictly greater than this.',
+        },
+        limit: {
+          type: 'number',
+          description: 'Max entries to return (the N most recent).',
         },
       },
     },
@@ -219,6 +224,75 @@ const TOOLS: McpToolDefinition[] = [
       properties: {},
     },
   },
+  {
+    name: 'llui_trace_element',
+    description:
+      "Find all bindings targeting a DOM element matched by a CSS selector. Returns { bindingIndex, kind, key, mask, lastValue, relation }[] so you can answer 'why is this element wrong?' — combine with llui_why_did_update(bindingIndex) for a full narrative.",
+    inputSchema: {
+      type: 'object',
+      properties: {
+        selector: { type: 'string', description: 'CSS selector (e.g. `.todo.active`, `#submit`)' },
+      },
+      required: ['selector'],
+    },
+  },
+  {
+    name: 'llui_snapshot_state',
+    description:
+      'Capture the current state (deep clone). Returns the snapshot — store it, then call llui_restore_state later to roll back. Useful for safely exploring transitions during a debugging session.',
+    inputSchema: { type: 'object', properties: {} },
+  },
+  {
+    name: 'llui_restore_state',
+    description:
+      'Overwrite the current state with a previously-captured snapshot. Triggers a full re-render (FULL_MASK). Bypasses update() — snap must already be a valid state value.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        snapshot: {
+          description: 'The state object returned by llui_snapshot_state.',
+        },
+      },
+      required: ['snapshot'],
+    },
+  },
+  {
+    name: 'llui_list_components',
+    description:
+      'List all currently-mounted LLui components + which one is active (being targeted by subsequent tool calls). Multi-mount apps show one entry per mount.',
+    inputSchema: { type: 'object', properties: {} },
+  },
+  {
+    name: 'llui_select_component',
+    description:
+      'Switch the active component (the one all other tool calls target). Use a key from llui_list_components.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        key: { type: 'string', description: 'Component key as returned by llui_list_components' },
+      },
+      required: ['key'],
+    },
+  },
+  {
+    name: 'llui_replay_trace',
+    description:
+      'Generate a ready-to-run vitest file that replays the current message history via `replayTrace()` from @llui/test. The output is a complete test file with the trace inlined — paste it into packages/<pkg>/test/ to reproduce the exact sequence of messages the component saw in this session. Use this to capture a debugging session as a regression test.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        importPath: {
+          type: 'string',
+          description:
+            "Where to import the component def from in the generated test (default: '../src/index'). Example: '../src/todo-app'.",
+        },
+        exportName: {
+          type: 'string',
+          description: "Named export that holds the component def (default: the component's name).",
+        },
+      },
+    },
+  },
 ]
 
 // ── MCP Server ──────────────────────────────────────────────────
@@ -329,10 +403,10 @@ export class LluiMcpServer {
         return this.call('validateMessage', [args.msg])
 
       case 'llui_get_message_history': {
-        const history = (await this.call('getMessageHistory', [])) as Array<{ index: number }>
-        const since = args.since as number | undefined
-        if (since !== undefined) return history.filter((h) => h.index > since)
-        return history
+        const opts: { since?: number; limit?: number } = {}
+        if (typeof args.since === 'number') opts.since = args.since
+        if (typeof args.limit === 'number') opts.limit = args.limit
+        return this.call('getMessageHistory', [opts])
       }
 
       case 'llui_export_trace':
@@ -368,6 +442,36 @@ export class LluiMcpServer {
 
       case 'llui_list_effects':
         return this.call('getEffectSchema', [])
+
+      case 'llui_trace_element':
+        return this.call('getBindingsFor', [args.selector as string])
+
+      case 'llui_snapshot_state':
+        return this.call('snapshotState', [])
+
+      case 'llui_restore_state':
+        await this.call('restoreState', [args.snapshot])
+        return { restored: true, state: await this.call('getState', []) }
+
+      case 'llui_list_components':
+        return this.call('__listComponents' as never, [])
+
+      case 'llui_select_component':
+        return this.call('__selectComponent' as never, [args.key])
+
+      case 'llui_replay_trace': {
+        const trace = (await this.call('exportTrace', [])) as {
+          component: string
+          entries: Array<{ msg: unknown; expectedState: unknown; expectedEffects: unknown[] }>
+        }
+        const importPath = (args.importPath as string | undefined) ?? '../src/index'
+        const exportName = (args.exportName as string | undefined) ?? trace.component
+        return {
+          filename: `${trace.component.toLowerCase()}-replay.test.ts`,
+          code: generateReplayTest(trace, importPath, exportName),
+          entryCount: trace.entries.length,
+        }
+      }
 
       default:
         throw new Error(`Unknown tool: ${name}`)
@@ -455,3 +559,36 @@ export class LluiMcpServer {
 }
 
 export { TOOLS as mcpToolDefinitions }
+
+function generateReplayTest(
+  trace: {
+    component: string
+    entries: Array<{ msg: unknown; expectedState: unknown; expectedEffects: unknown[] }>
+  },
+  importPath: string,
+  exportName: string,
+): string {
+  const traceJson = JSON.stringify(
+    {
+      lluiTrace: 1,
+      component: trace.component,
+      generatedBy: 'llui-mcp',
+      timestamp: new Date().toISOString(),
+      entries: trace.entries,
+    },
+    null,
+    2,
+  )
+  return `import { it, expect } from 'vitest'
+import { replayTrace } from '@llui/test'
+import { ${exportName} } from '${importPath}'
+
+// Auto-generated from a debugging session via llui_replay_trace MCP tool.
+// Edit the trace below to trim, reorder, or adjust expected state/effects.
+const trace = ${traceJson} as const
+
+it('${trace.component}: replays ${trace.entries.length} recorded message${trace.entries.length === 1 ? '' : 's'}', () => {
+  expect(() => replayTrace(${exportName}, trace as Parameters<typeof replayTrace>[1])).not.toThrow()
+})
+`
+}
