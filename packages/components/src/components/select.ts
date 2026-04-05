@@ -465,7 +465,7 @@ export function overlay<S>(opts: OverlayOptions<S>): Node[] {
                 },
               }),
             )
-            contentEl.focus()
+            contentEl.focus({ preventScroll: true })
             return () => {
               for (let i = cleanups.length - 1; i >= 0; i--) cleanups[i]!()
             }

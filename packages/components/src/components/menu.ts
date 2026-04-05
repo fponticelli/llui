@@ -395,8 +395,10 @@ export function overlay<S>(opts: OverlayOptions<S>): Node[] {
               }),
             )
 
-            // Auto-focus content so keyboard navigation works immediately
-            contentEl.focus()
+            // Auto-focus content so keyboard navigation works immediately.
+            // preventScroll avoids a page jump when the portaled content
+            // is briefly at position (0,0) before floating-ui positions it.
+            contentEl.focus({ preventScroll: true })
 
             return () => {
               for (let i = cleanups.length - 1; i >= 0; i--) cleanups[i]!()

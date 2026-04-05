@@ -252,7 +252,7 @@ export function overlay<S>(opts: OverlayOptions<S>): Node[] {
           onMount(() => {
             const contentEl = document.getElementById(contentId)
             if (!contentEl) return
-            contentEl.focus()
+            contentEl.focus({ preventScroll: true })
             const cleanup = pushDismissable({
               element: contentEl,
               onDismiss: () => opts.send({ type: 'close' }),
