@@ -44,8 +44,8 @@ export interface FileUploadState {
 }
 
 export type FileUploadMsg =
-  | { type: 'setFiles'; files: File[] }
-  | { type: 'addFiles'; files: File[] }
+  | { type: 'setFiles'; files: File[]; customRejected?: RejectedFile[] }
+  | { type: 'addFiles'; files: File[]; customRejected?: RejectedFile[] }
   | { type: 'removeFile'; index: number }
   | { type: 'removeRejected'; index: number }
   | { type: 'clear' }
@@ -176,13 +176,15 @@ export function update(state: FileUploadState, msg: FileUploadMsg): [FileUploadS
   switch (msg.type) {
     case 'setFiles': {
       const { accepted, rejected } = validateFiles(msg.files, state, 0)
-      return [{ ...state, files: accepted, rejectedFiles: rejected }, []]
+      const merged = msg.customRejected ? [...rejected, ...msg.customRejected] : rejected
+      return [{ ...state, files: accepted, rejectedFiles: merged }, []]
     }
     case 'addFiles': {
       const base = state.multiple ? state.files : []
       const { accepted, rejected } = validateFiles(msg.files, state, base.length)
       const combined = state.multiple ? [...base, ...accepted] : accepted
-      return [{ ...state, files: combined, rejectedFiles: rejected }, []]
+      const merged = msg.customRejected ? [...rejected, ...msg.customRejected] : rejected
+      return [{ ...state, files: combined, rejectedFiles: merged }, []]
     }
     case 'removeFile':
       return [{ ...state, files: state.files.filter((_, i) => i !== msg.index) }, []]
@@ -340,6 +342,19 @@ export interface ConnectOptions {
   capture?: 'user' | 'environment' | boolean
   /** Show a directory-picker instead of a file-picker (webkit only). */
   directory?: boolean
+  /**
+   * Per-file synchronous validator. Return a non-empty array of `FileError`
+   * codes to reject the file, or null/empty to accept. Runs in addition to
+   * the state-driven accept/size/count checks — its errors accumulate into
+   * `rejectedFiles` alongside the built-in errors.
+   */
+  validate?: (file: File) => FileError[] | null
+  /**
+   * Optional transform pipeline. Runs before validation. Can return a
+   * Promise; onChange awaits it before dispatching. Use for image resizing,
+   * format conversion, etc.
+   */
+  transformFiles?: (files: File[]) => File[] | Promise<File[]>
 }
 
 const HIDDEN_STYLE =
@@ -353,6 +368,35 @@ export function connect<S>(
   const inputId = `${opts.id}:input`
   const removeLabel = opts.removeLabel ?? 'Remove file'
   const clearLabel = opts.clearLabel ?? 'Clear files'
+
+  const runPipeline = async (
+    raw: File[],
+  ): Promise<{ files: File[]; customRejected: RejectedFile[] }> => {
+    let files = raw
+    if (opts.transformFiles) files = await opts.transformFiles(files)
+    const customRejected: RejectedFile[] = []
+    if (opts.validate) {
+      const passed: File[] = []
+      for (const f of files) {
+        const errors = opts.validate(f)
+        if (errors && errors.length > 0) customRejected.push({ file: f, errors })
+        else passed.push(f)
+      }
+      files = passed
+    }
+    return { files, customRejected }
+  }
+
+  const dispatchAdd = (raw: File[]): void => {
+    if (!opts.transformFiles && !opts.validate) {
+      send({ type: 'addFiles', files: raw })
+      return
+    }
+    // Fire-and-forget — transforms may be async.
+    void runPipeline(raw).then(({ files, customRejected }) => {
+      send({ type: 'addFiles', files, customRejected })
+    })
+  }
 
   const openPicker = (e: MouseEvent): void => {
     const target = e.target as HTMLElement
@@ -393,7 +437,7 @@ export function connect<S>(
         e.preventDefault()
         const files = Array.from(e.dataTransfer?.files ?? [])
         send({ type: 'drop' })
-        send({ type: 'addFiles', files })
+        dispatchAdd(files)
       },
     },
     trigger: {
@@ -420,7 +464,7 @@ export function connect<S>(
       onChange: (e) => {
         const input = e.target as HTMLInputElement
         const files = input.files ? Array.from(input.files) : []
-        send({ type: 'addFiles', files })
+        dispatchAdd(files)
         input.value = ''
       },
     },

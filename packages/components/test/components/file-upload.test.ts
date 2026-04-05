@@ -248,6 +248,63 @@ describe('connect: new parts + attrs', () => {
     expect(p2.hiddenInput.webkitdirectory).toBe('')
   })
 
+  it('custom validate adds to rejectedFiles via the pipeline', async () => {
+    const send = vi.fn()
+    const pc = connect<Ctx>((s) => s.u, send, {
+      id: 'x',
+      validate: (file) =>
+        file.name.endsWith('.bad') ? [{ code: 'CUSTOM', message: 'banned name' }] : null,
+    })
+    const input = document.createElement('input')
+    input.type = 'file'
+    const ok = makeFile('ok.txt', 10)
+    const bad = makeFile('oops.bad', 10)
+    Object.defineProperty(input, 'files', { value: [ok, bad] })
+    pc.hiddenInput.onChange({ target: input } as unknown as Event)
+    // Pipeline runs async via Promise.then — wait for microtasks.
+    await Promise.resolve()
+    await Promise.resolve()
+    expect(send).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'addFiles',
+        files: [ok],
+        customRejected: [
+          { file: bad, errors: [{ code: 'CUSTOM', message: 'banned name' }] },
+        ],
+      }),
+    )
+  })
+
+  it('transformFiles runs before validation', async () => {
+    const send = vi.fn()
+    const pc = connect<Ctx>((s) => s.u, send, {
+      id: 'x',
+      transformFiles: (files) =>
+        files.map((f) => new File([f], f.name.toUpperCase(), { type: f.type })),
+    })
+    const input = document.createElement('input')
+    Object.defineProperty(input, 'files', { value: [makeFile('a.txt', 5)] })
+    pc.hiddenInput.onChange({ target: input } as unknown as Event)
+    await Promise.resolve()
+    await Promise.resolve()
+    const call = send.mock.calls[0]![0]
+    expect(call.files[0].name).toBe('A.TXT')
+  })
+
+  it('no validate/transform: dispatches addFiles synchronously without customRejected', () => {
+    const send = vi.fn()
+    const pc = connect<Ctx>((s) => s.u, send, { id: 'x' })
+    const input = document.createElement('input')
+    Object.defineProperty(input, 'files', { value: [makeFile('a.txt', 5)] })
+    pc.hiddenInput.onChange({ target: input } as unknown as Event)
+    // Synchronous path — no await needed
+    expect(send).toHaveBeenCalledWith({
+      type: 'addFiles',
+      files: expect.arrayContaining([expect.any(File)]),
+    })
+    expect(send.mock.calls[0]![0].customRejected).toBeUndefined()
+  })
+
   it('itemDeleteTrigger is a zag-aligned alias for removeTrigger', () => {
     const send = vi.fn()
     const p = connect<Ctx>((s) => s.u, send, { id: 'x' })

@@ -26,3 +26,6 @@ export {
   isTypeaheadKey,
   TYPEAHEAD_TIMEOUT_MS,
 } from './typeahead'
+
+export { TreeCollection } from './tree-collection'
+export type { TreeNode } from './tree-collection'
