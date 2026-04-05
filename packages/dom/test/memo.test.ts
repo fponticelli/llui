@@ -101,9 +101,7 @@ describe('memo()', () => {
           return [
             {
               ...state,
-              todos: state.todos.map((t) =>
-                t.id === msg.id ? { ...t, done: !t.done } : t,
-              ),
+              todos: state.todos.map((t) => (t.id === msg.id ? { ...t, done: !t.done } : t)),
             },
             [],
           ]
@@ -118,8 +116,7 @@ describe('memo()', () => {
         })
       },
       __dirty: (o, n) =>
-        (Object.is(o.todos, n.todos) ? 0 : 0b01) |
-        (Object.is(o.filter, n.filter) ? 0 : 0b10),
+        (Object.is(o.todos, n.todos) ? 0 : 0b01) | (Object.is(o.filter, n.filter) ? 0 : 0b10),
     }
 
     const container = document.createElement('div')

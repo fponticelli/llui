@@ -35,6 +35,7 @@ export { flush } from './runtime'
 export { addressOf } from './addressed'
 export { renderToString } from './ssr'
 export { mergeHandlers } from './merge-handlers'
+export { createContext, provide, useContext, type Context } from './primitives/context'
 export { sliceHandler } from './slice-handler'
 
 // ── View Primitives ───────────────────────────────────────────────

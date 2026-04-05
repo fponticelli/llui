@@ -232,7 +232,8 @@ export function connect<S>(
       value: (s) => String(get(s).hsl.s),
       'data-scope': 'color-picker',
       'data-part': 'saturation-slider',
-      onInput: (e) => send({ type: 'setSaturation', s: Number((e.target as HTMLInputElement).value) }),
+      onInput: (e) =>
+        send({ type: 'setSaturation', s: Number((e.target as HTMLInputElement).value) }),
     },
     lightnessSlider: {
       type: 'range',
@@ -244,7 +245,8 @@ export function connect<S>(
       value: (s) => String(get(s).hsl.l),
       'data-scope': 'color-picker',
       'data-part': 'lightness-slider',
-      onInput: (e) => send({ type: 'setLightness', l: Number((e.target as HTMLInputElement).value) }),
+      onInput: (e) =>
+        send({ type: 'setLightness', l: Number((e.target as HTMLInputElement).value) }),
     },
     hexInput: {
       type: 'text',

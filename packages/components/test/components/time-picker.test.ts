@@ -1,5 +1,12 @@
 import { describe, it, expect, vi } from 'vitest'
-import { init, update, connect, displayHours, period, formatTime } from '../../src/components/time-picker'
+import {
+  init,
+  update,
+  connect,
+  displayHours,
+  period,
+  formatTime,
+} from '../../src/components/time-picker'
 import type { TimePickerState } from '../../src/components/time-picker'
 
 type Ctx = { t: TimePickerState }
@@ -36,13 +43,21 @@ describe('time-picker reducer', () => {
 
 describe('helpers', () => {
   it('displayHours in 12-hr format', () => {
-    expect(displayHours(init({ value: { hours: 0, minutes: 0, seconds: 0 }, format: '12' }))).toBe(12)
-    expect(displayHours(init({ value: { hours: 13, minutes: 0, seconds: 0 }, format: '12' }))).toBe(1)
-    expect(displayHours(init({ value: { hours: 12, minutes: 0, seconds: 0 }, format: '12' }))).toBe(12)
+    expect(displayHours(init({ value: { hours: 0, minutes: 0, seconds: 0 }, format: '12' }))).toBe(
+      12,
+    )
+    expect(displayHours(init({ value: { hours: 13, minutes: 0, seconds: 0 }, format: '12' }))).toBe(
+      1,
+    )
+    expect(displayHours(init({ value: { hours: 12, minutes: 0, seconds: 0 }, format: '12' }))).toBe(
+      12,
+    )
   })
 
   it('displayHours in 24-hr format is passthrough', () => {
-    expect(displayHours(init({ value: { hours: 17, minutes: 0, seconds: 0 }, format: '24' }))).toBe(17)
+    expect(displayHours(init({ value: { hours: 17, minutes: 0, seconds: 0 }, format: '24' }))).toBe(
+      17,
+    )
   })
 
   it('period returns AM or PM', () => {
@@ -52,9 +67,9 @@ describe('helpers', () => {
 
   it('formatTime pads to HH:MM', () => {
     expect(formatTime(init({ value: { hours: 9, minutes: 5, seconds: 0 } }))).toBe('09:05')
-    expect(formatTime(init({ value: { hours: 9, minutes: 5, seconds: 12 }, showSeconds: true }))).toBe(
-      '09:05:12',
-    )
+    expect(
+      formatTime(init({ value: { hours: 9, minutes: 5, seconds: 12 }, showSeconds: true })),
+    ).toBe('09:05:12')
   })
 })
 

@@ -22,7 +22,11 @@ describe('popover.overlay integration', () => {
 
   function makeApp(initialOpen = false): { send: (m: PopoverMsg) => void } {
     let sendRef!: (m: PopoverMsg) => void
-    const parts = connect<Ctx>((s) => s.p, (m) => sendRef(m), { id: 'pop' })
+    const parts = connect<Ctx>(
+      (s) => s.p,
+      (m) => sendRef(m),
+      { id: 'pop' },
+    )
     const def: ComponentDef<Ctx, PopoverMsg, never> = {
       name: 'T',
       init: () => [{ p: init({ open: initialOpen }) }, []],

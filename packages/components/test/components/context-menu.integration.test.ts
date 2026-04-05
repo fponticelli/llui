@@ -29,7 +29,11 @@ describe('context-menu.overlay integration', () => {
       initial.y = 50
       initial.highlighted = 'copy'
     }
-    const parts = connect<Ctx>((s) => s.m, (m) => sendRef(m), { id: 'cm' })
+    const parts = connect<Ctx>(
+      (s) => s.m,
+      (m) => sendRef(m),
+      { id: 'cm' },
+    )
     const def: ComponentDef<Ctx, ContextMenuMsg, never> = {
       name: 'T',
       init: () => [{ m: initial }, []],

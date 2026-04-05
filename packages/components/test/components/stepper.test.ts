@@ -90,8 +90,12 @@ describe('stepper.connect', () => {
   })
 
   it('item aria-current="step" for active', () => {
-    expect(p.item(1).item['aria-current'](wrap(init({ steps: ['a', 'b'], current: 1 })))).toBe('step')
-    expect(p.item(0).item['aria-current'](wrap(init({ steps: ['a', 'b'], current: 1 })))).toBeUndefined()
+    expect(p.item(1).item['aria-current'](wrap(init({ steps: ['a', 'b'], current: 1 })))).toBe(
+      'step',
+    )
+    expect(
+      p.item(0).item['aria-current'](wrap(init({ steps: ['a', 'b'], current: 1 }))),
+    ).toBeUndefined()
   })
 
   it('item data-status reflects computed status', () => {

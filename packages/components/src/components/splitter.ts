@@ -124,7 +124,10 @@ export interface SplitterParts<S> {
   }
 }
 
-export function connect<S>(get: (s: S) => SplitterState, send: Send<SplitterMsg>): SplitterParts<S> {
+export function connect<S>(
+  get: (s: S) => SplitterState,
+  send: Send<SplitterMsg>,
+): SplitterParts<S> {
   const sizeProp = (s: S, inverted: boolean): string => {
     const pos = get(s).position
     const axis = get(s).orientation === 'horizontal' ? 'width' : 'height'

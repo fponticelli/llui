@@ -98,7 +98,9 @@ export function update(state: TreeViewState, msg: TreeViewMsg): [TreeViewState, 
     }
     case 'focusPrev': {
       if (state.visibleItems.length === 0) return [state, []]
-      const idx = state.focused ? state.visibleItems.indexOf(state.focused) : state.visibleItems.length
+      const idx = state.focused
+        ? state.visibleItems.indexOf(state.focused)
+        : state.visibleItems.length
       const prev = state.visibleItems[Math.max(0, idx - 1)]
       return [{ ...state, focused: prev ?? state.focused }, []]
     }
@@ -183,7 +185,8 @@ export function connect<S>(
         role: 'treeitem',
         id: itemId(id),
         'aria-expanded': (s) => (isBranch ? isExpanded(get(s), id) : undefined),
-        'aria-selected': (s) => (get(s).selectionMode === 'single' ? isSelected(get(s), id) : undefined),
+        'aria-selected': (s) =>
+          get(s).selectionMode === 'single' ? isSelected(get(s), id) : undefined,
         'aria-level': depth + 1,
         tabIndex: (s) => (get(s).focused === id ? 0 : -1),
         'data-scope': 'tree-view',

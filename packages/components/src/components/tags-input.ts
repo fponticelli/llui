@@ -57,7 +57,8 @@ export function update(state: TagsInputState, msg: TagsInputMsg): [TagsInputStat
       const candidate = (msg.value ?? state.inputValue).trim()
       if (candidate === '') return [{ ...state, inputValue: '' }, []]
       if (state.unique && state.value.includes(candidate)) return [{ ...state, inputValue: '' }, []]
-      if (state.max > 0 && state.value.length >= state.max) return [{ ...state, inputValue: '' }, []]
+      if (state.max > 0 && state.value.length >= state.max)
+        return [{ ...state, inputValue: '' }, []]
       return [{ ...state, value: [...state.value, candidate], inputValue: '' }, []]
     }
     case 'removeTag': {

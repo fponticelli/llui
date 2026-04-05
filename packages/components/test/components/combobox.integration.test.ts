@@ -25,7 +25,11 @@ describe('combobox.overlay integration', () => {
     let sendRef!: (m: ComboboxMsg) => void
     const initial = init({ items: ['apple', 'banana'] })
     if (initialOpen) initial.open = true
-    const parts = connect<Ctx>((s) => s.c, (m) => sendRef(m), { id: 'cb' })
+    const parts = connect<Ctx>(
+      (s) => s.c,
+      (m) => sendRef(m),
+      { id: 'cb' },
+    )
     const def: ComponentDef<Ctx, ComboboxMsg, never> = {
       name: 'T',
       init: () => [{ c: initial }, []],

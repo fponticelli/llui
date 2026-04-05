@@ -93,6 +93,59 @@ case 'setQuery': {
 }
 ```
 
+### Polling with `interval`
+
+```typescript
+import { interval, cancel } from '@llui/effects'
+
+case 'startPolling':
+  return [{ ...state, polling: true }, [interval('poll', 5000, { type: 'tick' })]]
+case 'stopPolling':
+  return [{ ...state, polling: false }, [cancel('poll')]]
+case 'tick':
+  return [state, [http({ url: '/api/status', onSuccess: 'statusLoaded', onError: 'statusErr' })]]
+```
+
+### Delayed Messages with `timeout`
+
+```typescript
+import { timeout } from '@llui/effects'
+
+case 'showToast':
+  return [
+    { ...state, toast: msg.text },
+    [timeout(3000, { type: 'dismissToast' })],
+  ]
+case 'dismissToast':
+  return [{ ...state, toast: null }, []]
+```
+
+### Persistence with localStorage
+
+```typescript
+import { storageLoad, storageSet, storageWatch } from '@llui/effects'
+
+// Seed state at init time:
+init: () => {
+  const saved = storageLoad<{ theme: string }>('prefs')
+  return [{ theme: saved?.theme ?? 'light' }, [
+    // Optionally subscribe to cross-tab changes:
+    storageWatch('prefs', 'prefsChanged'),
+  ]]
+}
+
+// Write on every change:
+case 'setTheme':
+  return [
+    { ...state, theme: msg.value },
+    [storageSet('prefs', { theme: msg.value })],
+  ]
+
+// Cross-tab sync handler:
+case 'prefsChanged':
+  return msg.value ? [{ ...state, theme: (msg.value as { theme: string }).theme }, []] : [state, []]
+```
+
 ### Cancel Previous Request
 
 ```typescript
@@ -247,6 +300,40 @@ explicit.
 parent owns the state directly and passes accessors down via `Props<T, S>`.
 `sliceHandler` is for genuine sub-components with their own update logic.
 
+### Context: avoiding prop drilling
+
+For ambient data that many components need (theme, user session, i18n) without
+threading through every view function:
+
+```typescript
+import { createContext, provide, useContext } from '@llui/dom'
+
+// Declare a typed context. Pass a default to make unprovided consumers resolve;
+// omit to make `useContext` throw at mount.
+const ThemeContext = createContext<'light' | 'dark'>('light')
+
+// Provide a reactive accessor to every descendant rendered inside children():
+view: (send) =>
+  provide(ThemeContext, (s: State) => s.theme, () => [
+    header(send),
+    main(send),
+  ])
+
+// Consume anywhere in the subtree — returns a `(s) => T` accessor:
+export function card(): Node[] {
+  const theme = useContext(ThemeContext)
+  return [div({ class: (s) => `card theme-${theme(s)}` }, [...])]
+}
+```
+
+Nested providers shadow outer ones within their subtree; the outer value
+is restored for sibling subtrees automatically. Context works across
+`show`/`branch`/`each` boundaries, including re-mounts.
+
+**When to use context:** theme, route, user session, feature flags, design
+tokens. **When NOT to use it:** data that's specific to a subtree — pass
+via `Props<T, S>` instead.
+
 ## Routing
 
 ### Structured Route Definitions
@@ -380,18 +467,37 @@ foreign<State, { content: string }, { el: HTMLElement }>({
 ```typescript
 import { testComponent, testView, propertyTest } from '@llui/test'
 
-// Unit test update()
+// Unit test update() — zero DOM, runs in Node
 const harness = testComponent(MyComponent)
 harness.send({ type: 'inc' })
-expect(harness.state().count).toBe(1)
+expect(harness.state.count).toBe(1)
+expect(harness.allEffects).toEqual([])
 
-// View test
+// Chain messages:
+harness.sendAll([{ type: 'inc' }, { type: 'inc' }, { type: 'reset' }])
+expect(harness.state.count).toBe(0)
+
+// Interactive view test — mount, simulate events, assert DOM:
 const view = testView(MyComponent, { count: 5 })
-expect(view.query('.counter')?.textContent).toContain('5')
+expect(view.text('.count')).toBe('5')
 
-// Property test (random message sequences)
+view.click('.increment') // dispatches onClick + flushes
+view.input('.name', 'alice') // sets value + fires input event + flushes
+view.send({ type: 'reset' }) // dispatch a message + flush
+expect(view.text('.count')).toBe('0')
+
+view.unmount()
+
+// Property test (random message sequences):
 propertyTest(MyComponent, {
   messages: [{ type: 'inc' }, { type: 'dec' }, { type: 'reset' }],
   invariant: (state) => state.count >= 0,
 })
 ```
+
+**When to use which:**
+
+- `testComponent` — validating `update()` logic. Pure, fast, no DOM.
+- `testView` — validating bindings + event wiring. Uses jsdom, supports
+  `click`, `input`, `fire`, `send`, `text`, `attr`, `query`, `queryAll`.
+- `propertyTest` — catching edge cases via random message sequences.

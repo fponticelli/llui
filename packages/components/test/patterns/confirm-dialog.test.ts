@@ -136,7 +136,9 @@ describe('confirmDialog integration', () => {
       view: (send) => {
         sendRef = send
         return [
-          button({ type: 'button', onClick: () => send({ type: 'triggerConfirm' }) }, [text('Delete')]),
+          button({ type: 'button', onClick: () => send({ type: 'triggerConfirm' }) }, [
+            text('Delete'),
+          ]),
           ...view<Ctx>({
             get: (s) => s.cd,
             send: (m) => send({ type: 'cd', msg: m }),

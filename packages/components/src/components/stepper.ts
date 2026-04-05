@@ -77,7 +77,11 @@ export function update(state: StepperState, msg: StepperMsg): [StepperState, nev
     case 'complete': {
       if (state.completed.includes(msg.step)) return [state, []]
       return [
-        { ...state, completed: [...state.completed, msg.step], errors: state.errors.filter((e) => e !== msg.step) },
+        {
+          ...state,
+          completed: [...state.completed, msg.step],
+          errors: state.errors.filter((e) => e !== msg.step),
+        },
         [],
       ]
     }

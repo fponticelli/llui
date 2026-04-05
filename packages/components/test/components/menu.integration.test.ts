@@ -22,7 +22,11 @@ describe('menu.overlay integration', () => {
 
   function makeApp(initialOpen = false): { send: (m: MenuMsg) => void } {
     let sendRef!: (m: MenuMsg) => void
-    const parts = connect<Ctx>((s) => s.m, (m) => sendRef(m), { id: 'mn' })
+    const parts = connect<Ctx>(
+      (s) => s.m,
+      (m) => sendRef(m),
+      { id: 'mn' },
+    )
     const def: ComponentDef<Ctx, MenuMsg, never> = {
       name: 'T',
       init: () => [{ m: init({ items: ['a', 'b', 'c'], open: initialOpen }) }, []],

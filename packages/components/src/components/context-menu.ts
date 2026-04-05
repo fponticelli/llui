@@ -88,12 +88,18 @@ export function update(state: ContextMenuState, msg: ContextMenuMsg): [ContextMe
       return [{ ...state, highlighted: msg.value }, []]
     case 'highlightNext':
       return [
-        { ...state, highlighted: nextEnabled(state.items, state.disabledItems, state.highlighted, 1) },
+        {
+          ...state,
+          highlighted: nextEnabled(state.items, state.disabledItems, state.highlighted, 1),
+        },
         [],
       ]
     case 'highlightPrev':
       return [
-        { ...state, highlighted: nextEnabled(state.items, state.disabledItems, state.highlighted, -1) },
+        {
+          ...state,
+          highlighted: nextEnabled(state.items, state.disabledItems, state.highlighted, -1),
+        },
         [],
       ]
     case 'selectHighlighted':

@@ -12,6 +12,77 @@ export function enableDevTools(): void {
   _setDevToolsInstall(installDevTools)
 }
 
+// ── MCP WebSocket Relay ─────────────────────────────────────────────
+// Forwards method calls from an out-of-process MCP server to the
+// current __lluiDebug API. Dev-mode only — compiler injects startRelay(port).
+
+let relayStarted = false
+
+interface RelayRequest {
+  id: string
+  method: keyof LluiDebugAPI
+  args: unknown[]
+}
+
+/**
+ * Connect to a local MCP server's WebSocket and forward tool calls to
+ * `window.__lluiDebug`. Auto-reconnects on close. Safe to call multiple times
+ * (only the first call actually runs).
+ */
+export function startRelay(port = 5200): void {
+  if (relayStarted) return
+  relayStarted = true
+  if (typeof WebSocket === 'undefined') return
+
+  function connect(): void {
+    let ws: WebSocket
+    try {
+      ws = new WebSocket(`ws://127.0.0.1:${port}`)
+    } catch {
+      // Unable to open — retry later
+      setTimeout(connect, 3000)
+      return
+    }
+
+    ws.onmessage = (event: MessageEvent) => {
+      let req: RelayRequest
+      try {
+        req = JSON.parse(String(event.data)) as RelayRequest
+      } catch {
+        return
+      }
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const api = (globalThis as any).__lluiDebug as LluiDebugAPI | undefined
+      if (!api) {
+        ws.send(JSON.stringify({ id: req.id, error: '__lluiDebug not available' }))
+        return
+      }
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const fn = (api as any)[req.method]
+      if (typeof fn !== 'function') {
+        ws.send(JSON.stringify({ id: req.id, error: `unknown method: ${req.method}` }))
+        return
+      }
+      try {
+        const result = fn.apply(api, req.args ?? [])
+        ws.send(JSON.stringify({ id: req.id, result: result ?? null }))
+      } catch (e) {
+        ws.send(JSON.stringify({ id: req.id, error: e instanceof Error ? e.message : String(e) }))
+      }
+    }
+
+    ws.onclose = () => {
+      // Retry until the MCP server is up
+      setTimeout(connect, 2000)
+    }
+    ws.onerror = () => {
+      // onclose will fire and handle retry
+    }
+  }
+
+  connect()
+}
+
 export interface MessageRecord {
   index: number
   timestamp: number

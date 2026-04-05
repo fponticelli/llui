@@ -91,8 +91,8 @@ function isInRange(iso: string, min: string | null, max: string | null): boolean
 export function init(opts: DatePickerInit = {}): DatePickerState {
   const today = todayIso()
   const parsed = opts.value ? parseIso(opts.value) : null
-  const visibleMonth = opts.visibleMonth ?? (parsed?.m ?? new Date().getMonth() + 1)
-  const visibleYear = opts.visibleYear ?? (parsed?.y ?? new Date().getFullYear())
+  const visibleMonth = opts.visibleMonth ?? parsed?.m ?? new Date().getMonth() + 1
+  const visibleYear = opts.visibleYear ?? parsed?.y ?? new Date().getFullYear()
   return {
     value: opts.value ?? null,
     visibleMonth,
@@ -105,10 +105,7 @@ export function init(opts: DatePickerInit = {}): DatePickerState {
   }
 }
 
-function normalizeMonth(
-  year: number,
-  month: number,
-): { year: number; month: number } {
+function normalizeMonth(year: number, month: number): { year: number; month: number } {
   let y = year
   let m = month
   while (m > 12) {

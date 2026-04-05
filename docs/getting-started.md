@@ -46,7 +46,7 @@ type State = { count: number }
 type Msg = { type: 'inc' } | { type: 'dec' } | { type: 'reset' }
 
 // 3. Create the component
-const Counter = component<State, Msg, never>({
+const Counter = component<State, Msg>({
   name: 'Counter',
 
   // Initial state + effects
@@ -222,8 +222,8 @@ Handle effects with `handleEffects()`:
 import { handleEffects } from '@llui/effects'
 
 onEffect: handleEffects<Effect, Msg>()
-  .use(routingPlugin)        // plugins handle specific effect types
-  .else((effect, send) => {  // catch-all for app-specific effects
+  .use(routingPlugin)              // plugins handle specific effect types
+  .else(({ effect, send }) => {    // catch-all for app-specific effects
     // custom effect handling
   }),
 ```
@@ -261,6 +261,20 @@ view: (send) => [
   }),
 ]
 ```
+
+## Dev Tools
+
+When running through the Vite plugin in dev mode, LLui automatically installs
+`window.__lluiDebug` on every mounted component. Open the browser console:
+
+```js
+__lluiDebug.getState() // current state
+__lluiDebug.send({ type: 'inc' }) // dispatch a message
+__lluiDebug.getMessageHistory() // last 1000 state transitions
+__lluiDebug.exportTrace() // save + replay via @llui/test
+```
+
+The devtools code is tree-shaken out of production builds — zero cost in prod.
 
 ## Next Steps
 

@@ -58,9 +58,7 @@ describe('context-menu.connect', () => {
   })
 
   it('positioner style uses x/y', () => {
-    const style = p.positioner.style(
-      wrap({ ...init({ items: ['a'] }), open: true, x: 42, y: 99 }),
-    )
+    const style = p.positioner.style(wrap({ ...init({ items: ['a'] }), open: true, x: 42, y: 99 }))
     expect(style).toContain('top:99px')
     expect(style).toContain('left:42px')
   })

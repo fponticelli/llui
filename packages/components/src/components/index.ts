@@ -187,7 +187,13 @@ export type {
 export type { AvatarState, AvatarMsg, AvatarInit, AvatarParts, ImageStatus } from './avatar'
 export type { ClipboardState, ClipboardMsg, ClipboardInit, ClipboardParts } from './clipboard'
 export type { EditableState, EditableMsg, EditableInit, EditableParts } from './editable'
-export type { TagsInputState, TagsInputMsg, TagsInputInit, TagsInputParts, TagItemParts } from './tags-input'
+export type {
+  TagsInputState,
+  TagsInputMsg,
+  TagsInputInit,
+  TagsInputParts,
+  TagItemParts,
+} from './tags-input'
 export type { SplitterState, SplitterMsg, SplitterInit, SplitterParts } from './splitter'
 export type {
   FileUploadState,

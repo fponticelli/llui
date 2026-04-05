@@ -24,7 +24,11 @@ describe('select.overlay integration', () => {
     let sendRef!: (m: SelectMsg) => void
     const initial = init({ items: ['a', 'b'] })
     if (initialOpen) initial.open = true
-    const parts = connect<Ctx>((s) => s.s, (m) => sendRef(m), { id: 'sel' })
+    const parts = connect<Ctx>(
+      (s) => s.s,
+      (m) => sendRef(m),
+      { id: 'sel' },
+    )
     const def: ComponentDef<Ctx, SelectMsg, never> = {
       name: 'T',
       init: () => [{ s: initial }, []],

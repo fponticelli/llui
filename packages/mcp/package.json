@@ -22,9 +22,11 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@llui/dom": "workspace:*"
+    "@llui/dom": "workspace:*",
+    "ws": "^8.18.0"
   },
   "devDependencies": {
-    "@types/node": "^22.0.0"
+    "@types/node": "^22.0.0",
+    "@types/ws": "^8.5.13"
   }
 }

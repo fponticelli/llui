@@ -131,7 +131,15 @@ function processMessages<S, M, E>(inst: ComponentInstance<S, M, E>): void {
     for (let i = 0, len = phase2Len; i < len; i++) {
       const binding = bindings[i]!
       if (binding.dead || (binding.mask & combinedDirty) === 0) continue
-      const newValue = binding.accessor(state)
+      let newValue: unknown
+      try {
+        newValue = binding.accessor(state)
+      } catch (e) {
+        if (import.meta.env?.DEV) {
+          throw enhanceBindingError(e, binding, inst.def.name)
+        }
+        throw e
+      }
       if (Object.is(newValue, binding.lastValue)) continue
       binding.lastValue = newValue
       applyBinding(binding, newValue)
@@ -142,6 +150,31 @@ function processMessages<S, M, E>(inst: ComponentInstance<S, M, E>): void {
   for (const effect of allEffects) {
     dispatchEffect(inst, effect)
   }
+}
+
+function enhanceBindingError(err: unknown, binding: Binding, componentName: string): Error {
+  // For text bindings, binding.node is the Text node — use its parent element.
+  const node = binding.node
+  const target = node.nodeType === 1 ? (node as Element) : (node.parentElement ?? null)
+  let nodeDesc = '?'
+  if (target) {
+    const id = target.id ? `#${target.id}` : ''
+    const cls =
+      target.className && typeof target.className === 'string'
+        ? `.${target.className.split(' ').filter(Boolean).slice(0, 2).join('.')}`
+        : ''
+    nodeDesc = `<${target.tagName.toLowerCase()}${id}${cls}>`
+    if (node.nodeType === 3) nodeDesc += ' text-child'
+    else if (node.nodeType === 8) nodeDesc += ' comment-child'
+  }
+  const keyPart = binding.key ? `.${binding.key}` : ''
+  const wrapped = new Error(
+    `[LLui] accessor threw in ${componentName}: ${binding.kind}${keyPart} binding on ${nodeDesc}\n` +
+      `  ↳ ${err instanceof Error ? err.message : String(err)}`,
+    err instanceof Error ? { cause: err } : undefined,
+  )
+  wrapped.stack = (err instanceof Error && err.stack) || wrapped.stack
+  return wrapped
 }
 
 function dispatchEffect<S, M, E>(inst: ComponentInstance<S, M, E>, effect: E): void {

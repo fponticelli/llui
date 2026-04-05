@@ -10,10 +10,7 @@ import type { Send, ItemAccessor } from '@llui/dom'
 type CounterSlice = { id: number; value: number }
 type CounterMsg = { type: 'increment'; id: number }
 
-function counterView(
-  props: { item: ItemAccessor<CounterSlice> },
-  send: Send<CounterMsg>,
-): Node[] {
+function counterView(props: { item: ItemAccessor<CounterSlice> }, send: Send<CounterMsg>): Node[] {
   return [
     div({ class: 'counter-slice' }, [
       text(props.item((c) => String(c.value))),

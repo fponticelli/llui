@@ -74,12 +74,18 @@ export function update(state: TimePickerState, msg: TimePickerMsg): [TimePickerS
       return [{ ...state, value: { ...state.value, hours: mod(state.value.hours - 1, 24) } }, []]
     case 'incrementMinutes':
       return [
-        { ...state, value: { ...state.value, minutes: mod(state.value.minutes + state.minuteStep, 60) } },
+        {
+          ...state,
+          value: { ...state.value, minutes: mod(state.value.minutes + state.minuteStep, 60) },
+        },
         [],
       ]
     case 'decrementMinutes':
       return [
-        { ...state, value: { ...state.value, minutes: mod(state.value.minutes - state.minuteStep, 60) } },
+        {
+          ...state,
+          value: { ...state.value, minutes: mod(state.value.minutes - state.minuteStep, 60) },
+        },
         [],
       ]
     case 'toggleAmPm': {

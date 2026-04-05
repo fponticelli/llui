@@ -63,6 +63,53 @@ export interface IntervalEffect {
   msg: unknown
 }
 
+export type StorageScope = 'local' | 'session'
+
+/** Write a JSON value to localStorage/sessionStorage. Fire-and-forget. */
+export interface StorageSetEffect {
+  type: 'storage-set'
+  key: string
+  value: unknown
+  scope: StorageScope
+}
+
+/** Remove a key from storage. Fire-and-forget. */
+export interface StorageRemoveEffect {
+  type: 'storage-remove'
+  key: string
+  scope: StorageScope
+}
+
+/** Read a key from storage, dispatch `{ type: onLoad, value }` with the parsed JSON (or null). */
+export interface StorageGetEffect {
+  type: 'storage-get'
+  key: string
+  onLoad: string
+  scope: StorageScope
+}
+
+/** Listen for changes to a storage key. Fires `{ type: onChange, value }` on cross-tab writes. */
+export interface StorageWatchEffect {
+  type: 'storage-watch'
+  key: string
+  onChange: string
+  scope: StorageScope
+}
+
+/** Post a message to a BroadcastChannel. Fire-and-forget. */
+export interface BroadcastEffect {
+  type: 'broadcast'
+  channel: string
+  data: unknown
+}
+
+/** Subscribe to a BroadcastChannel. Fires `{ type: onMessage, data }` per incoming message. */
+export interface BroadcastListenEffect {
+  type: 'broadcast-listen'
+  channel: string
+  onMessage: string
+}
+
 export interface SequenceEffect {
   type: 'sequence'
   effects: BuiltinEffect[]
@@ -80,6 +127,12 @@ type BuiltinEffect =
   | DebounceEffect
   | TimeoutEffect
   | IntervalEffect
+  | StorageSetEffect
+  | StorageRemoveEffect
+  | StorageGetEffect
+  | StorageWatchEffect
+  | BroadcastEffect
+  | BroadcastListenEffect
   | SequenceEffect
   | RaceEffect
 
@@ -116,6 +169,59 @@ export function timeout<M>(ms: number, msg: M): TimeoutEffect {
 
 export function interval<M>(key: string, ms: number, msg: M): IntervalEffect {
   return { type: 'interval', key, ms, msg }
+}
+
+// ── Storage ───────────────────────────────────────────────────────
+
+/** Synchronous read from storage. Use at init time to seed state. Returns `null` on miss or invalid JSON. */
+export function storageLoad<T = unknown>(key: string, scope: StorageScope = 'local'): T | null {
+  if (typeof window === 'undefined') return null
+  const store = scope === 'local' ? window.localStorage : window.sessionStorage
+  const raw = store.getItem(key)
+  if (raw === null) return null
+  try {
+    return JSON.parse(raw) as T
+  } catch {
+    return null
+  }
+}
+
+export function storageSet(
+  key: string,
+  value: unknown,
+  scope: StorageScope = 'local',
+): StorageSetEffect {
+  return { type: 'storage-set', key, value, scope }
+}
+
+export function storageRemove(key: string, scope: StorageScope = 'local'): StorageRemoveEffect {
+  return { type: 'storage-remove', key, scope }
+}
+
+export function storageGet(
+  key: string,
+  onLoad: string,
+  scope: StorageScope = 'local',
+): StorageGetEffect {
+  return { type: 'storage-get', key, onLoad, scope }
+}
+
+export function storageWatch(
+  key: string,
+  onChange: string,
+  scope: StorageScope = 'local',
+): StorageWatchEffect {
+  return { type: 'storage-watch', key, onChange, scope }
+}
+
+// ── BroadcastChannel ──────────────────────────────────────────────
+
+export function broadcast(channel: string, data: unknown): BroadcastEffect {
+  return { type: 'broadcast', channel, data }
+}
+
+export function broadcastListen(channel: string, onMessage: string): BroadcastListenEffect {
+  return { type: 'broadcast-listen', channel, onMessage }
 }
 
 export function sequence(effects: BuiltinEffect[]): SequenceEffect {
@@ -227,6 +333,24 @@ function dispatchEffect(
       break
     case 'interval':
       runInterval(effect as IntervalEffect, send, signal, cancelControllers)
+      break
+    case 'storage-set':
+      runStorageSet(effect as StorageSetEffect)
+      break
+    case 'storage-remove':
+      runStorageRemove(effect as StorageRemoveEffect)
+      break
+    case 'storage-get':
+      runStorageGet(effect as StorageGetEffect, send)
+      break
+    case 'storage-watch':
+      runStorageWatch(effect as StorageWatchEffect, send, signal)
+      break
+    case 'broadcast':
+      runBroadcast(effect as BroadcastEffect)
+      break
+    case 'broadcast-listen':
+      runBroadcastListen(effect as BroadcastListenEffect, send, signal)
       break
     case 'sequence':
       runSequence(effect as SequenceEffect, send, signal, cancelControllers, debounceTimers, custom)
@@ -388,6 +512,100 @@ function runDebounce(
   }, effect.ms)
 
   debounceTimers.set(effect.key, timer)
+}
+
+function getStorage(scope: StorageScope): Storage | null {
+  if (typeof window === 'undefined') return null
+  return scope === 'local' ? window.localStorage : window.sessionStorage
+}
+
+function runStorageSet(effect: StorageSetEffect): void {
+  const store = getStorage(effect.scope)
+  if (!store) return
+  try {
+    store.setItem(effect.key, JSON.stringify(effect.value))
+  } catch {
+    // quota exceeded or serialization failed — silent, same as localStorage itself
+  }
+}
+
+function runStorageRemove(effect: StorageRemoveEffect): void {
+  const store = getStorage(effect.scope)
+  if (store) store.removeItem(effect.key)
+}
+
+function runStorageGet(effect: StorageGetEffect, send: InternalSend): void {
+  const store = getStorage(effect.scope)
+  if (!store) {
+    send({ type: effect.onLoad, value: null })
+    return
+  }
+  const raw = store.getItem(effect.key)
+  let value: unknown = null
+  if (raw !== null) {
+    try {
+      value = JSON.parse(raw)
+    } catch {
+      value = null
+    }
+  }
+  send({ type: effect.onLoad, value })
+}
+
+function runStorageWatch(
+  effect: StorageWatchEffect,
+  send: InternalSend,
+  signal: AbortSignal,
+): void {
+  if (typeof window === 'undefined') return
+  // `storage` event only fires on localStorage, and only cross-tab.
+  // For sessionStorage (single-tab) we have no cross-change signal — watcher is a no-op.
+  if (effect.scope !== 'local') return
+  const handler = (e: StorageEvent): void => {
+    if (e.key !== effect.key) return
+    let value: unknown = null
+    if (e.newValue !== null) {
+      try {
+        value = JSON.parse(e.newValue)
+      } catch {
+        value = null
+      }
+    }
+    send({ type: effect.onChange, value })
+  }
+  window.addEventListener('storage', handler)
+  signal.addEventListener('abort', () => window.removeEventListener('storage', handler), {
+    once: true,
+  })
+}
+
+function runBroadcast(effect: BroadcastEffect): void {
+  if (typeof BroadcastChannel === 'undefined') return
+  const bc = new BroadcastChannel(effect.channel)
+  try {
+    bc.postMessage(effect.data)
+  } finally {
+    bc.close()
+  }
+}
+
+function runBroadcastListen(
+  effect: BroadcastListenEffect,
+  send: InternalSend,
+  signal: AbortSignal,
+): void {
+  if (typeof BroadcastChannel === 'undefined') return
+  const bc = new BroadcastChannel(effect.channel)
+  bc.addEventListener('message', (e: MessageEvent) => {
+    send({ type: effect.onMessage, data: e.data })
+  })
+  signal.addEventListener(
+    'abort',
+    () => {
+      bc.close()
+    },
+    { once: true },
+  )
 }
 
 function runSequence(

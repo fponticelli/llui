@@ -1,4 +1,6 @@
 import type { LluiDebugAPI } from '@llui/dom'
+import { WebSocketServer, type WebSocket } from 'ws'
+import { randomUUID } from 'node:crypto'
 
 // ── MCP Protocol Types ──────────────────────────────────────────
 
@@ -164,17 +166,84 @@ const TOOLS: McpToolDefinition[] = [
 
 // ── MCP Server ──────────────────────────────────────────────────
 
-export class LluiMcpServer {
-  private debugApi: LluiDebugAPI | null = null
-  private wsUrl: string
+interface PendingRequest {
+  resolve: (v: unknown) => void
+  reject: (e: Error) => void
+}
 
-  constructor(wsUrl = 'ws://127.0.0.1:5173') {
-    this.wsUrl = wsUrl
+export class LluiMcpServer {
+  /** Direct (same-process) debug API, used for tests or in-process bridging. */
+  private debugApi: LluiDebugAPI | null = null
+  /** Bridge (WebSocket) state for out-of-process browser connection. */
+  private wsServer: WebSocketServer | null = null
+  private browserWs: WebSocket | null = null
+  private pending = new Map<string, PendingRequest>()
+  private bridgePort: number
+
+  constructor(bridgePort = 5200) {
+    this.bridgePort = bridgePort
   }
 
-  /** Connect to a debug API instance directly (for in-process usage) */
+  /** Connect to a debug API instance directly (for in-process usage). */
   connectDirect(api: LluiDebugAPI): void {
     this.debugApi = api
+  }
+
+  /**
+   * Start a WebSocket server on the configured bridge port. The browser-side
+   * relay (injected by the Vite plugin in dev mode) connects here and forwards
+   * debug-API calls.
+   */
+  startBridge(): void {
+    if (this.wsServer) return
+    this.wsServer = new WebSocketServer({ port: this.bridgePort, host: '127.0.0.1' })
+    this.wsServer.on('connection', (ws) => {
+      this.browserWs = ws
+      ws.on('message', (raw) => {
+        let msg: { id: string; result?: unknown; error?: string }
+        try {
+          msg = JSON.parse(String(raw))
+        } catch {
+          return
+        }
+        const p = this.pending.get(msg.id)
+        if (!p) return
+        this.pending.delete(msg.id)
+        if (msg.error) p.reject(new Error(msg.error))
+        else p.resolve(msg.result)
+      })
+      ws.on('close', () => {
+        if (this.browserWs === ws) this.browserWs = null
+      })
+    })
+  }
+
+  stopBridge(): void {
+    this.wsServer?.close()
+    this.wsServer = null
+    this.browserWs = null
+    for (const p of this.pending.values()) p.reject(new Error('bridge closed'))
+    this.pending.clear()
+  }
+
+  /** Invoke a debug API method — over the bridge if connected, else direct. */
+  private async call(method: keyof LluiDebugAPI, args: unknown[]): Promise<unknown> {
+    if (this.debugApi) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const fn = (this.debugApi as any)[method]
+      return typeof fn === 'function' ? fn.apply(this.debugApi, args) : undefined
+    }
+    if (!this.browserWs) {
+      throw new Error('No browser connected to the MCP bridge. Start your dev server.')
+    }
+    const id = randomUUID()
+    return new Promise((resolve, reject) => {
+      this.pending.set(id, { resolve, reject })
+      this.browserWs!.send(JSON.stringify({ id, method, args }))
+      setTimeout(() => {
+        if (this.pending.delete(id)) reject(new Error(`timeout: ${method}`))
+      }, 5000)
+    })
   }
 
   /** Get tool definitions for MCP handshake */
@@ -184,52 +253,45 @@ export class LluiMcpServer {
 
   /** Handle an MCP tool call */
   async handleToolCall(name: string, args: Record<string, unknown>): Promise<unknown> {
-    const api = this.debugApi
-    if (!api) {
-      throw new Error('Not connected to LLui debug API. Start a dev server first.')
-    }
-
     switch (name) {
       case 'llui_get_state':
-        return api.getState()
+        return this.call('getState', [])
 
       case 'llui_send_message': {
-        const errors = api.validateMessage(args.msg)
+        const errors = (await this.call('validateMessage', [args.msg])) as unknown[] | null
         if (errors) return { errors, sent: false }
-        api.send(args.msg)
-        api.flush()
-        return { state: api.getState(), sent: true }
+        await this.call('send', [args.msg])
+        await this.call('flush', [])
+        return { state: await this.call('getState', []), sent: true }
       }
 
       case 'llui_eval_update':
-        return api.evalUpdate(args.msg)
+        return this.call('evalUpdate', [args.msg])
 
       case 'llui_validate_message':
-        return api.validateMessage(args.msg)
+        return this.call('validateMessage', [args.msg])
 
       case 'llui_get_message_history': {
-        const history = api.getMessageHistory()
+        const history = (await this.call('getMessageHistory', [])) as Array<{ index: number }>
         const since = args.since as number | undefined
-        if (since !== undefined) {
-          return history.filter((h) => h.index > since)
-        }
+        if (since !== undefined) return history.filter((h) => h.index > since)
         return history
       }
 
       case 'llui_export_trace':
-        return api.exportTrace()
+        return this.call('exportTrace', [])
 
       case 'llui_get_bindings':
-        return api.getBindings()
+        return this.call('getBindings', [])
 
       case 'llui_why_did_update':
-        return api.whyDidUpdate(args.bindingIndex as number)
+        return this.call('whyDidUpdate', [args.bindingIndex as number])
 
       case 'llui_search_state':
-        return api.searchState(args.query as string)
+        return this.call('searchState', [args.query as string])
 
       case 'llui_clear_log':
-        api.clearLog()
+        await this.call('clearLog', [])
         return { cleared: true }
 
       default:

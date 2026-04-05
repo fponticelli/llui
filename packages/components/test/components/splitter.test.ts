@@ -76,10 +76,14 @@ describe('splitter.connect', () => {
   })
 
   it('primaryPanel style uses position', () => {
-    expect(p.primaryPanel.style(wrap(init({ position: 40, orientation: 'horizontal' })))).toContain('width:40%')
+    expect(p.primaryPanel.style(wrap(init({ position: 40, orientation: 'horizontal' })))).toContain(
+      'width:40%',
+    )
   })
 
   it('secondaryPanel style uses inverted position', () => {
-    expect(p.secondaryPanel.style(wrap(init({ position: 40, orientation: 'horizontal' })))).toContain('width:60%')
+    expect(
+      p.secondaryPanel.style(wrap(init({ position: 40, orientation: 'horizontal' }))),
+    ).toContain('width:60%')
   })
 })
