@@ -12,6 +12,7 @@ export type {
   BranchOptions,
   ShowOptions,
   EachOptions,
+  ItemAccessor,
   PortalOptions,
   ForeignOptions,
   ChildOptions,

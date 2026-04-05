@@ -18,12 +18,17 @@ Everything is wrapped in `pnpm bench`. The script:
 ## Running it
 
 ```bash
-pnpm bench                        # LLui only; compare vs saved baseline
-pnpm bench --save                 # LLui only; save results as new baseline
+pnpm bench                        # LLui only, 1 pass, headless; compare vs saved baseline
+pnpm bench --runs 3               # 3 passes, take median-of-medians (~3x slower but ±5% noise)
+pnpm bench --headful              # run with a visible Chrome window (default: headless)
+pnpm bench --save                 # save results as new baseline
 pnpm bench --all                  # also re-run all competitor frameworks (~15 min)
 pnpm bench --framework solid      # also re-run a specific competitor
 JFB_REPO=/path/to/repo pnpm bench # override the jfb repo location
 ```
+
+Single runs have ±15% variance. Use `--runs 3` or `--runs 5` before saving a baseline
+or making perf claims.
 
 ## How to use this skill
 

@@ -81,13 +81,19 @@ function runCapture(cmd: string, cwd?: string): string {
 const args = process.argv.slice(2)
 const saveBaseline = args.includes('--save')
 const runAll = args.includes('--all')
+const headful = args.includes('--headful')
 const extraFrameworks: string[] = []
+let runs = 1
 for (let i = 0; i < args.length; i++) {
   if (args[i] === '--framework' && i + 1 < args.length) {
     extraFrameworks.push(args[i + 1]!)
     i++
+  } else if (args[i] === '--runs' && i + 1 < args.length) {
+    runs = Math.max(1, parseInt(args[i + 1]!, 10))
+    i++
   }
 }
+const chromeMode = headful ? '' : ' --headless'
 
 // ── Preflight checks ──
 
@@ -168,43 +174,68 @@ if (runAll) {
 // ── Run benchmarks ──
 
 const webdriverDir = resolve(JFB_REPO, 'webdriver-ts')
-for (const fw of frameworksToRun) {
-  console.log(`\n🏃 Running benchmark: ${fw}...`)
-  try {
-    run(`node dist/benchmarkRunner.js --framework ${fw} --headless`, webdriverDir)
-  } catch (e) {
-    console.error(`Failed to run ${fw}, skipping`)
-  }
-}
-
-// ── Read results ──
+const resultsDir = resolve(webdriverDir, 'results')
 
 type FwResults = Record<string, Record<string, number | null>>
 
 const baseline: FwResults = existsSync(BASELINE) ? JSON.parse(readFileSync(BASELINE, 'utf8')) : {}
 
-// Current = baseline seed for frameworks we didn't re-run, overlayed with fresh results
-// for frameworks we did re-run.
+// Current = baseline seed for frameworks we didn't re-run, overlayed with fresh results.
 const current: FwResults = JSON.parse(JSON.stringify(baseline))
 
-const resultsDir = resolve(webdriverDir, 'results')
+// Accumulate medians from each run for each fw×benchmark.
+const samples = new Map<string, number[]>() // key: "fw/benchmarkId"
 
+function readMedian(fwName: string, benchmarkId: string): number | null {
+  try {
+    const matches = runCapture(`ls ${resultsDir}/${fwName}-*_${benchmarkId}.json 2>/dev/null`)
+      .trim()
+      .split('\n')
+    if (!matches[0]) return null
+    const data = JSON.parse(readFileSync(matches[0], 'utf8'))
+    return data.values?.total?.median ?? null
+  } catch {
+    return null
+  }
+}
+
+function medianOf(nums: number[]): number | null {
+  if (nums.length === 0) return null
+  const sorted = [...nums].sort((a, b) => a - b)
+  const mid = Math.floor(sorted.length / 2)
+  return sorted.length % 2 === 0 ? (sorted[mid - 1]! + sorted[mid]!) / 2 : sorted[mid]!
+}
+
+for (let pass = 1; pass <= runs; pass++) {
+  if (runs > 1) console.log(`\n=== Pass ${pass}/${runs} ===`)
+  for (const fw of frameworksToRun) {
+    console.log(`\n🏃 Running benchmark: ${fw}...`)
+    try {
+      run(`node dist/benchmarkRunner.js --framework ${fw}${chromeMode}`, webdriverDir)
+    } catch {
+      console.error(`Failed to run ${fw}, skipping`)
+      continue
+    }
+    const fwName = fw.replace('keyed/', '')
+    for (const b of BENCHMARKS) {
+      const m = readMedian(fwName, b.id)
+      if (m == null) continue
+      const key = `${fwName}/${b.id}`
+      const arr = samples.get(key) ?? []
+      arr.push(m)
+      samples.set(key, arr)
+    }
+  }
+}
+
+// Aggregate: median of per-run medians
 for (const fw of frameworksToRun) {
   const fwName = fw.replace('keyed/', '')
   if (!current[fwName]) current[fwName] = {}
-
   for (const b of BENCHMARKS) {
-    try {
-      const matches = runCapture(`ls ${resultsDir}/${fwName}-*_${b.id}.json 2>/dev/null`)
-        .trim()
-        .split('\n')
-      if (matches[0]) {
-        const data = JSON.parse(readFileSync(matches[0], 'utf8'))
-        current[fwName][b.id] = data.values?.total?.median ?? null
-      }
-    } catch {
-      // Keep existing baseline value
-    }
+    const arr = samples.get(`${fwName}/${b.id}`) ?? []
+    const agg = medianOf(arr)
+    if (agg != null) current[fwName][b.id] = agg
   }
 }
 

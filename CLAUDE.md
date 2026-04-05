@@ -28,7 +28,8 @@ cd packages/dom && pnpm vitest run test/scope.test.ts
 
 # Benchmarks (js-framework-benchmark)
 pnpm bench                    # Build + run jfb + compare against saved baseline
-pnpm bench --save             # Same, then overwrite baseline with current results
+pnpm bench --runs 3           # N runs, median-of-medians (reduces single-run noise)
+pnpm bench --save             # Overwrite baseline with current results
 pnpm bench --all              # Also re-run all competitor frameworks (~15 min)
 pnpm bench:build              # Build jfb app only (no benchmark run)
 ```

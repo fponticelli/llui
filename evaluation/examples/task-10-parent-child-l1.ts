@@ -3,15 +3,15 @@
  * Idiomatic score: 6/6
  */
 import { component, div, button, text, each } from '@llui/dom'
-import type { Send } from '@llui/dom'
+import type { Send, ItemAccessor } from '@llui/dom'
 
 // ── Counter slice view function (Level 1) ───────────────────────
 
 type CounterSlice = { id: number; value: number }
 type CounterMsg = { type: 'increment'; id: number }
 
-function counterView<S>(
-  props: { item: <R>(sel: (t: CounterSlice) => R) => () => R },
+function counterView(
+  props: { item: ItemAccessor<CounterSlice> },
   send: Send<CounterMsg>,
 ): Node[] {
   return [

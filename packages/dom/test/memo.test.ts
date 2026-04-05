@@ -78,4 +78,63 @@ describe('memo()', () => {
     handle.flush()
     expect(compute).toHaveBeenCalledTimes(1)
   })
+
+  it('bitmask fast path works during Phase 1 (structural primitives)', async () => {
+    // memo() in an each.items accessor must see the current dirty mask
+    // during Phase 1 reconciliation, not be stale from the previous cycle.
+    const { each } = await import('../src/primitives/each')
+    type S = { todos: Array<{ id: number; done: boolean }>; filter: string }
+    type M = { type: 'toggleFilter' } | { type: 'toggleTodo'; id: number }
+
+    const computeFilter = vi.fn((s: S) => s.todos.filter((t) => !t.done))
+    // filter depends on todos (bit 0). Does NOT depend on filter string (bit 1).
+    const memoized = memo(computeFilter, 0b01)
+
+    let sendFn: (m: M) => void
+    const def: ComponentDef<S, M, never> = {
+      name: 'Phase1Memo',
+      init: () => [{ todos: [{ id: 1, done: false }], filter: 'all' }, []],
+      update: (state, msg) => {
+        if (msg.type === 'toggleFilter')
+          return [{ ...state, filter: state.filter === 'all' ? 'active' : 'all' }, []]
+        if (msg.type === 'toggleTodo')
+          return [
+            {
+              ...state,
+              todos: state.todos.map((t) =>
+                t.id === msg.id ? { ...t, done: !t.done } : t,
+              ),
+            },
+            [],
+          ]
+        return [state, []]
+      },
+      view: (send) => {
+        sendFn = send
+        return each<S, { id: number; done: boolean }, M>({
+          items: memoized,
+          key: (t) => t.id,
+          render: ({ item }) => [div({}, [text((_s: S) => String(item.id()))])],
+        })
+      },
+      __dirty: (o, n) =>
+        (Object.is(o.todos, n.todos) ? 0 : 0b01) |
+        (Object.is(o.filter, n.filter) ? 0 : 0b10),
+    }
+
+    const container = document.createElement('div')
+    const handle = mountApp(container, def)
+    expect(computeFilter).toHaveBeenCalledTimes(1)
+    computeFilter.mockClear()
+
+    // Toggle filter — dirty = 0b10, memo mask = 0b01 → must NOT re-compute filter
+    sendFn!({ type: 'toggleFilter' })
+    handle.flush()
+    expect(computeFilter).toHaveBeenCalledTimes(0)
+
+    // Toggle todo — dirty = 0b01, memo mask = 0b01 → must re-compute
+    sendFn!({ type: 'toggleTodo', id: 1 })
+    handle.flush()
+    expect(computeFilter).toHaveBeenCalledTimes(1)
+  })
 })
