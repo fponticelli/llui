@@ -36,7 +36,12 @@ export interface FloatingOptions {
   /** Optional arrow element to position. */
   arrow?: HTMLElement
   /** Notify after each position computation. */
-  onUpdate?: (data: { x: number; y: number; placement: Placement; arrow?: { x?: number; y?: number } }) => void
+  onUpdate?: (data: {
+    x: number
+    y: number
+    placement: Placement
+    arrow?: { x?: number; y?: number }
+  }) => void
 }
 
 /**

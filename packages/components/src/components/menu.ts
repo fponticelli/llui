@@ -132,7 +132,9 @@ export function update(state: MenuState, msg: MenuMsg): [MenuState, never[]] {
     case 'setItems': {
       const disabled = msg.disabled ?? state.disabledItems
       const highlighted =
-        state.highlighted && msg.items.includes(state.highlighted) && !disabled.includes(state.highlighted)
+        state.highlighted &&
+        msg.items.includes(state.highlighted) &&
+        !disabled.includes(state.highlighted)
           ? state.highlighted
           : null
       return [{ ...state, items: msg.items, disabledItems: disabled, highlighted }, []]

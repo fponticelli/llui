@@ -82,7 +82,9 @@ export function update(state: PaginationState, msg: PaginationMsg): [PaginationS
   }
 }
 
-export type PageItem = { type: 'page'; page: number } | { type: 'ellipsis'; position: 'start' | 'end' }
+export type PageItem =
+  | { type: 'page'; page: number }
+  | { type: 'ellipsis'; position: 'start' | 'end' }
 
 /**
  * Compute the visible page buttons with ellipses:

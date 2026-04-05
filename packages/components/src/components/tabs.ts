@@ -65,7 +65,12 @@ function lastEnabled(items: string[], disabled: string[]): string | null {
   return null
 }
 
-function nextEnabled(items: string[], disabled: string[], from: string, delta: 1 | -1): string | null {
+function nextEnabled(
+  items: string[],
+  disabled: string[],
+  from: string,
+  delta: 1 | -1,
+): string | null {
   if (items.length === 0) return null
   const idx = items.indexOf(from)
   if (idx === -1) return firstEnabled(items, disabled)
@@ -209,8 +214,7 @@ export function connect<S>(
         role: 'tab',
         'aria-selected': (s) => get(s).value === value,
         'aria-controls': panelId(value),
-        'aria-disabled': (s) =>
-          get(s).disabledItems.includes(value) ? 'true' : undefined,
+        'aria-disabled': (s) => (get(s).disabledItems.includes(value) ? 'true' : undefined),
         id: triggerId(value),
         'data-state': (s) => (get(s).value === value ? 'active' : 'inactive'),
         'data-disabled': (s) => (get(s).disabledItems.includes(value) ? '' : undefined),

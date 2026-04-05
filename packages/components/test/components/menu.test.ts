@@ -200,9 +200,7 @@ describe('menu.connect', () => {
     const send = vi.fn()
     const p = connect<Ctx>((s) => s.m, send, { id: 'x' })
     p.content.onKeyDown(new KeyboardEvent('keydown', { key: 'a' }))
-    expect(send).toHaveBeenCalledWith(
-      expect.objectContaining({ type: 'typeahead', char: 'a' }),
-    )
+    expect(send).toHaveBeenCalledWith(expect.objectContaining({ type: 'typeahead', char: 'a' }))
   })
 
   it('item click sends select + invokes onSelect callback', () => {

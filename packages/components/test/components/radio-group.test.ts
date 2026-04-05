@@ -79,7 +79,9 @@ describe('radio-group.connect', () => {
   it('ArrowRight/Left sends selectNext/Prev', () => {
     const send = vi.fn()
     const p = connect<Ctx>((s) => s.rg, send, { id: 'x' })
-    p.item('a').root.onKeyDown(new KeyboardEvent('keydown', { key: 'ArrowRight', cancelable: true }))
+    p.item('a').root.onKeyDown(
+      new KeyboardEvent('keydown', { key: 'ArrowRight', cancelable: true }),
+    )
     p.item('b').root.onKeyDown(new KeyboardEvent('keydown', { key: 'ArrowLeft', cancelable: true }))
     expect(send).toHaveBeenNthCalledWith(1, { type: 'selectNext', from: 'a' })
     expect(send).toHaveBeenNthCalledWith(2, { type: 'selectPrev', from: 'b' })

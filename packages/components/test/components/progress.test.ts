@@ -69,11 +69,9 @@ describe('progress.connect', () => {
   })
 
   it('custom formatter', () => {
-    const p = connect<Ctx>(
-      (s) => s.p,
-      vi.fn(),
-      { format: (v, max) => (v === null ? '?' : `${v}/${max}`) },
-    )
+    const p = connect<Ctx>((s) => s.p, vi.fn(), {
+      format: (v, max) => (v === null ? '?' : `${v}/${max}`),
+    })
     expect(p.valueText(wrap(init({ value: 30, max: 100 })))).toBe('30/100')
   })
 })

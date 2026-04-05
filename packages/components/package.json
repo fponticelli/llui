@@ -96,6 +96,22 @@
     "./toast": {
       "import": "./dist/components/toast.js",
       "types": "./dist/components/toast.d.ts"
+    },
+    "./listbox": {
+      "import": "./dist/components/listbox.js",
+      "types": "./dist/components/listbox.d.ts"
+    },
+    "./select": {
+      "import": "./dist/components/select.js",
+      "types": "./dist/components/select.d.ts"
+    },
+    "./combobox": {
+      "import": "./dist/components/combobox.js",
+      "types": "./dist/components/combobox.d.ts"
+    },
+    "./hover-card": {
+      "import": "./dist/components/hover-card.js",
+      "types": "./dist/components/hover-card.d.ts"
     }
   },
   "scripts": {

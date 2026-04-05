@@ -145,9 +145,7 @@ function rangeStyle(state: ProgressState): string {
   const p = percent(state)
   if (p === null) return ''
   const clamped = Math.max(0, Math.min(100, p))
-  return state.orientation === 'horizontal'
-    ? `width:${clamped}%;`
-    : `height:${clamped}%;`
+  return state.orientation === 'horizontal' ? `width:${clamped}%;` : `height:${clamped}%;`
 }
 
 export const progress = { init, update, connect, percent, valueState }

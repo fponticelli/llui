@@ -73,7 +73,11 @@ describe('drawer.overlay integration', () => {
 
   function makeApp(initialOpen = false): { send: (m: DrawerMsg) => void } {
     let sendRef!: (m: DrawerMsg) => void
-    const parts = connect<Ctx>((s) => s.d, (m) => sendRef(m), { id: 'test', side: 'right' })
+    const parts = connect<Ctx>(
+      (s) => s.d,
+      (m) => sendRef(m),
+      { id: 'test', side: 'right' },
+    )
     const def: ComponentDef<Ctx, DrawerMsg, never> = {
       name: 'Test',
       init: () => [{ d: init({ open: initialOpen }) }, []],

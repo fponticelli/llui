@@ -107,7 +107,11 @@ describe('dialog.overlay integration', () => {
     app: ReturnType<typeof mountApp>
   } {
     let sendRef!: (m: DialogMsg) => void
-    const parts = connect<Ctx>((s) => s.dlg, (m) => sendRef(m), { id: 'test' })
+    const parts = connect<Ctx>(
+      (s) => s.dlg,
+      (m) => sendRef(m),
+      { id: 'test' },
+    )
     const def: ComponentDef<Ctx, DialogMsg, never> = {
       name: 'Test',
       init: () => [{ dlg: init({ open: initialOpen }) }, []],

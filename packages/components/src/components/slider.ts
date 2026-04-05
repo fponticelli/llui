@@ -95,18 +95,12 @@ export function update(state: SliderState, msg: SliderMsg): [SliderState, never[
     case 'increment': {
       const m = msg.multiplier ?? 1
       const current = state.value[msg.index] ?? state.min
-      return [
-        { ...state, value: setThumbValue(state, msg.index, current + state.step * m) },
-        [],
-      ]
+      return [{ ...state, value: setThumbValue(state, msg.index, current + state.step * m) }, []]
     }
     case 'decrement': {
       const m = msg.multiplier ?? 1
       const current = state.value[msg.index] ?? state.min
-      return [
-        { ...state, value: setThumbValue(state, msg.index, current - state.step * m) },
-        [],
-      ]
+      return [{ ...state, value: setThumbValue(state, msg.index, current - state.step * m) }, []]
     }
     case 'toMin':
       return [{ ...state, value: setThumbValue(state, msg.index, state.min) }, []]
@@ -172,10 +166,7 @@ export interface SliderParts<S> {
   value: (s: S) => number[]
 }
 
-export function connect<S>(
-  get: (s: S) => SliderState,
-  send: Send<SliderMsg>,
-): SliderParts<S> {
+export function connect<S>(get: (s: S) => SliderState, send: Send<SliderMsg>): SliderParts<S> {
   return {
     root: {
       'data-scope': 'slider',

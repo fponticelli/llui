@@ -55,7 +55,9 @@ export function update(state: ToggleGroupState, msg: ToggleGroupMsg): [ToggleGro
       if (state.disabledItems.includes(msg.value)) return [state, []]
       const isActive = state.value.includes(msg.value)
       if (state.type === 'multiple') {
-        const next = isActive ? state.value.filter((v) => v !== msg.value) : [...state.value, msg.value]
+        const next = isActive
+          ? state.value.filter((v) => v !== msg.value)
+          : [...state.value, msg.value]
         return [{ ...state, value: next }, []]
       }
       // single

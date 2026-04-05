@@ -69,10 +69,7 @@ export function update(state: AccordionState, msg: AccordionMsg): [AccordionStat
       return [{ ...state, value: toggleValue(state, msg.value) }, []]
     case 'open':
       if (state.value.includes(msg.value)) return [state, []]
-      return [
-        { ...state, value: state.multiple ? [...state.value, msg.value] : [msg.value] },
-        [],
-      ]
+      return [{ ...state, value: state.multiple ? [...state.value, msg.value] : [msg.value] }, []]
     case 'close':
       if (!state.value.includes(msg.value)) return [state, []]
       if (!state.multiple && !state.collapsible) return [state, []]

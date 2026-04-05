@@ -28,7 +28,12 @@ describe('pushFocusTrap()', () => {
   })
 
   function tab(shift = false): void {
-    const event = new KeyboardEvent('keydown', { key: 'Tab', shiftKey: shift, bubbles: true, cancelable: true })
+    const event = new KeyboardEvent('keydown', {
+      key: 'Tab',
+      shiftKey: shift,
+      bubbles: true,
+      cancelable: true,
+    })
     document.dispatchEvent(event)
   }
 

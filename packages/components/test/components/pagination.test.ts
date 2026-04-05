@@ -72,7 +72,9 @@ describe('pageItems', () => {
   })
 
   it('inserts ellipses for large ranges', () => {
-    const items = pageItems(init({ total: 1000, pageSize: 10, page: 50, siblings: 1, boundaries: 1 }))
+    const items = pageItems(
+      init({ total: 1000, pageSize: 10, page: 50, siblings: 1, boundaries: 1 }),
+    )
     const types = items.map((i) => i.type)
     expect(types).toContain('ellipsis')
     // First and last page always present

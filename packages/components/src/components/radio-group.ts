@@ -193,9 +193,8 @@ export function connect<S>(
         onClick: () => send({ type: 'setValue', value }),
         onKeyDown: (e) => {
           const isVertical =
-            (e.currentTarget as HTMLElement | null)?.closest(
-              '[data-orientation="vertical"]',
-            ) !== null
+            (e.currentTarget as HTMLElement | null)?.closest('[data-orientation="vertical"]') !==
+            null
           switch (e.key) {
             case 'ArrowDown':
               if (isVertical) {

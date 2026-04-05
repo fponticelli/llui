@@ -78,14 +78,18 @@ export function update(state: NumberInputState, msg: NumberInputMsg): [NumberInp
   }
   switch (msg.type) {
     case 'setValue': {
-      const v = msg.value === null ? null : clamp(snap(msg.value, state.step, state.min), state.min, state.max)
+      const v =
+        msg.value === null
+          ? null
+          : clamp(snap(msg.value, state.step, state.min), state.min, state.max)
       return [{ ...state, value: v, rawText: v === null ? '' : String(v) }, []]
     }
     case 'setRawText':
       return [{ ...state, rawText: msg.text }, []]
     case 'commit': {
       const parsed = parseFloat(state.rawText)
-      if (isNaN(parsed)) return [{ ...state, rawText: state.value === null ? '' : String(state.value) }, []]
+      if (isNaN(parsed))
+        return [{ ...state, rawText: state.value === null ? '' : String(state.value) }, []]
       const v = clamp(snap(parsed, state.step, state.min), state.min, state.max)
       return [{ ...state, value: v, rawText: String(v) }, []]
     }
@@ -233,7 +237,9 @@ export function connect<S>(
       type: 'button',
       'aria-label': incrementLabel,
       'aria-disabled': (s) =>
-        get(s).disabled || get(s).readOnly || (get(s).value ?? 0) >= get(s).max ? 'true' : undefined,
+        get(s).disabled || get(s).readOnly || (get(s).value ?? 0) >= get(s).max
+          ? 'true'
+          : undefined,
       disabled: (s) => get(s).disabled || get(s).readOnly || (get(s).value ?? 0) >= get(s).max,
       'data-scope': 'number-input',
       'data-part': 'increment',
@@ -244,7 +250,9 @@ export function connect<S>(
       type: 'button',
       'aria-label': decrementLabel,
       'aria-disabled': (s) =>
-        get(s).disabled || get(s).readOnly || (get(s).value ?? 0) <= get(s).min ? 'true' : undefined,
+        get(s).disabled || get(s).readOnly || (get(s).value ?? 0) <= get(s).min
+          ? 'true'
+          : undefined,
       disabled: (s) => get(s).disabled || get(s).readOnly || (get(s).value ?? 0) <= get(s).min,
       'data-scope': 'number-input',
       'data-part': 'decrement',
