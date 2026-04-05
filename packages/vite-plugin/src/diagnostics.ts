@@ -531,14 +531,15 @@ function checkBitmaskTierWarning(
   if (pathCount >= 28 && pathCount <= 31) {
     const { line, column } = pos(node, sf)
     diagnostics.push({
-      message: `Component at line ${line} has ${pathCount} unique state access paths, approaching the 31-path single-mask tier limit. Consider decomposing into child components.`,
+      message: `Component at line ${line} has ${pathCount} unique state access paths, approaching the 31-path limit. At 32+ paths, overflow paths fall back to FULL_MASK (re-evaluated on every update). Consider decomposing into child components.`,
       line,
       column,
     })
   } else if (pathCount > 31) {
+    const overflow = pathCount - 31
     const { line, column } = pos(node, sf)
     diagnostics.push({
-      message: `Component at line ${line} has ${pathCount} unique state access paths, exceeding the 31-path single-mask tier. Decompose into child components for optimal performance.`,
+      message: `Component at line ${line} has ${pathCount} unique state access paths (${overflow} past the 31-path limit). Paths 32..${pathCount} fall back to FULL_MASK — their changes re-evaluate every binding in the component. Decompose into child components for optimal performance.`,
       line,
       column,
     })
