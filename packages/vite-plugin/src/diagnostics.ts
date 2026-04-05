@@ -143,16 +143,51 @@ function checkSpreadChildren(node: ts.Node, sf: ts.SourceFile, diagnostics: Diag
   // Children could be at arguments[0] (children-only overload) or arguments[1]
   for (const arg of node.arguments) {
     if (!ts.isArrayLiteralExpression(arg)) continue
-    const hasSpread = arg.elements.some((el) => ts.isSpreadElement(el))
-    if (!hasSpread) continue
-    const { line, column } = pos(arg, sf)
-    diagnostics.push({
-      message: `Spread in children array of '${node.expression.text}()' at line ${line} disables template-clone compilation. For dynamic child counts, use each() instead.`,
-      line,
-      column,
-    })
-    return
+    // Look for "suspicious" spreads — ones that aren't obviously returning
+    // Node[] from a structural primitive or user-defined view helper.
+    for (const el of arg.elements) {
+      if (!ts.isSpreadElement(el)) continue
+      if (isStructuralSpread(el.expression)) continue
+      const { line, column } = pos(arg, sf)
+      diagnostics.push({
+        message: `Spread in children array of '${node.expression.text}()' at line ${line} disables template-clone compilation. For dynamic child counts, use each() instead.`,
+        line,
+        column,
+      })
+      return
+    }
   }
+}
+
+// Array iteration methods whose result spreads are the red flag we want
+// to catch — users should use each() instead. Function calls generally
+// return Node[] from structural primitives or user view helpers and are
+// the legitimate way to compose output.
+const ARRAY_ITERATION_METHODS = new Set([
+  'map',
+  'filter',
+  'flatMap',
+  'slice',
+  'concat',
+  'reverse',
+  'sort',
+])
+
+function isStructuralSpread(expr: ts.Expression): boolean {
+  // Only keep the warning for suspect patterns: identifier spreads and
+  // array-iteration method calls. Everything else is presumed to be a
+  // structural primitive or user helper returning Node[].
+  if (ts.isCallExpression(expr)) {
+    const callee = expr.expression
+    if (ts.isPropertyAccessExpression(callee) && ts.isIdentifier(callee.name)) {
+      // `...arr.map(...)`, `...arr.filter(...)` — suspect
+      return !ARRAY_ITERATION_METHODS.has(callee.name.text)
+    }
+    // Plain function call `...fn()` — presume structural/helper
+    return true
+  }
+  // Identifier spread (`...arr`) — suspect
+  return false
 }
 
 function pos(node: ts.Node, sf: ts.SourceFile): { line: number; column: number } {

@@ -169,6 +169,58 @@ describe('no warnings for clean code', () => {
     expect(w.some((m) => m.includes('Spread in children') && m.includes('div'))).toBe(true)
   })
 
+  it('does not warn on spread of structural primitive calls', () => {
+    const src = `
+      import { div, text, each, show, branch, portal } from '@llui/dom'
+      const a = div({}, [...each({ items: (s) => s.items, key: (x) => x, render: () => [] })])
+      const b = div({}, [...show({ when: (s) => s.flag, render: () => [] })])
+      const c = div({}, [...branch({ on: (s) => s.x, cases: {} })])
+      const d = div({}, [...portal({ target: 'body', render: () => [] })])
+    `
+    const w = warnings(src)
+    expect(w.some((m) => m.includes('Spread in children'))).toBe(false)
+  })
+
+  it('does not warn on spread of method calls named like structural primitives', () => {
+    const src = `
+      import { div } from '@llui/dom'
+      const myComponent = { overlay: () => [] }
+      const el = div({}, [...myComponent.overlay()])
+    `
+    const w = warnings(src)
+    expect(w.some((m) => m.includes('Spread in children'))).toBe(false)
+  })
+
+  it('still warns on spread of plain arrays', () => {
+    const src = `
+      import { div, text } from '@llui/dom'
+      const items = [text('a'), text('b')]
+      const el = div({}, [...items])
+    `
+    const w = warnings(src)
+    expect(w.some((m) => m.includes('Spread in children'))).toBe(true)
+  })
+
+  it('warns on spread of array .map() result', () => {
+    const src = `
+      import { div, text } from '@llui/dom'
+      const names = ['a', 'b']
+      const el = div({}, [...names.map((n) => text(n))])
+    `
+    const w = warnings(src)
+    expect(w.some((m) => m.includes('Spread in children'))).toBe(true)
+  })
+
+  it('does not warn on spread of user helper function', () => {
+    const src = `
+      import { div } from '@llui/dom'
+      const renderItems = () => []
+      const el = div({}, [...renderItems()])
+    `
+    const w = warnings(src)
+    expect(w.some((m) => m.includes('Spread in children'))).toBe(false)
+  })
+
   it('returns empty array for well-formed component', () => {
     const src = `
       import { component, div, text } from '@llui/dom'
