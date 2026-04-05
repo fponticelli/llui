@@ -48,9 +48,14 @@ export function elTemplate(
       const get = accessor as unknown as () => unknown
       const initialValue = get()
       applyBinding({ kind, node, key }, initialValue)
-      // Updater called by each() when item changes — no binding object needed
+      // Updater called by each() when item changes — bypasses Phase 2.
+      // Equality check avoids redundant DOM writes when only some fields
+      // of the item changed (e.g. label changed but id didn't).
+      let lastV: unknown = initialValue
       addItemUpdater(ctx.rootScope, () => {
         const v = get()
+        if (v === lastV || (v !== v && lastV !== lastV)) return
+        lastV = v
         applyBinding({ kind, node, key }, v)
       })
     } else {

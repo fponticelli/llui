@@ -306,7 +306,32 @@ function reconcileEntries<S, T>(
     return
   }
 
-  // Fast path 3: two-element swap — same keys, exactly two positions differ
+  // Fast path 3: same length, same keys in order — update items in place.
+  // This is the dominant path for partial updates (e.g., "update every 10th
+  // row"): the array length is unchanged, every key at position i still
+  // matches. Skip the Map/Set/reorder machinery entirely — just call
+  // updateEntry per item. updateEntry checks item-ref identity internally
+  // and only fires per-item updaters for actually-changed items.
+  if (newLen === oldLen) {
+    let allSameKeys = true
+    for (let i = 0; i < newLen; i++) {
+      // If the item ref is identical, the key is guaranteed unchanged —
+      // skip the (potentially expensive) opts.key() call.
+      if (entries[i]!.item === newItems[i]) continue
+      if (entries[i]!.key !== opts.key(newItems[i]!)) {
+        allSameKeys = false
+        break
+      }
+    }
+    if (allSameKeys) {
+      for (let i = 0; i < newLen; i++) {
+        updateEntry(entries[i]!, newItems[i]!, i)
+      }
+      return
+    }
+  }
+
+  // Fast path 4: two-element swap — same keys, exactly two positions differ
   if (newLen === oldLen && oldLen >= 2) {
     const swapResult = detectSwap(entries, newItems, opts)
     if (swapResult) {
@@ -335,7 +360,7 @@ function reconcileEntries<S, T>(
     }
   }
 
-  // Fast path 4: full replace — no shared keys between old and new.
+  // Fast path 5: full replace — no shared keys between old and new.
   // Skipped when opts.leave is set so departing items can animate individually.
   if (!hasLeave && oldLen > 0 && opts.key(newItems[0]!) !== entries[0]!.key) {
     const oldKeys = new Set<string | number>()

@@ -28,11 +28,16 @@ export function elSplit(
     for (const [mask, kind, key, accessor] of bindings) {
       const perItem = accessor.length === 0
       if (perItem) {
-        // Per-item: direct updater, bypassing Phase 2
+        // Per-item: direct updater, bypassing Phase 2.
+        // Equality check avoids redundant DOM writes.
         const get = accessor as unknown as () => unknown
-        applyBinding({ kind, node: el, key }, get())
+        let lastV: unknown = get()
+        applyBinding({ kind, node: el, key }, lastV)
         addItemUpdater(ctx.rootScope, () => {
-          applyBinding({ kind, node: el, key }, get())
+          const v = get()
+          if (v === lastV || (v !== v && lastV !== lastV)) return
+          lastV = v
+          applyBinding({ kind, node: el, key }, v)
         })
       } else {
         const binding = createBinding(ctx.rootScope, {
