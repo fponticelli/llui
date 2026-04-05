@@ -1296,6 +1296,7 @@ function avatarSection(): Node {
         img({
           ...avatarParts.image,
           src: 'https://example.invalid/not-an-avatar.png',
+          alt: '',
           class: 'avatar__image',
         }),
         span({ ...avatarParts.fallback, class: 'avatar__fallback' }, [text('FP')]),
@@ -1490,38 +1491,39 @@ function stepperSection(): Node {
 
 function stepItem(index: number, labelText: string): Node {
   const parts = stepperParts.item(index)
+  // Always render the separator; last step's sep is hidden via CSS :last-child.
   return div({ ...parts.item, class: 'step-item' }, [
     button({ ...parts.trigger, class: 'step-btn' }, [text(String(index + 1))]),
     span({ class: 'step-label' }, [text(labelText)]),
-    ...(index < 2 ? [span({ ...parts.separator, class: 'step-sep' }, [])] : []),
+    span({ ...parts.separator, class: 'step-sep' }, []),
   ])
 }
 
 function carouselSection(): Node {
   const slides = ['Mountains', 'Ocean', 'Forest', 'Desert']
   const colors = ['#0891b2', '#0284c7', '#166534', '#d97706']
+  const renderSlides = (): Node[] =>
+    slides.map((s, i) =>
+      div(
+        {
+          ...carouselParts.slide(i).slide,
+          class: 'carousel-slide',
+          style: `background:${colors[i]}`,
+        },
+        [text(s)],
+      ),
+    )
+  const renderIndicators = (): Node[] =>
+    slides.map((_, i) =>
+      button({ ...carouselParts.slide(i).indicator, class: 'carousel-dot' }, []),
+    )
   return div({ class: 'demo-section' }, [
     h2({ class: 'demo-title' }, [text('Carousel')]),
     div({ ...carouselParts.root, class: 'carousel' }, [
-      div({ ...carouselParts.viewport, class: 'carousel-viewport' }, [
-        ...slides.map((s, i) =>
-          div(
-            {
-              ...carouselParts.slide(i).slide,
-              class: 'carousel-slide',
-              style: `background:${colors[i]}`,
-            },
-            [text(s)],
-          ),
-        ),
-      ]),
+      div({ ...carouselParts.viewport, class: 'carousel-viewport' }, renderSlides()),
       div({ class: 'carousel-controls' }, [
         button({ ...carouselParts.prevTrigger, class: 'btn btn-secondary text-xs' }, [text('‹')]),
-        div({ ...carouselParts.indicatorGroup, class: 'carousel-indicators' }, [
-          ...slides.map((_, i) =>
-            button({ ...carouselParts.slide(i).indicator, class: 'carousel-dot' }, []),
-          ),
-        ]),
+        div({ ...carouselParts.indicatorGroup, class: 'carousel-indicators' }, renderIndicators()),
         button({ ...carouselParts.nextTrigger, class: 'btn btn-secondary text-xs' }, [text('›')]),
       ]),
     ]),
@@ -1839,17 +1841,14 @@ function contextMenuSection(): Node {
 }
 
 function contextMenuOverlay(send: (m: Msg) => void): Node[] {
+  const items = ['Cut', 'Copy', 'Paste', 'Delete']
+  const renderItems = (): Node[] =>
+    items.map((v) => div({ ...contextMenuParts.item(v).item, class: 'ctx-menu-item' }, [text(v)]))
   return contextMenu.overlay<State>({
     get: (s) => s.contextMenu,
     send: (m) => send({ type: 'contextMenu', msg: m }),
     parts: contextMenuParts,
-    content: () => [
-      div({ ...contextMenuParts.content, class: 'ctx-menu' }, [
-        ...['Cut', 'Copy', 'Paste', 'Delete'].map((v) =>
-          div({ ...contextMenuParts.item(v).item, class: 'ctx-menu-item' }, [text(v)]),
-        ),
-      ]),
-    ],
+    content: () => [div({ ...contextMenuParts.content, class: 'ctx-menu' }, renderItems())],
   })
 }
 
