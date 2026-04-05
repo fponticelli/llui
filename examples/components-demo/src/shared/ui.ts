@@ -10,5 +10,7 @@ export function sectionGroup(title: string, sections: Node[]): Node {
 }
 
 export function card(title: string, body: Node[]): Node {
-  return div({ class: 'demo-section' }, [h2({ class: 'demo-title' }, [text(title)]), ...body])
+  const children: Node[] = [h2({ class: 'demo-title' }, [text(title)])]
+  for (const node of body) children.push(node)
+  return div({ class: 'demo-section' }, children)
 }

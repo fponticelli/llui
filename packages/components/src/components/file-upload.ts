@@ -108,6 +108,7 @@ export interface FileUploadParts<S> {
     'data-scope': 'file-upload'
     'data-part': 'dropzone'
     'data-dragging': (s: S) => '' | undefined
+    onClick: (e: MouseEvent) => void
     onDragEnter: (e: DragEvent) => void
     onDragOver: (e: DragEvent) => void
     onDragLeave: (e: DragEvent) => void
@@ -176,6 +177,10 @@ export function connect<S>(
       'data-scope': 'file-upload',
       'data-part': 'dropzone',
       'data-dragging': (s) => (get(s).dragging ? '' : undefined),
+      onClick: () => {
+        const el = document.getElementById(inputId) as HTMLInputElement | null
+        el?.click()
+      },
       onDragEnter: (e) => {
         e.preventDefault()
         send({ type: 'dragEnter' })

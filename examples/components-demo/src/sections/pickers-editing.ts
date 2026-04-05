@@ -248,8 +248,7 @@ const App = component<State, Msg, never>({
         card('File Upload', [
           div({ ...fu.root, class: 'fu-root' }, [
             div({ ...fu.dropzone, class: 'fu-dropzone' }, [
-              text('Drag files here or '),
-              button({ ...fu.trigger, class: 'fu-browse' }, [text('browse')]),
+              text('Drag files here or click to browse'),
               input({ ...fu.hiddenInput }),
             ]),
             div({ class: 'fu-list' }, [
