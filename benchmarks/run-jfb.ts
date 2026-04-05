@@ -66,6 +66,19 @@ const BENCHMARKS = [
   { id: '09_clear1k_x8', label: 'Clear' },
 ]
 
+const MEMORY_BENCHMARKS = [
+  { id: '21_ready-memory', label: 'Ready (MB)' },
+  { id: '22_run-memory', label: 'Run 1k (MB)' },
+  { id: '25_run-clear-memory', label: 'Clear (MB)' },
+]
+
+const SIZE_BENCHMARKS = [
+  { id: '41_size-uncompressed', label: 'Uncompressed (kB)' },
+  { id: '42_size-compressed', label: 'Gzipped (kB)' },
+]
+
+const ALL_BENCHMARKS = [...BENCHMARKS, ...MEMORY_BENCHMARKS, ...SIZE_BENCHMARKS]
+
 const COMPETITORS = ['vanillajs', 'solid', 'svelte', 'react', 'elm']
 
 function run(cmd: string, cwd?: string) {
@@ -193,7 +206,8 @@ function readMedian(fwName: string, benchmarkId: string): number | null {
       .split('\n')
     if (!matches[0]) return null
     const data = JSON.parse(readFileSync(matches[0], 'utf8'))
-    return data.values?.total?.median ?? null
+    // CPU benchmarks nest under values.total; memory/size under values.DEFAULT.
+    return data.values?.total?.median ?? data.values?.DEFAULT?.median ?? null
   } catch {
     return null
   }
@@ -217,7 +231,7 @@ for (let pass = 1; pass <= runs; pass++) {
       continue
     }
     const fwName = fw.replace('keyed/', '')
-    for (const b of BENCHMARKS) {
+    for (const b of ALL_BENCHMARKS) {
       const m = readMedian(fwName, b.id)
       if (m == null) continue
       const key = `${fwName}/${b.id}`
@@ -232,7 +246,7 @@ for (let pass = 1; pass <= runs; pass++) {
 for (const fw of frameworksToRun) {
   const fwName = fw.replace('keyed/', '')
   if (!current[fwName]) current[fwName] = {}
-  for (const b of BENCHMARKS) {
+  for (const b of ALL_BENCHMARKS) {
     const arr = samples.get(`${fwName}/${b.id}`) ?? []
     const agg = medianOf(arr)
     if (agg != null) current[fwName][b.id] = agg
@@ -243,44 +257,56 @@ for (const fw of frameworksToRun) {
 
 const allFws = ['llui', ...COMPETITORS]
 const W = 11
+const LABEL_W = 20
 
-console.log('\n=== Absolute Timings (ms, median) ===\n')
+type Bench = { id: string; label: string }
 
-const header = 'Operation'.padEnd(18) + allFws.map((n) => n.padStart(W)).join('')
-console.log(header)
-console.log('-'.repeat(header.length))
-for (const b of BENCHMARKS) {
-  let line = b.label.padEnd(18)
-  for (const fw of allFws) {
-    const v = current[fw]?.[b.id]
-    line += (v != null ? v.toFixed(1) : '—').padStart(W)
+function printAbsolute(title: string, benches: Bench[]) {
+  console.log(`\n=== ${title} ===\n`)
+  const header = 'Operation'.padEnd(LABEL_W) + allFws.map((n) => n.padStart(W)).join('')
+  console.log(header)
+  console.log('-'.repeat(header.length))
+  for (const b of benches) {
+    let line = b.label.padEnd(LABEL_W)
+    for (const fw of allFws) {
+      const v = current[fw]?.[b.id]
+      line += (v != null ? v.toFixed(1) : '—').padStart(W)
+    }
+    console.log(line)
   }
-  console.log(line)
 }
 
-console.log('\n=== Relative to LLui (negative = faster than LLui) ===\n')
-
-const header2 = 'Operation'.padEnd(18) + allFws.map((n) => n.padStart(W)).join('')
-console.log(header2)
-console.log('-'.repeat(header2.length))
-for (const b of BENCHMARKS) {
-  const base = current.llui?.[b.id]
-  let line = b.label.padEnd(18)
-  for (const fw of allFws) {
-    if (fw === 'llui') {
-      line += '—'.padStart(W)
-      continue
+function printRelative(title: string, benches: Bench[]) {
+  console.log(`\n=== ${title} ===\n`)
+  const header = 'Operation'.padEnd(LABEL_W) + allFws.map((n) => n.padStart(W)).join('')
+  console.log(header)
+  console.log('-'.repeat(header.length))
+  for (const b of benches) {
+    const base = current.llui?.[b.id]
+    let line = b.label.padEnd(LABEL_W)
+    for (const fw of allFws) {
+      if (fw === 'llui') {
+        line += '—'.padStart(W)
+        continue
+      }
+      const v = current[fw]?.[b.id]
+      if (v == null || base == null) {
+        line += '—'.padStart(W)
+        continue
+      }
+      const pct = ((v - base) / base) * 100
+      line += ((pct >= 0 ? '+' : '') + pct.toFixed(0) + '%').padStart(W)
     }
-    const v = current[fw]?.[b.id]
-    if (v == null || base == null) {
-      line += '—'.padStart(W)
-      continue
-    }
-    const pct = ((v - base) / base) * 100
-    line += ((pct >= 0 ? '+' : '') + pct.toFixed(0) + '%').padStart(W)
+    console.log(line)
   }
-  console.log(line)
 }
+
+printAbsolute('Absolute Timings (ms, median)', BENCHMARKS)
+printRelative('Relative to LLui (negative = faster than LLui)', BENCHMARKS)
+printAbsolute('Memory (MB)', MEMORY_BENCHMARKS)
+printRelative('Memory Relative to LLui (negative = less than LLui)', MEMORY_BENCHMARKS)
+printAbsolute('Bundle Size (kB)', SIZE_BENCHMARKS)
+printRelative('Bundle Size Relative to LLui (negative = smaller than LLui)', SIZE_BENCHMARKS)
 
 // ── LLui: current vs baseline ──
 
@@ -289,25 +315,36 @@ const currentLlui = current.llui
 if (baselineLlui && currentLlui && baselineLlui !== currentLlui) {
   console.log('\n=== LLui: Current vs Baseline ===\n')
   const hdr =
-    'Operation'.padEnd(18) + 'Baseline'.padStart(W) + 'Current'.padStart(W) + 'Delta'.padStart(W)
+    'Operation'.padEnd(LABEL_W) +
+    'Baseline'.padStart(W) +
+    'Current'.padStart(W) +
+    'Delta'.padStart(W)
   console.log(hdr)
   console.log('-'.repeat(hdr.length))
   let anySignificant = false
-  for (const b of BENCHMARKS) {
-    const base = baselineLlui[b.id]
-    const cur = currentLlui[b.id]
-    let line = b.label.padEnd(18)
-    line += (base != null ? base.toFixed(1) : '—').padStart(W)
-    line += (cur != null ? cur.toFixed(1) : '—').padStart(W)
-    if (base != null && cur != null && base !== 0) {
-      const pct = ((cur - base) / base) * 100
-      const mark = Math.abs(pct) >= 5 ? (pct < 0 ? ' ✓' : ' ⚠') : '  '
-      if (Math.abs(pct) >= 5) anySignificant = true
-      line += ((pct >= 0 ? '+' : '') + pct.toFixed(0) + '%' + mark).padStart(W + 2)
-    } else {
-      line += '—'.padStart(W)
+  const groups: [string, Bench[]][] = [
+    ['Timings (ms)', BENCHMARKS],
+    ['Memory (MB)', MEMORY_BENCHMARKS],
+    ['Bundle (kB)', SIZE_BENCHMARKS],
+  ]
+  for (const [groupLabel, benches] of groups) {
+    console.log(`  — ${groupLabel} —`)
+    for (const b of benches) {
+      const base = baselineLlui[b.id]
+      const cur = currentLlui[b.id]
+      let line = b.label.padEnd(LABEL_W)
+      line += (base != null ? base.toFixed(1) : '—').padStart(W)
+      line += (cur != null ? cur.toFixed(1) : '—').padStart(W)
+      if (base != null && cur != null && base !== 0) {
+        const pct = ((cur - base) / base) * 100
+        const mark = Math.abs(pct) >= 5 ? (pct < 0 ? ' ✓' : ' ⚠') : '  '
+        if (Math.abs(pct) >= 5) anySignificant = true
+        line += ((pct >= 0 ? '+' : '') + pct.toFixed(0) + '%' + mark).padStart(W + 2)
+      } else {
+        line += '—'.padStart(W)
+      }
+      console.log(line)
     }
-    console.log(line)
   }
   if (!anySignificant) console.log('\n  (all deltas within ±5% noise)')
 }

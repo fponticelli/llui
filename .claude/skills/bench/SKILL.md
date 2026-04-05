@@ -12,7 +12,11 @@ Everything is wrapped in `pnpm bench`. The script:
 3. Starts the jfb server if needed
 4. Runs the LLui benchmark (and optionally competitors)
 5. Collects result JSONs
-6. Prints three tables: Absolute Timings, Relative to LLui, Current vs Baseline
+6. Prints six tables plus baseline delta:
+   - Absolute Timings (ms) and Relative to LLui
+   - Memory (MB) and Relative to LLui
+   - Bundle Size (kB) and Relative to LLui
+   - LLui: Current vs Baseline (grouped by timings / memory / bundle)
 7. Optionally overwrites `benchmarks/jfb-baseline.json`
 
 ## Running it
@@ -32,7 +36,9 @@ or making perf claims.
 
 ## How to use this skill
 
-**Default (no arguments):** Run `pnpm bench`. Relay the three output tables (Absolute, Relative, Current vs Baseline) verbatim to the user. Stop.
+**Default (no arguments):** Run `pnpm bench`. Relay all output tables (Timings, Memory, Bundle Size — each with Absolute + Relative to LLui — plus Current vs Baseline) verbatim to the user. Stop.
+
+**Empty competitor columns in Memory/Bundle tables** mean the saved baseline predates those metrics. The user can repopulate with `pnpm bench --all --save` (LLui + competitors, ~15 min) or just `pnpm bench --save` (LLui only).
 
 **Save a new baseline:** Append `--save`. Report that the baseline file was updated.
 
