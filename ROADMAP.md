@@ -117,29 +117,23 @@ Add the remaining Zag.js machines (naming aligned with zag):
 ### 10. Zag.js parity — cross-cutting patterns
 
 - **Controlled/uncontrolled split.** Add `defaultValue` vs `value` distinction + `onValueChange` hook to components that carry a single value field. Today llui only carries one field in state — consumer owns controlled-ness via the outer TEA loop.
-- **Collections abstraction.** Introduce `TreeCollection` / `ListCollection` helpers to centralize indexing/traversal for tree-view, listbox, combobox, select. Today consumers feed `visibleItems`/`items` arrays manually.
+- ~~**Collections abstraction.**~~ ✅ `TreeCollection` helper shipped. Listbox / combobox / select still feed string arrays directly — revisit if a unified `ListCollection` becomes useful.
 - **i18n / RTL layer.** Universal `translations` object + `dir` prop flipping arrow-key semantics. Today labels are hardcoded English with per-connect overrides in spots.
-- **Validator / transform callbacks.** `validate(value) → error | null` and `transform(value) → value` hooks on file-upload, editable, number-input, tags-input, pin-input.
+- ~~**Validator / transform callbacks.**~~ ✅ `validate` + `transformFiles` shipped for file-upload. Still to do: `validate` for editable, number-input, tags-input, pin-input.
 
 (`ids?: ElementIds` override for SSR id collisions — explicitly not pursuing, single `opts.id` prefix is adequate.)
 
 ### 11. Zag.js parity — accessibility
 
 - ~~**Typeahead first-letter search** across menu, listbox, select, tree-view, combobox.~~ ✅ (shared `utils/typeahead` shipped; wired into menu, listbox, select, tree-view. Combobox already has text-input filtering as its core behaviour.)
-- **Tri-state `aria-checked`** for hierarchical checkboxes in tree-view.
-- **`aria-busy`** during async operations + `aria-owns` for virtualized/async children.
+- ~~**Tri-state `aria-checked`** for hierarchical checkboxes in tree-view.~~ ✅ (`selectionMode: 'checkbox'` + checked/indeterminate state arrays).
+- ~~**`aria-busy`** during async operations~~ ✅ (tree-view loading state). `aria-owns` for virtualized children still open.
 - ~~**Orientation-aware keyboard** for tabs~~ ✅ (horizontal tabs use ArrowLeft/Right, vertical use ArrowUp/Down; orientation read from ancestor `[data-part=list]`).
 - **Localized `aria-label`** strings via `translations`.
-- **Tab `indicator` part** with measured `Rect` for animated underlines.
+- ~~**Tab `indicator` part** with measured `Rect` for animated underlines.~~ ✅ (`watchTabIndicator(root)` utility installs MutationObserver + ResizeObserver and writes CSS custom properties).
 - ~~**Tree-view ArrowLeft**: "collapse-then-jump-to-parent" WAI-ARIA semantics.~~ ✅ (plus ArrowRight "expand-then-focus-first-child"; requires caller to pass `parentId` to `item()`).
-- **Async load-children + in-place rename** for tree-view.
+- ~~**Async load-children + in-place rename** for tree-view.~~ ✅ (`loading[]` state + `loadingStart`/`loadingEnd` messages; `renaming`/`renameDraft` + full rename flow).
 
-### 12. Zag.js parity — per-component gaps
+### 12. Zag.js parity — per-component gaps — all shipped
 
-**file-upload:** ~~`minFileSize`~~ ✅, per-file `validate()`, `transformFiles`, ~~rejected-file tracking with `FileError` codes~~ ✅, ~~`capture`/`directory`/`required`/`readOnly`/`invalid` attrs~~ ✅, ~~`preventDocumentDrop` safety~~ ✅, ~~MIME-object `accept`~~ ✅, parts: ~~`itemName`, `itemSizeText`, `itemPreview`, `itemDeleteTrigger`, `itemGroup`~~ ✅.
-
-**tree-view:** tri-state checkbox selection, ~~typeahead~~ ✅, async lazy-load children, in-place rename flow, ~~`expandOnClick`~~ ✅, `TreeCollection` abstraction.
-
-**tabs:** `indicator` part (measured rect for animated selection bar), ~~`loopFocus` opt-out~~ ✅, ~~`deselectable` mode~~ ✅, ~~anchor-tab `navigate` hook~~ ✅, ~~orientation-aware keyboard~~ ✅.
-
-**combobox / select / menu:** ~~typeahead search~~ ✅ (menu + select + listbox + tree-view; combobox uses input-driven filtering by design).
+All §12 items shipped across commits 865db49..9095b81.
