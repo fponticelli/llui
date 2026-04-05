@@ -43,6 +43,15 @@ export interface TreeViewState {
   renaming: string | null
   /** Draft value during rename. */
   renameDraft: string
+  /**
+   * Ids of branches currently loading their children asynchronously. Item
+   * parts expose `aria-busy` while loading so assistive tech announces
+   * the in-progress state. The consumer kicks off the fetch externally
+   * (in a handler that intercepts `expand`, or via an effect), dispatches
+   * `loadingStart` immediately, fetches the children, then dispatches
+   * `setVisibleItems` with the new tree contents followed by `loadingEnd`.
+   */
+  loading: string[]
 }
 
 export type TreeViewMsg =
@@ -69,6 +78,8 @@ export type TreeViewMsg =
   | { type: 'renameChange'; value: string }
   | { type: 'renameCommit' }
   | { type: 'renameCancel' }
+  | { type: 'loadingStart'; id: string }
+  | { type: 'loadingEnd'; id: string }
 
 export interface TreeViewInit {
   expanded?: string[]
@@ -96,6 +107,7 @@ export function init(opts: TreeViewInit = {}): TreeViewState {
     typeaheadExpiresAt: 0,
     renaming: null,
     renameDraft: '',
+    loading: [],
   }
 }
 
@@ -222,6 +234,11 @@ export function update(state: TreeViewState, msg: TreeViewMsg): [TreeViewState, 
     case 'renameCommit':
     case 'renameCancel':
       return [{ ...state, renaming: null, renameDraft: '' }, []]
+    case 'loadingStart':
+      if (state.loading.includes(msg.id)) return [state, []]
+      return [{ ...state, loading: [...state.loading, msg.id] }, []]
+    case 'loadingEnd':
+      return [{ ...state, loading: state.loading.filter((id) => id !== msg.id) }, []]
   }
 }
 
@@ -245,6 +262,10 @@ export function isRenaming(state: TreeViewState, id: string): boolean {
   return state.renaming === id
 }
 
+export function isLoading(state: TreeViewState, id: string): boolean {
+  return state.loading.includes(id)
+}
+
 export interface TreeItemParts<S> {
   item: {
     role: 'treeitem'
@@ -252,6 +273,7 @@ export interface TreeItemParts<S> {
     'aria-expanded': (s: S) => boolean | undefined
     'aria-selected': (s: S) => boolean | undefined
     'aria-level': number
+    'aria-busy': (s: S) => 'true' | undefined
     tabIndex: (s: S) => number
     'data-scope': 'tree-view'
     'data-part': 'item'
@@ -259,6 +281,7 @@ export interface TreeItemParts<S> {
     'data-depth': string
     'data-selected': (s: S) => '' | undefined
     'data-focused': (s: S) => '' | undefined
+    'data-loading': (s: S) => '' | undefined
     onClick: (e: MouseEvent) => void
     onKeyDown: (e: KeyboardEvent) => void
     onFocus: (e: FocusEvent) => void
@@ -339,6 +362,7 @@ export function connect<S>(
         'aria-selected': (s) =>
           get(s).selectionMode === 'single' ? isSelected(get(s), id) : undefined,
         'aria-level': depth + 1,
+        'aria-busy': (s) => (isLoading(get(s), id) ? 'true' : undefined),
         tabIndex: (s) => (get(s).focused === id ? 0 : -1),
         'data-scope': 'tree-view',
         'data-part': 'item',
@@ -346,6 +370,7 @@ export function connect<S>(
         'data-depth': String(depth),
         'data-selected': (s) => (isSelected(get(s), id) ? '' : undefined),
         'data-focused': (s) => (get(s).focused === id ? '' : undefined),
+        'data-loading': (s) => (isLoading(get(s), id) ? '' : undefined),
         onClick: (e) => {
           send({ type: 'select', id, additive: e.metaKey || e.ctrlKey })
           if (expandOnClick && isBranch) send({ type: 'toggleBranch', id })
@@ -431,4 +456,5 @@ export const treeView = {
   isChecked,
   isIndeterminate,
   isRenaming,
+  isLoading,
 }

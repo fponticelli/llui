@@ -247,6 +247,28 @@ describe('tree-view.connect', () => {
     expect(s3.renameDraft).toBe('')
   })
 
+  it('loadingStart + loadingEnd toggle loading list', () => {
+    const [s1] = update(init(), { type: 'loadingStart', id: 'a' })
+    expect(s1.loading).toEqual(['a'])
+    const [s2] = update(s1, { type: 'loadingStart', id: 'b' })
+    expect(s2.loading).toEqual(['a', 'b'])
+    // loadingStart is idempotent
+    const [s3] = update(s2, { type: 'loadingStart', id: 'a' })
+    expect(s3.loading).toEqual(['a', 'b'])
+    const [s4] = update(s3, { type: 'loadingEnd', id: 'a' })
+    expect(s4.loading).toEqual(['b'])
+  })
+
+  it('item aria-busy reflects loading state', () => {
+    const pc = connect<Ctx>((s) => s.t, vi.fn(), { id: 'x' })
+    const item = pc.item('a', 0, true).item
+    expect(item['aria-busy'](wrap(init({})))).toBeUndefined()
+    // Force loading via explicit state construction
+    const loaded = { ...init(), loading: ['a'] }
+    expect(item['aria-busy']({ t: loaded })).toBe('true')
+    expect(item['data-loading']({ t: loaded })).toBe('')
+  })
+
   it('renameCancel clears rename state', () => {
     const s0 = init({})
     const [s1] = update(s0, { type: 'renameStart', id: 'x', initial: 'foo' })
