@@ -169,6 +169,18 @@
       "import": "./dist/components/timer.js",
       "types": "./dist/components/timer.d.ts"
     },
+    "./angle-slider": {
+      "import": "./dist/components/angle-slider.js",
+      "types": "./dist/components/angle-slider.d.ts"
+    },
+    "./marquee": {
+      "import": "./dist/components/marquee.js",
+      "types": "./dist/components/marquee.d.ts"
+    },
+    "./presence": {
+      "import": "./dist/components/presence.js",
+      "types": "./dist/components/presence.d.ts"
+    },
     "./carousel": {
       "import": "./dist/components/carousel.js",
       "types": "./dist/components/carousel.d.ts"

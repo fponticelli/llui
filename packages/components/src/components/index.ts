@@ -38,6 +38,9 @@ export * as carousel from './carousel'
 export * as datePicker from './date-picker'
 export * as colorPicker from './color-picker'
 export * as timer from './timer'
+export * as angleSlider from './angle-slider'
+export * as marquee from './marquee'
+export * as presence from './presence'
 
 export type {
   TimerState,
@@ -46,6 +49,26 @@ export type {
   TimerParts,
   Direction as TimerDirection,
 } from './timer'
+export type {
+  AngleSliderState,
+  AngleSliderMsg,
+  AngleSliderInit,
+  AngleSliderParts,
+} from './angle-slider'
+export type {
+  MarqueeState,
+  MarqueeMsg,
+  MarqueeInit,
+  MarqueeParts,
+  MarqueeDirection,
+} from './marquee'
+export type {
+  PresenceState,
+  PresenceMsg,
+  PresenceInit,
+  PresenceParts,
+  PresenceStatus,
+} from './presence'
 export type { ToggleState, ToggleMsg, ToggleInit, ToggleParts } from './toggle'
 export type {
   CheckboxState,
