@@ -21,12 +21,28 @@ import {
 import { switchMachine, type SwitchState, type SwitchMsg } from '@llui/components/switch'
 import { checkbox, type CheckboxState, type CheckboxMsg } from '@llui/components/checkbox'
 import { radioGroup, type RadioGroupState, type RadioGroupMsg } from '@llui/components/radio-group'
-import { toggleGroup, type ToggleGroupState, type ToggleGroupMsg } from '@llui/components/toggle-group'
+import {
+  toggleGroup,
+  type ToggleGroupState,
+  type ToggleGroupMsg,
+} from '@llui/components/toggle-group'
 import { slider, type SliderState, type SliderMsg } from '@llui/components/slider'
 import { progress, type ProgressState, type ProgressMsg } from '@llui/components/progress'
-import { numberInput, type NumberInputState, type NumberInputMsg } from '@llui/components/number-input'
-import { passwordInput, type PasswordInputState, type PasswordInputMsg } from '@llui/components/password-input'
-import { ratingGroup, type RatingGroupState, type RatingGroupMsg } from '@llui/components/rating-group'
+import {
+  numberInput,
+  type NumberInputState,
+  type NumberInputMsg,
+} from '@llui/components/number-input'
+import {
+  passwordInput,
+  type PasswordInputState,
+  type PasswordInputMsg,
+} from '@llui/components/password-input'
+import {
+  ratingGroup,
+  type RatingGroupState,
+  type RatingGroupMsg,
+} from '@llui/components/rating-group'
 import { pagination, type PaginationState, type PaginationMsg } from '@llui/components/pagination'
 import { avatar, type AvatarState, type AvatarMsg } from '@llui/components/avatar'
 import { tabs, type TabsState, type TabsMsg } from '@llui/components/tabs'
@@ -38,6 +54,42 @@ import { menu, type MenuState, type MenuMsg } from '@llui/components/menu'
 import { select, type SelectState, type SelectMsg } from '@llui/components/select'
 import { combobox, type ComboboxState, type ComboboxMsg } from '@llui/components/combobox'
 import { drawer, type DrawerState, type DrawerMsg } from '@llui/components/drawer'
+import {
+  contextMenu,
+  type ContextMenuState,
+  type ContextMenuMsg,
+} from '@llui/components/context-menu'
+import { carousel, type CarouselState, type CarouselMsg } from '@llui/components/carousel'
+import {
+  colorPicker,
+  type ColorPickerState,
+  type ColorPickerMsg,
+} from '@llui/components/color-picker'
+import {
+  datePicker,
+  type DatePickerState,
+  type DatePickerMsg,
+  monthGrid,
+} from '@llui/components/date-picker'
+import {
+  timePicker,
+  type TimePickerState,
+  type TimePickerMsg,
+  formatTime,
+} from '@llui/components/time-picker'
+import {
+  clipboard,
+  type ClipboardState,
+  type ClipboardMsg,
+  copyToClipboard,
+} from '@llui/components/clipboard'
+import { editable, type EditableState, type EditableMsg } from '@llui/components/editable'
+import { tagsInput, type TagsInputState, type TagsInputMsg } from '@llui/components/tags-input'
+import { stepper, type StepperState, type StepperMsg } from '@llui/components/stepper'
+import { pinInput, type PinInputState, type PinInputMsg } from '@llui/components/pin-input'
+import { fileUpload, type FileUploadState, type FileUploadMsg } from '@llui/components/file-upload'
+import { splitter, type SplitterState, type SplitterMsg } from '@llui/components/splitter'
+import { treeView, type TreeViewState, type TreeViewMsg } from '@llui/components/tree-view'
 import { toast, type ToasterState, type ToasterMsg, nextToastId } from '@llui/components/toast'
 import {
   confirmDialog,
@@ -69,6 +121,19 @@ type State = {
   select: SelectState
   combobox: ComboboxState
   drawer: DrawerState
+  contextMenu: ContextMenuState
+  carousel: CarouselState
+  colorPicker: ColorPickerState
+  datePicker: DatePickerState
+  timePicker: TimePickerState
+  clipboard: ClipboardState
+  editable: EditableState
+  tagsInput: TagsInputState
+  stepper: StepperState
+  pinInput: PinInputState
+  fileUpload: FileUploadState
+  splitter: SplitterState
+  treeView: TreeViewState
   toast: ToasterState
   confirm: ConfirmDialogState
   message: string
@@ -95,6 +160,20 @@ type Msg =
   | { type: 'select'; msg: SelectMsg }
   | { type: 'combobox'; msg: ComboboxMsg }
   | { type: 'drawer'; msg: DrawerMsg }
+  | { type: 'contextMenu'; msg: ContextMenuMsg }
+  | { type: 'carousel'; msg: CarouselMsg }
+  | { type: 'colorPicker'; msg: ColorPickerMsg }
+  | { type: 'datePicker'; msg: DatePickerMsg }
+  | { type: 'timePicker'; msg: TimePickerMsg }
+  | { type: 'clipboard'; msg: ClipboardMsg }
+  | { type: 'editable'; msg: EditableMsg }
+  | { type: 'tagsInput'; msg: TagsInputMsg }
+  | { type: 'stepper'; msg: StepperMsg }
+  | { type: 'pinInput'; msg: PinInputMsg }
+  | { type: 'fileUpload'; msg: FileUploadMsg }
+  | { type: 'splitter'; msg: SplitterMsg }
+  | { type: 'treeView'; msg: TreeViewMsg }
+  | { type: 'copyText'; value: string }
   | { type: 'toast'; msg: ToasterMsg }
   | { type: 'confirm'; msg: ConfirmDialogMsg }
   | { type: 'emitToast'; kind: 'info' | 'success' | 'error' }
@@ -157,6 +236,23 @@ const init = (): [State, never[]] => [
     }),
     combobox: combobox.init({ items: FRUITS }),
     drawer: drawer.init({ open: false }),
+    contextMenu: contextMenu.init({ items: ['Cut', 'Copy', 'Paste', 'Delete'] }),
+    carousel: carousel.init({ count: 4, current: 0, loop: true }),
+    colorPicker: colorPicker.init({ hsl: { h: 210, s: 70, l: 50 } }),
+    datePicker: datePicker.init({ value: '2026-04-15' }),
+    timePicker: timePicker.init({ value: { hours: 14, minutes: 30, seconds: 0 }, format: '12' }),
+    clipboard: clipboard.init({ value: 'pnpm install @llui/components' }),
+    editable: editable.init({ value: 'Click me to edit' }),
+    tagsInput: tagsInput.init({ value: ['typescript', 'vite'], unique: true, max: 5 }),
+    stepper: stepper.init({ steps: ['Account', 'Profile', 'Review'], current: 0, linear: true }),
+    pinInput: pinInput.init({ length: 4, type: 'numeric' }),
+    fileUpload: fileUpload.init({ multiple: true, maxFiles: 3 }),
+    splitter: splitter.init({ position: 50, orientation: 'horizontal' }),
+    treeView: treeView.init({
+      expanded: ['root'],
+      visibleItems: ['root', 'docs', 'src', 'tests'],
+      selectionMode: 'single',
+    }),
     toast: toast.init({ placement: 'bottom-end' }),
     confirm: confirmDialog.init(),
     message: '',
@@ -193,6 +289,14 @@ const appUpdate = (state: State, msg: Msg): [State, never[]] | null => {
     })
     return [{ ...state, toast: toastState }, []]
   }
+  if (msg.type === 'copyText') {
+    // Fire-and-forget browser clipboard write; state update happens below.
+    void copyToClipboard(msg.value).catch(() => {})
+    const [cb] = clipboard.update(state.clipboard, { type: 'copy' })
+    // Auto-reset the "copied" flag after 2s so the button label returns to "Copy"
+    setTimeout(() => sendGlobal({ type: 'clipboard', msg: { type: 'reset' } }), 2000)
+    return [{ ...state, clipboard: cb }, []]
+  }
   if (msg.type === 'askConfirm') {
     const [confirm] = confirmDialog.update(
       state.confirm,
@@ -210,27 +314,210 @@ const appUpdate = (state: State, msg: Msg): [State, never[]] | null => {
 }
 
 const update = mergeHandlers<State, Msg, never>(
-  sliceHandler({ get: (s) => s.switch, set: (s, v) => ({ ...s, switch: v }), narrow: (m) => (m.type === 'switch' ? m.msg : null), sub: switchMachine.update }),
-  sliceHandler({ get: (s) => s.checkbox, set: (s, v) => ({ ...s, checkbox: v }), narrow: (m) => (m.type === 'checkbox' ? m.msg : null), sub: checkbox.update }),
-  sliceHandler({ get: (s) => s.radio, set: (s, v) => ({ ...s, radio: v }), narrow: (m) => (m.type === 'radio' ? m.msg : null), sub: radioGroup.update }),
-  sliceHandler({ get: (s) => s.togGroup, set: (s, v) => ({ ...s, togGroup: v }), narrow: (m) => (m.type === 'togGroup' ? m.msg : null), sub: toggleGroup.update }),
-  sliceHandler({ get: (s) => s.slider, set: (s, v) => ({ ...s, slider: v }), narrow: (m) => (m.type === 'slider' ? m.msg : null), sub: slider.update }),
-  sliceHandler({ get: (s) => s.progress, set: (s, v) => ({ ...s, progress: v }), narrow: (m) => (m.type === 'progress' ? m.msg : null), sub: progress.update }),
-  sliceHandler({ get: (s) => s.number, set: (s, v) => ({ ...s, number: v }), narrow: (m) => (m.type === 'number' ? m.msg : null), sub: numberInput.update }),
-  sliceHandler({ get: (s) => s.password, set: (s, v) => ({ ...s, password: v }), narrow: (m) => (m.type === 'password' ? m.msg : null), sub: passwordInput.update }),
-  sliceHandler({ get: (s) => s.rating, set: (s, v) => ({ ...s, rating: v }), narrow: (m) => (m.type === 'rating' ? m.msg : null), sub: ratingGroup.update }),
-  sliceHandler({ get: (s) => s.pagination, set: (s, v) => ({ ...s, pagination: v }), narrow: (m) => (m.type === 'pagination' ? m.msg : null), sub: pagination.update }),
-  sliceHandler({ get: (s) => s.avatar, set: (s, v) => ({ ...s, avatar: v }), narrow: (m) => (m.type === 'avatar' ? m.msg : null), sub: avatar.update }),
-  sliceHandler({ get: (s) => s.tabs, set: (s, v) => ({ ...s, tabs: v }), narrow: (m) => (m.type === 'tabs' ? m.msg : null), sub: tabs.update }),
-  sliceHandler({ get: (s) => s.accordion, set: (s, v) => ({ ...s, accordion: v }), narrow: (m) => (m.type === 'accordion' ? m.msg : null), sub: accordion.update }),
-  sliceHandler({ get: (s) => s.popover, set: (s, v) => ({ ...s, popover: v }), narrow: (m) => (m.type === 'popover' ? m.msg : null), sub: popover.update }),
-  sliceHandler({ get: (s) => s.tooltip, set: (s, v) => ({ ...s, tooltip: v }), narrow: (m) => (m.type === 'tooltip' ? m.msg : null), sub: tooltip.update }),
-  sliceHandler({ get: (s) => s.hoverCard, set: (s, v) => ({ ...s, hoverCard: v }), narrow: (m) => (m.type === 'hoverCard' ? m.msg : null), sub: hoverCard.update }),
-  sliceHandler({ get: (s) => s.menu, set: (s, v) => ({ ...s, menu: v }), narrow: (m) => (m.type === 'menu' ? m.msg : null), sub: menu.update }),
-  sliceHandler({ get: (s) => s.select, set: (s, v) => ({ ...s, select: v }), narrow: (m) => (m.type === 'select' ? m.msg : null), sub: select.update }),
-  sliceHandler({ get: (s) => s.combobox, set: (s, v) => ({ ...s, combobox: v }), narrow: (m) => (m.type === 'combobox' ? m.msg : null), sub: combobox.update }),
-  sliceHandler({ get: (s) => s.drawer, set: (s, v) => ({ ...s, drawer: v }), narrow: (m) => (m.type === 'drawer' ? m.msg : null), sub: drawer.update }),
-  sliceHandler({ get: (s) => s.toast, set: (s, v) => ({ ...s, toast: v }), narrow: (m) => (m.type === 'toast' ? m.msg : null), sub: toast.update }),
+  sliceHandler({
+    get: (s) => s.switch,
+    set: (s, v) => ({ ...s, switch: v }),
+    narrow: (m) => (m.type === 'switch' ? m.msg : null),
+    sub: switchMachine.update,
+  }),
+  sliceHandler({
+    get: (s) => s.checkbox,
+    set: (s, v) => ({ ...s, checkbox: v }),
+    narrow: (m) => (m.type === 'checkbox' ? m.msg : null),
+    sub: checkbox.update,
+  }),
+  sliceHandler({
+    get: (s) => s.radio,
+    set: (s, v) => ({ ...s, radio: v }),
+    narrow: (m) => (m.type === 'radio' ? m.msg : null),
+    sub: radioGroup.update,
+  }),
+  sliceHandler({
+    get: (s) => s.togGroup,
+    set: (s, v) => ({ ...s, togGroup: v }),
+    narrow: (m) => (m.type === 'togGroup' ? m.msg : null),
+    sub: toggleGroup.update,
+  }),
+  sliceHandler({
+    get: (s) => s.slider,
+    set: (s, v) => ({ ...s, slider: v }),
+    narrow: (m) => (m.type === 'slider' ? m.msg : null),
+    sub: slider.update,
+  }),
+  sliceHandler({
+    get: (s) => s.progress,
+    set: (s, v) => ({ ...s, progress: v }),
+    narrow: (m) => (m.type === 'progress' ? m.msg : null),
+    sub: progress.update,
+  }),
+  sliceHandler({
+    get: (s) => s.number,
+    set: (s, v) => ({ ...s, number: v }),
+    narrow: (m) => (m.type === 'number' ? m.msg : null),
+    sub: numberInput.update,
+  }),
+  sliceHandler({
+    get: (s) => s.password,
+    set: (s, v) => ({ ...s, password: v }),
+    narrow: (m) => (m.type === 'password' ? m.msg : null),
+    sub: passwordInput.update,
+  }),
+  sliceHandler({
+    get: (s) => s.rating,
+    set: (s, v) => ({ ...s, rating: v }),
+    narrow: (m) => (m.type === 'rating' ? m.msg : null),
+    sub: ratingGroup.update,
+  }),
+  sliceHandler({
+    get: (s) => s.pagination,
+    set: (s, v) => ({ ...s, pagination: v }),
+    narrow: (m) => (m.type === 'pagination' ? m.msg : null),
+    sub: pagination.update,
+  }),
+  sliceHandler({
+    get: (s) => s.avatar,
+    set: (s, v) => ({ ...s, avatar: v }),
+    narrow: (m) => (m.type === 'avatar' ? m.msg : null),
+    sub: avatar.update,
+  }),
+  sliceHandler({
+    get: (s) => s.tabs,
+    set: (s, v) => ({ ...s, tabs: v }),
+    narrow: (m) => (m.type === 'tabs' ? m.msg : null),
+    sub: tabs.update,
+  }),
+  sliceHandler({
+    get: (s) => s.accordion,
+    set: (s, v) => ({ ...s, accordion: v }),
+    narrow: (m) => (m.type === 'accordion' ? m.msg : null),
+    sub: accordion.update,
+  }),
+  sliceHandler({
+    get: (s) => s.popover,
+    set: (s, v) => ({ ...s, popover: v }),
+    narrow: (m) => (m.type === 'popover' ? m.msg : null),
+    sub: popover.update,
+  }),
+  sliceHandler({
+    get: (s) => s.tooltip,
+    set: (s, v) => ({ ...s, tooltip: v }),
+    narrow: (m) => (m.type === 'tooltip' ? m.msg : null),
+    sub: tooltip.update,
+  }),
+  sliceHandler({
+    get: (s) => s.hoverCard,
+    set: (s, v) => ({ ...s, hoverCard: v }),
+    narrow: (m) => (m.type === 'hoverCard' ? m.msg : null),
+    sub: hoverCard.update,
+  }),
+  sliceHandler({
+    get: (s) => s.menu,
+    set: (s, v) => ({ ...s, menu: v }),
+    narrow: (m) => (m.type === 'menu' ? m.msg : null),
+    sub: menu.update,
+  }),
+  sliceHandler({
+    get: (s) => s.select,
+    set: (s, v) => ({ ...s, select: v }),
+    narrow: (m) => (m.type === 'select' ? m.msg : null),
+    sub: select.update,
+  }),
+  sliceHandler({
+    get: (s) => s.combobox,
+    set: (s, v) => ({ ...s, combobox: v }),
+    narrow: (m) => (m.type === 'combobox' ? m.msg : null),
+    sub: combobox.update,
+  }),
+  sliceHandler({
+    get: (s) => s.drawer,
+    set: (s, v) => ({ ...s, drawer: v }),
+    narrow: (m) => (m.type === 'drawer' ? m.msg : null),
+    sub: drawer.update,
+  }),
+  sliceHandler({
+    get: (s) => s.contextMenu,
+    set: (s, v) => ({ ...s, contextMenu: v }),
+    narrow: (m) => (m.type === 'contextMenu' ? m.msg : null),
+    sub: contextMenu.update,
+  }),
+  sliceHandler({
+    get: (s) => s.carousel,
+    set: (s, v) => ({ ...s, carousel: v }),
+    narrow: (m) => (m.type === 'carousel' ? m.msg : null),
+    sub: carousel.update,
+  }),
+  sliceHandler({
+    get: (s) => s.colorPicker,
+    set: (s, v) => ({ ...s, colorPicker: v }),
+    narrow: (m) => (m.type === 'colorPicker' ? m.msg : null),
+    sub: colorPicker.update,
+  }),
+  sliceHandler({
+    get: (s) => s.datePicker,
+    set: (s, v) => ({ ...s, datePicker: v }),
+    narrow: (m) => (m.type === 'datePicker' ? m.msg : null),
+    sub: datePicker.update,
+  }),
+  sliceHandler({
+    get: (s) => s.timePicker,
+    set: (s, v) => ({ ...s, timePicker: v }),
+    narrow: (m) => (m.type === 'timePicker' ? m.msg : null),
+    sub: timePicker.update,
+  }),
+  sliceHandler({
+    get: (s) => s.clipboard,
+    set: (s, v) => ({ ...s, clipboard: v }),
+    narrow: (m) => (m.type === 'clipboard' ? m.msg : null),
+    sub: clipboard.update,
+  }),
+  sliceHandler({
+    get: (s) => s.editable,
+    set: (s, v) => ({ ...s, editable: v }),
+    narrow: (m) => (m.type === 'editable' ? m.msg : null),
+    sub: editable.update,
+  }),
+  sliceHandler({
+    get: (s) => s.tagsInput,
+    set: (s, v) => ({ ...s, tagsInput: v }),
+    narrow: (m) => (m.type === 'tagsInput' ? m.msg : null),
+    sub: tagsInput.update,
+  }),
+  sliceHandler({
+    get: (s) => s.stepper,
+    set: (s, v) => ({ ...s, stepper: v }),
+    narrow: (m) => (m.type === 'stepper' ? m.msg : null),
+    sub: stepper.update,
+  }),
+  sliceHandler({
+    get: (s) => s.pinInput,
+    set: (s, v) => ({ ...s, pinInput: v }),
+    narrow: (m) => (m.type === 'pinInput' ? m.msg : null),
+    sub: pinInput.update,
+  }),
+  sliceHandler({
+    get: (s) => s.fileUpload,
+    set: (s, v) => ({ ...s, fileUpload: v }),
+    narrow: (m) => (m.type === 'fileUpload' ? m.msg : null),
+    sub: fileUpload.update,
+  }),
+  sliceHandler({
+    get: (s) => s.splitter,
+    set: (s, v) => ({ ...s, splitter: v }),
+    narrow: (m) => (m.type === 'splitter' ? m.msg : null),
+    sub: splitter.update,
+  }),
+  sliceHandler({
+    get: (s) => s.treeView,
+    set: (s, v) => ({ ...s, treeView: v }),
+    narrow: (m) => (m.type === 'treeView' ? m.msg : null),
+    sub: treeView.update,
+  }),
+  sliceHandler({
+    get: (s) => s.toast,
+    set: (s, v) => ({ ...s, toast: v }),
+    narrow: (m) => (m.type === 'toast' ? m.msg : null),
+    sub: toast.update,
+  }),
   // confirm-dialog with tag branching
   (state, msg) => {
     if (msg.type !== 'confirm') return null
@@ -308,6 +595,64 @@ const drawerParts = drawer.connect<State>(
   (m) => sendGlobal({ type: 'drawer', msg: m }),
   { id: 'drawer-demo', side: 'right' },
 )
+const contextMenuParts = contextMenu.connect<State>(
+  (s) => s.contextMenu,
+  (m) => sendGlobal({ type: 'contextMenu', msg: m }),
+  { id: 'cm-demo' },
+)
+const carouselParts = carousel.connect<State>(
+  (s) => s.carousel,
+  (m) => sendGlobal({ type: 'carousel', msg: m }),
+  { id: 'carousel-demo' },
+)
+const colorPickerParts = colorPicker.connect<State>(
+  (s) => s.colorPicker,
+  (m) => sendGlobal({ type: 'colorPicker', msg: m }),
+)
+const datePickerParts = datePicker.connect<State>(
+  (s) => s.datePicker,
+  (m) => sendGlobal({ type: 'datePicker', msg: m }),
+)
+const timePickerParts = timePicker.connect<State>(
+  (s) => s.timePicker,
+  (m) => sendGlobal({ type: 'timePicker', msg: m }),
+)
+const clipboardParts = clipboard.connect<State>(
+  (s) => s.clipboard,
+  (m) => sendGlobal({ type: 'clipboard', msg: m }),
+)
+const editableParts = editable.connect<State>(
+  (s) => s.editable,
+  (m) => sendGlobal({ type: 'editable', msg: m }),
+)
+const tagsInputParts = tagsInput.connect<State>(
+  (s) => s.tagsInput,
+  (m) => sendGlobal({ type: 'tagsInput', msg: m }),
+)
+const stepperParts = stepper.connect<State>(
+  (s) => s.stepper,
+  (m) => sendGlobal({ type: 'stepper', msg: m }),
+  { label: 'Signup progress' },
+)
+const pinInputParts = pinInput.connect<State>(
+  (s) => s.pinInput,
+  (m) => sendGlobal({ type: 'pinInput', msg: m }),
+  { id: 'pin-demo' },
+)
+const fileUploadParts = fileUpload.connect<State>(
+  (s) => s.fileUpload,
+  (m) => sendGlobal({ type: 'fileUpload', msg: m }),
+  { id: 'upload-demo' },
+)
+const splitterParts = splitter.connect<State>(
+  (s) => s.splitter,
+  (m) => sendGlobal({ type: 'splitter', msg: m }),
+)
+const treeViewParts = treeView.connect<State>(
+  (s) => s.treeView,
+  (m) => sendGlobal({ type: 'treeView', msg: m }),
+  { id: 'tree-demo' },
+)
 const sliderParts = slider.connect<State>(
   (s) => s.slider,
   (m) => sendGlobal({ type: 'slider', msg: m }),
@@ -369,20 +714,33 @@ const Demo = component<State, Msg, never>({
           toggleGroupSection(),
           numberSection(),
           passwordSection(),
+          pinInputSection(),
+          tagsInputSection(),
           ratingSection(),
           sliderSection(),
           progressSection(),
         ]),
+        sectionGroup('Pickers', [datePickerSection(), timePickerSection(), colorPickerSection()]),
         sectionGroup('Navigation & display', [
           tabsSection(),
           paginationSection(),
+          stepperSection(),
+          carouselSection(),
           avatarSection(),
+          treeViewSection(),
+        ]),
+        sectionGroup('Inline editing', [
+          editableSection(send),
+          clipboardSection(send),
+          fileUploadSection(),
+          splitterSection(),
         ]),
         sectionGroup('Overlays', [
           popoverSection(send),
           tooltipSection(),
           hoverCardSection(),
           menuSection(),
+          contextMenuSection(),
           selectSection(),
           comboboxSection(),
           drawerSection(send),
@@ -395,6 +753,7 @@ const Demo = component<State, Msg, never>({
       ...toastRegion(),
       ...confirmDialogOverlay(send),
       ...drawerOverlay(send),
+      ...contextMenuOverlay(send),
     ]
   },
 })
@@ -448,19 +807,31 @@ function progressSection(): Node {
     ]),
     div({ class: 'mt-3 flex gap-2' }, [
       button(
-        { class: 'btn btn-secondary text-xs', onClick: () => sendGlobal({ type: 'progress', msg: { type: 'setValue', value: 25 } }) },
+        {
+          class: 'btn btn-secondary text-xs',
+          onClick: () => sendGlobal({ type: 'progress', msg: { type: 'setValue', value: 25 } }),
+        },
         [text('25%')],
       ),
       button(
-        { class: 'btn btn-secondary text-xs', onClick: () => sendGlobal({ type: 'progress', msg: { type: 'setValue', value: 65 } }) },
+        {
+          class: 'btn btn-secondary text-xs',
+          onClick: () => sendGlobal({ type: 'progress', msg: { type: 'setValue', value: 65 } }),
+        },
         [text('65%')],
       ),
       button(
-        { class: 'btn btn-secondary text-xs', onClick: () => sendGlobal({ type: 'progress', msg: { type: 'setValue', value: 100 } }) },
+        {
+          class: 'btn btn-secondary text-xs',
+          onClick: () => sendGlobal({ type: 'progress', msg: { type: 'setValue', value: 100 } }),
+        },
         [text('100%')],
       ),
       button(
-        { class: 'btn btn-secondary text-xs', onClick: () => sendGlobal({ type: 'progress', msg: { type: 'setValue', value: null } }) },
+        {
+          class: 'btn btn-secondary text-xs',
+          onClick: () => sendGlobal({ type: 'progress', msg: { type: 'setValue', value: null } }),
+        },
         [text('Indeterminate')],
       ),
     ]),
@@ -571,13 +942,21 @@ function popoverSection(send: (m: Msg) => void): Node {
       send: (m) => send({ type: 'popover', msg: m }),
       parts: popoverParts,
       content: () => [
-        div({ ...popoverParts.content, class: 'min-w-[16rem] rounded-md border border-slate-200 bg-white p-4 shadow-lg' }, [
-          h3({ ...popoverParts.title, class: 'text-sm font-semibold' }, [text('Did you know?')]),
-          p({ class: 'mt-1 text-xs text-slate-600' }, [
-            text('LLui compiles access patterns into bitmasks at build time.'),
-          ]),
-          button({ ...popoverParts.closeTrigger, class: 'btn btn-secondary mt-3 text-xs' }, [text('Got it')]),
-        ]),
+        div(
+          {
+            ...popoverParts.content,
+            class: 'min-w-[16rem] rounded-md border border-slate-200 bg-white p-4 shadow-lg',
+          },
+          [
+            h3({ ...popoverParts.title, class: 'text-sm font-semibold' }, [text('Did you know?')]),
+            p({ class: 'mt-1 text-xs text-slate-600' }, [
+              text('LLui compiles access patterns into bitmasks at build time.'),
+            ]),
+            button({ ...popoverParts.closeTrigger, class: 'btn btn-secondary mt-3 text-xs' }, [
+              text('Got it'),
+            ]),
+          ],
+        ),
       ],
       placement: 'bottom-start',
     }),
@@ -592,11 +971,7 @@ function menuSection(): Node {
       get: (s) => s.menu,
       send: (m) => sendGlobal({ type: 'menu', msg: m }),
       parts: menuParts,
-      content: () => [
-        div({ ...menuParts.content }, [
-          ...renderMenuItems(),
-        ]),
-      ],
+      content: () => [div({ ...menuParts.content }, [...renderMenuItems()])],
     }),
   ])
 }
@@ -614,15 +989,24 @@ function toastSection(send: (m: Msg) => void): Node {
     h2({ class: 'demo-title' }, [text('Toast')]),
     div({ class: 'flex gap-2' }, [
       button(
-        { class: 'btn btn-secondary text-xs', onClick: () => send({ type: 'emitToast', kind: 'info' }) },
+        {
+          class: 'btn btn-secondary text-xs',
+          onClick: () => send({ type: 'emitToast', kind: 'info' }),
+        },
         [text('Info')],
       ),
       button(
-        { class: 'btn btn-primary text-xs', onClick: () => send({ type: 'emitToast', kind: 'success' }) },
+        {
+          class: 'btn btn-primary text-xs',
+          onClick: () => send({ type: 'emitToast', kind: 'success' }),
+        },
         [text('Success')],
       ),
       button(
-        { class: 'btn btn-danger text-xs', onClick: () => send({ type: 'emitToast', kind: 'error' }) },
+        {
+          class: 'btn btn-danger text-xs',
+          onClick: () => send({ type: 'emitToast', kind: 'error' }),
+        },
         [text('Error')],
       ),
     ]),
@@ -636,7 +1020,9 @@ function confirmSection(send: (m: Msg) => void): Node {
       text('Last action: '),
       span({ class: 'font-medium' }, [text((s: State) => s.message || 'none')]),
     ]),
-    button({ class: 'btn btn-danger', onClick: () => send({ type: 'askConfirm' }) }, [text('Delete item…')]),
+    button({ class: 'btn btn-danger', onClick: () => send({ type: 'askConfirm' }) }, [
+      text('Delete item…'),
+    ]),
   ])
 }
 
@@ -666,9 +1052,21 @@ function accordionSection(): Node {
   return div({ class: 'demo-section' }, [
     h2({ class: 'demo-title' }, [text('Accordion')]),
     div({ ...accordionParts.root }, [
-      accordionItem('what', 'What is LLui?', 'A compile-time-optimized web framework built on The Elm Architecture with zero virtual DOM.'),
-      accordionItem('why', 'Why another framework?', 'LLui is designed for LLM-first authoring — clean TEA patterns, explicit data flow, and a compiler that does the heavy lifting.'),
-      accordionItem('how', 'How does it work?', 'The Vite plugin extracts state access paths at build time, assigns bitmask bits, and synthesizes dirty-check functions for zero runtime overhead.'),
+      accordionItem(
+        'what',
+        'What is LLui?',
+        'A compile-time-optimized web framework built on The Elm Architecture with zero virtual DOM.',
+      ),
+      accordionItem(
+        'why',
+        'Why another framework?',
+        'LLui is designed for LLM-first authoring — clean TEA patterns, explicit data flow, and a compiler that does the heavy lifting.',
+      ),
+      accordionItem(
+        'how',
+        'How does it work?',
+        'The Vite plugin extracts state access paths at build time, assigns bitmask bits, and synthesizes dirty-check functions for zero runtime overhead.',
+      ),
     ]),
   ])
 }
@@ -683,7 +1081,8 @@ function accordionItem(value: string, title: string, body: string): Node {
           {
             class: 'ml-2 transition-transform',
             'data-state': (s: State) => (s.accordion.value.includes(value) ? 'open' : 'closed'),
-            style: (s: State) => (s.accordion.value.includes(value) ? 'transform:rotate(180deg);' : ''),
+            style: (s: State) =>
+              s.accordion.value.includes(value) ? 'transform:rotate(180deg);' : '',
           },
           [text('▾')],
         ),
@@ -709,7 +1108,9 @@ function toastRegion(): Node[] {
               'data-type': item.type,
             },
             [
-              div({ 'data-scope': 'toast', 'data-part': 'title' }, [text(() => item.title() ?? '')]),
+              div({ 'data-scope': 'toast', 'data-part': 'title' }, [
+                text(() => item.title() ?? ''),
+              ]),
               div({ 'data-scope': 'toast', 'data-part': 'description' }, [
                 text(() => item.description() ?? ''),
               ]),
@@ -754,7 +1155,8 @@ function checkboxSection(): Node {
       button(
         {
           class: 'btn btn-secondary text-xs',
-          onClick: () => sendGlobal({ type: 'checkbox', msg: { type: 'setChecked', checked: 'indeterminate' } }),
+          onClick: () =>
+            sendGlobal({ type: 'checkbox', msg: { type: 'setChecked', checked: 'indeterminate' } }),
         },
         [text('Set indeterminate')],
       ),
@@ -790,11 +1192,13 @@ function radioItem(value: string, labelText: string): Node {
 function toggleGroupSection(): Node {
   return div({ class: 'demo-section' }, [
     h2({ class: 'demo-title' }, [text('Toggle Group')]),
-    div({ ...togGroupParts.root, class: 'inline-flex rounded-md border border-slate-300 overflow-hidden' }, [
-      togItem('bold', 'B'),
-      togItem('italic', 'I'),
-      togItem('underline', 'U'),
-    ]),
+    div(
+      {
+        ...togGroupParts.root,
+        class: 'inline-flex rounded-md border border-slate-300 overflow-hidden',
+      },
+      [togItem('bold', 'B'), togItem('italic', 'I'), togItem('underline', 'U')],
+    ),
     div({ class: 'mt-3 text-sm text-slate-600' }, [
       text('Active: '),
       text((s: State) => (s.togGroup.value.length > 0 ? s.togGroup.value.join(', ') : 'none')),
@@ -912,9 +1316,7 @@ function tooltipSection(): Node {
       get: (s) => s.tooltip,
       send: (m) => sendGlobal({ type: 'tooltip', msg: m }),
       parts: tooltipParts,
-      content: () => [
-        div({ ...tooltipParts.content, class: 'tip' }, [text('This is a tooltip')]),
-      ],
+      content: () => [div({ ...tooltipParts.content, class: 'tip' }, [text('This is a tooltip')])],
     }),
   ])
 }
@@ -957,7 +1359,9 @@ function comboboxSection(): Node {
       get: (s) => s.combobox,
       send: (m) => sendGlobal({ type: 'combobox', msg: m }),
       parts: comboboxParts,
-      content: () => [div({ ...comboboxParts.content, class: 'cb-content' }, renderComboboxItems())],
+      content: () => [
+        div({ ...comboboxParts.content, class: 'cb-content' }, renderComboboxItems()),
+      ],
     }),
     div({ class: 'mt-3 text-sm text-slate-600' }, [
       text('Selected: '),
@@ -993,6 +1397,373 @@ function drawerOverlay(send: (m: Msg) => void): Node[] {
           text('Slide-in panel with focus trap, scroll lock, and dismissable layer.'),
         ]),
         button({ ...drawerParts.closeTrigger, class: 'btn btn-secondary mt-4' }, [text('Close')]),
+      ]),
+    ],
+  })
+}
+
+// ── Batch 3 sections ────────────────────────────────────────────────────────
+
+function pinInputSection(): Node {
+  // Auto-advance keyboard focus after each character entry.
+  onMount(() => {
+    const inputs = document.querySelectorAll<HTMLInputElement>(
+      '[data-scope="pin-input"][data-part="input"]',
+    )
+    const handleInput = (e: Event): void => {
+      const el = e.target as HTMLInputElement
+      if (el.value.length > 0) {
+        const idx = parseInt(el.dataset.index ?? '0', 10)
+        inputs[idx + 1]?.focus()
+      }
+    }
+    inputs.forEach((el) => el.addEventListener('input', handleInput))
+    return () => inputs.forEach((el) => el.removeEventListener('input', handleInput))
+  })
+
+  return div({ class: 'demo-section' }, [
+    h2({ class: 'demo-title' }, [text('Pin Input (OTP)')]),
+    div({ ...pinInputParts.root, class: 'flex gap-2' }, [
+      div({ ...pinInputParts.label, class: 'sr-only' }, [text('Verification code')]),
+      input({ ...pinInputParts.input(0), class: 'pin-slot' }),
+      input({ ...pinInputParts.input(1), class: 'pin-slot' }),
+      input({ ...pinInputParts.input(2), class: 'pin-slot' }),
+      input({ ...pinInputParts.input(3), class: 'pin-slot' }),
+    ]),
+    div({ class: 'mt-3 text-sm text-slate-600' }, [
+      text('Code: '),
+      text((s: State) => s.pinInput.values.join('') || '(empty)'),
+    ]),
+  ])
+}
+
+function tagsInputSection(): Node {
+  return div({ class: 'demo-section' }, [
+    h2({ class: 'demo-title' }, [text('Tags Input')]),
+    div({ ...tagsInputParts.root, class: 'tags-root' }, [
+      div({ class: 'tags-list' }, [
+        ...each<State, string, TagsInputMsg>({
+          items: (s) => s.tagsInput.value,
+          key: (t) => t,
+          render: ({ item, index }) => {
+            const tagFn = item((t) => t)
+            return [
+              span({ class: 'tag' }, [
+                text(tagFn),
+                button(
+                  {
+                    type: 'button',
+                    class: 'tag-x',
+                    onClick: () =>
+                      sendGlobal({ type: 'tagsInput', msg: { type: 'removeTag', index: index() } }),
+                    'aria-label': 'Remove tag',
+                  },
+                  [text('×')],
+                ),
+              ]),
+            ]
+          },
+        }),
+      ]),
+      input({ ...tagsInputParts.input, class: 'tags-input', placeholder: 'Enter to add' }),
+    ]),
+  ])
+}
+
+function stepperSection(): Node {
+  return div({ class: 'demo-section' }, [
+    h2({ class: 'demo-title' }, [text('Stepper')]),
+    div({ ...stepperParts.root, class: 'step-root' }, [
+      stepItem(0, 'Account'),
+      stepItem(1, 'Profile'),
+      stepItem(2, 'Review'),
+    ]),
+    div({ class: 'mt-3 flex gap-2' }, [
+      button({ ...stepperParts.prevTrigger, class: 'btn btn-secondary text-xs' }, [text('Back')]),
+      button({ ...stepperParts.nextTrigger, class: 'btn btn-primary text-xs' }, [text('Next')]),
+    ]),
+  ])
+}
+
+function stepItem(index: number, labelText: string): Node {
+  const parts = stepperParts.item(index)
+  return div({ ...parts.item, class: 'step-item' }, [
+    button({ ...parts.trigger, class: 'step-btn' }, [text(String(index + 1))]),
+    span({ class: 'step-label' }, [text(labelText)]),
+    ...(index < 2 ? [span({ ...parts.separator, class: 'step-sep' }, [])] : []),
+  ])
+}
+
+function carouselSection(): Node {
+  const slides = ['Mountains', 'Ocean', 'Forest', 'Desert']
+  const colors = ['#0891b2', '#0284c7', '#166534', '#d97706']
+  return div({ class: 'demo-section' }, [
+    h2({ class: 'demo-title' }, [text('Carousel')]),
+    div({ ...carouselParts.root, class: 'carousel' }, [
+      div({ ...carouselParts.viewport, class: 'carousel-viewport' }, [
+        ...slides.map((s, i) =>
+          div(
+            {
+              ...carouselParts.slide(i).slide,
+              class: 'carousel-slide',
+              style: `background:${colors[i]}`,
+            },
+            [text(s)],
+          ),
+        ),
+      ]),
+      div({ class: 'carousel-controls' }, [
+        button({ ...carouselParts.prevTrigger, class: 'btn btn-secondary text-xs' }, [text('‹')]),
+        div({ ...carouselParts.indicatorGroup, class: 'carousel-indicators' }, [
+          ...slides.map((_, i) =>
+            button({ ...carouselParts.slide(i).indicator, class: 'carousel-dot' }, []),
+          ),
+        ]),
+        button({ ...carouselParts.nextTrigger, class: 'btn btn-secondary text-xs' }, [text('›')]),
+      ]),
+    ]),
+  ])
+}
+
+function datePickerSection(): Node {
+  return div({ class: 'demo-section' }, [
+    h2({ class: 'demo-title' }, [text('Date Picker')]),
+    div({ ...datePickerParts.root, class: 'datepicker' }, [
+      div({ class: 'dp-header' }, [
+        button({ ...datePickerParts.prevMonthTrigger, class: 'dp-nav' }, [text('‹')]),
+        span({ class: 'dp-title' }, [
+          text((s: State) => {
+            const months = [
+              'Jan',
+              'Feb',
+              'Mar',
+              'Apr',
+              'May',
+              'Jun',
+              'Jul',
+              'Aug',
+              'Sep',
+              'Oct',
+              'Nov',
+              'Dec',
+            ]
+            return `${months[s.datePicker.visibleMonth - 1]} ${s.datePicker.visibleYear}`
+          }),
+        ]),
+        button({ ...datePickerParts.nextMonthTrigger, class: 'dp-nav' }, [text('›')]),
+      ]),
+      div({ ...datePickerParts.grid, class: 'dp-grid' }, renderCalendarDays()),
+    ]),
+    div({ class: 'mt-3 text-sm text-slate-600' }, [
+      text('Selected: '),
+      text((s: State) => s.datePicker.value ?? 'none'),
+    ]),
+  ])
+}
+
+function renderCalendarDays(): Node[] {
+  const dowLabels = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
+  const dowCells = dowLabels.map((d) => span({ class: 'dp-dow' }, [text(d)]))
+  // Days are rendered reactively per visible month via onMount + imperative DOM
+  // would be more complex; for the demo, we build a static 6x7 grid that reads
+  // from state via dayCell parts created at render time.
+  // Simpler approach: compute the grid once and render cells whose data-date
+  // reactively reflects the current state.
+  // We use the initial state's visibleMonth/Year for the demo layout.
+  const s: DatePickerState = {
+    value: '2026-04-15',
+    visibleMonth: 4,
+    visibleYear: 2026,
+    focused: '2026-04-15',
+    min: null,
+    max: null,
+    weekStartsOn: 0,
+    disabled: false,
+  }
+  // Import monthGrid dynamically — it's a pure helper
+  const cells = monthGrid(s).map((cell) => {
+    const parts = datePickerParts.dayCell(cell)
+    return button({ ...parts.cell, class: 'dp-day' }, [text(String(cell.day))])
+  })
+  return [...dowCells, ...cells]
+}
+
+function timePickerSection(): Node {
+  return div({ class: 'demo-section' }, [
+    h2({ class: 'demo-title' }, [text('Time Picker')]),
+    div({ ...timePickerParts.root, class: 'tp-root' }, [
+      input({ ...timePickerParts.hoursInput, class: 'tp-input' }),
+      span({ class: 'tp-sep' }, [text(':')]),
+      input({ ...timePickerParts.minutesInput, class: 'tp-input' }),
+      button({ ...timePickerParts.periodTrigger, class: 'tp-period' }, [
+        text((s: State) => (s.timePicker.value.hours >= 12 ? 'PM' : 'AM')),
+      ]),
+    ]),
+    div({ class: 'mt-3 text-sm text-slate-600' }, [
+      text('Time: '),
+      text((s: State) => formatTime(s.timePicker)),
+    ]),
+  ])
+}
+
+function colorPickerSection(): Node {
+  return div({ class: 'demo-section' }, [
+    h2({ class: 'demo-title' }, [text('Color Picker')]),
+    div({ ...colorPickerParts.root, class: 'cp-root' }, [
+      div({ class: 'cp-row' }, [
+        div({ ...colorPickerParts.swatch, class: 'cp-swatch' }, []),
+        input({ ...colorPickerParts.hexInput, class: 'cp-hex' }),
+      ]),
+      div({ class: 'cp-sliders' }, [
+        label({ class: 'cp-label' }, [
+          text('H'),
+          input({ ...colorPickerParts.hueSlider, class: 'cp-range' }),
+        ]),
+        label({ class: 'cp-label' }, [
+          text('S'),
+          input({ ...colorPickerParts.saturationSlider, class: 'cp-range' }),
+        ]),
+        label({ class: 'cp-label' }, [
+          text('L'),
+          input({ ...colorPickerParts.lightnessSlider, class: 'cp-range' }),
+        ]),
+      ]),
+    ]),
+  ])
+}
+
+function clipboardSection(_send: (m: Msg) => void): Node {
+  return div({ class: 'demo-section' }, [
+    h2({ class: 'demo-title' }, [text('Clipboard')]),
+    div({ ...clipboardParts.root, class: 'clip-root' }, [
+      input({ ...clipboardParts.input, class: 'clip-input' }),
+      button(
+        {
+          ...clipboardParts.trigger,
+          class: 'btn btn-secondary text-xs',
+          onClick: (e: MouseEvent) => {
+            const root = (e.currentTarget as HTMLElement).closest(
+              '[data-scope="clipboard"][data-part="root"]',
+            )
+            const inp = root?.querySelector<HTMLInputElement>('[data-part="input"]')
+            sendGlobal({ type: 'copyText', value: inp?.value ?? '' })
+          },
+        },
+        [text((s: State) => (s.clipboard.copied ? 'Copied!' : 'Copy'))],
+      ),
+    ]),
+  ])
+}
+
+function editableSection(_send: (m: Msg) => void): Node {
+  return div({ class: 'demo-section' }, [
+    h2({ class: 'demo-title' }, [text('Editable')]),
+    div({ ...editableParts.root, class: 'editable' }, [
+      span({ ...editableParts.preview, class: 'editable-preview' }, [
+        text((s: State) => s.editable.value || 'Click to edit'),
+      ]),
+      input({ ...editableParts.input, class: 'editable-input' }),
+    ]),
+    div({ class: 'mt-2 text-xs text-slate-500' }, [
+      text('Click, edit, press Enter to commit or Esc to cancel'),
+    ]),
+  ])
+}
+
+function fileUploadSection(): Node {
+  return div({ class: 'demo-section' }, [
+    h2({ class: 'demo-title' }, [text('File Upload')]),
+    div({ ...fileUploadParts.root, class: 'fu-root' }, [
+      div({ ...fileUploadParts.dropzone, class: 'fu-dropzone' }, [
+        text('Drag files here or'),
+        label({ ...fileUploadParts.label, class: 'fu-label' }, [text('browse')]),
+        input({ ...fileUploadParts.hiddenInput }),
+      ]),
+      div({ class: 'fu-list' }, [
+        ...each<State, File, FileUploadMsg>({
+          items: (s) => s.fileUpload.files,
+          key: (f) => f.name,
+          render: ({ item }) => [
+            div({ class: 'fu-item' }, [
+              text(() => item.name()),
+              text(' ('),
+              text(() => `${Math.round(item.size() / 1024)}kb`),
+              text(')'),
+            ]),
+          ],
+        }),
+      ]),
+    ]),
+  ])
+}
+
+function splitterSection(): Node {
+  return div({ class: 'demo-section' }, [
+    h2({ class: 'demo-title' }, [text('Splitter')]),
+    div({ ...splitterParts.root, class: 'split-root' }, [
+      div({ ...splitterParts.primaryPanel, class: 'split-pane' }, [text('Left pane')]),
+      div({ ...splitterParts.resizeTrigger, class: 'split-handle' }, []),
+      div({ ...splitterParts.secondaryPanel, class: 'split-pane' }, [text('Right pane')]),
+    ]),
+    div({ class: 'mt-2 text-xs text-slate-500' }, [
+      text('Split at '),
+      text((s: State) => `${s.splitter.position}%`),
+      text(' (use arrow keys when focused)'),
+    ]),
+  ])
+}
+
+function treeViewSection(): Node {
+  return div({ class: 'demo-section' }, [
+    h2({ class: 'demo-title' }, [text('Tree View')]),
+    div({ ...treeViewParts.root, class: 'tree' }, [
+      treeBranch('root', 'project/', 0, [
+        treeLeaf('docs', 'docs/', 1),
+        treeBranch('src', 'src/', 1, [
+          treeLeaf('main.ts', 'main.ts', 2),
+          treeLeaf('utils.ts', 'utils.ts', 2),
+        ]),
+        treeLeaf('tests', 'tests/', 1),
+      ]),
+    ]),
+  ])
+}
+
+function treeBranch(id: string, label: string, depth: number, children: Node[]): Node {
+  const parts = treeViewParts.item(id, depth, true)
+  return div({}, [
+    div({ ...parts.item, class: 'tree-item' }, [
+      button({ ...parts.branchTrigger, class: 'tree-caret' }, [text('▸')]),
+      span({ class: 'tree-label' }, [text(label)]),
+    ]),
+    div({ class: 'tree-children' }, children),
+  ])
+}
+
+function treeLeaf(id: string, label: string, depth: number): Node {
+  const parts = treeViewParts.item(id, depth, false)
+  return div({ ...parts.item, class: 'tree-item tree-leaf' }, [
+    span({ class: 'tree-label' }, [text(label)]),
+  ])
+}
+
+function contextMenuSection(): Node {
+  return div({ class: 'demo-section' }, [
+    h2({ class: 'demo-title' }, [text('Context Menu')]),
+    div({ ...contextMenuParts.trigger, class: 'ctx-target' }, [text('Right-click me')]),
+  ])
+}
+
+function contextMenuOverlay(send: (m: Msg) => void): Node[] {
+  return contextMenu.overlay<State>({
+    get: (s) => s.contextMenu,
+    send: (m) => send({ type: 'contextMenu', msg: m }),
+    parts: contextMenuParts,
+    content: () => [
+      div({ ...contextMenuParts.content, class: 'ctx-menu' }, [
+        ...['Cut', 'Copy', 'Paste', 'Delete'].map((v) =>
+          div({ ...contextMenuParts.item(v).item, class: 'ctx-menu-item' }, [text(v)]),
+        ),
       ]),
     ],
   })

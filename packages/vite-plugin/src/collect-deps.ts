@@ -91,7 +91,10 @@ function isReactiveAccessor(node: ts.ArrowFunction | ts.FunctionExpression): boo
     return true
   }
 
-  // div({ title: s => s.title }) — value in a property assignment inside an object literal
+  // div({ title: s => s.title }) — value in a property assignment inside an object literal.
+  // Only treat as reactive if the containing call is a known framework API whose
+  // properties are reactive accessors. Otherwise user-land helpers like
+  // sliceHandler({ narrow: (m) => m.type === ... }) would pollute the path set.
   if (ts.isPropertyAssignment(parent)) {
     const key = parent.name
     if (ts.isIdentifier(key)) {
@@ -99,12 +102,37 @@ function isReactiveAccessor(node: ts.ArrowFunction | ts.FunctionExpression): boo
       if (/^on[A-Z]/.test(key.text)) return false
       // Skip each() key function and other non-reactive props
       if (key.text === 'key' || key.text === 'name') return false
-      return true
+      // Walk up to find the enclosing call expression
+      let ancestor: ts.Node | undefined = parent.parent // ObjectLiteralExpression
+      while (ancestor && !ts.isCallExpression(ancestor)) {
+        ancestor = ancestor.parent
+      }
+      if (!ancestor) return false
+      const callExpr = ancestor as ts.CallExpression
+      if (!ts.isIdentifier(callExpr.expression)) return false
+      return REACTIVE_API_NAMES.has(callExpr.expression.text)
     }
   }
 
   return false
 }
+
+// Framework APIs whose object-literal arguments contain reactive accessors.
+// Arrow functions in property values of these calls are state-tracked.
+const REACTIVE_API_NAMES = new Set([
+  // Element helpers (see ELEMENT_HELPERS in transform.ts — we keep a superset here)
+  ...[
+    'a', 'abbr', 'article', 'aside', 'b', 'blockquote', 'br', 'button', 'canvas',
+    'code', 'dd', 'details', 'dialog', 'div', 'dl', 'dt', 'em', 'fieldset',
+    'figcaption', 'figure', 'footer', 'form', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6',
+    'header', 'hr', 'i', 'iframe', 'img', 'input', 'label', 'legend', 'li', 'main',
+    'mark', 'nav', 'ol', 'optgroup', 'option', 'output', 'p', 'pre', 'progress',
+    'section', 'select', 'small', 'span', 'strong', 'sub', 'summary', 'sup', 'table',
+    'tbody', 'td', 'textarea', 'tfoot', 'th', 'thead', 'time', 'tr', 'ul', 'video',
+  ],
+  // Structural primitives
+  'each', 'branch', 'show', 'memo', 'portal', 'foreign', 'child', 'errorBoundary',
+])
 
 /**
  * Extract state access paths from an expression body.
