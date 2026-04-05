@@ -1,6 +1,5 @@
 import {
   component,
-  mountApp,
   mergeHandlers,
   sliceHandler,
   div,
@@ -229,7 +228,7 @@ const update = mergeHandlers<State, Msg, never>(
   },
 )
 
-const App = component<State, Msg, never>({
+export const App = component<State, Msg, never>({
   name: 'OverlaysSection',
   init,
   update,
@@ -583,7 +582,3 @@ const App = component<State, Msg, never>({
 
 // Silence unused var (the bus handlers reference localSend indirectly via send closure)
 void localSend
-
-export function mount(container: HTMLElement): void {
-  mountApp(container, App)
-}

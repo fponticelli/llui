@@ -1,6 +1,5 @@
 import {
   component,
-  mountApp,
   mergeHandlers,
   sliceHandler,
   div,
@@ -131,7 +130,7 @@ const update = mergeHandlers<State, Msg, never>(
   }),
 )
 
-const App = component<State, Msg, never>({
+export const App = component<State, Msg, never>({
   name: 'DataSection',
   init,
   update,
@@ -386,7 +385,3 @@ const App = component<State, Msg, never>({
     ]
   },
 })
-
-export function mount(container: HTMLElement): void {
-  mountApp(container, App)
-}

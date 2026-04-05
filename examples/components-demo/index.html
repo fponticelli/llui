@@ -71,6 +71,16 @@
         }
       }
 
+      /* Marquee */
+      @keyframes marquee-scroll {
+        from {
+          transform: translateX(0);
+        }
+        to {
+          transform: translateX(-50%);
+        }
+      }
+
       /* Slider */
       [data-scope='slider'][data-part='control'] {
         position: relative;
@@ -1207,15 +1217,14 @@
         <p class="mt-1 text-slate-600">
           Headless components styled with Tailwind via
           <span class="font-mono text-sm">data-scope</span> /
-          <span class="font-mono text-sm">data-part</span> attributes. The demo is split into 4
-          independent apps (inputs, data, pickers/editing, overlays) each with its own state — keeps
-          every component under the 31-path bitmask tier for optimal reactivity.
+          <span class="font-mono text-sm">data-part</span> attributes. Seven sections (inputs,
+          data, pickers/editing, overlays, time-inputs, content, surfaces) compose as
+          <span class="font-mono text-sm">child()</span> boundaries under a single root app — each
+          keeps its own bitmask so every component stays under the 31-path limit for optimal
+          reactivity.
         </p>
       </div>
-      <div id="sec-inputs"></div>
-      <div id="sec-data"></div>
-      <div id="sec-pickers-editing"></div>
-      <div id="sec-overlays"></div>
+      <div id="app"></div>
     </div>
     <script type="module" src="/src/main.ts"></script>
   </body>
