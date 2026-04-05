@@ -16,6 +16,9 @@ export * as pinInput from './pin-input'
 export * as progress from './progress'
 export * as ratingGroup from './rating-group'
 export * as pagination from './pagination'
+export * as alertDialog from './alert-dialog'
+export * as drawer from './drawer'
+export * as toast from './toast'
 
 export type { ToggleState, ToggleMsg, ToggleInit, ToggleParts } from './toggle'
 export type {
@@ -120,3 +123,28 @@ export type {
   PaginationParts,
   PageItem,
 } from './pagination'
+export type {
+  AlertDialogState,
+  AlertDialogMsg,
+  AlertDialogParts,
+  AlertDialogConnectOptions,
+  AlertDialogOverlayOptions,
+} from './alert-dialog'
+export type {
+  DrawerState,
+  DrawerMsg,
+  DrawerInit,
+  DrawerParts,
+  DrawerSide,
+  OverlayOptions as DrawerOverlayOptions,
+} from './drawer'
+export type {
+  Toast,
+  ToasterState,
+  ToasterMsg,
+  ToasterInit,
+  ToasterParts,
+  ToastItemParts,
+  ToastType,
+  ToastPlacement,
+} from './toast'

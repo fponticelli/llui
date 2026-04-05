@@ -84,6 +84,18 @@
     "./pagination": {
       "import": "./dist/components/pagination.js",
       "types": "./dist/components/pagination.d.ts"
+    },
+    "./alert-dialog": {
+      "import": "./dist/components/alert-dialog.js",
+      "types": "./dist/components/alert-dialog.d.ts"
+    },
+    "./drawer": {
+      "import": "./dist/components/drawer.js",
+      "types": "./dist/components/drawer.d.ts"
+    },
+    "./toast": {
+      "import": "./dist/components/toast.js",
+      "types": "./dist/components/toast.d.ts"
     }
   },
   "scripts": {
