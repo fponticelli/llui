@@ -100,7 +100,16 @@ export type ItemAccessor<T> = {
 export interface EachOptions<S, T, M = unknown> extends TransitionOptions {
   items: (s: S) => T[]
   key: (item: T) => string | number
-  render: (opts: { send: Send<M>; item: ItemAccessor<T>; index: () => number }) => Node[]
+  render: (opts: {
+    send: Send<M>
+    item: ItemAccessor<T>
+    /**
+     * Plain (non-Proxy) accessor factory. Compiler-output path; avoid in user code
+     * (use `item.field` / `item(fn)` — more ergonomic and bypasses Proxy when compiled).
+     */
+    acc: <R>(selector: (t: T) => R) => () => R
+    index: () => number
+  }) => Node[]
 }
 
 export interface PortalOptions {

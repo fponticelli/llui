@@ -195,7 +195,12 @@ function buildEntry<S, T, M>(
   const prevFlatBindings = getFlatBindings()
   setFlatBindings(ctx.allBindings)
   setRenderContext(buildCtx)
-  entry.nodes = opts.render({ send, item: itemAccessor, index: indexAccessor })
+  entry.nodes = opts.render({
+    send,
+    item: itemAccessor,
+    acc: itemFn,
+    index: indexAccessor,
+  })
   clearRenderContext()
   setFlatBindings(prevFlatBindings)
   setRenderContext(ctx)

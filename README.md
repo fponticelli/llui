@@ -96,7 +96,7 @@ pnpm turbo build          # Build all packages
 pnpm turbo test           # Run 349 tests across 8 packages
 pnpm turbo check          # Type-check
 pnpm turbo lint           # ESLint
-pnpm -w run bench         # js-framework-benchmark
+pnpm bench                # js-framework-benchmark (add --save to update baseline)
 ```
 
 ## Performance

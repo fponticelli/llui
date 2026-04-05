@@ -96,7 +96,6 @@ export function diagnose(source: string): Diagnostic[] {
   const statePathCount = countStateAccessPaths(sf)
 
   function visit(node: ts.Node): void {
-    checkEachMisuse(node, sf, diagnostics)
     checkMapOnState(node, sf, diagnostics)
     checkExhaustiveUpdate(node, sf, diagnostics, msgVariants)
     checkAccessibility(node, sf, diagnostics)
@@ -114,28 +113,6 @@ export function diagnose(source: string): Diagnostic[] {
 function pos(node: ts.Node, sf: ts.SourceFile): { line: number; column: number } {
   const { line, character } = sf.getLineAndCharacterOfPosition(node.getStart(sf))
   return { line: line + 1, column: character + 1 }
-}
-
-// ── each() scoped accessor misuse ────────────────────────────────
-
-function checkEachMisuse(node: ts.Node, sf: ts.SourceFile, diagnostics: Diagnostic[]): void {
-  if (!ts.isPropertyAccessExpression(node)) return
-
-  // Check if the expression is 'item' (the scoped accessor param from each render)
-  if (!ts.isIdentifier(node.expression)) return
-  const name = node.expression.text
-  if (name !== 'item') return
-
-  // Check if we're inside an each() render callback
-  if (!isInsideEachRender(node)) return
-
-  const prop = node.name.text
-  const { line, column } = pos(node, sf)
-  diagnostics.push({
-    message: `Direct property access '${name}.${prop}' on each() scoped accessor at line ${line}. Use 'item(t => t.${prop})' to read the item's property reactively.`,
-    line,
-    column,
-  })
 }
 
 function isInsideEachRender(node: ts.Node): boolean {

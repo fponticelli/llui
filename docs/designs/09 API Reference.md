@@ -6,28 +6,28 @@ This document provides the authoritative type signatures for every public export
 
 ## Core Runtime (`llui`)
 
-### `component<S, M, E>(def)`
+### `component<S, M, E, D>(def)`
 
 Creates a component definition. This is the entry point for every LLui component.
 
 ```typescript
-function component<S, M, E>(def: ComponentDef<S, M, E>): ComponentDef<S, M, E>
+function component<S, M, E = never, D = void>(
+  def: ComponentDef<S, M, E, D>,
+): ComponentDef<S, M, E, D>
 
-interface ComponentDef<S, M, E> {
+interface ComponentDef<S, M, E = never, D = void> {
   name: string
-  init: (data?: any) => [S, E[]]
+  init: (data: D) => [S, E[]]
   update: (state: S, msg: M) => [S, E[]]
   view: (send: (msg: M) => void) => Node[]
-  onEffect?: (effect: E, send: (msg: M) => void, signal: AbortSignal) => void
+  onEffect?: (bag: { effect: E; send: (msg: M) => void; signal: AbortSignal }) => void
 
   // Level 2 composition only:
   propsMsg?: (props: any) => M
   receives?: Record<string, (params: any) => M>
 
-  // Compiler-injected (do not write manually unless overriding):
-  __dirty?: (oldState: S, newState: S) => number | [number, number]
-  __renderToString?: (state: S) => string
-  __msgSchema?: object // dev-mode only
+  // @internal — compiler-injected, not part of the public API:
+  // __dirty, __renderToString, __msgSchema
 }
 ```
 
@@ -48,10 +48,10 @@ See: 01 Architecture.md, 07 LLM Friendliness.md
 Mounts a component into the DOM. Runs `init(data)`, then `view()`, then Phase 2.
 
 ```typescript
-function mountApp<S, M, E>(
+function mountApp<S, M, E, D>(
   container: HTMLElement,
-  def: ComponentDef<S, M, E>,
-  data?: any,
+  def: ComponentDef<S, M, E, D>,
+  data: D,
 ): AppHandle
 
 interface AppHandle {
@@ -71,9 +71,9 @@ See: 08 Ecosystem Integration.md
 Hydrates server-rendered HTML. Walks existing DOM, attaches bindings to `data-llui-hydrate` markers, and registers structural blocks without creating new DOM nodes.
 
 ```typescript
-function hydrateApp<S, M, E>(
+function hydrateApp<S, M, E, D>(
   container: HTMLElement,
-  def: ComponentDef<S, M, E>,
+  def: ComponentDef<S, M, E, D>,
   serverState: S,
 ): AppHandle
 ```
@@ -135,7 +135,7 @@ button({ onClick: () => send({ type: 'increment' }) }, [text('+')])
 input({ onInput: (e) => send({ type: 'typed', value: e.target.value }) })
 ```
 
-Handlers are registered via `addEventListener` at mount time and removed when the owning scope is disposed. **Handlers are not reactive** — the handler identity is captured once at mount. If a handler needs to read current state, access it via the `state` parameter of `view()` (which is a stable reference to the latest state, not a snapshot).
+Handlers are registered via `addEventListener` at mount time and removed when the owning scope is disposed. **Handlers are not reactive** — the handler identity is captured once at mount. If a handler needs to read current state, capture the needed values via reactive accessors or dispatch a message and read state in `update()`.
 
 ---
 
@@ -234,21 +234,23 @@ Reactive keyed list rendering with reconciliation.
 function each<S, T, M>(opts: {
   items: (s: S) => T[]
   key: (item: T) => string | number
-  render: (opts: {
-    send: Send<M>
-    item: <R>(selector: (t: T) => R) => () => R
-    index: () => number
-  }) => Node[]
+  render: (bag: { send: Send<M>; item: ItemAccessor<T>; index: () => number }) => Node[]
   enter?: (nodes: Node[]) => void | Promise<void>
   leave?: (nodes: Node[]) => void | Promise<void>
   onTransition?: (ctx: { entering: Node[]; leaving: Node[]; parent: Node }) => void | Promise<void>
 }): Node[]
+
+// ItemAccessor is a proxy-function: callable for computed expressions,
+// with per-field shorthand properties.
+type ItemAccessor<T> = (<R>(selector: (t: T) => R) => () => R) & {
+  [K in keyof T]: () => T[K]
+}
 ```
 
 **Parameter types differ intentionally:**
 
 - `key` receives the **raw item value** `T` — it is a pure identity function evaluated during Phase 1.
-- `render` receives a **scoped accessor** `item` (a function, not the value) and an index accessor. Use `item(t => t.field)` to create reactive per-item bindings.
+- `render` receives a **scoped accessor** `item` and an `index` getter. Use `item.field()` for a direct field read (the shorthand for `item(t => t.field)()`), or `item(t => expr)` for computed expressions that produce a reactive binding.
 
 See: 03 Runtime DOM.md, 01 Architecture.md
 
@@ -294,18 +296,24 @@ See: 01 Architecture.md
 Opaque container for imperative third-party libraries. LLui owns the container element; the library owns everything inside it.
 
 ```typescript
-function foreign<S, T extends Record<string, unknown>, Instance>(opts: {
-  mount: (container: HTMLElement, send: (msg: any) => void) => Instance
+function foreign<S, M, T extends Record<string, unknown>, Instance>(opts: {
+  mount: (bag: { container: HTMLElement; send: (msg: M) => void }) => Instance
   props: (s: S) => T
   sync:
-    | ((instance: Instance, props: T, prev: T | undefined) => void)
-    | { [K in keyof T]?: (instance: Instance, value: T[K], prev: T[K] | undefined) => void }
+    | ((bag: { instance: Instance; props: T; prev: T | undefined }) => void)
+    | {
+        [K in keyof T]?: (bag: {
+          instance: Instance
+          value: T[K]
+          prev: T[K] | undefined
+        }) => void
+      }
   destroy: (instance: Instance) => void
   container?: { tag?: string; attrs?: Record<string, string> }
 }): Node[]
 ```
 
-All three generic parameters (`S`, `T`, `Instance`) are inferred by TypeScript. The `sync` record form diffs per-field and dispatches only changed fields.
+All four generic parameters (`S`, `M`, `T`, `Instance`) are inferred by TypeScript. The `sync` record form diffs per-field and dispatches only changed fields.
 
 See: 01 Architecture.md
 
@@ -395,7 +403,7 @@ All builders return plain data objects (JSON-serializable). They are returned fr
 ```typescript
 function handleEffects<E extends { type: string }>(): {
   else<R extends E>(
-    handler: (effect: R, send: Send<Msg>, signal: AbortSignal) => void,
+    handler: (bag: { effect: R; send: Send<Msg>; signal: AbortSignal }) => void,
   ): OnEffectHandler<E>
 }
 ```
@@ -415,9 +423,9 @@ All exports are devDependencies — zero production bundle cost.
 Zero-DOM component harness. Runs in Node, no browser needed.
 
 ```typescript
-function testComponent<S, M, E>(
-  def: ComponentDef<S, M, E>,
-  initialData?: any,
+function testComponent<S, M, E, D>(
+  def: ComponentDef<S, M, E, D>,
+  initialData: D,
 ): {
   state: S
   effects: E[]
@@ -433,8 +441,8 @@ function testComponent<S, M, E>(
 Runs `view()` once against a lightweight DOM shim.
 
 ```typescript
-function testView<S, M, E>(
-  def: ComponentDef<S, M, E>,
+function testView<S, M, E, D>(
+  def: ComponentDef<S, M, E, D>,
   state: S,
 ): {
   query: (selector: string) => Element | null
@@ -457,8 +465,8 @@ function assertEffects<E>(actual: E[], expected: Partial<E>[]): void
 Generative invariant testing via random message sequences.
 
 ```typescript
-function propertyTest<S, M, E>(
-  def: ComponentDef<S, M, E>,
+function propertyTest<S, M, E, D>(
+  def: ComponentDef<S, M, E, D>,
   config: {
     invariants: Array<(state: S, effects: E[]) => boolean>
     messageGenerators: Record<string, ((state: S) => M) | (() => M)>
@@ -475,7 +483,7 @@ On failure, shrinks to minimal reproduction.
 Regression testing from recorded sessions. Canonical import from `@llui/test`; implementation lives in `llui/trace`.
 
 ```typescript
-function replayTrace<S, M, E>(def: ComponentDef<S, M, E>, trace: LluiTrace<S, M, E>): void
+function replayTrace<S, M, E, D>(def: ComponentDef<S, M, E, D>, trace: LluiTrace<S, M, E>): void
 
 interface LluiTrace<S, M, E> {
   lluiTrace: 1

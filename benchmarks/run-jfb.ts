@@ -21,8 +21,38 @@ import { resolve, dirname } from 'node:path'
 const ROOT = dirname(import.meta.dirname)
 const BENCH_DIR = resolve(ROOT, 'benchmarks')
 const LLUI_APP = resolve(BENCH_DIR, 'js-framework-benchmark')
-const JFB_REPO = resolve(BENCH_DIR, 'js-framework-benchmark-repo')
 const BASELINE = resolve(BENCH_DIR, 'jfb-baseline.json')
+const WORKSPACE_REPO = resolve(BENCH_DIR, 'js-framework-benchmark-repo')
+
+// Discover which jfb install to use. If a server is running on :8080, use its cwd
+// (so we copy dist into the install that's actually serving). Otherwise fall back to
+// the workspace-embedded repo. Override with JFB_REPO env var.
+function detectJfbRepo(): string {
+  if (process.env.JFB_REPO) return resolve(process.env.JFB_REPO)
+  try {
+    // Server's cwd is <repo>/server — walk up one level.
+    const out = execSync(
+      "lsof -n -iTCP:8080 -sTCP:LISTEN -Fn 2>/dev/null | head -1 | sed 's/^n//' || true",
+      { encoding: 'utf8' },
+    ).trim()
+    if (!out) return WORKSPACE_REPO
+    const pidLine = execSync("lsof -n -iTCP:8080 -sTCP:LISTEN -Fp 2>/dev/null | head -1", {
+      encoding: 'utf8',
+    }).trim()
+    const pid = pidLine.startsWith('p') ? pidLine.slice(1) : ''
+    if (!pid) return WORKSPACE_REPO
+    const cwd = execSync(`lsof -a -p ${pid} -d cwd -Fn 2>/dev/null | tail -1 | sed 's/^n//'`, {
+      encoding: 'utf8',
+    }).trim()
+    // server cwd looks like .../<repo>/server → parent is the repo root.
+    if (cwd.endsWith('/server')) return dirname(cwd)
+  } catch {
+    // fall through
+  }
+  return WORKSPACE_REPO
+}
+
+const JFB_REPO = detectJfbRepo()
 
 const BENCHMARKS = [
   { id: '01_run1k', label: 'Create 1k' },
@@ -51,23 +81,26 @@ function runCapture(cmd: string, cwd?: string): string {
 const args = process.argv.slice(2)
 const saveBaseline = args.includes('--save')
 const runAll = args.includes('--all')
-const extraFrameworks = args
-  .filter((a) => a.startsWith('--framework'))
-  .flatMap((_, i) => {
-    const next = args[args.indexOf('--framework') + 1]
-    return next ? [next] : []
-  })
+const extraFrameworks: string[] = []
+for (let i = 0; i < args.length; i++) {
+  if (args[i] === '--framework' && i + 1 < args.length) {
+    extraFrameworks.push(args[i + 1]!)
+    i++
+  }
+}
 
 // ── Preflight checks ──
+
+console.log(`📦 jfb repo: ${JFB_REPO}`)
 
 if (!existsSync(JFB_REPO)) {
   console.error('ERROR: js-framework-benchmark repo not found.')
   console.error(
-    `Clone it:\n  git clone https://github.com/krausest/js-framework-benchmark.git ${JFB_REPO}`,
+    `Clone it:\n  git clone https://github.com/krausest/js-framework-benchmark.git ${WORKSPACE_REPO}`,
   )
   console.error(
     'Then install:\n  cd ' +
-      JFB_REPO +
+      WORKSPACE_REPO +
       ' && npm ci && cd webdriver-ts && npm ci && npm run compile',
   )
   process.exit(1)
@@ -146,26 +179,30 @@ for (const fw of frameworksToRun) {
 
 // ── Read results ──
 
-const baseline: Record<string, Record<string, number | null>> = existsSync(BASELINE)
+type FwResults = Record<string, Record<string, number | null>>
+
+const baseline: FwResults = existsSync(BASELINE)
   ? JSON.parse(readFileSync(BASELINE, 'utf8'))
   : {}
+
+// Current = baseline seed for frameworks we didn't re-run, overlayed with fresh results
+// for frameworks we did re-run.
+const current: FwResults = JSON.parse(JSON.stringify(baseline))
 
 const resultsDir = resolve(webdriverDir, 'results')
 
 for (const fw of frameworksToRun) {
   const fwName = fw.replace('keyed/', '')
-  if (!baseline[fwName]) baseline[fwName] = {}
+  if (!current[fwName]) current[fwName] = {}
 
   for (const b of BENCHMARKS) {
     try {
-      const file = resolve(resultsDir, `${fwName}-v*_${b.id}.json`)
-      // Find the actual file (version in name varies)
       const matches = runCapture(`ls ${resultsDir}/${fwName}-*_${b.id}.json 2>/dev/null`)
         .trim()
         .split('\n')
       if (matches[0]) {
         const data = JSON.parse(readFileSync(matches[0], 'utf8'))
-        baseline[fwName][b.id] = data.values?.total?.median ?? null
+        current[fwName][b.id] = data.values?.total?.median ?? null
       }
     } catch {
       // Keep existing baseline value
@@ -173,19 +210,12 @@ for (const fw of frameworksToRun) {
   }
 }
 
-// ── Save baseline if requested ──
-
-if (saveBaseline) {
-  writeFileSync(BASELINE, JSON.stringify(baseline, null, 2) + '\n')
-  console.log(`\n✅ Baseline saved to ${BASELINE}`)
-}
-
 // ── Display results ──
 
 const allFws = ['llui', ...COMPETITORS]
 const W = 11
 
-console.log('\n=== js-framework-benchmark — Absolute Timings (ms, median) ===\n')
+console.log('\n=== Absolute Timings (ms, median) ===\n')
 
 const header = 'Operation'.padEnd(18) + allFws.map((n) => n.padStart(W)).join('')
 console.log(header)
@@ -193,7 +223,7 @@ console.log('-'.repeat(header.length))
 for (const b of BENCHMARKS) {
   let line = b.label.padEnd(18)
   for (const fw of allFws) {
-    const v = baseline[fw]?.[b.id]
+    const v = current[fw]?.[b.id]
     line += (v != null ? v.toFixed(1) : '—').padStart(W)
   }
   console.log(line)
@@ -205,14 +235,14 @@ const header2 = 'Operation'.padEnd(18) + allFws.map((n) => n.padStart(W)).join('
 console.log(header2)
 console.log('-'.repeat(header2.length))
 for (const b of BENCHMARKS) {
-  const base = baseline.llui?.[b.id]
+  const base = current.llui?.[b.id]
   let line = b.label.padEnd(18)
   for (const fw of allFws) {
     if (fw === 'llui') {
-      line += '——'.padStart(W)
+      line += '—'.padStart(W)
       continue
     }
-    const v = baseline[fw]?.[b.id]
+    const v = current[fw]?.[b.id]
     if (v == null || base == null) {
       line += '—'.padStart(W)
       continue
@@ -221,6 +251,42 @@ for (const b of BENCHMARKS) {
     line += ((pct >= 0 ? '+' : '') + pct.toFixed(0) + '%').padStart(W)
   }
   console.log(line)
+}
+
+// ── LLui: current vs baseline ──
+
+const baselineLlui = baseline.llui
+const currentLlui = current.llui
+if (baselineLlui && currentLlui && baselineLlui !== currentLlui) {
+  console.log('\n=== LLui: Current vs Baseline ===\n')
+  const hdr = 'Operation'.padEnd(18) + 'Baseline'.padStart(W) + 'Current'.padStart(W) + 'Delta'.padStart(W)
+  console.log(hdr)
+  console.log('-'.repeat(hdr.length))
+  let anySignificant = false
+  for (const b of BENCHMARKS) {
+    const base = baselineLlui[b.id]
+    const cur = currentLlui[b.id]
+    let line = b.label.padEnd(18)
+    line += (base != null ? base.toFixed(1) : '—').padStart(W)
+    line += (cur != null ? cur.toFixed(1) : '—').padStart(W)
+    if (base != null && cur != null && base !== 0) {
+      const pct = ((cur - base) / base) * 100
+      const mark = Math.abs(pct) >= 5 ? (pct < 0 ? ' ✓' : ' ⚠') : '  '
+      if (Math.abs(pct) >= 5) anySignificant = true
+      line += ((pct >= 0 ? '+' : '') + pct.toFixed(0) + '%' + mark).padStart(W + 2)
+    } else {
+      line += '—'.padStart(W)
+    }
+    console.log(line)
+  }
+  if (!anySignificant) console.log('\n  (all deltas within ±5% noise)')
+}
+
+// ── Save baseline if requested ──
+
+if (saveBaseline) {
+  writeFileSync(BASELINE, JSON.stringify(current, null, 2) + '\n')
+  console.log(`\n✅ Baseline saved to ${BASELINE}`)
 }
 
 console.log()

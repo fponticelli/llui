@@ -145,41 +145,33 @@ An LLM that sees this and tries to write it directly will produce uncompilable c
 each({
   items: (s) => s.todos,
   key: (todo) => todo.id,
-  render: ({ item, index }) => {
-    return li({}, [
-      text(item((t) => t.text)), // correct: scoped accessor with selector
-    ])
-  },
+  render: ({ item }) => li([text(item.text)]),
 })
 ```
 
-The `each()` render callback receives a **scoped accessor** `item` — a function `<R>(selector: (t: T) => R) => R` — not the item value directly. The pattern `item(t => t.text)` mirrors the component-level `text(s => s.count)` pattern, which helps LLMs transfer their existing knowledge.
+The `each()` render callback receives a **scoped accessor** `item` — a proxy-function with two forms: `item.text` (property-access shorthand) returns a per-field accessor, and `item(t => expr)` remains available for computed expressions. Both return `() => V`. Invoke the accessor (`item.text()`) to read imperatively inside event handlers.
 
-The remaining LLM error pattern is direct property access on the accessor function:
+A common LLM error pattern is bypassing the scoped accessor to read state directly:
 
 ```typescript
-// WRONG — item is a function, not a value; item.text is undefined:
+// WRONG — accessing state directly, bypassing the scoped accessor:
 each({
   items: (s) => s.todos,
   key: (t) => t.id,
-  render: ({ item, index }) => {
-    return li({}, [text(item.text)]) // TypeScript error: no 'text' on function type
-  },
+  render: ({ item }) => li([text((s) => s.todos[0].text)]), // hardcoded index, not per-item
 })
 
-// ALSO WRONG — accessing state directly, bypassing the scoped accessor:
+// CORRECT — scoped accessor (property-access shorthand):
 each({
   items: (s) => s.todos,
   key: (t) => t.id,
-  render: ({ item, index }) => {
-    return li({}, [text((s) => s.todos[0].text)]) // hardcoded index, not per-item
-  },
+  render: ({ item }) => li([text(item.text)]),
 })
 ```
 
-The scoped accessor design improves on the previous closure-based approach (`getItem()`/`getIndex()`) in two ways for LLMs: (1) TypeScript catches `item.text` as a type error because `item` is typed as a function, not as `T`, and (2) the `item(t => t.text)` selector pattern is already learned from component-level state accessors. The compiler also emits diagnostics for direct property access on the `item` parameter, providing targeted error messages that guide toward the correct pattern.
+The accessor proxy gives `item.text` — typed as `() => T['text']` — which threads naturally into bindings. TypeScript infers field types from `T`, so `item.text` and `item.done` are distinct types. The compiler also emits diagnostics for common misuse patterns.
 
-The main residual risk is that LLMs may write `item()` (bare call without a selector) or try to destructure the result of `item()` into a local variable and use it for multiple bindings, losing reactivity. The system prompt should include one correct `each()` example.
+The main residual risk is forgetting that `item.field` is the *accessor*, not the value — e.g. writing `item.text + '!'` inside an event handler (concatenating a function). The correct imperative read is `item.text()`.
 
 ### 3.3 `memo()` Omission
 
@@ -225,16 +217,13 @@ LLMs trained on React will use `.map()` for list rendering. In LLui, `.map()` in
 
 ```typescript
 // WRONG — static nodes, never update:
-div(
-  {},
-  state.items.map((item) => div({}, [text(item.name)])),
-)
+div(state.items.map((item) => div([text(item.name)])))
 
 // CORRECT — reactive keyed list:
 each({
   items: (s) => s.items,
   key: (t) => t.id,
-  render: ({ item, index }) => div({}, [text(item((t) => t.name))]),
+  render: ({ item }) => div([text(item.name)]),
 })
 ```
 
@@ -798,17 +787,16 @@ The scoped accessor pattern eliminates the need for a separate `list()` primitiv
 each({
   items: (s) => s.items,
   key: (t) => t.id,
-  render: ({ item, index }) => {
-    return li({}, [
-      text(item((t) => t.label)),
+  render: ({ item, index }) =>
+    li([
+      text(item.label),
       span({ class: item((t) => (t.done ? 'done' : '')) }),
       text(() => `#${index()}`),
-    ])
-  },
+    ]),
 })
 ```
 
-This single example communicates: `item` takes a selector, each `item(...)` call is an independent reactive binding, `index()` is a zero-arg getter. The pattern is consistent with the component-level `text(s => s.count)` idiom the LLM already knows.
+This example communicates: `item.field` is the shorthand for a reactive field binding, `item(fn)` handles computed expressions, `index()` is a zero-arg getter. The shorthand mirrors the component-level `text(s => s.count)` idiom applied to item scope.
 
 ### Step 5 — Enforce compilation and `@llui/test` in the evaluation pipeline
 

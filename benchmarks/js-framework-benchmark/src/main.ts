@@ -165,10 +165,10 @@ const App = component<State, Msg, never>({
               items: (s) => s.rows,
               key: (r) => r.id,
               render: ({ item }) => {
-                const rowId = item((r) => r.id)()
+                const rowId = item.id()
                 const row = tr({}, [
                   td({ class: 'col-md-1' }, [text(item((r) => String(r.id)))]),
-                  td({ class: 'col-md-4' }, [a({}, [text(item((r) => r.label))])]),
+                  td({ class: 'col-md-4' }, [a({}, [text(item.label)])]),
                   td({ class: 'col-md-1' }, [
                     a({}, [
                       span({

@@ -507,8 +507,11 @@ function tryTransformElementCall(
   const originalName = helpers.get(localName)
   if (!originalName) return null
 
-  // First arg must be an object literal (or absent)
-  const propsArg = node.arguments[0]
+  // Handle children-only overload: `div([...])` — first arg is the children array.
+  // Normalize to props=undefined, children=firstArg so downstream logic works.
+  const firstArg = node.arguments[0]
+  const usesChildrenOnlyOverload = firstArg && ts.isArrayLiteralExpression(firstArg)
+  const propsArg = usesChildrenOnlyOverload ? undefined : firstArg
   if (propsArg && !ts.isObjectLiteralExpression(propsArg)) {
     bailed.add(localName)
     return null
@@ -596,6 +599,22 @@ function tryTransformElementCall(
         return null
       }
 
+      // Per-item property access: item.field — equivalent to item(t => t.field)
+      // Also matches hoisted __a0/__a1/… identifiers produced by dedup pass.
+      if (isPerItemFieldAccess(value) || isHoistedPerItem(value)) {
+        const kind = classifyKind(key)
+        const resolvedKey = resolveKey(key, kind)
+        bindings.push(
+          f.createArrayLiteralExpression([
+            createMaskLiteral(f, 0xffffffff | 0),
+            f.createStringLiteral(kind),
+            f.createStringLiteral(resolvedKey),
+            value,
+          ]),
+        )
+        continue
+      }
+
       // Static prop
       const kind = classifyKind(key)
       const resolvedKey = resolveKey(key, kind)
@@ -621,7 +640,9 @@ function tryTransformElementCall(
   const bindingsArr =
     bindings.length > 0 ? f.createArrayLiteralExpression(bindings) : f.createNull()
 
-  const children = node.arguments[1] ?? f.createNull()
+  const children = usesChildrenOnlyOverload
+    ? node.arguments[0]!
+    : (node.arguments[1] ?? f.createNull())
 
   compiled.add(localName)
 
@@ -956,14 +977,32 @@ function tryDeduplicateItemSelectors(
   }
   if (!itemName) return null
 
-  // Collect all item(selector) calls with their selector source text
-  const selectorCalls: Array<{
-    node: ts.CallExpression
-    selectorText: string
-    selector: ts.Expression
-  }> = []
+  // Collect all item(selector) calls AND item.FIELD property-access expressions.
+  // Both forms produce the same accessor; they dedup together via the field-name key.
+  type Occurrence =
+    | { kind: 'call'; node: ts.CallExpression; selector: ts.Expression; key: string }
+    | { kind: 'access'; node: ts.PropertyAccessExpression; field: string; key: string }
+
+  const occurrences: Occurrence[] = []
+
+  // Try to extract a simple field name from an arrow selector: (t) => t.FIELD → "FIELD"
+  function extractSimpleField(
+    sel: ts.ArrowFunction | ts.FunctionExpression,
+  ): string | null {
+    if (sel.parameters.length !== 1) return null
+    const paramName = sel.parameters[0]!.name
+    if (!ts.isIdentifier(paramName)) return null
+    const body = ts.isArrowFunction(sel) ? sel.body : null
+    if (!body) return null
+    const expr = ts.isBlock(body) ? null : body
+    if (!expr || !ts.isPropertyAccessExpression(expr)) return null
+    if (!ts.isIdentifier(expr.expression) || expr.expression.text !== paramName.text) return null
+    if (!ts.isIdentifier(expr.name)) return null
+    return expr.name.text
+  }
 
   function collectItemCalls(node: ts.Node): void {
+    // item(selector) calls
     if (
       ts.isCallExpression(node) &&
       ts.isIdentifier(node.expression) &&
@@ -972,49 +1011,88 @@ function tryDeduplicateItemSelectors(
     ) {
       const sel = node.arguments[0]!
       if (ts.isArrowFunction(sel) || ts.isFunctionExpression(sel)) {
-        const text = printer.printNode(ts.EmitHint.Expression, sel, sourceFile)
-        selectorCalls.push({ node, selectorText: text, selector: sel })
+        const field = extractSimpleField(sel)
+        const key = field !== null
+          ? `field:${field}`
+          : `expr:${printer.printNode(ts.EmitHint.Expression, sel, sourceFile)}`
+        occurrences.push({ kind: 'call', node, selector: sel, key })
       }
+    }
+    // item.FIELD property access — but NOT when it's the callee of a call expression
+    // where we want the original to stay (e.g. item.id() we still replace, because the
+    // accessor itself becomes __a0 and we keep the trailing ()).
+    else if (
+      ts.isPropertyAccessExpression(node) &&
+      ts.isIdentifier(node.expression) &&
+      node.expression.text === itemName &&
+      ts.isIdentifier(node.name)
+    ) {
+      const field = node.name.text
+      occurrences.push({ kind: 'access', node, field, key: `field:${field}` })
     }
     ts.forEachChild(node, collectItemCalls)
   }
   collectItemCalls(renderFn.body)
 
-  if (selectorCalls.length < 2) return null // nothing to deduplicate
+  if (occurrences.length < 2) return null // nothing to deduplicate
 
-  // Group by selector text
-  const groups = new Map<string, typeof selectorCalls>()
-  for (const call of selectorCalls) {
-    const existing = groups.get(call.selectorText)
-    if (existing) existing.push(call)
-    else groups.set(call.selectorText, [call])
+  // Group by normalized key (field:name or expr:text)
+  const groups = new Map<string, Occurrence[]>()
+  for (const occ of occurrences) {
+    const existing = groups.get(occ.key)
+    if (existing) existing.push(occ)
+    else groups.set(occ.key, [occ])
   }
 
-  // Only proceed if there are duplicates
-  const duplicateGroups = [...groups.entries()].filter(([, calls]) => calls.length > 1)
-  if (duplicateGroups.length === 0) return null
+  // Hoist ALL occurrences (even unique ones) so compiled code uses `acc()` (plain
+  // function) instead of `item(fn)` (Proxy-wrapped) or `item.FIELD` (Proxy.get trap).
+  // Unique accesses get their own __a* var; duplicates share one.
+  const allGroups = [...groups.entries()]
+  if (allGroups.length === 0) return null
 
   // Build hoisted declarations and replacement map
   const hoistedStmts: ts.Statement[] = []
-  const replacements = new Map<ts.CallExpression, ts.Identifier>()
+  const replacements = new Map<ts.Node, ts.Identifier>()
   let sIdx = 0
 
-  for (const [, calls] of duplicateGroups) {
+  for (const [key, occs] of allGroups) {
     const selVar = `__s${sIdx}`
     const accVar = `__a${sIdx}`
     sIdx++
+
+    // Build the selector expression.
+    // For field:FIELD, synthesize (t) => t.FIELD (or reuse an existing call's selector).
+    // For expr:..., reuse the existing selector expression.
+    let selector: ts.Expression
+    const callOccurrence = occs.find((o) => o.kind === 'call')
+    if (callOccurrence && callOccurrence.kind === 'call') {
+      selector = callOccurrence.selector
+    } else {
+      // All occurrences are property-access form — synthesize (t) => t.FIELD
+      const firstAccess = occs[0]!
+      if (firstAccess.kind !== 'access') throw new Error('unreachable')
+      selector = f.createArrowFunction(
+        undefined,
+        undefined,
+        [f.createParameterDeclaration(undefined, undefined, 't')],
+        undefined,
+        f.createToken(ts.SyntaxKind.EqualsGreaterThanToken),
+        f.createPropertyAccessExpression(f.createIdentifier('t'), firstAccess.field),
+      )
+    }
 
     // const __s0 = (r) => r.id
     hoistedStmts.push(
       f.createVariableStatement(
         undefined,
         f.createVariableDeclarationList(
-          [f.createVariableDeclaration(selVar, undefined, undefined, calls[0]!.selector)],
+          [f.createVariableDeclaration(selVar, undefined, undefined, selector)],
           ts.NodeFlags.Const,
         ),
       ),
     )
-    // const __a0 = item(__s0)
+    // const __a0 = acc(__s0) — use the plain-function `acc` instead of `item` (which
+    // is a Proxy). Adds `acc` to the destructure binding below if not already present.
     hoistedStmts.push(
       f.createVariableStatement(
         undefined,
@@ -1024,7 +1102,7 @@ function tryDeduplicateItemSelectors(
               accVar,
               undefined,
               undefined,
-              f.createCallExpression(f.createIdentifier(itemName), undefined, [
+              f.createCallExpression(f.createIdentifier('acc'), undefined, [
                 f.createIdentifier(selVar),
               ]),
             ),
@@ -1035,14 +1113,15 @@ function tryDeduplicateItemSelectors(
     )
 
     // Map all occurrences to the cached accessor identifier
-    for (const call of calls) {
-      replacements.set(call.node, f.createIdentifier(accVar))
+    void key // silence unused
+    for (const occ of occs) {
+      replacements.set(occ.node, f.createIdentifier(accVar))
     }
   }
 
-  // Rewrite the render function body to replace item(sel) calls with cached refs
+  // Rewrite the render function body to replace item(sel)/item.field with cached refs
   function replaceVisitor(node: ts.Node): ts.Node {
-    if (ts.isCallExpression(node) && replacements.has(node)) {
+    if (replacements.has(node)) {
       return replacements.get(node)!
     }
     return ts.visitEachChild(node, replaceVisitor, undefined!)
@@ -1062,12 +1141,35 @@ function tryDeduplicateItemSelectors(
     )
   }
 
+  // Ensure `acc` is in the destructure binding pattern of the render param.
+  // Hoisted code references it; if user didn't destructure it, add it.
+  const newParameters = renderFn.parameters.map((p, idx) => {
+    if (idx !== 0) return p
+    if (!ts.isObjectBindingPattern(p.name)) return p
+    const hasAcc = p.name.elements.some(
+      (el) => ts.isBindingElement(el) && ts.isIdentifier(el.name) && el.name.text === 'acc',
+    )
+    if (hasAcc) return p
+    const newBinding = f.createObjectBindingPattern([
+      ...p.name.elements,
+      f.createBindingElement(undefined, undefined, f.createIdentifier('acc')),
+    ])
+    return f.createParameterDeclaration(
+      p.modifiers,
+      p.dotDotDotToken,
+      newBinding,
+      p.questionToken,
+      p.type,
+      p.initializer,
+    )
+  })
+
   // Build new render function
   const newRenderFn = ts.isArrowFunction(renderFn)
     ? f.createArrowFunction(
         renderFn.modifiers,
         renderFn.typeParameters,
-        renderFn.parameters,
+        newParameters,
         renderFn.type,
         f.createToken(ts.SyntaxKind.EqualsGreaterThanToken),
         finalBody,
@@ -1077,7 +1179,7 @@ function tryDeduplicateItemSelectors(
         renderFn.asteriskToken,
         renderFn.name,
         renderFn.typeParameters,
-        renderFn.parameters,
+        newParameters,
         renderFn.type,
         finalBody as ts.Block,
       )
@@ -1148,7 +1250,13 @@ function analyzeSubtree(
   const tag = helpers.get(localName)
   if (!tag) return null
 
-  const propsArg = node.arguments[0]
+  // Handle children-only overload: `div([...])` — first arg is the children array.
+  // In that case, treat it as no props + children=firstArg.
+  const firstArg = node.arguments[0]
+  const usesChildrenOnlyOverload = firstArg && ts.isArrayLiteralExpression(firstArg)
+  const propsArg = usesChildrenOnlyOverload ? undefined : firstArg
+  const childrenArg = usesChildrenOnlyOverload ? firstArg : node.arguments[1]
+
   if (propsArg && !ts.isObjectLiteralExpression(propsArg)) return null
 
   const staticAttrs: Array<[string, string]> = []
@@ -1204,6 +1312,14 @@ function analyzeSubtree(
         continue
       }
 
+      // Per-item property access: item.field (or hoisted __a0/__a1/…)
+      if (isPerItemFieldAccess(value) || isHoistedPerItem(value)) {
+        const kind = classifyKind(key)
+        const resolvedKey = resolveKey(key, kind)
+        bindings.push([0xffffffff | 0, kind, resolvedKey, value])
+        continue
+      }
+
       // Static literal prop
       if (ts.isStringLiteral(value)) {
         const kind = classifyKind(key)
@@ -1230,12 +1346,18 @@ function analyzeSubtree(
   }
 
   // Analyze children
-  const childrenArg = node.arguments[1]
   const children: AnalyzedChild[] = []
 
   if (childrenArg && ts.isArrayLiteralExpression(childrenArg)) {
     let childIdx = 0
     for (const child of childrenArg.elements) {
+      // String literal child — static text node
+      if (ts.isStringLiteral(child) || ts.isNoSubstitutionTemplateLiteral(child)) {
+        children.push({ type: 'staticText', value: child.text })
+        childIdx++
+        continue
+      }
+
       // text('literal') — static text
       if (
         ts.isCallExpression(child) &&
@@ -1269,6 +1391,18 @@ function analyzeSubtree(
             childIdx,
           })
           childIdx++ // placeholder text node in template
+          continue
+        }
+        // Per-item text via property access: text(item.label)
+        // Also matches hoisted __a0/__a1/… identifiers produced by dedup.
+        if (isPerItemFieldAccess(accessor) || isHoistedPerItem(accessor)) {
+          children.push({
+            type: 'reactiveText',
+            accessor,
+            mask: 0xffffffff | 0,
+            childIdx,
+          })
+          childIdx++
           continue
         }
         return null // unsupported text() form
@@ -1775,6 +1909,25 @@ function isPerItemCall(node: ts.CallExpression): boolean {
   if (node.arguments.length !== 1) return false
   const arg = node.arguments[0]!
   return ts.isArrowFunction(arg) || ts.isFunctionExpression(arg)
+}
+
+// Matches: item.FIELD — the item-proxy shorthand equivalent of item(t => t.FIELD).
+// Loose heuristic: any `IDENT.IDENT` where the left side is the bare identifier `item`.
+// The runtime detects per-item via accessor.length === 0, so passing the property access
+// directly as a binding accessor works regardless of what the compiler assumes.
+function isPerItemFieldAccess(node: ts.Node): node is ts.PropertyAccessExpression {
+  if (!ts.isPropertyAccessExpression(node)) return false
+  if (!ts.isIdentifier(node.expression)) return false
+  if (node.expression.text !== 'item') return false
+  if (!ts.isIdentifier(node.name)) return false
+  return true
+}
+
+// Matches the hoisted identifiers produced by tryDeduplicateItemSelectors: __a0, __a1, …
+// These represent already-cached per-item accessors.
+function isHoistedPerItem(node: ts.Node): node is ts.Identifier {
+  if (!ts.isIdentifier(node)) return false
+  return /^__a\d+$/.test(node.text)
 }
 
 // ── Mask computation ─────────────────────────────────────────────

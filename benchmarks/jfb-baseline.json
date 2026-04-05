@@ -1,14 +1,14 @@
 {
   "llui": {
-    "01_run1k": 23.8,
-    "02_replace1k": 26.1,
+    "01_run1k": 23.5,
+    "02_replace1k": 26.5,
     "03_update10th1k_x16": 15.2,
-    "04_select1k": 3.9,
-    "05_swap1k": 15.3,
+    "04_select1k": 3.8,
+    "05_swap1k": 16.1,
     "06_remove-one-1k": 11.8,
-    "07_create10k": 247.6,
-    "08_create1k-after1k_x2": 27.5,
-    "09_clear1k_x8": 13.6,
+    "07_create10k": 241.2,
+    "08_create1k-after1k_x2": 27.1,
+    "09_clear1k_x8": 14.1,
     "size_gz": null,
     "memory_run": null
   },

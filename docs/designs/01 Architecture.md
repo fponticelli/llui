@@ -55,9 +55,8 @@ This means effects are serialisable, loggable, and testable without mocking the 
 // The complete shape of a component. No surprises.
 type State = { count: number }
 type Msg = { type: 'increment' }
-type Effect = never
 
-export const Counter = component<State, Msg, Effect>({
+export const Counter = component<State, Msg>({
   name: 'Counter',
   init: () => [{ count: 0 }, []],
   update: (state, msg) => {
@@ -67,7 +66,7 @@ export const Counter = component<State, Msg, Effect>({
     }
   },
   view: (send) => {
-    return div({}, [
+    return div([
       text((s: State) => String(s.count)),
       button({ onClick: () => send({ type: 'increment' }) }, [text('+')]),
     ])
@@ -121,9 +120,9 @@ export const Search = component<State, Msg, Effect>({
     }
   },
 
-  // onEffect receives (effect, send, signal). handleEffects() consumes http/cancel/debounce.
+  // onEffect receives { effect, send, signal }. handleEffects() consumes http/cancel/debounce.
   // .else() receives only the remaining types — here, just 'analytics'.
-  onEffect: handleEffects<Effect>().else((effect, send, signal) => {
+  onEffect: handleEffects<Effect>().else(({ effect, send, signal }) => {
     switch (effect.type) {
       case 'analytics':
         window.analytics?.track(effect.event)
@@ -170,7 +169,7 @@ export function toolbarUpdate(slice: ToolbarSlice, msg: ToolbarMsg): ToolbarSlic
 }
 
 export function toolbarView<S>(props: ToolbarProps<S>, send: (msg: ToolbarMsg) => void) {
-  div({}, [
+  div([
     button({ onClick: () => send({ type: 'toggleMenu' }) }, [text('Tools')]),
     show({
       when: (s) => props.toolbar(s).menuOpen,
@@ -178,12 +177,12 @@ export function toolbarView<S>(props: ToolbarProps<S>, send: (msg: ToolbarMsg) =
         each({
           items: props.tools,
           key: (t) => t.id,
-          render: ({ item, index }) =>
+          render: ({ item }) =>
             button(
               {
-                onClick: () => send({ type: 'selectTool', id: item((t) => t.id) }),
+                onClick: () => send({ type: 'selectTool', id: item.id() }),
               },
-              [text(item((t) => t.name))],
+              [text(item.name)],
             ),
         }),
     }),
@@ -207,7 +206,7 @@ type Msg =
   | { type: 'sidebar'; msg: SidebarMsg }
   | { type: 'backgroundClick' }
 
-export const Dashboard = component<State, Msg, Effect>({
+export const Dashboard = component<State, Msg>({
   init: () => [
     { toolbar: { menuOpen: false }, sidebar: { openSectionId: null }, tools: defaultTools },
     [],
@@ -257,8 +256,8 @@ type Msg =
   | { type: 'nextPage' }
   | { type: 'prevPage' }
 
-export const DataTable = component<State, Msg, Effect>({
-  init: (props: Props) => [
+export const DataTable = component<State, Msg, never, Props>({
+  init: (props) => [
     {
       rows: props.rows,
       columns: props.columns,
@@ -440,9 +439,9 @@ The hook is inert when DevTools are not connected — no allocation, no recordin
 **Third-party component embedding: resolved — `foreign()` primitive with typed imperative bridge.** Complex imperative components (ProseMirror, Monaco, Lexical, CodeMirror, MapboxGL, D3 visualizations) manage their own internal state, DOM, and event loops. They are fundamentally incompatible with LLui's declarative binding model — you cannot express a ProseMirror editor as a pure function of state. The `foreign()` primitive creates an explicit, typed handoff boundary: LLui creates and owns a container element, the library owns everything inside it, and a typed bridge synchronizes state in both directions.
 
 ```typescript
-function foreign<S, T extends Record<string, unknown>, Instance>(opts: {
+function foreign<S, M, T extends Record<string, unknown>, Instance>(opts: {
   /** Create the third-party instance. Runs once at mount time. */
-  mount: (container: HTMLElement, send: (msg: Msg) => void) => Instance
+  mount: (bag: { container: HTMLElement; send: (msg: M) => void }) => Instance
   /** Accessor for the state slice relevant to this foreign component.
    *  Participates in bitmask tracking — sync only fires when props change. */
   props: (s: S) => T
@@ -450,8 +449,14 @@ function foreign<S, T extends Record<string, unknown>, Instance>(opts: {
    *  Function form: called with full props and prev on any change.
    *  Record form: per-field handlers, each called only when that field changes. */
   sync:
-    | ((instance: Instance, props: T, prev: T | undefined) => void)
-    | { [K in keyof T]?: (instance: Instance, value: T[K], prev: T[K] | undefined) => void }
+    | ((bag: { instance: Instance; props: T; prev: T | undefined }) => void)
+    | {
+        [K in keyof T]?: (bag: {
+          instance: Instance
+          value: T[K]
+          prev: T[K] | undefined
+        }) => void
+      }
   /** Clean up the instance. Runs when the owning scope is disposed. */
   destroy: (instance: Instance) => void
   /** Optional container configuration. Defaults to a plain div. */
@@ -459,19 +464,20 @@ function foreign<S, T extends Record<string, unknown>, Instance>(opts: {
 }): Node[]
 ```
 
-The three generic parameters are fully inferred and type-checked:
+The four generic parameters are fully inferred and type-checked:
 
 - `S` — parent state type (inferred from the component context)
+- `M` — parent message type (inferred from the component context)
 - `T` — the props type (inferred from the `props` accessor return type, constrained to `Record<string, unknown>`)
 - `Instance` — the third-party instance type (inferred from `mount`'s return type)
 
-If the developer writes `mount: (el, send) => new EditorView(el, config)`, TypeScript infers `Instance = EditorView`. The `sync` and `destroy` functions must accept `EditorView` — a type mismatch is a compile error. The `props` accessor return type flows into `sync`'s type — if `props` returns `{ readonly: boolean, theme: string }`, both sync forms are type-checked against those exact fields.
+If the developer writes `mount: ({ container, send }) => new EditorView(container, config)`, TypeScript infers `Instance = EditorView`. The `sync` and `destroy` functions must accept `EditorView` — a type mismatch is a compile error. The `props` accessor return type flows into `sync`'s type — if `props` returns `{ readonly: boolean, theme: string }`, both sync forms are type-checked against those exact fields.
 
 **`sync` has two forms.** The function form receives the full props object and previous props — the developer diffs manually. The record form maps each field to its own handler — the runtime diffs per-field and dispatches only changed fields:
 
 ```typescript
 // Function form — manual diffing, full control
-sync: (editor, props, prev) => {
+sync: ({ instance: editor, props, prev }) => {
   if (!prev || props.readonly !== prev.readonly)
     editor.setProps({ editable: () => !props.readonly })
   if (!prev || props.theme !== prev.theme)
@@ -480,14 +486,14 @@ sync: (editor, props, prev) => {
 
 // Record form — runtime diffs per-field, each handler fires independently
 sync: {
-  readonly: (editor, val) => editor.setProps({ editable: () => !val }),
-  theme: (editor, val) => editor.setTheme(val),
+  readonly: ({ instance: editor, value }) => editor.setProps({ editable: () => !value }),
+  theme: ({ instance: editor, value }) => editor.setTheme(value),
 }
 ```
 
 The function form is appropriate when fields interact (e.g., setting `readonly` and `theme` together in a single `updateOptions` call). The record form is appropriate when each field maps cleanly to a single imperative API call — which is the common case for libraries like Monaco, MapboxGL, and CodeMirror.
 
-**Runtime behavior of record sync.** When `sync` is a record, the runtime calls the `props` accessor, shallow-diffs each key of the result against the previous props object (using `Object.is`), and for each key where the value changed, calls `sync[key](instance, newValue, prevValue)`. Keys not present in the `sync` record are ignored — the developer can track fields that are read by the library without writing a handler. On the first call after mount (where `prev` is `undefined`), all handlers fire with `prev` as `undefined`.
+**Runtime behavior of record sync.** When `sync` is a record, the runtime calls the `props` accessor, shallow-diffs each key of the result against the previous props object (using `Object.is`), and for each key where the value changed, calls `sync[key]({ instance, value: newValue, prev: prevValue })`. Keys not present in the `sync` record are ignored — the developer can track fields that are read by the library without writing a handler. On the first call after mount (where `prev` is `undefined`), all handlers fire with `prev` as `undefined`.
 
 **Source of truth semantics.** The critical design principle for `foreign()` is that the foreign library often owns its own content state. A ProseMirror editor's document state lives inside ProseMirror, not in LLui state. The LLui state may hold a _snapshot_ of the content (for persistence, validation, or derived computations), but the editor is authoritative during active editing. This means the `sync` flow is asymmetric:
 
@@ -496,11 +502,11 @@ The function form is appropriate when fields interact (e.g., setting `readonly` 
 
 Content is typically NOT pushed from LLui → library during active editing. If external state forces a content reset (e.g., loading a new document), the `sync` function handles it explicitly — the developer checks whether the content actually changed from an external source vs. from the editor itself.
 
-**Runtime behavior.** `foreign()` creates a container element (default: `<div>`) and registers it with the current scope. On mount, it calls `mount(container, send)` and stores the returned instance. The `props` accessor is registered as a binding with a mask derived by the compiler — it participates in the same bitmask dirty-tracking as any other binding. When the mask matches and the accessor's result differs from the previous value (by shallow equality), the runtime calls `sync(instance, newProps, prevProps)`. On scope disposal (the `foreign()` node leaves the DOM), the runtime calls `destroy(instance)`, then removes the container from the DOM.
+**Runtime behavior.** `foreign()` creates a container element (default: `<div>`) and registers it with the current scope. On mount, it calls `mount({ container, send })` and stores the returned instance. The `props` accessor is registered as a binding with a mask derived by the compiler — it participates in the same bitmask dirty-tracking as any other binding. When the mask matches and the accessor's result differs from the previous value (by shallow equality), the runtime calls `sync({ instance, props: newProps, prev: prevProps })`. On scope disposal (the `foreign()` node leaves the DOM), the runtime calls `destroy(instance)`, then removes the container from the DOM.
 
 **No transitions on `foreign()` itself.** The foreign component manages its own DOM, so LLui's `enter`/`leave`/`onTransition` don't apply to its internals. To animate the container's appearance, wrap `foreign()` in `show({ when, render: () => foreign(...), enter, leave })`. The container element receives the CSS classes; the library inside is unaware.
 
-**No Phase 2 bindings inside the container.** LLui does not walk the foreign component's DOM subtree during Phase 2. No bindings, no structural blocks, no scope children exist inside the container. The container is an opaque boundary — the only communication is through `sync` (LLui → library) and `send` (library → LLui). This is enforced at the type level: `mount`'s `container` parameter is a plain `HTMLElement`, not a LLui render context. Calling `text()`, `div()`, `each()`, etc. inside `mount` would throw `NO_RENDER_CONTEXT`.
+**No Phase 2 bindings inside the container.** LLui does not walk the foreign component's DOM subtree during Phase 2. No bindings, no structural blocks, no scope children exist inside the container. The container is an opaque boundary — the only communication is through `sync` (LLui → library) and `send` (library → LLui). This is enforced at the type level: `mount`'s `container` field is a plain `HTMLElement`, not a LLui render context. Calling `text()`, `div()`, `each()`, etc. inside `mount` would throw `NO_RENDER_CONTEXT`.
 
 **Error handling.** If `mount` throws, `errorBoundary` catches it (zone 1 — view construction). If `sync` throws, it is caught per-binding (zone 2). If `destroy` throws, the error is logged but disposal continues — partial cleanup is better than a leaked instance. The `send` callback is the same `send` as the parent component's; messages dispatched from the foreign library enter the normal message queue and are processed by `update()`.
 

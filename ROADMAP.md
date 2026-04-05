@@ -70,9 +70,9 @@
 
 **jfb results (vs Solid/Svelte):**
 
-- Create 1k: within 5-10%
-- Update/Select/Swap: on par or faster
-- Bundle: 4.0 KB gzip (smaller than Solid)
+- Create 1k / Replace / Append: within ~5%
+- Update / Swap / Remove: within 5-20%
+- Bundle: 5.5 KB gzip (slightly bigger than Solid's 4.7 KB)
 
 ## GitHub Explorer (validation app) ✅
 

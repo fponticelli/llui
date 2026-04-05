@@ -221,6 +221,59 @@ describe('per-item accessor calls', () => {
     // The binding should contain the item() call
     expect(out).toContain('item(')
   })
+
+  it('compiles item.field property access as a perItem binding', () => {
+    const src = `
+      import { component, div, each, text } from '@llui/dom'
+      export const C = component({
+        name: 'C',
+        init: () => [{ items: [] }, []],
+        update: (s, m) => [s, []],
+        view: () => each({
+          items: s => s.items,
+          key: t => t.id,
+          render: ({ item }) => [
+            div({ 'data-id': item.id }, [text(item.label)]),
+          ],
+        }),
+      })
+    `
+    const out = t(src)
+    expect(out).toContain('elSplit')
+    // item.id gets hoisted to __a0 = acc(t => t.id) — Proxy-free compiled code
+    expect(out).toMatch(/__a\d+/)
+    expect(out).toContain('acc(')
+    expect(out).toMatch(/"attr",\s*"data-id"/)
+  })
+
+  it('dedups repeated item.field across call and property access forms', () => {
+    const src = `
+      import { component, div, each, text } from '@llui/dom'
+      export const C = component({
+        name: 'C',
+        init: () => [{ items: [] }, []],
+        update: (s, m) => [s, []],
+        view: (send) => each({
+          items: s => s.items,
+          key: t => t.id,
+          render: ({ item }) => [
+            div({
+              class: item.label,
+              onClick: () => send({ type: 'click', id: item(t => t.id)() }),
+              'data-label': item(t => t.label),
+              'data-id': item.id,
+            }, [text(item.label)]),
+          ],
+        }),
+      })
+    `
+    const out = t(src)
+    // item.label and item(t=>t.label) should share a hoisted __a* var
+    expect(out).toMatch(/__a\d+/)
+    // item.id and item(t=>t.id) should also dedup together
+    const matches = out.match(/const __a(\d+)/g) || []
+    expect(matches.length).toBeGreaterThanOrEqual(2)
+  })
 })
 
 describe('static subtree prerendering', () => {

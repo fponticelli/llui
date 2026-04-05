@@ -5,19 +5,6 @@ function warnings(source: string): string[] {
   return diagnose(source).map((d) => d.message)
 }
 
-describe('each() scoped accessor misuse', () => {
-  it('warns on direct property access: item.text', () => {
-    const src = `
-      import { each } from '@llui/dom'
-      each({ items: s => s.items, key: t => t.id, render: ({ item, index }) => {
-        return [text(item.text)]
-      }})
-    `
-    const w = warnings(src)
-    expect(w.some((m) => m.includes('item.text') && m.includes('item(t => t.text)'))).toBe(true)
-  })
-})
-
 describe('.map() on state arrays', () => {
   it('warns on .map() inside view function body', () => {
     const src = `
