@@ -48,6 +48,42 @@
     "./menu": {
       "import": "./dist/components/menu.js",
       "types": "./dist/components/menu.d.ts"
+    },
+    "./switch": {
+      "import": "./dist/components/switch.js",
+      "types": "./dist/components/switch.d.ts"
+    },
+    "./radio-group": {
+      "import": "./dist/components/radio-group.js",
+      "types": "./dist/components/radio-group.d.ts"
+    },
+    "./collapsible": {
+      "import": "./dist/components/collapsible.js",
+      "types": "./dist/components/collapsible.d.ts"
+    },
+    "./toggle-group": {
+      "import": "./dist/components/toggle-group.js",
+      "types": "./dist/components/toggle-group.d.ts"
+    },
+    "./number-input": {
+      "import": "./dist/components/number-input.js",
+      "types": "./dist/components/number-input.d.ts"
+    },
+    "./pin-input": {
+      "import": "./dist/components/pin-input.js",
+      "types": "./dist/components/pin-input.d.ts"
+    },
+    "./progress": {
+      "import": "./dist/components/progress.js",
+      "types": "./dist/components/progress.d.ts"
+    },
+    "./rating-group": {
+      "import": "./dist/components/rating-group.js",
+      "types": "./dist/components/rating-group.d.ts"
+    },
+    "./pagination": {
+      "import": "./dist/components/pagination.js",
+      "types": "./dist/components/pagination.d.ts"
     }
   },
   "scripts": {

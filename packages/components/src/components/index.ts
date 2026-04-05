@@ -7,6 +7,15 @@ export * as dialog from './dialog'
 export * as popover from './popover'
 export * as tooltip from './tooltip'
 export * as menu from './menu'
+export * as switchMachine from './switch'
+export * as radioGroup from './radio-group'
+export * as collapsible from './collapsible'
+export * as toggleGroup from './toggle-group'
+export * as numberInput from './number-input'
+export * as pinInput from './pin-input'
+export * as progress from './progress'
+export * as ratingGroup from './rating-group'
+export * as pagination from './pagination'
 
 export type { ToggleState, ToggleMsg, ToggleInit, ToggleParts } from './toggle'
 export type {
@@ -67,3 +76,47 @@ export type {
   MenuItemParts,
   OverlayOptions as MenuOverlayOptions,
 } from './menu'
+export type { SwitchState, SwitchMsg, SwitchInit, SwitchParts } from './switch'
+export type {
+  RadioGroupState,
+  RadioGroupMsg,
+  RadioGroupInit,
+  RadioGroupParts,
+  RadioItemParts,
+} from './radio-group'
+export type {
+  CollapsibleState,
+  CollapsibleMsg,
+  CollapsibleInit,
+  CollapsibleParts,
+} from './collapsible'
+export type {
+  ToggleGroupState,
+  ToggleGroupMsg,
+  ToggleGroupInit,
+  ToggleGroupParts,
+  ToggleGroupItemParts,
+} from './toggle-group'
+export type {
+  NumberInputState,
+  NumberInputMsg,
+  NumberInputInit,
+  NumberInputParts,
+} from './number-input'
+export type { PinInputState, PinInputMsg, PinInputInit, PinInputParts, PinType } from './pin-input'
+export type { ProgressState, ProgressMsg, ProgressInit, ProgressParts } from './progress'
+export type {
+  RatingGroupState,
+  RatingGroupMsg,
+  RatingGroupInit,
+  RatingGroupParts,
+  RatingItemParts,
+  ItemFill,
+} from './rating-group'
+export type {
+  PaginationState,
+  PaginationMsg,
+  PaginationInit,
+  PaginationParts,
+  PageItem,
+} from './pagination'
