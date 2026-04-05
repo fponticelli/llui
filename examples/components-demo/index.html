@@ -753,7 +753,9 @@
       .step-sep[data-status='completed'] {
         background: rgb(34 197 94);
       }
-      .step-item:last-child .step-sep { display: none; }
+      .step-item:last-child .step-sep {
+        display: none;
+      }
 
       /* Carousel */
       .carousel {
@@ -939,14 +941,55 @@
         flex-direction: column;
         gap: 0.375rem;
       }
-      .cp-label { display: flex; align-items: center; gap: 0.5rem; font-size: 0.75rem; color: rgb(71 85 105); font-weight: 600; }
-      .cp-label > span { width: 1rem; display: inline-block; }
-      .cp-range { flex: 1; height: 0.75rem; appearance: none; -webkit-appearance: none; border-radius: 0.375rem; outline: none; cursor: pointer; border: 1px solid rgb(226 232 240); }
-      .cp-range::-webkit-slider-thumb { -webkit-appearance: none; width: 1rem; height: 1rem; border-radius: 9999px; background: white; border: 2px solid rgb(37 99 235); cursor: grab; box-shadow: 0 1px 3px rgb(0 0 0 / 0.2); }
-      .cp-range::-moz-range-thumb { width: 1rem; height: 1rem; border-radius: 9999px; background: white; border: 2px solid rgb(37 99 235); cursor: grab; }
-      .cp-range[data-part='hue-slider'] { background: linear-gradient(to right, #f00, #ff0, #0f0, #0ff, #00f, #f0f, #f00); }
-      .cp-range[data-part='saturation-slider'] { background: linear-gradient(to right, #808080, #2680d9); }
-      .cp-range[data-part='lightness-slider'] { background: linear-gradient(to right, #000, #2680d9, #fff); }
+      .cp-label {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        font-size: 0.75rem;
+        color: rgb(71 85 105);
+        font-weight: 600;
+      }
+      .cp-label > span {
+        width: 1rem;
+        display: inline-block;
+      }
+      .cp-range {
+        flex: 1;
+        height: 0.75rem;
+        appearance: none;
+        -webkit-appearance: none;
+        border-radius: 0.375rem;
+        outline: none;
+        cursor: pointer;
+        border: 1px solid rgb(226 232 240);
+      }
+      .cp-range::-webkit-slider-thumb {
+        -webkit-appearance: none;
+        width: 1rem;
+        height: 1rem;
+        border-radius: 9999px;
+        background: white;
+        border: 2px solid rgb(37 99 235);
+        cursor: grab;
+        box-shadow: 0 1px 3px rgb(0 0 0 / 0.2);
+      }
+      .cp-range::-moz-range-thumb {
+        width: 1rem;
+        height: 1rem;
+        border-radius: 9999px;
+        background: white;
+        border: 2px solid rgb(37 99 235);
+        cursor: grab;
+      }
+      .cp-range[data-part='hue-slider'] {
+        background: linear-gradient(to right, #f00, #ff0, #0f0, #0ff, #00f, #f0f, #f00);
+      }
+      .cp-range[data-part='saturation-slider'] {
+        background: linear-gradient(to right, #808080, #2680d9);
+      }
+      .cp-range[data-part='lightness-slider'] {
+        background: linear-gradient(to right, #000, #2680d9, #fff);
+      }
 
       /* Clipboard */
       .clip-root {
@@ -1004,7 +1047,10 @@
         background: rgb(248 250 252);
         cursor: pointer;
       }
-      .fu-dropzone:hover { border-color: rgb(148 163 184); background: rgb(241 245 249); }
+      .fu-dropzone:hover {
+        border-color: rgb(148 163 184);
+        background: rgb(241 245 249);
+      }
       .fu-dropzone[data-dragging=''] {
         border-color: rgb(37 99 235);
         background: rgb(219 234 254);
@@ -1074,17 +1120,25 @@
         color: rgb(30 58 138);
       }
       .tree-caret {
-        width: 1.25rem; height: 1.25rem;
-        display: inline-flex; align-items: center; justify-content: center;
-        border: 0; border-radius: 0.25rem;
+        width: 1.25rem;
+        height: 1.25rem;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        border: 0;
+        border-radius: 0.25rem;
         background: transparent;
         cursor: pointer;
         color: rgb(71 85 105);
         padding: 0;
         font-size: 1rem;
-        transition: transform 150ms, background-color 150ms;
+        transition:
+          transform 150ms,
+          background-color 150ms;
       }
-      .tree-caret:hover { background: rgb(226 232 240); }
+      .tree-caret:hover {
+        background: rgb(226 232 240);
+      }
       .tree-caret[data-state='open'] {
         transform: rotate(90deg);
       }
@@ -1151,10 +1205,11 @@
       <div class="mb-4">
         <h1 class="text-3xl font-bold">LLui Components</h1>
         <p class="mt-1 text-slate-600">
-          Headless components styled with Tailwind via <span class="font-mono text-sm">data-scope</span> /
-          <span class="font-mono text-sm">data-part</span> attributes. The demo is split into 4 independent
-          apps (inputs, data, pickers/editing, overlays) each with its own state — keeps every component
-          under the 31-path bitmask tier for optimal reactivity.
+          Headless components styled with Tailwind via
+          <span class="font-mono text-sm">data-scope</span> /
+          <span class="font-mono text-sm">data-part</span> attributes. The demo is split into 4
+          independent apps (inputs, data, pickers/editing, overlays) each with its own state — keeps
+          every component under the 31-path bitmask tier for optimal reactivity.
         </p>
       </div>
       <div id="sec-inputs"></div>

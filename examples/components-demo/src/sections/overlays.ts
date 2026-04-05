@@ -16,7 +16,11 @@ import { popover, type PopoverState, type PopoverMsg } from '@llui/components/po
 import { tooltip, type TooltipState, type TooltipMsg } from '@llui/components/tooltip'
 import { hoverCard, type HoverCardState, type HoverCardMsg } from '@llui/components/hover-card'
 import { menu, type MenuState, type MenuMsg } from '@llui/components/menu'
-import { contextMenu, type ContextMenuState, type ContextMenuMsg } from '@llui/components/context-menu'
+import {
+  contextMenu,
+  type ContextMenuState,
+  type ContextMenuMsg,
+} from '@llui/components/context-menu'
 import { select, type SelectState, type SelectMsg } from '@llui/components/select'
 import { combobox, type ComboboxState, type ComboboxMsg } from '@llui/components/combobox'
 import { drawer, type DrawerState, type DrawerMsg } from '@llui/components/drawer'
@@ -28,9 +32,35 @@ import {
   openWith,
 } from '@llui/components/patterns/confirm-dialog'
 import { sectionGroup, card } from '../shared/ui'
-import { registerToastHandler, registerConfirmHandler, showToast, askConfirm, type ToastKind } from '../shared/bus'
+import {
+  registerToastHandler,
+  registerConfirmHandler,
+  showToast,
+  askConfirm,
+  type ToastKind,
+} from '../shared/bus'
 
-const FRUITS = ['Apple', 'Apricot', 'Banana', 'Blackberry', 'Blueberry', 'Cherry', 'Coconut', 'Fig', 'Grape', 'Lemon', 'Mango', 'Orange', 'Papaya', 'Peach', 'Pear', 'Pineapple', 'Raspberry', 'Strawberry', 'Watermelon']
+const FRUITS = [
+  'Apple',
+  'Apricot',
+  'Banana',
+  'Blackberry',
+  'Blueberry',
+  'Cherry',
+  'Coconut',
+  'Fig',
+  'Grape',
+  'Lemon',
+  'Mango',
+  'Orange',
+  'Papaya',
+  'Peach',
+  'Pear',
+  'Pineapple',
+  'Raspberry',
+  'Strawberry',
+  'Watermelon',
+]
 
 type State = {
   popover: PopoverState
@@ -81,15 +111,60 @@ const init = (): [State, never[]] => [
 ]
 
 const update = mergeHandlers<State, Msg, never>(
-  sliceHandler({ get: (s) => s.popover, set: (s, v) => ({ ...s, popover: v }), narrow: (m) => (m.type === 'popover' ? m.msg : null), sub: popover.update }),
-  sliceHandler({ get: (s) => s.tooltip, set: (s, v) => ({ ...s, tooltip: v }), narrow: (m) => (m.type === 'tooltip' ? m.msg : null), sub: tooltip.update }),
-  sliceHandler({ get: (s) => s.hoverCard, set: (s, v) => ({ ...s, hoverCard: v }), narrow: (m) => (m.type === 'hoverCard' ? m.msg : null), sub: hoverCard.update }),
-  sliceHandler({ get: (s) => s.menu, set: (s, v) => ({ ...s, menu: v }), narrow: (m) => (m.type === 'menu' ? m.msg : null), sub: menu.update }),
-  sliceHandler({ get: (s) => s.contextMenu, set: (s, v) => ({ ...s, contextMenu: v }), narrow: (m) => (m.type === 'contextMenu' ? m.msg : null), sub: contextMenu.update }),
-  sliceHandler({ get: (s) => s.select, set: (s, v) => ({ ...s, select: v }), narrow: (m) => (m.type === 'select' ? m.msg : null), sub: select.update }),
-  sliceHandler({ get: (s) => s.combobox, set: (s, v) => ({ ...s, combobox: v }), narrow: (m) => (m.type === 'combobox' ? m.msg : null), sub: combobox.update }),
-  sliceHandler({ get: (s) => s.drawer, set: (s, v) => ({ ...s, drawer: v }), narrow: (m) => (m.type === 'drawer' ? m.msg : null), sub: drawer.update }),
-  sliceHandler({ get: (s) => s.toast, set: (s, v) => ({ ...s, toast: v }), narrow: (m) => (m.type === 'toast' ? m.msg : null), sub: toast.update }),
+  sliceHandler({
+    get: (s) => s.popover,
+    set: (s, v) => ({ ...s, popover: v }),
+    narrow: (m) => (m.type === 'popover' ? m.msg : null),
+    sub: popover.update,
+  }),
+  sliceHandler({
+    get: (s) => s.tooltip,
+    set: (s, v) => ({ ...s, tooltip: v }),
+    narrow: (m) => (m.type === 'tooltip' ? m.msg : null),
+    sub: tooltip.update,
+  }),
+  sliceHandler({
+    get: (s) => s.hoverCard,
+    set: (s, v) => ({ ...s, hoverCard: v }),
+    narrow: (m) => (m.type === 'hoverCard' ? m.msg : null),
+    sub: hoverCard.update,
+  }),
+  sliceHandler({
+    get: (s) => s.menu,
+    set: (s, v) => ({ ...s, menu: v }),
+    narrow: (m) => (m.type === 'menu' ? m.msg : null),
+    sub: menu.update,
+  }),
+  sliceHandler({
+    get: (s) => s.contextMenu,
+    set: (s, v) => ({ ...s, contextMenu: v }),
+    narrow: (m) => (m.type === 'contextMenu' ? m.msg : null),
+    sub: contextMenu.update,
+  }),
+  sliceHandler({
+    get: (s) => s.select,
+    set: (s, v) => ({ ...s, select: v }),
+    narrow: (m) => (m.type === 'select' ? m.msg : null),
+    sub: select.update,
+  }),
+  sliceHandler({
+    get: (s) => s.combobox,
+    set: (s, v) => ({ ...s, combobox: v }),
+    narrow: (m) => (m.type === 'combobox' ? m.msg : null),
+    sub: combobox.update,
+  }),
+  sliceHandler({
+    get: (s) => s.drawer,
+    set: (s, v) => ({ ...s, drawer: v }),
+    narrow: (m) => (m.type === 'drawer' ? m.msg : null),
+    sub: drawer.update,
+  }),
+  sliceHandler({
+    get: (s) => s.toast,
+    set: (s, v) => ({ ...s, toast: v }),
+    narrow: (m) => (m.type === 'toast' ? m.msg : null),
+    sub: toast.update,
+  }),
   (state, msg) => {
     if (msg.type !== 'confirm') return null
     const [confirm] = confirmDialog.update(state.confirm, msg.msg)
@@ -137,32 +212,67 @@ const App = component<State, Msg, never>({
   view: (send) => {
     localSend = send
     // Register bus handlers so other sections can trigger toast/confirm
-    registerToastHandler((kind, title, description) => send({ type: 'emitToast', kind, title, description }))
+    registerToastHandler((kind, title, description) =>
+      send({ type: 'emitToast', kind, title, description }),
+    )
     registerConfirmHandler((tag, title, description, destructive) =>
       send({ type: 'askConfirm', tag, title, description, destructive }),
     )
 
-    const po = popover.connect<State>((s) => s.popover, (m) => send({ type: 'popover', msg: m }), { id: 'pop-demo' })
-    const tp = tooltip.connect<State>((s) => s.tooltip, (m) => send({ type: 'tooltip', msg: m }), { id: 'tip-demo', delayOpen: 300 })
-    const hc = hoverCard.connect<State>((s) => s.hoverCard, (m) => send({ type: 'hoverCard', msg: m }), { id: 'hc-demo', openDelay: 400 })
-    const me = menu.connect<State>((s) => s.menu, (m) => send({ type: 'menu', msg: m }), {
-      id: 'menu-demo',
-      onSelect: () => showToast('info', 'Menu action', 'An item was selected'),
-    })
-    const cm = contextMenu.connect<State>((s) => s.contextMenu, (m) => send({ type: 'contextMenu', msg: m }), { id: 'cm-demo' })
-    const se = select.connect<State>((s) => s.select, (m) => send({ type: 'select', msg: m }), { id: 'sel-demo', placeholder: 'Choose a color' })
-    const co = combobox.connect<State>((s) => s.combobox, (m) => send({ type: 'combobox', msg: m }), { id: 'cb-demo' })
-    const dr = drawer.connect<State>((s) => s.drawer, (m) => send({ type: 'drawer', msg: m }), { id: 'drawer-demo', side: 'right' })
-    const toastParts = toast.connect<State>((s) => s.toast, (m) => send({ type: 'toast', msg: m }))
+    const po = popover.connect<State>(
+      (s) => s.popover,
+      (m) => send({ type: 'popover', msg: m }),
+      { id: 'pop-demo' },
+    )
+    const tp = tooltip.connect<State>(
+      (s) => s.tooltip,
+      (m) => send({ type: 'tooltip', msg: m }),
+      { id: 'tip-demo', delayOpen: 300 },
+    )
+    const hc = hoverCard.connect<State>(
+      (s) => s.hoverCard,
+      (m) => send({ type: 'hoverCard', msg: m }),
+      { id: 'hc-demo', openDelay: 400 },
+    )
+    const me = menu.connect<State>(
+      (s) => s.menu,
+      (m) => send({ type: 'menu', msg: m }),
+      {
+        id: 'menu-demo',
+        onSelect: () => showToast('info', 'Menu action', 'An item was selected'),
+      },
+    )
+    const cm = contextMenu.connect<State>(
+      (s) => s.contextMenu,
+      (m) => send({ type: 'contextMenu', msg: m }),
+      { id: 'cm-demo' },
+    )
+    const se = select.connect<State>(
+      (s) => s.select,
+      (m) => send({ type: 'select', msg: m }),
+      { id: 'sel-demo', placeholder: 'Choose a color' },
+    )
+    const co = combobox.connect<State>(
+      (s) => s.combobox,
+      (m) => send({ type: 'combobox', msg: m }),
+      { id: 'cb-demo' },
+    )
+    const dr = drawer.connect<State>(
+      (s) => s.drawer,
+      (m) => send({ type: 'drawer', msg: m }),
+      { id: 'drawer-demo', side: 'right' },
+    )
+    const toastParts = toast.connect<State>(
+      (s) => s.toast,
+      (m) => send({ type: 'toast', msg: m }),
+    )
 
     const selectItems = (): Node[] =>
       ['Red', 'Green', 'Blue', 'Purple', 'Orange'].map((v, i) =>
         div({ ...se.item(v, i).item, class: 'cb-item' }, [text(v)]),
       )
     const menuItems = (): Node[] =>
-      ['Edit', 'Duplicate', 'Archive', 'Delete'].map((v) =>
-        div({ ...me.item(v).item }, [text(v)]),
-      )
+      ['Edit', 'Duplicate', 'Archive', 'Delete'].map((v) => div({ ...me.item(v).item }, [text(v)]))
     const ctxMenuItems = (): Node[] =>
       ['Cut', 'Copy', 'Paste', 'Delete'].map((v) =>
         div({ ...cm.item(v).item, class: 'ctx-menu-item' }, [text(v)]),
@@ -175,13 +285,12 @@ const App = component<State, Msg, never>({
         items: (s) => s.toast.toasts,
         key: (t) => t.id,
         render: ({ item }) => [
-          div(
-            { 'data-scope': 'toast', 'data-part': 'root', 'data-type': item.type },
-            [
-              div({ 'data-scope': 'toast', 'data-part': 'title' }, [text(() => item.title() ?? '')]),
-              div({ 'data-scope': 'toast', 'data-part': 'description' }, [text(() => item.description() ?? '')]),
-            ],
-          ),
+          div({ 'data-scope': 'toast', 'data-part': 'root', 'data-type': item.type }, [
+            div({ 'data-scope': 'toast', 'data-part': 'title' }, [text(() => item.title() ?? '')]),
+            div({ 'data-scope': 'toast', 'data-part': 'description' }, [
+              text(() => item.description() ?? ''),
+            ]),
+          ]),
         ],
       }),
     )
@@ -216,11 +325,21 @@ const App = component<State, Msg, never>({
             send: (m) => send({ type: 'popover', msg: m }),
             parts: po,
             content: () => [
-              div({ ...po.content, class: 'min-w-[16rem] rounded-md border border-slate-200 bg-white p-4 shadow-lg' }, [
-                h3({ ...po.title, class: 'text-sm font-semibold' }, [text('Did you know?')]),
-                p({ class: 'mt-1 text-xs text-slate-600' }, [text('LLui compiles state paths into bitmasks at build time.')]),
-                button({ ...po.closeTrigger, class: 'btn btn-secondary mt-3 text-xs' }, [text('Got it')]),
-              ]),
+              div(
+                {
+                  ...po.content,
+                  class: 'min-w-[16rem] rounded-md border border-slate-200 bg-white p-4 shadow-lg',
+                },
+                [
+                  h3({ ...po.title, class: 'text-sm font-semibold' }, [text('Did you know?')]),
+                  p({ class: 'mt-1 text-xs text-slate-600' }, [
+                    text('LLui compiles state paths into bitmasks at build time.'),
+                  ]),
+                  button({ ...po.closeTrigger, class: 'btn btn-secondary mt-3 text-xs' }, [
+                    text('Got it'),
+                  ]),
+                ],
+              ),
             ],
             placement: 'bottom-start',
           }),
@@ -235,7 +354,9 @@ const App = component<State, Msg, never>({
           }),
         ]),
         card('Hover Card', [
-          span({ ...hc.trigger, class: 'underline decoration-dotted cursor-pointer' }, [text('Hover for details')]),
+          span({ ...hc.trigger, class: 'underline decoration-dotted cursor-pointer' }, [
+            text('Hover for details'),
+          ]),
           ...hoverCard.overlay<State>({
             get: (s) => s.hoverCard,
             send: (m) => send({ type: 'hoverCard', msg: m }),
@@ -243,7 +364,9 @@ const App = component<State, Msg, never>({
             content: () => [
               div({ ...hc.content, class: 'hc' }, [
                 h3({ class: 'text-sm font-semibold' }, [text('LLui Components')]),
-                p({ class: 'mt-1 text-xs text-slate-600' }, [text('Full keyboard, screen-reader, pointer support.')]),
+                p({ class: 'mt-1 text-xs text-slate-600' }, [
+                  text('Full keyboard, screen-reader, pointer support.'),
+                ]),
               ]),
             ],
           }),
@@ -302,16 +425,39 @@ const App = component<State, Msg, never>({
               ),
             ],
           }),
-          div({ class: 'mt-3 text-sm text-slate-600' }, [text('Selected: '), text((s: State) => s.combobox.value[0] ?? 'none')]),
+          div({ class: 'mt-3 text-sm text-slate-600' }, [
+            text('Selected: '),
+            text((s: State) => s.combobox.value[0] ?? 'none'),
+          ]),
         ]),
         card('Drawer', [
           button({ ...dr.trigger, class: 'btn btn-primary' }, [text('Open drawer')]),
         ]),
         card('Toast', [
           div({ class: 'flex gap-2' }, [
-            button({ class: 'btn btn-secondary text-xs', onClick: () => showToast('info', 'For your information', 'This is an informational message.') }, [text('Info')]),
-            button({ class: 'btn btn-primary text-xs', onClick: () => showToast('success', 'Saved!', 'Your changes have been saved.') }, [text('Success')]),
-            button({ class: 'btn btn-danger text-xs', onClick: () => showToast('error', 'Something went wrong', 'Please try again later.') }, [text('Error')]),
+            button(
+              {
+                class: 'btn btn-secondary text-xs',
+                onClick: () =>
+                  showToast('info', 'For your information', 'This is an informational message.'),
+              },
+              [text('Info')],
+            ),
+            button(
+              {
+                class: 'btn btn-primary text-xs',
+                onClick: () => showToast('success', 'Saved!', 'Your changes have been saved.'),
+              },
+              [text('Success')],
+            ),
+            button(
+              {
+                class: 'btn btn-danger text-xs',
+                onClick: () =>
+                  showToast('error', 'Something went wrong', 'Please try again later.'),
+              },
+              [text('Error')],
+            ),
           ]),
         ]),
         card('Confirm Dialog', [
@@ -319,7 +465,14 @@ const App = component<State, Msg, never>({
             text('Last action: '),
             span({ class: 'font-medium' }, [text((s: State) => s.message || 'none')]),
           ]),
-          button({ class: 'btn btn-danger', onClick: () => askConfirm('demo-delete', 'Delete this item?', 'This cannot be undone.', true) }, [text('Delete item…')]),
+          button(
+            {
+              class: 'btn btn-danger',
+              onClick: () =>
+                askConfirm('demo-delete', 'Delete this item?', 'This cannot be undone.', true),
+            },
+            [text('Delete item…')],
+          ),
         ]),
       ]),
       toastRegion,

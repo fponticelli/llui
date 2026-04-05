@@ -12,11 +12,31 @@ import {
   each,
   onMount,
 } from '@llui/dom'
-import { datePicker, type DatePickerState, type DatePickerMsg, type DayCell, monthGrid } from '@llui/components/date-picker'
-import { timePicker, type TimePickerState, type TimePickerMsg, formatTime } from '@llui/components/time-picker'
-import { colorPicker, type ColorPickerState, type ColorPickerMsg } from '@llui/components/color-picker'
+import {
+  datePicker,
+  type DatePickerState,
+  type DatePickerMsg,
+  type DayCell,
+  monthGrid,
+} from '@llui/components/date-picker'
+import {
+  timePicker,
+  type TimePickerState,
+  type TimePickerMsg,
+  formatTime,
+} from '@llui/components/time-picker'
+import {
+  colorPicker,
+  type ColorPickerState,
+  type ColorPickerMsg,
+} from '@llui/components/color-picker'
 import { editable, type EditableState, type EditableMsg } from '@llui/components/editable'
-import { clipboard, type ClipboardState, type ClipboardMsg, copyToClipboard } from '@llui/components/clipboard'
+import {
+  clipboard,
+  type ClipboardState,
+  type ClipboardMsg,
+  copyToClipboard,
+} from '@llui/components/clipboard'
 import { fileUpload, type FileUploadState, type FileUploadMsg } from '@llui/components/file-upload'
 import { splitter, type SplitterState, type SplitterMsg } from '@llui/components/splitter'
 import { sectionGroup, card } from '../shared/ui'
@@ -58,13 +78,48 @@ const init = (): [State, never[]] => [
 ]
 
 const update = mergeHandlers<State, Msg, never>(
-  sliceHandler({ get: (s) => s.datePicker, set: (s, v) => ({ ...s, datePicker: v }), narrow: (m) => (m.type === 'datePicker' ? m.msg : null), sub: datePicker.update }),
-  sliceHandler({ get: (s) => s.timePicker, set: (s, v) => ({ ...s, timePicker: v }), narrow: (m) => (m.type === 'timePicker' ? m.msg : null), sub: timePicker.update }),
-  sliceHandler({ get: (s) => s.colorPicker, set: (s, v) => ({ ...s, colorPicker: v }), narrow: (m) => (m.type === 'colorPicker' ? m.msg : null), sub: colorPicker.update }),
-  sliceHandler({ get: (s) => s.editable, set: (s, v) => ({ ...s, editable: v }), narrow: (m) => (m.type === 'editable' ? m.msg : null), sub: editable.update }),
-  sliceHandler({ get: (s) => s.clipboard, set: (s, v) => ({ ...s, clipboard: v }), narrow: (m) => (m.type === 'clipboard' ? m.msg : null), sub: clipboard.update }),
-  sliceHandler({ get: (s) => s.fileUpload, set: (s, v) => ({ ...s, fileUpload: v }), narrow: (m) => (m.type === 'fileUpload' ? m.msg : null), sub: fileUpload.update }),
-  sliceHandler({ get: (s) => s.splitter, set: (s, v) => ({ ...s, splitter: v }), narrow: (m) => (m.type === 'splitter' ? m.msg : null), sub: splitter.update }),
+  sliceHandler({
+    get: (s) => s.datePicker,
+    set: (s, v) => ({ ...s, datePicker: v }),
+    narrow: (m) => (m.type === 'datePicker' ? m.msg : null),
+    sub: datePicker.update,
+  }),
+  sliceHandler({
+    get: (s) => s.timePicker,
+    set: (s, v) => ({ ...s, timePicker: v }),
+    narrow: (m) => (m.type === 'timePicker' ? m.msg : null),
+    sub: timePicker.update,
+  }),
+  sliceHandler({
+    get: (s) => s.colorPicker,
+    set: (s, v) => ({ ...s, colorPicker: v }),
+    narrow: (m) => (m.type === 'colorPicker' ? m.msg : null),
+    sub: colorPicker.update,
+  }),
+  sliceHandler({
+    get: (s) => s.editable,
+    set: (s, v) => ({ ...s, editable: v }),
+    narrow: (m) => (m.type === 'editable' ? m.msg : null),
+    sub: editable.update,
+  }),
+  sliceHandler({
+    get: (s) => s.clipboard,
+    set: (s, v) => ({ ...s, clipboard: v }),
+    narrow: (m) => (m.type === 'clipboard' ? m.msg : null),
+    sub: clipboard.update,
+  }),
+  sliceHandler({
+    get: (s) => s.fileUpload,
+    set: (s, v) => ({ ...s, fileUpload: v }),
+    narrow: (m) => (m.type === 'fileUpload' ? m.msg : null),
+    sub: fileUpload.update,
+  }),
+  sliceHandler({
+    get: (s) => s.splitter,
+    set: (s, v) => ({ ...s, splitter: v }),
+    narrow: (m) => (m.type === 'splitter' ? m.msg : null),
+    sub: splitter.update,
+  }),
   (state, msg) => {
     if (msg.type !== 'copyText') return null
     void copyToClipboard(msg.value).catch(() => {})
@@ -86,13 +141,35 @@ const App = component<State, Msg, never>({
   update,
   view: (send) => {
     localSend = send
-    const dp = datePicker.connect<State>((s) => s.datePicker, (m) => send({ type: 'datePicker', msg: m }))
-    const tp = timePicker.connect<State>((s) => s.timePicker, (m) => send({ type: 'timePicker', msg: m }))
-    const cp = colorPicker.connect<State>((s) => s.colorPicker, (m) => send({ type: 'colorPicker', msg: m }))
-    const ed = editable.connect<State>((s) => s.editable, (m) => send({ type: 'editable', msg: m }))
-    const cb = clipboard.connect<State>((s) => s.clipboard, (m) => send({ type: 'clipboard', msg: m }))
-    const fu = fileUpload.connect<State>((s) => s.fileUpload, (m) => send({ type: 'fileUpload', msg: m }), { id: 'upload-demo' })
-    const sp = splitter.connect<State>((s) => s.splitter, (m) => send({ type: 'splitter', msg: m }))
+    const dp = datePicker.connect<State>(
+      (s) => s.datePicker,
+      (m) => send({ type: 'datePicker', msg: m }),
+    )
+    const tp = timePicker.connect<State>(
+      (s) => s.timePicker,
+      (m) => send({ type: 'timePicker', msg: m }),
+    )
+    const cp = colorPicker.connect<State>(
+      (s) => s.colorPicker,
+      (m) => send({ type: 'colorPicker', msg: m }),
+    )
+    const ed = editable.connect<State>(
+      (s) => s.editable,
+      (m) => send({ type: 'editable', msg: m }),
+    )
+    const cb = clipboard.connect<State>(
+      (s) => s.clipboard,
+      (m) => send({ type: 'clipboard', msg: m }),
+    )
+    const fu = fileUpload.connect<State>(
+      (s) => s.fileUpload,
+      (m) => send({ type: 'fileUpload', msg: m }),
+      { id: 'upload-demo' },
+    )
+    const sp = splitter.connect<State>(
+      (s) => s.splitter,
+      (m) => send({ type: 'splitter', msg: m }),
+    )
 
     // Editable focus on edit
     const previewParts = { ...ed.preview }
@@ -109,7 +186,9 @@ const App = component<State, Msg, never>({
     // Splitter drag
     onMount(() => {
       const root = document.querySelector<HTMLElement>('[data-scope="splitter"][data-part="root"]')
-      const handle = document.querySelector<HTMLElement>('[data-scope="splitter"][data-part="resize-trigger"]')
+      const handle = document.querySelector<HTMLElement>(
+        '[data-scope="splitter"][data-part="resize-trigger"]',
+      )
       if (!root || !handle) return
       let dragging = false
       const pct = (x: number): number => {
@@ -123,7 +202,8 @@ const App = component<State, Msg, never>({
         send({ type: 'splitter', msg: { type: 'setPosition', position: pct(e.clientX) } })
       }
       const onMove = (e: PointerEvent): void => {
-        if (dragging) send({ type: 'splitter', msg: { type: 'setPosition', position: pct(e.clientX) } })
+        if (dragging)
+          send({ type: 'splitter', msg: { type: 'setPosition', position: pct(e.clientX) } })
       }
       const onUp = (e: PointerEvent): void => {
         if (!dragging) return
@@ -185,7 +265,20 @@ const App = component<State, Msg, never>({
               button({ ...dp.prevMonthTrigger, class: 'dp-nav' }, [text('‹')]),
               span({ class: 'dp-title' }, [
                 text((s: State) => {
-                  const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+                  const months = [
+                    'Jan',
+                    'Feb',
+                    'Mar',
+                    'Apr',
+                    'May',
+                    'Jun',
+                    'Jul',
+                    'Aug',
+                    'Sep',
+                    'Oct',
+                    'Nov',
+                    'Dec',
+                  ]
                   return `${months[s.datePicker.visibleMonth - 1]} ${s.datePicker.visibleYear}`
                 }),
               ]),
@@ -193,7 +286,10 @@ const App = component<State, Msg, never>({
             ]),
             div({ ...dp.grid, class: 'dp-grid' }, dpGrid()),
           ]),
-          div({ class: 'mt-3 text-sm text-slate-600' }, [text('Selected: '), text((s: State) => s.datePicker.value ?? 'none')]),
+          div({ class: 'mt-3 text-sm text-slate-600' }, [
+            text('Selected: '),
+            text((s: State) => s.datePicker.value ?? 'none'),
+          ]),
         ]),
         card('Time Picker', [
           div({ ...tp.root, class: 'tp-root' }, [
@@ -204,7 +300,10 @@ const App = component<State, Msg, never>({
               text((s: State) => (s.timePicker.value.hours >= 12 ? 'PM' : 'AM')),
             ]),
           ]),
-          div({ class: 'mt-3 text-sm text-slate-600' }, [text('Time: '), text((s: State) => formatTime(s.timePicker))]),
+          div({ class: 'mt-3 text-sm text-slate-600' }, [
+            text('Time: '),
+            text((s: State) => formatTime(s.timePicker)),
+          ]),
         ]),
         card('Color Picker', [
           div({ ...cp.root, class: 'cp-root' }, [
@@ -213,9 +312,18 @@ const App = component<State, Msg, never>({
               input({ ...cp.hexInput, class: 'cp-hex' }),
             ]),
             div({ class: 'cp-sliders' }, [
-              label({ class: 'cp-label' }, [span({}, [text('H')]), input({ ...cp.hueSlider, class: 'cp-range' })]),
-              label({ class: 'cp-label' }, [span({}, [text('S')]), input({ ...cp.saturationSlider, class: 'cp-range' })]),
-              label({ class: 'cp-label' }, [span({}, [text('L')]), input({ ...cp.lightnessSlider, class: 'cp-range' })]),
+              label({ class: 'cp-label' }, [
+                span({}, [text('H')]),
+                input({ ...cp.hueSlider, class: 'cp-range' }),
+              ]),
+              label({ class: 'cp-label' }, [
+                span({}, [text('S')]),
+                input({ ...cp.saturationSlider, class: 'cp-range' }),
+              ]),
+              label({ class: 'cp-label' }, [
+                span({}, [text('L')]),
+                input({ ...cp.lightnessSlider, class: 'cp-range' }),
+              ]),
             ]),
           ]),
         ]),
@@ -223,10 +331,14 @@ const App = component<State, Msg, never>({
       sectionGroup('Inline editing', [
         card('Editable', [
           div({ ...ed.root, class: 'editable' }, [
-            span({ ...previewParts, class: 'editable-preview' }, [text((s: State) => s.editable.value || 'Click to edit')]),
+            span({ ...previewParts, class: 'editable-preview' }, [
+              text((s: State) => s.editable.value || 'Click to edit'),
+            ]),
             input({ ...ed.input, class: 'editable-input' }),
           ]),
-          div({ class: 'mt-2 text-xs text-slate-500' }, [text('Click, edit, Enter to commit, Esc to cancel')]),
+          div({ class: 'mt-2 text-xs text-slate-500' }, [
+            text('Click, edit, Enter to commit, Esc to cancel'),
+          ]),
         ]),
         card('Clipboard', [
           div({ ...cb.root, class: 'clip-root' }, [
@@ -236,7 +348,9 @@ const App = component<State, Msg, never>({
                 ...cb.trigger,
                 class: 'btn btn-secondary text-xs',
                 onClick: (e: MouseEvent) => {
-                  const root = (e.currentTarget as HTMLElement).closest('[data-scope="clipboard"][data-part="root"]')
+                  const root = (e.currentTarget as HTMLElement).closest(
+                    '[data-scope="clipboard"][data-part="root"]',
+                  )
                   const inp = root?.querySelector<HTMLInputElement>('[data-part="input"]')
                   send({ type: 'copyText', value: inp?.value ?? '' })
                 },
