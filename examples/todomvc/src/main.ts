@@ -10,8 +10,6 @@ import {
   button,
   span,
   text,
-  each,
-  show,
   footer,
   section,
   header,
@@ -73,7 +71,7 @@ const App = component<State, Msg, never>({
         return [{ ...state, todos: state.todos.filter((t) => !t.completed) }, []]
     }
   },
-  view: (send) => {
+  view: (send, h) => {
     const filteredTodos = memo((s: State) => {
       switch (s.filter) {
         case 'all':
@@ -105,7 +103,7 @@ const App = component<State, Msg, never>({
           }),
         ]),
 
-        ...show<State>({
+        ...h.show({
           when: (s) => s.todos.length > 0,
           render: () => [
             section({ class: 'main' }, [
@@ -121,7 +119,7 @@ const App = component<State, Msg, never>({
               ]),
               ul(
                 { class: 'todo-list' },
-                each<State, Todo>({
+                h.each<Todo>({
                   items: filteredTodos,
                   key: (t) => t.id,
                   render: ({ item }) => [
@@ -153,7 +151,7 @@ const App = component<State, Msg, never>({
 
             footer({ class: 'footer' }, [
               span({ class: 'todo-count' }, [
-                text((s: State) => {
+                h.text((s) => {
                   const n = activeCount(s)
                   return `${n} item${n === 1 ? '' : 's'} left`
                 }),
@@ -163,7 +161,7 @@ const App = component<State, Msg, never>({
                 filterLink('active', 'Active', send),
                 filterLink('completed', 'Completed', send),
               ]),
-              ...show<State>({
+              ...h.show({
                 when: hasCompleted,
                 render: () => [
                   button(

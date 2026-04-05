@@ -21,6 +21,7 @@ export type {
 // ── Component ─────────────────────────────────────────────────────
 
 export { component } from './component'
+export { createView, type View } from './view-helpers'
 
 // ── Mount ─────────────────────────────────────────────────────────
 

@@ -1,10 +1,12 @@
 // ── Component Definition ──────────────────────────────────────────
 
+import type { View } from './view-helpers'
+
 export interface ComponentDef<S, M, E = never, D = void> {
   name: string
   init: (data: D) => [S, E[]]
   update: (state: S, msg: M) => [S, E[]]
-  view: (send: Send<M>) => Node[]
+  view: (send: Send<M>, h: View<S, M>) => Node[]
   onEffect?: (ctx: { effect: E; send: Send<M>; signal: AbortSignal }) => void
 
   // Level 2 composition

@@ -1,4 +1,4 @@
-import { component, mountApp, div, button, text, show } from '@llui/dom'
+import { component, mountApp, div, button, text } from '@llui/dom'
 
 type State = { count: number }
 type Msg = { type: 'inc' } | { type: 'dec' } | { type: 'reset' }
@@ -16,13 +16,13 @@ const Counter = component<State, Msg, never>({
         return [{ count: 0 }, []]
     }
   },
-  view: (send) => [
+  view: (send, h) => [
     div({ class: 'counter' }, [
       button({ onClick: () => send({ type: 'dec' }) }, [text('-')]),
-      text((s: State) => String(s.count)),
+      h.text((s) => String(s.count)),
       button({ onClick: () => send({ type: 'inc' }) }, [text('+')]),
     ]),
-    ...show<State>({
+    ...h.show({
       when: (s) => s.count > 0,
       render: () => [button({ onClick: () => send({ type: 'reset' }) }, [text('Reset')])],
     }),

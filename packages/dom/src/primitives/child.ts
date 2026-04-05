@@ -4,6 +4,7 @@ import { createScope, disposeScope, addDisposer } from '../scope'
 import { createComponentInstance, flushInstance } from '../update-loop'
 import { createBinding, setFlatBindings } from '../binding'
 import { registerChild, unregisterChild } from '../addressed'
+import { createView } from '../view-helpers'
 
 const FULL_MASK = 0xffffffff
 
@@ -75,7 +76,7 @@ export function child<S, ChildM>(opts: ChildOptions<S, ChildM>): Node[] {
   // Run the child's view within the child's render context
   setFlatBindings(childInst.allBindings)
   setRenderContext({ ...childInst, send: childInst.send as (msg: unknown) => void })
-  const nodes = childDef.view(childInst.send)
+  const nodes = childDef.view(childInst.send, createView(childInst.send))
   clearRenderContext()
   setFlatBindings(parentCtx.allBindings)
   setRenderContext(parentCtx)
