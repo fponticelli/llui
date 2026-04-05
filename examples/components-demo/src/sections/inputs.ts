@@ -13,6 +13,7 @@ import {
   onMount,
 } from '@llui/dom'
 import { switchMachine, type SwitchState, type SwitchMsg } from '@llui/components/switch'
+import { toggle, type ToggleState, type ToggleMsg } from '@llui/components/toggle'
 import { checkbox, type CheckboxState, type CheckboxMsg } from '@llui/components/checkbox'
 import { radioGroup, type RadioGroupState, type RadioGroupMsg } from '@llui/components/radio-group'
 import {
@@ -43,6 +44,7 @@ import { sectionGroup, card } from '../shared/ui'
 
 type State = {
   switch: SwitchState
+  toggle: ToggleState
   checkbox: CheckboxState
   radio: RadioGroupState
   togGroup: ToggleGroupState
@@ -57,6 +59,7 @@ type State = {
 
 type Msg =
   | { type: 'switch'; msg: SwitchMsg }
+  | { type: 'toggle'; msg: ToggleMsg }
   | { type: 'checkbox'; msg: CheckboxMsg }
   | { type: 'radio'; msg: RadioGroupMsg }
   | { type: 'togGroup'; msg: ToggleGroupMsg }
@@ -71,6 +74,7 @@ type Msg =
 const init = (): [State, never[]] => [
   {
     switch: switchMachine.init({ checked: false }),
+    toggle: toggle.init({ pressed: false }),
     checkbox: checkbox.init({ checked: 'indeterminate' }),
     radio: radioGroup.init({ items: ['small', 'medium', 'large'], value: 'medium' }),
     togGroup: toggleGroup.init({
@@ -95,6 +99,12 @@ const update = mergeHandlers<State, Msg, never>(
     set: (s, v) => ({ ...s, switch: v }),
     narrow: (m) => (m.type === 'switch' ? m.msg : null),
     sub: switchMachine.update,
+  }),
+  sliceHandler({
+    get: (s) => s.toggle,
+    set: (s, v) => ({ ...s, toggle: v }),
+    narrow: (m) => (m.type === 'toggle' ? m.msg : null),
+    sub: toggle.update,
   }),
   sliceHandler({
     get: (s) => s.checkbox,
@@ -166,6 +176,10 @@ const App = component<State, Msg, never>({
     const sw = switchMachine.connect<State>(
       (s) => s.switch,
       (m) => send({ type: 'switch', msg: m }),
+    )
+    const tog = toggle.connect<State>(
+      (s) => s.toggle,
+      (m) => send({ type: 'toggle', msg: m }),
     )
     const cb = checkbox.connect<State>(
       (s) => s.checkbox,
@@ -280,6 +294,14 @@ const App = component<State, Msg, never>({
             button({ ...sw.root }, [div({ ...sw.track }, [div({ ...sw.thumb }, [])])]),
             span({ class: 'text-sm' }, [
               text((s: State) => (s.switch.checked ? 'Notifications on' : 'Notifications off')),
+            ]),
+          ]),
+        ]),
+        card('Toggle', [
+          div({ class: 'flex items-center gap-3' }, [
+            button({ ...tog.root, class: 'btn btn-secondary' }, [text('B')]),
+            span({ class: 'text-sm' }, [
+              text((s: State) => (s.toggle.pressed ? 'Bold on' : 'Bold off')),
             ]),
           ]),
         ]),

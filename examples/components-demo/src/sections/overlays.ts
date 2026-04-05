@@ -24,6 +24,12 @@ import {
 import { select, type SelectState, type SelectMsg } from '@llui/components/select'
 import { combobox, type ComboboxState, type ComboboxMsg } from '@llui/components/combobox'
 import { drawer, type DrawerState, type DrawerMsg } from '@llui/components/drawer'
+import { dialog, type DialogState, type DialogMsg } from '@llui/components/dialog'
+import {
+  alertDialog,
+  type AlertDialogState,
+  type AlertDialogMsg,
+} from '@llui/components/alert-dialog'
 import { toast, type ToasterState, type ToasterMsg, nextToastId } from '@llui/components/toast'
 import {
   confirmDialog,
@@ -71,6 +77,8 @@ type State = {
   select: SelectState
   combobox: ComboboxState
   drawer: DrawerState
+  dialog: DialogState
+  alertDialog: AlertDialogState
   toast: ToasterState
   confirm: ConfirmDialogState
   message: string
@@ -84,6 +92,8 @@ type Msg =
   | { type: 'select'; msg: SelectMsg }
   | { type: 'combobox'; msg: ComboboxMsg }
   | { type: 'drawer'; msg: DrawerMsg }
+  | { type: 'dialog'; msg: DialogMsg }
+  | { type: 'alertDialog'; msg: AlertDialogMsg }
   | { type: 'toast'; msg: ToasterMsg }
   | { type: 'confirm'; msg: ConfirmDialogMsg }
   | { type: 'emitToast'; kind: ToastKind; title: string; description: string }
@@ -103,6 +113,8 @@ const init = (): [State, never[]] => [
     select: select.init({ items: ['Red', 'Green', 'Blue', 'Purple', 'Orange'], value: ['Blue'] }),
     combobox: combobox.init({ items: FRUITS }),
     drawer: drawer.init({ open: false }),
+    dialog: dialog.init({ open: false }),
+    alertDialog: alertDialog.init({ open: false }),
     toast: toast.init({ placement: 'bottom-end' }),
     confirm: confirmDialog.init(),
     message: '',
@@ -158,6 +170,18 @@ const update = mergeHandlers<State, Msg, never>(
     set: (s, v) => ({ ...s, drawer: v }),
     narrow: (m) => (m.type === 'drawer' ? m.msg : null),
     sub: drawer.update,
+  }),
+  sliceHandler({
+    get: (s) => s.dialog,
+    set: (s, v) => ({ ...s, dialog: v }),
+    narrow: (m) => (m.type === 'dialog' ? m.msg : null),
+    sub: dialog.update,
+  }),
+  sliceHandler({
+    get: (s) => s.alertDialog,
+    set: (s, v) => ({ ...s, alertDialog: v }),
+    narrow: (m) => (m.type === 'alertDialog' ? m.msg : null),
+    sub: alertDialog.update,
   }),
   sliceHandler({
     get: (s) => s.toast,
@@ -262,6 +286,16 @@ const App = component<State, Msg, never>({
       (m) => send({ type: 'drawer', msg: m }),
       { id: 'drawer-demo', side: 'right' },
     )
+    const dlg = dialog.connect<State>(
+      (s) => s.dialog,
+      (m) => send({ type: 'dialog', msg: m }),
+      { id: 'dialog-demo' },
+    )
+    const adlg = alertDialog.connect<State>(
+      (s) => s.alertDialog,
+      (m) => send({ type: 'alertDialog', msg: m }),
+      { id: 'alert-dialog-demo' },
+    )
     const toastParts = toast.connect<State>(
       (s) => s.toast,
       (m) => send({ type: 'toast', msg: m }),
@@ -312,6 +346,60 @@ const App = component<State, Msg, never>({
             text('Slide-in panel with focus trap, scroll lock, dismissable layer.'),
           ]),
           button({ ...dr.closeTrigger, class: 'btn btn-secondary mt-4' }, [text('Close')]),
+        ]),
+      ],
+    })
+
+    const dialogOverlay = dialog.overlay<State>({
+      get: (s) => s.dialog,
+      send: (m) => send({ type: 'dialog', msg: m }),
+      parts: dlg,
+      content: () => [
+        div({ ...dlg.content, class: 'dialog-content' }, [
+          h3({ ...dlg.title, class: 'text-lg font-semibold' }, [text('Edit profile')]),
+          p({ ...dlg.description, class: 'mt-2 text-sm text-slate-600' }, [
+            text('Make changes to your profile. Click save when you are done.'),
+          ]),
+          div({ class: 'mt-4 flex gap-2' }, [
+            button({ ...dlg.closeTrigger, class: 'btn btn-secondary' }, [text('Cancel')]),
+            button(
+              {
+                class: 'btn btn-primary',
+                onClick: () => {
+                  send({ type: 'dialog', msg: { type: 'close' } })
+                  showToast('success', 'Profile saved', 'Your changes were saved.')
+                },
+              },
+              [text('Save')],
+            ),
+          ]),
+        ]),
+      ],
+    })
+
+    const alertDialogOverlay = alertDialog.overlay<State>({
+      get: (s) => s.alertDialog,
+      send: (m) => send({ type: 'alertDialog', msg: m }),
+      parts: adlg,
+      content: () => [
+        div({ ...adlg.content, class: 'dialog-content' }, [
+          h3({ ...adlg.title, class: 'text-lg font-semibold' }, [text('Revoke API key?')]),
+          p({ ...adlg.description, class: 'mt-2 text-sm text-slate-600' }, [
+            text('Any client using this key will lose access immediately.'),
+          ]),
+          div({ class: 'mt-4 flex gap-2' }, [
+            button({ ...adlg.closeTrigger, class: 'btn btn-secondary' }, [text('Cancel')]),
+            button(
+              {
+                class: 'btn btn-danger',
+                onClick: () => {
+                  send({ type: 'alertDialog', msg: { type: 'close' } })
+                  showToast('error', 'Key revoked', 'The API key has been revoked.')
+                },
+              },
+              [text('Revoke')],
+            ),
+          ]),
         ]),
       ],
     })
@@ -433,6 +521,15 @@ const App = component<State, Msg, never>({
         card('Drawer', [
           button({ ...dr.trigger, class: 'btn btn-primary' }, [text('Open drawer')]),
         ]),
+        card('Dialog', [
+          button({ ...dlg.trigger, class: 'btn btn-primary' }, [text('Edit profile')]),
+        ]),
+        card('Alert Dialog', [
+          button({ ...adlg.trigger, class: 'btn btn-danger' }, [text('Revoke API key…')]),
+          p({ class: 'mt-2 text-xs text-slate-500' }, [
+            text('role="alertdialog" — outside-click does not dismiss by default.'),
+          ]),
+        ]),
         card('Toast', [
           div({ class: 'flex gap-2' }, [
             button(
@@ -478,6 +575,8 @@ const App = component<State, Msg, never>({
       toastRegion,
       ...confirmOverlay,
       ...drawerOverlay,
+      ...dialogOverlay,
+      ...alertDialogOverlay,
     ]
   },
 })

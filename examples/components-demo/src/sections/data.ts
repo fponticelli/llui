@@ -12,30 +12,40 @@ import {
 } from '@llui/dom'
 import { tabs, type TabsState, type TabsMsg } from '@llui/components/tabs'
 import { accordion, type AccordionState, type AccordionMsg } from '@llui/components/accordion'
+import {
+  collapsible,
+  type CollapsibleState,
+  type CollapsibleMsg,
+} from '@llui/components/collapsible'
 import { pagination, type PaginationState, type PaginationMsg } from '@llui/components/pagination'
 import { stepper, type StepperState, type StepperMsg } from '@llui/components/stepper'
 import { carousel, type CarouselState, type CarouselMsg } from '@llui/components/carousel'
 import { avatar, type AvatarState, type AvatarMsg } from '@llui/components/avatar'
 import { treeView, type TreeViewState, type TreeViewMsg } from '@llui/components/tree-view'
+import { listbox, type ListboxState, type ListboxMsg } from '@llui/components/listbox'
 import { sectionGroup, card } from '../shared/ui'
 
 type State = {
   tabs: TabsState
   accordion: AccordionState
+  collapsible: CollapsibleState
   pagination: PaginationState
   stepper: StepperState
   carousel: CarouselState
   avatar: AvatarState
   treeView: TreeViewState
+  listbox: ListboxState
 }
 type Msg =
   | { type: 'tabs'; msg: TabsMsg }
   | { type: 'accordion'; msg: AccordionMsg }
+  | { type: 'collapsible'; msg: CollapsibleMsg }
   | { type: 'pagination'; msg: PaginationMsg }
   | { type: 'stepper'; msg: StepperMsg }
   | { type: 'carousel'; msg: CarouselMsg }
   | { type: 'avatar'; msg: AvatarMsg }
   | { type: 'treeView'; msg: TreeViewMsg }
+  | { type: 'listbox'; msg: ListboxMsg }
 
 const init = (): [State, never[]] => [
   {
@@ -45,6 +55,7 @@ const init = (): [State, never[]] => [
       value: ['what'],
       collapsible: true,
     }),
+    collapsible: collapsible.init({ open: false }),
     pagination: pagination.init({ total: 100, pageSize: 10, page: 3 }),
     stepper: stepper.init({ steps: ['Account', 'Profile', 'Review'], current: 0, linear: true }),
     carousel: carousel.init({ count: 4, current: 0, loop: true }),
@@ -52,6 +63,11 @@ const init = (): [State, never[]] => [
     treeView: treeView.init({
       expanded: ['root'],
       visibleItems: ['root', 'docs', 'src', 'tests'],
+      selectionMode: 'single',
+    }),
+    listbox: listbox.init({
+      items: ['Draft', 'Published', 'Archived', 'Deleted'],
+      value: ['Published'],
       selectionMode: 'single',
     }),
   },
@@ -70,6 +86,12 @@ const update = mergeHandlers<State, Msg, never>(
     set: (s, v) => ({ ...s, accordion: v }),
     narrow: (m) => (m.type === 'accordion' ? m.msg : null),
     sub: accordion.update,
+  }),
+  sliceHandler({
+    get: (s) => s.collapsible,
+    set: (s, v) => ({ ...s, collapsible: v }),
+    narrow: (m) => (m.type === 'collapsible' ? m.msg : null),
+    sub: collapsible.update,
   }),
   sliceHandler({
     get: (s) => s.pagination,
@@ -101,6 +123,12 @@ const update = mergeHandlers<State, Msg, never>(
     narrow: (m) => (m.type === 'treeView' ? m.msg : null),
     sub: treeView.update,
   }),
+  sliceHandler({
+    get: (s) => s.listbox,
+    set: (s, v) => ({ ...s, listbox: v }),
+    narrow: (m) => (m.type === 'listbox' ? m.msg : null),
+    sub: listbox.update,
+  }),
 )
 
 const App = component<State, Msg, never>({
@@ -117,6 +145,11 @@ const App = component<State, Msg, never>({
       (s) => s.accordion,
       (m) => send({ type: 'accordion', msg: m }),
       { id: 'acc-demo' },
+    )
+    const cl = collapsible.connect<State>(
+      (s) => s.collapsible,
+      (m) => send({ type: 'collapsible', msg: m }),
+      { id: 'coll-demo' },
     )
     const pg = pagination.connect<State>(
       (s) => s.pagination,
@@ -141,6 +174,11 @@ const App = component<State, Msg, never>({
       (s) => s.treeView,
       (m) => send({ type: 'treeView', msg: m }),
       { id: 'tree-demo' },
+    )
+    const lb = listbox.connect<State>(
+      (s) => s.listbox,
+      (m) => send({ type: 'listbox', msg: m }),
+      { id: 'lb-demo' },
     )
 
     const accItem = (v: string, title: string, body: string): Node => {
@@ -280,6 +318,25 @@ const App = component<State, Msg, never>({
             ]),
           ]),
         ]),
+        card('Listbox', [
+          div(
+            { ...lb.root, class: 'flex flex-col gap-1 rounded border border-slate-200 p-1' },
+            ['Draft', 'Published', 'Archived', 'Deleted'].map((v, i) => {
+              const p = lb.item(v, i).root
+              return div(
+                {
+                  ...p,
+                  class: 'cursor-pointer rounded px-2 py-1 text-sm hover:bg-slate-100',
+                },
+                [text(v)],
+              )
+            }),
+          ),
+          div({ class: 'mt-2 text-sm text-slate-600' }, [
+            text('Status: '),
+            text((s: State) => s.listbox.value[0] ?? 'none'),
+          ]),
+        ]),
         card('Tree View', [
           div({ ...tv.root, class: 'tree' }, [
             treeBranch('root', 'project/', 0, [
@@ -294,6 +351,18 @@ const App = component<State, Msg, never>({
         ]),
       ]),
       sectionGroup('Disclosure', [
+        card('Collapsible', [
+          div({ ...cl.root }, [
+            button({ ...cl.trigger, class: 'btn btn-secondary' }, [
+              span({}, [text((s: State) => (s.collapsible.open ? 'Hide details' : 'Show details'))]),
+            ]),
+            div({ ...cl.content, class: 'mt-2 text-sm text-slate-600' }, [
+              text(
+                'Simpler than accordion — single section, no keyboard nav between siblings. Uses role=region + aria-labelledby.',
+              ),
+            ]),
+          ]),
+        ]),
         card('Accordion', [
           div({ ...ac.root }, [
             accItem(
