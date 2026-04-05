@@ -27,9 +27,7 @@ type State = {
   sig: SignaturePadState
   crop: ImageCropperState
 }
-type Msg =
-  | { type: 'sig'; msg: SignaturePadMsg }
-  | { type: 'crop'; msg: ImageCropperMsg }
+type Msg = { type: 'sig'; msg: SignaturePadMsg } | { type: 'crop'; msg: ImageCropperMsg }
 
 const init = (): [State, never[]] => [
   {
@@ -67,8 +65,14 @@ const PLACEHOLDER_IMG =
       '</linearGradient></defs>' +
       '<rect width="400" height="300" fill="url(#g)"/>' +
       '<g stroke="rgba(255,255,255,.3)" stroke-width="1">' +
-      Array.from({ length: 9 }, (_, i) => `<line x1="${i * 50}" y1="0" x2="${i * 50}" y2="300"/>`).join('') +
-      Array.from({ length: 7 }, (_, i) => `<line x1="0" y1="${i * 50}" x2="400" y2="${i * 50}"/>`).join('') +
+      Array.from(
+        { length: 9 },
+        (_, i) => `<line x1="${i * 50}" y1="0" x2="${i * 50}" y2="300"/>`,
+      ).join('') +
+      Array.from(
+        { length: 7 },
+        (_, i) => `<line x1="0" y1="${i * 50}" x2="400" y2="${i * 50}"/>`,
+      ).join('') +
       '</g>' +
       '<text x="200" y="160" text-anchor="middle" fill="white" font-family="sans-serif" ' +
       'font-size="24" font-weight="bold">Sample Image</text>' +
@@ -218,9 +222,7 @@ export const App = component<State, Msg, never>({
                   {
                     class: 'absolute inset-0 pointer-events-none',
                     innerHTML: (s: State) => {
-                      const all = s.sig.current
-                        ? [...s.sig.strokes, s.sig.current]
-                        : s.sig.strokes
+                      const all = s.sig.current ? [...s.sig.strokes, s.sig.current] : s.sig.strokes
                       const paths = all
                         .filter((stroke) => stroke.length > 0)
                         .map(
@@ -241,16 +243,13 @@ export const App = component<State, Msg, never>({
               ],
             ),
             div({ class: 'flex items-center gap-2' }, [
-              button(
-                { ...sp.undoTrigger, class: 'btn btn-secondary text-xs' },
-                [text('Undo')],
-              ),
-              button(
-                { ...sp.clearTrigger, class: 'btn btn-secondary text-xs' },
-                [text('Clear')],
-              ),
+              button({ ...sp.undoTrigger, class: 'btn btn-secondary text-xs' }, [text('Undo')]),
+              button({ ...sp.clearTrigger, class: 'btn btn-secondary text-xs' }, [text('Clear')]),
               span({ class: 'text-xs text-slate-500 ml-auto' }, [
-                text((s: State) => `${s.sig.strokes.length} strokes · ${signaturePad.pointCount(s.sig)} points`),
+                text(
+                  (s: State) =>
+                    `${s.sig.strokes.length} strokes · ${signaturePad.pointCount(s.sig)} points`,
+                ),
               ]),
             ]),
           ]),
@@ -260,49 +259,49 @@ export const App = component<State, Msg, never>({
             p({ class: 'text-xs text-slate-500' }, [
               text('Drag the crop box to pan; drag the corner handle to resize (1:1 aspect).'),
             ]),
-            div({ class: 'relative inline-block border border-slate-300 rounded overflow-hidden' }, [
-              img({
-                ...ic.image,
-                src: PLACEHOLDER_IMG,
-                class: 'block w-[400px] h-[300px] select-none',
-              }),
-              // Crop box overlay — positioned via percentage from the
-              // component's style binding. Darkens outside area via
-              // box-shadow.
-              div(
-                {
-                  ...ic.cropBox,
-                  class: 'absolute cursor-move border-2 border-white',
-                  style: (s: State) => {
-                    const st = s.crop
-                    if (st.image.width === 0 || st.image.height === 0) return 'display:none;'
-                    const xp = (st.crop.x / st.image.width) * 100
-                    const yp = (st.crop.y / st.image.height) * 100
-                    const wp = (st.crop.width / st.image.width) * 100
-                    const hp = (st.crop.height / st.image.height) * 100
-                    return (
-                      `left:${xp}%;top:${yp}%;width:${wp}%;height:${hp}%;` +
-                      `box-shadow: 0 0 0 9999px rgba(0,0,0,0.5);touch-action:none;`
-                    )
-                  },
-                },
-                [
-                  div(
-                    {
-                      ...ic.resizeHandle('se'),
-                      class:
-                        'absolute -bottom-1 -right-1 w-3 h-3 bg-white border border-slate-400 cursor-se-resize rounded-sm',
+            div(
+              { class: 'relative inline-block border border-slate-300 rounded overflow-hidden' },
+              [
+                img({
+                  ...ic.image,
+                  src: PLACEHOLDER_IMG,
+                  class: 'block w-[400px] h-[300px] select-none',
+                }),
+                // Crop box overlay — positioned via percentage from the
+                // component's style binding. Darkens outside area via
+                // box-shadow.
+                div(
+                  {
+                    ...ic.cropBox,
+                    class: 'absolute cursor-move border-2 border-white',
+                    style: (s: State) => {
+                      const st = s.crop
+                      if (st.image.width === 0 || st.image.height === 0) return 'display:none;'
+                      const xp = (st.crop.x / st.image.width) * 100
+                      const yp = (st.crop.y / st.image.height) * 100
+                      const wp = (st.crop.width / st.image.width) * 100
+                      const hp = (st.crop.height / st.image.height) * 100
+                      return (
+                        `left:${xp}%;top:${yp}%;width:${wp}%;height:${hp}%;` +
+                        `box-shadow: 0 0 0 9999px rgba(0,0,0,0.5);touch-action:none;`
+                      )
                     },
-                    [],
-                  ),
-                ],
-              ),
-            ]),
+                  },
+                  [
+                    div(
+                      {
+                        ...ic.resizeHandle('se'),
+                        class:
+                          'absolute -bottom-1 -right-1 w-3 h-3 bg-white border border-slate-400 cursor-se-resize rounded-sm',
+                      },
+                      [],
+                    ),
+                  ],
+                ),
+              ],
+            ),
             div({ class: 'flex items-center gap-2 text-xs' }, [
-              button(
-                { ...ic.resetTrigger, class: 'btn btn-secondary' },
-                [text('Reset crop')],
-              ),
+              button({ ...ic.resetTrigger, class: 'btn btn-secondary' }, [text('Reset crop')]),
               span({ class: 'text-slate-500' }, [
                 text(
                   (s: State) =>
