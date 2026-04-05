@@ -115,7 +115,7 @@ function pos(node: ts.Node, sf: ts.SourceFile): { line: number; column: number }
   return { line: line + 1, column: character + 1 }
 }
 
-function isInsideEachRender(node: ts.Node): boolean {
+function _isInsideEachRender(node: ts.Node): boolean {
   let current = node.parent
   while (current) {
     if (

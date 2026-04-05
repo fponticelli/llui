@@ -15,3 +15,6 @@ export { lockBodyScroll } from './remove-scroll'
 
 export { getFocusables, isFocusable } from './focusables'
 export type { ElementSource } from './dom'
+
+export { attachFloating } from './floating'
+export type { FloatingOptions, Placement } from './floating'

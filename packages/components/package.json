@@ -36,6 +36,18 @@
     "./dialog": {
       "import": "./dist/components/dialog.js",
       "types": "./dist/components/dialog.d.ts"
+    },
+    "./popover": {
+      "import": "./dist/components/popover.js",
+      "types": "./dist/components/popover.d.ts"
+    },
+    "./tooltip": {
+      "import": "./dist/components/tooltip.js",
+      "types": "./dist/components/tooltip.d.ts"
+    },
+    "./menu": {
+      "import": "./dist/components/menu.js",
+      "types": "./dist/components/menu.d.ts"
     }
   },
   "scripts": {
