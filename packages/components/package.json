@@ -209,6 +209,18 @@
       "import": "./dist/components/scroll-area.js",
       "types": "./dist/components/scroll-area.d.ts"
     },
+    "./floating-panel": {
+      "import": "./dist/components/floating-panel.js",
+      "types": "./dist/components/floating-panel.d.ts"
+    },
+    "./image-cropper": {
+      "import": "./dist/components/image-cropper.js",
+      "types": "./dist/components/image-cropper.d.ts"
+    },
+    "./navigation-menu": {
+      "import": "./dist/components/navigation-menu.js",
+      "types": "./dist/components/navigation-menu.d.ts"
+    },
     "./carousel": {
       "import": "./dist/components/carousel.js",
       "types": "./dist/components/carousel.d.ts"

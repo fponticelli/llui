@@ -48,6 +48,9 @@ export * as dateInput from './date-input'
 export * as asyncList from './async-list'
 export * as cascadeSelect from './cascade-select'
 export * as scrollArea from './scroll-area'
+export * as floatingPanel from './floating-panel'
+export * as imageCropper from './image-cropper'
+export * as navigationMenu from './navigation-menu'
 
 export type {
   TimerState,
@@ -116,6 +119,27 @@ export type {
   ScrollbarVisibility,
   ScrollDims,
 } from './scroll-area'
+export type {
+  FloatingPanelState,
+  FloatingPanelMsg,
+  FloatingPanelInit,
+  FloatingPanelParts,
+  ResizeHandle as FloatingPanelHandle,
+} from './floating-panel'
+export type {
+  ImageCropperState,
+  ImageCropperMsg,
+  ImageCropperInit,
+  ImageCropperParts,
+  CropRect,
+} from './image-cropper'
+export type {
+  NavMenuState,
+  NavMenuMsg,
+  NavMenuInit,
+  NavMenuParts,
+  NavItemParts,
+} from './navigation-menu'
 export type { ToggleState, ToggleMsg, ToggleInit, ToggleParts } from './toggle'
 export type {
   CheckboxState,
