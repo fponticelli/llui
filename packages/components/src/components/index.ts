@@ -37,7 +37,15 @@ export * as timePicker from './time-picker'
 export * as carousel from './carousel'
 export * as datePicker from './date-picker'
 export * as colorPicker from './color-picker'
+export * as timer from './timer'
 
+export type {
+  TimerState,
+  TimerMsg,
+  TimerInit,
+  TimerParts,
+  Direction as TimerDirection,
+} from './timer'
 export type { ToggleState, ToggleMsg, ToggleInit, ToggleParts } from './toggle'
 export type {
   CheckboxState,
