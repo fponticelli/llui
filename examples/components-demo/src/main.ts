@@ -1344,12 +1344,6 @@ function hoverCardSection(): Node {
 }
 
 function comboboxSection(): Node {
-  onMount(() => {
-    // Render the filtered items reactively by observing the filteredItems array.
-    // For this demo we render statically from FRUITS and let the combobox
-    // filter via data-highlighted styling; the full filter would rebuild items.
-    return undefined
-  })
   return div({ class: 'demo-section' }, [
     h2({ class: 'demo-title' }, [text('Combobox')]),
     div({ ...comboboxParts.root, class: 'relative' }, [
@@ -1360,7 +1354,23 @@ function comboboxSection(): Node {
       send: (m) => sendGlobal({ type: 'combobox', msg: m }),
       parts: comboboxParts,
       content: () => [
-        div({ ...comboboxParts.content, class: 'cb-content' }, renderComboboxItems()),
+        div(
+          { ...comboboxParts.content, class: 'cb-content' },
+          each<State, string, ComboboxMsg>({
+            items: (s) => s.combobox.filteredItems,
+            key: (v) => v,
+            render: ({ item, index }) => {
+              // Read the item's current value + index at mount — the cell part
+              // is constructed from those. When filter changes, each reconciles
+              // by key (value). Items that remain keep their DOM; new matches
+              // get fresh rows.
+              const value = item((t: string) => t)()
+              const idx = index()
+              const parts = comboboxParts.item(value, idx).item
+              return [div({ ...parts, class: 'cb-item' }, [text(value)])]
+            },
+          }),
+        ),
       ],
     }),
     div({ class: 'mt-3 text-sm text-slate-600' }, [
@@ -1368,13 +1378,6 @@ function comboboxSection(): Node {
       text((s: State) => s.combobox.value[0] ?? 'none'),
     ]),
   ])
-}
-
-function renderComboboxItems(): Node[] {
-  return FRUITS.map((item, i) => {
-    const partItem = comboboxParts.item(item, i).item
-    return div({ ...partItem, class: 'cb-item' }, [text(item)])
-  })
 }
 
 function drawerSection(send: (m: Msg) => void): Node {
@@ -1564,28 +1567,47 @@ function datePickerSection(): Node {
 function renderCalendarDays(): Node[] {
   const dowLabels = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
   const dowCells = dowLabels.map((d) => span({ class: 'dp-dow' }, [text(d)]))
-  // Days are rendered reactively per visible month via onMount + imperative DOM
-  // would be more complex; for the demo, we build a static 6x7 grid that reads
-  // from state via dayCell parts created at render time.
-  // Simpler approach: compute the grid once and render cells whose data-date
-  // reactively reflects the current state.
-  // We use the initial state's visibleMonth/Year for the demo layout.
-  const s: DatePickerState = {
-    value: '2026-04-15',
-    visibleMonth: 4,
-    visibleYear: 2026,
-    focused: '2026-04-15',
-    min: null,
-    max: null,
-    weekStartsOn: 0,
-    disabled: false,
-  }
-  // Import monthGrid dynamically — it's a pure helper
-  const cells = monthGrid(s).map((cell) => {
-    const parts = datePickerParts.dayCell(cell)
-    return button({ ...parts.cell, class: 'dp-day' }, [text(String(cell.day))])
+  // Grid is computed reactively: monthGrid(state.datePicker) returns a fresh
+  // array keyed on `iso`. When visibleMonth/Year changes, keys change →
+  // entries rebuild. When just the focused or value changes, keys stay the
+  // same but the per-cell data-* accessors re-evaluate against state.
+  const gridCells = each<State, DayCell, DatePickerMsg>({
+    items: (s) => monthGrid(s.datePicker),
+    key: (cell) => cell.iso,
+    render: ({ item }) => {
+      // Stable per entry — computed once on mount.
+      const iso = item((c: DayCell) => c.iso)()
+      const day = item((c: DayCell) => c.day)()
+      const inMonth = item((c: DayCell) => c.inMonth)()
+      return [
+        button(
+          {
+            role: 'gridcell',
+            'data-date': iso,
+            'data-in-month': inMonth ? '' : undefined,
+            'data-today': (s: State) => (iso === todayIsoString() ? '' : undefined),
+            'data-selected': (s: State) => (s.datePicker.value === iso ? '' : undefined),
+            'data-focused': (s: State) => (s.datePicker.focused === iso ? '' : undefined),
+            'aria-selected': (s: State) => s.datePicker.value === iso,
+            tabIndex: (s: State) => (s.datePicker.focused === iso ? 0 : -1),
+            class: 'dp-day',
+            onClick: () => {
+              sendGlobal({ type: 'datePicker', msg: { type: 'setFocused', date: iso } })
+              sendGlobal({ type: 'datePicker', msg: { type: 'selectFocused' } })
+            },
+          },
+          [text(String(day))],
+        ),
+      ]
+    },
   })
-  return [...dowCells, ...cells]
+  return [...dowCells, ...gridCells]
+}
+
+function todayIsoString(): string {
+  const d = new Date()
+  const pad = (n: number): string => n.toString().padStart(2, '0')
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
 }
 
 function timePickerSection(): Node {
@@ -1616,15 +1638,15 @@ function colorPickerSection(): Node {
       ]),
       div({ class: 'cp-sliders' }, [
         label({ class: 'cp-label' }, [
-          text('H'),
+          span({}, [text('H')]),
           input({ ...colorPickerParts.hueSlider, class: 'cp-range' }),
         ]),
         label({ class: 'cp-label' }, [
-          text('S'),
+          span({}, [text('S')]),
           input({ ...colorPickerParts.saturationSlider, class: 'cp-range' }),
         ]),
         label({ class: 'cp-label' }, [
-          text('L'),
+          span({}, [text('L')]),
           input({ ...colorPickerParts.lightnessSlider, class: 'cp-range' }),
         ]),
       ]),
@@ -1656,10 +1678,24 @@ function clipboardSection(_send: (m: Msg) => void): Node {
 }
 
 function editableSection(_send: (m: Msg) => void): Node {
+  // Focus + select the input whenever we enter edit mode. We watch the
+  // editing flag via a derived text binding side-effect isn't LLui-idiomatic,
+  // so instead override preview onClick to dispatch then focus in a microtask.
+  const previewParts = { ...editableParts.preview }
+  const originalClick = previewParts.onClick
+  previewParts.onClick = (e: MouseEvent) => {
+    originalClick(e)
+    queueMicrotask(() => {
+      const inp = document.querySelector<HTMLInputElement>('.editable-input')
+      inp?.focus()
+      inp?.select()
+    })
+  }
+
   return div({ class: 'demo-section' }, [
     h2({ class: 'demo-title' }, [text('Editable')]),
     div({ ...editableParts.root, class: 'editable' }, [
-      span({ ...editableParts.preview, class: 'editable-preview' }, [
+      span({ ...previewParts, class: 'editable-preview' }, [
         text((s: State) => s.editable.value || 'Click to edit'),
       ]),
       input({ ...editableParts.input, class: 'editable-input' }),
@@ -1675,8 +1711,8 @@ function fileUploadSection(): Node {
     h2({ class: 'demo-title' }, [text('File Upload')]),
     div({ ...fileUploadParts.root, class: 'fu-root' }, [
       div({ ...fileUploadParts.dropzone, class: 'fu-dropzone' }, [
-        text('Drag files here or'),
-        label({ ...fileUploadParts.label, class: 'fu-label' }, [text('browse')]),
+        text('Drag files here or '),
+        button({ ...fileUploadParts.trigger, class: 'fu-browse' }, [text('browse')]),
         input({ ...fileUploadParts.hiddenInput }),
       ]),
       div({ class: 'fu-list' }, [
@@ -1698,6 +1734,49 @@ function fileUploadSection(): Node {
 }
 
 function splitterSection(): Node {
+  // Pointer drag: capture pointerdown on the handle, then track pointermove
+  // on the window until pointerup. Compute % position from cursor relative to
+  // the root's bounding rect.
+  onMount(() => {
+    const root = document.querySelector<HTMLElement>('[data-scope="splitter"][data-part="root"]')
+    const handle = document.querySelector<HTMLElement>(
+      '[data-scope="splitter"][data-part="resize-trigger"]',
+    )
+    if (!root || !handle) return
+    let dragging = false
+    const computePct = (clientX: number): number => {
+      const rect = root.getBoundingClientRect()
+      const pct = Math.max(0, Math.min(100, ((clientX - rect.left) / rect.width) * 100))
+      return Math.round(pct)
+    }
+    const onDown = (e: PointerEvent): void => {
+      dragging = true
+      handle.setPointerCapture(e.pointerId)
+      sendGlobal({ type: 'splitter', msg: { type: 'startDrag' } })
+      sendGlobal({ type: 'splitter', msg: { type: 'setPosition', position: computePct(e.clientX) } })
+    }
+    const onMove = (e: PointerEvent): void => {
+      if (!dragging) return
+      sendGlobal({ type: 'splitter', msg: { type: 'setPosition', position: computePct(e.clientX) } })
+    }
+    const onUp = (e: PointerEvent): void => {
+      if (!dragging) return
+      dragging = false
+      if (handle.hasPointerCapture(e.pointerId)) handle.releasePointerCapture(e.pointerId)
+      sendGlobal({ type: 'splitter', msg: { type: 'endDrag' } })
+    }
+    handle.addEventListener('pointerdown', onDown)
+    handle.addEventListener('pointermove', onMove)
+    handle.addEventListener('pointerup', onUp)
+    handle.addEventListener('pointercancel', onUp)
+    return () => {
+      handle.removeEventListener('pointerdown', onDown)
+      handle.removeEventListener('pointermove', onMove)
+      handle.removeEventListener('pointerup', onUp)
+      handle.removeEventListener('pointercancel', onUp)
+    }
+  })
+
   return div({ class: 'demo-section' }, [
     h2({ class: 'demo-title' }, [text('Splitter')]),
     div({ ...splitterParts.root, class: 'split-root' }, [
@@ -1706,9 +1785,8 @@ function splitterSection(): Node {
       div({ ...splitterParts.secondaryPanel, class: 'split-pane' }, [text('Right pane')]),
     ]),
     div({ class: 'mt-2 text-xs text-slate-500' }, [
-      text('Split at '),
+      text('Drag handle or use arrow keys when focused — split at '),
       text((s: State) => `${s.splitter.position}%`),
-      text(' (use arrow keys when focused)'),
     ]),
   ])
 }
@@ -1729,14 +1807,20 @@ function treeViewSection(): Node {
   ])
 }
 
-function treeBranch(id: string, label: string, depth: number, children: Node[]): Node {
+function treeBranch(id: string, labelText: string, depth: number, children: Node[]): Node {
   const parts = treeViewParts.item(id, depth, true)
   return div({}, [
     div({ ...parts.item, class: 'tree-item' }, [
       button({ ...parts.branchTrigger, class: 'tree-caret' }, [text('▸')]),
-      span({ class: 'tree-label' }, [text(label)]),
+      span({ class: 'tree-label' }, [text(labelText)]),
     ]),
-    div({ class: 'tree-children' }, children),
+    div(
+      {
+        class: 'tree-children',
+        hidden: (s: State) => !s.treeView.expanded.includes(id),
+      },
+      children,
+    ),
   ])
 }
 
