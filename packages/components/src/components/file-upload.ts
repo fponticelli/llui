@@ -177,9 +177,16 @@ export function connect<S>(
       'data-scope': 'file-upload',
       'data-part': 'dropzone',
       'data-dragging': (s) => (get(s).dragging ? '' : undefined),
-      onClick: () => {
-        const el = document.getElementById(inputId) as HTMLInputElement | null
-        el?.click()
+      onClick: (e) => {
+        const target = e.target as HTMLElement
+        if (target.getAttribute('data-part') === 'hidden-input') return
+        const root = (e.currentTarget as HTMLElement).closest(
+          '[data-scope="file-upload"][data-part="root"]',
+        )
+        const input = root?.querySelector<HTMLInputElement>(
+          '[data-scope="file-upload"][data-part="hidden-input"]',
+        )
+        input?.click()
       },
       onDragEnter: (e) => {
         e.preventDefault()
@@ -202,9 +209,14 @@ export function connect<S>(
       'data-scope': 'file-upload',
       'data-part': 'trigger',
       disabled: (s) => get(s).disabled,
-      onClick: () => {
-        const el = document.getElementById(inputId) as HTMLInputElement | null
-        el?.click()
+      onClick: (e) => {
+        const root = (e.currentTarget as HTMLElement).closest(
+          '[data-scope="file-upload"][data-part="root"]',
+        )
+        const input = root?.querySelector<HTMLInputElement>(
+          '[data-scope="file-upload"][data-part="hidden-input"]',
+        )
+        input?.click()
       },
     },
     hiddenInput: {

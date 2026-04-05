@@ -246,18 +246,12 @@ export function overlay<S>(opts: OverlayOptions<S>): Node[] {
               cleanups.push(
                 pushDismissable({
                   element: contentEl,
-                  ignore: () => {
-                    const t = document.getElementById(triggerId)
-                    return t ? [t] : []
-                  },
+                  ignore: () => [triggerEl],
                   disableEscape: !closeOnEscape,
                   disableOutside: !closeOnOutsideClick,
                   onDismiss: () => {
                     opts.send({ type: 'close' })
-                    if (restoreFocus) {
-                      const t = document.getElementById(triggerId) as HTMLElement | null
-                      t?.focus()
-                    }
+                    if (restoreFocus) triggerEl.focus()
                   },
                 }),
               )

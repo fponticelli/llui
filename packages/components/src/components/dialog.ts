@@ -252,6 +252,7 @@ export function overlay<S>(opts: OverlayOptions<S>): Node[] {
           onMount(() => {
             const contentEl = document.getElementById(contentId)
             if (!contentEl) return
+            const triggerEl = document.getElementById(triggerId)
 
             const cleanups: Array<() => void> = []
 
@@ -270,10 +271,7 @@ export function overlay<S>(opts: OverlayOptions<S>): Node[] {
               cleanups.push(
                 pushDismissable({
                   element: contentEl,
-                  ignore: () => {
-                    const t = document.getElementById(triggerId)
-                    return t ? [t] : []
-                  },
+                  ignore: () => (triggerEl ? [triggerEl] : []),
                   disableEscape: !closeOnEscape,
                   disableOutside: !closeOnOutsideClick,
                   onDismiss: () => opts.send({ type: 'close' }),

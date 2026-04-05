@@ -492,10 +492,7 @@ export function overlay<S>(opts: OverlayOptions<S>): Node[] {
             cleanups.push(
               pushDismissable({
                 element: contentEl,
-                ignore: () => {
-                  const el = document.getElementById(inputId)
-                  return el ? [el] : []
-                },
+                ignore: () => [inputEl],
                 onDismiss: () => opts.send({ type: 'close' }),
               }),
             )

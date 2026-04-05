@@ -383,14 +383,10 @@ export function overlay<S>(opts: OverlayOptions<S>): Node[] {
             cleanups.push(
               pushDismissable({
                 element: contentEl,
-                ignore: () => {
-                  const t = document.getElementById(triggerId)
-                  return t ? [t] : []
-                },
+                ignore: () => [triggerEl],
                 onDismiss: () => {
                   opts.send({ type: 'close' })
-                  const t = document.getElementById(triggerId) as HTMLElement | null
-                  t?.focus()
+                  triggerEl.focus()
                 },
               }),
             )
