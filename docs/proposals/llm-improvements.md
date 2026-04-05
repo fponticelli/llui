@@ -156,13 +156,13 @@ Warning: Accessor at line 15 reads state but path could not be resolved.
   Using full mask (updates on every state change). Consider simplifying the accessor.
 ```
 
-### 6c: Warn on 32+ state fields approaching bitmask tier boundary
+### 6c: Warn on 32+ state fields approaching the bitmask limit
 
-The design docs mention bitmask tiers (≤31 single, 32-62 two-word), but there's no warning when a component approaches the boundary:
+The bitmask is a single 31-bit word; components with more paths overflow to FULL_MASK. A warning near the boundary helps authors preempt the overflow:
 
 ```
 Warning: Component 'Dashboard' has 28 unique state access paths.
-  Consider decomposing into child components to keep below the 31-path single-mask tier.
+  Consider decomposing into child components to keep below the 31-path limit.
 ```
 
 ---

@@ -17,11 +17,10 @@ The invariant that makes this ordering correct: Phase 2 iterates the binding arr
 The two phases also keep the hot path in Phase 2 branchless for the common case. The mask check is a single bitwise AND and a branch-predicted zero comparison. The `Object.is` check on the result of a cheap accessor is usually a pointer comparison. The actual DOM write (`textNode.nodeValue = ...`, `element.setAttribute(...)`) executes only when something genuinely changed. On a typical update where a few fields in a 50-binding component change, Phase 2 does 48 mask checks, 2 accessor calls, 2 value comparisons, and 2 DOM writes. There is no tree traversal, no snapshot, no diffing.
 
 ```
-// Single-word tier (≤31 paths) — the common case.
-// For the two-word tier (32–62 paths), dirtyMask is a [dirty0, dirty1] pair,
-// each binding carries mask0/mask1, and the skip check becomes:
-//   if ((binding.mask0 & dirty0) === 0 && (binding.mask1 & dirty1) === 0) continue
-// See 01 Architecture.md and 02 Compiler.md for the tiered mask strategy.
+// Single-word bitmask. Paths 0–30 get individual bits; paths 32+ receive
+// FULL_MASK (-1) on both __dirty output and per-binding masks, so the AND
+// check below always fires for those bindings — graceful overflow using
+// the same hot-path code.
 
 function runUpdate(component, dirtyMask) {
   // Phase 1
@@ -50,11 +49,6 @@ The flat array is the critical structure. A tree walk of the scope hierarchy on 
 `send(msg)` does not trigger an update cycle immediately. It pushes the message onto a per-component queue and, if no microtask is already scheduled, calls `queueMicrotask(processMessages)`. When the microtask fires, `processMessages` drains the queue:
 
 ```typescript
-// Shown for the single-word tier. For the two-word tier, combinedDirty
-// is a [number, number] pair and the OR merging applies per-word:
-//   combinedDirty[0] |= dirty[0]; combinedDirty[1] |= dirty[1]
-// The zero-check becomes: combinedDirty[0] !== 0 || combinedDirty[1] !== 0
-
 function processMessages(component) {
   let state = component.state
   let combinedDirty = 0
@@ -156,7 +150,7 @@ The `onEffect` handler is called synchronously within `processMessages`, after a
 
 A binding is the fundamental unit that connects reactive state access paths to a DOM node property. It carries:
 
-- `mask`: a bitmask indicating which state access paths this binding reads (or a `mask0`/`mask1` pair for components with 32–62 tracked paths)
+- `mask`: a bitmask indicating which state access paths this binding reads. Paths 0–30 each get one bit; paths 32+ receive `FULL_MASK` (-1) so their bindings always re-evaluate (graceful overflow).
 - `accessor`: a function `(state) => value` that reads those paths
 - `lastValue`: the value from the previous update cycle
 - `kind`: one of `text`, `prop`, `attr`, `class`, `style`

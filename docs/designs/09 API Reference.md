@@ -519,8 +519,7 @@ See: 03 Runtime DOM.md
 
 ```typescript
 interface Binding {
-  mask: number // single-word tier
-  // mask0: number; mask1: number // two-word tier (32–62 paths)
+  mask: number // paths 0–30 get their own bit; 32+ overflow to FULL_MASK (-1)
   accessor: (state: any) => any
   lastValue: any
   kind: 'text' | 'prop' | 'attr' | 'class' | 'style'

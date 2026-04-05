@@ -38,10 +38,10 @@ export function collectDeps(source: string): Map<string, number> {
 
   visit(sourceFile)
 
-  // Assign bit positions. Single-mask tier holds 31 unique paths
-  // (positions 0..30). When the count exceeds 31, all overflow paths
-  // use FULL_MASK (-1) — they will always trigger a re-evaluation,
-  // degrading gracefully. The diagnostic warns the user to decompose.
+  // Assign bit positions. The bitmask holds 31 unique paths (positions
+  // 0..30). When the count exceeds 31, overflow paths use FULL_MASK (-1)
+  // — they always trigger re-evaluation, degrading gracefully. The
+  // diagnostic warns the user to decompose.
   const fieldBits = new Map<string, number>()
   let bit = 1
   let index = 0
@@ -122,16 +122,82 @@ function isReactiveAccessor(node: ts.ArrowFunction | ts.FunctionExpression): boo
 const REACTIVE_API_NAMES = new Set([
   // Element helpers (see ELEMENT_HELPERS in transform.ts — we keep a superset here)
   ...[
-    'a', 'abbr', 'article', 'aside', 'b', 'blockquote', 'br', 'button', 'canvas',
-    'code', 'dd', 'details', 'dialog', 'div', 'dl', 'dt', 'em', 'fieldset',
-    'figcaption', 'figure', 'footer', 'form', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6',
-    'header', 'hr', 'i', 'iframe', 'img', 'input', 'label', 'legend', 'li', 'main',
-    'mark', 'nav', 'ol', 'optgroup', 'option', 'output', 'p', 'pre', 'progress',
-    'section', 'select', 'small', 'span', 'strong', 'sub', 'summary', 'sup', 'table',
-    'tbody', 'td', 'textarea', 'tfoot', 'th', 'thead', 'time', 'tr', 'ul', 'video',
+    'a',
+    'abbr',
+    'article',
+    'aside',
+    'b',
+    'blockquote',
+    'br',
+    'button',
+    'canvas',
+    'code',
+    'dd',
+    'details',
+    'dialog',
+    'div',
+    'dl',
+    'dt',
+    'em',
+    'fieldset',
+    'figcaption',
+    'figure',
+    'footer',
+    'form',
+    'h1',
+    'h2',
+    'h3',
+    'h4',
+    'h5',
+    'h6',
+    'header',
+    'hr',
+    'i',
+    'iframe',
+    'img',
+    'input',
+    'label',
+    'legend',
+    'li',
+    'main',
+    'mark',
+    'nav',
+    'ol',
+    'optgroup',
+    'option',
+    'output',
+    'p',
+    'pre',
+    'progress',
+    'section',
+    'select',
+    'small',
+    'span',
+    'strong',
+    'sub',
+    'summary',
+    'sup',
+    'table',
+    'tbody',
+    'td',
+    'textarea',
+    'tfoot',
+    'th',
+    'thead',
+    'time',
+    'tr',
+    'ul',
+    'video',
   ],
   // Structural primitives
-  'each', 'branch', 'show', 'memo', 'portal', 'foreign', 'child', 'errorBoundary',
+  'each',
+  'branch',
+  'show',
+  'memo',
+  'portal',
+  'foreign',
+  'child',
+  'errorBoundary',
 ])
 
 /**

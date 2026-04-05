@@ -136,15 +136,14 @@ todos       → 0x0010 (bit 4)
 
 An accessor reading `s.user` as a whole object (not drilling into a sub-property) gets the **union** of all `user.*` bits — in this example, `0x0001 | 0x0002 | 0x0004 = 0x0007`. This is correct: a binding that consumes the entire `user` object depends on any sub-field change.
 
-**Tiered mask capacity.** The compiler uses a tiered strategy based on the total number of unique paths in the file:
+**Mask capacity and overflow.** The compiler uses a single `number` mask with graceful overflow:
 
-- **≤31 paths**: single `number` mask. Each path gets one bit (positions 0–30). This is the common case. The Phase 2 check is one bitwise AND.
-- **32–62 paths**: two `number` fields (`mask0`/`mask1` on each binding, `dirty0`/`dirty1` from `__dirty`). Paths 0–30 are in the first word, 31–61 in the second. The Phase 2 check is two bitwise ANDs with short-circuit: `(binding.mask0 & dirty0) === 0 && (binding.mask1 & dirty1) === 0`. The branch predictor handles this well when the first word covers the commonly-changed paths.
-- **63+ paths**: the compiler emits a diagnostic warning: `"Component 'FormEditor' in form-editor.ts has 78 unique state access paths, exceeding the 62-path bitmask capacity. Consider splitting into child components."` No silent degradation — the developer is directed to restructure. The component still compiles; all bindings receive `0xFFFFFFFF` and the warning explains the performance consequence.
+- **≤31 paths**: each path gets one bit (positions 0–30). The Phase 2 check is one bitwise AND. Common case, fastest path.
+- **32+ paths**: the first 31 paths still get individual bits; paths 32+ receive `FULL_MASK` (-1). Their bindings re-evaluate on every dirty cycle. The compiler emits a warning naming the top-level state fields sorted by path count, so authors know exactly which slice to extract. Example: `Component at line 120 has 45 unique state access paths (14 past the 31-path limit). Top-level fields by path count: form (18), user (12), ui (8), filter (7). Extract the largest fields into child components or slice handlers.`
 
-The 31-path-per-word cap is a hard constraint of JavaScript's 32-bit signed integer bitwise operations (bit 31 is the sign bit). Two words extend the capacity to 62 paths, which accommodates components with nested state shapes that would exceed 31 top-level fields. Beyond 62, the architectural recommendation is decomposition into child components.
+The 31-path cap is a hard constraint of JavaScript's 32-bit signed integer bitwise operations (bit 31 is the sign bit). The overflow path is cheap (~1–4 microseconds per update at 40–80 paths), but components at that scale almost always benefit from decomposition on architectural grounds — clearer effect lifecycle, easier testing, independent state. The warning pushes authors to that structure before any runtime cost becomes a concern.
 
-**Per-accessor mask computation.** For each reactive accessor, the compiler re-traverses its body to collect the specific paths it accesses, then ORs together their assigned bits. An accessor reading `s.user.name` and `s.filter` gets mask `0x0001 | 0x0008 = 0x0009`. An accessor reading `s.user` (the whole object) gets the union `0x0007`. An accessor that accesses no tracked paths (e.g., it reads a captured local variable `() => String(x)`) gets the conservative full mask `0xFFFFFFFF` (or `[0xFFFFFFFF, 0xFFFFFFFF]` in two-word mode), meaning it will be re-evaluated on every update regardless of which paths changed. A compiler diagnostic warning is emitted for every accessor that receives the conservative mask, identifying the specific expression that could not be resolved.
+**Per-accessor mask computation.** For each reactive accessor, the compiler re-traverses its body to collect the specific paths it accesses, then ORs together their assigned bits. An accessor reading `s.user.name` and `s.filter` gets mask `0x0001 | 0x0008 = 0x0009`. An accessor reading `s.user` (the whole object) gets the union `0x0007`. An accessor that accesses no tracked paths (e.g., it reads a captured local variable `() => String(x)`) gets the conservative full mask `0xFFFFFFFF`, meaning it will be re-evaluated on every update regardless of which paths changed. A compiler diagnostic warning is emitted for every accessor that receives the conservative mask, identifying the specific expression that could not be resolved.
 
 **Mask injection into binding tuples.** The mask is placed as the first element of the `[mask, kind, key, accessor]` tuple. The runtime update loop uses it as:
 
@@ -169,14 +168,7 @@ __dirty: (o, n) =>
 
 Nested path comparisons use optional chaining (`o.user?.name`) to safely handle cases where an intermediate object is `null` or `undefined`. If the parent reference is nullish, `Object.is(undefined, undefined)` returns `true`, correctly reporting no change.
 
-For the two-word tier (32–62 paths), `__dirty` returns an array of two numbers:
-
-```typescript
-__dirty: (o, n) => [
-  (Object.is(o.user?.name, n.user?.name) ? 0 : 1) | /* ... bits 0-30 ... */,
-  (Object.is(o.settings?.lang, n.settings?.lang) ? 0 : 1) | /* ... bits 0-30 ... */
-]
-```
+In overflow (32+ paths), the generator follows the same structure but emits `FULL_MASK` (-1) as the bit for any path beyond position 30. Since `__dirty` ORs all bits together, a single mutation to an overflow path yields FULL_MASK, which matches all bindings in Phase 2 — the expected fallback behavior.
 
 `Object.is` is used rather than `!==` because it handles `NaN` and `-0` correctly. The generated function returns a bitmask (or bitmask pair) of which paths changed. The update loop uses this to set `dirty`, which is then used to skip individual bindings. If `__dirty` is absent (uncompiled component), the runtime falls back to `dirty = 0xFFFFFFFF`, re-evaluating all bindings on every update — correct but not optimal.
 
@@ -529,7 +521,7 @@ These are the guarantees that must hold for every transformed file. A compiler c
 
 **3. Masks must be conservative.** A mask that is too narrow (missing a path bit that the accessor actually reads) causes silent stale values: the accessor is skipped on updates where the path changed, returning `lastValue` instead of the new value. A mask that is too broad (set to `0xFFFFFFFF` when a precise value is available) is merely suboptimal. The compiler must never emit a mask narrower than the actual path dependencies of the accessor. When uncertain, emit `0xFFFFFFFF` and a diagnostic warning. An accessor reading a parent path (`s.user`) must receive the union of all child path bits (`user.name | user.email | ...`), since the whole-object consumer depends on any sub-field change.
 
-**4. The `__dirty` function must be a conservative superset.** `__dirty(o, n)` must return a non-zero bit for path `p` whenever the value at that path differs between `o` and `n` (by `Object.is`). It may return non-zero for paths that did not change (false positives are harmless — they cause unnecessary binding evaluations). It must never return zero for a bit corresponding to a path that did change (false negatives cause stale DOM). The compiler uses `Object.is` with optional chaining for nested path comparisons (`Object.is(o.user?.name, n.user?.name)`), which is the strictest possible equality and safely handles nullish intermediates. For the two-word tier, both words of the dirty pair must independently satisfy this invariant for their respective bit ranges.
+**4. The `__dirty` function must be a conservative superset.** `__dirty(o, n)` must return a non-zero bit for path `p` whenever the value at that path differs between `o` and `n` (by `Object.is`). It may return non-zero for paths that did not change (false positives are harmless — they cause unnecessary binding evaluations). It must never return zero for a bit corresponding to a path that did change (false negatives cause stale DOM). The compiler uses `Object.is` with optional chaining for nested path comparisons (`Object.is(o.user?.name, n.user?.name)`), which is the strictest possible equality and safely handles nullish intermediates. In overflow (32+ paths), paths beyond position 30 use `FULL_MASK` (-1), which satisfies the invariant trivially: any change to an overflow path causes \_\_dirty to return FULL_MASK, matching every binding in Phase 2.
 
 **5. Import elision must only remove actually-compiled helpers.** If `div` was imported but one of its call sites bailed out (non-literal props), the `div` name must remain in the import. The compiler tracks `transformedHelpers` (the set of local names for which at least one call was compiled) separately from `helperLocalNames` (all imported element helpers). Only names in `transformedHelpers` are removed from the import. If a name is in `helperLocalNames` but not `transformedHelpers`, its import specifier is preserved.
 

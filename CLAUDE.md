@@ -68,9 +68,9 @@ Build order: `@llui/dom` and `@llui/effects` first (no deps), then `@llui/test`,
 **Two composition levels:**
 
 - **Level 1 (default):** View functions — modules exporting `update()` and `view()` functions. Parent owns state; child operates on a slice. Use `(props, send)` convention.
-- **Level 2 (opt-in):** `child()` — full component boundary with own bitmask, update cycle, and scope tree. Only for 30+ state paths, library components, or independent effect lifecycle.
+- **Level 2 (opt-in):** `child()` — full component boundary with own bitmask, update cycle, and scope tree. Only for 32+ state paths (past the single-mask limit), library components, or independent effect lifecycle.
 
-**Bitmask tiers:** ≤31 unique access paths → single number mask. 32–62 → two-word mask pair. 63+ → compiler warning recommending decomposition.
+**Bitmask:** single 31-bit `number` mask. Paths 0–30 get individual bits; 32+ paths overflow to `FULL_MASK` (-1) with a compiler warning naming the largest top-level fields to extract.
 
 **Effects as data:** `update()` returns `[newState, effects]`. Core runtime handles `delay` and `log`. The `@llui/effects` package provides `handleEffects<E>().else(handler)` for http/cancel/debounce/sequence/race.
 

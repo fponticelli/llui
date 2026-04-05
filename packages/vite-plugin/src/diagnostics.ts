@@ -93,7 +93,7 @@ export function diagnose(source: string): Diagnostic[] {
   const msgVariants = collectMsgVariants(sf)
 
   // Collect state access paths for bitmask warning
-  const statePathCount = countStateAccessPaths(sf)
+  const statePaths = collectStatePaths(sf)
 
   function visit(node: ts.Node): void {
     checkMapOnState(node, sf, diagnostics)
@@ -101,7 +101,7 @@ export function diagnose(source: string): Diagnostic[] {
     checkAccessibility(node, sf, diagnostics)
     checkControlledInput(node, sf, diagnostics)
     checkChildStaticProps(node, sf, diagnostics)
-    checkBitmaskTierWarning(node, sf, diagnostics, statePathCount)
+    checkBitmaskOverflow(node, sf, diagnostics, statePaths)
     checkNamespaceImport(node, sf, diagnostics)
     checkSpreadChildren(node, sf, diagnostics)
 
@@ -467,9 +467,9 @@ function checkChildStaticProps(node: ts.Node, sf: ts.SourceFile, diagnostics: Di
   }
 }
 
-// ── Bitmask tier boundary warning ───────────────────────────────
+// ── Bitmask overflow warning ────────────────────────────────────
 
-function countStateAccessPaths(sf: ts.SourceFile): number {
+function collectStatePaths(sf: ts.SourceFile): Set<string> {
   const paths = new Set<string>()
 
   function visit(node: ts.Node): void {
@@ -495,7 +495,7 @@ function countStateAccessPaths(sf: ts.SourceFile): number {
   }
 
   visit(sf)
-  return paths.size
+  return paths
 }
 
 function extractAccessPaths(node: ts.Node, paramName: string, paths: Set<string>): void {
@@ -518,23 +518,38 @@ function resolveSimpleChain(node: ts.PropertyAccessExpression, paramName: string
   return parts.join('.')
 }
 
-function checkBitmaskTierWarning(
+function checkBitmaskOverflow(
   node: ts.Node,
   sf: ts.SourceFile,
   diagnostics: Diagnostic[],
-  pathCount: number,
+  paths: Set<string>,
 ): void {
   // Only emit once, on the component() call
   if (!ts.isCallExpression(node)) return
   if (!ts.isIdentifier(node.expression) || node.expression.text !== 'component') return
 
-  if (pathCount > 31) {
-    const overflow = pathCount - 31
-    const { line, column } = pos(node, sf)
-    diagnostics.push({
-      message: `Component at line ${line} has ${pathCount} unique state access paths (${overflow} past the 31-path limit). Paths 32..${pathCount} fall back to FULL_MASK — their changes re-evaluate every binding in the component. Decompose into child components for optimal performance.`,
-      line,
-      column,
-    })
+  const pathCount = paths.size
+  if (pathCount <= 31) return
+
+  const overflow = pathCount - 31
+  const { line, column } = pos(node, sf)
+
+  // Group paths by top-level field so authors know which slice to extract.
+  // `resolveSimpleChain` already truncates to depth 2 (e.g. "user.name"),
+  // so splitting on "." gives us the top-level field.
+  const byTopLevel = new Map<string, number>()
+  for (const p of paths) {
+    const top = p.split('.', 1)[0]!
+    byTopLevel.set(top, (byTopLevel.get(top) ?? 0) + 1)
   }
+  const breakdown = [...byTopLevel.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .map(([field, n]) => `${field} (${n})`)
+    .join(', ')
+
+  diagnostics.push({
+    message: `Component at line ${line} has ${pathCount} unique state access paths (${overflow} past the 31-path limit). Paths 32..${pathCount} fall back to FULL_MASK — their changes re-evaluate every binding in the component. Top-level fields by path count: ${breakdown}. Extract the largest fields into child components or slice handlers.`,
+    line,
+    column,
+  })
 }
