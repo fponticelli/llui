@@ -22,6 +22,16 @@ export function _setHmrModule(m: typeof import('./hmr')): void {
   hmrModule = m
 }
 
+// ── DevTools auto-install (dev only) ────────────────────────────
+// Set by enableDevTools() from '@llui/dom/devtools' — never imported in production.
+
+let devToolsInstall: ((inst: object) => void) | null = null
+
+/** @internal Called by enableDevTools in the devtools module */
+export function _setDevToolsInstall(fn: ((inst: object) => void) | null): void {
+  devToolsInstall = fn
+}
+
 export interface MountOptions {
   devTools?: boolean
 }
@@ -40,6 +50,9 @@ export function mountApp<S, M, E>(
   }
 
   const inst = createComponentInstance(def, data)
+
+  // Dev-only: auto-install devtools if enabled via '@llui/dom/devtools' import
+  if (devToolsInstall) devToolsInstall(inst)
 
   // Dev-only: warn if initial state contains non-serializable values.
   // Silent bug-bomb: Date/Map/Set/class instances break SSR, hydration, replay tools.

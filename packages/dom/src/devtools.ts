@@ -1,5 +1,16 @@
 import { flushInstance, type ComponentInstance } from './update-loop'
+import { _setDevToolsInstall } from './mount'
 import type { Binding } from './types'
+
+/**
+ * Enable devtools auto-installation for every mountApp call. Called by
+ * compiler-generated dev code — never imported in production builds.
+ * Once enabled, every mounted component attaches `globalThis.__lluiDebug`
+ * to the most recently mounted instance.
+ */
+export function enableDevTools(): void {
+  _setDevToolsInstall(installDevTools)
+}
 
 export interface MessageRecord {
   index: number

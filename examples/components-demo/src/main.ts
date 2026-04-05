@@ -13,6 +13,7 @@ import {
   p,
   label,
   each,
+  onMount,
 } from '@llui/dom'
 
 import { switchMachine, type SwitchState, type SwitchMsg } from '@llui/components/switch'
@@ -343,6 +344,60 @@ function progressSection(): Node {
 }
 
 function sliderSection(): Node {
+  // Wire pointer drag: find the control element at mount time and dispatch
+  // setThumb messages as the pointer moves. min/max/step match the slider.init
+  // config at the top of this file.
+  onMount(() => {
+    const control = document.querySelector(
+      '[data-scope="slider"][data-part="control"]',
+    ) as HTMLElement | null
+    if (!control) return
+
+    const MIN = 0
+    const MAX = 100
+    const STEP = 5
+    let dragging = false
+
+    const computeValue = (clientX: number): number => {
+      const rect = control.getBoundingClientRect()
+      const pct = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width))
+      const raw = MIN + pct * (MAX - MIN)
+      return Math.round(raw / STEP) * STEP
+    }
+
+    const onDown = (e: PointerEvent): void => {
+      dragging = true
+      control.setPointerCapture(e.pointerId)
+      sendGlobal({
+        type: 'slider',
+        msg: { type: 'setThumb', index: 0, value: computeValue(e.clientX) },
+      })
+    }
+    const onMove = (e: PointerEvent): void => {
+      if (!dragging) return
+      sendGlobal({
+        type: 'slider',
+        msg: { type: 'setThumb', index: 0, value: computeValue(e.clientX) },
+      })
+    }
+    const onUp = (e: PointerEvent): void => {
+      dragging = false
+      if (control.hasPointerCapture(e.pointerId)) control.releasePointerCapture(e.pointerId)
+    }
+
+    control.addEventListener('pointerdown', onDown)
+    control.addEventListener('pointermove', onMove)
+    control.addEventListener('pointerup', onUp)
+    control.addEventListener('pointercancel', onUp)
+
+    return () => {
+      control.removeEventListener('pointerdown', onDown)
+      control.removeEventListener('pointermove', onMove)
+      control.removeEventListener('pointerup', onUp)
+      control.removeEventListener('pointercancel', onUp)
+    }
+  })
+
   return div({ class: 'demo-section' }, [
     h2({ class: 'demo-title' }, [text('Slider')]),
     div({ ...sliderParts.root, class: 'relative' }, [

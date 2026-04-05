@@ -331,7 +331,9 @@ if (import.meta.hot) {
 
   return `
 import { enableHmr as __enableHmr, replaceComponent as __replaceComponent } from '@llui/dom/hmr'
+import { enableDevTools as __enableDevTools } from '@llui/dom/devtools'
 __enableHmr()
+__enableDevTools()
 if (import.meta.hot) {
   import.meta.hot.accept(() => {
 ${replaceCalls}

@@ -93,6 +93,22 @@ describe('DevTools', () => {
     delete globalThis.__lluiDebug
   })
 
+  it('enableDevTools() auto-installs on every mountApp call', async () => {
+    const { enableDevTools } = await import('../src/devtools')
+    const { _setDevToolsInstall } = await import('../src/mount')
+    // Enable auto-install
+    enableDevTools()
+    // Mount a component via public API
+    const container = document.createElement('div')
+    mountApp(container, Counter)
+    expect(globalThis.__lluiDebug).toBeDefined()
+    expect(globalThis.__lluiDebug!.getState()).toEqual({ count: 0 })
+
+    // Reset hook so later tests aren't affected
+    _setDevToolsInstall(null)
+    delete globalThis.__lluiDebug
+  })
+
   it('exportTrace produces valid LluiTrace format', () => {
     mountWithDevTools()
 
