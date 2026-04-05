@@ -1145,7 +1145,21 @@
     </style>
   </head>
   <body class="bg-slate-50 text-slate-900">
-    <div id="app" class="mx-auto max-w-5xl p-6"></div>
+    <div class="mx-auto max-w-5xl p-6">
+      <div class="mb-4">
+        <h1 class="text-3xl font-bold">LLui Components</h1>
+        <p class="mt-1 text-slate-600">
+          Headless components styled with Tailwind via <span class="font-mono text-sm">data-scope</span> /
+          <span class="font-mono text-sm">data-part</span> attributes. The demo is split into 4 independent
+          apps (inputs, data, pickers/editing, overlays) each with its own state — keeps every component
+          under the 31-path bitmask tier for optimal reactivity.
+        </p>
+      </div>
+      <div id="sec-inputs"></div>
+      <div id="sec-data"></div>
+      <div id="sec-pickers-editing"></div>
+      <div id="sec-overlays"></div>
+    </div>
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>
