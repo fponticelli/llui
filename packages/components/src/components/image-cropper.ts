@@ -147,14 +147,20 @@ function applyResize(
       x = state.crop.x + (state.crop.width - newWidth) / 2
       width = newWidth
     } else {
-      // Corner: pick the larger of the two deltas to drive the aspect.
-      const byW = width / state.aspectRatio
-      const byH = height * state.aspectRatio
-      if (Math.abs(byW - height) < Math.abs(byH - width)) {
-        height = byW
+      // Corner: use the axis with the larger pointer delta (expressed in
+      // width-equivalent units) to drive the other. This keeps the thumb
+      // tracking the pointer linearly instead of snapping to whichever
+      // current dimension happens to match the aspect ratio closer.
+      const dw = width - state.crop.width
+      const dh = height - state.crop.height
+      const dhAsDw = dh * state.aspectRatio
+      if (Math.abs(dw) >= Math.abs(dhAsDw)) {
+        // Width leads; derive height, re-anchor top if resizing from north.
+        height = width / state.aspectRatio
         if (handle.includes('n')) y = state.crop.y + (state.crop.height - height)
       } else {
-        width = byH
+        // Height leads; derive width, re-anchor left if resizing from west.
+        width = height * state.aspectRatio
         if (handle.includes('w')) x = state.crop.x + (state.crop.width - width)
       }
     }

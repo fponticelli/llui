@@ -81,6 +81,44 @@ describe('image-cropper reducer', () => {
     expect(s.crop.width).toBe(150)
   })
 
+  it('corner resize with aspect ratio picks the larger pointer delta', () => {
+    // 1:1 aspect; se corner; drag is (dx=20, dy=5) — width should drive.
+    const s0 = {
+      ...init({
+        image: { width: 500, height: 500 },
+        crop: { x: 0, y: 0, width: 100, height: 100 },
+        aspectRatio: 1,
+      }),
+      resizing: 'se' as const,
+    } as ImageCropperState
+    const [s] = update(s0, { type: 'resizeMove', dx: 20, dy: 5 })
+    // Both axes grow by the bigger delta (20) to preserve 1:1 ratio.
+    expect(s.crop.width).toBe(120)
+    expect(s.crop.height).toBe(120)
+
+    // Now drag with dy bigger than dx — height drives.
+    const s1 = { ...s0, crop: { x: 0, y: 0, width: 100, height: 100 } } as ImageCropperState
+    const [s2] = update(s1, { type: 'resizeMove', dx: 5, dy: 25 })
+    expect(s2.crop.width).toBe(125)
+    expect(s2.crop.height).toBe(125)
+  })
+
+  it('corner resize with 2:1 aspect scales deltas by ratio', () => {
+    // aspect=2 (width:height = 2:1); dx=10, dy=10; dhAsDw=10*2=20 > |dx|=10,
+    // so height drives; width = height*2 = 120.
+    const s0 = {
+      ...init({
+        image: { width: 500, height: 500 },
+        crop: { x: 0, y: 0, width: 100, height: 50 },
+        aspectRatio: 2,
+      }),
+      resizing: 'se' as const,
+    } as ImageCropperState
+    const [s] = update(s0, { type: 'resizeMove', dx: 10, dy: 10 })
+    expect(s.crop.height).toBe(60)
+    expect(s.crop.width).toBe(120)
+  })
+
   it('resize enforces minSize', () => {
     const s0 = {
       ...init({

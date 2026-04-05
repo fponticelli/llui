@@ -60,7 +60,7 @@ const update = mergeHandlers<State, Msg, never>(
 const PLACEHOLDER_IMG =
   'data:image/svg+xml;utf8,' +
   encodeURIComponent(
-    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 300">' +
+    '<svg xmlns="http://www.w3.org/2000/svg" width="400" height="300" viewBox="0 0 400 300">' +
       '<defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1">' +
       '<stop offset="0%" stop-color="#7c3aed"/>' +
       '<stop offset="100%" stop-color="#ec4899"/>' +
