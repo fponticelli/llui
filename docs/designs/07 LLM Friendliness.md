@@ -171,7 +171,7 @@ each({
 
 The accessor proxy gives `item.text` — typed as `() => T['text']` — which threads naturally into bindings. TypeScript infers field types from `T`, so `item.text` and `item.done` are distinct types. The compiler also emits diagnostics for common misuse patterns.
 
-The main residual risk is forgetting that `item.field` is the *accessor*, not the value — e.g. writing `item.text + '!'` inside an event handler (concatenating a function). The correct imperative read is `item.text()`.
+The main residual risk is forgetting that `item.field` is the _accessor_, not the value — e.g. writing `item.text + '!'` inside an event handler (concatenating a function). The correct imperative read is `item.text()`.
 
 ### 3.3 `memo()` Omission
 

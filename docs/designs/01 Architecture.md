@@ -451,11 +451,7 @@ function foreign<S, M, T extends Record<string, unknown>, Instance>(opts: {
   sync:
     | ((bag: { instance: Instance; props: T; prev: T | undefined }) => void)
     | {
-        [K in keyof T]?: (bag: {
-          instance: Instance
-          value: T[K]
-          prev: T[K] | undefined
-        }) => void
+        [K in keyof T]?: (bag: { instance: Instance; value: T[K]; prev: T[K] | undefined }) => void
       }
   /** Clean up the instance. Runs when the owning scope is disposed. */
   destroy: (instance: Instance) => void

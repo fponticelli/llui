@@ -102,6 +102,10 @@ function processMessages<S, M, E>(inst: ComponentInstance<S, M, E>): void {
   const bindings = inst.allBindings
   const bindingsBeforePhase1 = bindings.length
 
+  // Set current dirty mask BEFORE Phase 1 so memo() accessors used in
+  // structural primitives (e.g. each.items) can use the bitmask fast path.
+  setCurrentDirtyMask(combinedDirty)
+
   // Phase 1 — structural reconciliation (instance-local blocks)
   const snapshot = inst.structuralBlocks.slice()
   for (const block of snapshot) {
@@ -122,7 +126,6 @@ function processMessages<S, M, E>(inst: ComponentInstance<S, M, E>): void {
   // Phase 2 — binding updates (flat array, no tree walk)
   // Only iterate bindings that existed before Phase 1.
   // Fresh bindings (created during Phase 1) already have initial values set.
-  setCurrentDirtyMask(combinedDirty)
   if (combinedDirty !== 0) {
     const state = inst.state
     for (let i = 0, len = phase2Len; i < len; i++) {

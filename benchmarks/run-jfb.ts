@@ -36,7 +36,7 @@ function detectJfbRepo(): string {
       { encoding: 'utf8' },
     ).trim()
     if (!out) return WORKSPACE_REPO
-    const pidLine = execSync("lsof -n -iTCP:8080 -sTCP:LISTEN -Fp 2>/dev/null | head -1", {
+    const pidLine = execSync('lsof -n -iTCP:8080 -sTCP:LISTEN -Fp 2>/dev/null | head -1', {
       encoding: 'utf8',
     }).trim()
     const pid = pidLine.startsWith('p') ? pidLine.slice(1) : ''
@@ -181,9 +181,7 @@ for (const fw of frameworksToRun) {
 
 type FwResults = Record<string, Record<string, number | null>>
 
-const baseline: FwResults = existsSync(BASELINE)
-  ? JSON.parse(readFileSync(BASELINE, 'utf8'))
-  : {}
+const baseline: FwResults = existsSync(BASELINE) ? JSON.parse(readFileSync(BASELINE, 'utf8')) : {}
 
 // Current = baseline seed for frameworks we didn't re-run, overlayed with fresh results
 // for frameworks we did re-run.
@@ -259,7 +257,8 @@ const baselineLlui = baseline.llui
 const currentLlui = current.llui
 if (baselineLlui && currentLlui && baselineLlui !== currentLlui) {
   console.log('\n=== LLui: Current vs Baseline ===\n')
-  const hdr = 'Operation'.padEnd(18) + 'Baseline'.padStart(W) + 'Current'.padStart(W) + 'Delta'.padStart(W)
+  const hdr =
+    'Operation'.padEnd(18) + 'Baseline'.padStart(W) + 'Current'.padStart(W) + 'Delta'.padStart(W)
   console.log(hdr)
   console.log('-'.repeat(hdr.length))
   let anySignificant = false

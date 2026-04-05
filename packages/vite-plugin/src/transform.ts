@@ -151,6 +151,7 @@ export function transformLlui(
   const bailedHelpers = new Set<string>()
   let usesElTemplate = false
   let usesElSplit = false
+  let usesMemo = false
 
   const f = ts.factory
   const printer = ts.createPrinter({ newLine: ts.NewLineKind.LineFeed })
@@ -164,15 +165,27 @@ export function transformLlui(
     const origStart = hasPos ? node.getStart(sourceFile) : -1
     const origEnd = hasPos ? node.getEnd() : -1
 
-    // Pass 0: Deduplicate item() selectors in each() render callbacks
+    // Pass 0: each() optimizations — dedup item() selectors + auto-wrap items in memo
     if (
       ts.isCallExpression(node) &&
       ts.isIdentifier(node.expression) &&
       node.expression.text === 'each'
     ) {
-      const rewritten = tryDeduplicateItemSelectors(node, f, printer, sourceFile)
-      if (rewritten) {
-        const result = ts.visitEachChild(rewritten, visitor, undefined!)
+      let current: ts.CallExpression = node
+      let changed = false
+      const memoWrapped = tryWrapEachItemsWithMemo(current, fieldBits, f)
+      if (memoWrapped) {
+        current = memoWrapped
+        changed = true
+        usesMemo = true
+      }
+      const deduped = tryDeduplicateItemSelectors(current, f, printer, sourceFile)
+      if (deduped) {
+        current = deduped
+        changed = true
+      }
+      if (changed) {
+        const result = ts.visitEachChild(current, visitor, undefined!)
         if (hasPos) edits.push({ start: origStart, end: origEnd, replacement: '' })
         return result
       }
@@ -235,6 +248,7 @@ export function transformLlui(
     safeToRemove,
     usesElSplit,
     usesElTemplate,
+    usesMemo,
     f,
   )
 
@@ -809,9 +823,10 @@ function cleanupImports(
   compiled: Set<string>,
   usesElSplit: boolean,
   usesElTemplate: boolean,
+  usesMemo: boolean,
   f: ts.NodeFactory,
 ): ts.SourceFile {
-  if (compiled.size === 0 && !usesElTemplate && !usesElSplit) return sf
+  if (compiled.size === 0 && !usesElTemplate && !usesElSplit && !usesMemo) return sf
 
   const clause = lluiImport.importClause
   if (!clause?.namedBindings || !ts.isNamedImports(clause.namedBindings)) return sf
@@ -826,6 +841,11 @@ function cleanupImports(
   const hasElTemplate = clause.namedBindings.elements.some((s) => s.name.text === 'elTemplate')
   if (!hasElTemplate && usesElTemplate) {
     remaining.push(f.createImportSpecifier(false, undefined, f.createIdentifier('elTemplate')))
+  }
+
+  const hasMemo = clause.namedBindings.elements.some((s) => s.name.text === 'memo')
+  if (!hasMemo && usesMemo) {
+    remaining.push(f.createImportSpecifier(false, undefined, f.createIdentifier('memo')))
   }
 
   const newBindings = f.createNamedImports(remaining)
@@ -986,9 +1006,7 @@ function tryDeduplicateItemSelectors(
   const occurrences: Occurrence[] = []
 
   // Try to extract a simple field name from an arrow selector: (t) => t.FIELD → "FIELD"
-  function extractSimpleField(
-    sel: ts.ArrowFunction | ts.FunctionExpression,
-  ): string | null {
+  function extractSimpleField(sel: ts.ArrowFunction | ts.FunctionExpression): string | null {
     if (sel.parameters.length !== 1) return null
     const paramName = sel.parameters[0]!.name
     if (!ts.isIdentifier(paramName)) return null
@@ -1012,9 +1030,10 @@ function tryDeduplicateItemSelectors(
       const sel = node.arguments[0]!
       if (ts.isArrowFunction(sel) || ts.isFunctionExpression(sel)) {
         const field = extractSimpleField(sel)
-        const key = field !== null
-          ? `field:${field}`
-          : `expr:${printer.printNode(ts.EmitHint.Expression, sel, sourceFile)}`
+        const key =
+          field !== null
+            ? `field:${field}`
+            : `expr:${printer.printNode(ts.EmitHint.Expression, sel, sourceFile)}`
         occurrences.push({ kind: 'call', node, selector: sel, key })
       }
     }
@@ -1187,6 +1206,117 @@ function tryDeduplicateItemSelectors(
   // Rebuild the each() call with the new render property
   const newProps = arg.properties.map((prop) =>
     prop === renderProp ? f.createPropertyAssignment('render', newRenderFn) : prop,
+  )
+  const newArg = f.createObjectLiteralExpression(newProps, true)
+
+  return f.createCallExpression(eachCall.expression, eachCall.typeArguments, [
+    newArg,
+    ...eachCall.arguments.slice(1),
+  ])
+}
+
+// ── Auto-memoize each() items accessor ──────────────────────────
+
+const ALLOCATING_METHODS = new Set([
+  'filter',
+  'map',
+  'slice',
+  'sort',
+  'reverse',
+  'concat',
+  'flat',
+  'flatMap',
+  'reduce',
+])
+
+/**
+ * Detect whether an expression body contains array-allocating operations
+ * that would produce a new array on every call.
+ */
+function accessorAllocatesArray(body: ts.ConciseBody | ts.Expression): boolean {
+  let found = false
+  function walk(n: ts.Node): void {
+    if (found) return
+    // .method() on something — check the method name
+    if (
+      ts.isCallExpression(n) &&
+      ts.isPropertyAccessExpression(n.expression) &&
+      ts.isIdentifier(n.expression.name) &&
+      ALLOCATING_METHODS.has(n.expression.name.text)
+    ) {
+      found = true
+      return
+    }
+    // Spread in array literal: [...x, y]
+    if (ts.isArrayLiteralExpression(n) && n.elements.some((el) => ts.isSpreadElement(el))) {
+      found = true
+      return
+    }
+    // Array.from(...)
+    if (
+      ts.isCallExpression(n) &&
+      ts.isPropertyAccessExpression(n.expression) &&
+      ts.isIdentifier(n.expression.expression) &&
+      n.expression.expression.text === 'Array' &&
+      ts.isIdentifier(n.expression.name) &&
+      n.expression.name.text === 'from'
+    ) {
+      found = true
+      return
+    }
+    ts.forEachChild(n, walk)
+  }
+  walk(body)
+  return found
+}
+
+/**
+ * Wrap `each({ items: (s) => s.x.filter(...) })` in `memo()` with a bitmask,
+ * so the filter is only re-run when its dependencies change. For items accessors
+ * that don't allocate (e.g. `(s) => s.items`), each's built-in same-ref fast
+ * path already suffices — no wrap needed.
+ *
+ * Returns null if no wrapping was applied.
+ */
+function tryWrapEachItemsWithMemo(
+  eachCall: ts.CallExpression,
+  fieldBits: Map<string, number>,
+  f: ts.NodeFactory,
+): ts.CallExpression | null {
+  const arg = eachCall.arguments[0]
+  if (!arg || !ts.isObjectLiteralExpression(arg)) return null
+
+  let itemsProp: ts.PropertyAssignment | null = null
+  for (const prop of arg.properties) {
+    if (ts.isPropertyAssignment(prop) && ts.isIdentifier(prop.name) && prop.name.text === 'items') {
+      itemsProp = prop
+      break
+    }
+  }
+  if (!itemsProp) return null
+
+  const accessor = itemsProp.initializer
+  if (!ts.isArrowFunction(accessor) && !ts.isFunctionExpression(accessor)) return null
+
+  // Don't wrap if it's already wrapped (call expression like memo(...) or similar)
+  // We only wrap raw arrow functions.
+
+  // Skip if the body doesn't allocate — each's own ref check handles those.
+  const body = ts.isArrowFunction(accessor) ? accessor.body : accessor.body
+  if (!accessorAllocatesArray(body)) return null
+
+  const { mask, readsState } = computeAccessorMask(accessor, fieldBits)
+  if (mask === 0 && !readsState) return null // constant, nothing to memoize
+  const finalMask = mask === 0 && readsState ? 0xffffffff | 0 : mask
+
+  // Wrap: memo(accessor, mask)
+  const wrapped = f.createCallExpression(f.createIdentifier('memo'), undefined, [
+    accessor,
+    createMaskLiteral(f, finalMask),
+  ])
+
+  const newProps = arg.properties.map((p) =>
+    p === itemsProp ? f.createPropertyAssignment('items', wrapped) : p,
   )
   const newArg = f.createObjectLiteralExpression(newProps, true)
 
@@ -1425,11 +1555,9 @@ function analyzeSubtree(
       return null
     }
 
-    // Bail if mixed static + reactive text in same parent — HTML parser
-    // merges adjacent text nodes, making childIdx indices unreliable
-    const hasStatic = children.some((c) => c.type === 'staticText')
-    const hasReactive = children.some((c) => c.type === 'reactiveText')
-    if (hasStatic && hasReactive) return null
+    // Note: mixed static + reactive text in the same parent is now supported
+    // because reactive text uses <!--$--> comment placeholders that break
+    // text-node merging at parse time.
   } else if (childrenArg && childrenArg.kind !== ts.SyntaxKind.NullKeyword) {
     // Non-array children (e.g., spread, variable) — bail
     return null
@@ -1479,8 +1607,10 @@ function buildTemplateHTML(node: AnalyzedNode): string {
     } else if (child.type === 'element') {
       html += buildTemplateHTML(child.node)
     } else if (child.type === 'reactiveText') {
-      // Placeholder text node — patch sets nodeValue instead of createTextNode
-      html += ' '
+      // Placeholder comment node — at patch time it's replaced with a text node.
+      // Comments break HTML text-node merging, so adjacent static text keeps
+      // stable childIdx positions.
+      html += '<!--$-->'
     }
   }
 
@@ -1640,20 +1770,58 @@ function emitSubtreeTemplate(
       )
     }
 
-    // Reactive text children — reference placeholder text nodes from template
+    // Reactive text children — walk to placeholder comment, replace with text node, bind
     for (const rt of op.reactiveTexts) {
+      const cVar = `__c${counter.t}`
       const tVar = `__t${counter.t++}`
-      // const __t0 = nodeRef.firstChild[.nextSibling...]  (placeholder text node)
-      let textWalk: ts.Expression = f.createPropertyAccessExpression(nodeRef, 'firstChild')
+      // const __c0 = nodeRef.firstChild[.nextSibling...]  (placeholder comment node)
+      let walk: ts.Expression = f.createPropertyAccessExpression(nodeRef, 'firstChild')
       for (let i = 0; i < rt.childIdx; i++) {
-        textWalk = f.createPropertyAccessExpression(textWalk, 'nextSibling')
+        walk = f.createPropertyAccessExpression(walk, 'nextSibling')
       }
       stmts.push(
         f.createVariableStatement(
           undefined,
           f.createVariableDeclarationList(
-            [f.createVariableDeclaration(tVar, undefined, undefined, textWalk)],
+            [f.createVariableDeclaration(cVar, undefined, undefined, walk)],
             ts.NodeFlags.Const,
+          ),
+        ),
+      )
+      // const __t0 = document.createTextNode("")
+      // __c0.parentNode.replaceChild(__t0, __c0)
+      stmts.push(
+        f.createVariableStatement(
+          undefined,
+          f.createVariableDeclarationList(
+            [
+              f.createVariableDeclaration(
+                tVar,
+                undefined,
+                undefined,
+                f.createCallExpression(
+                  f.createPropertyAccessExpression(
+                    f.createIdentifier('document'),
+                    'createTextNode',
+                  ),
+                  undefined,
+                  [f.createStringLiteral('')],
+                ),
+              ),
+            ],
+            ts.NodeFlags.Const,
+          ),
+        ),
+      )
+      stmts.push(
+        f.createExpressionStatement(
+          f.createCallExpression(
+            f.createPropertyAccessExpression(
+              f.createPropertyAccessExpression(f.createIdentifier(cVar), 'parentNode'),
+              'replaceChild',
+            ),
+            undefined,
+            [f.createIdentifier(tVar), f.createIdentifier(cVar)],
           ),
         ),
       )

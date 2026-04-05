@@ -246,6 +246,46 @@ describe('per-item accessor calls', () => {
     expect(out).toMatch(/"attr",\s*"data-id"/)
   })
 
+  it('auto-wraps each.items in memo() when accessor allocates (filter/map/etc.)', () => {
+    const src = `
+      import { component, each, div, text } from '@llui/dom'
+      export const C = component({
+        name: 'C',
+        init: () => [{ todos: [], filter: 'all' }, []],
+        update: (s, m) => [s, []],
+        view: () => each({
+          items: s => s.todos.filter(t => !t.done),
+          key: t => t.id,
+          render: ({ item }) => [div([text(item.text)])],
+        }),
+      })
+    `
+    const out = t(src)
+    // Should wrap items with memo(...)
+    expect(out).toMatch(/items:\s*memo\(/)
+    // And add memo to imports
+    expect(out).toMatch(/import\s*\{[^}]*\bmemo\b/)
+  })
+
+  it('does NOT wrap each.items when accessor is a plain state read', () => {
+    const src = `
+      import { component, each, div, text } from '@llui/dom'
+      export const C = component({
+        name: 'C',
+        init: () => [{ items: [] }, []],
+        update: (s, m) => [s, []],
+        view: () => each({
+          items: s => s.items,
+          key: t => t.id,
+          render: ({ item }) => [div([text(item.text)])],
+        }),
+      })
+    `
+    const out = t(src)
+    // Plain accessor — each's same-ref fast path handles it; memo not needed
+    expect(out).not.toMatch(/items:\s*memo\(/)
+  })
+
   it('dedups repeated item.field across call and property access forms', () => {
     const src = `
       import { component, div, each, text } from '@llui/dom'
@@ -445,10 +485,10 @@ describe('subtree collapse — nested elements → elTemplate', () => {
     `
     const out = t(src)
     expect(out).toContain('elTemplate')
-    // HTML should have placeholder space for reactive text
-    expect(out).toContain('<div><span> </span></div>')
-    // Should reference placeholder text node via firstChild, not create new one
-    expect(out).not.toContain('createTextNode')
+    // HTML should have a comment placeholder for reactive text
+    expect(out).toContain('<div><span><!--$--></span></div>')
+    // createTextNode replaces the comment at clone time, restoring stable childIdx
+    // even with interleaved static + reactive text
     expect(out).toContain('firstChild')
     expect(out).toContain('__bind')
     expect(out).toContain('"text"')
@@ -475,11 +515,37 @@ describe('subtree collapse — nested elements → elTemplate', () => {
     `
     const out = t(src)
     expect(out).toContain('elTemplate')
-    // Template should have placeholder spaces for reactive text
-    expect(out).toMatch(/<tr><td[^>]*id[^>]*> <\/td><td[^>]*label[^>]*> <\/td><\/tr>/)
-    // Should reference placeholder nodes, not create new ones
-    expect(out).not.toContain('createTextNode')
+    // Template has comment placeholders for reactive text
+    expect(out).toMatch(
+      /<tr><td[^>]*id[^>]*><!--\$--><\/td><td[^>]*label[^>]*><!--\$--><\/td><\/tr>/,
+    )
     expect(out).toContain('__bind')
+  })
+
+  it('supports interleaved static + reactive text in same parent', () => {
+    const src = `
+      import { component, div, span, text } from '@llui/dom'
+      export const C = component({
+        name: 'C',
+        init: () => [{ name: 'world' }, []],
+        update: (s, m) => [s, []],
+        view: () => [
+          div({}, [
+            text('Hello, '),
+            text((s: { name: string }) => s.name),
+            text('!'),
+            span({ class: 'dot' }, []),
+          ]),
+        ],
+      })
+    `
+    const out = t(src)
+    expect(out).toContain('elTemplate')
+    // Template: static "Hello, ", comment placeholder, static "!"
+    expect(out).toContain('>Hello, <!--$-->!<')
+    // Should replace comment with text node at clone time
+    expect(out).toContain('createTextNode')
+    expect(out).toContain('replaceChild')
   })
 
   it('does not collapse when children include structural primitives', () => {

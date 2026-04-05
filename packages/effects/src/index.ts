@@ -48,6 +48,21 @@ export interface DebounceEffect {
   inner: BuiltinEffect
 }
 
+/** Fires `msg` once, after `ms` milliseconds. Auto-cancels if the component unmounts. */
+export interface TimeoutEffect {
+  type: 'timeout'
+  ms: number
+  msg: unknown
+}
+
+/** Fires `msg` every `ms` milliseconds. Cancel with `cancel(key)`. */
+export interface IntervalEffect {
+  type: 'interval'
+  key: string
+  ms: number
+  msg: unknown
+}
+
 export interface SequenceEffect {
   type: 'sequence'
   effects: BuiltinEffect[]
@@ -63,6 +78,8 @@ type BuiltinEffect =
   | CancelEffect
   | CancelReplaceEffect
   | DebounceEffect
+  | TimeoutEffect
+  | IntervalEffect
   | SequenceEffect
   | RaceEffect
 
@@ -91,6 +108,14 @@ export function cancel(token: string, inner?: BuiltinEffect): CancelEffect | Can
 
 export function debounce(key: string, ms: number, inner: BuiltinEffect): DebounceEffect {
   return { type: 'debounce', key, ms, inner }
+}
+
+export function timeout<M>(ms: number, msg: M): TimeoutEffect {
+  return { type: 'timeout', ms, msg }
+}
+
+export function interval<M>(key: string, ms: number, msg: M): IntervalEffect {
+  return { type: 'interval', key, ms, msg }
 }
 
 export function sequence(effects: BuiltinEffect[]): SequenceEffect {
@@ -197,6 +222,12 @@ function dispatchEffect(
     case 'debounce':
       runDebounce(effect as DebounceEffect, send, signal, cancelControllers, debounceTimers, custom)
       break
+    case 'timeout':
+      runTimeout(effect as TimeoutEffect, send, signal)
+      break
+    case 'interval':
+      runInterval(effect as IntervalEffect, send, signal, cancelControllers)
+      break
     case 'sequence':
       runSequence(effect as SequenceEffect, send, signal, cancelControllers, debounceTimers, custom)
       break
@@ -297,6 +328,45 @@ function runCancel(
     componentSignal.addEventListener('abort', () => ctrl.abort(), { once: true })
     dispatchEffect(effect.inner, send, ctrl.signal, cancelControllers, debounceTimers, custom)
   }
+}
+
+function runTimeout(effect: TimeoutEffect, send: InternalSend, signal: AbortSignal): void {
+  const timer = setTimeout(() => {
+    if (!signal.aborted) send(effect.msg as Record<string, unknown>)
+  }, effect.ms)
+  signal.addEventListener('abort', () => clearTimeout(timer), { once: true })
+}
+
+function runInterval(
+  effect: IntervalEffect,
+  send: InternalSend,
+  componentSignal: AbortSignal,
+  cancelControllers: Map<string, AbortController>,
+): void {
+  // Clear any existing interval on the same key
+  const existing = cancelControllers.get(effect.key)
+  if (existing) existing.abort()
+
+  const ctrl = new AbortController()
+  cancelControllers.set(effect.key, ctrl)
+  componentSignal.addEventListener('abort', () => ctrl.abort(), { once: true })
+
+  const timer = setInterval(() => {
+    if (ctrl.signal.aborted || componentSignal.aborted) {
+      clearInterval(timer)
+      return
+    }
+    send(effect.msg as Record<string, unknown>)
+  }, effect.ms)
+
+  ctrl.signal.addEventListener(
+    'abort',
+    () => {
+      clearInterval(timer)
+      cancelControllers.delete(effect.key)
+    },
+    { once: true },
+  )
 }
 
 function runDebounce(

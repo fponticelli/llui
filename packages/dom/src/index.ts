@@ -3,6 +3,7 @@
 export type {
   ComponentDef,
   Send,
+  Props,
   AppHandle,
   Scope,
   Binding,

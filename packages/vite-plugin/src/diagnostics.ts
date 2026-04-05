@@ -102,12 +102,57 @@ export function diagnose(source: string): Diagnostic[] {
     checkControlledInput(node, sf, diagnostics)
     checkChildStaticProps(node, sf, diagnostics)
     checkBitmaskTierWarning(node, sf, diagnostics, statePathCount)
+    checkNamespaceImport(node, sf, diagnostics)
+    checkSpreadChildren(node, sf, diagnostics)
 
     ts.forEachChild(node, visit)
   }
 
   visit(sf)
   return diagnostics
+}
+
+// ── "Almost-optimized" diagnostics ───────────────────────────────
+
+// Warns when a user writes `import * as L from '@llui/dom'` — the compiler
+// can only recognize named-import helpers, so namespace imports disable
+// template cloning/elSplit for every element call in the file.
+function checkNamespaceImport(node: ts.Node, sf: ts.SourceFile, diagnostics: Diagnostic[]): void {
+  if (!ts.isImportDeclaration(node)) return
+  if (!ts.isStringLiteral(node.moduleSpecifier)) return
+  if (node.moduleSpecifier.text !== '@llui/dom') return
+  const clause = node.importClause
+  if (!clause?.namedBindings) return
+  if (!ts.isNamespaceImport(clause.namedBindings)) return
+  const name = clause.namedBindings.name.text
+  const { line, column } = pos(clause.namedBindings, sf)
+  diagnostics.push({
+    message: `Namespace import '${name}' from '@llui/dom' at line ${line} disables compiler optimizations. Use named imports instead: import { div, text, ... } from '@llui/dom'.`,
+    line,
+    column,
+  })
+}
+
+// Warns when a children array contains a spread — the compiler can't
+// analyze variable-length children, so it bails on template cloning and
+// falls back to runtime elSplit. Not fatal, but silent.
+function checkSpreadChildren(node: ts.Node, sf: ts.SourceFile, diagnostics: Diagnostic[]): void {
+  if (!ts.isCallExpression(node)) return
+  if (!ts.isIdentifier(node.expression)) return
+  if (!ELEMENT_HELPERS.has(node.expression.text)) return
+  // Children could be at arguments[0] (children-only overload) or arguments[1]
+  for (const arg of node.arguments) {
+    if (!ts.isArrayLiteralExpression(arg)) continue
+    const hasSpread = arg.elements.some((el) => ts.isSpreadElement(el))
+    if (!hasSpread) continue
+    const { line, column } = pos(arg, sf)
+    diagnostics.push({
+      message: `Spread in children array of '${node.expression.text}()' at line ${line} disables template-clone compilation. For dynamic child counts, use each() instead.`,
+      line,
+      column,
+    })
+    return
+  }
 }
 
 function pos(node: ts.Node, sf: ts.SourceFile): { line: number; column: number } {

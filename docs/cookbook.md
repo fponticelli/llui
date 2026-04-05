@@ -124,8 +124,58 @@ export function header(send: Send<Msg>): Node[] {
 }
 
 // main component view:
-view: (send) => [...header(send), ...mainContent(send)]
+view: (send) => [header(send), mainContent(send)]
 ```
+
+### View functions with typed props: `Props<T, S>`
+
+When a view function needs data from state, make **every field an accessor**.
+Raw values captured at mount are frozen — a silent reactivity bug.
+
+```typescript
+import type { Props, Send } from '@llui/dom'
+
+type ToolbarData = {
+  tools: Tool[]
+  theme: 'light' | 'dark'
+  activeId: string | null
+}
+
+// Generic over S — parent supplies its own state type:
+export function toolbar<S>(props: Props<ToolbarData, S>, send: Send<ToolbarMsg>): Node[] {
+  return [
+    div({ class: (s) => `toolbar theme-${props.theme(s)}` }, [
+      each({
+        items: props.tools,
+        key: (t) => t.id,
+        render: ({ item, send }) => [
+          div(
+            {
+              class: (s) => (props.activeId(s) === item.id() ? 'tool active' : 'tool'),
+              onClick: () => send({ type: 'pick', id: item.id() }),
+            },
+            [text(item.label)],
+          ),
+        ],
+      }),
+    ]),
+  ]
+}
+
+// Caller — each field is an accessor. TypeScript errors if you pass a raw value:
+view: (send) =>
+  toolbar<State>(
+    {
+      tools: (s) => s.tools,
+      theme: (s) => s.settings.theme,
+      activeId: (s) => s.selectedId,
+    },
+    (msg) => send({ type: 'toolbar', msg }),
+  )
+```
+
+`Props<T, S>` maps `{ tools: Tool[] }` to `{ tools: (s: S) => Tool[] }` — making the
+reactive-accessor contract explicit and type-enforced.
 
 ### Minimal Intent Pattern
 
@@ -154,6 +204,48 @@ const update = mergeHandlers<State, Msg, Effect>(
   },
 )
 ```
+
+### Embedding a sub-component with `sliceHandler`
+
+`sliceHandler` lifts a sub-component's reducer into one that operates on the
+parent's full state + message type. The sub-component's state lives at a slice
+of the parent state, and the parent wraps sub-messages in its own discriminant.
+Pair with `mergeHandlers` to compose:
+
+```typescript
+import { mergeHandlers, sliceHandler } from '@llui/dom'
+import * as dialog from './components/dialog'
+
+// Parent state owns a slice for the dialog:
+type State = { confirm: dialog.State; todos: Todo[] }
+type Msg = { type: 'confirm'; msg: dialog.Msg } | { type: 'addTodo'; text: string }
+
+const update = mergeHandlers<State, Msg, Effect>(
+  sliceHandler({
+    get: (s) => s.confirm,
+    set: (s, v) => ({ ...s, confirm: v }),
+    narrow: (m) => (m.type === 'confirm' ? m.msg : null),
+    sub: dialog.update,
+  }),
+  (state, msg) => {
+    // Only sees messages the slice handler didn't claim:
+    switch (msg.type) {
+      case 'addTodo':
+        return [{ ...state, todos: [...state.todos, { text: msg.text }] }, []]
+    }
+  },
+)
+```
+
+**When to reach for this:** embedding a reusable component (dialog, combobox,
+date-picker) that ships its own `State`, `Msg`, and `update`. The parent stays
+type-safe: each sub-component gets a branded message variant (`{ type: 'confirm',
+msg: dialog.Msg }`) so the parent's `Msg` union is exhaustive and routing is
+explicit.
+
+**When NOT to use it:** for view-function composition (Level 1), where the
+parent owns the state directly and passes accessors down via `Props<T, S>`.
+`sliceHandler` is for genuine sub-components with their own update logic.
 
 ## Routing
 

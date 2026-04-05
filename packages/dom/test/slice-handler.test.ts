@@ -53,11 +53,13 @@ describe('sliceHandler', () => {
   })
 
   it('composes with mergeHandlers', () => {
-    const update = mergeHandlers<AppState, AppMsg, AppEffect>(
-      counterHandler,
-      (s, m) => (m.type === 'setName' ? [{ ...s, name: m.name }, []] : null),
+    const update = mergeHandlers<AppState, AppMsg, AppEffect>(counterHandler, (s, m) =>
+      m.type === 'setName' ? [{ ...s, name: m.name }, []] : null,
     )
-    const r1 = update({ counter: { count: 0 }, name: 'a' }, { type: 'counter', msg: { type: 'inc' } })
+    const r1 = update(
+      { counter: { count: 0 }, name: 'a' },
+      { type: 'counter', msg: { type: 'inc' } },
+    )
     expect(r1[0].counter.count).toBe(1)
     const r2 = update({ counter: { count: 0 }, name: 'a' }, { type: 'setName', name: 'b' })
     expect(r2[0].name).toBe('b')

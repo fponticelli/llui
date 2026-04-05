@@ -144,6 +144,31 @@ describe('controlled input without handler', () => {
 })
 
 describe('no warnings for clean code', () => {
+  it('warns on namespace import from @llui/dom', () => {
+    const src = `
+      import * as L from '@llui/dom'
+      export const foo = L.div({}, [L.text('hi')])
+    `
+    const w = warnings(src)
+    expect(w.some((m) => m.includes('Namespace import') && m.includes("'L'"))).toBe(true)
+  })
+
+  it('does not warn on named imports', () => {
+    const src = `import { div, text } from '@llui/dom'; div({}, [text('hi')])`
+    const w = warnings(src)
+    expect(w.some((m) => m.includes('Namespace import'))).toBe(false)
+  })
+
+  it('warns on spread in children array', () => {
+    const src = `
+      import { div, text } from '@llui/dom'
+      const children = [text('a'), text('b')]
+      export const el = div({}, [text('start'), ...children])
+    `
+    const w = warnings(src)
+    expect(w.some((m) => m.includes('Spread in children') && m.includes('div'))).toBe(true)
+  })
+
   it('returns empty array for well-formed component', () => {
     const src = `
       import { component, div, text } from '@llui/dom'

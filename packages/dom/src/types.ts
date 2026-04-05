@@ -21,6 +21,25 @@ export interface ComponentDef<S, M, E = never, D = void> {
 
 export type Send<M> = (msg: M) => void
 
+/**
+ * Maps a value shape to a reactive-props shape: every field becomes an accessor
+ * `(s: S) => V`. Use for Level-1 view function signatures.
+ *
+ * ```ts
+ * type ToolbarData = { tools: Tool[]; theme: 'light' | 'dark' }
+ *
+ * export function toolbar<S>(props: Props<ToolbarData, S>, send: Send<Msg>) {
+ *   return [div({ class: props.theme }, [each({ items: props.tools, ... })])]
+ * }
+ *
+ * // Caller — TypeScript enforces per-field accessors; passing a raw value errors:
+ * toolbar({ tools: (s: State) => s.tools, theme: (s) => s.theme }, send)
+ * ```
+ */
+export type Props<T, S> = {
+  [K in keyof T]: (s: S) => T[K]
+}
+
 // ── App Handle ────────────────────────────────────────────────────
 
 export interface AppHandle {
