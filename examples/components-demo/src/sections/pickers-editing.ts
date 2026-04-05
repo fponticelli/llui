@@ -1,6 +1,5 @@
 import {
   component,
-  mountApp,
   mergeHandlers,
   sliceHandler,
   div,
@@ -135,7 +134,7 @@ function todayIsoString(): string {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
 }
 
-const App = component<State, Msg, never>({
+export const App = component<State, Msg, never>({
   name: 'PickersEditingSection',
   init,
   update,
@@ -396,7 +395,3 @@ const App = component<State, Msg, never>({
     ]
   },
 })
-
-export function mount(container: HTMLElement): void {
-  mountApp(container, App)
-}

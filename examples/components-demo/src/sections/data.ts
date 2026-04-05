@@ -1,15 +1,4 @@
-import {
-  component,
-  mountApp,
-  mergeHandlers,
-  sliceHandler,
-  div,
-  button,
-  span,
-  text,
-  h3,
-  img,
-} from '@llui/dom'
+import { component, mergeHandlers, sliceHandler, div, button, span, text, h3, img } from '@llui/dom'
 import { tabs, type TabsState, type TabsMsg } from '@llui/components/tabs'
 import { accordion, type AccordionState, type AccordionMsg } from '@llui/components/accordion'
 import {
@@ -131,7 +120,7 @@ const update = mergeHandlers<State, Msg, never>(
   }),
 )
 
-const App = component<State, Msg, never>({
+export const App = component<State, Msg, never>({
   name: 'DataSection',
   init,
   update,
@@ -354,7 +343,9 @@ const App = component<State, Msg, never>({
         card('Collapsible', [
           div({ ...cl.root }, [
             button({ ...cl.trigger, class: 'btn btn-secondary' }, [
-              span({}, [text((s: State) => (s.collapsible.open ? 'Hide details' : 'Show details'))]),
+              span({}, [
+                text((s: State) => (s.collapsible.open ? 'Hide details' : 'Show details')),
+              ]),
             ]),
             div({ ...cl.content, class: 'mt-2 text-sm text-slate-600' }, [
               text(
@@ -386,7 +377,3 @@ const App = component<State, Msg, never>({
     ]
   },
 })
-
-export function mount(container: HTMLElement): void {
-  mountApp(container, App)
-}
