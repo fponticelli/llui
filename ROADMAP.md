@@ -125,21 +125,21 @@ Add the remaining Zag.js machines (naming aligned with zag):
 
 ### 11. Zag.js parity — accessibility
 
-- **Typeahead first-letter search** across menu, listbox, select, tree-view, combobox.
+- ~~**Typeahead first-letter search** across menu, listbox, select, tree-view, combobox.~~ ✅ (shared `utils/typeahead` shipped; wired into menu, listbox, select, tree-view. Combobox already has text-input filtering as its core behaviour.)
 - **Tri-state `aria-checked`** for hierarchical checkboxes in tree-view.
 - **`aria-busy`** during async operations + `aria-owns` for virtualized/async children.
-- **Orientation-aware keyboard** — wire up state access in keydown handlers so tabs/toolbar flip ArrowUp↔ArrowLeft based on orientation (current comment at tabs.ts: "we don't have state here").
+- ~~**Orientation-aware keyboard** for tabs~~ ✅ (horizontal tabs use ArrowLeft/Right, vertical use ArrowUp/Down; orientation read from ancestor `[data-part=list]`).
 - **Localized `aria-label`** strings via `translations`.
 - **Tab `indicator` part** with measured `Rect` for animated underlines.
-- **Tree-view ArrowLeft**: "collapse-then-jump-to-parent" WAI-ARIA semantics.
+- ~~**Tree-view ArrowLeft**: "collapse-then-jump-to-parent" WAI-ARIA semantics.~~ ✅ (plus ArrowRight "expand-then-focus-first-child"; requires caller to pass `parentId` to `item()`).
 - **Async load-children + in-place rename** for tree-view.
 
 ### 12. Zag.js parity — per-component gaps
 
-**file-upload:** `minFileSize`, per-file `validate()`, `transformFiles`, rejected-file tracking with `FileError` codes, `capture`/`directory`/`required`/`readOnly`/`invalid` attrs, `preventDocumentDrop` safety, MIME-object `accept`, parts: `itemName`, `itemSizeText`, `itemPreview`, `itemDeleteTrigger`, `itemGroup`.
+**file-upload:** ~~`minFileSize`~~ ✅, per-file `validate()`, `transformFiles`, ~~rejected-file tracking with `FileError` codes~~ ✅, ~~`capture`/`directory`/`required`/`readOnly`/`invalid` attrs~~ ✅, ~~`preventDocumentDrop` safety~~ ✅, ~~MIME-object `accept`~~ ✅, parts: ~~`itemName`, `itemSizeText`, `itemPreview`, `itemDeleteTrigger`, `itemGroup`~~ ✅.
 
-**tree-view:** tri-state checkbox selection, typeahead, async lazy-load children, in-place rename flow, `expandOnClick`, `TreeCollection` abstraction.
+**tree-view:** tri-state checkbox selection, ~~typeahead~~ ✅, async lazy-load children, in-place rename flow, ~~`expandOnClick`~~ ✅, `TreeCollection` abstraction.
 
-**tabs:** `indicator` part (measured rect for animated selection bar), `loopFocus` opt-out, `deselectable` mode, anchor-tab `navigate` hook, orientation-aware keyboard.
+**tabs:** `indicator` part (measured rect for animated selection bar), ~~`loopFocus` opt-out~~ ✅, ~~`deselectable` mode~~ ✅, ~~anchor-tab `navigate` hook~~ ✅, ~~orientation-aware keyboard~~ ✅.
 
-**combobox / select / menu:** typeahead search.
+**combobox / select / menu:** ~~typeahead search~~ ✅ (menu + select + listbox + tree-view; combobox uses input-driven filtering by design).
