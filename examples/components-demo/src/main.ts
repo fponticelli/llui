@@ -69,6 +69,7 @@ import {
   datePicker,
   type DatePickerState,
   type DatePickerMsg,
+  type DayCell,
   monthGrid,
 } from '@llui/components/date-picker'
 import {
