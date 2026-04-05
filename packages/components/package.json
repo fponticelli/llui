@@ -221,6 +221,10 @@
       "import": "./dist/components/navigation-menu.js",
       "types": "./dist/components/navigation-menu.d.ts"
     },
+    "./qr-code": {
+      "import": "./dist/components/qr-code.js",
+      "types": "./dist/components/qr-code.d.ts"
+    },
     "./carousel": {
       "import": "./dist/components/carousel.js",
       "types": "./dist/components/carousel.d.ts"

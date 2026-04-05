@@ -103,14 +103,14 @@ New `@llui/transitions` package: `transition()` core + `fade`/`slide`/`scale`/`c
 
 39 headless components shipped, state-machine-driven, no zag dependency, using `@llui/transitions` for enter/leave: accordion, alert-dialog, avatar, carousel, checkbox, clipboard, collapsible, color-picker, combobox, context-menu, date-picker, dialog, drawer, editable, file-upload, hover-card, listbox, menu, number-input, pagination, password-input, pin-input, popover, progress, radio-group, rating-group, select, slider, splitter, stepper, switch, tabs, tags-input, time-picker, toast, toggle-group, toggle, tooltip, tree-view. Demo app at `examples/components-demo` exercises 34 + `confirm-dialog` pattern.
 
-### 9. Zag.js parity — missing components
+### 9. Zag.js parity — missing components ✅
 
-Add the remaining Zag.js machines (naming aligned with zag):
+All 15 zag.js machines now shipped. 54 headless components total.
 
-- **Broadly useful:** `qr-code`, `scroll-area`, `signature-pad`, `navigation-menu`, `angle-slider`, `tour`
-- **Niche but include for parity:** `async-list`, `cascade-select`, `date-input` (keyboard-only field, separate from date-picker), `floating-panel`, `image-cropper`, `marquee`, `presence` (primitive), `timer`, `toc`
+- **Broadly useful:** ~~qr-code~~, ~~scroll-area~~, ~~signature-pad~~, ~~navigation-menu~~, ~~angle-slider~~, ~~tour~~
+- **Niche:** ~~async-list~~, ~~cascade-select~~, ~~date-input~~, ~~floating-panel~~, ~~image-cropper~~, ~~marquee~~, ~~presence~~, ~~timer~~, ~~toc~~
 
-**Renames to align with zag naming:**
+**Renames to align with zag naming** (still open):
 - `stepper` → `steps`
 - Decide whether to merge `alert-dialog` into `dialog` (zag does this via `role="alertdialog"`) or keep separate
 

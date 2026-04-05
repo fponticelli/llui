@@ -51,6 +51,7 @@ export * as scrollArea from './scroll-area'
 export * as floatingPanel from './floating-panel'
 export * as imageCropper from './image-cropper'
 export * as navigationMenu from './navigation-menu'
+export * as qrCode from './qr-code'
 
 export type {
   TimerState,
@@ -140,6 +141,13 @@ export type {
   NavMenuParts,
   NavItemParts,
 } from './navigation-menu'
+export type {
+  QrCodeState,
+  QrCodeMsg,
+  QrCodeInit,
+  QrCodeParts,
+  ErrorCorrectionLevel,
+} from './qr-code'
 export type { ToggleState, ToggleMsg, ToggleInit, ToggleParts } from './toggle'
 export type {
   CheckboxState,
