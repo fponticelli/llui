@@ -63,11 +63,11 @@ export const ParentChild = component<State, Msg, Effect>({
         ]
     }
   },
-  view: (send) => [
+  view: ({ send, each }) => [
     div({ class: 'parent' }, [
       text((s: State) => `Total: ${total(s)}`),
       button({ onClick: () => send({ type: 'addCounter' }) }, [text('Add counter')]),
-      ...each<State, CounterSlice>({
+      ...each({
         items: (s) => s.counters,
         key: (c) => c.id,
         render: ({ item, send }) => counterView({ item }, send),

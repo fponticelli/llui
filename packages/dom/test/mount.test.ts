@@ -15,7 +15,7 @@ function counterDef(): ComponentDef<State, Msg, never> {
           return [{ ...state, count: state.count + 1 }, []]
       }
     },
-    view: (send) => {
+    view: ({ send }) => {
       const btn = document.createElement('button')
       btn.addEventListener('click', () => send({ type: 'inc' }))
       btn.textContent = '+'

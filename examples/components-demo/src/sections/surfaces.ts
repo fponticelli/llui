@@ -102,7 +102,7 @@ export const App = component<State, Msg, never>({
   name: 'SurfacesSection',
   init,
   update,
-  view: (send) => {
+  view: ({ send }) => {
     const tr = tour.connect<State>(
       (s) => s.tour,
       (m) => send({ type: 'tour', msg: m }),

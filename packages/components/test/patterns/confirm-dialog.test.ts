@@ -133,7 +133,7 @@ describe('confirmDialog integration', () => {
         }
         return [state, []]
       },
-      view: (send) => {
+      view: ({ send }) => {
         sendRef = send
         return [
           button({ type: 'button', onClick: () => send({ type: 'triggerConfirm' }) }, [

@@ -492,7 +492,7 @@ it('warns on direct property access on item parameter', () => {
 })
 
 it('warns on .map() with state-derived array in view()', () => {
-  const source = `view: (send) => div(state.items.map(i => text(i.name)))`
+  const source = `view: ({ send }) => div(state.items.map(i => text(i.name)))`
   const result = transform(source, 'test.ts')
   expect(result.diagnostics).toContainEqual(expect.objectContaining({ code: 'view-map-on-state' }))
 })

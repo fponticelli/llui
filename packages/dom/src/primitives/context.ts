@@ -31,7 +31,7 @@ export function createContext<T>(defaultValue?: T): Context<T> {
  * can thread state slices down without prop drilling.
  *
  * ```ts
- * view: (send) => [
+ * view: ({ send }) => [
  *   provide(ThemeContext, (s: State) => s.theme, () => [
  *     header(send),
  *     main(send),

@@ -8,7 +8,6 @@ import {
   text,
   label,
   input,
-  each,
   onMount,
 } from '@llui/dom'
 import { switchMachine, type SwitchState, type SwitchMsg } from '@llui/components/switch'
@@ -171,7 +170,7 @@ export const App = component<State, Msg, never>({
   name: 'InputsSection',
   init,
   update,
-  view: (send) => {
+  view: ({ send, each }) => {
     const sw = switchMachine.connect<State>(
       (s) => s.switch,
       (m) => send({ type: 'switch', msg: m }),
@@ -405,7 +404,7 @@ export const App = component<State, Msg, never>({
         card('Tags Input', [
           div({ ...ti.root, class: 'tags-root' }, [
             div({ class: 'tags-list' }, [
-              ...each<State, string, TagsInputMsg>({
+              ...each({
                 items: (s) => s.tagsInput.value,
                 key: (t) => t,
                 render: ({ item, index }) => {

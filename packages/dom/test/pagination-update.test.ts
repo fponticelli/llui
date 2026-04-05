@@ -44,7 +44,7 @@ describe('text binding updates inside stable branch case', () => {
             ]
         }
       },
-      view: (send) => {
+      view: ({ send }) => {
         sendFn = send
         return branch<State, Msg>({
           on: (s) => {

@@ -2,6 +2,7 @@ import type { ComponentDef } from './types'
 import { createComponentInstance } from './update-loop'
 import { setRenderContext, clearRenderContext } from './render-context'
 import { setFlatBindings } from './binding'
+import { createView } from './view-helpers'
 
 /**
  * Render a component to an HTML string for SSR.
@@ -19,7 +20,7 @@ export function renderToString<S, M, E>(def: ComponentDef<S, M, E>, initialState
 
   setFlatBindings(inst.allBindings)
   setRenderContext({ ...inst, send: inst.send as (msg: unknown) => void })
-  const nodes = def.view(inst.send)
+  const nodes = def.view(createView<S, M>(inst.send))
   clearRenderContext()
   setFlatBindings(null)
 

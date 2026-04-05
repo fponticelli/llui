@@ -35,7 +35,7 @@ describe('selector()', () => {
             ]
         }
       },
-      view: (send) => {
+      view: ({ send }) => {
         sendFn = send
         const sel = selector<State, number>((s) => s.selected)
 

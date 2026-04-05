@@ -66,7 +66,7 @@ describe('text()', () => {
             return [{ ...state, count: state.count + 1 }, []]
         }
       },
-      view: (send) => {
+      view: ({ send }) => {
         sendFn = send
         return [text((s: State) => String(s.count))]
       },

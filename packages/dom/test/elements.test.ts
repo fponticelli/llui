@@ -19,7 +19,7 @@ function elementsDef(): ComponentDef<State, Msg, never> {
           return [{ ...state, label: msg.value }, []]
       }
     },
-    view: (send) => [
+    view: ({ send }) => [
       div({ class: 'container', id: 'main' }, [
         span({ class: (s: State) => (s.active ? 'on' : 'off') }, [text((s: State) => s.label)]),
         button({ onClick: () => send({ type: 'toggle' }) }, [text('Toggle')]),
@@ -50,9 +50,9 @@ describe('element helpers (uncompiled path)', () => {
     let sendFn: (msg: Msg) => void
     const def = elementsDef()
     const origView = def.view
-    def.view = (send) => {
-      sendFn = send
-      return origView(send)
+    def.view = (h) => {
+      sendFn = h.send
+      return origView(h)
     }
 
     const container = document.createElement('div')
@@ -69,9 +69,9 @@ describe('element helpers (uncompiled path)', () => {
     let sendFn: (msg: Msg) => void
     const def = elementsDef()
     const origView = def.view
-    def.view = (send) => {
-      sendFn = send
-      return origView(send)
+    def.view = (h) => {
+      sendFn = h.send
+      return origView(h)
     }
 
     const container = document.createElement('div')

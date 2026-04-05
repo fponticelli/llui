@@ -177,7 +177,7 @@ export default component<State, Msg, Effect>({
   update: (state, msg) => {
     /* ... */
   },
-  view: (send) => {
+  view: ({ send }) => {
     /* ... */
   },
 })

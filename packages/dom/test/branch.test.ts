@@ -38,9 +38,9 @@ describe('branch()', () => {
   function mount() {
     const def = phaseDef()
     const origView = def.view
-    def.view = (send) => {
-      sendFn = send
-      return origView(send)
+    def.view = (h) => {
+      sendFn = h.send
+      return origView(h)
     }
     const container = document.createElement('div')
     const handle = mountApp(container, def)
@@ -107,9 +107,9 @@ describe('show()', () => {
   function mount() {
     const def = showDef()
     const origView = def.view
-    def.view = (send) => {
-      sendFn = send
-      return origView(send)
+    def.view = (h) => {
+      sendFn = h.send
+      return origView(h)
     }
     const container = document.createElement('div')
     const handle = mountApp(container, def)
@@ -163,9 +163,9 @@ describe('show() with fallback', () => {
   function mount() {
     const def = fbDef()
     const origView = def.view
-    def.view = (send) => {
-      sendFn = send
-      return origView(send)
+    def.view = (h) => {
+      sendFn = h.send
+      return origView(h)
     }
     const container = document.createElement('div')
     const handle = mountApp(container, def)

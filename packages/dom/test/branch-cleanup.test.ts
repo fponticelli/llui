@@ -20,7 +20,7 @@ describe('branch cleanup with template-cloned nodes', () => {
             return [{ ...state, page: msg.page }, []]
         }
       },
-      view: (send) => {
+      view: ({ send }) => {
         sendFn = send
         return branch<State>({
           on: (s) => s.page,
@@ -87,7 +87,7 @@ describe('branch cleanup with template-cloned nodes', () => {
       name: 'Toggle',
       init: () => [{ page: 'x' }, []],
       update: (state) => [{ ...state, page: state.page === 'x' ? 'y' : 'x' }, []],
-      view: (send) => {
+      view: ({ send }) => {
         sendFn = send
         return branch<State>({
           on: (s) => s.page,

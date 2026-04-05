@@ -10,7 +10,7 @@ Common patterns and recipes.
 type State = { name: string }
 type Msg = { type: 'setName'; value: string }
 
-view: (send) => [
+view: ({ send }) => [
   input({
     type: 'text',
     value: (s: State) => s.name,
@@ -177,7 +177,7 @@ export function header(send: Send<Msg>): Node[] {
 }
 
 // main component view:
-view: (send) => [header(send), mainContent(send)]
+view: ({ send }) => [header(send), mainContent(send)]
 ```
 
 ### View functions with typed props: `Props<T, S>`
@@ -216,7 +216,7 @@ export function toolbar<S>(props: Props<ToolbarData, S>, send: Send<ToolbarMsg>)
 }
 
 // Caller — each field is an accessor. TypeScript errors if you pass a raw value:
-view: (send) =>
+view: ({ send }) =>
   toolbar<State>(
     {
       tools: (s) => s.tools,
@@ -313,7 +313,7 @@ import { createContext, provide, useContext } from '@llui/dom'
 const ThemeContext = createContext<'light' | 'dark'>('light')
 
 // Provide a reactive accessor to every descendant rendered inside children():
-view: (send) =>
+view: ({ send }) =>
   provide(ThemeContext, (s: State) => s.theme, () => [
     header(send),
     main(send),
@@ -375,7 +375,7 @@ routing.link(send, { page: 'home' }, { class: 'nav-link' }, [text('Home')])
 ### Page Switching
 
 ```typescript
-view: (send) => [
+view: ({ send }) => [
   ...routing.listener(send), // listens for popstate/hashchange
   ...branch<State, Msg>({
     on: (s) => s.route.page,

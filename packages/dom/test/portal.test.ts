@@ -75,7 +75,7 @@ describe('portal()', () => {
             return [{ ...state, open: false }, []]
         }
       },
-      view: (send) => {
+      view: ({ send }) => {
         sendFn = send
         return show({
           when: (s: State) => s.open,
@@ -119,7 +119,7 @@ describe('portal()', () => {
             return [{ ...state, count: state.count + 1 }, []]
         }
       },
-      view: (send) => {
+      view: ({ send }) => {
         sendFn = send
         return portal({
           target,

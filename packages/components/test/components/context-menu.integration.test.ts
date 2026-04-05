@@ -41,7 +41,7 @@ describe('context-menu.overlay integration', () => {
         const [next] = update(state.m, msg)
         return [{ m: next }, []]
       },
-      view: (send) => {
+      view: ({ send }) => {
         sendRef = send
         return [
           div({ ...parts.trigger }, [text('Right-click me')]),

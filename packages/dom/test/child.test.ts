@@ -26,7 +26,7 @@ const ChildCounter = component<ChildState, ChildMsg, never>({
     type: 'propsChanged' as const,
     props: props as { initial: number },
   }),
-  view: (send) => [
+  view: ({ send }) => [
     div({ class: 'child' }, [
       text((s: ChildState) => String(s.value)),
       button({ onClick: () => send({ type: 'increment' }) }, [text('+')]),
@@ -52,7 +52,7 @@ function parentDef(): ComponentDef<ParentState, ParentMsg, never> {
           return [{ ...state, childClicks: state.childClicks + 1 }, []]
       }
     },
-    view: (_send) => [
+    view: () => [
       div({ class: 'parent' }, [
         text((s: ParentState) => `clicks: ${s.childClicks}`),
         ...child<ParentState, ChildMsg>({
@@ -74,9 +74,9 @@ describe('child()', () => {
   function mount() {
     const def = parentDef()
     const origView = def.view
-    def.view = (send) => {
-      parentSend = send
-      return origView(send)
+    def.view = (h) => {
+      parentSend = h.send
+      return origView(h)
     }
     const container = document.createElement('div')
     const handle = mountApp(container, def)

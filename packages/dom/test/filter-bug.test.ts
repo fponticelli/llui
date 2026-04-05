@@ -20,7 +20,7 @@ describe('filter highlight', () => {
             return [{ ...state, filter: msg.filter }, []]
         }
       },
-      view: (send) => {
+      view: ({ send }) => {
         sendFn = send
         return show<State>({
           when: () => true,

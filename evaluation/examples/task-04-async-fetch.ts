@@ -39,13 +39,13 @@ export const AsyncFetch = component<State, Msg, Effect>({
         ]
     }
   },
-  view: (send) => [
+  view: ({ send, show, each }) => [
     div({ class: 'async-fetch' }, [
-      ...show<State>({
+      ...show({
         when: (s) => s.phase === 'loading',
         render: () => [div({ class: 'spinner' }, [text('Loading...')])],
       }),
-      ...show<State>({
+      ...show({
         when: (s) => s.phase === 'error',
         render: () => [
           div({ class: 'error' }, [
@@ -54,10 +54,10 @@ export const AsyncFetch = component<State, Msg, Effect>({
           ]),
         ],
       }),
-      ...show<State>({
+      ...show({
         when: (s) => s.phase === 'success',
         render: () => [
-          ...each<State, Item>({
+          ...each({
             items: (s) => s.items,
             key: (item) => item.id,
             render: ({ item }) => [div({ class: 'item' }, [text(item((t) => t.name))])],

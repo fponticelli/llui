@@ -39,9 +39,9 @@ function mount(items: Item[]) {
   let sendFn!: (msg: Msg) => void
   const def = listDef(items)
   const origView = def.view
-  def.view = (send) => {
-    sendFn = send
-    return origView(send)
+  def.view = (h) => {
+    sendFn = h.send
+    return origView(h)
   }
   const container = document.createElement('div')
   const handle = mountApp(container, def)

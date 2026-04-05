@@ -14,7 +14,7 @@ const Counter = component<State, Msg, never>({
         return [{ ...state, count: state.count + 1 }, []]
     }
   },
-  view: (send) => [
+  view: ({ send }) => [
     div({ class: 'counter', id: 'main' }, [
       span({}, [text((s: State) => s.label)]),
       text((s: State) => String(s.count)),

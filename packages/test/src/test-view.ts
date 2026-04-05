@@ -41,9 +41,9 @@ export function testView<S, M, E>(def: ComponentDef<S, M, E>, state: S): ViewHar
   // Capture the component's send via a view interceptor.
   let sendFn: ((msg: M) => void) | null = null
   const originalView = testDef.view
-  testDef.view = (send) => {
-    sendFn = send
-    return originalView(send)
+  testDef.view = (h) => {
+    sendFn = h.send
+    return originalView(h)
   }
 
   const handle = mountApp(container, testDef)

@@ -58,9 +58,9 @@ export const InfiniteScroll = component<State, Msg, Effect>({
         return [{ ...state, loading: false }, []]
     }
   },
-  view: (send) => [
+  view: ({ send, show, each }) => [
     div({ class: 'infinite-scroll' }, [
-      ...each<State, Item>({
+      ...each({
         items: (s) => s.items,
         key: (item) => item.id,
         render: ({ item }) => [
@@ -73,15 +73,15 @@ export const InfiniteScroll = component<State, Msg, Effect>({
           ),
         ],
       }),
-      ...show<State>({
+      ...show({
         when: (s) => s.loading,
         render: () => [div({ class: 'loading' }, [text('Loading...')])],
       }),
-      ...show<State>({
+      ...show({
         when: (s) => s.exhausted,
         render: () => [div({ class: 'exhausted' }, [text('No more items')])],
       }),
-      ...show<State>({
+      ...show({
         when: (s) => !s.loading && !s.exhausted,
         render: () => [
           button(

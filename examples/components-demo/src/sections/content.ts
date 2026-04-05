@@ -155,7 +155,7 @@ export const App = component<State, Msg, never>({
   name: 'ContentSection',
   init,
   update,
-  view: (send) => {
+  view: ({ send }) => {
     const tc = toc.connect<State>(
       (s) => s.toc,
       (m) => send({ type: 'toc', msg: m }),

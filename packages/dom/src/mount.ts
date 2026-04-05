@@ -4,6 +4,7 @@ import { disposeScope } from './scope'
 import { setRenderContext, clearRenderContext } from './render-context'
 import { setFlatBindings } from './binding'
 import { registerInstance, unregisterInstance } from './runtime'
+import { createView } from './view-helpers'
 
 // Vite injects import.meta.env.DEV — declare the shape for TypeScript
 declare global {
@@ -70,7 +71,7 @@ export function mountApp<S, M, E>(
   // Run view() within a render context so primitives can register bindings
   setFlatBindings(inst.allBindings)
   setRenderContext({ ...inst, container, send: inst.send as (msg: unknown) => void })
-  const nodes = def.view(inst.send)
+  const nodes = def.view(createView<S, M>(inst.send))
   clearRenderContext()
   setFlatBindings(null)
 
@@ -177,7 +178,7 @@ export function hydrateApp<S, M, E>(
   // Server HTML remains visible until JS finishes — no flash.
   setFlatBindings(inst.allBindings)
   setRenderContext({ ...inst, container, send: inst.send as (msg: unknown) => void })
-  const nodes = hydrateDef.view(inst.send)
+  const nodes = hydrateDef.view(createView<S, M>(inst.send))
   clearRenderContext()
   setFlatBindings(null)
 

@@ -57,7 +57,7 @@ describe('createContext + provide + useContext', () => {
       init: () => [{ theme: 'light' }, []],
       update: (s, m) =>
         m.type === 'toggle' ? [{ theme: s.theme === 'light' ? 'dark' : 'light' }, []] : [s, []],
-      view: (send) => {
+      view: ({ send }) => {
         sendFn = send
         return provide(
           ThemeCtx,
@@ -207,7 +207,7 @@ describe('createContext + provide + useContext', () => {
       name: 'App',
       init: () => [{ level: 'a', visible: true }, []],
       update: (s, m) => (m.type === 'toggle' ? [{ ...s, visible: !s.visible }, []] : [s, []]),
-      view: (send) => {
+      view: ({ send }) => {
         sendFn = send
         return provide(
           LevelCtx,

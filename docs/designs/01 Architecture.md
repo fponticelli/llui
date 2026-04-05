@@ -66,9 +66,9 @@ export const Counter = component<State, Msg>({
         return [{ count: state.count + 1 }, []]
     }
   },
-  view: (send) => {
+  view: ({ send, text }) => {
     return div([
-      text((s: State) => String(s.count)),
+      text((s) => String(s.count)),
       button({ onClick: () => send({ type: 'increment' }) }, [text('+')]),
     ])
   },
@@ -225,7 +225,7 @@ export const Dashboard = component<State, Msg>({
     }
   },
 
-  view: (send) =>
+  view: ({ send }) =>
     div({ onClick: () => send({ type: 'backgroundClick' }) }, [
       toolbarView({ tools: (s) => s.tools, toolbar: (s) => s.toolbar }, (msg) =>
         send({ type: 'toolbar', msg }),
@@ -287,7 +287,7 @@ export const DataTable = component<State, Msg, never, Props>({
     }
   },
 
-  view: (send) => {
+  view: ({ send }) => {
     /* ... */
   },
 })

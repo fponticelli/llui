@@ -19,7 +19,7 @@ interface ComponentDef<S, M, E = never, D = void> {
   name: string
   init: (data: D) => [S, E[]]
   update: (state: S, msg: M) => [S, E[]]
-  view: (send: (msg: M) => void) => Node[]
+  view: (h: View<S, M>) => Node[]
   onEffect?: (bag: { effect: E; send: (msg: M) => void; signal: AbortSignal }) => void
 
   // Level 2 composition only:
@@ -38,6 +38,45 @@ interface ComponentDef<S, M, E = never, D = void> {
 - `E` should be a discriminated union with a `type` field.
 - `update()` must be pure — no side effects, no DOM access, no async.
 - `view()` runs once at mount time. Do not call view primitives outside this context.
+- `h` is a `View<S, M>` bundle of state-bound helpers — see [`View<S, M>`](#views-m) below. Using `h.show(...)` / `h.text(...)` / `h.each(...)` removes the need for per-call generic annotations because `S` is pinned by the enclosing `component<S, M, _>` call.
+
+See: 01 Architecture.md, 07 LLM Friendliness.md
+
+---
+
+### `View<S, M>`
+
+A bundle of state-bound view helpers passed as the second argument to `view`. Every method is typed over the component's `S` and `M`, so callbacks like `when: s => ...` and `items: s => ...` infer `s: S` without explicit generics at each call site.
+
+```typescript
+interface View<S, M> {
+  send: (msg: M) => void
+  show(opts: ShowOptions<S, M>): Node[]
+  branch(opts: BranchOptions<S, M>): Node[]
+  each<T>(opts: EachOptions<S, T, M>): Node[]
+  text(accessor: ((s: S) => string) | string, mask?: number): Text
+  memo<T>(accessor: (s: S) => T): (s: S) => T
+  selector<V>(field: (s: S) => V): SelectorInstance<V>
+  ctx<T>(c: Context<T>): (s: S) => T
+  slice<Sub>(selector: (s: S) => Sub): View<Sub, M>
+}
+```
+
+**`h.slice(selector)`** returns a narrower `View<Sub, M>` for view-functions that read a sub-slice of the parent state. All state-bound accessors written against the sub view are composed with `selector` under the hood, so:
+
+```typescript
+view: (h) => {
+  const routeH = h.slice(s => s.route)
+  return routeH.branch({
+    on: r => r.data.type === 'loading' ? 'loading' : 'ready',
+    cases: { ... },
+  })
+}
+```
+
+**Compiler integration.** The Vite plugin treats `<name>.text(...)` / `<name>.show(...)` / `<name>.each(...)` etc. identically to bare imports for mask injection, as long as `<name>` is the second parameter of a `view: (_, name) => ...` arrow inside a `component(...)` call. Calls outside of that scope fall back to `FULL_MASK` — correct but without per-binding gating.
+
+**When to use bare imports vs. `h`:** use `h` inside `view`. For view-functions (extracted helpers rendering a parent slice), pass `h: View<S, M>` as a parameter rather than importing primitives directly — this keeps inference working and lets the helper participate in `h.slice` composition.
 
 See: 01 Architecture.md, 07 LLM Friendliness.md
 

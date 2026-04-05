@@ -6,6 +6,7 @@ import { setRenderContext, clearRenderContext } from './render-context'
 import { setFlatBindings } from './binding'
 import { unregisterInstance } from './runtime'
 import { _setHmrModule } from './mount'
+import { createView } from './view-helpers'
 
 /**
  * Enable HMR state preservation. Called by compiler-generated dev code.
@@ -88,7 +89,7 @@ export function replaceComponent<S, M, E>(
       container,
       send: typedInst.send as (msg: unknown) => void,
     })
-    const nodes = typedInst.def.view(typedInst.send)
+    const nodes = typedInst.def.view(createView<S, M>(typedInst.send))
     clearRenderContext()
     setFlatBindings(null)
 

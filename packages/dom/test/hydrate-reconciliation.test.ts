@@ -256,7 +256,7 @@ describe('hydration reconciliation', () => {
         name: 'Reactive',
         init: () => [{ label: 'initial' }, []],
         update: (s, m) => [{ label: m.value }, []],
-        view: (send) => {
+        view: ({ send }) => {
           sendFn = send
           return [div({}, [text((s: S) => s.label)])]
         },
@@ -280,7 +280,7 @@ describe('hydration reconciliation', () => {
         name: 'Events',
         init: () => [{ count: 0 }, []],
         update: (s) => [{ count: s.count + 1 }, []],
-        view: (send) => [
+        view: ({ send }) => [
           div({}, [
             text((s: S) => String(s.count)),
             button({ class: 'btn', onClick: () => send({ type: 'inc' }) }, [text('+')]),

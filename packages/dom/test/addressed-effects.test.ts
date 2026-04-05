@@ -94,7 +94,7 @@ describe('addressed effects', () => {
             return [state, [addr.setValue({ value: 'from parent' })]]
         }
       },
-      view: (send) => [
+      view: ({ send }) => [
         div({}, [
           ...child<ParentState, ChildMsg>({
             def: ChildComp,
@@ -108,9 +108,9 @@ describe('addressed effects', () => {
     let parentSend: (msg: ParentMsg) => void
     const defWithSend = { ...def }
     const origView = def.view
-    defWithSend.view = (send) => {
-      parentSend = send
-      return origView(send)
+    defWithSend.view = (h) => {
+      parentSend = h.send
+      return origView(h)
     }
 
     const container = document.createElement('div')

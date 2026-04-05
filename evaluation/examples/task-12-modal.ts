@@ -26,7 +26,7 @@ export const Modal = component<State, Msg, Effect>({
         return [{ ...state, open: false, confirmed: true }, []]
     }
   },
-  view: (send) => [
+  view: ({ send, show }) => [
     div({ class: 'modal-container' }, [
       button(
         {
@@ -35,11 +35,11 @@ export const Modal = component<State, Msg, Effect>({
         },
         [text('Open Modal')],
       ),
-      ...show<State>({
+      ...show({
         when: (s) => s.confirmed,
         render: () => [div({ class: 'confirmation' }, [text('Confirmed!')])],
       }),
-      ...show<State>({
+      ...show({
         when: (s) => s.open,
         render: () => {
           onMount((el) => {

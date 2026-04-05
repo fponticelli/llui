@@ -5,7 +5,6 @@ import {
   div,
   button,
   span,
-  text,
   input,
   p,
   onMount,
@@ -77,7 +76,7 @@ export const App = component<State, Msg, never>({
   name: 'TimeInputsSection',
   init,
   update,
-  view: (send) => {
+  view: ({ send, text }) => {
     const tm = timer.connect<State>(
       (s) => s.timer,
       (m) => send({ type: 'timer', msg: m }),

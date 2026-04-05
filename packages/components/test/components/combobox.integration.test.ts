@@ -37,7 +37,7 @@ describe('combobox.overlay integration', () => {
         const [next] = update(state.c, msg)
         return [{ c: next }, []]
       },
-      view: (send) => {
+      view: ({ send }) => {
         sendRef = send
         return [
           input({ ...parts.input }),

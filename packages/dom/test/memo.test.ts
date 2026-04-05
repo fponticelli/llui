@@ -52,7 +52,7 @@ describe('memo()', () => {
             return [{ ...state, label: msg.value }, []]
         }
       },
-      view: (send) => {
+      view: ({ send }) => {
         sendFn = send
         return [div({}, [text((s: State) => memoized(s)), text((s: State) => s.label)])]
       },
@@ -107,7 +107,7 @@ describe('memo()', () => {
           ]
         return [state, []]
       },
-      view: (send) => {
+      view: ({ send }) => {
         sendFn = send
         return each<S, { id: number; done: boolean }, M>({
           items: memoized,

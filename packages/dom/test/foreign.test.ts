@@ -64,9 +64,9 @@ describe('foreign()', () => {
   function mount() {
     const fns = foreignDef()
     const origView = fns.def.view
-    fns.def.view = (send) => {
-      sendFn = send
-      return origView(send)
+    fns.def.view = (h) => {
+      sendFn = h.send
+      return origView(h)
     }
     const container = document.createElement('div')
     const handle = mountApp(container, fns.def)
@@ -198,7 +198,7 @@ describe('foreign()', () => {
             return [{ ...state, readonly: !state.readonly }, []]
         }
       },
-      view: (send) => {
+      view: ({ send }) => {
         localSend = send
         return foreign<State, Msg, { theme: string; readonly: boolean }, FakeEditor>({
           mount: ({ container }): FakeEditor => ({

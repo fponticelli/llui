@@ -65,7 +65,7 @@ const Counter = component<State, Msg>({
   },
 
   // View — runs once, creates DOM with reactive bindings
-  view: (send) => [
+  view: ({ send }) => [
     div({ class: 'counter' }, [
       button({ onClick: () => send({ type: 'dec' }) }, [text('-')]),
       text((s: State) => String(s.count)),
@@ -134,16 +134,25 @@ update: (state, msg) => {
 
 ### view() Runs Once
 
-`view()` builds the DOM at mount time. For values that change, use **accessor functions**:
+`view()` builds the DOM at mount time. It's called with `(send, h)` where `h` is a bundle of state-bound helpers. Destructure the ones you need — that pins `State` across every callback, so you never write per-call generics.
+
+```typescript
+view: ({ send, show, each, branch, text, memo }) => [
+  ...show({ when: (s) => s.visible, render: () => [...] }),
+]
+```
+
+For values that change, use **accessor functions**:
 
 ```typescript
 // Static text (never changes):
 text('Hello')
 
-// Reactive text (updates when state changes):
-text((s: State) => `Count: ${s.count}`)
+// Reactive text (updates when state changes — destructured `text` infers s: State):
+text((s) => `Count: ${s.count}`)
 
-// Reactive attribute:
+// Reactive attribute on an element helper (annotate s here — element
+// helpers are imported directly and not bound to the component's State):
 div({ class: (s: State) => s.active ? 'on' : 'off' }, [...])
 
 // Reactive prop:
@@ -155,8 +164,8 @@ input({ value: (s: State) => s.query, disabled: (s: State) => s.loading })
 Use `branch()` for multi-way and `show()` for boolean:
 
 ```typescript
-// Multi-way conditional
-branch<State, Msg>({
+// Multi-way conditional (destructure `branch` from the view helpers)
+branch({
   on: (s) => s.page,
   cases: {
     home: (send) => [text('Home page')],
@@ -165,7 +174,7 @@ branch<State, Msg>({
 })
 
 // Boolean conditional
-show<State, Msg>({
+show({
   when: (s) => s.isVisible,
   render: (send) => [div([text('I am visible')])],
 })
@@ -176,7 +185,7 @@ show<State, Msg>({
 Use `each()` with a key function and the options bag pattern:
 
 ```typescript
-each<State, Todo, Msg>({
+each({
   items: (s) => s.todos,
   key: (t) => t.id,
   render: ({ send, item, index }) => [
@@ -249,10 +258,10 @@ const routing = connectRouter(router)
 In the view:
 
 ```typescript
-view: (send) => [
+view: ({ send, branch }) => [
   routing.link(send, { page: 'home' }, {}, [text('Home')]),
   ...routing.listener(send),
-  ...branch<State, Msg>({
+  ...branch({
     on: (s) => s.route.page,
     cases: {
       home: (send) => homePage(send),

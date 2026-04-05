@@ -8,7 +8,6 @@ import {
   text,
   label,
   input,
-  each,
   onMount,
 } from '@llui/dom'
 import {
@@ -138,7 +137,7 @@ export const App = component<State, Msg, never>({
   name: 'PickersEditingSection',
   init,
   update,
-  view: (send) => {
+  view: ({ send, each }) => {
     localSend = send
     const dp = datePicker.connect<State>(
       (s) => s.datePicker,
@@ -225,7 +224,7 @@ export const App = component<State, Msg, never>({
     const dpGrid = (): Node[] => {
       const dowLabels = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
       const dowCells = dowLabels.map((d) => span({ class: 'dp-dow' }, [text(d)]))
-      const cells = each<State, DayCell, DatePickerMsg>({
+      const cells = each({
         items: (s) => monthGrid(s.datePicker),
         key: (c) => c.iso,
         render: ({ item }) => {
@@ -365,7 +364,7 @@ export const App = component<State, Msg, never>({
               input({ ...fu.hiddenInput }),
             ]),
             div({ class: 'fu-list' }, [
-              ...each<State, File, FileUploadMsg>({
+              ...each({
                 items: (s) => s.fileUpload.files,
                 key: (f) => f.name,
                 render: ({ item }) => [

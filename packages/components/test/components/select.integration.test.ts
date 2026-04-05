@@ -36,7 +36,7 @@ describe('select.overlay integration', () => {
         const [next] = update(state.s, msg)
         return [{ s: next }, []]
       },
-      view: (send) => {
+      view: ({ send }) => {
         sendRef = send
         return [
           button({ ...parts.trigger }, [text('Select')]),

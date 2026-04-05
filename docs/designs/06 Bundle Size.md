@@ -51,7 +51,7 @@ The Vite plugin does three distinct things that reduce the final bundle. Underst
 ```ts
 import { div, span, button } from '@llui/dom'
 
-view: (send) =>
+view: ({ send }) =>
   div({ class: 'container' }, [
     span([text(() => state.label)]),
     button({ onClick: () => send({ type: 'click' }) }, [text('Go')]),

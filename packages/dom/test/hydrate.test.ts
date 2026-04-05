@@ -16,7 +16,7 @@ const Counter = component<State, Msg, never>({
         return [{ ...state, label: msg.value }, []]
     }
   },
-  view: (send) => [
+  view: ({ send }) => [
     div({ class: 'counter' }, [
       span({}, [text((s: State) => s.label)]),
       text((s: State) => String(s.count)),
@@ -58,9 +58,9 @@ describe('hydrateApp', () => {
     let sendFn: (msg: Msg) => void
     const def = { ...Counter }
     const origView = Counter.view
-    def.view = (send) => {
-      sendFn = send
-      return origView(send)
+    def.view = (h) => {
+      sendFn = h.send
+      return origView(h)
     }
 
     const handle = hydrateApp(container, def, serverState)

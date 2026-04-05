@@ -19,7 +19,7 @@ export const Counter = component<State, Msg, Effect>({
         return [{ ...state, count: Math.max(0, state.count - 1) }, []]
     }
   },
-  view: (send) => [
+  view: ({ send }) => [
     div({ class: 'counter' }, [
       button({ onClick: () => send({ type: 'dec' }) }, [text('-')]),
       text((s: State) => String(s.count)),

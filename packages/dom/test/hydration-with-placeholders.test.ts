@@ -84,7 +84,7 @@ describe('hydration + elTemplate comment placeholders', () => {
       name: 'Counter',
       init: () => [{ value: 0 }, []],
       update: (s, m) => (m.type === 'inc' ? [{ value: s.value + 1 }, []] : [s, []]),
-      view: (send) => [
+      view: ({ send }) => [
         div({ onClick: () => send({ type: 'inc' }) }, [
           span({}, [text('v='), text((s: State) => String(s.value))]),
         ]),

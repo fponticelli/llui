@@ -66,7 +66,7 @@ describe('onMount()', () => {
             return [{ ...state, visible: false }, []]
         }
       },
-      view: (send) => {
+      view: ({ send }) => {
         sendFn = send
         return show({
           when: (s: State) => s.visible,
@@ -106,7 +106,7 @@ describe('onMount()', () => {
             return [{ ...state, visible: false }, []]
         }
       },
-      view: (send) => {
+      view: ({ send }) => {
         sendFn = send
         return show({
           when: (s: State) => s.visible,

@@ -19,7 +19,7 @@ describe('branch transitions', () => {
       name: 'Phase',
       init: () => [{ phase: 'a' }, []],
       update: (state) => [{ ...state, phase: state.phase === 'a' ? 'b' : 'a' }, []],
-      view: (send) => {
+      view: ({ send }) => {
         sendFn = send
         return branch<State>({
           on: (s) => s.phase,
@@ -129,7 +129,7 @@ describe('show transitions', () => {
       name: 'Show',
       init: () => [{ visible: false }, []],
       update: (state) => [{ ...state, visible: !state.visible }, []],
-      view: (send) => {
+      view: ({ send }) => {
         sendFn = send
         return show<State>({
           when: (s) => s.visible,

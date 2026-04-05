@@ -101,7 +101,7 @@ describe('each() per-item enter/leave', () => {
     let sendRef: ((m: Msg) => void) | null = null
     const wrapped: ComponentDef<State, Msg, never> = {
       ...def,
-      view: (send) => {
+      view: ({ send }) => {
         sendRef = send
         return def.view(send)
       },
@@ -127,7 +127,7 @@ describe('each() per-item enter/leave', () => {
     let sendRef: ((m: Msg) => void) | null = null
     const wrapped: ComponentDef<State, Msg, never> = {
       ...def,
-      view: (send) => {
+      view: ({ send }) => {
         sendRef = send
         return def.view(send)
       },
@@ -162,7 +162,7 @@ describe('each() per-item enter/leave', () => {
     let sendRef: ((m: Msg) => void) | null = null
     const wrapped: ComponentDef<State, Msg, never> = {
       ...def,
-      view: (send) => {
+      view: ({ send }) => {
         sendRef = send
         return def.view(send)
       },
@@ -192,7 +192,7 @@ describe('each() per-item enter/leave', () => {
     let sendRef: ((m: Msg) => void) | null = null
     const wrapped: ComponentDef<State, Msg, never> = {
       ...def,
-      view: (send) => {
+      view: ({ send }) => {
         sendRef = send
         return def.view(send)
       },
@@ -239,7 +239,7 @@ describe('each() per-item enter/leave', () => {
     let sendRef: ((m: Msg) => void) | null = null
     const wrapped: ComponentDef<State, Msg, never> = {
       ...def,
-      view: (send) => {
+      view: ({ send }) => {
         sendRef = send
         return def.view(send)
       },
@@ -256,7 +256,7 @@ describe('each() per-item enter/leave', () => {
     let sendRef: ((m: Msg) => void) | null = null
     const wrapped: ComponentDef<State, Msg, never> = {
       ...def,
-      view: (send) => {
+      view: ({ send }) => {
         sendRef = send
         return def.view(send)
       },

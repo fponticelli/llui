@@ -74,9 +74,9 @@ function measure(pathCount: number, useFullMask: boolean, iterations: number): n
   const def = buildDef(pathCount, useFullMask)
   let sendFn!: (m: Msg) => void
   const origView = def.view
-  def.view = (send) => {
-    sendFn = send
-    return origView(send)
+  def.view = (h) => {
+    sendFn = h.send
+    return origView(h)
   }
   const handle = mountApp(container, def)
   const keys = Array.from({ length: pathCount }, (_, i) => `f${i}`)

@@ -35,7 +35,7 @@ describe('cross-file bindings', () => {
             return [{ ...s, page: s.page === 'a' ? 'b' : 'a' }, []]
         }
       },
-      view: (send) => {
+      view: ({ send }) => {
         sendFn = send
         return branch<State, Msg>({
           on: (s) => s.page,

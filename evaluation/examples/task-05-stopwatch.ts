@@ -54,7 +54,7 @@ export const Stopwatch = component<State, Msg, Effect>({
         ]
     }
   },
-  view: (send) => [
+  view: ({ send, show }) => [
     div({ class: 'stopwatch' }, [
       div({ class: 'display' }, [text((s: State) => formatTime(s.elapsed))]),
       div({ class: 'controls' }, [
@@ -74,7 +74,7 @@ export const Stopwatch = component<State, Msg, Effect>({
         ),
         button({ onClick: () => send({ type: 'reset' }) }, [text('Reset')]),
       ]),
-      ...show<State>({
+      ...show({
         when: (s) => s.bestLap !== null,
         render: () => [
           div({ class: 'best-lap' }, [text((s: State) => `Best lap: ${formatTime(s.bestLap!)}`)]),

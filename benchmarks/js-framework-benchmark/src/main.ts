@@ -139,7 +139,7 @@ const App = component<State, Msg, never>({
         return [{ ...state, rows: state.rows.filter((r) => r.id !== msg.id) }, []]
     }
   },
-  view: (send) => [
+  view: ({ send }) => [
     div({ class: 'container' }, [
       div({ class: 'jumbotron' }, [
         div({ class: 'row' }, [

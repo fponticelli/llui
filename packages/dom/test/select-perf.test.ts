@@ -22,7 +22,7 @@ describe('select performance — only 2 rows should update', () => {
             return [{ ...state, selected: msg.id }, []]
         }
       },
-      view: (send) => {
+      view: ({ send }) => {
         sendFn = send
         return each<State, Item>({
           items: (s) => s.items,

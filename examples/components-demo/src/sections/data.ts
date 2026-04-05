@@ -1,4 +1,4 @@
-import { component, mergeHandlers, sliceHandler, div, button, span, text, h3, img } from '@llui/dom'
+import { component, mergeHandlers, sliceHandler, div, button, span, h3, img } from '@llui/dom'
 import { tabs, type TabsState, type TabsMsg } from '@llui/components/tabs'
 import { accordion, type AccordionState, type AccordionMsg } from '@llui/components/accordion'
 import {
@@ -124,7 +124,7 @@ export const App = component<State, Msg, never>({
   name: 'DataSection',
   init,
   update,
-  view: (send) => {
+  view: ({ send, text }) => {
     const ta = tabs.connect<State>(
       (s) => s.tabs,
       (m) => send({ type: 'tabs', msg: m }),

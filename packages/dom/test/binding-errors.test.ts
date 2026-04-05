@@ -13,7 +13,7 @@ function makeDef(
     name: 'Boom',
     init: () => [{ value: 0 }, []],
     update: (s, m) => (m.type === 'bump' ? [{ value: s.value + 1 }, []] : [s, []]),
-    view: (send) => {
+    view: ({ send }) => {
       onSend(send)
       return [
         div({ id: 'target', class: 'a b' }, [

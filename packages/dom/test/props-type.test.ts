@@ -62,7 +62,7 @@ describe('Props<T, S> type helper + view function composition', () => {
         if (m.type === 'select') return [{ ...s, selectedId: m.id }, []]
         return [s, []]
       },
-      view: (send) =>
+      view: ({ send }) =>
         toolbar<State>(
           {
             tools: (s) => s.tools,

@@ -70,7 +70,7 @@ describe('testView — interactive', () => {
       if (m.type === 'setLabel') return [{ ...s, label: m.value }, []]
       return [s, []]
     },
-    view: (send) => [
+    view: ({ send }) => [
       div({ class: 'root' }, [
         span({ class: 'count' }, [text((s: State) => String(s.count))]),
         span({ class: 'label' }, [text((s: State) => s.label)]),

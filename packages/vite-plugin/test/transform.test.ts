@@ -103,6 +103,123 @@ describe('Pass 2 — mask injection + __dirty', () => {
     expect(out).toMatch(/text\(s\s*=>\s*String\(s\.count\)\s*,\s*1\)/)
   })
 
+  it('injects mask into h.text() calls via view-helpers binding', () => {
+    const src = `
+      import { component } from '@llui/dom'
+      export const C = component({
+        name: 'C',
+        init: () => [{ count: 0 }, []],
+        update: (s, m) => [s, []],
+        view: (h) => [h.text(s => String(s.count))],
+      })
+    `
+    const out = t(src)
+    expect(out).toMatch(/h\.text\(s\s*=>\s*String\(s\.count\)\s*,\s*1\)/)
+  })
+
+  it('injects mask into destructured text() calls from view helpers', () => {
+    const src = `
+      import { component } from '@llui/dom'
+      export const C = component({
+        name: 'C',
+        init: () => [{ count: 0 }, []],
+        update: (s, m) => [s, []],
+        view: ({ text }) => [text(s => String(s.count))],
+      })
+    `
+    const out = t(src)
+    expect(out).toMatch(/text\(s\s*=>\s*String\(s\.count\)\s*,\s*1\)/)
+  })
+
+  it('injects mask in extracted helper with View<S,M> parameter', () => {
+    const src = `
+      import { component } from '@llui/dom'
+      import type { View } from '@llui/dom'
+      type S = { count: number }
+      function row(h: View<S, never>) { return [h.text(s => String(s.count))] }
+      export const C = component({
+        name: 'C',
+        init: () => [{ count: 0 }, []],
+        update: (s, m) => [s, []],
+        view: (h) => row(h),
+      })
+    `
+    const out = t(src)
+    expect(out).toMatch(/h\.text\(s\s*=>\s*String\(s\.count\)\s*,\s*1\)/)
+  })
+
+  it('injects mask through `const { text } = h` destructuring', () => {
+    const src = `
+      import { component } from '@llui/dom'
+      import type { View } from '@llui/dom'
+      type S = { count: number }
+      function row(h: View<S, never>) {
+        const { text } = h
+        return [text(s => String(s.count))]
+      }
+      export const C = component({
+        name: 'C',
+        init: () => [{ count: 0 }, []],
+        update: (s, m) => [s, []],
+        view: (h) => row(h),
+      })
+    `
+    const out = t(src)
+    expect(out).toMatch(/text\(s\s*=>\s*String\(s\.count\)\s*,\s*1\)/)
+  })
+
+  it('injects mask into renamed destructured text alias', () => {
+    const src = `
+      import { component } from '@llui/dom'
+      export const C = component({
+        name: 'C',
+        init: () => [{ count: 0 }, []],
+        update: (s, m) => [s, []],
+        view: ({ text: t }) => [t(s => String(s.count))],
+      })
+    `
+    const out = t(src)
+    expect(out).toMatch(/t\(s\s*=>\s*String\(s\.count\)\s*,\s*1\)/)
+  })
+
+  it('does NOT rewrite a user-defined text() that shadows the primitive', () => {
+    // User has their own `text` function in scope and is NOT importing text
+    // from @llui/dom. The compiler must not inject a mask into these calls.
+    const src = `
+      import { component } from '@llui/dom'
+      function text(x: string): string { return x.toUpperCase() }
+      export const C = component({
+        name: 'C',
+        init: () => [{ count: 0 }, []],
+        update: (s, m) => [s, []],
+        view: (send) => {
+          const label = text('hello')
+          return [label as unknown as Node]
+        },
+      })
+    `
+    const out = t(src)
+    // The call site 'text(...)' should remain as-is — no ,1 appended.
+    expect(out).not.toMatch(/text\('hello'\s*,\s*1\)/)
+    expect(out).toMatch(/text\('hello'\)/)
+  })
+
+  it('single-param view (no h) still works unchanged', () => {
+    // Backwards compat: omitting the second parameter to `view` still
+    // compiles and mask injection still fires for bare imports.
+    const src = `
+      import { component, text } from '@llui/dom'
+      export const C = component({
+        name: 'C',
+        init: () => [{ count: 0 }, []],
+        update: (s, m) => [s, []],
+        view: (send) => [text(s => String(s.count))],
+      })
+    `
+    const out = t(src)
+    expect(out).toMatch(/text\(s\s*=>\s*String\(s\.count\)\s*,\s*1\)/)
+  })
+
   it('synthesizes __dirty function', () => {
     const src = `
       import { component, text } from '@llui/dom'

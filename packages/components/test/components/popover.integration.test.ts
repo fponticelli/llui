@@ -34,7 +34,7 @@ describe('popover.overlay integration', () => {
         const [next] = update(state.p, msg)
         return [{ p: next }, []]
       },
-      view: (send) => {
+      view: ({ send }) => {
         sendRef = send
         return [
           button({ ...parts.trigger }, [text('Open')]),

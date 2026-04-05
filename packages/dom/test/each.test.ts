@@ -77,9 +77,9 @@ describe('each()', () => {
   function mount() {
     const def = listDef()
     const origView = def.view
-    def.view = (send) => {
-      sendFn = send
-      return origView(send)
+    def.view = (h) => {
+      sendFn = h.send
+      return origView(h)
     }
     const container = document.createElement('div')
     const handle = mountApp(container, def)
@@ -206,7 +206,7 @@ describe('each() item proxy', () => {
         if (m.type === 'click') clicks.push(m.id)
         return [s, []]
       },
-      view: (send) =>
+      view: ({ send }) =>
         each<S, P, M>({
           items: (s) => s.items,
           key: (i) => i.id,

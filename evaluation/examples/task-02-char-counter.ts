@@ -17,7 +17,7 @@ export const CharCounter = component<State, Msg, Effect>({
         return [{ ...state, content: msg.value }, []]
     }
   },
-  view: (send) => [
+  view: ({ send }) => [
     div({ class: 'char-counter' }, [
       textarea({
         onInput: (e: Event) =>

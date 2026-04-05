@@ -85,7 +85,7 @@ describe('drawer.overlay integration', () => {
         const [next] = update(state.d, msg)
         return [{ d: next }, []]
       },
-      view: (send) => {
+      view: ({ send }) => {
         sendRef = send
         return [
           button({ ...parts.trigger }, [text('Open')]),

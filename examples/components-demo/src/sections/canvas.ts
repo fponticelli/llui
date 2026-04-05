@@ -5,7 +5,6 @@ import {
   div,
   button,
   span,
-  text,
   p,
   canvas,
   img,
@@ -83,7 +82,7 @@ export const App = component<State, Msg, never>({
   name: 'CanvasSection',
   init,
   update,
-  view: (send) => {
+  view: ({ send, text }) => {
     const sp = signaturePad.connect<State>(
       (s) => s.sig,
       (m) => send({ type: 'sig', msg: m }),

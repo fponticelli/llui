@@ -59,10 +59,10 @@ export const WebSocketList = component<State, Msg, Effect>({
       }
     }
   },
-  view: (send) => [
+  view: ({ send, show, each }) => [
     div({ class: 'websocket-list' }, [
       div({ class: 'controls' }, [
-        ...show<State>({
+        ...show({
           when: (s) => !s.paused,
           render: () => [
             button(
@@ -73,7 +73,7 @@ export const WebSocketList = component<State, Msg, Effect>({
             ),
           ],
         }),
-        ...show<State>({
+        ...show({
           when: (s) => s.paused,
           render: () => [
             button(
@@ -84,12 +84,12 @@ export const WebSocketList = component<State, Msg, Effect>({
             ),
           ],
         }),
-        ...show<State>({
+        ...show({
           when: (s) => s.paused && s.buffer.length > 0,
           render: () => [text((s: State) => `(${s.buffer.length} buffered)`)],
         }),
       ]),
-      ...each<State, Item>({
+      ...each({
         items: (s) => s.items,
         key: (item) => item.id,
         render: ({ item }) => [
