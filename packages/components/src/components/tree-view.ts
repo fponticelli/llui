@@ -1,4 +1,10 @@
 import type { Send } from '@llui/dom'
+import {
+  typeaheadAccumulate,
+  typeaheadMatch,
+  isTypeaheadKey,
+  TYPEAHEAD_TIMEOUT_MS,
+} from '../utils/typeahead'
 
 /**
  * Tree view — hierarchical list with expand/collapse. Items are identified
@@ -17,7 +23,14 @@ export interface TreeViewState {
   selectionMode: 'single' | 'multiple'
   /** Ordered list of currently-visible item ids (updated by consumer via setVisible). */
   visibleItems: string[]
+  /** Parallel array of visible-item labels for typeahead. If empty, typeahead
+   *  matches against ids directly. Updated alongside visibleItems via the
+   *  optional `labels` field on `setVisibleItems`. */
+  visibleLabels: string[]
   disabled: boolean
+  /** Typeahead accumulator buffer. */
+  typeahead: string
+  typeaheadExpiresAt: number
 }
 
 export type TreeViewMsg =
@@ -33,7 +46,8 @@ export type TreeViewMsg =
   | { type: 'focusPrev' }
   | { type: 'focusFirst' }
   | { type: 'focusLast' }
-  | { type: 'setVisibleItems'; ids: string[] }
+  | { type: 'setVisibleItems'; ids: string[]; labels?: string[] }
+  | { type: 'typeahead'; char: string; now: number }
 
 export interface TreeViewInit {
   expanded?: string[]
@@ -41,6 +55,7 @@ export interface TreeViewInit {
   selectionMode?: 'single' | 'multiple'
   disabled?: boolean
   visibleItems?: string[]
+  visibleLabels?: string[]
 }
 
 export function init(opts: TreeViewInit = {}): TreeViewState {
@@ -50,7 +65,10 @@ export function init(opts: TreeViewInit = {}): TreeViewState {
     focused: null,
     selectionMode: opts.selectionMode ?? 'single',
     visibleItems: opts.visibleItems ?? [],
+    visibleLabels: opts.visibleLabels ?? [],
     disabled: opts.disabled ?? false,
+    typeahead: '',
+    typeaheadExpiresAt: 0,
   }
 }
 
@@ -109,7 +127,25 @@ export function update(state: TreeViewState, msg: TreeViewMsg): [TreeViewState, 
     case 'focusLast':
       return [{ ...state, focused: state.visibleItems[state.visibleItems.length - 1] ?? null }, []]
     case 'setVisibleItems':
-      return [{ ...state, visibleItems: msg.ids }, []]
+      return [
+        { ...state, visibleItems: msg.ids, visibleLabels: msg.labels ?? state.visibleLabels },
+        [],
+      ]
+    case 'typeahead': {
+      if (state.visibleItems.length === 0) return [state, []]
+      const acc = typeaheadAccumulate(state.typeahead, msg.char, msg.now, state.typeaheadExpiresAt)
+      // Fall back to matching ids if labels weren't provided.
+      const labels = state.visibleLabels.length > 0 ? state.visibleLabels : state.visibleItems
+      const disabledMask = new Array<boolean>(labels.length).fill(false)
+      const startIdx = state.focused ? state.visibleItems.indexOf(state.focused) : null
+      const matchIdx = typeaheadMatch(labels, disabledMask, acc, startIdx)
+      const focused =
+        matchIdx === null ? state.focused : (state.visibleItems[matchIdx] ?? state.focused)
+      return [
+        { ...state, typeahead: acc, typeaheadExpiresAt: msg.now + TYPEAHEAD_TIMEOUT_MS, focused },
+        [],
+      ]
+    }
   }
 }
 
@@ -233,6 +269,10 @@ export function connect<S>(
               send({ type: 'select', id, additive: e.metaKey || e.ctrlKey })
               if (isBranch) send({ type: 'toggleBranch', id })
               return
+            default:
+              if (isTypeaheadKey(e)) {
+                send({ type: 'typeahead', char: e.key, now: Date.now() })
+              }
           }
         },
       },

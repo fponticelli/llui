@@ -2,6 +2,12 @@ import type { Send, TransitionOptions } from '@llui/dom'
 import { show, portal, onMount, div } from '@llui/dom'
 import { pushDismissable } from '../utils/dismissable'
 import { attachFloating, type Placement } from '../utils/floating'
+import {
+  typeaheadAccumulate,
+  typeaheadMatchByItems,
+  isTypeaheadKey,
+  TYPEAHEAD_TIMEOUT_MS,
+} from '../utils/typeahead'
 
 /**
  * Select — a trigger button that opens a listbox dropdown. Value(s) are
@@ -20,6 +26,8 @@ export interface SelectState {
   highlightedIndex: number | null
   disabled: boolean
   required: boolean
+  typeahead: string
+  typeaheadExpiresAt: number
 }
 
 export type SelectMsg =
@@ -36,6 +44,7 @@ export type SelectMsg =
   | { type: 'highlightLast' }
   | { type: 'selectHighlighted' }
   | { type: 'setItems'; items: string[]; disabled?: string[] }
+  | { type: 'typeahead'; char: string; now: number }
 
 export interface SelectInit {
   value?: string[]
@@ -56,6 +65,8 @@ export function init(opts: SelectInit = {}): SelectState {
     highlightedIndex: null,
     disabled: opts.disabled ?? false,
     required: opts.required ?? false,
+    typeahead: '',
+    typeaheadExpiresAt: 0,
   }
 }
 
@@ -186,6 +197,24 @@ export function update(state: SelectState, msg: SelectMsg): [SelectState, never[
       const disabled = msg.disabled ?? state.disabledItems
       const value = state.value.filter((v) => msg.items.includes(v) && !disabled.includes(v))
       return [{ ...state, items: msg.items, disabledItems: disabled, value }, []]
+    }
+    case 'typeahead': {
+      const acc = typeaheadAccumulate(state.typeahead, msg.char, msg.now, state.typeaheadExpiresAt)
+      const match = typeaheadMatchByItems(
+        state.items,
+        state.disabledItems,
+        acc,
+        state.highlightedIndex,
+      )
+      return [
+        {
+          ...state,
+          typeahead: acc,
+          typeaheadExpiresAt: msg.now + TYPEAHEAD_TIMEOUT_MS,
+          highlightedIndex: match ?? state.highlightedIndex,
+        },
+        [],
+      ]
     }
   }
 }
@@ -323,6 +352,10 @@ export function connect<S>(
         e.preventDefault()
         send({ type: 'close' })
         return
+      default:
+        if (isTypeaheadKey(e)) {
+          send({ type: 'typeahead', char: e.key, now: Date.now() })
+        }
     }
   }
 

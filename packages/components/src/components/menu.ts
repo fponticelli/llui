@@ -2,6 +2,12 @@ import type { Send, TransitionOptions } from '@llui/dom'
 import { show, portal, onMount, div } from '@llui/dom'
 import { pushDismissable } from '../utils/dismissable'
 import { attachFloating, type Placement } from '../utils/floating'
+import {
+  typeaheadAccumulate,
+  typeaheadMatchByItems,
+  isTypeaheadKey,
+  TYPEAHEAD_TIMEOUT_MS,
+} from '../utils/typeahead'
 
 /**
  * Menu — a dropdown list of items triggered by a button. Keyboard navigation
@@ -44,8 +50,6 @@ export interface MenuInit {
   disabledItems?: string[]
   highlighted?: string | null
 }
-
-const TYPEAHEAD_TIMEOUT_MS = 500
 
 export function init(opts: MenuInit = {}): MenuState {
   return {
@@ -140,8 +144,10 @@ export function update(state: MenuState, msg: MenuMsg): [MenuState, never[]] {
       return [{ ...state, items: msg.items, disabledItems: disabled, highlighted }, []]
     }
     case 'typeahead': {
-      const acc = msg.now < state.typeaheadExpiresAt ? state.typeahead + msg.char : msg.char
-      const match = typeaheadMatch(state.items, state.disabledItems, acc, state.highlighted)
+      const acc = typeaheadAccumulate(state.typeahead, msg.char, msg.now, state.typeaheadExpiresAt)
+      const startIdx = state.highlighted ? state.items.indexOf(state.highlighted) : null
+      const matchIdx = typeaheadMatchByItems(state.items, state.disabledItems, acc, startIdx)
+      const match = matchIdx === null ? null : state.items[matchIdx]!
       return [
         {
           ...state,
@@ -153,27 +159,6 @@ export function update(state: MenuState, msg: MenuMsg): [MenuState, never[]] {
       ]
     }
   }
-}
-
-function typeaheadMatch(
-  items: string[],
-  disabled: string[],
-  query: string,
-  startFrom: string | null,
-): string | null {
-  if (items.length === 0 || query.length === 0) return null
-  const q = query.toLowerCase()
-  const startIdx = startFrom ? items.indexOf(startFrom) : -1
-  // If query is a single char, advance to next match after current; else search from current.
-  const offset = query.length === 1 ? 1 : 0
-  const n = items.length
-  for (let i = 0; i < n; i++) {
-    const idx = (startIdx + offset + i + n) % n
-    const v = items[idx]!
-    if (disabled.includes(v)) continue
-    if (v.toLowerCase().startsWith(q)) return v
-  }
-  return null
 }
 
 export interface MenuItemParts<S> {
@@ -267,7 +252,7 @@ export function connect<S>(
         send({ type: 'close' })
         return
       default:
-        if (e.key.length === 1 && !e.metaKey && !e.ctrlKey && !e.altKey) {
+        if (isTypeaheadKey(e)) {
           send({ type: 'typeahead', char: e.key, now: Date.now() })
         }
     }

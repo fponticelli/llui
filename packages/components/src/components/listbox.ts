@@ -1,4 +1,10 @@
 import type { Send } from '@llui/dom'
+import {
+  typeaheadAccumulate,
+  typeaheadMatchByItems,
+  isTypeaheadKey,
+  TYPEAHEAD_TIMEOUT_MS,
+} from '../utils/typeahead'
 
 /**
  * Listbox — a list of selectable options. Supports single and multiple
@@ -40,8 +46,6 @@ export interface ListboxInit {
   selectionMode?: SelectionMode
 }
 
-const TYPEAHEAD_TIMEOUT_MS = 500
-
 export function init(opts: ListboxInit = {}): ListboxState {
   return {
     value: opts.value ?? [],
@@ -81,26 +85,6 @@ function firstEnabledIndex(items: string[], disabled: string[]): number | null {
 function lastEnabledIndex(items: string[], disabled: string[]): number | null {
   for (let i = items.length - 1; i >= 0; i--) {
     if (!disabled.includes(items[i]!)) return i
-  }
-  return null
-}
-
-function typeaheadMatch(
-  items: string[],
-  disabled: string[],
-  query: string,
-  startFrom: number | null,
-): number | null {
-  if (items.length === 0 || query.length === 0) return null
-  const q = query.toLowerCase()
-  const offset = query.length === 1 ? 1 : 0
-  const n = items.length
-  const start = startFrom ?? -1
-  for (let i = 0; i < n; i++) {
-    const idx = (start + offset + i + n) % n
-    const v = items[idx]!
-    if (disabled.includes(v)) continue
-    if (v.toLowerCase().startsWith(q)) return idx
   }
   return null
 }
@@ -155,8 +139,13 @@ export function update(state: ListboxState, msg: ListboxMsg): [ListboxState, nev
       return [{ ...state, items: msg.items, disabledItems: disabled, value }, []]
     }
     case 'typeahead': {
-      const acc = msg.now < state.typeaheadExpiresAt ? state.typeahead + msg.char : msg.char
-      const match = typeaheadMatch(state.items, state.disabledItems, acc, state.highlightedIndex)
+      const acc = typeaheadAccumulate(state.typeahead, msg.char, msg.now, state.typeaheadExpiresAt)
+      const match = typeaheadMatchByItems(
+        state.items,
+        state.disabledItems,
+        acc,
+        state.highlightedIndex,
+      )
       return [
         {
           ...state,
@@ -254,7 +243,7 @@ export function connect<S>(
             send({ type: 'selectHighlighted' })
             return
           default:
-            if (e.key.length === 1 && !e.metaKey && !e.ctrlKey && !e.altKey) {
+            if (isTypeaheadKey(e)) {
               send({ type: 'typeahead', char: e.key, now: Date.now() })
             }
         }
