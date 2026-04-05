@@ -10,7 +10,6 @@ import {
   h3,
   p,
   input,
-  each,
 } from '@llui/dom'
 import { popover, type PopoverState, type PopoverMsg } from '@llui/components/popover'
 import { tooltip, type TooltipState, type TooltipMsg } from '@llui/components/tooltip'
@@ -233,7 +232,7 @@ const App = component<State, Msg, never>({
   name: 'OverlaysSection',
   init,
   update,
-  view: (send) => {
+  view: (send, { each }) => {
     localSend = send
     // Register bus handlers so other sections can trigger toast/confirm
     registerToastHandler((kind, title, description) =>
@@ -315,7 +314,7 @@ const App = component<State, Msg, never>({
     type Toast = { id: string; type: string; title?: string; description?: string }
     const toastRegion = div(
       { ...toastParts.region },
-      each<State, Toast, ToasterMsg>({
+      each({
         items: (s) => s.toast.toasts,
         key: (t) => t.id,
         render: ({ item }) => [
@@ -500,7 +499,7 @@ const App = component<State, Msg, never>({
             content: () => [
               div(
                 { ...co.content, class: 'cb-content' },
-                each<State, string, ComboboxMsg>({
+                each({
                   items: (s) => s.combobox.filteredItems,
                   key: (v) => v,
                   render: ({ item, index }) => {

@@ -24,9 +24,10 @@ function routeOwnerName(s: State): { owner: string; name: string } | null {
 // were already a footgun. routing.link needs a literal owner/name at mount.
 // Consider inlining the link builder into the reactive path.
 export function repoPage(h: View<State, Msg>, s: State, send: Send<Msg>): Node[] {
+  const { show } = h
   // Sub-view bound to s.route — demonstrates h.slice for view-functions
   // that only read a sub-slice of the parent component's state.
-  const routeH = h.slice((s) => s.route)
+  const { branch } = h.slice((s) => s.route)
   // owner/name from route (always available)
   const rp = routeOwnerName(s)
   const owner = rp?.owner ?? ''
@@ -54,7 +55,7 @@ export function repoPage(h: View<State, Msg>, s: State, send: Send<Msg>): Node[]
           ]),
           span({}, [text((s: State) => `Issues: ${repoFromState(s)?.open_issues_count ?? '—'}`)]),
         ]),
-        ...h.show({
+        ...show({
           when: (s) => !!repoFromState(s)?.description,
           render: () => [p({}, [text((s: State) => repoFromState(s)?.description ?? '')])],
         }),
@@ -85,7 +86,7 @@ export function repoPage(h: View<State, Msg>, s: State, send: Send<Msg>): Node[]
     ]),
     // Content
     div({ class: 'container' }, [
-      ...routeH.branch({
+      ...branch({
         on: (r) => {
           if (r.data.type === 'loading') return 'loading'
           if (r.data.type === 'failure') return 'error'
@@ -163,9 +164,10 @@ function breadcrumb(s: State, send: Send<Msg>): Node[] {
 }
 
 function fileTree(h: View<State, Msg>, send: Send<Msg>): Node[] {
+  const { each } = h
   return [
     div({ class: 'file-tree' }, [
-      ...h.each({
+      ...each({
         items: (s) => {
           const r = s.route
           let tree: TreeEntry[] = []
@@ -207,8 +209,9 @@ function fileTree(h: View<State, Msg>, send: Send<Msg>): Node[] {
 }
 
 function issuesList(h: View<State, Msg>): Node[] {
+  const { show, each } = h
   return [
-    ...h.show({
+    ...show({
       when: (s) =>
         s.route.page === 'repo' &&
         s.route.tab === 'issues' &&
@@ -216,7 +219,7 @@ function issuesList(h: View<State, Msg>): Node[] {
         s.route.data.data.issues.length === 0,
       render: () => [div({ class: 'loading' }, [text('No open issues.')])],
     }),
-    ...h.each({
+    ...each({
       items: (s) => {
         const r = s.route
         if (r.page === 'repo' && r.tab === 'issues' && r.data.type === 'success')

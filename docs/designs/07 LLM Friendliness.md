@@ -60,13 +60,15 @@ The consumption model is equally LLM-friendly: `handleEffects<Effect>().else(...
 The LLM generates DOM construction code in a style virtually identical to React's JSX or lit-html's tagged templates:
 
 ```typescript
-view: (send) => {
+view: (send, { text }) => {
   return div({ class: 'counter' }, [
     text((s) => String(s.count)),
     button({ onClick: () => send({ type: 'increment' }) }, [text('+')]),
   ])
 }
 ```
+
+The second `view` argument is a bundle of state-bound helpers (`View<State, Msg>`). Destructuring the helpers the component uses — `{ show, each, branch, text, memo }` — removes per-call generics (`show<State>` becomes `show`) because `S` is pinned by the enclosing `component<State, Msg, _>` call. The LLM never has to repeat the state type.
 
 No lifecycle rules apply. There is no `useEffect` with a dependency array that the LLM will get wrong. There are no class components. The function runs once at mount time and the bindings handle updates automatically. The LLM's strong intuition about "return a tree of nodes" applies directly.
 
@@ -95,6 +97,8 @@ view: (send) => {
   })
   return input({ type: 'text' })
 }
+// Helpers are the second arg (`view: (send, { ... }) => …`). `onMount` is
+// imported directly — it does not depend on the component's state type.
 ```
 
 No ordering constraints. No dependency arrays. The function registers a callback; the callback fires after DOM insertion. LLMs handle this pattern correctly.
@@ -540,7 +544,7 @@ You are writing a TypeScript component using the LLui framework.
 ## Pattern
 
 LLui uses The Elm Architecture: `init` returns initial state and effects;
-`update(state, msg)` returns `[newState, effects]`; `view(send)` returns
+`update(state, msg)` returns `[newState, effects]`; `view(send, h)` returns
 DOM nodes once at mount and binds state to the DOM through accessor functions.
 State is immutable. Effects are plain data objects returned from `update()`.
 
@@ -551,12 +555,16 @@ interface ComponentDef<S, M, E> {
   name: string;
   init: (props?: Record<string, unknown>) => [S, E[]];
   update: (state: S, msg: M) => [S, E[]];
-  view: (send: (msg: M) => void) => Node[];
+  view: (send: (msg: M) => void, h: View<S, M>) => Node[];
   onEffect?: (effect: E, send: (msg: M) => void, signal: AbortSignal) => void;
   // Level 2 only (optional):
   propsMsg?: (props: Record<string, unknown>) => M;
   receives?: Record<string, (params: any) => M>;
 }
+
+// `h: View<S, M>` is a bundle of state-bound helpers. Destructure it in
+// `view` to drop per-call generics — every accessor infers `s: S`:
+//   view: (send, { show, each, branch, text, memo }) => [...]
 
 // Effect consumption — import from @llui/effects:
 function handleEffects<E extends { type: string }>(): EffectChain<E>;
@@ -618,7 +626,7 @@ export const Counter = component<State, Msg, Effect>({
         return [{ ...state, count: Math.max(0, state.count - 1) }, []]
     }
   },
-  view: (send) =>
+  view: (send, { text }) =>
     div({ class: 'counter' }, [
       button({ onClick: () => send({ type: 'dec' }) }, [text('-')]),
       text((s) => String(s.count)),

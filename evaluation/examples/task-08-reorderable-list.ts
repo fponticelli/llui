@@ -46,9 +46,9 @@ export const ReorderableList = component<State, Msg, Effect>({
       }
     }
   },
-  view: (send) => [
+  view: (send, { each }) => [
     div({ class: 'reorderable-list' }, [
-      ...each<State, Item>({
+      ...each({
         items: (s) => s.items,
         key: (item) => item.id,
         render: ({ item }) => [

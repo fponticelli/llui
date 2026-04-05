@@ -57,7 +57,7 @@ export const DebouncedSearch = component<State, Msg, Effect>({
         return [{ ...state, searching: false }, []]
     }
   },
-  view: (send) => [
+  view: (send, { show, each }) => [
     div({ class: 'search' }, [
       input({
         type: 'text',
@@ -66,11 +66,11 @@ export const DebouncedSearch = component<State, Msg, Effect>({
         onInput: (e: Event) =>
           send({ type: 'setQuery', value: (e.target as HTMLInputElement).value }),
       }),
-      ...show<State>({
+      ...show({
         when: (s) => s.searching,
         render: () => [text('Searching...')],
       }),
-      ...each<State, SearchResult>({
+      ...each({
         items: (s) => s.results,
         key: (r) => r.id,
         render: ({ item }) => [div({ class: 'result' }, [text(item((r) => r.title))])],

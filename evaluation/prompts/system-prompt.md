@@ -5,7 +5,7 @@ You are writing a TypeScript component using the LLui framework.
 ## Pattern
 
 LLui uses The Elm Architecture: `init` returns initial state and effects;
-`update(state, msg)` returns `[newState, effects]`; `view(send)` returns
+`update(state, msg)` returns `[newState, effects]`; `view(send, h)` returns
 DOM nodes once at mount and binds state to the DOM through accessor functions.
 State is immutable. Effects are plain data objects returned from `update()`.
 
@@ -16,25 +16,27 @@ interface ComponentDef<S, M, E> {
   name: string
   init: (props?: Record<string, unknown>) => [S, E[]]
   update: (state: S, msg: M) => [S, E[]]
-  view: (send: (msg: M) => void) => Node[]
+  view: (send: (msg: M) => void, h: View<S, M>) => Node[]
   onEffect?: (effect: E, send: (msg: M) => void, signal: AbortSignal) => void
 }
 
-function each<S, T>(opts: {
-  items: (s: S) => T[]
-  key: (item: T) => string | number
-  render: (item: <R>(sel: (t: T) => R) => () => R, index: () => number) => Node[]
-}): Node[]
+// View<S, M> is a bundle of state-bound helpers. Destructure in `view` to
+// drop per-call generics — every accessor infers `s: S` from the component.
+interface View<S, M> {
+  send: (msg: M) => void
+  show(opts: { when: (s: S) => boolean; render: (send) => Node[] }): Node[]
+  branch(opts: { on: (s: S) => string | number; cases: Record<string, (send) => Node[]> }): Node[]
+  each<T>(opts: {
+    items: (s: S) => T[]
+    key: (item: T) => string | number
+    render: (bag: { item; index: () => number; send }) => Node[]
+  }): Node[]
+  text(accessor: ((s: S) => string) | string): Text
+  memo<T>(accessor: (s: S) => T): (s: S) => T
+  ctx<T>(c: Context<T>): (s: S) => T
+  slice<Sub>(selector: (s: S) => Sub): View<Sub, M>
+}
 
-function show<S, M>(opts: {
-  when: (s: S) => boolean
-  render: (send: (msg: M) => void) => Node[]
-}): Node[]
-function branch<S>(opts: {
-  on: (s: S) => string | number
-  cases: Record<string, () => Node[]>
-}): Node[]
-function memo<S, T>(accessor: (s: S) => T): (s: S) => T
 function onMount(callback: (el: Element) => (() => void) | void): void
 // item accessor: item.field (shorthand) or item(t => t.expr) (computed) — both return () => V
 ```
@@ -42,7 +44,7 @@ function onMount(callback: (el: Element) => (() => void) | void): void
 ## Example
 
 ```typescript
-import { component, div, button, text } from '@llui/dom'
+import { component, div, button } from '@llui/dom'
 
 type State = { count: number }
 type Msg = { type: 'inc' } | { type: 'dec' }
@@ -59,7 +61,7 @@ export const Counter = component<State, Msg, Effect>({
         return [{ ...state, count: Math.max(0, state.count - 1) }, []]
     }
   },
-  view: (send) =>
+  view: (send, { text }) =>
     div({ class: 'counter' }, [
       button({ onClick: () => send({ type: 'dec' }) }, [text('-')]),
       text((s) => String(s.count)),
@@ -73,6 +75,7 @@ export const Counter = component<State, Msg, Effect>({
 - Never mutate state in `update()`. Always return a new object: `{ ...state, field: newValue }`.
 - Reactive values in `view()` are arrow functions: `text(s => s.label)`, `div({ class: s => s.active ? 'on' : '' })`.
 - Static values are literals: `div({ class: 'container' })`.
+- Destructure view helpers from the second `view` argument: `view: (send, { show, each, branch, text, memo }) => [...]`. This pins `s: S` across all state-bound calls — no per-call `show<State>` generics. Import element helpers (`div`, `button`, `span`…) normally.
 - Never use `.map()` on state arrays in `view()`. Always use `each()` for reactive lists.
 - In `each()`, `render` receives `item` (a scoped accessor proxy) and `index` (a getter).
   Read item properties via property access: `item.text` (returns a reactive accessor).

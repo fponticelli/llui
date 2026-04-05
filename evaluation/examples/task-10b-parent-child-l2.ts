@@ -28,7 +28,7 @@ const CounterChild = component<ChildState, ChildMsg, ChildEffect>({
         return [{ ...state, id: msg.id, value: msg.value }, []]
     }
   },
-  view: (send) => [
+  view: (send, { each }) => [
     div({ class: 'counter-child' }, [
       text((s: ChildState) => String(s.value)),
       button({ onClick: () => send({ type: 'increment' }) }, [text('+')]),

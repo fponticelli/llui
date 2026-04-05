@@ -18,23 +18,26 @@ export const appDef = component<State, Msg, Effect>({
     return [s, effects]
   },
   update,
-  view: (send, h) => [
-    header(send),
+  view: (send, h) => {
+    const { branch } = h
+    return [
+      header(send),
 
-    ...routing.listener(send),
+      ...routing.listener(send),
 
-    // TODO(view-signature-migration): repoPage reads state.route at mount
-    // time for routing.link's literal owner/name params. Needs refactoring
-    // to use accessors. For now, snapshot from init state at module scope.
-    ...h.branch({
-      on: (s) => s.route.page,
-      cases: {
-        search: (send) => searchView(send),
-        repo: (send) => repoPage(h, initialState(), send),
-        tree: (send) => repoPage(h, initialState(), send),
-      },
-    }),
-  ],
+      // TODO(view-signature-migration): repoPage reads state.route at mount
+      // time for routing.link's literal owner/name params. Needs refactoring
+      // to use accessors. For now, snapshot from init state at module scope.
+      ...branch({
+        on: (s) => s.route.page,
+        cases: {
+          search: (send) => searchView(send),
+          repo: (send) => repoPage(h, initialState(), send),
+          tree: (send) => repoPage(h, initialState(), send),
+        },
+      }),
+    ]
+  },
   onEffect: handleEffects<Effect, Msg>()
     .use(routing.handleEffect)
     .else(() => {}),

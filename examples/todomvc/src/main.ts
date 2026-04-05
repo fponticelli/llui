@@ -13,7 +13,6 @@ import {
   footer,
   section,
   header,
-  memo,
 } from '@llui/dom'
 
 type Todo = { id: number; text: string; completed: boolean }
@@ -71,8 +70,8 @@ const App = component<State, Msg, never>({
         return [{ ...state, todos: state.todos.filter((t) => !t.completed) }, []]
     }
   },
-  view: (send, h) => {
-    const filteredTodos = memo((s: State) => {
+  view: (send, { show, each, memo }) => {
+    const filteredTodos = memo((s) => {
       switch (s.filter) {
         case 'all':
           return s.todos
@@ -83,8 +82,8 @@ const App = component<State, Msg, never>({
       }
     })
 
-    const activeCount = memo((s: State) => s.todos.filter((t) => !t.completed).length)
-    const hasCompleted = memo((s: State) => s.todos.some((t) => t.completed))
+    const activeCount = memo((s) => s.todos.filter((t) => !t.completed).length)
+    const hasCompleted = memo((s) => s.todos.some((t) => t.completed))
 
     return [
       section({ class: 'todoapp' }, [
@@ -103,7 +102,7 @@ const App = component<State, Msg, never>({
           }),
         ]),
 
-        ...h.show({
+        ...show({
           when: (s) => s.todos.length > 0,
           render: () => [
             section({ class: 'main' }, [
@@ -119,7 +118,7 @@ const App = component<State, Msg, never>({
               ]),
               ul(
                 { class: 'todo-list' },
-                h.each({
+                each({
                   items: filteredTodos,
                   key: (t) => t.id,
                   render: ({ item }) => [
@@ -151,7 +150,7 @@ const App = component<State, Msg, never>({
 
             footer({ class: 'footer' }, [
               span({ class: 'todo-count' }, [
-                h.text((s) => {
+                text((s) => {
                   const n = activeCount(s)
                   return `${n} item${n === 1 ? '' : 's'} left`
                 }),
@@ -161,7 +160,7 @@ const App = component<State, Msg, never>({
                 filterLink('active', 'Active', send),
                 filterLink('completed', 'Completed', send),
               ]),
-              ...h.show({
+              ...show({
                 when: hasCompleted,
                 render: () => [
                   button(

@@ -49,10 +49,10 @@ export const MultiStepForm = component<State, Msg, Effect>({
         return [state, []]
     }
   },
-  view: (send) => [
+  view: (send, { branch }) => [
     div({ class: 'multi-step-form' }, [
       div({ class: 'step-indicator' }, [text((s: State) => `Step ${s.step} of 4`)]),
-      ...branch<State>({
+      ...branch({
         on: (s) => s.step,
         cases: {
           1: () => [

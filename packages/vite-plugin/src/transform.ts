@@ -152,6 +152,8 @@ export function transformLlui(
   // When the user writes `h.text(...)` / `h.show(...)` / `h.each(...)`, the
   // compiler treats the call as if it were a bare import call.
   const viewHelperNames = collectViewHelperNames(sourceFile, lluiImport)
+  // Destructured aliases: `view: (_, { show, text: t }) => [...]` → { show→show, t→text }.
+  const viewHelperAliases = collectViewHelperAliases(sourceFile, lluiImport, viewHelperNames)
 
   // Track which helpers were compiled vs bailed out
   const compiledHelpers = new Set<string>()
@@ -173,7 +175,10 @@ export function transformLlui(
     const origEnd = hasPos ? node.getEnd() : -1
 
     // Pass 0: each() optimizations — dedup item() selectors + auto-wrap items in memo
-    if (ts.isCallExpression(node) && isHelperCall(node.expression, 'each', viewHelperNames)) {
+    if (
+      ts.isCallExpression(node) &&
+      isHelperCall(node.expression, 'each', viewHelperNames, viewHelperAliases)
+    ) {
       let current: ts.CallExpression = node
       let changed = false
       const memoWrapped = tryWrapEachItemsWithMemo(current, fieldBits, f)
@@ -214,7 +219,14 @@ export function transformLlui(
       }
 
       // Pass 2: Inject mask into text() calls
-      const textTransformed = tryInjectTextMask(node, lluiImport, viewHelperNames, fieldBits, f)
+      const textTransformed = tryInjectTextMask(
+        node,
+        lluiImport,
+        viewHelperNames,
+        viewHelperAliases,
+        fieldBits,
+        f,
+      )
       if (textTransformed) {
         if (hasPos) edits.push({ start: origStart, end: origEnd, replacement: '' })
         return textTransformed
@@ -496,10 +508,120 @@ function collectViewHelperNames(
         }
       }
     }
+    // Also: any function parameter annotated as `View<...>` — covers extracted
+    // view-functions like `function repoPage(h: View<State, Msg>, ...)`.
+    if (
+      ts.isParameter(node) &&
+      node.type &&
+      isViewTypeReference(node.type) &&
+      ts.isIdentifier(node.name)
+    ) {
+      names.add(node.name.text)
+    }
     ts.forEachChild(node, visit)
   }
   visit(sf)
   return names
+}
+
+function isViewTypeReference(t: ts.TypeNode): boolean {
+  return (
+    ts.isTypeReferenceNode(t) && ts.isIdentifier(t.typeName) && t.typeName.text === 'View'
+  )
+}
+
+/**
+ * Scan for `component({ view: (send, { show, each, text, ... }) => ... })`
+ * destructured second parameters and return a map from the locally-bound
+ * name to the primitive name it aliases. This lets users write the bare
+ * `show(...)` / `text(...)` forms without importing them, while the
+ * compiler still applies mask injection etc.
+ *
+ *     view: (_, { show, text: t }) => [...]
+ *     // returns { show → "show", t → "text" }
+ */
+const VIEW_HELPER_PRIMITIVES = new Set([
+  'show',
+  'branch',
+  'each',
+  'text',
+  'memo',
+  'selector',
+  'ctx',
+  'slice',
+  'send',
+])
+
+function collectViewHelperAliases(
+  sf: ts.SourceFile,
+  lluiImport: ts.ImportDeclaration,
+  helperNames: Set<string>,
+): Map<string, string> {
+  const aliases = new Map<string, string>()
+  function addFromBindingPattern(pattern: ts.ObjectBindingPattern): void {
+    for (const elem of pattern.elements) {
+      // { show } → propertyName=undefined, name=show
+      // { show: mySh } → propertyName=show, name=mySh
+      const sourceName =
+        elem.propertyName && ts.isIdentifier(elem.propertyName)
+          ? elem.propertyName.text
+          : ts.isIdentifier(elem.name)
+            ? elem.name.text
+            : null
+      const localName = ts.isIdentifier(elem.name) ? elem.name.text : null
+      if (sourceName && localName && VIEW_HELPER_PRIMITIVES.has(sourceName)) {
+        aliases.set(localName, sourceName)
+      }
+    }
+  }
+  function visit(node: ts.Node): void {
+    if (ts.isCallExpression(node) && isComponentCall(node, lluiImport)) {
+      const arg = node.arguments[0]
+      if (arg && ts.isObjectLiteralExpression(arg)) {
+        for (const prop of arg.properties) {
+          if (
+            ts.isPropertyAssignment(prop) &&
+            ts.isIdentifier(prop.name) &&
+            prop.name.text === 'view' &&
+            (ts.isArrowFunction(prop.initializer) || ts.isFunctionExpression(prop.initializer))
+          ) {
+            const params = prop.initializer.parameters
+            if (params.length >= 2) {
+              const second = params[1]!
+              if (ts.isObjectBindingPattern(second.name)) {
+                addFromBindingPattern(second.name)
+              }
+            }
+          }
+        }
+      }
+    }
+    // Also: function parameters like `(…, { show, text }: View<State, Msg>) => …`
+    // on extracted helpers — allow the same destructuring ergonomics.
+    if (
+      ts.isParameter(node) &&
+      node.type &&
+      isViewTypeReference(node.type) &&
+      ts.isObjectBindingPattern(node.name)
+    ) {
+      addFromBindingPattern(node.name)
+    }
+    // Also: `const { show, text } = h` assignments where `h` is a known
+    // helper binding — lets helpers destructure once at the top of the
+    // function body.
+    if (
+      ts.isVariableDeclaration(node) &&
+      ts.isObjectBindingPattern(node.name) &&
+      node.initializer &&
+      ts.isIdentifier(node.initializer) &&
+      helperNames.has(node.initializer.text)
+    ) {
+      addFromBindingPattern(node.name)
+    }
+    ts.forEachChild(node, visit)
+  }
+  visit(sf)
+  return aliases
 }
 
 function isComponentCall(node: ts.CallExpression, lluiImport: ts.ImportDeclaration): boolean {
@@ -770,15 +892,27 @@ function tryTransformElementCall(
 // ── Pass 2: Mask injection ───────────────────────────────────────
 
 /**
- * Match `name(...)` or `<h>.name(...)` where `<h>` is a known view-helpers
- * binding. Used so the compiler treats `h.text(...)` identically to `text(...)`.
+ * Match a call expression against a primitive name across all three binding
+ * forms:
+ *   - bare imported identifier: `name(...)` where `name` was imported from @llui/dom
+ *   - destructured alias: `name(...)` where `name` is bound via
+ *     `view: (_, { name }) => ...` (or `{ name: alias }`)
+ *   - member call: `<h>.name(...)` where `<h>` is the 2nd view parameter
+ *
+ * The compiler treats all three identically for mask injection / each()
+ * optimization purposes.
  */
 function isHelperCall(
   expr: ts.Expression,
   name: string,
   helperNames: Set<string>,
+  aliases?: Map<string, string>,
 ): boolean {
-  if (ts.isIdentifier(expr)) return expr.text === name
+  if (ts.isIdentifier(expr)) {
+    if (expr.text === name) return true
+    if (aliases && aliases.get(expr.text) === name) return true
+    return false
+  }
   if (
     ts.isPropertyAccessExpression(expr) &&
     ts.isIdentifier(expr.expression) &&
@@ -795,19 +929,18 @@ function tryInjectTextMask(
   node: ts.CallExpression,
   lluiImport: ts.ImportDeclaration,
   viewHelperNames: Set<string>,
+  viewHelperAliases: Map<string, string>,
   fieldBits: Map<string, number>,
   f: ts.NodeFactory,
 ): ts.CallExpression | null {
-  const isMember =
-    ts.isPropertyAccessExpression(node.expression) &&
-    ts.isIdentifier(node.expression.expression) &&
-    viewHelperNames.has(node.expression.expression.text) &&
-    ts.isIdentifier(node.expression.name) &&
-    node.expression.name.text === 'text'
+  if (!isHelperCall(node.expression, 'text', viewHelperNames, viewHelperAliases)) {
+    return null
+  }
 
-  if (!isMember) {
-    if (!ts.isIdentifier(node.expression) || node.expression.text !== 'text') return null
-    // Verify text is from @llui/dom
+  // For a bare identifier `text`, verify it actually resolves to the @llui/dom
+  // import (otherwise a user-defined `text` in scope would be rewritten).
+  // Destructured-alias and member-expression forms are already provenance-safe.
+  if (ts.isIdentifier(node.expression) && !viewHelperAliases.has(node.expression.text)) {
     const clause = lluiImport.importClause
     if (!clause?.namedBindings || !ts.isNamedImports(clause.namedBindings)) return null
     const hasText = clause.namedBindings.elements.some(

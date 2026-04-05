@@ -66,9 +66,9 @@ export const Counter = component<State, Msg>({
         return [{ count: state.count + 1 }, []]
     }
   },
-  view: (send) => {
+  view: (send, { text }) => {
     return div([
-      text((s: State) => String(s.count)),
+      text((s) => String(s.count)),
       button({ onClick: () => send({ type: 'increment' }) }, [text('+')]),
     ])
   },

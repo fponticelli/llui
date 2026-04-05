@@ -29,7 +29,7 @@ export const Accordion = component<State, Msg, Effect>({
         return [{ ...state, openId: state.openId === msg.id ? null : msg.id }, []]
     }
   },
-  view: (send) => [
+  view: (send, { show }) => [
     div({ class: 'accordion' }, [
       ...PANELS.flatMap((panel) => [
         div({ class: 'panel' }, [
@@ -40,7 +40,7 @@ export const Accordion = component<State, Msg, Effect>({
             },
             [text(panel.title)],
           ),
-          ...show<State>({
+          ...show({
             when: (s) => s.openId === panel.id,
             render: () => [div({ class: 'panel-body' }, [text(panel.body)])],
           }),

@@ -65,7 +65,7 @@ export const AsyncValidation = component<State, Msg, Effect>({
         return [state, []]
     }
   },
-  view: (send) => [
+  view: (send, { branch }) => [
     div({ class: 'async-validation' }, [
       label({}, [text('Email')]),
       input({
@@ -74,7 +74,7 @@ export const AsyncValidation = component<State, Msg, Effect>({
         onInput: (e: Event) =>
           send({ type: 'setEmail', value: (e.target as HTMLInputElement).value }),
       }),
-      ...branch<State>({
+      ...branch({
         on: (s) => s.status,
         cases: {
           idle: () => [],
