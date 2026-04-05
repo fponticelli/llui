@@ -651,6 +651,46 @@ describe('subtree collapse — nested elements → elTemplate', () => {
   })
 })
 
+describe('spread props bail to runtime', () => {
+  it('preserves spread props on div instead of stripping them', () => {
+    const src = `
+      import { div } from '@llui/dom'
+      const parts = { root: { 'data-scope': 'x', role: 'button' } }
+      const el = div({ ...parts.root, class: 'foo' })
+    `
+    const out = t(src)
+    // Must NOT transform to elSplit — that would drop the spread silently.
+    // The runtime div() helper handles spreads natively.
+    expect(clean(out)).toContain('div({ ...parts.root')
+    expect(clean(out)).not.toContain('elSplit("div"')
+  })
+
+  it('preserves spread props with reactive accessors in the spread source', () => {
+    const src = `
+      import { button } from '@llui/dom'
+      const parts = { trigger: { 'aria-expanded': (s) => s.open } }
+      const el = button({ ...parts.trigger, class: 'btn' })
+    `
+    const out = t(src)
+    expect(clean(out)).toContain('button({ ...parts.trigger')
+    expect(clean(out)).not.toContain('elSplit("button"')
+  })
+
+  it('still compiles other elements in the same file', () => {
+    const src = `
+      import { div, span } from '@llui/dom'
+      const parts = { root: { 'data-x': '1' } }
+      const a = div({ ...parts.root })
+      const b = span({ class: 'plain' })
+    `
+    const out = t(src)
+    // span() is fully static — should still be template-cloned
+    expect(clean(out)).toContain('cloneNode')
+    // div() with spread stays at runtime
+    expect(clean(out)).toContain('div({ ...parts.root')
+  })
+})
+
 describe('returns null for non-llui files', () => {
   it('returns null when no @llui/dom import', () => {
     const src = `export const x = 42`

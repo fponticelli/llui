@@ -530,6 +530,18 @@ function tryTransformElementCall(
     bailed.add(localName)
     return null
   }
+  // Bail on spread assignments (`...parts.root`) — the compiler cannot
+  // statically classify spread contents, and silently dropping them would
+  // break consumers (e.g. @llui/components parts spreading). Fall back to
+  // the runtime element helper so spreads are applied normally.
+  if (
+    propsArg &&
+    ts.isObjectLiteralExpression(propsArg) &&
+    propsArg.properties.some((p) => ts.isSpreadAssignment(p))
+  ) {
+    bailed.add(localName)
+    return null
+  }
 
   const tag = f.createStringLiteral(originalName)
 
