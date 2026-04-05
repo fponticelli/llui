@@ -127,6 +127,7 @@ export function transformLlui(
   source: string,
   _filename: string,
   devMode = false,
+  mcpPort: number | null = 5200,
 ): { output: string; edits: TransformEdit[] } | null {
   const sourceFile = ts.createSourceFile('input.ts', source, ts.ScriptTarget.Latest, true)
 
@@ -275,7 +276,7 @@ export function transformLlui(
     } catch {
       // Synthetic nodes may fail to print individually — fall back to full reprint
       const output =
-        printer.printFile(transformed) + (devMode ? '\n' + generateHmrCode(componentDecls) : '')
+        printer.printFile(transformed) + (devMode ? '\n' + generateHmrCode(componentDecls, mcpPort) : '')
       return { output, edits: [{ start: 0, end: source.length, replacement: output }] }
     }
 
@@ -296,7 +297,7 @@ export function transformLlui(
     finalEdits.push({
       start: source.length,
       end: source.length,
-      replacement: '\n' + generateHmrCode(componentDecls),
+      replacement: '\n' + generateHmrCode(componentDecls, mcpPort),
     })
   }
 
@@ -314,7 +315,10 @@ export function transformLlui(
 
 // ── HMR ──────────────────────────────────────────────────────────
 
-function generateHmrCode(components: Array<{ varName: string; componentName: string }>): string {
+function generateHmrCode(
+  components: Array<{ varName: string; componentName: string }>,
+  mcpPort: number | null,
+): string {
   if (components.length === 0) {
     // No component() calls in this file — just accept for view file hot reload
     return `
@@ -329,11 +333,14 @@ if (import.meta.hot) {
     .map(({ varName, componentName }) => `      __replaceComponent("${componentName}", ${varName})`)
     .join('\n')
 
+  const relayImport = mcpPort !== null ? ', startRelay as __startRelay' : ''
+  const relayCall = mcpPort !== null ? `\n__startRelay(${mcpPort})` : ''
+
   return `
 import { enableHmr as __enableHmr, replaceComponent as __replaceComponent } from '@llui/dom/hmr'
-import { enableDevTools as __enableDevTools } from '@llui/dom/devtools'
+import { enableDevTools as __enableDevTools${relayImport} } from '@llui/dom/devtools'
 __enableHmr()
-__enableDevTools()
+__enableDevTools()${relayCall}
 if (import.meta.hot) {
   import.meta.hot.accept(() => {
 ${replaceCalls}
@@ -792,6 +799,29 @@ function tryInjectDirty(
   for (let i = 1; i < comparisons.length; i++) {
     dirtyBody = f.createBinaryExpression(dirtyBody, ts.SyntaxKind.BarToken, comparisons[i]!)
   }
+
+  // Fallback: if no tracked bit fired but the state reference changed, some
+  // untracked field must have changed — return FULL_MASK so bindings whose
+  // accessors came from external modules (spread parts) still fire.
+  //   tracked || (Object.is(o, n) ? 0 : FULL_MASK)
+  const fallback = f.createParenthesizedExpression(
+    f.createConditionalExpression(
+      f.createCallExpression(
+        f.createPropertyAccessExpression(f.createIdentifier('Object'), 'is'),
+        undefined,
+        [f.createIdentifier('o'), f.createIdentifier('n')],
+      ),
+      f.createToken(ts.SyntaxKind.QuestionToken),
+      f.createNumericLiteral(0),
+      f.createToken(ts.SyntaxKind.ColonToken),
+      createMaskLiteral(f, -1),
+    ),
+  )
+  dirtyBody = f.createBinaryExpression(
+    f.createParenthesizedExpression(dirtyBody),
+    ts.SyntaxKind.BarBarToken,
+    fallback,
+  )
 
   const dirtyFn = f.createArrowFunction(
     undefined,
