@@ -57,7 +57,7 @@ export const MultiStepForm = component<State, Msg, Effect>({
         cases: {
           1: () => [
             div({ class: 'step' }, [
-              label({}, [text('Name')]),
+              label([text('Name')]),
               input({
                 type: 'text',
                 value: (s: State) => s.name,
@@ -72,7 +72,7 @@ export const MultiStepForm = component<State, Msg, Effect>({
           ],
           2: () => [
             div({ class: 'step' }, [
-              label({}, [text('Email')]),
+              label([text('Email')]),
               input({
                 type: 'email',
                 value: (s: State) => s.email,
@@ -87,7 +87,7 @@ export const MultiStepForm = component<State, Msg, Effect>({
           ],
           3: () => [
             div({ class: 'step' }, [
-              label({}, [text('Summary')]),
+              label([text('Summary')]),
               input({
                 type: 'text',
                 value: (s: State) => s.summary,

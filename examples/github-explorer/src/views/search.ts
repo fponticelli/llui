@@ -125,7 +125,7 @@ function repoItem(item: <R>(sel: (r: Repo) => R) => () => R, send: Send<Msg>): H
   const owner = item((r) => r.owner.login)()
   const name = item((r) => r.name)()
   return li({ class: 'repo-item' }, [
-    h3({}, [
+    h3([
       routing.link(
         send,
         { page: 'repo', owner, name, tab: 'code', data: { type: 'loading' } },
@@ -133,21 +133,21 @@ function repoItem(item: <R>(sel: (r: Repo) => R) => () => R, send: Send<Msg>): H
         [text(item((r) => r.full_name))],
       ),
     ]),
-    p({}, [text(item((r) => r.description ?? ''))]),
+    p([text(item((r) => r.description ?? ''))]),
     div({ class: 'repo-meta' }, [
       ...(() => {
         const lang = item((r) => r.language)()
         if (!lang) return []
         return [
-          span({}, [
+          span([
             span({ class: 'lang-dot', style: `background-color: ${LANG_COLORS[lang] ?? '#ccc'}` }),
             text(item((r) => r.language ?? '')),
           ]),
         ]
       })(),
-      span({}, [text(item((r) => `★ ${r.stargazers_count.toLocaleString()}`))]),
-      span({}, [text(item((r) => `🍴 ${r.forks_count.toLocaleString()}`))]),
-      span({}, [text(item((r) => `Updated ${new Date(r.updated_at).toLocaleDateString()}`))]),
+      span([text(item((r) => `★ ${r.stargazers_count.toLocaleString()}`))]),
+      span([text(item((r) => `🍴 ${r.forks_count.toLocaleString()}`))]),
+      span([text(item((r) => `Updated ${new Date(r.updated_at).toLocaleDateString()}`))]),
     ]),
   ])
 }

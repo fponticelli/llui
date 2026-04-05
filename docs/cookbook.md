@@ -169,7 +169,7 @@ Split views into separate modules. Parent owns state, child operates on a slice.
 // views/header.ts
 export function header(send: Send<Msg>): Node[] {
   return [
-    nav({}, [
+    nav([
       text((s: State) => s.user?.name ?? 'Guest'),
       button({ onClick: () => send({ type: 'logout' }) }, [text('Logout')]),
     ]),

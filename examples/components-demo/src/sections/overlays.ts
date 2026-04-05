@@ -478,7 +478,7 @@ export const App = component<State, Msg, never>({
         ]),
         card('Select', [
           button({ ...se.trigger }, [
-            span({}, [text((s: State) => se.valueText(s))]),
+            span([text((s: State) => se.valueText(s))]),
             span({ class: 'ml-2 text-slate-400' }, [text('▾')]),
           ]),
           ...select.overlay<State>({

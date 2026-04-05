@@ -440,13 +440,13 @@ export const App = component<State, Msg, never>({
                   s.qr.matrix.length > 0 ? qrCode.toDataUrl(s.qr.matrix, '#0f172a', '#ffffff') : '',
               }),
               div({ class: 'flex flex-col gap-1 text-xs text-slate-600' }, [
-                div({}, [
+                div([
                   text('Size: '),
                   span({ class: 'font-mono text-slate-700' }, [
                     text((s: State) => `${qrCode.size(s.qr)}×${qrCode.size(s.qr)}`),
                   ]),
                 ]),
-                div({}, [
+                div([
                   text('Value: '),
                   span({ class: 'font-mono text-slate-700 break-all' }, [
                     text((s: State) => s.qr.value || '(empty)'),

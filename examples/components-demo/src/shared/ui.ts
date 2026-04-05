@@ -1,7 +1,7 @@
 import { div, h2, text } from '@llui/dom'
 
 export function sectionGroup(title: string, sections: Node[]): Node {
-  return div({}, [
+  return div([
     h2({ class: 'mt-8 mb-3 text-xs font-semibold uppercase tracking-wider text-slate-500' }, [
       text(title),
     ]),

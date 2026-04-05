@@ -235,7 +235,7 @@ export const App = component<State, Msg, never>({
                   'flex items-center justify-between px-2 py-1 bg-slate-100 rounded-t cursor-move text-xs',
               },
               [
-                span({}, [text('Floating Panel')]),
+                span([text('Floating Panel')]),
                 div({ class: 'flex gap-1' }, [
                   button({ ...fp.minimizeTrigger, class: 'px-1 hover:bg-slate-200 rounded' }, [
                     text('–'),

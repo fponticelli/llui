@@ -312,15 +312,15 @@ export const App = component<State, Msg, never>({
             ]),
             div({ class: 'cp-sliders' }, [
               label({ class: 'cp-label' }, [
-                span({}, [text('H')]),
+                span([text('H')]),
                 input({ ...cp.hueSlider, class: 'cp-range' }),
               ]),
               label({ class: 'cp-label' }, [
-                span({}, [text('S')]),
+                span([text('S')]),
                 input({ ...cp.saturationSlider, class: 'cp-range' }),
               ]),
               label({ class: 'cp-label' }, [
-                span({}, [text('L')]),
+                span([text('L')]),
                 input({ ...cp.lightnessSlider, class: 'cp-range' }),
               ]),
             ]),

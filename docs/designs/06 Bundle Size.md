@@ -53,7 +53,7 @@ import { div, span, button } from '@llui/dom'
 
 view: (send) =>
   div({ class: 'container' }, [
-    span({}, [text(() => state.label)]),
+    span([text(() => state.label)]),
     button({ onClick: () => send({ type: 'click' }) }, [text('Go')]),
   ])
 ```
@@ -295,7 +295,7 @@ If an entire subtree has no reactive bindings — no accessor functions, no `bra
 
 ```ts
 // Source: a static header with no bindings
-header({ class: 'app-header' }, [h1({}, [text('My App')])])
+header({ class: 'app-header' }, [h1([text('My App')])])
 
 // Emitted:
 const _tmpl = document.createElement('template')

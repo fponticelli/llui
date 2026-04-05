@@ -32,7 +32,7 @@ export function repoPage(s: State, send: Send<Msg>): Node[] {
   return [
     div({ class: 'repo-header' }, [
       div({ class: 'container' }, [
-        h1({}, [
+        h1([
           text((s: State) => routeOwnerName(s)?.owner ?? ''),
           text(' / '),
           routing.link(
@@ -43,17 +43,17 @@ export function repoPage(s: State, send: Send<Msg>): Node[] {
           ),
         ]),
         div({ class: 'stats' }, [
-          span({}, [
+          span([
             text((s: State) => `★ ${repoFromState(s)?.stargazers_count?.toLocaleString() ?? '—'}`),
           ]),
-          span({}, [
+          span([
             text((s: State) => `🍴 ${repoFromState(s)?.forks_count?.toLocaleString() ?? '—'}`),
           ]),
-          span({}, [text((s: State) => `Issues: ${repoFromState(s)?.open_issues_count ?? '—'}`)]),
+          span([text((s: State) => `Issues: ${repoFromState(s)?.open_issues_count ?? '—'}`)]),
         ]),
         ...show<State, Msg>({
           when: (s) => !!repoFromState(s)?.description,
-          render: () => [p({}, [text((s: State) => repoFromState(s)?.description ?? '')])],
+          render: () => [p([text((s: State) => repoFromState(s)?.description ?? '')])],
         }),
       ]),
     ]),
@@ -142,9 +142,9 @@ function breadcrumb(s: State, send: Send<Msg>): Node[] {
   for (let i = 0; i < parts.length; i++) {
     const partial = parts.slice(0, i + 1).join('/')
     const isLast = i === parts.length - 1
-    crumbs.push(span({}, [text(' / ')]))
+    crumbs.push(span([text(' / ')]))
     if (isLast) {
-      crumbs.push(span({}, [text(parts[i]!)]))
+      crumbs.push(span([text(parts[i]!)]))
     } else {
       crumbs.push(
         routing.link(
@@ -194,7 +194,7 @@ function fileTree(send: Send<Msg>): Node[] {
                 [text(item((e) => e.name))],
               ),
               ...(!isDir
-                ? [span({}, [text(item((e) => (e.size ? formatSize(e.size) : '')))])]
+                ? [span([text(item((e) => (e.size ? formatSize(e.size) : '')))])]
                 : []),
             ]),
           ]
@@ -224,7 +224,7 @@ function issuesList(): Node[] {
       key: (i) => i.id,
       render: ({ item }) => [
         div({ class: 'issue-row' }, [
-          h3({}, [text(item((i) => i.title))]),
+          h3([text(item((i) => i.title))]),
           div({ class: 'issue-meta' }, [
             text(
               item(

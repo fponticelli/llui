@@ -167,7 +167,7 @@ branch<State, Msg>({
 // Boolean conditional
 show<State, Msg>({
   when: (s) => s.isVisible,
-  render: (send) => [div({}, [text('I am visible')])],
+  render: (send) => [div([text('I am visible')])],
 })
 ```
 
