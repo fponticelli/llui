@@ -1,6 +1,7 @@
 import ts from 'typescript'
 import { collectDeps } from './collect-deps.js'
-import { extractMsgSchema } from './msg-schema.js'
+import { extractMsgSchema, extractEffectSchema } from './msg-schema.js'
+import { extractStateSchema, type StateType } from './state-schema.js'
 
 function createMaskLiteral(f: ts.NodeFactory, mask: number): ts.Expression {
   if (mask >= 0) return f.createNumericLiteral(mask)
@@ -227,6 +228,15 @@ export function transformLlui(
         if (schema) {
           result = injectMsgSchema(result ?? node, schema, f)
         }
+        const stateSchema = extractStateSchema(source)
+        if (stateSchema) {
+          result = injectStateSchema(result ?? node, stateSchema.fields, f)
+        }
+        const effectSchema = extractEffectSchema(source)
+        if (effectSchema) {
+          result = injectEffectSchema(result ?? node, effectSchema, f)
+        }
+        result = injectComponentMeta(result ?? node, node, sourceFile, _filename, f)
       }
       if (result) {
         if (hasPos) edits.push({ start: origStart, end: origEnd, replacement: '' })
@@ -275,8 +285,11 @@ export function transformLlui(
       xfText = printer.printNode(ts.EmitHint.Unspecified, xfStmts[i]!, transformed)
     } catch {
       // Synthetic nodes may fail to print individually — fall back to full reprint
+      const { top: _top, bottom: _bottom } = devMode
+        ? generateDevCode(componentDecls, mcpPort)
+        : { top: '', bottom: '' }
       const output =
-        printer.printFile(transformed) + (devMode ? '\n' + generateHmrCode(componentDecls, mcpPort) : '')
+        (_top ? _top + '\n' : '') + printer.printFile(transformed) + (_bottom ? '\n' + _bottom : '')
       return { output, edits: [{ start: 0, end: source.length, replacement: output }] }
     }
 
@@ -292,13 +305,14 @@ export function transformLlui(
     }
   }
 
-  // HMR: append at end
+  // Dev setup: enable* must run BEFORE user's mountApp (top of file),
+  // but import.meta.hot.accept needs to reference user's component vars
+  // (bottom of file). So split the injection.
   if (devMode) {
-    finalEdits.push({
-      start: source.length,
-      end: source.length,
-      replacement: '\n' + generateHmrCode(componentDecls, mcpPort),
-    })
+    const { top, bottom } = generateDevCode(componentDecls, mcpPort)
+    if (top) finalEdits.push({ start: 0, end: 0, replacement: top + '\n' })
+    if (bottom)
+      finalEdits.push({ start: source.length, end: source.length, replacement: '\n' + bottom })
   }
 
   if (finalEdits.length === 0) return null
@@ -315,38 +329,40 @@ export function transformLlui(
 
 // ── HMR ──────────────────────────────────────────────────────────
 
-function generateHmrCode(
+function generateDevCode(
   components: Array<{ varName: string; componentName: string }>,
   mcpPort: number | null,
-): string {
+): { top: string; bottom: string } {
   if (components.length === 0) {
-    // No component() calls in this file — just accept for view file hot reload
-    return `
-if (import.meta.hot) {
-  import.meta.hot.accept()
-}
-`.trim()
+    return {
+      top: '',
+      bottom: `if (import.meta.hot) {\n  import.meta.hot.accept()\n}`,
+    }
   }
-
-  // Generate replaceComponent calls for each component in this file
-  const replaceCalls = components
-    .map(({ varName, componentName }) => `      __replaceComponent("${componentName}", ${varName})`)
-    .join('\n')
 
   const relayImport = mcpPort !== null ? ', startRelay as __startRelay' : ''
   const relayCall = mcpPort !== null ? `\n__startRelay(${mcpPort})` : ''
 
-  return `
+  const top = `
 import { enableHmr as __enableHmr, replaceComponent as __replaceComponent } from '@llui/dom/hmr'
 import { enableDevTools as __enableDevTools${relayImport} } from '@llui/dom/devtools'
 __enableHmr()
 __enableDevTools()${relayCall}
+`.trim()
+
+  const replaceCalls = components
+    .map(({ varName, componentName }) => `      __replaceComponent("${componentName}", ${varName})`)
+    .join('\n')
+
+  const bottom = `
 if (import.meta.hot) {
   import.meta.hot.accept(() => {
 ${replaceCalls}
   })
 }
 `.trim()
+
+  return { top, bottom }
 }
 
 /** Find all component() calls and extract the variable name and component name */
@@ -837,7 +853,21 @@ function tryInjectDirty(
 
   const dirtyProp = f.createPropertyAssignment('__dirty', dirtyFn)
 
-  const newConfig = f.createObjectLiteralExpression([...configArg.properties, dirtyProp], true)
+  // __maskLegend: maps each top-level state field to the bit(s) that fire when
+  // it changes. Lets introspection tools decode runtime dirty masks to field names.
+  const legendProps: ts.PropertyAssignment[] = []
+  for (const [field, bit] of topLevelBits) {
+    legendProps.push(f.createPropertyAssignment(field, createMaskLiteral(f, bit)))
+  }
+  const legendProp = f.createPropertyAssignment(
+    '__maskLegend',
+    f.createObjectLiteralExpression(legendProps, false),
+  )
+
+  const newConfig = f.createObjectLiteralExpression(
+    [...configArg.properties, dirtyProp, legendProp],
+    true,
+  )
 
   return f.createCallExpression(node.expression, node.typeArguments, [
     newConfig,
@@ -916,6 +946,121 @@ function cleanupImports(
 
 // ── __msgSchema injection ────────────────────────────────────────
 
+function injectStateSchema(
+  node: ts.CallExpression,
+  fields: Record<string, StateType>,
+  f: ts.NodeFactory,
+): ts.CallExpression {
+  const configArg = node.arguments[0]
+  if (!configArg || !ts.isObjectLiteralExpression(configArg)) return node
+
+  for (const prop of configArg.properties) {
+    if (
+      ts.isPropertyAssignment(prop) &&
+      ts.isIdentifier(prop.name) &&
+      prop.name.text === '__stateSchema'
+    ) {
+      return node
+    }
+  }
+
+  const schemaProp = f.createPropertyAssignment(
+    '__stateSchema',
+    stateTypeToLiteral({ kind: 'object', fields }, f),
+  )
+  const newConfig = f.createObjectLiteralExpression([...configArg.properties, schemaProp], true)
+
+  return f.createCallExpression(node.expression, node.typeArguments, [
+    newConfig,
+    ...node.arguments.slice(1),
+  ])
+}
+
+function stateTypeToLiteral(t: StateType, f: ts.NodeFactory): ts.Expression {
+  if (typeof t === 'string') return f.createStringLiteral(t)
+  if (t.kind === 'enum') {
+    return f.createObjectLiteralExpression([
+      f.createPropertyAssignment('kind', f.createStringLiteral('enum')),
+      f.createPropertyAssignment(
+        'values',
+        f.createArrayLiteralExpression(t.values.map((v) => f.createStringLiteral(v))),
+      ),
+    ])
+  }
+  if (t.kind === 'array') {
+    return f.createObjectLiteralExpression([
+      f.createPropertyAssignment('kind', f.createStringLiteral('array')),
+      f.createPropertyAssignment('of', stateTypeToLiteral(t.of, f)),
+    ])
+  }
+  if (t.kind === 'optional') {
+    return f.createObjectLiteralExpression([
+      f.createPropertyAssignment('kind', f.createStringLiteral('optional')),
+      f.createPropertyAssignment('of', stateTypeToLiteral(t.of, f)),
+    ])
+  }
+  if (t.kind === 'union') {
+    return f.createObjectLiteralExpression([
+      f.createPropertyAssignment('kind', f.createStringLiteral('union')),
+      f.createPropertyAssignment(
+        'of',
+        f.createArrayLiteralExpression(t.of.map((m) => stateTypeToLiteral(m, f))),
+      ),
+    ])
+  }
+  // object
+  const fieldProps: ts.PropertyAssignment[] = []
+  for (const [k, v] of Object.entries(t.fields)) {
+    fieldProps.push(f.createPropertyAssignment(k, stateTypeToLiteral(v, f)))
+  }
+  return f.createObjectLiteralExpression([
+    f.createPropertyAssignment('kind', f.createStringLiteral('object')),
+    f.createPropertyAssignment('fields', f.createObjectLiteralExpression(fieldProps, true)),
+  ])
+}
+
+function injectComponentMeta(
+  nodeWithMaybeEdits: ts.CallExpression,
+  originalNode: ts.CallExpression,
+  sourceFile: ts.SourceFile,
+  filename: string,
+  f: ts.NodeFactory,
+): ts.CallExpression {
+  const configArg = nodeWithMaybeEdits.arguments[0]
+  if (!configArg || !ts.isObjectLiteralExpression(configArg)) return nodeWithMaybeEdits
+
+  // Don't inject if already present
+  for (const prop of configArg.properties) {
+    if (
+      ts.isPropertyAssignment(prop) &&
+      ts.isIdentifier(prop.name) &&
+      prop.name.text === '__componentMeta'
+    ) {
+      return nodeWithMaybeEdits
+    }
+  }
+
+  // Line number from the original (real-position) node
+  const pos = originalNode.pos >= 0 ? originalNode.getStart(sourceFile) : 0
+  const { line } = sourceFile.getLineAndCharacterOfPosition(pos)
+
+  const meta = f.createObjectLiteralExpression(
+    [
+      f.createPropertyAssignment('file', f.createStringLiteral(filename)),
+      f.createPropertyAssignment('line', f.createNumericLiteral(line + 1)),
+    ],
+    false,
+  )
+
+  const metaProp = f.createPropertyAssignment('__componentMeta', meta)
+  const newConfig = f.createObjectLiteralExpression([...configArg.properties, metaProp], true)
+
+  return f.createCallExpression(nodeWithMaybeEdits.expression, nodeWithMaybeEdits.typeArguments, [
+    newConfig,
+    ...nodeWithMaybeEdits.arguments.slice(1),
+  ])
+}
+
 function injectMsgSchema(
   node: ts.CallExpression,
   schema: {
@@ -977,6 +1122,72 @@ function injectMsgSchema(
 
   const schemaProp = f.createPropertyAssignment('__msgSchema', schemaObj)
 
+  const newConfig = f.createObjectLiteralExpression([...configArg.properties, schemaProp], true)
+
+  return f.createCallExpression(node.expression, node.typeArguments, [
+    newConfig,
+    ...node.arguments.slice(1),
+  ])
+}
+
+function injectEffectSchema(
+  node: ts.CallExpression,
+  schema: {
+    discriminant: string
+    variants: Record<string, Record<string, string | { enum: string[] }>>
+  },
+  f: ts.NodeFactory,
+): ts.CallExpression {
+  const configArg = node.arguments[0]
+  if (!configArg || !ts.isObjectLiteralExpression(configArg)) return node
+
+  for (const prop of configArg.properties) {
+    if (
+      ts.isPropertyAssignment(prop) &&
+      ts.isIdentifier(prop.name) &&
+      prop.name.text === '__effectSchema'
+    ) {
+      return node
+    }
+  }
+
+  const variantProps: ts.PropertyAssignment[] = []
+  for (const [variant, fields] of Object.entries(schema.variants)) {
+    const fieldProps: ts.PropertyAssignment[] = []
+    for (const [field, type] of Object.entries(fields)) {
+      if (typeof type === 'string') {
+        fieldProps.push(f.createPropertyAssignment(field, f.createStringLiteral(type)))
+      } else {
+        fieldProps.push(
+          f.createPropertyAssignment(
+            field,
+            f.createObjectLiteralExpression([
+              f.createPropertyAssignment(
+                'enum',
+                f.createArrayLiteralExpression(type.enum.map((v) => f.createStringLiteral(v))),
+              ),
+            ]),
+          ),
+        )
+      }
+    }
+    variantProps.push(
+      f.createPropertyAssignment(
+        f.createStringLiteral(variant),
+        f.createObjectLiteralExpression(fieldProps),
+      ),
+    )
+  }
+
+  const schemaObj = f.createObjectLiteralExpression(
+    [
+      f.createPropertyAssignment('discriminant', f.createStringLiteral(schema.discriminant)),
+      f.createPropertyAssignment('variants', f.createObjectLiteralExpression(variantProps, true)),
+    ],
+    true,
+  )
+
+  const schemaProp = f.createPropertyAssignment('__effectSchema', schemaObj)
   const newConfig = f.createObjectLiteralExpression([...configArg.properties, schemaProp], true)
 
   return f.createCallExpression(node.expression, node.typeArguments, [

@@ -162,6 +162,63 @@ const TOOLS: McpToolDefinition[] = [
       properties: {},
     },
   },
+  {
+    name: 'llui_list_messages',
+    description:
+      'List all message variants the component accepts, with their field types. Returns { discriminant, variants: { [name]: { [field]: typeDescriptor } } }. Use this to discover what messages can be sent without reading source code.',
+    inputSchema: {
+      type: 'object',
+      properties: {},
+    },
+  },
+  {
+    name: 'llui_decode_mask',
+    description:
+      "Decode a dirty-mask value from llui_get_message_history (the 'dirtyMask' field) into the list of top-level state fields that changed. Requires 'mask' param.",
+    inputSchema: {
+      type: 'object',
+      properties: {
+        mask: { type: 'number', description: 'The dirtyMask value to decode' },
+      },
+      required: ['mask'],
+    },
+  },
+  {
+    name: 'llui_mask_legend',
+    description:
+      'Return the compiler-generated bit→field map for this component. Example: { todos: 1, filter: 2, nextId: 4 } means bit 0 represents `todos`, etc.',
+    inputSchema: {
+      type: 'object',
+      properties: {},
+    },
+  },
+  {
+    name: 'llui_component_info',
+    description:
+      'Get component name and source location (file + line) of the component() declaration. Lets you find where to read or edit the component.',
+    inputSchema: {
+      type: 'object',
+      properties: {},
+    },
+  },
+  {
+    name: 'llui_describe_state',
+    description:
+      "Return the State type's shape (not its value). Fields map to type descriptors: 'string', 'number', 'boolean', {kind:'enum',values:[...]}, {kind:'array',of:...}, {kind:'object',fields:...}, {kind:'optional',of:...}. Use this to know what fields exist and their types even when currently undefined.",
+    inputSchema: {
+      type: 'object',
+      properties: {},
+    },
+  },
+  {
+    name: 'llui_list_effects',
+    description:
+      'List all effect variants the component emits, with their field types (same format as llui_list_messages). Returns null if no Effect type is declared.',
+    inputSchema: {
+      type: 'object',
+      properties: {},
+    },
+  },
 ]
 
 // ── MCP Server ──────────────────────────────────────────────────
@@ -293,6 +350,24 @@ export class LluiMcpServer {
       case 'llui_clear_log':
         await this.call('clearLog', [])
         return { cleared: true }
+
+      case 'llui_list_messages':
+        return this.call('getMessageSchema', [])
+
+      case 'llui_decode_mask':
+        return this.call('decodeMask', [args.mask as number])
+
+      case 'llui_mask_legend':
+        return this.call('getMaskLegend', [])
+
+      case 'llui_component_info':
+        return this.call('getComponentInfo', [])
+
+      case 'llui_describe_state':
+        return this.call('getStateSchema', [])
+
+      case 'llui_list_effects':
+        return this.call('getEffectSchema', [])
 
       default:
         throw new Error(`Unknown tool: ${name}`)

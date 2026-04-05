@@ -42,7 +42,9 @@ export default function llui(options: LluiPluginOptions = {}): Plugin {
       const s = new MagicString(code)
       for (const edit of result.edits) {
         if (edit.start === edit.end) {
-          s.append(edit.replacement)
+          // Insert at position — appendRight for middle, append for end-of-file
+          if (edit.start === code.length) s.append(edit.replacement)
+          else s.appendRight(edit.start, edit.replacement)
         } else {
           s.overwrite(edit.start, edit.end, edit.replacement)
         }

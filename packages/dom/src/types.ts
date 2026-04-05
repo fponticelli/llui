@@ -17,6 +17,14 @@ export interface ComponentDef<S, M, E = never, D = void> {
   __renderToString?: (state: S) => string
   /** @internal Compiler-injected */
   __msgSchema?: object
+  /** @internal Compiler-injected — maps top-level state field → dirty-mask bit(s) */
+  __maskLegend?: Record<string, number>
+  /** @internal Compiler-injected — source-file location of the component() call */
+  __componentMeta?: { file: string; line: number }
+  /** @internal Compiler-injected — shape of the State type (for introspection) */
+  __stateSchema?: object
+  /** @internal Compiler-injected — Effect union schema (for introspection) */
+  __effectSchema?: object
 }
 
 export type Send<M> = (msg: M) => void

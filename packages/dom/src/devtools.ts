@@ -138,6 +138,29 @@ export interface LluiDebugAPI {
   getBindings(): BindingDebugInfo[]
   whyDidUpdate(bindingIndex: number): UpdateExplanation
   searchState(query: string): unknown
+  /** Returns the compiled Msg schema (discriminant + variant field types). */
+  getMessageSchema(): MessageSchemaInfo | null
+  /** Returns the bit→field map injected by the compiler. Lets tools decode dirty-mask values. */
+  getMaskLegend(): Record<string, number> | null
+  /** Given a dirty mask, return the list of top-level fields it represents. */
+  decodeMask(mask: number): string[]
+  /** Component name + source location (file/line from compiler-injected metadata). */
+  getComponentInfo(): ComponentInfo
+  /** Returns the compiled State type shape (from TypeScript `type State = { … }`). */
+  getStateSchema(): object | null
+  /** Returns the compiled Effect schema (from TypeScript `type Effect = { … }` union). */
+  getEffectSchema(): object | null
+}
+
+export interface ComponentInfo {
+  name: string
+  file: string | null
+  line: number | null
+}
+
+export interface MessageSchemaInfo {
+  discriminant: string
+  variants: Record<string, Record<string, unknown>>
 }
 
 const MAX_HISTORY = 1000
@@ -320,6 +343,41 @@ export function installDevTools(inst: object): void {
         current = (current as Record<string, unknown>)[part]
       }
       return current
+    },
+
+    getMessageSchema(): MessageSchemaInfo | null {
+      return (ci.def.__msgSchema as MessageSchemaInfo | undefined) ?? null
+    },
+
+    getMaskLegend(): Record<string, number> | null {
+      return ci.def.__maskLegend ?? null
+    },
+
+    decodeMask(mask: number): string[] {
+      const legend = ci.def.__maskLegend
+      if (!legend) return []
+      const fields: string[] = []
+      for (const [field, bit] of Object.entries(legend)) {
+        if ((mask & bit) !== 0) fields.push(field)
+      }
+      return fields
+    },
+
+    getComponentInfo(): ComponentInfo {
+      const meta = ci.def.__componentMeta
+      return {
+        name: ci.def.name,
+        file: meta?.file ?? null,
+        line: meta?.line ?? null,
+      }
+    },
+
+    getStateSchema(): object | null {
+      return (ci.def.__stateSchema as object | undefined) ?? null
+    },
+
+    getEffectSchema(): object | null {
+      return (ci.def.__effectSchema as object | undefined) ?? null
     },
   }
 

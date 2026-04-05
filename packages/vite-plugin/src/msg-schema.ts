@@ -6,11 +6,19 @@ export interface MsgSchema {
 }
 
 export function extractMsgSchema(source: string): MsgSchema | null {
+  return extractDiscriminatedUnionSchema(source, 'Msg')
+}
+
+export function extractEffectSchema(source: string): MsgSchema | null {
+  return extractDiscriminatedUnionSchema(source, 'Effect')
+}
+
+function extractDiscriminatedUnionSchema(source: string, typeName: string): MsgSchema | null {
   const sf = ts.createSourceFile('input.ts', source, ts.ScriptTarget.Latest, true)
 
   for (const stmt of sf.statements) {
     if (!ts.isTypeAliasDeclaration(stmt)) continue
-    if (stmt.name.text !== 'Msg') continue
+    if (stmt.name.text !== typeName) continue
 
     const variants: MsgSchema['variants'] = {}
     collectVariants(stmt.type, variants)
