@@ -1,5 +1,13 @@
 import { describe, it, expect, vi } from 'vitest'
-import { init, update, connect, totalSize } from '../../src/components/file-upload'
+import {
+  init,
+  update,
+  connect,
+  totalSize,
+  acceptToString,
+  fileMatchesAccept,
+  validateFiles,
+} from '../../src/components/file-upload'
 import type { FileUploadState } from '../../src/components/file-upload'
 
 type Ctx = { u: FileUploadState }
@@ -94,5 +102,156 @@ describe('file-upload.connect', () => {
     const pc = connect<Ctx>((s) => s.u, send, { id: 'x' })
     pc.clearTrigger.onClick(new MouseEvent('click'))
     expect(send).toHaveBeenCalledWith({ type: 'clear' })
+  })
+})
+
+describe('validateFiles', () => {
+  it('records TOO_LARGE errors', () => {
+    const s = init({ maxSize: 50 })
+    const { accepted, rejected } = validateFiles([makeFile('big', 100)], s, 0)
+    expect(accepted).toHaveLength(0)
+    expect(rejected[0]!.errors).toContainEqual({ code: 'TOO_LARGE', max: 50 })
+  })
+
+  it('records TOO_SMALL errors', () => {
+    const s = init({ minFileSize: 50 })
+    const { accepted, rejected } = validateFiles([makeFile('tiny', 10)], s, 0)
+    expect(accepted).toHaveLength(0)
+    expect(rejected[0]!.errors).toContainEqual({ code: 'TOO_SMALL', min: 50 })
+  })
+
+  it('records TOO_MANY when maxFiles exceeded', () => {
+    const s = init({ maxFiles: 2 })
+    const { accepted, rejected } = validateFiles(
+      [makeFile('a', 1), makeFile('b', 1), makeFile('c', 1)],
+      s,
+      0,
+    )
+    expect(accepted.map((f) => f.name)).toEqual(['a', 'b'])
+    expect(rejected[0]!.errors).toContainEqual({ code: 'TOO_MANY', max: 2 })
+  })
+
+  it('records INVALID_TYPE against MIME-object accept', () => {
+    const s = init({ accept: { 'image/*': ['.png'] } })
+    const { accepted, rejected } = validateFiles([makeFile('doc.txt', 10)], s, 0)
+    expect(accepted).toHaveLength(0)
+    expect(rejected[0]!.errors).toContainEqual({ code: 'INVALID_TYPE' })
+  })
+
+  it('string accept is permissive (browser-side filter only)', () => {
+    const s = init({ accept: 'image/*' })
+    const { accepted } = validateFiles([makeFile('doc.txt', 10)], s, 0)
+    expect(accepted).toHaveLength(1)
+  })
+})
+
+describe('acceptToString', () => {
+  it('passes strings through', () => {
+    expect(acceptToString('image/png,.jpg')).toBe('image/png,.jpg')
+  })
+
+  it('flattens MIME-object into comma-joined string', () => {
+    const r = acceptToString({ 'image/*': ['.png', '.jpg'], 'application/pdf': [] })
+    // Order: [mime, ...exts] per key, all joined
+    expect(r.split(',').sort()).toEqual(['.jpg', '.png', 'application/pdf', 'image/*'].sort())
+  })
+})
+
+describe('fileMatchesAccept', () => {
+  const png = new File([], 'pic.png', { type: 'image/png' })
+  const pdf = new File([], 'doc.pdf', { type: 'application/pdf' })
+  const txt = new File([], 'note.txt', { type: 'text/plain' })
+
+  it('matches MIME wildcards', () => {
+    expect(fileMatchesAccept(png, { 'image/*': [] })).toBe(true)
+    expect(fileMatchesAccept(pdf, { 'image/*': [] })).toBe(false)
+  })
+
+  it('matches extensions', () => {
+    expect(fileMatchesAccept(pdf, { 'image/*': ['.pdf'] })).toBe(true)
+    expect(fileMatchesAccept(txt, { 'image/*': ['.pdf'] })).toBe(false)
+  })
+
+  it('empty accept matches everything', () => {
+    expect(fileMatchesAccept(txt, {})).toBe(true)
+    expect(fileMatchesAccept(png, '')).toBe(true)
+  })
+})
+
+describe('rejected files', () => {
+  it('addFiles populates rejectedFiles alongside accepted', () => {
+    const s0 = init({ multiple: true, maxSize: 50 })
+    const [s] = update(s0, {
+      type: 'addFiles',
+      files: [makeFile('ok', 10), makeFile('toobig', 100)],
+    })
+    expect(s.files.map((f) => f.name)).toEqual(['ok'])
+    expect(s.rejectedFiles[0]!.file.name).toBe('toobig')
+  })
+
+  it('clearRejected leaves files alone', () => {
+    const s0 = init({ multiple: true, maxSize: 50 })
+    const [s1] = update(s0, {
+      type: 'addFiles',
+      files: [makeFile('ok', 10), makeFile('big', 100)],
+    })
+    const [s2] = update(s1, { type: 'clearRejected' })
+    expect(s2.rejectedFiles).toEqual([])
+    expect(s2.files.map((f) => f.name)).toEqual(['ok'])
+  })
+
+  it('removeRejected by index', () => {
+    const s0 = init({ multiple: true, maxSize: 5 })
+    const [s1] = update(s0, {
+      type: 'addFiles',
+      files: [makeFile('a', 100), makeFile('b', 100)],
+    })
+    const [s2] = update(s1, { type: 'removeRejected', index: 0 })
+    expect(s2.rejectedFiles.map((r) => r.file.name)).toEqual(['b'])
+  })
+})
+
+describe('readOnly + invalid', () => {
+  it('readOnly blocks addFiles and setFiles', () => {
+    const s0 = init({ readOnly: true })
+    const [s1] = update(s0, { type: 'addFiles', files: [makeFile('a', 1)] })
+    expect(s1.files).toEqual([])
+    const [s2] = update(s0, { type: 'setFiles', files: [makeFile('b', 1)] })
+    expect(s2.files).toEqual([])
+  })
+
+  it('setInvalid toggles state.invalid', () => {
+    const [s1] = update(init(), { type: 'setInvalid', invalid: true })
+    expect(s1.invalid).toBe(true)
+  })
+})
+
+describe('connect: new parts + attrs', () => {
+  it('hiddenInput forwards required + aria-invalid', () => {
+    const p = connect<Ctx>((s) => s.u, vi.fn(), { id: 'x' })
+    expect(p.hiddenInput.required({ u: init({ required: true }) })).toBe(true)
+    expect(p.hiddenInput['aria-invalid']({ u: init({ invalid: true }) })).toBe('true')
+    expect(p.hiddenInput['aria-invalid']({ u: init() })).toBeUndefined()
+  })
+
+  it('root exposes data-invalid + data-readonly', () => {
+    const p = connect<Ctx>((s) => s.u, vi.fn(), { id: 'x' })
+    expect(p.root['data-invalid']({ u: init({ invalid: true }) })).toBe('')
+    expect(p.root['data-readonly']({ u: init({ readOnly: true }) })).toBe('')
+  })
+
+  it('capture + directory options set hidden input attrs', () => {
+    const p1 = connect<Ctx>((s) => s.u, vi.fn(), { id: 'x', capture: 'environment' })
+    expect(p1.hiddenInput.capture).toBe('environment')
+
+    const p2 = connect<Ctx>((s) => s.u, vi.fn(), { id: 'x', directory: true })
+    expect(p2.hiddenInput.webkitdirectory).toBe('')
+  })
+
+  it('itemDeleteTrigger is a zag-aligned alias for removeTrigger', () => {
+    const send = vi.fn()
+    const p = connect<Ctx>((s) => s.u, send, { id: 'x' })
+    p.item(2).itemDeleteTrigger.onClick(new MouseEvent('click'))
+    expect(send).toHaveBeenCalledWith({ type: 'removeFile', index: 2 })
   })
 })
