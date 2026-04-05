@@ -782,7 +782,7 @@ function tryInjectDirty(
           f.createToken(ts.SyntaxKind.QuestionToken),
           f.createNumericLiteral(0),
           f.createToken(ts.SyntaxKind.ColonToken),
-          f.createNumericLiteral(bit),
+          createMaskLiteral(f, bit),
         ),
       ),
     )

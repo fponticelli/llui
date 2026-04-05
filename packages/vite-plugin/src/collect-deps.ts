@@ -38,12 +38,21 @@ export function collectDeps(source: string): Map<string, number> {
 
   visit(sourceFile)
 
-  // Assign bit positions
+  // Assign bit positions. Single-mask tier holds 31 unique paths
+  // (positions 0..30). When the count exceeds 31, all overflow paths
+  // use FULL_MASK (-1) — they will always trigger a re-evaluation,
+  // degrading gracefully. The diagnostic warns the user to decompose.
   const fieldBits = new Map<string, number>()
   let bit = 1
+  let index = 0
   for (const path of paths) {
-    fieldBits.set(path, bit)
-    bit <<= 1
+    if (index >= 31) {
+      fieldBits.set(path, -1)
+    } else {
+      fieldBits.set(path, bit)
+      bit <<= 1
+    }
+    index++
   }
 
   return fieldBits

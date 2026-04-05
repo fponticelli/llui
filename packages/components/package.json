@@ -145,6 +145,38 @@
       "import": "./dist/components/context-menu.js",
       "types": "./dist/components/context-menu.d.ts"
     },
+    "./password-input": {
+      "import": "./dist/components/password-input.js",
+      "types": "./dist/components/password-input.d.ts"
+    },
+    "./stepper": {
+      "import": "./dist/components/stepper.js",
+      "types": "./dist/components/stepper.d.ts"
+    },
+    "./time-picker": {
+      "import": "./dist/components/time-picker.js",
+      "types": "./dist/components/time-picker.d.ts"
+    },
+    "./date-picker": {
+      "import": "./dist/components/date-picker.js",
+      "types": "./dist/components/date-picker.d.ts"
+    },
+    "./color-picker": {
+      "import": "./dist/components/color-picker.js",
+      "types": "./dist/components/color-picker.d.ts"
+    },
+    "./carousel": {
+      "import": "./dist/components/carousel.js",
+      "types": "./dist/components/carousel.d.ts"
+    },
+    "./alert-dialog": {
+      "import": "./dist/components/alert-dialog.js",
+      "types": "./dist/components/alert-dialog.d.ts"
+    },
+    "./pin-input": {
+      "import": "./dist/components/pin-input.js",
+      "types": "./dist/components/pin-input.d.ts"
+    },
     "./patterns": {
       "import": "./dist/patterns/index.js",
       "types": "./dist/patterns/index.d.ts"
