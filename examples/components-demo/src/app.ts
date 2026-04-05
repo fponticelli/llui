@@ -18,6 +18,7 @@ import { App as PickersEditingApp } from './sections/pickers-editing'
 import { App as TimeInputsApp } from './sections/time-inputs'
 import { App as ContentApp } from './sections/content'
 import { App as SurfacesApp } from './sections/surfaces'
+import { App as CanvasApp } from './sections/canvas'
 
 type State = Record<string, never>
 type Msg = never
@@ -42,5 +43,6 @@ export const App = component<State, Msg, never>({
     div({}, child({ def: erase(TimeInputsApp), key: 'time-inputs', props: () => ({}) })),
     div({}, child({ def: erase(ContentApp), key: 'content', props: () => ({}) })),
     div({}, child({ def: erase(SurfacesApp), key: 'surfaces', props: () => ({}) })),
+    div({}, child({ def: erase(CanvasApp), key: 'canvas', props: () => ({}) })),
   ],
 })
