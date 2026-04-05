@@ -112,6 +112,38 @@
     "./hover-card": {
       "import": "./dist/components/hover-card.js",
       "types": "./dist/components/hover-card.d.ts"
+    },
+    "./avatar": {
+      "import": "./dist/components/avatar.js",
+      "types": "./dist/components/avatar.d.ts"
+    },
+    "./clipboard": {
+      "import": "./dist/components/clipboard.js",
+      "types": "./dist/components/clipboard.d.ts"
+    },
+    "./editable": {
+      "import": "./dist/components/editable.js",
+      "types": "./dist/components/editable.d.ts"
+    },
+    "./tags-input": {
+      "import": "./dist/components/tags-input.js",
+      "types": "./dist/components/tags-input.d.ts"
+    },
+    "./splitter": {
+      "import": "./dist/components/splitter.js",
+      "types": "./dist/components/splitter.d.ts"
+    },
+    "./file-upload": {
+      "import": "./dist/components/file-upload.js",
+      "types": "./dist/components/file-upload.d.ts"
+    },
+    "./tree-view": {
+      "import": "./dist/components/tree-view.js",
+      "types": "./dist/components/tree-view.d.ts"
+    },
+    "./context-menu": {
+      "import": "./dist/components/context-menu.js",
+      "types": "./dist/components/context-menu.d.ts"
     }
   },
   "scripts": {

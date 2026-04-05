@@ -23,6 +23,14 @@ export * as listbox from './listbox'
 export * as select from './select'
 export * as combobox from './combobox'
 export * as hoverCard from './hover-card'
+export * as avatar from './avatar'
+export * as clipboard from './clipboard'
+export * as editable from './editable'
+export * as tagsInput from './tags-input'
+export * as splitter from './splitter'
+export * as fileUpload from './file-upload'
+export * as treeView from './tree-view'
+export * as contextMenu from './context-menu'
 
 export type { ToggleState, ToggleMsg, ToggleInit, ToggleParts } from './toggle'
 export type {
@@ -170,3 +178,30 @@ export type {
   HoverCardParts,
   OverlayOptions as HoverCardOverlayOptions,
 } from './hover-card'
+export type { AvatarState, AvatarMsg, AvatarInit, AvatarParts, ImageStatus } from './avatar'
+export type { ClipboardState, ClipboardMsg, ClipboardInit, ClipboardParts } from './clipboard'
+export type { EditableState, EditableMsg, EditableInit, EditableParts } from './editable'
+export type { TagsInputState, TagsInputMsg, TagsInputInit, TagsInputParts, TagItemParts } from './tags-input'
+export type { SplitterState, SplitterMsg, SplitterInit, SplitterParts } from './splitter'
+export type {
+  FileUploadState,
+  FileUploadMsg,
+  FileUploadInit,
+  FileUploadParts,
+  FileUploadItemParts,
+} from './file-upload'
+export type {
+  TreeViewState,
+  TreeViewMsg,
+  TreeViewInit,
+  TreeViewParts,
+  TreeItemParts,
+} from './tree-view'
+export type {
+  ContextMenuState,
+  ContextMenuMsg,
+  ContextMenuInit,
+  ContextMenuParts,
+  ContextMenuItemParts,
+  OverlayOptions as ContextMenuOverlayOptions,
+} from './context-menu'
