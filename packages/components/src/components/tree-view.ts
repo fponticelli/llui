@@ -48,6 +48,8 @@ export type TreeViewMsg =
   | { type: 'focusLast' }
   | { type: 'setVisibleItems'; ids: string[]; labels?: string[] }
   | { type: 'typeahead'; char: string; now: number }
+  | { type: 'arrowLeftFrom'; id: string; isBranch: boolean; parentId: string | null }
+  | { type: 'arrowRightFrom'; id: string }
 
 export interface TreeViewInit {
   expanded?: string[]
@@ -131,6 +133,28 @@ export function update(state: TreeViewState, msg: TreeViewMsg): [TreeViewState, 
         { ...state, visibleItems: msg.ids, visibleLabels: msg.labels ?? state.visibleLabels },
         [],
       ]
+    case 'arrowLeftFrom': {
+      // If this is an expanded branch, collapse it and stay focused.
+      if (msg.isBranch && state.expanded.includes(msg.id)) {
+        return [{ ...state, expanded: state.expanded.filter((id) => id !== msg.id) }, []]
+      }
+      // Otherwise, move focus to parent if provided (WAI-ARIA).
+      if (msg.parentId !== null) {
+        return [{ ...state, focused: msg.parentId }, []]
+      }
+      return [state, []]
+    }
+    case 'arrowRightFrom': {
+      // If this branch is closed, expand it; otherwise focus the first
+      // visible child (the next item in depth-first visibleItems order).
+      if (!state.expanded.includes(msg.id)) {
+        return [{ ...state, expanded: [...state.expanded, msg.id] }, []]
+      }
+      const idx = state.visibleItems.indexOf(msg.id)
+      if (idx === -1 || idx === state.visibleItems.length - 1) return [state, []]
+      const next = state.visibleItems[idx + 1]!
+      return [{ ...state, focused: next }, []]
+    }
     case 'typeahead': {
       if (state.visibleItems.length === 0) return [state, []]
       const acc = typeaheadAccumulate(state.typeahead, msg.char, msg.now, state.typeaheadExpiresAt)
@@ -193,11 +217,17 @@ export interface TreeViewParts<S> {
     'data-part': 'root'
     'data-disabled': (s: S) => '' | undefined
   }
-  item: (id: string, depth: number, isBranch: boolean) => TreeItemParts<S>
+  item: (id: string, depth: number, isBranch: boolean, parentId?: string | null) => TreeItemParts<S>
 }
 
 export interface ConnectOptions {
   id: string
+  /**
+   * If true, clicking anywhere on a branch item (not just the disclosure
+   * caret) toggles its expanded state. Default: false — clicks on the row
+   * select it without toggling, consistent with most file-tree UIs.
+   */
+  expandOnClick?: boolean
 }
 
 export function connect<S>(
@@ -206,6 +236,7 @@ export function connect<S>(
   opts: ConnectOptions,
 ): TreeViewParts<S> {
   const itemId = (v: string): string => `${opts.id}:item:${v}`
+  const expandOnClick = opts.expandOnClick === true
 
   return {
     root: {
@@ -216,7 +247,12 @@ export function connect<S>(
       'data-part': 'root',
       'data-disabled': (s) => (get(s).disabled ? '' : undefined),
     },
-    item: (id: string, depth: number, isBranch: boolean): TreeItemParts<S> => ({
+    item: (
+      id: string,
+      depth: number,
+      isBranch: boolean,
+      parentId: string | null = null,
+    ): TreeItemParts<S> => ({
       item: {
         role: 'treeitem',
         id: itemId(id),
@@ -231,7 +267,10 @@ export function connect<S>(
         'data-depth': String(depth),
         'data-selected': (s) => (isSelected(get(s), id) ? '' : undefined),
         'data-focused': (s) => (get(s).focused === id ? '' : undefined),
-        onClick: (e) => send({ type: 'select', id, additive: e.metaKey || e.ctrlKey }),
+        onClick: (e) => {
+          send({ type: 'select', id, additive: e.metaKey || e.ctrlKey })
+          if (expandOnClick && isBranch) send({ type: 'toggleBranch', id })
+        },
         onFocus: () => send({ type: 'focus', id }),
         onKeyDown: (e) => {
           switch (e.key) {
@@ -244,16 +283,18 @@ export function connect<S>(
               send({ type: 'focusPrev' })
               return
             case 'ArrowRight':
-              if (isBranch) {
-                e.preventDefault()
-                send({ type: 'expand', id })
-              }
+              // WAI-ARIA: closed branch → expand (stay); open branch →
+              // focus first child. Leaf → nothing. The reducer decides
+              // based on current expanded state.
+              if (!isBranch) return
+              e.preventDefault()
+              send({ type: 'arrowRightFrom', id })
               return
             case 'ArrowLeft':
-              if (isBranch) {
-                e.preventDefault()
-                send({ type: 'collapse', id })
-              }
+              // WAI-ARIA: open branch → collapse (stay); closed branch or
+              // leaf → focus parent (if known). Root end-nodes → nothing.
+              e.preventDefault()
+              send({ type: 'arrowLeftFrom', id, isBranch, parentId })
               return
             case 'Home':
               e.preventDefault()

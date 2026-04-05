@@ -108,13 +108,89 @@ describe('tree-view.connect', () => {
     expect(p.item('b', 2, false).item['aria-level']).toBe(3)
   })
 
-  it('ArrowRight expands branch', () => {
+  it('ArrowRight sends arrowRightFrom for branch', () => {
     const send = vi.fn()
     const pc = connect<Ctx>((s) => s.t, send, { id: 'x' })
     pc.item('a', 0, true).item.onKeyDown(
       new KeyboardEvent('keydown', { key: 'ArrowRight', cancelable: true }),
     )
-    expect(send).toHaveBeenCalledWith({ type: 'expand', id: 'a' })
+    expect(send).toHaveBeenCalledWith({ type: 'arrowRightFrom', id: 'a' })
+  })
+
+  it('ArrowRight does nothing on leaf', () => {
+    const send = vi.fn()
+    const pc = connect<Ctx>((s) => s.t, send, { id: 'x' })
+    pc.item('a', 0, false).item.onKeyDown(
+      new KeyboardEvent('keydown', { key: 'ArrowRight', cancelable: true }),
+    )
+    expect(send).not.toHaveBeenCalled()
+  })
+
+  it('ArrowLeft sends arrowLeftFrom with parentId', () => {
+    const send = vi.fn()
+    const pc = connect<Ctx>((s) => s.t, send, { id: 'x' })
+    pc.item('a', 1, false, 'root').item.onKeyDown(
+      new KeyboardEvent('keydown', { key: 'ArrowLeft', cancelable: true }),
+    )
+    expect(send).toHaveBeenCalledWith({
+      type: 'arrowLeftFrom',
+      id: 'a',
+      isBranch: false,
+      parentId: 'root',
+    })
+  })
+
+  it('arrowRightFrom reducer: closed branch expands', () => {
+    const [s] = update(init({ expanded: [] }), { type: 'arrowRightFrom', id: 'a' })
+    expect(s.expanded).toContain('a')
+  })
+
+  it('arrowRightFrom reducer: open branch focuses first visible child', () => {
+    const s0 = init({ expanded: ['a'], visibleItems: ['a', 'a1', 'a2'] })
+    const [s] = update(s0, { type: 'arrowRightFrom', id: 'a' })
+    expect(s.focused).toBe('a1')
+  })
+
+  it('arrowLeftFrom reducer: expanded branch collapses', () => {
+    const s0 = init({ expanded: ['a'] })
+    const [s] = update(s0, {
+      type: 'arrowLeftFrom',
+      id: 'a',
+      isBranch: true,
+      parentId: 'root',
+    })
+    expect(s.expanded).not.toContain('a')
+    expect(s.focused).toBeNull()
+  })
+
+  it('arrowLeftFrom reducer: collapsed branch focuses parent', () => {
+    const [s] = update(init({ expanded: [] }), {
+      type: 'arrowLeftFrom',
+      id: 'a',
+      isBranch: true,
+      parentId: 'root',
+    })
+    expect(s.focused).toBe('root')
+  })
+
+  it('arrowLeftFrom reducer: leaf with parent focuses parent', () => {
+    const [s] = update(init(), {
+      type: 'arrowLeftFrom',
+      id: 'a1',
+      isBranch: false,
+      parentId: 'a',
+    })
+    expect(s.focused).toBe('a')
+  })
+
+  it('arrowLeftFrom reducer: leaf at root does nothing', () => {
+    const [s] = update(init(), {
+      type: 'arrowLeftFrom',
+      id: 'a',
+      isBranch: false,
+      parentId: null,
+    })
+    expect(s.focused).toBeNull()
   })
 
   it('branchTrigger click sends toggleBranch', () => {

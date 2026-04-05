@@ -121,4 +121,63 @@ describe('tabs.connect', () => {
     p.item('a').trigger.onKeyDown(ev)
     expect(send).toHaveBeenCalledWith({ type: 'activateFocused' })
   })
+
+  it('vertical orientation: ArrowDown navigates, ArrowRight ignored', () => {
+    // Render a real DOM tree so closest() can find the list with aria-orientation.
+    const root = document.createElement('div')
+    root.innerHTML = `
+      <div role="tablist" aria-orientation="vertical" data-scope="tabs" data-part="list">
+        <button id="t">Tab A</button>
+      </div>
+    `
+    document.body.appendChild(root)
+    const send = vi.fn()
+    const p = connect<Ctx>((s) => s.tabs, send, { id: 'x' })
+    const trigger = root.querySelector('#t') as HTMLButtonElement
+    // ArrowDown should navigate, ArrowRight should not.
+    const ev1 = new KeyboardEvent('keydown', { key: 'ArrowDown', cancelable: true })
+    Object.defineProperty(ev1, 'currentTarget', { value: trigger, writable: false })
+    p.item('a').trigger.onKeyDown(ev1)
+    expect(send).toHaveBeenCalledWith({ type: 'focusNext', from: 'a' })
+
+    send.mockClear()
+    const ev2 = new KeyboardEvent('keydown', { key: 'ArrowRight', cancelable: true })
+    Object.defineProperty(ev2, 'currentTarget', { value: trigger, writable: false })
+    p.item('a').trigger.onKeyDown(ev2)
+    expect(send).not.toHaveBeenCalled()
+    document.body.removeChild(root)
+  })
+
+  it('deselectable: clicking active tab clears value', () => {
+    const s0 = init({ items: ['a', 'b'], value: 'a', deselectable: true })
+    const [s1] = update(s0, { type: 'focusTab', value: 'a' })
+    expect(s1.value).toBe('')
+  })
+
+  it('non-deselectable (default): clicking active tab keeps it', () => {
+    const s0 = init({ items: ['a', 'b'], value: 'a' })
+    const [s1] = update(s0, { type: 'focusTab', value: 'a' })
+    expect(s1.value).toBe('a')
+  })
+
+  it('loopFocus: false stops at last item', () => {
+    const s0 = init({ items: ['a', 'b', 'c'], loopFocus: false })
+    const [s1] = update(s0, { type: 'focusNext', from: 'c' })
+    expect(s1.focused).toBeNull() // no wrap
+    expect(s1.value).toBe('a') // unchanged from init
+  })
+
+  it('loopFocus: true (default) wraps', () => {
+    const s0 = init({ items: ['a', 'b', 'c'] })
+    const [s1] = update(s0, { type: 'focusNext', from: 'c' })
+    expect(s1.focused).toBe('a')
+  })
+
+  it('onNavigate fires on click', () => {
+    const send = vi.fn()
+    const onNavigate = vi.fn()
+    const p = connect<Ctx>((s) => s.tabs, send, { id: 'x', onNavigate })
+    p.item('b').trigger.onClick(new MouseEvent('click'))
+    expect(onNavigate).toHaveBeenCalledWith('b')
+  })
 })

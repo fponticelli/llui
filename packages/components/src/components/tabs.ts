@@ -20,6 +20,10 @@ export interface TabsState {
   activation: Activation
   /** The currently focused (but not necessarily active) tab. For manual mode. */
   focused: string | null
+  /** Whether Arrow navigation wraps at the ends of the tab list. Default: true. */
+  loopFocus: boolean
+  /** Whether clicking the active tab deselects it (empty value). Default: false. */
+  deselectable: boolean
 }
 
 export type TabsMsg =
@@ -38,6 +42,8 @@ export interface TabsInit {
   disabledItems?: string[]
   orientation?: Orientation
   activation?: Activation
+  loopFocus?: boolean
+  deselectable?: boolean
 }
 
 export function init(opts: TabsInit = {}): TabsState {
@@ -49,6 +55,8 @@ export function init(opts: TabsInit = {}): TabsState {
     orientation: opts.orientation ?? 'horizontal',
     activation: opts.activation ?? 'automatic',
     focused: null,
+    loopFocus: opts.loopFocus ?? true,
+    deselectable: opts.deselectable ?? false,
   }
 }
 
@@ -70,13 +78,16 @@ function nextEnabled(
   disabled: string[],
   from: string,
   delta: 1 | -1,
+  loop: boolean,
 ): string | null {
   if (items.length === 0) return null
   const idx = items.indexOf(from)
   if (idx === -1) return firstEnabled(items, disabled)
   const n = items.length
   for (let i = 1; i <= n; i++) {
-    const next = items[(idx + delta * i + n * n) % n]!
+    const rawIdx = idx + delta * i
+    if (!loop && (rawIdx < 0 || rawIdx >= n)) return null
+    const next = items[(rawIdx + n * n) % n]!
     if (!disabled.includes(next)) return next
   }
   return null
@@ -99,18 +110,21 @@ export function update(state: TabsState, msg: TabsMsg): [TabsState, never[]] {
     case 'focusTab': {
       if (state.disabledItems.includes(msg.value)) return [state, []]
       const next: TabsState = { ...state, focused: msg.value }
-      if (state.activation === 'automatic') next.value = msg.value
+      if (state.activation === 'automatic') {
+        // Deselectable: clicking the already-active tab clears the value.
+        next.value = state.deselectable && state.value === msg.value ? '' : msg.value
+      }
       return [next, []]
     }
     case 'focusNext': {
-      const to = nextEnabled(state.items, state.disabledItems, msg.from, 1)
+      const to = nextEnabled(state.items, state.disabledItems, msg.from, 1, state.loopFocus)
       if (to === null) return [state, []]
       const next: TabsState = { ...state, focused: to }
       if (state.activation === 'automatic') next.value = to
       return [next, []]
     }
     case 'focusPrev': {
-      const to = nextEnabled(state.items, state.disabledItems, msg.from, -1)
+      const to = nextEnabled(state.items, state.disabledItems, msg.from, -1, state.loopFocus)
       if (to === null) return [state, []]
       const next: TabsState = { ...state, focused: to }
       if (state.activation === 'automatic') next.value = to
@@ -185,6 +199,12 @@ export interface TabsParts<S> {
 
 export interface ConnectOptions {
   id: string
+  /**
+   * Called whenever a tab is clicked/activated. Useful for anchor-style
+   * navigation where the tab's value is a URL path and you want to push
+   * to the history or router.
+   */
+  onNavigate?: (value: string) => void
 }
 
 export function connect<S>(
@@ -222,23 +242,31 @@ export function connect<S>(
         'data-part': 'trigger',
         'data-value': value,
         tabIndex: (s) => (get(s).value === value ? 0 : -1),
-        onClick: () => send({ type: 'focusTab', value }),
+        onClick: () => {
+          send({ type: 'focusTab', value })
+          opts.onNavigate?.(value)
+        },
         onFocus: () => {
           // `focusTab` handles automatic activation
           send({ type: 'focusTab', value })
         },
         onKeyDown: (e: KeyboardEvent) => {
-          const state = (e.currentTarget as HTMLElement | null)?.dataset
-          void state
-          // Need orientation — but we don't have state here. Fall back to both axes.
+          // Read orientation from the ancestor [data-part="list"] so the
+          // handler can dispatch the correct arrow keys per WAI-ARIA.
+          // Horizontal tabs: ArrowLeft/Right navigate; vertical: Up/Down.
+          const target = e.currentTarget as HTMLElement | null
+          const list =
+            target?.closest('[data-scope="tabs"][data-part="list"]') as HTMLElement | null
+          const orientation =
+            (list?.getAttribute('aria-orientation') as Orientation | null) ?? 'horizontal'
+          const nextKey = orientation === 'vertical' ? 'ArrowDown' : 'ArrowRight'
+          const prevKey = orientation === 'vertical' ? 'ArrowUp' : 'ArrowLeft'
           switch (e.key) {
-            case 'ArrowRight':
-            case 'ArrowDown':
+            case nextKey:
               e.preventDefault()
               send({ type: 'focusNext', from: value })
               return
-            case 'ArrowLeft':
-            case 'ArrowUp':
+            case prevKey:
               e.preventDefault()
               send({ type: 'focusPrev', from: value })
               return
