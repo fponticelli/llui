@@ -1,3 +1,8 @@
+---
+description: Bump, build, test, and publish changed @llui packages to npm
+user_invocable: true
+---
+
 # /publish — Bump, build, test, and publish changed packages to npm
 
 Publish only the @llui packages that have changed since the last release. Each package is versioned independently.
