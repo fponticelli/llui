@@ -88,6 +88,15 @@ describe('listbox.connect', () => {
     expect(send).toHaveBeenCalledWith({ type: 'highlightNext' })
   })
 
+  it('root aria-owns lists all item IDs', () => {
+    const pc = connect<Ctx>((s) => s.lb, vi.fn(), { id: 'lb' })
+    // Empty items → undefined
+    expect(pc.root['aria-owns'](wrap(init()))).toBeUndefined()
+    // With items → space-separated ids using index
+    const s = init({ items: ['apple', 'banana', 'cherry'] })
+    expect(pc.root['aria-owns'](wrap(s))).toBe('lb:item:0 lb:item:1 lb:item:2')
+  })
+
   it('typeahead fires for single char', () => {
     const send = vi.fn()
     const pc = connect<Ctx>((s) => s.lb, send, { id: 'x' })

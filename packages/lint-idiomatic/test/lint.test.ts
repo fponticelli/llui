@@ -19,7 +19,7 @@ describe('lintIdiomatic', () => {
     `
     const result = lintIdiomatic(source)
     expect(result.violations.some((v) => v.rule === 'state-mutation')).toBe(true)
-    expect(result.score).toBeLessThan(6)
+    expect(result.score).toBeLessThan(9)
   })
 
   it('detects state mutation via push', () => {
@@ -149,7 +149,7 @@ describe('lintIdiomatic', () => {
       })
     `
     const result = lintIdiomatic(source)
-    expect(result.score).toBe(6)
+    expect(result.score).toBe(9)
   })
 
   it('score decreases by unique violated rule categories', () => {
@@ -176,7 +176,7 @@ describe('lintIdiomatic', () => {
     // Should have at least state-mutation, map-on-state-array, and form-boilerplate
     const violatedRules = new Set(result.violations.map((v) => v.rule))
     expect(violatedRules.size).toBeGreaterThanOrEqual(3)
-    expect(result.score).toBe(6 - violatedRules.size)
+    expect(result.score).toBe(9 - violatedRules.size)
   })
 
   it('includes correct file and position info', () => {
@@ -193,5 +193,131 @@ describe('lintIdiomatic', () => {
     expect(violation!.file).toBe('myfile.ts')
     expect(violation!.line).toBe(3)
     expect(violation!.column).toBeGreaterThan(0)
+  })
+
+  // ── Rule 7: async-update ──────────────────────────────────────────
+
+  it('detects async update function', () => {
+    const source = `
+      const C = component({
+        name: 'C',
+        init: () => [{ count: 0 }, []],
+        update: async (state, msg) => {
+          const data = await fetch('/api')
+          return [{ ...state, data }, []]
+        },
+        view: ({ send }) => [],
+      })
+    `
+    const result = lintIdiomatic(source)
+    expect(result.violations.some((v) => v.rule === 'async-update')).toBe(true)
+    expect(
+      result.violations.some((v) => v.message.includes('synchronous and pure')),
+    ).toBe(true)
+  })
+
+  it('does not flag synchronous update', () => {
+    const source = `
+      const C = component({
+        name: 'C',
+        init: () => [{ count: 0 }, []],
+        update: (state, msg) => {
+          return [{ ...state, count: state.count + 1 }, []]
+        },
+        view: ({ send }) => [],
+      })
+    `
+    const result = lintIdiomatic(source)
+    expect(result.violations.some((v) => v.rule === 'async-update')).toBe(false)
+  })
+
+  // ── Rule 8: direct-state-in-view ──────────────────────────────────
+
+  it('detects stale state capture in event handler', () => {
+    const source = `
+      const C = component({
+        name: 'C',
+        init: () => [{ count: 0 }, []],
+        update: (s, msg) => [s, []],
+        view: ({ send }) => [
+          button({ onClick: () => send({ type: 'set', value: state.count }) }, [
+            text('click'),
+          ]),
+        ],
+      })
+    `
+    const result = lintIdiomatic(source)
+    expect(result.violations.some((v) => v.rule === 'direct-state-in-view')).toBe(true)
+    expect(
+      result.violations.some((v) => v.message.includes('stale state capture')),
+    ).toBe(true)
+  })
+
+  it('does not flag accessor-based state reads in view', () => {
+    const source = `
+      const C = component({
+        name: 'C',
+        init: () => [{ count: 0 }, []],
+        update: (s, msg) => [s, []],
+        view: ({ send }) => [
+          button({ onClick: () => send({ type: 'inc' }) }, [
+            text(s => String(s.count)),
+          ]),
+        ],
+      })
+    `
+    const result = lintIdiomatic(source)
+    expect(result.violations.some((v) => v.rule === 'direct-state-in-view')).toBe(false)
+  })
+
+  // ── Rule 9: exhaustive-effect-handling ────────────────────────────
+
+  it('detects empty .else() handler', () => {
+    const source = `
+      const C = component({
+        name: 'C',
+        init: () => [{ count: 0 }, []],
+        update: (s, msg) => [s, []],
+        view: ({ send }) => [],
+        onEffect: handleEffects()
+          .on('http', (ctx) => { /* handle */ })
+          .else(() => {}),
+      })
+    `
+    const result = lintIdiomatic(source)
+    expect(result.violations.some((v) => v.rule === 'exhaustive-effect-handling')).toBe(true)
+    expect(
+      result.violations.some((v) => v.message.includes('silently drops')),
+    ).toBe(true)
+  })
+
+  it('detects empty .else() handler with param', () => {
+    const source = `
+      const C = component({
+        name: 'C',
+        init: () => [{ count: 0 }, []],
+        update: (s, msg) => [s, []],
+        view: ({ send }) => [],
+        onEffect: handleEffects()
+          .else((_ctx) => {}),
+      })
+    `
+    const result = lintIdiomatic(source)
+    expect(result.violations.some((v) => v.rule === 'exhaustive-effect-handling')).toBe(true)
+  })
+
+  it('does not flag non-empty .else() handler', () => {
+    const source = `
+      const C = component({
+        name: 'C',
+        init: () => [{ count: 0 }, []],
+        update: (s, msg) => [s, []],
+        view: ({ send }) => [],
+        onEffect: handleEffects()
+          .else((ctx) => { console.warn('unhandled', ctx.effect) }),
+      })
+    `
+    const result = lintIdiomatic(source)
+    expect(result.violations.some((v) => v.rule === 'exhaustive-effect-handling')).toBe(false)
   })
 })

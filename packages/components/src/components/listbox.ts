@@ -180,6 +180,7 @@ export interface ListboxItemParts<S> {
 export interface ListboxParts<S> {
   root: {
     role: 'listbox'
+    'aria-owns': (s: S) => string | undefined
     'aria-multiselectable': (s: S) => 'true' | undefined
     'aria-disabled': (s: S) => 'true' | undefined
     'aria-activedescendant': (s: S) => string | undefined
@@ -208,6 +209,11 @@ export function connect<S>(
   return {
     root: {
       role: 'listbox',
+      'aria-owns': (s) => {
+        const items = get(s).items
+        if (items.length === 0) return undefined
+        return items.map((_, i) => itemId(i)).join(' ')
+      },
       'aria-multiselectable': (s) => (get(s).selectionMode === 'multiple' ? 'true' : undefined),
       'aria-disabled': (s) => (get(s).disabled ? 'true' : undefined),
       'aria-activedescendant': (s) => {

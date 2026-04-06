@@ -29,10 +29,13 @@ export function lintIdiomatic(source: string, filename = 'input.ts'): LintResult
   checkMapOnStateArrays(sf, filename, violations)
   checkUnnecessaryChild(sf, filename, violations)
   checkFormBoilerplate(sf, filename, violations)
+  checkAsyncUpdate(sf, filename, violations)
+  checkDirectStateInView(sf, filename, violations)
+  checkExhaustiveEffectHandling(sf, filename, violations)
 
   // Score: unique violated rule categories
   const violatedRules = new Set(violations.map((v) => v.rule))
-  const score = Math.max(0, 6 - violatedRules.size)
+  const score = Math.max(0, 9 - violatedRules.size)
 
   return { violations, score }
 }
@@ -635,6 +638,195 @@ function checkFormBoilerplate(
 interface MsgVariantShape {
   typeName: string
   shape: string
+}
+
+// ── Rule 7: async-update ───────────────────────────────────────────
+
+function checkAsyncUpdate(
+  sf: ts.SourceFile,
+  filename: string,
+  violations: LintViolation[],
+): void {
+  function visit(node: ts.Node): void {
+    if (
+      ts.isPropertyAssignment(node) &&
+      ts.isIdentifier(node.name) &&
+      node.name.text === 'update'
+    ) {
+      const fn = node.initializer
+      if (ts.isArrowFunction(fn) || ts.isFunctionExpression(fn)) {
+        // Check for async modifier
+        const mods = ts.getModifiers(fn)
+        if (mods?.some((m) => m.kind === ts.SyntaxKind.AsyncKeyword)) {
+          const { line, column } = pos(fn, sf)
+          violations.push({
+            rule: 'async-update',
+            message:
+              'update() must be synchronous and pure. Move async operations to effects.',
+            file: filename,
+            line,
+            column,
+          })
+        }
+        // Check for await keyword inside body
+        if (fn.body) {
+          checkForAwait(fn.body, sf, filename, violations)
+        }
+      }
+    }
+    ts.forEachChild(node, visit)
+  }
+  visit(sf)
+}
+
+function checkForAwait(
+  node: ts.Node,
+  sf: ts.SourceFile,
+  filename: string,
+  violations: LintViolation[],
+): void {
+  // Don't descend into nested functions — only check the update body itself
+  if (ts.isArrowFunction(node) || ts.isFunctionExpression(node) || ts.isFunctionDeclaration(node)) {
+    return
+  }
+  if (ts.isAwaitExpression(node)) {
+    const { line, column } = pos(node, sf)
+    violations.push({
+      rule: 'async-update',
+      message:
+        'update() must be synchronous and pure. Move async operations to effects.',
+      file: filename,
+      line,
+      column,
+    })
+    return
+  }
+  ts.forEachChild(node, (child) => checkForAwait(child, sf, filename, violations))
+}
+
+// ── Rule 8: direct-state-in-view ───────────────────────────────────
+
+function checkDirectStateInView(
+  sf: ts.SourceFile,
+  filename: string,
+  violations: LintViolation[],
+): void {
+  function visit(node: ts.Node): void {
+    if (
+      ts.isPropertyAssignment(node) &&
+      ts.isIdentifier(node.name) &&
+      node.name.text === 'view'
+    ) {
+      const fn = node.initializer
+      if (ts.isArrowFunction(fn) || ts.isFunctionExpression(fn)) {
+        // Look for state.X references inside event handler closures within view
+        if (fn.body) {
+          findStateInEventHandlers(fn.body, sf, filename, violations)
+        }
+      }
+    }
+    ts.forEachChild(node, visit)
+  }
+  visit(sf)
+}
+
+function findStateInEventHandlers(
+  node: ts.Node,
+  sf: ts.SourceFile,
+  filename: string,
+  violations: LintViolation[],
+): void {
+  // Look for event handler properties: onClick, onInput, onChange, onSubmit, etc.
+  if (ts.isPropertyAssignment(node) && ts.isIdentifier(node.name)) {
+    const propName = node.name.text
+    if (/^on[A-Z]/.test(propName)) {
+      const handler = node.initializer
+      if (ts.isArrowFunction(handler) || ts.isFunctionExpression(handler)) {
+        if (handler.body) {
+          findStateAccess(handler.body, sf, filename, violations)
+        }
+        return // don't recurse further into the handler
+      }
+    }
+  }
+  ts.forEachChild(node, (child) =>
+    findStateInEventHandlers(child, sf, filename, violations),
+  )
+}
+
+function findStateAccess(
+  node: ts.Node,
+  sf: ts.SourceFile,
+  filename: string,
+  violations: LintViolation[],
+): void {
+  // Don't descend into nested arrow functions that are accessors (s => s.x)
+  if (ts.isArrowFunction(node) || ts.isFunctionExpression(node)) {
+    return
+  }
+  if (
+    ts.isPropertyAccessExpression(node) &&
+    ts.isIdentifier(node.expression) &&
+    node.expression.text === 'state'
+  ) {
+    const { line, column } = pos(node, sf)
+    violations.push({
+      rule: 'direct-state-in-view',
+      message:
+        'Possible stale state capture in event handler. Use an accessor (s => s.field) for reactive reads, or item.field() for imperative reads inside each().',
+      file: filename,
+      line,
+      column,
+    })
+    return
+  }
+  ts.forEachChild(node, (child) => findStateAccess(child, sf, filename, violations))
+}
+
+// ── Rule 9: exhaustive-effect-handling ─────────────────────────────
+
+function checkExhaustiveEffectHandling(
+  sf: ts.SourceFile,
+  filename: string,
+  violations: LintViolation[],
+): void {
+  function visit(node: ts.Node): void {
+    // Look for .else(<empty fn>) calls
+    if (
+      ts.isCallExpression(node) &&
+      ts.isPropertyAccessExpression(node.expression) &&
+      node.expression.name.text === 'else'
+    ) {
+      const arg = node.arguments[0]
+      if (arg && (ts.isArrowFunction(arg) || ts.isFunctionExpression(arg))) {
+        if (isEmptyFunctionBody(arg)) {
+          const { line, column } = pos(node, sf)
+          violations.push({
+            rule: 'exhaustive-effect-handling',
+            message:
+              'Empty .else() handler silently drops unhandled effects. Add a console.warn for unrecognized effect types, or handle them explicitly.',
+            file: filename,
+            line,
+            column,
+          })
+        }
+      }
+    }
+    ts.forEachChild(node, visit)
+  }
+  visit(sf)
+}
+
+function isEmptyFunctionBody(
+  fn: ts.ArrowFunction | ts.FunctionExpression,
+): boolean {
+  if (!fn.body) return true
+  // Arrow with block body: () => {}
+  if (ts.isBlock(fn.body)) {
+    return fn.body.statements.length === 0
+  }
+  // Arrow with expression body is never "empty" — e.g. () => undefined is intentional
+  return false
 }
 
 function collectMsgVariantShapes(type: ts.TypeNode): MsgVariantShape[] {

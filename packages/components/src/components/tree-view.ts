@@ -313,6 +313,7 @@ export interface TreeItemParts<S> {
 export interface TreeViewParts<S> {
   root: {
     role: 'tree'
+    'aria-owns': (s: S) => string | undefined
     'aria-multiselectable': (s: S) => 'true' | undefined
     'aria-disabled': (s: S) => 'true' | undefined
     'data-scope': 'tree-view'
@@ -343,6 +344,11 @@ export function connect<S>(
   return {
     root: {
       role: 'tree',
+      'aria-owns': (s) => {
+        const items = get(s).visibleItems
+        if (items.length === 0) return undefined
+        return items.map((id) => itemId(id)).join(' ')
+      },
       'aria-multiselectable': (s) => (get(s).selectionMode === 'multiple' ? 'true' : undefined),
       'aria-disabled': (s) => (get(s).disabled ? 'true' : undefined),
       'data-scope': 'tree-view',

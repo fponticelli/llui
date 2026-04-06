@@ -276,6 +276,15 @@ describe('tree-view.connect', () => {
     expect(s2.renaming).toBeNull()
   })
 
+  it('root aria-owns lists visible item IDs', () => {
+    const pc = connect<Ctx>((s) => s.t, vi.fn(), { id: 'tv' })
+    // Empty visibleItems → undefined
+    expect(pc.root['aria-owns'](wrap(init()))).toBeUndefined()
+    // With visible items → space-separated ids
+    const s = init({ visibleItems: ['a', 'b', 'c'] })
+    expect(pc.root['aria-owns'](wrap(s))).toBe('tv:item:a tv:item:b tv:item:c')
+  })
+
   it('branchTrigger click sends toggleBranch', () => {
     const send = vi.fn()
     const pc = connect<Ctx>((s) => s.t, send, { id: 'x' })

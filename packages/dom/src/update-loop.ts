@@ -238,10 +238,33 @@ function enhanceBindingError(err: unknown, binding: Binding, componentName: stri
     if (node.nodeType === 3) nodeDesc += ' text-child'
     else if (node.nodeType === 8) nodeDesc += ' comment-child'
   }
-  const keyPart = binding.key ? `.${binding.key}` : ''
+  const keyPart = binding.key ? ` .${binding.key}` : ''
+  const errMsg = err instanceof Error ? err.message : String(err)
+
+  // Build accessor source hint if available
+  let accessorHint = ''
+  try {
+    const src = binding.accessor.toString().slice(0, 80)
+    accessorHint = `\n  accessor: ${src}${binding.accessor.toString().length > 80 ? '...' : ''}`
+  } catch {
+    // toString() may throw on revoked proxies, etc.
+  }
+
+  // Detect common undefined/null access pattern and add a helpful hint
+  let undefinedHint = ''
+  if (
+    err instanceof TypeError &&
+    /Cannot read propert(ies|y).*of (undefined|null)/.test(errMsg)
+  ) {
+    undefinedHint =
+      '\n  hint: Check that your accessor handles undefined state fields (e.g., use optional chaining: s.user?.name)'
+  }
+
   const wrapped = new Error(
-    `[LLui] accessor threw in ${componentName}: ${binding.kind}${keyPart} binding on ${nodeDesc}\n` +
-      `  ↳ ${err instanceof Error ? err.message : String(err)}`,
+    `[LLui] ${binding.kind}${keyPart} binding on ${nodeDesc} — accessor threw in <${componentName}>\n` +
+      `  ↳ ${errMsg}` +
+      undefinedHint +
+      accessorHint,
     err instanceof Error ? { cause: err } : undefined,
   )
   wrapped.stack = (err instanceof Error && err.stack) || wrapped.stack

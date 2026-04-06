@@ -61,9 +61,11 @@ export function mountApp<S, M, E>(
     const offender = findNonSerializable(inst.state)
     if (offender) {
       console.warn(
-        `[LLui] Non-serializable value in ${def.name} initial state at ${offender.path}:`,
+        `[LLui] <${def.name}> initial state contains a non-serializable value at "${offender.path}":`,
         offender.value,
-        '\nState must be plain JSON (no Date/Map/Set/class instances/functions).',
+        '\nState must be plain JSON (no Date/Map/Set/class instances/functions).' +
+          '\nThis will break SSR hydration, state replay, and devtools snapshots.' +
+          '\nhint: Convert to a serializable representation (e.g., Date → ISO string, Map → Record).',
       )
     }
   }
