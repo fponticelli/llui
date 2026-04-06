@@ -602,13 +602,14 @@ describe('subtree collapse — nested elements → elTemplate', () => {
     `
     const out = t(src)
     expect(out).toContain('elTemplate')
-    // HTML should have a comment placeholder for reactive text
-    expect(out).toContain('<div><span><!--$--></span></div>')
-    // createTextNode replaces the comment at clone time, restoring stable childIdx
-    // even with interleaved static + reactive text
+    // Sole-child reactive text uses inline text placeholder (space)
+    // instead of comment — no createTextNode + replaceChild needed.
+    expect(out).toContain('<div><span> </span></div>')
     expect(out).toContain('firstChild')
     expect(out).toContain('__bind')
     expect(out).toContain('"text"')
+    // Inline path should NOT create a text node — reuses the cloned one
+    expect(out).not.toContain('createTextNode')
   })
 
   it('handles per-item accessors in collapsed templates', () => {
@@ -632,11 +633,11 @@ describe('subtree collapse — nested elements → elTemplate', () => {
     `
     const out = t(src)
     expect(out).toContain('elTemplate')
-    // Template has comment placeholders for reactive text
-    expect(out).toMatch(
-      /<tr><td[^>]*id[^>]*><!--\$--><\/td><td[^>]*label[^>]*><!--\$--><\/td><\/tr>/,
-    )
+    // Each td has a sole reactive text child — uses inline text placeholder
+    expect(out).toMatch(/<tr><td[^>]*id[^>]*> <\/td><td[^>]*label[^>]*> <\/td><\/tr>/)
     expect(out).toContain('__bind')
+    // Inline path reuses cloned text node — no createTextNode needed
+    expect(out).not.toContain('createTextNode')
   })
 
   it('supports interleaved static + reactive text in same parent', () => {

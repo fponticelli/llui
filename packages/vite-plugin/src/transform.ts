@@ -2056,16 +2056,34 @@ function buildTemplateHTML(node: AnalyzedNode): string {
 
   if (VOID_ELEMENTS.has(node.tag)) return html
 
-  for (const child of node.children) {
+  for (let ci = 0; ci < node.children.length; ci++) {
+    const child = node.children[ci]!
     if (child.type === 'staticText') {
       html += escapeHTML(child.value)
     } else if (child.type === 'element') {
       html += buildTemplateHTML(child.node)
     } else if (child.type === 'reactiveText') {
-      // Placeholder comment node — at patch time it's replaced with a text node.
-      // Comments break HTML text-node merging, so adjacent static text keeps
-      // stable childIdx positions.
-      html += '<!--$-->'
+      // When the reactive text is not adjacent to another text-type child,
+      // we can use a literal text node placeholder instead of a comment.
+      // The cloned text node is reused in the patch function — no
+      // createTextNode + replaceChild needed. This saves 2 DOM operations
+      // per text binding per row.
+      //
+      // When adjacent text WOULD cause HTML-parser merging (two text nodes
+      // collapse into one), we fall back to the comment placeholder.
+      const prev = ci > 0 ? node.children[ci - 1]! : null
+      const next = ci < node.children.length - 1 ? node.children[ci + 1]! : null
+      const adjText =
+        (prev?.type === 'staticText' || prev?.type === 'reactiveText') ||
+        (next?.type === 'staticText' || next?.type === 'reactiveText')
+      if (adjText) {
+        html += '<!--$-->'
+      } else {
+        // Space character becomes a Text node in the cloned template.
+        // Mark the child so the patch codegen knows to skip replaceChild.
+        html += ' '
+        ;(child as { inlineText?: boolean }).inlineText = true
+      }
     }
   }
 
@@ -2225,61 +2243,80 @@ function emitSubtreeTemplate(
       )
     }
 
-    // Reactive text children — walk to placeholder comment, replace with text node, bind
+    // Reactive text children — walk to placeholder, create text node, bind
     for (const rt of op.reactiveTexts) {
-      const cVar = `__c${counter.t}`
       const tVar = `__t${counter.t++}`
-      // const __c0 = nodeRef.firstChild[.nextSibling...]  (placeholder comment node)
-      let walk: ts.Expression = f.createPropertyAccessExpression(nodeRef, 'firstChild')
-      for (let i = 0; i < rt.childIdx; i++) {
-        walk = f.createPropertyAccessExpression(walk, 'nextSibling')
-      }
-      stmts.push(
-        f.createVariableStatement(
-          undefined,
-          f.createVariableDeclarationList(
-            [f.createVariableDeclaration(cVar, undefined, undefined, walk)],
-            ts.NodeFlags.Const,
-          ),
-        ),
-      )
-      // const __t0 = document.createTextNode("")
-      // __c0.parentNode.replaceChild(__t0, __c0)
-      stmts.push(
-        f.createVariableStatement(
-          undefined,
-          f.createVariableDeclarationList(
-            [
-              f.createVariableDeclaration(
-                tVar,
-                undefined,
-                undefined,
-                f.createCallExpression(
-                  f.createPropertyAccessExpression(
-                    f.createIdentifier('document'),
-                    'createTextNode',
-                  ),
-                  undefined,
-                  [f.createStringLiteral('')],
-                ),
-              ),
-            ],
-            ts.NodeFlags.Const,
-          ),
-        ),
-      )
-      stmts.push(
-        f.createExpressionStatement(
-          f.createCallExpression(
-            f.createPropertyAccessExpression(
-              f.createPropertyAccessExpression(f.createIdentifier(cVar), 'parentNode'),
-              'replaceChild',
-            ),
+      const isInline = !!(rt as { inlineText?: boolean }).inlineText
+
+      if (isInline) {
+        // Inline text placeholder: the template HTML has a space character
+        // that cloneNode already created as a Text node. Walk to it and
+        // bind directly — no createTextNode, no replaceChild.
+        let walk: ts.Expression = f.createPropertyAccessExpression(nodeRef, 'firstChild')
+        for (let i = 0; i < rt.childIdx; i++) {
+          walk = f.createPropertyAccessExpression(walk, 'nextSibling')
+        }
+        stmts.push(
+          f.createVariableStatement(
             undefined,
-            [f.createIdentifier(tVar), f.createIdentifier(cVar)],
+            f.createVariableDeclarationList(
+              [f.createVariableDeclaration(tVar, undefined, undefined, walk)],
+              ts.NodeFlags.Const,
+            ),
           ),
-        ),
-      )
+        )
+      } else {
+        // Comment placeholder: create a new text node and replace the comment.
+        const cVar = `__c${counter.t - 1}`
+        let walk: ts.Expression = f.createPropertyAccessExpression(nodeRef, 'firstChild')
+        for (let i = 0; i < rt.childIdx; i++) {
+          walk = f.createPropertyAccessExpression(walk, 'nextSibling')
+        }
+        stmts.push(
+          f.createVariableStatement(
+            undefined,
+            f.createVariableDeclarationList(
+              [f.createVariableDeclaration(cVar, undefined, undefined, walk)],
+              ts.NodeFlags.Const,
+            ),
+          ),
+        )
+        stmts.push(
+          f.createVariableStatement(
+            undefined,
+            f.createVariableDeclarationList(
+              [
+                f.createVariableDeclaration(
+                  tVar,
+                  undefined,
+                  undefined,
+                  f.createCallExpression(
+                    f.createPropertyAccessExpression(
+                      f.createIdentifier('document'),
+                      'createTextNode',
+                    ),
+                    undefined,
+                    [f.createStringLiteral('')],
+                  ),
+                ),
+              ],
+              ts.NodeFlags.Const,
+            ),
+          ),
+        )
+        stmts.push(
+          f.createExpressionStatement(
+            f.createCallExpression(
+              f.createPropertyAccessExpression(
+                f.createPropertyAccessExpression(f.createIdentifier(cVar), 'parentNode'),
+                'replaceChild',
+              ),
+              undefined,
+              [f.createIdentifier(tVar), f.createIdentifier(cVar)],
+            ),
+          ),
+        )
+      }
       // __bind(__t0, mask, 'text', undefined, accessor)
       stmts.push(
         f.createExpressionStatement(
