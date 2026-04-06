@@ -197,7 +197,7 @@ function fileTree(h: View<State, Msg>, send: Send<Msg>): Node[] {
                 },
                 [text(item((e) => e.name))],
               ),
-              ...(!isDir ? [span([text(item((e) => (e.size ? formatSize(e.size) : '')))])] : []),
+              span([text(item((e) => (e.type !== 'dir' && e.size ? formatSize(e.size) : '')))]),
             ]),
           ]
         },
