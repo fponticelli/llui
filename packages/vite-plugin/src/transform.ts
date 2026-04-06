@@ -2074,8 +2074,10 @@ function buildTemplateHTML(node: AnalyzedNode): string {
       const prev = ci > 0 ? node.children[ci - 1]! : null
       const next = ci < node.children.length - 1 ? node.children[ci + 1]! : null
       const adjText =
-        (prev?.type === 'staticText' || prev?.type === 'reactiveText') ||
-        (next?.type === 'staticText' || next?.type === 'reactiveText')
+        prev?.type === 'staticText' ||
+        prev?.type === 'reactiveText' ||
+        next?.type === 'staticText' ||
+        next?.type === 'reactiveText'
       if (adjText) {
         html += '<!--$-->'
       } else {

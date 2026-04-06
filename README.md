@@ -24,7 +24,7 @@ const Counter = component<State, Msg, never>({
   view: ({ send, text }) => [
     div({ class: 'counter' }, [
       button({ onClick: () => send({ type: 'dec' }) }, [text('-')]),
-      text(s => String(s.count)),
+      text((s) => String(s.count)),
       button({ onClick: () => send({ type: 'inc' }) }, [text('+')]),
     ]),
   ],
@@ -104,14 +104,14 @@ pnpm bench                # js-framework-benchmark (add --save to update baselin
 
 Competitive with Solid and Svelte on [js-framework-benchmark](https://github.com/krausest/js-framework-benchmark):
 
-| Operation     |       LLui |  Solid |  Svelte | vanilla |
-| ------------- | ---------: | -----: | ------: | ------: |
-| Create 1k     |      ~24ms |   23ms |    23ms |    22ms |
-| Update 10th   |      ~11ms |   11ms |    12ms |    10ms |
-| Select        |       ~4ms |    6ms |     5ms |     3ms |
-| Swap          |      ~13ms |   14ms |    14ms |    12ms |
-| Clear 1k      |      ~11ms |   11ms |    11ms |     9ms |
-| Bundle (gzip) | **5.8 KB** | 4.7 KB |  4.3 KB |     — |
+| Operation     |       LLui |  Solid | Svelte | vanilla |
+| ------------- | ---------: | -----: | -----: | ------: |
+| Create 1k     |      ~24ms |   23ms |   23ms |    22ms |
+| Update 10th   |      ~11ms |   11ms |   12ms |    10ms |
+| Select        |       ~4ms |    6ms |    5ms |     3ms |
+| Swap          |      ~13ms |   14ms |   14ms |    12ms |
+| Clear 1k      |      ~11ms |   11ms |   11ms |     9ms |
+| Bundle (gzip) | **5.8 KB** | 4.7 KB | 4.3 KB |       — |
 
 ## License
 

@@ -37,7 +37,7 @@ export default defineConfig({
 **src/main.ts:**
 
 ```typescript
-import { component, mountApp, div, button, text, flush } from '@llui/dom'
+import { component, mountApp, div, button, flush } from '@llui/dom'
 
 // 1. Define your state shape
 type State = { count: number }
@@ -64,11 +64,12 @@ const Counter = component<State, Msg>({
     }
   },
 
-  // View — runs once, creates DOM with reactive bindings
-  view: ({ send }) => [
+  // View — runs once, creates DOM with reactive bindings.
+  // Destructure helpers from the View bag — `text` infers State automatically.
+  view: ({ send, text }) => [
     div({ class: 'counter' }, [
       button({ onClick: () => send({ type: 'dec' }) }, [text('-')]),
-      text((s: State) => String(s.count)),
+      text(s => String(s.count)),
       button({ onClick: () => send({ type: 'inc' }) }, [text('+')]),
       button({ onClick: () => send({ type: 'reset' }) }, [text('Reset')]),
     ]),
