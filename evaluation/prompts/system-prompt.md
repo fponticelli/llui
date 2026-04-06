@@ -18,7 +18,7 @@ interface ComponentDef<S, M, E> {
   init: (props?: Record<string, unknown>) => [S, E[]]
   update: (state: S, msg: M) => [S, E[]]
   view: (h: View<S, M>) => Node[]
-  onEffect?: (effect: E, send: (msg: M) => void, signal: AbortSignal) => void
+  onEffect?: (ctx: { effect: E; send: (msg: M) => void; signal: AbortSignal }) => void
 }
 
 // View<S, M> is a bundle of state-bound helpers + send. Destructure in
@@ -44,6 +44,54 @@ function onMount(callback: (el: Element) => (() => void) | void): void
 // item accessor: item.field (shorthand) or item(t => t.expr) (computed) — both return () => V
 ```
 
+## Effects
+
+Effects use **typed message constructors** — callbacks, not strings:
+
+```typescript
+import { http, cancel, debounce, handleEffects } from '@llui/effects'
+import type { ApiError } from '@llui/effects'
+
+// HTTP with typed callbacks + flexible body:
+http({
+  url: '/api/users',
+  method: 'POST',
+  body: { name: 'Franco' },             // auto JSON.stringify + Content-Type
+  // body: formData,                     // FormData/Blob/URLSearchParams pass through
+  timeout: 5000,                         // optional request timeout (ms)
+  onSuccess: (data, headers) => ({ type: 'usersLoaded' as const, payload: data }),
+  onError: (err: ApiError) => ({ type: 'fetchFailed' as const, error: err }),
+})
+
+// Compose: cancel previous + debounce + http
+cancel('search', debounce('search', 300, http({
+  url: `/api/search?q=${q}`,
+  onSuccess: (data) => ({ type: 'results' as const, payload: data }),
+  onError: (err) => ({ type: 'searchError' as const, error: err }),
+})))
+
+// WebSocket:
+import { websocket, wsSend } from '@llui/effects'
+websocket({
+  url: 'wss://api.example.com/ws',
+  key: 'feed',
+  onMessage: (data) => ({ type: 'wsMessage' as const, payload: data }),
+  onClose: (code, reason) => ({ type: 'wsDisconnected' as const }),
+})
+wsSend('feed', { action: 'subscribe', channel: 'updates' })
+
+// Retry with exponential backoff:
+import { retry } from '@llui/effects'
+retry(http({ url: '/api/data', onSuccess: ..., onError: ... }), {
+  maxAttempts: 3,
+  delayMs: 1000,  // 1s, 2s, 4s
+})
+
+// Handle effects:
+onEffect: handleEffects<Effect, Msg>()
+  .else(({ effect, send, signal }) => { /* custom effects */ })
+```
+
 ## Example
 
 ```typescript
@@ -51,9 +99,8 @@ import { component, div, button } from '@llui/dom'
 
 type State = { count: number }
 type Msg = { type: 'inc' } | { type: 'dec' }
-type Effect = never
 
-export const Counter = component<State, Msg, Effect>({
+export const Counter = component<State, Msg, never>({
   name: 'Counter',
   init: () => [{ count: 0 }, []],
   update: (state, msg) => {
@@ -91,6 +138,8 @@ export const Counter = component<State, Msg, Effect>({
 - For forms with many fields, use a single `setField` message:
   `{ type: 'setField'; field: keyof Fields; value: string }` instead of one message per field.
   Use `applyField(state, msg.field, msg.value)` from `@llui/dom` to apply updates.
-- Effects are dispatched via `onEffect(effect, send, signal)`.
-  For `http`, `cancel`, `debounce`: import `handleEffects` from `@llui/effects`.
+- Effects use typed message constructors: `onSuccess: (data) => ({ type: 'loaded', payload: data })`.
+  Never use string-based effect callbacks.
+- For `http`, `cancel`, `debounce`, `websocket`, `retry`: import from `@llui/effects`.
+  Wire into onEffect with `handleEffects<Effect, Msg>().else(handler)`.
 - `send()` batches via microtask. Use `flush()` only when reading DOM state immediately.
