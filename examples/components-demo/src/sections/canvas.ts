@@ -264,6 +264,7 @@ export const App = component<State, Msg, never>({
                 img({
                   ...ic.image,
                   src: PLACEHOLDER_IMG,
+                  alt: 'Sample image for cropping',
                   class: 'block w-[400px] h-[300px] select-none',
                 }),
                 // Crop box overlay — positioned via percentage from the
