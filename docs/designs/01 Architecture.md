@@ -108,7 +108,11 @@ export const Search = component<State, Msg, Effect>({
               debounce(
                 'search',
                 300,
-                http({ url: `/api?q=${msg.value}`, onSuccess: (data) => ({ type: 'results', payload: data }), onError: (err) => ({ type: 'error', error: err }) }),
+                http({
+                  url: `/api?q=${msg.value}`,
+                  onSuccess: (data) => ({ type: 'results', payload: data }),
+                  onError: (err) => ({ type: 'error', error: err }),
+                }),
               ),
             ),
             { type: 'analytics', event: 'search_typed' },
@@ -577,6 +581,18 @@ The compiler's exhaustive `branch()` diagnostic ensures all routes are handled. 
 
 ---
 
+## Styling
+
+Components are fully headless by default — they emit `data-scope` / `data-part` attributes on every element but prescribe no visual appearance. An opt-in styling layer provides two complementary mechanisms:
+
+**CSS theme (`theme.css`).** A single CSS import that styles all 54 components via attribute selectors. Design tokens are declared in a Tailwind 4 `@theme` block (colors, radii, spacing, shadows, transitions, z-indexes). Components get layout, state-driven visuals (hover, active, checked, disabled, open/closed), and enter/exit animations. Override any token by redeclaring it in your own `@theme` block. Dark mode lives in a separate `theme-dark.css` file — it must be imported after `theme.css` to avoid Tailwind 4's theme scanner merging dark values into the root defaults.
+
+**JS class helpers (`styles/`).** Each component has a function (e.g. `tabsClasses({ size: 'sm', variant: 'pill' })`) that returns an object of Tailwind utility strings per part. Powered by a `createVariants()` engine with compound variant support. This mechanism is for apps that use Tailwind utilities rather than plain CSS attribute selectors. Both mechanisms can coexist — the CSS theme applies via attribute selectors while class helpers add or override via the `class` attribute.
+
+**Shared utilities.** `theme.css` also provides `.btn` / `.btn-primary` / `.btn-secondary` / `.btn-danger` button classes, `.confirm-dialog` pattern styles, `.sr-only`, and marquee keyframes.
+
+---
+
 ## Expressibility Catalogue
 
 **Counter.** The canonical pattern: `State = { count: number }`, `Msg = Increment | Decrement | Reset`. `update()` returns a new state each time; the compiler assigns `count` bit 1. The text binding `text((s) => String(s.count))` gets mask `0b1`. After `Increment`, `__dirty` returns `0b1`, Phase 2 evaluates only that binding. `branch` handles the `counting`/`resetting` phase distinction without a boolean flag, as shown in the counter example.
@@ -629,7 +645,7 @@ The compiler's controlled-input diagnostic (02 Compiler.md) catches the most com
 
 **Drag and drop with reordering.** The drag state (`{ dragging: id | null, overIndex: number | null }`) lives in the component state. `each` uses the item key to preserve DOM node identity during reorder; the `updateEach` swap-detection fast path handles the common case of dragging one item past one other (exactly two positions change) with two DOM moves. Drag events dispatch messages that update the order in the `todos` array. The enter/leave transitions on `each` can animate items sliding into position.
 
-**Typeahead / autocomplete.** Keystrokes send `setQuery` messages. `update()` returns a composed effect: `cancel('search', debounce('search', 300, http({ url: \`/api/search?q=\${state.query}\`, onSuccess: (data) => ({ type: 'results', payload: data }), onError: (err) => ({ type: 'searchError', error: err }) })))`. The `cancel` wrapper discards any pending search when a new keystroke arrives; the `debounce` wrapper delays the HTTP request by 300ms; the `http` wrapper performs the fetch. No generation counter, no manual cancellation tracking. The component state is just `{ query, results, loading }`. Results render via `each` keyed by result id.
+**Typeahead / autocomplete.** Keystrokes send `setQuery` messages. `update()` returns a composed effect: `cancel('search', debounce('search', 300, http({ url: \`/api/search?q=\${state.query}\`, onSuccess: (data) => ({ type: 'results', payload: data }), onError: (err) => ({ type: 'searchError', error: err }) })))`. The `cancel`wrapper discards any pending search when a new keystroke arrives; the`debounce`wrapper delays the HTTP request by 300ms; the`http`wrapper performs the fetch. No generation counter, no manual cancellation tracking. The component state is just`{ query, results, loading }`. Results render via `each` keyed by result id.
 
 **Infinite scroll.** State holds `{ items: T[], cursor: string | null, loading: boolean }`. An `onMount` (or an event listener disposer registered via a scope disposer) observes an intersection observer on the sentinel element at the list bottom. When the sentinel is visible, it sends `loadMore`. `update()` returns the http effect and sets `loading: true`. On success, `update()` appends to `items` and updates `cursor`. `each` with key-by-id appends new entries at the tail; `updateEach` detects the append-at-end fast path and inserts a single fragment.
 
@@ -735,7 +751,7 @@ The two examples demonstrate both sync forms. Record sync is cleaner when fields
 
 **Data table with sort, filter, paginate.** All three dimensions live in state. `memo(applyFiltersAndSort)` produces the filtered+sorted array; `memo(currentPage)` slices it for display. Column header clicks send `setSort` messages; filter inputs send `setFilter` messages; page controls send `setPage`. The `__dirty` bitmask for a table with these fields will assign separate bits to `sortField`, `sortDir`, `filters`, `page`, and `rows`; a page change touches only `page`, so the filter/sort computation — if already memoized — is not re-run.
 
-**Form validation (sync + async).** Synchronous validation runs inside `update()`: the new state carries `errors` derived from the submitted values. Async validation (e.g., username availability check) returns a cancellable http effect: `cancel('validate-username', http({ url: \`/api/check?name=\${state.username}\`, onSuccess: (data) => ({ type: 'usernameAvailable', payload: data }), onError: (err) => ({ type: 'validationError', error: err }) }))`. The `cancel` wrapper discards any pending validation when the user types again. The form is in a `validating` phase while the check is in flight; the submit button is disabled via a binding `(s) => s.phase === 'validating'` with the appropriate mask.
+**Form validation (sync + async).** Synchronous validation runs inside `update()`: the new state carries `errors` derived from the submitted values. Async validation (e.g., username availability check) returns a cancellable http effect: `cancel('validate-username', http({ url: \`/api/check?name=\${state.username}\`, onSuccess: (data) => ({ type: 'usernameAvailable', payload: data }), onError: (err) => ({ type: 'validationError', error: err }) }))`. The `cancel`wrapper discards any pending validation when the user types again. The form is in a`validating`phase while the check is in flight; the submit button is disabled via a binding`(s) => s.phase === 'validating'` with the appropriate mask.
 
 **Animated transitions.** `branch`, `each`, and `show` all accept transition fields on their object parameter: `enter?`, `leave?`, and `onTransition?`. `leave` is called with the departing nodes before removal; if it returns a Promise, removal is deferred until the promise resolves. `enter` is called immediately after insertion. CSS class-based transitions work naturally: `each({ items: ..., key: ..., render: ..., enter: nodes => { nodes.forEach(n => n.classList.add('entering')); return waitForTransition(nodes[0]) } })`. For coordinated enter/leave (cross-fades, FLIP animations), `onTransition({ entering, leaving, parent })` fires first, followed by individual `enter`/`leave` handlers — they compose rather than override.
 

@@ -540,6 +540,45 @@ See: 04 Test Strategy.md
 
 ---
 
+## `@llui/components` — Styles
+
+### CSS Theme
+
+```typescript
+import '@llui/components/styles/theme.css' // light theme + all component styles
+import '@llui/components/styles/theme-dark.css' // dark mode overrides (separate file)
+```
+
+`theme.css` declares design tokens in a `@theme` block and styles all 54 components via `[data-scope][data-part]` attribute selectors. `theme-dark.css` overrides color/shadow tokens for dark mode via `prefers-color-scheme: dark` and `[data-theme="dark"]`.
+
+### Variant Engine
+
+```typescript
+import { createVariants, cx } from '@llui/components/styles'
+
+function createVariants<V extends VariantRecord>(
+  config: VariantConfig<V>,
+): (props?: VariantProps<V>) => string
+function cx(...classes: ClassValue[]): string
+
+type ClassValue = string | false | null | undefined
+```
+
+### Class Helpers
+
+Each component exports a class helper from `@llui/components/styles/<name>`:
+
+```typescript
+import { tabsClasses } from '@llui/components/styles/tabs'
+
+const cls = tabsClasses({ size: 'sm', variant: 'pill' })
+// Returns: { root: string, list: string, trigger: string, panel: string, indicator: string }
+```
+
+All 54 components have class helpers. Each returns an object mapping part names to Tailwind utility class strings. Most accept optional `size` and `variant`/`colorScheme` props with defaults.
+
+---
+
 ## Internal Types
 
 ### `Scope`

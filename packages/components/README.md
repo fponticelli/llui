@@ -125,7 +125,7 @@ Import once at your app root for a complete default look based on `data-scope`/`
 import '@llui/components/styles/theme.css'
 ```
 
-Includes design tokens (`@theme`), dark mode (`prefers-color-scheme: dark` + `[data-theme="dark"]`), and enter/exit animations for overlays. Override any token in your own CSS:
+Includes design tokens (`@theme`) and enter/exit animations for overlays. Override any token in your own CSS:
 
 ```css
 @theme {
@@ -133,6 +133,14 @@ Includes design tokens (`@theme`), dark mode (`prefers-color-scheme: dark` + `[d
   --radius-lg: 1rem;
 }
 ```
+
+For dark mode, import the separate dark theme file **after** Tailwind and theme.css:
+
+```typescript
+import '@llui/components/styles/theme-dark.css'
+```
+
+This activates automatically via `prefers-color-scheme: dark`. Force light with `<html data-theme="light">`, force dark with `<html data-theme="dark">`. The dark file is separate because Tailwind 4's `@theme` scanner would otherwise merge dark tokens into the root theme.
 
 ### JS class helpers — Tailwind utility strings
 
