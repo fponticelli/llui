@@ -117,10 +117,10 @@ All 15 zag.js machines now shipped. 54 headless components total.
 
 ### 10. Zag.js parity — cross-cutting patterns
 
-- **Controlled/uncontrolled split.** Add `defaultValue` vs `value` distinction + `onValueChange` hook to components that carry a single value field. Today llui only carries one field in state — consumer owns controlled-ness via the outer TEA loop.
+- ~~**Controlled/uncontrolled split.**~~ Removed — TEA's outer loop already owns controlled-ness. Adding `defaultValue` / `onValueChange` would duplicate what the architecture provides naturally.
 - ~~**Collections abstraction.**~~ ✅ `TreeCollection` helper shipped. Listbox / combobox / select still feed string arrays directly — revisit if a unified `ListCollection` becomes useful.
 - **i18n / RTL layer.** Universal `translations` object + `dir` prop flipping arrow-key semantics. Today labels are hardcoded English with per-connect overrides in spots.
-- ~~**Validator / transform callbacks.**~~ ✅ `validate` + `transformFiles` shipped for file-upload. Still to do: `validate` for editable, number-input, tags-input, pin-input.
+- ~~**Validator / transform callbacks.**~~ ✅ `validate` + `transformFiles` shipped for file-upload. Remaining components (editable, number-input, tags-input, pin-input) can add `validate` to their ConnectOptions as needed — same thin pattern, not an architectural blocker.
 
 (`ids?: ElementIds` override for SSR id collisions — explicitly not pursuing, single `opts.id` prefix is adequate.)
 
