@@ -55,9 +55,7 @@ export interface AccordionClasses {
   content: string
 }
 
-export function accordionClasses(
-  props?: AccordionStyleVariants,
-): AccordionClasses {
+export function accordionClasses(props?: AccordionStyleVariants): AccordionClasses {
   return {
     root: rootVariants(props),
     item: 'border-b border-border last:border-b-0',

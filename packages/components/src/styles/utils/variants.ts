@@ -6,9 +6,7 @@ export interface VariantConfig<V extends VariantRecord> {
   base: string
   variants: V
   defaultVariants?: { [K in keyof V]?: keyof V[K] }
-  compoundVariants?: Array<
-    { [K in keyof V]?: keyof V[K] } & { class: string }
-  >
+  compoundVariants?: Array<{ [K in keyof V]?: keyof V[K] } & { class: string }>
 }
 
 export type VariantProps<V extends VariantRecord> = {
@@ -23,8 +21,7 @@ export function createVariants<V extends VariantRecord>(
 
     for (const key of Object.keys(config.variants)) {
       resolved[key] =
-        (props[key] as string | undefined) ??
-        (config.defaultVariants?.[key] as string | undefined)
+        (props[key] as string | undefined) ?? (config.defaultVariants?.[key] as string | undefined)
     }
 
     const parts: ClassValue[] = [config.base]
@@ -37,9 +34,7 @@ export function createVariants<V extends VariantRecord>(
     if (config.compoundVariants) {
       for (const compound of config.compoundVariants) {
         const { class: cls, ...conditions } = compound
-        const match = Object.entries(conditions).every(
-          ([k, v]) => resolved[k] === v,
-        )
+        const match = Object.entries(conditions).every(([k, v]) => resolved[k] === v)
         if (match) parts.push(cls)
       }
     }

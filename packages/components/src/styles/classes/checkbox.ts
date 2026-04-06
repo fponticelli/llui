@@ -9,10 +9,8 @@ const rootVariants = createVariants({
       lg: 'w-6 h-6',
     },
     colorScheme: {
-      primary:
-        'data-[state=checked]:bg-primary data-[state=checked]:border-primary',
-      destructive:
-        'data-[state=checked]:bg-destructive data-[state=checked]:border-destructive',
+      primary: 'data-[state=checked]:bg-primary data-[state=checked]:border-primary',
+      destructive: 'data-[state=checked]:bg-destructive data-[state=checked]:border-destructive',
     },
   },
   defaultVariants: { size: 'md', colorScheme: 'primary' },
@@ -34,8 +32,7 @@ export interface CheckboxClasses {
 export function checkboxClasses(props?: CheckboxStyleVariants): CheckboxClasses {
   return {
     root: rootVariants(props),
-    indicator:
-      'text-text-inverted flex items-center justify-center data-[state=unchecked]:hidden',
+    indicator: 'text-text-inverted flex items-center justify-center data-[state=unchecked]:hidden',
     label: 'text-text select-none',
   }
 }

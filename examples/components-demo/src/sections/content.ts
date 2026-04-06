@@ -231,14 +231,14 @@ export const App = component<State, Msg, never>({
         ]),
         card('Cascade Select', [
           div({ ...cs.root, class: 'flex flex-col gap-3' }, [
-            p({ class: 'text-xs text-slate-500' }, [
+            p({ class: 'text-xs text-text-muted' }, [
               text(
                 'Region options depend on the selected country; choosing a new country resets the region.',
               ),
             ]),
             // Country buttons
             div({ class: 'flex items-center gap-2' }, [
-              span({ class: 'text-xs font-semibold text-slate-600 w-16' }, [text('Country:')]),
+              span({ class: 'text-xs font-semibold text-text-muted w-16' }, [text('Country:')]),
               button(
                 {
                   class: 'btn text-xs',
@@ -272,7 +272,7 @@ export const App = component<State, Msg, never>({
             ]),
             // Region buttons — filtered by country
             div({ class: 'flex items-center gap-2 flex-wrap' }, [
-              span({ class: 'text-xs font-semibold text-slate-600 w-16' }, [text('Region:')]),
+              span({ class: 'text-xs font-semibold text-text-muted w-16' }, [text('Region:')]),
               // Branch-per-country so the visible button set depends on
               // the value. Buttons without a country get data-ready=false.
               button(
@@ -346,14 +346,14 @@ export const App = component<State, Msg, never>({
               ),
               span(
                 {
-                  class: 'text-xs text-slate-400 italic',
+                  class: 'text-xs text-text-muted italic',
                   style: (s: State) => (s.cascade.values[0] === null ? '' : 'display:none;'),
                 },
                 [text('(pick a country first)')],
               ),
             ]),
             // Current selection readout
-            div({ class: 'text-sm font-mono text-slate-700 bg-slate-50 px-2 py-1 rounded' }, [
+            div({ class: 'text-sm font-mono text-text bg-surface-muted px-2 py-1 rounded' }, [
               text('Selection: '),
               text(
                 (s: State) =>
@@ -371,7 +371,7 @@ export const App = component<State, Msg, never>({
               items: (s) => s.list.items,
               key: (i) => i.id,
               render: ({ item }) => [
-                div({ class: 'px-2 py-1 rounded bg-slate-50 text-sm' }, [text(() => item.label())]),
+                div({ class: 'px-2 py-1 rounded bg-surface-muted text-sm' }, [text(() => item.label())]),
               ],
             }),
             div({ class: 'mt-2 flex gap-2' }, [
@@ -387,7 +387,7 @@ export const App = component<State, Msg, never>({
                   ),
                 ],
               ),
-              span({ class: 'text-xs text-slate-500' }, [
+              span({ class: 'text-xs text-text-muted' }, [
                 text((s: State) => `status: ${s.list.status} · ${s.list.items.length} items`),
               ]),
             ]),
@@ -405,7 +405,7 @@ export const App = component<State, Msg, never>({
             div(
               {
                 ...pr.root,
-                class: 'rounded border border-slate-300 px-3 py-2 text-sm transition-opacity',
+                class: 'rounded border border-border px-3 py-2 text-sm transition-opacity',
                 style: (s: State) =>
                   presence.isVisible(s.presence) ? 'opacity: 1;' : 'opacity: 0;',
               },
@@ -415,7 +415,7 @@ export const App = component<State, Msg, never>({
         ]),
         card('QR Code', [
           div({ class: 'flex flex-col gap-3' }, [
-            p({ class: 'text-xs text-slate-500' }, [
+            p({ class: 'text-xs text-text-muted' }, [
               text("Type in the box to re-encode. llui's qr-code component holds the matrix; "),
               text('this demo uses '),
               span({ class: 'font-mono' }, [text('uqr')]),
@@ -425,7 +425,7 @@ export const App = component<State, Msg, never>({
             input({
               type: 'text',
               class:
-                'w-full px-3 py-2 border border-slate-300 rounded font-mono text-sm ' +
+                'w-full px-3 py-2 border border-border rounded font-mono text-sm ' +
                 'focus:outline-none focus:ring-2 focus:ring-blue-200',
               placeholder: 'Type URL or text…',
               value: (s: State) => s.qr.value,
@@ -435,20 +435,20 @@ export const App = component<State, Msg, never>({
             div({ class: 'flex items-center gap-4' }, [
               img({
                 alt: 'QR code',
-                class: 'w-32 h-32 border border-slate-200 rounded bg-white',
+                class: 'w-32 h-32 border border-border rounded bg-white',
                 src: (s: State) =>
                   s.qr.matrix.length > 0 ? qrCode.toDataUrl(s.qr.matrix, '#0f172a', '#ffffff') : '',
               }),
-              div({ class: 'flex flex-col gap-1 text-xs text-slate-600' }, [
+              div({ class: 'flex flex-col gap-1 text-xs text-text-muted' }, [
                 div([
                   text('Size: '),
-                  span({ class: 'font-mono text-slate-700' }, [
+                  span({ class: 'font-mono text-text' }, [
                     text((s: State) => `${qrCode.size(s.qr)}×${qrCode.size(s.qr)}`),
                   ]),
                 ]),
                 div([
                   text('Value: '),
-                  span({ class: 'font-mono text-slate-700 break-all' }, [
+                  span({ class: 'font-mono text-text break-all' }, [
                     text((s: State) => s.qr.value || '(empty)'),
                   ]),
                 ]),

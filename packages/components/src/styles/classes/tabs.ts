@@ -64,7 +64,6 @@ export function tabsClasses(props?: TabsStyleVariants): TabsClasses {
     list: listVariants(props),
     trigger: triggerVariants(props),
     panel: panelVariants(props),
-    indicator:
-      'absolute bottom-0 h-0.5 bg-primary transition-all duration-normal',
+    indicator: 'absolute bottom-0 h-0.5 bg-primary transition-all duration-normal',
   }
 }

@@ -305,8 +305,8 @@ export const App = component<State, Msg, never>({
         ]),
         card('Checkbox', [
           label({ class: 'flex items-center gap-3' }, [
-            div({ ...cb.root, class: 'cb' }, [
-              span({ ...cb.indicator, class: 'cb__indicator' }, [
+            div({ ...cb.root }, [
+              span({ ...cb.indicator }, [
                 text((s: State) =>
                   s.checkbox.checked === true
                     ? '✓'
@@ -343,26 +343,26 @@ export const App = component<State, Msg, never>({
             ['small', 'medium', 'large'].map((v) => {
               const p = rg.item(v)
               return label({ class: 'flex items-center gap-2 cursor-pointer' }, [
-                div({ ...p.root, class: 'radio' }, [
-                  div({ ...p.indicator, class: 'radio__indicator' }, []),
+                div({ ...p.root }, [
+                  div({ ...p.indicator }, []),
                 ]),
                 span({ class: 'text-sm' }, [text(v.charAt(0).toUpperCase() + v.slice(1))]),
               ])
             }),
           ),
-          div({ class: 'mt-3 text-sm text-slate-600' }, [
+          div({ class: 'mt-3 text-sm text-text-muted' }, [
             text('Size: '),
             text((s: State) => s.radio.value ?? 'none'),
           ]),
         ]),
         card('Toggle Group', [
           div(
-            { ...tg.root, class: 'inline-flex rounded-md border border-slate-300 overflow-hidden' },
+            { ...tg.root },
             ['bold', 'italic', 'underline'].map((v) =>
-              button({ ...tg.item(v).root, class: 'tg-item' }, [text(v.charAt(0).toUpperCase())]),
+              button({ ...tg.item(v).root }, [text(v.charAt(0).toUpperCase())]),
             ),
           ),
-          div({ class: 'mt-3 text-sm text-slate-600' }, [
+          div({ class: 'mt-3 text-sm text-text-muted' }, [
             text('Active: '),
             text((s: State) =>
               s.togGroup.value.length > 0 ? s.togGroup.value.join(', ') : 'none',
@@ -370,75 +370,66 @@ export const App = component<State, Msg, never>({
           ]),
         ]),
         card('Number Input', [
-          div({ ...ni.root, class: 'num-root' }, [
-            button({ ...ni.decrement, class: 'num-btn' }, [text('−')]),
-            input({ ...ni.input, class: 'num-input' }),
-            button({ ...ni.increment, class: 'num-btn' }, [text('+')]),
+          div({ ...ni.root }, [
+            button({ ...ni.decrement }, [text('−')]),
+            input({ ...ni.input }),
+            button({ ...ni.increment }, [text('+')]),
           ]),
-          div({ class: 'mt-3 text-sm text-slate-600' }, [
+          div({ class: 'mt-3 text-sm text-text-muted' }, [
             text('Quantity: '),
             text((s: State) => String(s.number.value ?? 0)),
           ]),
         ]),
         card('Password Input', [
-          div({ ...pw.root, class: 'pw-root' }, [
-            input({ ...pw.input, class: 'pw-input' }),
-            button({ ...pw.visibilityTrigger, class: 'pw-toggle' }, [
+          div({ ...pw.root }, [
+            input({ ...pw.input }),
+            button({ ...pw.visibilityTrigger }, [
               text((s: State) => (s.password.visible ? 'Hide' : 'Show')),
             ]),
           ]),
         ]),
         card('Pin Input (OTP)', [
           div({ ...pin.root, class: 'flex gap-2' }, [
-            div({ ...pin.label, class: 'sr-only' }, [text('Verification code')]),
-            input({ ...pin.input(0), class: 'pin-slot' }),
-            input({ ...pin.input(1), class: 'pin-slot' }),
-            input({ ...pin.input(2), class: 'pin-slot' }),
-            input({ ...pin.input(3), class: 'pin-slot' }),
+            div({ ...pin.label }, [text('Verification code')]),
+            input({ ...pin.input(0) }),
+            input({ ...pin.input(1) }),
+            input({ ...pin.input(2) }),
+            input({ ...pin.input(3) }),
           ]),
-          div({ class: 'mt-3 text-sm text-slate-600' }, [
+          div({ class: 'mt-3 text-sm text-text-muted' }, [
             text('Code: '),
             text((s: State) => s.pinInput.values.join('') || '(empty)'),
           ]),
         ]),
         card('Tags Input', [
-          div({ ...ti.root, class: 'tags-root' }, [
-            div({ class: 'tags-list' }, [
-              ...each({
-                items: (s) => s.tagsInput.value,
-                key: (t) => t,
-                render: ({ item, index }) => {
-                  const tagFn = item((t) => t)
-                  return [
-                    span({ class: 'tag' }, [
-                      text(tagFn),
-                      button(
-                        {
-                          type: 'button',
-                          class: 'tag-x',
-                          onClick: () =>
-                            send({ type: 'tagsInput', msg: { type: 'removeTag', index: index() } }),
-                          'aria-label': 'Remove tag',
-                        },
-                        [text('×')],
-                      ),
-                    ]),
-                  ]
-                },
-              }),
-            ]),
-            input({ ...ti.input, class: 'tags-input', placeholder: 'Enter to add' }),
+          div({ ...ti.root }, [
+            ...each({
+              items: (s) => s.tagsInput.value,
+              key: (t) => t,
+              render: ({ item, index }) => {
+                const value = item((t: string) => t)()
+                const idx = index()
+                const tag = ti.tag(value, idx)
+                return [
+                  span({ ...tag.root }, [
+                    text(value),
+                    button({ ...tag.remove }, [text('×')]),
+                  ]),
+                ]
+              },
+            }),
+            input({ ...ti.input, placeholder: 'Enter to add' }),
           ]),
         ]),
         card('Rating', [
-          div({ ...ra.root, class: 'rating' }, [
-            div({ ...ra.item(0).root, class: 'rating-star' }, [text('★')]),
-            div({ ...ra.item(1).root, class: 'rating-star' }, [text('★')]),
-            div({ ...ra.item(2).root, class: 'rating-star' }, [text('★')]),
-            div({ ...ra.item(3).root, class: 'rating-star' }, [text('★')]),
-            div({ ...ra.item(4).root, class: 'rating-star' }, [text('★')]),
+          div({ ...ra.root }, [
+            div({ ...ra.item(0).root }, [text('★')]),
+            div({ ...ra.item(1).root }, [text('★')]),
+            div({ ...ra.item(2).root }, [text('★')]),
+            div({ ...ra.item(3).root }, [text('★')]),
+            div({ ...ra.item(4).root }, [text('★')]),
           ]),
-          div({ class: 'mt-3 text-sm text-slate-600' }, [
+          div({ class: 'mt-3 text-sm text-text-muted' }, [
             text('Rating: '),
             text((s: State) => String(s.rating.value)),
             text(' / '),
@@ -452,7 +443,7 @@ export const App = component<State, Msg, never>({
               div({ ...sl.thumb(0).thumb }, []),
             ]),
           ]),
-          div({ class: 'mt-2 text-sm text-slate-600' }, [
+          div({ class: 'mt-2 text-sm text-text-muted' }, [
             text('Value: '),
             text((s: State) => String(s.slider.value[0] ?? 0)),
           ]),
@@ -461,7 +452,7 @@ export const App = component<State, Msg, never>({
           div({ ...pr.root, 'aria-label': 'Upload progress' }, [
             div({ ...pr.track }, [div({ ...pr.range }, [])]),
           ]),
-          div({ class: 'mt-2 text-sm text-slate-600' }, [text((s: State) => pr.valueText(s))]),
+          div({ class: 'mt-2 text-sm text-text-muted' }, [text((s: State) => pr.valueText(s))]),
           div({ class: 'mt-3 flex gap-2' }, [
             progressBtn('25%', 25),
             progressBtn('65%', 65),

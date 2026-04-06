@@ -301,13 +301,13 @@ export const App = component<State, Msg, never>({
 
     const selectItems = (): Node[] =>
       ['Red', 'Green', 'Blue', 'Purple', 'Orange'].map((v, i) =>
-        div({ ...se.item(v, i).item, class: 'cb-item' }, [text(v)]),
+        div({ ...se.item(v, i).item }, [text(v)]),
       )
     const menuItems = (): Node[] =>
       ['Edit', 'Duplicate', 'Archive', 'Delete'].map((v) => div({ ...me.item(v).item }, [text(v)]))
     const ctxMenuItems = (): Node[] =>
       ['Cut', 'Copy', 'Paste', 'Delete'].map((v) =>
-        div({ ...cm.item(v).item, class: 'ctx-menu-item' }, [text(v)]),
+        div({ ...cm.item(v).item }, [text(v)]),
       )
 
     type Toast = { id: string; type: string; title?: string; description?: string }
@@ -338,9 +338,9 @@ export const App = component<State, Msg, never>({
       send: (m) => send({ type: 'drawer', msg: m }),
       parts: dr,
       content: () => [
-        div({ ...dr.content, class: 'drawer-content' }, [
+        div({ ...dr.content }, [
           h3({ ...dr.title, class: 'text-lg font-semibold' }, [text('Drawer panel')]),
-          p({ class: 'mt-2 text-sm text-slate-600' }, [
+          p({ class: 'mt-2 text-sm text-text-muted' }, [
             text('Slide-in panel with focus trap, scroll lock, dismissable layer.'),
           ]),
           button({ ...dr.closeTrigger, class: 'btn btn-secondary mt-4' }, [text('Close')]),
@@ -353,13 +353,20 @@ export const App = component<State, Msg, never>({
       send: (m) => send({ type: 'dialog', msg: m }),
       parts: dlg,
       content: () => [
-        div({ ...dlg.content, class: 'dialog-content' }, [
-          h3({ ...dlg.title, class: 'text-lg font-semibold' }, [text('Edit profile')]),
-          p({ ...dlg.description, class: 'mt-2 text-sm text-slate-600' }, [
+        div({ ...dlg.content }, [
+          button({ ...dlg.closeTrigger }, [text('\u00d7')]),
+          h3({ ...dlg.title }, [text('Edit profile')]),
+          p({ ...dlg.description }, [
             text('Make changes to your profile. Click save when you are done.'),
           ]),
-          div({ class: 'mt-4 flex gap-2' }, [
-            button({ ...dlg.closeTrigger, class: 'btn btn-secondary' }, [text('Cancel')]),
+          div({ class: 'mt-6 flex justify-end gap-3' }, [
+            button(
+              {
+                class: 'btn btn-secondary',
+                onClick: () => send({ type: 'dialog', msg: { type: 'close' } }),
+              },
+              [text('Cancel')],
+            ),
             button(
               {
                 class: 'btn btn-primary',
@@ -380,13 +387,20 @@ export const App = component<State, Msg, never>({
       send: (m) => send({ type: 'alertDialog', msg: m }),
       parts: adlg,
       content: () => [
-        div({ ...adlg.content, class: 'dialog-content' }, [
-          h3({ ...adlg.title, class: 'text-lg font-semibold' }, [text('Revoke API key?')]),
-          p({ ...adlg.description, class: 'mt-2 text-sm text-slate-600' }, [
+        div({ ...adlg.content }, [
+          button({ ...adlg.closeTrigger }, [text('\u00d7')]),
+          h3({ ...adlg.title }, [text('Revoke API key?')]),
+          p({ ...adlg.description }, [
             text('Any client using this key will lose access immediately.'),
           ]),
-          div({ class: 'mt-4 flex gap-2' }, [
-            button({ ...adlg.closeTrigger, class: 'btn btn-secondary' }, [text('Cancel')]),
+          div({ class: 'mt-6 flex justify-end gap-3' }, [
+            button(
+              {
+                class: 'btn btn-secondary',
+                onClick: () => send({ type: 'alertDialog', msg: { type: 'close' } }),
+              },
+              [text('Cancel')],
+            ),
             button(
               {
                 class: 'btn btn-danger',
@@ -418,7 +432,7 @@ export const App = component<State, Msg, never>({
                 },
                 [
                   h3({ ...po.title, class: 'text-sm font-semibold' }, [text('Did you know?')]),
-                  p({ class: 'mt-1 text-xs text-slate-600' }, [
+                  p({ class: 'mt-1 text-xs text-text-muted' }, [
                     text('LLui compiles state paths into bitmasks at build time.'),
                   ]),
                   button({ ...po.closeTrigger, class: 'btn btn-secondary mt-3 text-xs' }, [
@@ -436,7 +450,7 @@ export const App = component<State, Msg, never>({
             get: (s) => s.tooltip,
             send: (m) => send({ type: 'tooltip', msg: m }),
             parts: tp,
-            content: () => [div({ ...tp.content, class: 'tip' }, [text('This is a tooltip')])],
+            content: () => [div({ ...tp.content }, [text('This is a tooltip')])],
           }),
         ]),
         card('Hover Card', [
@@ -448,9 +462,9 @@ export const App = component<State, Msg, never>({
             send: (m) => send({ type: 'hoverCard', msg: m }),
             parts: hc,
             content: () => [
-              div({ ...hc.content, class: 'hc' }, [
+              div({ ...hc.content }, [
                 h3({ class: 'text-sm font-semibold' }, [text('LLui Components')]),
-                p({ class: 'mt-1 text-xs text-slate-600' }, [
+                p({ class: 'mt-1 text-xs text-text-muted' }, [
                   text('Full keyboard, screen-reader, pointer support.'),
                 ]),
               ]),
@@ -467,18 +481,25 @@ export const App = component<State, Msg, never>({
           }),
         ]),
         card('Context Menu', [
-          div({ ...cm.trigger, class: 'ctx-target' }, [text('Right-click me')]),
+          div(
+            {
+              ...cm.trigger,
+              class:
+                'p-8 bg-surface-muted border-2 border-dashed border-border rounded-md text-center text-text-muted select-none',
+            },
+            [text('Right-click me')],
+          ),
           ...contextMenu.overlay<State>({
             get: (s) => s.contextMenu,
             send: (m) => send({ type: 'contextMenu', msg: m }),
             parts: cm,
-            content: () => [div({ ...cm.content, class: 'ctx-menu' }, ctxMenuItems())],
+            content: () => [div({ ...cm.content }, ctxMenuItems())],
           }),
         ]),
         card('Select', [
           button({ ...se.trigger }, [
             span([text((s: State) => se.valueText(s))]),
-            span({ class: 'ml-2 text-slate-400' }, [text('▾')]),
+            span({ class: 'ml-2 text-text-muted' }, [text('▾')]),
           ]),
           ...select.overlay<State>({
             get: (s) => s.select,
@@ -489,7 +510,7 @@ export const App = component<State, Msg, never>({
         ]),
         card('Combobox', [
           div({ ...co.root, class: 'relative' }, [
-            input({ ...co.input, class: 'cb-input', placeholder: 'Search fruits…' }),
+            input({ ...co.input, placeholder: 'Search fruits…' }),
           ]),
           ...combobox.overlay<State>({
             get: (s) => s.combobox,
@@ -497,7 +518,7 @@ export const App = component<State, Msg, never>({
             parts: co,
             content: () => [
               div(
-                { ...co.content, class: 'cb-content' },
+                { ...co.content },
                 each({
                   items: (s) => s.combobox.filteredItems,
                   key: (v) => v,
@@ -505,13 +526,13 @@ export const App = component<State, Msg, never>({
                     const value = item((t: string) => t)()
                     const idx = index()
                     const parts = co.item(value, idx).item
-                    return [div({ ...parts, class: 'cb-item' }, [text(value)])]
+                    return [div({ ...parts }, [text(value)])]
                   },
                 }),
               ),
             ],
           }),
-          div({ class: 'mt-3 text-sm text-slate-600' }, [
+          div({ class: 'mt-3 text-sm text-text-muted' }, [
             text('Selected: '),
             text((s: State) => s.combobox.value[0] ?? 'none'),
           ]),
@@ -524,7 +545,7 @@ export const App = component<State, Msg, never>({
         ]),
         card('Alert Dialog', [
           button({ ...adlg.trigger, class: 'btn btn-danger' }, [text('Revoke API key…')]),
-          p({ class: 'mt-2 text-xs text-slate-500' }, [
+          p({ class: 'mt-2 text-xs text-text-muted' }, [
             text('role="alertdialog" — outside-click does not dismiss by default.'),
           ]),
         ]),
@@ -556,7 +577,7 @@ export const App = component<State, Msg, never>({
           ]),
         ]),
         card('Confirm Dialog', [
-          p({ class: 'mb-3 text-sm text-slate-600' }, [
+          p({ class: 'mb-3 text-sm text-text-muted' }, [
             text('Last action: '),
             span({ class: 'font-medium' }, [text((s: State) => s.message || 'none')]),
           ]),

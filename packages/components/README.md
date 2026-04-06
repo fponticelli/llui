@@ -113,6 +113,71 @@ Shared helpers used internally and exported for advanced use:
 | `aria-hidden`    | `aria-hidden` on siblings of a modal for screen readers                  |
 | `remove-scroll`  | Body scroll lock for modals/drawers                                      |
 
+## Styling (opt-in)
+
+Components are fully headless by default. An opt-in styling layer provides two complementary mechanisms:
+
+### CSS theme — `theme.css`
+
+Import once at your app root for a complete default look based on `data-scope`/`data-part` attribute selectors:
+
+```typescript
+import '@llui/components/styles/theme.css'
+```
+
+Includes design tokens (`@theme`), dark mode (`prefers-color-scheme: dark` + `[data-theme="dark"]`), and enter/exit animations for overlays. Override any token in your own CSS:
+
+```css
+@theme {
+  --color-primary: #8b5cf6;
+  --radius-lg: 1rem;
+}
+```
+
+### JS class helpers — Tailwind utility strings
+
+Each component has a class helper that returns Tailwind utility strings per part, with size/variant props:
+
+```typescript
+import { tabsClasses } from '@llui/components/styles/tabs'
+
+const cls = tabsClasses({ size: 'sm', variant: 'pill' })
+// cls.root, cls.list, cls.trigger, cls.panel, cls.indicator
+
+div({ ...t.root, class: cls.root }, [
+  div({ ...t.list, class: cls.list }, [
+    button({ ...t.item('a').trigger, class: cls.trigger }, [text('Tab A')]),
+  ]),
+  div({ ...t.item('a').panel, class: cls.panel }, [text('Content A')]),
+])
+```
+
+Or import everything from the barrel:
+
+```typescript
+import { tabsClasses, dialogClasses, cx } from '@llui/components/styles'
+```
+
+### Variant engine
+
+The `createVariants` utility powers all class helpers and is exported for custom components:
+
+```typescript
+import { createVariants, cx } from '@llui/components/styles'
+
+const button = createVariants({
+  base: 'inline-flex items-center font-medium',
+  variants: {
+    size: { sm: 'px-2 py-1 text-sm', md: 'px-4 py-2' },
+    intent: { primary: 'bg-primary text-white', ghost: 'bg-transparent' },
+  },
+  defaultVariants: { size: 'md', intent: 'primary' },
+  compoundVariants: [{ size: 'sm', intent: 'ghost', class: 'font-normal' }],
+})
+
+button({ size: 'sm', intent: 'ghost' }) // → class string
+```
+
 ## Sub-path imports
 
 Every component has its own entry point for tree-shaking:

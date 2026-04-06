@@ -132,18 +132,36 @@ describe('navigation-menu.connect', () => {
     expect(send).not.toHaveBeenCalled()
   })
 
-  it('root pointerLeave dispatches closeAll when closeOnLeave=true', () => {
+  it('root pointerLeave dispatches closeAll after delay when closeOnLeave=true', () => {
+    vi.useFakeTimers()
     const send = vi.fn()
     const p = connect<Ctx>((s) => s.n, send, { id: 'nav' })
     p.root.onPointerLeave({} as PointerEvent)
+    expect(send).not.toHaveBeenCalled()
+    vi.advanceTimersByTime(150)
     expect(send).toHaveBeenCalledWith({ type: 'closeAll' })
+    vi.useRealTimers()
+  })
+
+  it('pointerEnter on root cancels pending close', () => {
+    vi.useFakeTimers()
+    const send = vi.fn()
+    const p = connect<Ctx>((s) => s.n, send, { id: 'nav' })
+    p.root.onPointerLeave({} as PointerEvent)
+    p.root.onPointerEnter({} as PointerEvent)
+    vi.advanceTimersByTime(200)
+    expect(send).not.toHaveBeenCalledWith({ type: 'closeAll' })
+    vi.useRealTimers()
   })
 
   it('closeOnLeave:false prevents auto-close', () => {
+    vi.useFakeTimers()
     const send = vi.fn()
     const p = connect<Ctx>((s) => s.n, send, { id: 'nav', closeOnLeave: false })
     p.root.onPointerLeave({} as PointerEvent)
+    vi.advanceTimersByTime(200)
     expect(send).not.toHaveBeenCalled()
+    vi.useRealTimers()
   })
 
   it('content hidden when not open', () => {

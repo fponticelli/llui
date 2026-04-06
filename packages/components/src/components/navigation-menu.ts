@@ -112,6 +112,7 @@ export interface NavItemParts<S> {
     'data-part': 'content'
     'data-state': (s: S) => 'open' | 'closed'
     hidden: (s: S) => boolean
+    onPointerEnter: (e: PointerEvent) => void
   }
 }
 
@@ -123,6 +124,7 @@ export interface NavMenuParts<S> {
     'data-part': 'root'
     'data-disabled': (s: S) => '' | undefined
     onPointerLeave: (e: PointerEvent) => void
+    onPointerEnter: (e: PointerEvent) => void
   }
   item: (id: string, options: { isBranch: boolean; ancestorIds?: string[] }) => NavItemParts<S>
 }
@@ -146,6 +148,23 @@ export function connect<S>(
   const triggerId = (v: string): string => `${opts.id}:trigger:${v}`
   const contentId = (v: string): string => `${opts.id}:content:${v}`
   const closeOnLeave = opts.closeOnLeave !== false
+  let closeTimer: ReturnType<typeof setTimeout> | null = null
+
+  const scheduleClose = (): void => {
+    if (!closeOnLeave) return
+    if (closeTimer) clearTimeout(closeTimer)
+    closeTimer = setTimeout(() => {
+      send({ type: 'closeAll' })
+      closeTimer = null
+    }, 150)
+  }
+
+  const cancelClose = (): void => {
+    if (closeTimer) {
+      clearTimeout(closeTimer)
+      closeTimer = null
+    }
+  }
 
   return {
     root: {
@@ -154,9 +173,8 @@ export function connect<S>(
       'data-scope': 'navigation-menu',
       'data-part': 'root',
       'data-disabled': (s) => (get(s).disabled ? '' : undefined),
-      onPointerLeave: () => {
-        if (closeOnLeave) send({ type: 'closeAll' })
-      },
+      onPointerLeave: () => scheduleClose(),
+      onPointerEnter: () => cancelClose(),
     },
     item: (id: string, options: { isBranch: boolean; ancestorIds?: string[] }): NavItemParts<S> => {
       const ancestorIds = options.ancestorIds ?? []
@@ -178,6 +196,7 @@ export function connect<S>(
             }
           },
           onPointerEnter: () => {
+            cancelClose()
             if (options.isBranch) {
               send({ type: 'openBranch', id, ancestorIds })
             }
@@ -192,6 +211,12 @@ export function connect<S>(
           'data-part': 'content',
           'data-state': (s) => (isOpen(get(s), id) ? 'open' : 'closed'),
           hidden: (s) => !isOpen(get(s), id),
+          onPointerEnter: () => {
+            cancelClose()
+            if (options.isBranch) {
+              send({ type: 'openBranch', id, ancestorIds })
+            }
+          },
         },
       }
     },

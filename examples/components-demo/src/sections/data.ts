@@ -193,44 +193,44 @@ export const App = component<State, Msg, never>({
 
     const stepItem = (idx: number, labelText: string): Node => {
       const p = st.item(idx)
-      return div({ ...p.item, class: 'step-item' }, [
-        button({ ...p.trigger, class: 'step-btn' }, [text(String(idx + 1))]),
-        span({ class: 'step-label' }, [text(labelText)]),
-        span({ ...p.separator, class: 'step-sep' }, []),
+      return div({ ...p.item }, [
+        button({ ...p.trigger }, [text(String(idx + 1))]),
+        span([text(labelText)]),
+        span({ ...p.separator }, []),
       ])
     }
 
     const pgItem = (page: number): Node =>
-      button({ ...pg.item(page), class: 'pg-btn' }, [text(String(page))])
+      button({ ...pg.item(page) }, [text(String(page))])
 
     const slides = ['Mountains', 'Ocean', 'Forest', 'Desert']
     const colors = ['#0891b2', '#0284c7', '#166534', '#d97706']
     const renderSlides = (): Node[] =>
       slides.map((s, i) =>
-        div({ ...cr.slide(i).slide, class: 'carousel-slide', style: `background:${colors[i]}` }, [
+        div({ ...cr.slide(i).slide, style: `background:${colors[i]}` }, [
           text(s),
         ]),
       )
     const renderIndicators = (): Node[] =>
-      slides.map((_, i) => button({ ...cr.slide(i).indicator, class: 'carousel-dot' }, []))
+      slides.map((_, i) => button({ ...cr.slide(i).indicator }, []))
 
     const treeBranch = (id: string, label: string, depth: number, children: Node[]): Node => {
       const p = tv.item(id, depth, true)
       return div([
-        div({ ...p.item, class: 'tree-item' }, [
-          button({ ...p.branchTrigger, class: 'tree-caret' }, [text('▸')]),
-          span({ class: 'tree-label' }, [text(label)]),
+        div({ ...p.item }, [
+          button({ ...p.branchTrigger }, [text('▸')]),
+          span([text(label)]),
         ]),
         div(
-          { class: 'tree-children', hidden: (s: State) => !s.treeView.expanded.includes(id) },
+          { class: 'pl-4', hidden: (s: State) => !s.treeView.expanded.includes(id) },
           children,
         ),
       ])
     }
     const treeLeaf = (id: string, label: string, depth: number): Node => {
       const p = tv.item(id, depth, false)
-      return div({ ...p.item, class: 'tree-item tree-leaf' }, [
-        span({ class: 'tree-label' }, [text(label)]),
+      return div({ ...p.item, class: 'pl-5' }, [
+        span([text(label)]),
       ])
     }
 
@@ -252,17 +252,17 @@ export const App = component<State, Msg, never>({
         ]),
         card('Pagination', [
           div({ ...pg.root, class: 'flex items-center gap-1' }, [
-            button({ ...pg.prevTrigger, class: 'pg-btn' }, [text('‹')]),
+            button({ ...pg.prevTrigger }, [text('‹')]),
             pgItem(1),
             pgItem(2),
             pgItem(3),
             pgItem(4),
             pgItem(5),
-            span({ class: 'px-2 text-slate-400' }, [text('…')]),
+            span({ class: 'px-2 text-text-muted' }, [text('…')]),
             pgItem(10),
-            button({ ...pg.nextTrigger, class: 'pg-btn' }, [text('›')]),
+            button({ ...pg.nextTrigger }, [text('›')]),
           ]),
-          div({ class: 'mt-3 text-sm text-slate-600' }, [
+          div({ class: 'mt-3 text-sm text-text-muted' }, [
             text('Page '),
             text((s: State) => String(s.pagination.page)),
             text(' of '),
@@ -270,7 +270,7 @@ export const App = component<State, Msg, never>({
           ]),
         ]),
         card('Stepper', [
-          div({ ...st.root, class: 'step-root' }, [
+          div({ ...st.root }, [
             stepItem(0, 'Account'),
             stepItem(1, 'Profile'),
             stepItem(2, 'Review'),
@@ -281,27 +281,26 @@ export const App = component<State, Msg, never>({
           ]),
         ]),
         card('Carousel', [
-          div({ ...cr.root, class: 'carousel' }, [
-            div({ ...cr.viewport, class: 'carousel-viewport' }, renderSlides()),
-            div({ class: 'carousel-controls' }, [
+          div({ ...cr.root }, [
+            div({ ...cr.viewport }, renderSlides()),
+            div({ class: 'flex items-center justify-center gap-2' }, [
               button({ ...cr.prevTrigger, class: 'btn btn-secondary text-xs' }, [text('‹')]),
-              div({ ...cr.indicatorGroup, class: 'carousel-indicators' }, renderIndicators()),
+              div({ ...cr.indicatorGroup }, renderIndicators()),
               button({ ...cr.nextTrigger, class: 'btn btn-secondary text-xs' }, [text('›')]),
             ]),
           ]),
         ]),
         card('Avatar', [
           div({ class: 'flex items-center gap-4' }, [
-            div({ ...av.root, class: 'avatar' }, [
+            div({ ...av.root }, [
               img({
                 ...av.image,
                 src: 'https://example.invalid/not-an-avatar.png',
                 alt: '',
-                class: 'avatar__image',
               }),
-              span({ ...av.fallback, class: 'avatar__fallback' }, [text('FP')]),
+              span({ ...av.fallback }, [text('FP')]),
             ]),
-            div({ class: 'text-sm text-slate-600' }, [
+            div({ class: 'text-sm text-text-muted' }, [
               text('Status: '),
               text((s: State) => s.avatar.status),
             ]),
@@ -321,13 +320,13 @@ export const App = component<State, Msg, never>({
               )
             }),
           ),
-          div({ class: 'mt-2 text-sm text-slate-600' }, [
+          div({ class: 'mt-2 text-sm text-text-muted' }, [
             text('Status: '),
             text((s: State) => s.listbox.value[0] ?? 'none'),
           ]),
         ]),
         card('Tree View', [
-          div({ ...tv.root, class: 'tree' }, [
+          div({ ...tv.root }, [
             treeBranch('root', 'project/', 0, [
               treeLeaf('docs', 'docs/', 1),
               treeBranch('src', 'src/', 1, [
@@ -345,7 +344,7 @@ export const App = component<State, Msg, never>({
             button({ ...cl.trigger, class: 'btn btn-secondary' }, [
               span([text((s: State) => (s.collapsible.open ? 'Hide details' : 'Show details'))]),
             ]),
-            div({ ...cl.content, class: 'mt-2 text-sm text-slate-600' }, [
+            div({ ...cl.content, class: 'mt-2 text-sm text-text-muted' }, [
               text(
                 'Simpler than accordion — single section, no keyboard nav between siblings. Uses role=region + aria-labelledby.',
               ),

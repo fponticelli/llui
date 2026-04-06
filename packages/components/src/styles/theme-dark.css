@@ -1,0 +1,56 @@
+/*
+ * @llui/components — dark mode overrides
+ *
+ * Import after theme.css and after Tailwind:
+ *   @import 'tailwindcss';
+ *   @import '@llui/components/styles/theme.css';
+ *   @import '@llui/components/styles/theme-dark.css';
+ *
+ * Activates automatically via prefers-color-scheme: dark.
+ * Opt out per page with <html data-theme="light">.
+ * Force dark with <html data-theme="dark">.
+ */
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) {
+    --color-surface: #0f172a;
+    --color-surface-muted: #1e293b;
+    --color-surface-hover: #1e293b;
+    --color-surface-active: #334155;
+    --color-border: #334155;
+    --color-border-hover: #475569;
+    --color-border-focus: #60a5fa;
+    --color-text: #f1f5f9;
+    --color-text-muted: #94a3b8;
+    --color-text-inverted: #0f172a;
+    --color-primary: #60a5fa;
+    --color-primary-hover: #3b82f6;
+    --color-primary-active: #2563eb;
+    --color-destructive: #f87171;
+    --color-destructive-hover: #ef4444;
+    --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
+    --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.4);
+    --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.5);
+  }
+}
+
+[data-theme='dark'] {
+  --color-surface: #0f172a;
+  --color-surface-muted: #1e293b;
+  --color-surface-hover: #1e293b;
+  --color-surface-active: #334155;
+  --color-border: #334155;
+  --color-border-hover: #475569;
+  --color-border-focus: #60a5fa;
+  --color-text: #f1f5f9;
+  --color-text-muted: #94a3b8;
+  --color-text-inverted: #0f172a;
+  --color-primary: #60a5fa;
+  --color-primary-hover: #3b82f6;
+  --color-primary-active: #2563eb;
+  --color-destructive: #f87171;
+  --color-destructive-hover: #ef4444;
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
+  --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.4);
+  --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.5);
+}

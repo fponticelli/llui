@@ -157,7 +157,7 @@ export const App = component<State, Msg, never>({
                 {
                   ...ag.control,
                   class:
-                    'relative h-20 w-20 rounded-full border-2 border-slate-300 flex items-center justify-center cursor-pointer touch-none',
+                    'relative h-20 w-20 rounded-full border-2 border-border flex items-center justify-center cursor-pointer touch-none',
                   onPointerDown: onControlDown,
                 },
                 [
@@ -181,12 +181,12 @@ export const App = component<State, Msg, never>({
                     },
                     [],
                   ),
-                  div({ ...ag.valueText, class: 'text-xs font-mono text-slate-600' }, [
+                  div({ ...ag.valueText, class: 'text-xs font-mono text-text-muted' }, [
                     text((s: State) => `${Math.round(s.angle.value)}°`),
                   ]),
                 ],
               ),
-              span({ class: 'text-xs text-slate-500' }, [
+              span({ class: 'text-xs text-text-muted' }, [
                 text('Focus, then Arrow/PageUp/Down/Home/End'),
               ]),
             ],
@@ -194,7 +194,7 @@ export const App = component<State, Msg, never>({
         ]),
         card('Date Input', [
           div({ ...di.root, class: 'flex flex-col gap-2' }, [
-            p({ class: 'text-xs text-slate-500' }, [
+            p({ class: 'text-xs text-text-muted' }, [
               text('Masked text input that parses ISO dates and validates against min/max (2026).'),
             ]),
             input({
@@ -205,9 +205,9 @@ export const App = component<State, Msg, never>({
                 s.date.error ? 'border-color:rgb(239 68 68);' : 'border-color:rgb(203 213 225);',
             }),
             div({ class: 'flex items-center justify-between text-xs' }, [
-              span({ class: 'text-slate-500' }, [
+              span({ class: 'text-text-muted' }, [
                 text('Parsed: '),
-                span({ class: 'font-mono text-slate-700' }, [
+                span({ class: 'font-mono text-text' }, [
                   text((s: State) =>
                     s.date.value ? s.date.value.toDateString() : '(invalid or empty)',
                   ),
@@ -232,7 +232,7 @@ export const App = component<State, Msg, never>({
           div(
             {
               ...mq.root,
-              class: 'overflow-hidden whitespace-nowrap border border-slate-200 rounded p-2',
+              class: 'overflow-hidden whitespace-nowrap border border-border rounded p-2',
             },
             [
               div(

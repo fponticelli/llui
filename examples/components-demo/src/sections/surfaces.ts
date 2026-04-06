@@ -170,7 +170,7 @@ export const App = component<State, Msg, never>({
     return [
       sectionGroup('Surfaces + navigation', [
         card('Tour', [
-          div({ id: 'tour-target', class: 'p-4 bg-slate-50 rounded mb-3' }, [
+          div({ id: 'tour-target', class: 'p-4 bg-surface-muted rounded mb-3' }, [
             text('Target element for the tour walkthrough.'),
           ]),
           div({ class: 'flex gap-2' }, [
@@ -192,11 +192,11 @@ export const App = component<State, Msg, never>({
               h3({ ...tr.title, class: 'font-semibold text-sm' }, [
                 text((s: State) => tour.currentStep(s.tour)?.title ?? ''),
               ]),
-              p({ ...tr.description, class: 'mt-1 text-xs text-slate-600' }, [
+              p({ ...tr.description, class: 'mt-1 text-xs text-text-muted' }, [
                 text((s: State) => tour.currentStep(s.tour)?.description ?? ''),
               ]),
               div({ class: 'mt-2 flex items-center gap-2' }, [
-                span({ ...tr.progressText, class: 'text-xs text-slate-500' }, [
+                span({ ...tr.progressText, class: 'text-xs text-text-muted' }, [
                   text((s: State) => {
                     const p = tour.progress(s.tour)
                     return `${p.current} / ${p.total}`
@@ -222,25 +222,25 @@ export const App = component<State, Msg, never>({
               [text('Open panel')],
             ),
           ]),
-          p({ class: 'text-xs text-slate-500' }, [
+          p({ class: 'text-xs text-text-muted' }, [
             text(
               'Click Open → panel appears (static position — drag/resize needs pointer wiring).',
             ),
           ]),
-          div({ ...fp.root, class: 'border border-slate-300 bg-white shadow-xl rounded' }, [
+          div({ ...fp.root, class: 'border border-border bg-white shadow-xl rounded' }, [
             div(
               {
                 ...fp.dragHandle,
                 class:
-                  'flex items-center justify-between px-2 py-1 bg-slate-100 rounded-t cursor-move text-xs',
+                  'flex items-center justify-between px-2 py-1 bg-surface-hover rounded-t cursor-move text-xs',
               },
               [
                 span([text('Floating Panel')]),
                 div({ class: 'flex gap-1' }, [
-                  button({ ...fp.minimizeTrigger, class: 'px-1 hover:bg-slate-200 rounded' }, [
+                  button({ ...fp.minimizeTrigger, class: 'px-1 hover:bg-surface-hover rounded' }, [
                     text('–'),
                   ]),
-                  button({ ...fp.maximizeTrigger, class: 'px-1 hover:bg-slate-200 rounded' }, [
+                  button({ ...fp.maximizeTrigger, class: 'px-1 hover:bg-surface-hover rounded' }, [
                     text('□'),
                   ]),
                   button({ ...fp.closeTrigger, class: 'px-1 hover:bg-red-200 rounded' }, [
@@ -267,33 +267,73 @@ export const App = component<State, Msg, never>({
           div(
             {
               ...nv.root,
-              class: 'flex gap-1 text-sm',
+              class: 'relative flex gap-1 text-sm',
             },
             [
-              button(
-                {
-                  ...nv.item('file', { isBranch: true }).trigger,
-                  class: 'px-3 py-1 rounded hover:bg-slate-100',
-                },
-                [text('File')],
-              ),
-              button(
-                {
-                  ...nv.item('edit', { isBranch: true }).trigger,
-                  class: 'px-3 py-1 rounded hover:bg-slate-100',
-                },
-                [text('Edit')],
-              ),
+              div({ class: 'relative' }, [
+                button(
+                  {
+                    ...nv.item('file', { isBranch: true }).trigger,
+                    class: 'px-3 py-1.5 rounded font-medium hover:bg-surface-hover',
+                  },
+                  [text('File')],
+                ),
+                div(
+                  {
+                    ...nv.item('file', { isBranch: true }).content,
+                    class:
+                      'absolute top-full left-0 mt-1 min-w-36 bg-surface border border-border rounded-md shadow-lg p-1 z-50',
+                  },
+                  [
+                    div({ class: 'px-2 py-1.5 rounded cursor-pointer hover:bg-surface-hover' }, [
+                      text('New File'),
+                    ]),
+                    div({ class: 'px-2 py-1.5 rounded cursor-pointer hover:bg-surface-hover' }, [
+                      text('Open...'),
+                    ]),
+                    div({ class: 'px-2 py-1.5 rounded cursor-pointer hover:bg-surface-hover' }, [
+                      text('Save'),
+                    ]),
+                  ],
+                ),
+              ]),
+              div({ class: 'relative' }, [
+                button(
+                  {
+                    ...nv.item('edit', { isBranch: true }).trigger,
+                    class: 'px-3 py-1.5 rounded font-medium hover:bg-surface-hover',
+                  },
+                  [text('Edit')],
+                ),
+                div(
+                  {
+                    ...nv.item('edit', { isBranch: true }).content,
+                    class:
+                      'absolute top-full left-0 mt-1 min-w-36 bg-surface border border-border rounded-md shadow-lg p-1 z-50',
+                  },
+                  [
+                    div({ class: 'px-2 py-1.5 rounded cursor-pointer hover:bg-surface-hover' }, [
+                      text('Undo'),
+                    ]),
+                    div({ class: 'px-2 py-1.5 rounded cursor-pointer hover:bg-surface-hover' }, [
+                      text('Redo'),
+                    ]),
+                    div({ class: 'px-2 py-1.5 rounded cursor-pointer hover:bg-surface-hover' }, [
+                      text('Find & Replace'),
+                    ]),
+                  ],
+                ),
+              ]),
               button(
                 {
                   ...nv.item('help', { isBranch: false }).trigger,
-                  class: 'px-3 py-1 rounded hover:bg-slate-100',
+                  class: 'px-3 py-1.5 rounded font-medium hover:bg-surface-hover',
                 },
                 [text('Help')],
               ),
             ],
           ),
-          div({ class: 'mt-2 text-xs text-slate-500' }, [
+          div({ class: 'mt-2 text-xs text-text-muted' }, [
             text('Open: '),
             text((s: State) => (s.nav.open.length > 0 ? s.nav.open.join(' › ') : '(none)')),
           ]),
@@ -302,7 +342,7 @@ export const App = component<State, Msg, never>({
           div(
             {
               ...sa.root,
-              class: 'relative border border-slate-200 rounded',
+              class: 'relative border border-border rounded',
             },
             [
               div(
@@ -314,10 +354,10 @@ export const App = component<State, Msg, never>({
                   div(
                     {
                       ...sa.content,
-                      class: 'p-3 text-sm text-slate-700',
+                      class: 'p-3 text-sm text-text',
                     },
                     Array.from({ length: 30 }, (_, i) =>
-                      div({ class: 'py-1 border-b border-slate-100' }, [
+                      div({ class: 'py-1 border-b border-border' }, [
                         text(`Scrollable item ${i + 1}`),
                       ]),
                     ),
@@ -326,7 +366,7 @@ export const App = component<State, Msg, never>({
               ),
             ],
           ),
-          div({ class: 'mt-2 text-xs text-slate-500' }, [
+          div({ class: 'mt-2 text-xs text-text-muted' }, [
             text((s: State) => `scrollTop: ${Math.round(s.scroll.scrollTop)}px`),
           ]),
         ]),

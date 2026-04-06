@@ -47,9 +47,7 @@ export interface RadioGroupClasses {
   label: string
 }
 
-export function radioGroupClasses(
-  props?: RadioGroupStyleVariants,
-): RadioGroupClasses {
+export function radioGroupClasses(props?: RadioGroupStyleVariants): RadioGroupClasses {
   return {
     root: 'flex flex-col gap-2',
     item: 'flex items-center gap-2 cursor-pointer data-[disabled]:opacity-50 data-[disabled]:cursor-not-allowed',

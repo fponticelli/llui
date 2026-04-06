@@ -1,0 +1,18 @@
+@import 'tailwindcss';
+@import '@llui/components/styles/theme.css';
+@import '@llui/components/styles/theme-dark.css';
+
+/* Demo-specific layout */
+.demo-section {
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+  padding: 1.5rem;
+}
+
+.demo-title {
+  margin-bottom: 1rem;
+  font-size: 1.125rem;
+  font-weight: 600;
+  color: var(--color-text);
+}

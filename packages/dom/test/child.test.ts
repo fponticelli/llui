@@ -5,6 +5,7 @@ import { text } from '../src/primitives/text'
 import { div, button } from '../src/elements'
 import { component } from '../src/component'
 import type { ComponentDef } from '../src/types'
+import type { View } from '../src/view-helpers'
 
 // ── Child component ──────────────────────────────────────────────
 
@@ -137,5 +138,79 @@ describe('child()', () => {
     const { container, handle } = mount()
     handle.dispose()
     expect(container.children.length).toBe(0)
+  })
+
+  it('child view receives full View bag with all helpers', () => {
+    let capturedBag: View<unknown, unknown> | null = null
+    const ChildSpy = component<{ v: number }, never, never>({
+      name: 'ChildSpy',
+      init: () => [{ v: 0 }, []],
+      update: (s) => [s, []],
+      view: (h) => {
+        capturedBag = h as View<unknown, unknown>
+        return [document.createTextNode('spy')]
+      },
+    })
+
+    const Parent: ComponentDef<Record<string, never>, never, never> = {
+      name: 'SpyParent',
+      init: () => [{}, []],
+      update: (s) => [s, []],
+      view: () => [
+        ...child({ def: ChildSpy, key: 'spy', props: () => ({}) }),
+      ],
+    }
+
+    const container = document.createElement('div')
+    mountApp(container, Parent)
+
+    expect(capturedBag).not.toBeNull()
+    expect(capturedBag!.send).toBeTypeOf('function')
+    expect(capturedBag!.each).toBeTypeOf('function')
+    expect(capturedBag!.show).toBeTypeOf('function')
+    expect(capturedBag!.branch).toBeTypeOf('function')
+    expect(capturedBag!.text).toBeTypeOf('function')
+    expect(capturedBag!.memo).toBeTypeOf('function')
+    expect(capturedBag!.selector).toBeTypeOf('function')
+    expect(capturedBag!.ctx).toBeTypeOf('function')
+  })
+
+  it('each() works when destructured from child View bag', () => {
+    type CS = { items: string[] }
+    const ListChild = component<CS, never, never>({
+      name: 'ListChild',
+      init: () => [{ items: ['x', 'y'] }, []],
+      update: (s) => [s, []],
+      view: ({ each }) => [
+        div({ class: 'list' }, [
+          ...each<string>({
+            items: (s) => s.items,
+            key: (v) => v,
+            render: ({ item }) => {
+              const el = document.createElement('span')
+              el.textContent = item((v: string) => v)()
+              return [el]
+            },
+          }),
+        ]),
+      ],
+    })
+
+    const Parent: ComponentDef<Record<string, never>, never, never> = {
+      name: 'ListParent',
+      init: () => [{}, []],
+      update: (s) => [s, []],
+      view: () => [
+        ...child({ def: ListChild, key: 'list', props: () => ({}) }),
+      ],
+    }
+
+    const container = document.createElement('div')
+    mountApp(container, Parent)
+
+    const spans = container.querySelectorAll('.list span')
+    expect(spans.length).toBe(2)
+    expect(spans[0]!.textContent).toBe('x')
+    expect(spans[1]!.textContent).toBe('y')
   })
 })

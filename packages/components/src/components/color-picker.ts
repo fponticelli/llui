@@ -158,6 +158,7 @@ export interface ColorPickerParts<S> {
     'aria-label': string
     disabled: (s: S) => boolean
     value: (s: S) => string
+    style: (s: S) => string
     'data-scope': 'color-picker'
     'data-part': 'saturation-slider'
     onInput: (e: Event) => void
@@ -170,6 +171,7 @@ export interface ColorPickerParts<S> {
     'aria-label': string
     disabled: (s: S) => boolean
     value: (s: S) => string
+    style: (s: S) => string
     'data-scope': 'color-picker'
     'data-part': 'lightness-slider'
     onInput: (e: Event) => void
@@ -230,6 +232,10 @@ export function connect<S>(
       'aria-label': opts.saturationLabel ?? 'Saturation',
       disabled: (s) => get(s).disabled,
       value: (s) => String(get(s).hsl.s),
+      style: (s) => {
+        const { h, l } = get(s).hsl
+        return `background: linear-gradient(to right, hsl(${h} 0% ${l}%), hsl(${h} 100% ${l}%))`
+      },
       'data-scope': 'color-picker',
       'data-part': 'saturation-slider',
       onInput: (e) =>
@@ -243,6 +249,10 @@ export function connect<S>(
       'aria-label': opts.lightnessLabel ?? 'Lightness',
       disabled: (s) => get(s).disabled,
       value: (s) => String(get(s).hsl.l),
+      style: (s) => {
+        const { h, s: sat } = get(s).hsl
+        return `background: linear-gradient(to right, hsl(${h} ${sat}% 0%), hsl(${h} ${sat}% 50%), hsl(${h} ${sat}% 100%))`
+      },
       'data-scope': 'color-picker',
       'data-part': 'lightness-slider',
       onInput: (e) =>

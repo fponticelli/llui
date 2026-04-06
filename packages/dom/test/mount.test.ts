@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { mountApp } from '../src/mount'
 import type { ComponentDef } from '../src/types'
+import type { View } from '../src/view-helpers'
 
 type State = { count: number }
 type Msg = { type: 'inc' }
@@ -78,5 +79,56 @@ describe('mountApp', () => {
     handle.dispose()
     handle.dispose() // should not throw
     expect(container.children.length).toBe(0)
+  })
+
+  it('provides full View bag with all helpers', () => {
+    let captured: View<{ n: number }, never> | null = null
+    const def: ComponentDef<{ n: number }, never, never> = {
+      name: 'ViewBag',
+      init: () => [{ n: 0 }, []],
+      update: (s) => [s, []],
+      view: (h) => {
+        captured = h
+        return [document.createTextNode('ok')]
+      },
+    }
+    const container = document.createElement('div')
+    mountApp(container, def)
+    expect(captured).not.toBeNull()
+    expect(captured!.send).toBeTypeOf('function')
+    expect(captured!.each).toBeTypeOf('function')
+    expect(captured!.show).toBeTypeOf('function')
+    expect(captured!.branch).toBeTypeOf('function')
+    expect(captured!.text).toBeTypeOf('function')
+    expect(captured!.memo).toBeTypeOf('function')
+    expect(captured!.selector).toBeTypeOf('function')
+    expect(captured!.ctx).toBeTypeOf('function')
+  })
+
+  it('each() works when destructured from View bag', () => {
+    type S = { items: string[] }
+    const def: ComponentDef<S, never, never> = {
+      name: 'EachFromBag',
+      init: () => [{ items: ['a', 'b', 'c'] }, []],
+      update: (s) => [s, []],
+      view: ({ each }) => [
+        ...each<string>({
+          items: (s) => s.items,
+          key: (v) => v,
+          render: ({ item }) => {
+            const el = document.createElement('span')
+            el.textContent = item((v: string) => v)()
+            return [el]
+          },
+        }),
+      ],
+    }
+    const container = document.createElement('div')
+    mountApp(container, def)
+    const spans = container.querySelectorAll('span')
+    expect(spans.length).toBe(3)
+    expect(spans[0]!.textContent).toBe('a')
+    expect(spans[1]!.textContent).toBe('b')
+    expect(spans[2]!.textContent).toBe('c')
   })
 })

@@ -175,7 +175,7 @@ export const App = component<State, Msg, never>({
     previewParts.onClick = (e: MouseEvent): void => {
       origClick(e)
       queueMicrotask(() => {
-        const inp = document.querySelector<HTMLInputElement>('.editable-input')
+        const inp = document.querySelector<HTMLInputElement>('[data-scope="editable"][data-part="input"]')
         inp?.focus()
         inp?.select()
       })
@@ -223,7 +223,7 @@ export const App = component<State, Msg, never>({
 
     const dpGrid = (): Node[] => {
       const dowLabels = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
-      const dowCells = dowLabels.map((d) => span({ class: 'dp-dow' }, [text(d)]))
+      const dowCells = dowLabels.map((d) => span({ class: 'text-center text-[0.625rem] uppercase text-text-muted py-1' }, [text(d)]))
       const cells = each({
         items: (s) => monthGrid(s.datePicker),
         key: (c) => c.iso,
@@ -241,7 +241,6 @@ export const App = component<State, Msg, never>({
                 'data-selected': (s: State) => (s.datePicker.value === iso ? '' : undefined),
                 'data-focused': (s: State) => (s.datePicker.focused === iso ? '' : undefined),
                 tabIndex: (s: State) => (s.datePicker.focused === iso ? 0 : -1),
-                class: 'dp-day',
                 onClick: () => {
                   send({ type: 'datePicker', msg: { type: 'setFocused', date: iso } })
                   send({ type: 'datePicker', msg: { type: 'selectFocused' } })
@@ -258,10 +257,10 @@ export const App = component<State, Msg, never>({
     return [
       sectionGroup('Pickers', [
         card('Date Picker', [
-          div({ ...dp.root, class: 'datepicker' }, [
-            div({ class: 'dp-header' }, [
-              button({ ...dp.prevMonthTrigger, class: 'dp-nav' }, [text('‹')]),
-              span({ class: 'dp-title' }, [
+          div({ ...dp.root }, [
+            div({ class: 'flex items-center justify-between mb-2' }, [
+              button({ ...dp.prevMonthTrigger }, [text('‹')]),
+              span({ class: 'text-sm font-semibold' }, [
                 text((s: State) => {
                   const months = [
                     'Jan',
@@ -280,47 +279,47 @@ export const App = component<State, Msg, never>({
                   return `${months[s.datePicker.visibleMonth - 1]} ${s.datePicker.visibleYear}`
                 }),
               ]),
-              button({ ...dp.nextMonthTrigger, class: 'dp-nav' }, [text('›')]),
+              button({ ...dp.nextMonthTrigger }, [text('›')]),
             ]),
-            div({ ...dp.grid, class: 'dp-grid' }, dpGrid()),
+            div({ ...dp.grid }, dpGrid()),
           ]),
-          div({ class: 'mt-3 text-sm text-slate-600' }, [
+          div({ class: 'mt-3 text-sm text-text-muted' }, [
             text('Selected: '),
             text((s: State) => s.datePicker.value ?? 'none'),
           ]),
         ]),
         card('Time Picker', [
-          div({ ...tp.root, class: 'tp-root' }, [
-            input({ ...tp.hoursInput, class: 'tp-input' }),
-            span({ class: 'tp-sep' }, [text(':')]),
-            input({ ...tp.minutesInput, class: 'tp-input' }),
-            button({ ...tp.periodTrigger, class: 'tp-period' }, [
+          div({ ...tp.root }, [
+            input({ ...tp.hoursInput }),
+            span({ class: 'font-semibold text-text-muted' }, [text(':')]),
+            input({ ...tp.minutesInput }),
+            button({ ...tp.periodTrigger }, [
               text((s: State) => (s.timePicker.value.hours >= 12 ? 'PM' : 'AM')),
             ]),
           ]),
-          div({ class: 'mt-3 text-sm text-slate-600' }, [
+          div({ class: 'mt-3 text-sm text-text-muted' }, [
             text('Time: '),
             text((s: State) => formatTime(s.timePicker)),
           ]),
         ]),
         card('Color Picker', [
-          div({ ...cp.root, class: 'cp-root' }, [
-            div({ class: 'cp-row' }, [
-              div({ ...cp.swatch, class: 'cp-swatch' }, []),
-              input({ ...cp.hexInput, class: 'cp-hex' }),
+          div({ ...cp.root }, [
+            div({ class: 'flex items-center gap-2' }, [
+              div({ ...cp.swatch }, []),
+              input({ ...cp.hexInput }),
             ]),
-            div({ class: 'cp-sliders' }, [
-              label({ class: 'cp-label' }, [
+            div({ class: 'flex flex-col gap-1.5' }, [
+              label({ class: 'flex items-center gap-2 text-xs text-text-muted font-semibold' }, [
                 span([text('H')]),
-                input({ ...cp.hueSlider, class: 'cp-range' }),
+                input({ ...cp.hueSlider }),
               ]),
-              label({ class: 'cp-label' }, [
+              label({ class: 'flex items-center gap-2 text-xs text-text-muted font-semibold' }, [
                 span([text('S')]),
-                input({ ...cp.saturationSlider, class: 'cp-range' }),
+                input({ ...cp.saturationSlider }),
               ]),
-              label({ class: 'cp-label' }, [
+              label({ class: 'flex items-center gap-2 text-xs text-text-muted font-semibold' }, [
                 span([text('L')]),
-                input({ ...cp.lightnessSlider, class: 'cp-range' }),
+                input({ ...cp.lightnessSlider }),
               ]),
             ]),
           ]),
@@ -328,19 +327,19 @@ export const App = component<State, Msg, never>({
       ]),
       sectionGroup('Inline editing', [
         card('Editable', [
-          div({ ...ed.root, class: 'editable' }, [
-            span({ ...previewParts, class: 'editable-preview' }, [
+          div({ ...ed.root }, [
+            span({ ...previewParts }, [
               text((s: State) => s.editable.value || 'Click to edit'),
             ]),
-            input({ ...ed.input, class: 'editable-input' }),
+            input({ ...ed.input }),
           ]),
-          div({ class: 'mt-2 text-xs text-slate-500' }, [
+          div({ class: 'mt-2 text-xs text-text-muted' }, [
             text('Click, edit, Enter to commit, Esc to cancel'),
           ]),
         ]),
         card('Clipboard', [
-          div({ ...cb.root, class: 'clip-root' }, [
-            input({ ...cb.input, class: 'clip-input' }),
+          div({ ...cb.root }, [
+            input({ ...cb.input }),
             button(
               {
                 ...cb.trigger,
@@ -358,17 +357,17 @@ export const App = component<State, Msg, never>({
           ]),
         ]),
         card('File Upload', [
-          div({ ...fu.root, class: 'fu-root' }, [
-            div({ ...fu.dropzone, class: 'fu-dropzone' }, [
+          div({ ...fu.root }, [
+            div({ ...fu.dropzone }, [
               text('Drag files here or click to browse'),
               input({ ...fu.hiddenInput }),
             ]),
-            div({ class: 'fu-list' }, [
+            div({ class: 'text-xs text-text-muted' }, [
               ...each({
                 items: (s) => s.fileUpload.files,
                 key: (f) => f.name,
                 render: ({ item }) => [
-                  div({ class: 'fu-item' }, [
+                  div({ class: 'py-1' }, [
                     text(() => item.name()),
                     text(' ('),
                     text(() => `${Math.round(item.size() / 1024)}kb`),
@@ -380,12 +379,12 @@ export const App = component<State, Msg, never>({
           ]),
         ]),
         card('Splitter', [
-          div({ ...sp.root, class: 'split-root' }, [
-            div({ ...sp.primaryPanel, class: 'split-pane' }, [text('Left pane')]),
-            div({ ...sp.resizeTrigger, class: 'split-handle' }, []),
-            div({ ...sp.secondaryPanel, class: 'split-pane' }, [text('Right pane')]),
+          div({ ...sp.root }, [
+            div({ ...sp.primaryPanel }, [text('Left pane')]),
+            div({ ...sp.resizeTrigger }, []),
+            div({ ...sp.secondaryPanel }, [text('Right pane')]),
           ]),
-          div({ class: 'mt-2 text-xs text-slate-500' }, [
+          div({ class: 'mt-2 text-xs text-text-muted' }, [
             text('Drag handle or arrow keys — split at '),
             text((s: State) => `${s.splitter.position}%`),
           ]),

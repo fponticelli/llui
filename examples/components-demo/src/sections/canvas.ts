@@ -198,13 +198,13 @@ export const App = component<State, Msg, never>({
       sectionGroup('Canvas + image', [
         card('Signature Pad', [
           div({ ...sp.root, class: 'flex flex-col gap-2' }, [
-            p({ class: 'text-xs text-slate-500' }, [
+            p({ class: 'text-xs text-text-muted' }, [
               text('Draw with mouse or touch. Strokes accumulate in state.'),
             ]),
             div(
               {
                 ...sp.control,
-                class: 'relative border border-slate-300 rounded bg-white',
+                class: 'relative border border-border rounded bg-white',
               },
               [
                 canvas({
@@ -244,7 +244,7 @@ export const App = component<State, Msg, never>({
             div({ class: 'flex items-center gap-2' }, [
               button({ ...sp.undoTrigger, class: 'btn btn-secondary text-xs' }, [text('Undo')]),
               button({ ...sp.clearTrigger, class: 'btn btn-secondary text-xs' }, [text('Clear')]),
-              span({ class: 'text-xs text-slate-500 ml-auto' }, [
+              span({ class: 'text-xs text-text-muted ml-auto' }, [
                 text(
                   (s: State) =>
                     `${s.sig.strokes.length} strokes · ${signaturePad.pointCount(s.sig)} points`,
@@ -255,11 +255,11 @@ export const App = component<State, Msg, never>({
         ]),
         card('Image Cropper', [
           div({ ...ic.root, class: 'flex flex-col gap-2' }, [
-            p({ class: 'text-xs text-slate-500' }, [
+            p({ class: 'text-xs text-text-muted' }, [
               text('Drag the crop box to pan; drag the corner handle to resize (1:1 aspect).'),
             ]),
             div(
-              { class: 'relative inline-block border border-slate-300 rounded overflow-hidden' },
+              { class: 'relative inline-block border border-border rounded overflow-hidden' },
               [
                 img({
                   ...ic.image,
@@ -292,7 +292,7 @@ export const App = component<State, Msg, never>({
                       {
                         ...ic.resizeHandle('se'),
                         class:
-                          'absolute -bottom-1 -right-1 w-3 h-3 bg-white border border-slate-400 cursor-se-resize rounded-sm',
+                          'absolute -bottom-1 -right-1 w-3 h-3 bg-white border border-border cursor-se-resize rounded-sm',
                       },
                       [],
                     ),
@@ -302,7 +302,7 @@ export const App = component<State, Msg, never>({
             ),
             div({ class: 'flex items-center gap-2 text-xs' }, [
               button({ ...ic.resetTrigger, class: 'btn btn-secondary' }, [text('Reset crop')]),
-              span({ class: 'text-slate-500' }, [
+              span({ class: 'text-text-muted' }, [
                 text(
                   (s: State) =>
                     `crop: ${Math.round(s.crop.crop.x)},${Math.round(s.crop.crop.y)} ` +

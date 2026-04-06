@@ -72,15 +72,11 @@ describe('createVariants', () => {
         variant: { solid: 'btn-solid', outline: 'btn-outline' },
       },
       defaultVariants: { size: 'sm', variant: 'solid' },
-      compoundVariants: [
-        { size: 'lg', variant: 'solid', class: 'btn-lg-solid' },
-      ],
+      compoundVariants: [{ size: 'lg', variant: 'solid', class: 'btn-lg-solid' }],
     })
 
     it('applies compound when conditions match', () => {
-      expect(compound({ size: 'lg', variant: 'solid' })).toBe(
-        'btn btn-lg btn-solid btn-lg-solid',
-      )
+      expect(compound({ size: 'lg', variant: 'solid' })).toBe('btn btn-lg btn-solid btn-lg-solid')
     })
 
     it('skips compound when conditions do not match', () => {
