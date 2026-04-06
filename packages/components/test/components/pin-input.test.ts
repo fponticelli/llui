@@ -106,4 +106,25 @@ describe('pin-input.connect', () => {
     pc.input(1).onKeyDown(new KeyboardEvent('keydown', { key: 'Backspace' }))
     expect(send).toHaveBeenCalledWith({ type: 'backspace', index: 1 })
   })
+
+  it('validate blocks setValue when returning errors', () => {
+    const send = vi.fn()
+    const pc = connect<Ctx>((s) => s.p, send, {
+      id: 'x',
+      validate: (v) => (v === '0' ? ['zero not allowed'] : null),
+    })
+    // Try to input '0' — should be blocked
+    const target = document.createElement('input')
+    target.value = '0'
+    const ev = new Event('input')
+    Object.defineProperty(ev, 'target', { value: target })
+    pc.input(0).onInput(ev)
+    expect(send).not.toHaveBeenCalled()
+    // Input '5' — should pass
+    target.value = '5'
+    const ev2 = new Event('input')
+    Object.defineProperty(ev2, 'target', { value: target })
+    pc.input(0).onInput(ev2)
+    expect(send).toHaveBeenCalledWith({ type: 'setValue', index: 0, value: '5' })
+  })
 })

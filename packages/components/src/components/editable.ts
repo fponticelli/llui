@@ -103,6 +103,8 @@ export interface ConnectOptions {
   activateOnFocus?: boolean
   /** Submit on blur (default: true). False = blur cancels. */
   submitOnBlur?: boolean
+  /** Validate the draft text before committing. Non-empty array blocks submit. */
+  validate?: (value: string) => string[] | null
 }
 
 export function connect<S>(
@@ -112,6 +114,16 @@ export function connect<S>(
 ): EditableParts<S> {
   const activateOnFocus = opts.activateOnFocus === true
   const submitOnBlur = opts.submitOnBlur !== false
+  const validate = opts.validate
+  let currentDraft = ''
+
+  const trySubmit = () => {
+    if (validate) {
+      const errors = validate(currentDraft)
+      if (errors && errors.length > 0) return
+    }
+    send({ type: 'submit' })
+  }
 
   return {
     root: {
@@ -143,23 +155,30 @@ export function connect<S>(
       hidden: (s) => !get(s).editing,
       value: (s) => get(s).draft,
       disabled: (s) => get(s).disabled,
-      onInput: (e) => send({ type: 'setDraft', draft: (e.target as HTMLInputElement).value }),
+      onInput: (e) => {
+        const draft = (e.target as HTMLInputElement).value
+        currentDraft = draft
+        send({ type: 'setDraft', draft })
+      },
       onKeyDown: (e) => {
         if (e.key === 'Enter') {
           e.preventDefault()
-          send({ type: 'submit' })
+          trySubmit()
         } else if (e.key === 'Escape') {
           e.preventDefault()
           send({ type: 'cancel' })
         }
       },
-      onBlur: () => send({ type: submitOnBlur ? 'submit' : 'cancel' }),
+      onBlur: () => {
+        if (submitOnBlur) trySubmit()
+        else send({ type: 'cancel' })
+      },
     },
     submitTrigger: {
       type: 'button',
       'data-scope': 'editable',
       'data-part': 'submit-trigger',
-      onClick: () => send({ type: 'submit' }),
+      onClick: () => trySubmit(),
     },
     cancelTrigger: {
       type: 'button',

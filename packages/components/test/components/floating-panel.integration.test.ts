@@ -1,25 +1,38 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import { mountApp, div, button, text } from '@llui/dom'
 import type { ComponentDef } from '@llui/dom'
-import { floatingPanel, type FloatingPanelState, type FloatingPanelMsg } from '../../src/components/floating-panel'
+import {
+  floatingPanel,
+  type FloatingPanelState,
+  type FloatingPanelMsg,
+} from '../../src/components/floating-panel'
 
 type S = { p: FloatingPanelState }
 
 describe('floating-panel integration', () => {
   let app: ReturnType<typeof mountApp> | null = null
 
-  beforeEach(() => { document.body.innerHTML = '' })
-  afterEach(() => { app?.dispose(); app = null; document.body.innerHTML = '' })
+  beforeEach(() => {
+    document.body.innerHTML = ''
+  })
+  afterEach(() => {
+    app?.dispose()
+    app = null
+    document.body.innerHTML = ''
+  })
 
   function mount(open = true) {
     let sendRef!: (m: FloatingPanelMsg) => void
     const def: ComponentDef<S, FloatingPanelMsg, never> = {
       name: 'T',
       init: () => [{ p: floatingPanel.init({ open }) }, []],
-      update: (s, m) => { const [p] = floatingPanel.update(s.p, m); return [{ p }, []] },
+      update: (s, m) => {
+        const [p] = floatingPanel.update(s.p, m)
+        return [{ p }, []]
+      },
       view: ({ send }) => {
         sendRef = send
-        const parts = floatingPanel.connect<S>(s => s.p, send)
+        const parts = floatingPanel.connect<S>((s) => s.p, send)
         return [
           div({ ...parts.root }, [
             div({ ...parts.dragHandle }, [text('Title')]),

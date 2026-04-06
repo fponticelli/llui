@@ -136,6 +136,8 @@ export interface PinInputParts<S> {
 export interface ConnectOptions {
   id: string
   inputLabel?: (index: number) => string
+  /** Validate each character before setting. Non-empty array blocks setDigit. */
+  validate?: (value: string) => string[] | null
 }
 
 export function connect<S>(
@@ -145,6 +147,7 @@ export function connect<S>(
 ): PinInputParts<S> {
   const labelId = `${opts.id}:label`
   const inputLabel = opts.inputLabel ?? ((i: number) => `Digit ${i + 1}`)
+  const validate = opts.validate
 
   return {
     root: {
@@ -182,6 +185,10 @@ export function connect<S>(
       'data-index': String(index),
       onInput: (e) => {
         const value = (e.target as HTMLInputElement).value
+        if (validate && value !== '') {
+          const errors = validate(value.slice(-1))
+          if (errors && errors.length > 0) return
+        }
         send({ type: 'setValue', index, value })
       },
       onKeyDown: (e) => {

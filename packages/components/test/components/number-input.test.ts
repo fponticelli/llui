@@ -110,4 +110,28 @@ describe('number-input.connect', () => {
     expect(p.increment.disabled(wrap(init({ value: 10, max: 10 })))).toBe(true)
     expect(p.increment.disabled(wrap(init({ value: 5, max: 10 })))).toBe(false)
   })
+
+  it('validate blocks setValue on invalid input', () => {
+    const send = vi.fn()
+    const pc = connect<Ctx>((s) => s.n, send, {
+      validate: (v) => (v < 0 ? ['must be non-negative'] : null),
+    })
+    const input = document.createElement('input')
+    // Type a negative number
+    input.value = '-5'
+    const ev = new Event('input')
+    Object.defineProperty(ev, 'target', { value: input })
+    pc.input.onInput(ev)
+    // setRawText should still be dispatched
+    expect(send).toHaveBeenCalledWith({ type: 'setRawText', text: '-5' })
+    // setValue should NOT be dispatched (blocked by validate)
+    expect(send).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'setValue' }))
+    // Type a valid number
+    send.mockClear()
+    input.value = '5'
+    const ev2 = new Event('input')
+    Object.defineProperty(ev2, 'target', { value: input })
+    pc.input.onInput(ev2)
+    expect(send).toHaveBeenCalledWith({ type: 'setValue', value: 5 })
+  })
 })

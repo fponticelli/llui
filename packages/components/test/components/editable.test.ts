@@ -100,4 +100,27 @@ describe('editable.connect', () => {
     pc.input.onBlur(new FocusEvent('blur'))
     expect(send).toHaveBeenCalledWith({ type: 'cancel' })
   })
+
+  it('validate blocks submit when returning errors', () => {
+    const send = vi.fn()
+    const pc = connect<Ctx>((s) => s.e, send, {
+      validate: (v) => (v.length < 3 ? ['too short'] : null),
+    })
+    // Simulate typing a short draft
+    const input = document.createElement('input')
+    input.value = 'ab'
+    const inputEvent = new Event('input')
+    Object.defineProperty(inputEvent, 'target', { value: input })
+    pc.input.onInput(inputEvent)
+    // Try to submit via Enter
+    pc.input.onKeyDown(new KeyboardEvent('keydown', { key: 'Enter', cancelable: true }))
+    expect(send).not.toHaveBeenCalledWith({ type: 'submit' })
+    // Now type a valid draft
+    input.value = 'abc'
+    const inputEvent2 = new Event('input')
+    Object.defineProperty(inputEvent2, 'target', { value: input })
+    pc.input.onInput(inputEvent2)
+    pc.input.onKeyDown(new KeyboardEvent('keydown', { key: 'Enter', cancelable: true }))
+    expect(send).toHaveBeenCalledWith({ type: 'submit' })
+  })
 })

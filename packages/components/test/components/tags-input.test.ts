@@ -112,4 +112,28 @@ describe('tags-input.connect', () => {
     pc.tag('apple', 3).remove.onClick(new MouseEvent('click'))
     expect(send).toHaveBeenCalledWith({ type: 'removeTag', index: 3 })
   })
+
+  it('validate blocks addTag when returning errors', () => {
+    const send = vi.fn()
+    const pc = connect<Ctx>((s) => s.t, send, {
+      validate: (v) => (v.length < 2 ? ['too short'] : null),
+    })
+    // Simulate typing a short tag
+    const input = document.createElement('input')
+    input.value = 'x'
+    const inputEvent = new Event('input')
+    Object.defineProperty(inputEvent, 'target', { value: input })
+    pc.input.onInput(inputEvent)
+    // Try to add via Enter
+    pc.input.onKeyDown(new KeyboardEvent('keydown', { key: 'Enter', cancelable: true }))
+    expect(send).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'addTag' }))
+    // Now type a valid tag
+    send.mockClear()
+    input.value = 'ab'
+    const inputEvent2 = new Event('input')
+    Object.defineProperty(inputEvent2, 'target', { value: input })
+    pc.input.onInput(inputEvent2)
+    pc.input.onKeyDown(new KeyboardEvent('keydown', { key: 'Enter', cancelable: true }))
+    expect(send).toHaveBeenCalledWith({ type: 'addTag' })
+  })
 })

@@ -1,25 +1,38 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import { mountApp, div, button, text } from '@llui/dom'
 import type { ComponentDef } from '@llui/dom'
-import { signaturePad, type SignaturePadState, type SignaturePadMsg } from '../../src/components/signature-pad'
+import {
+  signaturePad,
+  type SignaturePadState,
+  type SignaturePadMsg,
+} from '../../src/components/signature-pad'
 
 type S = { s: SignaturePadState }
 
 describe('signature-pad integration', () => {
   let app: ReturnType<typeof mountApp> | null = null
 
-  beforeEach(() => { document.body.innerHTML = '' })
-  afterEach(() => { app?.dispose(); app = null; document.body.innerHTML = '' })
+  beforeEach(() => {
+    document.body.innerHTML = ''
+  })
+  afterEach(() => {
+    app?.dispose()
+    app = null
+    document.body.innerHTML = ''
+  })
 
   function mount() {
     let sendRef!: (m: SignaturePadMsg) => void
     const def: ComponentDef<S, SignaturePadMsg, never> = {
       name: 'T',
       init: () => [{ s: signaturePad.init() }, []],
-      update: (s, m) => { const [next] = signaturePad.update(s.s, m); return [{ s: next }, []] },
+      update: (s, m) => {
+        const [next] = signaturePad.update(s.s, m)
+        return [{ s: next }, []]
+      },
       view: ({ send }) => {
         sendRef = send
-        const parts = signaturePad.connect<S>(s => s.s, send)
+        const parts = signaturePad.connect<S>((s) => s.s, send)
         return [
           div({ ...parts.root }, [
             button({ ...parts.clearTrigger }, [text('Clear')]),

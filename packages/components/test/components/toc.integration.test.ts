@@ -13,23 +13,35 @@ const entries: TocEntry[] = [
 describe('toc integration', () => {
   let app: ReturnType<typeof mountApp> | null = null
 
-  beforeEach(() => { document.body.innerHTML = '' })
-  afterEach(() => { app?.dispose(); app = null; document.body.innerHTML = '' })
+  beforeEach(() => {
+    document.body.innerHTML = ''
+  })
+  afterEach(() => {
+    app?.dispose()
+    app = null
+    document.body.innerHTML = ''
+  })
 
   function mount() {
     let sendRef!: (m: TocMsg) => void
     const def: ComponentDef<S, TocMsg, never> = {
       name: 'T',
       init: () => [{ t: toc.init({ items: entries, activeId: 'intro' }) }, []],
-      update: (s, m) => { const [t] = toc.update(s.t, m); return [{ t }, []] },
+      update: (s, m) => {
+        const [t] = toc.update(s.t, m)
+        return [{ t }, []]
+      },
       view: ({ send }) => {
         sendRef = send
-        const parts = toc.connect<S>(s => s.t, send)
+        const parts = toc.connect<S>((s) => s.t, send)
         return [
-          div({ ...parts.root }, entries.map(e => {
-            const p = parts.item(e)
-            return div({ ...p.item }, [a({ ...p.link }, [text(e.label)])])
-          })),
+          div(
+            { ...parts.root },
+            entries.map((e) => {
+              const p = parts.item(e)
+              return div({ ...p.item }, [a({ ...p.link }, [text(e.label)])])
+            }),
+          ),
         ]
       },
     }

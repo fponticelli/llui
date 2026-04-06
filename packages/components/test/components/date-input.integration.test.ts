@@ -8,24 +8,31 @@ type S = { d: DateInputState }
 describe('date-input integration', () => {
   let app: ReturnType<typeof mountApp> | null = null
 
-  beforeEach(() => { document.body.innerHTML = '' })
-  afterEach(() => { app?.dispose(); app = null; document.body.innerHTML = '' })
+  beforeEach(() => {
+    document.body.innerHTML = ''
+  })
+  afterEach(() => {
+    app?.dispose()
+    app = null
+    document.body.innerHTML = ''
+  })
 
   function mount() {
     let sendRef!: (m: DateInputMsg) => void
     const def: ComponentDef<S, DateInputMsg, never> = {
       name: 'T',
-      init: () => [{ d: dateInput.init({ min: new Date(2024, 0, 1), max: new Date(2024, 11, 31) }) }, []],
-      update: (s, m) => { const [d] = dateInput.update(s.d, m); return [{ d }, []] },
+      init: () => [
+        { d: dateInput.init({ min: new Date(2024, 0, 1), max: new Date(2024, 11, 31) }) },
+        [],
+      ],
+      update: (s, m) => {
+        const [d] = dateInput.update(s.d, m)
+        return [{ d }, []]
+      },
       view: ({ send }) => {
         sendRef = send
-        const p = dateInput.connect<S>(s => s.d, send, { placeholder: 'YYYY-MM-DD' })
-        return [
-          div({ ...p.root }, [
-            input({ ...p.input }),
-            div({ ...p.errorText }, []),
-          ]),
-        ]
+        const p = dateInput.connect<S>((s) => s.d, send, { placeholder: 'YYYY-MM-DD' })
+        return [div({ ...p.root }, [input({ ...p.input }), div({ ...p.errorText }, [])])]
       },
     }
     const container = document.createElement('div')

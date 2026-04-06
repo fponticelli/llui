@@ -150,6 +150,8 @@ export interface ConnectOptions {
   delimiters?: string[]
   /** Commit on blur (default: true). */
   commitOnBlur?: boolean
+  /** Validate a tag value before adding. Non-empty array blocks addTag. */
+  validate?: (value: string) => string[] | null
 }
 
 export function connect<S>(
@@ -162,6 +164,17 @@ export function connect<S>(
   const clearLabel = opts.clearLabel ?? 'Clear all tags'
   const delimiters = opts.delimiters ?? [',']
   const commitOnBlur = opts.commitOnBlur !== false
+  const validate = opts.validate
+  let currentInput = ''
+
+  const tryAddTag = () => {
+    const candidate = currentInput.trim()
+    if (validate && candidate !== '') {
+      const errors = validate(candidate)
+      if (errors && errors.length > 0) return
+    }
+    send({ type: 'addTag' })
+  }
 
   return {
     root: {
@@ -179,14 +192,17 @@ export function connect<S>(
       value: (s) => get(s).inputValue,
       'data-scope': 'tags-input',
       'data-part': 'input',
-      onInput: (e) => send({ type: 'setInput', value: (e.target as HTMLInputElement).value }),
+      onInput: (e) => {
+        currentInput = (e.target as HTMLInputElement).value
+        send({ type: 'setInput', value: currentInput })
+      },
       onKeyDown: (e) => {
         if (e.key === 'Enter') {
           e.preventDefault()
-          send({ type: 'addTag' })
+          tryAddTag()
         } else if (delimiters.includes(e.key)) {
           e.preventDefault()
-          send({ type: 'addTag' })
+          tryAddTag()
         } else if (e.key === 'Backspace') {
           const target = e.target as HTMLInputElement
           if (target.value === '') {
@@ -201,7 +217,7 @@ export function connect<S>(
         }
       },
       onBlur: () => {
-        if (commitOnBlur) send({ type: 'addTag' })
+        if (commitOnBlur) tryAddTag()
       },
     },
     tag: (value: string, index: number): TagItemParts<S> => ({

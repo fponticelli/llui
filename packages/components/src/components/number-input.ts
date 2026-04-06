@@ -165,6 +165,8 @@ export interface NumberInputParts<S> {
 export interface ConnectOptions {
   incrementLabel?: string
   decrementLabel?: string
+  /** Validate the numeric value before committing. Non-empty array blocks setValue. */
+  validate?: (value: number) => string[] | null
 }
 
 export function connect<S>(
@@ -174,6 +176,15 @@ export function connect<S>(
 ): NumberInputParts<S> {
   const incrementLabel = opts.incrementLabel ?? 'Increase value'
   const decrementLabel = opts.decrementLabel ?? 'Decrease value'
+  const validate = opts.validate
+
+  const trySetValue = (value: number) => {
+    if (validate) {
+      const errors = validate(value)
+      if (errors && errors.length > 0) return
+    }
+    send({ type: 'setValue', value })
+  }
 
   return {
     root: {
@@ -198,6 +209,8 @@ export function connect<S>(
       onInput: (e) => {
         const text = (e.target as HTMLInputElement).value
         send({ type: 'setRawText', text })
+        const parsed = parseFloat(text)
+        if (!isNaN(parsed)) trySetValue(parsed)
       },
       onBlur: () => send({ type: 'commit' }),
       onKeyDown: (e) => {

@@ -18,18 +18,27 @@ const levels: CascadeLevel[] = [
 describe('cascade-select integration', () => {
   let app: ReturnType<typeof mountApp> | null = null
 
-  beforeEach(() => { document.body.innerHTML = '' })
-  afterEach(() => { app?.dispose(); app = null; document.body.innerHTML = '' })
+  beforeEach(() => {
+    document.body.innerHTML = ''
+  })
+  afterEach(() => {
+    app?.dispose()
+    app = null
+    document.body.innerHTML = ''
+  })
 
   function mount() {
     let sendRef!: (m: CascadeSelectMsg) => void
     const def: ComponentDef<S, CascadeSelectMsg, never> = {
       name: 'T',
       init: () => [{ c: cascadeSelect.init({ levels }) }, []],
-      update: (s, m) => { const [c] = cascadeSelect.update(s.c, m); return [{ c }, []] },
+      update: (s, m) => {
+        const [c] = cascadeSelect.update(s.c, m)
+        return [{ c }, []]
+      },
       view: ({ send }) => {
         sendRef = send
-        const parts = cascadeSelect.connect<S>(s => s.c, send, { id: 'cs' })
+        const parts = cascadeSelect.connect<S>((s) => s.c, send, { id: 'cs' })
         return [
           div({ ...parts.root }, [
             div({ ...parts.level(0).select }, []),

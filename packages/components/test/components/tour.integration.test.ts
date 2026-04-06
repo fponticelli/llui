@@ -13,16 +13,29 @@ const steps: TourStep[] = [
 describe('tour integration', () => {
   let app: ReturnType<typeof mountApp> | null = null
 
-  beforeEach(() => { document.body.innerHTML = '' })
-  afterEach(() => { app?.dispose(); app = null; document.body.innerHTML = '' })
+  beforeEach(() => {
+    document.body.innerHTML = ''
+  })
+  afterEach(() => {
+    app?.dispose()
+    app = null
+    document.body.innerHTML = ''
+  })
 
   function mount() {
     let sendRef!: (m: TourMsg) => void
-    const parts = tour.connect<S>(s => s.t, m => sendRef(m), { id: 'tour' })
+    const parts = tour.connect<S>(
+      (s) => s.t,
+      (m) => sendRef(m),
+      { id: 'tour' },
+    )
     const def: ComponentDef<S, TourMsg, never> = {
       name: 'T',
       init: () => [{ t: tour.init({ steps }) }, []],
-      update: (s, m) => { const [t] = tour.update(s.t, m); return [{ t }, []] },
+      update: (s, m) => {
+        const [t] = tour.update(s.t, m)
+        return [{ t }, []]
+      },
       view: ({ send }) => {
         sendRef = send
         return [

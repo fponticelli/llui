@@ -1,30 +1,39 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import { mountApp, div } from '@llui/dom'
 import type { ComponentDef } from '@llui/dom'
-import { angleSlider, type AngleSliderState, type AngleSliderMsg } from '../../src/components/angle-slider'
+import {
+  angleSlider,
+  type AngleSliderState,
+  type AngleSliderMsg,
+} from '../../src/components/angle-slider'
 
 type S = { a: AngleSliderState }
 
 describe('angle-slider integration', () => {
   let app: ReturnType<typeof mountApp> | null = null
 
-  beforeEach(() => { document.body.innerHTML = '' })
-  afterEach(() => { app?.dispose(); app = null; document.body.innerHTML = '' })
+  beforeEach(() => {
+    document.body.innerHTML = ''
+  })
+  afterEach(() => {
+    app?.dispose()
+    app = null
+    document.body.innerHTML = ''
+  })
 
   function mount(value = 45) {
     let sendRef!: (m: AngleSliderMsg) => void
     const def: ComponentDef<S, AngleSliderMsg, never> = {
       name: 'T',
       init: () => [{ a: angleSlider.init({ value, step: 5 }) }, []],
-      update: (s, m) => { const [a] = angleSlider.update(s.a, m); return [{ a }, []] },
+      update: (s, m) => {
+        const [a] = angleSlider.update(s.a, m)
+        return [{ a }, []]
+      },
       view: ({ send }) => {
         sendRef = send
-        const p = angleSlider.connect<S>(s => s.a, send)
-        return [
-          div({ ...p.root }, [
-            div({ ...p.control }, [div({ ...p.thumb }, [])]),
-          ]),
-        ]
+        const p = angleSlider.connect<S>((s) => s.a, send)
+        return [div({ ...p.root }, [div({ ...p.control }, [div({ ...p.thumb }, [])])])]
       },
     }
     const container = document.createElement('div')
