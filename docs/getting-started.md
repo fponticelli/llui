@@ -69,7 +69,7 @@ const Counter = component<State, Msg>({
   view: ({ send, text }) => [
     div({ class: 'counter' }, [
       button({ onClick: () => send({ type: 'dec' }) }, [text('-')]),
-      text(s => String(s.count)),
+      text((s) => String(s.count)),
       button({ onClick: () => send({ type: 'inc' }) }, [text('+')]),
       button({ onClick: () => send({ type: 'reset' }) }, [text('Reset')]),
     ]),
