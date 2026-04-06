@@ -3,7 +3,7 @@
  * Idiomatic score: 6/6
  */
 import { component, div, button, text, each, show } from '@llui/dom'
-import { handleEffects, http } from '@llui/effects'
+import { handleEffects, http, type ApiError } from '@llui/effects'
 
 type Item = { id: number; name: string }
 
@@ -15,28 +15,30 @@ type State = {
 
 type Msg =
   | { type: 'fetchSuccess'; payload: Item[] }
-  | { type: 'fetchError'; error: string }
+  | { type: 'fetchError'; error: ApiError }
   | { type: 'retry' }
 
-type Effect = { type: 'http'; url: string; onSuccess: string; onError: string }
+type Effect = { type: 'http' }
+
+function fetchItems() {
+  return http({
+    url: '/api/items',
+    onSuccess: (data) => ({ type: 'fetchSuccess' as const, payload: data as Item[] }),
+    onError: (error) => ({ type: 'fetchError' as const, error }),
+  })
+}
 
 export const AsyncFetch = component<State, Msg, Effect>({
   name: 'AsyncFetch',
-  init: () => [
-    { phase: 'loading', items: [], errorMsg: '' },
-    [http({ url: '/api/items', onSuccess: 'fetchSuccess', onError: 'fetchError' })],
-  ],
+  init: () => [{ phase: 'loading', items: [], errorMsg: '' }, [fetchItems()]],
   update: (state, msg) => {
     switch (msg.type) {
       case 'fetchSuccess':
         return [{ ...state, phase: 'success', items: msg.payload }, []]
       case 'fetchError':
-        return [{ ...state, phase: 'error', errorMsg: String(msg.error) }, []]
+        return [{ ...state, phase: 'error', errorMsg: String(msg.error.kind) }, []]
       case 'retry':
-        return [
-          { ...state, phase: 'loading', errorMsg: '' },
-          [http({ url: '/api/items', onSuccess: 'fetchSuccess', onError: 'fetchError' })],
-        ]
+        return [{ ...state, phase: 'loading', errorMsg: '' }, [fetchItems()]]
     }
   },
   view: ({ send, show, each }) => [

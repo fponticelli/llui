@@ -30,23 +30,23 @@ llui({
 
 The compiler runs 3 passes over every `.ts`/`.tsx` file using the TypeScript Compiler API:
 
-| Pass | Name            | Description                                                              |
-| ---- | --------------- | ------------------------------------------------------------------------ |
-| 1    | Prop split      | Rewrites element helpers to `elSplit()`/`elTemplate()` for template cloning. Separates static props (set once at mount) from dynamic props (updated on state change). |
-| 2    | Mask injection  | Analyzes state dependencies, assigns bitmask bits to state paths, injects `__dirty(oldState, newState)` per component. Rewrites `text()` and binding callbacks with mask guards. |
-| 3    | Import cleanup  | Removes unused imports introduced or made redundant by earlier passes.    |
+| Pass | Name           | Description                                                                                                                                                                      |
+| ---- | -------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1    | Prop split     | Rewrites element helpers to `elSplit()`/`elTemplate()` for template cloning. Separates static props (set once at mount) from dynamic props (updated on state change).            |
+| 2    | Mask injection | Analyzes state dependencies, assigns bitmask bits to state paths, injects `__dirty(oldState, newState)` per component. Rewrites `text()` and binding callbacks with mask guards. |
+| 3    | Import cleanup | Removes unused imports introduced or made redundant by earlier passes.                                                                                                           |
 
 ## Diagnostics
 
 The compiler emits warnings for common issues:
 
-| Diagnostic                | Description                                      |
-| ------------------------- | ------------------------------------------------ |
-| Missing alt attribute     | Accessibility: `img` without `alt`               |
-| Non-exhaustive update     | `update()` switch missing msg type cases          |
-| Empty props               | Element helper called with empty props object     |
-| Namespace imports         | `import * as` prevents tree-shaking               |
-| Spread children           | Spread in children array defeats static analysis  |
+| Diagnostic            | Description                                      |
+| --------------------- | ------------------------------------------------ |
+| Missing alt attribute | Accessibility: `img` without `alt`               |
+| Non-exhaustive update | `update()` switch missing msg type cases         |
+| Empty props           | Element helper called with empty props object    |
+| Namespace imports     | `import * as` prevents tree-shaking              |
+| Spread children       | Spread in children array defeats static analysis |
 
 ## License
 

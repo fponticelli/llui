@@ -19,6 +19,10 @@ Publish only the @llui packages that have changed since the last release. Each p
 
 ## Steps
 
+### 0. Run `pnpm verify`
+
+Run `pnpm verify` to ensure all packages are formatted, linted, buildable and testable.
+
 ### 1. Detect changed packages
 
 Find the latest git tag matching `v*` (e.g., `v0.0.1`). If no tag exists, treat all packages as changed.
@@ -49,6 +53,7 @@ Tier 2 (depends on tier 1): vite-plugin, test, router, transitions, components, 
 ```
 
 Specifically:
+
 - `dom` changed → also bump: vite-plugin, test, router, transitions, components, vike
 - `effects` changed → also bump: (no dependents currently)
 

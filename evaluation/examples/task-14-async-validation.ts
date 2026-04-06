@@ -40,8 +40,11 @@ export const AsyncValidation = component<State, Msg, Effect>({
                 500,
                 http({
                   url: `/api/check-email?email=${encodeURIComponent(email)}`,
-                  onSuccess: 'checkResult',
-                  onError: 'checkError',
+                  onSuccess: (data) => ({
+                    type: 'checkResult' as const,
+                    payload: data as { available: boolean },
+                  }),
+                  onError: (err) => ({ type: 'checkError' as const, error: err }),
                 }),
               ),
             ),

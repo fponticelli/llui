@@ -19,30 +19,26 @@ type Msg =
   | { type: 'loadSuccess'; payload: Item[] }
   | { type: 'loadError'; error: unknown }
 
-type Effect = { type: 'http'; url: string; onSuccess: string; onError: string }
+type Effect = { type: 'http' }
 
 const PAGE_SIZE = 20
 
+function loadPage(page: number) {
+  return http({
+    url: `/api/items?page=${page}&size=${PAGE_SIZE}`,
+    onSuccess: (data) => ({ type: 'loadSuccess' as const, payload: data as Item[] }),
+    onError: (err) => ({ type: 'loadError' as const, error: err }),
+  })
+}
+
 export const InfiniteScroll = component<State, Msg, Effect>({
   name: 'InfiniteScroll',
-  init: () => [
-    { items: [], page: 0, loading: true, exhausted: false },
-    [http({ url: '/api/items?page=0&size=20', onSuccess: 'loadSuccess', onError: 'loadError' })],
-  ],
+  init: () => [{ items: [], page: 0, loading: true, exhausted: false }, [loadPage(0)]],
   update: (state, msg) => {
     switch (msg.type) {
       case 'loadMore':
         if (state.loading || state.exhausted) return [state, []]
-        return [
-          { ...state, loading: true },
-          [
-            http({
-              url: `/api/items?page=${state.page + 1}&size=${PAGE_SIZE}`,
-              onSuccess: 'loadSuccess',
-              onError: 'loadError',
-            }),
-          ],
-        ]
+        return [{ ...state, loading: true }, [loadPage(state.page + 1)]]
       case 'loadSuccess':
         return [
           {

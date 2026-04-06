@@ -54,9 +54,10 @@ export async function resolveEffects<S, M extends { type: string }, E extends { 
     if (result.status === 'rejected') continue
 
     const { effect, ok } = result.value
+    // Use the typed callbacks to construct messages
     const msg = ok
-      ? ({ type: effect.onSuccess, payload: result.value.data } as unknown as M)
-      : ({ type: effect.onError, error: result.value.error } as unknown as M)
+      ? (effect.onSuccess(result.value.data, new Headers()) as unknown as M)
+      : (effect.onError(result.value.error) as unknown as M)
 
     const [nextState, moreEffects] = update(currentState, msg)
     currentState = nextState

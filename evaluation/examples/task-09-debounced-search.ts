@@ -40,8 +40,11 @@ export const DebouncedSearch = component<State, Msg, Effect>({
                 300,
                 http({
                   url: `/api/search?q=${encodeURIComponent(query)}`,
-                  onSuccess: 'searchResults',
-                  onError: 'searchError',
+                  onSuccess: (data) => ({
+                    type: 'searchResults' as const,
+                    payload: data as SearchResult[],
+                  }),
+                  onError: (err) => ({ type: 'searchError' as const, error: err }),
                 }),
               ),
             ),

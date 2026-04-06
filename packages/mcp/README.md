@@ -20,48 +20,48 @@ export default defineConfig({ plugins: [llui({ mcpPort: 5200 })] })
 
 ### State Inspection
 
-| Tool               | Description                                |
-| ------------------ | ------------------------------------------ |
-| `get_state`        | Get current component state                |
-| `describe_state`   | Describe state shape and types             |
-| `search_state`     | Search state tree by path or value         |
+| Tool             | Description                        |
+| ---------------- | ---------------------------------- |
+| `get_state`      | Get current component state        |
+| `describe_state` | Describe state shape and types     |
+| `search_state`   | Search state tree by path or value |
 
 ### Messaging
 
-| Tool               | Description                                |
-| ------------------ | ------------------------------------------ |
-| `send_message`     | Dispatch a message to the component        |
-| `validate_message` | Check if a message matches the Msg union   |
+| Tool               | Description                              |
+| ------------------ | ---------------------------------------- |
+| `send_message`     | Dispatch a message to the component      |
+| `validate_message` | Check if a message matches the Msg union |
 
 ### History and Replay
 
-| Tool                  | Description                             |
-| --------------------- | --------------------------------------- |
-| `get_message_history` | List all dispatched messages            |
-| `export_trace`        | Export message trace for `replayTrace`  |
-| `replay_trace`        | Replay a trace and compare states       |
+| Tool                  | Description                            |
+| --------------------- | -------------------------------------- |
+| `get_message_history` | List all dispatched messages           |
+| `export_trace`        | Export message trace for `replayTrace` |
+| `replay_trace`        | Replay a trace and compare states      |
 
 ### Bindings and DOM
 
-| Tool               | Description                                |
-| ------------------ | ------------------------------------------ |
-| `get_bindings`     | List all active bindings and their masks   |
-| `why_did_update`   | Explain which state change triggered a binding |
-| `trace_element`    | Trace a DOM element back to its binding    |
+| Tool             | Description                                    |
+| ---------------- | ---------------------------------------------- |
+| `get_bindings`   | List all active bindings and their masks       |
+| `why_did_update` | Explain which state change triggered a binding |
+| `trace_element`  | Trace a DOM element back to its binding        |
 
 ### Bitmask Debugging
 
-| Tool               | Description                                |
-| ------------------ | ------------------------------------------ |
-| `decode_mask`      | Decode a bitmask into state path names     |
-| `mask_legend`      | Show the full bit-to-path mapping          |
+| Tool          | Description                            |
+| ------------- | -------------------------------------- |
+| `decode_mask` | Decode a bitmask into state path names |
+| `mask_legend` | Show the full bit-to-path mapping      |
 
 ### Snapshots
 
-| Tool               | Description                                |
-| ------------------ | ------------------------------------------ |
-| `snapshot_state`   | Save a named state snapshot                |
-| `restore_state`    | Restore a previously saved snapshot        |
+| Tool             | Description                         |
+| ---------------- | ----------------------------------- |
+| `snapshot_state` | Save a named state snapshot         |
+| `restore_state`  | Restore a previously saved snapshot |
 
 ### Multi-Mount
 

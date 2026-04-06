@@ -40,7 +40,11 @@ describe('ApiError mapping from HTTP status', () => {
 
     const handler = handleEffects().else(() => {})
     handler({
-      effect: http({ url: '/x', onSuccess: 'ok', onError: 'err' }),
+      effect: http({
+        url: '/x',
+        onSuccess: (data) => ({ type: 'ok', payload: data }),
+        onError: (err) => ({ type: 'err', error: err }),
+      }),
       send,
       signal: new AbortController().signal,
     })
@@ -65,7 +69,11 @@ describe('ApiError mapping from HTTP status', () => {
 
     const handler = handleEffects().else(() => {})
     handler({
-      effect: http({ url: '/x', onSuccess: 'ok', onError: 'err' }),
+      effect: http({
+        url: '/x',
+        onSuccess: (data) => ({ type: 'ok', payload: data }),
+        onError: (err) => ({ type: 'err', error: err }),
+      }),
       send,
       signal: new AbortController().signal,
     })
@@ -90,7 +98,11 @@ describe('ApiError mapping from HTTP status', () => {
 
     const handler = handleEffects().else(() => {})
     handler({
-      effect: http({ url: '/x', onSuccess: 'ok', onError: 'err' }),
+      effect: http({
+        url: '/x',
+        onSuccess: (data) => ({ type: 'ok', payload: data }),
+        onError: (err) => ({ type: 'err', error: err }),
+      }),
       send,
       signal: new AbortController().signal,
     })
@@ -115,7 +127,11 @@ describe('ApiError mapping from HTTP status', () => {
 
     const handler = handleEffects().else(() => {})
     handler({
-      effect: http({ url: '/x', onSuccess: 'ok', onError: 'err' }),
+      effect: http({
+        url: '/x',
+        onSuccess: (data) => ({ type: 'ok', payload: data }),
+        onError: (err) => ({ type: 'err', error: err }),
+      }),
       send,
       signal: new AbortController().signal,
     })
@@ -143,7 +159,11 @@ describe('ApiError mapping from HTTP status', () => {
 
     const handler = handleEffects().else(() => {})
     handler({
-      effect: http({ url: '/x', onSuccess: 'ok', onError: 'err' }),
+      effect: http({
+        url: '/x',
+        onSuccess: (data) => ({ type: 'ok', payload: data }),
+        onError: (err) => ({ type: 'err', error: err }),
+      }),
       send,
       signal: new AbortController().signal,
     })
@@ -162,7 +182,11 @@ describe('ApiError mapping from HTTP status', () => {
 
     const handler = handleEffects().else(() => {})
     handler({
-      effect: http({ url: '/x', onSuccess: 'ok', onError: 'err' }),
+      effect: http({
+        url: '/x',
+        onSuccess: (data) => ({ type: 'ok', payload: data }),
+        onError: (err) => ({ type: 'err', error: err }),
+      }),
       send,
       signal: new AbortController().signal,
     })

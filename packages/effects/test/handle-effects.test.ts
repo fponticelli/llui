@@ -48,7 +48,11 @@ describe('handleEffects()', () => {
     const handler = handleEffects<AllEffects>().else(() => {})
 
     handler({
-      effect: http({ url: '/api/data', onSuccess: 'results', onError: 'error' }),
+      effect: http({
+        url: '/api/data',
+        onSuccess: (data) => ({ type: 'results', payload: data }),
+        onError: (err) => ({ type: 'error', error: err }),
+      }),
       send,
       signal,
     })
@@ -67,7 +71,11 @@ describe('handleEffects()', () => {
     const handler = handleEffects<AllEffects>().else(() => {})
 
     handler({
-      effect: http({ url: '/api/data', onSuccess: 'results', onError: 'error' }),
+      effect: http({
+        url: '/api/data',
+        onSuccess: (data) => ({ type: 'results', payload: data }),
+        onError: (err) => ({ type: 'error', error: err }),
+      }),
       send,
       signal,
     })
@@ -86,7 +94,15 @@ describe('handleEffects()', () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(mockResponse({}, { ok: false, status: 404 })))
 
     const handler = handleEffects<AllEffects>().else(() => {})
-    handler({ effect: http({ url: '/api/x', onSuccess: 'ok', onError: 'err' }), send, signal })
+    handler({
+      effect: http({
+        url: '/api/x',
+        onSuccess: (data) => ({ type: 'ok', payload: data }),
+        onError: (err) => ({ type: 'err', error: err }),
+      }),
+      send,
+      signal,
+    })
 
     await vi.waitFor(() => expect(send).toHaveBeenCalled())
     expect(send).toHaveBeenCalledWith({ type: 'err', error: { kind: 'notfound' } })
@@ -100,7 +116,15 @@ describe('handleEffects()', () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(resp))
 
     const handler = handleEffects<AllEffects>().else(() => {})
-    handler({ effect: http({ url: '/api/x', onSuccess: 'ok', onError: 'err' }), send, signal })
+    handler({
+      effect: http({
+        url: '/api/x',
+        onSuccess: (data) => ({ type: 'ok', payload: data }),
+        onError: (err) => ({ type: 'err', error: err }),
+      }),
+      send,
+      signal,
+    })
 
     await vi.waitFor(() => expect(send).toHaveBeenCalled())
     expect(send).toHaveBeenCalledWith({ type: 'err', error: { kind: 'ratelimit', retryAfter: 60 } })
@@ -115,7 +139,15 @@ describe('handleEffects()', () => {
     )
 
     const handler = handleEffects<AllEffects>().else(() => {})
-    handler({ effect: http({ url: '/api/readme', onSuccess: 'ok', onError: 'err' }), send, signal })
+    handler({
+      effect: http({
+        url: '/api/readme',
+        onSuccess: (data) => ({ type: 'ok', payload: data }),
+        onError: (err) => ({ type: 'err', error: err }),
+      }),
+      send,
+      signal,
+    })
 
     await vi.waitFor(() => expect(send).toHaveBeenCalled())
     expect(send).toHaveBeenCalledWith({ type: 'ok', payload: '<h1>Hello</h1>' })
@@ -143,7 +175,11 @@ describe('handleEffects()', () => {
     handler({
       effect: cancel(
         'search',
-        http({ url: '/api/search', onSuccess: 'results', onError: 'error' }),
+        http({
+          url: '/api/search',
+          onSuccess: (data) => ({ type: 'results', payload: data }),
+          onError: (err) => ({ type: 'error', error: err }),
+        }),
       ),
       send,
       signal,
@@ -170,13 +206,27 @@ describe('handleEffects()', () => {
     const handler = handleEffects<AllEffects>().else(() => {})
 
     handler({
-      effect: cancel('search', http({ url: '/api/1', onSuccess: 'results', onError: 'error' })),
+      effect: cancel(
+        'search',
+        http({
+          url: '/api/1',
+          onSuccess: (data) => ({ type: 'results', payload: data }),
+          onError: (err) => ({ type: 'error', error: err }),
+        }),
+      ),
       send,
       signal,
     })
 
     handler({
-      effect: cancel('search', http({ url: '/api/2', onSuccess: 'results', onError: 'error' })),
+      effect: cancel(
+        'search',
+        http({
+          url: '/api/2',
+          onSuccess: (data) => ({ type: 'results', payload: data }),
+          onError: (err) => ({ type: 'error', error: err }),
+        }),
+      ),
       send,
       signal,
     })
@@ -203,7 +253,14 @@ describe('handleEffects()', () => {
     const handler = handleEffects<AllEffects>().else(() => {})
 
     handler({
-      effect: cancel('search', http({ url: '/api/data', onSuccess: 'results', onError: 'error' })),
+      effect: cancel(
+        'search',
+        http({
+          url: '/api/data',
+          onSuccess: (data) => ({ type: 'results', payload: data }),
+          onError: (err) => ({ type: 'error', error: err }),
+        }),
+      ),
       send,
       signal,
     })

@@ -3,6 +3,7 @@
  * Idiomatic score: 6/6
  */
 import { component, div, button, text, each, show } from '@llui/dom'
+import { handleEffects, websocket, cancel, type Effect } from '@llui/effects'
 
 type Item = { id: number; content: string }
 
@@ -12,9 +13,11 @@ type State = {
   buffer: Item[]
 }
 
-type Msg = { type: 'receive'; item: Item } | { type: 'pause' } | { type: 'resume' }
-
-type Effect = { type: 'ws-connect'; url: string } | { type: 'ws-disconnect' }
+type Msg =
+  | { type: 'receive'; item: Item }
+  | { type: 'pause' }
+  | { type: 'resume' }
+  | { type: 'wsError' }
 
 const MAX_ITEMS = 50
 
@@ -27,7 +30,14 @@ export const WebSocketList = component<State, Msg, Effect>({
   name: 'WebSocketList',
   init: () => [
     { items: [], paused: false, buffer: [] },
-    [{ type: 'ws-connect', url: 'wss://example.com/feed' }],
+    [
+      websocket({
+        url: 'wss://example.com/feed',
+        key: 'feed',
+        onMessage: (data) => ({ type: 'receive' as const, item: data as Item }),
+        onError: () => ({ type: 'wsError' as const }),
+      }),
+    ],
   ],
   update: (state, msg) => {
     switch (msg.type) {
@@ -57,6 +67,8 @@ export const WebSocketList = component<State, Msg, Effect>({
         }
         return [{ ...state, paused: false, buffer: [], items }, []]
       }
+      case 'wsError':
+        return [state, []]
     }
   },
   view: ({ send, show, each }) => [
@@ -104,19 +116,7 @@ export const WebSocketList = component<State, Msg, Effect>({
       }),
     ]),
   ],
-  onEffect: ({ effect, send, signal }) => {
-    switch (effect.type) {
-      case 'ws-connect': {
-        const ws = new WebSocket(effect.url)
-        ws.onmessage = (event) => {
-          const item = JSON.parse(event.data) as Item
-          send({ type: 'receive', item })
-        }
-        signal.addEventListener('abort', () => ws.close())
-        break
-      }
-      case 'ws-disconnect':
-        break
-    }
-  },
+  onEffect: handleEffects<Effect>().else(() => {
+    // No custom effects
+  }),
 })

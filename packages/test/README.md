@@ -39,18 +39,18 @@ testView(def, state?) => ViewHarness<M>
 
 Mount a component into jsdom with full DOM. Returns a harness with DOM query and interaction methods.
 
-| Method                  | Description                                    |
-| ----------------------- | ---------------------------------------------- |
-| `.send(msg)`            | Dispatch a message                             |
-| `.flush()`              | Force synchronous update (skip microtask queue)|
-| `.click(selector)`      | Simulate click on element                      |
-| `.input(selector, val)` | Set input value and fire input event            |
-| `.text(selector)`       | Get textContent of element                     |
-| `.attr(selector, name)` | Get attribute value                            |
-| `.query(selector)`      | querySelector on mounted DOM                   |
-| `.queryAll(selector)`   | querySelectorAll on mounted DOM                |
-| `.fire(selector, event)`| Dispatch a custom event                        |
-| `.unmount()`            | Tear down the component and clean up           |
+| Method                   | Description                                     |
+| ------------------------ | ----------------------------------------------- |
+| `.send(msg)`             | Dispatch a message                              |
+| `.flush()`               | Force synchronous update (skip microtask queue) |
+| `.click(selector)`       | Simulate click on element                       |
+| `.input(selector, val)`  | Set input value and fire input event            |
+| `.text(selector)`        | Get textContent of element                      |
+| `.attr(selector, name)`  | Get attribute value                             |
+| `.query(selector)`       | querySelector on mounted DOM                    |
+| `.queryAll(selector)`    | querySelectorAll on mounted DOM                 |
+| `.fire(selector, event)` | Dispatch a custom event                         |
+| `.unmount()`             | Tear down the component and clean up            |
 
 ### assertEffects
 

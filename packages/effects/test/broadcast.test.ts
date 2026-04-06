@@ -21,7 +21,11 @@ describe('broadcast effects', () => {
 
   it('broadcastListen receives messages posted via broadcast', async () => {
     const handler = handleEffects<Effect>().else(() => {})
-    handler({ effect: broadcastListen('app-events', 'received'), send, signal })
+    handler({
+      effect: broadcastListen('app-events', (data) => ({ type: 'received', data })),
+      send,
+      signal,
+    })
 
     // Simulate an incoming message by posting via a separate channel instance
     const poster = new BroadcastChannel('app-events')
@@ -53,7 +57,11 @@ describe('broadcast effects', () => {
 
   it('broadcastListen stops receiving after signal abort', async () => {
     const handler = handleEffects<Effect>().else(() => {})
-    handler({ effect: broadcastListen('live', 'received'), send, signal })
+    handler({
+      effect: broadcastListen('live', (data) => ({ type: 'received', data })),
+      send,
+      signal,
+    })
 
     ctrl.abort()
 

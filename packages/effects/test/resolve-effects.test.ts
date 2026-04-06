@@ -43,7 +43,13 @@ describe('resolveEffects', () => {
       }),
     )
 
-    const effects: Effect[] = [http({ url: '/api/items', onSuccess: 'loaded', onError: 'error' })]
+    const effects: Effect[] = [
+      http({
+        url: '/api/items',
+        onSuccess: (data) => ({ type: 'loaded', payload: data }),
+        onError: (err) => ({ type: 'error', error: err }),
+      }),
+    ]
 
     const result = await resolveEffects<State, Msg, Effect>(
       { items: [], error: null },
@@ -78,8 +84,16 @@ describe('resolveEffects', () => {
       | { type: 'bOk'; payload: { items: string[] } }
 
     const effects: Effect[] = [
-      http({ url: '/api/a', onSuccess: 'aOk', onError: 'err' }),
-      http({ url: '/api/b', onSuccess: 'bOk', onError: 'err' }),
+      http({
+        url: '/api/a',
+        onSuccess: (data) => ({ type: 'aOk', payload: data }),
+        onError: () => ({ type: 'err' }),
+      }),
+      http({
+        url: '/api/b',
+        onSuccess: (data) => ({ type: 'bOk', payload: data }),
+        onError: () => ({ type: 'err' }),
+      }),
     ]
 
     const result = await resolveEffects<S2, M2, Effect>({ a: [], b: [] }, effects, (s, m) => {
@@ -105,7 +119,13 @@ describe('resolveEffects', () => {
 
     const result = await resolveEffects<State, Msg, Effect>(
       { items: [], error: null },
-      [http({ url: '/api/items', onSuccess: 'loaded', onError: 'error' })],
+      [
+        http({
+          url: '/api/items',
+          onSuccess: (data) => ({ type: 'loaded', payload: data }),
+          onError: (err) => ({ type: 'error', error: err }),
+        }),
+      ],
       update,
     )
 
@@ -146,12 +166,24 @@ describe('resolveEffects', () => {
 
     const result = await resolveEffects<S3, M3, Effect>(
       { items: [], nextUrl: null },
-      [http({ url: '/api/init', onSuccess: 'initOk', onError: 'err' })],
+      [
+        http({
+          url: '/api/init',
+          onSuccess: (data) => ({ type: 'initOk', payload: data }),
+          onError: () => ({ type: 'err' }),
+        }),
+      ],
       (s, m) => {
         if (m.type === 'initOk') {
           return [
             { ...s, nextUrl: m.payload.next },
-            [http({ url: m.payload.next, onSuccess: 'dataOk', onError: 'err' })],
+            [
+              http({
+                url: m.payload.next,
+                onSuccess: (data) => ({ type: 'dataOk', payload: data }),
+                onError: () => ({ type: 'err' }),
+              }),
+            ],
           ]
         }
         if (m.type === 'dataOk') {
@@ -185,10 +217,25 @@ describe('resolveEffects', () => {
     // update always produces another effect — would infinite loop without depth limit
     const result = await resolveEffects<State, Msg, Effect>(
       { items: [], error: null },
-      [http({ url: '/api/loop', onSuccess: 'loaded', onError: 'error' })],
+      [
+        http({
+          url: '/api/loop',
+          onSuccess: (data) => ({ type: 'loaded', payload: data }),
+          onError: (err) => ({ type: 'error', error: err }),
+        }),
+      ],
       (s, m) => {
         if (m.type === 'loaded') {
-          return [s, [http({ url: '/api/loop', onSuccess: 'loaded', onError: 'error' })]]
+          return [
+            s,
+            [
+              http({
+                url: '/api/loop',
+                onSuccess: (data) => ({ type: 'loaded', payload: data }),
+                onError: (err) => ({ type: 'error', error: err }),
+              }),
+            ],
+          ]
         }
         return [s, []]
       },
@@ -205,7 +252,13 @@ describe('resolveEffects', () => {
 
     const result = await resolveEffects<State, Msg, Effect>(
       { items: ['preserved'], error: null },
-      [http({ url: '/api/items', onSuccess: 'loaded', onError: 'error' })],
+      [
+        http({
+          url: '/api/items',
+          onSuccess: (data) => ({ type: 'loaded', payload: data }),
+          onError: (err) => ({ type: 'error', error: err }),
+        }),
+      ],
       update,
     )
 

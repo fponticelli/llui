@@ -46,10 +46,10 @@ Hydrates the server-rendered HTML on the client. Attaches event listeners and re
 
 ## API
 
-| Export            | Description                                              |
-| ----------------- | -------------------------------------------------------- |
-| `onRenderHtml`    | Vike server hook -- renders component to HTML string     |
-| `onRenderClient`  | Vike client hook -- hydrates server-rendered DOM         |
+| Export           | Description                                          |
+| ---------------- | ---------------------------------------------------- |
+| `onRenderHtml`   | Vike server hook -- renders component to HTML string |
+| `onRenderClient` | Vike client hook -- hydrates server-rendered DOM     |
 
 ## License
 

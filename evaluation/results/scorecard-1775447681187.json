@@ -12,9 +12,7 @@
       "assertionScore": 0,
       "consoleClean": 0,
       "idiomatic": 0,
-      "errors": [
-        "No generated file"
-      ]
+      "errors": ["No generated file"]
     },
     {
       "taskId": "02",
@@ -25,9 +23,7 @@
       "assertionScore": 0,
       "consoleClean": 0,
       "idiomatic": 0,
-      "errors": [
-        "No generated file"
-      ]
+      "errors": ["No generated file"]
     },
     {
       "taskId": "03",
@@ -38,9 +34,7 @@
       "assertionScore": 0,
       "consoleClean": 0,
       "idiomatic": 0,
-      "errors": [
-        "No generated file"
-      ]
+      "errors": ["No generated file"]
     },
     {
       "taskId": "04",
@@ -51,9 +45,7 @@
       "assertionScore": 0,
       "consoleClean": 0,
       "idiomatic": 0,
-      "errors": [
-        "No generated file"
-      ]
+      "errors": ["No generated file"]
     },
     {
       "taskId": "05",
@@ -64,9 +56,7 @@
       "assertionScore": 0,
       "consoleClean": 0,
       "idiomatic": 0,
-      "errors": [
-        "No generated file"
-      ]
+      "errors": ["No generated file"]
     },
     {
       "taskId": "06",
@@ -77,9 +67,7 @@
       "assertionScore": 0,
       "consoleClean": 0,
       "idiomatic": 0,
-      "errors": [
-        "No generated file"
-      ]
+      "errors": ["No generated file"]
     },
     {
       "taskId": "07",
@@ -90,9 +78,7 @@
       "assertionScore": 0,
       "consoleClean": 0,
       "idiomatic": 0,
-      "errors": [
-        "No generated file"
-      ]
+      "errors": ["No generated file"]
     },
     {
       "taskId": "08",
@@ -103,9 +89,7 @@
       "assertionScore": 0,
       "consoleClean": 0,
       "idiomatic": 0,
-      "errors": [
-        "No generated file"
-      ]
+      "errors": ["No generated file"]
     },
     {
       "taskId": "09",
@@ -116,9 +100,7 @@
       "assertionScore": 0,
       "consoleClean": 0,
       "idiomatic": 0,
-      "errors": [
-        "No generated file"
-      ]
+      "errors": ["No generated file"]
     },
     {
       "taskId": "10",
@@ -129,9 +111,7 @@
       "assertionScore": 0,
       "consoleClean": 0,
       "idiomatic": 0,
-      "errors": [
-        "No generated file"
-      ]
+      "errors": ["No generated file"]
     },
     {
       "taskId": "10b",
@@ -142,9 +122,7 @@
       "assertionScore": 0,
       "consoleClean": 0,
       "idiomatic": 0,
-      "errors": [
-        "No generated file"
-      ]
+      "errors": ["No generated file"]
     },
     {
       "taskId": "11",
@@ -155,9 +133,7 @@
       "assertionScore": 0,
       "consoleClean": 0,
       "idiomatic": 0,
-      "errors": [
-        "No generated file"
-      ]
+      "errors": ["No generated file"]
     },
     {
       "taskId": "12",
@@ -168,9 +144,7 @@
       "assertionScore": 0,
       "consoleClean": 0,
       "idiomatic": 0,
-      "errors": [
-        "No generated file"
-      ]
+      "errors": ["No generated file"]
     },
     {
       "taskId": "13",
@@ -181,9 +155,7 @@
       "assertionScore": 0,
       "consoleClean": 0,
       "idiomatic": 0,
-      "errors": [
-        "No generated file"
-      ]
+      "errors": ["No generated file"]
     },
     {
       "taskId": "14",
@@ -194,9 +166,7 @@
       "assertionScore": 0,
       "consoleClean": 0,
       "idiomatic": 0,
-      "errors": [
-        "No generated file"
-      ]
+      "errors": ["No generated file"]
     },
     {
       "taskId": "15",
@@ -207,9 +177,7 @@
       "assertionScore": 0,
       "consoleClean": 0,
       "idiomatic": 0,
-      "errors": [
-        "No generated file"
-      ]
+      "errors": ["No generated file"]
     }
   ],
   "macroAverages": {

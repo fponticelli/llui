@@ -21,6 +21,59 @@ import {
 } from './api'
 import { routing } from './router'
 
+// ── Typed http helpers ──────────────────────────────────────────
+
+function searchHttp(url: string) {
+  return http<Msg>({
+    url,
+    headers: JSON_HEADERS,
+    onSuccess: (data) => ({
+      type: 'searchOk',
+      payload: data as { total_count: number; items: Repo[] },
+    }),
+    onError: (error) => ({ type: 'apiError', error }),
+  })
+}
+
+function repoHttp(owner: string, name: string) {
+  return http<Msg>({
+    url: repoUrl(owner, name),
+    headers: JSON_HEADERS,
+    onSuccess: (data) => ({ type: 'repoOk', payload: data as Repo }),
+    onError: (error) => ({ type: 'apiError', error }),
+  })
+}
+
+function contentsHttp(owner: string, name: string, path: string) {
+  return http<Msg>({
+    url: contentsUrl(owner, name, path),
+    headers: JSON_HEADERS,
+    onSuccess: (data) => ({
+      type: 'contentsOk',
+      payload: data as TreeEntry[] | FileContent,
+    }),
+    onError: (error) => ({ type: 'contentsError', error }),
+  })
+}
+
+function readmeHttp(owner: string, name: string) {
+  return http<Msg>({
+    url: readmeUrl(owner, name),
+    headers: HTML_HEADERS,
+    onSuccess: (data) => ({ type: 'readmeOk', payload: data as string }),
+    onError: (error) => ({ type: 'readmeError', error }),
+  })
+}
+
+function issuesHttp(owner: string, name: string) {
+  return http<Msg>({
+    url: issuesUrl(owner, name),
+    headers: JSON_HEADERS,
+    onSuccess: (data) => ({ type: 'issuesOk', payload: data as Issue[] }),
+    onError: (error) => ({ type: 'apiError', error }),
+  })
+}
+
 export function update(state: State, msg: Msg): [State, Effect[]] {
   switch (msg.type) {
     case 'navigate':
@@ -50,21 +103,7 @@ export function update(state: State, msg: Msg): [State, Effect[]] {
               },
             }
           : { page: 'search', q, p: 1, data: { type: 'loading' } }
-      return [
-        { ...state, query: q, route },
-        [
-          debounce(
-            'search',
-            300,
-            http({
-              url: searchUrl(q, 0),
-              headers: JSON_HEADERS,
-              onSuccess: 'searchOk',
-              onError: 'apiError',
-            }),
-          ),
-        ],
-      ]
+      return [{ ...state, query: q, route }, [debounce('search', 300, searchHttp(searchUrl(q, 0)))]]
     }
 
     case 'submitSearch': {
@@ -72,18 +111,7 @@ export function update(state: State, msg: Msg): [State, Effect[]] {
       const route: Route = { page: 'search', q: state.query, p: 1, data: { type: 'loading' } }
       return [
         { ...state, route },
-        [
-          routing.push(route),
-          cancel(
-            'search',
-            http({
-              url: searchUrl(state.query, 0),
-              headers: JSON_HEADERS,
-              onSuccess: 'searchOk',
-              onError: 'apiError',
-            }),
-          ),
-        ],
+        [routing.push(route), cancel('search', searchHttp(searchUrl(state.query, 0)))],
       ]
     }
 
@@ -165,73 +193,24 @@ function loadRoute(state: State, route: Route): [State, Effect[]] {
   switch (r.page) {
     case 'search':
       if (r.q) {
-        effects.push(
-          http({
-            url: searchUrl(r.q, r.p - 1),
-            headers: JSON_HEADERS,
-            onSuccess: 'searchOk',
-            onError: 'apiError',
-          }),
-        )
+        effects.push(searchHttp(searchUrl(r.q, r.p - 1)))
         return [{ ...state, route: r, query: r.q }, effects]
       }
       return [{ ...state, route: { ...r, data: { type: 'idle' } }, query: '' }, []]
 
     case 'repo':
-      effects.push(
-        http({
-          url: repoUrl(r.owner, r.name),
-          headers: JSON_HEADERS,
-          onSuccess: 'repoOk',
-          onError: 'apiError',
-        }),
-      )
+      effects.push(repoHttp(r.owner, r.name))
       if (r.tab === 'code') {
-        effects.push(
-          http({
-            url: contentsUrl(r.owner, r.name, ''),
-            headers: JSON_HEADERS,
-            onSuccess: 'contentsOk',
-            onError: 'contentsError',
-          }),
-        )
-        effects.push(
-          http({
-            url: readmeUrl(r.owner, r.name),
-            headers: HTML_HEADERS,
-            onSuccess: 'readmeOk',
-            onError: 'readmeError',
-          }),
-        )
+        effects.push(contentsHttp(r.owner, r.name, ''))
+        effects.push(readmeHttp(r.owner, r.name))
       } else {
-        effects.push(
-          http({
-            url: issuesUrl(r.owner, r.name),
-            headers: JSON_HEADERS,
-            onSuccess: 'issuesOk',
-            onError: 'apiError',
-          }),
-        )
+        effects.push(issuesHttp(r.owner, r.name))
       }
       return [{ ...state, route: r }, effects]
 
     case 'tree':
-      effects.push(
-        http({
-          url: repoUrl(r.owner, r.name),
-          headers: JSON_HEADERS,
-          onSuccess: 'repoOk',
-          onError: 'apiError',
-        }),
-      )
-      effects.push(
-        http({
-          url: contentsUrl(r.owner, r.name, r.path),
-          headers: JSON_HEADERS,
-          onSuccess: 'contentsOk',
-          onError: 'contentsError',
-        }),
-      )
+      effects.push(repoHttp(r.owner, r.name))
+      effects.push(contentsHttp(r.owner, r.name, r.path))
       return [{ ...state, route: r }, effects]
   }
 }
@@ -334,14 +313,6 @@ function changePage(state: State, delta: number): [State, Effect[]] {
   const newRoute: Route = { ...r, p, data: { type: 'loading', stale: r.data.data } }
   return [
     { ...state, route: newRoute },
-    [
-      routing.replace(newRoute),
-      http({
-        url: searchUrl(r.q, p - 1),
-        headers: JSON_HEADERS,
-        onSuccess: 'searchOk',
-        onError: 'apiError',
-      }),
-    ],
+    [routing.replace(newRoute), searchHttp(searchUrl(r.q, p - 1))],
   ]
 }

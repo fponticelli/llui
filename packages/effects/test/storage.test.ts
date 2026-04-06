@@ -67,19 +67,31 @@ describe('storage effects', () => {
   it('storageGet dispatches onLoad with parsed value', () => {
     localStorage.setItem('theme', '"dark"')
     const handler = handleEffects<Effect>().else(() => {})
-    handler({ effect: storageGet('theme', 'themeLoaded'), send, signal })
+    handler({
+      effect: storageGet('theme', (value) => ({ type: 'themeLoaded', value })),
+      send,
+      signal,
+    })
     expect(send).toHaveBeenCalledWith({ type: 'themeLoaded', value: 'dark' })
   })
 
   it('storageGet dispatches onLoad with null when key missing', () => {
     const handler = handleEffects<Effect>().else(() => {})
-    handler({ effect: storageGet('nope', 'loaded'), send, signal })
+    handler({
+      effect: storageGet('nope', (value) => ({ type: 'loaded', value })),
+      send,
+      signal,
+    })
     expect(send).toHaveBeenCalledWith({ type: 'loaded', value: null })
   })
 
   it('storageWatch fires onChange when storage event dispatches for the key', () => {
     const handler = handleEffects<Effect>().else(() => {})
-    handler({ effect: storageWatch('settings', 'settingsChanged'), send, signal })
+    handler({
+      effect: storageWatch('settings', (value) => ({ type: 'settingsChanged', value })),
+      send,
+      signal,
+    })
 
     // Dispatch a storage event (simulates cross-tab write)
     window.dispatchEvent(
@@ -97,14 +109,22 @@ describe('storage effects', () => {
 
   it('storageWatch ignores events for other keys', () => {
     const handler = handleEffects<Effect>().else(() => {})
-    handler({ effect: storageWatch('a', 'changed'), send, signal })
+    handler({
+      effect: storageWatch('a', (value) => ({ type: 'changed', value })),
+      send,
+      signal,
+    })
     window.dispatchEvent(new StorageEvent('storage', { key: 'b', newValue: '"x"' }))
     expect(send).not.toHaveBeenCalled()
   })
 
   it('storageWatch stops listening on signal abort', () => {
     const handler = handleEffects<Effect>().else(() => {})
-    handler({ effect: storageWatch('k', 'changed'), send, signal })
+    handler({
+      effect: storageWatch('k', (value) => ({ type: 'changed', value })),
+      send,
+      signal,
+    })
     ctrl.abort()
     window.dispatchEvent(new StorageEvent('storage', { key: 'k', newValue: '"x"' }))
     expect(send).not.toHaveBeenCalled()

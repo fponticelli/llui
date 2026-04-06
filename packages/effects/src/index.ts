@@ -20,14 +20,17 @@ export type ApiError =
 
 // ── Effect Types ──────────────────────────────────────────────────
 
-export interface HttpEffect {
+export interface HttpEffect<M = unknown> {
   type: 'http'
   url: string
   method?: string
   body?: unknown
+  contentType?: string
   headers?: Record<string, string>
-  onSuccess: string
-  onError: string
+  timeout?: number
+  responseType?: 'json' | 'text' | 'blob' | 'arrayBuffer'
+  onSuccess: (data: unknown, headers: Headers) => M
+  onError: (error: ApiError) => M
 }
 
 export interface CancelEffect {
@@ -80,19 +83,19 @@ export interface StorageRemoveEffect {
   scope: StorageScope
 }
 
-/** Read a key from storage, dispatch `{ type: onLoad, value }` with the parsed JSON (or null). */
-export interface StorageGetEffect {
+/** Read a key from storage, dispatch the message returned by `onLoad(value)`. */
+export interface StorageGetEffect<M = unknown> {
   type: 'storage-get'
   key: string
-  onLoad: string
+  onLoad: (value: unknown) => M
   scope: StorageScope
 }
 
-/** Listen for changes to a storage key. Fires `{ type: onChange, value }` on cross-tab writes. */
-export interface StorageWatchEffect {
+/** Listen for changes to a storage key. Fires the message returned by `onChange(value)` on cross-tab writes. */
+export interface StorageWatchEffect<M = unknown> {
   type: 'storage-watch'
   key: string
-  onChange: string
+  onChange: (value: unknown) => M
   scope: StorageScope
 }
 
@@ -103,11 +106,11 @@ export interface BroadcastEffect {
   data: unknown
 }
 
-/** Subscribe to a BroadcastChannel. Fires `{ type: onMessage, data }` per incoming message. */
-export interface BroadcastListenEffect {
+/** Subscribe to a BroadcastChannel. Fires the message returned by `onMessage(data)` per incoming message. */
+export interface BroadcastListenEffect<M = unknown> {
   type: 'broadcast-listen'
   channel: string
-  onMessage: string
+  onMessage: (data: unknown) => M
 }
 
 export interface SequenceEffect {
@@ -118,6 +121,30 @@ export interface SequenceEffect {
 export interface RaceEffect {
   type: 'race'
   effects: BuiltinEffect[]
+}
+
+export interface WebSocketEffect<M = unknown> {
+  type: 'websocket'
+  url: string
+  key: string
+  protocols?: string[]
+  onOpen?: () => M
+  onMessage: (data: unknown) => M
+  onClose?: (code: number, reason: string) => M
+  onError?: () => M
+}
+
+export interface WebSocketSendEffect {
+  type: 'ws-send'
+  key: string
+  data: unknown
+}
+
+export interface RetryEffect {
+  type: 'retry'
+  inner: BuiltinEffect
+  maxAttempts: number
+  delayMs: number
 }
 
 type BuiltinEffect =
@@ -135,20 +162,26 @@ type BuiltinEffect =
   | BroadcastListenEffect
   | SequenceEffect
   | RaceEffect
+  | WebSocketEffect
+  | WebSocketSendEffect
+  | RetryEffect
 
 // Re-export for user convenience
 export type { BuiltinEffect as Effect }
 
 // ── Builders ──────────────────────────────────────────────────────
 
-export function http(opts: {
+export function http<M>(opts: {
   url: string
   method?: string
   body?: unknown
+  contentType?: string
   headers?: Record<string, string>
-  onSuccess: string
-  onError: string
-}): HttpEffect {
+  timeout?: number
+  responseType?: 'json' | 'text' | 'blob' | 'arrayBuffer'
+  onSuccess: (data: unknown, headers: Headers) => M
+  onError: (error: ApiError) => M
+}): HttpEffect<M> {
   return { type: 'http', ...opts }
 }
 
@@ -198,19 +231,19 @@ export function storageRemove(key: string, scope: StorageScope = 'local'): Stora
   return { type: 'storage-remove', key, scope }
 }
 
-export function storageGet(
+export function storageGet<M>(
   key: string,
-  onLoad: string,
+  onLoad: (value: unknown) => M,
   scope: StorageScope = 'local',
-): StorageGetEffect {
+): StorageGetEffect<M> {
   return { type: 'storage-get', key, onLoad, scope }
 }
 
-export function storageWatch(
+export function storageWatch<M>(
   key: string,
-  onChange: string,
+  onChange: (value: unknown) => M,
   scope: StorageScope = 'local',
-): StorageWatchEffect {
+): StorageWatchEffect<M> {
   return { type: 'storage-watch', key, onChange, scope }
 }
 
@@ -220,9 +253,41 @@ export function broadcast(channel: string, data: unknown): BroadcastEffect {
   return { type: 'broadcast', channel, data }
 }
 
-export function broadcastListen(channel: string, onMessage: string): BroadcastListenEffect {
+export function broadcastListen<M>(
+  channel: string,
+  onMessage: (data: unknown) => M,
+): BroadcastListenEffect<M> {
   return { type: 'broadcast-listen', channel, onMessage }
 }
+
+// ── WebSocket ────────────────────────────────────────────────────
+
+export function websocket<M>(opts: {
+  url: string
+  key: string
+  protocols?: string[]
+  onOpen?: () => M
+  onMessage: (data: unknown) => M
+  onClose?: (code: number, reason: string) => M
+  onError?: () => M
+}): WebSocketEffect<M> {
+  return { type: 'websocket', ...opts }
+}
+
+export function wsSend(key: string, data: unknown): WebSocketSendEffect {
+  return { type: 'ws-send', key, data }
+}
+
+// ── Retry ────────────────────────────────────────────────────────
+
+export function retry(
+  inner: BuiltinEffect,
+  opts: { maxAttempts: number; delayMs: number },
+): RetryEffect {
+  return { type: 'retry', inner, maxAttempts: opts.maxAttempts, delayMs: opts.delayMs }
+}
+
+// ── Sequence / Race ──────────────────────────────────────────────
 
 export function sequence(effects: BuiltinEffect[]): SequenceEffect {
   return { type: 'sequence', effects }
@@ -235,7 +300,7 @@ export function race(effects: BuiltinEffect[]): RaceEffect {
 // ── Handler Chain ─────────────────────────────────────────────────
 
 // Internal send type — widened for dynamic message creation (http onSuccess/onError)
-type InternalSend = (msg: Record<string, unknown>) => void
+type InternalSend = (msg: unknown) => void
 type InternalHandler = (effect: { type: string }, send: InternalSend, signal: AbortSignal) => void
 
 export interface EffectCtx<E, M> {
@@ -257,6 +322,7 @@ interface EffectChain<E extends { type: string }, M> {
 export function handleEffects<E extends { type: string }, M = never>(): EffectChain<E, M> {
   const cancelControllers = new Map<string, AbortController>()
   const debounceTimers = new Map<string, ReturnType<typeof setTimeout>>()
+  const websockets = new Map<string, WebSocket>()
   const plugins: Array<(ctx: EffectCtx<unknown, unknown>) => boolean> = []
   let cleanupRegistered = false
 
@@ -286,6 +352,8 @@ export function handleEffects<E extends { type: string }, M = never>(): EffectCh
               cancelControllers.clear()
               for (const timer of debounceTimers.values()) clearTimeout(timer)
               debounceTimers.clear()
+              for (const ws of websockets.values()) ws.close()
+              websockets.clear()
             },
             { once: true },
           )
@@ -293,7 +361,15 @@ export function handleEffects<E extends { type: string }, M = never>(): EffectCh
         }
         // Widen send for internal dispatch — built-in effects create dynamic messages
         const internalSend = send as unknown as InternalSend
-        dispatchEffect(effect, internalSend, signal, cancelControllers, debounceTimers, custom)
+        dispatchEffect(
+          effect,
+          internalSend,
+          signal,
+          cancelControllers,
+          debounceTimers,
+          websockets,
+          custom,
+        )
       }
     },
   }
@@ -309,6 +385,7 @@ function dispatchEffect(
   signal: AbortSignal,
   cancelControllers: Map<string, AbortController>,
   debounceTimers: Map<string, ReturnType<typeof setTimeout>>,
+  websockets: Map<string, WebSocket>,
   custom: InternalHandler,
 ): void {
   switch (effect.type) {
@@ -322,11 +399,20 @@ function dispatchEffect(
         signal,
         cancelControllers,
         debounceTimers,
+        websockets,
         custom,
       )
       break
     case 'debounce':
-      runDebounce(effect as DebounceEffect, send, signal, cancelControllers, debounceTimers, custom)
+      runDebounce(
+        effect as DebounceEffect,
+        send,
+        signal,
+        cancelControllers,
+        debounceTimers,
+        websockets,
+        custom,
+      )
       break
     case 'timeout':
       runTimeout(effect as TimeoutEffect, send, signal)
@@ -353,47 +439,138 @@ function dispatchEffect(
       runBroadcastListen(effect as BroadcastListenEffect, send, signal)
       break
     case 'sequence':
-      runSequence(effect as SequenceEffect, send, signal, cancelControllers, debounceTimers, custom)
+      runSequence(
+        effect as SequenceEffect,
+        send,
+        signal,
+        cancelControllers,
+        debounceTimers,
+        websockets,
+        custom,
+      )
       break
     case 'race':
-      runRace(effect as RaceEffect, send, signal, cancelControllers, debounceTimers, custom)
+      runRace(
+        effect as RaceEffect,
+        send,
+        signal,
+        cancelControllers,
+        debounceTimers,
+        websockets,
+        custom,
+      )
+      break
+    case 'websocket':
+      runWebSocket(effect as WebSocketEffect, send, signal, websockets)
+      break
+    case 'ws-send':
+      runWsSend(effect as WebSocketSendEffect, websockets)
+      break
+    case 'retry':
+      runRetry(
+        effect as RetryEffect,
+        send,
+        signal,
+        cancelControllers,
+        debounceTimers,
+        websockets,
+        custom,
+      )
       break
     default:
       custom(effect, send, signal)
   }
 }
 
+function isPassThroughBody(body: unknown): body is FormData | Blob | URLSearchParams | ArrayBuffer {
+  return (
+    (typeof FormData !== 'undefined' && body instanceof FormData) ||
+    (typeof Blob !== 'undefined' && body instanceof Blob) ||
+    (typeof URLSearchParams !== 'undefined' && body instanceof URLSearchParams) ||
+    (typeof ArrayBuffer !== 'undefined' && body instanceof ArrayBuffer)
+  )
+}
+
 function runHttp(effect: HttpEffect, send: InternalSend, signal: AbortSignal): void {
-  const opts: RequestInit = { signal }
+  const fetchSignal = effect.timeout
+    ? AbortSignal.any([signal, AbortSignal.timeout(effect.timeout)])
+    : signal
+
+  const opts: RequestInit = { signal: fetchSignal }
   if (effect.method) opts.method = effect.method
-  if (effect.body) opts.body = JSON.stringify(effect.body)
-  if (effect.headers) opts.headers = effect.headers
+
+  if (effect.body !== undefined) {
+    if (isPassThroughBody(effect.body) || typeof effect.body === 'string') {
+      opts.body = effect.body as BodyInit
+    } else {
+      opts.body = JSON.stringify(effect.body)
+    }
+  }
+
+  // Build headers: start with user-provided, then add content-type logic
+  const headers: Record<string, string> = { ...(effect.headers ?? {}) }
+  if (effect.contentType) {
+    headers['content-type'] = effect.contentType
+  } else if (
+    effect.body !== undefined &&
+    !isPassThroughBody(effect.body) &&
+    typeof effect.body !== 'string'
+  ) {
+    // Auto-set for JSON-serialized bodies, unless user already set it
+    if (!headers['content-type'] && !headers['Content-Type']) {
+      headers['content-type'] = 'application/json'
+    }
+  }
+  if (Object.keys(headers).length > 0) opts.headers = headers
 
   fetch(effect.url, opts)
     .then(async (res) => {
       if (signal.aborted) return
 
       if (res.ok) {
-        // Success — parse response based on content type
-        const ct = res.headers.get('content-type') ?? ''
-        const data = ct.includes('application/json') ? await res.json() : await res.text()
-        send({ type: effect.onSuccess, payload: data })
+        const data = await parseResponseBody(res, effect.responseType)
+        send(effect.onSuccess(data, res.headers))
         return
       }
 
       // Map HTTP status to ApiError
       const error = await httpStatusToApiError(res)
-      send({ type: effect.onError, error })
+      send(effect.onError(error))
     })
     .catch((err: unknown) => {
       if (signal.aborted) return
       if (err instanceof DOMException && err.name === 'AbortError') return
+      if (err instanceof DOMException && err.name === 'TimeoutError') {
+        send(effect.onError({ kind: 'timeout' }))
+        return
+      }
       const error: ApiError =
         err instanceof TypeError && err.message.includes('fetch')
           ? { kind: 'network', message: err.message }
           : { kind: 'network', message: String(err) }
-      send({ type: effect.onError, error })
+      send(effect.onError(error))
     })
+}
+
+async function parseResponseBody(
+  res: Response,
+  responseType?: 'json' | 'text' | 'blob' | 'arrayBuffer',
+): Promise<unknown> {
+  if (responseType) {
+    switch (responseType) {
+      case 'json':
+        return res.json()
+      case 'text':
+        return res.text()
+      case 'blob':
+        return res.blob()
+      case 'arrayBuffer':
+        return res.arrayBuffer()
+    }
+  }
+  // Auto-detect from content-type
+  const ct = res.headers.get('content-type') ?? ''
+  return ct.includes('application/json') ? res.json() : res.text()
 }
 
 async function httpStatusToApiError(res: Response): Promise<ApiError> {
@@ -432,6 +609,7 @@ function runCancel(
   componentSignal: AbortSignal,
   cancelControllers: Map<string, AbortController>,
   debounceTimers: Map<string, ReturnType<typeof setTimeout>>,
+  websockets: Map<string, WebSocket>,
   custom: InternalHandler,
 ): void {
   const existing = cancelControllers.get(effect.token)
@@ -446,11 +624,25 @@ function runCancel(
     debounceTimers.delete(effect.token)
   }
 
+  const ws = websockets.get(effect.token)
+  if (ws) {
+    ws.close()
+    websockets.delete(effect.token)
+  }
+
   if ('inner' in effect && effect.inner) {
     const ctrl = new AbortController()
     cancelControllers.set(effect.token, ctrl)
     componentSignal.addEventListener('abort', () => ctrl.abort(), { once: true })
-    dispatchEffect(effect.inner, send, ctrl.signal, cancelControllers, debounceTimers, custom)
+    dispatchEffect(
+      effect.inner,
+      send,
+      ctrl.signal,
+      cancelControllers,
+      debounceTimers,
+      websockets,
+      custom,
+    )
   }
 }
 
@@ -499,6 +691,7 @@ function runDebounce(
   componentSignal: AbortSignal,
   cancelControllers: Map<string, AbortController>,
   debounceTimers: Map<string, ReturnType<typeof setTimeout>>,
+  websockets: Map<string, WebSocket>,
   custom: InternalHandler,
 ): void {
   const existing = debounceTimers.get(effect.key)
@@ -507,7 +700,15 @@ function runDebounce(
   const timer = setTimeout(() => {
     debounceTimers.delete(effect.key)
     if (!componentSignal.aborted) {
-      dispatchEffect(effect.inner, send, componentSignal, cancelControllers, debounceTimers, custom)
+      dispatchEffect(
+        effect.inner,
+        send,
+        componentSignal,
+        cancelControllers,
+        debounceTimers,
+        websockets,
+        custom,
+      )
     }
   }, effect.ms)
 
@@ -537,7 +738,7 @@ function runStorageRemove(effect: StorageRemoveEffect): void {
 function runStorageGet(effect: StorageGetEffect, send: InternalSend): void {
   const store = getStorage(effect.scope)
   if (!store) {
-    send({ type: effect.onLoad, value: null })
+    send(effect.onLoad(null))
     return
   }
   const raw = store.getItem(effect.key)
@@ -549,7 +750,7 @@ function runStorageGet(effect: StorageGetEffect, send: InternalSend): void {
       value = null
     }
   }
-  send({ type: effect.onLoad, value })
+  send(effect.onLoad(value))
 }
 
 function runStorageWatch(
@@ -571,7 +772,7 @@ function runStorageWatch(
         value = null
       }
     }
-    send({ type: effect.onChange, value })
+    send(effect.onChange(value))
   }
   window.addEventListener('storage', handler)
   signal.addEventListener('abort', () => window.removeEventListener('storage', handler), {
@@ -597,7 +798,7 @@ function runBroadcastListen(
   if (typeof BroadcastChannel === 'undefined') return
   const bc = new BroadcastChannel(effect.channel)
   bc.addEventListener('message', (e: MessageEvent) => {
-    send({ type: effect.onMessage, data: e.data })
+    send(effect.onMessage(e.data))
   })
   signal.addEventListener(
     'abort',
@@ -608,12 +809,125 @@ function runBroadcastListen(
   )
 }
 
+function runWebSocket(
+  effect: WebSocketEffect,
+  send: InternalSend,
+  signal: AbortSignal,
+  websockets: Map<string, WebSocket>,
+): void {
+  // Close existing websocket on the same key
+  const existing = websockets.get(effect.key)
+  if (existing) existing.close()
+
+  const ws = effect.protocols
+    ? new WebSocket(effect.url, effect.protocols)
+    : new WebSocket(effect.url)
+  websockets.set(effect.key, ws)
+
+  ws.onopen = () => {
+    if (effect.onOpen) send(effect.onOpen())
+  }
+
+  ws.onmessage = (e: MessageEvent) => {
+    let data: unknown
+    try {
+      data = JSON.parse(e.data as string)
+    } catch {
+      data = e.data
+    }
+    send(effect.onMessage(data))
+  }
+
+  ws.onclose = (e: CloseEvent) => {
+    websockets.delete(effect.key)
+    if (effect.onClose) send(effect.onClose(e.code, e.reason))
+  }
+
+  ws.onerror = () => {
+    if (effect.onError) send(effect.onError())
+  }
+
+  signal.addEventListener(
+    'abort',
+    () => {
+      ws.close()
+      websockets.delete(effect.key)
+    },
+    { once: true },
+  )
+}
+
+function runWsSend(effect: WebSocketSendEffect, websockets: Map<string, WebSocket>): void {
+  const ws = websockets.get(effect.key)
+  if (!ws || ws.readyState !== WebSocket.OPEN) return
+  ws.send(typeof effect.data === 'string' ? effect.data : JSON.stringify(effect.data))
+}
+
+function runRetry(
+  effect: RetryEffect,
+  send: InternalSend,
+  signal: AbortSignal,
+  cancelControllers: Map<string, AbortController>,
+  debounceTimers: Map<string, ReturnType<typeof setTimeout>>,
+  websockets: Map<string, WebSocket>,
+  custom: InternalHandler,
+): void {
+  const inner = effect.inner
+  // Retry only works for http effects
+  if (inner.type !== 'http') {
+    dispatchEffect(inner, send, signal, cancelControllers, debounceTimers, websockets, custom)
+    return
+  }
+
+  const httpEffect = inner as HttpEffect
+  let attempt = 0
+
+  function tryOnce(): void {
+    if (signal.aborted) return
+
+    // Wrap the http effect with an intercepted onError
+    const wrapped: HttpEffect = {
+      ...httpEffect,
+      onError: (error: ApiError) => {
+        attempt++
+        if (attempt < effect.maxAttempts) {
+          const delay = effect.delayMs * Math.pow(2, attempt - 1)
+          const timer = setTimeout(() => {
+            if (!signal.aborted) tryOnce()
+          }, delay)
+          signal.addEventListener('abort', () => clearTimeout(timer), { once: true })
+          return undefined as unknown // message is suppressed
+        }
+        return httpEffect.onError(error)
+      },
+    }
+
+    // Use a custom send that suppresses undefined messages (from retry interception)
+    const retrySend: InternalSend = (msg: unknown) => {
+      if (msg !== undefined) send(msg)
+    }
+
+    dispatchEffect(
+      wrapped,
+      retrySend,
+      signal,
+      cancelControllers,
+      debounceTimers,
+      websockets,
+      custom,
+    )
+  }
+
+  tryOnce()
+}
+
 function runSequence(
   effect: SequenceEffect,
   send: InternalSend,
   signal: AbortSignal,
   cancelControllers: Map<string, AbortController>,
   debounceTimers: Map<string, ReturnType<typeof setTimeout>>,
+  websockets: Map<string, WebSocket>,
   custom: InternalHandler,
 ): void {
   const effects = effect.effects.slice()
@@ -627,7 +941,15 @@ function runSequence(
       next()
     }
 
-    dispatchEffect(current, wrappedSend, signal, cancelControllers, debounceTimers, custom)
+    dispatchEffect(
+      current,
+      wrappedSend,
+      signal,
+      cancelControllers,
+      debounceTimers,
+      websockets,
+      custom,
+    )
   }
 
   next()
@@ -639,6 +961,7 @@ function runRace(
   signal: AbortSignal,
   cancelControllers: Map<string, AbortController>,
   debounceTimers: Map<string, ReturnType<typeof setTimeout>>,
+  websockets: Map<string, WebSocket>,
   custom: InternalHandler,
 ): void {
   const ctrl = new AbortController()
@@ -653,7 +976,15 @@ function runRace(
   }
 
   for (const inner of effect.effects) {
-    dispatchEffect(inner, raceSend, ctrl.signal, cancelControllers, debounceTimers, custom)
+    dispatchEffect(
+      inner,
+      raceSend,
+      ctrl.signal,
+      cancelControllers,
+      debounceTimers,
+      websockets,
+      custom,
+    )
   }
 }
 

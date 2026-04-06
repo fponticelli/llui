@@ -26,20 +26,20 @@ view({ show, text }) {
 
 ### Core
 
-| Function                    | Description                                          |
-| --------------------------- | ---------------------------------------------------- |
+| Function                       | Description                                             |
+| ------------------------------ | ------------------------------------------------------- |
 | `transition({ enter, leave })` | Core transition -- define custom enter/leave animations |
-| `mergeTransitions(a, b)`    | Combine two transitions into one                     |
+| `mergeTransitions(a, b)`       | Combine two transitions into one                        |
 
 ### Presets
 
-| Function             | Options                         | Description                    |
-| -------------------- | ------------------------------- | ------------------------------ |
-| `fade(options?)`     | `duration`, `easing`            | Fade in/out                    |
+| Function             | Options                           | Description                                          |
+| -------------------- | --------------------------------- | ---------------------------------------------------- |
+| `fade(options?)`     | `duration`, `easing`              | Fade in/out                                          |
 | `slide(options?)`    | `direction`, `duration`, `easing` | Slide from direction (`up`, `down`, `left`, `right`) |
-| `scale(options?)`    | `from`, `duration`, `easing`    | Scale transform in/out         |
-| `collapse(options?)` | `duration`, `easing`            | Height collapse/expand         |
-| `flip(options?)`     | `duration`, `easing`            | FLIP reorder animation for `each()` |
+| `scale(options?)`    | `from`, `duration`, `easing`      | Scale transform in/out                               |
+| `collapse(options?)` | `duration`, `easing`              | Height collapse/expand                               |
+| `flip(options?)`     | `duration`, `easing`              | FLIP reorder animation for `each()`                  |
 
 ### Integration
 
@@ -53,7 +53,11 @@ show({ when: (s) => s.open, render: () => content(), ...fade() })
 each({
   items: (s) => s.list,
   key: (item) => item.id,
-  render: (item) => li({}, text(() => item.name)),
+  render: (item) =>
+    li(
+      {},
+      text(() => item.name),
+    ),
   ...flip({ duration: 200 }),
 })
 ```

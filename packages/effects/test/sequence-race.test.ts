@@ -35,8 +35,16 @@ describe('sequence', () => {
 
     handler({
       effect: sequence([
-        http({ url: '/first', onSuccess: 'r1', onError: 'e1' }),
-        http({ url: '/second', onSuccess: 'r2', onError: 'e2' }),
+        http({
+          url: '/first',
+          onSuccess: (data) => ({ type: 'r1', payload: data }),
+          onError: (err) => ({ type: 'e1', error: err }),
+        }),
+        http({
+          url: '/second',
+          onSuccess: (data) => ({ type: 'r2', payload: data }),
+          onError: (err) => ({ type: 'e2', error: err }),
+        }),
       ]),
       send,
       signal,
@@ -79,8 +87,16 @@ describe('race', () => {
 
     handler({
       effect: race([
-        http({ url: '/a', onSuccess: 'a', onError: 'e' }),
-        http({ url: '/b', onSuccess: 'b', onError: 'e' }),
+        http({
+          url: '/a',
+          onSuccess: (data) => ({ type: 'a', payload: data }),
+          onError: (err) => ({ type: 'e', error: err }),
+        }),
+        http({
+          url: '/b',
+          onSuccess: (data) => ({ type: 'b', payload: data }),
+          onError: (err) => ({ type: 'e', error: err }),
+        }),
       ]),
       send,
       signal: controller.signal,
@@ -110,8 +126,16 @@ describe('race', () => {
 
     handler({
       effect: race([
-        http({ url: '/slow', onSuccess: 'slow', onError: 'e' }),
-        http({ url: '/fast', onSuccess: 'fast', onError: 'e' }),
+        http({
+          url: '/slow',
+          onSuccess: (data) => ({ type: 'slow', payload: data }),
+          onError: (err) => ({ type: 'e', error: err }),
+        }),
+        http({
+          url: '/fast',
+          onSuccess: (data) => ({ type: 'fast', payload: data }),
+          onError: (err) => ({ type: 'e', error: err }),
+        }),
       ]),
       send,
       signal: controller.signal,
