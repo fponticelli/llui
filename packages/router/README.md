@@ -55,6 +55,53 @@ const routing = connectRouter(router)
 | `.forward()`                          | Navigate forward effect                                       |
 | `.scroll()`                           | Scroll restoration effect                                     |
 
+## Guards
+
+Router guards let you block or redirect navigation. Pass `beforeEnter` and/or `beforeLeave` to `connectRouter`:
+
+```ts
+const routing = connectRouter(router, {
+  // Called before entering a new route
+  beforeEnter(to, from) {
+    // Return void   → allow
+    // Return false  → block
+    // Return Route  → redirect
+  },
+  // Called before leaving the current route
+  beforeLeave(from, to) {
+    // Return true  → allow
+    // Return false → block
+  },
+})
+```
+
+Guards run in the effect handler and the popstate listener, keeping `update()` pure.
+
+### Auth guard
+
+```ts
+const routing = connectRouter(router, {
+  beforeEnter(to) {
+    if (to.page === 'admin' && !isLoggedIn()) {
+      return { page: 'login' }
+    }
+  },
+})
+```
+
+### Unsaved changes guard
+
+```ts
+const routing = connectRouter(router, {
+  beforeLeave(from) {
+    if (from.page === 'editor' && hasUnsavedChanges()) {
+      return confirm('Discard unsaved changes?')
+    }
+    return true
+  },
+})
+```
+
 ## License
 
 MIT

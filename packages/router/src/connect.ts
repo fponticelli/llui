@@ -11,6 +11,22 @@ export interface RouterEffect {
   y?: number
 }
 
+export interface ConnectOptions<R> {
+  /**
+   * Called before entering a new route. Return:
+   * - `void` / `undefined` → allow navigation
+   * - `false` → block navigation (stay on current route)
+   * - a different `Route` → redirect to that route
+   */
+  beforeEnter?: (to: R, from: R | null) => R | false | void
+  /**
+   * Called before leaving the current route. Return:
+   * - `true` → allow navigation
+   * - `false` → block (e.g. unsaved changes prompt)
+   */
+  beforeLeave?: (from: R, to: R) => boolean
+}
+
 export interface ConnectedRouter<R> {
   /** Effect: push a new route onto history */
   push(route: R): RouterEffect
@@ -60,23 +76,54 @@ export interface ConnectedRouter<R> {
   }): (state: S, msg: M) => [S, E[]] | null
 }
 
-export function connectRouter<R>(router: Router<R>): ConnectedRouter<R> {
+export function connectRouter<R>(router: Router<R>, options?: ConnectOptions<R>): ConnectedRouter<R> {
+  let currentRoute: R | null = null
+  /**
+   * Run guards for a navigation to `newRoute`. Returns the final route
+   * to navigate to, or `null` if navigation should be blocked.
+   */
+  function runGuards(newRoute: R): R | null {
+    if (options?.beforeLeave && currentRoute !== null) {
+      if (!options.beforeLeave(currentRoute, newRoute)) return null
+    }
+    if (options?.beforeEnter) {
+      const result = options.beforeEnter(newRoute, currentRoute)
+      if (result === false) return null
+      if (result !== undefined && result !== null && typeof result === 'object') {
+        return result as R
+      }
+    }
+    return newRoute
+  }
+
   function applyEffect(effect: RouterEffect): void {
     switch (effect.action) {
-      case 'push':
+      case 'push': {
+        const target = router.match(effect.path!)
+        const finalRoute = runGuards(target)
+        if (finalRoute === null) return
+        const finalPath = router.href(finalRoute)
         if (router.mode === 'hash') {
-          location.hash = effect.path!
+          location.hash = finalPath
         } else {
-          history.pushState(null, '', effect.path!)
+          history.pushState(null, '', finalPath)
         }
+        currentRoute = finalRoute
         break
-      case 'replace':
+      }
+      case 'replace': {
+        const target = router.match(effect.path!)
+        const finalRoute = runGuards(target)
+        if (finalRoute === null) return
+        const finalPath = router.href(finalRoute)
         if (router.mode === 'hash') {
-          location.replace(effect.path!)
+          location.replace(finalPath)
         } else {
-          history.replaceState(null, '', effect.path!)
+          history.replaceState(null, '', finalPath)
         }
+        currentRoute = finalRoute
         break
+      }
       case 'back':
         history.back()
         break
@@ -119,7 +166,17 @@ export function connectRouter<R>(router: Router<R>): ConnectedRouter<R> {
         const handler = () => {
           const input = router.mode === 'hash' ? location.hash : location.pathname + location.search
           const route = router.match(input)
-          send(factory(route))
+          const finalRoute = runGuards(route)
+          if (finalRoute === null) {
+            // Guard blocked — restore previous URL
+            if (currentRoute !== null) {
+              const restorePath = router.href(currentRoute)
+              history.pushState(null, '', restorePath)
+            }
+            return
+          }
+          currentRoute = finalRoute
+          send(factory(finalRoute))
         }
         window.addEventListener(event, handler)
         return () => window.removeEventListener(event, handler)
