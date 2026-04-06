@@ -25,15 +25,15 @@ export const appDef = component<State, Msg, Effect>({
 
       ...routing.listener(send),
 
-      // TODO(view-signature-migration): repoPage reads state.route at mount
-      // time for routing.link's literal owner/name params. Needs refactoring
-      // to use accessors. For now, snapshot from init state at module scope.
       ...branch({
         on: (s) => s.route.page,
         cases: {
           search: (send) => searchView(send),
-          repo: (send) => repoPage(h, initialState(), send),
-          tree: (send) => repoPage(h, initialState(), send),
+          // routing.link needs literal owner/name for href. Read from
+          // location.pathname which is current when the branch re-enters
+          // (routing.handleEffect pushes state before navigate resolves).
+          repo: (send) => repoPage(h, router.match(location.pathname), send),
+          tree: (send) => repoPage(h, router.match(location.pathname), send),
         },
       }),
     ]

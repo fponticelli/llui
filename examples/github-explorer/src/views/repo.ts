@@ -1,5 +1,5 @@
 import { div, h1, h3, a, p, span, text, slice } from '@llui/dom'
-import type { State, Msg, Repo, TreeEntry, Issue } from '../types'
+import type { State, Msg, Route, Repo, TreeEntry, Issue } from '../types'
 import type { Send, View } from '@llui/dom'
 import { routing } from '../router'
 import { readmeView } from './foreign-readme'
@@ -20,18 +20,17 @@ function routeOwnerName(s: State): { owner: string; name: string } | null {
   return null
 }
 
-// TODO(view-signature-migration): `s` was mount-time snapshot; these reads
-// were already a footgun. routing.link needs a literal owner/name at mount.
-// Consider inlining the link builder into the reactive path.
-export function repoPage(h: View<State, Msg>, s: State, send: Send<Msg>): Node[] {
+// routing.link needs literal owner/name for href. The Route is read from
+// location.pathname at branch-render time — the URL is current because
+// routing.handleEffect pushes state before the navigate message resolves.
+export function repoPage(h: View<State, Msg>, route: Route, send: Send<Msg>): Node[] {
   const { show } = h
   // Sub-view bound to s.route — demonstrates `slice()` for view-functions
   // that only read a sub-slice of the parent component's state.
   const { branch } = slice(h, (s) => s.route)
-  // owner/name from route (always available)
-  const rp = routeOwnerName(s)
-  const owner = rp?.owner ?? ''
-  const name = rp?.name ?? ''
+  // owner/name from the current route (literal values for routing.link hrefs)
+  const owner = 'owner' in route ? route.owner : ''
+  const name = 'name' in route ? route.name : ''
 
   return [
     div({ class: 'repo-header' }, [
@@ -120,8 +119,8 @@ export function repoPage(h: View<State, Msg>, s: State, send: Send<Msg>): Node[]
               }),
             ]),
           ],
-          code: (send) => [...breadcrumb(s, send), ...fileTree(h, send), ...readmeView()],
-          file: (send) => [...breadcrumb(s, send), ...codeView()],
+          code: (send) => [...breadcrumb(route, send), ...fileTree(h, send), ...readmeView()],
+          file: (send) => [...breadcrumb(route, send), ...codeView()],
           issues: () => issuesList(h),
         },
       }),
@@ -129,8 +128,8 @@ export function repoPage(h: View<State, Msg>, s: State, send: Send<Msg>): Node[]
   ]
 }
 
-function breadcrumb(s: State, send: Send<Msg>): Node[] {
-  const route = s.route
+function breadcrumb(currentRoute: Route, send: Send<Msg>): Node[] {
+  const route = currentRoute
   if (route.page !== 'tree') return []
   const { owner, name, path } = route
   if (!path) return []
