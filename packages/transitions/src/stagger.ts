@@ -24,10 +24,7 @@ export interface StaggerOptions {
  * })
  * ```
  */
-export function stagger(
-  spec: TransitionOptions,
-  opts?: StaggerOptions,
-): TransitionOptions {
+export function stagger(spec: TransitionOptions, opts?: StaggerOptions): TransitionOptions {
   const delayPerItem = opts?.delayPerItem ?? 30
   const leaveOrder = opts?.leaveOrder ?? 'simultaneous'
 

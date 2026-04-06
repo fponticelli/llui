@@ -2,7 +2,11 @@ import { describe, it, expect, vi } from 'vitest'
 import { createRouter, route, param } from '../src/index'
 import { connectRouter } from '../src/connect'
 
-type Route = { page: 'home' } | { page: 'admin' } | { page: 'login' } | { page: 'article'; slug: string }
+type Route =
+  | { page: 'home' }
+  | { page: 'admin' }
+  | { page: 'login' }
+  | { page: 'article'; slug: string }
 
 function makeRouter() {
   return createRouter<Route>(
@@ -197,7 +201,7 @@ describe('router guards', () => {
       const router = makeRouter()
       const routing = connectRouter(router, {
         beforeEnter: (to) => {
-          if (to.page === 'admin') return { page: 'login' }
+          if (to.page === 'admin') return { page: 'login' } as const
         },
       })
 

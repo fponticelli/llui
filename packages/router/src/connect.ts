@@ -76,7 +76,10 @@ export interface ConnectedRouter<R> {
   }): (state: S, msg: M) => [S, E[]] | null
 }
 
-export function connectRouter<R>(router: Router<R>, options?: ConnectOptions<R>): ConnectedRouter<R> {
+export function connectRouter<R>(
+  router: Router<R>,
+  options?: ConnectOptions<R>,
+): ConnectedRouter<R> {
   let currentRoute: R | null = null
   /**
    * Run guards for a navigation to `newRoute`. Returns the final route

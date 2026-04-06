@@ -211,9 +211,7 @@ describe('lintIdiomatic', () => {
     `
     const result = lintIdiomatic(source)
     expect(result.violations.some((v) => v.rule === 'async-update')).toBe(true)
-    expect(
-      result.violations.some((v) => v.message.includes('synchronous and pure')),
-    ).toBe(true)
+    expect(result.violations.some((v) => v.message.includes('synchronous and pure'))).toBe(true)
   })
 
   it('does not flag synchronous update', () => {
@@ -248,9 +246,7 @@ describe('lintIdiomatic', () => {
     `
     const result = lintIdiomatic(source)
     expect(result.violations.some((v) => v.rule === 'direct-state-in-view')).toBe(true)
-    expect(
-      result.violations.some((v) => v.message.includes('stale state capture')),
-    ).toBe(true)
+    expect(result.violations.some((v) => v.message.includes('stale state capture'))).toBe(true)
   })
 
   it('does not flag accessor-based state reads in view', () => {
@@ -286,9 +282,7 @@ describe('lintIdiomatic', () => {
     `
     const result = lintIdiomatic(source)
     expect(result.violations.some((v) => v.rule === 'exhaustive-effect-handling')).toBe(true)
-    expect(
-      result.violations.some((v) => v.message.includes('silently drops')),
-    ).toBe(true)
+    expect(result.violations.some((v) => v.message.includes('silently drops'))).toBe(true)
   })
 
   it('detects empty .else() handler with param', () => {
@@ -334,9 +328,7 @@ describe('lintIdiomatic', () => {
     `
     const result = lintIdiomatic(source)
     expect(result.violations.some((v) => v.rule === 'effect-without-handler')).toBe(true)
-    expect(
-      result.violations.some((v) => v.message.includes('no onEffect handler')),
-    ).toBe(true)
+    expect(result.violations.some((v) => v.message.includes('no onEffect handler'))).toBe(true)
   })
 
   it('does not flag component with onEffect handler', () => {
@@ -368,9 +360,7 @@ describe('lintIdiomatic', () => {
     `
     const result = lintIdiomatic(source)
     expect(result.violations.some((v) => v.rule === 'forgotten-spread')).toBe(true)
-    expect(
-      result.violations.some((v) => v.message.includes('spread it')),
-    ).toBe(true)
+    expect(result.violations.some((v) => v.message.includes('spread it'))).toBe(true)
   })
 
   it('does not flag spread show/each/branch', () => {
@@ -398,9 +388,7 @@ describe('lintIdiomatic', () => {
     `
     const result = lintIdiomatic(source)
     expect(result.violations.some((v) => v.rule === 'string-effect-callback')).toBe(true)
-    expect(
-      result.violations.some((v) => v.message.includes('deprecated')),
-    ).toBe(true)
+    expect(result.violations.some((v) => v.message.includes('deprecated'))).toBe(true)
   })
 
   it('does not flag function-based effect callbacks', () => {
@@ -429,9 +417,7 @@ describe('lintIdiomatic', () => {
     `
     const result = lintIdiomatic(source)
     expect(result.violations.some((v) => v.rule === 'nested-send-in-update')).toBe(true)
-    expect(
-      result.violations.some((v) => v.message.includes('recursive dispatch')),
-    ).toBe(true)
+    expect(result.violations.some((v) => v.message.includes('recursive dispatch'))).toBe(true)
   })
 
   it('does not flag send() outside update()', () => {
@@ -467,9 +453,7 @@ describe('lintIdiomatic', () => {
     `
     const result = lintIdiomatic(source)
     expect(result.violations.some((v) => v.rule === 'imperative-dom-in-view')).toBe(true)
-    expect(
-      result.violations.some((v) => v.message.includes('Imperative DOM access')),
-    ).toBe(true)
+    expect(result.violations.some((v) => v.message.includes('Imperative DOM access'))).toBe(true)
   })
 
   it('does not flag document.querySelector inside onMount()', () => {
@@ -505,9 +489,7 @@ describe('lintIdiomatic', () => {
     `
     const result = lintIdiomatic(source)
     expect(result.violations.some((v) => v.rule === 'accessor-side-effect')).toBe(true)
-    expect(
-      result.violations.some((v) => v.message.includes('Side effect in accessor')),
-    ).toBe(true)
+    expect(result.violations.some((v) => v.message.includes('Side effect in accessor'))).toBe(true)
   })
 
   it('does not flag accessor without side effects', () => {

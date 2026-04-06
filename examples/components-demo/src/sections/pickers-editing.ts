@@ -175,7 +175,9 @@ export const App = component<State, Msg, never>({
     previewParts.onClick = (e: MouseEvent): void => {
       origClick(e)
       queueMicrotask(() => {
-        const inp = document.querySelector<HTMLInputElement>('[data-scope="editable"][data-part="input"]')
+        const inp = document.querySelector<HTMLInputElement>(
+          '[data-scope="editable"][data-part="input"]',
+        )
         inp?.focus()
         inp?.select()
       })
@@ -223,7 +225,9 @@ export const App = component<State, Msg, never>({
 
     const dpGrid = (): Node[] => {
       const dowLabels = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
-      const dowCells = dowLabels.map((d) => span({ class: 'text-center text-[0.625rem] uppercase text-text-muted py-1' }, [text(d)]))
+      const dowCells = dowLabels.map((d) =>
+        span({ class: 'text-center text-[0.625rem] uppercase text-text-muted py-1' }, [text(d)]),
+      )
       const cells = each({
         items: (s) => monthGrid(s.datePicker),
         key: (c) => c.iso,
@@ -328,9 +332,7 @@ export const App = component<State, Msg, never>({
       sectionGroup('Inline editing', [
         card('Editable', [
           div({ ...ed.root }, [
-            span({ ...previewParts }, [
-              text((s: State) => s.editable.value || 'Click to edit'),
-            ]),
+            span({ ...previewParts }, [text((s: State) => s.editable.value || 'Click to edit')]),
             input({ ...ed.input }),
           ]),
           div({ class: 'mt-2 text-xs text-text-muted' }, [

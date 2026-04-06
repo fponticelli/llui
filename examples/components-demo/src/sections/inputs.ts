@@ -343,9 +343,7 @@ export const App = component<State, Msg, never>({
             ['small', 'medium', 'large'].map((v) => {
               const p = rg.item(v)
               return label({ class: 'flex items-center gap-2 cursor-pointer' }, [
-                div({ ...p.root }, [
-                  div({ ...p.indicator }, []),
-                ]),
+                div({ ...p.root }, [div({ ...p.indicator }, [])]),
                 span({ class: 'text-sm' }, [text(v.charAt(0).toUpperCase() + v.slice(1))]),
               ])
             }),
@@ -411,10 +409,7 @@ export const App = component<State, Msg, never>({
                 const idx = index()
                 const tag = ti.tag(value, idx)
                 return [
-                  span({ ...tag.root }, [
-                    text(value),
-                    button({ ...tag.remove }, [text('×')]),
-                  ]),
+                  span({ ...tag.root }, [text(value), button({ ...tag.remove }, [text('×')])]),
                 ]
               },
             }),

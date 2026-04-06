@@ -48,23 +48,23 @@ lintIdiomatic(source: string, filename?: string) => { violations: Violation[], s
 
 ## Rules
 
-| Rule                     | Description                                                              |
-| ------------------------ | ------------------------------------------------------------------------ |
-| `state-mutation`         | Direct mutation of state in `update()` instead of returning a new object |
-| `missing-memo`           | Expensive derived computation in `view()` without `memo()`               |
-| `each-closure-violation` | Capturing mutable outer variable inside `each()` render callback         |
-| `map-on-state-array`     | Calling `.map()` on a state array in `view()` (use `each()` instead)     |
-| `unnecessary-child`      | Using `child()` boundary when a view function would suffice              |
-| `form-boilerplate`       | Repetitive form field pattern that could use a view function             |
-| `async-update`           | Using `async`/`await` in `update()` — must be synchronous and pure      |
-| `direct-state-in-view`   | Stale state capture in event handler instead of using an accessor        |
-| `exhaustive-effect-handling` | Empty `.else()` handler silently drops unhandled effects             |
-| `effect-without-handler` | Component returns effects but has no `onEffect` handler                  |
-| `forgotten-spread`       | `show()`/`branch()`/`each()` used without spread in children array       |
-| `string-effect-callback` | Deprecated string-based `onSuccess`/`onError` in effect declarations     |
-| `nested-send-in-update`  | Calling `send()` inside `update()` causes recursive dispatch             |
-| `imperative-dom-in-view` | Using `document.querySelector` etc. in `view()` instead of primitives    |
-| `accessor-side-effect`   | Side effects (fetch, console.log, etc.) inside reactive accessor functions |
+| Rule                         | Description                                                                |
+| ---------------------------- | -------------------------------------------------------------------------- |
+| `state-mutation`             | Direct mutation of state in `update()` instead of returning a new object   |
+| `missing-memo`               | Expensive derived computation in `view()` without `memo()`                 |
+| `each-closure-violation`     | Capturing mutable outer variable inside `each()` render callback           |
+| `map-on-state-array`         | Calling `.map()` on a state array in `view()` (use `each()` instead)       |
+| `unnecessary-child`          | Using `child()` boundary when a view function would suffice                |
+| `form-boilerplate`           | Repetitive form field pattern that could use a view function               |
+| `async-update`               | Using `async`/`await` in `update()` — must be synchronous and pure         |
+| `direct-state-in-view`       | Stale state capture in event handler instead of using an accessor          |
+| `exhaustive-effect-handling` | Empty `.else()` handler silently drops unhandled effects                   |
+| `effect-without-handler`     | Component returns effects but has no `onEffect` handler                    |
+| `forgotten-spread`           | `show()`/`branch()`/`each()` used without spread in children array         |
+| `string-effect-callback`     | Deprecated string-based `onSuccess`/`onError` in effect declarations       |
+| `nested-send-in-update`      | Calling `send()` inside `update()` causes recursive dispatch               |
+| `imperative-dom-in-view`     | Using `document.querySelector` etc. in `view()` instead of primitives      |
+| `accessor-side-effect`       | Side effects (fetch, console.log, etc.) inside reactive accessor functions |
 
 ## License
 

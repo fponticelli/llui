@@ -306,9 +306,7 @@ export const App = component<State, Msg, never>({
     const menuItems = (): Node[] =>
       ['Edit', 'Duplicate', 'Archive', 'Delete'].map((v) => div({ ...me.item(v).item }, [text(v)]))
     const ctxMenuItems = (): Node[] =>
-      ['Cut', 'Copy', 'Paste', 'Delete'].map((v) =>
-        div({ ...cm.item(v).item }, [text(v)]),
-      )
+      ['Cut', 'Copy', 'Paste', 'Delete'].map((v) => div({ ...cm.item(v).item }, [text(v)]))
 
     type Toast = { id: string; type: string; title?: string; description?: string }
     const toastRegion = div(

@@ -200,16 +200,13 @@ export const App = component<State, Msg, never>({
       ])
     }
 
-    const pgItem = (page: number): Node =>
-      button({ ...pg.item(page) }, [text(String(page))])
+    const pgItem = (page: number): Node => button({ ...pg.item(page) }, [text(String(page))])
 
     const slides = ['Mountains', 'Ocean', 'Forest', 'Desert']
     const colors = ['#0891b2', '#0284c7', '#166534', '#d97706']
     const renderSlides = (): Node[] =>
       slides.map((s, i) =>
-        div({ ...cr.slide(i).slide, style: `background:${colors[i]}` }, [
-          text(s),
-        ]),
+        div({ ...cr.slide(i).slide, style: `background:${colors[i]}` }, [text(s)]),
       )
     const renderIndicators = (): Node[] =>
       slides.map((_, i) => button({ ...cr.slide(i).indicator }, []))
@@ -217,21 +214,13 @@ export const App = component<State, Msg, never>({
     const treeBranch = (id: string, label: string, depth: number, children: Node[]): Node => {
       const p = tv.item(id, depth, true)
       return div([
-        div({ ...p.item }, [
-          button({ ...p.branchTrigger }, [text('▸')]),
-          span([text(label)]),
-        ]),
-        div(
-          { class: 'pl-4', hidden: (s: State) => !s.treeView.expanded.includes(id) },
-          children,
-        ),
+        div({ ...p.item }, [button({ ...p.branchTrigger }, [text('▸')]), span([text(label)])]),
+        div({ class: 'pl-4', hidden: (s: State) => !s.treeView.expanded.includes(id) }, children),
       ])
     }
     const treeLeaf = (id: string, label: string, depth: number): Node => {
       const p = tv.item(id, depth, false)
-      return div({ ...p.item, class: 'pl-5' }, [
-        span([text(label)]),
-      ])
+      return div({ ...p.item, class: 'pl-5' }, [span([text(label)])])
     }
 
     return [

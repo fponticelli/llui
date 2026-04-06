@@ -258,48 +258,45 @@ export const App = component<State, Msg, never>({
             p({ class: 'text-xs text-text-muted' }, [
               text('Drag the crop box to pan; drag the corner handle to resize (1:1 aspect).'),
             ]),
-            div(
-              { class: 'relative inline-block border border-border rounded overflow-hidden' },
-              [
-                img({
-                  ...ic.image,
-                  src: PLACEHOLDER_IMG,
-                  alt: 'Sample image for cropping',
-                  class: 'block w-[400px] h-[300px] select-none',
-                }),
-                // Crop box overlay — positioned via percentage from the
-                // component's style binding. Darkens outside area via
-                // box-shadow.
-                div(
-                  {
-                    ...ic.cropBox,
-                    class: 'absolute cursor-move border-2 border-white',
-                    style: (s: State) => {
-                      const st = s.crop
-                      if (st.image.width === 0 || st.image.height === 0) return 'display:none;'
-                      const xp = (st.crop.x / st.image.width) * 100
-                      const yp = (st.crop.y / st.image.height) * 100
-                      const wp = (st.crop.width / st.image.width) * 100
-                      const hp = (st.crop.height / st.image.height) * 100
-                      return (
-                        `left:${xp}%;top:${yp}%;width:${wp}%;height:${hp}%;` +
-                        `box-shadow: 0 0 0 9999px rgba(0,0,0,0.5);touch-action:none;`
-                      )
-                    },
+            div({ class: 'relative inline-block border border-border rounded overflow-hidden' }, [
+              img({
+                ...ic.image,
+                src: PLACEHOLDER_IMG,
+                alt: 'Sample image for cropping',
+                class: 'block w-[400px] h-[300px] select-none',
+              }),
+              // Crop box overlay — positioned via percentage from the
+              // component's style binding. Darkens outside area via
+              // box-shadow.
+              div(
+                {
+                  ...ic.cropBox,
+                  class: 'absolute cursor-move border-2 border-white',
+                  style: (s: State) => {
+                    const st = s.crop
+                    if (st.image.width === 0 || st.image.height === 0) return 'display:none;'
+                    const xp = (st.crop.x / st.image.width) * 100
+                    const yp = (st.crop.y / st.image.height) * 100
+                    const wp = (st.crop.width / st.image.width) * 100
+                    const hp = (st.crop.height / st.image.height) * 100
+                    return (
+                      `left:${xp}%;top:${yp}%;width:${wp}%;height:${hp}%;` +
+                      `box-shadow: 0 0 0 9999px rgba(0,0,0,0.5);touch-action:none;`
+                    )
                   },
-                  [
-                    div(
-                      {
-                        ...ic.resizeHandle('se'),
-                        class:
-                          'absolute -bottom-1 -right-1 w-3 h-3 bg-white border border-border cursor-se-resize rounded-sm',
-                      },
-                      [],
-                    ),
-                  ],
-                ),
-              ],
-            ),
+                },
+                [
+                  div(
+                    {
+                      ...ic.resizeHandle('se'),
+                      class:
+                        'absolute -bottom-1 -right-1 w-3 h-3 bg-white border border-border cursor-se-resize rounded-sm',
+                    },
+                    [],
+                  ),
+                ],
+              ),
+            ]),
             div({ class: 'flex items-center gap-2 text-xs' }, [
               button({ ...ic.resetTrigger, class: 'btn btn-secondary' }, [text('Reset crop')]),
               span({ class: 'text-text-muted' }, [

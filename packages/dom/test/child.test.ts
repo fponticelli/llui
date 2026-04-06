@@ -156,9 +156,7 @@ describe('child()', () => {
       name: 'SpyParent',
       init: () => [{}, []],
       update: (s) => [s, []],
-      view: () => [
-        ...child({ def: ChildSpy, key: 'spy', props: () => ({}) }),
-      ],
+      view: () => [...child({ def: ChildSpy, key: 'spy', props: () => ({}) })],
     }
 
     const container = document.createElement('div')
@@ -200,9 +198,7 @@ describe('child()', () => {
       name: 'ListParent',
       init: () => [{}, []],
       update: (s) => [s, []],
-      view: () => [
-        ...child({ def: ListChild, key: 'list', props: () => ({}) }),
-      ],
+      view: () => [...child({ def: ListChild, key: 'list', props: () => ({}) })],
     }
 
     const container = document.createElement('div')

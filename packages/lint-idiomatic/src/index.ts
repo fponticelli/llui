@@ -648,11 +648,7 @@ interface MsgVariantShape {
 
 // ── Rule 7: async-update ───────────────────────────────────────────
 
-function checkAsyncUpdate(
-  sf: ts.SourceFile,
-  filename: string,
-  violations: LintViolation[],
-): void {
+function checkAsyncUpdate(sf: ts.SourceFile, filename: string, violations: LintViolation[]): void {
   function visit(node: ts.Node): void {
     if (
       ts.isPropertyAssignment(node) &&
@@ -667,8 +663,7 @@ function checkAsyncUpdate(
           const { line, column } = pos(fn, sf)
           violations.push({
             rule: 'async-update',
-            message:
-              'update() must be synchronous and pure. Move async operations to effects.',
+            message: 'update() must be synchronous and pure. Move async operations to effects.',
             file: filename,
             line,
             column,
@@ -699,8 +694,7 @@ function checkForAwait(
     const { line, column } = pos(node, sf)
     violations.push({
       rule: 'async-update',
-      message:
-        'update() must be synchronous and pure. Move async operations to effects.',
+      message: 'update() must be synchronous and pure. Move async operations to effects.',
       file: filename,
       line,
       column,
@@ -718,11 +712,7 @@ function checkDirectStateInView(
   violations: LintViolation[],
 ): void {
   function visit(node: ts.Node): void {
-    if (
-      ts.isPropertyAssignment(node) &&
-      ts.isIdentifier(node.name) &&
-      node.name.text === 'view'
-    ) {
+    if (ts.isPropertyAssignment(node) && ts.isIdentifier(node.name) && node.name.text === 'view') {
       const fn = node.initializer
       if (ts.isArrowFunction(fn) || ts.isFunctionExpression(fn)) {
         // Look for state.X references inside event handler closures within view
@@ -755,9 +745,7 @@ function findStateInEventHandlers(
       }
     }
   }
-  ts.forEachChild(node, (child) =>
-    findStateInEventHandlers(child, sf, filename, violations),
-  )
+  ts.forEachChild(node, (child) => findStateInEventHandlers(child, sf, filename, violations))
 }
 
 function findStateAccess(
@@ -823,9 +811,7 @@ function checkExhaustiveEffectHandling(
   visit(sf)
 }
 
-function isEmptyFunctionBody(
-  fn: ts.ArrowFunction | ts.FunctionExpression,
-): boolean {
+function isEmptyFunctionBody(fn: ts.ArrowFunction | ts.FunctionExpression): boolean {
   if (!fn.body) return true
   // Arrow with block body: () => {}
   if (ts.isBlock(fn.body)) {
@@ -893,11 +879,7 @@ function bodyReturnsEffects(node: ts.Node): boolean {
   // Pattern: return [state, [{ type: ... }]] or [state, [effect]]
   if (ts.isArrayLiteralExpression(node) && node.elements.length === 2) {
     const second = node.elements[1]
-    if (
-      second &&
-      ts.isArrayLiteralExpression(second) &&
-      second.elements.length > 0
-    ) {
+    if (second && ts.isArrayLiteralExpression(second) && second.elements.length > 0) {
       return true
     }
   }
@@ -1056,11 +1038,7 @@ function checkImperativeDomInView(
   ])
 
   function visit(node: ts.Node): void {
-    if (
-      ts.isPropertyAssignment(node) &&
-      ts.isIdentifier(node.name) &&
-      node.name.text === 'view'
-    ) {
+    if (ts.isPropertyAssignment(node) && ts.isIdentifier(node.name) && node.name.text === 'view') {
       const fn = node.initializer
       if (ts.isArrowFunction(fn) || ts.isFunctionExpression(fn)) {
         if (fn.body) {
@@ -1140,7 +1118,14 @@ function checkAccessorSideEffect(
     if (ts.isArrowFunction(node)) {
       const isAccessor = isAccessorArrow(node)
       if (isAccessor && node.body) {
-        findSideEffectsInAccessor(node.body, sf, filename, violations, sideEffectNames, consoleMethods)
+        findSideEffectsInAccessor(
+          node.body,
+          sf,
+          filename,
+          violations,
+          sideEffectNames,
+          consoleMethods,
+        )
       }
     }
     ts.forEachChild(node, visit)
@@ -1195,10 +1180,7 @@ function findSideEffectsInAccessor(
       return
     }
     // Check for fetch, alert
-    if (
-      ts.isIdentifier(node.expression) &&
-      sideEffectNames.has(node.expression.text)
-    ) {
+    if (ts.isIdentifier(node.expression) && sideEffectNames.has(node.expression.text)) {
       const { line, column } = pos(node, sf)
       violations.push({
         rule: 'accessor-side-effect',

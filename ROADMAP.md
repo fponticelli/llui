@@ -99,9 +99,11 @@ README rewritten. Getting-started guide with project setup + first component tut
 
 New `@llui/transitions` package: `transition()` core + `fade`/`slide`/`scale`/`collapse` presets. Values can be CSS class strings, style objects, or mixed arrays. Wired `each()`'s inherited `enter`/`leave` as per-item hooks — `each({...opts, ...fade()})` works uniformly with `branch`/`show`. Bulk-clear/full-replace fast paths fall back to per-item removal only when `leave` is set. Added `flip()` (FLIP reorder via WAAPI) + `mergeTransitions()` for combining — wired `onTransition` hook on `each` (fires after each reconcile with entering/leaving nodes).
 
-### 8. Headless components package (`@llui/components`)
+### 8. Headless components package (`@llui/components`) ✅
 
 54 headless components shipped, state-machine-driven, no zag dependency, using `@llui/transitions` for enter/leave: accordion, alert-dialog, angle-slider, async-list, avatar, carousel, cascade-select, checkbox, clipboard, collapsible, color-picker, combobox, context-menu, date-input, date-picker, dialog, drawer, editable, file-upload, floating-panel, hover-card, image-cropper, listbox, marquee, menu, navigation-menu, number-input, pagination, password-input, pin-input, popover, presence, progress, qr-code, radio-group, rating-group, scroll-area, select, signature-pad, slider, splitter, steps, switch, tabs, tags-input, time-picker, timer, toast, toc, toggle, toggle-group, tooltip, tour, tree-view. Demo app at `examples/components-demo` exercises all 54 + `confirm-dialog` pattern across 8 sections.
+
+**Opt-in styling layer:** CSS theme (`theme.css`) with design tokens + `data-scope`/`data-part` selectors for all 54 components. Dark mode via separate `theme-dark.css`. JS class helpers (`styles/`) with `createVariants()` engine returning Tailwind utility strings per part. Animations for overlays. 237 style tests. Demo migrated from custom CSS to theme.css.
 
 ### 9. Zag.js parity — missing components ✅
 

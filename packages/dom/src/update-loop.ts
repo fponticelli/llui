@@ -252,10 +252,7 @@ function enhanceBindingError(err: unknown, binding: Binding, componentName: stri
 
   // Detect common undefined/null access pattern and add a helpful hint
   let undefinedHint = ''
-  if (
-    err instanceof TypeError &&
-    /Cannot read propert(ies|y).*of (undefined|null)/.test(errMsg)
-  ) {
+  if (err instanceof TypeError && /Cannot read propert(ies|y).*of (undefined|null)/.test(errMsg)) {
     undefinedHint =
       '\n  hint: Check that your accessor handles undefined state fields (e.g., use optional chaining: s.user?.name)'
   }

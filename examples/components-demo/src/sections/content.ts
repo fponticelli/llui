@@ -371,7 +371,9 @@ export const App = component<State, Msg, never>({
               items: (s) => s.list.items,
               key: (i) => i.id,
               render: ({ item }) => [
-                div({ class: 'px-2 py-1 rounded bg-surface-muted text-sm' }, [text(() => item.label())]),
+                div({ class: 'px-2 py-1 rounded bg-surface-muted text-sm' }, [
+                  text(() => item.label()),
+                ]),
               ],
             }),
             div({ class: 'mt-2 flex gap-2' }, [
