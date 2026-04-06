@@ -4,7 +4,7 @@ import { disposeScope } from './scope'
 import { setRenderContext, clearRenderContext } from './render-context'
 import { setFlatBindings } from './binding'
 import { registerInstance, unregisterInstance } from './runtime'
-import { createView } from './view-helpers'
+import type { View } from './view-helpers'
 
 // Vite injects import.meta.env.DEV — declare the shape for TypeScript
 declare global {
@@ -71,7 +71,13 @@ export function mountApp<S, M, E>(
   // Run view() within a render context so primitives can register bindings
   setFlatBindings(inst.allBindings)
   setRenderContext({ ...inst, container, send: inst.send as (msg: unknown) => void })
-  const nodes = def.view(createView<S, M>(inst.send))
+  // Pass a minimal View bundle with just `send`. State-bound helpers
+  // (show/text/each/...) are resolved by the compiler: it rewrites
+  // destructured aliases to direct imports from @llui/dom, so the view
+  // callback never needs them on h at runtime. createView() remains a
+  // public export for users who need the full bundle in dynamic / test
+  // scenarios — they call it explicitly.
+  const nodes = def.view({ send: inst.send } as View<S, M>)
   clearRenderContext()
   setFlatBindings(null)
 
@@ -184,7 +190,7 @@ export function hydrateApp<S, M, E>(
   // Server HTML remains visible until JS finishes — no flash.
   setFlatBindings(inst.allBindings)
   setRenderContext({ ...inst, container, send: inst.send as (msg: unknown) => void })
-  const nodes = hydrateDef.view(createView<S, M>(inst.send))
+  const nodes = hydrateDef.view({ send: inst.send } as View<S, M>)
   clearRenderContext()
   setFlatBindings(null)
 
