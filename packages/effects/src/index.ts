@@ -158,6 +158,35 @@ export interface RetryEffect {
   delayMs: number
 }
 
+export interface ClipboardReadEffect<M = unknown> {
+  type: 'clipboard-read'
+  onSuccess: (text: string) => M
+  onError: (error: string) => M
+}
+
+export interface ClipboardWriteEffect {
+  type: 'clipboard-write'
+  text: string
+}
+
+export interface NotificationEffect<M = unknown> {
+  type: 'notification'
+  title: string
+  body?: string
+  icon?: string
+  tag?: string
+  onClick?: () => M
+  onClose?: () => M
+  onError?: () => M
+}
+
+export interface GeolocationEffect<M = unknown> {
+  type: 'geolocation'
+  onSuccess: (position: { latitude: number; longitude: number; accuracy: number }) => M
+  onError: (error: string) => M
+  enableHighAccuracy?: boolean
+}
+
 type BuiltinEffect =
   | HttpEffect
   | CancelEffect
@@ -177,6 +206,10 @@ type BuiltinEffect =
   | WebSocketSendEffect
   | RetryEffect
   | UploadEffect
+  | ClipboardReadEffect
+  | ClipboardWriteEffect
+  | NotificationEffect
+  | GeolocationEffect
 
 // Re-export for user convenience
 export type { BuiltinEffect as Effect }
@@ -311,6 +344,45 @@ export function upload<M>(opts: {
   onError: (error: ApiError) => M
 }): UploadEffect<M> {
   return { type: 'upload', ...opts }
+}
+
+// ── Clipboard ───────────────────────────────────────────────────
+
+export function clipboardRead<M>(opts: {
+  onSuccess: (text: string) => M
+  onError: (error: string) => M
+}): ClipboardReadEffect<M> {
+  return { type: 'clipboard-read', ...opts }
+}
+
+export function clipboardWrite(text: string): ClipboardWriteEffect {
+  return { type: 'clipboard-write', text }
+}
+
+// ── Notification ────────────────────────────────────────────────
+
+export function notification<M>(
+  title: string,
+  opts?: {
+    body?: string
+    icon?: string
+    tag?: string
+    onClick?: () => M
+    onClose?: () => M
+    onError?: () => M
+  },
+): NotificationEffect<M> {
+  return { type: 'notification', title, ...opts }
+}
+
+// ── Geolocation ─────────────────────────────────────────────────
+
+export function geolocation<M>(opts: {
+  onSuccess: (position: { latitude: number; longitude: number; accuracy: number }) => M
+  onError: (error: string) => M
+  enableHighAccuracy?: boolean
+}): GeolocationEffect<M> {
+  return { type: 'geolocation', ...opts }
 }
 
 // ── Sequence / Race ──────────────────────────────────────────────
@@ -505,6 +577,18 @@ function dispatchEffect(
       break
     case 'upload':
       runUpload(effect as UploadEffect, send, signal)
+      break
+    case 'clipboard-read':
+      runClipboardRead(effect as ClipboardReadEffect, send, signal)
+      break
+    case 'clipboard-write':
+      runClipboardWrite(effect as ClipboardWriteEffect)
+      break
+    case 'notification':
+      runNotification(effect as NotificationEffect, send, signal)
+      break
+    case 'geolocation':
+      runGeolocation(effect as GeolocationEffect, send, signal)
       break
     default:
       custom(effect, send, signal)
@@ -1060,6 +1144,114 @@ function runRace(
       custom,
     )
   }
+}
+
+// ── Clipboard ───────────────────────────────────────────────────
+
+function runClipboardRead(
+  effect: ClipboardReadEffect,
+  send: InternalSend,
+  signal: AbortSignal,
+): void {
+  if (typeof navigator === 'undefined' || !navigator.clipboard) {
+    send(effect.onError('Clipboard API not available'))
+    return
+  }
+  navigator.clipboard
+    .readText()
+    .then((text) => {
+      if (!signal.aborted) send(effect.onSuccess(text))
+    })
+    .catch((err: unknown) => {
+      if (!signal.aborted) send(effect.onError(err instanceof Error ? err.message : String(err)))
+    })
+}
+
+function runClipboardWrite(effect: ClipboardWriteEffect): void {
+  if (typeof navigator === 'undefined' || !navigator.clipboard) return
+  navigator.clipboard.writeText(effect.text).catch(() => {
+    // fire-and-forget
+  })
+}
+
+// ── Notification ────────────────────────────────────────────────
+
+function runNotification(
+  effect: NotificationEffect,
+  send: InternalSend,
+  signal: AbortSignal,
+): void {
+  if (typeof Notification === 'undefined') {
+    if (effect.onError) send(effect.onError())
+    return
+  }
+
+  const show = (): void => {
+    if (signal.aborted) return
+    const n = new Notification(effect.title, {
+      body: effect.body,
+      icon: effect.icon,
+      tag: effect.tag,
+    })
+    if (effect.onClick) {
+      const cb = effect.onClick
+      n.onclick = () => {
+        if (!signal.aborted) send(cb())
+      }
+    }
+    if (effect.onClose) {
+      const cb = effect.onClose
+      n.onclose = () => {
+        if (!signal.aborted) send(cb())
+      }
+    }
+    if (effect.onError) {
+      const cb = effect.onError
+      n.onerror = () => {
+        if (!signal.aborted) send(cb())
+      }
+    }
+  }
+
+  if (Notification.permission === 'granted') {
+    show()
+  } else if (Notification.permission !== 'denied') {
+    Notification.requestPermission().then((perm) => {
+      if (perm === 'granted') {
+        show()
+      } else if (effect.onError) {
+        if (!signal.aborted) send(effect.onError())
+      }
+    })
+  } else if (effect.onError) {
+    send(effect.onError())
+  }
+}
+
+// ── Geolocation ─────────────────────────────────────────────────
+
+function runGeolocation(effect: GeolocationEffect, send: InternalSend, signal: AbortSignal): void {
+  if (typeof navigator === 'undefined' || !navigator.geolocation) {
+    send(effect.onError('Geolocation API not available'))
+    return
+  }
+  navigator.geolocation.getCurrentPosition(
+    (position) => {
+      if (!signal.aborted) {
+        send(
+          effect.onSuccess({
+            latitude: position.coords.latitude,
+            longitude: position.coords.longitude,
+            accuracy: position.coords.accuracy,
+          }),
+        )
+      }
+    },
+    (err) => {
+      if (!signal.aborted) send(effect.onError(err.message))
+    },
+    { enableHighAccuracy: effect.enableHighAccuracy },
+  )
 }
 
 // ── SSR Effect Resolution ────────────────────────────────────────

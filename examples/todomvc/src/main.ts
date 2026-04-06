@@ -9,7 +9,6 @@ import {
   label,
   button,
   span,
-  text,
   footer,
   section,
   header,
@@ -70,7 +69,7 @@ const App = component<State, Msg, never>({
         return [{ ...state, todos: state.todos.filter((t) => !t.completed) }, []]
     }
   },
-  view: ({ send, show, each, memo }) => {
+  view: ({ send, text, show, each, memo }) => {
     const filteredTodos = memo((s) => {
       switch (s.filter) {
         case 'all':
@@ -156,9 +155,9 @@ const App = component<State, Msg, never>({
                 }),
               ]),
               ul({ class: 'filters' }, [
-                filterLink('all', 'All', send),
-                filterLink('active', 'Active', send),
-                filterLink('completed', 'Completed', send),
+                filterLink('all', 'All', text, send),
+                filterLink('active', 'Active', text, send),
+                filterLink('completed', 'Completed', text, send),
               ]),
               ...show({
                 when: hasCompleted,
@@ -180,7 +179,12 @@ const App = component<State, Msg, never>({
   },
 })
 
-function filterLink(filter: Filter, linkLabel: string, send: (msg: Msg) => void): HTMLElement {
+function filterLink(
+  filter: Filter,
+  linkLabel: string,
+  text: (v: string) => Text,
+  send: (msg: Msg) => void,
+): HTMLElement {
   return li([
     a(
       {

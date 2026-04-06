@@ -41,11 +41,33 @@ view({ show, text }) {
 | `collapse(options?)` | `duration`, `easing`              | Height collapse/expand                               |
 | `flip(options?)`     | `duration`, `easing`              | FLIP reorder animation for `each()`                  |
 
+### Spring Physics
+
+| Function           | Options                                                               | Description                      |
+| ------------------ | --------------------------------------------------------------------- | -------------------------------- |
+| `spring(options?)` | `stiffness`, `damping`, `mass`, `precision`, `property`, `from`, `to` | Spring-physics animation via rAF |
+
+Uses a damped spring simulation instead of CSS easing. The animation runs via `requestAnimationFrame` and settles naturally based on physics parameters.
+
+```ts
+import { spring } from '@llui/transitions'
+
+// Default: opacity 0 → 1 with react-spring-like defaults
+show({ when: (s) => s.open, render: () => content(), ...spring() })
+
+// Custom spring feel
+show({
+  when: (s) => s.open,
+  render: () => content(),
+  ...spring({ stiffness: 300, damping: 15, property: 'opacity' }),
+})
+```
+
 ### Route Transitions
 
-| Function                    | Options                                           | Description                                      |
-| --------------------------- | ------------------------------------------------- | ------------------------------------------------ |
-| `routeTransition(options?)` | `duration`, `easing`, `slide`, `slideDistance`     | Fade + slide for `branch()` page transitions     |
+| Function                    | Options                                        | Description                                  |
+| --------------------------- | ---------------------------------------------- | -------------------------------------------- |
+| `routeTransition(options?)` | `duration`, `easing`, `slide`, `slideDistance` | Fade + slide for `branch()` page transitions |
 
 Convenience wrapper for animating page transitions in a `branch()`:
 
@@ -71,9 +93,9 @@ branch({ on, cases, ...routeTransition(fade({ duration: 200 })) })
 
 ### Stagger
 
-| Function                          | Options                          | Description                                       |
-| --------------------------------- | -------------------------------- | ------------------------------------------------- |
-| `stagger(transition, options?)`   | `delayPerItem`, `leaveOrder`     | Stagger enter/leave animations for `each()` items |
+| Function                        | Options                      | Description                                       |
+| ------------------------------- | ---------------------------- | ------------------------------------------------- |
+| `stagger(transition, options?)` | `delayPerItem`, `leaveOrder` | Stagger enter/leave animations for `each()` items |
 
 Wraps any transition preset so batch-entered items animate with incremental delays:
 

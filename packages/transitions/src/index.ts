@@ -11,6 +11,10 @@ export type {
   CollapseOptions,
 } from './presets'
 
+// Spring physics
+export { spring } from './spring'
+export type { SpringOptions } from './spring'
+
 // Reorder animation + composition
 export { flip, mergeTransitions } from './flip'
 export type { FlipOptions } from './flip'

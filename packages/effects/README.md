@@ -45,22 +45,26 @@ const handler = handleEffects<Effect, Msg>()
 
 ### Effect Builders
 
-| Function                              | Description                                    |
-| ------------------------------------- | ---------------------------------------------- |
-| `http({ url, onSuccess, onError })`   | HTTP request effect                            |
-| `cancel(token, inner?)`               | Cancel by token, optionally replace with inner |
-| `debounce(key, ms, inner)`            | Debounce inner effect by key                   |
-| `timeout(ms, msg)`                    | Fire msg after delay                           |
-| `interval(ms, msg)`                   | Fire msg on interval                           |
-| `storageSet(key, value, storage?)`    | Write to localStorage/sessionStorage           |
-| `storageGet(key, onResult, storage?)` | Read from storage                              |
-| `storageRemove(key, storage?)`        | Remove from storage                            |
-| `storageWatch(key, onChange)`         | Watch storage for changes                      |
-| `broadcast(channel, data)`            | Send on BroadcastChannel                       |
-| `broadcastListen(channel, onMsg)`     | Listen on BroadcastChannel                     |
-| `sequence([...effects])`              | Run effects in order                           |
-| `race([...effects])`                  | Run effects concurrently, first wins           |
-| `upload({ url, body, onProgress, onSuccess, onError })` | File upload with progress via XHR |
+| Function                                                   | Description                                     |
+| ---------------------------------------------------------- | ----------------------------------------------- |
+| `http({ url, onSuccess, onError })`                        | HTTP request effect                             |
+| `cancel(token, inner?)`                                    | Cancel by token, optionally replace with inner  |
+| `debounce(key, ms, inner)`                                 | Debounce inner effect by key                    |
+| `timeout(ms, msg)`                                         | Fire msg after delay                            |
+| `interval(ms, msg)`                                        | Fire msg on interval                            |
+| `storageSet(key, value, storage?)`                         | Write to localStorage/sessionStorage            |
+| `storageGet(key, onResult, storage?)`                      | Read from storage                               |
+| `storageRemove(key, storage?)`                             | Remove from storage                             |
+| `storageWatch(key, onChange)`                              | Watch storage for changes                       |
+| `broadcast(channel, data)`                                 | Send on BroadcastChannel                        |
+| `broadcastListen(channel, onMsg)`                          | Listen on BroadcastChannel                      |
+| `sequence([...effects])`                                   | Run effects in order                            |
+| `race([...effects])`                                       | Run effects concurrently, first wins            |
+| `upload({ url, body, onProgress, onSuccess, onError })`    | File upload with progress via XHR               |
+| `clipboardRead({ onSuccess, onError })`                    | Read text from clipboard                        |
+| `clipboardWrite(text)`                                     | Write text to clipboard (fire-and-forget)       |
+| `notification(title, opts?)`                               | Show browser notification (requests permission) |
+| `geolocation({ onSuccess, onError, enableHighAccuracy? })` | One-shot geolocation position                   |
 
 ### Upload
 
@@ -79,6 +83,56 @@ const effect = upload({
   }),
   onSuccess: (data, status) => ({ type: 'uploadDone', data, status }),
   onError: (error) => ({ type: 'uploadFailed', error }),
+})
+```
+
+### Clipboard
+
+Read and write text via the Clipboard API:
+
+```ts
+import { clipboardRead, clipboardWrite } from '@llui/effects'
+
+// Copy text to clipboard (fire-and-forget)
+clipboardWrite('Hello, world!')
+
+// Read text from clipboard
+clipboardRead({
+  onSuccess: (text) => ({ type: 'pasted', text }),
+  onError: (error) => ({ type: 'clipError', error }),
+})
+```
+
+### Notification
+
+Show browser notifications (requests permission automatically):
+
+```ts
+import { notification } from '@llui/effects'
+
+notification('New message', {
+  body: 'You have a new message from Alice',
+  icon: '/avatar.png',
+  onClick: () => ({ type: 'openChat' }),
+  onError: () => ({ type: 'notifBlocked' }),
+})
+```
+
+### Geolocation
+
+One-shot position request:
+
+```ts
+import { geolocation } from '@llui/effects'
+
+geolocation({
+  enableHighAccuracy: true,
+  onSuccess: (pos) => ({
+    type: 'located',
+    lat: pos.latitude,
+    lng: pos.longitude,
+  }),
+  onError: (error) => ({ type: 'geoError', error }),
 })
 ```
 
