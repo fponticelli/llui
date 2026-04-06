@@ -1,47 +1,61 @@
-# /publish — Bump version, build, test, and publish all packages to npm
+# /publish — Bump, build, test, and publish changed packages to npm
 
-Publish all @llui packages to npm in dependency order.
+Publish only the @llui packages that have changed since the last release. Each package is versioned independently.
 
 ## Usage
 
 ```
-/publish patch    # 0.0.1 → 0.0.2
-/publish minor    # 0.0.1 → 0.1.0
-/publish major    # 0.0.1 → 1.0.0
-/publish 0.2.0    # explicit version
+/publish patch              # bump changed packages by patch
+/publish minor              # bump changed packages by minor
+/publish major              # bump changed packages by major
+/publish 0.2.0              # explicit version for changed packages
+/publish --all patch        # force-bump ALL packages regardless of changes
 ```
 
 ## Steps
 
-### 1. Determine the new version
+### 1. Detect changed packages
 
-Parse the argument: `patch`, `minor`, `major`, or an explicit semver string. Read the current version from `packages/dom/package.json` as the baseline.
-
-### 2. Update all package versions
-
-Run this Node script to bump every package + fix peer deps:
+Find the latest git tag matching `v*` (e.g., `v0.0.1`). If no tag exists, treat all packages as changed.
 
 ```bash
-node -e "
-const fs = require('fs')
-const path = require('path')
-const version = 'NEW_VERSION_HERE'
-const pkgs = ['dom','vite-plugin','effects','test','components','router','transitions','vike','mcp','lint-idiomatic']
-for (const dir of pkgs) {
-  const pkgPath = path.join('packages', dir, 'package.json')
-  const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf8'))
-  pkg.version = version
-  // Fix peer deps pointing to @llui/*
-  for (const [k, v] of Object.entries(pkg.peerDependencies || {})) {
-    if (k.startsWith('@llui/')) pkg.peerDependencies[k] = '^' + version
-  }
-  fs.writeFileSync(pkgPath, JSON.stringify(pkg, null, 2) + '\n')
-  console.log(pkg.name + ' → v' + version)
-}
-"
+LAST_TAG=$(git describe --tags --abbrev=0 --match 'v*' 2>/dev/null || echo "")
 ```
 
-### 3. Build and test
+For each package, check if any files under `packages/<name>/` changed since the tag:
+
+```bash
+for pkg in dom vite-plugin effects test components router transitions vike mcp lint-idiomatic; do
+  if [ -z "$LAST_TAG" ] || [ -n "$(git diff --name-only "$LAST_TAG"..HEAD -- "packages/$pkg/")" ]; then
+    echo "CHANGED: @llui/$pkg"
+  fi
+done
+```
+
+If `--all` flag is passed, skip detection and include every package.
+
+### 2. Determine dependency cascade
+
+If a **dependency** changed, its **dependents** must also be bumped even if their own source didn't change. The dependency graph is:
+
+```
+Tier 1 (no internal deps):  dom, effects
+Tier 2 (depends on tier 1): vite-plugin, test, router, transitions, components, vike, mcp, lint-idiomatic
+```
+
+Specifically:
+- `dom` changed → also bump: vite-plugin, test, router, transitions, components, vike
+- `effects` changed → also bump: (no dependents currently)
+
+Add cascaded packages to the changed set. Present the final list to the user for confirmation before proceeding.
+
+### 3. Bump versions
+
+For each changed package, compute the new version from its CURRENT version (not a shared baseline — packages may be at different versions). Apply the bump type (patch/minor/major) or set the explicit version.
+
+Update `peerDependencies` pointing to changed @llui packages to `^newVersion`.
+
+### 4. Build and test
 
 ```bash
 pnpm turbo build check lint test --force
@@ -49,52 +63,52 @@ pnpm turbo build check lint test --force
 
 All tasks must pass. If any fail, stop and fix before continuing.
 
-### 4. Git commit and tag
+### 5. Git commit and tag
+
+Create one commit with all version bumps. Tag each published package individually:
 
 ```bash
-git add -A
-git commit -m "release: v${VERSION}
+git add -A packages/*/package.json
+git commit -m "release: @llui/dom@X.Y.Z, @llui/components@X.Y.Z, ...
 
 Co-Authored-By: Claude Opus 4.6 (1M context) <noreply@anthropic.com>"
-git tag "v${VERSION}"
+
+# One tag per published package
+git tag "@llui/dom@X.Y.Z"
+git tag "@llui/components@X.Y.Z"
+# ... etc
+
 git push && git push --tags
 ```
 
-### 5. Publish to npm
+### 6. Publish to npm
 
-Publish in dependency order. `@llui/dom` and `@llui/effects` have no internal deps and must go first.
+Publish only the changed packages, in dependency order:
 
 ```bash
-# Tier 1 — no internal deps
+# Tier 1 first (if changed)
 cd packages/dom && npm publish --access public && cd ../..
 cd packages/effects && npm publish --access public && cd ../..
 
-# Tier 2 — depends on dom/effects
+# Then tier 2 (if changed)
 cd packages/vite-plugin && npm publish --access public && cd ../..
-cd packages/test && npm publish --access public && cd ../..
-cd packages/router && npm publish --access public && cd ../..
-cd packages/transitions && npm publish --access public && cd ../..
-cd packages/components && npm publish --access public && cd ../..
-cd packages/vike && npm publish --access public && cd ../..
-cd packages/mcp && npm publish --access public && cd ../..
-cd packages/lint-idiomatic && npm publish --access public && cd ../..
+# ... only packages in the changed set
 ```
 
 If any publish fails with an auth error, ask the user to check their npm token in `~/.npmrc`.
 
-### 6. Verify
+### 7. Verify
 
-Wait 30 seconds for registry propagation, then:
+Wait 30 seconds for registry propagation, then verify only the published packages:
 
 ```bash
-for pkg in dom vite-plugin effects test components router transitions vike mcp lint-idiomatic; do
-  ver=$(npm view @llui/$pkg version 2>/dev/null)
-  printf "%-22s %s\n" "@llui/$pkg" "${ver:-propagating...}"
-done
+npm view @llui/dom version       # should show new version
+npm view @llui/components version # should show new version
+# ... only for packages that were published
 ```
 
-All 10 should show the new version. If some are still propagating, wait another minute and retry.
+If some are still propagating, wait another minute and retry.
 
-### 7. Update ROADMAP if needed
+### 8. Update ROADMAP if needed
 
 If this is a significant release, add a release note to ROADMAP.md.
