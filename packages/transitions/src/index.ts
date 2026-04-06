@@ -15,5 +15,13 @@ export type {
 export { flip, mergeTransitions } from './flip'
 export type { FlipOptions } from './flip'
 
+// Route transitions
+export { routeTransition } from './route-transition'
+export type { RouteTransitionOptions } from './route-transition'
+
+// Stagger
+export { stagger } from './stagger'
+export type { StaggerOptions } from './stagger'
+
 // Types
 export type { TransitionSpec, TransitionValue, Styles } from './types'

@@ -41,6 +41,68 @@ view({ show, text }) {
 | `collapse(options?)` | `duration`, `easing`              | Height collapse/expand                               |
 | `flip(options?)`     | `duration`, `easing`              | FLIP reorder animation for `each()`                  |
 
+### Route Transitions
+
+| Function                    | Options                                           | Description                                      |
+| --------------------------- | ------------------------------------------------- | ------------------------------------------------ |
+| `routeTransition(options?)` | `duration`, `easing`, `slide`, `slideDistance`     | Fade + slide for `branch()` page transitions     |
+
+Convenience wrapper for animating page transitions in a `branch()`:
+
+```ts
+import { routeTransition, fade } from '@llui/transitions'
+
+// Default: fade + slight upward slide (250ms)
+branch({
+  on: (s) => s.route.page,
+  cases: { home: () => [...], about: () => [...] },
+  ...routeTransition(),
+})
+
+// Custom duration
+branch({ on, cases, ...routeTransition({ duration: 200 }) })
+
+// Fade only (no slide)
+branch({ on, cases, ...routeTransition({ duration: 200, slide: false }) })
+
+// Pass any preset directly
+branch({ on, cases, ...routeTransition(fade({ duration: 200 })) })
+```
+
+### Stagger
+
+| Function                          | Options                          | Description                                       |
+| --------------------------------- | -------------------------------- | ------------------------------------------------- |
+| `stagger(transition, options?)`   | `delayPerItem`, `leaveOrder`     | Stagger enter/leave animations for `each()` items |
+
+Wraps any transition preset so batch-entered items animate with incremental delays:
+
+```ts
+import { stagger, fade, slide } from '@llui/transitions'
+
+each({
+  items: (s) => s.items,
+  key: (i) => i.id,
+  render: ({ item }) => [...],
+  ...stagger(fade({ duration: 150 }), { delayPerItem: 30 }),
+})
+
+// Works with any preset
+each({
+  items: (s) => s.items,
+  key: (i) => i.id,
+  render: ({ item }) => [...],
+  ...stagger(slide({ direction: 'up' }), { delayPerItem: 50 }),
+})
+
+// Stagger leave animations too (default is simultaneous)
+each({
+  ...stagger(fade(), { delayPerItem: 30, leaveOrder: 'sequential' }),
+})
+```
+
+Items entering within the same microtask are considered a "batch" and get sequential delays. The counter resets after the microtask boundary, so the next batch starts from index 0.
+
 ### Integration
 
 Presets return `{ enter, leave }` objects that spread directly into `show`, `branch`, or `each`:
