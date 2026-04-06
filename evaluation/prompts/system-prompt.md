@@ -5,9 +5,10 @@ You are writing a TypeScript component using the LLui framework.
 ## Pattern
 
 LLui uses The Elm Architecture: `init` returns initial state and effects;
-`update(state, msg)` returns `[newState, effects]`; `view(send, h)` returns
-DOM nodes once at mount and binds state to the DOM through accessor functions.
-State is immutable. Effects are plain data objects returned from `update()`.
+`update(state, msg)` returns `[newState, effects]`; `view({ send, text, ... })`
+returns DOM nodes once at mount and binds state to the DOM through accessor
+functions. State is immutable. Effects are plain data objects returned from
+`update()`. Destructure view helpers from the single `View<S, M>` parameter.
 
 ## Key Types
 
@@ -35,8 +36,9 @@ interface View<S, M> {
   text(accessor: ((s: S) => string) | string): Text
   memo<T>(accessor: (s: S) => T): (s: S) => T
   ctx<T>(c: Context<T>): (s: S) => T
-  slice<Sub>(selector: (s: S) => Sub): View<Sub, M>
 }
+// slice(h, selector) — standalone function for sub-slice view composition
+function slice<Root, Sub, M>(h: View<Root, M>, sel: (s: Root) => Sub): View<Sub, M>
 
 function onMount(callback: (el: Element) => (() => void) | void): void
 // item accessor: item.field (shorthand) or item(t => t.expr) (computed) — both return () => V

@@ -5,7 +5,7 @@ A compile-time-optimized web framework built on [The Elm Architecture](https://g
 **No virtual DOM. Effects as data. Compile-time bitmask optimization.**
 
 ```typescript
-import { component, mountApp, div, button, text } from '@llui/dom'
+import { component, mountApp, div, button } from '@llui/dom'
 
 type State = { count: number }
 type Msg = { type: 'inc' } | { type: 'dec' }
@@ -21,10 +21,10 @@ const Counter = component<State, Msg, never>({
         return [{ ...state, count: state.count - 1 }, []]
     }
   },
-  view: (send) => [
+  view: ({ send, text }) => [
     div({ class: 'counter' }, [
       button({ onClick: () => send({ type: 'dec' }) }, [text('-')]),
-      text((s: State) => String(s.count)),
+      text(s => String(s.count)),
       button({ onClick: () => send({ type: 'inc' }) }, [text('+')]),
     ]),
   ],
@@ -49,6 +49,7 @@ mountApp(document.getElementById('app')!, Counter)
 | [`@llui/effects`](packages/effects)               | Effect system — http, cancel, debounce, sequence, race + `Async<T,E>`, `ApiError`                   |
 | [`@llui/router`](packages/router)                 | Routing — structured path matching, history/hash mode, link helper                                  |
 | [`@llui/transitions`](packages/transitions)       | Animation helpers for `branch`/`show`/`each` — `transition()`, `fade`, `slide`, `scale`, `collapse` |
+| [`@llui/components`](packages/components)         | 54 headless components — accordion, dialog, tabs, select, tree-view, timer, tour, and more          |
 | [`@llui/test`](packages/test)                     | Test harness — testComponent, testView, propertyTest, replayTrace                                   |
 | [`@llui/vike`](packages/vike)                     | Vike SSR adapter — onRenderHtml, onRenderClient                                                     |
 | [`@llui/mcp`](packages/mcp)                       | MCP server — LLM debug tools via Model Context Protocol                                             |
@@ -93,7 +94,7 @@ npx vite
 ```bash
 pnpm install
 pnpm turbo build          # Build all packages
-pnpm turbo test           # Run 349 tests across 8 packages
+pnpm turbo test           # Run 1200+ tests across all packages
 pnpm turbo check          # Type-check
 pnpm turbo lint           # ESLint
 pnpm bench                # js-framework-benchmark (add --save to update baseline)
@@ -103,13 +104,14 @@ pnpm bench                # js-framework-benchmark (add --save to update baselin
 
 Competitive with Solid and Svelte on [js-framework-benchmark](https://github.com/krausest/js-framework-benchmark):
 
-| Operation     |       LLui |  Solid |  Svelte |   React |
+| Operation     |       LLui |  Solid |  Svelte | vanilla |
 | ------------- | ---------: | -----: | ------: | ------: |
-| Create 1k     |      ~25ms |   23ms |    23ms |    27ms |
-| Update 10th   |      ~14ms |   14ms |    15ms |    17ms |
-| Select        |       ~4ms |    4ms |     6ms |     6ms |
-| Swap          |      ~14ms |   17ms |    17ms |   107ms |
-| Bundle (gzip) | **4.0 KB** | 4.8 KB | 13.6 KB | 61.3 KB |
+| Create 1k     |      ~24ms |   23ms |    23ms |    22ms |
+| Update 10th   |      ~11ms |   11ms |    12ms |    10ms |
+| Select        |       ~4ms |    6ms |     5ms |     3ms |
+| Swap          |      ~13ms |   14ms |    14ms |    12ms |
+| Clear 1k      |      ~11ms |   11ms |    11ms |     9ms |
+| Bundle (gzip) | **5.8 KB** | 4.7 KB |  4.3 KB |     — |
 
 ## License
 

@@ -58,25 +58,28 @@ interface View<S, M> {
   memo<T>(accessor: (s: S) => T): (s: S) => T
   selector<V>(field: (s: S) => V): SelectorInstance<V>
   ctx<T>(c: Context<T>): (s: S) => T
-  slice<Sub>(selector: (s: S) => Sub): View<Sub, M>
 }
 ```
 
-**`h.slice(selector)`** returns a narrower `View<Sub, M>` for view-functions that read a sub-slice of the parent state. All state-bound accessors written against the sub view are composed with `selector` under the hood, so:
+**`slice(h, selector)`** (standalone export from `@llui/dom`) returns a narrower `View<Sub, M>` for view-functions that read a sub-slice of the parent state. All state-bound accessors written against the sub view are composed with `selector` under the hood:
 
 ```typescript
-view: (h) => {
-  const routeH = h.slice(s => s.route)
-  return routeH.branch({
+import { slice } from '@llui/dom'
+
+view: ({ send, branch }) => {
+  const routeView = slice({ send }, s => s.route)
+  return routeView.branch({
     on: r => r.data.type === 'loading' ? 'loading' : 'ready',
     cases: { ... },
   })
 }
 ```
 
-**Compiler integration.** The Vite plugin treats `<name>.text(...)` / `<name>.show(...)` / `<name>.each(...)` etc. identically to bare imports for mask injection, as long as `<name>` is the second parameter of a `view: (_, name) => ...` arrow inside a `component(...)` call. Calls outside of that scope fall back to `FULL_MASK` — correct but without per-binding gating.
+`slice` is a standalone function (not a View method) so apps that don't use it don't pay its bundle cost.
 
-**When to use bare imports vs. `h`:** use `h` inside `view`. For view-functions (extracted helpers rendering a parent slice), pass `h: View<S, M>` as a parameter rather than importing primitives directly — this keeps inference working and lets the helper participate in `h.slice` composition.
+**Compiler integration.** The Vite plugin treats destructured aliases (`{ text, show }`) and member-expression calls (`h.text(...)`, `h.show(...)`) identically to bare imports for mask injection. Destructured names are tracked through the first parameter of `view: ({ send, text }) => ...` arrows and `(h: View<S, M>)` parameter annotations on extracted helpers.
+
+**Destructuring vs. `h.`:** destructure view helpers in `view: ({ send, text, show }) => ...`. For extracted view-functions, accept `h: View<S, M>` and destructure from it. The compiler handles both forms equivalently.
 
 See: 01 Architecture.md, 07 LLM Friendliness.md
 

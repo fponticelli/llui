@@ -55,6 +55,7 @@ Five packages under `packages/`, managed by pnpm workspaces + Turborepo:
 | ------------------- | --------------------------------------------------------------------------------------- | ------------ |
 | `@llui/dom`         | Runtime: component, mount, scope tree, bindings, element helpers, structural primitives | —            |
 | `@llui/vite-plugin` | Compiler: 3-pass TypeScript transform (prop split → mask injection → import cleanup)    | peer: vite   |
+| `@llui/components`  | 54 headless components: accordion, dialog, tabs, select, tree-view, timer, tour, etc.   | @llui/dom    |
 | `@llui/test`        | Test harness: testComponent, assertEffects, testView, propertyTest, replayTrace         | @llui/dom    |
 | `@llui/effects`     | Effect builders: http, cancel, debounce, sequence, race + handleEffects chain           | —            |
 | `@llui/vike`        | Vike SSR adapter: onRenderHtml, onRenderClient                                          | @llui/dom    |
@@ -63,7 +64,7 @@ Build order: `@llui/dom` and `@llui/effects` first (no deps), then `@llui/test`,
 
 ## Architecture Concepts
 
-**Component shape:** `component<State, Msg, Effect>({ name, init, update, view, onEffect? })`. State must be JSON-serializable. Msg and Effect are discriminated unions with a `type` field.
+**Component shape:** `component<State, Msg, Effect>({ name, init, update, view, onEffect? })`. State must be JSON-serializable. Msg and Effect are discriminated unions with a `type` field. `view` receives a single `View<S, M>` bag — destructure `{ send, text, show, each, branch, memo, ... }` from it. Element helpers (`div`, `button`, etc.) stay as imports.
 
 **Two composition levels:**
 

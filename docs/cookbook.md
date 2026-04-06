@@ -375,9 +375,9 @@ routing.link(send, { page: 'home' }, { class: 'nav-link' }, [text('Home')])
 ### Page Switching
 
 ```typescript
-view: ({ send }) => [
+view: ({ send, branch }) => [
   ...routing.listener(send), // listens for popstate/hashchange
-  ...branch<State, Msg>({
+  ...branch({
     on: (s) => s.route.page,
     cases: {
       home: (send) => homePage(send),

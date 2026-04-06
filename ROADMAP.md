@@ -72,7 +72,7 @@
 
 - Create 1k / Replace / Append: within ~5%
 - Update / Swap / Remove: within 5-20%
-- Bundle: 5.5 KB gzip (slightly bigger than Solid's 4.7 KB)
+- Bundle: 5.8 KB gzip (competitive with Solid's 4.7 KB)
 
 ## GitHub Explorer (validation app) ✅
 
@@ -101,7 +101,7 @@ New `@llui/transitions` package: `transition()` core + `fade`/`slide`/`scale`/`c
 
 ### 8. Headless components package (`@llui/components`)
 
-39 headless components shipped, state-machine-driven, no zag dependency, using `@llui/transitions` for enter/leave: accordion, alert-dialog, avatar, carousel, checkbox, clipboard, collapsible, color-picker, combobox, context-menu, date-picker, dialog, drawer, editable, file-upload, hover-card, listbox, menu, number-input, pagination, password-input, pin-input, popover, progress, radio-group, rating-group, select, slider, splitter, stepper, switch, tabs, tags-input, time-picker, toast, toggle-group, toggle, tooltip, tree-view. Demo app at `examples/components-demo` exercises 34 + `confirm-dialog` pattern.
+54 headless components shipped, state-machine-driven, no zag dependency, using `@llui/transitions` for enter/leave: accordion, alert-dialog, angle-slider, async-list, avatar, carousel, cascade-select, checkbox, clipboard, collapsible, color-picker, combobox, context-menu, date-input, date-picker, dialog, drawer, editable, file-upload, floating-panel, hover-card, image-cropper, listbox, marquee, menu, navigation-menu, number-input, pagination, password-input, pin-input, popover, presence, progress, qr-code, radio-group, rating-group, scroll-area, select, signature-pad, slider, splitter, steps, switch, tabs, tags-input, time-picker, timer, toast, toc, toggle, toggle-group, tooltip, tour, tree-view. Demo app at `examples/components-demo` exercises all 54 + `confirm-dialog` pattern across 8 sections.
 
 ### 9. Zag.js parity — missing components ✅
 
@@ -110,10 +110,10 @@ All 15 zag.js machines now shipped. 54 headless components total.
 - **Broadly useful:** ~~qr-code~~, ~~scroll-area~~, ~~signature-pad~~, ~~navigation-menu~~, ~~angle-slider~~, ~~tour~~
 - **Niche:** ~~async-list~~, ~~cascade-select~~, ~~date-input~~, ~~floating-panel~~, ~~image-cropper~~, ~~marquee~~, ~~presence~~, ~~timer~~, ~~toc~~
 
-**Renames to align with zag naming** (still open):
+**Renames to align with zag naming:**
 
-- `stepper` → `steps`
-- Decide whether to merge `alert-dialog` into `dialog` (zag does this via `role="alertdialog"`) or keep separate
+- ~~`stepper` → `steps`~~ ✅
+- `alert-dialog` kept separate (matches zag's own separate package; wraps `dialog` with `role="alertdialog"`)
 
 ### 10. Zag.js parity — cross-cutting patterns
 
