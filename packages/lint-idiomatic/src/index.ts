@@ -11,7 +11,7 @@ export interface LintViolation {
 
 export interface LintResult {
   violations: LintViolation[]
-  /** Score from 0 to 6. Starts at 6, -1 per violated rule category. */
+  /** Score from 0 to 15. Starts at 15, -1 per violated rule category. */
   score: number
 }
 
@@ -32,10 +32,16 @@ export function lintIdiomatic(source: string, filename = 'input.ts'): LintResult
   checkAsyncUpdate(sf, filename, violations)
   checkDirectStateInView(sf, filename, violations)
   checkExhaustiveEffectHandling(sf, filename, violations)
+  checkEffectWithoutHandler(sf, filename, violations)
+  checkForgottenSpread(sf, filename, violations)
+  checkStringEffectCallback(sf, filename, violations)
+  checkNestedSendInUpdate(sf, filename, violations)
+  checkImperativeDomInView(sf, filename, violations)
+  checkAccessorSideEffect(sf, filename, violations)
 
   // Score: unique violated rule categories
   const violatedRules = new Set(violations.map((v) => v.rule))
-  const score = Math.max(0, 9 - violatedRules.size)
+  const score = Math.max(0, 15 - violatedRules.size)
 
   return { violations, score }
 }
@@ -827,6 +833,387 @@ function isEmptyFunctionBody(
   }
   // Arrow with expression body is never "empty" — e.g. () => undefined is intentional
   return false
+}
+
+// ── Rule 10: effect-without-handler ───────────────────────────────
+
+function checkEffectWithoutHandler(
+  sf: ts.SourceFile,
+  filename: string,
+  violations: LintViolation[],
+): void {
+  function visit(node: ts.Node): void {
+    if (
+      ts.isCallExpression(node) &&
+      ts.isIdentifier(node.expression) &&
+      node.expression.text === 'component'
+    ) {
+      const arg = node.arguments[0]
+      if (arg && ts.isObjectLiteralExpression(arg)) {
+        let hasOnEffect = false
+        let hasEffectsInUpdate = false
+        let updateNode: ts.Node | undefined
+
+        for (const prop of arg.properties) {
+          if (!ts.isPropertyAssignment(prop) || !ts.isIdentifier(prop.name)) continue
+          if (prop.name.text === 'onEffect') {
+            hasOnEffect = true
+          }
+          if (prop.name.text === 'update') {
+            updateNode = prop
+            const fn = prop.initializer
+            if (ts.isArrowFunction(fn) || ts.isFunctionExpression(fn)) {
+              if (fn.body) {
+                hasEffectsInUpdate = bodyReturnsEffects(fn.body)
+              }
+            }
+          }
+        }
+
+        if (hasEffectsInUpdate && !hasOnEffect && updateNode) {
+          const { line, column } = pos(updateNode, sf)
+          violations.push({
+            rule: 'effect-without-handler',
+            message:
+              'Component returns effects from update() but has no onEffect handler. Effects will be silently dropped (only built-in delay/log are handled automatically).',
+            file: filename,
+            line,
+            column,
+          })
+        }
+      }
+    }
+    ts.forEachChild(node, visit)
+  }
+  visit(sf)
+}
+
+function bodyReturnsEffects(node: ts.Node): boolean {
+  // Look for array literals in return position with non-empty second element
+  // Pattern: return [state, [{ type: ... }]] or [state, [effect]]
+  if (ts.isArrayLiteralExpression(node) && node.elements.length === 2) {
+    const second = node.elements[1]
+    if (
+      second &&
+      ts.isArrayLiteralExpression(second) &&
+      second.elements.length > 0
+    ) {
+      return true
+    }
+  }
+  let found = false
+  ts.forEachChild(node, (child) => {
+    if (!found) found = bodyReturnsEffects(child)
+  })
+  return found
+}
+
+// ── Rule 11: forgotten-spread ─────────────────────────────────────
+
+function checkForgottenSpread(
+  sf: ts.SourceFile,
+  filename: string,
+  violations: LintViolation[],
+): void {
+  const structuralNames = new Set(['show', 'branch', 'each'])
+
+  function visit(node: ts.Node): void {
+    // Look for array literals containing calls to show/branch/each without spread
+    if (ts.isArrayLiteralExpression(node)) {
+      for (const element of node.elements) {
+        if (
+          ts.isCallExpression(element) &&
+          ts.isIdentifier(element.expression) &&
+          structuralNames.has(element.expression.text)
+        ) {
+          const { line, column } = pos(element, sf)
+          violations.push({
+            rule: 'forgotten-spread',
+            message: `${element.expression.text}() returns Node[] — spread it: [...${element.expression.text}({...})]. Without spread, the array is nested and won't render correctly.`,
+            file: filename,
+            line,
+            column,
+          })
+        }
+      }
+    }
+    ts.forEachChild(node, visit)
+  }
+  visit(sf)
+}
+
+// ── Rule 12: string-effect-callback ───────────────────────────────
+
+function checkStringEffectCallback(
+  sf: ts.SourceFile,
+  filename: string,
+  violations: LintViolation[],
+): void {
+  const callbackProps = new Set(['onSuccess', 'onError', 'onLoad', 'onChange', 'onMessage'])
+
+  function visit(node: ts.Node): void {
+    if (ts.isPropertyAssignment(node) && ts.isIdentifier(node.name)) {
+      if (callbackProps.has(node.name.text) && ts.isStringLiteral(node.initializer)) {
+        const { line, column } = pos(node, sf)
+        violations.push({
+          rule: 'string-effect-callback',
+          message: `String-based effect callback '${node.name.text}' is deprecated. Use a typed message constructor: ${node.name.text}: (data) => ({ type: '${node.initializer.text}', payload: data }).`,
+          file: filename,
+          line,
+          column,
+        })
+      }
+    }
+    ts.forEachChild(node, visit)
+  }
+  visit(sf)
+}
+
+// ── Rule 13: nested-send-in-update ────────────────────────────────
+
+function checkNestedSendInUpdate(
+  sf: ts.SourceFile,
+  filename: string,
+  violations: LintViolation[],
+): void {
+  function visit(node: ts.Node): void {
+    if (
+      ts.isPropertyAssignment(node) &&
+      ts.isIdentifier(node.name) &&
+      node.name.text === 'update'
+    ) {
+      // Check that this property is inside a component() call
+      if (isInsideComponentCall(node)) {
+        const fn = node.initializer
+        if (ts.isArrowFunction(fn) || ts.isFunctionExpression(fn)) {
+          if (fn.body) {
+            findSendCalls(fn.body, sf, filename, violations)
+          }
+        }
+      }
+    }
+    ts.forEachChild(node, visit)
+  }
+  visit(sf)
+}
+
+function isInsideComponentCall(node: ts.Node): boolean {
+  let current = node.parent
+  while (current) {
+    if (
+      ts.isCallExpression(current) &&
+      ts.isIdentifier(current.expression) &&
+      current.expression.text === 'component'
+    ) {
+      return true
+    }
+    current = current.parent
+  }
+  return false
+}
+
+function findSendCalls(
+  node: ts.Node,
+  sf: ts.SourceFile,
+  filename: string,
+  violations: LintViolation[],
+): void {
+  // Don't descend into nested functions
+  if (ts.isArrowFunction(node) || ts.isFunctionExpression(node) || ts.isFunctionDeclaration(node)) {
+    return
+  }
+  if (
+    ts.isCallExpression(node) &&
+    ts.isIdentifier(node.expression) &&
+    node.expression.text === 'send'
+  ) {
+    const { line, column } = pos(node, sf)
+    violations.push({
+      rule: 'nested-send-in-update',
+      message:
+        'Calling send() inside update() causes recursive dispatch. Return effects instead: return [newState, [myEffect]].',
+      file: filename,
+      line,
+      column,
+    })
+  }
+  ts.forEachChild(node, (child) => findSendCalls(child, sf, filename, violations))
+}
+
+// ── Rule 14: imperative-dom-in-view ───────────────────────────────
+
+function checkImperativeDomInView(
+  sf: ts.SourceFile,
+  filename: string,
+  violations: LintViolation[],
+): void {
+  const imperativeMethods = new Set([
+    'querySelector',
+    'querySelectorAll',
+    'getElementById',
+    'getElementsByClassName',
+    'getElementsByTagName',
+  ])
+
+  function visit(node: ts.Node): void {
+    if (
+      ts.isPropertyAssignment(node) &&
+      ts.isIdentifier(node.name) &&
+      node.name.text === 'view'
+    ) {
+      const fn = node.initializer
+      if (ts.isArrowFunction(fn) || ts.isFunctionExpression(fn)) {
+        if (fn.body) {
+          findImperativeDom(fn.body, sf, filename, violations, imperativeMethods)
+        }
+      }
+    }
+    ts.forEachChild(node, visit)
+  }
+  visit(sf)
+}
+
+function isInsideOnMountCall(node: ts.Node): boolean {
+  let current = node.parent
+  while (current) {
+    if (
+      ts.isCallExpression(current) &&
+      ts.isIdentifier(current.expression) &&
+      current.expression.text === 'onMount'
+    ) {
+      return true
+    }
+    current = current.parent
+  }
+  return false
+}
+
+function findImperativeDom(
+  node: ts.Node,
+  sf: ts.SourceFile,
+  filename: string,
+  violations: LintViolation[],
+  imperativeMethods: Set<string>,
+): void {
+  if (
+    ts.isPropertyAccessExpression(node) &&
+    ts.isIdentifier(node.expression) &&
+    node.expression.text === 'document' &&
+    imperativeMethods.has(node.name.text)
+  ) {
+    if (!isInsideOnMountCall(node)) {
+      const { line, column } = pos(node, sf)
+      violations.push({
+        rule: 'imperative-dom-in-view',
+        message:
+          "Imperative DOM access in view() won't be reactive. Use LLui primitives (text, show, branch, each) for reactive rendering. Use onMount() for imperative DOM that runs once.",
+        file: filename,
+        line,
+        column,
+      })
+    }
+  }
+  ts.forEachChild(node, (child) =>
+    findImperativeDom(child, sf, filename, violations, imperativeMethods),
+  )
+}
+
+// ── Rule 15: accessor-side-effect ─────────────────────────────────
+
+function checkAccessorSideEffect(
+  sf: ts.SourceFile,
+  filename: string,
+  violations: LintViolation[],
+): void {
+  const sideEffectNames = new Set(['fetch', 'alert'])
+  const consoleMethods = new Set(['log', 'warn', 'error'])
+
+  function visit(node: ts.Node): void {
+    if (!isInsideViewFunction(node)) {
+      ts.forEachChild(node, visit)
+      return
+    }
+
+    // Find arrow functions that are accessors:
+    // 1. First arg to text()
+    // 2. Prop values in element helpers (e.g. class: s => ...)
+    if (ts.isArrowFunction(node)) {
+      const isAccessor = isAccessorArrow(node)
+      if (isAccessor && node.body) {
+        findSideEffectsInAccessor(node.body, sf, filename, violations, sideEffectNames, consoleMethods)
+      }
+    }
+    ts.forEachChild(node, visit)
+  }
+  visit(sf)
+}
+
+function isAccessorArrow(node: ts.ArrowFunction): boolean {
+  const parent = node.parent
+  // First arg to text()
+  if (
+    parent &&
+    ts.isCallExpression(parent) &&
+    ts.isIdentifier(parent.expression) &&
+    parent.expression.text === 'text' &&
+    parent.arguments[0] === node
+  ) {
+    return true
+  }
+  // Prop value in a property assignment (e.g. class: s => ...)
+  if (parent && ts.isPropertyAssignment(parent)) {
+    return true
+  }
+  return false
+}
+
+function findSideEffectsInAccessor(
+  node: ts.Node,
+  sf: ts.SourceFile,
+  filename: string,
+  violations: LintViolation[],
+  sideEffectNames: Set<string>,
+  consoleMethods: Set<string>,
+): void {
+  if (ts.isCallExpression(node)) {
+    // Check for console.log/warn/error
+    if (
+      ts.isPropertyAccessExpression(node.expression) &&
+      ts.isIdentifier(node.expression.expression) &&
+      node.expression.expression.text === 'console' &&
+      consoleMethods.has(node.expression.name.text)
+    ) {
+      const { line, column } = pos(node, sf)
+      violations.push({
+        rule: 'accessor-side-effect',
+        message:
+          'Side effect in accessor function. Accessors run on every state change — move side effects to update() or onEffect.',
+        file: filename,
+        line,
+        column,
+      })
+      return
+    }
+    // Check for fetch, alert
+    if (
+      ts.isIdentifier(node.expression) &&
+      sideEffectNames.has(node.expression.text)
+    ) {
+      const { line, column } = pos(node, sf)
+      violations.push({
+        rule: 'accessor-side-effect',
+        message:
+          'Side effect in accessor function. Accessors run on every state change — move side effects to update() or onEffect.',
+        file: filename,
+        line,
+        column,
+      })
+      return
+    }
+  }
+  ts.forEachChild(node, (child) =>
+    findSideEffectsInAccessor(child, sf, filename, violations, sideEffectNames, consoleMethods),
+  )
 }
 
 function collectMsgVariantShapes(type: ts.TypeNode): MsgVariantShape[] {

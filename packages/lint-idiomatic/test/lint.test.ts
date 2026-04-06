@@ -19,7 +19,7 @@ describe('lintIdiomatic', () => {
     `
     const result = lintIdiomatic(source)
     expect(result.violations.some((v) => v.rule === 'state-mutation')).toBe(true)
-    expect(result.score).toBeLessThan(9)
+    expect(result.score).toBeLessThan(15)
   })
 
   it('detects state mutation via push', () => {
@@ -149,7 +149,7 @@ describe('lintIdiomatic', () => {
       })
     `
     const result = lintIdiomatic(source)
-    expect(result.score).toBe(9)
+    expect(result.score).toBe(15)
   })
 
   it('score decreases by unique violated rule categories', () => {
@@ -176,7 +176,7 @@ describe('lintIdiomatic', () => {
     // Should have at least state-mutation, map-on-state-array, and form-boilerplate
     const violatedRules = new Set(result.violations.map((v) => v.rule))
     expect(violatedRules.size).toBeGreaterThanOrEqual(3)
-    expect(result.score).toBe(9 - violatedRules.size)
+    expect(result.score).toBe(15 - violatedRules.size)
   })
 
   it('includes correct file and position info', () => {
@@ -319,5 +319,209 @@ describe('lintIdiomatic', () => {
     `
     const result = lintIdiomatic(source)
     expect(result.violations.some((v) => v.rule === 'exhaustive-effect-handling')).toBe(false)
+  })
+
+  // ── Rule 10: effect-without-handler ──────────────────────────────
+
+  it('detects effects returned without onEffect handler', () => {
+    const source = `
+      const C = component({
+        name: 'C',
+        init: () => [{ data: null }, []],
+        update: (s, msg) => [s, [{ type: 'http', url: '/api' }]],
+        view: ({ send }) => [],
+      })
+    `
+    const result = lintIdiomatic(source)
+    expect(result.violations.some((v) => v.rule === 'effect-without-handler')).toBe(true)
+    expect(
+      result.violations.some((v) => v.message.includes('no onEffect handler')),
+    ).toBe(true)
+  })
+
+  it('does not flag component with onEffect handler', () => {
+    const source = `
+      const C = component({
+        name: 'C',
+        init: () => [{ data: null }, []],
+        update: (s, msg) => [s, [{ type: 'http', url: '/api' }]],
+        view: ({ send }) => [],
+        onEffect: (ctx) => {},
+      })
+    `
+    const result = lintIdiomatic(source)
+    expect(result.violations.some((v) => v.rule === 'effect-without-handler')).toBe(false)
+  })
+
+  // ── Rule 11: forgotten-spread ────────────────────────────────────
+
+  it('detects show/each/branch without spread in array', () => {
+    const source = `
+      const C = component({
+        name: 'C',
+        init: () => [{ flag: true }, []],
+        update: (s, m) => [s, []],
+        view: ({ send }) => [
+          div({}, [show({ when: s => s.flag, then: () => [text('yes')] })]),
+        ],
+      })
+    `
+    const result = lintIdiomatic(source)
+    expect(result.violations.some((v) => v.rule === 'forgotten-spread')).toBe(true)
+    expect(
+      result.violations.some((v) => v.message.includes('spread it')),
+    ).toBe(true)
+  })
+
+  it('does not flag spread show/each/branch', () => {
+    const source = `
+      const C = component({
+        name: 'C',
+        init: () => [{ flag: true }, []],
+        update: (s, m) => [s, []],
+        view: ({ send }) => [
+          div({}, [...show({ when: s => s.flag, then: () => [text('yes')] })]),
+        ],
+      })
+    `
+    const result = lintIdiomatic(source)
+    expect(result.violations.some((v) => v.rule === 'forgotten-spread')).toBe(false)
+  })
+
+  // ── Rule 12: string-effect-callback ──────────────────────────────
+
+  it('detects string-based effect callbacks', () => {
+    const source = `
+      const effects = [
+        http({ url: '/api', onSuccess: 'loaded', onError: 'failed' })
+      ]
+    `
+    const result = lintIdiomatic(source)
+    expect(result.violations.some((v) => v.rule === 'string-effect-callback')).toBe(true)
+    expect(
+      result.violations.some((v) => v.message.includes('deprecated')),
+    ).toBe(true)
+  })
+
+  it('does not flag function-based effect callbacks', () => {
+    const source = `
+      const effects = [
+        http({ url: '/api', onSuccess: (data) => ({ type: 'loaded', payload: data }) })
+      ]
+    `
+    const result = lintIdiomatic(source)
+    expect(result.violations.some((v) => v.rule === 'string-effect-callback')).toBe(false)
+  })
+
+  // ── Rule 13: nested-send-in-update ───────────────────────────────
+
+  it('detects send() inside update()', () => {
+    const source = `
+      const C = component({
+        name: 'C',
+        init: () => [{ count: 0 }, []],
+        update: (state, msg) => {
+          send({ type: 'oops' })
+          return [state, []]
+        },
+        view: ({ send }) => [],
+      })
+    `
+    const result = lintIdiomatic(source)
+    expect(result.violations.some((v) => v.rule === 'nested-send-in-update')).toBe(true)
+    expect(
+      result.violations.some((v) => v.message.includes('recursive dispatch')),
+    ).toBe(true)
+  })
+
+  it('does not flag send() outside update()', () => {
+    const source = `
+      const C = component({
+        name: 'C',
+        init: () => [{ count: 0 }, []],
+        update: (state, msg) => {
+          return [{ ...state, count: state.count + 1 }, []]
+        },
+        view: ({ send }) => [
+          button({ onClick: () => send({ type: 'inc' }) }, [text('+')]),
+        ],
+      })
+    `
+    const result = lintIdiomatic(source)
+    expect(result.violations.some((v) => v.rule === 'nested-send-in-update')).toBe(false)
+  })
+
+  // ── Rule 14: imperative-dom-in-view ──────────────────────────────
+
+  it('detects document.querySelector in view()', () => {
+    const source = `
+      const C = component({
+        name: 'C',
+        init: () => [{ count: 0 }, []],
+        update: (s, m) => [s, []],
+        view: ({ send }) => {
+          const el = document.querySelector('.foo')
+          return []
+        },
+      })
+    `
+    const result = lintIdiomatic(source)
+    expect(result.violations.some((v) => v.rule === 'imperative-dom-in-view')).toBe(true)
+    expect(
+      result.violations.some((v) => v.message.includes('Imperative DOM access')),
+    ).toBe(true)
+  })
+
+  it('does not flag document.querySelector inside onMount()', () => {
+    const source = `
+      const C = component({
+        name: 'C',
+        init: () => [{ count: 0 }, []],
+        update: (s, m) => [s, []],
+        view: ({ send }) => {
+          onMount(() => {
+            const el = document.querySelector('.foo')
+          })
+          return []
+        },
+      })
+    `
+    const result = lintIdiomatic(source)
+    expect(result.violations.some((v) => v.rule === 'imperative-dom-in-view')).toBe(false)
+  })
+
+  // ── Rule 15: accessor-side-effect ────────────────────────────────
+
+  it('detects console.log in accessor', () => {
+    const source = `
+      const C = component({
+        name: 'C',
+        init: () => [{ count: 0 }, []],
+        update: (s, m) => [s, []],
+        view: ({ send }) => [
+          text(s => { console.log(s.count); return String(s.count) }),
+        ],
+      })
+    `
+    const result = lintIdiomatic(source)
+    expect(result.violations.some((v) => v.rule === 'accessor-side-effect')).toBe(true)
+    expect(
+      result.violations.some((v) => v.message.includes('Side effect in accessor')),
+    ).toBe(true)
+  })
+
+  it('does not flag accessor without side effects', () => {
+    const source = `
+      const C = component({
+        name: 'C',
+        init: () => [{ count: 0 }, []],
+        update: (s, m) => [s, []],
+        view: ({ send }) => [
+          text(s => String(s.count)),
+        ],
+      })
+    `
+    const result = lintIdiomatic(source)
+    expect(result.violations.some((v) => v.rule === 'accessor-side-effect')).toBe(false)
   })
 })
