@@ -140,6 +140,17 @@ export interface WebSocketSendEffect {
   data: unknown
 }
 
+export interface UploadEffect<M = unknown> {
+  type: 'upload'
+  url: string
+  method?: string
+  body: FormData | Blob
+  headers?: Record<string, string>
+  onProgress: (loaded: number, total: number) => M
+  onSuccess: (data: unknown, status: number) => M
+  onError: (error: ApiError) => M
+}
+
 export interface RetryEffect {
   type: 'retry'
   inner: BuiltinEffect
@@ -165,6 +176,7 @@ type BuiltinEffect =
   | WebSocketEffect
   | WebSocketSendEffect
   | RetryEffect
+  | UploadEffect
 
 // Re-export for user convenience
 export type { BuiltinEffect as Effect }
@@ -285,6 +297,20 @@ export function retry(
   opts: { maxAttempts: number; delayMs: number },
 ): RetryEffect {
   return { type: 'retry', inner, maxAttempts: opts.maxAttempts, delayMs: opts.delayMs }
+}
+
+// ── Upload ──────────────────────────────────────────────────
+
+export function upload<M>(opts: {
+  url: string
+  method?: string
+  body: FormData | Blob
+  headers?: Record<string, string>
+  onProgress: (loaded: number, total: number) => M
+  onSuccess: (data: unknown, status: number) => M
+  onError: (error: ApiError) => M
+}): UploadEffect<M> {
+  return { type: 'upload', ...opts }
 }
 
 // ── Sequence / Race ──────────────────────────────────────────────
@@ -476,6 +502,9 @@ function dispatchEffect(
         websockets,
         custom,
       )
+      break
+    case 'upload':
+      runUpload(effect as UploadEffect, send, signal)
       break
     default:
       custom(effect, send, signal)
@@ -919,6 +948,51 @@ function runRetry(
   }
 
   tryOnce()
+}
+
+function runUpload(effect: UploadEffect, send: InternalSend, signal: AbortSignal): void {
+  if (typeof XMLHttpRequest === 'undefined') return
+
+  const xhr = new XMLHttpRequest()
+  const method = effect.method ?? 'POST'
+
+  xhr.open(method, effect.url)
+
+  if (effect.headers) {
+    for (const [key, value] of Object.entries(effect.headers)) {
+      xhr.setRequestHeader(key, value)
+    }
+  }
+
+  xhr.upload.onprogress = (e: ProgressEvent) => {
+    if (signal.aborted) return
+    send(effect.onProgress(e.loaded, e.total))
+  }
+
+  xhr.onload = () => {
+    if (signal.aborted) return
+    let data: unknown
+    try {
+      data = JSON.parse(xhr.responseText)
+    } catch {
+      data = xhr.responseText
+    }
+    send(effect.onSuccess(data, xhr.status))
+  }
+
+  xhr.onerror = () => {
+    if (signal.aborted) return
+    send(effect.onError({ kind: 'network', message: 'Upload failed' }))
+  }
+
+  xhr.ontimeout = () => {
+    if (signal.aborted) return
+    send(effect.onError({ kind: 'timeout' }))
+  }
+
+  signal.addEventListener('abort', () => xhr.abort(), { once: true })
+
+  xhr.send(effect.body)
 }
 
 function runSequence(

@@ -60,6 +60,27 @@ const handler = handleEffects<Effect, Msg>()
 | `broadcastListen(channel, onMsg)`     | Listen on BroadcastChannel                     |
 | `sequence([...effects])`              | Run effects in order                           |
 | `race([...effects])`                  | Run effects concurrently, first wins           |
+| `upload({ url, body, onProgress, onSuccess, onError })` | File upload with progress via XHR |
+
+### Upload
+
+Upload files with progress tracking via XMLHttpRequest:
+
+```ts
+import { upload } from '@llui/effects'
+
+const effect = upload({
+  url: '/api/upload',
+  body: formData,
+  headers: { Authorization: `Bearer ${token}` },
+  onProgress: (loaded, total) => ({
+    type: 'uploadProgress',
+    pct: Math.round((loaded / total) * 100),
+  }),
+  onSuccess: (data, status) => ({ type: 'uploadDone', data, status }),
+  onError: (error) => ({ type: 'uploadFailed', error }),
+})
+```
 
 ### Effect Handling
 
