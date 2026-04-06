@@ -176,29 +176,34 @@ function buildEntry<S, T, M>(
     return accessor
   }
 
-  // Proxy: item.field returns a field-accessor (shorthand for item(t => t.field)).
-  // Cache the per-field accessor so repeated `item.name` reads across the
-  // view's binding sites return the SAME function identity. For 10k rows
-  // with 3 field reads each, this turns 30k closure allocations into 3k.
-  let fieldCache: Map<string, () => unknown> | null = null
-  const itemAccessor = new Proxy(itemFn as object, {
-    get(target, prop) {
-      if (typeof prop === 'symbol' || prop === 'then' || prop === 'prototype') {
-        return Reflect.get(target, prop)
-      }
-      const key = prop as string
-      if (fieldCache) {
-        const cached = fieldCache.get(key)
-        if (cached) return cached
-      } else {
-        fieldCache = new Map()
-      }
-      const accessor = () => (entry.current as Record<string, unknown>)[key]
-      ;(accessor as unknown as { __perItem: true }).__perItem = true
-      fieldCache.set(key, accessor)
-      return accessor
-    },
-  }) as ItemAccessor<T>
+  // Proxy for item.field shorthand: LAZILY created. Compiled code uses
+  // `acc(fn)` instead (the compiler rewrites item.x → acc(r => r.x)),
+  // so the Proxy is never constructed in the common case. This saves
+  // ~300ns × N Proxy allocations per create cycle.
+  let itemProxy: ItemAccessor<T> | null = null
+  const getItemProxy = (): ItemAccessor<T> => {
+    if (itemProxy) return itemProxy
+    let fieldCache: Map<string, () => unknown> | null = null
+    itemProxy = new Proxy(itemFn as object, {
+      get(target, prop) {
+        if (typeof prop === 'symbol' || prop === 'then' || prop === 'prototype') {
+          return Reflect.get(target, prop)
+        }
+        const key = prop as string
+        if (fieldCache) {
+          const cached = fieldCache.get(key)
+          if (cached) return cached
+        } else {
+          fieldCache = new Map()
+        }
+        const accessor = () => (entry.current as Record<string, unknown>)[key]
+        ;(accessor as unknown as { __perItem: true }).__perItem = true
+        fieldCache.set(key, accessor)
+        return accessor
+      },
+    }) as ItemAccessor<T>
+    return itemProxy
+  }
 
   const indexAccessor = (): number => entry.index
 
@@ -210,12 +215,19 @@ function buildEntry<S, T, M>(
   const prevFlatBindings = getFlatBindings()
   setFlatBindings(ctx.allBindings)
   setRenderContext(buildCtx)
-  entry.nodes = opts.render({
+
+  // The render bag exposes `item` as a getter so the Proxy is only
+  // created when the callback actually accesses item.field. Compiled
+  // code uses `acc(fn)` exclusively, avoiding the Proxy entirely.
+  const renderBag: Parameters<typeof opts.render>[0] = {
     send,
-    item: itemAccessor,
+    get item() {
+      return getItemProxy()
+    },
     acc: itemFn,
     index: indexAccessor,
-  })
+  }
+  entry.nodes = opts.render(renderBag)
   clearRenderContext()
   setFlatBindings(prevFlatBindings)
   setRenderContext(ctx)

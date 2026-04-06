@@ -75,8 +75,14 @@ export function mountApp<S, M, E>(
   clearRenderContext()
   setFlatBindings(null)
 
-  for (const node of nodes) {
-    container.appendChild(node)
+  // Batch-insert via DocumentFragment — one layout-invalidating operation
+  // instead of N individual appendChild calls on a live container element.
+  if (nodes.length > 1) {
+    const frag = document.createDocumentFragment()
+    for (const node of nodes) frag.appendChild(node)
+    container.appendChild(frag)
+  } else if (nodes.length === 1) {
+    container.appendChild(nodes[0]!)
   }
 
   registerInstance(inst)
