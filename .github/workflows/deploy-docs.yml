@@ -1,0 +1,58 @@
+name: Deploy docs
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'site/**'
+      - 'docs/**'
+      - 'packages/*/README.md'
+      - 'evaluation/prompts/system-prompt.md'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Build LLui packages
+        run: pnpm turbo build --filter=@llui/dom --filter=@llui/vite-plugin --filter=@llui/vike
+
+      - name: Generate LLM files
+        run: cd site && npx tsx src/generate-llms.ts
+
+      - name: Build site
+        run: cd site && npx vite build
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site/dist/client
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

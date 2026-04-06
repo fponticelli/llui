@@ -1,0 +1,1513 @@
+# LLui — Complete LLM Reference
+
+This document is the comprehensive reference for the LLui web framework, intended for LLMs generating LLui code. It contains the system prompt, getting started guide, cookbook, and full API reference.
+
+---
+
+## Part 1: System Prompt
+
+# LLui Component
+
+You are writing a TypeScript component using the LLui framework.
+
+## Pattern
+
+LLui uses The Elm Architecture: `init` returns initial state and effects;
+`update(state, msg)` returns `[newState, effects]`; `view({ send, text, ... })`
+returns DOM nodes once at mount and binds state to the DOM through accessor
+functions. State is immutable. Effects are plain data objects returned from
+`update()`. Destructure view helpers from the single `View<S, M>` parameter.
+
+## Key Types
+
+```typescript
+interface ComponentDef<S, M, E> {
+  name: string
+  init: (props?: Record<string, unknown>) => [S, E[]]
+  update: (state: S, msg: M) => [S, E[]]
+  view: (h: View<S, M>) => Node[]
+  onEffect?: (ctx: { effect: E; send: (msg: M) => void; signal: AbortSignal }) => void
+}
+
+// View<S, M> is a bundle of state-bound helpers + send. Destructure in
+// `view` to drop per-call generics — every accessor infers `s: S` from
+// the component.
+interface View<S, M> {
+  send: (msg: M) => void
+  show(opts: { when: (s: S) => boolean; render: (send) => Node[] }): Node[]
+  branch(opts: { on: (s: S) => string | number; cases: Record<string, (send) => Node[]> }): Node[]
+  each<T>(opts: {
+    items: (s: S) => T[]
+    key: (item: T) => string | number
+    render: (bag: { item; index: () => number; send }) => Node[]
+  }): Node[]
+  text(accessor: ((s: S) => string) | string): Text
+  memo<T>(accessor: (s: S) => T): (s: S) => T
+  ctx<T>(c: Context<T>): (s: S) => T
+}
+// slice(h, selector) — standalone function for sub-slice view composition
+function slice<Root, Sub, M>(h: View<Root, M>, sel: (s: Root) => Sub): View<Sub, M>
+
+function onMount(callback: (el: Element) => (() => void) | void): void
+// item accessor: item.field (shorthand) or item(t => t.expr) (computed) — both return () => V
+```
+
+## Effects
+
+Effects use **typed message constructors** — callbacks, not strings:
+
+```typescript
+import { http, cancel, debounce, handleEffects } from '@llui/effects'
+import type { ApiError } from '@llui/effects'
+
+// HTTP with typed callbacks + flexible body:
+http({
+  url: '/api/users',
+  method: 'POST',
+  body: { name: 'Franco' },             // auto JSON.stringify + Content-Type
+  // body: formData,                     // FormData/Blob/URLSearchParams pass through
+  timeout: 5000,                         // optional request timeout (ms)
+  onSuccess: (data, headers) => ({ type: 'usersLoaded' as const, payload: data }),
+  onError: (err: ApiError) => ({ type: 'fetchFailed' as const, error: err }),
+})
+
+// Compose: cancel previous + debounce + http
+cancel('search', debounce('search', 300, http({
+  url: `/api/search?q=${q}`,
+  onSuccess: (data) => ({ type: 'results' as const, payload: data }),
+  onError: (err) => ({ type: 'searchError' as const, error: err }),
+})))
+
+// WebSocket:
+import { websocket, wsSend } from '@llui/effects'
+websocket({
+  url: 'wss://api.example.com/ws',
+  key: 'feed',
+  onMessage: (data) => ({ type: 'wsMessage' as const, payload: data }),
+  onClose: (code, reason) => ({ type: 'wsDisconnected' as const }),
+})
+wsSend('feed', { action: 'subscribe', channel: 'updates' })
+
+// Retry with exponential backoff:
+import { retry } from '@llui/effects'
+retry(http({ url: '/api/data', onSuccess: ..., onError: ... }), {
+  maxAttempts: 3,
+  delayMs: 1000,  // 1s, 2s, 4s
+})
+
+// Handle effects:
+onEffect: handleEffects<Effect, Msg>()
+  .else(({ effect, send, signal }) => { /* custom effects */ })
+```
+
+## Example
+
+```typescript
+import { component, div, button } from '@llui/dom'
+
+type State = { count: number }
+type Msg = { type: 'inc' } | { type: 'dec' }
+
+export const Counter = component<State, Msg, never>({
+  name: 'Counter',
+  init: () => [{ count: 0 }, []],
+  update: (state, msg) => {
+    switch (msg.type) {
+      case 'inc':
+        return [{ ...state, count: state.count + 1 }, []]
+      case 'dec':
+        return [{ ...state, count: Math.max(0, state.count - 1) }, []]
+    }
+  },
+  view: ({ send, text }) =>
+    div({ class: 'counter' }, [
+      button({ onClick: () => send({ type: 'dec' }) }, [text('-')]),
+      text((s) => String(s.count)),
+      button({ onClick: () => send({ type: 'inc' }) }, [text('+')]),
+    ]),
+})
+```
+
+## Rules
+
+- Never mutate state in `update()`. Always return a new object: `{ ...state, field: newValue }`.
+- Reactive values in `view()` are arrow functions: `text(s => s.label)`, `div({ class: s => s.active ? 'on' : '' })`.
+- Static values are literals: `div({ class: 'container' })`.
+- Destructure view helpers from the `view` argument: `view: ({ send, show, each, branch, text, memo }) => [...]`. This pins `s: S` across all state-bound calls — no per-call `show<State>` generics. Import element helpers (`div`, `button`, `span`…) normally.
+- Never use `.map()` on state arrays in `view()`. Always use `each()` for reactive lists.
+- In `each()`, `render` receives `item` (a scoped accessor proxy) and `index` (a getter).
+  Read item properties via property access: `item.text` (returns a reactive accessor).
+  Use `item(t => t.expr)` for computed expressions.
+  Invoke the accessor to read imperatively: `item.id()` (e.g. inside event handlers).
+- Wrap derived values used in multiple places in `memo()`.
+- Use `show` for boolean conditions. Use `branch` for named states (3+ cases or non-boolean).
+- For composition, use view functions (Level 1) with `(props, send)` convention.
+  Only use `child()` for library components with encapsulated internals or 30+ state paths.
+- For forms with many fields, use a single `setField` message:
+  `{ type: 'setField'; field: keyof Fields; value: string }` instead of one message per field.
+  Use `applyField(state, msg.field, msg.value)` from `@llui/dom` to apply updates.
+- Effects use typed message constructors: `onSuccess: (data) => ({ type: 'loaded', payload: data })`.
+  Never use string-based effect callbacks.
+- For `http`, `cancel`, `debounce`, `websocket`, `retry`: import from `@llui/effects`.
+  Wire into onEffect with `handleEffects<Effect, Msg>().else(handler)`.
+- `send()` batches via microtask. Use `flush()` only when reading DOM state immediately.
+
+
+---
+
+## Part 2: Getting Started
+
+
+## Installation
+
+```bash
+mkdir my-app && cd my-app
+npm init -y
+npm install @llui/dom @llui/effects
+npm install -D @llui/vite-plugin vite typescript
+```
+
+## Vite Configuration
+
+```typescript
+// vite.config.ts
+import { defineConfig } from 'vite'
+import llui from '@llui/vite-plugin'
+
+export default defineConfig({ plugins: [llui()] })
+```
+
+## HTML Entry Point
+
+```html
+<!-- index.html -->
+<!DOCTYPE html>
+<html>
+  <body>
+    <div id="app"></div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
+```
+
+## Your First Component
+
+Every LLui component has four parts:
+
+1. **State** — a plain, JSON-serializable object
+2. **Msg** — a discriminated union of all possible events
+3. **`init`** — returns `[initialState, initialEffects]`
+4. **`update`** — receives current state and a message, returns `[newState, effects]`
+5. **`view`** — runs **once** at mount time, returns DOM nodes with reactive bindings
+
+```typescript
+// src/main.ts
+import { component, mountApp, div, button, input } from '@llui/dom'
+
+type State = {
+  text: string
+  items: string[]
+}
+
+type Msg =
+  | { type: 'setText'; value: string }
+  | { type: 'add' }
+  | { type: 'remove'; index: number }
+
+const TodoApp = component<State, Msg, never>({
+  name: 'TodoApp',
+  init: () => [{ text: '', items: [] }, []],
+
+  update: (state, msg) => {
+    switch (msg.type) {
+      case 'setText':
+        return [{ ...state, text: msg.value }, []]
+      case 'add':
+        if (!state.text.trim()) return [state, []]
+        return [{ ...state, text: '', items: [...state.items, state.text] }, []]
+      case 'remove':
+        return [{ ...state, items: state.items.filter((_, i) => i !== msg.index) }, []]
+    }
+  },
+
+  view: ({ send, text, each }) => [
+    div({ class: 'app' }, [
+      div({ class: 'input-row' }, [
+        input({
+          type: 'text',
+          value: (s) => s.text,
+          onInput: (e) => send({ type: 'setText', value: (e.target as HTMLInputElement).value }),
+          onKeydown: (e) => { if (e.key === 'Enter') send({ type: 'add' }) },
+          placeholder: 'Add item...',
+        }),
+        button({ onClick: () => send({ type: 'add' }) }, [text('Add')]),
+      ]),
+      ...each({
+        items: (s) => s.items,
+        key: (_item, i) => i,
+        render: ({ item, index, send }) => [
+          div({ class: 'item' }, [
+            text(() => item()),
+            button({
+              onClick: () => send({ type: 'remove', index: index() }),
+            }, [text('x')]),
+          ]),
+        ],
+      }),
+    ]),
+  ],
+})
+
+mountApp(document.getElementById('app')!, TodoApp)
+```
+
+## Core Concepts
+
+### Reactive Bindings
+
+In `view()`, arrow functions create **reactive bindings** — they re-evaluate whenever the relevant state changes:
+
+```typescript
+// Static (evaluated once):
+div({ class: 'container' }, [...])
+
+// Reactive (updates when state changes):
+div({ class: (s) => s.isActive ? 'active' : 'inactive' }, [...])
+text((s) => `Count: ${s.count}`)
+```
+
+### Structural Primitives
+
+LLui provides three structural primitives for conditional and list rendering:
+
+- **`show`** — render/remove nodes based on a boolean condition
+- **`branch`** — switch between named views based on a state value
+- **`each`** — render a list of items with keyed reconciliation
+
+```typescript
+view: ({ send, text, show, branch, each }) => [
+  // show: boolean toggle
+  ...show({
+    when: (s) => s.isVisible,
+    render: () => [div({}, [text('Visible!')])],
+  }),
+
+  // branch: multi-case switch
+  ...branch({
+    on: (s) => s.page,
+    cases: {
+      home: () => [text('Home page')],
+      about: () => [text('About page')],
+      contact: () => [text('Contact page')],
+    },
+  }),
+
+  // each: keyed list
+  ...each({
+    items: (s) => s.todos,
+    key: (todo) => todo.id,
+    render: ({ item, send }) => [
+      div({}, [
+        text(() => item.label()),
+        button({ onClick: () => send({ type: 'remove', id: item.id() }) }, [text('x')]),
+      ]),
+    ],
+  }),
+]
+```
+
+### Effects
+
+Side effects are data — plain objects returned from `update()`. The runtime dispatches them:
+
+```typescript
+import { http, cancel, debounce, handleEffects } from '@llui/effects'
+
+type Effect =
+  | ReturnType<typeof http>
+  | ReturnType<typeof cancel>
+  | ReturnType<typeof debounce>
+
+const App = component<State, Msg, Effect>({
+  // ...
+  update: (state, msg) => {
+    switch (msg.type) {
+      case 'search':
+        return [
+          { ...state, query: msg.value },
+          [cancel('search', debounce('search', 300, http({
+            url: `/api/search?q=${encodeURIComponent(msg.value)}`,
+            onSuccess: (data) => ({ type: 'results' as const, data }),
+            onError: (err) => ({ type: 'error' as const, err }),
+          })))],
+        ]
+      // ...
+    }
+  },
+  onEffect: handleEffects<Effect, Msg>()
+    .else(({ effect }) => { console.warn('Unhandled effect:', effect) }),
+})
+```
+
+### Composition
+
+LLui supports two levels of composition:
+
+**Level 1 — View functions** (default): A module exports `update()` and `view()` functions. The parent owns state; the child operates on a slice.
+
+**Level 2 — `child()`** (opt-in): Full component boundary with own bitmask, update cycle, and scope tree. Use for library components or 30+ state paths.
+
+```typescript
+// Level 1: view function
+function todoItem(item: Accessor<Todo>, send: (msg: Msg) => void): Node[] {
+  return [
+    div({ class: 'todo' }, [
+      text(() => item.label()),
+      button({ onClick: () => send({ type: 'toggle', id: item.id() }) }, [text('done')]),
+    ]),
+  ]
+}
+```
+
+## Dev Server
+
+```bash
+npx vite
+```
+
+Open `http://localhost:5173`. Changes hot-reload via HMR.
+
+
+---
+
+## Part 3: Cookbook
+
+
+# Cookbook
+
+Common patterns and recipes.
+
+## Forms
+
+### Text Input with Reactive Binding
+
+```typescript
+type State = { name: string }
+type Msg = { type: 'setName'; value: string }
+
+view: ({ send }) => [
+  input({
+    type: 'text',
+    value: (s: State) => s.name,
+    onInput: (e: Event) =>
+      send({
+        type: 'setName',
+        value: (e.target as HTMLInputElement).value,
+      }),
+  }),
+]
+```
+
+### Form Submission
+
+```typescript
+form({
+  onSubmit: (e: Event) => {
+    e.preventDefault()
+    send({ type: 'submitForm' })
+  },
+}, [
+  input({ value: (s: State) => s.email, onInput: ... }),
+  button({ type: 'submit', disabled: (s: State) => s.loading }, [text('Submit')]),
+])
+```
+
+### Error Display
+
+```typescript
+each<State, string, Msg>({
+  items: (s) => s.errors,
+  key: (e) => e,
+  render: ({ item }) => [li({ class: 'error' }, [text(item((e) => e))])],
+})
+```
+
+## Async Patterns
+
+### Loading State with `Async<T, E>`
+
+```typescript
+import type { Async, ApiError } from '@llui/effects'
+
+type State = { users: Async<User[], ApiError> }
+
+// In view:
+branch<State, Msg>({
+  on: (s) => s.users.type,
+  cases: {
+    idle: () => [text('Click to load')],
+    loading: () => [text('Loading...')],
+    success: () => [
+      each<State, User, Msg>({
+        items: (s) => (s.users.type === 'success' ? s.users.data : []),
+        key: (u) => u.id,
+        render: ({ item }) => [text(item((u) => u.name))],
+      }),
+    ],
+    failure: () => [text((s: State) => (s.users.type === 'failure' ? s.users.error.kind : ''))],
+  },
+})
+```
+
+### Debounced Search
+
+```typescript
+import { http, cancel, debounce } from '@llui/effects'
+
+case 'setQuery': {
+  const q = msg.value
+  if (!q.trim()) return [{ ...state, query: q }, [cancel('search')]]
+  return [
+    { ...state, query: q },
+    [debounce('search', 300, http({
+      url: `/api/search?q=${encodeURIComponent(q)}`,
+      onSuccess: (data) => ({ type: 'searchOk' as const, payload: data }),
+      onError: (err) => ({ type: 'searchError' as const, error: err }),
+    }))],
+  ]
+}
+```
+
+### Polling with `interval`
+
+```typescript
+import { interval, cancel } from '@llui/effects'
+
+case 'startPolling':
+  return [{ ...state, polling: true }, [interval('poll', 5000, { type: 'tick' })]]
+case 'stopPolling':
+  return [{ ...state, polling: false }, [cancel('poll')]]
+case 'tick':
+  return [state, [http({
+    url: '/api/status',
+    onSuccess: (data) => ({ type: 'statusLoaded' as const, payload: data }),
+    onError: (err) => ({ type: 'statusErr' as const, error: err }),
+  })]]
+```
+
+### Delayed Messages with `timeout`
+
+```typescript
+import { timeout } from '@llui/effects'
+
+case 'showToast':
+  return [
+    { ...state, toast: msg.text },
+    [timeout(3000, { type: 'dismissToast' })],
+  ]
+case 'dismissToast':
+  return [{ ...state, toast: null }, []]
+```
+
+### Persistence with localStorage
+
+```typescript
+import { storageLoad, storageSet, storageWatch } from '@llui/effects'
+
+// Seed state at init time:
+init: () => {
+  const saved = storageLoad<{ theme: string }>('prefs')
+  return [{ theme: saved?.theme ?? 'light' }, [
+    // Optionally subscribe to cross-tab changes:
+    storageWatch('prefs', 'prefsChanged'),
+  ]]
+}
+
+// Write on every change:
+case 'setTheme':
+  return [
+    { ...state, theme: msg.value },
+    [storageSet('prefs', { theme: msg.value })],
+  ]
+
+// Cross-tab sync handler:
+case 'prefsChanged':
+  return msg.value ? [{ ...state, theme: (msg.value as { theme: string }).theme }, []] : [state, []]
+```
+
+### Cancel Previous Request
+
+```typescript
+case 'loadUser':
+  return [state, [
+    cancel('user-load', http({
+      url: `/api/users/${msg.id}`,
+      onSuccess: (data) => ({ type: 'userLoaded' as const, payload: data }),
+      onError: (err) => ({ type: 'loadError' as const, error: err }),
+    })),
+  ]]
+```
+
+## Composition
+
+### Level 1: View Functions (default)
+
+Split views into separate modules. Parent owns state, child operates on a slice.
+
+```typescript
+// views/header.ts
+export function header(send: Send<Msg>): Node[] {
+  return [
+    nav([
+      text((s: State) => s.user?.name ?? 'Guest'),
+      button({ onClick: () => send({ type: 'logout' }) }, [text('Logout')]),
+    ]),
+  ]
+}
+
+// main component view:
+view: ({ send }) => [header(send), mainContent(send)]
+```
+
+### View functions with typed props: `Props<T, S>`
+
+When a view function needs data from state, make **every field an accessor**.
+Raw values captured at mount are frozen -- a silent reactivity bug.
+
+```typescript
+import type { Props, Send } from '@llui/dom'
+
+type ToolbarData = {
+  tools: Tool[]
+  theme: 'light' | 'dark'
+  activeId: string | null
+}
+
+// Generic over S -- parent supplies its own state type:
+export function toolbar<S>(props: Props<ToolbarData, S>, send: Send<ToolbarMsg>): Node[] {
+  return [
+    div({ class: (s) => `toolbar theme-${props.theme(s)}` }, [
+      each({
+        items: props.tools,
+        key: (t) => t.id,
+        render: ({ item, send }) => [
+          div(
+            {
+              class: (s) => (props.activeId(s) === item.id() ? 'tool active' : 'tool'),
+              onClick: () => send({ type: 'pick', id: item.id() }),
+            },
+            [text(item.label)],
+          ),
+        ],
+      }),
+    ]),
+  ]
+}
+
+// Caller -- each field is an accessor. TypeScript errors if you pass a raw value:
+view: ({ send }) =>
+  toolbar<State>(
+    {
+      tools: (s) => s.tools,
+      theme: (s) => s.settings.theme,
+      activeId: (s) => s.selectedId,
+    },
+    (msg) => send({ type: 'toolbar', msg }),
+  )
+```
+
+`Props<T, S>` maps `{ tools: Tool[] }` to `{ tools: (s: S) => Tool[] }` -- making the
+reactive-accessor contract explicit and type-enforced.
+
+### Minimal Intent Pattern
+
+Event handlers inside `each()` send minimal data -- `update()` resolves the rest from state:
+
+```typescript
+// In each() render -- only sends the item id
+onClick: () => send({ type: 'selectItem', id: item.id() })
+
+// In update() -- has full state access
+case 'selectItem':
+  const fullItem = state.items.find(i => i.id === msg.id)
+  return [{ ...state, selected: fullItem }, []]
+```
+
+### Composable Update with `mergeHandlers`
+
+```typescript
+import { mergeHandlers } from '@llui/dom'
+
+const update = mergeHandlers<State, Msg, Effect>(
+  routerHandler,     // handles 'navigate' messages
+  authHandler,       // handles 'login', 'logout'
+  (state, msg) => {  // everything else
+    switch (msg.type) { ... }
+  },
+)
+```
+
+### Embedding a sub-component with `sliceHandler`
+
+`sliceHandler` lifts a sub-component's reducer into one that operates on the
+parent's full state + message type. The sub-component's state lives at a slice
+of the parent state, and the parent wraps sub-messages in its own discriminant.
+Pair with `mergeHandlers` to compose:
+
+```typescript
+import { mergeHandlers, sliceHandler } from '@llui/dom'
+import * as dialog from './components/dialog'
+
+// Parent state owns a slice for the dialog:
+type State = { confirm: dialog.State; todos: Todo[] }
+type Msg = { type: 'confirm'; msg: dialog.Msg } | { type: 'addTodo'; text: string }
+
+const update = mergeHandlers<State, Msg, Effect>(
+  sliceHandler({
+    get: (s) => s.confirm,
+    set: (s, v) => ({ ...s, confirm: v }),
+    narrow: (m) => (m.type === 'confirm' ? m.msg : null),
+    sub: dialog.update,
+  }),
+  (state, msg) => {
+    // Only sees messages the slice handler didn't claim:
+    switch (msg.type) {
+      case 'addTodo':
+        return [{ ...state, todos: [...state.todos, { text: msg.text }] }, []]
+    }
+  },
+)
+```
+
+**When to reach for this:** embedding a reusable component (dialog, combobox,
+date-picker) that ships its own `State`, `Msg`, and `update`. The parent stays
+type-safe: each sub-component gets a branded message variant (`{ type: 'confirm',
+msg: dialog.Msg }`) so the parent's `Msg` union is exhaustive and routing is
+explicit.
+
+**When NOT to use it:** for view-function composition (Level 1), where the
+parent owns the state directly and passes accessors down via `Props<T, S>`.
+`sliceHandler` is for genuine sub-components with their own update logic.
+
+### Context: avoiding prop drilling
+
+For ambient data that many components need (theme, user session, i18n) without
+threading through every view function:
+
+```typescript
+import { createContext, provide, useContext } from '@llui/dom'
+
+// Declare a typed context. Pass a default to make unprovided consumers resolve;
+// omit to make `useContext` throw at mount.
+const ThemeContext = createContext<'light' | 'dark'>('light')
+
+// Provide a reactive accessor to every descendant rendered inside children():
+view: ({ send }) =>
+  provide(ThemeContext, (s: State) => s.theme, () => [
+    header(send),
+    main(send),
+  ])
+
+// Consume anywhere in the subtree -- returns a `(s) => T` accessor:
+export function card(): Node[] {
+  const theme = useContext(ThemeContext)
+  return [div({ class: (s) => `card theme-${theme(s)}` }, [...])]
+}
+```
+
+Nested providers shadow outer ones within their subtree; the outer value
+is restored for sibling subtrees automatically. Context works across
+`show`/`branch`/`each` boundaries, including re-mounts.
+
+**When to use context:** theme, route, user session, feature flags, design
+tokens. **When NOT to use it:** data that's specific to a subtree -- pass
+via `Props<T, S>` instead.
+
+## Routing
+
+### Structured Route Definitions
+
+```typescript
+import { createRouter, route, param, rest } from '@llui/router'
+
+const router = createRouter<Route>([
+  route([], () => ({ page: 'home' })),
+  route(['search'], { query: ['q', 'p'] }, ({ q, p }) => ({
+    page: 'search',
+    q: q ?? '',
+    p: p ? parseInt(p) : 1,
+  })),
+  route([param('owner'), param('name')], ({ owner, name }) => ({ page: 'repo', owner, name })),
+  route([param('owner'), param('name'), 'tree', rest('path')], ({ owner, name, path }) => ({
+    page: 'tree',
+    owner,
+    name,
+    path,
+  })),
+])
+```
+
+Routes are bidirectional -- `router.match('/search?q=foo')` parses, `router.href({ page: 'search', q: 'foo', p: 1 })` formats.
+
+### Navigation Links
+
+```typescript
+import { connectRouter } from '@llui/router/connect'
+const routing = connectRouter(router)
+
+// In views:
+routing.link(send, { page: 'home' }, { class: 'nav-link' }, [text('Home')])
+```
+
+`routing.link` renders `<a>` with correct href and handles click (`preventDefault` + send navigate message + pushState).
+
+### Page Switching
+
+```typescript
+view: ({ send, branch }) => [
+  ...routing.listener(send), // listens for popstate/hashchange
+  ...branch({
+    on: (s) => s.route.page,
+    cases: {
+      home: (send) => homePage(send),
+      search: (send) => searchPage(send),
+      repo: (send) => repoPage(send),
+    },
+  }),
+]
+```
+
+## SSR
+
+### Server-Side Data Loading
+
+```typescript
+import { initSsrDom } from '@llui/dom/ssr'
+import { renderToString } from '@llui/dom'
+import { resolveEffects } from '@llui/effects'
+
+await initSsrDom()
+
+export async function render(url: string) {
+  const state = initialState(url)
+  const [routeState, effects] = update(state, { type: 'navigate', route: state.route })
+
+  // Execute HTTP effects server-side
+  const loaded = await resolveEffects(routeState, effects, update)
+  const html = renderToString(appDef, loaded)
+
+  return { html, state: JSON.stringify(loaded) }
+}
+```
+
+### Client Hydration
+
+```typescript
+import { mountApp, hydrateApp } from '@llui/dom'
+
+const serverState = document.getElementById('__state')
+if (serverState && container.children.length > 0) {
+  hydrateApp(container, App, JSON.parse(serverState.textContent!))
+} else {
+  mountApp(container, App)
+}
+```
+
+## Foreign Libraries
+
+### Shadow DOM for Style Isolation
+
+```typescript
+foreign<State, { html: string }, { root: ShadowRoot }>({
+  mount: (container) => {
+    const root = container.attachShadow({ mode: 'open' })
+    root.innerHTML = '<style>h1 { color: blue }</style><div class="content"></div>'
+    return { root }
+  },
+  props: (s) => ({ html: s.readmeHtml }),
+  sync: (instance, { html }) => {
+    instance.root.querySelector('.content')!.innerHTML = html
+  },
+  destroy: () => {},
+})
+```
+
+### Imperative DOM (Line-Numbered Code)
+
+```typescript
+foreign<State, { content: string }, { el: HTMLElement }>({
+  mount: (container) => ({ el: container }),
+  props: (s) => ({ content: s.fileContent }),
+  sync: ({ el }, { content }) => {
+    el.innerHTML = ''
+    const lines = content.split('\n')
+    for (let i = 0; i < lines.length; i++) {
+      const row = document.createElement('div')
+      row.textContent = `${i + 1}: ${lines[i]}`
+      el.appendChild(row)
+    }
+  },
+  destroy: () => {},
+})
+```
+
+## Testing
+
+```typescript
+import { testComponent, testView, propertyTest } from '@llui/test'
+
+// Unit test update() -- zero DOM, runs in Node
+const harness = testComponent(MyComponent)
+harness.send({ type: 'inc' })
+expect(harness.state.count).toBe(1)
+expect(harness.allEffects).toEqual([])
+
+// Chain messages:
+harness.sendAll([{ type: 'inc' }, { type: 'inc' }, { type: 'reset' }])
+expect(harness.state.count).toBe(0)
+
+// Interactive view test -- mount, simulate events, assert DOM:
+const view = testView(MyComponent, { count: 5 })
+expect(view.text('.count')).toBe('5')
+
+view.click('.increment') // dispatches onClick + flushes
+view.input('.name', 'alice') // sets value + fires input event + flushes
+view.send({ type: 'reset' }) // dispatch a message + flush
+expect(view.text('.count')).toBe('0')
+
+view.unmount()
+
+// Property test (random message sequences):
+propertyTest(MyComponent, {
+  messages: [{ type: 'inc' }, { type: 'dec' }, { type: 'reset' }],
+  invariant: (state) => state.count >= 0,
+})
+```
+
+**When to use which:**
+
+- `testComponent` -- validating `update()` logic. Pure, fast, no DOM.
+- `testView` -- validating bindings + event wiring. Uses jsdom, supports
+  `click`, `input`, `fire`, `send`, `text`, `attr`, `query`, `queryAll`.
+- `propertyTest` -- catching edge cases via random message sequences.
+
+
+---
+
+## Part 4: API Reference
+
+# API Reference
+
+This document provides the authoritative type signatures for every public export in the LLui framework and its companion packages. For design rationale and usage patterns, see the document referenced in each section.
+
+---
+
+## Core Runtime (`llui`)
+
+### `component<S, M, E, D>(def)`
+
+Creates a component definition. This is the entry point for every LLui component.
+
+```typescript
+function component<S, M, E = never, D = void>(
+  def: ComponentDef<S, M, E, D>,
+): ComponentDef<S, M, E, D>
+
+interface ComponentDef<S, M, E = never, D = void> {
+  name: string
+  init: (data: D) => [S, E[]]
+  update: (state: S, msg: M) => [S, E[]]
+  view: (h: View<S, M>) => Node[]
+  onEffect?: (bag: { effect: E; send: (msg: M) => void; signal: AbortSignal }) => void
+
+  // Level 2 composition only:
+  propsMsg?: (props: any) => M
+  receives?: Record<string, (params: any) => M>
+
+  // @internal — compiler-injected, not part of the public API:
+  // __dirty, __renderToString, __msgSchema
+}
+```
+
+**Constraints:**
+
+- `S` must be JSON-serializable (no `Map`, `Set`, `Date`, class instances, functions).
+- `M` should be a discriminated union with a `type` field.
+- `E` should be a discriminated union with a `type` field.
+- `update()` must be pure — no side effects, no DOM access, no async.
+- `view()` runs once at mount time. Do not call view primitives outside this context.
+- `h` is a `View<S, M>` bundle of state-bound helpers — see [`View<S, M>`](#views-m) below. Using `h.show(...)` / `h.text(...)` / `h.each(...)` removes the need for per-call generic annotations because `S` is pinned by the enclosing `component<S, M, _>` call.
+
+See: 01 Architecture.md, 07 LLM Friendliness.md
+
+---
+
+### `View<S, M>`
+
+A bundle of state-bound view helpers passed as the second argument to `view`. Every method is typed over the component's `S` and `M`, so callbacks like `when: s => ...` and `items: s => ...` infer `s: S` without explicit generics at each call site.
+
+```typescript
+interface View<S, M> {
+  send: (msg: M) => void
+  show(opts: ShowOptions<S, M>): Node[]
+  branch(opts: BranchOptions<S, M>): Node[]
+  each<T>(opts: EachOptions<S, T, M>): Node[]
+  text(accessor: ((s: S) => string) | string, mask?: number): Text
+  memo<T>(accessor: (s: S) => T): (s: S) => T
+  selector<V>(field: (s: S) => V): SelectorInstance<V>
+  ctx<T>(c: Context<T>): (s: S) => T
+}
+```
+
+**`slice(h, selector)`** (standalone export from `@llui/dom`) returns a narrower `View<Sub, M>` for view-functions that read a sub-slice of the parent state. All state-bound accessors written against the sub view are composed with `selector` under the hood:
+
+```typescript
+import { slice } from '@llui/dom'
+
+view: ({ send, branch }) => {
+  const routeView = slice({ send }, s => s.route)
+  return routeView.branch({
+    on: r => r.data.type === 'loading' ? 'loading' : 'ready',
+    cases: { ... },
+  })
+}
+```
+
+`slice` is a standalone function (not a View method) so apps that don't use it don't pay its bundle cost.
+
+**Compiler integration.** The Vite plugin treats destructured aliases (`{ text, show }`) and member-expression calls (`h.text(...)`, `h.show(...)`) identically to bare imports for mask injection. Destructured names are tracked through the first parameter of `view: ({ send, text }) => ...` arrows and `(h: View<S, M>)` parameter annotations on extracted helpers.
+
+**Destructuring vs. `h.`:** destructure view helpers in `view: ({ send, text, show }) => ...`. For extracted view-functions, accept `h: View<S, M>` and destructure from it. The compiler handles both forms equivalently.
+
+See: 01 Architecture.md, 07 LLM Friendliness.md
+
+---
+
+### `mountApp(container, def, data?)`
+
+Mounts a component into the DOM. Runs `init(data)`, then `view()`, then Phase 2.
+
+```typescript
+function mountApp<S, M, E, D>(
+  container: HTMLElement,
+  def: ComponentDef<S, M, E, D>,
+  data: D,
+): AppHandle
+
+interface AppHandle {
+  dispose(): void // Disposes the root scope, removes all DOM, cancels all effects.
+  flush(): void // Alias for the global flush() scoped to this app.
+}
+```
+
+The returned `AppHandle` is the only way to tear down a mounted app — required for SPA page transitions, test cleanup, and HMR. Calling `dispose()` is idempotent; calling it twice is a no-op.
+
+See: 08 Ecosystem Integration.md
+
+---
+
+### `hydrateApp(container, def, serverState)`
+
+Hydrates server-rendered HTML. Walks existing DOM, attaches bindings to `data-llui-hydrate` markers, and registers structural blocks without creating new DOM nodes.
+
+```typescript
+function hydrateApp<S, M, E, D>(
+  container: HTMLElement,
+  def: ComponentDef<S, M, E, D>,
+  serverState: S,
+): AppHandle
+```
+
+Returns the same `AppHandle` as `mountApp`. On mismatch between server HTML and client state, falls back to full client render for the affected subtree with a development-mode console warning.
+
+See: 08 Ecosystem Integration.md
+
+---
+
+### `send(msg)`
+
+Enqueues a message for the next update cycle. Available as the second argument to `view()` and to `onEffect`. Multiple `send()` calls within the same synchronous execution coalesce into one update cycle.
+
+```typescript
+type Send<M> = (msg: M) => void
+```
+
+See: 01 Architecture.md, 03 Runtime DOM.md
+
+---
+
+### `flush()`
+
+Forces the pending update cycle to execute synchronously. After `flush()` returns, the DOM reflects all queued messages. No-op if no messages are pending.
+
+```typescript
+function flush(): void
+```
+
+Use for: (1) imperative DOM measurement after `send()`, (2) test harnesses needing synchronous assertions.
+
+**Reentrancy:** If `flush()` is called while an update cycle is already in progress (e.g., from inside an effect handler), it is a no-op — the current cycle will already process all pending messages. Messages enqueued by effects during the cycle are picked up in the next microtask drain, not in the current `flush()`.
+
+See: 03 Runtime DOM.md
+
+---
+
+### `onMount(callback)`
+
+Registers a callback that fires via `queueMicrotask` after DOM insertion. The callback receives the element's root DOM node. Must be called during `view()` execution. The callback is silently dropped if the owning scope is disposed before the microtask fires.
+
+```typescript
+function onMount(callback: (el: Element) => (() => void) | void): void
+```
+
+The optional return value is a cleanup function registered as a disposer on the current scope.
+
+See: 01 Architecture.md
+
+---
+
+### Event Listeners
+
+Event handlers are the second argument category in element props (keys matching `/^on[A-Z]/`). The `send` function is captured from the enclosing `view(send)` closure — handlers call `send()` to dispatch messages.
+
+```typescript
+button({ onClick: () => send({ type: 'increment' }) }, [text('+')])
+input({ onInput: (e) => send({ type: 'typed', value: e.target.value }) })
+```
+
+Handlers are registered via `addEventListener` at mount time and removed when the owning scope is disposed. **Handlers are not reactive** — the handler identity is captured once at mount. If a handler needs to read current state, capture the needed values via reactive accessors or dispatch a message and read state in `update()`.
+
+---
+
+### Addressed Effects
+
+Components can declare named command handlers via `receives` in `ComponentDef`. This enables typed cross-component communication through the effect system.
+
+```typescript
+// Child declares what it receives:
+const DataTable = component({
+  receives: {
+    scrollToRow: (params: { id: string }) => ({ type: 'scrollToRow', id: params.id }),
+    resetSort: () => ({ type: 'resetSort' }),
+  },
+  // ...
+})
+
+// Parent sends addressed effects:
+import { toDataTable } from './data-table'
+return [state, [toDataTable.scrollToRow({ id: msg.id })]]
+```
+
+**Component registry:** Each `child()` instance registers itself in a per-app component registry keyed by `child.key`. `dispatchEffect` resolves the `__targetKey` field on addressed effects against this registry at dispatch time. If the target component is not mounted, the effect is dropped with a development-mode warning. If multiple children share a key, the last-mounted instance wins (this is a bug — keys must be unique).
+
+The `component()` call auto-generates a typed `address` builder (exported as `toComponentName`) from the `receives` map. Invalid handler names or mismatched parameter types are caught at compile time.
+
+---
+
+## View Primitives
+
+### `text(accessor)`
+
+Creates a reactive text node. The accessor is re-evaluated on state changes matching its bitmask.
+
+```typescript
+function text<S>(accessor: (s: S) => string): Text
+function text(staticValue: string): Text
+```
+
+The compiler injects a mask as a second argument: `text(accessor, mask)`.
+
+See: 01 Architecture.md, 03 Runtime DOM.md
+
+---
+
+### Element Helpers (`div`, `span`, `button`, etc.)
+
+Approximately 50 functions, one per HTML element. All share the same signature pattern:
+
+```typescript
+function div<S>(props?: ElementProps<S>, children?: Node[]): HTMLDivElement
+function button<S>(props?: ElementProps<S>, children?: Node[]): HTMLButtonElement
+function input<S>(props?: ElementProps<S>): HTMLInputElement
+// ... etc for all HTML elements
+```
+
+**Props are classified by the compiler into three categories:**
+
+- **Static** — literal values applied once at mount: `{ class: 'container', id: 'root' }`
+- **Event handlers** — keys matching `/^on[A-Z]/`: `{ onClick: () => send({ type: 'click' }) }`
+- **Reactive bindings** — arrow functions re-evaluated on state changes: `{ class: s => s.active ? 'on' : 'off' }`
+
+After compilation, all element helper calls are rewritten to `elSplit()` and the helpers are tree-shaken from the bundle.
+
+See: 02 Compiler.md, 06 Bundle Size.md
+
+---
+
+## Structural Primitives
+
+### `branch(opts)`
+
+Conditional rendering keyed on a discriminant. When the discriminant changes, the old arm's scope is disposed depth-first (removing all bindings, listeners, and nested structural blocks) and the new arm's builder runs from scratch.
+
+```typescript
+function branch<S, M>(opts: {
+  on: (s: S) => string | number | boolean
+  cases: Record<string | number, (send: Send<M>) => Node[]>
+  enter?: (nodes: Node[]) => void | Promise<void>
+  leave?: (nodes: Node[]) => void | Promise<void>
+  onTransition?: (ctx: { entering: Node[]; leaving: Node[]; parent: Node }) => void | Promise<void>
+}): Node[]
+```
+
+The `leave` callback fires before node removal; if it returns a Promise, removal is deferred until the promise resolves. `enter` fires after insertion. `onTransition` fires first when both are specified (for FLIP animations), then `enter`/`leave` fire for their respective elements.
+
+See: 03 Runtime DOM.md, 01 Architecture.md
+
+---
+
+### `each(opts)`
+
+Reactive keyed list rendering with reconciliation.
+
+```typescript
+function each<S, T, M>(opts: {
+  items: (s: S) => T[]
+  key: (item: T) => string | number
+  render: (bag: { send: Send<M>; item: ItemAccessor<T>; index: () => number }) => Node[]
+  enter?: (nodes: Node[]) => void | Promise<void>
+  leave?: (nodes: Node[]) => void | Promise<void>
+  onTransition?: (ctx: { entering: Node[]; leaving: Node[]; parent: Node }) => void | Promise<void>
+}): Node[]
+
+// ItemAccessor is a proxy-function: callable for computed expressions,
+// with per-field shorthand properties.
+type ItemAccessor<T> = (<R>(selector: (t: T) => R) => () => R) & {
+  [K in keyof T]: () => T[K]
+}
+```
+
+**Parameter types differ intentionally:**
+
+- `key` receives the **raw item value** `T` — it is a pure identity function evaluated during Phase 1.
+- `render` receives a **scoped accessor** `item` and an `index` getter. Use `item.field()` for a direct field read (the shorthand for `item(t => t.field)()`), or `item(t => expr)` for computed expressions that produce a reactive binding.
+
+See: 03 Runtime DOM.md, 01 Architecture.md
+
+---
+
+### `show(opts)`
+
+Boolean conditional rendering. Implemented as a two-case `branch` — the scope is disposed when the condition becomes false and rebuilt when it becomes true.
+
+```typescript
+function show<S, M>(opts: {
+  when: (s: S) => boolean
+  render: (send: (msg: M) => void) => Node[]
+  fallback?: (send: (msg: M) => void) => Node[]
+  enter?: (nodes: Node[]) => void | Promise<void>
+  leave?: (nodes: Node[]) => void | Promise<void>
+  onTransition?: (ctx: { entering: Node[]; leaving: Node[]; parent: Node }) => void | Promise<void>
+}): Node[]
+```
+
+See: 03 Runtime DOM.md
+
+---
+
+### `portal(opts)`
+
+Renders a subtree outside the component's natural DOM position (e.g., to `document.body` for modals). Bindings participate in the same update cycle. The portal's scope is a child of the originating scope — disposal removes portal nodes from the target.
+
+```typescript
+function portal(opts: { target: HTMLElement | string; render: () => Node[] }): Node[]
+```
+
+When `target` is a `string`, it is resolved via `document.querySelector(target)` at mount time. If the target element is not found, a development-mode warning is emitted and the portal renders nothing. If the target element is removed from the DOM after mount, portal nodes are removed with it — the scope's disposers still fire on the next parent scope disposal.
+
+Bindings inside the portal participate in the same update cycle as the rest of the component. The portal's scope is a child of the originating scope — disposing the parent disposes the portal.
+
+See: 01 Architecture.md
+
+---
+
+### `foreign(opts)`
+
+Opaque container for imperative third-party libraries. LLui owns the container element; the library owns everything inside it.
+
+```typescript
+function foreign<S, M, T extends Record<string, unknown>, Instance>(opts: {
+  mount: (bag: { container: HTMLElement; send: (msg: M) => void }) => Instance
+  props: (s: S) => T
+  sync:
+    | ((bag: { instance: Instance; props: T; prev: T | undefined }) => void)
+    | {
+        [K in keyof T]?: (bag: { instance: Instance; value: T[K]; prev: T[K] | undefined }) => void
+      }
+  destroy: (instance: Instance) => void
+  container?: { tag?: string; attrs?: Record<string, string> }
+}): Node[]
+```
+
+All four generic parameters (`S`, `M`, `T`, `Instance`) are inferred by TypeScript. The `sync` record form diffs per-field and dispatches only changed fields.
+
+See: 01 Architecture.md
+
+---
+
+### `child(opts)`
+
+Level 2 composition — creates a full component boundary with its own bitmask, update cycle, and scope tree. Use only when the child has 30+ state paths, encapsulated internals, or an independent effect lifecycle.
+
+```typescript
+function child<S, ChildS, ChildM, ChildE>(opts: {
+  def: ComponentDef<ChildS, ChildM, ChildE>
+  key: string | number
+  props: (s: S) => Record<string, unknown>
+  onMsg?: (msg: ChildM) => ParentMsg | null
+}): Node[]
+```
+
+The props accessor has a bitmask derived from its parent state dependencies. The runtime: (1) checks the bitmask first — if no relevant parent state paths changed, the props accessor is not called at all; (2) when the bitmask matches, calls the accessor and compares each field of the returned object via `Object.is` with the previous props; (3) only if at least one field changed, calls `def.propsMsg(newProps)` and enqueues the result into the child's message queue. `onMsg` maps child messages selectively to parent messages — return `null` for messages the parent should ignore.
+
+See: 01 Architecture.md
+
+---
+
+### `memo(accessor)`
+
+Memoizes an accessor using a two-level cache: (1) the bitmask check skips re-evaluation when no relevant state paths changed, and (2) `Object.is` comparison on the return value prevents downstream updates when the computation produces the same result despite input changes.
+
+```typescript
+function memo<S, T>(accessor: (s: S) => T): (s: S) => T
+```
+
+Use for expensive derived computations referenced by multiple bindings.
+
+See: 01 Architecture.md
+
+---
+
+### `errorBoundary(opts)`
+
+Wraps a scoped builder in a try/catch. Renders fallback subtree on error. Independently tree-shakeable.
+
+```typescript
+function errorBoundary(opts: {
+  render: () => Node[]
+  fallback: (error: Error) => Node[]
+  onError?: (error: Error) => void
+}): Node[]
+```
+
+Protects three zones: (1) view construction errors, (2) binding evaluation errors in Phase 2, (3) effect handler errors. Does NOT wrap `update()` — a throwing `update()` is a bug.
+
+See: 01 Architecture.md
+
+---
+
+## `@llui/effects`
+
+Composable effect description builders and a runtime chain for interpreting them in `onEffect`.
+
+### Effect Builders
+
+```typescript
+function http(opts: {
+  url: string
+  method?: string
+  body?: any
+  headers?: Record<string, string>
+  onSuccess: string // tag name: runtime wraps response into { type: tag, payload: responseData }
+  onError: string // tag name: runtime wraps error into { type: tag, error: errorData }
+}): HttpEffect
+
+function cancel(token: string): CancelEffect
+function cancel(token: string, inner: Effect): CancelReplaceEffect
+
+function debounce(key: string, ms: number, inner: Effect): DebounceEffect
+
+function sequence(effects: Effect[]): SequenceEffect
+
+function race(effects: Effect[]): RaceEffect
+```
+
+All builders return plain data objects (JSON-serializable). They are returned from `update()`, not executed directly.
+
+### `handleEffects<E>()`
+
+```typescript
+function handleEffects<E extends { type: string }>(): {
+  else<R extends E>(
+    handler: (bag: { effect: R; send: Send<Msg>; signal: AbortSignal }) => void,
+  ): OnEffectHandler<E>
+}
+```
+
+Canonical `onEffect` handler. Consumes `http`, `cancel`, `debounce`, `sequence`, `race` effects. The `.else()` callback receives only the remaining custom effect types (TypeScript narrows automatically). The chain tracks cancellation tokens and debounce timers in a per-component closure and uses the `AbortSignal` for cleanup on unmount.
+
+See: 01 Architecture.md
+
+---
+
+## `@llui/test`
+
+All exports are devDependencies — zero production bundle cost.
+
+### `testComponent(def, initialData?)`
+
+Zero-DOM component harness. Runs in Node, no browser needed.
+
+```typescript
+function testComponent<S, M, E, D>(
+  def: ComponentDef<S, M, E, D>,
+  initialData: D,
+): {
+  state: S
+  effects: E[]
+  allEffects: E[]
+  history: Array<{ prevState: S; msg: M; nextState: S; effects: E[] }>
+  send: (msg: M) => void
+  sendAll: (msgs: M[]) => S
+}
+```
+
+### `testView(def, state)`
+
+Runs `view()` once against a lightweight DOM shim.
+
+```typescript
+function testView<S, M, E, D>(
+  def: ComponentDef<S, M, E, D>,
+  state: S,
+): {
+  query: (selector: string) => Element | null
+  queryAll: (selector: string) => Element[]
+}
+```
+
+The shim supports `querySelector`, `querySelectorAll`, `textContent`, `getAttribute`, `children`. No layout, CSS, focus, or events.
+
+### `assertEffects(actual, expected)`
+
+Partial deep matching — extra fields in actual effects are ignored.
+
+```typescript
+function assertEffects<E>(actual: E[], expected: Partial<E>[]): void
+```
+
+### `propertyTest(def, config)`
+
+Generative invariant testing via random message sequences.
+
+```typescript
+function propertyTest<S, M, E, D>(
+  def: ComponentDef<S, M, E, D>,
+  config: {
+    invariants: Array<(state: S, effects: E[]) => boolean>
+    messageGenerators: Record<string, ((state: S) => M) | (() => M)>
+    runs?: number // default: 1000
+    maxSequenceLength?: number // default: 50
+  },
+): void
+```
+
+On failure, shrinks to minimal reproduction.
+
+### `replayTrace(def, trace)`
+
+Regression testing from recorded sessions. Canonical import from `@llui/test`; implementation lives in `llui/trace`.
+
+```typescript
+function replayTrace<S, M, E, D>(def: ComponentDef<S, M, E, D>, trace: LluiTrace<S, M, E>): void
+
+interface LluiTrace<S, M, E> {
+  lluiTrace: 1
+  component: string
+  generatedBy: string
+  timestamp: string
+  entries: Array<{
+    msg: M
+    expectedState: S
+    expectedEffects: E[]
+  }>
+}
+```
+
+See: 04 Test Strategy.md
+
+---
+
+## `@llui/components` — Styles
+
+### CSS Theme
+
+```typescript
+import '@llui/components/styles/theme.css' // light theme + all component styles
+import '@llui/components/styles/theme-dark.css' // dark mode overrides (separate file)
+```
+
+`theme.css` declares design tokens in a `@theme` block and styles all 54 components via `[data-scope][data-part]` attribute selectors. `theme-dark.css` overrides color/shadow tokens for dark mode via `prefers-color-scheme: dark` and `[data-theme="dark"]`.
+
+### Variant Engine
+
+```typescript
+import { createVariants, cx } from '@llui/components/styles'
+
+function createVariants<V extends VariantRecord>(
+  config: VariantConfig<V>,
+): (props?: VariantProps<V>) => string
+function cx(...classes: ClassValue[]): string
+
+type ClassValue = string | false | null | undefined
+```
+
+### Class Helpers
+
+Each component exports a class helper from `@llui/components/styles/<name>`:
+
+```typescript
+import { tabsClasses } from '@llui/components/styles/tabs'
+
+const cls = tabsClasses({ size: 'sm', variant: 'pill' })
+// Returns: { root: string, list: string, trigger: string, panel: string, indicator: string }
+```
+
+All 54 components have class helpers. Each returns an object mapping part names to Tailwind utility class strings. Most accept optional `size` and `variant`/`colorScheme` props with defaults.
+
+---
+
+## Internal Types
+
+### `Scope`
+
+```typescript
+interface Scope {
+  id: number
+  parent: Scope | null
+  children: Scope[]
+  disposers: Array<() => void>
+  bindings: Binding[]
+  eachItemStable: boolean
+}
+```
+
+See: 03 Runtime DOM.md
+
+### `Binding`
+
+```typescript
+interface Binding {
+  mask: number // paths 0–30 get their own bit; 32+ overflow to FULL_MASK (-1)
+  accessor: (state: any) => any
+  lastValue: any
+  kind: 'text' | 'prop' | 'attr' | 'class' | 'style'
+  node: Node
+  key?: string // for prop, attr, style kinds
+  ownerScope: Scope
+  perItem: boolean
+}
+```
+
+See: 03 Runtime DOM.md
+

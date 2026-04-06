@@ -2,3 +2,4 @@ packages:
   - 'packages/*'
   - 'examples/*'
   - 'benchmarks/js-framework-benchmark'
+  - 'site'
