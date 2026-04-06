@@ -29,7 +29,11 @@ const App = component<State, Msg, never>({
     return [{ tabs: t }, []]
   },
   view: ({ send, text }) => {
-    const t = tabs.connect<State>(s => s.tabs, m => send({ type: 'tabs', msg: m }), { id: 'demo' })
+    const t = tabs.connect<State>(
+      (s) => s.tabs,
+      (m) => send({ type: 'tabs', msg: m }),
+      { id: 'demo' },
+    )
     return [
       div({ ...t.root }, [
         div({ ...t.list }, [
@@ -60,9 +64,9 @@ import { mergeHandlers, sliceHandler } from '@llui/dom'
 
 const update = mergeHandlers<State, Msg, never>(
   sliceHandler({
-    get: s => s.tabs,
+    get: (s) => s.tabs,
     set: (s, v) => ({ ...s, tabs: v }),
-    narrow: m => m.type === 'tabs' ? m.msg : null,
+    narrow: (m) => (m.type === 'tabs' ? m.msg : null),
     sub: tabs.update,
   }),
   // ... more slices
@@ -72,36 +76,42 @@ const update = mergeHandlers<State, Msg, never>(
 ## Components (54)
 
 ### Form controls
+
 accordion, checkbox, collapsible, editable, number-input, password-input, pin-input, radio-group, rating-group, slider, switch, tabs, tags-input, toggle, toggle-group
 
 ### Overlays
+
 alert-dialog, combobox, context-menu, dialog, drawer, hover-card, menu, navigation-menu, popover, select, toast, tooltip, tour
 
 ### Data display
+
 async-list, avatar, carousel, cascade-select, listbox, pagination, progress, qr-code, scroll-area, steps, toc, tree-view
 
 ### Pickers
+
 color-picker, date-input, date-picker, time-picker, angle-slider
 
 ### Media / canvas
+
 file-upload, floating-panel, image-cropper, marquee, presence, signature-pad, timer
 
 ### Patterns
+
 `@llui/components/patterns/confirm-dialog` — pre-wired alert-dialog for destructive confirmations.
 
 ## Utilities
 
 Shared helpers used internally and exported for advanced use:
 
-| Utility | Purpose |
-|---|---|
-| `typeahead` | First-letter search across menu, select, listbox, tree-view |
+| Utility          | Purpose                                                                  |
+| ---------------- | ------------------------------------------------------------------------ |
+| `typeahead`      | First-letter search across menu, select, listbox, tree-view              |
 | `TreeCollection` | Indexed tree traversal — visibleItems, labels, indeterminate computation |
-| `floating` | `@floating-ui/dom` wrapper for popover/menu positioning |
-| `focus-trap` | Stack-based focus containment for modals |
-| `dismissable` | Esc / outside-click dismiss layer stack |
-| `aria-hidden` | `aria-hidden` on siblings of a modal for screen readers |
-| `remove-scroll` | Body scroll lock for modals/drawers |
+| `floating`       | `@floating-ui/dom` wrapper for popover/menu positioning                  |
+| `focus-trap`     | Stack-based focus containment for modals                                 |
+| `dismissable`    | Esc / outside-click dismiss layer stack                                  |
+| `aria-hidden`    | `aria-hidden` on siblings of a modal for screen readers                  |
+| `remove-scroll`  | Body scroll lock for modals/drawers                                      |
 
 ## Sub-path imports
 
@@ -121,7 +131,7 @@ Input components accept an optional `validate` callback on `ConnectOptions` that
 const parts = editable.connect<S>(get, send, {
   validate: (value) => {
     if (value.length < 3) return ['Too short']
-    return null  // valid
+    return null // valid
   },
 })
 ```
