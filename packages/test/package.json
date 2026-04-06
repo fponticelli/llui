@@ -1,6 +1,6 @@
 {
   "name": "@llui/test",
-  "version": "0.0.0",
+  "version": "0.0.1",
   "type": "module",
   "sideEffects": false,
   "exports": {
@@ -20,5 +20,24 @@
   },
   "dependencies": {
     "@llui/dom": "workspace:*"
-  }
+  },
+  "description": "LLui test harness — testComponent, testView, propertyTest, replayTrace, assertEffects",
+  "keywords": [
+    "llui",
+    "test",
+    "testing",
+    "harness",
+    "property-test"
+  ],
+  "author": "Franco Ponticelli <franco.ponticelli@gmail.com>",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/fponticelli/llui.git",
+    "directory": "packages/test"
+  },
+  "bugs": {
+    "url": "https://github.com/fponticelli/llui/issues"
+  },
+  "homepage": "https://github.com/fponticelli/llui/tree/main/packages/test#readme"
 }

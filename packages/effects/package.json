@@ -1,6 +1,6 @@
 {
   "name": "@llui/effects",
-  "version": "0.0.0",
+  "version": "0.0.1",
   "type": "module",
   "sideEffects": false,
   "exports": {
@@ -18,5 +18,25 @@
     "lint": "eslint src",
     "test": "vitest run",
     "test:coverage": "vitest run --coverage"
-  }
+  },
+  "description": "LLui effect builders — http, cancel, debounce, sequence, race, storage, broadcast",
+  "keywords": [
+    "llui",
+    "effects",
+    "http",
+    "debounce",
+    "cancel",
+    "async"
+  ],
+  "author": "Franco Ponticelli <franco.ponticelli@gmail.com>",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/fponticelli/llui.git",
+    "directory": "packages/effects"
+  },
+  "bugs": {
+    "url": "https://github.com/fponticelli/llui/issues"
+  },
+  "homepage": "https://github.com/fponticelli/llui/tree/main/packages/effects#readme"
 }

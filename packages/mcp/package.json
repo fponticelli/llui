@@ -1,6 +1,6 @@
 {
   "name": "@llui/mcp",
-  "version": "0.0.0",
+  "version": "0.0.1",
   "type": "module",
   "sideEffects": false,
   "bin": {
@@ -28,5 +28,24 @@
   "devDependencies": {
     "@types/node": "^22.0.0",
     "@types/ws": "^8.5.13"
-  }
+  },
+  "description": "LLui MCP server — LLM debug tools via Model Context Protocol",
+  "keywords": [
+    "llui",
+    "mcp",
+    "debug",
+    "llm",
+    "devtools"
+  ],
+  "author": "Franco Ponticelli <franco.ponticelli@gmail.com>",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/fponticelli/llui.git",
+    "directory": "packages/mcp"
+  },
+  "bugs": {
+    "url": "https://github.com/fponticelli/llui/issues"
+  },
+  "homepage": "https://github.com/fponticelli/llui/tree/main/packages/mcp#readme"
 }

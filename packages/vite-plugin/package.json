@@ -1,6 +1,6 @@
 {
   "name": "@llui/vite-plugin",
-  "version": "0.0.0",
+  "version": "0.0.1",
   "type": "module",
   "sideEffects": false,
   "exports": {
@@ -24,5 +24,26 @@
   "dependencies": {
     "magic-string": "^0.30.21",
     "typescript": "^6.0.2"
-  }
+  },
+  "description": "LLui compiler — Vite plugin for compile-time bitmask optimization, template cloning, and source maps",
+  "keywords": [
+    "llui",
+    "vite",
+    "plugin",
+    "compiler",
+    "typescript",
+    "optimization",
+    "bitmask"
+  ],
+  "author": "Franco Ponticelli <franco.ponticelli@gmail.com>",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/fponticelli/llui.git",
+    "directory": "packages/vite-plugin"
+  },
+  "bugs": {
+    "url": "https://github.com/fponticelli/llui/issues"
+  },
+  "homepage": "https://github.com/fponticelli/llui/tree/main/packages/vite-plugin#readme"
 }

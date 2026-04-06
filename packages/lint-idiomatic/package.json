@@ -1,6 +1,6 @@
 {
   "name": "@llui/lint-idiomatic",
-  "version": "0.0.0",
+  "version": "0.0.1",
   "type": "module",
   "sideEffects": false,
   "exports": {
@@ -20,5 +20,24 @@
   },
   "dependencies": {
     "typescript": "^6.0.2"
-  }
+  },
+  "description": "LLui linter — AST rules for idiomatic LLui patterns",
+  "keywords": [
+    "llui",
+    "lint",
+    "linter",
+    "eslint",
+    "idiomatic"
+  ],
+  "author": "Franco Ponticelli <franco.ponticelli@gmail.com>",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/fponticelli/llui.git",
+    "directory": "packages/lint-idiomatic"
+  },
+  "bugs": {
+    "url": "https://github.com/fponticelli/llui/issues"
+  },
+  "homepage": "https://github.com/fponticelli/llui/tree/main/packages/lint-idiomatic#readme"
 }

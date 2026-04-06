@@ -1,6 +1,6 @@
 {
   "name": "@llui/components",
-  "version": "0.0.0",
+  "version": "0.0.1",
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -229,14 +229,6 @@
       "import": "./dist/components/carousel.js",
       "types": "./dist/components/carousel.d.ts"
     },
-    "./alert-dialog": {
-      "import": "./dist/components/alert-dialog.js",
-      "types": "./dist/components/alert-dialog.d.ts"
-    },
-    "./pin-input": {
-      "import": "./dist/components/pin-input.js",
-      "types": "./dist/components/pin-input.d.ts"
-    },
     "./patterns": {
       "import": "./dist/patterns/index.js",
       "types": "./dist/patterns/index.d.ts"
@@ -253,7 +245,7 @@
     "test": "vitest run"
   },
   "peerDependencies": {
-    "@llui/dom": "workspace:*"
+    "@llui/dom": "^0.0.1"
   },
   "devDependencies": {
     "@llui/dom": "workspace:*",
@@ -263,5 +255,28 @@
   "sideEffects": false,
   "dependencies": {
     "@floating-ui/dom": "^1.7.6"
-  }
+  },
+  "description": "54 headless UI components for LLui — accordion, dialog, tabs, select, tree-view, timer, tour, and more",
+  "keywords": [
+    "llui",
+    "components",
+    "headless",
+    "ui",
+    "accessible",
+    "state-machine"
+  ],
+  "author": "Franco Ponticelli <franco.ponticelli@gmail.com>",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/fponticelli/llui.git",
+    "directory": "packages/components"
+  },
+  "bugs": {
+    "url": "https://github.com/fponticelli/llui/issues"
+  },
+  "homepage": "https://github.com/fponticelli/llui/tree/main/packages/components#readme",
+  "files": [
+    "dist"
+  ]
 }

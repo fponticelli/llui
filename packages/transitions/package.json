@@ -1,6 +1,6 @@
 {
   "name": "@llui/transitions",
-  "version": "0.0.0",
+  "version": "0.0.1",
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -17,12 +17,34 @@
     "test": "vitest run"
   },
   "peerDependencies": {
-    "@llui/dom": "workspace:*"
+    "@llui/dom": "^0.0.1"
   },
   "devDependencies": {
     "@llui/dom": "workspace:*",
     "typescript": "^6.0.0",
     "vitest": "^4.1.2"
   },
-  "sideEffects": false
+  "sideEffects": false,
+  "description": "LLui animation helpers — transition(), fade, slide, scale, collapse for branch/show/each",
+  "keywords": [
+    "llui",
+    "transitions",
+    "animation",
+    "fade",
+    "slide"
+  ],
+  "author": "Franco Ponticelli <franco.ponticelli@gmail.com>",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/fponticelli/llui.git",
+    "directory": "packages/transitions"
+  },
+  "bugs": {
+    "url": "https://github.com/fponticelli/llui/issues"
+  },
+  "homepage": "https://github.com/fponticelli/llui/tree/main/packages/transitions#readme",
+  "files": [
+    "dist"
+  ]
 }

@@ -1,6 +1,6 @@
 {
   "name": "@llui/dom",
-  "version": "0.0.0",
+  "version": "0.0.1",
   "type": "module",
   "sideEffects": false,
   "exports": {
@@ -30,5 +30,27 @@
     "lint": "eslint src",
     "test": "vitest run",
     "test:coverage": "vitest run --coverage"
-  }
+  },
+  "description": "LLui runtime — TEA component model, mount, scope tree, bindings, structural primitives, element helpers",
+  "keywords": [
+    "llui",
+    "tea",
+    "elm-architecture",
+    "reactive",
+    "dom",
+    "framework",
+    "compile-time",
+    "bitmask"
+  ],
+  "author": "Franco Ponticelli <franco.ponticelli@gmail.com>",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/fponticelli/llui.git",
+    "directory": "packages/dom"
+  },
+  "bugs": {
+    "url": "https://github.com/fponticelli/llui/issues"
+  },
+  "homepage": "https://github.com/fponticelli/llui/tree/main/packages/dom#readme"
 }
