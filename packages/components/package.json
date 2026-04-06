@@ -244,10 +244,43 @@
     "./patterns/confirm-dialog": {
       "import": "./dist/patterns/confirm-dialog.js",
       "types": "./dist/patterns/confirm-dialog.d.ts"
+    },
+    "./styles/theme.css": "./dist/styles/theme.css",
+    "./styles": {
+      "import": "./dist/styles/index.js",
+      "types": "./dist/styles/index.d.ts"
+    },
+    "./styles/accordion": {
+      "import": "./dist/styles/classes/accordion.js",
+      "types": "./dist/styles/classes/accordion.d.ts"
+    },
+    "./styles/switch": {
+      "import": "./dist/styles/classes/switch.js",
+      "types": "./dist/styles/classes/switch.d.ts"
+    },
+    "./styles/checkbox": {
+      "import": "./dist/styles/classes/checkbox.js",
+      "types": "./dist/styles/classes/checkbox.d.ts"
+    },
+    "./styles/dialog": {
+      "import": "./dist/styles/classes/dialog.js",
+      "types": "./dist/styles/classes/dialog.d.ts"
+    },
+    "./styles/tabs": {
+      "import": "./dist/styles/classes/tabs.js",
+      "types": "./dist/styles/classes/tabs.d.ts"
+    },
+    "./styles/toggle": {
+      "import": "./dist/styles/classes/toggle.js",
+      "types": "./dist/styles/classes/toggle.d.ts"
+    },
+    "./styles/radio-group": {
+      "import": "./dist/styles/classes/radio-group.js",
+      "types": "./dist/styles/classes/radio-group.d.ts"
     }
   },
   "scripts": {
-    "build": "tsc -p tsconfig.build.json",
+    "build": "tsc -p tsconfig.build.json && mkdir -p dist/styles && cp src/styles/theme.css dist/styles/theme.css",
     "check": "tsc --noEmit -p tsconfig.check.json",
     "lint": "eslint src",
     "test": "vitest run"
@@ -260,7 +293,7 @@
     "typescript": "^6.0.0",
     "vitest": "^4.1.2"
   },
-  "sideEffects": false,
+  "sideEffects": ["./dist/styles/theme.css"],
   "dependencies": {
     "@floating-ui/dom": "^1.7.6"
   }
