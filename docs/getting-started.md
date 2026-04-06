@@ -213,13 +213,15 @@ Effects are plain data objects returned from `update()`:
 ```typescript
 import { http } from '@llui/effects'
 
-type Effect = { type: 'http'; url: string; onSuccess: string; onError: string }
-
 update: (state, msg) => {
   case 'fetchUsers':
     return [
       { ...state, loading: true },
-      [http({ url: '/api/users', onSuccess: 'usersLoaded', onError: 'fetchError' })],
+      [http({
+        url: '/api/users',
+        onSuccess: (data) => ({ type: 'usersLoaded' as const, payload: data }),
+        onError: (err) => ({ type: 'fetchError' as const, error: err }),
+      })],
     ]
   case 'usersLoaded':
     return [{ ...state, users: msg.payload, loading: false }, []]

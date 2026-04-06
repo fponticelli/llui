@@ -86,8 +86,8 @@ case 'setQuery': {
     { ...state, query: q },
     [debounce('search', 300, http({
       url: `/api/search?q=${encodeURIComponent(q)}`,
-      onSuccess: 'searchOk',
-      onError: 'searchError',
+      onSuccess: (data) => ({ type: 'searchOk' as const, payload: data }),
+      onError: (err) => ({ type: 'searchError' as const, error: err }),
     }))],
   ]
 }
@@ -103,7 +103,11 @@ case 'startPolling':
 case 'stopPolling':
   return [{ ...state, polling: false }, [cancel('poll')]]
 case 'tick':
-  return [state, [http({ url: '/api/status', onSuccess: 'statusLoaded', onError: 'statusErr' })]]
+  return [state, [http({
+    url: '/api/status',
+    onSuccess: (data) => ({ type: 'statusLoaded' as const, payload: data }),
+    onError: (err) => ({ type: 'statusErr' as const, error: err }),
+  })]]
 ```
 
 ### Delayed Messages with `timeout`
@@ -153,8 +157,8 @@ case 'loadUser':
   return [state, [
     cancel('user-load', http({
       url: `/api/users/${msg.id}`,
-      onSuccess: 'userLoaded',
-      onError: 'loadError',
+      onSuccess: (data) => ({ type: 'userLoaded' as const, payload: data }),
+      onError: (err) => ({ type: 'loadError' as const, error: err }),
     })),
   ]]
 ```
