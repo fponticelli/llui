@@ -3,7 +3,7 @@
  * Idiomatic score: 6/6
  */
 import { component, div, input, text, each, show } from '@llui/dom'
-import { handleEffects, http, cancel, debounce } from '@llui/effects'
+import { handleEffects, http, cancel, debounce, type Effect } from '@llui/effects'
 
 type SearchResult = { id: number; title: string }
 
@@ -18,10 +18,7 @@ type Msg =
   | { type: 'searchResults'; payload: SearchResult[] }
   | { type: 'searchError'; error: unknown }
 
-type Effect =
-  | { type: 'http'; url: string; onSuccess: string; onError: string }
-  | { type: 'cancel'; token: string; inner?: Effect }
-  | { type: 'debounce'; key: string; ms: number; inner: Effect }
+// Effect is the built-in union from @llui/effects (imported above).
 
 export const DebouncedSearch = component<State, Msg, Effect>({
   name: 'DebouncedSearch',

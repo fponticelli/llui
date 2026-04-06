@@ -3,7 +3,7 @@
  * Idiomatic score: 6/6
  */
 import { component, div, button, input, label, text, show, branch } from '@llui/dom'
-import { handleEffects, http, cancel, debounce } from '@llui/effects'
+import { handleEffects, http, cancel, debounce, type Effect } from '@llui/effects'
 
 type ValidationStatus = 'idle' | 'checking' | 'available' | 'taken'
 
@@ -18,10 +18,7 @@ type Msg =
   | { type: 'checkError'; error: unknown }
   | { type: 'submit' }
 
-type Effect =
-  | { type: 'http'; url: string; onSuccess: string; onError: string }
-  | { type: 'cancel'; token: string; inner?: Effect }
-  | { type: 'debounce'; key: string; ms: number; inner: Effect }
+// Effect is the built-in union from @llui/effects (imported above).
 
 export const AsyncValidation = component<State, Msg, Effect>({
   name: 'AsyncValidation',

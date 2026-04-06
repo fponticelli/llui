@@ -265,18 +265,41 @@ const TASKS: TaskDef[] = [
 // ── Pipeline Steps ──────────────────────────────────────────────
 
 function checkCompile(filePath: string): { pass: boolean; errors: string[] } {
-  try {
-    execSync(
-      `npx tsc --noEmit --strict --module ESNext --moduleResolution bundler --target ES2022 "${filePath}" 2>&1`,
-      {
-        encoding: 'utf8',
-        cwd: resolve(join(__dirname, '..')),
+  // Use a temp tsconfig with paths so @llui/* modules resolve against
+  // the workspace source. The root tsconfig provides base settings.
+  const root = resolve(join(import.meta.dirname, '..'))
+  // Place tsconfig at repo root so relative paths resolve correctly.
+  const tmpConfig = join(root, '.eval-tsconfig.json')
+  writeFileSync(
+    tmpConfig,
+    JSON.stringify({
+      extends: './tsconfig.json',
+      compilerOptions: {
+        noEmit: true,
+        paths: {
+          '@llui/dom': ['./packages/dom/src/index.ts'],
+          '@llui/dom/*': ['./packages/dom/src/*'],
+          '@llui/effects': ['./packages/effects/src/index.ts'],
+        },
       },
-    )
+      // Only include the specific file being checked — avoids
+      // one bad file failing all others.
+      include: [filePath],
+    }),
+  )
+  try {
+    execSync(`npx tsc -p "${tmpConfig}" --noEmit 2>&1`, {
+      encoding: 'utf8',
+      cwd: root,
+    })
     return { pass: true, errors: [] }
   } catch (e: unknown) {
     const stdout = (e as { stdout?: string }).stdout ?? String(e)
-    return { pass: false, errors: stdout.split('\n').filter(Boolean) }
+    // Filter to errors from this specific file
+    const fileErrors = stdout
+      .split('\n')
+      .filter((line) => line.includes(filePath) || line.includes('error TS'))
+    return { pass: fileErrors.length === 0, errors: fileErrors.slice(0, 10) }
   }
 }
 
@@ -380,7 +403,7 @@ function main(): void {
   const runAll = args.includes('--all')
   const runs = runsArg ? parseInt(runsArg, 10) : 1
 
-  const outputDir = resolve(join(__dirname, 'results'))
+  const outputDir = resolve(join(import.meta.dirname, 'results'))
   mkdirSync(outputDir, { recursive: true })
 
   const tasks = runAll ? TASKS : taskArg ? TASKS.filter((t) => t.id === taskArg) : []

@@ -1,0 +1,223 @@
+{
+  "model": "manual",
+  "timestamp": "2026-04-06T03:55:50.157Z",
+  "systemPrompt": "default",
+  "results": [
+    {
+      "taskId": "01",
+      "runIndex": 0,
+      "compile": 0,
+      "render": 0,
+      "fullPass": 0,
+      "assertionScore": 0,
+      "consoleClean": 0,
+      "idiomatic": 0,
+      "errors": [
+        "error TS18003: No inputs were found in config file '/Users/franco/projects/llui/evaluation/.eval-tsconfig.json'. Specified 'include' paths were '[\"./evaluation/examples/*.ts\",\"./evaluation/results/*.ts\"]' and 'exclude' paths were '[]'."
+      ]
+    },
+    {
+      "taskId": "02",
+      "runIndex": 0,
+      "compile": 0,
+      "render": 0,
+      "fullPass": 0,
+      "assertionScore": 0,
+      "consoleClean": 0,
+      "idiomatic": 0,
+      "errors": [
+        "error TS18003: No inputs were found in config file '/Users/franco/projects/llui/evaluation/.eval-tsconfig.json'. Specified 'include' paths were '[\"./evaluation/examples/*.ts\",\"./evaluation/results/*.ts\"]' and 'exclude' paths were '[]'."
+      ]
+    },
+    {
+      "taskId": "03",
+      "runIndex": 0,
+      "compile": 0,
+      "render": 0,
+      "fullPass": 0,
+      "assertionScore": 0,
+      "consoleClean": 0,
+      "idiomatic": 0,
+      "errors": [
+        "error TS18003: No inputs were found in config file '/Users/franco/projects/llui/evaluation/.eval-tsconfig.json'. Specified 'include' paths were '[\"./evaluation/examples/*.ts\",\"./evaluation/results/*.ts\"]' and 'exclude' paths were '[]'."
+      ]
+    },
+    {
+      "taskId": "04",
+      "runIndex": 0,
+      "compile": 0,
+      "render": 0,
+      "fullPass": 0,
+      "assertionScore": 0,
+      "consoleClean": 0,
+      "idiomatic": 0,
+      "errors": [
+        "error TS18003: No inputs were found in config file '/Users/franco/projects/llui/evaluation/.eval-tsconfig.json'. Specified 'include' paths were '[\"./evaluation/examples/*.ts\",\"./evaluation/results/*.ts\"]' and 'exclude' paths were '[]'."
+      ]
+    },
+    {
+      "taskId": "05",
+      "runIndex": 0,
+      "compile": 0,
+      "render": 0,
+      "fullPass": 0,
+      "assertionScore": 0,
+      "consoleClean": 0,
+      "idiomatic": 0,
+      "errors": [
+        "error TS18003: No inputs were found in config file '/Users/franco/projects/llui/evaluation/.eval-tsconfig.json'. Specified 'include' paths were '[\"./evaluation/examples/*.ts\",\"./evaluation/results/*.ts\"]' and 'exclude' paths were '[]'."
+      ]
+    },
+    {
+      "taskId": "06",
+      "runIndex": 0,
+      "compile": 0,
+      "render": 0,
+      "fullPass": 0,
+      "assertionScore": 0,
+      "consoleClean": 0,
+      "idiomatic": 0,
+      "errors": [
+        "error TS18003: No inputs were found in config file '/Users/franco/projects/llui/evaluation/.eval-tsconfig.json'. Specified 'include' paths were '[\"./evaluation/examples/*.ts\",\"./evaluation/results/*.ts\"]' and 'exclude' paths were '[]'."
+      ]
+    },
+    {
+      "taskId": "07",
+      "runIndex": 0,
+      "compile": 0,
+      "render": 0,
+      "fullPass": 0,
+      "assertionScore": 0,
+      "consoleClean": 0,
+      "idiomatic": 0,
+      "errors": [
+        "error TS18003: No inputs were found in config file '/Users/franco/projects/llui/evaluation/.eval-tsconfig.json'. Specified 'include' paths were '[\"./evaluation/examples/*.ts\",\"./evaluation/results/*.ts\"]' and 'exclude' paths were '[]'."
+      ]
+    },
+    {
+      "taskId": "08",
+      "runIndex": 0,
+      "compile": 0,
+      "render": 0,
+      "fullPass": 0,
+      "assertionScore": 0,
+      "consoleClean": 0,
+      "idiomatic": 0,
+      "errors": [
+        "error TS18003: No inputs were found in config file '/Users/franco/projects/llui/evaluation/.eval-tsconfig.json'. Specified 'include' paths were '[\"./evaluation/examples/*.ts\",\"./evaluation/results/*.ts\"]' and 'exclude' paths were '[]'."
+      ]
+    },
+    {
+      "taskId": "09",
+      "runIndex": 0,
+      "compile": 0,
+      "render": 0,
+      "fullPass": 0,
+      "assertionScore": 0,
+      "consoleClean": 0,
+      "idiomatic": 0,
+      "errors": [
+        "error TS18003: No inputs were found in config file '/Users/franco/projects/llui/evaluation/.eval-tsconfig.json'. Specified 'include' paths were '[\"./evaluation/examples/*.ts\",\"./evaluation/results/*.ts\"]' and 'exclude' paths were '[]'."
+      ]
+    },
+    {
+      "taskId": "10",
+      "runIndex": 0,
+      "compile": 0,
+      "render": 0,
+      "fullPass": 0,
+      "assertionScore": 0,
+      "consoleClean": 0,
+      "idiomatic": 0,
+      "errors": [
+        "error TS18003: No inputs were found in config file '/Users/franco/projects/llui/evaluation/.eval-tsconfig.json'. Specified 'include' paths were '[\"./evaluation/examples/*.ts\",\"./evaluation/results/*.ts\"]' and 'exclude' paths were '[]'."
+      ]
+    },
+    {
+      "taskId": "10b",
+      "runIndex": 0,
+      "compile": 0,
+      "render": 0,
+      "fullPass": 0,
+      "assertionScore": 0,
+      "consoleClean": 0,
+      "idiomatic": 0,
+      "errors": [
+        "error TS18003: No inputs were found in config file '/Users/franco/projects/llui/evaluation/.eval-tsconfig.json'. Specified 'include' paths were '[\"./evaluation/examples/*.ts\",\"./evaluation/results/*.ts\"]' and 'exclude' paths were '[]'."
+      ]
+    },
+    {
+      "taskId": "11",
+      "runIndex": 0,
+      "compile": 0,
+      "render": 0,
+      "fullPass": 0,
+      "assertionScore": 0,
+      "consoleClean": 0,
+      "idiomatic": 0,
+      "errors": [
+        "error TS18003: No inputs were found in config file '/Users/franco/projects/llui/evaluation/.eval-tsconfig.json'. Specified 'include' paths were '[\"./evaluation/examples/*.ts\",\"./evaluation/results/*.ts\"]' and 'exclude' paths were '[]'."
+      ]
+    },
+    {
+      "taskId": "12",
+      "runIndex": 0,
+      "compile": 0,
+      "render": 0,
+      "fullPass": 0,
+      "assertionScore": 0,
+      "consoleClean": 0,
+      "idiomatic": 0,
+      "errors": [
+        "error TS18003: No inputs were found in config file '/Users/franco/projects/llui/evaluation/.eval-tsconfig.json'. Specified 'include' paths were '[\"./evaluation/examples/*.ts\",\"./evaluation/results/*.ts\"]' and 'exclude' paths were '[]'."
+      ]
+    },
+    {
+      "taskId": "13",
+      "runIndex": 0,
+      "compile": 0,
+      "render": 0,
+      "fullPass": 0,
+      "assertionScore": 0,
+      "consoleClean": 0,
+      "idiomatic": 0,
+      "errors": [
+        "error TS18003: No inputs were found in config file '/Users/franco/projects/llui/evaluation/.eval-tsconfig.json'. Specified 'include' paths were '[\"./evaluation/examples/*.ts\",\"./evaluation/results/*.ts\"]' and 'exclude' paths were '[]'."
+      ]
+    },
+    {
+      "taskId": "14",
+      "runIndex": 0,
+      "compile": 0,
+      "render": 0,
+      "fullPass": 0,
+      "assertionScore": 0,
+      "consoleClean": 0,
+      "idiomatic": 0,
+      "errors": [
+        "error TS18003: No inputs were found in config file '/Users/franco/projects/llui/evaluation/.eval-tsconfig.json'. Specified 'include' paths were '[\"./evaluation/examples/*.ts\",\"./evaluation/results/*.ts\"]' and 'exclude' paths were '[]'."
+      ]
+    },
+    {
+      "taskId": "15",
+      "runIndex": 0,
+      "compile": 0,
+      "render": 0,
+      "fullPass": 0,
+      "assertionScore": 0,
+      "consoleClean": 0,
+      "idiomatic": 0,
+      "errors": [
+        "error TS18003: No inputs were found in config file '/Users/franco/projects/llui/evaluation/.eval-tsconfig.json'. Specified 'include' paths were '[\"./evaluation/examples/*.ts\",\"./evaluation/results/*.ts\"]' and 'exclude' paths were '[]'."
+      ]
+    }
+  ],
+  "macroAverages": {
+    "compile": 0,
+    "render": 0,
+    "fullPass": 0,
+    "assertionScore": 0,
+    "consoleClean": 0,
+    "idiomatic": 0
+  }
+}

@@ -1,0 +1,191 @@
+{
+  "model": "manual",
+  "timestamp": "2026-04-06T03:56:36.287Z",
+  "systemPrompt": "default",
+  "results": [
+    {
+      "taskId": "01",
+      "runIndex": 0,
+      "compile": 1,
+      "render": 0,
+      "fullPass": 0,
+      "assertionScore": 0,
+      "consoleClean": 1,
+      "idiomatic": 0,
+      "errors": []
+    },
+    {
+      "taskId": "02",
+      "runIndex": 0,
+      "compile": 1,
+      "render": 0,
+      "fullPass": 0,
+      "assertionScore": 0,
+      "consoleClean": 1,
+      "idiomatic": 0,
+      "errors": []
+    },
+    {
+      "taskId": "03",
+      "runIndex": 0,
+      "compile": 1,
+      "render": 0,
+      "fullPass": 0,
+      "assertionScore": 0,
+      "consoleClean": 1,
+      "idiomatic": 0,
+      "errors": []
+    },
+    {
+      "taskId": "04",
+      "runIndex": 0,
+      "compile": 1,
+      "render": 0,
+      "fullPass": 0,
+      "assertionScore": 0,
+      "consoleClean": 1,
+      "idiomatic": 0,
+      "errors": []
+    },
+    {
+      "taskId": "05",
+      "runIndex": 0,
+      "compile": 1,
+      "render": 0,
+      "fullPass": 0,
+      "assertionScore": 0,
+      "consoleClean": 1,
+      "idiomatic": 0,
+      "errors": []
+    },
+    {
+      "taskId": "06",
+      "runIndex": 0,
+      "compile": 1,
+      "render": 0,
+      "fullPass": 0,
+      "assertionScore": 0,
+      "consoleClean": 1,
+      "idiomatic": 0,
+      "errors": []
+    },
+    {
+      "taskId": "07",
+      "runIndex": 0,
+      "compile": 1,
+      "render": 0,
+      "fullPass": 0,
+      "assertionScore": 0,
+      "consoleClean": 1,
+      "idiomatic": 0,
+      "errors": []
+    },
+    {
+      "taskId": "08",
+      "runIndex": 0,
+      "compile": 1,
+      "render": 0,
+      "fullPass": 0,
+      "assertionScore": 0,
+      "consoleClean": 1,
+      "idiomatic": 0,
+      "errors": []
+    },
+    {
+      "taskId": "09",
+      "runIndex": 0,
+      "compile": 1,
+      "render": 0,
+      "fullPass": 0,
+      "assertionScore": 0,
+      "consoleClean": 1,
+      "idiomatic": 0,
+      "errors": []
+    },
+    {
+      "taskId": "10",
+      "runIndex": 0,
+      "compile": 1,
+      "render": 0,
+      "fullPass": 0,
+      "assertionScore": 0,
+      "consoleClean": 1,
+      "idiomatic": 0,
+      "errors": []
+    },
+    {
+      "taskId": "10b",
+      "runIndex": 0,
+      "compile": 1,
+      "render": 0,
+      "fullPass": 0,
+      "assertionScore": 0,
+      "consoleClean": 1,
+      "idiomatic": 0,
+      "errors": []
+    },
+    {
+      "taskId": "11",
+      "runIndex": 0,
+      "compile": 1,
+      "render": 0,
+      "fullPass": 0,
+      "assertionScore": 0,
+      "consoleClean": 1,
+      "idiomatic": 0,
+      "errors": []
+    },
+    {
+      "taskId": "12",
+      "runIndex": 0,
+      "compile": 1,
+      "render": 0,
+      "fullPass": 0,
+      "assertionScore": 0,
+      "consoleClean": 1,
+      "idiomatic": 0,
+      "errors": []
+    },
+    {
+      "taskId": "13",
+      "runIndex": 0,
+      "compile": 1,
+      "render": 0,
+      "fullPass": 0,
+      "assertionScore": 0,
+      "consoleClean": 1,
+      "idiomatic": 0,
+      "errors": []
+    },
+    {
+      "taskId": "14",
+      "runIndex": 0,
+      "compile": 1,
+      "render": 0,
+      "fullPass": 0,
+      "assertionScore": 0,
+      "consoleClean": 1,
+      "idiomatic": 0,
+      "errors": []
+    },
+    {
+      "taskId": "15",
+      "runIndex": 0,
+      "compile": 1,
+      "render": 0,
+      "fullPass": 0,
+      "assertionScore": 0,
+      "consoleClean": 1,
+      "idiomatic": 0,
+      "errors": []
+    }
+  ],
+  "macroAverages": {
+    "compile": 1,
+    "render": 0,
+    "fullPass": 0,
+    "assertionScore": 0,
+    "consoleClean": 1,
+    "idiomatic": 0
+  }
+}

@@ -1,0 +1,223 @@
+{
+  "model": "manual",
+  "timestamp": "2026-04-06T03:55:13.232Z",
+  "systemPrompt": "default",
+  "results": [
+    {
+      "taskId": "01",
+      "runIndex": 0,
+      "compile": 0,
+      "render": 0,
+      "fullPass": 0,
+      "assertionScore": 0,
+      "consoleClean": 0,
+      "idiomatic": 0,
+      "errors": [
+        "error TS5112: tsconfig.json is present but will not be loaded if files are specified on commandline. Use '--ignoreConfig' to skip this error."
+      ]
+    },
+    {
+      "taskId": "02",
+      "runIndex": 0,
+      "compile": 0,
+      "render": 0,
+      "fullPass": 0,
+      "assertionScore": 0,
+      "consoleClean": 0,
+      "idiomatic": 0,
+      "errors": [
+        "error TS5112: tsconfig.json is present but will not be loaded if files are specified on commandline. Use '--ignoreConfig' to skip this error."
+      ]
+    },
+    {
+      "taskId": "03",
+      "runIndex": 0,
+      "compile": 0,
+      "render": 0,
+      "fullPass": 0,
+      "assertionScore": 0,
+      "consoleClean": 0,
+      "idiomatic": 0,
+      "errors": [
+        "error TS5112: tsconfig.json is present but will not be loaded if files are specified on commandline. Use '--ignoreConfig' to skip this error."
+      ]
+    },
+    {
+      "taskId": "04",
+      "runIndex": 0,
+      "compile": 0,
+      "render": 0,
+      "fullPass": 0,
+      "assertionScore": 0,
+      "consoleClean": 0,
+      "idiomatic": 0,
+      "errors": [
+        "error TS5112: tsconfig.json is present but will not be loaded if files are specified on commandline. Use '--ignoreConfig' to skip this error."
+      ]
+    },
+    {
+      "taskId": "05",
+      "runIndex": 0,
+      "compile": 0,
+      "render": 0,
+      "fullPass": 0,
+      "assertionScore": 0,
+      "consoleClean": 0,
+      "idiomatic": 0,
+      "errors": [
+        "error TS5112: tsconfig.json is present but will not be loaded if files are specified on commandline. Use '--ignoreConfig' to skip this error."
+      ]
+    },
+    {
+      "taskId": "06",
+      "runIndex": 0,
+      "compile": 0,
+      "render": 0,
+      "fullPass": 0,
+      "assertionScore": 0,
+      "consoleClean": 0,
+      "idiomatic": 0,
+      "errors": [
+        "error TS5112: tsconfig.json is present but will not be loaded if files are specified on commandline. Use '--ignoreConfig' to skip this error."
+      ]
+    },
+    {
+      "taskId": "07",
+      "runIndex": 0,
+      "compile": 0,
+      "render": 0,
+      "fullPass": 0,
+      "assertionScore": 0,
+      "consoleClean": 0,
+      "idiomatic": 0,
+      "errors": [
+        "error TS5112: tsconfig.json is present but will not be loaded if files are specified on commandline. Use '--ignoreConfig' to skip this error."
+      ]
+    },
+    {
+      "taskId": "08",
+      "runIndex": 0,
+      "compile": 0,
+      "render": 0,
+      "fullPass": 0,
+      "assertionScore": 0,
+      "consoleClean": 0,
+      "idiomatic": 0,
+      "errors": [
+        "error TS5112: tsconfig.json is present but will not be loaded if files are specified on commandline. Use '--ignoreConfig' to skip this error."
+      ]
+    },
+    {
+      "taskId": "09",
+      "runIndex": 0,
+      "compile": 0,
+      "render": 0,
+      "fullPass": 0,
+      "assertionScore": 0,
+      "consoleClean": 0,
+      "idiomatic": 0,
+      "errors": [
+        "error TS5112: tsconfig.json is present but will not be loaded if files are specified on commandline. Use '--ignoreConfig' to skip this error."
+      ]
+    },
+    {
+      "taskId": "10",
+      "runIndex": 0,
+      "compile": 0,
+      "render": 0,
+      "fullPass": 0,
+      "assertionScore": 0,
+      "consoleClean": 0,
+      "idiomatic": 0,
+      "errors": [
+        "error TS5112: tsconfig.json is present but will not be loaded if files are specified on commandline. Use '--ignoreConfig' to skip this error."
+      ]
+    },
+    {
+      "taskId": "10b",
+      "runIndex": 0,
+      "compile": 0,
+      "render": 0,
+      "fullPass": 0,
+      "assertionScore": 0,
+      "consoleClean": 0,
+      "idiomatic": 0,
+      "errors": [
+        "error TS5112: tsconfig.json is present but will not be loaded if files are specified on commandline. Use '--ignoreConfig' to skip this error."
+      ]
+    },
+    {
+      "taskId": "11",
+      "runIndex": 0,
+      "compile": 0,
+      "render": 0,
+      "fullPass": 0,
+      "assertionScore": 0,
+      "consoleClean": 0,
+      "idiomatic": 0,
+      "errors": [
+        "error TS5112: tsconfig.json is present but will not be loaded if files are specified on commandline. Use '--ignoreConfig' to skip this error."
+      ]
+    },
+    {
+      "taskId": "12",
+      "runIndex": 0,
+      "compile": 0,
+      "render": 0,
+      "fullPass": 0,
+      "assertionScore": 0,
+      "consoleClean": 0,
+      "idiomatic": 0,
+      "errors": [
+        "error TS5112: tsconfig.json is present but will not be loaded if files are specified on commandline. Use '--ignoreConfig' to skip this error."
+      ]
+    },
+    {
+      "taskId": "13",
+      "runIndex": 0,
+      "compile": 0,
+      "render": 0,
+      "fullPass": 0,
+      "assertionScore": 0,
+      "consoleClean": 0,
+      "idiomatic": 0,
+      "errors": [
+        "error TS5112: tsconfig.json is present but will not be loaded if files are specified on commandline. Use '--ignoreConfig' to skip this error."
+      ]
+    },
+    {
+      "taskId": "14",
+      "runIndex": 0,
+      "compile": 0,
+      "render": 0,
+      "fullPass": 0,
+      "assertionScore": 0,
+      "consoleClean": 0,
+      "idiomatic": 0,
+      "errors": [
+        "error TS5112: tsconfig.json is present but will not be loaded if files are specified on commandline. Use '--ignoreConfig' to skip this error."
+      ]
+    },
+    {
+      "taskId": "15",
+      "runIndex": 0,
+      "compile": 0,
+      "render": 0,
+      "fullPass": 0,
+      "assertionScore": 0,
+      "consoleClean": 0,
+      "idiomatic": 0,
+      "errors": [
+        "error TS5112: tsconfig.json is present but will not be loaded if files are specified on commandline. Use '--ignoreConfig' to skip this error."
+      ]
+    }
+  ],
+  "macroAverages": {
+    "compile": 0,
+    "render": 0,
+    "fullPass": 0,
+    "assertionScore": 0,
+    "consoleClean": 0,
+    "idiomatic": 0
+  }
+}

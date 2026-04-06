@@ -1,0 +1,223 @@
+{
+  "model": "manual",
+  "timestamp": "2026-04-06T03:54:41.186Z",
+  "systemPrompt": "default",
+  "results": [
+    {
+      "taskId": "01",
+      "runIndex": 0,
+      "compile": 0,
+      "render": 0,
+      "fullPass": 0,
+      "assertionScore": 0,
+      "consoleClean": 0,
+      "idiomatic": 0,
+      "errors": [
+        "No generated file"
+      ]
+    },
+    {
+      "taskId": "02",
+      "runIndex": 0,
+      "compile": 0,
+      "render": 0,
+      "fullPass": 0,
+      "assertionScore": 0,
+      "consoleClean": 0,
+      "idiomatic": 0,
+      "errors": [
+        "No generated file"
+      ]
+    },
+    {
+      "taskId": "03",
+      "runIndex": 0,
+      "compile": 0,
+      "render": 0,
+      "fullPass": 0,
+      "assertionScore": 0,
+      "consoleClean": 0,
+      "idiomatic": 0,
+      "errors": [
+        "No generated file"
+      ]
+    },
+    {
+      "taskId": "04",
+      "runIndex": 0,
+      "compile": 0,
+      "render": 0,
+      "fullPass": 0,
+      "assertionScore": 0,
+      "consoleClean": 0,
+      "idiomatic": 0,
+      "errors": [
+        "No generated file"
+      ]
+    },
+    {
+      "taskId": "05",
+      "runIndex": 0,
+      "compile": 0,
+      "render": 0,
+      "fullPass": 0,
+      "assertionScore": 0,
+      "consoleClean": 0,
+      "idiomatic": 0,
+      "errors": [
+        "No generated file"
+      ]
+    },
+    {
+      "taskId": "06",
+      "runIndex": 0,
+      "compile": 0,
+      "render": 0,
+      "fullPass": 0,
+      "assertionScore": 0,
+      "consoleClean": 0,
+      "idiomatic": 0,
+      "errors": [
+        "No generated file"
+      ]
+    },
+    {
+      "taskId": "07",
+      "runIndex": 0,
+      "compile": 0,
+      "render": 0,
+      "fullPass": 0,
+      "assertionScore": 0,
+      "consoleClean": 0,
+      "idiomatic": 0,
+      "errors": [
+        "No generated file"
+      ]
+    },
+    {
+      "taskId": "08",
+      "runIndex": 0,
+      "compile": 0,
+      "render": 0,
+      "fullPass": 0,
+      "assertionScore": 0,
+      "consoleClean": 0,
+      "idiomatic": 0,
+      "errors": [
+        "No generated file"
+      ]
+    },
+    {
+      "taskId": "09",
+      "runIndex": 0,
+      "compile": 0,
+      "render": 0,
+      "fullPass": 0,
+      "assertionScore": 0,
+      "consoleClean": 0,
+      "idiomatic": 0,
+      "errors": [
+        "No generated file"
+      ]
+    },
+    {
+      "taskId": "10",
+      "runIndex": 0,
+      "compile": 0,
+      "render": 0,
+      "fullPass": 0,
+      "assertionScore": 0,
+      "consoleClean": 0,
+      "idiomatic": 0,
+      "errors": [
+        "No generated file"
+      ]
+    },
+    {
+      "taskId": "10b",
+      "runIndex": 0,
+      "compile": 0,
+      "render": 0,
+      "fullPass": 0,
+      "assertionScore": 0,
+      "consoleClean": 0,
+      "idiomatic": 0,
+      "errors": [
+        "No generated file"
+      ]
+    },
+    {
+      "taskId": "11",
+      "runIndex": 0,
+      "compile": 0,
+      "render": 0,
+      "fullPass": 0,
+      "assertionScore": 0,
+      "consoleClean": 0,
+      "idiomatic": 0,
+      "errors": [
+        "No generated file"
+      ]
+    },
+    {
+      "taskId": "12",
+      "runIndex": 0,
+      "compile": 0,
+      "render": 0,
+      "fullPass": 0,
+      "assertionScore": 0,
+      "consoleClean": 0,
+      "idiomatic": 0,
+      "errors": [
+        "No generated file"
+      ]
+    },
+    {
+      "taskId": "13",
+      "runIndex": 0,
+      "compile": 0,
+      "render": 0,
+      "fullPass": 0,
+      "assertionScore": 0,
+      "consoleClean": 0,
+      "idiomatic": 0,
+      "errors": [
+        "No generated file"
+      ]
+    },
+    {
+      "taskId": "14",
+      "runIndex": 0,
+      "compile": 0,
+      "render": 0,
+      "fullPass": 0,
+      "assertionScore": 0,
+      "consoleClean": 0,
+      "idiomatic": 0,
+      "errors": [
+        "No generated file"
+      ]
+    },
+    {
+      "taskId": "15",
+      "runIndex": 0,
+      "compile": 0,
+      "render": 0,
+      "fullPass": 0,
+      "assertionScore": 0,
+      "consoleClean": 0,
+      "idiomatic": 0,
+      "errors": [
+        "No generated file"
+      ]
+    }
+  ],
+  "macroAverages": {
+    "compile": 0,
+    "render": 0,
+    "fullPass": 0,
+    "assertionScore": 0,
+    "consoleClean": 0,
+    "idiomatic": 0
+  }
+}

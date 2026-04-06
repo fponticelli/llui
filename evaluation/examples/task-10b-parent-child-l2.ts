@@ -3,6 +3,7 @@
  * Idiomatic score: 6/6
  */
 import { component, div, button, text, each, child } from '@llui/dom'
+import type { ComponentDef } from '@llui/dom'
 
 // ── Child component (Level 2) ──────────────────────────────────
 
@@ -15,10 +16,10 @@ type ChildEffect = never
 const CounterChild = component<ChildState, ChildMsg, ChildEffect>({
   name: 'CounterChild',
   init: () => [{ id: 0, value: 0 }, []],
-  propsMsg: (props: { id: number; value: number }) => ({
+  propsMsg: (props) => ({
     type: 'propsChanged' as const,
-    id: props.id,
-    value: props.value,
+    id: props.id as number,
+    value: props.value as number,
   }),
   update: (state, msg) => {
     switch (msg.type) {
@@ -87,8 +88,8 @@ export const ParentChildL2 = component<ParentState, ParentMsg, ParentEffect>({
         items: (s) => s.counters,
         key: (c) => c.id,
         render: ({ item }) => [
-          ...child<ParentState, ChildState, ChildMsg, ChildEffect>({
-            def: CounterChild,
+          ...child<ParentState, ChildMsg>({
+            def: CounterChild as unknown as ComponentDef<unknown, ChildMsg, unknown>,
             key: item.id(),
             props: (s) => {
               const c = s.counters.find((x) => x.id === item.id())!
