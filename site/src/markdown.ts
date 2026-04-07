@@ -70,6 +70,7 @@ export async function loadDoc(slug: string): Promise<DocData> {
         return highlighter.codeToHtml(decoded, {
           lang: language,
           themes: { dark: 'github-dark', light: 'github-light' },
+          defaultColor: false,
         })
       } catch {
         return `<pre><code${lang ? ` class="language-${lang}"` : ''}>${code}</code></pre>`

@@ -187,19 +187,21 @@ body {
   border-radius: 0;
 }
 
-/* Shiki dual-theme support */
-.shiki {
-  background-color: var(--c-code-bg) !important;
+/* Shiki dual-theme via CSS variables (no !important needed) */
+.prose pre.shiki {
+  background-color: var(--c-code-bg);
+}
+
+.prose .shiki,
+.prose .shiki span {
+  color: var(--shiki-light);
+  background-color: transparent;
 }
 
 @media (prefers-color-scheme: dark) {
-  .shiki,
-  .shiki span {
-    color: var(--shiki-dark) !important;
-    background-color: transparent !important;
-  }
-  .shiki {
-    background-color: var(--c-code-bg) !important;
+  .prose .shiki,
+  .prose .shiki span {
+    color: var(--shiki-dark);
   }
 }
 
