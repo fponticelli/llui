@@ -60,11 +60,10 @@ export function each<S, T, M = unknown>(opts: EachOptions<S, T, M>): Node[] {
 
       const newItems = opts.items(state as S)
 
-      // Fast path: same array reference → skip entirely
-      if (newItems === lastItemsRef) {
-        for (const entry of entries) entry.scope.eachItemStable = true
-        return
-      }
+      // Fast path: same array reference → skip entirely.
+      // No per-entry work needed — eachItemStable defaults to true and is
+      // only set false by updateEntry when the item ref actually changes.
+      if (newItems === lastItemsRef) return
       lastItemsRef = newItems
 
       const report = opts.onTransition ? { entering: [] as Node[], leaving: [] as Node[] } : null
@@ -319,28 +318,24 @@ function reconcileEntries<S, T>(
   }
 
   // Fast path 3: same length, same keys in order — update items in place.
-  // This is the dominant path for partial updates (e.g., "update every 10th
-  // row"): the array length is unchanged, every key at position i still
-  // matches. Skip the Map/Set/reorder machinery entirely — just call
-  // updateEntry per item. updateEntry checks item-ref identity internally
-  // and only fires per-item updaters for actually-changed items.
+  // Single pass: verify keys match AND update changed items simultaneously.
+  // Items with identical object refs are skipped entirely (no key check,
+  // no updateEntry call). This is the dominant path for partial updates
+  // (e.g., "update every 10th row").
   if (newLen === oldLen) {
     let allSameKeys = true
     for (let i = 0; i < newLen; i++) {
-      // If the item ref is identical, the key is guaranteed unchanged —
-      // skip the (potentially expensive) opts.key() call.
-      if (entries[i]!.item === newItems[i]) continue
-      if (entries[i]!.key !== opts.key(newItems[i]!)) {
+      const entry = entries[i]!
+      const newItem = newItems[i]!
+      // Same object ref → key unchanged, item unchanged — skip entirely
+      if (entry.item === newItem) continue
+      if (entry.key !== opts.key(newItem)) {
         allSameKeys = false
         break
       }
+      updateEntry(entry, newItem, i)
     }
-    if (allSameKeys) {
-      for (let i = 0; i < newLen; i++) {
-        updateEntry(entries[i]!, newItems[i]!, i)
-      }
-      return
-    }
+    if (allSameKeys) return
   }
 
   // Fast path 4: two-element swap — same keys, exactly two positions differ
@@ -511,7 +506,7 @@ function updateEntry<T>(entry: Entry<T>, item: T, index: number): void {
   entry.item = item
   entry.current = item
   entry.index = index
-  entry.scope.eachItemStable = !changed
+  // eachItemStable removed — unused
   // Directly run per-item updaters when item changed — bypasses Phase 2
   if (changed) {
     const updaters = entry.scope.itemUpdaters

@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>Micro: check-before-apply vs unconditional-apply</title>
+  <style>
+    body { font-family: system-ui; padding: 20px; }
+    table { border-collapse: collapse; margin: 16px 0; }
+    th, td { border: 1px solid #ccc; padding: 6px 12px; text-align: right; }
+    th { text-align: left; background: #f5f5f5; }
+    .winner { font-weight: bold; color: #16a34a; }
+    #status { color: #666; margin: 8px 0; }
+  </style>
+</head>
+<body>
+  <h1>Check-before-apply vs Unconditional apply</h1>
+  <p>Tests whether comparing a value before writing to the DOM is faster than just writing unconditionally.</p>
+  <div id="status">Preparing...</div>
+  <div id="results"></div>
+
+  <!-- 1000-row test table -->
+  <div id="bench-container" style="position:absolute;left:-9999px;"></div>
+
+  <script>
+    const N = 1000
+    const REPS = 100   // inner repetitions per timing sample
+    const ITERS = 200
+    const container = document.getElementById('bench-container')
+
+    // Build N rows with text + class bindings
+    const rows = []
+    for (let i = 0; i < N; i++) {
+      const tr = document.createElement('tr')
+      const td1 = document.createElement('td')
+      td1.textContent = 'label ' + i
+      const td2 = document.createElement('td')
+      td2.className = ''
+      tr.appendChild(td1)
+      tr.appendChild(td2)
+      container.appendChild(tr)
+      rows.push({ td1, td2 })
+    }
+
+    const results = {}
+
+    function bench(name, fn) {
+      // Warmup
+      for (let i = 0; i < 50; i++) fn()
+      // Measure
+      const times = []
+      for (let iter = 0; iter < ITERS; iter++) {
+        const start = performance.now()
+        for (let r = 0; r < REPS; r++) fn()
+        times.push((performance.now() - start) / REPS)
+      }
+      times.sort((a, b) => a - b)
+      const median = times[Math.floor(times.length / 2)]
+      results[name] = median
+      return median
+    }
+
+    async function runAll() {
+      const status = document.getElementById('status')
+
+      // ── Test 1: textContent — unchanged value ──
+      status.textContent = 'Running: textContent unchanged...'
+      await new Promise(r => setTimeout(r, 50))
+
+      bench('textContent: unconditional (unchanged)', () => {
+        for (let i = 0; i < N; i++) {
+          rows[i].td1.textContent = 'label ' + i  // same value
+        }
+      })
+
+      bench('textContent: check-then-apply (unchanged)', () => {
+        for (let i = 0; i < N; i++) {
+          const v = 'label ' + i
+          if (rows[i].td1.textContent !== v) rows[i].td1.textContent = v
+        }
+      })
+
+      // ── Test 2: textContent — changed value (every 10th) ──
+      status.textContent = 'Running: textContent changed...'
+      await new Promise(r => setTimeout(r, 50))
+
+      let flip = false
+      bench('textContent: unconditional (10% changed)', () => {
+        flip = !flip
+        for (let i = 0; i < N; i++) {
+          const suffix = (i % 10 === 0 && flip) ? ' !!!' : ''
+          rows[i].td1.textContent = 'label ' + i + suffix
+        }
+      })
+
+      flip = false
+      bench('textContent: check-then-apply (10% changed)', () => {
+        flip = !flip
+        for (let i = 0; i < N; i++) {
+          const suffix = (i % 10 === 0 && flip) ? ' !!!' : ''
+          const v = 'label ' + i + suffix
+          if (rows[i].td1.textContent !== v) rows[i].td1.textContent = v
+        }
+      })
+
+      // ── Test 3: className — unchanged value ──
+      status.textContent = 'Running: className unchanged...'
+      await new Promise(r => setTimeout(r, 50))
+
+      bench('className: unconditional (unchanged)', () => {
+        for (let i = 0; i < N; i++) {
+          rows[i].td2.className = ''
+        }
+      })
+
+      bench('className: check-then-apply (unchanged)', () => {
+        for (let i = 0; i < N; i++) {
+          if (rows[i].td2.className !== '') rows[i].td2.className = ''
+        }
+      })
+
+      // ── Test 4: className — 2 changed (select scenario) ──
+      status.textContent = 'Running: className 2 changed...'
+      await new Promise(r => setTimeout(r, 50))
+
+      let selectedOld = 0
+      let selectedNew = 1
+      bench('className: unconditional (2/1000 changed)', () => {
+        for (let i = 0; i < N; i++) {
+          rows[i].td2.className = (i === selectedNew) ? 'danger' : ''
+        }
+        selectedOld = selectedNew
+        selectedNew = (selectedNew + 1) % N
+      })
+
+      selectedOld = 0
+      selectedNew = 1
+      bench('className: check-then-apply (2/1000 changed)', () => {
+        for (let i = 0; i < N; i++) {
+          const v = (i === selectedNew) ? 'danger' : ''
+          if (rows[i].td2.className !== v) rows[i].td2.className = v
+        }
+        selectedOld = selectedNew
+        selectedNew = (selectedNew + 1) % N
+      })
+
+      // ── Test 5: setAttribute — unchanged ──
+      status.textContent = 'Running: setAttribute unchanged...'
+      await new Promise(r => setTimeout(r, 50))
+
+      bench('setAttribute: unconditional (unchanged)', () => {
+        for (let i = 0; i < N; i++) {
+          rows[i].td2.setAttribute('data-id', String(i))
+        }
+      })
+
+      bench('setAttribute: check-then-apply (unchanged)', () => {
+        for (let i = 0; i < N; i++) {
+          const v = String(i)
+          if (rows[i].td2.getAttribute('data-id') !== v) rows[i].td2.setAttribute('data-id', v)
+        }
+      })
+
+      // ── Test 6: nodeValue on Text nodes — unchanged ──
+      status.textContent = 'Running: nodeValue unchanged...'
+      await new Promise(r => setTimeout(r, 50))
+
+      const textNodes = rows.map(r => r.td1.firstChild)
+
+      bench('nodeValue: unconditional (unchanged)', () => {
+        for (let i = 0; i < N; i++) {
+          textNodes[i].nodeValue = 'label ' + i
+        }
+      })
+
+      bench('nodeValue: check-then-apply (unchanged)', () => {
+        for (let i = 0; i < N; i++) {
+          const v = 'label ' + i
+          if (textNodes[i].nodeValue !== v) textNodes[i].nodeValue = v
+        }
+      })
+
+      // ── Render results ──
+      status.textContent = 'Done!'
+      renderResults()
+    }
+
+    function renderResults() {
+      const el = document.getElementById('results')
+      const pairs = [
+        ['textContent (unchanged)', 'textContent: unconditional (unchanged)', 'textContent: check-then-apply (unchanged)'],
+        ['textContent (10% changed)', 'textContent: unconditional (10% changed)', 'textContent: check-then-apply (10% changed)'],
+        ['className (unchanged)', 'className: unconditional (unchanged)', 'className: check-then-apply (unchanged)'],
+        ['className (2/1000 changed)', 'className: unconditional (2/1000 changed)', 'className: check-then-apply (2/1000 changed)'],
+        ['setAttribute (unchanged)', 'setAttribute: unconditional (unchanged)', 'setAttribute: check-then-apply (unchanged)'],
+        ['nodeValue (unchanged)', 'nodeValue: unconditional (unchanged)', 'nodeValue: check-then-apply (unchanged)'],
+      ]
+
+      let html = '<table><tr><th>Scenario</th><th>Unconditional</th><th>Check-then-apply</th><th>Winner</th></tr>'
+      for (const [label, uncondKey, checkKey] of pairs) {
+        const u = results[uncondKey]
+        const c = results[checkKey]
+        const uWins = u < c
+        const diff = ((Math.abs(u - c) / Math.min(u, c)) * 100).toFixed(0)
+        html += `<tr><td style="text-align:left">${label}</td>`
+        html += `<td class="${uWins ? 'winner' : ''}">${u.toFixed(3)}ms</td>`
+        html += `<td class="${!uWins ? 'winner' : ''}">${c.toFixed(3)}ms</td>`
+        html += `<td>${uWins ? 'Unconditional' : 'Check'} by ${diff}%</td></tr>`
+      }
+      html += '</table>'
+
+      // Machine-readable output for Playwright
+      html += `<pre id="json-results">${JSON.stringify(results, null, 2)}</pre>`
+      el.innerHTML = html
+    }
+
+    runAll()
+  </script>
+</body>
+</html>

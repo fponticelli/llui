@@ -1,7 +1,7 @@
 import type { BindingKind } from './types'
 import { getRenderContext } from './render-context'
 import { createBinding, applyBinding } from './binding'
-import { addItemUpdater } from './scope'
+import { addCheckedItemUpdater } from './scope'
 
 export function elSplit(
   tag: string,
@@ -28,17 +28,10 @@ export function elSplit(
     for (const [mask, kind, key, accessor] of bindings) {
       const perItem = accessor.length === 0
       if (perItem) {
-        // Per-item: direct updater, bypassing Phase 2.
-        // Equality check avoids redundant DOM writes.
         const get = accessor as unknown as () => unknown
-        let lastV: unknown = get()
-        applyBinding({ kind, node: el, key }, lastV)
-        addItemUpdater(ctx.rootScope, () => {
-          const v = get()
-          if (v === lastV || (v !== v && lastV !== lastV)) return
-          lastV = v
-          applyBinding({ kind, node: el, key }, v)
-        })
+        const target = { kind, node: el, key }
+        const initial = addCheckedItemUpdater(ctx.rootScope, get, (v) => applyBinding(target, v))
+        applyBinding(target, initial)
       } else {
         const binding = createBinding(ctx.rootScope, {
           mask,

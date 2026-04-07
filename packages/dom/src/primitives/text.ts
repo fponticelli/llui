@@ -1,6 +1,6 @@
 import { getRenderContext } from '../render-context'
 import { createBinding } from '../binding'
-import { addItemUpdater } from '../scope'
+import { addCheckedItemUpdater } from '../scope'
 import { FULL_MASK } from '../update-loop'
 
 export function text<S>(
@@ -18,10 +18,12 @@ export function text<S>(
   // Register as direct updater, bypassing Phase 2 binding scan
   if (accessor.length === 0) {
     const get = accessor as () => string
-    node.nodeValue = String(get())
-    addItemUpdater(ctx.rootScope, () => {
-      node.nodeValue = String(get())
-    })
+    const initial = addCheckedItemUpdater(
+      ctx.rootScope,
+      () => String(get()),
+      (v) => { node.nodeValue = v },
+    )
+    node.nodeValue = initial
     return node
   }
 

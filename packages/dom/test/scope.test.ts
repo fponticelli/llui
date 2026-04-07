@@ -8,7 +8,6 @@ describe('createScope', () => {
     expect(scope.children).toEqual([])
     expect(scope.disposers).toEqual([])
     expect(scope.bindings).toEqual([])
-    expect(scope.eachItemStable).toBe(false)
   })
 
   it('creates a child scope linked to its parent', () => {

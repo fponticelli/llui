@@ -65,7 +65,6 @@ export interface Scope {
   children: Scope[]
   disposers: Array<() => void>
   bindings: Binding[]
-  eachItemStable: boolean
   /** Per-item updaters — called directly by each() when item changes, bypassing Phase 2 */
   itemUpdaters: Array<() => void>
 }

@@ -1,7 +1,7 @@
 import type { BindingKind } from './types'
 import { getRenderContext } from './render-context'
 import { createBinding, applyBinding } from './binding'
-import { addItemUpdater } from './scope'
+import { addCheckedItemUpdater } from './scope'
 
 // Cache: HTML string → template element (created once, cloned per use)
 const templateCache = new Map<string, HTMLTemplateElement>()
@@ -44,20 +44,10 @@ export function elTemplate(
   const bind: TemplateBind = (node, mask, kind, key, accessor) => {
     const perItem = accessor.length === 0
     if (perItem) {
-      // Per-item: set initial value and register direct updater
       const get = accessor as unknown as () => unknown
-      const initialValue = get()
-      applyBinding({ kind, node, key }, initialValue)
-      // Updater called by each() when item changes — bypasses Phase 2.
-      // Equality check avoids redundant DOM writes when only some fields
-      // of the item changed (e.g. label changed but id didn't).
-      let lastV: unknown = initialValue
-      addItemUpdater(ctx.rootScope, () => {
-        const v = get()
-        if (v === lastV || (v !== v && lastV !== lastV)) return
-        lastV = v
-        applyBinding({ kind, node, key }, v)
-      })
+      const target = { kind, node, key }
+      const initial = addCheckedItemUpdater(ctx.rootScope, get, (v) => applyBinding(target, v))
+      applyBinding(target, initial)
     } else {
       // State-level: use the binding system for Phase 2
       const binding = createBinding(ctx.rootScope, {

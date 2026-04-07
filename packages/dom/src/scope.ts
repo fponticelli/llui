@@ -15,7 +15,6 @@ export function createScope(parent: Scope | null): Scope {
     children: EMPTY_SCOPES,
     disposers: EMPTY_DISPOSERS,
     bindings: EMPTY_BINDINGS,
-    eachItemStable: false,
     itemUpdaters: EMPTY_UPDATERS,
   }
 
@@ -94,6 +93,29 @@ export function addBinding(scope: Scope, binding: Binding): void {
 export function addItemUpdater(scope: Scope, updater: () => void): void {
   if (scope.itemUpdaters === EMPTY_UPDATERS) scope.itemUpdaters = []
   scope.itemUpdaters.push(updater)
+}
+
+/**
+ * Register a per-item updater that compares the new value against the last
+ * value before applying. Shared by `text()`, `elSplit()`, and `elTemplate()`
+ * so the equality-check logic lives in one place.
+ *
+ * @param apply - DOM write: receives the new value when it differs
+ * @returns the initial value (caller should apply it to the DOM)
+ */
+export function addCheckedItemUpdater<V>(
+  scope: Scope,
+  get: () => V,
+  apply: (value: V) => void,
+): V {
+  let last: V = get()
+  addItemUpdater(scope, () => {
+    const v = get()
+    if (v === last || (v !== v && last !== last)) return
+    last = v
+    apply(v)
+  })
+  return last
 }
 
 export function addDisposer(scope: Scope, disposer: () => void): void {
