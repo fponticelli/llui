@@ -1,5 +1,5 @@
 import { hydrateApp, mountApp } from '@llui/dom'
-import type { ComponentDef } from '@llui/dom'
+import type { ComponentDef, AppHandle } from '@llui/dom'
 
 declare global {
   interface Window {
@@ -20,6 +20,9 @@ export interface RenderClientOptions {
   onMount?: () => void
 }
 
+// Track the current app handle so we can dispose it on client navigation
+let currentHandle: AppHandle | null = null
+
 /**
  * Default onRenderClient hook.
  * Hydrates if isHydration is true, otherwise mounts fresh.
@@ -33,7 +36,7 @@ export async function onRenderClient(pageContext: ClientPageContext): Promise<vo
  *
  * ```typescript
  * // pages/+onRenderClient.ts
- * import { createOnRenderClient } from '@llui/vike'
+ * import { createOnRenderClient } from '@llui/vike/client'
  *
  * export const onRenderClient = createOnRenderClient({
  *   container: '#root',
@@ -59,11 +62,21 @@ async function renderClient(
     throw new Error(`@llui/vike: container "${selector}" not found in DOM`)
   }
 
+  // Dispose previous page's component on client navigation
+  if (currentHandle) {
+    currentHandle.dispose()
+    currentHandle = null
+  }
+
+  const el = container as HTMLElement
+
   if (pageContext.isHydration) {
     const serverState = window.__LLUI_STATE__
-    hydrateApp(container as HTMLElement, Page, serverState)
+    currentHandle = hydrateApp(el, Page, serverState)
   } else {
-    mountApp(container as HTMLElement, Page, pageContext.data)
+    // Clear old DOM before mounting new page
+    el.textContent = ''
+    currentHandle = mountApp(el, Page, pageContext.data)
   }
 
   options.onMount?.()

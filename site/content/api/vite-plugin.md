@@ -53,10 +53,6 @@ The compiler emits warnings for common issues:
 | Namespace imports     | `import * as` prevents tree-shaking              |
 | Spread children       | Spread in children array defeats static analysis |
 
-## License
-
-MIT
-
 <!-- auto-api:start -->
 
 ## Functions
@@ -84,6 +80,5 @@ export interface LluiPluginOptions {
   mcpPort?: number | false
 }
 ```
-
 
 <!-- auto-api:end -->

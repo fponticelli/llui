@@ -81,10 +81,6 @@ replayTrace(def, trace) => void
 
 Replay a recorded message trace against a component definition. Asserts state at each step.
 
-## License
-
-MIT
-
 <!-- auto-api:start -->
 
 ## Functions
@@ -92,7 +88,10 @@ MIT
 ### `testComponent()`
 
 ```typescript
-function testComponent<S, M, E>(def: ComponentDef<S, M, E>, initialData?: unknown): TestHarness<S, M, E>
+function testComponent<S, M, E>(
+  def: ComponentDef<S, M, E>,
+  initialData?: unknown,
+): TestHarness<S, M, E>
 ```
 
 ### `testView()`
@@ -113,12 +112,15 @@ function assertEffects<E>(actual: E[], expected: Array<Partial<E>>): void
 ### `propertyTest()`
 
 ```typescript
-function propertyTest<S, M, E>(def: ComponentDef<S, M, E>, config: {
+function propertyTest<S, M, E>(
+  def: ComponentDef<S, M, E>,
+  config: {
     invariants: Array<(state: S, effects: E[]) => boolean>
     messageGenerators: Record<string, ((state: S) => M) | (() => M)>
     runs?: number
     maxSequenceLength?: number
-  }): void
+  },
+): void
 ```
 
 ### `replayTrace()`
@@ -126,6 +128,5 @@ function propertyTest<S, M, E>(def: ComponentDef<S, M, E>, config: {
 ```typescript
 function replayTrace<S, M, E>(def: ComponentDef<S, M, E>, trace: LluiTrace<S, M, E>): void
 ```
-
 
 <!-- auto-api:end -->

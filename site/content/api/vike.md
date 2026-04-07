@@ -83,10 +83,6 @@ Hydrates the server-rendered HTML on the client. Attaches event listeners and re
 
 The barrel export (`@llui/vike`) re-exports everything, but prefer sub-path imports to avoid bundling jsdom into the client.
 
-## License
-
-MIT
-
 <!-- auto-api:start -->
 
 ## Functions
@@ -103,6 +99,7 @@ function onRenderHtml(pageContext: PageContext): Promise<RenderHtmlResult>
 ### `createOnRenderHtml()`
 
 Factory to create a customized onRenderHtml hook.
+
 ```typescript
 // pages/+onRenderHtml.ts
 import { createOnRenderHtml } from '@llui/vike'
@@ -125,7 +122,10 @@ function createOnRenderHtml(options: {
 ### `renderPage()`
 
 ```typescript
-function renderPage(pageContext: PageContext, document: (ctx: DocumentContext) => string): Promise<RenderHtmlResult>
+function renderPage(
+  pageContext: PageContext,
+  document: (ctx: DocumentContext) => string,
+): Promise<RenderHtmlResult>
 ```
 
 ### `onRenderClient()`
@@ -140,9 +140,10 @@ function onRenderClient(pageContext: ClientPageContext): Promise<void>
 ### `createOnRenderClient()`
 
 Factory to create a customized onRenderClient hook.
+
 ```typescript
 // pages/+onRenderClient.ts
-import { createOnRenderClient } from '@llui/vike'
+import { createOnRenderClient } from '@llui/vike/client'
 export const onRenderClient = createOnRenderClient({
   container: '#root',
   onMount: () => console.log('Page ready'),
@@ -150,7 +151,9 @@ export const onRenderClient = createOnRenderClient({
 ```
 
 ```typescript
-function createOnRenderClient(options: RenderClientOptions): (pageContext: ClientPageContext) => Promise<void>
+function createOnRenderClient(
+  options: RenderClientOptions,
+): (pageContext: ClientPageContext) => Promise<void>
 ```
 
 ### `renderClient()`
@@ -224,5 +227,10 @@ export interface RenderClientOptions {
 const DEFAULT_DOCUMENT
 ```
 
+### `currentHandle`
+
+```typescript
+const currentHandle: AppHandle | null
+```
 
 <!-- auto-api:end -->
