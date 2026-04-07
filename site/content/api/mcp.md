@@ -78,3 +78,97 @@ export default defineConfig({ plugins: [llui({ mcpPort: 5200 })] })
 ## License
 
 MIT
+
+<!-- auto-api:start -->
+
+## Functions
+
+### `generateReplayTest()`
+
+```typescript
+function generateReplayTest(trace: {
+    component: string
+    entries: Array<{ msg: unknown; expectedState: unknown; expectedEffects: unknown[] }>
+  }, importPath: string, exportName: string): string
+```
+
+## Interfaces
+
+### `McpToolDefinition`
+
+```typescript
+interface McpToolDefinition {
+  name: string
+  description: string
+  inputSchema: {
+    type: 'object'
+    properties: Record<string, unknown>
+    required?: string[]
+  }
+}
+```
+
+### `JsonRpcRequest`
+
+```typescript
+interface JsonRpcRequest {
+  jsonrpc: '2.0'
+  id: string | number
+  method: string
+  params?: Record<string, unknown>
+}
+```
+
+### `JsonRpcResponse`
+
+```typescript
+interface JsonRpcResponse {
+  jsonrpc: '2.0'
+  id: string | number
+  result?: unknown
+  error?: { code: number; message: string; data?: unknown }
+}
+```
+
+### `PendingRequest`
+
+```typescript
+interface PendingRequest {
+  resolve: (v: unknown) => void
+  reject: (e: Error) => void
+}
+```
+
+## Classes
+
+### `LluiMcpServer`
+
+```typescript
+class LluiMcpServer {
+  debugApi: LluiDebugAPI | null
+  wsServer: WebSocketServer | null
+  browserWs: WebSocket | null
+  pending
+  bridgePort: number
+  constructor(bridgePort = 5200)
+  connectDirect(api: LluiDebugAPI): void
+  startBridge(): void
+  stopBridge(): void
+  call(method: keyof LluiDebugAPI, args: unknown[]): Promise<unknown>
+  getTools(): McpToolDefinition[]
+  handleToolCall(name: string, args: Record<string, unknown>): Promise<unknown>
+  start(): void
+  handleRequest(request: JsonRpcRequest): Promise<JsonRpcResponse>
+}
+```
+
+## Constants
+
+### `TOOLS`
+
+```typescript
+const TOOLS: McpToolDefinition[]
+```
+
+
+<!-- auto-api:end -->

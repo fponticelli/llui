@@ -7,8 +7,7 @@ on:
       - 'site/**'
       - 'docs/**'
       - 'packages/*/README.md'
-      - 'packages/components/src/components/**'
-      - 'packages/effects/src/**'
+      - 'packages/*/src/**'
       - 'evaluation/prompts/system-prompt.md'
   workflow_dispatch:
 

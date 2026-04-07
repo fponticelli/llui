@@ -86,3 +86,143 @@ The barrel export (`@llui/vike`) re-exports everything, but prefer sub-path impo
 ## License
 
 MIT
+
+<!-- auto-api:start -->
+
+## Functions
+
+### `onRenderHtml()`
+
+Default onRenderHtml hook for simple cases.
+Uses a minimal HTML document template.
+
+```typescript
+function onRenderHtml(pageContext: PageContext): Promise<RenderHtmlResult>
+```
+
+### `createOnRenderHtml()`
+
+Factory to create a customized onRenderHtml hook.
+```typescript
+// pages/+onRenderHtml.ts
+import { createOnRenderHtml } from '@llui/vike'
+export const onRenderHtml = createOnRenderHtml({
+  document: ({ html, state, head }) => `<!DOCTYPE html>
+    <html>
+      <head>${head}<link rel="stylesheet" href="/styles.css" /></head>
+      <body><div id="app">${html}</div>
+      <script>window.__LLUI_STATE__ = ${state}</script></body>
+    </html>`,
+})
+```
+
+```typescript
+function createOnRenderHtml(options: {
+  document: (ctx: DocumentContext) => string
+}): (pageContext: PageContext) => Promise<RenderHtmlResult>
+```
+
+### `renderPage()`
+
+```typescript
+function renderPage(pageContext: PageContext, document: (ctx: DocumentContext) => string): Promise<RenderHtmlResult>
+```
+
+### `onRenderClient()`
+
+Default onRenderClient hook.
+Hydrates if isHydration is true, otherwise mounts fresh.
+
+```typescript
+function onRenderClient(pageContext: ClientPageContext): Promise<void>
+```
+
+### `createOnRenderClient()`
+
+Factory to create a customized onRenderClient hook.
+```typescript
+// pages/+onRenderClient.ts
+import { createOnRenderClient } from '@llui/vike'
+export const onRenderClient = createOnRenderClient({
+  container: '#root',
+  onMount: () => console.log('Page ready'),
+})
+```
+
+```typescript
+function createOnRenderClient(options: RenderClientOptions): (pageContext: ClientPageContext) => Promise<void>
+```
+
+### `renderClient()`
+
+```typescript
+function renderClient(pageContext: ClientPageContext, options: RenderClientOptions): Promise<void>
+```
+
+## Interfaces
+
+### `PageContext`
+
+```typescript
+export interface PageContext {
+  Page: ComponentDef<unknown, unknown, unknown, unknown>
+  data?: unknown
+  head?: string
+}
+```
+
+### `DocumentContext`
+
+```typescript
+export interface DocumentContext {
+  /** Rendered component HTML */
+  html: string
+  /** JSON-serialized initial state */
+  state: string
+  /** Head content from pageContext.head (e.g. from +Head.ts) */
+  head: string
+  /** Full page context for custom logic */
+  pageContext: PageContext
+}
+```
+
+### `RenderHtmlResult`
+
+```typescript
+export interface RenderHtmlResult {
+  documentHtml: string | { _escaped: string }
+  pageContext: { lluiState: unknown }
+}
+```
+
+### `ClientPageContext`
+
+```typescript
+export interface ClientPageContext {
+  Page: ComponentDef<unknown, unknown, unknown, unknown>
+  data?: unknown
+  isHydration?: boolean
+}
+```
+
+### `RenderClientOptions`
+
+```typescript
+export interface RenderClientOptions {
+  /** CSS selector for the mount container. Default: '#app' */
+  container?: string
+  /** Called after mount or hydration completes */
+  onMount?: () => void
+}
+```
+
+## Constants
+
+### `DEFAULT_DOCUMENT`
+
+```typescript
+const DEFAULT_DOCUMENT
+```
+
+
+<!-- auto-api:end -->

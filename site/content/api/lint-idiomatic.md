@@ -74,3 +74,263 @@ lintIdiomatic(source: string, filename?: string) => { violations: Violation[], s
 ## License
 
 MIT
+
+<!-- auto-api:start -->
+
+## Functions
+
+### `lintIdiomatic()`
+
+Lint a single source file for LLui idiomatic anti-patterns.
+Returns violations and a numeric score (6 = perfect).
+
+```typescript
+function lintIdiomatic(source: string, filename = 'input.ts'): LintResult
+```
+
+### `pos()`
+
+```typescript
+function pos(node: ts.Node, sf: ts.SourceFile): { line: number; column: number }
+```
+
+### `isStatePropertyAccess()`
+
+```typescript
+function isStatePropertyAccess(node: ts.Node, stateName: string): boolean
+```
+
+### `isInsideViewFunction()`
+
+```typescript
+function isInsideViewFunction(node: ts.Node): boolean
+```
+
+### `referencesStateParam()`
+
+```typescript
+function referencesStateParam(node: ts.Node): boolean
+```
+
+### `checkStateMutation()`
+
+```typescript
+function checkStateMutation(sf: ts.SourceFile, filename: string, violations: LintViolation[]): void
+```
+
+### `checkMutationsInBody()`
+
+```typescript
+function checkMutationsInBody(node: ts.Node, stateName: string, sf: ts.SourceFile, filename: string, violations: LintViolation[]): void
+```
+
+### `checkMissingMemo()`
+
+```typescript
+function checkMissingMemo(sf: ts.SourceFile, filename: string, violations: LintViolation[]): void
+```
+
+### `checkEachClosureViolation()`
+
+```typescript
+function checkEachClosureViolation(sf: ts.SourceFile, filename: string, violations: LintViolation[]): void
+```
+
+### `checkClosureCaptures()`
+
+```typescript
+function checkClosureCaptures(renderFn: ts.ArrowFunction | ts.FunctionExpression, sf: ts.SourceFile, filename: string, violations: LintViolation[]): void
+```
+
+### `isInBindingContext()`
+
+```typescript
+function isInBindingContext(node: ts.Node): boolean
+```
+
+### `checkMapOnStateArrays()`
+
+```typescript
+function checkMapOnStateArrays(sf: ts.SourceFile, filename: string, violations: LintViolation[]): void
+```
+
+### `checkUnnecessaryChild()`
+
+```typescript
+function checkUnnecessaryChild(sf: ts.SourceFile, filename: string, violations: LintViolation[]): void
+```
+
+### `countStateAccesses()`
+
+```typescript
+function countStateAccesses(node: ts.Node, accesses: Set<string>): void
+```
+
+### `checkFormBoilerplate()`
+
+```typescript
+function checkFormBoilerplate(sf: ts.SourceFile, filename: string, violations: LintViolation[]): void
+```
+
+### `checkAsyncUpdate()`
+
+```typescript
+function checkAsyncUpdate(sf: ts.SourceFile, filename: string, violations: LintViolation[]): void
+```
+
+### `checkForAwait()`
+
+```typescript
+function checkForAwait(node: ts.Node, sf: ts.SourceFile, filename: string, violations: LintViolation[]): void
+```
+
+### `checkDirectStateInView()`
+
+```typescript
+function checkDirectStateInView(sf: ts.SourceFile, filename: string, violations: LintViolation[]): void
+```
+
+### `findStateInEventHandlers()`
+
+```typescript
+function findStateInEventHandlers(node: ts.Node, sf: ts.SourceFile, filename: string, violations: LintViolation[]): void
+```
+
+### `findStateAccess()`
+
+```typescript
+function findStateAccess(node: ts.Node, sf: ts.SourceFile, filename: string, violations: LintViolation[]): void
+```
+
+### `checkExhaustiveEffectHandling()`
+
+```typescript
+function checkExhaustiveEffectHandling(sf: ts.SourceFile, filename: string, violations: LintViolation[]): void
+```
+
+### `isEmptyFunctionBody()`
+
+```typescript
+function isEmptyFunctionBody(fn: ts.ArrowFunction | ts.FunctionExpression): boolean
+```
+
+### `checkEffectWithoutHandler()`
+
+```typescript
+function checkEffectWithoutHandler(sf: ts.SourceFile, filename: string, violations: LintViolation[]): void
+```
+
+### `bodyReturnsEffects()`
+
+```typescript
+function bodyReturnsEffects(node: ts.Node): boolean
+```
+
+### `checkForgottenSpread()`
+
+```typescript
+function checkForgottenSpread(sf: ts.SourceFile, filename: string, violations: LintViolation[]): void
+```
+
+### `checkStringEffectCallback()`
+
+```typescript
+function checkStringEffectCallback(sf: ts.SourceFile, filename: string, violations: LintViolation[]): void
+```
+
+### `checkNestedSendInUpdate()`
+
+```typescript
+function checkNestedSendInUpdate(sf: ts.SourceFile, filename: string, violations: LintViolation[]): void
+```
+
+### `isInsideComponentCall()`
+
+```typescript
+function isInsideComponentCall(node: ts.Node): boolean
+```
+
+### `findSendCalls()`
+
+```typescript
+function findSendCalls(node: ts.Node, sf: ts.SourceFile, filename: string, violations: LintViolation[]): void
+```
+
+### `checkImperativeDomInView()`
+
+```typescript
+function checkImperativeDomInView(sf: ts.SourceFile, filename: string, violations: LintViolation[]): void
+```
+
+### `isInsideOnMountCall()`
+
+```typescript
+function isInsideOnMountCall(node: ts.Node): boolean
+```
+
+### `findImperativeDom()`
+
+```typescript
+function findImperativeDom(node: ts.Node, sf: ts.SourceFile, filename: string, violations: LintViolation[], imperativeMethods: Set<string>): void
+```
+
+### `checkAccessorSideEffect()`
+
+```typescript
+function checkAccessorSideEffect(sf: ts.SourceFile, filename: string, violations: LintViolation[]): void
+```
+
+### `isAccessorArrow()`
+
+```typescript
+function isAccessorArrow(node: ts.ArrowFunction): boolean
+```
+
+### `findSideEffectsInAccessor()`
+
+```typescript
+function findSideEffectsInAccessor(node: ts.Node, sf: ts.SourceFile, filename: string, violations: LintViolation[], sideEffectNames: Set<string>, consoleMethods: Set<string>): void
+```
+
+### `collectMsgVariantShapes()`
+
+```typescript
+function collectMsgVariantShapes(type: ts.TypeNode): MsgVariantShape[]
+```
+
+## Interfaces
+
+### `LintViolation`
+
+```typescript
+export interface LintViolation {
+  rule: string
+  message: string
+  file: string
+  line: number
+  column: number
+  suggestion?: string
+}
+```
+
+### `LintResult`
+
+```typescript
+export interface LintResult {
+  violations: LintViolation[]
+  /** Score from 0 to 15. Starts at 15, -1 per violated rule category. */
+  score: number
+}
+```
+
+### `MsgVariantShape`
+
+```typescript
+interface MsgVariantShape {
+  typeName: string
+  shape: string
+}
+```
+
+
+<!-- auto-api:end -->

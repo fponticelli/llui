@@ -1,11 +1,11 @@
 /**
- * Auto-generates API reference markdown for @llui packages by parsing
+ * Auto-generates API reference markdown for all @llui packages by parsing
  * TypeScript source with the TS Compiler API. Outputs to site/content/api/.
  *
  * Run as part of the build: `tsx src/generate-api.ts`
  */
 import * as ts from 'typescript'
-import { readFileSync, writeFileSync, readdirSync } from 'fs'
+import { readFileSync, writeFileSync, readdirSync, existsSync } from 'fs'
 import { resolve, basename, dirname } from 'path'
 import { fileURLToPath } from 'url'
 
@@ -20,24 +20,255 @@ function readSource(path: string): ts.SourceFile {
   return ts.createSourceFile(path, text, ts.ScriptTarget.Latest, true)
 }
 
-function getLeadingComment(node: ts.Node, sf: ts.SourceFile): string | undefined {
+function getJSDoc(node: ts.Node, sf: ts.SourceFile): string | undefined {
   const ranges = ts.getLeadingCommentRanges(sf.text, node.getFullStart())
   if (!ranges || ranges.length === 0) return undefined
-  const last = ranges[ranges.length - 1]!
-  const raw = sf.text.slice(last.pos, last.end)
-  // Strip /** ... */ or // ...
-  const cleaned = raw
-    .replace(/^\/\*\*?\s*/, '')
-    .replace(/\s*\*\/$/, '')
-    .replace(/^\s*\*\s?/gm, '')
-    .trim()
-  // Skip section separators like "// ── Foo ──"
-  if (/^──/.test(cleaned) || /^─/.test(cleaned)) return undefined
-  return cleaned
+  for (let i = ranges.length - 1; i >= 0; i--) {
+    const range = ranges[i]!
+    const raw = sf.text.slice(range.pos, range.end)
+    if (!raw.startsWith('/**')) continue
+    const cleaned = raw
+      .replace(/^\/\*\*\s*/, '')
+      .replace(/\s*\*\/$/, '')
+      .replace(/^\s*\*\s?/gm, '')
+      .trim()
+    if (/^[─—]/.test(cleaned)) return undefined
+    return cleaned
+  }
+  return undefined
 }
 
 function printNode(node: ts.Node, sf: ts.SourceFile): string {
   return sf.text.slice(node.getStart(sf), node.getEnd()).trim()
+}
+
+function hasExportModifier(node: ts.Node): boolean {
+  return ts.canHaveModifiers(node)
+    ? (ts.getModifiers(node) ?? []).some((m) => m.kind === ts.SyntaxKind.ExportKeyword)
+    : false
+}
+
+// ── Generic Package API Extractor ────────────────────────────────
+
+interface ExportedItem {
+  kind: 'function' | 'interface' | 'type' | 'class' | 'const'
+  name: string
+  doc?: string
+  signature: string
+}
+
+function extractPackageExports(pkgDir: string, sourceFiles?: string[]): ExportedItem[] {
+  const srcDir = resolve(pkgDir, 'src')
+  const entryFiles = sourceFiles ?? readdirSync(srcDir).filter((f) => f.endsWith('.ts'))
+
+  // Resolve re-exports: follow `export { X } from './module'` to find source files
+  const filesToParse = new Set<string>()
+  const reExportedNames = new Map<string, Set<string>>() // file → names to extract
+
+  for (const file of entryFiles) {
+    const filePath = resolve(srcDir, file)
+    if (!existsSync(filePath)) continue
+    const sf = readSource(filePath)
+
+    let hasDirectExports = false
+    ts.forEachChild(sf, (node) => {
+      // Re-export: `export { X, Y } from './module'` or `export type { X } from './module'`
+      if (
+        ts.isExportDeclaration(node) &&
+        node.moduleSpecifier &&
+        ts.isStringLiteral(node.moduleSpecifier)
+      ) {
+        let target = node.moduleSpecifier.text
+        if (target.startsWith('.')) {
+          target = resolve(srcDir, target)
+          if (!target.endsWith('.ts')) target += '.ts'
+          filesToParse.add(target)
+          if (node.exportClause && ts.isNamedExports(node.exportClause)) {
+            const names = reExportedNames.get(target) ?? new Set()
+            for (const spec of node.exportClause.elements) {
+              names.add(spec.propertyName?.text ?? spec.name.text)
+            }
+            reExportedNames.set(target, names)
+          }
+        }
+      }
+      // Direct export in this file
+      if (
+        (ts.isFunctionDeclaration(node) ||
+          ts.isInterfaceDeclaration(node) ||
+          ts.isTypeAliasDeclaration(node) ||
+          ts.isClassDeclaration(node) ||
+          ts.isVariableStatement(node)) &&
+        hasExportModifier(node)
+      ) {
+        hasDirectExports = true
+      }
+    })
+
+    if (hasDirectExports) filesToParse.add(filePath)
+  }
+
+  const items: ExportedItem[] = []
+  const seen = new Set<string>()
+  const overloadMap = new Map<string, string[]>()
+
+  for (const filePath of filesToParse) {
+    if (!existsSync(filePath)) continue
+    const sf = readSource(filePath)
+    const allowedNames = reExportedNames.get(filePath) // undefined = take all exports
+
+    const isAllowed = (name: string) => !allowedNames || allowedNames.has(name)
+
+    // First pass: collect overload signatures
+    ts.forEachChild(sf, (node) => {
+      if (ts.isFunctionDeclaration(node) && node.name && !node.body) {
+        const name = node.name.text
+        if (!isAllowed(name)) return
+        const sigs = overloadMap.get(name) ?? []
+        sigs.push(printNode(node, sf))
+        overloadMap.set(name, sigs)
+      }
+    })
+
+    // Second pass: collect exports
+    ts.forEachChild(sf, (node) => {
+      // Functions (with body)
+      if (ts.isFunctionDeclaration(node) && node.name && node.body) {
+        const name = node.name.text
+        if (!isAllowed(name)) return
+        if (seen.has(name)) return
+        seen.add(name)
+
+        const doc = getJSDoc(node, sf)
+        const overloads = overloadMap.get(name)
+
+        if (overloads && overloads.length > 0) {
+          items.push({ kind: 'function', name, doc, signature: overloads.join('\n') })
+        } else {
+          const params = node.parameters.map((p) => printNode(p, sf)).join(', ')
+          const ret = node.type ? `: ${printNode(node.type, sf)}` : ''
+          const tp = node.typeParameters
+            ? `<${node.typeParameters.map((t) => printNode(t, sf)).join(', ')}>`
+            : ''
+          items.push({
+            kind: 'function',
+            name,
+            doc,
+            signature: `function ${name}${tp}(${params})${ret}`,
+          })
+        }
+      }
+
+      // Interfaces
+      if (ts.isInterfaceDeclaration(node)) {
+        const name = node.name.text
+        if (!isAllowed(name)) return
+        if (seen.has(name)) return
+        seen.add(name)
+        items.push({
+          kind: 'interface',
+          name,
+          doc: getJSDoc(node, sf),
+          signature: printNode(node, sf),
+        })
+      }
+
+      // Type aliases
+      if (ts.isTypeAliasDeclaration(node)) {
+        const name = node.name.text
+        if (!isAllowed(name)) return
+        if (seen.has(name)) return
+        seen.add(name)
+        items.push({ kind: 'type', name, doc: getJSDoc(node, sf), signature: printNode(node, sf) })
+      }
+
+      // Classes
+      if (ts.isClassDeclaration(node) && node.name) {
+        const name = node.name.text
+        if (!isAllowed(name)) return
+        if (seen.has(name)) return
+        seen.add(name)
+        // Extract class with method signatures but no bodies
+        let classSig = `class ${name}`
+        if (node.heritageClauses) {
+          classSig += ' ' + node.heritageClauses.map((h) => printNode(h, sf)).join(' ')
+        }
+        classSig += ' {\n'
+        for (const member of node.members) {
+          if (ts.isConstructorDeclaration(member)) {
+            const params = member.parameters.map((p) => printNode(p, sf)).join(', ')
+            classSig += `  constructor(${params})\n`
+          } else if (ts.isMethodDeclaration(member) && member.name) {
+            const mName = member.name.getText(sf)
+            const params = member.parameters.map((p) => printNode(p, sf)).join(', ')
+            const ret = member.type ? `: ${printNode(member.type, sf)}` : ''
+            const tp = member.typeParameters
+              ? `<${member.typeParameters.map((t) => printNode(t, sf)).join(', ')}>`
+              : ''
+            classSig += `  ${mName}${tp}(${params})${ret}\n`
+          } else if (ts.isPropertyDeclaration(member) && member.name) {
+            const mName = member.name.getText(sf)
+            const mType = member.type ? `: ${printNode(member.type, sf)}` : ''
+            classSig += `  ${mName}${mType}\n`
+          }
+        }
+        classSig += '}'
+        items.push({ kind: 'class', name, doc: getJSDoc(node, sf), signature: classSig })
+      }
+
+      // Exported const/let
+      if (ts.isVariableStatement(node)) {
+        for (const decl of node.declarationList.declarations) {
+          const name = decl.name.getText(sf)
+          if (!isAllowed(name)) continue
+          if (seen.has(name)) continue
+          // Skip namespace objects like `export const tabs = { init, update, connect }`
+          if (decl.initializer && ts.isObjectLiteralExpression(decl.initializer)) continue
+          seen.add(name)
+          const type = decl.type ? `: ${printNode(decl.type, sf)}` : ''
+          items.push({
+            kind: 'const',
+            name,
+            doc: getJSDoc(node, sf),
+            signature: `const ${name}${type}`,
+          })
+        }
+      }
+    })
+  }
+
+  return items
+}
+
+function formatExports(items: ExportedItem[]): string {
+  if (items.length === 0) return ''
+
+  const functions = items.filter((i) => i.kind === 'function')
+  const types = items.filter((i) => i.kind === 'type')
+  const interfaces = items.filter((i) => i.kind === 'interface')
+  const classes = items.filter((i) => i.kind === 'class')
+  const consts = items.filter((i) => i.kind === 'const')
+
+  let md = ''
+
+  const section = (title: string, list: ExportedItem[]) => {
+    if (list.length === 0) return
+    md += `## ${title}\n\n`
+    for (const item of list) {
+      const backtick = item.kind === 'function' ? `\`${item.name}()\`` : `\`${item.name}\``
+      md += `### ${backtick}\n\n`
+      if (item.doc) md += `${item.doc}\n\n`
+      md += '```typescript\n' + item.signature + '\n```\n\n'
+    }
+  }
+
+  section('Functions', functions)
+  section('Types', types)
+  section('Interfaces', interfaces)
+  section('Classes', classes)
+  if (consts.length > 0) section('Constants', consts)
+
+  return md
 }
 
 // ── Component API Generator ──────────────────────────────────────
@@ -45,8 +276,7 @@ function printNode(node: ts.Node, sf: ts.SourceFile): string {
 interface ComponentInfo {
   name: string
   stateType: string
-  stateFields: { name: string; type: string; comment?: string }[]
-  msgType: string
+  stateFields: { name: string; type: string }[]
   msgVariants: string[]
   initParams: string
   connectParams: string
@@ -63,7 +293,6 @@ function extractComponent(filePath: string): ComponentInfo | null {
     name,
     stateType: '',
     stateFields: [],
-    msgType: '',
     msgVariants: [],
     initParams: '',
     connectParams: '',
@@ -72,125 +301,92 @@ function extractComponent(filePath: string): ComponentInfo | null {
   }
 
   ts.forEachChild(sf, (node) => {
-    // Find State interface
     if (ts.isInterfaceDeclaration(node) && node.name.text.endsWith('State')) {
       info.stateType = node.name.text
       for (const member of node.members) {
         if (ts.isPropertySignature(member) && member.name) {
-          const mName = member.name.getText(sf)
-          const mType = member.type ? printNode(member.type, sf) : 'unknown'
-          const comment = getLeadingComment(member, sf)
-          info.stateFields.push({ name: mName, type: mType, comment })
+          info.stateFields.push({
+            name: member.name.getText(sf),
+            type: member.type ? printNode(member.type, sf) : 'unknown',
+          })
         }
       }
     }
 
-    // Handle re-exported State type aliases (e.g., alert-dialog re-exports DialogState)
     if (ts.isTypeAliasDeclaration(node) && node.name.text.endsWith('State') && !info.stateType) {
       info.stateType = node.name.text
     }
 
-    // Handle `export type { Foo as BarState }` re-exports
     if (ts.isExportDeclaration(node) && node.exportClause && ts.isNamedExports(node.exportClause)) {
       for (const spec of node.exportClause.elements) {
-        const exported = spec.name.text
-        if (exported.endsWith('State') && !info.stateType) {
-          info.stateType = exported
-          // Fields come from the source type; note "see X" for the docs
-        }
-        if (exported.endsWith('Msg') && !info.msgType) {
-          info.msgType = exported
-        }
+        if (spec.name.text.endsWith('State') && !info.stateType) info.stateType = spec.name.text
       }
     }
 
-    // Find Msg type
-    if (ts.isTypeAliasDeclaration(node) && node.name.text.endsWith('Msg')) {
-      info.msgType = node.name.text
-      if (ts.isUnionTypeNode(node.type)) {
-        for (const member of node.type.types) {
-          if (ts.isTypeLiteralNode(member)) {
-            const typeProp = member.members.find(
-              (m) => ts.isPropertySignature(m) && m.name?.getText(sf) === 'type',
-            )
-            if (typeProp && ts.isPropertySignature(typeProp) && typeProp.type) {
-              const val = printNode(typeProp.type, sf).replace(/['"]/g, '')
-              info.msgVariants.push(val)
-            }
+    if (
+      ts.isTypeAliasDeclaration(node) &&
+      node.name.text.endsWith('Msg') &&
+      ts.isUnionTypeNode(node.type)
+    ) {
+      for (const member of node.type.types) {
+        if (ts.isTypeLiteralNode(member)) {
+          const typeProp = member.members.find(
+            (m) => ts.isPropertySignature(m) && m.name?.getText(sf) === 'type',
+          )
+          if (typeProp && ts.isPropertySignature(typeProp) && typeProp.type) {
+            info.msgVariants.push(printNode(typeProp.type, sf).replace(/['"]/g, ''))
           }
         }
       }
     }
 
-    // Find Init interface
     if (ts.isInterfaceDeclaration(node) && node.name.text.endsWith('Init')) {
       const fields: string[] = []
       for (const member of node.members) {
         if (ts.isPropertySignature(member) && member.name) {
-          const mName = member.name.getText(sf)
-          const optional = member.questionToken ? '?' : ''
-          const mType = member.type ? printNode(member.type, sf) : 'unknown'
-          fields.push(`${mName}${optional}: ${mType}`)
+          const opt = member.questionToken ? '?' : ''
+          fields.push(
+            `${member.name.getText(sf)}${opt}: ${member.type ? printNode(member.type, sf) : 'unknown'}`,
+          )
         }
       }
       info.initParams = fields.join(', ')
     }
 
-    // Find connect function
-    if (ts.isFunctionDeclaration(node) && node.name?.text === 'connect') {
-      // Look for ConnectOptions param or opts param
-      const params = node.parameters
-      if (params.length >= 3) {
-        const optsParam = params[2]!
-        if (optsParam.type) {
-          // Extract the type inline or referenced
-          if (ts.isTypeLiteralNode(optsParam.type)) {
-            const fields: string[] = []
-            for (const member of optsParam.type.members) {
-              if (ts.isPropertySignature(member) && member.name) {
-                const mName = member.name.getText(sf)
-                const optional = member.questionToken ? '?' : ''
-                const mType = member.type ? printNode(member.type, sf) : 'unknown'
-                fields.push(`${mName}${optional}: ${mType}`)
-              }
-            }
-            info.connectParams = fields.join(', ')
-          } else {
-            info.connectParams = printNode(optsParam.type, sf)
-          }
-        }
-      }
-
-      // Extract return type to find parts
-      if (node.body) {
-        const returnStmt = findReturn(node.body)
-        if (returnStmt && ts.isObjectLiteralExpression(returnStmt)) {
-          for (const prop of returnStmt.properties) {
-            if (ts.isPropertyAssignment(prop) || ts.isShorthandPropertyAssignment(prop)) {
-              info.parts.push(prop.name?.getText(sf) ?? '')
-            } else if (ts.isMethodDeclaration(prop)) {
-              info.parts.push(prop.name?.getText(sf) ?? '')
-            }
-          }
-        }
-      }
-    }
-
-    // Find extra exported functions
     if (
       ts.isFunctionDeclaration(node) &&
-      node.name &&
-      !['init', 'update', 'connect'].includes(node.name.text) &&
-      node.modifiers?.some((m) => m.kind === ts.SyntaxKind.ExportKeyword)
+      node.name?.text === 'connect' &&
+      node.parameters.length >= 3
     ) {
-      info.extras.push(node.name.text)
+      const optsParam = node.parameters[2]!
+      if (optsParam.type) {
+        if (ts.isTypeLiteralNode(optsParam.type)) {
+          const fields: string[] = []
+          for (const member of optsParam.type.members) {
+            if (ts.isPropertySignature(member) && member.name) {
+              const opt = member.questionToken ? '?' : ''
+              fields.push(
+                `${member.name.getText(sf)}${opt}: ${member.type ? printNode(member.type, sf) : 'unknown'}`,
+              )
+            }
+          }
+          info.connectParams = fields.join(', ')
+        } else {
+          info.connectParams = printNode(optsParam.type, sf)
+        }
+      }
+      if (node.body) {
+        const ret = findReturn(node.body)
+        if (ret && ts.isObjectLiteralExpression(ret)) {
+          for (const prop of ret.properties) {
+            const pName = prop.name?.getText(sf)
+            if (pName) info.parts.push(pName)
+          }
+        }
+      }
     }
 
-    // Find exported const that references extra functions (e.g., export const tabs = { ..., watchTabIndicator })
-    if (
-      ts.isVariableStatement(node) &&
-      node.modifiers?.some((m) => m.kind === ts.SyntaxKind.ExportKeyword)
-    ) {
+    if (ts.isVariableStatement(node) && hasExportModifier(node)) {
       for (const decl of node.declarationList.declarations) {
         if (
           decl.initializer &&
@@ -198,11 +394,9 @@ function extractComponent(filePath: string): ComponentInfo | null {
           decl.name.getText(sf) === name
         ) {
           for (const prop of decl.initializer.properties) {
-            const propName = prop.name?.getText(sf) ?? ''
-            if (!['init', 'update', 'connect'].includes(propName) && propName) {
-              if (!info.extras.includes(propName)) {
-                info.extras.push(propName)
-              }
+            const pName = prop.name?.getText(sf) ?? ''
+            if (!['init', 'update', 'connect'].includes(pName) && pName) {
+              if (!info.extras.includes(pName)) info.extras.push(pName)
             }
           }
         }
@@ -210,7 +404,6 @@ function extractComponent(filePath: string): ComponentInfo | null {
     }
   })
 
-  // If we didn't find parts from the return statement, try from a Parts interface
   if (info.parts.length === 0) {
     ts.forEachChild(sf, (node) => {
       if (
@@ -219,11 +412,8 @@ function extractComponent(filePath: string): ComponentInfo | null {
         !node.name.text.includes('Item')
       ) {
         for (const member of node.members) {
-          if (ts.isPropertySignature(member) && member.name) {
+          if ((ts.isPropertySignature(member) || ts.isMethodSignature(member)) && member.name) {
             info.parts.push(member.name.getText(sf))
-          }
-          if (ts.isMethodSignature(member) && member.name) {
-            info.parts.push(member.name.getText(sf) + '()')
           }
         }
       }
@@ -235,9 +425,7 @@ function extractComponent(filePath: string): ComponentInfo | null {
 
 function findReturn(block: ts.Block): ts.Expression | null {
   for (const stmt of block.statements) {
-    if (ts.isReturnStatement(stmt) && stmt.expression) {
-      return stmt.expression
-    }
+    if (ts.isReturnStatement(stmt) && stmt.expression) return stmt.expression
   }
   return null
 }
@@ -261,9 +449,7 @@ function generateComponentsDoc(): string {
     if (info) components.push(info)
   }
 
-  let md = ''
-
-  md += `## Component Reference\n\n`
+  let md = `## Component Reference\n\n`
   md += `All ${components.length} components follow the same pattern:\n\n`
   md += '```typescript\n'
   md += `import { componentName } from '@llui/components/component-name'\n\n`
@@ -273,96 +459,37 @@ function generateComponentsDoc(): string {
   md += `// Connect to DOM\n`
   md += `const parts = componentName.connect<State>(s => s.field, send, { id: '...' })\n`
   md += `// Use parts: div({ ...parts.root }, [button({ ...parts.trigger }, [...])])\n`
-  md += '```\n\n'
-
-  md += '---\n\n'
+  md += '```\n\n---\n\n'
 
   for (const c of components) {
     md += `### ${toTitle(c.name)}\n\n`
 
-    // State fields
     if (c.stateFields.length > 0) {
-      md += `**State** (\`${c.stateType}\`):\n\n`
-      md += `| Field | Type |\n|---|---|\n`
-      for (const f of c.stateFields) {
-        const type = f.type.replace(/\|/g, '\\|')
-        md += `| \`${f.name}\` | \`${type}\` |\n`
-      }
+      md += `**State** (\`${c.stateType}\`):\n\n| Field | Type |\n|---|---|\n`
+      for (const f of c.stateFields)
+        md += `| \`${f.name}\` | \`${f.type.replace(/\|/g, '\\|')}\` |\n`
       md += '\n'
+    } else if (c.stateType) {
+      md += `**State:** \`${c.stateType}\` (see parent component)\n\n`
     }
 
-    // Messages
-    if (c.msgVariants.length > 0) {
+    if (c.msgVariants.length > 0)
       md += `**Messages:** ${c.msgVariants.map((v) => `\`${v}\``).join(', ')}\n\n`
-    }
-
-    // Init options
-    if (c.initParams) {
-      md += `**Init options:** \`${c.initParams}\`\n\n`
-    }
-
-    // Connect options
-    if (c.connectParams) {
-      md += `**Connect options:** \`${c.connectParams}\`\n\n`
-    }
-
-    // Parts
-    if (c.parts.length > 0) {
-      md += `**Parts:** ${c.parts.map((p) => `\`${p}\``).join(', ')}\n\n`
-    }
-
-    // Extras
-    if (c.extras.length > 0) {
+    if (c.initParams) md += `**Init options:** \`${c.initParams}\`\n\n`
+    if (c.connectParams) md += `**Connect options:** \`${c.connectParams}\`\n\n`
+    if (c.parts.length > 0) md += `**Parts:** ${c.parts.map((p) => `\`${p}\``).join(', ')}\n\n`
+    if (c.extras.length > 0)
       md += `**Utilities:** ${c.extras.map((e) => `\`${e}()\``).join(', ')}\n\n`
-    }
-
     md += '---\n\n'
   }
-
   return md
-}
-
-// ── Effects API Generator ────────────────────────────────────────
-
-function generateEffectsDoc(): string {
-  const effectsPath = resolve(root, 'packages/effects/src/index.ts')
-  const sf = readSource(effectsPath)
-
-  let md = '## Type Reference\n\n'
-
-  // Extract all exported interfaces and type aliases
-  ts.forEachChild(sf, (node) => {
-    if (ts.isInterfaceDeclaration(node) && hasExportModifier(node)) {
-      const name = node.name.text
-      const comment = getLeadingComment(node, sf)
-      md += `### \`${name}\`\n\n`
-      if (comment) md += `${comment}\n\n`
-      md += '```typescript\n'
-      md += printNode(node, sf) + '\n'
-      md += '```\n\n'
-    }
-
-    if (ts.isTypeAliasDeclaration(node) && hasExportModifier(node)) {
-      const name = node.name.text
-      const comment = getLeadingComment(node, sf)
-      md += `### \`${name}\`\n\n`
-      if (comment) md += `${comment}\n\n`
-      md += '```typescript\n'
-      md += printNode(node, sf) + '\n'
-      md += '```\n\n'
-    }
-  })
-
-  return md
-}
-
-function hasExportModifier(node: ts.Node): boolean {
-  return ts.canHaveModifiers(node)
-    ? (ts.getModifiers(node) ?? []).some((m) => m.kind === ts.SyntaxKind.ExportKeyword)
-    : false
 }
 
 // ── Main ─────────────────────────────────────────────────────────
+
+function escapeRegex(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+}
 
 function injectSection(filePath: string, marker: string, content: string): void {
   const existing = readFileSync(filePath, 'utf-8')
@@ -371,31 +498,50 @@ function injectSection(filePath: string, marker: string, content: string): void 
 
   let output: string
   if (existing.includes(startMarker)) {
-    // Replace between markers
     const re = new RegExp(`${escapeRegex(startMarker)}[\\s\\S]*?${escapeRegex(endMarker)}`, 'g')
     output = existing.replace(re, `${startMarker}\n\n${content}\n${endMarker}`)
   } else {
-    // Append at end
     output = existing.trimEnd() + `\n\n${startMarker}\n\n${content}\n${endMarker}\n`
   }
-
   writeFileSync(filePath, output)
 }
 
-function escapeRegex(s: string): string {
-  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-}
+// Packages to generate API docs for
+const PACKAGES: { name: string; sourceFiles?: string[] }[] = [
+  { name: 'dom', sourceFiles: ['index.ts'] },
+  { name: 'effects', sourceFiles: ['index.ts'] },
+  { name: 'router', sourceFiles: ['index.ts', 'connect.ts'] },
+  { name: 'transitions', sourceFiles: ['index.ts'] },
+  { name: 'test', sourceFiles: ['index.ts'] },
+  { name: 'vike', sourceFiles: ['on-render-html.ts', 'on-render-client.ts'] },
+  { name: 'mcp', sourceFiles: ['index.ts'] },
+  { name: 'lint-idiomatic', sourceFiles: ['index.ts'] },
+  { name: 'vite-plugin', sourceFiles: ['index.ts'] },
+]
 
-// Generate components
+// Components are special — use the component extractor
 console.log('Generating component API reference...')
 const componentsDoc = generateComponentsDoc()
 injectSection(resolve(contentDir, 'components.md'), 'auto-api', componentsDoc)
-console.log('  → components.md updated')
+console.log('  → components.md')
 
-// Generate effects types
-console.log('Generating effects type reference...')
-const effectsDoc = generateEffectsDoc()
-injectSection(resolve(contentDir, 'effects.md'), 'auto-api', effectsDoc)
-console.log('  → effects.md updated')
+// All other packages use the generic extractor
+for (const pkg of PACKAGES) {
+  const pkgDir = resolve(root, 'packages', pkg.name)
+  if (!existsSync(pkgDir)) continue
+
+  const items = extractPackageExports(pkgDir, pkg.sourceFiles)
+  if (items.length === 0) {
+    console.log(`  → ${pkg.name}.md (no exports found, skipping)`)
+    continue
+  }
+
+  const md = formatExports(items)
+  const contentFile = resolve(contentDir, `${pkg.name}.md`)
+  if (existsSync(contentFile)) {
+    injectSection(contentFile, 'auto-api', md)
+    console.log(`  → ${pkg.name}.md (${items.length} exports)`)
+  }
+}
 
 console.log('Done.')

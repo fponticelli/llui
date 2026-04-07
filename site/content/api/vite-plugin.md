@@ -56,3 +56,34 @@ The compiler emits warnings for common issues:
 ## License
 
 MIT
+
+<!-- auto-api:start -->
+
+## Functions
+
+### `llui()`
+
+```typescript
+function llui(options: LluiPluginOptions = {}): Plugin
+```
+
+## Interfaces
+
+### `LluiPluginOptions`
+
+```typescript
+export interface LluiPluginOptions {
+  /**
+   * Port for the MCP debug bridge. In dev mode, the runtime relay connects
+   * to `ws://127.0.0.1:<port>` so an external `llui-mcp` server can forward
+   * tool calls into the running app.
+   *
+   * Set to `false` to disable the relay injection entirely.
+   * Default: 5200.
+   */
+  mcpPort?: number | false
+}
+```
+
+
+<!-- auto-api:end -->

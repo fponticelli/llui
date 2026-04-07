@@ -84,3 +84,48 @@ Replay a recorded message trace against a component definition. Asserts state at
 ## License
 
 MIT
+
+<!-- auto-api:start -->
+
+## Functions
+
+### `testComponent()`
+
+```typescript
+function testComponent<S, M, E>(def: ComponentDef<S, M, E>, initialData?: unknown): TestHarness<S, M, E>
+```
+
+### `testView()`
+
+Mount a component against a fresh container and return an interactive harness.
+Simulates events + auto-flushes so tests can chain assertions naturally.
+
+```typescript
+function testView<S, M, E>(def: ComponentDef<S, M, E>, state: S): ViewHarness<M>
+```
+
+### `assertEffects()`
+
+```typescript
+function assertEffects<E>(actual: E[], expected: Array<Partial<E>>): void
+```
+
+### `propertyTest()`
+
+```typescript
+function propertyTest<S, M, E>(def: ComponentDef<S, M, E>, config: {
+    invariants: Array<(state: S, effects: E[]) => boolean>
+    messageGenerators: Record<string, ((state: S) => M) | (() => M)>
+    runs?: number
+    maxSequenceLength?: number
+  }): void
+```
+
+### `replayTrace()`
+
+```typescript
+function replayTrace<S, M, E>(def: ComponentDef<S, M, E>, trace: LluiTrace<S, M, E>): void
+```
+
+
+<!-- auto-api:end -->
