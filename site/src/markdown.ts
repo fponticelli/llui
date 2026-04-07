@@ -48,22 +48,31 @@ export async function loadDoc(slug: string): Promise<DocData> {
 
   // Apply syntax highlighting to code blocks
   let html = String(result)
+
+  // Decode all HTML entities (named + numeric + hex)
+  const decodeEntities = (s: string): string =>
+    s
+      .replace(/&#x([0-9a-fA-F]+);/g, (_, hex: string) => String.fromCodePoint(parseInt(hex, 16)))
+      .replace(/&#(\d+);/g, (_, dec: string) => String.fromCodePoint(parseInt(dec, 10)))
+      .replace(/&amp;/g, '&')
+      .replace(/&lt;/g, '<')
+      .replace(/&gt;/g, '>')
+      .replace(/&quot;/g, '"')
+      .replace(/&apos;/g, "'")
+
+  // Match code blocks with or without a language class
   html = html.replace(
-    /<pre><code class="language-(\w+)">([\s\S]*?)<\/code><\/pre>/g,
-    (_match, lang: string, code: string) => {
-      const decoded = code
-        .replace(/&amp;/g, '&')
-        .replace(/&lt;/g, '<')
-        .replace(/&gt;/g, '>')
-        .replace(/&quot;/g, '"')
-        .replace(/&#39;/g, "'")
+    /<pre><code(?:\s+class="language-(\w+)")?>([\s\S]*?)<\/code><\/pre>/g,
+    (_match, lang: string | undefined, code: string) => {
+      const decoded = decodeEntities(code)
+      const language = lang ?? 'text'
       try {
         return highlighter.codeToHtml(decoded, {
-          lang,
+          lang: language,
           themes: { dark: 'github-dark', light: 'github-light' },
         })
       } catch {
-        return `<pre><code class="language-${lang}">${code}</code></pre>`
+        return `<pre><code${lang ? ` class="language-${lang}"` : ''}>${code}</code></pre>`
       }
     },
   )

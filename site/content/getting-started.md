@@ -37,7 +37,7 @@ export default defineConfig({ plugins: [llui()] })
 
 ## Your First Component
 
-Every LLui component has four parts:
+Every LLui component has five parts:
 
 1. **State** — a plain, JSON-serializable object
 2. **Msg** — a discriminated union of all possible events
