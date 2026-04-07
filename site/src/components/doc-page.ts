@@ -36,22 +36,132 @@ export const DocPage = component<State, Msg, never, DocData>({
           },
           [
             span({ class: 'nav-section' }, [text('Guide')]),
-            a({ href: '/', class: 'nav-link' }, [text('Home')]),
-            a({ href: '/getting-started', class: 'nav-link' }, [text('Getting Started')]),
-            a({ href: '/cookbook', class: 'nav-link' }, [text('Cookbook')]),
-            a({ href: '/architecture', class: 'nav-link' }, [text('Architecture')]),
-            a({ href: '/llm-guide', class: 'nav-link' }, [text('LLM Guide')]),
+            a(
+              {
+                href: '/',
+                class: (s: State) => (s.slug === 'index' ? 'nav-link active' : 'nav-link'),
+                'aria-current': (s: State) => (s.slug === 'index' ? 'page' : undefined),
+              },
+              [text('Home')],
+            ),
+            a(
+              {
+                href: '/getting-started',
+                class: (s: State) =>
+                  s.slug === 'getting-started' ? 'nav-link active' : 'nav-link',
+                'aria-current': (s: State) => (s.slug === 'getting-started' ? 'page' : undefined),
+              },
+              [text('Getting Started')],
+            ),
+            a(
+              {
+                href: '/cookbook',
+                class: (s: State) => (s.slug === 'cookbook' ? 'nav-link active' : 'nav-link'),
+                'aria-current': (s: State) => (s.slug === 'cookbook' ? 'page' : undefined),
+              },
+              [text('Cookbook')],
+            ),
+            a(
+              {
+                href: '/architecture',
+                class: (s: State) => (s.slug === 'architecture' ? 'nav-link active' : 'nav-link'),
+                'aria-current': (s: State) => (s.slug === 'architecture' ? 'page' : undefined),
+              },
+              [text('Architecture')],
+            ),
+            a(
+              {
+                href: '/llm-guide',
+                class: (s: State) => (s.slug === 'llm-guide' ? 'nav-link active' : 'nav-link'),
+                'aria-current': (s: State) => (s.slug === 'llm-guide' ? 'page' : undefined),
+              },
+              [text('LLM Guide')],
+            ),
             span({ class: 'nav-section' }, [text('Packages')]),
-            a({ href: '/api/dom', class: 'nav-link' }, [text('dom')]),
-            a({ href: '/api/vite-plugin', class: 'nav-link' }, [text('vite-plugin')]),
-            a({ href: '/api/effects', class: 'nav-link' }, [text('effects')]),
-            a({ href: '/api/components', class: 'nav-link' }, [text('components')]),
-            a({ href: '/api/router', class: 'nav-link' }, [text('router')]),
-            a({ href: '/api/transitions', class: 'nav-link' }, [text('transitions')]),
-            a({ href: '/api/test', class: 'nav-link' }, [text('test')]),
-            a({ href: '/api/vike', class: 'nav-link' }, [text('vike')]),
-            a({ href: '/api/mcp', class: 'nav-link' }, [text('mcp')]),
-            a({ href: '/api/lint-idiomatic', class: 'nav-link' }, [text('lint-idiomatic')]),
+            a(
+              {
+                href: '/api/dom',
+                class: (s: State) => (s.slug === 'api/dom' ? 'nav-link active' : 'nav-link'),
+                'aria-current': (s: State) => (s.slug === 'api/dom' ? 'page' : undefined),
+              },
+              [text('dom')],
+            ),
+            a(
+              {
+                href: '/api/vite-plugin',
+                class: (s: State) =>
+                  s.slug === 'api/vite-plugin' ? 'nav-link active' : 'nav-link',
+                'aria-current': (s: State) => (s.slug === 'api/vite-plugin' ? 'page' : undefined),
+              },
+              [text('vite-plugin')],
+            ),
+            a(
+              {
+                href: '/api/effects',
+                class: (s: State) => (s.slug === 'api/effects' ? 'nav-link active' : 'nav-link'),
+                'aria-current': (s: State) => (s.slug === 'api/effects' ? 'page' : undefined),
+              },
+              [text('effects')],
+            ),
+            a(
+              {
+                href: '/api/components',
+                class: (s: State) => (s.slug === 'api/components' ? 'nav-link active' : 'nav-link'),
+                'aria-current': (s: State) => (s.slug === 'api/components' ? 'page' : undefined),
+              },
+              [text('components')],
+            ),
+            a(
+              {
+                href: '/api/router',
+                class: (s: State) => (s.slug === 'api/router' ? 'nav-link active' : 'nav-link'),
+                'aria-current': (s: State) => (s.slug === 'api/router' ? 'page' : undefined),
+              },
+              [text('router')],
+            ),
+            a(
+              {
+                href: '/api/transitions',
+                class: (s: State) =>
+                  s.slug === 'api/transitions' ? 'nav-link active' : 'nav-link',
+                'aria-current': (s: State) => (s.slug === 'api/transitions' ? 'page' : undefined),
+              },
+              [text('transitions')],
+            ),
+            a(
+              {
+                href: '/api/test',
+                class: (s: State) => (s.slug === 'api/test' ? 'nav-link active' : 'nav-link'),
+                'aria-current': (s: State) => (s.slug === 'api/test' ? 'page' : undefined),
+              },
+              [text('test')],
+            ),
+            a(
+              {
+                href: '/api/vike',
+                class: (s: State) => (s.slug === 'api/vike' ? 'nav-link active' : 'nav-link'),
+                'aria-current': (s: State) => (s.slug === 'api/vike' ? 'page' : undefined),
+              },
+              [text('vike')],
+            ),
+            a(
+              {
+                href: '/api/mcp',
+                class: (s: State) => (s.slug === 'api/mcp' ? 'nav-link active' : 'nav-link'),
+                'aria-current': (s: State) => (s.slug === 'api/mcp' ? 'page' : undefined),
+              },
+              [text('mcp')],
+            ),
+            a(
+              {
+                href: '/api/lint-idiomatic',
+                class: (s: State) =>
+                  s.slug === 'api/lint-idiomatic' ? 'nav-link active' : 'nav-link',
+                'aria-current': (s: State) =>
+                  s.slug === 'api/lint-idiomatic' ? 'page' : undefined,
+              },
+              [text('lint-idiomatic')],
+            ),
           ],
         ),
 

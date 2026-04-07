@@ -219,3 +219,1267 @@ Supported on: editable, number-input, tags-input, pin-input, file-upload.
 ## License
 
 MIT
+
+<!-- auto-api:start -->
+
+## Component Reference
+
+All 54 components follow the same pattern:
+
+```typescript
+import { componentName } from '@llui/components/component-name'
+
+// State machine
+const state = componentName.init({ /* options */ })
+const [newState, effects] = componentName.update(state, msg)
+
+// Connect to DOM
+const parts = componentName.connect<State>(s => s.field, send, { id: '...' })
+// Use parts: div({ ...parts.root }, [button({ ...parts.trigger }, [...])])
+```
+
+---
+
+### Accordion
+
+**State** (`AccordionState`):
+
+| Field | Type |
+|---|---|
+| `value` | `string[]` |
+| `multiple` | `boolean` |
+| `collapsible` | `boolean` |
+| `disabled` | `boolean` |
+| `items` | `string[]` |
+
+**Messages:** `toggle`, `open`, `close`, `setValue`, `setItems`, `focusNext`, `focusPrev`, `focusFirst`, `focusLast`
+
+**Init options:** `value?: string[], multiple?: boolean, collapsible?: boolean, disabled?: boolean, items?: string[]`
+
+**Connect options:** `ConnectOptions`
+
+**Parts:** `root`, `item`
+
+**Utilities:** `focusTarget()`
+
+---
+
+### Alert Dialog
+
+**Connect options:** `AlertDialogConnectOptions`
+
+**Utilities:** `overlay()`
+
+---
+
+### Angle Slider
+
+**State** (`AngleSliderState`):
+
+| Field | Type |
+|---|---|
+| `value` | `number` |
+| `min` | `number` |
+| `max` | `number` |
+| `step` | `number` |
+| `disabled` | `boolean` |
+| `readOnly` | `boolean` |
+
+**Messages:** `setValue`, `increment`, `decrement`, `setMin`, `setMax`
+
+**Init options:** `value?: number, min?: number, max?: number, step?: number, disabled?: boolean, readOnly?: boolean`
+
+**Connect options:** `ConnectOptions`
+
+**Parts:** `root`, `control`, `thumb`, `valueText`, `hiddenInput`
+
+**Utilities:** `angleFromPoint()`, `pointFromAngle()`
+
+---
+
+### Async List
+
+**State** (`AsyncListState`):
+
+| Field | Type |
+|---|---|
+| `items` | `T[]` |
+| `page` | `number` |
+| `hasMore` | `boolean` |
+| `status` | `AsyncStatus` |
+| `error` | `string \| null` |
+
+**Messages:** `loadMore`, `pageLoaded`, `pageFailed`, `reset`, `setItems`, `retry`
+
+**Init options:** `items?: T[], page?: number, hasMore?: boolean`
+
+**Parts:** `root`, `sentinel`, `loadMoreTrigger`, `retryTrigger`, `errorText`
+
+**Utilities:** `isLoading()`, `isError()`, `isEmpty()`, `watchSentinel()`
+
+---
+
+### Avatar
+
+**State** (`AvatarState`):
+
+| Field | Type |
+|---|---|
+| `status` | `ImageStatus` |
+
+**Messages:** `loadStart`, `loaded`, `error`, `reset`
+
+**Init options:** `status?: ImageStatus`
+
+**Connect options:** `ConnectOptions`
+
+**Parts:** `root`, `image`, `fallback`
+
+---
+
+### Carousel
+
+**State** (`CarouselState`):
+
+| Field | Type |
+|---|---|
+| `current` | `number` |
+| `count` | `number` |
+| `loop` | `boolean` |
+| `autoplay` | `boolean` |
+| `interval` | `number` |
+| `paused` | `boolean` |
+| `direction` | `'forward' \| 'backward'` |
+
+**Messages:** `goTo`, `next`, `prev`, `setCount`, `pause`, `resume`, `setAutoplay`
+
+**Init options:** `current?: number, count?: number, loop?: boolean, autoplay?: boolean, interval?: number`
+
+**Connect options:** `ConnectOptions`
+
+**Parts:** `root`, `viewport`, `indicatorGroup`, `nextTrigger`, `prevTrigger`, `slide`
+
+**Utilities:** `canGoNext()`, `canGoPrev()`
+
+---
+
+### Cascade Select
+
+**State** (`CascadeSelectState`):
+
+| Field | Type |
+|---|---|
+| `levels` | `CascadeLevel[]` |
+| `values` | `(string \| null)[]` |
+| `disabled` | `boolean` |
+
+**Messages:** `setLevels`, `setValue`, `clear`
+
+**Init options:** `levels?: CascadeLevel[], values?: (string | null)[], disabled?: boolean`
+
+**Connect options:** `ConnectOptions`
+
+**Parts:** `root`, `clearTrigger`, `level`
+
+**Utilities:** `isLevelReady()`, `isComplete()`, `completeValues()`
+
+---
+
+### Checkbox
+
+**State** (`CheckboxState`):
+
+| Field | Type |
+|---|---|
+| `checked` | `CheckedState` |
+| `disabled` | `boolean` |
+| `required` | `boolean` |
+
+**Messages:** `toggle`, `setChecked`, `setDisabled`
+
+**Init options:** `checked?: CheckedState, disabled?: boolean, required?: boolean`
+
+**Parts:** `root`, `hiddenInput`, `indicator`
+
+---
+
+### Clipboard
+
+**State** (`ClipboardState`):
+
+| Field | Type |
+|---|---|
+| `value` | `string` |
+| `copied` | `boolean` |
+
+**Messages:** `setValue`, `copy`, `copied`, `reset`
+
+**Init options:** `value?: string`
+
+**Connect options:** `ConnectOptions`
+
+**Parts:** `root`, `trigger`, `input`, `indicator`
+
+**Utilities:** `copyToClipboard()`
+
+---
+
+### Collapsible
+
+**State** (`CollapsibleState`):
+
+| Field | Type |
+|---|---|
+| `open` | `boolean` |
+| `disabled` | `boolean` |
+
+**Messages:** `toggle`, `open`, `close`, `setOpen`
+
+**Init options:** `open?: boolean, disabled?: boolean`
+
+**Connect options:** `ConnectOptions`
+
+**Parts:** `root`, `trigger`, `content`
+
+---
+
+### Color Picker
+
+**State** (`ColorPickerState`):
+
+| Field | Type |
+|---|---|
+| `hsl` | `Hsl` |
+| `alpha` | `number` |
+| `disabled` | `boolean` |
+
+**Messages:** `setHsl`, `setHue`, `setSaturation`, `setLightness`, `setAlpha`, `setHex`
+
+**Init options:** `hsl?: Hsl, alpha?: number, disabled?: boolean`
+
+**Connect options:** `ConnectOptions`
+
+**Parts:** `root`, `hueSlider`, `saturationSlider`, `lightnessSlider`, `hexInput`, `swatch`
+
+**Utilities:** `hslToRgb()`, `toHex()`, `hexToHsl()`
+
+---
+
+### Combobox
+
+**State** (`ComboboxState`):
+
+| Field | Type |
+|---|---|
+| `open` | `boolean` |
+| `value` | `string[]` |
+| `inputValue` | `string` |
+| `items` | `string[]` |
+| `disabledItems` | `string[]` |
+| `filteredItems` | `string[]` |
+| `highlightedIndex` | `number \| null` |
+| `selectionMode` | `SelectionMode` |
+| `disabled` | `boolean` |
+
+**Messages:** `open`, `close`, `setInputValue`, `selectOption`, `setValue`, `clear`, `highlightNext`, `highlightPrev`, `highlightFirst`, `highlightLast`, `highlight`, `selectHighlighted`, `setItems`
+
+**Init options:** `value?: string[], inputValue?: string, items?: string[], disabledItems?: string[], selectionMode?: SelectionMode, disabled?: boolean`
+
+**Connect options:** `ConnectOptions`
+
+**Parts:** `root`, `input`, `trigger`, `positioner`, `content`, `item`, `empty`
+
+**Utilities:** `overlay()`
+
+---
+
+### Context Menu
+
+**State** (`ContextMenuState`):
+
+| Field | Type |
+|---|---|
+| `open` | `boolean` |
+| `x` | `number` |
+| `y` | `number` |
+| `items` | `string[]` |
+| `disabledItems` | `string[]` |
+| `highlighted` | `string \| null` |
+
+**Messages:** `openAt`, `close`, `highlight`, `highlightNext`, `highlightPrev`, `selectHighlighted`, `select`, `setItems`
+
+**Init options:** `items?: string[], disabledItems?: string[]`
+
+**Connect options:** `ConnectOptions`
+
+**Parts:** `trigger`, `positioner`, `content`, `item`
+
+**Utilities:** `overlay()`
+
+---
+
+### Date Input
+
+**State** (`DateInputState`):
+
+| Field | Type |
+|---|---|
+| `input` | `string` |
+| `value` | `Date \| null` |
+| `min` | `Date \| null` |
+| `max` | `Date \| null` |
+| `error` | `DateError` |
+| `disabled` | `boolean` |
+| `readOnly` | `boolean` |
+| `required` | `boolean` |
+
+**Messages:** `setInput`, `setValue`, `clear`, `setMin`, `setMax`, `setDisabled`
+
+**Init options:** `input?: string, value?: Date | null, min?: Date | null, max?: Date | null, disabled?: boolean, readOnly?: boolean, required?: boolean`
+
+**Connect options:** `ConnectOptions`
+
+**Parts:** `root`, `input`, `clearTrigger`, `errorText`
+
+**Utilities:** `parseDate()`, `formatDate()`
+
+---
+
+### Date Picker
+
+**State** (`DatePickerState`):
+
+| Field | Type |
+|---|---|
+| `value` | `string \| null` |
+| `visibleMonth` | `number` |
+| `visibleYear` | `number` |
+| `focused` | `string` |
+| `min` | `string \| null` |
+| `max` | `string \| null` |
+| `weekStartsOn` | `0 \| 1` |
+| `disabled` | `boolean` |
+
+**Messages:** `setValue`, `setFocused`, `prevMonth`, `nextMonth`, `prevYear`, `nextYear`, `selectFocused`, `moveFocus`, `focusStartOfWeek`, `focusEndOfWeek`, `focusToday`, `clear`
+
+**Init options:** `value?: string | null, visibleMonth?: number, visibleYear?: number, min?: string | null, max?: string | null, weekStartsOn?: 0 | 1, disabled?: boolean`
+
+**Connect options:** `ConnectOptions`
+
+**Parts:** `root`, `grid`, `prevMonthTrigger`, `nextMonthTrigger`, `dayCell`
+
+**Utilities:** `monthGrid()`
+
+---
+
+### Dialog
+
+**State** (`DialogState`):
+
+| Field | Type |
+|---|---|
+| `open` | `boolean` |
+
+**Messages:** `open`, `close`, `toggle`, `setOpen`
+
+**Init options:** `open?: boolean`
+
+**Connect options:** `ConnectOptions`
+
+**Parts:** `trigger`, `backdrop`, `positioner`, `content`, `title`, `description`, `closeTrigger`
+
+**Utilities:** `overlay()`
+
+---
+
+### Drawer
+
+**State** (`DrawerState`):
+
+| Field | Type |
+|---|---|
+| `open` | `boolean` |
+
+**Messages:** `open`, `close`, `toggle`, `setOpen`
+
+**Init options:** `open?: boolean`
+
+**Connect options:** `ConnectOptions`
+
+**Parts:** `trigger`, `backdrop`, `positioner`, `content`, `title`, `description`, `closeTrigger`
+
+**Utilities:** `overlay()`
+
+---
+
+### Editable
+
+**State** (`EditableState`):
+
+| Field | Type |
+|---|---|
+| `value` | `string` |
+| `editing` | `boolean` |
+| `draft` | `string` |
+| `disabled` | `boolean` |
+
+**Messages:** `edit`, `setDraft`, `submit`, `cancel`, `setValue`
+
+**Init options:** `value?: string, editing?: boolean, disabled?: boolean`
+
+**Connect options:** `ConnectOptions`
+
+**Parts:** `root`, `preview`, `input`, `submitTrigger`, `cancelTrigger`, `editTrigger`
+
+---
+
+### File Upload
+
+**State** (`FileUploadState`):
+
+| Field | Type |
+|---|---|
+| `files` | `File[]` |
+| `rejectedFiles` | `RejectedFile[]` |
+| `disabled` | `boolean` |
+| `multiple` | `boolean` |
+| `accept` | `AcceptValue` |
+| `maxFiles` | `number` |
+| `maxSize` | `number` |
+| `minFileSize` | `number` |
+| `required` | `boolean` |
+| `readOnly` | `boolean` |
+| `invalid` | `boolean` |
+| `dragging` | `boolean` |
+
+**Messages:** `setFiles`, `addFiles`, `removeFile`, `removeRejected`, `clear`, `clearRejected`, `dragEnter`, `dragLeave`, `drop`, `setInvalid`
+
+**Init options:** `files?: File[], disabled?: boolean, multiple?: boolean, accept?: AcceptValue, maxFiles?: number, maxSize?: number, minFileSize?: number, required?: boolean, readOnly?: boolean, invalid?: boolean`
+
+**Connect options:** `ConnectOptions`
+
+**Parts:** `root`, `dropzone`, `trigger`, `hiddenInput`, `label`, `clearTrigger`, `itemGroup`, `item`
+
+**Utilities:** `acceptToString()`, `fileMatchesAccept()`, `validateFiles()`, `totalSize()`, `preventDocumentDrop()`
+
+---
+
+### Floating Panel
+
+**State** (`FloatingPanelState`):
+
+| Field | Type |
+|---|---|
+| `position` | `{ x: number; y: number }` |
+| `size` | `{ width: number; height: number }` |
+| `minSize` | `{ width: number; height: number }` |
+| `maxSize` | `{ width: number; height: number } \| null` |
+| `open` | `boolean` |
+| `minimized` | `boolean` |
+| `maximized` | `boolean` |
+| `dragging` | `boolean` |
+| `resizing` | `ResizeHandle \| null` |
+| `restoreBounds` | `{ x: number; y: number; width: number; height: number } \| null` |
+| `disabled` | `boolean` |
+
+**Messages:** `open`, `close`, `minimize`, `restoreFromMinimized`, `maximize`, `restoreFromMaximized`, `toggleMinimize`, `toggleMaximize`, `dragStart`, `dragMove`, `dragEnd`, `resizeStart`, `resizeMove`, `resizeEnd`, `setPosition`, `setSize`
+
+**Init options:** `position?: { x: number; y: number }, size?: { width: number; height: number }, minSize?: { width: number; height: number }, maxSize?: { width: number; height: number } | null, open?: boolean, disabled?: boolean`
+
+**Connect options:** `ConnectOptions`
+
+**Parts:** `root`, `dragHandle`, `content`, `minimizeTrigger`, `maximizeTrigger`, `closeTrigger`, `resizeHandle`
+
+---
+
+### Hover Card
+
+**State** (`HoverCardState`):
+
+| Field | Type |
+|---|---|
+| `open` | `boolean` |
+
+**Messages:** `show`, `hide`, `setOpen`
+
+**Init options:** `open?: boolean`
+
+**Connect options:** `ConnectOptions`
+
+**Parts:** `trigger`, `positioner`, `content`, `arrow`
+
+**Utilities:** `overlay()`
+
+---
+
+### Image Cropper
+
+**State** (`ImageCropperState`):
+
+| Field | Type |
+|---|---|
+| `image` | `{ width: number; height: number }` |
+| `crop` | `CropRect` |
+| `aspectRatio` | `number \| null` |
+| `minSize` | `number` |
+| `dragging` | `boolean` |
+| `resizing` | `ResizeHandle \| null` |
+| `disabled` | `boolean` |
+
+**Messages:** `setImage`, `setCrop`, `setAspectRatio`, `dragStart`, `dragMove`, `dragEnd`, `resizeStart`, `resizeMove`, `resizeEnd`, `reset`, `centerFill`
+
+**Init options:** `image?: { width: number; height: number }, crop?: CropRect, aspectRatio?: number | null, minSize?: number, disabled?: boolean`
+
+**Connect options:** `ConnectOptions`
+
+**Parts:** `root`, `image`, `cropBox`, `resizeHandle`, `resetTrigger`
+
+**Utilities:** `centerFill()`
+
+---
+
+### Listbox
+
+**State** (`ListboxState`):
+
+| Field | Type |
+|---|---|
+| `value` | `string[]` |
+| `items` | `string[]` |
+| `disabledItems` | `string[]` |
+| `disabled` | `boolean` |
+| `selectionMode` | `SelectionMode` |
+| `highlightedIndex` | `number \| null` |
+| `typeahead` | `string` |
+| `typeaheadExpiresAt` | `number` |
+
+**Messages:** `select`, `setValue`, `clear`, `highlight`, `highlightNext`, `highlightPrev`, `highlightFirst`, `highlightLast`, `selectHighlighted`, `setItems`, `typeahead`
+
+**Init options:** `value?: string[], items?: string[], disabledItems?: string[], disabled?: boolean, selectionMode?: SelectionMode`
+
+**Connect options:** `ConnectOptions`
+
+**Parts:** `root`, `item`
+
+---
+
+### Marquee
+
+**State** (`MarqueeState`):
+
+| Field | Type |
+|---|---|
+| `running` | `boolean` |
+| `direction` | `MarqueeDirection` |
+| `durationSec` | `number` |
+| `pauseOnHover` | `boolean` |
+| `hovered` | `boolean` |
+| `disabled` | `boolean` |
+
+**Messages:** `play`, `pause`, `toggle`, `hoverPause`, `hoverResume`, `setDirection`, `setDuration`
+
+**Init options:** `running?: boolean, direction?: MarqueeDirection, durationSec?: number, pauseOnHover?: boolean, disabled?: boolean`
+
+**Parts:** `root`, `content`
+
+**Utilities:** `isRunning()`, `cssAnimationDirection()`, `axis()`
+
+---
+
+### Menu
+
+**State** (`MenuState`):
+
+| Field | Type |
+|---|---|
+| `open` | `boolean` |
+| `items` | `string[]` |
+| `disabledItems` | `string[]` |
+| `highlighted` | `string \| null` |
+| `typeahead` | `string` |
+| `typeaheadExpiresAt` | `number` |
+
+**Messages:** `open`, `close`, `toggle`, `highlight`, `highlightNext`, `highlightPrev`, `highlightFirst`, `highlightLast`, `selectHighlighted`, `select`, `setItems`, `typeahead`
+
+**Init options:** `open?: boolean, items?: string[], disabledItems?: string[], highlighted?: string | null`
+
+**Connect options:** `ConnectOptions`
+
+**Parts:** `trigger`, `positioner`, `content`, `item`
+
+**Utilities:** `overlay()`
+
+---
+
+### Navigation Menu
+
+**State** (`NavMenuState`):
+
+| Field | Type |
+|---|---|
+| `open` | `string[]` |
+| `focused` | `string \| null` |
+| `disabled` | `boolean` |
+
+**Messages:** `openBranch`, `closeBranch`, `toggleBranch`, `closeAll`, `focus`
+
+**Init options:** `open?: string[], focused?: string | null, disabled?: boolean`
+
+**Connect options:** `ConnectOptions`
+
+**Parts:** `root`, `item`
+
+**Utilities:** `isOpen()`
+
+---
+
+### Number Input
+
+**State** (`NumberInputState`):
+
+| Field | Type |
+|---|---|
+| `value` | `number \| null` |
+| `min` | `number` |
+| `max` | `number` |
+| `step` | `number` |
+| `disabled` | `boolean` |
+| `readOnly` | `boolean` |
+| `rawText` | `string` |
+
+**Messages:** `setValue`, `setRawText`, `commit`, `increment`, `decrement`, `toMin`, `toMax`, `setDisabled`
+
+**Init options:** `value?: number | null, min?: number, max?: number, step?: number, disabled?: boolean, readOnly?: boolean`
+
+**Connect options:** `ConnectOptions`
+
+**Parts:** `root`, `input`, `increment`, `decrement`
+
+---
+
+### Pagination
+
+**State** (`PaginationState`):
+
+| Field | Type |
+|---|---|
+| `page` | `number` |
+| `pageSize` | `number` |
+| `total` | `number` |
+| `siblings` | `number` |
+| `boundaries` | `number` |
+| `disabled` | `boolean` |
+
+**Messages:** `goTo`, `next`, `prev`, `first`, `last`, `setPageSize`, `setTotal`
+
+**Init options:** `page?: number, pageSize?: number, total?: number, siblings?: number, boundaries?: number, disabled?: boolean`
+
+**Connect options:** `ConnectOptions`
+
+**Parts:** `root`, `prevTrigger`, `nextTrigger`, `item`, `ellipsis`
+
+**Utilities:** `totalPages()`, `pageItems()`
+
+---
+
+### Password Input
+
+**State** (`PasswordInputState`):
+
+| Field | Type |
+|---|---|
+| `value` | `string` |
+| `visible` | `boolean` |
+| `disabled` | `boolean` |
+
+**Messages:** `setValue`, `toggleVisibility`, `setVisible`
+
+**Init options:** `value?: string, visible?: boolean, disabled?: boolean`
+
+**Connect options:** `ConnectOptions`
+
+**Parts:** `root`, `input`, `visibilityTrigger`
+
+---
+
+### Pin Input
+
+**State** (`PinInputState`):
+
+| Field | Type |
+|---|---|
+| `values` | `string[]` |
+| `length` | `number` |
+| `type` | `PinType` |
+| `mask` | `boolean` |
+| `disabled` | `boolean` |
+| `focusedIndex` | `number` |
+
+**Messages:** `setValue`, `setAll`, `focus`, `clear`, `backspace`
+
+**Init options:** `length?: number, type?: PinType, mask?: boolean, disabled?: boolean, values?: string[]`
+
+**Connect options:** `ConnectOptions`
+
+**Parts:** `root`, `label`, `input`
+
+**Utilities:** `isComplete()`, `getValue()`
+
+---
+
+### Popover
+
+**State** (`PopoverState`):
+
+| Field | Type |
+|---|---|
+| `open` | `boolean` |
+
+**Messages:** `open`, `close`, `toggle`, `setOpen`
+
+**Init options:** `open?: boolean`
+
+**Connect options:** `ConnectOptions`
+
+**Parts:** `trigger`, `positioner`, `content`, `title`, `description`, `arrow`, `closeTrigger`
+
+**Utilities:** `overlay()`
+
+---
+
+### Presence
+
+**State** (`PresenceState`):
+
+| Field | Type |
+|---|---|
+| `status` | `PresenceStatus` |
+| `unmountOnExit` | `boolean` |
+
+**Messages:** `open`, `close`, `toggle`, `animationEnd`, `setPresent`
+
+**Init options:** `present?: boolean, unmountOnExit?: boolean`
+
+**Parts:** `root`
+
+**Utilities:** `isMounted()`, `isVisible()`, `isAnimating()`
+
+---
+
+### Progress
+
+**State** (`ProgressState`):
+
+| Field | Type |
+|---|---|
+| `value` | `number \| null` |
+| `min` | `number` |
+| `max` | `number` |
+| `orientation` | `ProgressOrientation` |
+
+**Messages:** `setValue`, `setMax`
+
+**Init options:** `value?: number | null, min?: number, max?: number, orientation?: ProgressOrientation`
+
+**Connect options:** `ConnectOptions`
+
+**Parts:** `root`, `track`, `range`, `label`, `valueText`
+
+**Utilities:** `percent()`, `valueState()`
+
+---
+
+### Qr Code
+
+**State** (`QrCodeState`):
+
+| Field | Type |
+|---|---|
+| `value` | `string` |
+| `matrix` | `boolean[][]` |
+| `errorCorrection` | `ErrorCorrectionLevel` |
+
+**Messages:** `setValue`, `setMatrix`, `setErrorCorrection`
+
+**Init options:** `value?: string, matrix?: boolean[][], errorCorrection?: ErrorCorrectionLevel`
+
+**Connect options:** `ConnectOptions`
+
+**Parts:** `root`, `svg`, `background`, `foreground`, `downloadTrigger`
+
+**Utilities:** `size()`, `toSvgPath()`, `toDataUrl()`
+
+---
+
+### Radio Group
+
+**State** (`RadioGroupState`):
+
+| Field | Type |
+|---|---|
+| `value` | `string \| null` |
+| `items` | `string[]` |
+| `disabledItems` | `string[]` |
+| `disabled` | `boolean` |
+| `orientation` | `Orientation` |
+
+**Messages:** `setValue`, `setItems`, `selectNext`, `selectPrev`, `selectFirst`, `selectLast`
+
+**Init options:** `value?: string | null, items?: string[], disabledItems?: string[], disabled?: boolean, orientation?: Orientation`
+
+**Connect options:** `ConnectOptions`
+
+**Parts:** `root`, `item`
+
+---
+
+### Rating Group
+
+**State** (`RatingGroupState`):
+
+| Field | Type |
+|---|---|
+| `value` | `number` |
+| `count` | `number` |
+| `allowHalf` | `boolean` |
+| `disabled` | `boolean` |
+| `readOnly` | `boolean` |
+| `hoveredValue` | `number \| null` |
+
+**Messages:** `setValue`, `hover`, `clickItem`, `hoverItem`, `incrementValue`, `decrementValue`, `toEnd`
+
+**Init options:** `value?: number, count?: number, allowHalf?: boolean, disabled?: boolean, readOnly?: boolean`
+
+**Connect options:** `ConnectOptions`
+
+**Parts:** `root`, `item`
+
+**Utilities:** `itemFill()`
+
+---
+
+### Scroll Area
+
+**State** (`ScrollAreaState`):
+
+| Field | Type |
+|---|---|
+| `overflowX` | `boolean` |
+| `overflowY` | `boolean` |
+| `scrolling` | `boolean` |
+| `hovered` | `boolean` |
+| `visibility` | `ScrollbarVisibility` |
+
+**Messages:** `setScroll`, `setScrolling`, `setHovered`
+
+**Init options:** `visibility?: ScrollbarVisibility`
+
+**Parts:** `root`, `viewport`, `content`, `scrollbarX`, `scrollbarY`, `thumbX`, `thumbY`, `corner`
+
+**Utilities:** `showScrollbars()`, `thumbPosition()`, `thumbSize()`
+
+---
+
+### Select
+
+**State** (`SelectState`):
+
+| Field | Type |
+|---|---|
+| `open` | `boolean` |
+| `value` | `string[]` |
+| `items` | `string[]` |
+| `disabledItems` | `string[]` |
+| `selectionMode` | `SelectionMode` |
+| `highlightedIndex` | `number \| null` |
+| `disabled` | `boolean` |
+| `required` | `boolean` |
+| `typeahead` | `string` |
+| `typeaheadExpiresAt` | `number` |
+
+**Messages:** `open`, `close`, `toggle`, `selectOption`, `setValue`, `clear`, `highlight`, `highlightNext`, `highlightPrev`, `highlightFirst`, `highlightLast`, `selectHighlighted`, `setItems`, `typeahead`
+
+**Init options:** `value?: string[], items?: string[], disabledItems?: string[], selectionMode?: SelectionMode, disabled?: boolean, required?: boolean`
+
+**Connect options:** `ConnectOptions`
+
+**Parts:** `trigger`, `positioner`, `content`, `hiddenSelect`, `item`, `valueText`
+
+**Utilities:** `overlay()`
+
+---
+
+### Signature Pad
+
+**State** (`SignaturePadState`):
+
+| Field | Type |
+|---|---|
+| `strokes` | `Stroke[]` |
+| `current` | `Stroke \| null` |
+| `drawing` | `boolean` |
+| `disabled` | `boolean` |
+| `readOnly` | `boolean` |
+
+**Messages:** `strokeStart`, `strokePoint`, `strokeEnd`, `strokeCancel`, `undo`, `redo`, `clear`, `setStrokes`
+
+**Init options:** `strokes?: Stroke[], disabled?: boolean, readOnly?: boolean`
+
+**Connect options:** `ConnectOptions`
+
+**Parts:** `root`, `control`, `clearTrigger`, `undoTrigger`, `guide`, `hiddenInput`
+
+**Utilities:** `isEmpty()`, `pointCount()`, `getBounds()`
+
+---
+
+### Slider
+
+**State** (`SliderState`):
+
+| Field | Type |
+|---|---|
+| `value` | `number[]` |
+| `min` | `number` |
+| `max` | `number` |
+| `step` | `number` |
+| `disabled` | `boolean` |
+| `orientation` | `Orientation` |
+| `minStepsBetweenThumbs` | `number` |
+
+**Messages:** `setValue`, `setThumb`, `increment`, `decrement`, `toMin`, `toMax`, `setDisabled`
+
+**Init options:** `value?: number[], min?: number, max?: number, step?: number, disabled?: boolean, orientation?: Orientation, minStepsBetweenThumbs?: number`
+
+**Parts:** `root`, `control`, `track`, `range`, `thumb`, `value`
+
+**Utilities:** `valueFromPoint()`, `closestThumbIndex()`
+
+---
+
+### Splitter
+
+**State** (`SplitterState`):
+
+| Field | Type |
+|---|---|
+| `position` | `number` |
+| `min` | `number` |
+| `max` | `number` |
+| `step` | `number` |
+| `orientation` | `Orientation` |
+| `disabled` | `boolean` |
+| `dragging` | `boolean` |
+
+**Messages:** `setPosition`, `increment`, `decrement`, `toMin`, `toMax`, `startDrag`, `endDrag`
+
+**Init options:** `position?: number, min?: number, max?: number, step?: number, orientation?: Orientation, disabled?: boolean`
+
+**Parts:** `root`, `primaryPanel`, `secondaryPanel`, `resizeTrigger`
+
+**Utilities:** `positionFromPoint()`
+
+---
+
+### Steps
+
+**State** (`StepsState`):
+
+| Field | Type |
+|---|---|
+| `current` | `number` |
+| `completed` | `number[]` |
+| `errors` | `number[]` |
+| `steps` | `string[]` |
+| `linear` | `boolean` |
+| `disabled` | `boolean` |
+
+**Messages:** `goTo`, `next`, `prev`, `complete`, `markError`, `clearError`, `reset`
+
+**Init options:** `current?: number, completed?: number[], steps?: string[], linear?: boolean, disabled?: boolean`
+
+**Connect options:** `ConnectOptions`
+
+**Parts:** `root`, `nextTrigger`, `prevTrigger`, `item`
+
+**Utilities:** `stepStatus()`
+
+---
+
+### Switch
+
+**State** (`SwitchState`):
+
+| Field | Type |
+|---|---|
+| `checked` | `boolean` |
+| `disabled` | `boolean` |
+
+**Messages:** `toggle`, `setChecked`, `setDisabled`
+
+**Init options:** `checked?: boolean, disabled?: boolean`
+
+**Parts:** `root`, `track`, `thumb`, `hiddenInput`
+
+---
+
+### Tabs
+
+**State** (`TabsState`):
+
+| Field | Type |
+|---|---|
+| `value` | `string` |
+| `items` | `string[]` |
+| `disabledItems` | `string[]` |
+| `orientation` | `Orientation` |
+| `activation` | `Activation` |
+| `focused` | `string \| null` |
+| `loopFocus` | `boolean` |
+| `deselectable` | `boolean` |
+
+**Messages:** `setValue`, `setItems`, `focusTab`, `focusNext`, `focusPrev`, `focusFirst`, `focusLast`, `activateFocused`
+
+**Init options:** `value?: string, items?: string[], disabledItems?: string[], orientation?: Orientation, activation?: Activation, loopFocus?: boolean, deselectable?: boolean`
+
+**Connect options:** `ConnectOptions`
+
+**Parts:** `root`, `list`, `indicator`, `item`
+
+**Utilities:** `watchTabIndicator()`
+
+---
+
+### Tags Input
+
+**State** (`TagsInputState`):
+
+| Field | Type |
+|---|---|
+| `value` | `string[]` |
+| `inputValue` | `string` |
+| `disabled` | `boolean` |
+| `max` | `number` |
+| `unique` | `boolean` |
+| `focusedIndex` | `number \| null` |
+
+**Messages:** `setInput`, `addTag`, `removeTag`, `removeLast`, `setValue`, `focusTag`, `focusTagNext`, `focusTagPrev`, `clearAll`
+
+**Init options:** `value?: string[], inputValue?: string, disabled?: boolean, max?: number, unique?: boolean`
+
+**Connect options:** `ConnectOptions`
+
+**Parts:** `root`, `input`, `tag`, `clearTrigger`
+
+---
+
+### Time Picker
+
+**State** (`TimePickerState`):
+
+| Field | Type |
+|---|---|
+| `value` | `TimeValue` |
+| `format` | `TimeFormat` |
+| `minuteStep` | `number` |
+| `secondStep` | `number` |
+| `showSeconds` | `boolean` |
+| `disabled` | `boolean` |
+
+**Messages:** `setValue`, `setHours`, `setMinutes`, `setSeconds`, `incrementHours`, `decrementHours`, `incrementMinutes`, `decrementMinutes`, `toggleAmPm`
+
+**Init options:** `value?: TimeValue, format?: TimeFormat, minuteStep?: number, secondStep?: number, showSeconds?: boolean, disabled?: boolean`
+
+**Connect options:** `ConnectOptions`
+
+**Parts:** `root`, `hoursInput`, `minutesInput`, `periodTrigger`
+
+**Utilities:** `displayHours()`, `period()`, `formatTime()`
+
+---
+
+### Timer
+
+**State** (`TimerState`):
+
+| Field | Type |
+|---|---|
+| `running` | `boolean` |
+| `direction` | `Direction` |
+| `targetMs` | `number` |
+| `elapsedMs` | `number` |
+| `startedAt` | `number \| null` |
+
+**Messages:** `start`, `pause`, `reset`, `tick`, `setTarget`
+
+**Init options:** `direction?: Direction, targetMs?: number, elapsedMs?: number`
+
+**Connect options:** `ConnectOptions`
+
+**Parts:** `root`, `display`, `startTrigger`, `pauseTrigger`, `resetTrigger`
+
+**Utilities:** `display()`, `isComplete()`, `parts()`, `formatMs()`
+
+---
+
+### Toast
+
+**State** (`ToasterState`):
+
+| Field | Type |
+|---|---|
+| `toasts` | `Toast[]` |
+| `max` | `number` |
+| `placement` | `ToastPlacement` |
+
+**Messages:** `create`, `dismiss`, `dismissAll`, `update`, `pause`, `resume`, `pauseAll`, `resumeAll`
+
+**Init options:** `max?: number, placement?: ToastPlacement`
+
+**Connect options:** `ConnectOptions`
+
+**Parts:** `region`, `toast`
+
+**Utilities:** `nextToastId()`
+
+---
+
+### Toc
+
+**State** (`TocState`):
+
+| Field | Type |
+|---|---|
+| `items` | `TocEntry[]` |
+| `activeId` | `string \| null` |
+| `expanded` | `string[]` |
+
+**Messages:** `setItems`, `setActive`, `toggleExpanded`, `expandAll`, `collapseAll`
+
+**Init options:** `items?: TocEntry[], activeId?: string | null, expanded?: string[]`
+
+**Connect options:** `ConnectOptions`
+
+**Parts:** `root`, `list`, `item`
+
+**Utilities:** `isActive()`, `isExpanded()`, `watchActiveHeading()`
+
+---
+
+### Toggle Group
+
+**State** (`ToggleGroupState`):
+
+| Field | Type |
+|---|---|
+| `value` | `string[]` |
+| `type` | `'single' \| 'multiple'` |
+| `items` | `string[]` |
+| `disabledItems` | `string[]` |
+| `disabled` | `boolean` |
+| `orientation` | `Orientation` |
+| `deselectable` | `boolean` |
+
+**Messages:** `toggle`, `setValue`, `setItems`, `focusNext`, `focusPrev`
+
+**Init options:** `value?: string[], type?: 'single' | 'multiple', items?: string[], disabledItems?: string[], disabled?: boolean, orientation?: Orientation, deselectable?: boolean`
+
+**Parts:** `root`, `item`
+
+---
+
+### Toggle
+
+**State** (`ToggleState`):
+
+| Field | Type |
+|---|---|
+| `pressed` | `boolean` |
+| `disabled` | `boolean` |
+
+**Messages:** `toggle`, `setPressed`, `setDisabled`
+
+**Init options:** `pressed?: boolean, disabled?: boolean`
+
+**Parts:** `root`
+
+---
+
+### Tooltip
+
+**State** (`TooltipState`):
+
+| Field | Type |
+|---|---|
+| `open` | `boolean` |
+
+**Messages:** `show`, `hide`, `toggle`, `setOpen`
+
+**Init options:** `open?: boolean`
+
+**Connect options:** `ConnectOptions`
+
+**Parts:** `trigger`, `positioner`, `content`, `arrow`
+
+**Utilities:** `overlay()`
+
+---
+
+### Tour
+
+**State** (`TourState`):
+
+| Field | Type |
+|---|---|
+| `steps` | `TourStep[]` |
+| `open` | `boolean` |
+| `index` | `number` |
+| `visited` | `string[]` |
+
+**Messages:** `start`, `stop`, `next`, `prev`, `goto`, `setSteps`
+
+**Init options:** `steps?: TourStep[], open?: boolean, index?: number`
+
+**Connect options:** `ConnectOptions`
+
+**Parts:** `root`, `backdrop`, `spotlight`, `title`, `description`, `progressText`, `prevTrigger`, `nextTrigger`, `closeTrigger`
+
+**Utilities:** `currentStep()`, `isFirst()`, `isLast()`, `progress()`
+
+---
+
+### Tree View
+
+**State** (`TreeViewState`):
+
+| Field | Type |
+|---|---|
+| `expanded` | `string[]` |
+| `selected` | `string[]` |
+| `checked` | `string[]` |
+| `indeterminate` | `string[]` |
+| `focused` | `string \| null` |
+| `selectionMode` | `SelectionMode` |
+| `visibleItems` | `string[]` |
+| `visibleLabels` | `string[]` |
+| `disabled` | `boolean` |
+| `typeahead` | `string` |
+| `typeaheadExpiresAt` | `number` |
+| `renaming` | `string \| null` |
+| `renameDraft` | `string` |
+| `loading` | `string[]` |
+
+**Messages:** `toggleBranch`, `expand`, `collapse`, `expandAll`, `collapseAll`, `select`, `setSelected`, `focus`, `focusNext`, `focusPrev`, `focusFirst`, `focusLast`, `setVisibleItems`, `typeahead`, `arrowLeftFrom`, `arrowRightFrom`, `toggleChecked`, `setChecked`, `setIndeterminate`, `renameStart`, `renameChange`, `renameCommit`, `renameCancel`, `loadingStart`, `loadingEnd`
+
+**Init options:** `expanded?: string[], selected?: string[], checked?: string[], indeterminate?: string[], selectionMode?: SelectionMode, disabled?: boolean, visibleItems?: string[], visibleLabels?: string[]`
+
+**Connect options:** `ConnectOptions`
+
+**Parts:** `root`, `item`
+
+**Utilities:** `isExpanded()`, `isSelected()`, `isChecked()`, `isIndeterminate()`, `isRenaming()`, `isLoading()`
+
+---
+
+
+<!-- auto-api:end -->

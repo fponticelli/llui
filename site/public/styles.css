@@ -128,6 +128,12 @@ body {
   color: var(--c-accent);
 }
 
+.nav-link.active {
+  background: var(--c-accent-light);
+  color: var(--c-accent);
+  font-weight: 600;
+}
+
 .site-content {
   flex: 1;
   padding: 32px 40px;
