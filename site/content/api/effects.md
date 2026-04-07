@@ -480,5 +480,4 @@ Plugin handler — returns true if the effect was handled, false to pass through
 export type EffectPlugin<E, M> = (ctx: EffectCtx<E, M>) => boolean
 ```
 
-
 <!-- auto-api:end -->
