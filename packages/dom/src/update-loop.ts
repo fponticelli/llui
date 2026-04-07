@@ -159,13 +159,14 @@ function processMessages<S, M, E>(inst: ComponentInstance<S, M, E>): void {
   setCurrentDirtyMask(combinedDirty)
 
   // Phase 1 — structural reconciliation (instance-local blocks).
-  // Iterate with a fixed-length snapshot index so newly-added blocks
-  // (from nested each/show/branch) are deferred to the next cycle but
-  // we don't allocate a slice() on every flush.
+  // Skip blocks whose mask doesn't intersect the dirty bits — e.g.,
+  // an each() that reads `rows` is skipped when only `selected` changed.
   const blocks = inst.structuralBlocks
   const blocksLen = blocks.length
   for (let bi = 0; bi < blocksLen; bi++) {
-    blocks[bi]!.reconcile(state, combinedDirty)
+    const block = blocks[bi]!
+    if ((block.mask & combinedDirty) === 0) continue
+    block.reconcile(state, combinedDirty)
   }
 
   // Compact dead bindings before Phase 2 (Phase 1 may have disposed scopes)

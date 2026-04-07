@@ -7,6 +7,7 @@ import {
 } from '../render-context'
 import { createScope, disposeScope, addDisposer, removeOrphanedChildren } from '../scope'
 import { getFlatBindings, setFlatBindings } from '../binding'
+import { FULL_MASK } from '../update-loop'
 import type { StructuralBlock } from '../structural'
 
 // Reusable render context for buildEntry — avoids object allocation per entry
@@ -54,6 +55,7 @@ export function each<S, T, M = unknown>(opts: EachOptions<S, T, M>): Node[] {
   let lastItemsRef = initialItems
 
   const block: StructuralBlock = {
+    mask: (opts as { __mask?: number }).__mask ?? FULL_MASK,
     reconcile(state: unknown) {
       const parent = anchor.parentNode
       if (!parent) return

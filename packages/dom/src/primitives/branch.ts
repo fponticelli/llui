@@ -3,6 +3,7 @@ import { getRenderContext, setRenderContext, clearRenderContext } from '../rende
 import { createScope, disposeScope, addDisposer } from '../scope'
 import { setFlatBindings } from '../binding'
 import { createView } from '../view-helpers'
+import { FULL_MASK } from '../update-loop'
 import type { StructuralBlock } from '../structural'
 
 export function branch<S, M = unknown>(opts: BranchOptions<S, M>): Node[] {
@@ -33,6 +34,7 @@ export function branch<S, M = unknown>(opts: BranchOptions<S, M>): Node[] {
   }
 
   const block: StructuralBlock = {
+    mask: (opts as { __mask?: number }).__mask ?? FULL_MASK,
     reconcile(state: unknown) {
       const newKey = opts.on(state as S)
       if (Object.is(newKey, currentKey)) return

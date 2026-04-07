@@ -192,6 +192,12 @@ export function transformLlui(
         current = deduped
         changed = true
       }
+      // Inject __mask for Phase 1 gating
+      const masked = tryInjectStructuralMask(current, viewHelperNames, viewHelperAliases, fieldBits, f)
+      if (masked) {
+        current = masked
+        changed = true
+      }
       if (changed) {
         const result = ts.visitEachChild(current, visitor, undefined!)
         if (hasPos) edits.push({ start: origStart, end: origEnd, replacement: '' })
@@ -230,6 +236,19 @@ export function transformLlui(
       if (textTransformed) {
         if (hasPos) edits.push({ start: origStart, end: origEnd, replacement: '' })
         return textTransformed
+      }
+
+      // Inject __mask into each()/branch()/show() options for Phase 1 gating
+      const structuralMasked = tryInjectStructuralMask(
+        node,
+        viewHelperNames,
+        viewHelperAliases,
+        fieldBits,
+        f,
+      )
+      if (structuralMasked) {
+        if (hasPos) edits.push({ start: origStart, end: origEnd, replacement: '' })
+        return ts.visitEachChild(structuralMasked, visitor, undefined!)
       }
     }
 
@@ -956,6 +975,70 @@ function tryInjectTextMask(
   return f.createCallExpression(node.expression, node.typeArguments, [
     firstArg,
     createMaskLiteral(f, mask === 0 ? 0xffffffff | 0 : mask),
+  ])
+}
+
+/**
+ * Inject `__mask` into the options object of each()/branch()/show() calls.
+ *
+ * Analyzes the driving accessor (`items` for each, `on` for branch, `when`
+ * for show) and computes the bitmask of state fields it reads. The runtime
+ * uses this to skip Phase 1 reconciliation when irrelevant state changed
+ * (e.g., each() that reads `rows` is skipped when only `selected` changed).
+ */
+function tryInjectStructuralMask(
+  node: ts.CallExpression,
+  viewHelperNames: Set<string>,
+  viewHelperAliases: Map<string, string>,
+  fieldBits: Map<string, number>,
+  f: ts.NodeFactory,
+): ts.CallExpression | null {
+  if (fieldBits.size === 0) return null
+
+  // Match each(), branch(), show() — bare, aliased, or member-call
+  const isEach = isHelperCall(node.expression, 'each', viewHelperNames, viewHelperAliases)
+  const isBranch = isHelperCall(node.expression, 'branch', viewHelperNames, viewHelperAliases)
+  const isShow = isHelperCall(node.expression, 'show', viewHelperNames, viewHelperAliases)
+  if (!isEach && !isBranch && !isShow) return null
+
+  const optsArg = node.arguments[0]
+  if (!optsArg || !ts.isObjectLiteralExpression(optsArg)) return null
+
+  // Already has __mask
+  for (const prop of optsArg.properties) {
+    if (ts.isPropertyAssignment(prop) && ts.isIdentifier(prop.name) && prop.name.text === '__mask') {
+      return null
+    }
+  }
+
+  // Find the driving accessor property: items/on/when
+  const driverProp = isEach ? 'items' : isBranch ? 'on' : 'when'
+  let driverAccessor: ts.ArrowFunction | ts.FunctionExpression | null = null
+  for (const prop of optsArg.properties) {
+    if (
+      ts.isPropertyAssignment(prop) &&
+      ts.isIdentifier(prop.name) &&
+      prop.name.text === driverProp
+    ) {
+      if (ts.isArrowFunction(prop.initializer) || ts.isFunctionExpression(prop.initializer)) {
+        driverAccessor = prop.initializer
+      }
+      break
+    }
+  }
+
+  if (!driverAccessor) return null
+
+  const { mask } = computeAccessorMask(driverAccessor, fieldBits)
+  if (mask === 0 || mask === (0xffffffff | 0)) return null // no benefit
+
+  // Inject __mask into the options object
+  const maskProp = f.createPropertyAssignment('__mask', createMaskLiteral(f, mask))
+  const newProps = [...optsArg.properties, maskProp]
+  const newOpts = f.createObjectLiteralExpression(newProps, optsArg.properties.hasTrailingComma)
+  return f.createCallExpression(node.expression, node.typeArguments, [
+    newOpts,
+    ...node.arguments.slice(1),
   ])
 }
 
