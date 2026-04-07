@@ -21,7 +21,9 @@ export function text<S>(
     const initial = addCheckedItemUpdater(
       ctx.rootScope,
       () => String(get()),
-      (v) => { node.nodeValue = v },
+      (v) => {
+        node.nodeValue = v
+      },
     )
     node.nodeValue = initial
     return node

@@ -181,7 +181,22 @@ try {
 } catch {
   console.log('Starting jfb server...')
   execSync('npm start &', { cwd: JFB_REPO, stdio: 'ignore', shell: '/bin/bash' })
-  execSync('sleep 3')
+  // Wait for server to be ready (poll with retries instead of fixed sleep)
+  let ready = false
+  for (let i = 0; i < 10; i++) {
+    execSync('sleep 1')
+    try {
+      runCapture('curl -sf http://localhost:8080/ls > /dev/null')
+      ready = true
+      break
+    } catch {
+      // retry
+    }
+  }
+  if (!ready) {
+    console.error('ERROR: jfb server failed to start on port 8080')
+    process.exit(1)
+  }
   serverStarted = true
 }
 

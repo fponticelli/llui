@@ -161,15 +161,14 @@ Build a `TransitionOptions` bundle ({ enter, leave }) from a spec.
 Pass the result into `branch`, `show`, or `each` to animate the enter/leave
 of that structural block.
 Lifecycle:
-
-- **enter**: apply `enterFrom` + `enterActive` → reflow → swap `enterFrom` → `enterTo`
-  → wait for duration → remove all transient values (element rests on its base styles).
-- **leave**: apply `leaveFrom` + `leaveActive` → reflow → swap `leaveFrom` → `leaveTo`
-  → wait for duration (Promise-resolved so DOM removal is deferred).
-  Duration:
-- If `duration` is given, it is used verbatim.
-- Otherwise, computed `transition-duration + transition-delay` is read after
-  the active/from classes are applied, taking the max across properties.
+ - **enter**: apply `enterFrom` + `enterActive` → reflow → swap `enterFrom` → `enterTo`
+   → wait for duration → remove all transient values (element rests on its base styles).
+ - **leave**: apply `leaveFrom` + `leaveActive` → reflow → swap `leaveFrom` → `leaveTo`
+   → wait for duration (Promise-resolved so DOM removal is deferred).
+Duration:
+ - If `duration` is given, it is used verbatim.
+ - Otherwise, computed `transition-duration + transition-delay` is read after
+   the active/from classes are applied, taking the max across properties.
 
 ```typescript
 function transition(spec: TransitionSpec): TransitionOptions
@@ -208,7 +207,6 @@ function collapse(opts: CollapseOptions = {}): TransitionOptions
 
 Spring-physics transition. Returns `{ enter, leave }` that animate a CSS
 property using a damped spring simulation driven by `requestAnimationFrame`.
-
 ```ts
 show({ when: (s) => s.open, render: () => content(), ...spring() })
 show({ ...spring({ property: 'transform', from: 0, to: 1 }) })
@@ -224,17 +222,15 @@ FLIP (First-Last-Invert-Play) reorder animation for `each()` lists.
 Attach to an `each()` alongside item enter/leave transitions. After each
 reconcile, items whose positions changed animate smoothly from their
 previous position to the new one.
-
 ```ts
 each({
-  items: (s) => s.items,
-  key: (i) => i.id,
+  items: s => s.items,
+  key: i => i.id,
   render,
-  ...fade(), // animates appear/disappear
-  ...flip(), // animates reorders
+  ...fade(),         // animates appear/disappear
+  ...flip(),         // animates reorders
 })
 ```
-
 Spreading two transition helpers merges their hooks: `fade()` provides
 `enter`/`leave`, `flip()` provides `enter` (position capture) and
 `onTransition` (apply inverse + play). The `enter` from `flip()` overrides
@@ -253,7 +249,6 @@ function flip(opts: FlipOptions = {}): TransitionOptions
 Merge multiple TransitionOptions into one, chaining their `enter`,
 `leave`, and `onTransition` handlers in order.
 Useful for combining an item-level animation (fade/slide/...) with flip():
-
 ```ts
 each({ items, key, render, ...mergeTransitions(fade(), flip()) })
 ```
@@ -267,7 +262,6 @@ function mergeTransitions(...parts: TransitionOptions[]): TransitionOptions
 Convenience wrapper that returns `{ enter, leave }` hooks suitable for
 spreading into a `branch()` call to animate page transitions.
 Can be called two ways:
-
 1. With route-specific options (produces a fade + optional slide):
    ```ts
    branch({ on, cases, ...routeTransition({ duration: 200 }) })
@@ -287,7 +281,6 @@ Wrap any transition preset so that batch-entered items get staggered delays.
 Items entering within the same microtask are considered a "batch" and get
 sequential delays (`index * delayPerItem`). The counter resets after the
 microtask, so the next batch starts from 0.
-
 ```ts
 each({
   items: s => s.items,
@@ -322,7 +315,6 @@ export type Styles = Record<string, string | number>
 ### `TransitionValue`
 
 One "state" in a transition.
-
 - `string` — space-separated class names (applied via classList)
 - `Styles` — inline style object (applied via element.style)
 - `Array<string | Styles>` — mix both (useful for utility classes + dynamic styles)
@@ -470,5 +462,6 @@ export interface TransitionSpec {
   appear?: boolean
 }
 ```
+
 
 <!-- auto-api:end -->
