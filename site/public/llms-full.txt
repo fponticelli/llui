@@ -289,7 +289,7 @@ view: ({ send, text, show, branch, each }) => [
   // show: boolean toggle
   ...show({
     when: (s) => s.isVisible,
-    render: () => [div({}, [text('Visible!')])],
+    render: () => [div([text('Visible!')])],
   }),
 
   // branch: multi-case switch
@@ -307,8 +307,8 @@ view: ({ send, text, show, branch, each }) => [
     items: (s) => s.todos,
     key: (todo) => todo.id,
     render: ({ item, send }) => [
-      div({}, [
-        text(() => item.label()),
+      div([
+        text(item.label),
         button({ onClick: () => send({ type: 'remove', id: item.id() }) }, [text('x')]),
       ]),
     ],
@@ -428,7 +428,7 @@ form({
 each<State, string, Msg>({
   items: (s) => s.errors,
   key: (e) => e,
-  render: ({ item }) => [li({ class: 'error' }, [text(item((e) => e))])],
+  render: ({ item }) => [li({ class: 'error' }, [text(item)])],
 })
 ```
 
@@ -451,7 +451,7 @@ branch<State, Msg>({
       each<State, User, Msg>({
         items: (s) => (s.users.type === 'success' ? s.users.data : []),
         key: (u) => u.id,
-        render: ({ item }) => [text(item((u) => u.name))],
+        render: ({ item }) => [text(item.name)],
       }),
     ],
     failure: () => [text((s: State) => (s.users.type === 'failure' ? s.users.error.kind : ''))],

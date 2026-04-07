@@ -48,7 +48,7 @@ form({
 each<State, string, Msg>({
   items: (s) => s.errors,
   key: (e) => e,
-  render: ({ item }) => [li({ class: 'error' }, [text(item((e) => e))])],
+  render: ({ item }) => [li({ class: 'error' }, [text(item)])],
 })
 ```
 
@@ -71,7 +71,7 @@ branch<State, Msg>({
       each<State, User, Msg>({
         items: (s) => (s.users.type === 'success' ? s.users.data : []),
         key: (u) => u.id,
-        render: ({ item }) => [text(item((u) => u.name))],
+        render: ({ item }) => [text(item.name)],
       }),
     ],
     failure: () => [text((s: State) => (s.users.type === 'failure' ? s.users.error.kind : ''))],

@@ -134,7 +134,7 @@ view: ({ send, text, show, branch, each }) => [
   // show: boolean toggle
   ...show({
     when: (s) => s.isVisible,
-    render: () => [div({}, [text('Visible!')])],
+    render: () => [div([text('Visible!')])],
   }),
 
   // branch: multi-case switch
@@ -152,8 +152,8 @@ view: ({ send, text, show, branch, each }) => [
     items: (s) => s.todos,
     key: (todo) => todo.id,
     render: ({ item, send }) => [
-      div({}, [
-        text(() => item.label()),
+      div([
+        text(item.label),
         button({ onClick: () => send({ type: 'remove', id: item.id() }) }, [text('x')]),
       ]),
     ],

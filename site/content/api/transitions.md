@@ -21,7 +21,7 @@ import { div } from '@llui/dom'
 view({ show, text }) {
   show({
     when: (s) => s.visible,
-    render: () => div({}, text((s) => s.message)),
+    render: () => div([text((s) => s.message)]),
     ...mergeTransitions(fade(), slide({ direction: 'down' })),
   })
 }
