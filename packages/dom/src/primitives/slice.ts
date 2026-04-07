@@ -1,4 +1,4 @@
-import type { Send, EachOptions } from '../types'
+import type { Send, EachOptions, ShowOptions, BranchOptions } from '../types'
 import type { View } from '../view-helpers'
 import { show as _show } from './show'
 import { branch as _branch } from './branch'
@@ -17,7 +17,7 @@ import { useContext, type Context } from './context'
  *
  * view: (h) => {
  *   const formView = slice(h, (s) => s.form)
- *   return [...formView.show({ when: f => f.valid, render: () => [...] })]
+ *   return [...formView.show({ when: f => f.valid, render: (h) => [...] })]
  * }
  * ```
  *
@@ -30,17 +30,39 @@ export function slice<Root, Sub, M>(
   lift: (r: Root) => Sub,
 ): View<Sub, M> {
   const send = h.send
+
+  // Wrap a Sub-typed case callback to work with the Root-typed primitive.
+  // The inner callback receives a View<Root, M> from the primitive, and we
+  // narrow it to View<Sub, M> via a recursive slice() call.
+  const wrapCase =
+    (fn: (h: View<Sub, M>) => Node[]) =>
+    (rootH: View<Root, M>): Node[] =>
+      fn(slice(rootH, lift))
+
+  const wrapCases = (
+    cases: Record<string | number, (h: View<Sub, M>) => Node[]>,
+  ): Record<string | number, (h: View<Root, M>) => Node[]> => {
+    const out: Record<string | number, (h: View<Root, M>) => Node[]> = {}
+    for (const key of Object.keys(cases)) {
+      out[key] = wrapCase(cases[key]!)
+    }
+    return out
+  }
+
   return {
     send,
-    show: (opts) =>
+    show: (opts: ShowOptions<Sub, M>) =>
       _show<Root, M>({
         ...opts,
         when: (r) => opts.when(lift(r)),
+        render: wrapCase(opts.render),
+        fallback: opts.fallback ? wrapCase(opts.fallback) : undefined,
       }),
-    branch: (opts) =>
+    branch: (opts: BranchOptions<Sub, M>) =>
       _branch<Root, M>({
         ...opts,
         on: (r) => opts.on(lift(r)),
+        cases: wrapCases(opts.cases),
       }),
     each: <T>(opts: EachOptions<Sub, T, M>) =>
       _each<Root, T, M>({

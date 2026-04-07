@@ -1,6 +1,6 @@
 ---
-title: "@llui/components"
-description: "54 headless components + opt-in CSS theme and Tailwind class helpers"
+title: '@llui/components'
+description: '54 headless components + opt-in CSS theme and Tailwind class helpers'
 ---
 
 # @llui/components
@@ -108,15 +108,15 @@ file-upload, floating-panel, image-cropper, marquee, presence, signature-pad, ti
 
 Shared helpers used internally and exported for advanced use:
 
-| Utility          | Purpose                                                                  |
-| ---------------- | ------------------------------------------------------------------------ |
-| `typeahead`      | First-letter search across menu, select, listbox, tree-view              |
+| Utility          | Purpose                                                                   |
+| ---------------- | ------------------------------------------------------------------------- |
+| `typeahead`      | First-letter search across menu, select, listbox, tree-view               |
 | `TreeCollection` | Indexed tree traversal -- visibleItems, labels, indeterminate computation |
-| `floating`       | `@floating-ui/dom` wrapper for popover/menu positioning                  |
-| `focus-trap`     | Stack-based focus containment for modals                                 |
-| `dismissable`    | Esc / outside-click dismiss layer stack                                  |
-| `aria-hidden`    | `aria-hidden` on siblings of a modal for screen readers                  |
-| `remove-scroll`  | Body scroll lock for modals/drawers                                      |
+| `floating`       | `@floating-ui/dom` wrapper for popover/menu positioning                   |
+| `focus-trap`     | Stack-based focus containment for modals                                  |
+| `dismissable`    | Esc / outside-click dismiss layer stack                                   |
+| `aria-hidden`    | `aria-hidden` on siblings of a modal for screen readers                   |
+| `remove-scroll`  | Body scroll lock for modals/drawers                                       |
 
 ## Styling (opt-in)
 

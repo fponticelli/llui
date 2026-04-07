@@ -1,6 +1,6 @@
 ---
-title: "@llui/mcp"
-description: "MCP server exposing LLM debug tools via Model Context Protocol"
+title: '@llui/mcp'
+description: 'MCP server exposing LLM debug tools via Model Context Protocol'
 ---
 
 # @llui/mcp

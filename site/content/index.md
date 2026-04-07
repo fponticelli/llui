@@ -44,7 +44,7 @@ mountApp(document.getElementById('app')!, Counter)
 
 **Types constrain the output.** `State`, `Msg`, and `Effect` are explicit discriminated unions. The type system rejects invalid states at compile time. An LLM can't accidentally produce a component that sends the wrong message or forgets to handle a case — TypeScript catches it.
 
-**Effects as data, not callbacks.** Side effects are plain objects returned from `update()`, not imperative calls scattered through the code. An LLM can reason about what a component *does* by reading its return values. Testing is just `deepEqual` on the effect array.
+**Effects as data, not callbacks.** Side effects are plain objects returned from `update()`, not imperative calls scattered through the code. An LLM can reason about what a component _does_ by reading its return values. Testing is just `deepEqual` on the effect array.
 
 **No hidden runtime magic.** `view()` runs once. There's no virtual DOM diffing, no dependency tracking, no re-rendering. Reactive bindings are explicit arrow functions: `text((s) => s.count)`. An LLM can see exactly which state drives which DOM node.
 
@@ -68,31 +68,31 @@ LLui provides first-class tooling for AI workflows:
 
 ## Packages
 
-| Package | Description |
-|---|---|
-| [`@llui/dom`](/api/dom) | Runtime — component, mount, scope tree, bindings, structural primitives, element helpers |
-| [`@llui/vite-plugin`](/api/vite-plugin) | Compiler — 3-pass TypeScript transform, template cloning, source maps |
-| [`@llui/effects`](/api/effects) | Effect system — http, cancel, debounce, sequence, race, websocket, retry, upload |
-| [`@llui/router`](/api/router) | Routing — structured path matching, history/hash mode, guards, link helper |
-| [`@llui/transitions`](/api/transitions) | Animation helpers — `transition()`, `fade`, `slide`, `scale`, `collapse`, `flip`, `spring` |
-| [`@llui/components`](/api/components) | 54 headless components + opt-in theme (CSS tokens, dark mode, Tailwind class helpers) |
-| [`@llui/test`](/api/test) | Test harness — testComponent, testView, propertyTest, replayTrace |
-| [`@llui/vike`](/api/vike) | Vike SSR/SSG adapter — onRenderHtml, onRenderClient |
-| [`@llui/mcp`](/api/mcp) | MCP server — LLM debug tools via Model Context Protocol |
-| [`@llui/lint-idiomatic`](/api/lint-idiomatic) | Linter — 15 anti-pattern rules for idiomatic LLui |
+| Package                                       | Description                                                                                |
+| --------------------------------------------- | ------------------------------------------------------------------------------------------ |
+| [`@llui/dom`](/api/dom)                       | Runtime — component, mount, scope tree, bindings, structural primitives, element helpers   |
+| [`@llui/vite-plugin`](/api/vite-plugin)       | Compiler — 3-pass TypeScript transform, template cloning, source maps                      |
+| [`@llui/effects`](/api/effects)               | Effect system — http, cancel, debounce, sequence, race, websocket, retry, upload           |
+| [`@llui/router`](/api/router)                 | Routing — structured path matching, history/hash mode, guards, link helper                 |
+| [`@llui/transitions`](/api/transitions)       | Animation helpers — `transition()`, `fade`, `slide`, `scale`, `collapse`, `flip`, `spring` |
+| [`@llui/components`](/api/components)         | 54 headless components + opt-in theme (CSS tokens, dark mode, Tailwind class helpers)      |
+| [`@llui/test`](/api/test)                     | Test harness — testComponent, testView, propertyTest, replayTrace                          |
+| [`@llui/vike`](/api/vike)                     | Vike SSR/SSG adapter — onRenderHtml, onRenderClient                                        |
+| [`@llui/mcp`](/api/mcp)                       | MCP server — LLM debug tools via Model Context Protocol                                    |
+| [`@llui/lint-idiomatic`](/api/lint-idiomatic) | Linter — 15 anti-pattern rules for idiomatic LLui                                          |
 
 ## Performance
 
 Competitive with Solid and Svelte on [js-framework-benchmark](https://github.com/krausest/js-framework-benchmark):
 
-| Operation | LLui | Solid | Svelte | vanilla |
-|---|---:|---:|---:|---:|
-| Create 1k | ~24ms | 23ms | 23ms | 22ms |
-| Update 10th | ~11ms | 11ms | 12ms | 10ms |
-| Select | ~4ms | 6ms | 5ms | 3ms |
-| Swap | ~13ms | 14ms | 14ms | 12ms |
-| Clear 1k | ~11ms | 11ms | 11ms | 9ms |
-| Bundle (gzip) | **5.8 KB** | 4.7 KB | 4.3 KB | — |
+| Operation     |       LLui |  Solid | Svelte | vanilla |
+| ------------- | ---------: | -----: | -----: | ------: |
+| Create 1k     |      ~24ms |   23ms |   23ms |    22ms |
+| Update 10th   |      ~11ms |   11ms |   12ms |    10ms |
+| Select        |       ~4ms |    6ms |    5ms |     3ms |
+| Swap          |      ~13ms |   14ms |   14ms |    12ms |
+| Clear 1k      |      ~11ms |   11ms |   11ms |     9ms |
+| Bundle (gzip) | **5.8 KB** | 4.7 KB | 4.3 KB |       — |
 
 ## Quick Start
 

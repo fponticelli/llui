@@ -54,10 +54,7 @@ type State = {
   items: string[]
 }
 
-type Msg =
-  | { type: 'setText'; value: string }
-  | { type: 'add' }
-  | { type: 'remove'; index: number }
+type Msg = { type: 'setText'; value: string } | { type: 'add' } | { type: 'remove'; index: number }
 
 const TodoApp = component<State, Msg, never>({
   name: 'TodoApp',
@@ -82,7 +79,9 @@ const TodoApp = component<State, Msg, never>({
           type: 'text',
           value: (s) => s.text,
           onInput: (e) => send({ type: 'setText', value: (e.target as HTMLInputElement).value }),
-          onKeydown: (e) => { if (e.key === 'Enter') send({ type: 'add' }) },
+          onKeydown: (e) => {
+            if (e.key === 'Enter') send({ type: 'add' })
+          },
           placeholder: 'Add item...',
         }),
         button({ onClick: () => send({ type: 'add' }) }, [text('Add')]),
@@ -93,9 +92,12 @@ const TodoApp = component<State, Msg, never>({
         render: ({ item, index, send }) => [
           div({ class: 'item' }, [
             text(() => item()),
-            button({
-              onClick: () => send({ type: 'remove', index: index() }),
-            }, [text('x')]),
+            button(
+              {
+                onClick: () => send({ type: 'remove', index: index() }),
+              },
+              [text('x')],
+            ),
           ]),
         ],
       }),
@@ -168,10 +170,7 @@ Side effects are data — plain objects returned from `update()`. The runtime di
 ```typescript
 import { http, cancel, debounce, handleEffects } from '@llui/effects'
 
-type Effect =
-  | ReturnType<typeof http>
-  | ReturnType<typeof cancel>
-  | ReturnType<typeof debounce>
+type Effect = ReturnType<typeof http> | ReturnType<typeof cancel> | ReturnType<typeof debounce>
 
 const App = component<State, Msg, Effect>({
   // ...
@@ -180,17 +179,27 @@ const App = component<State, Msg, Effect>({
       case 'search':
         return [
           { ...state, query: msg.value },
-          [cancel('search', debounce('search', 300, http({
-            url: `/api/search?q=${encodeURIComponent(msg.value)}`,
-            onSuccess: (data) => ({ type: 'results' as const, data }),
-            onError: (err) => ({ type: 'error' as const, err }),
-          })))],
+          [
+            cancel(
+              'search',
+              debounce(
+                'search',
+                300,
+                http({
+                  url: `/api/search?q=${encodeURIComponent(msg.value)}`,
+                  onSuccess: (data) => ({ type: 'results' as const, data }),
+                  onError: (err) => ({ type: 'error' as const, err }),
+                }),
+              ),
+            ),
+          ],
         ]
       // ...
     }
   },
-  onEffect: handleEffects<Effect, Msg>()
-    .else(({ effect }) => { console.warn('Unhandled effect:', effect) }),
+  onEffect: handleEffects<Effect, Msg>().else(({ effect }) => {
+    console.warn('Unhandled effect:', effect)
+  }),
 })
 ```
 

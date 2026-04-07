@@ -1,6 +1,6 @@
 ---
-title: "@llui/transitions"
-description: "Animation: transition(), presets, flip, spring, stagger"
+title: '@llui/transitions'
+description: 'Animation: transition(), presets, flip, spring, stagger'
 ---
 
 # @llui/transitions

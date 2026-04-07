@@ -52,7 +52,6 @@ export function startRelay(port = 5200): void {
         return
       }
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const g = globalThis as any
       // Registry introspection methods work even when __lluiDebug isn't set
       if (req.method === '__listComponents') {

@@ -1,6 +1,6 @@
 ---
-title: "@llui/vite-plugin"
-description: "Compiler: 3-pass TypeScript transform, bitmask injection, diagnostics"
+title: '@llui/vite-plugin'
+description: 'Compiler: 3-pass TypeScript transform, bitmask injection, diagnostics'
 ---
 
 # @llui/vite-plugin

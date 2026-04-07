@@ -1,6 +1,6 @@
 ---
 title: Cookbook
-description: "Recipes for common patterns: forms, async, composition, routing, SSR, testing."
+description: 'Recipes for common patterns: forms, async, composition, routing, SSR, testing.'
 ---
 
 # Cookbook
@@ -389,9 +389,9 @@ view: ({ send, branch }) => [
   ...branch({
     on: (s) => s.route.page,
     cases: {
-      home: (send) => homePage(send),
-      search: (send) => searchPage(send),
-      repo: (send) => repoPage(send),
+      home: () => homePage(send),
+      search: () => searchPage(send),
+      repo: () => repoPage(send),
     },
   }),
 ]

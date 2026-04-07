@@ -22,7 +22,7 @@ const Counter = component<State, Msg, never>({
     ]),
     ...show<State>({
       when: (s) => s.count > 0,
-      render: (_send) => [span({ class: 'badge' }, [text('active')])],
+      render: () => [span({ class: 'badge' }, [text('active')])],
     }),
   ],
   __dirty: (o, n) =>

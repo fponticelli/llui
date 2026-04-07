@@ -1,6 +1,6 @@
 ---
-title: "@llui/router"
-description: "Routing: structured path matching, guards, history/hash mode, link helper"
+title: '@llui/router'
+description: 'Routing: structured path matching, guards, history/hash mode, link helper'
 ---
 
 # @llui/router

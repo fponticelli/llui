@@ -132,7 +132,6 @@ describe('onRenderClient', () => {
     container.id = 'app'
     container.innerHTML = serverHtml
     document.body.appendChild(container)
-
     ;(window as Record<string, unknown>).__LLUI_STATE__ = { greeting: 'hello' }
 
     await onRenderClient({ Page: TestPage, isHydration: true })
@@ -164,7 +163,11 @@ describe('createOnRenderClient', () => {
     document.body.appendChild(container)
 
     let mounted = false
-    const render = createOnRenderClient({ onMount: () => { mounted = true } })
+    const render = createOnRenderClient({
+      onMount: () => {
+        mounted = true
+      },
+    })
     await render({ Page: TestPage, isHydration: false })
 
     expect(mounted).toBe(true)

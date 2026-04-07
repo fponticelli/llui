@@ -96,13 +96,13 @@ export interface TransitionOptions {
 
 export interface BranchOptions<S, M = unknown> extends TransitionOptions {
   on: (s: S) => string | number | boolean
-  cases: Record<string | number, (send: Send<M>) => Node[]>
+  cases: Record<string | number, (h: View<S, M>) => Node[]>
 }
 
 export interface ShowOptions<S, M = unknown> extends TransitionOptions {
   when: (s: S) => boolean
-  render: (send: Send<M>) => Node[]
-  fallback?: (send: Send<M>) => Node[]
+  render: (h: View<S, M>) => Node[]
+  fallback?: (h: View<S, M>) => Node[]
 }
 
 /**

@@ -169,15 +169,15 @@ Use `branch()` for multi-way and `show()` for boolean:
 branch({
   on: (s) => s.page,
   cases: {
-    home: (send) => [text('Home page')],
-    about: (send) => [text('About page')],
+    home: () => [text('Home page')],
+    about: () => [text('About page')],
   },
 })
 
 // Boolean conditional
 show({
   when: (s) => s.isVisible,
-  render: (send) => [div([text('I am visible')])],
+  render: () => [div([text('I am visible')])],
 })
 ```
 
@@ -267,8 +267,8 @@ view: ({ send, branch }) => [
   ...branch({
     on: (s) => s.route.page,
     cases: {
-      home: (send) => homePage(send),
-      user: (send) => userPage(send),
+      home: () => homePage(send),
+      user: () => userPage(send),
     },
   }),
 ]

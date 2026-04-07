@@ -1,1 +1,1 @@
-export { onRenderClient } from '@llui/vike'
+export { onRenderClient } from '@llui/vike/client'

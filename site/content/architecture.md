@@ -1,6 +1,6 @@
 ---
 title: Architecture
-description: "How LLui works: two-phase update, bitmask optimization, compiler, scope tree."
+description: 'How LLui works: two-phase update, bitmask optimization, compiler, scope tree.'
 ---
 
 # Architecture
@@ -197,12 +197,12 @@ elSplit(
 
 The binding kind is determined by the property name:
 
-| Key pattern | Kind | DOM mutation |
-|---|---|---|
-| `class` or `className` | `'class'` | `elem.className = value` |
-| `style.X` | `'style'` | `elem.style.setProperty('X', value)` |
-| `value`, `checked`, `disabled`, etc. | `'prop'` | `elem[key] = value` |
-| anything else | `'attr'` | `elem.setAttribute(key, value)` |
+| Key pattern                          | Kind      | DOM mutation                         |
+| ------------------------------------ | --------- | ------------------------------------ |
+| `class` or `className`               | `'class'` | `elem.className = value`             |
+| `style.X`                            | `'style'` | `elem.style.setProperty('X', value)` |
+| `value`, `checked`, `disabled`, etc. | `'prop'`  | `elem[key] = value`                  |
+| anything else                        | `'attr'`  | `elem.setAttribute(key, value)`      |
 
 Pass 1 bails out conservatively when it encounters spreads, computed keys, or variable references as the props argument -- those call sites fall through to the uncompiled element helper path, which is functionally correct but unoptimized.
 
@@ -279,8 +279,11 @@ export const Search = component<State, Msg, Effect>({
         return [
           { ...state, query: msg.value, loading: true },
           [
-            cancel('search',
-              debounce('search', 300,
+            cancel(
+              'search',
+              debounce(
+                'search',
+                300,
                 http({
                   url: `/api?q=${msg.value}`,
                   onSuccess: (data) => ({ type: 'results', payload: data }),

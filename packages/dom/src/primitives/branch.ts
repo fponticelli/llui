@@ -2,6 +2,7 @@ import type { BranchOptions, Scope } from '../types'
 import { getRenderContext, setRenderContext, clearRenderContext } from '../render-context'
 import { createScope, disposeScope, addDisposer } from '../scope'
 import { setFlatBindings } from '../binding'
+import { createView } from '../view-helpers'
 import type { StructuralBlock } from '../structural'
 
 export function branch<S, M = unknown>(opts: BranchOptions<S, M>): Node[] {
@@ -21,7 +22,7 @@ export function branch<S, M = unknown>(opts: BranchOptions<S, M>): Node[] {
   if (builder) {
     currentScope = createScope(parentScope)
     setRenderContext({ ...ctx, rootScope: currentScope })
-    currentNodes = builder(send)
+    currentNodes = builder(createView<S, M>(send))
     clearRenderContext()
     setRenderContext(ctx)
 
@@ -53,7 +54,7 @@ export function branch<S, M = unknown>(opts: BranchOptions<S, M>): Node[] {
         currentScope = createScope(parentScope)
         setFlatBindings(ctx.allBindings)
         setRenderContext({ ...ctx, rootScope: currentScope, state })
-        currentNodes = newBuilder(send)
+        currentNodes = newBuilder(createView<S, M>(send))
         clearRenderContext()
         setFlatBindings(null)
 

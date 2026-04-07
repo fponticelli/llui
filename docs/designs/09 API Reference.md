@@ -255,7 +255,7 @@ Conditional rendering keyed on a discriminant. When the discriminant changes, th
 ```typescript
 function branch<S, M>(opts: {
   on: (s: S) => string | number | boolean
-  cases: Record<string | number, (send: Send<M>) => Node[]>
+  cases: Record<string | number, (h: View<S, M>) => Node[]>
   enter?: (nodes: Node[]) => void | Promise<void>
   leave?: (nodes: Node[]) => void | Promise<void>
   onTransition?: (ctx: { entering: Node[]; leaving: Node[]; parent: Node }) => void | Promise<void>
@@ -305,8 +305,8 @@ Boolean conditional rendering. Implemented as a two-case `branch` — the scope 
 ```typescript
 function show<S, M>(opts: {
   when: (s: S) => boolean
-  render: (send: (msg: M) => void) => Node[]
-  fallback?: (send: (msg: M) => void) => Node[]
+  render: (h: View<S, M>) => Node[]
+  fallback?: (h: View<S, M>) => Node[]
   enter?: (nodes: Node[]) => void | Promise<void>
   leave?: (nodes: Node[]) => void | Promise<void>
   onTransition?: (ctx: { entering: Node[]; leaving: Node[]; parent: Node }) => void | Promise<void>

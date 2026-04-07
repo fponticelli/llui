@@ -34,8 +34,11 @@ interface ComponentDef<S, M, E> {
 // the component.
 interface View<S, M> {
   send: (msg: M) => void
-  show(opts: { when: (s: S) => boolean; render: (send) => Node[] }): Node[]
-  branch(opts: { on: (s: S) => string | number; cases: Record<string, (send) => Node[]> }): Node[]
+  show(opts: { when: (s: S) => boolean; render: (h: View<S, M>) => Node[] }): Node[]
+  branch(opts: {
+    on: (s: S) => string | number
+    cases: Record<string, (h: View<S, M>) => Node[]>
+  }): Node[]
   each<T>(opts: {
     items: (s: S) => T[]
     key: (item: T) => string | number
@@ -209,10 +212,7 @@ type State = {
   items: string[]
 }
 
-type Msg =
-  | { type: 'setText'; value: string }
-  | { type: 'add' }
-  | { type: 'remove'; index: number }
+type Msg = { type: 'setText'; value: string } | { type: 'add' } | { type: 'remove'; index: number }
 
 const TodoApp = component<State, Msg, never>({
   name: 'TodoApp',
@@ -237,7 +237,9 @@ const TodoApp = component<State, Msg, never>({
           type: 'text',
           value: (s) => s.text,
           onInput: (e) => send({ type: 'setText', value: (e.target as HTMLInputElement).value }),
-          onKeydown: (e) => { if (e.key === 'Enter') send({ type: 'add' }) },
+          onKeydown: (e) => {
+            if (e.key === 'Enter') send({ type: 'add' })
+          },
           placeholder: 'Add item...',
         }),
         button({ onClick: () => send({ type: 'add' }) }, [text('Add')]),
@@ -248,9 +250,12 @@ const TodoApp = component<State, Msg, never>({
         render: ({ item, index, send }) => [
           div({ class: 'item' }, [
             text(() => item()),
-            button({
-              onClick: () => send({ type: 'remove', index: index() }),
-            }, [text('x')]),
+            button(
+              {
+                onClick: () => send({ type: 'remove', index: index() }),
+              },
+              [text('x')],
+            ),
           ]),
         ],
       }),
@@ -323,10 +328,7 @@ Side effects are data — plain objects returned from `update()`. The runtime di
 ```typescript
 import { http, cancel, debounce, handleEffects } from '@llui/effects'
 
-type Effect =
-  | ReturnType<typeof http>
-  | ReturnType<typeof cancel>
-  | ReturnType<typeof debounce>
+type Effect = ReturnType<typeof http> | ReturnType<typeof cancel> | ReturnType<typeof debounce>
 
 const App = component<State, Msg, Effect>({
   // ...
@@ -335,17 +337,27 @@ const App = component<State, Msg, Effect>({
       case 'search':
         return [
           { ...state, query: msg.value },
-          [cancel('search', debounce('search', 300, http({
-            url: `/api/search?q=${encodeURIComponent(msg.value)}`,
-            onSuccess: (data) => ({ type: 'results' as const, data }),
-            onError: (err) => ({ type: 'error' as const, err }),
-          })))],
+          [
+            cancel(
+              'search',
+              debounce(
+                'search',
+                300,
+                http({
+                  url: `/api/search?q=${encodeURIComponent(msg.value)}`,
+                  onSuccess: (data) => ({ type: 'results' as const, data }),
+                  onError: (err) => ({ type: 'error' as const, err }),
+                }),
+              ),
+            ),
+          ],
         ]
       // ...
     }
   },
-  onEffect: handleEffects<Effect, Msg>()
-    .else(({ effect }) => { console.warn('Unhandled effect:', effect) }),
+  onEffect: handleEffects<Effect, Msg>().else(({ effect }) => {
+    console.warn('Unhandled effect:', effect)
+  }),
 })
 ```
 
@@ -769,9 +781,9 @@ view: ({ send, branch }) => [
   ...branch({
     on: (s) => s.route.page,
     cases: {
-      home: (send) => homePage(send),
-      search: (send) => searchPage(send),
-      repo: (send) => repoPage(send),
+      home: () => homePage(send),
+      search: () => searchPage(send),
+      repo: () => repoPage(send),
     },
   }),
 ]
@@ -1153,7 +1165,7 @@ Conditional rendering keyed on a discriminant. When the discriminant changes, th
 ```typescript
 function branch<S, M>(opts: {
   on: (s: S) => string | number | boolean
-  cases: Record<string | number, (send: Send<M>) => Node[]>
+  cases: Record<string | number, (h: View<S, M>) => Node[]>
   enter?: (nodes: Node[]) => void | Promise<void>
   leave?: (nodes: Node[]) => void | Promise<void>
   onTransition?: (ctx: { entering: Node[]; leaving: Node[]; parent: Node }) => void | Promise<void>
@@ -1203,8 +1215,8 @@ Boolean conditional rendering. Implemented as a two-case `branch` — the scope 
 ```typescript
 function show<S, M>(opts: {
   when: (s: S) => boolean
-  render: (send: (msg: M) => void) => Node[]
-  fallback?: (send: (msg: M) => void) => Node[]
+  render: (h: View<S, M>) => Node[]
+  fallback?: (h: View<S, M>) => Node[]
   enter?: (nodes: Node[]) => void | Promise<void>
   leave?: (nodes: Node[]) => void | Promise<void>
   onTransition?: (ctx: { entering: Node[]; leaving: Node[]; parent: Node }) => void | Promise<void>

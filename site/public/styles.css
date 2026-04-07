@@ -27,7 +27,11 @@
   }
 }
 
-* { margin: 0; padding: 0; box-sizing: border-box; }
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
 
 body {
   font-family: var(--font-sans);
@@ -144,7 +148,8 @@ body {
   margin-bottom: 1rem;
 }
 
-.prose ul, .prose ol {
+.prose ul,
+.prose ol {
   margin-bottom: 1rem;
   padding-left: 1.5rem;
 }
@@ -212,7 +217,8 @@ body {
   font-size: 0.875rem;
 }
 
-.prose th, .prose td {
+.prose th,
+.prose td {
   padding: 8px 12px;
   border: 1px solid var(--c-border);
   text-align: left;

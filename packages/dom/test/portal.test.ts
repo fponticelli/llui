@@ -79,7 +79,7 @@ describe('portal()', () => {
         sendFn = send
         return show({
           when: (s: State) => s.open,
-          render: (_send) =>
+          render: () =>
             portal({
               target,
               render: () => [div({ class: 'overlay' }, [text('modal')])],

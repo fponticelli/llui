@@ -28,12 +28,12 @@ export const appDef = component<State, Msg, Effect>({
       ...branch({
         on: (s) => s.route.page,
         cases: {
-          search: (send) => searchView(send),
+          search: ({ send }) => searchView(send),
           // routing.link needs literal owner/name for href. Read from
           // location.pathname which is current when the branch re-enters
           // (routing.handleEffect pushes state before navigate resolves).
-          repo: (send) => repoPage(h, router.match(location.pathname), send),
-          tree: (send) => repoPage(h, router.match(location.pathname), send),
+          repo: ({ send }) => repoPage(h, router.match(location.pathname), send),
+          tree: ({ send }) => repoPage(h, router.match(location.pathname), send),
         },
       }),
     ]

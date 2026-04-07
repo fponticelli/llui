@@ -70,7 +70,7 @@ describe('onMount()', () => {
         sendFn = send
         return show({
           when: (s: State) => s.visible,
-          render: (_send) => {
+          render: () => {
             onMount(() => cleanup)
             return [text('content')]
           },
@@ -110,7 +110,7 @@ describe('onMount()', () => {
         sendFn = send
         return show({
           when: (s: State) => s.visible,
-          render: (_send) => {
+          render: () => {
             onMount(callback)
             return [text('temp')]
           },

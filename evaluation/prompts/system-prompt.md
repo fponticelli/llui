@@ -26,8 +26,11 @@ interface ComponentDef<S, M, E> {
 // the component.
 interface View<S, M> {
   send: (msg: M) => void
-  show(opts: { when: (s: S) => boolean; render: (send) => Node[] }): Node[]
-  branch(opts: { on: (s: S) => string | number; cases: Record<string, (send) => Node[]> }): Node[]
+  show(opts: { when: (s: S) => boolean; render: (h: View<S, M>) => Node[] }): Node[]
+  branch(opts: {
+    on: (s: S) => string | number
+    cases: Record<string, (h: View<S, M>) => Node[]>
+  }): Node[]
   each<T>(opts: {
     items: (s: S) => T[]
     key: (item: T) => string | number

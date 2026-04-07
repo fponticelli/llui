@@ -1,4 +1,4 @@
-import { createOnRenderHtml } from '@llui/vike'
+import { createOnRenderHtml } from '@llui/vike/server'
 
 function escapeAttr(s: string): string {
   return s.replace(/&/g, '&amp;').replace(/"/g, '&quot;')
@@ -15,8 +15,7 @@ export const onRenderHtml = createOnRenderHtml({
       ? `${data.title} — LLui`
       : 'LLui — Compile-time optimized web framework'
     const description =
-      data?.description ??
-      'A compile-time-optimized web framework built on The Elm Architecture.'
+      data?.description ?? 'A compile-time-optimized web framework built on The Elm Architecture.'
 
     return `<!DOCTYPE html>
 <html lang="en">

@@ -1,6 +1,6 @@
 ---
-title: "@llui/lint-idiomatic"
-description: "15 anti-pattern rules for idiomatic LLui code"
+title: '@llui/lint-idiomatic'
+description: '15 anti-pattern rules for idiomatic LLui code'
 ---
 
 # @llui/lint-idiomatic

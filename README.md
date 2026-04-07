@@ -49,7 +49,7 @@ mountApp(document.getElementById('app')!, Counter)
 | [`@llui/effects`](packages/effects)               | Effect system — http, cancel, debounce, sequence, race + `Async<T,E>`, `ApiError`                   |
 | [`@llui/router`](packages/router)                 | Routing — structured path matching, history/hash mode, link helper                                  |
 | [`@llui/transitions`](packages/transitions)       | Animation helpers for `branch`/`show`/`each` — `transition()`, `fade`, `slide`, `scale`, `collapse` |
-| [`@llui/components`](packages/components)         | 54 headless components + opt-in theme (CSS tokens, dark mode, Tailwind class helpers)                |
+| [`@llui/components`](packages/components)         | 54 headless components + opt-in theme (CSS tokens, dark mode, Tailwind class helpers)               |
 | [`@llui/test`](packages/test)                     | Test harness — testComponent, testView, propertyTest, replayTrace                                   |
 | [`@llui/vike`](packages/vike)                     | Vike SSR adapter — onRenderHtml, onRenderClient                                                     |
 | [`@llui/mcp`](packages/mcp)                       | MCP server — LLM debug tools via Model Context Protocol                                             |

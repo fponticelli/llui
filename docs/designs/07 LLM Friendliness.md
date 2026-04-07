@@ -576,14 +576,14 @@ function handleEffects<E extends { type: string }>(): EffectChain<E>;
 // Structural primitives (call only inside view()) — all use object parameters:
 function branch<S, M>(opts: {
   on: (s: S) => string | number | boolean,
-  cases: Record<string, (send: Send<M>) => Node[]>,
+  cases: Record<string, (h: View<S, M>) => Node[]>,
   enter?: (nodes: Node[]) => void | Promise<void>,
   leave?: (nodes: Node[]) => void | Promise<void>,
   onTransition?: (ctx: { entering: Node[], leaving: Node[], parent: Node }) => void | Promise<void>,
 }): Node[];
 function show<S, M>(opts: {
   when: (s: S) => boolean,
-  render: (send: Send<M>) => Node[],
+  render: (h: View<S, M>) => Node[],
   enter?: ..., leave?: ..., onTransition?: ...,
 }): Node[];
 function each<S, T, M>(opts: {
@@ -644,7 +644,7 @@ export const Counter = component<State, Msg, Effect>({
 - Structural primitives use object parameters:
   `each({ items: s => s.todos, key: t => t.id, render: ({ item, index }) => ... })`
   `branch({ on: s => s.phase, cases: { idle: () => ..., loading: () => ... } })`
-  `show({ when: s => s.open, render: (send) => ... })`
+  `show({ when: s => s.open, render: () => ... })`
   `portal({ target: document.body, render: () => ... })`
 - In `each()`, `render` receives `item` (a scoped accessor) and `index` (a getter).
   Read item properties via selector: `item(t => t.text)`, not `item.text`.

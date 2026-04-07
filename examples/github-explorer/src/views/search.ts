@@ -85,7 +85,7 @@ export function searchView(send: Send<Msg>): Node[] {
           ],
           loading: () => [div({ class: 'loading' }, [text('Searching...')])],
           empty: () => [div({ class: 'loading' }, [text('No repositories found.')])],
-          results: (send) => [
+          results: ({ send }) => [
             ul({ class: 'repo-list' }, [
               ...each<State, Repo, Msg>({
                 items: (s) => searchRepos(s),

@@ -45,84 +45,65 @@ No overlap. The plugins operate at different levels of abstraction.
 
 ### `@llui/vike` Adapter Architecture
 
-The `@llui/vike` package is a Vike extension that configures the two core rendering hooks:
+The `@llui/vike` package provides rendering hooks via sub-path exports. Use `@llui/vike/server` for the server hook and `@llui/vike/client` for the client hook — this keeps jsdom out of the client bundle.
+
+### Basic Setup
 
 ```typescript
-// packages/@llui/vike/config.ts
-export default {
-  onRenderHtml: '@llui/vike/onRenderHtml',
-  onRenderClient: '@llui/vike/onRenderClient',
-  meta: {
-    // LLui-specific page settings
-    Layout: { env: { server: true, client: true } },
-  },
-  passToClient: ['lluiState'],
-}
+// pages/+onRenderHtml.ts
+export { onRenderHtml } from '@llui/vike/server'
+
+// pages/+onRenderClient.ts
+export { onRenderClient } from '@llui/vike/client'
+```
+
+### Custom Document Template
+
+Use `createOnRenderHtml` to control the full HTML document:
+
+```typescript
+// pages/+onRenderHtml.ts
+import { createOnRenderHtml } from '@llui/vike/server'
+
+export const onRenderHtml = createOnRenderHtml({
+  document: ({ html, state, pageContext }) => `<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <div id="app">${html}</div>
+    <script>window.__LLUI_STATE__ = ${state}</script>
+  </body>
+</html>`,
+})
 ```
 
 ### Server-Side Rendering: `onRenderHtml`
 
-```typescript
-// @llui/vike/onRenderHtml.ts
-import { escapeInject, dangerouslySkipEscape } from 'vike/server'
-import type { OnRenderHtmlAsync } from 'vike/types'
+Internally, `onRenderHtml` does:
 
-export const onRenderHtml: OnRenderHtmlAsync = async (pageContext) => {
-  const { Page, data } = pageContext
-
-  // Page is a LLui ComponentDef. Compute initial state from data.
-  const [initialState, initialEffects] = Page.init(data)
-
-  // __renderToString is compiler-generated alongside the component.
-  // It evaluates the view tree against the state and emits static HTML
-  // with data-llui-hydrate markers on reactive binding sites.
-  const html = Page.__renderToString(initialState)
-
-  // Serialize state for client hydration.
-  // State is JSON-serializable by constraint (01 Architecture.md).
-  const serializedState = JSON.stringify(initialState)
-
-  return escapeInject`<!DOCTYPE html>
-    <html>
-      <head>
-        <meta charset="utf-8" />
-        ${dangerouslySkipEscape(pageContext.headTags ?? '')}
-      </head>
-      <body>
-        <div id="app">${dangerouslySkipEscape(html)}</div>
-        <script>window.__LLUI_STATE__ = ${dangerouslySkipEscape(serializedState)}</script>
-      </body>
-    </html>`
-}
-```
+1. Lazy-loads `initSsrDom()` to set up jsdom (no-op if already initialized)
+2. Calls `Page.init(data)` to compute initial state
+3. Calls `renderToString(Page, initialState)` to generate HTML with `data-llui-hydrate` markers
+4. Serializes state into a `<script>` tag via `JSON.stringify`
+5. Returns the document wrapped in Vike's `dangerouslySkipEscape` format
 
 The state serialization constraint (01 Architecture.md) guarantees `JSON.stringify(initialState)` is lossless. No `Map`, `Set`, `Date`, class instances, or functions in state.
 
 ### Client-Side Hydration: `onRenderClient`
 
 ```typescript
-// @llui/vike/onRenderClient.ts
-import { hydrateApp, mountApp } from '@llui/dom'
-import type { OnRenderClientAsync } from 'vike/types'
-
-export const onRenderClient: OnRenderClientAsync = async (pageContext) => {
-  const { Page } = pageContext
-  const container = document.getElementById('app')!
-
-  if (pageContext.isHydration) {
-    // Server already rendered HTML. Hydrate: walk existing DOM,
-    // attach bindings to data-llui-hydrate-marked nodes,
-    // register structural blocks, start the reactive cycle.
-    const serverState = window.__LLUI_STATE__
-    hydrateApp(container, Page, serverState)
-  } else {
-    // Client-side navigation (no server HTML). Full mount.
-    mountApp(container, Page, pageContext.data)
-  }
+// Internally:
+if (pageContext.isHydration) {
+  hydrateApp(container, Page, window.__LLUI_STATE__)
+} else {
+  mountApp(container, Page, pageContext.data)
 }
 ```
 
-**Hydration path.** `hydrateApp` reuses the existing DOM created by `__renderToString`. It walks the tree, finds `data-llui-hydrate` markers, attaches bindings with their bitmask, and registers structural blocks (`branch`, `each`, `show`). No DOM nodes are created or destroyed during hydration — only binding records and event listeners are attached. The `__dirty` function is the same one used in client-only mode.
+**Hydration path.** `hydrateApp` reuses the existing DOM created by `renderToString`. It walks the tree, finds `data-llui-hydrate` markers, attaches bindings with their bitmask, and registers structural blocks (`branch`, `each`, `show`). No DOM nodes are created or destroyed during hydration — only binding records and event listeners are attached. The `__dirty` function is the same one used in client-only mode.
 
 **Client navigation path.** When the user navigates to a new page (Vike's client-side routing), `pageContext.isHydration` is `false`. The adapter calls `mountApp`, which runs `init()` → `view()` → Phase 2 from scratch, creating a fresh DOM tree.
 

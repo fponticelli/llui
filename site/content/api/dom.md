@@ -1,6 +1,6 @@
 ---
-title: "@llui/dom"
-description: "Runtime API: component, mount, view, primitives, element helpers"
+title: '@llui/dom'
+description: 'Runtime API: component, mount, view, primitives, element helpers'
 ---
 
 # @llui/dom

@@ -1,5 +1,4 @@
 import { renderToString } from '@llui/dom'
-import { initSsrDom } from '@llui/dom/ssr'
 import type { ComponentDef } from '@llui/dom'
 
 export interface PageContext {
@@ -71,7 +70,8 @@ async function renderPage(
   pageContext: PageContext,
   document: (ctx: DocumentContext) => string,
 ): Promise<RenderHtmlResult> {
-  // Ensure jsdom is available for server-side rendering (no-op if already initialized)
+  // Lazy-import to keep jsdom out of the client bundle's dependency graph
+  const { initSsrDom } = await import('@llui/dom/ssr')
   await initSsrDom()
 
   const { Page, data } = pageContext

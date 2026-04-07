@@ -1,6 +1,6 @@
 ---
-title: "@llui/effects"
-description: "Effect builders: http, cancel, debounce, websocket, retry, upload"
+title: '@llui/effects'
+description: 'Effect builders: http, cancel, debounce, websocket, retry, upload'
 ---
 
 # @llui/effects
