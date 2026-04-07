@@ -101,7 +101,3 @@ const routing = connectRouter(router, {
   },
 })
 ```
-
-## License
-
-MIT

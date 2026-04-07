@@ -65,7 +65,3 @@ lintIdiomatic(source: string, filename?: string) => { violations: Violation[], s
 | `nested-send-in-update`      | Calling `send()` inside `update()` causes recursive dispatch               |
 | `imperative-dom-in-view`     | Using `document.querySelector` etc. in `view()` instead of primitives      |
 | `accessor-side-effect`       | Side effects (fetch, console.log, etc.) inside reactive accessor functions |
-
-## License
-
-MIT

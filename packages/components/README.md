@@ -210,7 +210,3 @@ const parts = editable.connect<S>(get, send, {
 ```
 
 Supported on: editable, number-input, tags-input, pin-input, file-upload.
-
-## License
-
-MIT

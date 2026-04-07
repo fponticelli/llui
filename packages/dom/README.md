@@ -119,7 +119,3 @@ import { replaceComponent } from '@llui/dom/hmr' // HMR support
 ## Performance
 
 Competitive with Solid and Svelte on [js-framework-benchmark](https://github.com/krausest/js-framework-benchmark). 5.8 KB gzipped.
-
-## License
-
-MIT

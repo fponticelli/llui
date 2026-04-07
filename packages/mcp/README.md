@@ -69,7 +69,3 @@ export default defineConfig({ plugins: [llui({ mcpPort: 5200 })] })
 | ------------------ | ------------------------------------------ |
 | `list_components`  | List all mounted component instances       |
 | `select_component` | Select a component for subsequent commands |
-
-## License
-
-MIT

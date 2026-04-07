@@ -145,7 +145,3 @@ each({
   ...flip({ duration: 200 }),
 })
 ```
-
-## License
-
-MIT

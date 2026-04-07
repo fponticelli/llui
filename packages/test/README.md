@@ -75,7 +75,3 @@ replayTrace(def, trace) => void
 ```
 
 Replay a recorded message trace against a component definition. Asserts state at each step.
-
-## License
-
-MIT

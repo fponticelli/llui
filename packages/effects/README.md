@@ -151,7 +151,3 @@ geolocation({
 | ------------- | -------------------------------------------------------------------------------------------------- |
 | `Async<T, E>` | `idle \| loading \| success \| failure` -- async data state                                        |
 | `ApiError`    | `network \| timeout \| notfound \| unauthorized \| forbidden \| ratelimit \| validation \| server` |
-
-## License
-
-MIT

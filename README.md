@@ -112,7 +112,3 @@ Competitive with Solid and Svelte on [js-framework-benchmark](https://github.com
 | Swap          |      ~13ms |   14ms |   14ms |    12ms |
 | Clear 1k      |      ~11ms |   11ms |   11ms |     9ms |
 | Bundle (gzip) | **5.8 KB** | 4.7 KB | 4.3 KB |       — |
-
-## License
-
-MIT

@@ -77,7 +77,3 @@ Hydrates the server-rendered HTML on the client. Attaches event listeners and re
 | `createOnRenderClient` | `@llui/vike/client` | Factory for custom container/lifecycle      |
 
 The barrel export (`@llui/vike`) re-exports everything, but prefer sub-path imports to avoid bundling jsdom into the client.
-
-## License
-
-MIT
