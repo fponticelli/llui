@@ -47,4 +47,3 @@ The compiler emits warnings for common issues:
 | Empty props           | Element helper called with empty props object    |
 | Namespace imports     | `import * as` prevents tree-shaking              |
 | Spread children       | Spread in children array defeats static analysis |
-
