@@ -27,6 +27,7 @@ pnpm --filter @llui/dom check
 cd packages/dom && pnpm vitest run test/scope.test.ts
 
 # Benchmarks (js-framework-benchmark)
+pnpm bench:setup              # One-time: clone + compile js-framework-benchmark repo
 pnpm bench                    # Build + run jfb + compare against saved baseline
 pnpm bench --runs 3           # N runs, median-of-medians (reduces single-run noise)
 pnpm bench --save             # Overwrite baseline with current results

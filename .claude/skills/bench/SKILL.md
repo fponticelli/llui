@@ -46,14 +46,23 @@ or making perf claims.
 
 ## Prerequisites
 
-If `pnpm bench` errors with "js-framework-benchmark repo not found", tell the user to clone it:
+The benchmark requires a local clone of `js-framework-benchmark`. If `pnpm bench` fails, tell the user to run:
+
+```bash
+pnpm bench:setup
+```
+
+This clones the repo into `benchmarks/js-framework-benchmark-repo/` and compiles `webdriver-ts`. The directory is gitignored.
+
+If the user prefers manual setup or the script isn't available:
 
 ```
 git clone https://github.com/krausest/js-framework-benchmark.git benchmarks/js-framework-benchmark-repo
 cd benchmarks/js-framework-benchmark-repo && npm ci && cd webdriver-ts && npm ci && npm run compile
 ```
 
-The script handles everything else: server startup, file copying, results collection, baseline comparison.
+The script auto-detects a running jfb server on port 8080, but validates it
+before use — stale/broken repos are skipped in favor of the workspace copy.
 
 ## Do NOT
 

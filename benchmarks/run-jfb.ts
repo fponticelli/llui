@@ -24,6 +24,11 @@ const LLUI_APP = resolve(BENCH_DIR, 'js-framework-benchmark')
 const BASELINE = resolve(BENCH_DIR, 'jfb-baseline.json')
 const WORKSPACE_REPO = resolve(BENCH_DIR, 'js-framework-benchmark-repo')
 
+// Check if a jfb repo is usable (has compiled webdriver-ts).
+function isValidJfbRepo(dir: string): boolean {
+  return existsSync(resolve(dir, 'webdriver-ts/dist/benchmarkRunner.js'))
+}
+
 // Discover which jfb install to use. If a server is running on :8080, use its cwd
 // (so we copy dist into the install that's actually serving). Otherwise fall back to
 // the workspace-embedded repo. Override with JFB_REPO env var.
@@ -45,7 +50,12 @@ function detectJfbRepo(): string {
       encoding: 'utf8',
     }).trim()
     // server cwd looks like .../<repo>/server → parent is the repo root.
-    if (cwd.endsWith('/server')) return dirname(cwd)
+    if (cwd.endsWith('/server')) {
+      const candidate = dirname(cwd)
+      // Only use the detected repo if it's actually valid; otherwise fall
+      // back to the workspace copy (avoids picking up a stale /tmp repo).
+      if (isValidJfbRepo(candidate)) return candidate
+    }
   } catch {
     // fall through
   }

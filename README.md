@@ -97,7 +97,8 @@ pnpm turbo build          # Build all packages
 pnpm turbo test           # Run 1200+ tests across all packages
 pnpm turbo check          # Type-check
 pnpm turbo lint           # ESLint
-pnpm bench                # js-framework-benchmark (add --save to update baseline)
+pnpm bench:setup          # One-time: clone + compile js-framework-benchmark
+pnpm bench                # Run LLui benchmark (add --save to update baseline)
 ```
 
 ## Performance
