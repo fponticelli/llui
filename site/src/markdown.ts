@@ -77,6 +77,9 @@ export async function loadDoc(slug: string): Promise<DocData> {
     },
   )
 
+  // Strip the first <h1> from the HTML — the component renders the title separately
+  html = html.replace(/^\s*<h1[^>]*>[\s\S]*?<\/h1>\s*/, '')
+
   return {
     title: (meta.title as string) ?? slug,
     description: (meta.description as string) ?? '',
