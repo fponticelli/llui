@@ -1897,6 +1897,42 @@ function tryEmitRowFactory(
 
   if (bindings.length === 0) return null
 
+  // Build map of __a{N} → __s{N} for rewriting accessor references.
+  // After dedup, `__a{N} = acc(__s{N})`. In the row factory, __a{N} declarations
+  // are eliminated, so all references must be rewritten to __s{N}.
+  const accToSelector = new Map<string, string>()
+  for (const stmt of body.statements) {
+    if (!ts.isVariableStatement(stmt)) continue
+    for (const decl of stmt.declarationList.declarations) {
+      if (!ts.isIdentifier(decl.name) || !decl.name.text.startsWith('__a')) continue
+      if (!decl.initializer || !ts.isCallExpression(decl.initializer)) continue
+      const callArg0 = decl.initializer.arguments[0]
+      if (callArg0 && ts.isIdentifier(callArg0) && callArg0.text.startsWith('__s')) {
+        accToSelector.set(decl.name.text, callArg0.text)
+      }
+    }
+  }
+
+  // Rewrite binding accessors: __a{N} → __s{N}
+  for (const b of bindings) {
+    if (ts.isIdentifier(b.accessor) && accToSelector.has(b.accessor.text)) {
+      b.accessor = f.createIdentifier(accToSelector.get(b.accessor.text)!)
+    }
+  }
+
+  // Collect __s{N} selector definitions — needed by __rowUpd and render init.
+  // These are currently scoped to the render body; we'll hoist them into the
+  // __rowUpd IIFE so they're accessible.
+  const selectorDefs = new Map<string, ts.Expression>()
+  for (const stmt of body.statements) {
+    if (!ts.isVariableStatement(stmt)) continue
+    for (const decl of stmt.declarationList.declarations) {
+      if (ts.isIdentifier(decl.name) && decl.name.text.startsWith('__s') && decl.initializer) {
+        selectorDefs.set(decl.name.text, decl.initializer)
+      }
+    }
+  }
+
   // === Generate the row factory ===
 
   // 1. __tpl: IIFE that creates + caches the template element
@@ -2034,7 +2070,9 @@ function tryEmitRowFactory(
     )
   }
 
-  const rowUpdFn = f.createArrowFunction(
+  // Wrap __rowUpd in IIFE that declares selectors (they're scoped to the
+  // render body but __rowUpd lives on the options object outside render).
+  const rawUpdFn = f.createArrowFunction(
     undefined,
     undefined,
     [f.createParameterDeclaration(undefined, undefined, 'e')],
@@ -2043,8 +2081,51 @@ function tryEmitRowFactory(
     f.createBlock(updStmts, true),
   )
 
+  // Build: (() => { const __s0 = ...; const __s1 = ...; return (e) => { ... } })()
+  const selectorDecls: ts.Statement[] = []
+  for (const [name, init] of selectorDefs) {
+    selectorDecls.push(
+      f.createVariableStatement(
+        undefined,
+        f.createVariableDeclarationList(
+          [f.createVariableDeclaration(name, undefined, undefined, init)],
+          ts.NodeFlags.Const,
+        ),
+      ),
+    )
+  }
+  selectorDecls.push(f.createReturnStatement(rawUpdFn))
+
+  const rowUpdFn = f.createCallExpression(
+    f.createParenthesizedExpression(
+      f.createArrowFunction(
+        undefined,
+        undefined,
+        [],
+        undefined,
+        f.createToken(ts.SyntaxKind.EqualsGreaterThanToken),
+        f.createBlock(selectorDecls, true),
+      ),
+    ),
+    undefined,
+    [],
+  )
+
   // 3. New render callback: ({ entry: e, __tpl, __rowUpd }) => { ... }
   const renderStmts: ts.Statement[] = []
+
+  // Declare selectors at the top of render body (they're used for initial values)
+  for (const [name, init] of selectorDefs) {
+    renderStmts.push(
+      f.createVariableStatement(
+        undefined,
+        f.createVariableDeclarationList(
+          [f.createVariableDeclaration(name, undefined, undefined, init)],
+          ts.NodeFlags.Const,
+        ),
+      ),
+    )
+  }
 
   // const r = __tpl.content.firstElementChild.cloneNode(true)
   renderStmts.push(
@@ -2141,23 +2222,6 @@ function tryEmitRowFactory(
       ),
     ),
   )
-
-  // Build map of __a{N} → __s{N} for rewriting accessor calls.
-  // After dedup, `__a{N} = acc(__s{N})` — calling `__a{N}()` returns `__s{N}(entry.current)`.
-  // In the row factory, we replace `__a{N}()` → `__s{N}(e.current)`.
-  const accToSelector = new Map<string, string>()
-  for (const stmt of body.statements) {
-    if (!ts.isVariableStatement(stmt)) continue
-    for (const decl of stmt.declarationList.declarations) {
-      if (!ts.isIdentifier(decl.name) || !decl.name.text.startsWith('__a')) continue
-      if (!decl.initializer || !ts.isCallExpression(decl.initializer)) continue
-      // __a{N} = acc(__s{N}) — extract the selector name from the first argument
-      const arg0 = decl.initializer.arguments[0]
-      if (arg0 && ts.isIdentifier(arg0) && arg0.text.startsWith('__s')) {
-        accToSelector.set(decl.name.text, arg0.text)
-      }
-    }
-  }
 
   // Rewrite a statement: replace __a{N}() → __s{N}(e.current),
   // replace template var → r, strip positions via deep clone.
