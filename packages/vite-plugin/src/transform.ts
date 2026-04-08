@@ -208,6 +208,20 @@ export function transformLlui(
       if (changed) {
         const result = ts.visitEachChild(current, visitor, undefined!)
         if (hasPos) edits.push({ start: origStart, end: origEnd, replacement: '' })
+        // Row factory: try after children are transformed
+        if (ts.isCallExpression(result)) {
+          try {
+            const rf = tryEmitRowFactory(result, f, source)
+            if (rf) return rf
+          } catch (err) {
+            console.warn(
+              '[llui] Row factory failed:',
+              (err as Error).message,
+              '\n',
+              (err as Error).stack?.split('\n').slice(0, 5).join('\n'),
+            )
+          }
+        }
         return result
       }
     }
@@ -1718,6 +1732,531 @@ function _deadCode_legacyCaseHandler(
     f.createToken(ts.SyntaxKind.EqualsGreaterThanToken),
     f.createBlock(stmts, true),
   )
+}
+
+// ── Row Factory ─────────────────────────────────────────────────
+
+/**
+ * Transform an eligible each() render to use a row factory — shared update
+ * function with zero per-row closures for bindings.
+ *
+ * Runs AFTER the element transform pass has converted tr/td/text() calls
+ * into elTemplate() calls, so we can analyze the template structure.
+ */
+function tryEmitRowFactory(
+  eachCall: ts.CallExpression,
+  f: ts.NodeFactory,
+  originalSource: string,
+): ts.CallExpression | null {
+  const arg = eachCall.arguments[0]
+  if (!arg || !ts.isObjectLiteralExpression(arg)) return null
+
+  // Find render property
+  let renderProp: ts.PropertyAssignment | null = null
+  for (const prop of arg.properties) {
+    if (
+      ts.isPropertyAssignment(prop) &&
+      ts.isIdentifier(prop.name) &&
+      prop.name.text === 'render'
+    ) {
+      renderProp = prop
+      break
+    }
+  }
+  if (!renderProp) return null
+
+  const renderFn = renderProp.initializer
+  if (!ts.isArrowFunction(renderFn) && !ts.isFunctionExpression(renderFn)) return null
+  const body = ts.isBlock(renderFn.body) ? renderFn.body : null
+  if (!body) return null
+
+  // Find the elTemplate call in the transformed render body
+  let templateCall: ts.CallExpression | null = null
+  let templateVarName: string | null = null
+
+  for (const stmt of body.statements) {
+    if (ts.isVariableStatement(stmt)) {
+      for (const decl of stmt.declarationList.declarations) {
+        if (
+          ts.isIdentifier(decl.name) &&
+          decl.initializer &&
+          ts.isCallExpression(decl.initializer)
+        ) {
+          if (
+            ts.isIdentifier(decl.initializer.expression) &&
+            decl.initializer.expression.text === 'elTemplate'
+          ) {
+            if (templateCall) return null // multiple templates — bail
+            templateCall = decl.initializer
+            templateVarName = decl.name.text
+          }
+        }
+      }
+    }
+    // Check for nested structural primitives — bail
+    if (containsStructuralCall(stmt)) return null
+  }
+
+  if (!templateCall || templateCall.arguments.length < 2) return null
+
+  // Extract HTML string
+  const htmlArg = templateCall.arguments[0]
+  if (!htmlArg || !ts.isStringLiteral(htmlArg)) return null
+  const html = htmlArg.text
+
+  // Extract patch function
+  const patchFn = templateCall.arguments[1]
+  if (!patchFn || (!ts.isArrowFunction(patchFn) && !ts.isFunctionExpression(patchFn))) return null
+  const patchBody = ts.isBlock(patchFn.body) ? patchFn.body : null
+  if (!patchBody) return null
+
+  const rootParam = patchFn.parameters[0]
+  const bindParam = patchFn.parameters[1]
+  if (!rootParam || !bindParam) return null
+  const rootName = ts.isIdentifier(rootParam.name) ? rootParam.name.text : null
+  const bindName = ts.isIdentifier(bindParam.name) ? bindParam.name.text : null
+  if (!rootName || !bindName) return null
+
+  // Extract bindings from patch function
+  interface RowBinding {
+    nodeInitializer: ts.Expression // the node path expression (e.g., root.firstChild)
+    kind: string
+    key: string | undefined
+    accessor: ts.Expression
+  }
+  const bindings: RowBinding[] = []
+  const nodeVarInitializers = new Map<string, ts.Expression>()
+
+  for (const stmt of patchBody.statements) {
+    if (ts.isVariableStatement(stmt)) {
+      for (const decl of stmt.declarationList.declarations) {
+        if (ts.isIdentifier(decl.name) && decl.initializer) {
+          nodeVarInitializers.set(decl.name.text, decl.initializer)
+        }
+      }
+    }
+
+    if (ts.isExpressionStatement(stmt) && ts.isCallExpression(stmt.expression)) {
+      const call = stmt.expression
+      if (
+        ts.isIdentifier(call.expression) &&
+        call.expression.text === bindName &&
+        call.arguments.length >= 5
+      ) {
+        const nodeArg = call.arguments[0]!
+        const maskArg = call.arguments[1]!
+        const kindArg = call.arguments[2]!
+        const keyArg = call.arguments[3]!
+        const accessorArg = call.arguments[4]!
+
+        // Must be per-item (mask -1)
+        if (ts.isPrefixUnaryExpression(maskArg) && maskArg.operator === ts.SyntaxKind.MinusToken) {
+          // -1 → per-item ✓
+        } else if (ts.isBinaryExpression(maskArg)) {
+          // -1 | 0 or 4294967295 | 0 → per-item ✓
+        } else {
+          return null // state-level binding — bail
+        }
+
+        const kind = ts.isStringLiteral(kindArg) ? kindArg.text : ''
+        const key = ts.isStringLiteral(keyArg) ? keyArg.text : undefined
+
+        // Resolve node path — recursively expand variable references to get
+        // the full path from root, then create fresh factory nodes
+        function resolveNodePath(expr: ts.Expression): ts.Expression {
+          if (ts.isIdentifier(expr)) {
+            if (expr.text === rootName) return f.createIdentifier(rootName)
+            const init = nodeVarInitializers.get(expr.text)
+            if (init) return resolveNodePath(init)
+            return f.createIdentifier(expr.text)
+          }
+          if (ts.isPropertyAccessExpression(expr)) {
+            return f.createPropertyAccessExpression(
+              resolveNodePath(expr.expression),
+              expr.name.text,
+            )
+          }
+          if (ts.isElementAccessExpression(expr)) {
+            return f.createElementAccessExpression(
+              resolveNodePath(expr.expression),
+              expr.argumentExpression,
+            )
+          }
+          return expr
+        }
+        const nodeInit = resolveNodePath(nodeArg)
+
+        // Clone accessor to strip source position — prevents mixed-position errors
+        const clonedAccessor = ts.isIdentifier(accessorArg)
+          ? f.createIdentifier(accessorArg.text)
+          : accessorArg
+        bindings.push({ nodeInitializer: nodeInit, kind, key, accessor: clonedAccessor })
+      }
+    }
+  }
+
+  if (bindings.length === 0) return null
+
+  // === Generate the row factory ===
+
+  // 1. __tpl: IIFE that creates + caches the template element
+  const tplInit = f.createCallExpression(
+    f.createParenthesizedExpression(
+      f.createArrowFunction(
+        undefined,
+        undefined,
+        [],
+        undefined,
+        f.createToken(ts.SyntaxKind.EqualsGreaterThanToken),
+        f.createBlock(
+          [
+            f.createVariableStatement(
+              undefined,
+              f.createVariableDeclarationList(
+                [
+                  f.createVariableDeclaration(
+                    't',
+                    undefined,
+                    undefined,
+                    f.createCallExpression(
+                      f.createPropertyAccessExpression(
+                        f.createIdentifier('document'),
+                        'createElement',
+                      ),
+                      undefined,
+                      [f.createStringLiteral('template')],
+                    ),
+                  ),
+                ],
+                ts.NodeFlags.Const,
+              ),
+            ),
+            f.createExpressionStatement(
+              f.createBinaryExpression(
+                f.createPropertyAccessExpression(f.createIdentifier('t'), 'innerHTML'),
+                ts.SyntaxKind.EqualsToken,
+                f.createStringLiteral(html),
+              ),
+            ),
+            f.createReturnStatement(f.createIdentifier('t')),
+          ],
+          true,
+        ),
+      ),
+    ),
+    undefined,
+    [],
+  )
+
+  // 2. __rowUpd: (e) => { const t = e.current; for each binding: check + write }
+  const updStmts: ts.Statement[] = []
+  updStmts.push(
+    f.createVariableStatement(
+      undefined,
+      f.createVariableDeclarationList(
+        [
+          f.createVariableDeclaration(
+            't',
+            undefined,
+            undefined,
+            f.createPropertyAccessExpression(f.createIdentifier('e'), 'current'),
+          ),
+        ],
+        ts.NodeFlags.Const,
+      ),
+    ),
+  )
+
+  for (let i = 0; i < bindings.length; i++) {
+    const b = bindings[i]!
+    const vId = f.createIdentifier(`v${i}`)
+    const cachedProp = f.createElementAccessExpression(
+      f.createIdentifier('e'),
+      f.createStringLiteral(`_v${i}`),
+    )
+    const nodeProp = f.createElementAccessExpression(
+      f.createIdentifier('e'),
+      f.createStringLiteral(`_n${i}`),
+    )
+
+    // const v{i} = accessor(t)
+    updStmts.push(
+      f.createVariableStatement(
+        undefined,
+        f.createVariableDeclarationList(
+          [
+            f.createVariableDeclaration(
+              vId,
+              undefined,
+              undefined,
+              f.createCallExpression(b.accessor, undefined, [f.createIdentifier('t')]),
+            ),
+          ],
+          ts.NodeFlags.Const,
+        ),
+      ),
+    )
+
+    // DOM write expression
+    const domWrite =
+      b.kind === 'text'
+        ? f.createBinaryExpression(
+            f.createPropertyAccessExpression(nodeProp, 'nodeValue'),
+            ts.SyntaxKind.EqualsToken,
+            vId,
+          )
+        : b.kind === 'class'
+          ? f.createBinaryExpression(
+              f.createPropertyAccessExpression(nodeProp, 'className'),
+              ts.SyntaxKind.EqualsToken,
+              vId,
+            )
+          : f.createBinaryExpression(
+              f.createPropertyAccessExpression(nodeProp, 'nodeValue'),
+              ts.SyntaxKind.EqualsToken,
+              vId,
+            )
+
+    // if (v{i} !== e['_v{i}']) { e['_v{i}'] = v{i}; DOM_WRITE }
+    updStmts.push(
+      f.createIfStatement(
+        f.createBinaryExpression(vId, ts.SyntaxKind.ExclamationEqualsEqualsToken, cachedProp),
+        f.createBlock(
+          [
+            f.createExpressionStatement(
+              f.createBinaryExpression(cachedProp, ts.SyntaxKind.EqualsToken, vId),
+            ),
+            f.createExpressionStatement(domWrite),
+          ],
+          true,
+        ),
+      ),
+    )
+  }
+
+  const rowUpdFn = f.createArrowFunction(
+    undefined,
+    undefined,
+    [f.createParameterDeclaration(undefined, undefined, 'e')],
+    undefined,
+    f.createToken(ts.SyntaxKind.EqualsGreaterThanToken),
+    f.createBlock(updStmts, true),
+  )
+
+  // 3. New render callback: ({ entry: e, __tpl, __rowUpd }) => { ... }
+  const renderStmts: ts.Statement[] = []
+
+  // const r = __tpl.content.firstElementChild.cloneNode(true)
+  renderStmts.push(
+    f.createVariableStatement(
+      undefined,
+      f.createVariableDeclarationList(
+        [
+          f.createVariableDeclaration(
+            'r',
+            undefined,
+            undefined,
+            f.createCallExpression(
+              f.createPropertyAccessExpression(
+                f.createPropertyAccessExpression(
+                  f.createPropertyAccessExpression(f.createIdentifier('__tpl'), 'content'),
+                  'firstElementChild',
+                ),
+                'cloneNode',
+              ),
+              undefined,
+              [f.createTrue()],
+            ),
+          ),
+        ],
+        ts.NodeFlags.Const,
+      ),
+    ),
+  )
+
+  // For each binding: store node ref, compute initial, apply
+  for (let i = 0; i < bindings.length; i++) {
+    const b = bindings[i]!
+    const nProp = f.createElementAccessExpression(
+      f.createIdentifier('e'),
+      f.createStringLiteral(`_n${i}`),
+    )
+    const vProp = f.createElementAccessExpression(
+      f.createIdentifier('e'),
+      f.createStringLiteral(`_v${i}`),
+    )
+
+    // Rewrite node path: replace root param name with 'r'
+    const rewrittenPath = rewriteRoot(b.nodeInitializer, rootName, 'r', f)
+
+    // e['_n{i}'] = rewrittenPath
+    renderStmts.push(
+      f.createExpressionStatement(
+        f.createBinaryExpression(nProp, ts.SyntaxKind.EqualsToken, rewrittenPath),
+      ),
+    )
+
+    // e['_v{i}'] = accessor(e.current)
+    renderStmts.push(
+      f.createExpressionStatement(
+        f.createBinaryExpression(
+          vProp,
+          ts.SyntaxKind.EqualsToken,
+          f.createCallExpression(b.accessor, undefined, [
+            f.createPropertyAccessExpression(f.createIdentifier('e'), 'current'),
+          ]),
+        ),
+      ),
+    )
+
+    // DOM write: e['_n{i}'].nodeValue = e['_v{i}']
+    const initWrite =
+      b.kind === 'text'
+        ? f.createBinaryExpression(
+            f.createPropertyAccessExpression(nProp, 'nodeValue'),
+            ts.SyntaxKind.EqualsToken,
+            vProp,
+          )
+        : b.kind === 'class'
+          ? f.createBinaryExpression(
+              f.createPropertyAccessExpression(nProp, 'className'),
+              ts.SyntaxKind.EqualsToken,
+              vProp,
+            )
+          : f.createBinaryExpression(
+              f.createPropertyAccessExpression(nProp, 'nodeValue'),
+              ts.SyntaxKind.EqualsToken,
+              vProp,
+            )
+    renderStmts.push(f.createExpressionStatement(initWrite))
+  }
+
+  // e.__rowUpdate = __rowUpd
+  renderStmts.push(
+    f.createExpressionStatement(
+      f.createBinaryExpression(
+        f.createPropertyAccessExpression(f.createIdentifier('e'), '__rowUpdate'),
+        ts.SyntaxKind.EqualsToken,
+        f.createIdentifier('__rowUpd'),
+      ),
+    ),
+  )
+
+  // Preserve non-template, non-acc, non-return statements by extracting their
+  // original source text and re-parsing into fresh AST nodes (no position issues).
+  for (const stmt of body.statements) {
+    // Skip template declaration
+    if (ts.isVariableStatement(stmt)) {
+      const isTemplate = stmt.declarationList.declarations.some(
+        (d) => ts.isIdentifier(d.name) && d.name.text === templateVarName,
+      )
+      if (isTemplate) continue
+      // Skip acc() declarations
+      const isAcc = stmt.declarationList.declarations.some((d) => {
+        if (!d.initializer || !ts.isCallExpression(d.initializer)) return false
+        // After dedup, acc calls look like: __a0 = acc(__s0)
+        // The acc identifier may have been renamed by the visitor
+        return true // skip ALL variable declarations in the render (they're all acc-related)
+      })
+      if (isAcc) continue
+    }
+    if (ts.isReturnStatement(stmt)) continue
+
+    // Extract source text and re-parse to get position-free nodes
+    // Guard: factory-created nodes may not have valid positions
+    let stmtStart: number, stmtEnd: number
+    try {
+      stmtStart = stmt.getStart()
+      stmtEnd = stmt.getEnd()
+    } catch {
+      continue // factory-created node, skip
+    }
+    if (stmtStart >= 0 && stmtEnd > stmtStart && stmtEnd <= originalSource.length) {
+      let text = originalSource.slice(stmtStart, stmtEnd)
+      // Rewrite template var references to 'r'
+      if (templateVarName) text = text.replace(new RegExp(`\\b${templateVarName}\\b`, 'g'), 'r')
+      const parsed = parseStmt(text)
+      if (parsed) renderStmts.push(parsed)
+    }
+  }
+
+  // return [r]
+  renderStmts.push(
+    f.createReturnStatement(f.createArrayLiteralExpression([f.createIdentifier('r')])),
+  )
+
+  const newRenderFn = f.createArrowFunction(
+    undefined,
+    undefined,
+    [
+      f.createParameterDeclaration(
+        undefined,
+        undefined,
+        f.createObjectBindingPattern([
+          f.createBindingElement(undefined, 'entry', 'e'),
+          f.createBindingElement(undefined, undefined, '__tpl'),
+          f.createBindingElement(undefined, undefined, '__rowUpd'),
+        ]),
+      ),
+    ],
+    undefined,
+    f.createToken(ts.SyntaxKind.EqualsGreaterThanToken),
+    f.createBlock(renderStmts, true),
+  )
+
+  // 4. Build new each options. To avoid mixed-position AST issues, we keep
+  // original properties unchanged and only ADD __tpl, __rowUpd, and replace render.
+  // The trick: return the original node structure but with the render property
+  // swapped. Use ts.factory.updateObjectLiteralExpression which preserves positions.
+  const updatedProps = arg.properties.map(
+    (p): ts.ObjectLiteralElementLike =>
+      p === renderProp ? f.createPropertyAssignment('render', newRenderFn) : p,
+  )
+  updatedProps.push(f.createPropertyAssignment('__tpl', tplInit))
+  updatedProps.push(f.createPropertyAssignment('__rowUpd', rowUpdFn))
+
+  const newOpts = f.updateObjectLiteralExpression(arg, updatedProps)
+
+  return f.updateCallExpression(eachCall, eachCall.expression, eachCall.typeArguments, [
+    newOpts,
+    ...eachCall.arguments.slice(1),
+  ])
+}
+
+function containsStructuralCall(node: ts.Node): boolean {
+  if (ts.isCallExpression(node) && ts.isIdentifier(node.expression)) {
+    if (['each', 'branch', 'show', 'child', 'foreign'].includes(node.expression.text)) return true
+  }
+  return ts.forEachChild(node, containsStructuralCall) ?? false
+}
+
+/** Rewrite property access chains replacing oldRoot identifier with newRoot */
+function rewriteRoot(
+  expr: ts.Expression,
+  oldRoot: string,
+  newRoot: string,
+  f: ts.NodeFactory,
+): ts.Expression {
+  if (ts.isIdentifier(expr) && expr.text === oldRoot) return f.createIdentifier(newRoot)
+  if (ts.isPropertyAccessExpression(expr)) {
+    return f.createPropertyAccessExpression(
+      rewriteRoot(expr.expression, oldRoot, newRoot, f),
+      expr.name.text,
+    )
+  }
+  if (ts.isElementAccessExpression(expr)) {
+    return f.createElementAccessExpression(
+      rewriteRoot(expr.expression, oldRoot, newRoot, f),
+      expr.argumentExpression,
+    )
+  }
+  return expr
+}
+
+/** Parse a statement string into a fresh AST node (no source positions) */
+function parseStmt(code: string): ts.Statement | null {
+  const sf = ts.createSourceFile('__gen.ts', code, ts.ScriptTarget.Latest, false)
+  return (sf.statements[0] as ts.Statement | undefined) ?? null
 }
 
 /**
