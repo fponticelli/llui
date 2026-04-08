@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from 'vitest'
+import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { mountApp } from '../src/mount'
 import { component, div, text, each, selector, flush } from '../src/index'
 import {
@@ -7,6 +7,7 @@ import {
   disposeScopesBulk,
   addDisposer,
   addCheckedItemUpdater,
+  _drainScopePool,
 } from '../src/scope'
 import { _runPhase2 } from '../src/update-loop'
 import type { ComponentDef, Binding } from '../src/types'
@@ -599,5 +600,288 @@ describe('selector __directUpdate', () => {
     selectorRef!.__directUpdate({ rows: [], selected: 2 })
     expect(divs[0]!.className).toBe('')
     expect(divs[1]!.className).toBe('active')
+  })
+})
+
+// ── Scope pooling ────────────────────────────────────────────────
+
+describe('scope pooling', () => {
+  beforeEach(() => {
+    _drainScopePool()
+  })
+
+  it('reuses disposed scope objects', () => {
+    const parent = createScope(null)
+    const child = createScope(parent)
+    const childId = child.id
+
+    // Dispose child — should return to pool
+    addDisposer(child, () => {}) // ensure it goes through full disposal path
+    disposeScope(child)
+
+    // Create a new scope — should reuse the pooled object
+    const reused = createScope(parent)
+    // Same object, different id
+    expect(reused).toBe(child)
+    expect(reused.id).not.toBe(childId)
+    expect(reused.parent).toBe(parent)
+    expect(reused.disposers).toEqual([])
+    expect(reused.children).toEqual([])
+    expect(reused.bindings).toEqual([])
+    expect(reused.itemUpdaters).toEqual([])
+
+    disposeScope(parent)
+  })
+
+  it('reused scopes do not carry stale state', () => {
+    _drainScopePool()
+
+    const parent = createScope(null)
+    const scope = createScope(parent)
+
+    // Add state to the scope
+    addDisposer(scope, () => {})
+    const binding: Binding = {
+      mask: 1,
+      accessor: () => 'old',
+      lastValue: 'old',
+      kind: 'text',
+      node: document.createTextNode(''),
+      perItem: false,
+      dead: false,
+      ownerScope: scope,
+    }
+    scope.bindings = [binding]
+    scope.itemUpdaters = [() => {}]
+
+    // Dispose — returns to pool with clean state
+    disposeScope(scope)
+
+    // Reuse
+    const reused = createScope(parent)
+    expect(reused).toBe(scope)
+    expect(reused.disposers).toEqual([])
+    expect(reused.bindings).toEqual([])
+    expect(reused.children).toEqual([])
+    expect(reused.itemUpdaters).toEqual([])
+
+    // Adding new state works correctly
+    const newCalls: string[] = []
+    addDisposer(reused, () => newCalls.push('new'))
+    disposeScope(reused)
+    expect(newCalls).toEqual(['new'])
+  })
+
+  it('pool is capped — does not grow unbounded', () => {
+    _drainScopePool()
+
+    const parent = createScope(null)
+    const scopes: ReturnType<typeof createScope>[] = []
+
+    // Create and dispose 3000 scopes (pool cap is 2048)
+    for (let i = 0; i < 3000; i++) {
+      const s = createScope(parent)
+      addDisposer(s, () => {}) // ensure full disposal path
+      scopes.push(s)
+    }
+    for (const s of scopes) {
+      disposeScope(s, true)
+    }
+
+    // Pool should be capped
+    // Create scopes from pool to count how many were pooled
+    let pooled = 0
+    const created = new Set<object>()
+    for (let i = 0; i < 3000; i++) {
+      const s = createScope(null)
+      if (created.has(s)) break // duplicate = pool exhausted, shouldn't happen
+      created.add(s)
+      if (scopes.includes(s)) pooled++
+      disposeScope(s) // empty scope, won't be re-pooled (early return path)
+    }
+
+    // Should be capped at 2048
+    expect(pooled).toBeLessThanOrEqual(2048)
+    expect(pooled).toBeGreaterThan(0)
+  })
+
+  it('bulk disposal pools scopes', () => {
+    _drainScopePool()
+
+    const parent = createScope(null)
+    const children = []
+    for (let i = 0; i < 5; i++) {
+      const c = createScope(parent)
+      addDisposer(c, () => {}) // ensure full disposal
+      children.push(c)
+    }
+
+    disposeScopesBulk(children)
+
+    // Create 5 new scopes — should reuse from pool
+    const reused = []
+    for (let i = 0; i < 5; i++) {
+      reused.push(createScope(null))
+    }
+
+    // All 5 should be reused objects
+    for (const r of reused) {
+      expect(children).toContain(r)
+    }
+  })
+})
+
+// ── reconcileRemove ──────────────────────────────────────────────
+
+describe('each reconcileRemove', () => {
+  it('removes a single item by filter', () => {
+    type Row = { id: number; label: string }
+    type S = { rows: Row[] }
+    type M = { type: 'remove'; id: number }
+
+    const def = component<S, M, never>({
+      name: 'RemoveTest',
+      init: () => [
+        {
+          rows: [
+            { id: 1, label: 'a' },
+            { id: 2, label: 'b' },
+            { id: 3, label: 'c' },
+          ],
+        },
+        [],
+      ],
+      update: (s, m) => [{ rows: s.rows.filter((r) => r.id !== m.id) }, []],
+      view: () => [
+        ...each<S, Row>({
+          items: (s) => s.rows,
+          key: (r) => r.id,
+          render: ({ item }) => [div([text(item.label)])],
+        }),
+      ],
+      __dirty: () => 1,
+    })
+
+    const container = document.createElement('div')
+    let sendFn!: (msg: M) => void
+    const origView = def.view
+    def.view = (h) => {
+      sendFn = h.send
+      return origView(h)
+    }
+    const handle = mountApp(container, def)
+
+    expect(container.querySelectorAll('div').length).toBe(3)
+    expect(container.textContent).toBe('abc')
+
+    // Remove middle item
+    sendFn({ type: 'remove', id: 2 })
+    flush()
+
+    expect(container.querySelectorAll('div').length).toBe(2)
+    expect(container.textContent).toBe('ac')
+
+    // Remove first item
+    sendFn({ type: 'remove', id: 1 })
+    flush()
+
+    expect(container.querySelectorAll('div').length).toBe(1)
+    expect(container.textContent).toBe('c')
+
+    // Remove last item
+    sendFn({ type: 'remove', id: 3 })
+    flush()
+
+    expect(container.querySelectorAll('div').length).toBe(0)
+
+    handle.dispose()
+  })
+
+  it('reconcileRemove called directly works', () => {
+    type Row = { id: number; label: string }
+    type S = { rows: Row[] }
+
+    const def = component<S, never, never>({
+      name: 'DirectRemove',
+      init: () => [
+        {
+          rows: [
+            { id: 1, label: 'x' },
+            { id: 2, label: 'y' },
+            { id: 3, label: 'z' },
+          ],
+        },
+        [],
+      ],
+      update: (s) => [s, []],
+      view: () => [
+        ...each<S, Row>({
+          items: (s) => s.rows,
+          key: (r) => r.id,
+          render: ({ item }) => [div([text(item.label)])],
+        }),
+      ],
+      __dirty: () => 1,
+    })
+
+    const container = document.createElement('div')
+    const handle = mountApp(container, def)
+
+    expect(container.textContent).toBe('xyz')
+
+    // Access the structural block
+    // @ts-expect-error — internal access
+    const blocks = (handle as unknown as { structuralBlocks: StructuralBlock[] }).structuralBlocks
+    if (blocks?.[0]?.reconcileRemove) {
+      // Call reconcileRemove directly with filtered rows
+      blocks[0].reconcileRemove({
+        rows: [
+          { id: 1, label: 'x' },
+          { id: 3, label: 'z' },
+        ],
+      })
+      expect(container.textContent).toBe('xz')
+      expect(container.querySelectorAll('div').length).toBe(2)
+    }
+
+    handle.dispose()
+  })
+
+  it('handles removing multiple items', () => {
+    type S = { items: number[] }
+    type M = { type: 'removeEvens' }
+
+    const def = component<S, M, never>({
+      name: 'MultiRemove',
+      init: () => [{ items: [1, 2, 3, 4, 5, 6] }, []],
+      update: (s) => [{ items: s.items.filter((n) => n % 2 !== 0) }, []],
+      view: () => [
+        ...each<S, number>({
+          items: (s) => s.items,
+          key: (n) => n,
+          render: ({ item }) => [div([text(item((n: number) => String(n)))])],
+        }),
+      ],
+      __dirty: () => 1,
+    })
+
+    const container = document.createElement('div')
+    let sendFn!: (msg: M) => void
+    const origView = def.view
+    def.view = (h) => {
+      sendFn = h.send
+      return origView(h)
+    }
+    const handle = mountApp(container, def)
+
+    expect(container.textContent).toBe('123456')
+
+    sendFn({ type: 'removeEvens' })
+    flush()
+
+    expect(container.textContent).toBe('135')
+    expect(container.querySelectorAll('div').length).toBe(3)
+
+    handle.dispose()
   })
 })
