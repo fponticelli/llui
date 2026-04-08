@@ -188,7 +188,22 @@ function genericUpdate<S, M, E>(
     block.reconcile(state, combinedDirty)
   }
 
-  // Compact dead bindings before Phase 2
+  // Phase 2 — compact + update bindings
+  _runPhase2(state, combinedDirty, bindings, bindingsBeforePhase1, inst.def.name)
+}
+
+/**
+ * Phase 2: compact dead bindings + update live bindings.
+ * Shared between genericUpdate and compiler-generated __update.
+ * @public — used by compiler-generated `__update` functions
+ */
+export function _runPhase2(
+  state: unknown,
+  dirty: number,
+  bindings: Binding[],
+  bindingsBeforePhase1: number,
+  componentName?: string,
+): void {
   let phase2Len = bindingsBeforePhase1
   if (bindings.length > bindingsBeforePhase1 || (phase2Len > 0 && bindings[0]!.dead)) {
     let w = 0
@@ -199,18 +214,16 @@ function genericUpdate<S, M, E>(
     phase2Len = Math.min(w, bindingsBeforePhase1)
   }
 
-  // Phase 2 — binding updates
-  if (combinedDirty !== 0) {
-    const s = inst.state
-    if (import.meta.env?.DEV) {
+  if (dirty !== 0) {
+    if (import.meta.env?.DEV && componentName) {
       for (let i = 0, len = phase2Len; i < len; i++) {
         const binding = bindings[i]!
-        if (binding.dead || (binding.mask & combinedDirty) === 0) continue
+        if (binding.dead || (binding.mask & dirty) === 0) continue
         let newValue: unknown
         try {
-          newValue = binding.accessor(s)
+          newValue = binding.accessor(state)
         } catch (e) {
-          throw enhanceBindingError(e, binding, inst.def.name)
+          throw enhanceBindingError(e, binding, componentName)
         }
         const last = binding.lastValue
         if (newValue === last || (newValue !== newValue && last !== last)) continue
@@ -220,8 +233,8 @@ function genericUpdate<S, M, E>(
     } else {
       for (let i = 0, len = phase2Len; i < len; i++) {
         const binding = bindings[i]!
-        if (binding.dead || (binding.mask & combinedDirty) === 0) continue
-        const newValue = binding.accessor(s)
+        if (binding.dead || (binding.mask & dirty) === 0) continue
+        const newValue = binding.accessor(state)
         const last = binding.lastValue
         if (newValue === last || (newValue !== newValue && last !== last)) continue
         binding.lastValue = newValue
@@ -230,10 +243,6 @@ function genericUpdate<S, M, E>(
     }
   }
 }
-
-/** @internal Exported for compiler-generated __update to reuse */
-export { applyBinding }
-export { genericUpdate as _genericUpdate }
 
 function enhanceBindingError(err: unknown, binding: Binding, componentName: string): Error {
   // For text bindings, binding.node is the Text node — use its parent element.

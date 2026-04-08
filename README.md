@@ -105,14 +105,14 @@ pnpm bench                # Run LLui benchmark (add --save to update baseline)
 
 Competitive with Solid and Svelte on [js-framework-benchmark](https://github.com/krausest/js-framework-benchmark):
 
-| Operation     |       LLui |  Solid | Svelte | vanilla |
-| ------------- | ---------: | -----: | -----: | ------: |
-| Create 1k     |      ~23ms |   23ms |   23ms |    22ms |
-| Replace 1k    |      ~26ms |   25ms |   25ms |    24ms |
-| Update 10th   |      ~12ms |   11ms |   12ms |    10ms |
-| Select        |    **~3ms** |    6ms |    5ms |     3ms |
-| Swap          |      ~15ms |   13ms |   14ms |    13ms |
-| Remove        |      ~12ms |   12ms |   12ms |    10ms |
-| Append 1k     |      ~27ms |   26ms |   26ms |    25ms |
-| Clear 1k      |      ~12ms |   11ms |   10ms |     9ms |
+| Operation     |       LLui |  Solid |  Svelte | vanilla |
+| ------------- | ---------: | -----: | ------: | ------: |
+| Create 1k     |      ~23ms |   23ms |    23ms |    22ms |
+| Replace 1k    |      ~26ms |   25ms |    25ms |    24ms |
+| Update 10th   |      ~12ms |   11ms |    12ms |    10ms |
+| Select        |   **~3ms** |    6ms |     5ms |     3ms |
+| Swap          |      ~15ms |   13ms |    14ms |    13ms |
+| Remove        |      ~12ms |   12ms |    12ms |    10ms |
+| Append 1k     |      ~27ms |   26ms |    26ms |    25ms |
+| Clear 1k      |      ~12ms |   11ms |    10ms |     9ms |
 | Bundle (gzip) | **6.6 KB** | 4.5 KB | 12.2 KB |       — |

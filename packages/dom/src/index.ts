@@ -133,4 +133,4 @@ export { applyField, type FieldMsg } from './form'
 
 export { elSplit } from './el-split'
 export { elTemplate } from './el-template'
-export { applyBinding as __applyBinding } from './binding'
+export { _runPhase2 as __runPhase2 } from './update-loop'

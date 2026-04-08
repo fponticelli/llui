@@ -403,10 +403,14 @@ Fast path for each() rows — 1 cloneNode instead of N createElement.
 function elTemplate(html: string, patch: (root: Element, bind: TemplateBind) => void): Element
 ```
 
-### `applyBinding()`
+### `_runPhase2()`
+
+Phase 2: compact dead bindings + update live bindings.
+Shared between genericUpdate and compiler-generated __update.
+@public — used by compiler-generated `__update` functions
 
 ```typescript
-function applyBinding(target: { kind: BindingKind; node: Node; key?: string }, value: unknown): void
+function _runPhase2(state: unknown, dirty: number, bindings: Binding[], bindingsBeforePhase1: number, componentName?: string): void
 ```
 
 ## Types

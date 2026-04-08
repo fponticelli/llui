@@ -5,7 +5,13 @@ import {
   clearRenderContext,
   type RenderContext,
 } from '../render-context'
-import { createScope, disposeScope, addDisposer, removeOrphanedChildren } from '../scope'
+import {
+  createScope,
+  disposeScope,
+  disposeScopesBulk,
+  addDisposer,
+  removeOrphanedChildren,
+} from '../scope'
 import { getFlatBindings, setFlatBindings } from '../binding'
 import { FULL_MASK } from '../update-loop'
 import type { StructuralBlock } from '../structural'
@@ -284,11 +290,10 @@ function reconcileEntries<S, T>(
       range.setEndAfter(lastNode)
       range.deleteContents()
     }
-    // Dispose scopes in bulk. Individual disposeScope → removeFromParent
-    // does parent.children.indexOf+splice per scope, which is O(N²) when
-    // clearing 1000 sibling entries. Pass skipParentRemoval=true and
-    // collapse all detachments into one O(N) scan.
-    for (const entry of entries) disposeScope(entry.scope, true)
+    // Bulk dispose all entry scopes — avoids per-scope function call overhead
+    const scopes: Scope[] = []
+    for (let i = 0; i < entries.length; i++) scopes.push(entries[i]!.scope)
+    disposeScopesBulk(scopes)
     removeOrphanedChildren(parentScope)
     entries.length = 0
     return
@@ -320,54 +325,50 @@ function reconcileEntries<S, T>(
     return
   }
 
-  // Fast path 3: same length, same keys in order — update items in place.
-  // Single pass: verify keys match AND update changed items simultaneously.
-  // Items with identical object refs are skipped entirely (no key check,
-  // no updateEntry call). This is the dominant path for partial updates
-  // (e.g., "update every 10th row").
+  // Fast path 3: same length — single pass handles both same-keys update
+  // and two-element swap detection. Avoids a second O(n) pass.
   if (newLen === oldLen) {
-    let allSameKeys = true
+    let mismatch1 = -1
+    let mismatch2 = -1
+    let mismatchCount = 0
+
     for (let i = 0; i < newLen; i++) {
       const entry = entries[i]!
       const newItem = newItems[i]!
-      // Same object ref → key unchanged, item unchanged — skip entirely
       if (entry.item === newItem) continue
-      if (entry.key !== opts.key(newItem)) {
-        allSameKeys = false
-        break
+      const newKey = opts.key(newItem)
+      if (entry.key === newKey) {
+        updateEntry(entry, newItem, i)
+        continue
       }
-      updateEntry(entry, newItem, i)
+      // Key mismatch — track for swap detection
+      mismatchCount++
+      if (mismatchCount === 1) mismatch1 = i
+      else if (mismatchCount === 2) mismatch2 = i
+      else break // 3+ mismatches → fall through to general path
     }
-    if (allSameKeys) return
-  }
 
-  // Fast path 4: two-element swap — same keys, exactly two positions differ
-  if (newLen === oldLen && oldLen >= 2) {
-    const swapResult = detectSwap(entries, newItems, opts)
-    if (swapResult) {
-      const [i, j] = swapResult
-      const entryI = entries[i]!
-      const entryJ = entries[j]!
+    // All keys matched (with possible item updates) → done
+    if (mismatchCount === 0) return
 
-      // Capture reference nodes before any DOM mutation
-      const refI = entryI.nodes[0]!
-      const refAfterJ = entryJ.nodes[entryJ.nodes.length - 1]!.nextSibling
-
-      // Move J's nodes to where I was
-      for (const node of entryJ.nodes) parent.insertBefore(node, refI)
-      // Move I's nodes to where J was (after J's last node's original position)
-      for (const node of entryI.nodes) parent.insertBefore(node, refAfterJ)
-
-      // Swap entries in the array
-      entries[i] = entryJ
-      entries[j] = entryI
-
-      // Update all entries' refs
-      for (let k = 0; k < oldLen; k++) {
-        updateEntry(entries[k]!, newItems[k]!, k)
+    // Exactly 2 key mismatches — check if it's a swap
+    if (mismatchCount === 2) {
+      const e1 = entries[mismatch1]!
+      const e2 = entries[mismatch2]!
+      if (e1.key === opts.key(newItems[mismatch2]!) && e2.key === opts.key(newItems[mismatch1]!)) {
+        // DOM swap
+        const refI = e1.nodes[0]!
+        const refAfterJ = e2.nodes[e2.nodes.length - 1]!.nextSibling
+        for (const node of e2.nodes) parent.insertBefore(node, refI)
+        for (const node of e1.nodes) parent.insertBefore(node, refAfterJ)
+        entries[mismatch1] = e2
+        entries[mismatch2] = e1
+        updateEntry(e2, newItems[mismatch1]!, mismatch1)
+        updateEntry(e1, newItems[mismatch2]!, mismatch2)
+        return
       }
-      return
     }
+    // Fall through to general path for 3+ mismatches or non-swap
   }
 
   // Fast path 5: full replace — no shared keys between old and new.
@@ -392,8 +393,10 @@ function reconcileEntries<S, T>(
       const lastEntry = entries[entries.length - 1]!
       range.setEndAfter(lastEntry.nodes[lastEntry.nodes.length - 1]!)
       range.deleteContents()
-      // Bulk detach — see comment at the clear-all path above.
-      for (const entry of entries) disposeScope(entry.scope, true)
+      // Bulk dispose all old scopes
+      const oldScopes: Scope[] = []
+      for (let i = 0; i < entries.length; i++) oldScopes.push(entries[i]!.scope)
+      disposeScopesBulk(oldScopes)
       removeOrphanedChildren(parentScope)
       entries.length = 0
       // Build all new entries into a fragment
@@ -524,40 +527,6 @@ function isAppendOnly<S, T>(entries: Entry<T>[], newItems: T[], opts: EachOption
     if (entries[i]!.key !== opts.key(newItems[i]!)) return false
   }
   return true
-}
-
-function detectSwap<S, T>(
-  entries: Entry<T>[],
-  newItems: T[],
-  opts: EachOptions<S, T>,
-): [number, number] | null {
-  let diff1 = -1
-  let diff2 = -1
-  let diffCount = 0
-
-  for (let i = 0; i < entries.length; i++) {
-    const newKey = opts.key(newItems[i]!)
-    if (entries[i]!.key !== newKey) {
-      diffCount++
-      if (diffCount === 1) diff1 = i
-      else if (diffCount === 2) diff2 = i
-      else return null // more than 2 differences
-    }
-  }
-
-  if (diffCount !== 2) return null
-
-  // Verify it's actually a swap (keys are exchanged)
-  const oldKey1 = entries[diff1]!.key
-  const oldKey2 = entries[diff2]!.key
-  const newKey1 = opts.key(newItems[diff1]!)
-  const newKey2 = opts.key(newItems[diff2]!)
-
-  if (oldKey1 === newKey2 && oldKey2 === newKey1) {
-    return [diff1, diff2]
-  }
-
-  return null
 }
 
 function survivorsInOrder<T>(

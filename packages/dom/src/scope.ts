@@ -87,6 +87,40 @@ export function removeOrphanedChildren(parent: Scope): void {
   children.length = w
 }
 
+/**
+ * Bulk dispose an array of sibling scopes — avoids per-scope function call
+ * overhead. Used by each() clear path where 1000+ scopes are disposed at once.
+ * Caller must call removeOrphanedChildren(parent) afterwards.
+ */
+export function disposeScopesBulk(scopes: Scope[]): void {
+  for (let i = 0; i < scopes.length; i++) {
+    const scope = scopes[i]!
+    // Recursively dispose children
+    const children = scope.children
+    if (children.length > 0) {
+      disposeScopesBulk(children)
+    }
+    // Run disposers
+    const disposers = scope.disposers
+    for (let d = 0; d < disposers.length; d++) disposers[d]!()
+    // Mark bindings dead
+    const bindings = scope.bindings
+    for (let b = 0; b < bindings.length; b++) {
+      const binding = bindings[b]!
+      binding.dead = true
+      binding.accessor = null!
+      binding.node = null!
+      binding.lastValue = undefined
+    }
+    // Clear all arrays + detach from parent
+    scope.disposers = EMPTY_DISPOSERS
+    scope.bindings = EMPTY_BINDINGS
+    scope.children = EMPTY_SCOPES
+    scope.itemUpdaters = EMPTY_UPDATERS
+    scope.parent = null
+  }
+}
+
 export function addBinding(scope: Scope, binding: Binding): void {
   binding.ownerScope = scope
   if (scope.bindings === EMPTY_BINDINGS) scope.bindings = []

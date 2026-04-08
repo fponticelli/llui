@@ -1308,7 +1308,7 @@ function computePhase2Mask(
  *       const l = bn.lastValue
  *       if (v === l || (v !== v && l !== l)) continue
  *       bn.lastValue = v
- *       __applyBinding(bn, v)
+ *       __runPhase2(s, d, b, p)
  *     }
  *   }
  * }
@@ -1516,136 +1516,17 @@ function buildUpdateBody(f: ts.NodeFactory, structuralMask: number, _phase2Mask:
     }
   }
 
-  // Phase 2: binding updates
-  const phase2Loop = f.createForStatement(
-    f.createVariableDeclarationList(
-      [f.createVariableDeclaration('i', undefined, undefined, f.createNumericLiteral(0))],
-      ts.NodeFlags.Let,
-    ),
-    f.createBinaryExpression(
-      f.createIdentifier('i'),
-      ts.SyntaxKind.LessThanToken,
-      f.createIdentifier('p'),
-    ),
-    f.createPostfixUnaryExpression(f.createIdentifier('i'), ts.SyntaxKind.PlusPlusToken),
-    f.createBlock(
-      [
-        // const bn = b[i]
-        f.createVariableStatement(
-          undefined,
-          f.createVariableDeclarationList(
-            [
-              f.createVariableDeclaration(
-                'bn',
-                undefined,
-                undefined,
-                f.createElementAccessExpression(f.createIdentifier('b'), f.createIdentifier('i')),
-              ),
-            ],
-            ts.NodeFlags.Const,
-          ),
-        ),
-        // if (bn.dead || (bn.mask & d) === 0) continue
-        f.createIfStatement(
-          f.createBinaryExpression(
-            f.createPropertyAccessExpression(f.createIdentifier('bn'), 'dead'),
-            ts.SyntaxKind.BarBarToken,
-            f.createBinaryExpression(
-              f.createParenthesizedExpression(
-                f.createBinaryExpression(
-                  f.createPropertyAccessExpression(f.createIdentifier('bn'), 'mask'),
-                  ts.SyntaxKind.AmpersandToken,
-                  f.createIdentifier('d'),
-                ),
-              ),
-              ts.SyntaxKind.EqualsEqualsEqualsToken,
-              f.createNumericLiteral(0),
-            ),
-          ),
-          f.createContinueStatement(),
-        ),
-        // const v = bn.accessor(s)
-        f.createVariableStatement(
-          undefined,
-          f.createVariableDeclarationList(
-            [
-              f.createVariableDeclaration(
-                'v',
-                undefined,
-                undefined,
-                f.createCallExpression(
-                  f.createPropertyAccessExpression(f.createIdentifier('bn'), 'accessor'),
-                  undefined,
-                  [f.createIdentifier('s')],
-                ),
-              ),
-            ],
-            ts.NodeFlags.Const,
-          ),
-        ),
-        // const l = bn.lastValue
-        f.createVariableStatement(
-          undefined,
-          f.createVariableDeclarationList(
-            [
-              f.createVariableDeclaration(
-                'l',
-                undefined,
-                undefined,
-                f.createPropertyAccessExpression(f.createIdentifier('bn'), 'lastValue'),
-              ),
-            ],
-            ts.NodeFlags.Const,
-          ),
-        ),
-        // if (v === l || (v !== v && l !== l)) continue
-        f.createIfStatement(
-          f.createBinaryExpression(
-            f.createBinaryExpression(
-              f.createIdentifier('v'),
-              ts.SyntaxKind.EqualsEqualsEqualsToken,
-              f.createIdentifier('l'),
-            ),
-            ts.SyntaxKind.BarBarToken,
-            f.createParenthesizedExpression(
-              f.createBinaryExpression(
-                f.createBinaryExpression(
-                  f.createIdentifier('v'),
-                  ts.SyntaxKind.ExclamationEqualsEqualsToken,
-                  f.createIdentifier('v'),
-                ),
-                ts.SyntaxKind.AmpersandAmpersandToken,
-                f.createBinaryExpression(
-                  f.createIdentifier('l'),
-                  ts.SyntaxKind.ExclamationEqualsEqualsToken,
-                  f.createIdentifier('l'),
-                ),
-              ),
-            ),
-          ),
-          f.createContinueStatement(),
-        ),
-        // bn.lastValue = v
-        f.createExpressionStatement(
-          f.createBinaryExpression(
-            f.createPropertyAccessExpression(f.createIdentifier('bn'), 'lastValue'),
-            ts.SyntaxKind.EqualsToken,
-            f.createIdentifier('v'),
-          ),
-        ),
-        // applyBinding(bn, v) — inline the switch for the common cases
-        f.createExpressionStatement(
-          f.createCallExpression(f.createIdentifier('__applyBinding'), undefined, [
-            f.createIdentifier('bn'),
-            f.createIdentifier('v'),
-          ]),
-        ),
-      ],
-      true,
+  // Phase 2: delegate to shared runtime — __runPhase2(s, d, b, p)
+  stmts.push(
+    f.createExpressionStatement(
+      f.createCallExpression(f.createIdentifier('__runPhase2'), undefined, [
+        f.createIdentifier('s'),
+        f.createIdentifier('d'),
+        f.createIdentifier('b'),
+        f.createIdentifier('p'),
+      ]),
     ),
   )
-
-  stmts.push(phase2Loop)
 
   return f.createBlock(stmts, true)
 }
@@ -1699,11 +1580,10 @@ function cleanupImports(
     remaining.push(f.createImportSpecifier(false, undefined, f.createIdentifier('memo')))
   }
 
-  const hasApplyBinding = clause.namedBindings.elements.some(
-    (s) => s.name.text === '__applyBinding',
-  )
-  if (!hasApplyBinding && usesApplyBinding) {
-    remaining.push(f.createImportSpecifier(false, undefined, f.createIdentifier('__applyBinding')))
+  if (usesApplyBinding) {
+    if (!clause.namedBindings.elements.some((s) => s.name.text === '__runPhase2')) {
+      remaining.push(f.createImportSpecifier(false, undefined, f.createIdentifier('__runPhase2')))
+    }
   }
 
   const newBindings = f.createNamedImports(remaining)
