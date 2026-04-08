@@ -372,12 +372,9 @@ Optimized "one-of-N" reactive binding — O(1) updates instead of O(n).
 Watches a state field and compares it against per-item keys. When the
 field changes, only the old and new matching rows update their DOM.
 Usage:
-// In view, before each():
 const sel = selector<State, number>(s => s.selected)
-// Inside each() render:
-tr({ class: sel.bind(item(r => r.id), 'class', match => match ? 'danger' : '') })
-sel.bind() creates and manages the DOM binding directly.
-Returns Node[] to spread into the element's children (empty — no visible output).
+// inside each() render:
+sel.bind(row, rowId, 'class', 'class', match => match ? 'danger' : '')
 
 ```typescript
 function selector<S, V>(field: (s: S) => V): SelectorInstance<V>
