@@ -31,6 +31,8 @@ interface Entry<T> {
   index: number
   scope: Scope
   nodes: Node[]
+  /** Per-item updaters — stored on entry directly to avoid scope overhead for leaf rows */
+  updaters: Array<() => void>
 }
 
 export function each<S, T, M = unknown>(opts: EachOptions<S, T, M>): Node[] {
@@ -270,12 +272,15 @@ function buildEntry<S, T, M>(
   state?: unknown,
 ): Entry<T> {
   const key = opts.key(item)
+  // Use a lightweight scope — just needs itemUpdaters for per-item bindings.
+  // Full scope features (disposers, bindings, children) are only needed when
+  // the render callback uses structural primitives or selector.bind().
   const scope = createScope(parentScope)
   const currentState = (state ?? ctx.state) as S
   const send = ctx.send as (msg: M) => void
 
   // Create entry before render so itemAccessor closures can capture it
-  const entry: Entry<T> = { key, item, current: item, index, scope, nodes: null! }
+  const entry: Entry<T> = { key, item, current: item, index, scope, nodes: null!, updaters: [] }
 
   // Base callable: item(selector) for computed expressions
   const itemFn = <R>(selector: (t: T) => R): (() => R) => {
@@ -336,6 +341,14 @@ function buildEntry<S, T, M>(
     index: indexAccessor,
   }
   entry.nodes = opts.render(renderBag)
+
+  // Move itemUpdaters from scope to entry for direct access during updateEntry.
+  // This avoids scope.itemUpdaters lookup overhead on every item update.
+  if (scope.itemUpdaters.length > 0) {
+    entry.updaters = scope.itemUpdaters
+    scope.itemUpdaters = []
+  }
+
   clearRenderContext()
   setFlatBindings(prevFlatBindings)
   setRenderContext(ctx)
@@ -615,7 +628,9 @@ function updateEntry<T>(entry: Entry<T>, item: T, index: number): void {
   // eachItemStable removed — unused
   // Directly run per-item updaters when item changed — bypasses Phase 2
   if (changed) {
-    const updaters = entry.scope.itemUpdaters
+    // Use entry-level updaters (populated during render)
+    // Falls back to scope.itemUpdaters for entries with full scopes
+    const updaters = entry.updaters.length > 0 ? entry.updaters : entry.scope.itemUpdaters
     for (let i = 0; i < updaters.length; i++) {
       updaters[i]!()
     }

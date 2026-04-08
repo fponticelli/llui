@@ -135,11 +135,7 @@ route(['article', param('slug')], ({ slug }) => ({ page: 'article', slug }))
 route(['search'], { query: ['q'] }, ({ q }) => ({ page: 'search', q: q ?? '' }))
 
 ```typescript
-function route<R = any>(
-  segments: Segment[],
-  buildOrOpts: ((params: Record<string, string>) => R) | RouteDefOptions,
-  buildOrToPath?: ((params: Record<string, string>) => R) | { toPath: (route: R) => string },
-): RouteDef<R>
+function route<R = any>(segments: Segment[], buildOrOpts: ((params: Record<string, string>) => R) | RouteDefOptions, buildOrToPath?: ((params: Record<string, string>) => R) | { toPath: (route: R) => string }): RouteDef<R>
 ```
 
 ### `createRouter()`
@@ -179,11 +175,7 @@ function getUrlKeys<R>(def: RouteDef<R>): Set<string>
 Compare two objects only on the specified keys
 
 ```typescript
-function partialEqual(
-  a: Record<string, unknown>,
-  b: Record<string, unknown>,
-  keys: Set<string>,
-): boolean
+function partialEqual(a: Record<string, unknown>, b: Record<string, unknown>, keys: Set<string>): boolean
 ```
 
 ### `deepEqual()`
@@ -358,5 +350,6 @@ export interface ConnectedRouter<R> {
   }): (state: S, msg: M) => [S, E[]] | null
 }
 ```
+
 
 <!-- auto-api:end -->
