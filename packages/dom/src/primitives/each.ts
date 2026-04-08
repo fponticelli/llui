@@ -16,6 +16,16 @@ import { getFlatBindings, setFlatBindings } from '../binding'
 import { FULL_MASK } from '../update-loop'
 import type { StructuralBlock } from '../structural'
 
+// Clear callbacks — registered by selector.bind() during render, called by reconcileClear().
+// Eliminates per-row disposers (1000 Set.delete calls → 1 registry.clear() call).
+let activeClearCallbacks: Array<() => void> | null = null
+
+/** Register a callback to run when the current each() block clears.
+ *  Called by selector.bind() to register registry.clear(). */
+export function registerOnClear(cb: () => void): void {
+  if (activeClearCallbacks) activeClearCallbacks.push(cb)
+}
+
 // Reusable render context for buildEntry — avoids object allocation per entry
 const buildCtx: RenderContext = {
   rootScope: null as unknown as Scope,
@@ -53,16 +63,19 @@ export function each<S, T, M = unknown>(opts: EachOptions<S, T, M>): Node[] {
 
   const anchor = document.createComment('each')
   const entries: Entry<T>[] = []
+  const clearCallbacks: Array<() => void> = []
   // Entries whose leave animation is still in progress. Their DOM nodes
   // remain in the parent until the leave Promise resolves.
   const leaving: Entry<T>[] = []
 
   const initialItems = opts.items(ctx.state as S)
+  activeClearCallbacks = clearCallbacks
   for (let i = 0; i < initialItems.length; i++) {
     const item = initialItems[i]!
     const entry = buildEntry(item, i, opts, parentScope, ctx)
     entries.push(entry)
   }
+  activeClearCallbacks = null
 
   // Fire initial enter for mount-time items
   if (opts.enter) {
@@ -125,6 +138,10 @@ export function each<S, T, M = unknown>(opts: EachOptions<S, T, M>): Node[] {
       if (!parent) return
       if (entries.length === 0) return
 
+      // Call registered clear callbacks (e.g., selector registry.clear())
+      // BEFORE scope disposal — avoids 1000 individual Set.delete calls
+      for (let i = 0; i < clearCallbacks.length; i++) clearCallbacks[i]!()
+
       // Bulk DOM removal
       const range = document.createRange()
       range.setStartAfter(anchor)
@@ -133,7 +150,8 @@ export function each<S, T, M = unknown>(opts: EachOptions<S, T, M>): Node[] {
       range.setEndAfter(lastNode)
       range.deleteContents()
 
-      // Bulk scope disposal
+      // Bulk scope disposal — disposers that were replaced by clearCallbacks
+      // are now no-ops, making this much faster
       const scopes: Scope[] = []
       for (let i = 0; i < entries.length; i++) scopes.push(entries[i]!.scope)
       disposeScopesBulk(scopes)

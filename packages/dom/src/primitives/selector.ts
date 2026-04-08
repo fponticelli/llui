@@ -2,6 +2,7 @@ import { getRenderContext } from '../render-context'
 import { createBinding, applyBinding } from '../binding'
 import { addDisposer } from '../scope'
 import { FULL_MASK } from '../update-loop'
+import { registerOnClear } from './each'
 import type { BindingKind } from '../types'
 
 interface SelectorEntry {
@@ -24,6 +25,7 @@ export function selector<S, V>(field: (s: S) => V): SelectorInstance<V> {
 
   const registry = new Map<V, Set<SelectorEntry>>()
   let lastValue: V = field(ctx.state as S)
+  let registeredOnClear = false
 
   function updateSelector(state: S): V {
     const newValue = field(state)
@@ -92,6 +94,15 @@ export function selector<S, V>(field: (s: S) => V): SelectorInstance<V> {
       }
       bucket.add(entry)
 
+      // Register bulk clear instead of per-row disposer.
+      // On first bind, register registry.clear() with the enclosing each() block.
+      // This replaces 1000 individual Set.delete calls with 1 Map.clear() call.
+      if (!registeredOnClear) {
+        registerOnClear(() => registry.clear())
+        registeredOnClear = true
+      }
+
+      // Individual disposal fallback for single-row removal (not bulk clear)
       const itemScope = getRenderContext().rootScope
       addDisposer(itemScope, () => {
         bucket!.delete(entry)
