@@ -11,4 +11,7 @@ export interface StructuralBlock {
   /** Remove entries whose keys are no longer in the new items array.
    *  Avoids Map/Set allocation — linear scan with early exit. */
   reconcileRemove?(state: unknown): void
+  /** Update only the entries at the given indices — O(k) instead of O(n).
+   *  Used when the compiler detects which indices the update loop modifies. */
+  reconcileChanged?(state: unknown, stride: number): void
 }

@@ -1329,7 +1329,13 @@ function tryBuildHandlers(
   return f.createPropertyAssignment('__handlers', f.createObjectLiteralExpression(handlers, true))
 }
 
-type ArrayOp = 'none' | 'clear' | 'mutate' | 'remove' | 'general'
+type ArrayOp =
+  | 'none'
+  | 'clear'
+  | 'mutate'
+  | 'remove'
+  | 'general'
+  | { type: 'strided'; stride: number } // for (i = 0; i < len; i += stride) pattern
 
 /**
  * Detect the array operation pattern in a case body.
@@ -1380,9 +1386,11 @@ function detectArrayOp(
       // Check for shorthand `field` where field was assigned via `.slice()` earlier
       // This catches: `const rows = state.rows.slice(); rows[i] = ...; return { ...state, rows }`
       if (ts.isShorthandPropertyAssignment(prop)) {
-        // Look in the case body for `.slice()` assignment to this variable
         const varName = prop.name.text
         if (hasSliceAssignment(clause, stateName, varName)) {
+          // Check for strided for-loop: for (let i = 0; i < arr.length; i += STRIDE)
+          const stride = detectStrideLoop(clause, varName)
+          if (stride > 1) return { type: 'strided', stride }
           return 'mutate'
         }
       }
@@ -1413,6 +1421,33 @@ function findReturnArray(stmt: ts.Statement): ts.ArrayLiteralExpression | null {
     }
   }
   return null
+}
+
+/**
+ * Detect a strided for-loop: `for (let i = 0; i < arr.length; i += STRIDE)`
+ * where `arr` is the named variable. Returns the stride or 0 if not found.
+ */
+function detectStrideLoop(clause: ts.CaseClause, _arrName: string): number {
+  function walk(node: ts.Node): number {
+    if (ts.isForStatement(node) && node.incrementor) {
+      // Check incrementor: i += STRIDE
+      const inc = node.incrementor
+      if (
+        ts.isBinaryExpression(inc) &&
+        inc.operatorToken.kind === ts.SyntaxKind.PlusEqualsToken &&
+        ts.isNumericLiteral(inc.right)
+      ) {
+        const stride = parseInt(inc.right.text, 10)
+        if (stride > 1) return stride
+      }
+    }
+    return ts.forEachChild(node, walk) ?? 0
+  }
+  for (const stmt of clause.statements) {
+    const result = walk(stmt)
+    if (result > 0) return result
+  }
+  return 0
 }
 
 function hasSliceAssignment(clause: ts.CaseClause, stateName: string, varName: string): boolean {
@@ -1509,15 +1544,17 @@ function buildCaseHandler(
   arrayOp: ArrayOp,
 ): ts.ArrowFunction {
   const method =
-    arrayOp === 'none'
-      ? -1
-      : arrayOp === 'mutate'
-        ? 1
-        : arrayOp === 'clear'
-          ? 2
-          : arrayOp === 'remove'
-            ? 3
-            : 0 // general
+    typeof arrayOp === 'object' && arrayOp.type === 'strided'
+      ? 10 + arrayOp.stride // reconcileChanged with stride
+      : arrayOp === 'none'
+        ? -1
+        : arrayOp === 'mutate'
+          ? 1
+          : arrayOp === 'clear'
+            ? 2
+            : arrayOp === 'remove'
+              ? 3
+              : 0 // general
 
   // (inst, msg) => __handleMsg(inst, msg, dirty, method)
   return f.createArrowFunction(

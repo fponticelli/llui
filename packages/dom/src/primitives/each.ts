@@ -204,6 +204,20 @@ export function each<S, T, M = unknown>(opts: EachOptions<S, T, M>): Node[] {
         entries[i]!.index = i
       }
     },
+
+    /** Update only entries at stride intervals — O(k) where k = n/stride.
+     *  The compiler passes the stride from the detected for-loop pattern. */
+    reconcileChanged(state: unknown, stride: number) {
+      const newItems = opts.items(state as S)
+      lastItemsRef = newItems
+      for (let i = 0; i < entries.length && i < newItems.length; i += stride) {
+        const entry = entries[i]!
+        const newItem = newItems[i]!
+        if (entry.item !== newItem) {
+          updateEntry(entry, newItem, i)
+        }
+      }
+    },
   }
 
   blocks.push(block)

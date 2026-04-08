@@ -886,6 +886,67 @@ describe('each reconcileRemove', () => {
   })
 })
 
+// ── reconcileChanged (strided update) ────────────────────────────
+
+describe('each reconcileChanged', () => {
+  it('updates only every Nth item by stride', () => {
+    type Row = { id: number; label: string }
+    type S = { rows: Row[] }
+    type M = { type: 'update' }
+
+    const def = component<S, M, never>({
+      name: 'StridedUpdate',
+      init: () => [
+        {
+          rows: [
+            { id: 1, label: 'a' },
+            { id: 2, label: 'b' },
+            { id: 3, label: 'c' },
+            { id: 4, label: 'd' },
+            { id: 5, label: 'e' },
+            { id: 6, label: 'f' },
+          ],
+        },
+        [],
+      ],
+      update: (s) => {
+        const rows = s.rows.slice()
+        for (let i = 0; i < rows.length; i += 3) {
+          rows[i] = { ...rows[i]!, label: rows[i]!.label + '!' }
+        }
+        return [{ rows }, []]
+      },
+      view: () => [
+        ...each<S, Row>({
+          items: (s) => s.rows,
+          key: (r) => r.id,
+          render: ({ item }) => [div([text(item.label)])],
+        }),
+      ],
+      __dirty: () => 1,
+    })
+
+    const container = document.createElement('div')
+    let sendFn!: (msg: M) => void
+    const origView = def.view
+    def.view = (h) => {
+      sendFn = h.send
+      return origView(h)
+    }
+    const handle = mountApp(container, def)
+
+    expect(container.textContent).toBe('abcdef')
+
+    sendFn({ type: 'update' })
+    flush()
+
+    // Only items at indices 0 and 3 changed (stride 3: 0, 3)
+    expect(container.textContent).toBe('a!bcd!ef')
+
+    handle.dispose()
+  })
+})
+
 // ── Row factory ──────────────────────────────────────────────────
 
 describe('row factory (__rowUpdate)', () => {

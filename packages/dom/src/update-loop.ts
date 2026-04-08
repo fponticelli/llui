@@ -252,6 +252,10 @@ export function _handleMsg(
         case 3:
           block.reconcileRemove?.(s)
           break
+        default:
+          // method >= 10: reconcileChanged with stride = method - 10
+          if (method >= 10) block.reconcileChanged?.(s, method - 10)
+          break
       }
     }
   }
