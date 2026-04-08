@@ -1834,8 +1834,9 @@ function tryEmitRowFactory(
     }
     // Check for nested structural primitives — bail
     if (containsStructuralCall(stmt)) return null
-    // selector.bind() is now compatible with row factory — no per-row
-    // disposers, generation-based cleanup instead
+    // Bail on selector.bind() — row factory + selector causes V8 deopt
+    // even without per-row disposers (selector fn declarations per render)
+    if (_containsSelectorBind(stmt)) return null
   }
 
   if (!templateCall || templateCall.arguments.length < 2) return null

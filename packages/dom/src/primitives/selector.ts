@@ -119,9 +119,14 @@ export function selector<S, V>(field: (s: S) => V): SelectorInstance<V> {
         registerOnRemove((key) => {
           const bucket = registry.get(key as V)
           if (!bucket) return
-          for (let i = 0; i < bucket.length; i++) {
-            if (bucket[i]!.gen === generation) bucket[i]!.gen = -1
+          // Remove current-gen entries and compact the bucket
+          let w = 0
+          for (let r = 0; r < bucket.length; r++) {
+            if (bucket[r]!.gen !== generation) bucket[w++] = bucket[r]!
+            // else: drop it (current gen entry for removed row)
           }
+          bucket.length = w
+          if (w === 0) registry.delete(key as V)
         })
         registeredOnClear = true
       }
