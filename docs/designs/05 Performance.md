@@ -534,17 +534,13 @@ The dirty bitmask is the Phase 2 pre-filter. A bitmask of `0xFFFFFFFF` (fallback
 
 The compiler tracks nested paths up to depth 2 and supports destructuring and single-assignment aliases. When the compiler cannot determine an accessor's dependencies (computed access, multi-hop aliases, closure captures), it falls back to `0xFFFFFFFF` and emits a diagnostic warning identifying the exact accessor and the reason. Every false positive in the mask translates to a wasted accessor call across every row in the `update` benchmark. For components with 32+ unique access paths, paths beyond position 30 overflow to `FULL_MASK`, meaning their bindings re-evaluate on every dirty cycle. The measured overhead is ~1–4 microseconds per update at 40–80 paths — negligible for realistic message rates. The compiler warns at 32+ paths, listing the top-level fields by path count so authors can decompose into child components or slice handlers.
 
-### 3. Per-Item Stable Detection (`eachItemStable`)
+### 3. Per-Item Equality-Checked Updaters (`addCheckedItemUpdater`)
 
 **Impact: High for `update` and `select` with large lists.**
 
-When `each()` reconciliation determines that a particular item reference is unchanged (same object identity), it can set `eachItemStable = true` on that item's scope. Phase 2 skips all bindings belonging to stable scopes:
+When `each()` detects an item reference change, it invokes per-item updaters registered via `addCheckedItemUpdater`. Each updater includes an `Object.is` equality check before the DOM write, so derived values that did not actually change (e.g., a row's ID when only its label changed) skip the DOM mutation entirely. This replaces the earlier `eachItemStable` field on Scope — that field and its associated O(n) `eachItemStable` loop have been removed.
 
-```typescript
-if (binding.perItem && binding.ownerScope.eachItemStable) continue
-```
-
-For `update` (every 10th row changes), this means 900 of 1000 row scopes are stable. All bindings in those 900 scopes are skipped at the `eachItemStable` check, which is cheaper than even the mask check. This optimization is only valid if items are replaced by reference (new object created for each changed item), not mutated in place. The benchmark application must never mutate row objects.
+For `update` (every 10th row changes), only the 100 changed rows invoke their updaters, and within each row only the bindings whose derived value actually differs produce a DOM write. The remaining 900 rows are skipped at Phase 1 via the same-keys single-pass reconciliation (see §3.5), never reaching Phase 2 at all.
 
 ### 4. Level 1 vs Level 2 Composition Overhead
 
@@ -556,19 +552,25 @@ Level 2 composition (`child()`) adds per-parent-update cost: the props accessor 
 
 ### 5. Array Reference Identity Fast Path
 
-**Impact: Moderate for `select`, `swap` at very large list sizes.**
+**Impact: High for `select`, `swap` at very large list sizes.**
 
-If the accessor passed to `each()` returns the same array reference as the previous call, no reconciliation is needed. This is true for `select` — the row array is unchanged, only `selectedId` changes. The fast path:
+If the accessor passed to `each()` returns the same array reference as the previous call, no reconciliation is needed — this is now an O(1) check and early return. Previously this case still ran an O(n) `eachItemStable` loop to mark each scope; that loop has been eliminated. The fast path:
 
 ```typescript
 const newItems = getItems(state)
 if (newItems === this.lastItems) {
-  // Skip Phase 1 reconciliation entirely for this each() block
+  // O(1) — skip Phase 1 reconciliation entirely for this each() block
   return
 }
 ```
 
 This is only valid for the structural phase. Phase 2 still runs bindings that depend on paths other than the array-producing path.
+
+### 5b. Same-Keys Single-Pass Reconciliation
+
+**Impact: High for `update` with large lists.**
+
+When the array reference changes but the key set is identical (common for immutable updates that replace individual items), `each()` now merges the two formerly separate O(n) passes — key matching and item-ref comparison — into a single O(n) pass. Items whose reference has not changed are skipped entirely (no updater invocation, no binding evaluation). Only items with changed references invoke their equality-checked updaters.
 
 ### 6. Avoid String Coercion in Hot Path
 
@@ -635,7 +637,17 @@ await page.evaluate(() => {
 })
 ```
 
-### 12. Skip String Conversion for Number Text Nodes
+### 12. Compiler-Generated `__update` Function
+
+**Impact: High for all operations.**
+
+The compiler generates a per-component `__update` function that replaces the generic Phase 1 / Phase 2 loop. Instead of iterating arrays of structural blocks and bindings, the generated function contains direct inline calls to each reconciler and each binding updater with mask checks baked in. This eliminates loop iteration overhead and enables V8 to inline individual calls.
+
+Phase 1 mask gating is built into the generated function: each structural block (`each`, `branch`, `show`) carries a compiler-injected `__mask` (the OR of all state paths its accessor reads). The generated code skips the block when `(block.__mask & dirtyMask) === 0`, so an `each()` depending on path A is entirely skipped when only path B is dirty.
+
+The generated function imports `__applyBinding` directly, bypassing the generic binding dispatch. Uncompiled components fall back to the generic `runUpdate` loop with identical semantics.
+
+### 13. Skip String Conversion for Number Text Nodes
 
 **Impact: Negligible; mentioned for completeness.**
 

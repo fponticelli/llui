@@ -582,6 +582,16 @@ The emission generates:
 
 Reactive text uses **placeholder text nodes** embedded in the template HTML (a space character). The patch function references these existing text nodes via `parentNode.childNodes[idx]` rather than creating new ones with `document.createTextNode()`, saving 2 DOM operations per reactive text child.
 
+### Structural Mask Injection (`tryInjectStructuralMask`)
+
+The compiler injects a `__mask` property into the options object of every `each()`, `branch()`, and `show()` call. The mask is computed by `computeStructuralMask`: it ORs together all path bits read by the block's discriminant/accessor (the `on` function for `branch`/`show`, the `items` function for `each`). At runtime, Phase 1 uses this mask to skip entire structural blocks when none of their dependency paths are dirty (`(block.__mask & dirtyMask) === 0`).
+
+### `__update` Function Generation (`tryInjectUpdate` / `buildUpdateBody`)
+
+For each `component()` call site, the compiler generates a `__update` function that replaces the generic Phase 1 / Phase 2 loop. `tryInjectUpdate` detects component definitions and delegates to `buildUpdateBody`, which emits direct calls to each structural block's reconciler and each binding's apply function with inlined mask checks. This eliminates loop iteration overhead and enables V8 to inline the individual calls.
+
+The generated `__update` function also triggers injection of the `__applyBinding` import (added to the `@llui/dom` import declaration alongside `elSplit`), so the compiled component can call the binding applicator directly rather than going through the generic dispatch.
+
 ### Event Delegation in Templates
 
 When multiple child elements within a collapsed template have event handlers of the same type (e.g., two `onClick` handlers), the compiler emits a single delegated listener on the template root using `element.contains(e.target)` dispatch:

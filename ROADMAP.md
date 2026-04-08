@@ -68,6 +68,15 @@
 - [x] All dev-only code tree-shaken from production builds
 - [x] `sideEffects: false`, named re-exports
 
+**Update loop:**
+
+- [x] Compiler-generated `__update` function replaces generic Phase 1/Phase 2 loop per component
+- [x] Phase 1 mask gating: structural blocks (`each`/`branch`/`show`) skipped when `__mask & dirty === 0`
+- [x] `__applyBinding` import injection for direct binding dispatch in compiled components
+- [x] `addCheckedItemUpdater`: shared equality-checked per-item updater (avoids redundant DOM writes)
+- [x] `each()` same-ref O(1) fast path (removed O(n) `eachItemStable` loop + removed unused field from Scope)
+- [x] `each()` same-keys single-pass reconciliation (merged two O(n) passes into one, skips unchanged item refs)
+
 **jfb results (vs Solid/Svelte):**
 
 - Create 1k / Replace / Append: within ~5%

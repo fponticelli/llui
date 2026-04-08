@@ -10,7 +10,7 @@ Every update cycle runs in two strictly ordered phases. The ordering is not arbi
 
 **Phase 1 — Structural.** Evaluate every branch discriminant and every each item array. For each primitive whose key or array reference has changed, reconcile the DOM: dispose old scopes depth-first, remove old nodes from the document, create new scopes, execute new builder functions, insert new nodes. Placeholder comment nodes act as stable anchors so insertion points survive arbitrary structural change.
 
-**Phase 2 — Bindings.** Iterate the flat binding array from start to finish. For each binding, check `(binding.mask & dirtyMask) === 0`; if true, skip immediately. If the binding belongs to an each entry and `ownerScope.eachItemStable` is true, skip. Otherwise call the accessor, compare to `binding.lastValue` with `Object.is`, and call `applyBinding()` only if the value changed.
+**Phase 2 — Bindings.** Iterate the flat binding array from start to finish. For each binding, check `(binding.mask & dirtyMask) === 0`; if true, skip immediately. Otherwise call the accessor, compare to `binding.lastValue` with `Object.is`, and call `applyBinding()` only if the value changed. Per-item bindings inside `each()` are handled separately by equality-checked updaters registered via `addCheckedItemUpdater` — these run during Phase 1 when an item reference changes, and each updater independently skips the DOM write if the derived value has not changed.
 
 The invariant that makes this ordering correct: Phase 2 iterates the binding array as it exists _after_ Phase 1 finishes. If Phase 2 ran first, it would encounter bindings belonging to scopes that Phase 1 is about to destroy — either wasting work on bindings about to be discarded or, worse, writing to DOM nodes that are simultaneously being removed. Running structural reconciliation first means the binding array in Phase 2 is always coherent: every entry belongs to a live scope, every DOM node it references is in the document.
 
@@ -23,15 +23,15 @@ The two phases also keep the hot path in Phase 2 branchless for the common case.
 // the same hot-path code.
 
 function runUpdate(component, dirtyMask) {
-  // Phase 1
+  // Phase 1 — structural blocks are mask-gated
   for (const structural of component.structuralBlocks) {
+    if ((structural.__mask & dirtyMask) === 0) continue
     structural.reconcile(dirtyMask)
   }
 
   // Phase 2
   for (const binding of component.bindings) {
     if ((binding.mask & dirtyMask) === 0) continue
-    if (binding.perItem && binding.ownerScope.eachItemStable) continue
     const newValue = binding.accessor(state)
     if (Object.is(newValue, binding.lastValue)) continue
     binding.lastValue = newValue
@@ -41,6 +41,16 @@ function runUpdate(component, dirtyMask) {
 ```
 
 The flat array is the critical structure. A tree walk of the scope hierarchy on every update would be O(scope count) regardless of how many bindings are dirty. The flat array, combined with the mask pre-filter, makes the inner loop proportional to the number of bindings whose state access paths could possibly have changed — which is usually a small fraction of the total.
+
+### Compiler `__update` Fast Path
+
+When the compiler plugin runs, it generates a per-component `__update` function that replaces the generic `runUpdate` loop above. The generated function contains direct calls to each structural block and each binding updater with inlined mask checks, eliminating loop overhead. Two key improvements over the generic loop:
+
+1. **Phase 1 mask gating.** Each structural block (`each`, `branch`, `show`) carries a compiler-injected `__mask` -- the OR of all state paths its discriminant/accessor reads. The generated `__update` skips the block when `(block.__mask & dirtyMask) === 0`. This means an `each()` whose items accessor depends on path A is entirely skipped when only path B is dirty.
+
+2. **Per-item equality-checked updaters.** `addCheckedItemUpdater` registers item updaters that include an `Object.is` check before the DOM write. When `each()` detects an item reference change and invokes updaters, each updater independently skips if the derived value has not changed. This avoids redundant DOM writes for items where the reference changed but the displayed field remained the same.
+
+The `__update` function also imports `__applyBinding` directly, bypassing the generic binding dispatch. Uncompiled components fall back to the generic `runUpdate` loop with identical semantics.
 
 ---
 
@@ -209,11 +219,11 @@ No individual binding disposer is needed because bindings have no side effects b
 
 The `each()` render callback receives a **scoped accessor** `item` — a function `<R>(selector: (t: T) => R) => R` — and an index accessor `index: () => number`. When the developer writes `item(t => t.text)`, the framework internally creates a binding whose accessor is a zero-argument closure: `() => selector(currentItemRef)`. Because this closure has `length === 0`, the binding is tagged `perItem: true` at creation time.
 
-In Phase 2, if `ownerScope.eachItemStable` is true, all `perItem` bindings are skipped entirely without calling their accessor. This is correct because a `perItem` binding's value can only change if the item reference itself changes — but `eachItemStable` is only set when the item reference is identical to the previous cycle (`Object.is(existing.item, newItem)`). The accessor call, value comparison, and potential DOM write are all eliminated.
+Per-item bindings are updated via `addCheckedItemUpdater`, which registers updaters that run during Phase 1 when an item reference changes. Each updater includes an `Object.is` equality check before the DOM write — if the derived value (e.g., `item(t => t.id)`) has not changed despite the reference changing, the DOM mutation is skipped. This replaces the earlier `eachItemStable` field on Scope, which required an O(n) loop to mark stable scopes.
 
 The scoped accessor pattern means the developer never needs to manage closure semantics manually. Writing `item(t => t.text)` in the render callback produces the correct reactive binding with per-item stability automatically. The framework handles the closure wrapping internally — the developer writes a selector, the runtime creates the optimized zero-arg binding.
 
-For components rendering large lists where most items are stable between updates, this optimization eliminates the entire Phase 2 cost for stable entries. A Select benchmark where only the selected state changes: the selected item's bindings run, all other items' perItem bindings are skipped. An Update-every-10th benchmark: only affected entries pay for accessor evaluation. An array-reference-same fast path: the entire each block exits in Phase 1 before any binding is touched.
+For components rendering large lists where most items are stable between updates, this optimization eliminates per-item cost for stable entries. When the array reference is unchanged, `each()` exits in O(1) — no per-item loop at all. When keys are unchanged but some item references differ, a single-pass reconciliation invokes updaters only for changed items, skipping unchanged ones entirely.
 
 ---
 
