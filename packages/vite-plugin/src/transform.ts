@@ -1160,12 +1160,7 @@ function tryInjectDirty(
     f.createObjectLiteralExpression(legendProps, false),
   )
 
-  // __update: compiler-generated Phase 1 + Phase 2 replacement.
-  // Collects structural block masks and binding masks to gate entire phases.
-  // Generated as: (s, d, b, bl, p) => {
-  //   if (d & structuralMask) { /* Phase 1 */ ... /* compact */ ... }
-  //   if (d & bindingMask) { /* Phase 2 */ ... }
-  // }
+  // Structural mask — used by both __update and __handlers
   const structuralMask = computeStructuralMask(configArg, fieldBits)
   const phase2Mask = computePhase2Mask(configArg, fieldBits)
 
@@ -1189,7 +1184,7 @@ function tryInjectDirty(
   // __handlers: per-message-type specialized update functions.
   // Analyzes the update() switch/case and generates direct handlers
   // that bypass the generic Phase 1/2 pipeline for single-message updates.
-  const handlersProp = tryBuildHandlers(configArg, topLevelBits, f)
+  const handlersProp = tryBuildHandlers(configArg, topLevelBits, structuralMask, f)
 
   const extraProps = [dirtyProp, legendProp, updateProp]
   if (handlersProp) extraProps.push(handlersProp)
@@ -1216,6 +1211,7 @@ function tryInjectDirty(
 function tryBuildHandlers(
   configArg: ts.ObjectLiteralExpression,
   topLevelBits: Map<string, number>,
+  structuralMask: number,
   f: ts.NodeFactory,
 ): ts.PropertyAssignment | null {
   if (topLevelBits.size === 0) return null
@@ -1307,31 +1303,128 @@ function tryBuildHandlers(
       caseDirty |= topLevelBits.get(field) ?? 0xffffffff | 0
     }
 
-    // Generate the handler function:
-    // (inst, msg) => {
-    //   const [s, e] = inst.def.update(inst.state, msg)
-    //   inst.state = s
-    //   // Phase 1: only call blocks whose mask intersects caseDirty
-    //   for (const bl of inst.structuralBlocks) {
-    //     if (bl.mask & caseDirty) bl.reconcile(s, caseDirty)
-    //   }
-    //   // Phase 2
-    //   __runPhase2(s, caseDirty, inst.allBindings, inst.allBindings.length)
-    //   return [s, e]
-    // }
-    //
-    // For now, generate a handler that calls update() and runs targeted
-    // Phase 1 + Phase 2 with the known dirty mask. This eliminates:
-    // - dirty computation (__dirty call)
-    // - mask accumulation across messages
-    // - Phase 1 blocks that don't match the case's dirty bits
-    const handler = buildCaseHandler(f, caseDirty)
+    // Detect array operation pattern for structural block optimization
+    const arrayOp = detectArrayOp(clause, stateName, modifiedFields, structuralMask, caseDirty)
+
+    const handler = buildCaseHandler(f, caseDirty, arrayOp)
     handlers.push(f.createPropertyAssignment(f.createStringLiteral(msgType), handler))
   }
 
   if (handlers.length === 0) return null
 
   return f.createPropertyAssignment('__handlers', f.createObjectLiteralExpression(handlers, true))
+}
+
+type ArrayOp = 'none' | 'clear' | 'mutate' | 'general'
+
+/**
+ * Detect the array operation pattern in a case body.
+ * - 'none': no array field modified (e.g., only `selected` changes)
+ * - 'clear': array set to empty literal `[]`
+ * - 'mutate': array created via `.slice()` then mutated in place (same keys)
+ * - 'general': unknown pattern, use generic reconcile
+ */
+function detectArrayOp(
+  clause: ts.CaseClause,
+  stateName: string,
+  modifiedFields: string[],
+  structuralMask?: number,
+  caseDirty?: number,
+): ArrayOp {
+  // No fields modified or dirty bits don't intersect any structural block →
+  // skip structural blocks entirely (e.g., only `selected` changes)
+  if (modifiedFields.length === 0) return 'none'
+  if (structuralMask !== undefined && caseDirty !== undefined && (structuralMask & caseDirty) === 0)
+    return 'none'
+
+  // Look at the return expression's array field values
+  for (const stmt of clause.statements) {
+    const returnExpr = findReturnArray(stmt)
+    if (!returnExpr) continue
+
+    const stateExpr = returnExpr.elements[0]
+    if (!stateExpr || !ts.isObjectLiteralExpression(stateExpr)) continue
+
+    for (const prop of stateExpr.properties) {
+      const name =
+        ts.isPropertyAssignment(prop) && ts.isIdentifier(prop.name)
+          ? prop.name.text
+          : ts.isShorthandPropertyAssignment(prop)
+            ? prop.name.text
+            : null
+      if (!name) continue
+
+      // Check for empty array literal: `field: []`
+      if (
+        ts.isPropertyAssignment(prop) &&
+        ts.isArrayLiteralExpression(prop.initializer) &&
+        prop.initializer.elements.length === 0
+      ) {
+        return 'clear'
+      }
+
+      // Check for shorthand `field` where field was assigned via `.slice()` earlier
+      // This catches: `const rows = state.rows.slice(); rows[i] = ...; return { ...state, rows }`
+      if (ts.isShorthandPropertyAssignment(prop)) {
+        // Look in the case body for `.slice()` assignment to this variable
+        const varName = prop.name.text
+        if (hasSliceAssignment(clause, stateName, varName)) {
+          return 'mutate'
+        }
+      }
+
+      // Check for property assignment with filter: `field: state.field.filter(...)`
+      if (ts.isPropertyAssignment(prop) && ts.isCallExpression(prop.initializer)) {
+        const call = prop.initializer
+        if (
+          ts.isPropertyAccessExpression(call.expression) &&
+          call.expression.name.text === 'filter'
+        ) {
+          return 'general'
+        }
+      }
+    }
+  }
+
+  return 'general'
+}
+
+function findReturnArray(stmt: ts.Statement): ts.ArrayLiteralExpression | null {
+  if (ts.isReturnStatement(stmt) && stmt.expression && ts.isArrayLiteralExpression(stmt.expression))
+    return stmt.expression
+  if (ts.isBlock(stmt)) {
+    for (const inner of stmt.statements) {
+      const result = findReturnArray(inner)
+      if (result) return result
+    }
+  }
+  return null
+}
+
+function hasSliceAssignment(clause: ts.CaseClause, stateName: string, varName: string): boolean {
+  function walk(node: ts.Node): boolean {
+    // Look for: const varName = stateName.field.slice()
+    if (
+      ts.isVariableDeclaration(node) &&
+      ts.isIdentifier(node.name) &&
+      node.name.text === varName &&
+      node.initializer
+    ) {
+      const init = node.initializer
+      if (
+        ts.isCallExpression(init) &&
+        ts.isPropertyAccessExpression(init.expression) &&
+        init.expression.name.text === 'slice'
+      ) {
+        return true
+      }
+    }
+    return ts.forEachChild(node, walk) ?? false
+  }
+  for (const stmt of clause.statements) {
+    if (walk(stmt)) return true
+  }
+  return false
 }
 
 /**
@@ -1392,7 +1485,11 @@ function analyzeModifiedFields(
  *   return [s, e]
  * }
  */
-function buildCaseHandler(f: ts.NodeFactory, caseDirty: number): ts.ArrowFunction {
+function buildCaseHandler(
+  f: ts.NodeFactory,
+  caseDirty: number,
+  arrayOp: ArrayOp,
+): ts.ArrowFunction {
   const stmts: ts.Statement[] = []
 
   // const [s, e] = inst.def.update(inst.state, msg)
@@ -1437,73 +1534,87 @@ function buildCaseHandler(f: ts.NodeFactory, caseDirty: number): ts.ArrowFunctio
     ),
   )
 
-  // Phase 1: structural blocks gated by caseDirty
+  // Phase 1 + Phase 2, specialized by array operation pattern
   if (caseDirty !== 0) {
-    // const bl = inst.structuralBlocks
-    stmts.push(
-      f.createVariableStatement(
-        undefined,
-        f.createVariableDeclarationList(
-          [
-            f.createVariableDeclaration(
-              'bl',
-              undefined,
-              undefined,
-              f.createPropertyAccessExpression(f.createIdentifier('inst'), 'structuralBlocks'),
-            ),
-          ],
-          ts.NodeFlags.Const,
-        ),
-      ),
-    )
+    // Determine the reconcile method based on array operation
+    const reconcileMethod =
+      arrayOp === 'clear' ? 'reconcileClear' : arrayOp === 'mutate' ? 'reconcileItems' : 'reconcile'
 
-    // for (let i = 0; i < bl.length; i++) { if (bl[i].mask & dirty) bl[i].reconcile(s, dirty) }
-    stmts.push(
-      f.createForStatement(
-        f.createVariableDeclarationList(
-          [f.createVariableDeclaration('i', undefined, undefined, f.createNumericLiteral(0))],
-          ts.NodeFlags.Let,
-        ),
-        f.createBinaryExpression(
-          f.createIdentifier('i'),
-          ts.SyntaxKind.LessThanToken,
-          f.createPropertyAccessExpression(f.createIdentifier('bl'), 'length'),
-        ),
-        f.createPostfixUnaryExpression(f.createIdentifier('i'), ts.SyntaxKind.PlusPlusToken),
-        f.createBlock(
-          [
-            f.createIfStatement(
-              f.createBinaryExpression(
-                f.createPropertyAccessExpression(
-                  f.createElementAccessExpression(
-                    f.createIdentifier('bl'),
-                    f.createIdentifier('i'),
-                  ),
-                  'mask',
-                ),
-                ts.SyntaxKind.AmpersandToken,
-                createMaskLiteral(f, caseDirty),
+    if (arrayOp === 'none') {
+      // No structural changes — skip Phase 1, only run Phase 2
+      // (e.g., select: only selector binding needs updating)
+    } else {
+      // Phase 1: call specialized reconciler on matching blocks
+      // const bl = inst.structuralBlocks
+      stmts.push(
+        f.createVariableStatement(
+          undefined,
+          f.createVariableDeclarationList(
+            [
+              f.createVariableDeclaration(
+                'bl',
+                undefined,
+                undefined,
+                f.createPropertyAccessExpression(f.createIdentifier('inst'), 'structuralBlocks'),
               ),
-              f.createExpressionStatement(
-                f.createCallExpression(
-                  f.createPropertyAccessExpression(
-                    f.createElementAccessExpression(
-                      f.createIdentifier('bl'),
-                      f.createIdentifier('i'),
-                    ),
-                    'reconcile',
-                  ),
-                  undefined,
-                  [f.createIdentifier('s'), createMaskLiteral(f, caseDirty)],
-                ),
-              ),
-            ),
-          ],
-          true,
+            ],
+            ts.NodeFlags.Const,
+          ),
         ),
-      ),
-    )
+      )
 
+      // for (let i = 0; i < bl.length; i++) { if (bl[i].mask & dirty) bl[i].METHOD(s, dirty) }
+      const blockEl = f.createElementAccessExpression(
+        f.createIdentifier('bl'),
+        f.createIdentifier('i'),
+      )
+      const reconcileArgs =
+        reconcileMethod === 'reconcileClear'
+          ? []
+          : [
+              f.createIdentifier('s'),
+              ...(reconcileMethod === 'reconcile' ? [createMaskLiteral(f, caseDirty)] : []),
+            ]
+
+      stmts.push(
+        f.createForStatement(
+          f.createVariableDeclarationList(
+            [f.createVariableDeclaration('i', undefined, undefined, f.createNumericLiteral(0))],
+            ts.NodeFlags.Let,
+          ),
+          f.createBinaryExpression(
+            f.createIdentifier('i'),
+            ts.SyntaxKind.LessThanToken,
+            f.createPropertyAccessExpression(f.createIdentifier('bl'), 'length'),
+          ),
+          f.createPostfixUnaryExpression(f.createIdentifier('i'), ts.SyntaxKind.PlusPlusToken),
+          f.createBlock(
+            [
+              f.createIfStatement(
+                f.createBinaryExpression(
+                  f.createPropertyAccessExpression(blockEl, 'mask'),
+                  ts.SyntaxKind.AmpersandToken,
+                  createMaskLiteral(f, caseDirty),
+                ),
+                f.createExpressionStatement(
+                  f.createCallExpression(
+                    // Use specialized method if available, fall back to reconcile
+                    // bl[i].reconcileItems?.(s) ?? bl[i].reconcile(s, dirty)
+                    // Simplified: just call the method — it exists on each() blocks
+                    f.createPropertyAccessExpression(blockEl, reconcileMethod),
+                    undefined,
+                    reconcileArgs as ts.Expression[],
+                  ),
+                ),
+              ),
+            ],
+            true,
+          ),
+        ),
+      )
+    }
+
+    // Phase 2: compact + update bindings
     // const b = inst.allBindings, p = b.length
     stmts.push(
       f.createVariableStatement(
