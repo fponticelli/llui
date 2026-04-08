@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest'
-import { createScope, disposeScope } from '../src/scope'
+import { createScope, disposeScope, addDisposer, addBinding } from '../src/scope'
+import type { Binding } from '../src/types'
 
 describe('createScope', () => {
   it('creates a root scope with no parent', () => {
@@ -28,8 +29,8 @@ describe('disposeScope', () => {
   it('fires all disposers', () => {
     const scope = createScope(null)
     const calls: string[] = []
-    scope.disposers.push(() => calls.push('a'))
-    scope.disposers.push(() => calls.push('b'))
+    addDisposer(scope, () => calls.push('a'))
+    addDisposer(scope, () => calls.push('b'))
     disposeScope(scope)
     expect(calls).toEqual(['a', 'b'])
   })
@@ -41,10 +42,10 @@ describe('disposeScope', () => {
     const grandchild = createScope(child1)
     const child2 = createScope(parent)
 
-    grandchild.disposers.push(() => order.push(grandchild.id))
-    child1.disposers.push(() => order.push(child1.id))
-    child2.disposers.push(() => order.push(child2.id))
-    parent.disposers.push(() => order.push(parent.id))
+    addDisposer(grandchild, () => order.push(grandchild.id))
+    addDisposer(child1, () => order.push(child1.id))
+    addDisposer(child2, () => order.push(child2.id))
+    addDisposer(parent, () => order.push(parent.id))
 
     disposeScope(parent)
 
@@ -62,17 +63,28 @@ describe('disposeScope', () => {
 
   it('clears bindings on disposed scope', () => {
     const scope = createScope(null)
-    scope.bindings.push({} as never)
+    const binding: Binding = {
+      mask: 1,
+      accessor: () => 'x',
+      lastValue: 'x',
+      kind: 'text',
+      node: document.createTextNode(''),
+      perItem: false,
+      dead: false,
+      ownerScope: scope,
+    }
+    addBinding(scope, binding)
+    expect(scope.bindings.length).toBe(1)
     disposeScope(scope)
-    expect(scope.bindings).toEqual([])
+    expect(binding.dead).toBe(true)
   })
 
   it('is idempotent — disposing twice does not throw or double-fire', () => {
     const scope = createScope(null)
     let count = 0
-    scope.disposers.push(() => count++)
+    addDisposer(scope, () => count++)
     disposeScope(scope)
-    disposeScope(scope)
+    disposeScope(scope) // second dispose — scope may be pooled, but should not throw
     expect(count).toBe(1)
   })
 })

@@ -8,14 +8,32 @@ const EMPTY_DISPOSERS: Array<() => void> = []
 const EMPTY_BINDINGS: Binding[] = []
 const EMPTY_UPDATERS: Array<() => void> = []
 
+// Scope pool — reuse disposed scope objects to reduce GC pressure.
+// Capped to avoid memory leaks in apps that create/destroy thousands of rows.
+const SCOPE_POOL: Scope[] = []
+const SCOPE_POOL_MAX = 2048
+
+/** @internal Drain the scope pool — for testing only */
+export function _drainScopePool(): void {
+  SCOPE_POOL.length = 0
+}
+
 export function createScope(parent: Scope | null): Scope {
-  const scope: Scope = {
-    id: nextId++,
-    parent,
-    children: EMPTY_SCOPES,
-    disposers: EMPTY_DISPOSERS,
-    bindings: EMPTY_BINDINGS,
-    itemUpdaters: EMPTY_UPDATERS,
+  let scope: Scope
+  if (SCOPE_POOL.length > 0) {
+    scope = SCOPE_POOL.pop()!
+    scope.id = nextId++
+    scope.parent = parent
+    // Arrays already reset to empties by dispose
+  } else {
+    scope = {
+      id: nextId++,
+      parent,
+      children: EMPTY_SCOPES,
+      disposers: EMPTY_DISPOSERS,
+      bindings: EMPTY_BINDINGS,
+      itemUpdaters: EMPTY_UPDATERS,
+    }
   }
 
   if (parent) {
@@ -41,6 +59,8 @@ export function disposeScope(scope: Scope, skipParentRemoval = false): void {
   if (scope.disposers.length === 0 && scope.children.length === 0 && scope.bindings.length === 0) {
     if (!skipParentRemoval) removeFromParent(scope)
     scope.parent = null
+    // Don't pool empty scopes from the early-return path — they may be
+    // disposed idempotently (twice), which would create pool duplicates
     return
   }
 
@@ -64,13 +84,18 @@ export function disposeScope(scope: Scope, skipParentRemoval = false): void {
     binding.lastValue = undefined
   }
 
-  scope.disposers.length = 0
-  scope.bindings.length = 0
-  scope.children.length = 0
-  scope.itemUpdaters.length = 0
+  // Reset to shared empties — don't just truncate, so pooled scopes
+  // don't hold allocated-but-empty arrays
+  scope.disposers = EMPTY_DISPOSERS
+  scope.bindings = EMPTY_BINDINGS
+  scope.children = EMPTY_SCOPES
+  scope.itemUpdaters = EMPTY_UPDATERS
 
   if (!skipParentRemoval) removeFromParent(scope)
   scope.parent = null
+
+  // Return to pool for reuse
+  if (SCOPE_POOL.length < SCOPE_POOL_MAX) SCOPE_POOL.push(scope)
 }
 
 /**
@@ -112,12 +137,13 @@ export function disposeScopesBulk(scopes: Scope[]): void {
       binding.node = null!
       binding.lastValue = undefined
     }
-    // Clear all arrays + detach from parent
+    // Reset to shared empties + detach from parent + return to pool
     scope.disposers = EMPTY_DISPOSERS
     scope.bindings = EMPTY_BINDINGS
     scope.children = EMPTY_SCOPES
     scope.itemUpdaters = EMPTY_UPDATERS
     scope.parent = null
+    if (SCOPE_POOL.length < SCOPE_POOL_MAX) SCOPE_POOL.push(scope)
   }
 }
 
