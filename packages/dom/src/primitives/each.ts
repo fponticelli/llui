@@ -24,6 +24,17 @@ const buildCtx: RenderContext = {
   structuralBlocks: [],
 }
 
+// Reusable render bag — mutated per entry instead of allocating new objects
+const buildBag: Record<string, unknown> = {
+  send: null,
+  get item() {
+    return (buildBag._getItemProxy as () => unknown)()
+  },
+  acc: null,
+  index: null,
+  _getItemProxy: null,
+}
+
 interface Entry<T> {
   key: string | number
   item: T
@@ -329,18 +340,13 @@ function buildEntry<S, T, M>(
   setFlatBindings(ctx.allBindings)
   setRenderContext(buildCtx)
 
-  // The render bag exposes `item` as a getter so the Proxy is only
-  // created when the callback actually accesses item.field. Compiled
-  // code uses `acc(fn)` exclusively, avoiding the Proxy entirely.
-  const renderBag: Parameters<typeof opts.render>[0] = {
-    send,
-    get item() {
-      return getItemProxy()
-    },
-    acc: itemFn,
-    index: indexAccessor,
-  }
-  entry.nodes = opts.render(renderBag)
+  // Reuse a single render bag object across entries — mutate `acc` and
+  // `index` per entry to avoid per-entry object allocation.
+  buildBag.send = send
+  buildBag.acc = itemFn
+  buildBag.index = indexAccessor
+  buildBag._getItemProxy = getItemProxy
+  entry.nodes = opts.render(buildBag as Parameters<typeof opts.render>[0])
 
   // Move itemUpdaters from scope to entry for direct access during updateEntry.
   // This avoids scope.itemUpdaters lookup overhead on every item update.
