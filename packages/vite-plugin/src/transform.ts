@@ -1186,15 +1186,379 @@ function tryInjectDirty(
   )
   const updateProp = f.createPropertyAssignment('__update', updateFn)
 
-  const newConfig = f.createObjectLiteralExpression(
-    [...configArg.properties, dirtyProp, legendProp, updateProp],
-    true,
-  )
+  // __handlers: per-message-type specialized update functions.
+  // Analyzes the update() switch/case and generates direct handlers
+  // that bypass the generic Phase 1/2 pipeline for single-message updates.
+  const handlersProp = tryBuildHandlers(configArg, topLevelBits, f)
+
+  const extraProps = [dirtyProp, legendProp, updateProp]
+  if (handlersProp) extraProps.push(handlersProp)
+
+  const newConfig = f.createObjectLiteralExpression([...configArg.properties, ...extraProps], true)
 
   return f.createCallExpression(node.expression, node.typeArguments, [
     newConfig,
     ...node.arguments.slice(1),
   ])
+}
+
+/**
+ * Analyze update() switch/case and generate per-message-type handlers.
+ *
+ * Each handler receives (inst, msg) and returns [newState, effects].
+ * The handler calls update() to get the new state, then directly invokes
+ * the appropriate runtime primitives (reconcileItems, __directUpdate, etc.)
+ * instead of going through the generic Phase 1/2 pipeline.
+ *
+ * Conservative: only generates handlers for cases where the field
+ * modifications are statically determinable. Complex cases are skipped.
+ */
+function tryBuildHandlers(
+  configArg: ts.ObjectLiteralExpression,
+  topLevelBits: Map<string, number>,
+  f: ts.NodeFactory,
+): ts.PropertyAssignment | null {
+  if (topLevelBits.size === 0) return null
+
+  // Find the update function in the component config
+  let updateFn: ts.ArrowFunction | ts.FunctionExpression | null = null
+  for (const prop of configArg.properties) {
+    if (
+      ts.isPropertyAssignment(prop) &&
+      ts.isIdentifier(prop.name) &&
+      prop.name.text === 'update'
+    ) {
+      if (ts.isArrowFunction(prop.initializer) || ts.isFunctionExpression(prop.initializer)) {
+        updateFn = prop.initializer
+      }
+      break
+    }
+  }
+  if (!updateFn) return null
+
+  // Find the switch statement in the update body
+  const body = ts.isBlock(updateFn.body) ? updateFn.body : null
+  if (!body) return null
+
+  let switchStmt: ts.SwitchStatement | null = null
+  for (const stmt of body.statements) {
+    if (ts.isSwitchStatement(stmt)) {
+      switchStmt = stmt
+      break
+    }
+  }
+  if (!switchStmt) return null
+
+  // Check the switch discriminant is msg.type pattern
+  const stateParam = updateFn.parameters[0]?.name
+  const msgParam = updateFn.parameters[1]?.name
+  if (!stateParam || !msgParam || !ts.isIdentifier(stateParam) || !ts.isIdentifier(msgParam))
+    return null
+  const stateName = stateParam.text
+  const _msgName = msgParam.text
+
+  // Analyze each case clause
+  const handlers: ts.PropertyAssignment[] = []
+
+  for (const clause of switchStmt.caseBlock.clauses) {
+    if (!ts.isCaseClause(clause)) continue
+
+    // Extract the case label — must be a string literal like 'select'
+    if (!ts.isStringLiteral(clause.expression)) continue
+    const msgType = clause.expression.text
+
+    // Find the return statement in the case body
+    let returnExpr: ts.ArrayLiteralExpression | null = null
+    for (const stmt of clause.statements) {
+      if (
+        ts.isReturnStatement(stmt) &&
+        stmt.expression &&
+        ts.isArrayLiteralExpression(stmt.expression)
+      ) {
+        returnExpr = stmt.expression
+        break
+      }
+      // Handle block-scoped cases: case 'x': { ... return [...] }
+      if (ts.isBlock(stmt)) {
+        for (const inner of stmt.statements) {
+          if (
+            ts.isReturnStatement(inner) &&
+            inner.expression &&
+            ts.isArrayLiteralExpression(inner.expression)
+          ) {
+            returnExpr = inner.expression
+            break
+          }
+        }
+      }
+    }
+    if (!returnExpr || returnExpr.elements.length < 2) continue
+
+    // Analyze the state expression (first element of return [newState, effects])
+    const stateExpr = returnExpr.elements[0]!
+
+    // Determine which top-level fields change
+    const modifiedFields = analyzeModifiedFields(stateExpr, stateName, topLevelBits)
+    if (!modifiedFields) continue // too complex to analyze
+
+    // Compute the dirty mask for this case
+    let caseDirty = 0
+    for (const field of modifiedFields) {
+      caseDirty |= topLevelBits.get(field) ?? 0xffffffff | 0
+    }
+
+    // Generate the handler function:
+    // (inst, msg) => {
+    //   const [s, e] = inst.def.update(inst.state, msg)
+    //   inst.state = s
+    //   // Phase 1: only call blocks whose mask intersects caseDirty
+    //   for (const bl of inst.structuralBlocks) {
+    //     if (bl.mask & caseDirty) bl.reconcile(s, caseDirty)
+    //   }
+    //   // Phase 2
+    //   __runPhase2(s, caseDirty, inst.allBindings, inst.allBindings.length)
+    //   return [s, e]
+    // }
+    //
+    // For now, generate a handler that calls update() and runs targeted
+    // Phase 1 + Phase 2 with the known dirty mask. This eliminates:
+    // - dirty computation (__dirty call)
+    // - mask accumulation across messages
+    // - Phase 1 blocks that don't match the case's dirty bits
+    const handler = buildCaseHandler(f, caseDirty)
+    handlers.push(f.createPropertyAssignment(f.createStringLiteral(msgType), handler))
+  }
+
+  if (handlers.length === 0) return null
+
+  return f.createPropertyAssignment('__handlers', f.createObjectLiteralExpression(handlers, true))
+}
+
+/**
+ * Analyze which top-level state fields are modified in a return expression.
+ * Returns the set of field names, or null if too complex to determine.
+ */
+function analyzeModifiedFields(
+  stateExpr: ts.Expression,
+  stateName: string,
+  topLevelBits: Map<string, number>,
+): string[] | null {
+  // Pattern: { ...state, field1: ..., field2: ... } or { field1: ..., field2: ... }
+  if (ts.isObjectLiteralExpression(stateExpr)) {
+    const modified: string[] = []
+    for (const prop of stateExpr.properties) {
+      if (ts.isSpreadAssignment(prop)) {
+        // { ...state } — the spread doesn't modify fields
+        continue
+      }
+      if (ts.isPropertyAssignment(prop) && ts.isIdentifier(prop.name)) {
+        const fieldName = prop.name.text
+        if (topLevelBits.has(fieldName)) {
+          modified.push(fieldName)
+        }
+      }
+      // Handle shorthand: { ...state, rows } where rows is a local variable
+      if (ts.isShorthandPropertyAssignment(prop)) {
+        const fieldName = prop.name.text
+        if (topLevelBits.has(fieldName)) {
+          modified.push(fieldName)
+        }
+      }
+    }
+    return modified.length > 0 ? modified : null
+  }
+
+  // Pattern: state (no change — early return)
+  if (ts.isIdentifier(stateExpr) && stateExpr.text === stateName) {
+    return [] // no fields modified
+  }
+
+  return null // too complex
+}
+
+/**
+ * Build a handler function for a specific message type case.
+ *
+ * Generated: (inst, msg) => {
+ *   const [s, e] = inst.def.update(inst.state, msg)
+ *   inst.state = s
+ *   const bl = inst.structuralBlocks, b = inst.allBindings, p = b.length
+ *   // Phase 1: gated by caseDirty
+ *   for (let i = 0; i < bl.length; i++) {
+ *     if (bl[i].mask & caseDirty) bl[i].reconcile(s, caseDirty)
+ *   }
+ *   // Phase 2
+ *   __runPhase2(s, caseDirty, b, p)
+ *   return [s, e]
+ * }
+ */
+function buildCaseHandler(f: ts.NodeFactory, caseDirty: number): ts.ArrowFunction {
+  const stmts: ts.Statement[] = []
+
+  // const [s, e] = inst.def.update(inst.state, msg)
+  stmts.push(
+    f.createVariableStatement(
+      undefined,
+      f.createVariableDeclarationList(
+        [
+          f.createVariableDeclaration(
+            f.createArrayBindingPattern([
+              f.createBindingElement(undefined, undefined, 's'),
+              f.createBindingElement(undefined, undefined, 'e'),
+            ]),
+            undefined,
+            undefined,
+            f.createCallExpression(
+              f.createPropertyAccessExpression(
+                f.createPropertyAccessExpression(f.createIdentifier('inst'), 'def'),
+                'update',
+              ),
+              undefined,
+              [
+                f.createPropertyAccessExpression(f.createIdentifier('inst'), 'state'),
+                f.createIdentifier('msg'),
+              ],
+            ),
+          ),
+        ],
+        ts.NodeFlags.Const,
+      ),
+    ),
+  )
+
+  // inst.state = s
+  stmts.push(
+    f.createExpressionStatement(
+      f.createBinaryExpression(
+        f.createPropertyAccessExpression(f.createIdentifier('inst'), 'state'),
+        ts.SyntaxKind.EqualsToken,
+        f.createIdentifier('s'),
+      ),
+    ),
+  )
+
+  // Phase 1: structural blocks gated by caseDirty
+  if (caseDirty !== 0) {
+    // const bl = inst.structuralBlocks
+    stmts.push(
+      f.createVariableStatement(
+        undefined,
+        f.createVariableDeclarationList(
+          [
+            f.createVariableDeclaration(
+              'bl',
+              undefined,
+              undefined,
+              f.createPropertyAccessExpression(f.createIdentifier('inst'), 'structuralBlocks'),
+            ),
+          ],
+          ts.NodeFlags.Const,
+        ),
+      ),
+    )
+
+    // for (let i = 0; i < bl.length; i++) { if (bl[i].mask & dirty) bl[i].reconcile(s, dirty) }
+    stmts.push(
+      f.createForStatement(
+        f.createVariableDeclarationList(
+          [f.createVariableDeclaration('i', undefined, undefined, f.createNumericLiteral(0))],
+          ts.NodeFlags.Let,
+        ),
+        f.createBinaryExpression(
+          f.createIdentifier('i'),
+          ts.SyntaxKind.LessThanToken,
+          f.createPropertyAccessExpression(f.createIdentifier('bl'), 'length'),
+        ),
+        f.createPostfixUnaryExpression(f.createIdentifier('i'), ts.SyntaxKind.PlusPlusToken),
+        f.createBlock(
+          [
+            f.createIfStatement(
+              f.createBinaryExpression(
+                f.createPropertyAccessExpression(
+                  f.createElementAccessExpression(
+                    f.createIdentifier('bl'),
+                    f.createIdentifier('i'),
+                  ),
+                  'mask',
+                ),
+                ts.SyntaxKind.AmpersandToken,
+                createMaskLiteral(f, caseDirty),
+              ),
+              f.createExpressionStatement(
+                f.createCallExpression(
+                  f.createPropertyAccessExpression(
+                    f.createElementAccessExpression(
+                      f.createIdentifier('bl'),
+                      f.createIdentifier('i'),
+                    ),
+                    'reconcile',
+                  ),
+                  undefined,
+                  [f.createIdentifier('s'), createMaskLiteral(f, caseDirty)],
+                ),
+              ),
+            ),
+          ],
+          true,
+        ),
+      ),
+    )
+
+    // const b = inst.allBindings, p = b.length
+    stmts.push(
+      f.createVariableStatement(
+        undefined,
+        f.createVariableDeclarationList(
+          [
+            f.createVariableDeclaration(
+              'b',
+              undefined,
+              undefined,
+              f.createPropertyAccessExpression(f.createIdentifier('inst'), 'allBindings'),
+            ),
+            f.createVariableDeclaration(
+              'p',
+              undefined,
+              undefined,
+              f.createPropertyAccessExpression(f.createIdentifier('b'), 'length'),
+            ),
+          ],
+          ts.NodeFlags.Const,
+        ),
+      ),
+    )
+
+    // __runPhase2(s, caseDirty, b, p)
+    stmts.push(
+      f.createExpressionStatement(
+        f.createCallExpression(f.createIdentifier('__runPhase2'), undefined, [
+          f.createIdentifier('s'),
+          createMaskLiteral(f, caseDirty),
+          f.createIdentifier('b'),
+          f.createIdentifier('p'),
+        ]),
+      ),
+    )
+  }
+
+  // return [s, e]
+  stmts.push(
+    f.createReturnStatement(
+      f.createArrayLiteralExpression([f.createIdentifier('s'), f.createIdentifier('e')]),
+    ),
+  )
+
+  return f.createArrowFunction(
+    undefined,
+    undefined,
+    [
+      f.createParameterDeclaration(undefined, undefined, 'inst'),
+      f.createParameterDeclaration(undefined, undefined, 'msg'),
+    ],
+    undefined,
+    f.createToken(ts.SyntaxKind.EqualsGreaterThanToken),
+    f.createBlock(stmts, true),
+  )
 }
 
 /**
