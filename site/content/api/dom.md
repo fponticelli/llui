@@ -403,6 +403,12 @@ Fast path for each() rows — 1 cloneNode instead of N createElement.
 function elTemplate(html: string, patch: (root: Element, bind: TemplateBind) => void): Element
 ```
 
+### `applyBinding()`
+
+```typescript
+function applyBinding(target: { kind: BindingKind; node: Node; key?: string }, value: unknown): void
+```
+
 ## Types
 
 ### `Send`
@@ -501,6 +507,14 @@ export interface ComponentDef<S, M, E = never, D = void> {
   __stateSchema?: object
   /** @internal Compiler-injected — Effect union schema (for introspection) */
   __effectSchema?: object
+  /** @internal Compiler-injected — replaces generic Phase 1 + Phase 2 loop */
+  __update?: (
+    state: S,
+    dirty: number,
+    bindings: Binding[],
+    blocks: StructuralBlock[],
+    bindingsBeforePhase1: number,
+  ) => void
 }
 ```
 
