@@ -1795,6 +1795,8 @@ function tryEmitRowFactory(
     }
     // Check for nested structural primitives — bail
     if (containsStructuralCall(stmt)) return null
+    // Check for selector.bind() calls — row factory + selector causes V8 deopt
+    if (containsSelectorBind(stmt)) return null
   }
 
   if (!templateCall || templateCall.arguments.length < 2) return null
@@ -2316,6 +2318,17 @@ function tryEmitRowFactory(
     newOpts,
     ...eachCall.arguments.slice(1),
   ])
+}
+
+function containsSelectorBind(node: ts.Node): boolean {
+  if (
+    ts.isCallExpression(node) &&
+    ts.isPropertyAccessExpression(node.expression) &&
+    node.expression.name.text === 'bind'
+  ) {
+    return true
+  }
+  return ts.forEachChild(node, containsSelectorBind) ?? false
 }
 
 function containsStructuralCall(node: ts.Node): boolean {
