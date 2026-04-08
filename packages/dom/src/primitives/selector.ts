@@ -42,32 +42,10 @@ export function selector<S, V>(field: (s: S) => V): SelectorInstance<V> {
       if (Object.is(newValue, lastValue)) return lastValue
 
       // Deselect old
-      const oldEntries = registry.get(lastValue)
-      if (oldEntries) {
-        for (let i = 0; i < oldEntries.length; i++) {
-          const entry = oldEntries[i]!
-          if (!entry.node) continue // disposed
-          const v = entry.transform(false)
-          if (!Object.is(v, entry.lastValue)) {
-            entry.lastValue = v
-            applyBinding({ kind: entry.kind, node: entry.node, key: entry.key }, v)
-          }
-        }
-      }
+      updateBucket(registry, lastValue, false)
 
       // Select new
-      const newEntries = registry.get(newValue)
-      if (newEntries) {
-        for (let i = 0; i < newEntries.length; i++) {
-          const entry = newEntries[i]!
-          if (!entry.node) continue // disposed
-          const v = entry.transform(true)
-          if (!Object.is(v, entry.lastValue)) {
-            entry.lastValue = v
-            applyBinding({ kind: entry.kind, node: entry.node, key: entry.key }, v)
-          }
-        }
-      }
+      updateBucket(registry, newValue, true)
 
       lastValue = newValue
       return newValue
@@ -122,6 +100,40 @@ export function selector<S, V>(field: (s: S) => V): SelectorInstance<V> {
         entry.node = null
       })
     },
+  }
+}
+
+/** Update a bucket's entries and lazily compact disposed entries. */
+function updateBucket<V>(
+  registry: Map<V, SelectorEntry[]>,
+  key: V,
+  match: boolean,
+): void {
+  const entries = registry.get(key)
+  if (!entries) return
+
+  let hasStale = false
+  for (let i = 0; i < entries.length; i++) {
+    const entry = entries[i]!
+    if (!entry.node) {
+      hasStale = true
+      continue
+    }
+    const v = entry.transform(match)
+    if (!Object.is(v, entry.lastValue)) {
+      entry.lastValue = v
+      applyBinding({ kind: entry.kind, node: entry.node, key: entry.key }, v)
+    }
+  }
+
+  // Compact stale entries lazily — only when we encounter them
+  if (hasStale) {
+    let w = 0
+    for (let r = 0; r < entries.length; r++) {
+      if (entries[r]!.node) entries[w++] = entries[r]!
+    }
+    entries.length = w
+    if (w === 0) registry.delete(key)
   }
 }
 
