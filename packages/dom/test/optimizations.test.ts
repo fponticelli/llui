@@ -1086,4 +1086,111 @@ describe('row factory (__rowUpdate)', () => {
     expect(e.current).toBe('a')
     expect(typeof e.index).toBe('number')
   })
+
+  it('row factory works with selector.bind and user variables derived from item', () => {
+    // This test replicates the benchmark pattern where:
+    // 1. A user variable (rowId) is computed from item.id()
+    // 2. selector.bind() uses that variable
+    // 3. A DOM property (_id) uses that variable
+    // The row factory must preserve these statements and rewrite accessor calls.
+    type Row = { id: number; label: string }
+    type S = { rows: Row[]; selected: number }
+    type M = { type: 'select'; id: number }
+
+    const def = component<S, M, never>({
+      name: 'RowFactoryWithSelector',
+      init: () => [
+        {
+          rows: [
+            { id: 1, label: 'one' },
+            { id: 2, label: 'two' },
+            { id: 3, label: 'three' },
+          ],
+          selected: 0,
+        },
+        [],
+      ],
+      update: (s, m) => [{ ...s, selected: m.id }, []],
+      view: ({ send }) => {
+        const sel = selector<S, number>((s) => s.selected)
+        return [
+          ...each<S, Row>({
+            items: (s) => s.rows,
+            key: (r) => r.id,
+            render: ({ item, entry }) => {
+              // User variable derived from item accessor
+              const rowId = item.id()
+              const row = div([text(item.label)])
+
+              // Selector bind using the user variable
+              sel.bind(row, rowId, 'class', 'class', (match) => (match ? 'selected' : ''))
+
+              // DOM property using the user variable
+              ;(row as Record<string, unknown>)._id = rowId
+
+              // If entry available, simulate row factory pattern
+              if (entry) {
+                const e = entry as Record<string, unknown>
+                e._n0 = row.firstChild as Text
+                e._v0 = (e as { current: Row }).current?.label ?? ''
+                ;(e._n0 as Text).nodeValue = e._v0 as string
+                e.__rowUpdate = (ent: Record<string, unknown>) => {
+                  const v = (ent.current as Row).label
+                  if (v !== ent._v0) {
+                    ent._v0 = v
+                    ;(ent._n0 as Text).nodeValue = v
+                  }
+                }
+              }
+
+              return [row]
+            },
+          }),
+        ]
+      },
+      __dirty: (o, n) => {
+        let m = 0
+        if (!Object.is(o.rows, n.rows)) m |= 1
+        if (!Object.is(o.selected, n.selected)) m |= 2
+        return m
+      },
+    })
+
+    const container = document.createElement('div')
+    let sendFn!: (msg: M) => void
+    const origView = def.view
+    def.view = (h) => {
+      sendFn = h.send
+      return origView(h)
+    }
+    const handle = mountApp(container, def)
+
+    // Verify initial render
+    const divs = container.querySelectorAll('div')
+    expect(divs.length).toBe(3)
+    expect(divs[0]!.textContent).toBe('one')
+    expect(divs[1]!.textContent).toBe('two')
+    expect(divs[2]!.textContent).toBe('three')
+
+    // Verify _id was set from the user variable
+    expect((divs[0] as Record<string, unknown>)._id).toBe(1)
+    expect((divs[1] as Record<string, unknown>)._id).toBe(2)
+    expect((divs[2] as Record<string, unknown>)._id).toBe(3)
+
+    // Verify selector works (className updates)
+    expect(divs[0]!.className).toBe('')
+    sendFn({ type: 'select', id: 2 })
+    flush()
+    expect(divs[0]!.className).toBe('')
+    expect(divs[1]!.className).toBe('selected')
+    expect(divs[2]!.className).toBe('')
+
+    // Switch selection
+    sendFn({ type: 'select', id: 3 })
+    flush()
+    expect(divs[1]!.className).toBe('')
+    expect(divs[2]!.className).toBe('selected')
+
+    handle.dispose()
+  })
 })
