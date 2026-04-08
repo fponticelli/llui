@@ -1,0 +1,441 @@
+import { describe, it, expect, vi } from 'vitest'
+import { mountApp } from '../src/mount'
+import { component, div, text, each, selector, flush } from '../src/index'
+import {
+  createScope,
+  disposeScope,
+  disposeScopesBulk,
+  addDisposer,
+  addCheckedItemUpdater,
+} from '../src/scope'
+import { _runPhase2 } from '../src/update-loop'
+import type { ComponentDef, Binding } from '../src/types'
+import type { StructuralBlock } from '../src/structural'
+
+// ── __update compiler fast path ──────────────────────────────────
+
+describe('__update fast path', () => {
+  it('calls __update instead of generic Phase 1/2 when present', () => {
+    const updateSpy = vi.fn()
+
+    type S = { count: number }
+    type M = { type: 'inc' }
+
+    const def: ComponentDef<S, M, never> = {
+      name: 'UpdateSpy',
+      init: () => [{ count: 0 }, []],
+      update: (s, _m) => [{ ...s, count: s.count + 1 }, []],
+      view: ({ text: t }) => [div([t((s: S) => String(s.count))])],
+      __dirty: (o, n) => (Object.is(o.count, n.count) ? 0 : 1),
+      __update(state, dirty, bindings, blocks, bindingsBeforePhase1) {
+        updateSpy({ state, dirty, bindings, blocks, bindingsBeforePhase1 })
+        // Must still run Phase 2 for correctness
+        _runPhase2(state, dirty, bindings, bindingsBeforePhase1)
+      },
+    }
+
+    const container = document.createElement('div')
+    let sendFn!: (msg: M) => void
+    const origView = def.view
+    def.view = (h) => {
+      sendFn = h.send
+      return origView(h)
+    }
+    const handle = mountApp(container, def)
+
+    expect(updateSpy).not.toHaveBeenCalled()
+
+    sendFn({ type: 'inc' })
+    flush()
+
+    expect(updateSpy).toHaveBeenCalledTimes(1)
+    const call = updateSpy.mock.calls[0]![0]
+    expect(call.state).toEqual({ count: 1 })
+    expect(call.dirty).toBe(1)
+    expect(Array.isArray(call.bindings)).toBe(true)
+    expect(Array.isArray(call.blocks)).toBe(true)
+
+    // DOM should still update (Phase 2 ran inside our spy)
+    expect(container.textContent).toBe('1')
+
+    handle.dispose()
+  })
+
+  it('falls back to generic update when __update is absent', () => {
+    type S = { count: number }
+    type M = { type: 'inc' }
+
+    const def: ComponentDef<S, M, never> = {
+      name: 'NoUpdate',
+      init: () => [{ count: 0 }, []],
+      update: (s, _m) => [{ ...s, count: s.count + 1 }, []],
+      view: ({ text: t }) => [div([t((s: S) => String(s.count))])],
+      __dirty: (o, n) => (Object.is(o.count, n.count) ? 0 : 1),
+      // No __update — generic path
+    }
+
+    const container = document.createElement('div')
+    let sendFn!: (msg: M) => void
+    const origView = def.view
+    def.view = (h) => {
+      sendFn = h.send
+      return origView(h)
+    }
+    const handle = mountApp(container, def)
+
+    sendFn({ type: 'inc' })
+    flush()
+
+    expect(container.textContent).toBe('1')
+    handle.dispose()
+  })
+})
+
+// ── Phase 1 mask gating ──────────────────────────────────────────
+
+describe('Phase 1 mask gating', () => {
+  it('skips each() reconcile when dirty mask does not intersect structural mask', () => {
+    type S = { items: string[]; label: string }
+    type M = { type: 'setLabel'; value: string } | { type: 'setItems'; items: string[] }
+
+    let itemsAccessorCalls = 0
+
+    const def: ComponentDef<S, M, never> = {
+      name: 'MaskGating',
+      init: () => [{ items: ['a', 'b'], label: 'hello' }, []],
+      update: (s, m) => {
+        switch (m.type) {
+          case 'setLabel':
+            return [{ ...s, label: m.value }, []]
+          case 'setItems':
+            return [{ ...s, items: m.items }, []]
+        }
+      },
+      view: ({ text: t }) => [
+        div([t((s: S) => s.label)]),
+        ...each<S, string>({
+          items: (s) => {
+            itemsAccessorCalls++
+            return s.items
+          },
+          key: (item) => item,
+          render: ({ item }) => [div([text(item)])],
+          __mask: 1, // items depends on bit 1
+        } as never),
+      ],
+      __dirty: (o, n) => {
+        let m = 0
+        if (!Object.is(o.items, n.items)) m |= 1
+        if (!Object.is(o.label, n.label)) m |= 2
+        return m
+      },
+    }
+
+    const container = document.createElement('div')
+    let sendFn!: (msg: M) => void
+    const origView = def.view
+    def.view = (h) => {
+      sendFn = h.send
+      return origView(h)
+    }
+    const handle = mountApp(container, def)
+
+    // Initial mount calls items accessor once
+    const initialCalls = itemsAccessorCalls
+
+    // Change label (bit 2) — should NOT call items accessor
+    sendFn({ type: 'setLabel', value: 'world' })
+    flush()
+
+    expect(container.textContent).toContain('world')
+    expect(itemsAccessorCalls).toBe(initialCalls) // No new items accessor call
+
+    // Change items (bit 1) — SHOULD call items accessor
+    sendFn({ type: 'setItems', items: ['c'] })
+    flush()
+
+    expect(itemsAccessorCalls).toBeGreaterThan(initialCalls)
+    expect(container.textContent).toContain('c')
+
+    handle.dispose()
+  })
+})
+
+// ── Swap in single-pass ──────────────────────────────────────────
+
+describe('swap optimization', () => {
+  it('swaps two items without updating all entries', () => {
+    type Row = { id: number; label: string }
+    type S = { rows: Row[] }
+    type M = { type: 'swap' }
+
+    let updateEntryCalls = 0
+
+    const def: ComponentDef<S, M, never> = {
+      name: 'SwapOpt',
+      init: () => [
+        {
+          rows: [
+            { id: 1, label: 'one' },
+            { id: 2, label: 'two' },
+            { id: 3, label: 'three' },
+            { id: 4, label: 'four' },
+            { id: 5, label: 'five' },
+          ],
+        },
+        [],
+      ],
+      update: (s, _m) => {
+        const rows = s.rows.slice()
+        const tmp = rows[0]!
+        rows[0] = rows[4]!
+        rows[4] = tmp
+        return [{ rows }, []]
+      },
+      view: () => [
+        ...each<S, Row>({
+          items: (s) => s.rows,
+          key: (r) => r.id,
+          render: ({ item }) => {
+            const nodes = [div([text(item.label)])]
+            return nodes
+          },
+        }),
+      ],
+      __dirty: (o, n) => (Object.is(o.rows, n.rows) ? 0 : 1),
+    }
+
+    const container = document.createElement('div')
+    let sendFn!: (msg: M) => void
+    const origView = def.view
+    def.view = (h) => {
+      sendFn = h.send
+      return origView(h)
+    }
+    const handle = mountApp(container, def)
+
+    // Verify initial order
+    const getText = () =>
+      Array.from(container.querySelectorAll('div'))
+        .map((d) => d.textContent)
+        .filter(Boolean)
+
+    expect(getText()).toEqual(['one', 'two', 'three', 'four', 'five'])
+
+    // Swap first and last
+    sendFn({ type: 'swap' })
+    flush()
+
+    expect(getText()).toEqual(['five', 'two', 'three', 'four', 'one'])
+
+    // Swap again
+    sendFn({ type: 'swap' })
+    flush()
+
+    expect(getText()).toEqual(['one', 'two', 'three', 'four', 'five'])
+
+    handle.dispose()
+  })
+})
+
+// ── disposeScopesBulk ────────────────────────────────────────────
+
+describe('disposeScopesBulk', () => {
+  it('disposes all scopes and their children', () => {
+    const parent = createScope(null)
+    const child1 = createScope(parent)
+    const child2 = createScope(parent)
+    const grandchild = createScope(child1)
+
+    const disposed: string[] = []
+    addDisposer(child1, () => disposed.push('child1'))
+    addDisposer(child2, () => disposed.push('child2'))
+    addDisposer(grandchild, () => disposed.push('grandchild'))
+
+    disposeScopesBulk([child1, child2])
+
+    expect(disposed).toContain('child1')
+    expect(disposed).toContain('child2')
+    expect(disposed).toContain('grandchild')
+    expect(child1.parent).toBeNull()
+    expect(child2.parent).toBeNull()
+    expect(grandchild.parent).toBeNull()
+  })
+
+  it('marks bindings as dead', () => {
+    const parent = createScope(null)
+    const child = createScope(parent)
+
+    // Create a mock binding on the child scope
+    const binding: Binding = {
+      mask: 1,
+      accessor: () => 'test',
+      lastValue: 'test',
+      kind: 'text',
+      node: document.createTextNode(''),
+      perItem: false,
+      dead: false,
+      ownerScope: child,
+    }
+    child.bindings = [binding]
+
+    disposeScopesBulk([child])
+
+    expect(binding.dead).toBe(true)
+    expect(binding.accessor).toBeNull()
+    expect(binding.node).toBeNull()
+  })
+
+  it('clears itemUpdaters', () => {
+    const parent = createScope(null)
+    const child = createScope(parent)
+    child.itemUpdaters = [() => {}, () => {}]
+
+    disposeScopesBulk([child])
+
+    // After bulk dispose, arrays are reset to shared empties
+    expect(child.itemUpdaters.length).toBe(0)
+  })
+})
+
+// ── addCheckedItemUpdater ────────────────────────────────────────
+
+describe('addCheckedItemUpdater', () => {
+  it('returns initial value', () => {
+    const scope = createScope(null)
+    let val = 'hello'
+    const initial = addCheckedItemUpdater(
+      scope,
+      () => val,
+      () => {},
+    )
+
+    expect(initial).toBe('hello')
+  })
+
+  it('calls apply when value changes', () => {
+    const scope = createScope(null)
+    let val = 'hello'
+    const applied: string[] = []
+
+    addCheckedItemUpdater(
+      scope,
+      () => val,
+      (v) => applied.push(v),
+    )
+
+    // Run updater with same value — should not apply
+    val = 'hello'
+    scope.itemUpdaters[0]!()
+    expect(applied).toEqual([])
+
+    // Run updater with new value — should apply
+    val = 'world'
+    scope.itemUpdaters[0]!()
+    expect(applied).toEqual(['world'])
+
+    // Run updater with same value again — should not apply
+    scope.itemUpdaters[0]!()
+    expect(applied).toEqual(['world'])
+  })
+
+  it('handles NaN correctly', () => {
+    const scope = createScope(null)
+    let val = NaN
+    const applied: number[] = []
+
+    addCheckedItemUpdater(
+      scope,
+      () => val,
+      (v) => applied.push(v),
+    )
+
+    // NaN === NaN should skip (NaN guard)
+    scope.itemUpdaters[0]!()
+    expect(applied).toEqual([])
+
+    // Change to a real number
+    val = 42
+    scope.itemUpdaters[0]!()
+    expect(applied).toEqual([42])
+  })
+})
+
+// ── selector O(1) update ─────────────────────────────────────────
+
+describe('selector optimization', () => {
+  it('updates only affected rows on select change', () => {
+    type Row = { id: number; label: string }
+    type S = { rows: Row[]; selected: number }
+    type M = { type: 'select'; id: number }
+
+    const def = component<S, M, never>({
+      name: 'SelectorOpt',
+      init: () => [
+        {
+          rows: [
+            { id: 1, label: 'one' },
+            { id: 2, label: 'two' },
+            { id: 3, label: 'three' },
+          ],
+          selected: 0,
+        },
+        [],
+      ],
+      update: (s, m) => [{ ...s, selected: m.id }, []],
+      view: ({ send }) => {
+        const sel = selector<S, number>((s) => s.selected)
+        return [
+          ...each<S, Row>({
+            items: (s) => s.rows,
+            key: (r) => r.id,
+            render: ({ item }) => {
+              const rowId = item.id()
+              const row = div([text(item.label)])
+              sel.bind(row, rowId, 'class', 'class', (match) => (match ? 'selected' : ''))
+              return [row]
+            },
+          }),
+        ]
+      },
+      __dirty: (o, n) => {
+        let m = 0
+        if (!Object.is(o.rows, n.rows)) m |= 1
+        if (!Object.is(o.selected, n.selected)) m |= 2
+        return m
+      },
+    })
+
+    const container = document.createElement('div')
+    let sendFn!: (msg: M) => void
+    const origView = def.view
+    def.view = (h) => {
+      sendFn = h.send
+      return origView(h)
+    }
+    const handle = mountApp(container, def)
+
+    const divs = container.querySelectorAll('div')
+    expect(divs[0]!.className).toBe('')
+    expect(divs[1]!.className).toBe('')
+    expect(divs[2]!.className).toBe('')
+
+    // Select row 2
+    sendFn({ type: 'select', id: 2 })
+    flush()
+
+    expect(divs[0]!.className).toBe('')
+    expect(divs[1]!.className).toBe('selected')
+    expect(divs[2]!.className).toBe('')
+
+    // Switch to row 3
+    sendFn({ type: 'select', id: 3 })
+    flush()
+
+    expect(divs[0]!.className).toBe('')
+    expect(divs[1]!.className).toBe('')
+    expect(divs[2]!.className).toBe('selected')
+
+    handle.dispose()
+  })
+})
