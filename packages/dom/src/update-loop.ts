@@ -234,6 +234,9 @@ export function _handleMsg(
   )
   inst.state = s
 
+  // Set dirty mask for memo() accessors used in structural blocks/bindings
+  setCurrentDirtyMask(dirty)
+
   if (method >= 0) {
     const bl = inst.structuralBlocks
     for (let i = 0; i < bl.length; i++) {
