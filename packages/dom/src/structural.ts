@@ -4,4 +4,8 @@ export interface StructuralBlock {
    *  means always run. */
   mask: number
   reconcile(state: unknown, dirtyMask: number): void
+  /** Same keys, only item data changed — skip mismatch/swap detection */
+  reconcileItems?(state: unknown): void
+  /** Remove all items — skip items accessor, go straight to clear path */
+  reconcileClear?(): void
 }

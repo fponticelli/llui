@@ -226,13 +226,11 @@ All 54 components follow the same pattern:
 import { componentName } from '@llui/components/component-name'
 
 // State machine
-const state = componentName.init({
-  /* options */
-})
+const state = componentName.init({ /* options */ })
 const [newState, effects] = componentName.update(state, msg)
 
 // Connect to DOM
-const parts = componentName.connect<State>((s) => s.field, send, { id: '...' })
+const parts = componentName.connect<State>(s => s.field, send, { id: '...' })
 // Use parts: div({ ...parts.root }, [button({ ...parts.trigger }, [...])])
 ```
 
@@ -242,13 +240,13 @@ const parts = componentName.connect<State>((s) => s.field, send, { id: '...' })
 
 **State** (`AccordionState`):
 
-| Field         | Type       |
-| ------------- | ---------- |
-| `value`       | `string[]` |
-| `multiple`    | `boolean`  |
-| `collapsible` | `boolean`  |
-| `disabled`    | `boolean`  |
-| `items`       | `string[]` |
+| Field | Type |
+|---|---|
+| `value` | `string[]` |
+| `multiple` | `boolean` |
+| `collapsible` | `boolean` |
+| `disabled` | `boolean` |
+| `items` | `string[]` |
 
 **Messages:** `toggle`, `open`, `close`, `setValue`, `setItems`, `focusNext`, `focusPrev`, `focusFirst`, `focusLast`
 
@@ -274,12 +272,12 @@ const parts = componentName.connect<State>((s) => s.field, send, { id: '...' })
 
 **State** (`AngleSliderState`):
 
-| Field      | Type      |
-| ---------- | --------- |
-| `value`    | `number`  |
-| `min`      | `number`  |
-| `max`      | `number`  |
-| `step`     | `number`  |
+| Field | Type |
+|---|---|
+| `value` | `number` |
+| `min` | `number` |
+| `max` | `number` |
+| `step` | `number` |
 | `disabled` | `boolean` |
 | `readOnly` | `boolean` |
 
@@ -297,13 +295,13 @@ const parts = componentName.connect<State>((s) => s.field, send, { id: '...' })
 
 **State** (`AsyncListState`):
 
-| Field     | Type             |
-| --------- | ---------------- |
-| `items`   | `T[]`            |
-| `page`    | `number`         |
-| `hasMore` | `boolean`        |
-| `status`  | `AsyncStatus`    |
-| `error`   | `string \| null` |
+| Field | Type |
+|---|---|
+| `items` | `T[]` |
+| `page` | `number` |
+| `hasMore` | `boolean` |
+| `status` | `AsyncStatus` |
+| `error` | `string \| null` |
 
 **Messages:** `loadMore`, `pageLoaded`, `pageFailed`, `reset`, `setItems`, `retry`
 
@@ -317,8 +315,8 @@ const parts = componentName.connect<State>((s) => s.field, send, { id: '...' })
 
 **State** (`AvatarState`):
 
-| Field    | Type          |
-| -------- | ------------- |
+| Field | Type |
+|---|---|
 | `status` | `ImageStatus` |
 
 **Messages:** `loadStart`, `loaded`, `error`, `reset`
@@ -335,14 +333,14 @@ const parts = componentName.connect<State>((s) => s.field, send, { id: '...' })
 
 **State** (`CarouselState`):
 
-| Field       | Type                      |
-| ----------- | ------------------------- |
-| `current`   | `number`                  |
-| `count`     | `number`                  |
-| `loop`      | `boolean`                 |
-| `autoplay`  | `boolean`                 |
-| `interval`  | `number`                  |
-| `paused`    | `boolean`                 |
+| Field | Type |
+|---|---|
+| `current` | `number` |
+| `count` | `number` |
+| `loop` | `boolean` |
+| `autoplay` | `boolean` |
+| `interval` | `number` |
+| `paused` | `boolean` |
 | `direction` | `'forward' \| 'backward'` |
 
 **Messages:** `goTo`, `next`, `prev`, `setCount`, `pause`, `resume`, `setAutoplay`
@@ -361,11 +359,11 @@ const parts = componentName.connect<State>((s) => s.field, send, { id: '...' })
 
 **State** (`CascadeSelectState`):
 
-| Field      | Type                 |
-| ---------- | -------------------- |
-| `levels`   | `CascadeLevel[]`     |
-| `values`   | `(string \| null)[]` |
-| `disabled` | `boolean`            |
+| Field | Type |
+|---|---|
+| `levels` | `CascadeLevel[]` |
+| `values` | `(string \| null)[]` |
+| `disabled` | `boolean` |
 
 **Messages:** `setLevels`, `setValue`, `clear`
 
@@ -381,11 +379,11 @@ const parts = componentName.connect<State>((s) => s.field, send, { id: '...' })
 
 **State** (`CheckboxState`):
 
-| Field      | Type           |
-| ---------- | -------------- |
-| `checked`  | `CheckedState` |
-| `disabled` | `boolean`      |
-| `required` | `boolean`      |
+| Field | Type |
+|---|---|
+| `checked` | `CheckedState` |
+| `disabled` | `boolean` |
+| `required` | `boolean` |
 
 **Messages:** `toggle`, `setChecked`, `setDisabled`
 
@@ -399,9 +397,9 @@ const parts = componentName.connect<State>((s) => s.field, send, { id: '...' })
 
 **State** (`ClipboardState`):
 
-| Field    | Type      |
-| -------- | --------- |
-| `value`  | `string`  |
+| Field | Type |
+|---|---|
+| `value` | `string` |
 | `copied` | `boolean` |
 
 **Messages:** `setValue`, `copy`, `copied`, `reset`
@@ -420,9 +418,9 @@ const parts = componentName.connect<State>((s) => s.field, send, { id: '...' })
 
 **State** (`CollapsibleState`):
 
-| Field      | Type      |
-| ---------- | --------- |
-| `open`     | `boolean` |
+| Field | Type |
+|---|---|
+| `open` | `boolean` |
 | `disabled` | `boolean` |
 
 **Messages:** `toggle`, `open`, `close`, `setOpen`
@@ -439,10 +437,10 @@ const parts = componentName.connect<State>((s) => s.field, send, { id: '...' })
 
 **State** (`ColorPickerState`):
 
-| Field      | Type      |
-| ---------- | --------- |
-| `hsl`      | `Hsl`     |
-| `alpha`    | `number`  |
+| Field | Type |
+|---|---|
+| `hsl` | `Hsl` |
+| `alpha` | `number` |
 | `disabled` | `boolean` |
 
 **Messages:** `setHsl`, `setHue`, `setSaturation`, `setLightness`, `setAlpha`, `setHex`
@@ -459,17 +457,17 @@ const parts = componentName.connect<State>((s) => s.field, send, { id: '...' })
 
 **State** (`ComboboxState`):
 
-| Field              | Type             |
-| ------------------ | ---------------- |
-| `open`             | `boolean`        |
-| `value`            | `string[]`       |
-| `inputValue`       | `string`         |
-| `items`            | `string[]`       |
-| `disabledItems`    | `string[]`       |
-| `filteredItems`    | `string[]`       |
+| Field | Type |
+|---|---|
+| `open` | `boolean` |
+| `value` | `string[]` |
+| `inputValue` | `string` |
+| `items` | `string[]` |
+| `disabledItems` | `string[]` |
+| `filteredItems` | `string[]` |
 | `highlightedIndex` | `number \| null` |
-| `selectionMode`    | `SelectionMode`  |
-| `disabled`         | `boolean`        |
+| `selectionMode` | `SelectionMode` |
+| `disabled` | `boolean` |
 
 **Messages:** `open`, `close`, `setInputValue`, `selectOption`, `setValue`, `clear`, `highlightNext`, `highlightPrev`, `highlightFirst`, `highlightLast`, `highlight`, `selectHighlighted`, `setItems`
 
@@ -487,14 +485,14 @@ const parts = componentName.connect<State>((s) => s.field, send, { id: '...' })
 
 **State** (`ContextMenuState`):
 
-| Field           | Type             |
-| --------------- | ---------------- |
-| `open`          | `boolean`        |
-| `x`             | `number`         |
-| `y`             | `number`         |
-| `items`         | `string[]`       |
-| `disabledItems` | `string[]`       |
-| `highlighted`   | `string \| null` |
+| Field | Type |
+|---|---|
+| `open` | `boolean` |
+| `x` | `number` |
+| `y` | `number` |
+| `items` | `string[]` |
+| `disabledItems` | `string[]` |
+| `highlighted` | `string \| null` |
 
 **Messages:** `openAt`, `close`, `highlight`, `highlightNext`, `highlightPrev`, `selectHighlighted`, `select`, `setItems`
 
@@ -510,16 +508,16 @@ const parts = componentName.connect<State>((s) => s.field, send, { id: '...' })
 
 **State** (`DateInputState`):
 
-| Field      | Type           |
-| ---------- | -------------- |
-| `input`    | `string`       |
-| `value`    | `Date \| null` |
-| `min`      | `Date \| null` |
-| `max`      | `Date \| null` |
-| `error`    | `DateError`    |
-| `disabled` | `boolean`      |
-| `readOnly` | `boolean`      |
-| `required` | `boolean`      |
+| Field | Type |
+|---|---|
+| `input` | `string` |
+| `value` | `Date \| null` |
+| `min` | `Date \| null` |
+| `max` | `Date \| null` |
+| `error` | `DateError` |
+| `disabled` | `boolean` |
+| `readOnly` | `boolean` |
+| `required` | `boolean` |
 
 **Messages:** `setInput`, `setValue`, `clear`, `setMin`, `setMax`, `setDisabled`
 
@@ -535,16 +533,16 @@ const parts = componentName.connect<State>((s) => s.field, send, { id: '...' })
 
 **State** (`DatePickerState`):
 
-| Field          | Type             |
-| -------------- | ---------------- |
-| `value`        | `string \| null` |
-| `visibleMonth` | `number`         |
-| `visibleYear`  | `number`         |
-| `focused`      | `string`         |
-| `min`          | `string \| null` |
-| `max`          | `string \| null` |
-| `weekStartsOn` | `0 \| 1`         |
-| `disabled`     | `boolean`        |
+| Field | Type |
+|---|---|
+| `value` | `string \| null` |
+| `visibleMonth` | `number` |
+| `visibleYear` | `number` |
+| `focused` | `string` |
+| `min` | `string \| null` |
+| `max` | `string \| null` |
+| `weekStartsOn` | `0 \| 1` |
+| `disabled` | `boolean` |
 
 **Messages:** `setValue`, `setFocused`, `prevMonth`, `nextMonth`, `prevYear`, `nextYear`, `selectFocused`, `moveFocus`, `focusStartOfWeek`, `focusEndOfWeek`, `focusToday`, `clear`
 
@@ -560,8 +558,8 @@ const parts = componentName.connect<State>((s) => s.field, send, { id: '...' })
 
 **State** (`DialogState`):
 
-| Field  | Type      |
-| ------ | --------- |
+| Field | Type |
+|---|---|
 | `open` | `boolean` |
 
 **Messages:** `open`, `close`, `toggle`, `setOpen`
@@ -580,8 +578,8 @@ const parts = componentName.connect<State>((s) => s.field, send, { id: '...' })
 
 **State** (`DrawerState`):
 
-| Field  | Type      |
-| ------ | --------- |
+| Field | Type |
+|---|---|
 | `open` | `boolean` |
 
 **Messages:** `open`, `close`, `toggle`, `setOpen`
@@ -600,11 +598,11 @@ const parts = componentName.connect<State>((s) => s.field, send, { id: '...' })
 
 **State** (`EditableState`):
 
-| Field      | Type      |
-| ---------- | --------- |
-| `value`    | `string`  |
-| `editing`  | `boolean` |
-| `draft`    | `string`  |
+| Field | Type |
+|---|---|
+| `value` | `string` |
+| `editing` | `boolean` |
+| `draft` | `string` |
 | `disabled` | `boolean` |
 
 **Messages:** `edit`, `setDraft`, `submit`, `cancel`, `setValue`
@@ -621,20 +619,20 @@ const parts = componentName.connect<State>((s) => s.field, send, { id: '...' })
 
 **State** (`FileUploadState`):
 
-| Field           | Type             |
-| --------------- | ---------------- |
-| `files`         | `File[]`         |
+| Field | Type |
+|---|---|
+| `files` | `File[]` |
 | `rejectedFiles` | `RejectedFile[]` |
-| `disabled`      | `boolean`        |
-| `multiple`      | `boolean`        |
-| `accept`        | `AcceptValue`    |
-| `maxFiles`      | `number`         |
-| `maxSize`       | `number`         |
-| `minFileSize`   | `number`         |
-| `required`      | `boolean`        |
-| `readOnly`      | `boolean`        |
-| `invalid`       | `boolean`        |
-| `dragging`      | `boolean`        |
+| `disabled` | `boolean` |
+| `multiple` | `boolean` |
+| `accept` | `AcceptValue` |
+| `maxFiles` | `number` |
+| `maxSize` | `number` |
+| `minFileSize` | `number` |
+| `required` | `boolean` |
+| `readOnly` | `boolean` |
+| `invalid` | `boolean` |
+| `dragging` | `boolean` |
 
 **Messages:** `setFiles`, `addFiles`, `removeFile`, `removeRejected`, `clear`, `clearRejected`, `dragEnter`, `dragLeave`, `drop`, `setInvalid`
 
@@ -650,19 +648,19 @@ const parts = componentName.connect<State>((s) => s.field, send, { id: '...' })
 
 **State** (`FloatingPanelState`):
 
-| Field           | Type                                                              |
-| --------------- | ----------------------------------------------------------------- |
-| `position`      | `{ x: number; y: number }`                                        |
-| `size`          | `{ width: number; height: number }`                               |
-| `minSize`       | `{ width: number; height: number }`                               |
-| `maxSize`       | `{ width: number; height: number } \| null`                       |
-| `open`          | `boolean`                                                         |
-| `minimized`     | `boolean`                                                         |
-| `maximized`     | `boolean`                                                         |
-| `dragging`      | `boolean`                                                         |
-| `resizing`      | `ResizeHandle \| null`                                            |
+| Field | Type |
+|---|---|
+| `position` | `{ x: number; y: number }` |
+| `size` | `{ width: number; height: number }` |
+| `minSize` | `{ width: number; height: number }` |
+| `maxSize` | `{ width: number; height: number } \| null` |
+| `open` | `boolean` |
+| `minimized` | `boolean` |
+| `maximized` | `boolean` |
+| `dragging` | `boolean` |
+| `resizing` | `ResizeHandle \| null` |
 | `restoreBounds` | `{ x: number; y: number; width: number; height: number } \| null` |
-| `disabled`      | `boolean`                                                         |
+| `disabled` | `boolean` |
 
 **Messages:** `open`, `close`, `minimize`, `restoreFromMinimized`, `maximize`, `restoreFromMaximized`, `toggleMinimize`, `toggleMaximize`, `dragStart`, `dragMove`, `dragEnd`, `resizeStart`, `resizeMove`, `resizeEnd`, `setPosition`, `setSize`
 
@@ -678,8 +676,8 @@ const parts = componentName.connect<State>((s) => s.field, send, { id: '...' })
 
 **State** (`HoverCardState`):
 
-| Field  | Type      |
-| ------ | --------- |
+| Field | Type |
+|---|---|
 | `open` | `boolean` |
 
 **Messages:** `show`, `hide`, `setOpen`
@@ -696,15 +694,15 @@ const parts = componentName.connect<State>((s) => s.field, send, { id: '...' })
 
 **State** (`ImageCropperState`):
 
-| Field         | Type                                |
-| ------------- | ----------------------------------- |
-| `image`       | `{ width: number; height: number }` |
-| `crop`        | `CropRect`                          |
-| `aspectRatio` | `number \| null`                    |
-| `minSize`     | `number`                            |
-| `dragging`    | `boolean`                           |
-| `resizing`    | `ResizeHandle \| null`              |
-| `disabled`    | `boolean`                           |
+| Field | Type |
+|---|---|
+| `image` | `{ width: number; height: number }` |
+| `crop` | `CropRect` |
+| `aspectRatio` | `number \| null` |
+| `minSize` | `number` |
+| `dragging` | `boolean` |
+| `resizing` | `ResizeHandle \| null` |
+| `disabled` | `boolean` |
 
 **Messages:** `setImage`, `setCrop`, `setAspectRatio`, `dragStart`, `dragMove`, `dragEnd`, `resizeStart`, `resizeMove`, `resizeEnd`, `reset`, `centerFill`
 
@@ -720,16 +718,16 @@ const parts = componentName.connect<State>((s) => s.field, send, { id: '...' })
 
 **State** (`ListboxState`):
 
-| Field                | Type             |
-| -------------------- | ---------------- |
-| `value`              | `string[]`       |
-| `items`              | `string[]`       |
-| `disabledItems`      | `string[]`       |
-| `disabled`           | `boolean`        |
-| `selectionMode`      | `SelectionMode`  |
-| `highlightedIndex`   | `number \| null` |
-| `typeahead`          | `string`         |
-| `typeaheadExpiresAt` | `number`         |
+| Field | Type |
+|---|---|
+| `value` | `string[]` |
+| `items` | `string[]` |
+| `disabledItems` | `string[]` |
+| `disabled` | `boolean` |
+| `selectionMode` | `SelectionMode` |
+| `highlightedIndex` | `number \| null` |
+| `typeahead` | `string` |
+| `typeaheadExpiresAt` | `number` |
 
 **Messages:** `select`, `setValue`, `clear`, `highlight`, `highlightNext`, `highlightPrev`, `highlightFirst`, `highlightLast`, `selectHighlighted`, `setItems`, `typeahead`
 
@@ -745,14 +743,14 @@ const parts = componentName.connect<State>((s) => s.field, send, { id: '...' })
 
 **State** (`MarqueeState`):
 
-| Field          | Type               |
-| -------------- | ------------------ |
-| `running`      | `boolean`          |
-| `direction`    | `MarqueeDirection` |
-| `durationSec`  | `number`           |
-| `pauseOnHover` | `boolean`          |
-| `hovered`      | `boolean`          |
-| `disabled`     | `boolean`          |
+| Field | Type |
+|---|---|
+| `running` | `boolean` |
+| `direction` | `MarqueeDirection` |
+| `durationSec` | `number` |
+| `pauseOnHover` | `boolean` |
+| `hovered` | `boolean` |
+| `disabled` | `boolean` |
 
 **Messages:** `play`, `pause`, `toggle`, `hoverPause`, `hoverResume`, `setDirection`, `setDuration`
 
@@ -768,14 +766,14 @@ const parts = componentName.connect<State>((s) => s.field, send, { id: '...' })
 
 **State** (`MenuState`):
 
-| Field                | Type             |
-| -------------------- | ---------------- |
-| `open`               | `boolean`        |
-| `items`              | `string[]`       |
-| `disabledItems`      | `string[]`       |
-| `highlighted`        | `string \| null` |
-| `typeahead`          | `string`         |
-| `typeaheadExpiresAt` | `number`         |
+| Field | Type |
+|---|---|
+| `open` | `boolean` |
+| `items` | `string[]` |
+| `disabledItems` | `string[]` |
+| `highlighted` | `string \| null` |
+| `typeahead` | `string` |
+| `typeaheadExpiresAt` | `number` |
 
 **Messages:** `open`, `close`, `toggle`, `highlight`, `highlightNext`, `highlightPrev`, `highlightFirst`, `highlightLast`, `selectHighlighted`, `select`, `setItems`, `typeahead`
 
@@ -793,11 +791,11 @@ const parts = componentName.connect<State>((s) => s.field, send, { id: '...' })
 
 **State** (`NavMenuState`):
 
-| Field      | Type             |
-| ---------- | ---------------- |
-| `open`     | `string[]`       |
-| `focused`  | `string \| null` |
-| `disabled` | `boolean`        |
+| Field | Type |
+|---|---|
+| `open` | `string[]` |
+| `focused` | `string \| null` |
+| `disabled` | `boolean` |
 
 **Messages:** `openBranch`, `closeBranch`, `toggleBranch`, `closeAll`, `focus`
 
@@ -813,15 +811,15 @@ const parts = componentName.connect<State>((s) => s.field, send, { id: '...' })
 
 **State** (`NumberInputState`):
 
-| Field      | Type             |
-| ---------- | ---------------- |
-| `value`    | `number \| null` |
-| `min`      | `number`         |
-| `max`      | `number`         |
-| `step`     | `number`         |
-| `disabled` | `boolean`        |
-| `readOnly` | `boolean`        |
-| `rawText`  | `string`         |
+| Field | Type |
+|---|---|
+| `value` | `number \| null` |
+| `min` | `number` |
+| `max` | `number` |
+| `step` | `number` |
+| `disabled` | `boolean` |
+| `readOnly` | `boolean` |
+| `rawText` | `string` |
 
 **Messages:** `setValue`, `setRawText`, `commit`, `increment`, `decrement`, `toMin`, `toMax`, `setDisabled`
 
@@ -837,14 +835,14 @@ const parts = componentName.connect<State>((s) => s.field, send, { id: '...' })
 
 **State** (`PaginationState`):
 
-| Field        | Type      |
-| ------------ | --------- |
-| `page`       | `number`  |
-| `pageSize`   | `number`  |
-| `total`      | `number`  |
-| `siblings`   | `number`  |
-| `boundaries` | `number`  |
-| `disabled`   | `boolean` |
+| Field | Type |
+|---|---|
+| `page` | `number` |
+| `pageSize` | `number` |
+| `total` | `number` |
+| `siblings` | `number` |
+| `boundaries` | `number` |
+| `disabled` | `boolean` |
 
 **Messages:** `goTo`, `next`, `prev`, `first`, `last`, `setPageSize`, `setTotal`
 
@@ -862,10 +860,10 @@ const parts = componentName.connect<State>((s) => s.field, send, { id: '...' })
 
 **State** (`PasswordInputState`):
 
-| Field      | Type      |
-| ---------- | --------- |
-| `value`    | `string`  |
-| `visible`  | `boolean` |
+| Field | Type |
+|---|---|
+| `value` | `string` |
+| `visible` | `boolean` |
 | `disabled` | `boolean` |
 
 **Messages:** `setValue`, `toggleVisibility`, `setVisible`
@@ -882,14 +880,14 @@ const parts = componentName.connect<State>((s) => s.field, send, { id: '...' })
 
 **State** (`PinInputState`):
 
-| Field          | Type       |
-| -------------- | ---------- |
-| `values`       | `string[]` |
-| `length`       | `number`   |
-| `type`         | `PinType`  |
-| `mask`         | `boolean`  |
-| `disabled`     | `boolean`  |
-| `focusedIndex` | `number`   |
+| Field | Type |
+|---|---|
+| `values` | `string[]` |
+| `length` | `number` |
+| `type` | `PinType` |
+| `mask` | `boolean` |
+| `disabled` | `boolean` |
+| `focusedIndex` | `number` |
 
 **Messages:** `setValue`, `setAll`, `focus`, `clear`, `backspace`
 
@@ -905,8 +903,8 @@ const parts = componentName.connect<State>((s) => s.field, send, { id: '...' })
 
 **State** (`PopoverState`):
 
-| Field  | Type      |
-| ------ | --------- |
+| Field | Type |
+|---|---|
 | `open` | `boolean` |
 
 **Messages:** `open`, `close`, `toggle`, `setOpen`
@@ -925,10 +923,10 @@ const parts = componentName.connect<State>((s) => s.field, send, { id: '...' })
 
 **State** (`PresenceState`):
 
-| Field           | Type             |
-| --------------- | ---------------- |
-| `status`        | `PresenceStatus` |
-| `unmountOnExit` | `boolean`        |
+| Field | Type |
+|---|---|
+| `status` | `PresenceStatus` |
+| `unmountOnExit` | `boolean` |
 
 **Messages:** `open`, `close`, `toggle`, `animationEnd`, `setPresent`
 
@@ -944,11 +942,11 @@ const parts = componentName.connect<State>((s) => s.field, send, { id: '...' })
 
 **State** (`ProgressState`):
 
-| Field         | Type                  |
-| ------------- | --------------------- |
-| `value`       | `number \| null`      |
-| `min`         | `number`              |
-| `max`         | `number`              |
+| Field | Type |
+|---|---|
+| `value` | `number \| null` |
+| `min` | `number` |
+| `max` | `number` |
 | `orientation` | `ProgressOrientation` |
 
 **Messages:** `setValue`, `setMax`
@@ -967,10 +965,10 @@ const parts = componentName.connect<State>((s) => s.field, send, { id: '...' })
 
 **State** (`QrCodeState`):
 
-| Field             | Type                   |
-| ----------------- | ---------------------- |
-| `value`           | `string`               |
-| `matrix`          | `boolean[][]`          |
+| Field | Type |
+|---|---|
+| `value` | `string` |
+| `matrix` | `boolean[][]` |
 | `errorCorrection` | `ErrorCorrectionLevel` |
 
 **Messages:** `setValue`, `setMatrix`, `setErrorCorrection`
@@ -987,13 +985,13 @@ const parts = componentName.connect<State>((s) => s.field, send, { id: '...' })
 
 **State** (`RadioGroupState`):
 
-| Field           | Type             |
-| --------------- | ---------------- |
-| `value`         | `string \| null` |
-| `items`         | `string[]`       |
-| `disabledItems` | `string[]`       |
-| `disabled`      | `boolean`        |
-| `orientation`   | `Orientation`    |
+| Field | Type |
+|---|---|
+| `value` | `string \| null` |
+| `items` | `string[]` |
+| `disabledItems` | `string[]` |
+| `disabled` | `boolean` |
+| `orientation` | `Orientation` |
 
 **Messages:** `setValue`, `setItems`, `selectNext`, `selectPrev`, `selectFirst`, `selectLast`
 
@@ -1009,13 +1007,13 @@ const parts = componentName.connect<State>((s) => s.field, send, { id: '...' })
 
 **State** (`RatingGroupState`):
 
-| Field          | Type             |
-| -------------- | ---------------- |
-| `value`        | `number`         |
-| `count`        | `number`         |
-| `allowHalf`    | `boolean`        |
-| `disabled`     | `boolean`        |
-| `readOnly`     | `boolean`        |
+| Field | Type |
+|---|---|
+| `value` | `number` |
+| `count` | `number` |
+| `allowHalf` | `boolean` |
+| `disabled` | `boolean` |
+| `readOnly` | `boolean` |
 | `hoveredValue` | `number \| null` |
 
 **Messages:** `setValue`, `hover`, `clickItem`, `hoverItem`, `incrementValue`, `decrementValue`, `toEnd`
@@ -1032,12 +1030,12 @@ const parts = componentName.connect<State>((s) => s.field, send, { id: '...' })
 
 **State** (`ScrollAreaState`):
 
-| Field        | Type                  |
-| ------------ | --------------------- |
-| `overflowX`  | `boolean`             |
-| `overflowY`  | `boolean`             |
-| `scrolling`  | `boolean`             |
-| `hovered`    | `boolean`             |
+| Field | Type |
+|---|---|
+| `overflowX` | `boolean` |
+| `overflowY` | `boolean` |
+| `scrolling` | `boolean` |
+| `hovered` | `boolean` |
 | `visibility` | `ScrollbarVisibility` |
 
 **Messages:** `setScroll`, `setScrolling`, `setHovered`
@@ -1052,18 +1050,18 @@ const parts = componentName.connect<State>((s) => s.field, send, { id: '...' })
 
 **State** (`SelectState`):
 
-| Field                | Type             |
-| -------------------- | ---------------- |
-| `open`               | `boolean`        |
-| `value`              | `string[]`       |
-| `items`              | `string[]`       |
-| `disabledItems`      | `string[]`       |
-| `selectionMode`      | `SelectionMode`  |
-| `highlightedIndex`   | `number \| null` |
-| `disabled`           | `boolean`        |
-| `required`           | `boolean`        |
-| `typeahead`          | `string`         |
-| `typeaheadExpiresAt` | `number`         |
+| Field | Type |
+|---|---|
+| `open` | `boolean` |
+| `value` | `string[]` |
+| `items` | `string[]` |
+| `disabledItems` | `string[]` |
+| `selectionMode` | `SelectionMode` |
+| `highlightedIndex` | `number \| null` |
+| `disabled` | `boolean` |
+| `required` | `boolean` |
+| `typeahead` | `string` |
+| `typeaheadExpiresAt` | `number` |
 
 **Messages:** `open`, `close`, `toggle`, `selectOption`, `setValue`, `clear`, `highlight`, `highlightNext`, `highlightPrev`, `highlightFirst`, `highlightLast`, `selectHighlighted`, `setItems`, `typeahead`
 
@@ -1081,13 +1079,13 @@ const parts = componentName.connect<State>((s) => s.field, send, { id: '...' })
 
 **State** (`SignaturePadState`):
 
-| Field      | Type             |
-| ---------- | ---------------- |
-| `strokes`  | `Stroke[]`       |
-| `current`  | `Stroke \| null` |
-| `drawing`  | `boolean`        |
-| `disabled` | `boolean`        |
-| `readOnly` | `boolean`        |
+| Field | Type |
+|---|---|
+| `strokes` | `Stroke[]` |
+| `current` | `Stroke \| null` |
+| `drawing` | `boolean` |
+| `disabled` | `boolean` |
+| `readOnly` | `boolean` |
 
 **Messages:** `strokeStart`, `strokePoint`, `strokeEnd`, `strokeCancel`, `undo`, `redo`, `clear`, `setStrokes`
 
@@ -1103,15 +1101,15 @@ const parts = componentName.connect<State>((s) => s.field, send, { id: '...' })
 
 **State** (`SliderState`):
 
-| Field                   | Type          |
-| ----------------------- | ------------- |
-| `value`                 | `number[]`    |
-| `min`                   | `number`      |
-| `max`                   | `number`      |
-| `step`                  | `number`      |
-| `disabled`              | `boolean`     |
-| `orientation`           | `Orientation` |
-| `minStepsBetweenThumbs` | `number`      |
+| Field | Type |
+|---|---|
+| `value` | `number[]` |
+| `min` | `number` |
+| `max` | `number` |
+| `step` | `number` |
+| `disabled` | `boolean` |
+| `orientation` | `Orientation` |
+| `minStepsBetweenThumbs` | `number` |
 
 **Messages:** `setValue`, `setThumb`, `increment`, `decrement`, `toMin`, `toMax`, `setDisabled`
 
@@ -1127,15 +1125,15 @@ const parts = componentName.connect<State>((s) => s.field, send, { id: '...' })
 
 **State** (`SplitterState`):
 
-| Field         | Type          |
-| ------------- | ------------- |
-| `position`    | `number`      |
-| `min`         | `number`      |
-| `max`         | `number`      |
-| `step`        | `number`      |
+| Field | Type |
+|---|---|
+| `position` | `number` |
+| `min` | `number` |
+| `max` | `number` |
+| `step` | `number` |
 | `orientation` | `Orientation` |
-| `disabled`    | `boolean`     |
-| `dragging`    | `boolean`     |
+| `disabled` | `boolean` |
+| `dragging` | `boolean` |
 
 **Messages:** `setPosition`, `increment`, `decrement`, `toMin`, `toMax`, `startDrag`, `endDrag`
 
@@ -1151,14 +1149,14 @@ const parts = componentName.connect<State>((s) => s.field, send, { id: '...' })
 
 **State** (`StepsState`):
 
-| Field       | Type       |
-| ----------- | ---------- |
-| `current`   | `number`   |
+| Field | Type |
+|---|---|
+| `current` | `number` |
 | `completed` | `number[]` |
-| `errors`    | `number[]` |
-| `steps`     | `string[]` |
-| `linear`    | `boolean`  |
-| `disabled`  | `boolean`  |
+| `errors` | `number[]` |
+| `steps` | `string[]` |
+| `linear` | `boolean` |
+| `disabled` | `boolean` |
 
 **Messages:** `goTo`, `next`, `prev`, `complete`, `markError`, `clearError`, `reset`
 
@@ -1176,9 +1174,9 @@ const parts = componentName.connect<State>((s) => s.field, send, { id: '...' })
 
 **State** (`SwitchState`):
 
-| Field      | Type      |
-| ---------- | --------- |
-| `checked`  | `boolean` |
+| Field | Type |
+|---|---|
+| `checked` | `boolean` |
 | `disabled` | `boolean` |
 
 **Messages:** `toggle`, `setChecked`, `setDisabled`
@@ -1193,16 +1191,16 @@ const parts = componentName.connect<State>((s) => s.field, send, { id: '...' })
 
 **State** (`TabsState`):
 
-| Field           | Type             |
-| --------------- | ---------------- |
-| `value`         | `string`         |
-| `items`         | `string[]`       |
-| `disabledItems` | `string[]`       |
-| `orientation`   | `Orientation`    |
-| `activation`    | `Activation`     |
-| `focused`       | `string \| null` |
-| `loopFocus`     | `boolean`        |
-| `deselectable`  | `boolean`        |
+| Field | Type |
+|---|---|
+| `value` | `string` |
+| `items` | `string[]` |
+| `disabledItems` | `string[]` |
+| `orientation` | `Orientation` |
+| `activation` | `Activation` |
+| `focused` | `string \| null` |
+| `loopFocus` | `boolean` |
+| `deselectable` | `boolean` |
 
 **Messages:** `setValue`, `setItems`, `focusTab`, `focusNext`, `focusPrev`, `focusFirst`, `focusLast`, `activateFocused`
 
@@ -1220,13 +1218,13 @@ const parts = componentName.connect<State>((s) => s.field, send, { id: '...' })
 
 **State** (`TagsInputState`):
 
-| Field          | Type             |
-| -------------- | ---------------- |
-| `value`        | `string[]`       |
-| `inputValue`   | `string`         |
-| `disabled`     | `boolean`        |
-| `max`          | `number`         |
-| `unique`       | `boolean`        |
+| Field | Type |
+|---|---|
+| `value` | `string[]` |
+| `inputValue` | `string` |
+| `disabled` | `boolean` |
+| `max` | `number` |
+| `unique` | `boolean` |
 | `focusedIndex` | `number \| null` |
 
 **Messages:** `setInput`, `addTag`, `removeTag`, `removeLast`, `setValue`, `focusTag`, `focusTagNext`, `focusTagPrev`, `clearAll`
@@ -1243,14 +1241,14 @@ const parts = componentName.connect<State>((s) => s.field, send, { id: '...' })
 
 **State** (`TimePickerState`):
 
-| Field         | Type         |
-| ------------- | ------------ |
-| `value`       | `TimeValue`  |
-| `format`      | `TimeFormat` |
-| `minuteStep`  | `number`     |
-| `secondStep`  | `number`     |
-| `showSeconds` | `boolean`    |
-| `disabled`    | `boolean`    |
+| Field | Type |
+|---|---|
+| `value` | `TimeValue` |
+| `format` | `TimeFormat` |
+| `minuteStep` | `number` |
+| `secondStep` | `number` |
+| `showSeconds` | `boolean` |
+| `disabled` | `boolean` |
 
 **Messages:** `setValue`, `setHours`, `setMinutes`, `setSeconds`, `incrementHours`, `decrementHours`, `incrementMinutes`, `decrementMinutes`, `toggleAmPm`
 
@@ -1266,12 +1264,12 @@ const parts = componentName.connect<State>((s) => s.field, send, { id: '...' })
 
 **State** (`TimerState`):
 
-| Field       | Type             |
-| ----------- | ---------------- |
-| `running`   | `boolean`        |
-| `direction` | `Direction`      |
-| `targetMs`  | `number`         |
-| `elapsedMs` | `number`         |
+| Field | Type |
+|---|---|
+| `running` | `boolean` |
+| `direction` | `Direction` |
+| `targetMs` | `number` |
+| `elapsedMs` | `number` |
 | `startedAt` | `number \| null` |
 
 **Messages:** `start`, `pause`, `reset`, `tick`, `setTarget`
@@ -1290,10 +1288,10 @@ const parts = componentName.connect<State>((s) => s.field, send, { id: '...' })
 
 **State** (`ToasterState`):
 
-| Field       | Type             |
-| ----------- | ---------------- |
-| `toasts`    | `Toast[]`        |
-| `max`       | `number`         |
+| Field | Type |
+|---|---|
+| `toasts` | `Toast[]` |
+| `max` | `number` |
 | `placement` | `ToastPlacement` |
 
 **Messages:** `create`, `dismiss`, `dismissAll`, `update`, `pause`, `resume`, `pauseAll`, `resumeAll`
@@ -1312,11 +1310,11 @@ const parts = componentName.connect<State>((s) => s.field, send, { id: '...' })
 
 **State** (`TocState`):
 
-| Field      | Type             |
-| ---------- | ---------------- |
-| `items`    | `TocEntry[]`     |
+| Field | Type |
+|---|---|
+| `items` | `TocEntry[]` |
 | `activeId` | `string \| null` |
-| `expanded` | `string[]`       |
+| `expanded` | `string[]` |
 
 **Messages:** `setItems`, `setActive`, `toggleExpanded`, `expandAll`, `collapseAll`
 
@@ -1334,15 +1332,15 @@ const parts = componentName.connect<State>((s) => s.field, send, { id: '...' })
 
 **State** (`ToggleGroupState`):
 
-| Field           | Type                     |
-| --------------- | ------------------------ |
-| `value`         | `string[]`               |
-| `type`          | `'single' \| 'multiple'` |
-| `items`         | `string[]`               |
-| `disabledItems` | `string[]`               |
-| `disabled`      | `boolean`                |
-| `orientation`   | `Orientation`            |
-| `deselectable`  | `boolean`                |
+| Field | Type |
+|---|---|
+| `value` | `string[]` |
+| `type` | `'single' \| 'multiple'` |
+| `items` | `string[]` |
+| `disabledItems` | `string[]` |
+| `disabled` | `boolean` |
+| `orientation` | `Orientation` |
+| `deselectable` | `boolean` |
 
 **Messages:** `toggle`, `setValue`, `setItems`, `focusNext`, `focusPrev`
 
@@ -1356,9 +1354,9 @@ const parts = componentName.connect<State>((s) => s.field, send, { id: '...' })
 
 **State** (`ToggleState`):
 
-| Field      | Type      |
-| ---------- | --------- |
-| `pressed`  | `boolean` |
+| Field | Type |
+|---|---|
+| `pressed` | `boolean` |
 | `disabled` | `boolean` |
 
 **Messages:** `toggle`, `setPressed`, `setDisabled`
@@ -1373,8 +1371,8 @@ const parts = componentName.connect<State>((s) => s.field, send, { id: '...' })
 
 **State** (`TooltipState`):
 
-| Field  | Type      |
-| ------ | --------- |
+| Field | Type |
+|---|---|
 | `open` | `boolean` |
 
 **Messages:** `show`, `hide`, `toggle`, `setOpen`
@@ -1393,12 +1391,12 @@ const parts = componentName.connect<State>((s) => s.field, send, { id: '...' })
 
 **State** (`TourState`):
 
-| Field     | Type         |
-| --------- | ------------ |
-| `steps`   | `TourStep[]` |
-| `open`    | `boolean`    |
-| `index`   | `number`     |
-| `visited` | `string[]`   |
+| Field | Type |
+|---|---|
+| `steps` | `TourStep[]` |
+| `open` | `boolean` |
+| `index` | `number` |
+| `visited` | `string[]` |
 
 **Messages:** `start`, `stop`, `next`, `prev`, `goto`, `setSteps`
 
@@ -1416,22 +1414,22 @@ const parts = componentName.connect<State>((s) => s.field, send, { id: '...' })
 
 **State** (`TreeViewState`):
 
-| Field                | Type             |
-| -------------------- | ---------------- |
-| `expanded`           | `string[]`       |
-| `selected`           | `string[]`       |
-| `checked`            | `string[]`       |
-| `indeterminate`      | `string[]`       |
-| `focused`            | `string \| null` |
-| `selectionMode`      | `SelectionMode`  |
-| `visibleItems`       | `string[]`       |
-| `visibleLabels`      | `string[]`       |
-| `disabled`           | `boolean`        |
-| `typeahead`          | `string`         |
-| `typeaheadExpiresAt` | `number`         |
-| `renaming`           | `string \| null` |
-| `renameDraft`        | `string`         |
-| `loading`            | `string[]`       |
+| Field | Type |
+|---|---|
+| `expanded` | `string[]` |
+| `selected` | `string[]` |
+| `checked` | `string[]` |
+| `indeterminate` | `string[]` |
+| `focused` | `string \| null` |
+| `selectionMode` | `SelectionMode` |
+| `visibleItems` | `string[]` |
+| `visibleLabels` | `string[]` |
+| `disabled` | `boolean` |
+| `typeahead` | `string` |
+| `typeaheadExpiresAt` | `number` |
+| `renaming` | `string \| null` |
+| `renameDraft` | `string` |
+| `loading` | `string[]` |
 
 **Messages:** `toggleBranch`, `expand`, `collapse`, `expandAll`, `collapseAll`, `select`, `setSelected`, `focus`, `focusNext`, `focusPrev`, `focusFirst`, `focusLast`, `setVisibleItems`, `typeahead`, `arrowLeftFrom`, `arrowRightFrom`, `toggleChecked`, `setChecked`, `setIndeterminate`, `renameStart`, `renameChange`, `renameCommit`, `renameCancel`, `loadingStart`, `loadingEnd`
 
@@ -1442,5 +1440,6 @@ const parts = componentName.connect<State>((s) => s.field, send, { id: '...' })
 **Parts:** `root`, `item`
 
 ---
+
 
 <!-- auto-api:end -->

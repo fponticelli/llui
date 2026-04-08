@@ -69,8 +69,6 @@ export function each<S, T, M = unknown>(opts: EachOptions<S, T, M>): Node[] {
       const newItems = opts.items(state as S)
 
       // Fast path: same array reference → skip entirely.
-      // No per-entry work needed — eachItemStable defaults to true and is
-      // only set false by updateEntry when the item ref actually changes.
       if (newItems === lastItemsRef) return
       lastItemsRef = newItems
 
@@ -90,6 +88,44 @@ export function each<S, T, M = unknown>(opts: EachOptions<S, T, M>): Node[] {
       if (opts.onTransition && report) {
         opts.onTransition({ entering: report.entering, leaving: report.leaving, parent })
       }
+    },
+
+    /** Same keys, only item data changed — skip mismatch/swap detection.
+     *  Compiler calls this when it knows the array structure is unchanged. */
+    reconcileItems(state: unknown) {
+      const newItems = opts.items(state as S)
+      lastItemsRef = newItems
+      const len = Math.min(entries.length, newItems.length)
+      for (let i = 0; i < len; i++) {
+        const entry = entries[i]!
+        const newItem = newItems[i]!
+        if (entry.item !== newItem) {
+          updateEntry(entry, newItem, i)
+        }
+      }
+    },
+
+    /** Remove all items — skip items accessor, go straight to clear path. */
+    reconcileClear() {
+      lastItemsRef = [] as unknown as T[]
+      const parent = anchor.parentNode
+      if (!parent) return
+      if (entries.length === 0) return
+
+      // Bulk DOM removal
+      const range = document.createRange()
+      range.setStartAfter(anchor)
+      const lastEntry = entries[entries.length - 1]!
+      const lastNode = lastEntry.nodes[lastEntry.nodes.length - 1]!
+      range.setEndAfter(lastNode)
+      range.deleteContents()
+
+      // Bulk scope disposal
+      const scopes: Scope[] = []
+      for (let i = 0; i < entries.length; i++) scopes.push(entries[i]!.scope)
+      disposeScopesBulk(scopes)
+      removeOrphanedChildren(parentScope)
+      entries.length = 0
     },
   }
 

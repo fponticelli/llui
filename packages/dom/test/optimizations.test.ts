@@ -439,3 +439,165 @@ describe('selector optimization', () => {
     handle.dispose()
   })
 })
+
+// ── __handlers per-message dispatch ──────────────────────────────
+
+describe('__handlers per-message dispatch', () => {
+  it('dispatches single message to __handlers instead of generic pipeline', () => {
+    type S = { count: number; label: string }
+    type M = { type: 'inc' } | { type: 'setLabel'; value: string }
+
+    const handlerSpy = vi.fn()
+
+    const def: ComponentDef<S, M, never> = {
+      name: 'Handlers',
+      init: () => [{ count: 0, label: 'hello' }, []],
+      update: (s, m) => {
+        switch (m.type) {
+          case 'inc':
+            return [{ ...s, count: s.count + 1 }, []]
+          case 'setLabel':
+            return [{ ...s, label: m.value }, []]
+        }
+      },
+      view: ({ text: t }) => [div([t((s: S) => String(s.count))]), div([t((s: S) => s.label)])],
+      __dirty: (o, n) => {
+        let m = 0
+        if (!Object.is(o.count, n.count)) m |= 1
+        if (!Object.is(o.label, n.label)) m |= 2
+        return m
+      },
+      __handlers: {
+        inc: (inst: object, _msg: unknown): [S, never[]] => {
+          const typedInst = inst as { state: S; allBindings: Binding[] }
+          handlerSpy('inc')
+          const newState = { ...typedInst.state, count: typedInst.state.count + 1 }
+          typedInst.state = newState
+          _runPhase2(newState, 1, typedInst.allBindings, typedInst.allBindings.length)
+          return [newState, []]
+        },
+      },
+    }
+
+    const container = document.createElement('div')
+    let sendFn!: (msg: M) => void
+    const origView = def.view
+    def.view = (h) => {
+      sendFn = h.send
+      return origView(h)
+    }
+    mountApp(container, def)
+
+    sendFn({ type: 'inc' })
+    flush()
+    expect(handlerSpy).toHaveBeenCalledWith('inc')
+    expect(container.textContent).toBe('1hello')
+
+    // Message without handler → falls through to generic
+    sendFn({ type: 'setLabel', value: 'world' })
+    flush()
+    expect(container.textContent).toBe('1world')
+  })
+
+  it('falls back to generic pipeline for multi-message batches', () => {
+    type S = { count: number }
+    type M = { type: 'inc' }
+
+    const handlerSpy = vi.fn()
+
+    const def: ComponentDef<S, M, never> = {
+      name: 'MultiBatch',
+      init: () => [{ count: 0 }, []],
+      update: (s) => [{ ...s, count: s.count + 1 }, []],
+      view: ({ text: t }) => [div([t((s: S) => String(s.count))])],
+      __dirty: (o, n) => (Object.is(o.count, n.count) ? 0 : 1),
+      __handlers: {
+        inc: (inst: object): [S, never[]] => {
+          handlerSpy('inc-handler')
+          const typedInst = inst as { state: S }
+          const newState = { ...typedInst.state, count: typedInst.state.count + 1 }
+          return [newState, []]
+        },
+      },
+    }
+
+    const container = document.createElement('div')
+    let sendFn!: (msg: M) => void
+    const origView = def.view
+    def.view = (h) => {
+      sendFn = h.send
+      return origView(h)
+    }
+    mountApp(container, def)
+
+    sendFn({ type: 'inc' })
+    sendFn({ type: 'inc' })
+    flush()
+
+    expect(handlerSpy).not.toHaveBeenCalled()
+    expect(container.textContent).toBe('2')
+  })
+})
+
+// ── selector __directUpdate ──────────────────────────────────────
+
+describe('selector __directUpdate', () => {
+  it('updates DOM directly without Phase 2', () => {
+    type Row = { id: number; label: string }
+    type S = { rows: Row[]; selected: number }
+    type M = { type: 'select'; id: number }
+
+    let selectorRef: ReturnType<typeof selector<S, number>> | null = null
+
+    const def = component<S, M, never>({
+      name: 'DirectSelector',
+      init: () => [
+        {
+          rows: [
+            { id: 1, label: 'a' },
+            { id: 2, label: 'b' },
+          ],
+          selected: 0,
+        },
+        [],
+      ],
+      update: (s, m) => [{ ...s, selected: m.id }, []],
+      view: () => {
+        const sel = selector<S, number>((s) => s.selected)
+        selectorRef = sel
+        return [
+          ...each<S, Row>({
+            items: (s) => s.rows,
+            key: (r) => r.id,
+            render: ({ item }) => {
+              const row = div([text(item.label)])
+              sel.bind(row, item.id(), 'class', 'class', (m) => (m ? 'active' : ''))
+              return [row]
+            },
+          }),
+        ]
+      },
+      __dirty: (o, n) => {
+        let m = 0
+        if (!Object.is(o.rows, n.rows)) m |= 1
+        if (!Object.is(o.selected, n.selected)) m |= 2
+        return m
+      },
+    })
+
+    const container = document.createElement('div')
+    mountApp(container, def)
+
+    const divs = container.querySelectorAll('div')
+    expect(divs[0]!.className).toBe('')
+    expect(divs[1]!.className).toBe('')
+
+    selectorRef!.__directUpdate({ rows: [], selected: 1 })
+    expect(divs[0]!.className).toBe('active')
+    expect(divs[1]!.className).toBe('')
+
+    selectorRef!.__directUpdate({ rows: [], selected: 2 })
+    expect(divs[0]!.className).toBe('')
+    expect(divs[1]!.className).toBe('active')
+  })
+})

@@ -36,6 +36,9 @@ export interface ComponentDef<S, M, E = never, D = void> {
     blocks: StructuralBlock[],
     bindingsBeforePhase1: number,
   ) => void
+  /** @internal Compiler-injected — per-message-type specialized handlers.
+   *  Bypass the entire processMessages pipeline for single-message updates. */
+  __handlers?: Record<string, (inst: object, msg: unknown) => [S, E[]]>
 }
 
 export type Send<M> = (msg: M) => void

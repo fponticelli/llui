@@ -116,13 +116,35 @@ export function _forceState<S, M, E>(inst: ComponentInstance<S, M, E>, newState:
 }
 
 function processMessages<S, M, E>(inst: ComponentInstance<S, M, E>): void {
+  const queue = inst.queue
+
+  // Single-message fast path: dispatch directly to per-message-type handler
+  // if available. Skips dirty computation, Phase 1/2 entirely.
+  if (queue.length === 1 && inst.def.__handlers) {
+    const msg = queue[0]!
+    const handler = inst.def.__handlers[(msg as Record<string, unknown>).type as string] as
+      | ((inst: ComponentInstance, msg: unknown) => [S, E[]])
+      | undefined
+    if (handler) {
+      queue.length = 0
+      const [newState, effects] = handler(inst as ComponentInstance, msg)
+      inst.state = newState
+      if (import.meta.env?.DEV) {
+        inst.lastDirtyMask = FULL_MASK
+        inst.lastEffects = effects
+      }
+      for (let i = 0; i < effects.length; i++) {
+        dispatchEffect(inst, effects[i]!)
+      }
+      return
+    }
+  }
+
+  // Generic pipeline — drain queue, accumulate dirty bits
   let state = inst.state
   let combinedDirty = 0
   const allEffects: E[] = []
 
-  // Drain the message queue. Index-based cursor rather than queue.shift()
-  // so N messages cost O(N) instead of O(N²) from repeated array shifts.
-  const queue = inst.queue
   const defUpdate = inst.def.update
   const dirtyFn = inst.def.__dirty
   for (let qi = 0; qi < queue.length; qi++) {

@@ -69,6 +69,7 @@ export function replaceComponent<S, M, E>(
       onEffect: newDef.onEffect,
       __dirty: newDef.__dirty,
       __update: newDef.__update,
+      __handlers: newDef.__handlers,
     }
 
     // Dispose old scope tree — removes all old DOM nodes and bindings

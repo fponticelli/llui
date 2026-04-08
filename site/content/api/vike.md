@@ -99,7 +99,6 @@ function onRenderHtml(pageContext: PageContext): Promise<RenderHtmlResult>
 ### `createOnRenderHtml()`
 
 Factory to create a customized onRenderHtml hook.
-
 ```typescript
 // pages/+onRenderHtml.ts
 import { createOnRenderHtml } from '@llui/vike'
@@ -122,10 +121,7 @@ function createOnRenderHtml(options: {
 ### `renderPage()`
 
 ```typescript
-function renderPage(
-  pageContext: PageContext,
-  document: (ctx: DocumentContext) => string,
-): Promise<RenderHtmlResult>
+function renderPage(pageContext: PageContext, document: (ctx: DocumentContext) => string): Promise<RenderHtmlResult>
 ```
 
 ### `onRenderClient()`
@@ -140,7 +136,6 @@ function onRenderClient(pageContext: ClientPageContext): Promise<void>
 ### `createOnRenderClient()`
 
 Factory to create a customized onRenderClient hook.
-
 ```typescript
 // pages/+onRenderClient.ts
 import { createOnRenderClient } from '@llui/vike/client'
@@ -151,9 +146,7 @@ export const onRenderClient = createOnRenderClient({
 ```
 
 ```typescript
-function createOnRenderClient(
-  options: RenderClientOptions,
-): (pageContext: ClientPageContext) => Promise<void>
+function createOnRenderClient(options: RenderClientOptions): (pageContext: ClientPageContext) => Promise<void>
 ```
 
 ### `renderClient()`
@@ -232,5 +225,6 @@ const DEFAULT_DOCUMENT
 ```typescript
 const currentHandle: AppHandle | null
 ```
+
 
 <!-- auto-api:end -->

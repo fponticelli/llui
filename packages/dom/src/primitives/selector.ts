@@ -17,11 +17,6 @@ interface SelectorEntry {
  *
  * Watches a state field and compares it against per-item keys. When the
  * field changes, only the old and new matching rows update their DOM.
- *
- * Usage:
- *   const sel = selector<State, number>(s => s.selected)
- *   // inside each() render:
- *   sel.bind(row, rowId, 'class', 'class', match => match ? 'danger' : '')
  */
 export function selector<S, V>(field: (s: S) => V): SelectorInstance<V> {
   const ctx = getRenderContext()
@@ -30,39 +25,43 @@ export function selector<S, V>(field: (s: S) => V): SelectorInstance<V> {
   const registry = new Map<V, Set<SelectorEntry>>()
   let lastValue: V = field(ctx.state as S)
 
+  /** Core update logic — shared by Phase 2 binding and __directUpdate */
+  function updateSelector(state: S): V {
+    const newValue = field(state)
+    if (Object.is(newValue, lastValue)) return lastValue
+
+    // Deselect old
+    const oldEntries = registry.get(lastValue)
+    if (oldEntries) {
+      for (const entry of oldEntries) {
+        const v = entry.transform(false)
+        if (!Object.is(v, entry.lastValue)) {
+          entry.lastValue = v
+          applyBinding({ kind: entry.kind, node: entry.node, key: entry.key }, v)
+        }
+      }
+    }
+
+    // Select new
+    const newEntries = registry.get(newValue)
+    if (newEntries) {
+      for (const entry of newEntries) {
+        const v = entry.transform(true)
+        if (!Object.is(v, entry.lastValue)) {
+          entry.lastValue = v
+          applyBinding({ kind: entry.kind, node: entry.node, key: entry.key }, v)
+        }
+      }
+    }
+
+    lastValue = newValue
+    return newValue
+  }
+
+  // Phase 2 binding — delegates to updateSelector
   createBinding(scope, {
     mask: FULL_MASK,
-    accessor: ((state: S) => {
-      const newValue = field(state)
-      if (Object.is(newValue, lastValue)) return lastValue
-
-      // Deselect old
-      const oldEntries = registry.get(lastValue)
-      if (oldEntries) {
-        for (const entry of oldEntries) {
-          const v = entry.transform(false)
-          if (!Object.is(v, entry.lastValue)) {
-            entry.lastValue = v
-            applyBinding({ kind: entry.kind, node: entry.node, key: entry.key }, v)
-          }
-        }
-      }
-
-      // Select new
-      const newEntries = registry.get(newValue)
-      if (newEntries) {
-        for (const entry of newEntries) {
-          const v = entry.transform(true)
-          if (!Object.is(v, entry.lastValue)) {
-            entry.lastValue = v
-            applyBinding({ kind: entry.kind, node: entry.node, key: entry.key }, v)
-          }
-        }
-      }
-
-      lastValue = newValue
-      return newValue
-    }) as (state: never) => unknown,
+    accessor: ((state: S) => updateSelector(state)) as (state: never) => unknown,
     kind: 'text',
     node: document.createComment('selector'),
     perItem: false,
@@ -97,14 +96,19 @@ export function selector<S, V>(field: (s: S) => V): SelectorInstance<V> {
       }
       bucket.add(entry)
 
-      // Cleanup: remove from registry when row scope is disposed.
-      // Uses Set.delete (O(1) amortized) — lighter than the previous
-      // Map.delete on the key, which required a size check.
       const itemScope = getRenderContext().rootScope
       addDisposer(itemScope, () => {
         bucket!.delete(entry)
         if (bucket!.size === 0) registry.delete(currentKey)
       })
+    },
+
+    /**
+     * Direct update — bypasses Phase 2 binding scan. Called by compiler-
+     * generated per-message handlers when only the selector's field changed.
+     */
+    __directUpdate(state: unknown): void {
+      updateSelector(state as S)
     },
   }
 }
@@ -117,4 +121,6 @@ export interface SelectorInstance<V> {
     propKey: string | undefined,
     transform: (match: boolean) => unknown,
   ): void
+  /** @internal Compiler-generated handlers call this to bypass Phase 2 */
+  __directUpdate(state: unknown): void
 }
