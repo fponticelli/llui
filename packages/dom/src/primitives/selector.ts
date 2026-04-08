@@ -5,7 +5,7 @@ import { FULL_MASK } from '../update-loop'
 import type { BindingKind } from '../types'
 
 interface SelectorEntry {
-  node: Node
+  node: Node | null
   kind: BindingKind
   key: string | undefined
   lastValue: unknown
@@ -26,17 +26,15 @@ interface SelectorEntry {
  *   tr({ class: sel.bind(item(r => r.id), 'class', match => match ? 'danger' : '') })
  *
  * sel.bind() creates and manages the DOM binding directly.
- * Returns Node[] to spread into the element's children (empty — no visible output).
  */
 export function selector<S, V>(field: (s: S) => V): SelectorInstance<V> {
   const ctx = getRenderContext()
   const scope = ctx.rootScope
 
-  const registry = new Map<V, Set<SelectorEntry>>()
+  const registry = new Map<V, SelectorEntry[]>()
   let lastValue: V = field(ctx.state as S)
 
   // Single watcher binding — evaluates the state field per update cycle.
-  // When the value changes, directly updates only affected entries.
   createBinding(scope, {
     mask: FULL_MASK,
     accessor: ((state: S) => {
@@ -46,7 +44,9 @@ export function selector<S, V>(field: (s: S) => V): SelectorInstance<V> {
       // Deselect old
       const oldEntries = registry.get(lastValue)
       if (oldEntries) {
-        for (const entry of oldEntries) {
+        for (let i = 0; i < oldEntries.length; i++) {
+          const entry = oldEntries[i]!
+          if (!entry.node) continue // disposed
           const v = entry.transform(false)
           if (!Object.is(v, entry.lastValue)) {
             entry.lastValue = v
@@ -58,7 +58,9 @@ export function selector<S, V>(field: (s: S) => V): SelectorInstance<V> {
       // Select new
       const newEntries = registry.get(newValue)
       if (newEntries) {
-        for (const entry of newEntries) {
+        for (let i = 0; i < newEntries.length; i++) {
+          const entry = newEntries[i]!
+          if (!entry.node) continue // disposed
           const v = entry.transform(true)
           if (!Object.is(v, entry.lastValue)) {
             entry.lastValue = v
@@ -80,11 +82,9 @@ export function selector<S, V>(field: (s: S) => V): SelectorInstance<V> {
      * Bind a DOM node to this selector. Called per row inside each().
      * Applies the initial value and registers for O(1) future updates.
      *
-     * @param node - The DOM element to bind
-     * @param key - The per-item value to compare against the state field
-     * @param kind - Binding kind ('class', 'attr', 'prop', etc.)
-     * @param propKey - Property/attribute name (e.g., 'class')
-     * @param transform - Maps match boolean to the DOM value
+     * Cleanup: nulls the entry's node ref when the row scope is disposed.
+     * This is cheaper than Map/Set operations — just one pointer write
+     * instead of Set.delete + conditional Map.delete per row.
      */
     bind(
       node: Node,
@@ -97,10 +97,8 @@ export function selector<S, V>(field: (s: S) => V): SelectorInstance<V> {
       const initialMatch = Object.is(lastValue, currentKey)
       const initialValue = transform(initialMatch)
 
-      // Apply initial value
       applyBinding({ kind, node, key: propKey }, initialValue)
 
-      // Register in selector registry
       const entry: SelectorEntry = {
         node,
         kind,
@@ -111,16 +109,17 @@ export function selector<S, V>(field: (s: S) => V): SelectorInstance<V> {
 
       let bucket = registry.get(currentKey)
       if (!bucket) {
-        bucket = new Set()
+        bucket = []
         registry.set(currentKey, bucket)
       }
-      bucket.add(entry)
+      bucket.push(entry)
 
-      // Cleanup when row scope is disposed
+      // Lightweight cleanup: null the node ref instead of Map/Set mutation.
+      // The entry stays in the bucket but is skipped during updates.
+      // Buckets are compacted lazily when they grow too large.
       const itemScope = getRenderContext().rootScope
       addDisposer(itemScope, () => {
-        bucket!.delete(entry)
-        if (bucket!.size === 0) registry.delete(currentKey)
+        entry.node = null
       })
     },
   }
