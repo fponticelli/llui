@@ -19,11 +19,16 @@ import type { StructuralBlock } from '../structural'
 // Clear callbacks — registered by selector.bind() during render, called by reconcileClear().
 // Eliminates per-row disposers (1000 Set.delete calls → 1 registry.clear() call).
 let activeClearCallbacks: Array<() => void> | null = null
+let activeRemoveCallbacks: Array<(key: string | number) => void> | null = null
 
-/** Register a callback to run when the current each() block clears.
- *  Called by selector.bind() to register registry.clear(). */
+/** Register a callback to run when the current each() block clears. */
 export function registerOnClear(cb: () => void): void {
   if (activeClearCallbacks) activeClearCallbacks.push(cb)
+}
+
+/** Register a callback to run when a single row is removed by key. */
+export function registerOnRemove(cb: (key: string | number) => void): void {
+  if (activeRemoveCallbacks) activeRemoveCallbacks.push(cb)
 }
 
 // Reusable render context for buildEntry — avoids object allocation per entry
@@ -64,18 +69,21 @@ export function each<S, T, M = unknown>(opts: EachOptions<S, T, M>): Node[] {
   const anchor = document.createComment('each')
   const entries: Entry<T>[] = []
   const clearCallbacks: Array<() => void> = []
+  const removeCallbacks: Array<(key: string | number) => void> = []
   // Entries whose leave animation is still in progress. Their DOM nodes
   // remain in the parent until the leave Promise resolves.
   const leaving: Entry<T>[] = []
 
   const initialItems = opts.items(ctx.state as S)
   activeClearCallbacks = clearCallbacks
+  activeRemoveCallbacks = removeCallbacks
   for (let i = 0; i < initialItems.length; i++) {
     const item = initialItems[i]!
     const entry = buildEntry(item, i, opts, parentScope, ctx)
     entries.push(entry)
   }
   activeClearCallbacks = null
+  activeRemoveCallbacks = null
 
   // Fire initial enter for mount-time items
   if (opts.enter) {
@@ -199,7 +207,8 @@ export function each<S, T, M = unknown>(opts: EachOptions<S, T, M>): Node[] {
           }
           ni++
         } else {
-          // Entry removed
+          // Entry removed — notify selectors before scope disposal
+          for (let ci = 0; ci < removeCallbacks.length; ci++) removeCallbacks[ci]!(entry.key)
           for (const node of entry.nodes) parent.removeChild(node)
           disposeScope(entry.scope, true)
           entries[oi] = null!

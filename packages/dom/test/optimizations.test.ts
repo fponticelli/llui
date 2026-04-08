@@ -1255,3 +1255,272 @@ describe('row factory (__rowUpdate)', () => {
     handle.dispose()
   })
 })
+
+// ── Disposer-free selector ───────────────────────────────────────
+
+describe('selector without per-row disposers', () => {
+  it('selector works after individual row removal', () => {
+    type Row = { id: number; label: string }
+    type S = { rows: Row[]; selected: number }
+    type M = { type: 'select'; id: number } | { type: 'remove'; id: number }
+
+    const def = component<S, M, never>({
+      name: 'SelectorRemove',
+      init: () => [
+        {
+          rows: [
+            { id: 1, label: 'a' },
+            { id: 2, label: 'b' },
+            { id: 3, label: 'c' },
+          ],
+          selected: 0,
+        },
+        [],
+      ],
+      update: (s, m) => {
+        switch (m.type) {
+          case 'select':
+            return [{ ...s, selected: m.id }, []]
+          case 'remove':
+            return [{ ...s, rows: s.rows.filter((r) => r.id !== m.id) }, []]
+        }
+      },
+      view: ({ send }) => {
+        const sel = selector<S, number>((s) => s.selected)
+        return [
+          ...each<S, Row>({
+            items: (s) => s.rows,
+            key: (r) => r.id,
+            render: ({ item }) => {
+              const rowId = item.id()
+              const row = div([text(item.label)])
+              sel.bind(row, rowId, 'class', 'class', (m) => (m ? 'active' : ''))
+              return [row]
+            },
+          }),
+        ]
+      },
+      __dirty: (o, n) => {
+        let m = 0
+        if (!Object.is(o.rows, n.rows)) m |= 1
+        if (!Object.is(o.selected, n.selected)) m |= 2
+        return m
+      },
+    })
+
+    const container = document.createElement('div')
+    let sendFn!: (msg: M) => void
+    const origView = def.view
+    def.view = (h) => {
+      sendFn = h.send
+      return origView(h)
+    }
+    const handle = mountApp(container, def)
+
+    // Select row 2
+    sendFn({ type: 'select', id: 2 })
+    flush()
+    let divs = container.querySelectorAll('div')
+    expect(divs[1]!.className).toBe('active')
+
+    // Remove row 2 (the selected one)
+    sendFn({ type: 'remove', id: 2 })
+    flush()
+    divs = container.querySelectorAll('div')
+    expect(divs.length).toBe(2)
+    expect(divs[0]!.textContent).toBe('a')
+    expect(divs[1]!.textContent).toBe('c')
+
+    // Select row 3 — should still work after removal
+    sendFn({ type: 'select', id: 3 })
+    flush()
+    divs = container.querySelectorAll('div')
+    expect(divs[0]!.className).toBe('')
+    expect(divs[1]!.className).toBe('active')
+
+    // Select row 1
+    sendFn({ type: 'select', id: 1 })
+    flush()
+    divs = container.querySelectorAll('div')
+    expect(divs[0]!.className).toBe('active')
+    expect(divs[1]!.className).toBe('')
+
+    handle.dispose()
+  })
+
+  it('selector works after clear and recreate', () => {
+    type Row = { id: number; label: string }
+    type S = { rows: Row[]; selected: number }
+    type M = { type: 'select'; id: number } | { type: 'clear' } | { type: 'create' }
+
+    const def = component<S, M, never>({
+      name: 'SelectorClearRecreate',
+      init: () => [
+        {
+          rows: [
+            { id: 1, label: 'x' },
+            { id: 2, label: 'y' },
+          ],
+          selected: 0,
+        },
+        [],
+      ],
+      update: (s, m) => {
+        switch (m.type) {
+          case 'select':
+            return [{ ...s, selected: m.id }, []]
+          case 'clear':
+            return [{ rows: [], selected: 0 }, []]
+          case 'create':
+            return [
+              {
+                rows: [
+                  { id: 10, label: 'p' },
+                  { id: 20, label: 'q' },
+                  { id: 30, label: 'r' },
+                ],
+                selected: 0,
+              },
+              [],
+            ]
+        }
+      },
+      view: ({ send }) => {
+        const sel = selector<S, number>((s) => s.selected)
+        return [
+          ...each<S, Row>({
+            items: (s) => s.rows,
+            key: (r) => r.id,
+            render: ({ item }) => {
+              const rowId = item.id()
+              const row = div([text(item.label)])
+              sel.bind(row, rowId, 'class', 'class', (m) => (m ? 'on' : ''))
+              return [row]
+            },
+          }),
+        ]
+      },
+      __dirty: (o, n) => {
+        let m = 0
+        if (!Object.is(o.rows, n.rows)) m |= 1
+        if (!Object.is(o.selected, n.selected)) m |= 2
+        return m
+      },
+    })
+
+    const container = document.createElement('div')
+    let sendFn!: (msg: M) => void
+    const origView = def.view
+    def.view = (h) => {
+      sendFn = h.send
+      return origView(h)
+    }
+    const handle = mountApp(container, def)
+
+    // Select row 2
+    sendFn({ type: 'select', id: 2 })
+    flush()
+    expect(container.querySelectorAll('div')[1]!.className).toBe('on')
+
+    // Clear all rows
+    sendFn({ type: 'clear' })
+    flush()
+    expect(container.querySelectorAll('div').length).toBe(0)
+
+    // Create new rows with different IDs
+    sendFn({ type: 'create' })
+    flush()
+    expect(container.querySelectorAll('div').length).toBe(3)
+    expect(container.textContent).toBe('pqr')
+
+    // Select one of the new rows
+    sendFn({ type: 'select', id: 20 })
+    flush()
+    const divs = container.querySelectorAll('div')
+    expect(divs[0]!.className).toBe('')
+    expect(divs[1]!.className).toBe('on')
+    expect(divs[2]!.className).toBe('')
+
+    handle.dispose()
+  })
+
+  it('no memory leak — stale entries are cleaned up on select after remove', () => {
+    type Row = { id: number }
+    type S = { rows: Row[]; selected: number }
+    type M = { type: 'select'; id: number } | { type: 'remove'; id: number }
+
+    const def = component<S, M, never>({
+      name: 'SelectorNoLeak',
+      init: () => [
+        {
+          rows: Array.from({ length: 100 }, (_, i) => ({ id: i + 1 })),
+          selected: 0,
+        },
+        [],
+      ],
+      update: (s, m) => {
+        switch (m.type) {
+          case 'select':
+            return [{ ...s, selected: m.id }, []]
+          case 'remove':
+            return [{ ...s, rows: s.rows.filter((r) => r.id !== m.id) }, []]
+        }
+      },
+      view: ({ send }) => {
+        const sel = selector<S, number>((s) => s.selected)
+        return [
+          ...each<S, Row>({
+            items: (s) => s.rows,
+            key: (r) => r.id,
+            render: ({ item }) => {
+              const rowId = item.id()
+              const row = div([text(item((r: Row) => String(r.id)))])
+              sel.bind(row, rowId, 'class', 'class', (m) => (m ? 'sel' : ''))
+              return [row]
+            },
+          }),
+        ]
+      },
+      __dirty: (o, n) => {
+        let m = 0
+        if (!Object.is(o.rows, n.rows)) m |= 1
+        if (!Object.is(o.selected, n.selected)) m |= 2
+        return m
+      },
+    })
+
+    const container = document.createElement('div')
+    let sendFn!: (msg: M) => void
+    const origView = def.view
+    def.view = (h) => {
+      sendFn = h.send
+      return origView(h)
+    }
+    const handle = mountApp(container, def)
+
+    expect(container.querySelectorAll('div').length).toBe(100)
+
+    // Remove 50 rows
+    for (let i = 1; i <= 50; i++) {
+      sendFn({ type: 'remove', id: i })
+    }
+    flush()
+    expect(container.querySelectorAll('div').length).toBe(50)
+
+    // Select — should work and not crash on stale entries
+    sendFn({ type: 'select', id: 51 })
+    flush()
+    const first = container.querySelector('div')
+    expect(first!.className).toBe('sel')
+    expect(first!.textContent).toBe('51')
+
+    // Switch select — stale entries from removed rows should be cleaned up
+    sendFn({ type: 'select', id: 100 })
+    flush()
+    const last = container.querySelector('div:last-child')
+    expect(last!.className).toBe('sel')
+    expect(first!.className).toBe('')
+
+    handle.dispose()
+  })
+})

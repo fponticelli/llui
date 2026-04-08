@@ -341,8 +341,12 @@ function memo<S, T>(accessor: (s: S) => T, mask?: number): (s: S) => T
 ### `selector()`
 
 Optimized "one-of-N" reactive binding — O(1) updates instead of O(n).
-Watches a state field and compares it against per-item keys. When the
-field changes, only the old and new matching rows update their DOM.
+Uses a generation counter instead of per-row disposers:
+- bind() tags entries with the current generation
+- Individual row removal bumps the generation for that entry (set gen = -1)
+- Bulk clear bumps the generation and clears the registry via registerOnClear
+- updateSelector() skips stale entries (gen !== current) and compacts lazily
+Zero per-row closure allocations. Zero Set.delete calls on disposal.
 
 ```typescript
 function selector<S, V>(field: (s: S) => V): SelectorInstance<V>
