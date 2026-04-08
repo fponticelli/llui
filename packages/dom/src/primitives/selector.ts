@@ -103,6 +103,7 @@ export function selector<S, V>(field: (s: S) => V): SelectorInstance<V> {
       const itemScope = getRenderContext().rootScope
       addDisposer(itemScope, () => {
         bucket!.delete(entry)
+        if (bucket!.size === 0) registry.delete(currentKey)
       })
     },
   }
