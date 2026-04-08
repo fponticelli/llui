@@ -149,6 +149,8 @@ export interface EachOptions<S, T, M = unknown> extends TransitionOptions {
      */
     acc: <R>(selector: (t: T) => R) => () => R
     index: () => number
+    /** @internal Compiler-injected — entry reference for row factory */
+    entry?: Record<string, unknown>
   }) => Node[]
 }
 

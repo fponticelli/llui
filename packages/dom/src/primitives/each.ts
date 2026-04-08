@@ -346,6 +346,11 @@ function buildEntry<S, T, M>(
   buildBag.acc = itemFn
   buildBag.index = indexAccessor
   buildBag._getItemProxy = getItemProxy
+  buildBag.entry = entry
+  // Row factory: pass compiler-injected template + update function through to render
+  const rfOpts = opts as unknown as Record<string, unknown>
+  if (rfOpts.__tpl) buildBag.__tpl = rfOpts.__tpl
+  if (rfOpts.__rowUpd) buildBag.__rowUpd = rfOpts.__rowUpd
   entry.nodes = opts.render(buildBag as Parameters<typeof opts.render>[0])
 
   // Move itemUpdaters from scope to entry for direct access during updateEntry.
@@ -634,11 +639,18 @@ function updateEntry<T>(entry: Entry<T>, item: T, index: number): void {
   // eachItemStable removed — unused
   // Directly run per-item updaters when item changed — bypasses Phase 2
   if (changed) {
-    // Use entry-level updaters (populated during render)
-    // Falls back to scope.itemUpdaters for entries with full scopes
-    const updaters = entry.updaters.length > 0 ? entry.updaters : entry.scope.itemUpdaters
-    for (let i = 0; i < updaters.length; i++) {
-      updaters[i]!()
+    // Row factory fast path: shared update function, zero closures
+    const rowUpd = (entry as unknown as Record<string, unknown>).__rowUpdate as
+      | ((e: Entry<T>) => void)
+      | undefined
+    if (rowUpd) {
+      rowUpd(entry)
+    } else {
+      // Closure-based fallback
+      const updaters = entry.updaters.length > 0 ? entry.updaters : entry.scope.itemUpdaters
+      for (let i = 0; i < updaters.length; i++) {
+        updaters[i]!()
+      }
     }
   }
 }
