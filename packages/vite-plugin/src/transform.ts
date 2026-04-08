@@ -1746,7 +1746,7 @@ function _deadCode_legacyCaseHandler(
 function tryEmitRowFactory(
   eachCall: ts.CallExpression,
   f: ts.NodeFactory,
-  originalSource: string,
+  _originalSource: string,
 ): ts.CallExpression | null {
   const arg = eachCall.arguments[0]
   if (!arg || !ts.isObjectLiteralExpression(arg)) return null
@@ -2142,42 +2142,73 @@ function tryEmitRowFactory(
     ),
   )
 
-  // Preserve non-template, non-acc, non-return statements by extracting their
-  // original source text and re-parsing into fresh AST nodes (no position issues).
+  // Build map of __a{N} → __s{N} for rewriting accessor calls.
+  // After dedup, `__a{N} = acc(__s{N})` — calling `__a{N}()` returns `__s{N}(entry.current)`.
+  // In the row factory, we replace `__a{N}()` → `__s{N}(e.current)`.
+  const accToSelector = new Map<string, string>()
   for (const stmt of body.statements) {
-    // Skip template declaration
+    if (!ts.isVariableStatement(stmt)) continue
+    for (const decl of stmt.declarationList.declarations) {
+      if (!ts.isIdentifier(decl.name) || !decl.name.text.startsWith('__a')) continue
+      if (!decl.initializer || !ts.isCallExpression(decl.initializer)) continue
+      // __a{N} = acc(__s{N}) — extract the selector name from the first argument
+      const arg0 = decl.initializer.arguments[0]
+      if (arg0 && ts.isIdentifier(arg0) && arg0.text.startsWith('__s')) {
+        accToSelector.set(decl.name.text, arg0.text)
+      }
+    }
+  }
+
+  // Rewrite a statement: replace __a{N}() → __s{N}(e.current),
+  // replace template var → r, strip positions via deep clone.
+  function rewriteStmt(stmt: ts.Statement): ts.Statement {
+    function visit(node: ts.Node): ts.Node {
+      // Rewrite __a{N}() → __s{N}(e.current)
+      if (
+        ts.isCallExpression(node) &&
+        ts.isIdentifier(node.expression) &&
+        accToSelector.has(node.expression.text) &&
+        node.arguments.length === 0
+      ) {
+        const selectorName = accToSelector.get(node.expression.text)!
+        return f.createCallExpression(f.createIdentifier(selectorName), undefined, [
+          f.createPropertyAccessExpression(f.createIdentifier('e'), 'current'),
+        ])
+      }
+      // Rewrite template variable → r
+      if (ts.isIdentifier(node) && templateVarName && node.text === templateVarName) {
+        return f.createIdentifier('r')
+      }
+      // Clone identifiers to strip positions
+      if (ts.isIdentifier(node)) {
+        return f.createIdentifier(node.text)
+      }
+      return ts.visitEachChild(node, visit, undefined!)
+    }
+    return ts.visitEachChild(stmt, visit, undefined!) as ts.Statement
+  }
+
+  // Preserve non-template, non-compiler-generated, non-return statements.
+  for (const stmt of body.statements) {
+    if (ts.isReturnStatement(stmt)) continue
+
     if (ts.isVariableStatement(stmt)) {
+      // Skip template declaration
       const isTemplate = stmt.declarationList.declarations.some(
         (d) => ts.isIdentifier(d.name) && d.name.text === templateVarName,
       )
       if (isTemplate) continue
-      // Skip acc() declarations
-      const isAcc = stmt.declarationList.declarations.some((d) => {
-        if (!d.initializer || !ts.isCallExpression(d.initializer)) return false
-        // After dedup, acc calls look like: __a0 = acc(__s0)
-        // The acc identifier may have been renamed by the visitor
-        return true // skip ALL variable declarations in the render (they're all acc-related)
-      })
-      if (isAcc) continue
+      // Skip __a{N} and __s{N} declarations (compiler-generated acc/selector)
+      const isCompilerOnly = stmt.declarationList.declarations.every(
+        (d) =>
+          ts.isIdentifier(d.name) &&
+          (d.name.text.startsWith('__a') || d.name.text.startsWith('__s')),
+      )
+      if (isCompilerOnly) continue
     }
-    if (ts.isReturnStatement(stmt)) continue
 
-    // Extract source text and re-parse to get position-free nodes
-    // Guard: factory-created nodes may not have valid positions
-    let stmtStart: number, stmtEnd: number
-    try {
-      stmtStart = stmt.getStart()
-      stmtEnd = stmt.getEnd()
-    } catch {
-      continue // factory-created node, skip
-    }
-    if (stmtStart >= 0 && stmtEnd > stmtStart && stmtEnd <= originalSource.length) {
-      let text = originalSource.slice(stmtStart, stmtEnd)
-      // Rewrite template var references to 'r'
-      if (templateVarName) text = text.replace(new RegExp(`\\b${templateVarName}\\b`, 'g'), 'r')
-      const parsed = parseStmt(text)
-      if (parsed) renderStmts.push(parsed)
-    }
+    // Rewrite and include
+    renderStmts.push(rewriteStmt(stmt))
   }
 
   // return [r]
@@ -2254,7 +2285,7 @@ function rewriteRoot(
 }
 
 /** Parse a statement string into a fresh AST node (no source positions) */
-function parseStmt(code: string): ts.Statement | null {
+function _parseStmt(code: string): ts.Statement | null {
   const sf = ts.createSourceFile('__gen.ts', code, ts.ScriptTarget.Latest, false)
   return (sf.statements[0] as ts.Statement | undefined) ?? null
 }
