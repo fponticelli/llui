@@ -215,6 +215,53 @@ function genericUpdate<S, M, E>(
 }
 
 /**
+ * Run a handler for a single message: call update(), reconcile blocks
+ * with the given method, run Phase 2. Used by compiler-generated __handlers
+ * to avoid duplicating boilerplate per message type.
+ *
+ * @param method 0=reconcile, 1=reconcileItems, 2=reconcileClear, 3=reconcileRemove, -1=skip blocks
+ * @public — used by compiler-generated `__handlers`
+ */
+export function _handleMsg(
+  inst: ComponentInstance,
+  msg: unknown,
+  dirty: number,
+  method: number,
+): [unknown, unknown[]] {
+  const [s, e] = (inst.def.update as (s: unknown, m: unknown) => [unknown, unknown[]])(
+    inst.state,
+    msg,
+  )
+  inst.state = s
+
+  if (method >= 0) {
+    const bl = inst.structuralBlocks
+    for (let i = 0; i < bl.length; i++) {
+      if (!(bl[i]!.mask & dirty)) continue
+      const block = bl[i]!
+      switch (method) {
+        case 0:
+          block.reconcile(s, dirty)
+          break
+        case 1:
+          block.reconcileItems?.(s)
+          break
+        case 2:
+          block.reconcileClear?.()
+          break
+        case 3:
+          block.reconcileRemove?.(s)
+          break
+      }
+    }
+  }
+
+  const b = inst.allBindings
+  _runPhase2(s, dirty, b, b.length)
+  return [s, e]
+}
+
+/**
  * Phase 2: compact dead bindings + update live bindings.
  * Shared between genericUpdate and compiler-generated __update.
  * @public — used by compiler-generated `__update` functions

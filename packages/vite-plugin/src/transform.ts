@@ -1485,7 +1485,49 @@ function analyzeModifiedFields(
  *   return [s, e]
  * }
  */
+/**
+ * Build a handler that delegates to __handleMsg(inst, msg, dirty, method).
+ * method: 0=reconcile, 1=reconcileItems, 2=reconcileClear, 3=reconcileRemove, -1=skip blocks
+ */
 function buildCaseHandler(
+  f: ts.NodeFactory,
+  caseDirty: number,
+  arrayOp: ArrayOp,
+): ts.ArrowFunction {
+  const method =
+    arrayOp === 'none'
+      ? -1
+      : arrayOp === 'mutate'
+        ? 1
+        : arrayOp === 'clear'
+          ? 2
+          : arrayOp === 'remove'
+            ? 3
+            : 0 // general
+
+  // (inst, msg) => __handleMsg(inst, msg, dirty, method)
+  return f.createArrowFunction(
+    undefined,
+    undefined,
+    [
+      f.createParameterDeclaration(undefined, undefined, 'inst'),
+      f.createParameterDeclaration(undefined, undefined, 'msg'),
+    ],
+    undefined,
+    f.createToken(ts.SyntaxKind.EqualsGreaterThanToken),
+    f.createCallExpression(f.createIdentifier('__handleMsg'), undefined, [
+      f.createIdentifier('inst'),
+      f.createIdentifier('msg'),
+      createMaskLiteral(f, caseDirty),
+      method >= 0
+        ? f.createNumericLiteral(method)
+        : f.createPrefixUnaryExpression(ts.SyntaxKind.MinusToken, f.createNumericLiteral(1)),
+    ]),
+  )
+}
+
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+function _deadCode_legacyCaseHandler(
   f: ts.NodeFactory,
   caseDirty: number,
   arrayOp: ArrayOp,
@@ -2064,6 +2106,9 @@ function cleanupImports(
   if (usesApplyBinding) {
     if (!clause.namedBindings.elements.some((s) => s.name.text === '__runPhase2')) {
       remaining.push(f.createImportSpecifier(false, undefined, f.createIdentifier('__runPhase2')))
+    }
+    if (!clause.namedBindings.elements.some((s) => s.name.text === '__handleMsg')) {
+      remaining.push(f.createImportSpecifier(false, undefined, f.createIdentifier('__handleMsg')))
     }
   }
 

@@ -396,6 +396,18 @@ Fast path for each() rows — 1 cloneNode instead of N createElement.
 function elTemplate(html: string, patch: (root: Element, bind: TemplateBind) => void): Element
 ```
 
+### `_handleMsg()`
+
+Run a handler for a single message: call update(), reconcile blocks
+with the given method, run Phase 2. Used by compiler-generated __handlers
+to avoid duplicating boilerplate per message type.
+@param method 0=reconcile, 1=reconcileItems, 2=reconcileClear, 3=reconcileRemove, -1=skip blocks
+@public — used by compiler-generated `__handlers`
+
+```typescript
+function _handleMsg(inst: ComponentInstance, msg: unknown, dirty: number, method: number): [unknown, unknown[]]
+```
+
 ### `_runPhase2()`
 
 Phase 2: compact dead bindings + update live bindings.

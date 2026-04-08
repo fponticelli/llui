@@ -25,12 +25,10 @@ export function selector<S, V>(field: (s: S) => V): SelectorInstance<V> {
   const registry = new Map<V, Set<SelectorEntry>>()
   let lastValue: V = field(ctx.state as S)
 
-  /** Core update logic — shared by Phase 2 binding and __directUpdate */
   function updateSelector(state: S): V {
     const newValue = field(state)
     if (Object.is(newValue, lastValue)) return lastValue
 
-    // Deselect old
     const oldEntries = registry.get(lastValue)
     if (oldEntries) {
       for (const entry of oldEntries) {
@@ -42,7 +40,6 @@ export function selector<S, V>(field: (s: S) => V): SelectorInstance<V> {
       }
     }
 
-    // Select new
     const newEntries = registry.get(newValue)
     if (newEntries) {
       for (const entry of newEntries) {
@@ -58,7 +55,6 @@ export function selector<S, V>(field: (s: S) => V): SelectorInstance<V> {
     return newValue
   }
 
-  // Phase 2 binding — delegates to updateSelector
   createBinding(scope, {
     mask: FULL_MASK,
     accessor: ((state: S) => updateSelector(state)) as (state: never) => unknown,
@@ -103,10 +99,6 @@ export function selector<S, V>(field: (s: S) => V): SelectorInstance<V> {
       })
     },
 
-    /**
-     * Direct update — bypasses Phase 2 binding scan. Called by compiler-
-     * generated per-message handlers when only the selector's field changed.
-     */
     __directUpdate(state: unknown): void {
       updateSelector(state as S)
     },
@@ -121,6 +113,5 @@ export interface SelectorInstance<V> {
     propKey: string | undefined,
     transform: (match: boolean) => unknown,
   ): void
-  /** @internal Compiler-generated handlers call this to bypass Phase 2 */
   __directUpdate(state: unknown): void
 }
