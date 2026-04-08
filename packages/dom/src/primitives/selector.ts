@@ -5,7 +5,7 @@ import { FULL_MASK } from '../update-loop'
 import type { BindingKind } from '../types'
 
 interface SelectorEntry {
-  node: Node | null
+  node: Node
   kind: BindingKind
   key: string | undefined
   lastValue: unknown
@@ -19,22 +19,17 @@ interface SelectorEntry {
  * field changes, only the old and new matching rows update their DOM.
  *
  * Usage:
- *   // In view, before each():
  *   const sel = selector<State, number>(s => s.selected)
- *
- *   // Inside each() render:
- *   tr({ class: sel.bind(item(r => r.id), 'class', match => match ? 'danger' : '') })
- *
- * sel.bind() creates and manages the DOM binding directly.
+ *   // inside each() render:
+ *   sel.bind(row, rowId, 'class', 'class', match => match ? 'danger' : '')
  */
 export function selector<S, V>(field: (s: S) => V): SelectorInstance<V> {
   const ctx = getRenderContext()
   const scope = ctx.rootScope
 
-  const registry = new Map<V, SelectorEntry[]>()
+  const registry = new Map<V, Set<SelectorEntry>>()
   let lastValue: V = field(ctx.state as S)
 
-  // Single watcher binding — evaluates the state field per update cycle.
   createBinding(scope, {
     mask: FULL_MASK,
     accessor: ((state: S) => {
@@ -42,10 +37,28 @@ export function selector<S, V>(field: (s: S) => V): SelectorInstance<V> {
       if (Object.is(newValue, lastValue)) return lastValue
 
       // Deselect old
-      updateBucket(registry, lastValue, false)
+      const oldEntries = registry.get(lastValue)
+      if (oldEntries) {
+        for (const entry of oldEntries) {
+          const v = entry.transform(false)
+          if (!Object.is(v, entry.lastValue)) {
+            entry.lastValue = v
+            applyBinding({ kind: entry.kind, node: entry.node, key: entry.key }, v)
+          }
+        }
+      }
 
       // Select new
-      updateBucket(registry, newValue, true)
+      const newEntries = registry.get(newValue)
+      if (newEntries) {
+        for (const entry of newEntries) {
+          const v = entry.transform(true)
+          if (!Object.is(v, entry.lastValue)) {
+            entry.lastValue = v
+            applyBinding({ kind: entry.kind, node: entry.node, key: entry.key }, v)
+          }
+        }
+      }
 
       lastValue = newValue
       return newValue
@@ -56,14 +69,6 @@ export function selector<S, V>(field: (s: S) => V): SelectorInstance<V> {
   })
 
   return {
-    /**
-     * Bind a DOM node to this selector. Called per row inside each().
-     * Applies the initial value and registers for O(1) future updates.
-     *
-     * Cleanup: nulls the entry's node ref when the row scope is disposed.
-     * This is cheaper than Map/Set operations — just one pointer write
-     * instead of Set.delete + conditional Map.delete per row.
-     */
     bind(
       node: Node,
       key: V | (() => V),
@@ -87,53 +92,19 @@ export function selector<S, V>(field: (s: S) => V): SelectorInstance<V> {
 
       let bucket = registry.get(currentKey)
       if (!bucket) {
-        bucket = []
+        bucket = new Set()
         registry.set(currentKey, bucket)
       }
-      bucket.push(entry)
+      bucket.add(entry)
 
-      // Lightweight cleanup: null the node ref instead of Map/Set mutation.
-      // The entry stays in the bucket but is skipped during updates.
-      // Buckets are compacted lazily when they grow too large.
+      // Cleanup: remove from registry when row scope is disposed.
+      // Uses Set.delete (O(1) amortized) — lighter than the previous
+      // Map.delete on the key, which required a size check.
       const itemScope = getRenderContext().rootScope
       addDisposer(itemScope, () => {
-        entry.node = null
+        bucket!.delete(entry)
       })
     },
-  }
-}
-
-/** Update a bucket's entries and lazily compact disposed entries. */
-function updateBucket<V>(
-  registry: Map<V, SelectorEntry[]>,
-  key: V,
-  match: boolean,
-): void {
-  const entries = registry.get(key)
-  if (!entries) return
-
-  let hasStale = false
-  for (let i = 0; i < entries.length; i++) {
-    const entry = entries[i]!
-    if (!entry.node) {
-      hasStale = true
-      continue
-    }
-    const v = entry.transform(match)
-    if (!Object.is(v, entry.lastValue)) {
-      entry.lastValue = v
-      applyBinding({ kind: entry.kind, node: entry.node, key: entry.key }, v)
-    }
-  }
-
-  // Compact stale entries lazily — only when we encounter them
-  if (hasStale) {
-    let w = 0
-    for (let r = 0; r < entries.length; r++) {
-      if (entries[r]!.node) entries[w++] = entries[r]!
-    }
-    entries.length = w
-    if (w === 0) registry.delete(key)
   }
 }
 
