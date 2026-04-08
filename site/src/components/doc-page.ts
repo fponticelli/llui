@@ -77,6 +77,14 @@ export const DocPage = component<State, Msg, never, DocData>({
               },
               [text('LLM Guide')],
             ),
+            a(
+              {
+                href: '/benchmarks',
+                class: (s: State) => (s.slug === 'benchmarks' ? 'nav-link active' : 'nav-link'),
+                'aria-current': (s: State) => (s.slug === 'benchmarks' ? 'page' : undefined),
+              },
+              [text('Benchmarks')],
+            ),
             span({ class: 'nav-section' }, [text('Packages')]),
             a(
               {

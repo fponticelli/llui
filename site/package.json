@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite dev",
-    "build": "tsx src/generate-api.ts && tsx src/generate-llms.ts && vite build",
+    "build": "tsx src/generate-benchmarks.ts && tsx src/generate-api.ts && tsx src/generate-llms.ts && vite build",
     "preview": "vite preview"
   },
   "dependencies": {

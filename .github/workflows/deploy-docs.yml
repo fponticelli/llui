@@ -9,6 +9,7 @@ on:
       - 'packages/*/README.md'
       - 'packages/*/src/**'
       - 'evaluation/prompts/system-prompt.md'
+      - 'benchmarks/jfb-baseline.json'
   workflow_dispatch:
 
 permissions:
@@ -38,8 +39,8 @@ jobs:
       - name: Build LLui packages
         run: pnpm turbo build --filter=@llui/dom --filter=@llui/vite-plugin --filter=@llui/vike
 
-      - name: Generate API docs + LLM files
-        run: cd site && npx tsx src/generate-api.ts && npx tsx src/generate-llms.ts
+      - name: Generate benchmarks + API docs + LLM files
+        run: cd site && npx tsx src/generate-benchmarks.ts && npx tsx src/generate-api.ts && npx tsx src/generate-llms.ts
 
       - name: Build site
         run: cd site && npx vite build
