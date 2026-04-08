@@ -1200,11 +1200,9 @@ function tryInjectDirty(
   // that bypass the generic Phase 1/2 pipeline for single-message updates.
   const handlersProp = tryBuildHandlers(configArg, topLevelBits, structuralMask, f)
 
-  // Skip __update when __handlers covers all cases — the generic fallback
-  // (genericUpdate) handles multi-message batches adequately, and single
-  // messages use __handlers directly. Saves ~350 bytes.
-  const extraProps = [dirtyProp, legendProp]
-  if (!handlersProp) extraProps.push(updateProp)
+  // Keep __update even when __handlers is present — it provides Phase 1
+  // mask gating for multi-message batches that bypass __handlers.
+  const extraProps = [dirtyProp, legendProp, updateProp]
   if (handlersProp) extraProps.push(handlersProp)
 
   const newConfig = f.createObjectLiteralExpression([...configArg.properties, ...extraProps], true)
