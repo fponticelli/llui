@@ -133,3 +133,4 @@ export { applyField, type FieldMsg } from './form'
 
 export { elSplit } from './el-split'
 export { elTemplate } from './el-template'
+export { applyBinding as __applyBinding } from './binding'

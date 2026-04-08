@@ -1,6 +1,7 @@
 // ── Component Definition ──────────────────────────────────────────
 
 import type { View } from './view-helpers'
+import type { StructuralBlock } from './structural'
 
 export interface ComponentDef<S, M, E = never, D = void> {
   name: string
@@ -27,6 +28,14 @@ export interface ComponentDef<S, M, E = never, D = void> {
   __stateSchema?: object
   /** @internal Compiler-injected — Effect union schema (for introspection) */
   __effectSchema?: object
+  /** @internal Compiler-injected — replaces generic Phase 1 + Phase 2 loop */
+  __update?: (
+    state: S,
+    dirty: number,
+    bindings: Binding[],
+    blocks: StructuralBlock[],
+    bindingsBeforePhase1: number,
+  ) => void
 }
 
 export type Send<M> = (msg: M) => void

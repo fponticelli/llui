@@ -158,9 +158,28 @@ function processMessages<S, M, E>(inst: ComponentInstance<S, M, E>): void {
   // structural primitives (e.g. each.items) can use the bitmask fast path.
   setCurrentDirtyMask(combinedDirty)
 
-  // Phase 1 — structural reconciliation (instance-local blocks).
-  // Skip blocks whose mask doesn't intersect the dirty bits — e.g.,
-  // an each() that reads `rows` is skipped when only `selected` changed.
+  if (inst.def.__update) {
+    // Compiler-generated fast path — replaces generic Phase 1 + Phase 2
+    inst.def.__update(state, combinedDirty, bindings, inst.structuralBlocks, bindingsBeforePhase1)
+  } else {
+    // Generic Phase 1 + Phase 2 fallback (uncompiled components)
+    genericUpdate(inst, state, combinedDirty, bindings, bindingsBeforePhase1)
+  }
+
+  // Dispatch effects after DOM updates
+  for (let i = 0; i < allEffects.length; i++) {
+    dispatchEffect(inst, allEffects[i]!)
+  }
+}
+
+function genericUpdate<S, M, E>(
+  inst: ComponentInstance<S, M, E>,
+  state: S,
+  combinedDirty: number,
+  bindings: Binding[],
+  bindingsBeforePhase1: number,
+): void {
+  // Phase 1 — structural reconciliation
   const blocks = inst.structuralBlocks
   const blocksLen = blocks.length
   for (let bi = 0; bi < blocksLen; bi++) {
@@ -169,7 +188,7 @@ function processMessages<S, M, E>(inst: ComponentInstance<S, M, E>): void {
     block.reconcile(state, combinedDirty)
   }
 
-  // Compact dead bindings before Phase 2 (Phase 1 may have disposed scopes)
+  // Compact dead bindings before Phase 2
   let phase2Len = bindingsBeforePhase1
   if (bindings.length > bindingsBeforePhase1 || (phase2Len > 0 && bindings[0]!.dead)) {
     let w = 0
@@ -180,13 +199,10 @@ function processMessages<S, M, E>(inst: ComponentInstance<S, M, E>): void {
     phase2Len = Math.min(w, bindingsBeforePhase1)
   }
 
-  // Phase 2 — binding updates (flat array, no tree walk).
-  // Only iterate bindings that existed before Phase 1; fresh bindings
-  // (created during Phase 1) already have initial values set.
+  // Phase 2 — binding updates
   if (combinedDirty !== 0) {
     const s = inst.state
     if (import.meta.env?.DEV) {
-      // Dev build: wrap accessor calls so errors reveal the binding path.
       for (let i = 0, len = phase2Len; i < len; i++) {
         const binding = bindings[i]!
         if (binding.dead || (binding.mask & combinedDirty) === 0) continue
@@ -197,10 +213,6 @@ function processMessages<S, M, E>(inst: ComponentInstance<S, M, E>): void {
           throw enhanceBindingError(e, binding, inst.def.name)
         }
         const last = binding.lastValue
-        // `===` is inline and 2-3× faster than Object.is for the common
-        // case. The NaN guard (v !== v means NaN) preserves Object.is's
-        // NaN-equals-NaN semantics. −0 vs +0 we treat as equal, which
-        // matches what users typically want for DOM updates.
         if (newValue === last || (newValue !== newValue && last !== last)) continue
         binding.lastValue = newValue
         applyBinding(binding, newValue)
@@ -217,12 +229,11 @@ function processMessages<S, M, E>(inst: ComponentInstance<S, M, E>): void {
       }
     }
   }
-
-  // Dispatch effects after DOM updates
-  for (let i = 0; i < allEffects.length; i++) {
-    dispatchEffect(inst, allEffects[i]!)
-  }
 }
+
+/** @internal Exported for compiler-generated __update to reuse */
+export { applyBinding }
+export { genericUpdate as _genericUpdate }
 
 function enhanceBindingError(err: unknown, binding: Binding, componentName: string): Error {
   // For text bindings, binding.node is the Text node — use its parent element.

@@ -161,6 +161,7 @@ export function transformLlui(
   let usesElTemplate = false
   let usesElSplit = false
   let usesMemo = false
+  let usesApplyBinding = false
 
   const f = ts.factory
   const printer = ts.createPrinter({ newLine: ts.NewLineKind.LineFeed })
@@ -193,7 +194,13 @@ export function transformLlui(
         changed = true
       }
       // Inject __mask for Phase 1 gating
-      const masked = tryInjectStructuralMask(current, viewHelperNames, viewHelperAliases, fieldBits, f)
+      const masked = tryInjectStructuralMask(
+        current,
+        viewHelperNames,
+        viewHelperAliases,
+        fieldBits,
+        f,
+      )
       if (masked) {
         current = masked
         changed = true
@@ -252,9 +259,10 @@ export function transformLlui(
       }
     }
 
-    // Pass 2: Inject __dirty and __msgSchema into component() calls
+    // Pass 2: Inject __dirty, __update, and __msgSchema into component() calls
     if (ts.isCallExpression(node) && isComponentCall(node, lluiImport)) {
       let result = tryInjectDirty(node, fieldBits, f)
+      if (result) usesApplyBinding = true
       if (devMode) {
         const schema = extractMsgSchema(source)
         if (schema) {
@@ -292,6 +300,7 @@ export function transformLlui(
     usesElSplit,
     usesElTemplate,
     usesMemo,
+    usesApplyBinding,
     f,
   )
 
@@ -1006,7 +1015,11 @@ function tryInjectStructuralMask(
 
   // Already has __mask
   for (const prop of optsArg.properties) {
-    if (ts.isPropertyAssignment(prop) && ts.isIdentifier(prop.name) && prop.name.text === '__mask') {
+    if (
+      ts.isPropertyAssignment(prop) &&
+      ts.isIdentifier(prop.name) &&
+      prop.name.text === '__mask'
+    ) {
       return null
     }
   }
@@ -1147,8 +1160,34 @@ function tryInjectDirty(
     f.createObjectLiteralExpression(legendProps, false),
   )
 
+  // __update: compiler-generated Phase 1 + Phase 2 replacement.
+  // Collects structural block masks and binding masks to gate entire phases.
+  // Generated as: (s, d, b, bl, p) => {
+  //   if (d & structuralMask) { /* Phase 1 */ ... /* compact */ ... }
+  //   if (d & bindingMask) { /* Phase 2 */ ... }
+  // }
+  const structuralMask = computeStructuralMask(configArg, fieldBits)
+  const phase2Mask = computePhase2Mask(configArg, fieldBits)
+
+  const updateBody = buildUpdateBody(f, structuralMask, phase2Mask)
+  const updateFn = f.createArrowFunction(
+    undefined,
+    undefined,
+    [
+      f.createParameterDeclaration(undefined, undefined, 's'),
+      f.createParameterDeclaration(undefined, undefined, 'd'),
+      f.createParameterDeclaration(undefined, undefined, 'b'),
+      f.createParameterDeclaration(undefined, undefined, 'bl'),
+      f.createParameterDeclaration(undefined, undefined, 'p'),
+    ],
+    undefined,
+    f.createToken(ts.SyntaxKind.EqualsGreaterThanToken),
+    updateBody,
+  )
+  const updateProp = f.createPropertyAssignment('__update', updateFn)
+
   const newConfig = f.createObjectLiteralExpression(
-    [...configArg.properties, dirtyProp, legendProp],
+    [...configArg.properties, dirtyProp, legendProp, updateProp],
     true,
   )
 
@@ -1156,6 +1195,459 @@ function tryInjectDirty(
     newConfig,
     ...node.arguments.slice(1),
   ])
+}
+
+/**
+ * Compute the OR of all structural block masks found in the view function.
+ * Returns FULL_MASK if any structural block uses FULL_MASK or if no blocks found.
+ */
+function computeStructuralMask(
+  configArg: ts.ObjectLiteralExpression,
+  fieldBits: Map<string, number>,
+): number {
+  const viewProp = configArg.properties.find(
+    (p) => ts.isPropertyAssignment(p) && ts.isIdentifier(p.name) && p.name.text === 'view',
+  )
+  if (!viewProp || !ts.isPropertyAssignment(viewProp)) return 0xffffffff | 0
+
+  let mask = 0
+  let foundStructural = false
+
+  function walk(node: ts.Node): void {
+    if (ts.isCallExpression(node)) {
+      const name = ts.isIdentifier(node.expression) ? node.expression.text : ''
+      if (['each', 'branch', 'show'].includes(name) && node.arguments[0]) {
+        foundStructural = true
+        const opts = node.arguments[0]
+        if (ts.isObjectLiteralExpression(opts)) {
+          // Check for __mask property (already injected by tryInjectStructuralMask)
+          for (const prop of opts.properties) {
+            if (
+              ts.isPropertyAssignment(prop) &&
+              ts.isIdentifier(prop.name) &&
+              prop.name.text === '__mask'
+            ) {
+              if (ts.isNumericLiteral(prop.initializer)) {
+                mask |= parseInt(prop.initializer.text, 10)
+                return
+              }
+              if (ts.isPrefixUnaryExpression(prop.initializer)) {
+                // Handle negative literals like -1
+                mask = 0xffffffff | 0
+                return
+              }
+            }
+          }
+          // No __mask found — use driving accessor mask
+          const driverProp = name === 'each' ? 'items' : name === 'branch' ? 'on' : 'when'
+          for (const prop of opts.properties) {
+            if (
+              ts.isPropertyAssignment(prop) &&
+              ts.isIdentifier(prop.name) &&
+              prop.name.text === driverProp
+            ) {
+              if (
+                ts.isArrowFunction(prop.initializer) ||
+                ts.isFunctionExpression(prop.initializer)
+              ) {
+                const { mask: m } = computeAccessorMask(prop.initializer, fieldBits)
+                mask |= m || 0xffffffff | 0
+              }
+              break
+            }
+          }
+        }
+      }
+    }
+    ts.forEachChild(node, walk)
+  }
+
+  walk(viewProp.initializer)
+  return foundStructural ? mask || 0xffffffff | 0 : 0
+}
+
+/**
+ * Compute the OR of all component-level binding masks from text() calls
+ * and element bindings in the view. Returns 0 if no component-level bindings.
+ */
+function computePhase2Mask(
+  _configArg: ts.ObjectLiteralExpression,
+  _fieldBits: Map<string, number>,
+): number {
+  // For now, return FULL_MASK — a future pass can analyze all binding sites
+  // in the view to compute the precise aggregate. The key optimization is
+  // already in Phase 1 gating: when structuralMask doesn't intersect dirty,
+  // the entire reconciliation is skipped.
+  return 0xffffffff | 0
+}
+
+/**
+ * Build the __update function body:
+ * {
+ *   // Phase 1 — structural reconciliation (gated by structuralMask)
+ *   if (d & structuralMask) {
+ *     for (let i = 0, len = bl.length; i < len; i++) {
+ *       const block = bl[i]
+ *       if ((block.mask & d) === 0) continue
+ *       block.reconcile(s, d)
+ *     }
+ *     // Compact dead bindings
+ *     if (b.length > p || (p > 0 && b[0].dead)) {
+ *       let w = 0
+ *       for (let r = 0; r < b.length; r++) { if (!b[r].dead) b[w++] = b[r] }
+ *       b.length = w
+ *       p = Math.min(w, p)
+ *     }
+ *   }
+ *   // Phase 2 — binding updates
+ *   if (d !== 0) {
+ *     for (let i = 0; i < p; i++) {
+ *       const bn = b[i]
+ *       if (bn.dead || (bn.mask & d) === 0) continue
+ *       const v = bn.accessor(s)
+ *       const l = bn.lastValue
+ *       if (v === l || (v !== v && l !== l)) continue
+ *       bn.lastValue = v
+ *       __applyBinding(bn, v)
+ *     }
+ *   }
+ * }
+ */
+function buildUpdateBody(f: ts.NodeFactory, structuralMask: number, _phase2Mask: number): ts.Block {
+  const stmts: ts.Statement[] = []
+
+  // Phase 1: structural block reconciliation, gated by aggregate mask
+  if (structuralMask !== 0) {
+    const phase1Stmts: ts.Statement[] = []
+
+    // for (let i = 0, len = bl.length; i < len; i++) {
+    //   const block = bl[i]; if ((block.mask & d) === 0) continue; block.reconcile(s, d)
+    // }
+    const blockLoop = f.createForStatement(
+      f.createVariableDeclarationList(
+        [
+          f.createVariableDeclaration('i', undefined, undefined, f.createNumericLiteral(0)),
+          f.createVariableDeclaration(
+            'len',
+            undefined,
+            undefined,
+            f.createPropertyAccessExpression(f.createIdentifier('bl'), 'length'),
+          ),
+        ],
+        ts.NodeFlags.Let,
+      ),
+      f.createBinaryExpression(
+        f.createIdentifier('i'),
+        ts.SyntaxKind.LessThanToken,
+        f.createIdentifier('len'),
+      ),
+      f.createPostfixUnaryExpression(f.createIdentifier('i'), ts.SyntaxKind.PlusPlusToken),
+      f.createBlock(
+        [
+          f.createVariableStatement(
+            undefined,
+            f.createVariableDeclarationList(
+              [
+                f.createVariableDeclaration(
+                  'bk',
+                  undefined,
+                  undefined,
+                  f.createElementAccessExpression(
+                    f.createIdentifier('bl'),
+                    f.createIdentifier('i'),
+                  ),
+                ),
+              ],
+              ts.NodeFlags.Const,
+            ),
+          ),
+          f.createIfStatement(
+            f.createBinaryExpression(
+              f.createParenthesizedExpression(
+                f.createBinaryExpression(
+                  f.createPropertyAccessExpression(f.createIdentifier('bk'), 'mask'),
+                  ts.SyntaxKind.AmpersandToken,
+                  f.createIdentifier('d'),
+                ),
+              ),
+              ts.SyntaxKind.EqualsEqualsEqualsToken,
+              f.createNumericLiteral(0),
+            ),
+            f.createContinueStatement(),
+          ),
+          f.createExpressionStatement(
+            f.createCallExpression(
+              f.createPropertyAccessExpression(f.createIdentifier('bk'), 'reconcile'),
+              undefined,
+              [f.createIdentifier('s'), f.createIdentifier('d')],
+            ),
+          ),
+        ],
+        true,
+      ),
+    )
+    phase1Stmts.push(blockLoop)
+
+    // Compaction: if (b.length > p || (p > 0 && b[0].dead)) { ... }
+    const compactBody = f.createBlock(
+      [
+        // let w = 0
+        f.createVariableStatement(
+          undefined,
+          f.createVariableDeclarationList(
+            [f.createVariableDeclaration('w', undefined, undefined, f.createNumericLiteral(0))],
+            ts.NodeFlags.Let,
+          ),
+        ),
+        // for (let r = 0; r < b.length; r++) { if (!b[r].dead) b[w++] = b[r] }
+        f.createForStatement(
+          f.createVariableDeclarationList(
+            [f.createVariableDeclaration('r', undefined, undefined, f.createNumericLiteral(0))],
+            ts.NodeFlags.Let,
+          ),
+          f.createBinaryExpression(
+            f.createIdentifier('r'),
+            ts.SyntaxKind.LessThanToken,
+            f.createPropertyAccessExpression(f.createIdentifier('b'), 'length'),
+          ),
+          f.createPostfixUnaryExpression(f.createIdentifier('r'), ts.SyntaxKind.PlusPlusToken),
+          f.createBlock(
+            [
+              f.createIfStatement(
+                f.createPrefixUnaryExpression(
+                  ts.SyntaxKind.ExclamationToken,
+                  f.createPropertyAccessExpression(
+                    f.createElementAccessExpression(
+                      f.createIdentifier('b'),
+                      f.createIdentifier('r'),
+                    ),
+                    'dead',
+                  ),
+                ),
+                f.createExpressionStatement(
+                  f.createBinaryExpression(
+                    f.createElementAccessExpression(
+                      f.createIdentifier('b'),
+                      f.createPostfixUnaryExpression(
+                        f.createIdentifier('w'),
+                        ts.SyntaxKind.PlusPlusToken,
+                      ),
+                    ),
+                    ts.SyntaxKind.EqualsToken,
+                    f.createElementAccessExpression(
+                      f.createIdentifier('b'),
+                      f.createIdentifier('r'),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+            true,
+          ),
+        ),
+        // b.length = w
+        f.createExpressionStatement(
+          f.createBinaryExpression(
+            f.createPropertyAccessExpression(f.createIdentifier('b'), 'length'),
+            ts.SyntaxKind.EqualsToken,
+            f.createIdentifier('w'),
+          ),
+        ),
+        // p = Math.min(w, p)
+        f.createExpressionStatement(
+          f.createBinaryExpression(
+            f.createIdentifier('p'),
+            ts.SyntaxKind.EqualsToken,
+            f.createCallExpression(
+              f.createPropertyAccessExpression(f.createIdentifier('Math'), 'min'),
+              undefined,
+              [f.createIdentifier('w'), f.createIdentifier('p')],
+            ),
+          ),
+        ),
+      ],
+      true,
+    )
+
+    const compactCondition = f.createBinaryExpression(
+      f.createBinaryExpression(
+        f.createPropertyAccessExpression(f.createIdentifier('b'), 'length'),
+        ts.SyntaxKind.GreaterThanToken,
+        f.createIdentifier('p'),
+      ),
+      ts.SyntaxKind.BarBarToken,
+      f.createParenthesizedExpression(
+        f.createBinaryExpression(
+          f.createBinaryExpression(
+            f.createIdentifier('p'),
+            ts.SyntaxKind.GreaterThanToken,
+            f.createNumericLiteral(0),
+          ),
+          ts.SyntaxKind.AmpersandAmpersandToken,
+          f.createPropertyAccessExpression(
+            f.createElementAccessExpression(f.createIdentifier('b'), f.createNumericLiteral(0)),
+            'dead',
+          ),
+        ),
+      ),
+    )
+    phase1Stmts.push(f.createIfStatement(compactCondition, compactBody))
+
+    // Wrap Phase 1 in mask gate
+    if (structuralMask !== (0xffffffff | 0)) {
+      stmts.push(
+        f.createIfStatement(
+          f.createBinaryExpression(
+            f.createParenthesizedExpression(
+              f.createBinaryExpression(
+                f.createIdentifier('d'),
+                ts.SyntaxKind.AmpersandToken,
+                createMaskLiteral(f, structuralMask),
+              ),
+            ),
+            ts.SyntaxKind.ExclamationEqualsEqualsToken,
+            f.createNumericLiteral(0),
+          ),
+          f.createBlock(phase1Stmts, true),
+        ),
+      )
+    } else {
+      stmts.push(...phase1Stmts)
+    }
+  }
+
+  // Phase 2: binding updates
+  const phase2Loop = f.createForStatement(
+    f.createVariableDeclarationList(
+      [f.createVariableDeclaration('i', undefined, undefined, f.createNumericLiteral(0))],
+      ts.NodeFlags.Let,
+    ),
+    f.createBinaryExpression(
+      f.createIdentifier('i'),
+      ts.SyntaxKind.LessThanToken,
+      f.createIdentifier('p'),
+    ),
+    f.createPostfixUnaryExpression(f.createIdentifier('i'), ts.SyntaxKind.PlusPlusToken),
+    f.createBlock(
+      [
+        // const bn = b[i]
+        f.createVariableStatement(
+          undefined,
+          f.createVariableDeclarationList(
+            [
+              f.createVariableDeclaration(
+                'bn',
+                undefined,
+                undefined,
+                f.createElementAccessExpression(f.createIdentifier('b'), f.createIdentifier('i')),
+              ),
+            ],
+            ts.NodeFlags.Const,
+          ),
+        ),
+        // if (bn.dead || (bn.mask & d) === 0) continue
+        f.createIfStatement(
+          f.createBinaryExpression(
+            f.createPropertyAccessExpression(f.createIdentifier('bn'), 'dead'),
+            ts.SyntaxKind.BarBarToken,
+            f.createBinaryExpression(
+              f.createParenthesizedExpression(
+                f.createBinaryExpression(
+                  f.createPropertyAccessExpression(f.createIdentifier('bn'), 'mask'),
+                  ts.SyntaxKind.AmpersandToken,
+                  f.createIdentifier('d'),
+                ),
+              ),
+              ts.SyntaxKind.EqualsEqualsEqualsToken,
+              f.createNumericLiteral(0),
+            ),
+          ),
+          f.createContinueStatement(),
+        ),
+        // const v = bn.accessor(s)
+        f.createVariableStatement(
+          undefined,
+          f.createVariableDeclarationList(
+            [
+              f.createVariableDeclaration(
+                'v',
+                undefined,
+                undefined,
+                f.createCallExpression(
+                  f.createPropertyAccessExpression(f.createIdentifier('bn'), 'accessor'),
+                  undefined,
+                  [f.createIdentifier('s')],
+                ),
+              ),
+            ],
+            ts.NodeFlags.Const,
+          ),
+        ),
+        // const l = bn.lastValue
+        f.createVariableStatement(
+          undefined,
+          f.createVariableDeclarationList(
+            [
+              f.createVariableDeclaration(
+                'l',
+                undefined,
+                undefined,
+                f.createPropertyAccessExpression(f.createIdentifier('bn'), 'lastValue'),
+              ),
+            ],
+            ts.NodeFlags.Const,
+          ),
+        ),
+        // if (v === l || (v !== v && l !== l)) continue
+        f.createIfStatement(
+          f.createBinaryExpression(
+            f.createBinaryExpression(
+              f.createIdentifier('v'),
+              ts.SyntaxKind.EqualsEqualsEqualsToken,
+              f.createIdentifier('l'),
+            ),
+            ts.SyntaxKind.BarBarToken,
+            f.createParenthesizedExpression(
+              f.createBinaryExpression(
+                f.createBinaryExpression(
+                  f.createIdentifier('v'),
+                  ts.SyntaxKind.ExclamationEqualsEqualsToken,
+                  f.createIdentifier('v'),
+                ),
+                ts.SyntaxKind.AmpersandAmpersandToken,
+                f.createBinaryExpression(
+                  f.createIdentifier('l'),
+                  ts.SyntaxKind.ExclamationEqualsEqualsToken,
+                  f.createIdentifier('l'),
+                ),
+              ),
+            ),
+          ),
+          f.createContinueStatement(),
+        ),
+        // bn.lastValue = v
+        f.createExpressionStatement(
+          f.createBinaryExpression(
+            f.createPropertyAccessExpression(f.createIdentifier('bn'), 'lastValue'),
+            ts.SyntaxKind.EqualsToken,
+            f.createIdentifier('v'),
+          ),
+        ),
+        // applyBinding(bn, v) — inline the switch for the common cases
+        f.createExpressionStatement(
+          f.createCallExpression(f.createIdentifier('__applyBinding'), undefined, [
+            f.createIdentifier('bn'),
+            f.createIdentifier('v'),
+          ]),
+        ),
+      ],
+      true,
+    ),
+  )
+
+  stmts.push(phase2Loop)
+
+  return f.createBlock(stmts, true)
 }
 
 function buildAccess(f: ts.NodeFactory, root: string, parts: string[]): ts.Expression {
@@ -1181,9 +1673,11 @@ function cleanupImports(
   usesElSplit: boolean,
   usesElTemplate: boolean,
   usesMemo: boolean,
+  usesApplyBinding: boolean,
   f: ts.NodeFactory,
 ): ts.SourceFile {
-  if (compiled.size === 0 && !usesElTemplate && !usesElSplit && !usesMemo) return sf
+  if (compiled.size === 0 && !usesElTemplate && !usesElSplit && !usesMemo && !usesApplyBinding)
+    return sf
 
   const clause = lluiImport.importClause
   if (!clause?.namedBindings || !ts.isNamedImports(clause.namedBindings)) return sf
@@ -1203,6 +1697,13 @@ function cleanupImports(
   const hasMemo = clause.namedBindings.elements.some((s) => s.name.text === 'memo')
   if (!hasMemo && usesMemo) {
     remaining.push(f.createImportSpecifier(false, undefined, f.createIdentifier('memo')))
+  }
+
+  const hasApplyBinding = clause.namedBindings.elements.some(
+    (s) => s.name.text === '__applyBinding',
+  )
+  if (!hasApplyBinding && usesApplyBinding) {
+    remaining.push(f.createImportSpecifier(false, undefined, f.createIdentifier('__applyBinding')))
   }
 
   const newBindings = f.createNamedImports(remaining)
