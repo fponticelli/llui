@@ -885,3 +885,205 @@ describe('each reconcileRemove', () => {
     handle.dispose()
   })
 })
+
+// ── Row factory ──────────────────────────────────────────────────
+
+describe('row factory (__rowUpdate)', () => {
+  it('entry.__rowUpdate is called instead of closure-based updaters', () => {
+    type Row = { id: number; label: string }
+    type S = { rows: Row[] }
+    type M = { type: 'update' }
+
+    const updateSpy = vi.fn()
+
+    const def = component<S, M, never>({
+      name: 'RowFactory',
+      init: () => [
+        {
+          rows: [
+            { id: 1, label: 'a' },
+            { id: 2, label: 'b' },
+          ],
+        },
+        [],
+      ],
+      update: (s) => {
+        const rows = s.rows.slice()
+        rows[0] = { ...rows[0]!, label: rows[0]!.label + '!' }
+        return [{ rows }, []]
+      },
+      view: () => [
+        ...each<S, Row>({
+          items: (s) => s.rows,
+          key: (r) => r.id,
+          render: ({ item, entry }) => {
+            const nodes = [div([text(item.label)])]
+            if (entry) {
+              const e = entry as Record<string, unknown>
+              e._n0 = nodes[0]!.firstChild as Text
+              e._v0 = (e as { current: Row }).current?.label ?? ''
+              e.__rowUpdate = (ent: Record<string, unknown>) => {
+                updateSpy()
+                const v = (ent.current as Row).label
+                if (v !== ent._v0) {
+                  ent._v0 = v
+                  ;(ent._n0 as Text).nodeValue = v
+                }
+              }
+            }
+            return nodes
+          },
+        }),
+      ],
+      __dirty: () => 1,
+    })
+
+    const container = document.createElement('div')
+    let sendFn!: (msg: M) => void
+    const origView = def.view
+    def.view = (h) => {
+      sendFn = h.send
+      return origView(h)
+    }
+    const handle = mountApp(container, def)
+
+    expect(container.textContent).toBe('ab')
+    sendFn({ type: 'update' })
+    flush()
+
+    expect(updateSpy).toHaveBeenCalled()
+    expect(container.textContent).toBe('a!b')
+    handle.dispose()
+  })
+
+  it('falls back to closure updaters when __rowUpdate is not set', () => {
+    type Row = { id: number; label: string }
+    type S = { rows: Row[] }
+    type M = { type: 'update' }
+
+    const def = component<S, M, never>({
+      name: 'NoRowFactory',
+      init: () => [
+        {
+          rows: [
+            { id: 1, label: 'x' },
+            { id: 2, label: 'y' },
+          ],
+        },
+        [],
+      ],
+      update: (s) => {
+        const rows = s.rows.slice()
+        rows[1] = { ...rows[1]!, label: 'z' }
+        return [{ rows }, []]
+      },
+      view: () => [
+        ...each<S, Row>({
+          items: (s) => s.rows,
+          key: (r) => r.id,
+          render: ({ item }) => [div([text(item.label)])],
+        }),
+      ],
+      __dirty: () => 1,
+    })
+
+    const container = document.createElement('div')
+    let sendFn!: (msg: M) => void
+    const origView = def.view
+    def.view = (h) => {
+      sendFn = h.send
+      return origView(h)
+    }
+    const handle = mountApp(container, def)
+
+    expect(container.textContent).toBe('xy')
+    sendFn({ type: 'update' })
+    flush()
+    expect(container.textContent).toBe('xz')
+    handle.dispose()
+  })
+
+  it('shared update function skips unchanged values', () => {
+    type Row = { id: number; label: string }
+    type S = { rows: Row[] }
+    type M = { type: 'noop' }
+
+    let domWrites = 0
+
+    const def = component<S, M, never>({
+      name: 'RowFactorySkip',
+      init: () => [{ rows: [{ id: 1, label: 'test' }] }, []],
+      update: (s) => [{ rows: [{ id: 1, label: 'test' }] }, []],
+      view: () => [
+        ...each<S, Row>({
+          items: (s) => s.rows,
+          key: (r) => r.id,
+          render: ({ entry }) => {
+            const textNode = document.createTextNode('')
+            if (entry) {
+              const e = entry as Record<string, unknown>
+              e._n0 = textNode
+              e._v0 = (e as { current: Row }).current?.label ?? ''
+              textNode.nodeValue = e._v0 as string
+              e.__rowUpdate = (ent: Record<string, unknown>) => {
+                const v = (ent.current as Row).label
+                if (v !== ent._v0) {
+                  domWrites++
+                  ent._v0 = v
+                  ;(ent._n0 as Text).nodeValue = v
+                }
+              }
+            }
+            return [textNode]
+          },
+        }),
+      ],
+      __dirty: () => 1,
+    })
+
+    const container = document.createElement('div')
+    let sendFn!: (msg: M) => void
+    const origView = def.view
+    def.view = (h) => {
+      sendFn = h.send
+      return origView(h)
+    }
+    mountApp(container, def)
+
+    expect(container.textContent).toBe('test')
+    sendFn({ type: 'noop' })
+    flush()
+    expect(domWrites).toBe(0)
+  })
+
+  it('entry is accessible on the render bag', () => {
+    type S = { items: string[] }
+    let receivedEntry: unknown = null
+
+    const def = component<S, never, never>({
+      name: 'EntryAccess',
+      init: () => [{ items: ['a'] }, []],
+      update: (s) => [s, []],
+      view: () => [
+        ...each<S, string>({
+          items: (s) => s.items,
+          key: (s) => s,
+          render: ({ item, entry }) => {
+            receivedEntry = entry
+            return [div([text(item((s: string) => s))])]
+          },
+        }),
+      ],
+      __dirty: () => 1,
+    })
+
+    const container = document.createElement('div')
+    mountApp(container, def)
+
+    expect(receivedEntry).not.toBeNull()
+    const e = receivedEntry as Record<string, unknown>
+    expect(e.key).toBe('a')
+    expect(e.current).toBe('a')
+    expect(typeof e.index).toBe('number')
+  })
+})
