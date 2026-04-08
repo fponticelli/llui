@@ -542,7 +542,41 @@ When `each()` detects an item reference change, it invokes per-item updaters reg
 
 For `update` (every 10th row changes), only the 100 changed rows invoke their updaters, and within each row only the bindings whose derived value actually differs produce a DOM write. The remaining 900 rows are skipped at Phase 1 via the same-keys single-pass reconciliation (see §3.5), never reaching Phase 2 at all.
 
-### 4. Level 1 vs Level 2 Composition Overhead
+### 4. Per-Message-Type Handlers (`__handlers`)
+
+**Impact: High for all single-message operations (`select`, `update`, `swap`, `remove`, `clear`).**
+
+The compiler analyzes each `case` in the `update()` switch and generates specialized handler functions per message type. Each handler knows exactly which dirty bits fire and calls the appropriate specialized reconciler. The runtime dispatches single-message updates directly to the handler, bypassing dirty computation and the generic Phase 1/2 pipeline. Multi-message batches fall back to the generic path.
+
+The compiler detects array operation patterns per case and selects the optimal reconciler:
+
+| Pattern                                   | Detection                     | Reconciler                 |
+| ----------------------------------------- | ----------------------------- | -------------------------- |
+| `select` (no array change)                | No array mutation             | Skip all structural blocks |
+| `clear` (empty array literal)             | `[]` assignment               | `reconcileClear()`         |
+| `update`/`swaprows` (.slice() + mutation) | `.slice()` + index assignment | `reconcileItems()`         |
+| `remove` (.filter())                      | `.filter()` call              | `reconcileRemove()`        |
+| `run`/`add` (full replace/append)         | Full array replacement        | Generic `reconcile()`      |
+
+Handlers delegate to a shared runtime function `__handleMsg` instead of duplicating the update-reconcile-Phase 2 pattern per message type. This reduced handler code from 2039 to 292 bytes.
+
+### 4b. Specialized Reconcilers on `each()`
+
+Three specialized reconcilers avoid work that the generic `reconcile()` performs unconditionally:
+
+- **`reconcileItems(state)`**: Same keys, only item data changed. Skips mismatch/swap detection entirely — single-pass update of changed item refs.
+- **`reconcileClear()`**: Direct bulk clear without evaluating the items accessor. No per-item disposal loop.
+- **`reconcileRemove(state)`**: Parallel-walk removal for `.filter()` patterns. No Map/Set allocation — walks old and new arrays simultaneously to find the removed entry.
+
+### 4c. `selector.__directUpdate`
+
+Bypasses Phase 2 entirely for select-style operations. Evaluates the selector field and updates registry entries directly, avoiding the flat binding array scan.
+
+### 4d. Scope Pooling
+
+Disposed scopes are returned to a capped pool (max 2048). `createScope()` reuses pooled scopes instead of allocating new objects. Arrays on pooled scopes are reset to shared empty sentinels on disposal, avoiding per-scope array allocation on reuse.
+
+### 5. Level 1 vs Level 2 Composition Overhead
 
 **Impact: Zero for Level 1; small per-parent-update for Level 2.**
 

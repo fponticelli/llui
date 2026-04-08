@@ -76,6 +76,11 @@
 - [x] `addCheckedItemUpdater`: shared equality-checked per-item updater (avoids redundant DOM writes)
 - [x] `each()` same-ref O(1) fast path (removed O(n) `eachItemStable` loop + removed unused field from Scope)
 - [x] `each()` same-keys single-pass reconciliation (merged two O(n) passes into one, skips unchanged item refs)
+- [x] Per-message-type handlers (`__handlers`): compiler-generated per-case dispatch bypasses generic Phase 1/2 pipeline for single-message updates
+- [x] Specialized `each()` reconcilers: `reconcileItems` (same keys), `reconcileClear` (bulk clear), `reconcileRemove` (parallel-walk filter)
+- [x] `selector.__directUpdate`: bypass Phase 2 for select-style operations
+- [x] Scope pooling: disposed scopes returned to capped pool (max 2048), reused by `createScope()`
+- [x] `__handleMsg` shared boilerplate: handlers delegate to shared runtime function (2039 → 292 bytes per handler)
 
 **jfb results (vs Solid/Svelte):**
 

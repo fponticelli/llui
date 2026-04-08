@@ -52,6 +52,22 @@ When the compiler plugin runs, it generates a per-component `__update` function 
 
 The `__update` function also imports `__applyBinding` directly, bypassing the generic binding dispatch. Uncompiled components fall back to the generic `runUpdate` loop with identical semantics.
 
+### Per-Message-Type Handlers (`__handlers`)
+
+When the compiler generates `__handlers`, the runtime bypasses the generic `processMessages` path for single-message batches. Instead of computing `__dirty`, ORing masks, and running the generic Phase 1/2 pipeline, the runtime dispatches directly to the handler for that message type. Each handler knows its exact dirty bits and calls the appropriate specialized reconciler.
+
+Multi-message batches (multiple `send()` calls coalesced into one microtask) fall back to the generic path, since the combined dirty mask requires the full Phase 1/2 pipeline.
+
+**Specialized reconcilers** on `each()` avoid unnecessary work for common array mutation patterns:
+
+- `reconcileItems(state)`: Same key set, only item data changed — skips mismatch/swap detection.
+- `reconcileClear()`: Bulk clear without evaluating the items accessor.
+- `reconcileRemove(state)`: Parallel-walk removal for `.filter()` patterns — no Map/Set allocation.
+
+**`selector.__directUpdate`** bypasses Phase 2 entirely for select-style operations, evaluating the selector field and updating registry entries directly.
+
+**Scope pooling:** Disposed scopes are returned to a capped pool (max 2048). `createScope()` reuses pooled scopes, and arrays are reset to shared empty sentinels on disposal.
+
 ---
 
 ## Message Queue and Batching

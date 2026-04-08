@@ -592,6 +592,22 @@ For each `component()` call site, the compiler generates a `__update` function t
 
 The generated `__update` function also triggers injection of the `__applyBinding` import (added to the `@llui/dom` import declaration alongside `elSplit`), so the compiled component can call the binding applicator directly rather than going through the generic dispatch.
 
+### Per-Message-Type Handler Generation (`tryBuildHandlers` / `buildCaseHandler`)
+
+The compiler analyzes each `case` in the component's `update()` switch via `analyzeUpdateCases` and generates specialized handler functions per message type. Each handler is a function that knows its exact dirty bits and the appropriate reconciler to call, bypassing the generic Phase 1/2 pipeline at runtime.
+
+**`detectArrayOp`** classifies each case body's array mutation pattern:
+
+- Empty array literal (`[]`) maps to `reconcileClear()`
+- `.slice()` + index mutation maps to `reconcileItems()` (same keys, data-only change)
+- `.filter()` maps to `reconcileRemove()` (parallel-walk removal)
+- Full array replacement/append maps to generic `reconcile()`
+- No array change (e.g., `select`) skips all structural blocks
+
+**`buildCaseHandler`** emits a handler function per case that calls the detected reconciler directly with the pre-computed dirty mask. All handlers delegate to the shared `__handleMsg` runtime function, which handles the update-reconcile-Phase 2 boilerplate. This reduced per-handler generated code from 2039 to 292 bytes.
+
+The generated `__handlers` map is injected as a property on the component definition alongside `__dirty` and `__update`. The runtime checks for `__handlers` and dispatches single-message updates directly; multi-message batches fall back to the generic path.
+
 ### Event Delegation in Templates
 
 When multiple child elements within a collapsed template have event handlers of the same type (e.g., two `onClick` handlers), the compiler emits a single delegated listener on the template root using `element.contains(e.target)` dispatch:
