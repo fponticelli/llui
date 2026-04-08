@@ -1315,7 +1315,7 @@ function tryBuildHandlers(
   return f.createPropertyAssignment('__handlers', f.createObjectLiteralExpression(handlers, true))
 }
 
-type ArrayOp = 'none' | 'clear' | 'mutate' | 'general'
+type ArrayOp = 'none' | 'clear' | 'mutate' | 'remove' | 'general'
 
 /**
  * Detect the array operation pattern in a case body.
@@ -1380,7 +1380,7 @@ function detectArrayOp(
           ts.isPropertyAccessExpression(call.expression) &&
           call.expression.name.text === 'filter'
         ) {
-          return 'general'
+          return 'remove'
         }
       }
     }
@@ -1538,7 +1538,13 @@ function buildCaseHandler(
   if (caseDirty !== 0) {
     // Determine the reconcile method based on array operation
     const reconcileMethod =
-      arrayOp === 'clear' ? 'reconcileClear' : arrayOp === 'mutate' ? 'reconcileItems' : 'reconcile'
+      arrayOp === 'clear'
+        ? 'reconcileClear'
+        : arrayOp === 'mutate'
+          ? 'reconcileItems'
+          : arrayOp === 'remove'
+            ? 'reconcileRemove'
+            : 'reconcile'
 
     if (arrayOp === 'none') {
       // No structural changes — skip Phase 1, only run Phase 2

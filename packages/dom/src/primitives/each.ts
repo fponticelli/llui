@@ -127,6 +127,70 @@ export function each<S, T, M = unknown>(opts: EachOptions<S, T, M>): Node[] {
       removeOrphanedChildren(parentScope)
       entries.length = 0
     },
+
+    /** Remove entries not present in the new items. Optimized for filter()
+     *  patterns where items are removed but order is preserved. Walks old
+     *  and new arrays in parallel — O(n) with no Map/Set allocation. */
+    reconcileRemove(state: unknown) {
+      const newItems = opts.items(state as S)
+      lastItemsRef = newItems
+      const parent = anchor.parentNode
+      if (!parent) return
+
+      const oldLen = entries.length
+      const newLen = newItems.length
+      if (newLen >= oldLen) {
+        // Not a removal — fallback (shouldn't happen if compiler detected correctly)
+        reconcileEntries(
+          entries,
+          newItems,
+          opts,
+          parentScope,
+          parent,
+          anchor,
+          ctx,
+          state,
+          leaving,
+          null,
+        )
+        return
+      }
+
+      // Parallel walk: new items are a subsequence of old items (same order, some removed)
+      let ni = 0
+      let didRemove = false
+      for (let oi = 0; oi < oldLen; oi++) {
+        const entry = entries[oi]!
+        if (ni < newLen && entry.key === opts.key(newItems[ni]!)) {
+          // Entry survives — update if item ref changed
+          if (entry.item !== newItems[ni]) {
+            updateEntry(entry, newItems[ni]!, ni)
+          }
+          ni++
+        } else {
+          // Entry removed
+          for (const node of entry.nodes) parent.removeChild(node)
+          disposeScope(entry.scope, true)
+          entries[oi] = null!
+          didRemove = true
+        }
+      }
+
+      // Compact entries array
+      if (didRemove) {
+        let w = 0
+        for (let r = 0; r < oldLen; r++) {
+          if (entries[r]) entries[w++] = entries[r]!
+        }
+        entries.length = w
+        removeOrphanedChildren(parentScope)
+      }
+
+      // Update indices for remaining entries
+      for (let i = 0; i < entries.length; i++) {
+        entries[i]!.index = i
+      }
+    },
   }
 
   blocks.push(block)
