@@ -567,3 +567,72 @@ This eliminates wasted accessor evaluations on create/replace operations where t
 ### Scope Disposal Reference Cleanup
 
 When a scope is disposed, binding objects have their `accessor`, `node`, and `lastValue` fields nulled immediately. This breaks closure and DOM retention chains, ensuring that disposed DOM trees become eligible for GC without waiting for Phase 2 compaction to remove dead bindings from `allBindings`.
+
+### Strided `reconcileChanged`
+
+When the compiler detects a stride loop pattern in `update()` (e.g., `for (let i = 0; i < data.length; i += 10)`), the generated handler calls `reconcileChanged(state, stride)` instead of `reconcileItems(state)`. The strided reconciler only visits entries at stride intervals, skipping entries that cannot have changed:
+
+```typescript
+function reconcileChanged(state: S, stride: number): void {
+  const items = getItems(state)
+  for (let i = 0; i < entries.length; i += stride) {
+    const entry = entries[i]
+    const newItem = items[i]
+    if (!Object.is(entry.current, newItem)) {
+      entry.current = newItem
+      for (const updater of entry.updaters) updater()
+    }
+  }
+}
+```
+
+For the `update` benchmark (every 10th row, stride=10), this reduces the reconciliation loop from 1000 iterations to 100.
+
+### Bulk Selector Registry Clear
+
+When `each()` calls `reconcileClear()`, it invokes registered `selector.registry.clear()` callbacks before beginning per-scope disposal. The selector maintains a `Set` of entries that reference it; during normal per-scope disposal, each entry's scope disposer calls `Set.delete(entry)` to unregister. By clearing the entire `Set` upfront, these 1000 individual `Set.delete` calls become no-ops (deleting from an empty set returns `false` immediately).
+
+The `each()` block registers clear callbacks during initialization:
+
+```typescript
+if (selector.registry) {
+  onClearCallbacks.push(() => selector.registry.clear())
+}
+```
+
+When `reconcileClear()` fires, it calls all registered clear callbacks first, then proceeds with standard scope disposal. This turns O(n) `Set.delete` operations into O(1) `Set.clear` + O(n) no-op deletes.
+
+### Entry-Level Updaters
+
+Item updaters (`itemUpdaters`) are stored directly on the entry object rather than on the entry's scope. This reduces one level of property indirection when `each()` invokes updaters for changed items:
+
+```typescript
+// Before: entry.scope.itemUpdaters
+// After:  entry.updaters
+
+function updateEntry(entry, newItem) {
+  if (!Object.is(entry.current, newItem)) {
+    entry.current = newItem
+    for (const updater of entry.updaters) updater()
+  }
+}
+```
+
+The entry object is the natural owner of updaters because updaters operate on entry-level data (the current item reference). Co-locating them with the entry improves V8 object shape predictability and avoids the scope lookup on every item update.
+
+### Reusable Render Bag
+
+The `each()` render callback receives a bag `({ send, item, index })`. Instead of allocating a new bag object per entry during list creation, a single `buildBag` object is allocated once and mutated with each entry's `item` and `index` accessors before calling the render function:
+
+```typescript
+const buildBag = { send, item: null!, index: null! }
+
+for (const entry of newEntries) {
+  buildBag.item = entry.itemAccessor
+  buildBag.index = entry.indexAccessor
+  const nodes = render(buildBag)
+  // ...
+}
+```
+
+This is safe because `view()` executes synchronously -- the render callback runs to completion before `buildBag` is mutated for the next entry. The bag is not captured by the render callback (it destructures the needed values). For 1000-row creation, this eliminates 999 object allocations.

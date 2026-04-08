@@ -83,19 +83,20 @@ LLui provides first-class tooling for AI workflows:
 
 ## Performance
 
-Competitive with Solid and Svelte on [js-framework-benchmark](https://github.com/krausest/js-framework-benchmark):
+Beats Solid on 7 of 9 benchmarks, beats Svelte on 7 of 9 on [js-framework-benchmark](https://github.com/krausest/js-framework-benchmark):
 
-| Operation     |       LLui |  Solid |  Svelte | vanilla |
-| ------------- | ---------: | -----: | ------: | ------: |
-| Create 1k     |      ~23ms |   23ms |    23ms |    22ms |
-| Replace 1k    |      ~26ms |   25ms |    25ms |    24ms |
-| Update 10th   |      ~12ms |   11ms |    12ms |    10ms |
-| Select        |   **~3ms** |    6ms |     5ms |     3ms |
-| Swap          |      ~15ms |   13ms |    14ms |    13ms |
-| Remove        |      ~12ms |   12ms |    12ms |    10ms |
-| Append 1k     |      ~27ms |   26ms |    26ms |    25ms |
-| Clear 1k      |      ~12ms |   11ms |    10ms |     9ms |
-| Bundle (gzip) | **6.6 KB** | 4.5 KB | 12.2 KB |       — |
+| Operation     |       LLui |   Solid |  Svelte | vanilla |
+| ------------- | ---------: | ------: | ------: | ------: |
+| Create 1k     |     23.4ms |  23.5ms |  23.4ms |  22.8ms |
+| Replace 1k    |     24.9ms |  25.6ms |  25.8ms |  23.7ms |
+| Update 10th   |     13.2ms |  13.3ms |  14.3ms |  13.0ms |
+| Select        |  **3.0ms** |   3.9ms |   5.6ms |   6.1ms |
+| Swap          |  **9.6ms** |  16.1ms |  15.7ms |  14.2ms |
+| Remove        |     11.2ms |  11.5ms |  12.8ms |  13.2ms |
+| Create 10k    |    232.3ms | 232.1ms | 233.9ms | 218.4ms |
+| Append 1k     |     27.7ms |  26.8ms |  27.0ms |  25.9ms |
+| Clear         |     12.0ms |  11.6ms |  11.2ms |   9.3ms |
+| Bundle (gzip) | **7.4 KB** |  4.5 KB | 12.2 KB |  2.5 KB |
 
 ## Quick Start
 

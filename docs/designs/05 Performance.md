@@ -687,6 +687,46 @@ The generated function imports `__applyBinding` directly, bypassing the generic 
 
 V8 accepts numbers as `nodeValue` without conversion. `node.nodeValue = 42` works and avoids one string allocation per row ID render.
 
+### 14. Row Factory
+
+**Impact: High for `run`, `replace`, `add` — eliminates per-row closure allocation.**
+
+The compiler generates a shared update function for `each()` render callbacks, replacing per-row closures with a single factory function that is called with the entry context. Instead of each row creating its own closure for item updaters via `selector.bind()`, the compiler emits a shared function that receives the entry directly.
+
+This optimization is disabled when the render callback uses `selector.bind()`, because bound selectors cause V8 to deoptimize the shared function (megamorphic inline caches from heterogeneous receiver shapes). The compiler detects `selector.bind()` calls in the render body and falls back to per-row closures in that case.
+
+For 1000-row creation, this eliminates 1000 closure allocations per render callback, reducing GC pressure and improving cache locality.
+
+### 15. Strided `reconcileChanged`
+
+**Impact: High for `update` — reduces reconciliation from O(n) to O(k) where k = n/stride.**
+
+The compiler detects `for` loop patterns with constant stride increments (`i += STRIDE`) in `update()` case bodies and generates handlers that call `reconcileChanged(state, stride)` instead of the generic `reconcileItems`. The strided reconciler only visits entries at stride intervals, skipping entries that cannot have changed.
+
+For the `update` benchmark (every 10th row changes, stride=10), this reduces the reconciliation scan from 1000 entries to 100 entries — a 10x reduction in loop iterations.
+
+### 16. Bulk Selector Registry Clear
+
+**Impact: High for `clear` — eliminates O(n) Set.delete calls.**
+
+When `each()` calls `reconcileClear()`, it invokes registered `selector.registry.clear()` callbacks before disposing individual scopes. This clears the selector's `Set` of registered entries in O(1), making the subsequent per-scope disposal's `Set.delete` calls no-ops (deleting from an already-empty set).
+
+Without this optimization, clearing 1000 rows requires 1000 `Set.delete` calls on the selector registry. With it, one `Set.clear()` call handles the entire registry, and the 1000 individual `Set.delete` calls during scope disposal find nothing to delete.
+
+### 17. Entry-Level Updaters
+
+**Impact: Medium for `update` — reduces indirection on item update path.**
+
+`itemUpdaters` are moved from the scope object to the entry object directly. When `each()` detects an item reference change and needs to invoke updaters, it accesses `entry.updaters` instead of `entry.scope.itemUpdaters`. This eliminates one property lookup per item update and keeps the updater array co-located with the entry data it operates on.
+
+### 18. Reusable Render Bag
+
+**Impact: Medium for `run`, `replace`, `add` — reduces per-entry object allocation.**
+
+The `each()` render callback receives a bag object `({ send, item, index })`. Instead of allocating a new bag per entry during creation, a single shared `buildBag` object is mutated with the current entry's `item` and `index` accessors before each render call. Since `view()` runs synchronously and the bag is only used during the render callback (not captured), the shared object is safe to reuse.
+
+For 1000-row creation, this eliminates 999 object allocations (one bag is created, then reused for all subsequent entries).
+
 ---
 
 ## 7. What to Avoid in Performance Optimization

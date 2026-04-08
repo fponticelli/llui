@@ -608,6 +608,29 @@ The compiler analyzes each `case` in the component's `update()` switch via `anal
 
 The generated `__handlers` map is injected as a property on the component definition alongside `__dirty` and `__update`. The runtime checks for `__handlers` and dispatches single-message updates directly; multi-message batches fall back to the generic path.
 
+### Row Factory Generation
+
+When an `each()` render callback does not use `selector.bind()`, the compiler generates a shared row factory function instead of per-row closures. The factory receives the entry context (item accessor, index accessor, send function) as parameters and returns the rendered nodes.
+
+**Detection:** The compiler scans the render callback body for `CallExpression` nodes matching `<identifier>.bind(...)` where the identifier resolves to the scoped accessor parameter. If no `.bind()` calls are found, the render callback is eligible for factory extraction.
+
+**Why `.bind()` disqualifies:** When `selector.bind()` is used, each row's bound function has a different receiver. V8's inline caches at the call site become megamorphic (many different hidden classes), which prevents TurboFan from inlining the call. A shared factory function that dispatches through megamorphic call sites is slower than dedicated per-row closures with monomorphic call sites. The compiler conservatively falls back to per-row closures when any `.bind()` is detected.
+
+**Code generation:** The compiler hoists the render callback body into a module-level function and replaces the inline render with a reference to the factory. The factory is called once per entry with the entry's accessors, producing the same DOM structure as the original inline render but without allocating a new closure per row.
+
+### Stride Loop Detection
+
+The compiler detects `for` loops with constant stride increments in `update()` case bodies and generates handlers that call `reconcileChanged(state, stride)` for O(k) updates.
+
+**Detection:** During `analyzeUpdateCases`, the compiler checks for `ForStatement` nodes where:
+
+- The update expression is `i += <numeric-literal>` or `i = i + <numeric-literal>` with a constant stride > 1
+- The loop body mutates array elements at index `i`
+
+When detected, the compiler records the stride value and emits a handler that calls `reconcileChanged(state, stride)` instead of `reconcileItems(state)`.
+
+**Correctness:** The strided reconciler only visits entries at stride intervals (0, stride, 2\*stride, ...). This is correct when the loop body modifies exactly those indices. If the loop body modifies indices other than `i`, the strided reconciler would miss updates -- the compiler only applies this optimization when the mutation target index matches the loop variable.
+
 ### Event Delegation in Templates
 
 When multiple child elements within a collapsed template have event handlers of the same type (e.g., two `onClick` handlers), the compiler emits a single delegated listener on the template root using `element.contains(e.target)` dispatch:

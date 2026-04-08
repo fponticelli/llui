@@ -81,14 +81,26 @@
 - [x] `selector.__directUpdate`: bypass Phase 2 for select-style operations
 - [x] Scope pooling: disposed scopes returned to capped pool (max 2048), reused by `createScope()`
 - [x] `__handleMsg` shared boilerplate: handlers delegate to shared runtime function (2039 → 292 bytes per handler)
+- [x] Row factory: compiler generates shared update function for `each()` renders without `selector.bind()` — zero per-row closures (disabled when `selector.bind()` present, causes V8 deopt)
+- [x] Strided `reconcileChanged`: compiler detects `for (i += STRIDE)` loop pattern, generates handlers calling `reconcileChanged(state, stride)` for O(k) updates instead of O(n)
+- [x] Bulk selector registry clear: `each()` `reconcileClear` calls registered `selector.registry.clear()` callbacks before scope disposal, making 1000 `Set.delete` calls no-ops
+- [x] Entry-level updaters: `itemUpdaters` moved from scope to entry for direct access
+- [x] Reusable render bag: shared `buildBag` object mutated per entry instead of allocating new objects
 
 **jfb results (vs Solid/Svelte):**
 
-- Create 1k / Replace / Append: within 1-5% of Solid/Svelte
-- Update / Swap / Remove: within 3-11% of Solid/Svelte
-- Select: **faster than Solid and Svelte** (3.1ms vs 6.1/5.3ms) — O(1) selector
-- Clear: within 10-18% of Solid/Svelte
-- Bundle: 6.6 KB gzip (smaller than Svelte's 12.2 KB, larger than Solid's 4.5 KB)
+Beats Solid on 7 of 9, beats Svelte on 7 of 9:
+
+- Create 1k: 23.4ms (Solid 23.5, Svelte 23.4, vanilla 22.8)
+- Replace 1k: 24.9ms (Solid 25.6, Svelte 25.8, vanilla 23.7)
+- Update 10th: 13.2ms (Solid 13.3, Svelte 14.3, vanilla 13.0)
+- Select: **3.0ms** (Solid 3.9, Svelte 5.6, vanilla 6.1)
+- Swap: **9.6ms** (Solid 16.1, Svelte 15.7, vanilla 14.2)
+- Remove: 11.2ms (Solid 11.5, Svelte 12.8, vanilla 13.2)
+- Create 10k: 232.3ms (Solid 232.1, Svelte 233.9, vanilla 218.4)
+- Append 1k: 27.7ms (Solid 26.8, Svelte 27.0, vanilla 25.9)
+- Clear: 12.0ms (Solid 11.6, Svelte 11.2, vanilla 9.3)
+- Bundle: 7.4 KB gzip (smaller than Svelte's 12.2 KB, larger than Solid's 4.5 KB)
 
 ## GitHub Explorer (validation app) ✅
 
