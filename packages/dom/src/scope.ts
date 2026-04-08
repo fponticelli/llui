@@ -44,9 +44,12 @@ export function disposeScope(scope: Scope, skipParentRemoval = false): void {
     return
   }
 
-  const children = scope.children.slice()
+  // When skipParentRemoval is true, children don't mutate during disposal —
+  // iterate directly without allocating a copy. Otherwise, clone to avoid
+  // mutation during iteration.
+  const children = skipParentRemoval ? scope.children : scope.children.slice()
   for (const child of children) {
-    disposeScope(child)
+    disposeScope(child, skipParentRemoval)
   }
 
   for (const disposer of scope.disposers) {

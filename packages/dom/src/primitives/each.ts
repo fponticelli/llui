@@ -111,7 +111,8 @@ export function each<S, T, M = unknown>(opts: EachOptions<S, T, M>): Node[] {
 
   const result: Node[] = [anchor]
   for (const entry of entries) {
-    result.push(...entry.nodes)
+    const nodes = entry.nodes
+    for (let i = 0; i < nodes.length; i++) result.push(nodes[i]!)
   }
   return result
 }
@@ -490,8 +491,8 @@ function reconcileEntries<S, T>(
     if (frag) parent.insertBefore(frag, insertRef)
   }
 
-  entries.length = 0
-  entries.push(...newEntries)
+  entries.length = newEntries.length
+  for (let i = 0; i < newEntries.length; i++) entries[i] = newEntries[i]!
 
   if (report) {
     for (const entry of newlyAdded) collectNodes(report.entering, entry.nodes)
