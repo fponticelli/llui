@@ -172,7 +172,7 @@ ${generateTable(SIZE_BENCHMARKS, 'KB')}
 - **Tool:** [js-framework-benchmark](https://github.com/krausest/js-framework-benchmark) by Stefan Krause
 - **Browser:** Chrome (headful), CPU throttling 4x
 - **Iterations:** 15 per benchmark, median reported
-- **Machine:** Same machine, same session for all frameworks
+- **Machine:** MacBook Pro M5 Max, 128 GB RAM
 - **LLui version:** Latest from \`opt\` branch with all compiler optimizations enabled
 - **Data source:** [\`benchmarks/jfb-baseline.json\`](/benchmark-data.json) — raw JSON
 
