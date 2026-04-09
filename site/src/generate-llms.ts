@@ -32,12 +32,12 @@ const llmsTxt = `# LLui
 
 ## Packages
 
-- @llui/dom — Runtime: component, mount, scope tree, bindings, element helpers
+- @llui/dom — Runtime: component, mount, scope tree, bindings, HTML/SVG/MathML element helpers
 - @llui/vite-plugin — Compiler: 3-pass TypeScript transform, bitmask injection
 - @llui/effects — Effect builders: http, cancel, debounce, websocket, retry, upload
 - @llui/router — Routing: structured path matching, guards, history/hash mode
 - @llui/transitions — Animation: transition(), fade, slide, scale, collapse, flip, spring
-- @llui/components — 54 headless components + opt-in theme
+- @llui/components — 55 headless components + locale i18n + format utilities (Intl wrappers) + opt-in theme
 - @llui/test — Test harness: testComponent, testView, propertyTest, replayTrace
 - @llui/vike — Vike SSR/SSG adapter
 - @llui/mcp — MCP server for LLM debug tools

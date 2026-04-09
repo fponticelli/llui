@@ -1154,6 +1154,67 @@ After compilation, all element helper calls are rewritten to `elSplit()` and the
 
 See: 02 Compiler.md, 06 Bundle Size.md
 
+### SVG Element Helpers
+
+55 SVG elements created via `document.createElementNS('http://www.w3.org/2000/svg', tag)`. Same prop/binding API as HTML elements — reactive attributes, event handlers, static props all work identically.
+
+```typescript
+import {
+  svg,
+  circle,
+  rect,
+  path,
+  g,
+  defs,
+  linearGradient,
+  stop,
+  svgText,
+  filter,
+  feGaussianBlur,
+} from '@llui/dom'
+
+// Container/structural: svg, g, defs, symbol, use
+// Shapes: circle, ellipse, line, path, polygon, polyline, rect
+// Text: svgText (aliased to avoid conflict with text()), tspan, textPath
+// Paint: clipPath, linearGradient, radialGradient, stop, mask, pattern, marker
+// Filters: filter, feBlend, feColorMatrix, feComposite, feGaussianBlur, feFlood, feOffset, feMerge, feMergeNode, + 12 more
+// Embedded: image, foreignObject
+// Animation: animate, animateMotion, animateTransform, set, mpath
+// Descriptive: desc, svgTitle (aliased), metadata
+```
+
+Note: SVG `text` is exported as `svgText` and SVG `title` as `svgTitle` to avoid conflicts with the `text()` primitive and HTML `title` element.
+
+### MathML Element Helpers
+
+31 MathML elements created via `document.createElementNS('http://www.w3.org/1998/Math/MathML', tag)`.
+
+```typescript
+import {
+  math,
+  mi,
+  mn,
+  mo,
+  mfrac,
+  msqrt,
+  mroot,
+  msup,
+  msub,
+  mrow,
+  mtable,
+  mtr,
+  mtd,
+} from '@llui/dom'
+
+// Top-level: math
+// Tokens: mi, mn, mo, ms, mtext
+// Layout: mrow, mfrac, msqrt, mroot, msup, msub, msubsup, munder, mover, munderover, mmultiscripts, mprescripts, mnone
+// Table: mtable, mtr, mtd
+// Spacing/visual: mspace, mpadded, mphantom, menclose, merror
+// Interactive: maction
+// Semantics: semantics, annotation, annotationXml
+```
+
 ---
 
 ## Structural Primitives
@@ -1522,4 +1583,94 @@ interface Binding {
 ```
 
 See: 03 Runtime DOM.md
+
+---
+
+## `@llui/components` — Locale & i18n
+
+### `LocaleContext`
+
+Context for component label translations. English defaults built-in — apps that don't call `provide()` get English for free.
+
+```typescript
+import { en, LocaleContext, type Locale } from '@llui/components'
+import { provide } from '@llui/dom'
+
+// Non-English app: provide locale at the root
+provide(LocaleContext, (s) => s.locale, () => [...])
+
+// Per-instance override still works:
+dialog.connect(get, send, { id: 'x', closeLabel: 'Cerrar' })
+```
+
+### RTL Support
+
+Components with directional keyboard navigation (tabs, slider, radio-group, tree-view, etc.) automatically flip ArrowLeft↔ArrowRight when inside a `dir="rtl"` context. Vertical arrows are never flipped.
+
+```typescript
+import { resolveDir, flipArrow } from '@llui/components'
+
+resolveDir(element) // 'ltr' | 'rtl' — walks up to nearest [dir] ancestor
+flipArrow(key, element) // swaps ArrowLeft↔ArrowRight in RTL, passes others through
+```
+
+---
+
+## `@llui/components` — Format Utilities
+
+Locale-aware wrappers for `Intl.*` APIs. Formatter instances are LRU-cached (max 64). Locale defaults to `navigator.language` in browsers, `'en'` in SSR. All accept an optional `locale` string in the options bag.
+
+```typescript
+import {
+  formatNumber,
+  formatDate,
+  formatTime,
+  formatDateTime,
+  formatRelativeTime,
+  formatList,
+  formatPlural,
+  formatDisplayName,
+  formatFileSize,
+  resolvePluralCategory,
+} from '@llui/components'
+
+formatNumber(1234.5, { style: 'currency', currency: 'USD', locale: 'en-US' }) // '$1,234.50'
+formatDate(new Date(), { dateStyle: 'full' })
+formatTime(new Date(), { timeStyle: 'short', hour12: true })
+formatDateTime(new Date(), { dateStyle: 'medium', timeStyle: 'short' })
+formatRelativeTime(-2, 'day', { numeric: 'auto' }) // '2 days ago'
+formatList(['a', 'b', 'c'], { type: 'conjunction' }) // 'a, b, and c'
+formatPlural(5, { one: '{count} item', other: '{count} items' }) // '5 items'
+formatDisplayName('USD', 'currency') // 'US Dollar'
+formatFileSize(2.5 * 1024 * 1024) // '2.5 MB'
+resolvePluralCategory(1, { locale: 'en' }) // 'one'
+```
+
+Date values accept `Date`, ISO string, or Unix timestamp (ms).
+
+---
+
+## `@llui/components` — In View
+
+IntersectionObserver state machine for scroll-triggered behavior.
+
+```typescript
+import { inView } from '@llui/components'
+
+// State machine
+const state = inView.init() // { visible: false }
+const [s1] = inView.update(state, { type: 'enter' }) // { visible: true }
+const [s2] = inView.update(s1, { type: 'leave' }) // { visible: false }
+
+// Connect for ARIA attributes
+const parts = inView.connect<S>(get, send, { id: 'hero' })
+// parts.root: { 'data-scope': 'in-view', 'data-part': 'root', 'data-state': 'visible' | 'hidden' }
+
+// Observer setup (call in onMount)
+const cleanup = inView.createObserver(element, send, {
+  threshold: 0.5, // 0-1, default 0
+  rootMargin: '0px', // default '0px'
+  once: true, // disconnect after first enter, default false
+})
+```
 
