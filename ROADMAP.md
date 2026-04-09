@@ -167,7 +167,7 @@ All 15 zag.js machines now shipped. 54 headless components total.
 
 - ~~**Typeahead first-letter search** across menu, listbox, select, tree-view, combobox.~~ ✅ (shared `utils/typeahead` shipped; wired into menu, listbox, select, tree-view. Combobox already has text-input filtering as its core behaviour.)
 - ~~**Tri-state `aria-checked`** for hierarchical checkboxes in tree-view.~~ ✅ (`selectionMode: 'checkbox'` + checked/indeterminate state arrays).
-- ~~**`aria-busy`** during async operations~~ ✅ (tree-view loading state). `aria-owns` for virtualized children still open.
+- ~~**`aria-busy`** during async operations~~ ✅ (tree-view loading state). ~~`aria-owns` for virtualized children~~ ✅ (tree-view + listbox).
 - ~~**Orientation-aware keyboard** for tabs~~ ✅ (horizontal tabs use ArrowLeft/Right, vertical use ArrowUp/Down; orientation read from ancestor `[data-part=list]`).
 - **Localized `aria-label`** strings via `translations`.
 - ~~**Tab `indicator` part** with measured `Rect` for animated underlines.~~ ✅ (`watchTabIndicator(root)` utility installs MutationObserver + ResizeObserver and writes CSS custom properties).
