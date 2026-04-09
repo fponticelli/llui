@@ -83,15 +83,16 @@
 - [x] `__handleMsg` shared boilerplate: handlers delegate to shared runtime function (2039 → 292 bytes per handler)
 - [x] Row factory: compiler generates shared update function for `each()` renders without `selector.bind()` — zero per-row closures (disabled when `selector.bind()` present, causes V8 deopt)
 - [x] Strided `reconcileChanged`: compiler detects `for (i += STRIDE)` loop pattern, generates handlers calling `reconcileChanged(state, stride)` for O(k) updates instead of O(n)
-- [x] Bulk selector registry clear: `each()` `reconcileClear` calls registered `selector.registry.clear()` callbacks before scope disposal, making 1000 `Set.delete` calls no-ops
+- [x] Generation-guarded selector disposal: per-row disposers guarded by generation counter — `reconcileClear` bumps generation + `registry.clear()` for O(1) bulk clear, generic reconcile fires disposers normally (no memory leak)
+- [x] `registerOnRemove` callback: `each()` notifies selectors on individual row removal via `reconcileRemove` for direct bucket compaction
 - [x] Entry-level updaters: `itemUpdaters` moved from scope to entry for direct access
 - [x] Reusable render bag: shared `buildBag` object mutated per entry instead of allocating new objects
 
 **jfb results (vs Solid/Svelte):**
 
-Beats Solid on 7 of 9, beats Svelte on 7 of 9:
+Beats Solid on 8 of 9, beats Svelte on 8 of 9:
 
-- Create 1k: 23.4ms (Solid 23.5, Svelte 23.4, vanilla 22.8)
+- Create 1k: **22.3ms** (Solid 23.5, Svelte 23.4, vanilla 22.8)
 - Replace 1k: 24.9ms (Solid 25.6, Svelte 25.8, vanilla 23.7)
 - Update 10th: 13.2ms (Solid 13.3, Svelte 14.3, vanilla 13.0)
 - Select: **3.0ms** (Solid 3.9, Svelte 5.6, vanilla 6.1)

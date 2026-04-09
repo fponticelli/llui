@@ -705,21 +705,31 @@ The compiler detects `for` loop patterns with constant stride increments (`i += 
 
 For the `update` benchmark (every 10th row changes, stride=10), this reduces the reconciliation scan from 1000 entries to 100 entries — a 10x reduction in loop iterations.
 
-### 16. Bulk Selector Registry Clear
+### 16. Generation-Guarded Selector Disposal
 
-**Impact: High for `clear` — eliminates O(n) Set.delete calls.**
+**Impact: High for `clear` — O(1) bulk clear with no memory leak on generic reconcile.**
 
-When `each()` calls `reconcileClear()`, it invokes registered `selector.registry.clear()` callbacks before disposing individual scopes. This clears the selector's `Set` of registered entries in O(1), making the subsequent per-scope disposal's `Set.delete` calls no-ops (deleting from an already-empty set).
+Per-row `addDisposer` still exists but is guarded by a generation counter. On bulk clear (`reconcileClear`), `registerOnClear` bumps the generation and calls `registry.clear()`, making all outstanding per-row disposers no-ops (they check `generation !== myGeneration` and bail). On generic reconcile (individual row removal), disposers fire normally and compact the registry. This gives O(1) bulk clear without the memory leak that a disposer-free approach would cause on incremental removal.
 
-Without this optimization, clearing 1000 rows requires 1000 `Set.delete` calls on the selector registry. With it, one `Set.clear()` call handles the entire registry, and the 1000 individual `Set.delete` calls during scope disposal find nothing to delete.
+### 17. `registerOnRemove` Callback
 
-### 17. Entry-Level Updaters
+**Impact: Medium for `remove` — enables direct bucket compaction.**
+
+`each()` notifies selectors when individual rows are removed via `reconcileRemove`. The `registerOnRemove` callback allows selectors to compact their per-entry bucket directly when a row is removed, rather than waiting for the per-scope disposer to fire. This keeps the selector registry tight without relying solely on scope disposal.
+
+### 18. Row Factory Disabled for Selector Renders
+
+**Impact: Neutral (avoids regression) — prevents V8 deopt in selector-heavy renders.**
+
+The V8 deoptimization from selector function declarations inside the row factory render persists even after removing per-row disposers. Row factory remains active for non-selector renders (where it eliminates per-row closure allocation), but the compiler falls back to per-row closures when `selector.bind()` is present in the render body.
+
+### 19. Entry-Level Updaters
 
 **Impact: Medium for `update` — reduces indirection on item update path.**
 
 `itemUpdaters` are moved from the scope object to the entry object directly. When `each()` detects an item reference change and needs to invoke updaters, it accesses `entry.updaters` instead of `entry.scope.itemUpdaters`. This eliminates one property lookup per item update and keeps the updater array co-located with the entry data it operates on.
 
-### 18. Reusable Render Bag
+### 20. Reusable Render Bag
 
 **Impact: Medium for `run`, `replace`, `add` — reduces per-entry object allocation.**
 

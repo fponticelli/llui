@@ -588,19 +588,11 @@ function reconcileChanged(state: S, stride: number): void {
 
 For the `update` benchmark (every 10th row, stride=10), this reduces the reconciliation loop from 1000 iterations to 100.
 
-### Bulk Selector Registry Clear
+### Generation-Guarded Selector Disposal
 
-When `each()` calls `reconcileClear()`, it invokes registered `selector.registry.clear()` callbacks before beginning per-scope disposal. The selector maintains a `Set` of entries that reference it; during normal per-scope disposal, each entry's scope disposer calls `Set.delete(entry)` to unregister. By clearing the entire `Set` upfront, these 1000 individual `Set.delete` calls become no-ops (deleting from an empty set returns `false` immediately).
+Per-row `addDisposer` calls are guarded by a generation counter. On bulk clear (`reconcileClear`), `registerOnClear` bumps the generation and calls `registry.clear()`, making all outstanding per-row disposers no-ops (they compare their captured generation against the current one and bail on mismatch). On generic reconcile or individual row removal, disposers fire normally and compact the registry. This gives O(1) bulk clear without leaking registry entries on incremental removal.
 
-The `each()` block registers clear callbacks during initialization:
-
-```typescript
-if (selector.registry) {
-  onClearCallbacks.push(() => selector.registry.clear())
-}
-```
-
-When `reconcileClear()` fires, it calls all registered clear callbacks first, then proceeds with standard scope disposal. This turns O(n) `Set.delete` operations into O(1) `Set.clear` + O(n) no-op deletes.
+The `each()` block also supports a `registerOnRemove` callback that notifies selectors when individual rows are removed via `reconcileRemove`, allowing direct bucket compaction without waiting for scope disposal.
 
 ### Entry-Level Updaters
 
