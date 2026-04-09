@@ -1,6 +1,6 @@
 import { div, h3, p, span, ul, li, text, button, each, branch } from '@llui/dom'
 import type { State, Msg, Repo } from '../types'
-import type { Send } from '@llui/dom'
+import type { Send, ItemAccessor } from '@llui/dom'
 import { routing } from '../router'
 
 const LANG_COLORS: Record<string, string> = {
@@ -121,22 +121,22 @@ export function searchView(send: Send<Msg>): Node[] {
   ]
 }
 
-function repoItem(item: <R>(sel: (r: Repo) => R) => () => R, send: Send<Msg>): HTMLElement {
+function repoItem(item: ItemAccessor<Repo>, send: Send<Msg>): HTMLElement {
   const owner = item((r) => r.owner.login)()
-  const name = item((r) => r.name)()
+  const name = item.name()
   return li({ class: 'repo-item' }, [
     h3([
       routing.link(
         send,
         { page: 'repo', owner, name, tab: 'code', data: { type: 'loading' } },
         {},
-        [text(item((r) => r.full_name))],
+        [text(item.full_name)],
       ),
     ]),
     p([text(item((r) => r.description ?? ''))]),
     div({ class: 'repo-meta' }, [
       ...(() => {
-        const lang = item((r) => r.language)()
+        const lang = item.language()
         if (!lang) return []
         return [
           span([
