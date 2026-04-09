@@ -182,7 +182,7 @@ function fileTree(h: View<State, Msg>, send: Send<Msg>): Node[] {
         },
         key: (e) => e.sha,
         render: ({ item, send }) => {
-          const isDir = item((e) => e.type)() === 'dir'
+          const isDir = item.type() === 'dir'
           return [
             div({ class: 'file-row' }, [
               span({ class: 'icon' }, [text(isDir ? '📁' : '📄')]),
@@ -194,7 +194,7 @@ function fileTree(h: View<State, Msg>, send: Send<Msg>): Node[] {
                     send({ type: 'openPath', path: item.path(), isDir })
                   },
                 },
-                [text(item((e) => e.name))],
+                [text(item.name)],
               ),
               span([text(item((e) => (e.type !== 'dir' && e.size ? formatSize(e.size) : '')))]),
             ]),
@@ -226,7 +226,7 @@ function issuesList(h: View<State, Msg>): Node[] {
       key: (i) => i.id,
       render: ({ item }) => [
         div({ class: 'issue-row' }, [
-          h3([text(item((i) => i.title))]),
+          h3([text(item.title)]),
           div({ class: 'issue-meta' }, [
             text(
               item(

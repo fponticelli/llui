@@ -132,7 +132,7 @@ const App = component<State, Msg, never>({
                           checked: item((t) => t.completed),
                           onClick: () => send({ type: 'toggle', id: item((t) => t.id)() }),
                         }),
-                        label([text(item((t) => t.text))]),
+                        label([text(item.text)]),
                         button(
                           {
                             class: 'destroy',
