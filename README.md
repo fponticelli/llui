@@ -103,7 +103,7 @@ pnpm bench                # Run LLui benchmark (add --save to update baseline)
 
 ## Performance
 
-Beats Solid on 8 of 9 benchmarks, beats Svelte on 8 of 9 on [js-framework-benchmark](https://github.com/krausest/js-framework-benchmark):
+Top-tier performance on [js-framework-benchmark](https://github.com/krausest/js-framework-benchmark), competitive with Solid and Svelte:
 
 | Operation     |       LLui |   Solid |  Svelte | vanilla |
 | ------------- | ---------: | ------: | ------: | ------: |

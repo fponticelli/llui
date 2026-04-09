@@ -83,7 +83,7 @@ LLui provides first-class tooling for AI workflows:
 
 ## Performance
 
-Beats Solid on 7 of 9, Svelte on 7 of 9 on [js-framework-benchmark](https://github.com/krausest/js-framework-benchmark). Faster than vanilla JS on Select, Swap, and Remove. [Full benchmarks →](/benchmarks)
+Top-tier performance on [js-framework-benchmark](https://github.com/krausest/js-framework-benchmark), competitive with Solid and Svelte. [Full benchmarks →](/benchmarks)
 
 ## Quick Start
 
