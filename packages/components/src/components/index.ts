@@ -52,7 +52,14 @@ export * as floatingPanel from './floating-panel'
 export * as imageCropper from './image-cropper'
 export * as navigationMenu from './navigation-menu'
 export * as qrCode from './qr-code'
+export * as inView from './in-view'
 
+export type {
+  InViewState,
+  InViewMsg,
+  InViewParts,
+  ObserverOptions as InViewObserverOptions,
+} from './in-view'
 export type {
   TimerState,
   TimerMsg,

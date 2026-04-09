@@ -112,29 +112,63 @@ function generateRelativeTable(benchmarks: { id: string; label: string }[]): str
   return md
 }
 
-function generateBarChart(benchmarks: { id: string; label: string }[], unit: string): string {
-  // Generate ASCII bar chart for each benchmark
-  const fws = ['llui', 'solid', 'svelte', 'vanillajs']
+const FW_COLORS: Record<string, string> = {
+  llui: '#6366f1',
+  solid: '#2563eb',
+  svelte: '#f97316',
+  vanillajs: '#737373',
+  react: '#06b6d4',
+  elm: '#60a5fa',
+}
+
+function generateSvgCharts(benchmarks: { id: string; label: string }[], unit: string): string {
+  const fws = ['llui', 'solid', 'svelte', 'vanillajs', 'react', 'elm']
+  const barH = 28
+  const gap = 6
+  const labelW = 70
+  const valueW = 80
+  const chartW = 600
+  const barAreaW = chartW - labelW - valueW
   let md = ''
 
   for (const b of benchmarks) {
-    const values = fws.map((fw) => ({ fw, val: val(fw, b.id) })).filter((v) => v.val > 0)
+    const values = fws
+      .map((fw) => ({ fw, val: val(fw, b.id) }))
+      .filter((v) => v.val > 0)
     if (values.length === 0) continue
     const max = Math.max(...values.map((v) => v.val))
+    const svgH = values.length * (barH + gap) + gap
 
     md += `**${b.label}**\n\n`
-    md += '```\n'
-    for (const v of values) {
-      const name = (DISPLAY_NAMES[v.fw] ?? v.fw).padEnd(8)
-      const barLen = Math.round((v.val / max) * 40)
-      const bar = '█'.repeat(barLen)
+    md += `<svg class="bench-chart" viewBox="0 0 ${chartW} ${svgH}" width="100%" preserveAspectRatio="xMinYMid meet">\n`
+
+    for (let i = 0; i < values.length; i++) {
+      const v = values[i]
+      const y = gap + i * (barH + gap)
+      const barW = Math.max(2, Math.round((v.val / max) * barAreaW))
+      const color = FW_COLORS[v.fw] ?? '#94a3b8'
+      const name = DISPLAY_NAMES[v.fw] ?? v.fw
+      const isLlui = v.fw === 'llui'
+      const delay = (i * 0.08).toFixed(2)
       const label = `${fmt(v.val, unit)} ${unit}`
-      md += `${name} ${bar} ${label}\n`
+
+      md += `  <text x="${labelW - 8}" y="${y + barH / 2 + 5}" text-anchor="end" class="bench-label${isLlui ? ' bench-llui' : ''}">${name}</text>\n`
+      md += `  <rect x="${labelW}" y="${y}" width="${barW}" height="${barH}" rx="4" fill="${color}" class="bench-bar" style="--bar-w:${barW}px;animation-delay:${delay}s"${isLlui ? ' opacity="1"' : ' opacity="0.75"'}/>\n`
+      md += `  <text x="${labelW + barW + 8}" y="${y + barH / 2 + 5}" class="bench-value${isLlui ? ' bench-llui' : ''}">${label}</text>\n`
     }
-    md += '```\n\n'
+
+    md += `</svg>\n\n`
   }
 
   return md
+}
+
+function generateMemoryChart(benchmarks: { id: string; label: string }[]): string {
+  return generateSvgCharts(benchmarks, 'MB')
+}
+
+function generateBundleChart(benchmarks: { id: string; label: string }[]): string {
+  return generateSvgCharts(benchmarks, 'KB')
 }
 
 // Generate the page content
@@ -143,29 +177,58 @@ title: Benchmarks
 description: js-framework-benchmark results — LLui vs Solid, Svelte, React, vanilla JS
 ---
 
+<style>
+@keyframes bar-grow {
+  from { transform: scaleX(0); }
+  to { transform: scaleX(1); }
+}
+.bench-chart { max-width: 640px; margin: 0.5rem 0 1.5rem; overflow: visible; }
+.bench-bar { transform-origin: left center; animation: bar-grow 0.6s cubic-bezier(0.22, 1, 0.36, 1) both; }
+.bench-label { font: 13px/1 system-ui, sans-serif; fill: var(--fg, #24292f); }
+.bench-value { font: 12px/1 system-ui, sans-serif; fill: var(--fg-muted, #656d76); }
+.bench-llui { font-weight: 600; }
+</style>
+
 Results from [js-framework-benchmark](https://github.com/krausest/js-framework-benchmark) (krausest). All frameworks measured under identical conditions.
 
-## Timings (ms, median of 15 iterations)
+## Timings (ms)
+
+${generateSvgCharts(TIMING_BENCHMARKS, 'ms')}
+
+<details>
+<summary>Raw data</summary>
 
 ${generateTable(TIMING_BENCHMARKS, 'ms')}
 
-## LLui vs Peers
+### Relative to LLui
 
 ${generateRelativeTable(TIMING_BENCHMARKS)}
 
 Positive = peer is slower than LLui. **Bold** = LLui wins by >3%.
 
-## Visual Comparison
-
-${generateBarChart(TIMING_BENCHMARKS, 'ms')}
+</details>
 
 ## Memory (MB)
 
+${generateMemoryChart(MEMORY_BENCHMARKS)}
+
+<details>
+<summary>Raw data</summary>
+
 ${generateTable(MEMORY_BENCHMARKS, 'MB')}
+
+</details>
 
 ## Bundle Size (KB)
 
+${generateBundleChart(SIZE_BENCHMARKS)}
+
+<details>
+<summary>Raw data</summary>
+
 ${generateTable(SIZE_BENCHMARKS, 'KB')}
+
+</details>
 
 ## Methodology
 

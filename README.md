@@ -44,12 +44,12 @@ mountApp(document.getElementById('app')!, Counter)
 
 | Package                                           | Description                                                                                         |
 | ------------------------------------------------- | --------------------------------------------------------------------------------------------------- |
-| [`@llui/dom`](packages/dom)                       | Runtime — component, mount, scope tree, bindings, structural primitives, element helpers            |
+| [`@llui/dom`](packages/dom)                       | Runtime — component, mount, scope tree, bindings, structural primitives, HTML/SVG/MathML helpers   |
 | [`@llui/vite-plugin`](packages/vite-plugin)       | Compiler — 3-pass TypeScript transform, template cloning, source maps                               |
 | [`@llui/effects`](packages/effects)               | Effect system — http, cancel, debounce, sequence, race + `Async<T,E>`, `ApiError`                   |
 | [`@llui/router`](packages/router)                 | Routing — structured path matching, history/hash mode, link helper                                  |
 | [`@llui/transitions`](packages/transitions)       | Animation helpers for `branch`/`show`/`each` — `transition()`, `fade`, `slide`, `scale`, `collapse` |
-| [`@llui/components`](packages/components)         | 54 headless components + opt-in theme (CSS tokens, dark mode, Tailwind class helpers)               |
+| [`@llui/components`](packages/components)         | 55 headless components + locale i18n + format utilities + opt-in theme                              |
 | [`@llui/test`](packages/test)                     | Test harness — testComponent, testView, propertyTest, replayTrace                                   |
 | [`@llui/vike`](packages/vike)                     | Vike SSR adapter — onRenderHtml, onRenderClient                                                     |
 | [`@llui/mcp`](packages/mcp)                       | MCP server — LLM debug tools via Model Context Protocol                                             |
@@ -87,7 +87,6 @@ npx vite
 - [Cookbook](docs/cookbook.md) — forms, async, lists, routing, composition, SSR
 - [Design Documents](docs/designs/) — architecture, compiler, runtime, performance
 - [API Reference](docs/designs/09%20API%20Reference.md) — type signatures for all exports
-- [Roadmap](ROADMAP.md) — implementation status
 
 ## Development
 

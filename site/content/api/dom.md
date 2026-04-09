@@ -1151,5 +1151,533 @@ const ul
 const video
 ```
 
+### `svg`
+
+```typescript
+const svg
+```
+
+### `g`
+
+```typescript
+const g
+```
+
+### `defs`
+
+```typescript
+const defs
+```
+
+### `symbol`
+
+```typescript
+const symbol
+```
+
+### `use`
+
+```typescript
+const use
+```
+
+### `circle`
+
+```typescript
+const circle
+```
+
+### `ellipse`
+
+```typescript
+const ellipse
+```
+
+### `line`
+
+```typescript
+const line
+```
+
+### `path`
+
+```typescript
+const path
+```
+
+### `polygon`
+
+```typescript
+const polygon
+```
+
+### `polyline`
+
+```typescript
+const polyline
+```
+
+### `rect`
+
+```typescript
+const rect
+```
+
+### `tspan`
+
+```typescript
+const tspan
+```
+
+### `textPath`
+
+```typescript
+const textPath
+```
+
+### `clipPath`
+
+```typescript
+const clipPath
+```
+
+### `linearGradient`
+
+```typescript
+const linearGradient
+```
+
+### `radialGradient`
+
+```typescript
+const radialGradient
+```
+
+### `stop`
+
+```typescript
+const stop
+```
+
+### `mask`
+
+```typescript
+const mask
+```
+
+### `pattern`
+
+```typescript
+const pattern
+```
+
+### `marker`
+
+```typescript
+const marker
+```
+
+### `filter`
+
+```typescript
+const filter
+```
+
+### `feBlend`
+
+```typescript
+const feBlend
+```
+
+### `feColorMatrix`
+
+```typescript
+const feColorMatrix
+```
+
+### `feComponentTransfer`
+
+```typescript
+const feComponentTransfer
+```
+
+### `feComposite`
+
+```typescript
+const feComposite
+```
+
+### `feConvolveMatrix`
+
+```typescript
+const feConvolveMatrix
+```
+
+### `feDiffuseLighting`
+
+```typescript
+const feDiffuseLighting
+```
+
+### `feDisplacementMap`
+
+```typescript
+const feDisplacementMap
+```
+
+### `feDropShadow`
+
+```typescript
+const feDropShadow
+```
+
+### `feFlood`
+
+```typescript
+const feFlood
+```
+
+### `feGaussianBlur`
+
+```typescript
+const feGaussianBlur
+```
+
+### `feImage`
+
+```typescript
+const feImage
+```
+
+### `feMerge`
+
+```typescript
+const feMerge
+```
+
+### `feMergeNode`
+
+```typescript
+const feMergeNode
+```
+
+### `feMorphology`
+
+```typescript
+const feMorphology
+```
+
+### `feOffset`
+
+```typescript
+const feOffset
+```
+
+### `feSpecularLighting`
+
+```typescript
+const feSpecularLighting
+```
+
+### `feTile`
+
+```typescript
+const feTile
+```
+
+### `feTurbulence`
+
+```typescript
+const feTurbulence
+```
+
+### `fePointLight`
+
+```typescript
+const fePointLight
+```
+
+### `feSpotLight`
+
+```typescript
+const feSpotLight
+```
+
+### `feDistantLight`
+
+```typescript
+const feDistantLight
+```
+
+### `feFuncR`
+
+```typescript
+const feFuncR
+```
+
+### `feFuncG`
+
+```typescript
+const feFuncG
+```
+
+### `feFuncB`
+
+```typescript
+const feFuncB
+```
+
+### `feFuncA`
+
+```typescript
+const feFuncA
+```
+
+### `image`
+
+```typescript
+const image
+```
+
+### `foreignObject`
+
+```typescript
+const foreignObject
+```
+
+### `animate`
+
+```typescript
+const animate
+```
+
+### `animateMotion`
+
+```typescript
+const animateMotion
+```
+
+### `animateTransform`
+
+```typescript
+const animateTransform
+```
+
+### `set`
+
+```typescript
+const set
+```
+
+### `mpath`
+
+```typescript
+const mpath
+```
+
+### `desc`
+
+```typescript
+const desc
+```
+
+### `title`
+
+```typescript
+const title
+```
+
+### `metadata`
+
+```typescript
+const metadata
+```
+
+### `math`
+
+```typescript
+const math
+```
+
+### `mi`
+
+```typescript
+const mi
+```
+
+### `mn`
+
+```typescript
+const mn
+```
+
+### `mo`
+
+```typescript
+const mo
+```
+
+### `ms`
+
+```typescript
+const ms
+```
+
+### `mtext`
+
+```typescript
+const mtext
+```
+
+### `mrow`
+
+```typescript
+const mrow
+```
+
+### `mfrac`
+
+```typescript
+const mfrac
+```
+
+### `msqrt`
+
+```typescript
+const msqrt
+```
+
+### `mroot`
+
+```typescript
+const mroot
+```
+
+### `msup`
+
+```typescript
+const msup
+```
+
+### `msub`
+
+```typescript
+const msub
+```
+
+### `msubsup`
+
+```typescript
+const msubsup
+```
+
+### `munder`
+
+```typescript
+const munder
+```
+
+### `mover`
+
+```typescript
+const mover
+```
+
+### `munderover`
+
+```typescript
+const munderover
+```
+
+### `mmultiscripts`
+
+```typescript
+const mmultiscripts
+```
+
+### `mprescripts`
+
+```typescript
+const mprescripts
+```
+
+### `mnone`
+
+```typescript
+const mnone
+```
+
+### `mtable`
+
+```typescript
+const mtable
+```
+
+### `mtr`
+
+```typescript
+const mtr
+```
+
+### `mtd`
+
+```typescript
+const mtd
+```
+
+### `mspace`
+
+```typescript
+const mspace
+```
+
+### `mpadded`
+
+```typescript
+const mpadded
+```
+
+### `mphantom`
+
+```typescript
+const mphantom
+```
+
+### `menclose`
+
+```typescript
+const menclose
+```
+
+### `merror`
+
+```typescript
+const merror
+```
+
+### `maction`
+
+```typescript
+const maction
+```
+
+### `semantics`
+
+```typescript
+const semantics
+```
+
+### `annotation`
+
+```typescript
+const annotation
+```
+
+### `annotationXml`
+
+```typescript
+const annotationXml
+```
+
 
 <!-- auto-api:end -->

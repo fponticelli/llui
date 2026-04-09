@@ -220,7 +220,7 @@ Supported on: editable, number-input, tags-input, pin-input, file-upload.
 
 ## Component Reference
 
-All 54 components follow the same pattern:
+All 55 components follow the same pattern:
 
 ```typescript
 import { componentName } from '@llui/components/component-name'
@@ -711,6 +711,22 @@ const parts = componentName.connect<State>(s => s.field, send, { id: '...' })
 **Connect options:** `ConnectOptions`
 
 **Parts:** `root`, `image`, `cropBox`, `resizeHandle`, `resetTrigger`
+
+---
+
+### In View
+
+**State** (`InViewState`):
+
+| Field | Type |
+|---|---|
+| `visible` | `boolean` |
+
+**Messages:** `enter`, `leave`
+
+**Connect options:** `ConnectOptions`
+
+**Parts:** `root`
 
 ---
 
