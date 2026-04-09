@@ -117,7 +117,13 @@ function checkStateMutation(sf: ts.SourceFile, filename: string, violations: Lin
 ### `checkMutationsInBody()`
 
 ```typescript
-function checkMutationsInBody(node: ts.Node, stateName: string, sf: ts.SourceFile, filename: string, violations: LintViolation[]): void
+function checkMutationsInBody(
+  node: ts.Node,
+  stateName: string,
+  sf: ts.SourceFile,
+  filename: string,
+  violations: LintViolation[],
+): void
 ```
 
 ### `checkMissingMemo()`
@@ -129,13 +135,22 @@ function checkMissingMemo(sf: ts.SourceFile, filename: string, violations: LintV
 ### `checkEachClosureViolation()`
 
 ```typescript
-function checkEachClosureViolation(sf: ts.SourceFile, filename: string, violations: LintViolation[]): void
+function checkEachClosureViolation(
+  sf: ts.SourceFile,
+  filename: string,
+  violations: LintViolation[],
+): void
 ```
 
 ### `checkClosureCaptures()`
 
 ```typescript
-function checkClosureCaptures(renderFn: ts.ArrowFunction | ts.FunctionExpression, sf: ts.SourceFile, filename: string, violations: LintViolation[]): void
+function checkClosureCaptures(
+  renderFn: ts.ArrowFunction | ts.FunctionExpression,
+  sf: ts.SourceFile,
+  filename: string,
+  violations: LintViolation[],
+): void
 ```
 
 ### `isInBindingContext()`
@@ -147,13 +162,21 @@ function isInBindingContext(node: ts.Node): boolean
 ### `checkMapOnStateArrays()`
 
 ```typescript
-function checkMapOnStateArrays(sf: ts.SourceFile, filename: string, violations: LintViolation[]): void
+function checkMapOnStateArrays(
+  sf: ts.SourceFile,
+  filename: string,
+  violations: LintViolation[],
+): void
 ```
 
 ### `checkUnnecessaryChild()`
 
 ```typescript
-function checkUnnecessaryChild(sf: ts.SourceFile, filename: string, violations: LintViolation[]): void
+function checkUnnecessaryChild(
+  sf: ts.SourceFile,
+  filename: string,
+  violations: LintViolation[],
+): void
 ```
 
 ### `countStateAccesses()`
@@ -165,7 +188,11 @@ function countStateAccesses(node: ts.Node, accesses: Set<string>): void
 ### `checkFormBoilerplate()`
 
 ```typescript
-function checkFormBoilerplate(sf: ts.SourceFile, filename: string, violations: LintViolation[]): void
+function checkFormBoilerplate(
+  sf: ts.SourceFile,
+  filename: string,
+  violations: LintViolation[],
+): void
 ```
 
 ### `checkAsyncUpdate()`
@@ -177,31 +204,54 @@ function checkAsyncUpdate(sf: ts.SourceFile, filename: string, violations: LintV
 ### `checkForAwait()`
 
 ```typescript
-function checkForAwait(node: ts.Node, sf: ts.SourceFile, filename: string, violations: LintViolation[]): void
+function checkForAwait(
+  node: ts.Node,
+  sf: ts.SourceFile,
+  filename: string,
+  violations: LintViolation[],
+): void
 ```
 
 ### `checkDirectStateInView()`
 
 ```typescript
-function checkDirectStateInView(sf: ts.SourceFile, filename: string, violations: LintViolation[]): void
+function checkDirectStateInView(
+  sf: ts.SourceFile,
+  filename: string,
+  violations: LintViolation[],
+): void
 ```
 
 ### `findStateInEventHandlers()`
 
 ```typescript
-function findStateInEventHandlers(node: ts.Node, sf: ts.SourceFile, filename: string, violations: LintViolation[]): void
+function findStateInEventHandlers(
+  node: ts.Node,
+  sf: ts.SourceFile,
+  filename: string,
+  violations: LintViolation[],
+): void
 ```
 
 ### `findStateAccess()`
 
 ```typescript
-function findStateAccess(node: ts.Node, sf: ts.SourceFile, filename: string, violations: LintViolation[]): void
+function findStateAccess(
+  node: ts.Node,
+  sf: ts.SourceFile,
+  filename: string,
+  violations: LintViolation[],
+): void
 ```
 
 ### `checkExhaustiveEffectHandling()`
 
 ```typescript
-function checkExhaustiveEffectHandling(sf: ts.SourceFile, filename: string, violations: LintViolation[]): void
+function checkExhaustiveEffectHandling(
+  sf: ts.SourceFile,
+  filename: string,
+  violations: LintViolation[],
+): void
 ```
 
 ### `isEmptyFunctionBody()`
@@ -213,7 +263,11 @@ function isEmptyFunctionBody(fn: ts.ArrowFunction | ts.FunctionExpression): bool
 ### `checkEffectWithoutHandler()`
 
 ```typescript
-function checkEffectWithoutHandler(sf: ts.SourceFile, filename: string, violations: LintViolation[]): void
+function checkEffectWithoutHandler(
+  sf: ts.SourceFile,
+  filename: string,
+  violations: LintViolation[],
+): void
 ```
 
 ### `bodyReturnsEffects()`
@@ -225,19 +279,31 @@ function bodyReturnsEffects(node: ts.Node): boolean
 ### `checkForgottenSpread()`
 
 ```typescript
-function checkForgottenSpread(sf: ts.SourceFile, filename: string, violations: LintViolation[]): void
+function checkForgottenSpread(
+  sf: ts.SourceFile,
+  filename: string,
+  violations: LintViolation[],
+): void
 ```
 
 ### `checkStringEffectCallback()`
 
 ```typescript
-function checkStringEffectCallback(sf: ts.SourceFile, filename: string, violations: LintViolation[]): void
+function checkStringEffectCallback(
+  sf: ts.SourceFile,
+  filename: string,
+  violations: LintViolation[],
+): void
 ```
 
 ### `checkNestedSendInUpdate()`
 
 ```typescript
-function checkNestedSendInUpdate(sf: ts.SourceFile, filename: string, violations: LintViolation[]): void
+function checkNestedSendInUpdate(
+  sf: ts.SourceFile,
+  filename: string,
+  violations: LintViolation[],
+): void
 ```
 
 ### `isInsideComponentCall()`
@@ -249,13 +315,22 @@ function isInsideComponentCall(node: ts.Node): boolean
 ### `findSendCalls()`
 
 ```typescript
-function findSendCalls(node: ts.Node, sf: ts.SourceFile, filename: string, violations: LintViolation[]): void
+function findSendCalls(
+  node: ts.Node,
+  sf: ts.SourceFile,
+  filename: string,
+  violations: LintViolation[],
+): void
 ```
 
 ### `checkImperativeDomInView()`
 
 ```typescript
-function checkImperativeDomInView(sf: ts.SourceFile, filename: string, violations: LintViolation[]): void
+function checkImperativeDomInView(
+  sf: ts.SourceFile,
+  filename: string,
+  violations: LintViolation[],
+): void
 ```
 
 ### `isInsideOnMountCall()`
@@ -267,13 +342,23 @@ function isInsideOnMountCall(node: ts.Node): boolean
 ### `findImperativeDom()`
 
 ```typescript
-function findImperativeDom(node: ts.Node, sf: ts.SourceFile, filename: string, violations: LintViolation[], imperativeMethods: Set<string>): void
+function findImperativeDom(
+  node: ts.Node,
+  sf: ts.SourceFile,
+  filename: string,
+  violations: LintViolation[],
+  imperativeMethods: Set<string>,
+): void
 ```
 
 ### `checkAccessorSideEffect()`
 
 ```typescript
-function checkAccessorSideEffect(sf: ts.SourceFile, filename: string, violations: LintViolation[]): void
+function checkAccessorSideEffect(
+  sf: ts.SourceFile,
+  filename: string,
+  violations: LintViolation[],
+): void
 ```
 
 ### `isAccessorArrow()`
@@ -285,7 +370,14 @@ function isAccessorArrow(node: ts.ArrowFunction): boolean
 ### `findSideEffectsInAccessor()`
 
 ```typescript
-function findSideEffectsInAccessor(node: ts.Node, sf: ts.SourceFile, filename: string, violations: LintViolation[], sideEffectNames: Set<string>, consoleMethods: Set<string>): void
+function findSideEffectsInAccessor(
+  node: ts.Node,
+  sf: ts.SourceFile,
+  filename: string,
+  violations: LintViolation[],
+  sideEffectNames: Set<string>,
+  consoleMethods: Set<string>,
+): void
 ```
 
 ### `collectMsgVariantShapes()`
@@ -327,6 +419,5 @@ interface MsgVariantShape {
   shape: string
 }
 ```
-
 
 <!-- auto-api:end -->

@@ -82,10 +82,14 @@ export default defineConfig({ plugins: [llui({ mcpPort: 5200 })] })
 ### `generateReplayTest()`
 
 ```typescript
-function generateReplayTest(trace: {
+function generateReplayTest(
+  trace: {
     component: string
     entries: Array<{ msg: unknown; expectedState: unknown; expectedEffects: unknown[] }>
-  }, importPath: string, exportName: string): string
+  },
+  importPath: string,
+  exportName: string,
+): string
 ```
 
 ## Interfaces
@@ -165,6 +169,5 @@ class LluiMcpServer {
 ```typescript
 const TOOLS: McpToolDefinition[]
 ```
-
 
 <!-- auto-api:end -->

@@ -147,13 +147,22 @@ function createView<S, M>(send: Send<M>): View<S, M>
 ### `mountApp()`
 
 ```typescript
-function mountApp<S, M, E>(container: HTMLElement, def: ComponentDef<S, M, E>, data?: unknown, _options?: MountOptions): AppHandle
+function mountApp<S, M, E>(
+  container: HTMLElement,
+  def: ComponentDef<S, M, E>,
+  data?: unknown,
+  _options?: MountOptions,
+): AppHandle
 ```
 
 ### `hydrateApp()`
 
 ```typescript
-function hydrateApp<S, M, E>(container: HTMLElement, def: ComponentDef<S, M, E>, serverState: S): AppHandle
+function hydrateApp<S, M, E>(
+  container: HTMLElement,
+  def: ComponentDef<S, M, E>,
+  serverState: S,
+): AppHandle
 ```
 
 ### `flush()`
@@ -167,7 +176,10 @@ function flush(): void
 Build a typed address builder from a component definition's `receives` map.
 
 ```typescript
-function addressOf<S, M, E>(def: ComponentDef<S, M, E>, key: string | number): Record<string, (params?: unknown) => AddressedEffect>
+function addressOf<S, M, E>(
+  def: ComponentDef<S, M, E>,
+  key: string | number,
+): Record<string, (params?: unknown) => AddressedEffect>
 ```
 
 ### `renderToString()`
@@ -189,13 +201,16 @@ Each handler returns [newState, effects] if it handled the message, or null to p
 The first handler that returns non-null wins.
 
 ```typescript
-function mergeHandlers<S, M, E>(...handlers: Array<(state: S, msg: M) => [S, E[]] | null>): (state: S, msg: M) => [S, E[]]
+function mergeHandlers<S, M, E>(
+  ...handlers: Array<(state: S, msg: M) => [S, E[]] | null>
+): (state: S, msg: M) => [S, E[]]
 ```
 
 ### `createContext()`
 
 Create a typed context key. Pass a default value to make consumers without a
 provider resolve to it; omit to make unprovided consumption throw.
+
 ```ts
 const ThemeContext = createContext<'light' | 'dark'>('light')
 ```
@@ -209,14 +224,17 @@ function createContext<T>(defaultValue?: T): Context<T>
 Provide a reactive value for `ctx` to every descendant rendered inside `children`.
 The accessor `(s: S) => T` is evaluated lazily at binding read time, so providers
 can thread state slices down without prop drilling.
+
 ```ts
 view: ({ send }) => [
-  provide(ThemeContext, (s: State) => s.theme, () => [
-    header(send),
-    main(send),
-  ]),
+  provide(
+    ThemeContext,
+    (s: State) => s.theme,
+    () => [header(send), main(send)],
+  ),
 ]
 ```
+
 Nested providers shadow outer ones within their subtree. The outer value is
 restored after `children()` returns, so sibling subtrees aren't affected.
 
@@ -229,6 +247,7 @@ function provide<S, T>(ctx: Context<T>, accessor: (s: S) => T, children: () => N
 Read a context accessor within a view or view-function. Walks the scope chain
 from the current render point to find the nearest provider. Returns an
 `(s: S) => T` accessor that can be passed to bindings (text/class/etc.).
+
 ```ts
 export function themedCard(): Node[] {
   const theme = useContext(ThemeContext)
@@ -245,17 +264,19 @@ function useContext<S, T>(ctx: Context<T>): (s: S) => T
 Lens-style adapter that lifts a sub-component's `update` into a handler that
 operates on a parent's full state and message type. Pairs with
 `mergeHandlers` to compose sub-components into a parent component's reducer.
+
 - `get` / `set` isolate the sub-component's state slice within the parent state.
 - `narrow` takes the parent message and returns the sub-message if this slice
   handles it, or `null` to pass through.
 - `sub` is the sub-component's pure reducer (operates on its own state + msg).
-Example — embedding `dialog.update` into a parent reducer:
+  Example — embedding `dialog.update` into a parent reducer:
+
 ```ts
 const update = mergeHandlers<State, Msg, Effect>(
   sliceHandler({
     get: (s) => s.confirm,
     set: (s, v) => ({ ...s, confirm: v }),
-    narrow: (m) => m.type === 'confirm' ? m.msg : null,
+    narrow: (m) => (m.type === 'confirm' ? m.msg : null),
     sub: dialog.update,
   }),
   appUpdate,
@@ -299,6 +320,7 @@ function show<S, M = unknown>(opts: ShowOptions<S, M>): Node[]
 
 Build a `View<Sub, M>` that composes a selector into every state-bound
 accessor. Used to write view-functions over a sub-slice of parent state:
+
 ```ts
 import { slice } from '@llui/dom'
 view: (h) => {
@@ -306,12 +328,16 @@ view: (h) => {
   return [...formView.show({ when: f => f.valid, render: (h) => [...] })]
 }
 ```
+
 Kept as a standalone function rather than a method on the View bundle so
 apps that don't use it don't pay for its bundle cost — tree-shaken when
 unused.
 
 ```typescript
-function slice<Root, Sub, M>(h: View<Root, M> | { send: Send<M> }, lift: (r: Root) => Sub): View<Sub, M>
+function slice<Root, Sub, M>(
+  h: View<Root, M> | { send: Send<M> },
+  lift: (r: Root) => Sub,
+): View<Sub, M>
 ```
 
 ### `portal()`
@@ -323,7 +349,9 @@ function portal(opts: PortalOptions): Node[]
 ### `foreign()`
 
 ```typescript
-function foreign<S, M, T extends Record<string, unknown>, Instance>(opts: ForeignOptions<S, M, T, Instance>): Node[]
+function foreign<S, M, T extends Record<string, unknown>, Instance>(
+  opts: ForeignOptions<S, M, T, Instance>,
+): Node[]
 ```
 
 ### `child()`
@@ -342,11 +370,12 @@ function memo<S, T>(accessor: (s: S) => T, mask?: number): (s: S) => T
 
 Optimized "one-of-N" reactive binding — O(1) updates instead of O(n).
 Uses a generation counter instead of per-row disposers:
+
 - bind() tags entries with the current generation
 - Individual row removal bumps the generation for that entry (set gen = -1)
 - Bulk clear bumps the generation and clears the registry via registerOnClear
 - updateSelector() skips stale entries (gen !== current) and compacts lazily
-Zero per-row closure allocations. Zero Set.delete calls on disposal.
+  Zero per-row closure allocations. Zero Set.delete calls on disposal.
 
 ```typescript
 function selector<S, V>(field: (s: S) => V): SelectorInstance<V>
@@ -373,17 +402,27 @@ function errorBoundary(opts: {
 Apply a field update to state immutably.
 Returns a new state object with the specified field updated.
 Usage in update():
-  case 'setField':
-    return [applyField(state, msg.field, msg.value), []]
+case 'setField':
+return [applyField(state, msg.field, msg.value), []]
 
 ```typescript
-function applyField<S extends Record<string, unknown>, K extends keyof S>(state: S, field: K, value: S[K]): S
+function applyField<S extends Record<string, unknown>, K extends keyof S>(
+  state: S,
+  field: K,
+  value: S[K],
+): S
 ```
 
 ### `elSplit()`
 
 ```typescript
-function elSplit(tag: string, staticFn: ((el: HTMLElement) => void) | null, events: Array<[string, EventListener]> | null, bindings: Array<[number, BindingKind, string, (state: never) => unknown]> | null, children: Node[] | null): HTMLElement
+function elSplit(
+  tag: string,
+  staticFn: ((el: HTMLElement) => void) | null,
+  events: Array<[string, EventListener]> | null,
+  bindings: Array<[number, BindingKind, string, (state: never) => unknown]> | null,
+  children: Node[] | null,
+): HTMLElement
 ```
 
 ### `elTemplate()`
@@ -403,23 +442,34 @@ function elTemplate(html: string, patch: (root: Element, bind: TemplateBind) => 
 ### `_handleMsg()`
 
 Run a handler for a single message: call update(), reconcile blocks
-with the given method, run Phase 2. Used by compiler-generated __handlers
+with the given method, run Phase 2. Used by compiler-generated **handlers
 to avoid duplicating boilerplate per message type.
 @param method 0=reconcile, 1=reconcileItems, 2=reconcileClear, 3=reconcileRemove, -1=skip blocks
-@public — used by compiler-generated `__handlers`
+@public — used by compiler-generated `**handlers`
 
 ```typescript
-function _handleMsg(inst: ComponentInstance, msg: unknown, dirty: number, method: number): [unknown, unknown[]]
+function _handleMsg(
+  inst: ComponentInstance,
+  msg: unknown,
+  dirty: number,
+  method: number,
+): [unknown, unknown[]]
 ```
 
 ### `_runPhase2()`
 
 Phase 2: compact dead bindings + update live bindings.
-Shared between genericUpdate and compiler-generated __update.
-@public — used by compiler-generated `__update` functions
+Shared between genericUpdate and compiler-generated **update.
+@public — used by compiler-generated `**update` functions
 
 ```typescript
-function _runPhase2(state: unknown, dirty: number, bindings: Binding[], bindingsBeforePhase1: number, componentName?: string): void
+function _runPhase2(
+  state: unknown,
+  dirty: number,
+  bindings: Binding[],
+  bindingsBeforePhase1: number,
+  componentName?: string,
+): void
 ```
 
 ## Types
@@ -434,6 +484,7 @@ export type Send<M> = (msg: M) => void
 
 Maps a value shape to a reactive-props shape: every field becomes an accessor
 `(s: S) => V`. Use for Level-1 view function signatures.
+
 ```ts
 type ToolbarData = { tools: Tool[]; theme: 'light' | 'dark' }
 export function toolbar<S>(props: Props<ToolbarData, S>, send: Send<Msg>) {
@@ -458,10 +509,11 @@ export type BindingKind = 'text' | 'prop' | 'attr' | 'class' | 'style'
 ### `ItemAccessor`
 
 Per-item accessor. Two access forms:
+
 - `item.field` — shorthand, returns accessor for `item.current[field]`
 - `item(t => t.expr)` — computed expressions
-In both cases the returned value is a `() => V` accessor.
-Invoke it (`item.field()`) to read the current value imperatively.
+  In both cases the returned value is a `() => V` accessor.
+  Invoke it (`item.field()`) to read the current value imperatively.
 
 ```typescript
 export type ItemAccessor<T> = {
@@ -477,12 +529,12 @@ Type utility for form field messages.
 Generates a discriminated union where each field gets its own typed variant,
 avoiding the need to define one message type per field.
 Usage:
-  type Fields = { name: string; email: string; age: number }
-  type Msg = FieldMsg<Fields> | { type: 'submit' }
-  // Produces: { type: 'setField'; field: 'name'; value: string }
-  //         | { type: 'setField'; field: 'email'; value: string }
-  //         | { type: 'setField'; field: 'age'; value: number }
-  //         | { type: 'submit' }
+type Fields = { name: string; email: string; age: number }
+type Msg = FieldMsg<Fields> | { type: 'submit' }
+// Produces: { type: 'setField'; field: 'name'; value: string }
+// | { type: 'setField'; field: 'email'; value: string }
+// | { type: 'setField'; field: 'age'; value: number }
+// | { type: 'submit' }
 
 ```typescript
 export type FieldMsg<Fields extends Record<string, unknown>> = {
@@ -664,18 +716,22 @@ export interface ChildOptions<S, ChildM> {
 Typed view helpers bound to a component's `State` / `Msg`. The sole
 argument to `view`, so every state-bound primitive infers `State` from
 the component definition — no per-call `show<State>(...)` annotation.
+
 ```ts
 view: ({ send, show, text }) => [
   ...show({ when: s => s.count > 0, render: () => [...] }),
   text(s => String(s.count)),
 ]
 ```
+
 Tip: to view-function over a sub-slice of parent state, import `slice`
 as a standalone helper:
+
 ```ts
 import { slice } from '@llui/dom'
-const form = slice(h, s => s.form)   // returns View<FormState, Msg>
+const form = slice(h, (s) => s.form) // returns View<FormState, Msg>
 ```
+
 The Vite plugin's mask-injection pass recognizes all three call forms
 equivalently: `h.text(...)` (member expression), `text(...)` (destructured
 alias), and `text(...)` (bare import from `@llui/dom`). No per-binding
@@ -1678,6 +1734,5 @@ const annotation
 ```typescript
 const annotationXml
 ```
-
 
 <!-- auto-api:end -->

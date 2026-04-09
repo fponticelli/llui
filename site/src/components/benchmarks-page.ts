@@ -131,28 +131,34 @@ export const BenchmarksPage = component<State, Msg, never, BenchmarksPageData>({
     }
   },
   view: ({ send, text }) => {
-    // IntersectionObserver sets data-visible directly on chart wrappers
+    // IntersectionObserver sets data-visible directly on chart wrappers.
+    // Use requestAnimationFrame to ensure innerHTML bindings have been applied.
     onMount((container) => {
-      const wrappers = container.querySelectorAll('.bench-chart-wrapper')
-      if (wrappers.length === 0) return
+      let observer: IntersectionObserver | null = null
 
-      const observer = new IntersectionObserver(
-        (entries) => {
-          for (const entry of entries) {
-            if (entry.isIntersecting) {
-              ;(entry.target as HTMLElement).dataset.visible = 'true'
-              observer.unobserve(entry.target)
+      const setup = () => {
+        const wrappers = container.querySelectorAll('.bench-chart-wrapper')
+        if (wrappers.length === 0) return
+
+        observer = new IntersectionObserver(
+          (entries) => {
+            for (const entry of entries) {
+              if (entry.isIntersecting) {
+                ;(entry.target as HTMLElement).dataset.visible = 'true'
+                observer!.unobserve(entry.target)
+              }
             }
-          }
-        },
-        { threshold: 0.2 },
-      )
+          },
+          { threshold: 0.2 },
+        )
 
-      for (const wrapper of wrappers) {
-        observer.observe(wrapper)
+        for (const wrapper of wrappers) {
+          observer.observe(wrapper)
+        }
       }
 
-      return () => observer.disconnect()
+      requestAnimationFrame(setup)
+      return () => observer?.disconnect()
     })
 
     return [
