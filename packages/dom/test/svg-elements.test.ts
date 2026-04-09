@@ -111,9 +111,7 @@ describe('SVG elements', () => {
         update: (s) => [s, []],
         view: () => [
           svg({}, [
-            defs([
-              clipPath({ id: 'clip1' }, [rect({ width: '50', height: '50' })]),
-            ]),
+            defs([clipPath({ id: 'clip1' }, [rect({ width: '50', height: '50' })])]),
             g({ 'clip-path': 'url(#clip1)' }, [
               rect({ width: '100', height: '100', fill: 'blue' }),
             ]),
@@ -142,9 +140,7 @@ describe('SVG elements', () => {
                 stop({ offset: '0%', 'stop-color': 'red' }),
                 stop({ offset: '100%', 'stop-color': 'blue' }),
               ]),
-              radialGradient({ id: 'rg1' }, [
-                stop({ offset: '0%', 'stop-color': 'white' }),
-              ]),
+              radialGradient({ id: 'rg1' }, [stop({ offset: '0%', 'stop-color': 'white' })]),
             ]),
           ]),
         ],
@@ -191,13 +187,7 @@ describe('SVG elements', () => {
         name: 'SvgText',
         init: () => [{}, []],
         update: (s) => [s, []],
-        view: () => [
-          svg({}, [
-            svgText({ x: '10', y: '20' }, [
-              tspan({ fill: 'red' }, []),
-            ]),
-          ]),
-        ],
+        view: () => [svg({}, [svgText({ x: '10', y: '20' }, [tspan({ fill: 'red' }, [])])])],
       }),
     )
 
@@ -225,10 +215,7 @@ describe('SVG elements', () => {
                 feFlood({ 'flood-color': 'red' }),
                 feComposite({ operator: 'in' }),
                 feOffset({ dx: '5', dy: '5' }),
-                feMerge([
-                  feMergeNode({}),
-                  feMergeNode({}),
-                ]),
+                feMerge([feMergeNode({}), feMergeNode({})]),
               ]),
             ]),
           ]),

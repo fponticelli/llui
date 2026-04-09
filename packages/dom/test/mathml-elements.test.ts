@@ -51,15 +51,7 @@ describe('MathML elements', () => {
         name: 'MathTest',
         init: () => [{}, []],
         update: (s) => [s, []],
-        view: () => [
-          math([
-            mrow([
-              mn([]),
-              mo([]),
-              mn([]),
-            ]),
-          ]),
-        ],
+        view: () => [math([mrow([mn([]), mo([]), mn([])])])],
       }),
     )
 
@@ -79,14 +71,7 @@ describe('MathML elements', () => {
         name: 'MathFrac',
         init: () => [{}, []],
         update: (s) => [s, []],
-        view: () => [
-          math([
-            mfrac([
-              mn([]),
-              mn([]),
-            ]),
-          ]),
-        ],
+        view: () => [math([mfrac([mn([]), mn([])])])],
       }),
     )
 
@@ -102,11 +87,7 @@ describe('MathML elements', () => {
         init: () => [{}, []],
         update: (s) => [s, []],
         view: () => [
-          math([
-            msup([mi([]), mn([])]),
-            msub([mi([]), mn([])]),
-            msubsup([mi([]), mn([]), mn([])]),
-          ]),
+          math([msup([mi([]), mn([])]), msub([mi([]), mn([])]), msubsup([mi([]), mn([]), mn([])])]),
         ],
       }),
     )
@@ -124,12 +105,7 @@ describe('MathML elements', () => {
         name: 'MathRoot',
         init: () => [{}, []],
         update: (s) => [s, []],
-        view: () => [
-          math([
-            msqrt([mn([])]),
-            mroot([mn([]), mn([])]),
-          ]),
-        ],
+        view: () => [math([msqrt([mn([])]), mroot([mn([]), mn([])])])],
       }),
     )
 
@@ -147,10 +123,7 @@ describe('MathML elements', () => {
         update: (s) => [s, []],
         view: () => [
           math([
-            mtable([
-              mtr([mtd([mn([])]), mtd([mn([])])]),
-              mtr([mtd([mn([])]), mtd([mn([])])]),
-            ]),
+            mtable([mtr([mtd([mn([])]), mtd([mn([])])]), mtr([mtd([mn([])]), mtd([mn([])])])]),
           ]),
         ],
       }),
@@ -223,11 +196,7 @@ describe('MathML elements', () => {
         name: 'MathReactive',
         init: () => [{ color: 'red' }, []],
         update: (s) => [s, []],
-        view: () => [
-          math([
-            mi({ mathcolor: (s: S) => s.color }, []),
-          ]),
-        ],
+        view: () => [math([mi({ mathcolor: (s: S) => s.color }, [])])],
       }),
     )
 

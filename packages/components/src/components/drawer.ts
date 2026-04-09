@@ -117,7 +117,8 @@ export function connect<S>(
   const titleId = `${base}:title`
   const descId = `${base}:description`
   const triggerId = `${base}:trigger`
-  const closeLabel: string | ((s: S) => string) = opts.closeLabel ?? ((s: S) => locale(s).drawer.close)
+  const closeLabel: string | ((s: S) => string) =
+    opts.closeLabel ?? ((s: S) => locale(s).drawer.close)
 
   return {
     trigger: {

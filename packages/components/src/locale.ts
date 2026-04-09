@@ -83,11 +83,21 @@ export const en: Locale = {
   dialog: { close: 'Close' },
   drawer: { close: 'Close' },
   fileUpload: { remove: 'Remove file', clear: 'Clear files' },
-  floatingPanel: { label: 'Floating panel', minimize: 'Minimize', maximize: 'Maximize', close: 'Close' },
+  floatingPanel: {
+    label: 'Floating panel',
+    minimize: 'Minimize',
+    maximize: 'Maximize',
+    close: 'Close',
+  },
   imageCropper: { reset: 'Reset crop' },
   navigationMenu: { label: 'Main navigation' },
   numberInput: { increment: 'Increase value', decrement: 'Decrease value' },
-  pagination: { label: 'Pagination', prev: 'Previous page', next: 'Next page', page: (n) => `Page ${n}` },
+  pagination: {
+    label: 'Pagination',
+    prev: 'Previous page',
+    next: 'Next page',
+    page: (n) => `Page ${n}`,
+  },
   passwordInput: { show: 'Show password', hide: 'Hide password' },
   pinInput: { input: (i) => `Digit ${i + 1}` },
   popover: { close: 'Close' },
@@ -108,4 +118,3 @@ export const en: Locale = {
  * English defaults are provided — apps that don't call `provide()` get English for free.
  */
 export const LocaleContext = createContext<Locale>(en)
-

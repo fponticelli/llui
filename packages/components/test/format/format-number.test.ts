@@ -28,12 +28,8 @@ describe('formatNumber', () => {
   })
 
   it('respects fraction digit options', () => {
-    expect(
-      formatNumber(1.1, { locale: 'en-US', minimumFractionDigits: 3 }),
-    ).toBe('1.100')
-    expect(
-      formatNumber(1.12345, { locale: 'en-US', maximumFractionDigits: 2 }),
-    ).toBe('1.12')
+    expect(formatNumber(1.1, { locale: 'en-US', minimumFractionDigits: 3 })).toBe('1.100')
+    expect(formatNumber(1.12345, { locale: 'en-US', maximumFractionDigits: 2 })).toBe('1.12')
   })
 
   it('respects signDisplay', () => {

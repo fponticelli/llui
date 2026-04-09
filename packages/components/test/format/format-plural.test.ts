@@ -16,9 +16,7 @@ describe('formatPlural', () => {
   })
 
   it('selects zero when provided', () => {
-    expect(formatPlural(0, { ...messages, zero: 'no items' }, { locale: 'en-US' })).toBe(
-      'no items',
-    )
+    expect(formatPlural(0, { ...messages, zero: 'no items' }, { locale: 'en-US' })).toBe('no items')
   })
 
   it('falls back to other for zero without zero key', () => {

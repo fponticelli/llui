@@ -181,8 +181,10 @@ export function connect<S>(
   const label: string | ((s: S) => string) = opts.label ?? ((s: S) => locale(s).carousel.label)
   const indicatorLabel: string | ((s: S) => string) =
     opts.indicatorLabel ?? ((s: S) => locale(s).carousel.indicators)
-  const nextLabel: string | ((s: S) => string) = opts.nextLabel ?? ((s: S) => locale(s).carousel.next)
-  const prevLabel: string | ((s: S) => string) = opts.prevLabel ?? ((s: S) => locale(s).carousel.prev)
+  const nextLabel: string | ((s: S) => string) =
+    opts.nextLabel ?? ((s: S) => locale(s).carousel.next)
+  const prevLabel: string | ((s: S) => string) =
+    opts.prevLabel ?? ((s: S) => locale(s).carousel.prev)
   const slideLabelFn = opts.slideLabel ?? en.carousel.slide
   const slideId = (i: number): string => `${opts.id}:slide:${i}`
 

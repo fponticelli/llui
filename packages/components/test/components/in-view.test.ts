@@ -88,16 +88,10 @@ describe('in-view observer', () => {
 
     expect(observedElements).toContain(el)
 
-    observeCb(
-      [{ isIntersecting: true } as IntersectionObserverEntry],
-      {} as IntersectionObserver,
-    )
+    observeCb([{ isIntersecting: true } as IntersectionObserverEntry], {} as IntersectionObserver)
     expect(send).toHaveBeenCalledWith({ type: 'enter' })
 
-    observeCb(
-      [{ isIntersecting: false } as IntersectionObserverEntry],
-      {} as IntersectionObserver,
-    )
+    observeCb([{ isIntersecting: false } as IntersectionObserverEntry], {} as IntersectionObserver)
     expect(send).toHaveBeenCalledWith({ type: 'leave' })
 
     cleanup()
@@ -111,10 +105,7 @@ describe('in-view observer', () => {
 
     createObserver(el, send, { once: true })
 
-    observeCb(
-      [{ isIntersecting: true } as IntersectionObserverEntry],
-      {} as IntersectionObserver,
-    )
+    observeCb([{ isIntersecting: true } as IntersectionObserverEntry], {} as IntersectionObserver)
     expect(send).toHaveBeenCalledWith({ type: 'enter' })
     expect(disconnected).toBe(true)
   })

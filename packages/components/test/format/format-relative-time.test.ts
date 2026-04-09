@@ -15,9 +15,7 @@ describe('formatRelativeTime', () => {
   })
 
   it('uses always numeric', () => {
-    expect(formatRelativeTime(-1, 'day', { locale: 'en-US', numeric: 'always' })).toBe(
-      '1 day ago',
-    )
+    expect(formatRelativeTime(-1, 'day', { locale: 'en-US', numeric: 'always' })).toBe('1 day ago')
   })
 
   it('formats with narrow style', () => {

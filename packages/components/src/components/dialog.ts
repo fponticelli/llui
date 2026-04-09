@@ -146,7 +146,8 @@ export function connect<S>(
   const role = opts.role ?? 'dialog'
   const modal = opts.modal !== false
   const locale = useContext<S, Locale>(LocaleContext)
-  const closeLabel: string | ((s: S) => string) = opts.closeLabel ?? ((s: S) => locale(s).dialog.close)
+  const closeLabel: string | ((s: S) => string) =
+    opts.closeLabel ?? ((s: S) => locale(s).dialog.close)
 
   return {
     trigger: {

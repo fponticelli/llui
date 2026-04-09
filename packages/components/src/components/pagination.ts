@@ -177,8 +177,10 @@ export function connect<S>(
 ): PaginationParts<S> {
   const locale = useContext<S, Locale>(LocaleContext)
   const label: string | ((s: S) => string) = opts.label ?? ((s: S) => locale(s).pagination.label)
-  const prevLabel: string | ((s: S) => string) = opts.prevLabel ?? ((s: S) => locale(s).pagination.prev)
-  const nextLabel: string | ((s: S) => string) = opts.nextLabel ?? ((s: S) => locale(s).pagination.next)
+  const prevLabel: string | ((s: S) => string) =
+    opts.prevLabel ?? ((s: S) => locale(s).pagination.prev)
+  const nextLabel: string | ((s: S) => string) =
+    opts.nextLabel ?? ((s: S) => locale(s).pagination.next)
   const pageLabel = opts.pageLabel ?? en.pagination.page
 
   return {

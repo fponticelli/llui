@@ -110,7 +110,8 @@ export function connect<S>(
   const contentId = `${base}:content`
   const titleId = `${base}:title`
   const descId = `${base}:description`
-  const closeLabel: string | ((s: S) => string) = opts.closeLabel ?? ((s: S) => locale(s).popover.close)
+  const closeLabel: string | ((s: S) => string) =
+    opts.closeLabel ?? ((s: S) => locale(s).popover.close)
 
   return {
     trigger: {

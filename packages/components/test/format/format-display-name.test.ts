@@ -3,9 +3,7 @@ import { formatDisplayName } from '../../src/format/format-display-name'
 
 describe('formatDisplayName', () => {
   it('formats language name', () => {
-    expect(formatDisplayName('en-US', 'language', { locale: 'en-US' })).toBe(
-      'American English',
-    )
+    expect(formatDisplayName('en-US', 'language', { locale: 'en-US' })).toBe('American English')
   })
 
   it('formats region name', () => {

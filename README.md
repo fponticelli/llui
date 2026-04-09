@@ -44,7 +44,7 @@ mountApp(document.getElementById('app')!, Counter)
 
 | Package                                           | Description                                                                                         |
 | ------------------------------------------------- | --------------------------------------------------------------------------------------------------- |
-| [`@llui/dom`](packages/dom)                       | Runtime — component, mount, scope tree, bindings, structural primitives, HTML/SVG/MathML helpers   |
+| [`@llui/dom`](packages/dom)                       | Runtime — component, mount, scope tree, bindings, structural primitives, HTML/SVG/MathML helpers    |
 | [`@llui/vite-plugin`](packages/vite-plugin)       | Compiler — 3-pass TypeScript transform, template cloning, source maps                               |
 | [`@llui/effects`](packages/effects)               | Effect system — http, cancel, debounce, sequence, race + `Async<T,E>`, `ApiError`                   |
 | [`@llui/router`](packages/router)                 | Routing — structured path matching, history/hash mode, link helper                                  |

@@ -9,9 +9,9 @@ describe('formatList', () => {
   })
 
   it('formats disjunction (or)', () => {
-    expect(
-      formatList(['red', 'blue', 'green'], { locale: 'en-US', type: 'disjunction' }),
-    ).toBe('red, blue, or green')
+    expect(formatList(['red', 'blue', 'green'], { locale: 'en-US', type: 'disjunction' })).toBe(
+      'red, blue, or green',
+    )
   })
 
   it('formats unit list', () => {

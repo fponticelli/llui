@@ -9,10 +9,7 @@ export interface FormatFileSizeOptions {
   decimalPlaces?: number
 }
 
-export function formatFileSize(
-  value: number | bigint,
-  opts: FormatFileSizeOptions = {},
-): string {
+export function formatFileSize(value: number | bigint, opts: FormatFileSizeOptions = {}): string {
   const locale = opts.locale ?? defaultLocale()
   const units = opts.units ?? DEFAULT_UNITS
   const decimals = opts.decimalPlaces ?? 1

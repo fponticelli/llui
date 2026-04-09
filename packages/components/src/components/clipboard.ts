@@ -105,7 +105,8 @@ export function connect<S>(
   opts: ConnectOptions = {},
 ): ClipboardParts<S> {
   const locale = useContext<S, Locale>(LocaleContext)
-  const copyLabel: string | ((s: S) => string) = opts.copyLabel ?? ((s: S) => locale(s).clipboard.copy)
+  const copyLabel: string | ((s: S) => string) =
+    opts.copyLabel ?? ((s: S) => locale(s).clipboard.copy)
   return {
     root: {
       'data-scope': 'clipboard',

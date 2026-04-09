@@ -58,7 +58,11 @@ function buildIntlOpts(opts: object): Intl.DateTimeFormatOptions {
   return result
 }
 
-function fmt(prefix: string, locale: string, intlOpts: Intl.DateTimeFormatOptions): Intl.DateTimeFormat {
+function fmt(
+  prefix: string,
+  locale: string,
+  intlOpts: Intl.DateTimeFormatOptions,
+): Intl.DateTimeFormat {
   const key = cacheKey(prefix, locale, intlOpts as unknown as Record<string, unknown>)
   return cached(key, () => new Intl.DateTimeFormat(locale, intlOpts))
 }
