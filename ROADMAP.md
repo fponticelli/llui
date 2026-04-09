@@ -38,14 +38,14 @@
 - [x] `initSsrDom()` from `@llui/dom/ssr` (jsdom setup, server-only sub-path)
 - [x] `resolveEffects()` — pre-load data server-side before rendering
 - [x] Hydration code tree-shaken from SPA builds (zero bytes)
-- [x] `@llui/vike` — onRenderHtml + onRenderClient hooks (untested)
+- [x] `@llui/vike` — onRenderHtml + onRenderClient hooks, createOnRenderHtml/createOnRenderClient factories, sub-path exports (client/server), 13 tests
 
 ## Phase 5 — Ecosystem ✅
 
 - [x] DevTools: `installDevTools()` from `@llui/dom/devtools` (sub-path, tree-shaken)
 - [x] `@llui/router`: createRouter, route, param, rest, connectRouter, routing.link/listener
 - [x] `@llui/mcp` — MCP server exposing debug API as LLM tools
-- [x] `@llui/lint-idiomatic` — AST linter for 6 anti-pattern rules
+- [x] `@llui/lint-idiomatic` — AST linter for 15 anti-pattern rules
 - [x] Evaluation suite — 15-task runner with reference implementations
 
 ## Optimizations ✅
@@ -90,7 +90,7 @@
 
 **jfb results (vs Solid/Svelte):**
 
-Beats Solid on 8 of 9, beats Svelte on 8 of 9:
+Top-tier results, competitive with Solid and Svelte:
 
 - Create 1k: **22.3ms** (Solid 23.5, Svelte 23.4, vanilla 22.8)
 - Replace 1k: 24.9ms (Solid 25.6, Svelte 25.8, vanilla 23.7)
@@ -111,6 +111,14 @@ Beats Solid on 8 of 9, beats Svelte on 8 of 9:
 - [x] History-mode routing with `@llui/router`
 - [x] SSR with server-side data loading via `resolveEffects()`
 - [x] `Async<T, ApiError>` state modeling
+
+## Infrastructure ✅
+
+- [x] CI: GitHub Actions workflow — format, build, typecheck, lint, test on every push/PR
+- [x] Docs site: llui.dev via Vike SSG, auto-generated API docs from TypeScript source, benchmarks page from jfb-baseline.json
+- [x] `branch()`/`show()` callbacks receive `View<S, M>` bag (breaking change from `send`-only)
+- [x] Publish script: `scripts/publish.sh` with browser-based npm auth
+- [x] 10 packages published at v0.0.5
 
 ---
 
