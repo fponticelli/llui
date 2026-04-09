@@ -1,7 +1,8 @@
 import { getRenderContext } from '../render-context'
 import { createBinding, applyBinding } from '../binding'
+import { addDisposer } from '../scope'
 import { FULL_MASK } from '../update-loop'
-import { registerOnClear, registerOnRemove } from './each'
+import { registerOnClear } from './each'
 import type { BindingKind } from '../types'
 
 interface SelectorEntry {
@@ -110,29 +111,25 @@ export function selector<S, V>(field: (s: S) => V): SelectorInstance<V> {
       }
       bucket.push(entry)
 
-      // Register callbacks (once per selector per each() block)
+      // Register bulk clear callback (once per selector per each() block)
       if (!registeredOnClear) {
         registerOnClear(() => {
           generation++
           registry.clear()
         })
-        registerOnRemove((key) => {
-          const bucket = registry.get(key as V)
-          if (!bucket) return
-          // Remove current-gen entries and compact the bucket
-          let w = 0
-          for (let r = 0; r < bucket.length; r++) {
-            if (bucket[r]!.gen !== generation) bucket[w++] = bucket[r]!
-            // else: drop it (current gen entry for removed row)
-          }
-          bucket.length = w
-          if (w === 0) registry.delete(key as V)
-        })
         registeredOnClear = true
       }
 
-      // No per-row disposer — stale entries are skipped by generation check
-      // and compacted lazily during updateSelector.
+      // Per-row disposer for generic reconcile paths (scope disposal).
+      // Uses generation check to skip work if already bulk-cleared.
+      const gen = generation
+      const itemScope = getRenderContext().rootScope
+      addDisposer(itemScope, () => {
+        if (gen !== generation) return // already bulk-cleared, no-op
+        const idx = bucket!.indexOf(entry)
+        if (idx !== -1) bucket!.splice(idx, 1)
+        if (bucket!.length === 0) registry.delete(currentKey)
+      })
     },
 
     __directUpdate(state: unknown): void {
