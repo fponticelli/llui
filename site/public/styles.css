@@ -336,14 +336,14 @@ body {
 
 .bench-label {
   font:
-    9px/1 system-ui,
+    10px/1 system-ui,
     sans-serif;
   fill: var(--c-text, #24292f);
 }
 
 .bench-value {
   font:
-    8px/1 system-ui,
+    9px/1 system-ui,
     sans-serif;
   fill: var(--c-text-muted, #656d76);
 }
