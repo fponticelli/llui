@@ -1,4 +1,5 @@
 import type { Send } from '@llui/dom'
+import { flipArrow } from '../utils/direction'
 
 /**
  * Angle slider — a circular input that selects a value in 0..360 degrees
@@ -191,7 +192,8 @@ export function connect<S>(
       'data-part': 'root',
       'data-disabled': (s) => (get(s).disabled ? '' : undefined),
       onKeyDown: (e) => {
-        switch (e.key) {
+        const key = flipArrow(e.key, e.currentTarget as Element)
+        switch (key) {
           case 'ArrowRight':
           case 'ArrowUp':
             e.preventDefault()

@@ -1,4 +1,5 @@
 import type { Send } from '@llui/dom'
+import { flipArrow } from '../utils/direction'
 
 /**
  * Toggle group — a set of toggle buttons. `type: 'single'` enforces
@@ -140,7 +141,8 @@ export function connect<S>(
         'data-value': value,
         onClick: () => send({ type: 'toggle', value }),
         onKeyDown: (e) => {
-          switch (e.key) {
+          const key = flipArrow(e.key, e.currentTarget as Element)
+          switch (key) {
             case 'ArrowRight':
             case 'ArrowDown':
               e.preventDefault()

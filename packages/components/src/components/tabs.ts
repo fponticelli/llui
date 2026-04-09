@@ -1,4 +1,5 @@
 import type { Send } from '@llui/dom'
+import { flipArrow } from '../utils/direction'
 
 /**
  * Tabs — tabbed interface with keyboard navigation. Each tab has a value
@@ -278,9 +279,10 @@ export function connect<S>(
           ) as HTMLElement | null
           const orientation =
             (list?.getAttribute('aria-orientation') as Orientation | null) ?? 'horizontal'
+          const key = flipArrow(e.key, e.currentTarget as Element)
           const nextKey = orientation === 'vertical' ? 'ArrowDown' : 'ArrowRight'
           const prevKey = orientation === 'vertical' ? 'ArrowUp' : 'ArrowLeft'
-          switch (e.key) {
+          switch (key) {
             case nextKey:
               e.preventDefault()
               send({ type: 'focusNext', from: value })

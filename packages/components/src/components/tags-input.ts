@@ -1,5 +1,6 @@
 import type { Send } from '@llui/dom'
 import { useContext } from '@llui/dom'
+import { flipArrow } from '../utils/direction'
 import { LocaleContext } from '../locale'
 import type { Locale } from '../locale'
 
@@ -204,18 +205,19 @@ export function connect<S>(
         send({ type: 'setInput', value: currentInput })
       },
       onKeyDown: (e) => {
-        if (e.key === 'Enter') {
+        const key = flipArrow(e.key, e.currentTarget as Element)
+        if (key === 'Enter') {
           e.preventDefault()
           tryAddTag()
-        } else if (delimiters.includes(e.key)) {
+        } else if (delimiters.includes(key)) {
           e.preventDefault()
           tryAddTag()
-        } else if (e.key === 'Backspace') {
+        } else if (key === 'Backspace') {
           const target = e.target as HTMLInputElement
           if (target.value === '') {
             send({ type: 'removeLast' })
           }
-        } else if (e.key === 'ArrowLeft') {
+        } else if (key === 'ArrowLeft') {
           const target = e.target as HTMLInputElement
           if (target.value === '') {
             e.preventDefault()
@@ -238,13 +240,14 @@ export function connect<S>(
         'data-focused': (s) => (get(s).focusedIndex === index ? '' : undefined),
         onFocus: () => send({ type: 'focusTag', index }),
         onKeyDown: (e) => {
-          if (e.key === 'ArrowLeft') {
+          const key = flipArrow(e.key, e.currentTarget as Element)
+          if (key === 'ArrowLeft') {
             e.preventDefault()
             send({ type: 'focusTagPrev' })
-          } else if (e.key === 'ArrowRight') {
+          } else if (key === 'ArrowRight') {
             e.preventDefault()
             send({ type: 'focusTagNext' })
-          } else if (e.key === 'Backspace' || e.key === 'Delete') {
+          } else if (key === 'Backspace' || key === 'Delete') {
             e.preventDefault()
             send({ type: 'removeTag', index })
           }

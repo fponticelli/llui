@@ -1,5 +1,6 @@
 import type { Send } from '@llui/dom'
 import { useContext } from '@llui/dom'
+import { flipArrow } from '../utils/direction'
 import { LocaleContext, en } from '../locale'
 import type { Locale } from '../locale'
 
@@ -366,7 +367,8 @@ export function connect<S>(
         },
         onFocus: () => send({ type: 'setFocused', date: cell.iso }),
         onKeyDown: (e) => {
-          switch (e.key) {
+          const key = flipArrow(e.key, e.currentTarget as Element)
+          switch (key) {
             case 'ArrowLeft':
               e.preventDefault()
               send({ type: 'moveFocus', days: -1 })

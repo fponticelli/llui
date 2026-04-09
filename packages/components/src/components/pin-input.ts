@@ -1,4 +1,5 @@
 import type { Send } from '@llui/dom'
+import { flipArrow } from '../utils/direction'
 import { en } from '../locale'
 
 /**
@@ -193,12 +194,13 @@ export function connect<S>(
         send({ type: 'setValue', index, value })
       },
       onKeyDown: (e) => {
-        if (e.key === 'Backspace') {
+        const key = flipArrow(e.key, e.currentTarget as Element)
+        if (key === 'Backspace') {
           send({ type: 'backspace', index })
-        } else if (e.key === 'ArrowLeft') {
+        } else if (key === 'ArrowLeft') {
           e.preventDefault()
           send({ type: 'focus', index: index - 1 })
-        } else if (e.key === 'ArrowRight') {
+        } else if (key === 'ArrowRight') {
           e.preventDefault()
           send({ type: 'focus', index: index + 1 })
         }

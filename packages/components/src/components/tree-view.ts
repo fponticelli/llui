@@ -1,4 +1,5 @@
 import type { Send } from '@llui/dom'
+import { flipArrow } from '../utils/direction'
 import {
   typeaheadAccumulate,
   typeaheadMatch,
@@ -383,7 +384,8 @@ export function connect<S>(
         },
         onFocus: () => send({ type: 'focus', id }),
         onKeyDown: (e) => {
-          switch (e.key) {
+          const key = flipArrow(e.key, e.currentTarget as Element)
+          switch (key) {
             case 'ArrowDown':
               e.preventDefault()
               send({ type: 'focusNext' })

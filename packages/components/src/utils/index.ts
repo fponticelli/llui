@@ -29,3 +29,5 @@ export {
 
 export { TreeCollection } from './tree-collection'
 export type { TreeNode } from './tree-collection'
+
+export { resolveDir, flipArrow } from './direction'

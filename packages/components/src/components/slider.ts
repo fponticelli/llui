@@ -1,4 +1,5 @@
 import type { Send } from '@llui/dom'
+import { flipArrow } from '../utils/direction'
 
 /**
  * Slider — numeric input controlled by drag or keyboard. Supports multiple
@@ -217,7 +218,8 @@ export function connect<S>(get: (s: S) => SliderState, send: Send<SliderMsg>): S
 }
 
 function handleThumbKey(e: KeyboardEvent, index: number, send: Send<SliderMsg>): void {
-  switch (e.key) {
+  const key = flipArrow(e.key, e.currentTarget as Element)
+  switch (key) {
     case 'ArrowRight':
     case 'ArrowUp':
       e.preventDefault()

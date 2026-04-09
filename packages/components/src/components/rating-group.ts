@@ -1,4 +1,5 @@
 import type { Send } from '@llui/dom'
+import { flipArrow } from '../utils/direction'
 
 /**
  * Rating group — a sequence of clickable items (stars) representing a
@@ -169,7 +170,8 @@ export function connect<S>(
         },
         onPointerLeave: () => send({ type: 'hover', value: null }),
         onKeyDown: (e) => {
-          switch (e.key) {
+          const key = flipArrow(e.key, e.currentTarget as Element)
+          switch (key) {
             case 'ArrowRight':
             case 'ArrowUp':
               e.preventDefault()

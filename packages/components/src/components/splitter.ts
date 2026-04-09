@@ -1,4 +1,5 @@
 import type { Send } from '@llui/dom'
+import { flipArrow } from '../utils/direction'
 
 /**
  * Splitter — resizable panes with a draggable handle. The handle's position
@@ -165,7 +166,8 @@ export function connect<S>(
       'data-orientation': (s) => get(s).orientation,
       tabIndex: (s) => (get(s).disabled ? -1 : 0),
       onKeyDown: (e) => {
-        switch (e.key) {
+        const key = flipArrow(e.key, e.currentTarget as Element)
+        switch (key) {
           case 'ArrowRight':
           case 'ArrowDown':
             e.preventDefault()
