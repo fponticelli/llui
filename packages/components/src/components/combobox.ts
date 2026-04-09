@@ -1,5 +1,7 @@
 import type { Send, TransitionOptions } from '@llui/dom'
-import { show, portal, onMount, div } from '@llui/dom'
+import { show, portal, onMount, div, useContext } from '@llui/dom'
+import { LocaleContext } from '../locale'
+import type { Locale } from '../locale'
 import { pushDismissable } from '../utils/dismissable'
 import { attachFloating, type Placement } from '../utils/floating'
 
@@ -281,7 +283,7 @@ export interface ComboboxParts<S> {
   }
   trigger: {
     type: 'button'
-    'aria-label': string
+    'aria-label': string | ((s: S) => string)
     'aria-expanded': (s: S) => boolean
     'aria-controls': string
     tabIndex: -1
@@ -320,11 +322,13 @@ export function connect<S>(
   send: Send<ComboboxMsg>,
   opts: ConnectOptions,
 ): ComboboxParts<S> {
+  const locale = useContext<S, Locale>(LocaleContext)
   const base = opts.id
   const inputId = `${base}:input`
   const contentId = `${base}:content`
   const itemId = (index: number): string => `${base}:item:${index}`
-  const triggerLabel = opts.triggerLabel ?? 'Toggle options'
+  const triggerLabel: string | ((s: S) => string) =
+    opts.triggerLabel ?? ((s: S) => locale(s).combobox.toggle)
 
   return {
     root: {

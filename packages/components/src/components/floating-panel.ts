@@ -1,4 +1,7 @@
 import type { Send } from '@llui/dom'
+import { useContext } from '@llui/dom'
+import { LocaleContext } from '../locale'
+import type { Locale } from '../locale'
 
 /**
  * Floating panel — a draggable + resizable window-like surface, useful
@@ -203,7 +206,7 @@ export function update(
 export interface FloatingPanelParts<S> {
   root: {
     role: 'dialog'
-    'aria-label': string
+    'aria-label': string | ((s: S) => string)
     'data-scope': 'floating-panel'
     'data-part': 'root'
     'data-dragging': (s: S) => '' | undefined
@@ -225,21 +228,21 @@ export interface FloatingPanelParts<S> {
   }
   minimizeTrigger: {
     type: 'button'
-    'aria-label': string
+    'aria-label': string | ((s: S) => string)
     'data-scope': 'floating-panel'
     'data-part': 'minimize-trigger'
     onClick: (e: MouseEvent) => void
   }
   maximizeTrigger: {
     type: 'button'
-    'aria-label': string
+    'aria-label': string | ((s: S) => string)
     'data-scope': 'floating-panel'
     'data-part': 'maximize-trigger'
     onClick: (e: MouseEvent) => void
   }
   closeTrigger: {
     type: 'button'
-    'aria-label': string
+    'aria-label': string | ((s: S) => string)
     'data-scope': 'floating-panel'
     'data-part': 'close-trigger'
     onClick: (e: MouseEvent) => void
@@ -264,10 +267,11 @@ export function connect<S>(
   send: Send<FloatingPanelMsg>,
   opts: ConnectOptions = {},
 ): FloatingPanelParts<S> {
+  const locale = useContext<S, Locale>(LocaleContext)
   return {
     root: {
       role: 'dialog',
-      'aria-label': opts.label ?? 'Floating panel',
+      'aria-label': opts.label ?? ((s: S) => locale(s).floatingPanel.label),
       'data-scope': 'floating-panel',
       'data-part': 'root',
       'data-dragging': (s) => (get(s).dragging ? '' : undefined),
@@ -297,21 +301,21 @@ export function connect<S>(
     },
     minimizeTrigger: {
       type: 'button',
-      'aria-label': opts.minimizeLabel ?? 'Minimize',
+      'aria-label': opts.minimizeLabel ?? ((s: S) => locale(s).floatingPanel.minimize),
       'data-scope': 'floating-panel',
       'data-part': 'minimize-trigger',
       onClick: () => send({ type: 'toggleMinimize' }),
     },
     maximizeTrigger: {
       type: 'button',
-      'aria-label': opts.maximizeLabel ?? 'Maximize',
+      'aria-label': opts.maximizeLabel ?? ((s: S) => locale(s).floatingPanel.maximize),
       'data-scope': 'floating-panel',
       'data-part': 'maximize-trigger',
       onClick: () => send({ type: 'toggleMaximize' }),
     },
     closeTrigger: {
       type: 'button',
-      'aria-label': opts.closeLabel ?? 'Close',
+      'aria-label': opts.closeLabel ?? ((s: S) => locale(s).floatingPanel.close),
       'data-scope': 'floating-panel',
       'data-part': 'close-trigger',
       onClick: () => send({ type: 'close' }),

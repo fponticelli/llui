@@ -20,6 +20,7 @@ describe('alert-dialog', () => {
   it('inherits dialog parts', () => {
     const p = connect<Ctx>((s) => s.d, vi.fn(), { id: 'a1' })
     expect(p.trigger['aria-expanded'](wrap({ open: true }))).toBe(true)
-    expect(p.closeTrigger['aria-label']).toBe('Close')
+    const label = p.closeTrigger['aria-label']
+    expect(typeof label === 'function' ? label(wrap({ open: false })) : label).toBe('Close')
   })
 })

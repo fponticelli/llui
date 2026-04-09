@@ -1,4 +1,7 @@
 import type { Send } from '@llui/dom'
+import { useContext } from '@llui/dom'
+import { LocaleContext } from '../locale'
+import type { Locale } from '../locale'
 
 /**
  * Password input — text input with show/hide visibility toggle.
@@ -83,9 +86,10 @@ export function connect<S>(
   send: Send<PasswordInputMsg>,
   opts: ConnectOptions = {},
 ): PasswordInputParts<S> {
+  const locale = useContext<S, Locale>(LocaleContext)
   const autoComplete = opts.autoComplete ?? 'current-password'
-  const showLabel = opts.showLabel ?? 'Show password'
-  const hideLabel = opts.hideLabel ?? 'Hide password'
+  const showLabel = opts.showLabel
+  const hideLabel = opts.hideLabel
 
   return {
     root: {
@@ -105,7 +109,10 @@ export function connect<S>(
     },
     visibilityTrigger: {
       type: 'button',
-      'aria-label': (s) => (get(s).visible ? hideLabel : showLabel),
+      'aria-label': (s) =>
+        get(s).visible
+          ? (hideLabel ?? locale(s).passwordInput.hide)
+          : (showLabel ?? locale(s).passwordInput.show),
       'aria-pressed': (s) => get(s).visible,
       disabled: (s) => get(s).disabled,
       tabIndex: -1,

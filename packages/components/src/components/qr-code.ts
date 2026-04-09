@@ -1,4 +1,7 @@
 import type { Send } from '@llui/dom'
+import { useContext } from '@llui/dom'
+import { LocaleContext } from '../locale'
+import type { Locale } from '../locale'
 
 /**
  * QR code — renders a QR matrix as SVG. llui does not bundle a QR
@@ -115,7 +118,7 @@ export interface QrCodeParts<S> {
   root: {
     'data-scope': 'qr-code'
     'data-part': 'root'
-    'aria-label': string
+    'aria-label': string | ((s: S) => string)
   }
   svg: {
     'data-scope': 'qr-code'
@@ -135,7 +138,7 @@ export interface QrCodeParts<S> {
   }
   downloadTrigger: {
     type: 'button'
-    'aria-label': string
+    'aria-label': string | ((s: S) => string)
     'data-scope': 'qr-code'
     'data-part': 'download-trigger'
     onClick: (e: MouseEvent) => void
@@ -154,7 +157,8 @@ export function connect<S>(
   send: Send<QrCodeMsg>,
   opts: ConnectOptions = {},
 ): QrCodeParts<S> {
-  const label = opts.label ?? 'QR code'
+  const locale = useContext<S, Locale>(LocaleContext)
+  const label: string | ((s: S) => string) = opts.label ?? ((s: S) => locale(s).qrCode.label)
   const filename = opts.downloadFilename ?? 'qrcode.svg'
 
   return {
@@ -184,7 +188,7 @@ export function connect<S>(
     },
     downloadTrigger: {
       type: 'button',
-      'aria-label': opts.downloadLabel ?? 'Download QR code',
+      'aria-label': opts.downloadLabel ?? ((s: S) => locale(s).qrCode.download),
       'data-scope': 'qr-code',
       'data-part': 'download-trigger',
       onClick: () => {

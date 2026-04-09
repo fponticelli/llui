@@ -1,4 +1,7 @@
 import type { Send } from '@llui/dom'
+import { useContext } from '@llui/dom'
+import { LocaleContext } from '../locale'
+import type { Locale } from '../locale'
 
 /**
  * Number input — numeric field with increment/decrement buttons. Clamps
@@ -142,7 +145,7 @@ export interface NumberInputParts<S> {
   }
   increment: {
     type: 'button'
-    'aria-label': string
+    'aria-label': string | ((s: S) => string)
     'aria-disabled': (s: S) => 'true' | undefined
     disabled: (s: S) => boolean
     'data-scope': 'number-input'
@@ -152,7 +155,7 @@ export interface NumberInputParts<S> {
   }
   decrement: {
     type: 'button'
-    'aria-label': string
+    'aria-label': string | ((s: S) => string)
     'aria-disabled': (s: S) => 'true' | undefined
     disabled: (s: S) => boolean
     'data-scope': 'number-input'
@@ -174,8 +177,11 @@ export function connect<S>(
   send: Send<NumberInputMsg>,
   opts: ConnectOptions = {},
 ): NumberInputParts<S> {
-  const incrementLabel = opts.incrementLabel ?? 'Increase value'
-  const decrementLabel = opts.decrementLabel ?? 'Decrease value'
+  const locale = useContext<S, Locale>(LocaleContext)
+  const incrementLabel: string | ((s: S) => string) =
+    opts.incrementLabel ?? ((s: S) => locale(s).numberInput.increment)
+  const decrementLabel: string | ((s: S) => string) =
+    opts.decrementLabel ?? ((s: S) => locale(s).numberInput.decrement)
   const validate = opts.validate
 
   const trySetValue = (value: number) => {

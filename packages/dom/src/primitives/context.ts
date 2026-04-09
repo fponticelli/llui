@@ -81,8 +81,13 @@ export function provide<S, T>(
  * ```
  */
 export function useContext<S, T>(ctx: Context<T>): (s: S) => T {
-  const renderCtx = getRenderContext()
-  let scope: Scope | null = renderCtx.rootScope
+  let scope: Scope | null = null
+  try {
+    scope = getRenderContext().rootScope
+  } catch {
+    // No render context (e.g. called from connect() in a unit test).
+    // Fall through to default resolution below.
+  }
   while (scope) {
     const map = contextMap.get(scope)
     if (map?.has(ctx._id)) {
@@ -95,5 +100,5 @@ export function useContext<S, T>(ctx: Context<T>): (s: S) => T {
     const d = ctx._default
     return () => d
   }
-  throw new Error('[LLui] useContext: no provider found for context')
+  throw new Error('[LLui] useContext: no provider found and no default value')
 }

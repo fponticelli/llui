@@ -1,4 +1,7 @@
 import type { Send } from '@llui/dom'
+import { useContext } from '@llui/dom'
+import { LocaleContext } from '../locale'
+import type { Locale } from '../locale'
 
 /**
  * Table of contents — a navigation list that tracks which heading is
@@ -101,7 +104,7 @@ export interface TocItemParts<S> {
   expandTrigger: {
     type: 'button'
     'aria-expanded': (s: S) => boolean
-    'aria-label': string
+    'aria-label': string | ((s: S) => string)
     'data-scope': 'toc'
     'data-part': 'expand-trigger'
     'data-state': (s: S) => 'open' | 'closed'
@@ -112,7 +115,7 @@ export interface TocItemParts<S> {
 export interface TocParts<S> {
   root: {
     role: 'navigation'
-    'aria-label': string
+    'aria-label': string | ((s: S) => string)
     'data-scope': 'toc'
     'data-part': 'root'
   }
@@ -136,13 +139,15 @@ export function connect<S>(
   send: Send<TocMsg>,
   opts: ConnectOptions = {},
 ): TocParts<S> {
+  const locale = useContext<S, Locale>(LocaleContext)
   const prefix = opts.hrefPrefix ?? '#'
-  const expandLabel = opts.expandLabel ?? 'Toggle section'
+  const expandLabel: string | ((s: S) => string) =
+    opts.expandLabel ?? ((s: S) => locale(s).toc.expand)
 
   return {
     root: {
       role: 'navigation',
-      'aria-label': opts.label ?? 'Table of contents',
+      'aria-label': opts.label ?? ((s: S) => locale(s).toc.label),
       'data-scope': 'toc',
       'data-part': 'root',
     },

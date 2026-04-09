@@ -1,4 +1,7 @@
 import type { Send } from '@llui/dom'
+import { useContext } from '@llui/dom'
+import { LocaleContext } from '../locale'
+import type { Locale } from '../locale'
 
 /**
  * Color picker — HSL/HSV color selection. Tracks hue (0-360), saturation
@@ -143,7 +146,7 @@ export interface ColorPickerParts<S> {
     min: 0
     max: 360
     step: 1
-    'aria-label': string
+    'aria-label': string | ((s: S) => string)
     disabled: (s: S) => boolean
     value: (s: S) => string
     'data-scope': 'color-picker'
@@ -155,7 +158,7 @@ export interface ColorPickerParts<S> {
     min: 0
     max: 100
     step: 1
-    'aria-label': string
+    'aria-label': string | ((s: S) => string)
     disabled: (s: S) => boolean
     value: (s: S) => string
     style: (s: S) => string
@@ -168,7 +171,7 @@ export interface ColorPickerParts<S> {
     min: 0
     max: 100
     step: 1
-    'aria-label': string
+    'aria-label': string | ((s: S) => string)
     disabled: (s: S) => boolean
     value: (s: S) => string
     style: (s: S) => string
@@ -179,7 +182,7 @@ export interface ColorPickerParts<S> {
   hexInput: {
     type: 'text'
     autoComplete: 'off'
-    'aria-label': string
+    'aria-label': string | ((s: S) => string)
     disabled: (s: S) => boolean
     value: (s: S) => string
     'data-scope': 'color-picker'
@@ -206,6 +209,7 @@ export function connect<S>(
   send: Send<ColorPickerMsg>,
   opts: ConnectOptions = {},
 ): ColorPickerParts<S> {
+  const locale = useContext<S, Locale>(LocaleContext)
   return {
     root: {
       'data-scope': 'color-picker',
@@ -217,7 +221,7 @@ export function connect<S>(
       min: 0,
       max: 360,
       step: 1,
-      'aria-label': opts.hueLabel ?? 'Hue',
+      'aria-label': opts.hueLabel ?? ((s: S) => locale(s).colorPicker.hue),
       disabled: (s) => get(s).disabled,
       value: (s) => String(get(s).hsl.h),
       'data-scope': 'color-picker',
@@ -229,7 +233,7 @@ export function connect<S>(
       min: 0,
       max: 100,
       step: 1,
-      'aria-label': opts.saturationLabel ?? 'Saturation',
+      'aria-label': opts.saturationLabel ?? ((s: S) => locale(s).colorPicker.saturation),
       disabled: (s) => get(s).disabled,
       value: (s) => String(get(s).hsl.s),
       style: (s) => {
@@ -246,7 +250,7 @@ export function connect<S>(
       min: 0,
       max: 100,
       step: 1,
-      'aria-label': opts.lightnessLabel ?? 'Lightness',
+      'aria-label': opts.lightnessLabel ?? ((s: S) => locale(s).colorPicker.lightness),
       disabled: (s) => get(s).disabled,
       value: (s) => String(get(s).hsl.l),
       style: (s) => {
@@ -261,7 +265,7 @@ export function connect<S>(
     hexInput: {
       type: 'text',
       autoComplete: 'off',
-      'aria-label': opts.hexLabel ?? 'Hex color',
+      'aria-label': opts.hexLabel ?? ((s: S) => locale(s).colorPicker.hex),
       disabled: (s) => get(s).disabled,
       value: (s) => toHex(get(s).hsl),
       'data-scope': 'color-picker',

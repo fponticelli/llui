@@ -1,4 +1,7 @@
 import type { Send } from '@llui/dom'
+import { useContext } from '@llui/dom'
+import { LocaleContext } from '../locale'
+import type { Locale } from '../locale'
 
 /**
  * Steps — progress indicator for multi-step flows (wizards, checkouts).
@@ -130,7 +133,7 @@ export interface StepsItemParts<S> {
 export interface StepsParts<S> {
   root: {
     role: 'group'
-    'aria-label': string
+    'aria-label': string | ((s: S) => string)
     'data-scope': 'steps'
     'data-part': 'root'
     'data-disabled': (s: S) => '' | undefined
@@ -161,7 +164,8 @@ export function connect<S>(
   send: Send<StepsMsg>,
   opts: ConnectOptions = {},
 ): StepsParts<S> {
-  const label = opts.label ?? 'Progress'
+  const locale = useContext<S, Locale>(LocaleContext)
+  const label: string | ((s: S) => string) = opts.label ?? ((s: S) => locale(s).steps.label)
   return {
     root: {
       role: 'group',

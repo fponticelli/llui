@@ -1,4 +1,7 @@
 import type { Send } from '@llui/dom'
+import { useContext } from '@llui/dom'
+import { LocaleContext } from '../locale'
+import type { Locale } from '../locale'
 
 /**
  * Navigation menu — multi-level menu bar with hover/focus-triggered
@@ -119,7 +122,7 @@ export interface NavItemParts<S> {
 export interface NavMenuParts<S> {
   root: {
     role: 'menubar'
-    'aria-label': string
+    'aria-label': string | ((s: S) => string)
     'data-scope': 'navigation-menu'
     'data-part': 'root'
     'data-disabled': (s: S) => '' | undefined
@@ -145,6 +148,7 @@ export function connect<S>(
   send: Send<NavMenuMsg>,
   opts: ConnectOptions,
 ): NavMenuParts<S> {
+  const locale = useContext<S, Locale>(LocaleContext)
   const triggerId = (v: string): string => `${opts.id}:trigger:${v}`
   const contentId = (v: string): string => `${opts.id}:content:${v}`
   const closeOnLeave = opts.closeOnLeave !== false
@@ -169,7 +173,7 @@ export function connect<S>(
   return {
     root: {
       role: 'menubar',
-      'aria-label': opts.label ?? 'Main navigation',
+      'aria-label': opts.label ?? ((s: S) => locale(s).navigationMenu.label),
       'data-scope': 'navigation-menu',
       'data-part': 'root',
       'data-disabled': (s) => (get(s).disabled ? '' : undefined),

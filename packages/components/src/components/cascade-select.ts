@@ -1,4 +1,7 @@
 import type { Send } from '@llui/dom'
+import { useContext } from '@llui/dom'
+import { LocaleContext } from '../locale'
+import type { Locale } from '../locale'
 
 /**
  * Cascade select — a series of dependent selects where each level's
@@ -120,7 +123,7 @@ export interface CascadeSelectParts<S> {
   }
   clearTrigger: {
     type: 'button'
-    'aria-label': string
+    'aria-label': string | ((s: S) => string)
     disabled: (s: S) => boolean
     'data-scope': 'cascade-select'
     'data-part': 'clear-trigger'
@@ -139,6 +142,7 @@ export function connect<S>(
   send: Send<CascadeSelectMsg>,
   opts: ConnectOptions,
 ): CascadeSelectParts<S> {
+  const locale = useContext<S, Locale>(LocaleContext)
   const levelId = (i: number): string => `${opts.id}:level:${i}`
 
   return {
@@ -150,7 +154,7 @@ export function connect<S>(
     },
     clearTrigger: {
       type: 'button',
-      'aria-label': opts.clearLabel ?? 'Clear selection',
+      'aria-label': opts.clearLabel ?? ((s: S) => locale(s).cascadeSelect.clear),
       disabled: (s) => get(s).values.every((v) => v === null),
       'data-scope': 'cascade-select',
       'data-part': 'clear-trigger',

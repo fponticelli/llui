@@ -1,4 +1,7 @@
 import type { Send } from '@llui/dom'
+import { useContext } from '@llui/dom'
+import { LocaleContext } from '../locale'
+import type { Locale } from '../locale'
 
 /**
  * Image cropper — select a rectangular crop region over an image,
@@ -244,7 +247,7 @@ export interface ImageCropperParts<S> {
   }
   resetTrigger: {
     type: 'button'
-    'aria-label': string
+    'aria-label': string | ((s: S) => string)
     'data-scope': 'image-cropper'
     'data-part': 'reset-trigger'
     onClick: (e: MouseEvent) => void
@@ -260,6 +263,7 @@ export function connect<S>(
   send: Send<ImageCropperMsg>,
   opts: ConnectOptions = {},
 ): ImageCropperParts<S> {
+  const locale = useContext<S, Locale>(LocaleContext)
   return {
     root: {
       'data-scope': 'image-cropper',
@@ -300,7 +304,7 @@ export function connect<S>(
     }),
     resetTrigger: {
       type: 'button',
-      'aria-label': opts.resetLabel ?? 'Reset crop',
+      'aria-label': opts.resetLabel ?? ((s: S) => locale(s).imageCropper.reset),
       'data-scope': 'image-cropper',
       'data-part': 'reset-trigger',
       onClick: () => send({ type: 'reset' }),

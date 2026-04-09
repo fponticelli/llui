@@ -1,4 +1,7 @@
 import type { Send } from '@llui/dom'
+import { useContext } from '@llui/dom'
+import { LocaleContext } from '../locale'
+import type { Locale } from '../locale'
 
 /**
  * Toast — ephemeral non-modal notifications rendered in a fixed region.
@@ -112,7 +115,7 @@ export function nextToastId(): string {
   return `toast-${++toastIdCounter}`
 }
 
-export interface ToastItemParts<_S> {
+export interface ToastItemParts<S> {
   root: {
     role: 'status'
     'aria-atomic': 'true'
@@ -139,7 +142,7 @@ export interface ToastItemParts<_S> {
   }
   closeTrigger: {
     type: 'button'
-    'aria-label': string
+    'aria-label': string | ((s: S) => string)
     'data-scope': 'toast'
     'data-part': 'close-trigger'
     onClick: (e: MouseEvent) => void
@@ -149,7 +152,7 @@ export interface ToastItemParts<_S> {
 export interface ToasterParts<S> {
   region: {
     role: 'region'
-    'aria-label': string
+    'aria-label': string | ((s: S) => string)
     tabIndex: -1
     'data-scope': 'toast'
     'data-part': 'region'
@@ -168,8 +171,11 @@ export function connect<S>(
   send: Send<ToasterMsg>,
   opts: ConnectOptions = {},
 ): ToasterParts<S> {
-  const regionLabel = opts.regionLabel ?? 'Notifications'
-  const closeLabel = opts.closeLabel ?? 'Dismiss notification'
+  const locale = useContext<S, Locale>(LocaleContext)
+  const regionLabel: string | ((s: S) => string) =
+    opts.regionLabel ?? ((s: S) => locale(s).toast.region)
+  const closeLabel: string | ((s: S) => string) =
+    opts.closeLabel ?? ((s: S) => locale(s).toast.dismiss)
 
   return {
     region: {

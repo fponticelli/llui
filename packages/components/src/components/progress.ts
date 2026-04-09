@@ -1,4 +1,5 @@
 import type { Send } from '@llui/dom'
+import { en } from '../locale'
 
 /**
  * Progress — linear or circular progress indicator. Determinate (0..max) or
@@ -136,7 +137,7 @@ export function connect<S>(
 }
 
 function defaultFormat(value: number | null, max: number): string {
-  if (value === null) return 'Loading…'
+  if (value === null) return en.progress.loading
   const pct = Math.round((value / max) * 100)
   return `${pct}%`
 }

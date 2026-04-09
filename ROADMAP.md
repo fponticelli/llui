@@ -158,7 +158,7 @@ All 15 zag.js machines now shipped. 54 headless components total.
 
 - ~~**Controlled/uncontrolled split.**~~ Removed — TEA's outer loop already owns controlled-ness. Adding `defaultValue` / `onValueChange` would duplicate what the architecture provides naturally.
 - ~~**Collections abstraction.**~~ ✅ `TreeCollection` helper shipped. Listbox / combobox / select still feed string arrays directly — revisit if a unified `ListCollection` becomes useful.
-- **i18n / RTL layer.** Universal `translations` object + `dir` prop flipping arrow-key semantics. Today labels are hardcoded English with per-connect overrides in spots.
+- ~~**i18n locale context.**~~ ✅ `Locale` type + `en` defaults + `LocaleContext` via `createContext`. All 29 components with user-facing strings read from context; English apps need zero setup, non-English apps `provide(LocaleContext, accessor, children)` at the root. Per-instance string overrides still work via connect options. RTL `dir` prop flipping not yet implemented.
 - ~~**Validator / transform callbacks.**~~ ✅ `validate` + `transformFiles` shipped for file-upload. Remaining components (editable, number-input, tags-input, pin-input) can add `validate` to their ConnectOptions as needed — same thin pattern, not an architectural blocker.
 
 (`ids?: ElementIds` override for SSR id collisions — explicitly not pursuing, single `opts.id` prefix is adequate.)
@@ -169,7 +169,7 @@ All 15 zag.js machines now shipped. 54 headless components total.
 - ~~**Tri-state `aria-checked`** for hierarchical checkboxes in tree-view.~~ ✅ (`selectionMode: 'checkbox'` + checked/indeterminate state arrays).
 - ~~**`aria-busy`** during async operations~~ ✅ (tree-view loading state). ~~`aria-owns` for virtualized children~~ ✅ (tree-view + listbox).
 - ~~**Orientation-aware keyboard** for tabs~~ ✅ (horizontal tabs use ArrowLeft/Right, vertical use ArrowUp/Down; orientation read from ancestor `[data-part=list]`).
-- **Localized `aria-label`** strings via `translations`.
+- ~~**Localized `aria-label`** strings via locale context.~~ ✅
 - ~~**Tab `indicator` part** with measured `Rect` for animated underlines.~~ ✅ (`watchTabIndicator(root)` utility installs MutationObserver + ResizeObserver and writes CSS custom properties).
 - ~~**Tree-view ArrowLeft**: "collapse-then-jump-to-parent" WAI-ARIA semantics.~~ ✅ (plus ArrowRight "expand-then-focus-first-child"; requires caller to pass `parentId` to `item()`).
 - ~~**Async load-children + in-place rename** for tree-view.~~ ✅ (`loading[]` state + `loadingStart`/`loadingEnd` messages; `renaming`/`renameDraft` + full rename flow).

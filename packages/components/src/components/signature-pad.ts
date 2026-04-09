@@ -1,4 +1,7 @@
 import type { Send } from '@llui/dom'
+import { useContext } from '@llui/dom'
+import { LocaleContext } from '../locale'
+import type { Locale } from '../locale'
 
 /**
  * Signature pad — capture free-form strokes on a canvas. The state
@@ -146,7 +149,7 @@ export function getBounds(
 export interface SignaturePadParts<S> {
   root: {
     role: 'application'
-    'aria-label': string
+    'aria-label': string | ((s: S) => string)
     'data-scope': 'signature-pad'
     'data-part': 'root'
     'data-disabled': (s: S) => '' | undefined
@@ -159,7 +162,7 @@ export interface SignaturePadParts<S> {
   }
   clearTrigger: {
     type: 'button'
-    'aria-label': string
+    'aria-label': string | ((s: S) => string)
     disabled: (s: S) => boolean
     'data-scope': 'signature-pad'
     'data-part': 'clear-trigger'
@@ -167,7 +170,7 @@ export interface SignaturePadParts<S> {
   }
   undoTrigger: {
     type: 'button'
-    'aria-label': string
+    'aria-label': string | ((s: S) => string)
     disabled: (s: S) => boolean
     'data-scope': 'signature-pad'
     'data-part': 'undo-trigger'
@@ -199,10 +202,11 @@ export function connect<S>(
   send: Send<SignaturePadMsg>,
   opts: ConnectOptions = {},
 ): SignaturePadParts<S> {
+  const locale = useContext<S, Locale>(LocaleContext)
   return {
     root: {
       role: 'application',
-      'aria-label': opts.label ?? 'Signature pad',
+      'aria-label': opts.label ?? ((s: S) => locale(s).signaturePad.label),
       'data-scope': 'signature-pad',
       'data-part': 'root',
       'data-disabled': (s) => (get(s).disabled ? '' : undefined),
@@ -215,7 +219,7 @@ export function connect<S>(
     },
     clearTrigger: {
       type: 'button',
-      'aria-label': opts.clearLabel ?? 'Clear signature',
+      'aria-label': opts.clearLabel ?? ((s: S) => locale(s).signaturePad.clear),
       disabled: (s) => isEmpty(get(s)),
       'data-scope': 'signature-pad',
       'data-part': 'clear-trigger',
@@ -223,7 +227,7 @@ export function connect<S>(
     },
     undoTrigger: {
       type: 'button',
-      'aria-label': opts.undoLabel ?? 'Undo last stroke',
+      'aria-label': opts.undoLabel ?? ((s: S) => locale(s).signaturePad.undo),
       disabled: (s) => get(s).strokes.length === 0,
       'data-scope': 'signature-pad',
       'data-part': 'undo-trigger',

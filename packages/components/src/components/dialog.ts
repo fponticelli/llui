@@ -1,5 +1,7 @@
 import type { Send, TransitionOptions } from '@llui/dom'
-import { show, portal, onMount, div } from '@llui/dom'
+import { show, portal, onMount, div, useContext } from '@llui/dom'
+import { LocaleContext } from '../locale'
+import type { Locale } from '../locale'
 import { pushFocusTrap } from '../utils/focus-trap'
 import { pushDismissable } from '../utils/dismissable'
 import { setAriaHiddenOutside } from '../utils/aria-hidden'
@@ -113,7 +115,7 @@ export interface DialogParts<S> {
   }
   closeTrigger: {
     type: 'button'
-    'aria-label': string
+    'aria-label': string | ((s: S) => string)
     'data-scope': 'dialog'
     'data-part': 'close-trigger'
     onClick: (e: MouseEvent) => void
@@ -143,7 +145,8 @@ export function connect<S>(
   const triggerId = `${base}:trigger`
   const role = opts.role ?? 'dialog'
   const modal = opts.modal !== false
-  const closeLabel = opts.closeLabel ?? 'Close'
+  const locale = useContext<S, Locale>(LocaleContext)
+  const closeLabel: string | ((s: S) => string) = opts.closeLabel ?? ((s: S) => locale(s).dialog.close)
 
   return {
     trigger: {

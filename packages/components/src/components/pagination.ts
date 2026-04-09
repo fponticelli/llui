@@ -1,4 +1,7 @@
 import type { Send } from '@llui/dom'
+import { useContext } from '@llui/dom'
+import { LocaleContext, en } from '../locale'
+import type { Locale } from '../locale'
 
 /**
  * Pagination — page navigation with ellipses for large ranges.
@@ -119,14 +122,14 @@ export function pageItems(state: PaginationState): PageItem[] {
 export interface PaginationParts<S> {
   root: {
     role: 'navigation'
-    'aria-label': string
+    'aria-label': string | ((s: S) => string)
     'data-scope': 'pagination'
     'data-part': 'root'
     'data-disabled': (s: S) => '' | undefined
   }
   prevTrigger: {
     type: 'button'
-    'aria-label': string
+    'aria-label': string | ((s: S) => string)
     'aria-disabled': (s: S) => 'true' | undefined
     disabled: (s: S) => boolean
     'data-scope': 'pagination'
@@ -135,7 +138,7 @@ export interface PaginationParts<S> {
   }
   nextTrigger: {
     type: 'button'
-    'aria-label': string
+    'aria-label': string | ((s: S) => string)
     'aria-disabled': (s: S) => 'true' | undefined
     disabled: (s: S) => boolean
     'data-scope': 'pagination'
@@ -172,10 +175,11 @@ export function connect<S>(
   send: Send<PaginationMsg>,
   opts: ConnectOptions = {},
 ): PaginationParts<S> {
-  const label = opts.label ?? 'Pagination'
-  const prevLabel = opts.prevLabel ?? 'Previous page'
-  const nextLabel = opts.nextLabel ?? 'Next page'
-  const pageLabel = opts.pageLabel ?? ((p) => `Page ${p}`)
+  const locale = useContext<S, Locale>(LocaleContext)
+  const label: string | ((s: S) => string) = opts.label ?? ((s: S) => locale(s).pagination.label)
+  const prevLabel: string | ((s: S) => string) = opts.prevLabel ?? ((s: S) => locale(s).pagination.prev)
+  const nextLabel: string | ((s: S) => string) = opts.nextLabel ?? ((s: S) => locale(s).pagination.next)
+  const pageLabel = opts.pageLabel ?? en.pagination.page
 
   return {
     root: {

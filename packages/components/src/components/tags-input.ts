@@ -1,4 +1,7 @@
 import type { Send } from '@llui/dom'
+import { useContext } from '@llui/dom'
+import { LocaleContext } from '../locale'
+import type { Locale } from '../locale'
 
 /**
  * Tags input — text input that creates chips (tags) on commit keys
@@ -104,7 +107,7 @@ export interface TagItemParts<S> {
   }
   remove: {
     type: 'button'
-    'aria-label': string
+    'aria-label': string | ((s: S) => string)
     tabIndex: -1
     'data-scope': 'tags-input'
     'data-part': 'tag-remove'
@@ -123,7 +126,7 @@ export interface TagsInputParts<S> {
   input: {
     type: 'text'
     autoComplete: 'off'
-    'aria-label': string
+    'aria-label': string | ((s: S) => string)
     disabled: (s: S) => boolean
     value: (s: S) => string
     'data-scope': 'tags-input'
@@ -135,7 +138,7 @@ export interface TagsInputParts<S> {
   tag: (value: string, index: number) => TagItemParts<S>
   clearTrigger: {
     type: 'button'
-    'aria-label': string
+    'aria-label': string | ((s: S) => string)
     'data-scope': 'tags-input'
     'data-part': 'clear-trigger'
     onClick: (e: MouseEvent) => void
@@ -159,9 +162,13 @@ export function connect<S>(
   send: Send<TagsInputMsg>,
   opts: ConnectOptions = {},
 ): TagsInputParts<S> {
-  const inputLabel = opts.inputLabel ?? 'Add tag'
-  const removeLabel = opts.removeLabel ?? 'Remove tag'
-  const clearLabel = opts.clearLabel ?? 'Clear all tags'
+  const locale = useContext<S, Locale>(LocaleContext)
+  const inputLabel: string | ((s: S) => string) =
+    opts.inputLabel ?? ((s: S) => locale(s).tagsInput.input)
+  const removeLabel: string | ((s: S) => string) =
+    opts.removeLabel ?? ((s: S) => locale(s).tagsInput.remove)
+  const clearLabel: string | ((s: S) => string) =
+    opts.clearLabel ?? ((s: S) => locale(s).tagsInput.clear)
   const delimiters = opts.delimiters ?? [',']
   const commitOnBlur = opts.commitOnBlur !== false
   const validate = opts.validate

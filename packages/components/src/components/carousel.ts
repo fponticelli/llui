@@ -1,4 +1,7 @@
 import type { Send } from '@llui/dom'
+import { useContext } from '@llui/dom'
+import { LocaleContext, en } from '../locale'
+import type { Locale } from '../locale'
 
 /**
  * Carousel — sliding content viewer with pagination. Tracks active slide
@@ -96,7 +99,7 @@ export interface CarouselSlideParts<S> {
     role: 'tabpanel'
     id: string
     'aria-roledescription': 'slide'
-    'aria-label': string
+    'aria-label': string | ((s: S) => string)
     'data-scope': 'carousel'
     'data-part': 'slide'
     'data-index': string
@@ -106,7 +109,7 @@ export interface CarouselSlideParts<S> {
   indicator: {
     type: 'button'
     role: 'tab'
-    'aria-label': string
+    'aria-label': string | ((s: S) => string)
     'aria-selected': (s: S) => boolean
     'aria-controls': string
     'data-scope': 'carousel'
@@ -121,7 +124,7 @@ export interface CarouselParts<S> {
   root: {
     role: 'region'
     'aria-roledescription': 'carousel'
-    'aria-label': string
+    'aria-label': string | ((s: S) => string)
     'data-scope': 'carousel'
     'data-part': 'root'
     'data-paused': (s: S) => '' | undefined
@@ -136,13 +139,13 @@ export interface CarouselParts<S> {
   }
   indicatorGroup: {
     role: 'tablist'
-    'aria-label': string
+    'aria-label': string | ((s: S) => string)
     'data-scope': 'carousel'
     'data-part': 'indicator-group'
   }
   nextTrigger: {
     type: 'button'
-    'aria-label': string
+    'aria-label': string | ((s: S) => string)
     disabled: (s: S) => boolean
     'data-scope': 'carousel'
     'data-part': 'next-trigger'
@@ -150,7 +153,7 @@ export interface CarouselParts<S> {
   }
   prevTrigger: {
     type: 'button'
-    'aria-label': string
+    'aria-label': string | ((s: S) => string)
     disabled: (s: S) => boolean
     'data-scope': 'carousel'
     'data-part': 'prev-trigger'
@@ -174,11 +177,13 @@ export function connect<S>(
   send: Send<CarouselMsg>,
   opts: ConnectOptions,
 ): CarouselParts<S> {
-  const label = opts.label ?? 'Carousel'
-  const indicatorLabel = opts.indicatorLabel ?? 'Slide indicators'
-  const nextLabel = opts.nextLabel ?? 'Next slide'
-  const prevLabel = opts.prevLabel ?? 'Previous slide'
-  const slideLabelFn = opts.slideLabel
+  const locale = useContext<S, Locale>(LocaleContext)
+  const label: string | ((s: S) => string) = opts.label ?? ((s: S) => locale(s).carousel.label)
+  const indicatorLabel: string | ((s: S) => string) =
+    opts.indicatorLabel ?? ((s: S) => locale(s).carousel.indicators)
+  const nextLabel: string | ((s: S) => string) = opts.nextLabel ?? ((s: S) => locale(s).carousel.next)
+  const prevLabel: string | ((s: S) => string) = opts.prevLabel ?? ((s: S) => locale(s).carousel.prev)
+  const slideLabelFn = opts.slideLabel ?? en.carousel.slide
   const slideId = (i: number): string => `${opts.id}:slide:${i}`
 
   return {
@@ -225,7 +230,7 @@ export function connect<S>(
         role: 'tabpanel',
         id: slideId(index),
         'aria-roledescription': 'slide',
-        'aria-label': slideLabelFn ? slideLabelFn(index, 0) : `Slide ${index + 1}`,
+        'aria-label': slideLabelFn(index, 0),
         'data-scope': 'carousel',
         'data-part': 'slide',
         'data-index': String(index),
@@ -235,7 +240,7 @@ export function connect<S>(
       indicator: {
         type: 'button',
         role: 'tab',
-        'aria-label': `Go to slide ${index + 1}`,
+        'aria-label': en.carousel.goToSlide(index),
         'aria-selected': (s) => get(s).current === index,
         'aria-controls': slideId(index),
         'data-scope': 'carousel',

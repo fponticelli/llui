@@ -86,7 +86,8 @@ describe('toast.connect', () => {
 
   it('region role=region', () => {
     expect(parts.region.role).toBe('region')
-    expect(parts.region['aria-label']).toBe('Notifications')
+    const label = parts.region['aria-label']
+    expect(typeof label === 'function' ? label({} as Ctx) : label).toBe('Notifications')
   })
 
   it('toast root uses assertive for error type', () => {

@@ -1,4 +1,7 @@
 import type { Send } from '@llui/dom'
+import { useContext } from '@llui/dom'
+import { LocaleContext } from '../locale'
+import type { Locale } from '../locale'
 
 /**
  * Date input — keyboard-only date field with masked parsing. Unlike
@@ -168,7 +171,7 @@ export interface DateInputParts<S> {
   }
   clearTrigger: {
     type: 'button'
-    'aria-label': string
+    'aria-label': string | ((s: S) => string)
     disabled: (s: S) => boolean
     'data-scope': 'date-input'
     'data-part': 'clear-trigger'
@@ -193,6 +196,7 @@ export function connect<S>(
   send: Send<DateInputMsg>,
   opts: ConnectOptions = {},
 ): DateInputParts<S> {
+  const locale = useContext<S, Locale>(LocaleContext)
   return {
     root: {
       'data-scope': 'date-input',
@@ -223,7 +227,7 @@ export function connect<S>(
     },
     clearTrigger: {
       type: 'button',
-      'aria-label': opts.clearLabel ?? 'Clear date',
+      'aria-label': opts.clearLabel ?? ((s: S) => locale(s).dateInput.clear),
       disabled: (s) => get(s).input === '',
       'data-scope': 'date-input',
       'data-part': 'clear-trigger',

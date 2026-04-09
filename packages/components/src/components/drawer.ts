@@ -1,5 +1,7 @@
 import type { Send, TransitionOptions } from '@llui/dom'
-import { show, portal, onMount, div } from '@llui/dom'
+import { show, portal, onMount, div, useContext } from '@llui/dom'
+import { LocaleContext } from '../locale'
+import type { Locale } from '../locale'
 import { pushDismissable } from '../utils/dismissable'
 import { pushFocusTrap } from '../utils/focus-trap'
 import { setAriaHiddenOutside } from '../utils/aria-hidden'
@@ -90,7 +92,7 @@ export interface DrawerParts<S> {
   }
   closeTrigger: {
     type: 'button'
-    'aria-label': string
+    'aria-label': string | ((s: S) => string)
     'data-scope': 'drawer'
     'data-part': 'close-trigger'
     onClick: (e: MouseEvent) => void
@@ -108,13 +110,14 @@ export function connect<S>(
   send: Send<DrawerMsg>,
   opts: ConnectOptions,
 ): DrawerParts<S> {
+  const locale = useContext<S, Locale>(LocaleContext)
   const side = opts.side ?? 'right'
   const base = opts.id
   const contentId = `${base}:content`
   const titleId = `${base}:title`
   const descId = `${base}:description`
   const triggerId = `${base}:trigger`
-  const closeLabel = opts.closeLabel ?? 'Close'
+  const closeLabel: string | ((s: S) => string) = opts.closeLabel ?? ((s: S) => locale(s).drawer.close)
 
   return {
     trigger: {

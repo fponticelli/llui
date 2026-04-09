@@ -1,4 +1,7 @@
 import type { Send } from '@llui/dom'
+import { useContext } from '@llui/dom'
+import { LocaleContext } from '../locale'
+import type { Locale } from '../locale'
 
 /**
  * Clipboard — copy-to-clipboard with transient "copied" feedback. The
@@ -69,7 +72,7 @@ export interface ClipboardParts<S> {
   }
   trigger: {
     type: 'button'
-    'aria-label': string
+    'aria-label': string | ((s: S) => string)
     'data-scope': 'clipboard'
     'data-part': 'trigger'
     'data-copied': (s: S) => '' | undefined
@@ -101,7 +104,8 @@ export function connect<S>(
   send: Send<ClipboardMsg>,
   opts: ConnectOptions = {},
 ): ClipboardParts<S> {
-  const copyLabel = opts.copyLabel ?? 'Copy to clipboard'
+  const locale = useContext<S, Locale>(LocaleContext)
+  const copyLabel: string | ((s: S) => string) = opts.copyLabel ?? ((s: S) => locale(s).clipboard.copy)
   return {
     root: {
       'data-scope': 'clipboard',

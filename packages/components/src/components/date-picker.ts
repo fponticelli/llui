@@ -1,4 +1,7 @@
 import type { Send } from '@llui/dom'
+import { useContext } from '@llui/dom'
+import { LocaleContext, en } from '../locale'
+import type { Locale } from '../locale'
 
 /**
  * Date picker — calendar with month navigation and date selection. Works
@@ -279,7 +282,7 @@ export interface DatePickerParts<S> {
   }
   prevMonthTrigger: {
     type: 'button'
-    'aria-label': string
+    'aria-label': string | ((s: S) => string)
     disabled: (s: S) => boolean
     'data-scope': 'date-picker'
     'data-part': 'prev-month-trigger'
@@ -287,7 +290,7 @@ export interface DatePickerParts<S> {
   }
   nextMonthTrigger: {
     type: 'button'
-    'aria-label': string
+    'aria-label': string | ((s: S) => string)
     disabled: (s: S) => boolean
     'data-scope': 'date-picker'
     'data-part': 'next-month-trigger'
@@ -302,29 +305,17 @@ export interface ConnectOptions {
   gridLabel?: (year: number, month: number) => string
 }
 
-const MONTH_NAMES = [
-  'January',
-  'February',
-  'March',
-  'April',
-  'May',
-  'June',
-  'July',
-  'August',
-  'September',
-  'October',
-  'November',
-  'December',
-]
-
 export function connect<S>(
   get: (s: S) => DatePickerState,
   send: Send<DatePickerMsg>,
   opts: ConnectOptions = {},
 ): DatePickerParts<S> {
-  const prevLabel = opts.prevLabel ?? 'Previous month'
-  const nextLabel = opts.nextLabel ?? 'Next month'
-  const gridLabel = opts.gridLabel ?? ((y, m) => `${MONTH_NAMES[m - 1]} ${y}`)
+  const locale = useContext<S, Locale>(LocaleContext)
+  const prevLabel: string | ((s: S) => string) =
+    opts.prevLabel ?? ((s: S) => locale(s).datePicker.prev)
+  const nextLabel: string | ((s: S) => string) =
+    opts.nextLabel ?? ((s: S) => locale(s).datePicker.next)
+  const gridLabel = opts.gridLabel ?? en.datePicker.grid
 
   return {
     root: {

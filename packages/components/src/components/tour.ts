@@ -1,4 +1,7 @@
 import type { Send } from '@llui/dom'
+import { useContext } from '@llui/dom'
+import { LocaleContext } from '../locale'
+import type { Locale } from '../locale'
 
 /**
  * Tour — guided walkthrough over a sequence of steps, each targeting
@@ -169,7 +172,7 @@ export interface TourParts<S> {
   }
   closeTrigger: {
     type: 'button'
-    'aria-label': string
+    'aria-label': string | ((s: S) => string)
     'data-scope': 'tour'
     'data-part': 'close-trigger'
     onClick: (e: MouseEvent) => void
@@ -189,6 +192,7 @@ export function connect<S>(
   send: Send<TourMsg>,
   opts: ConnectOptions,
 ): TourParts<S> {
+  const locale = useContext<S, Locale>(LocaleContext)
   const titleId = `${opts.id}:title`
   const descId = `${opts.id}:description`
   const closeOnBackdrop = opts.closeOnBackdropClick === true
@@ -246,7 +250,7 @@ export function connect<S>(
     },
     closeTrigger: {
       type: 'button',
-      'aria-label': opts.closeLabel ?? 'Close tour',
+      'aria-label': opts.closeLabel ?? ((s: S) => locale(s).tour.close),
       'data-scope': 'tour',
       'data-part': 'close-trigger',
       onClick: () => send({ type: 'stop' }),

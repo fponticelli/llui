@@ -1,4 +1,7 @@
 import type { Send } from '@llui/dom'
+import { useContext } from '@llui/dom'
+import { LocaleContext } from '../locale'
+import type { Locale } from '../locale'
 
 /**
  * File upload — input element + drag-and-drop zone. Tracks selected files,
@@ -234,7 +237,7 @@ export function preventDocumentDrop(): () => void {
   }
 }
 
-export interface FileUploadItemParts<_S> {
+export interface FileUploadItemParts<S> {
   item: {
     'data-scope': 'file-upload'
     'data-part': 'item'
@@ -254,7 +257,7 @@ export interface FileUploadItemParts<_S> {
   }
   removeTrigger: {
     type: 'button'
-    'aria-label': string
+    'aria-label': string | ((s: S) => string)
     'data-scope': 'file-upload'
     'data-part': 'item-remove'
     onClick: (e: MouseEvent) => void
@@ -262,7 +265,7 @@ export interface FileUploadItemParts<_S> {
   /** Zag-aligned alias for removeTrigger. Same wiring. */
   itemDeleteTrigger: {
     type: 'button'
-    'aria-label': string
+    'aria-label': string | ((s: S) => string)
     'data-scope': 'file-upload'
     'data-part': 'item-delete-trigger'
     onClick: (e: MouseEvent) => void
@@ -318,7 +321,7 @@ export interface FileUploadParts<S> {
   }
   clearTrigger: {
     type: 'button'
-    'aria-label': string
+    'aria-label': string | ((s: S) => string)
     'data-scope': 'file-upload'
     'data-part': 'clear-trigger'
     onClick: (e: MouseEvent) => void
@@ -365,9 +368,12 @@ export function connect<S>(
   send: Send<FileUploadMsg>,
   opts: ConnectOptions,
 ): FileUploadParts<S> {
+  const locale = useContext<S, Locale>(LocaleContext)
   const inputId = `${opts.id}:input`
-  const removeLabel = opts.removeLabel ?? 'Remove file'
-  const clearLabel = opts.clearLabel ?? 'Clear files'
+  const removeLabel: string | ((s: S) => string) =
+    opts.removeLabel ?? ((s: S) => locale(s).fileUpload.remove)
+  const clearLabel: string | ((s: S) => string) =
+    opts.clearLabel ?? ((s: S) => locale(s).fileUpload.clear)
 
   const runPipeline = async (
     raw: File[],

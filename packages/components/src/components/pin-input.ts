@@ -1,4 +1,5 @@
 import type { Send } from '@llui/dom'
+import { en } from '../locale'
 
 /**
  * Pin input — a sequence of single-character fields for OTP codes, etc.
@@ -146,7 +147,7 @@ export function connect<S>(
   opts: ConnectOptions,
 ): PinInputParts<S> {
   const labelId = `${opts.id}:label`
-  const inputLabel = opts.inputLabel ?? ((i: number) => `Digit ${i + 1}`)
+  const inputLabel = opts.inputLabel ?? en.pinInput.input
   const validate = opts.validate
 
   return {

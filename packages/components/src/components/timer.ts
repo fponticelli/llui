@@ -1,4 +1,7 @@
 import type { Send } from '@llui/dom'
+import { useContext } from '@llui/dom'
+import { LocaleContext } from '../locale'
+import type { Locale } from '../locale'
 
 /**
  * Timer — counts elapsed time up from zero, or down from a configured
@@ -139,7 +142,7 @@ export interface TimerParts<S> {
   }
   startTrigger: {
     type: 'button'
-    'aria-label': string
+    'aria-label': string | ((s: S) => string)
     'data-scope': 'timer'
     'data-part': 'start-trigger'
     disabled: (s: S) => boolean
@@ -147,7 +150,7 @@ export interface TimerParts<S> {
   }
   pauseTrigger: {
     type: 'button'
-    'aria-label': string
+    'aria-label': string | ((s: S) => string)
     'data-scope': 'timer'
     'data-part': 'pause-trigger'
     disabled: (s: S) => boolean
@@ -155,7 +158,7 @@ export interface TimerParts<S> {
   }
   resetTrigger: {
     type: 'button'
-    'aria-label': string
+    'aria-label': string | ((s: S) => string)
     'data-scope': 'timer'
     'data-part': 'reset-trigger'
     onClick: (e: MouseEvent) => void
@@ -180,6 +183,7 @@ export function connect<S>(
   send: Send<TimerMsg>,
   opts: ConnectOptions = {},
 ): TimerParts<S> {
+  const locale = useContext<S, Locale>(LocaleContext)
   return {
     root: {
       'data-scope': 'timer',
@@ -195,7 +199,7 @@ export function connect<S>(
     },
     startTrigger: {
       type: 'button',
-      'aria-label': opts.startLabel ?? 'Start timer',
+      'aria-label': opts.startLabel ?? ((s: S) => locale(s).timer.start),
       'data-scope': 'timer',
       'data-part': 'start-trigger',
       disabled: (s) => get(s).running,
@@ -203,7 +207,7 @@ export function connect<S>(
     },
     pauseTrigger: {
       type: 'button',
-      'aria-label': opts.pauseLabel ?? 'Pause timer',
+      'aria-label': opts.pauseLabel ?? ((s: S) => locale(s).timer.pause),
       'data-scope': 'timer',
       'data-part': 'pause-trigger',
       disabled: (s) => !get(s).running,
@@ -211,7 +215,7 @@ export function connect<S>(
     },
     resetTrigger: {
       type: 'button',
-      'aria-label': opts.resetLabel ?? 'Reset timer',
+      'aria-label': opts.resetLabel ?? ((s: S) => locale(s).timer.reset),
       'data-scope': 'timer',
       'data-part': 'reset-trigger',
       onClick: () => send({ type: 'reset' }),
