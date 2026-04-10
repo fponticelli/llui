@@ -552,7 +552,7 @@ const parts = componentName.connect<State>((s) => s.field, send, { id: '...' })
 
 **Connect options:** `ConnectOptions`
 
-**Parts:** `root`, `grid`, `prevMonthTrigger`, `nextMonthTrigger`, `dayCell`
+**Parts:** `root`, `grid`, `row`, `prevMonthTrigger`, `nextMonthTrigger`, `dayCell`
 
 ---
 

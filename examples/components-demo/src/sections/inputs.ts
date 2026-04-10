@@ -342,9 +342,10 @@ export const App = component<State, Msg, never>({
             { ...rg.root, class: 'flex flex-col gap-2' },
             ['small', 'medium', 'large'].map((v) => {
               const p = rg.item(v)
+              const labelText = v.charAt(0).toUpperCase() + v.slice(1)
               return label({ class: 'flex items-center gap-2 cursor-pointer' }, [
-                div({ ...p.root }, [div({ ...p.indicator }, [])]),
-                span({ class: 'text-sm' }, [text(v.charAt(0).toUpperCase() + v.slice(1))]),
+                div({ ...p.root, 'aria-label': labelText }, [div({ ...p.indicator }, [])]),
+                span({ class: 'text-sm' }, [text(labelText)]),
               ])
             }),
           ),
@@ -370,7 +371,7 @@ export const App = component<State, Msg, never>({
         card('Number Input', [
           div({ ...ni.root }, [
             button({ ...ni.decrement }, [text('−')]),
-            input({ ...ni.input }),
+            input({ ...ni.input, 'aria-label': 'Quantity' }),
             button({ ...ni.increment }, [text('+')]),
           ]),
           div({ class: 'mt-3 text-sm text-text-muted' }, [
@@ -380,7 +381,7 @@ export const App = component<State, Msg, never>({
         ]),
         card('Password Input', [
           div({ ...pw.root }, [
-            input({ ...pw.input }),
+            input({ ...pw.input, 'aria-label': 'Password' }),
             button({ ...pw.visibilityTrigger }, [
               text((s: State) => (s.password.visible ? 'Hide' : 'Show')),
             ]),
@@ -435,7 +436,7 @@ export const App = component<State, Msg, never>({
           div({ ...sl.root, class: 'relative' }, [
             div({ ...sl.control }, [
               div({ ...sl.track }, [div({ ...sl.range }, [])]),
-              div({ ...sl.thumb(0).thumb }, []),
+              div({ ...sl.thumb(0).thumb, 'aria-label': 'Volume' }, []),
             ]),
           ]),
           div({ class: 'mt-2 text-sm text-text-muted' }, [

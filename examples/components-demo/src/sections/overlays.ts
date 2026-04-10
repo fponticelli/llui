@@ -495,7 +495,7 @@ export const App = component<State, Msg, never>({
           }),
         ]),
         card('Select', [
-          button({ ...se.trigger }, [
+          button({ ...se.trigger, 'aria-label': 'Select color' }, [
             span([text((s: State) => se.valueText(s))]),
             span({ class: 'ml-2 text-text-muted' }, [text('▾')]),
           ]),

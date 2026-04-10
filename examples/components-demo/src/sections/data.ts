@@ -203,7 +203,7 @@ export const App = component<State, Msg, never>({
     const pgItem = (page: number): Node => button({ ...pg.item(page) }, [text(String(page))])
 
     const slides = ['Mountains', 'Ocean', 'Forest', 'Desert']
-    const colors = ['#0891b2', '#0284c7', '#166534', '#d97706']
+    const colors = ['#0e7490', '#0369a1', '#14532d', '#b45309']
     const renderSlides = (): Node[] =>
       slides.map((s, i) =>
         div({ ...cr.slide(i).slide, style: `background:${colors[i]}` }, [text(s)]),
@@ -297,7 +297,11 @@ export const App = component<State, Msg, never>({
         ]),
         card('Listbox', [
           div(
-            { ...lb.root, class: 'flex flex-col gap-1 rounded border border-slate-200 p-1' },
+            {
+              ...lb.root,
+              'aria-label': 'Status filter',
+              class: 'flex flex-col gap-1 rounded border border-slate-200 p-1',
+            },
             ['Draft', 'Published', 'Archived', 'Deleted'].map((v, i) => {
               const p = lb.item(v, i).root
               return div(

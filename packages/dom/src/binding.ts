@@ -56,8 +56,15 @@ export function applyBinding(
     }
 
     case 'attr':
-      if (value == null || value === false) {
+      if (value == null) {
         ;(target.node as Element).removeAttribute(target.key!)
+      } else if (value === false) {
+        // ARIA attributes need explicit "false"; others are removed
+        if (target.key!.startsWith('aria-')) {
+          ;(target.node as Element).setAttribute(target.key!, 'false')
+        } else {
+          ;(target.node as Element).removeAttribute(target.key!)
+        }
       } else {
         ;(target.node as Element).setAttribute(target.key!, String(value))
       }

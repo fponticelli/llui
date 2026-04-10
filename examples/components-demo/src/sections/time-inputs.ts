@@ -149,6 +149,7 @@ export const App = component<State, Msg, never>({
           div(
             {
               ...ag.root,
+              'aria-label': 'Angle',
               class:
                 'flex items-center gap-4 rounded focus:outline focus:outline-2 focus:outline-blue-300',
             },

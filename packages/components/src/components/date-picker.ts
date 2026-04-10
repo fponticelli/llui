@@ -249,6 +249,19 @@ export function monthGrid(state: DatePickerState): DayCell[] {
   return cells
 }
 
+/**
+ * Group a flat `DayCell[]` (from `monthGrid`) into rows of 7 — one row
+ * per week — so the view can wrap each in a `role="row"` element as
+ * required by the WAI-ARIA grid pattern.
+ */
+export function weekRows(cells: DayCell[]): DayCell[][] {
+  const rows: DayCell[][] = []
+  for (let i = 0; i < cells.length; i += 7) {
+    rows.push(cells.slice(i, i + 7))
+  }
+  return rows
+}
+
 export interface DayCellParts<_S> {
   cell: {
     role: 'gridcell'
@@ -280,6 +293,11 @@ export interface DatePickerParts<S> {
     'aria-label': (s: S) => string
     'data-scope': 'date-picker'
     'data-part': 'grid'
+  }
+  row: {
+    role: 'row'
+    'data-scope': 'date-picker'
+    'data-part': 'row'
   }
   prevMonthTrigger: {
     type: 'button'
@@ -329,6 +347,11 @@ export function connect<S>(
       'aria-label': (s) => gridLabel(get(s).visibleYear, get(s).visibleMonth),
       'data-scope': 'date-picker',
       'data-part': 'grid',
+    },
+    row: {
+      role: 'row',
+      'data-scope': 'date-picker',
+      'data-part': 'row',
     },
     prevMonthTrigger: {
       type: 'button',
@@ -413,4 +436,4 @@ export function connect<S>(
   }
 }
 
-export const datePicker = { init, update, connect, monthGrid }
+export const datePicker = { init, update, connect, monthGrid, weekRows }

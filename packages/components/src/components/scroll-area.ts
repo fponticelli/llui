@@ -144,6 +144,7 @@ export interface ScrollAreaParts<S> {
     onMouseLeave: (e: MouseEvent) => void
   }
   viewport: {
+    tabIndex: 0
     'data-scope': 'scroll-area'
     'data-part': 'viewport'
     onScroll: (e: Event) => void
@@ -197,6 +198,7 @@ export function connect<S>(
       onMouseLeave: () => send({ type: 'setHovered', hovered: false }),
     },
     viewport: {
+      tabIndex: 0,
       'data-scope': 'scroll-area',
       'data-part': 'viewport',
       onScroll: (e) => {

@@ -101,7 +101,6 @@ export interface ToggleGroupItemParts<S> {
 export interface ToggleGroupParts<S> {
   root: {
     role: 'group'
-    'aria-orientation': (s: S) => Orientation
     'aria-disabled': (s: S) => 'true' | undefined
     'data-scope': 'toggle-group'
     'data-part': 'root'
@@ -118,7 +117,6 @@ export function connect<S>(
   return {
     root: {
       role: 'group',
-      'aria-orientation': (s) => get(s).orientation,
       'aria-disabled': (s) => (get(s).disabled ? 'true' : undefined),
       'data-scope': 'toggle-group',
       'data-part': 'root',

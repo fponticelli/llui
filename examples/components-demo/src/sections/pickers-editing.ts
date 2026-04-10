@@ -16,6 +16,7 @@ import {
   type DatePickerMsg,
   type DayCell,
   monthGrid,
+  weekRows,
 } from '@llui/components/date-picker'
 import {
   timePicker,
@@ -225,37 +226,51 @@ export const App = component<State, Msg, never>({
 
     const dpGrid = (): Node[] => {
       const dowLabels = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
-      const dowCells = dowLabels.map((d) =>
-        span({ class: 'text-center text-[0.625rem] uppercase text-text-muted py-1' }, [text(d)]),
+      const dowRow = div(
+        { ...dp.row },
+        dowLabels.map((d) =>
+          span(
+            {
+              role: 'columnheader',
+              class: 'text-center text-[0.625rem] uppercase text-text-muted py-1',
+            },
+            [text(d)],
+          ),
+        ),
       )
-      const cells = each({
-        items: (s) => monthGrid(s.datePicker),
-        key: (c) => c.iso,
+      const rows = each({
+        items: (s) => weekRows(monthGrid(s.datePicker)),
+        key: (row) => row[0].iso,
         render: ({ item }) => {
-          const iso = item((c: DayCell) => c.iso)()
-          const day = item((c: DayCell) => c.day)()
-          const inMonth = item((c: DayCell) => c.inMonth)()
+          const week = item((r: DayCell[]) => r)()
           return [
-            button(
-              {
-                role: 'gridcell',
-                'data-date': iso,
-                'data-in-month': inMonth ? '' : undefined,
-                'data-today': (s: State) => (iso === todayIsoString() ? '' : undefined),
-                'data-selected': (s: State) => (s.datePicker.value === iso ? '' : undefined),
-                'data-focused': (s: State) => (s.datePicker.focused === iso ? '' : undefined),
-                tabIndex: (s: State) => (s.datePicker.focused === iso ? 0 : -1),
-                onClick: () => {
-                  send({ type: 'datePicker', msg: { type: 'setFocused', date: iso } })
-                  send({ type: 'datePicker', msg: { type: 'selectFocused' } })
-                },
-              },
-              [text(String(day))],
+            div(
+              { ...dp.row },
+              week.map((cell) =>
+                button(
+                  {
+                    role: 'gridcell',
+                    'data-date': cell.iso,
+                    'data-in-month': cell.inMonth ? '' : undefined,
+                    'data-today': (s: State) => (cell.iso === todayIsoString() ? '' : undefined),
+                    'data-selected': (s: State) =>
+                      s.datePicker.value === cell.iso ? '' : undefined,
+                    'data-focused': (s: State) =>
+                      s.datePicker.focused === cell.iso ? '' : undefined,
+                    tabIndex: (s: State) => (s.datePicker.focused === cell.iso ? 0 : -1),
+                    onClick: () => {
+                      send({ type: 'datePicker', msg: { type: 'setFocused', date: cell.iso } })
+                      send({ type: 'datePicker', msg: { type: 'selectFocused' } })
+                    },
+                  },
+                  [text(String(cell.day))],
+                ),
+              ),
             ),
           ]
         },
       })
-      return [...dowCells, ...cells]
+      return [dowRow, ...rows]
     }
 
     return [
@@ -341,7 +356,7 @@ export const App = component<State, Msg, never>({
         ]),
         card('Clipboard', [
           div({ ...cb.root }, [
-            input({ ...cb.input }),
+            input({ ...cb.input, 'aria-label': 'Text to copy' }),
             button(
               {
                 ...cb.trigger,

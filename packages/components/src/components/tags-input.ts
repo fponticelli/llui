@@ -96,7 +96,6 @@ export function update(state: TagsInputState, msg: TagsInputMsg): [TagsInputStat
 
 export interface TagItemParts<S> {
   root: {
-    role: 'button'
     tabIndex: (s: S) => number
     'data-scope': 'tags-input'
     'data-part': 'tag'
@@ -231,7 +230,6 @@ export function connect<S>(
     },
     tag: (value: string, index: number): TagItemParts<S> => ({
       root: {
-        role: 'button',
         tabIndex: (s) => (get(s).focusedIndex === index ? 0 : -1),
         'data-scope': 'tags-input',
         'data-part': 'tag',

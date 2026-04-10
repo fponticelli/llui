@@ -301,6 +301,7 @@ export interface FileUploadParts<S> {
   hiddenInput: {
     type: 'file'
     tabIndex: -1
+    'aria-hidden': 'true'
     style: string
     disabled: (s: S) => boolean
     multiple: (s: S) => boolean
@@ -456,6 +457,7 @@ export function connect<S>(
     hiddenInput: {
       type: 'file',
       tabIndex: -1,
+      'aria-hidden': 'true',
       style: HIDDEN_STYLE,
       disabled: (s) => get(s).disabled,
       multiple: (s) => get(s).multiple,

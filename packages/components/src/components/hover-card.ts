@@ -37,7 +37,6 @@ export interface HoverCardParts<S> {
   trigger: {
     id: string
     'aria-haspopup': 'dialog'
-    'aria-expanded': (s: S) => boolean
     'aria-controls': string
     'data-state': (s: S) => 'open' | 'closed'
     'data-scope': 'hover-card'
@@ -120,7 +119,6 @@ export function connect<S>(
     trigger: {
       id: triggerId,
       'aria-haspopup': 'dialog',
-      'aria-expanded': (s) => get(s).open,
       'aria-controls': contentId,
       'data-state': (s) => (get(s).open ? 'open' : 'closed'),
       'data-scope': 'hover-card',

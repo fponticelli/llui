@@ -10,7 +10,7 @@
  * (registerToastHandler / registerConfirmHandler) before any other
  * section's view() runs and potentially calls showToast / askConfirm.
  */
-import { component, div, child, type ComponentDef } from '@llui/dom'
+import { component, div, main, child, type ComponentDef } from '@llui/dom'
 import { App as OverlaysApp } from './sections/overlays'
 import { App as InputsApp } from './sections/inputs'
 import { App as DataApp } from './sections/data'
@@ -36,13 +36,15 @@ export const App = component<State, Msg, never>({
   init: () => [{}, []],
   update: (state) => [state, []],
   view: () => [
-    div(child({ def: erase(OverlaysApp), key: 'overlays', props: () => ({}) })),
-    div(child({ def: erase(InputsApp), key: 'inputs', props: () => ({}) })),
-    div(child({ def: erase(DataApp), key: 'data', props: () => ({}) })),
-    div(child({ def: erase(PickersEditingApp), key: 'pickers-editing', props: () => ({}) })),
-    div(child({ def: erase(TimeInputsApp), key: 'time-inputs', props: () => ({}) })),
-    div(child({ def: erase(ContentApp), key: 'content', props: () => ({}) })),
-    div(child({ def: erase(SurfacesApp), key: 'surfaces', props: () => ({}) })),
-    div(child({ def: erase(CanvasApp), key: 'canvas', props: () => ({}) })),
+    main([
+      div(child({ def: erase(OverlaysApp), key: 'overlays', props: () => ({}) })),
+      div(child({ def: erase(InputsApp), key: 'inputs', props: () => ({}) })),
+      div(child({ def: erase(DataApp), key: 'data', props: () => ({}) })),
+      div(child({ def: erase(PickersEditingApp), key: 'pickers-editing', props: () => ({}) })),
+      div(child({ def: erase(TimeInputsApp), key: 'time-inputs', props: () => ({}) })),
+      div(child({ def: erase(ContentApp), key: 'content', props: () => ({}) })),
+      div(child({ def: erase(SurfacesApp), key: 'surfaces', props: () => ({}) })),
+      div(child({ def: erase(CanvasApp), key: 'canvas', props: () => ({}) })),
+    ]),
   ],
 })
