@@ -38,10 +38,12 @@ export function lintIdiomatic(source: string, filename = 'input.ts'): LintResult
   checkNestedSendInUpdate(sf, filename, violations)
   checkImperativeDomInView(sf, filename, violations)
   checkAccessorSideEffect(sf, filename, violations)
+  checkViewBagImport(sf, filename, violations)
+  checkSpreadInChildren(sf, filename, violations)
 
   // Score: unique violated rule categories
   const violatedRules = new Set(violations.map((v) => v.rule))
-  const score = Math.max(0, 15 - violatedRules.size)
+  const score = Math.max(0, 17 - violatedRules.size)
 
   return { violations, score }
 }
@@ -1240,4 +1242,110 @@ function collectMsgVariantShapes(type: ts.TypeNode): MsgVariantShape[] {
   }
 
   return variants
+}
+
+// ── Rule: view-bag-import ──────────────────────────────────────
+
+const VIEW_BAG_NAMES = new Set(['text', 'each', 'show', 'branch', 'memo'])
+
+function checkViewBagImport(
+  sf: ts.SourceFile,
+  filename: string,
+  violations: LintViolation[],
+): void {
+  for (const stmt of sf.statements) {
+    if (!ts.isImportDeclaration(stmt)) continue
+    const moduleSpec = stmt.moduleSpecifier
+    if (!ts.isStringLiteral(moduleSpec)) continue
+    if (moduleSpec.text !== '@llui/dom') continue
+
+    const clause = stmt.importClause
+    if (!clause?.namedBindings || !ts.isNamedImports(clause.namedBindings)) continue
+
+    for (const spec of clause.namedBindings.elements) {
+      const name = spec.name.text
+      if (VIEW_BAG_NAMES.has(name)) {
+        const { line } = sf.getLineAndCharacterOfPosition(spec.getStart())
+        violations.push({
+          rule: 'view-bag-import',
+          message: `Do not import '${name}' from '@llui/dom'. Use the view bag instead: view: ({ ${name}, ... }) => [...]. The view bag version is typed to your component's State.`,
+          file: filename,
+          line: line + 1,
+          column: 0,
+          suggestion: `Destructure '${name}' from the view() parameter and pass it to helper functions.`,
+        })
+      }
+    }
+  }
+}
+
+// ── Rule: spread-in-children ───────────────────────────────────
+
+function checkSpreadInChildren(
+  sf: ts.SourceFile,
+  filename: string,
+  violations: LintViolation[],
+): void {
+  const ELEMENT_HELPERS = new Set([
+    'div',
+    'span',
+    'button',
+    'p',
+    'h1',
+    'h2',
+    'h3',
+    'h4',
+    'h5',
+    'h6',
+    'ul',
+    'ol',
+    'li',
+    'a',
+    'nav',
+    'main',
+    'section',
+    'article',
+    'header',
+    'footer',
+    'form',
+    'fieldset',
+    'table',
+    'thead',
+    'tbody',
+    'tr',
+    'td',
+    'th',
+    'label',
+    'details',
+    'summary',
+  ])
+
+  function walk(node: ts.Node): void {
+    if (
+      ts.isCallExpression(node) &&
+      ts.isIdentifier(node.expression) &&
+      ELEMENT_HELPERS.has(node.expression.text)
+    ) {
+      // Check children argument (last array literal)
+      for (const arg of node.arguments) {
+        if (!ts.isArrayLiteralExpression(arg)) continue
+        for (const el of arg.elements) {
+          if (ts.isSpreadElement(el)) {
+            const { line } = sf.getLineAndCharacterOfPosition(el.getStart())
+            violations.push({
+              rule: 'spread-in-children',
+              message: `Spread in children of '${node.expression.text}()' prevents template-clone optimization. Use each() for lists.`,
+              file: filename,
+              line: line + 1,
+              column: 0,
+              suggestion: `Replace '...array.map(...)' with each({ items: () => array, key: ..., render: ... }).`,
+            })
+          }
+        }
+      }
+    }
+    ts.forEachChild(node, walk)
+  }
+
+  ts.forEachChild(sf, walk)
 }

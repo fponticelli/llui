@@ -48,10 +48,10 @@ describe('hover-card.connect', () => {
     expect(send).not.toHaveBeenCalled()
   })
 
-  it('aria-expanded tracks open state', () => {
+  it('data-state tracks open state', () => {
     const p = connect<Ctx>((s) => s.h, vi.fn(), { id: 'x' })
-    expect(p.trigger['aria-expanded'](wrap({ open: true }))).toBe(true)
-    expect(p.trigger['aria-expanded'](wrap({ open: false }))).toBe(false)
+    expect(p.trigger['data-state'](wrap({ open: true }))).toBe('open')
+    expect(p.trigger['data-state'](wrap({ open: false }))).toBe('closed')
   })
 
   it('trigger aria-controls points at content id', () => {

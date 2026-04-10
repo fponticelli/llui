@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>LLui Dashboard</title>
+    <link rel="stylesheet" href="/src/styles.css" />
+    <style>
+      *,
+      *::before,
+      *::after {
+        box-sizing: border-box;
+        margin: 0;
+      }
+      :root {
+        --bg: #0f172a;
+        --bg-card: #1e293b;
+        --bg-card-hover: #334155;
+        --text: #f8fafc;
+        --text-muted: #94a3b8;
+        --accent: #6366f1;
+        --accent-muted: #818cf8;
+        --green: #22c55e;
+        --red: #ef4444;
+        --border: #334155;
+        --radius: 12px;
+        font-family:
+          system-ui,
+          -apple-system,
+          sans-serif;
+        color: var(--text);
+        background: var(--bg);
+      }
+      body {
+        padding: 2rem;
+        max-width: 1200px;
+        margin: 0 auto;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="app"></div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

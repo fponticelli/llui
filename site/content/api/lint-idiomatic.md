@@ -386,6 +386,22 @@ function findSideEffectsInAccessor(
 function collectMsgVariantShapes(type: ts.TypeNode): MsgVariantShape[]
 ```
 
+### `checkViewBagImport()`
+
+```typescript
+function checkViewBagImport(sf: ts.SourceFile, filename: string, violations: LintViolation[]): void
+```
+
+### `checkSpreadInChildren()`
+
+```typescript
+function checkSpreadInChildren(
+  sf: ts.SourceFile,
+  filename: string,
+  violations: LintViolation[],
+): void
+```
+
 ## Interfaces
 
 ### `LintViolation`
@@ -418,6 +434,14 @@ interface MsgVariantShape {
   typeName: string
   shape: string
 }
+```
+
+## Constants
+
+### `VIEW_BAG_NAMES`
+
+```typescript
+const VIEW_BAG_NAMES
 ```
 
 <!-- auto-api:end -->

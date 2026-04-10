@@ -1,0 +1,17 @@
+{
+  "name": "@llui/example-dashboard",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build"
+  },
+  "dependencies": {
+    "@llui/dom": "workspace:*",
+    "@llui/components": "workspace:*"
+  },
+  "devDependencies": {
+    "@llui/vite-plugin": "workspace:*",
+    "vite": "^8.0.0"
+  }
+}

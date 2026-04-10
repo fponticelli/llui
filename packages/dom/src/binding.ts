@@ -71,7 +71,7 @@ export function applyBinding(
       break
 
     case 'class':
-      ;(target.node as Element).className = value as string
+      ;(target.node as Element).setAttribute('class', value as string)
       break
 
     case 'style':

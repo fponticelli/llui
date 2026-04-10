@@ -133,8 +133,11 @@ export const Counter = component<State, Msg, never>({
 - Never mutate state in `update()`. Always return a new object: `{ ...state, field: newValue }`.
 - Reactive values in `view()` are arrow functions: `text(s => s.label)`, `div({ class: s => s.active ? 'on' : '' })`.
 - Static values are literals: `div({ class: 'container' })`.
-- Destructure view helpers from the `view` argument: `view: ({ send, show, each, branch, text, memo }) => [...]`. This pins `s: S` across all state-bound calls -- no per-call `show<State>` generics. Import element helpers (`div`, `button`, `span`...) normally.
+- Destructure view helpers from the `view` argument: `view: ({ send, show, each, branch, text, memo }) => [...]`. This pins `s: S` across all state-bound calls -- no per-call generics. Import element helpers (`div`, `button`, `span`...) normally.
+- **Never import `text`, `each`, `show`, `branch`, `memo` from `@llui/dom`** -- always use the view bag's versions. The bag versions are typed to the component's `State`; the import versions are weakly typed.
+- When extracting view helpers (functions called from `view`), pass the needed primitives as arguments: `function myHelper(text: View<S,M>['text'], send: Send<M>): Node[]`.
 - Never use `.map()` on state arrays in `view()`. Always use `each()` for reactive lists.
+- Never spread arrays into element children: `div([...arr.map(...)])` prevents template-clone optimization. Use `each()` instead, even for static arrays.
 - In `each()`, `render` receives `item` (a scoped accessor proxy) and `index` (a getter).
   Read item properties via property access: `item.text` (returns a reactive accessor).
   Use `item(t => t.expr)` for computed expressions.

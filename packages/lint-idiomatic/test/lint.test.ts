@@ -19,7 +19,7 @@ describe('lintIdiomatic', () => {
     `
     const result = lintIdiomatic(source)
     expect(result.violations.some((v) => v.rule === 'state-mutation')).toBe(true)
-    expect(result.score).toBeLessThan(15)
+    expect(result.score).toBeLessThan(17)
   })
 
   it('detects state mutation via push', () => {
@@ -128,19 +128,19 @@ describe('lintIdiomatic', () => {
 
   it('reports perfect score for clean code', () => {
     const source = `
-      import { component, div, button, text, each, memo } from '@llui/dom'
-      type State = { count: number; items: { id: number; text: string }[] }
+      import { component, div, button } from '@llui/dom'
+      type State = { count: number }
       type Msg = { type: 'inc' } | { type: 'dec' }
       const C = component<State, Msg, never>({
         name: 'C',
-        init: () => [{ count: 0, items: [] }, []],
+        init: () => [{ count: 0 }, []],
         update: (state, msg) => {
           switch (msg.type) {
             case 'inc': return [{ ...state, count: state.count + 1 }, []]
             case 'dec': return [{ ...state, count: state.count - 1 }, []]
           }
         },
-        view: (send) => [
+        view: ({ send, text }) => [
           div({}, [
             text(s => String(s.count)),
             button({ onClick: () => send({ type: 'inc' }) }, [text('+')]),
@@ -149,7 +149,7 @@ describe('lintIdiomatic', () => {
       })
     `
     const result = lintIdiomatic(source)
-    expect(result.score).toBe(15)
+    expect(result.score).toBe(17)
   })
 
   it('score decreases by unique violated rule categories', () => {
@@ -176,7 +176,7 @@ describe('lintIdiomatic', () => {
     // Should have at least state-mutation, map-on-state-array, and form-boilerplate
     const violatedRules = new Set(result.violations.map((v) => v.rule))
     expect(violatedRules.size).toBeGreaterThanOrEqual(3)
-    expect(result.score).toBe(15 - violatedRules.size)
+    expect(result.score).toBe(17 - violatedRules.size)
   })
 
   it('includes correct file and position info', () => {
