@@ -117,4 +117,121 @@ describe('sortable.connect', () => {
     const parts = connect<Ctx>((s) => s.sort, vi.fn(), { id: 'list1' })
     expect(parts.item('x', 3)['data-index']).toBe('3')
   })
+
+  it('handle has aria-grabbed reflecting drag state', () => {
+    const parts = connect<Ctx>((s) => s.sort, vi.fn(), { id: 'list1' })
+    const h = parts.handle('apple', 2)
+    expect(h['aria-grabbed']({ sort: { dragging: null } })).toBe(false)
+    expect(
+      h['aria-grabbed']({ sort: { dragging: { id: 'apple', startIndex: 2, currentIndex: 2 } } }),
+    ).toBe(true)
+  })
+
+  it('handle has tabIndex=0 for keyboard focus', () => {
+    const parts = connect<Ctx>((s) => s.sort, vi.fn(), { id: 'list1' })
+    expect(parts.handle('apple', 2).tabIndex).toBe(0)
+  })
+
+  it('handle role is button', () => {
+    const parts = connect<Ctx>((s) => s.sort, vi.fn(), { id: 'list1' })
+    expect(parts.handle('apple', 2).role).toBe('button')
+  })
+})
+
+describe('sortable keyboard events', () => {
+  type Ctx = { sort: SortableState }
+
+  function makeKey(key: string): KeyboardEvent {
+    return new KeyboardEvent('keydown', { key, cancelable: true, bubbles: true })
+  }
+
+  it('Space sends toggleGrab', () => {
+    const send = vi.fn()
+    const parts = connect<Ctx>((s) => s.sort, send, { id: 'list1' })
+    const e = makeKey(' ')
+    parts.handle('apple', 1).onKeyDown(e)
+    expect(send).toHaveBeenCalledWith({ type: 'toggleGrab', id: 'apple', index: 1 })
+    expect(e.defaultPrevented).toBe(true)
+  })
+
+  it('Enter sends toggleGrab', () => {
+    const send = vi.fn()
+    const parts = connect<Ctx>((s) => s.sort, send, { id: 'list1' })
+    parts.handle('apple', 1).onKeyDown(makeKey('Enter'))
+    expect(send).toHaveBeenCalledWith({ type: 'toggleGrab', id: 'apple', index: 1 })
+  })
+
+  it('Escape sends cancel', () => {
+    const send = vi.fn()
+    const parts = connect<Ctx>((s) => s.sort, send, { id: 'list1' })
+    parts.handle('apple', 1).onKeyDown(makeKey('Escape'))
+    expect(send).toHaveBeenCalledWith({ type: 'cancel' })
+  })
+
+  it('ArrowDown sends moveBy +1', () => {
+    const send = vi.fn()
+    const parts = connect<Ctx>((s) => s.sort, send, { id: 'list1' })
+    const e = makeKey('ArrowDown')
+    parts.handle('apple', 0).onKeyDown(e)
+    expect(send).toHaveBeenCalledWith({ type: 'moveBy', delta: 1 })
+    expect(e.defaultPrevented).toBe(true)
+  })
+
+  it('ArrowUp sends moveBy -1', () => {
+    const send = vi.fn()
+    const parts = connect<Ctx>((s) => s.sort, send, { id: 'list1' })
+    parts.handle('apple', 2).onKeyDown(makeKey('ArrowUp'))
+    expect(send).toHaveBeenCalledWith({ type: 'moveBy', delta: -1 })
+  })
+
+  it('unrelated keys are ignored', () => {
+    const send = vi.fn()
+    const parts = connect<Ctx>((s) => s.sort, send, { id: 'list1' })
+    parts.handle('apple', 0).onKeyDown(makeKey('a'))
+    expect(send).not.toHaveBeenCalled()
+  })
+})
+
+describe('sortable reducer — keyboard messages', () => {
+  it('toggleGrab starts when not dragging', () => {
+    const [s] = update(init(), { type: 'toggleGrab', id: 'apple', index: 2 })
+    expect(s.dragging).toEqual({ id: 'apple', startIndex: 2, currentIndex: 2 })
+  })
+
+  it('toggleGrab drops when already dragging', () => {
+    const state: SortableState = {
+      dragging: { id: 'apple', startIndex: 0, currentIndex: 3 },
+    }
+    const [s] = update(state, { type: 'toggleGrab', id: 'banana', index: 1 })
+    expect(s.dragging).toBeNull()
+  })
+
+  it('moveBy updates currentIndex when dragging', () => {
+    const state: SortableState = {
+      dragging: { id: 'apple', startIndex: 0, currentIndex: 2 },
+    }
+    const [s] = update(state, { type: 'moveBy', delta: 1 })
+    expect(s.dragging?.currentIndex).toBe(3)
+  })
+
+  it('moveBy negative delta works', () => {
+    const state: SortableState = {
+      dragging: { id: 'apple', startIndex: 0, currentIndex: 5 },
+    }
+    const [s] = update(state, { type: 'moveBy', delta: -2 })
+    expect(s.dragging?.currentIndex).toBe(3)
+  })
+
+  it('moveBy clamps at zero', () => {
+    const state: SortableState = {
+      dragging: { id: 'apple', startIndex: 0, currentIndex: 0 },
+    }
+    const [s] = update(state, { type: 'moveBy', delta: -5 })
+    expect(s.dragging?.currentIndex).toBe(0)
+  })
+
+  it('moveBy is ignored when not dragging', () => {
+    const [s] = update(init(), { type: 'moveBy', delta: 1 })
+    expect(s.dragging).toBeNull()
+  })
 })

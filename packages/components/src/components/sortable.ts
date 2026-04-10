@@ -60,6 +60,10 @@ export type SortableMsg =
   | { type: 'move'; index: number }
   | { type: 'drop' }
   | { type: 'cancel' }
+  // Keyboard: toggle between picking up and dropping at current position
+  | { type: 'toggleGrab'; id: string; index: number }
+  // Keyboard: shift currentIndex by delta (clamped ≥ 0)
+  | { type: 'moveBy'; delta: number }
 
 export function init(): SortableState {
   return { dragging: null }
@@ -78,6 +82,19 @@ export function update(state: SortableState, msg: SortableMsg): [SortableState, 
       return state.dragging ? [{ dragging: null }, []] : [state, []]
     case 'cancel':
       return state.dragging ? [{ dragging: null }, []] : [state, []]
+    case 'toggleGrab':
+      if (state.dragging) {
+        // Already dragging — drop at current position
+        return [{ dragging: null }, []]
+      }
+      // Pick up
+      return [{ dragging: { id: msg.id, startIndex: msg.index, currentIndex: msg.index } }, []]
+    case 'moveBy': {
+      if (!state.dragging) return [state, []]
+      const next = Math.max(0, state.dragging.currentIndex + msg.delta)
+      if (next === state.dragging.currentIndex) return [state, []]
+      return [{ dragging: { ...state.dragging, currentIndex: next } }, []]
+    }
   }
 }
 
@@ -107,7 +124,12 @@ export interface SortableParts<S> {
   ) => {
     'data-scope': 'sortable'
     'data-part': 'handle'
+    role: 'button'
+    tabIndex: 0
+    'aria-grabbed': (s: S) => boolean
+    'aria-label': string
     onPointerDown: (e: PointerEvent) => void
+    onKeyDown: (e: KeyboardEvent) => void
   }
 }
 
@@ -158,6 +180,11 @@ export function connect<S>(
     handle: (id, index) => ({
       'data-scope': 'sortable',
       'data-part': 'handle',
+      role: 'button',
+      tabIndex: 0,
+      'aria-grabbed': (s) => get(s).dragging?.id === id,
+      'aria-label':
+        'Drag handle. Press space to pick up, arrow keys to move, space again to drop, escape to cancel.',
       onPointerDown: (e) => {
         e.preventDefault()
         const target = e.currentTarget as Element | null
@@ -171,6 +198,29 @@ export function connect<S>(
           }
         }
         send({ type: 'start', id, index })
+      },
+      onKeyDown: (e) => {
+        switch (e.key) {
+          case ' ':
+          case 'Enter':
+            e.preventDefault()
+            send({ type: 'toggleGrab', id, index })
+            return
+          case 'Escape':
+            e.preventDefault()
+            send({ type: 'cancel' })
+            return
+          case 'ArrowDown':
+          case 'ArrowRight':
+            e.preventDefault()
+            send({ type: 'moveBy', delta: 1 })
+            return
+          case 'ArrowUp':
+          case 'ArrowLeft':
+            e.preventDefault()
+            send({ type: 'moveBy', delta: -1 })
+            return
+        }
       },
     }),
   }
