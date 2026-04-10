@@ -13,6 +13,7 @@
         margin: 0;
       }
       :root {
+        /* Dark theme (default) */
         --bg: #0f172a;
         --bg-card: #1e293b;
         --bg-card-hover: #334155;
@@ -30,6 +31,32 @@
           sans-serif;
         color: var(--text);
         background: var(--bg);
+      }
+      :root[data-theme='light'] {
+        --bg: #f8fafc;
+        --bg-card: #ffffff;
+        --bg-card-hover: #f1f5f9;
+        --text: #0f172a;
+        --text-muted: #64748b;
+        --accent: #4f46e5;
+        --accent-muted: #6366f1;
+        --green: #16a34a;
+        --red: #dc2626;
+        --border: #e2e8f0;
+      }
+      @media (prefers-color-scheme: light) {
+        :root:not([data-theme='dark']) {
+          --bg: #f8fafc;
+          --bg-card: #ffffff;
+          --bg-card-hover: #f1f5f9;
+          --text: #0f172a;
+          --text-muted: #64748b;
+          --accent: #4f46e5;
+          --accent-muted: #6366f1;
+          --green: #16a34a;
+          --red: #dc2626;
+          --border: #e2e8f0;
+        }
       }
       body {
         padding: 2rem;

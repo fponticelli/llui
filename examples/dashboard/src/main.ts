@@ -1,29 +1,89 @@
-import { component, mountApp, div, h1, h2, h3, span, button, p, onMount } from '@llui/dom'
+import { component, mountApp, div, h1, h2, h3, span, button, p, ul, li, onMount } from '@llui/dom'
 import type { Send, View } from '@llui/dom'
-import { formatNumber, formatRelativeTime, formatDate, formatList } from '@llui/components'
+import {
+  formatNumber,
+  formatRelativeTime,
+  formatDate,
+  formatList,
+  sortable,
+  themeSwitch,
+} from '@llui/components'
+import type { SortableState, SortableMsg, Theme } from '@llui/components'
 import { MONTHLY_REVENUE, DAILY_USERS, ACTIVITY } from './data'
 import { barChart, lineChart } from './charts'
 
 // ── Types ────────────────────────────────────────────────────────
 
+interface Priority {
+  id: string
+  title: string
+  impact: 'high' | 'medium' | 'low'
+}
+
 type State = {
   locale: string
   chartsVisible: boolean
+  priorities: Priority[]
+  sort: SortableState
+  theme: Theme
 }
 
-type Msg = { type: 'setLocale'; locale: string } | { type: 'chartsVisible' }
+type Msg =
+  | { type: 'setLocale'; locale: string }
+  | { type: 'chartsVisible' }
+  | { type: 'sort'; msg: SortableMsg }
+  | { type: 'reorderPriorities'; from: number; to: number }
+  | { type: 'setTheme'; theme: Theme }
+
+const INITIAL_PRIORITIES: Priority[] = [
+  { id: 'p1', title: 'Migrate billing service to new API', impact: 'high' },
+  { id: 'p2', title: 'Investigate Q3 revenue drop', impact: 'high' },
+  { id: 'p3', title: 'Update onboarding flow design', impact: 'medium' },
+  { id: 'p4', title: 'Refactor auth middleware', impact: 'medium' },
+  { id: 'p5', title: 'Archive old logs', impact: 'low' },
+]
 
 // ── Component ────────────────────────────────────────────────────
 
 const Dashboard = component<State, Msg, never>({
   name: 'Dashboard',
-  init: () => [{ locale: 'en-US', chartsVisible: false }, []],
+  init: () => [
+    {
+      locale: 'en-US',
+      chartsVisible: false,
+      priorities: INITIAL_PRIORITIES,
+      sort: sortable.init(),
+      theme: 'system' as Theme,
+    },
+    [],
+  ],
   update: (state, msg) => {
     switch (msg.type) {
       case 'setLocale':
         return [{ ...state, locale: msg.locale }, []]
       case 'chartsVisible':
         return [state.chartsVisible ? state : { ...state, chartsVisible: true }, []]
+      case 'sort': {
+        const [sort] = sortable.update(state.sort, msg.msg)
+        // On drop, apply the reorder to priorities
+        if (msg.msg.type === 'drop' && state.sort.dragging) {
+          const { startIndex, currentIndex } = state.sort.dragging
+          return [
+            {
+              ...state,
+              sort,
+              priorities: sortable.reorder(state.priorities, startIndex, currentIndex),
+            },
+            [],
+          ]
+        }
+        return [{ ...state, sort }, []]
+      }
+      case 'reorderPriorities':
+        return [{ ...state, priorities: sortable.reorder(state.priorities, msg.from, msg.to) }, []]
+      case 'setTheme':
+        themeSwitch.applyTheme(themeSwitch.resolveTheme(msg.theme))
+        return [{ ...state, theme: msg.theme }, []]
     }
   },
   view: (h) => {
@@ -31,6 +91,8 @@ const Dashboard = component<State, Msg, never>({
 
     // Set up IntersectionObserver for chart animation
     onMount((container) => {
+      // Apply current theme on mount
+      themeSwitch.applyTheme(themeSwitch.resolveTheme('system'))
       requestAnimationFrame(() => {
         const section = container.querySelector('.charts-section')
         if (!section) return
@@ -59,7 +121,7 @@ const Dashboard = component<State, Msg, never>({
               text((s) => formatDate(new Date(), { locale: s.locale, dateStyle: 'full' })),
             ]),
           ]),
-          localeSwitch(text, send),
+          div({ class: 'header-controls' }, [themeToggle(text, send), localeSwitch(text, send)]),
         ]),
 
         // KPI cards
@@ -141,6 +203,9 @@ const Dashboard = component<State, Msg, never>({
           ],
         ),
 
+        // Priorities (sortable)
+        prioritiesSection(h, send),
+
         // Activity feed
         div({ class: 'activity-card' }, [
           h2([text('Recent Activity')]),
@@ -199,6 +264,75 @@ const Dashboard = component<State, Msg, never>({
 // ── View helpers ─────────────────────────────────────────────────
 
 type TextFn = View<State, Msg>['text']
+
+function prioritiesSection(h: View<State, Msg>, send: Send<Msg>): HTMLElement {
+  const { text, each } = h
+  const sortSend = (m: SortableMsg): void => send({ type: 'sort', msg: m })
+  const parts = sortable.connect<State>((s) => s.sort, sortSend, { id: 'priorities' })
+
+  return div({ class: 'priorities-card' }, [
+    h2([text('Priorities')]),
+    p({ class: 'hint' }, [text('Drag the handle to reorder')]),
+    ul(
+      {
+        ...parts.root,
+        class: 'priority-list',
+      },
+      [
+        ...each({
+          items: (s: State) => s.priorities,
+          key: (p: Priority) => p.id,
+          render: ({ item, index }) => {
+            const id = item((p) => p.id)
+            return [
+              li(
+                {
+                  ...parts.item(id(), index()),
+                  class: (s: State) =>
+                    `priority-item${s.sort.dragging?.id === id() ? ' dragging' : ''}`,
+                },
+                [
+                  div({ ...parts.handle(id(), index()), class: 'priority-handle' }, [
+                    text('\u2630'),
+                  ]),
+                  div({ class: 'priority-body' }, [
+                    span({ class: 'priority-title' }, [text(item((p) => p.title))]),
+                    span(
+                      {
+                        class: (_s) => `priority-impact priority-${item((p) => p.impact)()}`,
+                      },
+                      [text(item((p) => p.impact))],
+                    ),
+                  ]),
+                ],
+              ),
+            ]
+          },
+        }),
+      ],
+    ),
+  ])
+}
+
+function themeBtn(text: TextFn, send: Send<Msg>, t: Theme, icon: string): HTMLElement {
+  return button(
+    {
+      class: (s: State) => `theme-btn${s.theme === t ? ' active' : ''}`,
+      onClick: () => send({ type: 'setTheme', theme: t }),
+      'aria-label': `Theme: ${t}`,
+      'aria-pressed': (s: State) => s.theme === t,
+    },
+    [text(icon)],
+  )
+}
+
+function themeToggle(text: TextFn, send: Send<Msg>): HTMLElement {
+  return div({ class: 'theme-switch', role: 'group', 'aria-label': 'Theme' }, [
+    themeBtn(text, send, 'light', '\u2600'),
+    themeBtn(text, send, 'dark', '\u263D'),
+    themeBtn(text, send, 'system', '\u25D0'),
+  ])
+}
 
 function localeSwitch(text: TextFn, send: Send<Msg>): HTMLElement {
   const locales = [
