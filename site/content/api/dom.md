@@ -360,6 +360,29 @@ function foreign<S, M, T extends Record<string, unknown>, Instance>(
 function child<S, ChildM>(opts: ChildOptions<S, ChildM>): Node[]
 ```
 
+### `lazy()`
+
+Load a component asynchronously. Renders `fallback` immediately, then swaps
+in the loaded component when the loader's Promise resolves. If the loader
+rejects, renders `error` (or nothing if no error handler is provided).
+
+```ts
+view: ({ text }) => [
+  ...lazy({
+    loader: () => import('./Chart').then((m) => m.default),
+    fallback: ({ text }) => [div([text('Loading chart...')])],
+    error: (err, { text }) => [div([text(`Failed: ${err.message}`)])],
+  }),
+]
+```
+
+If the parent scope is disposed before the loader resolves, the load is
+cancelled — the loaded component is never mounted.
+
+```typescript
+function lazy<S, M, E = never, D = undefined>(opts: LazyOptions<S, M, E, D>): Node[]
+```
+
 ### `memo()`
 
 ```typescript
@@ -806,6 +829,21 @@ export interface LluiDebugAPI {
 export interface Context<T> {
   readonly _id: symbol
   readonly _default: T | undefined
+}
+```
+
+### `LazyOptions`
+
+```typescript
+export interface LazyOptions<S, M, E, D> {
+  /** Async loader — typically `() => import('./MyComponent').then(m => m.default)`. */
+  loader: () => Promise<ComponentDef<unknown, M, E, D>>
+  /** Nodes to render while loading. */
+  fallback: (h: View<S, M>) => Node[]
+  /** Nodes to render if the loader rejects. */
+  error?: (err: Error, h: View<S, M>) => Node[]
+  /** Props passed as init data to the loaded component. Evaluated once at resolution. */
+  data?: (s: S) => D
 }
 ```
 

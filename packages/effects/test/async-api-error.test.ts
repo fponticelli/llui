@@ -40,7 +40,7 @@ describe('ApiError mapping from HTTP status', () => {
 
     const handler = handleEffects().else(() => {})
     handler({
-      effect: http({
+      effect: http<{ type: string; payload?: unknown; error?: ApiError }>({
         url: '/x',
         onSuccess: (data) => ({ type: 'ok', payload: data }),
         onError: (err) => ({ type: 'err', error: err }),
@@ -69,7 +69,7 @@ describe('ApiError mapping from HTTP status', () => {
 
     const handler = handleEffects().else(() => {})
     handler({
-      effect: http({
+      effect: http<{ type: string; payload?: unknown; error?: ApiError }>({
         url: '/x',
         onSuccess: (data) => ({ type: 'ok', payload: data }),
         onError: (err) => ({ type: 'err', error: err }),
@@ -98,7 +98,7 @@ describe('ApiError mapping from HTTP status', () => {
 
     const handler = handleEffects().else(() => {})
     handler({
-      effect: http({
+      effect: http<{ type: string; payload?: unknown; error?: ApiError }>({
         url: '/x',
         onSuccess: (data) => ({ type: 'ok', payload: data }),
         onError: (err) => ({ type: 'err', error: err }),
@@ -127,7 +127,7 @@ describe('ApiError mapping from HTTP status', () => {
 
     const handler = handleEffects().else(() => {})
     handler({
-      effect: http({
+      effect: http<{ type: string; payload?: unknown; error?: ApiError }>({
         url: '/x',
         onSuccess: (data) => ({ type: 'ok', payload: data }),
         onError: (err) => ({ type: 'err', error: err }),
@@ -159,7 +159,7 @@ describe('ApiError mapping from HTTP status', () => {
 
     const handler = handleEffects().else(() => {})
     handler({
-      effect: http({
+      effect: http<{ type: string; payload?: unknown; error?: ApiError }>({
         url: '/x',
         onSuccess: (data) => ({ type: 'ok', payload: data }),
         onError: (err) => ({ type: 'err', error: err }),
@@ -182,7 +182,7 @@ describe('ApiError mapping from HTTP status', () => {
 
     const handler = handleEffects().else(() => {})
     handler({
-      effect: http({
+      effect: http<{ type: string; payload?: unknown; error?: ApiError }>({
         url: '/x',
         onSuccess: (data) => ({ type: 'ok', payload: data }),
         onError: (err) => ({ type: 'err', error: err }),

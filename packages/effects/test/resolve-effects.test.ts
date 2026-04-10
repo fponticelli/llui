@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { resolveEffects } from '../src/resolve'
-import { http, type Effect } from '../src/index'
+import { http, type Effect, type ApiError } from '../src/index'
 
 type State = { items: string[]; error: string | null }
 type Msg =
@@ -44,7 +44,7 @@ describe('resolveEffects', () => {
     )
 
     const effects: Effect[] = [
-      http({
+      http<{ type: string; payload?: unknown; error?: ApiError }>({
         url: '/api/items',
         onSuccess: (data) => ({ type: 'loaded', payload: data }),
         onError: (err) => ({ type: 'error', error: err }),
@@ -84,12 +84,12 @@ describe('resolveEffects', () => {
       | { type: 'bOk'; payload: { items: string[] } }
 
     const effects: Effect[] = [
-      http({
+      http<{ type: string; payload?: unknown; error?: ApiError }>({
         url: '/api/a',
         onSuccess: (data) => ({ type: 'aOk', payload: data }),
         onError: () => ({ type: 'err' }),
       }),
-      http({
+      http<{ type: string; payload?: unknown; error?: ApiError }>({
         url: '/api/b',
         onSuccess: (data) => ({ type: 'bOk', payload: data }),
         onError: () => ({ type: 'err' }),
@@ -120,7 +120,7 @@ describe('resolveEffects', () => {
     const result = await resolveEffects<State, Msg, Effect>(
       { items: [], error: null },
       [
-        http({
+        http<{ type: string; payload?: unknown; error?: ApiError }>({
           url: '/api/items',
           onSuccess: (data) => ({ type: 'loaded', payload: data }),
           onError: (err) => ({ type: 'error', error: err }),
@@ -167,7 +167,7 @@ describe('resolveEffects', () => {
     const result = await resolveEffects<S3, M3, Effect>(
       { items: [], nextUrl: null },
       [
-        http({
+        http<{ type: string; payload?: unknown; error?: ApiError }>({
           url: '/api/init',
           onSuccess: (data) => ({ type: 'initOk', payload: data }),
           onError: () => ({ type: 'err' }),
@@ -178,7 +178,7 @@ describe('resolveEffects', () => {
           return [
             { ...s, nextUrl: m.payload.next },
             [
-              http({
+              http<{ type: string; payload?: unknown; error?: ApiError }>({
                 url: m.payload.next,
                 onSuccess: (data) => ({ type: 'dataOk', payload: data }),
                 onError: () => ({ type: 'err' }),
@@ -218,7 +218,7 @@ describe('resolveEffects', () => {
     const result = await resolveEffects<State, Msg, Effect>(
       { items: [], error: null },
       [
-        http({
+        http<{ type: string; payload?: unknown; error?: ApiError }>({
           url: '/api/loop',
           onSuccess: (data) => ({ type: 'loaded', payload: data }),
           onError: (err) => ({ type: 'error', error: err }),
@@ -229,7 +229,7 @@ describe('resolveEffects', () => {
           return [
             s,
             [
-              http({
+              http<{ type: string; payload?: unknown; error?: ApiError }>({
                 url: '/api/loop',
                 onSuccess: (data) => ({ type: 'loaded', payload: data }),
                 onError: (err) => ({ type: 'error', error: err }),
@@ -253,7 +253,7 @@ describe('resolveEffects', () => {
     const result = await resolveEffects<State, Msg, Effect>(
       { items: ['preserved'], error: null },
       [
-        http({
+        http<{ type: string; payload?: unknown; error?: ApiError }>({
           url: '/api/items',
           onSuccess: (data) => ({ type: 'loaded', payload: data }),
           onError: (err) => ({ type: 'error', error: err }),

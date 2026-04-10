@@ -147,6 +147,7 @@ export const Counter = component<State, Msg, never>({
   Invoke the accessor to read imperatively: `item.id()` (e.g. inside event handlers).
 - Wrap derived values used in multiple places in `memo()`.
 - Use `show` for boolean conditions. Use `branch` for named states (3+ cases or non-boolean).
+- Use `lazy({ loader, fallback, error?, data? })` for code-split components: `loader: () => import('./Heavy').then(m => m.default)`. Renders `fallback` until loaded; the `error` handler fires on rejection. Cancels cleanly if the parent scope is disposed mid-load.
 - For composition, use view functions (Level 1) with `(props, send)` convention.
   Only use `child()` for library components with encapsulated internals or 30+ state paths.
 - For forms with many fields, use a single `setField` message:
@@ -1347,6 +1348,38 @@ function child<S, ChildS, ChildM, ChildE>(opts: {
 The props accessor has a bitmask derived from its parent state dependencies. The runtime: (1) checks the bitmask first — if no relevant parent state paths changed, the props accessor is not called at all; (2) when the bitmask matches, calls the accessor and compares each field of the returned object via `Object.is` with the previous props; (3) only if at least one field changed, calls `def.propsMsg(newProps)` and enqueues the result into the child's message queue. `onMsg` maps child messages selectively to parent messages — return `null` for messages the parent should ignore.
 
 See: 01 Architecture.md
+
+---
+
+### `lazy(opts)`
+
+Asynchronously load a component on demand. Renders `fallback` immediately, then swaps in the loaded component when the loader's Promise resolves. On rejection, renders `error` (or nothing if no error handler is provided). If the parent scope is disposed before the loader resolves, the load is cancelled — the loaded component is never mounted.
+
+```typescript
+function lazy<S, M, E = never, D = undefined>(opts: {
+  loader: () => Promise<ComponentDef<unknown, M, E, D>>
+  fallback: (h: View<S, M>) => Node[]
+  error?: (err: Error, h: View<S, M>) => Node[]
+  data?: (s: S) => D
+}): Node[]
+```
+
+Typical use:
+
+```typescript
+view: ({ text }) => [
+  ...lazy({
+    loader: () => import('./Chart').then((m) => m.default),
+    fallback: ({ text }) => [div([text('Loading...')])],
+    error: (err, { text }) => [div([text(`Failed: ${err.message}`)])],
+    data: (s) => ({ points: s.chartData }),
+  }),
+]
+```
+
+The loader is called once per `lazy()` instance. Integrates with Vite's dynamic `import()` for code splitting.
+
+See: 06 Bundle Size.md
 
 ---
 

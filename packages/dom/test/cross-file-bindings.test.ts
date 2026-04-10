@@ -40,8 +40,8 @@ describe('cross-file bindings', () => {
         return branch<State, Msg>({
           on: (s) => s.page,
           cases: {
-            a: (send) => pageA(send),
-            b: (send) => pageB(send),
+            a: ({ send }) => pageA(send),
+            b: ({ send }) => pageB(send),
           },
         })
       },

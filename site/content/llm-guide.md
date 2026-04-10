@@ -144,6 +144,7 @@ export const Counter = component<State, Msg, never>({
   Invoke the accessor to read imperatively: `item.id()` (e.g. inside event handlers).
 - Wrap derived values used in multiple places in `memo()`.
 - Use `show` for boolean conditions. Use `branch` for named states (3+ cases or non-boolean).
+- Use `lazy({ loader, fallback, error?, data? })` for code-split components: `loader: () => import('./Heavy').then(m => m.default)`. Renders `fallback` until loaded; the `error` handler fires on rejection. Cancels cleanly if the parent scope is disposed mid-load.
 - For composition, use view functions (Level 1) with `(props, send)` convention.
   Only use `child()` for library components with encapsulated internals or 30+ state paths.
 - For forms with many fields, use a single `setField` message:

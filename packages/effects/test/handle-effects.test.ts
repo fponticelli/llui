@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, type Mock } from 'vitest'
-import { handleEffects, http, cancel, debounce, type Effect } from '../src/index'
+import { handleEffects, http, cancel, debounce, type Effect, type ApiError } from '../src/index'
 
 type CustomEffect = { type: 'custom'; data: string }
 type AllEffects = Effect | CustomEffect
@@ -32,11 +32,13 @@ describe('handleEffects()', () => {
   })
 
   it('passes custom effects to .else()', () => {
-    const handler = handleEffects<AllEffects>().else(({ effect, send }) => {
-      if (effect.type === 'custom') {
-        send({ type: 'custom', data: effect.data })
-      }
-    })
+    const handler = handleEffects<AllEffects, Record<string, unknown>>().else(
+      ({ effect, send }) => {
+        if (effect.type === 'custom') {
+          send({ type: 'custom', data: effect.data })
+        }
+      },
+    )
 
     handler({ effect: { type: 'custom', data: 'hello' }, send, signal })
     expect(send).toHaveBeenCalledWith({ type: 'custom', data: 'hello' })
@@ -48,7 +50,7 @@ describe('handleEffects()', () => {
     const handler = handleEffects<AllEffects>().else(() => {})
 
     handler({
-      effect: http({
+      effect: http<{ type: string; payload?: unknown; error?: ApiError }>({
         url: '/api/data',
         onSuccess: (data) => ({ type: 'results', payload: data }),
         onError: (err) => ({ type: 'error', error: err }),
@@ -71,7 +73,7 @@ describe('handleEffects()', () => {
     const handler = handleEffects<AllEffects>().else(() => {})
 
     handler({
-      effect: http({
+      effect: http<{ type: string; payload?: unknown; error?: ApiError }>({
         url: '/api/data',
         onSuccess: (data) => ({ type: 'results', payload: data }),
         onError: (err) => ({ type: 'error', error: err }),
@@ -95,7 +97,7 @@ describe('handleEffects()', () => {
 
     const handler = handleEffects<AllEffects>().else(() => {})
     handler({
-      effect: http({
+      effect: http<{ type: string; payload?: unknown; error?: ApiError }>({
         url: '/api/x',
         onSuccess: (data) => ({ type: 'ok', payload: data }),
         onError: (err) => ({ type: 'err', error: err }),
@@ -117,7 +119,7 @@ describe('handleEffects()', () => {
 
     const handler = handleEffects<AllEffects>().else(() => {})
     handler({
-      effect: http({
+      effect: http<{ type: string; payload?: unknown; error?: ApiError }>({
         url: '/api/x',
         onSuccess: (data) => ({ type: 'ok', payload: data }),
         onError: (err) => ({ type: 'err', error: err }),
@@ -140,7 +142,7 @@ describe('handleEffects()', () => {
 
     const handler = handleEffects<AllEffects>().else(() => {})
     handler({
-      effect: http({
+      effect: http<{ type: string; payload?: unknown; error?: ApiError }>({
         url: '/api/readme',
         onSuccess: (data) => ({ type: 'ok', payload: data }),
         onError: (err) => ({ type: 'err', error: err }),
@@ -175,7 +177,7 @@ describe('handleEffects()', () => {
     handler({
       effect: cancel(
         'search',
-        http({
+        http<{ type: string; payload?: unknown; error?: ApiError }>({
           url: '/api/search',
           onSuccess: (data) => ({ type: 'results', payload: data }),
           onError: (err) => ({ type: 'error', error: err }),
@@ -208,7 +210,7 @@ describe('handleEffects()', () => {
     handler({
       effect: cancel(
         'search',
-        http({
+        http<{ type: string; payload?: unknown; error?: ApiError }>({
           url: '/api/1',
           onSuccess: (data) => ({ type: 'results', payload: data }),
           onError: (err) => ({ type: 'error', error: err }),
@@ -221,7 +223,7 @@ describe('handleEffects()', () => {
     handler({
       effect: cancel(
         'search',
-        http({
+        http<{ type: string; payload?: unknown; error?: ApiError }>({
           url: '/api/2',
           onSuccess: (data) => ({ type: 'results', payload: data }),
           onError: (err) => ({ type: 'error', error: err }),
@@ -255,7 +257,7 @@ describe('handleEffects()', () => {
     handler({
       effect: cancel(
         'search',
-        http({
+        http<{ type: string; payload?: unknown; error?: ApiError }>({
           url: '/api/data',
           onSuccess: (data) => ({ type: 'results', payload: data }),
           onError: (err) => ({ type: 'error', error: err }),

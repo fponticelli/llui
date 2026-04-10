@@ -4,6 +4,7 @@ import { replaceComponent, registerForHmr, enableHmr } from '../src/hmr'
 import { createComponentInstance, flushInstance } from '../src/update-loop'
 import { setFlatBindings } from '../src/binding'
 import { setRenderContext, clearRenderContext } from '../src/render-context'
+import { createView } from '../src/view-helpers'
 
 describe('HMR state preservation', () => {
   it('replaceComponent preserves state and rebuilds DOM with new view', () => {
@@ -35,9 +36,9 @@ describe('HMR state preservation', () => {
       allBindings: inst.allBindings,
       structuralBlocks: inst.structuralBlocks,
       container,
-      send: inst.send,
+      send: inst.send as (msg: unknown) => void,
     })
-    const nodes = v1Def.view(inst.state, inst.send)
+    const nodes = v1Def.view(createView(inst.send))
     clearRenderContext()
     setFlatBindings(null)
     for (const node of nodes) container.appendChild(node)

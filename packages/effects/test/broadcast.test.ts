@@ -1,16 +1,16 @@
 /**
  * @vitest-environment jsdom
  */
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach, type Mock } from 'vitest'
 import { handleEffects, broadcast, broadcastListen, type Effect } from '../src/index'
 
 describe('broadcast effects', () => {
-  let send: ReturnType<typeof vi.fn>
+  let send: Mock<(msg: { type: string; data?: unknown }) => void>
   let ctrl: AbortController
   let signal: AbortSignal
 
   beforeEach(() => {
-    send = vi.fn()
+    send = vi.fn<(msg: { type: string; data?: unknown }) => void>()
     ctrl = new AbortController()
     signal = ctrl.signal
   })
@@ -20,7 +20,7 @@ describe('broadcast effects', () => {
   })
 
   it('broadcastListen receives messages posted via broadcast', async () => {
-    const handler = handleEffects<Effect>().else(() => {})
+    const handler = handleEffects<Effect, { type: string; data?: unknown }>().else(() => {})
     handler({
       effect: broadcastListen('app-events', (data) => ({ type: 'received', data })),
       send,
@@ -41,7 +41,7 @@ describe('broadcast effects', () => {
   })
 
   it('broadcast posts a message to the channel', async () => {
-    const handler = handleEffects<Effect>().else(() => {})
+    const handler = handleEffects<Effect, { type: string; data?: unknown }>().else(() => {})
 
     // Listen via a separate BroadcastChannel instance
     const listener = new BroadcastChannel('ping-pong')
@@ -56,7 +56,7 @@ describe('broadcast effects', () => {
   })
 
   it('broadcastListen stops receiving after signal abort', async () => {
-    const handler = handleEffects<Effect>().else(() => {})
+    const handler = handleEffects<Effect, { type: string; data?: unknown }>().else(() => {})
     handler({
       effect: broadcastListen('live', (data) => ({ type: 'received', data })),
       send,

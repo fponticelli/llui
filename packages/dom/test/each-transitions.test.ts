@@ -101,9 +101,10 @@ describe('each() per-item enter/leave', () => {
     let sendRef: ((m: Msg) => void) | null = null
     const wrapped: ComponentDef<State, Msg, never> = {
       ...def,
-      view: ({ send }) => {
+      view: (h) => {
+        const { send } = h
         sendRef = send
-        return def.view(send)
+        return def.view(h)
       },
     }
     mountApp(container, wrapped)
@@ -127,9 +128,10 @@ describe('each() per-item enter/leave', () => {
     let sendRef: ((m: Msg) => void) | null = null
     const wrapped: ComponentDef<State, Msg, never> = {
       ...def,
-      view: ({ send }) => {
+      view: (h) => {
+        const { send } = h
         sendRef = send
-        return def.view(send)
+        return def.view(h)
       },
     }
     mountApp(container, wrapped)
@@ -162,9 +164,10 @@ describe('each() per-item enter/leave', () => {
     let sendRef: ((m: Msg) => void) | null = null
     const wrapped: ComponentDef<State, Msg, never> = {
       ...def,
-      view: ({ send }) => {
+      view: (h) => {
+        const { send } = h
         sendRef = send
-        return def.view(send)
+        return def.view(h)
       },
     }
     mountApp(container, wrapped)
@@ -192,9 +195,10 @@ describe('each() per-item enter/leave', () => {
     let sendRef: ((m: Msg) => void) | null = null
     const wrapped: ComponentDef<State, Msg, never> = {
       ...def,
-      view: ({ send }) => {
+      view: (h) => {
+        const { send } = h
         sendRef = send
-        return def.view(send)
+        return def.view(h)
       },
     }
     mountApp(container, wrapped)
@@ -231,17 +235,19 @@ describe('each() per-item enter/leave', () => {
         each<State, Item>({
           items: (s) => s.items,
           key: (item) => item.id,
-          onTransition: (ctx) =>
-            events.push({ entering: ctx.entering.length, leaving: ctx.leaving.length }),
+          onTransition: (ctx) => {
+            events.push({ entering: ctx.entering.length, leaving: ctx.leaving.length })
+          },
           render: ({ item }) => [div({ 'data-id': item((t) => t.id) }, [])],
         }),
     }
     let sendRef: ((m: Msg) => void) | null = null
     const wrapped: ComponentDef<State, Msg, never> = {
       ...def,
-      view: ({ send }) => {
+      view: (h) => {
+        const { send } = h
         sendRef = send
-        return def.view(send)
+        return def.view(h)
       },
     }
     mountApp(container, wrapped)
@@ -256,9 +262,10 @@ describe('each() per-item enter/leave', () => {
     let sendRef: ((m: Msg) => void) | null = null
     const wrapped: ComponentDef<State, Msg, never> = {
       ...def,
-      view: ({ send }) => {
+      view: (h) => {
+        const { send } = h
         sendRef = send
-        return def.view(send)
+        return def.view(h)
       },
     }
     mountApp(container, wrapped)

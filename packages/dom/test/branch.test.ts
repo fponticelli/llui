@@ -4,7 +4,8 @@ import { branch } from '../src/primitives/branch'
 import { show } from '../src/primitives/show'
 import { text } from '../src/primitives/text'
 import { div } from '../src/elements'
-import type { ComponentDef, View } from '../src/types'
+import type { ComponentDef } from '../src/types'
+import type { View } from '../src/view-helpers'
 
 type State = { phase: 'idle' | 'loading' | 'done' }
 type Msg = { type: 'setPhase'; phase: State['phase'] }

@@ -1,14 +1,14 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach, type Mock } from 'vitest'
 import { handleEffects, timeout, interval, cancel, type Effect } from '../src/index'
 
 describe('timeout() / interval()', () => {
-  let send: ReturnType<typeof vi.fn>
+  let send: Mock<(msg: Record<string, unknown>) => void>
   let controller: AbortController
   let signal: AbortSignal
 
   beforeEach(() => {
     vi.useFakeTimers()
-    send = vi.fn()
+    send = vi.fn<(msg: Record<string, unknown>) => void>()
     controller = new AbortController()
     signal = controller.signal
   })
@@ -19,7 +19,7 @@ describe('timeout() / interval()', () => {
   })
 
   it('timeout fires msg once after delay', () => {
-    const handler = handleEffects<Effect>().else(() => {})
+    const handler = handleEffects<Effect, Record<string, unknown>>().else(() => {})
     handler({ effect: timeout(100, { type: 'tick', n: 1 }), send, signal })
 
     expect(send).not.toHaveBeenCalled()
@@ -31,7 +31,7 @@ describe('timeout() / interval()', () => {
   })
 
   it('timeout does not fire if signal is aborted before delay', () => {
-    const handler = handleEffects<Effect>().else(() => {})
+    const handler = handleEffects<Effect, Record<string, unknown>>().else(() => {})
     handler({ effect: timeout(100, { type: 'tick' }), send, signal })
 
     controller.abort()
@@ -40,7 +40,7 @@ describe('timeout() / interval()', () => {
   })
 
   it('interval fires msg repeatedly', () => {
-    const handler = handleEffects<Effect>().else(() => {})
+    const handler = handleEffects<Effect, Record<string, unknown>>().else(() => {})
     handler({ effect: interval('t1', 50, { type: 'tick' }), send, signal })
 
     expect(send).not.toHaveBeenCalled()
@@ -53,7 +53,7 @@ describe('timeout() / interval()', () => {
   })
 
   it('cancel(key) stops an active interval', () => {
-    const handler = handleEffects<Effect>().else(() => {})
+    const handler = handleEffects<Effect, Record<string, unknown>>().else(() => {})
     handler({ effect: interval('ticker', 50, { type: 'tick' }), send, signal })
 
     vi.advanceTimersByTime(150)
@@ -66,7 +66,7 @@ describe('timeout() / interval()', () => {
   })
 
   it('starting a new interval with same key replaces the old one', () => {
-    const handler = handleEffects<Effect>().else(() => {})
+    const handler = handleEffects<Effect, Record<string, unknown>>().else(() => {})
     handler({ effect: interval('t', 50, { type: 'first' }), send, signal })
 
     vi.advanceTimersByTime(60)
@@ -82,7 +82,7 @@ describe('timeout() / interval()', () => {
   })
 
   it('component unmount aborts active intervals', () => {
-    const handler = handleEffects<Effect>().else(() => {})
+    const handler = handleEffects<Effect, Record<string, unknown>>().else(() => {})
     handler({ effect: interval('ticker', 50, { type: 'tick' }), send, signal })
 
     vi.advanceTimersByTime(50)

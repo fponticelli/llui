@@ -84,7 +84,7 @@ describe('hydration reconciliation', () => {
         __dirty: (o, n) => (Object.is(o.mode, n.mode) ? 0 : 1),
       })
 
-      const { container } = serverRenderAndHydrate(def, { mode: 'a' })
+      const { container } = serverRenderAndHydrate(def, { mode: 'a' as const })
 
       // Should have Page A, not duplicated
       expect(container.querySelectorAll('.page-a').length).toBe(1)
@@ -294,7 +294,7 @@ describe('hydration reconciliation', () => {
       expect(container.textContent).toContain('0')
 
       // Click button
-      container.querySelector('.btn')!.click()
+      ;(container.querySelector('.btn') as HTMLElement).click()
       handle.flush()
 
       expect(container.textContent).toContain('1')

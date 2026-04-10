@@ -4,6 +4,7 @@ import type { ComponentDef } from '../src/types'
 import { text } from '../src/primitives/text'
 import { setRenderContext, clearRenderContext } from '../src/render-context'
 import { createComponentInstance } from '../src/update-loop'
+import { createView } from '../src/view-helpers'
 
 describe('text()', () => {
   it('creates a static text node for string literals', () => {
@@ -15,8 +16,8 @@ describe('text()', () => {
     }
     const container = document.createElement('div')
     const inst = createComponentInstance(def)
-    setRenderContext(inst)
-    const nodes = def.view(inst.state, inst.send)
+    setRenderContext({ ...inst, container, send: inst.send as (msg: unknown) => void })
+    const nodes = def.view(createView(inst.send))
     clearRenderContext()
     for (const n of nodes) container.appendChild(n)
 

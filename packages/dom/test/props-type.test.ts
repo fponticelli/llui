@@ -22,7 +22,7 @@ describe('Props<T, S> type helper + view function composition', () => {
     return [
       div(
         {
-          class: (s) => `toolbar theme-${props.theme(s)}`,
+          class: (s: S) => `toolbar theme-${props.theme(s)}`,
           id: 'toolbar',
         },
         [
@@ -32,7 +32,7 @@ describe('Props<T, S> type helper + view function composition', () => {
             render: ({ item, send }) => [
               div(
                 {
-                  class: (s) => (props.selectedId(s) === item.id() ? 'tool active' : 'tool'),
+                  class: (s: S) => (props.selectedId(s) === item.id() ? 'tool active' : 'tool'),
                   onClick: () => send({ type: 'select', id: item.id() }),
                 },
                 [text(item.label)],

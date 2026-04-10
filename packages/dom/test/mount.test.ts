@@ -61,7 +61,7 @@ describe('mountApp', () => {
   it('passes initial data to init()', () => {
     const def: ComponentDef<{ value: number }, never, never> = {
       name: 'WithData',
-      init: (data) => [{ value: (data as { v: number }).v }, []],
+      init: (data) => [{ value: (data as unknown as { v: number }).v }, []],
       update: (s) => [s, []],
       view: () => {
         const span = document.createElement('span')

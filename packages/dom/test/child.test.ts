@@ -14,7 +14,7 @@ type ChildMsg = { type: 'propsChanged'; props: { initial: number } } | { type: '
 
 const ChildCounter = component<ChildState, ChildMsg, never>({
   name: 'ChildCounter',
-  init: (data) => [{ value: (data as { initial: number }).initial }, []],
+  init: (data) => [{ value: (data as unknown as { initial: number }).initial }, []],
   update: (state, msg) => {
     switch (msg.type) {
       case 'propsChanged':
@@ -57,7 +57,7 @@ function parentDef(): ComponentDef<ParentState, ParentMsg, never> {
       div({ class: 'parent' }, [
         text((s: ParentState) => `clicks: ${s.childClicks}`),
         ...child<ParentState, ChildMsg>({
-          def: ChildCounter,
+          def: ChildCounter as unknown as ComponentDef<unknown, ChildMsg, unknown>,
           key: 'counter',
           props: (s) => ({ initial: s.base }),
           onMsg: (msg) => (msg.type === 'increment' ? { type: 'childIncremented' as const } : null),
@@ -121,15 +121,13 @@ describe('child()', () => {
 
   it('does not call propsMsg when props are unchanged', () => {
     const { handle } = mount()
-    const spy = vi.spyOn(ChildCounter, 'update' as never)
+    const spy = vi.spyOn(ChildCounter, 'update')
     // Send a parent message that changes childClicks but not base
     parentSend({ type: 'childIncremented' })
     handle.flush()
     // ChildCounter.update should NOT have been called with propsChanged
     // because base (the prop) didn't change
-    const propsCalls = (spy as ReturnType<typeof vi.fn>).mock.calls.filter(
-      (c: [ChildState, ChildMsg]) => c[1]?.type === 'propsChanged',
-    )
+    const propsCalls = spy.mock.calls.filter((c) => (c[1] as ChildMsg)?.type === 'propsChanged')
     expect(propsCalls).toHaveLength(0)
     spy.mockRestore()
   })
@@ -156,7 +154,13 @@ describe('child()', () => {
       name: 'SpyParent',
       init: () => [{}, []],
       update: (s) => [s, []],
-      view: () => [...child({ def: ChildSpy, key: 'spy', props: () => ({}) })],
+      view: () => [
+        ...child({
+          def: ChildSpy as unknown as ComponentDef<unknown, never, unknown>,
+          key: 'spy',
+          props: () => ({}),
+        }),
+      ],
     }
 
     const container = document.createElement('div')
@@ -198,7 +202,13 @@ describe('child()', () => {
       name: 'ListParent',
       init: () => [{}, []],
       update: (s) => [s, []],
-      view: () => [...child({ def: ListChild, key: 'list', props: () => ({}) })],
+      view: () => [
+        ...child({
+          def: ListChild as unknown as ComponentDef<unknown, never, unknown>,
+          key: 'list',
+          props: () => ({}),
+        }),
+      ],
     }
 
     const container = document.createElement('div')

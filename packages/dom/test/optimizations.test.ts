@@ -115,12 +115,14 @@ describe('Phase 1 mask gating', () => {
       view: ({ text: t }) => [
         div([t((s: S) => s.label)]),
         ...each<S, string>({
-          items: (s) => {
+          items: (s: S) => {
             itemsAccessorCalls++
             return s.items
           },
-          key: (item) => item,
-          render: ({ item }) => [div([text(item)])],
+          key: (item: string) => item,
+          render: ({ item }: { item: import('../src/types').ItemAccessor<string> }) => [
+            div([text(item((t) => t))]),
+          ],
           __mask: 1, // items depends on bit 1
         } as never),
       ],
@@ -829,8 +831,7 @@ describe('each reconcileRemove', () => {
 
     expect(container.textContent).toBe('xyz')
 
-    // Access the structural block
-    // @ts-expect-error — internal access
+    // Access the structural block (internal access)
     const blocks = (handle as unknown as { structuralBlocks: StructuralBlock[] }).structuralBlocks
     if (blocks?.[0]?.reconcileRemove) {
       // Call reconcileRemove directly with filtered rows
@@ -1187,7 +1188,7 @@ describe('row factory (__rowUpdate)', () => {
               sel.bind(row, rowId, 'class', 'class', (match) => (match ? 'selected' : ''))
 
               // DOM property using the user variable
-              ;(row as Record<string, unknown>)._id = rowId
+              ;(row as unknown as Record<string, unknown>)._id = rowId
 
               // If entry available, simulate row factory pattern
               if (entry) {
@@ -1234,9 +1235,9 @@ describe('row factory (__rowUpdate)', () => {
     expect(divs[2]!.textContent).toBe('three')
 
     // Verify _id was set from the user variable
-    expect((divs[0] as Record<string, unknown>)._id).toBe(1)
-    expect((divs[1] as Record<string, unknown>)._id).toBe(2)
-    expect((divs[2] as Record<string, unknown>)._id).toBe(3)
+    expect((divs[0] as unknown as Record<string, unknown>)._id).toBe(1)
+    expect((divs[1] as unknown as Record<string, unknown>)._id).toBe(2)
+    expect((divs[2] as unknown as Record<string, unknown>)._id).toBe(3)
 
     // Verify selector works (className updates)
     expect(divs[0]!.className).toBe('')

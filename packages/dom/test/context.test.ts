@@ -20,7 +20,7 @@ describe('createContext + provide + useContext', () => {
 
     function card(): Node[] {
       const theme = useContext(ThemeCtx)
-      return [div({ class: (s) => `card theme-${theme(s)}` }, [text('content')])]
+      return [div({ class: (s: State) => `card theme-${theme(s)}` }, [text('content')])]
     }
 
     const App = component<State, never, never>({
@@ -49,7 +49,7 @@ describe('createContext + provide + useContext', () => {
 
     function box(): Node[] {
       const t = useContext(ThemeCtx)
-      return [span({ class: (s) => `box ${t(s)}` })]
+      return [span({ class: (s: State) => `box ${t(s)}` })]
     }
 
     const App = component<State, Msg, never>({
@@ -81,7 +81,7 @@ describe('createContext + provide + useContext', () => {
 
     function leaf(): Node[] {
       const v = useContext(Ctx)
-      return [span({ class: (s) => v(s) })]
+      return [span({ class: (s: State) => v(s) })]
     }
 
     const App = component<State, never, never>({
@@ -97,12 +97,13 @@ describe('createContext + provide + useContext', () => {
   })
 
   it('throws when no provider and no default', () => {
+    type LeafState = Record<string, never>
     const Ctx = createContext<string>()
     function leaf(): Node[] {
       const v = useContext(Ctx)
-      return [span({ class: (s) => v(s) })]
+      return [span({ class: (s: LeafState) => v(s) })]
     }
-    const App = component<Record<string, never>, never, never>({
+    const App = component<LeafState, never, never>({
       name: 'App',
       init: () => [{}, []],
       update: (s) => [s, []],
@@ -118,11 +119,11 @@ describe('createContext + provide + useContext', () => {
 
     function outer(): Node[] {
       const v = useContext(Ctx)
-      return [span({ class: 'o', 'data-val': (s) => v(s) })]
+      return [span({ class: 'o', 'data-val': (s: State) => v(s) })]
     }
     function inner(): Node[] {
       const v = useContext(Ctx)
-      return [span({ class: 'i', 'data-val': (s) => v(s) })]
+      return [span({ class: 'i', 'data-val': (s: State) => v(s) })]
     }
 
     const App = component<State, never, never>({
@@ -183,7 +184,7 @@ describe('createContext + provide + useContext', () => {
               key: (i) => i.id,
               render: ({ item }) => {
                 const theme = useContext(ThemeCtx)
-                return [div({ class: (s) => `row ${theme(s)}` }, [text(item.label)])]
+                return [div({ class: (s: State) => `row ${theme(s)}` }, [text(item.label)])]
               },
             }),
         ),
@@ -217,7 +218,7 @@ describe('createContext + provide + useContext', () => {
               when: (s) => s.visible,
               render: () => {
                 const lvl = useContext(LevelCtx)
-                return [span({ class: 'inside', 'data-lvl': (s) => lvl(s) })]
+                return [span({ class: 'inside', 'data-lvl': (s: State) => lvl(s) })]
               },
             }),
           ],

@@ -29,7 +29,10 @@ const ChildComp = component<ChildState, ChildMsg, never>({
   propsMsg: () => ({ type: 'propsChanged' as const, props: {} }),
   receives: {
     reset: () => ({ type: 'reset' as const }),
-    setValue: (params: { value: string }) => ({ type: 'setValue' as const, value: params.value }),
+    setValue: (params: unknown) => ({
+      type: 'setValue' as const,
+      value: (params as { value: string }).value,
+    }),
   },
   view: () => [text((s: ChildState) => s.value)],
   __dirty: (o, n) => (Object.is(o.value, n.value) ? 0 : 1),
@@ -38,7 +41,7 @@ const ChildComp = component<ChildState, ChildMsg, never>({
 describe('addressed effects', () => {
   it('addressOf builds typed effect objects from receives', () => {
     const addr = addressOf(ChildComp, 'child-1')
-    const eff = addr.reset()
+    const eff = addr.reset!()
     expect(eff).toEqual({
       __addressed: true,
       __targetKey: 'child-1',
@@ -48,7 +51,7 @@ describe('addressed effects', () => {
 
   it('addressOf passes params to the receives handler', () => {
     const addr = addressOf(ChildComp, 'child-1')
-    const eff = addr.setValue({ value: 'hello' })
+    const eff = addr.setValue!({ value: 'hello' })
     expect(eff).toEqual({
       __addressed: true,
       __targetKey: 'child-1',
@@ -91,13 +94,13 @@ describe('addressed effects', () => {
       update: (state, msg) => {
         switch (msg.type) {
           case 'sendToChild':
-            return [state, [addr.setValue({ value: 'from parent' })]]
+            return [state, [addr.setValue!({ value: 'from parent' }) as ParentEff]]
         }
       },
       view: ({ send }) => [
         div({}, [
           ...child<ParentState, ChildMsg>({
-            def: ChildComp,
+            def: ChildComp as unknown as ComponentDef<unknown, ChildMsg, unknown>,
             key: 'myChild',
             props: () => ({}),
           }),

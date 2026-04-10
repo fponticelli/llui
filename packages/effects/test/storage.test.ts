@@ -1,7 +1,7 @@
 /**
  * @vitest-environment jsdom
  */
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach, type Mock } from 'vitest'
 import {
   handleEffects,
   storageLoad,
@@ -13,14 +13,14 @@ import {
 } from '../src/index'
 
 describe('storage effects', () => {
-  let send: ReturnType<typeof vi.fn>
+  let send: Mock<(msg: { type: string; value?: unknown }) => void>
   let ctrl: AbortController
   let signal: AbortSignal
 
   beforeEach(() => {
     localStorage.clear()
     sessionStorage.clear()
-    send = vi.fn()
+    send = vi.fn<(msg: { type: string; value?: unknown }) => void>()
     ctrl = new AbortController()
     signal = ctrl.signal
   })
@@ -52,21 +52,21 @@ describe('storage effects', () => {
   })
 
   it('storageSet writes JSON to localStorage', () => {
-    const handler = handleEffects<Effect>().else(() => {})
+    const handler = handleEffects<Effect, { type: string; value?: unknown }>().else(() => {})
     handler({ effect: storageSet('count', 42), send, signal })
     expect(localStorage.getItem('count')).toBe('42')
   })
 
   it('storageRemove deletes the key', () => {
     localStorage.setItem('tmp', '"x"')
-    const handler = handleEffects<Effect>().else(() => {})
+    const handler = handleEffects<Effect, { type: string; value?: unknown }>().else(() => {})
     handler({ effect: storageRemove('tmp'), send, signal })
     expect(localStorage.getItem('tmp')).toBe(null)
   })
 
   it('storageGet dispatches onLoad with parsed value', () => {
     localStorage.setItem('theme', '"dark"')
-    const handler = handleEffects<Effect>().else(() => {})
+    const handler = handleEffects<Effect, { type: string; value?: unknown }>().else(() => {})
     handler({
       effect: storageGet('theme', (value) => ({ type: 'themeLoaded', value })),
       send,
@@ -76,7 +76,7 @@ describe('storage effects', () => {
   })
 
   it('storageGet dispatches onLoad with null when key missing', () => {
-    const handler = handleEffects<Effect>().else(() => {})
+    const handler = handleEffects<Effect, { type: string; value?: unknown }>().else(() => {})
     handler({
       effect: storageGet('nope', (value) => ({ type: 'loaded', value })),
       send,
@@ -86,7 +86,7 @@ describe('storage effects', () => {
   })
 
   it('storageWatch fires onChange when storage event dispatches for the key', () => {
-    const handler = handleEffects<Effect>().else(() => {})
+    const handler = handleEffects<Effect, { type: string; value?: unknown }>().else(() => {})
     handler({
       effect: storageWatch('settings', (value) => ({ type: 'settingsChanged', value })),
       send,
@@ -108,7 +108,7 @@ describe('storage effects', () => {
   })
 
   it('storageWatch ignores events for other keys', () => {
-    const handler = handleEffects<Effect>().else(() => {})
+    const handler = handleEffects<Effect, { type: string; value?: unknown }>().else(() => {})
     handler({
       effect: storageWatch('a', (value) => ({ type: 'changed', value })),
       send,
@@ -119,7 +119,7 @@ describe('storage effects', () => {
   })
 
   it('storageWatch stops listening on signal abort', () => {
-    const handler = handleEffects<Effect>().else(() => {})
+    const handler = handleEffects<Effect, { type: string; value?: unknown }>().else(() => {})
     handler({
       effect: storageWatch('k', (value) => ({ type: 'changed', value })),
       send,

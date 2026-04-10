@@ -5,6 +5,7 @@ import type { LluiDebugAPI } from '../src/devtools'
 import { createComponentInstance, flushInstance } from '../src/update-loop'
 import { setFlatBindings } from '../src/binding'
 import { setRenderContext, clearRenderContext } from '../src/render-context'
+import { createView } from '../src/view-helpers'
 
 declare const globalThis: { __lluiDebug?: LluiDebugAPI }
 
@@ -36,9 +37,9 @@ function mountWithDevTools() {
     allBindings: inst.allBindings,
     structuralBlocks: inst.structuralBlocks,
     container,
-    send: inst.send,
+    send: inst.send as (msg: unknown) => void,
   })
-  Counter.view(inst.state, inst.send)
+  Counter.view(createView(inst.send))
   clearRenderContext()
   setFlatBindings(null)
 

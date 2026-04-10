@@ -57,7 +57,7 @@ describe('text binding updates inside stable branch case', () => {
           cases: {
             loading: () => [text('Loading...')],
             empty: () => [text('No results')],
-            results: (send) => [
+            results: ({ send }) => [
               div({ class: 'items' }, [
                 ...each<State, string, Msg>({
                   items: (s) => {

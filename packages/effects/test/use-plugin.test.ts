@@ -7,7 +7,7 @@ describe('handleEffects().use()', () => {
     const send = vi.fn()
 
     const handler = handleEffects<Effect | { type: 'custom'; data: string }>()
-      .use(({ effect }) => {
+      .use<{ type: string; data?: string }, unknown>(({ effect }) => {
         if (effect.type === 'custom') {
           send({ type: 'handled', data: (effect as { data: string }).data })
           return true

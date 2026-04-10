@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, type Mock } from 'vitest'
-import { handleEffects, http, sequence, race, type Effect } from '../src/index'
+import { handleEffects, http, sequence, race, type Effect, type ApiError } from '../src/index'
 
 type Send = (msg: Record<string, unknown>) => void
 
@@ -35,12 +35,12 @@ describe('sequence', () => {
 
     handler({
       effect: sequence([
-        http({
+        http<{ type: string; payload?: unknown; error?: ApiError }>({
           url: '/first',
           onSuccess: (data) => ({ type: 'r1', payload: data }),
           onError: (err) => ({ type: 'e1', error: err }),
         }),
-        http({
+        http<{ type: string; payload?: unknown; error?: ApiError }>({
           url: '/second',
           onSuccess: (data) => ({ type: 'r2', payload: data }),
           onError: (err) => ({ type: 'e2', error: err }),
@@ -87,12 +87,12 @@ describe('race', () => {
 
     handler({
       effect: race([
-        http({
+        http<{ type: string; payload?: unknown; error?: ApiError }>({
           url: '/a',
           onSuccess: (data) => ({ type: 'a', payload: data }),
           onError: (err) => ({ type: 'e', error: err }),
         }),
-        http({
+        http<{ type: string; payload?: unknown; error?: ApiError }>({
           url: '/b',
           onSuccess: (data) => ({ type: 'b', payload: data }),
           onError: (err) => ({ type: 'e', error: err }),
@@ -126,12 +126,12 @@ describe('race', () => {
 
     handler({
       effect: race([
-        http({
+        http<{ type: string; payload?: unknown; error?: ApiError }>({
           url: '/slow',
           onSuccess: (data) => ({ type: 'slow', payload: data }),
           onError: (err) => ({ type: 'e', error: err }),
         }),
-        http({
+        http<{ type: string; payload?: unknown; error?: ApiError }>({
           url: '/fast',
           onSuccess: (data) => ({ type: 'fast', payload: data }),
           onError: (err) => ({ type: 'e', error: err }),

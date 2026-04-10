@@ -25,7 +25,7 @@ function twoPropDef(): ComponentDef<State, Msg, never> {
   }
 }
 
-function wireFlat(inst: ReturnType<typeof createComponentInstance>) {
+function wireFlat<S, M, E>(inst: import('../src/update-loop').ComponentInstance<S, M, E>) {
   setFlatBindings(inst.allBindings)
 }
 

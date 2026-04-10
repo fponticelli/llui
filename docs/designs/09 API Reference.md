@@ -437,6 +437,38 @@ See: 01 Architecture.md
 
 ---
 
+### `lazy(opts)`
+
+Asynchronously load a component on demand. Renders `fallback` immediately, then swaps in the loaded component when the loader's Promise resolves. On rejection, renders `error` (or nothing if no error handler is provided). If the parent scope is disposed before the loader resolves, the load is cancelled — the loaded component is never mounted.
+
+```typescript
+function lazy<S, M, E = never, D = undefined>(opts: {
+  loader: () => Promise<ComponentDef<unknown, M, E, D>>
+  fallback: (h: View<S, M>) => Node[]
+  error?: (err: Error, h: View<S, M>) => Node[]
+  data?: (s: S) => D
+}): Node[]
+```
+
+Typical use:
+
+```typescript
+view: ({ text }) => [
+  ...lazy({
+    loader: () => import('./Chart').then((m) => m.default),
+    fallback: ({ text }) => [div([text('Loading...')])],
+    error: (err, { text }) => [div([text(`Failed: ${err.message}`)])],
+    data: (s) => ({ points: s.chartData }),
+  }),
+]
+```
+
+The loader is called once per `lazy()` instance. Integrates with Vite's dynamic `import()` for code splitting.
+
+See: 06 Bundle Size.md
+
+---
+
 ### `memo(accessor)`
 
 Memoizes an accessor using a two-level cache: (1) the bitmask check skips re-evaluation when no relevant state paths changed, and (2) `Object.is` comparison on the return value prevents downstream updates when the computation produces the same result despite input changes.
