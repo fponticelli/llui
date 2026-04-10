@@ -14,8 +14,9 @@
   --sidebar-width: 220px;
 }
 
+/* Dark palette — applied when user selects dark OR system prefers dark (without explicit light) */
 @media (prefers-color-scheme: dark) {
-  :root {
+  :root:not([data-theme='light']) {
     --c-bg: #0f172a;
     --c-text: #e2e8f0;
     --c-text-muted: #94a3b8;
@@ -25,6 +26,16 @@
     --c-code-bg: #1e293b;
     --c-nav-bg: #1e293b;
   }
+}
+:root[data-theme='dark'] {
+  --c-bg: #0f172a;
+  --c-text: #e2e8f0;
+  --c-text-muted: #94a3b8;
+  --c-border: #334155;
+  --c-accent: #60a5fa;
+  --c-accent-light: #1e3a5f;
+  --c-code-bg: #1e293b;
+  --c-nav-bg: #1e293b;
 }
 
 * {
@@ -71,11 +82,48 @@ body {
   font-size: 0.85rem;
 }
 
+.site-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-left: auto;
+}
+
 .menu-toggle {
   display: none;
   cursor: pointer;
   font-size: 1.5rem;
-  margin-left: auto;
+}
+
+.theme-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2rem;
+  height: 2rem;
+  padding: 0;
+  border: 1px solid var(--c-border);
+  background: transparent;
+  color: var(--c-text-muted);
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 1rem;
+  line-height: 1;
+  transition:
+    background 0.15s,
+    color 0.15s,
+    border-color 0.15s;
+}
+
+.theme-toggle:hover {
+  background: var(--c-nav-bg);
+  color: var(--c-text);
+  border-color: var(--c-accent);
+}
+
+.theme-icon {
+  display: inline-block;
+  pointer-events: none;
 }
 
 .site-body {
@@ -224,10 +272,14 @@ body {
 }
 
 @media (prefers-color-scheme: dark) {
-  .prose .shiki,
-  .prose .shiki span {
+  :root:not([data-theme='light']) .prose .shiki,
+  :root:not([data-theme='light']) .prose .shiki span {
     color: var(--shiki-dark);
   }
+}
+:root[data-theme='dark'] .prose .shiki,
+:root[data-theme='dark'] .prose .shiki span {
+  color: var(--shiki-dark);
 }
 
 .prose table {

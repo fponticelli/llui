@@ -53,7 +53,19 @@ export * as imageCropper from './image-cropper'
 export * as navigationMenu from './navigation-menu'
 export * as qrCode from './qr-code'
 export * as inView from './in-view'
+export * as form from './form'
+export * as sortable from './sortable'
+export * as themeSwitch from './theme-switch'
 
+export type { FormState, FormMsg, FormStatus, FormParts, ValidateResult } from './form'
+export type { SortableState, SortableMsg, SortableParts, DragState } from './sortable'
+export type {
+  ThemeSwitchState,
+  ThemeSwitchMsg,
+  ThemeSwitchParts,
+  Theme,
+  ResolvedTheme,
+} from './theme-switch'
 export type {
   InViewState,
   InViewMsg,

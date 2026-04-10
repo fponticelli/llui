@@ -30,6 +30,9 @@ export const onRenderHtml = createOnRenderHtml({
     <meta property="og:url" content="https://llui.dev" />
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
     <link rel="stylesheet" href="/styles.css" />
+    <script>
+      (function(){try{var t=localStorage.getItem('llui-theme');if(t==='dark'||t==='light'){document.documentElement.dataset.theme=t}}catch(e){}})();
+    </script>
   </head>
   <body>
     <div id="app">${html}</div>

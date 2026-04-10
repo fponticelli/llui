@@ -475,7 +475,8 @@
     "./dist/styles/theme-dark.css"
   ],
   "dependencies": {
-    "@floating-ui/dom": "^1.7.6"
+    "@floating-ui/dom": "^1.7.6",
+    "@standard-schema/spec": "^1.0.0"
   },
   "description": "54 headless UI components for LLui — accordion, dialog, tabs, select, tree-view, timer, tour, and more",
   "keywords": [

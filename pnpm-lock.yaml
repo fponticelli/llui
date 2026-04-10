@@ -166,6 +166,9 @@ importers:
       '@floating-ui/dom':
         specifier: ^1.7.6
         version: 1.7.6
+      '@standard-schema/spec':
+        specifier: ^1.0.0
+        version: 1.1.0
     devDependencies:
       '@llui/dom':
         specifier: workspace:*

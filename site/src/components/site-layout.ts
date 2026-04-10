@@ -1,4 +1,4 @@
-import { div, nav, a, span } from '@llui/dom'
+import { div, nav, a, span, button, onMount } from '@llui/dom'
 import type { Send } from '@llui/dom'
 
 interface LayoutState {
@@ -21,17 +21,34 @@ export function siteLayout<S extends LayoutState, M extends LayoutMsg>({
   send: Send<M>
   content: Node[]
 }): Node {
+  // Wire theme toggle button after mount (self-contained — no component state)
+  onMount(() => {
+    setupThemeToggle()
+  })
+
   return div({ class: 'site-layout' }, [
     // Header
     div({ class: 'site-header' }, [
       a({ href: '/', class: 'site-logo' }, [text('LLui')]),
-      div(
-        {
-          class: 'menu-toggle',
-          onClick: () => send({ type: 'toggleMenu' } as M),
-        },
-        [text('\u2630')],
-      ),
+      div({ class: 'site-header-actions' }, [
+        button(
+          {
+            class: 'theme-toggle',
+            id: 'theme-toggle',
+            type: 'button',
+            'aria-label': 'Toggle theme',
+            title: 'Toggle theme',
+          },
+          [span({ class: 'theme-icon' }, [text('\u263D')])],
+        ),
+        div(
+          {
+            class: 'menu-toggle',
+            onClick: () => send({ type: 'toggleMenu' } as M),
+          },
+          [text('\u2630')],
+        ),
+      ]),
     ]),
 
     div({ class: 'site-body' }, [
@@ -75,6 +92,68 @@ export function siteLayout<S extends LayoutState, M extends LayoutMsg>({
       a({ href: '/llms.txt', class: 'footer-link' }, [text('llms.txt')]),
     ]),
   ])
+}
+
+type ThemePref = 'light' | 'dark' | 'system'
+
+function readStoredTheme(): ThemePref {
+  try {
+    const v = localStorage.getItem('llui-theme')
+    if (v === 'light' || v === 'dark' || v === 'system') return v
+  } catch {
+    // ignore
+  }
+  return 'system'
+}
+
+function resolvedTheme(pref: ThemePref): 'light' | 'dark' {
+  if (pref === 'dark') return 'dark'
+  if (pref === 'light') return 'light'
+  if (typeof window !== 'undefined' && window.matchMedia) {
+    return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
+  }
+  return 'light'
+}
+
+function setupThemeToggle(): void {
+  const btn = document.getElementById('theme-toggle')
+  if (!btn) return
+
+  // Avoid double-binding on client navigation
+  if (btn.dataset.wired === 'true') {
+    updateIcon(btn, readStoredTheme())
+    return
+  }
+  btn.dataset.wired = 'true'
+
+  updateIcon(btn, readStoredTheme())
+
+  btn.addEventListener('click', () => {
+    const current = readStoredTheme()
+    // Cycle: system → dark → light → system
+    const next: ThemePref = current === 'system' ? 'dark' : current === 'dark' ? 'light' : 'system'
+    try {
+      localStorage.setItem('llui-theme', next)
+    } catch {
+      // ignore
+    }
+    if (next === 'system') {
+      document.documentElement.removeAttribute('data-theme')
+    } else {
+      document.documentElement.dataset.theme = next
+    }
+    updateIcon(btn, next)
+  })
+}
+
+function updateIcon(btn: HTMLElement, pref: ThemePref): void {
+  const icon = btn.querySelector('.theme-icon')
+  if (!icon) return
+  // ☽ = dark, ☀ = light, ◐ = system
+  const resolved = resolvedTheme(pref)
+  icon.textContent = pref === 'system' ? '\u25D0' : resolved === 'dark' ? '\u263D' : '\u2600'
+  btn.title = `Theme: ${pref}`
+  btn.setAttribute('aria-label', `Theme: ${pref}. Click to switch.`)
 }
 
 function navLink<S extends LayoutState>(

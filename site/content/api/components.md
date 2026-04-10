@@ -220,7 +220,7 @@ Supported on: editable, number-input, tags-input, pin-input, file-upload.
 
 ## Component Reference
 
-All 55 components follow the same pattern:
+All 58 components follow the same pattern:
 
 ```typescript
 import { componentName } from '@llui/components/component-name'
@@ -671,6 +671,26 @@ const parts = componentName.connect<State>((s) => s.field, send, { id: '...' })
 **Connect options:** `ConnectOptions`
 
 **Parts:** `root`, `dragHandle`, `content`, `minimizeTrigger`, `maximizeTrigger`, `closeTrigger`, `resizeHandle`
+
+---
+
+### Form
+
+**State** (`FormState`):
+
+| Field         | Type                      |
+| ------------- | ------------------------- |
+| `status`      | `FormStatus`              |
+| `touched`     | `Record<string, boolean>` |
+| `submitError` | `string \| null`          |
+
+**Messages:** `touch`, `touchAll`, `submit`, `submitSuccess`, `submitError`, `reset`
+
+**Connect options:** `ConnectOptions`
+
+**Parts:** `root`, `field`, `submit`
+
+**Utilities:** `validateSchema()`, `validateSchemaAsync()`
 
 ---
 
@@ -1139,6 +1159,27 @@ const parts = componentName.connect<State>((s) => s.field, send, { id: '...' })
 
 ---
 
+### Sortable
+
+**State** (`SortableState`):
+
+| Field          | Type                |
+| -------------- | ------------------- |
+| `id`           | `string`            |
+| `startIndex`   | `number`            |
+| `currentIndex` | `number`            |
+| `dragging`     | `DragState \| null` |
+
+**Messages:** `start`, `move`, `drop`, `cancel`
+
+**Connect options:** `ConnectOptions`
+
+**Parts:** `root`, `item`, `handle`
+
+**Utilities:** `reorder()`
+
+---
+
 ### Splitter
 
 **State** (`SplitterState`):
@@ -1252,6 +1293,22 @@ const parts = componentName.connect<State>((s) => s.field, send, { id: '...' })
 **Connect options:** `ConnectOptions`
 
 **Parts:** `root`, `input`, `tag`, `clearTrigger`
+
+---
+
+### Theme Switch
+
+**State** (`ThemeSwitchState`):
+
+| Field   | Type    |
+| ------- | ------- |
+| `theme` | `Theme` |
+
+**Messages:** `setTheme`, `toggle`
+
+**Connect options:** `ConnectOptions`
+
+**Parts:** `root`, `option`, `toggle`
 
 ---
 
