@@ -59,6 +59,15 @@ export interface DragState {
    * single-container sortables. Differs when dragging across containers.
    */
   toContainer: string
+  /**
+   * Pointer Y at drag start (viewport coordinates). Used by CSS to make
+   * the dragged item follow the pointer via translateY(deltaY).
+   */
+  startY: number
+  /**
+   * Current pointer Y (viewport coordinates). `deltaY = currentY - startY`.
+   */
+  currentY: number
 }
 
 export interface SortableState {
@@ -66,8 +75,8 @@ export interface SortableState {
 }
 
 export type SortableMsg =
-  | { type: 'start'; id: string; index: number; container: string }
-  | { type: 'move'; index: number; container: string }
+  | { type: 'start'; id: string; index: number; container: string; y: number }
+  | { type: 'move'; index: number; container: string; y: number }
   | { type: 'drop' }
   | { type: 'cancel' }
   // Keyboard: toggle between picking up and dropping at current position
@@ -90,6 +99,8 @@ export function update(state: SortableState, msg: SortableMsg): [SortableState, 
             currentIndex: msg.index,
             fromContainer: msg.container,
             toContainer: msg.container,
+            startY: msg.y,
+            currentY: msg.y,
           },
         },
         [],
@@ -98,7 +109,8 @@ export function update(state: SortableState, msg: SortableMsg): [SortableState, 
       if (!state.dragging) return [state, []]
       if (
         state.dragging.currentIndex === msg.index &&
-        state.dragging.toContainer === msg.container
+        state.dragging.toContainer === msg.container &&
+        state.dragging.currentY === msg.y
       ) {
         return [state, []]
       }
@@ -108,6 +120,7 @@ export function update(state: SortableState, msg: SortableMsg): [SortableState, 
             ...state.dragging,
             currentIndex: msg.index,
             toContainer: msg.container,
+            currentY: msg.y,
           },
         },
         [],
@@ -122,7 +135,7 @@ export function update(state: SortableState, msg: SortableMsg): [SortableState, 
         // Already dragging — drop at current position
         return [{ dragging: null }, []]
       }
-      // Pick up
+      // Pick up (keyboard — no pointer position)
       return [
         {
           dragging: {
@@ -131,6 +144,8 @@ export function update(state: SortableState, msg: SortableMsg): [SortableState, 
             currentIndex: msg.index,
             fromContainer: msg.container,
             toContainer: msg.container,
+            startY: 0,
+            currentY: 0,
           },
         },
         [],
@@ -164,6 +179,9 @@ export interface SortableParts<S> {
     'data-id': string
     'data-dragging': (s: S) => '' | undefined
     'data-over': (s: S) => '' | undefined
+    'data-shift': (s: S) => 'up' | 'down' | undefined
+    'style.transform': (s: S) => string | undefined
+    'style.zIndex': (s: S) => string | undefined
   }
   handle: (
     id: string,
@@ -231,7 +249,8 @@ export function connect<S>(
       onPointerMove: (e) => {
         if (!e.buttons) return
         const hit = findItemAt(e)
-        if (hit !== null) send({ type: 'move', index: hit.index, container: hit.container })
+        if (hit !== null)
+          send({ type: 'move', index: hit.index, container: hit.container, y: e.clientY })
       },
       onPointerUp: () => send({ type: 'drop' }),
       onPointerCancel: () => send({ type: 'cancel' }),
@@ -248,6 +267,36 @@ export function connect<S>(
       'data-over': (s) => {
         const d = get(s).dragging
         return d?.currentIndex === index && d?.toContainer === containerId ? '' : undefined
+      },
+      // Shift direction for items BETWEEN the source and target (excluding the
+      // dragged item itself). 'down' = item should translate down to make room;
+      // 'up' = item should translate up. CSS controls the actual displacement.
+      'data-shift': (s) => {
+        const d = get(s).dragging
+        if (!d || d.fromContainer !== containerId || d.toContainer !== containerId) return undefined
+        if (d.id === id) return undefined
+        if (d.startIndex === d.currentIndex) return undefined
+        if (d.startIndex < d.currentIndex) {
+          // Dragging down: items between start+1 and current shift up
+          if (index > d.startIndex && index <= d.currentIndex) return 'up'
+        } else {
+          // Dragging up: items between current and start-1 shift down
+          if (index >= d.currentIndex && index < d.startIndex) return 'down'
+        }
+        return undefined
+      },
+      // The dragged item follows the pointer via translateY(deltaY). Other
+      // items have no transform override — data-shift CSS handles them.
+      'style.transform': (s) => {
+        const d = get(s).dragging
+        if (!d || d.id !== id || d.fromContainer !== containerId) return undefined
+        const deltaY = d.currentY - d.startY
+        return `translateY(${deltaY}px)`
+      },
+      'style.zIndex': (s) => {
+        const d = get(s).dragging
+        if (!d || d.id !== id || d.fromContainer !== containerId) return undefined
+        return '10'
       },
     }),
     handle: (id, index) => ({
@@ -273,7 +322,7 @@ export function connect<S>(
             // Ignore — not all elements support pointer capture
           }
         }
-        send({ type: 'start', id, index, container: containerId })
+        send({ type: 'start', id, index, container: containerId, y: e.clientY })
       },
       onKeyDown: (e) => {
         switch (e.key) {

@@ -341,6 +341,7 @@
 }
 
 .priority-item {
+  --row-height: 57px;
   display: flex;
   align-items: center;
   gap: 0.75rem;
@@ -351,7 +352,8 @@
   transition:
     background 0.15s,
     border-color 0.15s,
-    transform 0.15s;
+    transform 0.2s cubic-bezier(0.22, 1, 0.36, 1);
+  will-change: transform;
 }
 
 .priority-item:hover {
@@ -359,11 +361,24 @@
   border-color: var(--accent-muted);
 }
 
-.priority-item.dragging {
-  background: rgba(99, 102, 241, 0.15);
+/* Dragged item: no transition so it follows the pointer smoothly via inline transform */
+.priority-item[data-dragging] {
+  background: rgba(99, 102, 241, 0.25);
   border-color: var(--accent);
-  transform: scale(1.01);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+  transition:
+    background 0.15s,
+    border-color 0.15s;
+  pointer-events: none;
+}
+
+/* Items shifted to make room for the drop position */
+.priority-item[data-shift='down'] {
+  transform: translateY(var(--row-height));
+}
+
+.priority-item[data-shift='up'] {
+  transform: translateY(calc(var(--row-height) * -1));
 }
 
 .priority-handle {

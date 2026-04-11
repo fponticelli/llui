@@ -1170,6 +1170,8 @@ const parts = componentName.connect<State>((s) => s.field, send, { id: '...' })
 | `currentIndex`  | `number`            |
 | `fromContainer` | `string`            |
 | `toContainer`   | `string`            |
+| `startY`        | `number`            |
+| `currentY`      | `number`            |
 | `dragging`      | `DragState \| null` |
 
 **Messages:** `start`, `move`, `drop`, `cancel`, `toggleGrab`, `moveBy`

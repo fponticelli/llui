@@ -282,8 +282,7 @@ function prioritiesSection(h: View<State, Msg>, send: Send<Msg>): HTMLElement {
               li(
                 {
                   ...parts.item(id(), index()),
-                  class: (s: State) =>
-                    `priority-item${s.sort.dragging?.id === id() ? ' dragging' : ''}`,
+                  class: 'priority-item',
                 },
                 [
                   div({ ...parts.handle(id(), index()), class: 'priority-handle' }, [
