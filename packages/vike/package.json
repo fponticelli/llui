@@ -1,6 +1,6 @@
 {
   "name": "@llui/vike",
-  "version": "0.0.7",
+  "version": "0.0.8",
   "type": "module",
   "sideEffects": false,
   "exports": {
@@ -28,7 +28,7 @@
     "test:coverage": "vitest run --coverage"
   },
   "dependencies": {
-    "@llui/dom": "workspace:*",
+    "@llui/dom": "^0.0.8",
     "jsdom": "^26.1.0"
   },
   "description": "LLui Vike SSR adapter — onRenderHtml, onRenderClient hooks",
