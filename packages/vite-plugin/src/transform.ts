@@ -1279,39 +1279,51 @@ function tryBuildHandlers(
     if (!ts.isStringLiteral(clause.expression)) continue
     const msgType = clause.expression.text
 
-    // Find the return statement in the case body
-    let returnExpr: ts.ArrayLiteralExpression | null = null
-    for (const stmt of clause.statements) {
+    // Collect ALL return [newState, effects] statements recursively from the
+    // case body. Multiple returns (from if/else branches) must all be analyzed
+    // so the handler's dirty mask covers every possible modified field.
+    const returnExprs: ts.ArrayLiteralExpression[] = []
+    const collectReturns = (node: ts.Node): void => {
       if (
-        ts.isReturnStatement(stmt) &&
-        stmt.expression &&
-        ts.isArrayLiteralExpression(stmt.expression)
+        ts.isReturnStatement(node) &&
+        node.expression &&
+        ts.isArrayLiteralExpression(node.expression) &&
+        node.expression.elements.length >= 2
       ) {
-        returnExpr = stmt.expression
+        returnExprs.push(node.expression)
+        return
+      }
+      // Don't descend into nested functions — their returns are unrelated.
+      if (
+        ts.isFunctionDeclaration(node) ||
+        ts.isFunctionExpression(node) ||
+        ts.isArrowFunction(node) ||
+        ts.isMethodDeclaration(node)
+      ) {
+        return
+      }
+      ts.forEachChild(node, collectReturns)
+    }
+    for (const stmt of clause.statements) {
+      collectReturns(stmt)
+    }
+    if (returnExprs.length === 0) continue
+
+    // Union modified fields across all return paths.
+    const allModified = new Set<string>()
+    let bailOut = false
+    for (const returnExpr of returnExprs) {
+      const stateExpr = returnExpr.elements[0]!
+      const fields = analyzeModifiedFields(stateExpr, stateName, topLevelBits)
+      if (!fields) {
+        bailOut = true
         break
       }
-      // Handle block-scoped cases: case 'x': { ... return [...] }
-      if (ts.isBlock(stmt)) {
-        for (const inner of stmt.statements) {
-          if (
-            ts.isReturnStatement(inner) &&
-            inner.expression &&
-            ts.isArrayLiteralExpression(inner.expression)
-          ) {
-            returnExpr = inner.expression
-            break
-          }
-        }
-      }
+      for (const f of fields) allModified.add(f)
     }
-    if (!returnExpr || returnExpr.elements.length < 2) continue
+    if (bailOut) continue // at least one return path was too complex
 
-    // Analyze the state expression (first element of return [newState, effects])
-    const stateExpr = returnExpr.elements[0]!
-
-    // Determine which top-level fields change
-    const modifiedFields = analyzeModifiedFields(stateExpr, stateName, topLevelBits)
-    if (!modifiedFields) continue // too complex to analyze
+    const modifiedFields = Array.from(allModified)
 
     // Compute the dirty mask for this case
     let caseDirty = 0

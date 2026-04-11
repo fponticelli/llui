@@ -68,7 +68,6 @@ const Dashboard = component<State, Msg, never>({
       }
       case 'sort': {
         const [sort] = sortable.update(state.sort, msg.msg)
-        // On drop, apply the reorder to priorities
         if (msg.msg.type === 'drop' && state.sort.dragging) {
           const { startIndex, currentIndex } = state.sort.dragging
           return [

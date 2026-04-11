@@ -809,6 +809,98 @@ describe('spread props bail to runtime', () => {
   })
 })
 
+describe('__handlers per-message optimization', () => {
+  it('unions modified fields across multiple return paths in a single case', () => {
+    // Regression: the compiler used to only analyze the first return
+    // statement in a case, missing conditional returns inside if-blocks.
+    // This caused drag-and-drop in the dashboard example to silently fail
+    // because the 'sort' handler's dirty mask only included 'sort' (16)
+    // but not 'priorities' (8) which is set in the drop branch.
+    const src = `
+      import { component, div } from '@llui/dom'
+      type State = { a: string; b: string; c: string }
+      type Msg = { type: 'multi' } | { type: 'single' }
+      export const C = component<State, Msg, never>({
+        name: 'C',
+        init: () => [{ a: '', b: '', c: '' }, []],
+        update: (state, msg) => {
+          switch (msg.type) {
+            case 'multi': {
+              if (state.a === 'x') {
+                return [{ ...state, a: 'y', b: 'z', c: 'w' }, []]
+              }
+              return [{ ...state, a: 'fallback' }, []]
+            }
+            case 'single':
+              return [{ ...state, b: 'only' }, []]
+          }
+        },
+        view: ({ text }) => [div([text((s) => s.a + s.b + s.c)])],
+      })
+    `
+    const out = t(src)
+    // The 'multi' handler must have a mask covering a|b|c, not just a.
+    // Masks: a=1, b=2, c=4, so multi = 1|2|4 = 7
+    const multiHandlerMatch = out.match(/"multi"[\s\S]*?__handleMsg\([^,]+,\s*[^,]+,\s*(\d+)/)
+    expect(multiHandlerMatch).not.toBeNull()
+    const multiMask = Number(multiHandlerMatch![1])
+    // Must include bits for a, b, and c (at least 3 bits set)
+    expect(multiMask.toString(2).split('1').length - 1).toBeGreaterThanOrEqual(3)
+  })
+
+  it('handles a case with only a single return path correctly', () => {
+    const src = `
+      import { component, div } from '@llui/dom'
+      type State = { a: string; b: string }
+      type Msg = { type: 'x' }
+      export const C = component<State, Msg, never>({
+        name: 'C',
+        init: () => [{ a: '', b: '' }, []],
+        update: (state, msg) => {
+          switch (msg.type) {
+            case 'x':
+              return [{ ...state, a: 'new' }, []]
+          }
+        },
+        view: ({ text }) => [div([text((s) => s.a + s.b)])],
+      })
+    `
+    const out = t(src)
+    // Only 'a' modified — mask should be 1
+    const handlerMatch = out.match(/"x"[\s\S]*?__handleMsg\([^,]+,\s*[^,]+,\s*(\d+)/)
+    expect(handlerMatch).not.toBeNull()
+    expect(Number(handlerMatch![1])).toBe(1)
+  })
+
+  it('ignores returns inside nested functions', () => {
+    const src = `
+      import { component, div } from '@llui/dom'
+      type State = { a: number; b: number }
+      type Msg = { type: 'go' }
+      export const C = component<State, Msg, never>({
+        name: 'C',
+        init: () => [{ a: 0, b: 0 }, []],
+        update: (state, msg) => {
+          switch (msg.type) {
+            case 'go': {
+              // A nested function with its own return — must NOT be counted
+              const helper = () => [{ ...state, b: 999 }, []] as [State, never[]]
+              helper() // swallowed
+              return [{ ...state, a: state.a + 1 }, []]
+            }
+          }
+        },
+        view: ({ text }) => [div([text((s) => String(s.a + s.b))])],
+      })
+    `
+    const out = t(src)
+    const handlerMatch = out.match(/"go"[\s\S]*?__handleMsg\([^,]+,\s*[^,]+,\s*(\d+)/)
+    expect(handlerMatch).not.toBeNull()
+    // Only 'a' should be modified — nested function's return is ignored
+    expect(Number(handlerMatch![1])).toBe(1)
+  })
+})
+
 describe('returns null for non-llui files', () => {
   it('returns null when no @llui/dom import', () => {
     const src = `export const x = 42`
