@@ -214,17 +214,27 @@ export function connect<S>(
   // the target index is not affected by items visually shifting via CSS.
   // Map: container-id → array of midpoint Y values for each item's original
   // bounding rect (sorted by index). The handler records this on pointerdown.
-  const snapshots = new Map<string, number[]>()
+  interface Snapshot {
+    mids: number[]
+    // id → current DOM index at drag start. Used by data-shift to look up an
+    // item's live position, since the `index` captured at render time is
+    // frozen and goes stale after each() reconciles a reorder.
+    idToIndex: Map<string, number>
+  }
+  const snapshots = new Map<string, Snapshot>()
 
   function snapshotContainer(rootEl: HTMLElement, cid: string): void {
     const items = rootEl.querySelectorAll<HTMLElement>('[data-scope="sortable"][data-part="item"]')
     // Read rects once — they're pre-transform (no drag shifts yet)
     const mids: number[] = []
-    for (const item of items) {
+    const idToIndex = new Map<string, number>()
+    items.forEach((item, i) => {
       const r = item.getBoundingClientRect()
       mids.push(r.top + r.height / 2)
-    }
-    snapshots.set(cid, mids)
+      const itemId = item.dataset.id
+      if (itemId !== undefined) idToIndex.set(itemId, i)
+    })
+    snapshots.set(cid, { mids, idToIndex })
   }
 
   function snapshotAll(): void {
@@ -252,8 +262,9 @@ export function connect<S>(
       if (e.clientY < r.top || e.clientY > r.bottom) continue
       const cid = root.dataset.containerId
       if (!cid) continue
-      const mids = snapshots.get(cid)
-      if (!mids || mids.length === 0) return { container: cid, index: 0 }
+      const snap = snapshots.get(cid)
+      if (!snap || snap.mids.length === 0) return { container: cid, index: 0 }
+      const mids = snap.mids
       // Find the index whose midpoint is closest to clientY
       let bestIdx = 0
       let bestDist = Math.abs(e.clientY - mids[0]!)
@@ -301,7 +312,13 @@ export function connect<S>(
       },
       'data-over': (s) => {
         const d = get(s).dragging
-        return d?.currentIndex === index && d?.toContainer === containerId ? '' : undefined
+        if (!d || d.toContainer !== containerId) return undefined
+        // Look up this item's CURRENT DOM index via the drag-start snapshot.
+        // The `index` closed over here is frozen at initial render and goes
+        // stale after each() reconciles a reorder.
+        const snap = snapshots.get(containerId)
+        const liveIndex = snap?.idToIndex.get(id) ?? index
+        return d.currentIndex === liveIndex ? '' : undefined
       },
       // Shift direction for items BETWEEN the source and target (excluding the
       // dragged item itself). 'down' = item should translate down to make room;
@@ -311,12 +328,15 @@ export function connect<S>(
         if (!d || d.fromContainer !== containerId || d.toContainer !== containerId) return undefined
         if (d.id === id) return undefined
         if (d.startIndex === d.currentIndex) return undefined
+        // Look up this item's live DOM index — see note on data-over.
+        const snap = snapshots.get(containerId)
+        const liveIndex = snap?.idToIndex.get(id) ?? index
         if (d.startIndex < d.currentIndex) {
           // Dragging down: items between start+1 and current shift up
-          if (index > d.startIndex && index <= d.currentIndex) return 'up'
+          if (liveIndex > d.startIndex && liveIndex <= d.currentIndex) return 'up'
         } else {
           // Dragging up: items between current and start-1 shift down
-          if (index >= d.currentIndex && index < d.startIndex) return 'down'
+          if (liveIndex >= d.currentIndex && liveIndex < d.startIndex) return 'down'
         }
         return undefined
       },
@@ -357,12 +377,37 @@ export function connect<S>(
             // Ignore — not all elements support pointer capture
           }
         }
+        // Compute the CURRENT DOM index of this handle's item — the captured
+        // `index` param is stale after a reorder (each() moves keyed nodes
+        // without re-running render, so the closure's index is frozen at
+        // initial mount). Walk up to find the containing item, then count its
+        // position among sibling items.
+        let currentIndex = index
+        if (target) {
+          const itemEl = (target as Element).closest<HTMLElement>(
+            '[data-scope="sortable"][data-part="item"]',
+          )
+          const rootEl = (target as Element).closest<HTMLElement>(
+            '[data-scope="sortable"][data-part="root"]',
+          )
+          if (itemEl && rootEl) {
+            const items = rootEl.querySelectorAll<HTMLElement>(
+              '[data-scope="sortable"][data-part="item"]',
+            )
+            for (let i = 0; i < items.length; i++) {
+              if (items[i] === itemEl) {
+                currentIndex = i
+                break
+              }
+            }
+          }
+        }
         // Snapshot positions BEFORE the drag starts, so subsequent pointermove
         // events can resolve the target index against stable (pre-transform)
         // positions. Otherwise items shifting via CSS would cause the target
         // to oscillate as elementFromPoint hits different items.
         snapshotAll()
-        send({ type: 'start', id, index, container: containerId, y: e.clientY })
+        send({ type: 'start', id, index: currentIndex, container: containerId, y: e.clientY })
       },
       onKeyDown: (e) => {
         switch (e.key) {

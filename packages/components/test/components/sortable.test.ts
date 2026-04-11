@@ -448,6 +448,182 @@ describe('sortable cross-container', () => {
     expect(doneParts.item('task-1', 0)['data-dragging'](state)).toBeUndefined()
   })
 
+  it('onPointerDown computes live DOM index, not the captured render-time index', () => {
+    // Regression: parts.handle(id, index) captures `index` at initial render,
+    // but each() reorders by moving keyed DOM nodes without re-running render,
+    // so after a reorder the captured index is stale. Sequential drags must
+    // send the item's CURRENT DOM position as startIndex.
+    type Ctx = { sort: SortableState }
+    const send = vi.fn()
+    const parts = connect<Ctx>((s) => s.sort, send, { id: 'list1' })
+
+    // Build a DOM that reflects post-reorder state: item 'p1' was originally
+    // at index 0 (captured index=0 in the handle's closure) but now sits at
+    // DOM position 2 because the user already dragged it down once.
+    const root = document.createElement('ul')
+    root.setAttribute('data-scope', 'sortable')
+    root.setAttribute('data-part', 'root')
+    root.setAttribute('data-container-id', 'list1')
+    const ids = ['p2', 'p3', 'p1', 'p4', 'p5']
+    const handles: Record<string, HTMLElement> = {}
+    for (const id of ids) {
+      const item = document.createElement('li')
+      item.setAttribute('data-scope', 'sortable')
+      item.setAttribute('data-part', 'item')
+      item.setAttribute('data-id', id)
+      const handle = document.createElement('div')
+      handle.setAttribute('data-scope', 'sortable')
+      handle.setAttribute('data-part', 'handle')
+      item.appendChild(handle)
+      root.appendChild(item)
+      handles[id] = handle
+    }
+    document.body.appendChild(root)
+
+    // p1's handle closure was created at initial render with index=0.
+    // After the reorder, p1 is at DOM position 2. Trigger pointerdown on it.
+    parts.handle('p1', 0).onPointerDown({
+      pointerId: 1,
+      currentTarget: handles.p1,
+      clientY: 0,
+      preventDefault: () => {},
+    } as unknown as PointerEvent)
+
+    expect(send).toHaveBeenCalledWith({
+      type: 'start',
+      id: 'p1',
+      index: 2, // live DOM index, NOT the stale captured 0
+      container: 'list1',
+      y: expect.any(Number),
+    })
+
+    document.body.removeChild(root)
+  })
+
+  it('data-shift uses live DOM index from the snapshot (survives reorder)', () => {
+    // Regression: data-shift compared the stale captured `index` against
+    // startIndex/currentIndex (in live-DOM space), causing wrong items to
+    // shift after a reorder.
+    type Ctx = { sort: SortableState }
+    const send = vi.fn()
+    const parts = connect<Ctx>((s) => s.sort, send, { id: 'list1' })
+
+    // Post-reorder DOM: p1 (orig index 0) now at DOM position 2
+    const root = document.createElement('ul')
+    root.setAttribute('data-scope', 'sortable')
+    root.setAttribute('data-part', 'root')
+    root.setAttribute('data-container-id', 'list1')
+    const ids = ['p2', 'p3', 'p1', 'p4', 'p5']
+    const handles: Record<string, HTMLElement> = {}
+    for (const id of ids) {
+      const item = document.createElement('li')
+      item.setAttribute('data-scope', 'sortable')
+      item.setAttribute('data-part', 'item')
+      item.setAttribute('data-id', id)
+      const h = document.createElement('div')
+      h.setAttribute('data-scope', 'sortable')
+      h.setAttribute('data-part', 'handle')
+      item.appendChild(h)
+      root.appendChild(item)
+      handles[id] = h
+    }
+    document.body.appendChild(root)
+
+    // Start a drag on p1 — the onPointerDown handler snapshots live positions
+    parts.handle('p1', 0).onPointerDown({
+      pointerId: 1,
+      currentTarget: handles.p1,
+      clientY: 0,
+      preventDefault: () => {},
+    } as unknown as PointerEvent)
+
+    // Simulate a drop-target at DOM index 4 (dragging down from live idx 2)
+    const state: Ctx = {
+      sort: {
+        dragging: {
+          id: 'p1',
+          startIndex: 2,
+          currentIndex: 4,
+          fromContainer: 'list1',
+          toContainer: 'list1',
+          startY: 0,
+          currentY: 0,
+        },
+      },
+    }
+
+    // p4 is at live DOM index 3 → should shift 'up' (between start 2 and end 4)
+    // Its captured render-time index was 3 in this mock, but even if stale
+    // the snapshot lookup by id must return 3.
+    const p4Item = parts.item('p4', 999) // deliberately stale captured index
+    expect(p4Item['data-shift'](state)).toBe('up')
+
+    // p5 is at live DOM index 4 → should also shift 'up'
+    const p5Item = parts.item('p5', 999)
+    expect(p5Item['data-shift'](state)).toBe('up')
+
+    // p2 is at live DOM index 0 → outside the range, no shift
+    const p2Item = parts.item('p2', 999)
+    expect(p2Item['data-shift'](state)).toBeUndefined()
+
+    document.body.removeChild(root)
+  })
+
+  it('data-over uses live DOM index from snapshot', () => {
+    type Ctx = { sort: SortableState }
+    const send = vi.fn()
+    const parts = connect<Ctx>((s) => s.sort, send, { id: 'list1' })
+
+    const root = document.createElement('ul')
+    root.setAttribute('data-scope', 'sortable')
+    root.setAttribute('data-part', 'root')
+    root.setAttribute('data-container-id', 'list1')
+    const ids = ['p2', 'p3', 'p1']
+    const handles: Record<string, HTMLElement> = {}
+    for (const id of ids) {
+      const item = document.createElement('li')
+      item.setAttribute('data-scope', 'sortable')
+      item.setAttribute('data-part', 'item')
+      item.setAttribute('data-id', id)
+      const h = document.createElement('div')
+      h.setAttribute('data-scope', 'sortable')
+      h.setAttribute('data-part', 'handle')
+      item.appendChild(h)
+      root.appendChild(item)
+      handles[id] = h
+    }
+    document.body.appendChild(root)
+
+    // Snapshot via pointerdown
+    parts.handle('p1', 0).onPointerDown({
+      pointerId: 1,
+      currentTarget: handles.p1,
+      clientY: 0,
+      preventDefault: () => {},
+    } as unknown as PointerEvent)
+
+    const state: Ctx = {
+      sort: {
+        dragging: {
+          id: 'p1',
+          startIndex: 2,
+          currentIndex: 0,
+          fromContainer: 'list1',
+          toContainer: 'list1',
+          startY: 0,
+          currentY: 0,
+        },
+      },
+    }
+
+    // p2 is at live DOM index 0 = currentIndex → data-over should be ''
+    expect(parts.item('p2', 999)['data-over'](state)).toBe('')
+    // p3 is at live DOM index 1 ≠ 0 → undefined
+    expect(parts.item('p3', 999)['data-over'](state)).toBeUndefined()
+
+    document.body.removeChild(root)
+  })
+
   it('item data-over only flags items in the target container', () => {
     type Ctx = { sort: SortableState }
     const todoParts = connect<Ctx>((s) => s.sort, vi.fn(), { id: 'todo' })
