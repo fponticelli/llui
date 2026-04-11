@@ -57,6 +57,10 @@ export * as form from './form'
 export * as sortable from './sortable'
 export * as themeSwitch from './theme-switch'
 
+export { validateSchema, validateSchemaAsync } from './form'
+export { reorder } from './sortable'
+export { resolveTheme, applyTheme, watchSystemTheme } from './theme-switch'
+
 export type { FormState, FormMsg, FormStatus, FormParts, ValidateResult } from './form'
 export type { SortableState, SortableMsg, SortableParts, DragState } from './sortable'
 export type {
