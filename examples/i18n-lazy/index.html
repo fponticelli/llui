@@ -1,0 +1,138 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>LLui — LocaleContext + lazy()</title>
+    <style>
+      *,
+      *::before,
+      *::after {
+        box-sizing: border-box;
+        margin: 0;
+      }
+      body {
+        font-family:
+          system-ui,
+          -apple-system,
+          sans-serif;
+        background: #0f172a;
+        color: #f1f5f9;
+        padding: 3rem 1.5rem;
+        max-width: 520px;
+        margin: 0 auto;
+      }
+      h1 {
+        font-size: 1.5rem;
+      }
+      .subtitle {
+        color: #94a3b8;
+        font-size: 0.875rem;
+        margin: 0.25rem 0 2rem;
+      }
+      .locale-row {
+        display: flex;
+        gap: 0.5rem;
+        margin-bottom: 2rem;
+      }
+      .locale-btn {
+        flex: 1;
+        background: #1e293b;
+        border: 1px solid #334155;
+        color: #94a3b8;
+        padding: 0.5rem 0.75rem;
+        border-radius: 6px;
+        cursor: pointer;
+        font-size: 0.8125rem;
+        font-weight: 600;
+        font-family: inherit;
+        transition: all 0.15s;
+      }
+      .locale-btn:hover {
+        background: #334155;
+        color: #f1f5f9;
+      }
+      .locale-btn.active {
+        background: #6366f1;
+        border-color: #6366f1;
+        color: white;
+      }
+      .card {
+        background: #1e293b;
+        border: 1px solid #334155;
+        border-radius: 10px;
+        padding: 1.25rem;
+        margin-bottom: 1rem;
+      }
+      .card h2 {
+        font-size: 1rem;
+        margin-bottom: 0.75rem;
+      }
+      .card p {
+        color: #cbd5e1;
+        font-size: 0.875rem;
+        line-height: 1.5;
+      }
+      button.primary {
+        background: #6366f1;
+        border: none;
+        color: white;
+        padding: 0.625rem 1rem;
+        border-radius: 6px;
+        cursor: pointer;
+        font-size: 0.8125rem;
+        font-weight: 600;
+        font-family: inherit;
+      }
+      button.primary:hover {
+        background: #4f46e5;
+      }
+      .loading {
+        color: #94a3b8;
+        font-size: 0.875rem;
+        font-style: italic;
+      }
+      .error {
+        color: #ef4444;
+        font-size: 0.875rem;
+      }
+      .dialog-demo {
+        margin-top: 2rem;
+      }
+      [data-scope='dialog'][data-part='backdrop'] {
+        position: fixed;
+        inset: 0;
+        background: rgba(0, 0, 0, 0.6);
+      }
+      [data-scope='dialog'][data-part='positioner'] {
+        position: fixed;
+        inset: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+      [data-scope='dialog'][data-part='content'] {
+        background: #1e293b;
+        border: 1px solid #334155;
+        border-radius: 12px;
+        padding: 1.5rem;
+        min-width: 300px;
+      }
+      .dialog-title {
+        font-size: 1rem;
+        font-weight: 600;
+        margin-bottom: 1rem;
+      }
+      .dialog-actions {
+        display: flex;
+        justify-content: flex-end;
+        gap: 0.5rem;
+        margin-top: 1.5rem;
+      }
+    </style>
+  </head>
+  <body>
+    <main id="app"></main>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
