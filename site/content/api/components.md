@@ -1163,12 +1163,14 @@ const parts = componentName.connect<State>((s) => s.field, send, { id: '...' })
 
 **State** (`SortableState`):
 
-| Field          | Type                |
-| -------------- | ------------------- |
-| `id`           | `string`            |
-| `startIndex`   | `number`            |
-| `currentIndex` | `number`            |
-| `dragging`     | `DragState \| null` |
+| Field           | Type                |
+| --------------- | ------------------- |
+| `id`            | `string`            |
+| `startIndex`    | `number`            |
+| `currentIndex`  | `number`            |
+| `fromContainer` | `string`            |
+| `toContainer`   | `string`            |
+| `dragging`      | `DragState \| null` |
 
 **Messages:** `start`, `move`, `drop`, `cancel`, `toggleGrab`, `moveBy`
 

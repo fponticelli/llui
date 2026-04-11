@@ -26,34 +26,58 @@ describe('sortable reducer', () => {
   })
 
   it('start sets dragging state', () => {
-    const [s] = update(init(), { type: 'start', id: 'item-1', index: 2 })
-    expect(s.dragging).toEqual({ id: 'item-1', startIndex: 2, currentIndex: 2 })
+    const [s] = update(init(), { type: 'start', id: 'item-1', index: 2, container: 'list1' })
+    expect(s.dragging).toEqual({
+      id: 'item-1',
+      startIndex: 2,
+      currentIndex: 2,
+      fromContainer: 'list1',
+      toContainer: 'list1',
+    })
   })
 
   it('move updates currentIndex', () => {
     const started: SortableState = {
-      dragging: { id: 'item-1', startIndex: 2, currentIndex: 2 },
+      dragging: {
+        id: 'item-1',
+        startIndex: 2,
+        currentIndex: 2,
+        fromContainer: 'list1',
+        toContainer: 'list1',
+      },
     }
-    const [s] = update(started, { type: 'move', index: 4 })
+    const [s] = update(started, { type: 'move', index: 4, container: 'list1' })
     expect(s.dragging?.currentIndex).toBe(4)
   })
 
   it('move is idempotent when index is unchanged', () => {
     const started: SortableState = {
-      dragging: { id: 'x', startIndex: 0, currentIndex: 3 },
+      dragging: {
+        id: 'x',
+        startIndex: 0,
+        currentIndex: 3,
+        fromContainer: 'list1',
+        toContainer: 'list1',
+      },
     }
-    const [next] = update(started, { type: 'move', index: 3 })
+    const [next] = update(started, { type: 'move', index: 3, container: 'list1' })
     expect(next).toBe(started)
   })
 
   it('move ignored when not dragging', () => {
-    const [s] = update(init(), { type: 'move', index: 4 })
+    const [s] = update(init(), { type: 'move', index: 4, container: 'list1' })
     expect(s.dragging).toBeNull()
   })
 
   it('drop clears dragging', () => {
     const started: SortableState = {
-      dragging: { id: 'x', startIndex: 0, currentIndex: 3 },
+      dragging: {
+        id: 'x',
+        startIndex: 0,
+        currentIndex: 3,
+        fromContainer: 'list1',
+        toContainer: 'list1',
+      },
     }
     const [s] = update(started, { type: 'drop' })
     expect(s.dragging).toBeNull()
@@ -61,7 +85,13 @@ describe('sortable reducer', () => {
 
   it('cancel clears dragging', () => {
     const started: SortableState = {
-      dragging: { id: 'x', startIndex: 0, currentIndex: 3 },
+      dragging: {
+        id: 'x',
+        startIndex: 0,
+        currentIndex: 3,
+        fromContainer: 'list1',
+        toContainer: 'list1',
+      },
     }
     const [s] = update(started, { type: 'cancel' })
     expect(s.dragging).toBeNull()
@@ -82,7 +112,15 @@ describe('sortable.connect', () => {
     expect(parts.root['data-dragging']({ sort: { dragging: null } })).toBeUndefined()
     expect(
       parts.root['data-dragging']({
-        sort: { dragging: { id: 'x', startIndex: 0, currentIndex: 1 } },
+        sort: {
+          dragging: {
+            id: 'x',
+            startIndex: 0,
+            currentIndex: 1,
+            fromContainer: 'list1',
+            toContainer: 'list1',
+          },
+        },
       }),
     ).toBe('')
   })
@@ -92,12 +130,28 @@ describe('sortable.connect', () => {
     const item = parts.item('apple', 0)
     expect(
       item['data-dragging']({
-        sort: { dragging: { id: 'apple', startIndex: 0, currentIndex: 0 } },
+        sort: {
+          dragging: {
+            id: 'apple',
+            startIndex: 0,
+            currentIndex: 0,
+            fromContainer: 'list1',
+            toContainer: 'list1',
+          },
+        },
       }),
     ).toBe('')
     expect(
       item['data-dragging']({
-        sort: { dragging: { id: 'banana', startIndex: 1, currentIndex: 0 } },
+        sort: {
+          dragging: {
+            id: 'banana',
+            startIndex: 1,
+            currentIndex: 0,
+            fromContainer: 'list1',
+            toContainer: 'list1',
+          },
+        },
       }),
     ).toBeUndefined()
   })
@@ -110,7 +164,12 @@ describe('sortable.connect', () => {
       currentTarget: null,
       preventDefault: () => {},
     } as unknown as PointerEvent)
-    expect(send).toHaveBeenCalledWith({ type: 'start', id: 'apple', index: 2 })
+    expect(send).toHaveBeenCalledWith({
+      type: 'start',
+      id: 'apple',
+      index: 2,
+      container: 'list1',
+    })
   })
 
   it('item[data-index] carries the index', () => {
@@ -123,7 +182,17 @@ describe('sortable.connect', () => {
     const h = parts.handle('apple', 2)
     expect(h['aria-grabbed']({ sort: { dragging: null } })).toBe(false)
     expect(
-      h['aria-grabbed']({ sort: { dragging: { id: 'apple', startIndex: 2, currentIndex: 2 } } }),
+      h['aria-grabbed']({
+        sort: {
+          dragging: {
+            id: 'apple',
+            startIndex: 2,
+            currentIndex: 2,
+            fromContainer: 'list1',
+            toContainer: 'list1',
+          },
+        },
+      }),
     ).toBe(true)
   })
 
@@ -150,7 +219,12 @@ describe('sortable keyboard events', () => {
     const parts = connect<Ctx>((s) => s.sort, send, { id: 'list1' })
     const e = makeKey(' ')
     parts.handle('apple', 1).onKeyDown(e)
-    expect(send).toHaveBeenCalledWith({ type: 'toggleGrab', id: 'apple', index: 1 })
+    expect(send).toHaveBeenCalledWith({
+      type: 'toggleGrab',
+      id: 'apple',
+      index: 1,
+      container: 'list1',
+    })
     expect(e.defaultPrevented).toBe(true)
   })
 
@@ -158,7 +232,12 @@ describe('sortable keyboard events', () => {
     const send = vi.fn()
     const parts = connect<Ctx>((s) => s.sort, send, { id: 'list1' })
     parts.handle('apple', 1).onKeyDown(makeKey('Enter'))
-    expect(send).toHaveBeenCalledWith({ type: 'toggleGrab', id: 'apple', index: 1 })
+    expect(send).toHaveBeenCalledWith({
+      type: 'toggleGrab',
+      id: 'apple',
+      index: 1,
+      container: 'list1',
+    })
   })
 
   it('Escape sends cancel', () => {
@@ -194,21 +273,39 @@ describe('sortable keyboard events', () => {
 
 describe('sortable reducer — keyboard messages', () => {
   it('toggleGrab starts when not dragging', () => {
-    const [s] = update(init(), { type: 'toggleGrab', id: 'apple', index: 2 })
-    expect(s.dragging).toEqual({ id: 'apple', startIndex: 2, currentIndex: 2 })
+    const [s] = update(init(), { type: 'toggleGrab', id: 'apple', index: 2, container: 'list1' })
+    expect(s.dragging).toEqual({
+      id: 'apple',
+      startIndex: 2,
+      currentIndex: 2,
+      fromContainer: 'list1',
+      toContainer: 'list1',
+    })
   })
 
   it('toggleGrab drops when already dragging', () => {
     const state: SortableState = {
-      dragging: { id: 'apple', startIndex: 0, currentIndex: 3 },
+      dragging: {
+        id: 'apple',
+        startIndex: 0,
+        currentIndex: 3,
+        fromContainer: 'list1',
+        toContainer: 'list1',
+      },
     }
-    const [s] = update(state, { type: 'toggleGrab', id: 'banana', index: 1 })
+    const [s] = update(state, { type: 'toggleGrab', id: 'banana', index: 1, container: 'list1' })
     expect(s.dragging).toBeNull()
   })
 
   it('moveBy updates currentIndex when dragging', () => {
     const state: SortableState = {
-      dragging: { id: 'apple', startIndex: 0, currentIndex: 2 },
+      dragging: {
+        id: 'apple',
+        startIndex: 0,
+        currentIndex: 2,
+        fromContainer: 'list1',
+        toContainer: 'list1',
+      },
     }
     const [s] = update(state, { type: 'moveBy', delta: 1 })
     expect(s.dragging?.currentIndex).toBe(3)
@@ -216,7 +313,13 @@ describe('sortable reducer — keyboard messages', () => {
 
   it('moveBy negative delta works', () => {
     const state: SortableState = {
-      dragging: { id: 'apple', startIndex: 0, currentIndex: 5 },
+      dragging: {
+        id: 'apple',
+        startIndex: 0,
+        currentIndex: 5,
+        fromContainer: 'list1',
+        toContainer: 'list1',
+      },
     }
     const [s] = update(state, { type: 'moveBy', delta: -2 })
     expect(s.dragging?.currentIndex).toBe(3)
@@ -224,7 +327,13 @@ describe('sortable reducer — keyboard messages', () => {
 
   it('moveBy clamps at zero', () => {
     const state: SortableState = {
-      dragging: { id: 'apple', startIndex: 0, currentIndex: 0 },
+      dragging: {
+        id: 'apple',
+        startIndex: 0,
+        currentIndex: 0,
+        fromContainer: 'list1',
+        toContainer: 'list1',
+      },
     }
     const [s] = update(state, { type: 'moveBy', delta: -5 })
     expect(s.dragging?.currentIndex).toBe(0)
@@ -233,5 +342,92 @@ describe('sortable reducer — keyboard messages', () => {
   it('moveBy is ignored when not dragging', () => {
     const [s] = update(init(), { type: 'moveBy', delta: 1 })
     expect(s.dragging).toBeNull()
+  })
+})
+
+describe('sortable cross-container', () => {
+  it('start sets fromContainer and toContainer to the same value', () => {
+    const [s] = update(init(), { type: 'start', id: 'a', index: 0, container: 'todo' })
+    expect(s.dragging?.fromContainer).toBe('todo')
+    expect(s.dragging?.toContainer).toBe('todo')
+  })
+
+  it('move to a different container updates toContainer', () => {
+    const [s1] = update(init(), { type: 'start', id: 'a', index: 0, container: 'todo' })
+    const [s2] = update(s1, { type: 'move', index: 2, container: 'done' })
+    expect(s2.dragging?.fromContainer).toBe('todo')
+    expect(s2.dragging?.toContainer).toBe('done')
+    expect(s2.dragging?.currentIndex).toBe(2)
+  })
+
+  it('move within the same container updates only currentIndex', () => {
+    const [s1] = update(init(), { type: 'start', id: 'a', index: 0, container: 'todo' })
+    const [s2] = update(s1, { type: 'move', index: 3, container: 'todo' })
+    expect(s2.dragging?.toContainer).toBe('todo')
+    expect(s2.dragging?.currentIndex).toBe(3)
+  })
+
+  it('move is idempotent when both index and container are unchanged', () => {
+    const [s1] = update(init(), { type: 'start', id: 'a', index: 2, container: 'todo' })
+    const [s2] = update(s1, { type: 'move', index: 2, container: 'todo' })
+    expect(s2).toBe(s1)
+  })
+
+  it('moving from one container to another then back', () => {
+    const [s1] = update(init(), { type: 'start', id: 'a', index: 0, container: 'todo' })
+    const [s2] = update(s1, { type: 'move', index: 0, container: 'done' })
+    const [s3] = update(s2, { type: 'move', index: 1, container: 'todo' })
+    expect(s3.dragging?.fromContainer).toBe('todo')
+    expect(s3.dragging?.toContainer).toBe('todo')
+    expect(s3.dragging?.currentIndex).toBe(1)
+  })
+
+  it('connect roots have data-container-id matching their connect id', () => {
+    type Ctx = { sort: SortableState }
+    const list1 = connect<Ctx>((s) => s.sort, vi.fn(), { id: 'todo' })
+    const list2 = connect<Ctx>((s) => s.sort, vi.fn(), { id: 'done' })
+    expect(list1.root['data-container-id']).toBe('todo')
+    expect(list2.root['data-container-id']).toBe('done')
+  })
+
+  it('item data-dragging only flags items in the source container', () => {
+    type Ctx = { sort: SortableState }
+    const todoParts = connect<Ctx>((s) => s.sort, vi.fn(), { id: 'todo' })
+    const doneParts = connect<Ctx>((s) => s.sort, vi.fn(), { id: 'done' })
+    const state: Ctx = {
+      sort: {
+        dragging: {
+          id: 'task-1',
+          startIndex: 0,
+          currentIndex: 0,
+          fromContainer: 'todo',
+          toContainer: 'done',
+        },
+      },
+    }
+    expect(todoParts.item('task-1', 0)['data-dragging'](state)).toBe('')
+    // Same id but in different container — not dragging from done
+    expect(doneParts.item('task-1', 0)['data-dragging'](state)).toBeUndefined()
+  })
+
+  it('item data-over only flags items in the target container', () => {
+    type Ctx = { sort: SortableState }
+    const todoParts = connect<Ctx>((s) => s.sort, vi.fn(), { id: 'todo' })
+    const doneParts = connect<Ctx>((s) => s.sort, vi.fn(), { id: 'done' })
+    const state: Ctx = {
+      sort: {
+        dragging: {
+          id: 'task-1',
+          startIndex: 0,
+          currentIndex: 2,
+          fromContainer: 'todo',
+          toContainer: 'done',
+        },
+      },
+    }
+    // currentIndex 2 is in the target container 'done'
+    expect(doneParts.item('task-x', 2)['data-over'](state)).toBe('')
+    // Same index but wrong container
+    expect(todoParts.item('task-y', 2)['data-over'](state)).toBeUndefined()
   })
 })

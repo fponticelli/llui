@@ -49,6 +49,16 @@ export interface DragState {
   id: string
   startIndex: number
   currentIndex: number
+  /**
+   * Container the drag originated from. Defaults to the connect's `id` for
+   * single-container sortables. Set when multiple sortables share state.
+   */
+  fromContainer: string
+  /**
+   * Container the pointer is currently over. Same as `fromContainer` for
+   * single-container sortables. Differs when dragging across containers.
+   */
+  toContainer: string
 }
 
 export interface SortableState {
@@ -56,12 +66,12 @@ export interface SortableState {
 }
 
 export type SortableMsg =
-  | { type: 'start'; id: string; index: number }
-  | { type: 'move'; index: number }
+  | { type: 'start'; id: string; index: number; container: string }
+  | { type: 'move'; index: number; container: string }
   | { type: 'drop' }
   | { type: 'cancel' }
   // Keyboard: toggle between picking up and dropping at current position
-  | { type: 'toggleGrab'; id: string; index: number }
+  | { type: 'toggleGrab'; id: string; index: number; container: string }
   // Keyboard: shift currentIndex by delta (clamped ≥ 0)
   | { type: 'moveBy'; delta: number }
 
@@ -72,11 +82,36 @@ export function init(): SortableState {
 export function update(state: SortableState, msg: SortableMsg): [SortableState, never[]] {
   switch (msg.type) {
     case 'start':
-      return [{ dragging: { id: msg.id, startIndex: msg.index, currentIndex: msg.index } }, []]
+      return [
+        {
+          dragging: {
+            id: msg.id,
+            startIndex: msg.index,
+            currentIndex: msg.index,
+            fromContainer: msg.container,
+            toContainer: msg.container,
+          },
+        },
+        [],
+      ]
     case 'move': {
       if (!state.dragging) return [state, []]
-      if (state.dragging.currentIndex === msg.index) return [state, []]
-      return [{ dragging: { ...state.dragging, currentIndex: msg.index } }, []]
+      if (
+        state.dragging.currentIndex === msg.index &&
+        state.dragging.toContainer === msg.container
+      ) {
+        return [state, []]
+      }
+      return [
+        {
+          dragging: {
+            ...state.dragging,
+            currentIndex: msg.index,
+            toContainer: msg.container,
+          },
+        },
+        [],
+      ]
     }
     case 'drop':
       return state.dragging ? [{ dragging: null }, []] : [state, []]
@@ -88,7 +123,18 @@ export function update(state: SortableState, msg: SortableMsg): [SortableState, 
         return [{ dragging: null }, []]
       }
       // Pick up
-      return [{ dragging: { id: msg.id, startIndex: msg.index, currentIndex: msg.index } }, []]
+      return [
+        {
+          dragging: {
+            id: msg.id,
+            startIndex: msg.index,
+            currentIndex: msg.index,
+            fromContainer: msg.container,
+            toContainer: msg.container,
+          },
+        },
+        [],
+      ]
     case 'moveBy': {
       if (!state.dragging) return [state, []]
       const next = Math.max(0, state.dragging.currentIndex + msg.delta)
@@ -102,6 +148,7 @@ export interface SortableParts<S> {
   root: {
     'data-scope': 'sortable'
     'data-part': 'root'
+    'data-container-id': string
     'data-dragging': (s: S) => '' | undefined
     onPointerMove: (e: PointerEvent) => void
     onPointerUp: (e: PointerEvent) => void
@@ -140,31 +187,51 @@ export interface ConnectOptions {
 export function connect<S>(
   get: (s: S) => SortableState,
   send: Send<SortableMsg>,
-  _opts: ConnectOptions,
+  opts: ConnectOptions,
 ): SortableParts<S> {
-  const findItemIndex = (e: PointerEvent): number | null => {
-    // Walk up from the element at the pointer looking for [data-part="item"]
+  // The connect's `id` doubles as the cross-container identifier
+  const containerId = opts.id
+
+  // Find item under pointer + which container it belongs to.
+  // Looks for the nearest [data-part="item"] then walks up to its [data-part="root"]
+  // to read the container id. Returns null if not over a sortable.
+  const findItemAt = (e: PointerEvent): { container: string; index: number } | null => {
     const target = document.elementFromPoint(e.clientX, e.clientY)
     if (!target) return null
     const item = (target as Element).closest<HTMLElement>(
       '[data-scope="sortable"][data-part="item"]',
     )
-    if (!item) return null
+    if (!item) {
+      // Maybe over an empty container — find the root directly
+      const root = (target as Element).closest<HTMLElement>(
+        '[data-scope="sortable"][data-part="root"]',
+      )
+      if (!root) return null
+      const cid = root.dataset.containerId
+      if (!cid) return null
+      // Append at end of empty container
+      return { container: cid, index: 0 }
+    }
     const idxStr = item.dataset.index
     if (idxStr === undefined) return null
     const idx = Number(idxStr)
-    return Number.isFinite(idx) ? idx : null
+    if (!Number.isFinite(idx)) return null
+    const root = item.closest<HTMLElement>('[data-scope="sortable"][data-part="root"]')
+    const cid = root?.dataset.containerId
+    if (!cid) return null
+    return { container: cid, index: idx }
   }
 
   return {
     root: {
       'data-scope': 'sortable',
       'data-part': 'root',
+      'data-container-id': containerId,
       'data-dragging': (s) => (get(s).dragging ? '' : undefined),
       onPointerMove: (e) => {
         if (!e.buttons) return
-        const idx = findItemIndex(e)
-        if (idx !== null) send({ type: 'move', index: idx })
+        const hit = findItemAt(e)
+        if (hit !== null) send({ type: 'move', index: hit.index, container: hit.container })
       },
       onPointerUp: () => send({ type: 'drop' }),
       onPointerCancel: () => send({ type: 'cancel' }),
@@ -174,15 +241,24 @@ export function connect<S>(
       'data-part': 'item',
       'data-index': String(index),
       'data-id': id,
-      'data-dragging': (s) => (get(s).dragging?.id === id ? '' : undefined),
-      'data-over': (s) => (get(s).dragging?.currentIndex === index ? '' : undefined),
+      'data-dragging': (s) => {
+        const d = get(s).dragging
+        return d?.id === id && d?.fromContainer === containerId ? '' : undefined
+      },
+      'data-over': (s) => {
+        const d = get(s).dragging
+        return d?.currentIndex === index && d?.toContainer === containerId ? '' : undefined
+      },
     }),
     handle: (id, index) => ({
       'data-scope': 'sortable',
       'data-part': 'handle',
       role: 'button',
       tabIndex: 0,
-      'aria-grabbed': (s) => get(s).dragging?.id === id,
+      'aria-grabbed': (s) => {
+        const d = get(s).dragging
+        return d?.id === id && d?.fromContainer === containerId
+      },
       'aria-label':
         'Drag handle. Press space to pick up, arrow keys to move, space again to drop, escape to cancel.',
       onPointerDown: (e) => {
@@ -197,14 +273,14 @@ export function connect<S>(
             // Ignore — not all elements support pointer capture
           }
         }
-        send({ type: 'start', id, index })
+        send({ type: 'start', id, index, container: containerId })
       },
       onKeyDown: (e) => {
         switch (e.key) {
           case ' ':
           case 'Enter':
             e.preventDefault()
-            send({ type: 'toggleGrab', id, index })
+            send({ type: 'toggleGrab', id, index, container: containerId })
             return
           case 'Escape':
             e.preventDefault()
