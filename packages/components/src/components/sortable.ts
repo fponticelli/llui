@@ -210,34 +210,63 @@ export function connect<S>(
   // The connect's `id` doubles as the cross-container identifier
   const containerId = opts.id
 
-  // Find item under pointer + which container it belongs to.
-  // Looks for the nearest [data-part="item"] then walks up to its [data-part="root"]
-  // to read the container id. Returns null if not over a sortable.
-  const findItemAt = (e: PointerEvent): { container: string; index: number } | null => {
-    const target = document.elementFromPoint(e.clientX, e.clientY)
-    if (!target) return null
-    const item = (target as Element).closest<HTMLElement>(
-      '[data-scope="sortable"][data-part="item"]',
-    )
-    if (!item) {
-      // Maybe over an empty container — find the root directly
-      const root = (target as Element).closest<HTMLElement>(
-        '[data-scope="sortable"][data-part="root"]',
-      )
-      if (!root) return null
-      const cid = root.dataset.containerId
-      if (!cid) return null
-      // Append at end of empty container
-      return { container: cid, index: 0 }
+  // Snapshots taken at drag start — stable throughout the drag so computing
+  // the target index is not affected by items visually shifting via CSS.
+  // Map: container-id → array of midpoint Y values for each item's original
+  // bounding rect (sorted by index). The handler records this on pointerdown.
+  const snapshots = new Map<string, number[]>()
+
+  function snapshotContainer(rootEl: HTMLElement, cid: string): void {
+    const items = rootEl.querySelectorAll<HTMLElement>('[data-scope="sortable"][data-part="item"]')
+    // Read rects once — they're pre-transform (no drag shifts yet)
+    const mids: number[] = []
+    for (const item of items) {
+      const r = item.getBoundingClientRect()
+      mids.push(r.top + r.height / 2)
     }
-    const idxStr = item.dataset.index
-    if (idxStr === undefined) return null
-    const idx = Number(idxStr)
-    if (!Number.isFinite(idx)) return null
-    const root = item.closest<HTMLElement>('[data-scope="sortable"][data-part="root"]')
-    const cid = root?.dataset.containerId
-    if (!cid) return null
-    return { container: cid, index: idx }
+    snapshots.set(cid, mids)
+  }
+
+  function snapshotAll(): void {
+    const roots = document.querySelectorAll<HTMLElement>(
+      '[data-scope="sortable"][data-part="root"]',
+    )
+    for (const root of roots) {
+      const cid = root.dataset.containerId
+      if (cid) snapshotContainer(root, cid)
+    }
+  }
+
+  // Find the target index under the pointer using the drag-start snapshot.
+  // Picks the index whose midpoint is closest to the pointer Y — stable
+  // against items being visually transformed during the drag.
+  function findTargetAt(e: PointerEvent): { container: string; index: number } | null {
+    // Find which sortable root the pointer is over (using getBoundingClientRect
+    // on roots, which are not transformed during drag).
+    const roots = document.querySelectorAll<HTMLElement>(
+      '[data-scope="sortable"][data-part="root"]',
+    )
+    for (const root of roots) {
+      const r = root.getBoundingClientRect()
+      if (e.clientX < r.left || e.clientX > r.right) continue
+      if (e.clientY < r.top || e.clientY > r.bottom) continue
+      const cid = root.dataset.containerId
+      if (!cid) continue
+      const mids = snapshots.get(cid)
+      if (!mids || mids.length === 0) return { container: cid, index: 0 }
+      // Find the index whose midpoint is closest to clientY
+      let bestIdx = 0
+      let bestDist = Math.abs(e.clientY - mids[0]!)
+      for (let i = 1; i < mids.length; i++) {
+        const d = Math.abs(e.clientY - mids[i]!)
+        if (d < bestDist) {
+          bestDist = d
+          bestIdx = i
+        }
+      }
+      return { container: cid, index: bestIdx }
+    }
+    return null
   }
 
   return {
@@ -248,12 +277,18 @@ export function connect<S>(
       'data-dragging': (s) => (get(s).dragging ? '' : undefined),
       onPointerMove: (e) => {
         if (!e.buttons) return
-        const hit = findItemAt(e)
+        const hit = findTargetAt(e)
         if (hit !== null)
           send({ type: 'move', index: hit.index, container: hit.container, y: e.clientY })
       },
-      onPointerUp: () => send({ type: 'drop' }),
-      onPointerCancel: () => send({ type: 'cancel' }),
+      onPointerUp: () => {
+        snapshots.clear()
+        send({ type: 'drop' })
+      },
+      onPointerCancel: () => {
+        snapshots.clear()
+        send({ type: 'cancel' })
+      },
     },
     item: (id, index) => ({
       'data-scope': 'sortable',
@@ -322,6 +357,11 @@ export function connect<S>(
             // Ignore — not all elements support pointer capture
           }
         }
+        // Snapshot positions BEFORE the drag starts, so subsequent pointermove
+        // events can resolve the target index against stable (pre-transform)
+        // positions. Otherwise items shifting via CSS would cause the target
+        // to oscillate as elementFromPoint hits different items.
+        snapshotAll()
         send({ type: 'start', id, index, container: containerId, y: e.clientY })
       },
       onKeyDown: (e) => {
