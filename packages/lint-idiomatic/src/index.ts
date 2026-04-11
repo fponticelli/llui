@@ -305,12 +305,19 @@ function checkClosureCaptures(
   filename: string,
   violations: LintViolation[],
 ): void {
-  // Collect parameter names of the render callback
+  // Collect parameter names of the render callback (including destructured ones)
   const paramNames = new Set<string>()
-  for (const param of renderFn.parameters) {
-    if (ts.isIdentifier(param.name)) {
-      paramNames.add(param.name.text)
+  function collectBindingNames(name: ts.BindingName): void {
+    if (ts.isIdentifier(name)) {
+      paramNames.add(name.text)
+    } else if (ts.isObjectBindingPattern(name) || ts.isArrayBindingPattern(name)) {
+      for (const el of name.elements) {
+        if (ts.isBindingElement(el)) collectBindingNames(el.name)
+      }
     }
+  }
+  for (const param of renderFn.parameters) {
+    collectBindingNames(param.name)
   }
 
   // Collect locally declared names inside the render body
@@ -398,7 +405,8 @@ function checkClosureCaptures(
       if (node.parent && ts.isTypeReferenceNode(node.parent)) return
 
       // Check if this identifier is used in a binding context (arrow fn arg to text(), prop value)
-      if (isInBindingContext(node)) {
+      // — but only nested arrow functions inside the render body, not the render itself.
+      if (isInBindingContext(node, renderFn)) {
         const { line, column } = pos(node, sf)
         violations.push({
           rule: 'each-closure-violation',
@@ -418,13 +426,17 @@ function checkClosureCaptures(
   }
 }
 
-function isInBindingContext(node: ts.Node): boolean {
-  // Walk up to find if we're inside an arrow function used as a binding
+function isInBindingContext(
+  node: ts.Node,
+  boundary: ts.ArrowFunction | ts.FunctionExpression,
+): boolean {
+  // Walk up to find if we're inside an arrow function that's nested inside
+  // (not equal to) the render callback — i.e. a genuine reactive binding.
   let current: ts.Node | undefined = node
-  while (current) {
+  while (current && current !== boundary) {
     if (ts.isArrowFunction(current)) {
       const parent: ts.Node | undefined = current.parent
-      // First arg to text()
+      // First arg to text() — reactive text binding
       if (
         parent &&
         ts.isCallExpression(parent) &&
@@ -434,9 +446,30 @@ function isInBindingContext(node: ts.Node): boolean {
       ) {
         return true
       }
-      // Prop value in object literal
+      // Reactive prop value in object literal (e.g. class: (s) => ...)
+      // but only if the property is not a structural callback like 'render', 'items', 'key'
       if (parent && ts.isPropertyAssignment(parent)) {
-        return true
+        const propName =
+          ts.isIdentifier(parent.name) || ts.isStringLiteral(parent.name) ? parent.name.text : null
+        // Skip structural callbacks — they're not reactive bindings
+        if (
+          propName !== 'render' &&
+          propName !== 'items' &&
+          propName !== 'key' &&
+          propName !== 'init' &&
+          propName !== 'update' &&
+          propName !== 'view' &&
+          propName !== 'onMsg' &&
+          propName !== 'onSuccess' &&
+          propName !== 'onError' &&
+          propName !== 'on' &&
+          propName !== 'when' &&
+          propName !== 'cases' &&
+          propName !== 'fallback' &&
+          propName !== 'props'
+        ) {
+          return true
+        }
       }
     }
     current = current.parent
@@ -1326,21 +1359,29 @@ function checkSpreadInChildren(
       ts.isIdentifier(node.expression) &&
       ELEMENT_HELPERS.has(node.expression.text)
     ) {
-      // Check children argument (last array literal)
+      // Check children argument (last array literal).
+      // Spread is allowed when the argument is a structural primitive
+      // (each, show, branch, virtualEach) — those return Node[] and MUST
+      // be spread. Flag only spreads over .map(), .filter(), or arrays.
+      const STRUCTURAL = new Set(['each', 'show', 'branch', 'virtualEach', 'onMount'])
       for (const arg of node.arguments) {
         if (!ts.isArrayLiteralExpression(arg)) continue
         for (const el of arg.elements) {
-          if (ts.isSpreadElement(el)) {
-            const { line } = sf.getLineAndCharacterOfPosition(el.getStart())
-            violations.push({
-              rule: 'spread-in-children',
-              message: `Spread in children of '${node.expression.text}()' prevents template-clone optimization. Use each() for lists.`,
-              file: filename,
-              line: line + 1,
-              column: 0,
-              suggestion: `Replace '...array.map(...)' with each({ items: () => array, key: ..., render: ... }).`,
-            })
+          if (!ts.isSpreadElement(el)) continue
+          // Allowed: ...each(...), ...show(...), ...branch(...), ...virtualEach(...)
+          const inner = el.expression
+          if (ts.isCallExpression(inner) && ts.isIdentifier(inner.expression)) {
+            if (STRUCTURAL.has(inner.expression.text)) continue
           }
+          const { line } = sf.getLineAndCharacterOfPosition(el.getStart())
+          violations.push({
+            rule: 'spread-in-children',
+            message: `Spread in children of '${node.expression.text}()' prevents template-clone optimization. Use each() for lists.`,
+            file: filename,
+            line: line + 1,
+            column: 0,
+            suggestion: `Replace '...array.map(...)' with each({ items: () => array, key: ..., render: ... }).`,
+          })
         }
       }
     }

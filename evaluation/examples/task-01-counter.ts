@@ -2,7 +2,7 @@
  * Task 01 — Counter (Tier 1)
  * Idiomatic score: 6/6
  */
-import { component, div, button, text } from '@llui/dom'
+import { component, div, button } from '@llui/dom'
 
 type State = { count: number }
 type Msg = { type: 'inc' } | { type: 'dec' }
@@ -19,10 +19,10 @@ export const Counter = component<State, Msg, Effect>({
         return [{ ...state, count: Math.max(0, state.count - 1) }, []]
     }
   },
-  view: ({ send }) => [
+  view: ({ send, text }) => [
     div({ class: 'counter' }, [
       button({ onClick: () => send({ type: 'dec' }) }, [text('-')]),
-      text((s: State) => String(s.count)),
+      text((s) => String(s.count)),
       button({ onClick: () => send({ type: 'inc' }) }, [text('+')]),
     ]),
   ],

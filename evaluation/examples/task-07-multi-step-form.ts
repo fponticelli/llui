@@ -2,7 +2,7 @@
  * Task 07 — Multi-Step Form (Tier 2)
  * Idiomatic score: 6/6
  */
-import { component, div, button, text, input, label, branch } from '@llui/dom'
+import { component, div, button, input, label } from '@llui/dom'
 import { applyField, type FieldMsg } from '@llui/dom'
 
 type Fields = {
@@ -49,9 +49,9 @@ export const MultiStepForm = component<State, Msg, Effect>({
         return [state, []]
     }
   },
-  view: ({ send, branch }) => [
+  view: ({ send, text, branch }) => [
     div({ class: 'multi-step-form' }, [
-      div({ class: 'step-indicator' }, [text((s: State) => `Step ${s.step} of 4`)]),
+      div({ class: 'step-indicator' }, [text((s) => `Step ${s.step} of 4`)]),
       ...branch({
         on: (s) => s.step,
         cases: {
@@ -102,9 +102,9 @@ export const MultiStepForm = component<State, Msg, Effect>({
           ],
           4: () => [
             div({ class: 'step confirmation' }, [
-              text((s: State) => `Name: ${s.name}`),
-              text((s: State) => `Email: ${s.email}`),
-              text((s: State) => `Summary: ${s.summary}`),
+              text((s) => `Name: ${s.name}`),
+              text((s) => `Email: ${s.email}`),
+              text((s) => `Summary: ${s.summary}`),
             ]),
           ],
         },

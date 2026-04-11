@@ -2,7 +2,7 @@
  * Task 13 — Infinite Scroll (Tier 4)
  * Idiomatic score: 6/6
  */
-import { component, div, button, text, each, show } from '@llui/dom'
+import { component, div, button } from '@llui/dom'
 import { handleEffects, http } from '@llui/effects'
 
 type Item = { id: number; title: string }
@@ -54,18 +54,18 @@ export const InfiniteScroll = component<State, Msg, Effect>({
         return [{ ...state, loading: false }, []]
     }
   },
-  view: ({ send, show, each }) => [
+  view: ({ send, text, show, each }) => [
     div({ class: 'infinite-scroll' }, [
       ...each({
         items: (s) => s.items,
         key: (item) => item.id,
-        render: ({ item }) => [
+        render: (r) => [
           div(
             {
               class: 'item',
-              'data-testid': item((t) => String(t.id)),
+              'data-testid': r.item((t) => String(t.id)),
             },
-            [text(item((t) => t.title))],
+            [text(r.item((t) => t.title))],
           ),
         ],
       }),
@@ -78,7 +78,7 @@ export const InfiniteScroll = component<State, Msg, Effect>({
         render: () => [div({ class: 'exhausted' }, [text('No more items')])],
       }),
       ...show({
-        when: (s) => !s.loading && !s.exhausted,
+        when: (s) => s.loading === false && s.exhausted === false,
         render: () => [
           button(
             {
@@ -91,7 +91,7 @@ export const InfiniteScroll = component<State, Msg, Effect>({
       }),
     ]),
   ],
-  onEffect: handleEffects<Effect>().else(() => {
-    // No custom effects
+  onEffect: handleEffects<Effect>().else((ctx) => {
+    console.warn('Unhandled effect:', ctx.effect)
   }),
 })

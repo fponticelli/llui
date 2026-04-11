@@ -2,15 +2,19 @@
  * Task 10 — Parent-Child Communication Level 1 (Tier 5)
  * Idiomatic score: 6/6
  */
-import { component, div, button, text, each } from '@llui/dom'
-import type { Send, ItemAccessor } from '@llui/dom'
+import { component, div, button } from '@llui/dom'
+import type { Send, ItemAccessor, View } from '@llui/dom'
 
 // ── Counter slice view function (Level 1) ───────────────────────
 
 type CounterSlice = { id: number; value: number }
 type CounterMsg = { type: 'increment'; id: number }
 
-function counterView(props: { item: ItemAccessor<CounterSlice> }, send: Send<CounterMsg>): Node[] {
+function counterView<S>(
+  props: { item: ItemAccessor<CounterSlice> },
+  send: Send<CounterMsg>,
+  text: View<S, CounterMsg>['text'],
+): Node[] {
   return [
     div({ class: 'counter-slice' }, [
       text(props.item((c) => String(c.value))),
@@ -63,14 +67,14 @@ export const ParentChild = component<State, Msg, Effect>({
         ]
     }
   },
-  view: ({ send, each }) => [
+  view: ({ send, text, each }) => [
     div({ class: 'parent' }, [
-      text((s: State) => `Total: ${total(s)}`),
+      text((s) => `Total: ${total(s)}`),
       button({ onClick: () => send({ type: 'addCounter' }) }, [text('Add counter')]),
       ...each({
         items: (s) => s.counters,
         key: (c) => c.id,
-        render: ({ item, send }) => counterView({ item }, send),
+        render: (r) => counterView({ item: r.item }, r.send, text),
       }),
     ]),
   ],

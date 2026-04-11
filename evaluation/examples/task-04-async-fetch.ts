@@ -2,7 +2,7 @@
  * Task 04 — Async Data Fetch (Tier 3)
  * Idiomatic score: 6/6
  */
-import { component, div, button, text, each, show } from '@llui/dom'
+import { component, div, button } from '@llui/dom'
 import { handleEffects, http, type ApiError } from '@llui/effects'
 
 type Item = { id: number; name: string }
@@ -41,7 +41,7 @@ export const AsyncFetch = component<State, Msg, Effect>({
         return [{ ...state, phase: 'loading', errorMsg: '' }, [fetchItems()]]
     }
   },
-  view: ({ send, show, each }) => [
+  view: ({ send, text, show, each }) => [
     div({ class: 'async-fetch' }, [
       ...show({
         when: (s) => s.phase === 'loading',
@@ -51,7 +51,7 @@ export const AsyncFetch = component<State, Msg, Effect>({
         when: (s) => s.phase === 'error',
         render: () => [
           div({ class: 'error' }, [
-            text((s: State) => `Error: ${s.errorMsg}`),
+            text((s) => `Error: ${s.errorMsg}`),
             button({ onClick: () => send({ type: 'retry' }) }, [text('Retry')]),
           ]),
         ],
@@ -62,13 +62,13 @@ export const AsyncFetch = component<State, Msg, Effect>({
           ...each({
             items: (s) => s.items,
             key: (item) => item.id,
-            render: ({ item }) => [div({ class: 'item' }, [text(item((t) => t.name))])],
+            render: (r) => [div({ class: 'item' }, [text(r.item((t) => t.name))])],
           }),
         ],
       }),
     ]),
   ],
-  onEffect: handleEffects<Effect>().else(() => {
-    // No custom effects
+  onEffect: handleEffects<Effect>().else((ctx) => {
+    console.warn('Unhandled effect:', ctx.effect)
   }),
 })

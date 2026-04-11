@@ -2,7 +2,7 @@
  * Task 06 — Accordion (Tier 2)
  * Idiomatic score: 6/6
  */
-import { component, div, button, text, show } from '@llui/dom'
+import { component, div, button } from '@llui/dom'
 
 type Panel = { id: number; title: string; body: string }
 
@@ -29,23 +29,27 @@ export const Accordion = component<State, Msg, Effect>({
         return [{ ...state, openId: state.openId === msg.id ? null : msg.id }, []]
     }
   },
-  view: ({ send, show }) => [
+  view: ({ send, text, show, each }) => [
     div({ class: 'accordion' }, [
-      ...PANELS.flatMap((panel) => [
-        div({ class: 'panel' }, [
-          button(
-            {
-              class: 'panel-title',
-              onClick: () => send({ type: 'toggle', id: panel.id }),
-            },
-            [text(panel.title)],
-          ),
-          ...show({
-            when: (s) => s.openId === panel.id,
-            render: () => [div({ class: 'panel-body' }, [text(panel.body)])],
-          }),
-        ]),
-      ]),
+      ...each({
+        items: (s) => s.panels,
+        key: (p) => p.id,
+        render: (r) => [
+          div({ class: 'panel' }, [
+            button(
+              {
+                class: 'panel-title',
+                onClick: () => send({ type: 'toggle', id: r.item.id() }),
+              },
+              [text(r.item((p) => p.title))],
+            ),
+            ...show({
+              when: (s) => s.openId === r.item.id(),
+              render: () => [div({ class: 'panel-body' }, [text(r.item((p) => p.body))])],
+            }),
+          ]),
+        ],
+      }),
     ]),
   ],
 })

@@ -2,7 +2,7 @@
  * Task 09 — Debounced Search (Tier 3)
  * Idiomatic score: 6/6
  */
-import { component, div, input, text, each, show } from '@llui/dom'
+import { component, div, input } from '@llui/dom'
 import { handleEffects, http, cancel, debounce, type Effect } from '@llui/effects'
 
 type SearchResult = { id: number; title: string }
@@ -57,7 +57,7 @@ export const DebouncedSearch = component<State, Msg, Effect>({
         return [{ ...state, searching: false }, []]
     }
   },
-  view: ({ send, show, each }) => [
+  view: ({ send, text, show, each }) => [
     div({ class: 'search' }, [
       input({
         type: 'text',
@@ -73,11 +73,11 @@ export const DebouncedSearch = component<State, Msg, Effect>({
       ...each({
         items: (s) => s.results,
         key: (r) => r.id,
-        render: ({ item }) => [div({ class: 'result' }, [text(item((r) => r.title))])],
+        render: (row) => [div({ class: 'result' }, [text(row.item((r) => r.title))])],
       }),
     ]),
   ],
-  onEffect: handleEffects<Effect>().else(() => {
-    // No custom effects
+  onEffect: handleEffects<Effect>().else((ctx) => {
+    console.warn('Unhandled effect:', ctx.effect)
   }),
 })

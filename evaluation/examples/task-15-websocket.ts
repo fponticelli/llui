@@ -2,7 +2,7 @@
  * Task 15 — WebSocket Real-Time Updates (Tier 5)
  * Idiomatic score: 6/6
  */
-import { component, div, button, text, each, show } from '@llui/dom'
+import { component, div, button } from '@llui/dom'
 import { handleEffects, websocket, cancel, type Effect } from '@llui/effects'
 
 type Item = { id: number; content: string }
@@ -71,11 +71,11 @@ export const WebSocketList = component<State, Msg, Effect>({
         return [state, []]
     }
   },
-  view: ({ send, show, each }) => [
+  view: ({ send, text, show, each }) => [
     div({ class: 'websocket-list' }, [
       div({ class: 'controls' }, [
         ...show({
-          when: (s) => !s.paused,
+          when: (s) => s.paused === false,
           render: () => [
             button(
               {
@@ -98,25 +98,25 @@ export const WebSocketList = component<State, Msg, Effect>({
         }),
         ...show({
           when: (s) => s.paused && s.buffer.length > 0,
-          render: () => [text((s: State) => `(${s.buffer.length} buffered)`)],
+          render: () => [text((s) => `(${s.buffer.length} buffered)`)],
         }),
       ]),
       ...each({
         items: (s) => s.items,
         key: (item) => item.id,
-        render: ({ item }) => [
+        render: (r) => [
           div(
             {
               class: 'item',
-              'data-testid': item((t) => String(t.id)),
+              'data-testid': r.item((t) => String(t.id)),
             },
-            [text(item((t) => t.content))],
+            [text(r.item((t) => t.content))],
           ),
         ],
       }),
     ]),
   ],
-  onEffect: handleEffects<Effect>().else(() => {
-    // No custom effects
+  onEffect: handleEffects<Effect>().else((ctx) => {
+    console.warn('Unhandled effect:', ctx.effect)
   }),
 })

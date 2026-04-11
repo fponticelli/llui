@@ -2,7 +2,7 @@
  * Task 02 — Character Counter (Tier 1)
  * Idiomatic score: 6/6
  */
-import { component, div, textarea, text } from '@llui/dom'
+import { component, div, textarea } from '@llui/dom'
 
 type State = { content: string }
 type Msg = { type: 'setContent'; value: string }
@@ -17,7 +17,7 @@ export const CharCounter = component<State, Msg, Effect>({
         return [{ ...state, content: msg.value }, []]
     }
   },
-  view: ({ send }) => [
+  view: ({ send, text }) => [
     div({ class: 'char-counter' }, [
       textarea({
         onInput: (e: Event) =>
@@ -27,7 +27,7 @@ export const CharCounter = component<State, Msg, Effect>({
         {
           class: (s: State) => (s.content.length > 260 ? 'counter over-limit' : 'counter'),
         },
-        [text((s: State) => `${s.content.length} / 280`)],
+        [text((s) => `${s.content.length} / 280`)],
       ),
     ]),
   ],

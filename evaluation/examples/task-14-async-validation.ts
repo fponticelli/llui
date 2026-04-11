@@ -2,7 +2,7 @@
  * Task 14 — Async Validation (Tier 3)
  * Idiomatic score: 6/6
  */
-import { component, div, button, input, label, text, show, branch } from '@llui/dom'
+import { component, div, button, input, label } from '@llui/dom'
 import { handleEffects, http, cancel, debounce, type Effect } from '@llui/effects'
 
 type ValidationStatus = 'idle' | 'checking' | 'available' | 'taken'
@@ -65,7 +65,7 @@ export const AsyncValidation = component<State, Msg, Effect>({
         return [state, []]
     }
   },
-  view: ({ send, branch }) => [
+  view: ({ send, text, branch }) => [
     div({ class: 'async-validation' }, [
       label([text('Email')]),
       input({
@@ -93,7 +93,7 @@ export const AsyncValidation = component<State, Msg, Effect>({
       ),
     ]),
   ],
-  onEffect: handleEffects<Effect>().else(() => {
-    // No custom effects
+  onEffect: handleEffects<Effect>().else((ctx) => {
+    console.warn('Unhandled effect:', ctx.effect)
   }),
 })

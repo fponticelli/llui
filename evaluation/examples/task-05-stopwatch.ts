@@ -2,7 +2,7 @@
  * Task 05 — Stopwatch (Tier 6)
  * Idiomatic score: 6/6
  */
-import { component, div, button, text, show } from '@llui/dom'
+import { component, div, button } from '@llui/dom'
 
 type State = {
   running: boolean
@@ -47,16 +47,16 @@ export const Stopwatch = component<State, Msg, Effect>({
       case 'reset':
         return [{ ...state, elapsed: 0, running: false }, []]
       case 'tick':
-        if (!state.running) return [state, []]
+        if (state.running === false) return [state, []]
         return [
           { ...state, elapsed: state.elapsed + TICK_MS },
           [{ type: 'delay', ms: TICK_MS, onDone: { type: 'tick' } }],
         ]
     }
   },
-  view: ({ send, show }) => [
+  view: ({ send, text, show }) => [
     div({ class: 'stopwatch' }, [
-      div({ class: 'display' }, [text((s: State) => formatTime(s.elapsed))]),
+      div({ class: 'display' }, [text((s) => formatTime(s.elapsed))]),
       div({ class: 'controls' }, [
         button(
           {
@@ -68,7 +68,7 @@ export const Stopwatch = component<State, Msg, Effect>({
         button(
           {
             onClick: () => send({ type: 'stop' }),
-            disabled: (s: State) => !s.running,
+            disabled: (s: State) => s.running === false,
           },
           [text('Stop')],
         ),
@@ -77,7 +77,7 @@ export const Stopwatch = component<State, Msg, Effect>({
       ...show({
         when: (s) => s.bestLap !== null,
         render: () => [
-          div({ class: 'best-lap' }, [text((s: State) => `Best lap: ${formatTime(s.bestLap!)}`)]),
+          div({ class: 'best-lap' }, [text((s) => `Best lap: ${formatTime(s.bestLap!)}`)]),
         ],
       }),
     ]),

@@ -2,7 +2,7 @@
  * Task 10b — Parent-Child Communication Level 2 (Tier 5)
  * Idiomatic score: 6/6
  */
-import { component, div, button, text, each, child } from '@llui/dom'
+import { component, div, button, child } from '@llui/dom'
 import type { ComponentDef } from '@llui/dom'
 
 // ── Child component (Level 2) ──────────────────────────────────
@@ -29,9 +29,9 @@ const CounterChild = component<ChildState, ChildMsg, ChildEffect>({
         return [{ ...state, id: msg.id, value: msg.value }, []]
     }
   },
-  view: ({ send, each }) => [
+  view: ({ send, text }) => [
     div({ class: 'counter-child' }, [
-      text((s: ChildState) => String(s.value)),
+      text((s) => String(s.value)),
       button({ onClick: () => send({ type: 'increment' }) }, [text('+')]),
     ]),
   ],
@@ -80,24 +80,24 @@ export const ParentChildL2 = component<ParentState, ParentMsg, ParentEffect>({
       }
     }
   },
-  view: ({ send }) => [
+  view: ({ send, text, each }) => [
     div({ class: 'parent' }, [
-      text((s: ParentState) => `Total: ${s.total}`),
+      text((s) => `Total: ${s.total}`),
       button({ onClick: () => send({ type: 'addCounter' }) }, [text('Add counter')]),
-      ...each<ParentState, CounterEntry>({
+      ...each<CounterEntry>({
         items: (s) => s.counters,
         key: (c) => c.id,
-        render: ({ item }) => [
+        render: (r) => [
           ...child<ParentState, ChildMsg>({
             def: CounterChild as unknown as ComponentDef<unknown, ChildMsg, unknown>,
-            key: item.id(),
+            key: r.item.id(),
             props: (s) => {
-              const c = s.counters.find((x) => x.id === item.id())!
+              const c = s.counters.find((x) => x.id === r.item.id())!
               return { id: c.id, value: c.value }
             },
             onMsg: (childMsg) => {
               if (childMsg.type === 'increment') {
-                return { type: 'childIncremented', id: item.id() }
+                return { type: 'childIncremented', id: r.item.id() }
               }
               return null
             },

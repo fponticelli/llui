@@ -156,7 +156,10 @@ function checkClosureCaptures(
 ### `isInBindingContext()`
 
 ```typescript
-function isInBindingContext(node: ts.Node): boolean
+function isInBindingContext(
+  node: ts.Node,
+  boundary: ts.ArrowFunction | ts.FunctionExpression,
+): boolean
 ```
 
 ### `checkMapOnStateArrays()`
