@@ -359,6 +359,39 @@ See: 03 Runtime DOM.md, 01 Architecture.md
 
 ---
 
+### `virtualEach(opts)`
+
+Virtualized list — renders only items currently visible in the scroll viewport plus an overscan buffer. Use for lists with 1k+ items where a regular `each()` would be too expensive. Fixed-height rows only.
+
+```typescript
+function virtualEach<S, T, M>(opts: {
+  items: (s: S) => T[]
+  key: (item: T) => string | number
+  itemHeight: number // fixed pixel height per row
+  containerHeight: number // pixel height of the scroll container
+  overscan?: number // extra rows to render above/below viewport (default: 3)
+  class?: string // optional class for the scroll container
+  render: (opts: {
+    send: Send<M>
+    item: ItemAccessor<T>
+    acc: <R>(selector: (t: T) => R) => () => R
+    index: () => number
+  }) => Node[]
+}): Node[]
+```
+
+`virtualEach` creates its own scroll container (`overflow: auto`) and an inner spacer sized to `items.length * itemHeight`. Visible rows are absolutely positioned at `index * itemHeight`. As the user scrolls, rows outside the viewport have their scopes disposed; new rows entering the viewport are built fresh. When the items array changes in state, the component's update loop triggers a reconcile.
+
+**Limitations (current):**
+
+- Fixed row height only — dynamic heights not supported
+- No transitions / animations
+- Items that scroll out of view are fully disposed and rebuilt when re-entering (no pooling)
+
+See: 03 Runtime DOM.md
+
+---
+
 ### `show(opts)`
 
 Boolean conditional rendering. Implemented as a two-case `branch` — the scope is disposed when the condition becomes false and rebuilt when it becomes true.
@@ -795,3 +828,131 @@ const cleanup = inView.createObserver(element, send, {
   once: true, // disconnect after first enter, default false
 })
 ```
+
+---
+
+## `@llui/components` — Form
+
+Submit lifecycle state machine plus Standard Schema integration. The form tracks `status` (`'idle' | 'submitting' | 'submitted' | 'error'`) and per-field `touched` flags. Field values live in the parent component's state — `form` is a coordinator, not a data store.
+
+```typescript
+interface FormState {
+  status: 'idle' | 'submitting' | 'submitted' | 'error'
+  touched: Record<string, boolean>
+  submitError: string | null
+}
+
+type FormMsg =
+  | { type: 'touch'; field: string }
+  | { type: 'touchAll'; fields: string[] }
+  | { type: 'submit' }
+  | { type: 'submitSuccess' }
+  | { type: 'submitError'; error: string }
+  | { type: 'reset' }
+
+function init(): FormState
+function update(state: FormState, msg: FormMsg): [FormState, never[]]
+function connect<S>(
+  get: (s: S) => FormState,
+  send: Send<FormMsg>,
+  opts: { id: string },
+): FormParts<S>
+```
+
+### `validateSchema(schema, values)`
+
+Synchronous validation against a Standard Schema (Zod v3.24+, Valibot v1+, ArkType, etc.). Throws if the schema is async — use `validateSchemaAsync` for those. Returns `{ isValid, errors, issues }` where `errors` is a field-name→first-message map.
+
+```typescript
+function validateSchema<T>(
+  schema: StandardSchemaV1<T>,
+  values: unknown,
+): {
+  isValid: boolean
+  errors: Partial<Record<keyof T, string>>
+  issues: readonly StandardSchemaV1.Issue[]
+}
+
+async function validateSchemaAsync<T>(
+  schema: StandardSchemaV1<T>,
+  values: unknown,
+): Promise<ValidateResult<T>>
+```
+
+Bring your own validation library — `@llui/components` only imports types from `@standard-schema/spec` (zero runtime footprint).
+
+---
+
+## `@llui/components` — Sortable
+
+Pointer + keyboard reorderable list. Single-container by default; set distinct `id` on multiple connect calls for cross-container drag-and-drop.
+
+```typescript
+interface DragState {
+  id: string
+  startIndex: number
+  currentIndex: number
+  fromContainer: string
+  toContainer: string
+}
+
+interface SortableState {
+  dragging: DragState | null
+}
+
+type SortableMsg =
+  | { type: 'start'; id: string; index: number; container: string }
+  | { type: 'move'; index: number; container: string }
+  | { type: 'drop' }
+  | { type: 'cancel' }
+  | { type: 'toggleGrab'; id: string; index: number; container: string }
+  | { type: 'moveBy'; delta: number }
+
+function connect<S>(
+  get: (s: S) => SortableState,
+  send: Send<SortableMsg>,
+  opts: { id: string },
+): SortableParts<S>
+
+function reorder<T>(arr: readonly T[], from: number, to: number): T[]
+```
+
+**Parts returned by `connect`:**
+
+- `root` — scroll container, handles `pointermove`/`pointerup`/`pointercancel`, tagged with `data-container-id`
+- `item(id, index)` — per-row data attributes (`data-dragging`, `data-over`) for CSS feedback
+- `handle(id, index)` — `role="button"`, `tabIndex=0`, `aria-grabbed`, full keyboard support (Space/Enter to pick up and drop, Arrow keys to move, Escape to cancel)
+
+The app's reducer listens for `drop` (or watches `state.sort.dragging` changes) and computes the final array via `reorder(arr, from, to)` — or for cross-container drops, by combining both arrays.
+
+---
+
+## `@llui/components` — Theme Switch
+
+Light/dark/system theme toggle with `data-theme` on `<html>`.
+
+```typescript
+type Theme = 'light' | 'dark' | 'system'
+type ResolvedTheme = 'light' | 'dark'
+
+interface ThemeSwitchState {
+  theme: Theme
+}
+
+type ThemeSwitchMsg = { type: 'setTheme'; theme: Theme } | { type: 'toggle' }
+
+function init(theme?: Theme): ThemeSwitchState
+function update(state: ThemeSwitchState, msg: ThemeSwitchMsg): [ThemeSwitchState, never[]]
+function connect<S>(
+  get: (s: S) => ThemeSwitchState,
+  send: Send<ThemeSwitchMsg>,
+  opts: { id: string; label?: string },
+): ThemeSwitchParts<S>
+
+// Utilities
+function resolveTheme(theme: Theme): ResolvedTheme
+function applyTheme(resolved: ResolvedTheme): void
+function watchSystemTheme(cb: (theme: ResolvedTheme) => void): () => void
+```
+
+`resolveTheme('system')` reads `prefers-color-scheme`. `applyTheme('dark')` sets `document.documentElement.dataset.theme = 'dark'` so CSS selectors like `[data-theme='dark'] { ... }` take effect. `watchSystemTheme` listens for OS theme changes.

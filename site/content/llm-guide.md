@@ -145,6 +145,7 @@ export const Counter = component<State, Msg, never>({
 - Wrap derived values used in multiple places in `memo()`.
 - Use `show` for boolean conditions. Use `branch` for named states (3+ cases or non-boolean).
 - Use `lazy({ loader, fallback, error?, data? })` for code-split components: `loader: () => import('./Heavy').then(m => m.default)`. Renders `fallback` until loaded; the `error` handler fires on rejection. Cancels cleanly if the parent scope is disposed mid-load.
+- Use `virtualEach({ items, key, itemHeight, containerHeight, render })` from `@llui/dom` for large lists (1k+ rows) with fixed row height. Renders only visible rows; scrolling reconciles in place without touching component state.
 - For composition, use view functions (Level 1) with `(props, send)` convention.
   Only use `child()` for library components with encapsulated internals or 30+ state paths.
 - For forms with many fields, use a single `setField` message:
@@ -155,3 +156,10 @@ export const Counter = component<State, Msg, never>({
 - For `http`, `cancel`, `debounce`, `websocket`, `retry`: import from `@llui/effects`.
   Wire into onEffect with `handleEffects<Effect, Msg>().else(handler)`.
 - `send()` batches via microtask. Use `flush()` only when reading DOM state immediately.
+- `@llui/components` ships 58 headless state machines. Each exports `init`, `update`, `connect` and a `Parts` type. Wire them into your app reducer via `sliceHandler` or a single `msg.type === 'compName'` case. Pointer + keyboard accessibility is built in.
+- For forms, use the `form` state machine (`FormState` tracks submit status + touched fields) with `validateSchema(schema, values)` against any Standard Schema library (Zod, Valibot, ArkType). Values live in parent state; `form` is a coordinator.
+- For drag-to-reorder, use the `sortable` state machine. Call `reorder(arr, from, to)` in the `drop` case. Multiple sortable containers share state and track `fromContainer`/`toContainer` for cross-container drag.
+- For theme toggling, use the `themeSwitch` state machine plus `applyTheme(resolveTheme(state.theme))` to set `data-theme` on `<html>`. CSS selectors use `[data-theme='dark']`.
+- For scroll-triggered behavior, use the `inView` state machine with `inView.createObserver(el, send, { once: true })` inside `onMount`.
+- For component label translations, components read from `LocaleContext` (created with English defaults) — English apps need zero setup. Non-English apps call `provide(LocaleContext, (s) => s.locale, () => [...])` at the root.
+- For number/date/list/plural formatting, use `formatNumber`, `formatDate`, `formatRelativeTime`, `formatList`, `formatPlural`, `formatFileSize` from `@llui/components` — all wrap `Intl.*` with caching and accept an optional `locale` option.

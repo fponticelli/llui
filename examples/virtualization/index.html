@@ -1,0 +1,113 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>LLui virtualEach — 50,000 rows</title>
+    <style>
+      *,
+      *::before,
+      *::after {
+        box-sizing: border-box;
+        margin: 0;
+      }
+      body {
+        font-family:
+          system-ui,
+          -apple-system,
+          sans-serif;
+        background: #0f172a;
+        color: #f1f5f9;
+        padding: 2rem;
+        max-width: 900px;
+        margin: 0 auto;
+      }
+      h1 {
+        font-size: 1.5rem;
+        margin-bottom: 0.25rem;
+      }
+      .subtitle {
+        color: #94a3b8;
+        font-size: 0.875rem;
+        margin-bottom: 1.5rem;
+      }
+      .controls {
+        display: flex;
+        gap: 0.5rem;
+        align-items: center;
+        margin-bottom: 1rem;
+      }
+      label {
+        color: #94a3b8;
+        font-size: 0.875rem;
+      }
+      input[type='range'] {
+        flex: 1;
+      }
+      .count {
+        font-variant-numeric: tabular-nums;
+        font-weight: 600;
+        min-width: 5ch;
+        text-align: right;
+      }
+      .log-table {
+        background: #1e293b;
+        border: 1px solid #334155;
+        border-radius: 8px;
+      }
+      .log-row {
+        display: grid;
+        grid-template-columns: 100px 80px 100px 1fr;
+        align-items: center;
+        padding: 0 1rem;
+        gap: 1rem;
+        border-bottom: 1px solid #1e293b;
+        font-size: 0.8125rem;
+        font-family: 'SF Mono', Menlo, monospace;
+      }
+      .log-row[data-level='info'] .level {
+        color: #60a5fa;
+      }
+      .log-row[data-level='warn'] .level {
+        color: #f59e0b;
+      }
+      .log-row[data-level='error'] .level {
+        color: #ef4444;
+      }
+      .log-row[data-level='debug'] .level {
+        color: #94a3b8;
+      }
+      .log-row .timestamp {
+        color: #64748b;
+      }
+      .log-row .level {
+        text-transform: uppercase;
+        font-weight: 700;
+        font-size: 0.6875rem;
+      }
+      .log-row .source {
+        color: #a78bfa;
+      }
+      .log-row .message {
+        color: #e2e8f0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .stats {
+        margin-top: 1rem;
+        display: flex;
+        gap: 1.5rem;
+        font-size: 0.8125rem;
+        color: #94a3b8;
+      }
+      .stats strong {
+        color: #f1f5f9;
+      }
+    </style>
+  </head>
+  <body>
+    <main id="app"></main>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

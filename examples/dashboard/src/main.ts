@@ -7,8 +7,9 @@ import {
   formatList,
   sortable,
   themeSwitch,
+  inView,
 } from '@llui/components'
-import type { SortableState, SortableMsg, Theme } from '@llui/components'
+import type { SortableState, SortableMsg, Theme, InViewState, InViewMsg } from '@llui/components'
 import { MONTHLY_REVENUE, DAILY_USERS, ACTIVITY } from './data'
 import { barChart, lineChart } from './charts'
 
@@ -22,7 +23,7 @@ interface Priority {
 
 type State = {
   locale: string
-  chartsVisible: boolean
+  charts: InViewState
   priorities: Priority[]
   sort: SortableState
   theme: Theme
@@ -30,7 +31,7 @@ type State = {
 
 type Msg =
   | { type: 'setLocale'; locale: string }
-  | { type: 'chartsVisible' }
+  | { type: 'charts'; msg: InViewMsg }
   | { type: 'sort'; msg: SortableMsg }
   | { type: 'reorderPriorities'; from: number; to: number }
   | { type: 'setTheme'; theme: Theme }
@@ -50,7 +51,7 @@ const Dashboard = component<State, Msg, never>({
   init: () => [
     {
       locale: 'en-US',
-      chartsVisible: false,
+      charts: inView.init(),
       priorities: INITIAL_PRIORITIES,
       sort: sortable.init(),
       theme: 'system' as Theme,
@@ -61,8 +62,10 @@ const Dashboard = component<State, Msg, never>({
     switch (msg.type) {
       case 'setLocale':
         return [{ ...state, locale: msg.locale }, []]
-      case 'chartsVisible':
-        return [state.chartsVisible ? state : { ...state, chartsVisible: true }, []]
+      case 'charts': {
+        const [charts] = inView.update(state.charts, msg.msg)
+        return [{ ...state, charts }, []]
+      }
       case 'sort': {
         const [sort] = sortable.update(state.sort, msg.msg)
         // On drop, apply the reorder to priorities
@@ -89,25 +92,17 @@ const Dashboard = component<State, Msg, never>({
   view: (h) => {
     const { send, text, each } = h
 
-    // Set up IntersectionObserver for chart animation
+    // Apply current theme on mount + wire up inView observer for chart animation
     onMount((container) => {
-      // Apply current theme on mount
       themeSwitch.applyTheme(themeSwitch.resolveTheme('system'))
+      // Wait a frame so innerHTML bindings settle, then locate the charts section
       requestAnimationFrame(() => {
-        const section = container.querySelector('.charts-section')
+        const section = container.querySelector('.charts-section') as HTMLElement | null
         if (!section) return
-        const obs = new IntersectionObserver(
-          (entries) => {
-            for (const e of entries) {
-              if (e.isIntersecting) {
-                send({ type: 'chartsVisible' })
-                obs.disconnect()
-              }
-            }
-          },
-          { threshold: 0.1 },
-        )
-        obs.observe(section)
+        return inView.createObserver(section, (m) => send({ type: 'charts', msg: m }), {
+          threshold: 0.1,
+          once: true,
+        })
       })
     })
 
@@ -165,7 +160,7 @@ const Dashboard = component<State, Msg, never>({
         // Charts
         div(
           {
-            class: (s: State) => `charts-section${s.chartsVisible ? ' visible' : ''}`,
+            class: (s: State) => `charts-section${s.charts.visible ? ' visible' : ''}`,
           },
           [
             div({ class: 'chart-card' }, [

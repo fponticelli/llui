@@ -310,6 +310,32 @@ function branch<S, M = unknown>(opts: BranchOptions<S, M>): Node[]
 function each<S, T, M = unknown>(opts: EachOptions<S, T, M>): Node[]
 ```
 
+### `virtualEach()`
+
+Virtualized list — renders only the rows visible in the scroll viewport.
+Use for lists with 1k+ items where a regular `each()` would be too slow.
+Current limitations:
+
+- Fixed row height (`itemHeight`) — dynamic heights not supported
+- No transitions / animations
+- No cross-container reuse (items outside view are fully disposed)
+
+```ts
+view: ({ text }) => [
+  ...virtualEach({
+    items: (s) => s.rows,
+    key: (r) => r.id,
+    itemHeight: 40,
+    containerHeight: 600,
+    render: ({ item }) => [div({ class: 'row' }, [text(item.label)])],
+  }),
+]
+```
+
+```typescript
+function virtualEach<S, T, M = unknown>(opts: VirtualEachOptions<S, T, M>): Node[]
+```
+
 ### `show()`
 
 ```typescript
@@ -829,6 +855,29 @@ export interface LluiDebugAPI {
 export interface Context<T> {
   readonly _id: symbol
   readonly _default: T | undefined
+}
+```
+
+### `VirtualEachOptions`
+
+```typescript
+export interface VirtualEachOptions<S, T, M = unknown> {
+  items: (s: S) => T[]
+  key: (item: T) => string | number
+  /** Fixed pixel height per item. Required — dynamic heights are not supported yet. */
+  itemHeight: number
+  /** Scrollable container height in pixels. */
+  containerHeight: number
+  /** Extra rows to render above/below the viewport for smooth scrolling. Default: 3. */
+  overscan?: number
+  /** Optional class for the scroll container. */
+  class?: string
+  render: (opts: {
+    send: Send<M>
+    item: ItemAccessor<T>
+    acc: <R>(selector: (t: T) => R) => () => R
+    index: () => number
+  }) => Node[]
 }
 ```
 
