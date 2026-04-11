@@ -1532,7 +1532,7 @@
   background: var(--color-surface-hover);
 }
 
-[data-scope='listbox'][data-part='item'][data-state='checked'] {
+[data-scope='listbox'][data-part='item'][data-state='selected'] {
   background: color-mix(in srgb, var(--color-primary) 15%, transparent);
   color: var(--color-primary-active);
 }

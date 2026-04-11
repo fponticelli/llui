@@ -186,7 +186,7 @@ export const App = component<State, Msg, never>({
           div(
             {
               ...tr.root,
-              class: 'mt-3 border border-blue-200 rounded bg-blue-50 p-3',
+              class: 'mt-3 border border-border rounded bg-surface-muted p-3',
             },
             [
               h3({ ...tr.title, class: 'font-semibold text-sm' }, [
@@ -227,7 +227,7 @@ export const App = component<State, Msg, never>({
               'Click Open → panel appears (static position — drag/resize needs pointer wiring).',
             ),
           ]),
-          div({ ...fp.root, class: 'border border-border bg-white shadow-xl rounded' }, [
+          div({ ...fp.root, class: 'border border-border bg-surface shadow-xl rounded' }, [
             div(
               {
                 ...fp.dragHandle,
@@ -243,9 +243,13 @@ export const App = component<State, Msg, never>({
                   button({ ...fp.maximizeTrigger, class: 'px-1 hover:bg-surface-hover rounded' }, [
                     text('□'),
                   ]),
-                  button({ ...fp.closeTrigger, class: 'px-1 hover:bg-red-200 rounded' }, [
-                    text('×'),
-                  ]),
+                  button(
+                    {
+                      ...fp.closeTrigger,
+                      class: 'px-1 hover:bg-destructive hover:text-text-inverted rounded',
+                    },
+                    [text('×')],
+                  ),
                 ]),
               ],
             ),

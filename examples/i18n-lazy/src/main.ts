@@ -37,6 +37,21 @@ const JA_MONTHS = [
   '12月',
 ]
 
+const AR_MONTHS = [
+  'يناير',
+  'فبراير',
+  'مارس',
+  'أبريل',
+  'مايو',
+  'يونيو',
+  'يوليو',
+  'أغسطس',
+  'سبتمبر',
+  'أكتوبر',
+  'نوفمبر',
+  'ديسمبر',
+]
+
 const es: Locale = {
   ...en,
   dialog: { close: 'Cerrar' },
@@ -65,29 +80,51 @@ const ja: Locale = {
   },
 }
 
-type LocaleKey = 'en' | 'es' | 'ja'
+const ar: Locale = {
+  ...en,
+  dialog: { close: 'إغلاق' },
+  popover: { close: 'إغلاق' },
+  drawer: { close: 'إغلاق' },
+  tour: { close: 'إغلاق الجولة' },
+  datePicker: {
+    prev: 'الشهر السابق',
+    next: 'الشهر التالي',
+    monthNames: AR_MONTHS,
+    grid: (y, m) => `${AR_MONTHS[m - 1]} ${y}`,
+  },
+}
+
+type LocaleKey = 'en' | 'es' | 'ja' | 'ar'
 
 function getLocale(key: LocaleKey): Locale {
   if (key === 'es') return es
   if (key === 'ja') return ja
+  if (key === 'ar') return ar
   return en
 }
 
 function getBcp47(key: LocaleKey): string {
   if (key === 'es') return 'es-ES'
   if (key === 'ja') return 'ja-JP'
+  if (key === 'ar') return 'ar-SA'
   return 'en-US'
 }
 
 function getLabel(key: LocaleKey): string {
   if (key === 'es') return 'Español'
   if (key === 'ja') return '日本語'
+  if (key === 'ar') return 'العربية'
   return 'English'
+}
+
+function getDir(key: LocaleKey): 'ltr' | 'rtl' {
+  return key === 'ar' ? 'rtl' : 'ltr'
 }
 
 function dialogGreeting(key: LocaleKey): string {
   if (key === 'es') return 'Hola, mundo'
   if (key === 'ja') return 'こんにちは、世界'
+  if (key === 'ar') return 'مرحبًا بالعالم'
   return 'Hello, world'
 }
 
@@ -112,6 +149,12 @@ const App = component<State, Msg, never>({
   update: (state, msg) => {
     switch (msg.type) {
       case 'setLocale':
+        // Mirror `dir` onto <html> so the whole document flips for RTL
+        // scripts (scrollbar side, text alignment, form controls).
+        if (typeof document !== 'undefined') {
+          document.documentElement.dir = getDir(msg.key)
+          document.documentElement.lang = getBcp47(msg.key)
+        }
         return [{ ...state, localeKey: msg.key }, []]
       case 'loadStats':
         return [{ ...state, showStats: true }, []]
@@ -143,6 +186,7 @@ const App = component<State, Msg, never>({
             localeBtn(text, send, 'en'),
             localeBtn(text, send, 'es'),
             localeBtn(text, send, 'ja'),
+            localeBtn(text, send, 'ar'),
           ]),
 
           // Section 1: dialog reads close label from LocaleContext
@@ -209,7 +253,9 @@ const App = component<State, Msg, never>({
                   ),
                 ]),
                 div({ class: 'dialog-actions' }, [
-                  button({ ...dlg.closeTrigger, class: 'primary' }, []),
+                  button({ ...dlg.closeTrigger, class: 'primary' }, [
+                    text((s: State) => getLocale(s.localeKey).dialog.close),
+                  ]),
                 ]),
               ]),
             ],
@@ -233,4 +279,6 @@ function localeBtn(text: TextFn, send: Send<Msg>, key: LocaleKey): HTMLElement {
   )
 }
 
+document.documentElement.dir = 'ltr'
+document.documentElement.lang = 'en-US'
 mountApp(document.getElementById('app')!, App)

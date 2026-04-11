@@ -226,8 +226,12 @@ export const App = component<State, Msg, never>({
 
     const dpGrid = (): Node[] => {
       const dowLabels = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
+      // The baked theme applies `display: grid; grid-template-columns: repeat(7, 1fr)`
+      // to dp.grid via attribute selector. Flatten rows with `display: contents`
+      // so cells become direct grid children and wrap every 7 (one week per row).
+      const rowClass = 'contents'
       const dowRow = div(
-        { ...dp.row },
+        { ...dp.row, class: rowClass },
         dowLabels.map((d) =>
           span(
             {
@@ -245,13 +249,15 @@ export const App = component<State, Msg, never>({
           const week = item((r: DayCell[]) => r)()
           return [
             div(
-              { ...dp.row },
+              { ...dp.row, class: rowClass },
               week.map((cell) =>
                 button(
                   {
                     role: 'gridcell',
+                    class:
+                      'inline-flex items-center justify-center w-9 h-9 rounded-md text-sm cursor-pointer bg-transparent border-none text-text hover:bg-surface-hover transition-colors duration-fast data-[selected]:bg-primary data-[selected]:text-text-inverted data-[today]:font-bold data-[in-month=false]:opacity-40',
                     'data-date': cell.iso,
-                    'data-in-month': cell.inMonth ? '' : undefined,
+                    'data-in-month': cell.inMonth ? 'true' : 'false',
                     'data-today': (s: State) => (cell.iso === todayIsoString() ? '' : undefined),
                     'data-selected': (s: State) =>
                       s.datePicker.value === cell.iso ? '' : undefined,

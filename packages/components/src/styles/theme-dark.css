@@ -13,6 +13,7 @@
 
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme='light']) {
+    color-scheme: dark;
     --color-surface: #0f172a;
     --color-surface-muted: #1e293b;
     --color-surface-hover: #1e293b;
@@ -35,6 +36,7 @@
 }
 
 [data-theme='dark'] {
+  color-scheme: dark;
   --color-surface: #0f172a;
   --color-surface-muted: #1e293b;
   --color-surface-hover: #1e293b;

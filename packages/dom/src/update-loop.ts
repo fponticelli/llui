@@ -201,12 +201,13 @@ function genericUpdate<S, M, E>(
   bindings: Binding[],
   bindingsBeforePhase1: number,
 ): void {
-  // Phase 1 — structural reconciliation
+  // Phase 1 — structural reconciliation. Re-read length and null-check
+  // each slot: a branch's reconcile may dispose the old scope, whose
+  // disposers splice child blocks out of this shared array mid-iteration.
   const blocks = inst.structuralBlocks
-  const blocksLen = blocks.length
-  for (let bi = 0; bi < blocksLen; bi++) {
-    const block = blocks[bi]!
-    if ((block.mask & combinedDirty) === 0) continue
+  for (let bi = 0; bi < blocks.length; bi++) {
+    const block = blocks[bi]
+    if (!block || (block.mask & combinedDirty) === 0) continue
     block.reconcile(state, combinedDirty)
   }
 
@@ -237,8 +238,8 @@ export function _handleMsg(
   if (method >= 0) {
     const bl = inst.structuralBlocks
     for (let i = 0; i < bl.length; i++) {
-      if (!(bl[i]!.mask & dirty)) continue
-      const block = bl[i]!
+      const block = bl[i]
+      if (!block || !(block.mask & dirty)) continue
       switch (method) {
         case 0:
           block.reconcile(s, dirty)

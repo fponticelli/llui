@@ -13,7 +13,7 @@ const rootVariants = createVariants({
 })
 
 const itemVariants = createVariants({
-  base: 'flex items-center cursor-pointer transition-colors duration-fast data-[highlighted]:bg-surface-hover data-[state=checked]:bg-surface-active data-[state=checked]:text-primary data-[disabled]:opacity-50 data-[disabled]:cursor-not-allowed',
+  base: 'flex items-center cursor-pointer transition-colors duration-fast data-[highlighted]:bg-surface-hover data-[state=selected]:bg-surface-active data-[state=selected]:text-primary data-[disabled]:opacity-50 data-[disabled]:cursor-not-allowed',
   variants: {
     size: {
       sm: 'px-2 py-1 text-sm',

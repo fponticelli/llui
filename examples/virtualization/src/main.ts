@@ -1,4 +1,15 @@
-import { component, mountApp, div, h1, p, input, label, span, virtualEach } from '@llui/dom'
+import {
+  component,
+  mountApp,
+  div,
+  h1,
+  p,
+  input,
+  label,
+  span,
+  virtualEach,
+  onMount,
+} from '@llui/dom'
 
 // ── Data ────────────────────────────────────────────────────────
 
@@ -50,76 +61,96 @@ function generateLogs(count: number): LogEntry[] {
 type State = {
   count: number
   logs: LogEntry[]
+  visible: number
 }
 
-type Msg = { type: 'setCount'; count: number }
+type Msg = { type: 'setCount'; count: number } | { type: 'visibleChanged'; n: number }
 
 // ── Component ───────────────────────────────────────────────────
 
 const App = component<State, Msg, never>({
   name: 'VirtualLogViewer',
-  init: () => [{ count: 50000, logs: generateLogs(50000) }, []],
+  init: () => [{ count: 50000, logs: generateLogs(50000), visible: 0 }, []],
   update: (state, msg) => {
     switch (msg.type) {
       case 'setCount':
-        return [{ count: msg.count, logs: generateLogs(msg.count) }, []]
+        return [{ ...state, count: msg.count, logs: generateLogs(msg.count) }, []]
+      case 'visibleChanged':
+        if (state.visible === msg.n) return [state, []]
+        return [{ ...state, visible: msg.n }, []]
     }
   },
-  view: ({ send, text }) => [
-    h1([text('Virtual log viewer')]),
-    p({ class: 'subtitle' }, [
-      text(
-        '50,000 log entries rendered with virtualEach — only the ~15 visible rows are in the DOM',
-      ),
-    ]),
+  view: ({ send, text }) => {
+    // Observe the virtual scroll container: childList mutations happen
+    // whenever virtualEach adds/removes rows on scroll or state change.
+    // Sending `visibleChanged` keeps the stat reactive without polling.
+    onMount((host) => {
+      const container = host.querySelector<HTMLElement>('.log-table[data-virtual-container]')
+      if (!container) return
+      const spacer = container.firstElementChild
+      if (!spacer) return
+      const report = (): void => {
+        send({ type: 'visibleChanged', n: container.querySelectorAll('.log-row').length })
+      }
+      const obs = new MutationObserver(report)
+      obs.observe(spacer, { childList: true })
+      report()
+      return () => obs.disconnect()
+    })
 
-    div({ class: 'controls' }, [
-      label({ for: 'count' }, [text('Rows:')]),
-      input({
-        id: 'count',
-        type: 'range',
-        min: '100',
-        max: '100000',
-        step: '100',
-        value: (s: State) => String(s.count),
-        onInput: (e: Event) => {
-          const target = e.currentTarget as HTMLInputElement
-          send({ type: 'setCount', count: Number(target.value) })
-        },
-      }),
-      span({ class: 'count' }, [text((s: State) => s.count.toLocaleString())]),
-    ]),
-
-    ...virtualEach<State, LogEntry, Msg>({
-      items: (s) => s.logs,
-      key: (log) => log.id,
-      itemHeight: 32,
-      containerHeight: 560,
-      class: 'log-table',
-      render: ({ item }) => [
-        div(
-          {
-            class: 'log-row',
-            'data-level': item((l) => l.level),
-          },
-          [
-            span({ class: 'timestamp' }, [text(item((l) => l.timestamp))]),
-            span({ class: 'level' }, [text(item((l) => l.level))]),
-            span({ class: 'source' }, [text(item((l) => l.source))]),
-            span({ class: 'message' }, [text(item((l) => l.message))]),
-          ],
+    return [
+      h1([text('Virtual log viewer')]),
+      p({ class: 'subtitle' }, [
+        text(
+          '50,000 log entries rendered with virtualEach — only the ~15 visible rows are in the DOM',
         ),
-      ],
-    }),
-
-    div({ class: 'stats' }, [
-      span([
-        text('Visible DOM nodes: '),
-        span([text(() => String(document.querySelectorAll('.log-row').length))]),
       ]),
-      span([text('Total entries: '), span([text((s: State) => String(s.logs.length))])]),
-    ]),
-  ],
+
+      div({ class: 'controls' }, [
+        label({ for: 'count' }, [text('Rows:')]),
+        input({
+          id: 'count',
+          type: 'range',
+          min: '100',
+          max: '100000',
+          step: '100',
+          value: (s: State) => String(s.count),
+          onInput: (e: Event) => {
+            const target = e.currentTarget as HTMLInputElement
+            send({ type: 'setCount', count: Number(target.value) })
+          },
+        }),
+        span({ class: 'count' }, [text((s: State) => s.count.toLocaleString())]),
+      ]),
+
+      ...virtualEach<State, LogEntry, Msg>({
+        items: (s) => s.logs,
+        key: (log) => log.id,
+        itemHeight: 32,
+        containerHeight: 560,
+        class: 'log-table',
+        render: ({ item }) => [
+          div(
+            {
+              class: 'log-row',
+              'data-level': item((l) => l.level),
+            },
+            [
+              span({ class: 'timestamp' }, [text(item((l) => l.timestamp))]),
+              span({ class: 'level' }, [text(item((l) => l.level))]),
+              span({ class: 'source' }, [text(item((l) => l.source))]),
+              span({ class: 'message' }, [text(item((l) => l.message))]),
+            ],
+          ),
+        ],
+      }),
+
+      div({ class: 'stats' }, [
+        span([text('Visible DOM nodes: '), span([text((s: State) => String(s.visible))])]),
+        span([text('Total entries: '), span([text((s: State) => String(s.logs.length))])]),
+      ]),
+    ]
+  },
 })
 
 // ── Mount ───────────────────────────────────────────────────────

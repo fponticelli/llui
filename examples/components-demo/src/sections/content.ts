@@ -241,11 +241,10 @@ export const App = component<State, Msg, never>({
               span({ class: 'text-xs font-semibold text-text-muted w-16' }, [text('Country:')]),
               button(
                 {
-                  class: 'btn text-xs',
-                  style: (s: State) =>
+                  class: (s: State) =>
                     s.cascade.values[0] === 'US'
-                      ? 'background:rgb(37 99 235);color:white;'
-                      : 'background:rgb(241 245 249);',
+                      ? 'btn text-xs btn-primary'
+                      : 'btn text-xs btn-secondary',
                   onClick: () =>
                     send({
                       type: 'cascade',
@@ -256,11 +255,10 @@ export const App = component<State, Msg, never>({
               ),
               button(
                 {
-                  class: 'btn text-xs',
-                  style: (s: State) =>
+                  class: (s: State) =>
                     s.cascade.values[0] === 'IT'
-                      ? 'background:rgb(37 99 235);color:white;'
-                      : 'background:rgb(241 245 249);',
+                      ? 'btn text-xs btn-primary'
+                      : 'btn text-xs btn-secondary',
                   onClick: () =>
                     send({
                       type: 'cascade',
@@ -277,13 +275,12 @@ export const App = component<State, Msg, never>({
               // the value. Buttons without a country get data-ready=false.
               button(
                 {
-                  class: 'btn text-xs',
-                  style: (s: State) => {
+                  class: (s: State) => {
                     const country = s.cascade.values[0]
-                    if (country !== 'US') return 'display:none;'
+                    if (country !== 'US') return 'btn text-xs btn-secondary hidden'
                     return s.cascade.values[1] === 'CA'
-                      ? 'background:rgb(37 99 235);color:white;'
-                      : 'background:rgb(241 245 249);'
+                      ? 'btn text-xs btn-primary'
+                      : 'btn text-xs btn-secondary'
                   },
                   onClick: () =>
                     send({
@@ -295,12 +292,11 @@ export const App = component<State, Msg, never>({
               ),
               button(
                 {
-                  class: 'btn text-xs',
-                  style: (s: State) => {
-                    if (s.cascade.values[0] !== 'US') return 'display:none;'
+                  class: (s: State) => {
+                    if (s.cascade.values[0] !== 'US') return 'btn text-xs btn-secondary hidden'
                     return s.cascade.values[1] === 'NY'
-                      ? 'background:rgb(37 99 235);color:white;'
-                      : 'background:rgb(241 245 249);'
+                      ? 'btn text-xs btn-primary'
+                      : 'btn text-xs btn-secondary'
                   },
                   onClick: () =>
                     send({
@@ -312,12 +308,11 @@ export const App = component<State, Msg, never>({
               ),
               button(
                 {
-                  class: 'btn text-xs',
-                  style: (s: State) => {
-                    if (s.cascade.values[0] !== 'IT') return 'display:none;'
+                  class: (s: State) => {
+                    if (s.cascade.values[0] !== 'IT') return 'btn text-xs btn-secondary hidden'
                     return s.cascade.values[1] === 'MI'
-                      ? 'background:rgb(37 99 235);color:white;'
-                      : 'background:rgb(241 245 249);'
+                      ? 'btn text-xs btn-primary'
+                      : 'btn text-xs btn-secondary'
                   },
                   onClick: () =>
                     send({

@@ -210,6 +210,90 @@ describe('branch()', () => {
     handle.flush()
     expect(container.textContent).toBe('flag is on')
   })
+
+  it('outer branch case switch does not crash when disposing nested branches', () => {
+    // Regression: when an outer branch switches case, it disposes the leaving
+    // scope, whose disposers splice nested structural blocks out of the shared
+    // structuralBlocks array. The phase 1 loop must re-read length and
+    // null-check each slot, otherwise it reads past the shrunk array and
+    // crashes on `undefined.mask`.
+    type S = { page: 'a' | 'b'; counter: number }
+    type M = { type: 'setPage'; page: S['page'] } | { type: 'tick' }
+
+    const def: ComponentDef<S, M, never> = {
+      name: 'NestedSwitch',
+      init: () => [{ page: 'a', counter: 0 }, []],
+      update: (state, msg) => {
+        switch (msg.type) {
+          case 'setPage':
+            return [{ ...state, page: msg.page }, []]
+          case 'tick':
+            return [{ ...state, counter: state.counter + 1 }, []]
+        }
+      },
+      view: ({ branch: b }) => [
+        // Outer branch — when it switches, the inner nested branches in
+        // 'a' get disposed, splicing themselves out of structuralBlocks.
+        ...b({
+          on: (s) => s.page,
+          cases: {
+            a: (h) => [
+              ...h.branch({
+                on: (s) => (s.counter % 2 === 0 ? 'even' : 'odd'),
+                cases: {
+                  even: () => [h.text('a:even')],
+                  odd: () => [h.text('a:odd')],
+                },
+              }),
+              ...h.branch({
+                on: (s) => (s.counter > 5 ? 'hi' : 'lo'),
+                cases: {
+                  hi: () => [h.text(':hi')],
+                  lo: () => [h.text(':lo')],
+                },
+              }),
+            ],
+            b: (h) => [h.text('page b')],
+          },
+        }),
+      ],
+      __dirty: (o, n) => {
+        let mask = 0
+        if (!Object.is(o.page, n.page)) mask |= 1
+        if (!Object.is(o.counter, n.counter)) mask |= 2
+        return mask
+      },
+    }
+
+    const container = document.createElement('div')
+    let sendFn!: (msg: M) => void
+    const origView = def.view
+    def.view = (h) => {
+      sendFn = h.send
+      return origView(h)
+    }
+    const handle = mountApp(container, def)
+    expect(container.textContent).toBe('a:even:lo')
+
+    // This is the crash scenario: outer branch switches case, disposing
+    // the leaving scope (which contains the two nested branches), splicing
+    // them out of the shared structuralBlocks array mid-iteration.
+    expect(() => {
+      sendFn({ type: 'setPage', page: 'b' })
+      handle.flush()
+    }).not.toThrow()
+
+    expect(container.textContent).toBe('page b')
+
+    // Switch back and verify nested branches still work
+    sendFn({ type: 'setPage', page: 'a' })
+    handle.flush()
+    expect(container.textContent).toBe('a:even:lo')
+
+    sendFn({ type: 'tick' })
+    handle.flush()
+    expect(container.textContent).toBe('a:odd:lo')
+  })
 })
 
 describe('show()', () => {

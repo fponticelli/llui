@@ -2508,10 +2508,10 @@ function computePhase2Mask(
  * {
  *   // Phase 1 — structural reconciliation (gated by structuralMask)
  *   if (d & structuralMask) {
- *     for (let i = 0, len = bl.length; i < len; i++) {
- *       const block = bl[i]
- *       if ((block.mask & d) === 0) continue
- *       block.reconcile(s, d)
+ *     for (let i = 0; i < bl.length; i++) {
+ *       const bk = bl[i]
+ *       if (!bk || (bk.mask & d) === 0) continue
+ *       bk.reconcile(s, d)
  *     }
  *     // Compact dead bindings
  *     if (b.length > p || (p > 0 && b[0].dead)) {
@@ -2542,26 +2542,23 @@ function buildUpdateBody(f: ts.NodeFactory, structuralMask: number, _phase2Mask:
   if (structuralMask !== 0) {
     const phase1Stmts: ts.Statement[] = []
 
-    // for (let i = 0, len = bl.length; i < len; i++) {
-    //   const block = bl[i]; if ((block.mask & d) === 0) continue; block.reconcile(s, d)
+    // for (let i = 0; i < bl.length; i++) {
+    //   const bk = bl[i];
+    //   if (!bk || (bk.mask & d) === 0) continue;
+    //   bk.reconcile(s, d)
     // }
+    // Re-read bl.length each iteration and null-check bk — a branch's
+    // reconcile may dispose the old scope, whose disposers splice child
+    // structural blocks out of this shared array mid-iteration.
     const blockLoop = f.createForStatement(
       f.createVariableDeclarationList(
-        [
-          f.createVariableDeclaration('i', undefined, undefined, f.createNumericLiteral(0)),
-          f.createVariableDeclaration(
-            'len',
-            undefined,
-            undefined,
-            f.createPropertyAccessExpression(f.createIdentifier('bl'), 'length'),
-          ),
-        ],
+        [f.createVariableDeclaration('i', undefined, undefined, f.createNumericLiteral(0))],
         ts.NodeFlags.Let,
       ),
       f.createBinaryExpression(
         f.createIdentifier('i'),
         ts.SyntaxKind.LessThanToken,
-        f.createIdentifier('len'),
+        f.createPropertyAccessExpression(f.createIdentifier('bl'), 'length'),
       ),
       f.createPostfixUnaryExpression(f.createIdentifier('i'), ts.SyntaxKind.PlusPlusToken),
       f.createBlock(
@@ -2585,15 +2582,22 @@ function buildUpdateBody(f: ts.NodeFactory, structuralMask: number, _phase2Mask:
           ),
           f.createIfStatement(
             f.createBinaryExpression(
-              f.createParenthesizedExpression(
-                f.createBinaryExpression(
-                  f.createPropertyAccessExpression(f.createIdentifier('bk'), 'mask'),
-                  ts.SyntaxKind.AmpersandToken,
-                  f.createIdentifier('d'),
-                ),
+              f.createPrefixUnaryExpression(
+                ts.SyntaxKind.ExclamationToken,
+                f.createIdentifier('bk'),
               ),
-              ts.SyntaxKind.EqualsEqualsEqualsToken,
-              f.createNumericLiteral(0),
+              ts.SyntaxKind.BarBarToken,
+              f.createBinaryExpression(
+                f.createParenthesizedExpression(
+                  f.createBinaryExpression(
+                    f.createPropertyAccessExpression(f.createIdentifier('bk'), 'mask'),
+                    ts.SyntaxKind.AmpersandToken,
+                    f.createIdentifier('d'),
+                  ),
+                ),
+                ts.SyntaxKind.EqualsEqualsEqualsToken,
+                f.createNumericLiteral(0),
+              ),
             ),
             f.createContinueStatement(),
           ),
