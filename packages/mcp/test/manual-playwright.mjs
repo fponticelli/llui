@@ -1,15 +1,12 @@
 #!/usr/bin/env node
 /**
- * Manual integration test for the MCP HMR auto-connect chain.
+ * Manual integration script for the MCP HMR auto-connect chain — kept as
+ * a debugging harness with verbose console logging. The CI version of
+ * this same chain lives in `playwright-e2e.test.ts` (vitest, terser).
  *
- * Runs slow (spawns vite + browser) so it lives outside the regular vitest
- * suite. Verifies the FULL pipeline that the unit tests stub out:
- *
- *   1. MCP server starts → writes node_modules/.cache/llui-mcp/active.json
- *   2. Vite plugin watches the file → sends `llui:mcp-ready` HMR event
- *   3. Browser receives HMR event → calls __lluiConnect(port)
- *   4. Browser opens WebSocket to MCP server → relay registered
- *   5. MCP tool call goes through real devtools.ts → real component state
+ * Use this script when debugging the auto-connect chain interactively:
+ * the verbose logs surface exactly which step fails (file marker write,
+ * vite middleware, browser fetch, relay connection, tool call).
  *
  * Usage:
  *   node packages/mcp/test/manual-playwright.mjs
