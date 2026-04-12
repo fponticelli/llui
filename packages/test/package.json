@@ -1,6 +1,6 @@
 {
   "name": "@llui/test",
-  "version": "0.0.9",
+  "version": "0.0.10",
   "type": "module",
   "sideEffects": false,
   "exports": {
@@ -19,7 +19,7 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@llui/dom": "^0.0.9"
+    "@llui/dom": "^0.0.10"
   },
   "description": "LLui test harness — testComponent, testView, propertyTest, replayTrace, assertEffects",
   "keywords": [
