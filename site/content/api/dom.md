@@ -132,7 +132,9 @@ Competitive with Solid and Svelte on [js-framework-benchmark](https://github.com
 ### `component()`
 
 ```typescript
-function component<S, M, E>(def: ComponentDef<S, M, E>): ComponentDef<S, M, E>
+function component<S, M, E = never, D = void>(
+  def: ComponentDef<S, M, E, D>,
+): ComponentDef<S, M, E, D>
 ```
 
 ### `createView()`

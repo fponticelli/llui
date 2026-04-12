@@ -1,5 +1,5 @@
 import { component, mountApp, div, h1, h2, p, button, lazy, provide } from '@llui/dom'
-import type { Send, View } from '@llui/dom'
+import type { ComponentDef, Send, View } from '@llui/dom'
 import { LocaleContext, en, formatDate, formatRelativeTime, dialog } from '@llui/components'
 import type { Locale, DialogState, DialogMsg } from '@llui/components'
 
@@ -164,103 +164,122 @@ const App = component<State, Msg, never>({
   },
   view: (h) => {
     const { send, text, show } = h
-    const dlg = dialog.connect<State>(
-      (s) => s.dialog,
-      (m) => send({ type: 'dialog', msg: m }),
-      { id: 'confirm' },
-    )
 
     return [
       ...provide(
         LocaleContext,
         (s: State) => getLocale(s.localeKey),
-        () => [
-          h1([text('Locale + Lazy')]),
-          p({ class: 'subtitle' }, [
-            text((s: State) =>
-              formatDate(new Date(), { locale: getBcp47(s.localeKey), dateStyle: 'full' }),
-            ),
-          ]),
-
-          div({ class: 'locale-row' }, [
-            localeBtn(text, send, 'en'),
-            localeBtn(text, send, 'es'),
-            localeBtn(text, send, 'ja'),
-            localeBtn(text, send, 'ar'),
-          ]),
-
-          // Section 1: dialog reads close label from LocaleContext
-          div({ class: 'card' }, [
-            h2([text('LocaleContext → dialog component')]),
-            p([
-              text(
-                "The dialog's close button reads its label from LocaleContext. Switch locale above, then open the dialog.",
+        // connect() runs inside the provider so dialog's default closeLabel
+        // resolves the LocaleContext and the aria-label updates reactively
+        // when the user switches locale.
+        () => {
+          const dlg = dialog.connect<State>(
+            (s) => s.dialog,
+            (m) => send({ type: 'dialog', msg: m }),
+            { id: 'confirm' },
+          )
+          return [
+            h1([text('Locale + Lazy')]),
+            p({ class: 'subtitle' }, [
+              text((s: State) =>
+                formatDate(new Date(), { locale: getBcp47(s.localeKey), dateStyle: 'full' }),
               ),
             ]),
-            div({ style: 'margin-top: 1rem' }, [
-              button({ ...dlg.trigger, class: 'primary' }, [text('Open dialog')]),
-            ]),
-          ]),
 
-          // Section 2: lazy-loaded stats module
-          div({ class: 'card' }, [
-            h2([text('lazy() → code-split component')]),
-            p([
-              text(
-                'Click to lazy-load a stats module. The fallback shows while import() resolves, then the component mounts.',
-              ),
+            div({ class: 'locale-row' }, [
+              localeBtn(text, send, 'en'),
+              localeBtn(text, send, 'es'),
+              localeBtn(text, send, 'ja'),
+              localeBtn(text, send, 'ar'),
             ]),
-            div({ style: 'margin-top: 1rem' }, [
-              ...show({
-                when: (s) => !s.showStats,
-                render: ({ text }) => [
-                  button({ class: 'primary', onClick: () => send({ type: 'loadStats' }) }, [
-                    text('Load stats'),
-                  ]),
-                ],
-                fallback: () => [
-                  ...lazy<State, Msg, never, { locale: string }>({
-                    loader: () => import('./stats-module').then((m) => m.default),
-                    fallback: ({ text }) => [
-                      p({ class: 'loading' }, [text('Loading stats module...')]),
-                    ],
-                    error: (err, { text }) => [
-                      p({ class: 'error' }, [text(`Error: ${err.message}`)]),
-                    ],
-                    data: (s: State) => ({ locale: getBcp47(s.localeKey) }),
-                  }),
-                ],
-              }),
-            ]),
-          ]),
 
-          // Dialog overlay
-          ...dialog.overlay({
-            get: (s) => s.dialog,
-            send: (m) => send({ type: 'dialog', msg: m }),
-            parts: dlg,
-            content: () => [
-              div({ ...dlg.content }, [
-                div({ ...dlg.title, class: 'dialog-title' }, [
-                  text((s: State) => dialogGreeting(s.localeKey)),
-                ]),
-                p([
-                  text((s: State) =>
-                    formatRelativeTime(-3, 'minute', {
-                      locale: getBcp47(s.localeKey),
-                      numeric: 'auto',
-                    }),
-                  ),
-                ]),
-                div({ class: 'dialog-actions' }, [
-                  button({ ...dlg.closeTrigger, class: 'primary' }, [
-                    text((s: State) => getLocale(s.localeKey).dialog.close),
-                  ]),
-                ]),
+            // Section 1: dialog reads close label from LocaleContext
+            div({ class: 'card' }, [
+              h2([text('LocaleContext → dialog component')]),
+              p([
+                text(
+                  "The dialog's close button reads its label from LocaleContext. Switch locale above, then open the dialog.",
+                ),
               ]),
-            ],
-          }),
-        ],
+              div({ style: 'margin-top: 1rem' }, [
+                button({ ...dlg.trigger, class: 'primary' }, [text('Open dialog')]),
+              ]),
+            ]),
+
+            // Section 2: lazy-loaded stats module
+            div({ class: 'card' }, [
+              h2([text('lazy() → code-split component')]),
+              p([
+                text(
+                  'Click to lazy-load a stats module. The fallback shows while import() resolves, then the component mounts.',
+                ),
+              ]),
+              div({ style: 'margin-top: 1rem' }, [
+                ...show({
+                  when: (s) => !s.showStats,
+                  render: ({ text }) => [
+                    button({ class: 'primary', onClick: () => send({ type: 'loadStats' }) }, [
+                      text('Load stats'),
+                    ]),
+                  ],
+                  fallback: () => [
+                    ...lazy<State, Msg, never, { locale: string }>({
+                      // View<S, M> is invariant in M (because send: Send<M> is
+                      // contravariant), so a child component's ComponentDef
+                      // can't structurally satisfy a parent's wider Msg. Cast
+                      // at the erasure boundary where lazy() drops the child's
+                      // actual state/msg types anyway.
+                      loader: () =>
+                        import('./stats-module').then(
+                          (m) =>
+                            m.default as unknown as ComponentDef<
+                              unknown,
+                              Msg,
+                              never,
+                              { locale: string }
+                            >,
+                        ),
+                      fallback: ({ text }) => [
+                        p({ class: 'loading' }, [text('Loading stats module...')]),
+                      ],
+                      error: (err, { text }) => [
+                        p({ class: 'error' }, [text(`Error: ${err.message}`)]),
+                      ],
+                      data: (s: State) => ({ locale: getBcp47(s.localeKey) }),
+                    }),
+                  ],
+                }),
+              ]),
+            ]),
+
+            // Dialog overlay
+            ...dialog.overlay({
+              get: (s) => s.dialog,
+              send: (m) => send({ type: 'dialog', msg: m }),
+              parts: dlg,
+              content: () => [
+                div({ ...dlg.content }, [
+                  div({ ...dlg.title, class: 'dialog-title' }, [
+                    text((s: State) => dialogGreeting(s.localeKey)),
+                  ]),
+                  p([
+                    text((s: State) =>
+                      formatRelativeTime(-3, 'minute', {
+                        locale: getBcp47(s.localeKey),
+                        numeric: 'auto',
+                      }),
+                    ),
+                  ]),
+                  div({ class: 'dialog-actions' }, [
+                    button({ ...dlg.closeTrigger, class: 'primary' }, [
+                      text((s: State) => getLocale(s.localeKey).dialog.close),
+                    ]),
+                  ]),
+                ]),
+              ],
+            }),
+          ]
+        },
       ),
     ]
   },
