@@ -305,6 +305,19 @@ function sliceHandler<S, M, E, SubS, SubM>(
 ): (state: S, msg: M) => [S, E[]] | null
 ```
 
+### `childHandlers()`
+
+Create a merged handler from a map of component modules. Each module's
+update is wired via `sliceHandler(key, module.update)` convention:
+state[key] holds the sub-state, messages match `{ type: key; msg: SubMsg }`.
+Returns a handler compatible with `mergeHandlers`.
+
+```typescript
+function childHandlers<S, M, E>(
+  modules: Record<string, { update: (state: never, msg: never) => [unknown, unknown[]] }>,
+): (state: S, msg: M) => [S, E[]] | null
+```
+
 ### `text()`
 
 ```typescript
@@ -587,6 +600,65 @@ export type ItemAccessor<T> = {
 } & {
   [K in keyof T]-?: () => T[K]
 }
+```
+
+### `ModuleState`
+
+Extract the state type from a component module's update function.
+Works with both property and method syntax.
+
+```typescript
+export type ModuleState<T> = T extends {
+  update: (state: infer S, msg: infer _M) => [infer _S2, infer _E]
+}
+  ? S
+  : never
+```
+
+### `ModuleMsg`
+
+Extract the message type from a component module's update function.
+
+```typescript
+export type ModuleMsg<T> = T extends {
+  update: (state: infer _S, msg: infer M) => [infer _S2, infer _E]
+}
+  ? M
+  : never
+```
+
+### `ChildState`
+
+Given a record of component modules, derive the combined child state.
+Each key maps to its module's state type.
+
+```ts
+const children = { dialog, sort: sortable } as const
+type CS = ChildState<typeof children>
+// → { dialog: DialogState; sort: SortableState }
+```
+
+```typescript
+export type ChildState<T extends Record<string, unknown>> = {
+  [K in keyof T]: ModuleState<T[K]>
+}
+```
+
+### `ChildMsg`
+
+Given a record of component modules, derive the combined child message
+union. Each module's messages are wrapped in `{ type: key; msg: SubMsg }`.
+
+```ts
+const children = { dialog, sort: sortable } as const
+type CM = ChildMsg<typeof children>
+// → { type: 'dialog'; msg: DialogMsg } | { type: 'sort'; msg: SortableMsg }
+```
+
+```typescript
+export type ChildMsg<T extends Record<string, unknown>> = {
+  [K in keyof T]: { type: K; msg: ModuleMsg<T[K]> }
+}[keyof T]
 ```
 
 ### `FieldMsg`

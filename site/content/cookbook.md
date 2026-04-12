@@ -309,6 +309,39 @@ explicit.
 parent owns the state directly and passes accessors down via `Props<T, S>`.
 `sliceHandler` is for genuine sub-components with their own update logic.
 
+### Type-level composition with `ChildState` / `ChildMsg`
+
+When composing many child components, the State and Msg union declarations
+become repetitive. `ChildState` and `ChildMsg` derive the child portions
+from a map of component modules, and `childHandlers` creates the merged
+handler at runtime:
+
+```typescript
+import { mergeHandlers, childHandlers } from '@llui/dom'
+import type { ChildState, ChildMsg } from '@llui/dom'
+import { dialog } from '@llui/components/dialog'
+import { tabs } from '@llui/components/tabs'
+import { sortable } from '@llui/components/sortable'
+
+const children = { dialog, tabs, sort: sortable } as const
+
+// ChildState derives { dialog: DialogState; tabs: TabsState; sort: SortableState }
+// ChildMsg  derives { type: 'dialog'; msg: DialogMsg } | { type: 'tabs'; msg: TabsMsg } | ...
+type State = ChildState<typeof children> & { items: string[] }
+type Msg = ChildMsg<typeof children> | { type: 'addItem'; text: string }
+
+const update = mergeHandlers<State, Msg, never>(childHandlers(children), (state, msg) => {
+  if (msg.type === 'addItem') {
+    return [{ ...state, items: [...state.items, msg.text] }, []]
+  }
+  return null
+})
+```
+
+Each child module's `update` is wired via the key convention automatically.
+The parent only writes its own State fields and Msg variants — child wiring
+is zero boilerplate.
+
 ### Context: avoiding prop drilling
 
 For ambient data that many components need (theme, user session, i18n) without

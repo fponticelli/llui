@@ -38,6 +38,13 @@ export { renderToString } from './ssr'
 export { mergeHandlers } from './merge-handlers'
 export { createContext, provide, useContext, type Context } from './primitives/context'
 export { sliceHandler } from './slice-handler'
+export {
+  childHandlers,
+  type ChildState,
+  type ChildMsg,
+  type ModuleState,
+  type ModuleMsg,
+} from './compose'
 
 // ── View Primitives ───────────────────────────────────────────────
 
