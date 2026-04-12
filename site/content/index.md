@@ -75,7 +75,7 @@ LLui provides first-class tooling for AI workflows:
 | [`@llui/effects`](/api/effects)               | Effect system — http, cancel, debounce, sequence, race, websocket, retry, upload           |
 | [`@llui/router`](/api/router)                 | Routing — structured path matching, history/hash mode, guards, link helper                 |
 | [`@llui/transitions`](/api/transitions)       | Animation helpers — `transition()`, `fade`, `slide`, `scale`, `collapse`, `flip`, `spring` |
-| [`@llui/components`](/api/components)         | 54 headless components + opt-in theme (CSS tokens, dark mode, Tailwind class helpers)      |
+| [`@llui/components`](/api/components)         | 58 headless components + opt-in theme (CSS tokens, dark mode, Tailwind class helpers)      |
 | [`@llui/test`](/api/test)                     | Test harness — testComponent, testView, propertyTest, replayTrace                          |
 | [`@llui/vike`](/api/vike)                     | Vike SSR/SSG adapter — onRenderHtml, onRenderClient                                        |
 | [`@llui/mcp`](/api/mcp)                       | MCP server — LLM debug tools via Model Context Protocol                                    |

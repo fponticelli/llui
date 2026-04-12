@@ -18,13 +18,20 @@ functions. State is immutable. Effects are plain data objects returned from
 ## Key Types
 
 ```typescript
-interface ComponentDef<S, M, E> {
+interface ComponentDef<S, M, E = never, D = void> {
   name: string
-  init: (props?: Record<string, unknown>) => [S, E[]]
+  // `data` is typed by D. Top-level components use D = void (default);
+  // lazy()-loaded children receive D-typed init data from the parent.
+  init: (data: D) => [S, E[]]
   update: (state: S, msg: M) => [S, E[]]
   view: (h: View<S, M>) => Node[]
   onEffect?: (ctx: { effect: E; send: (msg: M) => void; signal: AbortSignal }) => void
 }
+
+// component() wrapper preserves all four type params.
+function component<S, M, E = never, D = void>(
+  def: ComponentDef<S, M, E, D>,
+): ComponentDef<S, M, E, D>
 
 // View<S, M> is a bundle of state-bound helpers + send. Destructure in
 // `view` to drop per-call generics — every accessor infers `s: S` from
@@ -161,5 +168,5 @@ export const Counter = component<State, Msg, never>({
 - For drag-to-reorder, use the `sortable` state machine. Call `reorder(arr, from, to)` in the `drop` case. Multiple sortable containers share state and track `fromContainer`/`toContainer` for cross-container drag.
 - For theme toggling, use the `themeSwitch` state machine plus `applyTheme(resolveTheme(state.theme))` to set `data-theme` on `<html>`. CSS selectors use `[data-theme='dark']`.
 - For scroll-triggered behavior, use the `inView` state machine with `inView.createObserver(el, send, { once: true })` inside `onMount`.
-- For component label translations, components read from `LocaleContext` (created with English defaults) — English apps need zero setup. Non-English apps call `provide(LocaleContext, (s) => s.locale, () => [...])` at the root.
+- For component label translations, components read from `LocaleContext` (exported from `@llui/components`, defaulting to English) — English apps need zero setup. Non-English apps call `provide(LocaleContext, (s) => s.locale, () => [...])` at the root.
 - For number/date/list/plural formatting, use `formatNumber`, `formatDate`, `formatRelativeTime`, `formatList`, `formatPlural`, `formatFileSize` from `@llui/components` — all wrap `Intl.*` with caching and accept an optional `locale` option.

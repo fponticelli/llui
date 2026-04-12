@@ -17,10 +17,12 @@ After mount, state changes skip `view()` entirely. The runtime instead drives tw
 
 ```ts
 // The complete shape of a component. No surprises.
+// component<S, M, E = never, D = void> — E is the effect type,
+// D is init data for lazy()-loaded components (defaults to void).
 type State = { count: number }
 type Msg = { type: 'increment' }
 
-export const Counter = component<State, Msg>({
+export const Counter = component<State, Msg, never>({
   name: 'Counter',
   init: () => [{ count: 0 }, []],
   update: (state, msg) => {

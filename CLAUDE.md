@@ -56,7 +56,7 @@ Five packages under `packages/`, managed by pnpm workspaces + Turborepo:
 | ------------------- | --------------------------------------------------------------------------------------- | ------------ |
 | `@llui/dom`         | Runtime: component, mount, scope tree, bindings, element helpers, structural primitives | —            |
 | `@llui/vite-plugin` | Compiler: 3-pass TypeScript transform (prop split → mask injection → import cleanup)    | peer: vite   |
-| `@llui/components`  | 54 headless components: accordion, dialog, tabs, select, tree-view, timer, tour, etc.   | @llui/dom    |
+| `@llui/components`  | 58 headless components: accordion, dialog, tabs, select, tree-view, timer, tour, etc.   | @llui/dom    |
 | `@llui/test`        | Test harness: testComponent, assertEffects, testView, propertyTest, replayTrace         | @llui/dom    |
 | `@llui/effects`     | Effect builders: http, cancel, debounce, sequence, race + handleEffects chain           | —            |
 | `@llui/vike`        | Vike SSR adapter: onRenderHtml, onRenderClient                                          | @llui/dom    |
