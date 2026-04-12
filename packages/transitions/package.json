@@ -1,6 +1,6 @@
 {
   "name": "@llui/transitions",
-  "version": "0.0.12",
+  "version": "0.0.13",
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -17,7 +17,7 @@
     "test": "vitest run"
   },
   "peerDependencies": {
-    "@llui/dom": "^0.0.12"
+    "@llui/dom": "^0.0.13"
   },
   "devDependencies": {
     "@llui/dom": "workspace:*",

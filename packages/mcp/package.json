@@ -1,6 +1,6 @@
 {
   "name": "@llui/mcp",
-  "version": "0.0.5",
+  "version": "0.0.6",
   "type": "module",
   "sideEffects": false,
   "bin": {
@@ -22,7 +22,7 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@llui/dom": "workspace:*",
+    "@llui/dom": "^0.0.13",
     "ws": "^8.18.0"
   },
   "devDependencies": {
