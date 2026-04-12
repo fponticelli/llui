@@ -1,7 +1,7 @@
 import {
   component,
   mergeHandlers,
-  sliceHandler,
+  childHandlers,
   div,
   button,
   span,
@@ -14,35 +14,21 @@ import {
   input,
   each,
 } from '@llui/dom'
-import { toc, type TocState, type TocMsg } from '@llui/components/toc'
-import {
-  cascadeSelect,
-  type CascadeSelectState,
-  type CascadeSelectMsg,
-} from '@llui/components/cascade-select'
-import { asyncList, type AsyncListState, type AsyncListMsg } from '@llui/components/async-list'
-import { presence, type PresenceState, type PresenceMsg } from '@llui/components/presence'
-import { qrCode, type QrCodeState, type QrCodeMsg } from '@llui/components/qr-code'
+import type { ChildState, ChildMsg } from '@llui/dom'
+import { toc } from '@llui/components/toc'
+import { cascadeSelect } from '@llui/components/cascade-select'
+import { asyncList } from '@llui/components/async-list'
+import { presence } from '@llui/components/presence'
+import { qrCode } from '@llui/components/qr-code'
 import { encode as uqrEncode } from 'uqr'
 import { sectionGroup, card } from '../shared/ui'
 
 type Item = { id: number; label: string }
 
-type State = {
-  toc: TocState
-  cascade: CascadeSelectState
-  list: AsyncListState<Item>
-  presence: PresenceState
-  qr: QrCodeState
-}
-type Msg =
-  | { type: 'toc'; msg: TocMsg }
-  | { type: 'cascade'; msg: CascadeSelectMsg }
-  | { type: 'list'; msg: AsyncListMsg<Item> }
-  | { type: 'presence'; msg: PresenceMsg }
-  | { type: 'qr'; msg: QrCodeMsg }
-  | { type: 'qrInput'; value: string }
-  | { type: 'loadPage' }
+const children = { toc, cascade: cascadeSelect, list: asyncList, presence, qr: qrCode } as const
+
+type State = ChildState<typeof children>
+type Msg = ChildMsg<typeof children> | { type: 'qrInput'; value: string } | { type: 'loadPage' }
 
 // uqr returns { data: boolean[][], size, version } — we just need the 2D
 // array in llui's matrix shape.
@@ -94,36 +80,7 @@ const init = (): [State, never[]] => [
 ]
 
 const update = mergeHandlers<State, Msg, never>(
-  sliceHandler({
-    get: (s) => s.toc,
-    set: (s, v) => ({ ...s, toc: v }),
-    narrow: (m) => (m.type === 'toc' ? m.msg : null),
-    sub: toc.update,
-  }),
-  sliceHandler({
-    get: (s) => s.cascade,
-    set: (s, v) => ({ ...s, cascade: v }),
-    narrow: (m) => (m.type === 'cascade' ? m.msg : null),
-    sub: cascadeSelect.update,
-  }),
-  sliceHandler({
-    get: (s) => s.list,
-    set: (s, v) => ({ ...s, list: v }),
-    narrow: (m) => (m.type === 'list' ? m.msg : null),
-    sub: asyncList.update,
-  }),
-  sliceHandler({
-    get: (s) => s.presence,
-    set: (s, v) => ({ ...s, presence: v }),
-    narrow: (m) => (m.type === 'presence' ? m.msg : null),
-    sub: presence.update,
-  }),
-  sliceHandler({
-    get: (s) => s.qr,
-    set: (s, v) => ({ ...s, qr: v }),
-    narrow: (m) => (m.type === 'qr' ? m.msg : null),
-    sub: qrCode.update,
-  }),
+  childHandlers<State, Msg, never>(children),
   // Typing in the input box: re-encode on every keystroke and update
   // both value + matrix in one step.
   (state, msg) => {

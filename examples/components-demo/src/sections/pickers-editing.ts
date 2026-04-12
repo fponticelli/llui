@@ -1,7 +1,7 @@
 import {
   component,
   mergeHandlers,
-  sliceHandler,
+  childHandlers,
   div,
   button,
   span,
@@ -10,54 +10,28 @@ import {
   input,
   onMount,
 } from '@llui/dom'
-import {
-  datePicker,
-  type DatePickerState,
-  type DatePickerMsg,
-  type DayCell,
-  monthGrid,
-  weekRows,
-} from '@llui/components/date-picker'
-import {
-  timePicker,
-  type TimePickerState,
-  type TimePickerMsg,
-  formatTime,
-} from '@llui/components/time-picker'
-import {
-  colorPicker,
-  type ColorPickerState,
-  type ColorPickerMsg,
-} from '@llui/components/color-picker'
-import { editable, type EditableState, type EditableMsg } from '@llui/components/editable'
-import {
-  clipboard,
-  type ClipboardState,
-  type ClipboardMsg,
-  copyToClipboard,
-} from '@llui/components/clipboard'
-import { fileUpload, type FileUploadState, type FileUploadMsg } from '@llui/components/file-upload'
-import { splitter, type SplitterState, type SplitterMsg } from '@llui/components/splitter'
+import type { ChildState, ChildMsg } from '@llui/dom'
+import { datePicker, type DayCell, monthGrid, weekRows } from '@llui/components/date-picker'
+import { timePicker, formatTime } from '@llui/components/time-picker'
+import { colorPicker } from '@llui/components/color-picker'
+import { editable } from '@llui/components/editable'
+import { clipboard, copyToClipboard } from '@llui/components/clipboard'
+import { fileUpload } from '@llui/components/file-upload'
+import { splitter } from '@llui/components/splitter'
 import { sectionGroup, card } from '../shared/ui'
 
-type State = {
-  datePicker: DatePickerState
-  timePicker: TimePickerState
-  colorPicker: ColorPickerState
-  editable: EditableState
-  clipboard: ClipboardState
-  fileUpload: FileUploadState
-  splitter: SplitterState
-}
-type Msg =
-  | { type: 'datePicker'; msg: DatePickerMsg }
-  | { type: 'timePicker'; msg: TimePickerMsg }
-  | { type: 'colorPicker'; msg: ColorPickerMsg }
-  | { type: 'editable'; msg: EditableMsg }
-  | { type: 'clipboard'; msg: ClipboardMsg }
-  | { type: 'fileUpload'; msg: FileUploadMsg }
-  | { type: 'splitter'; msg: SplitterMsg }
-  | { type: 'copyText'; value: string }
+const children = {
+  datePicker,
+  timePicker,
+  colorPicker,
+  editable,
+  clipboard,
+  fileUpload,
+  splitter,
+} as const
+
+type State = ChildState<typeof children>
+type Msg = ChildMsg<typeof children> | { type: 'copyText'; value: string }
 
 let localSend: (m: Msg) => void = () => {
   throw new Error('send not initialized')
@@ -77,48 +51,7 @@ const init = (): [State, never[]] => [
 ]
 
 const update = mergeHandlers<State, Msg, never>(
-  sliceHandler({
-    get: (s) => s.datePicker,
-    set: (s, v) => ({ ...s, datePicker: v }),
-    narrow: (m) => (m.type === 'datePicker' ? m.msg : null),
-    sub: datePicker.update,
-  }),
-  sliceHandler({
-    get: (s) => s.timePicker,
-    set: (s, v) => ({ ...s, timePicker: v }),
-    narrow: (m) => (m.type === 'timePicker' ? m.msg : null),
-    sub: timePicker.update,
-  }),
-  sliceHandler({
-    get: (s) => s.colorPicker,
-    set: (s, v) => ({ ...s, colorPicker: v }),
-    narrow: (m) => (m.type === 'colorPicker' ? m.msg : null),
-    sub: colorPicker.update,
-  }),
-  sliceHandler({
-    get: (s) => s.editable,
-    set: (s, v) => ({ ...s, editable: v }),
-    narrow: (m) => (m.type === 'editable' ? m.msg : null),
-    sub: editable.update,
-  }),
-  sliceHandler({
-    get: (s) => s.clipboard,
-    set: (s, v) => ({ ...s, clipboard: v }),
-    narrow: (m) => (m.type === 'clipboard' ? m.msg : null),
-    sub: clipboard.update,
-  }),
-  sliceHandler({
-    get: (s) => s.fileUpload,
-    set: (s, v) => ({ ...s, fileUpload: v }),
-    narrow: (m) => (m.type === 'fileUpload' ? m.msg : null),
-    sub: fileUpload.update,
-  }),
-  sliceHandler({
-    get: (s) => s.splitter,
-    set: (s, v) => ({ ...s, splitter: v }),
-    narrow: (m) => (m.type === 'splitter' ? m.msg : null),
-    sub: splitter.update,
-  }),
+  childHandlers<State, Msg, never>(children),
   (state, msg) => {
     if (msg.type !== 'copyText') return null
     void copyToClipboard(msg.value).catch(() => {})

@@ -1,7 +1,7 @@
 import {
   component,
   mergeHandlers,
-  sliceHandler,
+  childHandlers,
   div,
   button,
   span,
@@ -10,64 +10,38 @@ import {
   input,
   onMount,
 } from '@llui/dom'
-import { switchMachine, type SwitchState, type SwitchMsg } from '@llui/components/switch'
-import { toggle, type ToggleState, type ToggleMsg } from '@llui/components/toggle'
-import { checkbox, type CheckboxState, type CheckboxMsg } from '@llui/components/checkbox'
-import { radioGroup, type RadioGroupState, type RadioGroupMsg } from '@llui/components/radio-group'
-import {
-  toggleGroup,
-  type ToggleGroupState,
-  type ToggleGroupMsg,
-} from '@llui/components/toggle-group'
-import {
-  numberInput,
-  type NumberInputState,
-  type NumberInputMsg,
-} from '@llui/components/number-input'
-import {
-  passwordInput,
-  type PasswordInputState,
-  type PasswordInputMsg,
-} from '@llui/components/password-input'
-import { pinInput, type PinInputState, type PinInputMsg } from '@llui/components/pin-input'
-import { tagsInput, type TagsInputState, type TagsInputMsg } from '@llui/components/tags-input'
-import {
-  ratingGroup,
-  type RatingGroupState,
-  type RatingGroupMsg,
-} from '@llui/components/rating-group'
-import { slider, type SliderState, type SliderMsg } from '@llui/components/slider'
-import { progress, type ProgressState, type ProgressMsg } from '@llui/components/progress'
+import type { ChildState, ChildMsg } from '@llui/dom'
+import { switchMachine } from '@llui/components/switch'
+import { toggle } from '@llui/components/toggle'
+import { checkbox } from '@llui/components/checkbox'
+import { radioGroup } from '@llui/components/radio-group'
+import { toggleGroup } from '@llui/components/toggle-group'
+import { numberInput } from '@llui/components/number-input'
+import { passwordInput } from '@llui/components/password-input'
+import { pinInput } from '@llui/components/pin-input'
+import { tagsInput } from '@llui/components/tags-input'
+import { ratingGroup } from '@llui/components/rating-group'
+import { slider } from '@llui/components/slider'
+import { progress } from '@llui/components/progress'
 import { sectionGroup, card } from '../shared/ui'
 
-type State = {
-  switch: SwitchState
-  toggle: ToggleState
-  checkbox: CheckboxState
-  radio: RadioGroupState
-  togGroup: ToggleGroupState
-  number: NumberInputState
-  password: PasswordInputState
-  pinInput: PinInputState
-  tagsInput: TagsInputState
-  rating: RatingGroupState
-  slider: SliderState
-  progress: ProgressState
-}
+const children = {
+  switch: switchMachine,
+  toggle,
+  checkbox,
+  radio: radioGroup,
+  togGroup: toggleGroup,
+  number: numberInput,
+  password: passwordInput,
+  pinInput,
+  tagsInput,
+  rating: ratingGroup,
+  slider,
+  progress,
+} as const
 
-type Msg =
-  | { type: 'switch'; msg: SwitchMsg }
-  | { type: 'toggle'; msg: ToggleMsg }
-  | { type: 'checkbox'; msg: CheckboxMsg }
-  | { type: 'radio'; msg: RadioGroupMsg }
-  | { type: 'togGroup'; msg: ToggleGroupMsg }
-  | { type: 'number'; msg: NumberInputMsg }
-  | { type: 'password'; msg: PasswordInputMsg }
-  | { type: 'pinInput'; msg: PinInputMsg }
-  | { type: 'tagsInput'; msg: TagsInputMsg }
-  | { type: 'rating'; msg: RatingGroupMsg }
-  | { type: 'slider'; msg: SliderMsg }
-  | { type: 'progress'; msg: ProgressMsg }
+type State = ChildState<typeof children>
+type Msg = ChildMsg<typeof children>
 
 const init = (): [State, never[]] => [
   {
@@ -91,80 +65,7 @@ const init = (): [State, never[]] => [
   [],
 ]
 
-const update = mergeHandlers<State, Msg, never>(
-  sliceHandler({
-    get: (s) => s.switch,
-    set: (s, v) => ({ ...s, switch: v }),
-    narrow: (m) => (m.type === 'switch' ? m.msg : null),
-    sub: switchMachine.update,
-  }),
-  sliceHandler({
-    get: (s) => s.toggle,
-    set: (s, v) => ({ ...s, toggle: v }),
-    narrow: (m) => (m.type === 'toggle' ? m.msg : null),
-    sub: toggle.update,
-  }),
-  sliceHandler({
-    get: (s) => s.checkbox,
-    set: (s, v) => ({ ...s, checkbox: v }),
-    narrow: (m) => (m.type === 'checkbox' ? m.msg : null),
-    sub: checkbox.update,
-  }),
-  sliceHandler({
-    get: (s) => s.radio,
-    set: (s, v) => ({ ...s, radio: v }),
-    narrow: (m) => (m.type === 'radio' ? m.msg : null),
-    sub: radioGroup.update,
-  }),
-  sliceHandler({
-    get: (s) => s.togGroup,
-    set: (s, v) => ({ ...s, togGroup: v }),
-    narrow: (m) => (m.type === 'togGroup' ? m.msg : null),
-    sub: toggleGroup.update,
-  }),
-  sliceHandler({
-    get: (s) => s.number,
-    set: (s, v) => ({ ...s, number: v }),
-    narrow: (m) => (m.type === 'number' ? m.msg : null),
-    sub: numberInput.update,
-  }),
-  sliceHandler({
-    get: (s) => s.password,
-    set: (s, v) => ({ ...s, password: v }),
-    narrow: (m) => (m.type === 'password' ? m.msg : null),
-    sub: passwordInput.update,
-  }),
-  sliceHandler({
-    get: (s) => s.pinInput,
-    set: (s, v) => ({ ...s, pinInput: v }),
-    narrow: (m) => (m.type === 'pinInput' ? m.msg : null),
-    sub: pinInput.update,
-  }),
-  sliceHandler({
-    get: (s) => s.tagsInput,
-    set: (s, v) => ({ ...s, tagsInput: v }),
-    narrow: (m) => (m.type === 'tagsInput' ? m.msg : null),
-    sub: tagsInput.update,
-  }),
-  sliceHandler({
-    get: (s) => s.rating,
-    set: (s, v) => ({ ...s, rating: v }),
-    narrow: (m) => (m.type === 'rating' ? m.msg : null),
-    sub: ratingGroup.update,
-  }),
-  sliceHandler({
-    get: (s) => s.slider,
-    set: (s, v) => ({ ...s, slider: v }),
-    narrow: (m) => (m.type === 'slider' ? m.msg : null),
-    sub: slider.update,
-  }),
-  sliceHandler({
-    get: (s) => s.progress,
-    set: (s, v) => ({ ...s, progress: v }),
-    narrow: (m) => (m.type === 'progress' ? m.msg : null),
-    sub: progress.update,
-  }),
-)
+const update = mergeHandlers<State, Msg, never>(childHandlers<State, Msg, never>(children))
 
 export const App = component<State, Msg, never>({
   name: 'InputsSection',

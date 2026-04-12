@@ -1,40 +1,30 @@
-import { component, mergeHandlers, sliceHandler, div, button, span, h3, img } from '@llui/dom'
-import { tabs, type TabsState, type TabsMsg } from '@llui/components/tabs'
-import { accordion, type AccordionState, type AccordionMsg } from '@llui/components/accordion'
-import {
-  collapsible,
-  type CollapsibleState,
-  type CollapsibleMsg,
-} from '@llui/components/collapsible'
-import { pagination, type PaginationState, type PaginationMsg } from '@llui/components/pagination'
-import { steps, type StepsState, type StepsMsg } from '@llui/components/steps'
-import { carousel, type CarouselState, type CarouselMsg } from '@llui/components/carousel'
-import { avatar, type AvatarState, type AvatarMsg } from '@llui/components/avatar'
-import { treeView, type TreeViewState, type TreeViewMsg } from '@llui/components/tree-view'
-import { listbox, type ListboxState, type ListboxMsg } from '@llui/components/listbox'
+import { component, mergeHandlers, childHandlers, div, button, span, h3, img } from '@llui/dom'
+import type { ChildState, ChildMsg } from '@llui/dom'
+import { tabs } from '@llui/components/tabs'
+import { accordion } from '@llui/components/accordion'
+import { collapsible } from '@llui/components/collapsible'
+import { pagination } from '@llui/components/pagination'
+import { steps } from '@llui/components/steps'
+import { carousel } from '@llui/components/carousel'
+import { avatar } from '@llui/components/avatar'
+import { treeView } from '@llui/components/tree-view'
+import { listbox } from '@llui/components/listbox'
 import { sectionGroup, card } from '../shared/ui'
 
-type State = {
-  tabs: TabsState
-  accordion: AccordionState
-  collapsible: CollapsibleState
-  pagination: PaginationState
-  steps: StepsState
-  carousel: CarouselState
-  avatar: AvatarState
-  treeView: TreeViewState
-  listbox: ListboxState
-}
-type Msg =
-  | { type: 'tabs'; msg: TabsMsg }
-  | { type: 'accordion'; msg: AccordionMsg }
-  | { type: 'collapsible'; msg: CollapsibleMsg }
-  | { type: 'pagination'; msg: PaginationMsg }
-  | { type: 'steps'; msg: StepsMsg }
-  | { type: 'carousel'; msg: CarouselMsg }
-  | { type: 'avatar'; msg: AvatarMsg }
-  | { type: 'treeView'; msg: TreeViewMsg }
-  | { type: 'listbox'; msg: ListboxMsg }
+const children = {
+  tabs,
+  accordion,
+  collapsible,
+  pagination,
+  steps,
+  carousel,
+  avatar,
+  treeView,
+  listbox,
+} as const
+
+type State = ChildState<typeof children>
+type Msg = ChildMsg<typeof children>
 
 const init = (): [State, never[]] => [
   {
@@ -63,62 +53,7 @@ const init = (): [State, never[]] => [
   [],
 ]
 
-const update = mergeHandlers<State, Msg, never>(
-  sliceHandler({
-    get: (s) => s.tabs,
-    set: (s, v) => ({ ...s, tabs: v }),
-    narrow: (m) => (m.type === 'tabs' ? m.msg : null),
-    sub: tabs.update,
-  }),
-  sliceHandler({
-    get: (s) => s.accordion,
-    set: (s, v) => ({ ...s, accordion: v }),
-    narrow: (m) => (m.type === 'accordion' ? m.msg : null),
-    sub: accordion.update,
-  }),
-  sliceHandler({
-    get: (s) => s.collapsible,
-    set: (s, v) => ({ ...s, collapsible: v }),
-    narrow: (m) => (m.type === 'collapsible' ? m.msg : null),
-    sub: collapsible.update,
-  }),
-  sliceHandler({
-    get: (s) => s.pagination,
-    set: (s, v) => ({ ...s, pagination: v }),
-    narrow: (m) => (m.type === 'pagination' ? m.msg : null),
-    sub: pagination.update,
-  }),
-  sliceHandler({
-    get: (s) => s.steps,
-    set: (s, v) => ({ ...s, steps: v }),
-    narrow: (m) => (m.type === 'steps' ? m.msg : null),
-    sub: steps.update,
-  }),
-  sliceHandler({
-    get: (s) => s.carousel,
-    set: (s, v) => ({ ...s, carousel: v }),
-    narrow: (m) => (m.type === 'carousel' ? m.msg : null),
-    sub: carousel.update,
-  }),
-  sliceHandler({
-    get: (s) => s.avatar,
-    set: (s, v) => ({ ...s, avatar: v }),
-    narrow: (m) => (m.type === 'avatar' ? m.msg : null),
-    sub: avatar.update,
-  }),
-  sliceHandler({
-    get: (s) => s.treeView,
-    set: (s, v) => ({ ...s, treeView: v }),
-    narrow: (m) => (m.type === 'treeView' ? m.msg : null),
-    sub: treeView.update,
-  }),
-  sliceHandler({
-    get: (s) => s.listbox,
-    set: (s, v) => ({ ...s, listbox: v }),
-    narrow: (m) => (m.type === 'listbox' ? m.msg : null),
-    sub: listbox.update,
-  }),
-)
+const update = mergeHandlers<State, Msg, never>(childHandlers<State, Msg, never>(children))
 
 export const App = component<State, Msg, never>({
   name: 'DataSection',

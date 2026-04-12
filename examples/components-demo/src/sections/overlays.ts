@@ -1,7 +1,7 @@
 import {
   component,
   mergeHandlers,
-  sliceHandler,
+  childHandlers,
   div,
   button,
   span,
@@ -10,25 +10,18 @@ import {
   p,
   input,
 } from '@llui/dom'
-import { popover, type PopoverState, type PopoverMsg } from '@llui/components/popover'
-import { tooltip, type TooltipState, type TooltipMsg } from '@llui/components/tooltip'
-import { hoverCard, type HoverCardState, type HoverCardMsg } from '@llui/components/hover-card'
-import { menu, type MenuState, type MenuMsg } from '@llui/components/menu'
-import {
-  contextMenu,
-  type ContextMenuState,
-  type ContextMenuMsg,
-} from '@llui/components/context-menu'
-import { select, type SelectState, type SelectMsg } from '@llui/components/select'
-import { combobox, type ComboboxState, type ComboboxMsg } from '@llui/components/combobox'
-import { drawer, type DrawerState, type DrawerMsg } from '@llui/components/drawer'
-import { dialog, type DialogState, type DialogMsg } from '@llui/components/dialog'
-import {
-  alertDialog,
-  type AlertDialogState,
-  type AlertDialogMsg,
-} from '@llui/components/alert-dialog'
-import { toast, type ToasterState, type ToasterMsg, nextToastId } from '@llui/components/toast'
+import type { ChildState, ChildMsg } from '@llui/dom'
+import { popover } from '@llui/components/popover'
+import { tooltip } from '@llui/components/tooltip'
+import { hoverCard } from '@llui/components/hover-card'
+import { menu } from '@llui/components/menu'
+import { contextMenu } from '@llui/components/context-menu'
+import { select } from '@llui/components/select'
+import { combobox } from '@llui/components/combobox'
+import { drawer } from '@llui/components/drawer'
+import { dialog } from '@llui/components/dialog'
+import { alertDialog } from '@llui/components/alert-dialog'
+import { toast, nextToastId } from '@llui/components/toast'
 import {
   confirmDialog,
   type ConfirmDialogState,
@@ -66,33 +59,28 @@ const FRUITS = [
   'Watermelon',
 ]
 
-type State = {
-  popover: PopoverState
-  tooltip: TooltipState
-  hoverCard: HoverCardState
-  menu: MenuState
-  contextMenu: ContextMenuState
-  select: SelectState
-  combobox: ComboboxState
-  drawer: DrawerState
-  dialog: DialogState
-  alertDialog: AlertDialogState
-  toast: ToasterState
+// confirm is excluded from `children` because it has a custom handler that
+// updates sibling state (`message`) when the dialog confirms or cancels.
+const children = {
+  popover,
+  tooltip,
+  hoverCard,
+  menu,
+  contextMenu,
+  select,
+  combobox,
+  drawer,
+  dialog,
+  alertDialog,
+  toast,
+} as const
+
+type State = ChildState<typeof children> & {
   confirm: ConfirmDialogState
   message: string
 }
 type Msg =
-  | { type: 'popover'; msg: PopoverMsg }
-  | { type: 'tooltip'; msg: TooltipMsg }
-  | { type: 'hoverCard'; msg: HoverCardMsg }
-  | { type: 'menu'; msg: MenuMsg }
-  | { type: 'contextMenu'; msg: ContextMenuMsg }
-  | { type: 'select'; msg: SelectMsg }
-  | { type: 'combobox'; msg: ComboboxMsg }
-  | { type: 'drawer'; msg: DrawerMsg }
-  | { type: 'dialog'; msg: DialogMsg }
-  | { type: 'alertDialog'; msg: AlertDialogMsg }
-  | { type: 'toast'; msg: ToasterMsg }
+  | ChildMsg<typeof children>
   | { type: 'confirm'; msg: ConfirmDialogMsg }
   | { type: 'emitToast'; kind: ToastKind; title: string; description: string }
   | { type: 'askConfirm'; tag: string; title: string; description: string; destructive: boolean }
@@ -121,72 +109,7 @@ const init = (): [State, never[]] => [
 ]
 
 const update = mergeHandlers<State, Msg, never>(
-  sliceHandler({
-    get: (s) => s.popover,
-    set: (s, v) => ({ ...s, popover: v }),
-    narrow: (m) => (m.type === 'popover' ? m.msg : null),
-    sub: popover.update,
-  }),
-  sliceHandler({
-    get: (s) => s.tooltip,
-    set: (s, v) => ({ ...s, tooltip: v }),
-    narrow: (m) => (m.type === 'tooltip' ? m.msg : null),
-    sub: tooltip.update,
-  }),
-  sliceHandler({
-    get: (s) => s.hoverCard,
-    set: (s, v) => ({ ...s, hoverCard: v }),
-    narrow: (m) => (m.type === 'hoverCard' ? m.msg : null),
-    sub: hoverCard.update,
-  }),
-  sliceHandler({
-    get: (s) => s.menu,
-    set: (s, v) => ({ ...s, menu: v }),
-    narrow: (m) => (m.type === 'menu' ? m.msg : null),
-    sub: menu.update,
-  }),
-  sliceHandler({
-    get: (s) => s.contextMenu,
-    set: (s, v) => ({ ...s, contextMenu: v }),
-    narrow: (m) => (m.type === 'contextMenu' ? m.msg : null),
-    sub: contextMenu.update,
-  }),
-  sliceHandler({
-    get: (s) => s.select,
-    set: (s, v) => ({ ...s, select: v }),
-    narrow: (m) => (m.type === 'select' ? m.msg : null),
-    sub: select.update,
-  }),
-  sliceHandler({
-    get: (s) => s.combobox,
-    set: (s, v) => ({ ...s, combobox: v }),
-    narrow: (m) => (m.type === 'combobox' ? m.msg : null),
-    sub: combobox.update,
-  }),
-  sliceHandler({
-    get: (s) => s.drawer,
-    set: (s, v) => ({ ...s, drawer: v }),
-    narrow: (m) => (m.type === 'drawer' ? m.msg : null),
-    sub: drawer.update,
-  }),
-  sliceHandler({
-    get: (s) => s.dialog,
-    set: (s, v) => ({ ...s, dialog: v }),
-    narrow: (m) => (m.type === 'dialog' ? m.msg : null),
-    sub: dialog.update,
-  }),
-  sliceHandler({
-    get: (s) => s.alertDialog,
-    set: (s, v) => ({ ...s, alertDialog: v }),
-    narrow: (m) => (m.type === 'alertDialog' ? m.msg : null),
-    sub: alertDialog.update,
-  }),
-  sliceHandler({
-    get: (s) => s.toast,
-    set: (s, v) => ({ ...s, toast: v }),
-    narrow: (m) => (m.type === 'toast' ? m.msg : null),
-    sub: toast.update,
-  }),
+  childHandlers<State, Msg, never>(children),
   (state, msg) => {
     if (msg.type !== 'confirm') return null
     const [confirm] = confirmDialog.update(state.confirm, msg.msg)

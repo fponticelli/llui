@@ -268,3 +268,89 @@ describe('no warnings for clean code', () => {
     expect(w.some((m) => m.includes('Empty props'))).toBe(false)
   })
 })
+
+describe('bitmask overflow (>31 state paths)', () => {
+  function manyPaths(prefix: string, count: number): string {
+    return Array.from({ length: count }, (_, i) => `text((s) => s.${prefix}.f${i})`).join(
+      ',\n          ',
+    )
+  }
+
+  it('does not warn under the 31-path limit', () => {
+    // 20 paths under `a` — the compiler also tracks the parent `a` itself,
+    // so the effective count is ~21, well under the limit.
+    const src = `
+      import { component, div, text } from '@llui/dom'
+      export const C = component({
+        name: 'C',
+        init: () => [{ a: { f0: 0 } }, []],
+        update: (s, m) => [s, []],
+        view: (h) => [
+          div({}, [
+            ${manyPaths('a', 20)}
+          ]),
+        ],
+      })
+    `
+    const w = warnings(src)
+    expect(w.some((m) => m.includes('31-path limit'))).toBe(false)
+  })
+
+  it('warns when paths exceed 31 and names the largest top-level fields', () => {
+    // Many paths under `huge`, fewer under `medium` and `small`
+    const src = `
+      import { component, div, text } from '@llui/dom'
+      export const C = component({
+        name: 'C',
+        init: () => [{ huge: {}, medium: {}, small: {} }, []],
+        update: (s, m) => [s, []],
+        view: (h) => [
+          div({}, [
+            ${manyPaths('huge', 20)},
+            ${manyPaths('medium', 8)},
+            ${manyPaths('small', 8)}
+          ]),
+        ],
+      })
+    `
+    const w = warnings(src)
+    const overflow = w.find((m) => m.includes('31-path limit'))
+    expect(overflow).toBeDefined()
+    // Reports total path count
+    expect(overflow).toMatch(/\d+ unique state access paths/)
+    // Reports overflow amount
+    expect(overflow).toMatch(/\d+ past the 31-path limit/)
+    // Reports breakdown sorted by count: huge first, then medium/small
+    expect(overflow).toMatch(/huge \(\d+\).*medium \(\d+\).*small \(\d+\)/)
+    // Recommends extracting the largest field
+    expect(overflow).toContain('`huge`')
+    // Mentions child() as the recommended fix
+    expect(overflow).toContain('child()')
+    // Mentions sliceHandler as alternative
+    expect(overflow).toContain('sliceHandler')
+  })
+
+  it('extracting one field is enough when it covers most paths', () => {
+    // 22 paths under `huge` plus a few under others — extracting `huge`
+    // alone should bring the count under 31
+    const src = `
+      import { component, div, text } from '@llui/dom'
+      export const C = component({
+        name: 'C',
+        init: () => [{ huge: {}, medium: {} }, []],
+        update: (s, m) => [s, []],
+        view: (h) => [
+          div({}, [
+            ${manyPaths('huge', 22)},
+            ${manyPaths('medium', 12)}
+          ]),
+        ],
+      })
+    `
+    const w = warnings(src)
+    const overflow = w.find((m) => m.includes('31-path limit'))
+    expect(overflow).toBeDefined()
+    // Should recommend extracting `huge`
+    expect(overflow).toContain('`huge`')
+  })
+})

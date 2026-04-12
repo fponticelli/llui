@@ -560,13 +560,33 @@ function checkBitmaskOverflow(
     const top = p.split('.', 1)[0]!
     byTopLevel.set(top, (byTopLevel.get(top) ?? 0) + 1)
   }
-  const breakdown = [...byTopLevel.entries()]
-    .sort((a, b) => b[1] - a[1])
-    .map(([field, n]) => `${field} (${n})`)
-    .join(', ')
+  const sorted = [...byTopLevel.entries()].sort((a, b) => b[1] - a[1])
+
+  // Pick the top fields whose combined path count would bring us under
+  // the 31 limit. These are the best candidates to extract.
+  const candidates: string[] = []
+  let saved = 0
+  for (const [field, n] of sorted) {
+    if (pathCount - saved <= 31) break
+    candidates.push(field)
+    saved += n
+  }
+  const breakdown = sorted.map(([field, n]) => `${field} (${n})`).join(', ')
+  const candidateList = candidates.map((f) => `\`${f}\``).join(', ')
 
   diagnostics.push({
-    message: `Component at line ${line} has ${pathCount} unique state access paths (${overflow} past the 31-path limit). Paths 32..${pathCount} fall back to FULL_MASK — their changes re-evaluate every binding in the component. Top-level fields by path count: ${breakdown}. Extract the largest fields into child components or slice handlers.`,
+    message:
+      `Component at line ${line} has ${pathCount} unique state access paths ` +
+      `(${overflow} past the 31-path limit). Paths 32..${pathCount} fall back to ` +
+      `FULL_MASK — their changes re-evaluate every binding in the component, ` +
+      `negating the bitmask optimization for those updates.\n\n` +
+      `Top-level fields by path count: ${breakdown}.\n\n` +
+      `Recommended fix: extract ${candidateList} into ${candidates.length === 1 ? 'a' : ''} ` +
+      `child component${candidates.length === 1 ? '' : 's'} via \`child()\` ` +
+      `(see /api/dom#child). Each child gets its own 31-path bitmask, so the ` +
+      `extracted paths no longer count against the parent's limit. ` +
+      `Alternative: use \`sliceHandler\` to embed a state machine that owns ` +
+      `the field's reducer.`,
     line,
     column,
   })

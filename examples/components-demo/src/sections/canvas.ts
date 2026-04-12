@@ -1,7 +1,7 @@
 import {
   component,
   mergeHandlers,
-  sliceHandler,
+  childHandlers,
   div,
   button,
   span,
@@ -10,23 +10,15 @@ import {
   img,
   onMount,
 } from '@llui/dom'
-import {
-  signaturePad,
-  type SignaturePadState,
-  type SignaturePadMsg,
-} from '@llui/components/signature-pad'
-import {
-  imageCropper,
-  type ImageCropperState,
-  type ImageCropperMsg,
-} from '@llui/components/image-cropper'
+import type { ChildState, ChildMsg } from '@llui/dom'
+import { signaturePad } from '@llui/components/signature-pad'
+import { imageCropper } from '@llui/components/image-cropper'
 import { sectionGroup, card } from '../shared/ui'
 
-type State = {
-  sig: SignaturePadState
-  crop: ImageCropperState
-}
-type Msg = { type: 'sig'; msg: SignaturePadMsg } | { type: 'crop'; msg: ImageCropperMsg }
+const children = { sig: signaturePad, crop: imageCropper } as const
+
+type State = ChildState<typeof children>
+type Msg = ChildMsg<typeof children>
 
 const init = (): [State, never[]] => [
   {
@@ -37,20 +29,7 @@ const init = (): [State, never[]] => [
   [],
 ]
 
-const update = mergeHandlers<State, Msg, never>(
-  sliceHandler({
-    get: (s) => s.sig,
-    set: (s, v) => ({ ...s, sig: v }),
-    narrow: (m) => (m.type === 'sig' ? m.msg : null),
-    sub: signaturePad.update,
-  }),
-  sliceHandler({
-    get: (s) => s.crop,
-    set: (s, v) => ({ ...s, crop: v }),
-    narrow: (m) => (m.type === 'crop' ? m.msg : null),
-    sub: imageCropper.update,
-  }),
-)
+const update = mergeHandlers<State, Msg, never>(childHandlers<State, Msg, never>(children))
 
 // Inline SVG placeholder used by the image-cropper demo — avoids loading
 // from an external host. 400×300 gradient with a grid.

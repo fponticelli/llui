@@ -1,7 +1,7 @@
 import {
   component,
   mergeHandlers,
-  sliceHandler,
+  childHandlers,
   div,
   button,
   span,
@@ -10,18 +10,11 @@ import {
   p,
   onMount,
 } from '@llui/dom'
-import { tour, type TourState, type TourMsg, type TourStep } from '@llui/components/tour'
-import {
-  floatingPanel,
-  type FloatingPanelState,
-  type FloatingPanelMsg,
-} from '@llui/components/floating-panel'
-import {
-  navigationMenu,
-  type NavMenuState,
-  type NavMenuMsg,
-} from '@llui/components/navigation-menu'
-import { scrollArea, type ScrollAreaState, type ScrollAreaMsg } from '@llui/components/scroll-area'
+import type { ChildState, ChildMsg } from '@llui/dom'
+import { tour, type TourStep } from '@llui/components/tour'
+import { floatingPanel } from '@llui/components/floating-panel'
+import { navigationMenu } from '@llui/components/navigation-menu'
+import { scrollArea } from '@llui/components/scroll-area'
 import { sectionGroup, card } from '../shared/ui'
 
 const tourSteps: TourStep[] = [
@@ -45,17 +38,10 @@ const tourSteps: TourStep[] = [
   },
 ]
 
-type State = {
-  tour: TourState
-  panel: FloatingPanelState
-  nav: NavMenuState
-  scroll: ScrollAreaState
-}
-type Msg =
-  | { type: 'tour'; msg: TourMsg }
-  | { type: 'panel'; msg: FloatingPanelMsg }
-  | { type: 'nav'; msg: NavMenuMsg }
-  | { type: 'scroll'; msg: ScrollAreaMsg }
+const children = { tour, panel: floatingPanel, nav: navigationMenu, scroll: scrollArea } as const
+
+type State = ChildState<typeof children>
+type Msg = ChildMsg<typeof children>
 
 const init = (): [State, never[]] => [
   {
@@ -71,32 +57,7 @@ const init = (): [State, never[]] => [
   [],
 ]
 
-const update = mergeHandlers<State, Msg, never>(
-  sliceHandler({
-    get: (s) => s.tour,
-    set: (s, v) => ({ ...s, tour: v }),
-    narrow: (m) => (m.type === 'tour' ? m.msg : null),
-    sub: tour.update,
-  }),
-  sliceHandler({
-    get: (s) => s.panel,
-    set: (s, v) => ({ ...s, panel: v }),
-    narrow: (m) => (m.type === 'panel' ? m.msg : null),
-    sub: floatingPanel.update,
-  }),
-  sliceHandler({
-    get: (s) => s.nav,
-    set: (s, v) => ({ ...s, nav: v }),
-    narrow: (m) => (m.type === 'nav' ? m.msg : null),
-    sub: navigationMenu.update,
-  }),
-  sliceHandler({
-    get: (s) => s.scroll,
-    set: (s, v) => ({ ...s, scroll: v }),
-    narrow: (m) => (m.type === 'scroll' ? m.msg : null),
-    sub: scrollArea.update,
-  }),
-)
+const update = mergeHandlers<State, Msg, never>(childHandlers<State, Msg, never>(children))
 
 export const App = component<State, Msg, never>({
   name: 'SurfacesSection',
