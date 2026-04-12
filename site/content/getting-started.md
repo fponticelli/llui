@@ -223,6 +223,13 @@ function todoItem(item: Accessor<Todo>, send: (msg: Msg) => void): Node[] {
 }
 ```
 
+### SSR
+
+LLui supports server-side rendering via `@llui/vike`. The runtime's
+`view()` runs identically on the server (producing HTML strings) and
+on the client (hydrating existing DOM). See the [SSR cookbook recipes](/cookbook#ssr)
+and [`@llui/vike` API reference](/api/vike) for setup details.
+
 ## Dev Server
 
 ```bash

@@ -343,6 +343,194 @@ is restored for sibling subtrees automatically. Context works across
 tokens. **When NOT to use it:** data that's specific to a subtree -- pass
 via `Props<T, S>` instead.
 
+### `sliceHandler` shorthand
+
+When your state key matches the message's `type` field and the parent wraps
+the child message in a `msg` property, the shorthand derives get/set/narrow
+automatically:
+
+```typescript
+// Instead of:
+sliceHandler({
+  get: (s) => s.confirm,
+  set: (s, v) => ({ ...s, confirm: v }),
+  narrow: (m) => (m.type === 'confirm' ? m.msg : null),
+  sub: dialog.update,
+})
+
+// Write:
+sliceHandler('confirm', dialog.update)
+```
+
+Both forms are equivalent. Use the full form when the state key doesn't match
+the message type, or when the parent message shape differs from `{ type; msg }`.
+
+### Sub-state slicing with `slice()`
+
+`slice()` narrows a parent's `View<Root, M>` to a `View<Sub, M>` that only
+sees a sub-slice of the state. View functions that operate on a sub-shape
+don't need the full parent state type:
+
+```typescript
+import { slice, div, text } from '@llui/dom'
+import type { View } from '@llui/dom'
+
+type AppState = { user: { name: string; email: string }; settings: Settings }
+
+function userCard(h: View<AppState, Msg>): Node[] {
+  // Narrow to just the user slice:
+  const { text: t } = slice(h, (s) => s.user)
+  return [
+    div({ class: 'card' }, [
+      t((u) => u.name), // u is { name, email }, not AppState
+      t((u) => u.email),
+    ]),
+  ]
+}
+```
+
+**When to use it:** view functions that read a focused sub-tree of state.
+Keeps the view function's type signature tight and decoupled from the
+parent's full state shape.
+
+### Derived values with `selector`
+
+`selector` caches a derived value and only recomputes when its dependencies
+change. Use it when a computation is expensive or shared across bindings:
+
+```typescript
+view: ({ selector, text, each }) => {
+  // Computed once per update cycle, memoized:
+  const sorted = selector((s) => [...s.items].sort((a, b) => a.name.localeCompare(b.name)))
+
+  return [
+    text((s) => `${sorted(s).length} items`),
+    ...each({
+      items: (s) => sorted(s),
+      key: (item) => item.id,
+      render: ({ item }) => [div([text(item.name)])],
+    }),
+  ]
+}
+```
+
+**`selector` vs `memo`:** `memo` caches and returns an accessor function
+`(s) => T` that you pass to bindings. `selector` returns a function you call
+inside other accessors to share derived state. Use `memo` for simple
+projections, `selector` when the derived value feeds into multiple bindings
+or structural primitives.
+
+## Code Splitting
+
+### Lazy-loaded components with `lazy()`
+
+`lazy()` loads a component asynchronously via dynamic `import()`. The
+fallback renders immediately; the loaded component swaps in when the
+Promise resolves:
+
+```typescript
+import { lazy, div, p } from '@llui/dom'
+
+view: ({ show, send, text }) => [
+  ...show({
+    when: (s) => s.showChart,
+    render: () => [
+      ...lazy({
+        loader: () => import('./chart').then((m) => m.default),
+        fallback: ({ text }) => [p([text('Loading chart...')])],
+        error: (err, { text }) => [p([text(`Failed: ${err.message}`)])],
+        data: (s) => ({ points: s.chartData }),
+      }),
+    ],
+  }),
+]
+```
+
+The loaded component's S, M, E types are internal -- `lazy()` only needs
+the `D` (init data) type to match. `LazyDef<D>` erases the child's types
+at the module boundary, so the loader requires no casts:
+
+```typescript
+// chart.ts — the loaded module
+const Chart = component<ChartState, ChartMsg, never, { points: Point[] }>({
+  name: 'Chart',
+  init: (data) => [{ points: data.points, zoom: 1 }, []],
+  // ... own state/msg/view — invisible to the parent
+})
+export default Chart
+```
+
+### Virtualized lists with `virtualEach()`
+
+For large lists (1k+ items), `virtualEach` renders only the visible rows.
+It requires a fixed row height and a known container height:
+
+```typescript
+import { virtualEach, div, span, text } from '@llui/dom'
+
+view: ({ text }) => [
+  ...virtualEach({
+    items: (s) => s.logs,
+    key: (log) => log.id,
+    itemHeight: 32,
+    containerHeight: 600,
+    overscan: 3,
+    class: 'log-list',
+    render: ({ item }) => [
+      div({ class: 'row' }, [span([text(item.timestamp)]), span([text(item.message)])]),
+    ],
+  }),
+]
+```
+
+Scrolling reconciles rows in place without touching component state.
+The `overscan` option (default 3) renders extra rows above and below
+the viewport for smooth scrolling.
+
+## Drag and Drop
+
+### Sortable lists
+
+The `sortable` state machine from `@llui/components` handles single-
+and cross-container drag-to-reorder with pointer and keyboard support:
+
+```typescript
+import { sortable, type SortableState, type SortableMsg } from '@llui/components/sortable'
+
+type State = { items: string[]; sort: SortableState }
+type Msg = { type: 'sort'; msg: SortableMsg }
+
+// In update:
+case 'sort': {
+  const [s, fx] = sortable.update(state.sort, msg.msg)
+  if (msg.msg.type === 'drop' && state.sort.dragging) {
+    const { startIndex, currentIndex } = state.sort.dragging
+    return [{ ...state, items: sortable.reorder(state.items, startIndex, currentIndex), sort: s }, fx]
+  }
+  return [{ ...state, sort: s }, fx]
+}
+
+// In view:
+const parts = sortable.connect<State>((s) => s.sort, (m) => send({ type: 'sort', msg: m }), { id: 'list' })
+
+div({ ...parts.root }, [
+  ...each({
+    items: (s) => s.items,
+    key: (item) => item,
+    render: ({ item, index }) => [
+      div({ ...parts.item(item(), index()) }, [
+        span({ ...parts.handle(item(), index()) }, [text('⋮')]),
+        text(item((i) => i)),
+      ]),
+    ],
+  }),
+])
+```
+
+`parts.item` provides `data-dragging`, `data-shift`, and `data-over`
+attributes for CSS-driven visual feedback. `parts.handle` captures
+pointer events and computes the live DOM index on each drag start.
+
 ## Routing
 
 ### Structured Route Definitions
