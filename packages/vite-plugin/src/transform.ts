@@ -214,11 +214,9 @@ export function transformLlui(
             const rf = tryEmitRowFactory(result, f, source)
             if (rf) return rf
           } catch (err) {
+            const line = ts.getLineAndCharacterOfPosition(sourceFile, result.getStart())
             console.warn(
-              '[llui] Row factory failed:',
-              (err as Error).message,
-              '\n',
-              (err as Error).stack?.split('\n').slice(0, 5).join('\n'),
+              `[llui] Row factory failed in ${_filename}:${line.line + 1} — ${(err as Error).message}`,
             )
           }
         }

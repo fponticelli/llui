@@ -11,7 +11,7 @@ export function text<S>(
     return document.createTextNode(accessor)
   }
 
-  const ctx = getRenderContext()
+  const ctx = getRenderContext('text')
   const node = document.createTextNode('')
 
   // Per-item accessor from each() — zero-arg function (length === 0)

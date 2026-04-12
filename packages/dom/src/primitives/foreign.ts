@@ -8,7 +8,7 @@ const FULL_MASK = 0xffffffff
 export function foreign<S, M, T extends Record<string, unknown>, Instance>(
   opts: ForeignOptions<S, M, T, Instance>,
 ): Node[] {
-  const ctx = getRenderContext()
+  const ctx = getRenderContext('foreign')
   const parentScope = ctx.rootScope
   const foreignScope = createScope(parentScope)
 

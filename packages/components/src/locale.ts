@@ -117,4 +117,4 @@ export const en: Locale = {
  * Locale context. Components read from this via `useContext(LocaleContext)`.
  * English defaults are provided — apps that don't call `provide()` get English for free.
  */
-export const LocaleContext = createContext<Locale>(en)
+export const LocaleContext = createContext<Locale>(en, 'LocaleContext')

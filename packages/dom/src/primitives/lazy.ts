@@ -40,7 +40,7 @@ export interface LazyOptions<S, M, D> {
  * cancelled — the loaded component is never mounted.
  */
 export function lazy<S, M, D = undefined>(opts: LazyOptions<S, M, D>): Node[] {
-  const ctx = getRenderContext()
+  const ctx = getRenderContext('lazy')
   const parentScope = ctx.rootScope
   const send = ctx.send as (msg: M) => void
 

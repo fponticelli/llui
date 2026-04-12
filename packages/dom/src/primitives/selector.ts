@@ -26,7 +26,7 @@ interface SelectorEntry {
  * Zero per-row closure allocations. Zero Set.delete calls on disposal.
  */
 export function selector<S, V>(field: (s: S) => V): SelectorInstance<V> {
-  const ctx = getRenderContext()
+  const ctx = getRenderContext('selector')
   const scope = ctx.rootScope
 
   const registry = new Map<V, SelectorEntry[]>()
@@ -123,7 +123,7 @@ export function selector<S, V>(field: (s: S) => V): SelectorInstance<V> {
       // Per-row disposer for generic reconcile paths (scope disposal).
       // Uses generation check to skip work if already bulk-cleared.
       const gen = generation
-      const itemScope = getRenderContext().rootScope
+      const itemScope = getRenderContext('selector').rootScope
       addDisposer(itemScope, () => {
         if (gen !== generation) return // already bulk-cleared, no-op
         const idx = bucket!.indexOf(entry)

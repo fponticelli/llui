@@ -68,7 +68,7 @@ const buildCtx: RenderContext = {
  * ```
  */
 export function virtualEach<S, T, M = unknown>(opts: VirtualEachOptions<S, T, M>): Node[] {
-  const ctx = getRenderContext()
+  const ctx = getRenderContext('virtualEach')
   const parentScope = ctx.rootScope
   const blocks = ctx.structuralBlocks
   const send = ctx.send as (msg: M) => void

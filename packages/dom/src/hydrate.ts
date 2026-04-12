@@ -47,8 +47,18 @@ export function claimElement(tag: string): HTMLElement {
 
   // Mismatch — create a new element (hydration mismatch warning)
   if (typeof console !== 'undefined') {
+    const got = child
+      ? child.nodeType === 1
+        ? `<${(child as Element).tagName.toLowerCase()}>`
+        : child.nodeType === 3
+          ? `text "${(child.textContent ?? '').slice(0, 30)}"`
+          : `node type ${child.nodeType}`
+      : 'nothing (no more children)'
     console.warn(
-      `[LLui hydration] expected <${tag}> at index ${cursor.index}, got ${child ? `<${(child as Element).tagName?.toLowerCase?.() ?? child.nodeType}>` : 'nothing'}`,
+      `[LLui hydration] mismatch in <${cursor.parent.nodeName.toLowerCase()}>: ` +
+        `expected <${tag}> at child index ${cursor.index}, got ${got}. ` +
+        `This usually means the server-rendered HTML doesn't match the client's ` +
+        `view() output — check that SSR and client use the same initial state.`,
     )
   }
   const el = document.createElement(tag)

@@ -20,9 +20,14 @@ export function clearRenderContext(): void {
   currentContext = null
 }
 
-export function getRenderContext(): RenderContext {
+export function getRenderContext(primitiveName?: string): RenderContext {
   if (!currentContext) {
-    throw new Error('LLUI: primitives can only be called inside view()')
+    const name = primitiveName ? `${primitiveName}()` : 'primitives'
+    throw new Error(
+      `[LLui] ${name} can only be called inside a component's view() function. ` +
+        `It was called outside a render context — ensure it runs synchronously within view(), ` +
+        `not in a setTimeout, Promise, or event handler.`,
+    )
   }
   return currentContext
 }

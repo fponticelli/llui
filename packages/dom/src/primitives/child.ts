@@ -18,7 +18,7 @@ export function child<S, ChildM>(opts: ChildOptions<S, ChildM>): Node[] {
     )
   }
 
-  const parentCtx = getRenderContext()
+  const parentCtx = getRenderContext('child')
   const parentScope = parentCtx.rootScope
   const childScope = createScope(parentScope)
   const parentSend = parentCtx.send

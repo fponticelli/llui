@@ -3,7 +3,7 @@ import { getRenderContext, setRenderContext, clearRenderContext } from '../rende
 import { createScope, addDisposer } from '../scope'
 
 export function portal(opts: PortalOptions): Node[] {
-  const ctx = getRenderContext()
+  const ctx = getRenderContext('portal')
   const parentScope = ctx.rootScope
 
   const target = typeof opts.target === 'string' ? document.querySelector(opts.target) : opts.target

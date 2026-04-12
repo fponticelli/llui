@@ -11,6 +11,7 @@ const contextMap = new WeakMap<Scope, Map<symbol, (s: unknown) => unknown>>()
 export interface Context<T> {
   readonly _id: symbol
   readonly _default: T | undefined
+  readonly _name: string | undefined
 }
 
 /**
@@ -21,8 +22,8 @@ export interface Context<T> {
  * const ThemeContext = createContext<'light' | 'dark'>('light')
  * ```
  */
-export function createContext<T>(defaultValue?: T): Context<T> {
-  return { _id: Symbol('llui-ctx'), _default: defaultValue }
+export function createContext<T>(defaultValue?: T, name?: string): Context<T> {
+  return { _id: Symbol(name ?? 'llui-ctx'), _default: defaultValue, _name: name }
 }
 
 /**
@@ -47,7 +48,7 @@ export function provide<S, T>(
   accessor: (s: S) => T,
   children: () => Node[],
 ): Node[] {
-  const renderCtx = getRenderContext()
+  const renderCtx = getRenderContext('provide')
   const parentScope = renderCtx.rootScope
   // Create a sub-scope so the context is attached to THIS provider alone.
   // Descendants (including those mounted later via show/branch/each) walk
@@ -83,7 +84,7 @@ export function provide<S, T>(
 export function useContext<S, T>(ctx: Context<T>): (s: S) => T {
   let scope: Scope | null = null
   try {
-    scope = getRenderContext().rootScope
+    scope = getRenderContext('useContext').rootScope
   } catch {
     // No render context (e.g. called from connect() in a unit test).
     // Fall through to default resolution below.
@@ -100,5 +101,10 @@ export function useContext<S, T>(ctx: Context<T>): (s: S) => T {
     const d = ctx._default
     return () => d
   }
-  throw new Error('[LLui] useContext: no provider found and no default value')
+  const label = ctx._name ?? ctx._id.description ?? 'unknown'
+  throw new Error(
+    `[LLui] useContext(${label}): no provider found and no default value. ` +
+      `Wrap a parent element with provide(${label}, accessor, () => [...]) ` +
+      `or pass a default to createContext().`,
+  )
 }

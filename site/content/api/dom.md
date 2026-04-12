@@ -218,7 +218,7 @@ const ThemeContext = createContext<'light' | 'dark'>('light')
 ```
 
 ```typescript
-function createContext<T>(defaultValue?: T): Context<T>
+function createContext<T>(defaultValue?: T, name?: string): Context<T>
 ```
 
 ### `provide()`
@@ -266,32 +266,43 @@ function useContext<S, T>(ctx: Context<T>): (s: S) => T
 Lens-style adapter that lifts a sub-component's `update` into a handler that
 operates on a parent's full state and message type. Pairs with
 `mergeHandlers` to compose sub-components into a parent component's reducer.
-
-- `get` / `set` isolate the sub-component's state slice within the parent state.
-- `narrow` takes the parent message and returns the sub-message if this slice
-  handles it, or `null` to pass through.
-- `sub` is the sub-component's pure reducer (operates on its own state + msg).
-  Example — embedding `dialog.update` into a parent reducer:
+**Full form** — explicit lens for custom state paths or message shapes:
 
 ```ts
-const update = mergeHandlers<State, Msg, Effect>(
-  sliceHandler({
-    get: (s) => s.confirm,
-    set: (s, v) => ({ ...s, confirm: v }),
-    narrow: (m) => (m.type === 'confirm' ? m.msg : null),
-    sub: dialog.update,
-  }),
-  appUpdate,
-)
+sliceHandler({
+  get: (s) => s.confirm,
+  set: (s, v) => ({ ...s, confirm: v }),
+  narrow: (m) => (m.type === 'confirm' ? m.msg : null),
+  sub: dialog.update,
+})
 ```
 
+**Shorthand** — when the state key matches the message's `type` field and
+the parent message wraps the child message in a `msg` property:
+
+```ts
+// Equivalent to the full form above.
+// Derives get/set/narrow from the key string.
+sliceHandler('confirm', dialog.update)
+```
+
+The shorthand assumes the convention:
+
+- `state[key]` holds the sub-state
+- Messages matching this slice have shape `{ type: key; msg: SubMsg }`
+
 ```typescript
-function sliceHandler<S, M, E, SubS, SubM>(opts: {
-  get: (state: S) => SubS
-  set: (state: S, slice: SubS) => S
-  narrow: (msg: M) => SubM | null
-  sub: (slice: SubS, msg: SubM) => [SubS, E[]]
-}): (state: S, msg: M) => [S, E[]] | null
+function sliceHandler<S, M, E, SubS, SubM>(
+  keyOrOpts:
+    | string
+    | {
+        get: (state: S) => SubS
+        set: (state: S, slice: SubS) => S
+        narrow: (msg: M) => SubM | null
+        sub: (slice: SubS, msg: SubM) => [SubS, E[]]
+      },
+  sub?: (slice: SubS, msg: SubM) => [SubS, E[]],
+): (state: S, msg: M) => [S, E[]] | null
 ```
 
 ### `text()`
@@ -896,6 +907,7 @@ export interface LluiDebugAPI {
 export interface Context<T> {
   readonly _id: symbol
   readonly _default: T | undefined
+  readonly _name: string | undefined
 }
 ```
 

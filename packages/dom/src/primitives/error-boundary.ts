@@ -6,7 +6,7 @@ export function errorBoundary(opts: {
   fallback: (error: Error) => Node[]
   onError?: (error: Error) => void
 }): Node[] {
-  const ctx = getRenderContext()
+  const ctx = getRenderContext('errorBoundary')
   const parentScope = ctx.rootScope
   const childScope = createScope(parentScope)
 

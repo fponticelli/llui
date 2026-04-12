@@ -52,6 +52,45 @@ describe('sliceHandler', () => {
     expect(s.counter.count).toBe(4)
   })
 
+  it('shorthand form derives get/set/narrow from key', () => {
+    const handler = sliceHandler<AppState, AppMsg, AppEffect, SubState, SubMsg>('counter', sub)
+    const result = handler(
+      { counter: { count: 0 }, name: 'x' },
+      { type: 'counter', msg: { type: 'inc' } },
+    )
+    expect(result).toEqual([{ counter: { count: 1 }, name: 'x' }, [{ type: 'logged' }]])
+  })
+
+  it('shorthand returns null for non-matching messages', () => {
+    const handler = sliceHandler<AppState, AppMsg, AppEffect, SubState, SubMsg>('counter', sub)
+    const result = handler({ counter: { count: 0 }, name: 'x' }, { type: 'setName', name: 'y' })
+    expect(result).toBeNull()
+  })
+
+  it('shorthand preserves sibling state', () => {
+    const handler = sliceHandler<AppState, AppMsg, AppEffect, SubState, SubMsg>('counter', sub)
+    const [s] = handler(
+      { counter: { count: 5 }, name: 'keep' },
+      { type: 'counter', msg: { type: 'dec' } },
+    )!
+    expect(s.name).toBe('keep')
+    expect(s.counter.count).toBe(4)
+  })
+
+  it('shorthand composes with mergeHandlers', () => {
+    const update = mergeHandlers<AppState, AppMsg, AppEffect>(
+      sliceHandler<AppState, AppMsg, AppEffect, SubState, SubMsg>('counter', sub),
+      (s, m) => (m.type === 'setName' ? [{ ...s, name: m.name }, []] : null),
+    )
+    const r1 = update(
+      { counter: { count: 0 }, name: 'a' },
+      { type: 'counter', msg: { type: 'inc' } },
+    )
+    expect(r1[0].counter.count).toBe(1)
+    const r2 = update({ counter: { count: 0 }, name: 'a' }, { type: 'setName', name: 'b' })
+    expect(r2[0].name).toBe('b')
+  })
+
   it('composes with mergeHandlers', () => {
     const update = mergeHandlers<AppState, AppMsg, AppEffect>(counterHandler, (s, m) =>
       m.type === 'setName' ? [{ ...s, name: m.name }, []] : null,

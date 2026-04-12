@@ -7,7 +7,7 @@ import { FULL_MASK } from '../update-loop'
 import type { StructuralBlock } from '../structural'
 
 export function branch<S, M = unknown>(opts: BranchOptions<S, M>): Node[] {
-  const ctx = getRenderContext()
+  const ctx = getRenderContext('branch')
   const parentScope = ctx.rootScope
   const blocks = ctx.structuralBlocks
   const send = ctx.send as (msg: M) => void

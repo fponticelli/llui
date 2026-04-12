@@ -62,7 +62,7 @@ interface Entry<T> {
 }
 
 export function each<S, T, M = unknown>(opts: EachOptions<S, T, M>): Node[] {
-  const ctx = getRenderContext()
+  const ctx = getRenderContext('each')
   const parentScope = ctx.rootScope
   const blocks = ctx.structuralBlocks
 
