@@ -15,8 +15,15 @@ export function enableDevTools(): void {
 // ── MCP WebSocket Relay ─────────────────────────────────────────────
 // Forwards method calls from an out-of-process MCP server to the
 // current __lluiDebug API. Dev-mode only — compiler injects startRelay(port).
+//
+// On-demand: tries a SINGLE connection on page load. If it succeeds
+// (MCP server is already running), the relay stays open and reconnects
+// on drop. If it fails, no retry loop — just registers
+// `window.__lluiConnect(port?)` so the developer can connect later
+// from the console or when the MCP server starts.
 
-let relayStarted = false
+let relayPort = 5200
+let relayConnected = false
 
 interface RelayRequest {
   id: string
@@ -24,86 +31,104 @@ interface RelayRequest {
   args: unknown[]
 }
 
-/**
- * Connect to a local MCP server's WebSocket and forward tool calls to
- * `window.__lluiDebug`. Auto-reconnects on close. Safe to call multiple times
- * (only the first call actually runs).
- */
-export function startRelay(port = 5200): void {
-  if (relayStarted) return
-  relayStarted = true
-  if (typeof WebSocket === 'undefined') return
-
-  function connect(): void {
-    let ws: WebSocket
-    try {
-      ws = new WebSocket(`ws://127.0.0.1:${port}`)
-    } catch {
-      // Unable to open — retry later
-      setTimeout(connect, 3000)
+function handleMessage(ws: WebSocket, event: MessageEvent): void {
+  let req: RelayRequest
+  try {
+    req = JSON.parse(String(event.data)) as RelayRequest
+  } catch {
+    return
+  }
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const g = globalThis as any
+  if (req.method === '__listComponents') {
+    const keys = g.__lluiComponents ? Object.keys(g.__lluiComponents) : []
+    const active =
+      g.__lluiDebug && g.__lluiComponents
+        ? (Object.entries(g.__lluiComponents).find(([, v]) => v === g.__lluiDebug)?.[0] ?? null)
+        : null
+    ws.send(JSON.stringify({ id: req.id, result: { components: keys, active } }))
+    return
+  }
+  if (req.method === '__selectComponent') {
+    const key = (req.args?.[0] as string | undefined) ?? ''
+    const entry = g.__lluiComponents?.[key]
+    if (!entry) {
+      ws.send(JSON.stringify({ id: req.id, error: `unknown component: ${key}` }))
       return
     }
-
-    ws.onmessage = (event: MessageEvent) => {
-      let req: RelayRequest
-      try {
-        req = JSON.parse(String(event.data)) as RelayRequest
-      } catch {
-        return
-      }
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const g = globalThis as any
-      // Registry introspection methods work even when __lluiDebug isn't set
-      if (req.method === '__listComponents') {
-        const keys = g.__lluiComponents ? Object.keys(g.__lluiComponents) : []
-        const active =
-          g.__lluiDebug && g.__lluiComponents
-            ? (Object.entries(g.__lluiComponents).find(([, v]) => v === g.__lluiDebug)?.[0] ?? null)
-            : null
-        ws.send(JSON.stringify({ id: req.id, result: { components: keys, active } }))
-        return
-      }
-      if (req.method === '__selectComponent') {
-        const key = (req.args?.[0] as string | undefined) ?? ''
-        const entry = g.__lluiComponents?.[key]
-        if (!entry) {
-          ws.send(JSON.stringify({ id: req.id, error: `unknown component: ${key}` }))
-          return
-        }
-        g.__lluiDebug = entry
-        ws.send(JSON.stringify({ id: req.id, result: { active: key } }))
-        return
-      }
-
-      const api = g.__lluiDebug as LluiDebugAPI | undefined
-      if (!api) {
-        ws.send(JSON.stringify({ id: req.id, error: '__lluiDebug not available' }))
-        return
-      }
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const fn = (api as any)[req.method]
-      if (typeof fn !== 'function') {
-        ws.send(JSON.stringify({ id: req.id, error: `unknown method: ${req.method}` }))
-        return
-      }
-      try {
-        const result = fn.apply(api, req.args ?? [])
-        ws.send(JSON.stringify({ id: req.id, result: result ?? null }))
-      } catch (e) {
-        ws.send(JSON.stringify({ id: req.id, error: e instanceof Error ? e.message : String(e) }))
-      }
-    }
-
-    ws.onclose = () => {
-      // Retry until the MCP server is up
-      setTimeout(connect, 2000)
-    }
-    ws.onerror = () => {
-      // onclose will fire and handle retry
-    }
+    g.__lluiDebug = entry
+    ws.send(JSON.stringify({ id: req.id, result: { active: key } }))
+    return
   }
 
-  connect()
+  const api = g.__lluiDebug as LluiDebugAPI | undefined
+  if (!api) {
+    ws.send(JSON.stringify({ id: req.id, error: '__lluiDebug not available' }))
+    return
+  }
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const fn = (api as any)[req.method]
+  if (typeof fn !== 'function') {
+    ws.send(JSON.stringify({ id: req.id, error: `unknown method: ${req.method}` }))
+    return
+  }
+  try {
+    const result = fn.apply(api, req.args ?? [])
+    ws.send(JSON.stringify({ id: req.id, result: result ?? null }))
+  } catch (e) {
+    ws.send(JSON.stringify({ id: req.id, error: e instanceof Error ? e.message : String(e) }))
+  }
+}
+
+function connectRelay(port: number, isInitial: boolean): void {
+  if (typeof WebSocket === 'undefined') return
+
+  let ws: WebSocket
+  try {
+    ws = new WebSocket(`ws://127.0.0.1:${port}`)
+  } catch {
+    if (!isInitial) console.warn(`[LLui MCP] failed to connect to ws://127.0.0.1:${port}`)
+    return
+  }
+
+  ws.onopen = () => {
+    relayConnected = true
+    console.log(`[LLui MCP] connected to ws://127.0.0.1:${port}`)
+  }
+  ws.onmessage = (event) => handleMessage(ws, event)
+  ws.onclose = () => {
+    if (relayConnected) {
+      relayConnected = false
+      console.log('[LLui MCP] disconnected — call __lluiConnect() to reconnect')
+    }
+  }
+  ws.onerror = () => {
+    // onclose fires after onerror — nothing to do here
+  }
+}
+
+/**
+ * Register the MCP relay for this page. Attempts a single connection
+ * to `ws://127.0.0.1:<port>`. If the MCP server is running, the relay
+ * connects immediately. If not, no retry noise — the developer can
+ * call `__lluiConnect()` from the browser console when the MCP server
+ * is ready.
+ *
+ * The compiler injects this in dev mode. Safe to call multiple times.
+ */
+export function startRelay(port = 5200): void {
+  relayPort = port
+  if (typeof WebSocket === 'undefined') return
+
+  // Expose manual connect for on-demand use
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const g = globalThis as any
+  g.__lluiConnect = (p?: number) => {
+    connectRelay(p ?? relayPort, false)
+  }
+
+  // Single initial attempt — silent on failure
+  connectRelay(port, true)
 }
 
 export interface MessageRecord {

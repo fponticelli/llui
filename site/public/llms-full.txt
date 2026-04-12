@@ -1143,6 +1143,98 @@ propertyTest(MyComponent, {
   `click`, `input`, `fire`, `send`, `text`, `attr`, `query`, `queryAll`.
 - `propertyTest` -- catching edge cases via random message sequences.
 
+## DevTools / MCP Debugging
+
+LLui ships a debug API that an LLM (or any tool) can use to inspect state,
+send messages, replay traces, and decode bitmasks — all while the app is
+running in the browser.
+
+### How it works
+
+In dev mode the Vite plugin injects two things:
+
+1. **`enableDevTools()`** — installs `window.__lluiDebug` on every mounted
+   component. This is always active in dev builds and costs nothing if
+   unused.
+2. **`startRelay(port)`** — attempts a single WebSocket connection to the
+   MCP server. If the server is running, the relay opens immediately. If
+   not, no retry noise — call `__lluiConnect()` from the browser console
+   when the server is ready.
+
+### Setup
+
+```bash
+# 1. Start the MCP server (separate terminal)
+npx @llui/mcp
+
+# 2. Start your dev server (Vite injects the relay automatically)
+npx vite
+```
+
+The relay connects to `ws://127.0.0.1:5200` by default. Configure via the
+Vite plugin option:
+
+```typescript
+// vite.config.ts
+import llui from '@llui/vite-plugin'
+
+export default {
+  plugins: [llui({ mcpPort: 5201 })], // custom port
+  // or: llui({ mcpPort: false })       // disable relay entirely
+}
+```
+
+### Manual connection
+
+If the MCP server starts after the page loads, connect from the browser
+console:
+
+```javascript
+__lluiConnect() // connect to default port
+__lluiConnect(5201) // connect to custom port
+```
+
+### Available MCP tools
+
+Once connected, the MCP server exposes these tools to any MCP client
+(Claude Desktop, Claude Code, etc.):
+
+| Tool                      | Description                                                     |
+| ------------------------- | --------------------------------------------------------------- |
+| `llui_get_state`          | Get the current component state                                 |
+| `llui_send_message`       | Send a message and return new state + effects                   |
+| `llui_eval_update`        | Dry-run a message without applying it                           |
+| `llui_get_bindings`       | List all bindings with mask, kind, and last value               |
+| `llui_why_did_update`     | Explain why a specific binding updated (mask match, value diff) |
+| `llui_validate_message`   | Validate a message against the compiled schema                  |
+| `llui_get_message_schema` | Get the discriminated union schema for Msg                      |
+| `llui_decode_mask`        | Translate a dirty-mask number to field names                    |
+| `llui_search_state`       | Dot-path lookup into state (e.g. `route.data.repos`)            |
+| `llui_export_trace`       | Export message history as a replayable trace                    |
+| `llui_snapshot_state`     | Checkpoint the current state                                    |
+| `llui_restore_state`      | Restore a previously-captured snapshot                          |
+| `llui_list_components`    | List all mounted components                                     |
+| `llui_select_component`   | Switch the active debug target                                  |
+
+### Browser console
+
+Even without the MCP server, the debug API is available directly:
+
+```javascript
+__lluiDebug.getState()
+__lluiDebug.send({ type: 'increment' })
+__lluiDebug.getBindings()
+__lluiDebug.decodeMask(5) // → ['route', 'query']
+__lluiDebug.whyDidUpdate(3) // → { matched, changed, ... }
+__lluiDebug.getMessageSchema() // → discriminant + variants
+__lluiDebug.snapshotState() // → deep clone
+__lluiDebug.restoreState(snapshot) // → overwrite + re-render
+
+// Multi-component apps:
+__lluiComponents // → { Counter: api, Dashboard: api }
+__lluiDebug = __lluiComponents.Dashboard // switch target
+```
+
 
 ---
 
