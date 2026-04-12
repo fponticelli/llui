@@ -41,6 +41,7 @@ pnpm bench:build              # Build jfb app only (no benchmark run)
 - **Tests live in a separate `test/` folder** within each package (e.g. `packages/core/test/`), not alongside source files.
 - **No `any` types** unless strictly unavoidable. `as unknown as X` is a code smell — find a better type or restructure.
 - **Nothing is sacred.** There is no legacy code or backward compatibility concern. When changing assumptions, update the design docs in `docs/designs/` to match.
+- **No shortcuts.** Engineering economy, expedience, or "good enough for now" must never drive decisions. The drivers are engineering excellence, sound solutions, correctness, and developer experience. If the correct fix is harder, do the harder thing.
 
 ## Code Style
 

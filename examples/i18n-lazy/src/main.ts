@@ -1,5 +1,5 @@
 import { component, mountApp, div, h1, h2, p, button, lazy, provide } from '@llui/dom'
-import type { ComponentDef, Send, View } from '@llui/dom'
+import type { Send, View } from '@llui/dom'
 import { LocaleContext, en, formatDate, formatRelativeTime, dialog } from '@llui/components'
 import type { Locale, DialogState, DialogMsg } from '@llui/components'
 
@@ -223,22 +223,8 @@ const App = component<State, Msg, never>({
                     ]),
                   ],
                   fallback: () => [
-                    ...lazy<State, Msg, never, { locale: string }>({
-                      // View<S, M> is invariant in M (because send: Send<M> is
-                      // contravariant), so a child component's ComponentDef
-                      // can't structurally satisfy a parent's wider Msg. Cast
-                      // at the erasure boundary where lazy() drops the child's
-                      // actual state/msg types anyway.
-                      loader: () =>
-                        import('./stats-module').then(
-                          (m) =>
-                            m.default as unknown as ComponentDef<
-                              unknown,
-                              Msg,
-                              never,
-                              { locale: string }
-                            >,
-                        ),
+                    ...lazy<State, Msg, { locale: string }>({
+                      loader: () => import('./stats-module').then((m) => m.default),
                       fallback: ({ text }) => [
                         p({ class: 'loading' }, [text('Loading stats module...')]),
                       ],

@@ -1397,13 +1397,18 @@ See: 01 Architecture.md
 Asynchronously load a component on demand. Renders `fallback` immediately, then swaps in the loaded component when the loader's Promise resolves. On rejection, renders `error` (or nothing if no error handler is provided). If the parent scope is disposed before the loader resolves, the load is cancelled — the loaded component is never mounted.
 
 ```typescript
-function lazy<S, M, E = never, D = undefined>(opts: {
-  loader: () => Promise<ComponentDef<unknown, M, E, D>>
+function lazy<S, M, D = undefined>(opts: {
+  loader: () => Promise<LazyDef<D>>
   fallback: (h: View<S, M>) => Node[]
   error?: (err: Error, h: View<S, M>) => Node[]
   data?: (s: S) => D
 }): Node[]
 ```
+
+`LazyDef<D>` is a type-erased component definition — any `ComponentDef<S, M, E, D>` is
+structurally assignable to `LazyDef<D>` regardless of `S`, `M`, `E`. The loaded
+component's internal types are invisible to the caller; only `D` (init data) survives
+because the caller provides it via `data`.
 
 Typical use:
 

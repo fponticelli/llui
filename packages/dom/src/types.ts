@@ -44,6 +44,40 @@ export interface ComponentDef<S, M, E = never, D = void> {
 export type Send<M> = (msg: M) => void
 
 /**
+ * Type-erased component definition for use at module boundaries where the
+ * loaded component's S, M, E are internal and invisible to the caller.
+ * Only `D` (init data) survives because the caller provides it.
+ *
+ * `ComponentDef<S, M, E, D>` is structurally assignable to `LazyDef<D>`
+ * for any S, M, E — `view: (h: unknown) => Node[]` accepts any View via
+ * contravariance, and all other fields widen to `unknown` return types.
+ *
+ * Used by `lazy()` as the loader's return type.
+ */
+export interface LazyDef<D = void> {
+  name: string
+  // Method syntax — TypeScript checks methods bivariantly, so
+  // ComponentDef<S, M, E, D>'s concrete (state: S, msg: M) => ...
+  // assigns here even though S/M ≠ unknown. Property syntax would
+  // be contravariant and reject the assignment.
+  init(data: D): [unknown, unknown[]]
+  update(state: unknown, msg: unknown): [unknown, unknown[]]
+  view(h: unknown): Node[]
+  onEffect?: unknown
+  propsMsg?: unknown
+  receives?: unknown
+  __dirty?: unknown
+  __renderToString?: unknown
+  __msgSchema?: unknown
+  __maskLegend?: unknown
+  __componentMeta?: unknown
+  __stateSchema?: unknown
+  __effectSchema?: unknown
+  __update?: unknown
+  __handlers?: unknown
+}
+
+/**
  * Maps a value shape to a reactive-props shape: every field becomes an accessor
  * `(s: S) => V`. Use for Level-1 view function signatures.
  *

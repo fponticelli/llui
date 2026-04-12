@@ -1,13 +1,13 @@
-import type { ComponentDef } from '../types'
+import type { ComponentDef, LazyDef } from '../types'
 import { getRenderContext, setRenderContext, clearRenderContext } from '../render-context'
 import { createScope, disposeScope, addDisposer } from '../scope'
 import { createComponentInstance } from '../update-loop'
 import { setFlatBindings } from '../binding'
 import { createView, type View } from '../view-helpers'
 
-export interface LazyOptions<S, M, E, D> {
+export interface LazyOptions<S, M, D> {
   /** Async loader — typically `() => import('./MyComponent').then(m => m.default)`. */
-  loader: () => Promise<ComponentDef<unknown, M, E, D>>
+  loader: () => Promise<LazyDef<D>>
   /** Nodes to render while loading. */
   fallback: (h: View<S, M>) => Node[]
   /** Nodes to render if the loader rejects. */
@@ -31,10 +31,15 @@ export interface LazyOptions<S, M, E, D> {
  * ]
  * ```
  *
+ * The loaded component's S, M, E types are internal — `lazy()` only needs
+ * the `D` (init data) type to match. `LazyDef<D>` is a type-erased shape
+ * that any `ComponentDef<S, M, E, D>` satisfies structurally, avoiding the
+ * `View<S, M>` invariance trap that would otherwise require user-side casts.
+ *
  * If the parent scope is disposed before the loader resolves, the load is
  * cancelled — the loaded component is never mounted.
  */
-export function lazy<S, M, E = never, D = undefined>(opts: LazyOptions<S, M, E, D>): Node[] {
+export function lazy<S, M, D = undefined>(opts: LazyOptions<S, M, D>): Node[] {
   const ctx = getRenderContext()
   const parentScope = ctx.rootScope
   const send = ctx.send as (msg: M) => void
@@ -85,10 +90,12 @@ export function lazy<S, M, E = never, D = undefined>(opts: LazyOptions<S, M, E, 
     .then((def) => {
       if (cancelled) return
       swap(() => {
-        // Mount loaded component as a nested instance (similar to child())
+        // Mount loaded component as a nested instance (similar to child()).
+        // Cast LazyDef back to ComponentDef — safe because the loader
+        // returned a real ComponentDef; LazyDef only erased the types.
         const initialProps = opts.data ? opts.data(ctx.state as S) : undefined
         const childInst = createComponentInstance(
-          def as unknown as ComponentDef<unknown, M, E>,
+          def as unknown as ComponentDef<unknown, unknown, unknown>,
           initialProps,
         )
 
@@ -98,7 +105,7 @@ export function lazy<S, M, E = never, D = undefined>(opts: LazyOptions<S, M, E, 
           ...childInst,
           send: childInst.send as (msg: unknown) => void,
         })
-        const nodes = def.view(createView(childInst.send))
+        const nodes = (def as { view: (h: unknown) => Node[] }).view(createView(childInst.send))
         clearRenderContext()
         setFlatBindings(ctx.allBindings)
         setRenderContext(ctx)

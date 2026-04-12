@@ -26,10 +26,6 @@ const STATS: StatItem[] = [
   { label: 'Avg session (s)', value: 183, isPercent: false, change: 0.072 },
 ]
 
-// Child's own state/msg types. `View<S, M>` is invariant in M (because
-// `send: Send<M>` is contravariant), so we can't widen here to match the
-// parent's Msg type. Callers of lazy() cast the loader result to bridge
-// the erasure boundary.
 const StatsModule = component<Props, never, never, Props>({
   name: 'StatsModule',
   init: (data) => [{ locale: data?.locale ?? 'en-US' }, []],

@@ -404,11 +404,15 @@ view: ({ text }) => [
 ]
 ```
 
+The loaded component's S, M, E types are internal — `lazy()` only needs
+the `D` (init data) type to match. `LazyDef<D>` is a type-erased shape
+that any `ComponentDef<S, M, E, D>` satisfies structurally, avoiding the
+`View<S, M>` invariance trap that would otherwise require user-side casts.
 If the parent scope is disposed before the loader resolves, the load is
 cancelled — the loaded component is never mounted.
 
 ```typescript
-function lazy<S, M, E = never, D = undefined>(opts: LazyOptions<S, M, E, D>): Node[]
+function lazy<S, M, D = undefined>(opts: LazyOptions<S, M, D>): Node[]
 ```
 
 ### `memo()`
@@ -634,6 +638,41 @@ export interface ComponentDef<S, M, E = never, D = void> {
   /** @internal Compiler-injected — per-message-type specialized handlers.
    *  Bypass the entire processMessages pipeline for single-message updates. */
   __handlers?: Record<string, (inst: object, msg: unknown) => [S, E[]]>
+}
+```
+
+### `LazyDef`
+
+Type-erased component definition for use at module boundaries where the
+loaded component's S, M, E are internal and invisible to the caller.
+Only `D` (init data) survives because the caller provides it.
+`ComponentDef<S, M, E, D>` is structurally assignable to `LazyDef<D>`
+for any S, M, E — `view: (h: unknown) => Node[]` accepts any View via
+contravariance, and all other fields widen to `unknown` return types.
+Used by `lazy()` as the loader's return type.
+
+```typescript
+export interface LazyDef<D = void> {
+  name: string
+  // Method syntax — TypeScript checks methods bivariantly, so
+  // ComponentDef<S, M, E, D>'s concrete (state: S, msg: M) => ...
+  // assigns here even though S/M ≠ unknown. Property syntax would
+  // be contravariant and reject the assignment.
+  init(data: D): [unknown, unknown[]]
+  update(state: unknown, msg: unknown): [unknown, unknown[]]
+  view(h: unknown): Node[]
+  onEffect?: unknown
+  propsMsg?: unknown
+  receives?: unknown
+  __dirty?: unknown
+  __renderToString?: unknown
+  __msgSchema?: unknown
+  __maskLegend?: unknown
+  __componentMeta?: unknown
+  __stateSchema?: unknown
+  __effectSchema?: unknown
+  __update?: unknown
+  __handlers?: unknown
 }
 ```
 
@@ -886,9 +925,9 @@ export interface VirtualEachOptions<S, T, M = unknown> {
 ### `LazyOptions`
 
 ```typescript
-export interface LazyOptions<S, M, E, D> {
+export interface LazyOptions<S, M, D> {
   /** Async loader — typically `() => import('./MyComponent').then(m => m.default)`. */
-  loader: () => Promise<ComponentDef<unknown, M, E, D>>
+  loader: () => Promise<LazyDef<D>>
   /** Nodes to render while loading. */
   fallback: (h: View<S, M>) => Node[]
   /** Nodes to render if the loader rejects. */
