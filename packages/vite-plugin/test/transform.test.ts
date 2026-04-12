@@ -907,3 +907,52 @@ describe('returns null for non-llui files', () => {
     expect(transformLlui(src, 'test.ts')).toBeNull()
   })
 })
+
+describe('dev code injection — MCP HMR auto-connect', () => {
+  const componentSource = `
+    import { component } from '@llui/dom'
+    type State = { count: number }
+    type Msg = { type: 'inc' }
+    export const C = component<State, Msg, never>({
+      name: 'C',
+      init: () => [{ count: 0 }, []],
+      update: (s, m) => [s, []],
+      view: () => [],
+    })
+  `
+
+  it('emits __startRelay and the llui:mcp-ready HMR listener in dev mode', () => {
+    const result = transformLlui(componentSource, 'app.ts', /* devMode */ true, 5200)
+    const out = result?.output ?? ''
+
+    // Imports the relay starter
+    expect(out).toContain('startRelay as __startRelay')
+    // Calls it on load with the configured port
+    expect(out).toContain('__startRelay(5200)')
+    // Wires the HMR custom event to __lluiConnect
+    expect(out).toContain("import.meta.hot.on('llui:mcp-ready'")
+    expect(out).toContain('__lluiConnect')
+  })
+
+  it('uses a custom port when provided', () => {
+    const result = transformLlui(componentSource, 'app.ts', true, 5300)
+    const out = result?.output ?? ''
+    expect(out).toContain('__startRelay(5300)')
+  })
+
+  it('omits the relay and HMR listener when mcpPort is null', () => {
+    const result = transformLlui(componentSource, 'app.ts', true, null)
+    const out = result?.output ?? ''
+    expect(out).not.toContain('startRelay')
+    expect(out).not.toContain('llui:mcp-ready')
+    expect(out).not.toContain('__lluiConnect')
+  })
+
+  it('omits all dev injection in production mode', () => {
+    const result = transformLlui(componentSource, 'app.ts', /* devMode */ false, 5200)
+    const out = result?.output ?? ''
+    expect(out).not.toContain('startRelay')
+    expect(out).not.toContain('enableDevTools')
+    expect(out).not.toContain('llui:mcp-ready')
+  })
+})

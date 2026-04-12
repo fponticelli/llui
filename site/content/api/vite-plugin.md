@@ -57,6 +57,17 @@ The compiler emits warnings for common issues:
 
 ## Functions
 
+### `findWorkspaceRoot()`
+
+Locate the workspace root so we share the MCP active marker file
+with @llui/mcp regardless of which subdirectory the dev server runs in.
+Mirrors `findWorkspaceRoot` from @llui/mcp — duplicated to avoid a
+vite-plugin → mcp dependency cycle. The contract must stay in sync.
+
+```typescript
+function findWorkspaceRoot(start: string = process.cwd()): string
+```
+
 ### `llui()`
 
 ```typescript

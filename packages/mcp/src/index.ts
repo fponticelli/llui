@@ -1,6 +1,51 @@
 import type { LluiDebugAPI } from '@llui/dom'
 import { WebSocketServer, type WebSocket } from 'ws'
 import { randomUUID } from 'node:crypto'
+import { mkdirSync, writeFileSync, unlinkSync, existsSync } from 'node:fs'
+import { dirname, resolve } from 'node:path'
+
+/**
+ * Walk up from `start` until we find a workspace root marker. Used by
+ * both the MCP server (writing the active marker) and the Vite plugin
+ * (watching it) so they agree on a single shared location regardless of
+ * which subdirectory each process happens to be running in.
+ *
+ * Strong markers (workspace root): pnpm-workspace.yaml, .git directory.
+ * If neither is found anywhere up the chain, falls back to the highest
+ * package.json above `start`. For pnpm monorepos this finds the workspace
+ * root from any subpackage; for single-package projects it finds the
+ * package root.
+ */
+export function findWorkspaceRoot(start: string = process.cwd()): string {
+  let dir = resolve(start)
+  let lastPackageJson: string | null = null
+  while (true) {
+    // Strong markers — return immediately
+    if (existsSync(resolve(dir, 'pnpm-workspace.yaml'))) return dir
+    if (existsSync(resolve(dir, '.git'))) return dir
+    // Track the highest package.json as a fallback
+    if (existsSync(resolve(dir, 'package.json'))) lastPackageJson = dir
+    const parent = dirname(dir)
+    if (parent === dir) {
+      // Reached filesystem root — return the highest package.json we saw
+      return lastPackageJson ?? start
+    }
+    dir = parent
+  }
+}
+
+/**
+ * Path where the MCP server writes its active port marker. Vite plugins
+ * watch this file to auto-trigger browser-side `__lluiConnect()` whenever
+ * the MCP server starts, regardless of whether Vite or MCP started first.
+ *
+ * Resolved relative to the workspace root (not the immediate cwd) so the
+ * MCP server and the Vite plugin always agree on a single location even
+ * when one runs from the repo root and the other from a subpackage.
+ */
+export function mcpActiveFilePath(cwd: string = process.cwd()): string {
+  return resolve(findWorkspaceRoot(cwd), 'node_modules/.cache/llui-mcp/active.json')
+}
 
 // ── MCP Protocol Types ──────────────────────────────────────────
 
@@ -347,6 +392,10 @@ export class LluiMcpServer {
         if (this.browserWs === ws) this.browserWs = null
       })
     })
+
+    // Write the active marker file so Vite plugins watching it can
+    // dispatch an HMR custom event to auto-trigger browser connects.
+    this.writeActiveFile()
   }
 
   stopBridge(): void {
@@ -355,6 +404,26 @@ export class LluiMcpServer {
     this.browserWs = null
     for (const p of this.pending.values()) p.reject(new Error('bridge closed'))
     this.pending.clear()
+    this.removeActiveFile()
+  }
+
+  private writeActiveFile(): void {
+    try {
+      const path = mcpActiveFilePath()
+      mkdirSync(dirname(path), { recursive: true })
+      writeFileSync(path, JSON.stringify({ port: this.bridgePort, pid: process.pid }))
+    } catch {
+      // Best-effort — failure to write the marker should not crash the server
+    }
+  }
+
+  private removeActiveFile(): void {
+    try {
+      const path = mcpActiveFilePath()
+      if (existsSync(path)) unlinkSync(path)
+    } catch {
+      // Ignore — file may already be gone
+    }
   }
 
   /** Invoke a debug API method — over the bridge if connected, else direct. */

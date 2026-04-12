@@ -407,11 +407,26 @@ __enableDevTools()${relayCall}
     .map(({ varName, componentName }) => `      __replaceComponent("${componentName}", ${varName})`)
     .join('\n')
 
+  // HMR auto-connect: when the Vite plugin detects that @llui/mcp's
+  // active marker file exists or appears, it sends `llui:mcp-ready`
+  // with the MCP bridge port. We forward that to __lluiConnect so the
+  // browser connects automatically — no console gymnastics, no retry
+  // spam, regardless of whether MCP or Vite started first.
+  const mcpHmrHandler =
+    mcpPort !== null
+      ? `
+  import.meta.hot.on('llui:mcp-ready', (data) => {
+    if (typeof globalThis.__lluiConnect === 'function') {
+      globalThis.__lluiConnect(data?.port)
+    }
+  })`
+      : ''
+
   const bottom = `
 if (import.meta.hot) {
   import.meta.hot.accept(() => {
 ${replaceCalls}
-  })
+  })${mcpHmrHandler}
 }
 `.trim()
 

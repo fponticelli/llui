@@ -108,13 +108,25 @@ function connectRelay(port: number, isInitial: boolean): void {
 }
 
 /**
- * Register the MCP relay for this page. Attempts a single connection
- * to `ws://127.0.0.1:<port>`. If the MCP server is running, the relay
- * connects immediately. If not, no retry noise — the developer can
- * call `__lluiConnect()` from the browser console when the MCP server
- * is ready.
+ * Register the MCP relay for this page.
  *
- * The compiler injects this in dev mode. Safe to call multiple times.
+ * Discovery happens in two phases:
+ *
+ * 1. **Status endpoint** (preferred): fetches `/__llui_mcp_status`,
+ *    which the Vite plugin serves from the active marker file written
+ *    by `@llui/mcp`. If the MCP server is running, the response gives
+ *    us the actual port — we connect immediately. This avoids the race
+ *    where HMR events fire before the listener registers, and handles
+ *    cases where MCP runs on a non-default port.
+ * 2. **Compile-time fallback**: if the status endpoint is unavailable
+ *    (404, network error, non-Vite environment), we attempt a single
+ *    connection to the compiled-in `port` parameter as a best-effort.
+ *
+ * Either way: no retry loop. If both fail, `window.__lluiConnect(port?)`
+ * is exposed so the developer can connect manually from the console
+ * when the MCP server starts. The Vite plugin also dispatches an
+ * `llui:mcp-ready` HMR custom event when the marker file appears later,
+ * which the compiler-injected dev code forwards to `__lluiConnect`.
  */
 export function startRelay(port = 5200): void {
   relayPort = port
@@ -127,8 +139,27 @@ export function startRelay(port = 5200): void {
     connectRelay(p ?? relayPort, false)
   }
 
-  // Single initial attempt — silent on failure
-  connectRelay(port, true)
+  // Try the Vite middleware first (knows the actual port from the marker file)
+  if (typeof fetch !== 'undefined') {
+    fetch('/__llui_mcp_status')
+      .then((res) => (res.ok ? (res.json() as Promise<{ port: number }>) : null))
+      .then((data) => {
+        if (data && typeof data.port === 'number') {
+          relayPort = data.port
+          connectRelay(data.port, true)
+        } else {
+          // Endpoint replied 404 — MCP not running. Don't fall back to the
+          // compile-time port; the HMR event will fire if MCP starts later.
+        }
+      })
+      .catch(() => {
+        // Network error or non-Vite environment — fall back to compile-time port
+        connectRelay(port, true)
+      })
+  } else {
+    // No fetch available — use the compile-time port directly
+    connectRelay(port, true)
+  }
 }
 
 export interface MessageRecord {

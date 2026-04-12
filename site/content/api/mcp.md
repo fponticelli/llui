@@ -79,6 +79,35 @@ export default defineConfig({ plugins: [llui({ mcpPort: 5200 })] })
 
 ## Functions
 
+### `findWorkspaceRoot()`
+
+Walk up from `start` until we find a workspace root marker. Used by
+both the MCP server (writing the active marker) and the Vite plugin
+(watching it) so they agree on a single shared location regardless of
+which subdirectory each process happens to be running in.
+Strong markers (workspace root): pnpm-workspace.yaml, .git directory.
+If neither is found anywhere up the chain, falls back to the highest
+package.json above `start`. For pnpm monorepos this finds the workspace
+root from any subpackage; for single-package projects it finds the
+package root.
+
+```typescript
+function findWorkspaceRoot(start: string = process.cwd()): string
+```
+
+### `mcpActiveFilePath()`
+
+Path where the MCP server writes its active port marker. Vite plugins
+watch this file to auto-trigger browser-side `__lluiConnect()` whenever
+the MCP server starts, regardless of whether Vite or MCP started first.
+Resolved relative to the workspace root (not the immediate cwd) so the
+MCP server and the Vite plugin always agree on a single location even
+when one runs from the repo root and the other from a subpackage.
+
+```typescript
+function mcpActiveFilePath(cwd: string = process.cwd()): string
+```
+
 ### `generateReplayTest()`
 
 ```typescript
@@ -154,6 +183,8 @@ class LluiMcpServer {
   connectDirect(api: LluiDebugAPI): void
   startBridge(): void
   stopBridge(): void
+  writeActiveFile(): void
+  removeActiveFile(): void
   call(method: keyof LluiDebugAPI, args: unknown[]): Promise<unknown>
   getTools(): McpToolDefinition[]
   handleToolCall(name: string, args: Record<string, unknown>): Promise<unknown>

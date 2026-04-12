@@ -740,15 +740,23 @@ running in the browser.
 
 ### How it works
 
-In dev mode the Vite plugin injects two things:
+In dev mode the Vite plugin injects two things and exposes one HTTP endpoint:
 
 1. **`enableDevTools()`** — installs `window.__lluiDebug` on every mounted
    component. This is always active in dev builds and costs nothing if
    unused.
-2. **`startRelay(port)`** — attempts a single WebSocket connection to the
-   MCP server. If the server is running, the relay opens immediately. If
-   not, no retry noise — call `__lluiConnect()` from the browser console
-   when the server is ready.
+2. **`startRelay(port)`** — on page load, fetches `/__llui_mcp_status` from
+   the dev server. If the MCP server is running, the response gives the
+   actual port and the browser connects automatically — no console steps
+   needed, no retry spam, no race conditions.
+3. **`/__llui_mcp_status`** — Vite middleware that reads the marker file
+   `node_modules/.cache/llui-mcp/active.json` (written by the MCP server
+   on startup, removed on shutdown) and returns `{port}` or 404.
+
+The MCP server can be started before or after Vite — both orderings
+work. If MCP starts after the page loads, the Vite plugin's file watcher
+sends an `llui:mcp-ready` HMR custom event, which the compiler-injected
+listener forwards to `__lluiConnect`.
 
 ### Setup
 
@@ -775,12 +783,14 @@ export default {
 
 ### Manual connection
 
-If the MCP server starts after the page loads, connect from the browser
-console:
+The auto-connect via `/__llui_mcp_status` covers the common cases. If
+you're running outside Vite (e.g. a static-built app for testing), or
+the MCP server is on a non-default host, connect manually from the
+browser console:
 
 ```javascript
-__lluiConnect() // connect to default port
-__lluiConnect(5201) // connect to custom port
+__lluiConnect() // connect to the compile-time default port
+__lluiConnect(5201) // connect to a custom port
 ```
 
 ### Available MCP tools

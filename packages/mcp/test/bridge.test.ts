@@ -1,6 +1,8 @@
 import { describe, it, expect, afterEach } from 'vitest'
 import WebSocket from 'ws'
-import { LluiMcpServer } from '../src/index'
+import { existsSync, readFileSync, mkdirSync, writeFileSync, rmSync } from 'node:fs'
+import { dirname } from 'node:path'
+import { LluiMcpServer, mcpActiveFilePath } from '../src/index'
 
 /**
  * These tests simulate the browser side by opening a WebSocket client that
@@ -151,4 +153,51 @@ describe('MCP bridge (WebSocket)', () => {
 
     browser.close()
   }, 10_000)
+})
+
+describe('MCP active marker file', () => {
+  const path = mcpActiveFilePath()
+
+  afterEach(() => {
+    try {
+      if (existsSync(path)) rmSync(path)
+    } catch {
+      // ignore
+    }
+  })
+
+  it('writes active.json on startBridge() with port + pid', async () => {
+    const s = new LluiMcpServer(5311)
+    s.startBridge()
+
+    expect(existsSync(path)).toBe(true)
+    const data = JSON.parse(readFileSync(path, 'utf8')) as { port: number; pid: number }
+    expect(data.port).toBe(5311)
+    expect(data.pid).toBe(process.pid)
+
+    s.stopBridge()
+  })
+
+  it('removes active.json on stopBridge()', async () => {
+    const s = new LluiMcpServer(5312)
+    s.startBridge()
+    expect(existsSync(path)).toBe(true)
+
+    s.stopBridge()
+    expect(existsSync(path)).toBe(false)
+  })
+
+  it('overwrites a stale marker file from a previous session', async () => {
+    // Simulate leftover from a crashed previous server
+    mkdirSync(dirname(path), { recursive: true })
+    writeFileSync(path, JSON.stringify({ port: 9999, pid: 0 }))
+
+    const s = new LluiMcpServer(5313)
+    s.startBridge()
+
+    const data = JSON.parse(readFileSync(path, 'utf8')) as { port: number; pid: number }
+    expect(data.port).toBe(5313)
+
+    s.stopBridge()
+  })
 })
