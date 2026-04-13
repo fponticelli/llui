@@ -28,7 +28,7 @@
     "test:coverage": "vitest run --coverage"
   },
   "dependencies": {
-    "@llui/dom": "^0.0.13",
+    "@llui/dom": "workspace:*",
     "jsdom": "^26.1.0"
   },
   "description": "LLui Vike SSR adapter — onRenderHtml, onRenderClient hooks",

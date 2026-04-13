@@ -22,7 +22,7 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@llui/dom": "^0.0.13",
+    "@llui/dom": "workspace:*",
     "ws": "^8.18.0"
   },
   "devDependencies": {

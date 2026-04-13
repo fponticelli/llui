@@ -2,7 +2,15 @@
 set -e
 
 # Publish @llui packages to npm in dependency order.
-# Uses --auth-type=web for browser-based authentication.
+#
+# Uses `pnpm publish`, which automatically rewrites `workspace:*` /
+# `workspace:^` / `workspace:~` dependency specs to the resolved version
+# in the published tarball. Source files keep `workspace:*` so local
+# `pnpm install` continues to work against the workspace.
+#
+# Authentication is delegated to whatever pnpm/npm already has configured
+# (either a long-lived token in ~/.npmrc or a prior `pnpm login`). If not
+# logged in, pnpm will prompt.
 #
 # Usage:
 #   ./scripts/publish.sh              # publish all packages
@@ -22,11 +30,6 @@ fi
 echo "Publishing ${#PKGS[@]} packages: ${PKGS[*]}"
 echo ""
 
-# Authenticate once via browser
-echo "Authenticating with npm (browser)..."
-npm login --auth-type=web
-echo ""
-
 FAILED=()
 SUCCEEDED=()
 
@@ -40,7 +43,12 @@ for pkg in "${PKGS[@]}"; do
   version=$(node -e "console.log(require('./$dir/package.json').version)")
   echo "Publishing @llui/$pkg@$version..."
 
-  if (cd "$dir" && npm publish --access public 2>&1); then
+  # pnpm publish substitutes workspace:* with the concrete dependency
+  # version at pack time, so the published tarball has real semver ranges
+  # while the source stays on workspace:* for local resolution.
+  # --no-git-checks skips pnpm's "you have uncommitted changes" guard —
+  # we've already committed the bump in the calling flow.
+  if (cd "$dir" && pnpm publish --access public --no-git-checks 2>&1); then
     SUCCEEDED+=("@llui/$pkg@$version")
     echo "✓ @llui/$pkg@$version published"
   else
