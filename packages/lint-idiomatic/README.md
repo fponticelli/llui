@@ -6,45 +6,72 @@ AST linter for idiomatic [LLui](https://github.com/fponticelli/llui) patterns. C
 pnpm add -D @llui/lint-idiomatic
 ```
 
-## Usage
+## Vite plugin (recommended)
+
+```ts
+// vite.config.ts
+import llui from '@llui/vite-plugin'
+import lintIdiomatic from '@llui/lint-idiomatic/vite'
+
+export default {
+  plugins: [llui(), lintIdiomatic()],
+}
+```
+
+Violations appear as warnings in the Vite dev server overlay and in CI
+build output. The plugin dedupes rules that overlap with `@llui/vite-plugin`'s
+built-in `diagnose()` pass so you don't see the same warning twice.
+
+### Plugin options
+
+| Option        | Type                                  | Default                                        | Description                                                                    |
+| ------------- | ------------------------------------- | ---------------------------------------------- | ------------------------------------------------------------------------------ |
+| `exclude`     | `readonly string[]`                   | `['map-on-state-array']`                       | Rule names to skip. Pass `[]` to include all rules.                            |
+| `skip`        | `readonly RegExp[]`                   | `[/\/node_modules\//, /\/dist\//]`             | File patterns to skip.                                                         |
+| `devOnly`     | `boolean`                             | `false`                                        | Only lint in dev mode (skip in production builds).                             |
+| `failOnError` | `boolean`                             | `false`                                        | Call `this.error()` instead of `this.warn()` on violations (fails the build). |
+| `onLint`      | `(filename, result) => void`          | —                                              | Callback for each linted file. Useful for summary reporters.                   |
+
+## Library usage
+
+For eval harnesses, CLIs, or editor integrations that need the pure function:
 
 ```ts
 import { lintIdiomatic } from '@llui/lint-idiomatic'
 
-const source = `
-  function update(state: State, msg: Msg): [State, Effect[]] {
-    switch (msg.type) {
-      case 'increment':
-        state.count++ // mutation!
-        return [state, []]
-    }
-  }
-`
+const source = `...`
+const { violations, score } = lintIdiomatic(source, 'counter.ts', {
+  exclude: ['state-mutation'], // optional: skip specific rules
+})
 
-const { violations, score } = lintIdiomatic(source, 'counter.ts')
-
-console.log(score) // 5 (out of 6)
-console.log(violations) // [{ rule: 'state-mutation', line: 5, message: '...' }]
+console.log(score) // 17 = fully idiomatic
+console.log(violations) // [{ rule, line, column, message, suggestion? }]
 ```
 
 ## API
 
 ```ts
-lintIdiomatic(source: string, filename?: string) => { violations: Violation[], score: number }
+lintIdiomatic(
+  source: string,
+  filename?: string,
+  options?: { exclude?: readonly string[] },
+) => { violations: Violation[], score: number }
 ```
 
 | Field        | Type          | Description                                 |
 | ------------ | ------------- | ------------------------------------------- |
 | `violations` | `Violation[]` | List of rule violations found               |
-| `score`      | `number`      | Idiomatic score 0-15 (15 = fully idiomatic) |
+| `score`      | `number`      | Idiomatic score 0-17 (17 = fully idiomatic) |
 
 ### Violation
 
-| Field     | Type     | Description                |
-| --------- | -------- | -------------------------- |
-| `rule`    | `string` | Rule identifier            |
-| `line`    | `number` | Source line number         |
-| `message` | `string` | Human-readable explanation |
+| Field        | Type     | Description                            |
+| ------------ | -------- | -------------------------------------- |
+| `rule`       | `string` | Rule identifier                        |
+| `line`       | `number` | Source line number                     |
+| `column`     | `number` | Source column number                   |
+| `message`    | `string` | Human-readable explanation             |
+| `suggestion` | `string` | Optional fix suggestion                |
 
 ## Rules
 
@@ -65,3 +92,5 @@ lintIdiomatic(source: string, filename?: string) => { violations: Violation[], s
 | `nested-send-in-update`      | Calling `send()` inside `update()` causes recursive dispatch               |
 | `imperative-dom-in-view`     | Using `document.querySelector` etc. in `view()` instead of primitives      |
 | `accessor-side-effect`       | Side effects (fetch, console.log, etc.) inside reactive accessor functions |
+| `view-bag-import`            | Importing view helpers instead of destructuring from the `View<S, M>` bag   |
+| `spread-in-children`         | Spreading array literals into children instead of `show()`/`each()`/`branch()` |

@@ -11,18 +11,61 @@ export interface LintViolation {
 
 export interface LintResult {
   violations: LintViolation[]
-  /** Score from 0 to 15. Starts at 15, -1 per violated rule category. */
+  /** Score from 0 to 17. Starts at 17, -1 per violated rule category. */
   score: number
 }
 
+export interface LintOptions {
+  /**
+   * Rule names to skip. Useful for avoiding duplication when running
+   * alongside `@llui/vite-plugin`, which already emits some of these
+   * diagnostics from its own `diagnose()` pass.
+   */
+  exclude?: readonly string[]
+}
+
+/**
+ * Every rule name emitted by `lintIdiomatic`. Stable list so callers
+ * (like the Vite plugin wrapper) can reference them by name to exclude.
+ */
+export const RULE_NAMES = [
+  'state-mutation',
+  'missing-memo',
+  'each-closure-violation',
+  'map-on-state-array',
+  'unnecessary-child',
+  'form-boilerplate',
+  'async-update',
+  'direct-state-in-view',
+  'exhaustive-effect-handling',
+  'effect-without-handler',
+  'forgotten-spread',
+  'string-effect-callback',
+  'nested-send-in-update',
+  'imperative-dom-in-view',
+  'accessor-side-effect',
+  'view-bag-import',
+  'spread-in-children',
+] as const
+
+export type RuleName = (typeof RULE_NAMES)[number]
+
 /**
  * Lint a single source file for LLui idiomatic anti-patterns.
- * Returns violations and a numeric score (6 = perfect).
+ * Returns violations and a numeric score (17 = perfect).
  */
-export function lintIdiomatic(source: string, filename = 'input.ts'): LintResult {
+export function lintIdiomatic(
+  source: string,
+  filename = 'input.ts',
+  options: LintOptions = {},
+): LintResult {
   const sf = ts.createSourceFile(filename, source, ts.ScriptTarget.Latest, true)
   const violations: LintViolation[] = []
+  const exclude = new Set(options.exclude ?? [])
 
+  // Each check runs its own visitor; filter by rule name at the end rather
+  // than skipping the check entirely, so tests can verify the exclude
+  // mechanism without re-plumbing every check function.
   checkStateMutation(sf, filename, violations)
   checkMissingMemo(sf, filename, violations)
   checkEachClosureViolation(sf, filename, violations)
@@ -41,11 +84,13 @@ export function lintIdiomatic(source: string, filename = 'input.ts'): LintResult
   checkViewBagImport(sf, filename, violations)
   checkSpreadInChildren(sf, filename, violations)
 
-  // Score: unique violated rule categories
-  const violatedRules = new Set(violations.map((v) => v.rule))
+  const filtered = exclude.size > 0 ? violations.filter((v) => !exclude.has(v.rule)) : violations
+
+  // Score: unique violated rule categories (post-filter)
+  const violatedRules = new Set(filtered.map((v) => v.rule))
   const score = Math.max(0, 17 - violatedRules.size)
 
-  return { violations, score }
+  return { violations: filtered, score }
 }
 
 // ── Helpers ─────────────────────────────────────────────────────────
