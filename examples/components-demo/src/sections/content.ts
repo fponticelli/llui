@@ -5,14 +5,12 @@ import {
   div,
   button,
   span,
-  text,
   p,
   a,
   ul,
   li,
   img,
   input,
-  each,
 } from '@llui/dom'
 import type { ChildState, ChildMsg } from '@llui/dom'
 import { toc } from '@llui/components/toc'
@@ -112,7 +110,7 @@ export const App = component<State, Msg, never>({
   name: 'ContentSection',
   init,
   update,
-  view: ({ send }) => {
+  view: ({ send, text, each }) => {
     const tc = toc.connect<State>(
       (s) => s.toc,
       (m) => send({ type: 'toc', msg: m }),

@@ -24,13 +24,13 @@ built-in `diagnose()` pass so you don't see the same warning twice.
 
 ### Plugin options
 
-| Option        | Type                                  | Default                                        | Description                                                                    |
-| ------------- | ------------------------------------- | ---------------------------------------------- | ------------------------------------------------------------------------------ |
-| `exclude`     | `readonly string[]`                   | `['map-on-state-array']`                       | Rule names to skip. Pass `[]` to include all rules.                            |
-| `skip`        | `readonly RegExp[]`                   | `[/\/node_modules\//, /\/dist\//]`             | File patterns to skip.                                                         |
-| `devOnly`     | `boolean`                             | `false`                                        | Only lint in dev mode (skip in production builds).                             |
-| `failOnError` | `boolean`                             | `false`                                        | Call `this.error()` instead of `this.warn()` on violations (fails the build). |
-| `onLint`      | `(filename, result) => void`          | —                                              | Callback for each linted file. Useful for summary reporters.                   |
+| Option        | Type                         | Default                            | Description                                                                   |
+| ------------- | ---------------------------- | ---------------------------------- | ----------------------------------------------------------------------------- |
+| `exclude`     | `readonly string[]`          | `['map-on-state-array']`           | Rule names to skip. Pass `[]` to include all rules.                           |
+| `skip`        | `readonly RegExp[]`          | `[/\/node_modules\//, /\/dist\//]` | File patterns to skip.                                                        |
+| `devOnly`     | `boolean`                    | `false`                            | Only lint in dev mode (skip in production builds).                            |
+| `failOnError` | `boolean`                    | `false`                            | Call `this.error()` instead of `this.warn()` on violations (fails the build). |
+| `onLint`      | `(filename, result) => void` | —                                  | Callback for each linted file. Useful for summary reporters.                  |
 
 ## Library usage
 
@@ -65,32 +65,32 @@ lintIdiomatic(
 
 ### Violation
 
-| Field        | Type     | Description                            |
-| ------------ | -------- | -------------------------------------- |
-| `rule`       | `string` | Rule identifier                        |
-| `line`       | `number` | Source line number                     |
-| `column`     | `number` | Source column number                   |
-| `message`    | `string` | Human-readable explanation             |
-| `suggestion` | `string` | Optional fix suggestion                |
+| Field        | Type     | Description                |
+| ------------ | -------- | -------------------------- |
+| `rule`       | `string` | Rule identifier            |
+| `line`       | `number` | Source line number         |
+| `column`     | `number` | Source column number       |
+| `message`    | `string` | Human-readable explanation |
+| `suggestion` | `string` | Optional fix suggestion    |
 
 ## Rules
 
-| Rule                         | Description                                                                |
-| ---------------------------- | -------------------------------------------------------------------------- |
-| `state-mutation`             | Direct mutation of state in `update()` instead of returning a new object   |
-| `missing-memo`               | Expensive derived computation in `view()` without `memo()`                 |
-| `each-closure-violation`     | Capturing mutable outer variable inside `each()` render callback           |
-| `map-on-state-array`         | Calling `.map()` on a state array in `view()` (use `each()` instead)       |
-| `unnecessary-child`          | Using `child()` boundary when a view function would suffice                |
-| `form-boilerplate`           | Repetitive form field pattern that could use a view function               |
-| `async-update`               | Using `async`/`await` in `update()` — must be synchronous and pure         |
-| `direct-state-in-view`       | Stale state capture in event handler instead of using an accessor          |
-| `exhaustive-effect-handling` | Empty `.else()` handler silently drops unhandled effects                   |
-| `effect-without-handler`     | Component returns effects but has no `onEffect` handler                    |
-| `forgotten-spread`           | `show()`/`branch()`/`each()` used without spread in children array         |
-| `string-effect-callback`     | Deprecated string-based `onSuccess`/`onError` in effect declarations       |
-| `nested-send-in-update`      | Calling `send()` inside `update()` causes recursive dispatch               |
-| `imperative-dom-in-view`     | Using `document.querySelector` etc. in `view()` instead of primitives      |
-| `accessor-side-effect`       | Side effects (fetch, console.log, etc.) inside reactive accessor functions |
-| `view-bag-import`            | Importing view helpers instead of destructuring from the `View<S, M>` bag   |
+| Rule                         | Description                                                                    |
+| ---------------------------- | ------------------------------------------------------------------------------ |
+| `state-mutation`             | Direct mutation of state in `update()` instead of returning a new object       |
+| `missing-memo`               | Expensive derived computation in `view()` without `memo()`                     |
+| `each-closure-violation`     | Capturing mutable outer variable inside `each()` render callback               |
+| `map-on-state-array`         | Calling `.map()` on a state array in `view()` (use `each()` instead)           |
+| `unnecessary-child`          | Using `child()` boundary when a view function would suffice                    |
+| `form-boilerplate`           | Repetitive form field pattern that could use a view function                   |
+| `async-update`               | Using `async`/`await` in `update()` — must be synchronous and pure             |
+| `direct-state-in-view`       | Stale state capture in event handler instead of using an accessor              |
+| `exhaustive-effect-handling` | Empty `.else()` handler silently drops unhandled effects                       |
+| `effect-without-handler`     | Component returns effects but has no `onEffect` handler                        |
+| `forgotten-spread`           | `show()`/`branch()`/`each()` used without spread in children array             |
+| `string-effect-callback`     | Deprecated string-based `onSuccess`/`onError` in effect declarations           |
+| `nested-send-in-update`      | Calling `send()` inside `update()` causes recursive dispatch                   |
+| `imperative-dom-in-view`     | Using `document.querySelector` etc. in `view()` instead of primitives          |
+| `accessor-side-effect`       | Side effects (fetch, console.log, etc.) inside reactive accessor functions     |
+| `view-bag-import`            | Importing view helpers instead of destructuring from the `View<S, M>` bag      |
 | `spread-in-children`         | Spreading array literals into children instead of `show()`/`each()`/`branch()` |

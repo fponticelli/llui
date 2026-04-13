@@ -13,6 +13,7 @@
     "uqr": "^0.1.3"
   },
   "devDependencies": {
+    "@llui/lint-idiomatic": "workspace:*",
     "@llui/vite-plugin": "workspace:*",
     "@tailwindcss/vite": "^4.2.2",
     "tailwindcss": "^4.2.2",

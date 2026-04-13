@@ -236,24 +236,28 @@ function issuesList(h: View<State, Msg>): Node[] {
             ),
             text(item((i) => (i.comments > 0 ? ` · ${i.comments} comments` : ''))),
           ]),
-          ...labelSpans(item),
+          div({ class: 'labels' }, [
+            ...each<Issue['labels'][number]>({
+              items: () => item((i) => i.labels)(),
+              key: (label) => label.name,
+              render: ({ item: label }) => [
+                span(
+                  {
+                    class: 'label',
+                    style: label((l) => {
+                      const inverted = isLightColor(l.color) ? '#24292f' : '#fff'
+                      return `background-color: #${l.color}; color: ${inverted}`
+                    }),
+                  },
+                  [text(label.name)],
+                ),
+              ],
+            }),
+          ]),
         ]),
       ],
     }),
   ]
-}
-
-function labelSpans(item: <R>(sel: (i: Issue) => R) => () => R): Node[] {
-  const labels = item((i) => i.labels)()
-  return labels.map((label) =>
-    span(
-      {
-        class: 'label',
-        style: `background-color: #${label.color}; color: ${isLightColor(label.color) ? '#24292f' : '#fff'}`,
-      },
-      [text(label.name)],
-    ),
-  )
 }
 
 function formatSize(bytes: number): string {

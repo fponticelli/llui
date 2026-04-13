@@ -40,7 +40,9 @@ export const appDef = component<State, Msg, Effect>({
   },
   onEffect: handleEffects<Effect, Msg>()
     .use(routing.handleEffect)
-    .else(() => {}),
+    .else((effect) => {
+      console.warn('[github-explorer] unhandled effect:', effect)
+    }),
 })
 
 export function initialState(url?: string): State {

@@ -243,8 +243,9 @@ function checkMutationsInBody(
 // ── Rule 2: missing-memo ────────────────────────────────────────────
 
 function checkMissingMemo(sf: ts.SourceFile, filename: string, violations: LintViolation[]): void {
-  // Collect arrow functions used as arguments in binding positions (text(), prop values)
-  // Group by printed source text. Flag groups with count >= 2 not wrapped in memo().
+  // Collect arrow functions used as reactive-binding accessors (not
+  // arbitrary prop values). Group by printed source text and flag
+  // groups with count >= 2 that aren't wrapped in memo().
   const arrowsByText = new Map<string, { node: ts.ArrowFunction; inMemo: boolean }[]>()
 
   function isInMemoCall(node: ts.Node): boolean {
@@ -260,21 +261,137 @@ function checkMissingMemo(sf: ts.SourceFile, filename: string, violations: LintV
     return false
   }
 
+  // Element helpers — any prop assignment on an object passed to one
+  // of these counts as a reactive binding site. `child()`, `each()`,
+  // `show()`, `branch()`, `memo()`, `selector()` are STRUCTURAL
+  // primitives; arrow props there are configuration, not bindings.
+  const ELEMENT_HELPER_RECEIVERS = new Set([
+    'a',
+    'abbr',
+    'article',
+    'aside',
+    'b',
+    'blockquote',
+    'br',
+    'button',
+    'canvas',
+    'code',
+    'dd',
+    'details',
+    'dialog',
+    'div',
+    'dl',
+    'dt',
+    'em',
+    'fieldset',
+    'figcaption',
+    'figure',
+    'footer',
+    'form',
+    'h1',
+    'h2',
+    'h3',
+    'h4',
+    'h5',
+    'h6',
+    'header',
+    'hr',
+    'i',
+    'iframe',
+    'img',
+    'input',
+    'kbd',
+    'label',
+    'legend',
+    'li',
+    'main',
+    'mark',
+    'menu',
+    'meter',
+    'nav',
+    'ol',
+    'optgroup',
+    'option',
+    'output',
+    'p',
+    'picture',
+    'pre',
+    'progress',
+    'q',
+    's',
+    'samp',
+    'section',
+    'select',
+    'small',
+    'source',
+    'span',
+    'strong',
+    'sub',
+    'summary',
+    'sup',
+    'table',
+    'tbody',
+    'td',
+    'textarea',
+    'tfoot',
+    'th',
+    'thead',
+    'time',
+    'tr',
+    'track',
+    'u',
+    'ul',
+    'var',
+    'video',
+    'wbr',
+  ])
+
+  /**
+   * An arrow is a reactive binding if it sits in one of:
+   *   - first arg to `text(...)`
+   *   - a property value of an object literal passed to an element
+   *     helper like `div({ class: (s) => ... }, [...])`
+   *
+   * Prop values passed to `child()`, `each()`, etc. are configuration,
+   * not reactive bindings, and should not be memoized.
+   */
+  function isReactiveBinding(arrow: ts.ArrowFunction): boolean {
+    const parent = arrow.parent
+    if (!parent) return false
+
+    // Case 1: first arg to text()
+    if (
+      ts.isCallExpression(parent) &&
+      ts.isIdentifier(parent.expression) &&
+      parent.expression.text === 'text' &&
+      parent.arguments[0] === arrow
+    ) {
+      return true
+    }
+
+    // Case 2: property in an object literal passed to an element helper
+    if (ts.isPropertyAssignment(parent)) {
+      const objectLit = parent.parent
+      if (!objectLit || !ts.isObjectLiteralExpression(objectLit)) return false
+      const call = objectLit.parent
+      if (!call || !ts.isCallExpression(call)) return false
+      if (!ts.isIdentifier(call.expression)) return false
+      return ELEMENT_HELPER_RECEIVERS.has(call.expression.text)
+    }
+
+    return false
+  }
+
   function visit(node: ts.Node): void {
     if (ts.isArrowFunction(node) && isInsideViewFunction(node)) {
-      // Check if this arrow is in a binding position:
-      // - first arg to text()
-      // - prop value in element helper call
-      const parent = node.parent
-      const isBinding =
-        (parent &&
-          ts.isCallExpression(parent) &&
-          ts.isIdentifier(parent.expression) &&
-          parent.expression.text === 'text' &&
-          parent.arguments[0] === node) ||
-        (parent && ts.isPropertyAssignment(parent))
-
-      if (isBinding) {
+      // Require at least one parameter: state-accessor convention is
+      // `(s) => ...`. Zero-arg arrows like `() => 'static'` or `() => ({})`
+      // don't depend on state and memo() doesn't help.
+      if (node.parameters.length === 0) {
+        ts.forEachChild(node, visit)
+        return
+      }
+      if (isReactiveBinding(node)) {
         const sourceText = node.getText(sf).replace(/\s+/g, ' ').trim()
         const inMemo = isInMemoCall(node)
         const entries = arrowsByText.get(sourceText) ?? []
@@ -310,11 +427,79 @@ function checkMissingMemo(sf: ts.SourceFile, filename: string, violations: LintV
 
 // ── Rule 3: each-closure-violation ──────────────────────────────────
 
+/**
+ * Collect every identifier declared at the module (file) level. These
+ * are safe to capture inside an each() render callback because they
+ * share a single value across all iterations — typical cases are
+ * imports, top-level consts, and function declarations.
+ *
+ * Identifiers declared INSIDE a function (as `let`, `var`, or function
+ * parameters) are not collected — those are the genuinely mutable
+ * captures the rule is designed to catch.
+ */
+function collectModuleLevelNames(sf: ts.SourceFile): Set<string> {
+  const names = new Set<string>()
+  for (const stmt of sf.statements) {
+    // Imports: import { a, b as c } from 'x'  /  import def from 'x'
+    if (ts.isImportDeclaration(stmt)) {
+      const clause = stmt.importClause
+      if (!clause) continue
+      if (clause.name) names.add(clause.name.text) // default import
+      if (clause.namedBindings) {
+        if (ts.isNamespaceImport(clause.namedBindings)) {
+          names.add(clause.namedBindings.name.text)
+        } else if (ts.isNamedImports(clause.namedBindings)) {
+          for (const el of clause.namedBindings.elements) {
+            names.add(el.name.text)
+          }
+        }
+      }
+      continue
+    }
+    // Top-level function declarations
+    if (ts.isFunctionDeclaration(stmt) && stmt.name) {
+      names.add(stmt.name.text)
+      continue
+    }
+    // Top-level class declarations
+    if (ts.isClassDeclaration(stmt) && stmt.name) {
+      names.add(stmt.name.text)
+      continue
+    }
+    // Top-level variable declarations — any kind, including `let` and
+    // `var`. A top-level `let` is still shared across each() iterations
+    // because each() runs all renders within one update cycle; the
+    // concern is locals inside the ENCLOSING component function, not
+    // module-level state.
+    if (ts.isVariableStatement(stmt)) {
+      for (const decl of stmt.declarationList.declarations) {
+        collectBindingIdentifiers(decl.name, names)
+      }
+    }
+  }
+  return names
+}
+
+function collectBindingIdentifiers(name: ts.BindingName, out: Set<string>): void {
+  if (ts.isIdentifier(name)) {
+    out.add(name.text)
+  } else if (ts.isObjectBindingPattern(name) || ts.isArrayBindingPattern(name)) {
+    for (const el of name.elements) {
+      if (ts.isBindingElement(el)) collectBindingIdentifiers(el.name, out)
+    }
+  }
+}
+
 function checkEachClosureViolation(
   sf: ts.SourceFile,
   filename: string,
   violations: LintViolation[],
 ): void {
+  // Pre-compute module-level declarations so checkClosureCaptures can
+  // skip any identifier that resolves to one of them. Built once per
+  // file regardless of how many each() calls the file contains.
+  const moduleScopeNames = collectModuleLevelNames(sf)
+
   function visit(node: ts.Node): void {
     // Look for each() calls
     if (
@@ -333,7 +518,7 @@ function checkEachClosureViolation(
           ) {
             const renderFn = prop.initializer
             if (ts.isArrowFunction(renderFn) || ts.isFunctionExpression(renderFn)) {
-              checkClosureCaptures(renderFn, sf, filename, violations)
+              checkClosureCaptures(renderFn, sf, filename, violations, moduleScopeNames)
             }
           }
         }
@@ -349,6 +534,7 @@ function checkClosureCaptures(
   sf: ts.SourceFile,
   filename: string,
   violations: LintViolation[],
+  moduleScopeNames: Set<string>,
 ): void {
   // Collect parameter names of the render callback (including destructured ones)
   const paramNames = new Set<string>()
@@ -380,9 +566,10 @@ function checkClosureCaptures(
     collectLocals(renderFn.body)
   }
 
-  // Known safe globals/imports that should not be flagged
-  const safeNames = new Set([
-    'send',
+  // Built-in JS globals that are always safe to reference. Everything
+  // else we might need to skip (imports, element helpers, custom
+  // utilities) is already in `moduleScopeNames` from the file pre-scan.
+  const jsGlobals = new Set([
     'console',
     'Math',
     'JSON',
@@ -397,50 +584,50 @@ function checkClosureCaptures(
     'null',
     'true',
     'false',
-    'div',
-    'span',
-    'p',
-    'text',
-    'button',
-    'input',
-    'each',
-    'memo',
-    'show',
-    'branch',
-    'child',
-    'h1',
-    'h2',
-    'h3',
-    'h4',
-    'h5',
-    'h6',
-    'ul',
-    'ol',
-    'li',
-    'a',
-    'img',
-    'form',
-    'label',
-    'select',
-    'textarea',
-    'table',
-    'tr',
-    'td',
-    'th',
-    'header',
-    'footer',
-    'nav',
-    'main',
-    'section',
-    'article',
+    'NaN',
+    'Infinity',
+    'document',
+    'window',
+    'globalThis',
+    'parseInt',
+    'parseFloat',
+    'isNaN',
+    'isFinite',
+    'Error',
+    'TypeError',
+    'RangeError',
+    'Set',
+    'Map',
+    'WeakSet',
+    'WeakMap',
+    'Symbol',
+    'Reflect',
+    'Proxy',
   ])
+
+  // LLui-specific names that are stable function references across
+  // renders. `send` in particular is the same function inside and
+  // outside the each() render callback, so capturing the outer one is
+  // equivalent to destructuring it. No correctness risk.
+  const lluiSafeNames = new Set(['send'])
 
   // Find identifiers in binding positions that reference parent scope
   function checkBindings(node: ts.Node): void {
     if (ts.isIdentifier(node)) {
       const name = node.text
-      // Skip if it's a parameter, local, or safe name
-      if (paramNames.has(name) || localNames.has(name) || safeNames.has(name)) return
+      // Skip if it's a parameter, local, JS global, LLui stable name,
+      // or module-scope name. Module-scope names include imports,
+      // top-level consts, and function declarations — all shared
+      // across each() iterations, so capturing them is harmless.
+      if (
+        paramNames.has(name) ||
+        localNames.has(name) ||
+        jsGlobals.has(name) ||
+        lluiSafeNames.has(name) ||
+        moduleScopeNames.has(name)
+      ) {
+        return
+      }
       // Skip if it's a property name in a property access (rhs of dot)
       if (node.parent && ts.isPropertyAccessExpression(node.parent) && node.parent.name === node)
         return
@@ -699,24 +886,37 @@ function checkFormBoilerplate(
       shapeGroups.set(shape, group)
     }
 
-    for (const [_shape, group] of shapeGroups) {
-      if (group.length >= 3) {
-        const { line, column } = pos(stmt, sf)
-        violations.push({
-          rule: 'form-boilerplate',
-          message: `Msg type has ${group.length} variants with identical shapes (${group
-            .slice(0, 3)
-            .map((g) => `'${g}'`)
-            .join(
-              ', ',
-            )}${group.length > 3 ? ', ...' : ''}). Consider using a generic field-update message pattern.`,
-          file: filename,
-          line,
-          column,
-          suggestion:
-            "Use a single { type: 'setField'; field: string; value: string } variant instead.",
-        })
-      }
+    for (const [shape, group] of shapeGroups) {
+      if (group.length < 3) continue
+
+      // Only flag when the shared shape looks like form field updates.
+      // Heuristic: the shape must contain a `value` field AND the variant
+      // names must share a common `set*`/`update*`/`change*` prefix.
+      // Error variants (`apiError`, `readmeError`, …) and data variants
+      // (`userOk`, `repoOk`, …) coincidentally share shapes but aren't
+      // form boilerplate — the rule should not flag them.
+      const hasValueField = shape.split(',').some((f) => f.startsWith('value:'))
+      if (!hasValueField) continue
+
+      const prefixPattern = /^(set|update|change)[A-Z]/
+      const allMatchPrefix = group.every((name) => prefixPattern.test(name))
+      if (!allMatchPrefix) continue
+
+      const { line, column } = pos(stmt, sf)
+      violations.push({
+        rule: 'form-boilerplate',
+        message: `Msg type has ${group.length} variants with identical shapes (${group
+          .slice(0, 3)
+          .map((g) => `'${g}'`)
+          .join(
+            ', ',
+          )}${group.length > 3 ? ', ...' : ''}). Consider using a generic field-update message pattern.`,
+        file: filename,
+        line,
+        column,
+        suggestion:
+          "Use a single { type: 'setField'; field: string; value: string } variant instead.",
+      })
     }
   }
 }
@@ -1146,6 +1346,65 @@ function isInsideOnMountCall(node: ts.Node): boolean {
   return false
 }
 
+/**
+ * Returns true if the node is inside a function that serves as an
+ * event handler (onClick, onInput, onMouseDown…) or a deferred
+ * callback (setTimeout, queueMicrotask, requestAnimationFrame,
+ * Promise.then, addEventListener). All of these execute imperatively,
+ * not reactively — imperative DOM inside them is fine.
+ */
+function isInsideImperativeCallback(node: ts.Node): boolean {
+  let current: ts.Node | undefined = node.parent
+  while (current) {
+    // Walk up to the enclosing function, then check what that function
+    // is passed to.
+    if (ts.isArrowFunction(current) || ts.isFunctionExpression(current)) {
+      const parent = current.parent
+      if (parent) {
+        // Case 1: prop assignment like `onClick: () => ...`
+        if (
+          ts.isPropertyAssignment(parent) &&
+          ts.isIdentifier(parent.name) &&
+          /^on[A-Z]/.test(parent.name.text)
+        ) {
+          return true
+        }
+        // Case 2: argument to a known deferred-execution helper
+        if (ts.isCallExpression(parent)) {
+          const callee = parent.expression
+          if (ts.isIdentifier(callee)) {
+            if (
+              callee.text === 'setTimeout' ||
+              callee.text === 'setInterval' ||
+              callee.text === 'queueMicrotask' ||
+              callee.text === 'requestAnimationFrame' ||
+              callee.text === 'requestIdleCallback'
+            ) {
+              return true
+            }
+          }
+          // addEventListener / Promise.then / etc.
+          if (ts.isPropertyAccessExpression(callee)) {
+            const method = callee.name.text
+            if (
+              method === 'addEventListener' ||
+              method === 'then' ||
+              method === 'catch' ||
+              method === 'finally'
+            ) {
+              return true
+            }
+          }
+        }
+      }
+      // Keep walking — a nested arrow inside an event handler should
+      // still count as "inside an event handler".
+    }
+    current = current.parent
+  }
+  return false
+}
+
 function findImperativeDom(
   node: ts.Node,
   sf: ts.SourceFile,
@@ -1159,7 +1418,10 @@ function findImperativeDom(
     node.expression.text === 'document' &&
     imperativeMethods.has(node.name.text)
   ) {
-    if (!isInsideOnMountCall(node)) {
+    // Skip legitimate imperative contexts: onMount() callbacks, event
+    // handlers (onClick, onInput, …), and deferred callbacks
+    // (setTimeout, queueMicrotask, addEventListener, Promise.then).
+    if (!isInsideOnMountCall(node) && !isInsideImperativeCallback(node)) {
       const { line, column } = pos(node, sf)
       violations.push({
         rule: 'imperative-dom-in-view',
@@ -1324,13 +1586,58 @@ function collectMsgVariantShapes(type: ts.TypeNode): MsgVariantShape[] {
 
 // ── Rule: view-bag-import ──────────────────────────────────────
 
-const VIEW_BAG_NAMES = new Set(['text', 'each', 'show', 'branch', 'memo'])
+const VIEW_BAG_NAMES = new Set(['text', 'each', 'show', 'branch', 'memo', 'selector'])
+
+/**
+ * Detect whether the file defines a component. Only in that case does
+ * a direct `import { text } from '@llui/dom'` compete with the
+ * bag-provided form — in standalone helper modules (Level-1 view
+ * functions, shared UI utilities), imports are the only way to
+ * reference these primitives and are idiomatic.
+ *
+ * A `component()` call is sufficient on its own — even if the `view:`
+ * callback currently has no parameter, the developer can add one and
+ * destructure, so the direct import is still redundant.
+ */
+function fileDefinesComponent(sf: ts.SourceFile): boolean {
+  let found = false
+  function visit(node: ts.Node): void {
+    if (found) return
+    if (
+      ts.isCallExpression(node) &&
+      ts.isIdentifier(node.expression) &&
+      node.expression.text === 'component' &&
+      node.arguments.length > 0 &&
+      ts.isObjectLiteralExpression(node.arguments[0]!)
+    ) {
+      const obj = node.arguments[0] as ts.ObjectLiteralExpression
+      for (const prop of obj.properties) {
+        if (
+          ts.isPropertyAssignment(prop) &&
+          ts.isIdentifier(prop.name) &&
+          prop.name.text === 'view'
+        ) {
+          found = true
+          return
+        }
+      }
+    }
+    ts.forEachChild(node, visit)
+  }
+  visit(sf)
+  return found
+}
 
 function checkViewBagImport(
   sf: ts.SourceFile,
   filename: string,
   violations: LintViolation[],
 ): void {
+  // Only applies to files that define a component. Helper modules
+  // (Level-1 view functions, shared UI utilities) legitimately need
+  // to import these names because they have no view bag to destructure.
+  if (!fileDefinesComponent(sf)) return
+
   for (const stmt of sf.statements) {
     if (!ts.isImportDeclaration(stmt)) continue
     const moduleSpec = stmt.moduleSpecifier

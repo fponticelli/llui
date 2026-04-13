@@ -12,6 +12,7 @@
     "zod": "^4.3.6"
   },
   "devDependencies": {
+    "@llui/lint-idiomatic": "workspace:*",
     "@llui/vite-plugin": "workspace:*",
     "vite": "^8.0.0"
   }

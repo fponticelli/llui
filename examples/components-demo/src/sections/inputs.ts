@@ -5,7 +5,6 @@ import {
   div,
   button,
   span,
-  text,
   label,
   input,
   onMount,
@@ -71,7 +70,7 @@ export const App = component<State, Msg, never>({
   name: 'InputsSection',
   init,
   update,
-  view: ({ send, each }) => {
+  view: ({ send, text, each }) => {
     const sw = switchMachine.connect<State>(
       (s) => s.switch,
       (m) => send({ type: 'switch', msg: m }),

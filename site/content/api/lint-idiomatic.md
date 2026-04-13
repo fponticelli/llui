@@ -78,10 +78,10 @@ lintIdiomatic(source: string, filename?: string) => { violations: Violation[], s
 ### `lintIdiomatic()`
 
 Lint a single source file for LLui idiomatic anti-patterns.
-Returns violations and a numeric score (6 = perfect).
+Returns violations and a numeric score (17 = perfect).
 
 ```typescript
-function lintIdiomatic(source: string, filename = 'input.ts'): LintResult
+function lintIdiomatic(source: string, filename = 'input.ts', options: LintOptions = {}): LintResult
 ```
 
 ### `pos()`
@@ -132,6 +132,26 @@ function checkMutationsInBody(
 function checkMissingMemo(sf: ts.SourceFile, filename: string, violations: LintViolation[]): void
 ```
 
+### `collectModuleLevelNames()`
+
+Collect every identifier declared at the module (file) level. These
+are safe to capture inside an each() render callback because they
+share a single value across all iterations — typical cases are
+imports, top-level consts, and function declarations.
+Identifiers declared INSIDE a function (as `let`, `var`, or function
+parameters) are not collected — those are the genuinely mutable
+captures the rule is designed to catch.
+
+```typescript
+function collectModuleLevelNames(sf: ts.SourceFile): Set<string>
+```
+
+### `collectBindingIdentifiers()`
+
+```typescript
+function collectBindingIdentifiers(name: ts.BindingName, out: Set<string>): void
+```
+
 ### `checkEachClosureViolation()`
 
 ```typescript
@@ -150,6 +170,7 @@ function checkClosureCaptures(
   sf: ts.SourceFile,
   filename: string,
   violations: LintViolation[],
+  moduleScopeNames: Set<string>,
 ): void
 ```
 
@@ -342,6 +363,18 @@ function checkImperativeDomInView(
 function isInsideOnMountCall(node: ts.Node): boolean
 ```
 
+### `isInsideImperativeCallback()`
+
+Returns true if the node is inside a function that serves as an
+event handler (onClick, onInput, onMouseDown…) or a deferred
+callback (setTimeout, queueMicrotask, requestAnimationFrame,
+Promise.then, addEventListener). All of these execute imperatively,
+not reactively — imperative DOM inside them is fine.
+
+```typescript
+function isInsideImperativeCallback(node: ts.Node): boolean
+```
+
 ### `findImperativeDom()`
 
 ```typescript
@@ -389,6 +422,21 @@ function findSideEffectsInAccessor(
 function collectMsgVariantShapes(type: ts.TypeNode): MsgVariantShape[]
 ```
 
+### `fileDefinesComponent()`
+
+Detect whether the file defines a component. Only in that case does
+a direct `import { text } from '@llui/dom'` compete with the
+bag-provided form — in standalone helper modules (Level-1 view
+functions, shared UI utilities), imports are the only way to
+reference these primitives and are idiomatic.
+A `component()` call is sufficient on its own — even if the `view:`
+callback currently has no parameter, the developer can add one and
+destructure, so the direct import is still redundant.
+
+```typescript
+function fileDefinesComponent(sf: ts.SourceFile): boolean
+```
+
 ### `checkViewBagImport()`
 
 ```typescript
@@ -403,6 +451,14 @@ function checkSpreadInChildren(
   filename: string,
   violations: LintViolation[],
 ): void
+```
+
+## Types
+
+### `RuleName`
+
+```typescript
+export type RuleName = (typeof RULE_NAMES)[number]
 ```
 
 ## Interfaces
@@ -425,8 +481,21 @@ export interface LintViolation {
 ```typescript
 export interface LintResult {
   violations: LintViolation[]
-  /** Score from 0 to 15. Starts at 15, -1 per violated rule category. */
+  /** Score from 0 to 17. Starts at 17, -1 per violated rule category. */
   score: number
+}
+```
+
+### `LintOptions`
+
+```typescript
+export interface LintOptions {
+  /**
+   * Rule names to skip. Useful for avoiding duplication when running
+   * alongside `@llui/vite-plugin`, which already emits some of these
+   * diagnostics from its own `diagnose()` pass.
+   */
+  exclude?: readonly string[]
 }
 ```
 
@@ -440,6 +509,15 @@ interface MsgVariantShape {
 ```
 
 ## Constants
+
+### `RULE_NAMES`
+
+Every rule name emitted by `lintIdiomatic`. Stable list so callers
+(like the Vite plugin wrapper) can reference them by name to exclude.
+
+```typescript
+const RULE_NAMES
+```
 
 ### `VIEW_BAG_NAMES`
 

@@ -507,3 +507,290 @@ describe('lintIdiomatic', () => {
     expect(result.violations.some((v) => v.rule === 'accessor-side-effect')).toBe(false)
   })
 })
+
+// ── Regression: false positives from real examples ────────────────────
+
+describe('each-closure-violation — only flags mutable captures', () => {
+  it('does NOT flag captures of imported pure functions', () => {
+    const source = `
+      import { component, div, each, text } from '@llui/dom'
+      import { formatRelativeTime } from '@llui/components'
+      type State = { items: { id: string; ts: number }[] }
+      type Msg = { type: 'noop' }
+      const C = component<State, Msg, never>({
+        name: 'C',
+        init: () => [{ items: [] }, []],
+        update: (s, m) => [s, []],
+        view: ({ each, text }) => [
+          div({}, [
+            ...each({
+              items: (s) => s.items,
+              key: (i) => i.id,
+              render: ({ item }) => [
+                text((s: State) => formatRelativeTime(item.ts())),
+              ],
+            }),
+          ]),
+        ],
+      })
+    `
+    const result = lintIdiomatic(source)
+    expect(result.violations.some((v) => v.rule === 'each-closure-violation')).toBe(false)
+  })
+
+  it('does NOT flag captures of module-level const declarations', () => {
+    const source = `
+      import { component, div, each, text } from '@llui/dom'
+      const PREFIX = 'item:'
+      type State = { items: { id: string }[] }
+      type Msg = { type: 'noop' }
+      const C = component<State, Msg, never>({
+        name: 'C',
+        init: () => [{ items: [] }, []],
+        update: (s, m) => [s, []],
+        view: ({ each, text }) => [
+          div({}, [
+            ...each({
+              items: (s) => s.items,
+              key: (i) => i.id,
+              render: ({ item }) => [text(() => PREFIX + item.id())],
+            }),
+          ]),
+        ],
+      })
+    `
+    const result = lintIdiomatic(source)
+    expect(result.violations.some((v) => v.rule === 'each-closure-violation')).toBe(false)
+  })
+
+  it('does NOT flag captures of module-level function declarations', () => {
+    const source = `
+      import { component, div, each, text } from '@llui/dom'
+      function formatId(id: string): string { return '#' + id }
+      type State = { items: { id: string }[] }
+      type Msg = { type: 'noop' }
+      const C = component<State, Msg, never>({
+        name: 'C',
+        init: () => [{ items: [] }, []],
+        update: (s, m) => [s, []],
+        view: ({ each, text }) => [
+          div({}, [
+            ...each({
+              items: (s) => s.items,
+              key: (i) => i.id,
+              render: ({ item }) => [text(() => formatId(item.id()))],
+            }),
+          ]),
+        ],
+      })
+    `
+    const result = lintIdiomatic(source)
+    expect(result.violations.some((v) => v.rule === 'each-closure-violation')).toBe(false)
+  })
+
+  it('STILL flags captures of enclosing-function let variables', () => {
+    const source = `
+      import { component, div, each, text } from '@llui/dom'
+      type State = { items: { id: string }[]; counter: number }
+      type Msg = { type: 'noop' }
+      const C = component<State, Msg, never>({
+        name: 'C',
+        init: () => [{ items: [], counter: 0 }, []],
+        update: (s, m) => [s, []],
+        view: ({ each, text }) => {
+          let localCounter = 0
+          return [
+            div({}, [
+              ...each({
+                items: (s) => s.items,
+                key: (i) => i.id,
+                render: ({ item }) => [text(() => String(localCounter))],
+              }),
+            ]),
+          ]
+        },
+      })
+    `
+    const result = lintIdiomatic(source)
+    expect(result.violations.some((v) => v.rule === 'each-closure-violation')).toBe(true)
+  })
+})
+
+describe('view-bag-import — only flags inside component()', () => {
+  it('does NOT flag Level-1 view function modules (no component() in file)', () => {
+    const source = `
+      import { div, text, each } from '@llui/dom'
+      import type { State, Msg } from '../types'
+      import type { Send } from '@llui/dom'
+
+      export function todoList(send: Send<Msg>): HTMLElement {
+        return div({}, [text((s: State) => s.title)])
+      }
+    `
+    const result = lintIdiomatic(source)
+    expect(result.violations.some((v) => v.rule === 'view-bag-import')).toBe(false)
+  })
+
+  it('STILL flags direct imports used inside a component view body', () => {
+    const source = `
+      import { component, div, text } from '@llui/dom'
+      type State = { count: number }
+      type Msg = { type: 'inc' }
+      const C = component<State, Msg, never>({
+        name: 'C',
+        init: () => [{ count: 0 }, []],
+        update: (s, m) => [s, []],
+        view: () => [div({}, [text((s: State) => String(s.count))])],
+      })
+    `
+    const result = lintIdiomatic(source)
+    expect(result.violations.some((v) => v.rule === 'view-bag-import')).toBe(true)
+  })
+
+  it('does NOT flag shared helper imports (no component, no view bag)', () => {
+    const source = `
+      import { div, span, text } from '@llui/dom'
+      import type { Send } from '@llui/dom'
+      export function card<M>(title: string, body: string, send: Send<M>) {
+        return div({ class: 'card' }, [
+          span({}, [text(title)]),
+          span({}, [text(body)]),
+        ])
+      }
+    `
+    const result = lintIdiomatic(source)
+    expect(result.violations.some((v) => v.rule === 'view-bag-import')).toBe(false)
+  })
+})
+
+describe('imperative-dom-in-view — skips event handlers and deferred callbacks', () => {
+  it('does NOT flag document.querySelector inside onClick handler', () => {
+    const source = `
+      import { component, div, button } from '@llui/dom'
+      type State = {}; type Msg = { type: 'noop' }
+      const C = component<State, Msg, never>({
+        name: 'C',
+        init: () => [{}, []],
+        update: (s, m) => [s, []],
+        view: () => [
+          div({}, [
+            button({
+              onClick: () => {
+                const el = document.querySelector('.target')
+                el?.focus()
+              },
+            }, []),
+          ]),
+        ],
+      })
+    `
+    const result = lintIdiomatic(source)
+    expect(result.violations.some((v) => v.rule === 'imperative-dom-in-view')).toBe(false)
+  })
+
+  it('does NOT flag document.querySelector inside queueMicrotask', () => {
+    const source = `
+      import { component, div, button } from '@llui/dom'
+      type State = {}; type Msg = { type: 'noop' }
+      const C = component<State, Msg, never>({
+        name: 'C',
+        init: () => [{}, []],
+        update: (s, m) => [s, []],
+        view: () => [
+          div({}, [
+            button({
+              onClick: () => {
+                queueMicrotask(() => {
+                  const el = document.querySelector('.target')
+                })
+              },
+            }, []),
+          ]),
+        ],
+      })
+    `
+    const result = lintIdiomatic(source)
+    expect(result.violations.some((v) => v.rule === 'imperative-dom-in-view')).toBe(false)
+  })
+
+  it('STILL flags document.querySelector in the view body itself', () => {
+    const source = `
+      import { component, div, text } from '@llui/dom'
+      type State = {}; type Msg = { type: 'noop' }
+      const C = component<State, Msg, never>({
+        name: 'C',
+        init: () => [{}, []],
+        update: (s, m) => [s, []],
+        view: () => {
+          const el = document.querySelector('.target')
+          return [div({}, [text(() => String(el))])]
+        },
+      })
+    `
+    const result = lintIdiomatic(source)
+    expect(result.violations.some((v) => v.rule === 'imperative-dom-in-view')).toBe(true)
+  })
+})
+
+describe('missing-memo — only flags reactive-binding accessors', () => {
+  it('does NOT flag duplicate zero-arg arrows in utility calls like child()', () => {
+    const source = `
+      import { component, div, child } from '@llui/dom'
+      declare const A: any; declare const B: any; declare const C: any
+      type State = {}; type Msg = { type: 'noop' }
+      const Root = component<State, Msg, never>({
+        name: 'Root',
+        init: () => [{}, []],
+        update: (s, m) => [s, []],
+        view: () => [
+          div({}, [
+            div(child({ def: A, key: 'a', props: () => ({}) })),
+            div(child({ def: B, key: 'b', props: () => ({}) })),
+            div(child({ def: C, key: 'c', props: () => ({}) })),
+          ]),
+        ],
+      })
+    `
+    const result = lintIdiomatic(source)
+    expect(result.violations.some((v) => v.rule === 'missing-memo')).toBe(false)
+  })
+
+  it('does NOT flag trivial zero-arg arrows anywhere', () => {
+    const source = `
+      import { component, div, text } from '@llui/dom'
+      type State = {}; type Msg = { type: 'noop' }
+      const C = component<State, Msg, never>({
+        name: 'C',
+        init: () => [{}, []],
+        update: (s, m) => [s, []],
+        view: () => [
+          div({}, [text(() => 'static')]),
+          div({}, [text(() => 'static')]),
+        ],
+      })
+    `
+    const result = lintIdiomatic(source)
+    expect(result.violations.some((v) => v.rule === 'missing-memo')).toBe(false)
+  })
+
+  it('STILL flags duplicate state-reading accessors across bindings', () => {
+    const source = `
+      import { component, div, text } from '@llui/dom'
+      type State = { first: string; last: string }
+      type Msg = { type: 'noop' }
+      const C = component<State, Msg, never>({
+        name: 'C',
+        init: () => [{ first: '', last: '' }, []],
+        update: (s, m) => [s, []],
+        view: () => [
+          div({}, [
+            text((s: State) => s.first + ' ' + s.last),
+            text((s: State) => s.first + ' ' + s.last),
+          ]),
+        ],
+      })
+    `
+    const result = lintIdiomatic(source)
+    expect(result.violations.some((v) => v.rule === 'missing-memo')).toBe(true)
+  })
+})

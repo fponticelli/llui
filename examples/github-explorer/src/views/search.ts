@@ -1,4 +1,4 @@
-import { div, h3, p, span, ul, li, text, button, each, branch } from '@llui/dom'
+import { div, h3, p, span, ul, li, text, button, each, branch, show } from '@llui/dom'
 import type { State, Msg, Repo } from '../types'
 import type { Send, ItemAccessor } from '@llui/dom'
 import { routing } from '../router'
@@ -135,16 +135,21 @@ function repoItem(item: ItemAccessor<Repo>, send: Send<Msg>): HTMLElement {
     ]),
     p([text(item((r) => r.description ?? ''))]),
     div({ class: 'repo-meta' }, [
-      ...(() => {
-        const lang = item.language()
-        if (!lang) return []
-        return [
-          span([
-            span({ class: 'lang-dot', style: `background-color: ${LANG_COLORS[lang] ?? '#ccc'}` }),
-            text(item((r) => r.language ?? '')),
-          ]),
-        ]
-      })(),
+      ...show({
+        when: () => Boolean(item.language()),
+        render: () => {
+          const lang = item.language() ?? ''
+          return [
+            span([
+              span({
+                class: 'lang-dot',
+                style: `background-color: ${LANG_COLORS[lang] ?? '#ccc'}`,
+              }),
+              text(lang),
+            ]),
+          ]
+        },
+      }),
       span([text(item((r) => `★ ${r.stargazers_count.toLocaleString()}`))]),
       span([text(item((r) => `🍴 ${r.forks_count.toLocaleString()}`))]),
       span([text(item((r) => `Updated ${new Date(r.updated_at).toLocaleDateString()}`))]),

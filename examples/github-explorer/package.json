@@ -16,6 +16,7 @@
     "@llui/router": "workspace:*"
   },
   "devDependencies": {
+    "@llui/lint-idiomatic": "workspace:*",
     "@llui/vite-plugin": "workspace:*",
     "jsdom": "^29.0.1",
     "vite": "^8.0.0"

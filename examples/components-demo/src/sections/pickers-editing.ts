@@ -5,7 +5,6 @@ import {
   div,
   button,
   span,
-  text,
   label,
   input,
   onMount,
@@ -71,7 +70,7 @@ export const App = component<State, Msg, never>({
   name: 'PickersEditingSection',
   init,
   update,
-  view: ({ send, each }) => {
+  view: ({ send, text, each }) => {
     localSend = send
     const dp = datePicker.connect<State>(
       (s) => s.datePicker,

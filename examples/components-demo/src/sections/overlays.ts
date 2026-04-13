@@ -1,15 +1,4 @@
-import {
-  component,
-  mergeHandlers,
-  childHandlers,
-  div,
-  button,
-  span,
-  text,
-  h3,
-  p,
-  input,
-} from '@llui/dom'
+import { component, mergeHandlers, childHandlers, div, button, span, h3, p, input } from '@llui/dom'
 import type { ChildState, ChildMsg } from '@llui/dom'
 import { popover } from '@llui/components/popover'
 import { tooltip } from '@llui/components/tooltip'
@@ -154,7 +143,7 @@ export const App = component<State, Msg, never>({
   name: 'OverlaysSection',
   init,
   update,
-  view: ({ send, each }) => {
+  view: ({ send, text, each }) => {
     localSend = send
     // Register bus handlers so other sections can trigger toast/confirm
     registerToastHandler((kind, title, description) =>
