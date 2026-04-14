@@ -163,43 +163,68 @@ All three should show `^<new dom version>`. The bump script can silently miss th
 
 ### 6. Write the CHANGELOG entry
 
-Read `CHANGELOG.md` and prepend a new entry at the top, below the intro paragraph and above the most recent previous entry. Heading format is **version-primary with date**:
+Read `CHANGELOG.md` and prepend a new entry at the top, below the intro paragraph and above the most recent previous entry.
+
+**Structure — date-anchored with per-package sub-sections:**
 
 ```markdown
-## 0.0.15 — 2026-04-20
+## YYYY-MM-DD — <qualifier>
 
-Released: `@llui/{dom,vite-plugin,test,router,transitions,components,vike,mcp}@0.0.15`
+**Released:** `@llui/{pkg1,pkg2,...}@X.Y.Z`; `@llui/other@A.B.C`
 
-<one-sentence release summary>
+<optional one-sentence release summary>
 
 ### Breaking
 
-- ...
+- **`@llui/<pkg>@<version>`** — description. Include the concrete thing users must change.
 
-### Added
+### Migration
 
-- ...
+- One bullet per action users should take when upgrading. Usually mirrors the Breaking section but written as an action list ("revert your workaround", "pass `{ foo: bar }`").
 
-### Fixed
+### `@llui/<pkg>@<version>`
 
-- ...
+- **Added** one-line-or-paragraph description.
+- **Fixed** ...
+- **Improved** ...
 
-### Improved
+### `@llui/<other-pkg>@<version>`
 
-- ...
+- **Fixed** ...
 
-### Migration notes
+### All packages — build output
 
-- ...
+- **Fixed** changes that affect every package's published artifacts (e.g. the `.js` extension rewrite, the `inlineSources` sourcemap fix). Use this for truly cross-cutting items — don't duplicate them per package.
+
+### Docs (optional)
+
+- Documentation changes that aren't tied to a specific package's `dist/`.
 ```
 
-Omit empty sections. Lead each bullet with the package prefix when useful (`` `@llui/dom` — ``). Order sections Breaking → Added → Fixed → Improved → Migration notes.
+**Heading conventions:**
 
-For releases where the tier-1 package versions all match, use a single version heading. For releases that only bump a subset (e.g. just `lint-idiomatic`), use a package-qualified heading:
+- `## YYYY-MM-DD — <qualifier>` — date first so the anchor is stable across lockstep-vs-split releases.
+- `<qualifier>` is the tier-1 lockstep version when tier-1 packages bumped (e.g. `2026-04-14 — 0.0.14`). Even when `@llui/effects` / `@llui/mcp` / `@llui/lint-idiomatic` shipped at different numbers on the same day, the tier-1 version is the primary anchor — the full version list goes in the **Released:** line immediately below.
+- When only one or two off-cadence packages shipped, use them as the qualifier instead: `2026-04-13 — @llui/lint-idiomatic@0.0.10, @llui/mcp@0.0.7`.
+- The `**Released:**` line directly below the heading spells out the concrete bumps. Always include it, even when the qualifier covers everything, so readers can grep a package name and find every release it appears in.
 
-```markdown
-## @llui/lint-idiomatic@0.0.12 — 2026-04-15
-```
+**Bullet conventions:**
+
+- Every bullet lives inside a `### @llui/<pkg>@<version>` sub-section. No top-level orphan bullets — the sub-section header carries the attribution so individual bullets don't need a package prefix.
+- Lead each bullet with one of four labels in bold: **Added**, **Fixed**, **Improved**, **Breaking**. Pick the one that best describes the user-visible impact.
+- For a breaking change inside a package sub-section, write **Breaking** as a short pointer and keep the full explanation in the top-level Breaking section: `- **Breaking** \`mcpPort\` is now opt-in. See top of release block.`
+- Cross-cutting changes that touch every package's build output go under **`### All packages — build output`**, not duplicated across each `@llui/<pkg>` section.
+
+**Section order inside a release:**
+
+1. **Breaking** — at the top, before any per-package section. Users evaluating an upgrade read this first.
+2. **Migration** — immediately after Breaking, when actions are needed.
+3. **Tier-1 packages first** — usually `@llui/dom` then `@llui/vite-plugin`, then the rest in rough dependency order.
+4. **Off-cadence packages** — `@llui/effects`, `@llui/mcp`, `@llui/lint-idiomatic` after tier-1.
+5. **All packages — build output** — near the end, before Docs.
+6. **Docs** — if there's anything worth noting.
+
+Omit empty sections. If a release only touches one package, you still use a `### @llui/<pkg>@<version>` sub-section — don't collapse it into bullets under the `**Released:**` line, because then the version attribution gets lost when someone grep's through the file.
 
 **Source the entry from the actual commits since `$LAST_RELEASE`**:
 
