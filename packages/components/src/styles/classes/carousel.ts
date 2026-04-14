@@ -1,4 +1,4 @@
-import { createVariants, type VariantProps } from '../utils/variants'
+import { createVariants, type VariantProps } from '../utils/variants.js'
 
 const navTriggerVariants = createVariants({
   base: 'inline-flex items-center justify-center rounded-full bg-surface border border-border shadow-sm cursor-pointer transition-all duration-fast hover:bg-surface-hover data-[disabled]:opacity-50 data-[disabled]:cursor-not-allowed',

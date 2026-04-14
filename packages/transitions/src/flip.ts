@@ -1,5 +1,5 @@
 import type { TransitionOptions } from '@llui/dom'
-import { asElements } from './style-utils'
+import { asElements } from './style-utils.js'
 
 export interface FlipOptions {
   duration?: number

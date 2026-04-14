@@ -1,20 +1,20 @@
-import type { EachOptions, ItemAccessor, Scope } from '../types'
+import type { EachOptions, ItemAccessor, Scope } from '../types.js'
 import {
   getRenderContext,
   setRenderContext,
   clearRenderContext,
   type RenderContext,
-} from '../render-context'
+} from '../render-context.js'
 import {
   createScope,
   disposeScope,
   disposeScopesBulk,
   addDisposer,
   removeOrphanedChildren,
-} from '../scope'
-import { getFlatBindings, setFlatBindings } from '../binding'
-import { FULL_MASK } from '../update-loop'
-import type { StructuralBlock } from '../structural'
+} from '../scope.js'
+import { getFlatBindings, setFlatBindings } from '../binding.js'
+import { FULL_MASK } from '../update-loop.js'
+import type { StructuralBlock } from '../structural.js'
 
 // Clear callbacks — registered by selector.bind() during render, called by reconcileClear().
 // Eliminates per-row disposers (1000 Set.delete calls → 1 registry.clear() call).
@@ -75,23 +75,6 @@ export function each<S, T, M = unknown>(opts: EachOptions<S, T, M>): Node[] {
   const leaving: Entry<T>[] = []
 
   const initialItems = opts.items(ctx.state as S)
-  activeClearCallbacks = clearCallbacks
-  activeRemoveCallbacks = removeCallbacks
-  for (let i = 0; i < initialItems.length; i++) {
-    const item = initialItems[i]!
-    const entry = buildEntry(item, i, opts, parentScope, ctx)
-    entries.push(entry)
-  }
-  activeClearCallbacks = null
-  activeRemoveCallbacks = null
-
-  // Fire initial enter for mount-time items
-  if (opts.enter) {
-    for (const entry of entries) {
-      if (entry.nodes.length > 0) opts.enter(entry.nodes)
-    }
-  }
-
   let lastItemsRef = initialItems
 
   const block: StructuralBlock = {
@@ -247,7 +230,28 @@ export function each<S, T, M = unknown>(opts: EachOptions<S, T, M>): Node[] {
     },
   }
 
+  // Register the block BEFORE building initial row entries so that this
+  // each() block precedes any nested structural blocks its rows register.
+  // Parents must come first in the flat blocks array — see branch.ts for
+  // the full rationale (Phase 1 iteration safety when disposing nested).
   blocks.push(block)
+
+  activeClearCallbacks = clearCallbacks
+  activeRemoveCallbacks = removeCallbacks
+  for (let i = 0; i < initialItems.length; i++) {
+    const item = initialItems[i]!
+    const entry = buildEntry(item, i, opts, parentScope, ctx)
+    entries.push(entry)
+  }
+  activeClearCallbacks = null
+  activeRemoveCallbacks = null
+
+  // Fire initial enter for mount-time items
+  if (opts.enter) {
+    for (const entry of entries) {
+      if (entry.nodes.length > 0) opts.enter(entry.nodes)
+    }
+  }
 
   addDisposer(parentScope, () => {
     const idx = blocks.indexOf(block)

@@ -1,10 +1,10 @@
-import type { ChildOptions, ComponentDef } from '../types'
-import { getRenderContext, setRenderContext, clearRenderContext } from '../render-context'
-import { createScope, disposeScope, addDisposer } from '../scope'
-import { createComponentInstance, flushInstance } from '../update-loop'
-import { createBinding, setFlatBindings } from '../binding'
-import { registerChild, unregisterChild } from '../addressed'
-import { createView } from '../view-helpers'
+import type { ChildOptions, ComponentDef } from '../types.js'
+import { getRenderContext, setRenderContext, clearRenderContext } from '../render-context.js'
+import { createScope, disposeScope, addDisposer } from '../scope.js'
+import { createComponentInstance, flushInstance } from '../update-loop.js'
+import { createBinding, setFlatBindings } from '../binding.js'
+import { registerChild, unregisterChild } from '../addressed.js'
+import { createView } from '../view-helpers.js'
 
 const FULL_MASK = 0xffffffff
 

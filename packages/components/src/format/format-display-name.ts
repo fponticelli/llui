@@ -1,5 +1,5 @@
-import { cached, cacheKey } from './cache'
-import { defaultLocale } from './defaults'
+import { cached, cacheKey } from './cache.js'
+import { defaultLocale } from './defaults.js'
 
 export type DisplayNameType =
   | 'language'

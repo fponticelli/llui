@@ -1,5 +1,5 @@
 import type { Send } from '@llui/dom'
-import { flipArrow } from '../utils/direction'
+import { flipArrow } from '../utils/direction.js'
 
 /**
  * Slider — numeric input controlled by drag or keyboard. Supports multiple

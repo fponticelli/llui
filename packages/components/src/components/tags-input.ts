@@ -1,8 +1,8 @@
 import type { Send } from '@llui/dom'
 import { useContext } from '@llui/dom'
-import { flipArrow } from '../utils/direction'
-import { LocaleContext } from '../locale'
-import type { Locale } from '../locale'
+import { flipArrow } from '../utils/direction.js'
+import { LocaleContext } from '../locale.js'
+import type { Locale } from '../locale.js'
 
 /**
  * Tags input — text input that creates chips (tags) on commit keys

@@ -1,9 +1,9 @@
 import type { Send, TransitionOptions } from '@llui/dom'
 import { show, portal, onMount, div, useContext } from '@llui/dom'
-import { LocaleContext } from '../locale'
-import type { Locale } from '../locale'
-import { pushDismissable } from '../utils/dismissable'
-import { attachFloating, type Placement } from '../utils/floating'
+import { LocaleContext } from '../locale.js'
+import type { Locale } from '../locale.js'
+import { pushDismissable } from '../utils/dismissable.js'
+import { attachFloating, type Placement } from '../utils/floating.js'
 
 /**
  * Combobox — text input paired with a filtered listbox dropdown. User

@@ -1,4 +1,4 @@
-import type { Scope, Binding } from './types'
+import type { Scope, Binding } from './types.js'
 
 let nextId = 1
 

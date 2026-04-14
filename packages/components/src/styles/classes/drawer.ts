@@ -1,4 +1,4 @@
-import { createVariants, type VariantProps } from '../utils/variants'
+import { createVariants, type VariantProps } from '../utils/variants.js'
 
 const positionerVariants = createVariants({
   base: 'fixed inset-0 z-dialog',

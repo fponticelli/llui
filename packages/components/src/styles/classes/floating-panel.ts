@@ -1,4 +1,4 @@
-import { createVariants, type VariantProps } from '../utils/variants'
+import { createVariants, type VariantProps } from '../utils/variants.js'
 
 const rootVariants = createVariants({
   base: 'fixed bg-surface border border-border shadow-lg rounded-xl flex flex-col overflow-hidden z-popover',

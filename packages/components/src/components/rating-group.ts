@@ -1,5 +1,5 @@
 import type { Send } from '@llui/dom'
-import { flipArrow } from '../utils/direction'
+import { flipArrow } from '../utils/direction.js'
 
 /**
  * Rating group — a sequence of clickable items (stars) representing a

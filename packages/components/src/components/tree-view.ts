@@ -1,11 +1,11 @@
 import type { Send } from '@llui/dom'
-import { flipArrow } from '../utils/direction'
+import { flipArrow } from '../utils/direction.js'
 import {
   typeaheadAccumulate,
   typeaheadMatch,
   isTypeaheadKey,
   TYPEAHEAD_TIMEOUT_MS,
-} from '../utils/typeahead'
+} from '../utils/typeahead.js'
 
 /**
  * Tree view — hierarchical list with expand/collapse. Items are identified

@@ -1,7 +1,7 @@
 import type { Send } from '@llui/dom'
 import { useContext } from '@llui/dom'
-import { LocaleContext } from '../locale'
-import type { Locale } from '../locale'
+import { LocaleContext } from '../locale.js'
+import type { Locale } from '../locale.js'
 
 /**
  * QR code — renders a QR matrix as SVG. llui does not bundle a QR

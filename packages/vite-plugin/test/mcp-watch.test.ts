@@ -125,7 +125,7 @@ describe('vite-plugin: /__llui_mcp_status middleware', () => {
     removeMarker()
   })
 
-  function setup(opts?: { mcpPort?: number | false }): FakeServer {
+  function setup(opts: { mcpPort?: number | false } = { mcpPort: 5200 }): FakeServer {
     const plugin = llui(opts)
     const fake = makeFakeServer()
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -133,10 +133,10 @@ describe('vite-plugin: /__llui_mcp_status middleware', () => {
     return fake
   }
 
-  it('returns 200 + port when the marker file exists', () => {
+  it('returns 200 + port when the marker file exists (mcpPort set)', () => {
     writeFileSync(ACTIVE_PATH, JSON.stringify({ port: 5200, pid: 1 }))
 
-    const fake = setup()
+    const fake = setup({ mcpPort: 5200 })
     const res = callMiddleware(fake, '/__llui_mcp_status')
     expect(res.statusCode).toBe(200)
     expect(JSON.parse(res.body)).toEqual({ port: 5200 })
@@ -144,13 +144,13 @@ describe('vite-plugin: /__llui_mcp_status middleware', () => {
   })
 
   it('returns 404 when the marker file does not exist', () => {
-    const fake = setup()
+    const fake = setup({ mcpPort: 5200 })
     const res = callMiddleware(fake, '/__llui_mcp_status')
     expect(res.statusCode).toBe(404)
   })
 
   it('reads the port dynamically — picks up changes after configureServer', () => {
-    const fake = setup()
+    const fake = setup({ mcpPort: 5200 })
     // Initially absent → 404
     expect(callMiddleware(fake, '/__llui_mcp_status').statusCode).toBe(404)
 
@@ -171,10 +171,20 @@ describe('vite-plugin: /__llui_mcp_status middleware', () => {
     expect(fake.middlewares.handlers.has('/__llui_mcp_status')).toBe(false)
   })
 
+  it('does not register the middleware by default (opt-in)', () => {
+    writeFileSync(ACTIVE_PATH, JSON.stringify({ port: 5200, pid: 1 }))
+    // No explicit mcpPort — should default to disabled
+    const plugin = llui()
+    const fake = makeFakeServer()
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(plugin as any).configureServer?.call(plugin, fake)
+    expect(fake.middlewares.handlers.has('/__llui_mcp_status')).toBe(false)
+  })
+
   it('handles a malformed marker file gracefully (treats as missing)', () => {
     writeFileSync(ACTIVE_PATH, 'not json at all')
 
-    const fake = setup()
+    const fake = setup({ mcpPort: 5200 })
     const res = callMiddleware(fake, '/__llui_mcp_status')
     expect(res.statusCode).toBe(404)
   })
@@ -182,7 +192,7 @@ describe('vite-plugin: /__llui_mcp_status middleware', () => {
   it('sends llui:mcp-ready HMR event when a client connects after the marker exists', () => {
     writeFileSync(ACTIVE_PATH, JSON.stringify({ port: 5200, pid: 1 }))
 
-    const fake = setup()
+    const fake = setup({ mcpPort: 5200 })
     expect(fake.sent).toHaveLength(0)
 
     // Simulate the HMR client connecting
@@ -194,7 +204,7 @@ describe('vite-plugin: /__llui_mcp_status middleware', () => {
   })
 
   it('does not send llui:mcp-ready on connection when marker is absent', () => {
-    const fake = setup()
+    const fake = setup({ mcpPort: 5200 })
     fake.ws.onConnection?.()
 
     const ready = fake.sent.find((m) => m.event === 'llui:mcp-ready')

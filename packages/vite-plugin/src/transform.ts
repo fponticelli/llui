@@ -99,6 +99,63 @@ const PROP_KEYS = new Set([
 
 type BindingKind = 'text' | 'prop' | 'attr' | 'class' | 'style'
 
+/**
+ * Walk from `use` outward toward the source file root, looking for a
+ * `const <name> = <initializer>` (or `let`/`var`) declaration that binds
+ * this identifier in an enclosing scope. Returns the initializer if found.
+ *
+ * This enables reactive-binding detection for hoisted accessors:
+ *
+ *   const cls = (s: State) => isActive(item, s.path) ? 'on' : 'off'
+ *   return a({ class: cls }, ...)
+ *
+ * Without resolution, `class: cls` would fall through the static path
+ * and emit `__e.className = cls`, coercing the function to its source
+ * string. With resolution, we see that `cls` is an arrow and emit a
+ * binding exactly as if the arrow had been inlined.
+ *
+ * Scope rules:
+ *   - Only single-binding `const`/`let`/`var` declarations with an
+ *     initializer are considered. No destructuring, no multi-declarator
+ *     statements (too easy to get wrong without a type checker).
+ *   - Later reassignments are NOT tracked — if the identifier is `let`
+ *     and gets reassigned, the resolution is unreliable. We conservatively
+ *     refuse to resolve `let` bindings for now (arrow-valued accessors
+ *     are ~always `const` in practice).
+ *   - The declaration must dominate the use (same block or an enclosing
+ *     one). TypeScript's block semantics mean walking up parent blocks
+ *     is sufficient.
+ */
+function resolveLocalConstInitializer(use: ts.Identifier): ts.Expression | null {
+  const name = use.text
+  let node: ts.Node = use
+  while (node.parent) {
+    const parent = node.parent
+    // Scan statements of an enclosing block/source-file for a matching declaration
+    let statements: readonly ts.Statement[] | null = null
+    if (ts.isBlock(parent) || ts.isSourceFile(parent) || ts.isModuleBlock(parent)) {
+      statements = parent.statements
+    } else if (ts.isCaseClause(parent) || ts.isDefaultClause(parent)) {
+      statements = parent.statements
+    }
+    if (statements) {
+      for (const stmt of statements) {
+        if (!ts.isVariableStatement(stmt)) continue
+        // Skip `let` — reassignment would invalidate our resolution
+        const flags = stmt.declarationList.flags
+        if (!(flags & ts.NodeFlags.Const)) continue
+        if (stmt.declarationList.declarations.length !== 1) continue
+        const decl = stmt.declarationList.declarations[0]!
+        if (!ts.isIdentifier(decl.name) || decl.name.text !== name) continue
+        if (!decl.initializer) continue
+        return decl.initializer
+      }
+    }
+    node = parent
+  }
+  return null
+}
+
 function classifyKind(key: string): BindingKind {
   if (key === 'class' || key === 'className') return 'class'
   if (key.startsWith('style.')) return 'style'
@@ -810,6 +867,18 @@ function tryTransformElementCall(
         const eventName = key.slice(2).toLowerCase()
         events.push(f.createArrayLiteralExpression([f.createStringLiteral(eventName), value]))
         continue
+      }
+
+      // If the value is an Identifier that refers to a local const-bound
+      // arrow/function, resolve it and treat it as if the arrow had been
+      // inlined. Without this, `class: cls` where `const cls = (s) => ...`
+      // falls through to the static path and emits `.className = cls`,
+      // coercing the function to its source string in the DOM.
+      if (ts.isIdentifier(value)) {
+        const resolved = resolveLocalConstInitializer(value)
+        if (resolved && (ts.isArrowFunction(resolved) || ts.isFunctionExpression(resolved))) {
+          value = resolved
+        }
       }
 
       // Reactive binding — value is an arrow function or function expression
@@ -3577,6 +3646,15 @@ function analyzeSubtree(
         continue
       }
 
+      // Resolve identifier → local const arrow initializer (see elSplit
+      // path for the full rationale).
+      if (ts.isIdentifier(value)) {
+        const resolved = resolveLocalConstInitializer(value)
+        if (resolved && (ts.isArrowFunction(resolved) || ts.isFunctionExpression(resolved))) {
+          value = resolved
+        }
+      }
+
       // Reactive binding
       if (ts.isArrowFunction(value) || ts.isFunctionExpression(value)) {
         const kind = classifyKind(key)
@@ -4280,14 +4358,65 @@ function isPerItemCall(node: ts.CallExpression): boolean {
 }
 
 // Matches: item.FIELD — the item-proxy shorthand equivalent of item(t => t.FIELD).
-// Loose heuristic: any `IDENT.IDENT` where the left side is the bare identifier `item`.
-// The runtime detects per-item via accessor.length === 0, so passing the property access
-// directly as a binding accessor works regardless of what the compiler assumes.
+// Scope-checked: the `item` identifier must resolve to a parameter of an
+// `each({ render })` callback. Without this check, plain
+// `arr.map((item) => item.field)` outside each() would be rewritten as a
+// per-item binding and crash at runtime with "accessor is not a function"
+// because `item.field` evaluates to a bare value (not a function) when
+// treated as an accessor.
 function isPerItemFieldAccess(node: ts.Node): node is ts.PropertyAccessExpression {
   if (!ts.isPropertyAccessExpression(node)) return false
   if (!ts.isIdentifier(node.expression)) return false
   if (node.expression.text !== 'item') return false
   if (!ts.isIdentifier(node.name)) return false
+  return isItemBoundToEachRender(node)
+}
+
+/**
+ * Walks up from a node and returns true iff the nearest enclosing function
+ * that binds an `item` parameter is the `render` property of an `each()`
+ * call. Handles both positional (`(item) => …`) and destructured
+ * (`({ item, index }) => …`) parameter bindings.
+ */
+function isItemBoundToEachRender(node: ts.Node): boolean {
+  let current: ts.Node | undefined = node.parent
+  while (current) {
+    if (ts.isArrowFunction(current) || ts.isFunctionExpression(current)) {
+      if (functionParamsBindItem(current)) {
+        return isEachRenderCallback(current)
+      }
+    }
+    current = current.parent
+  }
+  return false
+}
+
+function functionParamsBindItem(fn: ts.ArrowFunction | ts.FunctionExpression): boolean {
+  for (const param of fn.parameters) {
+    if (bindingNameBindsItem(param.name)) return true
+  }
+  return false
+}
+
+function bindingNameBindsItem(name: ts.BindingName): boolean {
+  if (ts.isIdentifier(name)) return name.text === 'item'
+  if (ts.isObjectBindingPattern(name) || ts.isArrayBindingPattern(name)) {
+    for (const el of name.elements) {
+      if (ts.isBindingElement(el) && bindingNameBindsItem(el.name)) return true
+    }
+  }
+  return false
+}
+
+function isEachRenderCallback(fn: ts.ArrowFunction | ts.FunctionExpression): boolean {
+  const parent = fn.parent
+  if (!parent || !ts.isPropertyAssignment(parent)) return false
+  if (!ts.isIdentifier(parent.name) || parent.name.text !== 'render') return false
+  const objLit = parent.parent
+  if (!objLit || !ts.isObjectLiteralExpression(objLit)) return false
+  const call = objLit.parent
+  if (!call || !ts.isCallExpression(call)) return false
+  if (!ts.isIdentifier(call.expression) || call.expression.text !== 'each') return false
   return true
 }
 

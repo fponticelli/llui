@@ -1,7 +1,7 @@
 import type { TransitionOptions } from '@llui/dom'
-import type { Styles } from './types'
-import { transition } from './transition'
-import { asElements, forceReflow } from './style-utils'
+import type { Styles } from './types.js'
+import { transition } from './transition.js'
+import { asElements, forceReflow } from './style-utils.js'
 
 export interface FadeOptions {
   duration?: number

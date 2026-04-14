@@ -4,7 +4,7 @@ import {
   typeaheadMatchByItems,
   isTypeaheadKey,
   TYPEAHEAD_TIMEOUT_MS,
-} from '../utils/typeahead'
+} from '../utils/typeahead.js'
 
 /**
  * Listbox — a list of selectable options. Supports single and multiple

@@ -6,7 +6,7 @@
  * parallel, applies success/error messages to state via update(),
  * and recurses if the responses produce more effects (up to a depth limit).
  */
-import type { HttpEffect, ApiError } from './index'
+import type { HttpEffect, ApiError } from './index.js'
 
 type UpdateFn<S, M, E> = (state: S, msg: M) => [S, E[]]
 

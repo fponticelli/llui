@@ -1,14 +1,17 @@
-import type { BindingKind } from './types'
-import { getRenderContext } from './render-context'
-import { createBinding, applyBinding } from './binding'
-import { addCheckedItemUpdater } from './scope'
+import type { BindingKind } from './types.js'
+import { getRenderContext } from './render-context.js'
+import { createBinding, applyBinding } from './binding.js'
+import { addCheckedItemUpdater } from './scope.js'
 
 export function elSplit(
   tag: string,
   staticFn: ((el: HTMLElement) => void) | null,
   events: Array<[string, EventListener]> | null,
   bindings: Array<[number, BindingKind, string, (state: never) => unknown]> | null,
-  children: Node[] | null,
+  // Accepts raw strings too — wrapped in Text nodes at append time so
+  // user code like `button([], ['Sign in'])` works without requiring
+  // an explicit text() wrapper.
+  children: Array<Node | string> | null,
 ): HTMLElement {
   const el = document.createElement(tag)
 
@@ -50,7 +53,16 @@ export function elSplit(
 
   if (children) {
     for (const child of children) {
-      el.appendChild(child)
+      // Strings get wrapped in Text nodes — matches createElement's
+      // behavior in elements.ts. Without this, user code that passes
+      // raw strings as children (e.g. `button([], ['Sign in'])`) crashes
+      // in jsdom with "parameter 1 is not of type 'Node'" during SSR
+      // and throws a TypeError in strict browsers.
+      if (typeof child === 'string') {
+        el.appendChild(document.createTextNode(child))
+      } else {
+        el.appendChild(child)
+      }
     }
   }
 

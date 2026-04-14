@@ -1,9 +1,9 @@
-import { getRenderContext } from '../render-context'
-import { createBinding, applyBinding } from '../binding'
-import { addDisposer } from '../scope'
-import { FULL_MASK } from '../update-loop'
-import { registerOnClear } from './each'
-import type { BindingKind } from '../types'
+import { getRenderContext } from '../render-context.js'
+import { createBinding, applyBinding } from '../binding.js'
+import { addDisposer } from '../scope.js'
+import { FULL_MASK } from '../update-loop.js'
+import { registerOnClear } from './each.js'
+import type { BindingKind } from '../types.js'
 
 interface SelectorEntry {
   node: Node

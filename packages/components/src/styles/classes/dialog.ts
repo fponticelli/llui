@@ -1,4 +1,4 @@
-import { createVariants, type VariantProps } from '../utils/variants'
+import { createVariants, type VariantProps } from '../utils/variants.js'
 
 const contentVariants = createVariants({
   base: 'bg-surface rounded-xl shadow-lg p-6 relative w-full',

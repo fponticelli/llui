@@ -30,15 +30,21 @@ export interface LluiPluginOptions {
    * to `ws://127.0.0.1:<port>` so an external `llui-mcp` server can forward
    * tool calls into the running app.
    *
-   * Set to `false` to disable the relay injection entirely.
-   * Default: 5200.
+   * Defaults to `false` (opt-in). Pass a number (typically `5200`) to
+   * enable. When enabled but the MCP server isn't running, the plugin
+   * returns 404 from its discovery endpoint and the browser silently
+   * skips the connection — no retry noise.
    */
   mcpPort?: number | false
 }
 
 export default function llui(options: LluiPluginOptions = {}): Plugin {
   let devMode = false
-  const mcpPort = options.mcpPort === false ? null : (options.mcpPort ?? 5200)
+  // MCP is opt-in: developers who want interactive debugging pass an
+  // explicit port. Leaving it off avoids 404 polling in projects that
+  // don't use the companion server.
+  const mcpPort =
+    options.mcpPort === false || options.mcpPort === undefined ? null : options.mcpPort
 
   // File-based handshake with @llui/mcp. The MCP server writes a marker
   // file when its bridge starts; we watch it and send a Vite HMR custom

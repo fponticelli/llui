@@ -1,5 +1,5 @@
 import type { Send } from '@llui/dom'
-import { flipArrow } from '../utils/direction'
+import { flipArrow } from '../utils/direction.js'
 
 /**
  * Splitter — resizable panes with a draggable handle. The handle's position

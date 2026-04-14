@@ -1,11 +1,11 @@
-import type { Send, ShowOptions, BranchOptions, EachOptions } from './types'
-import { show as _show } from './primitives/show'
-import { branch as _branch } from './primitives/branch'
-import { each as _each } from './primitives/each'
-import { text as _text } from './primitives/text'
-import { memo as _memo } from './primitives/memo'
-import { selector as _selector, type SelectorInstance } from './primitives/selector'
-import { useContext, type Context } from './primitives/context'
+import type { Send, ShowOptions, BranchOptions, EachOptions } from './types.js'
+import { show as _show } from './primitives/show.js'
+import { branch as _branch } from './primitives/branch.js'
+import { each as _each } from './primitives/each.js'
+import { text as _text } from './primitives/text.js'
+import { memo as _memo } from './primitives/memo.js'
+import { selector as _selector, type SelectorInstance } from './primitives/selector.js'
+import { useContext, type Context } from './primitives/context.js'
 
 /**
  * Typed view helpers bound to a component's `State` / `Msg`. The sole

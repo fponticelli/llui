@@ -1,5 +1,5 @@
-import { flushInstance } from './update-loop'
-import type { ComponentInstance } from './update-loop'
+import { flushInstance } from './update-loop.js'
+import type { ComponentInstance } from './update-loop.js'
 
 const activeInstances = new Set<object>()
 

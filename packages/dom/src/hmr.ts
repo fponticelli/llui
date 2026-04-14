@@ -1,12 +1,12 @@
-import type { ComponentDef, AppHandle } from './types'
-import type { ComponentInstance } from './update-loop'
-import { flushInstance } from './update-loop'
-import { createScope, disposeScope } from './scope'
-import { setRenderContext, clearRenderContext } from './render-context'
-import { setFlatBindings } from './binding'
-import { unregisterInstance } from './runtime'
-import { _setHmrModule } from './mount'
-import { createView } from './view-helpers'
+import type { ComponentDef, AppHandle } from './types.js'
+import type { ComponentInstance } from './update-loop.js'
+import { flushInstance } from './update-loop.js'
+import { createScope, disposeScope } from './scope.js'
+import { setRenderContext, clearRenderContext } from './render-context.js'
+import { setFlatBindings } from './binding.js'
+import { unregisterInstance } from './runtime.js'
+import { _setHmrModule } from './mount.js'
+import { createView } from './view-helpers.js'
 
 /**
  * Enable HMR state preservation. Called by compiler-generated dev code.

@@ -1,6 +1,6 @@
 import type { Send, TransitionOptions } from '@llui/dom'
 import { show, portal, onMount, div } from '@llui/dom'
-import { pushDismissable } from '../utils/dismissable'
+import { pushDismissable } from '../utils/dismissable.js'
 
 /**
  * Context menu — right-click (contextmenu) triggered menu positioned at

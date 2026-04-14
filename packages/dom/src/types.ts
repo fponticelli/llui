@@ -1,7 +1,7 @@
 // ── Component Definition ──────────────────────────────────────────
 
-import type { View } from './view-helpers'
-import type { StructuralBlock } from './structural'
+import type { View } from './view-helpers.js'
+import type { StructuralBlock } from './structural.js'
 
 export interface ComponentDef<S, M, E = never, D = void> {
   name: string

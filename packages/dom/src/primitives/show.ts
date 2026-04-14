@@ -1,5 +1,5 @@
-import type { ShowOptions } from '../types'
-import { branch } from './branch'
+import type { ShowOptions } from '../types.js'
+import { branch } from './branch.js'
 
 const EMPTY = () => [] as Node[]
 

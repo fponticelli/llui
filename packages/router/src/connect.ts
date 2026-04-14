@@ -1,4 +1,4 @@
-import type { Router } from './index'
+import type { Router } from './index.js'
 import { a, onMount } from '@llui/dom'
 
 // ── Router Effects ───────────────────────────────────────────────

@@ -1,4 +1,4 @@
-import type { ComponentDef } from './types'
+import type { ComponentDef } from './types.js'
 
 export function component<S, M, E = never, D = void>(
   def: ComponentDef<S, M, E, D>,

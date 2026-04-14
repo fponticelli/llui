@@ -1,4 +1,4 @@
-import { cx, type ClassValue } from './cx'
+import { cx, type ClassValue } from './cx.js'
 
 export type VariantRecord = Record<string, Record<string, string>>
 

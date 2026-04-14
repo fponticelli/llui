@@ -1,5 +1,5 @@
-import type { Scope, Binding } from './types'
-import type { StructuralBlock } from './structural'
+import type { Scope, Binding } from './types.js'
+import type { StructuralBlock } from './structural.js'
 
 export interface RenderContext {
   rootScope: Scope
@@ -25,8 +25,14 @@ export function getRenderContext(primitiveName?: string): RenderContext {
     const name = primitiveName ? `${primitiveName}()` : 'primitives'
     throw new Error(
       `[LLui] ${name} can only be called inside a component's view() function. ` +
-        `It was called outside a render context — ensure it runs synchronously within view(), ` +
-        `not in a setTimeout, Promise, or event handler.`,
+        `It was called outside a render context. Common causes:\n` +
+        `  1. Calling a primitive at module scope instead of inside view().\n` +
+        `  2. Calling an overlay helper (dialog.overlay, popover.overlay, …) at ` +
+        `module scope — these internally use show()/branch() and must be invoked ` +
+        `from inside the component's view callback so their result can be spread ` +
+        `into the returned node tree.\n` +
+        `  3. Calling a primitive from a setTimeout / Promise / event handler — ` +
+        `the render context only persists during the synchronous view() call.`,
     )
   }
   return currentContext

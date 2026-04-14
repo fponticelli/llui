@@ -1,5 +1,5 @@
 import type { Send } from '@llui/dom'
-import { flipArrow } from '../utils/direction'
+import { flipArrow } from '../utils/direction.js'
 
 /**
  * Radio group — a set of mutually-exclusive options. Users select one value

@@ -1,5 +1,5 @@
-import { resolveElements, type ElementSource } from './dom'
-import { getFocusables } from './focusables'
+import { resolveElements, type ElementSource } from './dom.js'
+import { getFocusables } from './focusables.js'
 
 export interface FocusTrapOptions {
   /** The container whose focusable descendants form the trap. */

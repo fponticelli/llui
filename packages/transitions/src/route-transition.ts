@@ -1,7 +1,7 @@
 import type { TransitionOptions } from '@llui/dom'
-import { fade } from './presets'
-import { slide } from './presets'
-import { mergeTransitions } from './flip'
+import { fade } from './presets.js'
+import { slide } from './presets.js'
+import { mergeTransitions } from './flip.js'
 
 export interface RouteTransitionOptions {
   /** Duration in milliseconds (default: 250). */

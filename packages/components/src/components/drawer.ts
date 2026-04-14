@@ -1,11 +1,11 @@
 import type { Send, TransitionOptions } from '@llui/dom'
 import { show, portal, onMount, div, useContext } from '@llui/dom'
-import { LocaleContext } from '../locale'
-import type { Locale } from '../locale'
-import { pushDismissable } from '../utils/dismissable'
-import { pushFocusTrap } from '../utils/focus-trap'
-import { setAriaHiddenOutside } from '../utils/aria-hidden'
-import { lockBodyScroll } from '../utils/remove-scroll'
+import { LocaleContext } from '../locale.js'
+import type { Locale } from '../locale.js'
+import { pushDismissable } from '../utils/dismissable.js'
+import { pushFocusTrap } from '../utils/focus-trap.js'
+import { setAriaHiddenOutside } from '../utils/aria-hidden.js'
+import { lockBodyScroll } from '../utils/remove-scroll.js'
 
 /**
  * Drawer — a panel that slides in from a screen edge. Structurally

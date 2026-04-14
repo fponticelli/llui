@@ -1,4 +1,4 @@
-import { createVariants, type VariantProps } from '../utils/variants'
+import { createVariants, type VariantProps } from '../utils/variants.js'
 
 const triggerVariants = createVariants({
   base: 'inline-flex items-center justify-between bg-surface border border-border cursor-pointer transition-all duration-fast hover:border-border-hover data-[state=open]:border-border-focus data-[disabled]:opacity-50 data-[disabled]:cursor-not-allowed',

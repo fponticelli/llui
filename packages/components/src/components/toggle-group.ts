@@ -1,5 +1,5 @@
 import type { Send } from '@llui/dom'
-import { flipArrow } from '../utils/direction'
+import { flipArrow } from '../utils/direction.js'
 
 /**
  * Toggle group — a set of toggle buttons. `type: 'single'` enforces

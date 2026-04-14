@@ -1,5 +1,5 @@
-import { watchInteractOutside } from './interact-outside'
-import type { ElementSource } from './dom'
+import { watchInteractOutside } from './interact-outside.js'
+import type { ElementSource } from './dom.js'
 
 /**
  * Reason a dismissable layer was closed.

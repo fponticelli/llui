@@ -1,4 +1,4 @@
-import { type VariantProps } from '../utils/variants'
+import { type VariantProps } from '../utils/variants.js'
 
 type Variants = Record<string, never>
 

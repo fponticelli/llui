@@ -1,108 +1,108 @@
-export * as toggle from './toggle'
-export * as checkbox from './checkbox'
-export * as accordion from './accordion'
-export * as tabs from './tabs'
-export * as slider from './slider'
-export * as dialog from './dialog'
-export * as popover from './popover'
-export * as tooltip from './tooltip'
-export * as menu from './menu'
-export * as switchMachine from './switch'
-export * as radioGroup from './radio-group'
-export * as collapsible from './collapsible'
-export * as toggleGroup from './toggle-group'
-export * as numberInput from './number-input'
-export * as pinInput from './pin-input'
-export * as progress from './progress'
-export * as ratingGroup from './rating-group'
-export * as pagination from './pagination'
-export * as alertDialog from './alert-dialog'
-export * as drawer from './drawer'
-export * as toast from './toast'
-export * as listbox from './listbox'
-export * as select from './select'
-export * as combobox from './combobox'
-export * as hoverCard from './hover-card'
-export * as avatar from './avatar'
-export * as clipboard from './clipboard'
-export * as editable from './editable'
-export * as tagsInput from './tags-input'
-export * as splitter from './splitter'
-export * as fileUpload from './file-upload'
-export * as treeView from './tree-view'
-export * as contextMenu from './context-menu'
-export * as passwordInput from './password-input'
-export * as steps from './steps'
-export * as timePicker from './time-picker'
-export * as carousel from './carousel'
-export * as datePicker from './date-picker'
-export * as colorPicker from './color-picker'
-export * as timer from './timer'
-export * as angleSlider from './angle-slider'
-export * as marquee from './marquee'
-export * as presence from './presence'
-export * as signaturePad from './signature-pad'
-export * as toc from './toc'
-export * as tour from './tour'
-export * as dateInput from './date-input'
-export * as asyncList from './async-list'
-export * as cascadeSelect from './cascade-select'
-export * as scrollArea from './scroll-area'
-export * as floatingPanel from './floating-panel'
-export * as imageCropper from './image-cropper'
-export * as navigationMenu from './navigation-menu'
-export * as qrCode from './qr-code'
-export * as inView from './in-view'
-export * as form from './form'
-export * as sortable from './sortable'
-export * as themeSwitch from './theme-switch'
+export * as toggle from './toggle.js'
+export * as checkbox from './checkbox.js'
+export * as accordion from './accordion.js'
+export * as tabs from './tabs.js'
+export * as slider from './slider.js'
+export * as dialog from './dialog.js'
+export * as popover from './popover.js'
+export * as tooltip from './tooltip.js'
+export * as menu from './menu.js'
+export * as switchMachine from './switch.js'
+export * as radioGroup from './radio-group.js'
+export * as collapsible from './collapsible.js'
+export * as toggleGroup from './toggle-group.js'
+export * as numberInput from './number-input.js'
+export * as pinInput from './pin-input.js'
+export * as progress from './progress.js'
+export * as ratingGroup from './rating-group.js'
+export * as pagination from './pagination.js'
+export * as alertDialog from './alert-dialog.js'
+export * as drawer from './drawer.js'
+export * as toast from './toast.js'
+export * as listbox from './listbox.js'
+export * as select from './select.js'
+export * as combobox from './combobox.js'
+export * as hoverCard from './hover-card.js'
+export * as avatar from './avatar.js'
+export * as clipboard from './clipboard.js'
+export * as editable from './editable.js'
+export * as tagsInput from './tags-input.js'
+export * as splitter from './splitter.js'
+export * as fileUpload from './file-upload.js'
+export * as treeView from './tree-view.js'
+export * as contextMenu from './context-menu.js'
+export * as passwordInput from './password-input.js'
+export * as steps from './steps.js'
+export * as timePicker from './time-picker.js'
+export * as carousel from './carousel.js'
+export * as datePicker from './date-picker.js'
+export * as colorPicker from './color-picker.js'
+export * as timer from './timer.js'
+export * as angleSlider from './angle-slider.js'
+export * as marquee from './marquee.js'
+export * as presence from './presence.js'
+export * as signaturePad from './signature-pad.js'
+export * as toc from './toc.js'
+export * as tour from './tour.js'
+export * as dateInput from './date-input.js'
+export * as asyncList from './async-list.js'
+export * as cascadeSelect from './cascade-select.js'
+export * as scrollArea from './scroll-area.js'
+export * as floatingPanel from './floating-panel.js'
+export * as imageCropper from './image-cropper.js'
+export * as navigationMenu from './navigation-menu.js'
+export * as qrCode from './qr-code.js'
+export * as inView from './in-view.js'
+export * as form from './form.js'
+export * as sortable from './sortable.js'
+export * as themeSwitch from './theme-switch.js'
 
-export { validateSchema, validateSchemaAsync } from './form'
-export { reorder } from './sortable'
-export { resolveTheme, applyTheme, watchSystemTheme } from './theme-switch'
+export { validateSchema, validateSchemaAsync } from './form.js'
+export { reorder } from './sortable.js'
+export { resolveTheme, applyTheme, watchSystemTheme } from './theme-switch.js'
 
-export type { FormState, FormMsg, FormStatus, FormParts, ValidateResult } from './form'
-export type { SortableState, SortableMsg, SortableParts, DragState } from './sortable'
+export type { FormState, FormMsg, FormStatus, FormParts, ValidateResult } from './form.js'
+export type { SortableState, SortableMsg, SortableParts, DragState } from './sortable.js'
 export type {
   ThemeSwitchState,
   ThemeSwitchMsg,
   ThemeSwitchParts,
   Theme,
   ResolvedTheme,
-} from './theme-switch'
+} from './theme-switch.js'
 export type {
   InViewState,
   InViewMsg,
   InViewParts,
   ObserverOptions as InViewObserverOptions,
-} from './in-view'
+} from './in-view.js'
 export type {
   TimerState,
   TimerMsg,
   TimerInit,
   TimerParts,
   Direction as TimerDirection,
-} from './timer'
+} from './timer.js'
 export type {
   AngleSliderState,
   AngleSliderMsg,
   AngleSliderInit,
   AngleSliderParts,
-} from './angle-slider'
+} from './angle-slider.js'
 export type {
   MarqueeState,
   MarqueeMsg,
   MarqueeInit,
   MarqueeParts,
   MarqueeDirection,
-} from './marquee'
+} from './marquee.js'
 export type {
   PresenceState,
   PresenceMsg,
   PresenceInit,
   PresenceParts,
   PresenceStatus,
-} from './presence'
+} from './presence.js'
 export type {
   SignaturePadState,
   SignaturePadMsg,
@@ -110,23 +110,23 @@ export type {
   SignaturePadParts,
   Point as SignaturePadPoint,
   Stroke as SignatureStroke,
-} from './signature-pad'
-export type { TocState, TocMsg, TocInit, TocParts, TocEntry } from './toc'
-export type { TourState, TourMsg, TourInit, TourParts, TourStep } from './tour'
+} from './signature-pad.js'
+export type { TocState, TocMsg, TocInit, TocParts, TocEntry } from './toc.js'
+export type { TourState, TourMsg, TourInit, TourParts, TourStep } from './tour.js'
 export type {
   DateInputState,
   DateInputMsg,
   DateInputInit,
   DateInputParts,
   DateError,
-} from './date-input'
+} from './date-input.js'
 export type {
   AsyncListState,
   AsyncListMsg,
   AsyncListInit,
   AsyncListParts,
   AsyncStatus,
-} from './async-list'
+} from './async-list.js'
 export type {
   CascadeSelectState,
   CascadeSelectMsg,
@@ -134,7 +134,7 @@ export type {
   CascadeSelectParts,
   CascadeLevel,
   CascadeLevelParts,
-} from './cascade-select'
+} from './cascade-select.js'
 export type {
   ScrollAreaState,
   ScrollAreaMsg,
@@ -142,73 +142,73 @@ export type {
   ScrollAreaParts,
   ScrollbarVisibility,
   ScrollDims,
-} from './scroll-area'
+} from './scroll-area.js'
 export type {
   FloatingPanelState,
   FloatingPanelMsg,
   FloatingPanelInit,
   FloatingPanelParts,
   ResizeHandle as FloatingPanelHandle,
-} from './floating-panel'
+} from './floating-panel.js'
 export type {
   ImageCropperState,
   ImageCropperMsg,
   ImageCropperInit,
   ImageCropperParts,
   CropRect,
-} from './image-cropper'
+} from './image-cropper.js'
 export type {
   NavMenuState,
   NavMenuMsg,
   NavMenuInit,
   NavMenuParts,
   NavItemParts,
-} from './navigation-menu'
+} from './navigation-menu.js'
 export type {
   QrCodeState,
   QrCodeMsg,
   QrCodeInit,
   QrCodeParts,
   ErrorCorrectionLevel,
-} from './qr-code'
-export type { ToggleState, ToggleMsg, ToggleInit, ToggleParts } from './toggle'
+} from './qr-code.js'
+export type { ToggleState, ToggleMsg, ToggleInit, ToggleParts } from './toggle.js'
 export type {
   CheckboxState,
   CheckboxMsg,
   CheckboxInit,
   CheckboxParts,
   CheckedState,
-} from './checkbox'
+} from './checkbox.js'
 export type {
   AccordionState,
   AccordionMsg,
   AccordionInit,
   AccordionParts,
   AccordionItemParts,
-} from './accordion'
-export type { TabsState, TabsMsg, TabsInit, TabsParts, TabsItemParts, Activation } from './tabs'
-export type { SliderState, SliderMsg, SliderInit, SliderParts, SliderThumbParts } from './slider'
+} from './accordion.js'
+export type { TabsState, TabsMsg, TabsInit, TabsParts, TabsItemParts, Activation } from './tabs.js'
+export type { SliderState, SliderMsg, SliderInit, SliderParts, SliderThumbParts } from './slider.js'
 export type {
   DialogState,
   DialogMsg,
   DialogInit,
   DialogParts,
   OverlayOptions as DialogOverlayOptions,
-} from './dialog'
+} from './dialog.js'
 export type {
   PopoverState,
   PopoverMsg,
   PopoverInit,
   PopoverParts,
   OverlayOptions as PopoverOverlayOptions,
-} from './popover'
+} from './popover.js'
 export type {
   TooltipState,
   TooltipMsg,
   TooltipInit,
   TooltipParts,
   OverlayOptions as TooltipOverlayOptions,
-} from './tooltip'
+} from './tooltip.js'
 export type {
   MenuState,
   MenuMsg,
@@ -216,36 +216,42 @@ export type {
   MenuParts,
   MenuItemParts,
   OverlayOptions as MenuOverlayOptions,
-} from './menu'
-export type { SwitchState, SwitchMsg, SwitchInit, SwitchParts } from './switch'
+} from './menu.js'
+export type { SwitchState, SwitchMsg, SwitchInit, SwitchParts } from './switch.js'
 export type {
   RadioGroupState,
   RadioGroupMsg,
   RadioGroupInit,
   RadioGroupParts,
   RadioItemParts,
-} from './radio-group'
+} from './radio-group.js'
 export type {
   CollapsibleState,
   CollapsibleMsg,
   CollapsibleInit,
   CollapsibleParts,
-} from './collapsible'
+} from './collapsible.js'
 export type {
   ToggleGroupState,
   ToggleGroupMsg,
   ToggleGroupInit,
   ToggleGroupParts,
   ToggleGroupItemParts,
-} from './toggle-group'
+} from './toggle-group.js'
 export type {
   NumberInputState,
   NumberInputMsg,
   NumberInputInit,
   NumberInputParts,
-} from './number-input'
-export type { PinInputState, PinInputMsg, PinInputInit, PinInputParts, PinType } from './pin-input'
-export type { ProgressState, ProgressMsg, ProgressInit, ProgressParts } from './progress'
+} from './number-input.js'
+export type {
+  PinInputState,
+  PinInputMsg,
+  PinInputInit,
+  PinInputParts,
+  PinType,
+} from './pin-input.js'
+export type { ProgressState, ProgressMsg, ProgressInit, ProgressParts } from './progress.js'
 export type {
   RatingGroupState,
   RatingGroupMsg,
@@ -253,21 +259,21 @@ export type {
   RatingGroupParts,
   RatingItemParts,
   ItemFill,
-} from './rating-group'
+} from './rating-group.js'
 export type {
   PaginationState,
   PaginationMsg,
   PaginationInit,
   PaginationParts,
   PageItem,
-} from './pagination'
+} from './pagination.js'
 export type {
   AlertDialogState,
   AlertDialogMsg,
   AlertDialogParts,
   AlertDialogConnectOptions,
   AlertDialogOverlayOptions,
-} from './alert-dialog'
+} from './alert-dialog.js'
 export type {
   DrawerState,
   DrawerMsg,
@@ -275,7 +281,7 @@ export type {
   DrawerParts,
   DrawerSide,
   OverlayOptions as DrawerOverlayOptions,
-} from './drawer'
+} from './drawer.js'
 export type {
   Toast,
   ToasterState,
@@ -285,7 +291,7 @@ export type {
   ToastItemParts,
   ToastType,
   ToastPlacement,
-} from './toast'
+} from './toast.js'
 export type {
   ListboxState,
   ListboxMsg,
@@ -293,7 +299,7 @@ export type {
   ListboxParts,
   ListboxItemParts,
   SelectionMode,
-} from './listbox'
+} from './listbox.js'
 export type {
   SelectState,
   SelectMsg,
@@ -301,7 +307,7 @@ export type {
   SelectParts,
   SelectItemParts,
   OverlayOptions as SelectOverlayOptions,
-} from './select'
+} from './select.js'
 export type {
   ComboboxState,
   ComboboxMsg,
@@ -309,39 +315,39 @@ export type {
   ComboboxParts,
   ComboboxItemParts,
   OverlayOptions as ComboboxOverlayOptions,
-} from './combobox'
+} from './combobox.js'
 export type {
   HoverCardState,
   HoverCardMsg,
   HoverCardInit,
   HoverCardParts,
   OverlayOptions as HoverCardOverlayOptions,
-} from './hover-card'
-export type { AvatarState, AvatarMsg, AvatarInit, AvatarParts, ImageStatus } from './avatar'
-export type { ClipboardState, ClipboardMsg, ClipboardInit, ClipboardParts } from './clipboard'
-export type { EditableState, EditableMsg, EditableInit, EditableParts } from './editable'
+} from './hover-card.js'
+export type { AvatarState, AvatarMsg, AvatarInit, AvatarParts, ImageStatus } from './avatar.js'
+export type { ClipboardState, ClipboardMsg, ClipboardInit, ClipboardParts } from './clipboard.js'
+export type { EditableState, EditableMsg, EditableInit, EditableParts } from './editable.js'
 export type {
   TagsInputState,
   TagsInputMsg,
   TagsInputInit,
   TagsInputParts,
   TagItemParts,
-} from './tags-input'
-export type { SplitterState, SplitterMsg, SplitterInit, SplitterParts } from './splitter'
+} from './tags-input.js'
+export type { SplitterState, SplitterMsg, SplitterInit, SplitterParts } from './splitter.js'
 export type {
   FileUploadState,
   FileUploadMsg,
   FileUploadInit,
   FileUploadParts,
   FileUploadItemParts,
-} from './file-upload'
+} from './file-upload.js'
 export type {
   TreeViewState,
   TreeViewMsg,
   TreeViewInit,
   TreeViewParts,
   TreeItemParts,
-} from './tree-view'
+} from './tree-view.js'
 export type {
   ContextMenuState,
   ContextMenuMsg,
@@ -349,13 +355,13 @@ export type {
   ContextMenuParts,
   ContextMenuItemParts,
   OverlayOptions as ContextMenuOverlayOptions,
-} from './context-menu'
+} from './context-menu.js'
 export type {
   PasswordInputState,
   PasswordInputMsg,
   PasswordInputInit,
   PasswordInputParts,
-} from './password-input'
+} from './password-input.js'
 export type {
   StepsState,
   StepsMsg,
@@ -363,7 +369,7 @@ export type {
   StepsParts,
   StepsItemParts,
   StepStatus,
-} from './steps'
+} from './steps.js'
 export type {
   TimePickerState,
   TimePickerMsg,
@@ -371,14 +377,14 @@ export type {
   TimePickerParts,
   TimeValue,
   TimeFormat,
-} from './time-picker'
+} from './time-picker.js'
 export type {
   CarouselState,
   CarouselMsg,
   CarouselInit,
   CarouselParts,
   CarouselSlideParts,
-} from './carousel'
+} from './carousel.js'
 export type {
   DatePickerState,
   DatePickerMsg,
@@ -386,11 +392,11 @@ export type {
   DatePickerParts,
   DayCellParts,
   DayCell,
-} from './date-picker'
+} from './date-picker.js'
 export type {
   ColorPickerState,
   ColorPickerMsg,
   ColorPickerInit,
   ColorPickerParts,
   Hsl,
-} from './color-picker'
+} from './color-picker.js'

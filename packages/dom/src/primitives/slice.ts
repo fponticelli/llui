@@ -1,12 +1,12 @@
-import type { Send, EachOptions, ShowOptions, BranchOptions } from '../types'
-import type { View } from '../view-helpers'
-import { show as _show } from './show'
-import { branch as _branch } from './branch'
-import { each as _each } from './each'
-import { text as _text } from './text'
-import { memo as _memo } from './memo'
-import { selector as _selector } from './selector'
-import { useContext, type Context } from './context'
+import type { Send, EachOptions, ShowOptions, BranchOptions } from '../types.js'
+import type { View } from '../view-helpers.js'
+import { show as _show } from './show.js'
+import { branch as _branch } from './branch.js'
+import { each as _each } from './each.js'
+import { text as _text } from './text.js'
+import { memo as _memo } from './memo.js'
+import { selector as _selector } from './selector.js'
+import { useContext, type Context } from './context.js'
 
 /**
  * Build a `View<Sub, M>` that composes a selector into every state-bound

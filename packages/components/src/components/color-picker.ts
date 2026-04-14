@@ -1,7 +1,7 @@
 import type { Send } from '@llui/dom'
 import { useContext } from '@llui/dom'
-import { LocaleContext } from '../locale'
-import type { Locale } from '../locale'
+import { LocaleContext } from '../locale.js'
+import type { Locale } from '../locale.js'
 
 /**
  * Color picker — HSL/HSV color selection. Tracks hue (0-360), saturation

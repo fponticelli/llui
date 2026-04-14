@@ -1,7 +1,7 @@
-import type { BindingKind } from './types'
-import { getRenderContext } from './render-context'
-import { createBinding, applyBinding } from './binding'
-import { addCheckedItemUpdater } from './scope'
+import type { BindingKind } from './types.js'
+import { getRenderContext } from './render-context.js'
+import { createBinding, applyBinding } from './binding.js'
+import { addCheckedItemUpdater } from './scope.js'
 
 // Cache: HTML string → template element (created once, cloned per use)
 const templateCache = new Map<string, HTMLTemplateElement>()

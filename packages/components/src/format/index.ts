@@ -1,4 +1,4 @@
-export { formatNumber, type FormatNumberOptions } from './format-number'
+export { formatNumber, type FormatNumberOptions } from './format-number.js'
 export {
   formatDate,
   formatTime,
@@ -7,23 +7,23 @@ export {
   type FormatDateOptions,
   type FormatTimeOptions,
   type FormatDateTimeOptions,
-} from './format-date'
+} from './format-date.js'
 export {
   formatRelativeTime,
   type RelativeTimeUnit,
   type FormatRelativeTimeOptions,
-} from './format-relative-time'
-export { formatList, type FormatListOptions } from './format-list'
+} from './format-relative-time.js'
+export { formatList, type FormatListOptions } from './format-list.js'
 export {
   formatPlural,
   resolvePluralCategory,
   type PluralCategory,
   type PluralMessages,
   type FormatPluralOptions,
-} from './format-plural'
+} from './format-plural.js'
 export {
   formatDisplayName,
   type DisplayNameType,
   type FormatDisplayNameOptions,
-} from './format-display-name'
-export { formatFileSize, type FormatFileSizeOptions } from './format-file-size'
+} from './format-display-name.js'
+export { formatFileSize, type FormatFileSizeOptions } from './format-file-size.js'

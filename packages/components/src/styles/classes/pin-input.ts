@@ -1,4 +1,4 @@
-import { createVariants, type VariantProps } from '../utils/variants'
+import { createVariants, type VariantProps } from '../utils/variants.js'
 
 const inputVariants = createVariants({
   base: 'text-center border border-border bg-surface outline-none transition-all duration-fast focus:border-border-focus data-[disabled]:opacity-50 data-[disabled]:cursor-not-allowed',

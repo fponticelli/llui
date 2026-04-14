@@ -1,8 +1,8 @@
-import type { ComponentDef } from './types'
-import { createComponentInstance } from './update-loop'
-import { setRenderContext, clearRenderContext } from './render-context'
-import { setFlatBindings } from './binding'
-import { createView } from './view-helpers'
+import type { ComponentDef } from './types.js'
+import { createComponentInstance } from './update-loop.js'
+import { setRenderContext, clearRenderContext } from './render-context.js'
+import { setFlatBindings } from './binding.js'
+import { createView } from './view-helpers.js'
 
 /**
  * Render a component to an HTML string for SSR.

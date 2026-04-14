@@ -1,14 +1,14 @@
-import type { ItemAccessor, Scope, Send } from '../types'
+import type { ItemAccessor, Scope, Send } from '../types.js'
 import {
   getRenderContext,
   setRenderContext,
   clearRenderContext,
   type RenderContext,
-} from '../render-context'
-import { createScope, disposeScope, addDisposer } from '../scope'
-import { getFlatBindings, setFlatBindings } from '../binding'
-import { FULL_MASK } from '../update-loop'
-import type { StructuralBlock } from '../structural'
+} from '../render-context.js'
+import { createScope, disposeScope, addDisposer } from '../scope.js'
+import { getFlatBindings, setFlatBindings } from '../binding.js'
+import { FULL_MASK } from '../update-loop.js'
+import type { StructuralBlock } from '../structural.js'
 
 export interface VirtualEachOptions<S, T, M = unknown> {
   items: (s: S) => T[]
@@ -232,11 +232,9 @@ export function virtualEach<S, T, M = unknown>(opts: VirtualEachOptions<S, T, M>
   }
   scroll.addEventListener('scroll', onScroll, { passive: true })
 
-  // Initial render
-  reconcile(ctx.state as S)
-
-  // Register as a structural block so LLui's update loop calls reconcile()
-  // when component state (and thus items) changes
+  // Register as a structural block BEFORE initial render so this block
+  // precedes any nested blocks its rows register. See branch.ts for the
+  // full rationale (Phase 1 iteration safety).
   const block: StructuralBlock = {
     mask: FULL_MASK,
     reconcile(state: unknown) {
@@ -246,6 +244,9 @@ export function virtualEach<S, T, M = unknown>(opts: VirtualEachOptions<S, T, M>
     },
   }
   blocks.push(block)
+
+  // Initial render
+  reconcile(ctx.state as S)
 
   // Cleanup on parent disposal
   addDisposer(parentScope, () => {

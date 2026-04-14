@@ -1,5 +1,5 @@
 import type { Send } from '@llui/dom'
-import { en } from '../locale'
+import { en } from '../locale.js'
 
 /**
  * Progress — linear or circular progress indicator. Determinate (0..max) or

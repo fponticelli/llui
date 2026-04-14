@@ -6,6 +6,7 @@
     "declaration": true,
     "declarationMap": true,
     "sourceMap": true,
-    "stripInternal": true
+    "stripInternal": true,
+    "inlineSources": true
   }
 }

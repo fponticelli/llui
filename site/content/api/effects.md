@@ -161,20 +161,6 @@ geolocation({
 
 ## Functions
 
-### `resolveEffects()`
-
-Execute all HTTP effects from the effect list, apply responses
-to state via update(), return the final loaded state.
-
-```typescript
-function resolveEffects<S, M extends { type: string }, E extends { type: string }>(
-  state: S,
-  effects: E[],
-  update: UpdateFn<S, M, E>,
-  maxDepth = 3,
-): Promise<S>
-```
-
 ### `http()`
 
 ```typescript

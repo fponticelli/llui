@@ -1,7 +1,7 @@
-import { getRenderContext } from '../render-context'
-import { createBinding } from '../binding'
-import { addCheckedItemUpdater } from '../scope'
-import { FULL_MASK } from '../update-loop'
+import { getRenderContext } from '../render-context.js'
+import { createBinding } from '../binding.js'
+import { addCheckedItemUpdater } from '../scope.js'
+import { FULL_MASK } from '../update-loop.js'
 
 export function text<S>(
   accessor: ((s: S) => string) | (() => string) | string,

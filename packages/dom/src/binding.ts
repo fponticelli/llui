@@ -1,5 +1,5 @@
-import type { Scope, Binding, BindingKind } from './types'
-import { addBinding } from './scope'
+import type { Scope, Binding, BindingKind } from './types.js'
+import { addBinding } from './scope.js'
 
 export interface CreateBindingOpts {
   mask: number
@@ -43,6 +43,23 @@ export function applyBinding(
   target: { kind: BindingKind; node: Node; key?: string },
   value: unknown,
 ): void {
+  // Defensive guard: if a reactive accessor leaks through as a raw
+  // function value, emitting its `.toString()` into the DOM (e.g. as
+  // an attribute) would be a silent correctness bug that only surfaces
+  // on server-rendered pages. Throw loudly so the callsite is obvious.
+  // Event handlers (onXxx → 'prop' kind) are NOT handled here; events
+  // are registered via addEventListener in the element helpers, not
+  // via applyBinding.
+  if (typeof value === 'function') {
+    throw new TypeError(
+      `[LLui] applyBinding(${target.kind}${target.key ? `, '${target.key}'` : ''}) received ` +
+        `a function as its value. This means an accessor wasn't invoked before ` +
+        `reaching the binding layer — usually a bug in a compiled binding tuple or ` +
+        `in a helper that forwards props without calling them. The arrow's source ` +
+        `would have been serialized into the DOM otherwise. Offender: ${value.toString().slice(0, 120)}`,
+    )
+  }
+
   switch (target.kind) {
     case 'text':
       target.node.nodeValue = String(value)

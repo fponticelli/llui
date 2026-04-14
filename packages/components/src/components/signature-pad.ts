@@ -1,7 +1,7 @@
 import type { Send } from '@llui/dom'
 import { useContext } from '@llui/dom'
-import { LocaleContext } from '../locale'
-import type { Locale } from '../locale'
+import { LocaleContext } from '../locale.js'
+import type { Locale } from '../locale.js'
 
 /**
  * Signature pad — capture free-form strokes on a canvas. The state

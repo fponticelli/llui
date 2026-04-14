@@ -16,53 +16,53 @@ export type {
   PortalOptions,
   ForeignOptions,
   ChildOptions,
-} from './types'
+} from './types.js'
 
 // ── Component ─────────────────────────────────────────────────────
 
-export { component } from './component'
-export { createView, type View } from './view-helpers'
+export { component } from './component.js'
+export { createView, type View } from './view-helpers.js'
 
 // ── Mount ─────────────────────────────────────────────────────────
 
-export { mountApp, hydrateApp, type MountOptions } from './mount'
+export { mountApp, hydrateApp, type MountOptions } from './mount.js'
 // installDevTools is NOT re-exported here to keep it out of production bundles.
 // Import directly: import { installDevTools } from '@llui/dom/devtools'
-export type { LluiDebugAPI } from './devtools'
+export type { LluiDebugAPI } from './devtools.js'
 
 // ── Runtime ───────────────────────────────────────────────────────
 
-export { flush } from './runtime'
-export { addressOf } from './addressed'
-export { renderToString } from './ssr'
-export { mergeHandlers } from './merge-handlers'
-export { createContext, provide, useContext, type Context } from './primitives/context'
-export { sliceHandler } from './slice-handler'
+export { flush } from './runtime.js'
+export { addressOf } from './addressed.js'
+export { renderToString } from './ssr.js'
+export { mergeHandlers } from './merge-handlers.js'
+export { createContext, provide, useContext, type Context } from './primitives/context.js'
+export { sliceHandler } from './slice-handler.js'
 export {
   childHandlers,
   type ChildState,
   type ChildMsg,
   type ModuleState,
   type ModuleMsg,
-} from './compose'
+} from './compose.js'
 
 // ── View Primitives ───────────────────────────────────────────────
 
-export { text } from './primitives/text'
-export { branch } from './primitives/branch'
-export { each } from './primitives/each'
-export { virtualEach, type VirtualEachOptions } from './primitives/virtual-each'
-export { show } from './primitives/show'
-export { slice } from './primitives/slice'
-export { portal } from './primitives/portal'
-export { foreign } from './primitives/foreign'
-export { child } from './primitives/child'
-export { lazy, type LazyOptions } from './primitives/lazy'
-export type { LazyDef } from './types'
-export { memo } from './primitives/memo'
-export { selector } from './primitives/selector'
-export { onMount } from './primitives/on-mount'
-export { errorBoundary } from './primitives/error-boundary'
+export { text } from './primitives/text.js'
+export { branch } from './primitives/branch.js'
+export { each } from './primitives/each.js'
+export { virtualEach, type VirtualEachOptions } from './primitives/virtual-each.js'
+export { show } from './primitives/show.js'
+export { slice } from './primitives/slice.js'
+export { portal } from './primitives/portal.js'
+export { foreign } from './primitives/foreign.js'
+export { child } from './primitives/child.js'
+export { lazy, type LazyOptions } from './primitives/lazy.js'
+export type { LazyDef } from './types.js'
+export { memo } from './primitives/memo.js'
+export { selector } from './primitives/selector.js'
+export { onMount } from './primitives/on-mount.js'
+export { errorBoundary } from './primitives/error-boundary.js'
 
 // ── Element Helpers ───────────────────────────────────────────────
 
@@ -133,7 +133,7 @@ export {
   tr,
   ul,
   video,
-} from './elements'
+} from './elements.js'
 
 // ── SVG Elements ─────────────────────────────────────────────────
 
@@ -196,7 +196,7 @@ export {
   desc,
   title as svgTitle,
   metadata,
-} from './svg-elements'
+} from './svg-elements.js'
 
 // ── MathML Elements ──────────────────────────────────────────────
 
@@ -232,14 +232,14 @@ export {
   semantics,
   annotation,
   annotationXml,
-} from './mathml-elements'
+} from './mathml-elements.js'
 
 // ── Form Utilities ────────────────────────────────────────────────
 
-export { applyField, type FieldMsg } from './form'
+export { applyField, type FieldMsg } from './form.js'
 
 // ── Compiler Target ───────────────────────────────────────────────
 
-export { elSplit } from './el-split'
-export { elTemplate } from './el-template'
-export { _runPhase2 as __runPhase2, _handleMsg as __handleMsg } from './update-loop'
+export { elSplit } from './el-split.js'
+export { elTemplate } from './el-template.js'
+export { _runPhase2 as __runPhase2, _handleMsg as __handleMsg } from './update-loop.js'

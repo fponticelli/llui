@@ -1,7 +1,7 @@
-import type { ForeignOptions, Send } from '../types'
-import { getRenderContext } from '../render-context'
-import { createBinding } from '../binding'
-import { createScope, addDisposer } from '../scope'
+import type { ForeignOptions, Send } from '../types.js'
+import { getRenderContext } from '../render-context.js'
+import { createBinding } from '../binding.js'
+import { createScope, addDisposer } from '../scope.js'
 
 const FULL_MASK = 0xffffffff
 

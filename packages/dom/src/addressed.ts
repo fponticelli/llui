@@ -1,5 +1,5 @@
-import type { ComponentDef } from './types'
-import { setAddressedDispatcher } from './update-loop'
+import type { ComponentDef } from './types.js'
+import { setAddressedDispatcher } from './update-loop.js'
 
 export interface AddressedEffect {
   __addressed: true

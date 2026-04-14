@@ -1,8 +1,8 @@
 import type { Send } from '@llui/dom'
 import { useContext } from '@llui/dom'
-import { flipArrow } from '../utils/direction'
-import { LocaleContext, en } from '../locale'
-import type { Locale } from '../locale'
+import { flipArrow } from '../utils/direction.js'
+import { LocaleContext, en } from '../locale.js'
+import type { Locale } from '../locale.js'
 
 /**
  * Date picker — calendar with month navigation and date selection. Works

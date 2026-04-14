@@ -1,4 +1,4 @@
-import { createVariants, type VariantProps } from '../utils/variants'
+import { createVariants, type VariantProps } from '../utils/variants.js'
 
 const contentVariants = createVariants({
   base: 'bg-text text-text-inverted shadow-md px-2.5 py-1.5',

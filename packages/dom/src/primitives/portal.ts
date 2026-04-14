@@ -1,6 +1,6 @@
-import type { PortalOptions } from '../types'
-import { getRenderContext, setRenderContext, clearRenderContext } from '../render-context'
-import { createScope, addDisposer } from '../scope'
+import type { PortalOptions } from '../types.js'
+import { getRenderContext, setRenderContext, clearRenderContext } from '../render-context.js'
+import { createScope, addDisposer } from '../scope.js'
 
 export function portal(opts: PortalOptions): Node[] {
   const ctx = getRenderContext('portal')

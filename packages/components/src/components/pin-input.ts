@@ -1,6 +1,6 @@
 import type { Send } from '@llui/dom'
-import { flipArrow } from '../utils/direction'
-import { en } from '../locale'
+import { flipArrow } from '../utils/direction.js'
+import { en } from '../locale.js'
 
 /**
  * Pin input — a sequence of single-character fields for OTP codes, etc.

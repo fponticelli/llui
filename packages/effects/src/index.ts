@@ -1256,4 +1256,4 @@ function runGeolocation(effect: GeolocationEffect, send: InternalSend, signal: A
 
 // ── SSR Effect Resolution ────────────────────────────────────────
 
-export { resolveEffects } from './resolve'
+export { resolveEffects } from './resolve.js'

@@ -1,4 +1,4 @@
-import { createVariants, type VariantProps } from '../utils/variants'
+import { createVariants, type VariantProps } from '../utils/variants.js'
 
 const rootVariants = createVariants({
   base: 'inline-flex items-center justify-center border-2 border-border rounded-sm cursor-pointer transition-all duration-fast data-[state=checked]:bg-primary data-[state=checked]:border-primary data-[state=indeterminate]:bg-primary data-[state=indeterminate]:border-primary data-[disabled]:opacity-50 data-[disabled]:cursor-not-allowed',

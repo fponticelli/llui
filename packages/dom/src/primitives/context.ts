@@ -1,6 +1,6 @@
-import type { Scope } from '../types'
-import { getRenderContext, setRenderContext, clearRenderContext } from '../render-context'
-import { createScope } from '../scope'
+import type { Scope } from '../types.js'
+import { getRenderContext, setRenderContext, clearRenderContext } from '../render-context.js'
+import { createScope } from '../scope.js'
 
 /**
  * Per-scope storage: scope → (context-id → accessor).

@@ -1,7 +1,7 @@
 import type { Send } from '@llui/dom'
 import { useContext } from '@llui/dom'
-import { LocaleContext, en } from '../locale'
-import type { Locale } from '../locale'
+import { LocaleContext, en } from '../locale.js'
+import type { Locale } from '../locale.js'
 
 /**
  * Carousel — sliding content viewer with pagination. Tracks active slide

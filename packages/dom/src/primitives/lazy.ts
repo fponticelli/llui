@@ -1,9 +1,9 @@
-import type { ComponentDef, LazyDef } from '../types'
-import { getRenderContext, setRenderContext, clearRenderContext } from '../render-context'
-import { createScope, disposeScope, addDisposer } from '../scope'
-import { createComponentInstance } from '../update-loop'
-import { setFlatBindings } from '../binding'
-import { createView, type View } from '../view-helpers'
+import type { ComponentDef, LazyDef } from '../types.js'
+import { getRenderContext, setRenderContext, clearRenderContext } from '../render-context.js'
+import { createScope, disposeScope, addDisposer } from '../scope.js'
+import { createComponentInstance } from '../update-loop.js'
+import { setFlatBindings } from '../binding.js'
+import { createView, type View } from '../view-helpers.js'
 
 export interface LazyOptions<S, M, D> {
   /** Async loader — typically `() => import('./MyComponent').then(m => m.default)`. */

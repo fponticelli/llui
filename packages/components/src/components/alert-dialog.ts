@@ -8,7 +8,7 @@ import {
   type DialogMsg,
   type DialogParts,
   type ConnectOptions as DialogConnectOptions,
-} from './dialog'
+} from './dialog.js'
 
 /**
  * Alert dialog — a variant of dialog for destructive confirmations or

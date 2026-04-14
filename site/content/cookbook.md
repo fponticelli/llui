@@ -654,6 +654,23 @@ if (serverState && container.children.length > 0) {
 }
 ```
 
+`hydrateApp` uses the `serverState` you pass in (instead of whatever
+`init()` would return) so the client tree lines up with the HTML the
+server already rendered. **Effects from the original `init()` are
+still dispatched** after hydration completes — subscriptions,
+initial data loads, and other effect-based wiring work the same way
+they would on a fresh mount. If your `init` returns effects that
+would duplicate work already done by the server (e.g. re-fetching
+data that's baked into `serverState`), gate them inside `init`
+based on a flag in state:
+
+```typescript
+init: (data) => {
+  const loaded = data?.loaded === true
+  return [data ?? { loaded: false, items: [] }, loaded ? [] : [http({ url: '/api/items' /* … */ })]]
+}
+```
+
 ## Foreign Libraries
 
 ### Shadow DOM for Style Isolation
@@ -760,16 +777,32 @@ listener forwards to `__lluiConnect`.
 
 ### Setup
 
+MCP is **opt-in** — pass a port to the Vite plugin to enable it:
+
+```typescript
+// vite.config.ts
+import llui from '@llui/vite-plugin'
+
+export default {
+  plugins: [llui({ mcpPort: 5200 })],
+}
+```
+
+Then run both processes:
+
 ```bash
 # 1. Start the MCP server (separate terminal)
 npx @llui/mcp
 
-# 2. Start your dev server (Vite injects the relay automatically)
+# 2. Start your dev server
 npx vite
 ```
 
-The relay connects to `ws://127.0.0.1:5200` by default. Configure via the
-Vite plugin option:
+Without `mcpPort`, the plugin skips the discovery endpoint entirely
+— no 404 polling, no browser-side relay code. Opt in only when you
+actually want interactive debugging.
+
+Configure a custom port via the plugin option:
 
 ```typescript
 // vite.config.ts

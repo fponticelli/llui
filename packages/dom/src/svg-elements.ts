@@ -1,7 +1,7 @@
-import type { BindingKind } from './types'
-import { getRenderContext } from './render-context'
-import { createBinding, applyBinding } from './binding'
-import { FULL_MASK } from './update-loop'
+import type { BindingKind } from './types.js'
+import { getRenderContext } from './render-context.js'
+import { createBinding, applyBinding } from './binding.js'
+import { FULL_MASK } from './update-loop.js'
 
 const SVG_NS = 'http://www.w3.org/2000/svg'
 

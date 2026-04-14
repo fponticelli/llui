@@ -1,5 +1,5 @@
-import { getRenderContext, setRenderContext, clearRenderContext } from '../render-context'
-import { createScope, disposeScope } from '../scope'
+import { getRenderContext, setRenderContext, clearRenderContext } from '../render-context.js'
+import { createScope, disposeScope } from '../scope.js'
 
 export function errorBoundary(opts: {
   render: () => Node[]

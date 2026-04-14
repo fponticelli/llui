@@ -1,8 +1,8 @@
-import type { ComponentDef, Scope, Binding } from './types'
-import type { StructuralBlock } from './structural'
-import { createScope } from './scope'
-import { applyBinding } from './binding'
-import { setCurrentDirtyMask } from './primitives/memo'
+import type { ComponentDef, Scope, Binding } from './types.js'
+import type { StructuralBlock } from './structural.js'
+import { createScope } from './scope.js'
+import { applyBinding } from './binding.js'
+import { setCurrentDirtyMask } from './primitives/memo.js'
 
 export const FULL_MASK = 0xffffffff | 0
 
@@ -201,9 +201,13 @@ function genericUpdate<S, M, E>(
   bindings: Binding[],
   bindingsBeforePhase1: number,
 ): void {
-  // Phase 1 — structural reconciliation. Re-read length and null-check
-  // each slot: a branch's reconcile may dispose the old scope, whose
-  // disposers splice child blocks out of this shared array mid-iteration.
+  // Phase 1 — structural reconciliation. Structural primitives register
+  // their blocks BEFORE running builders, so parents precede their nested
+  // children in this array. That ordering matters: a parent's reconcile
+  // may dispose the old arm, whose disposers splice nested child blocks
+  // out of this shared array. Because children are always to the right
+  // of their parent, the splice shifts entries left — which is safe for
+  // a forward iterator that re-reads length each step.
   const blocks = inst.structuralBlocks
   for (let bi = 0; bi < blocks.length; bi++) {
     const block = blocks[bi]

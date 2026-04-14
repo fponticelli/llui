@@ -6,7 +6,7 @@ import {
   connect as dialogConnect,
   overlay as dialogOverlay,
   type DialogParts,
-} from '../components/dialog'
+} from '../components/dialog.js'
 
 /**
  * ConfirmDialog — a pre-wired dialog pattern for confirmations.

@@ -1,6 +1,6 @@
 import type { Send, TransitionOptions } from '@llui/dom'
 import { show, portal, onMount, div } from '@llui/dom'
-import { attachFloating, type Placement } from '../utils/floating'
+import { attachFloating, type Placement } from '../utils/floating.js'
 
 /**
  * Hover card — richer tooltip-like popup triggered by hover or focus.

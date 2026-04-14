@@ -85,8 +85,10 @@ export interface LluiPluginOptions {
    * to `ws://127.0.0.1:<port>` so an external `llui-mcp` server can forward
    * tool calls into the running app.
    *
-   * Set to `false` to disable the relay injection entirely.
-   * Default: 5200.
+   * Defaults to `false` (opt-in). Pass a number (typically `5200`) to
+   * enable. When enabled but the MCP server isn't running, the plugin
+   * returns 404 from its discovery endpoint and the browser silently
+   * skips the connection — no retry noise.
    */
   mcpPort?: number | false
 }

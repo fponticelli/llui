@@ -1,13 +1,13 @@
 import type { Send, TransitionOptions } from '@llui/dom'
 import { show, portal, onMount, div } from '@llui/dom'
-import { pushDismissable } from '../utils/dismissable'
-import { attachFloating, type Placement } from '../utils/floating'
+import { pushDismissable } from '../utils/dismissable.js'
+import { attachFloating, type Placement } from '../utils/floating.js'
 import {
   typeaheadAccumulate,
   typeaheadMatchByItems,
   isTypeaheadKey,
   TYPEAHEAD_TIMEOUT_MS,
-} from '../utils/typeahead'
+} from '../utils/typeahead.js'
 
 /**
  * Menu — a dropdown list of items triggered by a button. Keyboard navigation

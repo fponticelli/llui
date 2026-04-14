@@ -1,11 +1,11 @@
 import type { Send, TransitionOptions } from '@llui/dom'
 import { show, portal, onMount, div, useContext } from '@llui/dom'
-import { LocaleContext } from '../locale'
-import type { Locale } from '../locale'
-import { pushFocusTrap } from '../utils/focus-trap'
-import { pushDismissable } from '../utils/dismissable'
-import { setAriaHiddenOutside } from '../utils/aria-hidden'
-import { lockBodyScroll } from '../utils/remove-scroll'
+import { LocaleContext } from '../locale.js'
+import type { Locale } from '../locale.js'
+import { pushFocusTrap } from '../utils/focus-trap.js'
+import { pushDismissable } from '../utils/dismissable.js'
+import { setAriaHiddenOutside } from '../utils/aria-hidden.js'
+import { lockBodyScroll } from '../utils/remove-scroll.js'
 
 /**
  * Dialog — modal / non-modal overlay. Ties together focus-trap, dismissable,

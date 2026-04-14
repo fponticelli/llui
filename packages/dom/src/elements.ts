@@ -1,7 +1,7 @@
-import type { BindingKind } from './types'
-import { getRenderContext } from './render-context'
-import { createBinding, applyBinding } from './binding'
-import { FULL_MASK } from './update-loop'
+import type { BindingKind } from './types.js'
+import { getRenderContext } from './render-context.js'
+import { createBinding, applyBinding } from './binding.js'
+import { FULL_MASK } from './update-loop.js'
 
 type ElementProps = Record<string, unknown>
 type Child = Node | string | Node[]

@@ -1,4 +1,4 @@
-import { createVariants, type VariantProps } from '../utils/variants'
+import { createVariants, type VariantProps } from '../utils/variants.js'
 
 const linkVariants = createVariants({
   base: 'block text-text-muted transition-colors duration-fast hover:text-text data-[state=active]:text-primary data-[state=active]:font-medium',

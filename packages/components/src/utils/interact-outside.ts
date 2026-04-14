@@ -1,4 +1,4 @@
-import { resolveElements, isInAnyElement, type ElementSource } from './dom'
+import { resolveElements, isInAnyElement, type ElementSource } from './dom.js'
 
 export interface InteractOutsideOptions {
   /** Element(s) that define the "inside" region. */

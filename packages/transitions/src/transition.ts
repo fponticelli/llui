@@ -1,6 +1,6 @@
 import type { TransitionOptions } from '@llui/dom'
-import type { TransitionSpec } from './types'
-import { applyValue, removeValue, asElements, detectDuration, forceReflow } from './style-utils'
+import type { TransitionSpec } from './types.js'
+import { applyValue, removeValue, asElements, detectDuration, forceReflow } from './style-utils.js'
 
 // Buffer added to setTimeout so styles have settled before resolution.
 const TIMING_BUFFER_MS = 16

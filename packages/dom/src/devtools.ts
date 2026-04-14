@@ -1,6 +1,6 @@
-import { flushInstance, _forceState, type ComponentInstance } from './update-loop'
-import { _setDevToolsInstall } from './mount'
-import type { Binding } from './types'
+import { flushInstance, _forceState, type ComponentInstance } from './update-loop.js'
+import { _setDevToolsInstall } from './mount.js'
+import type { Binding } from './types.js'
 
 /**
  * Enable devtools auto-installation for every mountApp call. Called by

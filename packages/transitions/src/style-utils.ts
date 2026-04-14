@@ -1,4 +1,4 @@
-import type { Styles, TransitionValue } from './types'
+import type { Styles, TransitionValue } from './types.js'
 
 // CSS properties that are unitless when given a numeric value.
 // All other numeric values are suffixed with `px`.

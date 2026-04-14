@@ -1,7 +1,7 @@
-export * as confirmDialog from './confirm-dialog'
+export * as confirmDialog from './confirm-dialog.js'
 export type {
   ConfirmDialogState,
   ConfirmDialogMsg,
   ConfirmDialogInit,
   ConfirmDialogViewOptions,
-} from './confirm-dialog'
+} from './confirm-dialog.js'

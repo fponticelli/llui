@@ -1,10 +1,11 @@
-import type { ComponentDef, AppHandle } from './types'
-import { createComponentInstance, flushInstance } from './update-loop'
-import { disposeScope } from './scope'
-import { setRenderContext, clearRenderContext } from './render-context'
-import { setFlatBindings } from './binding'
-import { registerInstance, unregisterInstance } from './runtime'
-import { createView } from './view-helpers'
+import type { ComponentDef, AppHandle } from './types.js'
+import { createComponentInstance, flushInstance } from './update-loop.js'
+import { disposeScope } from './scope.js'
+import { setRenderContext, clearRenderContext } from './render-context.js'
+import { setFlatBindings } from './binding.js'
+import { registerInstance, unregisterInstance } from './runtime.js'
+import { createView } from './view-helpers.js'
+import { pushMountQueue, popMountQueue, flushMountQueue } from './primitives/on-mount.js'
 
 // Vite injects import.meta.env.DEV — declare the shape for TypeScript
 declare global {
@@ -70,12 +71,17 @@ export function mountApp<S, M, E>(
     }
   }
 
-  // Run view() within a render context so primitives can register bindings
+  // Run view() within a render context so primitives can register bindings.
+  // Also collect onMount callbacks in a queue we'll flush synchronously
+  // after node insertion — prevents the race where a user event fires
+  // between mount and the queueMicrotask callback running.
+  const { queue: onMountQueue, prev: prevMountQueue } = pushMountQueue()
   setFlatBindings(inst.allBindings)
   setRenderContext({ ...inst, container, send: inst.send as (msg: unknown) => void })
   const nodes = def.view(createView<S, M>(inst.send))
   clearRenderContext()
   setFlatBindings(null)
+  popMountQueue(prevMountQueue)
 
   // Batch-insert via DocumentFragment — one layout-invalidating operation
   // instead of N individual appendChild calls on a live container element.
@@ -86,6 +92,12 @@ export function mountApp<S, M, E>(
   } else if (nodes.length === 1) {
     container.appendChild(nodes[0]!)
   }
+
+  // Flush onMount callbacks SYNCHRONOUSLY now that the DOM is in place.
+  // Any listeners they attach are ready before this function returns,
+  // so a synchronous dispatchEvent in the caller's next line fires
+  // against a fully-wired tree.
+  flushMountQueue(onMountQueue)
 
   registerInstance(inst)
   if (hmrModule && def.name) {
@@ -175,23 +187,44 @@ export function hydrateApp<S, M, E>(
   def: ComponentDef<S, M, E>,
   serverState: S,
 ): AppHandle {
+  // Run the original init once to capture its effects. The state it
+  // returns is discarded — we use `serverState` (what the server
+  // rendered with) instead. The effects are preserved and dispatched
+  // after the DOM is in place, so components that rely on "load data
+  // or wire subscriptions on mount" behave consistently between fresh
+  // mount and SSR+hydrate. If the original init has already-loaded
+  // data for the hydration case, gate the effect emission inside init
+  // itself (e.g. based on a `loaded` flag in state).
+  const [, originalEffects] = (def.init as (data: unknown) => [S, E[]])(undefined)
+
   const hydrateDef: ComponentDef<S, M, E> = {
     ...def,
-    init: () => [serverState, []],
+    init: () => [serverState, originalEffects],
   }
 
   const inst = createComponentInstance(hydrateDef)
 
   // Build the component DOM and swap atomically with server HTML.
   // Server HTML remains visible until JS finishes — no flash.
+  // onMount callbacks are collected in a queue and flushed synchronously
+  // after the swap, matching mountApp's ordering.
+  const { queue: onMountQueue, prev: prevMountQueue } = pushMountQueue()
   setFlatBindings(inst.allBindings)
   setRenderContext({ ...inst, container, send: inst.send as (msg: unknown) => void })
   const nodes = hydrateDef.view(createView<S, M>(inst.send))
   clearRenderContext()
   setFlatBindings(null)
+  popMountQueue(prevMountQueue)
 
   // Atomic swap — replaces server HTML with client DOM in one operation
   container.replaceChildren(...nodes)
+
+  // Flush onMount callbacks synchronously now that the DOM is in place.
+  flushMountQueue(onMountQueue)
+
+  // Fire the original init's effects post-swap, matching mountApp's
+  // lifecycle. Previously these were silently dropped.
+  dispatchInitialEffects(inst)
 
   registerInstance(inst)
   let disposed = false

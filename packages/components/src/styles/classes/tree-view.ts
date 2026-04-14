@@ -1,4 +1,4 @@
-import { createVariants, type VariantProps } from '../utils/variants'
+import { createVariants, type VariantProps } from '../utils/variants.js'
 
 const itemVariants = createVariants({
   base: 'flex items-center cursor-pointer transition-colors duration-fast hover:bg-surface-hover data-[state=selected]:bg-surface-active rounded-md',
