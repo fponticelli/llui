@@ -1,7 +1,8 @@
 import type { LluiDebugAPI } from '@llui/dom'
+import { lintIdiomatic } from '@llui/lint-idiomatic'
 import { WebSocketServer, type WebSocket } from 'ws'
 import { randomUUID } from 'node:crypto'
-import { mkdirSync, writeFileSync, unlinkSync, existsSync } from 'node:fs'
+import { mkdirSync, writeFileSync, unlinkSync, existsSync, readFileSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 
 /**
@@ -338,6 +339,31 @@ const TOOLS: McpToolDefinition[] = [
       },
     },
   },
+  {
+    name: 'llui_lint',
+    description:
+      "Lint LLui source code against @llui/lint-idiomatic's 17 anti-pattern rules. Returns violations grouped by rule with line/column/suggestion fields, plus a 0–17 score (17 = fully idiomatic). Pass either `source` (raw TypeScript code) or `path` (absolute file path on the dev machine) — exactly one is required. The optional `exclude` array skips specific rule names. Use this after writing or editing LLui code to self-correct: catches state mutation, missing memo(), each() closure violations, view-bag-import (use the bag inside component bodies, see llm-guide.md), missing exhaustive update() cases, async update() (must be sync), nested send() in update(), spread-in-children (use each() instead), imperative DOM in view(), and more. The same rules run as a Vite plugin in dev — this tool gives LLMs the same feedback without requiring a build.",
+    inputSchema: {
+      type: 'object',
+      properties: {
+        source: {
+          type: 'string',
+          description: 'TypeScript source code to lint. Mutually exclusive with `path`.',
+        },
+        path: {
+          type: 'string',
+          description:
+            'Absolute file path to read and lint (must be a .ts/.tsx file). Mutually exclusive with `source`.',
+        },
+        exclude: {
+          type: 'array',
+          items: { type: 'string' },
+          description:
+            "Rule names to skip (e.g. ['map-on-state-array']). Useful when running in a project that already gets that rule from @llui/vite-plugin's diagnose() pass.",
+        },
+      },
+    },
+  },
 ]
 
 // ── MCP Server ──────────────────────────────────────────────────
@@ -539,6 +565,46 @@ export class LluiMcpServer {
           filename: `${trace.component.toLowerCase()}-replay.test.ts`,
           code: generateReplayTest(trace, importPath, exportName),
           entryCount: trace.entries.length,
+        }
+      }
+
+      case 'llui_lint': {
+        const sourceArg = args.source as string | undefined
+        const pathArg = args.path as string | undefined
+        const excludeArg = args.exclude as string[] | undefined
+
+        if (sourceArg !== undefined && pathArg !== undefined) {
+          throw new Error("llui_lint: provide either 'source' or 'path', not both")
+        }
+        if (sourceArg === undefined && pathArg === undefined) {
+          throw new Error("llui_lint: must provide either 'source' or 'path'")
+        }
+
+        let code: string
+        let filename: string
+        if (sourceArg !== undefined) {
+          code = sourceArg
+          filename = 'input.ts'
+        } else {
+          // pathArg is defined here
+          if (!pathArg!.endsWith('.ts') && !pathArg!.endsWith('.tsx')) {
+            throw new Error(`llui_lint: path must end in .ts or .tsx (got ${pathArg!})`)
+          }
+          if (!existsSync(pathArg!)) {
+            throw new Error(`llui_lint: file not found: ${pathArg!}`)
+          }
+          code = readFileSync(pathArg!, 'utf8')
+          filename = pathArg!
+        }
+
+        const result = lintIdiomatic(code, filename, {
+          exclude: excludeArg,
+        })
+        return {
+          file: filename,
+          score: result.score,
+          violations: result.violations,
+          summary: `${result.violations.length} violation(s), score ${result.score}/17`,
         }
       }
 

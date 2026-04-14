@@ -15,6 +15,75 @@ returns DOM nodes once at mount and binds state to the DOM through accessor
 functions. State is immutable. Effects are plain data objects returned from
 `update()`. Destructure view helpers from the single `View<S, M>` parameter.
 
+## Canonical shape
+
+This is what an LLui component looks like. Mirror this shape — destructure
+reactive primitives (`text`, `each`, `show`, `branch`, `memo`, `selector`,
+`ctx`) from the view bag, import element helpers (`div`, `button`, `span`…)
+directly:
+
+```typescript
+import { component, div, button } from '@llui/dom'
+
+type State = { count: number }
+type Msg = { type: 'inc' } | { type: 'dec' } | { type: 'reset' }
+
+export const Counter = component<State, Msg, never>({
+  name: 'Counter',
+  init: () => [{ count: 0 }, []],
+  update: (state, msg) => {
+    switch (msg.type) {
+      case 'inc':
+        return [{ ...state, count: state.count + 1 }, []]
+      case 'dec':
+        return [{ ...state, count: Math.max(0, state.count - 1) }, []]
+      case 'reset':
+        return [{ count: 0 }, []]
+    }
+  },
+  // Destructure ALL the reactive primitives you need from the view bag.
+  // Inside the bag, `s` infers as State without annotation.
+  view: ({ send, text, show }) => [
+    div({ class: 'counter' }, [
+      button({ onClick: () => send({ type: 'dec' }) }, [text('-')]),
+      text((s) => String(s.count)),
+      button({ onClick: () => send({ type: 'inc' }) }, [text('+')]),
+    ]),
+    ...show({
+      when: (s) => s.count > 0,
+      render: () => [button({ onClick: () => send({ type: 'reset' }) }, [text('reset')])],
+    }),
+  ],
+})
+```
+
+## Reactive primitives: bag vs. import
+
+`text`, `each`, `show`, `branch`, `memo`, `selector`, and `ctx` exist in two
+forms that are **the same functions at runtime**:
+
+1. **Destructured from the view bag** (`view: ({ text, each }) => …`) —
+   pre-bound to the component's `S` and `M`, so `(s) => s.field` infers
+   without annotation.
+2. **Imported from `@llui/dom`** — the stateless entry point. You must
+   annotate `(s: State) => …` explicitly when reading state.
+
+The bag is a typing shim over the imports — there is no second
+implementation. The split exists only because TypeScript can't infer
+`S` from call-site context without a parameter carrying the type.
+
+**Mechanical rule:**
+
+- _Inside_ a `component({ view: (h) => … })` body → **destructure from
+  the bag**. No annotations needed.
+- _Outside_ — Level-1 view functions, shared UI helpers, test fixtures,
+  scratch scripts → **import directly** and annotate `(s: State) => …`
+  where you read state.
+
+The `@llui/lint-idiomatic` plugin's `view-bag-import` rule enforces this
+automatically. It only fires inside files that contain a `component()`
+call, leaving helper modules alone.
+
 ## Key Types
 
 ```typescript
@@ -107,41 +176,13 @@ onEffect: handleEffects<Effect, Msg>()
   .else(({ effect, send, signal }) => { /* custom effects */ })
 ```
 
-## Example
-
-```typescript
-import { component, div, button } from '@llui/dom'
-
-type State = { count: number }
-type Msg = { type: 'inc' } | { type: 'dec' }
-
-export const Counter = component<State, Msg, never>({
-  name: 'Counter',
-  init: () => [{ count: 0 }, []],
-  update: (state, msg) => {
-    switch (msg.type) {
-      case 'inc':
-        return [{ ...state, count: state.count + 1 }, []]
-      case 'dec':
-        return [{ ...state, count: Math.max(0, state.count - 1) }, []]
-    }
-  },
-  view: ({ send, text }) =>
-    div({ class: 'counter' }, [
-      button({ onClick: () => send({ type: 'dec' }) }, [text('-')]),
-      text((s) => String(s.count)),
-      button({ onClick: () => send({ type: 'inc' }) }, [text('+')]),
-    ]),
-})
-```
-
 ## Rules
 
 - Never mutate state in `update()`. Always return a new object: `{ ...state, field: newValue }`.
 - Reactive values in `view()` are arrow functions: `text(s => s.label)`, `div({ class: s => s.active ? 'on' : '' })`.
 - Static values are literals: `div({ class: 'container' })`.
 - Destructure view helpers from the `view` argument: `view: ({ send, show, each, branch, text, memo }) => [...]`. This pins `s: S` across all state-bound calls -- no per-call generics. Import element helpers (`div`, `button`, `span`...) normally.
-- **Never import `text`, `each`, `show`, `branch`, `memo` from `@llui/dom`** -- always use the view bag's versions. The bag versions are typed to the component's `State`; the import versions are weakly typed.
+- **Inside a component view body, destructure reactive primitives from the bag** (`text`, `each`, `show`, `branch`, `memo`, `selector`, `ctx`). Do NOT import them — the bag form gives `(s) => s.field` type inference, the imported form does not. The lint rule `view-bag-import` enforces this. (Outside a component body — Level-1 helpers, test fixtures — imports are correct and the lint rule won't fire.)
 - When extracting view helpers (functions called from `view`), pass the needed primitives as arguments: `function myHelper(text: View<S,M>['text'], send: Send<M>): Node[]`.
 - Never use `.map()` on state arrays in `view()`. Always use `each()` for reactive lists.
 - Never spread arrays into element children: `div([...arr.map(...)])` prevents template-clone optimization. Use `each()` instead, even for static arrays.
@@ -171,3 +212,4 @@ export const Counter = component<State, Msg, never>({
 - For component label translations, components read from `LocaleContext` (exported from `@llui/components`, defaulting to English) — English apps need zero setup. Non-English apps call `provide(LocaleContext, (s) => s.locale, () => [...])` at the root.
 - For number/date/list/plural formatting, use `formatNumber`, `formatDate`, `formatRelativeTime`, `formatList`, `formatPlural`, `formatFileSize` from `@llui/components` — all wrap `Intl.*` with caching and accept an optional `locale` option.
 - **MCP debug tools:** In dev mode, `window.__lluiDebug` exposes `getState()`, `send(msg)`, `getBindings()`, `whyDidUpdate(i)`, `decodeMask(n)`, `getMessageSchema()`, `snapshotState()`/`restoreState()`, and `exportTrace()`. The `@llui/mcp` package wraps these as MCP tools — run `npx @llui/mcp` alongside the dev server and connect via any MCP client (Claude Desktop, Claude Code) for interactive debugging. The relay connects on page load if the MCP server is running; otherwise call `__lluiConnect()` from the console.
+- **`llui_lint` MCP tool:** When writing or editing LLui code, call `llui_lint({ source })` or `llui_lint({ path })` to check it against the 17 idiomatic rules WITHOUT running a build. Returns violations with rule names, line/column, and suggestions, plus a 0–17 score. Use this after every non-trivial code generation to self-correct — it catches state mutation, missing memo(), each() closure violations, view-bag-import, async update(), and more. Pass `exclude: ['rule-name']` to skip specific rules. The same checks run as a Vite plugin in dev — this tool gives the LLM the same feedback loop interactively.

@@ -23,6 +23,7 @@
   },
   "dependencies": {
     "@llui/dom": "workspace:*",
+    "@llui/lint-idiomatic": "workspace:*",
     "ws": "^8.18.0"
   },
   "devDependencies": {

@@ -270,6 +270,9 @@ importers:
       '@llui/dom':
         specifier: workspace:*
         version: link:../dom
+      '@llui/lint-idiomatic':
+        specifier: workspace:*
+        version: link:../lint-idiomatic
       ws:
         specifier: ^8.18.0
         version: 8.20.0

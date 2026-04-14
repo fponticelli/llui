@@ -113,3 +113,158 @@ describe('LluiMcpServer', () => {
     await expect(server.handleToolCall('llui_get_state', {})).rejects.toThrow()
   })
 })
+
+describe('llui_lint tool', () => {
+  it('lints inline source via the source argument', async () => {
+    const server = new LluiMcpServer()
+    // No debug API needed — lint tool is independent of the running app
+    const source = `
+      import { component } from '@llui/dom'
+      type State = { count: number }
+      type Msg = { type: 'inc' }
+      const C = component<State, Msg, never>({
+        name: 'C',
+        init: () => [{ count: 0 }, []],
+        update: (state, msg) => {
+          state.count++  // mutation
+          return [state, []]
+        },
+        view: () => [],
+      })
+    `
+    const result = (await server.handleToolCall('llui_lint', { source })) as {
+      file: string
+      score: number
+      violations: Array<{ rule: string; line: number; message: string }>
+      summary: string
+    }
+    expect(result.file).toBe('input.ts')
+    expect(result.violations.length).toBeGreaterThan(0)
+    expect(result.violations.some((v) => v.rule === 'state-mutation')).toBe(true)
+    expect(result.score).toBeLessThan(17)
+    expect(result.summary).toContain('violation')
+  })
+
+  it('returns score 17 and zero violations for clean source', async () => {
+    const server = new LluiMcpServer()
+    const source = `
+      import { component, div } from '@llui/dom'
+      type State = { count: number }
+      type Msg = { type: 'inc' }
+      export const C = component<State, Msg, never>({
+        name: 'C',
+        init: () => [{ count: 0 }, []],
+        update: (state, msg) => {
+          switch (msg.type) {
+            case 'inc':
+              return [{ ...state, count: state.count + 1 }, []]
+          }
+        },
+        view: ({ text }) => [div({}, [text((s) => String(s.count))])],
+      })
+    `
+    const result = (await server.handleToolCall('llui_lint', { source })) as {
+      score: number
+      violations: unknown[]
+    }
+    expect(result.score).toBe(17)
+    expect(result.violations).toEqual([])
+  })
+
+  it('respects the exclude option', async () => {
+    const server = new LluiMcpServer()
+    const source = `
+      import { component } from '@llui/dom'
+      type State = { count: number }
+      type Msg = { type: 'inc' }
+      const C = component<State, Msg, never>({
+        name: 'C',
+        init: () => [{ count: 0 }, []],
+        update: (state, msg) => {
+          state.count++
+          return [state, []]
+        },
+        view: () => [],
+      })
+    `
+    const result = (await server.handleToolCall('llui_lint', {
+      source,
+      exclude: ['state-mutation'],
+    })) as {
+      violations: Array<{ rule: string }>
+    }
+    expect(result.violations.every((v) => v.rule !== 'state-mutation')).toBe(true)
+  })
+
+  it('throws when neither source nor path is provided', async () => {
+    const server = new LluiMcpServer()
+    await expect(server.handleToolCall('llui_lint', {})).rejects.toThrow(/source.*path/)
+  })
+
+  it('throws when both source and path are provided', async () => {
+    const server = new LluiMcpServer()
+    await expect(
+      server.handleToolCall('llui_lint', { source: 'x', path: '/tmp/foo.ts' }),
+    ).rejects.toThrow(/not both/)
+  })
+
+  it('lints a file via the path argument', async () => {
+    const { writeFileSync, mkdtempSync, rmSync } = await import('node:fs')
+    const { tmpdir } = await import('node:os')
+    const { join } = await import('node:path')
+
+    const dir = mkdtempSync(join(tmpdir(), 'llui-lint-test-'))
+    const filePath = join(dir, 'sample.ts')
+    writeFileSync(
+      filePath,
+      `
+        import { component } from '@llui/dom'
+        type State = { count: number }
+        type Msg = { type: 'inc' }
+        const C = component<State, Msg, never>({
+          name: 'C',
+          init: () => [{ count: 0 }, []],
+          update: (state) => { state.count++; return [state, []] },
+          view: () => [],
+        })
+      `,
+    )
+
+    try {
+      const server = new LluiMcpServer()
+      const result = (await server.handleToolCall('llui_lint', { path: filePath })) as {
+        file: string
+        violations: Array<{ rule: string }>
+      }
+      expect(result.file).toBe(filePath)
+      expect(result.violations.some((v) => v.rule === 'state-mutation')).toBe(true)
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
+  it('rejects non-.ts paths', async () => {
+    const server = new LluiMcpServer()
+    await expect(server.handleToolCall('llui_lint', { path: '/tmp/foo.js' })).rejects.toThrow(
+      /\.ts/,
+    )
+  })
+
+  it('rejects nonexistent paths', async () => {
+    const server = new LluiMcpServer()
+    await expect(
+      server.handleToolCall('llui_lint', { path: '/nonexistent/file.ts' }),
+    ).rejects.toThrow(/not found/)
+  })
+
+  it('exposes llui_lint in the tool list', () => {
+    const server = new LluiMcpServer()
+    const tools = server.getTools()
+    const lint = tools.find((t) => t.name === 'llui_lint')
+    expect(lint).toBeDefined()
+    expect(lint!.description).toContain('lint')
+    expect(lint!.inputSchema.properties.source).toBeDefined()
+    expect(lint!.inputSchema.properties.path).toBeDefined()
+    expect(lint!.inputSchema.properties.exclude).toBeDefined()
+  })
+})
