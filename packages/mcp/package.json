@@ -1,6 +1,6 @@
 {
   "name": "@llui/mcp",
-  "version": "0.0.7",
+  "version": "0.0.8",
   "type": "module",
   "sideEffects": false,
   "bin": {
