@@ -173,18 +173,23 @@ Released: `@llui/{dom,vite-plugin,test,router,transitions,components,vike,mcp}@0
 <one-sentence release summary>
 
 ### Breaking
+
 - ...
 
 ### Added
+
 - ...
 
 ### Fixed
+
 - ...
 
 ### Improved
+
 - ...
 
 ### Migration notes
+
 - ...
 ```
 
