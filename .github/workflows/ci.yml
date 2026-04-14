@@ -38,4 +38,12 @@ jobs:
         run: pnpm turbo lint
 
       - name: Test
+        # LLUI_SKIP_E2E skips @llui/mcp's playwright-e2e.test.ts, which
+        # spawns a real Vite dev server + Chromium browser. That requires
+        # `playwright install chromium` to download the ~250 MB binary
+        # and is flaky on CI's slower disks. The jsdom-based e2e.test.ts
+        # already covers the MCP protocol logic at the same level of
+        # detail; the browser test is a local-dev integration check.
+        env:
+          LLUI_SKIP_E2E: '1'
         run: pnpm turbo test
