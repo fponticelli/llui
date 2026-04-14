@@ -66,6 +66,7 @@ export function siteLayout<S extends LayoutState, M extends LayoutMsg>({
           navLink<S>('/architecture', 'architecture', 'Architecture', text),
           navLink<S>('/llm-guide', 'llm-guide', 'LLM Guide', text),
           navLink<S>('/benchmarks', 'benchmarks', 'Benchmarks', text),
+          navLink<S>('/changelog', 'changelog', 'Changelog', text),
           span({ class: 'nav-section' }, [text('Packages')]),
           navLink<S>('/api/dom', 'api/dom', 'dom', text),
           navLink<S>('/api/vite-plugin', 'api/vite-plugin', 'vite-plugin', text),
