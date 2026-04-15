@@ -11,6 +11,7 @@
     "format:check": "prettier --check .",
     "test": "turbo run test",
     "test:coverage": "turbo run test:coverage",
+    "test:e2e": "LLUI_RUN_E2E=1 pnpm --filter @llui/mcp test",
     "verify": "pnpm format && turbo run build check lint test",
     "bench": "tsx benchmarks/run-jfb.ts",
     "bench:build": "pnpm --filter js-framework-benchmark-keyed-llui build-prod",
