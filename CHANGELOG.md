@@ -11,6 +11,52 @@ All notable changes to LLui packages are documented here. LLui is a pre-1.0 proj
 
 Packages version in lockstep at release time: `@llui/dom`, `@llui/vite-plugin`, `@llui/test`, `@llui/router`, `@llui/transitions`, `@llui/components`, `@llui/vike` share a version line. `@llui/effects`, `@llui/mcp`, and `@llui/lint-idiomatic` have their own cadence.
 
+## 2026-04-15 — 0.0.16
+
+**Released:** `@llui/{dom,vite-plugin,test,router,transitions,components,vike}@0.0.16`; `@llui/mcp@0.0.10`; `@llui/lint-idiomatic@0.0.12`
+
+Headline: **persistent layouts** in `@llui/vike`. Declare app chrome (header, sidebar, session state, portalled dialogs) as a `Layout` component that stays mounted across client navigation — only the route's page disposes and re-mounts. Nested layout chains and per-route chain resolvers both supported from day one. Plus the supporting runtime primitives in `@llui/dom`, a compiler walker fix, and two lint-rule false-positive fixes.
+
+### `@llui/vike@0.0.16`
+
+- **Added** `Layout` option on `createOnRenderClient` / `createOnRenderHtml`. Accepts a single `ComponentDef`, an array `[outer, ..., inner]` for nested chains, or a `(pageContext) => chain` function for per-route resolution. Persistent layouts stay mounted across client nav; only the divergent suffix of the chain disposes and re-mounts. Outer-layer DOM — and every portal, focus trap, scroll position, and effect subscription rooted inside it — survives page swaps.
+- **Added** `pageSlot()` primitive (exported from `@llui/vike/client`) — a declarative structural marker a layout places in its view to declare where the nested Page or nested Layout renders. Creates its scope as a child of the current render scope so contexts flow from layout providers through the slot into the page via standard `useContext` lookups. Call exactly once per layout; layouts with zero or two-plus slots throw with descriptive errors.
+- **Added** Chain diff on nav walks old and new chains in parallel by component identity and preserves every shared prefix layer. Navigating between `/dashboard/reports` and `/dashboard/overview` disposes only the innermost `Page`; navigating from `/dashboard/*` to `/settings` collapses the chain to `[AppLayout]`. Per-route resolvers enable this cleanly.
+- **Added** Chain-aware hydration envelope: `window.__LLUI_STATE__` is now `{ layouts: [{ name, state }, ...], page: { name, state } }` for layout-using pages. Entries carry the component name so server/client chain mismatches fail loud with a clear error instead of silently binding wrong state to wrong instance. The legacy flat envelope shape is still read for pages without a configured `Layout` — no migration required for existing apps.
+- **Added** Regression tests covering single-layout mount + nav, nested 3-layer chains, context flow through the slot, chain diffing with per-route resolvers, SSR composed rendering, and error paths (missing `pageSlot` in a layout, `pageSlot` called from the innermost page). 10 tests in `packages/vike/test/layout.test.ts`.
+
+### `@llui/dom@0.0.16`
+
+- **Added** `MountOptions.parentScope` on `mountApp` / `hydrateApp` — when provided, the mounted instance's `rootScope` becomes a child of that scope. This is the keystone that makes persistent layouts compose: `@llui/vike`'s `pageSlot()` uses it to parent a page instance into its enclosing layout's scope tree, so `useContext` lookups walk layer boundaries and scope disposal cascades in the right direction on nav.
+- **Added** `@llui/dom/internal` subpath export. Surfaces low-level primitives (`getRenderContext`, `setRenderContext`, `clearRenderContext`, `createScope`, `disposeScope`, `addDisposer`) for framework-adapter packages that need to build structural primitives like `pageSlot()` on top of the runtime. Not part of the public app-author API — stability contract applies only to the main `@llui/dom` barrel.
+- **Added** `renderNodes` and `serializeNodes` factored out of `renderToString`. Chain renders (e.g. `@llui/vike/server`'s layout-composed SSR) can now render multiple instances, append their outputs into each other's slot markers, and serialize the composed tree once with the union of every layer's bindings. `renderToString` is a trivial one-liner on top and its public contract is unchanged.
+- **Fixed** `elSplit` children now flatten nested arrays one level, matching `createElement`'s existing behavior. Patterns like `main([helperReturningNodeArray()])` worked in unit tests (raw path flattens) but silently crashed at SSR build time because the compiled path didn't. Both paths now agree — catches this class of test-vs-production mismatch permanently.
+
+### `@llui/vite-plugin@0.0.16`
+
+- **Fixed** `computeAccessorMask`'s AST walker no longer crashes on chained method calls inside template literals inside reactive accessors. Previously a pattern like `text((_s) => \`$${item.x.toLocaleString()}\`)`inside an`each()`row crashed the whole build with "Cannot read properties of undefined (reading 'kind')" — the row-factory rewrite synthesizes new sub-trees whose inner`PropertyAccessExpression`nodes have no parent pointers, and the walker's`ts.isPropertyAccessExpression(node.parent)`crashed on undefined. Guarded every parent access in the walker; mask accounting is unchanged because resolving a chain from an inner PAE produces a prefix of the outer chain (idempotent`|=`). Regression tests in `accessor-walker-parent.test.ts`.
+
+### `@llui/lint-idiomatic@0.0.12`
+
+- **Fixed** `state-mutation` rule's "Increment/decrement on state" check no longer flags all prefix and postfix unary operators on state access — only `++` and `--` count as mutations. Before the fix, the canonical toggle reducer `return [{ ...state, flag: !state.flag }, []]` was flagged as a mutation because `!` is a prefix unary operator; `-state.x`, `~state.x`, `+state.x` were caught the same way.
+- **Fixed** `spread-in-children` rule now exempts `provide` and `pageSlot` alongside the existing structural-primitive exemptions (`each`, `show`, `branch`, `virtualEach`, `onMount`). Both return `Node[]` and must be spread, and the rule was tripping on every layout authoring pattern that placed a context provider or page slot inside an element-helper children array.
+- **Fixed** `@llui/lint-idiomatic/vite` plugin now reads source from disk via `readFileSync(id)` inside the transform hook instead of trusting the pipeline `code` argument. Before the fix, `enforce: 'post'` meant the plugin was linting the AST AFTER `@llui/vite-plugin` had rewritten component bodies — compiler-generated row-updater `++` / `--` loops triggered false-positive `state-mutation` warnings that didn't correspond to anything in user source. Reading from disk guarantees we only ever see what the author wrote.
+
+### `@llui/mcp@0.0.10`
+
+- **Improved** Cascade bump from `@llui/dom@0.0.16` and `@llui/lint-idiomatic@0.0.12` runtime dependencies. No direct code changes — same contracts as 0.0.9.
+
+### `@llui/{test,router,transitions,components}@0.0.16`
+
+- **Improved** Cascade bump from `@llui/dom@0.0.16` (tier-1 lockstep). No direct code changes — same contracts as 0.0.15. `components`, `router`, and `transitions` also have their `peerDependencies["@llui/dom"]` range updated from `^0.0.15` to `^0.0.16`.
+
+### Docs
+
+- **Added** New "Persistent Layouts" + "Layout → Page communication via context" recipes in the cookbook under the SSR section.
+- **Added** New "Persistent layouts (@llui/vike)" section in the LLM guide with the canonical shape and a new rules bullet so LLMs reach for `pageSlot()` as the idiom.
+- **Added** New "Cross-instance scope parenting" subsection in the architecture doc explaining how `parentScope` + `pageSlot()` make context flow layer → layer and how disposal cascades asymmetrically on nav.
+- **Added** New `examples/vike-layout` workspace — full working example with root layout (toast stack + session context dispatchers from layout state), nested dashboard layout with sidebar, four routes exercising different chain shapes, per-route chain resolver. All four routes prerender via Vike SSG.
+
 ## 2026-04-14 — 0.0.15
 
 **Released:** `@llui/{dom,vite-plugin,test,router,transitions,components,vike}@0.0.15`; `@llui/mcp@0.0.9`
