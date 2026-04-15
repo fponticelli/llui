@@ -1,4 +1,7 @@
-import { describe, it, expect, vi } from 'vitest'
+import { afterEach, describe, it, expect, vi } from 'vitest'
+import { mkdtempSync, writeFileSync, rmSync, mkdirSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import lintIdiomaticPlugin, { lintIdiomatic } from '../src/vite'
 import type { Plugin } from 'vite'
 
@@ -42,10 +45,33 @@ function makeContext(): {
   }
 }
 
+// Tracks temp directories created during the test so afterEach can
+// clean them up. The plugin reads source from disk (not from the
+// pipeline `code` arg), so test fixtures must be real files.
+const tempDirs: string[] = []
+
+/**
+ * Create a real temp file with the given source and return its path.
+ * The path mimics the shape the test was originally asserting (e.g.
+ * `/app/main.ts`, `/app/node_modules/some-pkg/main.ts`) by using the
+ * suffix as a subdirectory structure inside a temp root. This keeps
+ * the `skip` regex behaviors (node_modules, dist) exercisable.
+ */
+function writeFixture(source: string, suffix: string): string {
+  const root = mkdtempSync(join(tmpdir(), 'llui-lint-test-'))
+  tempDirs.push(root)
+  // Strip leading slash so join() treats suffix as relative.
+  const rel = suffix.replace(/^\//, '')
+  const full = join(root, rel)
+  mkdirSync(join(full, '..'), { recursive: true })
+  writeFileSync(full, source, 'utf-8')
+  return full
+}
+
 function runTransform(
   plugin: Plugin,
   code: string,
-  id: string,
+  suffix: string,
 ): { warnings: Warning[]; errors: Warning[] } {
   const { warnings, errors, ctx } = makeContext()
   // configResolved has to run first so the plugin captures dev/build mode
@@ -59,12 +85,29 @@ function runTransform(
   }
   const transform =
     typeof plugin.transform === 'function' ? plugin.transform : plugin.transform?.handler
-  if (!transform)
-    throw new Error('plugin has no transform hook')
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  if (!transform) throw new Error('plugin has no transform hook')
+
+  // Write source to a real temp file. The plugin ignores `code` and
+  // re-reads from disk, so a non-existent path would cause a silent
+  // skip (which is the right behavior for virtual modules) but the
+  // wrong behavior for our fixtures.
+  const id = writeFixture(code, suffix)
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   ;(transform as any).call(ctx, code, id)
   return { warnings, errors }
 }
+
+afterEach(() => {
+  for (const dir of tempDirs) {
+    try {
+      rmSync(dir, { recursive: true, force: true })
+    } catch {
+      // Ignore cleanup failures — temp directory GC will handle them.
+    }
+  }
+  tempDirs.length = 0
+})
 
 // ── Fixture sources ─────────────────────────────────────────────────
 
@@ -170,7 +213,9 @@ describe('lintIdiomatic vite plugin', () => {
     const plugin = lintIdiomaticPlugin({ onLint })
     runTransform(plugin, STATE_MUTATION_SOURCE, '/app/main.ts')
     expect(onLint).toHaveBeenCalledWith(
-      '/app/main.ts',
+      // The ID is a real temp-file path after the refactor; match the
+      // shape (ends with main.ts) rather than exact equality.
+      expect.stringMatching(/main\.ts$/),
       expect.objectContaining({ violations: expect.any(Array) }),
     )
   })

@@ -4447,11 +4447,26 @@ function computeAccessorMask(
   let readsState = false
 
   function walk(node: ts.Node): void {
-    if (ts.isIdentifier(node) && node.text === stateParam && !ts.isParameter(node.parent)) {
+    // `node.parent` can be undefined for synthetic nodes produced by
+    // earlier AST-transform passes (the row-factory rewrite and the
+    // per-item heuristic both build new sub-trees whose inner nodes
+    // have no parent pointers). Guard every parent access below —
+    // crashing the whole build on a perfectly valid reactive accessor
+    // like `text((_s) => \`$${item.x.toLocaleString()}\`)` was how
+    // this bug first surfaced in the persistent-layout example work.
+    const parent = node.parent
+    if (ts.isIdentifier(node) && node.text === stateParam && (!parent || !ts.isParameter(parent))) {
       readsState = true
     }
     if (ts.isPropertyAccessExpression(node)) {
-      if (!ts.isPropertyAccessExpression(node.parent)) {
+      // When there's no parent we can't tell if this is the top of a
+      // chain, so we resolve from here. That's still correct for mask
+      // accounting: `resolveChain` on an inner PAE produces a prefix
+      // of the outer chain, which maps to the same `fieldBits` bit
+      // via the prefix-match loop below. Worst case we resolve the
+      // same chain twice (`|=` is idempotent); best case we'd have
+      // resolved once from the real top. Correctness unchanged.
+      if (!parent || !ts.isPropertyAccessExpression(parent)) {
         const chain = resolveChain(node, stateParam)
         if (chain) {
           const bit = fieldBits.get(chain)

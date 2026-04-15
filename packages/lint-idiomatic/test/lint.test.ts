@@ -85,6 +85,35 @@ describe('lintIdiomatic', () => {
     ).toBe(true)
   })
 
+  it('does NOT flag logical not / bitwise not / unary plus/minus on state', () => {
+    // Prefix unary operators other than ++/-- are pure reads, not
+    // mutations. This is the canonical pattern for a toggle reducer:
+    //   return [{ ...state, flag: !state.flag }, []]
+    // Regression: before the fix, the state-mutation rule matched all
+    // prefix unary operators and flagged this as an increment.
+    const source = `
+      import { component } from '@llui/dom'
+      type State = { on: boolean; count: number }
+      type Msg = { type: 'toggle' } | { type: 'negate' }
+      const C = component<State, Msg, never>({
+        name: 'C',
+        init: () => [{ on: false, count: 5 }, []],
+        update: (state, msg) => {
+          switch (msg.type) {
+            case 'toggle':
+              return [{ ...state, on: !state.on }, []]
+            case 'negate':
+              return [{ ...state, count: -state.count }, []]
+          }
+        },
+        view: (send) => [],
+      })
+    `
+    const result = lintIdiomatic(source)
+    const mutations = result.violations.filter((v) => v.rule === 'state-mutation')
+    expect(mutations).toEqual([])
+  })
+
   it('detects .map() on state arrays in view', () => {
     const source = `
       import { component, div, text } from '@llui/dom'
@@ -193,6 +222,70 @@ describe('lintIdiomatic', () => {
     expect(violation!.file).toBe('myfile.ts')
     expect(violation!.line).toBe(3)
     expect(violation!.column).toBeGreaterThan(0)
+  })
+
+  // ── Rule: spread-in-children ──────────────────────────────────────
+
+  it('does NOT flag spread of provide() inside element children', () => {
+    // `provide()` returns Node[] — spreading is the idiomatic and
+    // ONLY way to use it as a child. Regression: before the fix,
+    // spread-in-children had no `provide` exemption and flagged every
+    // context-provider use inside a layout's view tree.
+    const source = `
+      import { component, div, main, provide, createContext } from '@llui/dom'
+      const Ctx = createContext<string>('default')
+      const C = component<{}, never, never>({
+        name: 'C',
+        init: () => [{}, []],
+        update: (s) => [s, []],
+        view: ({ send }) => [
+          div({ class: 'root' }, [
+            ...provide(Ctx, () => 'hello', () => [
+              main({ class: 'main' }, []),
+            ]),
+          ]),
+        ],
+      })
+    `
+    const result = lintIdiomatic(source)
+    const spreads = result.violations.filter((v) => v.rule === 'spread-in-children')
+    expect(spreads).toEqual([])
+  })
+
+  it('does NOT flag spread of pageSlot() inside element children', () => {
+    // pageSlot() (from @llui/vike/client) also returns Node[].
+    // Not imported from @llui/dom in practice, but the rule should
+    // still exempt it by name since it composes the same way.
+    const source = `
+      import { component, main } from '@llui/dom'
+      import { pageSlot } from '@llui/vike/client'
+      const C = component<{}, never, never>({
+        name: 'C',
+        init: () => [{}, []],
+        update: (s) => [s, []],
+        view: ({ send }) => [main({}, [...pageSlot()])],
+      })
+    `
+    const result = lintIdiomatic(source)
+    const spreads = result.violations.filter((v) => v.rule === 'spread-in-children')
+    expect(spreads).toEqual([])
+  })
+
+  it('still flags spread of a plain .map() call in element children', () => {
+    const source = `
+      import { component, ul, li, text } from '@llui/dom'
+      const items = ['a', 'b', 'c']
+      const C = component<{}, never, never>({
+        name: 'C',
+        init: () => [{}, []],
+        update: (s) => [s, []],
+        view: ({ send }) => [
+          ul({}, [...items.map((x) => li({}, [text(x)]))]),
+        ],
+      })
+    `
+    const result = lintIdiomatic(source)
+    expect(result.violations.some((v) => v.rule === 'spread-in-children')).toBe(true)
   })
 
   // ── Rule 7: async-update ──────────────────────────────────────────

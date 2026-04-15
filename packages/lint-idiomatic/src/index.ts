@@ -202,8 +202,14 @@ function checkMutationsInBody(
     }
   }
   // Check for prefix/postfix increment/decrement: state.x++, ++state.x
+  // Only `++` / `--` are mutations. Other prefix unary operators (`!`,
+  // `~`, `+`, `-`) are pure reads and must NOT match — flagging them
+  // turned `return [{ ...state, flag: !state.flag }, []]` into a false
+  // positive during the persistent-layout example work.
   if (
     (ts.isPostfixUnaryExpression(node) || ts.isPrefixUnaryExpression(node)) &&
+    (node.operator === ts.SyntaxKind.PlusPlusToken ||
+      node.operator === ts.SyntaxKind.MinusMinusToken) &&
     isStatePropertyAccess(node.operand, stateName)
   ) {
     const { line, column } = pos(node, sf)
@@ -1713,9 +1719,23 @@ function checkSpreadInChildren(
     ) {
       // Check children argument (last array literal).
       // Spread is allowed when the argument is a structural primitive
-      // (each, show, branch, virtualEach) — those return Node[] and MUST
-      // be spread. Flag only spreads over .map(), .filter(), or arrays.
-      const STRUCTURAL = new Set(['each', 'show', 'branch', 'virtualEach', 'onMount'])
+      // or a context provider — those return Node[] and MUST be spread.
+      // Flag only spreads over .map(), .filter(), or arrays.
+      //
+      // `provide` and `pageSlot` return Node[] the same way each/show/
+      // branch do, and the idiomatic pattern is
+      // `...provide(Ctx, accessor, () => [...])` as a child. Without
+      // this exemption the rule trips on every context-provider use
+      // inside a layout's view tree.
+      const STRUCTURAL = new Set([
+        'each',
+        'show',
+        'branch',
+        'virtualEach',
+        'onMount',
+        'provide',
+        'pageSlot',
+      ])
       for (const arg of node.arguments) {
         if (!ts.isArrayLiteralExpression(arg)) continue
         for (const el of arg.elements) {

@@ -2,10 +2,7 @@ import { component, div, h1, p, table, thead, tbody, tr, th, td } from '@llui/do
 
 interface Report {
   month: string
-  // Pre-formatted for display. Keeping formatting out of the view avoids
-  // chained method calls inside reactive accessors — simpler bindings
-  // are easier for the compiler's mask analysis and for readers.
-  revenue: string
+  revenue: number
   growth: string
 }
 
@@ -22,10 +19,10 @@ export const Page = component<ReportsState, never, never>({
   init: () => [
     {
       rows: [
-        { month: 'January', revenue: '$12,400', growth: '+4.2%' },
-        { month: 'February', revenue: '$13,800', growth: '+11.3%' },
-        { month: 'March', revenue: '$15,100', growth: '+9.4%' },
-        { month: 'April', revenue: '$14,700', growth: '−2.6%' },
+        { month: 'January', revenue: 12_400, growth: '+4.2%' },
+        { month: 'February', revenue: 13_800, growth: '+11.3%' },
+        { month: 'March', revenue: 15_100, growth: '+9.4%' },
+        { month: 'April', revenue: 14_700, growth: '−2.6%' },
       ],
     },
     [],
@@ -42,7 +39,11 @@ export const Page = component<ReportsState, never, never>({
             items: (s) => s.rows,
             key: (r) => r.month,
             render: ({ item }) => [
-              tr([td([text(item.month)]), td([text(item.revenue)]), td([text(item.growth)])]),
+              tr([
+                td([text(item.month)]),
+                td([text((_s) => `$${item.revenue().toLocaleString()}`)]),
+                td([text(item.growth)]),
+              ]),
             ],
           }),
         ]),

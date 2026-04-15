@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs'
 import type { Plugin } from 'vite'
 import { lintIdiomatic, type LintResult } from './index.js'
 
@@ -74,23 +75,44 @@ export default function lintIdiomaticPlugin(options: LintIdiomaticPluginOptions 
 
   return {
     name: 'llui-lint-idiomatic',
-    // Run after @llui/vite-plugin's own transform — we want to lint
-    // the original source, not the transformed output, so order doesn't
-    // actually matter (we get `code` as the current pipeline state, but
-    // AST structure that matters to the linter is preserved until
-    // template cloning). `enforce: 'post'` is a defensive default.
-    enforce: 'post',
+    // Run before other transforms in the same file so if another plugin
+    // depends on lint diagnostics they've seen them. The ordering matters
+    // only cosmetically — we always re-read the file from disk below, so
+    // whatever `code` the pipeline hands us is ignored.
+    enforce: 'pre',
 
     configResolved(config) {
       isDev = config.command === 'serve' || config.mode === 'development'
     },
 
-    transform(code, id) {
+    transform(_code, id) {
       if (devOnly && !isDev) return
       if (!id.endsWith('.ts') && !id.endsWith('.tsx')) return
       if (skip.some((re) => re.test(id))) return
 
-      const result = lintIdiomatic(code, id, { exclude })
+      // Always lint the original on-disk source, not the current
+      // pipeline state. Another vite plugin (notably @llui/vite-plugin)
+      // rewrites component bodies before we'd get a chance to see
+      // them, and compiler-generated code contains patterns — `++` in
+      // row updaters, state-paren calls after prop-split — that
+      // trigger false positives against user-facing rules like
+      // `state-mutation`. Reading from disk guarantees we only ever
+      // see what the author wrote.
+      //
+      // Strip any query suffix vite may have added (e.g. `?t=123` for
+      // cache-busting) before passing the path to readFileSync.
+      const cleanPath = id.split('?', 1)[0]!
+      let source: string
+      try {
+        source = readFileSync(cleanPath, 'utf-8')
+      } catch {
+        // Virtual modules, not-yet-written files, anything without a
+        // readable on-disk path — skip silently. These aren't user
+        // source and aren't meaningful targets for idiomatic lint.
+        return
+      }
+
+      const result = lintIdiomatic(source, id, { exclude })
       if (onLint) onLint(id, result)
       if (result.violations.length === 0) return
 
