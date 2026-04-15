@@ -1,9 +1,9 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest'
-import { spawn, type ChildProcess } from 'node:child_process'
 import { resolve, dirname } from 'node:path'
 import { existsSync } from 'node:fs'
 import { setTimeout as delay } from 'node:timers/promises'
 import type { Browser, Page } from 'playwright'
+import type { ViteDevServer } from 'vite'
 import { LluiMcpServer } from '../src/index'
 
 /**
@@ -74,7 +74,7 @@ const playwright = await loadPlaywright()
 
 interface Harness {
   mcp: LluiMcpServer
-  vite: ChildProcess
+  vite: ViteDevServer
   browser: Browser
   page: Page
   viteUrl: string
@@ -82,24 +82,43 @@ interface Harness {
   wsErrorCount: number
 }
 
-async function spawnVite(): Promise<{ vite: ChildProcess; viteUrl: string }> {
-  const vite = spawn('pnpm', ['dev'], {
-    cwd: EXAMPLE_DIR,
-    stdio: ['ignore', 'pipe', 'pipe'],
+/**
+ * Start a real vite dev server programmatically with file watching
+ * disabled. Disabling the watcher is the only way to make this test
+ * reliable on macOS — vite's default chokidar+FSEvents watcher tries
+ * to register directory watches across the whole monorepo at startup
+ * and blows through the launchctl-default 256-fd soft limit before
+ * printing its ready message (EMFILE: too many open files, watch).
+ *
+ * HMR isn't needed for this suite — we're exercising the browser-side
+ * auto-connect chain on first page load, not editing files mid-test.
+ */
+async function startViteServer(): Promise<{ vite: ViteDevServer; viteUrl: string }> {
+  const { createServer } = await import('vite')
+  const vite = await createServer({
+    root: EXAMPLE_DIR,
+    configFile: resolve(EXAMPLE_DIR, 'vite.config.ts'),
+    server: {
+      // Disable the FS watcher entirely — no HMR, no EMFILE.
+      watch: null,
+      // Pick a random port so parallel test runs don't collide.
+      port: 0,
+      strictPort: false,
+    },
+    // Reduce startup noise — we don't want info spam in test output.
+    logLevel: 'warn',
+    optimizeDeps: {
+      // Skip dep pre-bundling — cuts startup time and fd churn.
+      noDiscovery: true,
+    },
   })
-  const viteUrl = await new Promise<string>((resolveUrl, rejectUrl) => {
-    const timer = setTimeout(() => rejectUrl(new Error('vite startup timeout')), 30_000)
-    const onData = (chunk: Buffer): void => {
-      const text = String(chunk)
-      const match = text.match(/Local:\s+(http:\/\/localhost:\d+\/)/)
-      if (match) {
-        clearTimeout(timer)
-        vite.stdout?.off('data', onData)
-        resolveUrl(match[1]!)
-      }
-    }
-    vite.stdout?.on('data', onData)
-  })
+  await vite.listen()
+  const addr = vite.httpServer?.address()
+  if (!addr || typeof addr === 'string') {
+    await vite.close()
+    throw new Error('vite dev server failed to bind a port')
+  }
+  const viteUrl = `http://localhost:${addr.port}/`
   return { vite, viteUrl }
 }
 
@@ -110,8 +129,8 @@ async function setupHarness(): Promise<Harness> {
   const mcp = new LluiMcpServer(MCP_PORT)
   mcp.startBridge()
 
-  // 2. Spawn vite dev server in the example
-  const { vite, viteUrl } = await spawnVite()
+  // 2. Start vite dev server programmatically (no file watcher)
+  const { vite, viteUrl } = await startViteServer()
 
   // 3. Launch Chromium and capture console messages
   const browser = await playwright.chromium.launch()
@@ -133,7 +152,7 @@ async function setupHarness(): Promise<Harness> {
 
 async function teardownHarness(h: Harness): Promise<void> {
   await h.browser.close()
-  h.vite.kill('SIGTERM')
+  await h.vite.close()
   h.mcp.stopBridge()
   // Give the dev server a moment to release its port + clean up the marker
   await delay(200)
@@ -141,13 +160,31 @@ async function teardownHarness(h: Harness): Promise<void> {
 
 describe.skipIf(!playwright)('MCP auto-connect — real browser + real Vite', () => {
   let h: Harness
+  let uncaughtHandler: ((err: Error) => void) | null = null
 
   beforeAll(async () => {
+    // Vite's watchPackageDataPlugin registers fs.watch on every
+    // package.json it discovers, regardless of server.watch config.
+    // Across this monorepo that's enough to blow through macOS's
+    // launchctl-default per-process fd soft limit (256), producing
+    // async EMFILE errors that surface as unhandled exceptions even
+    // though the tests themselves pass. Filter those out during the
+    // suite — legit exceptions still propagate.
+    uncaughtHandler = (err: Error & { code?: string; syscall?: string }) => {
+      if (err.code === 'EMFILE' && err.syscall === 'watch') return
+      throw err
+    }
+    process.on('uncaughtException', uncaughtHandler)
+
     h = await setupHarness()
   }, 60_000)
 
   afterAll(async () => {
     if (h) await teardownHarness(h)
+    if (uncaughtHandler) {
+      process.off('uncaughtException', uncaughtHandler)
+      uncaughtHandler = null
+    }
   }, 10_000)
 
   it('installs __lluiDebug, __lluiConnect, and registers the component', async () => {
