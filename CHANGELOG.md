@@ -11,6 +11,38 @@ All notable changes to LLui packages are documented here. LLui is a pre-1.0 proj
 
 Packages version in lockstep at release time: `@llui/dom`, `@llui/vite-plugin`, `@llui/test`, `@llui/router`, `@llui/transitions`, `@llui/components`, `@llui/vike` share a version line. `@llui/effects`, `@llui/mcp`, and `@llui/lint-idiomatic` have their own cadence.
 
+## 2026-04-15 — 0.0.18
+
+**Released:** `@llui/{dom,vite-plugin,test,router,transitions,components,vike}@0.0.18`; `@llui/mcp@0.0.12`
+
+Hotfix release for a compiler regression in 0.0.17 that silently broke form-error rendering inside child components whose view factored structural blocks into helper functions. Anyone running 0.0.17 against `@llui/components`'s `dialog.overlay` with a form body inside should upgrade.
+
+### Migration
+
+- **Delete any `stripFastPath`-style workaround** that strips `__update` / `__dirty` / `__handlers` from concrete `ComponentDef`s before passing them to `child({ def })`. The compiler fast path is now correct — pass the concrete def directly.
+- **Delete any `widenDef`-style wrapper** still in use at a `child({ def })` boundary. 0.0.17's `AnyComponentDef` alias already made the wrapper unnecessary for typing; 0.0.18 removes the runtime reason it was accidentally helping (it was stripping the broken fast path, not widening).
+
+### `@llui/vite-plugin@0.0.18`
+
+- **Fixed** `detectArrayOp` no longer short-circuits structural reconcile when a case's `caseDirty` doesn't intersect the computed `structuralMask`. The optimization was unsafe because `computeStructuralMask` only walks the view function's lexical AST — it does not descend into helper function calls. A view like `view: () => [...show({ when: s => s.mode === 'signin', render: () => [signinFormBody(send)] })]` where `signinFormBody(send)` internally does `...show({ when: s => s.errors.email !== undefined, ... })` produces a `structuralMask` that contains the `mode` bit but misses `errors.email`. The submit case's `caseDirty` then had no overlap with `structuralMask` even though the inner show block's mask DOES depend on `errors`, and the compiler emitted `method = -1` ("skip structural blocks") for the submit handler. At runtime `_handleMsg` skipped Phase 1 entirely, the helper-hidden show blocks never reconciled, and error paragraphs never mounted despite state having changed. The symptom was "submit button click doesn't show validation errors" — reproducible against any component that factors its form body into a helper function. Fixed by removing the unsafe short-circuit. Non-empty cases now always fall through to `'general'` (`method = 0`) unless an explicit array op (clear/remove/mutate/strided) is detected. Phase 1 runs unconditionally; `_handleMsg`'s existing per-block `(block.mask & dirty)` check filters uninterested blocks at near-zero cost. The `modifiedFields.length === 0` short-circuit is preserved — a case that returns `[state, []]` unchanged is a real tautology and still emits `method = -1`. Regression tests in `packages/vite-plugin/test/show-helper-reconcile.test.ts` cover the helper-hidden shape, a minimal cross-function mode+errors variant, and the preserved noop tautology.
+
+### `@llui/dom@0.0.18`
+
+- **Improved** `useContextValue` docstring now has a dedicated "Value capture contract" section spelling out that the returned value is captured once at view-construction time. Storing the return in a closure inside `view()` and reading from event handlers is the correct and efficient pattern for stable dispatcher bags; consumers that need to see later re-publishes from a parent must use the reactive `useContext(ctx)` form. The docstring also documents the pairing rule: `useContextValue` must be used with `provideValue` on the producer side; using it against a state-reading provider will pass `undefined` to the accessor and likely throw or return garbage.
+
+### `@llui/{test,router,transitions,components,vike}@0.0.18`
+
+- **Improved** Cascade bump from `@llui/dom@0.0.18` (tier-1 lockstep). No direct code changes — same contracts as 0.0.17. `components`, `router`, and `transitions` also have their `peerDependencies["@llui/dom"]` range updated from `^0.0.17` to `^0.0.18`.
+
+### `@llui/mcp@0.0.12`
+
+- **Improved** Cascade bump from `@llui/dom@0.0.18` runtime dependency. No direct code changes — same contracts as 0.0.11.
+
+### Docs
+
+- **Improved** Cookbook "Persistent Layouts → Layout ↔ Page communication" recipe now documents the `useContextValue` capture contract inline — when to reach for it vs the reactive `useContext` form.
+- **Improved** LLM guide rules bullet extended with the capture contract note so LLMs picking up the context-dispatcher pattern from the guide see the warning.
+
 ## 2026-04-15 — 0.0.17
 
 **Released:** `@llui/{dom,vite-plugin,test,router,transitions,components,vike}@0.0.17`; `@llui/mcp@0.0.11`
