@@ -149,12 +149,36 @@ export function provideValue<T>(ctx: Context<T>, value: T, children: () => Node[
  * three-step "look up the accessor, ignore the state arg, get the
  * value" dance.
  *
- * Use this only with values provided via `provideValue` (or via
- * `provide` with an accessor that ignores its state argument). Calling
- * `useContextValue` against a context whose accessor reads from state
- * will resolve the accessor against `undefined` and likely throw or
- * return wrong data — there's no way for the runtime to detect the
- * mismatch, so honor the contract at the API surface.
+ * ## Value capture contract
+ *
+ * **The returned value is captured once, at view-construction time.**
+ * Any reference you store from `useContextValue(ctx)` into a closure
+ * — for example, by assigning it to a local `const` inside `view(...)`
+ * and reading it from an event handler — sees the value as it was
+ * when the view ran. The closure does NOT re-read the context on each
+ * event dispatch.
+ *
+ * That's fine, and usually what you want, for stable dispatcher bags:
+ * the bag's methods close over the layout's `send`, and `send` itself
+ * is stable across the layout's lifetime, so the methods work
+ * correctly regardless of when the handler fires. Pages can stash
+ * `const toast = useContextValue(ToastContext)` at the top of their
+ * `view()` and call `toast.show(...)` from any event handler below.
+ *
+ * **Do NOT use `useContextValue` when the consumer needs to see
+ * updates to the context value.** If a parent re-`provideValue`s the
+ * context with a different object later, existing consumers already
+ * holding the captured value will still see the old one. For
+ * reactive consumption, use `useContext(ctx)` — that returns an
+ * accessor that re-reads the provider on each binding evaluation, so
+ * reactive bindings (`class`, `text`, etc.) pick up updates
+ * automatically.
+ *
+ * **Do NOT use `useContextValue` against a provider whose accessor
+ * reads from state.** The accessor is invoked with `undefined` here,
+ * so any `(s) => s.something` provider will throw or return garbage.
+ * Match `provideValue` on the producer side with `useContextValue` on
+ * the consumer side, and `provide` with `useContext`.
  */
 export function useContextValue<T>(ctx: Context<T>): T {
   const accessor = useContext<unknown, T>(ctx)

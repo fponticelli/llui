@@ -840,6 +840,17 @@ Reach for the reactive form (`provide(ctx, accessor, children)` +
 e.g. `provide(ThemeContext, (s) => s.theme, () => [...])` for a
 theme value that changes on user interaction.
 
+**Capture contract:** `useContextValue(ctx)` returns the value **once,
+at view-construction time**. Assigning it to a `const` inside `view()`
+and reading it from an event handler is the correct and efficient
+pattern — the closure captures the stable dispatcher record and
+handlers fire against it forever. But it also means: if a parent
+re-`provideValue`s the context with a different object later,
+consumers already holding the captured reference still see the old
+one. For that case — rare, since dispatcher records are typically
+identity-stable — reach for the reactive `useContext(ctx)` form, which
+re-reads the provider on every binding evaluation.
+
 ## Foreign Libraries
 
 ### Shadow DOM for Style Isolation
