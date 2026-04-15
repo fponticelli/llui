@@ -11,6 +11,45 @@ All notable changes to LLui packages are documented here. LLui is a pre-1.0 proj
 
 Packages version in lockstep at release time: `@llui/dom`, `@llui/vite-plugin`, `@llui/test`, `@llui/router`, `@llui/transitions`, `@llui/components`, `@llui/vike` share a version line. `@llui/effects`, `@llui/mcp`, and `@llui/lint-idiomatic` have their own cadence.
 
+## 2026-04-15 — 0.0.17
+
+**Released:** `@llui/{dom,vite-plugin,test,router,transitions,components,vike}@0.0.17`; `@llui/mcp@0.0.11`
+
+Follow-up release for four reports against 0.0.16's persistent-layout work. Covers a functional gap (no prop updates on surviving layers), a type-system ergonomics issue (`widenDef` invariance across three APIs), a docs filename collision (`+Layout.ts` vs Vike's own convention), and an API shape wart (`useContext` awkward for static dispatcher bags).
+
+### Migration
+
+- **Revert any `widenDef`-style helper** you wrote to pass a concrete `ComponentDef<S, M, E, D>` into `child({ def })`, `createOnRenderClient({ Layout })`, or `createOnRenderHtml({ Layout })`. Concrete component definitions now assign structurally into these APIs via the new `AnyComponentDef` alias — no widening needed.
+- **Revert any module-level pub/sub bridge** you wrote to deliver nav data into a persistent layout. `createOnRenderClient` now pushes fresh `lluiLayoutData[i]` into surviving layers through their `propsMsg` handler on every nav — opt in by setting `propsMsg: (data) => ({ type: 'navChanged', data })` on the layout def.
+- **Consider switching static dispatcher-bag contexts** from the reactive `provide(ctx, accessor, children)` / `useContext(ctx)` pair to the new `provideValue(ctx, value, children)` / `useContextValue(ctx)` forms. Call sites become `useContextValue(ctx).method(...)` instead of `useContext(ctx)(undefined as never).method(...)`. The reactive forms still exist for context values that track state.
+- **Rename any layout file called `+Layout.ts`** (per the previous release's docs) to `Layout.ts` or similar — the `+` prefix is Vike's own framework-adapter convention and collides with `@llui/vike`'s `Layout` option.
+
+### `@llui/vike@0.0.17`
+
+- **Fixed** Surviving layers on client nav now receive fresh `lluiLayoutData[i]` through their `propsMsg` handler. Previously the chain diff identified which layers to keep alive but never delivered the updated data slice — a persistent layout tracking pathname, session, breadcrumbs, or nav-highlight state was frozen at whatever it initialized with on first mount. The adapter now walks the shared prefix after the diff, shallow-key `Object.is`-diffs each surviving layer's new data against its stored slice, and dispatches the layer's `propsMsg(newData)` result through the new `AppHandle.send` channel on change. Layers without `propsMsg` are skipped silently — opt-in. Mirrors `child()`'s prop-diff and dispatch behavior exactly.
+- **Fixed** `createOnRenderClient({ Layout })` and `createOnRenderHtml({ Layout })` now accept concrete `ComponentDef<S, M, E, D>` without a widening helper. Previously the `Layout` option was typed as `ComponentDef<unknown, unknown, unknown, unknown>`, which uses property syntax and is contravariant in each type parameter — concrete definitions were rejected with "Type 'void' is not assignable to type 'unknown'" on the `init` field. The option is now typed as `AnyComponentDef` (a new type-erased alias exported from `@llui/dom` using method syntax for bivariance) so structural assignment succeeds without any `widenDef` wrapper. `ChildOptions.def` uses the same alias — the same gap in `child({ def })` is fixed by the same change.
+- **Improved** Docs no longer recommend `pages/+Layout.ts` as the layout filename. Vike reserves the `+` prefix for its own framework-adapter config conventions, and `+Layout.ts` specifically is interpreted by `vike-react` / `vike-vue` / `vike-solid` as a framework-native layout config — collides with `@llui/vike`'s `Layout` option. All JSDoc examples, the README, cookbook recipe, LLM guide, and `pageSlot()` primitive doc now show `pages/Layout.ts` (no prefix) with an explicit warning paragraph explaining why.
+
+### `@llui/dom@0.0.17`
+
+- **Added** `AnyComponentDef` exported from `@llui/dom` (and from `@llui/dom/internal` for framework adapters). A type-erased component-definition shape using method syntax for bivariance — concrete `ComponentDef<S, M, E, D>`s assign structurally without any widening helper. Used by `child()`, `createOnRenderClient({ Layout })`, and `createOnRenderHtml({ Layout })` as the consumer-facing type for opaque component definitions at module boundaries. The existing `LazyDef<D>` (used by `lazy()`) remains parameterized on `D` for the lazy-loader case.
+- **Added** `AppHandle.send(msg)` exposes the mounted instance's send channel through the handle object, allowing adapter-level code to dispatch messages into long-lived instances from outside their normal view-bound `send` path. No-op after `dispose()`. Used by `@llui/vike`'s persistent-layout chain to push layout-data updates into surviving layer instances on client navigation. `mountApp`, `hydrateApp`, and `hmr.replaceComponent` all populate the new method; existing consumers that only use `dispose()` and `flush()` are unaffected.
+- **Added** `provideValue<T>(ctx, value, children)` and `useContextValue<T>(ctx)` as static-bag companions to the existing reactive `provide` / `useContext` primitives. For the common case of publishing a stable dispatcher record (toast queues, session managers, DI containers — anything that doesn't depend on parent state), `provideValue` wraps the value in a constant accessor and `useContextValue` resolves it with a single function call. Replaces the `useContext(ctx)(undefined as never).method(...)` pattern with `useContextValue(ctx).method(...)`. The reactive primitives still exist and are still the right call when the context value DOES need to track state.
+
+### `@llui/{vite-plugin,test,router,transitions,components}@0.0.17`
+
+- **Improved** Cascade bump from `@llui/dom@0.0.17` (tier-1 lockstep). No direct code changes — same contracts as 0.0.16. `components`, `router`, and `transitions` also have their `peerDependencies["@llui/dom"]` range updated from `^0.0.16` to `^0.0.17`.
+
+### `@llui/mcp@0.0.11`
+
+- **Improved** Cascade bump from `@llui/dom@0.0.17` runtime dependency. No direct code changes — same contracts as 0.0.10.
+
+### Docs
+
+- **Added** Doc updates across the `@llui/vike` README, cookbook "Persistent Layouts" recipe, LLM guide section + rules bullet: everything shows `provideValue` / `useContextValue` for the layout-owned dispatcher pattern, uses `pages/Layout.ts` as the filename with an explicit warning against `+Layout.ts`, and the cookbook + llm-guide spell out when to reach for the static-bag primitives vs the reactive ones.
+- **Improved** `examples/vike-layout` switched both `ToastContext` and `SessionContext` to `provideValue` + `useContextValue`. Dropped `SessionDispatcher.getUser` from the contexts module with a note explaining why — context accessors can't reach across instance boundaries to read live layout state, so exposing a state-reader dispatcher from a layout context was always subtly broken.
+- **Improved** `scripts/publish.sh` now runs `pnpm whoami` as an auth preflight and auto-runs `pnpm login` interactively when the token is expired or missing. Previously a stale token produced nine consecutive `E404` errors (npm returns 404 on PUT for unauthenticated writers to avoid leaking scope existence) which was confusing if you didn't know the pattern. Not a package change — only visible to maintainers running publish.
+
 ## 2026-04-15 — 0.0.16
 
 **Released:** `@llui/{dom,vite-plugin,test,router,transitions,components,vike}@0.0.16`; `@llui/mcp@0.0.10`; `@llui/lint-idiomatic@0.0.12`

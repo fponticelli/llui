@@ -1,6 +1,6 @@
 {
   "name": "@llui/components",
-  "version": "0.0.16",
+  "version": "0.0.17",
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -463,7 +463,7 @@
     "test": "vitest run"
   },
   "peerDependencies": {
-    "@llui/dom": "^0.0.16"
+    "@llui/dom": "^0.0.17"
   },
   "devDependencies": {
     "@llui/dom": "workspace:*",
