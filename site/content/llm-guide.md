@@ -176,6 +176,86 @@ onEffect: handleEffects<Effect, Msg>()
   .else(({ effect, send, signal }) => { /* custom effects */ })
 ```
 
+## Persistent layouts (`@llui/vike`)
+
+When building a Vike app with `@llui/vike`, declare app chrome (header,
+sidebar, session state, portalled dialogs) as a `Layout` component that
+stays mounted across client navigation. Pages render at the layout's
+`pageSlot()` position and only the page — not the layout — is disposed
+and re-mounted when the user navigates.
+
+```typescript
+// pages/+Layout.ts
+import { component, div, header, main } from '@llui/dom'
+import { pageSlot } from '@llui/vike/client'
+
+export const AppLayout = component<LayoutState, LayoutMsg>({
+  name: 'AppLayout',
+  init: () => [{ session: null }, []],
+  update: layoutUpdate,
+  view: ({ send }) => [
+    div({ class: 'app-shell' }, [
+      header([
+        /* persistent chrome */
+      ]),
+      main([pageSlot()]), // ← exactly one pageSlot() per layout
+    ]),
+  ],
+})
+```
+
+```typescript
+// pages/+onRenderClient.ts
+import { createOnRenderClient } from '@llui/vike/client'
+import { AppLayout } from './+Layout'
+
+export const onRenderClient = createOnRenderClient({
+  Layout: AppLayout,
+})
+```
+
+```typescript
+// pages/+onRenderHtml.ts — same Layout on the server
+import { createOnRenderHtml } from '@llui/vike/server'
+import { AppLayout } from './+Layout'
+
+export const onRenderHtml = createOnRenderHtml({
+  Layout: AppLayout,
+})
+```
+
+For nested layouts pass an array outermost-to-innermost (every layer
+except the innermost calls its own `pageSlot()`), or a resolver
+function for per-route chains:
+
+```typescript
+createOnRenderClient({
+  Layout: (pageContext) =>
+    pageContext.urlPathname.startsWith('/dashboard') ? [AppLayout, DashboardLayout] : [AppLayout],
+})
+```
+
+**Layout → page communication.** Pages read layout-provided operations
+via `useContext` — `pageSlot()` parents the page's scope inside the
+layout's scope tree, so `useContext` walks up through the slot and
+finds providers the layout installed above it. Use this for toast
+dispatchers, global progress bars, breadcrumbs, session refresh, any
+pattern where a page triggers a layout operation without importing
+from the layout's internals.
+
+```typescript
+// Inside the layout's view, above the pageSlot()
+...provide(
+  ToastContext,
+  () => ({ show: (msg: string) => send({ type: 'toast/show', msg }) }),
+  () => [main([pageSlot()])],
+),
+
+// Inside any page's view
+const toast = useContext(ToastContext)
+button({ onClick: () => toast({} as LayoutState).show('Saved') }, [text('Save')])
+```
+
 ## Rules
 
 - Never mutate state in `update()`. Always return a new object: `{ ...state, field: newValue }`.
@@ -196,6 +276,7 @@ onEffect: handleEffects<Effect, Msg>()
 - Use `virtualEach({ items, key, itemHeight, containerHeight, render })` from `@llui/dom` for large lists (1k+ rows) with fixed row height. Renders only visible rows; scrolling reconciles in place without touching component state.
 - For composition, use view functions (Level 1) with `(props, send)` convention.
   Only use `child()` for library components with encapsulated internals or 30+ state paths.
+- For Vike apps with persistent app chrome (header, sidebar, session state, portalled dialogs), declare a `Layout` component and use `pageSlot()` from `@llui/vike/client` at the position where the route's page should render. Wire it via `createOnRenderClient({ Layout })` + `createOnRenderHtml({ Layout })`. Pages read layout-provided operations (toast dispatchers, progress bars, breadcrumbs) via `useContext` — `pageSlot()` parents the page's scope inside the layout's scope tree so `useContext` walks through the slot. Pass an array `[AppLayout, DashboardLayout]` for nested layouts, or a `(pageContext) => chain` resolver for per-route chains.
 - For forms with many fields, use a single `setField` message:
   `{ type: 'setField'; field: keyof Fields; value: string }` instead of one message per field.
   Use `applyField(state, msg.field, msg.value)` from `@llui/dom` to apply updates.

@@ -1082,6 +1082,158 @@ init: (data) => {
 }
 ```
 
+### Persistent Layouts
+
+App chrome — header, sidebar, session state, global dialogs — usually
+shouldn't re-mount every time the user navigates to a new page. Declare
+a `Layout` component that stays alive across client navigation via
+`@llui/vike`'s `Layout` option, and use `pageSlot()` inside the layout
+to mark where the route's page renders.
+
+```typescript
+// pages/+Layout.ts
+import { component, div, header, main } from '@llui/dom'
+import { pageSlot } from '@llui/vike/client'
+
+type LayoutState = { session: string | null }
+type LayoutMsg = { type: 'login' } | { type: 'logout' }
+
+export const AppLayout = component<LayoutState, LayoutMsg>({
+  name: 'AppLayout',
+  init: () => [{ session: null }, []],
+  update: (state, msg) => {
+    switch (msg.type) {
+      case 'login':
+        return [{ session: 'alice' }, []]
+      case 'logout':
+        return [{ session: null }, []]
+    }
+  },
+  view: ({ send }) => [
+    div({ class: 'app-shell' }, [
+      header([
+        /* persistent chrome — stays mounted across nav */
+      ]),
+      main([pageSlot()]), // ← route's Page renders here
+    ]),
+  ],
+})
+```
+
+```typescript
+// pages/+onRenderClient.ts
+import { createOnRenderClient } from '@llui/vike/client'
+import { AppLayout } from './+Layout'
+
+export const onRenderClient = createOnRenderClient({
+  Layout: AppLayout,
+})
+```
+
+```typescript
+// pages/+onRenderHtml.ts — same Layout on the server
+import { createOnRenderHtml } from '@llui/vike/server'
+import { AppLayout } from './+Layout'
+
+export const onRenderHtml = createOnRenderHtml({
+  Layout: AppLayout,
+})
+```
+
+On the first page load the layout hydrates once. On every subsequent
+client navigation only the `Page` is disposed and re-mounted — the
+layout's DOM nodes, focus traps, portals, scroll positions, and effect
+subscriptions all survive. A dialog rendered from the layout
+(`AuthDialog`, a settings drawer, etc.) keeps its open/closed state
+across nav; pages render inside the slot without touching it.
+
+**Nested layouts.** Pass an array outermost-to-innermost. Every layout
+except the innermost calls its own `pageSlot()`:
+
+```typescript
+export const onRenderClient = createOnRenderClient({
+  Layout: [AppLayout, DashboardLayout],
+})
+```
+
+For per-route chains — e.g. dashboard routes get the nested layout,
+other routes get just the app layout — pass a resolver:
+
+```typescript
+export const onRenderClient = createOnRenderClient({
+  Layout: (pageContext) =>
+    pageContext.urlPathname.startsWith('/dashboard') ? [AppLayout, DashboardLayout] : [AppLayout],
+})
+```
+
+The chain diff on each nav preserves every layer that matches by
+identity with the previous render. Navigating from `/dashboard/reports`
+to `/dashboard/overview` disposes only the `Page`; navigating to
+`/settings` collapses the chain to `[AppLayout]`, disposing
+`DashboardLayout` and its page but leaving `AppLayout` alive.
+
+### Layout → Page communication via context
+
+Layouts and pages are independent component instances, but `pageSlot()`
+parents the page's scope inside the layout's scope tree. That means
+`useContext` walks from the page up through the slot and finds any
+providers the layout installed above it. Use this for layout-owned
+operations that pages need to trigger — toast queues, global progress
+bars, breadcrumbs, session refresh, chrome visibility toggles.
+
+```typescript
+// pages/+Layout.ts
+import { component, div, main, provide, createContext } from '@llui/dom'
+import { pageSlot } from '@llui/vike/client'
+
+interface ToastDispatcher {
+  show: (msg: string) => void
+}
+export const ToastContext = createContext<ToastDispatcher>(undefined, 'Toast')
+
+export const AppLayout = component<LayoutState, LayoutMsg>({
+  name: 'AppLayout',
+  init: () => [{ toasts: [] }, []],
+  update: layoutUpdate,
+  view: ({ send }) => [
+    div({ class: 'app-shell' }, [
+      ToastStack(), // rendered from layout state
+      ...provide(
+        ToastContext,
+        () => ({
+          show: (msg) => send({ type: 'toast/show', msg }),
+        }),
+        () => [main([pageSlot()])],
+      ),
+    ]),
+  ],
+})
+```
+
+```typescript
+// Any page below the layout reads the dispatcher and triggers it.
+// pages/studio/+Page.ts
+import { component, button, text, useContext } from '@llui/dom'
+import { ToastContext } from '../+Layout'
+
+export const StudioPage = component<StudioState, StudioMsg>({
+  name: 'StudioPage',
+  init: () => [{ saved: false }, []],
+  update: (s) => [s, []],
+  view: ({ send }) => {
+    const toast = useContext(ToastContext)
+    return [button({ onClick: () => toast({} as LayoutState).show('Saved') }, [text('Save')])]
+  },
+})
+```
+
+The page never imports from the layout's internals — it just reads the
+context value and calls its methods. The dispatcher is a closure over
+the layout's `send`, so calls into it land as messages in the layout's
+own update loop. This works uniformly for toast queues, session
+refresh, breadcrumb updates, and any other "page triggers layout
+operation" pattern.
+
 ## Foreign Libraries
 
 ### Shadow DOM for Style Isolation

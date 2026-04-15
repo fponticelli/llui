@@ -8,10 +8,12 @@ export function elSplit(
   staticFn: ((el: HTMLElement) => void) | null,
   events: Array<[string, EventListener]> | null,
   bindings: Array<[number, BindingKind, string, (state: never) => unknown]> | null,
-  // Accepts raw strings too — wrapped in Text nodes at append time so
-  // user code like `button([], ['Sign in'])` works without requiring
-  // an explicit text() wrapper.
-  children: Array<Node | string> | null,
+  // Accepts raw strings too (wrapped in Text nodes at append time so
+  // user code like `button([], ['Sign in'])` works without an explicit
+  // text() wrapper) and nested arrays (flattened one level to match the
+  // raw createElement path — supports patterns like `main([pageSlot()])`
+  // where pageSlot() returns Node[]).
+  children: Array<Node | string | Array<Node | string>> | null,
 ): HTMLElement {
   const el = document.createElement(tag)
 
@@ -60,6 +62,21 @@ export function elSplit(
       // and throws a TypeError in strict browsers.
       if (typeof child === 'string') {
         el.appendChild(document.createTextNode(child))
+      } else if (Array.isArray(child)) {
+        // Arrays-in-children are flattened one level. This matches
+        // the raw createElement path in elements.ts and makes patterns
+        // like `main([pageSlot()])` (where pageSlot() returns Node[])
+        // work consistently between raw and compiled call paths.
+        // Without this flattening, tests run via vitest pass (raw path
+        // flattens) but SSR via the compiler transform crashes with
+        // "appendChild parameter is not of type Node".
+        for (const node of child) {
+          if (typeof node === 'string') {
+            el.appendChild(document.createTextNode(node))
+          } else {
+            el.appendChild(node)
+          }
+        }
       } else {
         el.appendChild(child)
       }

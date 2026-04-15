@@ -169,6 +169,18 @@ Component-level lifecycle (mounted/unmounted) is not granular enough: a single c
 
 A tree traversal of the scope hierarchy on every update would be O(scope count). The flat array, pre-filtered by mask, makes Phase 2 proportional to the number of bindings with matching mask bits -- which is often a small constant regardless of component size.
 
+### Cross-instance scope parenting
+
+`mountApp` and `hydrateApp` accept an optional `parentScope` so the mounted instance's `rootScope` becomes a child of an existing scope in a different component instance. This is what `@llui/vike`'s persistent-layout feature uses: when a layout calls `pageSlot()`, the primitive creates a `slotScope` as a child of the layout's current render scope, and the page mounts with that `slotScope` as its `parentScope`. The page is its own `ComponentInstance` with its own `update` loop, state, and `send` — but its `rootScope` lives inside the layout's scope tree.
+
+Two consequences follow from that one parameter:
+
+**Context flow across layers.** `useContext` walks up from the current render scope through the chain of `parent` pointers until it finds a provider. With the page's `rootScope` parented inside the layout, a `useContext(ToastContext)` call inside the page walks `pageRootScope → slotScope → layoutProviderScope → layoutRootScope` and finds any provider the layout installed above the slot. This is how layout-owned dispatchers (toast queues, progress bars, breadcrumbs) reach pages without direct messaging.
+
+**Disposal cascades in the right direction.** Disposing the layout's root cascades through `slotScope` → page `rootScope` → page's entire subtree — the whole chain tears down in one pass. Disposing only the page's root disposes its subtree without touching the layout: child scopes disposed, disposers fired, bindings marked dead, but the `parent` pointer from `slotScope` downward is the only upward reference and it's never followed by `disposeScope`. Navigating between pages (page re-mount, layout persists) is exactly this asymmetric disposal.
+
+For framework-adapter packages that need to build primitives like `pageSlot()` on top of the runtime, the low-level glue (`getRenderContext`, `createScope`, `addDisposer`) is exposed via the `@llui/dom/internal` subpath. App authors never reach for this — it's for sibling packages in the workspace that compose at the render-context layer.
+
 ## Compiler Pipeline
 
 The Vite plugin performs three logically distinct passes over each source file, using the **TypeScript Compiler API** exclusively. It runs with `enforce: 'pre'` so it processes raw TypeScript before Vite strips types.
