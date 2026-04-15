@@ -11,6 +11,42 @@ All notable changes to LLui packages are documented here. LLui is a pre-1.0 proj
 
 Packages version in lockstep at release time: `@llui/dom`, `@llui/vite-plugin`, `@llui/test`, `@llui/router`, `@llui/transitions`, `@llui/components`, `@llui/vike` share a version line. `@llui/effects`, `@llui/mcp`, and `@llui/lint-idiomatic` have their own cadence.
 
+## 2026-04-14 — 0.0.15
+
+**Released:** `@llui/{dom,vite-plugin,test,router,transitions,components,vike}@0.0.15`; `@llui/mcp@0.0.9`
+
+Addresses two production reports against `@llui/vike` + `@llui/transitions` page routing, and bakes the browser-e2e test back into the default `pnpm verify` pipeline.
+
+### `@llui/vike@0.0.15`
+
+- **Added** `RenderClientOptions.onLeave(el)` — awaited before dispose, so leave animations can run against the outgoing page's still-mounted DOM. Return a promise to defer the dispose-and-mount swap until the animation finishes.
+- **Added** `RenderClientOptions.onEnter(el)` — fires after the new page mounts, for enter animations. Sync; promise returns are ignored. Neither hook fires on the initial hydration render.
+- **Added** `fromTransition(t)` adapter — converts any `TransitionOptions` (the shape returned by `routeTransition`, `fade`, `slide`, etc. from `@llui/transitions`) into the `{ onLeave, onEnter }` pair, so wiring route transitions into Vike filesystem routing is one line: `createOnRenderClient({ ...fromTransition(routeTransition({ duration: 200 })) })`.
+- **Improved** README documents the full client-navigation lifecycle: `onLeave` → `dispose` → `textContent = ''` → `mountApp` → `onEnter` → `onMount`, with notes on `AbortSignal` semantics for in-flight effects (the signal gates `send()` dispatches but does not cancel in-flight network requests — intentional, avoids losing a successful POST on nav) and scroll handling (Vike's problem via `scrollToTop`, not ours).
+
+### `@llui/transitions@0.0.15`
+
+- **Improved** `routeTransition()` JSDoc now documents both call sites: manual `branch()`-based routing (spread `{ enter, leave }` into the branch call) and `@llui/vike` filesystem routing (wrap via `fromTransition` from `@llui/vike/client`). Previous wording implied the primary path was `branch()` and left Vike users reaching for a helper with nowhere to plug it in.
+
+### `@llui/components@0.0.15`
+
+- **Added** `dialog-dispose.test.ts` regression test: asserts that disposing a mounted app with an open `dialog.overlay` leaves `document.body` clean — no leftover portal content, focus-trap stack empty, body scroll lock count zero, sibling `aria-hidden` / `inert` restored, idempotent on second `dispose()`. Empirically confirms the scope-disposer chain correctly tears down overlay state when `@llui/vike` clears a page during client navigation.
+
+### `@llui/vite-plugin@0.0.15`
+
+- **Fixed** `test/mcp-watch.test.ts` was leaking `fs.watch` handles on the marker directory's parent on every `setup()` call. Over ~200 test invocations the accumulated handles hit macOS's EMFILE cap and sporadically crashed other tests running in parallel. Track active fake servers per test and fire their registered `close` handlers in `afterEach` so the plugin's cleanup path runs.
+
+### `@llui/mcp@0.0.9`
+
+- **Fixed** `test/playwright-e2e.test.ts` reworked to use vite's programmatic `createServer` API with `server.watch: null` and `optimizeDeps.noDiscovery: true`. The previous `spawn('pnpm', ['dev'])` path was unreliable on macOS: vite's default chokidar watcher tries to register directory watches across the whole monorepo at startup and blows through the launchctl-default 256-fd soft limit before printing its ready message, surfacing as a spurious `vite startup timeout` that had broken this suite on every developer machine since it landed.
+- **Fixed** Narrowly-scoped `process.on('uncaughtException')` filter installed during the suite swallows only `{ code: 'EMFILE', syscall: 'watch' }` errors originating from vite's `watchPackageDataPlugin`, which registers `fs.watch` on every `package.json` regardless of `server.watch`. Legit exceptions still propagate; the filter is removed in `afterAll`.
+- **Improved** Suite is re-included in the default `pnpm verify` pipeline — runs in ~3s against a real Vite dev server and a real Chromium browser. The earlier `LLUI_RUN_E2E` opt-in flag is gone; `loadPlaywright()` probes `playwright.chromium.executablePath()` + `existsSync` so fresh checkouts (before `pnpm install`) and CI jobs without Chromium installed still skip the suite cleanly.
+- **Added** `pnpm test:e2e` root script — shortcut for `pnpm --filter @llui/mcp test` when iterating on the browser-integration suite.
+
+### CI
+
+- **Added** Playwright Chromium install + cache step in `.github/workflows/ci.yml`. Cache keyed on `pnpm-lock.yaml`, stored at `~/.cache/ms-playwright`. Cold install is ~30s with `--with-deps`; cache hits run `install-deps chromium` only to refresh system libraries.
+
 ## 2026-04-14 — 0.0.14
 
 **Released:** `@llui/{dom,vite-plugin,test,router,transitions,components,vike}@0.0.14`; `@llui/{effects,mcp}@0.0.8`; `@llui/lint-idiomatic@0.0.11`
