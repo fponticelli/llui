@@ -679,8 +679,15 @@ a `Layout` component that stays alive across client navigation via
 `@llui/vike`'s `Layout` option, and use `pageSlot()` inside the layout
 to mark where the route's page renders.
 
+> **Don't name the file `+Layout.ts`.** Vike reserves the `+` prefix for
+> its own framework-adapter conventions, and `+Layout.ts` is interpreted
+> by `vike-react` / `vike-vue` / `vike-solid` as a framework-native
+> layout config that conflicts with `@llui/vike`'s `Layout` option. Name
+> it `Layout.ts`, `app-layout.ts`, or anywhere outside `/pages` Vike
+> won't scan, and import it from `+onRenderClient.ts` by path.
+
 ```typescript
-// pages/+Layout.ts
+// pages/Layout.ts    ← not +Layout.ts
 import { component, div, header, main } from '@llui/dom'
 import { pageSlot } from '@llui/vike/client'
 
@@ -712,7 +719,7 @@ export const AppLayout = component<LayoutState, LayoutMsg>({
 ```typescript
 // pages/+onRenderClient.ts
 import { createOnRenderClient } from '@llui/vike/client'
-import { AppLayout } from './+Layout'
+import { AppLayout } from './Layout'
 
 export const onRenderClient = createOnRenderClient({
   Layout: AppLayout,
@@ -722,7 +729,7 @@ export const onRenderClient = createOnRenderClient({
 ```typescript
 // pages/+onRenderHtml.ts — same Layout on the server
 import { createOnRenderHtml } from '@llui/vike/server'
-import { AppLayout } from './+Layout'
+import { AppLayout } from './Layout'
 
 export const onRenderHtml = createOnRenderHtml({
   Layout: AppLayout,
@@ -771,7 +778,7 @@ operations that pages need to trigger — toast queues, global progress
 bars, breadcrumbs, session refresh, chrome visibility toggles.
 
 ```typescript
-// pages/+Layout.ts
+// pages/Layout.ts
 import { component, div, main, provide, createContext } from '@llui/dom'
 import { pageSlot } from '@llui/vike/client'
 
@@ -787,11 +794,11 @@ export const AppLayout = component<LayoutState, LayoutMsg>({
   view: ({ send }) => [
     div({ class: 'app-shell' }, [
       ToastStack(), // rendered from layout state
-      ...provide(
+      ...provideValue(
         ToastContext,
-        () => ({
+        {
           show: (msg) => send({ type: 'toast/show', msg }),
-        }),
+        },
         () => [main([pageSlot()])],
       ),
     ]),
@@ -802,16 +809,16 @@ export const AppLayout = component<LayoutState, LayoutMsg>({
 ```typescript
 // Any page below the layout reads the dispatcher and triggers it.
 // pages/studio/+Page.ts
-import { component, button, text, useContext } from '@llui/dom'
-import { ToastContext } from '../+Layout'
+import { component, button, text, useContextValue } from '@llui/dom'
+import { ToastContext } from '../Layout'
 
 export const StudioPage = component<StudioState, StudioMsg>({
   name: 'StudioPage',
   init: () => [{ saved: false }, []],
   update: (s) => [s, []],
   view: ({ send }) => {
-    const toast = useContext(ToastContext)
-    return [button({ onClick: () => toast({} as LayoutState).show('Saved') }, [text('Save')])]
+    const toast = useContextValue(ToastContext)
+    return [button({ onClick: () => toast.show('Saved') }, [text('Save')])]
   },
 })
 ```
@@ -822,6 +829,16 @@ the layout's `send`, so calls into it land as messages in the layout's
 own update loop. This works uniformly for toast queues, session
 refresh, breadcrumb updates, and any other "page triggers layout
 operation" pattern.
+
+`provideValue` and `useContextValue` are the static-bag companions to
+the reactive `provide` / `useContext` primitives. Use them whenever the
+context value is a stable dispatcher record that doesn't depend on
+parent state — they let you write `useContextValue(ctx).method(...)`
+in one call instead of `useContext(ctx)(undefined as never).method(...)`.
+Reach for the reactive form (`provide(ctx, accessor, children)` +
+`useContext(ctx)`) when the context value DOES need to track state,
+e.g. `provide(ThemeContext, (s) => s.theme, () => [...])` for a
+theme value that changes on user interaction.
 
 ## Foreign Libraries
 

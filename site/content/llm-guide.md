@@ -184,8 +184,14 @@ stays mounted across client navigation. Pages render at the layout's
 `pageSlot()` position and only the page — not the layout — is disposed
 and re-mounted when the user navigates.
 
+**Filename rule:** name the layout file `Layout.ts` (or `app-layout.ts`,
+or anywhere outside `/pages`). NEVER name it `+Layout.ts` — Vike reserves
+the `+` prefix for its own framework-adapter conventions and treats
+`+Layout.ts` as a `vike-react` / `vike-vue` / `vike-solid` config that
+collides with `@llui/vike`'s `Layout` option.
+
 ```typescript
-// pages/+Layout.ts
+// pages/Layout.ts    ← not +Layout.ts
 import { component, div, header, main } from '@llui/dom'
 import { pageSlot } from '@llui/vike/client'
 
@@ -207,7 +213,7 @@ export const AppLayout = component<LayoutState, LayoutMsg>({
 ```typescript
 // pages/+onRenderClient.ts
 import { createOnRenderClient } from '@llui/vike/client'
-import { AppLayout } from './+Layout'
+import { AppLayout } from './Layout'
 
 export const onRenderClient = createOnRenderClient({
   Layout: AppLayout,
@@ -217,7 +223,7 @@ export const onRenderClient = createOnRenderClient({
 ```typescript
 // pages/+onRenderHtml.ts — same Layout on the server
 import { createOnRenderHtml } from '@llui/vike/server'
-import { AppLayout } from './+Layout'
+import { AppLayout } from './Layout'
 
 export const onRenderHtml = createOnRenderHtml({
   Layout: AppLayout,
@@ -236,24 +242,25 @@ createOnRenderClient({
 ```
 
 **Layout → page communication.** Pages read layout-provided operations
-via `useContext` — `pageSlot()` parents the page's scope inside the
-layout's scope tree, so `useContext` walks up through the slot and
-finds providers the layout installed above it. Use this for toast
+via `useContextValue` (for stable dispatcher bags) or `useContext` (for
+state-dependent values). `pageSlot()` parents the page's scope inside
+the layout's scope tree, so context lookups walk up through the slot
+and find providers the layout installed above it. Use this for toast
 dispatchers, global progress bars, breadcrumbs, session refresh, any
 pattern where a page triggers a layout operation without importing
 from the layout's internals.
 
 ```typescript
 // Inside the layout's view, above the pageSlot()
-...provide(
+...provideValue(
   ToastContext,
-  () => ({ show: (msg: string) => send({ type: 'toast/show', msg }) }),
+  { show: (msg: string) => send({ type: 'toast/show', msg }) },
   () => [main([pageSlot()])],
 ),
 
 // Inside any page's view
-const toast = useContext(ToastContext)
-button({ onClick: () => toast({} as LayoutState).show('Saved') }, [text('Save')])
+const toast = useContextValue(ToastContext)
+button({ onClick: () => toast.show('Saved') }, [text('Save')])
 ```
 
 ## Rules
@@ -276,7 +283,8 @@ button({ onClick: () => toast({} as LayoutState).show('Saved') }, [text('Save')]
 - Use `virtualEach({ items, key, itemHeight, containerHeight, render })` from `@llui/dom` for large lists (1k+ rows) with fixed row height. Renders only visible rows; scrolling reconciles in place without touching component state.
 - For composition, use view functions (Level 1) with `(props, send)` convention.
   Only use `child()` for library components with encapsulated internals or 30+ state paths.
-- For Vike apps with persistent app chrome (header, sidebar, session state, portalled dialogs), declare a `Layout` component and use `pageSlot()` from `@llui/vike/client` at the position where the route's page should render. Wire it via `createOnRenderClient({ Layout })` + `createOnRenderHtml({ Layout })`. Pages read layout-provided operations (toast dispatchers, progress bars, breadcrumbs) via `useContext` — `pageSlot()` parents the page's scope inside the layout's scope tree so `useContext` walks through the slot. Pass an array `[AppLayout, DashboardLayout]` for nested layouts, or a `(pageContext) => chain` resolver for per-route chains.
+- For Vike apps with persistent app chrome (header, sidebar, session state, portalled dialogs), declare a `Layout` component and use `pageSlot()` from `@llui/vike/client` at the position where the route's page should render. Wire it via `createOnRenderClient({ Layout })` + `createOnRenderHtml({ Layout })`. Pages read layout-provided operations (toast dispatchers, progress bars, breadcrumbs) via `useContextValue` (for static dispatcher bags) or `useContext` (for state-dependent values) — `pageSlot()` parents the page's scope inside the layout's scope tree so context lookups walk through the slot. Pass an array `[AppLayout, DashboardLayout]` for nested layouts, or a `(pageContext) => chain` resolver for per-route chains. NEVER name the file `+Layout.ts` (collides with Vike's framework-adapter convention) — use `Layout.ts` or anywhere outside `/pages`.
+- For context, prefer `provideValue(ctx, value, children)` + `useContextValue(ctx)` when the value is a stable dispatcher bag, action record, or DI container that doesn't depend on state. Use the reactive `provide(ctx, accessor, children)` + `useContext(ctx)` when the value DOES need to track state (e.g. `provide(ThemeContext, (s) => s.theme, () => [...])`). The static forms read as `useContextValue(ctx).method(...)` instead of `useContext(ctx)(undefined as never).method(...)`.
 - For forms with many fields, use a single `setField` message:
   `{ type: 'setField'; field: keyof Fields; value: string }` instead of one message per field.
   Use `applyField(state, msg.field, msg.value)` from `@llui/dom` to apply updates.

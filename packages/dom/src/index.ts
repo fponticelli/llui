@@ -36,7 +36,14 @@ export { flush } from './runtime.js'
 export { addressOf } from './addressed.js'
 export { renderToString, renderNodes, serializeNodes } from './ssr.js'
 export { mergeHandlers } from './merge-handlers.js'
-export { createContext, provide, useContext, type Context } from './primitives/context.js'
+export {
+  createContext,
+  provide,
+  provideValue,
+  useContext,
+  useContextValue,
+  type Context,
+} from './primitives/context.js'
 export { sliceHandler } from './slice-handler.js'
 export {
   childHandlers,
@@ -58,7 +65,7 @@ export { portal } from './primitives/portal.js'
 export { foreign } from './primitives/foreign.js'
 export { child } from './primitives/child.js'
 export { lazy, type LazyOptions } from './primitives/lazy.js'
-export type { LazyDef } from './types.js'
+export type { LazyDef, AnyComponentDef } from './types.js'
 export { memo } from './primitives/memo.js'
 export { selector } from './primitives/selector.js'
 export { onMount } from './primitives/on-mount.js'

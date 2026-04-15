@@ -136,6 +136,10 @@ export function mountApp<S, M, E>(
       if (disposed) return
       flushInstance(inst)
     },
+    send(msg: unknown) {
+      if (disposed) return
+      ;(inst.send as (m: unknown) => void)(msg)
+    },
   }
 }
 
@@ -258,6 +262,10 @@ export function hydrateApp<S, M, E>(
     flush() {
       if (disposed) return
       flushInstance(inst)
+    },
+    send(msg: unknown) {
+      if (disposed) return
+      ;(inst.send as (m: unknown) => void)(msg)
     },
   }
 }

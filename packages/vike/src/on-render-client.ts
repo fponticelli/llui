@@ -1,5 +1,5 @@
 import { hydrateApp, mountApp } from '@llui/dom'
-import type { ComponentDef, AppHandle, TransitionOptions, Scope } from '@llui/dom'
+import type { AnyComponentDef, AppHandle, TransitionOptions, Scope } from '@llui/dom'
 import { _consumePendingSlot, _resetPendingSlot } from './page-slot.js'
 
 // Re-exported so `@llui/vike/client` is a one-stop-shop for everything
@@ -25,13 +25,12 @@ declare global {
  * data under the `lluiLayoutData` key.
  */
 export interface ClientPageContext {
-  Page: ComponentDef<unknown, unknown, unknown, unknown>
+  Page: AnyComponentDef
   data?: unknown
   lluiLayoutData?: readonly unknown[]
   isHydration?: boolean
 }
 
-type AnyComponentDef = ComponentDef<unknown, unknown, unknown, unknown>
 type LayoutChain = ReadonlyArray<AnyComponentDef>
 
 /**
@@ -195,6 +194,13 @@ interface ChainEntry {
   handle: AppHandle
   slotMarker: HTMLElement | null
   slotScope: Scope | null
+  /**
+   * The data slice this layer was most recently mounted or updated
+   * with. Compared shallow-key against the next nav's `lluiLayoutData[i]`
+   * to decide whether a surviving layer needs a `propsMsg` dispatch.
+   * Layers that didn't receive any layout data carry `undefined` here.
+   */
+  data: unknown
 }
 
 // Live chain of mounted layers. Module-level state: there's exactly
@@ -238,11 +244,20 @@ export async function onRenderClient(pageContext: ClientPageContext): Promise<vo
  * for the full option surface — this is the entry point for persistent
  * layouts, route transitions, and lifecycle hooks.
  *
+ * **Do not name your layout file `+Layout.ts`.** Vike reserves the `+`
+ * prefix for its own framework config conventions, and `+Layout.ts` is
+ * interpreted by `vike-react` / `vike-vue` / `vike-solid` framework
+ * adapters as a native layout config. `@llui/vike` isn't a framework
+ * adapter in that sense — it's a render adapter, and `createOnRenderClient`
+ * consumes the layout component directly via the `Layout` option. Name
+ * the file `Layout.ts`, `app-layout.ts`, or anywhere outside `/pages`
+ * that Vike won't scan, and import it here by path.
+ *
  * ```ts
  * // pages/+onRenderClient.ts
  * import { createOnRenderClient, fromTransition } from '@llui/vike/client'
  * import { routeTransition } from '@llui/transitions'
- * import { AppLayout } from './+Layout'
+ * import { AppLayout } from './Layout' // ← NOT './+Layout'
  *
  * export const onRenderClient = createOnRenderClient({
  *   Layout: AppLayout,
@@ -293,6 +308,31 @@ async function renderClient(
     firstMismatch++
   }
 
+  // Push fresh data into surviving layers (layers in the shared prefix).
+  // Without this, persistent layouts can't react to nav-driven data
+  // changes — pathname, breadcrumbs, session, nav-highlight state all
+  // belong to the layout but change on every client navigation. Each
+  // surviving layer's def can opt in via `propsMsg(data) => Msg`; we
+  // dispatch the resulting message through the handle's `send` so the
+  // layout's update loop processes it like any other state change.
+  //
+  // Diff is shallow-key Object.is on record-shaped data, falling back
+  // to whole-value Object.is for primitives / non-records. This matches
+  // child()'s prop-diff behavior, which is what the report asked us to
+  // mirror. Layers without `propsMsg` are skipped silently — opt-in.
+  for (let i = 0; i < firstMismatch; i++) {
+    const entry = chainHandles[i]!
+    const newData = newChainData[i]
+    if (!hasDataChanged(entry.data, newData)) continue
+    entry.data = newData
+    const propsMsg = (entry.def as { propsMsg?: (data: unknown) => unknown }).propsMsg
+    if (typeof propsMsg !== 'function') continue
+    const msg = propsMsg(newData)
+    if (msg !== null && msg !== undefined) {
+      entry.handle.send(msg)
+    }
+  }
+
   // Find the slot element whose contents will change. Shared prefix =
   // everything before firstMismatch. The slot we're about to replace
   // content in sits in the layer at firstMismatch - 1 (if any);
@@ -302,8 +342,9 @@ async function renderClient(
 
   // If everything matches (same chain end-to-end with same defs), this
   // is effectively a no-op nav — the page def hasn't changed. We still
-  // fire onMount so callers can run per-render side effects, but there's
-  // nothing to dispose or mount.
+  // fire onMount so callers can run per-render side effects, and the
+  // surviving-layer data updates above already ran. But there's nothing
+  // to dispose or mount, so skip the rest of the work.
   const isNoOp = firstMismatch === chainHandles.length && firstMismatch === newChain.length
   if (isNoOp) {
     options.onMount?.()
@@ -400,9 +441,22 @@ function mountChainSuffix(
       // client mismatch throws with a clear error instead of silently
       // hydrating the wrong state into the wrong instance.
       const layerState = extractHydrationState(opts.serverStateEnvelope, i, chain.length, def)
-      handle = hydrateApp(mountTarget, def, layerState, { parentScope })
+      // Cross from the type-erased AnyComponentDef back into a concrete
+      // ComponentDef<unknown, unknown, unknown, unknown> for the mount
+      // primitive's signature. The cast is safe — mountApp / hydrateApp
+      // don't use the type parameters at runtime, they just thread the
+      // def through createComponentInstance which accesses init/update/
+      // view by field name. AnyComponentDef has the same field shape.
+      handle = hydrateApp(
+        mountTarget,
+        def as unknown as Parameters<typeof hydrateApp>[1],
+        layerState,
+        { parentScope },
+      )
     } else {
-      handle = mountApp(mountTarget, def, layerData, { parentScope })
+      handle = mountApp(mountTarget, def as unknown as Parameters<typeof mountApp>[1], layerData, {
+        parentScope,
+      })
     }
 
     const slot = _consumePendingSlot()
@@ -434,6 +488,7 @@ function mountChainSuffix(
       handle,
       slotMarker: slot?.marker ?? null,
       slotScope: slot?.slotScope ?? null,
+      data: layerData,
     })
 
     if (slot !== null) {
@@ -453,6 +508,46 @@ function mountChainSuffix(
  * name at a given index — so server/client drift fails loud instead of
  * silently binding the wrong state to the wrong instance.
  */
+/**
+ * Shallow-key data diff for the persistent-layer prop-update path.
+ * Returns true when `next` differs from `prev` enough to warrant
+ * dispatching a `propsMsg`. Mirrors `child()`'s prop-diff semantics:
+ *
+ * - `Object.is(prev, next)` short-circuits identical references.
+ * - For two plain-object records, walks the union of keys and returns
+ *   true on the first `Object.is` mismatch.
+ * - For anything else (primitives, arrays, class instances), falls
+ *   back to the top-level `Object.is` result — covers the cases where
+ *   the host populates `lluiLayoutData[i]` with a primitive or a
+ *   referentially-stable object.
+ */
+function hasDataChanged(prev: unknown, next: unknown): boolean {
+  if (Object.is(prev, next)) return false
+  // Both must be plain object records to do a key walk; otherwise the
+  // Object.is above is the only signal.
+  if (
+    prev === null ||
+    next === null ||
+    typeof prev !== 'object' ||
+    typeof next !== 'object' ||
+    Array.isArray(prev) ||
+    Array.isArray(next)
+  ) {
+    return true
+  }
+  const prevRec = prev as Record<string, unknown>
+  const nextRec = next as Record<string, unknown>
+  const seen = new Set<string>()
+  for (const k of Object.keys(prevRec)) {
+    seen.add(k)
+    if (!Object.is(prevRec[k], nextRec[k])) return true
+  }
+  for (const k of Object.keys(nextRec)) {
+    if (!seen.has(k)) return true
+  }
+  return false
+}
+
 function extractHydrationState(
   envelope: unknown,
   layerIndex: number,

@@ -112,6 +112,9 @@ export function replaceComponent<S, M, E>(
         flush() {
           flushInstance(inst)
         },
+        send(msg: unknown) {
+          ;(typedInst.send as (m: unknown) => void)(msg)
+        },
       }
     }
   }

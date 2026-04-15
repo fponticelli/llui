@@ -33,8 +33,12 @@ let pendingSlot: PendingSlot | null = null
  * the page does `useContext(ToastContext)` and walks up through the
  * slot into the layout's providers.
  *
+ * Do NOT name the file `+Layout.ts` — Vike reserves the `+` prefix for
+ * its own framework config conventions. Use `Layout.ts`, `app-layout.ts`,
+ * or anywhere outside `/pages` that Vike won't scan.
+ *
  * ```ts
- * // pages/+Layout.ts
+ * // pages/Layout.ts    ← not +Layout.ts
  * import { component, div, main, header } from '@llui/dom'
  * import { pageSlot } from '@llui/vike/client'
  *

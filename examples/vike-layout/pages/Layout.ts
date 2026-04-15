@@ -1,4 +1,4 @@
-import { component, div, header, main, nav, a, span, button, provide } from '@llui/dom'
+import { component, div, header, main, nav, a, span, button, provideValue } from '@llui/dom'
 import { pageSlot } from '@llui/vike/client'
 import { ToastContext, SessionContext } from '../src/contexts'
 
@@ -97,24 +97,26 @@ export const AppLayout = component<AppLayoutState, AppLayoutMsg, never>({
         }),
       ]),
 
-      // Two providers wrap the main content region. Each exposes a
-      // dispatcher object whose methods close over `send`, so any page
-      // below the slot can read them via `useContext` and trigger layout
-      // state changes without direct coupling.
-      ...provide(
+      // Two stable dispatcher bags wrap the main content region. Each
+      // exposes methods that close over `send`, so any page below the
+      // slot can read them via `useContextValue` and trigger layout
+      // state changes without direct coupling. Both contexts are
+      // state-independent — `provideValue` is the right primitive,
+      // and consumers read with `useContextValue(ctx)` (one call,
+      // not the `useContext(ctx)(undefined as never).method()` dance).
+      ...provideValue(
         ToastContext,
-        () => ({
+        {
           show: (msg: string) => send({ type: 'toast/show', msg }),
           dismiss: (id: number) => send({ type: 'toast/dismiss', id }),
-        }),
+        },
         () => [
-          ...provide(
+          ...provideValue(
             SessionContext,
-            (s) => ({
+            {
               login: (user: string) => send({ type: 'session/login', user }),
               logout: () => send({ type: 'session/logout' }),
-              getUser: () => s.user,
-            }),
+            },
             () => [main({ class: 'app-main' }, [pageSlot()])],
           ),
         ],

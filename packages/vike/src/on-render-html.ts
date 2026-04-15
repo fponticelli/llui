@@ -1,8 +1,7 @@
 import { renderNodes, serializeNodes } from '@llui/dom'
-import type { ComponentDef, Binding, Scope } from '@llui/dom'
+import type { AnyComponentDef, Binding, Scope } from '@llui/dom'
 import { _consumePendingSlot, _resetPendingSlot } from './page-slot.js'
 
-type AnyComponentDef = ComponentDef<unknown, unknown, unknown, unknown>
 type LayoutChain = ReadonlyArray<AnyComponentDef>
 
 /**
@@ -93,10 +92,16 @@ export async function onRenderHtml(pageContext: PageContext): Promise<RenderHtml
 /**
  * Factory to create a customized onRenderHtml hook.
  *
+ * **Do not name your layout file `+Layout.ts`.** Vike reserves `+Layout`
+ * for its own framework-adapter config (`vike-react` / `vike-vue` /
+ * `vike-solid`) and will conflict with `@llui/vike`'s `Layout` option.
+ * Name the file `Layout.ts`, `app-layout.ts`, or anywhere outside
+ * `/pages` that Vike won't scan, and import it here by path.
+ *
  * ```ts
  * // pages/+onRenderHtml.ts
  * import { createOnRenderHtml } from '@llui/vike/server'
- * import { AppLayout } from './+Layout'
+ * import { AppLayout } from './Layout' // ← NOT './+Layout'
  *
  * export const onRenderHtml = createOnRenderHtml({
  *   Layout: AppLayout,
@@ -193,7 +198,14 @@ function renderChain(
     // the state post-init so that the view sees the right fields.
     const [initialState] = def.init(layerData)
 
-    const { nodes, inst } = renderNodes(def, initialState, currentSlotScope)
+    // Cross from type-erased AnyComponentDef into the concrete signature
+    // renderNodes expects. Same pattern as the client mount path —
+    // renderNodes is generic but the runtime doesn't use the type params.
+    const { nodes, inst } = renderNodes(
+      def as unknown as Parameters<typeof renderNodes>[0],
+      initialState,
+      currentSlotScope,
+    )
     allBindings.push(...inst.allBindings)
 
     if (i === 0) {

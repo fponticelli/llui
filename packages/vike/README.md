@@ -61,8 +61,10 @@ export const onRenderClient = createOnRenderClient({
 
 Declare app chrome (header, sidebar, dialogs, session state) as a `Layout` component that stays mounted across client navigation. The route-scoped `Page` swaps in and out at the layout's `pageSlot()` position while the surrounding layout subtree — and every DOM node, focus trap, portal, and effect subscription inside it — is untouched.
 
+> **Do not name your layout file `+Layout.ts`.** Vike reserves the `+` prefix for its own framework-adapter config conventions, and `+Layout.ts` specifically is interpreted by `vike-react` / `vike-vue` / `vike-solid` as a framework-native layout config. `@llui/vike` isn't a framework adapter in that sense — it's a render adapter, and `createOnRenderClient({ Layout })` consumes the layout component directly. Name your file `Layout.ts`, `app-layout.ts`, or place it anywhere outside `/pages` that Vike won't scan, then import it from `+onRenderClient.ts` / `+onRenderHtml.ts` by path.
+
 ```ts
-// pages/+Layout.ts
+// pages/Layout.ts    ← not +Layout.ts
 import { component, div, header, main } from '@llui/dom'
 import { pageSlot } from '@llui/vike/client'
 
@@ -84,7 +86,7 @@ export const AppLayout = component<LayoutState, LayoutMsg>({
 ```ts
 // pages/+onRenderClient.ts
 import { createOnRenderClient } from '@llui/vike/client'
-import { AppLayout } from './+Layout'
+import { AppLayout } from './Layout'
 
 export const onRenderClient = createOnRenderClient({
   Layout: AppLayout,
@@ -94,7 +96,7 @@ export const onRenderClient = createOnRenderClient({
 ```ts
 // pages/+onRenderHtml.ts — server renders layout + page as one tree
 import { createOnRenderHtml } from '@llui/vike/server'
-import { AppLayout } from './+Layout'
+import { AppLayout } from './Layout'
 
 export const onRenderHtml = createOnRenderHtml({
   Layout: AppLayout,
@@ -133,7 +135,7 @@ The scope-tree integration makes this natural: `pageSlot()` creates its slot as 
 Common pattern — a layout-owned toast system:
 
 ```ts
-// pages/+Layout.ts
+// pages/Layout.ts
 import { component, div, main, provide, createContext } from '@llui/dom'
 import { pageSlot } from '@llui/vike/client'
 
@@ -143,6 +145,10 @@ interface ToastDispatchers {
 }
 export const ToastContext = createContext<ToastDispatchers>(undefined, 'Toast')
 
+// Note: import { provideValue, useContextValue } from '@llui/dom' for
+// the stable-dispatcher pattern below — they're the static-bag
+// companions to the reactive provide / useContext primitives.
+
 export const AppLayout = component<LayoutState, LayoutMsg>({
   name: 'AppLayout',
   init: () => [{ toasts: [] }, []],
@@ -150,12 +156,12 @@ export const AppLayout = component<LayoutState, LayoutMsg>({
   view: ({ send }) => [
     div({ class: 'app-shell' }, [
       ToastStack(), // reads from layout state
-      ...provide(
+      ...provideValue(
         ToastContext,
-        () => ({
+        {
           show: (msg) => send({ type: 'toast/show', msg }),
           dismiss: (id) => send({ type: 'toast/dismiss', id }),
-        }),
+        },
         () => [main([pageSlot()])],
       ),
     ]),
@@ -166,8 +172,8 @@ export const AppLayout = component<LayoutState, LayoutMsg>({
 ```ts
 // Any page below the layout can now use the toast dispatcher.
 // pages/studio/+Page.ts
-import { component, button, text, useContext } from '@llui/dom'
-import { ToastContext } from '../+Layout'
+import { component, button, text, useContextValue } from '@llui/dom'
+import { ToastContext } from '../Layout'
 
 export const StudioPage = component<StudioState, StudioMsg>({
   name: 'StudioPage',
@@ -179,11 +185,13 @@ export const StudioPage = component<StudioState, StudioMsg>({
     return [s, []]
   },
   view: ({ send }) => {
-    const toast = useContext(ToastContext)
-    return [button({ onClick: () => toast({} as LayoutState).show('Saved') }, [text('Save')])]
+    const toast = useContextValue(ToastContext)
+    return [button({ onClick: () => toast.show('Saved') }, [text('Save')])]
   },
 })
 ```
+
+`provideValue` and `useContextValue` are companions to the reactive `provide` / `useContext` for the common case of publishing a stable dispatcher bag — anything that doesn't depend on the parent's state. Use them for toast queues, session managers, breadcrumb dispatchers, and any other pattern where a page calls into layout-owned operations through a closure-captured `send`. The reactive `provide(ctx, accessor, children)` and `useContext(ctx)` forms still exist for context values that DO depend on state (e.g. `provide(ThemeContext, (s) => s.theme, () => [...])`).
 
 Toast state machines, global progress indicators, breadcrumb/title bars, modal-takeover chrome toggles, and session-expired banners all fall out of this pattern naturally — the layout owns the state, provides a dispatcher via context, and any page can trigger layout operations without touching the layout's internals.
 

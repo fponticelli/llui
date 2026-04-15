@@ -1,4 +1,4 @@
-import { component, div, h1, p, label, input, button, useContext } from '@llui/dom'
+import { component, div, h1, p, label, input, button, useContextValue } from '@llui/dom'
 import { ToastContext } from '../../src/contexts'
 
 type SettingsState = {
@@ -33,7 +33,7 @@ export const Page = component<SettingsState, SettingsMsg, never>({
     }
   },
   view: ({ send, text }) => {
-    const toast = useContext(ToastContext)
+    const toast = useContextValue(ToastContext)
     return [
       div({ class: 'page page-settings' }, [
         h1([text('Settings')]),
@@ -82,7 +82,7 @@ export const Page = component<SettingsState, SettingsMsg, never>({
             class: 'primary',
             onClick: () => {
               send({ type: 'save' })
-              toast({} as never).show('Settings saved')
+              toast.show('Settings saved')
             },
           },
           [text('Save')],

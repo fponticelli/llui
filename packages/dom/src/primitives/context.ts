@@ -108,3 +108,57 @@ export function useContext<S, T>(ctx: Context<T>): (s: S) => T {
       `or pass a default to createContext().`,
   )
 }
+
+/**
+ * Provide a state-independent value to every descendant. Companion to
+ * `provide()` for the common case of publishing a stable dispatcher
+ * bag, callback record, or DI container — anything that doesn't depend
+ * on the parent's state.
+ *
+ * ```ts
+ * provideValue(ToastContext, { show: (m) => send({ type: 'toast', m }) }, () => [
+ *   main([pageSlot()]),
+ * ])
+ * ```
+ *
+ * Equivalent to `provide(ctx, () => value, children)`, but exists so
+ * the call site reads as "provide this value" rather than "provide an
+ * accessor that ignores its state argument and returns a value." Pair
+ * with `useContextValue` for symmetric ergonomics on the consumer side.
+ *
+ * Internally still uses the accessor mechanism: the value is wrapped
+ * in a constant lambda. Consumers that read via the reactive
+ * `useContext` form will get an `(s) => T` whose accessor ignores `s`.
+ */
+export function provideValue<T>(ctx: Context<T>, value: T, children: () => Node[]): Node[] {
+  return provide(ctx, () => value, children)
+}
+
+/**
+ * Read a state-independent value from the nearest provider. Companion
+ * to `useContext()` for the common case of consuming a stable
+ * dispatcher bag, callback record, or DI container.
+ *
+ * ```ts
+ * const toast = useContextValue(ToastContext)
+ * button({ onClick: () => toast.show('Saved') }, [text('Save')])
+ * ```
+ *
+ * Equivalent to calling the accessor returned by `useContext` with
+ * `undefined`, but reads as a single function call instead of a
+ * three-step "look up the accessor, ignore the state arg, get the
+ * value" dance.
+ *
+ * Use this only with values provided via `provideValue` (or via
+ * `provide` with an accessor that ignores its state argument). Calling
+ * `useContextValue` against a context whose accessor reads from state
+ * will resolve the accessor against `undefined` and likely throw or
+ * return wrong data — there's no way for the runtime to detect the
+ * mismatch, so honor the contract at the API surface.
+ */
+export function useContextValue<T>(ctx: Context<T>): T {
+  const accessor = useContext<unknown, T>(ctx)
+  // The contract above: the producer side promised this accessor
+  // doesn't read its state arg. Pass undefined.
+  return accessor(undefined)
+}

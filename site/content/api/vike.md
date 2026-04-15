@@ -107,11 +107,16 @@ function onRenderHtml(pageContext: PageContext): Promise<RenderHtmlResult>
 ### `createOnRenderHtml()`
 
 Factory to create a customized onRenderHtml hook.
+**Do not name your layout file `+Layout.ts`.** Vike reserves `+Layout`
+for its own framework-adapter config (`vike-react` / `vike-vue` /
+`vike-solid`) and will conflict with `@llui/vike`'s `Layout` option.
+Name the file `Layout.ts`, `app-layout.ts`, or anywhere outside
+`/pages` that Vike won't scan, and import it here by path.
 
 ```ts
 // pages/+onRenderHtml.ts
 import { createOnRenderHtml } from '@llui/vike/server'
-import { AppLayout } from './+Layout'
+import { AppLayout } from './Layout' // ← NOT './+Layout'
 export const onRenderHtml = createOnRenderHtml({
   Layout: AppLayout,
   document: ({ html, state, head }) => `<!DOCTYPE html>
@@ -208,12 +213,20 @@ function onRenderClient(pageContext: ClientPageContext): Promise<void>
 Factory to create a customized onRenderClient hook. See `RenderClientOptions`
 for the full option surface — this is the entry point for persistent
 layouts, route transitions, and lifecycle hooks.
+**Do not name your layout file `+Layout.ts`.** Vike reserves the `+`
+prefix for its own framework config conventions, and `+Layout.ts` is
+interpreted by `vike-react` / `vike-vue` / `vike-solid` framework
+adapters as a native layout config. `@llui/vike` isn't a framework
+adapter in that sense — it's a render adapter, and `createOnRenderClient`
+consumes the layout component directly via the `Layout` option. Name
+the file `Layout.ts`, `app-layout.ts`, or anywhere outside `/pages`
+that Vike won't scan, and import it here by path.
 
 ```ts
 // pages/+onRenderClient.ts
 import { createOnRenderClient, fromTransition } from '@llui/vike/client'
 import { routeTransition } from '@llui/transitions'
-import { AppLayout } from './+Layout'
+import { AppLayout } from './Layout' // ← NOT './+Layout'
 export const onRenderClient = createOnRenderClient({
   Layout: AppLayout,
   ...fromTransition(routeTransition({ duration: 200 })),
@@ -267,15 +280,25 @@ function mountChainSuffix(
 ): void
 ```
 
-### `extractHydrationState()`
+### `hasDataChanged()`
 
-Pull the per-layer state from the hydration envelope. Supports both
-the new chain-aware shape (`{ layouts: [...], page: {...} }`) and the
-legacy flat shape (`window.__LLUI_STATE__` is the state object itself)
-for backward compatibility with pages written against 0.0.15 or earlier.
-Throws on envelope shape mismatch — missing entries, wrong component
-name at a given index — so server/client drift fails loud instead of
-silently binding the wrong state to the wrong instance.
+Shallow-key data diff for the persistent-layer prop-update path.
+Returns true when `next` differs from `prev` enough to warrant
+dispatching a `propsMsg`. Mirrors `child()`'s prop-diff semantics:
+
+- `Object.is(prev, next)` short-circuits identical references.
+- For two plain-object records, walks the union of keys and returns
+  true on the first `Object.is` mismatch.
+- For anything else (primitives, arrays, class instances), falls
+  back to the top-level `Object.is` result — covers the cases where
+  the host populates `lluiLayoutData[i]` with a primitive or a
+  referentially-stable object.
+
+```typescript
+function hasDataChanged(prev: unknown, next: unknown): boolean
+```
+
+### `extractHydrationState()`
 
 ```typescript
 function extractHydrationState(
@@ -287,12 +310,6 @@ function extractHydrationState(
 ```
 
 ## Types
-
-### `AnyComponentDef`
-
-```typescript
-type AnyComponentDef = ComponentDef<unknown, unknown, unknown, unknown>
-```
 
 ### `LayoutChain`
 
@@ -397,7 +414,7 @@ data under the `lluiLayoutData` key.
 
 ```typescript
 export interface ClientPageContext {
-  Page: ComponentDef<unknown, unknown, unknown, unknown>
+  Page: AnyComponentDef
   data?: unknown
   lluiLayoutData?: readonly unknown[]
   isHydration?: boolean
@@ -510,6 +527,13 @@ interface ChainEntry {
   handle: AppHandle
   slotMarker: HTMLElement | null
   slotScope: Scope | null
+  /**
+   * The data slice this layer was most recently mounted or updated
+   * with. Compared shallow-key against the next nav's `lluiLayoutData[i]`
+   * to decide whether a surviving layer needs a `propsMsg` dispatch.
+   * Layers that didn't receive any layout data carry `undefined` here.
+   */
+  data: unknown
 }
 ```
 

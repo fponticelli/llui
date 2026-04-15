@@ -44,6 +44,57 @@ export interface ComponentDef<S, M, E = never, D = void> {
 export type Send<M> = (msg: M) => void
 
 /**
+ * Type-erased component definition for use at module boundaries where
+ * the consumer's `S`, `M`, `E` are internal and invisible to the caller.
+ *
+ * Why this exists: `ComponentDef<S, M, E, D>` uses property syntax for
+ * its callable fields (`init: (data: D) => ...`), and TypeScript
+ * checks property syntax with strict (contravariant) variance. That's
+ * the right call for user-facing type safety when authoring a
+ * component (a narrower `Msg` type can't accidentally satisfy the
+ * `update`'s param), but it means `ComponentDef<MyState, MyMsg, MyEffect, MyData>`
+ * is NOT structurally assignable to `ComponentDef<unknown, unknown, unknown, unknown>`
+ * — the `init: (data: MyData) => ...` field is contravariant in `MyData`,
+ * so widening to `unknown` is rejected.
+ *
+ * `AnyComponentDef` (and `LazyDef<D>` below) declare the same fields
+ * using **method syntax** (`init(data: D): ...`), which TypeScript
+ * checks bivariantly. Concrete `ComponentDef<S, M, E, D>` assigns into
+ * these structurally without any `widenDef` helper at the callsite.
+ *
+ * Used by every API that accepts an opaque component definition at a
+ * module boundary:
+ *
+ * - `child({ def })`
+ * - `lazy({ loader })` — returns `LazyDef<D>` so the loader's `D` survives
+ * - `createOnRenderClient({ Layout })` (from `@llui/vike`)
+ * - `createOnRenderHtml({ Layout })` (from `@llui/vike`)
+ *
+ * The `D` parameter is `unknown` here — `child()` doesn't pass init
+ * data through, and `Layout` callers pass route-supplied data whose
+ * shape is unknown at the type-erased boundary. Use `LazyDef<D>` when
+ * you need to preserve the init data shape (the lazy loader case).
+ */
+export interface AnyComponentDef {
+  name: string
+  init(data: unknown): [unknown, unknown[]]
+  update(state: unknown, msg: unknown): [unknown, unknown[]]
+  view(h: unknown): Node[]
+  onEffect?: unknown
+  propsMsg?: unknown
+  receives?: unknown
+  __dirty?: unknown
+  __renderToString?: unknown
+  __msgSchema?: unknown
+  __maskLegend?: unknown
+  __componentMeta?: unknown
+  __stateSchema?: unknown
+  __effectSchema?: unknown
+  __update?: unknown
+  __handlers?: unknown
+}
+
+/**
  * Type-erased component definition for use at module boundaries where the
  * loaded component's S, M, E are internal and invisible to the caller.
  * Only `D` (init data) survives because the caller provides it.
@@ -52,7 +103,8 @@ export type Send<M> = (msg: M) => void
  * for any S, M, E — `view: (h: unknown) => Node[]` accepts any View via
  * contravariance, and all other fields widen to `unknown` return types.
  *
- * Used by `lazy()` as the loader's return type.
+ * Used by `lazy()` as the loader's return type. Use `AnyComponentDef`
+ * (above) when D is also opaque — most other adapter-layer APIs.
  */
 export interface LazyDef<D = void> {
   name: string
@@ -101,6 +153,19 @@ export type Props<T, S> = {
 export interface AppHandle {
   dispose(): void
   flush(): void
+  /**
+   * Dispatch a message into the mounted instance from outside its
+   * normal view-bound `send` channel. Useful for adapter layers that
+   * need to push updates into a long-lived instance — e.g.
+   * `@llui/vike`'s persistent-layout chain pushes layout-data updates
+   * into surviving layer instances on client navigation when their
+   * `propsMsg` translates the new data into a state-update message.
+   *
+   * Messages are queued through the same path as `view`-side `send`
+   * calls — they batch into the next microtask and process via the
+   * normal update loop. Calling `send` after `dispose` is a no-op.
+   */
+  send(msg: unknown): void
 }
 
 // ── Scope ─────────────────────────────────────────────────────────
@@ -206,7 +271,12 @@ export interface ForeignOptions<S, M, T extends Record<string, unknown>, Instanc
 }
 
 export interface ChildOptions<S, ChildM> {
-  def: ComponentDef<unknown, ChildM, unknown>
+  // Type-erased via AnyComponentDef so callers can pass any concrete
+  // ComponentDef<S, M, E, D> without a widening helper. The runtime
+  // narrows the message shape via the user-supplied `onMsg` callback,
+  // which keeps `ChildM` typed at this boundary even though the def
+  // itself is opaque.
+  def: AnyComponentDef
   key: string | number
   props: (s: S) => Record<string, unknown>
   onMsg?: (msg: ChildM) => unknown | null

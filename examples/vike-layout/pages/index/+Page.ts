@@ -1,4 +1,4 @@
-import { component, div, h1, p, button, useContext } from '@llui/dom'
+import { component, div, h1, p, button, useContextValue } from '@llui/dom'
 import { ToastContext, SessionContext } from '../../src/contexts'
 
 type HomeState = { clicks: number }
@@ -24,8 +24,13 @@ export const Page = component<HomeState, HomeMsg, never>({
     }
   },
   view: ({ send, text }) => {
-    const toast = useContext(ToastContext)
-    const session = useContext(SessionContext)
+    // useContextValue reads the layout-provided dispatcher bag in
+    // one call. The reactive useContext(ctx) form would return an
+    // accessor and force `useContext(ToastContext)(undefined as never).show(...)`
+    // at every call site — useContextValue gives us toast.show('...')
+    // directly because the ToastContext value doesn't depend on state.
+    const toast = useContextValue(ToastContext)
+    const session = useContextValue(SessionContext)
     return [
       div({ class: 'page page-home' }, [
         h1([text('Welcome')]),
@@ -41,7 +46,7 @@ export const Page = component<HomeState, HomeMsg, never>({
             class: 'primary',
             onClick: () => {
               send({ type: 'clicked' })
-              toast({} as never).show('You clicked the button')
+              toast.show('You clicked the button')
             },
           },
           [text('Click me (also shows a toast from the layout)')],
@@ -50,13 +55,13 @@ export const Page = component<HomeState, HomeMsg, never>({
         p([text('Session actions (dispatched through the layout via SessionContext):')]),
         button(
           {
-            onClick: () => session({} as never).login('alice'),
+            onClick: () => session.login('alice'),
           },
           [text('Log in as alice')],
         ),
         button(
           {
-            onClick: () => session({} as never).logout(),
+            onClick: () => session.logout(),
           },
           [text('Log out')],
         ),
