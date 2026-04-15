@@ -35,6 +35,7 @@ export interface ComponentInstance<S = unknown, M = unknown, E = unknown> {
 export function createComponentInstance<S, M, E>(
   def: ComponentDef<S, M, E>,
   data?: unknown,
+  parentScope: Scope | null = null,
 ): ComponentInstance<S, M, E> {
   const [initialState, initialEffects] = (def.init as (data: unknown) => [S, E[]])(data)
 
@@ -44,7 +45,13 @@ export function createComponentInstance<S, M, E>(
     def,
     state: initialState,
     initialEffects,
-    rootScope: createScope(null),
+    // When `parentScope` is provided the instance's rootScope becomes a
+    // child of that scope. This is how persistent layouts wire pages
+    // into the layout's scope tree: the page's rootScope is parented at
+    // the layout's pageSlot() point so `useContext` lookups flow layout
+    // → page, and scope disposal cascades correctly. Mount paths that
+    // don't pass parentScope get the classic detached root.
+    rootScope: createScope(parentScope),
     allBindings: [],
     structuralBlocks: [],
     queue: [],

@@ -57,6 +57,160 @@ export const onRenderClient = createOnRenderClient({
 })
 ```
 
+### Persistent Layouts
+
+Declare app chrome (header, sidebar, dialogs, session state) as a `Layout` component that stays mounted across client navigation. The route-scoped `Page` swaps in and out at the layout's `pageSlot()` position while the surrounding layout subtree — and every DOM node, focus trap, portal, and effect subscription inside it — is untouched.
+
+```ts
+// pages/+Layout.ts
+import { component, div, header, main } from '@llui/dom'
+import { pageSlot } from '@llui/vike/client'
+
+export const AppLayout = component<LayoutState, LayoutMsg>({
+  name: 'AppLayout',
+  init: () => [{ session: null }, []],
+  update: layoutUpdate,
+  view: ({ send }) => [
+    div({ class: 'app-shell' }, [
+      header([
+        /* persistent chrome */
+      ]),
+      main([pageSlot()]), // ← where the route's Page renders
+    ]),
+  ],
+})
+```
+
+```ts
+// pages/+onRenderClient.ts
+import { createOnRenderClient } from '@llui/vike/client'
+import { AppLayout } from './+Layout'
+
+export const onRenderClient = createOnRenderClient({
+  Layout: AppLayout,
+})
+```
+
+```ts
+// pages/+onRenderHtml.ts — server renders layout + page as one tree
+import { createOnRenderHtml } from '@llui/vike/server'
+import { AppLayout } from './+Layout'
+
+export const onRenderHtml = createOnRenderHtml({
+  Layout: AppLayout,
+})
+```
+
+Call `pageSlot()` exactly once in each layout's view, at the position where nested content should render. It's an ordinary structural primitive — composes naturally inside `show()`, `branch()`, `provide()`, and any other view tree.
+
+#### Nested layouts
+
+Pass an array to stack layouts outer-to-inner. Each layout except the innermost calls its own `pageSlot()`. The innermost layer is always the route's `Page`.
+
+```ts
+createOnRenderClient({
+  Layout: [AppLayout, DashboardLayout],
+})
+```
+
+For per-route chains — e.g. `/dashboard/*` routes use `[AppLayout, DashboardLayout]` while `/settings` uses `[AppLayout]` — pass a resolver function instead:
+
+```ts
+createOnRenderClient({
+  Layout: (pageContext) =>
+    pageContext.urlPathname.startsWith('/dashboard') ? [AppLayout, DashboardLayout] : [AppLayout],
+})
+```
+
+The chain diff on each nav walks old and new chains in parallel and finds the first mismatch. Every layer before that mismatch stays mounted; every layer at or after it is torn down innermost-first and re-mounted outermost-first. Navigating from `/dashboard/reports` to `/dashboard/overview` only disposes the `Page` — `AppLayout` and `DashboardLayout` stay alive. Navigating to `/settings` disposes `DashboardLayout` and the `Page`, keeping only `AppLayout`.
+
+#### Layout ↔ Page communication
+
+Layouts and pages are independent component instances with their own state, update, and `send`. They share state and expose cross-cutting operations via **context**, not via direct messaging.
+
+The scope-tree integration makes this natural: `pageSlot()` creates its slot as a child of the layout's render scope, and the page's `rootScope` is parented inside that slot. `useContext` from within the page walks up through the slot and finds any providers the layout installed above it.
+
+Common pattern — a layout-owned toast system:
+
+```ts
+// pages/+Layout.ts
+import { component, div, main, provide, createContext } from '@llui/dom'
+import { pageSlot } from '@llui/vike/client'
+
+interface ToastDispatchers {
+  show: (msg: string) => void
+  dismiss: (id: string) => void
+}
+export const ToastContext = createContext<ToastDispatchers>(undefined, 'Toast')
+
+export const AppLayout = component<LayoutState, LayoutMsg>({
+  name: 'AppLayout',
+  init: () => [{ toasts: [] }, []],
+  update: layoutUpdate,
+  view: ({ send }) => [
+    div({ class: 'app-shell' }, [
+      ToastStack(), // reads from layout state
+      ...provide(
+        ToastContext,
+        () => ({
+          show: (msg) => send({ type: 'toast/show', msg }),
+          dismiss: (id) => send({ type: 'toast/dismiss', id }),
+        }),
+        () => [main([pageSlot()])],
+      ),
+    ]),
+  ],
+})
+```
+
+```ts
+// Any page below the layout can now use the toast dispatcher.
+// pages/studio/+Page.ts
+import { component, button, text, useContext } from '@llui/dom'
+import { ToastContext } from '../+Layout'
+
+export const StudioPage = component<StudioState, StudioMsg>({
+  name: 'StudioPage',
+  init: () => [{ saved: false }, []],
+  update: (s, m) => {
+    if (m.type === 'saveSucceeded') {
+      // ...
+    }
+    return [s, []]
+  },
+  view: ({ send }) => {
+    const toast = useContext(ToastContext)
+    return [button({ onClick: () => toast({} as LayoutState).show('Saved') }, [text('Save')])]
+  },
+})
+```
+
+Toast state machines, global progress indicators, breadcrumb/title bars, modal-takeover chrome toggles, and session-expired banners all fall out of this pattern naturally — the layout owns the state, provides a dispatcher via context, and any page can trigger layout operations without touching the layout's internals.
+
+For the rarer case where a layout needs to **probe a page** (e.g. "is your form dirty? can we navigate away?"), use **addressed effects** — the page registers an address on mount, the layout dispatches a targeted effect to it.
+
+#### Layout data
+
+Layouts can have their own server-fetched data alongside per-page `+data.ts` by populating `pageContext.lluiLayoutData` as an array matching the layout chain (outermost first). Each layout's `init(layoutData)` receives its slice.
+
+Wire this from Vike's config mechanism however you like — the adapter just reads `pageContext.lluiLayoutData` when present.
+
+#### Hydration envelope
+
+With a `Layout` configured, `window.__LLUI_STATE__` is chain-aware:
+
+```js
+window.__LLUI_STATE__ = {
+  layouts: [
+    { name: 'AppLayout', state: { session: 'alice' } },
+    { name: 'DashboardLayout', state: { active: 'reports' } },
+  ],
+  page: { name: 'ReportsPage', state: { view: 'summary' } },
+}
+```
+
+The client matches each layer by component `name` when hydrating — server/client chain mismatches throw with a clear error instead of silently binding the wrong state to the wrong instance. Pages written against the pre-layout flat envelope shape continue to hydrate correctly when no `Layout` is configured.
+
 ### Page Transitions
 
 `createOnRenderClient` accepts `onLeave` and `onEnter` hooks that fire around the dispose-and-remount cycle on client navigation. `onLeave` is awaited — return a promise to defer the swap until a leave animation finishes:
@@ -110,12 +264,13 @@ Hydrates the server-rendered HTML on the client. Attaches event listeners and re
 
 ## API
 
-| Export                 | Sub-path            | Description                                                      |
-| ---------------------- | ------------------- | ---------------------------------------------------------------- |
-| `onRenderHtml`         | `@llui/vike/server` | Default server hook — minimal HTML template                      |
-| `createOnRenderHtml`   | `@llui/vike/server` | Factory for custom document templates                            |
-| `onRenderClient`       | `@llui/vike/client` | Default client hook — hydrate or mount                           |
-| `createOnRenderClient` | `@llui/vike/client` | Factory for custom container + `onLeave` / `onEnter` / `onMount` |
-| `fromTransition`       | `@llui/vike/client` | Adapter: `TransitionOptions` → `{ onLeave, onEnter }` hook pair  |
+| Export                 | Sub-path            | Description                                                     |
+| ---------------------- | ------------------- | --------------------------------------------------------------- |
+| `onRenderHtml`         | `@llui/vike/server` | Default server hook — minimal HTML template                     |
+| `createOnRenderHtml`   | `@llui/vike/server` | Factory for custom document templates + persistent layouts      |
+| `onRenderClient`       | `@llui/vike/client` | Default client hook — hydrate or mount                          |
+| `createOnRenderClient` | `@llui/vike/client` | Factory for custom container + layouts + transition hooks       |
+| `pageSlot`             | `@llui/vike/client` | Structural primitive — declares where a layout renders its page |
+| `fromTransition`       | `@llui/vike/client` | Adapter: `TransitionOptions` → `{ onLeave, onEnter }` hook pair |
 
 The barrel export (`@llui/vike`) re-exports everything, but prefer sub-path imports to avoid bundling jsdom into the client.

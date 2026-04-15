@@ -1,4 +1,4 @@
-import type { ComponentDef, AppHandle } from './types.js'
+import type { ComponentDef, AppHandle, Scope } from './types.js'
 import { createComponentInstance, flushInstance } from './update-loop.js'
 import { disposeScope } from './scope.js'
 import { setRenderContext, clearRenderContext } from './render-context.js'
@@ -36,22 +36,38 @@ export function _setDevToolsInstall(fn: ((inst: object) => void) | null): void {
 
 export interface MountOptions {
   devTools?: boolean
+  /**
+   * Parent scope for the mounted component's rootScope. When provided,
+   * the rootScope is created as a child of this scope — context lookups
+   * from within the component walk up through the parent's scope tree,
+   * and disposing the parent scope cascades into this instance's scope.
+   * Used by `@llui/vike`'s persistent-layout machinery to mount a page
+   * as a true scope-tree child of its enclosing layout, so layout-
+   * provided contexts flow naturally into pages via `useContext`.
+   *
+   * When omitted (the default), the rootScope is detached — same as
+   * every `mountApp` call before persistent layouts existed.
+   */
+  parentScope?: Scope
 }
 
 export function mountApp<S, M, E>(
   container: HTMLElement,
   def: ComponentDef<S, M, E>,
   data?: unknown,
-  _options?: MountOptions,
+  options?: MountOptions,
 ): AppHandle {
   // HMR: if this component is already mounted (module re-execution
   // during hot update), swap the definition instead of creating a new instance.
-  if (hmrModule && def.name) {
+  // HMR swap bypasses parentScope — HMR re-mounts the outermost app handle,
+  // which in a layout setup means the layout re-mounts at the root and the
+  // rest of the chain is re-established via the normal mount path.
+  if (hmrModule && def.name && !options?.parentScope) {
     const swapped = hmrModule.replaceComponent(def.name, def)
     if (swapped) return swapped
   }
 
-  const inst = createComponentInstance(def, data)
+  const inst = createComponentInstance(def, data, options?.parentScope ?? null)
 
   // Dev-only: auto-install devtools if enabled via '@llui/dom/devtools' import
   if (devToolsInstall) devToolsInstall(inst)
@@ -186,6 +202,7 @@ export function hydrateApp<S, M, E>(
   container: HTMLElement,
   def: ComponentDef<S, M, E>,
   serverState: S,
+  options?: MountOptions,
 ): AppHandle {
   // Run the original init once to capture its effects. The state it
   // returns is discarded — we use `serverState` (what the server
@@ -202,7 +219,7 @@ export function hydrateApp<S, M, E>(
     init: () => [serverState, originalEffects],
   }
 
-  const inst = createComponentInstance(hydrateDef)
+  const inst = createComponentInstance(hydrateDef, undefined, options?.parentScope ?? null)
 
   // Build the component DOM and swap atomically with server HTML.
   // Server HTML remains visible until JS finishes — no flash.

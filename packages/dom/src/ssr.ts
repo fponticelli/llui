@@ -1,19 +1,28 @@
-import type { ComponentDef } from './types.js'
-import { createComponentInstance } from './update-loop.js'
+import type { ComponentDef, Scope, Binding } from './types.js'
+import { createComponentInstance, type ComponentInstance } from './update-loop.js'
 import { setRenderContext, clearRenderContext } from './render-context.js'
 import { setFlatBindings } from './binding.js'
 import { createView } from './view-helpers.js'
 
 /**
- * Render a component to an HTML string for SSR.
- * Evaluates view() against the initial state (or provided data),
- * serializes the DOM to HTML, and adds data-llui-hydrate markers
- * on nodes with reactive bindings.
+ * Render a component to DOM nodes for SSR, returning both the produced
+ * nodes and the component instance (so callers can compose trees before
+ * serializing — e.g. `@llui/vike` stitches layout + page nodes at the
+ * `pageSlot()` marker position before one final serialization pass).
  *
- * Call initSsrDom() once before using this on the server.
+ * Accepts an optional `parentScope` so the rendered instance's rootScope
+ * becomes a child of an existing scope tree — used by persistent layouts
+ * so contexts provided by an outer layout are reachable from an inner
+ * page via `useContext`.
+ *
+ * Call `initSsrDom()` once before using this on the server.
  */
-export function renderToString<S, M, E>(def: ComponentDef<S, M, E>, initialState?: S): string {
-  const inst = createComponentInstance(def)
+export function renderNodes<S, M, E>(
+  def: ComponentDef<S, M, E>,
+  initialState?: S,
+  parentScope?: Scope,
+): { nodes: Node[]; inst: ComponentInstance<S, M, E> } {
+  const inst = createComponentInstance(def, undefined, parentScope ?? null)
   if (initialState !== undefined) {
     inst.state = initialState
   }
@@ -24,15 +33,21 @@ export function renderToString<S, M, E>(def: ComponentDef<S, M, E>, initialState
   clearRenderContext()
   setFlatBindings(null)
 
-  // Serialize nodes to HTML
-  let html = ''
-  for (const node of nodes) {
-    html += nodeToString(node)
-  }
+  return { nodes, inst }
+}
 
-  // Collect elements that need hydrate markers (bindings on them or their text children)
+/**
+ * Serialize an array of DOM nodes to an HTML string, adding
+ * `data-llui-hydrate` markers on elements that own reactive bindings.
+ *
+ * Accepts a flat binding list so compositions of multiple instances
+ * (layout + page, for persistent-layout SSR) produce correct markers
+ * across the whole tree. Pass the union of every composed instance's
+ * `allBindings`.
+ */
+export function serializeNodes(nodes: Node[], bindings: Binding[]): string {
   const hydrateElements = new Set<Node>()
-  for (const binding of inst.allBindings) {
+  for (const binding of bindings) {
     const node = binding.node
     if (node.nodeType === 1) {
       hydrateElements.add(node)
@@ -40,28 +55,27 @@ export function renderToString<S, M, E>(def: ComponentDef<S, M, E>, initialState
       hydrateElements.add(node.parentNode)
     }
   }
-
-  // Re-serialize with markers
-  html = ''
+  let html = ''
   for (const node of nodes) {
     html += nodeToStringWithMarkers(node, hydrateElements)
   }
-
   return html
 }
 
-function nodeToString(node: Node): string {
-  if (node.nodeType === 3) {
-    return escapeHtml(node.textContent ?? '')
-  }
-  if (node.nodeType === 8) {
-    return `<!--${node.textContent ?? ''}-->`
-  }
-  if (node.nodeType === 1) {
-    const el = node as Element
-    return elementToString(el, false, new Set())
-  }
-  return ''
+/**
+ * Render a component to an HTML string for SSR.
+ * Evaluates view() against the initial state (or provided data),
+ * serializes the DOM to HTML, and adds data-llui-hydrate markers
+ * on nodes with reactive bindings.
+ *
+ * Call initSsrDom() once before using this on the server.
+ *
+ * For persistent layouts, use `renderNodes` + `serializeNodes` directly
+ * so layout and page nodes can be composed before serialization.
+ */
+export function renderToString<S, M, E>(def: ComponentDef<S, M, E>, initialState?: S): string {
+  const { nodes, inst } = renderNodes(def, initialState)
+  return serializeNodes(nodes, inst.allBindings)
 }
 
 function nodeToStringWithMarkers(node: Node, bindingNodes: Set<Node>): string {
@@ -73,12 +87,12 @@ function nodeToStringWithMarkers(node: Node, bindingNodes: Set<Node>): string {
   }
   if (node.nodeType === 1) {
     const el = node as Element
-    return elementToString(el, true, bindingNodes)
+    return elementToString(el, bindingNodes)
   }
   return ''
 }
 
-function elementToString(el: Element, withMarkers: boolean, bindingNodes: Set<Node>): string {
+function elementToString(el: Element, bindingNodes: Set<Node>): string {
   const tag = el.tagName.toLowerCase()
   let attrs = ''
 
@@ -90,7 +104,7 @@ function elementToString(el: Element, withMarkers: boolean, bindingNodes: Set<No
   }
 
   // Add hydrate marker if this element or any of its text children have bindings
-  if (withMarkers && bindingNodes.has(el)) {
+  if (bindingNodes.has(el)) {
     attrs += ' data-llui-hydrate'
   }
 
@@ -101,12 +115,7 @@ function elementToString(el: Element, withMarkers: boolean, bindingNodes: Set<No
 
   let children = ''
   for (let i = 0; i < el.childNodes.length; i++) {
-    const child = el.childNodes[i]!
-    if (withMarkers) {
-      children += nodeToStringWithMarkers(child, bindingNodes)
-    } else {
-      children += nodeToString(child)
-    }
+    children += nodeToStringWithMarkers(el.childNodes[i]!, bindingNodes)
   }
 
   return `<${tag}${attrs}>${children}</${tag}>`

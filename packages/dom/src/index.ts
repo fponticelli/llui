@@ -34,7 +34,7 @@ export type { LluiDebugAPI } from './devtools.js'
 
 export { flush } from './runtime.js'
 export { addressOf } from './addressed.js'
-export { renderToString } from './ssr.js'
+export { renderToString, renderNodes, serializeNodes } from './ssr.js'
 export { mergeHandlers } from './merge-handlers.js'
 export { createContext, provide, useContext, type Context } from './primitives/context.js'
 export { sliceHandler } from './slice-handler.js'

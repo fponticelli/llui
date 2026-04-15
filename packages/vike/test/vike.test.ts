@@ -5,7 +5,7 @@ import {
   onRenderClient,
   createOnRenderClient,
   fromTransition,
-  _resetCurrentHandleForTest,
+  _resetChainForTest,
 } from '../src/on-render-client'
 import type { TransitionOptions } from '@llui/dom'
 import { component, div, text } from '@llui/dom'
@@ -19,11 +19,32 @@ const TestPage = component<State, never, never>({
   view: () => [div({ class: 'page' }, [text((s: State) => s.greeting)])],
 })
 
+// Distinct second page for nav-lifecycle tests. The chain-diff logic
+// treats same-def navs as no-ops (correct: nothing actually changed),
+// so exercising real leave/mount/enter requires a *different* Page def
+// on the second call.
+const OtherPage = component<State, never, never>({
+  name: 'OtherPage',
+  init: () => [{ greeting: 'hello again' }, []],
+  update: (s) => [s, []],
+  view: () => [div({ class: 'page' }, [text((s: State) => s.greeting)])],
+})
+
 /** Extract the HTML string from the result (handles dangerouslySkipEscape format) */
 function getHtml(result: RenderHtmlResult): string {
   const doc = result.documentHtml
   return typeof doc === 'string' ? doc : doc._escaped
 }
+
+// Reset module-level chain + document state between every test so tests
+// don't leak state. The client render path keeps a live handle chain
+// across calls (that's the whole point of persistent layouts); between
+// tests we need a fresh slate.
+beforeEach(() => {
+  _resetChainForTest()
+  document.body.innerHTML = ''
+  delete (window as Record<string, unknown>).__LLUI_STATE__
+})
 
 describe('onRenderHtml', () => {
   it('renders HTML with component content', async () => {
@@ -38,7 +59,12 @@ describe('onRenderHtml', () => {
     const result = await onRenderHtml({ Page: TestPage })
     const html = getHtml(result)
     expect(html).toContain('"greeting":"hello"')
-    expect(result.pageContext.lluiState).toEqual({ greeting: 'hello' })
+    // Hydration envelope is chain-aware: layouts array (empty when no
+    // Layout configured) plus a named page entry that carries state.
+    expect(result.pageContext.lluiState).toEqual({
+      layouts: [],
+      page: { name: 'TestPage', state: { greeting: 'hello' } },
+    })
   })
 
   it('passes data to init', async () => {
@@ -83,7 +109,10 @@ describe('createOnRenderHtml', () => {
     expect(html).toContain('<main id="root">')
     expect(html).toContain('hello')
     expect(html).toContain('__LLUI_STATE__')
-    expect(result.pageContext.lluiState).toEqual({ greeting: 'hello' })
+    expect(result.pageContext.lluiState).toEqual({
+      layouts: [],
+      page: { name: 'TestPage', state: { greeting: 'hello' } },
+    })
   })
 
   it('passes pageContext to document function', async () => {
@@ -191,7 +220,7 @@ describe('createOnRenderClient — onLeave / onEnter lifecycle', () => {
   beforeEach(() => {
     // Module-level currentHandle is shared across tests; reset it so each
     // test starts with a clean "no previous page" state.
-    _resetCurrentHandleForTest()
+    _resetChainForTest()
     // Remove any leftover container nodes from previous tests
     document.body.innerHTML = ''
   })
@@ -205,7 +234,7 @@ describe('createOnRenderClient — onLeave / onEnter lifecycle', () => {
 
   function teardown(container: HTMLElement): void {
     if (container.parentNode) container.parentNode.removeChild(container)
-    _resetCurrentHandleForTest()
+    _resetChainForTest()
   }
 
   it('does not call onLeave or onEnter on the initial (hydration) render', async () => {
@@ -278,8 +307,9 @@ describe('createOnRenderClient — onLeave / onEnter lifecycle', () => {
     expect(order).toEqual(['enter', 'mount'])
 
     order.length = 0
-    await render({ Page: TestPage, isHydration: false })
-    // Second nav: leave → enter → mount
+    await render({ Page: OtherPage, isHydration: false })
+    // Second nav: leave → enter → mount. OtherPage !== TestPage so the
+    // diff picks up a mismatch at depth 0 and does a full re-render.
     expect(order).toEqual(['leave', 'enter', 'mount'])
 
     teardown(container)
@@ -310,9 +340,11 @@ describe('createOnRenderClient — onLeave / onEnter lifecycle', () => {
     // First mount — no previous handle → onLeave not called
     await render({ Page: TestPage, isHydration: false })
 
-    // Second nav — onLeave returns a pending promise. render() is now
-    // awaiting inside, so the caller's Promise is still pending.
-    const second = render({ Page: TestPage, isHydration: false })
+    // Second nav to a different page. OtherPage !== TestPage so the
+    // chain diff picks up a mismatch and runs the real leave flow.
+    // onLeave returns a pending promise; render() is now awaiting
+    // inside, so the caller's Promise is still pending.
+    const second = render({ Page: OtherPage, isHydration: false })
     // Let a few microtasks run; render should still be stuck on the leave
     await Promise.resolve()
     await Promise.resolve()
