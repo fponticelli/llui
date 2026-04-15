@@ -1444,14 +1444,40 @@ function detectArrayOp(
   clause: ts.CaseClause,
   stateName: string,
   modifiedFields: string[],
-  structuralMask?: number,
-  caseDirty?: number,
+  _structuralMask?: number,
+  _caseDirty?: number,
 ): ArrayOp {
-  // No fields modified or dirty bits don't intersect any structural block →
-  // skip structural blocks entirely (e.g., only `selected` changes)
+  // No fields modified → no Phase 1 needed (no bindings can care if no
+  // state field changed). Safe to return 'none' here because it's a
+  // tautology: every binding mask ANDed with zero is zero.
   if (modifiedFields.length === 0) return 'none'
-  if (structuralMask !== undefined && caseDirty !== undefined && (structuralMask & caseDirty) === 0)
-    return 'none'
+
+  // Previously: if `(structuralMask & caseDirty) === 0`, return 'none'
+  // on the theory that no structural block's mask could intersect this
+  // case's dirty bits. That optimization was UNSAFE: `computeStructuralMask`
+  // only walks the view function's lexical AST and does not descend into
+  // helper function calls. A view like
+  //
+  //     view: () => [
+  //       ...show({ when: s => s.mode === 'signin', render: () => [signinFormBody()] }),
+  //     ]
+  //
+  // where `signinFormBody()` is a helper that internally does
+  //     ...show({ when: s => s.errors.email !== undefined, ... })
+  //
+  // produces a `structuralMask` that covers `mode` but MISSES
+  // `errors.email`. At runtime the inner show block is still registered
+  // in `inst.structuralBlocks`, and it legitimately needs to reconcile
+  // when `errors` changes — but the compiler was emitting `method = -1`
+  // (skip blocks entirely) for cases that only touch `errors`, and the
+  // error paragraphs would never mount.
+  //
+  // The fix is to remove this short-circuit. Phase 1 runs unconditionally
+  // when any field is modified; `_handleMsg`'s per-block check
+  // `if (!(block.mask & dirty)) continue` filters out uninterested
+  // blocks at near-zero cost. We lose a micro-optimization but gain
+  // correctness for every component that factors view helpers into
+  // functions — which is the idiomatic pattern.
 
   // Look at the return expression's array field values
   for (const stmt of clause.statements) {
