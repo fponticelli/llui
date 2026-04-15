@@ -25,6 +25,24 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
 
+      # Cache Playwright's downloaded browser binaries keyed on the
+      # playwright version in pnpm-lock.yaml. Keeps CI fast — the
+      # chromium install is ~250 MB and takes ~30s cold.
+      - name: Cache Playwright browsers
+        id: playwright-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
+
+      - name: Install Playwright Chromium
+        if: steps.playwright-cache.outputs.cache-hit != 'true'
+        run: pnpm exec playwright install chromium --with-deps
+
+      - name: Install Playwright system deps
+        if: steps.playwright-cache.outputs.cache-hit == 'true'
+        run: pnpm exec playwright install-deps chromium
+
       - name: Format check
         run: pnpm format:check
 
@@ -38,10 +56,4 @@ jobs:
         run: pnpm turbo lint
 
       - name: Test
-        # @llui/mcp's playwright-e2e.test.ts is opt-in via LLUI_RUN_E2E
-        # and skipped by default. It spawns a real Vite dev server +
-        # Chromium browser — neither of which is available on CI without
-        # a downloaded ~250 MB browser binary. The jsdom-based e2e.test.ts
-        # already covers the MCP protocol logic at the same level of
-        # detail; the browser test is a local-dev integration check.
         run: pnpm turbo test

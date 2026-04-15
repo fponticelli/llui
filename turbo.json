@@ -10,8 +10,7 @@
     },
     "lint": {},
     "test": {
-      "dependsOn": ["^build"],
-      "env": ["LLUI_RUN_E2E"]
+      "dependsOn": ["^build"]
     },
     "test:coverage": {
       "dependsOn": ["^build"],

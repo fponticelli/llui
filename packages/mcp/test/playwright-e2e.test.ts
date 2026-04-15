@@ -24,23 +24,17 @@ import { LluiMcpServer } from '../src/index'
  * everything end-to-end including the compiler-injected dev code, the
  * Vite middleware, the file marker, and the relay.
  *
- * Opt-in only — this suite is skipped by default because it spawns a
- * real Vite dev server + Chromium browser. That combination tends to
- * blow through macOS's default file-descriptor limit (chokidar + FSEvents
- * crashes vite with EMFILE) and requires a downloaded Chromium binary
- * that fresh checkouts and CI don't have. Running this suite on every
- * `pnpm verify` would make the default flow red for no good reason —
- * the jsdom-based `e2e.test.ts` already covers the MCP protocol logic
- * at the same level of detail.
+ * Runs automatically in `pnpm verify` whenever Playwright and a
+ * Chromium browser binary are available. Gracefully skips when
+ * either is missing (fresh checkouts before `pnpm install`, or CI
+ * jobs that haven't run `playwright install chromium`).
  *
- * To run it during local browser integration debugging:
+ * Uses Vite's programmatic `createServer` API with the file watcher
+ * disabled — that keeps the suite fast (~3 seconds) and reliable on
+ * macOS, whose launchctl-default 256-fd soft limit otherwise makes
+ * vite crash with EMFILE during a full-watcher startup.
  *
- *     LLUI_RUN_E2E=1 pnpm --filter @llui/mcp test
- *
- * The test is also automatically skipped if Playwright isn't installed
- * or the Chromium binary isn't downloaded.
- *
- * Cost: ~5–10 seconds when it runs cleanly.
+ * To run just this suite in isolation: `pnpm test:e2e`.
  */
 
 // Walk up from cwd to find the workspace root, then locate the example.
@@ -59,12 +53,19 @@ const WORKSPACE_ROOT = findWorkspaceRoot()
 const EXAMPLE_DIR = resolve(WORKSPACE_ROOT, 'examples/virtualization')
 const MCP_PORT = 5400 + Math.floor(Math.random() * 100)
 
-// Opt-in — skip unless the developer explicitly enables this suite.
-// See the comment at the top of the file for the rationale.
+// Import playwright and verify a chromium browser binary is available.
+// Returns null on any failure so the suite skips cleanly — fresh
+// checkouts (before `pnpm install`) and CI jobs without browsers
+// installed both land here.
 async function loadPlaywright(): Promise<typeof import('playwright') | null> {
-  if (!process.env.LLUI_RUN_E2E) return null
   try {
-    return await import('playwright')
+    const pw = await import('playwright')
+    // chromium.executablePath() throws if the browser isn't downloaded
+    // (needs `playwright install chromium`). Probe it now so we skip
+    // the suite rather than fail beforeAll on first launch.
+    const execPath = pw.chromium.executablePath()
+    if (!execPath || !existsSync(execPath)) return null
+    return pw
   } catch {
     return null
   }
