@@ -52,13 +52,17 @@ interface FakeServer {
     use: (path: string, handler: MiddlewareHandler) => void
     handlers: Map<string, MiddlewareHandler>
   }
-  httpServer: { on: (event: string, cb: () => void) => void } | null
+  httpServer: {
+    on: (event: string, cb: () => void) => void
+    closeHandlers: Array<() => void>
+  } | null
   sent: SentEvent[]
 }
 
 function makeFakeServer(): FakeServer {
   const sent: SentEvent[] = []
   const handlers = new Map<string, MiddlewareHandler>()
+  const closeHandlers: Array<() => void> = []
   const server: FakeServer = {
     sent,
     ws: {
@@ -74,9 +78,23 @@ function makeFakeServer(): FakeServer {
         handlers.set(path, handler)
       },
     },
-    httpServer: { on: () => {} },
+    httpServer: {
+      closeHandlers,
+      on: (event, cb) => {
+        if (event === 'close') closeHandlers.push(cb)
+      },
+    },
   }
   return server
+}
+
+// Fire the fake httpServer's close handlers so the plugin's registered
+// cleanup (fs.watch close, poll interval clear) actually runs. Without
+// this, each test would leak a directory watcher and eventually hit
+// EMFILE on macOS.
+function closeFakeServer(server: FakeServer): void {
+  const handlers = server.httpServer?.closeHandlers ?? []
+  for (const cb of handlers) cb()
 }
 
 interface MockResponse {
@@ -116,12 +134,19 @@ function removeMarker(): void {
 }
 
 describe('vite-plugin: /__llui_mcp_status middleware', () => {
+  const activeServers: FakeServer[] = []
+
   beforeEach(() => {
     removeMarker()
     ensureMarkerDir()
   })
 
   afterEach(() => {
+    // Drain any servers created this test — fires the close handlers
+    // so the plugin's fs.watch watchers and poll intervals are released.
+    // Leaking these causes EMFILE on macOS when the full suite runs.
+    for (const s of activeServers) closeFakeServer(s)
+    activeServers.length = 0
     removeMarker()
   })
 
@@ -130,6 +155,7 @@ describe('vite-plugin: /__llui_mcp_status middleware', () => {
     const fake = makeFakeServer()
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     ;(plugin as any).configureServer?.call(plugin, fake)
+    activeServers.push(fake)
     return fake
   }
 
