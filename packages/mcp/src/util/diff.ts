@@ -8,8 +8,7 @@ export function domDiff(
   actual: string,
   opts: { ignoreWhitespace?: boolean } = {},
 ): HtmlDiffResult {
-  const norm = (s: string): string =>
-    opts.ignoreWhitespace ? s.replace(/\s+/g, ' ').trim() : s
+  const norm = (s: string): string => (opts.ignoreWhitespace ? s.replace(/\s+/g, ' ').trim() : s)
   const e = norm(expected)
   const a = norm(actual)
   if (e === a) return { match: true, differences: [] }

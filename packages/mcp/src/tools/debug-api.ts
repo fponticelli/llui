@@ -612,7 +612,8 @@ export function registerDebugApiTools(registry: ToolRegistry): void {
       },
     },
     'debug-api',
-    async (args, ctx) => ctx.relay!.call('getScopeTree', [{ depth: args.depth, scopeId: args.scopeId }]),
+    async (args, ctx) =>
+      ctx.relay!.call('getScopeTree', [{ depth: args.depth, scopeId: args.scopeId }]),
   )
 
   registry.register(
@@ -665,5 +666,67 @@ export function registerDebugApiTools(registry: ToolRegistry): void {
     },
     'debug-api',
     async (_args, ctx) => ctx.relay!.call('getBindingGraph', []),
+  )
+
+  registry.register(
+    {
+      name: 'llui_mock_effect',
+      description:
+        "Register a mock for an effect matching 'match' ({ type?, payloadPath?, payloadEquals? }). The next matching effect resolves with 'response' instead of running. Mocks are one-shot; pass { persist: true } to keep across matches. Returns { mockId } for later reference.",
+      inputSchema: {
+        type: 'object',
+        properties: {
+          match: { type: 'object' },
+          response: {},
+          opts: { type: 'object' },
+        },
+        required: ['match', 'response'],
+      },
+    },
+    'debug-api',
+    async (args, ctx) => ctx.relay!.call('mockEffect', [args.match, args.response, args.opts]),
+  )
+
+  registry.register(
+    {
+      name: 'llui_resolve_effect',
+      description:
+        "Manually resolve a pending effect with a given response. The effect's onSuccess callback (if any) runs as if it had actually resolved. Pass effectId from llui_pending_effects.",
+      inputSchema: {
+        type: 'object',
+        properties: {
+          effectId: { type: 'string' },
+          response: {},
+        },
+        required: ['effectId', 'response'],
+      },
+    },
+    'debug-api',
+    async (args, ctx) => ctx.relay!.call('resolveEffect', [args.effectId, args.response]),
+  )
+
+  registry.register(
+    {
+      name: 'llui_pending_effects',
+      description:
+        "Current queued and in-flight effects. Each entry has { id, type, dispatchedAt, status, payload }. Use 'id' with llui_resolve_effect to manually resolve one.",
+      inputSchema: { type: 'object', properties: {} },
+    },
+    'debug-api',
+    async (_args, ctx) => ctx.relay!.call('getPendingEffects', []),
+  )
+
+  registry.register(
+    {
+      name: 'llui_effect_timeline',
+      description:
+        "Phased log of effect events: dispatched -> in-flight -> resolved/cancelled/resolved-mocked. Each entry has { effectId, type, phase, timestamp, durationMs? }. Pass 'limit' to cap the tail.",
+      inputSchema: {
+        type: 'object',
+        properties: { limit: { type: 'number' } },
+      },
+    },
+    'debug-api',
+    async (args, ctx) => ctx.relay!.call('getEffectTimeline', [args.limit]),
   )
 }

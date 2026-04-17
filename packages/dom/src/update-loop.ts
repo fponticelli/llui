@@ -472,18 +472,14 @@ function dispatchEffect<S, M, E>(inst: ComponentInstance<S, M, E>, effect: E): v
 }
 
 /**
- * Dev-only effect dispatch wrapper. Records the `dispatched` phase,
- * consults the mock registry, and tracks the effect as pending.
+ * Dev-only effect dispatch wrapper. Records the `dispatched` phase and,
+ * when a mock matches, auto-delivers the mocked response through the
+ * effect's own `onSuccess` callback on a microtask (same timing contract
+ * as a real async resolve). Non-matched effects are tracked as pending
+ * so `llui_pending_effects` / `llui_resolve_effect` can observe them.
  *
  * @returns `true` when a mock matched (caller should skip the real
  *   dispatch) or `false` to proceed with the user-provided onEffect.
- *
- * Delivery of the mocked response (i.e., converting `response` back
- * into an app Msg via the effect's onSuccess/onError callbacks) is
- * the responsibility of the `llui_resolve_effect` MCP tool — not this
- * wrapper. Phase 1 records the `resolved-mocked` timeline phase and
- * stops, so the real effect never runs; the MCP tool then decides how
- * the app observes the mocked result.
  */
 function dispatchEffectDev<S, M, E>(inst: ComponentInstance<S, M, E>, effect: E): boolean {
   const timeline = inst._effectTimeline
@@ -497,6 +493,16 @@ function dispatchEffectDev<S, M, E>(inst: ComponentInstance<S, M, E>, effect: E)
   const mock = inst._effectMocks?.match(effect)
   if (mock) {
     timeline.push({ effectId: id, type, phase: 'dispatched', timestamp: dispatchedAt })
+    // Auto-deliver the mocked response via the effect's onSuccess callback (if any).
+    // This mirrors what the real dispatch would do, so the component receives a Msg
+    // from the mocked effect without any network/IO happening.
+    const payload = effect as Record<string, unknown>
+    if (typeof payload.onSuccess === 'function') {
+      const msg = (payload.onSuccess as (d: unknown) => unknown)(mock.response)
+      // Schedule delivery as a microtask so it runs after the current update
+      // cycle completes (same timing contract as a real async effect resolve).
+      Promise.resolve().then(() => inst.send(msg as never))
+    }
     timeline.push({
       effectId: id,
       type,
@@ -504,9 +510,6 @@ function dispatchEffectDev<S, M, E>(inst: ComponentInstance<S, M, E>, effect: E)
       timestamp: dispatchedAt,
       durationMs: 0,
     })
-    // Intentionally do NOT push to `_pendingEffects` — the mock resolved
-    // synchronously. Delivery of `mock.response` to the app is deferred
-    // to the `llui_resolve_effect` MCP tool (see fn-level docstring).
     return true
   }
 

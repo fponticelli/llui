@@ -24,11 +24,7 @@ const Counter = component<CState, CMsg, never>({
   name: 'Counter',
   init: () => [{ n: 0 }, []],
   update: (state, _msg) => [{ n: state.n + 1 }, []],
-  view: ({ send }) => [
-    div({}, [
-      button({ id: 'b', onClick: () => send({ type: 'inc' }) }, []),
-    ]),
-  ],
+  view: ({ send }) => [div({}, [button({ id: 'b', onClick: () => send({ type: 'inc' }) }, [])])],
 })
 
 // ── Tests ───────────────────────────────────────────────────────

@@ -4,12 +4,18 @@ import { _markDisposerLogInstalled } from './scope.js'
 import type { Binding, Scope, ScopeNode } from './types.js'
 import { applyBinding } from './binding.js'
 import { createRingBuffer, type EachDiff } from './tracking/each-diff.js'
-import { createRingBuffer as createDisposerBuffer, type DisposerEvent } from './tracking/disposer-log.js'
+import {
+  createRingBuffer as createDisposerBuffer,
+  type DisposerEvent,
+} from './tracking/disposer-log.js'
 import { createCoverageTracker } from './tracking/coverage.js'
 import {
   createRingBuffer as createTimelineBuffer,
   createMockRegistry,
   createPendingEffectsList,
+  type PendingEffect,
+  type EffectTimelineEntry,
+  type EffectMatch,
 } from './tracking/effect-timeline.js'
 
 /**
@@ -276,6 +282,18 @@ export interface LluiDebugAPI {
   getDisposerLog(limit?: number): Array<{ scopeId: string; cause: string; timestamp: number }>
   /** Edge list: state path → binding indices that depend on it. Inverts the compiler-emitted mask legend to show, for each top-level state field, which bindings will re-evaluate when it changes. */
   getBindingGraph(): Array<{ statePath: string; bindingIndices: number[] }>
+  /** Current queued and in-flight effects. Each entry has { id, type, dispatchedAt, status, payload }. Use 'id' with llui_resolve_effect to manually resolve one. */
+  getPendingEffects(): PendingEffect[]
+  /** Phased log of effect events: dispatched -> in-flight -> resolved/cancelled/resolved-mocked. Each entry has { effectId, type, phase, timestamp, durationMs? }. Pass 'limit' to cap the tail. */
+  getEffectTimeline(limit?: number): EffectTimelineEntry[]
+  /** Register a mock for an effect matching 'match'. The next matching effect resolves with 'response' instead of running. Mocks are one-shot by default; pass { persist: true } to keep across matches. Returns { mockId } for later reference. */
+  mockEffect(
+    match: EffectMatch,
+    response: unknown,
+    opts?: { persist?: boolean },
+  ): { mockId: string }
+  /** Manually resolve a pending effect with a given response. The effect's onSuccess callback (if any) runs as if it had actually resolved. Pass effectId from llui_pending_effects. */
+  resolveEffect(effectId: string, response: unknown): { resolved: boolean }
 }
 
 export interface ElementReport {
@@ -688,7 +706,13 @@ export function installDevTools(inst: object): void {
           height: rect.height,
         }
       } catch {
-        computed = { display: 'unknown', visibility: 'unknown', position: 'unknown', width: 0, height: 0 }
+        computed = {
+          display: 'unknown',
+          visibility: 'unknown',
+          position: 'unknown',
+          width: 0,
+          height: 0,
+        }
       }
 
       const rawBindings = api.getBindingsFor(selector)
@@ -742,7 +766,11 @@ export function installDevTools(inst: object): void {
 
       let event: Event
       if (type === 'click' || type === 'mousedown' || type === 'mouseup') {
-        event = new MouseEvent(type, { bubbles: true, cancelable: true, ...(init as MouseEventInit) })
+        event = new MouseEvent(type, {
+          bubbles: true,
+          cancelable: true,
+          ...(init as MouseEventInit),
+        })
       } else if (type === 'keydown' || type === 'keyup' || type === 'keypress') {
         event = new KeyboardEvent(type, {
           bubbles: true,
@@ -756,9 +784,7 @@ export function installDevTools(inst: object): void {
       el.dispatchEvent(event)
       flushInstance(ci)
 
-      const messagesProducedIndices = history
-        .filter((r) => r.index > preIndex)
-        .map((r) => r.index)
+      const messagesProducedIndices = history.filter((r) => r.index > preIndex).map((r) => r.index)
 
       return {
         dispatched: true,
@@ -810,9 +836,7 @@ export function installDevTools(inst: object): void {
 
     getScopeTree(opts?: { depth?: number; scopeId?: string }): ScopeNode {
       const maxDepth = opts?.depth ?? Infinity
-      const startScope = opts?.scopeId
-        ? findScopeById(ci.rootScope, opts.scopeId)
-        : ci.rootScope
+      const startScope = opts?.scopeId ? findScopeById(ci.rootScope, opts.scopeId) : ci.rootScope
       if (!startScope) {
         return { scopeId: '0', kind: 'root', active: false, children: [] }
       }
@@ -838,6 +862,40 @@ export function installDevTools(inst: object): void {
         result.push({ statePath: path, bindingIndices: indices })
       }
       return result
+    },
+
+    getPendingEffects(): PendingEffect[] {
+      return ci._pendingEffects?.list() ?? []
+    },
+
+    getEffectTimeline(limit?: number): EffectTimelineEntry[] {
+      const all = ci._effectTimeline?.toArray() ?? []
+      if (limit === undefined) return all
+      return all.slice(-Math.max(0, limit))
+    },
+
+    mockEffect(match, response, opts) {
+      if (!ci._effectMocks) return { mockId: '' }
+      return { mockId: ci._effectMocks.add(match, response, Boolean(opts?.persist)) }
+    },
+
+    resolveEffect(effectId, response) {
+      const pending = ci._pendingEffects?.findById(effectId)
+      if (!pending) return { resolved: false }
+      const payload = pending.payload as { onSuccess?: (d: unknown) => unknown } | undefined
+      if (payload?.onSuccess) {
+        const msg = payload.onSuccess(response)
+        ci.send(msg as never)
+      }
+      ci._pendingEffects?.remove(effectId)
+      ci._effectTimeline?.push({
+        effectId,
+        type: pending.type,
+        phase: 'resolved',
+        timestamp: Date.now(),
+        durationMs: Date.now() - pending.dispatchedAt,
+      })
+      return { resolved: true }
     },
   }
 

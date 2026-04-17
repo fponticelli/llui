@@ -133,9 +133,33 @@ describe('llui_list_dead_bindings', () => {
   it('returns dead and never-changed bindings with a reason', async () => {
     const api = mkApi({
       getBindings: vi.fn(() => [
-        { index: 0, mask: 1, lastValue: 'x', kind: 'text', key: undefined, dead: false, perItem: false },
-        { index: 1, mask: 2, lastValue: undefined, kind: 'text', key: undefined, dead: false, perItem: false },
-        { index: 2, mask: 4, lastValue: 'y', kind: 'text', key: undefined, dead: true, perItem: false },
+        {
+          index: 0,
+          mask: 1,
+          lastValue: 'x',
+          kind: 'text',
+          key: undefined,
+          dead: false,
+          perItem: false,
+        },
+        {
+          index: 1,
+          mask: 2,
+          lastValue: undefined,
+          kind: 'text',
+          key: undefined,
+          dead: false,
+          perItem: false,
+        },
+        {
+          index: 2,
+          mask: 4,
+          lastValue: 'y',
+          kind: 'text',
+          key: undefined,
+          dead: true,
+          perItem: false,
+        },
       ]),
     })
     const server = new LluiMcpServer()

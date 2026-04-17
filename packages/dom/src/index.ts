@@ -31,6 +31,7 @@ export { mountApp, hydrateApp, type MountOptions } from './mount.js'
 export type { LluiDebugAPI, ElementReport } from './devtools.js'
 export type { EachDiff } from './tracking/each-diff.js'
 export type { DisposerEvent } from './tracking/disposer-log.js'
+export type { PendingEffect, EffectTimelineEntry, EffectMatch } from './tracking/effect-timeline.js'
 export type { ScopeNode } from './types.js'
 
 // ── Runtime ───────────────────────────────────────────────────────

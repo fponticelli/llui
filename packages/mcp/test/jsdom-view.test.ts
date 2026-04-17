@@ -24,9 +24,7 @@ const Counter = component<CState, CMsg, never>({
   name: 'Counter',
   init: () => [{ count: 0 }, []],
   update: (state, _msg) => [{ count: state.count + 1 }, []],
-  view: ({ text: textFn }) => [
-    div({ id: 'c' }, [textFn((s: CState) => String(s.count))]),
-  ],
+  view: ({ text: textFn }) => [div({ id: 'c' }, [textFn((s: CState) => String(s.count))])],
 })
 
 // ── Tests ───────────────────────────────────────────────────────

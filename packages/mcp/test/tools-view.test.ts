@@ -161,7 +161,10 @@ describe('llui_dom_diff', () => {
 
     const result = (await server.handleToolCall('llui_dom_diff', {
       expected: '<div>expected</div>',
-    })) as { match: boolean; differences: Array<{ path: string; expected: string; actual: string }> }
+    })) as {
+      match: boolean
+      differences: Array<{ path: string; expected: string; actual: string }>
+    }
 
     expect(result.match).toBe(false)
     expect(result.differences).toHaveLength(1)
