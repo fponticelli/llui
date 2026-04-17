@@ -11,6 +11,60 @@ All notable changes to LLui packages are documented here. LLui is a pre-1.0 proj
 
 Packages version in lockstep at release time: `@llui/dom`, `@llui/vite-plugin`, `@llui/test`, `@llui/router`, `@llui/transitions`, `@llui/components`, `@llui/vike` share a version line. `@llui/effects`, `@llui/mcp`, and `@llui/lint-idiomatic` have their own cadence.
 
+## 2026-04-17 — 0.0.19
+
+**Released:** `@llui/{dom,vite-plugin,test,router,transitions,components,vike}@0.0.19`; `@llui/effects@0.0.9`; `@llui/mcp@0.0.13`
+
+Phase 1 of the MCP debug-API expansion lands: 21 new MCP tools, 16 new `LluiDebugAPI` methods, four dev-mode runtime trackers in `@llui/dom`, and a dev-only effect interceptor hook in `@llui/effects`. Plus three correctness fixes carried along from parallel work on `child()`, per-case mask analysis, and Vike page context typing.
+
+### `@llui/dom@0.0.19`
+
+- **Added** 16 new `LluiDebugAPI` methods, populated on `installDevTools`:
+  - DOM: `inspectElement`, `getRenderedHtml`, `dispatchDomEvent`, `getFocus`
+  - Bindings/scope: `forceRerender`, `getEachDiff`, `getScopeTree`, `getDisposerLog`, `getBindingGraph`
+  - Effects: `getPendingEffects`, `getEffectTimeline`, `mockEffect`, `resolveEffect`
+  - Time-travel/utility: `stepBack`, `getCoverage`
+  - Eval: `evalInPage` (runs user JS via `new Function()` with an observability envelope — state diff, new history entries, new pending effects, dirty bindings).
+- **Added** four dev-mode ring-buffer trackers: each-diff log (100), disposer log (500), effect timeline (500), Msg coverage. All zero-cost in production — populated only when `installDevTools` runs, gated on a module-level flag.
+- **Added** scope `_kind` tagging (`root | show | each | branch | child | portal | foreign`) set by each structural primitive at creation; reset on pool recycle. Powers `getScopeTree`'s classification without a separate lookup.
+- **Added** new exported types: `ElementReport`, `ScopeNode`, `EachDiff`, `DisposerEvent`, `PendingEffect`, `EffectTimelineEntry`, `EffectMatch`, `StateDiff`, `CoverageSnapshot`, `MessageRecord`.
+- **Added** `kind='effect'` binding variant for side-effect-only watchers. `applyBinding` is a typed no-op; Phase 2 runs the accessor without diffing or writing `lastValue`. Used internally by `child()`'s prop-watch binding, eliminating per-tick object stringification onto a detached anchor.
+- **Fixed** `child()` propsMsg loop vector. Framework-synthesized propsMsg messages now dispatch through `originalSend`, bypassing the `onMsg` wrapper — a naive `onMsg: m => echo(m)` no longer bounces props/set back to the parent and loops forever.
+- **Improved** mocked effects auto-deliver their response via the effect's own `onSuccess` callback on a microtask (same timing contract as a real async resolve), making `llui_mock_effect` usable as a testing primitive.
+
+### `@llui/effects@0.0.9`
+
+- **Added** `_setEffectInterceptor(hook | null)` dev-only hook. Zero-cost in production — one null check per dispatch; no allocation when the hook is null. Reserved for Phase 2 (Worker / off-loop effect interception); Phase 1 `@llui/dom` intercepts upstream at the update loop, so Phase 1 callers of the hook won't see invocations. Documented in JSDoc.
+
+### `@llui/vite-plugin@0.0.19`
+
+- **Added** MCP marker file now carries an optional `devUrl` field. The plugin stamps the dev URL when Vite's HTTP server starts listening; marker updates handle both orderings (MCP-before-Vite and MCP-after-Vite). The `llui:mcp-ready` HMR event broadcasts the full marker so the browser relay doesn't depend on `fs.watch` side-effects.
+- **Added** diagnostic that warns when a `child()` `props` accessor returns an object literal whose values are themselves freshly-constructed object/array literals. Prop diffing compares top-level keys by `Object.is` — a fresh reference reports "changed" every render, firing `propsMsg` on every parent update.
+- **Fixed** `analyzeModifiedFields` now bails out on `SpreadAssignment`s whose source isn't the state parameter (e.g. `...msg.props`). The previous code treated every spread as a noop, which produced narrow `caseDirty` masks excluding fields the spread actually overwrites. Symptom: stale DOM on props/set after a spread-based reducer. `show()` reconcile seemed to work only because mounting a fresh arm created new bindings that happened to read current state.
+
+### `@llui/mcp@0.0.13`
+
+- **Added** 21 new MCP tools routed through a new `ToolRegistry` with layer-tag dispatch (`debug-api | cdp | source | compiler`):
+  - View/DOM (5): `llui_inspect_element`, `llui_get_rendered_html`, `llui_dom_diff`, `llui_dispatch_event`, `llui_get_focus`
+  - Bindings/scope (6): `llui_force_rerender`, `llui_each_diff`, `llui_scope_tree`, `llui_disposer_log`, `llui_list_dead_bindings`, `llui_binding_graph`
+  - Effects (4): `llui_pending_effects`, `llui_effect_timeline`, `llui_mock_effect`, `llui_resolve_effect`
+  - Time-travel/utility (5): `llui_step_back`, `llui_coverage`, `llui_diff_state`, `llui_assert`, `llui_search_history`
+  - Eval (1): `llui_eval`
+- **Improved** internal layout: `packages/mcp/src/index.ts` shrinks from 747 → ~244 lines. Tool handlers live in `tools/debug-api.ts`; WebSocket relay lives in `transports/relay.ts` as `WebSocketRelayTransport implements RelayTransport`. Same public API (`LluiMcpServer`, `connectDirect`, `handleToolCall`).
+- **Added** `setDevUrl(url)` on `LluiMcpServer`. Extends the marker write so CDP-fallback consumers (Phase 2) can find the dev URL.
+
+### `@llui/vike@0.0.19`
+
+- **Fixed** `pageContext.data` now honors `Vike.PageContext` augmentations. The server and client hook interfaces previously declared `data?: unknown` inline, so consumer augmentations of Vike's global namespace never reached the hook callbacks — every `document({ pageContext })` / nav callback had to cast. A conditional lookup on `Vike.PageContext` resolves to `unknown` when unaugmented and to the user's type when declared. An ambient stub of the `Vike` namespace lets the package type-check standalone and merge cleanly when `vike` is installed alongside.
+
+### `@llui/{test,router,transitions,components}@0.0.19`
+
+- **Added** cascade bump — no user-visible changes; picks up the new `@llui/dom@0.0.19` peerDependency range.
+
+### Docs
+
+- `packages/mcp/README.md`, `site/content/api/mcp.md`, `site/content/cookbook.md`, `site/content/llm-guide.md`, `CLAUDE.md`, `docs/designs/07 LLM Friendliness.md`, `docs/designs/09 API Reference.md` all updated with Phase 1 additions (tool tables, API types, browser console examples, package row).
+
 ## 2026-04-15 — 0.0.18
 
 **Released:** `@llui/{dom,vite-plugin,test,router,transitions,components,vike}@0.0.18`; `@llui/mcp@0.0.12`
