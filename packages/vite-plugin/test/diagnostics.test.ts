@@ -410,9 +410,7 @@ describe('child() props accessor footguns', () => {
       })
     `
     const w = warnings(src)
-    expect(
-      w.some((m) => m.includes('child()') && m.includes('tags')),
-    ).toBe(true)
+    expect(w.some((m) => m.includes('child()') && m.includes('tags'))).toBe(true)
   })
 
   it('does not warn when props accessor returns only primitives and stable refs', () => {

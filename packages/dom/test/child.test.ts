@@ -346,5 +346,4 @@ describe('child()', () => {
     expect(loopDetected).toBe(false)
     expect(onMsgCalls).toBeLessThan(5)
   })
-
 })
