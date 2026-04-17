@@ -1,6 +1,7 @@
 import { renderNodes, serializeNodes } from '@llui/dom'
 import type { AnyComponentDef, Binding, Scope } from '@llui/dom'
 import { _consumePendingSlot, _resetPendingSlot } from './page-slot.js'
+import type { VikePageContextData } from './vike-namespace.js'
 
 type LayoutChain = ReadonlyArray<AnyComponentDef>
 
@@ -9,10 +10,15 @@ type LayoutChain = ReadonlyArray<AnyComponentDef>
  * `data` are whichever `+Page.ts` and `+data.ts` Vike resolved for the
  * current route; `lluiLayoutData` is an optional array of per-layer
  * layout data matching the chain configured on `createOnRenderHtml`.
+ *
+ * `data` is derived from the global `Vike.PageContext` namespace so that
+ * consumer-side augmentations (the Vike convention for typing data) flow
+ * into this hook's callbacks without any cast. When the consumer hasn't
+ * augmented the namespace, `data` falls back to `unknown`.
  */
 export interface PageContext {
   Page: AnyComponentDef
-  data?: unknown
+  data?: VikePageContextData
   lluiLayoutData?: readonly unknown[]
   head?: string
 }

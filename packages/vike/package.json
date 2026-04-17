@@ -22,7 +22,7 @@
   ],
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
-    "check": "tsc --noEmit",
+    "check": "tsc --noEmit && tsc --noEmit -p tsconfig.test-types.json",
     "lint": "eslint src",
     "test": "vitest run",
     "test:coverage": "vitest run --coverage"

@@ -1,6 +1,7 @@
 import { hydrateApp, mountApp } from '@llui/dom'
 import type { AnyComponentDef, AppHandle, TransitionOptions, Scope } from '@llui/dom'
 import { _consumePendingSlot, _resetPendingSlot } from './page-slot.js'
+import type { VikePageContextData } from './vike-namespace.js'
 
 // Re-exported so `@llui/vike/client` is a one-stop-shop for everything
 // a pages/+onRenderClient.ts / +Layout.ts file needs.
@@ -17,6 +18,12 @@ declare global {
  * `Page` and `data` fields come from whichever `+Page.ts` and `+data.ts`
  * Vike resolved for the current route.
  *
+ * `data` is derived from the global `Vike.PageContext` namespace — the
+ * convention users already know from Vike. Consumer augmentations of
+ * `Vike.PageContext { interface PageContext { data?: MyData } }` flow
+ * through to every callback here without a cast. Unaugmented projects
+ * fall back to `unknown`.
+ *
  * `lluiLayoutData` is optional and carries per-layer data for the layout
  * chain configured via `createOnRenderClient({ Layout })`. It's indexed
  * outermost-to-innermost, one entry per layout layer. Absent entries
@@ -26,7 +33,7 @@ declare global {
  */
 export interface ClientPageContext {
   Page: AnyComponentDef
-  data?: unknown
+  data?: VikePageContextData
   lluiLayoutData?: readonly unknown[]
   isHydration?: boolean
 }
