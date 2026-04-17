@@ -244,6 +244,51 @@ export interface LluiDebugAPI {
   restoreState(snap: unknown): void
   /** Find all bindings whose target node matches or is a child of the selector. */
   getBindingsFor(selector: string): BindingLocation[]
+  /** Return a rich structural + style + binding report for the first element matching selector. Returns null if no element matches or document is unavailable. */
+  inspectElement(selector: string): ElementReport | null
+  /** Get the outerHTML of the mounted component or a specific element. Pass a selector for a specific node (defaults to the mount root). Pass maxLength to truncate output. */
+  getRenderedHtml(selector?: string, maxLength?: number): string
+  /** Synthesize and dispatch a browser event at a DOM element matched by selector. Returns dispatched status, the history indices of any Msgs the handler produced, and the resulting state. */
+  dispatchDomEvent(
+    selector: string,
+    type: string,
+    init?: EventInit,
+  ): {
+    dispatched: boolean
+    messagesProducedIndices: number[]
+    resultingState: unknown | null
+  }
+  /** Return info about the currently focused element: { selector (if it has an id), tagName, selectionStart, selectionEnd }. Useful for catching "focus lost on re-render" bugs. */
+  getFocus(): {
+    selector: string | null
+    tagName: string | null
+    selectionStart: number | null
+    selectionEnd: number | null
+  }
+}
+
+export interface ElementReport {
+  selector: string
+  tagName: string
+  attributes: Record<string, string>
+  classes: string[]
+  dataset: Record<string, string>
+  text: string
+  computed: {
+    display: string
+    visibility: string
+    position: string
+    width: number
+    height: number
+  }
+  boundingBox: { x: number; y: number; width: number; height: number }
+  bindings: Array<{
+    bindingIndex: number
+    kind: string
+    mask: number
+    lastValue: unknown
+    relation: 'self' | 'text-child' | 'comment-child'
+  }>
 }
 
 export interface BindingLocation {
@@ -571,6 +616,140 @@ export function installDevTools(inst: object): void {
         })
       }
       return results
+    },
+
+    inspectElement(selector: string): ElementReport | null {
+      if (typeof document === 'undefined') return null
+      const el = document.querySelector(selector)
+      if (!el) return null
+
+      const attributes: Record<string, string> = {}
+      for (const attr of Array.from(el.attributes)) {
+        attributes[attr.name] = attr.value
+      }
+
+      const classes = Array.from(el.classList)
+
+      const dataset: Record<string, string> = {}
+      if (el instanceof HTMLElement) {
+        for (const [key, value] of Object.entries(el.dataset)) {
+          if (typeof value === 'string') dataset[key] = value
+        }
+      }
+
+      const rawText = el.textContent ?? ''
+      const text = rawText.length > 1000 ? rawText.slice(0, 1000) : rawText
+
+      const rect = el.getBoundingClientRect()
+      const boundingBox = { x: rect.x, y: rect.y, width: rect.width, height: rect.height }
+
+      let computed: ElementReport['computed']
+      try {
+        const cs = window.getComputedStyle(el)
+        computed = {
+          display: cs.display,
+          visibility: cs.visibility,
+          position: cs.position,
+          width: rect.width,
+          height: rect.height,
+        }
+      } catch {
+        computed = { display: 'unknown', visibility: 'unknown', position: 'unknown', width: 0, height: 0 }
+      }
+
+      const rawBindings = api.getBindingsFor(selector)
+      const bindings = rawBindings.map((b) => ({
+        bindingIndex: b.bindingIndex,
+        kind: b.kind,
+        mask: b.mask,
+        lastValue: b.lastValue,
+        relation: b.relation,
+      }))
+
+      return {
+        selector,
+        tagName: el.tagName.toLowerCase(),
+        attributes,
+        classes,
+        dataset,
+        text,
+        computed,
+        boundingBox,
+        bindings,
+      }
+    },
+
+    getRenderedHtml(selector?: string, maxLength?: number): string {
+      if (typeof document === 'undefined') return ''
+      const el = selector ? document.querySelector(selector) : document.body
+      if (!(el instanceof Element)) return ''
+      const html = el.outerHTML
+      if (typeof maxLength === 'number' && html.length > maxLength) {
+        return html.slice(0, maxLength) + `<!-- truncated; total ${html.length} chars -->`
+      }
+      return html
+    },
+
+    dispatchDomEvent(
+      selector: string,
+      type: string,
+      init?: EventInit,
+    ): {
+      dispatched: boolean
+      messagesProducedIndices: number[]
+      resultingState: unknown | null
+    } {
+      const noOp = { dispatched: false, messagesProducedIndices: [], resultingState: null }
+      if (typeof document === 'undefined') return noOp
+      const el = document.querySelector(selector)
+      if (!el) return noOp
+
+      const preIndex = history.length > 0 ? history[history.length - 1]!.index : -1
+
+      let event: Event
+      if (type === 'click' || type === 'mousedown' || type === 'mouseup') {
+        event = new MouseEvent(type, { bubbles: true, cancelable: true, ...(init as MouseEventInit) })
+      } else if (type === 'keydown' || type === 'keyup' || type === 'keypress') {
+        event = new KeyboardEvent(type, {
+          bubbles: true,
+          cancelable: true,
+          ...(init as KeyboardEventInit),
+        })
+      } else {
+        event = new Event(type, { bubbles: true, cancelable: true, ...init })
+      }
+
+      el.dispatchEvent(event)
+      flushInstance(ci)
+
+      const messagesProducedIndices = history
+        .filter((r) => r.index > preIndex)
+        .map((r) => r.index)
+
+      return {
+        dispatched: true,
+        messagesProducedIndices,
+        resultingState: ci.state,
+      }
+    },
+
+    getFocus() {
+      if (typeof document === 'undefined') {
+        return { selector: null, tagName: null, selectionStart: null, selectionEnd: null }
+      }
+      const el = document.activeElement
+      if (!el || el === document.body) {
+        return { selector: null, tagName: null, selectionStart: null, selectionEnd: null }
+      }
+      const id = el.id ? `#${el.id}` : null
+      const tagName = el.tagName.toLowerCase()
+      let selectionStart: number | null = null
+      let selectionEnd: number | null = null
+      if (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement) {
+        selectionStart = el.selectionStart ?? null
+        selectionEnd = el.selectionEnd ?? null
+      }
+      return { selector: id, tagName, selectionStart, selectionEnd }
     },
   }
 

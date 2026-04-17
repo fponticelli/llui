@@ -28,7 +28,7 @@ export { createView, type View } from './view-helpers.js'
 export { mountApp, hydrateApp, type MountOptions } from './mount.js'
 // installDevTools is NOT re-exported here to keep it out of production bundles.
 // Import directly: import { installDevTools } from '@llui/dom/devtools'
-export type { LluiDebugAPI } from './devtools.js'
+export type { LluiDebugAPI, ElementReport } from './devtools.js'
 
 // ── Runtime ───────────────────────────────────────────────────────
 

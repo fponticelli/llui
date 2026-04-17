@@ -2,6 +2,7 @@ import { existsSync, readFileSync } from 'node:fs'
 import { lintIdiomatic } from '@llui/lint-idiomatic'
 import type { ToolRegistry } from '../tool-registry.js'
 import { generateReplayTest } from './replay-test-generator.js'
+import { domDiff } from '../util/diff.js'
 
 /**
  * Register the 23 debug-API-backed tools. Every handler here routes through
@@ -417,6 +418,92 @@ export function registerDebugApiTools(registry: ToolRegistry): void {
         entryCount: trace.entries.length,
       }
     },
+  )
+
+  registry.register(
+    {
+      name: 'llui_inspect_element',
+      description:
+        'Get a rich report for a DOM element: tag, attributes, classes, data-*, text, bounding box, a computed-style subset (display/visibility/position/dimensions), and the bindings targeting this node. Pass a CSS selector. Returns null if no element matches.',
+      inputSchema: {
+        type: 'object',
+        properties: { selector: { type: 'string', description: 'CSS selector' } },
+        required: ['selector'],
+      },
+    },
+    'debug-api',
+    async (args, ctx) => ctx.relay!.call('inspectElement', [args.selector as string]),
+  )
+
+  registry.register(
+    {
+      name: 'llui_get_rendered_html',
+      description:
+        "Get the outerHTML of the mounted component or a specific element. Pass 'selector' for a specific node (defaults to the mount root). Pass 'maxLength' to truncate output.",
+      inputSchema: {
+        type: 'object',
+        properties: {
+          selector: { type: 'string' },
+          maxLength: { type: 'number' },
+        },
+      },
+    },
+    'debug-api',
+    async (args, ctx) => ctx.relay!.call('getRenderedHtml', [args.selector, args.maxLength]),
+  )
+
+  registry.register(
+    {
+      name: 'llui_dispatch_event',
+      description:
+        "Synthesize and dispatch a browser event at a DOM element. Returns the history indices of any Msgs the handler produced plus the resulting state. 'type' is the event name (e.g. 'click', 'input', 'keydown'). 'init' is an EventInit object (e.g. { key: 'Enter' } for keydown).",
+      inputSchema: {
+        type: 'object',
+        properties: {
+          selector: { type: 'string' },
+          type: { type: 'string' },
+          init: { type: 'object' },
+        },
+        required: ['selector', 'type'],
+      },
+    },
+    'debug-api',
+    async (args, ctx) => ctx.relay!.call('dispatchDomEvent', [args.selector, args.type, args.init]),
+  )
+
+  registry.register(
+    {
+      name: 'llui_dom_diff',
+      description:
+        'Compare expected HTML against the currently rendered HTML (from selector, or the mount root). Returns { match, differences }. Pass ignoreWhitespace=true to normalize whitespace.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          expected: { type: 'string' },
+          selector: { type: 'string' },
+          ignoreWhitespace: { type: 'boolean' },
+        },
+        required: ['expected'],
+      },
+    },
+    'debug-api',
+    async (args, ctx) => {
+      const actual = (await ctx.relay!.call('getRenderedHtml', [args.selector])) as string
+      return domDiff(String(args.expected), actual, {
+        ignoreWhitespace: Boolean(args.ignoreWhitespace),
+      })
+    },
+  )
+
+  registry.register(
+    {
+      name: 'llui_get_focus',
+      description:
+        'Return info about the currently focused element: { selector (if it has an id), tagName, selectionStart, selectionEnd }. Useful for catching "focus lost on re-render" bugs.',
+      inputSchema: { type: 'object', properties: {} },
+    },
+    'debug-api',
+    async (_args, ctx) => ctx.relay!.call('getFocus', []),
   )
 
   registry.register(
