@@ -219,4 +219,132 @@ describe('child()', () => {
     expect(spans[0]!.textContent).toBe('x')
     expect(spans[1]!.textContent).toBe('y')
   })
+
+  // ── Regression: propsMsg loop vectors ──────────────────────────────
+  //
+  // Bug: child() wraps `childInst.send` so every message is piped through
+  // `onMsg`. That wrapper fires for the framework-synthesized propsMsg too,
+  // which means a naive `onMsg: msg => msg` echoes props/set back to the
+  // parent, mutates parent state, re-triggers the prop-diff accessor, and
+  // infinitely loops.
+
+  it('onMsg is not invoked for framework-synthesized propsMsg messages', () => {
+    const onMsgCalls: ChildMsg[] = []
+    const def: ComponentDef<ParentState, ParentMsg, never> = {
+      name: 'LoopTestParent',
+      init: () => [{ base: 10, childClicks: 0 }, []],
+      update: (s, m) => {
+        switch (m.type) {
+          case 'setBase':
+            return [{ ...s, base: m.value }, []]
+          case 'childIncremented':
+            return [{ ...s, childClicks: s.childClicks + 1 }, []]
+        }
+      },
+      view: () => [
+        div({ class: 'parent' }, [
+          ...child<ParentState, ChildMsg>({
+            def: ChildCounter as unknown as ComponentDef<unknown, ChildMsg, unknown>,
+            key: 'counter',
+            props: (s) => ({ initial: s.base }),
+            onMsg: (msg) => {
+              onMsgCalls.push(msg)
+              return null
+            },
+          }),
+        ]),
+      ],
+    }
+    let send: (msg: ParentMsg) => void = () => {}
+    const origView = def.view
+    def.view = (h) => {
+      send = h.send
+      return origView(h)
+    }
+    const container = document.createElement('div')
+    const handle = mountApp(container, def)
+
+    send({ type: 'setBase', value: 99 })
+    handle.flush()
+    // Drain any queued microtasks from the wrapped send.
+    return Promise.resolve()
+      .then(() => Promise.resolve())
+      .then(() => {
+        expect(onMsgCalls.some((m) => m.type === 'propsChanged')).toBe(false)
+      })
+  })
+
+  it('onMsg echoing every message does not produce an infinite loop', async () => {
+    // Mirrors the real-world footgun from the bug report: a naive adapter
+    // that forwards every child msg upward as a parent msg. With the bug,
+    // changing parent props triggers propsMsg → onMsg → parentSend →
+    // state change → Phase 2 → propsMsg …
+    type PState = { base: number; lastChild: string | null; updates: number }
+    type PMsg =
+      | { type: 'setBase'; value: number }
+      | { type: 'fromChild'; kind: string }
+      | { type: 'tick' }
+    // A loop guard: if the parent processes more than N messages in one
+    // synchronous + microtask chain, treat it as unbounded and bail instead
+    // of hanging the test runner. 50 is generous — the fixed path should
+    // see exactly 1 (the user-initiated setBase).
+    const LOOP_CAP = 50
+    let onMsgCalls = 0
+    let loopDetected = false
+    const def: ComponentDef<PState, PMsg, never> = {
+      name: 'EchoParent',
+      init: () => [{ base: 0, lastChild: null, updates: 0 }, []],
+      update: (s, m) => {
+        switch (m.type) {
+          case 'setBase':
+            return [{ ...s, base: m.value, updates: s.updates + 1 }, []]
+          case 'fromChild':
+            return [{ ...s, lastChild: m.kind, updates: s.updates + 1 }, []]
+          case 'tick':
+            return [s, []]
+        }
+      },
+      view: () => [
+        div({}, [
+          ...child<PState, ChildMsg>({
+            def: ChildCounter as unknown as ComponentDef<unknown, ChildMsg, unknown>,
+            key: 'c',
+            // Fresh nested literal ⇒ per-key reference diff always reports changed
+            // ⇒ propsMsg fires every render. If onMsg forwards every child msg
+            // upward, that forms the infinite loop described in the bug report.
+            props: (s) => ({ initial: s.base, nested: { foo: 'bar' } }),
+            onMsg: (msg) => {
+              onMsgCalls++
+              if (onMsgCalls > LOOP_CAP) {
+                loopDetected = true
+                return null // bail so test terminates
+              }
+              return { type: 'fromChild', kind: msg.type }
+            },
+          }),
+        ]),
+      ],
+    }
+    let send: (msg: PMsg) => void = () => {}
+    const origView = def.view
+    def.view = (h) => {
+      send = h.send
+      return origView(h)
+    }
+    const container = document.createElement('div')
+    const handle = mountApp(container, def)
+
+    send({ type: 'setBase', value: 7 })
+    handle.flush()
+    // Drain microtasks several times — the wrapped childSend queues a
+    // microtask per message, and a real loop would keep re-queuing.
+    for (let i = 0; i < 10; i++) {
+      await Promise.resolve()
+      handle.flush()
+    }
+
+    expect(loopDetected).toBe(false)
+    expect(onMsgCalls).toBeLessThan(5)
+  })
+
 })

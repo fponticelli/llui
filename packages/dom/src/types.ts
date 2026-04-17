@@ -199,7 +199,18 @@ export interface Scope {
 
 // ── Binding ───────────────────────────────────────────────────────
 
-export type BindingKind = 'text' | 'prop' | 'attr' | 'class' | 'style'
+/**
+ * Binding output kinds.
+ *
+ * `'text' | 'prop' | 'attr' | 'class' | 'style'` write their accessor's
+ * return value to the DOM. `'effect'` is a side-effect-only watcher:
+ * the accessor is invoked every Phase 2 tick its mask is hit, but its
+ * return value is discarded and `applyBinding` is a no-op. Used by
+ * `child()` to fire the prop-diff/propsMsg cascade on parent updates
+ * without the cost of stringifying the returned props bag onto a
+ * detached anchor node every render.
+ */
+export type BindingKind = 'text' | 'prop' | 'attr' | 'class' | 'style' | 'effect'
 
 export interface Binding {
   mask: number

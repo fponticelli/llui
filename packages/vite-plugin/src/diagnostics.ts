@@ -481,8 +481,58 @@ function checkChildStaticProps(node: ts.Node, sf: ts.SourceFile, diagnostics: Di
         line,
         column,
       })
+      continue
+    }
+
+    // props accessor: warn when the returned object contains fresh
+    // object/array literals. The prop-diff in `child()` compares by
+    // reference per top-level key (Object.is), so a freshly-constructed
+    // nested value reports changed on every parent update — propsMsg
+    // fires every render, which is wasted work at best and an infinite
+    // loop vector when combined with a naive `onMsg` forwarder.
+    if (ts.isArrowFunction(prop.initializer) || ts.isFunctionExpression(prop.initializer)) {
+      const returned = getReturnedObjectLiteral(prop.initializer)
+      if (!returned) continue
+      for (const keyProp of returned.properties) {
+        if (!ts.isPropertyAssignment(keyProp)) continue
+        const init = keyProp.initializer
+        if (!ts.isObjectLiteralExpression(init) && !ts.isArrayLiteralExpression(init)) continue
+        const keyName = ts.isIdentifier(keyProp.name)
+          ? keyProp.name.text
+          : ts.isStringLiteral(keyProp.name)
+            ? keyProp.name.text
+            : '<?>'
+        const kind = ts.isArrayLiteralExpression(init) ? 'array' : 'object'
+        const { line, column } = pos(keyProp, sf)
+        diagnostics.push({
+          message: `child() at line ${line}: the 'props' accessor returns a fresh ${kind} literal for '${keyName}'. Prop diffing uses Object.is per key, so a freshly-constructed reference reports changed every render — propsMsg will fire on every parent update. Hoist to a module-level constant, reuse a reference from state, or return null from propsMsg when the value is unchanged.`,
+          line,
+          column,
+        })
+      }
     }
   }
+}
+
+function getReturnedObjectLiteral(
+  fn: ts.ArrowFunction | ts.FunctionExpression,
+): ts.ObjectLiteralExpression | null {
+  const body = fn.body
+  if (ts.isParenthesizedExpression(body) && ts.isObjectLiteralExpression(body.expression)) {
+    return body.expression
+  }
+  if (ts.isObjectLiteralExpression(body)) return body
+  if (ts.isBlock(body)) {
+    for (const stmt of body.statements) {
+      if (!ts.isReturnStatement(stmt) || !stmt.expression) continue
+      const expr = stmt.expression
+      if (ts.isObjectLiteralExpression(expr)) return expr
+      if (ts.isParenthesizedExpression(expr) && ts.isObjectLiteralExpression(expr.expression)) {
+        return expr.expression
+      }
+    }
+  }
+  return null
 }
 
 // ── Bitmask overflow warning ────────────────────────────────────

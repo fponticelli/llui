@@ -354,3 +354,87 @@ describe('bitmask overflow (>31 state paths)', () => {
     expect(overflow).toContain('`huge`')
   })
 })
+
+describe('child() props accessor footguns', () => {
+  // The child-prop watch binding diffs props by Object.is per key. When the
+  // accessor returns an object literal whose values are themselves fresh
+  // object/array literals, that diff fires every parent update, spamming
+  // propsMsg and giving users a silent performance footgun (and worse, a
+  // loop vector through a naive onMsg forwarder). Catch it at compile time.
+
+  it('warns when props accessor returns a fresh nested object literal', () => {
+    const src = `
+      import { component, child, div } from '@llui/dom'
+      export const P = component({
+        name: 'P',
+        init: () => [{ open: false }, []],
+        update: (s, m) => [s, []],
+        view: () => [
+          div({}, [
+            ...child({
+              def: SomeChild,
+              key: 'c',
+              props: (s) => ({ open: s.open, settings: { foo: 'bar' } }),
+            }),
+          ]),
+        ],
+      })
+    `
+    const w = warnings(src)
+    expect(
+      w.some(
+        (m) =>
+          m.includes('child()') &&
+          m.includes('settings') &&
+          /fresh|stable|Object\.is|reference/i.test(m),
+      ),
+    ).toBe(true)
+  })
+
+  it('warns when props accessor returns a fresh array literal', () => {
+    const src = `
+      import { component, child, div } from '@llui/dom'
+      export const P = component({
+        name: 'P',
+        init: () => [{ items: [] }, []],
+        update: (s, m) => [s, []],
+        view: () => [
+          div({}, [
+            ...child({
+              def: SomeChild,
+              key: 'c',
+              props: (s) => ({ tags: ['a', 'b'], count: s.items.length }),
+            }),
+          ]),
+        ],
+      })
+    `
+    const w = warnings(src)
+    expect(
+      w.some((m) => m.includes('child()') && m.includes('tags')),
+    ).toBe(true)
+  })
+
+  it('does not warn when props accessor returns only primitives and stable refs', () => {
+    const src = `
+      import { component, child, div } from '@llui/dom'
+      const STABLE = { closed: true }
+      export const P = component({
+        name: 'P',
+        init: () => [{ n: 0, settings: { a: 1 } }, []],
+        update: (s, m) => [s, []],
+        view: () => [
+          div({}, [
+            ...child({
+              def: SomeChild,
+              key: 'c',
+              props: (s) => ({ n: s.n, settings: s.settings, closed: STABLE }),
+            }),
+          ]),
+        ],
+      })
+    `
+    const w = warnings(src)
+    expect(w.filter((m) => m.includes('child()') && /fresh|stable/i.test(m))).toHaveLength(0)
+  })
+})

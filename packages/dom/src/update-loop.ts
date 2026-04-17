@@ -155,6 +155,10 @@ export function _forceState<S, M, E>(inst: ComponentInstance<S, M, E>, newState:
   for (let i = 0, len = phase2Len; i < len; i++) {
     const binding = bindings[i]!
     if (binding.dead) continue
+    if (binding.kind === 'effect') {
+      binding.accessor(state)
+      continue
+    }
     const newValue = binding.accessor(state)
     if (Object.is(newValue, binding.lastValue)) continue
     binding.lastValue = newValue
@@ -344,6 +348,18 @@ export function _runPhase2(
       for (let i = 0, len = phase2Len; i < len; i++) {
         const binding = bindings[i]!
         if (binding.dead || (binding.mask & dirty) === 0) continue
+        if (binding.kind === 'effect') {
+          // Side-effect-only: run accessor, discard return, skip the
+          // Object.is diff and `applyBinding` entirely. Used by child()'s
+          // prop-watch binding so fresh-object props accessors don't
+          // stringify onto a detached anchor every update.
+          try {
+            binding.accessor(state)
+          } catch (e) {
+            throw enhanceBindingError(e, binding, componentName)
+          }
+          continue
+        }
         let newValue: unknown
         try {
           newValue = binding.accessor(state)
@@ -359,6 +375,10 @@ export function _runPhase2(
       for (let i = 0, len = phase2Len; i < len; i++) {
         const binding = bindings[i]!
         if (binding.dead || (binding.mask & dirty) === 0) continue
+        if (binding.kind === 'effect') {
+          binding.accessor(state)
+          continue
+        }
         const newValue = binding.accessor(state)
         const last = binding.lastValue
         if (newValue === last || (newValue !== newValue && last !== last)) continue

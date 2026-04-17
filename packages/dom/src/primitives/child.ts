@@ -51,7 +51,11 @@ export function child<S, ChildM>(opts: ChildOptions<S, ChildM>): Node[] {
   // Track props for shallow-diff
   let prevProps: Record<string, unknown> = { ...initialProps }
 
-  // Register a binding on the child scope that watches parent props changes
+  // Register a binding on the child scope that watches parent props changes.
+  // This is a side-effect-only (`kind: 'effect'`) binding: Phase 2 runs the
+  // accessor purely to fire the diff + propsMsg dispatch below. There is no
+  // DOM output — the comment node is a detached anchor kept only so the
+  // Binding shape stays uniform with other kinds.
   createBinding(childScope, {
     mask: FULL_MASK,
     accessor: ((parentState: S) => {
@@ -67,14 +71,17 @@ export function child<S, ChildM>(opts: ChildOptions<S, ChildM>): Node[] {
 
       if (changed && childDef.propsMsg) {
         const msg = childDef.propsMsg(newProps)
-        childInst.send(msg)
+        // Dispatch via `originalSend` so framework-synthesized propsMsg
+        // traffic bypasses the `onMsg` wrapper below. Otherwise a naive
+        // `onMsg: m => forward(m)` echoes props/set back to the parent,
+        // which mutates parent state, re-fires this accessor, and loops
+        // forever.
+        originalSend(msg)
         flushInstance(childInst)
       }
       prevProps = { ...newProps }
-
-      return newProps
     }) as (state: never) => unknown,
-    kind: 'text',
+    kind: 'effect',
     node: document.createComment('child:' + opts.key),
     perItem: false,
   })

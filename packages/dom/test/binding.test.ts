@@ -90,4 +90,23 @@ describe('applyBinding', () => {
     applyBinding({ kind: 'style', node: el, key: 'color' }, null)
     expect(el.style.color).toBe('')
   })
+
+  // ── 'effect' kind — side-effect-only bindings ────────────────────
+  //
+  // Some bindings exist purely to run their accessor (for its side
+  // effects, e.g. the prop-watch binding in `child()`). They have no
+  // meaningful value to write into the DOM. Declaring them kind='effect'
+  // makes applyBinding a no-op, avoiding object stringification and
+  // lastValue churn on every parent update.
+
+  it('is a no-op for kind=effect (does not mutate the node)', () => {
+    const comment = document.createComment('watcher')
+    const original = comment.nodeValue
+    applyBinding({ kind: 'effect', node: comment, key: undefined }, { anything: true })
+    expect(comment.nodeValue).toBe(original)
+    applyBinding({ kind: 'effect', node: comment, key: undefined }, 'a string')
+    expect(comment.nodeValue).toBe(original)
+    applyBinding({ kind: 'effect', node: comment, key: undefined }, null)
+    expect(comment.nodeValue).toBe(original)
+  })
 })

@@ -61,6 +61,12 @@ export function applyBinding(
   }
 
   switch (target.kind) {
+    case 'effect':
+      // Side-effect-only binding — the accessor already ran for its
+      // side effects in Phase 2. We keep `applyBinding` callable for
+      // type-uniform call sites, but there is no DOM write to perform.
+      break
+
     case 'text':
       target.node.nodeValue = String(value)
       break
