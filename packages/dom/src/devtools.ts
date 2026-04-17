@@ -308,7 +308,7 @@ export interface LluiDebugAPI {
   /** Walk the component's scope tree and return a nested ScopeNode with kind classification. Pass depth to limit traversal depth, scopeId to start from a specific scope. */
   getScopeTree(opts?: { depth?: number; scopeId?: string }): ScopeNode
   /** Recent onDispose firings with scope id and cause. Pass 'limit' to cap results to the N most recent entries. Catches 'leak on branch swap' class bugs. */
-  getDisposerLog(limit?: number): Array<{ scopeId: string; cause: string; timestamp: number }>
+  getDisposerLog(limit?: number): DisposerEvent[]
   /** Edge list: state path → binding indices that depend on it. Inverts the compiler-emitted mask legend to show, for each top-level state field, which bindings will re-evaluate when it changes. */
   getBindingGraph(): Array<{ statePath: string; bindingIndices: number[] }>
   /** Current queued and in-flight effects. Each entry has { id, type, dispatchedAt, status, payload }. Use 'id' with llui_resolve_effect to manually resolve one. */
@@ -886,7 +886,7 @@ export function installDevTools(inst: object): void {
       return walkScope(startScope, 0, maxDepth)
     },
 
-    getDisposerLog(limit?: number): Array<{ scopeId: string; cause: string; timestamp: number }> {
+    getDisposerLog(limit?: number): DisposerEvent[] {
       const all = ci._disposerLog?.toArray() ?? []
       if (limit === undefined) return all
       return all.slice(-Math.max(0, limit))
