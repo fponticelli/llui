@@ -899,6 +899,55 @@ describe('__handlers per-message optimization', () => {
     // Only 'a' should be modified — nested function's return is ignored
     expect(Number(handlerMatch![1])).toBe(1)
   })
+
+  it('does not emit a narrow per-case handler when the return spreads a non-state value', () => {
+    // Regression: `return [{ ...state, ...msg.props, extra: x }, []]` was
+    // analyzed as modifying ONLY `extra` — the `...msg.props` spread was
+    // silently ignored as if it were `...state`. That produced a narrow
+    // `caseDirty` that excluded every field coming in through the props
+    // spread, so text()/attr() bindings reading those fields in Phase 2
+    // were skipped and the DOM retained stale values after a props/set.
+    //
+    // Correct behaviour: when a spread's source is anything other than
+    // the state parameter, bail out of the per-case optimization so the
+    // generic Phase 2 path runs and `__dirty` computes an honest mask.
+    const src = `
+      import { component, div, span, text } from '@llui/dom'
+      type Props = { name: string | null; other: number }
+      type State = Props & { tgState: number }
+      type Msg = { type: 'props/set'; props: Props }
+      export const C = component<State, Msg, never, Props>({
+        name: 'C',
+        init: (p) => [{ ...(p ?? { name: null, other: 0 }), tgState: 0 }, []],
+        propsMsg: (p) => ({ type: 'props/set', props: p }),
+        update: (state, msg) => {
+          switch (msg.type) {
+            case 'props/set': {
+              const tgNext = state.tgState + 1
+              return [{ ...state, ...msg.props, tgState: tgNext }, []]
+            }
+          }
+        },
+        view: ({ text }) => [
+          div([
+            span([text((s) => s.name === null ? 'NULL' : s.name)]),
+            span([text((s) => String(s.tgState))]),
+          ]),
+        ],
+      })
+    `
+    const out = t(src)
+    // Two acceptable outcomes: (a) no per-case handler for 'props/set'
+    // (bail-out, preferred — generic __dirty path runs), or (b) the handler
+    // emits with caseDirty === FULL_MASK (-1 as a 32-bit signed int).
+    const handlerMatch = out.match(/"props\/set"[\s\S]*?__handleMsg\([^,]+,\s*[^,]+,\s*(-?\d+)/)
+    if (handlerMatch) {
+      const mask = Number(handlerMatch[1]) | 0
+      expect(mask).toBe(-1)
+    } else {
+      expect(out).not.toMatch(/"props\/set"/)
+    }
+  })
 })
 
 describe('returns null for non-llui files', () => {

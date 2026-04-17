@@ -1612,8 +1612,16 @@ function analyzeModifiedFields(
     const modified: string[] = []
     for (const prop of stateExpr.properties) {
       if (ts.isSpreadAssignment(prop)) {
-        // { ...state } — the spread doesn't modify fields
-        continue
+        // Only `...state` is safe to ignore — re-spreading state back into
+        // state doesn't change any field's identity. ANY other spread
+        // (e.g. `...msg.props`, `...someObj`) can overwrite arbitrary
+        // top-level fields with new references, and we cannot know which
+        // ones statically. Bail out so the generic Phase 2 path runs
+        // `__dirty` at runtime and produces a correct mask.
+        if (ts.isIdentifier(prop.expression) && prop.expression.text === stateName) {
+          continue
+        }
+        return null
       }
       if (ts.isPropertyAssignment(prop) && ts.isIdentifier(prop.name)) {
         const fieldName = prop.name.text
