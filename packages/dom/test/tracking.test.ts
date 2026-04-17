@@ -4,6 +4,12 @@ import type { EachDiff } from '../src/tracking/each-diff'
 import type { DisposerEvent } from '../src/tracking/disposer-log'
 import { createRingBuffer as createRB2 } from '../src/tracking/disposer-log'
 import { createCoverageTracker } from '../src/tracking/coverage'
+import type { EffectTimelineEntry } from '../src/tracking/effect-timeline'
+import {
+  createRingBuffer as createRB3,
+  createMockRegistry,
+  createPendingEffectsList,
+} from '../src/tracking/effect-timeline'
 import { mountApp, _setDevToolsInstall } from '../src/mount'
 import { installDevTools } from '../src/devtools'
 import { each } from '../src/primitives/each'
@@ -659,5 +665,77 @@ describe('coverage integration', () => {
     expect(snap.neverFired).toEqual(['Decrement'])
 
     handle.dispose()
+  })
+})
+
+// ── Effect timeline / mock registry / pending effects ─────────────────
+
+describe('effect timeline buffer', () => {
+  it('records phases in order', () => {
+    const buf = createRB3<EffectTimelineEntry>(500)
+    buf.push({ effectId: 'e1', type: 'http', phase: 'dispatched', timestamp: 1 })
+    buf.push({ effectId: 'e1', type: 'http', phase: 'in-flight', timestamp: 2 })
+    buf.push({ effectId: 'e1', type: 'http', phase: 'resolved', timestamp: 5, durationMs: 4 })
+    const entries = buf.toArray()
+    expect(entries.map((e) => e.phase)).toEqual(['dispatched', 'in-flight', 'resolved'])
+    expect(entries[2]!.durationMs).toBe(4)
+  })
+})
+
+describe('mock registry', () => {
+  it('matches by type and returns the registered response', () => {
+    const reg = createMockRegistry()
+    const mockId = reg.add({ type: 'http' }, { data: 'ok' }, false)
+    expect(mockId).toMatch(/^mock-\d+$/)
+    const hit = reg.match({ type: 'http', url: '/x' })
+    expect(hit).not.toBeNull()
+    expect(hit!.response).toEqual({ data: 'ok' })
+    // One-shot — second match should miss
+    expect(reg.match({ type: 'http' })).toBeNull()
+  })
+
+  it('persists when persist=true', () => {
+    const reg = createMockRegistry()
+    reg.add({ type: 'log' }, null, true)
+    expect(reg.match({ type: 'log' })).not.toBeNull()
+    expect(reg.match({ type: 'log' })).not.toBeNull()
+  })
+
+  it('matches by payloadPath + payloadEquals', () => {
+    const reg = createMockRegistry()
+    reg.add({ type: 'http', payloadPath: 'url', payloadEquals: '/api/x' }, 'ok', false)
+    expect(reg.match({ type: 'http', url: '/api/y' })).toBeNull()
+    expect(reg.match({ type: 'http', url: '/api/x' })).not.toBeNull()
+  })
+
+  it('ignores effects that are not objects', () => {
+    const reg = createMockRegistry()
+    reg.add({ type: 'http' }, 'ok', true)
+    expect(reg.match(null)).toBeNull()
+    expect(reg.match(42)).toBeNull()
+    expect(reg.match('http')).toBeNull()
+  })
+
+  it('clear() drops all mocks and resets id counter', () => {
+    const reg = createMockRegistry()
+    reg.add({ type: 'http' }, 'a', true)
+    reg.add({ type: 'log' }, 'b', true)
+    expect(reg.list()).toHaveLength(2)
+    reg.clear()
+    expect(reg.list()).toHaveLength(0)
+    const newId = reg.add({ type: 'http' }, 'c', true)
+    expect(newId).toBe('mock-1')
+  })
+})
+
+describe('pending effects list', () => {
+  it('supports push, findById, remove', () => {
+    const list = createPendingEffectsList()
+    list.push({ id: 'e1', type: 'http', dispatchedAt: 1, status: 'queued', payload: {} })
+    list.push({ id: 'e2', type: 'log', dispatchedAt: 2, status: 'queued', payload: {} })
+    expect(list.findById('e1')?.type).toBe('http')
+    list.remove('e1')
+    expect(list.findById('e1')).toBeUndefined()
+    expect(list.list()).toHaveLength(1)
   })
 })

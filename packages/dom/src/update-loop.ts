@@ -3,6 +3,11 @@ import type { StructuralBlock } from './structural.js'
 import type { RingBuffer, EachDiff } from './tracking/each-diff.js'
 import type { DisposerEvent } from './tracking/disposer-log.js'
 import type { CoverageTracker } from './tracking/coverage.js'
+import type {
+  EffectTimelineEntry,
+  PendingEffectsList,
+  MockRegistry,
+} from './tracking/effect-timeline.js'
 import { createScope } from './scope.js'
 import { applyBinding } from './binding.js'
 import { setCurrentDirtyMask } from './primitives/memo.js'
@@ -48,6 +53,23 @@ export interface ComponentInstance<S = unknown, M = unknown, E = unknown> {
    *  Msg counter keyed by discriminant. Consumed by the `llui_coverage` MCP
    *  tool to surface Msg variants that have never fired this session. */
   _coverage?: CoverageTracker
+  /** @internal dev-only — populated when `installDevTools` ran. Ring-buffered
+   *  effect dispatch phase log (dispatched → resolved/cancelled) for USER
+   *  effects emitted from `update()`. Consumed by the `llui_effect_timeline`
+   *  MCP tool. Built-in plumbing effects (`delay`, `log`, addressed) are NOT
+   *  recorded here by design — they short-circuit in `dispatchEffect` before
+   *  `dispatchEffectDev` runs. They're runtime plumbing, not user intent,
+   *  and surface via other channels (message queue for `delay`, browser
+   *  console for `log`, addressed-target routing for addressed effects). */
+  _effectTimeline?: RingBuffer<EffectTimelineEntry>
+  /** @internal dev-only — populated when `installDevTools` ran. List of
+   *  currently-pending effects addressable by id, consumed by the
+   *  `llui_pending_effects` MCP tool. */
+  _pendingEffects?: PendingEffectsList
+  /** @internal dev-only — populated when `installDevTools` ran. Mock
+   *  registry consulted by the effect-dispatch wrapper to short-circuit
+   *  matching effects. Consumed by the `llui_mock_effect` MCP tool. */
+  _effectMocks?: MockRegistry
 }
 
 export function createComponentInstance<S, M, E>(
@@ -415,8 +437,64 @@ function dispatchEffect<S, M, E>(inst: ComponentInstance<S, M, E>, effect: E): v
     return
   }
 
+  // Dev-only: record on the timeline / consult the mock registry.
+  // Short-circuits real dispatch when a mock matches. Zero cost in
+  // production — the guard on `_effectTimeline` is undefined unless
+  // `installDevTools` populated the trackers.
+  if (inst._effectTimeline !== undefined && dispatchEffectDev(inst, effect)) return
+
   // User onEffect handler
   if (inst.def.onEffect) {
     inst.def.onEffect({ effect, send: inst.send, signal: inst.signal })
   }
+}
+
+/**
+ * Dev-only effect dispatch wrapper. Records the `dispatched` phase,
+ * consults the mock registry, and tracks the effect as pending.
+ *
+ * @returns `true` when a mock matched (caller should skip the real
+ *   dispatch) or `false` to proceed with the user-provided onEffect.
+ *
+ * Delivery of the mocked response (i.e., converting `response` back
+ * into an app Msg via the effect's onSuccess/onError callbacks) is
+ * the responsibility of the `llui_resolve_effect` MCP tool — not this
+ * wrapper. Phase 1 records the `resolved-mocked` timeline phase and
+ * stops, so the real effect never runs; the MCP tool then decides how
+ * the app observes the mocked result.
+ */
+function dispatchEffectDev<S, M, E>(inst: ComponentInstance<S, M, E>, effect: E): boolean {
+  const timeline = inst._effectTimeline
+  if (timeline === undefined) return false
+
+  const eff = effect as Record<string, unknown>
+  const id = newEffectId()
+  const type = typeof eff.type === 'string' ? eff.type : '<unknown>'
+  const dispatchedAt = Date.now()
+
+  const mock = inst._effectMocks?.match(effect)
+  if (mock) {
+    timeline.push({ effectId: id, type, phase: 'dispatched', timestamp: dispatchedAt })
+    timeline.push({
+      effectId: id,
+      type,
+      phase: 'resolved-mocked',
+      timestamp: dispatchedAt,
+      durationMs: 0,
+    })
+    // Intentionally do NOT push to `_pendingEffects` — the mock resolved
+    // synchronously. Delivery of `mock.response` to the app is deferred
+    // to the `llui_resolve_effect` MCP tool (see fn-level docstring).
+    return true
+  }
+
+  timeline.push({ effectId: id, type, phase: 'dispatched', timestamp: dispatchedAt })
+  inst._pendingEffects?.push({ id, type, dispatchedAt, status: 'queued', payload: effect })
+  return false
+}
+
+function newEffectId(): string {
+  const cryptoObj = (globalThis as { crypto?: { randomUUID?: () => string } }).crypto
+  if (cryptoObj?.randomUUID) return cryptoObj.randomUUID()
+  return `eff-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`
 }

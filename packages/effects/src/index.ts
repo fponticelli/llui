@@ -1257,3 +1257,12 @@ function runGeolocation(effect: GeolocationEffect, send: InternalSend, signal: A
 // ── SSR Effect Resolution ────────────────────────────────────────
 
 export { resolveEffects } from './resolve.js'
+
+// ── Dev-only effect interceptor ──────────────────────────────────
+
+export {
+  _setEffectInterceptor,
+  _getEffectInterceptor,
+  type EffectInterceptor,
+  type EffectInterceptorResult,
+} from './interceptor.js'

@@ -5,6 +5,11 @@ import type { Binding } from './types.js'
 import { createRingBuffer } from './tracking/each-diff.js'
 import { createRingBuffer as createDisposerBuffer } from './tracking/disposer-log.js'
 import { createCoverageTracker } from './tracking/coverage.js'
+import {
+  createRingBuffer as createTimelineBuffer,
+  createMockRegistry,
+  createPendingEffectsList,
+} from './tracking/effect-timeline.js'
 
 /**
  * Enable devtools auto-installation for every mountApp call. Called by
@@ -284,6 +289,14 @@ export function installDevTools(inst: object): void {
   // it fired at, allowing the tool to surface Msg variants that never
   // fired this session. Recorded inside the update interceptor below.
   ci._coverage = createCoverageTracker()
+  // Effect timeline / pending / mocks — consumed by the
+  // `llui_effect_timeline`, `llui_pending_effects`, `llui_mock_effect`,
+  // and `llui_resolve_effect` MCP tools. Populated by the
+  // `dispatchEffectDev` wrapper in `update-loop.ts`; zero cost in
+  // production where `_effectTimeline` stays undefined.
+  ci._effectTimeline = createTimelineBuffer(500)
+  ci._effectMocks = createMockRegistry()
+  ci._pendingEffects = createPendingEffectsList()
   ci.rootScope.instance = ci
   // Flip the scope-module flag so disposeScope starts walking the parent
   // chain to emit disposer events. Before the first installDevTools call
@@ -332,6 +345,12 @@ export function installDevTools(inst: object): void {
       ci._eachDiffLog?.clear()
       ci._disposerLog?.clear()
       ci._coverage?.clear()
+      ci._effectTimeline?.clear()
+      ci._effectMocks?.clear()
+      // NB: `_pendingEffects` is intentionally NOT cleared — pending
+      // entries represent in-flight effects that still have to land
+      // resolution/cancellation phases. Dropping them here would leak
+      // the ids that MCP tools hold onto for `llui_resolve_effect`.
     },
 
     validateMessage(msg: unknown): ValidationError[] | null {
