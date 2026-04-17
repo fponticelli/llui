@@ -2,7 +2,7 @@ import { existsSync, readFileSync } from 'node:fs'
 import { lintIdiomatic } from '@llui/lint-idiomatic'
 import type { ToolRegistry } from '../tool-registry.js'
 import { generateReplayTest } from './replay-test-generator.js'
-import { domDiff } from '../util/diff.js'
+import { domDiff, diffState } from '../util/diff.js'
 
 /**
  * Register the 23 debug-API-backed tools. Every handler here routes through
@@ -728,5 +728,172 @@ export function registerDebugApiTools(registry: ToolRegistry): void {
     },
     'debug-api',
     async (args, ctx) => ctx.relay!.call('getEffectTimeline', [args.limit]),
+  )
+
+  registry.register(
+    {
+      name: 'llui_step_back',
+      description:
+        "Rewind state by replaying from init() with the last N messages excluded. 'mode' is 'pure' (default; suppresses effects) or 'live' (re-fires effects from replay). Returns the new state and rewindDepth.",
+      inputSchema: {
+        type: 'object',
+        properties: {
+          n: { type: 'number' },
+          mode: { type: 'string', enum: ['pure', 'live'] },
+        },
+      },
+    },
+    'debug-api',
+    async (args, ctx) => {
+      const n = typeof args.n === 'number' ? args.n : 1
+      const mode = args.mode === 'live' ? 'live' : 'pure'
+      return ctx.relay!.call('stepBack', [n, mode])
+    },
+  )
+
+  registry.register(
+    {
+      name: 'llui_coverage',
+      description:
+        "Per-Msg-variant coverage for the current session: { fired: { variant: { count, lastIndex } }, neverFired: [variants] }. Shows which message types have run and which haven't — useful for finding untested paths.",
+      inputSchema: { type: 'object', properties: {} },
+    },
+    'debug-api',
+    async (_args, ctx) => ctx.relay!.call('getCoverage', []),
+  )
+
+  registry.register(
+    {
+      name: 'llui_diff_state',
+      description:
+        "Structured JSON diff between two state values. Pass 'a' and 'b' — plain objects. Returns { added, removed, changed }.",
+      inputSchema: {
+        type: 'object',
+        properties: {
+          a: {},
+          b: {},
+        },
+        required: ['a', 'b'],
+      },
+    },
+    'debug-api',
+    async (args) => diffState(args.a, args.b),
+  )
+
+  registry.register(
+    {
+      name: 'llui_assert',
+      description:
+        "Evaluate a predicate against current state. Pass 'path' (dot-separated), 'op' (eq/neq/exists/gt/lt/in), and 'value'. Returns { pass, actual, expected, op }.",
+      inputSchema: {
+        type: 'object',
+        properties: {
+          path: { type: 'string' },
+          op: { type: 'string', enum: ['eq', 'neq', 'exists', 'gt', 'lt', 'in'] },
+          value: {},
+        },
+        required: ['path', 'op'],
+      },
+    },
+    'debug-api',
+    async (args, ctx) => {
+      const actual = await ctx.relay!.call('searchState', [args.path])
+      const op = args.op as string
+      const expected = args.value
+      let pass = false
+      switch (op) {
+        case 'eq':
+          pass = Object.is(actual, expected)
+          break
+        case 'neq':
+          pass = !Object.is(actual, expected)
+          break
+        case 'exists':
+          pass = actual !== undefined
+          break
+        case 'gt':
+          pass = typeof actual === 'number' && typeof expected === 'number' && actual > expected
+          break
+        case 'lt':
+          pass = typeof actual === 'number' && typeof expected === 'number' && actual < expected
+          break
+        case 'in':
+          pass = Array.isArray(expected) && expected.includes(actual)
+          break
+      }
+      return { pass, actual, expected, op }
+    },
+  )
+
+  registry.register(
+    {
+      name: 'llui_search_history',
+      description:
+        "Filtered message history. Pass 'filter' with { type?, statePath?, effectType?, fromIndex?, toIndex? }. Entries match if all present fields match — type is the Msg discriminant, statePath is a dot path whose value differs pre->post, effectType is a type present in the effects array.",
+      inputSchema: {
+        type: 'object',
+        properties: {
+          filter: {
+            type: 'object',
+            properties: {
+              type: { type: 'string' },
+              statePath: { type: 'string' },
+              effectType: { type: 'string' },
+              fromIndex: { type: 'number' },
+              toIndex: { type: 'number' },
+            },
+          },
+        },
+        required: ['filter'],
+      },
+    },
+    'debug-api',
+    async (args, ctx) => {
+      type HRecord = {
+        index: number
+        timestamp: number
+        msg: unknown
+        stateBefore: unknown
+        stateAfter: unknown
+        effects: unknown[]
+        dirtyMask: number
+      }
+      const history = (await ctx.relay!.call('getMessageHistory', [{}])) as HRecord[]
+      const f = (args.filter ?? {}) as {
+        type?: string
+        statePath?: string
+        effectType?: string
+        fromIndex?: number
+        toIndex?: number
+      }
+      function pathValue(obj: unknown, path: string): unknown {
+        const parts = path.split('.')
+        let v: unknown = obj
+        for (const p of parts) {
+          if (v == null || typeof v !== 'object') return undefined
+          v = (v as Record<string, unknown>)[p]
+        }
+        return v
+      }
+      return history.filter((r) => {
+        if (f.fromIndex !== undefined && r.index < f.fromIndex) return false
+        if (f.toIndex !== undefined && r.index > f.toIndex) return false
+        if (f.type !== undefined) {
+          const t = (r.msg as { type?: string } | null)?.type
+          if (t !== f.type) return false
+        }
+        if (f.statePath !== undefined) {
+          const before = pathValue(r.stateBefore, f.statePath)
+          const after = pathValue(r.stateAfter, f.statePath)
+          if (Object.is(before, after)) return false
+        }
+        if (f.effectType !== undefined) {
+          if (!r.effects.some((e) => (e as { type?: string } | null)?.type === f.effectType)) {
+            return false
+          }
+        }
+        return true
+      })
+    },
   )
 }

@@ -8,7 +8,7 @@ import {
   createRingBuffer as createDisposerBuffer,
   type DisposerEvent,
 } from './tracking/disposer-log.js'
-import { createCoverageTracker } from './tracking/coverage.js'
+import { createCoverageTracker, type CoverageSnapshot } from './tracking/coverage.js'
 import {
   createRingBuffer as createTimelineBuffer,
   createMockRegistry,
@@ -294,6 +294,10 @@ export interface LluiDebugAPI {
   ): { mockId: string }
   /** Manually resolve a pending effect with a given response. The effect's onSuccess callback (if any) runs as if it had actually resolved. Pass effectId from llui_pending_effects. */
   resolveEffect(effectId: string, response: unknown): { resolved: boolean }
+  /** Rewind state by replaying from init() with the last N messages excluded. mode='pure' suppresses effects; mode='live' re-fires them. Returns the new state and rewind depth. */
+  stepBack(n: number, mode: 'pure' | 'live'): { state: unknown; rewindDepth: number }
+  /** Per-Msg-variant coverage for the current session. Shows which message types have run and which haven't. */
+  getCoverage(): CoverageSnapshot
 }
 
 export interface ElementReport {
@@ -896,6 +900,36 @@ export function installDevTools(inst: object): void {
         durationMs: Date.now() - pending.dispatchedAt,
       })
       return { resolved: true }
+    },
+
+    stepBack(n: number, mode: 'pure' | 'live') {
+      const rewindDepth = Math.min(Math.max(0, n), history.length)
+      const keep = history.slice(0, history.length - rewindDepth)
+      const [initialState] = ci.def.init(undefined) as [unknown, unknown[]]
+      let state = initialState
+      const collectedEffects: unknown[] = []
+      for (const record of keep) {
+        const [newState, newEffects] = (
+          ci.def.update as unknown as (s: unknown, m: unknown) => [unknown, unknown[]]
+        )(state, record.msg)
+        state = newState
+        if (mode === 'live') collectedEffects.push(...newEffects)
+      }
+      _forceState(ci, state)
+      history.length = keep.length
+      if (mode === 'live') {
+        for (const eff of collectedEffects) {
+          if (ci.def.onEffect) ci.def.onEffect({ effect: eff as never, send: ci.send, signal: ci.signal })
+        }
+      }
+      return { state, rewindDepth }
+    },
+
+    getCoverage(): CoverageSnapshot {
+      if (!ci._coverage) return { fired: {}, neverFired: [] }
+      const schema = ci.def.__msgSchema as { variants?: Record<string, unknown> } | undefined
+      const known = schema?.variants ? Object.keys(schema.variants) : undefined
+      return ci._coverage.snapshot(known)
     },
   }
 
