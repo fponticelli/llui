@@ -1,0 +1,59 @@
+export interface ToolDefinition {
+  name: string
+  description: string
+  inputSchema: {
+    type: 'object'
+    properties: Record<string, unknown>
+    required?: string[]
+  }
+}
+
+export type ToolLayer = 'debug-api' | 'cdp' | 'source' | 'compiler'
+
+export interface ToolContext {
+  relay: RelayTransport | null
+  cdp: CdpTransport | null
+}
+
+export interface RelayTransport {
+  call(method: string, args: unknown[]): Promise<unknown>
+  isAvailable(): boolean
+}
+
+export interface CdpTransport {
+  call(domain: string, method: string, params?: Record<string, unknown>): Promise<unknown>
+  isAvailable(): boolean
+}
+
+export type ToolHandler = (args: Record<string, unknown>, ctx: ToolContext) => Promise<unknown>
+
+interface Entry {
+  definition: ToolDefinition
+  layer: ToolLayer
+  handler: ToolHandler
+}
+
+export class ToolRegistry {
+  private entries = new Map<string, Entry>()
+
+  register(definition: ToolDefinition, layer: ToolLayer, handler: ToolHandler): void {
+    if (this.entries.has(definition.name)) {
+      throw new Error(`Duplicate tool registration: ${definition.name}`)
+    }
+    this.entries.set(definition.name, { definition, layer, handler })
+  }
+
+  async dispatch(name: string, args: Record<string, unknown>, ctx: ToolContext): Promise<unknown> {
+    const entry = this.entries.get(name)
+    if (!entry) throw new Error(`Unknown tool: ${name}`)
+    return entry.handler(args, ctx)
+  }
+
+  listDefinitions(): ToolDefinition[] {
+    return Array.from(this.entries.values()).map((e) => e.definition)
+  }
+
+  getLayer(name: string): ToolLayer | null {
+    return this.entries.get(name)?.layer ?? null
+  }
+}

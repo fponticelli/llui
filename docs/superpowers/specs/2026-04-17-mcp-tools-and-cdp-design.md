@@ -87,72 +87,72 @@ The existing 730-line `index.ts` is decomposed as part of Phase 1. Going to ~60 
 
 All tagged `debug-api`.
 
-| # | Tool | Inputs | Semantic |
-|---|---|---|---|
-| 1 | `llui_inspect_element` | `selector` | Single-node report: tag, attrs, classes, `data-*`, text, computed subset (display / visibility / position / dimensions), bounding box, bindings targeting this node |
-| 2 | `llui_get_rendered_html` | `selector?`, `maxLength?` | outerHTML of selector (default = mount root) |
-| 3 | `llui_dom_diff` | `expected`, `selector?`, `ignoreWhitespace?` | Structural diff expected-vs-actual HTML |
-| 4 | `llui_dispatch_event` | `selector`, `type`, `init?` | Synthesize and dispatch a browser event; return the history indices of any `Msg`s the handler produced + resulting state |
-| 5 | `llui_get_focus` | — | `{ activeSelector, tagName, selectionStart, selectionEnd }` |
-| 6 | `llui_force_rerender` | — | Re-run phase 2 with `dirty = FULL_MASK`; report changed bindings |
-| 7 | `llui_each_diff` | `sinceIndex?` | Per-`each` keys added / removed / moved / reused since given update index |
-| 8 | `llui_scope_tree` | `depth?`, `scopeId?` | Tree of `show` / `each` / `branch` / `child` scopes with active-branch + mounted-key state |
-| 9 | `llui_disposer_log` | `limit?` | Recent `onDispose` firings with scope id + cause |
-| 10 | `llui_list_dead_bindings` | — | Bindings with `dead: true` OR never-matched-dirty OR never-changed-lastValue |
-| 11 | `llui_binding_graph` | — | Edge list: state path → `bindingIndex[]` |
-| 12 | `llui_pending_effects` | — | Effect-queue snapshot with id, type, dispatched-at, status |
-| 13 | `llui_effect_timeline` | `limit?` | Ordered log: dispatched → in-flight → resolved/cancelled with timings |
-| 14 | `llui_mock_effect` | `match`, `response`, `opts?` ( `{persist?: boolean}` ) | Register match-predicate → response mock; next matching effect resolves with `response` |
-| 15 | `llui_resolve_effect` | `effectId`, `response` | Manually resolve one specific pending effect |
-| 16 | `llui_step_back` | `n?`, `mode?` ( `'pure'` default / `'live'` ) | Rewind by replaying from init minus last `n`; pure mode suppresses effects |
-| 17 | `llui_coverage` | — | Per-`Msg` variant: count fired, last fired index; list of never-fired variants |
-| 18 | `llui_diff_state` | `a`, `b` (state object or snapshot id) | Structured JSON diff |
-| 19 | `llui_assert` | `path`, `op` (`eq` / `neq` / `exists` / `gt` / `lt` / `in`), `value` | Evaluate predicate against current state; `{pass, actual, expected}` |
-| 20 | `llui_search_history` | `filter` ( `{type?, statePath?, effectType?, fromIndex?, toIndex?}` ) | Predicate-filtered message history |
-| 21 | `llui_eval` | `code` | Arbitrary JS in page context via relay; returns `{ result, sideEffects }` with state diff, new history entries, new pending effects, dirty binding indices |
+| #   | Tool                      | Inputs                                                                | Semantic                                                                                                                                                            |
+| --- | ------------------------- | --------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | `llui_inspect_element`    | `selector`                                                            | Single-node report: tag, attrs, classes, `data-*`, text, computed subset (display / visibility / position / dimensions), bounding box, bindings targeting this node |
+| 2   | `llui_get_rendered_html`  | `selector?`, `maxLength?`                                             | outerHTML of selector (default = mount root)                                                                                                                        |
+| 3   | `llui_dom_diff`           | `expected`, `selector?`, `ignoreWhitespace?`                          | Structural diff expected-vs-actual HTML                                                                                                                             |
+| 4   | `llui_dispatch_event`     | `selector`, `type`, `init?`                                           | Synthesize and dispatch a browser event; return the history indices of any `Msg`s the handler produced + resulting state                                            |
+| 5   | `llui_get_focus`          | —                                                                     | `{ activeSelector, tagName, selectionStart, selectionEnd }`                                                                                                         |
+| 6   | `llui_force_rerender`     | —                                                                     | Re-run phase 2 with `dirty = FULL_MASK`; report changed bindings                                                                                                    |
+| 7   | `llui_each_diff`          | `sinceIndex?`                                                         | Per-`each` keys added / removed / moved / reused since given update index                                                                                           |
+| 8   | `llui_scope_tree`         | `depth?`, `scopeId?`                                                  | Tree of `show` / `each` / `branch` / `child` scopes with active-branch + mounted-key state                                                                          |
+| 9   | `llui_disposer_log`       | `limit?`                                                              | Recent `onDispose` firings with scope id + cause                                                                                                                    |
+| 10  | `llui_list_dead_bindings` | —                                                                     | Bindings with `dead: true` OR never-matched-dirty OR never-changed-lastValue                                                                                        |
+| 11  | `llui_binding_graph`      | —                                                                     | Edge list: state path → `bindingIndex[]`                                                                                                                            |
+| 12  | `llui_pending_effects`    | —                                                                     | Effect-queue snapshot with id, type, dispatched-at, status                                                                                                          |
+| 13  | `llui_effect_timeline`    | `limit?`                                                              | Ordered log: dispatched → in-flight → resolved/cancelled with timings                                                                                               |
+| 14  | `llui_mock_effect`        | `match`, `response`, `opts?` ( `{persist?: boolean}` )                | Register match-predicate → response mock; next matching effect resolves with `response`                                                                             |
+| 15  | `llui_resolve_effect`     | `effectId`, `response`                                                | Manually resolve one specific pending effect                                                                                                                        |
+| 16  | `llui_step_back`          | `n?`, `mode?` ( `'pure'` default / `'live'` )                         | Rewind by replaying from init minus last `n`; pure mode suppresses effects                                                                                          |
+| 17  | `llui_coverage`           | —                                                                     | Per-`Msg` variant: count fired, last fired index; list of never-fired variants                                                                                      |
+| 18  | `llui_diff_state`         | `a`, `b` (state object or snapshot id)                                | Structured JSON diff                                                                                                                                                |
+| 19  | `llui_assert`             | `path`, `op` (`eq` / `neq` / `exists` / `gt` / `lt` / `in`), `value`  | Evaluate predicate against current state; `{pass, actual, expected}`                                                                                                |
+| 20  | `llui_search_history`     | `filter` ( `{type?, statePath?, effectType?, fromIndex?, toIndex?}` ) | Predicate-filtered message history                                                                                                                                  |
+| 21  | `llui_eval`               | `code`                                                                | Arbitrary JS in page context via relay; returns `{ result, sideEffects }` with state diff, new history entries, new pending effects, dirty binding indices          |
 
 ### 3.2 Phase 2 — CDP transport + CDP-only tools (6 tools)
 
 All tagged `cdp` (except `browser_close` which is a meta-tool on the CDP session).
 
-| # | Tool | Inputs | Semantic |
-|---|---|---|---|
-| 22 | `llui_screenshot` | `selector?`, `fullPage?`, `format?` | PNG via `Page.captureScreenshot` or `Element.screenshot` |
-| 23 | `llui_a11y_tree` | `selector?`, `interestingOnly?` | Serialized accessibility tree via `Accessibility.getFullAXTree` |
-| 24 | `llui_network_tail` | `limit?`, `filter?` ( `{urlPattern?, status?}` ) | Recent requests from session network buffer |
-| 25 | `llui_console_tail` | `limit?`, `level?` | Recent console entries from session console buffer |
-| 26 | `llui_uncaught_errors` | `limit?` | Recent uncaught exceptions from session error buffer |
-| 27 | `llui_browser_close` | — | Tear down Playwright fallback browser; no-op in user-chrome mode |
+| #   | Tool                   | Inputs                                           | Semantic                                                         |
+| --- | ---------------------- | ------------------------------------------------ | ---------------------------------------------------------------- |
+| 22  | `llui_screenshot`      | `selector?`, `fullPage?`, `format?`              | PNG via `Page.captureScreenshot` or `Element.screenshot`         |
+| 23  | `llui_a11y_tree`       | `selector?`, `interestingOnly?`                  | Serialized accessibility tree via `Accessibility.getFullAXTree`  |
+| 24  | `llui_network_tail`    | `limit?`, `filter?` ( `{urlPattern?, status?}` ) | Recent requests from session network buffer                      |
+| 25  | `llui_console_tail`    | `limit?`, `level?`                               | Recent console entries from session console buffer               |
+| 26  | `llui_uncaught_errors` | `limit?`                                         | Recent uncaught exceptions from session error buffer             |
+| 27  | `llui_browser_close`   | —                                                | Tear down Playwright fallback browser; no-op in user-chrome mode |
 
 ### 3.3 Phase 3 — Compiler metadata (3 tools)
 
 All tagged `compiler`.
 
-| # | Tool | Inputs | Semantic |
-|---|---|---|---|
-| 28 | `llui_show_compiled` | `componentName?`, `viewFn?` | Pre / post compiler output for the component's `view` (and optional specific view-helper function) |
-| 29 | `llui_explain_mask` | `msgType` | For a given `Msg` variant: which state paths the compiler believes change → which mask bits. Contrasts with runtime-observed dirty mask if a matching msg is in history |
-| 30 | `llui_goto_binding_source` | `bindingIndex` | File / line / column of the `view()` expression that created this binding |
+| #   | Tool                       | Inputs                      | Semantic                                                                                                                                                                |
+| --- | -------------------------- | --------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 28  | `llui_show_compiled`       | `componentName?`, `viewFn?` | Pre / post compiler output for the component's `view` (and optional specific view-helper function)                                                                      |
+| 29  | `llui_explain_mask`        | `msgType`                   | For a given `Msg` variant: which state paths the compiler believes change → which mask bits. Contrasts with runtime-observed dirty mask if a matching msg is in history |
+| 30  | `llui_goto_binding_source` | `bindingIndex`              | File / line / column of the `view()` expression that created this binding                                                                                               |
 
 ### 3.4 Phase 4 — Source-scan + test-runner (4 tools)
 
 Tagged `source`.
 
-| # | Tool | Inputs | Semantic |
-|---|---|---|---|
-| 31 | `llui_find_msg_producers` | `msgType`, `rootDir?` | All `send({type: ...})` call sites for this Msg variant |
-| 32 | `llui_find_msg_handlers` | `msgType`, `rootDir?` | All branches in `update()` functions handling this Msg variant |
-| 33 | `llui_run_test` | `file?`, `testName?` | Spawn `vitest run <file> -t <testName>`; stream JSON reporter output |
-| 34 | `llui_lint_project` | `rootDir?`, `exclude?` | Run `@llui/lint-idiomatic` across all `.ts` / `.tsx` in project; aggregated score + per-file violations |
+| #   | Tool                      | Inputs                 | Semantic                                                                                                |
+| --- | ------------------------- | ---------------------- | ------------------------------------------------------------------------------------------------------- |
+| 31  | `llui_find_msg_producers` | `msgType`, `rootDir?`  | All `send({type: ...})` call sites for this Msg variant                                                 |
+| 32  | `llui_find_msg_handlers`  | `msgType`, `rootDir?`  | All branches in `update()` functions handling this Msg variant                                          |
+| 33  | `llui_run_test`           | `file?`, `testName?`   | Spawn `vitest run <file> -t <testName>`; stream JSON reporter output                                    |
+| 34  | `llui_lint_project`       | `rootDir?`, `exclude?` | Run `@llui/lint-idiomatic` across all `.ts` / `.tsx` in project; aggregated score + per-file violations |
 
 ### 3.5 Phase 5 — SSR (2 tools)
 
 Tagged `debug-api` (with `@llui/vike` dep for `ssr_render`).
 
-| # | Tool | Inputs | Semantic |
-|---|---|---|---|
-| 35 | `llui_hydration_report` | — | Compare server HTML (from Vike) vs post-hydration DOM; list divergences (attr / text / structural) |
-| 36 | `llui_ssr_render` | `state?` (default = current state) | Run the active component through `@llui/vike` adapter; return HTML without round-tripping Vite |
+| #   | Tool                    | Inputs                             | Semantic                                                                                           |
+| --- | ----------------------- | ---------------------------------- | -------------------------------------------------------------------------------------------------- |
+| 35  | `llui_hydration_report` | —                                  | Compare server HTML (from Vike) vs post-hydration DOM; list divergences (attr / text / structural) |
+| 36  | `llui_ssr_render`       | `state?` (default = current state) | Run the active component through `@llui/vike` adapter; return HTML without round-tripping Vite     |
 
 ### 3.6 Principled defaults
 
@@ -183,9 +183,13 @@ interface LluiDebugAPI {
   }
 
   // ── Interaction (Phase 1) ───────────────────────────
-  dispatchDomEvent(selector: string, type: string, init?: EventInit): {
+  dispatchDomEvent(
+    selector: string,
+    type: string,
+    init?: EventInit,
+  ): {
     dispatched: boolean
-    messagesProducedIndices: number[]   // indices into history, in order
+    messagesProducedIndices: number[] // indices into history, in order
     resultingState: unknown | null
   }
 
@@ -209,7 +213,10 @@ interface LluiDebugAPI {
   resolveEffect(effectId: string, response: unknown): { resolved: boolean }
 
   // ── History & time-travel (Phase 1) ─────────────────
-  stepBack(n: number, mode: 'pure' | 'live'): {
+  stepBack(
+    n: number,
+    mode: 'pure' | 'live',
+  ): {
     state: unknown
     rewindDepth: number
   }
@@ -244,6 +251,7 @@ interface LluiDebugAPI {
 ```
 
 **Not added as new methods** — composed MCP-side from existing capabilities:
+
 - `dom_diff` (via `getRenderedHtml`)
 - `diff_state` (via `snapshotState` / pure diff)
 - `assert` (via `searchState`)
@@ -256,12 +264,12 @@ Fewer methods = smaller runtime surface.
 
 Four new dev-time trackers, all populated only when `installDevTools(inst)` has run.
 
-| Tracker | Location | Emits on | Storage |
-|---|---|---|---|
-| **Each-diff** | `packages/dom/src/structural/each.ts` reconciliation | Every `each` update | Ring buffer of `{ updateIndex, eachKey, added[], removed[], moved[], reused[] }`, last 100 |
-| **Disposer log** | `packages/dom/src/scope.ts` disposal path | Every `onDispose` fire | Ring buffer of `{ scopeId, cause, timestamp }`, last 500 |
-| **Effect timeline** | `packages/effects/src/runtime.ts` + `packages/dom/src/update-loop.ts` effect handler | Dispatch / in-flight start / resolve / cancel | Ring buffer of `{ effectId, type, phase, timestamp, durationMs? }`, last 500 |
-| **Msg coverage** | existing history recorder in `devtools.ts` | Every message recorded | `Map<variantName, { count, lastIndex }>` |
+| Tracker             | Location                                                                             | Emits on                                      | Storage                                                                                    |
+| ------------------- | ------------------------------------------------------------------------------------ | --------------------------------------------- | ------------------------------------------------------------------------------------------ |
+| **Each-diff**       | `packages/dom/src/structural/each.ts` reconciliation                                 | Every `each` update                           | Ring buffer of `{ updateIndex, eachKey, added[], removed[], moved[], reused[] }`, last 100 |
+| **Disposer log**    | `packages/dom/src/scope.ts` disposal path                                            | Every `onDispose` fire                        | Ring buffer of `{ scopeId, cause, timestamp }`, last 500                                   |
+| **Effect timeline** | `packages/effects/src/runtime.ts` + `packages/dom/src/update-loop.ts` effect handler | Dispatch / in-flight start / resolve / cancel | Ring buffer of `{ effectId, type, phase, timestamp, durationMs? }`, last 500               |
+| **Msg coverage**    | existing history recorder in `devtools.ts`                                           | Every message recorded                        | `Map<variantName, { count, lastIndex }>`                                                   |
 
 All four live on the `ComponentInstance` under new fields. Production builds pay zero cost.
 
@@ -275,9 +283,7 @@ New function exported from `@llui/effects`:
 /** Dev-only hook used by @llui/mcp. No-op in production. */
 export function _setEffectInterceptor(
   hook:
-    | ((effect: unknown, id: string) =>
-        | { mocked: true; response: unknown }
-        | { mocked: false })
+    | ((effect: unknown, id: string) => { mocked: true; response: unknown } | { mocked: false })
     | null,
 ): void
 ```
@@ -322,16 +328,17 @@ The Vite plugin writes `devUrl` into the marker when the MCP server is detected.
 ```ts
 interface CdpSession {
   mode: 'user-chrome' | 'playwright-owned'
-  browser: Browser | null              // null in user-chrome mode
+  browser: Browser | null // null in user-chrome mode
   page: Page
-  consoleBuffer: RingBuffer<ConsoleEntry>    // last 500
-  networkBuffer: RingBuffer<NetworkEntry>    // last 500
-  errorBuffer: RingBuffer<ErrorEntry>        // last 200
+  consoleBuffer: RingBuffer<ConsoleEntry> // last 500
+  networkBuffer: RingBuffer<NetworkEntry> // last 500
+  errorBuffer: RingBuffer<ErrorEntry> // last 200
   startedAt: number
 }
 ```
 
 Listeners registered on attach, not per-tool-call:
+
 - `Runtime.consoleAPICalled` → `consoleBuffer`
 - `Runtime.exceptionThrown` → `errorBuffer`
 - `Network.requestWillBeSent` / `responseReceived` / `loadingFinished` / `loadingFailed` → `networkBuffer`
@@ -390,15 +397,15 @@ Ignored in user-chrome mode. Default: headless.
 
 ### 6.1 Test gating per category
 
-| Category | Unit (mocked API) | jsdom e2e | Playwright e2e |
-|---|---|---|---|
-| Phase 1 pure-compute | ✅ | — | — |
-| Phase 1 DOM-touching | ✅ | ✅ | — |
-| Phase 1 `step_back` live-mode | ✅ | ✅ | — |
-| Phase 2 CDP | ✅ (mock CdpSession) | — | ✅ |
-| Phase 3 compiler | ✅ | — | ✅ one smoke per phase |
-| Phase 4 source-scan | ✅ (fixtures) | — | — |
-| Phase 5 SSR | ✅ | — | ✅ one smoke |
+| Category                      | Unit (mocked API)    | jsdom e2e | Playwright e2e         |
+| ----------------------------- | -------------------- | --------- | ---------------------- |
+| Phase 1 pure-compute          | ✅                   | —         | —                      |
+| Phase 1 DOM-touching          | ✅                   | ✅        | —                      |
+| Phase 1 `step_back` live-mode | ✅                   | ✅        | —                      |
+| Phase 2 CDP                   | ✅ (mock CdpSession) | —         | ✅                     |
+| Phase 3 compiler              | ✅                   | —         | ✅ one smoke per phase |
+| Phase 4 source-scan           | ✅ (fixtures)        | —         | —                      |
+| Phase 5 SSR                   | ✅                   | —         | ✅ one smoke           |
 
 **Approximate totals:** 36 unit + ~14 jsdom + ~8 Playwright ≈ **58 new test cases**.
 
@@ -479,12 +486,12 @@ Types referenced above, defined precisely at implementation time. Shapes given h
 
 ```ts
 interface ElementReport {
-  selector: string              // canonical selector that matched
+  selector: string // canonical selector that matched
   tagName: string
   attributes: Record<string, string>
   classes: string[]
   dataset: Record<string, string>
-  text: string                  // textContent, truncated to 1000 chars
+  text: string // textContent, truncated to 1000 chars
   computed: {
     display: string
     visibility: string
@@ -505,16 +512,16 @@ interface ElementReport {
 interface ScopeNode {
   scopeId: string
   kind: 'root' | 'show' | 'each' | 'branch' | 'child' | 'portal'
-  active: boolean               // for branch/show: whether this arm is mounted
-  eachKey?: string              // for each items
-  childName?: string            // for child scopes
+  active: boolean // for branch/show: whether this arm is mounted
+  eachKey?: string // for each items
+  childName?: string // for child scopes
   children: ScopeNode[]
 }
 
 interface EachDiff {
-  updateIndex: number           // message history index that caused this diff
-  eachSiteId: string            // stable identifier for the each() call site
-  added: string[]               // keys
+  updateIndex: number // message history index that caused this diff
+  eachSiteId: string // stable identifier for the each() call site
+  added: string[] // keys
   removed: string[]
   moved: Array<{ key: string; from: number; to: number }>
   reused: string[]
@@ -527,11 +534,11 @@ interface DisposerEvent {
 }
 
 interface PendingEffect {
-  id: string                    // opaque; used by resolveEffect
-  type: string                  // discriminant from the Effect union
+  id: string // opaque; used by resolveEffect
+  type: string // discriminant from the Effect union
   dispatchedAt: number
   status: 'queued' | 'in-flight'
-  payload: unknown              // the effect data itself
+  payload: unknown // the effect data itself
 }
 
 interface EffectTimelineEntry {
@@ -539,7 +546,7 @@ interface EffectTimelineEntry {
   type: string
   phase: 'dispatched' | 'in-flight' | 'resolved' | 'resolved-mocked' | 'cancelled'
   timestamp: number
-  durationMs?: number           // present on 'resolved' / 'resolved-mocked' / 'cancelled'
+  durationMs?: number // present on 'resolved' / 'resolved-mocked' / 'cancelled'
 }
 
 /**
@@ -547,9 +554,9 @@ interface EffectTimelineEntry {
  * At least one field must be present; multiple fields AND together.
  */
 interface EffectMatch {
-  type?: string                 // exact match against effect.type
-  payloadPath?: string          // dot-path; e.g. 'url'
-  payloadEquals?: unknown       // value the path must equal
+  type?: string // exact match against effect.type
+  payloadPath?: string // dot-path; e.g. 'url'
+  payloadEquals?: unknown // value the path must equal
 }
 
 interface StateDiff {
@@ -559,7 +566,7 @@ interface StateDiff {
 }
 
 interface HydrationDivergence {
-  path: string                  // DOM path like 'body > div:nth-child(1)'
+  path: string // DOM path like 'body > div:nth-child(1)'
   kind: 'attribute' | 'text' | 'structural'
   server: unknown
   client: unknown
@@ -568,7 +575,7 @@ interface HydrationDivergence {
 interface ConsoleEntry {
   level: 'log' | 'info' | 'warn' | 'error' | 'debug'
   text: string
-  args: unknown[]               // serialized
+  args: unknown[] // serialized
   timestamp: number
   stackTrace?: string
 }
@@ -577,7 +584,7 @@ interface NetworkEntry {
   requestId: string
   url: string
   method: string
-  status: number | null         // null if pending/failed
+  status: number | null // null if pending/failed
   startTime: number
   endTime: number | null
   durationMs: number | null
@@ -594,7 +601,7 @@ interface ErrorEntry {
   column?: number
 }
 
-type RingBuffer<T> = T[]        // bounded FIFO; implementation detail
+type RingBuffer<T> = T[] // bounded FIFO; implementation detail
 ```
 
 ---

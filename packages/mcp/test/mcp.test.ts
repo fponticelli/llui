@@ -1,5 +1,6 @@
 import { describe, it, expect, vi } from 'vitest'
-import { LluiMcpServer } from '../src/index'
+import { readFileSync, existsSync } from 'node:fs'
+import { LluiMcpServer, mcpActiveFilePath } from '../src/index'
 import type { LluiDebugAPI } from '@llui/dom'
 
 function mockDebugApi(state: Record<string, unknown> = { count: 0 }): LluiDebugAPI {
@@ -111,6 +112,33 @@ describe('LluiMcpServer', () => {
   it('returns error when no API connected', async () => {
     const server = new LluiMcpServer()
     await expect(server.handleToolCall('llui_get_state', {})).rejects.toThrow()
+  })
+
+  it('writes devUrl to the marker file when provided', () => {
+    const server = new LluiMcpServer(5299)
+    server.setDevUrl('http://localhost:5173')
+    server.startBridge()
+    const path = mcpActiveFilePath()
+    expect(existsSync(path)).toBe(true)
+    const marker = JSON.parse(readFileSync(path, 'utf8')) as {
+      port: number
+      pid: number
+      devUrl?: string
+    }
+    expect(marker.port).toBe(5299)
+    expect(marker.devUrl).toBe('http://localhost:5173')
+    server.stopBridge()
+  })
+
+  it('omits devUrl from the marker file when not set', () => {
+    const server = new LluiMcpServer(5298)
+    server.startBridge()
+    const marker = JSON.parse(readFileSync(mcpActiveFilePath(), 'utf8')) as {
+      port: number
+      devUrl?: string
+    }
+    expect(marker.devUrl).toBeUndefined()
+    server.stopBridge()
   })
 })
 

@@ -30,13 +30,13 @@ Phases 2–5 are independent of each other after Phase 1 lands; they can be exec
 
 ## Phase plan files
 
-| Phase | File | Tools | Primary packages touched |
-|---|---|---|---|
-| 1 | `2026-04-17-mcp-phase-1-debug-api.md` | 21 | `@llui/mcp`, `@llui/dom`, `@llui/effects`, `@llui/vite-plugin` (marker file only) |
-| 2 | `2026-04-17-mcp-phase-2-cdp-transport.md` | 6 | `@llui/mcp` |
-| 3 | `2026-04-17-mcp-phase-3-compiler-metadata.md` | 3 | `@llui/mcp`, `@llui/dom`, `@llui/vite-plugin` |
-| 4 | `2026-04-17-mcp-phase-4-source-scan.md` | 4 | `@llui/mcp` |
-| 5 | `2026-04-17-mcp-phase-5-ssr.md` | 2 | `@llui/mcp`, `@llui/dom`, `@llui/vike` |
+| Phase | File                                          | Tools | Primary packages touched                                                          |
+| ----- | --------------------------------------------- | ----- | --------------------------------------------------------------------------------- |
+| 1     | `2026-04-17-mcp-phase-1-debug-api.md`         | 21    | `@llui/mcp`, `@llui/dom`, `@llui/effects`, `@llui/vite-plugin` (marker file only) |
+| 2     | `2026-04-17-mcp-phase-2-cdp-transport.md`     | 6     | `@llui/mcp`                                                                       |
+| 3     | `2026-04-17-mcp-phase-3-compiler-metadata.md` | 3     | `@llui/mcp`, `@llui/dom`, `@llui/vite-plugin`                                     |
+| 4     | `2026-04-17-mcp-phase-4-source-scan.md`       | 4     | `@llui/mcp`                                                                       |
+| 5     | `2026-04-17-mcp-phase-5-ssr.md`               | 2     | `@llui/mcp`, `@llui/dom`, `@llui/vike`                                            |
 
 ---
 
@@ -54,11 +54,11 @@ The following rules apply to every phase plan. They come from `CLAUDE.md`, the s
 
 ### Test tiers
 
-| Tier | File | Scope |
-|---|---|---|
-| Unit | `packages/mcp/test/mcp.test.ts` | Every tool's routing + argument handling against a mocked debug API |
-| jsdom e2e | `packages/mcp/test/e2e.test.ts` | Phase 1 DOM-touching tools against a real devtools installation in jsdom |
-| Playwright e2e | `packages/mcp/test/playwright-e2e.test.ts` | Phase 2 CDP tools + one smoke per Phase 3/5 against real Chromium |
+| Tier           | File                                       | Scope                                                                    |
+| -------------- | ------------------------------------------ | ------------------------------------------------------------------------ |
+| Unit           | `packages/mcp/test/mcp.test.ts`            | Every tool's routing + argument handling against a mocked debug API      |
+| jsdom e2e      | `packages/mcp/test/e2e.test.ts`            | Phase 1 DOM-touching tools against a real devtools installation in jsdom |
+| Playwright e2e | `packages/mcp/test/playwright-e2e.test.ts` | Phase 2 CDP tools + one smoke per Phase 3/5 against real Chromium        |
 
 ### Verification gate (end of every phase)
 

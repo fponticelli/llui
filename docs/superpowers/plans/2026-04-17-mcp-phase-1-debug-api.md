@@ -16,49 +16,49 @@
 
 ### Files created
 
-| Path | Responsibility |
-|---|---|
-| `packages/mcp/src/tool-registry.ts` | Tool definitions with layer-tag; central dispatch map |
-| `packages/mcp/src/tools/debug-api.ts` | All debug-API-backed tool handlers (Phase 1 + 5) |
-| `packages/mcp/src/tools/index.ts` | Re-exports `registerDebugApiTools` |
-| `packages/mcp/src/transports/relay.ts` | Relay transport (extracted from current index.ts) |
-| `packages/mcp/src/transports/index.ts` | Transport re-exports |
-| `packages/mcp/src/util/diff.ts` | Pure `diffState` and `domDiff` helpers (MCP-side) |
-| `packages/dom/src/tracking/each-diff.ts` | Each reconciliation diff ring buffer |
-| `packages/dom/src/tracking/disposer-log.ts` | Disposer event ring buffer |
-| `packages/dom/src/tracking/effect-timeline.ts` | Effect phase event ring buffer |
-| `packages/dom/src/tracking/coverage.ts` | Per-variant message counters |
-| `packages/dom/src/tracking/index.ts` | Re-exports all trackers |
-| `packages/mcp/test/tools-view.test.ts` | Unit tests for view/DOM tools |
-| `packages/mcp/test/tools-interaction.test.ts` | Unit tests for interaction tools |
-| `packages/mcp/test/tools-bindings.test.ts` | Unit tests for binding/scope tools |
-| `packages/mcp/test/tools-effects.test.ts` | Unit tests for effect tools |
-| `packages/mcp/test/tools-time-travel.test.ts` | Unit tests for time-travel + utility tools |
-| `packages/mcp/test/tools-eval.test.ts` | Unit tests for eval tool |
-| `packages/mcp/test/jsdom-view.test.ts` | jsdom e2e for DOM-touching view tools |
-| `packages/mcp/test/jsdom-interaction.test.ts` | jsdom e2e for dispatch_event + focus |
-| `packages/mcp/test/jsdom-bindings.test.ts` | jsdom e2e for force_rerender + scope tree |
-| `packages/mcp/test/jsdom-effects.test.ts` | jsdom e2e for effect tools |
-| `packages/dom/test/tracking.test.ts` | Unit tests for all 4 trackers |
+| Path                                           | Responsibility                                        |
+| ---------------------------------------------- | ----------------------------------------------------- |
+| `packages/mcp/src/tool-registry.ts`            | Tool definitions with layer-tag; central dispatch map |
+| `packages/mcp/src/tools/debug-api.ts`          | All debug-API-backed tool handlers (Phase 1 + 5)      |
+| `packages/mcp/src/tools/index.ts`              | Re-exports `registerDebugApiTools`                    |
+| `packages/mcp/src/transports/relay.ts`         | Relay transport (extracted from current index.ts)     |
+| `packages/mcp/src/transports/index.ts`         | Transport re-exports                                  |
+| `packages/mcp/src/util/diff.ts`                | Pure `diffState` and `domDiff` helpers (MCP-side)     |
+| `packages/dom/src/tracking/each-diff.ts`       | Each reconciliation diff ring buffer                  |
+| `packages/dom/src/tracking/disposer-log.ts`    | Disposer event ring buffer                            |
+| `packages/dom/src/tracking/effect-timeline.ts` | Effect phase event ring buffer                        |
+| `packages/dom/src/tracking/coverage.ts`        | Per-variant message counters                          |
+| `packages/dom/src/tracking/index.ts`           | Re-exports all trackers                               |
+| `packages/mcp/test/tools-view.test.ts`         | Unit tests for view/DOM tools                         |
+| `packages/mcp/test/tools-interaction.test.ts`  | Unit tests for interaction tools                      |
+| `packages/mcp/test/tools-bindings.test.ts`     | Unit tests for binding/scope tools                    |
+| `packages/mcp/test/tools-effects.test.ts`      | Unit tests for effect tools                           |
+| `packages/mcp/test/tools-time-travel.test.ts`  | Unit tests for time-travel + utility tools            |
+| `packages/mcp/test/tools-eval.test.ts`         | Unit tests for eval tool                              |
+| `packages/mcp/test/jsdom-view.test.ts`         | jsdom e2e for DOM-touching view tools                 |
+| `packages/mcp/test/jsdom-interaction.test.ts`  | jsdom e2e for dispatch_event + focus                  |
+| `packages/mcp/test/jsdom-bindings.test.ts`     | jsdom e2e for force_rerender + scope tree             |
+| `packages/mcp/test/jsdom-effects.test.ts`      | jsdom e2e for effect tools                            |
+| `packages/dom/test/tracking.test.ts`           | Unit tests for all 4 trackers                         |
 
 ### Files modified
 
-| Path | Change |
-|---|---|
-| `packages/mcp/src/index.ts` | Reduced to `LluiMcpServer` + bridge lifecycle; tool dispatch moves to `tool-registry.ts`; add `devUrl` to marker file |
-| `packages/dom/src/devtools.ts` | Add 21 new methods + wire trackers; export `LluiDebugAPI` type additions |
-| `packages/dom/src/types.ts` | Extend `ComponentInstance` with tracker fields |
-| `packages/dom/src/structural/each.ts` | Emit each-diff events on reconciliation (dev-gated) |
-| `packages/dom/src/scope.ts` | Emit disposer events on disposal (dev-gated) |
-| `packages/dom/src/update-loop.ts` | Add `_forceFullRerender(inst)` internal; emit effect timeline events |
-| `packages/dom/src/index.ts` | Export new types (`ElementReport`, `ScopeNode`, `EachDiff`, `DisposerEvent`, `PendingEffect`, `EffectTimelineEntry`, `EffectMatch`, `StateDiff`) |
-| `packages/effects/src/resolve.ts` | Add `_setEffectInterceptor` export; null-check hook in dispatch path |
-| `packages/effects/src/index.ts` | Re-export `_setEffectInterceptor` |
-| `packages/vite-plugin/src/index.ts` | Write `devUrl` into marker read/broadcast |
-| `packages/mcp/README.md` | New tool table rows |
-| `docs/designs/07 LLM Friendliness.md` | Update MCP tool catalog |
-| `docs/designs/09 API Reference.md` | Document new `LluiDebugAPI` methods |
-| `CLAUDE.md` | Add `@llui/mcp` row to package table |
+| Path                                  | Change                                                                                                                                           |
+| ------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `packages/mcp/src/index.ts`           | Reduced to `LluiMcpServer` + bridge lifecycle; tool dispatch moves to `tool-registry.ts`; add `devUrl` to marker file                            |
+| `packages/dom/src/devtools.ts`        | Add 21 new methods + wire trackers; export `LluiDebugAPI` type additions                                                                         |
+| `packages/dom/src/types.ts`           | Extend `ComponentInstance` with tracker fields                                                                                                   |
+| `packages/dom/src/structural/each.ts` | Emit each-diff events on reconciliation (dev-gated)                                                                                              |
+| `packages/dom/src/scope.ts`           | Emit disposer events on disposal (dev-gated)                                                                                                     |
+| `packages/dom/src/update-loop.ts`     | Add `_forceFullRerender(inst)` internal; emit effect timeline events                                                                             |
+| `packages/dom/src/index.ts`           | Export new types (`ElementReport`, `ScopeNode`, `EachDiff`, `DisposerEvent`, `PendingEffect`, `EffectTimelineEntry`, `EffectMatch`, `StateDiff`) |
+| `packages/effects/src/resolve.ts`     | Add `_setEffectInterceptor` export; null-check hook in dispatch path                                                                             |
+| `packages/effects/src/index.ts`       | Re-export `_setEffectInterceptor`                                                                                                                |
+| `packages/vite-plugin/src/index.ts`   | Write `devUrl` into marker read/broadcast                                                                                                        |
+| `packages/mcp/README.md`              | New tool table rows                                                                                                                              |
+| `docs/designs/07 LLM Friendliness.md` | Update MCP tool catalog                                                                                                                          |
+| `docs/designs/09 API Reference.md`    | Document new `LluiDebugAPI` methods                                                                                                              |
+| `CLAUDE.md`                           | Add `@llui/mcp` row to package table                                                                                                             |
 
 ---
 
@@ -71,6 +71,7 @@
 **Why:** Phase 2's CDP fallback needs to navigate Playwright to the dev URL. The marker file already carries `{port, pid}`; we add `devUrl`. Writing it is part of `@llui/vite-plugin` (it knows the URL); reading it is part of `@llui/mcp` (uses it for validation and Phase 2).
 
 **Files:**
+
 - Modify: `packages/mcp/src/index.ts` (marker writer — extend shape)
 - Modify: `packages/vite-plugin/src/index.ts` (marker reader — extend shape, include devUrl when broadcasting)
 - Test: `packages/mcp/test/mcp.test.ts`
@@ -89,7 +90,11 @@ it('writes devUrl to the marker file when provided', () => {
   server.startBridge()
   const path = mcpActiveFilePath()
   expect(existsSync(path)).toBe(true)
-  const marker = JSON.parse(readFileSync(path, 'utf8')) as { port: number; pid: number; devUrl?: string }
+  const marker = JSON.parse(readFileSync(path, 'utf8')) as {
+    port: number
+    pid: number
+    devUrl?: string
+  }
   expect(marker.port).toBe(5299)
   expect(marker.devUrl).toBe('http://localhost:5173')
   server.stopBridge()
@@ -98,7 +103,10 @@ it('writes devUrl to the marker file when provided', () => {
 it('omits devUrl from the marker file when not set', () => {
   const server = new LluiMcpServer(5298)
   server.startBridge()
-  const marker = JSON.parse(readFileSync(mcpActiveFilePath(), 'utf8')) as { port: number; devUrl?: string }
+  const marker = JSON.parse(readFileSync(mcpActiveFilePath(), 'utf8')) as {
+    port: number
+    devUrl?: string
+  }
   expect(marker.devUrl).toBeUndefined()
   server.stopBridge()
 })
@@ -163,7 +171,10 @@ Modify `packages/vite-plugin/src/index.ts`. In `readMcpPort`, extend to read `de
 function readMcpMarker(): { port: number; devUrl?: string } | null {
   try {
     if (!existsSync(activeFilePath)) return null
-    const data = JSON.parse(readFileSync(activeFilePath, 'utf8')) as { port?: number; devUrl?: string }
+    const data = JSON.parse(readFileSync(activeFilePath, 'utf8')) as {
+      port?: number
+      devUrl?: string
+    }
     if (typeof data.port !== 'number') return null
     return { port: data.port, ...(data.devUrl ? { devUrl: data.devUrl } : {}) }
   } catch {
@@ -184,7 +195,8 @@ Also update `configureServer` so it calls `mcpServer.setDevUrl(…)` automatical
 server.httpServer?.once('listening', () => {
   const address = server.httpServer?.address()
   if (address && typeof address === 'object') {
-    const host = address.address === '::' || address.address === '0.0.0.0' ? 'localhost' : address.address
+    const host =
+      address.address === '::' || address.address === '0.0.0.0' ? 'localhost' : address.address
     const url = `http://${host}:${address.port}`
     // Write into the MCP marker if it exists; the MCP server picks it up via marker refresh
     try {
@@ -220,6 +232,7 @@ Leave staged (or unstaged — a git-add will happen at the category commit point
 **Why:** Phase 1 adds 21 tools and later phases add 15 more. The current switch statement in `index.ts::handleToolCall` (lines 481–613) is already unwieldy at 23 cases; going to 58 would be unmanageable. We introduce a registry with layer-tag routing.
 
 **Files:**
+
 - Create: `packages/mcp/src/tool-registry.ts`
 - Modify: `packages/mcp/src/index.ts` (delegate to registry)
 - Test: `packages/mcp/test/tool-registry.test.ts`
@@ -311,10 +324,7 @@ export interface CdpTransport {
   isAvailable(): boolean
 }
 
-export type ToolHandler = (
-  args: Record<string, unknown>,
-  ctx: ToolContext,
-) => Promise<unknown>
+export type ToolHandler = (args: Record<string, unknown>, ctx: ToolContext) => Promise<unknown>
 
 interface Entry {
   definition: ToolDefinition
@@ -332,11 +342,7 @@ export class ToolRegistry {
     this.entries.set(definition.name, { definition, layer, handler })
   }
 
-  async dispatch(
-    name: string,
-    args: Record<string, unknown>,
-    ctx: ToolContext,
-  ): Promise<unknown> {
+  async dispatch(name: string, args: Record<string, unknown>, ctx: ToolContext): Promise<unknown> {
     const entry = this.entries.get(name)
     if (!entry) throw new Error(`Unknown tool: ${name}`)
     return entry.handler(args, ctx)
@@ -369,6 +375,7 @@ Expected: 3 tests pass.
 **Why:** Before adding 21 new handlers we move the existing 23 into the registry. This keeps `index.ts` focused on server lifecycle and pushes all tool logic into category-specific files.
 
 **Files:**
+
 - Create: `packages/mcp/src/tools/debug-api.ts`
 - Create: `packages/mcp/src/tools/index.ts`
 - Create: `packages/mcp/src/transports/relay.ts`
@@ -719,6 +726,7 @@ Confirm with user before running.
 **Why:** `llui_each_diff` and `llui_scope_tree` need per-update diff data. Added as a ring buffer on `ComponentInstance`, populated by `each` reconciliation. Dev-gated.
 
 **Files:**
+
 - Create: `packages/dom/src/tracking/each-diff.ts`
 - Modify: `packages/dom/src/structural/each.ts` (emit events)
 - Modify: `packages/dom/src/update-loop.ts` (attach ring to instance, init cleanly)
@@ -930,6 +938,7 @@ Expected: all tests pass; no type errors.
 #### Task 5: Disposer log tracker
 
 **Files:**
+
 - Create: `packages/dom/src/tracking/disposer-log.ts`
 - Modify: `packages/dom/src/scope.ts` (emit on disposal)
 - Modify: `packages/dom/src/types.ts` (instance field)
@@ -1067,6 +1076,7 @@ Expected: all tests pass (including existing scope tests).
 #### Task 6: Msg coverage tracker
 
 **Files:**
+
 - Create: `packages/dom/src/tracking/coverage.ts`
 - Modify: `packages/dom/src/devtools.ts` (count in history recorder)
 - Modify: `packages/dom/src/types.ts` (`ComponentInstance._coverage`)
@@ -1206,6 +1216,7 @@ Expected: pass.
 **Why:** `llui_pending_effects`, `llui_effect_timeline`, `llui_mock_effect`, `llui_resolve_effect` all hinge on the effects runtime exposing pending/resolved events plus an interception point. `@llui/effects` gets a dev-only `_setEffectInterceptor`; the runtime in `@llui/dom` emits timeline events on dispatch/resolve.
 
 **Files:**
+
 - Create: `packages/dom/src/tracking/effect-timeline.ts`
 - Modify: `packages/effects/src/resolve.ts` (null-check hook)
 - Modify: `packages/effects/src/index.ts` (export hook setter)
@@ -1383,7 +1394,12 @@ function dispatchEffect(inst: ComponentInstance, effect: unknown): void {
     // Check mock registry first
     const mock = inst._effectMocks?.match(effect)
     if (mock) {
-      inst._effectTimeline.push({ effectId: id, type, phase: 'dispatched', timestamp: dispatchedAt })
+      inst._effectTimeline.push({
+        effectId: id,
+        type,
+        phase: 'dispatched',
+        timestamp: dispatchedAt,
+      })
       inst._effectTimeline.push({
         effectId: id,
         type,
@@ -1403,7 +1419,12 @@ function dispatchEffect(inst: ComponentInstance, effect: unknown): void {
     // Real dispatch through the existing pathway.
     realDispatch(inst, effect, {
       onStart: () => {
-        inst._effectTimeline?.push({ effectId: id, type, phase: 'in-flight', timestamp: Date.now() })
+        inst._effectTimeline?.push({
+          effectId: id,
+          type,
+          phase: 'in-flight',
+          timestamp: Date.now(),
+        })
         const pending = inst._pendingEffects?.findById(id)
         if (pending) pending.status = 'in-flight'
       },
@@ -1647,6 +1668,7 @@ Each tool in this section follows the same TDD shape:
 #### Task 8: `llui_inspect_element`
 
 **Files:**
+
 - Modify: `packages/dom/src/devtools.ts` (add `inspectElement`)
 - Modify: `packages/dom/src/index.ts` (export `ElementReport`)
 - Modify: `packages/mcp/src/tools/debug-api.ts` (register tool)
@@ -1714,7 +1736,12 @@ function mkApi(overrides: Partial<LluiDebugAPI> = {}): LluiDebugAPI {
     })),
     getBindingGraph: vi.fn(() => []),
     forceRerender: vi.fn(() => ({ changedBindings: [] })),
-    getScopeTree: vi.fn(() => ({ scopeId: '0', kind: 'root' as const, active: true, children: [] })),
+    getScopeTree: vi.fn(() => ({
+      scopeId: '0',
+      kind: 'root' as const,
+      active: true,
+      children: [],
+    })),
     getEachDiff: vi.fn(() => []),
     getDisposerLog: vi.fn(() => []),
     getPendingEffects: vi.fn(() => []),
@@ -1745,7 +1772,13 @@ describe('llui_inspect_element', () => {
       classes: [],
       dataset: {},
       text: 'hi',
-      computed: { display: 'block', visibility: 'visible', position: 'static', width: 100, height: 20 },
+      computed: {
+        display: 'block',
+        visibility: 'visible',
+        position: 'static',
+        width: 100,
+        height: 20,
+      },
       boundingBox: { x: 0, y: 0, width: 100, height: 20 },
       bindings: [],
     }
@@ -1918,18 +1951,21 @@ describe('jsdom: llui_inspect_element', () => {
       name: 'Counter',
       init: () => [{ n: 0 }, []],
       update: (s, m) => (m.type === 'inc' ? [{ n: s.n + 1 }, []] : [s, []]),
-      view: ({ text }) => ({
-        kind: 'el',
-        tag: 'div',
-        attrs: { id: 'c' },
-        children: [text((s: { n: number }) => String(s.n))],
-      }) as never,
+      view: ({ text }) =>
+        ({
+          kind: 'el',
+          tag: 'div',
+          attrs: { id: 'c' },
+          children: [text((s: { n: number }) => String(s.n))],
+        }) as never,
     })
 
     const app = mountApp(Counter, document.getElementById('root')!)
     installDevTools(app.instance)
     const server = new LluiMcpServer()
-    server.connectDirect((globalThis as unknown as { __lluiDebug: import('@llui/dom').LluiDebugAPI }).__lluiDebug)
+    server.connectDirect(
+      (globalThis as unknown as { __lluiDebug: import('@llui/dom').LluiDebugAPI }).__lluiDebug,
+    )
 
     const result = (await server.handleToolCall('llui_inspect_element', { selector: '#c' })) as {
       tagName: string
@@ -1958,6 +1994,7 @@ Expected: pass (since implementation is in place).
 #### Task 9: `llui_get_rendered_html`
 
 **Files:**
+
 - Modify: `packages/dom/src/devtools.ts` (add `getRenderedHtml`)
 - Modify: `packages/mcp/src/tools/debug-api.ts`
 - Test: `packages/mcp/test/tools-view.test.ts` (append)
@@ -2054,17 +2091,20 @@ it('get_rendered_html returns outerHTML of a mounted element', async () => {
     name: 'App',
     init: () => [{}, []],
     update: (s) => [s, []],
-    view: () => ({
-      kind: 'el',
-      tag: 'section',
-      attrs: { id: 's' },
-      children: [],
-    }) as never,
+    view: () =>
+      ({
+        kind: 'el',
+        tag: 'section',
+        attrs: { id: 's' },
+        children: [],
+      }) as never,
   })
   const app = mountApp(App, document.getElementById('root')!)
   installDevTools(app.instance)
   const server = new LluiMcpServer()
-  server.connectDirect((globalThis as unknown as { __lluiDebug: import('@llui/dom').LluiDebugAPI }).__lluiDebug)
+  server.connectDirect(
+    (globalThis as unknown as { __lluiDebug: import('@llui/dom').LluiDebugAPI }).__lluiDebug,
+  )
   const html = (await server.handleToolCall('llui_get_rendered_html', { selector: '#s' })) as string
   expect(html.startsWith('<section')).toBe(true)
 })
@@ -2079,6 +2119,7 @@ it('get_rendered_html returns outerHTML of a mounted element', async () => {
 **Why:** Pure MCP-side function; no new debug-API method. Composes `getRenderedHtml` with a diff algorithm in `packages/mcp/src/util/diff.ts`.
 
 **Files:**
+
 - Create: `packages/mcp/src/util/diff.ts`
 - Modify: `packages/mcp/src/tools/debug-api.ts`
 - Test: `packages/mcp/test/tools-view.test.ts` (append)
@@ -2225,6 +2266,7 @@ Expected: 3 new tests pass.
 #### Task 11: `llui_dispatch_event`
 
 **Files:**
+
 - Modify: `packages/dom/src/devtools.ts` (add `dispatchDomEvent`)
 - Modify: `packages/mcp/src/tools/debug-api.ts`
 - Test: `packages/mcp/test/tools-interaction.test.ts` (new file)
@@ -2272,7 +2314,13 @@ describe('llui_dispatch_event', () => {
   })
 
   it('forwards the event init object', async () => {
-    const api = mkApi({ dispatchDomEvent: vi.fn(() => ({ dispatched: true, messagesProducedIndices: [], resultingState: null })) })
+    const api = mkApi({
+      dispatchDomEvent: vi.fn(() => ({
+        dispatched: true,
+        messagesProducedIndices: [],
+        resultingState: null,
+      })),
+    })
     const server = new LluiMcpServer()
     server.connectDirect(api)
     await server.handleToolCall('llui_dispatch_event', {
@@ -2430,6 +2478,7 @@ Expected: pass.
 #### Task 12: `llui_get_focus`
 
 **Files:**
+
 - Modify: `packages/dom/src/devtools.ts` (add `getFocus`)
 - Modify: `packages/mcp/src/tools/debug-api.ts`
 - Test: `packages/mcp/test/tools-interaction.test.ts` (append)
@@ -2765,9 +2814,7 @@ describe('llui_scope_tree', () => {
       scopeId: '1',
       kind: 'root' as const,
       active: true,
-      children: [
-        { scopeId: '2', kind: 'each' as const, active: true, children: [] },
-      ],
+      children: [{ scopeId: '2', kind: 'each' as const, active: true, children: [] }],
     }
     const api = mkApi({ getScopeTree: vi.fn(() => tree) })
     const server = new LluiMcpServer()
@@ -2859,9 +2906,33 @@ describe('llui_list_dead_bindings', () => {
   it('returns dead and never-changed bindings with a reason', async () => {
     const api = mkApi({
       getBindings: vi.fn(() => [
-        { index: 0, mask: 1, lastValue: 'x', kind: 'text', key: undefined, dead: false, perItem: false },
-        { index: 1, mask: 2, lastValue: undefined, kind: 'text', key: undefined, dead: false, perItem: false },
-        { index: 2, mask: 4, lastValue: 'y', kind: 'text', key: undefined, dead: true, perItem: false },
+        {
+          index: 0,
+          mask: 1,
+          lastValue: 'x',
+          kind: 'text',
+          key: undefined,
+          dead: false,
+          perItem: false,
+        },
+        {
+          index: 1,
+          mask: 2,
+          lastValue: undefined,
+          kind: 'text',
+          key: undefined,
+          dead: false,
+          perItem: false,
+        },
+        {
+          index: 2,
+          mask: 4,
+          lastValue: 'y',
+          kind: 'text',
+          key: undefined,
+          dead: true,
+          perItem: false,
+        },
       ]),
     })
     const server = new LluiMcpServer()
@@ -3120,7 +3191,17 @@ describe('jsdom: llui_mock_effect', () => {
       init: () => [{ data: null }, []],
       update: (s, m) => {
         if (m.type === 'fetch')
-          return [s, [{ type: 'http', url: '/api/x', onSuccess: (d) => ({ type: 'loaded', data: String(d) }), onError: () => ({ type: 'loaded', data: 'err' }) }]]
+          return [
+            s,
+            [
+              {
+                type: 'http',
+                url: '/api/x',
+                onSuccess: (d) => ({ type: 'loaded', data: String(d) }),
+                onError: () => ({ type: 'loaded', data: 'err' }),
+              },
+            ],
+          ]
         if (m.type === 'loaded') return [{ data: m.data }, []]
         return [s, []]
       },
@@ -3312,7 +3393,7 @@ registry.register(
   {
     name: 'llui_coverage',
     description:
-      'Per-Msg-variant coverage for the current session: { fired: { variant: { count, lastIndex } }, neverFired: [variants] }. Shows which message types have run and which haven\'t — useful for finding untested paths.',
+      "Per-Msg-variant coverage for the current session: { fired: { variant: { count, lastIndex } }, neverFired: [variants] }. Shows which message types have run and which haven't — useful for finding untested paths.",
     inputSchema: { type: 'object', properties: {} },
   },
   'debug-api',
@@ -3359,7 +3440,7 @@ registry.register(
 describe('llui_diff_state', () => {
   it('returns added/removed/changed', async () => {
     const server = new LluiMcpServer()
-    server.connectDirect(mkApi())  // no debug-api calls made
+    server.connectDirect(mkApi()) // no debug-api calls made
     const result = await server.handleToolCall('llui_diff_state', {
       a: { x: 1, y: 2 },
       b: { x: 1, y: 3, z: 4 },
@@ -3543,9 +3624,33 @@ registry.register(
 describe('llui_search_history', () => {
   it('filters by msg.type', async () => {
     const hist = [
-      { index: 0, timestamp: 1, msg: { type: 'A' }, stateBefore: {}, stateAfter: {}, effects: [], dirtyMask: 0 },
-      { index: 1, timestamp: 2, msg: { type: 'B' }, stateBefore: {}, stateAfter: {}, effects: [], dirtyMask: 0 },
-      { index: 2, timestamp: 3, msg: { type: 'A' }, stateBefore: {}, stateAfter: {}, effects: [], dirtyMask: 0 },
+      {
+        index: 0,
+        timestamp: 1,
+        msg: { type: 'A' },
+        stateBefore: {},
+        stateAfter: {},
+        effects: [],
+        dirtyMask: 0,
+      },
+      {
+        index: 1,
+        timestamp: 2,
+        msg: { type: 'B' },
+        stateBefore: {},
+        stateAfter: {},
+        effects: [],
+        dirtyMask: 0,
+      },
+      {
+        index: 2,
+        timestamp: 3,
+        msg: { type: 'A' },
+        stateBefore: {},
+        stateAfter: {},
+        effects: [],
+        dirtyMask: 0,
+      },
     ]
     const api = mkApi({ getMessageHistory: vi.fn(() => hist) })
     const server = new LluiMcpServer()
@@ -3751,7 +3856,12 @@ describe('llui_eval', () => {
     server.connectDirect(api)
     const result = (await server.handleToolCall('llui_eval', {
       code: 'window.__lluiDebug.send({ type: "set", n: 5 })',
-    })) as { sideEffects: { stateChanged: { changed: Record<string, unknown> }; dirtyBindingIndices: number[] } }
+    })) as {
+      sideEffects: {
+        stateChanged: { changed: Record<string, unknown> }
+        dirtyBindingIndices: number[]
+      }
+    }
     expect(result.sideEffects.stateChanged?.changed.n).toEqual({ from: 0, to: 5 })
     expect(result.sideEffects.dirtyBindingIndices).toEqual([0, 1])
   })
@@ -3814,6 +3924,7 @@ EOF
 #### Task 29: Update documentation
 
 **Files:**
+
 - Modify: `packages/mcp/README.md`
 - Modify: `docs/designs/07 LLM Friendliness.md`
 - Modify: `docs/designs/09 API Reference.md`
@@ -3829,49 +3940,49 @@ Add rows for all 21 new tools. Example addition for the "View and DOM" section:
 ```markdown
 ### View and DOM
 
-| Tool                | Description                                                                 |
-| ------------------- | --------------------------------------------------------------------------- |
-| `inspect_element`   | Rich report: tag, attrs, classes, data-*, text, computed, box, bindings     |
-| `get_rendered_html` | outerHTML of a selector (default = mount root), truncatable                 |
-| `dom_diff`          | Structural diff expected vs actual HTML                                     |
-| `dispatch_event`    | Synthesize a browser event; returns Msgs produced + resulting state         |
-| `get_focus`         | Active element info: selector, tag, selection range                         |
+| Tool                | Description                                                              |
+| ------------------- | ------------------------------------------------------------------------ |
+| `inspect_element`   | Rich report: tag, attrs, classes, data-\*, text, computed, box, bindings |
+| `get_rendered_html` | outerHTML of a selector (default = mount root), truncatable              |
+| `dom_diff`          | Structural diff expected vs actual HTML                                  |
+| `dispatch_event`    | Synthesize a browser event; returns Msgs produced + resulting state      |
+| `get_focus`         | Active element info: selector, tag, selection range                      |
 
 ### Bindings and Scope
 
-| Tool                  | Description                                                           |
-| --------------------- | --------------------------------------------------------------------- |
-| `force_rerender`      | Re-evaluate all bindings with FULL_MASK; returns changed indices      |
-| `each_diff`           | Per-each-site add/remove/move/reuse per update                         |
-| `scope_tree`          | Scope hierarchy with kind + active state                               |
-| `disposer_log`        | Recent onDispose events with scope id + cause                          |
-| `list_dead_bindings`  | Bindings that are dead or never changed                               |
-| `binding_graph`       | state path → bindingIndex[] edge list                                  |
+| Tool                 | Description                                                      |
+| -------------------- | ---------------------------------------------------------------- |
+| `force_rerender`     | Re-evaluate all bindings with FULL_MASK; returns changed indices |
+| `each_diff`          | Per-each-site add/remove/move/reuse per update                   |
+| `scope_tree`         | Scope hierarchy with kind + active state                         |
+| `disposer_log`       | Recent onDispose events with scope id + cause                    |
+| `list_dead_bindings` | Bindings that are dead or never changed                          |
+| `binding_graph`      | state path → bindingIndex[] edge list                            |
 
 ### Effects
 
-| Tool                | Description                                                              |
-| ------------------- | ------------------------------------------------------------------------ |
-| `pending_effects`   | Queued and in-flight effects                                             |
-| `effect_timeline`   | Phased log: dispatched → in-flight → resolved/cancelled                   |
-| `mock_effect`       | Register match→response mock; next matching effect resolves with mock    |
-| `resolve_effect`    | Manually resolve a specific pending effect                               |
+| Tool              | Description                                                           |
+| ----------------- | --------------------------------------------------------------------- |
+| `pending_effects` | Queued and in-flight effects                                          |
+| `effect_timeline` | Phased log: dispatched → in-flight → resolved/cancelled               |
+| `mock_effect`     | Register match→response mock; next matching effect resolves with mock |
+| `resolve_effect`  | Manually resolve a specific pending effect                            |
 
 ### Time Travel and Utilities
 
-| Tool             | Description                                                     |
-| ---------------- | --------------------------------------------------------------- |
-| `step_back`      | Rewind N messages by replaying from init (pure mode default)    |
-| `coverage`       | Per-Msg variant counts + list of never-fired variants           |
-| `diff_state`     | Structured JSON diff between two state values                   |
-| `assert`         | Evaluate eq/neq/exists/gt/lt/in against a state path            |
-| `search_history` | Filter history by type, statePath change, effectType, or range  |
+| Tool             | Description                                                    |
+| ---------------- | -------------------------------------------------------------- |
+| `step_back`      | Rewind N messages by replaying from init (pure mode default)   |
+| `coverage`       | Per-Msg variant counts + list of never-fired variants          |
+| `diff_state`     | Structured JSON diff between two state values                  |
+| `assert`         | Evaluate eq/neq/exists/gt/lt/in against a state path           |
+| `search_history` | Filter history by type, statePath change, effectType, or range |
 
 ### Eval
 
-| Tool         | Description                                                                    |
-| ------------ | ------------------------------------------------------------------------------ |
-| `eval`       | Arbitrary JS in page context; returns result + observability envelope          |
+| Tool   | Description                                                           |
+| ------ | --------------------------------------------------------------------- |
+| `eval` | Arbitrary JS in page context; returns result + observability envelope |
 ```
 
 - [ ] **Step 2: Update `docs/designs/07 LLM Friendliness.md` §10**
@@ -3887,7 +3998,7 @@ Add new `LluiDebugAPI` method signatures under the existing devtools section, pl
 Add `@llui/mcp` row to the package table if missing:
 
 ```markdown
-| `@llui/mcp`         | MCP server exposing LLui debug API + lint to LLMs                                       | @llui/dom, @llui/lint-idiomatic |
+| `@llui/mcp` | MCP server exposing LLui debug API + lint to LLMs | @llui/dom, @llui/lint-idiomatic |
 ```
 
 - [ ] **Step 5: Add changelog entries**
@@ -3896,7 +4007,9 @@ In `packages/mcp/CHANGELOG.md`:
 
 ```markdown
 ## [Unreleased]
+
 ### Added
+
 - 21 new MCP tools (Phase 1): inspect_element, get_rendered_html, dom_diff, dispatch_event, get_focus, force_rerender, each_diff, scope_tree, disposer_log, list_dead_bindings, binding_graph, pending_effects, effect_timeline, mock_effect, resolve_effect, step_back, coverage, diff_state, assert, search_history, eval.
 - Tool registry with layer-tag routing (debug-api, cdp, source, compiler).
 - Marker file now includes optional devUrl field (consumed by Phase 2 CDP transport).
@@ -3972,6 +4085,7 @@ Confirm with user before running.
 - [ ] **Step 7: Phase 1 done**
 
 Announce completion to the user. Phase 1 delivers:
+
 - 21 new MCP tools via debug-api transport.
 - 4 dev-mode runtime trackers in @llui/dom (each-diff, disposer log, effect timeline, coverage).
 - Effect interceptor hook in @llui/effects (zero-cost in production).

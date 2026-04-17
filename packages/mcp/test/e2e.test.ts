@@ -72,7 +72,7 @@ function waitForConnection(server: LluiMcpServer, timeoutMs = 1000): Promise<voi
     const start = Date.now()
     const check = (): void => {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      if ((server as any).browserWs) return resolve()
+      if ((server as any).relay.browserWs) return resolve()
       if (Date.now() - start > timeoutMs) return reject(new Error('relay never connected'))
       setTimeout(check, 10)
     }

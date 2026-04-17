@@ -1,0 +1,488 @@
+import { existsSync, readFileSync } from 'node:fs'
+import { lintIdiomatic } from '@llui/lint-idiomatic'
+import type { ToolRegistry } from '../tool-registry.js'
+import { generateReplayTest } from './replay-test-generator.js'
+
+/**
+ * Register the 23 debug-API-backed tools. Every handler here routes through
+ * `ctx.relay!.call(method, args)` — which transparently dispatches to either
+ * an in-process `LluiDebugAPI` or the WebSocket bridge, depending on how the
+ * transport was wired.
+ */
+export function registerDebugApiTools(registry: ToolRegistry): void {
+  registry.register(
+    {
+      name: 'llui_get_state',
+      description:
+        'Get the current state of the LLui component. Returns a JSON-serializable state object.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          component: {
+            type: 'string',
+            description: 'Component name (defaults to root)',
+          },
+        },
+      },
+    },
+    'debug-api',
+    async (_args, ctx) => ctx.relay!.call('getState', []),
+  )
+
+  registry.register(
+    {
+      name: 'llui_send_message',
+      description:
+        'Send a message to the component and return the new state and effects. Validates the message first. Calls flush() automatically.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          msg: {
+            type: 'object',
+            description: 'The message to send (must be a valid Msg variant)',
+          },
+        },
+        required: ['msg'],
+      },
+    },
+    'debug-api',
+    async (args, ctx) => {
+      const errors = (await ctx.relay!.call('validateMessage', [args.msg])) as unknown[] | null
+      if (errors) return { errors, sent: false }
+      await ctx.relay!.call('send', [args.msg])
+      await ctx.relay!.call('flush', [])
+      return { state: await ctx.relay!.call('getState', []), sent: true }
+    },
+  )
+
+  registry.register(
+    {
+      name: 'llui_eval_update',
+      description:
+        'Dry-run: call update(state, msg) without applying. Returns what the new state and effects would be without modifying the running app.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          msg: {
+            type: 'object',
+            description: 'The hypothetical message to evaluate',
+          },
+        },
+        required: ['msg'],
+      },
+    },
+    'debug-api',
+    async (args, ctx) => ctx.relay!.call('evalUpdate', [args.msg]),
+  )
+
+  registry.register(
+    {
+      name: 'llui_validate_message',
+      description:
+        'Validate a message against the component Msg type. Returns errors or null if valid.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          msg: {
+            type: 'object',
+            description: 'The message to validate',
+          },
+        },
+        required: ['msg'],
+      },
+    },
+    'debug-api',
+    async (args, ctx) => ctx.relay!.call('validateMessage', [args.msg]),
+  )
+
+  registry.register(
+    {
+      name: 'llui_get_message_history',
+      description:
+        'Get the chronological message history with state transitions, effects, and dirty masks. Supports pagination via `since` (exclusive, return entries with index > since) and `limit` (return at most N most-recent entries). Use both together for tail-fetching.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          since: {
+            type: 'number',
+            description: 'Return entries with index strictly greater than this.',
+          },
+          limit: {
+            type: 'number',
+            description: 'Max entries to return (the N most recent).',
+          },
+        },
+      },
+    },
+    'debug-api',
+    async (args, ctx) => {
+      const opts: { since?: number; limit?: number } = {}
+      if (typeof args.since === 'number') opts.since = args.since
+      if (typeof args.limit === 'number') opts.limit = args.limit
+      return ctx.relay!.call('getMessageHistory', [opts])
+    },
+  )
+
+  registry.register(
+    {
+      name: 'llui_export_trace',
+      description: 'Export the current session as a replayable LluiTrace JSON.',
+      inputSchema: {
+        type: 'object',
+        properties: {},
+      },
+    },
+    'debug-api',
+    async (_args, ctx) => ctx.relay!.call('exportTrace', []),
+  )
+
+  registry.register(
+    {
+      name: 'llui_get_bindings',
+      description:
+        'Get all active reactive bindings with their masks, last values, and DOM targets.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          filter: {
+            type: 'string',
+            description: 'Filter by DOM selector or mask value',
+          },
+        },
+      },
+    },
+    'debug-api',
+    async (_args, ctx) => ctx.relay!.call('getBindings', []),
+  )
+
+  registry.register(
+    {
+      name: 'llui_why_did_update',
+      description:
+        'Explain why a specific binding re-evaluated: which mask bits were dirty, what the accessor returned, what the previous value was.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          bindingIndex: {
+            type: 'number',
+            description: 'The binding index to inspect',
+          },
+        },
+        required: ['bindingIndex'],
+      },
+    },
+    'debug-api',
+    async (args, ctx) => ctx.relay!.call('whyDidUpdate', [args.bindingIndex as number]),
+  )
+
+  registry.register(
+    {
+      name: 'llui_search_state',
+      description:
+        'Search current state using a dot-separated path query. E.g., "cart.items" returns the items array.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          query: {
+            type: 'string',
+            description: 'Dot-separated path to search. E.g., "user.name", "items"',
+          },
+        },
+        required: ['query'],
+      },
+    },
+    'debug-api',
+    async (args, ctx) => ctx.relay!.call('searchState', [args.query as string]),
+  )
+
+  registry.register(
+    {
+      name: 'llui_clear_log',
+      description: 'Clear the message and effects history.',
+      inputSchema: {
+        type: 'object',
+        properties: {},
+      },
+    },
+    'debug-api',
+    async (_args, ctx) => {
+      await ctx.relay!.call('clearLog', [])
+      return { cleared: true }
+    },
+  )
+
+  registry.register(
+    {
+      name: 'llui_list_messages',
+      description:
+        'List all message variants the component accepts, with their field types. Returns { discriminant, variants: { [name]: { [field]: typeDescriptor } } }. Use this to discover what messages can be sent without reading source code.',
+      inputSchema: {
+        type: 'object',
+        properties: {},
+      },
+    },
+    'debug-api',
+    async (_args, ctx) => ctx.relay!.call('getMessageSchema', []),
+  )
+
+  registry.register(
+    {
+      name: 'llui_decode_mask',
+      description:
+        "Decode a dirty-mask value from llui_get_message_history (the 'dirtyMask' field) into the list of top-level state fields that changed. Requires 'mask' param.",
+      inputSchema: {
+        type: 'object',
+        properties: {
+          mask: { type: 'number', description: 'The dirtyMask value to decode' },
+        },
+        required: ['mask'],
+      },
+    },
+    'debug-api',
+    async (args, ctx) => ctx.relay!.call('decodeMask', [args.mask as number]),
+  )
+
+  registry.register(
+    {
+      name: 'llui_mask_legend',
+      description:
+        'Return the compiler-generated bit→field map for this component. Example: { todos: 1, filter: 2, nextId: 4 } means bit 0 represents `todos`, etc.',
+      inputSchema: {
+        type: 'object',
+        properties: {},
+      },
+    },
+    'debug-api',
+    async (_args, ctx) => ctx.relay!.call('getMaskLegend', []),
+  )
+
+  registry.register(
+    {
+      name: 'llui_component_info',
+      description:
+        'Get component name and source location (file + line) of the component() declaration. Lets you find where to read or edit the component.',
+      inputSchema: {
+        type: 'object',
+        properties: {},
+      },
+    },
+    'debug-api',
+    async (_args, ctx) => ctx.relay!.call('getComponentInfo', []),
+  )
+
+  registry.register(
+    {
+      name: 'llui_describe_state',
+      description:
+        "Return the State type's shape (not its value). Fields map to type descriptors: 'string', 'number', 'boolean', {kind:'enum',values:[...]}, {kind:'array',of:...}, {kind:'object',fields:...}, {kind:'optional',of:...}. Use this to know what fields exist and their types even when currently undefined.",
+      inputSchema: {
+        type: 'object',
+        properties: {},
+      },
+    },
+    'debug-api',
+    async (_args, ctx) => ctx.relay!.call('getStateSchema', []),
+  )
+
+  registry.register(
+    {
+      name: 'llui_list_effects',
+      description:
+        'List all effect variants the component emits, with their field types (same format as llui_list_messages). Returns null if no Effect type is declared.',
+      inputSchema: {
+        type: 'object',
+        properties: {},
+      },
+    },
+    'debug-api',
+    async (_args, ctx) => ctx.relay!.call('getEffectSchema', []),
+  )
+
+  registry.register(
+    {
+      name: 'llui_trace_element',
+      description:
+        "Find all bindings targeting a DOM element matched by a CSS selector. Returns { bindingIndex, kind, key, mask, lastValue, relation }[] so you can answer 'why is this element wrong?' — combine with llui_why_did_update(bindingIndex) for a full narrative.",
+      inputSchema: {
+        type: 'object',
+        properties: {
+          selector: {
+            type: 'string',
+            description: 'CSS selector (e.g. `.todo.active`, `#submit`)',
+          },
+        },
+        required: ['selector'],
+      },
+    },
+    'debug-api',
+    async (args, ctx) => ctx.relay!.call('getBindingsFor', [args.selector as string]),
+  )
+
+  registry.register(
+    {
+      name: 'llui_snapshot_state',
+      description:
+        'Capture the current state (deep clone). Returns the snapshot — store it, then call llui_restore_state later to roll back. Useful for safely exploring transitions during a debugging session.',
+      inputSchema: { type: 'object', properties: {} },
+    },
+    'debug-api',
+    async (_args, ctx) => ctx.relay!.call('snapshotState', []),
+  )
+
+  registry.register(
+    {
+      name: 'llui_restore_state',
+      description:
+        'Overwrite the current state with a previously-captured snapshot. Triggers a full re-render (FULL_MASK). Bypasses update() — snap must already be a valid state value.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          snapshot: {
+            description: 'The state object returned by llui_snapshot_state.',
+          },
+        },
+        required: ['snapshot'],
+      },
+    },
+    'debug-api',
+    async (args, ctx) => {
+      await ctx.relay!.call('restoreState', [args.snapshot])
+      return { restored: true, state: await ctx.relay!.call('getState', []) }
+    },
+  )
+
+  registry.register(
+    {
+      name: 'llui_list_components',
+      description:
+        'List all currently-mounted LLui components + which one is active (being targeted by subsequent tool calls). Multi-mount apps show one entry per mount.',
+      inputSchema: { type: 'object', properties: {} },
+    },
+    'debug-api',
+    async (_args, ctx) => ctx.relay!.call('__listComponents', []),
+  )
+
+  registry.register(
+    {
+      name: 'llui_select_component',
+      description:
+        'Switch the active component (the one all other tool calls target). Use a key from llui_list_components.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          key: {
+            type: 'string',
+            description: 'Component key as returned by llui_list_components',
+          },
+        },
+        required: ['key'],
+      },
+    },
+    'debug-api',
+    async (args, ctx) => ctx.relay!.call('__selectComponent', [args.key]),
+  )
+
+  registry.register(
+    {
+      name: 'llui_replay_trace',
+      description:
+        'Generate a ready-to-run vitest file that replays the current message history via `replayTrace()` from @llui/test. The output is a complete test file with the trace inlined — paste it into packages/<pkg>/test/ to reproduce the exact sequence of messages the component saw in this session. Use this to capture a debugging session as a regression test.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          importPath: {
+            type: 'string',
+            description:
+              "Where to import the component def from in the generated test (default: '../src/index'). Example: '../src/todo-app'.",
+          },
+          exportName: {
+            type: 'string',
+            description:
+              "Named export that holds the component def (default: the component's name).",
+          },
+        },
+      },
+    },
+    'debug-api',
+    async (args, ctx) => {
+      const trace = (await ctx.relay!.call('exportTrace', [])) as {
+        component: string
+        entries: Array<{ msg: unknown; expectedState: unknown; expectedEffects: unknown[] }>
+      }
+      const importPath = (args.importPath as string | undefined) ?? '../src/index'
+      const exportName = (args.exportName as string | undefined) ?? trace.component
+      return {
+        filename: `${trace.component.toLowerCase()}-replay.test.ts`,
+        code: generateReplayTest(trace, importPath, exportName),
+        entryCount: trace.entries.length,
+      }
+    },
+  )
+
+  registry.register(
+    {
+      name: 'llui_lint',
+      description:
+        "Lint LLui source code against @llui/lint-idiomatic's 17 anti-pattern rules. Returns violations grouped by rule with line/column/suggestion fields, plus a 0–17 score (17 = fully idiomatic). Pass either `source` (raw TypeScript code) or `path` (absolute file path on the dev machine) — exactly one is required. The optional `exclude` array skips specific rule names. Use this after writing or editing LLui code to self-correct: catches state mutation, missing memo(), each() closure violations, view-bag-import (use the bag inside component bodies, see llm-guide.md), missing exhaustive update() cases, async update() (must be sync), nested send() in update(), spread-in-children (use each() instead), imperative DOM in view(), and more. The same rules run as a Vite plugin in dev — this tool gives LLMs the same feedback without requiring a build.",
+      inputSchema: {
+        type: 'object',
+        properties: {
+          source: {
+            type: 'string',
+            description: 'TypeScript source code to lint. Mutually exclusive with `path`.',
+          },
+          path: {
+            type: 'string',
+            description:
+              'Absolute file path to read and lint (must be a .ts/.tsx file). Mutually exclusive with `source`.',
+          },
+          exclude: {
+            type: 'array',
+            items: { type: 'string' },
+            description:
+              "Rule names to skip (e.g. ['map-on-state-array']). Useful when running in a project that already gets that rule from @llui/vite-plugin's diagnose() pass.",
+          },
+        },
+      },
+    },
+    'debug-api',
+    async (args, _ctx) => {
+      const sourceArg = args.source as string | undefined
+      const pathArg = args.path as string | undefined
+      const excludeArg = args.exclude as string[] | undefined
+
+      if (sourceArg !== undefined && pathArg !== undefined) {
+        throw new Error("llui_lint: provide either 'source' or 'path', not both")
+      }
+      if (sourceArg === undefined && pathArg === undefined) {
+        throw new Error("llui_lint: must provide either 'source' or 'path'")
+      }
+
+      let code: string
+      let filename: string
+      if (sourceArg !== undefined) {
+        code = sourceArg
+        filename = 'input.ts'
+      } else {
+        if (!pathArg!.endsWith('.ts') && !pathArg!.endsWith('.tsx')) {
+          throw new Error(`llui_lint: path must end in .ts or .tsx (got ${pathArg!})`)
+        }
+        if (!existsSync(pathArg!)) {
+          throw new Error(`llui_lint: file not found: ${pathArg!}`)
+        }
+        code = readFileSync(pathArg!, 'utf8')
+        filename = pathArg!
+      }
+
+      const result = lintIdiomatic(code, filename, {
+        exclude: excludeArg,
+      })
+      return {
+        file: filename,
+        score: result.score,
+        violations: result.violations,
+        summary: `${result.violations.length} violation(s), score ${result.score}/17`,
+      }
+    },
+  )
+}

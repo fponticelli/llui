@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
-import { mkdirSync, writeFileSync, unlinkSync, existsSync, rmSync } from 'node:fs'
+import { mkdirSync, writeFileSync, readFileSync, unlinkSync, existsSync, rmSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 import llui from '../src/index'
 
@@ -54,7 +54,10 @@ interface FakeServer {
   }
   httpServer: {
     on: (event: string, cb: () => void) => void
+    once: (event: string, cb: () => void) => void
+    address: () => { address: string; port: number; family: string } | null
     closeHandlers: Array<() => void>
+    listeningHandlers: Array<() => void>
   } | null
   sent: SentEvent[]
 }
@@ -63,6 +66,7 @@ function makeFakeServer(): FakeServer {
   const sent: SentEvent[] = []
   const handlers = new Map<string, MiddlewareHandler>()
   const closeHandlers: Array<() => void> = []
+  const listeningHandlers: Array<() => void> = []
   const server: FakeServer = {
     sent,
     ws: {
@@ -80,9 +84,15 @@ function makeFakeServer(): FakeServer {
     },
     httpServer: {
       closeHandlers,
+      listeningHandlers,
       on: (event, cb) => {
         if (event === 'close') closeHandlers.push(cb)
       },
+      once: (event, cb) => {
+        if (event === 'listening') listeningHandlers.push(cb)
+      },
+      // Default fake address — tests that care override via a separate helper.
+      address: () => ({ address: '127.0.0.1', port: 5173, family: 'IPv4' }),
     },
   }
   return server
@@ -235,5 +245,101 @@ describe('vite-plugin: /__llui_mcp_status middleware', () => {
 
     const ready = fake.sent.find((m) => m.event === 'llui:mcp-ready')
     expect(ready).toBeUndefined()
+  })
+
+  it('stamps devUrl into an existing marker file when the httpServer emits listening', () => {
+    // MCP started first (marker present without devUrl). Vite then begins
+    // listening: the listening-hook must read, mutate, and persist the
+    // marker so downstream consumers can navigate Playwright to the URL.
+    writeFileSync(ACTIVE_PATH, JSON.stringify({ port: 5200, pid: 123 }))
+
+    const fake = setup({ mcpPort: 5200 })
+    expect(fake.httpServer?.listeningHandlers.length).toBe(1)
+
+    // Fire the listening handlers registered by the plugin.
+    for (const cb of fake.httpServer?.listeningHandlers ?? []) cb()
+
+    const marker = JSON.parse(readFileSync(ACTIVE_PATH, 'utf8')) as {
+      port: number
+      pid: number
+      devUrl?: string
+    }
+    // Fake `address()` returns 127.0.0.1:5173; plugin preserves non-wildcard
+    // hosts verbatim, so we expect that exact URL.
+    expect(marker.port).toBe(5200)
+    expect(marker.pid).toBe(123)
+    expect(marker.devUrl).toBe('http://127.0.0.1:5173')
+  })
+
+  it('stamps devUrl into the marker when it appears after the listening event (MCP starts after Vite)', () => {
+    // Marker does NOT exist when Vite begins listening. The plugin should
+    // cache the URL, then — when the marker later appears via the watcher
+    // firing — stamp devUrl into it. Without this, the MCP-after-Vite
+    // workflow leaves devUrl permanently unset.
+    const fake = setup({ mcpPort: 5200 })
+    expect(fake.httpServer?.listeningHandlers.length).toBe(1)
+
+    // Fire the listening handlers BEFORE the marker exists.
+    for (const cb of fake.httpServer?.listeningHandlers ?? []) cb()
+
+    // Marker is still absent — the listening hook must be a no-op on the
+    // filesystem when no marker exists (it only caches the URL internally).
+    expect(existsSync(ACTIVE_PATH)).toBe(false)
+  })
+
+  it('broadcasts devUrl via HMR after stamping from the listening hook (no reliance on fs.watch)', () => {
+    // Issue 2 fix: once the listening hook has stamped devUrl into an
+    // existing marker, the plugin must call notifyMcpReady() so the
+    // browser learns the URL through the HMR channel — don't rely on an
+    // incidental fs.watch tick (which can miss on NFS/SMB).
+    writeFileSync(ACTIVE_PATH, JSON.stringify({ port: 5200, pid: 1 }))
+
+    const fake = setup({ mcpPort: 5200 })
+    // Drop any ready events that might have been sent during setup so we
+    // can assert the listening-hook broadcast in isolation.
+    fake.sent.length = 0
+
+    for (const cb of fake.httpServer?.listeningHandlers ?? []) cb()
+
+    const ready = fake.sent.find((m) => m.event === 'llui:mcp-ready')
+    expect(ready).toBeDefined()
+    expect(ready?.data).toEqual({ port: 5200, devUrl: 'http://127.0.0.1:5173' })
+  })
+
+  it('stamps devUrl when the marker is created after listening fires (dirWatcher path)', async () => {
+    // Full MCP-after-Vite integration: listening fires with no marker,
+    // the plugin caches the URL, then MCP later writes the marker. The
+    // parent-directory watcher must detect the creation, call
+    // stampDevUrl(), and notify HMR with the devUrl attached.
+    const fake = setup({ mcpPort: 5200 })
+    // Fire listening first, while marker absent.
+    for (const cb of fake.httpServer?.listeningHandlers ?? []) cb()
+    expect(existsSync(ACTIVE_PATH)).toBe(false)
+    fake.sent.length = 0
+
+    // MCP now writes the marker without devUrl.
+    writeFileSync(ACTIVE_PATH, JSON.stringify({ port: 5200, pid: 42 }))
+
+    // Wait for fs.watch to fire — poll up to ~500ms.
+    const deadline = Date.now() + 500
+    while (Date.now() < deadline) {
+      const marker = JSON.parse(readFileSync(ACTIVE_PATH, 'utf8')) as { devUrl?: string }
+      if (marker.devUrl === 'http://127.0.0.1:5173') break
+      await new Promise((r) => setTimeout(r, 20))
+    }
+
+    const marker = JSON.parse(readFileSync(ACTIVE_PATH, 'utf8')) as {
+      port: number
+      pid: number
+      devUrl?: string
+    }
+    expect(marker.devUrl).toBe('http://127.0.0.1:5173')
+    expect(marker.port).toBe(5200)
+    expect(marker.pid).toBe(42)
+
+    // The dirWatcher-triggered notification should carry the stamped devUrl.
+    const ready = fake.sent.find((m) => m.event === 'llui:mcp-ready')
+    expect(ready).toBeDefined()
+    expect(ready?.data).toEqual({ port: 5200, devUrl: 'http://127.0.0.1:5173' })
   })
 })

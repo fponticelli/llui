@@ -1,6 +1,6 @@
 import type { Plugin, ViteDevServer } from 'vite'
 import MagicString from 'magic-string'
-import { existsSync, readFileSync, watch as fsWatch, type FSWatcher } from 'node:fs'
+import { existsSync, readFileSync, writeFileSync, watch as fsWatch, type FSWatcher } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 import { transformLlui } from './transform.js'
 import { diagnose } from './diagnostics.js'
@@ -53,21 +53,50 @@ export default function llui(options: LluiPluginOptions = {}): Plugin {
   const activeFilePath = resolve(findWorkspaceRoot(), 'node_modules/.cache/llui-mcp/active.json')
   let mcpWatcher: FSWatcher | null = null
   let dirWatcher: FSWatcher | null = null
+  // Cached once Vite's HTTP server emits `listening`. `stampDevUrl()`
+  // uses this to write the URL into the marker file — either immediately
+  // (if MCP already started and wrote one) or later when the marker
+  // appears via the directory watcher (MCP-starts-after-Vite path).
+  let cachedDevUrl: string | null = null
 
-  function readMcpPort(): number | null {
+  function readMcpMarker(): { port: number; devUrl?: string } | null {
     try {
       if (!existsSync(activeFilePath)) return null
-      const data = JSON.parse(readFileSync(activeFilePath, 'utf8')) as { port?: number }
-      return typeof data.port === 'number' ? data.port : null
+      const data = JSON.parse(readFileSync(activeFilePath, 'utf8')) as {
+        port?: number
+        devUrl?: string
+      }
+      if (typeof data.port !== 'number') return null
+      return { port: data.port, ...(data.devUrl ? { devUrl: data.devUrl } : {}) }
     } catch {
       return null
     }
   }
 
+  /**
+   * Idempotently write `cachedDevUrl` into the marker file. No-op if the
+   * URL hasn't been captured yet (Vite hasn't emitted `listening`) or if
+   * the marker file doesn't exist (MCP hasn't started yet). Covers both
+   * orderings — the listening hook calls this after caching, and the
+   * directory watcher calls it when the marker appears later.
+   */
+  function stampDevUrl(): void {
+    if (cachedDevUrl === null) return
+    if (!existsSync(activeFilePath)) return
+    try {
+      const marker = JSON.parse(readFileSync(activeFilePath, 'utf8')) as Record<string, unknown>
+      if (marker.devUrl === cachedDevUrl) return
+      marker.devUrl = cachedDevUrl
+      writeFileSync(activeFilePath, JSON.stringify(marker))
+    } catch {
+      // Best-effort — failure to update the marker should not crash Vite
+    }
+  }
+
   function notifyMcpReady(server: ViteDevServer): void {
-    const port = readMcpPort()
-    if (port === null) return
-    server.ws.send({ type: 'custom', event: 'llui:mcp-ready', data: { port } })
+    const marker = readMcpMarker()
+    if (marker === null) return
+    server.ws.send({ type: 'custom', event: 'llui:mcp-ready', data: marker })
   }
 
   function notifyMcpOffline(server: ViteDevServer): void {
@@ -91,15 +120,15 @@ export default function llui(options: LluiPluginOptions = {}): Plugin {
       // the browser connect to the actual port (which may differ from
       // the compile-time default if MCP was started with LLUI_MCP_PORT).
       server.middlewares.use('/__llui_mcp_status', (_req, res) => {
-        const port = readMcpPort()
-        if (port === null) {
+        const marker = readMcpMarker()
+        if (marker === null) {
           res.statusCode = 404
           res.end()
           return
         }
         res.statusCode = 200
         res.setHeader('content-type', 'application/json')
-        res.end(JSON.stringify({ port }))
+        res.end(JSON.stringify({ port: marker.port }))
       })
 
       // Watch the marker file for create/delete. fs.watch on the parent
@@ -113,6 +142,11 @@ export default function llui(options: LluiPluginOptions = {}): Plugin {
           dirWatcher = fsWatch(dir, (_event, filename) => {
             if (filename !== 'active.json') return
             if (existsSync(activeFilePath)) {
+              // Stamp BEFORE notifying so the `llui:mcp-ready` payload
+              // carries the cached devUrl. This is the MCP-after-Vite
+              // path: listening already fired and cached the URL; the
+              // marker is only now appearing.
+              stampDevUrl()
               notifyMcpReady(server)
             } else {
               notifyMcpOffline(server)
@@ -147,6 +181,28 @@ export default function llui(options: LluiPluginOptions = {}): Plugin {
         dirWatcher?.close()
         mcpWatcher = null
         dirWatcher = null
+      })
+
+      // Once Vite's HTTP server is listening, cache our dev URL and stamp
+      // it into the marker file. Two orderings are possible:
+      //   (a) MCP started FIRST → marker exists now → stampDevUrl() writes
+      //       it, and we broadcast llui:mcp-ready so the browser picks up
+      //       the devUrl without relying on an incidental fs.watch tick
+      //       (which can miss on NFS/SMB).
+      //   (b) MCP will start LATER → marker doesn't exist yet → stamp is a
+      //       no-op. When MCP eventually writes the marker, the directory
+      //       watcher fires, calls stampDevUrl(), and notifies.
+      server.httpServer?.once('listening', () => {
+        const address = server.httpServer?.address()
+        if (!address || typeof address !== 'object') return
+        const host =
+          address.address === '::' || address.address === '0.0.0.0' ? 'localhost' : address.address
+        cachedDevUrl = `http://${host}:${address.port}`
+        stampDevUrl()
+        // Broadcast after stamping so the payload carries devUrl. Only
+        // fires in case (a) — notifyMcpReady no-ops when the marker is
+        // absent.
+        notifyMcpReady(server)
       })
     },
 

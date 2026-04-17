@@ -1,9 +1,9 @@
 import type { LluiDebugAPI } from '@llui/dom'
-import { lintIdiomatic } from '@llui/lint-idiomatic'
-import { WebSocketServer, type WebSocket } from 'ws'
-import { randomUUID } from 'node:crypto'
-import { mkdirSync, writeFileSync, unlinkSync, existsSync, readFileSync } from 'node:fs'
+import { mkdirSync, writeFileSync, unlinkSync, existsSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
+import { ToolRegistry, type ToolContext, type ToolDefinition } from './tool-registry.js'
+import { registerDebugApiTools } from './tools/index.js'
+import { WebSocketRelayTransport } from './transports/index.js'
 
 /**
  * Walk up from `start` until we find a workspace root marker. Used by
@@ -50,16 +50,6 @@ export function mcpActiveFilePath(cwd: string = process.cwd()): string {
 
 // ── MCP Protocol Types ──────────────────────────────────────────
 
-interface McpToolDefinition {
-  name: string
-  description: string
-  inputSchema: {
-    type: 'object'
-    properties: Record<string, unknown>
-    required?: string[]
-  }
-}
-
 interface JsonRpcRequest {
   jsonrpc: '2.0'
   id: string | number
@@ -74,321 +64,35 @@ interface JsonRpcResponse {
   error?: { code: number; message: string; data?: unknown }
 }
 
-// ── Tool Definitions ────────────────────────────────────────────
-
-const TOOLS: McpToolDefinition[] = [
-  {
-    name: 'llui_get_state',
-    description:
-      'Get the current state of the LLui component. Returns a JSON-serializable state object.',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        component: {
-          type: 'string',
-          description: 'Component name (defaults to root)',
-        },
-      },
-    },
-  },
-  {
-    name: 'llui_send_message',
-    description:
-      'Send a message to the component and return the new state and effects. Validates the message first. Calls flush() automatically.',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        msg: {
-          type: 'object',
-          description: 'The message to send (must be a valid Msg variant)',
-        },
-      },
-      required: ['msg'],
-    },
-  },
-  {
-    name: 'llui_eval_update',
-    description:
-      'Dry-run: call update(state, msg) without applying. Returns what the new state and effects would be without modifying the running app.',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        msg: {
-          type: 'object',
-          description: 'The hypothetical message to evaluate',
-        },
-      },
-      required: ['msg'],
-    },
-  },
-  {
-    name: 'llui_validate_message',
-    description:
-      'Validate a message against the component Msg type. Returns errors or null if valid.',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        msg: {
-          type: 'object',
-          description: 'The message to validate',
-        },
-      },
-      required: ['msg'],
-    },
-  },
-  {
-    name: 'llui_get_message_history',
-    description:
-      'Get the chronological message history with state transitions, effects, and dirty masks. Supports pagination via `since` (exclusive, return entries with index > since) and `limit` (return at most N most-recent entries). Use both together for tail-fetching.',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        since: {
-          type: 'number',
-          description: 'Return entries with index strictly greater than this.',
-        },
-        limit: {
-          type: 'number',
-          description: 'Max entries to return (the N most recent).',
-        },
-      },
-    },
-  },
-  {
-    name: 'llui_export_trace',
-    description: 'Export the current session as a replayable LluiTrace JSON.',
-    inputSchema: {
-      type: 'object',
-      properties: {},
-    },
-  },
-  {
-    name: 'llui_get_bindings',
-    description: 'Get all active reactive bindings with their masks, last values, and DOM targets.',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        filter: {
-          type: 'string',
-          description: 'Filter by DOM selector or mask value',
-        },
-      },
-    },
-  },
-  {
-    name: 'llui_why_did_update',
-    description:
-      'Explain why a specific binding re-evaluated: which mask bits were dirty, what the accessor returned, what the previous value was.',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        bindingIndex: {
-          type: 'number',
-          description: 'The binding index to inspect',
-        },
-      },
-      required: ['bindingIndex'],
-    },
-  },
-  {
-    name: 'llui_search_state',
-    description:
-      'Search current state using a dot-separated path query. E.g., "cart.items" returns the items array.',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        query: {
-          type: 'string',
-          description: 'Dot-separated path to search. E.g., "user.name", "items"',
-        },
-      },
-      required: ['query'],
-    },
-  },
-  {
-    name: 'llui_clear_log',
-    description: 'Clear the message and effects history.',
-    inputSchema: {
-      type: 'object',
-      properties: {},
-    },
-  },
-  {
-    name: 'llui_list_messages',
-    description:
-      'List all message variants the component accepts, with their field types. Returns { discriminant, variants: { [name]: { [field]: typeDescriptor } } }. Use this to discover what messages can be sent without reading source code.',
-    inputSchema: {
-      type: 'object',
-      properties: {},
-    },
-  },
-  {
-    name: 'llui_decode_mask',
-    description:
-      "Decode a dirty-mask value from llui_get_message_history (the 'dirtyMask' field) into the list of top-level state fields that changed. Requires 'mask' param.",
-    inputSchema: {
-      type: 'object',
-      properties: {
-        mask: { type: 'number', description: 'The dirtyMask value to decode' },
-      },
-      required: ['mask'],
-    },
-  },
-  {
-    name: 'llui_mask_legend',
-    description:
-      'Return the compiler-generated bit→field map for this component. Example: { todos: 1, filter: 2, nextId: 4 } means bit 0 represents `todos`, etc.',
-    inputSchema: {
-      type: 'object',
-      properties: {},
-    },
-  },
-  {
-    name: 'llui_component_info',
-    description:
-      'Get component name and source location (file + line) of the component() declaration. Lets you find where to read or edit the component.',
-    inputSchema: {
-      type: 'object',
-      properties: {},
-    },
-  },
-  {
-    name: 'llui_describe_state',
-    description:
-      "Return the State type's shape (not its value). Fields map to type descriptors: 'string', 'number', 'boolean', {kind:'enum',values:[...]}, {kind:'array',of:...}, {kind:'object',fields:...}, {kind:'optional',of:...}. Use this to know what fields exist and their types even when currently undefined.",
-    inputSchema: {
-      type: 'object',
-      properties: {},
-    },
-  },
-  {
-    name: 'llui_list_effects',
-    description:
-      'List all effect variants the component emits, with their field types (same format as llui_list_messages). Returns null if no Effect type is declared.',
-    inputSchema: {
-      type: 'object',
-      properties: {},
-    },
-  },
-  {
-    name: 'llui_trace_element',
-    description:
-      "Find all bindings targeting a DOM element matched by a CSS selector. Returns { bindingIndex, kind, key, mask, lastValue, relation }[] so you can answer 'why is this element wrong?' — combine with llui_why_did_update(bindingIndex) for a full narrative.",
-    inputSchema: {
-      type: 'object',
-      properties: {
-        selector: { type: 'string', description: 'CSS selector (e.g. `.todo.active`, `#submit`)' },
-      },
-      required: ['selector'],
-    },
-  },
-  {
-    name: 'llui_snapshot_state',
-    description:
-      'Capture the current state (deep clone). Returns the snapshot — store it, then call llui_restore_state later to roll back. Useful for safely exploring transitions during a debugging session.',
-    inputSchema: { type: 'object', properties: {} },
-  },
-  {
-    name: 'llui_restore_state',
-    description:
-      'Overwrite the current state with a previously-captured snapshot. Triggers a full re-render (FULL_MASK). Bypasses update() — snap must already be a valid state value.',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        snapshot: {
-          description: 'The state object returned by llui_snapshot_state.',
-        },
-      },
-      required: ['snapshot'],
-    },
-  },
-  {
-    name: 'llui_list_components',
-    description:
-      'List all currently-mounted LLui components + which one is active (being targeted by subsequent tool calls). Multi-mount apps show one entry per mount.',
-    inputSchema: { type: 'object', properties: {} },
-  },
-  {
-    name: 'llui_select_component',
-    description:
-      'Switch the active component (the one all other tool calls target). Use a key from llui_list_components.',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        key: { type: 'string', description: 'Component key as returned by llui_list_components' },
-      },
-      required: ['key'],
-    },
-  },
-  {
-    name: 'llui_replay_trace',
-    description:
-      'Generate a ready-to-run vitest file that replays the current message history via `replayTrace()` from @llui/test. The output is a complete test file with the trace inlined — paste it into packages/<pkg>/test/ to reproduce the exact sequence of messages the component saw in this session. Use this to capture a debugging session as a regression test.',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        importPath: {
-          type: 'string',
-          description:
-            "Where to import the component def from in the generated test (default: '../src/index'). Example: '../src/todo-app'.",
-        },
-        exportName: {
-          type: 'string',
-          description: "Named export that holds the component def (default: the component's name).",
-        },
-      },
-    },
-  },
-  {
-    name: 'llui_lint',
-    description:
-      "Lint LLui source code against @llui/lint-idiomatic's 17 anti-pattern rules. Returns violations grouped by rule with line/column/suggestion fields, plus a 0–17 score (17 = fully idiomatic). Pass either `source` (raw TypeScript code) or `path` (absolute file path on the dev machine) — exactly one is required. The optional `exclude` array skips specific rule names. Use this after writing or editing LLui code to self-correct: catches state mutation, missing memo(), each() closure violations, view-bag-import (use the bag inside component bodies, see llm-guide.md), missing exhaustive update() cases, async update() (must be sync), nested send() in update(), spread-in-children (use each() instead), imperative DOM in view(), and more. The same rules run as a Vite plugin in dev — this tool gives LLMs the same feedback without requiring a build.",
-    inputSchema: {
-      type: 'object',
-      properties: {
-        source: {
-          type: 'string',
-          description: 'TypeScript source code to lint. Mutually exclusive with `path`.',
-        },
-        path: {
-          type: 'string',
-          description:
-            'Absolute file path to read and lint (must be a .ts/.tsx file). Mutually exclusive with `source`.',
-        },
-        exclude: {
-          type: 'array',
-          items: { type: 'string' },
-          description:
-            "Rule names to skip (e.g. ['map-on-state-array']). Useful when running in a project that already gets that rule from @llui/vite-plugin's diagnose() pass.",
-        },
-      },
-    },
-  },
-]
-
 // ── MCP Server ──────────────────────────────────────────────────
 
-interface PendingRequest {
-  resolve: (v: unknown) => void
-  reject: (e: Error) => void
-}
-
 export class LluiMcpServer {
-  /** Direct (same-process) debug API, used for tests or in-process bridging. */
-  private debugApi: LluiDebugAPI | null = null
-  /** Bridge (WebSocket) state for out-of-process browser connection. */
-  private wsServer: WebSocketServer | null = null
-  private browserWs: WebSocket | null = null
-  private pending = new Map<string, PendingRequest>()
-  private bridgePort: number
+  private readonly registry: ToolRegistry
+  private readonly relay: WebSocketRelayTransport
+  private readonly bridgePort: number
+  private devUrl: string | null = null
 
   constructor(bridgePort = 5200) {
     this.bridgePort = bridgePort
+    this.registry = new ToolRegistry()
+    this.relay = new WebSocketRelayTransport({ port: bridgePort })
+    registerDebugApiTools(this.registry)
   }
 
   /** Connect to a debug API instance directly (for in-process usage). */
   connectDirect(api: LluiDebugAPI): void {
-    this.debugApi = api
+    this.relay.connectDirect(api)
+  }
+
+  /**
+   * Set the dev-server URL that Phase 2's CDP fallback can navigate a
+   * Playwright browser to. Persisted into the active marker file so the
+   * Vite plugin (or other consumers) can rebroadcast it. If the bridge is
+   * already running, rewrites the marker so consumers see the update.
+   */
+  setDevUrl(url: string): void {
+    this.devUrl = url
+    if (this.relay.isServerRunning()) this.writeActiveFile()
   }
 
   /**
@@ -397,27 +101,7 @@ export class LluiMcpServer {
    * debug-API calls.
    */
   startBridge(): void {
-    if (this.wsServer) return
-    this.wsServer = new WebSocketServer({ port: this.bridgePort, host: '127.0.0.1' })
-    this.wsServer.on('connection', (ws) => {
-      this.browserWs = ws
-      ws.on('message', (raw) => {
-        let msg: { id: string; result?: unknown; error?: string }
-        try {
-          msg = JSON.parse(String(raw))
-        } catch {
-          return
-        }
-        const p = this.pending.get(msg.id)
-        if (!p) return
-        this.pending.delete(msg.id)
-        if (msg.error) p.reject(new Error(msg.error))
-        else p.resolve(msg.result)
-      })
-      ws.on('close', () => {
-        if (this.browserWs === ws) this.browserWs = null
-      })
-    })
+    this.relay.start()
 
     // Write the active marker file so Vite plugins watching it can
     // dispatch an HMR custom event to auto-trigger browser connects.
@@ -425,11 +109,7 @@ export class LluiMcpServer {
   }
 
   stopBridge(): void {
-    this.wsServer?.close()
-    this.wsServer = null
-    this.browserWs = null
-    for (const p of this.pending.values()) p.reject(new Error('bridge closed'))
-    this.pending.clear()
+    this.relay.stop()
     this.removeActiveFile()
   }
 
@@ -437,7 +117,12 @@ export class LluiMcpServer {
     try {
       const path = mcpActiveFilePath()
       mkdirSync(dirname(path), { recursive: true })
-      writeFileSync(path, JSON.stringify({ port: this.bridgePort, pid: process.pid }))
+      const payload: { port: number; pid: number; devUrl?: string } = {
+        port: this.bridgePort,
+        pid: process.pid,
+      }
+      if (this.devUrl !== null) payload.devUrl = this.devUrl
+      writeFileSync(path, JSON.stringify(payload))
     } catch {
       // Best-effort — failure to write the marker should not crash the server
     }
@@ -452,165 +137,15 @@ export class LluiMcpServer {
     }
   }
 
-  /** Invoke a debug API method — over the bridge if connected, else direct. */
-  private async call(method: keyof LluiDebugAPI, args: unknown[]): Promise<unknown> {
-    if (this.debugApi) {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const fn = (this.debugApi as any)[method]
-      return typeof fn === 'function' ? fn.apply(this.debugApi, args) : undefined
-    }
-    if (!this.browserWs) {
-      throw new Error('No browser connected to the MCP bridge. Start your dev server.')
-    }
-    const id = randomUUID()
-    return new Promise((resolve, reject) => {
-      this.pending.set(id, { resolve, reject })
-      this.browserWs!.send(JSON.stringify({ id, method, args }))
-      setTimeout(() => {
-        if (this.pending.delete(id)) reject(new Error(`timeout: ${method}`))
-      }, 5000)
-    })
-  }
-
   /** Get tool definitions for MCP handshake */
-  getTools(): McpToolDefinition[] {
-    return TOOLS
+  getTools(): ToolDefinition[] {
+    return this.registry.listDefinitions()
   }
 
   /** Handle an MCP tool call */
   async handleToolCall(name: string, args: Record<string, unknown>): Promise<unknown> {
-    switch (name) {
-      case 'llui_get_state':
-        return this.call('getState', [])
-
-      case 'llui_send_message': {
-        const errors = (await this.call('validateMessage', [args.msg])) as unknown[] | null
-        if (errors) return { errors, sent: false }
-        await this.call('send', [args.msg])
-        await this.call('flush', [])
-        return { state: await this.call('getState', []), sent: true }
-      }
-
-      case 'llui_eval_update':
-        return this.call('evalUpdate', [args.msg])
-
-      case 'llui_validate_message':
-        return this.call('validateMessage', [args.msg])
-
-      case 'llui_get_message_history': {
-        const opts: { since?: number; limit?: number } = {}
-        if (typeof args.since === 'number') opts.since = args.since
-        if (typeof args.limit === 'number') opts.limit = args.limit
-        return this.call('getMessageHistory', [opts])
-      }
-
-      case 'llui_export_trace':
-        return this.call('exportTrace', [])
-
-      case 'llui_get_bindings':
-        return this.call('getBindings', [])
-
-      case 'llui_why_did_update':
-        return this.call('whyDidUpdate', [args.bindingIndex as number])
-
-      case 'llui_search_state':
-        return this.call('searchState', [args.query as string])
-
-      case 'llui_clear_log':
-        await this.call('clearLog', [])
-        return { cleared: true }
-
-      case 'llui_list_messages':
-        return this.call('getMessageSchema', [])
-
-      case 'llui_decode_mask':
-        return this.call('decodeMask', [args.mask as number])
-
-      case 'llui_mask_legend':
-        return this.call('getMaskLegend', [])
-
-      case 'llui_component_info':
-        return this.call('getComponentInfo', [])
-
-      case 'llui_describe_state':
-        return this.call('getStateSchema', [])
-
-      case 'llui_list_effects':
-        return this.call('getEffectSchema', [])
-
-      case 'llui_trace_element':
-        return this.call('getBindingsFor', [args.selector as string])
-
-      case 'llui_snapshot_state':
-        return this.call('snapshotState', [])
-
-      case 'llui_restore_state':
-        await this.call('restoreState', [args.snapshot])
-        return { restored: true, state: await this.call('getState', []) }
-
-      case 'llui_list_components':
-        return this.call('__listComponents' as never, [])
-
-      case 'llui_select_component':
-        return this.call('__selectComponent' as never, [args.key])
-
-      case 'llui_replay_trace': {
-        const trace = (await this.call('exportTrace', [])) as {
-          component: string
-          entries: Array<{ msg: unknown; expectedState: unknown; expectedEffects: unknown[] }>
-        }
-        const importPath = (args.importPath as string | undefined) ?? '../src/index'
-        const exportName = (args.exportName as string | undefined) ?? trace.component
-        return {
-          filename: `${trace.component.toLowerCase()}-replay.test.ts`,
-          code: generateReplayTest(trace, importPath, exportName),
-          entryCount: trace.entries.length,
-        }
-      }
-
-      case 'llui_lint': {
-        const sourceArg = args.source as string | undefined
-        const pathArg = args.path as string | undefined
-        const excludeArg = args.exclude as string[] | undefined
-
-        if (sourceArg !== undefined && pathArg !== undefined) {
-          throw new Error("llui_lint: provide either 'source' or 'path', not both")
-        }
-        if (sourceArg === undefined && pathArg === undefined) {
-          throw new Error("llui_lint: must provide either 'source' or 'path'")
-        }
-
-        let code: string
-        let filename: string
-        if (sourceArg !== undefined) {
-          code = sourceArg
-          filename = 'input.ts'
-        } else {
-          // pathArg is defined here
-          if (!pathArg!.endsWith('.ts') && !pathArg!.endsWith('.tsx')) {
-            throw new Error(`llui_lint: path must end in .ts or .tsx (got ${pathArg!})`)
-          }
-          if (!existsSync(pathArg!)) {
-            throw new Error(`llui_lint: file not found: ${pathArg!}`)
-          }
-          code = readFileSync(pathArg!, 'utf8')
-          filename = pathArg!
-        }
-
-        const result = lintIdiomatic(code, filename, {
-          exclude: excludeArg,
-        })
-        return {
-          file: filename,
-          score: result.score,
-          violations: result.violations,
-          summary: `${result.violations.length} violation(s), score ${result.score}/17`,
-        }
-      }
-
-      default:
-        throw new Error(`Unknown tool: ${name}`)
-    }
+    const ctx: ToolContext = { relay: this.relay, cdp: null }
+    return this.registry.dispatch(name, args, ctx)
   }
 
   /** Start the MCP server on stdin/stdout */
@@ -693,37 +228,13 @@ export class LluiMcpServer {
   }
 }
 
-export { TOOLS as mcpToolDefinitions }
-
-function generateReplayTest(
-  trace: {
-    component: string
-    entries: Array<{ msg: unknown; expectedState: unknown; expectedEffects: unknown[] }>
-  },
-  importPath: string,
-  exportName: string,
-): string {
-  const traceJson = JSON.stringify(
-    {
-      lluiTrace: 1,
-      component: trace.component,
-      generatedBy: 'llui-mcp',
-      timestamp: new Date().toISOString(),
-      entries: trace.entries,
-    },
-    null,
-    2,
-  )
-  return `import { it, expect } from 'vitest'
-import { replayTrace } from '@llui/test'
-import { ${exportName} } from '${importPath}'
-
-// Auto-generated from a debugging session via llui_replay_trace MCP tool.
-// Edit the trace below to trim, reorder, or adjust expected state/effects.
-const trace = ${traceJson} as const
-
-it('${trace.component}: replays ${trace.entries.length} recorded message${trace.entries.length === 1 ? '' : 's'}', () => {
-  expect(() => replayTrace(${exportName}, trace as Parameters<typeof replayTrace>[1])).not.toThrow()
-})
-`
-}
+/**
+ * Snapshot of all registered tool definitions. Kept as a named export for
+ * backward compatibility with downstream consumers that used to import the
+ * `TOOLS` array re-export under this alias.
+ */
+export const mcpToolDefinitions: ToolDefinition[] = (() => {
+  const registry = new ToolRegistry()
+  registerDebugApiTools(registry)
+  return registry.listDefinitions()
+})()
