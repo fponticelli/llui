@@ -958,7 +958,8 @@ export function installDevTools(inst: object): void {
       history.length = keep.length
       if (mode === 'live') {
         for (const eff of collectedEffects) {
-          if (ci.def.onEffect) ci.def.onEffect({ effect: eff as never, send: ci.send, signal: ci.signal })
+          if (ci.def.onEffect)
+            ci.def.onEffect({ effect: eff as never, send: ci.send, signal: ci.signal })
         }
       }
       return { state, rewindDepth }

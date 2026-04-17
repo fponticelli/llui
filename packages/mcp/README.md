@@ -69,3 +69,49 @@ export default defineConfig({ plugins: [llui({ mcpPort: 5200 })] })
 | ------------------ | ------------------------------------------ |
 | `list_components`  | List all mounted component instances       |
 | `select_component` | Select a component for subsequent commands |
+
+### View and DOM
+
+| Tool                | Description                                                              |
+| ------------------- | ------------------------------------------------------------------------ |
+| `inspect_element`   | Rich report: tag, attrs, classes, data-\*, text, computed, box, bindings |
+| `get_rendered_html` | outerHTML of a selector (default = mount root), truncatable              |
+| `dom_diff`          | Compare expected HTML against rendered HTML                              |
+| `dispatch_event`    | Synthesize a browser event; returns Msgs produced + resulting state      |
+| `get_focus`         | Active element info: selector, tag, selection range                      |
+
+### Bindings and Scope
+
+| Tool                 | Description                                                    |
+| -------------------- | -------------------------------------------------------------- |
+| `force_rerender`     | Re-evaluate all bindings; returns indices that changed         |
+| `each_diff`          | Per-each-site add/remove/move/reuse per update                 |
+| `scope_tree`         | Scope hierarchy with kind (root/show/each/branch/child/portal) |
+| `disposer_log`       | Recent scope disposals with cause                              |
+| `list_dead_bindings` | Bindings that are dead or have never changed value             |
+| `binding_graph`      | state path -> binding indices (inverts compiler mask legend)   |
+
+### Effects
+
+| Tool              | Description                                                            |
+| ----------------- | ---------------------------------------------------------------------- |
+| `pending_effects` | Queued and in-flight effects                                           |
+| `effect_timeline` | Phased log: dispatched -> in-flight -> resolved/cancelled              |
+| `mock_effect`     | Register match->response mock; next matching effect resolves with mock |
+| `resolve_effect`  | Manually resolve a specific pending effect                             |
+
+### Time Travel and Utilities
+
+| Tool             | Description                                                    |
+| ---------------- | -------------------------------------------------------------- |
+| `step_back`      | Rewind N messages by replaying from init (pure mode default)   |
+| `coverage`       | Per-Msg variant fire counts + list of never-fired variants     |
+| `diff_state`     | Structured JSON diff between two state values                  |
+| `assert`         | Evaluate eq/neq/exists/gt/lt/in against a state path           |
+| `search_history` | Filter history by type, statePath change, effectType, or range |
+
+### Eval
+
+| Tool   | Description                                                           |
+| ------ | --------------------------------------------------------------------- |
+| `eval` | Arbitrary JS in page context; returns result + observability envelope |

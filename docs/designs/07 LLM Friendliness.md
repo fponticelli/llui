@@ -997,6 +997,32 @@ The Vite dev server already maintains a WebSocket for HMR. The LLui Vite plugin 
 | `llui_search_state`        | `query: string`                     | Query results                     | JSONPath against current state.                                              |
 | `llui_get_bindings`        | `filter?: string`                   | `BindingDebugInfo[]`              | Filter by DOM selector or mask.                                              |
 
+**Phase 1 additions (21 new tools):**
+
+| Tool                      | Description                                                                         |
+| ------------------------- | ----------------------------------------------------------------------------------- |
+| `llui_inspect_element`    | Rich report: tag, attrs, classes, data-\*, text, computed style, box, binding list. |
+| `llui_get_rendered_html`  | outerHTML of a selector (default = mount root), truncatable.                        |
+| `llui_dom_diff`           | Compare expected HTML against rendered HTML; returns unified diff.                  |
+| `llui_dispatch_event`     | Synthesize a browser event; returns messages produced + resulting state.            |
+| `llui_get_focus`          | Active element info: selector, tag, selection range.                                |
+| `llui_force_rerender`     | Re-evaluate all bindings; returns indices that changed.                             |
+| `llui_each_diff`          | Per-each-site add/remove/move/reuse records per update.                             |
+| `llui_scope_tree`         | Scope hierarchy with kind (root/show/each/branch/child/portal).                     |
+| `llui_disposer_log`       | Recent scope disposals with cause.                                                  |
+| `llui_list_dead_bindings` | Bindings that are detached or have never changed value.                             |
+| `llui_binding_graph`      | state path → binding indices (inverts compiler mask legend).                        |
+| `llui_pending_effects`    | Queued and in-flight effects.                                                       |
+| `llui_effect_timeline`    | Phased log: dispatched → in-flight → resolved/cancelled.                            |
+| `llui_mock_effect`        | Register match→response mock; next matching effect resolves with mock.              |
+| `llui_resolve_effect`     | Manually resolve a specific pending effect.                                         |
+| `llui_step_back`          | Rewind N messages by replaying from init (pure mode default).                       |
+| `llui_coverage`           | Per-Msg variant fire counts + list of never-fired variants.                         |
+| `llui_diff_state`         | Structured JSON diff between two state values.                                      |
+| `llui_assert`             | Evaluate eq/neq/exists/gt/lt/in against a state path.                               |
+| `llui_search_history`     | Filter history by type, statePath change, effectType, or index range.               |
+| `llui_eval`               | Arbitrary JS in page context; returns result + observability envelope.              |
+
 **`llui_send_message` validates before dispatching.** When the LLM calls `llui_send_message({ type: 'addItem', text: 'test' })`, the MCP server first calls `validateMessage` against the component's Msg type. If validation fails, the tool returns the validation errors _without sending the message_. This feedback loop is immediate and structured — the LLM sees `{ errors: [{ path: '.id', expected: 'string', received: 'undefined', message: 'missing required field "id"' }] }` and corrects its next attempt. No other framework derives runtime-accessible message validation metadata directly from TypeScript discriminated union types at compile time — other approaches require manually written schemas (Zod, io-ts) or lose type information at runtime.
 
 **`llui_eval_update` enables speculative debugging.** The LLM can ask "what would happen if the user clicked 'submit' right now?" without changing the app. It calls `llui_eval_update({ type: 'submit' })` and reads the resulting state and effects. If the result reveals a bug ("the state transitions to `loading` but no `http` effect is emitted"), the LLM has found the problem without executing any side effects. It can then inspect the `update()` source, identify the missing effect, and propose a fix — all without the app ever leaving its current state.

@@ -51,7 +51,7 @@ pnpm bench:build              # Build jfb app only (no benchmark run)
 
 ## Monorepo Structure
 
-Five packages under `packages/`, managed by pnpm workspaces + Turborepo:
+Six packages under `packages/`, managed by pnpm workspaces + Turborepo:
 
 | Package             | Purpose                                                                                 | Dependencies |
 | ------------------- | --------------------------------------------------------------------------------------- | ------------ |
@@ -60,6 +60,7 @@ Five packages under `packages/`, managed by pnpm workspaces + Turborepo:
 | `@llui/components`  | 58 headless components: accordion, dialog, tabs, select, tree-view, timer, tour, etc.   | @llui/dom    |
 | `@llui/test`        | Test harness: testComponent, assertEffects, testView, propertyTest, replayTrace         | @llui/dom    |
 | `@llui/effects`     | Effect builders: http, cancel, debounce, sequence, race + handleEffects chain           | —            |
+| `@llui/mcp`         | MCP server: 44 tools exposing LLui debug API + lint to LLMs                             | @llui/dom    |
 | `@llui/vike`        | Vike SSR adapter: onRenderHtml, onRenderClient                                          | @llui/dom    |
 
 Build order: `@llui/dom` and `@llui/effects` first (no deps), then `@llui/test`, `@llui/vike` (depend on core). Turbo handles this via `"dependsOn": ["^build"]`.

@@ -581,6 +581,16 @@ Canonical `onEffect` handler. Consumes `http`, `cancel`, `debounce`, `sequence`,
 
 See: 01 Architecture.md
 
+### `_setEffectInterceptor(hook | null)` (dev only)
+
+```typescript
+function _setEffectInterceptor(
+  hook: ((effect: unknown) => { mocked: true; response: unknown } | { mocked: false }) | null,
+): void
+```
+
+Registers a dev-only interceptor that runs at effect dispatch time. Return `{ mocked: true, response }` to short-circuit the real handler; return `{ mocked: false }` to pass the effect through unchanged. Call with `null` to remove the interceptor. The function is a no-op in production — only the `import.meta.env.DEV` branch exists in the bundle. Used internally by `llui_mock_effect` and `llui_resolve_effect`.
+
 ---
 
 ## `@llui/test`
@@ -743,6 +753,183 @@ interface Binding {
 ```
 
 See: 03 Runtime DOM.md
+
+### Dev-mode Debug Types (exported from `@llui/dom`, dev only)
+
+These types back the `window.__lluiDebug` API. They are tree-shaken from production builds.
+
+```typescript
+/** Detailed inspection report for a single DOM element. */
+interface ElementReport {
+  selector: string
+  tagName: string
+  attributes: Record<string, string>
+  classes: string[]
+  dataAttributes: Record<string, string>
+  textContent: string | null
+  computedStyle: Record<string, string>
+  boundingBox: { x: number; y: number; width: number; height: number }
+  bindingIndices: number[]
+}
+
+/** One node in the scope tree returned by getScopeTree(). */
+interface ScopeNode {
+  id: number
+  kind: 'root' | 'show' | 'each' | 'branch' | 'child' | 'portal'
+  bindingCount: number
+  children: ScopeNode[]
+}
+
+/** Add/remove/move/reuse record for one reconciliation pass of an each() site. */
+interface EachDiff {
+  siteId: string
+  messageIndex: number
+  added: string[]
+  removed: string[]
+  moved: Array<{ key: string; from: number; to: number }>
+  reused: string[]
+}
+
+/** One scope disposal event recorded by the runtime. */
+interface DisposerEvent {
+  scopeId: number
+  kind: ScopeNode['kind']
+  cause: 'parent' | 'branch' | 'show' | 'each' | 'dispose'
+  timestamp: number
+}
+
+/** An effect that is queued or currently in-flight. */
+interface PendingEffect {
+  effectId: string
+  effect: unknown
+  status: 'queued' | 'in-flight'
+  dispatchedAt: number
+}
+
+/** One entry in the effect timeline log. */
+interface EffectTimelineEntry {
+  effectId: string
+  effect: unknown
+  phase: 'dispatched' | 'in-flight' | 'resolved' | 'cancelled' | 'error'
+  timestamp: number
+  result?: unknown
+  error?: unknown
+}
+
+/** A registered effect mock for llui_mock_effect. */
+interface EffectMatch {
+  mockId: string
+  match: Partial<Record<string, unknown>>
+  response: unknown
+  once: boolean
+}
+
+/** Structured diff between two state values. */
+interface StateDiff {
+  path: string
+  kind: 'added' | 'removed' | 'changed'
+  oldValue?: unknown
+  newValue?: unknown
+}
+
+/** Per-Msg variant fire counts, from getCoverage(). */
+interface CoverageSnapshot {
+  counts: Record<string, number>
+  neverFired: string[]
+  totalMessages: number
+}
+```
+
+`MessageRecord` is already defined in §10 of `07 LLM Friendliness.md` as part of `LluiDebugAPI`. It is the canonical type — no re-export needed.
+
+---
+
+## `window.__lluiDebug` — Phase 1 Extensions
+
+The base `LluiDebugAPI` interface is specified in `07 LLM Friendliness.md §10`. The Phase 1 expansion adds the following methods. All are tree-shaken from production builds.
+
+### View and DOM
+
+```typescript
+/** Rich inspection report for a DOM element matching the selector. */
+inspectElement(selector: string): ElementReport | null
+
+/** outerHTML of the element matching selector (default = mount root). Truncated to maxLength if provided. */
+getRenderedHtml(selector?: string, maxLength?: number): string
+
+/** Synthesize a browser event on the element; returns messages produced and the resulting state. */
+dispatchDomEvent(
+  selector: string,
+  type: string,
+  init?: EventInit,
+): { dispatched: boolean; messagesProducedIndices: number[]; resultingState: unknown }
+
+/** Info about the currently focused element. */
+getFocus(): { selector: string; tagName: string; selectionStart: number | null; selectionEnd: number | null }
+```
+
+### Bindings and Scope
+
+```typescript
+/** Force all bindings to re-evaluate; returns indices of bindings whose value changed. */
+forceRerender(): { changedBindings: number[] }
+
+/** Each-site reconciliation diffs since messageIndex (default = all). */
+getEachDiff(sinceIndex?: number): EachDiff[]
+
+/** Scope hierarchy rooted at scopeId (default = root), truncated at depth. */
+getScopeTree(opts?: { depth?: number; scopeId?: number }): ScopeNode
+
+/** Recent scope disposal events, newest first. */
+getDisposerLog(limit?: number): DisposerEvent[]
+
+/** Inverted binding index: maps state paths to the binding indices that read them. */
+getBindingGraph(): Array<{ statePath: string; bindingIndices: number[] }>
+
+/** Bindings that are either detached or whose value has never changed since mount. */
+listDeadBindings(): BindingDebugInfo[]
+```
+
+### Effects
+
+```typescript
+/** All currently queued or in-flight effects. */
+getPendingEffects(): PendingEffect[]
+
+/** Chronological effect phase log, newest first. */
+getEffectTimeline(limit?: number): EffectTimelineEntry[]
+
+/**
+ * Register a mock: the next effect matching `match` (subset equality) resolves with `response`.
+ * Set opts.once = false for a persistent mock. Returns the mock ID.
+ */
+mockEffect(
+  match: Partial<Record<string, unknown>>,
+  response: unknown,
+  opts?: { once?: boolean },
+): { mockId: string }
+
+/** Manually resolve a specific pending effect by ID. */
+resolveEffect(effectId: string, response: unknown): { resolved: boolean }
+```
+
+### Time Travel and Utilities
+
+```typescript
+/**
+ * Rewind N messages by replaying from init.
+ * mode = 'pure' (default) replays update() only; mode = 'full' also re-runs effects.
+ */
+stepBack(n: number, mode?: 'pure' | 'full'): { state: unknown; rewindDepth: number }
+
+/** Per-Msg variant fire counts and variants that have never fired. */
+getCoverage(): CoverageSnapshot
+
+/** Evaluate arbitrary JS in the page context; returns the result and any side effects observed. */
+evalInPage(code: string): { result: unknown; sideEffects: { messagesSent: number[]; effectsDispatched: unknown[] } }
+```
+
+`diffState`, `assert`, and `searchHistory` map to the `StateDiff`, assertion, and filtered `MessageRecord[]` types defined in the Dev-mode Debug Types section above.
 
 ---
 
