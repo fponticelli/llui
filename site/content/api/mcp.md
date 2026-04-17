@@ -108,34 +108,7 @@ when one runs from the repo root and the other from a subpackage.
 function mcpActiveFilePath(cwd: string = process.cwd()): string
 ```
 
-### `generateReplayTest()`
-
-```typescript
-function generateReplayTest(
-  trace: {
-    component: string
-    entries: Array<{ msg: unknown; expectedState: unknown; expectedEffects: unknown[] }>
-  },
-  importPath: string,
-  exportName: string,
-): string
-```
-
 ## Interfaces
-
-### `McpToolDefinition`
-
-```typescript
-interface McpToolDefinition {
-  name: string
-  description: string
-  inputSchema: {
-    type: 'object'
-    properties: Record<string, unknown>
-    required?: string[]
-  }
-}
-```
 
 ### `JsonRpcRequest`
 
@@ -159,34 +132,24 @@ interface JsonRpcResponse {
 }
 ```
 
-### `PendingRequest`
-
-```typescript
-interface PendingRequest {
-  resolve: (v: unknown) => void
-  reject: (e: Error) => void
-}
-```
-
 ## Classes
 
 ### `LluiMcpServer`
 
 ```typescript
 class LluiMcpServer {
-  debugApi: LluiDebugAPI | null
-  wsServer: WebSocketServer | null
-  browserWs: WebSocket | null
-  pending
+  registry: ToolRegistry
+  relay: WebSocketRelayTransport
   bridgePort: number
+  devUrl: string | null
   constructor(bridgePort = 5200)
   connectDirect(api: LluiDebugAPI): void
+  setDevUrl(url: string): void
   startBridge(): void
   stopBridge(): void
   writeActiveFile(): void
   removeActiveFile(): void
-  call(method: keyof LluiDebugAPI, args: unknown[]): Promise<unknown>
-  getTools(): McpToolDefinition[]
+  getTools(): ToolDefinition[]
   handleToolCall(name: string, args: Record<string, unknown>): Promise<unknown>
   start(): void
   handleRequest(request: JsonRpcRequest): Promise<JsonRpcResponse>
@@ -195,10 +158,14 @@ class LluiMcpServer {
 
 ## Constants
 
-### `TOOLS`
+### `mcpToolDefinitions`
+
+Snapshot of all registered tool definitions. Kept as a named export for
+backward compatibility with downstream consumers that used to import the
+`TOOLS` array re-export under this alias.
 
 ```typescript
-const TOOLS: McpToolDefinition[]
+const mcpToolDefinitions: ToolDefinition[]
 ```
 
 <!-- auto-api:end -->

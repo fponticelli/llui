@@ -325,11 +325,15 @@ Page context shape as seen by `@llui/vike`'s server hook. `Page` and
 `data` are whichever `+Page.ts` and `+data.ts` Vike resolved for the
 current route; `lluiLayoutData` is an optional array of per-layer
 layout data matching the chain configured on `createOnRenderHtml`.
+`data` is derived from the global `Vike.PageContext` namespace so that
+consumer-side augmentations (the Vike convention for typing data) flow
+into this hook's callbacks without any cast. When the consumer hasn't
+augmented the namespace, `data` falls back to `unknown`.
 
 ```typescript
 export interface PageContext {
   Page: AnyComponentDef
-  data?: unknown
+  data?: VikePageContextData
   lluiLayoutData?: readonly unknown[]
   head?: string
 }
@@ -405,6 +409,11 @@ interface HydrationEnvelope {
 Page context shape as seen by `@llui/vike`'s client-side hooks. The
 `Page` and `data` fields come from whichever `+Page.ts` and `+data.ts`
 Vike resolved for the current route.
+`data` is derived from the global `Vike.PageContext` namespace — the
+convention users already know from Vike. Consumer augmentations of
+`Vike.PageContext { interface PageContext { data?: MyData } }` flow
+through to every callback here without a cast. Unaugmented projects
+fall back to `unknown`.
 `lluiLayoutData` is optional and carries per-layer data for the layout
 chain configured via `createOnRenderClient({ Layout })`. It's indexed
 outermost-to-innermost, one entry per layout layer. Absent entries
@@ -415,7 +424,7 @@ data under the `lluiLayoutData` key.
 ```typescript
 export interface ClientPageContext {
   Page: AnyComponentDef
-  data?: unknown
+  data?: VikePageContextData
   lluiLayoutData?: readonly unknown[]
   isHydration?: boolean
 }
