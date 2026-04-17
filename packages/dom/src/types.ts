@@ -2,6 +2,8 @@
 
 import type { View } from './view-helpers.js'
 import type { StructuralBlock } from './structural.js'
+import type { ComponentInstance } from './update-loop.js'
+import type { DisposerEvent } from './tracking/disposer-log.js'
 
 export interface ComponentDef<S, M, E = never, D = void> {
   name: string
@@ -178,6 +180,21 @@ export interface Scope {
   bindings: Binding[]
   /** Per-item updaters — called directly by each() when item changes, bypassing Phase 2 */
   itemUpdaters: Array<() => void>
+  /**
+   * @internal dev-only back-reference to the owning ComponentInstance.
+   * Populated on the root scope by `installDevTools` so `disposeScope`
+   * can walk up the scope chain and emit DisposerEvents into the
+   * instance's `_disposerLog`. Undefined in production.
+   */
+  instance?: ComponentInstance
+  /**
+   * @internal dev-only cause hint. Structural primitives (branch, each,
+   * child, mountApp teardown) set this field immediately before calling
+   * `disposeScope`; the dispose path reads it once to stamp the emitted
+   * DisposerEvent. Left undefined, `disposeScope` falls back to
+   * `'component-unmount'`. Undefined in production.
+   */
+  disposalCause?: DisposerEvent['cause']
 }
 
 // ── Binding ───────────────────────────────────────────────────────
@@ -207,6 +224,13 @@ export interface TransitionOptions {
 export interface BranchOptions<S, M = unknown> extends TransitionOptions {
   on: (s: S) => string | number | boolean
   cases: Record<string | number, (h: View<S, M>) => Node[]>
+  /**
+   * @internal Set by `show()` when it delegates to `branch()`, so the
+   * dev-only disposer log can report `'show-hide'` instead of the
+   * default `'branch-swap'` for the leaving arm. User code should not
+   * set this directly.
+   */
+  __disposalCause?: DisposerEvent['cause']
 }
 
 export interface ShowOptions<S, M = unknown> extends TransitionOptions {

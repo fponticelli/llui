@@ -1,6 +1,10 @@
 import { flushInstance, _forceState, type ComponentInstance } from './update-loop.js'
 import { _setDevToolsInstall } from './mount.js'
+import { _markDisposerLogInstalled } from './scope.js'
 import type { Binding } from './types.js'
+import { createRingBuffer } from './tracking/each-diff.js'
+import { createRingBuffer as createDisposerBuffer } from './tracking/disposer-log.js'
+import { createCoverageTracker } from './tracking/coverage.js'
 
 /**
  * Enable devtools auto-installation for every mountApp call. Called by
@@ -266,6 +270,26 @@ export function installDevTools(inst: object): void {
   let idx = 0
   let lastDirtyMask = 0
 
+  // Tracker storage — populated by primitives when they detect dev-mode
+  // is active (via `inst._eachDiffLog !== undefined` guard). Zero cost in
+  // production where installDevTools never runs.
+  ci._eachDiffLog = createRingBuffer(100)
+  ci._updateCounter = 0
+  // Disposer log — consumed by `llui_disposer_log` MCP tool. Stamped by
+  // `disposeScope` via `findInstance(scope)` — which only works when the
+  // rootScope carries an `instance` back-reference.
+  ci._disposerLog = createDisposerBuffer(500)
+  // Coverage tracker — consumed by `llui_coverage` MCP tool. Records the
+  // discriminant of each dispatched message along with the message index
+  // it fired at, allowing the tool to surface Msg variants that never
+  // fired this session. Recorded inside the update interceptor below.
+  ci._coverage = createCoverageTracker()
+  ci.rootScope.instance = ci
+  // Flip the scope-module flag so disposeScope starts walking the parent
+  // chain to emit disposer events. Before the first installDevTools call
+  // the flag stays false and disposeScope skips findInstance entirely.
+  _markDisposerLogInstalled()
+
   const api: LluiDebugAPI = {
     getState: () => ci.state,
     send: (msg) => ci.send(msg as never),
@@ -304,6 +328,10 @@ export function installDevTools(inst: object): void {
     clearLog() {
       history.length = 0
       idx = 0
+      ci._updateCounter = 0
+      ci._eachDiffLog?.clear()
+      ci._disposerLog?.clear()
+      ci._coverage?.clear()
     },
 
     validateMessage(msg: unknown): ValidationError[] | null {
@@ -540,7 +568,7 @@ export function installDevTools(inst: object): void {
     lastDirtyMask = typeof dirty === 'number' ? dirty : -1
 
     const record: MessageRecord = {
-      index: idx++,
+      index: idx,
       timestamp: Date.now(),
       msg,
       stateBefore: state,
@@ -548,6 +576,24 @@ export function installDevTools(inst: object): void {
       effects,
       dirtyMask: lastDirtyMask,
     }
+
+    // _updateCounter and the history index track the same thing —
+    // tie them so EachDiff entries emitted during the ensuing Phase 1
+    // reconcile carry the same updateIndex as the message record that
+    // caused the reconcile. `each.ts` reads `inst._updateCounter` when
+    // stamping EachDiff entries.
+    ci._updateCounter = idx
+
+    // Coverage: record the discriminant of this message at the SAME
+    // index stamped on the MessageRecord above, so tools can cross-
+    // reference `getMessageHistory()[i]` with `coverage.fired[v].lastIndex`.
+    const variant =
+      msg && typeof msg === 'object' && 'type' in (msg as Record<string, unknown>)
+        ? String((msg as Record<string, unknown>).type)
+        : '<non-discriminant>'
+    ci._coverage?.record(variant, idx)
+
+    idx++
 
     if (history.length >= MAX_HISTORY) history.shift()
     history.push(record)

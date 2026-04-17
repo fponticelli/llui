@@ -1,5 +1,5 @@
 import type { ComponentDef, AppHandle, Scope } from './types.js'
-import { createComponentInstance, flushInstance } from './update-loop.js'
+import { createComponentInstance, flushInstance, type ComponentInstance } from './update-loop.js'
 import { disposeScope } from './scope.js'
 import { setRenderContext, clearRenderContext } from './render-context.js'
 import { setFlatBindings } from './binding.js'
@@ -93,7 +93,12 @@ export function mountApp<S, M, E>(
   // between mount and the queueMicrotask callback running.
   const { queue: onMountQueue, prev: prevMountQueue } = pushMountQueue()
   setFlatBindings(inst.allBindings)
-  setRenderContext({ ...inst, container, send: inst.send as (msg: unknown) => void })
+  setRenderContext({
+    ...inst,
+    container,
+    send: inst.send as (msg: unknown) => void,
+    instance: inst as ComponentInstance,
+  })
   const nodes = def.view(createView<S, M>(inst.send))
   clearRenderContext()
   setFlatBindings(null)
@@ -129,6 +134,9 @@ export function mountApp<S, M, E>(
       if (hmrModule && def.name) hmrModule.unregisterForHmr(def.name, inst)
       inst.abortController.abort()
       unregisterInstance(inst)
+      // Tag the root scope so the disposer log reports app-level
+      // teardown distinct from in-tree component-unmount events.
+      inst.rootScope.disposalCause = 'app-unmount'
       disposeScope(inst.rootScope)
       container.textContent = ''
     },
@@ -231,7 +239,12 @@ export function hydrateApp<S, M, E>(
   // after the swap, matching mountApp's ordering.
   const { queue: onMountQueue, prev: prevMountQueue } = pushMountQueue()
   setFlatBindings(inst.allBindings)
-  setRenderContext({ ...inst, container, send: inst.send as (msg: unknown) => void })
+  setRenderContext({
+    ...inst,
+    container,
+    send: inst.send as (msg: unknown) => void,
+    instance: inst as ComponentInstance,
+  })
   const nodes = hydrateDef.view(createView<S, M>(inst.send))
   clearRenderContext()
   setFlatBindings(null)
@@ -256,6 +269,9 @@ export function hydrateApp<S, M, E>(
       disposed = true
       inst.abortController.abort()
       unregisterInstance(inst)
+      // Tag the root scope so the disposer log reports app-level
+      // teardown distinct from in-tree component-unmount events.
+      inst.rootScope.disposalCause = 'app-unmount'
       disposeScope(inst.rootScope)
       container.textContent = ''
     },

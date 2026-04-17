@@ -28,7 +28,11 @@ export function renderNodes<S, M, E>(
   }
 
   setFlatBindings(inst.allBindings)
-  setRenderContext({ ...inst, send: inst.send as (msg: unknown) => void })
+  setRenderContext({
+    ...inst,
+    send: inst.send as (msg: unknown) => void,
+    instance: inst as ComponentInstance,
+  })
   const nodes = def.view(createView<S, M>(inst.send))
   clearRenderContext()
   setFlatBindings(null)

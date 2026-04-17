@@ -1,5 +1,6 @@
 import type { Scope, Binding } from './types.js'
 import type { StructuralBlock } from './structural.js'
+import type { ComponentInstance } from './update-loop.js'
 
 export interface RenderContext {
   rootScope: Scope
@@ -8,6 +9,11 @@ export interface RenderContext {
   structuralBlocks: StructuralBlock[]
   container?: Element
   send?: (msg: unknown) => void
+  /** @internal dev-only — the owning ComponentInstance. Set by mount /
+   *  hydrate / child to let primitives (currently `each`) emit tracker
+   *  data to `inst._eachDiffLog`. Nested contexts pass through via
+   *  spread (e.g. `{ ...ctx, rootScope }`). Undefined outside dev. */
+  instance?: ComponentInstance
 }
 
 let currentContext: RenderContext | null = null

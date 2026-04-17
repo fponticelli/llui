@@ -1,6 +1,22 @@
 import type { Scope, Binding } from './types.js'
+import type { ComponentInstance } from './update-loop.js'
 
 let nextId = 1
+
+/**
+ * Walk up the scope chain to find the owning ComponentInstance. The
+ * instance is stamped onto the rootScope by `installDevTools`, so this
+ * returns null in production (no devtools) or for scopes that haven't
+ * yet been parented to a tracked root (e.g., during initial creation).
+ */
+function findInstance(scope: Scope): ComponentInstance | null {
+  let s: Scope | null = scope
+  while (s) {
+    if (s.instance) return s.instance
+    s = s.parent
+  }
+  return null
+}
 
 // Shared empty arrays — avoid allocating per scope when unused
 const EMPTY_SCOPES: Scope[] = []
@@ -13,6 +29,16 @@ const EMPTY_UPDATERS: Array<() => void> = []
 const SCOPE_POOL: Scope[] = []
 const SCOPE_POOL_MAX = 2048
 
+// Dev-mode flag. Flipped to true by installDevTools() once any component
+// instance has a disposer log. In production this stays false forever,
+// and disposeScope skips findInstance entirely — zero cost.
+let anyDisposerLogInstalled = false
+
+/** @internal — called by devtools.ts::installDevTools */
+export function _markDisposerLogInstalled(): void {
+  anyDisposerLogInstalled = true
+}
+
 /** @internal Drain the scope pool — for testing only */
 export function _drainScopePool(): void {
   SCOPE_POOL.length = 0
@@ -24,7 +50,12 @@ export function createScope(parent: Scope | null): Scope {
     scope = SCOPE_POOL.pop()!
     scope.id = nextId++
     scope.parent = parent
-    // Arrays already reset to empties by dispose
+    // Arrays already reset to empties by dispose. Reset dev-only hints
+    // so recycled scopes don't carry stale tagging/back-refs. Cheap
+    // (two undefined writes) and keeps production-identical behavior
+    // when these fields are never set.
+    scope.disposalCause = undefined
+    scope.instance = undefined
   } else {
     scope = {
       id: nextId++,
@@ -57,6 +88,20 @@ export function createScope(parent: Scope | null): Scope {
  */
 export function disposeScope(scope: Scope, skipParentRemoval = false): void {
   if (scope.disposers.length === 0 && scope.children.length === 0 && scope.bindings.length === 0) {
+    // Dev-only: still emit a DisposerEvent for empty scopes — the log
+    // is meant to capture every scope the app destroys, not only ones
+    // that had attached work. Outer flag check keeps production (no
+    // devtools ever installed) at true zero cost — no parent-chain walk.
+    if (anyDisposerLogInstalled) {
+      const inst = findInstance(scope)
+      if (inst?._disposerLog !== undefined) {
+        inst._disposerLog.push({
+          scopeId: String(scope.id),
+          cause: scope.disposalCause ?? 'component-unmount',
+          timestamp: Date.now(),
+        })
+      }
+    }
     if (!skipParentRemoval) removeFromParent(scope)
     scope.parent = null
     // Don't pool empty scopes from the early-return path — they may be
@@ -74,6 +119,20 @@ export function disposeScope(scope: Scope, skipParentRemoval = false): void {
 
   for (const disposer of scope.disposers) {
     disposer()
+  }
+
+  // Dev-only: emit disposer events into the owning instance's log.
+  // Outer flag check keeps production (no devtools ever installed) at
+  // true zero cost — skips the O(depth) parent-chain walk entirely.
+  if (anyDisposerLogInstalled) {
+    const inst = findInstance(scope)
+    if (inst?._disposerLog !== undefined) {
+      inst._disposerLog.push({
+        scopeId: String(scope.id),
+        cause: scope.disposalCause ?? 'component-unmount',
+        timestamp: Date.now(),
+      })
+    }
   }
 
   // Mark bindings as dead and break closure/DOM retention
@@ -128,6 +187,17 @@ export function disposeScopesBulk(scopes: Scope[]): void {
     // Run disposers
     const disposers = scope.disposers
     for (let d = 0; d < disposers.length; d++) disposers[d]!()
+    // Dev-only: emit disposer events — same guard as disposeScope.
+    if (anyDisposerLogInstalled) {
+      const inst = findInstance(scope)
+      if (inst?._disposerLog !== undefined) {
+        inst._disposerLog.push({
+          scopeId: String(scope.id),
+          cause: scope.disposalCause ?? 'component-unmount',
+          timestamp: Date.now(),
+        })
+      }
+    }
     // Mark bindings dead
     const bindings = scope.bindings
     for (let b = 0; b < bindings.length; b++) {

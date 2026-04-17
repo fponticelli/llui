@@ -72,7 +72,15 @@ export function branch<S, M = unknown>(opts: BranchOptions<S, M>): Node[] {
         for (const node of leavingNodes) {
           if (node.parentNode) node.parentNode.removeChild(node)
         }
-        if (leavingScope) disposeScope(leavingScope)
+        if (leavingScope) {
+          // Tag BEFORE dispose so the disposer log records the cause.
+          // `show()` passes `__disposalCause: 'show-hide'`; raw branch()
+          // defaults to `'branch-swap'`. Tag wins over any pre-existing
+          // value set by an inner primitive so the outermost cause is
+          // reported (matches how humans describe the event).
+          leavingScope.disposalCause = opts.__disposalCause ?? 'branch-swap'
+          disposeScope(leavingScope)
+        }
       }
 
       if (leavingNodes.length > 0 && opts.leave) {

@@ -90,6 +90,7 @@ export function replaceComponent<S, M, E>(
       structuralBlocks: typedInst.structuralBlocks,
       container,
       send: typedInst.send as (msg: unknown) => void,
+      instance: typedInst as ComponentInstance,
     })
     const nodes = typedInst.def.view(createView<S, M>(typedInst.send))
     clearRenderContext()

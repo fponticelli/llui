@@ -77,6 +77,48 @@ export function each<S, T, M = unknown>(opts: EachOptions<S, T, M>): Node[] {
   const initialItems = opts.items(ctx.state as S)
   let lastItemsRef = initialItems
 
+  // Dev-only diff tracking: if the owning component has an _eachDiffLog
+  // (installed by devtools), we capture key sets before/after each
+  // key-mutating reconcile call and emit an EachDiff entry. The siteId
+  // is derived from this each() block's position in the flat block
+  // array at registration time — stable for the lifetime of the block.
+  const inst = ctx.instance
+  const eachSiteId = inst?._eachDiffLog !== undefined ? `each#${blocks.length}` : ''
+  const snapshotKeys = (): string[] | null => {
+    if (inst?._eachDiffLog === undefined) return null
+    const keys: string[] = []
+    for (let i = 0; i < entries.length; i++) keys.push(String(entries[i]!.key))
+    return keys
+  }
+  const emitDiff = (oldKeys: string[] | null): void => {
+    if (oldKeys === null || inst?._eachDiffLog === undefined) return
+    const newKeys: string[] = []
+    for (let i = 0; i < entries.length; i++) newKeys.push(String(entries[i]!.key))
+    const oldKeySet = new Set(oldKeys)
+    const newKeySet = new Set(newKeys)
+    const added: string[] = []
+    const removed: string[] = []
+    const moved: Array<{ key: string; from: number; to: number }> = []
+    const reused: string[] = []
+    for (const k of newKeys) if (!oldKeySet.has(k)) added.push(k)
+    for (const k of oldKeys) if (!newKeySet.has(k)) removed.push(k)
+    for (let i = 0; i < newKeys.length; i++) {
+      const k = newKeys[i]!
+      if (!oldKeySet.has(k)) continue
+      const from = oldKeys.indexOf(k)
+      if (from !== i) moved.push({ key: k, from, to: i })
+      else reused.push(k)
+    }
+    inst._eachDiffLog.push({
+      updateIndex: inst._updateCounter ?? 0,
+      eachSiteId,
+      added,
+      removed,
+      moved,
+      reused,
+    })
+  }
+
   const block: StructuralBlock = {
     mask: (opts as { __mask?: number }).__mask ?? FULL_MASK,
     reconcile(state: unknown) {
@@ -89,6 +131,7 @@ export function each<S, T, M = unknown>(opts: EachOptions<S, T, M>): Node[] {
       if (newItems === lastItemsRef) return
       lastItemsRef = newItems
 
+      const oldKeys = snapshotKeys()
       const report = opts.onTransition ? { entering: [] as Node[], leaving: [] as Node[] } : null
       reconcileEntries(
         entries,
@@ -105,6 +148,7 @@ export function each<S, T, M = unknown>(opts: EachOptions<S, T, M>): Node[] {
       if (opts.onTransition && report) {
         opts.onTransition({ entering: report.entering, leaving: report.leaving, parent })
       }
+      emitDiff(oldKeys)
     },
 
     /** Same keys, only item data changed — skip mismatch/swap detection.
@@ -129,6 +173,8 @@ export function each<S, T, M = unknown>(opts: EachOptions<S, T, M>): Node[] {
       if (!parent) return
       if (entries.length === 0) return
 
+      const oldKeys = snapshotKeys()
+
       // Call registered clear callbacks (e.g., selector registry.clear())
       // BEFORE scope disposal — avoids 1000 individual Set.delete calls
       for (let i = 0; i < clearCallbacks.length; i++) clearCallbacks[i]!()
@@ -144,10 +190,16 @@ export function each<S, T, M = unknown>(opts: EachOptions<S, T, M>): Node[] {
       // Bulk scope disposal — disposers that were replaced by clearCallbacks
       // are now no-ops, making this much faster
       const scopes: Scope[] = []
-      for (let i = 0; i < entries.length; i++) scopes.push(entries[i]!.scope)
+      for (let i = 0; i < entries.length; i++) {
+        const s = entries[i]!.scope
+        s.disposalCause = 'each-remove'
+        scopes.push(s)
+      }
       disposeScopesBulk(scopes)
       removeOrphanedChildren(parentScope)
       entries.length = 0
+
+      emitDiff(oldKeys)
     },
 
     /** Remove entries not present in the new items. Optimized for filter()
@@ -159,6 +211,7 @@ export function each<S, T, M = unknown>(opts: EachOptions<S, T, M>): Node[] {
       const parent = anchor.parentNode
       if (!parent) return
 
+      const oldKeys = snapshotKeys()
       const oldLen = entries.length
       const newLen = newItems.length
       if (newLen >= oldLen) {
@@ -175,6 +228,7 @@ export function each<S, T, M = unknown>(opts: EachOptions<S, T, M>): Node[] {
           leaving,
           null,
         )
+        emitDiff(oldKeys)
         return
       }
 
@@ -193,6 +247,7 @@ export function each<S, T, M = unknown>(opts: EachOptions<S, T, M>): Node[] {
           // Entry removed — notify selectors before scope disposal
           for (let ci = 0; ci < removeCallbacks.length; ci++) removeCallbacks[ci]!(entry.key)
           for (const node of entry.nodes) parent.removeChild(node)
+          entry.scope.disposalCause = 'each-remove'
           disposeScope(entry.scope, true)
           entries[oi] = null!
           didRemove = true
@@ -213,6 +268,8 @@ export function each<S, T, M = unknown>(opts: EachOptions<S, T, M>): Node[] {
       for (let i = 0; i < entries.length; i++) {
         entries[i]!.index = i
       }
+
+      emitDiff(oldKeys)
     },
 
     /** Update only entries at stride intervals — O(k) where k = n/stride.
@@ -295,6 +352,7 @@ function removeEntry<T>(
     for (const node of entry.nodes) {
       if (node.parentNode) node.parentNode.removeChild(node)
     }
+    entry.scope.disposalCause = 'each-remove'
     disposeScope(entry.scope)
     const idx = leaving.indexOf(entry)
     if (idx !== -1) leaving.splice(idx, 1)
@@ -381,6 +439,7 @@ function buildEntry<S, T, M>(
   buildCtx.state = currentState
   buildCtx.allBindings = ctx.allBindings
   buildCtx.structuralBlocks = ctx.structuralBlocks
+  buildCtx.instance = ctx.instance
   const prevFlatBindings = getFlatBindings()
   setFlatBindings(ctx.allBindings)
   setRenderContext(buildCtx)
@@ -461,7 +520,11 @@ function reconcileEntries<S, T>(
     }
     // Bulk dispose all entry scopes — avoids per-scope function call overhead
     const scopes: Scope[] = []
-    for (let i = 0; i < entries.length; i++) scopes.push(entries[i]!.scope)
+    for (let i = 0; i < entries.length; i++) {
+      const s = entries[i]!.scope
+      s.disposalCause = 'each-remove'
+      scopes.push(s)
+    }
     disposeScopesBulk(scopes)
     removeOrphanedChildren(parentScope)
     entries.length = 0
@@ -564,7 +627,11 @@ function reconcileEntries<S, T>(
       range.deleteContents()
       // Bulk dispose all old scopes
       const oldScopes: Scope[] = []
-      for (let i = 0; i < entries.length; i++) oldScopes.push(entries[i]!.scope)
+      for (let i = 0; i < entries.length; i++) {
+        const s = entries[i]!.scope
+        s.disposalCause = 'each-remove'
+        oldScopes.push(s)
+      }
       disposeScopesBulk(oldScopes)
       removeOrphanedChildren(parentScope)
       entries.length = 0
@@ -623,6 +690,7 @@ function reconcileEntries<S, T>(
         removeEntry(entry, opts, leaving)
       } else {
         for (const node of entry.nodes) parent.removeChild(node)
+        entry.scope.disposalCause = 'each-remove'
         disposeScope(entry.scope, true)
         didBulkDetach = true
       }

@@ -1,7 +1,7 @@
 import type { ComponentDef, LazyDef } from '../types.js'
 import { getRenderContext, setRenderContext, clearRenderContext } from '../render-context.js'
 import { createScope, disposeScope, addDisposer } from '../scope.js'
-import { createComponentInstance } from '../update-loop.js'
+import { createComponentInstance, type ComponentInstance } from '../update-loop.js'
 import { setFlatBindings } from '../binding.js'
 import { createView, type View } from '../view-helpers.js'
 
@@ -104,6 +104,7 @@ export function lazy<S, M, D = undefined>(opts: LazyOptions<S, M, D>): Node[] {
         setRenderContext({
           ...childInst,
           send: childInst.send as (msg: unknown) => void,
+          instance: childInst as ComponentInstance,
         })
         const nodes = (def as { view: (h: unknown) => Node[] }).view(createView(childInst.send))
         clearRenderContext()

@@ -1,7 +1,7 @@
 import type { ChildOptions, ComponentDef } from '../types.js'
 import { getRenderContext, setRenderContext, clearRenderContext } from '../render-context.js'
 import { createScope, disposeScope, addDisposer } from '../scope.js'
-import { createComponentInstance, flushInstance } from '../update-loop.js'
+import { createComponentInstance, flushInstance, type ComponentInstance } from '../update-loop.js'
 import { createBinding, setFlatBindings } from '../binding.js'
 import { registerChild, unregisterChild } from '../addressed.js'
 import { createView } from '../view-helpers.js'
@@ -21,6 +21,12 @@ export function child<S, ChildM>(opts: ChildOptions<S, ChildM>): Node[] {
   const parentCtx = getRenderContext('child')
   const parentScope = parentCtx.rootScope
   const childScope = createScope(parentScope)
+  // Tag eagerly: childScope lives as long as the child component is mounted,
+  // so disposing it IS the child-unmount event. Setting the cause up front
+  // (instead of inside the disposer closure below) ensures the parent's
+  // _disposerLog sees it when `disposeScope` walks up the parent chain —
+  // `childInst.rootScope` is an orphan (parent = null) and cannot emit.
+  childScope.disposalCause = 'child-unmount'
   const parentSend = parentCtx.send
 
   const childDef = opts.def as ComponentDef<unknown, ChildM, unknown>
@@ -75,7 +81,11 @@ export function child<S, ChildM>(opts: ChildOptions<S, ChildM>): Node[] {
 
   // Run the child's view within the child's render context
   setFlatBindings(childInst.allBindings)
-  setRenderContext({ ...childInst, send: childInst.send as (msg: unknown) => void })
+  setRenderContext({
+    ...childInst,
+    send: childInst.send as (msg: unknown) => void,
+    instance: childInst as ComponentInstance,
+  })
   const nodes = childDef.view(createView(childInst.send))
   clearRenderContext()
   setFlatBindings(parentCtx.allBindings)
@@ -87,6 +97,7 @@ export function child<S, ChildM>(opts: ChildOptions<S, ChildM>): Node[] {
   // Cleanup: dispose child instance when parent scope disposes
   addDisposer(childScope, () => {
     unregisterChild(opts.key)
+    childInst.rootScope.disposalCause = 'child-unmount'
     disposeScope(childInst.rootScope)
   })
 

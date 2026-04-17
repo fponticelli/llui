@@ -1,5 +1,8 @@
 import type { ComponentDef, Scope, Binding } from './types.js'
 import type { StructuralBlock } from './structural.js'
+import type { RingBuffer, EachDiff } from './tracking/each-diff.js'
+import type { DisposerEvent } from './tracking/disposer-log.js'
+import type { CoverageTracker } from './tracking/coverage.js'
 import { createScope } from './scope.js'
 import { applyBinding } from './binding.js'
 import { setCurrentDirtyMask } from './primitives/memo.js'
@@ -30,6 +33,21 @@ export interface ComponentInstance<S = unknown, M = unknown, E = unknown> {
   send: (msg: M) => void
   signal: AbortSignal
   abortController: AbortController
+  /** @internal dev-only — populated when `installDevTools` ran. Ring-buffered
+   *  per-each-site reconciliation diffs for MCP introspection tools. */
+  _eachDiffLog?: RingBuffer<EachDiff>
+  /** @internal dev-only — monotonically incremented by the devtools-intercepted
+   *  `update` before each history push. Read by `each.ts` to stamp diffs with
+   *  the `updateIndex` of the message that caused the reconciliation. */
+  _updateCounter?: number
+  /** @internal dev-only — populated when `installDevTools` ran. Ring-buffered
+   *  log of `disposeScope` firings (scope id + cause). Consumed by the
+   *  `llui_disposer_log` MCP tool to diagnose leaks on structural transitions. */
+  _disposerLog?: RingBuffer<DisposerEvent>
+  /** @internal dev-only — populated when `installDevTools` ran. Per-variant
+   *  Msg counter keyed by discriminant. Consumed by the `llui_coverage` MCP
+   *  tool to surface Msg variants that have never fired this session. */
+  _coverage?: CoverageTracker
 }
 
 export function createComponentInstance<S, M, E>(

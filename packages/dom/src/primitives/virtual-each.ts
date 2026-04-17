@@ -154,6 +154,7 @@ export function virtualEach<S, T, M = unknown>(opts: VirtualEachOptions<S, T, M>
     buildCtx.state = state
     buildCtx.allBindings = ctx.allBindings
     buildCtx.structuralBlocks = ctx.structuralBlocks
+    buildCtx.instance = ctx.instance
     const prevFlat = getFlatBindings()
     setFlatBindings(ctx.allBindings)
     setRenderContext(buildCtx)
@@ -183,6 +184,7 @@ export function virtualEach<S, T, M = unknown>(opts: VirtualEachOptions<S, T, M>
     if (items.length === 0) {
       // Dispose all entries
       for (const entry of entries.values()) {
+        entry.scope.disposalCause = 'each-remove'
         disposeScope(entry.scope)
         if (entry.wrapper.parentNode) entry.wrapper.parentNode.removeChild(entry.wrapper)
       }
@@ -202,6 +204,7 @@ export function virtualEach<S, T, M = unknown>(opts: VirtualEachOptions<S, T, M>
     // Dispose entries no longer visible
     for (const [key, entry] of entries) {
       if (!visibleKeys.has(key)) {
+        entry.scope.disposalCause = 'each-remove'
         disposeScope(entry.scope)
         if (entry.wrapper.parentNode) entry.wrapper.parentNode.removeChild(entry.wrapper)
         entries.delete(key)
