@@ -18,6 +18,35 @@ import {
   type EffectMatch,
 } from './tracking/effect-timeline.js'
 
+export interface StateDiff {
+  added: Record<string, unknown>
+  removed: Record<string, unknown>
+  changed: Record<string, { from: unknown; to: unknown }>
+}
+
+function diffStateInternal(a: unknown, b: unknown): StateDiff {
+  const out: StateDiff = { added: {}, removed: {}, changed: {} }
+  if (
+    a == null ||
+    b == null ||
+    typeof a !== 'object' ||
+    typeof b !== 'object' ||
+    Array.isArray(a) !== Array.isArray(b)
+  ) {
+    if (a !== b) out.changed['<root>'] = { from: a, to: b }
+    return out
+  }
+  const aObj = a as Record<string, unknown>
+  const bObj = b as Record<string, unknown>
+  const keys = new Set([...Object.keys(aObj), ...Object.keys(bObj)])
+  for (const k of keys) {
+    if (!(k in aObj)) out.added[k] = bObj[k]
+    else if (!(k in bObj)) out.removed[k] = aObj[k]
+    else if (!Object.is(aObj[k], bObj[k])) out.changed[k] = { from: aObj[k], to: bObj[k] }
+  }
+  return out
+}
+
 /**
  * Enable devtools auto-installation for every mountApp call. Called by
  * compiler-generated dev code — never imported in production builds.
@@ -298,6 +327,16 @@ export interface LluiDebugAPI {
   stepBack(n: number, mode: 'pure' | 'live'): { state: unknown; rewindDepth: number }
   /** Per-Msg-variant coverage for the current session. Shows which message types have run and which haven't. */
   getCoverage(): CoverageSnapshot
+  /** Run arbitrary JS in page context and return { result, sideEffects }. result is the expression's return value or { error }. sideEffects captures state diff, new history entries, new pending effects, and dirty binding indices. Phase 1 does not support async expressions. */
+  evalInPage(code: string): {
+    result: unknown | { error: string }
+    sideEffects: {
+      stateChanged: StateDiff | null
+      newHistoryEntries: number
+      newPendingEffects: PendingEffect[]
+      dirtyBindingIndices: number[]
+    }
+  }
 }
 
 export interface ElementReport {
@@ -930,6 +969,65 @@ export function installDevTools(inst: object): void {
       const schema = ci.def.__msgSchema as { variants?: Record<string, unknown> } | undefined
       const known = schema?.variants ? Object.keys(schema.variants) : undefined
       return ci._coverage.snapshot(known)
+    },
+
+    evalInPage(code: string) {
+      const stateBefore = JSON.parse(JSON.stringify(ci.state))
+      const historyLenBefore = history.length
+      const pendingBefore = new Set((ci._pendingEffects?.list() ?? []).map((p) => p.id))
+      const dirtyMaskBefore = lastDirtyMask
+
+      let result: unknown | { error: string }
+      try {
+        const fn = new Function(`return (${code})`) as () => unknown
+        const rv = fn()
+        if (rv && typeof rv === 'object' && 'then' in (rv as object)) {
+          result = {
+            error:
+              'llui_eval does not support async expressions in Phase 1. Wrap awaits in an IIFE and expose the result synchronously via globalThis.',
+          }
+        } else {
+          result = rv
+        }
+      } catch (err) {
+        result = { error: err instanceof Error ? err.message : String(err) }
+      }
+
+      try {
+        flushInstance(ci)
+      } catch {
+        // Best-effort; user's eval may have left the instance in a weird state
+      }
+
+      const stateAfter = ci.state
+      const stateDiff = diffStateInternal(stateBefore, stateAfter)
+      const stateChanged =
+        Object.keys(stateDiff.added).length === 0 &&
+        Object.keys(stateDiff.removed).length === 0 &&
+        Object.keys(stateDiff.changed).length === 0
+          ? null
+          : stateDiff
+
+      const newHistoryEntries = history.length - historyLenBefore
+      const pendingNow = ci._pendingEffects?.list() ?? []
+      const newPendingEffects = pendingNow.filter((p) => !pendingBefore.has(p.id))
+
+      const dirtyBindingIndices: number[] = []
+      const maskDiff = lastDirtyMask ^ dirtyMaskBefore
+      for (let i = 0; i < ci.allBindings.length; i++) {
+        const b = ci.allBindings[i]!
+        if ((b.mask & maskDiff) !== 0) dirtyBindingIndices.push(i)
+      }
+
+      return {
+        result,
+        sideEffects: {
+          stateChanged,
+          newHistoryEntries,
+          newPendingEffects,
+          dirtyBindingIndices,
+        },
+      }
     },
   }
 

@@ -896,4 +896,19 @@ export function registerDebugApiTools(registry: ToolRegistry): void {
       })
     },
   )
+
+  registry.register(
+    {
+      name: 'llui_eval',
+      description:
+        "Arbitrary JavaScript in the page context via the debug relay. Returns { result, sideEffects }. 'result' is the expression's return value or { error }. 'sideEffects' makes any state changes, new history entries, new pending effects, and dirty bindings visible. Phase 1 does not support async expressions; expose async results via globalThis instead.",
+      inputSchema: {
+        type: 'object',
+        properties: { code: { type: 'string' } },
+        required: ['code'],
+      },
+    },
+    'debug-api',
+    async (args, ctx) => ctx.relay!.call('evalInPage', [args.code]),
+  )
 }
