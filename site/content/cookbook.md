@@ -1028,6 +1028,27 @@ Once connected, the MCP server exposes these tools to any MCP client
 | `llui_list_components`    | List all mounted components                                                                                                                                                                         |
 | `llui_select_component`   | Switch the active debug target                                                                                                                                                                      |
 | `llui_lint`               | Lint TypeScript source against `@llui/lint-idiomatic`'s 17 rules — pass either inline `source` or a `path` to a file. Returns violations + score. Lets an LLM self-correct without running a build. |
+| `llui_inspect_element`    | Rich report: tag, attrs, classes, data-\*, text, computed box model, and binding indices for a selector.                                                                                            |
+| `llui_get_rendered_html`  | Return outerHTML of a selector (defaults to mount root); accepts a max-length limit.                                                                                                                |
+| `llui_dom_diff`           | Compare expected HTML against the currently rendered HTML and return a structured diff.                                                                                                             |
+| `llui_dispatch_event`     | Synthesize a browser event on a selector; returns the Msgs produced and resulting state.                                                                                                            |
+| `llui_get_focus`          | Return active-element info: selector, tag name, and text selection range.                                                                                                                           |
+| `llui_force_rerender`     | Re-evaluate all bindings and return the indices that produced a new value.                                                                                                                          |
+| `llui_each_diff`          | Show per-each-site add/remove/move/reuse counts for the last update.                                                                                                                                |
+| `llui_scope_tree`         | Return the scope hierarchy annotated with kind (root/show/each/branch/child/portal).                                                                                                                |
+| `llui_disposer_log`       | List recent scope disposals with the cause of each disposal.                                                                                                                                        |
+| `llui_list_dead_bindings` | Return bindings that are currently dead or have never changed value.                                                                                                                                |
+| `llui_binding_graph`      | Invert the compiler mask legend: map state paths to the binding indices they gate.                                                                                                                  |
+| `llui_pending_effects`    | List effects that are currently queued or in-flight.                                                                                                                                                |
+| `llui_effect_timeline`    | Phased log of every effect: dispatched → in-flight → resolved/cancelled.                                                                                                                            |
+| `llui_mock_effect`        | Register a match→response mock; the next matching effect resolves with the mock value.                                                                                                              |
+| `llui_resolve_effect`     | Manually resolve a specific pending effect by id.                                                                                                                                                   |
+| `llui_step_back`          | Rewind N messages by replaying from init (pure mode by default).                                                                                                                                    |
+| `llui_coverage`           | Return per-Msg variant fire counts and a list of never-fired variants.                                                                                                                              |
+| `llui_diff_state`         | Produce a structured JSON diff between two state values.                                                                                                                                            |
+| `llui_assert`             | Evaluate an eq/neq/exists/gt/lt/in predicate against a state path.                                                                                                                                  |
+| `llui_search_history`     | Filter message history by type, state-path change, effect type, or index range.                                                                                                                     |
+| `llui_eval`               | Run arbitrary JS in the page context; returns the result plus an observability envelope.                                                                                                            |
 
 ### Browser console
 
@@ -1042,6 +1063,13 @@ __lluiDebug.whyDidUpdate(3) // → { matched, changed, ... }
 __lluiDebug.getMessageSchema() // → discriminant + variants
 __lluiDebug.snapshotState() // → deep clone
 __lluiDebug.restoreState(snapshot) // → overwrite + re-render
+
+// Phase 1 additions:
+__lluiDebug.inspectElement('#btn') // → rich element report
+__lluiDebug.getPendingEffects() // → list of queued/in-flight effects
+__lluiDebug.mockEffect({ type: 'http' }, { data: 'fake' }) // → { mockId }
+__lluiDebug.stepBack(3, 'pure') // → rewind 3 messages
+__lluiDebug.getCoverage() // → { fired, neverFired }
 
 // Multi-component apps:
 __lluiComponents // → { Counter: api, Dashboard: api }
