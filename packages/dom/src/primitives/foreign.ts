@@ -11,6 +11,7 @@ export function foreign<S, M, T extends Record<string, unknown>, Instance>(
   const ctx = getRenderContext('foreign')
   const parentScope = ctx.rootScope
   const foreignScope = createScope(parentScope)
+  foreignScope._kind = 'foreign'
 
   // Create container element
   const tag = opts.container?.tag ?? 'div'

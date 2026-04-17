@@ -1,9 +1,10 @@
 import { flushInstance, _forceState, type ComponentInstance } from './update-loop.js'
 import { _setDevToolsInstall } from './mount.js'
 import { _markDisposerLogInstalled } from './scope.js'
-import type { Binding } from './types.js'
-import { createRingBuffer } from './tracking/each-diff.js'
-import { createRingBuffer as createDisposerBuffer } from './tracking/disposer-log.js'
+import type { Binding, Scope, ScopeNode } from './types.js'
+import { applyBinding } from './binding.js'
+import { createRingBuffer, type EachDiff } from './tracking/each-diff.js'
+import { createRingBuffer as createDisposerBuffer, type DisposerEvent } from './tracking/disposer-log.js'
 import { createCoverageTracker } from './tracking/coverage.js'
 import {
   createRingBuffer as createTimelineBuffer,
@@ -265,6 +266,16 @@ export interface LluiDebugAPI {
     selectionStart: number | null
     selectionEnd: number | null
   }
+  /** Re-evaluate every binding's accessor against the current state, apply values that changed to the DOM, and return indices of bindings that changed. */
+  forceRerender(): { changedBindings: number[] }
+  /** Per-each-site reconciliation diffs (added/removed/moved/reused keys) from the dev-time diff log. Pass sinceIndex to filter to entries after a specific message history index. */
+  getEachDiff(sinceIndex?: number): EachDiff[]
+  /** Walk the component's scope tree and return a nested ScopeNode with kind classification. Pass depth to limit traversal depth, scopeId to start from a specific scope. */
+  getScopeTree(opts?: { depth?: number; scopeId?: string }): ScopeNode
+  /** Recent onDispose firings with scope id and cause. Pass 'limit' to cap results to the N most recent entries. Catches 'leak on branch swap' class bugs. */
+  getDisposerLog(limit?: number): Array<{ scopeId: string; cause: string; timestamp: number }>
+  /** Edge list: state path → binding indices that depend on it. Inverts the compiler-emitted mask legend to show, for each top-level state field, which bindings will re-evaluate when it changes. */
+  getBindingGraph(): Array<{ statePath: string; bindingIndices: number[] }>
 }
 
 export interface ElementReport {
@@ -313,6 +324,29 @@ export interface MessageSchemaInfo {
 }
 
 const MAX_HISTORY = 1000
+
+function findScopeById(root: Scope, id: string): Scope | null {
+  const n = Number(id)
+  if (root.id === n) return root
+  for (const c of root.children) {
+    const found = findScopeById(c, id)
+    if (found) return found
+  }
+  return null
+}
+
+function walkScope(s: Scope, depth: number, maxDepth: number): ScopeNode {
+  const node: ScopeNode = {
+    scopeId: String(s.id),
+    kind: s._kind ?? 'root',
+    active: true,
+    children: [],
+  }
+  if (depth < maxDepth) {
+    for (const c of s.children) node.children.push(walkScope(c, depth + 1, maxDepth))
+  }
+  return node
+}
 
 export function installDevTools(inst: object): void {
   const ci = inst as ComponentInstance
@@ -750,6 +784,60 @@ export function installDevTools(inst: object): void {
         selectionEnd = el.selectionEnd ?? null
       }
       return { selector: id, tagName, selectionStart, selectionEnd }
+    },
+
+    forceRerender(): { changedBindings: number[] } {
+      const changed: number[] = []
+      const allBindings = ci.allBindings
+      for (let i = 0; i < allBindings.length; i++) {
+        const b = allBindings[i]!
+        if (b.dead) continue
+        const next = b.accessor(ci.state)
+        if (!Object.is(next, b.lastValue)) {
+          changed.push(i)
+          b.lastValue = next
+          applyBinding(b, next)
+        }
+      }
+      return { changedBindings: changed }
+    },
+
+    getEachDiff(sinceIndex?: number): EachDiff[] {
+      const all = ci._eachDiffLog?.toArray() ?? []
+      if (sinceIndex === undefined) return all
+      return all.filter((e) => e.updateIndex >= sinceIndex)
+    },
+
+    getScopeTree(opts?: { depth?: number; scopeId?: string }): ScopeNode {
+      const maxDepth = opts?.depth ?? Infinity
+      const startScope = opts?.scopeId
+        ? findScopeById(ci.rootScope, opts.scopeId)
+        : ci.rootScope
+      if (!startScope) {
+        return { scopeId: '0', kind: 'root', active: false, children: [] }
+      }
+      return walkScope(startScope, 0, maxDepth)
+    },
+
+    getDisposerLog(limit?: number): Array<{ scopeId: string; cause: string; timestamp: number }> {
+      const all = ci._disposerLog?.toArray() ?? []
+      if (limit === undefined) return all
+      return all.slice(-Math.max(0, limit))
+    },
+
+    getBindingGraph(): Array<{ statePath: string; bindingIndices: number[] }> {
+      const legend = ci.def.__maskLegend as Record<string, number> | undefined
+      if (!legend) return []
+      const result: Array<{ statePath: string; bindingIndices: number[] }> = []
+      for (const [path, bit] of Object.entries(legend)) {
+        const indices: number[] = []
+        for (let i = 0; i < ci.allBindings.length; i++) {
+          const b = ci.allBindings[i]!
+          if ((b.mask & bit) !== 0) indices.push(i)
+        }
+        result.push({ statePath: path, bindingIndices: indices })
+      }
+      return result
     },
   }
 

@@ -78,6 +78,7 @@ export function replaceComponent<S, M, E>(
 
     // Create fresh scope tree
     typedInst.rootScope = createScope(null)
+    typedInst.rootScope._kind = 'root'
     typedInst.allBindings = []
     typedInst.structuralBlocks = []
 

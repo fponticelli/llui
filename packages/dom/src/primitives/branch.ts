@@ -48,6 +48,7 @@ export function branch<S, M = unknown>(opts: BranchOptions<S, M>): Node[] {
         const mq = pushMountQueue()
         onMountQueue = mq.queue
         currentScope = createScope(parentScope)
+        currentScope._kind = opts.__disposalCause === 'show-hide' ? 'show' : 'branch'
         setFlatBindings(ctx.allBindings)
         setRenderContext({ ...ctx, rootScope: currentScope, state })
         currentNodes = newBuilder(createView<S, M>(send))
@@ -112,6 +113,7 @@ export function branch<S, M = unknown>(opts: BranchOptions<S, M>): Node[] {
   // are returned to the parent), so we don't need to flush here.
   if (builder) {
     currentScope = createScope(parentScope)
+    currentScope._kind = opts.__disposalCause === 'show-hide' ? 'show' : 'branch'
     setRenderContext({ ...ctx, rootScope: currentScope })
     currentNodes = builder(createView<S, M>(send))
     clearRenderContext()

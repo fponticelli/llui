@@ -56,6 +56,7 @@ export function createScope(parent: Scope | null): Scope {
     // when these fields are never set.
     scope.disposalCause = undefined
     scope.instance = undefined
+    scope._kind = undefined
   } else {
     scope = {
       id: nextId++,

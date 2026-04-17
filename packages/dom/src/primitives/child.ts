@@ -21,6 +21,7 @@ export function child<S, ChildM>(opts: ChildOptions<S, ChildM>): Node[] {
   const parentCtx = getRenderContext('child')
   const parentScope = parentCtx.rootScope
   const childScope = createScope(parentScope)
+  childScope._kind = 'child'
   // Tag eagerly: childScope lives as long as the child component is mounted,
   // so disposing it IS the child-unmount event. Setting the cause up front
   // (instead of inside the disposer closure below) ensures the parent's

@@ -113,6 +113,8 @@ export function createComponentInstance<S, M, E>(
     },
   }
 
+  inst.rootScope._kind = 'root'
+
   return inst
 }
 

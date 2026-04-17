@@ -195,6 +195,15 @@ export interface Scope {
    * `'component-unmount'`. Undefined in production.
    */
   disposalCause?: DisposerEvent['cause']
+  /** @internal dev-only — populated by structural primitives for scope-tree classification */
+  _kind?: 'root' | 'show' | 'each' | 'branch' | 'child' | 'portal' | 'foreign'
+}
+
+export interface ScopeNode {
+  scopeId: string
+  kind: 'root' | 'show' | 'each' | 'branch' | 'child' | 'portal' | 'foreign'
+  active: boolean
+  children: ScopeNode[]
 }
 
 // ── Binding ───────────────────────────────────────────────────────

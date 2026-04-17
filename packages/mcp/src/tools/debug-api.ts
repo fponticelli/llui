@@ -572,4 +572,98 @@ export function registerDebugApiTools(registry: ToolRegistry): void {
       }
     },
   )
+
+  registry.register(
+    {
+      name: 'llui_force_rerender',
+      description:
+        "Re-evaluate every binding's accessor against the current state, apply changed values to the DOM, and return the indices of bindings that changed. If a binding's DOM value corrects itself after this call but not after a real message, the mask for that binding is wrong.",
+      inputSchema: { type: 'object', properties: {} },
+    },
+    'debug-api',
+    async (_args, ctx) => ctx.relay!.call('forceRerender', []),
+  )
+
+  registry.register(
+    {
+      name: 'llui_each_diff',
+      description:
+        "Per-each-site reconciliation diffs (added/removed/moved/reused keys) from the dev-time diff log. Pass 'sinceIndex' to filter to entries after a specific message history index.",
+      inputSchema: {
+        type: 'object',
+        properties: { sinceIndex: { type: 'number' } },
+      },
+    },
+    'debug-api',
+    async (args, ctx) => ctx.relay!.call('getEachDiff', [args.sinceIndex]),
+  )
+
+  registry.register(
+    {
+      name: 'llui_scope_tree',
+      description:
+        "Walk the scope tree starting at the component root (or a specific scopeId). Returns a ScopeNode tree with kind (root/show/each/branch/child/portal/foreign) and children. Pass 'depth' to limit traversal, 'scopeId' to start elsewhere.",
+      inputSchema: {
+        type: 'object',
+        properties: {
+          depth: { type: 'number' },
+          scopeId: { type: 'string' },
+        },
+      },
+    },
+    'debug-api',
+    async (args, ctx) => ctx.relay!.call('getScopeTree', [{ depth: args.depth, scopeId: args.scopeId }]),
+  )
+
+  registry.register(
+    {
+      name: 'llui_disposer_log',
+      description:
+        "Recent onDispose firings with scope id and cause. Pass 'limit' to cap results to the N most recent entries. Catches 'leak on branch swap' class bugs.",
+      inputSchema: {
+        type: 'object',
+        properties: { limit: { type: 'number' } },
+      },
+    },
+    'debug-api',
+    async (args, ctx) => ctx.relay!.call('getDisposerLog', [args.limit]),
+  )
+
+  registry.register(
+    {
+      name: 'llui_list_dead_bindings',
+      description:
+        "Bindings that are inactive (scope disposed) OR never matched a dirty mask OR never changed value. Useful for finding wasted work and 'this never updates' bugs. Returns the subset of get_bindings with an annotation on why it's flagged.",
+      inputSchema: { type: 'object', properties: {} },
+    },
+    'debug-api',
+    async (_args, ctx) => {
+      const bindings = (await ctx.relay!.call('getBindings', [])) as Array<{
+        index: number
+        mask: number
+        lastValue: unknown
+        kind: string
+        key: string | undefined
+        dead: boolean
+        perItem: boolean
+      }>
+      return bindings
+        .filter((b) => b.dead || b.lastValue === undefined)
+        .map((b) => ({
+          ...b,
+          reason: b.dead ? 'scope_disposed' : 'never_changed',
+        }))
+    },
+  )
+
+  registry.register(
+    {
+      name: 'llui_binding_graph',
+      description:
+        'Edge list: state path → binding indices that depend on it. Inverts the compiler-emitted mask legend to show, for each top-level state field, which bindings will re-evaluate when it changes.',
+      inputSchema: { type: 'object', properties: {} },
+    },
+    'debug-api',
+    async (_args, ctx) => ctx.relay!.call('getBindingGraph', []),
+  )
 }
