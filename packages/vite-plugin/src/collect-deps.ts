@@ -1,21 +1,21 @@
 import ts from 'typescript'
 
 /**
- * Pre-scan a source file to collect all unique state access paths
- * referenced by reactive accessors (arrow functions in props and text() calls).
- * Returns a Map<path, bitPosition> where each path gets a unique power-of-two bit.
+ * Walk the AST and collect every unique state access path referenced by
+ * a reactive accessor. A reactive accessor is an arrow/function whose
+ * placement passes `isReactiveAccessor` — text()/memo() first args,
+ * element-helper prop values, and allowlisted framework-API prop values.
+ * Paths are rooted at the accessor's single parameter name.
+ *
+ * Shared by the bit-assignment path (`collectDeps`, below) and the
+ * `diagnostics.ts` bitmask-overflow warning. Extracted so both consumers
+ * see the same truth — previously the diagnostics side had its own naïve
+ * walker that produced false positives for `each({ key })`, `item(...)`,
+ * array-method callbacks, and user-land helpers.
  */
-export function collectDeps(source: string): Map<string, number> {
-  const sourceFile = ts.createSourceFile('input.ts', source, ts.ScriptTarget.Latest, true)
-
-  // Check if file imports from @llui/dom
-  if (!hasLluiImport(sourceFile)) {
-    return new Map()
-  }
-
+export function collectStatePathsFromSource(sourceFile: ts.SourceFile): Set<string> {
   const paths = new Set<string>()
 
-  // Walk the AST to find reactive accessors
   function visit(node: ts.Node): void {
     // Look for arrow functions that are reactive accessors:
     // - First arg to text(): text(s => s.count)
@@ -37,6 +37,23 @@ export function collectDeps(source: string): Map<string, number> {
   }
 
   visit(sourceFile)
+  return paths
+}
+
+/**
+ * Pre-scan a source file to collect all unique state access paths
+ * referenced by reactive accessors (arrow functions in props and text() calls).
+ * Returns a Map<path, bitPosition> where each path gets a unique power-of-two bit.
+ */
+export function collectDeps(source: string): Map<string, number> {
+  const sourceFile = ts.createSourceFile('input.ts', source, ts.ScriptTarget.Latest, true)
+
+  // Check if file imports from @llui/dom
+  if (!hasLluiImport(sourceFile)) {
+    return new Map()
+  }
+
+  const paths = collectStatePathsFromSource(sourceFile)
 
   // Assign bit positions. The bitmask holds 31 unique paths (positions
   // 0..30). When the count exceeds 31, overflow paths use FULL_MASK (-1)

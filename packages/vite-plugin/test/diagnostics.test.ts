@@ -330,6 +330,48 @@ describe('bitmask overflow (>31 state paths)', () => {
     expect(overflow).toContain('sliceHandler')
   })
 
+  it('does not fire on false-positive paths (each key / item / array callbacks / user helpers)', () => {
+    // Drive the legitimate path count right up to the 31-path ceiling:
+    // 29 fields under `a` (depth-truncated to `a.fN`) + top-level `items`
+    // + top-level `msgs` = 31. Then sprinkle the four false-positive
+    // shapes from the external repro (each({ key: it => it.id }),
+    // item(t => t.label), `.some((m) => m.type === …)`, sliceHandler's
+    // `narrow: (m) => m.type`). A naïve scanner counts those extra
+    // properties and pushes the total past 31, firing the overflow
+    // warning; the shared scanner ignores them and the warning must NOT
+    // fire.
+    const legitPaths = Array.from({ length: 29 }, (_, i) => `text((s) => s.a.f${i})`).join(
+      ',\n            ',
+    )
+    const src = `
+      import { component, div, text, each, show } from '@llui/dom'
+      declare const item: unknown
+      declare const sliceHandler: unknown
+      export const C = component({
+        name: 'C',
+        init: () => [{ a: {}, items: [], msgs: [] }, []],
+        update: (s, m) => [s, []],
+        view: ({ text, each, show }) => [
+          div({}, [
+            ${legitPaths}
+          ]),
+          ...each({
+            items: (s) => s.items,
+            key: (it) => it.id,
+            render: () => [div([text(item((t) => t.label))])],
+          }),
+          ...show(
+            (s) => s.msgs.some((m) => m.type === 'warn'),
+            () => [],
+          ),
+          ...sliceHandler({ narrow: (m) => m.type === 'k' }),
+        ],
+      })
+    `
+    const w = warnings(src)
+    expect(w.some((m) => m.includes('31-path limit'))).toBe(false)
+  })
+
   it('extracting one field is enough when it covers most paths', () => {
     // 22 paths under `huge` plus a few under others — extracting `huge`
     // alone should bring the count under 31

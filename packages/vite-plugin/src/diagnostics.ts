@@ -1,4 +1,5 @@
 import ts from 'typescript'
+import { collectStatePathsFromSource } from './collect-deps.js'
 
 export interface Diagnostic {
   message: string
@@ -92,8 +93,8 @@ export function diagnose(source: string): Diagnostic[] {
   // Collect Msg type variants for exhaustive update() check
   const msgVariants = collectMsgVariants(sf)
 
-  // Collect state access paths for bitmask warning
-  const statePaths = collectStatePaths(sf)
+  // Collect state access paths for bitmask warning (shared scanner with collect-deps.ts)
+  const statePaths = collectStatePathsFromSource(sf)
 
   function visit(node: ts.Node): void {
     checkMapOnState(node, sf, diagnostics)
@@ -536,55 +537,9 @@ function getReturnedObjectLiteral(
 }
 
 // ── Bitmask overflow warning ────────────────────────────────────
-
-function collectStatePaths(sf: ts.SourceFile): Set<string> {
-  const paths = new Set<string>()
-
-  function visit(node: ts.Node): void {
-    if (
-      (ts.isArrowFunction(node) || ts.isFunctionExpression(node)) &&
-      node.parameters.length === 1
-    ) {
-      const param = node.parameters[0]!.name
-      if (ts.isIdentifier(param)) {
-        // Check if this looks like a reactive accessor
-        const parent = node.parent
-        if (ts.isPropertyAssignment(parent)) {
-          const key = parent.name
-          if (ts.isIdentifier(key) && !/^on[A-Z]/.test(key.text)) {
-            extractAccessPaths(node.body, param.text, paths)
-          }
-        } else if (ts.isCallExpression(parent) && parent.arguments[0] === node) {
-          extractAccessPaths(node.body, param.text, paths)
-        }
-      }
-    }
-    ts.forEachChild(node, visit)
-  }
-
-  visit(sf)
-  return paths
-}
-
-function extractAccessPaths(node: ts.Node, paramName: string, paths: Set<string>): void {
-  if (ts.isPropertyAccessExpression(node)) {
-    const chain = resolveSimpleChain(node, paramName)
-    if (chain) paths.add(chain)
-  }
-  ts.forEachChild(node, (child) => extractAccessPaths(child, paramName, paths))
-}
-
-function resolveSimpleChain(node: ts.PropertyAccessExpression, paramName: string): string | null {
-  const parts: string[] = []
-  let current: ts.Expression = node
-  while (ts.isPropertyAccessExpression(current)) {
-    parts.unshift(current.name.text)
-    current = current.expression
-  }
-  if (!ts.isIdentifier(current) || current.text !== paramName) return null
-  if (parts.length > 2) return parts.slice(0, 2).join('.')
-  return parts.join('.')
-}
+// The path-scan walker lives in `collect-deps.ts` and is shared with
+// the runtime bit-assignment path. Keeping one scanner means one truth
+// about what counts as a reactive accessor.
 
 function checkBitmaskOverflow(
   node: ts.Node,
