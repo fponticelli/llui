@@ -1,7 +1,7 @@
 import { describe, it, expect, afterEach } from 'vitest'
 import { createComponentInstance, flushInstance } from '../src/update-loop'
 import { createBinding, setFlatBindings } from '../src/binding'
-import { createScope, disposeScope } from '../src/scope'
+import { createLifetime, disposeLifetime } from '../src/lifetime'
 import type { ComponentDef } from '../src/types'
 
 type State = { name: string; age: number }
@@ -40,14 +40,14 @@ describe('Phase 2 — binding iteration', () => {
     const nameNode = document.createTextNode('')
     const ageNode = document.createTextNode('')
 
-    createBinding(inst.rootScope, {
+    createBinding(inst.rootLifetime, {
       mask: 0b01,
       accessor: (s: State) => s.name,
       kind: 'text',
       node: nameNode,
       perItem: false,
     })
-    createBinding(inst.rootScope, {
+    createBinding(inst.rootLifetime, {
       mask: 0b10,
       accessor: (s: State) => String(s.age),
       kind: 'text',
@@ -70,7 +70,7 @@ describe('Phase 2 — binding iteration', () => {
     wireFlat(inst)
     const nameNode = document.createTextNode('Alice')
 
-    const binding = createBinding(inst.rootScope, {
+    const binding = createBinding(inst.rootLifetime, {
       mask: 0b01,
       accessor: (s: State) => s.name,
       kind: 'text',
@@ -90,7 +90,7 @@ describe('Phase 2 — binding iteration', () => {
     wireFlat(inst)
     const el = document.createElement('div')
 
-    createBinding(inst.rootScope, {
+    createBinding(inst.rootLifetime, {
       mask: 0b01,
       accessor: (s: State) => s.name,
       kind: 'attr',
@@ -111,14 +111,14 @@ describe('Phase 2 — binding iteration', () => {
     const nameNode = document.createTextNode('')
     const ageNode = document.createTextNode('')
 
-    createBinding(inst.rootScope, {
+    createBinding(inst.rootLifetime, {
       mask: 0b01,
       accessor: (s: State) => s.name,
       kind: 'text',
       node: nameNode,
       perItem: false,
     })
-    createBinding(inst.rootScope, {
+    createBinding(inst.rootLifetime, {
       mask: 0b10,
       accessor: (s: State) => String(s.age),
       kind: 'text',
@@ -137,10 +137,10 @@ describe('Phase 2 — binding iteration', () => {
   it('skips bindings on disposed child scopes', () => {
     const inst = createComponentInstance(twoPropDef())
     wireFlat(inst)
-    const childScope = createScope(inst.rootScope)
+    const childLifetime = createLifetime(inst.rootLifetime)
     const node = document.createTextNode('')
 
-    createBinding(childScope, {
+    createBinding(childLifetime, {
       mask: 0b01,
       accessor: (s: State) => s.name,
       kind: 'text',
@@ -148,7 +148,7 @@ describe('Phase 2 — binding iteration', () => {
       perItem: false,
     })
 
-    disposeScope(childScope)
+    disposeLifetime(childLifetime)
 
     inst.send({ type: 'setName', value: 'Ghost' })
     flushInstance(inst)

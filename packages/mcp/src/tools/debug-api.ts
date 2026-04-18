@@ -602,7 +602,7 @@ export function registerDebugApiTools(registry: ToolRegistry): void {
     {
       name: 'llui_scope_tree',
       description:
-        "Walk the scope tree starting at the component root (or a specific scopeId). Returns a ScopeNode tree with kind (root/show/each/branch/child/portal/foreign) and children. Pass 'depth' to limit traversal, 'scopeId' to start elsewhere.",
+        "Walk the scope tree starting at the component root (or a specific scopeId). Returns a LifetimeNode tree with kind (root/show/each/branch/child/portal/foreign) and children. Pass 'depth' to limit traversal, 'scopeId' to start elsewhere.",
       inputSchema: {
         type: 'object',
         properties: {

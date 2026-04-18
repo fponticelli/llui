@@ -1,7 +1,7 @@
 import type { BindingKind } from './types.js'
 import { getRenderContext } from './render-context.js'
 import { createBinding, applyBinding } from './binding.js'
-import { addCheckedItemUpdater } from './scope.js'
+import { addCheckedItemUpdater } from './lifetime.js'
 
 // Cache: HTML string → template element (created once, cloned per use)
 const templateCache = new Map<string, HTMLTemplateElement>()
@@ -46,11 +46,11 @@ export function elTemplate(
     if (perItem) {
       const get = accessor as unknown as () => unknown
       const target = { kind, node, key }
-      const initial = addCheckedItemUpdater(ctx.rootScope, get, (v) => applyBinding(target, v))
+      const initial = addCheckedItemUpdater(ctx.rootLifetime, get, (v) => applyBinding(target, v))
       applyBinding(target, initial)
     } else {
       // State-level: use the binding system for Phase 2
-      const binding = createBinding(ctx.rootScope, {
+      const binding = createBinding(ctx.rootLifetime, {
         mask,
         accessor,
         kind,

@@ -1,5 +1,5 @@
 import { getRenderContext, setRenderContext, clearRenderContext } from '../render-context.js'
-import { createScope, disposeScope } from '../scope.js'
+import { createLifetime, disposeLifetime } from '../lifetime.js'
 
 export function errorBoundary(opts: {
   render: () => Node[]
@@ -7,11 +7,11 @@ export function errorBoundary(opts: {
   onError?: (error: Error) => void
 }): Node[] {
   const ctx = getRenderContext('errorBoundary')
-  const parentScope = ctx.rootScope
-  const childScope = createScope(parentScope)
+  const parentLifetime = ctx.rootLifetime
+  const childLifetime = createLifetime(parentLifetime)
 
   try {
-    const buildCtx = { ...ctx, rootScope: childScope }
+    const buildCtx = { ...ctx, rootLifetime: childLifetime }
     setRenderContext(buildCtx)
     const nodes = opts.render()
     clearRenderContext()
@@ -19,7 +19,7 @@ export function errorBoundary(opts: {
     return nodes
   } catch (thrown) {
     // Clean up the partially-created scope
-    disposeScope(childScope)
+    disposeLifetime(childLifetime)
 
     const error = thrown instanceof Error ? thrown : new Error(String(thrown))
 
@@ -28,8 +28,8 @@ export function errorBoundary(opts: {
     }
 
     // Build fallback in a fresh scope
-    const fallbackScope = createScope(parentScope)
-    const fallbackCtx = { ...ctx, rootScope: fallbackScope }
+    const fallbackScope = createLifetime(parentLifetime)
+    const fallbackCtx = { ...ctx, rootLifetime: fallbackScope }
     setRenderContext(fallbackCtx)
     const fallbackNodes = opts.fallback(error)
     clearRenderContext()

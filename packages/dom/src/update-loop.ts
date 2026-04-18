@@ -1,4 +1,4 @@
-import type { ComponentDef, Scope, Binding } from './types.js'
+import type { ComponentDef, Lifetime, Binding } from './types.js'
 import type { StructuralBlock } from './structural.js'
 import type { RingBuffer, EachDiff } from './tracking/each-diff.js'
 import type { DisposerEvent } from './tracking/disposer-log.js'
@@ -8,7 +8,7 @@ import type {
   PendingEffectsList,
   MockRegistry,
 } from './tracking/effect-timeline.js'
-import { createScope } from './scope.js'
+import { createLifetime } from './lifetime.js'
 import { applyBinding } from './binding.js'
 import { setCurrentDirtyMask } from './primitives/memo.js'
 
@@ -28,7 +28,7 @@ export interface ComponentInstance<S = unknown, M = unknown, E = unknown> {
   def: ComponentDef<S, M, E>
   state: S
   initialEffects: E[]
-  rootScope: Scope
+  rootLifetime: Lifetime
   allBindings: Binding[]
   structuralBlocks: StructuralBlock[]
   queue: M[]
@@ -46,7 +46,7 @@ export interface ComponentInstance<S = unknown, M = unknown, E = unknown> {
    *  the `updateIndex` of the message that caused the reconciliation. */
   _updateCounter?: number
   /** @internal dev-only — populated when `installDevTools` ran. Ring-buffered
-   *  log of `disposeScope` firings (scope id + cause). Consumed by the
+   *  log of `disposeLifetime` firings (scope id + cause). Consumed by the
    *  `llui_disposer_log` MCP tool to diagnose leaks on structural transitions. */
   _disposerLog?: RingBuffer<DisposerEvent>
   /** @internal dev-only — populated when `installDevTools` ran. Per-variant
@@ -75,7 +75,7 @@ export interface ComponentInstance<S = unknown, M = unknown, E = unknown> {
 export function createComponentInstance<S, M, E, D = void>(
   def: ComponentDef<S, M, E, D>,
   data?: D,
-  parentScope: Scope | null = null,
+  parentLifetime: Lifetime | null = null,
 ): ComponentInstance<S, M, E> {
   const [initialState, initialEffects] = def.init(data as D)
 
@@ -89,13 +89,13 @@ export function createComponentInstance<S, M, E, D = void>(
     def: def as ComponentDef<S, M, E>,
     state: initialState,
     initialEffects,
-    // When `parentScope` is provided the instance's rootScope becomes a
+    // When `parentLifetime` is provided the instance's rootLifetime becomes a
     // child of that scope. This is how persistent layouts wire pages
-    // into the layout's scope tree: the page's rootScope is parented at
+    // into the layout's scope tree: the page's rootLifetime is parented at
     // the layout's pageSlot() point so `useContext` lookups flow layout
     // → page, and scope disposal cascades correctly. Mount paths that
-    // don't pass parentScope get the classic detached root.
-    rootScope: createScope(parentScope),
+    // don't pass parentLifetime get the classic detached root.
+    rootLifetime: createLifetime(parentLifetime),
     allBindings: [],
     structuralBlocks: [],
     queue: [],
@@ -117,7 +117,7 @@ export function createComponentInstance<S, M, E, D = void>(
     },
   }
 
-  inst.rootScope._kind = 'root'
+  inst.rootLifetime._kind = 'root'
 
   return inst
 }

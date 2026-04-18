@@ -72,7 +72,7 @@ function createElement<K extends keyof HTMLElementTagNameMap>(
         const accessor = value as (state: never) => unknown
         const perItem = value.length === 0
 
-        const binding = createBinding(ctx.rootScope, {
+        const binding = createBinding(ctx.rootLifetime, {
           mask: FULL_MASK,
           accessor,
           kind,

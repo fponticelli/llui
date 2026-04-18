@@ -114,7 +114,7 @@ type BindingKind = 'text' | 'prop' | 'attr' | 'class' | 'style'
  * string. With resolution, we see that `cls` is an arrow and emit a
  * binding exactly as if the arrow had been inlined.
  *
- * Scope rules:
+ * Lifetime rules:
  *   - Only single-binding `const`/`let`/`var` declarations with an
  *     initializer are considered. No destructuring, no multi-declarator
  *     statements (too easy to get wrong without a type checker).
@@ -4392,7 +4392,7 @@ function isPerItemCall(node: ts.CallExpression): boolean {
 }
 
 // Matches: item.FIELD — the item-proxy shorthand equivalent of item(t => t.FIELD).
-// Scope-checked: the `item` identifier must resolve to a parameter of an
+// Lifetime-checked: the `item` identifier must resolve to a parameter of an
 // `each({ render })` callback. Without this check, plain
 // `arr.map((item) => item.field)` outside each() would be rewritten as a
 // per-item binding and crash at runtime with "accessor is not a function"

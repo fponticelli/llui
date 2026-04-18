@@ -1,7 +1,7 @@
 import type { BindingKind } from './types.js'
 import { getRenderContext } from './render-context.js'
 import { createBinding, applyBinding } from './binding.js'
-import { addCheckedItemUpdater } from './scope.js'
+import { addCheckedItemUpdater } from './lifetime.js'
 
 export function elSplit(
   tag: string,
@@ -35,10 +35,10 @@ export function elSplit(
       if (perItem) {
         const get = accessor as unknown as () => unknown
         const target = { kind, node: el, key }
-        const initial = addCheckedItemUpdater(ctx.rootScope, get, (v) => applyBinding(target, v))
+        const initial = addCheckedItemUpdater(ctx.rootLifetime, get, (v) => applyBinding(target, v))
         applyBinding(target, initial)
       } else {
-        const binding = createBinding(ctx.rootScope, {
+        const binding = createBinding(ctx.rootLifetime, {
           mask,
           accessor,
           kind,

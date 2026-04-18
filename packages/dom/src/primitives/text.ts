@@ -1,6 +1,6 @@
 import { getRenderContext } from '../render-context.js'
 import { createBinding } from '../binding.js'
-import { addCheckedItemUpdater } from '../scope.js'
+import { addCheckedItemUpdater } from '../lifetime.js'
 import { FULL_MASK } from '../update-loop.js'
 
 export function text<S>(
@@ -19,7 +19,7 @@ export function text<S>(
   if (accessor.length === 0) {
     const get = accessor as () => string
     const initial = addCheckedItemUpdater(
-      ctx.rootScope,
+      ctx.rootLifetime,
       () => String(get()),
       (v) => {
         node.nodeValue = v
@@ -31,7 +31,7 @@ export function text<S>(
 
   // Component-level state accessor
   const bindingMask = mask ?? FULL_MASK
-  const binding = createBinding(ctx.rootScope, {
+  const binding = createBinding(ctx.rootLifetime, {
     mask: bindingMask,
     accessor: accessor as (state: never) => unknown,
     kind: 'text',

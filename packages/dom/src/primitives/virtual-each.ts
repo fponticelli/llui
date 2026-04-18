@@ -1,11 +1,11 @@
-import type { ItemAccessor, Scope, Send } from '../types.js'
+import type { ItemAccessor, Lifetime, Send } from '../types.js'
 import {
   getRenderContext,
   setRenderContext,
   clearRenderContext,
   type RenderContext,
 } from '../render-context.js'
-import { createScope, disposeScope, addDisposer } from '../scope.js'
+import { createLifetime, disposeLifetime, addDisposer } from '../lifetime.js'
 import { getFlatBindings, setFlatBindings } from '../binding.js'
 import { FULL_MASK } from '../update-loop.js'
 import type { StructuralBlock } from '../structural.js'
@@ -33,12 +33,12 @@ interface VirtualEntry<T> {
   key: string | number
   current: T
   index: number
-  scope: Scope
+  scope: Lifetime
   wrapper: HTMLElement
 }
 
 const buildCtx: RenderContext = {
-  rootScope: null as unknown as Scope,
+  rootLifetime: null as unknown as Lifetime,
   state: null,
   allBindings: [],
   structuralBlocks: [],
@@ -69,7 +69,7 @@ const buildCtx: RenderContext = {
  */
 export function virtualEach<S, T, M = unknown>(opts: VirtualEachOptions<S, T, M>): Node[] {
   const ctx = getRenderContext('virtualEach')
-  const parentScope = ctx.rootScope
+  const parentLifetime = ctx.rootLifetime
   const blocks = ctx.structuralBlocks
   const send = ctx.send as (msg: M) => void
 
@@ -107,7 +107,7 @@ export function virtualEach<S, T, M = unknown>(opts: VirtualEachOptions<S, T, M>
 
   const buildEntry = (item: T, index: number, state: S): VirtualEntry<T> => {
     const key = opts.key(item)
-    const scope = createScope(parentScope)
+    const scope = createLifetime(parentLifetime)
 
     const wrapper = document.createElement('div')
     wrapper.style.position = 'absolute'
@@ -150,7 +150,7 @@ export function virtualEach<S, T, M = unknown>(opts: VirtualEachOptions<S, T, M>
 
     const indexAccessor = (): number => entry.index
 
-    buildCtx.rootScope = scope
+    buildCtx.rootLifetime = scope
     buildCtx.state = state
     buildCtx.allBindings = ctx.allBindings
     buildCtx.structuralBlocks = ctx.structuralBlocks
@@ -185,7 +185,7 @@ export function virtualEach<S, T, M = unknown>(opts: VirtualEachOptions<S, T, M>
       // Dispose all entries
       for (const entry of entries.values()) {
         entry.scope.disposalCause = 'each-remove'
-        disposeScope(entry.scope)
+        disposeLifetime(entry.scope)
         if (entry.wrapper.parentNode) entry.wrapper.parentNode.removeChild(entry.wrapper)
       }
       entries.clear()
@@ -205,7 +205,7 @@ export function virtualEach<S, T, M = unknown>(opts: VirtualEachOptions<S, T, M>
     for (const [key, entry] of entries) {
       if (!visibleKeys.has(key)) {
         entry.scope.disposalCause = 'each-remove'
-        disposeScope(entry.scope)
+        disposeLifetime(entry.scope)
         if (entry.wrapper.parentNode) entry.wrapper.parentNode.removeChild(entry.wrapper)
         entries.delete(key)
       }
@@ -252,10 +252,10 @@ export function virtualEach<S, T, M = unknown>(opts: VirtualEachOptions<S, T, M>
   reconcile(ctx.state as S)
 
   // Cleanup on parent disposal
-  addDisposer(parentScope, () => {
+  addDisposer(parentLifetime, () => {
     scroll.removeEventListener('scroll', onScroll)
     for (const entry of entries.values()) {
-      disposeScope(entry.scope)
+      disposeLifetime(entry.scope)
     }
     entries.clear()
   })

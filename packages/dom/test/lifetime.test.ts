@@ -1,10 +1,10 @@
 import { describe, it, expect } from 'vitest'
-import { createScope, disposeScope, addDisposer, addBinding } from '../src/scope'
+import { createLifetime, disposeLifetime, addDisposer, addBinding } from '../src/lifetime'
 import type { Binding } from '../src/types'
 
-describe('createScope', () => {
+describe('createLifetime', () => {
   it('creates a root scope with no parent', () => {
-    const scope = createScope(null)
+    const scope = createLifetime(null)
     expect(scope.parent).toBeNull()
     expect(scope.children).toEqual([])
     expect(scope.disposers).toEqual([])
@@ -12,57 +12,57 @@ describe('createScope', () => {
   })
 
   it('creates a child scope linked to its parent', () => {
-    const parent = createScope(null)
-    const child = createScope(parent)
+    const parent = createLifetime(null)
+    const child = createLifetime(parent)
     expect(child.parent).toBe(parent)
     expect(parent.children).toContain(child)
   })
 
   it('assigns unique ids', () => {
-    const a = createScope(null)
-    const b = createScope(null)
+    const a = createLifetime(null)
+    const b = createLifetime(null)
     expect(a.id).not.toBe(b.id)
   })
 })
 
-describe('disposeScope', () => {
+describe('disposeLifetime', () => {
   it('fires all disposers', () => {
-    const scope = createScope(null)
+    const scope = createLifetime(null)
     const calls: string[] = []
     addDisposer(scope, () => calls.push('a'))
     addDisposer(scope, () => calls.push('b'))
-    disposeScope(scope)
+    disposeLifetime(scope)
     expect(calls).toEqual(['a', 'b'])
   })
 
   it('disposes children depth-first', () => {
     const order: number[] = []
-    const parent = createScope(null)
-    const child1 = createScope(parent)
-    const grandchild = createScope(child1)
-    const child2 = createScope(parent)
+    const parent = createLifetime(null)
+    const child1 = createLifetime(parent)
+    const grandchild = createLifetime(child1)
+    const child2 = createLifetime(parent)
 
     addDisposer(grandchild, () => order.push(grandchild.id))
     addDisposer(child1, () => order.push(child1.id))
     addDisposer(child2, () => order.push(child2.id))
     addDisposer(parent, () => order.push(parent.id))
 
-    disposeScope(parent)
+    disposeLifetime(parent)
 
     // depth-first: grandchild before child1, child1 before child2, child2 before parent
     expect(order).toEqual([grandchild.id, child1.id, child2.id, parent.id])
   })
 
   it('removes itself from parent children list', () => {
-    const parent = createScope(null)
-    const child = createScope(parent)
+    const parent = createLifetime(null)
+    const child = createLifetime(parent)
     expect(parent.children).toContain(child)
-    disposeScope(child)
+    disposeLifetime(child)
     expect(parent.children).not.toContain(child)
   })
 
   it('clears bindings on disposed scope', () => {
-    const scope = createScope(null)
+    const scope = createLifetime(null)
     const binding: Binding = {
       mask: 1,
       accessor: () => 'x',
@@ -71,20 +71,20 @@ describe('disposeScope', () => {
       node: document.createTextNode(''),
       perItem: false,
       dead: false,
-      ownerScope: scope,
+      ownerLifetime: scope,
     }
     addBinding(scope, binding)
     expect(scope.bindings.length).toBe(1)
-    disposeScope(scope)
+    disposeLifetime(scope)
     expect(binding.dead).toBe(true)
   })
 
   it('is idempotent — disposing twice does not throw or double-fire', () => {
-    const scope = createScope(null)
+    const scope = createLifetime(null)
     let count = 0
     addDisposer(scope, () => count++)
-    disposeScope(scope)
-    disposeScope(scope) // second dispose — scope may be pooled, but should not throw
+    disposeLifetime(scope)
+    disposeLifetime(scope) // second dispose — scope may be pooled, but should not throw
     expect(count).toBe(1)
   })
 })

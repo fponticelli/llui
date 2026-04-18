@@ -1,5 +1,5 @@
-import type { Scope } from '@llui/dom'
-import { getRenderContext, createScope } from '@llui/dom/internal'
+import type { Lifetime } from '@llui/dom'
+import { getRenderContext, createLifetime } from '@llui/dom/internal'
 
 // @llui/dom/internal is the adapter-layer surface: low-level primitives
 // (render-context access, scope creation, disposer registration) that
@@ -14,7 +14,7 @@ import { getRenderContext, createScope } from '@llui/dom/internal'
  * `pageSlot()` twice in the same layout is a bug the primitive reports.
  */
 interface PendingSlot {
-  slotScope: Scope
+  slotLifetime: Lifetime
   anchor: Comment
 }
 
@@ -79,9 +79,9 @@ export function pageSlot(): Node[] {
     )
   }
   const ctx = getRenderContext('pageSlot')
-  const slotScope = createScope(ctx.rootScope)
+  const slotLifetime = createLifetime(ctx.rootLifetime)
   const anchor = document.createComment('llui-page-slot')
-  pendingSlot = { slotScope, anchor }
+  pendingSlot = { slotLifetime, anchor }
   return [anchor]
 }
 

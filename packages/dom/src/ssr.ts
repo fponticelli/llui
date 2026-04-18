@@ -1,4 +1,4 @@
-import type { ComponentDef, Scope, Binding } from './types.js'
+import type { ComponentDef, Lifetime, Binding } from './types.js'
 import { createComponentInstance, type ComponentInstance } from './update-loop.js'
 import { setRenderContext, clearRenderContext } from './render-context.js'
 import { setFlatBindings } from './binding.js'
@@ -10,7 +10,7 @@ import { createView } from './view-helpers.js'
  * serializing — e.g. `@llui/vike` stitches layout + page nodes at the
  * `pageSlot()` marker position before one final serialization pass).
  *
- * Accepts an optional `parentScope` so the rendered instance's rootScope
+ * Accepts an optional `parentLifetime` so the rendered instance's rootLifetime
  * becomes a child of an existing scope tree — used by persistent layouts
  * so contexts provided by an outer layout are reachable from an inner
  * page via `useContext`.
@@ -20,9 +20,9 @@ import { createView } from './view-helpers.js'
 export function renderNodes<S, M, E, D = void>(
   def: ComponentDef<S, M, E, D>,
   initialState?: S,
-  parentScope?: Scope,
+  parentLifetime?: Lifetime,
 ): { nodes: Node[]; inst: ComponentInstance<S, M, E> } {
-  const inst = createComponentInstance(def, undefined, parentScope ?? null)
+  const inst = createComponentInstance(def, undefined, parentLifetime ?? null)
   if (initialState !== undefined) {
     inst.state = initialState
   }

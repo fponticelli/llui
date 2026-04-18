@@ -1,5 +1,5 @@
 import { renderNodes, serializeNodes } from '@llui/dom'
-import type { AnyComponentDef, Binding, Scope } from '@llui/dom'
+import type { AnyComponentDef, Binding, Lifetime } from '@llui/dom'
 import { _consumePendingSlot, _resetPendingSlot } from './page-slot.js'
 import type { VikePageContextData } from './vike-namespace.js'
 
@@ -195,7 +195,7 @@ export function _renderChain(
 
   let outermostNodes: Node[] = []
   let currentSlotAnchor: Comment | null = null
-  let currentSlotScope: Scope | undefined = undefined
+  let currentSlotScope: Lifetime | undefined = undefined
 
   for (let i = 0; i < chain.length; i++) {
     const def = chain[i]!
@@ -273,7 +273,7 @@ export function _renderChain(
     }
 
     currentSlotAnchor = slot?.anchor ?? null
-    currentSlotScope = slot?.slotScope
+    currentSlotScope = slot?.slotLifetime
   }
 
   const html = serializeNodes(outermostNodes, allBindings)

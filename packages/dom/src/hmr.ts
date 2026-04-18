@@ -1,7 +1,7 @@
 import type { ComponentDef, AppHandle } from './types.js'
 import type { ComponentInstance } from './update-loop.js'
 import { flushInstance } from './update-loop.js'
-import { createScope, disposeScope } from './scope.js'
+import { createLifetime, disposeLifetime } from './lifetime.js'
 import { setRenderContext, clearRenderContext } from './render-context.js'
 import { setFlatBindings } from './binding.js'
 import { unregisterInstance } from './runtime.js'
@@ -96,7 +96,7 @@ export function replaceComponent<S, M, E, D = void>(
       __handlers: newDef.__handlers,
     }
 
-    disposeScope(typedInst.rootScope)
+    disposeLifetime(typedInst.rootLifetime)
 
     // Clear the owned region per-kind.
     if (entry.kind === 'container') {
@@ -112,14 +112,14 @@ export function replaceComponent<S, M, E, D = void>(
       }
     }
 
-    typedInst.rootScope = createScope(null)
-    typedInst.rootScope._kind = 'root'
+    typedInst.rootLifetime = createLifetime(null)
+    typedInst.rootLifetime._kind = 'root'
     typedInst.allBindings = []
     typedInst.structuralBlocks = []
 
     setFlatBindings(typedInst.allBindings)
     setRenderContext({
-      rootScope: typedInst.rootScope,
+      rootLifetime: typedInst.rootLifetime,
       state: typedInst.state,
       allBindings: typedInst.allBindings,
       structuralBlocks: typedInst.structuralBlocks,
@@ -162,7 +162,7 @@ function makeReplacementHandle<S, M, E>(
       unregisterForHmr(name, entry.inst)
       entry.inst.abortController.abort()
       unregisterInstance(entry.inst)
-      disposeScope(typedInst.rootScope)
+      disposeLifetime(typedInst.rootLifetime)
       if (entry.kind === 'container') {
         entry.container.textContent = ''
       } else {

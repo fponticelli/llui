@@ -1,7 +1,7 @@
 import { flushInstance, _forceState, type ComponentInstance } from './update-loop.js'
 import { _setDevToolsInstall } from './mount.js'
-import { _markDisposerLogInstalled } from './scope.js'
-import type { Binding, Scope, ScopeNode } from './types.js'
+import { _markDisposerLogInstalled } from './lifetime.js'
+import type { Binding, Lifetime, LifetimeNode } from './types.js'
 import { applyBinding } from './binding.js'
 import { createRingBuffer, type EachDiff } from './tracking/each-diff.js'
 import {
@@ -305,8 +305,8 @@ export interface LluiDebugAPI {
   forceRerender(): { changedBindings: number[] }
   /** Per-each-site reconciliation diffs (added/removed/moved/reused keys) from the dev-time diff log. Pass sinceIndex to filter to entries after a specific message history index. */
   getEachDiff(sinceIndex?: number): EachDiff[]
-  /** Walk the component's scope tree and return a nested ScopeNode with kind classification. Pass depth to limit traversal depth, scopeId to start from a specific scope. */
-  getScopeTree(opts?: { depth?: number; scopeId?: string }): ScopeNode
+  /** Walk the component's scope tree and return a nested LifetimeNode with kind classification. Pass depth to limit traversal depth, scopeId to start from a specific scope. */
+  getScopeTree(opts?: { depth?: number; scopeId?: string }): LifetimeNode
   /** Recent onDispose firings with scope id and cause. Pass 'limit' to cap results to the N most recent entries. Catches 'leak on branch swap' class bugs. */
   getDisposerLog(limit?: number): DisposerEvent[]
   /** Edge list: state path → binding indices that depend on it. Inverts the compiler-emitted mask legend to show, for each top-level state field, which bindings will re-evaluate when it changes. */
@@ -386,25 +386,25 @@ export interface MessageSchemaInfo {
 
 const MAX_HISTORY = 1000
 
-function findScopeById(root: Scope, id: string): Scope | null {
+function findLifetimeById(root: Lifetime, id: string): Lifetime | null {
   const n = Number(id)
   if (root.id === n) return root
   for (const c of root.children) {
-    const found = findScopeById(c, id)
+    const found = findLifetimeById(c, id)
     if (found) return found
   }
   return null
 }
 
-function walkScope(s: Scope, depth: number, maxDepth: number): ScopeNode {
-  const node: ScopeNode = {
+function walkLifetime(s: Lifetime, depth: number, maxDepth: number): LifetimeNode {
+  const node: LifetimeNode = {
     scopeId: String(s.id),
     kind: s._kind ?? 'root',
     active: true,
     children: [],
   }
   if (depth < maxDepth) {
-    for (const c of s.children) node.children.push(walkScope(c, depth + 1, maxDepth))
+    for (const c of s.children) node.children.push(walkLifetime(c, depth + 1, maxDepth))
   }
   return node
 }
@@ -421,8 +421,8 @@ export function installDevTools(inst: object): void {
   ci._eachDiffLog = createRingBuffer(100)
   ci._updateCounter = 0
   // Disposer log — consumed by `llui_disposer_log` MCP tool. Stamped by
-  // `disposeScope` via `findInstance(scope)` — which only works when the
-  // rootScope carries an `instance` back-reference.
+  // `disposeLifetime` via `findInstance(scope)` — which only works when the
+  // rootLifetime carries an `instance` back-reference.
   ci._disposerLog = createDisposerBuffer(500)
   // Coverage tracker — consumed by `llui_coverage` MCP tool. Records the
   // discriminant of each dispatched message along with the message index
@@ -437,10 +437,10 @@ export function installDevTools(inst: object): void {
   ci._effectTimeline = createTimelineBuffer(500)
   ci._effectMocks = createMockRegistry()
   ci._pendingEffects = createPendingEffectsList()
-  ci.rootScope.instance = ci
-  // Flip the scope-module flag so disposeScope starts walking the parent
+  ci.rootLifetime.instance = ci
+  // Flip the scope-module flag so disposeLifetime starts walking the parent
   // chain to emit disposer events. Before the first installDevTools call
-  // the flag stays false and disposeScope skips findInstance entirely.
+  // the flag stays false and disposeLifetime skips findInstance entirely.
   _markDisposerLogInstalled()
 
   const api: LluiDebugAPI = {
@@ -877,13 +877,13 @@ export function installDevTools(inst: object): void {
       return all.filter((e) => e.updateIndex >= sinceIndex)
     },
 
-    getScopeTree(opts?: { depth?: number; scopeId?: string }): ScopeNode {
+    getScopeTree(opts?: { depth?: number; scopeId?: string }): LifetimeNode {
       const maxDepth = opts?.depth ?? Infinity
-      const startScope = opts?.scopeId ? findScopeById(ci.rootScope, opts.scopeId) : ci.rootScope
+      const startScope = opts?.scopeId ? findLifetimeById(ci.rootLifetime, opts.scopeId) : ci.rootLifetime
       if (!startScope) {
         return { scopeId: '0', kind: 'root', active: false, children: [] }
       }
-      return walkScope(startScope, 0, maxDepth)
+      return walkLifetime(startScope, 0, maxDepth)
     },
 
     getDisposerLog(limit?: number): DisposerEvent[] {

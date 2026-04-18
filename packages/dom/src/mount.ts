@@ -1,6 +1,6 @@
-import type { ComponentDef, AppHandle, Scope } from './types.js'
+import type { ComponentDef, AppHandle, Lifetime } from './types.js'
 import { createComponentInstance, flushInstance, type ComponentInstance } from './update-loop.js'
-import { disposeScope } from './scope.js'
+import { disposeLifetime } from './lifetime.js'
 import { setRenderContext, clearRenderContext } from './render-context.js'
 import { setFlatBindings } from './binding.js'
 import { registerInstance, unregisterInstance } from './runtime.js'
@@ -70,18 +70,18 @@ export function _setDevToolsInstall(fn: ((inst: object) => void) | null): void {
 export interface MountOptions {
   devTools?: boolean
   /**
-   * Parent scope for the mounted component's rootScope. When provided,
-   * the rootScope is created as a child of this scope — context lookups
+   * Parent scope for the mounted component's rootLifetime. When provided,
+   * the rootLifetime is created as a child of this scope — context lookups
    * from within the component walk up through the parent's scope tree,
    * and disposing the parent scope cascades into this instance's scope.
    * Used by `@llui/vike`'s persistent-layout machinery to mount a page
    * as a true scope-tree child of its enclosing layout, so layout-
    * provided contexts flow naturally into pages via `useContext`.
    *
-   * When omitted (the default), the rootScope is detached — same as
+   * When omitted (the default), the rootLifetime is detached — same as
    * every `mountApp` call before persistent layouts existed.
    */
-  parentScope?: Scope
+  parentLifetime?: Lifetime
 }
 
 export function mountApp<S, M, E>(
@@ -104,15 +104,15 @@ export function mountApp<S, M, E, D>(
 ): AppHandle {
   // HMR: if this component is already mounted (module re-execution
   // during hot update), swap the definition instead of creating a new instance.
-  // HMR swap bypasses parentScope — HMR re-mounts the outermost app handle,
+  // HMR swap bypasses parentLifetime — HMR re-mounts the outermost app handle,
   // which in a layout setup means the layout re-mounts at the root and the
   // rest of the chain is re-established via the normal mount path.
-  if (hmrModule && def.name && !options?.parentScope) {
+  if (hmrModule && def.name && !options?.parentLifetime) {
     const swapped = hmrModule.replaceComponent(def.name, def)
     if (swapped) return swapped
   }
 
-  const inst = createComponentInstance(def, data, options?.parentScope ?? null)
+  const inst = createComponentInstance(def, data, options?.parentLifetime ?? null)
 
   // Dev-only: auto-install devtools if enabled via '@llui/dom/devtools' import
   if (devToolsInstall) devToolsInstall(inst)
@@ -181,8 +181,8 @@ export function mountApp<S, M, E, D>(
       unregisterInstance(inst)
       // Tag the root scope so the disposer log reports app-level
       // teardown distinct from in-tree component-unmount events.
-      inst.rootScope.disposalCause = 'app-unmount'
-      disposeScope(inst.rootScope)
+      inst.rootLifetime.disposalCause = 'app-unmount'
+      disposeLifetime(inst.rootLifetime)
       container.textContent = ''
     },
     flush() {
@@ -302,7 +302,7 @@ export function mountAtAnchor<S, M, E, D>(
     anchor.parentNode.insertBefore(endSentinel, anchor.nextSibling)
   }
 
-  const inst = createComponentInstance(def, data, options?.parentScope ?? null)
+  const inst = createComponentInstance(def, data, options?.parentLifetime ?? null)
 
   if (devToolsInstall) devToolsInstall(inst)
 
@@ -357,8 +357,8 @@ export function mountAtAnchor<S, M, E, D>(
       if (hmrModule && def.name) hmrModule.unregisterForHmr(def.name, inst)
       inst.abortController.abort()
       unregisterInstance(inst)
-      inst.rootScope.disposalCause = 'app-unmount'
-      disposeScope(inst.rootScope)
+      inst.rootLifetime.disposalCause = 'app-unmount'
+      disposeLifetime(inst.rootLifetime)
       _removeBetween(anchor, endSentinel)
       endSentinel.parentNode?.removeChild(endSentinel)
     },
@@ -416,7 +416,7 @@ export function hydrateAtAnchor<S, M, E, D = void>(
     init: () => [serverState, originalEffects],
   }
 
-  const inst = createComponentInstance(hydrateDef, undefined, options?.parentScope ?? null)
+  const inst = createComponentInstance(hydrateDef, undefined, options?.parentLifetime ?? null)
 
   if (devToolsInstall) devToolsInstall(inst)
 
@@ -457,8 +457,8 @@ export function hydrateAtAnchor<S, M, E, D = void>(
       if (hmrModule && def.name) hmrModule.unregisterForHmr(def.name, inst)
       inst.abortController.abort()
       unregisterInstance(inst)
-      inst.rootScope.disposalCause = 'app-unmount'
-      disposeScope(inst.rootScope)
+      inst.rootLifetime.disposalCause = 'app-unmount'
+      disposeLifetime(inst.rootLifetime)
       _removeBetween(anchor, endSentinel)
       endSentinel.parentNode?.removeChild(endSentinel)
     },
@@ -504,7 +504,7 @@ export function hydrateApp<S, M, E, D = void>(
     init: () => [serverState, originalEffects],
   }
 
-  const inst = createComponentInstance(hydrateDef, undefined, options?.parentScope ?? null)
+  const inst = createComponentInstance(hydrateDef, undefined, options?.parentLifetime ?? null)
 
   // Build the component DOM and swap atomically with server HTML.
   // Server HTML remains visible until JS finishes — no flash.
@@ -544,8 +544,8 @@ export function hydrateApp<S, M, E, D = void>(
       unregisterInstance(inst)
       // Tag the root scope so the disposer log reports app-level
       // teardown distinct from in-tree component-unmount events.
-      inst.rootScope.disposalCause = 'app-unmount'
-      disposeScope(inst.rootScope)
+      inst.rootLifetime.disposalCause = 'app-unmount'
+      disposeLifetime(inst.rootLifetime)
       container.textContent = ''
     },
     flush() {

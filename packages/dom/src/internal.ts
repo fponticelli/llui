@@ -19,4 +19,4 @@
 
 export { getRenderContext, setRenderContext, clearRenderContext } from './render-context.js'
 export type { RenderContext } from './render-context.js'
-export { createScope, disposeScope, addDisposer } from './scope.js'
+export { createLifetime, disposeLifetime, addDisposer } from './lifetime.js'

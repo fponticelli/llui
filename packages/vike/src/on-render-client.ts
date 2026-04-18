@@ -1,5 +1,5 @@
 import { hydrateApp, mountApp, mountAtAnchor, hydrateAtAnchor } from '@llui/dom'
-import type { AnyComponentDef, AppHandle, TransitionOptions, Scope } from '@llui/dom'
+import type { AnyComponentDef, AppHandle, TransitionOptions, Lifetime } from '@llui/dom'
 import { _consumePendingSlot, _resetPendingSlot } from './page-slot.js'
 import type { VikePageContextData } from './vike-namespace.js'
 
@@ -192,7 +192,7 @@ export function fromTransition(
 /**
  * One element of the live chain the adapter keeps between navs.
  * `handle` is the AppHandle returned by mountApp/hydrateApp for this
- * layer. `slotAnchor` / `slotScope` are set when the layer called
+ * layer. `slotAnchor` / `slotLifetime` are set when the layer called
  * `pageSlot()` during its view pass; they're null for the innermost
  * layer (typically the page component, which doesn't have a slot).
  */
@@ -200,7 +200,7 @@ interface ChainEntry {
   def: AnyComponentDef
   handle: AppHandle
   slotAnchor: Comment | null
-  slotScope: Scope | null
+  slotLifetime: Lifetime | null
   /**
    * The data slice this layer was most recently mounted or updated
    * with. Compared shallow-key against the next nav's `lluiLayoutData[i]`
@@ -368,7 +368,7 @@ async function renderClient(
   }
 
   // Dispose the divergent suffix, innermost first. Each handle.dispose()
-  // calls disposeScope on that layer's rootScope, which cascades through
+  // calls disposeLifetime on that layer's rootLifetime, which cascades through
   // every child scope the layer owned (bindings, portals, onMount
   // cleanups, dialog focus traps, etc.). The surviving layers are
   // untouched because their scopes live above the disposal roots.
@@ -382,11 +382,11 @@ async function renderClient(
   // Mount the new suffix starting at firstMismatch.
   // For a root swap, the target is the container HTMLElement.
   // For a deeper swap, the target is the surviving layer's slot anchor (Comment).
-  const parentScope =
-    firstMismatch === 0 ? undefined : (chainHandles[firstMismatch - 1]!.slotScope ?? undefined)
+  const parentLifetime =
+    firstMismatch === 0 ? undefined : (chainHandles[firstMismatch - 1]!.slotLifetime ?? undefined)
   const mountTargetArg: HTMLElement | Comment =
     firstMismatch === 0 ? rootEl : chainHandles[firstMismatch - 1]!.slotAnchor!
-  mountChainSuffix(newChain, newChainData, firstMismatch, mountTargetArg, parentScope, {
+  mountChainSuffix(newChain, newChainData, firstMismatch, mountTargetArg, parentLifetime, {
     mode: 'mount',
   })
 
@@ -403,7 +403,7 @@ async function renderClient(
 /**
  * Walk the full chain for the first mount or hydration. Starts from
  * depth 0 at the root container, threads each layer's slot into the
- * next layer's mount target + parentScope.
+ * next layer's mount target + parentLifetime.
  */
 async function mountOrHydrateChain(
   chain: LayoutChain,
@@ -422,8 +422,8 @@ interface MountOpts {
 
 /**
  * Mount (or hydrate) `chain[startAt..end]` into `initialTarget`, with
- * the initial layer's rootScope parented at `initialParentScope`.
- * Threads slot → next-target → next-parentScope through the chain.
+ * the initial layer's rootLifetime parented at `initialParentLifetime`.
+ * Threads slot → next-target → next-parentLifetime through the chain.
  *
  * `initialTarget` is `HTMLElement` for the outermost layer (container-
  * based mount/hydrate) and `Comment` for inner layers that mount relative
@@ -441,11 +441,11 @@ export function _mountChainSuffix(
   chainData: readonly unknown[],
   startAt: number,
   initialTarget: HTMLElement | Comment,
-  initialParentScope: Scope | undefined,
+  initialParentLifetime: Lifetime | undefined,
   opts: MountOpts,
 ): void {
   let mountTarget: HTMLElement | Comment = initialTarget
-  let parentScope: Scope | undefined = initialParentScope
+  let parentLifetime: Lifetime | undefined = initialParentLifetime
 
   for (let i = startAt; i < chain.length; i++) {
     const def = chain[i]!
@@ -473,7 +473,7 @@ export function _mountChainSuffix(
           mountTarget as HTMLElement,
           def as unknown as Parameters<typeof hydrateApp>[1],
           layerState,
-          { parentScope },
+          { parentLifetime },
         )
       } else {
         // Comment anchor — inner layer, use hydrateAtAnchor.
@@ -481,7 +481,7 @@ export function _mountChainSuffix(
           mountTarget as Comment,
           def as unknown as Parameters<typeof hydrateAtAnchor>[1],
           layerState as never,
-          { parentScope },
+          { parentLifetime },
         )
       }
     } else {
@@ -491,7 +491,7 @@ export function _mountChainSuffix(
           mountTarget as HTMLElement,
           def as unknown as Parameters<typeof mountApp>[1],
           layerData,
-          { parentScope },
+          { parentLifetime },
         )
       } else {
         // Comment anchor — inner layer, use mountAtAnchor.
@@ -499,7 +499,7 @@ export function _mountChainSuffix(
           mountTarget as Comment,
           def as unknown as Parameters<typeof mountAtAnchor>[1],
           layerData,
-          { parentScope },
+          { parentLifetime },
         )
       }
     }
@@ -532,14 +532,14 @@ export function _mountChainSuffix(
       def,
       handle,
       slotAnchor: slot?.anchor ?? null,
-      slotScope: slot?.slotScope ?? null,
+      slotLifetime: slot?.slotLifetime ?? null,
       data: layerData,
     })
 
     if (slot !== null) {
       // Next layer mounts relative to the slot's comment anchor.
       mountTarget = slot.anchor
-      parentScope = slot.slotScope
+      parentLifetime = slot.slotLifetime
     }
   }
 }

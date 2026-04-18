@@ -31,7 +31,7 @@ describe('HMR state preservation', () => {
     // Mount manually
     setFlatBindings(inst.allBindings)
     setRenderContext({
-      rootScope: inst.rootScope,
+      rootLifetime: inst.rootLifetime,
       state: inst.state,
       allBindings: inst.allBindings,
       structuralBlocks: inst.structuralBlocks,

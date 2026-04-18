@@ -1,16 +1,16 @@
-import type { Scope, Binding } from './types.js'
+import type { Lifetime, Binding } from './types.js'
 import type { ComponentInstance } from './update-loop.js'
 
 let nextId = 1
 
 /**
  * Walk up the scope chain to find the owning ComponentInstance. The
- * instance is stamped onto the rootScope by `installDevTools`, so this
+ * instance is stamped onto the rootLifetime by `installDevTools`, so this
  * returns null in production (no devtools) or for scopes that haven't
  * yet been parented to a tracked root (e.g., during initial creation).
  */
-function findInstance(scope: Scope): ComponentInstance | null {
-  let s: Scope | null = scope
+function findInstance(scope: Lifetime): ComponentInstance | null {
+  let s: Lifetime | null = scope
   while (s) {
     if (s.instance) return s.instance
     s = s.parent
@@ -19,19 +19,19 @@ function findInstance(scope: Scope): ComponentInstance | null {
 }
 
 // Shared empty arrays — avoid allocating per scope when unused
-const EMPTY_SCOPES: Scope[] = []
+const EMPTY_LIFETIMES: Lifetime[] = []
 const EMPTY_DISPOSERS: Array<() => void> = []
 const EMPTY_BINDINGS: Binding[] = []
 const EMPTY_UPDATERS: Array<() => void> = []
 
-// Scope pool — reuse disposed scope objects to reduce GC pressure.
+// Lifetime pool — reuse disposed scope objects to reduce GC pressure.
 // Capped to avoid memory leaks in apps that create/destroy thousands of rows.
-const SCOPE_POOL: Scope[] = []
+const SCOPE_POOL: Lifetime[] = []
 const SCOPE_POOL_MAX = 2048
 
 // Dev-mode flag. Flipped to true by installDevTools() once any component
 // instance has a disposer log. In production this stays false forever,
-// and disposeScope skips findInstance entirely — zero cost.
+// and disposeLifetime skips findInstance entirely — zero cost.
 let anyDisposerLogInstalled = false
 
 /** @internal — called by devtools.ts::installDevTools */
@@ -44,8 +44,8 @@ export function _drainScopePool(): void {
   SCOPE_POOL.length = 0
 }
 
-export function createScope(parent: Scope | null): Scope {
-  let scope: Scope
+export function createLifetime(parent: Lifetime | null): Lifetime {
+  let scope: Lifetime
   if (SCOPE_POOL.length > 0) {
     scope = SCOPE_POOL.pop()!
     scope.id = nextId++
@@ -61,7 +61,7 @@ export function createScope(parent: Scope | null): Scope {
     scope = {
       id: nextId++,
       parent,
-      children: EMPTY_SCOPES,
+      children: EMPTY_LIFETIMES,
       disposers: EMPTY_DISPOSERS,
       bindings: EMPTY_BINDINGS,
       itemUpdaters: EMPTY_UPDATERS,
@@ -69,7 +69,7 @@ export function createScope(parent: Scope | null): Scope {
   }
 
   if (parent) {
-    if (parent.children === EMPTY_SCOPES) parent.children = []
+    if (parent.children === EMPTY_LIFETIMES) parent.children = []
     parent.children.push(scope)
   }
 
@@ -87,7 +87,7 @@ export function createScope(parent: Scope | null): Scope {
  * `parent` pointer is still set to `null` so the caller can identify
  * orphaned entries.
  */
-export function disposeScope(scope: Scope, skipParentRemoval = false): void {
+export function disposeLifetime(scope: Lifetime, skipParentRemoval = false): void {
   if (scope.disposers.length === 0 && scope.children.length === 0 && scope.bindings.length === 0) {
     // Dev-only: still emit a DisposerEvent for empty scopes — the log
     // is meant to capture every scope the app destroys, not only ones
@@ -115,7 +115,7 @@ export function disposeScope(scope: Scope, skipParentRemoval = false): void {
   // mutation during iteration.
   const children = skipParentRemoval ? scope.children : scope.children.slice()
   for (const child of children) {
-    disposeScope(child, skipParentRemoval)
+    disposeLifetime(child, skipParentRemoval)
   }
 
   for (const disposer of scope.disposers) {
@@ -148,7 +148,7 @@ export function disposeScope(scope: Scope, skipParentRemoval = false): void {
   // don't hold allocated-but-empty arrays
   scope.disposers = EMPTY_DISPOSERS
   scope.bindings = EMPTY_BINDINGS
-  scope.children = EMPTY_SCOPES
+  scope.children = EMPTY_LIFETIMES
   scope.itemUpdaters = EMPTY_UPDATERS
 
   if (!skipParentRemoval) removeFromParent(scope)
@@ -160,10 +160,10 @@ export function disposeScope(scope: Scope, skipParentRemoval = false): void {
 
 /**
  * Batch-remove children with `parent === null` from `parent.children`.
- * Called after a bulk `disposeScope(child, true)` pass to collapse the
+ * Called after a bulk `disposeLifetime(child, true)` pass to collapse the
  * individual O(N) splice operations into one O(N) scan.
  */
-export function removeOrphanedChildren(parent: Scope): void {
+export function removeOrphanedChildren(parent: Lifetime): void {
   const children = parent.children
   let w = 0
   for (let r = 0; r < children.length; r++) {
@@ -177,18 +177,18 @@ export function removeOrphanedChildren(parent: Scope): void {
  * overhead. Used by each() clear path where 1000+ scopes are disposed at once.
  * Caller must call removeOrphanedChildren(parent) afterwards.
  */
-export function disposeScopesBulk(scopes: Scope[]): void {
+export function disposeLifetimesBulk(scopes: Lifetime[]): void {
   for (let i = 0; i < scopes.length; i++) {
     const scope = scopes[i]!
     // Recursively dispose children
     const children = scope.children
     if (children.length > 0) {
-      disposeScopesBulk(children)
+      disposeLifetimesBulk(children)
     }
     // Run disposers
     const disposers = scope.disposers
     for (let d = 0; d < disposers.length; d++) disposers[d]!()
-    // Dev-only: emit disposer events — same guard as disposeScope.
+    // Dev-only: emit disposer events — same guard as disposeLifetime.
     if (anyDisposerLogInstalled) {
       const inst = findInstance(scope)
       if (inst?._disposerLog !== undefined) {
@@ -211,20 +211,20 @@ export function disposeScopesBulk(scopes: Scope[]): void {
     // Reset to shared empties + detach from parent + return to pool
     scope.disposers = EMPTY_DISPOSERS
     scope.bindings = EMPTY_BINDINGS
-    scope.children = EMPTY_SCOPES
+    scope.children = EMPTY_LIFETIMES
     scope.itemUpdaters = EMPTY_UPDATERS
     scope.parent = null
     if (SCOPE_POOL.length < SCOPE_POOL_MAX) SCOPE_POOL.push(scope)
   }
 }
 
-export function addBinding(scope: Scope, binding: Binding): void {
-  binding.ownerScope = scope
+export function addBinding(scope: Lifetime, binding: Binding): void {
+  binding.ownerLifetime = scope
   if (scope.bindings === EMPTY_BINDINGS) scope.bindings = []
   scope.bindings.push(binding)
 }
 
-export function addItemUpdater(scope: Scope, updater: () => void): void {
+export function addItemUpdater(scope: Lifetime, updater: () => void): void {
   if (scope.itemUpdaters === EMPTY_UPDATERS) scope.itemUpdaters = []
   scope.itemUpdaters.push(updater)
 }
@@ -237,7 +237,7 @@ export function addItemUpdater(scope: Scope, updater: () => void): void {
  * @param apply - DOM write: receives the new value when it differs
  * @returns the initial value (caller should apply it to the DOM)
  */
-export function addCheckedItemUpdater<V>(scope: Scope, get: () => V, apply: (value: V) => void): V {
+export function addCheckedItemUpdater<V>(scope: Lifetime, get: () => V, apply: (value: V) => void): V {
   let last: V = get()
   addItemUpdater(scope, () => {
     const v = get()
@@ -248,12 +248,12 @@ export function addCheckedItemUpdater<V>(scope: Scope, get: () => V, apply: (val
   return last
 }
 
-export function addDisposer(scope: Scope, disposer: () => void): void {
+export function addDisposer(scope: Lifetime, disposer: () => void): void {
   if (scope.disposers === EMPTY_DISPOSERS) scope.disposers = []
   scope.disposers.push(disposer)
 }
 
-function removeFromParent(scope: Scope): void {
+function removeFromParent(scope: Lifetime): void {
   if (scope.parent) {
     const idx = scope.parent.children.indexOf(scope)
     if (idx !== -1) {

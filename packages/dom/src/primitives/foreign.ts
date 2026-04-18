@@ -1,7 +1,7 @@
 import type { ForeignOptions, Send } from '../types.js'
 import { getRenderContext } from '../render-context.js'
 import { createBinding } from '../binding.js'
-import { createScope, addDisposer } from '../scope.js'
+import { createLifetime, addDisposer } from '../lifetime.js'
 
 const FULL_MASK = 0xffffffff
 
@@ -9,8 +9,8 @@ export function foreign<S, M, T extends Record<string, unknown>, Instance>(
   opts: ForeignOptions<S, M, T, Instance>,
 ): Node[] {
   const ctx = getRenderContext('foreign')
-  const parentScope = ctx.rootScope
-  const foreignScope = createScope(parentScope)
+  const parentLifetime = ctx.rootLifetime
+  const foreignScope = createLifetime(parentLifetime)
   foreignScope._kind = 'foreign'
 
   // Create container element

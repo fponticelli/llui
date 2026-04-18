@@ -2,13 +2,13 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { mountApp } from '../src/mount'
 import { component, div, text, each, selector, flush } from '../src/index'
 import {
-  createScope,
-  disposeScope,
-  disposeScopesBulk,
+  createLifetime,
+  disposeLifetime,
+  disposeLifetimesBulk,
   addDisposer,
   addCheckedItemUpdater,
   _drainScopePool,
-} from '../src/scope'
+} from '../src/lifetime'
 import { _runPhase2 } from '../src/update-loop'
 import type { ComponentDef, Binding } from '../src/types'
 import type { StructuralBlock } from '../src/structural'
@@ -241,21 +241,21 @@ describe('swap optimization', () => {
   })
 })
 
-// ── disposeScopesBulk ────────────────────────────────────────────
+// ── disposeLifetimesBulk ────────────────────────────────────────────
 
-describe('disposeScopesBulk', () => {
+describe('disposeLifetimesBulk', () => {
   it('disposes all scopes and their children', () => {
-    const parent = createScope(null)
-    const child1 = createScope(parent)
-    const child2 = createScope(parent)
-    const grandchild = createScope(child1)
+    const parent = createLifetime(null)
+    const child1 = createLifetime(parent)
+    const child2 = createLifetime(parent)
+    const grandchild = createLifetime(child1)
 
     const disposed: string[] = []
     addDisposer(child1, () => disposed.push('child1'))
     addDisposer(child2, () => disposed.push('child2'))
     addDisposer(grandchild, () => disposed.push('grandchild'))
 
-    disposeScopesBulk([child1, child2])
+    disposeLifetimesBulk([child1, child2])
 
     expect(disposed).toContain('child1')
     expect(disposed).toContain('child2')
@@ -266,8 +266,8 @@ describe('disposeScopesBulk', () => {
   })
 
   it('marks bindings as dead', () => {
-    const parent = createScope(null)
-    const child = createScope(parent)
+    const parent = createLifetime(null)
+    const child = createLifetime(parent)
 
     // Create a mock binding on the child scope
     const binding: Binding = {
@@ -278,11 +278,11 @@ describe('disposeScopesBulk', () => {
       node: document.createTextNode(''),
       perItem: false,
       dead: false,
-      ownerScope: child,
+      ownerLifetime: child,
     }
     child.bindings = [binding]
 
-    disposeScopesBulk([child])
+    disposeLifetimesBulk([child])
 
     expect(binding.dead).toBe(true)
     expect(binding.accessor).toBeNull()
@@ -290,11 +290,11 @@ describe('disposeScopesBulk', () => {
   })
 
   it('clears itemUpdaters', () => {
-    const parent = createScope(null)
-    const child = createScope(parent)
+    const parent = createLifetime(null)
+    const child = createLifetime(parent)
     child.itemUpdaters = [() => {}, () => {}]
 
-    disposeScopesBulk([child])
+    disposeLifetimesBulk([child])
 
     // After bulk dispose, arrays are reset to shared empties
     expect(child.itemUpdaters.length).toBe(0)
@@ -305,7 +305,7 @@ describe('disposeScopesBulk', () => {
 
 describe('addCheckedItemUpdater', () => {
   it('returns initial value', () => {
-    const scope = createScope(null)
+    const scope = createLifetime(null)
     let val = 'hello'
     const initial = addCheckedItemUpdater(
       scope,
@@ -317,7 +317,7 @@ describe('addCheckedItemUpdater', () => {
   })
 
   it('calls apply when value changes', () => {
-    const scope = createScope(null)
+    const scope = createLifetime(null)
     let val = 'hello'
     const applied: string[] = []
 
@@ -343,7 +343,7 @@ describe('addCheckedItemUpdater', () => {
   })
 
   it('handles NaN correctly', () => {
-    const scope = createScope(null)
+    const scope = createLifetime(null)
     let val = NaN
     const applied: number[] = []
 
@@ -605,7 +605,7 @@ describe('selector __directUpdate', () => {
   })
 })
 
-// ── Scope pooling ────────────────────────────────────────────────
+// ── Lifetime pooling ────────────────────────────────────────────────
 
 describe('scope pooling', () => {
   beforeEach(() => {
@@ -613,16 +613,16 @@ describe('scope pooling', () => {
   })
 
   it('reuses disposed scope objects', () => {
-    const parent = createScope(null)
-    const child = createScope(parent)
+    const parent = createLifetime(null)
+    const child = createLifetime(parent)
     const childId = child.id
 
     // Dispose child — should return to pool
     addDisposer(child, () => {}) // ensure it goes through full disposal path
-    disposeScope(child)
+    disposeLifetime(child)
 
     // Create a new scope — should reuse the pooled object
-    const reused = createScope(parent)
+    const reused = createLifetime(parent)
     // Same object, different id
     expect(reused).toBe(child)
     expect(reused.id).not.toBe(childId)
@@ -632,14 +632,14 @@ describe('scope pooling', () => {
     expect(reused.bindings).toEqual([])
     expect(reused.itemUpdaters).toEqual([])
 
-    disposeScope(parent)
+    disposeLifetime(parent)
   })
 
   it('reused scopes do not carry stale state', () => {
     _drainScopePool()
 
-    const parent = createScope(null)
-    const scope = createScope(parent)
+    const parent = createLifetime(null)
+    const scope = createLifetime(parent)
 
     // Add state to the scope
     addDisposer(scope, () => {})
@@ -651,16 +651,16 @@ describe('scope pooling', () => {
       node: document.createTextNode(''),
       perItem: false,
       dead: false,
-      ownerScope: scope,
+      ownerLifetime: scope,
     }
     scope.bindings = [binding]
     scope.itemUpdaters = [() => {}]
 
     // Dispose — returns to pool with clean state
-    disposeScope(scope)
+    disposeLifetime(scope)
 
     // Reuse
-    const reused = createScope(parent)
+    const reused = createLifetime(parent)
     expect(reused).toBe(scope)
     expect(reused.disposers).toEqual([])
     expect(reused.bindings).toEqual([])
@@ -670,24 +670,24 @@ describe('scope pooling', () => {
     // Adding new state works correctly
     const newCalls: string[] = []
     addDisposer(reused, () => newCalls.push('new'))
-    disposeScope(reused)
+    disposeLifetime(reused)
     expect(newCalls).toEqual(['new'])
   })
 
   it('pool is capped — does not grow unbounded', () => {
     _drainScopePool()
 
-    const parent = createScope(null)
-    const scopes: ReturnType<typeof createScope>[] = []
+    const parent = createLifetime(null)
+    const scopes: ReturnType<typeof createLifetime>[] = []
 
     // Create and dispose 3000 scopes (pool cap is 2048)
     for (let i = 0; i < 3000; i++) {
-      const s = createScope(parent)
+      const s = createLifetime(parent)
       addDisposer(s, () => {}) // ensure full disposal path
       scopes.push(s)
     }
     for (const s of scopes) {
-      disposeScope(s, true)
+      disposeLifetime(s, true)
     }
 
     // Pool should be capped
@@ -695,11 +695,11 @@ describe('scope pooling', () => {
     let pooled = 0
     const created = new Set<object>()
     for (let i = 0; i < 3000; i++) {
-      const s = createScope(null)
+      const s = createLifetime(null)
       if (created.has(s)) break // duplicate = pool exhausted, shouldn't happen
       created.add(s)
       if (scopes.includes(s)) pooled++
-      disposeScope(s) // empty scope, won't be re-pooled (early return path)
+      disposeLifetime(s) // empty scope, won't be re-pooled (early return path)
     }
 
     // Should be capped at 2048
@@ -710,20 +710,20 @@ describe('scope pooling', () => {
   it('bulk disposal pools scopes', () => {
     _drainScopePool()
 
-    const parent = createScope(null)
+    const parent = createLifetime(null)
     const children = []
     for (let i = 0; i < 5; i++) {
-      const c = createScope(parent)
+      const c = createLifetime(parent)
       addDisposer(c, () => {}) // ensure full disposal
       children.push(c)
     }
 
-    disposeScopesBulk(children)
+    disposeLifetimesBulk(children)
 
     // Create 5 new scopes — should reuse from pool
     const reused = []
     for (let i = 0; i < 5; i++) {
-      reused.push(createScope(null))
+      reused.push(createLifetime(null))
     }
 
     // All 5 should be reused objects

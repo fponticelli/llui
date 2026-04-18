@@ -170,19 +170,19 @@ export interface AppHandle {
   send(msg: unknown): void
 }
 
-// ── Scope ─────────────────────────────────────────────────────────
+// ── Lifetime ─────────────────────────────────────────────────────────
 
-export interface Scope {
+export interface Lifetime {
   id: number
-  parent: Scope | null
-  children: Scope[]
+  parent: Lifetime | null
+  children: Lifetime[]
   disposers: Array<() => void>
   bindings: Binding[]
   /** Per-item updaters — called directly by each() when item changes, bypassing Phase 2 */
   itemUpdaters: Array<() => void>
   /**
    * @internal dev-only back-reference to the owning ComponentInstance.
-   * Populated on the root scope by `installDevTools` so `disposeScope`
+   * Populated on the root scope by `installDevTools` so `disposeLifetime`
    * can walk up the scope chain and emit DisposerEvents into the
    * instance's `_disposerLog`. Undefined in production.
    */
@@ -190,8 +190,8 @@ export interface Scope {
   /**
    * @internal dev-only cause hint. Structural primitives (branch, each,
    * child, mountApp teardown) set this field immediately before calling
-   * `disposeScope`; the dispose path reads it once to stamp the emitted
-   * DisposerEvent. Left undefined, `disposeScope` falls back to
+   * `disposeLifetime`; the dispose path reads it once to stamp the emitted
+   * DisposerEvent. Left undefined, `disposeLifetime` falls back to
    * `'component-unmount'`. Undefined in production.
    */
   disposalCause?: DisposerEvent['cause']
@@ -199,11 +199,11 @@ export interface Scope {
   _kind?: 'root' | 'show' | 'each' | 'branch' | 'child' | 'portal' | 'foreign'
 }
 
-export interface ScopeNode {
+export interface LifetimeNode {
   scopeId: string
   kind: 'root' | 'show' | 'each' | 'branch' | 'child' | 'portal' | 'foreign'
   active: boolean
-  children: ScopeNode[]
+  children: LifetimeNode[]
 }
 
 // ── Binding ───────────────────────────────────────────────────────
@@ -228,7 +228,7 @@ export interface Binding {
   kind: BindingKind
   node: Node
   key?: string
-  ownerScope: Scope
+  ownerLifetime: Lifetime
   perItem: boolean
   dead: boolean
 }

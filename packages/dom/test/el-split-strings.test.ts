@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { elSplit } from '../src/el-split'
-import { createScope } from '../src/scope'
+import { createLifetime } from '../src/lifetime'
 import { setRenderContext, clearRenderContext } from '../src/render-context'
 
 // REPRO: Bug 5 — elSplit should auto-wrap raw string children as
@@ -10,7 +10,7 @@ import { setRenderContext, clearRenderContext } from '../src/render-context'
 describe('elSplit — string children', () => {
   it('wraps a raw string child in a Text node (does not throw)', () => {
     setRenderContext({
-      rootScope: createScope(null),
+      rootLifetime: createLifetime(null),
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       state: {} as any,
       allBindings: [],
@@ -29,7 +29,7 @@ describe('elSplit — string children', () => {
 
   it('mixes string and Node children in one call', () => {
     setRenderContext({
-      rootScope: createScope(null),
+      rootLifetime: createLifetime(null),
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       state: {} as any,
       allBindings: [],

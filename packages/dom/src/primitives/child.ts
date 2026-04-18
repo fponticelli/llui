@@ -1,6 +1,6 @@
 import type { ChildOptions, ComponentDef } from '../types.js'
 import { getRenderContext, setRenderContext, clearRenderContext } from '../render-context.js'
-import { createScope, disposeScope, addDisposer } from '../scope.js'
+import { createLifetime, disposeLifetime, addDisposer } from '../lifetime.js'
 import { createComponentInstance, flushInstance, type ComponentInstance } from '../update-loop.js'
 import { createBinding, setFlatBindings } from '../binding.js'
 import { registerChild, unregisterChild } from '../addressed.js'
@@ -19,15 +19,15 @@ export function child<S, ChildM>(opts: ChildOptions<S, ChildM>): Node[] {
   }
 
   const parentCtx = getRenderContext('child')
-  const parentScope = parentCtx.rootScope
-  const childScope = createScope(parentScope)
-  childScope._kind = 'child'
-  // Tag eagerly: childScope lives as long as the child component is mounted,
+  const parentLifetime = parentCtx.rootLifetime
+  const childLifetime = createLifetime(parentLifetime)
+  childLifetime._kind = 'child'
+  // Tag eagerly: childLifetime lives as long as the child component is mounted,
   // so disposing it IS the child-unmount event. Setting the cause up front
   // (instead of inside the disposer closure below) ensures the parent's
-  // _disposerLog sees it when `disposeScope` walks up the parent chain —
-  // `childInst.rootScope` is an orphan (parent = null) and cannot emit.
-  childScope.disposalCause = 'child-unmount'
+  // _disposerLog sees it when `disposeLifetime` walks up the parent chain —
+  // `childInst.rootLifetime` is an orphan (parent = null) and cannot emit.
+  childLifetime.disposalCause = 'child-unmount'
   const parentSend = parentCtx.send
 
   const childDef = opts.def as ComponentDef<unknown, ChildM, unknown, Record<string, unknown>>
@@ -57,7 +57,7 @@ export function child<S, ChildM>(opts: ChildOptions<S, ChildM>): Node[] {
   // accessor purely to fire the diff + propsMsg dispatch below. There is no
   // DOM output — the comment node is a detached anchor kept only so the
   // Binding shape stays uniform with other kinds.
-  createBinding(childScope, {
+  createBinding(childLifetime, {
     mask: FULL_MASK,
     accessor: ((parentState: S) => {
       const newProps = opts.props(parentState)
@@ -103,10 +103,10 @@ export function child<S, ChildM>(opts: ChildOptions<S, ChildM>): Node[] {
   registerChild(opts.key, { send: childInst.send as (msg: unknown) => void })
 
   // Cleanup: dispose child instance when parent scope disposes
-  addDisposer(childScope, () => {
+  addDisposer(childLifetime, () => {
     unregisterChild(opts.key)
-    childInst.rootScope.disposalCause = 'child-unmount'
-    disposeScope(childInst.rootScope)
+    childInst.rootLifetime.disposalCause = 'child-unmount'
+    disposeLifetime(childInst.rootLifetime)
   })
 
   return nodes

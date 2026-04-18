@@ -1,10 +1,10 @@
 import type { PortalOptions } from '../types.js'
 import { getRenderContext, setRenderContext, clearRenderContext } from '../render-context.js'
-import { createScope, addDisposer } from '../scope.js'
+import { createLifetime, addDisposer } from '../lifetime.js'
 
 export function portal(opts: PortalOptions): Node[] {
   const ctx = getRenderContext('portal')
-  const parentScope = ctx.rootScope
+  const parentLifetime = ctx.rootLifetime
 
   const target = typeof opts.target === 'string' ? document.querySelector(opts.target) : opts.target
 
@@ -12,9 +12,9 @@ export function portal(opts: PortalOptions): Node[] {
     return []
   }
 
-  const portalScope = createScope(parentScope)
+  const portalScope = createLifetime(parentLifetime)
   portalScope._kind = 'portal'
-  const buildCtx = { ...ctx, rootScope: portalScope, container: target as Element }
+  const buildCtx = { ...ctx, rootLifetime: portalScope, container: target as Element }
   setRenderContext(buildCtx)
   const nodes = opts.render()
   clearRenderContext()

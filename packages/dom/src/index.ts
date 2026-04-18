@@ -5,7 +5,7 @@ export type {
   Send,
   Props,
   AppHandle,
-  Scope,
+  Lifetime,
   Binding,
   BindingKind,
   TransitionOptions,
@@ -33,7 +33,7 @@ export type { CoverageSnapshot } from './tracking/coverage.js'
 export type { EachDiff } from './tracking/each-diff.js'
 export type { DisposerEvent } from './tracking/disposer-log.js'
 export type { PendingEffect, EffectTimelineEntry, EffectMatch } from './tracking/effect-timeline.js'
-export type { ScopeNode } from './types.js'
+export type { LifetimeNode } from './types.js'
 
 // ── Runtime ───────────────────────────────────────────────────────
 

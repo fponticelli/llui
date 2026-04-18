@@ -1,5 +1,5 @@
 import { getRenderContext } from '../render-context.js'
-import { addDisposer } from '../scope.js'
+import { addDisposer } from '../lifetime.js'
 
 /**
  * Synchronous onMount queue.
@@ -58,7 +58,7 @@ export function onMount(callback: (el: Element) => (() => void) | void): void {
   if (typeof window === 'undefined') return
 
   const ctx = getRenderContext('onMount')
-  const scope = ctx.rootScope
+  const scope = ctx.rootLifetime
   const container = ctx.container ?? document.body
   let cancelled = false
 

@@ -1,5 +1,5 @@
-import type { Scope, Binding, BindingKind } from './types.js'
-import { addBinding } from './scope.js'
+import type { Lifetime, Binding, BindingKind } from './types.js'
+import { addBinding } from './lifetime.js'
 
 export interface CreateBindingOpts {
   mask: number
@@ -20,7 +20,7 @@ export function setFlatBindings(arr: Binding[] | null): void {
   flatBindings = arr
 }
 
-export function createBinding(scope: Scope, opts: CreateBindingOpts): Binding {
+export function createBinding(scope: Lifetime, opts: CreateBindingOpts): Binding {
   const binding: Binding = {
     mask: opts.mask,
     accessor: opts.accessor as (state: unknown) => unknown,
@@ -28,7 +28,7 @@ export function createBinding(scope: Scope, opts: CreateBindingOpts): Binding {
     kind: opts.kind,
     node: opts.node,
     key: opts.key,
-    ownerScope: scope,
+    ownerLifetime: scope,
     perItem: opts.perItem,
     dead: false,
   }

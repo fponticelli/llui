@@ -1,6 +1,6 @@
-import type { BranchOptions, Scope } from '../types.js'
+import type { BranchOptions, Lifetime } from '../types.js'
 import { getRenderContext, setRenderContext, clearRenderContext } from '../render-context.js'
-import { createScope, disposeScope, addDisposer } from '../scope.js'
+import { createLifetime, disposeLifetime, addDisposer } from '../lifetime.js'
 import { setFlatBindings } from '../binding.js'
 import { createView } from '../view-helpers.js'
 import { FULL_MASK } from '../update-loop.js'
@@ -9,14 +9,14 @@ import type { StructuralBlock } from '../structural.js'
 
 export function branch<S, M = unknown>(opts: BranchOptions<S, M>): Node[] {
   const ctx = getRenderContext('branch')
-  const parentScope = ctx.rootScope
+  const parentLifetime = ctx.rootLifetime
   const blocks = ctx.structuralBlocks
   const send = ctx.send as (msg: M) => void
 
   const anchor = document.createComment('branch')
 
   let currentKey = opts.on(ctx.state as S)
-  let currentScope: Scope | null = null
+  let currentLifetime: Lifetime | null = null
   let currentNodes: Node[] = []
 
   const block: StructuralBlock = {
@@ -29,11 +29,11 @@ export function branch<S, M = unknown>(opts: BranchOptions<S, M>): Node[] {
       if (!parent) return
 
       const leavingNodes = currentNodes
-      const leavingScope = currentScope
+      const leavingLifetime = currentLifetime
 
       // Build new arm first (before removing old — for FLIP animations)
       currentNodes = []
-      currentScope = null
+      currentLifetime = null
       currentKey = newKey
 
       const newCaseKey = String(newKey)
@@ -47,10 +47,10 @@ export function branch<S, M = unknown>(opts: BranchOptions<S, M>): Node[] {
       if (newBuilder) {
         const mq = pushMountQueue()
         onMountQueue = mq.queue
-        currentScope = createScope(parentScope)
-        currentScope._kind = opts.__disposalCause === 'show-hide' ? 'show' : 'branch'
+        currentLifetime = createLifetime(parentLifetime)
+        currentLifetime._kind = opts.__disposalCause === 'show-hide' ? 'show' : 'branch'
         setFlatBindings(ctx.allBindings)
-        setRenderContext({ ...ctx, rootScope: currentScope, state })
+        setRenderContext({ ...ctx, rootLifetime: currentLifetime, state })
         currentNodes = newBuilder(createView<S, M>(send))
         clearRenderContext()
         setFlatBindings(null)
@@ -73,14 +73,14 @@ export function branch<S, M = unknown>(opts: BranchOptions<S, M>): Node[] {
         for (const node of leavingNodes) {
           if (node.parentNode) node.parentNode.removeChild(node)
         }
-        if (leavingScope) {
+        if (leavingLifetime) {
           // Tag BEFORE dispose so the disposer log records the cause.
           // `show()` passes `__disposalCause: 'show-hide'`; raw branch()
           // defaults to `'branch-swap'`. Tag wins over any pre-existing
           // value set by an inner primitive so the outermost cause is
           // reported (matches how humans describe the event).
-          leavingScope.disposalCause = opts.__disposalCause ?? 'branch-swap'
-          disposeScope(leavingScope)
+          leavingLifetime.disposalCause = opts.__disposalCause ?? 'branch-swap'
+          disposeLifetime(leavingLifetime)
         }
       }
 
@@ -112,9 +112,9 @@ export function branch<S, M = unknown>(opts: BranchOptions<S, M>): Node[] {
   // insert into the DOM at this point (the anchor + initial children
   // are returned to the parent), so we don't need to flush here.
   if (builder) {
-    currentScope = createScope(parentScope)
-    currentScope._kind = opts.__disposalCause === 'show-hide' ? 'show' : 'branch'
-    setRenderContext({ ...ctx, rootScope: currentScope })
+    currentLifetime = createLifetime(parentLifetime)
+    currentLifetime._kind = opts.__disposalCause === 'show-hide' ? 'show' : 'branch'
+    setRenderContext({ ...ctx, rootLifetime: currentLifetime })
     currentNodes = builder(createView<S, M>(send))
     clearRenderContext()
     setRenderContext(ctx)
@@ -125,12 +125,12 @@ export function branch<S, M = unknown>(opts: BranchOptions<S, M>): Node[] {
     }
   }
 
-  addDisposer(parentScope, () => {
+  addDisposer(parentLifetime, () => {
     const idx = blocks.indexOf(block)
     if (idx !== -1) blocks.splice(idx, 1)
-    if (currentScope) {
-      disposeScope(currentScope)
-      currentScope = null
+    if (currentLifetime) {
+      disposeLifetime(currentLifetime)
+      currentLifetime = null
     }
   })
 

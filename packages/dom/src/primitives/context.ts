@@ -1,12 +1,12 @@
-import type { Scope } from '../types.js'
+import type { Lifetime } from '../types.js'
 import { getRenderContext, setRenderContext, clearRenderContext } from '../render-context.js'
-import { createScope } from '../scope.js'
+import { createLifetime } from '../lifetime.js'
 
 /**
  * Per-scope storage: scope → (context-id → accessor).
  * WeakMap so disposed scopes are GC'd.
  */
-const contextMap = new WeakMap<Scope, Map<symbol, (s: unknown) => unknown>>()
+const contextMap = new WeakMap<Lifetime, Map<symbol, (s: unknown) => unknown>>()
 
 export interface Context<T> {
   readonly _id: symbol
@@ -49,18 +49,18 @@ export function provide<S, T>(
   children: () => Node[],
 ): Node[] {
   const renderCtx = getRenderContext('provide')
-  const parentScope = renderCtx.rootScope
+  const parentLifetime = renderCtx.rootLifetime
   // Create a sub-scope so the context is attached to THIS provider alone.
   // Descendants (including those mounted later via show/branch/each) walk
   // up to this scope via their own parent chain and find the accessor.
   // Nested providers create their own sub-scope, shadowing outer values.
-  const providerScope = createScope(parentScope)
+  const providerScope = createLifetime(parentLifetime)
   const map = new Map<symbol, (s: unknown) => unknown>()
   map.set(ctx._id, accessor as (s: unknown) => unknown)
   contextMap.set(providerScope, map)
-  // Render children with the provider scope as the new rootScope so any
+  // Render children with the provider scope as the new rootLifetime so any
   // primitives (bindings, structural blocks, nested providers) attach here.
-  setRenderContext({ ...renderCtx, rootScope: providerScope })
+  setRenderContext({ ...renderCtx, rootLifetime: providerScope })
   try {
     return children()
   } finally {
@@ -82,9 +82,9 @@ export function provide<S, T>(
  * ```
  */
 export function useContext<S, T>(ctx: Context<T>): (s: S) => T {
-  let scope: Scope | null = null
+  let scope: Lifetime | null = null
   try {
-    scope = getRenderContext('useContext').rootScope
+    scope = getRenderContext('useContext').rootLifetime
   } catch {
     // No render context (e.g. called from connect() in a unit test).
     // Fall through to default resolution below.

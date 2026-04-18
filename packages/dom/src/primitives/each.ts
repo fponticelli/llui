@@ -1,4 +1,4 @@
-import type { EachOptions, ItemAccessor, Scope } from '../types.js'
+import type { EachOptions, ItemAccessor, Lifetime } from '../types.js'
 import {
   getRenderContext,
   setRenderContext,
@@ -6,12 +6,12 @@ import {
   type RenderContext,
 } from '../render-context.js'
 import {
-  createScope,
-  disposeScope,
-  disposeScopesBulk,
+  createLifetime,
+  disposeLifetime,
+  disposeLifetimesBulk,
   addDisposer,
   removeOrphanedChildren,
-} from '../scope.js'
+} from '../lifetime.js'
 import { getFlatBindings, setFlatBindings } from '../binding.js'
 import { FULL_MASK } from '../update-loop.js'
 import type { StructuralBlock } from '../structural.js'
@@ -33,7 +33,7 @@ export function registerOnRemove(cb: (key: string | number) => void): void {
 
 // Reusable render context for buildEntry — avoids object allocation per entry
 const buildCtx: RenderContext = {
-  rootScope: null as unknown as Scope,
+  rootLifetime: null as unknown as Lifetime,
   state: null,
   allBindings: [],
   structuralBlocks: [],
@@ -55,7 +55,7 @@ interface Entry<T> {
   item: T
   current: T
   index: number
-  scope: Scope
+  scope: Lifetime
   nodes: Node[]
   /** Per-item updaters — stored on entry directly to avoid scope overhead for leaf rows */
   updaters: Array<() => void>
@@ -63,7 +63,7 @@ interface Entry<T> {
 
 export function each<S, T, M = unknown>(opts: EachOptions<S, T, M>): Node[] {
   const ctx = getRenderContext('each')
-  const parentScope = ctx.rootScope
+  const parentLifetime = ctx.rootLifetime
   const blocks = ctx.structuralBlocks
 
   const anchor = document.createComment('each')
@@ -137,7 +137,7 @@ export function each<S, T, M = unknown>(opts: EachOptions<S, T, M>): Node[] {
         entries,
         newItems,
         opts,
-        parentScope,
+        parentLifetime,
         parent,
         anchor,
         ctx,
@@ -189,14 +189,14 @@ export function each<S, T, M = unknown>(opts: EachOptions<S, T, M>): Node[] {
 
       // Bulk scope disposal — disposers that were replaced by clearCallbacks
       // are now no-ops, making this much faster
-      const scopes: Scope[] = []
+      const scopes: Lifetime[] = []
       for (let i = 0; i < entries.length; i++) {
         const s = entries[i]!.scope
         s.disposalCause = 'each-remove'
         scopes.push(s)
       }
-      disposeScopesBulk(scopes)
-      removeOrphanedChildren(parentScope)
+      disposeLifetimesBulk(scopes)
+      removeOrphanedChildren(parentLifetime)
       entries.length = 0
 
       emitDiff(oldKeys)
@@ -220,7 +220,7 @@ export function each<S, T, M = unknown>(opts: EachOptions<S, T, M>): Node[] {
           entries,
           newItems,
           opts,
-          parentScope,
+          parentLifetime,
           parent,
           anchor,
           ctx,
@@ -248,7 +248,7 @@ export function each<S, T, M = unknown>(opts: EachOptions<S, T, M>): Node[] {
           for (let ci = 0; ci < removeCallbacks.length; ci++) removeCallbacks[ci]!(entry.key)
           for (const node of entry.nodes) parent.removeChild(node)
           entry.scope.disposalCause = 'each-remove'
-          disposeScope(entry.scope, true)
+          disposeLifetime(entry.scope, true)
           entries[oi] = null!
           didRemove = true
         }
@@ -261,7 +261,7 @@ export function each<S, T, M = unknown>(opts: EachOptions<S, T, M>): Node[] {
           if (entries[r]) entries[w++] = entries[r]!
         }
         entries.length = w
-        removeOrphanedChildren(parentScope)
+        removeOrphanedChildren(parentLifetime)
       }
 
       // Update indices for remaining entries
@@ -297,7 +297,7 @@ export function each<S, T, M = unknown>(opts: EachOptions<S, T, M>): Node[] {
   activeRemoveCallbacks = removeCallbacks
   for (let i = 0; i < initialItems.length; i++) {
     const item = initialItems[i]!
-    const entry = buildEntry(item, i, opts, parentScope, ctx)
+    const entry = buildEntry(item, i, opts, parentLifetime, ctx)
     entries.push(entry)
   }
   activeClearCallbacks = null
@@ -310,14 +310,14 @@ export function each<S, T, M = unknown>(opts: EachOptions<S, T, M>): Node[] {
     }
   }
 
-  addDisposer(parentScope, () => {
+  addDisposer(parentLifetime, () => {
     const idx = blocks.indexOf(block)
     if (idx !== -1) blocks.splice(idx, 1)
-    // parentScope is being disposed — its children array is about to be
+    // parentLifetime is being disposed — its children array is about to be
     // cleared by the recursive dispose pass, so skip per-entry parent
     // removal (avoids O(N²) indexOf+splice).
     for (const entry of entries) {
-      disposeScope(entry.scope, true)
+      disposeLifetime(entry.scope, true)
     }
     entries.length = 0
     // Force-remove any mid-leave entries immediately
@@ -325,7 +325,7 @@ export function each<S, T, M = unknown>(opts: EachOptions<S, T, M>): Node[] {
       for (const node of entry.nodes) {
         if (node.parentNode) node.parentNode.removeChild(node)
       }
-      disposeScope(entry.scope, true)
+      disposeLifetime(entry.scope, true)
     }
     leaving.length = 0
   })
@@ -353,7 +353,7 @@ function removeEntry<T>(
       if (node.parentNode) node.parentNode.removeChild(node)
     }
     entry.scope.disposalCause = 'each-remove'
-    disposeScope(entry.scope)
+    disposeLifetime(entry.scope)
     const idx = leaving.indexOf(entry)
     if (idx !== -1) leaving.splice(idx, 1)
   }
@@ -381,7 +381,7 @@ function buildEntry<S, T, M>(
   item: T,
   index: number,
   opts: EachOptions<S, T, M>,
-  parentScope: Scope,
+  parentLifetime: Lifetime,
   ctx: ReturnType<typeof getRenderContext>,
   state?: unknown,
 ): Entry<T> {
@@ -389,7 +389,7 @@ function buildEntry<S, T, M>(
   // Use a lightweight scope — just needs itemUpdaters for per-item bindings.
   // Full scope features (disposers, bindings, children) are only needed when
   // the render callback uses structural primitives or selector.bind().
-  const scope = createScope(parentScope)
+  const scope = createLifetime(parentLifetime)
   scope._kind = 'each'
   const currentState = (state ?? ctx.state) as S
   const send = ctx.send as (msg: M) => void
@@ -442,7 +442,7 @@ function buildEntry<S, T, M>(
   const indexAccessor = (): number => entry.index
 
   // Reuse a single context object to avoid allocation per entry
-  buildCtx.rootScope = scope
+  buildCtx.rootLifetime = scope
   buildCtx.state = currentState
   buildCtx.allBindings = ctx.allBindings
   buildCtx.structuralBlocks = ctx.structuralBlocks
@@ -491,7 +491,7 @@ function reconcileEntries<S, T>(
   entries: Entry<T>[],
   newItems: T[],
   opts: EachOptions<S, T>,
-  parentScope: Scope,
+  parentLifetime: Lifetime,
   parent: Node,
   anchor: Node,
   ctx: ReturnType<typeof getRenderContext>,
@@ -526,14 +526,14 @@ function reconcileEntries<S, T>(
       range.deleteContents()
     }
     // Bulk dispose all entry scopes — avoids per-scope function call overhead
-    const scopes: Scope[] = []
+    const scopes: Lifetime[] = []
     for (let i = 0; i < entries.length; i++) {
       const s = entries[i]!.scope
       s.disposalCause = 'each-remove'
       scopes.push(s)
     }
-    disposeScopesBulk(scopes)
-    removeOrphanedChildren(parentScope)
+    disposeLifetimesBulk(scopes)
+    removeOrphanedChildren(parentLifetime)
     entries.length = 0
     return
   }
@@ -551,7 +551,7 @@ function reconcileEntries<S, T>(
     const frag = document.createDocumentFragment()
     const newlyAdded: Entry<T>[] = []
     for (let i = oldLen; i < newLen; i++) {
-      const entry = buildEntry(newItems[i]!, i, opts, parentScope, ctx, state)
+      const entry = buildEntry(newItems[i]!, i, opts, parentLifetime, ctx, state)
       entries.push(entry)
       newlyAdded.push(entry)
       for (const node of entry.nodes) frag.appendChild(node)
@@ -633,20 +633,20 @@ function reconcileEntries<S, T>(
       range.setEndAfter(lastEntry.nodes[lastEntry.nodes.length - 1]!)
       range.deleteContents()
       // Bulk dispose all old scopes
-      const oldScopes: Scope[] = []
+      const oldLifetimes: Lifetime[] = []
       for (let i = 0; i < entries.length; i++) {
         const s = entries[i]!.scope
         s.disposalCause = 'each-remove'
-        oldScopes.push(s)
+        oldLifetimes.push(s)
       }
-      disposeScopesBulk(oldScopes)
-      removeOrphanedChildren(parentScope)
+      disposeLifetimesBulk(oldLifetimes)
+      removeOrphanedChildren(parentLifetime)
       entries.length = 0
       // Build all new entries into a fragment
       const frag = document.createDocumentFragment()
       const newlyAdded: Entry<T>[] = []
       for (let i = 0; i < newLen; i++) {
-        const entry = buildEntry(newItems[i]!, i, opts, parentScope, ctx, state)
+        const entry = buildEntry(newItems[i]!, i, opts, parentLifetime, ctx, state)
         entries.push(entry)
         newlyAdded.push(entry)
         for (const node of entry.nodes) frag.appendChild(node)
@@ -680,7 +680,7 @@ function reconcileEntries<S, T>(
       updateEntry(existing, item, i)
       newEntries.push(existing)
     } else {
-      const entry = buildEntry(item, i, opts, parentScope, ctx, state)
+      const entry = buildEntry(item, i, opts, parentLifetime, ctx, state)
       newEntries.push(entry)
       newlyAdded.push(entry)
     }
@@ -688,7 +688,7 @@ function reconcileEntries<S, T>(
 
   // Remove entries not in the new list. Use bulk-detach pattern so
   // disposing K removals costs O(K+P) rather than O(K*P) where P is
-  // parentScope.children.length (avoids K * indexOf+splice).
+  // parentLifetime.children.length (avoids K * indexOf+splice).
   let didBulkDetach = false
   for (const entry of entries) {
     if (!usedKeys.has(entry.key)) {
@@ -698,12 +698,12 @@ function reconcileEntries<S, T>(
       } else {
         for (const node of entry.nodes) parent.removeChild(node)
         entry.scope.disposalCause = 'each-remove'
-        disposeScope(entry.scope, true)
+        disposeLifetime(entry.scope, true)
         didBulkDetach = true
       }
     }
   }
-  if (didBulkDetach) removeOrphanedChildren(parentScope)
+  if (didBulkDetach) removeOrphanedChildren(parentLifetime)
 
   // Reorder DOM
   const hasSurvivors = newEntries.some((e) => oldByKey.has(e.key))

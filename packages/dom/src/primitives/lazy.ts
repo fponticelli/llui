@@ -1,6 +1,6 @@
 import type { ComponentDef, LazyDef } from '../types.js'
 import { getRenderContext, setRenderContext, clearRenderContext } from '../render-context.js'
-import { createScope, disposeScope, addDisposer } from '../scope.js'
+import { createLifetime, disposeLifetime, addDisposer } from '../lifetime.js'
 import { createComponentInstance, type ComponentInstance } from '../update-loop.js'
 import { setFlatBindings } from '../binding.js'
 import { createView, type View } from '../view-helpers.js'
@@ -41,7 +41,7 @@ export interface LazyOptions<S, M, D> {
  */
 export function lazy<S, M, D = undefined>(opts: LazyOptions<S, M, D>): Node[] {
   const ctx = getRenderContext('lazy')
-  const parentScope = ctx.rootScope
+  const parentLifetime = ctx.rootLifetime
   const send = ctx.send as (msg: M) => void
 
   // Anchor marks the insertion point; fallback nodes live between anchor and endAnchor
@@ -49,14 +49,14 @@ export function lazy<S, M, D = undefined>(opts: LazyOptions<S, M, D>): Node[] {
   const endAnchor = document.createComment('/lazy')
 
   // Build fallback inside its own sub-scope (disposed when we swap in loaded component)
-  let currentScope = createScope(parentScope)
-  setRenderContext({ ...ctx, rootScope: currentScope })
+  let currentLifetime = createLifetime(parentLifetime)
+  setRenderContext({ ...ctx, rootLifetime: currentLifetime })
   let currentNodes = opts.fallback(createView<S, M>(send))
   clearRenderContext()
   setRenderContext(ctx)
 
   let cancelled = false
-  addDisposer(parentScope, () => {
+  addDisposer(parentLifetime, () => {
     cancelled = true
   })
 
@@ -66,14 +66,14 @@ export function lazy<S, M, D = undefined>(opts: LazyOptions<S, M, D>): Node[] {
     if (!parent) return
 
     // Dispose old sub-scope (removes fallback bindings/listeners)
-    if (currentScope) disposeScope(currentScope)
+    if (currentLifetime) disposeLifetime(currentLifetime)
     for (const node of currentNodes) {
       if (node.parentNode === parent) parent.removeChild(node)
     }
 
     // Build new nodes in a fresh sub-scope
-    currentScope = createScope(parentScope)
-    setRenderContext({ ...ctx, rootScope: currentScope })
+    currentLifetime = createLifetime(parentLifetime)
+    setRenderContext({ ...ctx, rootLifetime: currentLifetime })
     currentNodes = buildNew()
     clearRenderContext()
     setRenderContext(ctx)
@@ -112,8 +112,8 @@ export function lazy<S, M, D = undefined>(opts: LazyOptions<S, M, D>): Node[] {
         setRenderContext(ctx)
 
         // Dispose the loaded instance when our current sub-scope disposes
-        addDisposer(currentScope, () => {
-          disposeScope(childInst.rootScope)
+        addDisposer(currentLifetime, () => {
+          disposeLifetime(childInst.rootLifetime)
         })
 
         return nodes

@@ -1,10 +1,10 @@
 import { describe, it, expect } from 'vitest'
 import { createBinding, applyBinding } from '../src/binding'
-import { createScope } from '../src/scope'
+import { createLifetime } from '../src/lifetime'
 
 describe('createBinding', () => {
   it('creates a binding with the given properties', () => {
-    const scope = createScope(null)
+    const scope = createLifetime(null)
     const node = document.createTextNode('')
     const accessor = (s: { count: number }) => String(s.count)
     const binding = createBinding(scope, {
@@ -21,11 +21,11 @@ describe('createBinding', () => {
     expect(binding.node).toBe(node)
     expect(binding.perItem).toBe(false)
     expect(binding.lastValue).toBeUndefined()
-    expect(binding.ownerScope).toBe(scope)
+    expect(binding.ownerLifetime).toBe(scope)
   })
 
   it('registers the binding on the scope', () => {
-    const scope = createScope(null)
+    const scope = createLifetime(null)
     const node = document.createTextNode('')
     const binding = createBinding(scope, {
       mask: 1,

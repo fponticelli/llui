@@ -1,6 +1,6 @@
 import { getRenderContext } from '../render-context.js'
 import { createBinding, applyBinding } from '../binding.js'
-import { addDisposer } from '../scope.js'
+import { addDisposer } from '../lifetime.js'
 import { FULL_MASK } from '../update-loop.js'
 import { registerOnClear } from './each.js'
 import type { BindingKind } from '../types.js'
@@ -27,7 +27,7 @@ interface SelectorEntry {
  */
 export function selector<S, V>(field: (s: S) => V): SelectorInstance<V> {
   const ctx = getRenderContext('selector')
-  const scope = ctx.rootScope
+  const scope = ctx.rootLifetime
 
   const registry = new Map<V, SelectorEntry[]>()
   let lastValue: V = field(ctx.state as S)
@@ -123,8 +123,8 @@ export function selector<S, V>(field: (s: S) => V): SelectorInstance<V> {
       // Per-row disposer for generic reconcile paths (scope disposal).
       // Uses generation check to skip work if already bulk-cleared.
       const gen = generation
-      const itemScope = getRenderContext('selector').rootScope
-      addDisposer(itemScope, () => {
+      const itemLifetime = getRenderContext('selector').rootLifetime
+      addDisposer(itemLifetime, () => {
         if (gen !== generation) return // already bulk-cleared, no-op
         const idx = bucket!.indexOf(entry)
         if (idx !== -1) bucket!.splice(idx, 1)

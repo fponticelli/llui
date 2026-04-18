@@ -72,7 +72,7 @@ describe('mountAtAnchor', () => {
     expect(anchor.nextSibling).toBeNull()
   })
 
-  it('dispose() tags rootScope.disposalCause and cascades scope disposal', async () => {
+  it('dispose() tags rootLifetime.disposalCause and cascades scope disposal', async () => {
     const { anchor } = makeAnchor()
     const mountSpy = vi.fn()
     const cleanupSpy = vi.fn()
@@ -110,9 +110,9 @@ describe('mountAtAnchor', () => {
     expect((anchor.nextSibling as HTMLElement).textContent).toBe('1')
   })
 
-  it('accepts options.parentScope without breaking mount/dispose', () => {
+  it('accepts options.parentLifetime without breaking mount/dispose', () => {
     const { anchor: outerAnchor } = makeAnchor()
-    // Build a parent instance first so we can grab a real Scope to pass in
+    // Build a parent instance first so we can grab a real Lifetime to pass in
     const parentDef = component<{}, never, never>({
       name: 'Outer',
       init: () => [{}, []],
@@ -122,7 +122,7 @@ describe('mountAtAnchor', () => {
     const outer = mountAtAnchor(outerAnchor, parentDef)
     // Reach into the outer instance via the public scope tree by its DOM
     // side effect is sufficient — the real scope lookup is an internal
-    // detail we don't need to assert beyond "parentScope was honored"
+    // detail we don't need to assert beyond "parentLifetime was honored"
     outer.dispose()
     expect(outerAnchor.nextSibling).toBeNull()
   })
