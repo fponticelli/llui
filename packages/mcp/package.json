@@ -24,6 +24,7 @@
   "dependencies": {
     "@llui/dom": "workspace:*",
     "@llui/lint-idiomatic": "workspace:*",
+    "@modelcontextprotocol/sdk": "^1.29.0",
     "ws": "^8.18.0"
   },
   "devDependencies": {

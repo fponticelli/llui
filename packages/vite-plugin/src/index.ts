@@ -3,6 +3,7 @@ import MagicString from 'magic-string'
 import { existsSync, readFileSync, writeFileSync, watch as fsWatch, type FSWatcher } from 'node:fs'
 import { dirname, relative, resolve } from 'node:path'
 import { createRequire } from 'node:module'
+import { spawn, type ChildProcess } from 'node:child_process'
 import { transformLlui } from './transform.js'
 import { diagnose, type DiagnosticRule } from './diagnostics.js'
 
@@ -94,12 +95,38 @@ function hasMcpPackage(root: string): boolean {
   }
 }
 
+/**
+ * Resolve the path to the llui-mcp CLI entry. Reads `bin.llui-mcp`
+ * from @llui/mcp's package.json and joins it against the package
+ * directory. Returns null if @llui/mcp isn't resolvable.
+ */
+function resolveMcpCliPath(root: string): string | null {
+  try {
+    const req = createRequire(resolve(root, 'package.json'))
+    const pkgJsonPath = req.resolve('@llui/mcp/package.json')
+    const pkgJson = JSON.parse(readFileSync(pkgJsonPath, 'utf8')) as {
+      bin?: string | Record<string, string>
+    }
+    const binEntry = typeof pkgJson.bin === 'string' ? pkgJson.bin : pkgJson.bin?.['llui-mcp']
+    if (!binEntry) return null
+    return resolve(dirname(pkgJsonPath), binEntry)
+  } catch {
+    return null
+  }
+}
+
 export default function llui(options: LluiPluginOptions = {}): Plugin {
   let devMode = false
-  // mcpPort is resolved lazily in `configResolved` so we can check for
-  // @llui/mcp in the consuming project's node_modules. Explicit false
-  // or a number always wins; `undefined` triggers auto-detect.
+  // `mcpPort` + `mcpMode` are resolved lazily in `configResolved` so we
+  // can check for @llui/mcp in the consuming project's node_modules.
+  //   - `options.mcpPort === false`  → disabled
+  //   - explicit number              → wire-only (user manages the server)
+  //   - undefined + @llui/mcp found  → spawn (plugin starts llui-mcp --http)
+  //   - undefined + no @llui/mcp     → disabled
   let mcpPort: number | null = null
+  let mcpMode: 'disabled' | 'wire' | 'spawn' = 'disabled'
+  let mcpCliPath: string | null = null
+  let mcpChild: ChildProcess | null = null
   const failOnWarning = options.failOnWarning === true
   const disabledWarnings = new Set<string>(options.disabledWarnings ?? [])
   const verbose = options.verbose === true
@@ -167,13 +194,24 @@ export default function llui(options: LluiPluginOptions = {}): Plugin {
 
     configResolved(config) {
       devMode = config.command === 'serve' || config.mode === 'development'
-      // Resolve mcpPort: explicit user value wins; otherwise auto-detect.
       if (options.mcpPort === false) {
+        mcpMode = 'disabled'
         mcpPort = null
       } else if (typeof options.mcpPort === 'number') {
+        mcpMode = 'wire'
         mcpPort = options.mcpPort
+      } else if (hasMcpPackage(config.root)) {
+        mcpCliPath = resolveMcpCliPath(config.root)
+        if (mcpCliPath) {
+          mcpMode = 'spawn'
+          mcpPort = 5200
+        } else {
+          mcpMode = 'wire'
+          mcpPort = 5200
+        }
       } else {
-        mcpPort = hasMcpPackage(config.root) ? 5200 : null
+        mcpMode = 'disabled'
+        mcpPort = null
       }
     },
 
@@ -192,6 +230,35 @@ export default function llui(options: LluiPluginOptions = {}): Plugin {
           )
         }
         return
+      }
+
+      // Spawn mode: plugin launches llui-mcp as a child process so
+      // `pnpm dev` handles the whole stack. Skip spawning when a marker
+      // already exists — something (usually a separate llui-mcp process
+      // started before Vite) is already listening. The existing wire
+      // behavior takes over from there.
+      if (mcpMode === 'spawn' && mcpCliPath !== null && !existsSync(activeFilePath)) {
+        mcpChild = spawn(process.execPath, [mcpCliPath, '--http', String(mcpPort)], {
+          stdio: ['ignore', 'pipe', 'pipe'],
+          env: { ...process.env, LLUI_MCP_PORT: String(mcpPort) },
+        })
+        mcpChild.stdout?.on('data', (buf: Buffer) => {
+          process.stdout.write(`[mcp] ${buf.toString()}`)
+        })
+        mcpChild.stderr?.on('data', (buf: Buffer) => {
+          process.stderr.write(`[mcp] ${buf.toString()}`)
+        })
+        mcpChild.on('exit', (code) => {
+          if (code !== 0 && code !== null) {
+            console.warn(`[llui] @llui/mcp child exited with code ${code}`)
+          }
+          mcpChild = null
+        })
+        const killChild = (): void => {
+          if (mcpChild && !mcpChild.killed) mcpChild.kill('SIGTERM')
+        }
+        server.httpServer?.on('close', killChild)
+        process.once('exit', killChild)
       }
 
       // HTTP endpoint: the browser fetches this on load to discover the

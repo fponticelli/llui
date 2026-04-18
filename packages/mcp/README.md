@@ -8,11 +8,51 @@ pnpm add -D @llui/mcp
 
 ## Usage
 
-The MCP server auto-connects to running LLui apps via the vite-plugin's `mcpPort` bridge (default port 5200). No manual setup needed -- just enable the plugin and point your MCP client at the server.
+The MCP server has two transports and two usage patterns.
+
+### Plugin-launched (recommended): one-terminal dev
+
+Install `@llui/mcp` as a dev dependency. The Vite plugin auto-detects the package and spawns `llui-mcp --http` as a child of the dev server. One `pnpm dev` starts everything; no second terminal, no stdio fuss.
 
 ```ts
-// vite.config.ts -- MCP is enabled by default
+// vite.config.ts
 import llui from '@llui/vite-plugin'
+export default defineConfig({ plugins: [llui()] })
+```
+
+Point your MCP client (e.g. Claude Code) at the HTTP endpoint. In `.mcp.json`:
+
+```json
+{
+  "mcpServers": {
+    "llui": {
+      "type": "http",
+      "url": "http://127.0.0.1:5200/mcp"
+    }
+  }
+}
+```
+
+The MCP protocol runs on `POST /mcp`; the browser-relay WebSocket bridge shares the same port via upgrade on `/bridge`.
+
+### Stdio (manual spawn): traditional MCP client
+
+If your MCP client spawns servers over stdio (the older pattern), run the CLI without `--http`:
+
+```json
+{
+  "mcpServers": {
+    "llui": {
+      "command": "npx",
+      "args": ["llui-mcp"]
+    }
+  }
+}
+```
+
+The server talks stdio to the client and stands up its own WebSocket bridge on port 5200 for the browser relay. With this pattern, set `mcpPort: 5200` explicitly in the Vite plugin so it wires to the externally-managed server instead of spawning its own:
+
+```ts
 export default defineConfig({ plugins: [llui({ mcpPort: 5200 })] })
 ```
 

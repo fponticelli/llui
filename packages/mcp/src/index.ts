@@ -1,6 +1,10 @@
 import type { LluiDebugAPI } from '@llui/dom'
 import { mkdirSync, writeFileSync, unlinkSync, existsSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
+import type { Server as HttpServer } from 'node:http'
+import { Server as McpServer } from '@modelcontextprotocol/sdk/server/index.js'
+import type { Transport } from '@modelcontextprotocol/sdk/shared/transport.js'
+import { ListToolsRequestSchema, CallToolRequestSchema } from '@modelcontextprotocol/sdk/types.js'
 import { ToolRegistry, type ToolContext, type ToolDefinition } from './tool-registry.js'
 import { registerDebugApiTools } from './tools/index.js'
 import { WebSocketRelayTransport } from './transports/index.js'
@@ -48,35 +52,78 @@ export function mcpActiveFilePath(cwd: string = process.cwd()): string {
   return resolve(findWorkspaceRoot(cwd), 'node_modules/.cache/llui-mcp/active.json')
 }
 
-// ── MCP Protocol Types ──────────────────────────────────────────
-
-interface JsonRpcRequest {
-  jsonrpc: '2.0'
-  id: string | number
-  method: string
-  params?: Record<string, unknown>
-}
-
-interface JsonRpcResponse {
-  jsonrpc: '2.0'
-  id: string | number
-  result?: unknown
-  error?: { code: number; message: string; data?: unknown }
-}
-
 // ── MCP Server ──────────────────────────────────────────────────
+
+export interface LluiMcpServerOptions {
+  /**
+   * Port for the browser-relay WebSocket bridge. When the MCP transport
+   * is stdio (the CLI default), the relay stands up its own server on
+   * this port. When the MCP transport is HTTP, the relay attaches to
+   * that HTTP server and the MCP protocol + bridge share a single port.
+   */
+  bridgePort?: number
+  /**
+   * Optional pre-existing `http.Server` to share with the bridge. When
+   * provided, the bridge attaches to it via upgrade routing on
+   * `/bridge`; `bridgePort` is ignored for server-creation purposes
+   * (but still written into the marker file so consumers know where to
+   * connect).
+   */
+  attachTo?: HttpServer
+}
 
 export class LluiMcpServer {
   private readonly registry: ToolRegistry
   private readonly relay: WebSocketRelayTransport
   private readonly bridgePort: number
+  private readonly mcp: McpServer
   private devUrl: string | null = null
 
-  constructor(bridgePort = 5200) {
-    this.bridgePort = bridgePort
+  constructor(optsOrPort: LluiMcpServerOptions | number = 5200) {
+    const opts: LluiMcpServerOptions =
+      typeof optsOrPort === 'number' ? { bridgePort: optsOrPort } : optsOrPort
+    this.bridgePort = opts.bridgePort ?? 5200
     this.registry = new ToolRegistry()
-    this.relay = new WebSocketRelayTransport({ port: bridgePort })
+    this.relay = new WebSocketRelayTransport({
+      port: opts.attachTo ? undefined : this.bridgePort,
+      attachTo: opts.attachTo,
+    })
     registerDebugApiTools(this.registry)
+
+    // SDK-managed MCP server — owns the JSON-RPC protocol, handshake,
+    // session lifecycle. Transport is plugged in later via `connect()`.
+    this.mcp = new McpServer(
+      { name: '@llui/mcp', version: '0.0.15' },
+      { capabilities: { tools: {} } },
+    )
+    this.registerMcpHandlers()
+  }
+
+  private registerMcpHandlers(): void {
+    this.mcp.setRequestHandler(ListToolsRequestSchema, async () => ({
+      tools: this.getTools().map((t) => ({
+        name: t.name,
+        description: t.description,
+        inputSchema: t.inputSchema,
+      })),
+    }))
+
+    this.mcp.setRequestHandler(CallToolRequestSchema, async (request) => {
+      const { name, arguments: args } = request.params
+      const result = await this.handleToolCall(name, args ?? {})
+      return {
+        content: [{ type: 'text' as const, text: JSON.stringify(result, null, 2) }],
+      }
+    })
+  }
+
+  /**
+   * Connect the SDK MCP server to a transport (stdio, HTTP, etc).
+   * The CLI builds the transport based on command-line flags and
+   * hands it in here.
+   */
+  async connect(transport: Transport): Promise<void> {
+    await this.mcp.connect(transport)
   }
 
   /** Connect to a debug API instance directly (for in-process usage). */
@@ -146,85 +193,6 @@ export class LluiMcpServer {
   async handleToolCall(name: string, args: Record<string, unknown>): Promise<unknown> {
     const ctx: ToolContext = { relay: this.relay, cdp: null }
     return this.registry.dispatch(name, args, ctx)
-  }
-
-  /** Start the MCP server on stdin/stdout */
-  start(): void {
-    let buffer = ''
-
-    process.stdin.setEncoding('utf8')
-    process.stdin.on('data', (chunk: string) => {
-      buffer += chunk
-      // MCP uses newline-delimited JSON
-      const lines = buffer.split('\n')
-      buffer = lines.pop()! // keep incomplete line
-      for (const line of lines) {
-        if (!line.trim()) continue
-        try {
-          const request = JSON.parse(line) as JsonRpcRequest
-          this.handleRequest(request).then((response) => {
-            process.stdout.write(JSON.stringify(response) + '\n')
-          })
-        } catch {
-          // Ignore parse errors
-        }
-      }
-    })
-  }
-
-  private async handleRequest(request: JsonRpcRequest): Promise<JsonRpcResponse> {
-    try {
-      switch (request.method) {
-        case 'initialize':
-          return {
-            jsonrpc: '2.0',
-            id: request.id,
-            result: {
-              protocolVersion: '2024-11-05',
-              capabilities: { tools: {} },
-              serverInfo: { name: '@llui/mcp', version: '0.0.0' },
-            },
-          }
-
-        case 'tools/list':
-          return {
-            jsonrpc: '2.0',
-            id: request.id,
-            result: { tools: this.getTools() },
-          }
-
-        case 'tools/call': {
-          const params = request.params as {
-            name: string
-            arguments: Record<string, unknown>
-          }
-          const result = await this.handleToolCall(params.name, params.arguments ?? {})
-          return {
-            jsonrpc: '2.0',
-            id: request.id,
-            result: {
-              content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
-            },
-          }
-        }
-
-        default:
-          return {
-            jsonrpc: '2.0',
-            id: request.id,
-            error: {
-              code: -32601,
-              message: `Method not found: ${request.method}`,
-            },
-          }
-      }
-    } catch (err) {
-      return {
-        jsonrpc: '2.0',
-        id: request.id,
-        error: { code: -32000, message: String(err) },
-      }
-    }
   }
 }
 

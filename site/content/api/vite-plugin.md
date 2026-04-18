@@ -79,6 +79,16 @@ leave `mcpPort` disabled, which is the safe default.
 function hasMcpPackage(root: string): boolean
 ```
 
+### `resolveMcpCliPath()`
+
+Resolve the path to the llui-mcp CLI entry. Reads `bin.llui-mcp`
+from @llui/mcp's package.json and joins it against the package
+directory. Returns null if @llui/mcp isn't resolvable.
+
+```typescript
+function resolveMcpCliPath(root: string): string | null
+```
+
 ### `llui()`
 
 ```typescript

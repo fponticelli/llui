@@ -156,25 +156,25 @@ function mcpActiveFilePath(cwd: string = process.cwd()): string
 
 ## Interfaces
 
-### `JsonRpcRequest`
+### `LluiMcpServerOptions`
 
 ```typescript
-interface JsonRpcRequest {
-  jsonrpc: '2.0'
-  id: string | number
-  method: string
-  params?: Record<string, unknown>
-}
-```
-
-### `JsonRpcResponse`
-
-```typescript
-interface JsonRpcResponse {
-  jsonrpc: '2.0'
-  id: string | number
-  result?: unknown
-  error?: { code: number; message: string; data?: unknown }
+export interface LluiMcpServerOptions {
+  /**
+   * Port for the browser-relay WebSocket bridge. When the MCP transport
+   * is stdio (the CLI default), the relay stands up its own server on
+   * this port. When the MCP transport is HTTP, the relay attaches to
+   * that HTTP server and the MCP protocol + bridge share a single port.
+   */
+  bridgePort?: number
+  /**
+   * Optional pre-existing `http.Server` to share with the bridge. When
+   * provided, the bridge attaches to it via upgrade routing on
+   * `/bridge`; `bridgePort` is ignored for server-creation purposes
+   * (but still written into the marker file so consumers know where to
+   * connect).
+   */
+  attachTo?: HttpServer
 }
 ```
 
@@ -187,8 +187,11 @@ class LluiMcpServer {
   registry: ToolRegistry
   relay: WebSocketRelayTransport
   bridgePort: number
+  mcp: McpServer
   devUrl: string | null
-  constructor(bridgePort = 5200)
+  constructor(optsOrPort: LluiMcpServerOptions | number = 5200)
+  registerMcpHandlers(): void
+  connect(transport: Transport): Promise<void>
   connectDirect(api: LluiDebugAPI): void
   setDevUrl(url: string): void
   startBridge(): void
@@ -197,8 +200,6 @@ class LluiMcpServer {
   removeActiveFile(): void
   getTools(): ToolDefinition[]
   handleToolCall(name: string, args: Record<string, unknown>): Promise<unknown>
-  start(): void
-  handleRequest(request: JsonRpcRequest): Promise<JsonRpcResponse>
 }
 ```
 
