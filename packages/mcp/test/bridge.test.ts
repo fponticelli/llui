@@ -121,12 +121,25 @@ describe('MCP bridge (WebSocket)', () => {
     browser.close()
   })
 
-  it('throws when no browser is connected', async () => {
+  it('throws a RelayUnavailableError with a structured diagnostic when no browser is connected', async () => {
     port = 5304
     server = new LluiMcpServer(port)
     server.startBridge()
 
-    await expect(server.handleToolCall('llui_get_state', {})).rejects.toThrow(/No browser/)
+    try {
+      await server.handleToolCall('llui_get_state', {})
+      throw new Error('expected to throw')
+    } catch (err) {
+      const { RelayUnavailableError } = await import('../src/transports/index.js')
+      expect(err).toBeInstanceOf(RelayUnavailableError)
+      const d = (err as InstanceType<typeof RelayUnavailableError>).diagnostic
+      expect(d.connected).toBe(false)
+      expect(d.bridge.running).toBe(true)
+      expect(d.bridge.port).toBe(port)
+      expect(d.browser.tabsConnected).toBe(0)
+      expect(typeof d.suggestedFix).toBe('string')
+      expect(d.suggestedFix.length).toBeGreaterThan(0)
+    }
   })
 
   it('times out if browser does not respond', async () => {

@@ -7,7 +7,7 @@ import type { Transport } from '@modelcontextprotocol/sdk/shared/transport.js'
 import { ListToolsRequestSchema, CallToolRequestSchema } from '@modelcontextprotocol/sdk/types.js'
 import { ToolRegistry, type ToolContext, type ToolDefinition } from './tool-registry.js'
 import { registerDebugApiTools } from './tools/index.js'
-import { WebSocketRelayTransport } from './transports/index.js'
+import { WebSocketRelayTransport, RelayUnavailableError } from './transports/index.js'
 
 /**
  * Walk up from `start` until we find a workspace root marker. Used by
@@ -87,6 +87,7 @@ export class LluiMcpServer {
     this.relay = new WebSocketRelayTransport({
       port: opts.attachTo ? undefined : this.bridgePort,
       attachTo: opts.attachTo,
+      markerPath: mcpActiveFilePath(),
     })
     registerDebugApiTools(this.registry)
 
@@ -110,9 +111,27 @@ export class LluiMcpServer {
 
     this.mcp.setRequestHandler(CallToolRequestSchema, async (request) => {
       const { name, arguments: args } = request.params
-      const result = await this.handleToolCall(name, args ?? {})
-      return {
-        content: [{ type: 'text' as const, text: JSON.stringify(result, null, 2) }],
+      try {
+        const result = await this.handleToolCall(name, args ?? {})
+        return {
+          content: [{ type: 'text' as const, text: JSON.stringify(result, null, 2) }],
+        }
+      } catch (err) {
+        // Bridge-unavailable errors carry a structured diagnostic — surface
+        // it as an isError tool result so the caller (typically Claude) sees
+        // WHY the browser isn't reachable, not just that it failed.
+        if (err instanceof RelayUnavailableError) {
+          return {
+            isError: true,
+            content: [
+              {
+                type: 'text' as const,
+                text: JSON.stringify({ error: 'bridge-unavailable', ...err.diagnostic }, null, 2),
+              },
+            ],
+          }
+        }
+        throw err
       }
     })
   }

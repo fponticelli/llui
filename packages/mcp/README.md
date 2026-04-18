@@ -56,6 +56,24 @@ The server talks stdio to the client and stands up its own WebSocket bridge on p
 export default defineConfig({ plugins: [llui({ mcpPort: 5200 })] })
 ```
 
+### Troubleshooting: `llui-mcp doctor`
+
+If a tool call returns a `bridge-unavailable` error or Claude simply can't talk to a running app, run the doctor to see what's wrong:
+
+```bash
+npx llui-mcp doctor
+```
+
+It checks, in order:
+
+- Is the active-marker file at `node_modules/.cache/llui-mcp/active.json` present?
+- Is the marker JSON parseable?
+- Has the Vite plugin stamped its `devUrl` into the marker?
+- Is the bridge port listening on 127.0.0.1?
+- Is the PID recorded in the marker still alive?
+
+Each check prints `✓` or `✗` with a one-line detail. Exit code is 0 when everything passes, 1 when any check fails.
+
 ## Tools
 
 ### State Inspection

@@ -1,8 +1,86 @@
 import { WebSocketServer, type WebSocket } from 'ws'
 import type { Server as HttpServer } from 'node:http'
+import { existsSync, readFileSync } from 'node:fs'
 import { randomUUID } from 'node:crypto'
 import type { LluiDebugAPI } from '@llui/dom'
 import type { RelayTransport } from '../tool-registry.js'
+
+/**
+ * Structured snapshot of the bridge state at a single point in time.
+ * Returned by `RelayUnavailableError.diagnostic` so tool callers can
+ * see WHY the browser isn't reachable without grepping plugin source.
+ */
+export interface BridgeDiagnostic {
+  connected: boolean
+  bridge: {
+    /** Is the WS server bound and listening? */
+    running: boolean
+    port: number | null
+  }
+  browser: {
+    /** Currently connected browser tabs (0 or 1 — the bridge is single-client today). */
+    tabsConnected: number
+  }
+  mcpMarker: {
+    present: boolean
+    path: string
+    /** Set by the Vite plugin once Vite's httpServer emits `listening`. */
+    devUrl: string | null
+  }
+  suggestedFix: string
+}
+
+/**
+ * Error thrown when a tool call needs the browser relay but no browser
+ * is attached. Carries a `diagnostic` payload the MCP handler can
+ * surface as `isError: true` tool content — no need for Claude (or any
+ * MCP client) to grep plugin source to guess what's wrong.
+ */
+export class RelayUnavailableError extends Error {
+  readonly diagnostic: BridgeDiagnostic
+  constructor(diagnostic: BridgeDiagnostic) {
+    super(diagnostic.suggestedFix)
+    this.name = 'RelayUnavailableError'
+    this.diagnostic = diagnostic
+  }
+}
+
+function buildSuggestedFix(state: {
+  bridgeRunning: boolean
+  tabsConnected: number
+  markerPresent: boolean
+  devUrl: string | null
+}): string {
+  if (!state.bridgeRunning) {
+    return (
+      'The MCP bridge server is not running. Start @llui/mcp — either via the ' +
+      'Vite plugin (install @llui/mcp as a dev dep and the plugin will auto-spawn ' +
+      'it on `pnpm dev`) or manually with `npx llui-mcp`.'
+    )
+  }
+  if (!state.markerPresent) {
+    return (
+      'The bridge is running but no active-marker file exists — internal ' +
+      'state mismatch. Restart the MCP server and retry.'
+    )
+  }
+  if (state.devUrl === null) {
+    return (
+      "The marker file exists but the Vite plugin hasn't stamped its dev URL " +
+      "(so the plugin probably isn't opted in). Check vite.config.ts: ensure " +
+      '`llui()` is in plugins and mcpPort is not set to false. Then restart ' +
+      'Vite and load the app in a browser.'
+    )
+  }
+  if (state.tabsConnected === 0) {
+    return (
+      `The bridge is running and the Vite plugin is opted in, but no browser ` +
+      `tab is attached. Open ${state.devUrl} (or reload the tab if already open). ` +
+      'The browser relay connects on page load.'
+    )
+  }
+  return 'Unknown state — bridge running, browser attached, yet the call failed.'
+}
 
 export interface RelayTransportOptions {
   /**
@@ -12,6 +90,12 @@ export interface RelayTransportOptions {
    */
   port?: number
   attachTo?: HttpServer
+  /**
+   * Filesystem path to the MCP active-marker file. Used by `diagnose()`
+   * to check whether the Vite plugin has written the marker (indicating
+   * it's opted in) and to read back the `devUrl` it stamped.
+   */
+  markerPath?: string
   onBrowserConnect?: () => void
   onBrowserDisconnect?: () => void
 }
@@ -28,12 +112,14 @@ export class WebSocketRelayTransport implements RelayTransport {
   private directApi: LluiDebugAPI | null = null
   private readonly port: number | undefined
   private readonly attachTo: HttpServer | undefined
+  private readonly markerPath: string
   private readonly onConnect?: () => void
   private readonly onDisconnect?: () => void
 
   constructor(opts: RelayTransportOptions) {
     this.port = opts.port
     this.attachTo = opts.attachTo
+    this.markerPath = opts.markerPath ?? ''
     this.onConnect = opts.onBrowserConnect
     this.onDisconnect = opts.onBrowserDisconnect
   }
@@ -102,6 +188,40 @@ export class WebSocketRelayTransport implements RelayTransport {
     return this.wsServer !== null
   }
 
+  /**
+   * Build a snapshot of the bridge state for diagnostics. Called when a
+   * tool call fails because the browser isn't attached — the payload
+   * goes straight into `RelayUnavailableError.diagnostic` for the
+   * client to surface.
+   */
+  diagnose(markerPath: string): BridgeDiagnostic {
+    const connected = this.isAvailable()
+    const tabsConnected = this.browserWs !== null ? 1 : 0
+    const markerPresent = existsSync(markerPath)
+    let devUrl: string | null = null
+    if (markerPresent) {
+      try {
+        const payload = JSON.parse(readFileSync(markerPath, 'utf8')) as { devUrl?: string }
+        devUrl = typeof payload.devUrl === 'string' ? payload.devUrl : null
+      } catch {
+        // Ignore malformed markers — leaves devUrl null.
+      }
+    }
+    const suggestedFix = buildSuggestedFix({
+      bridgeRunning: this.wsServer !== null,
+      tabsConnected,
+      markerPresent,
+      devUrl,
+    })
+    return {
+      connected,
+      bridge: { running: this.wsServer !== null, port: this.port ?? null },
+      browser: { tabsConnected },
+      mcpMarker: { present: markerPresent, path: markerPath, devUrl },
+      suggestedFix,
+    }
+  }
+
   async call(method: string, args: unknown[]): Promise<unknown> {
     if (this.directApi) {
       const fn = (this.directApi as unknown as Record<string, unknown>)[method]
@@ -109,7 +229,10 @@ export class WebSocketRelayTransport implements RelayTransport {
       return (fn as (...a: unknown[]) => unknown).apply(this.directApi, args)
     }
     if (!this.browserWs) {
-      throw new Error('No browser connected to the MCP bridge. Start your dev server.')
+      // Caller will typically catch + surface the diagnostic via the
+      // MCP tool-call error path. Throwing the structured error keeps
+      // the runtime contract simple — synchronous failure with context.
+      throw new RelayUnavailableError(this.diagnose(this.markerPath || 'unknown'))
     }
     const id = randomUUID()
     return new Promise((resolve, reject) => {

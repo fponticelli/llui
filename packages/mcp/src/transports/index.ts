@@ -1,2 +1,2 @@
-export { WebSocketRelayTransport } from './relay.js'
-export type { RelayTransportOptions } from './relay.js'
+export { WebSocketRelayTransport, RelayUnavailableError } from './relay.js'
+export type { RelayTransportOptions, BridgeDiagnostic } from './relay.js'
