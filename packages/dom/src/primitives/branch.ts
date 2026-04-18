@@ -49,9 +49,11 @@ export function branch<S, M = unknown>(opts: BranchOptions<S, M>): Node[] {
         onMountQueue = mq.queue
         currentLifetime = createLifetime(parentLifetime)
         currentLifetime._kind =
-      opts.__disposalCause === 'show-hide' ? 'show'
-        : opts.__disposalCause === 'scope-rebuild' ? 'scope'
-          : 'branch'
+          opts.__disposalCause === 'show-hide'
+            ? 'show'
+            : opts.__disposalCause === 'scope-rebuild'
+              ? 'scope'
+              : 'branch'
         setFlatBindings(ctx.allBindings)
         setRenderContext({ ...ctx, rootLifetime: currentLifetime, state })
         currentNodes = newBuilder(createView<S, M>(send))
@@ -117,8 +119,10 @@ export function branch<S, M = unknown>(opts: BranchOptions<S, M>): Node[] {
   if (builder) {
     currentLifetime = createLifetime(parentLifetime)
     currentLifetime._kind =
-      opts.__disposalCause === 'show-hide' ? 'show'
-        : opts.__disposalCause === 'scope-rebuild' ? 'scope'
+      opts.__disposalCause === 'show-hide'
+        ? 'show'
+        : opts.__disposalCause === 'scope-rebuild'
+          ? 'scope'
           : 'branch'
     setRenderContext({ ...ctx, rootLifetime: currentLifetime })
     currentNodes = builder(createView<S, M>(send))

@@ -879,7 +879,9 @@ export function installDevTools(inst: object): void {
 
     getScopeTree(opts?: { depth?: number; scopeId?: string }): LifetimeNode {
       const maxDepth = opts?.depth ?? Infinity
-      const startScope = opts?.scopeId ? findLifetimeById(ci.rootLifetime, opts.scopeId) : ci.rootLifetime
+      const startScope = opts?.scopeId
+        ? findLifetimeById(ci.rootLifetime, opts.scopeId)
+        : ci.rootLifetime
       if (!startScope) {
         return { scopeId: '0', kind: 'root', active: false, children: [] }
       }

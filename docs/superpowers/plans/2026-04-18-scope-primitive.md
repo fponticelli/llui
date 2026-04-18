@@ -15,6 +15,7 @@
 ## File structure
 
 **New files**
+
 - `packages/dom/src/lifetime.ts` (renamed from `scope.ts`)
 - `packages/dom/src/primitives/sample.ts`
 - `packages/dom/src/primitives/scope.ts`
@@ -27,10 +28,12 @@
 - `packages/vite-plugin/test/scope-compiler.test.ts`
 
 **Deleted files**
+
 - `packages/dom/src/scope.ts` (renamed to `lifetime.ts` — no actual delete; git handles the move)
 - `packages/dom/test/scope.test.ts` (renamed; then a new file of the same name is created in Phase 5)
 
 **Modified files (high-traffic)**
+
 - `packages/dom/src/types.ts` — `Scope` → `Lifetime` interface, `ScopeNode` → `LifetimeNode`, new `ScopeOptions`, new `BranchOptions` with conditional default
 - `packages/dom/src/mount.ts` — `parentScope` → `parentLifetime`, `rootScope` → `rootLifetime`
 - `packages/dom/src/render-context.ts` — `rootScope` → `rootLifetime` field
@@ -52,6 +55,7 @@
 - `site/src/generate-llms.ts` (regenerates `site/public/llms-full.txt`, `llms.txt`)
 
 **Test inventory** (renamed as part of Phase 1 mechanical rename, listed here for visibility)
+
 - `packages/dom/test/{mount-at-anchor,optimizations,el-split-strings,hmr,devtools,phase2,binding,scope}.test.ts` all reference `Scope`-family identifiers.
 
 ---
@@ -88,6 +92,7 @@ Mechanical rename. Existing tests (unchanged behavior) are the verification gate
 ### Task 1.1: Rename source file `scope.ts` → `lifetime.ts`
 
 **Files:**
+
 - Rename: `packages/dom/src/scope.ts` → `packages/dom/src/lifetime.ts`
 
 - [ ] **Step 1: Rename via git**
@@ -99,6 +104,7 @@ git mv packages/dom/src/scope.ts packages/dom/src/lifetime.ts
 - [ ] **Step 2: Update exports inside the renamed file**
 
 Inside `packages/dom/src/lifetime.ts`:
+
 - Rename the exported interface `Scope` → `Lifetime` (if it's re-exported from this file; otherwise just rename the function symbols below).
 - `createScope` → `createLifetime`
 - `disposeScope` → `disposeLifetime`
@@ -109,6 +115,7 @@ Inside `packages/dom/src/lifetime.ts`:
 ### Task 1.2: Rename `Scope` interface + `ScopeNode` type in `types.ts`
 
 **Files:**
+
 - Modify: `packages/dom/src/types.ts`
 
 - [ ] **Step 1: Find the `Scope` interface definition**
@@ -213,6 +220,7 @@ git commit -m "refactor(dom): rename internal Scope type to Lifetime"
 ### Task 1.5: Rename public consumers in `@llui/vike`, `@llui/test`, `@llui/components`, `@llui/mcp`
 
 **Files:**
+
 - `packages/vike/src/on-render-client.ts`
 - `packages/vike/src/on-render-html.ts`
 - `packages/test/src/test-view.ts` (check — may consume `MountOptions.parentScope`)
@@ -248,6 +256,7 @@ git commit -m "refactor: update @llui/{vike,test,components,mcp} for Lifetime re
 ### Task 2.1: Write failing test for top-level `sample` import
 
 **Files:**
+
 - Create: `packages/dom/test/view-sample.test.ts`
 
 - [ ] **Step 1: Write the test**
@@ -357,6 +366,7 @@ Expected: fails — `sample` import doesn't exist yet.
 ### Task 2.2: Implement `sample` primitive
 
 **Files:**
+
 - Create: `packages/dom/src/primitives/sample.ts`
 - Modify: `packages/dom/src/index.ts`
 
@@ -402,6 +412,7 @@ Expected: 3 pass, 1 fail (the `h.sample` branch case — View bag doesn't carry 
 ### Task 2.3: Add `sample` to the View bag
 
 **Files:**
+
 - Modify: `packages/dom/src/view-helpers.ts`
 - Modify: `packages/dom/src/types.ts`
 
@@ -469,6 +480,7 @@ git commit -m "feat(dom): add sample() for imperative state reads"
 ### Task 3.1: Write failing runtime test for `default` fallback
 
 **Files:**
+
 - Create: `packages/dom/test/branch-default.test.ts`
 
 - [ ] **Step 1: Write the test**
@@ -562,6 +574,7 @@ Expected: all 3 fail — `default` isn't honored by `branch`, `cases` required b
 ### Task 3.2: Implement `default` in `branch.ts` reconciler
 
 **Files:**
+
 - Modify: `packages/dom/src/primitives/branch.ts`
 
 - [ ] **Step 1: Update `BranchOptions` field shape (runtime type only — full conditional typing lands in Phase 4)**
@@ -623,6 +636,7 @@ Expected: most green; some existing branch-consuming tests may fail because of t
 ### Task 3.3: Update `show.ts` for string-only `on`
 
 **Files:**
+
 - Modify: `packages/dom/src/primitives/show.ts`
 
 - [ ] **Step 1: Wrap `when` in `String(...)`**
@@ -669,6 +683,7 @@ grep -rln "branch(" packages/router/src --include="*.ts"
 - [ ] **Step 2: For each caller with a non-string `on`**
 
 Wrap in `String(...)`:
+
 ```ts
 // Before
 branch({ on: (s) => s.count, cases: { 0: …, 1: … } })
@@ -700,6 +715,7 @@ git commit -m "feat(dom): branch() accepts default case for non-matching keys"
 ### Task 4.1: Write type test with `@ts-expect-error` markers
 
 **Files:**
+
 - Create: `packages/dom/test/branch-exhaustive-types.test.ts`
 
 - [ ] **Step 1: Write the test**
@@ -777,6 +793,7 @@ Expected: passes **with the wrong typing**, because current `BranchOptions` does
 ### Task 4.2: Implement exhaustiveness typing in `BranchOptions`
 
 **Files:**
+
 - Modify: `packages/dom/src/types.ts`
 - Modify: `packages/dom/src/primitives/branch.ts`
 
@@ -785,8 +802,9 @@ Expected: passes **with the wrong typing**, because current `BranchOptions` does
 In `packages/dom/src/types.ts`:
 
 ```ts
-type ExhaustiveKeys<K extends string, C> =
-  [Exclude<K, keyof C & string>] extends [never] ? true : false
+type ExhaustiveKeys<K extends string, C> = [Exclude<K, keyof C & string>] extends [never]
+  ? true
+  : false
 
 export type BranchOptions<
   S,
@@ -795,16 +813,14 @@ export type BranchOptions<
   C extends Partial<Record<K, (h: View<S, M>) => Node[]>> = {},
 > = TransitionOptions & {
   on: (s: S) => K
-} & (
-  ExhaustiveKeys<K, C> extends true
+} & (ExhaustiveKeys<K, C> extends true
     ? { cases: C; default?: never }
-    : { cases?: C; default: (h: View<S, M>) => Node[] }
-) & {
-  /** @internal Set by show()/scope() sugar. */
-  __disposalCause?: DisposerEvent['cause']
-  /** @internal Compiler-injected. */
-  __mask?: number
-}
+    : { cases?: C; default: (h: View<S, M>) => Node[] }) & {
+    /** @internal Set by show()/scope() sugar. */
+    __disposalCause?: DisposerEvent['cause']
+    /** @internal Compiler-injected. */
+    __mask?: number
+  }
 ```
 
 - [ ] **Step 2: Update `branch()` signature**
@@ -853,6 +869,7 @@ git commit -m "feat(dom): exhaustiveness typing for branch() cases/default"
 ### Task 5.1: Add `'scope-rebuild'` to the disposer-cause union
 
 **Files:**
+
 - Modify: `packages/dom/src/tracking/disposer-log.ts`
 
 - [ ] **Step 1: Find the union**
@@ -866,7 +883,13 @@ grep -n "cause:" packages/dom/src/tracking/disposer-log.ts
 ```ts
 export interface DisposerEvent {
   // existing fields
-  cause: 'app-unmount' | 'branch-swap' | 'show-hide' | 'each-remove' | 'child-unmount' | 'scope-rebuild'
+  cause:
+    | 'app-unmount'
+    | 'branch-swap'
+    | 'show-hide'
+    | 'each-remove'
+    | 'child-unmount'
+    | 'scope-rebuild'
 }
 ```
 
@@ -879,6 +902,7 @@ pnpm check
 ### Task 5.2: Add `'scope'` to `LifetimeNode.kind`
 
 **Files:**
+
 - Modify: `packages/dom/src/types.ts`
 
 - [ ] **Step 1: Extend the kind union**
@@ -893,6 +917,7 @@ export interface LifetimeNode {
 ### Task 5.3: Extend `branch.ts` to tag lifetime with `'scope'` kind
 
 **Files:**
+
 - Modify: `packages/dom/src/primitives/branch.ts`
 
 - [ ] **Step 1: Update `_kind` assignment**
@@ -901,9 +926,11 @@ Replace the existing `_kind` ternary:
 
 ```ts
 currentLifetime._kind =
-  opts.__disposalCause === 'show-hide' ? 'show' :
-  opts.__disposalCause === 'scope-rebuild' ? 'scope' :
-  'branch'
+  opts.__disposalCause === 'show-hide'
+    ? 'show'
+    : opts.__disposalCause === 'scope-rebuild'
+      ? 'scope'
+      : 'branch'
 ```
 
 Also the disposal tag on the leaving arm:
@@ -917,6 +944,7 @@ leavingLifetime.disposalCause = opts.__disposalCause ?? 'branch-swap'
 ### Task 5.4: Define `ScopeOptions` and the `scope()` function
 
 **Files:**
+
 - Modify: `packages/dom/src/types.ts`
 - Create: `packages/dom/src/primitives/scope.ts`
 - Modify: `packages/dom/src/index.ts`
@@ -968,6 +996,7 @@ export type { ScopeOptions } from './types.js'
 ### Task 5.5: Write tests for the `scope()` primitive
 
 **Files:**
+
 - Create: `packages/dom/test/scope.test.ts`
 
 - [ ] **Step 1: Write tests**
@@ -1084,6 +1113,7 @@ git commit -m "feat(dom): scope() primitive for keyed subtree rebuild"
 ### Task 5.6: Type-level tests for `scope()`
 
 **Files:**
+
 - Create: `packages/dom/test/scope-types.test.ts`
 
 - [ ] **Step 1: Write type tests**
@@ -1139,6 +1169,7 @@ git commit -m "test(dom): type surface guards for scope()"
 ### Task 6.1: Write failing compiler tests for `scope` + `sample` handling
 
 **Files:**
+
 - Create: `packages/vite-plugin/test/scope-compiler.test.ts`
 
 - [ ] **Step 1: Write the test**
@@ -1297,13 +1328,16 @@ Expected: fails — `scope` isn't in `REACTIVE_API_NAMES`, `sample` not in the s
 ### Task 6.2: Update `REACTIVE_API_NAMES` and add `sample` to skip list
 
 **Files:**
+
 - Modify: `packages/vite-plugin/src/collect-deps.ts`
 
 - [ ] **Step 1: Add `'scope'` to `REACTIVE_API_NAMES`**
 
 ```ts
 const REACTIVE_API_NAMES = new Set([
-  ...[/* element helpers */],
+  ...[
+    /* element helpers */
+  ],
   'each',
   'branch',
   'show',
@@ -1312,7 +1346,7 @@ const REACTIVE_API_NAMES = new Set([
   'foreign',
   'child',
   'errorBoundary',
-  'scope',  // NEW
+  'scope', // NEW
 ])
 ```
 
@@ -1337,6 +1371,7 @@ Expected: all `pathsOf` tests pass.
 ### Task 6.3: Pass 2 — add `'scope'` to `__mask` injection allowlist
 
 **Files:**
+
 - Modify: `packages/vite-plugin/src/transform.ts`
 
 - [ ] **Step 1: Find the Pass 2 mask injection site**
@@ -1362,6 +1397,7 @@ Expected: all green, including existing `branch`/`each` mask-injection tests.
 ### Task 6.4: Dev-mode lint — `__mask === 0` on `scope.on` / `branch.on`
 
 **Files:**
+
 - Modify: `packages/vite-plugin/src/diagnostics.ts`
 
 - [ ] **Step 1: Write a failing test**
@@ -1419,7 +1455,12 @@ function checkEmptyMaskOn(node: ts.Node, sf: ts.SourceFile, diagnostics: Diagnos
   if (!ts.isArrowFunction(onValue) && !ts.isFunctionExpression(onValue)) return
 
   // Reuse the shared scanner over the `on` subtree
-  const subSf = ts.createSourceFile('sub.ts', onValue.body.getText(sf), ts.ScriptTarget.Latest, true)
+  const subSf = ts.createSourceFile(
+    'sub.ts',
+    onValue.body.getText(sf),
+    ts.ScriptTarget.Latest,
+    true,
+  )
   const paths = collectStatePathsFromSource(subSf)
   if (paths.size > 0) return
 
@@ -1467,6 +1508,7 @@ git commit -m "feat(vite-plugin): recognize scope() and sample() in path scanner
 ### Task 7.1: Write end-to-end integration test
 
 **Files:**
+
 - Create: `packages/dom/test/scope-integration.test.ts`
 
 - [ ] **Step 1: Write the test**
@@ -1486,9 +1528,9 @@ import { component, div, text } from '../src'
 type Stats = { samples: number; mean: number }
 type S = { stats: Stats; epoch: number; live: number }
 type Msg =
-  | { type: 'updateStats'; stats: Stats }  // updates stats, no epoch bump
-  | { type: 'rebuildChart' }               // bumps epoch
-  | { type: 'tickLive' }                   // updates live counter
+  | { type: 'updateStats'; stats: Stats } // updates stats, no epoch bump
+  | { type: 'rebuildChart' } // bumps epoch
+  | { type: 'tickLive' } // updates live counter
 
 describe('scope() + sample() integration', () => {
   it('rebuilds chart when epoch changes; skips rebuild on stats-only change; live binding stays reactive', () => {
@@ -1500,9 +1542,12 @@ describe('scope() + sample() integration', () => {
       init: () => [{ stats: { samples: 0, mean: 0 }, epoch: 0, live: 0 }, []],
       update: (s, m) => {
         switch (m.type) {
-          case 'updateStats': return [{ ...s, stats: m.stats }, []]
-          case 'rebuildChart': return [{ ...s, epoch: s.epoch + 1 }, []]
-          case 'tickLive': return [{ ...s, live: s.live + 1 }, []]
+          case 'updateStats':
+            return [{ ...s, stats: m.stats }, []]
+          case 'rebuildChart':
+            return [{ ...s, epoch: s.epoch + 1 }, []]
+          case 'tickLive':
+            return [{ ...s, live: s.live + 1 }, []]
         }
       },
       view: ({ text }) => [
@@ -1570,6 +1615,7 @@ git commit -m "test(dom): end-to-end scope() + sample() integration"
 ### Task 7.2: Update design docs
 
 **Files:**
+
 - Modify: `docs/designs/01 Architecture.md`
 - Modify: `docs/designs/03 Runtime DOM.md`
 - Modify: `docs/designs/09 API Reference.md`
@@ -1632,6 +1678,7 @@ In the same section, wherever the doc says "the scope tree" or "scope lifetime" 
 - [ ] **Step 3: Runtime DOM doc** (`docs/designs/03 Runtime DOM.md`)
 
 Two passes:
+
 1. Global find: every use of `Scope` (capitalized type name) → `Lifetime`; every `createScope` → `createLifetime`; `disposeScope` → `disposeLifetime`. Use the same rename map as Phase 1.
 2. New section "Scope primitive": describe the rebuild-on-key-change flow. Note the `'scope-rebuild'` disposal cause and `_kind: 'scope'` variant on `LifetimeNode`. Reference §4 of the spec.
 
@@ -1670,7 +1717,10 @@ scope({
 // Do not do this
 let chartSnap: Stats | null = null
 each({
-  items: (s) => { chartSnap = s.stats; return [s.chartEpoch] },
+  items: (s) => {
+    chartSnap = s.stats
+    return [s.chartEpoch]
+  },
   key: (n) => String(n),
   render: () => chartView(chartSnap!),
 })
@@ -1745,6 +1795,7 @@ git log main..HEAD --oneline
 ```
 
 Expected series (approx):
+
 ```
 docs: scope() + sample() API reference, cookbook, Lifetime rename
 test(dom): end-to-end scope() + sample() integration
@@ -1798,16 +1849,16 @@ Out of scope for this plan — the publish flow is owned by the repo's release s
 
 Each phase has a clear gate:
 
-| Phase | Gate |
-|---|---|
-| 1 | `pnpm turbo check test` green after rename |
-| 2 | `pnpm vitest run test/view-sample.test.ts` green |
-| 3 | `pnpm turbo check test` green after default + show fix |
-| 4 | `branch-exhaustive-types.test.ts` green |
-| 5 | `scope.test.ts` + full repo green |
-| 6 | `scope-compiler.test.ts` + diagnostics test green |
-| 7 | `scope-integration.test.ts` + full `pnpm turbo check test build` green |
-| 8 | clean build + lint + format green |
+| Phase | Gate                                                                   |
+| ----- | ---------------------------------------------------------------------- |
+| 1     | `pnpm turbo check test` green after rename                             |
+| 2     | `pnpm vitest run test/view-sample.test.ts` green                       |
+| 3     | `pnpm turbo check test` green after default + show fix                 |
+| 4     | `branch-exhaustive-types.test.ts` green                                |
+| 5     | `scope.test.ts` + full repo green                                      |
+| 6     | `scope-compiler.test.ts` + diagnostics test green                      |
+| 7     | `scope-integration.test.ts` + full `pnpm turbo check test build` green |
+| 8     | clean build + lint + format green                                      |
 
 If a gate fails, stop — fix before proceeding to the next phase.
 

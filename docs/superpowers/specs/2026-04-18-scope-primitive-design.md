@@ -13,27 +13,27 @@
 **Pattern A — rebuild a subtree when a derived key changes.** A chart component takes a stats object; the parent bumps an `epoch` counter whenever the bucket size changes so the chart should rebuild from scratch. There is no enumeration of cases; the key is dynamic. Today's workaround (from the dicerun2 post-mortem):
 
 ```ts
-let currentChartSnap: { stats, mode, bucketSize, overlays } | null = null
+let currentChartSnap: { stats; mode; bucketSize; overlays } | null = null
 
 each({
   items: (s) => {
-    currentChartSnap = { stats: s.stats, mode: s.mode, /* ... */ }
+    currentChartSnap = { stats: s.stats, mode: s.mode /* ... */ }
     return [s.statsEpoch]
   },
   key: (n) => n,
-  render: () => chartView(currentChartSnap!.stats, /* ... */),
+  render: () => chartView(currentChartSnap!.stats /* ... */),
 })
 ```
 
 `each` over a singleton array, keyed on the epoch, with a module-scope `let` as a side-channel so `render()` can read the stats snapshot. The `items` callback's primary job is the side effect, not producing the list. This is the symptom of a missing primitive.
 
-**Pattern B — imperatively read current state inside a builder.** The `render` callback above needs the *current* `stats` object, not a reactive binding on `s.stats`. LLui's View bag exposes `text`, `each`, `branch`, `send`, etc. — all reactive accessors. There is no one-shot "read state now" escape hatch, so callers invent closure-captured snapshots.
+**Pattern B — imperatively read current state inside a builder.** The `render` callback above needs the _current_ `stats` object, not a reactive binding on `s.stats`. LLui's View bag exposes `text`, `each`, `branch`, `send`, etc. — all reactive accessors. There is no one-shot "read state now" escape hatch, so callers invent closure-captured snapshots.
 
 This design addresses both:
 
 1. `scope({ on, render })` — new primitive that rebuilds its subtree when `on(state)` changes. Sugar over an extended `branch` with a dynamic `default` case.
 2. `h.sample(selector)` — new View-bag method that reads current state at call time without creating a binding. Available in every builder (branch, show, each, scope, top-level view).
-3. `branch` extended with a `default?: builder` case, typed so it's *required* when `cases` isn't exhaustive for the key union and *disallowed* when it is.
+3. `branch` extended with a `default?: builder` case, typed so it's _required_ when `cases` isn't exhaustive for the key union and _disallowed_ when it is.
 
 The third change also turns `branch` into the canonical structural primitive for keyed rebuilds — enumerated, dynamic, or hybrid — with `scope` as a named-for-intent shortcut for the dynamic-only shape (mirroring how `show` is a named shortcut for the binary-case shape).
 
@@ -98,8 +98,9 @@ Contract:
 ```ts
 // packages/dom/src/types.ts
 
-type ExhaustiveKeys<K extends string, C> =
-  [Exclude<K, keyof C & string>] extends [never] ? true : false
+type ExhaustiveKeys<K extends string, C> = [Exclude<K, keyof C & string>] extends [never]
+  ? true
+  : false
 
 export type BranchOptions<
   S,
@@ -108,16 +109,14 @@ export type BranchOptions<
   C extends Partial<Record<K, (h: View<S, M>) => Node[]>>,
 > = TransitionOptions & {
   on: (s: S) => K
-} & (
-  ExhaustiveKeys<K, C> extends true
+} & (ExhaustiveKeys<K, C> extends true
     ? { cases: C; default?: never }
-    : { cases?: C; default: (h: View<S, M>) => Node[] }
-) & {
-  /** @internal Set by `show()` / `scope()` sugar. */
-  __disposalCause?: DisposerEvent['cause']
-  /** @internal Compiler-injected. */
-  __mask?: number
-}
+    : { cases?: C; default: (h: View<S, M>) => Node[] }) & {
+    /** @internal Set by `show()` / `scope()` sugar. */
+    __disposalCause?: DisposerEvent['cause']
+    /** @internal Compiler-injected. */
+    __mask?: number
+  }
 
 export function branch<
   S,
@@ -219,12 +218,15 @@ No new reconcile code. `scope.ts` is a ~20-line sugar module sitting alongside `
 Two surgical changes to `packages/dom/src/primitives/branch.ts`:
 
 1. `reconcile()` — after the existing `const newBuilder = opts.cases[newCaseKey]`, fall through to `opts.default` if `newBuilder` is undefined:
+
    ```ts
    const newBuilder = opts.cases?.[newCaseKey] ?? opts.default
    ```
+
    (`opts.cases?.[…]` accommodates the now-optional `cases` field.)
 
 2. Initial-mount builder lookup, same treatment:
+
    ```ts
    const builder = opts.cases?.[caseKey] ?? opts.default
    ```
@@ -232,9 +234,11 @@ Two surgical changes to `packages/dom/src/primitives/branch.ts`:
 3. `_kind` assignment — add `'scope'` branch:
    ```ts
    currentLifetime._kind =
-     opts.__disposalCause === 'show-hide' ? 'show'
-     : opts.__disposalCause === 'scope-rebuild' ? 'scope'
-     : 'branch'
+     opts.__disposalCause === 'show-hide'
+       ? 'show'
+       : opts.__disposalCause === 'scope-rebuild'
+         ? 'scope'
+         : 'branch'
    ```
 
 ### 4.3 `DisposerEvent['cause']` union
@@ -244,6 +248,7 @@ Add `'scope-rebuild'` to the union in `packages/dom/src/tracking/disposer-log.ts
 ### 4.4 `ScopeNode.kind` → `LifetimeNode.kind`
 
 Add `'scope'` to the kind union:
+
 ```ts
 kind: 'root' | 'show' | 'each' | 'branch' | 'child' | 'portal' | 'foreign' | 'scope'
 ```
@@ -256,21 +261,21 @@ A standalone primitive module (`packages/dom/src/primitives/sample.ts`) exports 
 
 ### 4.6 `Lifetime` rename — mechanical map
 
-| Before | After |
-|---|---|
-| `Scope` (interface) | `Lifetime` |
-| `ScopeNode` (type export) | `LifetimeNode` |
-| `createScope(parent)` | `createLifetime(parent)` |
-| `disposeScope(lifetime)` | `disposeLifetime(lifetime)` |
-| `addDisposer(lifetime, fn)` | `addDisposer(lifetime, fn)` (unchanged — already a verb) |
-| `rootScope` (field on ComponentInstance, RenderContext) | `rootLifetime` |
-| `parentScope` (option, field, arg) | `parentLifetime` |
-| `MountOptions.parentScope` | `MountOptions.parentLifetime` |
-| `childScope` / `leavingScope` / `currentScope` (local variables) | `childLifetime` / `leavingLifetime` / `currentLifetime` |
-| `packages/dom/src/scope.ts` | `packages/dom/src/lifetime.ts` |
-| `packages/dom/test/scope.test.ts` | `packages/dom/test/lifetime.test.ts` |
+| Before                                                           | After                                                    |
+| ---------------------------------------------------------------- | -------------------------------------------------------- |
+| `Scope` (interface)                                              | `Lifetime`                                               |
+| `ScopeNode` (type export)                                        | `LifetimeNode`                                           |
+| `createScope(parent)`                                            | `createLifetime(parent)`                                 |
+| `disposeScope(lifetime)`                                         | `disposeLifetime(lifetime)`                              |
+| `addDisposer(lifetime, fn)`                                      | `addDisposer(lifetime, fn)` (unchanged — already a verb) |
+| `rootScope` (field on ComponentInstance, RenderContext)          | `rootLifetime`                                           |
+| `parentScope` (option, field, arg)                               | `parentLifetime`                                         |
+| `MountOptions.parentScope`                                       | `MountOptions.parentLifetime`                            |
+| `childScope` / `leavingScope` / `currentScope` (local variables) | `childLifetime` / `leavingLifetime` / `currentLifetime`  |
+| `packages/dom/src/scope.ts`                                      | `packages/dom/src/lifetime.ts`                           |
+| `packages/dom/test/scope.test.ts`                                | `packages/dom/test/lifetime.test.ts`                     |
 
-The `_kind` string-literal values (`'root'`, `'branch'`, `'show'`, `'each'`, `'child'`, `'portal'`, `'foreign'`, `'scope'`) describe the *primitive that owns the lifetime*, not the concept. They stay as-is.
+The `_kind` string-literal values (`'root'`, `'branch'`, `'show'`, `'each'`, `'child'`, `'portal'`, `'foreign'`, `'scope'`) describe the _primitive that owns the lifetime_, not the concept. They stay as-is.
 
 Disposal-cause strings (`'branch-swap'`, `'each-remove'`, `'show-hide'`, `'app-unmount'`, `'child-unmount'`, new `'scope-rebuild'`) similarly stay as-is.
 
@@ -288,14 +293,21 @@ Three changes in `@llui/vite-plugin`.
 // packages/vite-plugin/src/collect-deps.ts
 const REACTIVE_API_NAMES = new Set([
   ...ELEMENT_HELPERS,
-  'each', 'branch', 'show', 'memo', 'portal', 'foreign', 'child', 'errorBoundary',
-  'scope',  // NEW
+  'each',
+  'branch',
+  'show',
+  'memo',
+  'portal',
+  'foreign',
+  'child',
+  'errorBoundary',
+  'scope', // NEW
 ])
 ```
 
 Effect: `scope({ on: s => s.epoch, render: h => [...] })`'s `on` callback's state-access paths are collected into the bitmask. Same machinery `branch.on` already uses.
 
-The `render` prop's arrow has paramName `h`. The path resolver rejects chains not rooted at the arrow's paramName, so `h.text(s => s.x)` inside `render`'s body is picked up on the *inner* arrow (paramName `s`), and stray `h.*` chains are filtered. No false positives. This behavior is identical to how `each.render` and `branch.cases[k]` are already treated.
+The `render` prop's arrow has paramName `h`. The path resolver rejects chains not rooted at the arrow's paramName, so `h.text(s => s.x)` inside `render`'s body is picked up on the _inner_ arrow (paramName `s`), and stray `h.*` chains are filtered. No false positives. This behavior is identical to how `each.render` and `branch.cases[k]` are already treated.
 
 ### 5.2 `isReactiveAccessor` — `sample` identifier-callee skip
 
@@ -344,7 +356,7 @@ type Status = 'idle' | 'loading' | 'done'
 
 // OK — all cases covered, no default
 branch<{ status: Status }, never, Status, { idle: B; loading: B; done: B }>({
-  on: s => s.status,
+  on: (s) => s.status,
   cases: {
     idle: () => [],
     loading: () => [],

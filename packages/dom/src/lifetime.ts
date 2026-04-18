@@ -237,7 +237,11 @@ export function addItemUpdater(scope: Lifetime, updater: () => void): void {
  * @param apply - DOM write: receives the new value when it differs
  * @returns the initial value (caller should apply it to the DOM)
  */
-export function addCheckedItemUpdater<V>(scope: Lifetime, get: () => V, apply: (value: V) => void): V {
+export function addCheckedItemUpdater<V>(
+  scope: Lifetime,
+  get: () => V,
+  apply: (value: V) => void,
+): V {
   let last: V = get()
   addItemUpdater(scope, () => {
     const v = get()
