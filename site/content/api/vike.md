@@ -90,7 +90,10 @@ The barrel export (`@llui/vike`) re-exports everything, but prefer sub-path impo
 ### `resolveLayoutChain()`
 
 ```typescript
-function resolveLayoutChain(layoutOption: RenderHtmlOptions['Layout'], pageContext: PageContext): LayoutChain
+function resolveLayoutChain(
+  layoutOption: RenderHtmlOptions['Layout'],
+  pageContext: PageContext,
+): LayoutChain
 ```
 
 ### `onRenderHtml()`
@@ -109,6 +112,7 @@ for its own framework-adapter config (`vike-react` / `vike-vue` /
 `vike-solid`) and will conflict with `@llui/vike`'s `Layout` option.
 Name the file `Layout.ts`, `app-layout.ts`, or anywhere outside
 `/pages` that Vike won't scan, and import it here by path.
+
 ```ts
 // pages/+onRenderHtml.ts
 import { createOnRenderHtml } from '@llui/vike/server'
@@ -123,7 +127,9 @@ export const onRenderHtml = createOnRenderHtml({
 ```
 
 ```typescript
-function createOnRenderHtml(options: RenderHtmlOptions): (pageContext: PageContext) => Promise<RenderHtmlResult>
+function createOnRenderHtml(
+  options: RenderHtmlOptions,
+): (pageContext: PageContext) => Promise<RenderHtmlResult>
 ```
 
 ### `renderPage()`
@@ -143,7 +149,10 @@ tree for context lookups.
 @internal — exported for unit testing only (`_renderChain`).
 
 ```typescript
-function _renderChain(chain: LayoutChain, chainData: readonly unknown[]): { html: string; envelope: HydrationEnvelope }
+function _renderChain(
+  chain: LayoutChain,
+  chainData: readonly unknown[],
+): { html: string; envelope: HydrationEnvelope }
 ```
 
 ### `fromTransition()`
@@ -152,6 +161,7 @@ Adapt a `TransitionOptions` object (e.g. the output of
 `routeTransition()` from `@llui/transitions`, or a preset like `fade`
 / `slide`) into the `onLeave` / `onEnter` pair expected by
 `createOnRenderClient`.
+
 ```ts
 import { createOnRenderClient, fromTransition } from '@llui/vike/client'
 import { routeTransition } from '@llui/transitions'
@@ -160,6 +170,7 @@ export const onRenderClient = createOnRenderClient({
   ...fromTransition(routeTransition({ duration: 200 })),
 })
 ```
+
 The transition operates on the slot element — in a no-layout setup,
 the root container; in a layout setup, the innermost surviving
 layer's `pageSlot()` element. Opacity / transform fades apply to the
@@ -212,6 +223,7 @@ adapter in that sense — it's a render adapter, and `createOnRenderClient`
 consumes the layout component directly via the `Layout` option. Name
 the file `Layout.ts`, `app-layout.ts`, or anywhere outside `/pages`
 that Vike won't scan, and import it here by path.
+
 ```ts
 // pages/+onRenderClient.ts
 import { createOnRenderClient, fromTransition } from '@llui/vike/client'
@@ -225,7 +237,9 @@ export const onRenderClient = createOnRenderClient({
 ```
 
 ```typescript
-function createOnRenderClient(options: RenderClientOptions): (pageContext: ClientPageContext) => Promise<void>
+function createOnRenderClient(
+  options: RenderClientOptions,
+): (pageContext: ClientPageContext) => Promise<void>
 ```
 
 ### `renderClient()`
@@ -241,7 +255,12 @@ depth 0 at the root container, threads each layer's slot into the
 next layer's mount target + parentLifetime.
 
 ```typescript
-function mountOrHydrateChain(chain: LayoutChain, chainData: readonly unknown[], rootEl: HTMLElement, opts: MountOpts): Promise<void>
+function mountOrHydrateChain(
+  chain: LayoutChain,
+  chainData: readonly unknown[],
+  rootEl: HTMLElement,
+  opts: MountOpts,
+): Promise<void>
 ```
 
 ### `_mountChainSuffix()`
@@ -259,7 +278,14 @@ test anchor-mount/dispose contracts directly with hand-built DOM.
 Not part of the public API.
 
 ```typescript
-function _mountChainSuffix(chain: LayoutChain, chainData: readonly unknown[], startAt: number, initialTarget: HTMLElement | Comment, initialParentLifetime: Lifetime | undefined, opts: MountOpts): void
+function _mountChainSuffix(
+  chain: LayoutChain,
+  chainData: readonly unknown[],
+  startAt: number,
+  initialTarget: HTMLElement | Comment,
+  initialParentLifetime: Lifetime | undefined,
+  opts: MountOpts,
+): void
 ```
 
 ### `hasDataChanged()`
@@ -267,6 +293,7 @@ function _mountChainSuffix(chain: LayoutChain, chainData: readonly unknown[], st
 Shallow-key data diff for the persistent-layer prop-update path.
 Returns true when `next` differs from `prev` enough to warrant
 dispatching a `propsMsg`. Mirrors `child()`'s prop-diff semantics:
+
 - `Object.is(prev, next)` short-circuits identical references.
 - For two plain-object records, walks the union of keys and returns
   true on the first `Object.is` mismatch.
@@ -282,7 +309,12 @@ function hasDataChanged(prev: unknown, next: unknown): boolean
 ### `extractHydrationState()`
 
 ```typescript
-function extractHydrationState(envelope: unknown, layerIndex: number, chainLength: number, def: AnyComponentDef): unknown
+function extractHydrationState(
+  envelope: unknown,
+  layerIndex: number,
+  chainLength: number,
+  def: AnyComponentDef,
+): unknown
 ```
 
 ## Types
@@ -410,9 +442,10 @@ export interface ClientPageContext {
 
 Page-lifecycle hooks that fire around the dispose → mount cycle on
 client navigation. With persistent layouts in play the cycle only
-tears down the *divergent* suffix of the layout chain — any layers
+tears down the _divergent_ suffix of the layout chain — any layers
 shared between the old and new routes stay mounted.
 Navigation sequence for an already-mounted app:
+
 ```
   client nav triggered
     │
@@ -438,6 +471,7 @@ Navigation sequence for an already-mounted app:
     ▼
   onMount()
 ```
+
 On the initial hydration render, `onLeave` and `onEnter` are NOT
 called — there's no outgoing page to leave and no animation to enter.
 Use `onMount` for code that should run on every render including the
@@ -549,6 +583,5 @@ const chainHandles: ChainEntry[]
 ```typescript
 const mountChainSuffix
 ```
-
 
 <!-- auto-api:end -->

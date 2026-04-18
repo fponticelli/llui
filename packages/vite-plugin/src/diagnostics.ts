@@ -291,10 +291,7 @@ function isBoundedArrayReceiver(receiver: ts.Expression, sf: ts.SourceFile): boo
  * VariableDeclaration. Returns its initializer (or null if the name
  * resolves to a function parameter, import, or nothing at all).
  */
-function resolveBindingInitializer(
-  ident: ts.Identifier,
-  sf: ts.SourceFile,
-): ts.Expression | null {
+function resolveBindingInitializer(ident: ts.Identifier, sf: ts.SourceFile): ts.Expression | null {
   const name = ident.text
   let scope: ts.Node | undefined = ident.parent
   while (scope) {
