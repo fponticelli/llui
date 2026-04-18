@@ -41,6 +41,33 @@ export function collectStatePathsFromSource(sourceFile: ts.SourceFile): Set<stri
 }
 
 /**
+ * Per-accessor path sets — one entry per reactive arrow/function. Used
+ * by the bitmask-overflow diagnostic to find clusters of paths that
+ * always fire together (co-occurrence analysis).
+ */
+export function collectAccessorPathSets(sourceFile: ts.SourceFile): Set<string>[] {
+  const sets: Set<string>[] = []
+
+  function visit(node: ts.Node): void {
+    if (ts.isArrowFunction(node) || ts.isFunctionExpression(node)) {
+      const params = node.parameters
+      if (params.length === 1) {
+        const paramName = params[0]!.name
+        if (ts.isIdentifier(paramName) && isReactiveAccessor(node)) {
+          const set = new Set<string>()
+          extractPaths(node.body, paramName.text, '', set)
+          if (set.size > 0) sets.push(set)
+        }
+      }
+    }
+    ts.forEachChild(node, visit)
+  }
+
+  visit(sourceFile)
+  return sets
+}
+
+/**
  * Pre-scan a source file to collect all unique state access paths
  * referenced by reactive accessors (arrow functions in props and text() calls).
  * Returns a Map<path, bitPosition> where each path gets a unique power-of-two bit.

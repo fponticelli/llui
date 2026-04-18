@@ -394,6 +394,65 @@ describe('bitmask overflow (>31 state paths)', () => {
     expect(w.some((m) => m.includes('31-path limit'))).toBe(false)
   })
 
+  it('reports co-occurring top-level field when all its sub-paths always fire together', () => {
+    // 28 unique top-level `a.fN` paths + 4 `r.X`/`r.Y`/`r.Z`/`r.W`
+    // paths that ALWAYS co-occur (every accessor reading any `r.*`
+    // reads all four). Total 32 — overflows by 1. The smart diagnostic
+    // should flag `r` as a cluster: bundling those reads under one
+    // `s.r` accessor collapses 4 bits to 1, saving 3 toward the limit.
+    const rAccessors = Array.from(
+      { length: 5 },
+      (_, i) => `text((s) => s.r.X + s.r.Y + s.r.Z + s.r.W + ${i})`,
+    ).join(',\n          ')
+    const aAccessors = Array.from({ length: 28 }, (_, i) => `text((s) => s.a.f${i})`).join(
+      ',\n          ',
+    )
+    const src = `
+      import { component, div, text } from '@llui/dom'
+      export const C = component({
+        name: 'C',
+        init: () => [{ a: {}, r: { X: 0, Y: 0, Z: 0, W: 0 } }, []],
+        update: (s, m) => [s, []],
+        view: () => [
+          div({}, [
+            ${aAccessors},
+            ${rAccessors}
+          ]),
+        ],
+      })
+    `
+    const w = warnings(src)
+    const overflow = w.find((m) => m.includes('31-path limit'))
+    expect(overflow).toBeDefined()
+    // The smarter diagnostic should identify the co-occurring cluster.
+    // Reports the top-level field name and how many bits bundling saves.
+    expect(overflow).toMatch(/co-occur|always fire together|bundle/i)
+    expect(overflow).toContain('`r`')
+  })
+
+  it('does not report co-occurrence when sub-paths fire independently', () => {
+    // Every sub-path of `a` is read in its own independent accessor —
+    // there is no cluster to collapse. Only the extraction advice.
+    const src = `
+      import { component, div, text } from '@llui/dom'
+      export const C = component({
+        name: 'C',
+        init: () => [{ a: {}, b: {} }, []],
+        update: (s, m) => [s, []],
+        view: () => [
+          div({}, [
+            ${Array.from({ length: 32 }, (_, i) => `text((s) => s.a.f${i})`).join(',\n            ')}
+          ]),
+        ],
+      })
+    `
+    const w = warnings(src)
+    const overflow = w.find((m) => m.includes('31-path limit'))
+    expect(overflow).toBeDefined()
+    // No cluster language — paths are independent, only extraction advice.
+    expect(overflow).not.toMatch(/co-occur|always fire together/i)
+  })
+
   it('extracting one field is enough when it covers most paths', () => {
     // 22 paths under `huge` plus a few under others — extracting `huge`
     // alone should bring the count under 31

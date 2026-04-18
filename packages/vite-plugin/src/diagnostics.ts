@@ -1,5 +1,5 @@
 import ts from 'typescript'
-import { collectStatePathsFromSource } from './collect-deps.js'
+import { collectStatePathsFromSource, collectAccessorPathSets } from './collect-deps.js'
 
 export interface Diagnostic {
   /** Short identifier — passed to `disabledWarnings` in LluiPluginOptions to silence. */
@@ -739,6 +739,28 @@ function checkBitmaskOverflow(
   const breakdown = sorted.map(([field, n]) => `${field} (${n})`).join(', ')
   const candidateList = candidates.map((f) => `\`${f}\``).join(', ')
 
+  // Co-occurrence analysis: identify top-level fields whose every
+  // sub-path always fires in the same accessor sets. Those are prime
+  // candidates to read as a single object — the parent path (one bit)
+  // replaces multiple sub-paths (one bit each), saving (count - 1) bits
+  // toward the 31 limit without the larger surgery that `child()`
+  // extraction requires.
+  const accessorSets = collectAccessorPathSets(sf)
+  const cooccurringFields = findCooccurringFields(paths, accessorSets)
+  const cooccurrenceNote =
+    cooccurringFields.length > 0
+      ? `\n\nCo-occurrence detected: ` +
+        cooccurringFields
+          .map(
+            ({ field, saved }) =>
+              `every sub-path under \`${field}\` always fires together; reading \`s.${field}\` as one unit saves ${saved} bit${saved === 1 ? '' : 's'}`,
+          )
+          .join('; ') +
+        `. Bundle those reads into a single \`s.${cooccurringFields[0]!.field}\` ` +
+        `access (e.g. \`const ${cooccurringFields[0]!.field} = s.${cooccurringFields[0]!.field}\`) ` +
+        `before extraction — cheaper refactor, same budget relief.`
+      : ''
+
   diagnostics.push({
     rule: 'bitmask-overflow',
     message:
@@ -746,7 +768,9 @@ function checkBitmaskOverflow(
       `(${overflow} past the 31-path limit). Paths 32..${pathCount} fall back to ` +
       `FULL_MASK — their changes re-evaluate every binding in the component, ` +
       `negating the bitmask optimization for those updates.\n\n` +
-      `Top-level fields by path count: ${breakdown}.\n\n` +
+      `Top-level fields by path count: ${breakdown}.` +
+      cooccurrenceNote +
+      `\n\n` +
       `Recommended fix: extract ${candidateList} into ${candidates.length === 1 ? 'a' : ''} ` +
       `child component${candidates.length === 1 ? '' : 's'} via \`child()\` ` +
       `(see /api/dom#child). Each child gets its own 31-path bitmask, so the ` +
@@ -756,6 +780,65 @@ function checkBitmaskOverflow(
     line,
     column,
   })
+}
+
+/**
+ * Identify top-level fields whose every sub-path fires in the SAME set
+ * of accessors — the signature of paths that could share a single bit
+ * if the author read the parent object as one unit. Returns a list of
+ * `{ field, saved }` records where `saved = sub-path count - 1` (the
+ * bits freed by collapsing to the parent read).
+ *
+ * Only meaningful for fields with 2+ sub-paths; single-path top-level
+ * fields already occupy exactly one bit.
+ */
+function findCooccurringFields(
+  paths: Set<string>,
+  accessorSets: Set<string>[],
+): Array<{ field: string; saved: number }> {
+  // Group paths by top-level field. Only fields whose depth-2 paths
+  // uniformly share the same appearance-signature are candidates.
+  const subPathsByTop = new Map<string, string[]>()
+  for (const p of paths) {
+    const dot = p.indexOf('.')
+    if (dot < 0) continue // depth-1 path — no bundling opportunity
+    const top = p.slice(0, dot)
+    const arr = subPathsByTop.get(top) ?? []
+    arr.push(p)
+    subPathsByTop.set(top, arr)
+  }
+
+  // For each path, record the set of accessors that read it.
+  const appearances = new Map<string, Set<number>>()
+  for (let i = 0; i < accessorSets.length; i++) {
+    for (const path of accessorSets[i]!) {
+      if (!appearances.has(path)) appearances.set(path, new Set())
+      appearances.get(path)!.add(i)
+    }
+  }
+
+  const out: Array<{ field: string; saved: number }> = []
+  for (const [field, subPaths] of subPathsByTop) {
+    if (subPaths.length < 2) continue
+    // Compute the signature for each sub-path and check they all match.
+    const first = appearances.get(subPaths[0]!) ?? new Set<number>()
+    let uniform = true
+    for (let i = 1; i < subPaths.length; i++) {
+      const set = appearances.get(subPaths[i]!) ?? new Set<number>()
+      if (!setsEqual(first, set)) {
+        uniform = false
+        break
+      }
+    }
+    if (uniform) out.push({ field, saved: subPaths.length - 1 })
+  }
+  return out.sort((a, b) => b.saved - a.saved)
+}
+
+function setsEqual<T>(a: Set<T>, b: Set<T>): boolean {
+  if (a.size !== b.size) return false
+  for (const x of a) if (!b.has(x)) return false
+  return true
 }
 
 // ── scope/branch `on` reads no state ────────────────────────────
