@@ -11,6 +11,62 @@ All notable changes to LLui packages are documented here. LLui is a pre-1.0 proj
 
 Packages version in lockstep at release time: `@llui/dom`, `@llui/vite-plugin`, `@llui/test`, `@llui/router`, `@llui/transitions`, `@llui/components`, `@llui/vike` share a version line. `@llui/effects`, `@llui/mcp`, and `@llui/lint-idiomatic` have their own cadence.
 
+## 2026-04-18 — 0.0.22
+
+**Released:** `@llui/{dom,vite-plugin,test,router,transitions,components,vike}@0.0.22`; `@llui/mcp@0.0.16`
+
+Follow-up pass on the dicerun2 feedback batch. The `branch()` exhaustiveness-typing gate lands (deferred from 0.0.21). `@llui/mcp` adopts `@modelcontextprotocol/sdk`, gains an HTTP transport, and becomes plugin-spawnable — one `pnpm dev` starts the whole stack. `@llui/vite-plugin` picks up `verbose`, auto-detects `@llui/mcp` as a dep, warns on mismatched MCP state, and auto-spawns the child in HTTP mode. `@llui/mcp` also ships a `doctor` CLI + structured bridge diagnostic for self-describing failures.
+
+### Breaking
+
+- **`@llui/dom@0.0.22`** — `branch.cases` now enforces exhaustiveness at the type level when `on` returns a literal string union. Existing calls with partial `cases` and no `default` that previously compiled silently now require a `default` builder. Wide `string` returns stay lenient (exhaustiveness can't be checked on an infinite domain).
+- **`@llui/mcp@0.0.16`** — `LluiMcpServer.start()` is removed. The hand-rolled stdio JSON-RPC loop is replaced by SDK-backed transports; callers drive the protocol via `connect(transport)` (e.g. `StdioServerTransport`, `StreamableHTTPServerTransport`). Direct stdio consumers of the class must refactor; CLI users are unaffected.
+- **`@llui/vite-plugin@0.0.22`** — when `@llui/mcp` is installed and `mcpPort` is omitted, the plugin now **spawns** `llui-mcp --http 5200` as a child of the dev server (previously: wire-only to an externally-managed server). If your `.mcp.json` already runs `llui-mcp` via stdio, the spawn is skipped when the marker file is already present — but switching to HTTP transport in `.mcp.json` (`{ "type": "http", "url": "http://127.0.0.1:5200/mcp" }`) is the recommended path forward.
+
+### Migration
+
+- `branch({ on, cases: { a: …, b: … } })` without `default` over a literal union like `'a' | 'b' | 'c'`: add `default: () => []` (or whatever the fallback should be) so the missing cases compile.
+- If you embed `@llui/mcp` programmatically (rare — most consumers use the CLI), replace `server.start()` with `await server.connect(new StdioServerTransport())`. The `start()` method no longer exists.
+- If you previously ran `npx llui-mcp` in a separate terminal plus configured the Vite plugin with `mcpPort: 5200`: keep that setup — the plugin detects the existing marker and won't double-spawn. Or switch to the plugin-spawn + HTTP `.mcp.json` flow to drop the second terminal.
+
+### `@llui/dom@0.0.22`
+
+- **Breaking** exhaustiveness typing for `branch()` — see top of release block.
+- **Added** `ExhaustiveKeys<K, C>` type helper (public) surfaced for consumers composing their own `branch`-like abstractions.
+- **Improved** `branch.ts` reconciler tags the Lifetime with `_kind: 'scope'` when `__disposalCause === 'scope-rebuild'`; devtools disposer-log now distinguishes scope rebuilds from branch swaps end-to-end (runtime side was right in 0.0.21; this fills in the kind-string missing link).
+- **Fixed** `BranchOptionsBase<_S, _M>` stops tripping the no-unused-vars lint in downstream consumers.
+
+### `@llui/vite-plugin@0.0.22`
+
+- **Added** `verbose?: boolean` option — emits `[llui]`-prefixed `console.info` logs per compiled component file listing reactive state paths and their bit assignments. Off by default.
+- **Added** auto-detect: when `mcpPort` is omitted and `@llui/mcp` resolves from the Vite project root, the plugin now defaults to enabling MCP — previously silent opt-out. Explicit `mcpPort: false` still disables, explicit numeric port still selects wire-only.
+- **Added** auto-spawn: when auto-detect succeeds, the plugin reads `@llui/mcp`'s `bin.llui-mcp` entry and spawns `llui-mcp --http <port>` as a child of `server.httpServer`, piping stdout/stderr to Vite with `[mcp]` prefix, killing the child on server close. Skipped when the marker file already exists (something else is managing the server).
+- **Added** MCP mismatch warning: when `mcpPort` resolves to null but the marker file exists, the plugin emits a one-shot `console.warn` explaining the opted-out state and how to wire things up.
+- **Improved** `scope()` is recognized by the path scanner, `__mask` injection, and the static-`on` lint — it sees the same reactive-accessor treatment as `branch`, `show`, `each`, `memo`.
+- **Improved** Pass 2 mask injection: new lint variant fires when `scope.on` / `branch.on` reads no state (key never changes, subtree mounts once and never rebuilds). Usually a bug.
+
+### `@llui/mcp@0.0.16`
+
+- **Breaking** `LluiMcpServer.start()` removed — see top of release block.
+- **Added** `@modelcontextprotocol/sdk` dependency. `LluiMcpServer` wraps the SDK's `Server` class; tool list/call handlers register via `setRequestHandler` with Zod-backed schemas. The hand-rolled JSON-RPC loop is gone.
+- **Added** HTTP transport via SDK's `StreamableHTTPServerTransport`. `llui-mcp --http [port]` (default 5200) listens on `POST /mcp` for JSON-RPC requests, emits SSE-framed responses, and upgrades `/bridge` for the browser WebSocket relay — one port, dual protocol.
+- **Added** `llui-mcp doctor` subcommand — offline diagnostic that walks the full failure-mode tree (marker presence, JSON validity, plugin devUrl stamping, bridge-port TCP connectability, recorded-pid liveness). Prints a ✓/✗ punch list; exits 0 on all-pass.
+- **Added** `RelayUnavailableError` (exported) — thrown when a tool call needs the browser and no browser is attached. Carries a `diagnostic: BridgeDiagnostic` payload (connection status, bridge state, browser tabs, marker state, `suggestedFix` sentence). The `tools/call` handler surfaces it as an MCP `isError: true` tool result whose content is JSON-serialized diagnostic — callers see *why* the call failed, not just that it did.
+- **Added** `BridgeDiagnostic` type (exported from `@llui/mcp/transports`) for consumers building their own diagnostics UI.
+- **Added** `LluiMcpServerOptions` shape — constructor now accepts `{ bridgePort?, attachTo? }` to share an `http.Server` with an externally-managed HTTP transport. Numeric-port constructor still works for backward compat.
+- **Improved** `WebSocketRelayTransport` gains an `attachTo: http.Server` mode alongside the standalone `port` mode — HTTP-transport deployments share a single port for MCP + bridge via upgrade routing on `/bridge`.
+
+### `@llui/{test,router,transitions,components,vike}@0.0.22`
+
+- Rebuilt against the new `@llui/dom` version. No source changes.
+
+### Docs
+
+- `@llui/mcp` README documents both usage patterns (plugin-launched HTTP and manual stdio) with `.mcp.json` examples and a `doctor` troubleshooting section.
+- Site API docs + llms-full.txt regenerated.
+
+---
+
 ## 2026-04-18 — 0.0.21
 
 **Released:** `@llui/{dom,vite-plugin,test,router,transitions,components,vike}@0.0.21`; `@llui/mcp@0.0.15`
