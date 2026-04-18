@@ -242,15 +242,25 @@ export interface TransitionOptions {
 }
 
 export interface BranchOptions<S, M = unknown> extends TransitionOptions {
-  on: (s: S) => string | number | boolean
-  cases: Record<string | number, (h: View<S, M>) => Node[]>
+  on: (s: S) => string
+  cases?: Record<string, (h: View<S, M>) => Node[]>
   /**
-   * @internal Set by `show()` when it delegates to `branch()`, so the
-   * dev-only disposer log can report `'show-hide'` instead of the
-   * default `'branch-swap'` for the leaving arm. User code should not
-   * set this directly.
+   * Fallback builder — runs when `on(state)` returns a key not present
+   * in `cases`, or when `cases` is omitted entirely. Phase 4 of the
+   * scope-primitive rollout will make this required-or-disallowed by
+   * exhaustiveness analysis of `cases` against the union inferred from
+   * `on`'s return type; for now it is always optional.
+   */
+  default?: (h: View<S, M>) => Node[]
+  /**
+   * @internal Set by `show()` / `scope()` sugar when delegating to
+   * `branch()`, so the dev-only disposer log can report `'show-hide'` /
+   * `'scope-rebuild'` instead of the default `'branch-swap'` for the
+   * leaving arm. User code should not set this directly.
    */
   __disposalCause?: DisposerEvent['cause']
+  /** @internal Compiler-injected mask of paths read by `on`. */
+  __mask?: number
 }
 
 export interface ShowOptions<S, M = unknown> extends TransitionOptions {

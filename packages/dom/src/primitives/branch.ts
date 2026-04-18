@@ -37,7 +37,7 @@ export function branch<S, M = unknown>(opts: BranchOptions<S, M>): Node[] {
       currentKey = newKey
 
       const newCaseKey = String(newKey)
-      const newBuilder = opts.cases[newCaseKey]
+      const newBuilder = opts.cases?.[newCaseKey] ?? opts.default
       // Collect onMount callbacks from the new case into a local queue,
       // then flush them SYNCHRONOUSLY after the new nodes are inserted.
       // Without this, onMount inside a branch case would see stale DOM
@@ -106,7 +106,7 @@ export function branch<S, M = unknown>(opts: BranchOptions<S, M>): Node[] {
   blocks.push(block)
 
   const caseKey = String(currentKey)
-  const builder = opts.cases[caseKey]
+  const builder = opts.cases?.[caseKey] ?? opts.default
   // Initial-mount onMount callbacks are handled by the outer mountApp
   // queue — we're still inside the first view() call. branch doesn't
   // insert into the DOM at this point (the anchor + initial children
