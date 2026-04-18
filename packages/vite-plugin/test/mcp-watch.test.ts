@@ -162,6 +162,10 @@ describe('vite-plugin: /__llui_mcp_status middleware', () => {
 
   function setup(opts: { mcpPort?: number | false } = { mcpPort: 5200 }): FakeServer {
     const plugin = llui(opts)
+    // configResolved now resolves mcpPort (explicit value wins; undefined
+    // auto-detects). Must run before configureServer so the port is set.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(plugin as any).configResolved?.call(plugin, { root: process.cwd(), command: 'serve' })
     const fake = makeFakeServer()
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     ;(plugin as any).configureServer?.call(plugin, fake)

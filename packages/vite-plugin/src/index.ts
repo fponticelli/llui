@@ -2,6 +2,7 @@ import type { Plugin, ViteDevServer } from 'vite'
 import MagicString from 'magic-string'
 import { existsSync, readFileSync, writeFileSync, watch as fsWatch, type FSWatcher } from 'node:fs'
 import { dirname, relative, resolve } from 'node:path'
+import { createRequire } from 'node:module'
 import { transformLlui } from './transform.js'
 import { diagnose, type DiagnosticRule } from './diagnostics.js'
 
@@ -32,10 +33,14 @@ export interface LluiPluginOptions {
    * to `ws://127.0.0.1:<port>` so an external `llui-mcp` server can forward
    * tool calls into the running app.
    *
-   * Defaults to `false` (opt-in). Pass a number (typically `5200`) to
-   * enable. When enabled but the MCP server isn't running, the plugin
-   * returns 404 from its discovery endpoint and the browser silently
-   * skips the connection — no retry noise.
+   * When omitted, the plugin checks whether `@llui/mcp` is resolvable from
+   * the Vite project root. If yes → defaults to `5200`. If no → stays
+   * disabled. This means installing `@llui/mcp` (+ starting its server)
+   * Just Works without an explicit config entry. Pass an explicit `false`
+   * to opt out even when `@llui/mcp` is installed; pass a number to use
+   * a non-default port. When enabled but the MCP server isn't running,
+   * the plugin returns 404 from its discovery endpoint and the browser
+   * silently skips the connection — no retry noise.
    */
   mcpPort?: number | false
 
@@ -73,13 +78,28 @@ export interface LluiPluginOptions {
   verbose?: boolean
 }
 
+/**
+ * Does `@llui/mcp` resolve from `root`'s node_modules? Uses
+ * `require.resolve` so monorepo workspaces and hoisted installs both
+ * work. Catches failures silently — the only consequence is that we
+ * leave `mcpPort` disabled, which is the safe default.
+ */
+function hasMcpPackage(root: string): boolean {
+  try {
+    const req = createRequire(resolve(root, 'package.json'))
+    req.resolve('@llui/mcp/package.json')
+    return true
+  } catch {
+    return false
+  }
+}
+
 export default function llui(options: LluiPluginOptions = {}): Plugin {
   let devMode = false
-  // MCP is opt-in: developers who want interactive debugging pass an
-  // explicit port. Leaving it off avoids 404 polling in projects that
-  // don't use the companion server.
-  const mcpPort =
-    options.mcpPort === false || options.mcpPort === undefined ? null : options.mcpPort
+  // mcpPort is resolved lazily in `configResolved` so we can check for
+  // @llui/mcp in the consuming project's node_modules. Explicit false
+  // or a number always wins; `undefined` triggers auto-detect.
+  let mcpPort: number | null = null
   const failOnWarning = options.failOnWarning === true
   const disabledWarnings = new Set<string>(options.disabledWarnings ?? [])
   const verbose = options.verbose === true
@@ -147,10 +167,32 @@ export default function llui(options: LluiPluginOptions = {}): Plugin {
 
     configResolved(config) {
       devMode = config.command === 'serve' || config.mode === 'development'
+      // Resolve mcpPort: explicit user value wins; otherwise auto-detect.
+      if (options.mcpPort === false) {
+        mcpPort = null
+      } else if (typeof options.mcpPort === 'number') {
+        mcpPort = options.mcpPort
+      } else {
+        mcpPort = hasMcpPackage(config.root) ? 5200 : null
+      }
     },
 
     configureServer(server) {
-      if (mcpPort === null) return
+      if (mcpPort === null) {
+        // #3 diagnostic: MCP server is running but the plugin is opted
+        // out. Users in this state usually don't realize the mismatch —
+        // loud-and-early log saves the "why isn't my MCP attached" hunt.
+        if (existsSync(activeFilePath)) {
+          console.warn(
+            `[llui] @llui/mcp server is running (marker at ${activeFilePath}) ` +
+              `but the Vite plugin is opted out (mcpPort: false, or @llui/mcp ` +
+              `isn't a dep of this project). Add \`llui({ mcpPort: 5200 })\` ` +
+              `to vite.config to wire them up, or remove the marker file and ` +
+              `stop the MCP server if the mismatch was unintended.`,
+          )
+        }
+        return
+      }
 
       // HTTP endpoint: the browser fetches this on load to discover the
       // current MCP port. Avoids the race where HMR events sent before

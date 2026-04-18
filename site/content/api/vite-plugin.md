@@ -68,6 +68,17 @@ vite-plugin → mcp dependency cycle. The contract must stay in sync.
 function findWorkspaceRoot(start: string = process.cwd()): string
 ```
 
+### `hasMcpPackage()`
+
+Does `@llui/mcp` resolve from `root`'s node_modules? Uses
+`require.resolve` so monorepo workspaces and hoisted installs both
+work. Catches failures silently — the only consequence is that we
+leave `mcpPort` disabled, which is the safe default.
+
+```typescript
+function hasMcpPackage(root: string): boolean
+```
+
 ### `llui()`
 
 ```typescript
@@ -85,10 +96,14 @@ export interface LluiPluginOptions {
    * to `ws://127.0.0.1:<port>` so an external `llui-mcp` server can forward
    * tool calls into the running app.
    *
-   * Defaults to `false` (opt-in). Pass a number (typically `5200`) to
-   * enable. When enabled but the MCP server isn't running, the plugin
-   * returns 404 from its discovery endpoint and the browser silently
-   * skips the connection — no retry noise.
+   * When omitted, the plugin checks whether `@llui/mcp` is resolvable from
+   * the Vite project root. If yes → defaults to `5200`. If no → stays
+   * disabled. This means installing `@llui/mcp` (+ starting its server)
+   * Just Works without an explicit config entry. Pass an explicit `false`
+   * to opt out even when `@llui/mcp` is installed; pass a number to use
+   * a non-default port. When enabled but the MCP server isn't running,
+   * the plugin returns 404 from its discovery endpoint and the browser
+   * silently skips the connection — no retry noise.
    */
   mcpPort?: number | false
 
