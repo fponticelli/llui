@@ -52,8 +52,9 @@ describe('hydrateAtAnchor', () => {
   })
 
   it('atomic-swaps: removes server content between the pair, inserts fresh client content', () => {
-    const { anchor, endSentinel, parent } =
-      makeAnchorWithServerContent('<div id="server">server</div><div id="extra">x</div>')
+    const { anchor, endSentinel, parent } = makeAnchorWithServerContent(
+      '<div id="server">server</div><div id="extra">x</div>',
+    )
     expect(parent.querySelectorAll('div').length).toBe(2)
 
     const def = component<{ n: number }, never, never>({

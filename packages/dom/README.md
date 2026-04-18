@@ -57,13 +57,15 @@ Element helpers (`div`, `button`, `span`, etc.) stay as imports — they're stat
 
 ### Core
 
-| Export                | Purpose                                           |
-| --------------------- | ------------------------------------------------- |
-| `component(def)`      | Create a component definition                     |
-| `mountApp(el, def)`   | Mount a component to a DOM element                |
-| `hydrateApp(el, def)` | Hydrate server-rendered HTML                      |
-| `flush()`             | Synchronously flush all pending updates           |
-| `createView(send)`    | Create a full View bundle (for tests/dynamic use) |
+| Export                         | Purpose                                                   |
+| ------------------------------ | --------------------------------------------------------- |
+| `component(def)`               | Create a component definition                             |
+| `mountApp(el, def)`            | Mount a component to a DOM element                        |
+| `hydrateApp(el, def)`          | Hydrate server-rendered HTML                              |
+| `mountAtAnchor(anchor, def)`   | Mount a component relative to a comment anchor            |
+| `hydrateAtAnchor(anchor, def)` | Hydrate server-rendered HTML relative to a comment anchor |
+| `flush()`                      | Synchronously flush all pending updates                   |
+| `createView(send)`             | Create a full View bundle (for tests/dynamic use)         |
 
 ### View Primitives
 

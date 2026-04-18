@@ -28,9 +28,7 @@ function makeSimplePage(): ComponentDef<PageState, never, never> {
     name: 'SimplePage',
     init: () => [{ label: 'hello' }, []],
     update: (s) => [s, []],
-    view: () => [
-      div({ class: 'page' }, [text((s: PageState) => s.label)]),
-    ],
+    view: () => [div({ class: 'page' }, [text((s: PageState) => s.label)])],
   }
 }
 

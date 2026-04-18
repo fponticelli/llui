@@ -138,16 +138,18 @@ function createOnRenderHtml(
 function renderPage(pageContext: PageContext, options: RenderHtmlOptions): Promise<RenderHtmlResult>
 ```
 
-### `renderChain()`
+### `_renderChain()`
 
 Render every layer of the chain into one composed DOM tree, then
 serialize. At each non-innermost layer, consume the pending
-`pageSlot()` registration and append the next layer's nodes into
-the slot marker. Scopes are threaded so inner layers inherit the
-outer layer's scope tree for context lookups.
+`pageSlot()` registration and insert the next layer's nodes as
+siblings after the anchor comment, bracketed by an end sentinel.
+Scopes are threaded so inner layers inherit the outer layer's scope
+tree for context lookups.
+@internal — exported for unit testing only (`_renderChain`).
 
 ```typescript
-function renderChain(
+function _renderChain(
   chain: LayoutChain,
   chainData: readonly unknown[],
 ): { html: string; envelope: HydrationEnvelope }
@@ -261,20 +263,26 @@ function mountOrHydrateChain(
 ): Promise<void>
 ```
 
-### `mountChainSuffix()`
+### `_mountChainSuffix()`
 
 Mount (or hydrate) `chain[startAt..end]` into `initialTarget`, with
 the initial layer's rootScope parented at `initialParentScope`.
 Threads slot → next-target → next-parentScope through the chain.
+`initialTarget` is `HTMLElement` for the outermost layer (container-
+based mount/hydrate) and `Comment` for inner layers that mount relative
+to a `pageSlot()` anchor.
 Fails loudly if a non-innermost layer forgot to call `pageSlot()`,
 or if the innermost layer called `pageSlot()` unnecessarily.
+@internal — test helper. Exported so `client-page-slot.test.ts` can
+test anchor-mount/dispose contracts directly with hand-built DOM.
+Not part of the public API.
 
 ```typescript
-function mountChainSuffix(
+function _mountChainSuffix(
   chain: LayoutChain,
   chainData: readonly unknown[],
   startAt: number,
-  initialTarget: HTMLElement,
+  initialTarget: HTMLElement | Comment,
   initialParentScope: Scope | undefined,
   opts: MountOpts,
 ): void
@@ -526,7 +534,7 @@ export interface RenderClientOptions {
 
 One element of the live chain the adapter keeps between navs.
 `handle` is the AppHandle returned by mountApp/hydrateApp for this
-layer. `slotMarker` / `slotScope` are set when the layer called
+layer. `slotAnchor` / `slotScope` are set when the layer called
 `pageSlot()` during its view pass; they're null for the innermost
 layer (typically the page component, which doesn't have a slot).
 
@@ -534,7 +542,7 @@ layer (typically the page component, which doesn't have a slot).
 interface ChainEntry {
   def: AnyComponentDef
   handle: AppHandle
-  slotMarker: HTMLElement | null
+  slotAnchor: Comment | null
   slotScope: Scope | null
   /**
    * The data slice this layer was most recently mounted or updated
@@ -568,6 +576,12 @@ const DEFAULT_DOCUMENT
 
 ```typescript
 const chainHandles: ChainEntry[]
+```
+
+### `mountChainSuffix`
+
+```typescript
+const mountChainSuffix
 ```
 
 <!-- auto-api:end -->

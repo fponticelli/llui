@@ -1620,6 +1620,44 @@ See: 08 Ecosystem Integration.md
 
 ---
 
+### `mountAtAnchor(anchor, def, data?, options?)`
+
+Mounts a component relative to a comment anchor rather than inside a container element. Inserts a synthesized end sentinel (`<!-- llui-mount-end -->`) immediately after the anchor and places the component's nodes between the pair. Requires `anchor.parentNode !== null`.
+
+```typescript
+function mountAtAnchor<S, M, E>(
+  anchor: Comment,
+  def: ComponentDef<S, M, E>,
+  data?: unknown,
+  options?: MountOptions,
+): AppHandle
+```
+
+The caller's anchor is preserved across the handle's lifetime; only the content between the pair (and the end sentinel itself) is removed by `dispose()`. Used by `@llui/vike` to mount chain layers without a wrapper element. Also suitable for embedding reactive components inside markdown-rendered content or any other context where a wrapper element is undesirable.
+
+See: `docs/superpowers/specs/2026-04-17-anchor-mount-design.md`
+
+---
+
+### `hydrateAtAnchor(anchor, def, serverState, options?)`
+
+Hydration counterpart to `mountAtAnchor`. Uses `serverState` as the initial state and preserves `init()`'s effects for post-mount dispatch (analogous to `hydrateApp`'s behavior).
+
+```typescript
+function hydrateAtAnchor<S, M, E>(
+  anchor: Comment,
+  def: ComponentDef<S, M, E>,
+  serverState: S,
+  options?: MountOptions,
+): AppHandle
+```
+
+Atomic-swap: removes whatever is between the anchor and its end sentinel (reusing an existing sentinel or synthesizing one) and inserts fresh client-rendered nodes in their place. Never throws for a missing sentinel — the `@llui/vike` chain's outer `hydrateApp` call wipes inner layers' end sentinels, so inner-layer `hydrateAtAnchor` calls routinely find nothing to reuse.
+
+See: `docs/superpowers/specs/2026-04-17-anchor-mount-design.md`
+
+---
+
 ### `send(msg)`
 
 Enqueues a message for the next update cycle. Available as the second argument to `view()` and to `onEffect`. Multiple `send()` calls within the same synchronous execution coalesce into one update cycle.

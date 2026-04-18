@@ -16,30 +16,30 @@
 
 ### Files created
 
-| Path                                         | Responsibility                                                      |
-| -------------------------------------------- | ------------------------------------------------------------------- |
-| `packages/dom/test/mount-at-anchor.test.ts`  | Unit tests for `mountAtAnchor` (9 cases per spec §8.1)              |
-| `packages/dom/test/hydrate-at-anchor.test.ts`| Unit tests for `hydrateAtAnchor` (6 cases per spec §8.2)            |
-| `packages/dom/test/hmr-anchor.test.ts`       | HMR tests for anchor-mounted instances (3 cases per spec §8.5)      |
-| `packages/vike/test/ssr-page-slot.test.ts`   | SSR stitching tests — comment anchor + end sentinel emission        |
-| `packages/vike/test/client-page-slot.test.ts`| Client hydrate/mount/nav tests against comment-based slots          |
+| Path                                          | Responsibility                                                 |
+| --------------------------------------------- | -------------------------------------------------------------- |
+| `packages/dom/test/mount-at-anchor.test.ts`   | Unit tests for `mountAtAnchor` (9 cases per spec §8.1)         |
+| `packages/dom/test/hydrate-at-anchor.test.ts` | Unit tests for `hydrateAtAnchor` (6 cases per spec §8.2)       |
+| `packages/dom/test/hmr-anchor.test.ts`        | HMR tests for anchor-mounted instances (3 cases per spec §8.5) |
+| `packages/vike/test/ssr-page-slot.test.ts`    | SSR stitching tests — comment anchor + end sentinel emission   |
+| `packages/vike/test/client-page-slot.test.ts` | Client hydrate/mount/nav tests against comment-based slots     |
 
 ### Files modified
 
-| Path                                       | Change                                                                            |
-| ------------------------------------------ | --------------------------------------------------------------------------------- |
-| `packages/dom/src/mount.ts`                | Add `mountAtAnchor`, `hydrateAtAnchor`; extract `_removeBetween` sentinel helper  |
-| `packages/dom/src/index.ts`                | Export `mountAtAnchor`, `hydrateAtAnchor`                                         |
-| `packages/dom/src/hmr.ts`                  | Discriminated union `HmrEntry`; add `registerForAnchor`, update replace flow      |
-| `packages/vike/src/page-slot.ts`           | Emit `<!-- llui-page-slot -->` comment; `PendingSlot.marker` → `PendingSlot.anchor` |
-| `packages/vike/src/on-render-html.ts`      | SSR stitching via `insertBefore` + synthesize end sentinel per layer              |
-| `packages/vike/src/on-render-client.ts`    | Chain layers mount via `mountAtAnchor`/`hydrateAtAnchor`; nav swap via handle.dispose() |
-| `packages/vike/test/surviving-layer-updates.test.ts` | Remove `div.page-slot` wrapper assertion; adapt to comment shape      |
-| `packages/vike/test/layout.test.ts`        | Adapt any `.page-slot` / `data-llui-page-slot` assertions                         |
-| `packages/vike/test/widening.test.ts`      | Adapt any `.page-slot` / `data-llui-page-slot` assertions                         |
-| `packages/mcp/README.md`                   | Note the API addition (brief — not the primary consumer)                          |
-| `docs/designs/09 API Reference.md`         | Document `mountAtAnchor`, `hydrateAtAnchor`                                       |
-| `CHANGELOG.md`                             | Next-release entry — not committed until the release step                         |
+| Path                                                 | Change                                                                                  |
+| ---------------------------------------------------- | --------------------------------------------------------------------------------------- |
+| `packages/dom/src/mount.ts`                          | Add `mountAtAnchor`, `hydrateAtAnchor`; extract `_removeBetween` sentinel helper        |
+| `packages/dom/src/index.ts`                          | Export `mountAtAnchor`, `hydrateAtAnchor`                                               |
+| `packages/dom/src/hmr.ts`                            | Discriminated union `HmrEntry`; add `registerForAnchor`, update replace flow            |
+| `packages/vike/src/page-slot.ts`                     | Emit `<!-- llui-page-slot -->` comment; `PendingSlot.marker` → `PendingSlot.anchor`     |
+| `packages/vike/src/on-render-html.ts`                | SSR stitching via `insertBefore` + synthesize end sentinel per layer                    |
+| `packages/vike/src/on-render-client.ts`              | Chain layers mount via `mountAtAnchor`/`hydrateAtAnchor`; nav swap via handle.dispose() |
+| `packages/vike/test/surviving-layer-updates.test.ts` | Remove `div.page-slot` wrapper assertion; adapt to comment shape                        |
+| `packages/vike/test/layout.test.ts`                  | Adapt any `.page-slot` / `data-llui-page-slot` assertions                               |
+| `packages/vike/test/widening.test.ts`                | Adapt any `.page-slot` / `data-llui-page-slot` assertions                               |
+| `packages/mcp/README.md`                             | Note the API addition (brief — not the primary consumer)                                |
+| `docs/designs/09 API Reference.md`                   | Document `mountAtAnchor`, `hydrateAtAnchor`                                             |
+| `CHANGELOG.md`                                       | Next-release entry — not committed until the release step                               |
 
 ---
 
@@ -48,6 +48,7 @@
 ### Task 1: Write failing tests for `mountAtAnchor`
 
 **Files:**
+
 - Create: `packages/dom/test/mount-at-anchor.test.ts`
 
 - [ ] **Step 1: Create the test file**
@@ -245,6 +246,7 @@ Expected: every test errors with `mountAtAnchor is not a function` or `is not ex
 ### Task 2: Implement `mountAtAnchor`
 
 **Files:**
+
 - Modify: `packages/dom/src/mount.ts`
 - Modify: `packages/dom/src/index.ts`
 
@@ -464,6 +466,7 @@ Expected: no errors.
 ### Task 3: Write failing tests for `hydrateAtAnchor`
 
 **Files:**
+
 - Create: `packages/dom/test/hydrate-at-anchor.test.ts`
 
 - [ ] **Step 1: Create the test file**
@@ -523,8 +526,9 @@ describe('hydrateAtAnchor', () => {
   })
 
   it('atomic-swaps: removes server content between the pair, inserts fresh client content', () => {
-    const { anchor, endSentinel, parent } =
-      makeAnchorWithServerContent('<div id="server">server</div><div id="extra">x</div>')
+    const { anchor, endSentinel, parent } = makeAnchorWithServerContent(
+      '<div id="server">server</div><div id="extra">x</div>',
+    )
     expect(parent.querySelectorAll('div').length).toBe(2)
 
     const def = component<{ n: number }, never, never>({
@@ -609,6 +613,7 @@ Expected: every test errors with `hydrateAtAnchor is not a function` or not expo
 ### Task 4: Implement `hydrateAtAnchor`
 
 **Files:**
+
 - Modify: `packages/dom/src/mount.ts`
 - Modify: `packages/dom/src/index.ts`
 
@@ -727,13 +732,7 @@ export function hydrateAtAnchor<S, M, E>(
 Update the line added in Task 2 Step 4:
 
 ```ts
-export {
-  mountApp,
-  hydrateApp,
-  mountAtAnchor,
-  hydrateAtAnchor,
-  type MountOptions,
-} from './mount.js'
+export { mountApp, hydrateApp, mountAtAnchor, hydrateAtAnchor, type MountOptions } from './mount.js'
 ```
 
 - [ ] **Step 3: Run tests — they should pass**
@@ -759,6 +758,7 @@ Expected: no errors.
 ### Task 5: Write failing tests for HMR anchor integration
 
 **Files:**
+
 - Create: `packages/dom/test/hmr-anchor.test.ts`
 
 - [ ] **Step 1: Create the test file**
@@ -891,6 +891,7 @@ Expected: the first two tests either throw (registerForAnchor not found) or fail
 ### Task 6: Refactor `hmr.ts` for discriminated-union entries + `registerForAnchor`
 
 **Files:**
+
 - Modify: `packages/dom/src/hmr.ts`
 - Modify: `packages/dom/src/mount.ts` (tighten the `registerForAnchor` call site)
 
@@ -1133,6 +1134,7 @@ git diff --stat
 ```
 
 Expected modified/new:
+
 - `packages/dom/src/mount.ts` (added `_removeBetween`, `_findEndSentinel`, `mountAtAnchor`, `hydrateAtAnchor`)
 - `packages/dom/src/hmr.ts` (discriminated union, new `registerForAnchor`, updated `replaceComponent`)
 - `packages/dom/src/index.ts` (exports)
@@ -1189,13 +1191,14 @@ git commit -m "..."
 ### Task 8: Switch `pageSlot()` to emit a comment
 
 **Files:**
+
 - Modify: `packages/vike/src/page-slot.ts`
 
 - [ ] **Step 1: Rewrite `PendingSlot` and `pageSlot()` to use a comment anchor**
 
 Replace the existing `PendingSlot` interface and `pageSlot` function with:
 
-```ts
+````ts
 interface PendingSlot {
   slotScope: Scope
   anchor: Comment
@@ -1288,7 +1291,7 @@ export function _consumePendingSlot(): PendingSlot | null {
 export function _resetPendingSlot(): void {
   pendingSlot = null
 }
-```
+````
 
 - [ ] **Step 2: Type-check**
 
@@ -1305,6 +1308,7 @@ Expected: errors in `on-render-html.ts` and `on-render-client.ts` (they referenc
 ### Task 9: Write failing SSR tests, then update `on-render-html.ts`
 
 **Files:**
+
 - Create: `packages/vike/test/ssr-page-slot.test.ts`
 - Modify: `packages/vike/src/on-render-html.ts`
 
@@ -1383,7 +1387,8 @@ describe('SSR with comment-based pageSlot', () => {
     }
 
     const result = onRenderHtml(pageContext as unknown as Parameters<typeof onRenderHtml>[0])
-    const html = typeof result === 'string' ? result : (result as { documentHtml: string }).documentHtml
+    const html =
+      typeof result === 'string' ? result : (result as { documentHtml: string }).documentHtml
     expect(html).toContain('<!--llui-page-slot-->')
     expect(html).toContain('<div class="page">home</div>')
     expect(html).toContain('<!--llui-mount-end-->')
@@ -1418,7 +1423,8 @@ describe('SSR with comment-based pageSlot', () => {
     }
 
     const result = onRenderHtml(pageContext as unknown as Parameters<typeof onRenderHtml>[0])
-    const html = typeof result === 'string' ? result : (result as { documentHtml: string }).documentHtml
+    const html =
+      typeof result === 'string' ? result : (result as { documentHtml: string }).documentHtml
     // The inner div carries a text binding, so it should have data-llui-hydrate
     expect(html).toMatch(/<div id="i"[^>]*data-llui-hydrate/)
   })
@@ -1440,6 +1446,7 @@ Expected: test fails because `on-render-html.ts` still uses `slot.marker` (which
 Open `packages/vike/src/on-render-html.ts` and locate the stitching block currently around lines 190–260. Replace the relevant section:
 
 Current (roughly):
+
 ```ts
 let currentSlotMarker: HTMLElement | null = null
 let currentSlotScope: Scope | undefined
@@ -1462,6 +1469,7 @@ currentSlotScope = slot?.slotScope
 ```
 
 Replace with:
+
 ```ts
 let currentSlotAnchor: Comment | null = null
 let currentSlotScope: Scope | undefined
@@ -1521,6 +1529,7 @@ Expected: 3 tests pass.
 ### Task 10: Write failing client tests, then update `on-render-client.ts`
 
 **Files:**
+
 - Create: `packages/vike/test/client-page-slot.test.ts`
 - Modify: `packages/vike/src/on-render-client.ts`
 
@@ -1541,7 +1550,9 @@ const Layout = component<LayoutS, LayoutM, never>({
   name: 'TestLayout',
   init: () => [{ count: 0 }, []],
   update: (s) => [s, []],
-  view: ({ text: t }) => [div({ class: 'shell' }, [t((s: LayoutS) => 'L:' + s.count), ...pageSlot()])],
+  view: ({ text: t }) => [
+    div({ class: 'shell' }, [t((s: LayoutS) => 'L:' + s.count), ...pageSlot()]),
+  ],
 })
 
 type PageAS = { title: string }
@@ -1635,6 +1646,7 @@ slotScope: Scope | null
 **Leave-target calculation (around line 348):**
 
 Current:
+
 ```ts
 const leaveTarget =
   firstMismatch === 0 ? rootEl : (chainHandles[firstMismatch - 1]!.slotMarker ?? rootEl)
@@ -1652,6 +1664,7 @@ const isRootSwap = firstMismatch === 0
 **Leave callback (around line 365):**
 
 Current:
+
 ```ts
 if (options.onLeave && !isFirstMount) {
   await options.onLeave(leaveTarget)
@@ -1659,6 +1672,7 @@ if (options.onLeave && !isFirstMount) {
 ```
 
 Change to:
+
 ```ts
 if (options.onLeave && !isFirstMount) {
   const leaveTargetEl = isRootSwap
@@ -1673,6 +1687,7 @@ if (options.onLeave && !isFirstMount) {
 **Dispose loop + swap (around lines 373–390):**
 
 Current:
+
 ```ts
 for (let i = chainHandles.length - 1; i >= firstMismatch; i--) {
   chainHandles[i]!.handle.dispose()
@@ -1689,6 +1704,7 @@ mountChainSuffix(newChain, newChainData, firstMismatch, leaveTarget, parentScope
 ```
 
 Change to:
+
 ```ts
 for (let i = chainHandles.length - 1; i >= firstMismatch; i--) {
   chainHandles[i]!.handle.dispose()
@@ -1731,12 +1747,7 @@ function mountChainSuffix(
     _resetPendingSlot()
     let handle: AppHandle
     if (opts.mode === 'hydrate') {
-      const layerState = extractHydrationState(
-        opts.serverStateEnvelope!,
-        i,
-        chain.length,
-        def,
-      )
+      const layerState = extractHydrationState(opts.serverStateEnvelope!, i, chain.length, def)
       if (mountTarget.nodeType === 1) {
         // HTMLElement — outermost layer, use hydrateApp
         handle = hydrateApp(
@@ -1757,9 +1768,14 @@ function mountChainSuffix(
     } else {
       // mode === 'mount'
       if (mountTarget.nodeType === 1) {
-        handle = mountApp(mountTarget as HTMLElement, def as Parameters<typeof mountApp>[1], chainData[i], {
-          parentScope,
-        })
+        handle = mountApp(
+          mountTarget as HTMLElement,
+          def as Parameters<typeof mountApp>[1],
+          chainData[i],
+          {
+            parentScope,
+          },
+        )
       } else {
         handle = mountAtAnchor(
           mountTarget as Comment,
@@ -1829,6 +1845,7 @@ Expected: all tests pass, including the pre-existing `layout.test.ts`, `widening
 ### Task 11: Migrate existing vike tests
 
 **Files:**
+
 - Modify: `packages/vike/test/layout.test.ts`
 - Modify: `packages/vike/test/surviving-layer-updates.test.ts`
 - Modify: `packages/vike/test/widening.test.ts`
@@ -1907,6 +1924,7 @@ git status --short
 ```
 
 Expected:
+
 - `packages/vike/src/page-slot.ts` — Comment anchor emission
 - `packages/vike/src/on-render-html.ts` — SSR stitching
 - `packages/vike/src/on-render-client.ts` — client mount/hydrate/nav rewiring
@@ -1960,6 +1978,7 @@ git commit -m "..."
 ### Task 13: Update design doc and API reference
 
 **Files:**
+
 - Modify: `docs/designs/09 API Reference.md`
 - Modify: `docs/designs/08 Ecosystem Integration.md` (only if it describes `pageSlot()`'s shape)
 - Modify: `packages/vike/README.md` (only if it has a `pageSlot()` example showing the div marker)
@@ -1969,7 +1988,7 @@ git commit -m "..."
 
 Locate the `@llui/dom` section — near the existing `mountApp` entry. Add (tune wording to the file's existing style):
 
-```markdown
+````markdown
 #### `mountAtAnchor(anchor, def, data?, options?)`
 
 ```ts
@@ -1980,6 +1999,7 @@ export function mountAtAnchor<S, M, E>(
   options?: MountOptions,
 ): AppHandle
 ```
+````
 
 Mount a component relative to a comment anchor rather than inside a container element. Inserts a synthesized end sentinel (`<!-- llui-mount-end -->`) immediately after the anchor and places the component's nodes between the pair. Requires `anchor.parentNode !== null`. The caller's anchor is preserved across the handle's lifetime; only the content between the pair (and the end sentinel itself) is removed by `dispose()`. Used by `@llui/vike` to mount chain layers without a wrapper element. See `docs/superpowers/specs/2026-04-17-anchor-mount-design.md` for the full design.
 
@@ -1995,7 +2015,8 @@ export function hydrateAtAnchor<S, M, E>(
 ```
 
 Hydration counterpart to `mountAtAnchor`. Uses `serverState` as the initial state and preserves `init()`'s effects for post-mount dispatch (analogous to `hydrateApp`'s behavior). Atomic-swap: removes whatever's between the anchor and its end sentinel (reusing an existing sentinel or synthesizing one) and inserts fresh client-rendered nodes in their place.
-```
+
+````
 
 - [ ] **Step 2: Update the `pageSlot()` entry in any doc that shows its return shape**
 
@@ -2003,7 +2024,7 @@ Search the design docs and vike README for `pageSlot`:
 
 ```bash
 grep -rn "pageSlot\|data-llui-page-slot" docs/ packages/vike/README.md
-```
+````
 
 For each hit that describes or shows the div marker, update to reflect the comment marker.
 
