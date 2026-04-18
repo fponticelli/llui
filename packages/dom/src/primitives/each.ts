@@ -424,7 +424,13 @@ function buildEntry<S, T, M>(
         } else {
           fieldCache = new Map()
         }
-        const accessor = () => (entry.current as Record<string, unknown>)[key]
+        // `current` returns the whole item — essential for primitive T
+        // (where the field map is useless) and for whole-record sampling.
+        // Caller must call it like a method: `item.current()`.
+        const accessor =
+          key === 'current'
+            ? () => entry.current
+            : () => (entry.current as Record<string, unknown>)[key]
         ;(accessor as unknown as { __perItem: true }).__perItem = true
         fieldCache.set(key, accessor)
         return accessor

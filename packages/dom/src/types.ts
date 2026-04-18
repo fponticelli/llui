@@ -278,6 +278,16 @@ export type ItemAccessor<T> = {
   <R>(selector: (t: T) => R): () => R
 } & {
   [K in keyof T]-?: () => T[K]
+} & {
+  /**
+   * Read the whole current item. Needed when T is a primitive (where the
+   * field-map branch collapses to method names like `toString`) or when
+   * you want to sample the entire record rather than a single field.
+   *
+   * Shadows any literal `current` field on T — if T has such a field,
+   * use `item(r => r.current)` to disambiguate.
+   */
+  current(): T
 }
 
 export interface EachOptions<S, T, M = unknown> extends TransitionOptions {
