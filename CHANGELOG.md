@@ -11,6 +11,31 @@ All notable changes to LLui packages are documented here. LLui is a pre-1.0 proj
 
 Packages version in lockstep at release time: `@llui/dom`, `@llui/vite-plugin`, `@llui/test`, `@llui/router`, `@llui/transitions`, `@llui/components`, `@llui/vike` share a version line. `@llui/effects`, `@llui/mcp`, and `@llui/lint-idiomatic` have their own cadence.
 
+## 2026-04-18 — 0.0.23
+
+**Released:** `@llui/{dom,vite-plugin,test,router,transitions,components,vike}@0.0.23`; `@llui/mcp@0.0.17`
+
+Post-`0.0.22` polish pass. Ships a real bug fix: HTTP-mode `@llui/mcp` sessions used to route tool calls through dead relay instances (the per-session `LluiMcpServer`'s relay was never `startBridge()`'d), so any tool that needed the browser would fail with `RelayUnavailableError` even when a browser was attached. Upgrade strongly recommended for anyone running MCP in HTTP mode.
+
+### `@llui/dom@0.0.23`
+
+- **Added** `each.render`'s callback bag now carries `h: View<S, M>`. Inside each-render you can now reach for `h.text`, `h.scope`, `h.sample`, etc. without using the top-level imports — symmetric with how `branch.cases[k]`, `show.render`, and `scope.render` receive the View. Both forms still work; destructure whichever is cleaner.
+- **Improved** `slice()` wraps the `each` render callback so a lifted `h: View<Sub, M>` is threaded through correctly — code that uses `slice(h, selector).each({ render })` now sees the Sub-typed View inside the render bag.
+- **Improved** Dropped the placeholder `<_S, _M>` generics on the internal `BranchOptionsBase` interface — they weren't used in the body. The three variants that extend it (`BranchOptionsExhaustive`, `BranchOptionsNonExhaustive`, `BranchOptionsWide`) continue to carry S, M as before. No user-visible API change.
+
+### `@llui/mcp@0.0.17`
+
+- **Fixed** HTTP-mode session-relay bug. Each HTTP MCP session used to construct a fresh `LluiMcpServer`, which in turn constructed its own `WebSocketRelayTransport`. Only the `bridgeHost`'s relay ever had `startBridge()` called — session relays were dead instances. Any tool call that needed the browser failed even when a browser was attached because the dispatcher's `ctx.relay` pointed at the unstarted session relay. Fix: new `LluiMcpServer.createSessionMcp()` returns a fresh SDK `Server` routing through THIS instance's registry and relay. `cli.ts` calls it per session instead of spawning a new `LluiMcpServer`. A regression test in `test/http-transport.test.ts` pins the shape by asserting `bridge.running: true` in the error diagnostic (the discriminator between a live `bridgeHost` relay and a dead session-local one).
+- **Fixed** MCP server version advertised in the `initialize` handshake is now read from `@llui/mcp/package.json` at module init instead of hardcoded as a literal — the hardcoded `'0.0.15'` silently drifted through the `0.0.16` release. Reads once, falls back to `'unknown'` on read failure.
+- **Added** `llui-mcp doctor` honors the standard `NO_COLOR` env var and a new `--plain` flag. Falls back to `OK` / `FAIL` glyphs instead of emoji ✓/✗ for CI logs, screen readers, and corporate terminals that don't render U+2713/U+2717.
+- **Deprecated** `new LluiMcpServer(<port>)` numeric-port constructor. The options form `new LluiMcpServer({ bridgePort, attachTo? })` is the only shape that expresses HTTP-transport port sharing; numeric form is mostly dead code outside a couple of bridge tests and will be removed in a future release. JSDoc carries the `@deprecated` tag.
+
+### `@llui/{vite-plugin,test,router,transitions,components,vike}@0.0.23`
+
+- Rebuilt against the new `@llui/dom` version. No source changes.
+
+---
+
 ## 2026-04-18 — 0.0.22
 
 **Released:** `@llui/{dom,vite-plugin,test,router,transitions,components,vike}@0.0.22`; `@llui/mcp@0.0.16`
