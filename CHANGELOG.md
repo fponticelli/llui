@@ -11,6 +11,71 @@ All notable changes to LLui packages are documented here. LLui is a pre-1.0 proj
 
 Packages version in lockstep at release time: `@llui/dom`, `@llui/vite-plugin`, `@llui/test`, `@llui/router`, `@llui/transitions`, `@llui/components`, `@llui/vike` share a version line. `@llui/effects`, `@llui/mcp`, and `@llui/lint-idiomatic` have their own cadence.
 
+## 2026-04-18 — 0.0.21
+
+**Released:** `@llui/{dom,vite-plugin,test,router,transitions,components,vike}@0.0.21`; `@llui/mcp@0.0.15`
+
+Big release. Lands the `scope()` + `sample()` primitives for keyed subtree rebuild, renames the internal `Scope` disposal concept to `Lifetime`, threads the `D` (init-data) generic through every public API, and closes every item from the dicerun2 feedback batch — path-scanner false positives, spread-in-children noise, bitmask diagnostic improvements, plus new plugin options for CI (`failOnWarning`, `disabledWarnings`). Three breaking changes in `@llui/dom`; mechanical migrations.
+
+### Breaking
+
+- **`@llui/dom@0.0.21`** — Internal `Scope` disposal-lifetime type renamed to `Lifetime`. The rename surfaces in two public places: the exported `ScopeNode` type becomes `LifetimeNode`, and `MountOptions.parentScope` becomes `MountOptions.parentLifetime`. The runtime itself, DOM output, disposal semantics, and the `_kind` strings on nodes are unchanged — this is a pure naming fix.
+- **`@llui/dom@0.0.21`** — `branch.on` narrows from `string | number | boolean` to `string`. Numeric/boolean discriminants coerce at the call site (`on: s => String(s.code)` or `on: s => s.flag ? 'yes' : 'no'`). `branch.cases` becomes optional, and a new `default?: (h) => Node[]` field runs whenever no case matches — the canonical "dynamic rebuild" shape `branch({ on, default })` works without enumerated cases.
+- **`@llui/dom,@llui/test@0.0.21`** — Every public API that takes a `ComponentDef` now threads the `D` (init-data) generic. Covers `mountApp`, `mountAtAnchor`, `hydrateApp`, `hydrateAtAnchor`, `renderToString`, `renderNodes`, `addressOf`, `replaceComponent`, `testComponent`, `testView`. Previously a typed-data component required an `as unknown as ComponentDef<S, M, E>` cast at each call site; that cast is no longer needed (and, for non-void D, no longer compiles without it).
+
+### Migration
+
+- Replace every `MountOptions.parentScope` with `parentLifetime`; same for any `ScopeNode` type import (→ `LifetimeNode`). The only consumer outside `@llui/dom` is `@llui/vike`'s layout chain, which this release updates.
+- Wrap numeric/boolean `branch({ on })` in `String(...)` and keep case keys as stringified literals. If `cases` didn't cover every possible key, add a `default` builder — the new runtime will now fall back to it instead of rendering nothing.
+- Remove `as unknown as ComponentDef<S, M, E>` casts from `mountApp(container, MyDef, data)` and `testComponent(MyDef, data)` call sites; the `D` generic now flows through. Regenerate types (`pnpm turbo check --force`) to confirm nothing else was papering over a real mismatch.
+
+### `@llui/dom@0.0.21`
+
+- **Added** `scope({ on, render })` — rebuilds a subtree when the string-valued key returned by `on(state)` changes. Each rebuild runs in a fresh `Lifetime` with fresh bindings and `onMount` callbacks. Sugar over `branch({ on, cases: {}, default: render })` with the `'scope-rebuild'` disposer cause. Replaces the "each + epoch + closure-captured snapshot" workaround for "rebuild this region when this counter changes" use cases.
+- **Added** `sample(selector)` — one-shot imperative state read inside a render context. Available as a top-level `@llui/dom` import and as `h.sample(...)` on the `View` bag (destructure-friendly inside builders). No binding is created, no mask is assigned; ideal for reading a whole-state snapshot inside a `scope()` arm without making the entire subtree reactive.
+- **Added** `branch.default` — fallback builder described under Breaking. With `cases` also now optional, `branch({ on: s => String(s.epoch), default: render })` is a valid dynamic-rebuild shape (though `scope()` is the preferred spelling).
+- **Added** `ItemAccessor<T>.current()` — returns the whole current item. Fixes primitive-T ergonomics (where the mapped-field branch collapses to method names like `toString`) and lets object-T callers sample the full record without writing `item(r => r)()`.
+- **Improved** `D` generic threaded through every public `ComponentDef`-taking API (see Breaking / Migration). Also cascades into `createComponentInstance` internally — `child()` and `lazy()` widen their pre-existing casts to carry the `D` slot.
+- **Improved** `View.branch` / `View.scope` / `View.sample` available on the destructured `h` bag.
+- **Fixed** `show()` wraps the boolean `when` via `String(...)` internally to match the new string-only `branch.on` — runtime semantics unchanged for user code.
+
+### `@llui/vite-plugin@0.0.21`
+
+- **Added** `failOnWarning` plugin option — routes every diagnostic through `this.error` instead of `this.warn` so lint regressions fail CI without a custom `build.rollupOptions.onwarn` handler.
+- **Added** `disabledWarnings` plugin option — silences specific rules without disabling the lint pass. Every diagnostic is tagged with a `DiagnosticRule` (also exported); the tag appears in brackets at the start of each warning message (e.g. `[spread-in-children]`), so authors know what to pass.
+- **Added** `scope` recognized by the path scanner and `__mask` injection — the `on` accessor's state paths contribute to the component bitmask, and Phase 1 reconcile is gated by the same mask machinery `branch`/`each`/`show`/`memo` already use.
+- **Added** `static-on` lint — warns when `scope.on` or `branch.on` reads no state. The key never changes, so the subtree mounts once and never rebuilds; usually a bug.
+- **Improved** Every diagnostic message is now prefixed with `<file>:<line>:<col>: [<rule>] ` — survives custom `onwarn` handlers that log `warning.message` alone.
+- **Improved** Bitmask-overflow diagnostic does co-occurrence analysis — when every sub-path of a top-level field always fires in the same set of accessors, suggests reading the parent object as a single unit (one bit vs. N bits) before recommending `child()` extraction. Cheaper refactor, same budget relief.
+- **Fixed** Spread-in-children is now scope-aware. Identifier spreads (`...foo`) and array-method spreads (`...foo.map(...)`, `.concat(...)`, etc.) resolving to bounded bindings — array literal, function-call result, or `.map` on a named bounded receiver — no longer fire. Inline `...[…].map(...)` still warns. Closes four concrete noise cases reported from dicerun2: conditional `push` into a local `Node[]`, `.map` over a `const x = […] as const` tuple, storing a helper-call result in a local first, and `.concat` on two named `Node[]` arrays.
+- **Fixed** Path scanner unified between `collect-deps.ts` (runtime bit assignment) and `diagnostics.ts` (bitmask-overflow warning). The diagnostics side previously had its own naïve walker that produced false positives for `each({ key })`, `item((t) => t.field)`, array-method callbacks (`.some`, `.filter`, etc.) inside reactive accessors, and user-land helper properties like `sliceHandler({ narrow })`. All four are now silent.
+- **Fixed** `onMsg` handlers no longer inflate the path bitmask via the same unified-scanner change.
+
+### `@llui/test@0.0.21`
+
+- **Added** `reducer({ init, update, name? })` — builds a view-less `ComponentDef` so reducer-only suites can drop a definition into `testComponent()` without padding a `view: () => []` field. Default name `__reducer__` surfaces in devtools/HMR if one ever leaks into a real mount.
+- **Improved** `testComponent` and `testView` thread the `D` generic through (see Breaking). Typed init data passes without a cast.
+
+### `@llui/vike@0.0.21`
+
+- **Breaking** Consumes the `Lifetime` rename via `MountOptions.parentLifetime` — see top of release block.
+
+### `@llui/mcp@0.0.15`
+
+- **Breaking** Consumes the `Lifetime` rename via `LifetimeNode` — see top of release block.
+
+### `@llui/{router,transitions,components}@0.0.21`
+
+- Rebuilt against the new `@llui/dom` version. No source changes.
+
+### Docs
+
+- New design spec `docs/superpowers/specs/2026-04-18-scope-primitive-design.md` and matching plan under `docs/superpowers/plans/`.
+- Cookbook recipe "Rebuild a subtree when a derived value changes" documents the canonical `scope() + sample()` pattern and deprecates the old `each + epoch + closure-snapshot` workaround.
+- Site footer exposes `llms-full.txt` alongside `llms.txt` for discoverability.
+
+---
+
 ## 2026-04-18 — 0.0.20
 
 **Released:** `@llui/{dom,vite-plugin,test,router,transitions,components,vike}@0.0.20`; `@llui/mcp@0.0.14`
