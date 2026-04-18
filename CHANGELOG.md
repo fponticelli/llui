@@ -11,6 +11,43 @@ All notable changes to LLui packages are documented here. LLui is a pre-1.0 proj
 
 Packages version in lockstep at release time: `@llui/dom`, `@llui/vite-plugin`, `@llui/test`, `@llui/router`, `@llui/transitions`, `@llui/components`, `@llui/vike` share a version line. `@llui/effects`, `@llui/mcp`, and `@llui/lint-idiomatic` have their own cadence.
 
+## 2026-04-18 — 0.0.20
+
+**Released:** `@llui/{dom,vite-plugin,test,router,transitions,components,vike}@0.0.20`; `@llui/mcp@0.0.14`
+
+Anchor-based mount primitives land in `@llui/dom`, enabling `@llui/vike`'s `pageSlot()` to emit a bare comment marker instead of a wrapper div. Also in `@llui/dom`: a new `unsafeHtml` primitive for rendering trusted HTML strings (markdown output, syntax-highlighted code, server snippets).
+
+### Breaking
+
+- **`@llui/vike@0.0.20`** — `pageSlot()` now emits `<!-- llui-page-slot -->` instead of `<div data-llui-page-slot="">`. Apps that styled or queried the slot element directly must wrap `pageSlot()` in their own styled element. The scope-tree behavior is unchanged.
+
+### Migration
+
+- If you were styling the page slot (e.g. `.page-slot { display: flex }` or `[data-llui-page-slot] { ... }`), move the styles to an enclosing element you add inside your layout view: `main([pageSlot()])`, `div({ class: 'page-slot' }, [...pageSlot()])`, etc.
+- If you were querying the slot via `document.querySelector('[data-llui-page-slot]')`, switch to walking comment nodes (`TreeWalker(..., SHOW_COMMENT)`) or query your own wrapping element.
+
+### `@llui/dom@0.0.20`
+
+- **Added** `mountAtAnchor(anchor, def, data?, opts?)` and `hydrateAtAnchor(anchor, def, serverState, opts?)` — mount or hydrate a component relative to a comment anchor rather than inside a container element. Uses a synthesized end sentinel (`<!-- llui-mount-end -->`) to bracket the owned DOM region; dispose walks between the sentinels so top-level `each` / `show` / `branch` mutations within the component are always cleaned up correctly. Publicly exported — usable outside `@llui/vike` for anywhere you want to embed a reactive component at a comment anchor (e.g. inside rendered markdown).
+- **Added** `unsafeHtml(html, mask?)` primitive — escape hatch for rendering trusted HTML strings into the DOM. Accepts a static string or a reactive accessor. The reactive path short-circuits on strict string equality so unchanged HTML preserves subtree identity (focus, selection, listeners attached outside LLui). Callers own sanitization — the parsed subtree is opaque to the framework (no nested bindings, events, or primitives). Wired into `View<S, M>` and `slice()`'s view bag.
+- **Improved** `HmrEntry` becomes a discriminated union (`kind: 'container' | 'anchor'`) with a new `registerForAnchor` export. `replaceComponent` handles both kinds with appropriate DOM cleanup + insertion strategies, so hot-swap works for anchor-mounted instances without touching their outer DOM.
+- **Improved** new `_removeBetween` and `_findEndSentinel` helpers in `mount.ts`. Both guard a null `parentNode` defensively so a detached anchor at dispose time is a no-op rather than a thrown `TypeError`.
+
+### `@llui/vike@0.0.20`
+
+- **Breaking** `pageSlot()` emits a comment anchor. See top of release block.
+- **Improved** SSR stitching in `on-render-html.ts` uses `insertBefore` relative to the anchor plus a synthesized end sentinel per layer, replacing the old `appendChild`-into-marker approach.
+- **Improved** client adapter in `on-render-client.ts` dispatches between `hydrateApp`/`mountApp` (root container) and `hydrateAtAnchor`/`mountAtAnchor` (inner anchors) based on node kind. Nav swaps rely on per-layer `handle.dispose()` for region cleanup instead of the old top-down `leaveTarget.textContent = ''`.
+- **Improved** exports `_renderChain` and `_mountChainSuffix` `@internal` for direct testing.
+
+### `@llui/{vite-plugin,test,router,transitions,components}@0.0.20`
+
+- **Added** cascade bump — no user-visible changes; picks up the new `@llui/dom@0.0.20` peerDependency range.
+
+### `@llui/mcp@0.0.14`
+
+- **Added** cascade bump — no direct changes. Picks up `@llui/dom@0.0.20` via workspace resolution.
+
 ## 2026-04-17 — 0.0.19
 
 **Released:** `@llui/{dom,vite-plugin,test,router,transitions,components,vike}@0.0.19`; `@llui/effects@0.0.9`; `@llui/mcp@0.0.13`
