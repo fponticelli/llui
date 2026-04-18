@@ -196,12 +196,12 @@ export interface Lifetime {
    */
   disposalCause?: DisposerEvent['cause']
   /** @internal dev-only — populated by structural primitives for scope-tree classification */
-  _kind?: 'root' | 'show' | 'each' | 'branch' | 'child' | 'portal' | 'foreign'
+  _kind?: 'root' | 'show' | 'each' | 'branch' | 'scope' | 'child' | 'portal' | 'foreign'
 }
 
 export interface LifetimeNode {
   scopeId: string
-  kind: 'root' | 'show' | 'each' | 'branch' | 'child' | 'portal' | 'foreign'
+  kind: 'root' | 'show' | 'each' | 'branch' | 'scope' | 'child' | 'portal' | 'foreign'
   active: boolean
   children: LifetimeNode[]
 }
@@ -277,6 +277,22 @@ export interface ShowOptions<S, M = unknown> extends TransitionOptions {
   when: (s: S) => boolean
   render: (h: View<S, M>) => Node[]
   fallback?: (h: View<S, M>) => Node[]
+}
+
+/**
+ * Options for `scope()` — rebuilds a subtree when `on(state)` changes.
+ *
+ * Sugar over `branch({ on, cases: {}, default: render, __disposalCause: 'scope-rebuild' })`.
+ * Use when the key is dynamic (e.g. an epoch counter bumped from the
+ * outside) and you want a fresh arm — fresh lifetime, fresh bindings —
+ * each time it changes. Combine with `sample()` inside `render` for a
+ * one-shot current-state read.
+ */
+export interface ScopeOptions<S, M = unknown> extends TransitionOptions {
+  on: (s: S) => string
+  render: (h: View<S, M>) => Node[]
+  /** @internal Compiler-injected mask of paths read by `on`. */
+  __mask?: number
 }
 
 /**

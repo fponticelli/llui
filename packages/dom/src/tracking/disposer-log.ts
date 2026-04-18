@@ -20,6 +20,7 @@ export interface DisposerEvent {
     | 'branch-swap'
     | 'each-remove'
     | 'show-hide'
+    | 'scope-rebuild'
     | 'child-unmount'
     | 'app-unmount'
     | 'component-unmount'

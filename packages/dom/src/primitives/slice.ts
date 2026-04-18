@@ -1,7 +1,8 @@
-import type { Send, EachOptions, ShowOptions, BranchOptions } from '../types.js'
+import type { Send, EachOptions, ShowOptions, BranchOptions, ScopeOptions } from '../types.js'
 import type { View } from '../view-helpers.js'
 import { show as _show } from './show.js'
 import { branch as _branch } from './branch.js'
+import { scope as _scope } from './scope.js'
 import { each as _each } from './each.js'
 import { text as _text } from './text.js'
 import { unsafeHtml as _unsafeHtml } from './unsafe-html.js'
@@ -66,6 +67,12 @@ export function slice<Root, Sub, M>(
         on: (r) => opts.on(lift(r)),
         cases: opts.cases ? wrapCases(opts.cases) : undefined,
         default: opts.default ? wrapCase(opts.default) : undefined,
+      }),
+    scope: (opts: ScopeOptions<Sub, M>) =>
+      _scope<Root, M>({
+        ...opts,
+        on: (r) => opts.on(lift(r)),
+        render: wrapCase(opts.render),
       }),
     each: <T>(opts: EachOptions<Sub, T, M>) =>
       _each<Root, T, M>({

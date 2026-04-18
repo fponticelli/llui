@@ -1,6 +1,7 @@
-import type { Send, ShowOptions, BranchOptions, EachOptions } from './types.js'
+import type { Send, ShowOptions, BranchOptions, EachOptions, ScopeOptions } from './types.js'
 import { show as _show } from './primitives/show.js'
 import { branch as _branch } from './primitives/branch.js'
+import { scope as _scope } from './primitives/scope.js'
 import { each as _each } from './primitives/each.js'
 import { text as _text } from './primitives/text.js'
 import { unsafeHtml as _unsafeHtml } from './primitives/unsafe-html.js'
@@ -38,6 +39,7 @@ export interface View<S, M> {
   send: Send<M>
   show(opts: ShowOptions<S, M>): Node[]
   branch(opts: BranchOptions<S, M>): Node[]
+  scope(opts: ScopeOptions<S, M>): Node[]
   each<T>(opts: EachOptions<S, T, M>): Node[]
   text(accessor: ((s: S) => string) | string, mask?: number): Text
   /**
@@ -67,6 +69,7 @@ export function createView<S, M>(send: Send<M>): View<S, M> {
     send,
     show: (opts) => _show<S, M>(opts),
     branch: (opts) => _branch<S, M>(opts),
+    scope: (opts) => _scope<S, M>(opts),
     each: <T>(opts: EachOptions<S, T, M>) => _each<S, T, M>(opts),
     text: (accessor, mask) =>
       typeof accessor === 'string' ? _text(accessor) : _text<S>(accessor, mask),
