@@ -4,3 +4,6 @@ dist
 .turbo
 coverage
 benchmarks/js-framework-benchmark-repo/
+
+# Editor workspace settings (peacock, etc.)
+.vscode/
