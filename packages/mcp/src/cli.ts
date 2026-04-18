@@ -74,9 +74,12 @@ async function main(): Promise<void> {
     })
   })
 
-  // Single bridge attached to the HTTP server; all MCP sessions share it.
-  const bridgeServer = new LluiMcpServer({ bridgePort: httpPort, attachTo: httpServer })
-  bridgeServer.startBridge()
+  // Single bridge host: owns the WS relay, tool registry, and marker
+  // file. All MCP sessions route tool calls through its relay via
+  // `createSessionMcp()` — ensures the browser-connected state is
+  // shared instead of each session creating its own dead relay.
+  const bridgeHost = new LluiMcpServer({ bridgePort: httpPort, attachTo: httpServer })
+  bridgeHost.startBridge()
 
   httpServer.listen(httpPort, '127.0.0.1', () => {
     process.stderr.write(
@@ -85,7 +88,7 @@ async function main(): Promise<void> {
   })
 
   const shutdown = async (): Promise<void> => {
-    bridgeServer.stopBridge()
+    bridgeHost.stopBridge()
     for (const t of mcpTransports.values()) await t.close()
     mcpTransports.clear()
     httpServer.close()
@@ -115,8 +118,10 @@ async function main(): Promise<void> {
     let transport = sessionId ? mcpTransports.get(sessionId) : undefined
 
     if (!transport) {
-      // New session. Each MCP session gets its own server instance
-      // (SDK requirement), but all share the one browser bridge.
+      // New session. SDK requires one `McpServer` per transport, but
+      // all sessions must share the single browser bridge — route
+      // through `createSessionMcp()` so the session's tool dispatch
+      // lands on bridgeHost's registry + relay.
       transport = new StreamableHTTPServerTransport({
         sessionIdGenerator: () => randomUUID(),
         onsessioninitialized: (id: string) => {
@@ -127,8 +132,8 @@ async function main(): Promise<void> {
         const id = transport!.sessionId
         if (id) mcpTransports.delete(id)
       }
-      const sessionServer = new LluiMcpServer({ bridgePort: httpPort!, attachTo: httpServer })
-      await sessionServer.connect(transport)
+      const sessionMcp = bridgeHost.createSessionMcp()
+      await sessionMcp.connect(transport)
     }
 
     await transport.handleRequest(req, res)
@@ -139,6 +144,13 @@ async function doctor(port: number): Promise<boolean> {
   // Offline checks only — doctor doesn't require the server to be
   // running. Walks the same states the RelayUnavailableError diagnostic
   // surfaces at runtime, plus a port-liveness probe.
+  //
+  // Glyphs: emoji ✓/✗ by default, fall back to `OK`/`FAIL` when the
+  // environment requests plain output. Honors `--plain` and the
+  // standard `NO_COLOR` env var (https://no-color.org).
+  const plain = args.includes('--plain') || process.env.NO_COLOR !== undefined
+  const ok = plain ? 'OK  ' : '✓'
+  const fail = plain ? 'FAIL' : '✗'
   const markerPath = mcpActiveFilePath()
   const checks: Array<{ name: string; ok: boolean; detail: string }> = []
 
@@ -196,7 +208,7 @@ async function doctor(port: number): Promise<boolean> {
   process.stdout.write('—\n')
   for (const c of checks) {
     allOk = allOk && c.ok
-    process.stdout.write(`${c.ok ? '✓' : '✗'} ${c.name.padEnd(32)} ${c.detail}\n`)
+    process.stdout.write(`${c.ok ? ok : fail} ${c.name.padEnd(32)} ${c.detail}\n`)
   }
   process.stdout.write('—\n')
   process.stdout.write(allOk ? 'All checks passed.\n' : 'Some checks failed — see above.\n')

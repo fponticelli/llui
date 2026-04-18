@@ -15,10 +15,13 @@ interface DoctorRun {
   stderr: string
 }
 
-async function runDoctor(): Promise<DoctorRun> {
+async function runDoctor(extraArgs: string[] = []): Promise<DoctorRun> {
   return new Promise<DoctorRun>((resolvePromise) => {
-    const proc = spawn(process.execPath, [CLI_PATH, 'doctor'], {
+    const proc = spawn(process.execPath, [CLI_PATH, 'doctor', ...extraArgs], {
       stdio: ['ignore', 'pipe', 'pipe'],
+      // Strip NO_COLOR so the default test run exercises the emoji path
+      // explicitly; the --plain test overrides.
+      env: { ...process.env, NO_COLOR: undefined } as NodeJS.ProcessEnv,
     })
     let stdout = ''
     let stderr = ''
@@ -64,4 +67,24 @@ describe('llui-mcp doctor', () => {
       await delay(100)
     }
   }, 6000)
+
+  it('falls back to OK/FAIL glyphs with --plain', async () => {
+    const run = await runDoctor(['--plain'])
+    expect(run.stdout).not.toContain('✓')
+    expect(run.stdout).not.toContain('✗')
+    // With no MCP running the doctor fails — we expect FAIL somewhere.
+    expect(run.stdout).toMatch(/\bFAIL\b/)
+  })
+
+  it('honors NO_COLOR env var', async () => {
+    const proc = spawn(process.execPath, [CLI_PATH, 'doctor'], {
+      stdio: ['ignore', 'pipe', 'pipe'],
+      env: { ...process.env, NO_COLOR: '1' },
+    })
+    let stdout = ''
+    proc.stdout?.on('data', (b: Buffer) => (stdout += b.toString()))
+    await new Promise<void>((resolvePromise) => proc.on('exit', () => resolvePromise()))
+    expect(stdout).not.toContain('✓')
+    expect(stdout).not.toContain('✗')
+  })
 })

@@ -28,6 +28,63 @@ describe('llui-mcp --http integration', () => {
     if (proc && !proc.killed) proc.kill('SIGTERM')
   })
 
+  it('routes tool calls through the shared bridge relay (not dead session relays)', async () => {
+    // Regression: every HTTP session used to construct its own
+    // LluiMcpServer (with its own unstarted relay), so browser-bound
+    // tool calls failed with RelayUnavailableError even when a browser
+    // was attached. Post-fix, sessions use `createSessionMcp()` which
+    // shares the bridgeHost's registry + relay.
+    //
+    // The assertion here is INDIRECT — we don't mount a real browser —
+    // but any bridge-unavailable response carries the current marker
+    // state in its diagnostic. The port we report is the bridgeHost's
+    // port, proving the call reached the shared relay. If sessions
+    // had dead relays, the diagnostic would report `port: null`
+    // (session relay constructed with `port: undefined`).
+    const init = await callMcp(TEST_PORT, {
+      jsonrpc: '2.0',
+      id: 10,
+      method: 'initialize',
+      params: {
+        protocolVersion: '2025-06-18',
+        capabilities: {},
+        clientInfo: { name: 'vitest', version: '1' },
+      },
+    })
+    const sessionId = init.sessionId
+    expect(sessionId).toBeTruthy()
+    await callMcp(TEST_PORT, { jsonrpc: '2.0', method: 'notifications/initialized' }, sessionId)
+
+    const call = await callMcp(
+      TEST_PORT,
+      {
+        jsonrpc: '2.0',
+        id: 11,
+        method: 'tools/call',
+        params: { name: 'llui_get_state', arguments: {} },
+      },
+      sessionId,
+    )
+    expect(call.status).toBe(200)
+    const msg = parseFirstMessage(call.body) as {
+      result?: {
+        isError?: boolean
+        content?: Array<{ text: string }>
+      }
+    }
+    // The tool will fail (no browser attached in this test) but the
+    // error must come from the LIVE bridgeHost relay. The discriminator
+    // is `bridge.running` — bridgeHost has startBridge()'d (running:
+    // true); a dead session-local relay wouldn't have (running: false).
+    expect(msg.result?.isError).toBe(true)
+    const diagText = msg.result?.content?.[0]?.text ?? ''
+    const diag = JSON.parse(diagText) as {
+      bridge?: { running?: boolean; port?: number | null }
+    }
+    expect(diag.bridge?.running).toBe(true)
+    expect(diag.bridge?.port).toBe(TEST_PORT)
+  })
+
   it('handles initialize + tools/list over HTTP', async () => {
     const initRes = await callMcp(TEST_PORT, {
       jsonrpc: '2.0',

@@ -15,6 +15,7 @@ import {
 import { getFlatBindings, setFlatBindings } from '../binding.js'
 import { FULL_MASK } from '../update-loop.js'
 import type { StructuralBlock } from '../structural.js'
+import { createView } from '../view-helpers.js'
 
 // Clear callbacks — registered by selector.bind() during render, called by reconcileClear().
 // Eliminates per-row disposers (1000 Set.delete calls → 1 registry.clear() call).
@@ -458,6 +459,10 @@ function buildEntry<S, T, M>(
   buildBag.index = indexAccessor
   buildBag._getItemProxy = getItemProxy
   buildBag.entry = entry
+  // The View bag — lets each.render use `h.text`, `h.scope`, `h.sample`,
+  // etc. without reaching for the top-level imports. Each entry gets a
+  // fresh View so its `send` is bound to this row's dispatch path.
+  buildBag.h = createView<S, M>(send)
   // Row factory: pass compiler-injected template + update function through to render
   const rfOpts = opts as unknown as Record<string, unknown>
   if (rfOpts.__tpl) buildBag.__tpl = rfOpts.__tpl

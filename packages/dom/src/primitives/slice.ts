@@ -88,6 +88,15 @@ export function slice<Root, Sub, M>(
       _each<Root, T, M>({
         ...opts,
         items: (r) => opts.items(lift(r)),
+        // The render bag carries a View<S, M> — for the inner Root-typed
+        // each we need to translate Root → Sub by re-slicing h.
+        render: (rootBag) => {
+          const subBag = {
+            ...rootBag,
+            h: slice(rootBag.h, lift),
+          } as unknown as Parameters<(typeof opts)['render']>[0]
+          return opts.render(subBag)
+        },
       }),
     text: (accessor, mask) => {
       if (typeof accessor === 'string') return _text(accessor)

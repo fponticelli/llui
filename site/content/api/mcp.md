@@ -190,7 +190,8 @@ class LluiMcpServer {
   mcp: McpServer
   devUrl: string | null
   constructor(optsOrPort: LluiMcpServerOptions | number = 5200)
-  registerMcpHandlers(): void
+  buildMcpServer(): McpServer
+  createSessionMcp(): McpServer
   connect(transport: Transport): Promise<void>
   connectDirect(api: LluiDebugAPI): void
   setDevUrl(url: string): void
@@ -204,6 +205,18 @@ class LluiMcpServer {
 ```
 
 ## Constants
+
+### `PACKAGE_VERSION`
+
+Version advertised in the MCP `initialize` handshake. Read once from
+our own `package.json` so it stays in sync with the publish bump,
+instead of a hardcoded literal that silently drifts each release.
+Falls back to `'unknown'` on read failure — SDK initialization still
+succeeds; only the cosmetic serverInfo.version is affected.
+
+```typescript
+const PACKAGE_VERSION: string
+```
 
 ### `mcpToolDefinitions`
 

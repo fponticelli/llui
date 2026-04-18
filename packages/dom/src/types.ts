@@ -241,7 +241,7 @@ export interface TransitionOptions {
   onTransition?: (ctx: { entering: Node[]; leaving: Node[]; parent: Node }) => void | Promise<void>
 }
 
-interface BranchOptionsBase<_S, _M> extends TransitionOptions {
+interface BranchOptionsBase extends TransitionOptions {
   /**
    * @internal Set by `show()` / `scope()` sugar when delegating to
    * `branch()`, so the dev-only disposer log can report `'show-hide'` /
@@ -256,7 +256,7 @@ interface BranchOptionsBase<_S, _M> extends TransitionOptions {
 /**
  * All cases covered by `cases` — no default allowed (would be dead code).
  */
-type BranchOptionsExhaustive<S, M, K extends string> = BranchOptionsBase<S, M> & {
+type BranchOptionsExhaustive<S, M, K extends string> = BranchOptionsBase & {
   on: (s: S) => K
   cases: { [P in K]: (h: View<S, M>) => Node[] }
   default?: never
@@ -265,7 +265,7 @@ type BranchOptionsExhaustive<S, M, K extends string> = BranchOptionsBase<S, M> &
 /**
  * `cases` may cover some but not all keys; `default` handles the rest.
  */
-type BranchOptionsNonExhaustive<S, M, K extends string> = BranchOptionsBase<S, M> & {
+type BranchOptionsNonExhaustive<S, M, K extends string> = BranchOptionsBase & {
   on: (s: S) => K
   cases?: { [P in K]?: (h: View<S, M>) => Node[] }
   default: (h: View<S, M>) => Node[]
@@ -278,7 +278,7 @@ type BranchOptionsNonExhaustive<S, M, K extends string> = BranchOptionsBase<S, M
  * continue to compile. Authors who want the gate opt in by narrowing
  * `on`'s return type to a literal union.
  */
-type BranchOptionsWide<S, M> = BranchOptionsBase<S, M> & {
+type BranchOptionsWide<S, M> = BranchOptionsBase & {
   on: (s: S) => string
   cases?: Record<string, (h: View<S, M>) => Node[]>
   default?: (h: View<S, M>) => Node[]
@@ -367,6 +367,14 @@ export interface EachOptions<S, T, M = unknown> extends TransitionOptions {
      */
     acc: <R>(selector: (t: T) => R) => () => R
     index: () => number
+    /**
+     * The component's View bag (`h.text`, `h.show`, `h.branch`,
+     * `h.scope`, `h.sample`, …). Each-render callers used to reach
+     * for the top-level imports; the bag form is symmetric with how
+     * `branch.cases[k]`, `show.render`, and `scope.render` receive it.
+     * Both still work — destructure whichever is more convenient.
+     */
+    h: View<S, M>
     /** @internal Compiler-injected — entry reference for row factory */
     entry?: Record<string, unknown>
   }) => Node[]

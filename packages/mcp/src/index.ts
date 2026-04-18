@@ -1,6 +1,7 @@
 import type { LluiDebugAPI } from '@llui/dom'
-import { mkdirSync, writeFileSync, unlinkSync, existsSync } from 'node:fs'
+import { mkdirSync, readFileSync, writeFileSync, unlinkSync, existsSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import type { Server as HttpServer } from 'node:http'
 import { Server as McpServer } from '@modelcontextprotocol/sdk/server/index.js'
 import type { Transport } from '@modelcontextprotocol/sdk/shared/transport.js'
@@ -8,6 +9,28 @@ import { ListToolsRequestSchema, CallToolRequestSchema } from '@modelcontextprot
 import { ToolRegistry, type ToolContext, type ToolDefinition } from './tool-registry.js'
 import { registerDebugApiTools } from './tools/index.js'
 import { WebSocketRelayTransport, RelayUnavailableError } from './transports/index.js'
+
+/**
+ * Version advertised in the MCP `initialize` handshake. Read once from
+ * our own `package.json` so it stays in sync with the publish bump,
+ * instead of a hardcoded literal that silently drifts each release.
+ *
+ * Falls back to `'unknown'` on read failure — SDK initialization still
+ * succeeds; only the cosmetic serverInfo.version is affected.
+ */
+const PACKAGE_VERSION: string = (() => {
+  try {
+    // dist layout: `dist/index.js` → `package.json` is two levels up
+    // from the module file at runtime.
+    const here = dirname(fileURLToPath(import.meta.url))
+    const pkg = JSON.parse(readFileSync(resolve(here, '../package.json'), 'utf8')) as {
+      version?: string
+    }
+    return typeof pkg.version === 'string' ? pkg.version : 'unknown'
+  } catch {
+    return 'unknown'
+  }
+})()
 
 /**
  * Walk up from `start` until we find a workspace root marker. Used by
@@ -79,13 +102,27 @@ export class LluiMcpServer {
   private readonly mcp: McpServer
   private devUrl: string | null = null
 
+  /**
+   * @param optsOrPort options object (preferred) or bridge port (legacy).
+   *   The numeric-port form is kept for one release cycle of back-compat;
+   *   new code should always pass an options object. The options form
+   *   supports `attachTo` for HTTP-transport deployments that share a
+   *   single port between MCP and the browser bridge — the numeric form
+   *   can't express that.
+   * @deprecated numeric `optsOrPort` — pass `{ bridgePort }` instead.
+   *   This overload will be removed in a future breaking release.
+   */
   constructor(optsOrPort: LluiMcpServerOptions | number = 5200) {
     const opts: LluiMcpServerOptions =
       typeof optsOrPort === 'number' ? { bridgePort: optsOrPort } : optsOrPort
     this.bridgePort = opts.bridgePort ?? 5200
     this.registry = new ToolRegistry()
+    // Pass bridgePort even in attachTo mode — the relay's diagnose()
+    // needs it for the port field of BridgeDiagnostic. The `start()`
+    // path is gated on `attachTo` first so a standalone listener
+    // never gets created twice.
     this.relay = new WebSocketRelayTransport({
-      port: opts.attachTo ? undefined : this.bridgePort,
+      port: this.bridgePort,
       attachTo: opts.attachTo,
       markerPath: mcpActiveFilePath(),
     })
@@ -93,23 +130,30 @@ export class LluiMcpServer {
 
     // SDK-managed MCP server — owns the JSON-RPC protocol, handshake,
     // session lifecycle. Transport is plugged in later via `connect()`.
-    this.mcp = new McpServer(
-      { name: '@llui/mcp', version: '0.0.15' },
-      { capabilities: { tools: {} } },
-    )
-    this.registerMcpHandlers()
+    this.mcp = this.buildMcpServer()
   }
 
-  private registerMcpHandlers(): void {
-    this.mcp.setRequestHandler(ListToolsRequestSchema, async () => ({
+  /**
+   * Build a fresh SDK `McpServer` wired to THIS instance's tool
+   * registry and browser relay. The primary `this.mcp` uses one.
+   * `createSessionMcp()` returns additional ones for HTTP-transport
+   * deployments where every session needs its own SDK Server — each
+   * routes tool calls through the shared relay, so the single
+   * bridgeHost owns all the browser-facing state.
+   */
+  private buildMcpServer(): McpServer {
+    const mcp = new McpServer(
+      { name: '@llui/mcp', version: PACKAGE_VERSION },
+      { capabilities: { tools: {} } },
+    )
+    mcp.setRequestHandler(ListToolsRequestSchema, async () => ({
       tools: this.getTools().map((t) => ({
         name: t.name,
         description: t.description,
         inputSchema: t.inputSchema,
       })),
     }))
-
-    this.mcp.setRequestHandler(CallToolRequestSchema, async (request) => {
+    mcp.setRequestHandler(CallToolRequestSchema, async (request) => {
       const { name, arguments: args } = request.params
       try {
         const result = await this.handleToolCall(name, args ?? {})
@@ -134,6 +178,22 @@ export class LluiMcpServer {
         throw err
       }
     })
+    return mcp
+  }
+
+  /**
+   * Build a new SDK MCP server sharing this instance's registry + relay,
+   * for HTTP-transport deployments where each session needs its own
+   * `Server` (SDK requirement). Call-site pattern:
+   *
+   *   const bridgeHost = new LluiMcpServer({ bridgePort, attachTo: httpServer })
+   *   bridgeHost.startBridge()
+   *   // Per session:
+   *   const sessionMcp = bridgeHost.createSessionMcp()
+   *   await sessionMcp.connect(transport)
+   */
+  createSessionMcp(): McpServer {
+    return this.buildMcpServer()
   }
 
   /**
