@@ -241,7 +241,7 @@ export interface TransitionOptions {
   onTransition?: (ctx: { entering: Node[]; leaving: Node[]; parent: Node }) => void | Promise<void>
 }
 
-interface BranchOptionsBase<S, M> extends TransitionOptions {
+interface BranchOptionsBase<_S, _M> extends TransitionOptions {
   /**
    * @internal Set by `show()` / `scope()` sugar when delegating to
    * `branch()`, so the dev-only disposer log can report `'show-hide'` /
