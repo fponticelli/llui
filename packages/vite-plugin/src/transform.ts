@@ -650,9 +650,11 @@ function isViewTypeReference(t: ts.TypeNode): boolean {
 const VIEW_HELPER_PRIMITIVES = new Set([
   'show',
   'branch',
+  'scope',
   'each',
   'text',
   'memo',
+  'sample',
   'selector',
   'ctx',
   'slice',
@@ -1100,11 +1102,12 @@ function tryInjectStructuralMask(
 ): ts.CallExpression | null {
   if (fieldBits.size === 0) return null
 
-  // Match each(), branch(), show() — bare, aliased, or member-call
+  // Match each(), branch(), scope(), show() — bare, aliased, or member-call
   const isEach = isHelperCall(node.expression, 'each', viewHelperNames, viewHelperAliases)
   const isBranch = isHelperCall(node.expression, 'branch', viewHelperNames, viewHelperAliases)
+  const isScope = isHelperCall(node.expression, 'scope', viewHelperNames, viewHelperAliases)
   const isShow = isHelperCall(node.expression, 'show', viewHelperNames, viewHelperAliases)
-  if (!isEach && !isBranch && !isShow) return null
+  if (!isEach && !isBranch && !isScope && !isShow) return null
 
   const optsArg = node.arguments[0]
   if (!optsArg || !ts.isObjectLiteralExpression(optsArg)) return null
@@ -1120,8 +1123,9 @@ function tryInjectStructuralMask(
     }
   }
 
-  // Find the driving accessor property: items/on/when
-  const driverProp = isEach ? 'items' : isBranch ? 'on' : 'when'
+  // Find the driving accessor property: items / on / when
+  //   each → 'items', branch/scope → 'on', show → 'when'
+  const driverProp = isEach ? 'items' : isBranch || isScope ? 'on' : 'when'
   let driverAccessor: ts.ArrowFunction | ts.FunctionExpression | null = null
   for (const prop of optsArg.properties) {
     if (
@@ -2501,7 +2505,8 @@ function _containsSelectorBind(node: ts.Node): boolean {
 
 function containsStructuralCall(node: ts.Node): boolean {
   if (ts.isCallExpression(node) && ts.isIdentifier(node.expression)) {
-    if (['each', 'branch', 'show', 'child', 'foreign'].includes(node.expression.text)) return true
+    if (['each', 'branch', 'scope', 'show', 'child', 'foreign'].includes(node.expression.text))
+      return true
   }
   return ts.forEachChild(node, containsStructuralCall) ?? false
 }
@@ -2554,7 +2559,7 @@ function computeStructuralMask(
   function walk(node: ts.Node): void {
     if (ts.isCallExpression(node)) {
       const name = ts.isIdentifier(node.expression) ? node.expression.text : ''
-      if (['each', 'branch', 'show'].includes(name) && node.arguments[0]) {
+      if (['each', 'branch', 'scope', 'show'].includes(name) && node.arguments[0]) {
         foundStructural = true
         const opts = node.arguments[0]
         if (ts.isObjectLiteralExpression(opts)) {

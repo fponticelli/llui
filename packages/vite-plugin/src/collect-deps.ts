@@ -97,9 +97,13 @@ function isReactiveAccessor(node: ts.ArrowFunction | ts.FunctionExpression): boo
 
   // text(s => s.count) — first arg to a call
   if (ts.isCallExpression(parent) && parent.arguments[0] === node) {
-    // Skip item(t => t.id) — per-item selectors inside each() render
-    if (ts.isIdentifier(parent.expression) && parent.expression.text === 'item') {
-      return false
+    // Skip item(t => t.id) — per-item selectors inside each() render.
+    // Skip sample(s => s.x) — imperative one-shot read, no binding created
+    // (both the top-level import and the destructured-from-h form).
+    if (ts.isIdentifier(parent.expression)) {
+      if (parent.expression.text === 'item' || parent.expression.text === 'sample') {
+        return false
+      }
     }
     // Skip array method callbacks: .filter(t => ...), .map(t => ...), .some(t => ...), etc.
     // Allow view-helper primitive calls: h.text(s => ...), h.memo(s => ...)
@@ -214,6 +218,7 @@ const REACTIVE_API_NAMES = new Set([
   // Structural primitives
   'each',
   'branch',
+  'scope',
   'show',
   'memo',
   'portal',

@@ -106,6 +106,7 @@ export function diagnose(source: string): Diagnostic[] {
     checkNamespaceImport(node, sf, diagnostics)
     checkSpreadChildren(node, sf, diagnostics)
     checkEmptyProps(node, sf, diagnostics)
+    checkStaticOn(node, sf, diagnostics)
 
     ts.forEachChild(node, visit)
   }
@@ -595,4 +596,80 @@ function checkBitmaskOverflow(
     line,
     column,
   })
+}
+
+// ── scope/branch `on` reads no state ────────────────────────────
+// If the discriminant accessor doesn't read any state paths, the key
+// never changes after mount and the subtree never rebuilds. Likely a
+// bug — warn so the author can verify intent.
+
+function checkStaticOn(node: ts.Node, sf: ts.SourceFile, diagnostics: Diagnostic[]): void {
+  if (!ts.isCallExpression(node)) return
+  if (!ts.isIdentifier(node.expression)) return
+  const name = node.expression.text
+  if (name !== 'scope' && name !== 'branch') return
+
+  const optsArg = node.arguments[0]
+  if (!optsArg || !ts.isObjectLiteralExpression(optsArg)) return
+
+  const onProp = optsArg.properties.find(
+    (p): p is ts.PropertyAssignment =>
+      ts.isPropertyAssignment(p) && ts.isIdentifier(p.name) && p.name.text === 'on',
+  )
+  if (!onProp) return
+  const onValue = onProp.initializer
+  if (!ts.isArrowFunction(onValue) && !ts.isFunctionExpression(onValue)) return
+
+  // Extract paths rooted at `on`'s single parameter. Zero-param
+  // on (`on: () => 'x'`) definitionally reads no state and must warn.
+  const params = onValue.parameters
+  const paths = new Set<string>()
+  if (params.length === 1) {
+    const param = params[0]!.name
+    if (!ts.isIdentifier(param)) return
+    collectPathsInBody(onValue.body, param.text, paths)
+  } else if (params.length !== 0) {
+    return
+  }
+  if (paths.size > 0) return
+
+  const { line, column } = pos(node, sf)
+  diagnostics.push({
+    message:
+      `${name}() at line ${line}: 'on' reads no state — the key never ` +
+      `changes, so the subtree mounts once and never rebuilds. ` +
+      `Is this intentional? If so, consider replacing with a static ` +
+      `builder; if not, reference the state field(s) that drive the ` +
+      `discriminant.`,
+    line,
+    column,
+  })
+}
+
+// Minimal state-path extractor used only by checkStaticOn; it needs the
+// same "chain rooted at paramName" logic as the shared collector but
+// without walking into nested reactive-accessor arrows (we only care
+// about reads inside `on`'s immediate body).
+function collectPathsInBody(body: ts.Node, paramName: string, out: Set<string>): void {
+  if (ts.isPropertyAccessExpression(body)) {
+    const parts: string[] = []
+    let current: ts.Expression = body
+    while (ts.isPropertyAccessExpression(current)) {
+      parts.unshift(current.name.text)
+      current = current.expression
+    }
+    if (ts.isIdentifier(current) && current.text === paramName) {
+      out.add(parts.slice(0, 2).join('.'))
+    }
+  }
+  if (ts.isElementAccessExpression(body)) {
+    if (
+      ts.isIdentifier(body.expression) &&
+      body.expression.text === paramName &&
+      ts.isStringLiteral(body.argumentExpression)
+    ) {
+      out.add(body.argumentExpression.text)
+    }
+  }
+  ts.forEachChild(body, (child) => collectPathsInBody(child, paramName, out))
 }

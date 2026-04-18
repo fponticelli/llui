@@ -397,6 +397,65 @@ describe('bitmask overflow (>31 state paths)', () => {
   })
 })
 
+describe('scope()/branch() with static on', () => {
+  it('warns when scope.on reads no state paths', () => {
+    const src = `
+      import { component, div, scope } from '@llui/dom'
+      component({
+        name: 'C',
+        init: () => [{}, []],
+        update: (s) => [s, []],
+        view: ({ scope }) => [
+          ...scope({
+            on: () => 'static',
+            render: () => [div()],
+          }),
+        ],
+      })
+    `
+    const w = warnings(src)
+    expect(w.some((m) => m.includes('reads no state') && m.includes('scope'))).toBe(true)
+  })
+
+  it('warns when branch.on reads no state paths', () => {
+    const src = `
+      import { component, div, branch } from '@llui/dom'
+      component({
+        name: 'C',
+        init: () => [{}, []],
+        update: (s) => [s, []],
+        view: ({ branch }) => [
+          ...branch({
+            on: () => 'a',
+            cases: { a: () => [div()] },
+          }),
+        ],
+      })
+    `
+    const w = warnings(src)
+    expect(w.some((m) => m.includes('reads no state') && m.includes('branch'))).toBe(true)
+  })
+
+  it('does not warn when on reads state', () => {
+    const src = `
+      import { component, div, scope } from '@llui/dom'
+      component({
+        name: 'C',
+        init: () => [{ epoch: 0 }, []],
+        update: (s) => [s, []],
+        view: ({ scope }) => [
+          ...scope({
+            on: (s) => String(s.epoch),
+            render: () => [div()],
+          }),
+        ],
+      })
+    `
+    const w = warnings(src)
+    expect(w.some((m) => m.includes('reads no state'))).toBe(false)
+  })
+})
+
 describe('child() props accessor footguns', () => {
   // The child-prop watch binding diffs props by Object.is per key. When the
   // accessor returns an object literal whose values are themselves fresh
