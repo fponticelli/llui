@@ -139,6 +139,12 @@ function checkNamespaceImport(node: ts.Node, sf: ts.SourceFile, diagnostics: Dia
 // Warns when a children array contains a spread — the compiler can't
 // analyze variable-length children, so it bails on template cloning and
 // falls back to runtime elSplit. Not fatal, but silent.
+//
+// Scope-aware: when the spread source (or an array-method's receiver)
+// resolves to a locally-bounded binding — `const x = [...]`, `const x =
+// fn(...)`, `const x = other.map(...)` where `other` is bounded — the
+// child count is statically known and `each()` is not a usable fix.
+// Those cases stay silent; only truly dynamic spreads warn.
 function checkSpreadChildren(node: ts.Node, sf: ts.SourceFile, diagnostics: Diagnostic[]): void {
   if (!ts.isCallExpression(node)) return
   if (!ts.isIdentifier(node.expression)) return
@@ -146,11 +152,9 @@ function checkSpreadChildren(node: ts.Node, sf: ts.SourceFile, diagnostics: Diag
   // Children could be at arguments[0] (children-only overload) or arguments[1]
   for (const arg of node.arguments) {
     if (!ts.isArrayLiteralExpression(arg)) continue
-    // Look for "suspicious" spreads — ones that aren't obviously returning
-    // Node[] from a structural primitive or user-defined view helper.
     for (const el of arg.elements) {
       if (!ts.isSpreadElement(el)) continue
-      if (isStructuralSpread(el.expression)) continue
+      if (isBoundedSpreadSource(el.expression, sf)) continue
       const { line, column } = pos(arg, sf)
       diagnostics.push({
         message: `Spread in children array of '${node.expression.text}()' at line ${line} disables template-clone compilation. For dynamic child counts, use each() instead.`,
@@ -176,21 +180,148 @@ const ARRAY_ITERATION_METHODS = new Set([
   'sort',
 ])
 
-function isStructuralSpread(expr: ts.Expression): boolean {
-  // Only keep the warning for suspect patterns: identifier spreads and
-  // array-iteration method calls. Everything else is presumed to be a
-  // structural primitive or user helper returning Node[].
+/**
+ * Classify a spread-source expression as "bounded" — i.e., the child
+ * count is statically knowable and `each()` is not an applicable fix.
+ * Returns true when the spread should stay silent, false when the
+ * spread is genuinely suspect (state-derived, unresolved, inline
+ * array-method call on a non-bounded receiver).
+ */
+function isBoundedSpreadSource(expr: ts.Expression, sf: ts.SourceFile): boolean {
+  // Identifier spread `...foo` — resolve the binding.
+  if (ts.isIdentifier(expr)) {
+    const init = resolveBindingInitializer(expr, sf)
+    if (init === null) return false
+    return isBoundedInitializer(init, sf)
+  }
+
+  // Call-expression spread.
   if (ts.isCallExpression(expr)) {
     const callee = expr.expression
+    // Array-method call: `...x.map(...)`, `...arr.concat([...])`, etc.
     if (ts.isPropertyAccessExpression(callee) && ts.isIdentifier(callee.name)) {
-      // `...arr.map(...)`, `...arr.filter(...)` — suspect
-      return !ARRAY_ITERATION_METHODS.has(callee.name.text)
+      if (!ARRAY_ITERATION_METHODS.has(callee.name.text)) {
+        // Non-array-method method call (e.g. `...my.overlay()`) — presume
+        // structural/helper. Same as before.
+        return true
+      }
+      // Array method — bounded if the receiver resolves to a bounded
+      // array source. Inline literals (e.g. `...[1,2,3].map(...)`)
+      // stay suspect intentionally so authors see the warning on the
+      // canonical dynamic-mapping shape.
+      return isBoundedArrayReceiver(callee.expression, sf)
     }
-    // Plain function call `...fn()` — presume structural/helper
+    // Plain function call `...fn()` — presume structural/helper.
     return true
   }
-  // Identifier spread (`...arr`) — suspect
+
+  // Anything else (array literal inline, etc.) — treat as suspect for
+  // now. Inline `...[...]` at a call site is unusual and worth flagging.
   return false
+}
+
+/**
+ * Is the initializer a bounded expression? Array literals and
+ * function-call results both qualify; method calls recurse on their
+ * receivers.
+ */
+function isBoundedInitializer(init: ts.Expression, sf: ts.SourceFile): boolean {
+  // `const foo = [...]` — bounded.
+  if (ts.isArrayLiteralExpression(init)) return true
+
+  // `const foo = x as const` / `x as T` — look through the assertion.
+  if (ts.isAsExpression(init) || ts.isTypeAssertionExpression(init)) {
+    return isBoundedInitializer(init.expression, sf)
+  }
+
+  // `const foo = someCall(...)` — treat plain-call results as bounded
+  // structural output. Same heuristic the original syntactic rule used.
+  if (ts.isCallExpression(init)) {
+    const callee = init.expression
+    if (ts.isIdentifier(callee)) return true
+    if (ts.isPropertyAccessExpression(callee) && ts.isIdentifier(callee.name)) {
+      if (!ARRAY_ITERATION_METHODS.has(callee.name.text)) return true
+      // Method call is an array method — bounded iff receiver is.
+      return isBoundedArrayReceiver(callee.expression, sf)
+    }
+  }
+
+  return false
+}
+
+/**
+ * A method-call receiver (the `x` in `x.map(...)`) is bounded when
+ * resolved to a named array-literal binding. Inline literals are
+ * intentionally NOT bounded here — callers who inline `[1,2,3].map(...)`
+ * should still see the warning.
+ */
+function isBoundedArrayReceiver(receiver: ts.Expression, sf: ts.SourceFile): boolean {
+  if (!ts.isIdentifier(receiver)) return false
+  const init = resolveBindingInitializer(receiver, sf)
+  if (init === null) return false
+  if (ts.isArrayLiteralExpression(init)) return true
+  if (ts.isAsExpression(init) || ts.isTypeAssertionExpression(init)) {
+    return ts.isArrayLiteralExpression(init.expression)
+  }
+  return false
+}
+
+/**
+ * Walk the identifier's ancestor scopes looking for a matching
+ * VariableDeclaration. Returns its initializer (or null if the name
+ * resolves to a function parameter, import, or nothing at all).
+ */
+function resolveBindingInitializer(
+  ident: ts.Identifier,
+  sf: ts.SourceFile,
+): ts.Expression | null {
+  const name = ident.text
+  let scope: ts.Node | undefined = ident.parent
+  while (scope) {
+    const decl = findVariableDeclarationInScope(scope, name, ident)
+    if (decl) return decl.initializer ?? null
+    if (scope === sf) break
+    scope = scope.parent
+  }
+  return null
+}
+
+/**
+ * Scan a scope's immediate statements for a `const/let/var name = ...`
+ * declaration. Does not descend into inner function bodies — those are
+ * visible only from within themselves.
+ */
+function findVariableDeclarationInScope(
+  scope: ts.Node,
+  name: string,
+  from: ts.Node,
+): ts.VariableDeclaration | null {
+  let found: ts.VariableDeclaration | null = null
+
+  function visit(node: ts.Node): void {
+    if (found) return
+    // Don't descend into nested function bodies other than the one
+    // containing `from` — that walking is handled by the outer loop.
+    if (
+      node !== from.parent &&
+      (ts.isFunctionDeclaration(node) ||
+        ts.isFunctionExpression(node) ||
+        ts.isArrowFunction(node) ||
+        ts.isMethodDeclaration(node) ||
+        ts.isConstructorDeclaration(node))
+    ) {
+      // Still scan the parameters? No — parameters aren't VariableDeclarations.
+      return
+    }
+    if (ts.isVariableDeclaration(node) && ts.isIdentifier(node.name) && node.name.text === name) {
+      found = node
+      return
+    }
+    ts.forEachChild(node, visit)
+  }
+
+  ts.forEachChild(scope, visit)
+  return found
 }
 
 // Warns when an element helper is called with an empty props object — the

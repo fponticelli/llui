@@ -159,14 +159,17 @@ describe('no warnings for clean code', () => {
     expect(w.some((m) => m.includes('Namespace import'))).toBe(false)
   })
 
-  it('warns on spread in children array', () => {
+  it('silent on spread of a locally-bounded array-literal binding', () => {
+    // Scope-aware: `children` resolves to a `const = [...]` array
+    // literal — bounded, each() is not a usable fix. The warning
+    // previously fired here; the scope-aware path demotes it.
     const src = `
       import { div, text } from '@llui/dom'
       const children = [text('a'), text('b')]
       export const el = div({}, [text('start'), ...children])
     `
     const w = warnings(src)
-    expect(w.some((m) => m.includes('Spread in children') && m.includes('div'))).toBe(true)
+    expect(w.some((m) => m.includes('Spread in children'))).toBe(false)
   })
 
   it('does not warn on spread of structural primitive calls', () => {
@@ -191,21 +194,40 @@ describe('no warnings for clean code', () => {
     expect(w.some((m) => m.includes('Spread in children'))).toBe(false)
   })
 
-  it('still warns on spread of plain arrays', () => {
+  it('silent on spread of a named array-literal binding', () => {
+    // Same scope-aware relaxation as above — `items` binds to a `const =
+    // [...]` array literal, so the spread is bounded.
     const src = `
       import { div, text } from '@llui/dom'
       const items = [text('a'), text('b')]
       const el = div({}, [...items])
     `
     const w = warnings(src)
-    expect(w.some((m) => m.includes('Spread in children'))).toBe(true)
+    expect(w.some((m) => m.includes('Spread in children'))).toBe(false)
   })
 
-  it('warns on spread of array .map() result', () => {
+  it('silent on .map() over a named bounded receiver', () => {
+    // `names` resolves to `const = ['a', 'b']` — a known-length array
+    // literal. `.map` over it produces a bounded Node[]; each() adds no
+    // value. Inline `[...].map(...)` still fires — see "warns on inline
+    // array-method spread" below.
     const src = `
       import { div, text } from '@llui/dom'
       const names = ['a', 'b']
       const el = div({}, [...names.map((n) => text(n))])
+    `
+    const w = warnings(src)
+    expect(w.some((m) => m.includes('Spread in children'))).toBe(false)
+  })
+
+  it('warns on inline array-method spread', () => {
+    // `...[1,2,3].map(...)` — inline literal receiver. The scope-aware
+    // relaxation only silences NAMED bounded receivers; inline shapes
+    // stay suspect so authors see the warning on the canonical dynamic
+    // mapping shape.
+    const src = `
+      import { div, text } from '@llui/dom'
+      const el = div({}, [...[1, 2, 3].map((n) => text(String(n)))])
     `
     const w = warnings(src)
     expect(w.some((m) => m.includes('Spread in children'))).toBe(true)
