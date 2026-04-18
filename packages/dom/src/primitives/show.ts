@@ -8,9 +8,9 @@ export function show<S, M = unknown>(opts: ShowOptions<S, M>): Node[] {
   // arm — it lets the disposer log distinguish show/hide transitions from
   // multi-case branch swaps.
   return branch<S, M>({
-    // branch.on is now string-only; stringify the boolean for the case lookup.
-    // `cases.{ true, false }` keys match because JS object literals stringify
-    // boolean keys to 'true' / 'false'.
+    // branch.on is string-only; stringify the boolean for the case lookup.
+    // JS object literals stringify boolean keys, so `cases.{true, false}`
+    // matches `String(true)` / `String(false)`.
     on: (s) => String(opts.when(s)),
     cases: { true: opts.render, false: opts.fallback ?? EMPTY },
     enter: opts.enter,

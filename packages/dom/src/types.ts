@@ -241,15 +241,25 @@ export interface TransitionOptions {
   onTransition?: (ctx: { entering: Node[]; leaving: Node[]; parent: Node }) => void | Promise<void>
 }
 
+/**
+ * Options for `branch()`.
+ *
+ * `on(state)` returns a string-valued discriminant. The reconciler looks
+ * up `cases[on(state)]` on each change; falls back to `default` when no
+ * case matches, or renders nothing if no `default` is provided.
+ *
+ * `cases` is optional — `branch({ on, default })` is the canonical
+ * dynamic-rebuild shape. `scope()` sugar wraps exactly this form.
+ */
 export interface BranchOptions<S, M = unknown> extends TransitionOptions {
   on: (s: S) => string
   cases?: Record<string, (h: View<S, M>) => Node[]>
   /**
-   * Fallback builder — runs when `on(state)` returns a key not present
-   * in `cases`, or when `cases` is omitted entirely. Phase 4 of the
-   * scope-primitive rollout will make this required-or-disallowed by
-   * exhaustiveness analysis of `cases` against the union inferred from
-   * `on`'s return type; for now it is always optional.
+   * Fallback builder. Runs when `on(state)` returns a key not present in
+   * `cases`, or when `cases` is omitted entirely. A future type-level
+   * pass may make this required-or-disallowed by inferring exhaustiveness
+   * against the literal union returned by `on`; today it is always
+   * optional.
    */
   default?: (h: View<S, M>) => Node[]
   /**

@@ -42,9 +42,8 @@ export function slice<Root, Sub, M>(
       fn(slice(rootH, lift))
 
   const wrapCases = (
-    cases: Record<string, (h: View<Sub, M>) => Node[]> | undefined,
-  ): Record<string, (h: View<Root, M>) => Node[]> | undefined => {
-    if (!cases) return undefined
+    cases: Record<string, (h: View<Sub, M>) => Node[]>,
+  ): Record<string, (h: View<Root, M>) => Node[]> => {
     const out: Record<string, (h: View<Root, M>) => Node[]> = {}
     for (const key of Object.keys(cases)) {
       out[key] = wrapCase(cases[key]!)
@@ -65,7 +64,7 @@ export function slice<Root, Sub, M>(
       _branch<Root, M>({
         ...opts,
         on: (r) => opts.on(lift(r)),
-        cases: wrapCases(opts.cases),
+        cases: opts.cases ? wrapCases(opts.cases) : undefined,
         default: opts.default ? wrapCase(opts.default) : undefined,
       }),
     each: <T>(opts: EachOptions<Sub, T, M>) =>
