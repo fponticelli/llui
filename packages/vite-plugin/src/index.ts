@@ -3,7 +3,9 @@ import MagicString from 'magic-string'
 import { existsSync, readFileSync, writeFileSync, watch as fsWatch, type FSWatcher } from 'node:fs'
 import { dirname, relative, resolve } from 'node:path'
 import { transformLlui } from './transform.js'
-import { diagnose } from './diagnostics.js'
+import { diagnose, type DiagnosticRule } from './diagnostics.js'
+
+export type { DiagnosticRule } from './diagnostics.js'
 
 /**
  * Locate the workspace root so we share the MCP active marker file
@@ -47,6 +49,19 @@ export interface LluiPluginOptions {
    * handler.
    */
   failOnWarning?: boolean
+
+  /**
+   * Silence specific diagnostic rules without disabling the whole lint
+   * pass. Each message is tagged with a rule name (shown in brackets at
+   * the start of every warning, e.g. `[spread-in-children]`). Listing
+   * a rule here drops all diagnostics with that tag before rollup sees
+   * them — so they don't fire via `this.warn` and don't fail the build
+   * even when `failOnWarning` is enabled.
+   *
+   * The valid rule names are enumerated by the `DiagnosticRule` type
+   * re-exported from this module. Unknown rule names are ignored.
+   */
+  disabledWarnings?: readonly DiagnosticRule[]
 }
 
 export default function llui(options: LluiPluginOptions = {}): Plugin {
@@ -57,6 +72,7 @@ export default function llui(options: LluiPluginOptions = {}): Plugin {
   const mcpPort =
     options.mcpPort === false || options.mcpPort === undefined ? null : options.mcpPort
   const failOnWarning = options.failOnWarning === true
+  const disabledWarnings = new Set<string>(options.disabledWarnings ?? [])
 
   // File-based handshake with @llui/mcp. The MCP server writes a marker
   // file when its bridge starts; we watch it and send a Vite HMR custom
@@ -223,16 +239,16 @@ export default function llui(options: LluiPluginOptions = {}): Plugin {
 
       const diagnostics = diagnose(code)
       if (diagnostics.length > 0) {
-        // Prefix every diagnostic with `<file>:<line>:<col>` so consumers
-        // that log only `warning.message` (common in custom `onwarn`
-        // handlers) still see where the issue lives. Rollup also attaches
-        // the same info to `warning.loc` / `warning.id`, but the string
-        // prefix is the one piece that survives arbitrary log plumbing.
+        // Prefix every diagnostic with `<file>:<line>:<col>` plus the
+        // `[rule-name]` tag so consumers logging `warning.message` in a
+        // custom onwarn handler see both the location and the rule they
+        // could silence via `disabledWarnings`.
         const cwd = process.cwd()
         const rel = relative(cwd, id)
         const display = rel.startsWith('..') ? id : rel
         for (const d of diagnostics) {
-          const message = `${display}:${d.line}:${d.column}: ${d.message}`
+          if (disabledWarnings.has(d.rule)) continue
+          const message = `${display}:${d.line}:${d.column}: [${d.rule}] ${d.message}`
           if (failOnWarning) {
             this.error({ message, loc: { line: d.line, column: d.column, file: id } })
           } else {

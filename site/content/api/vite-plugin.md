@@ -102,7 +102,21 @@ export interface LluiPluginOptions {
    * handler.
    */
   failOnWarning?: boolean
+
+  /**
+   * Silence specific diagnostic rules without disabling the whole lint
+   * pass. Each message is tagged with a rule name (shown in brackets at
+   * the start of every warning, e.g. `[spread-in-children]`). Listing
+   * a rule here drops all diagnostics with that tag before rollup sees
+   * them — so they don't fire via `this.warn` and don't fail the build
+   * even when `failOnWarning` is enabled.
+   *
+   * The valid rule names are enumerated by the `DiagnosticRule` type
+   * re-exported from this module. Unknown rule names are ignored.
+   */
+  disabledWarnings?: readonly DiagnosticRule[]
 }
 ```
+
 
 <!-- auto-api:end -->

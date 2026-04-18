@@ -2,10 +2,28 @@ import ts from 'typescript'
 import { collectStatePathsFromSource } from './collect-deps.js'
 
 export interface Diagnostic {
+  /** Short identifier — passed to `disabledWarnings` in LluiPluginOptions to silence. */
+  rule: DiagnosticRule
   message: string
   line: number
   column: number
 }
+
+/**
+ * Every diagnostic the plugin can emit. Exported so consumers can pass
+ * `disabledWarnings: [...]` with compile-time type safety.
+ */
+export type DiagnosticRule =
+  | 'map-on-state'
+  | 'exhaustive-update'
+  | 'accessibility'
+  | 'controlled-input'
+  | 'child-static-props'
+  | 'bitmask-overflow'
+  | 'namespace-import'
+  | 'spread-in-children'
+  | 'empty-props'
+  | 'static-on'
 
 const INTERACTIVE_ELEMENTS = new Set([
   'button',
@@ -130,6 +148,7 @@ function checkNamespaceImport(node: ts.Node, sf: ts.SourceFile, diagnostics: Dia
   const name = clause.namedBindings.name.text
   const { line, column } = pos(clause.namedBindings, sf)
   diagnostics.push({
+    rule: 'namespace-import',
     message: `Namespace import '${name}' from '@llui/dom' at line ${line} disables compiler optimizations. Use named imports instead: import { div, text, ... } from '@llui/dom'.`,
     line,
     column,
@@ -157,6 +176,7 @@ function checkSpreadChildren(node: ts.Node, sf: ts.SourceFile, diagnostics: Diag
       if (isBoundedSpreadSource(el.expression, sf)) continue
       const { line, column } = pos(arg, sf)
       diagnostics.push({
+        rule: 'spread-in-children',
         message: `Spread in children array of '${node.expression.text}()' at line ${line} disables template-clone compilation. For dynamic child counts, use each() instead.`,
         line,
         column,
@@ -335,6 +355,7 @@ function checkEmptyProps(node: ts.Node, sf: ts.SourceFile, diagnostics: Diagnost
   if (firstArg.properties.length !== 0) return
   const { line, column } = pos(firstArg, sf)
   diagnostics.push({
+    rule: 'empty-props',
     message: `Empty props object passed to '${node.expression.text}()' at line ${line}. The attrs argument is optional — omit it: ${node.expression.text}([...]).`,
     line,
     column,
@@ -391,6 +412,7 @@ function checkMapOnState(node: ts.Node, sf: ts.SourceFile, diagnostics: Diagnost
 
   const { line, column } = pos(node, sf)
   diagnostics.push({
+    rule: 'map-on-state',
     message: `Array .map() on state-derived value at line ${line}. Use each() for reactive lists that update when the array changes.`,
     line,
     column,
@@ -502,6 +524,7 @@ function checkExhaustiveUpdate(
 
   const { line, column } = pos(node, sf)
   diagnostics.push({
+    rule: 'exhaustive-update',
     message: `update() does not handle message type${missing.length > 1 ? 's' : ''} ${missing.map((m) => `'${m}'`).join(', ')} at line ${line}.`,
     line,
     column,
@@ -526,6 +549,7 @@ function checkAccessibility(node: ts.Node, sf: ts.SourceFile, diagnostics: Diagn
   if (tag === 'img' && !props.has('alt')) {
     const { line, column } = pos(node, sf)
     diagnostics.push({
+      rule: 'accessibility',
       message: `<img> at line ${line} has no 'alt' attribute. Add alt text for screen readers, or alt='' for decorative images.`,
       line,
       column,
@@ -536,6 +560,7 @@ function checkAccessibility(node: ts.Node, sf: ts.SourceFile, diagnostics: Diagn
   if (props.has('onClick') && !INTERACTIVE_ELEMENTS.has(tag) && !props.has('role')) {
     const { line, column } = pos(node, sf)
     diagnostics.push({
+      rule: 'accessibility',
       message: `onClick on <${tag}> at line ${line} without role and tabIndex. Non-interactive elements with click handlers are not keyboard-accessible. Add role='button' and tabIndex={0}, or use <button>.`,
       line,
       column,
@@ -566,6 +591,7 @@ function checkControlledInput(node: ts.Node, sf: ts.SourceFile, diagnostics: Dia
   if (!props.has('onInput') && !props.has('onChange')) {
     const { line, column } = pos(node, sf)
     diagnostics.push({
+      rule: 'controlled-input',
       message: `Controlled input at line ${line}: reactive 'value' binding without 'onInput' handler. The binding will overwrite user input on every state update.`,
       line,
       column,
@@ -610,6 +636,7 @@ function checkChildStaticProps(node: ts.Node, sf: ts.SourceFile, diagnostics: Di
     if (ts.isObjectLiteralExpression(prop.initializer)) {
       const { line, column } = pos(node, sf)
       diagnostics.push({
+        rule: 'child-static-props',
         message: `child() at line ${line}: 'props' is a static object literal. It must be a reactive accessor function (s => ({ ... })) so props update when parent state changes.`,
         line,
         column,
@@ -638,6 +665,7 @@ function checkChildStaticProps(node: ts.Node, sf: ts.SourceFile, diagnostics: Di
         const kind = ts.isArrayLiteralExpression(init) ? 'array' : 'object'
         const { line, column } = pos(keyProp, sf)
         diagnostics.push({
+          rule: 'child-static-props',
           message: `child() at line ${line}: the 'props' accessor returns a fresh ${kind} literal for '${keyName}'. Prop diffing uses Object.is per key, so a freshly-constructed reference reports changed every render — propsMsg will fire on every parent update. Hoist to a module-level constant, reuse a reference from state, or return null from propsMsg when the value is unchanged.`,
           line,
           column,
@@ -712,6 +740,7 @@ function checkBitmaskOverflow(
   const candidateList = candidates.map((f) => `\`${f}\``).join(', ')
 
   diagnostics.push({
+    rule: 'bitmask-overflow',
     message:
       `Component at line ${line} has ${pathCount} unique state access paths ` +
       `(${overflow} past the 31-path limit). Paths 32..${pathCount} fall back to ` +
@@ -766,6 +795,7 @@ function checkStaticOn(node: ts.Node, sf: ts.SourceFile, diagnostics: Diagnostic
 
   const { line, column } = pos(node, sf)
   diagnostics.push({
+    rule: 'static-on',
     message:
       `${name}() at line ${line}: 'on' reads no state — the key never ` +
       `changes, so the subtree mounts once and never rebuilds. ` +
