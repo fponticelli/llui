@@ -186,6 +186,7 @@ export function transformLlui(
   _filename: string,
   devMode = false,
   mcpPort: number | null = 5200,
+  verbose = false,
 ): { output: string; edits: TransformEdit[] } | null {
   const sourceFile = ts.createSourceFile('input.ts', source, ts.ScriptTarget.Latest, true)
 
@@ -204,6 +205,16 @@ export function transformLlui(
   // won't match. Files without component() get FULL_MASK on all bindings.
   const fileHasComponent = hasComponentDef(sourceFile, lluiImport)
   const fieldBits = fileHasComponent ? collectDeps(source) : new Map<string, number>()
+
+  if (verbose && fileHasComponent) {
+    const pairs = [...fieldBits.entries()]
+      .map(([path, bit]) => `${path}=${bit === -1 ? 'FULL' : bit}`)
+      .join(', ')
+    console.info(
+      `[llui] ${_filename}: ${fieldBits.size} reactive path${fieldBits.size === 1 ? '' : 's'}` +
+        (pairs.length > 0 ? ` — ${pairs}` : ''),
+    )
+  }
 
   // Identifier names bound to the View<S,M> helpers parameter of a `view` callback.
   // When the user writes `h.text(...)` / `h.show(...)` / `h.each(...)`, the

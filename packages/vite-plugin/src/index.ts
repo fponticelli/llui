@@ -62,6 +62,15 @@ export interface LluiPluginOptions {
    * re-exported from this module. Unknown rule names are ignored.
    */
   disabledWarnings?: readonly DiagnosticRule[]
+
+  /**
+   * Emit `[llui]`-prefixed `console.info` logs for every transformed
+   * component file — state-path bit assignments, mask injections, and
+   * helper compile/bail counts. Useful when diagnosing why a binding
+   * isn't gated the way you expect, or why a call fell back from
+   * template-clone to `elSplit`. Off by default.
+   */
+  verbose?: boolean
 }
 
 export default function llui(options: LluiPluginOptions = {}): Plugin {
@@ -73,6 +82,7 @@ export default function llui(options: LluiPluginOptions = {}): Plugin {
     options.mcpPort === false || options.mcpPort === undefined ? null : options.mcpPort
   const failOnWarning = options.failOnWarning === true
   const disabledWarnings = new Set<string>(options.disabledWarnings ?? [])
+  const verbose = options.verbose === true
 
   // File-based handshake with @llui/mcp. The MCP server writes a marker
   // file when its bridge starts; we watch it and send a Vite HMR custom
@@ -257,7 +267,7 @@ export default function llui(options: LluiPluginOptions = {}): Plugin {
         }
       }
 
-      const result = transformLlui(code, id, devMode, mcpPort)
+      const result = transformLlui(code, id, devMode, mcpPort, verbose)
       if (!result) return undefined
 
       // Apply per-statement edits via MagicString for accurate source maps.

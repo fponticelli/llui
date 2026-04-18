@@ -115,7 +115,17 @@ export interface LluiPluginOptions {
    * re-exported from this module. Unknown rule names are ignored.
    */
   disabledWarnings?: readonly DiagnosticRule[]
+
+  /**
+   * Emit `[llui]`-prefixed `console.info` logs for every transformed
+   * component file — state-path bit assignments, mask injections, and
+   * helper compile/bail counts. Useful when diagnosing why a binding
+   * isn't gated the way you expect, or why a call fell back from
+   * template-clone to `elSplit`. Off by default.
+   */
+  verbose?: boolean
 }
 ```
+
 
 <!-- auto-api:end -->

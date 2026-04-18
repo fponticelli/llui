@@ -225,21 +225,13 @@ function storageRemove(key: string, scope: StorageScope = 'local'): StorageRemov
 ### `storageGet()`
 
 ```typescript
-function storageGet<M>(
-  key: string,
-  onLoad: (value: unknown) => M,
-  scope: StorageScope = 'local',
-): StorageGetEffect<M>
+function storageGet<M>(key: string, onLoad: (value: unknown) => M, scope: StorageScope = 'local'): StorageGetEffect<M>
 ```
 
 ### `storageWatch()`
 
 ```typescript
-function storageWatch<M>(
-  key: string,
-  onChange: (value: unknown) => M,
-  scope: StorageScope = 'local',
-): StorageWatchEffect<M>
+function storageWatch<M>(key: string, onChange: (value: unknown) => M, scope: StorageScope = 'local'): StorageWatchEffect<M>
 ```
 
 ### `broadcast()`
@@ -251,10 +243,7 @@ function broadcast(channel: string, data: unknown): BroadcastEffect
 ### `broadcastListen()`
 
 ```typescript
-function broadcastListen<M>(
-  channel: string,
-  onMessage: (data: unknown) => M,
-): BroadcastListenEffect<M>
+function broadcastListen<M>(channel: string, onMessage: (data: unknown) => M): BroadcastListenEffect<M>
 ```
 
 ### `websocket()`
@@ -315,17 +304,14 @@ function clipboardWrite(text: string): ClipboardWriteEffect
 ### `notification()`
 
 ```typescript
-function notification<M>(
-  title: string,
-  opts?: {
+function notification<M>(title: string, opts?: {
     body?: string
     icon?: string
     tag?: string
     onClick?: () => M
     onClose?: () => M
     onError?: () => M
-  },
-): NotificationEffect<M>
+  }): NotificationEffect<M>
 ```
 
 ### `geolocation()`
@@ -359,15 +345,7 @@ function handleEffects<E extends { type: string }, M = never>(): EffectChain<E, 
 ### `dispatchEffect()`
 
 ```typescript
-function dispatchEffect(
-  effect: { type: string },
-  send: InternalSend,
-  signal: AbortSignal,
-  cancelControllers: Map<string, AbortController>,
-  debounceTimers: Map<string, ReturnType<typeof setTimeout>>,
-  websockets: Map<string, WebSocket>,
-  custom: InternalHandler,
-): void
+function dispatchEffect(effect: { type: string }, send: InternalSend, signal: AbortSignal, cancelControllers: Map<string, AbortController>, debounceTimers: Map<string, ReturnType<typeof setTimeout>>, websockets: Map<string, WebSocket>, custom: InternalHandler): void
 ```
 
 ### `isPassThroughBody()`
@@ -385,10 +363,7 @@ function runHttp(effect: HttpEffect, send: InternalSend, signal: AbortSignal): v
 ### `parseResponseBody()`
 
 ```typescript
-function parseResponseBody(
-  res: Response,
-  responseType?: 'json' | 'text' | 'blob' | 'arrayBuffer',
-): Promise<unknown>
+function parseResponseBody(res: Response, responseType?: 'json' | 'text' | 'blob' | 'arrayBuffer'): Promise<unknown>
 ```
 
 ### `httpStatusToApiError()`
@@ -400,15 +375,7 @@ function httpStatusToApiError(res: Response): Promise<ApiError>
 ### `runCancel()`
 
 ```typescript
-function runCancel(
-  effect: CancelEffect | CancelReplaceEffect,
-  send: InternalSend,
-  componentSignal: AbortSignal,
-  cancelControllers: Map<string, AbortController>,
-  debounceTimers: Map<string, ReturnType<typeof setTimeout>>,
-  websockets: Map<string, WebSocket>,
-  custom: InternalHandler,
-): void
+function runCancel(effect: CancelEffect | CancelReplaceEffect, send: InternalSend, componentSignal: AbortSignal, cancelControllers: Map<string, AbortController>, debounceTimers: Map<string, ReturnType<typeof setTimeout>>, websockets: Map<string, WebSocket>, custom: InternalHandler): void
 ```
 
 ### `runTimeout()`
@@ -420,26 +387,13 @@ function runTimeout(effect: TimeoutEffect, send: InternalSend, signal: AbortSign
 ### `runInterval()`
 
 ```typescript
-function runInterval(
-  effect: IntervalEffect,
-  send: InternalSend,
-  componentSignal: AbortSignal,
-  cancelControllers: Map<string, AbortController>,
-): void
+function runInterval(effect: IntervalEffect, send: InternalSend, componentSignal: AbortSignal, cancelControllers: Map<string, AbortController>): void
 ```
 
 ### `runDebounce()`
 
 ```typescript
-function runDebounce(
-  effect: DebounceEffect,
-  send: InternalSend,
-  componentSignal: AbortSignal,
-  cancelControllers: Map<string, AbortController>,
-  debounceTimers: Map<string, ReturnType<typeof setTimeout>>,
-  websockets: Map<string, WebSocket>,
-  custom: InternalHandler,
-): void
+function runDebounce(effect: DebounceEffect, send: InternalSend, componentSignal: AbortSignal, cancelControllers: Map<string, AbortController>, debounceTimers: Map<string, ReturnType<typeof setTimeout>>, websockets: Map<string, WebSocket>, custom: InternalHandler): void
 ```
 
 ### `getStorage()`
@@ -481,22 +435,13 @@ function runBroadcast(effect: BroadcastEffect): void
 ### `runBroadcastListen()`
 
 ```typescript
-function runBroadcastListen(
-  effect: BroadcastListenEffect,
-  send: InternalSend,
-  signal: AbortSignal,
-): void
+function runBroadcastListen(effect: BroadcastListenEffect, send: InternalSend, signal: AbortSignal): void
 ```
 
 ### `runWebSocket()`
 
 ```typescript
-function runWebSocket(
-  effect: WebSocketEffect,
-  send: InternalSend,
-  signal: AbortSignal,
-  websockets: Map<string, WebSocket>,
-): void
+function runWebSocket(effect: WebSocketEffect, send: InternalSend, signal: AbortSignal, websockets: Map<string, WebSocket>): void
 ```
 
 ### `runWsSend()`
@@ -508,15 +453,7 @@ function runWsSend(effect: WebSocketSendEffect, websockets: Map<string, WebSocke
 ### `runRetry()`
 
 ```typescript
-function runRetry(
-  effect: RetryEffect,
-  send: InternalSend,
-  signal: AbortSignal,
-  cancelControllers: Map<string, AbortController>,
-  debounceTimers: Map<string, ReturnType<typeof setTimeout>>,
-  websockets: Map<string, WebSocket>,
-  custom: InternalHandler,
-): void
+function runRetry(effect: RetryEffect, send: InternalSend, signal: AbortSignal, cancelControllers: Map<string, AbortController>, debounceTimers: Map<string, ReturnType<typeof setTimeout>>, websockets: Map<string, WebSocket>, custom: InternalHandler): void
 ```
 
 ### `runUpload()`
@@ -528,39 +465,19 @@ function runUpload(effect: UploadEffect, send: InternalSend, signal: AbortSignal
 ### `runSequence()`
 
 ```typescript
-function runSequence(
-  effect: SequenceEffect,
-  send: InternalSend,
-  signal: AbortSignal,
-  cancelControllers: Map<string, AbortController>,
-  debounceTimers: Map<string, ReturnType<typeof setTimeout>>,
-  websockets: Map<string, WebSocket>,
-  custom: InternalHandler,
-): void
+function runSequence(effect: SequenceEffect, send: InternalSend, signal: AbortSignal, cancelControllers: Map<string, AbortController>, debounceTimers: Map<string, ReturnType<typeof setTimeout>>, websockets: Map<string, WebSocket>, custom: InternalHandler): void
 ```
 
 ### `runRace()`
 
 ```typescript
-function runRace(
-  effect: RaceEffect,
-  send: InternalSend,
-  signal: AbortSignal,
-  cancelControllers: Map<string, AbortController>,
-  debounceTimers: Map<string, ReturnType<typeof setTimeout>>,
-  websockets: Map<string, WebSocket>,
-  custom: InternalHandler,
-): void
+function runRace(effect: RaceEffect, send: InternalSend, signal: AbortSignal, cancelControllers: Map<string, AbortController>, debounceTimers: Map<string, ReturnType<typeof setTimeout>>, websockets: Map<string, WebSocket>, custom: InternalHandler): void
 ```
 
 ### `runClipboardRead()`
 
 ```typescript
-function runClipboardRead(
-  effect: ClipboardReadEffect,
-  send: InternalSend,
-  signal: AbortSignal,
-): void
+function runClipboardRead(effect: ClipboardReadEffect, send: InternalSend, signal: AbortSignal): void
 ```
 
 ### `runClipboardWrite()`
@@ -948,5 +865,6 @@ interface EffectChain<E extends { type: string }, M> {
   else(handler: (ctx: EffectCtx<E, M>) => void): (ctx: EffectCtx<E, M>) => void
 }
 ```
+
 
 <!-- auto-api:end -->
