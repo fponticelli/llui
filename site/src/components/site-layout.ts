@@ -91,6 +91,8 @@ export function siteLayout<S extends LayoutState, M extends LayoutMsg>({
       a({ href: 'https://github.com/fponticelli/llui', class: 'footer-link' }, [text('GitHub')]),
       text(' \u00b7 '),
       a({ href: '/llms.txt', class: 'footer-link' }, [text('llms.txt')]),
+      text(' \u00b7 '),
+      a({ href: '/llms-full.txt', class: 'footer-link' }, [text('llms-full.txt')]),
     ]),
   ])
 }
