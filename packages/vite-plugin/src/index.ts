@@ -1,7 +1,7 @@
 import type { Plugin, ViteDevServer } from 'vite'
 import MagicString from 'magic-string'
 import { existsSync, readFileSync, writeFileSync, watch as fsWatch, type FSWatcher } from 'node:fs'
-import { dirname, resolve } from 'node:path'
+import { dirname, relative, resolve } from 'node:path'
 import { transformLlui } from './transform.js'
 import { diagnose } from './diagnostics.js'
 
@@ -36,6 +36,17 @@ export interface LluiPluginOptions {
    * skips the connection — no retry noise.
    */
   mcpPort?: number | false
+
+  /**
+   * Treat every compiler diagnostic as a build error.
+   *
+   * Default `false` — diagnostics are emitted via rollup's `this.warn` and
+   * can be ignored. Set to `true` in CI so lint-style regressions (namespace
+   * imports, bitmask overflow, spread-in-children, `.map()` on state, etc.)
+   * fail the build without requiring a custom `build.rollupOptions.onwarn`
+   * handler.
+   */
+  failOnWarning?: boolean
 }
 
 export default function llui(options: LluiPluginOptions = {}): Plugin {
@@ -45,6 +56,7 @@ export default function llui(options: LluiPluginOptions = {}): Plugin {
   // don't use the companion server.
   const mcpPort =
     options.mcpPort === false || options.mcpPort === undefined ? null : options.mcpPort
+  const failOnWarning = options.failOnWarning === true
 
   // File-based handshake with @llui/mcp. The MCP server writes a marker
   // file when its bridge starts; we watch it and send a Vite HMR custom
@@ -209,8 +221,24 @@ export default function llui(options: LluiPluginOptions = {}): Plugin {
     transform(code, id) {
       if (!id.endsWith('.ts') && !id.endsWith('.tsx')) return
 
-      for (const d of diagnose(code)) {
-        this.warn(d.message, { line: d.line, column: d.column })
+      const diagnostics = diagnose(code)
+      if (diagnostics.length > 0) {
+        // Prefix every diagnostic with `<file>:<line>:<col>` so consumers
+        // that log only `warning.message` (common in custom `onwarn`
+        // handlers) still see where the issue lives. Rollup also attaches
+        // the same info to `warning.loc` / `warning.id`, but the string
+        // prefix is the one piece that survives arbitrary log plumbing.
+        const cwd = process.cwd()
+        const rel = relative(cwd, id)
+        const display = rel.startsWith('..') ? id : rel
+        for (const d of diagnostics) {
+          const message = `${display}:${d.line}:${d.column}: ${d.message}`
+          if (failOnWarning) {
+            this.error({ message, loc: { line: d.line, column: d.column, file: id } })
+          } else {
+            this.warn(message, { line: d.line, column: d.column })
+          }
+        }
       }
 
       const result = transformLlui(code, id, devMode, mcpPort)

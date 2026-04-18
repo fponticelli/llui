@@ -91,6 +91,17 @@ export interface LluiPluginOptions {
    * skips the connection — no retry noise.
    */
   mcpPort?: number | false
+
+  /**
+   * Treat every compiler diagnostic as a build error.
+   *
+   * Default `false` — diagnostics are emitted via rollup's `this.warn` and
+   * can be ignored. Set to `true` in CI so lint-style regressions (namespace
+   * imports, bitmask overflow, spread-in-children, `.map()` on state, etc.)
+   * fail the build without requiring a custom `build.rollupOptions.onwarn`
+   * handler.
+   */
+  failOnWarning?: boolean
 }
 ```
 
