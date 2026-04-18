@@ -13,21 +13,46 @@ import { createView } from './view-helpers.js'
  * Importing this module registers it with mountApp for hot-swapping.
  */
 export function enableHmr(): void {
-  _setHmrModule({ enableHmr, registerForHmr, unregisterForHmr, replaceComponent })
+  _setHmrModule({
+    enableHmr,
+    registerForHmr,
+    registerForAnchor,
+    unregisterForHmr,
+    replaceComponent,
+  })
 }
 
 // ── HMR Registry ─────────────────────────────────────────────────
 
-interface HmrEntry {
-  inst: ComponentInstance
-  container: HTMLElement
-}
+type HmrEntry =
+  | {
+      kind: 'container'
+      inst: ComponentInstance
+      container: HTMLElement
+    }
+  | {
+      kind: 'anchor'
+      inst: ComponentInstance
+      anchor: Comment
+      endSentinel: Comment
+    }
 
 const hmrRegistry = new Map<string, HmrEntry[]>()
 
 export function registerForHmr(name: string, inst: object, container: HTMLElement): void {
   const entries = hmrRegistry.get(name) ?? []
-  entries.push({ inst: inst as ComponentInstance, container })
+  entries.push({ kind: 'container', inst: inst as ComponentInstance, container })
+  hmrRegistry.set(name, entries)
+}
+
+export function registerForAnchor(
+  name: string,
+  inst: object,
+  anchor: Comment,
+  endSentinel: Comment,
+): void {
+  const entries = hmrRegistry.get(name) ?? []
+  entries.push({ kind: 'anchor', inst: inst as ComponentInstance, anchor, endSentinel })
   hmrRegistry.set(name, entries)
 }
 
@@ -58,10 +83,9 @@ export function replaceComponent<S, M, E>(
 
   let handle: AppHandle | null = null
 
-  for (const { inst, container } of entries) {
-    const typedInst = inst as ComponentInstance<S, M, E>
+  for (const entry of entries) {
+    const typedInst = entry.inst as ComponentInstance<S, M, E>
 
-    // Replace functions on the live definition
     typedInst.def = {
       ...typedInst.def,
       update: newDef.update,
@@ -72,24 +96,35 @@ export function replaceComponent<S, M, E>(
       __handlers: newDef.__handlers,
     }
 
-    // Dispose old scope tree — removes all old DOM nodes and bindings
     disposeScope(typedInst.rootScope)
-    container.textContent = ''
 
-    // Create fresh scope tree
+    // Clear the owned region per-kind.
+    if (entry.kind === 'container') {
+      entry.container.textContent = ''
+    } else {
+      // anchor kind — wipe siblings between anchor and endSentinel, keep the
+      // anchor AND the end sentinel (they bracket the fresh render).
+      let sib = entry.anchor.nextSibling
+      while (sib !== null && sib !== entry.endSentinel) {
+        const next = sib.nextSibling
+        sib.parentNode!.removeChild(sib)
+        sib = next
+      }
+    }
+
     typedInst.rootScope = createScope(null)
     typedInst.rootScope._kind = 'root'
     typedInst.allBindings = []
     typedInst.structuralBlocks = []
 
-    // Re-run view with current state
     setFlatBindings(typedInst.allBindings)
     setRenderContext({
       rootScope: typedInst.rootScope,
       state: typedInst.state,
       allBindings: typedInst.allBindings,
       structuralBlocks: typedInst.structuralBlocks,
-      container,
+      container:
+        entry.kind === 'container' ? entry.container : (entry.anchor.parentElement ?? undefined),
       send: typedInst.send as (msg: unknown) => void,
       instance: typedInst as ComponentInstance,
     })
@@ -97,31 +132,54 @@ export function replaceComponent<S, M, E>(
     clearRenderContext()
     setFlatBindings(null)
 
-    for (const node of nodes) {
-      container.appendChild(node)
+    if (entry.kind === 'container') {
+      for (const node of nodes) {
+        entry.container.appendChild(node)
+      }
+    } else {
+      for (const node of nodes) {
+        entry.anchor.parentNode!.insertBefore(node, entry.endSentinel)
+      }
     }
 
-    // Return AppHandle for the first instance
     if (!handle) {
-      handle = {
-        dispose() {
-          unregisterForHmr(name, inst)
-          inst.abortController.abort()
-          unregisterInstance(inst)
-          disposeScope(typedInst.rootScope)
-          container.textContent = ''
-        },
-        flush() {
-          flushInstance(inst)
-        },
-        send(msg: unknown) {
-          ;(typedInst.send as (m: unknown) => void)(msg)
-        },
-      }
+      handle = makeReplacementHandle(name, entry, typedInst)
     }
   }
 
   console.log(`[LLui HMR] ${name} updated — state preserved`)
 
   return handle
+}
+
+function makeReplacementHandle<S, M, E>(
+  name: string,
+  entry: HmrEntry,
+  typedInst: ComponentInstance<S, M, E>,
+): AppHandle {
+  return {
+    dispose() {
+      unregisterForHmr(name, entry.inst)
+      entry.inst.abortController.abort()
+      unregisterInstance(entry.inst)
+      disposeScope(typedInst.rootScope)
+      if (entry.kind === 'container') {
+        entry.container.textContent = ''
+      } else {
+        let sib = entry.anchor.nextSibling
+        while (sib !== null && sib !== entry.endSentinel) {
+          const next = sib.nextSibling
+          sib.parentNode!.removeChild(sib)
+          sib = next
+        }
+        entry.endSentinel.parentNode?.removeChild(entry.endSentinel)
+      }
+    },
+    flush() {
+      flushInstance(entry.inst)
+    },
+    send(msg: unknown) {
+      ;(typedInst.send as (m: unknown) => void)(msg)
+    },
+  }
 }

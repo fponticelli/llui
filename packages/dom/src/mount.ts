@@ -7,6 +7,39 @@ import { registerInstance, unregisterInstance } from './runtime.js'
 import { createView } from './view-helpers.js'
 import { pushMountQueue, popMountQueue, flushMountQueue } from './primitives/on-mount.js'
 
+// ── Sentinel-region helpers (used by anchor-based mount primitives) ─────
+
+/**
+ * Remove every sibling from `anchor.nextSibling` up to but not including
+ * `stopBefore`. Used by anchor-based mount primitives and their HMR
+ * swap path to clear the owned DOM region between the pair.
+ */
+function _removeBetween(anchor: Comment, stopBefore: Comment): void {
+  const parent = anchor.parentNode
+  if (parent === null) return
+  while (anchor.nextSibling !== null && anchor.nextSibling !== stopBefore) {
+    parent.removeChild(anchor.nextSibling)
+  }
+}
+
+/**
+ * Walk forward from `anchor.nextSibling` looking for an existing
+ * `<!-- llui-mount-end -->` sentinel. Used by mount/hydrate at anchor
+ * to reuse a server-emitted (or stale) sentinel rather than synthesizing
+ * a duplicate. Returns null if no matching comment is found before the
+ * end of the parent's children.
+ */
+function _findEndSentinel(anchor: Comment): Comment | null {
+  let node: Node | null = anchor.nextSibling
+  while (node !== null) {
+    if (node.nodeType === 8 && (node as Comment).nodeValue === 'llui-mount-end') {
+      return node as Comment
+    }
+    node = node.nextSibling
+  }
+  return null
+}
+
 // Vite injects import.meta.env.DEV — declare the shape for TypeScript
 declare global {
   interface ImportMeta {
@@ -198,6 +231,222 @@ function findNonSerializable(
     if (r) return r
   }
   return null
+}
+
+/**
+ * Mount a component relative to a comment anchor rather than inside a
+ * container element. Inserts a synthesized end sentinel (`<!-- llui-mount-end -->`)
+ * immediately after the anchor and places the component's nodes between
+ * the pair. The anchor must already be attached to a live DOM tree.
+ *
+ * Unlike `mountApp`, the caller's anchor node is preserved across the
+ * handle's lifetime — only the content between the pair (and the end
+ * sentinel itself) is disposed. Used by `@llui/vike` persistent layouts
+ * to mount chain layers without a wrapper element.
+ *
+ * If a pre-existing `<!-- llui-mount-end -->` is found after the anchor
+ * (e.g. stale from an undisposed prior mount), the content between the
+ * anchor and that sentinel is swept and the sentinel is reused. Dev mode
+ * warns in that case.
+ */
+export function mountAtAnchor<S, M, E>(
+  anchor: Comment,
+  def: ComponentDef<S, M, E>,
+  data?: unknown,
+  options?: MountOptions,
+): AppHandle {
+  if (anchor.parentNode === null) {
+    throw new Error(
+      `[LLui] mountAtAnchor: anchor comment must be attached to a live DOM tree before mount`,
+    )
+  }
+
+  // Locate or synthesize the end sentinel.
+  const existingEnd = _findEndSentinel(anchor)
+  let endSentinel: Comment
+  if (existingEnd !== null) {
+    if (import.meta.env?.DEV) {
+      console.warn(
+        `[LLui] mountAtAnchor: anchor has a pre-existing end sentinel. ` +
+          `A prior mount was not disposed — sweeping stale siblings and reusing the sentinel.`,
+      )
+    }
+    _removeBetween(anchor, existingEnd)
+    endSentinel = existingEnd
+  } else {
+    endSentinel = document.createComment('llui-mount-end')
+    anchor.parentNode.insertBefore(endSentinel, anchor.nextSibling)
+  }
+
+  const inst = createComponentInstance(def, data, options?.parentScope ?? null)
+
+  if (devToolsInstall) devToolsInstall(inst)
+
+  if (import.meta.env?.DEV) {
+    const offender = findNonSerializable(inst.state)
+    if (offender) {
+      console.warn(
+        `[LLui] <${def.name}> initial state contains a non-serializable value at "${offender.path}":`,
+        offender.value,
+        '\nState must be plain JSON (no Date/Map/Set/class instances/functions).' +
+          '\nThis will break SSR hydration, state replay, and devtools snapshots.' +
+          '\nhint: Convert to a serializable representation (e.g., Date → ISO string, Map → Record).',
+      )
+    }
+  }
+
+  const { queue: onMountQueue, prev: prevMountQueue } = pushMountQueue()
+  setFlatBindings(inst.allBindings)
+  setRenderContext({
+    ...inst,
+    container: anchor.parentElement ?? undefined,
+    send: inst.send as (msg: unknown) => void,
+    instance: inst as ComponentInstance,
+  })
+  const nodes = def.view(createView<S, M>(inst.send))
+  clearRenderContext()
+  setFlatBindings(null)
+  popMountQueue(prevMountQueue)
+
+  // Batch-insert via DocumentFragment — one layout pass instead of N.
+  if (nodes.length > 1) {
+    const frag = document.createDocumentFragment()
+    for (const node of nodes) frag.appendChild(node)
+    anchor.parentNode.insertBefore(frag, endSentinel)
+  } else if (nodes.length === 1) {
+    anchor.parentNode.insertBefore(nodes[0]!, endSentinel)
+  }
+
+  flushMountQueue(onMountQueue)
+
+  registerInstance(inst)
+  if (hmrModule && def.name) {
+    hmrModule.registerForAnchor(def.name, inst, anchor, endSentinel)
+  }
+  dispatchInitialEffects(inst)
+  let disposed = false
+
+  return {
+    dispose() {
+      if (disposed) return
+      disposed = true
+      if (hmrModule && def.name) hmrModule.unregisterForHmr(def.name, inst)
+      inst.abortController.abort()
+      unregisterInstance(inst)
+      inst.rootScope.disposalCause = 'app-unmount'
+      disposeScope(inst.rootScope)
+      _removeBetween(anchor, endSentinel)
+      endSentinel.parentNode?.removeChild(endSentinel)
+    },
+    flush() {
+      if (disposed) return
+      flushInstance(inst)
+    },
+    send(msg: unknown) {
+      if (disposed) return
+      ;(inst.send as (m: unknown) => void)(msg)
+    },
+  }
+}
+
+/**
+ * Hydrate a component relative to a comment anchor rather than inside a
+ * container element. Analogous to `hydrateApp` — uses `serverState` as
+ * the initial state (not `init()`'s output) while preserving `init()`'s
+ * effects for post-mount dispatch.
+ *
+ * The DOM-handling path is identical to `mountAtAnchor`: reuses a
+ * pre-existing end sentinel when present, synthesizes one otherwise.
+ * Atomic-swaps the owned region whether or not server content is there
+ * to replace. No error for a missing end sentinel — the vike chain's
+ * outer `hydrateApp`'s `replaceChildren` wipes inner layers' sentinels,
+ * so inner-layer `hydrateAtAnchor` calls routinely find nothing to
+ * reuse, and that's normal.
+ */
+export function hydrateAtAnchor<S, M, E>(
+  anchor: Comment,
+  def: ComponentDef<S, M, E>,
+  serverState: S,
+  options?: MountOptions,
+): AppHandle {
+  if (anchor.parentNode === null) {
+    throw new Error(
+      `[LLui] hydrateAtAnchor: anchor comment must be attached to a live DOM tree before hydrate`,
+    )
+  }
+
+  const existingEnd = _findEndSentinel(anchor)
+  let endSentinel: Comment
+  if (existingEnd !== null) {
+    _removeBetween(anchor, existingEnd)
+    endSentinel = existingEnd
+  } else {
+    endSentinel = document.createComment('llui-mount-end')
+    anchor.parentNode.insertBefore(endSentinel, anchor.nextSibling)
+  }
+
+  // Run original init() to capture effects, then override state with server's.
+  const [, originalEffects] = (def.init as (data: unknown) => [S, E[]])(undefined)
+  const hydrateDef: ComponentDef<S, M, E> = {
+    ...def,
+    init: () => [serverState, originalEffects],
+  }
+
+  const inst = createComponentInstance(hydrateDef, undefined, options?.parentScope ?? null)
+
+  if (devToolsInstall) devToolsInstall(inst)
+
+  const { queue: onMountQueue, prev: prevMountQueue } = pushMountQueue()
+  setFlatBindings(inst.allBindings)
+  setRenderContext({
+    ...inst,
+    container: anchor.parentElement ?? undefined,
+    send: inst.send as (msg: unknown) => void,
+    instance: inst as ComponentInstance,
+  })
+  const nodes = hydrateDef.view(createView<S, M>(inst.send))
+  clearRenderContext()
+  setFlatBindings(null)
+  popMountQueue(prevMountQueue)
+
+  if (nodes.length > 1) {
+    const frag = document.createDocumentFragment()
+    for (const node of nodes) frag.appendChild(node)
+    anchor.parentNode.insertBefore(frag, endSentinel)
+  } else if (nodes.length === 1) {
+    anchor.parentNode.insertBefore(nodes[0]!, endSentinel)
+  }
+
+  flushMountQueue(onMountQueue)
+
+  registerInstance(inst)
+  if (hmrModule && def.name) {
+    hmrModule.registerForAnchor(def.name, inst, anchor, endSentinel)
+  }
+  dispatchInitialEffects(inst)
+  let disposed = false
+
+  return {
+    dispose() {
+      if (disposed) return
+      disposed = true
+      if (hmrModule && def.name) hmrModule.unregisterForHmr(def.name, inst)
+      inst.abortController.abort()
+      unregisterInstance(inst)
+      inst.rootScope.disposalCause = 'app-unmount'
+      disposeScope(inst.rootScope)
+      _removeBetween(anchor, endSentinel)
+      endSentinel.parentNode?.removeChild(endSentinel)
+    },
+    flush() {
+      if (disposed) return
+      flushInstance(inst)
+    },
+    send(msg: unknown) {
+      if (disposed) return
+      ;(inst.send as (m: unknown) => void)(msg)
+    },
+  }
 }
 
 function dispatchInitialEffects<S, M, E>(
