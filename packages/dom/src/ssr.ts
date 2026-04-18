@@ -17,8 +17,8 @@ import { createView } from './view-helpers.js'
  *
  * Call `initSsrDom()` once before using this on the server.
  */
-export function renderNodes<S, M, E>(
-  def: ComponentDef<S, M, E>,
+export function renderNodes<S, M, E, D = void>(
+  def: ComponentDef<S, M, E, D>,
   initialState?: S,
   parentScope?: Scope,
 ): { nodes: Node[]; inst: ComponentInstance<S, M, E> } {
@@ -77,7 +77,10 @@ export function serializeNodes(nodes: Node[], bindings: Binding[]): string {
  * For persistent layouts, use `renderNodes` + `serializeNodes` directly
  * so layout and page nodes can be composed before serialization.
  */
-export function renderToString<S, M, E>(def: ComponentDef<S, M, E>, initialState?: S): string {
+export function renderToString<S, M, E, D = void>(
+  def: ComponentDef<S, M, E, D>,
+  initialState?: S,
+): string {
   const { nodes, inst } = renderNodes(def, initialState)
   return serializeNodes(nodes, inst.allBindings)
 }

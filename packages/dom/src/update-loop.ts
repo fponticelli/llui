@@ -72,17 +72,21 @@ export interface ComponentInstance<S = unknown, M = unknown, E = unknown> {
   _effectMocks?: MockRegistry
 }
 
-export function createComponentInstance<S, M, E>(
-  def: ComponentDef<S, M, E>,
-  data?: unknown,
+export function createComponentInstance<S, M, E, D = void>(
+  def: ComponentDef<S, M, E, D>,
+  data?: D,
   parentScope: Scope | null = null,
 ): ComponentInstance<S, M, E> {
-  const [initialState, initialEffects] = (def.init as (data: unknown) => [S, E[]])(data)
+  const [initialState, initialEffects] = def.init(data as D)
 
   const controller = new AbortController()
 
   const inst: ComponentInstance<S, M, E> = {
-    def,
+    // `def` carries an arbitrary `D` for typed init data, but after init
+    // has run the runtime never touches `def.init` again — update/view/
+    // onEffect and HMR replacement don't depend on D. Cast to the
+    // D=void instance storage shape here.
+    def: def as ComponentDef<S, M, E>,
     state: initialState,
     initialEffects,
     // When `parentScope` is provided the instance's rootScope becomes a

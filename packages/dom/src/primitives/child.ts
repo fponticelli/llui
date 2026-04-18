@@ -30,7 +30,7 @@ export function child<S, ChildM>(opts: ChildOptions<S, ChildM>): Node[] {
   childScope.disposalCause = 'child-unmount'
   const parentSend = parentCtx.send
 
-  const childDef = opts.def as ComponentDef<unknown, ChildM, unknown>
+  const childDef = opts.def as ComponentDef<unknown, ChildM, unknown, Record<string, unknown>>
   const initialProps = opts.props(parentCtx.state as S)
   const childInst = createComponentInstance(childDef, initialProps)
 

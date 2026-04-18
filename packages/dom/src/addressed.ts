@@ -39,8 +39,8 @@ export function isAddressedEffect(effect: unknown): effect is AddressedEffect {
 /**
  * Build a typed address builder from a component definition's `receives` map.
  */
-export function addressOf<S, M, E>(
-  def: ComponentDef<S, M, E>,
+export function addressOf<S, M, E, D = void>(
+  def: ComponentDef<S, M, E, D>,
   key: string | number,
 ): Record<string, (params?: unknown) => AddressedEffect> {
   const receives = def.receives

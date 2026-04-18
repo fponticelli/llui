@@ -87,7 +87,19 @@ export interface MountOptions {
 export function mountApp<S, M, E>(
   container: HTMLElement,
   def: ComponentDef<S, M, E>,
-  data?: unknown,
+  data?: undefined,
+  options?: MountOptions,
+): AppHandle
+export function mountApp<S, M, E, D>(
+  container: HTMLElement,
+  def: ComponentDef<S, M, E, D>,
+  data: D,
+  options?: MountOptions,
+): AppHandle
+export function mountApp<S, M, E, D>(
+  container: HTMLElement,
+  def: ComponentDef<S, M, E, D>,
+  data?: D,
   options?: MountOptions,
 ): AppHandle {
   // HMR: if this component is already mounted (module re-execution
@@ -252,7 +264,19 @@ function findNonSerializable(
 export function mountAtAnchor<S, M, E>(
   anchor: Comment,
   def: ComponentDef<S, M, E>,
-  data?: unknown,
+  data?: undefined,
+  options?: MountOptions,
+): AppHandle
+export function mountAtAnchor<S, M, E, D>(
+  anchor: Comment,
+  def: ComponentDef<S, M, E, D>,
+  data: D,
+  options?: MountOptions,
+): AppHandle
+export function mountAtAnchor<S, M, E, D>(
+  anchor: Comment,
+  def: ComponentDef<S, M, E, D>,
+  data?: D,
   options?: MountOptions,
 ): AppHandle {
   if (anchor.parentNode === null) {
@@ -363,9 +387,9 @@ export function mountAtAnchor<S, M, E>(
  * so inner-layer `hydrateAtAnchor` calls routinely find nothing to
  * reuse, and that's normal.
  */
-export function hydrateAtAnchor<S, M, E>(
+export function hydrateAtAnchor<S, M, E, D = void>(
   anchor: Comment,
-  def: ComponentDef<S, M, E>,
+  def: ComponentDef<S, M, E, D>,
   serverState: S,
   options?: MountOptions,
 ): AppHandle {
@@ -459,9 +483,9 @@ function dispatchInitialEffects<S, M, E>(
   inst.initialEffects = []
 }
 
-export function hydrateApp<S, M, E>(
+export function hydrateApp<S, M, E, D = void>(
   container: HTMLElement,
-  def: ComponentDef<S, M, E>,
+  def: ComponentDef<S, M, E, D>,
   serverState: S,
   options?: MountOptions,
 ): AppHandle {

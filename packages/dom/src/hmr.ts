@@ -74,9 +74,9 @@ export function unregisterForHmr(name: string, inst: object): void {
  * Returns an AppHandle for the first instance (for mountApp compatibility),
  * or null if no instances are registered (first mount).
  */
-export function replaceComponent<S, M, E>(
+export function replaceComponent<S, M, E, D = void>(
   name: string,
-  newDef: ComponentDef<S, M, E>,
+  newDef: ComponentDef<S, M, E, D>,
 ): AppHandle | null {
   const entries = hmrRegistry.get(name)
   if (!entries || entries.length === 0) return null

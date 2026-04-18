@@ -9,11 +9,16 @@ export interface TestHarness<S, M, E> {
   sendAll: (msgs: M[]) => S
 }
 
-export function testComponent<S, M, E>(
-  def: ComponentDef<S, M, E>,
-  initialData?: unknown,
+export function testComponent<S, M, E>(def: ComponentDef<S, M, E>): TestHarness<S, M, E>
+export function testComponent<S, M, E, D>(
+  def: ComponentDef<S, M, E, D>,
+  initialData: D,
+): TestHarness<S, M, E>
+export function testComponent<S, M, E, D>(
+  def: ComponentDef<S, M, E, D>,
+  initialData?: D,
 ): TestHarness<S, M, E> {
-  const [initState, initEffects] = (def.init as (data: unknown) => [S, E[]])(initialData)
+  const [initState, initEffects] = def.init(initialData as D)
 
   const harness: TestHarness<S, M, E> = {
     state: initState,

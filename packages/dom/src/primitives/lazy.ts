@@ -95,7 +95,7 @@ export function lazy<S, M, D = undefined>(opts: LazyOptions<S, M, D>): Node[] {
         // returned a real ComponentDef; LazyDef only erased the types.
         const initialProps = opts.data ? opts.data(ctx.state as S) : undefined
         const childInst = createComponentInstance(
-          def as unknown as ComponentDef<unknown, unknown, unknown>,
+          def as unknown as ComponentDef<unknown, unknown, unknown, unknown>,
           initialProps,
         )
 

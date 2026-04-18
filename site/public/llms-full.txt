@@ -1625,10 +1625,10 @@ See: 08 Ecosystem Integration.md
 Mounts a component relative to a comment anchor rather than inside a container element. Inserts a synthesized end sentinel (`<!-- llui-mount-end -->`) immediately after the anchor and places the component's nodes between the pair. Requires `anchor.parentNode !== null`.
 
 ```typescript
-function mountAtAnchor<S, M, E>(
+function mountAtAnchor<S, M, E, D>(
   anchor: Comment,
-  def: ComponentDef<S, M, E>,
-  data?: unknown,
+  def: ComponentDef<S, M, E, D>,
+  data: D,
   options?: MountOptions,
 ): AppHandle
 ```
@@ -1644,9 +1644,9 @@ See: `docs/superpowers/specs/2026-04-17-anchor-mount-design.md`
 Hydration counterpart to `mountAtAnchor`. Uses `serverState` as the initial state and preserves `init()`'s effects for post-mount dispatch (analogous to `hydrateApp`'s behavior).
 
 ```typescript
-function hydrateAtAnchor<S, M, E>(
+function hydrateAtAnchor<S, M, E, D = void>(
   anchor: Comment,
-  def: ComponentDef<S, M, E>,
+  def: ComponentDef<S, M, E, D>,
   serverState: S,
   options?: MountOptions,
 ): AppHandle

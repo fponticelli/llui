@@ -30,9 +30,15 @@ export interface ViewHarness<M> {
  * Mount a component against a fresh container and return an interactive harness.
  * Simulates events + auto-flushes so tests can chain assertions naturally.
  */
-export function testView<S, M, E>(def: ComponentDef<S, M, E>, state: S): ViewHarness<M> {
+export function testView<S, M, E, D = void>(
+  def: ComponentDef<S, M, E, D>,
+  state: S,
+): ViewHarness<M> {
   const container = document.createElement('div')
 
+  // The inner mount uses a D=void init override — testView runs the
+  // component against the provided `state`, not init data — so the
+  // local testDef re-declares D as void.
   const testDef: ComponentDef<S, M, E> = {
     ...def,
     init: () => [state, []],
