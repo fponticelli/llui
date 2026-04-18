@@ -6,6 +6,7 @@ import { text as _text } from './primitives/text.js'
 import { unsafeHtml as _unsafeHtml } from './primitives/unsafe-html.js'
 import { memo as _memo } from './primitives/memo.js'
 import { selector as _selector, type SelectorInstance } from './primitives/selector.js'
+import { sample as _sample } from './primitives/sample.js'
 import { useContext, type Context } from './primitives/context.js'
 
 /**
@@ -48,6 +49,13 @@ export interface View<S, M> {
   memo<T>(accessor: (s: S) => T): (s: S) => T
   selector<V>(field: (s: S) => V): SelectorInstance<V>
   ctx<T>(c: Context<T>): (s: S) => T
+  /**
+   * Imperative one-shot read of current state inside the render context.
+   * Returns `selector(state)` at call time — no binding is created, no
+   * mask is assigned. Use when a builder needs the current state
+   * snapshot and a reactive binding would be wrong semantically.
+   */
+  sample<R>(selector: (s: S) => R): R
 }
 
 /**
@@ -67,5 +75,6 @@ export function createView<S, M>(send: Send<M>): View<S, M> {
     memo: <T>(accessor: (s: S) => T) => _memo<S, T>(accessor),
     selector: <V>(field: (s: S) => V) => _selector<S, V>(field),
     ctx: <T>(c: Context<T>) => useContext<S, T>(c),
+    sample: <R>(selector: (s: S) => R) => _sample<S, R>(selector),
   }
 }

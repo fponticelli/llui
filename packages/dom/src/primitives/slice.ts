@@ -6,6 +6,7 @@ import { each as _each } from './each.js'
 import { text as _text } from './text.js'
 import { unsafeHtml as _unsafeHtml } from './unsafe-html.js'
 import { memo as _memo } from './memo.js'
+import { sample as _sample } from './sample.js'
 import { selector as _selector } from './selector.js'
 import { useContext, type Context } from './context.js'
 
@@ -87,5 +88,6 @@ export function slice<Root, Sub, M>(
       const root = useContext<Root, T>(c)
       return (s: Sub) => root(s as unknown as Root)
     },
+    sample: <R>(selector: (s: Sub) => R) => _sample<Root, R>((r) => selector(lift(r))),
   }
 }
