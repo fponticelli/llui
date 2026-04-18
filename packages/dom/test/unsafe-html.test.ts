@@ -62,7 +62,12 @@ describe('unsafeHtml()', () => {
       name: 'ReactiveInitial',
       init: () => [{ html: '<strong>bold</strong>' }, []],
       update: (s) => [s, []],
-      view: ({ unsafeHtml: uh }) => [div({ class: 'wrap' }, uh((s: State) => s.html))],
+      view: ({ unsafeHtml: uh }) => [
+        div(
+          { class: 'wrap' },
+          uh((s: State) => s.html),
+        ),
+      ],
     }
     const container = document.createElement('div')
     mountApp(container, def)
@@ -85,7 +90,12 @@ describe('unsafeHtml()', () => {
       },
       view: ({ send, unsafeHtml: uh }) => {
         sendRef = send
-        return [div({ class: 'wrap' }, uh((s: State) => s.html))]
+        return [
+          div(
+            { class: 'wrap' },
+            uh((s: State) => s.html),
+          ),
+        ]
       },
       __dirty: (o, n) => (Object.is(o.html, n.html) ? 0 : 1),
     }
@@ -117,7 +127,12 @@ describe('unsafeHtml()', () => {
       },
       view: ({ send, unsafeHtml: uh }) => {
         sendRef = send
-        return [div({ class: 'wrap' }, uh((s: State) => s.html))]
+        return [
+          div(
+            { class: 'wrap' },
+            uh((s: State) => s.html),
+          ),
+        ]
       },
       __dirty: (o, n) => (Object.is(o.html, n.html) ? 0 : 1),
     }
@@ -147,7 +162,12 @@ describe('unsafeHtml()', () => {
       },
       view: ({ send, unsafeHtml: uh }) => {
         sendRef = send
-        return [div({ class: 'wrap' }, uh((s: State) => s.html))]
+        return [
+          div(
+            { class: 'wrap' },
+            uh((s: State) => s.html),
+          ),
+        ]
       },
       __dirty: (o, n) => (Object.is(o.html, n.html) ? 0 : 1),
     }
@@ -180,7 +200,12 @@ describe('unsafeHtml()', () => {
       },
       view: ({ send, unsafeHtml: uh }) => {
         sendRef = send
-        return [div({ class: 'wrap' }, uh((s: State) => s.html))]
+        return [
+          div(
+            { class: 'wrap' },
+            uh((s: State) => s.html),
+          ),
+        ]
       },
       __dirty: () => 1,
     }

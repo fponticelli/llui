@@ -28,10 +28,7 @@ import { FULL_MASK } from '../update-loop.js'
  * reads. Phase 2 / Phase 1 skip the reconcile when no interesting bit
  * is set. Defaults to FULL_MASK for hand-written components.
  */
-export function unsafeHtml<S>(
-  accessor: ((s: S) => string) | string,
-  mask?: number,
-): Node[] {
+export function unsafeHtml<S>(accessor: ((s: S) => string) | string, mask?: number): Node[] {
   if (typeof accessor === 'string') {
     return parseHtmlToNodes(accessor)
   }

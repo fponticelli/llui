@@ -66,6 +66,7 @@ export function mountAtAnchor<S, M, E>(
 ```
 
 Contract:
+
 - Throws immediately if `anchor.parentNode === null`.
 - Walks forward from `anchor.nextSibling` looking for a pre-existing end sentinel. If one is found (stale from a prior undisposed mount), sweeps everything between `anchor` and the found sentinel and reuses the sentinel — with a dev-mode `console.warn` advising the caller to dispose prior mounts.
 - If no pre-existing end sentinel is found, synthesizes one (`document.createComment('llui-mount-end')`) and inserts it at `anchor.nextSibling`.
@@ -95,6 +96,7 @@ export function hydrateAtAnchor<S, M, E>(
 ```
 
 Contract:
+
 - Same pre-flight checks as `mountAtAnchor`.
 - Walks forward from `anchor.nextSibling` looking for an `<!-- llui-mount-end -->` sentinel. If found, reuses it; if not, synthesizes one at `anchor.nextSibling` (identical to `mountAtAnchor`). Never throws for missing sentinel — the vike chain's outer `hydrateApp` does `container.replaceChildren(...)` which wipes inner layers' server content and their end sentinels, so inner-layer `hydrateAtAnchor` calls routinely find nothing to reuse.
 - Builds the client-side component fresh (`createComponentInstance` with `serverState` via the same technique `hydrateApp` uses: discards `init()`'s state but preserves its effects).
@@ -137,7 +139,7 @@ export function pageSlot(): Node[] {
 ```ts
 interface PendingSlot {
   slotScope: Scope
-  anchor: Comment  // was: marker: HTMLElement
+  anchor: Comment // was: marker: HTMLElement
 }
 ```
 
@@ -147,7 +149,7 @@ interface PendingSlot {
 interface ChainHandle {
   def: AnyComponentDef
   handle: AppHandle
-  slotAnchor: Comment | null  // was: slotMarker: HTMLElement | null
+  slotAnchor: Comment | null // was: slotMarker: HTMLElement | null
   slotScope: Scope | null
   data: unknown
 }
@@ -257,7 +259,7 @@ Extend the registration payload to a discriminated union:
 ```ts
 type HmrEntry =
   | { kind: 'container'; inst: ComponentInstance; container: HTMLElement }
-  | { kind: 'anchor';    inst: ComponentInstance; anchor: Comment; endSentinel: Comment }
+  | { kind: 'anchor'; inst: ComponentInstance; anchor: Comment; endSentinel: Comment }
 ```
 
 ### 5.2 Replace flow
@@ -265,6 +267,7 @@ type HmrEntry =
 For `kind: 'container'`: unchanged.
 
 For `kind: 'anchor'`:
+
 1. Walk siblings from `anchor.nextSibling` to `endSentinel` (exclusive), `removeChild` each.
 2. Build fresh instance from the new `def`.
 3. Insert fresh nodes via `anchor.parentNode.insertBefore(node, endSentinel)`.
@@ -279,13 +282,13 @@ For `kind: 'anchor'`:
 
 ## 6. Error handling
 
-| Situation | Behavior |
-| --- | --- |
-| `anchor.parentNode === null` at `mountAtAnchor` / `hydrateAtAnchor` entry | Throw: `"[LLui] mountAtAnchor: anchor comment must be attached to a live DOM tree before mount"` |
-| `mountAtAnchor` / `hydrateAtAnchor` finds a stale end sentinel (prior undisposed mount) | Dev-only `console.warn` recommending dispose; proceed by sweeping stale siblings and reusing the sentinel |
-| `hydrateAtAnchor` finds no end sentinel after the anchor | Synthesize one, proceed as fresh mount. Normal in the vike chain (outer `hydrateApp`'s `replaceChildren` wipes inner end sentinels); no warning |
-| Anchor is moved or removed by user code between mount and dispose | Undocumented: the handle becomes invalid. Documented: the caller owns the anchor; moving it after mount invalidates the handle |
-| Synthesized end sentinel collides by text with an unrelated comment | Non-issue — the primitive walks by node identity, not textContent |
+| Situation                                                                               | Behavior                                                                                                                                        |
+| --------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
+| `anchor.parentNode === null` at `mountAtAnchor` / `hydrateAtAnchor` entry               | Throw: `"[LLui] mountAtAnchor: anchor comment must be attached to a live DOM tree before mount"`                                                |
+| `mountAtAnchor` / `hydrateAtAnchor` finds a stale end sentinel (prior undisposed mount) | Dev-only `console.warn` recommending dispose; proceed by sweeping stale siblings and reusing the sentinel                                       |
+| `hydrateAtAnchor` finds no end sentinel after the anchor                                | Synthesize one, proceed as fresh mount. Normal in the vike chain (outer `hydrateApp`'s `replaceChildren` wipes inner end sentinels); no warning |
+| Anchor is moved or removed by user code between mount and dispose                       | Undocumented: the handle becomes invalid. Documented: the caller owns the anchor; moving it after mount invalidates the handle                  |
+| Synthesized end sentinel collides by text with an unrelated comment                     | Non-issue — the primitive walks by node identity, not textContent                                                                               |
 
 ---
 
