@@ -1,4 +1,4 @@
-import { hydrateApp, mountApp } from '@llui/dom'
+import { hydrateApp, mountApp, mountAtAnchor, hydrateAtAnchor } from '@llui/dom'
 import type { AnyComponentDef, AppHandle, TransitionOptions, Scope } from '@llui/dom'
 import { _consumePendingSlot, _resetPendingSlot } from './page-slot.js'
 import type { VikePageContextData } from './vike-namespace.js'
@@ -192,14 +192,14 @@ export function fromTransition(
 /**
  * One element of the live chain the adapter keeps between navs.
  * `handle` is the AppHandle returned by mountApp/hydrateApp for this
- * layer. `slotMarker` / `slotScope` are set when the layer called
+ * layer. `slotAnchor` / `slotScope` are set when the layer called
  * `pageSlot()` during its view pass; they're null for the innermost
  * layer (typically the page component, which doesn't have a slot).
  */
 interface ChainEntry {
   def: AnyComponentDef
   handle: AppHandle
-  slotMarker: HTMLElement | null
+  slotAnchor: Comment | null
   slotScope: Scope | null
   /**
    * The data slice this layer was most recently mounted or updated
@@ -340,12 +340,11 @@ async function renderClient(
     }
   }
 
-  // Find the slot element whose contents will change. Shared prefix =
-  // everything before firstMismatch. The slot we're about to replace
-  // content in sits in the layer at firstMismatch - 1 (if any);
-  // otherwise we're swapping the whole app at the root container.
-  const leaveTarget =
-    firstMismatch === 0 ? rootEl : (chainHandles[firstMismatch - 1]!.slotMarker ?? rootEl)
+  // Determine whether this nav replaces the entire root or only a suffix.
+  // For the root swap, the outermost layer mounts/hydrates via mountApp/
+  // hydrateApp on rootEl. For a deeper swap, the mount target is an
+  // anchor comment owned by the surviving layer's slot.
+  const isRootSwap = firstMismatch === 0
 
   // If everything matches (same chain end-to-end with same defs), this
   // is effectively a no-op nav — the page def hasn't changed. We still
@@ -362,7 +361,10 @@ async function renderClient(
   // Skip on the very first mount — there's no outgoing page to leave.
   const isFirstMount = chainHandles.length === 0
   if (options.onLeave && !isFirstMount) {
-    await options.onLeave(leaveTarget)
+    const leaveTargetEl = isRootSwap
+      ? rootEl
+      : (chainHandles[firstMismatch - 1]!.slotAnchor?.parentElement ?? rootEl)
+    await options.onLeave(leaveTargetEl)
   }
 
   // Dispose the divergent suffix, innermost first. Each handle.dispose()
@@ -370,26 +372,31 @@ async function renderClient(
   // every child scope the layer owned (bindings, portals, onMount
   // cleanups, dialog focus traps, etc.). The surviving layers are
   // untouched because their scopes live above the disposal roots.
+  // For anchor-based mounts, dispose() also removes the owned DOM region
+  // between the anchor and end sentinel — no additional textContent clear needed.
   for (let i = chainHandles.length - 1; i >= firstMismatch; i--) {
     chainHandles[i]!.handle.dispose()
   }
   chainHandles = chainHandles.slice(0, firstMismatch)
 
-  // Clear the slot element before mounting the new suffix. handle.dispose()
-  // above already did this for the innermost layer's container, but the
-  // slot at firstMismatch - 1 keeps its marker element (it's owned by the
-  // surviving layer) and we mount fresh children into it.
-  leaveTarget.textContent = ''
-
   // Mount the new suffix starting at firstMismatch.
+  // For a root swap, the target is the container HTMLElement.
+  // For a deeper swap, the target is the surviving layer's slot anchor (Comment).
   const parentScope =
     firstMismatch === 0 ? undefined : (chainHandles[firstMismatch - 1]!.slotScope ?? undefined)
-  mountChainSuffix(newChain, newChainData, firstMismatch, leaveTarget, parentScope, {
+  const mountTargetArg: HTMLElement | Comment =
+    firstMismatch === 0 ? rootEl : chainHandles[firstMismatch - 1]!.slotAnchor!
+  mountChainSuffix(newChain, newChainData, firstMismatch, mountTargetArg, parentScope, {
     mode: 'mount',
   })
 
   // onEnter fires after the new suffix is in place. Fire-and-forget.
-  options.onEnter?.(leaveTarget)
+  if (options.onEnter) {
+    const enterTargetEl = isRootSwap
+      ? rootEl
+      : (chainHandles[firstMismatch - 1]!.slotAnchor?.parentElement ?? rootEl)
+    options.onEnter(enterTargetEl)
+  }
   options.onMount?.()
 }
 
@@ -418,18 +425,26 @@ interface MountOpts {
  * the initial layer's rootScope parented at `initialParentScope`.
  * Threads slot → next-target → next-parentScope through the chain.
  *
+ * `initialTarget` is `HTMLElement` for the outermost layer (container-
+ * based mount/hydrate) and `Comment` for inner layers that mount relative
+ * to a `pageSlot()` anchor.
+ *
  * Fails loudly if a non-innermost layer forgot to call `pageSlot()`,
  * or if the innermost layer called `pageSlot()` unnecessarily.
+ *
+ * @internal — test helper. Exported so `client-page-slot.test.ts` can
+ * test anchor-mount/dispose contracts directly with hand-built DOM.
+ * Not part of the public API.
  */
-function mountChainSuffix(
+export function _mountChainSuffix(
   chain: LayoutChain,
   chainData: readonly unknown[],
   startAt: number,
-  initialTarget: HTMLElement,
+  initialTarget: HTMLElement | Comment,
   initialParentScope: Scope | undefined,
   opts: MountOpts,
 ): void {
-  let mountTarget: HTMLElement = initialTarget
+  let mountTarget: HTMLElement | Comment = initialTarget
   let parentScope: Scope | undefined = initialParentScope
 
   for (let i = startAt; i < chain.length; i++) {
@@ -448,22 +463,45 @@ function mountChainSuffix(
       // client mismatch throws with a clear error instead of silently
       // hydrating the wrong state into the wrong instance.
       const layerState = extractHydrationState(opts.serverStateEnvelope, i, chain.length, def)
-      // Cross from the type-erased AnyComponentDef back into a concrete
-      // ComponentDef<unknown, unknown, unknown, unknown> for the mount
-      // primitive's signature. The cast is safe — mountApp / hydrateApp
-      // don't use the type parameters at runtime, they just thread the
-      // def through createComponentInstance which accesses init/update/
-      // view by field name. AnyComponentDef has the same field shape.
-      handle = hydrateApp(
-        mountTarget,
-        def as unknown as Parameters<typeof hydrateApp>[1],
-        layerState,
-        { parentScope },
-      )
+      if (mountTarget.nodeType === 1) {
+        // HTMLElement — outermost layer, use hydrateApp (container-based).
+        // Cross from the type-erased AnyComponentDef back into a concrete
+        // ComponentDef<unknown, unknown, unknown, unknown> for the mount
+        // primitive's signature. The cast is safe — mountApp / hydrateApp
+        // don't use the type parameters at runtime.
+        handle = hydrateApp(
+          mountTarget as HTMLElement,
+          def as unknown as Parameters<typeof hydrateApp>[1],
+          layerState,
+          { parentScope },
+        )
+      } else {
+        // Comment anchor — inner layer, use hydrateAtAnchor.
+        handle = hydrateAtAnchor(
+          mountTarget as Comment,
+          def as unknown as Parameters<typeof hydrateAtAnchor>[1],
+          layerState as never,
+          { parentScope },
+        )
+      }
     } else {
-      handle = mountApp(mountTarget, def as unknown as Parameters<typeof mountApp>[1], layerData, {
-        parentScope,
-      })
+      if (mountTarget.nodeType === 1) {
+        // HTMLElement — outermost layer, use mountApp (container-based).
+        handle = mountApp(
+          mountTarget as HTMLElement,
+          def as unknown as Parameters<typeof mountApp>[1],
+          layerData,
+          { parentScope },
+        )
+      } else {
+        // Comment anchor — inner layer, use mountAtAnchor.
+        handle = mountAtAnchor(
+          mountTarget as Comment,
+          def as unknown as Parameters<typeof mountAtAnchor>[1],
+          layerData,
+          { parentScope },
+        )
+      }
     }
 
     const slot = _consumePendingSlot()
@@ -493,17 +531,22 @@ function mountChainSuffix(
     chainHandles.push({
       def,
       handle,
-      slotMarker: slot?.marker ?? null,
+      slotAnchor: slot?.anchor ?? null,
       slotScope: slot?.slotScope ?? null,
       data: layerData,
     })
 
     if (slot !== null) {
-      mountTarget = slot.marker
+      // Next layer mounts relative to the slot's comment anchor.
+      mountTarget = slot.anchor
       parentScope = slot.slotScope
     }
   }
 }
+
+// Internal alias used by renderClient and mountOrHydrateChain.
+// The public-named export above carries the @internal doc.
+const mountChainSuffix = _mountChainSuffix
 
 /**
  * Pull the per-layer state from the hydration envelope. Supports both

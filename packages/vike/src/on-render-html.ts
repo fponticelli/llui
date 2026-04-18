@@ -150,7 +150,7 @@ async function renderPage(
   const chain: LayoutChain = [...layoutChain, pageContext.Page]
   const chainData: readonly unknown[] = [...layoutData, pageContext.data]
 
-  const { html, envelope } = renderChain(chain, chainData)
+  const { html, envelope } = _renderChain(chain, chainData)
 
   const document = options.document ?? DEFAULT_DOCUMENT
   const head = pageContext.head ?? ''
@@ -168,11 +168,14 @@ async function renderPage(
 /**
  * Render every layer of the chain into one composed DOM tree, then
  * serialize. At each non-innermost layer, consume the pending
- * `pageSlot()` registration and append the next layer's nodes into
- * the slot marker. Scopes are threaded so inner layers inherit the
- * outer layer's scope tree for context lookups.
+ * `pageSlot()` registration and insert the next layer's nodes as
+ * siblings after the anchor comment, bracketed by an end sentinel.
+ * Scopes are threaded so inner layers inherit the outer layer's scope
+ * tree for context lookups.
+ *
+ * @internal — exported for unit testing only (`_renderChain`).
  */
-function renderChain(
+export function _renderChain(
   chain: LayoutChain,
   chainData: readonly unknown[],
 ): { html: string; envelope: HydrationEnvelope } {
@@ -191,7 +194,7 @@ function renderChain(
   let envelopePage: HydrationEnvelope['page'] | null = null
 
   let outermostNodes: Node[] = []
-  let currentSlotMarker: HTMLElement | null = null
+  let currentSlotAnchor: Comment | null = null
   let currentSlotScope: Scope | undefined = undefined
 
   for (let i = 0; i < chain.length; i++) {
@@ -217,17 +220,31 @@ function renderChain(
     if (i === 0) {
       outermostNodes = nodes
     } else {
-      // Append this layer's nodes into the previous layer's slot marker.
-      // The slot marker is an element owned by the previous layer's DOM;
-      // appending here stitches this layer into the composed tree so
-      // the final serialization pass emits one integrated HTML string.
-      if (!currentSlotMarker) {
+      // Insert this layer's nodes as siblings immediately after the
+      // anchor comment, then place an end sentinel after them.
+      // The anchor is already attached to the composed DOM tree (it was
+      // produced by the previous layer's pageSlot() call). We insert
+      // before the anchor's next sibling so nodes land right after the
+      // anchor, preserving any trailing siblings that may exist.
+      if (!currentSlotAnchor) {
         // Unreachable given the error checks below, but defensive.
-        throw new Error(`[llui/vike] internal: chain layer ${i} (<${def.name}>) has no slot marker`)
+        throw new Error(`[llui/vike] internal: chain layer ${i} (<${def.name}>) has no slot anchor`)
       }
+      const parentNode = currentSlotAnchor.parentNode
+      if (!parentNode) {
+        throw new Error(
+          `[llui/vike] internal: slot anchor for layer ${i} (<${def.name}>) is detached`,
+        )
+      }
+      // insertPoint is the node currently after the anchor; inserting
+      // before it keeps all new nodes in order immediately after anchor.
+      const insertPoint = currentSlotAnchor.nextSibling
       for (const node of nodes) {
-        currentSlotMarker.appendChild(node)
+        parentNode.insertBefore(node, insertPoint)
       }
+      // Synthesize an end sentinel that brackets the owned region.
+      const endSentinel = document.createComment('llui-mount-end')
+      parentNode.insertBefore(endSentinel, insertPoint)
     }
 
     // Record this layer's state in the envelope. Page goes under
@@ -255,7 +272,7 @@ function renderChain(
       )
     }
 
-    currentSlotMarker = slot?.marker ?? null
+    currentSlotAnchor = slot?.anchor ?? null
     currentSlotScope = slot?.slotScope
   }
 

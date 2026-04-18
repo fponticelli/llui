@@ -15,7 +15,7 @@ import { getRenderContext, createScope } from '@llui/dom/internal'
  */
 interface PendingSlot {
   slotScope: Scope
-  marker: HTMLElement
+  anchor: Comment
 }
 
 let pendingSlot: PendingSlot | null = null
@@ -25,6 +25,11 @@ let pendingSlot: PendingSlot | null = null
  * a nested layout or the route's page component. The vike adapter's
  * client and server render paths walk the layout chain, and each layer's
  * `pageSlot()` call records the position where the next layer mounts.
+ *
+ * Emits a single `<!-- llui-page-slot -->` comment as an insertion
+ * anchor. The nested layer's DOM lives as siblings of this comment
+ * within the layout's own parent element; a synthesized end sentinel
+ * (`<!-- llui-mount-end -->`) brackets the owned region.
  *
  * The slot is a real scope-tree node: the scope it creates is a child
  * of the current render scope, so contexts provided by the layout (via
@@ -48,21 +53,18 @@ let pendingSlot: PendingSlot | null = null
  *   update: layoutUpdate,
  *   view: (h) => [
  *     div({ class: 'app-shell' }, [
- *       header([... persistent chrome ...]),
- *       main([pageSlot()]),    // ← here the page goes
+ *       header([...]),
+ *       main([pageSlot()]),    // ← here the page goes (no wrapper div)
  *     ]),
  *   ],
  * })
  * ```
  *
  * Call exactly once per layout. Calling more than once in a single
- * view throws — a layout with two slots would be ambiguous about which
- * one receives the nested content.
+ * view throws.
  */
 export function pageSlot(): Node[] {
   if (typeof document === 'undefined') {
-    // Server path — @llui/dom's renderToString uses jsdom, so document
-    // IS defined during SSR, but we guard anyway for safety.
     throw new Error(
       '[llui/vike] pageSlot() called without a DOM environment. ' +
         'Call from inside a component view() that runs during mount, hydrate, or SSR.',
@@ -78,10 +80,9 @@ export function pageSlot(): Node[] {
   }
   const ctx = getRenderContext('pageSlot')
   const slotScope = createScope(ctx.rootScope)
-  const marker = document.createElement('div')
-  marker.dataset.lluiPageSlot = ''
-  pendingSlot = { slotScope, marker }
-  return [marker]
+  const anchor = document.createComment('llui-page-slot')
+  pendingSlot = { slotScope, anchor }
+  return [anchor]
 }
 
 /**
