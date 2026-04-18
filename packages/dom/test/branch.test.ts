@@ -101,6 +101,7 @@ describe('branch()', () => {
               return [h.text('via h')]
             },
           },
+          default: () => [],
         }),
       ],
       __dirty: () => 0,
@@ -135,6 +136,7 @@ describe('branch()', () => {
             idle: (h) => [h.text((s) => `Phase: ${s.phase}`)],
             loading: (h) => [h.text((s) => `Loading: ${s.phase}`)],
           },
+          default: () => [],
         }),
       ],
       __dirty: (o, n) => (Object.is(o.phase, n.phase) ? 0 : 1),

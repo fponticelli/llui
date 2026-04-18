@@ -7,7 +7,9 @@ import { FULL_MASK } from '../update-loop.js'
 import { pushMountQueue, popMountQueue, flushMountQueue } from './on-mount.js'
 import type { StructuralBlock } from '../structural.js'
 
-export function branch<S, M = unknown>(opts: BranchOptions<S, M>): Node[] {
+export function branch<S, M = unknown, K extends string = string>(
+  opts: BranchOptions<S, M, K>,
+): Node[] {
   const ctx = getRenderContext('branch')
   const parentLifetime = ctx.rootLifetime
   const blocks = ctx.structuralBlocks
@@ -36,7 +38,7 @@ export function branch<S, M = unknown>(opts: BranchOptions<S, M>): Node[] {
       currentLifetime = null
       currentKey = newKey
 
-      const newCaseKey = String(newKey)
+      const newCaseKey = String(newKey) as K
       const newBuilder = opts.cases?.[newCaseKey] ?? opts.default
       // Collect onMount callbacks from the new case into a local queue,
       // then flush them SYNCHRONOUSLY after the new nodes are inserted.
@@ -110,7 +112,7 @@ export function branch<S, M = unknown>(opts: BranchOptions<S, M>): Node[] {
   // index — the splice only affects entries to the RIGHT of the parent.
   blocks.push(block)
 
-  const caseKey = String(currentKey)
+  const caseKey = String(currentKey) as K
   const builder = opts.cases?.[caseKey] ?? opts.default
   // Initial-mount onMount callbacks are handled by the outer mountApp
   // queue — we're still inside the first view() call. branch doesn't

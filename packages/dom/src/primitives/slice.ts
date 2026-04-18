@@ -61,13 +61,23 @@ export function slice<Root, Sub, M>(
         render: wrapCase(opts.render),
         fallback: opts.fallback ? wrapCase(opts.fallback) : undefined,
       }),
-    branch: (opts: BranchOptions<Sub, M>) =>
-      _branch<Root, M>({
-        ...opts,
-        on: (r) => opts.on(lift(r)),
-        cases: opts.cases ? wrapCases(opts.cases) : undefined,
-        default: opts.default ? wrapCase(opts.default) : undefined,
-      }),
+    branch: <K extends string>(opts: BranchOptions<Sub, M, K>) => {
+      // Re-typed to the wide form internally because we're transforming
+      // the options before handing them to the real `branch`. The inner
+      // call loses exhaustiveness narrowing — it's been enforced at the
+      // slice boundary already.
+      const anyOpts = opts as unknown as {
+        on: (s: Sub) => K
+        cases?: Record<string, (h: View<Sub, M>) => Node[]>
+        default?: (h: View<Sub, M>) => Node[]
+      }
+      return _branch<Root, M>({
+        ...(anyOpts as unknown as BranchOptions<Root, M>),
+        on: (r) => anyOpts.on(lift(r)),
+        cases: anyOpts.cases ? wrapCases(anyOpts.cases) : undefined,
+        default: anyOpts.default ? wrapCase(anyOpts.default) : undefined,
+      } as BranchOptions<Root, M>)
+    },
     scope: (opts: ScopeOptions<Sub, M>) =>
       _scope<Root, M>({
         ...opts,

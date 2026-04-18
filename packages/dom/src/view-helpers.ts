@@ -38,7 +38,7 @@ import { useContext, type Context } from './primitives/context.js'
 export interface View<S, M> {
   send: Send<M>
   show(opts: ShowOptions<S, M>): Node[]
-  branch(opts: BranchOptions<S, M>): Node[]
+  branch<K extends string = string>(opts: BranchOptions<S, M, K>): Node[]
   scope(opts: ScopeOptions<S, M>): Node[]
   each<T>(opts: EachOptions<S, T, M>): Node[]
   text(accessor: ((s: S) => string) | string, mask?: number): Text
@@ -68,7 +68,7 @@ export function createView<S, M>(send: Send<M>): View<S, M> {
   return {
     send,
     show: (opts) => _show<S, M>(opts),
-    branch: (opts) => _branch<S, M>(opts),
+    branch: <K extends string>(opts: BranchOptions<S, M, K>) => _branch<S, M, K>(opts),
     scope: (opts) => _scope<S, M>(opts),
     each: <T>(opts: EachOptions<S, T, M>) => _each<S, T, M>(opts),
     text: (accessor, mask) =>

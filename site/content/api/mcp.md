@@ -214,5 +214,4 @@ backward compatibility with downstream consumers that used to import the
 const mcpToolDefinitions: ToolDefinition[]
 ```
 
-
 <!-- auto-api:end -->

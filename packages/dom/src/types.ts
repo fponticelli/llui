@@ -241,27 +241,7 @@ export interface TransitionOptions {
   onTransition?: (ctx: { entering: Node[]; leaving: Node[]; parent: Node }) => void | Promise<void>
 }
 
-/**
- * Options for `branch()`.
- *
- * `on(state)` returns a string-valued discriminant. The reconciler looks
- * up `cases[on(state)]` on each change; falls back to `default` when no
- * case matches, or renders nothing if no `default` is provided.
- *
- * `cases` is optional — `branch({ on, default })` is the canonical
- * dynamic-rebuild shape. `scope()` sugar wraps exactly this form.
- */
-export interface BranchOptions<S, M = unknown> extends TransitionOptions {
-  on: (s: S) => string
-  cases?: Record<string, (h: View<S, M>) => Node[]>
-  /**
-   * Fallback builder. Runs when `on(state)` returns a key not present in
-   * `cases`, or when `cases` is omitted entirely. A future type-level
-   * pass may make this required-or-disallowed by inferring exhaustiveness
-   * against the literal union returned by `on`; today it is always
-   * optional.
-   */
-  default?: (h: View<S, M>) => Node[]
+interface BranchOptionsBase<S, M> extends TransitionOptions {
   /**
    * @internal Set by `show()` / `scope()` sugar when delegating to
    * `branch()`, so the dev-only disposer log can report `'show-hide'` /
@@ -272,6 +252,55 @@ export interface BranchOptions<S, M = unknown> extends TransitionOptions {
   /** @internal Compiler-injected mask of paths read by `on`. */
   __mask?: number
 }
+
+/**
+ * All cases covered by `cases` — no default allowed (would be dead code).
+ */
+type BranchOptionsExhaustive<S, M, K extends string> = BranchOptionsBase<S, M> & {
+  on: (s: S) => K
+  cases: { [P in K]: (h: View<S, M>) => Node[] }
+  default?: never
+}
+
+/**
+ * `cases` may cover some but not all keys; `default` handles the rest.
+ */
+type BranchOptionsNonExhaustive<S, M, K extends string> = BranchOptionsBase<S, M> & {
+  on: (s: S) => K
+  cases?: { [P in K]?: (h: View<S, M>) => Node[] }
+  default: (h: View<S, M>) => Node[]
+}
+
+/**
+ * `on` returns a wide `string` — exhaustiveness cannot be verified at
+ * compile time (the key domain is infinite). Lenient: `default` is
+ * optional so existing call sites that predate exhaustiveness typing
+ * continue to compile. Authors who want the gate opt in by narrowing
+ * `on`'s return type to a literal union.
+ */
+type BranchOptionsWide<S, M> = BranchOptionsBase<S, M> & {
+  on: (s: S) => string
+  cases?: Record<string, (h: View<S, M>) => Node[]>
+  default?: (h: View<S, M>) => Node[]
+}
+
+/**
+ * Options for `branch()`.
+ *
+ * When `on` returns a literal string union (e.g. `'idle' | 'loading'
+ * | 'done'`), TypeScript enforces exhaustiveness: either every union
+ * member has a case (and `default` is disallowed as unreachable), or
+ * `default` is required to cover the remainder. When `on` returns a
+ * wide `string`, `default` stays optional — exhaustiveness isn't
+ * meaningful for an unbounded domain.
+ *
+ * `cases` is optional when `default` is present; `branch({ on, default })`
+ * is the canonical dynamic-rebuild shape — `scope()` sugar wraps
+ * exactly this form.
+ */
+export type BranchOptions<S, M = unknown, K extends string = string> = string extends K
+  ? BranchOptionsWide<S, M>
+  : BranchOptionsExhaustive<S, M, K> | BranchOptionsNonExhaustive<S, M, K>
 
 export interface ShowOptions<S, M = unknown> extends TransitionOptions {
   when: (s: S) => boolean
