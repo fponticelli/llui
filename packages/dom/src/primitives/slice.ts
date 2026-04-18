@@ -4,6 +4,7 @@ import { show as _show } from './show.js'
 import { branch as _branch } from './branch.js'
 import { each as _each } from './each.js'
 import { text as _text } from './text.js'
+import { unsafeHtml as _unsafeHtml } from './unsafe-html.js'
 import { memo as _memo } from './memo.js'
 import { selector as _selector } from './selector.js'
 import { useContext, type Context } from './context.js'
@@ -72,6 +73,10 @@ export function slice<Root, Sub, M>(
     text: (accessor, mask) => {
       if (typeof accessor === 'string') return _text(accessor)
       return _text<Root>((r) => accessor(lift(r)), mask)
+    },
+    unsafeHtml: (accessor, mask) => {
+      if (typeof accessor === 'string') return _unsafeHtml(accessor)
+      return _unsafeHtml<Root>((r) => accessor(lift(r)), mask)
     },
     memo: <T>(accessor: (s: Sub) => T) => {
       const m = _memo<Root, T>((r) => accessor(lift(r)))

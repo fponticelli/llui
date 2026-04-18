@@ -3,6 +3,7 @@ import { show as _show } from './primitives/show.js'
 import { branch as _branch } from './primitives/branch.js'
 import { each as _each } from './primitives/each.js'
 import { text as _text } from './primitives/text.js'
+import { unsafeHtml as _unsafeHtml } from './primitives/unsafe-html.js'
 import { memo as _memo } from './primitives/memo.js'
 import { selector as _selector, type SelectorInstance } from './primitives/selector.js'
 import { useContext, type Context } from './primitives/context.js'
@@ -38,6 +39,12 @@ export interface View<S, M> {
   branch(opts: BranchOptions<S, M>): Node[]
   each<T>(opts: EachOptions<S, T, M>): Node[]
   text(accessor: ((s: S) => string) | string, mask?: number): Text
+  /**
+   * Insert raw HTML into the tree. Caller is responsible for sanitizing.
+   * The parsed subtree is opaque to LLui — no nested bindings, events,
+   * or primitives inside it will be tracked. See `unsafeHtml` for details.
+   */
+  unsafeHtml(accessor: ((s: S) => string) | string, mask?: number): Node[]
   memo<T>(accessor: (s: S) => T): (s: S) => T
   selector<V>(field: (s: S) => V): SelectorInstance<V>
   ctx<T>(c: Context<T>): (s: S) => T
@@ -55,6 +62,8 @@ export function createView<S, M>(send: Send<M>): View<S, M> {
     each: <T>(opts: EachOptions<S, T, M>) => _each<S, T, M>(opts),
     text: (accessor, mask) =>
       typeof accessor === 'string' ? _text(accessor) : _text<S>(accessor, mask),
+    unsafeHtml: (accessor, mask) =>
+      typeof accessor === 'string' ? _unsafeHtml(accessor) : _unsafeHtml<S>(accessor, mask),
     memo: <T>(accessor: (s: S) => T) => _memo<S, T>(accessor),
     selector: <V>(field: (s: S) => V) => _selector<S, V>(field),
     ctx: <T>(c: Context<T>) => useContext<S, T>(c),

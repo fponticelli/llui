@@ -61,6 +61,7 @@ export {
 // ── View Primitives ───────────────────────────────────────────────
 
 export { text } from './primitives/text.js'
+export { unsafeHtml } from './primitives/unsafe-html.js'
 export { branch } from './primitives/branch.js'
 export { each } from './primitives/each.js'
 export { virtualEach, type VirtualEachOptions } from './primitives/virtual-each.js'
