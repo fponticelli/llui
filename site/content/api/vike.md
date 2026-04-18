@@ -252,7 +252,7 @@ function renderClient(pageContext: ClientPageContext, options: RenderClientOptio
 
 Walk the full chain for the first mount or hydration. Starts from
 depth 0 at the root container, threads each layer's slot into the
-next layer's mount target + parentScope.
+next layer's mount target + parentLifetime.
 
 ```typescript
 function mountOrHydrateChain(
@@ -266,8 +266,8 @@ function mountOrHydrateChain(
 ### `_mountChainSuffix()`
 
 Mount (or hydrate) `chain[startAt..end]` into `initialTarget`, with
-the initial layer's rootScope parented at `initialParentScope`.
-Threads slot → next-target → next-parentScope through the chain.
+the initial layer's rootLifetime parented at `initialParentLifetime`.
+Threads slot → next-target → next-parentLifetime through the chain.
 `initialTarget` is `HTMLElement` for the outermost layer (container-
 based mount/hydrate) and `Comment` for inner layers that mount relative
 to a `pageSlot()` anchor.
@@ -283,7 +283,7 @@ function _mountChainSuffix(
   chainData: readonly unknown[],
   startAt: number,
   initialTarget: HTMLElement | Comment,
-  initialParentScope: Scope | undefined,
+  initialParentLifetime: Lifetime | undefined,
   opts: MountOpts,
 ): void
 ```
@@ -534,7 +534,7 @@ export interface RenderClientOptions {
 
 One element of the live chain the adapter keeps between navs.
 `handle` is the AppHandle returned by mountApp/hydrateApp for this
-layer. `slotAnchor` / `slotScope` are set when the layer called
+layer. `slotAnchor` / `slotLifetime` are set when the layer called
 `pageSlot()` during its view pass; they're null for the innermost
 layer (typically the page component, which doesn't have a slot).
 
@@ -543,7 +543,7 @@ interface ChainEntry {
   def: AnyComponentDef
   handle: AppHandle
   slotAnchor: Comment | null
-  slotScope: Scope | null
+  slotLifetime: Lifetime | null
   /**
    * The data slice this layer was most recently mounted or updated
    * with. Compared shallow-key against the next nav's `lluiLayoutData[i]`

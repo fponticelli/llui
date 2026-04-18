@@ -53,11 +53,14 @@ interface View<S, M> {
   send: (msg: M) => void
   show(opts: ShowOptions<S, M>): Node[]
   branch(opts: BranchOptions<S, M>): Node[]
+  scope(opts: ScopeOptions<S, M>): Node[]
   each<T>(opts: EachOptions<S, T, M>): Node[]
   text(accessor: ((s: S) => string) | string, mask?: number): Text
   memo<T>(accessor: (s: S) => T): (s: S) => T
   selector<V>(field: (s: S) => V): SelectorInstance<V>
   ctx<T>(c: Context<T>): (s: S) => T
+  /** One-shot imperative read of current state; no binding created. */
+  sample<R>(selector: (s: S) => R): R
 }
 ```
 
@@ -349,21 +352,48 @@ import {
 
 ### `branch(opts)`
 
-Conditional rendering keyed on a discriminant. When the discriminant changes, the old arm's scope is disposed depth-first (removing all bindings, listeners, and nested structural blocks) and the new arm's builder runs from scratch.
+Conditional rendering keyed on a string-valued discriminant. When the discriminant changes, the old arm's lifetime is disposed depth-first (removing all bindings, listeners, and nested structural blocks) and the new arm's builder runs from scratch.
 
 ```typescript
 function branch<S, M>(opts: {
-  on: (s: S) => string | number | boolean
-  cases: Record<string | number, (h: View<S, M>) => Node[]>
+  on: (s: S) => string
+  cases?: Record<string, (h: View<S, M>) => Node[]>
+  default?: (h: View<S, M>) => Node[]
   enter?: (nodes: Node[]) => void | Promise<void>
   leave?: (nodes: Node[]) => void | Promise<void>
   onTransition?: (ctx: { entering: Node[]; leaving: Node[]; parent: Node }) => void | Promise<void>
 }): Node[]
 ```
 
+- `on(state)` returns a string. Coerce numeric/boolean discriminants at the call site (`on: (s) => String(s.code)` or `on: (s) => s.flag ? 'yes' : 'no'`).
+- `cases` is optional. The reconciler looks up `cases[on(state)]`; if no case matches, `default(h)` runs. If neither matches, the arm is empty.
+- `default` is the canonical shape for "any unmatched key rebuilds here" — use `scope()` below if you want no enumerated cases at all.
+
 The `leave` callback fires before node removal; if it returns a Promise, removal is deferred until the promise resolves. `enter` fires after insertion. `onTransition` fires first when both are specified (for FLIP animations), then `enter`/`leave` fire for their respective elements.
 
 See: 03 Runtime DOM.md, 01 Architecture.md
+
+---
+
+### `scope(opts)`
+
+Rebuild a subtree when a derived string-valued key changes. Sugar over `branch({ on, cases: {}, default: render, __disposalCause: 'scope-rebuild' })` — same reconcile machinery, named for intent.
+
+```typescript
+function scope<S, M>(opts: {
+  on: (s: S) => string
+  render: (h: View<S, M>) => Node[]
+  enter?: (nodes: Node[]) => void | Promise<void>
+  leave?: (nodes: Node[]) => void | Promise<void>
+  onTransition?: (ctx: { entering: Node[]; leaving: Node[]; parent: Node }) => void | Promise<void>
+}): Node[]
+```
+
+On initial mount, `on(state)` is computed, a fresh Lifetime is created, and `render(h)` is invoked in that lifetime. On each dirty tick where the scope's compiler-injected `__mask` overlaps, `on(state)` is recomputed; a new key disposes the current arm and runs `render(h)` against a fresh Lifetime. Bindings inside are recreated each rebuild.
+
+Use `sample()` (below) inside `render` to capture a snapshot of state at rebuild time without creating a reactive binding — the idiomatic pattern for "rebuild when an epoch counter bumps, build from the current data".
+
+See: `docs/superpowers/specs/2026-04-18-scope-primitive-design.md`
 
 ---
 
@@ -556,6 +586,22 @@ function memo<S, T>(accessor: (s: S) => T): (s: S) => T
 Use for expensive derived computations referenced by multiple bindings.
 
 See: 01 Architecture.md
+
+---
+
+### `sample(selector)`
+
+One-shot imperative read of the current state inside a render context. No binding is created, no mask is assigned, the call is a synchronous read.
+
+```typescript
+function sample<S, R>(selector: (s: S) => R): R
+```
+
+Use when a builder needs the current state snapshot — e.g. to pass a record to an imperative renderer inside a `scope()` rebuild — and a reactive binding would be wrong semantically. The top-level import works in every render context (including `each.render`, whose bag does not carry View methods); `h.sample(…)` is the View-bag form for destructure-from-`h` callers.
+
+Throws `[LLui] sample called outside render` if invoked outside a render context.
+
+See: `docs/superpowers/specs/2026-04-18-scope-primitive-design.md`
 
 ---
 
@@ -811,11 +857,11 @@ interface ElementReport {
 }
 
 /** One node in the scope tree returned by getScopeTree(). */
-interface ScopeNode {
+interface LifetimeNode {
   id: number
   kind: 'root' | 'show' | 'each' | 'branch' | 'child' | 'portal'
   bindingCount: number
-  children: ScopeNode[]
+  children: LifetimeNode[]
 }
 
 /** Add/remove/move/reuse record for one reconciliation pass of an each() site. */
@@ -831,7 +877,7 @@ interface EachDiff {
 /** One scope disposal event recorded by the runtime. */
 interface DisposerEvent {
   scopeId: number
-  kind: ScopeNode['kind']
+  kind: LifetimeNode['kind']
   cause: 'parent' | 'branch' | 'show' | 'each' | 'dispose'
   timestamp: number
 }
@@ -916,7 +962,7 @@ forceRerender(): { changedBindings: number[] }
 getEachDiff(sinceIndex?: number): EachDiff[]
 
 /** Scope hierarchy rooted at scopeId (default = root), truncated at depth. */
-getScopeTree(opts?: { depth?: number; scopeId?: number }): ScopeNode
+getScopeTree(opts?: { depth?: number; scopeId?: number }): LifetimeNode
 
 /** Recent scope disposal events, newest first. */
 getDisposerLog(limit?: number): DisposerEvent[]

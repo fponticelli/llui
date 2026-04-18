@@ -130,7 +130,7 @@ The chain diff on each nav walks old and new chains in parallel and finds the fi
 
 Layouts and pages are independent component instances with their own state, update, and `send`. They share state and expose cross-cutting operations via **context**, not via direct messaging.
 
-The scope-tree integration makes this natural: `pageSlot()` creates its slot as a child of the layout's render scope, and the page's `rootScope` is parented inside that slot. `useContext` from within the page walks up through the slot and finds any providers the layout installed above it.
+The scope-tree integration makes this natural: `pageSlot()` creates its slot as a child of the layout's render scope, and the page's `rootLifetime` is parented inside that slot. `useContext` from within the page walks up through the slot and finds any providers the layout installed above it.
 
 Common pattern — a layout-owned toast system:
 

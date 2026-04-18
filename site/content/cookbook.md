@@ -453,6 +453,53 @@ inside other accessors to share derived state. Use `memo` for simple
 projections, `selector` when the derived value feeds into multiple bindings
 or structural primitives.
 
+### Rebuild a subtree when a derived value changes
+
+When a piece of state bumps an epoch/version counter and you want the
+downstream subtree to rebuild from scratch — not diff in place — use
+`scope()`:
+
+```typescript
+import { scope, sample } from '@llui/dom'
+
+view: () => [
+  ...scope({
+    on: (s) => String(s.chartEpoch),
+    render: () => {
+      const stats = sample<State, Stats>((s) => s.stats)
+      return [chartView(stats)]
+    },
+  }),
+]
+```
+
+- `on` gates when the subtree rebuilds. Only state paths read inside `on`
+  contribute to the `scope`'s dirty mask; stats-only changes that don't
+  bump `chartEpoch` do **not** trigger a rebuild.
+- `sample()` reads the current state snapshot without creating a binding.
+  Use it when the imperative renderer wants the whole record, not a
+  single reactive field. Inside a `View` bag, `h.sample(...)` is the
+  destructure-friendly form; the top-level import works anywhere a
+  render context is live.
+
+**Avoid the old workaround.** Before `scope()` existed, authors used
+`each()` with a singleton-array plus a closure-captured snapshot:
+
+```typescript
+// Don't do this — use scope() instead
+let chartSnap: Stats | null = null
+each({
+  items: (s) => {
+    chartSnap = s.stats
+    return [s.chartEpoch]
+  },
+  key: (n) => String(n),
+  render: () => chartView(chartSnap!),
+})
+```
+
+`scope({ on, render })` + `sample()` is the idiomatic replacement.
+
 ## Code Splitting
 
 ### Lazy-loaded components with `lazy()`

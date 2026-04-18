@@ -111,7 +111,7 @@ The following is a conceptual breakdown of what each primitive contributes to th
 - `mountApp` and the component initialization path
 - `processMessages`: the message queue drain loop (microtask-batched `send()`)
 - `flush()`: synchronous update cycle trigger (~5 lines, negligible addition)
-- Scope creation, child scope registration, `disposeScope`
+- Scope creation, child scope registration, `disposeLifetime`
 - `applyBinding` and the binding update loop
 - `__dirty` injection infrastructure (the runtime side of the dirty-bit protocol)
 - `elSplit`: the compiled element constructor

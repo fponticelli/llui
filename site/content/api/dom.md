@@ -74,20 +74,22 @@ Element helpers (`div`, `button`, `span`, etc.) stay as imports -- they're state
 
 ### View Primitives
 
-| Primitive                      | Purpose                                       |
-| ------------------------------ | --------------------------------------------- |
-| `text(accessor)`               | Reactive text node                            |
-| `show({ when, render })`       | Conditional rendering                         |
-| `branch({ on, cases })`        | Multi-case switching                          |
-| `each({ items, key, render })` | Keyed list rendering                          |
-| `portal({ target, render })`   | Render into a different DOM location          |
-| `child({ def, key, props })`   | Full component boundary (Level 2 composition) |
-| `memo(accessor)`               | Memoized derived value                        |
-| `selector(field)`              | O(1) one-of-N selection binding               |
-| `onMount(callback)`            | Lifecycle hook (runs once after mount)        |
-| `errorBoundary(opts)`          | Catch render errors                           |
-| `foreign({ create, update })`  | Integrate non-LLui libraries                  |
-| `slice(h, selector)`           | View over a sub-slice of state                |
+| Primitive                         | Purpose                                       |
+| --------------------------------- | --------------------------------------------- |
+| `text(accessor)`                  | Reactive text node                            |
+| `show({ when, render })`          | Conditional rendering                         |
+| `branch({ on, cases, default? })` | Multi-case switching with optional default    |
+| `scope({ on, render })`           | Keyed subtree rebuild on key change           |
+| `each({ items, key, render })`    | Keyed list rendering                          |
+| `portal({ target, render })`      | Render into a different DOM location          |
+| `child({ def, key, props })`      | Full component boundary (Level 2 composition) |
+| `memo(accessor)`                  | Memoized derived value                        |
+| `sample(selector)`                | One-shot imperative state read (no binding)   |
+| `selector(field)`                 | O(1) one-of-N selection binding               |
+| `onMount(callback)`               | Lifecycle hook (runs once after mount)        |
+| `errorBoundary(opts)`             | Catch render errors                           |
+| `foreign({ create, update })`     | Integrate non-LLui libraries                  |
+| `slice(h, selector)`              | View over a sub-slice of state                |
 
 ### Composition
 
@@ -331,6 +333,33 @@ function text<S>(accessor: ((s: S) => string) | (() => string) | string, mask?: 
 ```typescript
 function branch<S, M = unknown>(opts: BranchOptions<S, M>): Node[]
 ```
+
+### `scope()`
+
+Rebuild a subtree when a derived key changes. Sugar over `branch({ on, cases: {}, default: render })`.
+
+```typescript
+function scope<S, M = unknown>(opts: ScopeOptions<S, M>): Node[]
+
+interface ScopeOptions<S, M> {
+  on: (s: S) => string
+  render: (h: View<S, M>) => Node[]
+  enter?: (nodes: Node[]) => void | Promise<void>
+  leave?: (nodes: Node[]) => void | Promise<void>
+}
+```
+
+Each time `on(state)` returns a new value (compared with `Object.is`), the current arm's Lifetime is disposed and `render(h)` runs against a fresh one. Combine with `sample()` for a whole-state snapshot read at rebuild time — see the cookbook recipe "Rebuild a subtree when a derived value changes".
+
+### `sample()`
+
+One-shot imperative read of current state inside a render context. No binding is created.
+
+```typescript
+function sample<S, R>(selector: (s: S) => R): R
+```
+
+Throws if called outside a render context. Also available as `h.sample(...)` on the View bag.
 
 ### `each()`
 

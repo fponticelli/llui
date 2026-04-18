@@ -66,7 +66,7 @@ Multi-message batches (multiple `send()` calls coalesced into one microtask) fal
 
 **`selector.__directUpdate`** bypasses Phase 2 entirely for select-style operations, evaluating the selector field and updating registry entries directly.
 
-**Scope pooling:** Disposed scopes are returned to a capped pool (max 2048). `createScope()` reuses pooled scopes, and arrays are reset to shared empty sentinels on disposal.
+**Scope pooling:** Disposed scopes are returned to a capped pool (max 2048). `createLifetime()` reuses pooled scopes, and arrays are reset to shared empty sentinels on disposal.
 
 ---
 
@@ -283,7 +283,7 @@ function reconcileBranch(block, state) {
   if (!caseBuilder) return
 
   // Build new case
-  const newScope = createScope(block.ownerScope)
+  const newScope = createLifetime(block.ownerScope)
   const newNodes = []
   caseBuilder(newScope, newNodes)
   block.activeScope = newScope
@@ -421,16 +421,16 @@ interface Scope {
   eachItemStable: boolean
 }
 
-function createScope(parent: Scope | null): Scope {
+function createLifetime(parent: Scope | null): Scope {
   const scope = { id: nextId++, parent, children: [], disposers: [], bindings: [], eachItemStable: false }
   parent?.children.push(scope)
   return scope
 }
 
-function disposeScope(scope: Scope) {
+function disposeLifetime(scope: Scope) {
   // depth-first: children before parent
   for (const child of scope.children) {
-    disposeScope(child)
+    disposeLifetime(child)
   }
   for (const disposer of scope.disposers) {
     disposer()
@@ -446,7 +446,7 @@ The disposers list holds anything that has an external side effect: `removeEvent
 
 Depth-first disposal is required for correctness when child scopes hold references to resources that parent scope cleanup expects to be live. For example, a child component may have registered a portal node in the parent document; the child's disposer removes that portal node; the parent's disposer then safely cleans up the portal container. Reversing the order would leave dangling DOM nodes.
 
-The scope hierarchy mirrors the conceptual nesting of the view: a branch scope is a child of the scope that owns the branch block; each entry scopes are children of the each scope. This means `disposeScope(branchScope)` recursively cleans up everything the active case ever created, regardless of how deeply nested.
+The scope hierarchy mirrors the conceptual nesting of the view: a branch scope is a child of the scope that owns the branch block; each entry scopes are children of the each scope. This means `disposeLifetime(branchScope)` recursively cleans up everything the active case ever created, regardless of how deeply nested.
 
 This is the right unit of lifetime management because it is the only unit that captures the structural lifecycle of a subtree. Component-level lifecycle (mounted/unmounted) is not granular enough: a single component may contain multiple branch blocks, each with independent lifetimes. Event-based subscriptions require explicit pairing of subscribe/unsubscribe. Scopes require neither: anything registered with a scope is automatically cleaned up when the scope is disposed, which happens exactly when the DOM subtree it covers is removed.
 

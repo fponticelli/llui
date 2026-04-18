@@ -574,7 +574,7 @@ Bypasses Phase 2 entirely for select-style operations. Evaluates the selector fi
 
 ### 4d. Scope Pooling
 
-Disposed scopes are returned to a capped pool (max 2048). `createScope()` reuses pooled scopes instead of allocating new objects. Arrays on pooled scopes are reset to shared empty sentinels on disposal, avoiding per-scope array allocation on reuse.
+Disposed scopes are returned to a capped pool (max 2048). `createLifetime()` reuses pooled scopes instead of allocating new objects. Arrays on pooled scopes are reset to shared empty sentinels on disposal, avoiding per-scope array allocation on reuse.
 
 ### 5. Level 1 vs Level 2 Composition Overhead
 
