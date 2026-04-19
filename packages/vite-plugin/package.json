@@ -1,6 +1,6 @@
 {
   "name": "@llui/vite-plugin",
-  "version": "0.0.26",
+  "version": "0.0.27",
   "type": "module",
   "sideEffects": false,
   "exports": {

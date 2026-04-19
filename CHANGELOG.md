@@ -11,6 +11,35 @@ All notable changes to LLui packages are documented here. LLui is a pre-1.0 proj
 
 Packages version in lockstep at release time: `@llui/dom`, `@llui/vite-plugin`, `@llui/test`, `@llui/router`, `@llui/transitions`, `@llui/components`, `@llui/vike` share a version line. `@llui/effects`, `@llui/mcp`, and `@llui/lint-idiomatic` have their own cadence.
 
+## 2026-04-19 — 0.0.27
+
+**Released:** `@llui/{dom,vite-plugin,test,router,transitions,components,vike}@0.0.27`; `@llui/mcp@0.0.21`
+
+Tightens the `DomEnv` contract introduced in 0.0.24 — follow-up hardening after the portal SSR fix in 0.0.26.
+
+### Breaking
+
+- **`@llui/dom@0.0.27`** — `DomEnv.querySelector(selector)` is now a required method on the interface. Previously optional, with `portal()` silently falling back to `globalThis.document` when a custom env didn't implement it. That fallback was exactly the shape that let a Workers-hostile env slip to production without an error — which is the failure mode 0.0.26 had to fix in the first place. Making the method required means any custom env that forgets to wire up selector resolution fails TS compile instead of crashing at render time. Consumers on the three LLui-shipped envs (`browserEnv`, `jsdomEnv`, `linkedomEnv`) need no action; they already implement it.
+
+### Migration
+
+- **Hand-rolled `DomEnv` implementations** — add `querySelector(selector: string): Element | null` that resolves against your env's document (or returns `null` if your env has no meaningful document concept — portal treats `null` as a no-op).
+
+### `@llui/dom@0.0.27`
+
+- **Breaking** `DomEnv.querySelector` required. See top of release block.
+- **Improved** Portal's string-target resolution is now a straight `ctx.dom.querySelector` call with no fallback branches — one less silent-failure mode.
+
+### `@llui/{vite-plugin,test,router,transitions,components,vike}@0.0.27`
+
+- Rebuilt against the new `@llui/dom` version. No source changes.
+
+### `@llui/mcp@0.0.21`
+
+- Rebuilt against the new `@llui/dom` version. No source changes.
+
+---
+
 ## 2026-04-19 — 0.0.26
 
 **Released:** `@llui/{dom,vite-plugin,test,router,transitions,components,vike}@0.0.26`; `@llui/mcp@0.0.20`
