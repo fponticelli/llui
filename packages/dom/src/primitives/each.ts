@@ -321,10 +321,22 @@ export function each<S, T, M = unknown>(opts: EachOptions<S, T, M>): Node[] {
     // parentLifetime is being disposed — its children array is about to be
     // cleared by the recursive dispose pass, so skip per-entry parent
     // removal (avoids O(N²) indexOf+splice).
+    //
+    // Rows created AFTER the parent's initial render (each reconciled
+    // with a new item list) are siblings of the anchor inside the
+    // parent's DOM container, but aren't tracked by the parent's
+    // snapshot (e.g. an outer branch's currentNodes). Walking entries
+    // here and removing their DOM — guarded by parentNode — closes
+    // the leak: cascade-removed subtrees no-op, live-parent cases get
+    // the orphans cleaned up.
     for (const entry of entries) {
+      for (const node of entry.nodes) {
+        if (node.parentNode) node.parentNode.removeChild(node)
+      }
       disposeLifetime(entry.scope, true)
     }
     entries.length = 0
+    if (anchor.parentNode) anchor.parentNode.removeChild(anchor)
     // Force-remove any mid-leave entries immediately
     for (const entry of leaving) {
       for (const node of entry.nodes) {

@@ -140,6 +140,20 @@ export function branch<S, M = unknown, K extends string = string>(
   addDisposer(parentLifetime, () => {
     const idx = blocks.indexOf(block)
     if (idx !== -1) blocks.splice(idx, 1)
+    // Remove arm DOM nodes + the anchor. The parent's own cleanup
+    // (e.g. an outer branch's removeOld) only walks what its initial
+    // render captured — nodes that THIS branch inserted into the
+    // shared parent AFTER the outer's snapshot (including every
+    // arm swap since initial mount) aren't in that list. Walking
+    // `currentNodes` here and guarding with `parentNode` closes the
+    // leak: if the parent DOM is already cascade-removed by an
+    // ancestor, `node.parentNode` is null and the removeChild
+    // no-ops. If the parent is still live (spread-into-arm case),
+    // the removal is what cleans up the orphans.
+    for (const node of currentNodes) {
+      if (node.parentNode) node.parentNode.removeChild(node)
+    }
+    if (anchor.parentNode) anchor.parentNode.removeChild(anchor)
     if (currentLifetime) {
       disposeLifetime(currentLifetime)
       currentLifetime = null
