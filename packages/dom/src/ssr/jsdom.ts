@@ -17,6 +17,7 @@ interface JsdomWindow {
     createComment: (text: string) => Comment
     createDocumentFragment: () => DocumentFragment
     createRange: () => Range
+    querySelector: (selector: string) => Element | null
   }
   Element: typeof Element
   Node: typeof Node
@@ -65,5 +66,6 @@ export async function jsdomEnv(): Promise<DomEnv> {
       template.innerHTML = html
       return template.content
     },
+    querySelector: (selector) => w.document.querySelector(selector),
   }
 }

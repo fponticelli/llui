@@ -58,6 +58,22 @@ export interface DomEnv {
   parseHtmlFragment(html: string): DocumentFragment
 
   /**
+   * Resolve a CSS selector against the env's root document. Used by
+   * `portal()` to locate its target when `opts.target` is a string.
+   *
+   * Returns `null` when the selector doesn't match — portal callers
+   * treat a null target as a no-op (render nothing), so adapters on
+   * runtimes where no real document exists (detached linkedom, empty
+   * shadow root, etc.) can safely return `null` here.
+   *
+   * Optional at the interface level so pre-existing consumer envs
+   * constructed by hand continue to type-check; a portal call site
+   * with a string target falls back to returning no nodes when the
+   * method is absent.
+   */
+  querySelector?(selector: string): Element | null
+
+  /**
    * @internal Lets hot-path code (e.g. `el-split.ts`'s template-clone)
    * skip env indirection when the env wraps the browser globals. Only
    * set by `browserEnv()`.
@@ -122,6 +138,7 @@ export function browserEnv(): DomEnv {
       template.innerHTML = html
       return template.content
     },
+    querySelector: (selector) => document.querySelector(selector),
     isBrowser: true,
   }
 }

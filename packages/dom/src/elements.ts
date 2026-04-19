@@ -54,6 +54,15 @@ function createElement<K extends keyof HTMLElementTagNameMap>(
     ? propsOrChildren
     : maybeChildren
 
+  // Props that have to apply AFTER children are appended. `<select
+  // value=...>` is the canonical case: setting `value` on a select
+  // without options is a silent no-op in real browsers + jsdom
+  // (value falls through to the first option on append), and a hard
+  // throw under linkedom (its HTMLSelectElement.value setter, once
+  // patched, walks options — but there are none yet if we set before
+  // appending). Deferring the apply fixes all three envs.
+  const deferred: Array<() => void> = []
+
   if (props) {
     for (const [rawKey, value] of Object.entries(props)) {
       if (rawKey === 'key') continue
@@ -64,6 +73,8 @@ function createElement<K extends keyof HTMLElementTagNameMap>(
         el.addEventListener(eventName, value as EventListener)
         continue
       }
+
+      const isSelectValue = tag === 'select' && rawKey === 'value'
 
       // Reactive binding — value is a function
       if (typeof value === 'function') {
@@ -83,14 +94,22 @@ function createElement<K extends keyof HTMLElementTagNameMap>(
 
         const initialValue = perItem ? (value as () => unknown)() : accessor(ctx.state as never)
         binding.lastValue = initialValue
-        applyBinding({ kind, node: el, key }, initialValue)
+        if (isSelectValue) {
+          deferred.push(() => applyBinding({ kind, node: el, key }, initialValue))
+        } else {
+          applyBinding({ kind, node: el, key }, initialValue)
+        }
         continue
       }
 
       // Static prop
       const kind = classifyKind(rawKey)
       const key = resolveKey(rawKey, kind)
-      applyBinding({ kind, node: el, key }, value)
+      if (isSelectValue) {
+        deferred.push(() => applyBinding({ kind, node: el, key }, value))
+      } else {
+        applyBinding({ kind, node: el, key }, value)
+      }
     }
   }
 
@@ -105,6 +124,8 @@ function createElement<K extends keyof HTMLElementTagNameMap>(
       }
     }
   }
+
+  for (const fn of deferred) fn()
 
   return el
 }
