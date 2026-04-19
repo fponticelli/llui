@@ -1,4 +1,5 @@
 import { createOnRenderHtml } from '@llui/vike/server'
+import { jsdomEnv } from '@llui/dom/ssr/jsdom'
 
 function escapeAttr(s: string): string {
   return s.replace(/&/g, '&amp;').replace(/"/g, '&quot;')
@@ -9,6 +10,7 @@ function escapeHtml(s: string): string {
 }
 
 export const onRenderHtml = createOnRenderHtml({
+  domEnv: jsdomEnv,
   document: ({ html, state, pageContext }) => {
     const data = (pageContext as { data?: { title?: string; description?: string } }).data
     const title = data?.title

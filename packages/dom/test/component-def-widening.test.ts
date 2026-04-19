@@ -4,8 +4,11 @@ import { component } from '../src/component'
 import { div } from '../src/elements'
 import { mountApp, hydrateApp, mountAtAnchor, hydrateAtAnchor } from '../src/mount'
 import { renderToString, renderNodes } from '../src/ssr'
+import { browserEnv } from '../src/dom-env'
 import { addressOf } from '../src/addressed'
 import { replaceComponent } from '../src/hmr'
+
+const env = browserEnv()
 
 // Type-level regression: every public API that takes a ComponentDef
 // must accept a fully-typed `ComponentDef<S, M, E, D>` with D ≠ void
@@ -77,12 +80,12 @@ describe('public API accepts ComponentDef<S, M, E, D> with non-void D', () => {
   })
 
   it('renderToString accepts a ComponentDef<…, D> without a cast', () => {
-    const html = renderToString(WidgetDef, { count: 0, label: 'ok' })
+    const html = renderToString(WidgetDef, { count: 0, label: 'ok' }, env)
     expect(html).toContain('widget')
   })
 
   it('renderNodes accepts a ComponentDef<…, D> without a cast', () => {
-    const { nodes, inst } = renderNodes(WidgetDef, { count: 0, label: 'ok' })
+    const { nodes, inst } = renderNodes(WidgetDef, { count: 0, label: 'ok' }, env)
     expect(nodes.length).toBeGreaterThan(0)
     expect(inst).toBeDefined()
   })
@@ -118,7 +121,7 @@ describe('void-D callers continue to type-check', () => {
   })
 
   it('renderToString(VoidDef) with no state argument', () => {
-    const html = renderToString(VoidDef)
+    const html = renderToString(VoidDef, undefined, env)
     expect(typeof html).toBe('string')
   })
 })

@@ -230,6 +230,7 @@ export function transformLlui(
   let usesElSplit = false
   let usesMemo = false
   let usesApplyBinding = false
+  let usesCloneStaticTemplate = false
 
   const f = ts.factory
   const printer = ts.createPrinter({ newLine: ts.NewLineKind.LineFeed })
@@ -306,6 +307,8 @@ export function transformLlui(
         if (ts.isIdentifier(transformed.expression)) {
           if (transformed.expression.text === 'elTemplate') usesElTemplate = true
           else if (transformed.expression.text === 'elSplit') usesElSplit = true
+          else if (transformed.expression.text === '__cloneStaticTemplate')
+            usesCloneStaticTemplate = true
         }
         if (hasPos) edits.push({ start: origStart, end: origEnd, replacement: '' })
         return ts.visitEachChild(transformed, visitor, undefined!)
@@ -381,6 +384,7 @@ export function transformLlui(
     usesElTemplate,
     usesMemo,
     usesApplyBinding,
+    usesCloneStaticTemplate,
     f,
   )
 
@@ -2913,9 +2917,17 @@ function cleanupImports(
   usesElTemplate: boolean,
   usesMemo: boolean,
   usesApplyBinding: boolean,
+  usesCloneStaticTemplate: boolean,
   f: ts.NodeFactory,
 ): ts.SourceFile {
-  if (compiled.size === 0 && !usesElTemplate && !usesElSplit && !usesMemo && !usesApplyBinding)
+  if (
+    compiled.size === 0 &&
+    !usesElTemplate &&
+    !usesElSplit &&
+    !usesMemo &&
+    !usesApplyBinding &&
+    !usesCloneStaticTemplate
+  )
     return sf
 
   const clause = lluiImport.importClause
@@ -2931,6 +2943,15 @@ function cleanupImports(
   const hasElTemplate = clause.namedBindings.elements.some((s) => s.name.text === 'elTemplate')
   if (!hasElTemplate && usesElTemplate) {
     remaining.push(f.createImportSpecifier(false, undefined, f.createIdentifier('elTemplate')))
+  }
+
+  const hasCloneStaticTemplate = clause.namedBindings.elements.some(
+    (s) => s.name.text === '__cloneStaticTemplate',
+  )
+  if (!hasCloneStaticTemplate && usesCloneStaticTemplate) {
+    remaining.push(
+      f.createImportSpecifier(false, undefined, f.createIdentifier('__cloneStaticTemplate')),
+    )
   }
 
   const hasMemo = clause.namedBindings.elements.some((s) => s.name.text === 'memo')
@@ -4127,10 +4148,7 @@ function emitSubtreeTemplate(
                   undefined,
                   undefined,
                   f.createCallExpression(
-                    f.createPropertyAccessExpression(
-                      f.createIdentifier('document'),
-                      'createTextNode',
-                    ),
+                    f.createPropertyAccessExpression(f.createIdentifier('__dom'), 'createTextNode'),
                     undefined,
                     [f.createStringLiteral('')],
                   ),
@@ -4232,13 +4250,14 @@ function emitSubtreeTemplate(
     )
   }
 
-  // (root, __bind) => { ... }
+  // (root, __bind, __dom) => { ... }
   const patchFn = f.createArrowFunction(
     undefined,
     undefined,
     [
       f.createParameterDeclaration(undefined, undefined, 'root'),
       f.createParameterDeclaration(undefined, undefined, '__bind'),
+      f.createParameterDeclaration(undefined, undefined, '__dom'),
     ],
     undefined,
     f.createToken(ts.SyntaxKind.EqualsGreaterThanToken),
@@ -4336,65 +4355,16 @@ function escapeAttr(s: string): string {
   return s.replace(/&/g, '&amp;').replace(/"/g, '&quot;')
 }
 
-let templateCounter = 0
-
 function emitTemplateClone(html: string, f: ts.NodeFactory): ts.Expression {
-  const varName = `__tmpl${templateCounter++}`
-  // Emit: (() => { const t = document.createElement('template'); t.innerHTML = 'html'; return t.content.cloneNode(true).firstChild })()
-  // Simplified: we use an IIFE that creates and caches a template
-  // Actually, for simplicity, just emit the cloneNode inline
-  const tmplCreate = f.createCallExpression(
-    f.createPropertyAccessExpression(f.createIdentifier('document'), 'createElement'),
-    undefined,
-    [f.createStringLiteral('template')],
-  )
-  const iife = f.createCallExpression(
-    f.createParenthesizedExpression(
-      f.createArrowFunction(
-        undefined,
-        undefined,
-        [],
-        undefined,
-        f.createToken(ts.SyntaxKind.EqualsGreaterThanToken),
-        f.createBlock(
-          [
-            f.createVariableStatement(
-              undefined,
-              f.createVariableDeclarationList(
-                [f.createVariableDeclaration(varName, undefined, undefined, tmplCreate)],
-                ts.NodeFlags.Const,
-              ),
-            ),
-            f.createExpressionStatement(
-              f.createBinaryExpression(
-                f.createPropertyAccessExpression(f.createIdentifier(varName), 'innerHTML'),
-                ts.SyntaxKind.EqualsToken,
-                f.createStringLiteral(html),
-              ),
-            ),
-            f.createReturnStatement(
-              f.createPropertyAccessExpression(
-                f.createCallExpression(
-                  f.createPropertyAccessExpression(
-                    f.createPropertyAccessExpression(f.createIdentifier(varName), 'content'),
-                    'cloneNode',
-                  ),
-                  undefined,
-                  [f.createTrue()],
-                ),
-                'firstChild',
-              ),
-            ),
-          ],
-          true,
-        ),
-      ),
-    ),
-    undefined,
-    [],
-  )
-
-  return iife
+  // Emits: __cloneStaticTemplate("<html>")
+  //
+  // The helper lives in `@llui/dom` and threads through `ctx.dom` so SSR
+  // under jsdom/linkedom works without touching globalThis. The import
+  // cleanup pass (see cleanupImports) auto-injects the import when this
+  // emission fires.
+  return f.createCallExpression(f.createIdentifier('__cloneStaticTemplate'), undefined, [
+    f.createStringLiteral(html),
+  ])
 }
 
 function isPerItemCall(node: ts.CallExpression): boolean {

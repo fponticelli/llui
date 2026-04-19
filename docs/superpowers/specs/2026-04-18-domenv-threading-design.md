@@ -125,12 +125,12 @@ No `globalThis` touches anywhere in the render path. `mountApp`'s default env wr
 
 ### 2.3 Sub-entry responsibilities
 
-| Entry | Exports | Imports DOM impl |
-|---|---|---|
-| `@llui/dom` | `mountApp`, `hydrateApp`, `mountAtAnchor`, `hydrateAtAnchor`, all primitives | No — defaults to `browserEnv()` which reads from `globalThis` lazily at mount time |
-| `@llui/dom/ssr` | `renderToString`, `renderNodes`, `serializeNodes`, `DomEnv` type, `browserEnv()` helper | No |
-| `@llui/dom/ssr/jsdom` | `jsdomEnv(): Promise<DomEnv>` | Yes — lazy `await import('jsdom')` |
-| `@llui/dom/ssr/linkedom` | `linkedomEnv(): Promise<DomEnv>` | Yes — lazy `await import('linkedom')` |
+| Entry                    | Exports                                                                                 | Imports DOM impl                                                                   |
+| ------------------------ | --------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------- |
+| `@llui/dom`              | `mountApp`, `hydrateApp`, `mountAtAnchor`, `hydrateAtAnchor`, all primitives            | No — defaults to `browserEnv()` which reads from `globalThis` lazily at mount time |
+| `@llui/dom/ssr`          | `renderToString`, `renderNodes`, `serializeNodes`, `DomEnv` type, `browserEnv()` helper | No                                                                                 |
+| `@llui/dom/ssr/jsdom`    | `jsdomEnv(): Promise<DomEnv>`                                                           | Yes — lazy `await import('jsdom')`                                                 |
+| `@llui/dom/ssr/linkedom` | `linkedomEnv(): Promise<DomEnv>`                                                        | Yes — lazy `await import('linkedom')`                                              |
 
 A Worker build that imports only `@llui/dom/ssr/linkedom` has zero reachable references to jsdom. Rollup walks the graph and finds linkedom only. Bundle shrinks from 9+ MiB to whatever linkedom's footprint is (~200 KiB).
 
@@ -147,7 +147,9 @@ The existing `initSsrDom()` export from `@llui/dom/ssr` becomes a deprecated shi
 ```ts
 // packages/dom/src/dom-env.ts — new public type module
 
-export interface DomEnv { /* see §2.1 */ }
+export interface DomEnv {
+  /* see §2.1 */
+}
 
 /**
  * Wrap the browser globals as a DomEnv. Used as the default env for
@@ -166,14 +168,18 @@ The `browserEnv()` call constructs a lightweight proxy-like object whose methods
 // packages/dom/src/ssr/jsdom.ts — new sub-entry
 
 import type { DomEnv } from '../dom-env.js'
-export async function jsdomEnv(): Promise<DomEnv> { /* …constructs a fresh jsdom per call… */ }
+export async function jsdomEnv(): Promise<DomEnv> {
+  /* …constructs a fresh jsdom per call… */
+}
 ```
 
 ```ts
 // packages/dom/src/ssr/linkedom.ts — new sub-entry
 
 import type { DomEnv } from '../dom-env.js'
-export async function linkedomEnv(): Promise<DomEnv> { /* …linkedom-backed… */ }
+export async function linkedomEnv(): Promise<DomEnv> {
+  /* …linkedom-backed… */
+}
 ```
 
 Both return fresh `DomEnv`s per call. No process-level state, no singletons, no global mutation.
@@ -251,7 +257,7 @@ export interface RenderContext {
   send?: (msg: unknown) => void
   container?: HTMLElement
   instance?: ComponentInstance
-  dom: DomEnv  // NEW — required
+  dom: DomEnv // NEW — required
 }
 ```
 
@@ -326,10 +332,21 @@ Each call returns a FRESH env — no process-level state, safe under concurrency
 ```ts
 export async function linkedomEnv(): Promise<DomEnv> {
   const { parseHTML } = await import('linkedom')
-  const { document, Element, Node, Text, Comment, DocumentFragment,
-          HTMLElement, HTMLTemplateElement, ShadowRoot, MouseEvent } =
-    parseHTML('<!DOCTYPE html><html><body></body></html>')
-  return { /* same shape as jsdomEnv */ }
+  const {
+    document,
+    Element,
+    Node,
+    Text,
+    Comment,
+    DocumentFragment,
+    HTMLElement,
+    HTMLTemplateElement,
+    ShadowRoot,
+    MouseEvent,
+  } = parseHTML('<!DOCTYPE html><html><body></body></html>')
+  return {
+    /* same shape as jsdomEnv */
+  }
 }
 ```
 
@@ -338,6 +355,7 @@ Identical shape; different underlying library. A test matrix verifies both envs 
 ### 5.3 `@llui/dom/ssr` — the generic entry
 
 Exports:
+
 - `renderToString(def, state?, env)`
 - `renderNodes(def, state?, env, parentLifetime?)`
 - `serializeNodes(nodes, bindings)`
@@ -353,12 +371,18 @@ No unconditional DOM implementation imports.
 {
   "exports": {
     ".": { "types": "./dist/index.d.ts", "import": "./dist/index.js" },
-    "./devtools": { /* unchanged */ },
+    "./devtools": {
+      /* unchanged */
+    },
     "./ssr": { "types": "./dist/ssr.d.ts", "import": "./dist/ssr.js" },
     "./ssr/jsdom": { "types": "./dist/ssr/jsdom.d.ts", "import": "./dist/ssr/jsdom.js" },
     "./ssr/linkedom": { "types": "./dist/ssr/linkedom.d.ts", "import": "./dist/ssr/linkedom.js" },
-    "./hmr": { /* unchanged */ },
-    "./internal": { /* unchanged */ }
+    "./hmr": {
+      /* unchanged */
+    },
+    "./internal": {
+      /* unchanged */
+    }
   },
   "peerDependenciesMeta": {
     "jsdom": { "optional": true },
@@ -379,7 +403,7 @@ Both DOM libraries are optional peer dependencies — consumers install whicheve
 import { initSsrDom } from '@llui/dom/ssr'
 import { renderToString } from '@llui/dom'
 
-await initSsrDom()                           // mutates globalThis
+await initSsrDom() // mutates globalThis
 const html = renderToString(MyApp, initialState)
 ```
 
@@ -389,22 +413,24 @@ const html = renderToString(MyApp, initialState)
 import { renderToString } from '@llui/dom/ssr'
 import { jsdomEnv } from '@llui/dom/ssr/jsdom'
 
-const env = await jsdomEnv()                 // fresh, no globals
+const env = await jsdomEnv() // fresh, no globals
 const html = renderToString(MyApp, initialState, env)
 ```
 
 ### 6.3 Linkedom (was: hand-patched globals)
 
 Before:
+
 ```ts
 import { parseHTML } from 'linkedom'
-const { document, Element, /* ... */ } = parseHTML('<!DOCTYPE html>...')
-Object.assign(globalThis, { document, Element, /* ... */ })
+const { document, Element /* ... */ } = parseHTML('<!DOCTYPE html>...')
+Object.assign(globalThis, { document, Element /* ... */ })
 import { renderToString } from '@llui/dom'
 renderToString(MyApp, state)
 ```
 
 After:
+
 ```ts
 import { renderToString } from '@llui/dom/ssr'
 import { linkedomEnv } from '@llui/dom/ssr/linkedom'
@@ -428,7 +454,7 @@ import { createOnRenderHtml } from '@llui/vike'
 import { jsdomEnv } from '@llui/dom/ssr/jsdom'
 export const onRenderHtml = createOnRenderHtml({
   Layout: MyLayout,
-  domEnv: jsdomEnv,   // or linkedomEnv, or a user factory
+  domEnv: jsdomEnv, // or linkedomEnv, or a user factory
 })
 ```
 

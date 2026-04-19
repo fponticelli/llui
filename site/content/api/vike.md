@@ -98,7 +98,12 @@ function resolveLayoutChain(
 
 ### `onRenderHtml()`
 
-Default onRenderHtml hook — no layout, minimal document template.
+Default onRenderHtml hook — no layout, minimal document template,
+jsdom-backed DOM env. For Cloudflare Workers (no jsdom support) or
+a custom layout / document, use `createOnRenderHtml({ domEnv, … })`
+with `linkedomEnv` from `@llui/dom/ssr/linkedom`.
+The lazy import below keeps jsdom out of the client bundle —
+Rollup's graph walker only pulls it when this server hook executes.
 
 ```typescript
 function onRenderHtml(pageContext: PageContext): Promise<RenderHtmlResult>
@@ -152,6 +157,7 @@ tree for context lookups.
 function _renderChain(
   chain: LayoutChain,
   chainData: readonly unknown[],
+  env: DomEnv,
 ): { html: string; envelope: HydrationEnvelope }
 ```
 
@@ -377,7 +383,7 @@ Options for the customized `createOnRenderHtml` factory. Mirrors
 `@llui/vike/client`'s `RenderClientOptions.Layout` — the same chain
 shape is accepted for consistency between server and client render.
 
-```typescript
+````typescript
 export interface RenderHtmlOptions {
   /** Custom HTML document template. Defaults to a minimal layout. */
   document?: (ctx: DocumentContext) => string
@@ -396,8 +402,26 @@ export interface RenderHtmlOptions {
    * layer-by-layer.
    */
   Layout?: AnyComponentDef | LayoutChain | ((pageContext: PageContext) => LayoutChain)
+
+  /**
+   * Factory that returns the `DomEnv` backing SSR render. Call with
+   * either `jsdomEnv` (from `@llui/dom/ssr/jsdom`) or `linkedomEnv`
+   * (from `@llui/dom/ssr/linkedom`). The factory is invoked once per
+   * page render, so each request gets a fresh DOM — safe under
+   * concurrency, no `globalThis` mutation.
+   *
+   * On Cloudflare Workers use `linkedomEnv` — jsdom's transitive deps
+   * (whatwg-url, tr46, punycode) don't resolve under workerd.
+   *
+   * @example
+   * ```ts
+   * import { jsdomEnv } from '@llui/dom/ssr/jsdom'
+   * createOnRenderHtml({ Layout: MyLayout, domEnv: jsdomEnv })
+   * ```
+   */
+  domEnv: () => DomEnv | Promise<DomEnv>
 }
-```
+````
 
 ### `HydrationEnvelope`
 

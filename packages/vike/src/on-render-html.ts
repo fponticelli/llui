@@ -1,5 +1,5 @@
 import { renderNodes, serializeNodes } from '@llui/dom'
-import type { AnyComponentDef, Binding, Lifetime } from '@llui/dom'
+import type { AnyComponentDef, Binding, Lifetime, DomEnv } from '@llui/dom'
 import { _consumePendingSlot, _resetPendingSlot } from './page-slot.js'
 import type { VikePageContextData } from './vike-namespace.js'
 
@@ -74,6 +74,24 @@ export interface RenderHtmlOptions {
    * layer-by-layer.
    */
   Layout?: AnyComponentDef | LayoutChain | ((pageContext: PageContext) => LayoutChain)
+
+  /**
+   * Factory that returns the `DomEnv` backing SSR render. Call with
+   * either `jsdomEnv` (from `@llui/dom/ssr/jsdom`) or `linkedomEnv`
+   * (from `@llui/dom/ssr/linkedom`). The factory is invoked once per
+   * page render, so each request gets a fresh DOM — safe under
+   * concurrency, no `globalThis` mutation.
+   *
+   * On Cloudflare Workers use `linkedomEnv` — jsdom's transitive deps
+   * (whatwg-url, tr46, punycode) don't resolve under workerd.
+   *
+   * @example
+   * ```ts
+   * import { jsdomEnv } from '@llui/dom/ssr/jsdom'
+   * createOnRenderHtml({ Layout: MyLayout, domEnv: jsdomEnv })
+   * ```
+   */
+  domEnv: () => DomEnv | Promise<DomEnv>
 }
 
 function resolveLayoutChain(
@@ -89,10 +107,17 @@ function resolveLayoutChain(
 }
 
 /**
- * Default onRenderHtml hook — no layout, minimal document template.
+ * Default onRenderHtml hook — no layout, minimal document template,
+ * jsdom-backed DOM env. For Cloudflare Workers (no jsdom support) or
+ * a custom layout / document, use `createOnRenderHtml({ domEnv, … })`
+ * with `linkedomEnv` from `@llui/dom/ssr/linkedom`.
+ *
+ * The lazy import below keeps jsdom out of the client bundle —
+ * Rollup's graph walker only pulls it when this server hook executes.
  */
 export async function onRenderHtml(pageContext: PageContext): Promise<RenderHtmlResult> {
-  return renderPage(pageContext, {})
+  const { jsdomEnv } = await import('@llui/dom/ssr/jsdom')
+  return renderPage(pageContext, { domEnv: jsdomEnv })
 }
 
 /**
@@ -138,9 +163,7 @@ async function renderPage(
   pageContext: PageContext,
   options: RenderHtmlOptions,
 ): Promise<RenderHtmlResult> {
-  // Lazy-import to keep jsdom out of the client bundle's dependency graph
-  const { initSsrDom } = await import('@llui/dom/ssr')
-  await initSsrDom()
+  const env = await options.domEnv()
 
   const layoutChain = resolveLayoutChain(options.Layout, pageContext)
   const layoutData = pageContext.lluiLayoutData ?? []
@@ -150,7 +173,7 @@ async function renderPage(
   const chain: LayoutChain = [...layoutChain, pageContext.Page]
   const chainData: readonly unknown[] = [...layoutData, pageContext.data]
 
-  const { html, envelope } = _renderChain(chain, chainData)
+  const { html, envelope } = _renderChain(chain, chainData, env)
 
   const document = options.document ?? DEFAULT_DOCUMENT
   const head = pageContext.head ?? ''
@@ -178,6 +201,7 @@ async function renderPage(
 export function _renderChain(
   chain: LayoutChain,
   chainData: readonly unknown[],
+  env: DomEnv,
 ): { html: string; envelope: HydrationEnvelope } {
   if (chain.length === 0) {
     throw new Error('[llui/vike] renderChain called with empty chain')
@@ -213,6 +237,7 @@ export function _renderChain(
     const { nodes, inst } = renderNodes(
       def as unknown as Parameters<typeof renderNodes>[0],
       initialState,
+      env,
       currentSlotScope,
     )
     allBindings.push(...inst.allBindings)
@@ -243,7 +268,7 @@ export function _renderChain(
         parentNode.insertBefore(node, insertPoint)
       }
       // Synthesize an end sentinel that brackets the owned region.
-      const endSentinel = document.createComment('llui-mount-end')
+      const endSentinel = env.createComment('llui-mount-end')
       parentNode.insertBefore(endSentinel, insertPoint)
     }
 

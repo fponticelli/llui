@@ -1,6 +1,9 @@
 import { describe, it, expect } from 'vitest'
 import { hydrateApp, renderToString } from '../src/index'
+import { browserEnv } from '../src/dom-env'
 import { component, div, span, button, text, show } from '../src/index'
+
+const env = browserEnv()
 
 type State = { count: number; label: string }
 type Msg = { type: 'inc' } | { type: 'setLabel'; value: string }
@@ -34,7 +37,7 @@ const Counter = component<State, Msg, never>({
 describe('hydrateApp', () => {
   it('takes over server-rendered HTML with correct state', () => {
     const serverState: State = { count: 0, label: 'hello' }
-    const html = renderToString(Counter, serverState)
+    const html = renderToString(Counter, serverState, env)
 
     const container = document.createElement('div')
     container.innerHTML = html
@@ -50,7 +53,7 @@ describe('hydrateApp', () => {
 
   it('becomes reactive after hydration — updates work', () => {
     const serverState: State = { count: 0, label: 'hello' }
-    const html = renderToString(Counter, serverState)
+    const html = renderToString(Counter, serverState, env)
 
     const container = document.createElement('div')
     container.innerHTML = html
@@ -75,7 +78,7 @@ describe('hydrateApp', () => {
 
   it('produces correct DOM structure after hydration', () => {
     const serverState: State = { count: 0, label: 'hello' }
-    const html = renderToString(Counter, serverState)
+    const html = renderToString(Counter, serverState, env)
 
     const container = document.createElement('div')
     container.innerHTML = html
@@ -93,7 +96,7 @@ describe('hydrateApp', () => {
 
   it('event handlers work after hydration', () => {
     const serverState: State = { count: 0, label: 'hello' }
-    const html = renderToString(Counter, serverState)
+    const html = renderToString(Counter, serverState, env)
 
     const container = document.createElement('div')
     container.innerHTML = html

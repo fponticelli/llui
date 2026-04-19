@@ -11,6 +11,52 @@ All notable changes to LLui packages are documented here. LLui is a pre-1.0 proj
 
 Packages version in lockstep at release time: `@llui/dom`, `@llui/vite-plugin`, `@llui/test`, `@llui/router`, `@llui/transitions`, `@llui/components`, `@llui/vike` share a version line. `@llui/effects`, `@llui/mcp`, and `@llui/lint-idiomatic` have their own cadence.
 
+## 2026-04-18 — 0.0.24
+
+**Released:** `@llui/{dom,vite-plugin,test,router,transitions,components,vike}@0.0.24`
+
+Removes `globalThis` mutation from SSR. `@llui/dom` now threads a `DomEnv` through its render pipeline as a context object instead of patching the process's window. Ships new sub-entries `@llui/dom/ssr/jsdom` + `@llui/dom/ssr/linkedom` for per-call env construction, which fixes a 9+ MiB Cloudflare Workers bundle regression (the old `initSsrDom` pulled jsdom's `tr46` / `whatwg-url` / `punycode` transitive chain into the Worker bundle even when consumers used linkedom at runtime).
+
+### Breaking
+
+- **`@llui/dom@0.0.24`** — `renderToString(def, state?)` → `renderToString(def, state, env)`. The third `env: DomEnv` argument is required. Same change applies to `renderNodes`. Get an env from `@llui/dom/ssr/jsdom` (`jsdomEnv()`), `@llui/dom/ssr/linkedom` (`linkedomEnv()`), or the new `browserEnv()` helper for client-side tests.
+- **`@llui/vike@0.0.24`** — `createOnRenderHtml({ Layout, document })` → `createOnRenderHtml({ domEnv, Layout, document })`. The `domEnv: () => DomEnv | Promise<DomEnv>` factory is required. The default `onRenderHtml` export still ships with a built-in jsdom env for zero-config setups; Workers consumers must use `createOnRenderHtml({ domEnv: linkedomEnv })`.
+
+### Migration
+
+- **Direct SSR users (jsdom):** replace `await initSsrDom()` + `renderToString(def, state)` with `const env = await jsdomEnv()` + `renderToString(def, state, env)`. Import `jsdomEnv` from `@llui/dom/ssr/jsdom`.
+- **Cloudflare Workers / strict-isolate runtimes:** switch to `linkedomEnv()` from `@llui/dom/ssr/linkedom`. Your Worker bundle no longer pulls jsdom — the rollup graph walker only sees linkedom.
+- **Vike consumers:** add `domEnv: jsdomEnv` (or `linkedomEnv`) to your `createOnRenderHtml` options. Import the factory from `@llui/dom/ssr/jsdom` (or `/linkedom`).
+- **Hand-patched globals (legacy linkedom workaround):** delete the `Object.assign(globalThis, …)` shim. `linkedomEnv()` returns a self-contained env that the renderer uses directly.
+- **`initSsrDom` callers:** update the import path from `@llui/dom/ssr` to `@llui/dom/ssr/legacy`. The shim still works, but living behind its own sub-entry means `@llui/dom/ssr` no longer pulls jsdom into bundles that don't explicitly opt in. Plan a real migration to `jsdomEnv()` before the shim is removed.
+
+### `@llui/dom@0.0.24`
+
+- **Breaking** `renderToString` / `renderNodes` require a `DomEnv`. See top of release block.
+- **Added** `DomEnv` interface + `browserEnv()` factory, both exported from `@llui/dom` and `@llui/dom/ssr`. Defines a minimal DOM contract (createElement, createTextNode, createComment, createDocumentFragment, Element, Node, Text, Comment, HTMLElement, HTMLTemplateElement, ShadowRoot, MouseEvent, parseHtmlFragment) that the runtime consumes instead of reaching for `globalThis`.
+- **Added** `@llui/dom/ssr/jsdom` sub-entry exporting `jsdomEnv(): Promise<DomEnv>`. Lazy-imports jsdom on call; each call returns a fresh env.
+- **Added** `@llui/dom/ssr/linkedom` sub-entry exporting `linkedomEnv(): Promise<DomEnv>`. Lazy-imports linkedom on call; safe on workerd and other strict-isolate runtimes where jsdom's transitive deps can't resolve.
+- **Improved** Every internal `document.*` reference migrated to `ctx.dom.*` threading — 19 files, ~40 call sites. `mountApp` / `hydrateApp` / `renderToString` each seed the render context with a `dom: DomEnv` field the primitives read. Concurrent SSR with different DOM implementations in a single process works correctly.
+- **Improved** `elTemplate`'s template cache is now per-env (WeakMap keyed on `DomEnv`) so concurrent SSR across jsdom + linkedom never cross-pollinates HTMLTemplateElement instances between envs.
+- **Breaking** `initSsrDom()` moved from `@llui/dom/ssr` → `@llui/dom/ssr/legacy`. The shim still works (emits a one-time `console.warn` pointing at the migration path) but must be imported from the new path. Rationale: co-locating the shim with the clean entry meant `await import('jsdom')` stayed reachable from every Worker bundle that only wanted `renderToString`. Splitting into a named sub-entry ensures the jsdom chunk only appears in bundles that explicitly import the legacy path. Migrate: `import { initSsrDom } from '@llui/dom/ssr/legacy'`, then plan a proper migration to `jsdomEnv()` before it's removed.
+
+### `@llui/vite-plugin@0.0.24`
+
+- **Improved** Compiler replaces its internal `document.createElement('template')` IIFE emission with a call to `__cloneStaticTemplate(html)`, a new `@llui/dom` helper that threads through `ctx.dom`. Static-content template clones now work correctly under SSR without needing a patched globalThis. The plugin auto-injects the helper import when it emits the call.
+- **Improved** `elTemplate` patch-function signature gains a third `__dom: DomEnv` parameter. Compiler-emitted patch bodies call `__dom.createTextNode(...)` instead of `document.createTextNode(...)` for reactive-text placeholders. App-authored `elTemplate` calls are unaffected — the new parameter is optional in positional terms (unused params don't need to be declared).
+
+### `@llui/vike@0.0.24`
+
+- **Breaking** `createOnRenderHtml` requires a `domEnv` option. See top of release block.
+- **Improved** `pageSlot()` threads through `ctx.dom.createComment` for its anchor comment instead of touching `document` directly. Works under any env (jsdom, linkedom, or a custom one) without globalThis state.
+- **Improved** Chain-composition `renderNodes` loop accepts an env parameter and uses it to synthesize end-sentinel comments. No more implicit dependency on a global document being alive during the composition pass.
+
+### `@llui/{test,router,transitions,components}@0.0.24`
+
+- Rebuilt against the new `@llui/dom` version. No source changes.
+
+---
+
 ## 2026-04-18 — 0.0.23
 
 **Released:** `@llui/{dom,vite-plugin,test,router,transitions,components,vike}@0.0.23`; `@llui/mcp@0.0.17`

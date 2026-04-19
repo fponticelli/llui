@@ -1,8 +1,10 @@
 import { describe, it, expect } from 'vitest'
-import { component, div, text } from '@llui/dom'
+import { component, div, text, browserEnv } from '@llui/dom'
 import type { ComponentDef } from '@llui/dom'
 import { createOnRenderClient, _resetChainForTest } from '../src/on-render-client'
 import { createOnRenderHtml } from '../src/on-render-html'
+
+const domEnv = () => browserEnv()
 
 // Type-level regression for issue #10: concrete ComponentDef<S, M, E, D>
 // must assign directly into createOnRenderClient({ Layout }) and
@@ -91,6 +93,7 @@ describe('Layout option accepts concrete ComponentDef without widening', () => {
 
   it('createOnRenderHtml typechecks with the same concrete ComponentDef', () => {
     const handler = createOnRenderHtml({
+      domEnv,
       Layout: ConcreteLayout,
     })
     expect(typeof handler).toBe('function')

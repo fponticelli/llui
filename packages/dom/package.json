@@ -16,6 +16,18 @@
       "types": "./dist/ssr-dom.d.ts",
       "import": "./dist/ssr-dom.js"
     },
+    "./ssr/jsdom": {
+      "types": "./dist/ssr/jsdom.d.ts",
+      "import": "./dist/ssr/jsdom.js"
+    },
+    "./ssr/linkedom": {
+      "types": "./dist/ssr/linkedom.d.ts",
+      "import": "./dist/ssr/linkedom.js"
+    },
+    "./ssr/legacy": {
+      "types": "./dist/ssr/legacy.d.ts",
+      "import": "./dist/ssr/legacy.js"
+    },
     "./hmr": {
       "types": "./dist/hmr.d.ts",
       "import": "./dist/hmr.js"
@@ -23,6 +35,18 @@
     "./internal": {
       "types": "./dist/internal.d.ts",
       "import": "./dist/internal.js"
+    }
+  },
+  "peerDependencies": {
+    "jsdom": "*",
+    "linkedom": "*"
+  },
+  "peerDependenciesMeta": {
+    "jsdom": {
+      "optional": true
+    },
+    "linkedom": {
+      "optional": true
     }
   },
   "files": [

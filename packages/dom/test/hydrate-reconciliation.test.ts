@@ -1,7 +1,10 @@
 import { describe, it, expect } from 'vitest'
 import { hydrateApp, renderToString, mountApp } from '../src/index'
 import { component, div, span, button, text, branch, show, each } from '../src/index'
+import { browserEnv } from '../src/dom-env'
 import type { Send } from '../src/types'
+
+const env = browserEnv()
 
 /**
  * Comprehensive hydration reconciliation tests.
@@ -13,7 +16,7 @@ import type { Send } from '../src/types'
 describe('hydration reconciliation', () => {
   // Helper: render + hydrate + return container
   function serverRenderAndHydrate<S, M>(def: ReturnType<typeof component<S, M, never>>, state: S) {
-    const html = renderToString(def, state)
+    const html = renderToString(def, state, env)
     const container = document.createElement('div')
     container.innerHTML = html
     const nodeCountBefore = container.childNodes.length
@@ -227,7 +230,7 @@ describe('hydration reconciliation', () => {
       const mountHandle = mountApp(mountContainer, def)
 
       // Hydrated
-      const html = renderToString(def, state)
+      const html = renderToString(def, state, env)
       const hydrateContainer = document.createElement('div')
       hydrateContainer.innerHTML = html
       const hydrateHandle = hydrateApp(hydrateContainer, def, state)

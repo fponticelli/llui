@@ -8,7 +8,10 @@ import {
   _resetChainForTest,
 } from '../src/on-render-client'
 import type { TransitionOptions } from '@llui/dom'
-import { component, div, text } from '@llui/dom'
+import { component, div, text, browserEnv } from '@llui/dom'
+
+const env = browserEnv()
+const domEnv = () => env
 
 type State = { greeting: string }
 
@@ -98,6 +101,7 @@ describe('onRenderHtml', () => {
 describe('createOnRenderHtml', () => {
   it('uses custom document template', async () => {
     const render = createOnRenderHtml({
+      domEnv,
       document: ({ html, state, head }) =>
         `<!DOCTYPE html><html><head>${head}</head>` +
         `<body><main id="root">${html}</main>` +
@@ -117,6 +121,7 @@ describe('createOnRenderHtml', () => {
 
   it('passes pageContext to document function', async () => {
     const render = createOnRenderHtml({
+      domEnv,
       document: ({ html, state, pageContext }) =>
         `<!DOCTYPE html><html><body>` +
         `<div data-page="${(pageContext as Record<string, unknown>).urlPathname ?? ''}">${html}</div>` +
@@ -132,6 +137,7 @@ describe('createOnRenderHtml', () => {
 
   it('injects CSS link via custom template', async () => {
     const render = createOnRenderHtml({
+      domEnv,
       document: ({ html, state }) =>
         `<!DOCTYPE html><html><head>` +
         `<link rel="stylesheet" href="/styles.css" />` +

@@ -1,6 +1,9 @@
 import { describe, it, expect } from 'vitest'
 import { renderToString } from '../src/ssr'
+import { browserEnv } from '../src/dom-env'
 import { component, div, span, button, text, show } from '../src/index'
+
+const env = browserEnv()
 
 type State = { count: number; label: string }
 type Msg = { type: 'inc' }
@@ -31,7 +34,7 @@ const Counter = component<State, Msg, never>({
 
 describe('renderToString', () => {
   it('renders initial state to HTML', () => {
-    const html = renderToString(Counter)
+    const html = renderToString(Counter, undefined, env)
     expect(html).toContain('<div')
     expect(html).toContain('class="counter"')
     expect(html).toContain('id="main"')
@@ -41,34 +44,34 @@ describe('renderToString', () => {
   })
 
   it('renders with custom initial data', () => {
-    const html = renderToString(Counter, { count: 5, label: 'world' })
+    const html = renderToString(Counter, { count: 5, label: 'world' }, env)
     expect(html).toContain('world')
     expect(html).toContain('5')
   })
 
   it('evaluates show() conditionally', () => {
-    const html0 = renderToString(Counter)
+    const html0 = renderToString(Counter, undefined, env)
     expect(html0).not.toContain('badge')
     expect(html0).not.toContain('active')
 
-    const html5 = renderToString(Counter, { count: 5, label: 'x' })
+    const html5 = renderToString(Counter, { count: 5, label: 'x' }, env)
     expect(html5).toContain('badge')
     expect(html5).toContain('active')
   })
 
   it('adds data-llui-hydrate markers on reactive binding sites', () => {
-    const html = renderToString(Counter)
+    const html = renderToString(Counter, undefined, env)
     expect(html).toContain('data-llui-hydrate')
   })
 
   it('does not include event handler attributes', () => {
-    const html = renderToString(Counter)
+    const html = renderToString(Counter, undefined, env)
     expect(html).not.toContain('onclick')
     expect(html).not.toContain('onClick')
   })
 
   it('produces valid HTML that can be parsed', () => {
-    const html = renderToString(Counter)
+    const html = renderToString(Counter, undefined, env)
     const div = document.createElement('div')
     div.innerHTML = html
     expect(div.querySelector('.counter')).not.toBeNull()

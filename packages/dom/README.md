@@ -107,16 +107,20 @@ Element helpers (`div`, `button`, `span`, etc.) stay as imports — they're stat
 
 ### SSR
 
-| Export                | Purpose                                         |
-| --------------------- | ----------------------------------------------- |
-| `renderToString(def)` | Render component to HTML string                 |
-| `initSsrDom()`        | Initialize jsdom for SSR (from `@llui/dom/ssr`) |
+| Export                            | Purpose                                                                |
+| --------------------------------- | ---------------------------------------------------------------------- |
+| `renderToString(def, state, env)` | Render component to HTML string (requires an env from a sub-entry)     |
+| `renderNodes(def, state, env)`    | Render to DOM nodes + instance for layout composition                  |
+| `browserEnv()`                    | Wrap the browser globals as a `DomEnv` (default for `mountApp`)        |
+| `jsdomEnv()` / `linkedomEnv()`    | Construct per-call SSR envs (from `@llui/dom/ssr/jsdom` / `/linkedom`) |
 
 ## Sub-path Exports
 
 ```typescript
 import { installDevTools } from '@llui/dom/devtools' // dev-only, tree-shaken
-import { initSsrDom } from '@llui/dom/ssr' // server-only
+import { renderToString } from '@llui/dom/ssr' // server entry
+import { jsdomEnv } from '@llui/dom/ssr/jsdom' // jsdom-backed DomEnv
+import { linkedomEnv } from '@llui/dom/ssr/linkedom' // linkedom-backed (Workers)
 import { replaceComponent } from '@llui/dom/hmr' // HMR support
 ```
 

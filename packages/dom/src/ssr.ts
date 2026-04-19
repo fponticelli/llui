@@ -3,6 +3,7 @@ import { createComponentInstance, type ComponentInstance } from './update-loop.j
 import { setRenderContext, clearRenderContext } from './render-context.js'
 import { setFlatBindings } from './binding.js'
 import { createView } from './view-helpers.js'
+import type { DomEnv } from './dom-env.js'
 
 /**
  * Render a component to DOM nodes for SSR, returning both the produced
@@ -10,19 +11,23 @@ import { createView } from './view-helpers.js'
  * serializing — e.g. `@llui/vike` stitches layout + page nodes at the
  * `pageSlot()` marker position before one final serialization pass).
  *
+ * `env` is the `DomEnv` backing this render pass — obtain one from
+ * `@llui/dom/ssr/jsdom` (`jsdomEnv()`) or `@llui/dom/ssr/linkedom`
+ * (`linkedomEnv()`). Passing the env per call keeps SSR concurrent-safe
+ * and lets a single process host multiple DOM implementations.
+ *
  * Accepts an optional `parentLifetime` so the rendered instance's rootLifetime
  * becomes a child of an existing scope tree — used by persistent layouts
  * so contexts provided by an outer layout are reachable from an inner
  * page via `useContext`.
- *
- * Call `initSsrDom()` once before using this on the server.
  */
 export function renderNodes<S, M, E, D = void>(
   def: ComponentDef<S, M, E, D>,
-  initialState?: S,
+  initialState: S | undefined,
+  env: DomEnv,
   parentLifetime?: Lifetime,
 ): { nodes: Node[]; inst: ComponentInstance<S, M, E> } {
-  const inst = createComponentInstance(def, undefined, parentLifetime ?? null)
+  const inst = createComponentInstance(def, undefined, parentLifetime ?? null, env)
   if (initialState !== undefined) {
     inst.state = initialState
   }
@@ -72,16 +77,18 @@ export function serializeNodes(nodes: Node[], bindings: Binding[]): string {
  * serializes the DOM to HTML, and adds data-llui-hydrate markers
  * on nodes with reactive bindings.
  *
- * Call initSsrDom() once before using this on the server.
+ * `env` is the `DomEnv` backing this render pass — obtain one from
+ * `@llui/dom/ssr/jsdom` or `@llui/dom/ssr/linkedom`.
  *
  * For persistent layouts, use `renderNodes` + `serializeNodes` directly
  * so layout and page nodes can be composed before serialization.
  */
 export function renderToString<S, M, E, D = void>(
   def: ComponentDef<S, M, E, D>,
-  initialState?: S,
+  initialState: S | undefined,
+  env: DomEnv,
 ): string {
-  const { nodes, inst } = renderNodes(def, initialState)
+  const { nodes, inst } = renderNodes(def, initialState, env)
   return serializeNodes(nodes, inst.allBindings)
 }
 

@@ -1,9 +1,11 @@
 // @vitest-environment jsdom
 import { describe, it, expect } from 'vitest'
-import { component, div, text, renderNodes } from '@llui/dom'
+import { component, div, text, renderNodes, browserEnv } from '@llui/dom'
 import type { ComponentDef } from '@llui/dom'
 import { pageSlot } from '../src/page-slot.js'
 import { _renderChain } from '../src/on-render-html.js'
+
+const env = browserEnv()
 
 // ──── Fixtures ────
 
@@ -52,6 +54,7 @@ describe('pageSlot() node shape', () => {
     const { nodes } = renderNodes(
       Layout as unknown as Parameters<typeof renderNodes>[0],
       initialState,
+      env,
     )
 
     // The slot-only layout's view returns exactly the pageSlot() result.
@@ -68,7 +71,7 @@ describe('_renderChain — two-layer render', () => {
     const Layout = makeSimpleLayout()
     const Page = makeSimplePage()
 
-    const { html } = _renderChain([Layout, Page], [undefined, undefined])
+    const { html } = _renderChain([Layout, Page], [undefined, undefined], env)
 
     // The comment anchor must appear before the page div.
     const anchorPos = html.indexOf('<!--llui-page-slot-->')
@@ -88,7 +91,7 @@ describe('_renderChain — two-layer render', () => {
     const Layout = makeSimpleLayout()
     const Page = makeSimplePage()
 
-    const { html } = _renderChain([Layout, Page], [undefined, undefined])
+    const { html } = _renderChain([Layout, Page], [undefined, undefined], env)
 
     // Both the layout header (has a dynamic text binding) and the page
     // div (has a dynamic text binding) should carry the hydrate marker.

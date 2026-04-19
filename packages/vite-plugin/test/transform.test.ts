@@ -17,8 +17,9 @@ describe('Pass 1 — element helper → elSplit', () => {
       const el = div({ class: 'foo', id: 'bar' })
     `
     const out = t(src)
-    // Fully static — should emit template clone
-    expect(out).toContain('cloneNode')
+    // Fully static — should emit __cloneStaticTemplate(html). The helper
+    // lives in @llui/dom and threads through ctx.dom for SSR correctness.
+    expect(out).toContain('__cloneStaticTemplate')
     expect(out).toContain('foo')
   })
 
@@ -470,7 +471,7 @@ describe('static subtree prerendering', () => {
       })
     `
     const out = t(src)
-    expect(out).not.toContain('cloneNode')
+    expect(out).not.toContain('__cloneStaticTemplate')
   })
 
   it('does not use template for subtrees with event handlers', () => {
@@ -486,7 +487,7 @@ describe('static subtree prerendering', () => {
       })
     `
     const out = t(src)
-    expect(out).not.toContain('cloneNode')
+    expect(out).not.toContain('__cloneStaticTemplate')
   })
 })
 
@@ -803,7 +804,7 @@ describe('spread props bail to runtime', () => {
     `
     const out = t(src)
     // span() is fully static — should still be template-cloned
-    expect(clean(out)).toContain('cloneNode')
+    expect(clean(out)).toContain('__cloneStaticTemplate')
     // div() with spread stays at runtime
     expect(clean(out)).toContain('div({ ...parts.root')
   })

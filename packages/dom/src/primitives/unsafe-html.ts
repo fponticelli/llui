@@ -76,10 +76,7 @@ export function unsafeHtml<S>(accessor: ((s: S) => string) | string, mask?: numb
   return [anchor, ...currentNodes]
 }
 
-function parseHtmlToNodes(
-  ctx: import('../render-context.js').RenderContext,
-  html: string,
-): Node[] {
+function parseHtmlToNodes(ctx: import('../render-context.js').RenderContext, html: string): Node[] {
   // Delegates to the env — jsdom/linkedom adapters may implement this
   // via DOMParser instead of the browser `<template>` trick, but both
   // return an inert DocumentFragment that doesn't execute scripts.

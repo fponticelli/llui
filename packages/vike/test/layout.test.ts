@@ -1,8 +1,21 @@
 import { describe, it, expect, beforeEach } from 'vitest'
-import { component, div, header, main, text, provide, useContext, createContext } from '@llui/dom'
+import {
+  component,
+  div,
+  header,
+  main,
+  text,
+  provide,
+  useContext,
+  createContext,
+  browserEnv,
+} from '@llui/dom'
 import type { ComponentDef } from '@llui/dom'
 import { createOnRenderClient, pageSlot, _resetChainForTest } from '../src/on-render-client'
 import { createOnRenderHtml } from '../src/on-render-html'
+
+const env = browserEnv()
+const domEnv = () => env
 
 // Persistent-layout regression coverage. Asserts that:
 //
@@ -293,7 +306,7 @@ describe('persistent layouts — SSR chain render', () => {
     const AppLayout = makeAppLayout()
     const ReportsPage = makeReportsPage()
 
-    const render = createOnRenderHtml({ Layout: AppLayout })
+    const render = createOnRenderHtml({ domEnv, Layout: AppLayout })
     const result = await render({ Page: ReportsPage })
 
     expect(result.pageContext.lluiState).toEqual({
@@ -308,6 +321,7 @@ describe('persistent layouts — SSR chain render', () => {
     const ReportsPage = makeReportsPage()
 
     const render = createOnRenderHtml({
+      domEnv,
       Layout: [AppLayout, DashboardLayout],
     })
     const result = await render({ Page: ReportsPage })
@@ -340,7 +354,7 @@ describe('persistent layouts — SSR chain render', () => {
     }
     const ReportsPage = makeReportsPage()
 
-    const render = createOnRenderHtml({ Layout: BadLayout })
+    const render = createOnRenderHtml({ domEnv, Layout: BadLayout })
     await expect(render({ Page: ReportsPage })).rejects.toThrow(/did not call pageSlot/)
   })
 
@@ -353,7 +367,7 @@ describe('persistent layouts — SSR chain render', () => {
     }
     const AppLayout = makeAppLayout()
 
-    const render = createOnRenderHtml({ Layout: AppLayout })
+    const render = createOnRenderHtml({ domEnv, Layout: AppLayout })
     await expect(render({ Page: BadPage })).rejects.toThrow(/innermost component/)
   })
 })

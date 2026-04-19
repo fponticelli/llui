@@ -15,8 +15,10 @@ describe('template clone output', () => {
       })
     `
     const out = transformLlui(src, 'test.ts')!.output
-    expect(out).toContain('cloneNode')
-    expect(out).toContain('firstChild')
+    // Static subtree emits __cloneStaticTemplate(html) — the helper
+    // threads through ctx.dom so SSR works without globalThis mutation.
+    expect(out).toContain('__cloneStaticTemplate')
+    expect(out).toContain('class=\\"static\\"')
   })
 
   it('inlines string literal children into the template', () => {
@@ -53,7 +55,7 @@ describe('template clone output', () => {
     `
     const out = transformLlui(src, 'test.ts')!.output
     expect(out).toContain('nested')
-    // Should produce a template clone — either cloneNode IIFE or elTemplate
-    expect(out).toMatch(/cloneNode|elTemplate/)
+    // Should produce a template clone — either __cloneStaticTemplate or elTemplate
+    expect(out).toMatch(/__cloneStaticTemplate|elTemplate/)
   })
 })

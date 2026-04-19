@@ -64,12 +64,6 @@ let pendingSlot: PendingSlot | null = null
  * view throws.
  */
 export function pageSlot(): Node[] {
-  if (typeof document === 'undefined') {
-    throw new Error(
-      '[llui/vike] pageSlot() called without a DOM environment. ' +
-        'Call from inside a component view() that runs during mount, hydrate, or SSR.',
-    )
-  }
   if (pendingSlot !== null) {
     throw new Error(
       '[llui/vike] pageSlot() was called more than once in the same layout. ' +
@@ -80,7 +74,7 @@ export function pageSlot(): Node[] {
   }
   const ctx = getRenderContext('pageSlot')
   const slotLifetime = createLifetime(ctx.rootLifetime)
-  const anchor = document.createComment('llui-page-slot')
+  const anchor = ctx.dom.createComment('llui-page-slot') as Comment
   pendingSlot = { slotLifetime, anchor }
   return [anchor]
 }

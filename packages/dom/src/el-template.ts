@@ -1,10 +1,22 @@
 import type { BindingKind } from './types.js'
+import type { DomEnv } from './dom-env.js'
 import { getRenderContext } from './render-context.js'
 import { createBinding, applyBinding } from './binding.js'
 import { addCheckedItemUpdater } from './lifetime.js'
 
-// Cache: HTML string → template element (created once, cloned per use)
-const templateCache = new Map<string, HTMLTemplateElement>()
+// Per-env cache: each DomEnv owns its own HTMLTemplateElement cache so
+// concurrent SSR with different envs (jsdom + linkedom in one process)
+// never cross-polluates node instances. Keyed by env identity via
+// WeakMap so envs get GC'd with their caches.
+const templateCacheByEnv = new WeakMap<DomEnv, Map<string, HTMLTemplateElement>>()
+function getTemplateCache(env: DomEnv): Map<string, HTMLTemplateElement> {
+  let cache = templateCacheByEnv.get(env)
+  if (!cache) {
+    cache = new Map()
+    templateCacheByEnv.set(env, cache)
+  }
+  return cache
+}
 
 /** Callback passed to patch functions — registers a reactive binding on a node. */
 export type TemplateBind = (
@@ -29,14 +41,15 @@ export type TemplateBind = (
  */
 export function elTemplate(
   html: string,
-  patch: (root: Element, bind: TemplateBind) => void,
+  patch: (root: Element, bind: TemplateBind, dom: DomEnv) => void,
 ): Element {
   const ctx = getRenderContext()
-  let tmpl = templateCache.get(html)
+  const cache = getTemplateCache(ctx.dom)
+  let tmpl = cache.get(html)
   if (!tmpl) {
     tmpl = ctx.dom.createElement('template') as HTMLTemplateElement
     tmpl.innerHTML = html
-    templateCache.set(html, tmpl)
+    cache.set(html, tmpl)
   }
 
   const root = tmpl.content.firstElementChild!.cloneNode(true) as Element
@@ -64,6 +77,29 @@ export function elTemplate(
     }
   }
 
-  patch(root, bind)
+  patch(root, bind, ctx.dom)
   return root
+}
+
+/**
+ * Emitted by `@llui/vite-plugin` for static-content template clones
+ * (no bindings). Replaces the bare `document.createElement('template')`
+ * IIFE the compiler used to emit, threading through `ctx.dom` so SSR
+ * in non-browser envs (jsdom, linkedom) works without globalThis mutation.
+ *
+ * App authors should not call this directly — use `elTemplate` for
+ * dynamic content and element helpers (`div`, `span`, …) for everything
+ * else. The underscore prefix signals the compiler-only surface; the
+ * export exists because the compiler emits import references to it.
+ */
+export function __cloneStaticTemplate(html: string): Node {
+  const ctx = getRenderContext('cloneStaticTemplate')
+  const cache = getTemplateCache(ctx.dom)
+  let tmpl = cache.get(html)
+  if (!tmpl) {
+    tmpl = ctx.dom.createElement('template') as HTMLTemplateElement
+    tmpl.innerHTML = html
+    cache.set(html, tmpl)
+  }
+  return tmpl.content.cloneNode(true).firstChild!
 }

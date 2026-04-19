@@ -1,5 +1,8 @@
 import { describe, it, expect } from 'vitest'
 import { renderToString, hydrateApp, component, div, span, text, elTemplate } from '../src/index'
+import { browserEnv } from '../src/dom-env'
+
+const env = browserEnv()
 
 describe('hydration + elTemplate comment placeholders', () => {
   it('SSR output has no <!--$--> placeholders (replaced with text nodes at render)', () => {
@@ -16,7 +19,7 @@ describe('hydration + elTemplate comment placeholders', () => {
       ],
     })
 
-    const html = renderToString(def, { name: 'Alice', count: 5 })
+    const html = renderToString(def, { name: 'Alice', count: 5 }, env)
     expect(html).not.toContain('<!--$-->')
     expect(html).toContain('Alice')
     expect(html).toContain('Count: ')
@@ -36,7 +39,7 @@ describe('hydration + elTemplate comment placeholders', () => {
       ],
     })
 
-    const html = renderToString(def, { greeting: 'hello' })
+    const html = renderToString(def, { greeting: 'hello' }, env)
     const container = document.createElement('div')
     container.innerHTML = html
     hydrateApp(container, def, { greeting: 'hello' })
@@ -65,7 +68,7 @@ describe('hydration + elTemplate comment placeholders', () => {
       __dirty: (o, n) => (Object.is(o.name, n.name) ? 0 : 1),
     })
 
-    const html = renderToString(def, { name: 'Alice' })
+    const html = renderToString(def, { name: 'Alice' }, env)
     // Comment placeholder should NOT be in SSR output — replaced by text node before serialization
     expect(html).not.toContain('<!--$-->')
     expect(html).toContain('Hello, ')
@@ -92,7 +95,7 @@ describe('hydration + elTemplate comment placeholders', () => {
       __dirty: (o, n) => (Object.is(o.value, n.value) ? 0 : 1),
     })
 
-    const html = renderToString(def, { value: 7 })
+    const html = renderToString(def, { value: 7 }, env)
     const container = document.createElement('div')
     container.innerHTML = html
     const handle = hydrateApp(container, def, { value: 7 })

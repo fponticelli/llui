@@ -264,7 +264,7 @@ On the initial hydration render, `onLeave` and `onEnter` are both skipped — th
 
 ### Server (`onRenderHtml`)
 
-Renders the component to HTML via `renderToString()`. Automatically initializes jsdom for server-side DOM (lazy-loaded to avoid client bundle pollution). Serializes state into a `<script>` tag for hydration.
+Renders the component to HTML via `renderToString()`. Each render gets a fresh `DomEnv` from the factory passed to `createOnRenderHtml({ domEnv })` — use `jsdomEnv` from `@llui/dom/ssr/jsdom` for Node targets, or `linkedomEnv` from `@llui/dom/ssr/linkedom` for Cloudflare Workers (jsdom's transitive deps don't resolve under workerd). The default `onRenderHtml` export wires up jsdom for zero-config Node setups; `createOnRenderHtml` requires an explicit `domEnv` factory so the bundler can tree-shake whichever DOM you don't use.
 
 ### Client (`onRenderClient`)
 

@@ -428,7 +428,12 @@ export function hydrateAtAnchor<S, M, E, D = void>(
     init: () => [serverState, originalEffects],
   }
 
-  const inst = createComponentInstance(hydrateDef, undefined, options?.parentLifetime ?? null, options?.env)
+  const inst = createComponentInstance(
+    hydrateDef,
+    undefined,
+    options?.parentLifetime ?? null,
+    options?.env,
+  )
 
   if (devToolsInstall) devToolsInstall(inst)
 
@@ -516,7 +521,12 @@ export function hydrateApp<S, M, E, D = void>(
     init: () => [serverState, originalEffects],
   }
 
-  const inst = createComponentInstance(hydrateDef, undefined, options?.parentLifetime ?? null, options?.env)
+  const inst = createComponentInstance(
+    hydrateDef,
+    undefined,
+    options?.parentLifetime ?? null,
+    options?.env,
+  )
 
   // Build the component DOM and swap atomically with server HTML.
   // Server HTML remains visible until JS finishes — no flash.
