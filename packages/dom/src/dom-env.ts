@@ -66,12 +66,14 @@ export interface DomEnv {
    * runtimes where no real document exists (detached linkedom, empty
    * shadow root, etc.) can safely return `null` here.
    *
-   * Optional at the interface level so pre-existing consumer envs
-   * constructed by hand continue to type-check; a portal call site
-   * with a string target falls back to returning no nodes when the
-   * method is absent.
+   * Required — making this mandatory on the interface means a custom
+   * env that forgets to wire up selector resolution fails compile
+   * instead of silently falling back to `globalThis.document` at
+   * render time (which would crash under Cloudflare Workers + other
+   * strict-isolate runtimes). The three first-party envs
+   * (`browserEnv`, `jsdomEnv`, `linkedomEnv`) all implement it.
    */
-  querySelector?(selector: string): Element | null
+  querySelector(selector: string): Element | null
 
   /**
    * @internal Lets hot-path code (e.g. `el-split.ts`'s template-clone)

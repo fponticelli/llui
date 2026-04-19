@@ -6,24 +6,12 @@ export function portal(opts: PortalOptions): Node[] {
   const ctx = getRenderContext('portal')
   const parentLifetime = ctx.rootLifetime
 
-  // Resolve a string target against the current env's document.
-  // `ctx.dom.querySelector` is present on every env shipped by
-  // `@llui/dom` (browserEnv, jsdomEnv, linkedomEnv). For a user-built
-  // env that predates this method we fall back to `globalThis.document`,
-  // and if THAT is also absent — which is exactly the Cloudflare
-  // Workers + linkedom-with-stale-env case portal used to crash on —
-  // we return [] instead of throwing. Portal is a client concept; SSR
-  // silently skipping the resolution is the right "no-op" behavior.
-  let target: Element | null = null
-  if (typeof opts.target === 'string') {
-    if (ctx.dom.querySelector) {
-      target = ctx.dom.querySelector(opts.target)
-    } else if (typeof document !== 'undefined') {
-      target = document.querySelector(opts.target)
-    }
-  } else {
-    target = opts.target
-  }
+  // `DomEnv.querySelector` is a required method — see dom-env.ts.
+  // Custom envs that don't implement it fail TS compile; at runtime
+  // every LLui-shipped env resolves against its own document, which
+  // keeps portal safe on both client and SSR (returns `null` →
+  // no-op when the target is unreachable).
+  const target = typeof opts.target === 'string' ? ctx.dom.querySelector(opts.target) : opts.target
 
   if (!target) {
     return []
