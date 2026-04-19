@@ -38,6 +38,24 @@ export function clearRenderContext(): void {
 export function getRenderContext(primitiveName?: string): RenderContext {
   if (!currentContext) {
     const name = primitiveName ? `${primitiveName}()` : 'primitives'
+    // `sample()` is specifically the one users reach for from adapter
+    // send wrappers / event handlers / async callbacks expecting it to
+    // be "imperative and safe." It isn't — it's a view-primitive that
+    // reads the render-time state snapshot, and the context is cleared
+    // as soon as view() returns. Point at the sanctioned escape hatch
+    // in the thrown message so the caller doesn't have to dig.
+    const sampleGuidance =
+      primitiveName === 'sample'
+        ? '\n\nFor the "read state inside a callback / handler" case: use ' +
+          'AppHandle.getState() instead. It is safe to call from anywhere ' +
+          '(event handlers, adapter send wrappers, async callbacks, timers).\n' +
+          'Example:\n' +
+          '  const handle = mountApp(root, App)\n' +
+          "  el.addEventListener('click', () => {\n" +
+          '    const { count } = handle.getState() as AppState\n' +
+          "    if (count > 0) handle.send({ type: 'tick' })\n" +
+          '  })'
+        : ''
     throw new Error(
       `[LLui] ${name} can only be called inside a component's view() function. ` +
         `It was called outside a render context. Common causes:\n` +
@@ -47,7 +65,8 @@ export function getRenderContext(primitiveName?: string): RenderContext {
         `from inside the component's view callback so their result can be spread ` +
         `into the returned node tree.\n` +
         `  3. Calling a primitive from a setTimeout / Promise / event handler — ` +
-        `the render context only persists during the synchronous view() call.`,
+        `the render context only persists during the synchronous view() call.` +
+        sampleGuidance,
     )
   }
   return currentContext

@@ -182,5 +182,8 @@ function makeReplacementHandle<S, M, E>(
     send(msg: unknown) {
       ;(typedInst.send as (m: unknown) => void)(msg)
     },
+    getState() {
+      return typedInst.state
+    },
   }
 }

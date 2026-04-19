@@ -168,6 +168,32 @@ export interface AppHandle {
    * normal update loop. Calling `send` after `dispose` is a no-op.
    */
   send(msg: unknown): void
+  /**
+   * Read the current state snapshot. Safe to call from anywhere —
+   * event handlers, async callbacks, adapter `send` wrappers, or any
+   * imperative context where the render context is not live.
+   *
+   * Unlike `sample()` (a view primitive that requires an active
+   * render context and throws outside of `view()`), `getState` is
+   * the sanctioned escape hatch for "I need to know the current
+   * state to decide what to dispatch." Typical shape:
+   *
+   * ```ts
+   * const handle = mountApp(root, MyApp)
+   * container.addEventListener('drop', () => {
+   *   const { mode } = handle.getState() as AppState
+   *   if (mode === 'drag') handle.send({ type: 'commit' })
+   * })
+   * ```
+   *
+   * Throws after `dispose()` — stale reads are silent bugs; a thrown
+   * error pinpoints the callsite that forgot to detach.
+   *
+   * The return type is `unknown` because `AppHandle` is state-type
+   * erased at this boundary; cast to your app's state type at the
+   * call site.
+   */
+  getState(): unknown
 }
 
 // ── Lifetime ─────────────────────────────────────────────────────────

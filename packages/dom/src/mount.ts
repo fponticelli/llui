@@ -201,6 +201,16 @@ export function mountApp<S, M, E, D>(
       if (disposed) return
       ;(inst.send as (m: unknown) => void)(msg)
     },
+    getState() {
+      if (disposed) {
+        throw new Error(
+          '[LLui] AppHandle.getState() called after dispose — handle is dead. ' +
+            'Detach your event listener / cancel your timer when the handle ' +
+            'is disposed to avoid stale reads.',
+        )
+      }
+      return inst.state
+    },
   }
 }
 
@@ -382,6 +392,12 @@ export function mountAtAnchor<S, M, E, D>(
       if (disposed) return
       ;(inst.send as (m: unknown) => void)(msg)
     },
+    getState() {
+      if (disposed) {
+        throw new Error('[LLui] AppHandle.getState() called after dispose — handle is dead.')
+      }
+      return inst.state
+    },
   }
 }
 
@@ -487,6 +503,12 @@ export function hydrateAtAnchor<S, M, E, D = void>(
       if (disposed) return
       ;(inst.send as (m: unknown) => void)(msg)
     },
+    getState() {
+      if (disposed) {
+        throw new Error('[LLui] AppHandle.getState() called after dispose — handle is dead.')
+      }
+      return inst.state
+    },
   }
 }
 
@@ -577,6 +599,12 @@ export function hydrateApp<S, M, E, D = void>(
     send(msg: unknown) {
       if (disposed) return
       ;(inst.send as (m: unknown) => void)(msg)
+    },
+    getState() {
+      if (disposed) {
+        throw new Error('[LLui] AppHandle.getState() called after dispose — handle is dead.')
+      }
+      return inst.state
     },
   }
 }
