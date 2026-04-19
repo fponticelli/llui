@@ -31,6 +31,7 @@ describe('sortable reducer', () => {
       id: 'item-1',
       index: 2,
       container: 'list1',
+      x: 0,
       y: 0,
     })
     expect(s.dragging).toEqual({
@@ -39,7 +40,9 @@ describe('sortable reducer', () => {
       currentIndex: 2,
       fromContainer: 'list1',
       toContainer: 'list1',
+      startX: 0,
       startY: 0,
+      currentX: 0,
       currentY: 0,
     })
   })
@@ -52,11 +55,13 @@ describe('sortable reducer', () => {
         currentIndex: 2,
         fromContainer: 'list1',
         toContainer: 'list1',
+        startX: 0,
         startY: 0,
+        currentX: 0,
         currentY: 0,
       },
     }
-    const [s] = update(started, { type: 'move', index: 4, container: 'list1', y: 0 })
+    const [s] = update(started, { type: 'move', index: 4, container: 'list1', x: 0, y: 0 })
     expect(s.dragging?.currentIndex).toBe(4)
   })
 
@@ -68,16 +73,18 @@ describe('sortable reducer', () => {
         currentIndex: 3,
         fromContainer: 'list1',
         toContainer: 'list1',
+        startX: 0,
         startY: 0,
+        currentX: 0,
         currentY: 0,
       },
     }
-    const [next] = update(started, { type: 'move', index: 3, container: 'list1', y: 0 })
+    const [next] = update(started, { type: 'move', index: 3, container: 'list1', x: 0, y: 0 })
     expect(next).toBe(started)
   })
 
   it('move ignored when not dragging', () => {
-    const [s] = update(init(), { type: 'move', index: 4, container: 'list1', y: 0 })
+    const [s] = update(init(), { type: 'move', index: 4, container: 'list1', x: 0, y: 0 })
     expect(s.dragging).toBeNull()
   })
 
@@ -89,7 +96,9 @@ describe('sortable reducer', () => {
         currentIndex: 3,
         fromContainer: 'list1',
         toContainer: 'list1',
+        startX: 0,
         startY: 0,
+        currentX: 0,
         currentY: 0,
       },
     }
@@ -105,7 +114,9 @@ describe('sortable reducer', () => {
         currentIndex: 3,
         fromContainer: 'list1',
         toContainer: 'list1',
+        startX: 0,
         startY: 0,
+        currentX: 0,
         currentY: 0,
       },
     }
@@ -135,7 +146,9 @@ describe('sortable.connect', () => {
             currentIndex: 1,
             fromContainer: 'list1',
             toContainer: 'list1',
+            startX: 0,
             startY: 0,
+            currentX: 0,
             currentY: 0,
           },
         },
@@ -155,7 +168,9 @@ describe('sortable.connect', () => {
             currentIndex: 0,
             fromContainer: 'list1',
             toContainer: 'list1',
+            startX: 0,
             startY: 0,
+            currentX: 0,
             currentY: 0,
           },
         },
@@ -170,7 +185,9 @@ describe('sortable.connect', () => {
             currentIndex: 0,
             fromContainer: 'list1',
             toContainer: 'list1',
+            startX: 0,
             startY: 0,
+            currentX: 0,
             currentY: 0,
           },
         },
@@ -214,7 +231,9 @@ describe('sortable.connect', () => {
             currentIndex: 2,
             fromContainer: 'list1',
             toContainer: 'list1',
+            startX: 0,
             startY: 0,
+            currentX: 0,
             currentY: 0,
           },
         },
@@ -306,7 +325,9 @@ describe('sortable reducer — keyboard messages', () => {
       currentIndex: 2,
       fromContainer: 'list1',
       toContainer: 'list1',
+      startX: 0,
       startY: 0,
+      currentX: 0,
       currentY: 0,
     })
   })
@@ -319,7 +340,9 @@ describe('sortable reducer — keyboard messages', () => {
         currentIndex: 3,
         fromContainer: 'list1',
         toContainer: 'list1',
+        startX: 0,
         startY: 0,
+        currentX: 0,
         currentY: 0,
       },
     }
@@ -335,7 +358,9 @@ describe('sortable reducer — keyboard messages', () => {
         currentIndex: 2,
         fromContainer: 'list1',
         toContainer: 'list1',
+        startX: 0,
         startY: 0,
+        currentX: 0,
         currentY: 0,
       },
     }
@@ -351,7 +376,9 @@ describe('sortable reducer — keyboard messages', () => {
         currentIndex: 5,
         fromContainer: 'list1',
         toContainer: 'list1',
+        startX: 0,
         startY: 0,
+        currentX: 0,
         currentY: 0,
       },
     }
@@ -367,7 +394,9 @@ describe('sortable reducer — keyboard messages', () => {
         currentIndex: 0,
         fromContainer: 'list1',
         toContainer: 'list1',
+        startX: 0,
         startY: 0,
+        currentX: 0,
         currentY: 0,
       },
     }
@@ -383,36 +412,36 @@ describe('sortable reducer — keyboard messages', () => {
 
 describe('sortable cross-container', () => {
   it('start sets fromContainer and toContainer to the same value', () => {
-    const [s] = update(init(), { type: 'start', id: 'a', index: 0, container: 'todo', y: 0 })
+    const [s] = update(init(), { type: 'start', id: 'a', index: 0, container: 'todo', x: 0, y: 0 })
     expect(s.dragging?.fromContainer).toBe('todo')
     expect(s.dragging?.toContainer).toBe('todo')
   })
 
   it('move to a different container updates toContainer', () => {
-    const [s1] = update(init(), { type: 'start', id: 'a', index: 0, container: 'todo', y: 0 })
-    const [s2] = update(s1, { type: 'move', index: 2, container: 'done', y: 0 })
+    const [s1] = update(init(), { type: 'start', id: 'a', index: 0, container: 'todo', x: 0, y: 0 })
+    const [s2] = update(s1, { type: 'move', index: 2, container: 'done', x: 0, y: 0 })
     expect(s2.dragging?.fromContainer).toBe('todo')
     expect(s2.dragging?.toContainer).toBe('done')
     expect(s2.dragging?.currentIndex).toBe(2)
   })
 
   it('move within the same container updates only currentIndex', () => {
-    const [s1] = update(init(), { type: 'start', id: 'a', index: 0, container: 'todo', y: 0 })
-    const [s2] = update(s1, { type: 'move', index: 3, container: 'todo', y: 0 })
+    const [s1] = update(init(), { type: 'start', id: 'a', index: 0, container: 'todo', x: 0, y: 0 })
+    const [s2] = update(s1, { type: 'move', index: 3, container: 'todo', x: 0, y: 0 })
     expect(s2.dragging?.toContainer).toBe('todo')
     expect(s2.dragging?.currentIndex).toBe(3)
   })
 
   it('move is idempotent when both index and container are unchanged', () => {
-    const [s1] = update(init(), { type: 'start', id: 'a', index: 2, container: 'todo', y: 0 })
-    const [s2] = update(s1, { type: 'move', index: 2, container: 'todo', y: 0 })
+    const [s1] = update(init(), { type: 'start', id: 'a', index: 2, container: 'todo', x: 0, y: 0 })
+    const [s2] = update(s1, { type: 'move', index: 2, container: 'todo', x: 0, y: 0 })
     expect(s2).toBe(s1)
   })
 
   it('moving from one container to another then back', () => {
-    const [s1] = update(init(), { type: 'start', id: 'a', index: 0, container: 'todo', y: 0 })
-    const [s2] = update(s1, { type: 'move', index: 0, container: 'done', y: 0 })
-    const [s3] = update(s2, { type: 'move', index: 1, container: 'todo', y: 0 })
+    const [s1] = update(init(), { type: 'start', id: 'a', index: 0, container: 'todo', x: 0, y: 0 })
+    const [s2] = update(s1, { type: 'move', index: 0, container: 'done', x: 0, y: 0 })
+    const [s3] = update(s2, { type: 'move', index: 1, container: 'todo', x: 0, y: 0 })
     expect(s3.dragging?.fromContainer).toBe('todo')
     expect(s3.dragging?.toContainer).toBe('todo')
     expect(s3.dragging?.currentIndex).toBe(1)
@@ -438,7 +467,9 @@ describe('sortable cross-container', () => {
           currentIndex: 0,
           fromContainer: 'todo',
           toContainer: 'done',
+          startX: 0,
           startY: 0,
+          currentX: 0,
           currentY: 0,
         },
       },
@@ -546,7 +577,9 @@ describe('sortable cross-container', () => {
           currentIndex: 4,
           fromContainer: 'list1',
           toContainer: 'list1',
+          startX: 0,
           startY: 0,
+          currentX: 0,
           currentY: 0,
         },
       },
@@ -610,7 +643,9 @@ describe('sortable cross-container', () => {
           currentIndex: 0,
           fromContainer: 'list1',
           toContainer: 'list1',
+          startX: 0,
           startY: 0,
+          currentX: 0,
           currentY: 0,
         },
       },
@@ -636,7 +671,9 @@ describe('sortable cross-container', () => {
           currentIndex: 2,
           fromContainer: 'todo',
           toContainer: 'done',
+          startX: 0,
           startY: 0,
+          currentX: 0,
           currentY: 0,
         },
       },

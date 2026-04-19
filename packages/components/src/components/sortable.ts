@@ -60,10 +60,21 @@ export interface DragState {
    */
   toContainer: string
   /**
-   * Pointer Y at drag start (viewport coordinates). Used by CSS to make
-   * the dragged item follow the pointer via translateY(deltaY).
+   * Pointer X at drag start (viewport coordinates). Used by 2D layouts
+   * to compute `deltaX = currentX - startX` alongside the Y axis. In 1D
+   * layouts X is tracked but ignored by the renderer.
+   */
+  startX: number
+  /**
+   * Pointer Y at drag start (viewport coordinates). Used by CSS / the
+   * library's `style.transform` binding to make the dragged item follow
+   * the pointer.
    */
   startY: number
+  /**
+   * Current pointer X (viewport coordinates). `deltaX = currentX - startX`.
+   */
+  currentX: number
   /**
    * Current pointer Y (viewport coordinates). `deltaY = currentY - startY`.
    */
@@ -75,8 +86,8 @@ export interface SortableState {
 }
 
 export type SortableMsg =
-  | { type: 'start'; id: string; index: number; container: string; y: number }
-  | { type: 'move'; index: number; container: string; y: number }
+  | { type: 'start'; id: string; index: number; container: string; x: number; y: number }
+  | { type: 'move'; index: number; container: string; x: number; y: number }
   | { type: 'drop' }
   | { type: 'cancel' }
   // Keyboard: toggle between picking up and dropping at current position
@@ -99,7 +110,9 @@ export function update(state: SortableState, msg: SortableMsg): [SortableState, 
             currentIndex: msg.index,
             fromContainer: msg.container,
             toContainer: msg.container,
+            startX: msg.x,
             startY: msg.y,
+            currentX: msg.x,
             currentY: msg.y,
           },
         },
@@ -110,6 +123,7 @@ export function update(state: SortableState, msg: SortableMsg): [SortableState, 
       if (
         state.dragging.currentIndex === msg.index &&
         state.dragging.toContainer === msg.container &&
+        state.dragging.currentX === msg.x &&
         state.dragging.currentY === msg.y
       ) {
         return [state, []]
@@ -120,6 +134,7 @@ export function update(state: SortableState, msg: SortableMsg): [SortableState, 
             ...state.dragging,
             currentIndex: msg.index,
             toContainer: msg.container,
+            currentX: msg.x,
             currentY: msg.y,
           },
         },
@@ -144,7 +159,9 @@ export function update(state: SortableState, msg: SortableMsg): [SortableState, 
             currentIndex: msg.index,
             fromContainer: msg.container,
             toContainer: msg.container,
+            startX: 0,
             startY: 0,
+            currentX: 0,
             currentY: 0,
           },
         },
@@ -200,6 +217,32 @@ export interface SortableParts<S> {
 
 export interface ConnectOptions {
   id: string
+  /**
+   * Drag-target selection + render strategy.
+   *
+   *   - `'1d'` (default) — single-axis, Y-only. `findTargetAt` picks
+   *     by vertical distance; `style.transform` on the dragged item
+   *     is `translateY(deltaY)`; non-dragged items between source
+   *     and target emit `data-shift: 'up' | 'down'` so CSS can
+   *     animate them via `translateY(±var(--sortable-shift))`.
+   *     Correct for vertical lists; fails for 2D layouts (flex-wrap,
+   *     grid) because same-row items collapse to the same midpoint
+   *     distance.
+   *
+   *   - `'2d'` — Euclidean target selection against 2D midpoints;
+   *     dragged item follows both X and Y (`translate(dx, dy)`);
+   *     non-dragged items between source and target get a per-item
+   *     `style.transform = translate(deltaFromSnapshot)` that opens
+   *     the correct gap regardless of row boundaries. `data-shift`
+   *     is always `undefined` in 2D so CSS `translateY(var(--...))`
+   *     rules don't conflict with the per-item transform.
+   *
+   * Keyboard navigation (`moveBy`) stays linear-array in both modes —
+   * arrow keys step through the array indices regardless of visual
+   * row, because that's what screen readers announce and what the
+   * underlying data order actually is.
+   */
+  layout?: '1d' | '2d'
 }
 
 export function connect<S>(
@@ -209,16 +252,19 @@ export function connect<S>(
 ): SortableParts<S> {
   // The connect's `id` doubles as the cross-container identifier
   const containerId = opts.id
+  const layout = opts.layout ?? '1d'
 
   // Snapshots taken at drag start — stable throughout the drag so computing
   // the target index is not affected by items visually shifting via CSS.
-  // Map: container-id → array of midpoint Y values for each item's original
-  // bounding rect (sorted by index). The handler records this on pointerdown.
+  // Map: container-id → array of midpoint {x, y} pairs for each item's
+  // original bounding rect (sorted by index). The handler records this on
+  // pointerdown. Always 2D internally; 1D layout's findTargetAt ignores X.
   interface Snapshot {
-    mids: number[]
-    // id → current DOM index at drag start. Used by data-shift to look up an
-    // item's live position, since the `index` captured at render time is
-    // frozen and goes stale after each() reconciles a reorder.
+    mids: Array<{ x: number; y: number }>
+    // id → current DOM index at drag start. Used by data-shift / per-item
+    // transform to look up an item's live position, since the `index`
+    // captured at render time is frozen and goes stale after each()
+    // reconciles a reorder.
     idToIndex: Map<string, number>
   }
   const snapshots = new Map<string, Snapshot>()
@@ -226,11 +272,11 @@ export function connect<S>(
   function snapshotContainer(rootEl: HTMLElement, cid: string): void {
     const items = rootEl.querySelectorAll<HTMLElement>('[data-scope="sortable"][data-part="item"]')
     // Read rects once — they're pre-transform (no drag shifts yet)
-    const mids: number[] = []
+    const mids: Array<{ x: number; y: number }> = []
     const idToIndex = new Map<string, number>()
     items.forEach((item, i) => {
       const r = item.getBoundingClientRect()
-      mids.push(r.top + r.height / 2)
+      mids.push({ x: r.left + r.width / 2, y: r.top + r.height / 2 })
       const itemId = item.dataset.id
       if (itemId !== undefined) idToIndex.set(itemId, i)
     })
@@ -248,11 +294,12 @@ export function connect<S>(
   }
 
   // Find the target index under the pointer using the drag-start snapshot.
-  // Picks the index whose midpoint is closest to the pointer Y — stable
-  // against items being visually transformed during the drag.
+  // 1D mode: picks by Y-only distance (original behavior). 2D mode: picks
+  // by Euclidean distance over {x, y} midpoints — required for flex-wrap
+  // / grid layouts where multiple items share a row and collapse to the
+  // same Y value. Both modes are stable against items being visually
+  // transformed during the drag because midpoints are taken pre-transform.
   function findTargetAt(e: PointerEvent): { container: string; index: number } | null {
-    // Find which sortable root the pointer is over (using getBoundingClientRect
-    // on roots, which are not transformed during drag).
     const roots = document.querySelectorAll<HTMLElement>(
       '[data-scope="sortable"][data-part="root"]',
     )
@@ -265,14 +312,32 @@ export function connect<S>(
       const snap = snapshots.get(cid)
       if (!snap || snap.mids.length === 0) return { container: cid, index: 0 }
       const mids = snap.mids
-      // Find the index whose midpoint is closest to clientY
       let bestIdx = 0
-      let bestDist = Math.abs(e.clientY - mids[0]!)
-      for (let i = 1; i < mids.length; i++) {
-        const d = Math.abs(e.clientY - mids[i]!)
-        if (d < bestDist) {
-          bestDist = d
-          bestIdx = i
+      if (layout === '2d') {
+        // Euclidean (squared — monotonic with distance, saves a sqrt).
+        const dx0 = e.clientX - mids[0]!.x
+        const dy0 = e.clientY - mids[0]!.y
+        let bestDist = dx0 * dx0 + dy0 * dy0
+        for (let i = 1; i < mids.length; i++) {
+          const dx = e.clientX - mids[i]!.x
+          const dy = e.clientY - mids[i]!.y
+          const d = dx * dx + dy * dy
+          if (d < bestDist) {
+            bestDist = d
+            bestIdx = i
+          }
+        }
+      } else {
+        // 1D — Y-only distance. Preserves the original behavior for
+        // vertical lists; same-row items in a flex-wrap would tie and
+        // the first match wins, which is the bug that motivates 2D.
+        let bestDist = Math.abs(e.clientY - mids[0]!.y)
+        for (let i = 1; i < mids.length; i++) {
+          const d = Math.abs(e.clientY - mids[i]!.y)
+          if (d < bestDist) {
+            bestDist = d
+            bestIdx = i
+          }
         }
       }
       return { container: cid, index: bestIdx }
@@ -290,7 +355,13 @@ export function connect<S>(
         if (!e.buttons) return
         const hit = findTargetAt(e)
         if (hit !== null)
-          send({ type: 'move', index: hit.index, container: hit.container, y: e.clientY })
+          send({
+            type: 'move',
+            index: hit.index,
+            container: hit.container,
+            x: e.clientX,
+            y: e.clientY,
+          })
       },
       onPointerUp: () => {
         snapshots.clear()
@@ -323,7 +394,14 @@ export function connect<S>(
       // Shift direction for items BETWEEN the source and target (excluding the
       // dragged item itself). 'down' = item should translate down to make room;
       // 'up' = item should translate up. CSS controls the actual displacement.
+      //
+      // In 2D layout, `data-shift` is always undefined — the per-item
+      // `style.transform` below opens the correct gap directly. Keeping
+      // `data-shift` out of the 2D path prevents any author-provided
+      // CSS rule like `[data-shift] { translate: 0 var(--sortable-shift) }`
+      // from fighting with the computed transform.
       'data-shift': (s) => {
+        if (layout === '2d') return undefined
         const d = get(s).dragging
         if (!d || d.fromContainer !== containerId || d.toContainer !== containerId) return undefined
         if (d.id === id) return undefined
@@ -340,13 +418,55 @@ export function connect<S>(
         }
         return undefined
       },
-      // The dragged item follows the pointer via translateY(deltaY). Other
-      // items have no transform override — data-shift CSS handles them.
+      // The dragged item follows the pointer. In 1D, translateY only; in
+      // 2D, both axes. Non-dragged items in 2D between source and target
+      // get a per-item translate computed from the snapshot — each item's
+      // vector is `snapshot[newSlot] - snapshot[ownSlot]` so the gap
+      // opens correctly regardless of row wrap. In 1D, non-dragged items
+      // emit `undefined` here and rely on the consumer's CSS `data-shift`
+      // rule.
       'style.transform': (s) => {
         const d = get(s).dragging
-        if (!d || d.id !== id || d.fromContainer !== containerId) return undefined
-        const deltaY = d.currentY - d.startY
-        return `translateY(${deltaY}px)`
+        if (!d) return undefined
+        const isDragged = d.id === id && d.fromContainer === containerId
+        if (isDragged) {
+          const deltaY = d.currentY - d.startY
+          if (layout === '2d') {
+            const deltaX = d.currentX - d.startX
+            return `translate(${deltaX}px, ${deltaY}px)`
+          }
+          return `translateY(${deltaY}px)`
+        }
+        // Non-dragged items: per-item displacement in 2D only.
+        if (layout !== '2d') return undefined
+        if (d.fromContainer !== containerId || d.toContainer !== containerId) return undefined
+        if (d.startIndex === d.currentIndex) return undefined
+        const snap = snapshots.get(containerId)
+        if (!snap) return undefined
+        const liveIndex = snap.idToIndex.get(id)
+        if (liveIndex === undefined) return undefined
+        // Which slot this item should visually occupy while the drag
+        // previews the reorder:
+        //   drag-down (start < current): items at liveIndex in
+        //     (start .. current] shift left-by-one in array order, so
+        //     they take the slot at liveIndex - 1.
+        //   drag-up (current < start): items at liveIndex in
+        //     [current .. start) shift right-by-one, take slot
+        //     liveIndex + 1.
+        let targetSlot: number
+        if (d.startIndex < d.currentIndex) {
+          if (liveIndex <= d.startIndex || liveIndex > d.currentIndex) return undefined
+          targetSlot = liveIndex - 1
+        } else {
+          if (liveIndex < d.currentIndex || liveIndex >= d.startIndex) return undefined
+          targetSlot = liveIndex + 1
+        }
+        const own = snap.mids[liveIndex]
+        const target = snap.mids[targetSlot]
+        if (!own || !target) return undefined
+        const dx = target.x - own.x
+        const dy = target.y - own.y
+        return `translate(${dx}px, ${dy}px)`
       },
       'style.zIndex': (s) => {
         const d = get(s).dragging
@@ -407,7 +527,14 @@ export function connect<S>(
         // positions. Otherwise items shifting via CSS would cause the target
         // to oscillate as elementFromPoint hits different items.
         snapshotAll()
-        send({ type: 'start', id, index: currentIndex, container: containerId, y: e.clientY })
+        send({
+          type: 'start',
+          id,
+          index: currentIndex,
+          container: containerId,
+          x: e.clientX,
+          y: e.clientY,
+        })
       },
       onKeyDown: (e) => {
         switch (e.key) {
