@@ -11,6 +11,30 @@ All notable changes to LLui packages are documented here. LLui is a pre-1.0 proj
 
 Packages version in lockstep at release time: `@llui/dom`, `@llui/vite-plugin`, `@llui/test`, `@llui/router`, `@llui/transitions`, `@llui/components`, `@llui/vike` share a version line. `@llui/effects`, `@llui/mcp`, and `@llui/lint-idiomatic` have their own cadence.
 
+## 2026-04-19 — 0.0.25
+
+**Released:** `@llui/{dom,vite-plugin,test,router,transitions,components,vike}@0.0.25`; `@llui/mcp@0.0.19`
+
+Follow-up to 0.0.24 — fixes a pre-existing `@llui/vike` package.json bug that survived the DomEnv refactor. No API changes.
+
+### `@llui/vike@0.0.25`
+
+- **Fixed** `jsdom` moved from `dependencies` to `peerDependencies` with `peerDependenciesMeta.jsdom.optional: true`. Before this release, installing `@llui/vike` auto-pulled jsdom into `node_modules` even when the consumer used `createOnRenderHtml({ domEnv: linkedomEnv })` on Cloudflare Workers. Now Workers consumers can skip jsdom entirely — matching `@llui/dom`'s shape, where jsdom and linkedom are both optional peers. Consumers using the default `onRenderHtml` export see the standard peer-dep install prompt (`pnpm install jsdom`).
+
+### `@llui/dom@0.0.25`
+
+- **Fixed** Dropped a stale `@ts-expect-error` directive in `src/ssr/linkedom.ts` that became an unused-directive lint error once pnpm started hoisting linkedom via the optional peer declaration. Replaced with an explicit `as unknown as …` cast that tolerates both resolved and unresolved module shapes at build time. Compiled JS is identical to 0.0.24 — this is a TS-only cleanup.
+
+### `@llui/{vite-plugin,test,router,transitions,components}@0.0.25`
+
+- Rebuilt against the new `@llui/dom` version. No source changes. Compiled output identical to 0.0.24.
+
+### `@llui/mcp@0.0.19`
+
+- Rebuilt against the new `@llui/dom` version. No source changes. Compiled output identical to 0.0.18.
+
+---
+
 ## 2026-04-18 — 0.0.24
 
 **Released:** `@llui/{dom,vite-plugin,test,router,transitions,components,vike}@0.0.24`; `@llui/mcp@0.0.18`
