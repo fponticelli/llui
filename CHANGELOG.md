@@ -11,6 +11,28 @@ All notable changes to LLui packages are documented here. LLui is a pre-1.0 proj
 
 Packages version in lockstep at release time: `@llui/dom`, `@llui/vite-plugin`, `@llui/test`, `@llui/router`, `@llui/transitions`, `@llui/components`, `@llui/vike` share a version line. `@llui/effects`, `@llui/mcp`, and `@llui/lint-idiomatic` have their own cadence.
 
+## 2026-04-19 — 0.0.26
+
+**Released:** `@llui/{dom,vite-plugin,test,router,transitions,components,vike}@0.0.26`; `@llui/mcp@0.0.20`
+
+Fixes two SSR crashes under Cloudflare Workers + `linkedomEnv` that shipped in 0.0.24 / 0.0.25.
+
+### `@llui/dom@0.0.26`
+
+- **Fixed** `<select value={accessor}>` no longer throws under linkedomEnv. Two-part fix: (1) the element helper now defers applying `value` on a `<select>` until after its children are appended — in real browsers and jsdom, setting `select.value` on an empty select was already a silent no-op (value fell through to the first option once options arrived), and on linkedom it was a hard throw. Deferring makes every env agree; the matching `<option>` ends up `selected` regardless. (2) `linkedomEnv()` now patches `HTMLSelectElement.prototype.value` with a custom get/set pair that walks `<option>` children and toggles `[selected]` per HTML-spec semantics. The patch is idempotent and only runs when the descriptor has no setter, so jsdom / real browser envs routed through the factory are untouched.
+- **Fixed** `portal()` no longer reaches for bare `document` at render time, which crashed SSR with `ReferenceError: document is not defined` whenever a portal call appeared inside a `show` / `branch` / overlay render callback on Workers. `DomEnv` gains an optional `querySelector?(selector): Element | null`; `browserEnv`, `jsdomEnv`, and `linkedomEnv` all implement it. Portal resolves string targets via `ctx.dom.querySelector` first, falls back to `globalThis.document` for legacy envs that predate the method, and returns `[]` when neither is available — consistent with portal's existing "target not found" branch. Portal is semantically a client-only primitive; SSR emitting nothing is correct.
+- **Added** Optional `querySelector?(selector): Element | null` method on the `DomEnv` interface. Added as optional so pre-existing consumer envs built by hand continue to type-check. All LLui-shipped envs implement it.
+
+### `@llui/{vite-plugin,test,router,transitions,components,vike}@0.0.26`
+
+- Rebuilt against the new `@llui/dom` version. No source changes.
+
+### `@llui/mcp@0.0.20`
+
+- Rebuilt against the new `@llui/dom` version. No source changes.
+
+---
+
 ## 2026-04-19 — 0.0.25
 
 **Released:** `@llui/{dom,vite-plugin,test,router,transitions,components,vike}@0.0.25`; `@llui/mcp@0.0.19`
