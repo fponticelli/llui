@@ -13,7 +13,7 @@ Packages version in lockstep at release time: `@llui/dom`, `@llui/vite-plugin`, 
 
 ## 2026-04-18 — 0.0.24
 
-**Released:** `@llui/{dom,vite-plugin,test,router,transitions,components,vike}@0.0.24`
+**Released:** `@llui/{dom,vite-plugin,test,router,transitions,components,vike}@0.0.24`; `@llui/mcp@0.0.18`
 
 Removes `globalThis` mutation from SSR. `@llui/dom` now threads a `DomEnv` through its render pipeline as a context object instead of patching the process's window. Ships new sub-entries `@llui/dom/ssr/jsdom` + `@llui/dom/ssr/linkedom` for per-call env construction, which fixes a 9+ MiB Cloudflare Workers bundle regression (the old `initSsrDom` pulled jsdom's `tr46` / `whatwg-url` / `punycode` transitive chain into the Worker bundle even when consumers used linkedom at runtime).
 
@@ -55,6 +55,10 @@ Removes `globalThis` mutation from SSR. `@llui/dom` now threads a `DomEnv` throu
 - **Improved** Chain-composition `renderNodes` loop accepts an env parameter and uses it to synthesize end-sentinel comments. No more implicit dependency on a global document being alive during the composition pass.
 
 ### `@llui/{test,router,transitions,components}@0.0.24`
+
+- Rebuilt against the new `@llui/dom` version. No source changes.
+
+### `@llui/mcp@0.0.18`
 
 - Rebuilt against the new `@llui/dom` version. No source changes.
 
