@@ -38,11 +38,16 @@ interface LinkedomWindow {
  * Requires `linkedom` as an installed dependency.
  */
 export async function linkedomEnv(): Promise<DomEnv> {
-  // @ts-expect-error — linkedom is an optional peer dependency, not typed
-  const linkedomMod = await import('linkedom')
-  const { parseHTML } = linkedomMod as {
+  // Dynamic import — linkedom is an optional peer dependency. When it
+  // is installed (workspace build, or any consumer that needs the
+  // linkedom env), TS resolves the module and infers a real type;
+  // when absent, TS errors with "Cannot find module 'linkedom'" which
+  // is the intended nudge. The explicit `as unknown as …` coerces
+  // both cases through the narrow shape the runtime actually uses.
+  const linkedomMod = (await import('linkedom')) as unknown as {
     parseHTML: (html: string) => LinkedomWindow
   }
+  const { parseHTML } = linkedomMod
   const w = parseHTML('<!DOCTYPE html><html><body></body></html>')
 
   return {
