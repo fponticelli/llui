@@ -77,7 +77,7 @@ export function virtualEach<S, T, M = unknown>(opts: VirtualEachOptions<S, T, M>
   const overscan = opts.overscan ?? 3
 
   // Scroll container
-  const scroll = document.createElement('div')
+  const scroll = ctx.dom.createElement('div') as HTMLDivElement
   scroll.style.overflow = 'auto'
   scroll.style.position = 'relative'
   scroll.style.height = `${opts.containerHeight}px`
@@ -85,7 +85,7 @@ export function virtualEach<S, T, M = unknown>(opts: VirtualEachOptions<S, T, M>
   if (opts.class) scroll.className = opts.class
 
   // Inner spacer sized to full content height
-  const spacer = document.createElement('div')
+  const spacer = ctx.dom.createElement('div') as HTMLDivElement
   spacer.style.position = 'relative'
   spacer.style.width = '100%'
   spacer.dataset.virtualSpacer = ''
@@ -110,7 +110,7 @@ export function virtualEach<S, T, M = unknown>(opts: VirtualEachOptions<S, T, M>
     const key = opts.key(item)
     const scope = createLifetime(parentLifetime)
 
-    const wrapper = document.createElement('div')
+    const wrapper = ctx.dom.createElement('div') as HTMLDivElement
     wrapper.style.position = 'absolute'
     wrapper.style.top = `${index * opts.itemHeight}px`
     wrapper.style.left = '0'

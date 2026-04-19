@@ -14,8 +14,8 @@ function createMathmlElement(
   propsOrChildren?: ElementProps | Children,
   maybeChildren?: Children,
 ): MathMLElement {
-  const el = document.createElementNS(MATHML_NS, tag) as MathMLElement
   const ctx = getRenderContext()
+  const el = ctx.dom.createElementNS(MATHML_NS, tag) as MathMLElement
 
   const props: ElementProps | undefined = Array.isArray(propsOrChildren)
     ? undefined
@@ -66,7 +66,7 @@ function createMathmlElement(
   if (children) {
     for (const child of children) {
       if (typeof child === 'string') {
-        el.appendChild(document.createTextNode(child))
+        el.appendChild(ctx.dom.createTextNode(child))
       } else if (Array.isArray(child)) {
         for (const node of child) el.appendChild(node)
       } else {

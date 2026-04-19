@@ -71,7 +71,7 @@ export function each<S, T, M = unknown>(opts: EachOptions<S, T, M>): Node[] {
   const parentLifetime = ctx.rootLifetime
   const blocks = ctx.structuralBlocks
 
-  const anchor = document.createComment('each')
+  const anchor = ctx.dom.createComment('each')
   const entries: Entry<T>[] = []
   const clearCallbacks: Array<() => void> = []
   const removeCallbacks: Array<(key: string | number) => void> = []
@@ -185,7 +185,7 @@ export function each<S, T, M = unknown>(opts: EachOptions<S, T, M>): Node[] {
       for (let i = 0; i < clearCallbacks.length; i++) clearCallbacks[i]!()
 
       // Bulk DOM removal
-      const range = document.createRange()
+      const range = ctx.dom.createRange()
       range.setStartAfter(anchor)
       const lastEntry = entries[entries.length - 1]!
       const lastNode = lastEntry.nodes[lastEntry.nodes.length - 1]!
@@ -528,7 +528,7 @@ function reconcileEntries<S, T>(
     }
     // Remove all DOM nodes in one operation using Range
     if (entries.length > 0) {
-      const range = document.createRange()
+      const range = ctx.dom.createRange()
       range.setStartAfter(anchor)
       const lastEntry = entries[entries.length - 1]!
       const lastNode = lastEntry.nodes[lastEntry.nodes.length - 1]!
@@ -558,7 +558,7 @@ function reconcileEntries<S, T>(
     const ref = lastEntry
       ? lastEntry.nodes[lastEntry.nodes.length - 1]!.nextSibling
       : anchor.nextSibling
-    const frag = document.createDocumentFragment()
+    const frag = ctx.dom.createDocumentFragment()
     const newlyAdded: Entry<T>[] = []
     for (let i = oldLen; i < newLen; i++) {
       const entry = buildEntry(newItems[i]!, i, opts, parentLifetime, ctx, state)
@@ -637,7 +637,7 @@ function reconcileEntries<S, T>(
         for (const entry of entries) collectNodes(report.leaving, entry.nodes)
       }
       // Bulk DOM removal using Range
-      const range = document.createRange()
+      const range = ctx.dom.createRange()
       range.setStartAfter(anchor)
       const lastEntry = entries[entries.length - 1]!
       range.setEndAfter(lastEntry.nodes[lastEntry.nodes.length - 1]!)
@@ -653,7 +653,7 @@ function reconcileEntries<S, T>(
       removeOrphanedChildren(parentLifetime)
       entries.length = 0
       // Build all new entries into a fragment
-      const frag = document.createDocumentFragment()
+      const frag = ctx.dom.createDocumentFragment()
       const newlyAdded: Entry<T>[] = []
       for (let i = 0; i < newLen; i++) {
         const entry = buildEntry(newItems[i]!, i, opts, parentLifetime, ctx, state)
@@ -720,7 +720,7 @@ function reconcileEntries<S, T>(
 
   if (!hasSurvivors || !survivorsInOrder(entries, newEntries, usedKeys)) {
     // Full fragment rebuild — one reflow
-    const frag = document.createDocumentFragment()
+    const frag = ctx.dom.createDocumentFragment()
     for (const entry of newEntries) {
       for (const node of entry.nodes) frag.appendChild(node)
     }
@@ -741,7 +741,7 @@ function reconcileEntries<S, T>(
         insertRef = lastNode ? lastNode.nextSibling : insertRef
       } else {
         // Batch new entries into a fragment
-        if (!frag) frag = document.createDocumentFragment()
+        if (!frag) frag = ctx.dom.createDocumentFragment()
         for (const node of entry.nodes) frag.appendChild(node)
       }
     }

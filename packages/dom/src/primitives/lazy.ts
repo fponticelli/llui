@@ -45,8 +45,8 @@ export function lazy<S, M, D = undefined>(opts: LazyOptions<S, M, D>): Node[] {
   const send = ctx.send as (msg: M) => void
 
   // Anchor marks the insertion point; fallback nodes live between anchor and endAnchor
-  const startAnchor = document.createComment('lazy')
-  const endAnchor = document.createComment('/lazy')
+  const startAnchor = ctx.dom.createComment('lazy')
+  const endAnchor = ctx.dom.createComment('/lazy')
 
   // Build fallback inside its own sub-scope (disposed when we swap in loaded component)
   let currentLifetime = createLifetime(parentLifetime)

@@ -13,9 +13,11 @@ export function foreign<S, M, T extends Record<string, unknown>, Instance>(
   const foreignScope = createLifetime(parentLifetime)
   foreignScope._kind = 'foreign'
 
-  // Create container element
+  // Create container element — cast to HTMLElement since foreign() is
+  // HTML-only (no SVG/MathML foreign containers) and HTMLElement is the
+  // contract callers see on the `mount({ container })` argument.
   const tag = opts.container?.tag ?? 'div'
-  const container = document.createElement(tag)
+  const container = ctx.dom.createElement(tag) as HTMLElement
   if (opts.container?.attrs) {
     for (const [key, value] of Object.entries(opts.container.attrs)) {
       container.setAttribute(key, value)

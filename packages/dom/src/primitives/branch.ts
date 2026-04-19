@@ -15,7 +15,7 @@ export function branch<S, M = unknown, K extends string = string>(
   const blocks = ctx.structuralBlocks
   const send = ctx.send as (msg: M) => void
 
-  const anchor = document.createComment('branch')
+  const anchor = ctx.dom.createComment('branch')
 
   let currentKey = opts.on(ctx.state as S)
   let currentLifetime: Lifetime | null = null

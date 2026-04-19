@@ -77,7 +77,7 @@ export function selector<S, V>(field: (s: S) => V): SelectorInstance<V> {
     mask: FULL_MASK,
     accessor: ((state: S) => updateSelector(state)) as (state: never) => unknown,
     kind: 'text',
-    node: document.createComment('selector'),
+    node: ctx.dom.createComment('selector'),
     perItem: false,
   })
 

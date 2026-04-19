@@ -7,12 +7,12 @@ export function text<S>(
   accessor: ((s: S) => string) | (() => string) | string,
   mask?: number,
 ): Text {
+  const ctx = getRenderContext('text')
   if (typeof accessor === 'string') {
-    return document.createTextNode(accessor)
+    return ctx.dom.createTextNode(accessor)
   }
 
-  const ctx = getRenderContext('text')
-  const node = document.createTextNode('')
+  const node = ctx.dom.createTextNode('')
 
   // Per-item accessor from each() — zero-arg function (length === 0)
   // Register as direct updater, bypassing Phase 2 binding scan

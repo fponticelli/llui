@@ -160,7 +160,7 @@ export function mountApp<S, M, E, D>(
   // Batch-insert via DocumentFragment — one layout-invalidating operation
   // instead of N individual appendChild calls on a live container element.
   if (nodes.length > 1) {
-    const frag = document.createDocumentFragment()
+    const frag = inst.dom.createDocumentFragment()
     for (const node of nodes) frag.appendChild(node)
     container.appendChild(frag)
   } else if (nodes.length === 1) {
@@ -306,7 +306,11 @@ export function mountAtAnchor<S, M, E, D>(
     _removeBetween(anchor, existingEnd)
     endSentinel = existingEnd
   } else {
-    endSentinel = document.createComment('llui-mount-end')
+    // Use the caller-provided env if any — end-sentinel creation happens
+    // before `inst` exists, so we pick the env directly from options.
+    // (browserEnv() fallback matches what createComponentInstance will
+    // use below when options.env is undefined.)
+    endSentinel = (options?.env ?? browserEnv()).createComment('llui-mount-end')
     anchor.parentNode.insertBefore(endSentinel, anchor.nextSibling)
   }
 
@@ -342,7 +346,7 @@ export function mountAtAnchor<S, M, E, D>(
 
   // Batch-insert via DocumentFragment — one layout pass instead of N.
   if (nodes.length > 1) {
-    const frag = document.createDocumentFragment()
+    const frag = inst.dom.createDocumentFragment()
     for (const node of nodes) frag.appendChild(node)
     anchor.parentNode.insertBefore(frag, endSentinel)
   } else if (nodes.length === 1) {
@@ -413,7 +417,7 @@ export function hydrateAtAnchor<S, M, E, D = void>(
     _removeBetween(anchor, existingEnd)
     endSentinel = existingEnd
   } else {
-    endSentinel = document.createComment('llui-mount-end')
+    endSentinel = (options?.env ?? browserEnv()).createComment('llui-mount-end')
     anchor.parentNode.insertBefore(endSentinel, anchor.nextSibling)
   }
 
@@ -442,7 +446,7 @@ export function hydrateAtAnchor<S, M, E, D = void>(
   popMountQueue(prevMountQueue)
 
   if (nodes.length > 1) {
-    const frag = document.createDocumentFragment()
+    const frag = inst.dom.createDocumentFragment()
     for (const node of nodes) frag.appendChild(node)
     anchor.parentNode.insertBefore(frag, endSentinel)
   } else if (nodes.length === 1) {

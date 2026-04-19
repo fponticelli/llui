@@ -32,7 +32,10 @@ export function child<S, ChildM>(opts: ChildOptions<S, ChildM>): Node[] {
 
   const childDef = opts.def as ComponentDef<unknown, ChildM, unknown, Record<string, unknown>>
   const initialProps = opts.props(parentCtx.state as S)
-  const childInst = createComponentInstance(childDef, initialProps)
+  // Child component inherits the parent's DOM env — render-context
+  // threading means the same env flows from mountApp to child() to any
+  // nested primitives inside the child's view.
+  const childInst = createComponentInstance(childDef, initialProps, null, parentCtx.dom)
 
   // Wrap child's send to intercept messages for onMsg → parent
   const originalSend = childInst.send
@@ -83,7 +86,7 @@ export function child<S, ChildM>(opts: ChildOptions<S, ChildM>): Node[] {
       prevProps = { ...newProps }
     }) as (state: never) => unknown,
     kind: 'effect',
-    node: document.createComment('child:' + opts.key),
+    node: parentCtx.dom.createComment('child:' + opts.key),
     perItem: false,
   })
 

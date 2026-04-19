@@ -14,8 +14,8 @@ function createSvgElement(
   propsOrChildren?: ElementProps | Children,
   maybeChildren?: Children,
 ): SVGElement {
-  const el = document.createElementNS(SVG_NS, tag)
   const ctx = getRenderContext()
+  const el = ctx.dom.createElementNS(SVG_NS, tag) as SVGElement
 
   const props: ElementProps | undefined = Array.isArray(propsOrChildren)
     ? undefined
@@ -66,7 +66,7 @@ function createSvgElement(
   if (children) {
     for (const child of children) {
       if (typeof child === 'string') {
-        el.appendChild(document.createTextNode(child))
+        el.appendChild(ctx.dom.createTextNode(child))
       } else if (Array.isArray(child)) {
         for (const node of child) el.appendChild(node)
       } else {

@@ -31,15 +31,15 @@ export function elTemplate(
   html: string,
   patch: (root: Element, bind: TemplateBind) => void,
 ): Element {
+  const ctx = getRenderContext()
   let tmpl = templateCache.get(html)
   if (!tmpl) {
-    tmpl = document.createElement('template')
+    tmpl = ctx.dom.createElement('template') as HTMLTemplateElement
     tmpl.innerHTML = html
     templateCache.set(html, tmpl)
   }
 
   const root = tmpl.content.firstElementChild!.cloneNode(true) as Element
-  const ctx = getRenderContext()
 
   const bind: TemplateBind = (node, mask, kind, key, accessor) => {
     const perItem = accessor.length === 0

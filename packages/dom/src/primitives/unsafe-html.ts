@@ -29,17 +29,17 @@ import { FULL_MASK } from '../update-loop.js'
  * is set. Defaults to FULL_MASK for hand-written components.
  */
 export function unsafeHtml<S>(accessor: ((s: S) => string) | string, mask?: number): Node[] {
+  const ctx = getRenderContext('unsafeHtml')
   if (typeof accessor === 'string') {
-    return parseHtmlToNodes(accessor)
+    return parseHtmlToNodes(ctx, accessor)
   }
 
-  const ctx = getRenderContext('unsafeHtml')
   const blocks = ctx.structuralBlocks
   const blockMask = mask ?? FULL_MASK
 
-  const anchor = document.createComment('unsafeHtml')
+  const anchor = ctx.dom.createComment('unsafeHtml')
   let currentHtml = accessor(ctx.state as S)
-  let currentNodes: Node[] = parseHtmlToNodes(currentHtml)
+  let currentNodes: Node[] = parseHtmlToNodes(ctx, currentHtml)
 
   const block: StructuralBlock = {
     mask: blockMask,
@@ -54,7 +54,7 @@ export function unsafeHtml<S>(accessor: ((s: S) => string) | string, mask?: numb
       if (!parent) return
 
       const oldNodes = currentNodes
-      currentNodes = parseHtmlToNodes(newHtml)
+      currentNodes = parseHtmlToNodes(ctx, newHtml)
       currentHtml = newHtml
 
       // The anchor sits immediately before the current node range, so
@@ -76,13 +76,14 @@ export function unsafeHtml<S>(accessor: ((s: S) => string) | string, mask?: numb
   return [anchor, ...currentNodes]
 }
 
-function parseHtmlToNodes(html: string): Node[] {
-  // `<template>` parses into an inert DocumentFragment without running
-  // scripts, resolving images, or firing connection callbacks. The
-  // childNodes live reference is stable until we move the nodes out.
-  const template = document.createElement('template')
-  template.innerHTML = html
-  // Snapshot — moving nodes to a parent drains template.content, but
+function parseHtmlToNodes(
+  ctx: import('../render-context.js').RenderContext,
+  html: string,
+): Node[] {
+  // Delegates to the env — jsdom/linkedom adapters may implement this
+  // via DOMParser instead of the browser `<template>` trick, but both
+  // return an inert DocumentFragment that doesn't execute scripts.
+  // Snapshot — moving nodes to a parent drains fragment.childNodes, but
   // callers hold this array and we iterate it on reconcile.
-  return Array.from(template.content.childNodes)
+  return Array.from(ctx.dom.parseHtmlFragment(html).childNodes)
 }

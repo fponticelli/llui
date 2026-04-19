@@ -15,7 +15,8 @@ export function elSplit(
   // where pageSlot() returns Node[]).
   children: Array<Node | string | Array<Node | string>> | null,
 ): HTMLElement {
-  const el = document.createElement(tag)
+  const ctx = getRenderContext()
+  const el = ctx.dom.createElement(tag) as HTMLElement
 
   if (staticFn) {
     staticFn(el)
@@ -26,8 +27,6 @@ export function elSplit(
       el.addEventListener(eventName, handler)
     }
   }
-
-  const ctx = getRenderContext()
 
   if (bindings) {
     for (const [mask, kind, key, accessor] of bindings) {
@@ -61,7 +60,7 @@ export function elSplit(
       // in jsdom with "parameter 1 is not of type 'Node'" during SSR
       // and throws a TypeError in strict browsers.
       if (typeof child === 'string') {
-        el.appendChild(document.createTextNode(child))
+        el.appendChild(ctx.dom.createTextNode(child))
       } else if (Array.isArray(child)) {
         // Arrays-in-children are flattened one level. This matches
         // the raw createElement path in elements.ts and makes patterns
@@ -72,7 +71,7 @@ export function elSplit(
         // "appendChild parameter is not of type Node".
         for (const node of child) {
           if (typeof node === 'string') {
-            el.appendChild(document.createTextNode(node))
+            el.appendChild(ctx.dom.createTextNode(node))
           } else {
             el.appendChild(node)
           }

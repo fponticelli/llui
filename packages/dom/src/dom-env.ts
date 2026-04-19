@@ -26,6 +26,13 @@ export interface DomEnv {
   createTextNode(text: string): Text
   createComment(text: string): Comment
   createDocumentFragment(): DocumentFragment
+  /**
+   * Used by `each()`'s fast clear/bulk-remove paths to delete a range
+   * of siblings in one call. SSR adapters that don't need those paths
+   * (jsdom + linkedom both do) can stub — the runtime tolerates a
+   * missing range during SSR render, which never hits the bulk paths.
+   */
+  createRange(): Range
 
   // ── Node / element constructors ─────────────────────────────────
   // Exposed for `instanceof` checks in binding targeting + for any
@@ -82,6 +89,7 @@ export function browserEnv(): DomEnv {
     createTextNode: (text) => document.createTextNode(text),
     createComment: (text) => document.createComment(text),
     createDocumentFragment: () => document.createDocumentFragment(),
+    createRange: () => document.createRange(),
     get Element() {
       return Element
     },

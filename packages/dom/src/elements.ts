@@ -43,8 +43,8 @@ function createElement<K extends keyof HTMLElementTagNameMap>(
   propsOrChildren?: ElementProps | Children,
   maybeChildren?: Children,
 ): HTMLElementTagNameMap[K] {
-  const el = document.createElement(tag)
   const ctx = getRenderContext()
+  const el = ctx.dom.createElement(tag) as HTMLElementTagNameMap[K]
 
   // Distinguish (props, children) from (children,) — if first arg is an Array, it's children
   const props: ElementProps | undefined = Array.isArray(propsOrChildren)
@@ -97,7 +97,7 @@ function createElement<K extends keyof HTMLElementTagNameMap>(
   if (children) {
     for (const child of children) {
       if (typeof child === 'string') {
-        el.appendChild(document.createTextNode(child))
+        el.appendChild(ctx.dom.createTextNode(child))
       } else if (Array.isArray(child)) {
         for (const node of child) el.appendChild(node)
       } else {
