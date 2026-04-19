@@ -2,7 +2,17 @@ import { describe, it, expect } from 'vitest'
 import { renderToString } from '../src/ssr'
 import { browserEnv } from '../src/dom-env'
 import { jsdomEnv } from '../src/ssr/jsdom'
-import { component, div, span, text, clientOnly, mountApp, hydrateApp } from '../src/index'
+import {
+  component,
+  div,
+  span,
+  text,
+  clientOnly,
+  __clientOnlyStub,
+  child,
+  mountApp,
+  hydrateApp,
+} from '../src/index'
 
 type State = { label: string }
 
@@ -228,6 +238,77 @@ describe('clientOnly — hydrate (atomic swap)', () => {
       handle.dispose()
       container.remove()
     }
+  })
+})
+
+describe('clientOnly — bag.clientOnly (destructured form)', () => {
+  it('emits the same SSR output as the imported primitive', async () => {
+    const DefBag = component<State, never, never>({
+      name: 'FromBag',
+      init: () => [{ label: 'x' }, []],
+      update: (s) => [s, []],
+      view: ({ clientOnly: co }) => [
+        div({ class: 'host' }, [
+          ...co({
+            render: () => [span({ class: 'real' })],
+            fallback: () => [span({ class: 'skeleton' })],
+          }),
+        ]),
+      ],
+    })
+    const env = await jsdomEnv()
+    const html = renderToString(DefBag, undefined, env)
+    expect(html).toContain('<!--llui-client-only-start-->')
+    expect(html).toContain('class="skeleton"')
+    expect(html).not.toContain('class="real"')
+  })
+
+  it('runs render on the client when called through the bag', () => {
+    const DefBag = component<State, never, never>({
+      name: 'BagClientMount',
+      init: () => [{ label: 'x' }, []],
+      update: (s) => [s, []],
+      view: ({ clientOnly: co }) => [
+        div({}, [
+          ...co({
+            render: () => [span({ class: 'real' })],
+            fallback: () => [span({ class: 'skeleton' })],
+          }),
+        ]),
+      ],
+    })
+    const container = document.createElement('div')
+    const handle = mountApp(container, DefBag)
+    try {
+      expect(container.querySelector('.real')).not.toBeNull()
+      expect(container.querySelector('.skeleton')).toBeNull()
+    } finally {
+      handle.dispose()
+    }
+  })
+})
+
+describe('__clientOnlyStub — emitted by the use-client directive', () => {
+  it('produces a ComponentDef that emits clientOnly anchors during SSR', async () => {
+    const StubbedWidget = __clientOnlyStub('MapWidget')
+    type HostState = { x: number }
+    const Host = component<HostState, never, never>({
+      name: 'Host',
+      init: () => [{ x: 0 }, []],
+      update: (s) => [s, []],
+      view: () => [
+        div({ class: 'host' }, [...child({ def: StubbedWidget, key: 'map', props: () => ({}) })]),
+      ],
+    })
+    const env = await jsdomEnv()
+    const html = renderToString(Host, undefined, env)
+    expect(html).toContain('<!--llui-client-only-start-->')
+    expect(html).toContain('<!--llui-client-only-end-->')
+  })
+
+  it('the stub has the configured name for debugging', () => {
+    const s = __clientOnlyStub('ExampleName')
+    expect(s.name).toBe('ExampleName')
   })
 })
 

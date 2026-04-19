@@ -8,6 +8,7 @@ import { unsafeHtml as _unsafeHtml } from './primitives/unsafe-html.js'
 import { memo as _memo } from './primitives/memo.js'
 import { selector as _selector, type SelectorInstance } from './primitives/selector.js'
 import { sample as _sample } from './primitives/sample.js'
+import { clientOnly as _clientOnly, type ClientOnlyOptions } from './primitives/client-only.js'
 import { useContext, type Context } from './primitives/context.js'
 
 /**
@@ -58,6 +59,12 @@ export interface View<S, M> {
    * snapshot and a reactive binding would be wrong semantically.
    */
   sample<R>(selector: (s: S) => R): R
+  /**
+   * Mark a subtree as browser-only. SSR emits an anchor-bracketed
+   * placeholder (with optional fallback); the `render` callback only
+   * runs on client mount / hydrate. See the `clientOnly` export.
+   */
+  clientOnly(opts: ClientOnlyOptions<S, M>): Node[]
 }
 
 /**
@@ -79,5 +86,6 @@ export function createView<S, M>(send: Send<M>): View<S, M> {
     selector: <V>(field: (s: S) => V) => _selector<S, V>(field),
     ctx: <T>(c: Context<T>) => useContext<S, T>(c),
     sample: <R>(selector: (s: S) => R) => _sample<S, R>(selector),
+    clientOnly: (opts) => _clientOnly<S, M>(opts),
   }
 }

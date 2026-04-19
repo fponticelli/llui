@@ -24,57 +24,83 @@ export function foreign<S, M, T extends Record<string, unknown>, Instance>(
     }
   }
 
-  // Mount the foreign instance
-  const instance = opts.mount({ container, send: ctx.send as Send<M> })
+  // Instance may resolve synchronously or asynchronously. `instance ===
+  // undefined` means "not ready yet" — `sync` is suppressed and the
+  // binding below only tracks `latestProps`. When the instance arrives,
+  // an initial `sync` runs with `latestProps` (may differ from the props
+  // at mount time if state changed while awaiting).
+  const mountResult = opts.mount({ container, send: ctx.send as Send<M> })
+  let instance: Instance | undefined = undefined
+  let disposed = false
+  let latestProps: T = opts.props(ctx.state as S)
+  let syncedProps: T | undefined = undefined
 
-  // Evaluate initial props and call sync
-  let prevProps: T | undefined = undefined
-  const initialProps = opts.props(ctx.state as S)
-
-  if (typeof opts.sync === 'function') {
-    opts.sync({ instance, props: initialProps, prev: undefined })
-  } else {
-    for (const key of Object.keys(initialProps) as Array<keyof T>) {
-      const handler = opts.sync[key]
-      if (handler) {
-        handler({ instance, value: initialProps[key], prev: undefined })
+  const callSync = (props: T, prev: T | undefined) => {
+    if (typeof opts.sync === 'function') {
+      opts.sync({ instance: instance as Instance, props, prev })
+    } else {
+      for (const key of Object.keys(props) as Array<keyof T>) {
+        if (!prev || !Object.is(props[key], prev[key])) {
+          const handler = opts.sync[key]
+          if (handler) {
+            handler({ instance: instance as Instance, value: props[key], prev: prev?.[key] })
+          }
+        }
       }
     }
+    syncedProps = props
   }
-  prevProps = initialProps
+
+  const isPromise = (v: unknown): v is Promise<Instance> =>
+    typeof v === 'object' && v !== null && typeof (v as { then?: unknown }).then === 'function'
+
+  if (isPromise(mountResult)) {
+    mountResult.then(
+      (resolved) => {
+        // Dispose-before-resolve: still destroy so the library cleans up
+        // whatever it allocated. Bail before calling sync.
+        if (disposed) {
+          opts.destroy(resolved)
+          return
+        }
+        instance = resolved
+        // Initial sync runs with the latest props the binding observed
+        // while we were awaiting. `prev: undefined` matches the sync-
+        // path semantics for the first sync call.
+        callSync(latestProps, undefined)
+      },
+      (err) => {
+        // Async mount failures shouldn't crash the app. Log once and
+        // leave the container empty — caller can inspect the DOM to
+        // detect the mount failed. `errorBoundary` catches sync mount
+        // throws but can't reach async rejections through the microtask
+        // queue, which is why we log here instead of re-throwing.
+        console.error('[LLui] foreign({ mount }) promise rejected:', err)
+      },
+    )
+  } else {
+    instance = mountResult
+    callSync(latestProps, undefined)
+  }
 
   // Register a binding for the props accessor — fires when state changes
   createBinding(foreignScope, {
     mask: FULL_MASK,
     accessor: ((state: S) => {
       const newProps = opts.props(state)
-      // Shallow-diff props
-      let changed = false
-      if (!prevProps) {
-        changed = true
-      } else {
-        for (const key of Object.keys(newProps) as Array<keyof T>) {
-          if (!Object.is(newProps[key], prevProps[key])) {
-            changed = true
-            break
-          }
-        }
-      }
+      // Shallow-diff against whichever we have: syncedProps is the
+      // truth once the instance is live; while still pending, latestProps
+      // is the most recent thing we've observed.
+      const compareTo = syncedProps ?? latestProps
+      const changed = !shallowEqual(newProps, compareTo)
 
       if (changed) {
-        if (typeof opts.sync === 'function') {
-          opts.sync({ instance, props: newProps, prev: prevProps })
-        } else {
-          for (const key of Object.keys(newProps) as Array<keyof T>) {
-            if (!prevProps || !Object.is(newProps[key], prevProps[key])) {
-              const handler = opts.sync[key]
-              if (handler) {
-                handler({ instance, value: newProps[key], prev: prevProps?.[key] })
-              }
-            }
-          }
+        latestProps = newProps
+        // Only sync if the instance is ready. If not, `latestProps`
+        // is updated and resolve will flush it.
+        if (instance !== undefined) {
+          callSync(newProps, syncedProps)
         }
-        prevProps = newProps
       }
 
       return newProps
@@ -84,10 +110,26 @@ export function foreign<S, M, T extends Record<string, unknown>, Instance>(
     perItem: false,
   })
 
-  // Destroy on scope disposal
+  // Destroy on scope disposal. If the mount promise is still pending,
+  // flip the disposed flag so the resolve handler takes the
+  // dispose-before-resolve path.
   addDisposer(foreignScope, () => {
-    opts.destroy(instance)
+    disposed = true
+    if (instance !== undefined) {
+      opts.destroy(instance)
+    }
+    // If instance is still undefined, the promise will destroy on resolve.
   })
 
   return [container]
+}
+
+function shallowEqual<T extends Record<string, unknown>>(a: T, b: T): boolean {
+  for (const key of Object.keys(a) as Array<keyof T>) {
+    if (!Object.is(a[key], b[key])) return false
+  }
+  for (const key of Object.keys(b) as Array<keyof T>) {
+    if (!(key in a)) return false
+  }
+  return true
 }

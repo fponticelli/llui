@@ -386,7 +386,21 @@ export interface PortalOptions {
 }
 
 export interface ForeignOptions<S, M, T extends Record<string, unknown>, Instance> {
-  mount: (ctx: { container: HTMLElement; send: Send<M> }) => Instance
+  /**
+   * Construct the imperative instance. Can be async — return a
+   * `Promise<Instance>` to defer construction until e.g. a dynamic
+   * `import()` resolves. While the promise is pending:
+   *
+   *   - The container element is in the DOM immediately (so layout
+   *     doesn't shift when the instance arrives).
+   *   - `sync` is NOT called. State changes are tracked by the
+   *     primitive and the latest props are applied as the initial
+   *     sync right after the promise resolves.
+   *   - If the owning scope disposes before the promise resolves,
+   *     `destroy(instance)` runs on resolution — no matter how long
+   *     the promise takes.
+   */
+  mount: (ctx: { container: HTMLElement; send: Send<M> }) => Instance | Promise<Instance>
   props: (s: S) => T
   sync:
     | ((ctx: { instance: Instance; props: T; prev: T | undefined }) => void)

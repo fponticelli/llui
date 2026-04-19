@@ -236,3 +236,176 @@ describe('foreign()', () => {
     expect(readonlyFn).not.toHaveBeenCalled()
   })
 })
+
+describe('foreign — async mount', () => {
+  it('defers the initial sync until the mount promise resolves', async () => {
+    let resolveMount!: (inst: FakeEditor) => void
+    const mountPromise = new Promise<FakeEditor>((res) => {
+      resolveMount = res
+    })
+    const mountFn = vi.fn((ctx: { container: HTMLElement }): Promise<FakeEditor> => {
+      // Store the container on the unresolved editor via the promise
+      void ctx
+      return mountPromise
+    })
+    const syncFn = vi.fn()
+    const destroyFn = vi.fn()
+
+    const def: ComponentDef<State, Msg, never> = {
+      name: 'AsyncForeign',
+      init: () => [{ theme: 'dark', readonly: false }, []],
+      update: (s) => [s, []],
+      view: () =>
+        foreign<State, Msg, { theme: string; readonly: boolean }, FakeEditor>({
+          mount: mountFn,
+          props: (s) => ({ theme: s.theme, readonly: s.readonly }),
+          sync: syncFn,
+          destroy: destroyFn,
+        }),
+    }
+    const container = document.createElement('div')
+    const handle = mountApp(container, def)
+    try {
+      // Container is in the DOM but sync hasn't run yet.
+      expect(container.querySelector('div')).not.toBeNull()
+      expect(syncFn).not.toHaveBeenCalled()
+
+      const inst: FakeEditor = { container, destroyed: false, options: {} }
+      resolveMount(inst)
+      await mountPromise
+
+      expect(syncFn).toHaveBeenCalledTimes(1)
+      expect(syncFn).toHaveBeenCalledWith({
+        instance: inst,
+        props: { theme: 'dark', readonly: false },
+        prev: undefined,
+      })
+    } finally {
+      handle.dispose()
+    }
+  })
+
+  it('applies props changes that happened before resolve, once the instance arrives', async () => {
+    let resolveMount!: (inst: FakeEditor) => void
+    const mountPromise = new Promise<FakeEditor>((res) => {
+      resolveMount = res
+    })
+    const syncFn = vi.fn()
+
+    const def: ComponentDef<State, Msg, never> = {
+      name: 'PendingProps',
+      init: () => [{ theme: 'dark', readonly: false }, []],
+      update: (state, msg) => {
+        switch (msg.type) {
+          case 'setTheme':
+            return [{ ...state, theme: msg.value }, []]
+          case 'toggleReadonly':
+            return [{ ...state, readonly: !state.readonly }, []]
+        }
+      },
+      view: () =>
+        foreign<State, Msg, { theme: string; readonly: boolean }, FakeEditor>({
+          mount: () => mountPromise,
+          props: (s) => ({ theme: s.theme, readonly: s.readonly }),
+          sync: syncFn,
+          destroy: () => {},
+        }),
+    }
+
+    const container = document.createElement('div')
+    const handle = mountApp(container, def)
+    try {
+      // Change state while mount is still pending.
+      handle.send({ type: 'setTheme', value: 'light' })
+      handle.flush()
+      handle.send({ type: 'toggleReadonly' })
+      handle.flush()
+
+      // No sync yet — instance not ready.
+      expect(syncFn).not.toHaveBeenCalled()
+
+      const inst: FakeEditor = { container, destroyed: false, options: {} }
+      resolveMount(inst)
+      await mountPromise
+
+      // Exactly one sync, with the LATEST props.
+      expect(syncFn).toHaveBeenCalledTimes(1)
+      expect(syncFn).toHaveBeenCalledWith({
+        instance: inst,
+        props: { theme: 'light', readonly: true },
+        prev: undefined,
+      })
+    } finally {
+      handle.dispose()
+    }
+  })
+
+  it('destroys the instance when dispose happens before resolve', async () => {
+    let resolveMount!: (inst: FakeEditor) => void
+    const mountPromise = new Promise<FakeEditor>((res) => {
+      resolveMount = res
+    })
+    const syncFn = vi.fn()
+    const destroyFn = vi.fn()
+
+    const def: ComponentDef<State, Msg, never> = {
+      name: 'DisposeRace',
+      init: () => [{ theme: 'dark', readonly: false }, []],
+      update: (s) => [s, []],
+      view: () =>
+        foreign<State, Msg, { theme: string; readonly: boolean }, FakeEditor>({
+          mount: () => mountPromise,
+          props: (s) => ({ theme: s.theme, readonly: s.readonly }),
+          sync: syncFn,
+          destroy: destroyFn,
+        }),
+    }
+
+    const container = document.createElement('div')
+    const handle = mountApp(container, def)
+    handle.dispose()
+
+    const inst: FakeEditor = { container, destroyed: false, options: {} }
+    resolveMount(inst)
+    await mountPromise
+
+    // Sync was never called because the scope was disposed.
+    expect(syncFn).not.toHaveBeenCalled()
+    // Destroy was called with the resolved instance — no leak.
+    expect(destroyFn).toHaveBeenCalledTimes(1)
+    expect(destroyFn).toHaveBeenCalledWith(inst)
+  })
+
+  it('logs rejected promise without throwing', async () => {
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const rejection = new Error('library init failed')
+    const def: ComponentDef<State, Msg, never> = {
+      name: 'Rejected',
+      init: () => [{ theme: 'dark', readonly: false }, []],
+      update: (s) => [s, []],
+      view: () =>
+        foreign<State, Msg, { theme: string; readonly: boolean }, FakeEditor>({
+          mount: () => Promise.reject(rejection),
+          props: (s) => ({ theme: s.theme, readonly: s.readonly }),
+          sync: () => {},
+          destroy: () => {},
+        }),
+    }
+
+    const container = document.createElement('div')
+    const handle = mountApp(container, def)
+    try {
+      // Await a microtask cycle so the rejection handler fires.
+      await Promise.resolve()
+      await Promise.resolve()
+
+      expect(errorSpy).toHaveBeenCalledWith(
+        expect.stringContaining('foreign({ mount }) promise rejected'),
+        rejection,
+      )
+    } finally {
+      handle.dispose()
+      errorSpy.mockRestore()
+    }
+  })
+})

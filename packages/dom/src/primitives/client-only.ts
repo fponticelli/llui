@@ -43,6 +43,7 @@
  * code path; the SSR bundle elides it.
  */
 
+import type { ComponentDef } from '../types.js'
 import { getRenderContext } from '../render-context.js'
 import { createView, type View } from '../view-helpers.js'
 
@@ -104,4 +105,34 @@ export function clientOnly<S, M = unknown>(opts: ClientOnlyOptions<S, M>): Node[
   const end = ctx.dom.createComment('llui-client-only-end')
   const fallbackNodes = opts.fallback ? opts.fallback(bag) : []
   return [start, ...fallbackNodes, end]
+}
+
+/**
+ * Generated component stub used by `@llui/vite-plugin`'s `'use client'`
+ * directive. For SSR builds, every `export const X = component({...})`
+ * in a `'use client'` module is rewritten to
+ * `export const X = __clientOnlyStub('X')` — the module's real imports
+ * and top-level side effects never run under SSR.
+ *
+ * The stub is a minimal valid `ComponentDef` whose `view()` emits a
+ * `clientOnly` placeholder. The client build imports the ORIGINAL
+ * module (directive is a no-op on client), so the real component mounts
+ * on hydrate; atomic-swap wipes the SSR stub's empty placeholder.
+ *
+ * State shape is `{}` and message type is `never` — the stub doesn't
+ * participate in any real update cycle. Callers that tried to `send()`
+ * messages against the stub during SSR would be dispatching into the
+ * void, which is fine: SSR doesn't process messages.
+ *
+ * App authors should not call this directly — reach for `clientOnly`
+ * or the `'use client'` directive depending on the granularity you
+ * want.
+ */
+export function __clientOnlyStub(name: string): ComponentDef<object, never, never> {
+  return {
+    name,
+    init: () => [{}, []],
+    update: (s) => [s, []],
+    view: () => clientOnly<object, never>({ render: () => [] }),
+  }
 }

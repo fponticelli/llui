@@ -4,7 +4,7 @@ import { existsSync, readFileSync, writeFileSync, watch as fsWatch, type FSWatch
 import { dirname, relative, resolve } from 'node:path'
 import { createRequire } from 'node:module'
 import { spawn, type ChildProcess } from 'node:child_process'
-import { transformLlui } from './transform.js'
+import { transformLlui, transformUseClientSsr, hasUseClientDirective } from './transform.js'
 import { diagnose, type DiagnosticRule } from './diagnostics.js'
 
 export type { DiagnosticRule } from './diagnostics.js'
@@ -353,8 +353,25 @@ export default function llui(options: LluiPluginOptions = {}): Plugin {
       })
     },
 
-    transform(code, id) {
+    transform(code, id, options) {
       if (!id.endsWith('.ts') && !id.endsWith('.tsx')) return
+
+      // `'use client'` directive — SSR builds replace the module with a
+      // stub so top-level imports and side effects never run on the
+      // server. Client builds pass through to the normal transform; the
+      // directive is effectively a no-op on the client.
+      if (options?.ssr && hasUseClientDirective(code)) {
+        const result = transformUseClientSsr(code, id)
+        if (result) {
+          const cwd = process.cwd()
+          const rel = relative(cwd, id)
+          const display = rel.startsWith('..') ? id : rel
+          for (const warning of result.warnings) {
+            this.warn(`${display}: ${warning}`)
+          }
+          return { code: result.output, map: { mappings: '' } }
+        }
+      }
 
       const diagnostics = diagnose(code)
       if (diagnostics.length > 0) {

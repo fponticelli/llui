@@ -9,6 +9,7 @@ import { unsafeHtml as _unsafeHtml } from './unsafe-html.js'
 import { memo as _memo } from './memo.js'
 import { sample as _sample } from './sample.js'
 import { selector as _selector } from './selector.js'
+import { clientOnly as _clientOnly, type ClientOnlyOptions } from './client-only.js'
 import { useContext, type Context } from './context.js'
 
 /**
@@ -116,5 +117,10 @@ export function slice<Root, Sub, M>(
       return (s: Sub) => root(s as unknown as Root)
     },
     sample: <R>(selector: (s: Sub) => R) => _sample<Root, R>((r) => selector(lift(r))),
+    clientOnly: (opts: ClientOnlyOptions<Sub, M>) =>
+      _clientOnly<Root, M>({
+        render: wrapCase(opts.render),
+        fallback: opts.fallback ? wrapCase(opts.fallback) : undefined,
+      }),
   }
 }
