@@ -42,6 +42,7 @@ const buildCtx: RenderContext = {
   state: null,
   allBindings: [],
   structuralBlocks: [],
+  dom: null as unknown as import('../dom-env.js').DomEnv,
 }
 
 /**
@@ -154,6 +155,7 @@ export function virtualEach<S, T, M = unknown>(opts: VirtualEachOptions<S, T, M>
     buildCtx.state = state
     buildCtx.allBindings = ctx.allBindings
     buildCtx.structuralBlocks = ctx.structuralBlocks
+    buildCtx.dom = ctx.dom
     buildCtx.instance = ctx.instance
     const prevFlat = getFlatBindings()
     setFlatBindings(ctx.allBindings)

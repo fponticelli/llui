@@ -3,6 +3,16 @@ import type { StructuralBlock } from './structural.js'
 import type { RingBuffer, EachDiff } from './tracking/each-diff.js'
 import type { DisposerEvent } from './tracking/disposer-log.js'
 import type { CoverageTracker } from './tracking/coverage.js'
+import { type DomEnv, browserEnv } from './dom-env.js'
+
+// Single lazily-constructed browser env shared by every client-side
+// component instance. Falls through to globalThis at call time — safe
+// to construct on a server process (the lookups never fire there).
+let _fallbackEnv: DomEnv | null = null
+function fallbackBrowserEnv(): DomEnv {
+  if (_fallbackEnv === null) _fallbackEnv = browserEnv()
+  return _fallbackEnv
+}
 import type {
   EffectTimelineEntry,
   PendingEffectsList,
@@ -29,6 +39,7 @@ export interface ComponentInstance<S = unknown, M = unknown, E = unknown> {
   state: S
   initialEffects: E[]
   rootLifetime: Lifetime
+  dom: DomEnv
   allBindings: Binding[]
   structuralBlocks: StructuralBlock[]
   queue: M[]
@@ -76,6 +87,7 @@ export function createComponentInstance<S, M, E, D = void>(
   def: ComponentDef<S, M, E, D>,
   data?: D,
   parentLifetime: Lifetime | null = null,
+  dom?: DomEnv,
 ): ComponentInstance<S, M, E> {
   const [initialState, initialEffects] = def.init(data as D)
 
@@ -89,6 +101,10 @@ export function createComponentInstance<S, M, E, D = void>(
     def: def as ComponentDef<S, M, E>,
     state: initialState,
     initialEffects,
+    // Caller-supplied DOM env. `mountApp` defaults this to `browserEnv()`;
+    // `renderToString` passes the user's jsdom/linkedom env. Never null —
+    // every primitive reads from inst.dom.
+    dom: dom ?? fallbackBrowserEnv(),
     // When `parentLifetime` is provided the instance's rootLifetime becomes a
     // child of that scope. This is how persistent layouts wire pages
     // into the layout's scope tree: the page's rootLifetime is parented at

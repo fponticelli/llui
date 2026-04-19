@@ -1,4 +1,5 @@
 import type { ComponentDef, AppHandle, Lifetime } from './types.js'
+import { type DomEnv, browserEnv } from './dom-env.js'
 import { createComponentInstance, flushInstance, type ComponentInstance } from './update-loop.js'
 import { disposeLifetime } from './lifetime.js'
 import { setRenderContext, clearRenderContext } from './render-context.js'
@@ -82,6 +83,13 @@ export interface MountOptions {
    * every `mountApp` call before persistent layouts existed.
    */
   parentLifetime?: Lifetime
+  /**
+   * DOM env override. Defaults to `browserEnv()` — wraps the browser
+   * globals. Specify only when mounting into a non-browser DOM (e.g.
+   * a jsdom instance held by a test harness, or isolated DOM per
+   * shadow root).
+   */
+  env?: DomEnv
 }
 
 export function mountApp<S, M, E>(
@@ -112,7 +120,7 @@ export function mountApp<S, M, E, D>(
     if (swapped) return swapped
   }
 
-  const inst = createComponentInstance(def, data, options?.parentLifetime ?? null)
+  const inst = createComponentInstance(def, data, options?.parentLifetime ?? null, options?.env)
 
   // Dev-only: auto-install devtools if enabled via '@llui/dom/devtools' import
   if (devToolsInstall) devToolsInstall(inst)
@@ -302,7 +310,7 @@ export function mountAtAnchor<S, M, E, D>(
     anchor.parentNode.insertBefore(endSentinel, anchor.nextSibling)
   }
 
-  const inst = createComponentInstance(def, data, options?.parentLifetime ?? null)
+  const inst = createComponentInstance(def, data, options?.parentLifetime ?? null, options?.env)
 
   if (devToolsInstall) devToolsInstall(inst)
 
@@ -416,7 +424,7 @@ export function hydrateAtAnchor<S, M, E, D = void>(
     init: () => [serverState, originalEffects],
   }
 
-  const inst = createComponentInstance(hydrateDef, undefined, options?.parentLifetime ?? null)
+  const inst = createComponentInstance(hydrateDef, undefined, options?.parentLifetime ?? null, options?.env)
 
   if (devToolsInstall) devToolsInstall(inst)
 
@@ -504,7 +512,7 @@ export function hydrateApp<S, M, E, D = void>(
     init: () => [serverState, originalEffects],
   }
 
-  const inst = createComponentInstance(hydrateDef, undefined, options?.parentLifetime ?? null)
+  const inst = createComponentInstance(hydrateDef, undefined, options?.parentLifetime ?? null, options?.env)
 
   // Build the component DOM and swap atomically with server HTML.
   // Server HTML remains visible until JS finishes — no flash.

@@ -3,6 +3,7 @@ import { mountApp } from '../src/mount'
 import type { ComponentDef } from '../src/types'
 import { text } from '../src/primitives/text'
 import { setRenderContext, clearRenderContext } from '../src/render-context'
+import { browserEnv } from '../src/dom-env'
 import { createComponentInstance } from '../src/update-loop'
 import { createView } from '../src/view-helpers'
 

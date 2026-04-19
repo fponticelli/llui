@@ -1,6 +1,7 @@
 import type { Lifetime, Binding } from './types.js'
 import type { StructuralBlock } from './structural.js'
 import type { ComponentInstance } from './update-loop.js'
+import type { DomEnv } from './dom-env.js'
 
 export interface RenderContext {
   rootLifetime: Lifetime
@@ -9,6 +10,14 @@ export interface RenderContext {
   structuralBlocks: StructuralBlock[]
   container?: Element
   send?: (msg: unknown) => void
+  /**
+   * The DOM implementation backing this render pass. Seeded by
+   * `mountApp` / `hydrateApp` / `renderToString` and threaded through
+   * every nested primitive via context spread. Primitives construct
+   * DOM through `ctx.dom.createElement(...)` etc. instead of reaching
+   * for `globalThis.document`.
+   */
+  dom: DomEnv
   /** @internal dev-only — the owning ComponentInstance. Set by mount /
    *  hydrate / child to let primitives (currently `each`) emit tracker
    *  data to `inst._eachDiffLog`. Nested contexts pass through via

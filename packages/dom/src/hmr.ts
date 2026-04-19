@@ -123,6 +123,7 @@ export function replaceComponent<S, M, E, D = void>(
       state: typedInst.state,
       allBindings: typedInst.allBindings,
       structuralBlocks: typedInst.structuralBlocks,
+      dom: typedInst.dom,
       container:
         entry.kind === 'container' ? entry.container : (entry.anchor.parentElement ?? undefined),
       send: typedInst.send as (msg: unknown) => void,

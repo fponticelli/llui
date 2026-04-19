@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest'
 import { elSplit } from '../src/el-split'
 import { createLifetime } from '../src/lifetime'
 import { setRenderContext, clearRenderContext } from '../src/render-context'
+import { browserEnv } from '../src/dom-env'
 
 // REPRO: Bug 5 — elSplit should auto-wrap raw string children as
 // Text nodes, matching createElement's behavior. Previously it called
@@ -15,6 +16,7 @@ describe('elSplit — string children', () => {
       state: {} as any,
       allBindings: [],
       structuralBlocks: [],
+      dom: browserEnv(),
     })
     try {
       const el = elSplit('button', null, null, null, ['Sign in'])
@@ -34,6 +36,7 @@ describe('elSplit — string children', () => {
       state: {} as any,
       allBindings: [],
       structuralBlocks: [],
+      dom: browserEnv(),
     })
     try {
       const span = document.createElement('span')

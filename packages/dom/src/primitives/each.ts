@@ -32,12 +32,16 @@ export function registerOnRemove(cb: (key: string | number) => void): void {
   if (activeRemoveCallbacks) activeRemoveCallbacks.push(cb)
 }
 
-// Reusable render context for buildEntry — avoids object allocation per entry
+// Reusable render context for buildEntry — avoids object allocation per entry.
+// All fields except `rootLifetime`, `state`, `allBindings`, `structuralBlocks`, `dom`
+// are copied from the surrounding render context per reconcile call, so the
+// initial shape's null/empty values are never observed in practice.
 const buildCtx: RenderContext = {
   rootLifetime: null as unknown as Lifetime,
   state: null,
   allBindings: [],
   structuralBlocks: [],
+  dom: null as unknown as import('../dom-env.js').DomEnv,
 }
 
 // Reusable render bag — mutated per entry instead of allocating new objects
@@ -447,6 +451,7 @@ function buildEntry<S, T, M>(
   buildCtx.state = currentState
   buildCtx.allBindings = ctx.allBindings
   buildCtx.structuralBlocks = ctx.structuralBlocks
+  buildCtx.dom = ctx.dom
   buildCtx.instance = ctx.instance
   const prevFlatBindings = getFlatBindings()
   setFlatBindings(ctx.allBindings)
