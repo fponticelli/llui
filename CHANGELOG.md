@@ -11,6 +11,41 @@ All notable changes to LLui packages are documented here. LLui is a pre-1.0 proj
 
 Packages version in lockstep at release time: `@llui/dom`, `@llui/vite-plugin`, `@llui/test`, `@llui/router`, `@llui/transitions`, `@llui/components`, `@llui/vike` share a version line. `@llui/effects`, `@llui/mcp`, and `@llui/lint-idiomatic` have their own cadence.
 
+## 2026-04-19 — 0.0.28
+
+**Released:** `@llui/{dom,vite-plugin,test,router,transitions,components,vike}@0.0.28`; `@llui/mcp@0.0.22`
+
+Three consumer-reported issues fixed with TDD-first discipline — each lands with failing-test-then-implementation and no workarounds left in the library.
+
+### Breaking
+
+- **`@llui/components@0.0.28`** — `SortableMsg.start` and `SortableMsg.move` gain required `x: number`. Consumers using `connect()` for their handle/root wiring (the 99% case) see no change — `connect` fills `x` from `e.clientX` automatically. Hand-wired dispatchers that construct these messages directly get a TS error pointing at the missing field; add `x: <number>` alongside the existing `y`.
+
+### Migration
+
+- **Hand-wired sortable dispatchers** — add `x: <clientX or 0>` to every `SortableMsg.start` and `.move` literal in your app. `DragState` fixtures in tests get `startX` / `currentX` alongside the existing `startY` / `currentY` (both default to `0` when you don't have a meaningful position).
+
+### `@llui/dom@0.0.28`
+
+- **Fixed** `branch` and `each` disposers now remove their DOM nodes from the parent, not just their scopes. When an outer structural primitive swaps an arm whose children spread a nested `branch` / `each` directly (no wrapping element), nodes the nested primitive inserted AFTER the outer's initial render — each-reconciled rows, inner-branch post-mount case swaps — used to leak. The parent's cleanup only walked its initial-render `currentNodes` snapshot; anything the nested primitive inserted later was invisible to it. The disposer now walks live entries/nodes + anchor and removes them via `parentNode.removeChild`, guarded so cascade-removed subtrees no-op. `show` and `scope` ride this fix through `branch`. 6 new tests in `test/branch-nested-swap.test.ts` pinning every failure mode the repro covered.
+- **Added** `AppHandle.getState(): unknown` — sanctioned escape hatch for reading state outside `view()`. Safe from event handlers, adapter `send` wrappers, async callbacks, timers. Returns the current instance state; throws after `dispose()` so stale reads fail loud. Wired into all four mount paths (`mountApp`, `hydrateApp`, `mountAtAnchor`, `hydrateAtAnchor`) plus the HMR replacement handle.
+- **Improved** `sample()`'s "called outside view" error now points specifically at `AppHandle.getState()` with an example. The previous message told users "you called a primitive outside a render context" but didn't say what to do instead; the common-case shape (adapter wraps `send`, needs current state) now gets inline migration guidance with copy-pasteable code.
+
+### `@llui/components@0.0.28`
+
+- **Added** `layout: '2d'` option on `sortable.connect(get, send, { id, layout })`. Opt-in 2D support for flex-wrap and grid layouts where same-row items share a Y coordinate. Under the flag: `findTargetAt` ranks by Euclidean distance instead of Y-only; the dragged item's `style.transform` is `translate(dx, dy)` instead of `translateY(dy)`; non-dragged items between source and target get per-item `style.transform = translate(snapshotDelta)` that opens the correct gap regardless of row wrap; `data-shift` is suppressed in 2D so CSS `translateY(var(--sortable-shift))` rules don't fight with the computed transform. `DragState` now always tracks `{startX, startY, currentX, currentY}` — 1D ignores X at render time. Keyboard `moveBy` stays linear-array in both modes (screen-reader-correct; 2D-spatial keyboard nav is a separate feature).
+- **Breaking** `SortableMsg.start` and `.move` gain required `x: number`. See top of release block.
+
+### `@llui/{vite-plugin,test,router,transitions,vike}@0.0.28`
+
+- Rebuilt against the new `@llui/dom` version. No source changes.
+
+### `@llui/mcp@0.0.22`
+
+- Rebuilt against the new `@llui/dom` version. No source changes.
+
+---
+
 ## 2026-04-19 — 0.0.27
 
 **Released:** `@llui/{dom,vite-plugin,test,router,transitions,components,vike}@0.0.27`; `@llui/mcp@0.0.21`
