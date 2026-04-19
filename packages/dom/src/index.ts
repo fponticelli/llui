@@ -79,6 +79,7 @@ export { memo } from './primitives/memo.js'
 export { sample } from './primitives/sample.js'
 export { selector } from './primitives/selector.js'
 export { onMount } from './primitives/on-mount.js'
+export { clientOnly, type ClientOnlyOptions } from './primitives/client-only.js'
 export { errorBoundary } from './primitives/error-boundary.js'
 
 // ── Element Helpers ───────────────────────────────────────────────

@@ -33,6 +33,7 @@ Removes `globalThis` mutation from SSR. `@llui/dom` now threads a `DomEnv` throu
 ### `@llui/dom@0.0.24`
 
 - **Breaking** `renderToString` / `renderNodes` require a `DomEnv`. See top of release block.
+- **Added** `clientOnly({ render, fallback? })` primitive for browser-only subtrees. SSR emits `<!--llui-client-only-start-->` + optional fallback + `<!--llui-client-only-end-->` and never invokes `render`; on the client `render` runs inline, participating in the host component's `View<S, M>` bag and bitmask update cycle normally. Pair with dynamic `import()` inside `render` to keep browser-only libraries (Leaflet, Chart.js, Monaco, etc.) out of the SSR bundle's module graph. Discriminates SSR vs client via `ctx.dom.isBrowser` — `browserEnv()` sets it, `jsdomEnv`/`linkedomEnv` don't.
 - **Added** `DomEnv` interface + `browserEnv()` factory, both exported from `@llui/dom` and `@llui/dom/ssr`. Defines a minimal DOM contract (createElement, createTextNode, createComment, createDocumentFragment, Element, Node, Text, Comment, HTMLElement, HTMLTemplateElement, ShadowRoot, MouseEvent, parseHtmlFragment) that the runtime consumes instead of reaching for `globalThis`.
 - **Added** `@llui/dom/ssr/jsdom` sub-entry exporting `jsdomEnv(): Promise<DomEnv>`. Lazy-imports jsdom on call; each call returns a fresh env.
 - **Added** `@llui/dom/ssr/linkedom` sub-entry exporting `linkedomEnv(): Promise<DomEnv>`. Lazy-imports linkedom on call; safe on workerd and other strict-isolate runtimes where jsdom's transitive deps can't resolve.

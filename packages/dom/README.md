@@ -69,22 +69,23 @@ Element helpers (`div`, `button`, `span`, etc.) stay as imports — they're stat
 
 ### View Primitives
 
-| Primitive                         | Purpose                                       |
-| --------------------------------- | --------------------------------------------- |
-| `text(accessor)`                  | Reactive text node                            |
-| `show({ when, render })`          | Conditional rendering                         |
-| `branch({ on, cases, default? })` | Multi-case switching with optional default    |
-| `scope({ on, render })`           | Keyed subtree rebuild on key change           |
-| `each({ items, key, render })`    | Keyed list rendering                          |
-| `portal({ target, render })`      | Render into a different DOM location          |
-| `child({ def, key, props })`      | Full component boundary (Level 2 composition) |
-| `memo(accessor)`                  | Memoized derived value                        |
-| `sample(selector)`                | One-shot imperative state read (no binding)   |
-| `selector(field)`                 | O(1) one-of-N selection binding               |
-| `onMount(callback)`               | Lifecycle hook (runs once after mount)        |
-| `errorBoundary(opts)`             | Catch render errors                           |
-| `foreign({ create, update })`     | Integrate non-LLui libraries                  |
-| `slice(h, selector)`              | View over a sub-slice of state                |
+| Primitive                          | Purpose                                       |
+| ---------------------------------- | --------------------------------------------- |
+| `text(accessor)`                   | Reactive text node                            |
+| `show({ when, render })`           | Conditional rendering                         |
+| `branch({ on, cases, default? })`  | Multi-case switching with optional default    |
+| `scope({ on, render })`            | Keyed subtree rebuild on key change           |
+| `each({ items, key, render })`     | Keyed list rendering                          |
+| `portal({ target, render })`       | Render into a different DOM location          |
+| `child({ def, key, props })`       | Full component boundary (Level 2 composition) |
+| `memo(accessor)`                   | Memoized derived value                        |
+| `sample(selector)`                 | One-shot imperative state read (no binding)   |
+| `selector(field)`                  | O(1) one-of-N selection binding               |
+| `onMount(callback)`                | Lifecycle hook (runs once after mount)        |
+| `errorBoundary(opts)`              | Catch render errors                           |
+| `foreign({ create, update })`      | Integrate non-LLui libraries                  |
+| `clientOnly({ render, fallback })` | Browser-only subtree (skipped during SSR)     |
+| `slice(h, selector)`               | View over a sub-slice of state                |
 
 ### Composition
 

@@ -495,6 +495,25 @@ See: 01 Architecture.md
 
 ---
 
+### `clientOnly(opts)`
+
+Marks a subtree as browser-only. SSR emits an anchor-bracketed placeholder (optionally backed by a server-rendered fallback subtree); the real render callback only runs on the client at mount or hydrate.
+
+```typescript
+function clientOnly<S, M>(opts: {
+  render: (bag: View<S, M>) => Node[]
+  fallback?: (bag: View<S, M>) => Node[]
+}): Node[]
+```
+
+SSR emits `<!--llui-client-only-start-->` + (optional) fallback nodes + `<!--llui-client-only-end-->`. The `render` callback is not invoked during SSR — it's free to touch `window` / `document` or import browser-only modules. On the client (both fresh mount and hydrate), `render` runs inline with the host component's `View<S, M>` bag; LLui's atomic-swap hydration discards the server DOM, so the anchors are an SSR-output artifact only.
+
+Gate heavy browser-only imports via dynamic `import()` inside `render` — the module graph elides them from the SSR bundle. The current `isBrowser` flag on the `DomEnv` is the SSR-vs-client discriminator: jsdom/linkedom envs don't set it, `browserEnv()` does.
+
+See: 03 Runtime DOM.md
+
+---
+
 ### `foreign(opts)`
 
 Opaque container for imperative third-party libraries. LLui owns the container element; the library owns everything inside it.
