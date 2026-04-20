@@ -1251,3 +1251,326 @@ function watchSystemTheme(cb: (theme: ResolvedTheme) => void): () => void
 ```
 
 `resolveTheme('system')` reads `prefers-color-scheme`. `applyTheme('dark')` sets `document.documentElement.dataset.theme = 'dark'` so CSS selectors like `[data-theme='dark'] { ... }` take effect. `watchSystemTheme` listens for OS theme changes.
+
+---
+
+## Agent
+
+> For the wire protocol, token model, and security details, see `docs/designs/10 Agent Protocol.md`.
+
+---
+
+### `@llui/agent/protocol`
+
+Shared types for LAP (LLui Agent Protocol) endpoints, WebSocket frames, tokens, and audit. No runtime code — types only.
+
+| Type | Description |
+| ---- | ----------- |
+| `LapErrorCode` | Union of error code strings: `'auth-failed' \| 'revoked' \| 'paused' \| 'rate-limited' \| 'invalid' \| 'schema-error' \| 'timeout' \| 'internal'` |
+| `LapError` | HTTP error envelope: `{ error: { code, detail?, retryAfterMs? } }` |
+| `MessageAnnotations` | Per-Msg-variant annotation record: `{ intent?, alwaysAffordable?, requiresConfirm?, humanOnly? }` |
+| `MessageSchemaEntry` | Schema + annotations for one Msg variant: `{ payloadSchema, intent, alwaysAffordable, requiresConfirm, humanOnly }` |
+| `LapDescribeResponse` | `/describe` response: app name, version, state schema, message schema, docs, schemaHash |
+| `LapStateRequest` | `/state` request: `{ path?: string }` (JSON Pointer) |
+| `LapStateResponse` | `/state` response: `{ state: unknown }` |
+| `LapActionsResponse` | `/actions` response: `{ actions: Array<{ variant, intent, requiresConfirm, source, selectorHint, payloadHint }> }` |
+| `LapMessageRequest` | `/message` request: `{ msg, reason?, waitFor?, timeoutMs? }` |
+| `LapMessageRejectReason` | Union: `'humanOnly' \| 'user-cancelled' \| 'timeout' \| 'invalid' \| 'schema-error' \| 'revoked' \| 'paused'` |
+| `LapMessageResponse` | `/message` discriminated union: `dispatched \| pending-confirmation \| confirmed \| rejected` |
+| `LapConfirmResultRequest` | `/confirm-result` request: `{ confirmId, timeoutMs? }` |
+| `LapConfirmResultResponse` | `/confirm-result` discriminated union: `confirmed \| rejected \| still-pending` |
+| `LapWaitRequest` | `/wait` request: `{ path?, timeoutMs? }` |
+| `LapWaitResponse` | `/wait` discriminated union: `changed \| timeout` (long-poll) |
+| `LapQueryDomRequest` | `/query-dom` request: `{ name, multiple? }` |
+| `LapQueryDomResponse` | `/query-dom` response: `{ elements: Array<{ text, attrs, path }> }` |
+| `OutlineNode` | One node in the visible-content outline; discriminated by `kind` |
+| `LapDescribeVisibleResponse` | `/describe-visible` response: `{ outline: OutlineNode[] }` |
+| `LapContextResponse` | `/context` response: `{ context: AgentContext }` |
+| `AgentDocs` | Static app documentation: `{ purpose, overview?, cautions? }` |
+| `AgentContext` | Dynamic per-state context: `{ summary, hints?, cautions? }` |
+| `LapEndpointMap` | Map of short endpoint names to full LAP paths |
+| `LapPath` | Union of valid LAP path strings |
+| `LapRequest<P>` | Generic LAP request envelope parameterized on the path |
+| `LapResponse<P>` | Generic LAP response envelope parameterized on the path |
+| `LogKind` | `'proposed' \| 'dispatched' \| 'confirmed' \| 'rejected' \| 'blocked' \| 'read' \| 'error'` |
+| `LogEntry` | One log entry: `{ id, at, kind, variant?, intent?, detail? }` |
+| `HelloFrame` | Browser → server WS handshake frame (carries schema + docs) |
+| `RpcReplyFrame` | Browser → server RPC reply: `{ t: 'rpc-reply', id, result }` |
+| `RpcErrorFrame` | Browser → server RPC error: `{ t: 'rpc-error', id, code, detail? }` |
+| `ConfirmResolvedFrame` | Browser → server confirm outcome: `{ t: 'confirm-resolved', confirmId, outcome, stateAfter? }` |
+| `StateUpdateFrame` | Browser → server state push for `/wait`: `{ t: 'state-update', path, stateAfter }` |
+| `LogAppendFrame` | Browser → server log mirror: `{ t: 'log-append', entry }` |
+| `ClientFrame` | Union of all browser-sends-server WS frame types |
+| `RpcFrame` | Server → browser RPC dispatch: `{ t: 'rpc', id, tool, args }` |
+| `RevokedFrame` | Server → browser revocation notice: `{ t: 'revoked' }` |
+| `ServerFrame` | Union of all server-sends-browser WS frame types |
+| `AgentToken` | Opaque signed token string type alias |
+| `TokenPayload` | Decoded token payload: `{ tid, iat, exp, scope }` |
+| `TokenStatus` | `'awaiting-ws' \| 'awaiting-claude' \| 'active' \| 'pending-resume' \| 'revoked'` |
+| `TokenRecord` | Full token store record (see §5.5 of Agent Protocol doc) |
+| `AgentSession` | Session record as seen by the browser client |
+| `MintRequest` | `/agent/mint` request body |
+| `MintResponse` | `/agent/mint` response: `{ token, tid, wsUrl, lapUrl, expiresAt }` |
+| `ResumeListRequest` | `/agent/resume/list` request: `{ tids: string[] }` |
+| `ResumeListResponse` | `/agent/resume/list` response: `{ sessions: AgentSession[] }` |
+| `ResumeClaimRequest` | `/agent/resume/claim` request: `{ tid: string }` |
+| `ResumeClaimResponse` | `/agent/resume/claim` response: `{ token, wsUrl }` |
+| `RevokeRequest` | `/agent/revoke` request: `{ tid: string }` |
+| `RevokeResponse` | `/agent/revoke` response: `{ status: 'revoked' }` |
+| `SessionsResponse` | `/agent/sessions` response: `{ sessions: AgentSession[] }` |
+| `AuditEvent` | Union of audit event name strings (see §6 of Agent Protocol doc) |
+| `AuditEntry` | Structured audit log entry: `{ at, tid, uid, event, detail }` |
+
+---
+
+### `@llui/agent/server`
+
+Server library. Mount in your backend; no MCP SDK dependency.
+
+```typescript
+function createLluiAgentServer(opts: ServerOptions): AgentServerHandle
+```
+
+Returns an `AgentServerHandle` with:
+- `router: (req: Request) => Promise<Response | null>` — Web-standards request handler; mount under `/agent/`.
+- `wsUpgrade: (req, socket, head) => void` — Node.js `'upgrade'` event handler for `/agent/ws`.
+
+```typescript
+interface ServerOptions {
+  signingKey: string                    // ≥ 32 bytes; HMAC-SHA256 key
+  tokenStore?: TokenStore               // default: InMemoryTokenStore
+  identityResolver?: IdentityResolver   // default: null (anonymous)
+  auditSink?: AuditSink                 // default: consoleAuditSink
+  rateLimiter?: RateLimiter             // default: defaultRateLimiter
+  rateLimit?: { perToken?: string; perIdentity?: string }  // e.g. '30/minute'
+  corsOrigins?: string[]                // for session meta-endpoints
+  lapBasePath?: string                  // default: '/agent/lap/v1'
+  pairingGraceMs?: number               // default: 15 * 60 * 1000
+  slidingTtlMs?: number                 // default: 60 * 60 * 1000
+}
+
+interface AgentServerHandle {
+  router(req: Request): Promise<Response | null>
+  wsUpgrade(req: IncomingMessage, socket: Duplex, head: Buffer): void
+}
+```
+
+**Interfaces and reference implementations:**
+
+```typescript
+interface TokenStore {
+  create(record: TokenRecord): Promise<void>
+  findByTid(tid: string): Promise<TokenRecord | null>
+  listByIdentity(uid: string): Promise<TokenRecord[]>
+  touch(tid: string, now: number): Promise<void>
+  markPendingResume(tid: string, until: number): Promise<void>
+  markActive(tid: string, label: string, now: number): Promise<void>
+  revoke(tid: string): Promise<void>
+}
+
+class InMemoryTokenStore implements TokenStore { /* Map<tid, TokenRecord> + TTL sweep */ }
+
+interface IdentityResolver {
+  (req: Request): Promise<string | null>
+}
+
+function defaultIdentityResolver(opts: { cookieName: string; signingKey: string }): IdentityResolver
+function signCookieValue(value: string, key: string): string
+
+interface AuditSink {
+  write(entry: AuditEntry): void | Promise<void>
+}
+
+const consoleAuditSink: AuditSink  // JSON lines to stdout
+
+interface RateLimiter {
+  check(key: string, bucket: 'token' | 'identity'): Promise<{ allowed: boolean; retryAfterMs?: number }>
+}
+
+const defaultRateLimiter: RateLimiter  // in-memory token bucket; not suitable for multi-instance
+```
+
+---
+
+### `@llui/agent/client`
+
+Browser-side runtime. Zero server imports.
+
+```typescript
+function createAgentClient(opts: CreateAgentClientOpts): AgentClient
+```
+
+```typescript
+interface CreateAgentClientOpts {
+  handle: AppHandle            // from mountApp()
+  def: ComponentDef<any, any, any>
+  rootElement: HTMLElement
+  slices: {
+    getConnect: (s: unknown) => agentConnect.State
+    getConfirm: (s: unknown) => agentConfirm.State
+    wrapConnectMsg: (m: agentConnect.Msg) => unknown
+    wrapConfirmMsg: (m: agentConfirm.Msg) => unknown
+  }
+}
+
+interface AgentClient {
+  start(): void
+  stop(): void
+  effectHandler: AgentEffectHandler
+}
+```
+
+**Headless component namespaces** — each follows the `@llui/components` convention (`init`, `update`, `connect`):
+
+```typescript
+// agentConnect — session minting, resume, revoke, session list
+namespace agentConnect {
+  type State = { status, pendingToken, sessions, resumable, error }
+  type Msg = Mint | MintSucceeded | MintFailed | WsOpened | WsClosed | ResumeList | ...
+  function init(): State
+  function update(state: State, msg: Msg): [State, AgentEffect[]]
+  function connect<S>(get: (s: S) => State, send: (m: Msg) => void, opts: { mintUrl: string }): AgentConnectParts<S>
+}
+
+// agentConfirm — confirmation queue UI
+namespace agentConfirm {
+  type State = { pending: ConfirmEntry[] }
+  type Msg = Propose | Approve | Reject | ExpireStale
+  function init(): State
+  function update(state: State, msg: Msg): [State, AgentEffect[]]
+  function connect<S>(get: (s: S) => State, send: (m: Msg) => void): AgentConfirmParts<S>
+}
+
+// agentLog — ring-buffer log of agent actions
+namespace agentLog {
+  type State = { entries: LogEntry[]; filter: { kinds?: LogKind[]; since?: number } }
+  type Msg = Append | Clear | SetFilter
+  function init(): State
+  function update(state: State, msg: Msg): [State, never[]]
+  function connect<S>(get: (s: S) => State, send: (m: Msg) => void): AgentLogParts<S>
+}
+```
+
+**Effect type and handler:**
+
+```typescript
+type AgentEffect =
+  | { type: 'AgentMintRequest';  mintUrl: string }
+  | { type: 'AgentOpenWS';       token: string; wsUrl: string }
+  | { type: 'AgentCloseWS' }
+  | { type: 'AgentResumeCheck';  tids: string[] }
+  | { type: 'AgentResumeClaim';  tid: string }
+  | { type: 'AgentRevoke';       tid: string }
+  | { type: 'AgentSessionsList' }
+
+type AgentEffectHandler = (bag: { effect: AgentEffect; send: (msg: unknown) => void; signal: AbortSignal }) => void
+```
+
+Chain `client.effectHandler` as the `.else()` of your `handleEffects` chain:
+```typescript
+const onEffect = handleEffects<MyEffect | AgentEffect>().when('http', ...).else(client.effectHandler)
+```
+
+---
+
+### `llui-agent` (CLI / bridge)
+
+Not programmatically imported. Install once into Claude Desktop's `mcpServers` config:
+
+```json
+{
+  "mcpServers": {
+    "llui": { "command": "npx", "args": ["-y", "llui-agent"] }
+  }
+}
+```
+
+Registers MCP tools (`describe_app`, `get_state`, `list_actions`, `send_message`, etc.) and the `llui-connect` MCP prompt. Stateless about app logic; stores one `{ lapUrl, token }` binding per MCP session (per Claude chat). See `packages/agent-bridge/` for implementation.
+
+---
+
+### `@llui/vite-plugin` — Agent option
+
+```typescript
+interface LluiPluginOptions {
+  // ...existing options...
+
+  /**
+   * Emit agent metadata: __msgAnnotations, __bindingDescriptors, __schemaHash.
+   * Default: false. Set true in production builds that ship @llui/agent/client.
+   * Required for list_actions, describe_app, and /lap/v1/wait to work correctly.
+   */
+  agent?: boolean
+}
+```
+
+When `agent: true`, the compiler's second pass also:
+1. Extracts JSDoc annotations (`@intent`, `@alwaysAffordable`, `@requiresConfirm`, `@humanOnly`) from Msg union variants into `__msgAnnotations`.
+2. Emits `__bindingDescriptors` — a per-component table mapping event-handler call sites to their Msg variant + shape.
+3. Computes `__schemaHash` — a stable hash over `__msgSchema + __stateSchema + annotations` for cache invalidation.
+
+---
+
+### `@llui/dom` — Agent extensions
+
+**Compiler-emitted fields** (not authored by hand; injected by the vite plugin when `agent: true`):
+
+```typescript
+interface ComponentDef<S, M, E, D> {
+  // ...existing fields...
+
+  /** @internal — compiler-injected. Per-variant annotation records. */
+  __msgAnnotations?: Record<string, MessageAnnotations>
+
+  /** @internal — compiler-injected. Per-binding-site descriptor for list_actions. */
+  __bindingDescriptors?: Array<{ variant: string }>
+
+  /** @internal — compiler-injected. Stable hash for describe_app cache invalidation. */
+  __schemaHash?: string
+}
+```
+
+**Authoring fields** (declared by the developer on the component record):
+
+```typescript
+interface ComponentDef<S, M, E, D> {
+  // ...existing fields...
+
+  /**
+   * Msgs that Claude can always dispatch, independent of which bindings are
+   * currently rendered. Pure function of state; evaluated lazily on list_actions.
+   */
+  agentAffordances?: (state: S) => Array<{ type: string; [k: string]: unknown }>
+
+  /**
+   * Static documentation surfaced to Claude via describe_app. Cached for the
+   * pairing lifetime. If absent, docs: null is returned.
+   */
+  agentDocs?: AgentDocs
+
+  /**
+   * Dynamic per-state context surfaced to Claude via describe_context.
+   * Not cached; invoked fresh on every /lap/v1/context call.
+   */
+  agentContext?: (state: S) => AgentContext
+}
+```
+
+**New `AppHandle` method:**
+
+```typescript
+interface AppHandle {
+  dispose(): void
+  flush(): void
+  send(msg: unknown): void
+  getState(): unknown
+
+  /**
+   * Register a listener called synchronously after every update cycle completes.
+   * Receives the new state. Returns an unsubscribe function. Safe to call after
+   * dispose() (returns a no-op unsubscribe). Does NOT fire for the initial mount.
+   * Used by @llui/agent/client to emit state-update frames for /lap/v1/wait.
+   */
+  subscribe(listener: (state: unknown) => void): () => void
+}
+```
