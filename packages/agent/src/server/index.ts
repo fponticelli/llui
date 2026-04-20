@@ -1,2 +1,10 @@
-// Placeholder. Implementation lands in Plan 3.
-export {}
+export { createLluiAgentServer } from './factory.js'
+export type { ServerOptions, AgentServerHandle } from './options.js'
+export { InMemoryTokenStore } from './token-store.js'
+export type { TokenStore } from './token-store.js'
+export { defaultIdentityResolver } from './identity.js'
+export type { IdentityResolver } from './identity.js'
+export { consoleAuditSink } from './audit.js'
+export type { AuditSink } from './audit.js'
+export { defaultRateLimiter } from './rate-limit.js'
+export type { RateLimiter } from './rate-limit.js'
