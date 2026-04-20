@@ -5,6 +5,8 @@ import {
   agentConnect,
   agentConfirm,
   agentLog,
+  type AgentEffect,
+  type AgentClient,
 } from '@llui/agent/client'
 
 // ── State / Msg types ─────────────────────────────────────────────────────────
@@ -38,9 +40,17 @@ type Msg =
   | { type: 'agent'; sub: 'confirm'; msg: agentConfirm.AgentConfirmMsg }
   | { type: 'agent'; sub: 'log'; msg: agentLog.AgentLogMsg }
 
+// ── Late-bound client reference ───────────────────────────────────────────────
+// The component's onEffect closure needs a reference to the agent client,
+// but the client is created after mountApp(). Use a closure variable
+// populated once the client exists. First effects can only fire after the
+// first user action, by which time client is bound.
+
+let client: AgentClient | null = null
+
 // ── Component definition ──────────────────────────────────────────────────────
 
-const App = component<State, Msg, never>({
+const App = component<State, Msg, AgentEffect>({
   name: 'TestApp',
 
   init: () => [
@@ -75,30 +85,26 @@ const App = component<State, Msg, never>({
       case 'agent': {
         switch (m.sub) {
           case 'connect': {
-            const [next] = agentConnect.update(s.agent.connect, m.msg, {
+            const [next, effects] = agentConnect.update(s.agent.connect, m.msg, {
               mintUrl: '/agent/mint',
             })
-            // NOTE (v1 shortcut): effects from agentConnect.update are
-            // intentionally dropped here. Tests bypass the WS-open flow by
-            // calling client.effectHandler() directly via the
-            // __lluiE2eClient global. A follow-up will wire handleEffects
-            // properly via the component's onEffect.
-            return [{ ...s, agent: { ...s.agent, connect: next } }, []]
+            return [{ ...s, agent: { ...s.agent, connect: next } }, effects]
           }
           case 'confirm': {
-            const [next] = agentConfirm.update(s.agent.confirm, m.msg)
-            // AgentForwardMsg effects from 'Approve' are also dropped here.
-            // The test harness polls state and sends approved messages
-            // directly via page.evaluate.
-            return [{ ...s, agent: { ...s.agent, confirm: next } }, []]
+            const [next, effects] = agentConfirm.update(s.agent.confirm, m.msg)
+            return [{ ...s, agent: { ...s.agent, confirm: next } }, effects]
           }
           case 'log': {
-            const [next] = agentLog.update(s.agent.log, m.msg)
-            return [{ ...s, agent: { ...s.agent, log: next } }, []]
+            const [next, effects] = agentLog.update(s.agent.log, m.msg)
+            return [{ ...s, agent: { ...s.agent, log: next } }, effects]
           }
         }
       }
     }
+  },
+
+  onEffect: async ({ effect }) => {
+    if (client) await client.effectHandler(effect)
   },
 
   view: ({ send, text: t }) => [
@@ -187,7 +193,7 @@ AppWithMeta.__schemaHash = 'e2e-test-hash'
 const root = document.getElementById('app')!
 const handle = mountApp(root, App)
 
-const client = createAgentClient<State, Msg>({
+client = createAgentClient<State, Msg>({
   handle,
   def: AppWithMeta,
   rootElement: root,

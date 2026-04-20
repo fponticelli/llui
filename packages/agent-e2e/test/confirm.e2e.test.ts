@@ -9,10 +9,9 @@ import { mintAndBind, parseToolResult } from '../src/test-utils.js'
  * ConfirmEntry transitions from 'pending' → 'approved' | 'rejected'.
  * This means the send_message long-poll DOES resolve once the user acts.
  *
- * NOTE (v1 shortcut): host.ts drops AgentForwardMsg effects returned by
- * agentConfirm.update('Approve'), so approving a delete does NOT re-dispatch
- * the delete to the app. The delete won't show up in lastDelete. A follow-up
- * will wire the handleEffects chain so AgentForwardMsg is properly forwarded.
+ * host.ts routes AgentForwardMsg effects through onEffect → client.effectHandler,
+ * so an approved delete actually re-dispatches the delete Msg to the app and
+ * lastDelete reflects the approved payload.
  */
 
 let ctx: E2EContext
@@ -98,7 +97,7 @@ describe('e2e: confirm flow', () => {
     expect(['user-cancelled', 'rejected']).toContain(body.status)
   })
 
-  it('delete approved by the user resolves with confirmed (forward dropped due to v1 shortcut)', async () => {
+  it('delete approved by the user resolves with confirmed and re-dispatches the Msg', async () => {
     await mintAndBind(ctx)
 
     const sendPromise = ctx.mcpClient.callTool({
@@ -127,8 +126,21 @@ describe('e2e: confirm flow', () => {
     )
     expect(body.status).toBe('confirmed')
 
-    // NOTE: lastDelete is still null because AgentForwardMsg is dropped in host.ts (v1 shortcut).
-    // When the forward shortcut is removed, this will be '99'.
+    // AgentForwardMsg effect from the confirm reducer is routed via onEffect →
+    // client.effectHandler → handle.send, re-dispatching {type: 'delete', id: '99'}
+    // to the root update() which sets lastDelete = '99'.
+    await ctx.page.waitForFunction(
+      () => {
+        const h = (
+          window as unknown as {
+            __lluiE2eHandle: { getState: () => { lastDelete: string | null } }
+          }
+        )['__lluiE2eHandle']
+        return h.getState().lastDelete === '99'
+      },
+      undefined,
+      { timeout: 5_000 },
+    )
     const lastDelete = await ctx.page.evaluate(() => {
       const h = (
         window as unknown as {
@@ -137,6 +149,6 @@ describe('e2e: confirm flow', () => {
       )['__lluiE2eHandle']
       return h.getState().lastDelete
     })
-    expect(lastDelete).toBeNull()
+    expect(lastDelete).toBe('99')
   })
 })
