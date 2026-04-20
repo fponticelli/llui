@@ -321,3 +321,86 @@ describe('Relay WS frame types', () => {
     expect(frames).toHaveLength(2)
   })
 })
+
+import type {
+  AgentToken,
+  TokenPayload,
+  TokenRecord,
+  TokenStatus,
+  AgentSession,
+  MintResponse,
+  ResumeListResponse,
+  ResumeClaimResponse,
+  SessionsResponse,
+} from '../src/protocol.js'
+
+describe('Token + pairing types', () => {
+  it('token brand and payload', () => {
+    const t: AgentToken = 'llui-agent_payload.signature' as AgentToken
+    const p: TokenPayload = {
+      tid: '11111111-1111-1111-1111-111111111111',
+      iat: 0,
+      exp: 86400,
+      scope: 'agent',
+    }
+    expect(typeof t).toBe('string')
+    expect(p.scope).toBe('agent')
+  })
+
+  it('token record status values', () => {
+    const statuses: TokenStatus[] = [
+      'awaiting-ws',
+      'awaiting-claude',
+      'active',
+      'pending-resume',
+      'revoked',
+    ]
+    expect(statuses).toHaveLength(5)
+    const rec: TokenRecord = {
+      tid: 't1',
+      uid: 'u1',
+      status: 'active',
+      createdAt: 0,
+      lastSeenAt: 0,
+      pendingResumeUntil: null,
+      origin: 'https://app.example',
+      label: null,
+    }
+    expect(rec.status).toBe('active')
+  })
+
+  it('agent session', () => {
+    const s: AgentSession = {
+      tid: 't1',
+      label: 'Claude Desktop · Opus 4.7',
+      status: 'active',
+      createdAt: 0,
+      lastSeenAt: 0,
+    }
+    expect(s.status).toBe('active')
+  })
+
+  it('mint + resume response shapes', () => {
+    const mint: MintResponse = {
+      token: 'llui-agent_x.y' as AgentToken,
+      tid: 't1',
+      wsUrl: 'wss://app/agent/ws',
+      lapUrl: 'https://app/agent/lap/v1',
+      expiresAt: 86400,
+    }
+    const resumeList: ResumeListResponse = {
+      sessions: [{ tid: 't1', label: 'x', status: 'pending-resume', createdAt: 0, lastSeenAt: 0 }],
+    }
+    const resumeClaim: ResumeClaimResponse = {
+      token: 'llui-agent_new.sig' as AgentToken,
+      wsUrl: 'wss://app/agent/ws',
+    }
+    const sessions: SessionsResponse = {
+      sessions: [{ tid: 't1', label: 'x', status: 'active', createdAt: 0, lastSeenAt: 0 }],
+    }
+    expect(mint.lapUrl).toContain('/agent/lap/v1')
+    expect(resumeList.sessions).toHaveLength(1)
+    expect(resumeClaim.token).toBeDefined()
+    expect(sessions.sessions).toHaveLength(1)
+  })
+})

@@ -204,3 +204,63 @@ export type RpcFrame = { t: 'rpc'; id: string; tool: string; args: unknown }
 export type RevokedFrame = { t: 'revoked' }
 
 export type ServerFrame = RpcFrame | RevokedFrame
+
+// ── Tokens + pairing ─────────────────────────────────────────────
+
+declare const TokenBrand: unique symbol
+export type AgentToken = string & { readonly [TokenBrand]: 'AgentToken' }
+
+export type TokenPayload = {
+  tid: string
+  iat: number
+  exp: number
+  scope: 'agent'
+}
+
+export type TokenStatus =
+  | 'awaiting-ws'
+  | 'awaiting-claude'
+  | 'active'
+  | 'pending-resume'
+  | 'revoked'
+
+export type TokenRecord = {
+  tid: string
+  uid: string | null
+  status: TokenStatus
+  createdAt: number
+  lastSeenAt: number
+  pendingResumeUntil: number | null
+  origin: string
+  label: string | null
+}
+
+export type AgentSession = {
+  tid: string
+  label: string
+  status: 'active' | 'pending-resume' | 'revoked'
+  createdAt: number
+  lastSeenAt: number
+}
+
+// HTTP envelopes for the mint/resume/revoke/sessions endpoints (non-LAP).
+
+export type MintRequest = Record<string, never>
+export type MintResponse = {
+  token: AgentToken
+  tid: string
+  wsUrl: string
+  lapUrl: string
+  expiresAt: number
+}
+
+export type ResumeListRequest = { tids: string[] }
+export type ResumeListResponse = { sessions: AgentSession[] }
+
+export type ResumeClaimRequest = { tid: string }
+export type ResumeClaimResponse = { token: AgentToken; wsUrl: string }
+
+export type RevokeRequest = { tid: string }
+export type RevokeResponse = { status: 'revoked' }
+
+export type SessionsResponse = { sessions: AgentSession[] }
