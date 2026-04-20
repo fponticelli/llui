@@ -22,6 +22,18 @@ export interface ComponentDef<S, M, E = never, D = void> {
   __renderToString?: (state: S) => string
   /** @internal Compiler-injected */
   __msgSchema?: object
+  /** @internal Compiler-injected; keyed by Msg discriminant → annotations. See agent spec §5.1. */
+  __msgAnnotations?: Record<
+    string,
+    {
+      intent: string | null
+      alwaysAffordable: boolean
+      requiresConfirm: boolean
+      humanOnly: boolean
+    }
+  >
+  /** @internal Compiler-injected; 32-char hex SHA-256 of schemas + annotations. See agent spec §12.3. */
+  __schemaHash?: string
   /** @internal Compiler-injected — maps top-level state field → dirty-mask bit(s) */
   __maskLegend?: Record<string, number>
   /** @internal Compiler-injected — source-file location of the component() call */
@@ -88,6 +100,8 @@ export interface AnyComponentDef {
   __dirty?: unknown
   __renderToString?: unknown
   __msgSchema?: unknown
+  __msgAnnotations?: unknown
+  __schemaHash?: unknown
   __maskLegend?: unknown
   __componentMeta?: unknown
   __stateSchema?: unknown
@@ -123,6 +137,8 @@ export interface LazyDef<D = void> {
   __dirty?: unknown
   __renderToString?: unknown
   __msgSchema?: unknown
+  __msgAnnotations?: unknown
+  __schemaHash?: unknown
   __maskLegend?: unknown
   __componentMeta?: unknown
   __stateSchema?: unknown
