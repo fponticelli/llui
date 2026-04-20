@@ -147,3 +147,60 @@ export type LapEndpointMap = {
 export type LapPath = keyof LapEndpointMap
 export type LapRequest<P extends LapPath> = LapEndpointMap[P]['req']
 export type LapResponse<P extends LapPath> = LapEndpointMap[P]['res']
+
+// ── Relay WS frames ──────────────────────────────────────────────
+// Bidirectional framing between the LLui runtime in the browser and
+// the @llui/agent server over /agent/ws. See spec §10.5.
+
+export type LogKind =
+  | 'proposed'
+  | 'dispatched'
+  | 'confirmed'
+  | 'rejected'
+  | 'blocked'
+  | 'read'
+  | 'error'
+
+export type LogEntry = {
+  id: string
+  at: number
+  kind: LogKind
+  variant?: string
+  intent?: string
+  detail?: string
+}
+
+export type HelloFrame = {
+  t: 'hello'
+  appName: string
+  appVersion: string
+  msgSchema: object
+  stateSchema: object
+  affordancesSample: object[]
+  docs: AgentDocs | null
+  schemaHash: string
+}
+
+export type RpcReplyFrame = { t: 'rpc-reply'; id: string; result: unknown }
+export type RpcErrorFrame = { t: 'rpc-error'; id: string; code: string; detail?: string }
+export type ConfirmResolvedFrame = {
+  t: 'confirm-resolved'
+  confirmId: string
+  outcome: 'confirmed' | 'user-cancelled'
+  stateAfter?: unknown
+}
+export type StateUpdateFrame = { t: 'state-update'; path: string; stateAfter: unknown }
+export type LogAppendFrame = { t: 'log-append'; entry: LogEntry }
+
+export type ClientFrame =
+  | HelloFrame
+  | RpcReplyFrame
+  | RpcErrorFrame
+  | ConfirmResolvedFrame
+  | StateUpdateFrame
+  | LogAppendFrame
+
+export type RpcFrame = { t: 'rpc'; id: string; tool: string; args: unknown }
+export type RevokedFrame = { t: 'revoked' }
+
+export type ServerFrame = RpcFrame | RevokedFrame

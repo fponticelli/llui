@@ -218,3 +218,106 @@ describe('LapDescribeResponse — docs block + describe_context read surface', (
     expect(sample.docs).toBeNull()
   })
 })
+
+import type {
+  ClientFrame,
+  ServerFrame,
+  HelloFrame,
+  RpcReplyFrame,
+  RpcErrorFrame,
+  ConfirmResolvedFrame,
+  StateUpdateFrame,
+  LogAppendFrame,
+  RpcFrame,
+  RevokedFrame,
+} from '../src/protocol.js'
+
+describe('Relay WS frame types', () => {
+  it('hello frame', () => {
+    const f: HelloFrame = {
+      t: 'hello',
+      appName: 'App',
+      appVersion: '1.0',
+      msgSchema: { inc: { payload: {}, annotations: { intent: null, alwaysAffordable: false, requiresConfirm: false, humanOnly: false } } },
+      stateSchema: { type: 'object' },
+      affordancesSample: [{ type: 'inc' }],
+      docs: null,
+      schemaHash: 'h1',
+    }
+    expect(f.t).toBe('hello')
+  })
+
+  it('hello frame with populated docs', () => {
+    const f: HelloFrame = {
+      t: 'hello',
+      appName: 'App',
+      appVersion: '1.0',
+      msgSchema: {},
+      stateSchema: { type: 'object' },
+      affordancesSample: [],
+      docs: { purpose: 'Demo app', overview: 'Counter', cautions: ['Don\u2019t reset mid-flow'] },
+      schemaHash: 'h2',
+    }
+    expect(f.docs?.purpose).toBe('Demo app')
+  })
+
+  it('rpc reply + error frames', () => {
+    const ok: RpcReplyFrame = { t: 'rpc-reply', id: 'r1', result: { state: {} } }
+    const err: RpcErrorFrame = { t: 'rpc-error', id: 'r1', code: 'invalid', detail: 'bad path' }
+    expect(ok.t).toBe('rpc-reply')
+    expect(err.t).toBe('rpc-error')
+  })
+
+  it('confirm-resolved frame', () => {
+    const f: ConfirmResolvedFrame = {
+      t: 'confirm-resolved',
+      confirmId: 'c1',
+      outcome: 'confirmed',
+      stateAfter: {},
+    }
+    expect(f.outcome).toBe('confirmed')
+  })
+
+  it('state-update frame', () => {
+    const f: StateUpdateFrame = { t: 'state-update', path: '/count', stateAfter: { count: 1 } }
+    expect(f.t).toBe('state-update')
+  })
+
+  it('log-append frame', () => {
+    const f: LogAppendFrame = {
+      t: 'log-append',
+      entry: { id: 'e1', at: 0, kind: 'dispatched', variant: 'inc', intent: 'Increment' },
+    }
+    expect(f.entry.kind).toBe('dispatched')
+  })
+
+  it('rpc (server→client) frame', () => {
+    const f: RpcFrame = { t: 'rpc', id: 'r1', tool: 'get_state', args: { path: null } }
+    expect(f.t).toBe('rpc')
+  })
+
+  it('revoked frame', () => {
+    const f: RevokedFrame = { t: 'revoked' }
+    expect(f.t).toBe('revoked')
+  })
+
+  it('ClientFrame union is inhabited by all expected variants', () => {
+    const frames: ClientFrame[] = [
+      { t: 'hello', appName: 'x', appVersion: '1', msgSchema: {}, stateSchema: {}, affordancesSample: [], docs: null, schemaHash: 'h' },
+      { t: 'rpc-reply', id: 'r', result: null },
+      { t: 'rpc-error', id: 'r', code: 'invalid' },
+      { t: 'confirm-resolved', confirmId: 'c', outcome: 'user-cancelled' },
+      { t: 'state-update', path: '/', stateAfter: null },
+      { t: 'log-append', entry: { id: 'e', at: 0, kind: 'read' } },
+    ]
+    expect(frames).toHaveLength(6)
+  })
+
+  it('ServerFrame union is inhabited', () => {
+    const frames: ServerFrame[] = [
+      { t: 'rpc', id: 'r', tool: 'get_state', args: {} },
+      { t: 'revoked' },
+    ]
+    expect(frames).toHaveLength(2)
+  })
+})
