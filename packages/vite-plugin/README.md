@@ -23,8 +23,14 @@ export default defineConfig({
 ```ts
 llui({
   mcpPort: 5200, // MCP debug server port (default: 5200, false to disable)
+  agent: true,   // Emit LLui Agent metadata in prod builds (default: false)
 })
 ```
+
+- `mcpPort` — MCP debug bridge port. Default `5200`. Set to `false` to disable.
+- `agent` — Opt into emitting schemas + binding descriptors in prod builds.
+  Required when the app is deployed with `@llui/agent/client`. Default `false`
+  (metadata is dev-only to keep production bundle size minimal).
 
 ## What It Does
 
