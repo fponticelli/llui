@@ -17,11 +17,19 @@ export async function handleSessions(req: Request, deps: SessionsDeps): Promise<
   }
   const records = await deps.tokenStore.listByIdentity(uid)
   const sessions: AgentSession[] = records
-    .filter((r) => r.status === 'active' || r.status === 'pending-resume')
+    .filter(
+      (r) =>
+        r.status === 'active' ||
+        r.status === 'pending-resume' ||
+        r.status === 'awaiting-ws' ||
+        r.status === 'awaiting-claude',
+    )
     .map((r) => ({
       tid: r.tid,
       label: r.label ?? '(unknown)',
-      status: r.status as 'active' | 'pending-resume',
+      status: (r.status === 'awaiting-ws' || r.status === 'awaiting-claude'
+        ? 'active'
+        : r.status) as 'active' | 'pending-resume',
       createdAt: r.createdAt,
       lastSeenAt: r.lastSeenAt,
     }))

@@ -5,7 +5,7 @@ import type { TokenRecord } from '../../src/protocol.js'
 
 let store: InMemoryTokenStore
 let log: unknown[]
-const audit = { write: (e: unknown) => log.push(e) }
+const audit = { write: (e: unknown) => { log.push(e) } }
 
 beforeEach(() => { store = new InMemoryTokenStore(); log = [] })
 
