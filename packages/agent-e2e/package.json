@@ -1,0 +1,25 @@
+{
+  "name": "@llui/agent-e2e",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "vitest run",
+    "check": "tsc --noEmit",
+    "lint": "eslint src test"
+  },
+  "dependencies": {
+    "@llui/agent": "workspace:*",
+    "@llui/dom": "workspace:*",
+    "@llui/vite-plugin": "workspace:*",
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "@playwright/test": "^1.49.0",
+    "esbuild": "^0.24.0",
+    "llui-agent": "workspace:*",
+    "ws": "^8.18.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "@types/ws": "^8.5.13"
+  }
+}
