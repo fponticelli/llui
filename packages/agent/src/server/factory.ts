@@ -3,14 +3,18 @@ import { InMemoryTokenStore } from './token-store.js'
 import { consoleAuditSink } from './audit.js'
 import { defaultRateLimiter } from './rate-limit.js'
 import { createHttpRouter } from './http/router.js'
+import { createLapRouter } from './lap/router.js'
+import { WsPairingRegistry } from './ws/pairing-registry.js'
+import { createWsUpgradeHandler } from './ws/upgrade.js'
 
 const ANONYMOUS_RESOLVER = async () => null
 
 /**
- * Compose the server from its (defaulted) parts. Returns a handle whose
- * `router` matches any /agent/* request. `wsUpgrade` lands in Plan 5.
+ * Compose the server from its (defaulted) parts. Returns a handle with a
+ * `router` that dispatches `/agent/lap/v1/*` (LAP, checked first) then
+ * `/agent/*` (HTTP management), and a `wsUpgrade` for `/agent/ws`.
  *
- * Spec §10.1.
+ * Spec §10.1, §10.4.
  */
 export function createLluiAgentServer(opts: ServerOptions): AgentServerHandle {
   if (!opts.signingKey) {
@@ -23,7 +27,9 @@ export function createLluiAgentServer(opts: ServerOptions): AgentServerHandle {
   const rateLimiter = opts.rateLimiter ?? defaultRateLimiter({ perBucket: '30/minute' })
   const lapBasePath = opts.lapBasePath ?? '/agent/lap/v1'
 
-  const router = createHttpRouter({
+  const registry = new WsPairingRegistry()
+
+  const httpRouter = createHttpRouter({
     signingKey: opts.signingKey,
     tokenStore,
     identityResolver,
@@ -31,10 +37,27 @@ export function createLluiAgentServer(opts: ServerOptions): AgentServerHandle {
     lapBasePath,
   })
 
-  // Silence unused-until-Plan-5 warnings:
-  void rateLimiter
+  const lapRouter = createLapRouter({
+    signingKey: opts.signingKey,
+    tokenStore,
+    registry,
+    auditSink,
+  }, lapBasePath)
 
-  return {
-    router,
+  const router: AgentServerHandle['router'] = async (req) => {
+    const lapRes = await lapRouter(req)
+    if (lapRes) return lapRes
+    return httpRouter(req)
   }
+
+  const wsUpgrade = createWsUpgradeHandler({
+    signingKey: opts.signingKey,
+    tokenStore,
+    registry,
+    auditSink,
+  })
+
+  void rateLimiter  // applied inside route handlers in future polish work
+
+  return { router, wsUpgrade }
 }

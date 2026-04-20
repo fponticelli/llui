@@ -1,3 +1,5 @@
+import type { IncomingMessage } from 'node:http'
+import type { Duplex } from 'node:stream'
 import type { TokenStore } from './token-store.js'
 import type { IdentityResolver } from './identity.js'
 import type { AuditSink } from './audit.js'
@@ -40,8 +42,9 @@ export type ServerOptions = {
 /**
  * Value returned by `createLluiAgentServer`. `router` matches any
  * `/agent/*` request and returns a Response (or null to fall through).
- * `wsUpgrade` lands in Plan 5.
+ * `wsUpgrade` handles Node HTTP upgrade events for `/agent/ws`.
  */
 export type AgentServerHandle = {
   router: (req: Request) => Promise<Response | null>
+  wsUpgrade: (req: IncomingMessage, socket: Duplex, head: Buffer) => void
 }
