@@ -9,6 +9,7 @@ import { TOOLS, TOOL_TO_LAP_PATH } from './tools.js'
 import { BindingMap } from './binding.js'
 import { forwardLap } from './forwarder.js'
 import type { LapDescribeResponse } from '@llui/agent/protocol'
+import { registerPrompts } from './prompts.js'
 
 export type BridgeDeps = {
   /** Injectable for tests. */
@@ -88,6 +89,8 @@ export function createBridgeServer(deps: BridgeDeps): McpServer {
 
     return okResult(res.body)
   })
+
+  registerPrompts(server)
 
   return server
 }
