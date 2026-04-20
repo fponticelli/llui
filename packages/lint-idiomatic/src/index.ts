@@ -1,4 +1,7 @@
 import ts from 'typescript'
+import { checkAgentMissingIntent } from './rules/agent-intent.js'
+import { checkAgentExclusiveTags } from './rules/agent-exclusive-tags.js'
+import { checkAgentHandlerPattern } from './rules/agent-handler-pattern.js'
 
 export interface LintViolation {
   rule: string
@@ -46,6 +49,9 @@ export const RULE_NAMES = [
   'accessor-side-effect',
   'view-bag-import',
   'spread-in-children',
+  'agent-missing-intent',
+  'agent-exclusive-annotations',
+  'agent-nonextractable-handler',
 ] as const
 
 export type RuleName = (typeof RULE_NAMES)[number]
@@ -83,12 +89,15 @@ export function lintIdiomatic(
   checkAccessorSideEffect(sf, filename, violations)
   checkViewBagImport(sf, filename, violations)
   checkSpreadInChildren(sf, filename, violations)
+  checkAgentMissingIntent(sf, filename, violations, source)
+  checkAgentExclusiveTags(sf, filename, violations, source)
+  checkAgentHandlerPattern(sf, filename, violations)
 
   const filtered = exclude.size > 0 ? violations.filter((v) => !exclude.has(v.rule)) : violations
 
   // Score: unique violated rule categories (post-filter)
   const violatedRules = new Set(filtered.map((v) => v.rule))
-  const score = Math.max(0, 17 - violatedRules.size)
+  const score = Math.max(0, RULE_NAMES.length - violatedRules.size)
 
   return { violations: filtered, score }
 }

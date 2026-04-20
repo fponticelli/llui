@@ -19,7 +19,7 @@ describe('lintIdiomatic', () => {
     `
     const result = lintIdiomatic(source)
     expect(result.violations.some((v) => v.rule === 'state-mutation')).toBe(true)
-    expect(result.score).toBeLessThan(17)
+    expect(result.score).toBeLessThan(20)
   })
 
   it('detects state mutation via push', () => {
@@ -159,7 +159,14 @@ describe('lintIdiomatic', () => {
     const source = `
       import { component, div, button } from '@llui/dom'
       type State = { count: number }
-      type Msg = { type: 'inc' } | { type: 'dec' }
+      /**
+       * @intent("Increment the counter")
+       */
+      type Msg =
+        /** @intent("Increment") */
+        | { type: 'inc' }
+        /** @intent("Decrement") */
+        | { type: 'dec' }
       const C = component<State, Msg, never>({
         name: 'C',
         init: () => [{ count: 0 }, []],
@@ -178,7 +185,7 @@ describe('lintIdiomatic', () => {
       })
     `
     const result = lintIdiomatic(source)
-    expect(result.score).toBe(17)
+    expect(result.score).toBe(20)
   })
 
   it('score decreases by unique violated rule categories', () => {
@@ -205,7 +212,7 @@ describe('lintIdiomatic', () => {
     // Should have at least state-mutation, map-on-state-array, and form-boilerplate
     const violatedRules = new Set(result.violations.map((v) => v.rule))
     expect(violatedRules.size).toBeGreaterThanOrEqual(3)
-    expect(result.score).toBe(17 - violatedRules.size)
+    expect(result.score).toBe(20 - violatedRules.size)
   })
 
   it('includes correct file and position info', () => {
