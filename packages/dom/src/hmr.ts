@@ -158,8 +158,23 @@ function makeReplacementHandle<S, M, E>(
   entry: HmrEntry,
   typedInst: ComponentInstance<S, M, E>,
 ): AppHandle {
+  const listeners = new Set<(s: unknown) => void>()
+  typedInst._onCommit = (state: unknown) => {
+    for (const l of Array.from(listeners)) {
+      try {
+        l(state)
+      } catch (err) {
+        console.error('[llui] listener threw:', err)
+      }
+    }
+  }
+  let disposed = false
   return {
     dispose() {
+      if (disposed) return
+      disposed = true
+      listeners.clear()
+      typedInst._onCommit = undefined
       unregisterForHmr(name, entry.inst)
       entry.inst.abortController.abort()
       unregisterInstance(entry.inst)
@@ -184,6 +199,11 @@ function makeReplacementHandle<S, M, E>(
     },
     getState() {
       return typedInst.state
+    },
+    subscribe(listener: (state: unknown) => void) {
+      if (disposed) return () => {}
+      listeners.add(listener)
+      return () => listeners.delete(listener)
     },
   }
 }

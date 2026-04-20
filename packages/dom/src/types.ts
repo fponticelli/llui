@@ -214,6 +214,13 @@ export interface AppHandle {
    * call site.
    */
   getState(): unknown
+  /**
+   * Register a listener called synchronously after every update cycle
+   * completes. The listener receives the new state. Returns an
+   * unsubscribe function. Safe after dispose (no-op; returns a no-op
+   * unsubscribe). See agent spec §10.5 (state-update frames).
+   */
+  subscribe(listener: (state: unknown) => void): () => void
 }
 
 // ── Lifetime ─────────────────────────────────────────────────────────

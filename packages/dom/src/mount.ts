@@ -179,11 +179,24 @@ export function mountApp<S, M, E, D>(
   }
   dispatchInitialEffects(inst)
   let disposed = false
+  const listeners = new Set<(s: unknown) => void>()
+
+  inst._onCommit = (state: unknown) => {
+    for (const l of Array.from(listeners)) {
+      try {
+        l(state)
+      } catch (err) {
+        console.error('[llui] listener threw:', err)
+      }
+    }
+  }
 
   return {
     dispose() {
       if (disposed) return
       disposed = true
+      listeners.clear()
+      inst._onCommit = undefined
       if (hmrModule && def.name) hmrModule.unregisterForHmr(def.name, inst)
       inst.abortController.abort()
       unregisterInstance(inst)
@@ -210,6 +223,11 @@ export function mountApp<S, M, E, D>(
         )
       }
       return inst.state
+    },
+    subscribe(listener: (state: unknown) => void) {
+      if (disposed) return () => {}
+      listeners.add(listener)
+      return () => listeners.delete(listener)
     },
   }
 }
@@ -371,11 +389,24 @@ export function mountAtAnchor<S, M, E, D>(
   }
   dispatchInitialEffects(inst)
   let disposed = false
+  const listeners = new Set<(s: unknown) => void>()
+
+  inst._onCommit = (state: unknown) => {
+    for (const l of Array.from(listeners)) {
+      try {
+        l(state)
+      } catch (err) {
+        console.error('[llui] listener threw:', err)
+      }
+    }
+  }
 
   return {
     dispose() {
       if (disposed) return
       disposed = true
+      listeners.clear()
+      inst._onCommit = undefined
       if (hmrModule && def.name) hmrModule.unregisterForHmr(def.name, inst)
       inst.abortController.abort()
       unregisterInstance(inst)
@@ -397,6 +428,11 @@ export function mountAtAnchor<S, M, E, D>(
         throw new Error('[LLui] AppHandle.getState() called after dispose — handle is dead.')
       }
       return inst.state
+    },
+    subscribe(listener: (state: unknown) => void) {
+      if (disposed) return () => {}
+      listeners.add(listener)
+      return () => listeners.delete(listener)
     },
   }
 }
@@ -482,11 +518,24 @@ export function hydrateAtAnchor<S, M, E, D = void>(
   }
   dispatchInitialEffects(inst)
   let disposed = false
+  const listeners = new Set<(s: unknown) => void>()
+
+  inst._onCommit = (state: unknown) => {
+    for (const l of Array.from(listeners)) {
+      try {
+        l(state)
+      } catch (err) {
+        console.error('[llui] listener threw:', err)
+      }
+    }
+  }
 
   return {
     dispose() {
       if (disposed) return
       disposed = true
+      listeners.clear()
+      inst._onCommit = undefined
       if (hmrModule && def.name) hmrModule.unregisterForHmr(def.name, inst)
       inst.abortController.abort()
       unregisterInstance(inst)
@@ -508,6 +557,11 @@ export function hydrateAtAnchor<S, M, E, D = void>(
         throw new Error('[LLui] AppHandle.getState() called after dispose — handle is dead.')
       }
       return inst.state
+    },
+    subscribe(listener: (state: unknown) => void) {
+      if (disposed) return () => {}
+      listeners.add(listener)
+      return () => listeners.delete(listener)
     },
   }
 }
@@ -579,11 +633,24 @@ export function hydrateApp<S, M, E, D = void>(
 
   registerInstance(inst)
   let disposed = false
+  const listeners = new Set<(s: unknown) => void>()
+
+  inst._onCommit = (state: unknown) => {
+    for (const l of Array.from(listeners)) {
+      try {
+        l(state)
+      } catch (err) {
+        console.error('[llui] listener threw:', err)
+      }
+    }
+  }
 
   return {
     dispose() {
       if (disposed) return
       disposed = true
+      listeners.clear()
+      inst._onCommit = undefined
       inst.abortController.abort()
       unregisterInstance(inst)
       // Tag the root scope so the disposer log reports app-level
@@ -605,6 +672,11 @@ export function hydrateApp<S, M, E, D = void>(
         throw new Error('[LLui] AppHandle.getState() called after dispose — handle is dead.')
       }
       return inst.state
+    },
+    subscribe(listener: (state: unknown) => void) {
+      if (disposed) return () => {}
+      listeners.add(listener)
+      return () => listeners.delete(listener)
     },
   }
 }

@@ -81,6 +81,12 @@ export interface ComponentInstance<S = unknown, M = unknown, E = unknown> {
    *  registry consulted by the effect-dispatch wrapper to short-circuit
    *  matching effects. Consumed by the `llui_mock_effect` MCP tool. */
   _effectMocks?: MockRegistry
+  /**
+   * @internal — set by mountApp/mountAtAnchor/hydrateApp/hydrateAtAnchor
+   * to fire AppHandle.subscribe listeners after every update cycle.
+   * Undefined until the first subscriber registers.
+   */
+  _onCommit?: (state: unknown) => void
 }
 
 export function createComponentInstance<S, M, E, D = void>(
@@ -202,6 +208,7 @@ function processMessages<S, M, E>(inst: ComponentInstance<S, M, E>): void {
       queue.length = 0
       const [newState, effects] = handler(inst as ComponentInstance, msg)
       inst.state = newState
+      inst._onCommit?.(newState as unknown)
       if (import.meta.env?.DEV) {
         inst.lastDirtyMask = FULL_MASK
         inst.lastEffects = effects
@@ -237,6 +244,7 @@ function processMessages<S, M, E>(inst: ComponentInstance<S, M, E>): void {
   queue.length = 0
 
   inst.state = state
+  inst._onCommit?.(state as unknown)
   // Dev-only bookkeeping — tests read lastDirtyMask/lastEffects, prod
   // doesn't. Gating here keeps two writes out of the prod hot path.
   if (import.meta.env?.DEV) {
@@ -311,6 +319,7 @@ export function _handleMsg(
     msg,
   )
   inst.state = s
+  inst._onCommit?.(s)
 
   if (method >= 0) {
     const bl = inst.structuralBlocks
