@@ -160,6 +160,40 @@ describe('createAgentClient', () => {
     expect(hello.appVersion).toBe('1.0.0')
   })
 
+  it('AgentOpenWS effect dispatches WsOpened msg via handle.send on open event', async () => {
+    const handle = makeHandle({ connect: {}, confirm: { pending: [] } })
+    const client = createAgentClient(makeOpts(handle, () => ({ pending: [] })))
+
+    const effect: AgentEffect = {
+      type: 'AgentOpenWS',
+      token: 'tok456' as AgentToken,
+      wsUrl: 'ws://localhost:9000/agent/ws',
+    }
+    await client.effectHandler(effect)
+
+    // Simulate open event
+    lastFakeWs!.emit('open')
+
+    expect(handle.send).toHaveBeenCalledWith({ type: 'AgentMsg', inner: { type: 'WsOpened' } })
+  })
+
+  it('AgentOpenWS effect dispatches WsClosed msg via handle.send on close event', async () => {
+    const handle = makeHandle({ connect: {}, confirm: { pending: [] } })
+    const client = createAgentClient(makeOpts(handle, () => ({ pending: [] })))
+
+    const effect: AgentEffect = {
+      type: 'AgentOpenWS',
+      token: 'tok789' as AgentToken,
+      wsUrl: 'ws://localhost:9000/agent/ws',
+    }
+    await client.effectHandler(effect)
+
+    lastFakeWs!.emit('open')
+    lastFakeWs!.emit('close')
+
+    expect(handle.send).toHaveBeenCalledWith({ type: 'AgentMsg', inner: { type: 'WsClosed' } })
+  })
+
   it('AgentForwardMsg effect dispatches payload via handle.send', async () => {
     const handle = makeHandle({ connect: {}, confirm: { pending: [] } })
     const client = createAgentClient(makeOpts(handle, () => ({ pending: [] })))

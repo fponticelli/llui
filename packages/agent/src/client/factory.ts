@@ -85,6 +85,12 @@ export function createAgentClient<State, Msg>(
       if (ws) ws.close()
       ws = new WebSocket(`${wsUrl}?token=${encodeURIComponent(token)}`)
       wsClient = attachWsClient(ws as unknown as WsLike, rpcHost, helloBuilder)
+      ws.addEventListener('open', () => {
+        opts.handle.send(opts.slices.wrapConnectMsg({ type: 'WsOpened' }))
+      })
+      ws.addEventListener('close', () => {
+        opts.handle.send(opts.slices.wrapConnectMsg({ type: 'WsClosed' }))
+      })
     },
     closeWs: () => {
       wsClient?.close()
