@@ -25,10 +25,12 @@ describe('LAP types — sample value conformance', () => {
       messages: {
         inc: {
           payloadSchema: { type: 'object' },
-          intent: 'Increment',
-          alwaysAffordable: false,
-          requiresConfirm: false,
-          humanOnly: false,
+          annotations: {
+            intent: 'Increment',
+            alwaysAffordable: false,
+            requiresConfirm: false,
+            humanOnly: false,
+          },
         },
       },
       docs: null,

@@ -30,10 +30,7 @@ export type MessageAnnotations = {
 
 export type MessageSchemaEntry = {
   payloadSchema: object
-  intent: string | null
-  alwaysAffordable: boolean
-  requiresConfirm: boolean
-  humanOnly: boolean
+  annotations: MessageAnnotations
 }
 
 export type LapDescribeResponse = {
@@ -45,7 +42,7 @@ export type LapDescribeResponse = {
   conventions: {
     dispatchModel: 'TEA'
     confirmationModel: 'runtime-mediated'
-    readSurfaces: Array<'state' | 'query_dom' | 'describe_visible_content' | 'describe_context'>
+    readSurfaces: readonly ('state' | 'query_dom' | 'describe_visible_content' | 'describe_context')[]
   }
   schemaHash: string
 }
