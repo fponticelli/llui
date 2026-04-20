@@ -77,6 +77,14 @@ export interface LluiPluginOptions {
    * template-clone to `elSplit`. Off by default.
    */
   verbose?: boolean
+
+  /**
+   * When true, include schemas and binding descriptors in prod builds so
+   * the @llui/agent runtime has metadata to advertise over its WS hello
+   * frame. Default false — matches prior behavior (metadata is dev-only).
+   * See agent spec §7.4 and Plan 3b.
+   */
+  agent?: boolean
 }
 
 /**
@@ -130,6 +138,7 @@ export default function llui(options: LluiPluginOptions = {}): Plugin {
   const failOnWarning = options.failOnWarning === true
   const disabledWarnings = new Set<string>(options.disabledWarnings ?? [])
   const verbose = options.verbose === true
+  const agent = options.agent ?? false
 
   // File-based handshake with @llui/mcp. The MCP server writes a marker
   // file when its bridge starts; we watch it and send a Vite HMR custom
@@ -393,7 +402,7 @@ export default function llui(options: LluiPluginOptions = {}): Plugin {
         }
       }
 
-      const result = transformLlui(code, id, devMode, false, mcpPort, verbose)
+      const result = transformLlui(code, id, devMode, agent, mcpPort, verbose)
       if (!result) return undefined
 
       // Apply per-statement edits via MagicString for accurate source maps.
