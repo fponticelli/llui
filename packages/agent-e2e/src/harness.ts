@@ -65,6 +65,10 @@ export async function setup(): Promise<E2EContext> {
   //            /app.js   → the esbuild bundle
   //            /agent/*  → delegated to the LLui agent router
   //            upgrade   → WS pairing
+  //
+  // ephemeralPort is mutated after server.listen() resolves so the request
+  // handler (a closure) always sees the real port when it constructs Web Requests.
+  let ephemeralPort = 0
   const server = createServer(async (req, res) => {
     const url = req.url ?? '/'
 
@@ -86,10 +90,12 @@ export async function setup(): Promise<E2EContext> {
     if (url.startsWith('/agent/')) {
       // Convert Node's IncomingMessage to a Web Request for the agent router.
       // Buffer is not BodyInit in the DOM types, so convert to Uint8Array first.
+      // Include the ephemeral port so that mint() produces correct lapUrl/wsUrl
+      // values (the server derives its origin from the incoming request URL).
       const rawBody =
         req.method && !['GET', 'HEAD'].includes(req.method) ? await readBody(req) : undefined
       const body: BodyInit | undefined = rawBody ? new Uint8Array(rawBody) : undefined
-      const webReq = new Request(`http://localhost${url}`, {
+      const webReq = new Request(`http://localhost:${ephemeralPort}${url}`, {
         method: req.method ?? 'GET',
         headers: nodeHeadersToRecord(req),
         body,
@@ -114,6 +120,7 @@ export async function setup(): Promise<E2EContext> {
 
   await new Promise<void>((resolve) => server.listen(0, resolve))
   const httpPort = (server.address() as AddressInfo).port
+  ephemeralPort = httpPort
 
   // 4. Create an in-process MCP bridge (createBridgeServer) paired with an
   //    MCP Client via InMemoryTransport so tests can issue tool calls without
