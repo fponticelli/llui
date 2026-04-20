@@ -187,6 +187,13 @@ export function agentPanel(send: Send<Msg>): HTMLElement {
               'data-agent-snippet': '',
               style: 'display: none',
             }, [text((s: State) => s.agent.connect.pendingToken?.connectSnippet ?? '')]),
+            p({
+              style: 'margin: 8px 0 0; font-size: 11px; color: #94a3b8; line-height: 1.4',
+            }, [
+              text(
+                'Tokens are signed with a per-session key — restarting the dev server invalidates them. Set AGENT_SIGNING_KEY for persistence.',
+              ),
+            ]),
           ],
           active: () => [
             div({
