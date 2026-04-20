@@ -4,6 +4,7 @@ import { extractMsgSchema, extractEffectSchema } from './msg-schema.js'
 import { extractMsgAnnotations, type MessageAnnotations } from './msg-annotations.js'
 import { extractStateSchema, type StateType } from './state-schema.js'
 import { computeSchemaHash } from './schema-hash.js'
+import { extractBindingDescriptors, type BindingDescriptor } from './binding-descriptors.js'
 
 function createMaskLiteral(f: ts.NodeFactory, mask: number): ts.Expression {
   if (mask >= 0) return f.createNumericLiteral(mask)
@@ -355,6 +356,8 @@ export function transformLlui(
       const msgAnnotations = extractMsgAnnotations(source)
       const stateSchema = extractStateSchema(source)
 
+      const bindingDescriptors = extractBindingDescriptors(source)
+
       if (devMode) {
         if (msgSchema) {
           result = injectMsgSchema(result ?? node, msgSchema, f)
@@ -368,6 +371,9 @@ export function transformLlui(
         const effectSchema = extractEffectSchema(source)
         if (effectSchema) {
           result = injectEffectSchema(result ?? node, effectSchema, f)
+        }
+        if (bindingDescriptors.length > 0) {
+          result = injectBindingDescriptors(result ?? node, bindingDescriptors, f)
         }
         result = injectComponentMeta(result ?? node, node, sourceFile, _filename, f)
       }
@@ -3377,6 +3383,58 @@ function injectEffectSchema(
     newConfig,
     ...node.arguments.slice(1),
   ])
+}
+
+function injectBindingDescriptors(
+  node: ts.CallExpression,
+  descs: BindingDescriptor[],
+  f: ts.NodeFactory,
+): ts.CallExpression {
+  const configArg = node.arguments[0]
+  if (!configArg || !ts.isObjectLiteralExpression(configArg)) return node
+
+  // Don't inject if already present
+  for (const prop of configArg.properties) {
+    if (
+      ts.isPropertyAssignment(prop) &&
+      ts.isIdentifier(prop.name) &&
+      prop.name.text === '__bindingDescriptors'
+    ) {
+      return node
+    }
+  }
+
+  const descsProp = f.createPropertyAssignment(
+    '__bindingDescriptors',
+    bindingDescriptorsToArrayLiteral(descs),
+  )
+
+  const newConfig = f.createObjectLiteralExpression(
+    [...configArg.properties, descsProp],
+    true,
+  )
+
+  return f.createCallExpression(node.expression, node.typeArguments, [
+    newConfig,
+    ...node.arguments.slice(1),
+  ])
+}
+
+function bindingDescriptorsToArrayLiteral(
+  descs: BindingDescriptor[],
+): ts.ArrayLiteralExpression {
+  const entries = descs.map((d) =>
+    ts.factory.createObjectLiteralExpression(
+      [
+        ts.factory.createPropertyAssignment(
+          'variant',
+          ts.factory.createStringLiteral(d.variant),
+        ),
+      ],
+      false,
+    ),
+  )
+  return ts.factory.createArrayLiteralExpression(entries, true)
 }
 
 // ── Per-item accessor detection ──────────────────────────────────

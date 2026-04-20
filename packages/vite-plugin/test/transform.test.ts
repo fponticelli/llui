@@ -1060,6 +1060,53 @@ export const App = component<State, Msg, never>({
   })
 })
 
+describe('Pass 2 — __bindingDescriptors emission', () => {
+  function tDev(source: string): string {
+    return transformLlui(source, 'test.ts', /* devMode */ true)?.output ?? source
+  }
+
+  it('emits __bindingDescriptors reflecting send() call sites in view', () => {
+    const source = `
+import { component, button } from '@llui/dom'
+
+type State = { count: number }
+type Msg = { type: 'inc' } | { type: 'dec' }
+
+export const App = component<State, Msg, never>({
+  name: 'App',
+  init: () => [{ count: 0 }, []],
+  update: (s, m) => {
+    switch (m.type) {
+      case 'inc': return [{ ...s, count: s.count + 1 }, []]
+      case 'dec': return [{ ...s, count: s.count - 1 }, []]
+    }
+  },
+  view: ({ send, text }) => [
+    button({ onClick: () => send({ type: 'inc' }) }, [text('+')]),
+    button({ onClick: () => send({ type: 'dec' }) }, [text('-')]),
+  ],
+})
+`
+    const out = tDev(source)
+    expect(out).toContain('__bindingDescriptors:')
+    expect(out).toMatch(/\{\s*variant:\s*["']inc["']\s*\}/)
+    expect(out).toMatch(/\{\s*variant:\s*["']dec["']\s*\}/)
+  })
+
+  it('omits __bindingDescriptors when view has no send() calls', () => {
+    const source = `
+import { component, text } from '@llui/dom'
+type State = { n: number }; type Msg = { type: 'noop' }
+export const App = component<State, Msg, never>({
+  name: 'X', init: () => [{ n: 0 }, []], update: (s, _m) => [s, []],
+  view: ({ text }) => [text((s) => String(s.n))],
+})
+`
+    const out = tDev(source)
+    expect(out).not.toContain('__bindingDescriptors:')
+  })
+})
+
 describe('Pass 2 — __schemaHash emission', () => {
   function tDev(source: string): string {
     return transformLlui(source, 'test.ts', /* devMode */ true)?.output ?? source
