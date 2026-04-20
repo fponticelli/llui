@@ -8,6 +8,7 @@ export type AgentEffect =
   | { type: 'AgentResumeClaim'; tid: string }
   | { type: 'AgentRevoke'; tid: string }
   | { type: 'AgentSessionsList' }
+  | { type: 'AgentForwardMsg'; payload: unknown }
 
 // Handler implementation lands in Plan 7 alongside the WS client.
 export type AgentEffectHandler = (effect: AgentEffect) => Promise<void>
