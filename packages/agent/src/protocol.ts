@@ -174,7 +174,7 @@ export type HelloFrame = {
   t: 'hello'
   appName: string
   appVersion: string
-  msgSchema: object
+  msgSchema: Record<string, MessageSchemaEntry>
   stateSchema: object
   affordancesSample: object[]
   docs: AgentDocs | null

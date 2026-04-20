@@ -238,7 +238,7 @@ describe('Relay WS frame types', () => {
       t: 'hello',
       appName: 'App',
       appVersion: '1.0',
-      msgSchema: { inc: { payload: {}, annotations: { intent: null, alwaysAffordable: false, requiresConfirm: false, humanOnly: false } } },
+      msgSchema: { inc: { payloadSchema: {}, annotations: { intent: null, alwaysAffordable: false, requiresConfirm: false, humanOnly: false } } },
       stateSchema: { type: 'object' },
       affordancesSample: [{ type: 'inc' }],
       docs: null,
