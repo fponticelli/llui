@@ -121,6 +121,6 @@ type Msg =
   /** @intent("straight") */
   | { type: 'a' }
 `
-    expect(extractMsgAnnotations(src)?.a.intent).toBe('straight')
+    expect(extractMsgAnnotations(src)?.a?.intent).toBe('straight')
   })
 })

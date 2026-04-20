@@ -43,14 +43,15 @@ export function extractMsgAnnotations(source: string): Record<string, MessageAnn
   const types = alias.type.types
   for (let i = 0; i < types.length; i++) {
     const member = types[i]
-    if (!ts.isTypeLiteralNode(member)) continue
+    if (member === undefined || !ts.isTypeLiteralNode(member)) continue
     const variant = readDiscriminantLiteral(member)
     if (!variant) continue
     // Leading JSDoc for union member i is scanned from the end of the
     // previous element (or union.pos for the first member), because
     // TypeScript's parser places comment ranges relative to the token
     // that follows them — and the | bar is not part of the TypeLiteralNode.
-    const scanPos = i === 0 ? alias.type.pos : types[i - 1].end
+    const prev = types[i - 1]
+    const scanPos = i === 0 || prev === undefined ? alias.type.pos : prev.end
     const comment = readLeadingJSDoc(source, scanPos)
     result[variant] = parseAnnotations(comment)
   }
@@ -90,5 +91,5 @@ function parseAnnotations(comment: string): MessageAnnotations {
 
 function readIntent(comment: string): string | null {
   const match = comment.match(/@intent\s*\(\s*["\u201c]([^"\u201d]*)["\u201d]\s*\)/)
-  return match ? match[1] : null
+  return match?.[1] ?? null
 }
