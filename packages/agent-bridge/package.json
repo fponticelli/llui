@@ -5,6 +5,16 @@
   "bin": {
     "llui-agent": "./dist/cli.js"
   },
+  "exports": {
+    "./internal/bridge": {
+      "types": "./dist/bridge.d.ts",
+      "import": "./dist/bridge.js"
+    },
+    "./internal/binding": {
+      "types": "./dist/binding.d.ts",
+      "import": "./dist/binding.js"
+    }
+  },
   "files": [
     "dist"
   ],
