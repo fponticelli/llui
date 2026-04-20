@@ -796,13 +796,7 @@ Compute a stable hash over `__msgSchema` + `__stateSchema` + annotation record p
 
 ```
 packages/
-  mcp-core/                           (new)
-    src/
-      schema/                         (moved: serialize/deserialize msg/state schemas)
-      validator.ts                    (moved: validateMessage)
-      relay-protocol.ts               (new: shared WS frame types)
-      lap-protocol.ts                 (new: LAP endpoint & payload types)
-  mcp/                                (existing, trimmed)
+  mcp/                                (existing, unchanged)
     src/
       index.ts                        — dev-time MCP server (stdio + http)
       transports/relay.ts             — WS to local browser via @llui/vite-plugin
@@ -826,7 +820,7 @@ packages/
         agentLog.ts
         ws-client.ts
         effects.ts
-      protocol.ts                     — re-exports from mcp-core
+      protocol.ts                     — LAP types, relay frame types, tokens, audit
     package.json, tsconfig.build.json, vitest.config.ts, README.md
   agent-bridge/                       (new, publishes llui-agent unscoped)
     src/
@@ -836,6 +830,8 @@ packages/
       prompts.ts                      — registers llui-connect prompt
     package.json (name: "llui-agent"), tsconfig.build.json, README.md
 ```
+
+**Rationale:** the originally-planned `@llui/mcp-core` extraction was dropped. Inspection showed the actual shared code between `@llui/mcp` and `@llui/agent` is small enough — protocol types only — to live in `@llui/agent/protocol`. `validateMessage` already ships in `@llui/dom/devtools` and is not duplicated.
 
 ### 13.1 Entry points
 
@@ -853,18 +849,17 @@ packages/
 "bin": { "llui-agent": "./dist/cli.js" }
 ```
 
-Server and client never import each other. Bridge depends only on `@llui/agent/protocol` and `@llui/mcp-core` for shared types.
+Server and client never import each other. Bridge depends only on `@llui/agent/protocol` for shared types.
 
 ### 13.2 Dependency graph
 
 ```
-@llui/agent/client    →  @llui/dom, @llui/effects, @llui/mcp-core
-@llui/agent/server    →  @llui/mcp-core, ws                                   (no MCP SDK)
-llui-agent (bridge)   →  @llui/mcp-core, @llui/agent/protocol,                (the only MCP SDK consumer)
+@llui/agent/client    →  @llui/dom, @llui/effects, @llui/agent/protocol
+@llui/agent/server    →  @llui/agent/protocol, ws                                (no MCP SDK)
+llui-agent (bridge)   →  @llui/agent/protocol,                                   (the only MCP SDK consumer in the new work)
                          @modelcontextprotocol/sdk
-@llui/mcp             →  @llui/dom, @llui/mcp-core, @llui/lint-idiomatic,
-                         @modelcontextprotocol/sdk, ws
-@llui/mcp-core        →  — (no runtime deps)
+@llui/mcp             →  @llui/dom, @llui/lint-idiomatic,
+                         @modelcontextprotocol/sdk, ws                           (unchanged)
 ```
 
 ### 13.3 npm name availability
