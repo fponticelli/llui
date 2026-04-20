@@ -123,7 +123,7 @@ describe('handleSendMessage', () => {
     expect(result).toMatchObject({ status: 'dispatched', stateAfter: { count: 1 } })
   })
 
-  it('annotation fallback when msg type absent from annotations → dispatches normally', async () => {
+  it('unknown variant when annotations map is non-empty → rejected as invalid', async () => {
     const send = vi.fn()
     const host = makeHost({
       send,
@@ -139,7 +139,31 @@ describe('handleSendMessage', () => {
 
     const result = await handleSendMessage(host, { msg: { type: 'UnknownMsg' } })
 
-    expect(send).toHaveBeenCalledWith({ type: 'UnknownMsg' })
+    expect(send).not.toHaveBeenCalled()
+    expect(result.status).toBe('rejected')
+    if (result.status === 'rejected') {
+      expect(result.reason).toBe('invalid')
+      expect(result.detail).toMatch('UnknownMsg')
+    }
+  })
+
+  it('unknown variant when annotations map is empty → dispatches normally (no false-positive)', async () => {
+    const send = vi.fn()
+    const host = makeHost({ send, getMsgAnnotations: () => ({}) })
+
+    const result = await handleSendMessage(host, { msg: { type: 'AnyMsg' } })
+
+    expect(send).toHaveBeenCalledWith({ type: 'AnyMsg' })
+    expect(result.status).toBe('dispatched')
+  })
+
+  it('unknown variant when annotations is null → dispatches normally', async () => {
+    const send = vi.fn()
+    const host = makeHost({ send, getMsgAnnotations: () => null })
+
+    const result = await handleSendMessage(host, { msg: { type: 'AnyMsg' } })
+
+    expect(send).toHaveBeenCalledWith({ type: 'AnyMsg' })
     expect(result.status).toBe('dispatched')
   })
 })

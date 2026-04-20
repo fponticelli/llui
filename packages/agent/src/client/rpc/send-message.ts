@@ -34,6 +34,15 @@ export async function handleSendMessage(
   }
   const annotations = host.getMsgAnnotations() ?? {}
   const ann = annotations[args.msg.type]
+
+  // If annotations map is non-empty and this variant isn't in it, it's an
+  // unknown msg type that the app never declared — reject early so the
+  // browser never dispatches an unrecognised variant into update().
+  const hasAnnotations = Object.keys(annotations).length > 0
+  if (hasAnnotations && !ann) {
+    return { status: 'rejected', reason: 'invalid', detail: `unknown variant: ${args.msg.type}` }
+  }
+
   if (ann?.humanOnly) {
     return { status: 'rejected', reason: 'humanOnly' }
   }

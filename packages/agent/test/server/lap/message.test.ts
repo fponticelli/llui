@@ -101,6 +101,15 @@ describe('handleLapMessage', () => {
     expect(res.status).toBe(503)
   })
 
+  it('returns 500 with descriptive detail when browser replies an unknown status', async () => {
+    vi.spyOn(registry, 'rpc').mockResolvedValue({ status: 'mystery-status-xyz' })
+    const res = await handleLapMessage(mkReq({ msg: { type: 'inc' } }), deps())
+    expect(res.status).toBe(500)
+    const body = (await res.json()) as { error: { code: string; detail: string } }
+    expect(body.error.code).toBe('internal')
+    expect(body.error.detail).toMatch('mystery-status-xyz')
+  })
+
   it('returns 429 with retryAfterMs when rate limiter denies', async () => {
     const tightLimiter: RateLimiter = {
       check: vi.fn<RateLimiter['check']>(async () => ({ allowed: false, retryAfterMs: 500 })),

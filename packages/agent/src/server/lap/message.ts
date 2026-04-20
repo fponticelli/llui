@@ -96,7 +96,15 @@ export async function handleLapMessage(req: Request, deps: LapMessageDeps): Prom
     return json({ status: 'rejected', reason: 'user-cancelled' } satisfies LapMessageResponse, 200)
   }
 
-  return json({ error: { code: 'internal', detail: 'unknown browser status' } }, 500)
+  return json(
+    {
+      error: {
+        code: 'internal',
+        detail: `unexpected browser status: ${String((initial as { status?: unknown }).status ?? 'undefined')}`,
+      },
+    },
+    500,
+  )
 }
 
 function json(b: unknown, s: number): Response {
