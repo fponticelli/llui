@@ -1,4 +1,4 @@
-import type { ClientFrame, ServerFrame, HelloFrame } from '../protocol.js'
+import type { ClientFrame, ServerFrame, HelloFrame, LogEntry, LogKind } from '../protocol.js'
 import { handleGetState, type GetStateHost } from './rpc/get-state.js'
 import { handleSendMessage, type SendMessageHost } from './rpc/send-message.js'
 import { handleListActions, type ListActionsHost } from './rpc/list-actions.js'
@@ -20,6 +20,10 @@ export type HelloBuilder = () => HelloFrame
 export type WsClient = {
   /** Resolve a pending confirmation; emits confirm-resolved frame to the server. */
   resolveConfirm(confirmId: string, outcome: 'confirmed' | 'user-cancelled', stateAfter?: unknown): void
+  /** Emit a state-update frame so the server can resolve waitForChange promises. */
+  emitStateUpdate(path: string, stateAfter: unknown): void
+  /** Emit a log-append frame so the server can mirror client-observed actions to the audit sink. */
+  emitLogAppend(entry: LogEntry): void
   /** Close the socket cleanly. */
   close(): void
 }
@@ -44,19 +48,30 @@ export function attachWsClient(ws: WsLike, rpc: RpcHosts, hello: HelloBuilder): 
       return
     }
     if (frame.t !== 'rpc') return
+    let result: unknown
+    let rpcErr: { code?: string; detail?: string } | null = null
     try {
-      const result = await dispatch(frame.tool, frame.args, rpc)
+      result = await dispatch(frame.tool, frame.args, rpc)
       const reply: ClientFrame = { t: 'rpc-reply', id: frame.id, result }
       ws.send(JSON.stringify(reply))
     } catch (e: unknown) {
-      const err = e as { code?: string; detail?: string }
+      rpcErr = e as { code?: string; detail?: string }
       const errFrame: ClientFrame = {
         t: 'rpc-error', id: frame.id,
-        code: err.code ?? 'internal',
-        detail: err.detail,
+        code: rpcErr.code ?? 'internal',
+        detail: rpcErr.detail,
       }
       ws.send(JSON.stringify(errFrame))
     }
+    const kind = getLogKindForTool(frame.tool, result, rpcErr)
+    const logEntry: LogEntry = {
+      id: frame.id,
+      at: Date.now(),
+      kind,
+      variant: extractVariant(frame.tool, frame.args),
+      intent: undefined,
+    }
+    ws.send(JSON.stringify({ t: 'log-append', entry: logEntry } satisfies ClientFrame))
   })
 
   return {
@@ -64,6 +79,14 @@ export function attachWsClient(ws: WsLike, rpc: RpcHosts, hello: HelloBuilder): 
       const frame: ClientFrame = {
         t: 'confirm-resolved', confirmId, outcome, stateAfter,
       }
+      ws.send(JSON.stringify(frame))
+    },
+    emitStateUpdate(path, stateAfter) {
+      const frame: ClientFrame = { t: 'state-update', path, stateAfter }
+      ws.send(JSON.stringify(frame))
+    },
+    emitLogAppend(entry) {
+      const frame: ClientFrame = { t: 'log-append', entry }
       ws.send(JSON.stringify(frame))
     },
     close() {
@@ -82,4 +105,33 @@ async function dispatch(tool: string, args: unknown, rpc: RpcHosts): Promise<unk
     case 'describe_context': return handleDescribeContext(rpc)
     default: throw { code: 'invalid', detail: `unknown tool: ${tool}` }
   }
+}
+
+const READ_TOOLS = new Set(['get_state', 'list_actions', 'describe_context', 'query_dom', 'describe_visible_content'])
+
+function getLogKindForTool(
+  tool: string,
+  result: unknown,
+  err: { code?: string; detail?: string } | null,
+): LogKind {
+  if (err !== null) return 'error'
+  if (tool === 'send_message') {
+    const r = result as { status?: string } | null
+    const status = r?.status
+    if (status === 'dispatched' || status === 'confirmed') return 'dispatched'
+    if (status === 'pending-confirmation') return 'proposed'
+    if (status === 'rejected') return 'blocked'
+    return 'dispatched'
+  }
+  if (READ_TOOLS.has(tool)) return 'read'
+  return 'read'
+}
+
+function extractVariant(tool: string, args: unknown): string | undefined {
+  if (tool === 'send_message') {
+    const a = args as { msg?: { type?: string } } | null
+    const t = a?.msg?.type
+    return typeof t === 'string' ? t : undefined
+  }
+  return undefined
 }

@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest'
 import { attachWsClient, type WsLike, type RpcHosts, type HelloBuilder } from '../../src/client/ws-client.js'
-import type { HelloFrame, ServerFrame, RpcFrame } from '../../src/protocol.js'
+import type { HelloFrame, ServerFrame, RpcFrame, LogEntry } from '../../src/protocol.js'
 
 // A minimal fake WsLike backed by an event map so tests can fire events.
 // The WsLike interface has overloaded addEventListener signatures, so we
@@ -90,7 +90,7 @@ describe('attachWsClient', () => {
     expect(frame.appName).toBe('test-app')
   })
 
-  it('valid rpc frame for get_state → sends rpc-reply with state', async () => {
+  it('valid rpc frame for get_state → sends rpc-reply with state, then log-append with kind "read"', async () => {
     const ws = new FakeWs()
     attachWsClient(ws, makeRpcHosts(), makeHelloBuilder())
 
@@ -103,14 +103,18 @@ describe('attachWsClient', () => {
     // Allow async dispatch to complete
     await new Promise((r) => setTimeout(r, 0))
 
-    expect(ws.sent).toHaveLength(1)
+    expect(ws.sent).toHaveLength(2)
     const reply = JSON.parse(ws.sent[0]!)
     expect(reply.t).toBe('rpc-reply')
     expect(reply.id).toBe('req-1')
     expect(reply.result).toEqual({ state: { count: 5 } })
+    const logFrame = JSON.parse(ws.sent[1]!)
+    expect(logFrame.t).toBe('log-append')
+    expect(logFrame.entry.kind).toBe('read')
+    expect(logFrame.entry.id).toBe('req-1')
   })
 
-  it('unknown tool → sends rpc-error with code "invalid"', async () => {
+  it('unknown tool → sends rpc-error with code "invalid", then log-append with kind "error"', async () => {
     const ws = new FakeWs()
     attachWsClient(ws, makeRpcHosts(), makeHelloBuilder())
     ws.emit('open')
@@ -120,11 +124,14 @@ describe('attachWsClient', () => {
     ws.emit('message', JSON.stringify(rpc))
     await new Promise((r) => setTimeout(r, 0))
 
-    expect(ws.sent).toHaveLength(1)
+    expect(ws.sent).toHaveLength(2)
     const errFrame = JSON.parse(ws.sent[0]!)
     expect(errFrame.t).toBe('rpc-error')
     expect(errFrame.id).toBe('req-2')
     expect(errFrame.code).toBe('invalid')
+    const logFrame = JSON.parse(ws.sent[1]!)
+    expect(logFrame.t).toBe('log-append')
+    expect(logFrame.entry.kind).toBe('error')
   })
 
   it('revoked frame → closes the socket', async () => {
@@ -167,5 +174,67 @@ describe('attachWsClient', () => {
     expect(frame.confirmId).toBe('conf-2')
     expect(frame.outcome).toBe('user-cancelled')
     expect(frame.stateAfter).toBeUndefined()
+  })
+
+  it('emitStateUpdate sends a state-update frame', () => {
+    const ws = new FakeWs()
+    const client = attachWsClient(ws, makeRpcHosts(), makeHelloBuilder())
+    ws.emit('open')
+    ws.sent.length = 0
+
+    client.emitStateUpdate('/', { x: 1 })
+
+    expect(ws.sent).toHaveLength(1)
+    const frame = JSON.parse(ws.sent[0]!)
+    expect(frame.t).toBe('state-update')
+    expect(frame.path).toBe('/')
+    expect(frame.stateAfter).toEqual({ x: 1 })
+  })
+
+  it('emitLogAppend sends a log-append frame', () => {
+    const ws = new FakeWs()
+    const client = attachWsClient(ws, makeRpcHosts(), makeHelloBuilder())
+    ws.emit('open')
+    ws.sent.length = 0
+
+    const entry: LogEntry = { id: 'x', at: 0, kind: 'read' }
+    client.emitLogAppend(entry)
+
+    expect(ws.sent).toHaveLength(1)
+    const frame = JSON.parse(ws.sent[0]!)
+    expect(frame.t).toBe('log-append')
+    expect(frame.entry).toEqual(entry)
+  })
+
+  it('send_message with status "dispatched" → log-append with kind "dispatched" and variant from msg.type', async () => {
+    const ws = new FakeWs()
+    const customRpc: RpcHosts = {
+      ...makeRpcHosts(),
+      send: vi.fn(),
+      flush: vi.fn(),
+      getState: () => ({ count: 1 }),
+      getMsgAnnotations: () => ({
+        Increment: { intent: 'Increment', alwaysAffordable: true, requiresConfirm: false, humanOnly: false },
+      }),
+    }
+    attachWsClient(ws, customRpc, makeHelloBuilder())
+    ws.emit('open')
+    ws.sent.length = 0
+
+    const rpcFrame: RpcFrame = {
+      t: 'rpc',
+      id: 'req-sm',
+      tool: 'send_message',
+      args: { msg: { type: 'Increment' }, waitFor: 'idle' },
+    }
+    ws.emit('message', JSON.stringify(rpcFrame))
+    await new Promise((r) => setTimeout(r, 0))
+
+    // Find the log-append frame
+    const logFrames = ws.sent.map((s) => JSON.parse(s)).filter((f) => f.t === 'log-append')
+    expect(logFrames).toHaveLength(1)
+    const logFrame = logFrames[0]!
+    expect(logFrame.entry.kind).toBe('dispatched')
+    expect(logFrame.entry.variant).toBe('Increment')
   })
 })

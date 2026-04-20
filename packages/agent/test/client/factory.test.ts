@@ -66,6 +66,7 @@ type FakeState = { connect: unknown; confirm: AgentConfirmState }
 
 function makeHandle(initialState: FakeState) {
   let state = initialState
+  const listeners = new Set<(s: unknown) => void>()
   const handle = {
     getState: () => state,
     send: vi.fn((msg: unknown) => {
@@ -74,7 +75,14 @@ function makeHandle(initialState: FakeState) {
     }),
     flush: vi.fn(),
     dispose: vi.fn(),
-    setState: (s: FakeState) => { state = s },
+    subscribe: (listener: (s: unknown) => void) => {
+      listeners.add(listener)
+      return () => { listeners.delete(listener) }
+    },
+    setState: (s: FakeState) => {
+      state = s
+      for (const l of listeners) l(s)
+    },
   }
   return handle
 }
@@ -209,5 +217,37 @@ describe('createAgentClient', () => {
 
     client.stop()
     vi.useRealTimers()
+  })
+
+  it('start() subscribes to handle and emits state-update frames when state changes', async () => {
+    const handle = makeHandle({ connect: {}, confirm: { pending: [] } })
+    const client = createAgentClient(makeOpts(handle, () => ({ pending: [] })))
+
+    // Open a WS so wsClient is available
+    const effect: AgentEffect = {
+      type: 'AgentOpenWS',
+      token: 'tok' as AgentToken,
+      wsUrl: 'ws://localhost:9000/agent/ws',
+    }
+    await client.effectHandler(effect)
+    lastFakeWs!.emit('open')
+
+    client.start()
+
+    // Clear frames sent so far (hello)
+    lastFakeWs!.sent.length = 0
+
+    // Trigger a state change via handle.setState
+    handle.setState({ connect: {}, confirm: { pending: [] } })
+
+    // Should emit a state-update frame
+    const stateFrames = lastFakeWs!.sent.filter((s) => {
+      try { return JSON.parse(s).t === 'state-update' } catch { return false }
+    })
+    expect(stateFrames).toHaveLength(1)
+    const frame = JSON.parse(stateFrames[0]!)
+    expect(frame.path).toBe('/')
+
+    client.stop()
   })
 })

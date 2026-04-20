@@ -42,6 +42,7 @@ export function createAgentClient<State, Msg>(
   let ws: WebSocket | null = null
   let wsClient: ReturnType<typeof attachWsClient> | null = null
   let confirmPollTimer: ReturnType<typeof setInterval> | null = null
+  let stateSubscription: (() => void) | null = null
   const resolvedConfirms = new Set<string>()
 
   const rpcHost: RpcHosts = {
@@ -103,14 +104,17 @@ export function createAgentClient<State, Msg>(
   return {
     effectHandler,
     start() {
-      // V1: poll agentConfirm state at 200ms intervals to emit confirm-resolved.
-      // Plan 9 will replace with a proper state-change subscription once
-      // @llui/dom exposes one.
       if (!confirmPollTimer) confirmPollTimer = setInterval(pollConfirms, 200)
+      if (!stateSubscription) {
+        stateSubscription = opts.handle.subscribe((state) => {
+          wsClient?.emitStateUpdate('/', state)
+        })
+      }
     },
     stop() {
       if (confirmPollTimer) clearInterval(confirmPollTimer)
       confirmPollTimer = null
+      if (stateSubscription) { stateSubscription(); stateSubscription = null }
       wsClient?.close()
     },
   }
