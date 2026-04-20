@@ -120,7 +120,42 @@ component<State, Msg, Effect>({
 
 Pure function of state. Re-evaluated lazily on `list_actions` (not on every state change).
 
-### 5.4 Dispatch flow for a Claude-proposed Msg
+### 5.4 App + context documentation
+
+Annotations tell Claude what individual Msgs *do*. Two additional authoring surfaces tell Claude what the app *is for* and what the user is *currently trying to do*:
+
+- **`agentDocs`** — static, declared once on the component record. Shipped as part of `describe_app`, cached by the bridge for the session. Free prose in structured slots.
+- **`agentContext(state)`** — dynamic, a pure function of state. Served by a dedicated `describe_context` tool. Regenerated lazily per call; not cached across turns.
+
+Types:
+
+```ts
+type AgentDocs = {
+  purpose: string                    // one-sentence elevator pitch
+  overview?: string                  // longer prose: data model, conventions, navigation
+  cautions?: string[]                // short warnings Claude should internalize
+}
+
+type AgentContext = {
+  summary: string                    // one-paragraph description of where the user is
+  hints?: string[]                   // short action-level suggestions grounded in current state
+  cautions?: string[]                // state-specific warnings (e.g. "card is locked; reopen first")
+}
+```
+
+Component record extensions:
+```ts
+component<State, Msg, Effect>({
+  name, init, update, view, onEffect,
+  agentAffordances,
+  agentDocs,                         // optional AgentDocs
+  agentContext,                      // optional (state: State) => AgentContext
+})
+```
+
+Both are optional. A missing `agentDocs` results in `docs: null` on `describe_app`. A missing `agentContext` causes `describe_context` to return `{ summary: '', hints: [], cautions: [] }` with no dynamic commentary.
+
+### 5.5 Dispatch flow for a Claude-proposed Msg
 
 1. Claude calls `send_message({ type: 'delete', id: 'abc' })`. Bridge forwards as `POST /lap/v1/message`.
 2. App server validates payload against `__msgSchema`, verifies pairing is live, forwards over WS to the browser.
@@ -217,6 +252,7 @@ JSON over HTTPS. All endpoints under a developer-chosen base path (default `/age
 | `/lap/v1/wait`                   | POST   | `{ path?, timeoutMs? }` → `changed` or `timeout` (long-poll)    |
 | `/lap/v1/query-dom`              | POST   | `{ name, multiple? }` → `{ elements[] }`                        |
 | `/lap/v1/describe-visible`       | POST   | `{}` → `{ outline[] }`                                          |
+| `/lap/v1/context`                | POST   | `{}` → `{ context: AgentContext }` (dynamic per-state docs)     |
 
 ### 7.2 Response envelope
 
@@ -245,9 +281,21 @@ type LapError = {
 
 On WS open (browser → app server), the browser sends:
 ```ts
-{ t: 'hello', appName, appVersion, msgSchema, stateSchema, affordancesSample, schemaHash }
+{ t: 'hello', appName, appVersion, msgSchema, stateSchema, affordancesSample, docs, schemaHash }
 ```
+`docs` is the static `AgentDocs | null` from the component record — it's part of the schema handoff because it's static for the lifetime of the pairing.
+
 App server caches per-pairing. `/lap/v1/describe` serves from the cache. Browser re-sends `hello` when `schemaHash` changes (dev hot-reload).
+
+### 7.5 Context endpoint
+
+`/lap/v1/context` is dynamic. Server forwards each call as an `rpc` frame to the browser; browser invokes `agentContext(state)` fresh and returns:
+
+```ts
+type LapContextResponse = { context: AgentContext }
+```
+
+Server does NOT cache `/lap/v1/context` responses. If `agentContext` is not defined on the component, the browser returns `{ context: { summary: '', hints: [], cautions: [] } }`.
 
 ## 8. Tool surface (what Claude sees via the bridge)
 
@@ -290,14 +338,23 @@ Each forwards to the corresponding LAP endpoint using the session's bound `{url,
     requiresConfirm: boolean
     humanOnly: boolean
   }>
+  docs: AgentDocs | null        // static app docs from the component record
   conventions: {
     dispatchModel: 'TEA'
     confirmationModel: 'runtime-mediated'
-    readSurfaces: ['state', 'query_dom', 'describe_visible_content']
+    readSurfaces: ['state', 'query_dom', 'describe_visible_content', 'describe_context']
   }
 }
 ```
 Bridge may serve from cache (keyed by session's `schemaHash`) after the first call.
+
+#### `describe_context`
+```ts
+// Args: none
+// Response
+{ context: AgentContext }
+```
+Forwards to `/lap/v1/context`. Never cached. Returns the dynamic per-state docs produced by the component's `agentContext(state)`; empty-summary fallback if the app didn't define one.
 
 #### `get_state`
 ```ts
@@ -618,7 +675,7 @@ Adapters (Node http / Express / Hono / Fastify) convert their native request sha
 
 ```ts
 type ClientFrame =
-  | { t: 'hello'; appName: string; appVersion: string; msgSchema: object; stateSchema: object; affordancesSample: object[]; schemaHash: string }
+  | { t: 'hello'; appName: string; appVersion: string; msgSchema: object; stateSchema: object; affordancesSample: object[]; docs: AgentDocs | null; schemaHash: string }
   | { t: 'rpc-reply'; id: string; result: unknown }
   | { t: 'rpc-error'; id: string; code: string; detail?: string }
   | { t: 'confirm-resolved'; confirmId: string; outcome: 'confirmed' | 'user-cancelled'; stateAfter?: unknown }
