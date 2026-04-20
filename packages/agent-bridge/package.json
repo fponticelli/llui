@@ -1,0 +1,33 @@
+{
+  "name": "llui-agent",
+  "version": "0.0.0",
+  "type": "module",
+  "bin": {
+    "llui-agent": "./dist/cli.js"
+  },
+  "files": ["dist"],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "check": "tsc --noEmit",
+    "lint": "eslint src",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@llui/agent": "workspace:*",
+    "@modelcontextprotocol/sdk": "^1.29.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0"
+  },
+  "description": "LLui Agent bridge — MCP server that translates Claude Desktop tool calls to LLui apps via LAP",
+  "keywords": ["llui", "agent", "mcp", "claude", "bridge"],
+  "author": "Franco Ponticelli <franco.ponticelli@gmail.com>",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/fponticelli/llui.git",
+    "directory": "packages/agent-bridge"
+  },
+  "bugs": { "url": "https://github.com/fponticelli/llui/issues" },
+  "homepage": "https://github.com/fponticelli/llui/tree/main/packages/agent-bridge#readme"
+}
