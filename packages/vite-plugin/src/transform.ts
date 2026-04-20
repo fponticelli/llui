@@ -1,6 +1,7 @@
 import ts from 'typescript'
 import { collectDeps } from './collect-deps.js'
 import { extractMsgSchema, extractEffectSchema } from './msg-schema.js'
+import { extractMsgAnnotations, type MessageAnnotations } from './msg-annotations.js'
 import { extractStateSchema, type StateType } from './state-schema.js'
 
 function createMaskLiteral(f: ts.NodeFactory, mask: number): ts.Expression {
@@ -350,6 +351,10 @@ export function transformLlui(
         const schema = extractMsgSchema(source)
         if (schema) {
           result = injectMsgSchema(result ?? node, schema, f)
+        }
+        const msgAnnotations = extractMsgAnnotations(source)
+        if (msgAnnotations && hasNonDefaultAnnotation(msgAnnotations)) {
+          result = injectMsgAnnotations(result ?? node, msgAnnotations, f)
         }
         const stateSchema = extractStateSchema(source)
         if (stateSchema) {
@@ -3169,6 +3174,88 @@ function injectMsgSchema(
   const schemaProp = f.createPropertyAssignment('__msgSchema', schemaObj)
 
   const newConfig = f.createObjectLiteralExpression([...configArg.properties, schemaProp], true)
+
+  return f.createCallExpression(node.expression, node.typeArguments, [
+    newConfig,
+    ...node.arguments.slice(1),
+  ])
+}
+
+function hasNonDefaultAnnotation(a: Record<string, MessageAnnotations>): boolean {
+  for (const v of Object.values(a)) {
+    if (v.intent !== null) return true
+    if (v.alwaysAffordable) return true
+    if (v.requiresConfirm) return true
+    if (v.humanOnly) return true
+  }
+  return false
+}
+
+function annotationsToObjectLiteral(
+  a: Record<string, MessageAnnotations>,
+): ts.ObjectLiteralExpression {
+  const props: ts.PropertyAssignment[] = []
+  for (const [variant, ann] of Object.entries(a)) {
+    props.push(
+      ts.factory.createPropertyAssignment(
+        variant,
+        ts.factory.createObjectLiteralExpression(
+          [
+            ts.factory.createPropertyAssignment(
+              'intent',
+              ann.intent === null
+                ? ts.factory.createNull()
+                : ts.factory.createStringLiteral(ann.intent),
+            ),
+            ts.factory.createPropertyAssignment(
+              'alwaysAffordable',
+              ann.alwaysAffordable ? ts.factory.createTrue() : ts.factory.createFalse(),
+            ),
+            ts.factory.createPropertyAssignment(
+              'requiresConfirm',
+              ann.requiresConfirm ? ts.factory.createTrue() : ts.factory.createFalse(),
+            ),
+            ts.factory.createPropertyAssignment(
+              'humanOnly',
+              ann.humanOnly ? ts.factory.createTrue() : ts.factory.createFalse(),
+            ),
+          ],
+          true,
+        ),
+      ),
+    )
+  }
+  return ts.factory.createObjectLiteralExpression(props, true)
+}
+
+function injectMsgAnnotations(
+  node: ts.CallExpression,
+  annotations: Record<string, MessageAnnotations>,
+  f: ts.NodeFactory,
+): ts.CallExpression {
+  const configArg = node.arguments[0]
+  if (!configArg || !ts.isObjectLiteralExpression(configArg)) return node
+
+  // Don't inject if already present
+  for (const prop of configArg.properties) {
+    if (
+      ts.isPropertyAssignment(prop) &&
+      ts.isIdentifier(prop.name) &&
+      prop.name.text === '__msgAnnotations'
+    ) {
+      return node
+    }
+  }
+
+  const annotationsProp = f.createPropertyAssignment(
+    '__msgAnnotations',
+    annotationsToObjectLiteral(annotations),
+  )
+
+  const newConfig = f.createObjectLiteralExpression(
+    [...configArg.properties, annotationsProp],
+    true,
+  )
 
   return f.createCallExpression(node.expression, node.typeArguments, [
     newConfig,

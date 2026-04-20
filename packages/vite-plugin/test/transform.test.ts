@@ -1006,3 +1006,56 @@ describe('dev code injection — MCP HMR auto-connect', () => {
     expect(out).not.toContain('llui:mcp-ready')
   })
 })
+
+describe('Pass 2 — __msgAnnotations emission', () => {
+  function tDev(source: string): string {
+    return transformLlui(source, 'test.ts', /* devMode */ true)?.output ?? source
+  }
+
+  it('emits __msgAnnotations alongside __msgSchema for annotated Msg variants', () => {
+    const source = `
+import { component } from '@llui/dom'
+
+type State = { count: number }
+type Msg =
+  /** @intent("Increment the counter") */
+  | { type: 'inc' }
+  /** @intent("Delete item") @requiresConfirm */
+  | { type: 'delete', id: string }
+
+export const App = component<State, Msg, never>({
+  name: 'App',
+  init: () => [{ count: 0 }, []],
+  update: (s, m) => {
+    switch (m.type) {
+      case 'inc': return [{ ...s, count: s.count + 1 }, []]
+      case 'delete': return [s, []]
+    }
+  },
+  view: ({ send, text }) => [text((s) => String(s.count))],
+})
+`
+    const out = tDev(source)
+    expect(out).toContain('__msgAnnotations:')
+    expect(out).toMatch(/inc:\s*\{\s*intent:\s*["']Increment the counter["']/)
+    expect(out).toMatch(/delete:\s*\{\s*intent:\s*["']Delete item["'][\s\S]*requiresConfirm:\s*true/)
+  })
+
+  it('omits __msgAnnotations when no variants carry annotations', () => {
+    const source = `
+import { component } from '@llui/dom'
+
+type State = { n: number }
+type Msg = { type: 'x' }
+
+export const App = component<State, Msg, never>({
+  name: 'App',
+  init: () => [{ n: 0 }, []],
+  update: (s, _m) => [s, []],
+  view: ({ text }) => [text((s) => String(s.n))],
+})
+`
+    const out = tDev(source)
+    expect(out).not.toContain('__msgAnnotations:')
+  })
+})
