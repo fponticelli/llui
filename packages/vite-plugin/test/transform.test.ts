@@ -1059,3 +1059,58 @@ export const App = component<State, Msg, never>({
     expect(out).not.toContain('__msgAnnotations:')
   })
 })
+
+describe('Pass 2 — __schemaHash emission', () => {
+  function tDev(source: string): string {
+    return transformLlui(source, 'test.ts', /* devMode */ true)?.output ?? source
+  }
+
+  it('emits __schemaHash alongside __msgSchema', () => {
+    const source = `
+import { component } from '@llui/dom'
+
+type State = { count: number }
+type Msg = { type: 'inc' } | { type: 'dec' }
+
+export const App = component<State, Msg, never>({
+  name: 'App',
+  init: () => [{ count: 0 }, []],
+  update: (s, m) => {
+    switch (m.type) {
+      case 'inc': return [{ ...s, count: s.count + 1 }, []]
+      case 'dec': return [{ ...s, count: s.count - 1 }, []]
+    }
+  },
+  view: ({ text }) => [text((s) => String(s.count))],
+})
+`
+    const out = tDev(source)
+    expect(out).toMatch(/__schemaHash:\s*["'][0-9a-f]{32}["']/)
+  })
+
+  it('__schemaHash changes when msgSchema changes', () => {
+    const a = tDev(`
+import { component } from '@llui/dom'
+type State = { n: number }
+type Msg = { type: 'a' }
+export const X = component<State, Msg, never>({
+  name: 'X', init: () => [{ n: 0 }, []], update: (s, _m) => [s, []],
+  view: ({ text }) => [text((s) => String(s.n))],
+})
+`)
+    const b = tDev(`
+import { component } from '@llui/dom'
+type State = { n: number }
+type Msg = { type: 'a' } | { type: 'b' }
+export const X = component<State, Msg, never>({
+  name: 'X', init: () => [{ n: 0 }, []], update: (s, _m) => [s, []],
+  view: ({ text }) => [text((s) => String(s.n))],
+})
+`)
+    const aHash = a.match(/__schemaHash:\s*["']([0-9a-f]{32})["']/)?.[1]
+    const bHash = b.match(/__schemaHash:\s*["']([0-9a-f]{32})["']/)?.[1]
+    expect(aHash).toBeDefined()
+    expect(bHash).toBeDefined()
+    expect(aHash).not.toBe(bHash)
+  })
+})

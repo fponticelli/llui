@@ -3,6 +3,7 @@ import { collectDeps } from './collect-deps.js'
 import { extractMsgSchema, extractEffectSchema } from './msg-schema.js'
 import { extractMsgAnnotations, type MessageAnnotations } from './msg-annotations.js'
 import { extractStateSchema, type StateType } from './state-schema.js'
+import { computeSchemaHash } from './schema-hash.js'
 
 function createMaskLiteral(f: ts.NodeFactory, mask: number): ts.Expression {
   if (mask >= 0) return f.createNumericLiteral(mask)
@@ -347,16 +348,20 @@ export function transformLlui(
     if (ts.isCallExpression(node) && isComponentCall(node, lluiImport)) {
       let result = tryInjectDirty(node, fieldBits, f)
       if (result) usesApplyBinding = true
+
+      // Extract schema data once — used both for devMode injections and the
+      // unconditional __schemaHash (spec §7.4: hash ships in prod too).
+      const msgSchema = extractMsgSchema(source)
+      const msgAnnotations = extractMsgAnnotations(source)
+      const stateSchema = extractStateSchema(source)
+
       if (devMode) {
-        const schema = extractMsgSchema(source)
-        if (schema) {
-          result = injectMsgSchema(result ?? node, schema, f)
+        if (msgSchema) {
+          result = injectMsgSchema(result ?? node, msgSchema, f)
         }
-        const msgAnnotations = extractMsgAnnotations(source)
         if (msgAnnotations && hasNonDefaultAnnotation(msgAnnotations)) {
           result = injectMsgAnnotations(result ?? node, msgAnnotations, f)
         }
-        const stateSchema = extractStateSchema(source)
         if (stateSchema) {
           result = injectStateSchema(result ?? node, stateSchema.fields, f)
         }
@@ -366,6 +371,16 @@ export function transformLlui(
         }
         result = injectComponentMeta(result ?? node, node, sourceFile, _filename, f)
       }
+
+      // __schemaHash is always emitted (not dev-gated) — runtime uses it to
+      // gate hello-frame re-sends during hot-reload in prod builds too.
+      const schemaHash = computeSchemaHash({
+        msgSchema: msgSchema ?? null,
+        stateSchema: stateSchema ?? null,
+        msgAnnotations,
+      })
+      result = injectSchemaHash(result ?? node, schemaHash, f)
+
       if (result) {
         if (hasPos) edits.push({ start: origStart, end: origEnd, replacement: '' })
         return ts.visitEachChild(result, visitor, undefined!)
@@ -3254,6 +3269,41 @@ function injectMsgAnnotations(
 
   const newConfig = f.createObjectLiteralExpression(
     [...configArg.properties, annotationsProp],
+    true,
+  )
+
+  return f.createCallExpression(node.expression, node.typeArguments, [
+    newConfig,
+    ...node.arguments.slice(1),
+  ])
+}
+
+function injectSchemaHash(
+  node: ts.CallExpression,
+  hash: string,
+  f: ts.NodeFactory,
+): ts.CallExpression {
+  const configArg = node.arguments[0]
+  if (!configArg || !ts.isObjectLiteralExpression(configArg)) return node
+
+  // Don't inject if already present
+  for (const prop of configArg.properties) {
+    if (
+      ts.isPropertyAssignment(prop) &&
+      ts.isIdentifier(prop.name) &&
+      prop.name.text === '__schemaHash'
+    ) {
+      return node
+    }
+  }
+
+  const hashProp = f.createPropertyAssignment(
+    '__schemaHash',
+    f.createStringLiteral(hash),
+  )
+
+  const newConfig = f.createObjectLiteralExpression(
+    [...configArg.properties, hashProp],
     true,
   )
 
