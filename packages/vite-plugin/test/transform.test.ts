@@ -972,7 +972,7 @@ describe('dev code injection — MCP HMR auto-connect', () => {
   `
 
   it('emits __startRelay and the llui:mcp-ready HMR listener in dev mode', () => {
-    const result = transformLlui(componentSource, 'app.ts', /* devMode */ true, 5200)
+    const result = transformLlui(componentSource, 'app.ts', /* devMode */ true, /* emitAgentMetadata */ false, 5200)
     const out = result?.output ?? ''
 
     // Imports the relay starter
@@ -985,13 +985,13 @@ describe('dev code injection — MCP HMR auto-connect', () => {
   })
 
   it('uses a custom port when provided', () => {
-    const result = transformLlui(componentSource, 'app.ts', true, 5300)
+    const result = transformLlui(componentSource, 'app.ts', true, false, 5300)
     const out = result?.output ?? ''
     expect(out).toContain('__startRelay(5300)')
   })
 
   it('omits the relay and HMR listener when mcpPort is null', () => {
-    const result = transformLlui(componentSource, 'app.ts', true, null)
+    const result = transformLlui(componentSource, 'app.ts', true, false, null)
     const out = result?.output ?? ''
     expect(out).not.toContain('startRelay')
     expect(out).not.toContain('llui:mcp-ready')
@@ -999,7 +999,7 @@ describe('dev code injection — MCP HMR auto-connect', () => {
   })
 
   it('omits all dev injection in production mode', () => {
-    const result = transformLlui(componentSource, 'app.ts', /* devMode */ false, 5200)
+    const result = transformLlui(componentSource, 'app.ts', /* devMode */ false, /* emitAgentMetadata */ false, 5200)
     const out = result?.output ?? ''
     expect(out).not.toContain('startRelay')
     expect(out).not.toContain('enableDevTools')
@@ -1159,5 +1159,49 @@ export const X = component<State, Msg, never>({
     expect(aHash).toBeDefined()
     expect(bHash).toBeDefined()
     expect(aHash).not.toBe(bHash)
+  })
+})
+
+describe('transformLlui — agent-mode metadata emission', () => {
+  const tProd = (src: string, emitAgentMetadata: boolean) =>
+    transformLlui(src, 'test.ts', /* devMode */ false, /* emitAgentMetadata */ emitAgentMetadata)?.output ?? src
+
+  const sample = `
+import { component, button } from '@llui/dom'
+type State = { n: number }
+type Msg =
+  /** @intent("Increment") */
+  | { type: 'inc' }
+export const App = component<State, Msg, never>({
+  name: 'App', init: () => [{ n: 0 }, []],
+  update: (s, _m) => [s, []],
+  view: ({ send, text }) => [
+    button({ onClick: () => send({ type: 'inc' }) }, [text('+')]),
+  ],
+})
+`
+
+  it('omits schemas and descriptors in prod mode with agent: false (baseline)', () => {
+    const out = tProd(sample, false)
+    expect(out).not.toContain('__msgSchema:')
+    expect(out).not.toContain('__stateSchema:')
+    expect(out).not.toContain('__msgAnnotations:')
+    expect(out).not.toContain('__bindingDescriptors:')
+    // __schemaHash is already always-emitted:
+    expect(out).toMatch(/__schemaHash:/)
+  })
+
+  it('emits schemas and descriptors in prod mode with agent: true', () => {
+    const out = tProd(sample, true)
+    expect(out).toContain('__msgSchema:')
+    expect(out).toContain('__stateSchema:')
+    expect(out).toContain('__msgAnnotations:')
+    expect(out).toContain('__bindingDescriptors:')
+    expect(out).toMatch(/__schemaHash:/)
+  })
+
+  it('omits __componentMeta (file/line) even with agent: true in prod', () => {
+    const out = tProd(sample, true)
+    expect(out).not.toContain('__componentMeta:')
   })
 })

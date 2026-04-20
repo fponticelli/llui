@@ -188,6 +188,7 @@ export function transformLlui(
   source: string,
   _filename: string,
   devMode = false,
+  emitAgentMetadata = false,
   mcpPort: number | null = 5200,
   verbose = false,
 ): { output: string; edits: TransformEdit[] } | null {
@@ -358,7 +359,8 @@ export function transformLlui(
 
       const bindingDescriptors = extractBindingDescriptors(source)
 
-      if (devMode) {
+      const shouldEmitAgentMetadata = devMode || emitAgentMetadata
+      if (shouldEmitAgentMetadata) {
         if (msgSchema) {
           result = injectMsgSchema(result ?? node, msgSchema, f)
         }
@@ -375,6 +377,8 @@ export function transformLlui(
         if (bindingDescriptors.length > 0) {
           result = injectBindingDescriptors(result ?? node, bindingDescriptors, f)
         }
+      }
+      if (devMode) {
         result = injectComponentMeta(result ?? node, node, sourceFile, _filename, f)
       }
 

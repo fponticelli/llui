@@ -393,7 +393,7 @@ export default function llui(options: LluiPluginOptions = {}): Plugin {
         }
       }
 
-      const result = transformLlui(code, id, devMode, mcpPort, verbose)
+      const result = transformLlui(code, id, devMode, false, mcpPort, verbose)
       if (!result) return undefined
 
       // Apply per-statement edits via MagicString for accurate source maps.
