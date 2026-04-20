@@ -95,4 +95,19 @@ describe('agent-missing-intent', () => {
     expect(violations[0]!.message).toContain('"second"')
     expect(violations[0]!.message).toContain('@intent("...")')
   })
+
+  it('does not flag @humanOnly variants — they are never agent-dispatched', () => {
+    const source = `
+      type Msg =
+        /** @intent("Do A") */
+        | { type: 'a' }
+        /** @humanOnly */
+        | { type: 'internal' }
+        /** @humanOnly @intent("Has both") */
+        | { type: 'both' }
+    `
+    const result = lintIdiomatic(source)
+    const violations = result.violations.filter((v) => v.rule === 'agent-missing-intent')
+    expect(violations).toHaveLength(0)
+  })
 })

@@ -34,6 +34,10 @@ export function checkAgentMissingIntent(
       const scanPos = i === 0 || prev === undefined ? stmt.type.pos : prev.end
       const comment = readLeadingJSDoc(source, scanPos)
 
+      // @humanOnly variants are never agent-dispatched, so they don't need
+      // an @intent. Skip the check.
+      if (hasHumanOnlyTag(comment)) continue
+
       if (!hasIntentTag(comment)) {
         const { line, character } = sf.getLineAndCharacterOfPosition(member.getStart(sf))
         violations.push({
@@ -70,4 +74,8 @@ function readLeadingJSDoc(source: string, scanPos: number): string {
 
 function hasIntentTag(comment: string): boolean {
   return /@intent\s*\(\s*["\u201c]([^"\u201d]*)["\u201d]\s*\)/.test(comment)
+}
+
+function hasHumanOnlyTag(comment: string): boolean {
+  return /@humanOnly\b/.test(comment)
 }
