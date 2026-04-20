@@ -52,6 +52,7 @@ export function createLluiAgentServer(opts: ServerOptions): AgentServerHandle {
     tokenStore,
     registry,
     auditSink,
+    rateLimiter,
   }, lapBasePath)
 
   const router: AgentServerHandle['router'] = async (req) => {
@@ -66,8 +67,6 @@ export function createLluiAgentServer(opts: ServerOptions): AgentServerHandle {
     registry,
     auditSink,
   })
-
-  void rateLimiter  // applied inside route handlers in future polish work
 
   return { router, wsUpgrade }
 }

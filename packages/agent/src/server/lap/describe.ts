@@ -2,6 +2,7 @@ import { verifyToken } from '../token.js'
 import type { TokenStore } from '../token-store.js'
 import type { WsPairingRegistry } from '../ws/pairing-registry.js'
 import type { AuditSink } from '../audit.js'
+import type { RateLimiter } from '../rate-limit.js'
 import type { LapDescribeResponse, MessageSchemaEntry } from '../../protocol.js'
 
 export type LapDescribeDeps = {
@@ -9,6 +10,7 @@ export type LapDescribeDeps = {
   tokenStore: TokenStore
   registry: WsPairingRegistry
   auditSink: AuditSink
+  rateLimiter: RateLimiter
   now?: () => number
 }
 
@@ -19,6 +21,11 @@ export async function handleLapDescribe(req: Request, deps: LapDescribeDeps): Pr
   const rec = await deps.tokenStore.findByTid(auth.tid)
   if (!rec || rec.status === 'revoked') return json({ error: { code: 'revoked' } }, 403)
   if (!deps.registry.isPaired(auth.tid)) return json({ error: { code: 'paused' } }, 503)
+
+  const rlCheck = await deps.rateLimiter.check(auth.tid, 'token')
+  if (!rlCheck.allowed) {
+    return json({ error: { code: 'rate-limited', retryAfterMs: rlCheck.retryAfterMs } }, 429)
+  }
 
   const hello = deps.registry.getHello(auth.tid)
   if (!hello) return json({ error: { code: 'paused' } }, 503)

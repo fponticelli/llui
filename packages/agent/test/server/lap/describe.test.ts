@@ -1,9 +1,10 @@
-import { describe, it, expect, beforeEach } from 'vitest'
+import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { handleLapDescribe } from '../../../src/server/lap/describe.js'
 import { WsPairingRegistry, type PairingConnection } from '../../../src/server/ws/pairing-registry.js'
 import { InMemoryTokenStore } from '../../../src/server/token-store.js'
 import { signToken } from '../../../src/server/token.js'
 import type { HelloFrame, LapDescribeResponse, TokenRecord } from '../../../src/protocol.js'
+import type { RateLimiter } from '../../../src/server/rate-limit.js'
 
 const key = 'x'.repeat(32)
 
@@ -18,11 +19,19 @@ function fakeConn(): PairingConnection & { emit: (f: HelloFrame) => void } {
   } as unknown as PairingConnection & { emit: (f: HelloFrame) => void }
 }
 
+const permissiveLimiter: RateLimiter = { check: async () => ({ allowed: true }) }
+
 let store: InMemoryTokenStore
 let registry: WsPairingRegistry
 beforeEach(() => {
   store = new InMemoryTokenStore()
   registry = new WsPairingRegistry()
+})
+
+const baseDeps = () => ({
+  signingKey: key, tokenStore: store, registry,
+  auditSink: { write: () => {} }, now: () => 1000,
+  rateLimiter: permissiveLimiter,
 })
 
 const seed = async (tid: string): Promise<void> => {
@@ -58,10 +67,7 @@ describe('handleLapDescribe', () => {
       docs: { purpose: 'Demo' },
       schemaHash: 'abc',
     })
-    const res = await handleLapDescribe(mkRequest(validToken('t1')), {
-      signingKey: key, tokenStore: store, registry,
-      auditSink: { write: () => {} }, now: () => 1000,
-    })
+    const res = await handleLapDescribe(mkRequest(validToken('t1')), baseDeps())
     expect(res.status).toBe(200)
     const body = (await res.json()) as LapDescribeResponse
     expect(body.name).toBe('Kanban')
@@ -73,10 +79,7 @@ describe('handleLapDescribe', () => {
   it('returns 503 paused when no pairing is live', async () => {
     await seed('t1')
     // No registry.register(...)
-    const res = await handleLapDescribe(mkRequest(validToken('t1')), {
-      signingKey: key, tokenStore: store, registry,
-      auditSink: { write: () => {} }, now: () => 1000,
-    })
+    const res = await handleLapDescribe(mkRequest(validToken('t1')), baseDeps())
     expect(res.status).toBe(503)
     const body = await res.json() as { error: { code: string } }
     expect(body.error.code).toBe('paused')
@@ -86,29 +89,44 @@ describe('handleLapDescribe', () => {
     await seed('t1')
     const conn = fakeConn()
     registry.register('t1', conn)
-    const res = await handleLapDescribe(mkRequest(validToken('t1')), {
-      signingKey: key, tokenStore: store, registry,
-      auditSink: { write: () => {} }, now: () => 1000,
-    })
+    const res = await handleLapDescribe(mkRequest(validToken('t1')), baseDeps())
     expect(res.status).toBe(503)
   })
 
   it('rejects bearer-less requests with 401', async () => {
     const req = new Request('https://app/agent/lap/v1/describe', { method: 'POST' })
-    const res = await handleLapDescribe(req, {
-      signingKey: key, tokenStore: store, registry,
-      auditSink: { write: () => {} }, now: () => 1000,
-    })
+    const res = await handleLapDescribe(req, baseDeps())
     expect(res.status).toBe(401)
   })
 
   it('rejects revoked tokens with 403', async () => {
     await seed('t1')
     await store.revoke('t1')
-    const res = await handleLapDescribe(mkRequest(validToken('t1')), {
-      signingKey: key, tokenStore: store, registry,
-      auditSink: { write: () => {} }, now: () => 1000,
-    })
+    const res = await handleLapDescribe(mkRequest(validToken('t1')), baseDeps())
     expect(res.status).toBe(403)
+  })
+
+  it('returns 429 with retryAfterMs when rate limiter denies', async () => {
+    await seed('t1')
+    const conn = fakeConn()
+    registry.register('t1', conn)
+    conn.emit({
+      t: 'hello',
+      appName: 'Kanban',
+      appVersion: '1.0',
+      msgSchema: {},
+      stateSchema: {},
+      affordancesSample: [],
+      docs: { purpose: 'Test' },
+      schemaHash: 'abc',
+    })
+    const tightLimiter: RateLimiter = {
+      check: vi.fn<RateLimiter['check']>(async () => ({ allowed: false, retryAfterMs: 500 })),
+    }
+    const res = await handleLapDescribe(mkRequest(validToken('t1')), { ...baseDeps(), rateLimiter: tightLimiter })
+    expect(res.status).toBe(429)
+    const body = (await res.json()) as { error: { code: string; retryAfterMs: number } }
+    expect(body.error.code).toBe('rate-limited')
+    expect(body.error.retryAfterMs).toBe(500)
   })
 })

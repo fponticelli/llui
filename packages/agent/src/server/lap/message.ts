@@ -1,6 +1,7 @@
 import type { TokenStore } from '../token-store.js'
 import type { WsPairingRegistry } from '../ws/pairing-registry.js'
 import type { AuditSink } from '../audit.js'
+import type { RateLimiter } from '../rate-limit.js'
 import { verifyAndReadTid } from './describe.js'
 import type { LapMessageRequest, LapMessageResponse } from '../../protocol.js'
 
@@ -9,6 +10,7 @@ export type LapMessageDeps = {
   tokenStore: TokenStore
   registry: WsPairingRegistry
   auditSink: AuditSink
+  rateLimiter: RateLimiter
   now?: () => number
 }
 
@@ -19,6 +21,11 @@ export async function handleLapMessage(req: Request, deps: LapMessageDeps): Prom
   const rec = await deps.tokenStore.findByTid(auth.tid)
   if (!rec || rec.status === 'revoked') return json({ error: { code: 'revoked' } }, 403)
   if (!deps.registry.isPaired(auth.tid)) return json({ error: { code: 'paused' } }, 503)
+
+  const rlCheck = await deps.rateLimiter.check(auth.tid, 'token')
+  if (!rlCheck.allowed) {
+    return json({ error: { code: 'rate-limited', retryAfterMs: rlCheck.retryAfterMs } }, 429)
+  }
 
   const body = (await req.json().catch(() => null)) as LapMessageRequest | null
   if (!body || !body.msg || typeof body.msg.type !== 'string') {
