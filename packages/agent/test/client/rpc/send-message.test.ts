@@ -3,9 +3,7 @@ import { handleSendMessage, type SendMessageHost } from '../../../src/client/rpc
 import { randomUUID } from '../../../src/client/uuid.js'
 import type { MessageAnnotations } from '../../../src/protocol.js'
 
-function makeHost(
-  overrides: Partial<SendMessageHost> & { state?: unknown } = {},
-): SendMessageHost {
+function makeHost(overrides: Partial<SendMessageHost> & { state?: unknown } = {}): SendMessageHost {
   let _state = overrides.state ?? { count: 0 }
   return {
     getState: overrides.getState ?? (() => _state),
@@ -129,7 +127,14 @@ describe('handleSendMessage', () => {
     const send = vi.fn()
     const host = makeHost({
       send,
-      getMsgAnnotations: () => ({ OtherMsg: { intent: 'other', alwaysAffordable: false, requiresConfirm: false, humanOnly: false } }),
+      getMsgAnnotations: () => ({
+        OtherMsg: {
+          intent: 'other',
+          alwaysAffordable: false,
+          requiresConfirm: false,
+          humanOnly: false,
+        },
+      }),
     })
 
     const result = await handleSendMessage(host, { msg: { type: 'UnknownMsg' } })

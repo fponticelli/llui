@@ -28,9 +28,12 @@ export function createBridgeServer(deps: BridgeDeps): McpServer {
     { capabilities: { tools: {}, prompts: {} } },
   )
 
-  server.setRequestHandler(ListToolsRequestSchema, async (): Promise<ListToolsResult> => ({
-    tools: TOOLS,
-  }))
+  server.setRequestHandler(
+    ListToolsRequestSchema,
+    async (): Promise<ListToolsResult> => ({
+      tools: TOOLS,
+    }),
+  )
 
   server.setRequestHandler(CallToolRequestSchema, async (req): Promise<CallToolResult> => {
     const { name, arguments: args = {} } = req.params
@@ -64,9 +67,7 @@ export function createBridgeServer(deps: BridgeDeps): McpServer {
     // Forwarded tools
     const binding = deps.bindings.get(deps.sessionId)
     if (!binding) {
-      return errorResult(
-        'not bound — ask the user to run /llui-connect <url> <token> first',
-      )
+      return errorResult('not bound — ask the user to run /llui-connect <url> <token> first')
     }
 
     // describe_app can serve from cache

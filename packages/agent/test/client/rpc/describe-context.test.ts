@@ -1,5 +1,8 @@
 import { describe, it, expect } from 'vitest'
-import { handleDescribeContext, type DescribeContextHost } from '../../../src/client/rpc/describe-context.js'
+import {
+  handleDescribeContext,
+  type DescribeContextHost,
+} from '../../../src/client/rpc/describe-context.js'
 import type { AgentContext } from '../../../src/protocol.js'
 
 describe('handleDescribeContext', () => {

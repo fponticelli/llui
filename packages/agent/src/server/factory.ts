@@ -34,7 +34,12 @@ export function createLluiAgentServer(opts: ServerOptions): AgentServerHandle {
         tid,
         uid: null,
         event: 'lap-call',
-        detail: { source: 'client-log', kind: entry.kind, variant: entry.variant, intent: entry.intent },
+        detail: {
+          source: 'client-log',
+          kind: entry.kind,
+          variant: entry.variant,
+          intent: entry.intent,
+        },
       })
     },
   })
@@ -47,13 +52,16 @@ export function createLluiAgentServer(opts: ServerOptions): AgentServerHandle {
     lapBasePath,
   })
 
-  const lapRouter = createLapRouter({
-    signingKey: opts.signingKey,
-    tokenStore,
-    registry,
-    auditSink,
-    rateLimiter,
-  }, lapBasePath)
+  const lapRouter = createLapRouter(
+    {
+      signingKey: opts.signingKey,
+      tokenStore,
+      registry,
+      auditSink,
+      rateLimiter,
+    },
+    lapBasePath,
+  )
 
   const router: AgentServerHandle['router'] = async (req) => {
     const lapRes = await lapRouter(req)

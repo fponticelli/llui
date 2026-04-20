@@ -23,7 +23,7 @@ export default defineConfig({
 ```ts
 llui({
   mcpPort: 5200, // MCP debug server port (default: 5200, false to disable)
-  agent: true,   // Emit LLui Agent metadata in prod builds (default: false)
+  agent: true, // Emit LLui Agent metadata in prod builds (default: false)
 })
 ```
 

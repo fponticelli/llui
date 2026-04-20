@@ -1,7 +1,12 @@
 import type { AppHandle } from '@llui/dom'
 import type { AgentEffect } from './effects.js'
 import type { AgentConfirmState } from './agentConfirm.js'
-import type { AgentDocs, AgentContext, MessageAnnotations, MessageSchemaEntry } from '../protocol.js'
+import type {
+  AgentDocs,
+  AgentContext,
+  MessageAnnotations,
+  MessageSchemaEntry,
+} from '../protocol.js'
 import { attachWsClient, type WsLike, type RpcHosts } from './ws-client.js'
 import { createEffectHandler } from './effect-handler.js'
 
@@ -65,7 +70,9 @@ export function createAgentClient<State, Msg>(
     appVersion: opts.appVersion ?? '0.0.0',
     msgSchema: (opts.def.__msgSchema ?? {}) as Record<string, MessageSchemaEntry>,
     stateSchema: (opts.def.__stateSchema ?? {}) as object,
-    affordancesSample: opts.def.agentAffordances ? opts.def.agentAffordances(opts.handle.getState()) : [],
+    affordancesSample: opts.def.agentAffordances
+      ? opts.def.agentAffordances(opts.handle.getState())
+      : [],
     docs: opts.def.agentDocs ?? null,
     schemaHash: opts.def.__schemaHash ?? '',
   })
@@ -114,7 +121,10 @@ export function createAgentClient<State, Msg>(
     stop() {
       if (confirmPollTimer) clearInterval(confirmPollTimer)
       confirmPollTimer = null
-      if (stateSubscription) { stateSubscription(); stateSubscription = null }
+      if (stateSubscription) {
+        stateSubscription()
+        stateSubscription = null
+      }
       wsClient?.close()
     },
   }

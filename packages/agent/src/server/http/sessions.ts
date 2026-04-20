@@ -29,5 +29,8 @@ export async function handleSessions(req: Request, deps: SessionsDeps): Promise<
 }
 
 function json(b: unknown, s: number): Response {
-  return new Response(JSON.stringify(b), { status: s, headers: { 'content-type': 'application/json' } })
+  return new Response(JSON.stringify(b), {
+    status: s,
+    headers: { 'content-type': 'application/json' },
+  })
 }

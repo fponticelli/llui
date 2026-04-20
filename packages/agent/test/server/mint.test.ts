@@ -16,7 +16,11 @@ beforeEach(() => {
   clock = 1_700_000_000
 })
 
-const audit = { write: (e: unknown) => { auditLog.push(e) } }
+const audit = {
+  write: (e: unknown) => {
+    auditLog.push(e)
+  },
+}
 
 describe('handleMint', () => {
   it('creates a pairing record and returns a signed token + wsUrl + lapUrl', async () => {
@@ -27,7 +31,7 @@ describe('handleMint', () => {
       identityResolver: async () => 'u1',
       auditSink: audit,
       lapBasePath: '/agent/lap/v1',
-      now: () => clock * 1000,  // ms-resolution wall clock
+      now: () => clock * 1000, // ms-resolution wall clock
       uuid: () => '11111111-1111-1111-1111-111111111111',
     })
     expect(res.status).toBe(200)

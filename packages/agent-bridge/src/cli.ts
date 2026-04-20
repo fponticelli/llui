@@ -9,9 +9,13 @@ import { BindingMap } from './binding.js'
 const PACKAGE_VERSION = (() => {
   try {
     const here = dirname(fileURLToPath(import.meta.url))
-    const pkg = JSON.parse(readFileSync(resolve(here, '../package.json'), 'utf8')) as { version?: string }
+    const pkg = JSON.parse(readFileSync(resolve(here, '../package.json'), 'utf8')) as {
+      version?: string
+    }
     return typeof pkg.version === 'string' ? pkg.version : 'unknown'
-  } catch { return 'unknown' }
+  } catch {
+    return 'unknown'
+  }
 })()
 
 async function main(): Promise<void> {

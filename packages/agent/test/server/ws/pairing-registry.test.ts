@@ -13,9 +13,15 @@ function mkFake(): Fake {
   let onClose: () => void = () => {}
   const conn = {
     send: vi.fn(),
-    onFrame(h: typeof onFrame) { onFrame = h },
-    onClose(h: typeof onClose) { onClose = h },
-    close() { onClose() },
+    onFrame(h: typeof onFrame) {
+      onFrame = h
+    },
+    onClose(h: typeof onClose) {
+      onClose = h
+    },
+    close() {
+      onClose()
+    },
   }
   const out: Fake = {
     send: conn.send,
@@ -38,7 +44,9 @@ const hello = (schemaHash = 'h1'): HelloFrame => ({
 })
 
 let reg: WsPairingRegistry
-beforeEach(() => { reg = new WsPairingRegistry({ now: () => 1000 }) })
+beforeEach(() => {
+  reg = new WsPairingRegistry({ now: () => 1000 })
+})
 
 function getConn(f: Fake) {
   return (f as unknown as { __conn: Parameters<WsPairingRegistry['register']>[1] }).__conn
@@ -47,7 +55,19 @@ function getConn(f: Fake) {
 describe('WsPairingRegistry', () => {
   it('register stores the pairing keyed by tid', () => {
     const f = mkFake()
-    reg.register('t1', (f as unknown as { __conn: { send: (x: ServerFrame) => void; onFrame: (h: (cf: ClientFrame) => void) => void; onClose: (h: () => void) => void; close: () => void } }).__conn)
+    reg.register(
+      't1',
+      (
+        f as unknown as {
+          __conn: {
+            send: (x: ServerFrame) => void
+            onFrame: (h: (cf: ClientFrame) => void) => void
+            onClose: (h: () => void) => void
+            close: () => void
+          }
+        }
+      ).__conn,
+    )
     expect(reg.isPaired('t1')).toBe(true)
   })
 
@@ -95,14 +115,21 @@ describe('WsPairingRegistry', () => {
   it('rpc() respects an explicit timeout', async () => {
     const f = mkFake()
     reg.register('t1', (f as unknown as { __conn: unknown }).__conn as never)
-    await expect(reg.rpc('t1', 'get_state', {}, { timeoutMs: 1 })).rejects.toMatchObject({ code: 'timeout' })
+    await expect(reg.rpc('t1', 'get_state', {}, { timeoutMs: 1 })).rejects.toMatchObject({
+      code: 'timeout',
+    })
   })
 
   it('waitForConfirm() resolves when a matching confirm-resolved frame arrives', async () => {
     const f = mkFake()
     reg.register('t1', (f as unknown as { __conn: unknown }).__conn as never)
     const p = reg.waitForConfirm('t1', 'c-1', 1000)
-    f.emit({ t: 'confirm-resolved', confirmId: 'c-1', outcome: 'confirmed', stateAfter: { ok: true } })
+    f.emit({
+      t: 'confirm-resolved',
+      confirmId: 'c-1',
+      outcome: 'confirmed',
+      stateAfter: { ok: true },
+    })
     expect(await p).toEqual({ outcome: 'confirmed', stateAfter: { ok: true } })
   })
 

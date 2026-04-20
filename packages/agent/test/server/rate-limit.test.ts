@@ -3,7 +3,9 @@ import { defaultRateLimiter } from '../../src/server/rate-limit.js'
 
 let clock = 0
 const now = () => clock
-beforeEach(() => { clock = 0 })
+beforeEach(() => {
+  clock = 0
+})
 
 describe('defaultRateLimiter — token bucket', () => {
   it('allows under-limit calls', async () => {

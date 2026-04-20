@@ -11,9 +11,10 @@ export function defaultIdentityResolver(cfg: IdentityCookieConfig): IdentityReso
   if (!cfg.signingKey || (typeof cfg.signingKey === 'string' && cfg.signingKey.length < 32)) {
     throw new Error('IdentityCookie signingKey must be at least 32 bytes')
   }
-  const keyBuf = typeof cfg.signingKey === 'string'
-    ? Buffer.from(cfg.signingKey, 'utf8')
-    : Buffer.from(cfg.signingKey)
+  const keyBuf =
+    typeof cfg.signingKey === 'string'
+      ? Buffer.from(cfg.signingKey, 'utf8')
+      : Buffer.from(cfg.signingKey)
 
   return async (req) => {
     const cookie = req.headers.get('cookie')
@@ -39,9 +40,8 @@ export function defaultIdentityResolver(cfg: IdentityCookieConfig): IdentityReso
 }
 
 export function signCookieValue(value: string, signingKey: string | Uint8Array): string {
-  const keyBuf = typeof signingKey === 'string'
-    ? Buffer.from(signingKey, 'utf8')
-    : Buffer.from(signingKey)
+  const keyBuf =
+    typeof signingKey === 'string' ? Buffer.from(signingKey, 'utf8') : Buffer.from(signingKey)
   const mac = createHmac('sha256', keyBuf).update(value).digest('base64url')
   return `${value}.${mac}`
 }

@@ -23,11 +23,7 @@ export const App = component<State, Msg, never>({
 })
 `
     const result = extractBindingDescriptors(source)
-    expect(result).toEqual([
-      { variant: 'inc' },
-      { variant: 'dec' },
-      { variant: 'reset' },
-    ])
+    expect(result).toEqual([{ variant: 'inc' }, { variant: 'dec' }, { variant: 'reset' }])
   })
 })
 
@@ -75,10 +71,7 @@ export const App = component<State, Msg, never>({
   ],
 })
 `
-    expect(extractBindingDescriptors(src)).toEqual([
-      { variant: 'inc' },
-      { variant: 'inc' },
-    ])
+    expect(extractBindingDescriptors(src)).toEqual([{ variant: 'inc' }, { variant: 'inc' }])
   })
 
   it('finds send() nested inside branch/show/each bodies', () => {
@@ -95,10 +88,7 @@ export const App = component<State, Msg, never>({
   ],
 })
 `
-    expect(extractBindingDescriptors(src)).toEqual([
-      { variant: 'a' },
-      { variant: 'b' },
-    ])
+    expect(extractBindingDescriptors(src)).toEqual([{ variant: 'a' }, { variant: 'b' }])
   })
 
   it('ignores calls whose first argument is not an object literal', () => {
@@ -130,9 +120,6 @@ export const B = component<S2, M2, never>({
   view: ({ send }) => [button({ onClick: () => send({ type: 'b' }) }, [])],
 })
 `
-    expect(extractBindingDescriptors(src)).toEqual([
-      { variant: 'a' },
-      { variant: 'b' },
-    ])
+    expect(extractBindingDescriptors(src)).toEqual([{ variant: 'a' }, { variant: 'b' }])
   })
 })

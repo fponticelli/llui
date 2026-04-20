@@ -166,7 +166,11 @@ describe('integration: mint → ws → describe → state', () => {
     const ws = new WebSocket(`${wsUrl('/agent/ws')}?token=${encodeURIComponent(token)}`)
     // ws package implements the WsLike interface (addEventListener + send + close)
     const fakeRpc = makeFakeRpcHost({ value: 42 })
-    attachWsClient(ws as unknown as import('../../src/client/ws-client.js').WsLike, fakeRpc, makeHelloBuilder('IntegrationApp'))
+    attachWsClient(
+      ws as unknown as import('../../src/client/ws-client.js').WsLike,
+      fakeRpc,
+      makeHelloBuilder('IntegrationApp'),
+    )
 
     // 3. Wait for WS to fully open (hello has been sent at this point)
     await new Promise<void>((resolve, reject) => {
@@ -194,7 +198,7 @@ describe('integration: mint → ws → describe → state', () => {
     await new Promise<void>((resolve) => ws.once('close', resolve))
   })
 
-  it('state returns the rpc host\'s current state', async () => {
+  it("state returns the rpc host's current state", async () => {
     // Mint + connect WS
     const mintRes = await fetch(`${baseUrl()}/agent/mint`, { method: 'POST' })
     const { token } = (await mintRes.json()) as MintResponse

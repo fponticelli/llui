@@ -30,7 +30,10 @@ export async function handleLapDescribe(req: Request, deps: LapDescribeDeps): Pr
   const hello = deps.registry.getHello(auth.tid)
   if (!hello) return json({ error: { code: 'paused' } }, 503)
 
-  const messages: Record<string, MessageSchemaEntry> = hello.msgSchema as Record<string, MessageSchemaEntry>
+  const messages: Record<string, MessageSchemaEntry> = hello.msgSchema as Record<
+    string,
+    MessageSchemaEntry
+  >
   const out: LapDescribeResponse = {
     name: hello.appName,
     version: hello.appVersion,
@@ -48,8 +51,11 @@ export async function handleLapDescribe(req: Request, deps: LapDescribeDeps): Pr
   const nowMs = (deps.now ?? (() => Date.now()))()
   await deps.tokenStore.touch(auth.tid, nowMs)
   await deps.auditSink.write({
-    at: nowMs, tid: auth.tid, uid: rec.uid,
-    event: 'lap-call', detail: { path: '/lap/v1/describe' },
+    at: nowMs,
+    tid: auth.tid,
+    uid: rec.uid,
+    event: 'lap-call',
+    detail: { path: '/lap/v1/describe' },
   })
   return json(out, 200)
 }
@@ -67,5 +73,8 @@ export function verifyAndReadTid(
 }
 
 function json(b: unknown, s: number): Response {
-  return new Response(JSON.stringify(b), { status: s, headers: { 'content-type': 'application/json' } })
+  return new Response(JSON.stringify(b), {
+    status: s,
+    headers: { 'content-type': 'application/json' },
+  })
 }

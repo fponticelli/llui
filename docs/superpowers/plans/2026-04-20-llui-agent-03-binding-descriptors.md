@@ -9,6 +9,7 @@
 **Tech Stack:** TypeScript Compiler API (recursive `ts.forEachChild`), vitest, existing Pass 2 infrastructure.
 
 **Spec section coverage:**
+
 - §5.2 Binding introspection — partial (emission only, not runtime live-binding reconciliation).
 - §12.2 Binding descriptor emission — implementation (minus argsShape / selectorHint).
 - Deferred to a future plan: runtime live-binding filtering so `list_actions` returns only currently-rendered affordances instead of the static union. For v1, Claude cross-references with `describe_visible_content` to understand which static affordances are actually on screen.
@@ -18,6 +19,7 @@
 ## v1 scope trim (captured here so the spec stays aspirational)
 
 The spec's full `BindingDescriptor` is:
+
 ```ts
 {
   variant: string
@@ -28,12 +30,14 @@ The spec's full `BindingDescriptor` is:
 ```
 
 V1 emits only `{variant: string}`. At runtime the server/bridge compose the full response by:
+
 - Joining with `__msgAnnotations[variant]` to get `intent` / `requiresConfirm` / `humanOnly`.
 - Leaving `payloadHint: null`, `selectorHint: null`, `source: 'binding'`.
 
 This is sufficient to tell Claude WHICH variants are reachable through the UI; payload details come from `describe_app.messages[variant].payloadSchema`, and visibility comes from `describe_visible_content`.
 
 Deferred for a follow-up plan:
+
 - `argsShape` / `payloadHint` — extract literal fields from `send({type: 'delete', id: 'abc'})`.
 - `selectorHint` — walk the enclosing element call to reconstruct a CSS hint like `button[data-action='delete']`.
 - Live-binding reconciliation — the runtime binding array carries a reference to its descriptor; `list_actions` filters by `branch`/`show`/`each` reconciliation state.
@@ -53,6 +57,7 @@ Deferred for a follow-up plan:
 ## Task 1: Failing unit test — happy path
 
 **Files:**
+
 - Create: `packages/vite-plugin/test/binding-descriptors.test.ts`
 
 - [ ] **Step 1: Write the failing test**
@@ -83,11 +88,7 @@ export const App = component<State, Msg, never>({
 })
 `
     const result = extractBindingDescriptors(source)
-    expect(result).toEqual([
-      { variant: 'inc' },
-      { variant: 'dec' },
-      { variant: 'reset' },
-    ])
+    expect(result).toEqual([{ variant: 'inc' }, { variant: 'dec' }, { variant: 'reset' }])
   })
 })
 ```
@@ -105,6 +106,7 @@ Expected: FAIL (module not found).
 ## Task 2: Implement `extractBindingDescriptors`
 
 **Files:**
+
 - Create: `packages/vite-plugin/src/binding-descriptors.ts`
 
 - [ ] **Step 1: Write the implementation**
@@ -152,12 +154,7 @@ export function extractBindingDescriptors(source: string): BindingDescriptor[] {
     if (ts.isCallExpression(node)) {
       const callee = node.expression
       const first = node.arguments[0]
-      if (
-        callee &&
-        ts.isIdentifier(callee) &&
-        first &&
-        ts.isObjectLiteralExpression(first)
-      ) {
+      if (callee && ts.isIdentifier(callee) && first && ts.isObjectLiteralExpression(first)) {
         const variant = readTypeLiteral(first)
         if (variant !== null && isLikelySendCall(callee)) {
           out.push({ variant })
@@ -241,6 +238,7 @@ COMMIT
 ## Task 3: Edge-case tests
 
 **Files:**
+
 - Modify: `packages/vite-plugin/test/binding-descriptors.test.ts`
 
 - [ ] **Step 1: Append**
@@ -293,10 +291,7 @@ export const App = component<State, Msg, never>({
   ],
 })
 `
-    expect(extractBindingDescriptors(src)).toEqual([
-      { variant: 'inc' },
-      { variant: 'inc' },
-    ])
+    expect(extractBindingDescriptors(src)).toEqual([{ variant: 'inc' }, { variant: 'inc' }])
   })
 
   it('finds send() nested inside branch/show/each bodies', () => {
@@ -313,10 +308,7 @@ export const App = component<State, Msg, never>({
   ],
 })
 `
-    expect(extractBindingDescriptors(src)).toEqual([
-      { variant: 'a' },
-      { variant: 'b' },
-    ])
+    expect(extractBindingDescriptors(src)).toEqual([{ variant: 'a' }, { variant: 'b' }])
   })
 
   it('ignores calls whose first argument is not an object literal', () => {
@@ -348,10 +340,7 @@ export const B = component<S2, M2, never>({
   view: ({ send }) => [button({ onClick: () => send({ type: 'b' }) }, [])],
 })
 `
-    expect(extractBindingDescriptors(src)).toEqual([
-      { variant: 'a' },
-      { variant: 'b' },
-    ])
+    expect(extractBindingDescriptors(src)).toEqual([{ variant: 'a' }, { variant: 'b' }])
   })
 })
 ```
@@ -386,6 +375,7 @@ COMMIT
 ## Task 4: Failing integration test
 
 **Files:**
+
 - Modify: `packages/vite-plugin/test/transform.test.ts`
 
 - [ ] **Step 1: Append — use the same harness (`tDev`) used for `__msgAnnotations` / `__schemaHash`**
@@ -448,6 +438,7 @@ Expected: FAIL.
 ## Task 5: Integrate into Pass 2
 
 **Files:**
+
 - Modify: `packages/vite-plugin/src/transform.ts`
 
 - [ ] **Step 1: Import**
@@ -463,7 +454,7 @@ import { extractBindingDescriptors, type BindingDescriptor } from './binding-des
 At the same Pass 2 site where `msgAnnotations` and `schemaHash` are computed, add:
 
 ```ts
-const bindingDescriptors = extractBindingDescriptors(code)  // use the local source var name
+const bindingDescriptors = extractBindingDescriptors(code) // use the local source var name
 ```
 
 - [ ] **Step 3: Inject `__bindingDescriptors` into the component-config object literal**
@@ -484,17 +475,10 @@ if (bindingDescriptors.length > 0) {
 And append this helper alongside the other `annotationsToObjectLiteral` helper:
 
 ```ts
-function bindingDescriptorsToArrayLiteral(
-  descs: BindingDescriptor[],
-): ts.ArrayLiteralExpression {
+function bindingDescriptorsToArrayLiteral(descs: BindingDescriptor[]): ts.ArrayLiteralExpression {
   const entries = descs.map((d) =>
     ts.factory.createObjectLiteralExpression(
-      [
-        ts.factory.createPropertyAssignment(
-          'variant',
-          ts.factory.createStringLiteral(d.variant),
-        ),
-      ],
+      [ts.factory.createPropertyAssignment('variant', ts.factory.createStringLiteral(d.variant))],
       false,
     ),
   )
@@ -534,6 +518,7 @@ COMMIT
 ## Task 6: Extend `LluiComponentDef` in `@llui/dom`
 
 **Files:**
+
 - Modify: `packages/dom/src/types.ts`
 
 - [ ] **Step 1: Find the three type declarations that already carry `__msgAnnotations`**
@@ -543,12 +528,14 @@ Based on the prior plan, they live near `ComponentDef<S, M, E, D>` (~line 25), `
 - [ ] **Step 2: Add the new field**
 
 In `ComponentDef` (the fully typed form):
+
 ```ts
 /** Compiler-emitted; one entry per send() call site in view(). See agent spec §5.2. */
 __bindingDescriptors?: Array<{ variant: string }>
 ```
 
 In `AnyComponentDef` and `LazyDef` (type-erased forms):
+
 ```ts
 __bindingDescriptors?: unknown
 ```

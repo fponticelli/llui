@@ -40,12 +40,7 @@ export function extractBindingDescriptors(source: string): BindingDescriptor[] {
     if (ts.isCallExpression(node)) {
       const callee = node.expression
       const first = node.arguments[0]
-      if (
-        callee &&
-        ts.isIdentifier(callee) &&
-        first &&
-        ts.isObjectLiteralExpression(first)
-      ) {
+      if (callee && ts.isIdentifier(callee) && first && ts.isObjectLiteralExpression(first)) {
         const variant = readTypeLiteral(first)
         if (variant !== null) {
           out.push({ variant })

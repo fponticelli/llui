@@ -17,7 +17,9 @@
       "import": "./dist/protocol.js"
     }
   },
-  "files": ["dist"],
+  "files": [
+    "dist"
+  ],
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
     "check": "tsc --noEmit",
@@ -34,7 +36,13 @@
     "@types/ws": "^8.5.13"
   },
   "description": "LLui Agent — LAP server + browser client runtime for driving LLui apps from LLM clients",
-  "keywords": ["llui", "agent", "llm", "mcp", "lap"],
+  "keywords": [
+    "llui",
+    "agent",
+    "llm",
+    "mcp",
+    "lap"
+  ],
   "author": "Franco Ponticelli <franco.ponticelli@gmail.com>",
   "license": "MIT",
   "repository": {
@@ -42,6 +50,8 @@
     "url": "git+https://github.com/fponticelli/llui.git",
     "directory": "packages/agent"
   },
-  "bugs": { "url": "https://github.com/fponticelli/llui/issues" },
+  "bugs": {
+    "url": "https://github.com/fponticelli/llui/issues"
+  },
   "homepage": "https://github.com/fponticelli/llui/tree/main/packages/agent#readme"
 }

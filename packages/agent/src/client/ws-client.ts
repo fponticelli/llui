@@ -3,7 +3,10 @@ import { handleGetState, type GetStateHost } from './rpc/get-state.js'
 import { handleSendMessage, type SendMessageHost } from './rpc/send-message.js'
 import { handleListActions, type ListActionsHost } from './rpc/list-actions.js'
 import { handleQueryDom, type QueryDomHost } from './rpc/query-dom.js'
-import { handleDescribeVisibleContent, type DescribeVisibleHost } from './rpc/describe-visible-content.js'
+import {
+  handleDescribeVisibleContent,
+  type DescribeVisibleHost,
+} from './rpc/describe-visible-content.js'
 import { handleDescribeContext, type DescribeContextHost } from './rpc/describe-context.js'
 
 export interface WsLike {
@@ -13,13 +16,22 @@ export interface WsLike {
   addEventListener(event: 'open' | 'close', h: () => void): void
 }
 
-export type RpcHosts = GetStateHost & SendMessageHost & ListActionsHost & QueryDomHost & DescribeVisibleHost & DescribeContextHost
+export type RpcHosts = GetStateHost &
+  SendMessageHost &
+  ListActionsHost &
+  QueryDomHost &
+  DescribeVisibleHost &
+  DescribeContextHost
 
 export type HelloBuilder = () => HelloFrame
 
 export type WsClient = {
   /** Resolve a pending confirmation; emits confirm-resolved frame to the server. */
-  resolveConfirm(confirmId: string, outcome: 'confirmed' | 'user-cancelled', stateAfter?: unknown): void
+  resolveConfirm(
+    confirmId: string,
+    outcome: 'confirmed' | 'user-cancelled',
+    stateAfter?: unknown,
+  ): void
   /** Emit a state-update frame so the server can resolve waitForChange promises. */
   emitStateUpdate(path: string, stateAfter: unknown): void
   /** Emit a log-append frame so the server can mirror client-observed actions to the audit sink. */
@@ -57,7 +69,8 @@ export function attachWsClient(ws: WsLike, rpc: RpcHosts, hello: HelloBuilder): 
     } catch (e: unknown) {
       rpcErr = e as { code?: string; detail?: string }
       const errFrame: ClientFrame = {
-        t: 'rpc-error', id: frame.id,
+        t: 'rpc-error',
+        id: frame.id,
         code: rpcErr.code ?? 'internal',
         detail: rpcErr.detail,
       }
@@ -77,7 +90,10 @@ export function attachWsClient(ws: WsLike, rpc: RpcHosts, hello: HelloBuilder): 
   return {
     resolveConfirm(confirmId, outcome, stateAfter) {
       const frame: ClientFrame = {
-        t: 'confirm-resolved', confirmId, outcome, stateAfter,
+        t: 'confirm-resolved',
+        confirmId,
+        outcome,
+        stateAfter,
       }
       ws.send(JSON.stringify(frame))
     },
@@ -97,17 +113,30 @@ export function attachWsClient(ws: WsLike, rpc: RpcHosts, hello: HelloBuilder): 
 
 async function dispatch(tool: string, args: unknown, rpc: RpcHosts): Promise<unknown> {
   switch (tool) {
-    case 'get_state': return handleGetState(rpc, (args ?? {}) as { path?: string })
-    case 'list_actions': return handleListActions(rpc)
-    case 'send_message': return handleSendMessage(rpc, args as never)
-    case 'query_dom': return handleQueryDom(rpc, args as never)
-    case 'describe_visible_content': return handleDescribeVisibleContent(rpc)
-    case 'describe_context': return handleDescribeContext(rpc)
-    default: throw { code: 'invalid', detail: `unknown tool: ${tool}` }
+    case 'get_state':
+      return handleGetState(rpc, (args ?? {}) as { path?: string })
+    case 'list_actions':
+      return handleListActions(rpc)
+    case 'send_message':
+      return handleSendMessage(rpc, args as never)
+    case 'query_dom':
+      return handleQueryDom(rpc, args as never)
+    case 'describe_visible_content':
+      return handleDescribeVisibleContent(rpc)
+    case 'describe_context':
+      return handleDescribeContext(rpc)
+    default:
+      throw { code: 'invalid', detail: `unknown tool: ${tool}` }
   }
 }
 
-const READ_TOOLS = new Set(['get_state', 'list_actions', 'describe_context', 'query_dom', 'describe_visible_content'])
+const READ_TOOLS = new Set([
+  'get_state',
+  'list_actions',
+  'describe_context',
+  'query_dom',
+  'describe_visible_content',
+])
 
 function getLogKindForTool(
   tool: string,

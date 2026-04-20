@@ -5,6 +5,7 @@
 **Goal:** Close the gaps deferred through Plans 1-8. After this plan, the LLui Agent epic is v1-complete: users can install `llui-agent`, developers can ship apps with `@llui/agent`, Claude Desktop can drive them end-to-end including `wait_for_change` long-poll semantics, and the author ergonomics (lint + docs) are in place.
 
 **Scope:**
+
 - Runtime **state-change subscription** in `@llui/dom` → emit `state-update` frames so `/lap/v1/wait` actually resolves.
 - `log-append` frame emission from ws-client for every rpc dispatch (mirrors to audit sink server-side).
 - Server-side rate-limit application inside LAP handlers.
@@ -13,6 +14,7 @@
 - Updated `docs/designs/09 API Reference.md`.
 
 **Non-goals for this plan:**
+
 - Playwright-based E2E test across real browser + real MCP client. Significant infra; track as follow-up.
 - `examples/agent-demo/` scaffolded app. Defer — the README snippet is enough for v1.
 - Bridge `--http` transport, `--doctor`, persistent bindings. Already marked deferred in earlier plans.
@@ -53,6 +55,7 @@ docs/designs/09 API Reference.md                    — append agent exports
 ## Task 1: `@llui/dom` AppHandle.subscribe
 
 **Files:**
+
 - Modify: `packages/dom/src/types.ts`
 - Modify: `packages/dom/src/mount.ts`
 - Create: `packages/dom/test/subscribe.test.ts`
@@ -103,8 +106,10 @@ const Counter = component<S, M, never>({
   init: () => [{ n: 0 }, []],
   update: (s, m) => {
     switch (m.type) {
-      case 'inc': return [{ ...s, n: s.n + 1 }, []]
-      case 'set': return [{ ...s, n: m.value }, []]
+      case 'inc':
+        return [{ ...s, n: s.n + 1 }, []]
+      case 'set':
+        return [{ ...s, n: m.value }, []]
     }
   },
   view: () => [],
@@ -174,12 +179,14 @@ describe('AppHandle.subscribe', () => {
 ```
 
 Run:
+
 ```bash
 cd packages/dom && pnpm vitest run test/subscribe.test.ts
 cd packages/dom && pnpm check
 ```
 
 Commit:
+
 ```
 feat(dom): AppHandle.subscribe — post-update state-change listener
 
@@ -196,6 +203,7 @@ Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
 ## Task 2: Wire state-update + log-append in `@llui/agent/client`
 
 **Files:**
+
 - Modify: `packages/agent/src/client/ws-client.ts`
 - Modify: `packages/agent/src/client/factory.ts`
 - Modify: `packages/agent/test/client/ws-client.test.ts`
@@ -206,7 +214,11 @@ Add two new methods to the `WsClient` return shape:
 
 ```ts
 export type WsClient = {
-  resolveConfirm(confirmId: string, outcome: 'confirmed' | 'user-cancelled', stateAfter?: unknown): void
+  resolveConfirm(
+    confirmId: string,
+    outcome: 'confirmed' | 'user-cancelled',
+    stateAfter?: unknown,
+  ): void
   emitStateUpdate(path: string, stateAfter: unknown): void
   emitLogAppend(entry: import('../protocol.js').LogEntry): void
   close(): void
@@ -218,6 +230,7 @@ Implementations are one-liners that send the respective `ClientFrame` variant.
 ### 2b — factory subscribes to handle.subscribe
 
 In `createAgentClient`, after construction:
+
 ```ts
 const unsub = opts.handle.subscribe((state) => {
   wsClient?.emitStateUpdate('/', state)
@@ -231,11 +244,13 @@ For `log-append`: wrap the rpc dispatcher in ws-client to emit a log-append afte
 ### 2c — Tests
 
 Extend `ws-client.test.ts` with:
+
 - `emitStateUpdate('/', state)` sends a `state-update` frame
 - `emitLogAppend(entry)` sends a `log-append` frame
 - After dispatching get_state successfully, a log-append frame is sent with `kind: 'read'`
 
 Commit:
+
 ```
 feat(agent): state-update + log-append frame emission in ws-client
 
@@ -251,6 +266,7 @@ Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
 ## Task 3: log-append → audit mirror on the server
 
 **Files:**
+
 - Modify: `packages/agent/src/server/ws/pairing-registry.ts`
 
 The registry's `handleClientFrame` currently skips `log-append`. Route it to the audit sink:
@@ -265,6 +281,7 @@ case 'log-append': {
 ```
 
 Add a constructor option:
+
 ```ts
 constructor(opts: { now?: () => number; onLogAppend?: (tid: string, entry: LogEntry) => void } = {}) {
   this.now = opts.now ?? (() => Date.now())
@@ -273,24 +290,32 @@ constructor(opts: { now?: () => number; onLogAppend?: (tid: string, entry: LogEn
 ```
 
 In the factory (`src/server/factory.ts`), construct the registry with:
+
 ```ts
 const registry = new WsPairingRegistry({
   onLogAppend: (tid, entry) => {
     auditSink.write({
       at: entry.at,
       tid,
-      uid: null,  // server-side we don't re-resolve uid for each frame; log carries its own kind
+      uid: null, // server-side we don't re-resolve uid for each frame; log carries its own kind
       event: 'lap-call',
-      detail: { source: 'client-log', kind: entry.kind, variant: entry.variant, intent: entry.intent },
+      detail: {
+        source: 'client-log',
+        kind: entry.kind,
+        variant: entry.variant,
+        intent: entry.intent,
+      },
     })
   },
 })
 ```
 
 Add a test to `packages/agent/test/server/ws/pairing-registry.test.ts`:
+
 - Emit a `log-append` frame; verify `onLogAppend` was called with `(tid, entry)`.
 
 Commit:
+
 ```
 feat(agent): log-append frames → audit sink mirror
 
@@ -307,6 +332,7 @@ Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
 ## Task 4: Rate-limit application in LAP handlers
 
 **Files:**
+
 - Modify: `packages/agent/src/server/lap/forward.ts`, `message.ts`, `wait.ts`, `confirm-result.ts`
 - Modify: `packages/agent/src/server/lap/router.ts` and `factory.ts` to pass `rateLimiter` through
 
@@ -315,10 +341,7 @@ Extend the common `ForwardDeps` (and ad-hoc `LapMessageDeps`, `LapWaitDeps`, `La
 ```ts
 const check = await deps.rateLimiter.check(auth.tid, 'token')
 if (!check.allowed) {
-  return json(
-    { error: { code: 'rate-limited', retryAfterMs: check.retryAfterMs } },
-    429,
-  )
+  return json({ error: { code: 'rate-limited', retryAfterMs: check.retryAfterMs } }, 429)
 }
 ```
 
@@ -327,6 +350,7 @@ Wire `rateLimiter` through `createLapRouter` and the factory. The factory alread
 Add regression tests — one each — that triggers the rate limit and asserts 429 + `retryAfterMs`.
 
 Commit:
+
 ```
 feat(agent): apply rate limiter inside LAP handlers
 
@@ -342,6 +366,7 @@ Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
 ## Task 5: Lint rule — missing @intent
 
 **Files:**
+
 - Create: `packages/lint-idiomatic/src/rules/agent-intent.ts`
 - Create: `packages/lint-idiomatic/test/rules/agent-intent.test.ts`
 - Modify: the lint-idiomatic package entry to register the rule (look at existing rules for the registration pattern)
@@ -353,6 +378,7 @@ Rule output: one diagnostic per variant missing `@intent`, at the variant's posi
 Tests: file with 3 annotated, 1 unannotated → 1 diagnostic. File with no Msg → 0 diagnostics. File with non-object variants → skipped.
 
 Commit:
+
 ```
 feat(lint-idiomatic): rule agent-missing-intent
 
@@ -366,12 +392,14 @@ drift before the agent surface becomes opaque.
 ## Task 6: Lint rule — forbidden annotation combinations
 
 **Files:**
+
 - Create: `packages/lint-idiomatic/src/rules/agent-exclusive-tags.ts`
 - Create: `packages/lint-idiomatic/test/rules/agent-exclusive-tags.test.ts`
 
 Scope: `@humanOnly` is mutually exclusive with `@requiresConfirm` and `@alwaysAffordable`. Warn when both appear on the same variant. Severity: warning; rule code `agent-exclusive-annotations`.
 
 Commit:
+
 ```
 feat(lint-idiomatic): rule agent-exclusive-annotations
 
@@ -384,6 +412,7 @@ feat(lint-idiomatic): rule agent-exclusive-annotations
 ## Task 7: Lint rule — non-extractable send() handler
 
 **Files:**
+
 - Create: `packages/lint-idiomatic/src/rules/agent-handler-pattern.ts`
 - Create: `packages/lint-idiomatic/test/rules/agent-handler-pattern.test.ts`
 
@@ -392,6 +421,7 @@ Scope: find any `send(...)` call inside a component view whose first argument is
 Uses the same walker as `@llui/vite-plugin/src/binding-descriptors.ts`, but flips: emit a diagnostic when a call looks send-like but doesn't match.
 
 Commit:
+
 ```
 feat(lint-idiomatic): rule agent-nonextractable-handler
 
@@ -406,11 +436,12 @@ component name.
 ## Task 8: Host-app integration docs — `@llui/agent` README
 
 **Files:**
+
 - Modify: `packages/agent/README.md`
 
 Current README is a placeholder. Replace with:
 
-```markdown
+````markdown
 # @llui/agent
 
 Server and browser-client libraries for the [LLui Agent Protocol (LAP)](../../docs/superpowers/specs/2026-04-19-llui-agent-design.md).
@@ -425,6 +456,7 @@ Your app's users can install the `llui-agent` bridge into Claude Desktop once, p
 pnpm add @llui/agent @llui/effects ws
 pnpm add -D @llui/vite-plugin  # if not already present
 ```
+````
 
 Enable agent-metadata emission in `vite.config.ts`:
 
@@ -447,9 +479,12 @@ const agent = createLluiAgentServer({
 const app = express()
 // The router is Web-standards; adapt it:
 app.use('/agent', async (req, res) => {
-  const webReq = expressToWebRequest(req)  // adapter
+  const webReq = expressToWebRequest(req) // adapter
   const webRes = await agent.router(webReq)
-  if (!webRes) { res.status(404).end(); return }
+  if (!webRes) {
+    res.status(404).end()
+    return
+  }
   webRes.headers.forEach((v, k) => res.setHeader(k, v))
   res.status(webRes.status).send(await webRes.text())
 })
@@ -526,19 +561,22 @@ export const App = component<State, Msg, Effect>({
 
 ## Annotations reference
 
-| Tag                  | Semantics                                                                  |
-| -------------------- | -------------------------------------------------------------------------- |
-| `@intent("...")`     | Human-readable label for Claude + confirmation UI + log                   |
-| `@alwaysAffordable`  | Surfaces to Claude even when no binding is currently visible              |
-| `@requiresConfirm`   | Claude must propose; user approves before dispatch                        |
-| `@humanOnly`         | Claude cannot dispatch; not in `list_actions`                             |
+| Tag                 | Semantics                                                    |
+| ------------------- | ------------------------------------------------------------ |
+| `@intent("...")`    | Human-readable label for Claude + confirmation UI + log      |
+| `@alwaysAffordable` | Surfaces to Claude even when no binding is currently visible |
+| `@requiresConfirm`  | Claude must propose; user approves before dispatch           |
+| `@humanOnly`        | Claude cannot dispatch; not in `list_actions`                |
 
 See the [design spec](../../docs/superpowers/specs/2026-04-19-llui-agent-design.md) and [Agent Protocol doc](../../docs/designs/10%20Agent%20Protocol.md).
+
 ```
 
 Commit:
 ```
+
 docs(agent): README with full host-app integration guide
+
 ```
 
 ---
@@ -561,7 +599,9 @@ Target: ~500 lines. Reuse content from the design spec where appropriate; this d
 
 Commit:
 ```
+
 docs(designs): 10 Agent Protocol — implementation reference doc
+
 ```
 
 ---
@@ -583,8 +623,10 @@ Append a section for the agent packages. Cover the public exports:
 
 Commit:
 ```
+
 docs(designs): update 09 API Reference with agent exports
-```
+
+````
 
 ---
 
@@ -597,7 +639,7 @@ pnpm turbo build
 pnpm turbo check
 pnpm turbo lint
 pnpm turbo test
-```
+````
 
 All green. Confirm `@llui/dom` gains ~5 tests, `@llui/agent` gains ~10 tests, `@llui/lint-idiomatic` gains ~15 tests. Total ~30 new tests across the plan.
 
@@ -608,6 +650,7 @@ No commit.
 ## Task 12: Plan commit + epic wrap-up
 
 Commit the plan file:
+
 ```
 docs(agent): Plan 9 polish — implementation plan document
 
@@ -622,6 +665,7 @@ Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
 ```
 
 Then produce an epic-completion summary (stdout, no commit):
+
 - Total commits across the 9 plans
 - Total test count in each package
 - List of public exports per package

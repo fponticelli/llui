@@ -30,5 +30,8 @@ export async function handleRevoke(req: Request, deps: RevokeDeps): Promise<Resp
 }
 
 function json(b: unknown, s: number): Response {
-  return new Response(JSON.stringify(b), { status: s, headers: { 'content-type': 'application/json' } })
+  return new Response(JSON.stringify(b), {
+    status: s,
+    headers: { 'content-type': 'application/json' },
+  })
 }

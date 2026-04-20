@@ -1,6 +1,9 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { handleLapDescribe } from '../../../src/server/lap/describe.js'
-import { WsPairingRegistry, type PairingConnection } from '../../../src/server/ws/pairing-registry.js'
+import {
+  WsPairingRegistry,
+  type PairingConnection,
+} from '../../../src/server/ws/pairing-registry.js'
 import { InMemoryTokenStore } from '../../../src/server/token-store.js'
 import { signToken } from '../../../src/server/token.js'
 import type { HelloFrame, LapDescribeResponse, TokenRecord } from '../../../src/protocol.js'
@@ -12,7 +15,9 @@ function fakeConn(): PairingConnection & { emit: (f: HelloFrame) => void } {
   let onFrame: (f: unknown) => void = () => {}
   return {
     send: () => {},
-    onFrame(h: (f: unknown) => void) { onFrame = h },
+    onFrame(h: (f: unknown) => void) {
+      onFrame = h
+    },
     onClose: () => {},
     close: () => {},
     emit: (f: HelloFrame) => onFrame(f),
@@ -29,16 +34,24 @@ beforeEach(() => {
 })
 
 const baseDeps = () => ({
-  signingKey: key, tokenStore: store, registry,
-  auditSink: { write: () => {} }, now: () => 1000,
+  signingKey: key,
+  tokenStore: store,
+  registry,
+  auditSink: { write: () => {} },
+  now: () => 1000,
   rateLimiter: permissiveLimiter,
 })
 
 const seed = async (tid: string): Promise<void> => {
   const rec: TokenRecord = {
-    tid, uid: 'u1', status: 'active',
-    createdAt: 0, lastSeenAt: 0, pendingResumeUntil: null,
-    origin: 'https://app', label: null,
+    tid,
+    uid: 'u1',
+    status: 'active',
+    createdAt: 0,
+    lastSeenAt: 0,
+    pendingResumeUntil: null,
+    origin: 'https://app',
+    label: null,
   }
   await store.create(rec)
 }
@@ -61,7 +74,17 @@ describe('handleLapDescribe', () => {
       t: 'hello',
       appName: 'Kanban',
       appVersion: '1.0',
-      msgSchema: { inc: { payloadSchema: {}, annotations: { intent: 'inc', alwaysAffordable: false, requiresConfirm: false, humanOnly: false } } },
+      msgSchema: {
+        inc: {
+          payloadSchema: {},
+          annotations: {
+            intent: 'inc',
+            alwaysAffordable: false,
+            requiresConfirm: false,
+            humanOnly: false,
+          },
+        },
+      },
       stateSchema: { count: 'number' },
       affordancesSample: [],
       docs: { purpose: 'Demo' },
@@ -81,7 +104,7 @@ describe('handleLapDescribe', () => {
     // No registry.register(...)
     const res = await handleLapDescribe(mkRequest(validToken('t1')), baseDeps())
     expect(res.status).toBe(503)
-    const body = await res.json() as { error: { code: string } }
+    const body = (await res.json()) as { error: { code: string } }
     expect(body.error.code).toBe('paused')
   })
 
@@ -123,7 +146,10 @@ describe('handleLapDescribe', () => {
     const tightLimiter: RateLimiter = {
       check: vi.fn<RateLimiter['check']>(async () => ({ allowed: false, retryAfterMs: 500 })),
     }
-    const res = await handleLapDescribe(mkRequest(validToken('t1')), { ...baseDeps(), rateLimiter: tightLimiter })
+    const res = await handleLapDescribe(mkRequest(validToken('t1')), {
+      ...baseDeps(),
+      rateLimiter: tightLimiter,
+    })
     expect(res.status).toBe(429)
     const body = (await res.json()) as { error: { code: string; retryAfterMs: number } }
     expect(body.error.code).toBe('rate-limited')

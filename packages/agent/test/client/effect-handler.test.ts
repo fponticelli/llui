@@ -70,8 +70,13 @@ describe('createEffectHandler', () => {
 
     await handle({ type: 'AgentMintRequest', mintUrl: 'http://localhost:3000/agent/mint' })
 
-    expect(mockFetch).toHaveBeenCalledWith('http://localhost:3000/agent/mint', expect.objectContaining({ method: 'POST' }))
-    expect(wrapAgentConnect).toHaveBeenCalledWith(expect.objectContaining({ type: 'MintSucceeded', token: 'tok' }))
+    expect(mockFetch).toHaveBeenCalledWith(
+      'http://localhost:3000/agent/mint',
+      expect.objectContaining({ method: 'POST' }),
+    )
+    expect(wrapAgentConnect).toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'MintSucceeded', token: 'tok' }),
+    )
     expect(send).toHaveBeenCalledOnce()
   })
 
@@ -84,7 +89,12 @@ describe('createEffectHandler', () => {
 
     await handle({ type: 'AgentMintRequest', mintUrl: 'http://localhost:3000/agent/mint' })
 
-    expect(wrapAgentConnect).toHaveBeenCalledWith(expect.objectContaining({ type: 'MintFailed', error: expect.objectContaining({ code: 'http-403' }) }))
+    expect(wrapAgentConnect).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'MintFailed',
+        error: expect.objectContaining({ code: 'http-403' }),
+      }),
+    )
     expect(send).toHaveBeenCalledOnce()
   })
 
@@ -97,7 +107,12 @@ describe('createEffectHandler', () => {
 
     await handle({ type: 'AgentMintRequest', mintUrl: 'http://localhost:3000/agent/mint' })
 
-    expect(wrapAgentConnect).toHaveBeenCalledWith(expect.objectContaining({ type: 'MintFailed', error: expect.objectContaining({ code: 'network' }) }))
+    expect(wrapAgentConnect).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'MintFailed',
+        error: expect.objectContaining({ code: 'network' }),
+      }),
+    )
   })
 
   it('AgentOpenWS → calls host.openWs with token + wsUrl', async () => {
@@ -105,7 +120,11 @@ describe('createEffectHandler', () => {
     const host = makeHost({ openWs })
     const handle = createEffectHandler(host)
 
-    const effect: AgentEffect = { type: 'AgentOpenWS', token: 'mytoken' as AgentToken, wsUrl: 'ws://localhost:3000/ws' }
+    const effect: AgentEffect = {
+      type: 'AgentOpenWS',
+      token: 'mytoken' as AgentToken,
+      wsUrl: 'ws://localhost:3000/ws',
+    }
     await handle(effect)
 
     expect(openWs).toHaveBeenCalledWith('mytoken', 'ws://localhost:3000/ws')
@@ -124,7 +143,9 @@ describe('createEffectHandler', () => {
   it('AgentResumeCheck → POST /agent/resume/list, dispatches ResumeListLoaded', async () => {
     const send = vi.fn()
     const wrapAgentConnect = vi.fn((m) => m)
-    const sessions = [{ tid: 't1', label: 'session', status: 'active' as const, createdAt: 0, lastSeenAt: 0 }]
+    const sessions = [
+      { tid: 't1', label: 'session', status: 'active' as const, createdAt: 0, lastSeenAt: 0 },
+    ]
     const mockFetch = vi.fn().mockResolvedValue(makeJsonResponse({ sessions }))
     const host = makeHost({ send, wrapAgentConnect, fetch: mockFetch })
     const handle = createEffectHandler(host)
@@ -135,14 +156,20 @@ describe('createEffectHandler', () => {
       `${TEST_ORIGIN}/agent/resume/list`,
       expect.objectContaining({ method: 'POST', body: JSON.stringify({ tids: ['t1'] }) }),
     )
-    expect(wrapAgentConnect).toHaveBeenCalledWith(expect.objectContaining({ type: 'ResumeListLoaded', sessions }))
+    expect(wrapAgentConnect).toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'ResumeListLoaded', sessions }),
+    )
   })
 
   it('AgentResumeClaim → POST /agent/resume/claim, calls openWs + dispatches WsOpened', async () => {
     const send = vi.fn()
     const wrapAgentConnect = vi.fn((m) => m)
     const openWs = vi.fn()
-    const mockFetch = vi.fn().mockResolvedValue(makeJsonResponse({ token: 'newtoken' as AgentToken, wsUrl: 'ws://localhost/ws' }))
+    const mockFetch = vi
+      .fn()
+      .mockResolvedValue(
+        makeJsonResponse({ token: 'newtoken' as AgentToken, wsUrl: 'ws://localhost/ws' }),
+      )
     const host = makeHost({ send, wrapAgentConnect, openWs, fetch: mockFetch })
     const handle = createEffectHandler(host)
 
@@ -170,15 +197,22 @@ describe('createEffectHandler', () => {
   it('AgentSessionsList → GET /agent/sessions, dispatches SessionsLoaded', async () => {
     const send = vi.fn()
     const wrapAgentConnect = vi.fn((m) => m)
-    const sessions = [{ tid: 't2', label: 'sess', status: 'active' as const, createdAt: 0, lastSeenAt: 0 }]
+    const sessions = [
+      { tid: 't2', label: 'sess', status: 'active' as const, createdAt: 0, lastSeenAt: 0 },
+    ]
     const mockFetch = vi.fn().mockResolvedValue(makeJsonResponse({ sessions }))
     const host = makeHost({ send, wrapAgentConnect, fetch: mockFetch })
     const handle = createEffectHandler(host)
 
     await handle({ type: 'AgentSessionsList' })
 
-    expect(mockFetch).toHaveBeenCalledWith(`${TEST_ORIGIN}/agent/sessions`, expect.objectContaining({ method: 'GET' }))
-    expect(wrapAgentConnect).toHaveBeenCalledWith(expect.objectContaining({ type: 'SessionsLoaded', sessions }))
+    expect(mockFetch).toHaveBeenCalledWith(
+      `${TEST_ORIGIN}/agent/sessions`,
+      expect.objectContaining({ method: 'GET' }),
+    )
+    expect(wrapAgentConnect).toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'SessionsLoaded', sessions }),
+    )
   })
 
   it('AgentForwardMsg → calls host.forward with payload', async () => {

@@ -16,7 +16,13 @@ describe('forwardLap', () => {
   it('200 happy path — returns ok:true with parsed body', async () => {
     const body = { state: { count: 42 } }
     const fetch = makeFetch(200, body)
-    const result = await forwardLap('https://app/lap/v1', 'tok', '/state', { path: '/count' }, { fetch })
+    const result = await forwardLap(
+      'https://app/lap/v1',
+      'tok',
+      '/state',
+      { path: '/count' },
+      { fetch },
+    )
     expect(result).toEqual({ ok: true, body })
     expect(fetch).toHaveBeenCalledOnce()
     const [url, init] = (fetch as ReturnType<typeof vi.fn>).mock.calls[0] as [string, RequestInit]

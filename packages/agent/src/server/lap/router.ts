@@ -23,16 +23,26 @@ export function createLapRouter(
     if (!path.startsWith(basePath + '/')) return null
     const tail = path.slice(basePath.length)
     switch (tail) {
-      case '/describe': return handleLapDescribe(req, deps)
-      case '/state': return handleLapState(req, deps)
-      case '/actions': return handleLapActions(req, deps)
-      case '/message': return handleLapMessage(req, deps)
-      case '/confirm-result': return handleLapConfirmResult(req, deps)
-      case '/wait': return handleLapWait(req, deps)
-      case '/query-dom': return handleLapQueryDom(req, deps)
-      case '/describe-visible': return handleLapDescribeVisible(req, deps)
-      case '/context': return handleLapContext(req, deps)
-      default: return null
+      case '/describe':
+        return handleLapDescribe(req, deps)
+      case '/state':
+        return handleLapState(req, deps)
+      case '/actions':
+        return handleLapActions(req, deps)
+      case '/message':
+        return handleLapMessage(req, deps)
+      case '/confirm-result':
+        return handleLapConfirmResult(req, deps)
+      case '/wait':
+        return handleLapWait(req, deps)
+      case '/query-dom':
+        return handleLapQueryDom(req, deps)
+      case '/describe-visible':
+        return handleLapDescribeVisible(req, deps)
+      case '/context':
+        return handleLapContext(req, deps)
+      default:
+        return null
     }
   }
 }

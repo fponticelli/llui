@@ -149,6 +149,14 @@ export interface LluiPluginOptions {
    * template-clone to `elSplit`. Off by default.
    */
   verbose?: boolean
+
+  /**
+   * When true, include schemas and binding descriptors in prod builds so
+   * the @llui/agent runtime has metadata to advertise over its WS hello
+   * frame. Default false — matches prior behavior (metadata is dev-only).
+   * See agent spec §7.4 and Plan 3b.
+   */
+  agent?: boolean
 }
 ```
 

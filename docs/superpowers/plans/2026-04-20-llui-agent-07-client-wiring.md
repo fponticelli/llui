@@ -11,6 +11,7 @@
 **Spec section coverage after this plan:** §6.2 mint flow (client side), §6.3 resume flow (client side), §6.5 revocation (client side), §7.3 transport, §9.4 WS client wiring, §9.5 AgentEffect handler, §9.6 host app integration, §10.5 browser-to-server frames (client side of every variant except `state-update` — see deferred).
 
 **Explicitly deferred:**
+
 - `state-update` frame emission on every state change. The `@llui/dom` runtime doesn't expose a state-change subscription today — adding one is a Plan 9 (polish) task that touches `mountApp`. Without it, `/lap/v1/wait` LAP calls just time out (returning `{status: 'timeout'}`). Claude still gets correct behavior; just no long-poll optimization.
 - `log-append` frame mirroring to `agentLog`. Plan 9.
 - Host-app integration docs + example app. Plan 9.
@@ -53,6 +54,7 @@ packages/agent/test/client/
 Starts with the easiest to establish the pattern.
 
 **Files:**
+
 - Create: `packages/agent/src/client/rpc/get-state.ts`
 - Create: `packages/agent/test/client/rpc/get-state.test.ts`
 
@@ -106,6 +108,7 @@ function resolveJsonPointer(root: unknown, pointer: string): unknown {
 - array index `/items/0`
 
 Commit:
+
 ```
 feat(agent): get_state rpc handler with JSON-pointer resolution
 ```
@@ -115,6 +118,7 @@ feat(agent): get_state rpc handler with JSON-pointer resolution
 ## Task 2: `describe_context` rpc handler
 
 **Files:**
+
 - Create: `packages/agent/src/client/rpc/describe-context.ts`
 - Create: `packages/agent/test/client/rpc/describe-context.test.ts`
 
@@ -139,6 +143,7 @@ export function handleDescribeContext(host: DescribeContextHost): DescribeContex
 Tests: ~3 — missing fn returns EMPTY; present fn returns its output; state is passed.
 
 Commit:
+
 ```
 feat(agent): describe_context rpc handler
 ```
@@ -148,6 +153,7 @@ feat(agent): describe_context rpc handler
 ## Task 3: `list_actions` rpc handler
 
 **Files:**
+
 - Create: `packages/agent/src/client/rpc/list-actions.ts`
 - Create: `packages/agent/test/client/rpc/list-actions.test.ts`
 
@@ -221,6 +227,7 @@ export function handleListActions(host: ListActionsHost): ListActionsResult {
 Tests: ~6 cases — empty bindings/affordances, humanOnly filtering, intent fallback, affordances with payload, missing annotations.
 
 Commit:
+
 ```
 feat(agent): list_actions rpc handler — bindings + affordances + annotations
 ```
@@ -230,6 +237,7 @@ feat(agent): list_actions rpc handler — bindings + affordances + annotations
 ## Task 4: `query_dom` + `describe_visible_content`
 
 **Files:**
+
 - Create: `packages/agent/src/client/rpc/query-dom.ts`
 - Create: `packages/agent/src/client/rpc/describe-visible-content.ts`
 - Create test files.
@@ -256,7 +264,7 @@ export function handleQueryDom(host: QueryDomHost, args: QueryDomArgs): QueryDom
   const selector = `[data-agent="${cssEscape(args.name)}"]`
   const nodes = args.multiple
     ? Array.from(root.querySelectorAll(selector))
-    : [root.querySelector(selector)].filter(Boolean) as Element[]
+    : ([root.querySelector(selector)].filter(Boolean) as Element[])
 
   return {
     elements: nodes.map((n) => ({
@@ -367,6 +375,7 @@ function walk(el: Element, out: OutlineNode[]): void {
 Tests: ~8 total (4 per file). Use `jsdom` to build test DOMs.
 
 Commit:
+
 ```
 feat(agent): query_dom + describe_visible_content rpc handlers
 ```
@@ -376,10 +385,12 @@ feat(agent): query_dom + describe_visible_content rpc handlers
 ## Task 5: `send_message` rpc handler — annotation gating + confirm propose
 
 **Files:**
+
 - Create: `packages/agent/src/client/rpc/send-message.ts`
 - Create: `packages/agent/test/client/rpc/send-message.test.ts`
 
 This is the most nuanced handler. Behaviors:
+
 1. Validate `msg.type` is a string.
 2. Look up annotations for `msg.type`.
 3. If `humanOnly` → return `{ status: 'rejected', reason: 'humanOnly' }`.
@@ -389,7 +400,7 @@ This is the most nuanced handler. Behaviors:
 `waitFor: 'idle'` — caller runs a microtask flush before reading stateAfter. Since the microtask model means the dispatch queue settles on the next tick, a simple `Promise.resolve().then(...)` before reading state works for 'idle'.
 
 ```ts
-import { randomUUID } from '../uuid.js'  // tiny shim: prefer crypto.randomUUID, fallback
+import { randomUUID } from '../uuid.js' // tiny shim: prefer crypto.randomUUID, fallback
 import type { LapMessageResponse, MessageAnnotations } from '../../protocol.js'
 
 export type SendMessageArgs = {
@@ -452,6 +463,7 @@ export async function handleSendMessage(
 ```
 
 Create `packages/agent/src/client/uuid.ts`:
+
 ```ts
 export function randomUUID(): string {
   if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) {
@@ -466,7 +478,7 @@ export function randomUUID(): string {
     } else if (i === 14) {
       s += '4'
     } else if (i === 19) {
-      s += chars[(Math.random() * 4) | 0 + 8]
+      s += chars[(Math.random() * 4) | (0 + 8)]
     } else {
       s += chars[(Math.random() * 16) | 0]
     }
@@ -478,6 +490,7 @@ export function randomUUID(): string {
 Tests: ~8 cases — invalid msg, humanOnly → rejected, requiresConfirm → propose + pending-confirmation, dispatch normal, waitFor: 'none' skips flush, getState in stateAfter reflects post-dispatch, annotation fallback when msg type absent from annotations.
 
 Commit:
+
 ```
 feat(agent): send_message rpc handler — annotation gating + confirm propose
 ```
@@ -487,15 +500,21 @@ feat(agent): send_message rpc handler — annotation gating + confirm propose
 ## Task 6: HTTP effect handler (mint/resume/revoke/sessions)
 
 **Files:**
+
 - Create: `packages/agent/src/client/effect-handler.ts`
 - Create: `packages/agent/test/client/effect-handler.test.ts`
 
 ```ts
 import type { AgentEffect } from './effects.js'
-import type { MintResponse, ResumeListResponse, ResumeClaimResponse, SessionsResponse } from '../protocol.js'
+import type {
+  MintResponse,
+  ResumeListResponse,
+  ResumeClaimResponse,
+  SessionsResponse,
+} from '../protocol.js'
 
 export type EffectHandlerHost = {
-  send(msg: unknown): void  // root app send; wraps agent sub-msgs into the app Msg envelope
+  send(msg: unknown): void // root app send; wraps agent sub-msgs into the app Msg envelope
   /** Wraps an agentConnect msg into an app-Msg. */
   wrapAgentConnect(m: unknown): unknown
   /** Called for AgentForwardMsg — the payload is re-dispatched via send. */
@@ -517,18 +536,32 @@ export function createEffectHandler(host: EffectHandlerHost) {
           const res = await doFetch(effect.mintUrl, { method: 'POST', credentials: 'include' })
           if (!res.ok) {
             const detail = await safeText(res)
-            host.send(host.wrapAgentConnect({ type: 'MintFailed', error: { code: `http-${res.status}`, detail } }))
+            host.send(
+              host.wrapAgentConnect({
+                type: 'MintFailed',
+                error: { code: `http-${res.status}`, detail },
+              }),
+            )
             return
           }
           const body = (await res.json()) as MintResponse
-          host.send(host.wrapAgentConnect({
-            type: 'MintSucceeded',
-            token: body.token, tid: body.tid,
-            lapUrl: body.lapUrl, wsUrl: body.wsUrl,
-            expiresAt: body.expiresAt,
-          }))
+          host.send(
+            host.wrapAgentConnect({
+              type: 'MintSucceeded',
+              token: body.token,
+              tid: body.tid,
+              lapUrl: body.lapUrl,
+              wsUrl: body.wsUrl,
+              expiresAt: body.expiresAt,
+            }),
+          )
         } catch (e) {
-          host.send(host.wrapAgentConnect({ type: 'MintFailed', error: { code: 'network', detail: String(e) } }))
+          host.send(
+            host.wrapAgentConnect({
+              type: 'MintFailed',
+              error: { code: 'network', detail: String(e) },
+            }),
+          )
         }
         return
       }
@@ -547,14 +580,17 @@ export function createEffectHandler(host: EffectHandlerHost) {
         if (!origin) return
         try {
           const res = await doFetch(`${origin}/agent/resume/list`, {
-            method: 'POST', credentials: 'include',
+            method: 'POST',
+            credentials: 'include',
             headers: { 'content-type': 'application/json' },
             body: JSON.stringify({ tids: effect.tids }),
           })
           if (!res.ok) return
           const body = (await res.json()) as ResumeListResponse
           host.send(host.wrapAgentConnect({ type: 'ResumeListLoaded', sessions: body.sessions }))
-        } catch { /* quiet failure; user can retry */ }
+        } catch {
+          /* quiet failure; user can retry */
+        }
         return
       }
       case 'AgentResumeClaim': {
@@ -562,7 +598,8 @@ export function createEffectHandler(host: EffectHandlerHost) {
         if (!origin) return
         try {
           const res = await doFetch(`${origin}/agent/resume/claim`, {
-            method: 'POST', credentials: 'include',
+            method: 'POST',
+            credentials: 'include',
             headers: { 'content-type': 'application/json' },
             body: JSON.stringify({ tid: effect.tid }),
           })
@@ -570,7 +607,9 @@ export function createEffectHandler(host: EffectHandlerHost) {
           const body = (await res.json()) as ResumeClaimResponse
           host.openWs(body.token, body.wsUrl)
           host.send(host.wrapAgentConnect({ type: 'WsOpened' }))
-        } catch { /* quiet */ }
+        } catch {
+          /* quiet */
+        }
         return
       }
       case 'AgentRevoke': {
@@ -578,22 +617,30 @@ export function createEffectHandler(host: EffectHandlerHost) {
         if (!origin) return
         try {
           await doFetch(`${origin}/agent/revoke`, {
-            method: 'POST', credentials: 'include',
+            method: 'POST',
+            credentials: 'include',
             headers: { 'content-type': 'application/json' },
             body: JSON.stringify({ tid: effect.tid }),
           })
-        } catch { /* quiet */ }
+        } catch {
+          /* quiet */
+        }
         return
       }
       case 'AgentSessionsList': {
         const origin = deriveOrigin(host)
         if (!origin) return
         try {
-          const res = await doFetch(`${origin}/agent/sessions`, { method: 'GET', credentials: 'include' })
+          const res = await doFetch(`${origin}/agent/sessions`, {
+            method: 'GET',
+            credentials: 'include',
+          })
           if (!res.ok) return
           const body = (await res.json()) as SessionsResponse
           host.send(host.wrapAgentConnect({ type: 'SessionsLoaded', sessions: body.sessions }))
-        } catch { /* quiet */ }
+        } catch {
+          /* quiet */
+        }
         return
       }
       case 'AgentForwardMsg': {
@@ -605,7 +652,11 @@ export function createEffectHandler(host: EffectHandlerHost) {
 }
 
 async function safeText(res: Response): Promise<string> {
-  try { return await res.text() } catch { return '' }
+  try {
+    return await res.text()
+  } catch {
+    return ''
+  }
 }
 
 function deriveOrigin(_host: EffectHandlerHost): string | null {
@@ -620,6 +671,7 @@ function deriveOrigin(_host: EffectHandlerHost): string | null {
 Tests: ~10 cases using fetch-mocks. Mint success/failure, resume list, resume claim → opens WS, revoke, sessions load, AgentForwardMsg.
 
 Commit:
+
 ```
 feat(agent): HTTP + AgentForwardMsg effect handler
 ```
@@ -629,18 +681,29 @@ feat(agent): HTTP + AgentForwardMsg effect handler
 ## Task 7: `ws-client.ts` — WS lifecycle + hello + rpc dispatch
 
 **Files:**
+
 - Create: `packages/agent/src/client/ws-client.ts`
 - Create: `packages/agent/test/client/ws-client.test.ts`
 
 Core job: given a WebSocket (injectable for tests), send `hello`, listen for `rpc` frames, dispatch to the per-tool handler, send `rpc-reply`/`rpc-error` back. Also exposes `resolveConfirm(confirmId, outcome, stateAfter?)` for the factory to invoke when agentConfirm entries resolve.
 
 ```ts
-import type { ClientFrame, ServerFrame, HelloFrame, MessageAnnotations, MessageSchemaEntry, AgentDocs } from '../protocol.js'
+import type {
+  ClientFrame,
+  ServerFrame,
+  HelloFrame,
+  MessageAnnotations,
+  MessageSchemaEntry,
+  AgentDocs,
+} from '../protocol.js'
 import { handleGetState, type GetStateHost } from './rpc/get-state.js'
 import { handleSendMessage, type SendMessageHost } from './rpc/send-message.js'
 import { handleListActions, type ListActionsHost } from './rpc/list-actions.js'
 import { handleQueryDom, type QueryDomHost } from './rpc/query-dom.js'
-import { handleDescribeVisibleContent, type DescribeVisibleHost } from './rpc/describe-visible-content.js'
+import {
+  handleDescribeVisibleContent,
+  type DescribeVisibleHost,
+} from './rpc/describe-visible-content.js'
 import { handleDescribeContext, type DescribeContextHost } from './rpc/describe-context.js'
 
 export interface WsLike {
@@ -650,13 +713,22 @@ export interface WsLike {
   addEventListener(event: 'open' | 'close', h: () => void): void
 }
 
-export type RpcHosts = GetStateHost & SendMessageHost & ListActionsHost & QueryDomHost & DescribeVisibleHost & DescribeContextHost
+export type RpcHosts = GetStateHost &
+  SendMessageHost &
+  ListActionsHost &
+  QueryDomHost &
+  DescribeVisibleHost &
+  DescribeContextHost
 
 export type HelloBuilder = () => HelloFrame
 
 export type WsClient = {
   /** Resolve a pending confirmation; emits confirm-resolved frame to the server. */
-  resolveConfirm(confirmId: string, outcome: 'confirmed' | 'user-cancelled', stateAfter?: unknown): void
+  resolveConfirm(
+    confirmId: string,
+    outcome: 'confirmed' | 'user-cancelled',
+    stateAfter?: unknown,
+  ): void
   /** Close the socket cleanly. */
   close(): void
 }
@@ -688,7 +760,8 @@ export function attachWsClient(ws: WsLike, rpc: RpcHosts, hello: HelloBuilder): 
     } catch (e: unknown) {
       const err = e as { code?: string; detail?: string }
       const errFrame: ClientFrame = {
-        t: 'rpc-error', id: frame.id,
+        t: 'rpc-error',
+        id: frame.id,
         code: err.code ?? 'internal',
         detail: err.detail,
       }
@@ -699,7 +772,10 @@ export function attachWsClient(ws: WsLike, rpc: RpcHosts, hello: HelloBuilder): 
   return {
     resolveConfirm(confirmId, outcome, stateAfter) {
       const frame: ClientFrame = {
-        t: 'confirm-resolved', confirmId, outcome, stateAfter,
+        t: 'confirm-resolved',
+        confirmId,
+        outcome,
+        stateAfter,
       }
       ws.send(JSON.stringify(frame))
     },
@@ -711,13 +787,20 @@ export function attachWsClient(ws: WsLike, rpc: RpcHosts, hello: HelloBuilder): 
 
 async function dispatch(tool: string, args: unknown, rpc: RpcHosts): Promise<unknown> {
   switch (tool) {
-    case 'get_state': return handleGetState(rpc, (args ?? {}) as { path?: string })
-    case 'list_actions': return handleListActions(rpc)
-    case 'send_message': return handleSendMessage(rpc, args as never)
-    case 'query_dom': return handleQueryDom(rpc, args as never)
-    case 'describe_visible_content': return handleDescribeVisibleContent(rpc)
-    case 'describe_context': return handleDescribeContext(rpc)
-    default: throw { code: 'invalid', detail: `unknown tool: ${tool}` }
+    case 'get_state':
+      return handleGetState(rpc, (args ?? {}) as { path?: string })
+    case 'list_actions':
+      return handleListActions(rpc)
+    case 'send_message':
+      return handleSendMessage(rpc, args as never)
+    case 'query_dom':
+      return handleQueryDom(rpc, args as never)
+    case 'describe_visible_content':
+      return handleDescribeVisibleContent(rpc)
+    case 'describe_context':
+      return handleDescribeContext(rpc)
+    default:
+      throw { code: 'invalid', detail: `unknown tool: ${tool}` }
   }
 }
 ```
@@ -725,6 +808,7 @@ async function dispatch(tool: string, args: unknown, rpc: RpcHosts): Promise<unk
 Tests: ~6 cases using a fake `WsLike` (event emitter). hello emission on open, rpc-reply on valid tool call, rpc-error on unknown tool, revoked → close, resolveConfirm emits frame.
 
 Commit:
+
 ```
 feat(agent): ws-client — hello + rpc dispatch + confirm-resolved
 ```
@@ -734,15 +818,18 @@ feat(agent): ws-client — hello + rpc dispatch + confirm-resolved
 ## Task 8: `createAgentClient` factory
 
 **Files:**
+
 - Create: `packages/agent/src/client/factory.ts`
 - Create: `packages/agent/test/client/factory.test.ts`
 
 The factory is the developer's single entry point. It receives:
+
 - `AppHandle` from `mountApp`
 - The `ComponentDef` (for compiler-emitted metadata + agentAffordances/agentDocs/agentContext)
 - Slice accessors: connect / confirm / log + Msg-wrappers to re-dispatch sub-msgs
 
 It returns:
+
 - `effectHandler: (effect: AgentEffect) => Promise<void>` — developer chains into their `onEffect`
 - `start()` — subscribes to agentConfirm state transitions to emit `confirm-resolved` (MVP: poll the slice on each call since no state-change subscription exists — see Plan 9 deferred note)
 - `stop()`
@@ -755,7 +842,12 @@ Implementation outline (stubbed details since this is the most integration-heavy
 import type { AppHandle } from '@llui/dom'
 import type { AgentEffect } from './effects.js'
 import type { AgentConfirmState } from './agentConfirm.js'
-import type { AgentDocs, AgentContext, MessageAnnotations, MessageSchemaEntry } from '../protocol.js'
+import type {
+  AgentDocs,
+  AgentContext,
+  MessageAnnotations,
+  MessageSchemaEntry,
+} from '../protocol.js'
 import { attachWsClient, type RpcHosts } from './ws-client.js'
 import { createEffectHandler } from './effect-handler.js'
 
@@ -818,7 +910,9 @@ export function createAgentClient<State, Msg>(
     appVersion: opts.appVersion ?? '0.0.0',
     msgSchema: (opts.def.__msgSchema ?? {}) as Record<string, MessageSchemaEntry>,
     stateSchema: (opts.def.__stateSchema ?? {}) as object,
-    affordancesSample: opts.def.agentAffordances ? opts.def.agentAffordances(opts.handle.getState()) : [],
+    affordancesSample: opts.def.agentAffordances
+      ? opts.def.agentAffordances(opts.handle.getState())
+      : [],
     docs: opts.def.agentDocs ?? null,
     schemaHash: opts.def.__schemaHash ?? '',
   })
@@ -830,7 +924,11 @@ export function createAgentClient<State, Msg>(
     openWs: (token, wsUrl) => {
       if (ws) ws.close()
       ws = new WebSocket(`${wsUrl}?token=${encodeURIComponent(token)}`)
-      wsClient = attachWsClient(ws as unknown as import('./ws-client.js').WsLike, rpcHost, helloBuilder)
+      wsClient = attachWsClient(
+        ws as unknown as import('./ws-client.js').WsLike,
+        rpcHost,
+        helloBuilder,
+      )
     },
     closeWs: () => {
       wsClient?.close()
@@ -874,6 +972,7 @@ export function createAgentClient<State, Msg>(
 Tests: ~4 cases at the factory level — createAgentClient returns effectHandler + start/stop; start() begins polling for confirm resolutions; AgentOpenWS → opens WS; AgentForwardMsg → calls handle.send.
 
 Commit:
+
 ```
 feat(agent): createAgentClient factory — composes effect handler + WS client
 ```
@@ -883,6 +982,7 @@ feat(agent): createAgentClient factory — composes effect handler + WS client
 ## Task 9: Update `client/index.ts` to re-export the factory
 
 **Files:**
+
 - Modify: `packages/agent/src/client/index.ts`
 
 ```ts
@@ -895,6 +995,7 @@ export type { CreateAgentClientOpts, AgentClient } from './factory.js'
 ```
 
 Commit:
+
 ```
 feat(agent): client/index.ts exposes createAgentClient
 ```
@@ -904,9 +1005,11 @@ feat(agent): client/index.ts exposes createAgentClient
 ## Task 10: End-to-end integration test
 
 **Files:**
+
 - Create: `packages/agent/test/client/integration.test.ts`
 
 Pattern:
+
 1. Spin up a real agent server via `createLluiAgentServer` bound to a Node http server on an ephemeral port.
 2. Use `fetch` to POST `/agent/mint`.
 3. Open a WebSocket to the returned `wsUrl` with the token; wire it to `attachWsClient` with a fake rpc host that returns deterministic values.
@@ -918,6 +1021,7 @@ Pattern:
 This is a significant test; ~100 lines. Use the ws-upgrade.test.ts pattern from Plan 5 Task 3 as reference.
 
 Commit:
+
 ```
 test(agent): integration — mint → ws → describe → state → message round-trip
 ```

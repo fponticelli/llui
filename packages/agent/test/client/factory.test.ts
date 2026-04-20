@@ -38,7 +38,7 @@ class FakeWebSocket {
     h: (() => void) | ((e: { data: string }) => void),
   ): void {
     if (event === 'open' || event === 'close') {
-      (this._handlers[event]).push(h as () => void)
+      this._handlers[event].push(h as () => void)
     } else if (event === 'message') {
       this._handlers.message.push(h as (e: { data: string }) => void)
     }
@@ -77,7 +77,9 @@ function makeHandle(initialState: FakeState) {
     dispose: vi.fn(),
     subscribe: (listener: (s: unknown) => void) => {
       listeners.add(listener)
-      return () => { listeners.delete(listener) }
+      return () => {
+        listeners.delete(listener)
+      }
     },
     setState: (s: FakeState) => {
       state = s
@@ -208,7 +210,11 @@ describe('createAgentClient', () => {
 
     // confirm-resolved should now have been sent (after hello)
     const confirmFrames = lastFakeWs!.sent.filter((s) => {
-      try { return JSON.parse(s).t === 'confirm-resolved' } catch { return false }
+      try {
+        return JSON.parse(s).t === 'confirm-resolved'
+      } catch {
+        return false
+      }
     })
     expect(confirmFrames).toHaveLength(1)
     const frame = JSON.parse(confirmFrames[0]!)
@@ -242,7 +248,11 @@ describe('createAgentClient', () => {
 
     // Should emit a state-update frame
     const stateFrames = lastFakeWs!.sent.filter((s) => {
-      try { return JSON.parse(s).t === 'state-update' } catch { return false }
+      try {
+        return JSON.parse(s).t === 'state-update'
+      } catch {
+        return false
+      }
     })
     expect(stateFrames).toHaveLength(1)
     const frame = JSON.parse(stateFrames[0]!)

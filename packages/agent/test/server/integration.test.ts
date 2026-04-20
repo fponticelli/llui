@@ -15,7 +15,9 @@ describe('full LAP flow — mint → register → describe → message', () => {
     })
 
     // 1. Mint
-    const mintRes = await agent.router(new Request('https://app.example/agent/mint', { method: 'POST' }))
+    const mintRes = await agent.router(
+      new Request('https://app.example/agent/mint', { method: 'POST' }),
+    )
     const mint = (await mintRes!.json()) as MintResponse
 
     // 2. Simulate WS pair — reach into the factory's registry via internal module import.
@@ -29,10 +31,12 @@ describe('full LAP flow — mint → register → describe → message', () => {
     //    full WS-pair integration lives in the WS-upgrade test (Task 3), which already uses
     //    a real http + ws server.
 
-    const describeRes = await agent.router(new Request('https://app.example/agent/lap/v1/describe', {
-      method: 'POST',
-      headers: { authorization: `Bearer ${mint.token}` },
-    }))
+    const describeRes = await agent.router(
+      new Request('https://app.example/agent/lap/v1/describe', {
+        method: 'POST',
+        headers: { authorization: `Bearer ${mint.token}` },
+      }),
+    )
     expect(describeRes?.status).toBe(503)
     const body = (await describeRes!.json()) as { error: { code: string } }
     expect(body.error.code).toBe('paused')

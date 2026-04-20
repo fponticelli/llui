@@ -7,18 +7,22 @@ import {
 } from '@modelcontextprotocol/sdk/types.js'
 
 export function registerPrompts(server: McpServer): void {
-  server.setRequestHandler(ListPromptsRequestSchema, async (): Promise<ListPromptsResult> => ({
-    prompts: [
-      {
-        name: 'llui-connect',
-        description: 'Bind this Claude conversation to an LLui app. Paste the URL and token the app showed you.',
-        arguments: [
-          { name: 'url', description: 'LAP base URL', required: true },
-          { name: 'token', description: 'Bearer token', required: true },
-        ],
-      },
-    ],
-  }))
+  server.setRequestHandler(
+    ListPromptsRequestSchema,
+    async (): Promise<ListPromptsResult> => ({
+      prompts: [
+        {
+          name: 'llui-connect',
+          description:
+            'Bind this Claude conversation to an LLui app. Paste the URL and token the app showed you.',
+          arguments: [
+            { name: 'url', description: 'LAP base URL', required: true },
+            { name: 'token', description: 'Bearer token', required: true },
+          ],
+        },
+      ],
+    }),
+  )
 
   server.setRequestHandler(GetPromptRequestSchema, async (req): Promise<GetPromptResult> => {
     if (req.params.name !== 'llui-connect') {

@@ -34,7 +34,12 @@ export function update(
       if (!entry || entry.status !== 'pending') return [state, []]
       return [
         { pending: state.pending.map((e) => (e.id === msg.id ? { ...e, status: 'approved' } : e)) },
-        [{ type: 'AgentForwardMsg', payload: { type: entry.variant, ...(entry.payload as object) } }],
+        [
+          {
+            type: 'AgentForwardMsg',
+            payload: { type: entry.variant, ...(entry.payload as object) },
+          },
+        ],
       ]
     }
     case 'Reject':

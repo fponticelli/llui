@@ -27,8 +27,18 @@ describe('handleListActions', () => {
       makeHost({
         descriptors: [{ variant: 'Delete' }, { variant: 'Save' }],
         annotations: {
-          Delete: { intent: 'delete item', humanOnly: true, requiresConfirm: false, alwaysAffordable: false },
-          Save: { intent: 'save item', humanOnly: false, requiresConfirm: false, alwaysAffordable: false },
+          Delete: {
+            intent: 'delete item',
+            humanOnly: true,
+            requiresConfirm: false,
+            alwaysAffordable: false,
+          },
+          Save: {
+            intent: 'save item',
+            humanOnly: false,
+            requiresConfirm: false,
+            alwaysAffordable: false,
+          },
         },
       }),
     )
@@ -41,7 +51,12 @@ describe('handleListActions', () => {
       makeHost({
         descriptors: [{ variant: 'Toggle' }],
         annotations: {
-          Toggle: { intent: null, humanOnly: false, requiresConfirm: false, alwaysAffordable: false },
+          Toggle: {
+            intent: null,
+            humanOnly: false,
+            requiresConfirm: false,
+            alwaysAffordable: false,
+          },
         },
       }),
     )

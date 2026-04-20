@@ -17,7 +17,13 @@ const expiresAt = 9_999_999_999
 const mintUrl = 'https://app.example/agent/mint'
 const opts: AgentConnectInitOpts = { mintUrl }
 
-const session1 = { tid, label: 'Session 1', status: 'active' as const, createdAt: 1000, lastSeenAt: 2000 }
+const session1 = {
+  tid,
+  label: 'Session 1',
+  status: 'active' as const,
+  createdAt: 1000,
+  lastSeenAt: 2000,
+}
 const session2 = {
   tid: '22222222-2222-2222-2222-222222222222',
   label: 'Session 2',
@@ -60,7 +66,14 @@ describe('agentConnect', () => {
     it('populates pendingToken, transitions to pending-claude, emits AgentOpenWS', () => {
       const [state0] = init(opts)
       const [minting] = send(state0, { type: 'Mint' })
-      const [state1, effects] = send(minting, { type: 'MintSucceeded', token, tid, lapUrl, wsUrl, expiresAt })
+      const [state1, effects] = send(minting, {
+        type: 'MintSucceeded',
+        token,
+        tid,
+        lapUrl,
+        wsUrl,
+        expiresAt,
+      })
       expect(state1.status).toBe('pending-claude')
       expect(state1.pendingToken).not.toBeNull()
       expect(state1.pendingToken!.token).toBe(token)
@@ -89,7 +102,14 @@ describe('agentConnect', () => {
     it('transitions pending-claude → active', () => {
       const [state0] = init(opts)
       const [minting] = send(state0, { type: 'Mint' })
-      const [pending] = send(minting, { type: 'MintSucceeded', token, tid, lapUrl, wsUrl, expiresAt })
+      const [pending] = send(minting, {
+        type: 'MintSucceeded',
+        token,
+        tid,
+        lapUrl,
+        wsUrl,
+        expiresAt,
+      })
       const [state1, effects] = send(pending, { type: 'WsOpened' })
       expect(state1.status).toBe('active')
       expect(effects).toEqual([])
@@ -100,7 +120,14 @@ describe('agentConnect', () => {
     it('transitions active → idle and clears pendingToken', () => {
       const [state0] = init(opts)
       const [minting] = send(state0, { type: 'Mint' })
-      const [pending] = send(minting, { type: 'MintSucceeded', token, tid, lapUrl, wsUrl, expiresAt })
+      const [pending] = send(minting, {
+        type: 'MintSucceeded',
+        token,
+        tid,
+        lapUrl,
+        wsUrl,
+        expiresAt,
+      })
       const [active] = send(pending, { type: 'WsOpened' })
       const [state1, effects] = send(active, { type: 'WsClosed' })
       expect(state1.status).toBe('idle')
@@ -141,7 +168,10 @@ describe('agentConnect', () => {
   describe('Revoke', () => {
     it('emits AgentRevoke and optimistically removes tid from sessions and resumable', () => {
       const [state0] = init(opts)
-      const [withSessions] = send(state0, { type: 'SessionsLoaded', sessions: [session1, session2] })
+      const [withSessions] = send(state0, {
+        type: 'SessionsLoaded',
+        sessions: [session1, session2],
+      })
       const [withResumable] = send(withSessions, { type: 'ResumeListLoaded', sessions: [session1] })
       const [state1, effects] = send(withResumable, { type: 'Revoke', tid })
       expect(state1.sessions).toEqual([session2])
@@ -172,7 +202,10 @@ describe('agentConnect', () => {
   describe('ClearError', () => {
     it('nulls out error', () => {
       const [state0] = init(opts)
-      const [errState] = send(state0, { type: 'MintFailed', error: { code: 'internal', detail: 'oops' } })
+      const [errState] = send(state0, {
+        type: 'MintFailed',
+        error: { code: 'internal', detail: 'oops' },
+      })
       expect(errState.error).not.toBeNull()
       const [state1, effects] = send(errState, { type: 'ClearError' })
       expect(state1.error).toBeNull()
@@ -218,19 +251,33 @@ describe('agentConnect.connect', () => {
     const [s0] = init(opts)
 
     const [minting] = update(s0, { type: 'Mint' }, opts)
-    expect(connect<ParentState>((s) => s.agent, sendFn)({ agent: minting }).mintTrigger.disabled).toBe(true)
+    expect(
+      connect<ParentState>((s) => s.agent, sendFn)({ agent: minting }).mintTrigger.disabled,
+    ).toBe(true)
 
-    const [pending] = update(minting, { type: 'MintSucceeded', token, tid, lapUrl, wsUrl, expiresAt }, opts)
-    expect(connect<ParentState>((s) => s.agent, sendFn)({ agent: pending }).mintTrigger.disabled).toBe(true)
+    const [pending] = update(
+      minting,
+      { type: 'MintSucceeded', token, tid, lapUrl, wsUrl, expiresAt },
+      opts,
+    )
+    expect(
+      connect<ParentState>((s) => s.agent, sendFn)({ agent: pending }).mintTrigger.disabled,
+    ).toBe(true)
 
     const [active] = update(pending, { type: 'WsOpened' }, opts)
-    expect(connect<ParentState>((s) => s.agent, sendFn)({ agent: active }).mintTrigger.disabled).toBe(true)
+    expect(
+      connect<ParentState>((s) => s.agent, sendFn)({ agent: active }).mintTrigger.disabled,
+    ).toBe(true)
   })
 
   it('mintTrigger.disabled is false in error state', () => {
     const sendFn = vi.fn()
     const [s0] = init(opts)
-    const [errState] = update(s0, { type: 'MintFailed', error: { code: 'internal', detail: 'oops' } }, opts)
+    const [errState] = update(
+      s0,
+      { type: 'MintFailed', error: { code: 'internal', detail: 'oops' } },
+      opts,
+    )
     const bag = connect<ParentState>((s) => s.agent, sendFn)({ agent: errState })
     expect(bag.mintTrigger.disabled).toBe(false)
   })

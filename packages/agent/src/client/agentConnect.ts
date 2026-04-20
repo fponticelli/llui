@@ -22,7 +22,14 @@ export type AgentConnectState = {
 
 export type AgentConnectMsg =
   | { type: 'Mint' }
-  | { type: 'MintSucceeded'; token: AgentToken; tid: string; lapUrl: string; wsUrl: string; expiresAt: number }
+  | {
+      type: 'MintSucceeded'
+      token: AgentToken
+      tid: string
+      lapUrl: string
+      wsUrl: string
+      expiresAt: number
+    }
   | { type: 'MintFailed'; error: { code: string; detail: string } }
   | { type: 'WsOpened' }
   | { type: 'WsClosed' }
@@ -57,7 +64,10 @@ export function update(
 ): [AgentConnectState, AgentEffect[]] {
   switch (msg.type) {
     case 'Mint':
-      return [{ ...state, status: 'minting' }, [{ type: 'AgentMintRequest', mintUrl: opts.mintUrl }]]
+      return [
+        { ...state, status: 'minting' },
+        [{ type: 'AgentMintRequest', mintUrl: opts.mintUrl }],
+      ]
     case 'MintSucceeded': {
       const pending: AgentConnectPendingToken = {
         token: msg.token,

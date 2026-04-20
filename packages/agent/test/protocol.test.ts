@@ -137,11 +137,7 @@ describe('LAP types — sample value conformance', () => {
   })
 })
 
-import type {
-  AgentDocs,
-  AgentContext,
-  LapContextResponse,
-} from '../src/protocol.js'
+import type { AgentDocs, AgentContext, LapContextResponse } from '../src/protocol.js'
 
 describe('Documentation types', () => {
   it('AgentDocs minimal', () => {
@@ -153,10 +149,7 @@ describe('Documentation types', () => {
     const d: AgentDocs = {
       purpose: 'Kanban for a small team.',
       overview: 'Columns are To do / Doing / Done. Cards carry owner, due date, tags.',
-      cautions: [
-        'Do not delete a card with unfinished subtasks.',
-        'Moving to Done locks edits.',
-      ],
+      cautions: ['Do not delete a card with unfinished subtasks.', 'Moving to Done locks edits.'],
     }
     expect(d.cautions).toHaveLength(2)
   })
@@ -238,7 +231,17 @@ describe('Relay WS frame types', () => {
       t: 'hello',
       appName: 'App',
       appVersion: '1.0',
-      msgSchema: { inc: { payloadSchema: {}, annotations: { intent: null, alwaysAffordable: false, requiresConfirm: false, humanOnly: false } } },
+      msgSchema: {
+        inc: {
+          payloadSchema: {},
+          annotations: {
+            intent: null,
+            alwaysAffordable: false,
+            requiresConfirm: false,
+            humanOnly: false,
+          },
+        },
+      },
       stateSchema: { type: 'object' },
       affordancesSample: [{ type: 'inc' }],
       docs: null,
@@ -303,7 +306,16 @@ describe('Relay WS frame types', () => {
 
   it('ClientFrame union is inhabited by all expected variants', () => {
     const frames: ClientFrame[] = [
-      { t: 'hello', appName: 'x', appVersion: '1', msgSchema: {}, stateSchema: {}, affordancesSample: [], docs: null, schemaHash: 'h' },
+      {
+        t: 'hello',
+        appName: 'x',
+        appVersion: '1',
+        msgSchema: {},
+        stateSchema: {},
+        affordancesSample: [],
+        docs: null,
+        schemaHash: 'h',
+      },
       { t: 'rpc-reply', id: 'r', result: null },
       { t: 'rpc-error', id: 'r', code: 'invalid' },
       { t: 'confirm-resolved', confirmId: 'c', outcome: 'user-cancelled' },

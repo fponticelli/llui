@@ -12,9 +12,14 @@ const key = 'x'.repeat(32)
 
 function seed(store: InMemoryTokenStore, tid: string): Promise<void> {
   const rec: TokenRecord = {
-    tid, uid: 'u1', status: 'awaiting-ws',
-    createdAt: 0, lastSeenAt: 0, pendingResumeUntil: null,
-    origin: 'http://localhost', label: null,
+    tid,
+    uid: 'u1',
+    status: 'awaiting-ws',
+    createdAt: 0,
+    lastSeenAt: 0,
+    pendingResumeUntil: null,
+    origin: 'http://localhost',
+    label: null,
   }
   return store.create(rec)
 }
@@ -46,7 +51,10 @@ afterEach(async () => {
 
 function makeToken(tid: string): string {
   const payload: TokenPayload = {
-    tid, iat: 0, exp: 9_999_999_999, scope: 'agent',
+    tid,
+    iat: 0,
+    exp: 9_999_999_999,
+    scope: 'agent',
   }
   return signToken(payload, key)
 }

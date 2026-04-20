@@ -44,7 +44,9 @@ export async function handleLapConfirmResult(
   const nowMs = (deps.now ?? (() => Date.now()))()
   if (result.outcome === 'confirmed') {
     await deps.auditSink.write({
-      at: nowMs, tid: auth.tid, uid: rec.uid,
+      at: nowMs,
+      tid: auth.tid,
+      uid: rec.uid,
       event: 'confirm-approved',
       detail: { confirmId: body.confirmId },
     })
@@ -63,7 +65,9 @@ export async function handleLapConfirmResult(
   // (matches registry semantics). Spec §8.2 get_confirm_result allows 'user-cancelled' |
   // 'timeout' | 'still-pending' — a refinement to distinguish is follow-up work.
   await deps.auditSink.write({
-    at: nowMs, tid: auth.tid, uid: rec.uid,
+    at: nowMs,
+    tid: auth.tid,
+    uid: rec.uid,
     event: 'confirm-rejected',
     detail: { confirmId: body.confirmId },
   })
@@ -74,5 +78,8 @@ export async function handleLapConfirmResult(
 }
 
 function json(b: unknown, s: number): Response {
-  return new Response(JSON.stringify(b), { status: s, headers: { 'content-type': 'application/json' } })
+  return new Response(JSON.stringify(b), {
+    status: s,
+    headers: { 'content-type': 'application/json' },
+  })
 }

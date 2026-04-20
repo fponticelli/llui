@@ -9,6 +9,7 @@
 **Tech Stack:** Node `ws` library, Node `http.IncomingMessage` / `net.Socket` for the upgrade signature, `node:url` for token extraction, Web `Request`/`Response` for the HTTP surface, vitest + `ws`-based fakes for tests.
 
 **Spec section coverage after this plan:**
+
 - §7.1–§7.5 LAP endpoints (full set, including `/context`)
 - §8.2 `describe_app` cache + forwarded tools
 - §10.2 WS endpoint
@@ -68,6 +69,7 @@ Real upgrade handler wraps `ws` into this interface; test harness implements it 
 ## Task 1: `WsPairingRegistry` — failing tests for rpc correlation
 
 **Files:**
+
 - Create: `packages/agent/test/server/ws/pairing-registry.test.ts`
 
 - [ ] **Step 1: Test**
@@ -88,9 +90,15 @@ function mkFake(): Fake {
   let onClose: () => void = () => {}
   const conn = {
     send: vi.fn(),
-    onFrame(h: typeof onFrame) { onFrame = h },
-    onClose(h: typeof onClose) { onClose = h },
-    close() { onClose() },
+    onFrame(h: typeof onFrame) {
+      onFrame = h
+    },
+    onClose(h: typeof onClose) {
+      onClose = h
+    },
+    close() {
+      onClose()
+    },
   }
   const out: Fake = {
     send: conn.send,
@@ -113,12 +121,26 @@ const hello = (schemaHash = 'h1'): HelloFrame => ({
 })
 
 let reg: WsPairingRegistry
-beforeEach(() => { reg = new WsPairingRegistry({ now: () => 1000 }) })
+beforeEach(() => {
+  reg = new WsPairingRegistry({ now: () => 1000 })
+})
 
 describe('WsPairingRegistry', () => {
   it('register stores the pairing keyed by tid', () => {
     const f = mkFake()
-    reg.register('t1', (f as unknown as { __conn: { send: (x: ServerFrame) => void; onFrame: (h: (cf: ClientFrame) => void) => void; onClose: (h: () => void) => void; close: () => void } }).__conn)
+    reg.register(
+      't1',
+      (
+        f as unknown as {
+          __conn: {
+            send: (x: ServerFrame) => void
+            onFrame: (h: (cf: ClientFrame) => void) => void
+            onClose: (h: () => void) => void
+            close: () => void
+          }
+        }
+      ).__conn,
+    )
     expect(reg.isPaired('t1')).toBe(true)
   })
 
@@ -166,14 +188,21 @@ describe('WsPairingRegistry', () => {
   it('rpc() respects an explicit timeout', async () => {
     const f = mkFake()
     reg.register('t1', (f as unknown as { __conn: unknown }).__conn as never)
-    await expect(reg.rpc('t1', 'get_state', {}, { timeoutMs: 1 })).rejects.toMatchObject({ code: 'timeout' })
+    await expect(reg.rpc('t1', 'get_state', {}, { timeoutMs: 1 })).rejects.toMatchObject({
+      code: 'timeout',
+    })
   })
 
   it('waitForConfirm() resolves when a matching confirm-resolved frame arrives', async () => {
     const f = mkFake()
     reg.register('t1', (f as unknown as { __conn: unknown }).__conn as never)
     const p = reg.waitForConfirm('t1', 'c-1', 1000)
-    f.emit({ t: 'confirm-resolved', confirmId: 'c-1', outcome: 'confirmed', stateAfter: { ok: true } })
+    f.emit({
+      t: 'confirm-resolved',
+      confirmId: 'c-1',
+      outcome: 'confirmed',
+      stateAfter: { ok: true },
+    })
     expect(await p).toEqual({ outcome: 'confirmed', stateAfter: { ok: true } })
   })
 
@@ -213,6 +242,7 @@ cd packages/agent && pnpm vitest run test/server/ws/pairing-registry.test.ts
 ## Task 2: `WsPairingRegistry` — implementation
 
 **Files:**
+
 - Create: `packages/agent/src/server/ws/pairing-registry.ts`
 
 - [ ] **Step 1: Implement**
@@ -307,12 +337,7 @@ export class WsPairingRegistry {
     return this.pairings.get(tid)?.hello ?? null
   }
 
-  async rpc(
-    tid: string,
-    tool: string,
-    args: unknown,
-    opts: RpcOptions = {},
-  ): Promise<unknown> {
+  async rpc(tid: string, tool: string, args: unknown, opts: RpcOptions = {}): Promise<unknown> {
     const p = this.pairings.get(tid)
     if (!p || p.closed) {
       const err: RpcError = { code: 'paused' }
@@ -489,6 +514,7 @@ COMMIT
 ## Task 3: WS upgrade handler — test + impl
 
 **Files:**
+
 - Create: `packages/agent/src/server/ws/upgrade.ts`
 - Create: `packages/agent/test/server/ws/upgrade.test.ts`
 
@@ -509,9 +535,14 @@ const key = 'x'.repeat(32)
 
 function seed(store: InMemoryTokenStore, tid: string): Promise<void> {
   const rec: TokenRecord = {
-    tid, uid: 'u1', status: 'awaiting-ws',
-    createdAt: 0, lastSeenAt: 0, pendingResumeUntil: null,
-    origin: 'http://localhost', label: null,
+    tid,
+    uid: 'u1',
+    status: 'awaiting-ws',
+    createdAt: 0,
+    lastSeenAt: 0,
+    pendingResumeUntil: null,
+    origin: 'http://localhost',
+    label: null,
   }
   return store.create(rec)
 }
@@ -543,7 +574,10 @@ afterEach(async () => {
 
 function makeToken(tid: string): string {
   const payload: TokenPayload = {
-    tid, iat: 0, exp: 9_999_999_999, scope: 'agent',
+    tid,
+    iat: 0,
+    exp: 9_999_999_999,
+    scope: 'agent',
   }
   return signToken(payload, key)
 }
@@ -741,6 +775,7 @@ COMMIT
 ## Task 4: LAP `/describe` — cached-hello serving
 
 **Files:**
+
 - Create: `packages/agent/src/server/lap/describe.ts`
 - Create: `packages/agent/test/server/lap/describe.test.ts`
 
@@ -749,7 +784,10 @@ COMMIT
 ```ts
 import { describe, it, expect, beforeEach } from 'vitest'
 import { handleLapDescribe } from '../../../src/server/lap/describe.js'
-import { WsPairingRegistry, type PairingConnection } from '../../../src/server/ws/pairing-registry.js'
+import {
+  WsPairingRegistry,
+  type PairingConnection,
+} from '../../../src/server/ws/pairing-registry.js'
 import { InMemoryTokenStore } from '../../../src/server/token-store.js'
 import { signToken } from '../../../src/server/token.js'
 import type { HelloFrame, LapDescribeResponse, TokenRecord } from '../../../src/protocol.js'
@@ -760,7 +798,9 @@ function fakeConn(): PairingConnection & { emit: (f: HelloFrame) => void } {
   let onFrame: (f: unknown) => void = () => {}
   return {
     send: () => {},
-    onFrame(h: (f: unknown) => void) { onFrame = h },
+    onFrame(h: (f: unknown) => void) {
+      onFrame = h
+    },
     onClose: () => {},
     close: () => {},
     emit: (f: HelloFrame) => onFrame(f),
@@ -776,9 +816,14 @@ beforeEach(() => {
 
 const seed = async (tid: string): Promise<void> => {
   const rec: TokenRecord = {
-    tid, uid: 'u1', status: 'active',
-    createdAt: 0, lastSeenAt: 0, pendingResumeUntil: null,
-    origin: 'https://app', label: null,
+    tid,
+    uid: 'u1',
+    status: 'active',
+    createdAt: 0,
+    lastSeenAt: 0,
+    pendingResumeUntil: null,
+    origin: 'https://app',
+    label: null,
   }
   await store.create(rec)
 }
@@ -801,15 +846,28 @@ describe('handleLapDescribe', () => {
       t: 'hello',
       appName: 'Kanban',
       appVersion: '1.0',
-      msgSchema: { inc: { payloadSchema: {}, annotations: { intent: 'inc', alwaysAffordable: false, requiresConfirm: false, humanOnly: false } } },
+      msgSchema: {
+        inc: {
+          payloadSchema: {},
+          annotations: {
+            intent: 'inc',
+            alwaysAffordable: false,
+            requiresConfirm: false,
+            humanOnly: false,
+          },
+        },
+      },
       stateSchema: { count: 'number' },
       affordancesSample: [],
       docs: { purpose: 'Demo' },
       schemaHash: 'abc',
     })
     const res = await handleLapDescribe(mkRequest(validToken('t1')), {
-      signingKey: key, tokenStore: store, registry,
-      auditSink: { write: () => {} }, now: () => 1000,
+      signingKey: key,
+      tokenStore: store,
+      registry,
+      auditSink: { write: () => {} },
+      now: () => 1000,
     })
     expect(res.status).toBe(200)
     const body = (await res.json()) as LapDescribeResponse
@@ -823,11 +881,14 @@ describe('handleLapDescribe', () => {
     await seed('t1')
     // No registry.register(...)
     const res = await handleLapDescribe(mkRequest(validToken('t1')), {
-      signingKey: key, tokenStore: store, registry,
-      auditSink: { write: () => {} }, now: () => 1000,
+      signingKey: key,
+      tokenStore: store,
+      registry,
+      auditSink: { write: () => {} },
+      now: () => 1000,
     })
     expect(res.status).toBe(503)
-    const body = await res.json() as { error: { code: string } }
+    const body = (await res.json()) as { error: { code: string } }
     expect(body.error.code).toBe('paused')
   })
 
@@ -836,8 +897,11 @@ describe('handleLapDescribe', () => {
     const conn = fakeConn()
     registry.register('t1', conn)
     const res = await handleLapDescribe(mkRequest(validToken('t1')), {
-      signingKey: key, tokenStore: store, registry,
-      auditSink: { write: () => {} }, now: () => 1000,
+      signingKey: key,
+      tokenStore: store,
+      registry,
+      auditSink: { write: () => {} },
+      now: () => 1000,
     })
     expect(res.status).toBe(503)
   })
@@ -845,8 +909,11 @@ describe('handleLapDescribe', () => {
   it('rejects bearer-less requests with 401', async () => {
     const req = new Request('https://app/agent/lap/v1/describe', { method: 'POST' })
     const res = await handleLapDescribe(req, {
-      signingKey: key, tokenStore: store, registry,
-      auditSink: { write: () => {} }, now: () => 1000,
+      signingKey: key,
+      tokenStore: store,
+      registry,
+      auditSink: { write: () => {} },
+      now: () => 1000,
     })
     expect(res.status).toBe(401)
   })
@@ -855,8 +922,11 @@ describe('handleLapDescribe', () => {
     await seed('t1')
     await store.revoke('t1')
     const res = await handleLapDescribe(mkRequest(validToken('t1')), {
-      signingKey: key, tokenStore: store, registry,
-      auditSink: { write: () => {} }, now: () => 1000,
+      signingKey: key,
+      tokenStore: store,
+      registry,
+      auditSink: { write: () => {} },
+      now: () => 1000,
     })
     expect(res.status).toBe(403)
   })
@@ -872,10 +942,7 @@ import { verifyToken } from '../token.js'
 import type { TokenStore } from '../token-store.js'
 import type { WsPairingRegistry } from '../ws/pairing-registry.js'
 import type { AuditSink } from '../audit.js'
-import type {
-  LapDescribeResponse,
-  MessageSchemaEntry,
-} from '../../protocol.js'
+import type { LapDescribeResponse, MessageSchemaEntry } from '../../protocol.js'
 
 export type LapDescribeDeps = {
   signingKey: string | Uint8Array
@@ -895,8 +962,10 @@ export async function handleLapDescribe(req: Request, deps: LapDescribeDeps): Pr
   const hello = deps.registry.getHello(auth.tid)
   if (!hello) return json({ error: { code: 'paused' } }, 503)
 
-  const messages: Record<string, MessageSchemaEntry> =
-    hello.msgSchema as Record<string, MessageSchemaEntry>
+  const messages: Record<string, MessageSchemaEntry> = hello.msgSchema as Record<
+    string,
+    MessageSchemaEntry
+  >
 
   const out: LapDescribeResponse = {
     name: hello.appName,
@@ -915,16 +984,17 @@ export async function handleLapDescribe(req: Request, deps: LapDescribeDeps): Pr
   const nowMs = (deps.now ?? (() => Date.now()))()
   await deps.tokenStore.touch(auth.tid, nowMs)
   await deps.auditSink.write({
-    at: nowMs, tid: auth.tid, uid: rec.uid,
-    event: 'lap-call', detail: { path: '/lap/v1/describe' },
+    at: nowMs,
+    tid: auth.tid,
+    uid: rec.uid,
+    event: 'lap-call',
+    detail: { path: '/lap/v1/describe' },
   })
 
   return json(out, 200)
 }
 
-export function extractAuth(
-  req: Request,
-): { ok: true; tid: string } | { ok: false } {
+export function extractAuth(req: Request): { ok: true; tid: string } | { ok: false } {
   const auth = req.headers.get('authorization')
   if (!auth || !auth.startsWith('Bearer ')) return { ok: false }
   const token = auth.slice('Bearer '.length)
@@ -932,7 +1002,7 @@ export function extractAuth(
   // We only need to parse the payload out to get tid.
   // For handlers we actually do verify with the key since each handler has deps.signingKey.
   // Keep this extractAuth for tid-only parsing after verify succeeds.
-  return { ok: false }  // placeholder — real code uses verifyTokenAndReadTid below
+  return { ok: false } // placeholder — real code uses verifyTokenAndReadTid below
 }
 
 // Actual auth helper that verifies + returns tid:
@@ -949,7 +1019,10 @@ export function verifyAndReadTid(
 }
 
 function json(b: unknown, s: number): Response {
-  return new Response(JSON.stringify(b), { status: s, headers: { 'content-type': 'application/json' } })
+  return new Response(JSON.stringify(b), {
+    status: s,
+    headers: { 'content-type': 'application/json' },
+  })
 }
 ```
 
@@ -983,7 +1056,10 @@ export async function handleLapDescribe(req: Request, deps: LapDescribeDeps): Pr
   const hello = deps.registry.getHello(auth.tid)
   if (!hello) return json({ error: { code: 'paused' } }, 503)
 
-  const messages: Record<string, MessageSchemaEntry> = hello.msgSchema as Record<string, MessageSchemaEntry>
+  const messages: Record<string, MessageSchemaEntry> = hello.msgSchema as Record<
+    string,
+    MessageSchemaEntry
+  >
   const out: LapDescribeResponse = {
     name: hello.appName,
     version: hello.appVersion,
@@ -1001,8 +1077,11 @@ export async function handleLapDescribe(req: Request, deps: LapDescribeDeps): Pr
   const nowMs = (deps.now ?? (() => Date.now()))()
   await deps.tokenStore.touch(auth.tid, nowMs)
   await deps.auditSink.write({
-    at: nowMs, tid: auth.tid, uid: rec.uid,
-    event: 'lap-call', detail: { path: '/lap/v1/describe' },
+    at: nowMs,
+    tid: auth.tid,
+    uid: rec.uid,
+    event: 'lap-call',
+    detail: { path: '/lap/v1/describe' },
   })
   return json(out, 200)
 }
@@ -1020,7 +1099,10 @@ export function verifyAndReadTid(
 }
 
 function json(b: unknown, s: number): Response {
-  return new Response(JSON.stringify(b), { status: s, headers: { 'content-type': 'application/json' } })
+  return new Response(JSON.stringify(b), {
+    status: s,
+    headers: { 'content-type': 'application/json' },
+  })
 }
 ```
 
@@ -1048,12 +1130,14 @@ COMMIT
 ## Task 5: LAP simple-forward handlers (5 endpoints sharing one pattern)
 
 **Files:**
+
 - Create: `packages/agent/src/server/lap/forward.ts`
 - Create: `packages/agent/test/server/lap/simple-forwards.test.ts`
 
 All 5 of these follow the same pattern: auth → look up rec → check pairing → registry.rpc(tool, args) → response.
 
 The 5 endpoints:
+
 - `/lap/v1/state` → tool `get_state`, args `{ path? }`
 - `/lap/v1/actions` → tool `list_actions`, args `{}`
 - `/lap/v1/query-dom` → tool `query_dom`, args `{ name, multiple? }`
@@ -1094,9 +1178,7 @@ export function makeForwardHandler(
     if (!rec || rec.status === 'revoked') return json({ error: { code: 'revoked' } }, 403)
     if (!deps.registry.isPaired(auth.tid)) return json({ error: { code: 'paused' } }, 503)
 
-    const rawBody = req.method === 'POST'
-      ? await req.json().catch(() => null)
-      : null
+    const rawBody = req.method === 'POST' ? await req.json().catch(() => null) : null
     const args = parseArgs(rawBody)
     if (args === null) return json({ error: { code: 'invalid' } }, 400)
 
@@ -1105,7 +1187,9 @@ export function makeForwardHandler(
       const nowMs = (deps.now ?? (() => Date.now()))()
       await deps.tokenStore.touch(auth.tid, nowMs)
       await deps.auditSink.write({
-        at: nowMs, tid: auth.tid, uid: rec.uid,
+        at: nowMs,
+        tid: auth.tid,
+        uid: rec.uid,
         event: 'lap-call',
         detail: { tool, ...auditDetail(auth.tid, args) },
       })
@@ -1120,7 +1204,10 @@ export function makeForwardHandler(
 }
 
 function json(b: unknown, s: number): Response {
-  return new Response(JSON.stringify(b), { status: s, headers: { 'content-type': 'application/json' } })
+  return new Response(JSON.stringify(b), {
+    status: s,
+    headers: { 'content-type': 'application/json' },
+  })
 }
 
 // Concrete handlers:
@@ -1160,12 +1247,18 @@ import { signToken } from '../../../src/server/token.js'
 import type { TokenRecord } from '../../../src/protocol.js'
 
 const key = 'x'.repeat(32)
-const validToken = (tid: string) => signToken({ tid, iat: 0, exp: 9_999_999_999, scope: 'agent' }, key)
+const validToken = (tid: string) =>
+  signToken({ tid, iat: 0, exp: 9_999_999_999, scope: 'agent' }, key)
 const seed = async (store: InMemoryTokenStore, tid: string) => {
   const rec: TokenRecord = {
-    tid, uid: 'u1', status: 'active',
-    createdAt: 0, lastSeenAt: 0, pendingResumeUntil: null,
-    origin: 'https://app', label: null,
+    tid,
+    uid: 'u1',
+    status: 'active',
+    createdAt: 0,
+    lastSeenAt: 0,
+    pendingResumeUntil: null,
+    origin: 'https://app',
+    label: null,
   }
   await store.create(rec)
 }
@@ -1191,12 +1284,17 @@ function mkReq(path: string, body: unknown): Request {
 }
 
 const deps = () => ({
-  signingKey: key, tokenStore: store, registry,
-  auditSink: { write: () => {} }, now: () => 1,
+  signingKey: key,
+  tokenStore: store,
+  registry,
+  auditSink: { write: () => {} },
+  now: () => 1,
 })
 
 describe('LAP simple-forward handlers', () => {
-  beforeEach(async () => { await seed(store, 't1') })
+  beforeEach(async () => {
+    await seed(store, 't1')
+  })
 
   it('/state forwards get_state with {path}', async () => {
     const res = await handleLapState(mkReq('/lap/v1/state', { path: '/x' }), deps())
@@ -1216,7 +1314,10 @@ describe('LAP simple-forward handlers', () => {
   })
 
   it('/query-dom forwards {name, multiple}', async () => {
-    const res = await handleLapQueryDom(mkReq('/lap/v1/query-dom', { name: 'email', multiple: true }), deps())
+    const res = await handleLapQueryDom(
+      mkReq('/lap/v1/query-dom', { name: 'email', multiple: true }),
+      deps(),
+    )
     expect(res.status).toBe(200)
     expect(rpcSpy).toHaveBeenCalledWith('t1', 'query_dom', { name: 'email', multiple: true })
   })
@@ -1275,10 +1376,12 @@ COMMIT
 ## Task 6: LAP `/message` — long-poll pending-confirmation
 
 **Files:**
+
 - Create: `packages/agent/src/server/lap/message.ts`
 - Create: `packages/agent/test/server/lap/message.test.ts`
 
 Spec semantics:
+
 - Browser may reply `dispatched` → return immediately.
 - Browser may reply `rejected` → return immediately.
 - Browser may reply `pending-confirmation` → server holds HTTP response up to `timeoutMs`, waits for `confirm-resolved` frame, returns `confirmed`/`rejected`.
@@ -1318,7 +1421,9 @@ export async function handleLapMessage(req: Request, deps: LapMessageDeps): Prom
 
   let initial: LapMessageResponse
   try {
-    initial = (await deps.registry.rpc(auth.tid, 'send_message', body, { timeoutMs })) as LapMessageResponse
+    initial = (await deps.registry.rpc(auth.tid, 'send_message', body, {
+      timeoutMs,
+    })) as LapMessageResponse
   } catch (e: unknown) {
     const err = e as { code?: string; detail?: string }
     const status = err.code === 'paused' ? 503 : err.code === 'timeout' ? 504 : 500
@@ -1328,9 +1433,15 @@ export async function handleLapMessage(req: Request, deps: LapMessageDeps): Prom
   const nowMs = (deps.now ?? (() => Date.now()))()
   await deps.tokenStore.touch(auth.tid, nowMs)
 
-  if (initial.status === 'dispatched' || initial.status === 'confirmed' || initial.status === 'rejected') {
+  if (
+    initial.status === 'dispatched' ||
+    initial.status === 'confirmed' ||
+    initial.status === 'rejected'
+  ) {
     await deps.auditSink.write({
-      at: nowMs, tid: auth.tid, uid: rec.uid,
+      at: nowMs,
+      tid: auth.tid,
+      uid: rec.uid,
       event: initial.status === 'rejected' ? 'msg-blocked' : 'msg-dispatched',
       detail: { variant: body.msg.type, status: initial.status },
     })
@@ -1339,7 +1450,9 @@ export async function handleLapMessage(req: Request, deps: LapMessageDeps): Prom
 
   if (initial.status === 'pending-confirmation') {
     await deps.auditSink.write({
-      at: nowMs, tid: auth.tid, uid: rec.uid,
+      at: nowMs,
+      tid: auth.tid,
+      uid: rec.uid,
       event: 'confirm-proposed',
       detail: { variant: body.msg.type, confirmId: initial.confirmId },
     })
@@ -1347,28 +1460,35 @@ export async function handleLapMessage(req: Request, deps: LapMessageDeps): Prom
     const nowMs2 = (deps.now ?? (() => Date.now()))()
     if (resolved.outcome === 'confirmed') {
       await deps.auditSink.write({
-        at: nowMs2, tid: auth.tid, uid: rec.uid,
+        at: nowMs2,
+        tid: auth.tid,
+        uid: rec.uid,
         event: 'confirm-approved',
         detail: { variant: body.msg.type, confirmId: initial.confirmId },
       })
-      return json({ status: 'confirmed', stateAfter: resolved.stateAfter } satisfies LapMessageResponse, 200)
+      return json(
+        { status: 'confirmed', stateAfter: resolved.stateAfter } satisfies LapMessageResponse,
+        200,
+      )
     }
     await deps.auditSink.write({
-      at: nowMs2, tid: auth.tid, uid: rec.uid,
+      at: nowMs2,
+      tid: auth.tid,
+      uid: rec.uid,
       event: 'confirm-rejected',
       detail: { variant: body.msg.type, confirmId: initial.confirmId },
     })
-    return json(
-      { status: 'rejected', reason: 'user-cancelled' } satisfies LapMessageResponse,
-      200,
-    )
+    return json({ status: 'rejected', reason: 'user-cancelled' } satisfies LapMessageResponse, 200)
   }
 
   return json({ error: { code: 'internal', detail: 'unknown browser status' } }, 500)
 }
 
 function json(b: unknown, s: number): Response {
-  return new Response(JSON.stringify(b), { status: s, headers: { 'content-type': 'application/json' } })
+  return new Response(JSON.stringify(b), {
+    status: s,
+    headers: { 'content-type': 'application/json' },
+  })
 }
 ```
 
@@ -1383,12 +1503,18 @@ import { signToken } from '../../../src/server/token.js'
 import type { TokenRecord, LapMessageResponse } from '../../../src/protocol.js'
 
 const key = 'x'.repeat(32)
-const validToken = (tid: string) => signToken({ tid, iat: 0, exp: 9_999_999_999, scope: 'agent' }, key)
+const validToken = (tid: string) =>
+  signToken({ tid, iat: 0, exp: 9_999_999_999, scope: 'agent' }, key)
 const seed = async (store: InMemoryTokenStore, tid: string) => {
   const rec: TokenRecord = {
-    tid, uid: 'u1', status: 'active',
-    createdAt: 0, lastSeenAt: 0, pendingResumeUntil: null,
-    origin: 'https://app', label: null,
+    tid,
+    uid: 'u1',
+    status: 'active',
+    createdAt: 0,
+    lastSeenAt: 0,
+    pendingResumeUntil: null,
+    origin: 'https://app',
+    label: null,
   }
   await store.create(rec)
 }
@@ -1402,8 +1528,11 @@ beforeEach(() => {
 })
 
 const deps = () => ({
-  signingKey: key, tokenStore: store, registry,
-  auditSink: { write: () => {} }, now: () => 1,
+  signingKey: key,
+  tokenStore: store,
+  registry,
+  auditSink: { write: () => {} },
+  now: () => 1,
 })
 
 const mkReq = (body: unknown): Request =>
@@ -1414,7 +1543,9 @@ const mkReq = (body: unknown): Request =>
   })
 
 describe('handleLapMessage', () => {
-  beforeEach(async () => { await seed(store, 't1') })
+  beforeEach(async () => {
+    await seed(store, 't1')
+  })
 
   it('returns dispatched when browser replies dispatched', async () => {
     vi.spyOn(registry, 'rpc').mockResolvedValue({ status: 'dispatched', stateAfter: { n: 1 } })
@@ -1489,6 +1620,7 @@ COMMIT
 ## Task 7: LAP `/wait` + `/confirm-result`
 
 **Files:**
+
 - Create: `packages/agent/src/server/lap/wait.ts`
 - Create: `packages/agent/src/server/lap/confirm-result.ts`
 - Create: `packages/agent/test/server/lap/wait.test.ts`
@@ -1526,14 +1658,20 @@ export async function handleLapWait(req: Request, deps: LapWaitDeps): Promise<Re
 
   const nowMs = (deps.now ?? (() => Date.now()))()
   await deps.auditSink.write({
-    at: nowMs, tid: auth.tid, uid: rec.uid,
-    event: 'lap-call', detail: { path: '/lap/v1/wait', outcome: result.status },
+    at: nowMs,
+    tid: auth.tid,
+    uid: rec.uid,
+    event: 'lap-call',
+    detail: { path: '/lap/v1/wait', outcome: result.status },
   })
   return json(out, 200)
 }
 
 function json(b: unknown, s: number): Response {
-  return new Response(JSON.stringify(b), { status: s, headers: { 'content-type': 'application/json' } })
+  return new Response(JSON.stringify(b), {
+    status: s,
+    headers: { 'content-type': 'application/json' },
+  })
 }
 ```
 
@@ -1579,7 +1717,9 @@ export async function handleLapConfirmResult(
   const nowMs = (deps.now ?? (() => Date.now()))()
   if (result.outcome === 'confirmed') {
     await deps.auditSink.write({
-      at: nowMs, tid: auth.tid, uid: rec.uid,
+      at: nowMs,
+      tid: auth.tid,
+      uid: rec.uid,
       event: 'confirm-approved',
       detail: { confirmId: body.confirmId },
     })
@@ -1598,7 +1738,9 @@ export async function handleLapConfirmResult(
   // (matches registry semantics). Spec §8.2 get_confirm_result allows 'user-cancelled' |
   // 'timeout' | 'still-pending' — a refinement to distinguish is follow-up work.
   await deps.auditSink.write({
-    at: nowMs, tid: auth.tid, uid: rec.uid,
+    at: nowMs,
+    tid: auth.tid,
+    uid: rec.uid,
     event: 'confirm-rejected',
     detail: { confirmId: body.confirmId },
   })
@@ -1609,7 +1751,10 @@ export async function handleLapConfirmResult(
 }
 
 function json(b: unknown, s: number): Response {
-  return new Response(JSON.stringify(b), { status: s, headers: { 'content-type': 'application/json' } })
+  return new Response(JSON.stringify(b), {
+    status: s,
+    headers: { 'content-type': 'application/json' },
+  })
 }
 ```
 
@@ -1626,24 +1771,33 @@ import { signToken } from '../../../src/server/token.js'
 import type { TokenRecord, LapWaitResponse } from '../../../src/protocol.js'
 
 const key = 'x'.repeat(32)
-const validToken = (tid: string) => signToken({ tid, iat: 0, exp: 9_999_999_999, scope: 'agent' }, key)
+const validToken = (tid: string) =>
+  signToken({ tid, iat: 0, exp: 9_999_999_999, scope: 'agent' }, key)
 let store: InMemoryTokenStore
 let registry: WsPairingRegistry
 beforeEach(async () => {
   store = new InMemoryTokenStore()
   registry = new WsPairingRegistry()
   const rec: TokenRecord = {
-    tid: 't1', uid: 'u1', status: 'active',
-    createdAt: 0, lastSeenAt: 0, pendingResumeUntil: null,
-    origin: 'https://app', label: null,
+    tid: 't1',
+    uid: 'u1',
+    status: 'active',
+    createdAt: 0,
+    lastSeenAt: 0,
+    pendingResumeUntil: null,
+    origin: 'https://app',
+    label: null,
   }
   await store.create(rec)
   vi.spyOn(registry, 'isPaired').mockReturnValue(true)
 })
 
 const deps = () => ({
-  signingKey: key, tokenStore: store, registry,
-  auditSink: { write: () => {} }, now: () => 1,
+  signingKey: key,
+  tokenStore: store,
+  registry,
+  auditSink: { write: () => {} },
+  now: () => 1,
 })
 
 const req = (body: unknown): Request =>
@@ -1655,7 +1809,10 @@ const req = (body: unknown): Request =>
 
 describe('handleLapWait', () => {
   it('returns changed when registry.waitForChange resolves with a match', async () => {
-    vi.spyOn(registry, 'waitForChange').mockResolvedValue({ status: 'changed', stateAfter: { n: 2 } })
+    vi.spyOn(registry, 'waitForChange').mockResolvedValue({
+      status: 'changed',
+      stateAfter: { n: 2 },
+    })
     const res = await handleLapWait(req({ path: '/count' }), deps())
     const body = (await res.json()) as LapWaitResponse
     expect(body.status).toBe('changed')
@@ -1681,24 +1838,33 @@ import { signToken } from '../../../src/server/token.js'
 import type { TokenRecord } from '../../../src/protocol.js'
 
 const key = 'x'.repeat(32)
-const validToken = (tid: string) => signToken({ tid, iat: 0, exp: 9_999_999_999, scope: 'agent' }, key)
+const validToken = (tid: string) =>
+  signToken({ tid, iat: 0, exp: 9_999_999_999, scope: 'agent' }, key)
 let store: InMemoryTokenStore
 let registry: WsPairingRegistry
 beforeEach(async () => {
   store = new InMemoryTokenStore()
   registry = new WsPairingRegistry()
   const rec: TokenRecord = {
-    tid: 't1', uid: 'u1', status: 'active',
-    createdAt: 0, lastSeenAt: 0, pendingResumeUntil: null,
-    origin: 'https://app', label: null,
+    tid: 't1',
+    uid: 'u1',
+    status: 'active',
+    createdAt: 0,
+    lastSeenAt: 0,
+    pendingResumeUntil: null,
+    origin: 'https://app',
+    label: null,
   }
   await store.create(rec)
   vi.spyOn(registry, 'isPaired').mockReturnValue(true)
 })
 
 const deps = () => ({
-  signingKey: key, tokenStore: store, registry,
-  auditSink: { write: () => {} }, now: () => 1,
+  signingKey: key,
+  tokenStore: store,
+  registry,
+  auditSink: { write: () => {} },
+  now: () => 1,
 })
 
 const req = (body: unknown): Request =>
@@ -1757,6 +1923,7 @@ COMMIT
 ## Task 8: LAP router + factory integration
 
 **Files:**
+
 - Create: `packages/agent/src/server/lap/router.ts`
 - Create: `packages/agent/test/server/lap/router.test.ts`
 - Modify: `packages/agent/src/server/factory.ts` (add `wsUpgrade` and compose LAP routes)
@@ -1790,16 +1957,26 @@ export function createLapRouter(
     if (!path.startsWith(basePath + '/')) return null
     const tail = path.slice(basePath.length)
     switch (tail) {
-      case '/describe': return handleLapDescribe(req, deps)
-      case '/state': return handleLapState(req, deps)
-      case '/actions': return handleLapActions(req, deps)
-      case '/message': return handleLapMessage(req, deps)
-      case '/confirm-result': return handleLapConfirmResult(req, deps)
-      case '/wait': return handleLapWait(req, deps)
-      case '/query-dom': return handleLapQueryDom(req, deps)
-      case '/describe-visible': return handleLapDescribeVisible(req, deps)
-      case '/context': return handleLapContext(req, deps)
-      default: return null
+      case '/describe':
+        return handleLapDescribe(req, deps)
+      case '/state':
+        return handleLapState(req, deps)
+      case '/actions':
+        return handleLapActions(req, deps)
+      case '/message':
+        return handleLapMessage(req, deps)
+      case '/confirm-result':
+        return handleLapConfirmResult(req, deps)
+      case '/wait':
+        return handleLapWait(req, deps)
+      case '/query-dom':
+        return handleLapQueryDom(req, deps)
+      case '/describe-visible':
+        return handleLapDescribeVisible(req, deps)
+      case '/context':
+        return handleLapContext(req, deps)
+      default:
+        return null
     }
   }
 }
@@ -1816,7 +1993,8 @@ import { signToken } from '../../../src/server/token.js'
 import type { TokenRecord } from '../../../src/protocol.js'
 
 const key = 'x'.repeat(32)
-const validToken = (tid: string) => signToken({ tid, iat: 0, exp: 9_999_999_999, scope: 'agent' }, key)
+const validToken = (tid: string) =>
+  signToken({ tid, iat: 0, exp: 9_999_999_999, scope: 'agent' }, key)
 
 describe('createLapRouter', () => {
   let store: InMemoryTokenStore
@@ -1826,17 +2004,27 @@ describe('createLapRouter', () => {
     store = new InMemoryTokenStore()
     registry = new WsPairingRegistry()
     const rec: TokenRecord = {
-      tid: 't1', uid: 'u1', status: 'active',
-      createdAt: 0, lastSeenAt: 0, pendingResumeUntil: null,
-      origin: 'https://app', label: null,
+      tid: 't1',
+      uid: 'u1',
+      status: 'active',
+      createdAt: 0,
+      lastSeenAt: 0,
+      pendingResumeUntil: null,
+      origin: 'https://app',
+      label: null,
     }
     await store.create(rec)
     vi.spyOn(registry, 'isPaired').mockReturnValue(true)
     vi.spyOn(registry, 'rpc').mockResolvedValue({ ok: true })
-    router = createLapRouter({
-      signingKey: key, tokenStore: store, registry,
-      auditSink: { write: () => {} },
-    }, '/agent/lap/v1')
+    router = createLapRouter(
+      {
+        signingKey: key,
+        tokenStore: store,
+        registry,
+        auditSink: { write: () => {} },
+      },
+      '/agent/lap/v1',
+    )
   })
 
   it('returns null for paths outside the base', async () => {
@@ -1844,11 +2032,16 @@ describe('createLapRouter', () => {
   })
 
   it('routes /agent/lap/v1/state', async () => {
-    const res = await router(new Request('https://app/agent/lap/v1/state', {
-      method: 'POST',
-      headers: { authorization: `Bearer ${validToken('t1')}`, 'content-type': 'application/json' },
-      body: JSON.stringify({}),
-    }))
+    const res = await router(
+      new Request('https://app/agent/lap/v1/state', {
+        method: 'POST',
+        headers: {
+          authorization: `Bearer ${validToken('t1')}`,
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify({}),
+      }),
+    )
     expect(res?.status).toBe(200)
   })
 
@@ -1908,12 +2101,15 @@ export function createLluiAgentServer(opts: ServerOptions): AgentServerHandle {
     lapBasePath,
   })
 
-  const lapRouter = createLapRouter({
-    signingKey: opts.signingKey,
-    tokenStore,
-    registry,
-    auditSink,
-  }, lapBasePath)
+  const lapRouter = createLapRouter(
+    {
+      signingKey: opts.signingKey,
+      tokenStore,
+      registry,
+      auditSink,
+    },
+    lapBasePath,
+  )
 
   const router: AgentServerHandle['router'] = async (req) => {
     const lapRes = await lapRouter(req)
@@ -1928,7 +2124,7 @@ export function createLluiAgentServer(opts: ServerOptions): AgentServerHandle {
     auditSink,
   })
 
-  void rateLimiter  // applied inside route handlers in future polish work
+  void rateLimiter // applied inside route handlers in future polish work
 
   return { router, wsUpgrade }
 }
@@ -1966,6 +2162,7 @@ COMMIT
 ## Task 9: Integration test — mint → fake WS pair → describe → message
 
 **Files:**
+
 - Create: `packages/agent/test/server/integration.test.ts`
 
 - [ ] **Step 1: Test**
@@ -1993,8 +2190,12 @@ function fakeConn(): PairingConnection & {
   let onFrame: (f: ClientFrame) => void = () => {}
   const sent: ServerFrame[] = []
   return {
-    send(f) { sent.push(f) },
-    onFrame(h) { onFrame = h },
+    send(f) {
+      sent.push(f)
+    },
+    onFrame(h) {
+      onFrame = h
+    },
     onClose: () => {},
     close: () => {},
     emit: (f: ClientFrame) => onFrame(f),
@@ -2013,7 +2214,9 @@ describe('full LAP flow — mint → register → describe → message', () => {
     })
 
     // 1. Mint
-    const mintRes = await agent.router(new Request('https://app.example/agent/mint', { method: 'POST' }))
+    const mintRes = await agent.router(
+      new Request('https://app.example/agent/mint', { method: 'POST' }),
+    )
     const mint = (await mintRes!.json()) as MintResponse
 
     // 2. Simulate WS pair — reach into the factory's registry via internal module import.
@@ -2027,10 +2230,12 @@ describe('full LAP flow — mint → register → describe → message', () => {
     //    full WS-pair integration lives in the WS-upgrade test (Task 3), which already uses
     //    a real http + ws server.
 
-    const describeRes = await agent.router(new Request('https://app.example/agent/lap/v1/describe', {
-      method: 'POST',
-      headers: { authorization: `Bearer ${mint.token}` },
-    }))
+    const describeRes = await agent.router(
+      new Request('https://app.example/agent/lap/v1/describe', {
+        method: 'POST',
+        headers: { authorization: `Bearer ${mint.token}` },
+      }),
+    )
     expect(describeRes?.status).toBe(503)
     const body = (await describeRes!.json()) as { error: { code: string } }
     expect(body.error.code).toBe('paused')
@@ -2044,7 +2249,9 @@ Optionally (only if the above test feels too thin), expose an `internal` export 
 
 ```ts
 // factory.ts
-export function createLluiAgentServer(opts: ServerOptions): AgentServerHandle { /* existing */ }
+export function createLluiAgentServer(opts: ServerOptions): AgentServerHandle {
+  /* existing */
+}
 
 export function __createLluiAgentServerForTest(
   opts: ServerOptions,

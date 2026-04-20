@@ -1,5 +1,10 @@
 import { describe, it, expect, vi } from 'vitest'
-import { attachWsClient, type WsLike, type RpcHosts, type HelloBuilder } from '../../src/client/ws-client.js'
+import {
+  attachWsClient,
+  type WsLike,
+  type RpcHosts,
+  type HelloBuilder,
+} from '../../src/client/ws-client.js'
 import type { HelloFrame, ServerFrame, RpcFrame, LogEntry } from '../../src/protocol.js'
 
 // A minimal fake WsLike backed by an event map so tests can fire events.
@@ -214,7 +219,12 @@ describe('attachWsClient', () => {
       flush: vi.fn(),
       getState: () => ({ count: 1 }),
       getMsgAnnotations: () => ({
-        Increment: { intent: 'Increment', alwaysAffordable: true, requiresConfirm: false, humanOnly: false },
+        Increment: {
+          intent: 'Increment',
+          alwaysAffordable: true,
+          requiresConfirm: false,
+          humanOnly: false,
+        },
       }),
     }
     attachWsClient(ws, customRpc, makeHelloBuilder())

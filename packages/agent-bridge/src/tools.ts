@@ -14,7 +14,10 @@ export const TOOLS: ListToolsResult['tools'] = [
     inputSchema: {
       type: 'object',
       properties: {
-        url: { type: 'string', description: 'LAP base URL (e.g. https://app.example/agent/lap/v1)' },
+        url: {
+          type: 'string',
+          description: 'LAP base URL (e.g. https://app.example/agent/lap/v1)',
+        },
         token: { type: 'string', description: 'Bearer token for LAP calls' },
       },
       required: ['url', 'token'],
@@ -22,25 +25,31 @@ export const TOOLS: ListToolsResult['tools'] = [
   },
   {
     name: 'llui_disconnect_session',
-    description: 'Clear the binding for this Claude conversation. Subsequent LLui tool calls will fail until rebind.',
+    description:
+      'Clear the binding for this Claude conversation. Subsequent LLui tool calls will fail until rebind.',
     inputSchema: { type: 'object', properties: {} },
   },
   {
     name: 'describe_app',
-    description: 'Return the bound app\'s name, version, state/message schemas, annotations, and static docs.',
+    description:
+      "Return the bound app's name, version, state/message schemas, annotations, and static docs.",
     inputSchema: { type: 'object', properties: {} },
   },
   {
     name: 'get_state',
-    description: 'Return the current app state. Optional `path` (JSON-pointer) to narrow the slice.',
+    description:
+      'Return the current app state. Optional `path` (JSON-pointer) to narrow the slice.',
     inputSchema: {
       type: 'object',
-      properties: { path: { type: 'string', description: 'Optional JSON-pointer, e.g. "/user/name"' } },
+      properties: {
+        path: { type: 'string', description: 'Optional JSON-pointer, e.g. "/user/name"' },
+      },
     },
   },
   {
     name: 'list_actions',
-    description: 'Return the currently-affordable actions: visible UI bindings plus agent-affordable registry entries, filtered by annotation gates.',
+    description:
+      'Return the currently-affordable actions: visible UI bindings plus agent-affordable registry entries, filtered by annotation gates.',
     inputSchema: { type: 'object', properties: {} },
   },
   {
@@ -51,7 +60,10 @@ export const TOOLS: ListToolsResult['tools'] = [
       type: 'object',
       properties: {
         msg: { type: 'object', description: 'The message to dispatch; must have a `type` string' },
-        reason: { type: 'string', description: 'User-facing rationale (required for confirm-gated variants)' },
+        reason: {
+          type: 'string',
+          description: 'User-facing rationale (required for confirm-gated variants)',
+        },
         waitFor: { type: 'string', enum: ['idle', 'none'], description: 'default "idle"' },
         timeoutMs: { type: 'number' },
       },
@@ -60,7 +72,8 @@ export const TOOLS: ListToolsResult['tools'] = [
   },
   {
     name: 'get_confirm_result',
-    description: 'Poll a pending-confirmation by confirmId. Returns confirmed / rejected / still-pending.',
+    description:
+      'Poll a pending-confirmation by confirmId. Returns confirmed / rejected / still-pending.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -76,7 +89,10 @@ export const TOOLS: ListToolsResult['tools'] = [
     inputSchema: {
       type: 'object',
       properties: {
-        path: { type: 'string', description: 'Optional JSON-pointer to narrow which state changes trigger resolution' },
+        path: {
+          type: 'string',
+          description: 'Optional JSON-pointer to narrow which state changes trigger resolution',
+        },
         timeoutMs: { type: 'number' },
       },
     },
@@ -100,7 +116,8 @@ export const TOOLS: ListToolsResult['tools'] = [
   },
   {
     name: 'describe_context',
-    description: 'Return the current per-state narrative docs (agentContext) — what the user is trying to do right now.',
+    description:
+      'Return the current per-state narrative docs (agentContext) — what the user is trying to do right now.',
     inputSchema: { type: 'object', properties: {} },
   },
 ]

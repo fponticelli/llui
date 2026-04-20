@@ -11,6 +11,7 @@
 **Spec section coverage after this plan:** §11 (bridge architecture, session lifecycle, request forwarding, `describe_app` caching, MCP prompt registration, installability).
 
 **Explicitly deferred:**
+
 - Persistent binding memory across bridge restarts (Plan 9 follow-up if friction shows up in dogfood).
 - Multi-binding per MCP session (Plan 9; v1 is one app per chat).
 - HTTP-MCP transport (`--http` flag). Stdio is sufficient for Claude Desktop; HTTP is follow-up if another client needs it.
@@ -45,6 +46,7 @@ packages/agent-bridge/
 ## Task 1: Scaffold `packages/agent-bridge/`
 
 **Files:**
+
 - Create: `packages/agent-bridge/package.json`
 - Create: `packages/agent-bridge/tsconfig.json`
 - Create: `packages/agent-bridge/tsconfig.build.json`
@@ -126,7 +128,7 @@ import { defineConfig } from 'vitest/config'
 export default defineConfig({
   test: {
     include: ['test/**/*.test.ts'],
-    environment: 'node',  // no DOM needed for the bridge
+    environment: 'node', // no DOM needed for the bridge
   },
 })
 ```
@@ -134,11 +136,13 @@ export default defineConfig({
 ### Verify npm name availability
 
 Before committing, run:
+
 ```bash
 npm view llui-agent name 2>&1 | head -3
 ```
 
 Interpretation:
+
 - If stdout contains `llui-agent` → name is TAKEN; abort and switch to scoped `@llui/agent-bridge`. Update package.json's `name` field and the `bin` map (keep bin as `llui-agent` — npm lets scoped packages expose unscoped binaries).
 - If stderr says "404" or "Not Found" → name is AVAILABLE; proceed as written.
 
@@ -169,6 +173,7 @@ COMMIT
 ## Task 2: Binding map + describe cache
 
 **Files:**
+
 - Create: `packages/agent-bridge/src/binding.ts`
 - Create: `packages/agent-bridge/test/binding.test.ts`
 
@@ -176,7 +181,7 @@ COMMIT
 import type { LapDescribeResponse } from '@llui/agent/protocol'
 
 export type Binding = {
-  url: string                        // LAP base path, e.g. "https://app/agent/lap/v1"
+  url: string // LAP base path, e.g. "https://app/agent/lap/v1"
   token: string
   describe: LapDescribeResponse | null // cached describe_app response; populated on bind
 }
@@ -210,6 +215,7 @@ export class BindingMap {
 Tests (~5 cases): set + get round-trip, get-missing returns null, setDescribe updates cache, clear removes entry, has reflects presence.
 
 Commit:
+
 ```
 feat(agent-bridge): BindingMap — per-session {url, token, describe}
 ```
@@ -219,6 +225,7 @@ feat(agent-bridge): BindingMap — per-session {url, token, describe}
 ## Task 3: Forwarder — generic LAP POST dispatcher
 
 **Files:**
+
 - Create: `packages/agent-bridge/src/forwarder.ts`
 - Create: `packages/agent-bridge/test/forwarder.test.ts`
 
@@ -255,7 +262,11 @@ export async function forwardLap(
       body: JSON.stringify(args),
     })
     let body: unknown = null
-    try { body = await res.json() } catch { body = null }
+    try {
+      body = await res.json()
+    } catch {
+      body = null
+    }
     if (!res.ok) return { ok: false, status: res.status, error: body }
     return { ok: true, body }
   } catch (e) {
@@ -265,6 +276,7 @@ export async function forwardLap(
 ```
 
 Tests (~5 cases):
+
 - Happy path: 200 with JSON body
 - 503 with `{ error: { code: 'paused' } }` → `{ok: false, status: 503, error: {...}}`
 - 401 → same pattern
@@ -272,6 +284,7 @@ Tests (~5 cases):
 - baseUrl with trailing slash — joined correctly
 
 Commit:
+
 ```
 feat(agent-bridge): forwardLap — generic POST dispatcher for LAP endpoints
 ```
@@ -281,6 +294,7 @@ feat(agent-bridge): forwardLap — generic POST dispatcher for LAP endpoints
 ## Task 4: Tool definitions
 
 **Files:**
+
 - Create: `packages/agent-bridge/src/tools.ts`
 
 ```ts
@@ -300,7 +314,10 @@ export const TOOLS: ListToolsResult['tools'] = [
     inputSchema: {
       type: 'object',
       properties: {
-        url: { type: 'string', description: 'LAP base URL (e.g. https://app.example/agent/lap/v1)' },
+        url: {
+          type: 'string',
+          description: 'LAP base URL (e.g. https://app.example/agent/lap/v1)',
+        },
         token: { type: 'string', description: 'Bearer token for LAP calls' },
       },
       required: ['url', 'token'],
@@ -308,25 +325,31 @@ export const TOOLS: ListToolsResult['tools'] = [
   },
   {
     name: 'llui_disconnect_session',
-    description: 'Clear the binding for this Claude conversation. Subsequent LLui tool calls will fail until rebind.',
+    description:
+      'Clear the binding for this Claude conversation. Subsequent LLui tool calls will fail until rebind.',
     inputSchema: { type: 'object', properties: {} },
   },
   {
     name: 'describe_app',
-    description: 'Return the bound app\'s name, version, state/message schemas, annotations, and static docs.',
+    description:
+      "Return the bound app's name, version, state/message schemas, annotations, and static docs.",
     inputSchema: { type: 'object', properties: {} },
   },
   {
     name: 'get_state',
-    description: 'Return the current app state. Optional `path` (JSON-pointer) to narrow the slice.',
+    description:
+      'Return the current app state. Optional `path` (JSON-pointer) to narrow the slice.',
     inputSchema: {
       type: 'object',
-      properties: { path: { type: 'string', description: 'Optional JSON-pointer, e.g. "/user/name"' } },
+      properties: {
+        path: { type: 'string', description: 'Optional JSON-pointer, e.g. "/user/name"' },
+      },
     },
   },
   {
     name: 'list_actions',
-    description: 'Return the currently-affordable actions: visible UI bindings plus agent-affordable registry entries, filtered by annotation gates.',
+    description:
+      'Return the currently-affordable actions: visible UI bindings plus agent-affordable registry entries, filtered by annotation gates.',
     inputSchema: { type: 'object', properties: {} },
   },
   {
@@ -337,7 +360,10 @@ export const TOOLS: ListToolsResult['tools'] = [
       type: 'object',
       properties: {
         msg: { type: 'object', description: 'The message to dispatch; must have a `type` string' },
-        reason: { type: 'string', description: 'User-facing rationale (required for confirm-gated variants)' },
+        reason: {
+          type: 'string',
+          description: 'User-facing rationale (required for confirm-gated variants)',
+        },
         waitFor: { type: 'string', enum: ['idle', 'none'], description: 'default "idle"' },
         timeoutMs: { type: 'number' },
       },
@@ -346,7 +372,8 @@ export const TOOLS: ListToolsResult['tools'] = [
   },
   {
     name: 'get_confirm_result',
-    description: 'Poll a pending-confirmation by confirmId. Returns confirmed / rejected / still-pending.',
+    description:
+      'Poll a pending-confirmation by confirmId. Returns confirmed / rejected / still-pending.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -362,7 +389,10 @@ export const TOOLS: ListToolsResult['tools'] = [
     inputSchema: {
       type: 'object',
       properties: {
-        path: { type: 'string', description: 'Optional JSON-pointer to narrow which state changes trigger resolution' },
+        path: {
+          type: 'string',
+          description: 'Optional JSON-pointer to narrow which state changes trigger resolution',
+        },
         timeoutMs: { type: 'number' },
       },
     },
@@ -386,7 +416,8 @@ export const TOOLS: ListToolsResult['tools'] = [
   },
   {
     name: 'describe_context',
-    description: 'Return the current per-state narrative docs (agentContext) — what the user is trying to do right now.',
+    description:
+      'Return the current per-state narrative docs (agentContext) — what the user is trying to do right now.',
     inputSchema: { type: 'object', properties: {} },
   },
 ]
@@ -411,6 +442,7 @@ export const TOOL_TO_LAP_PATH: Record<string, string> = {
 No tests for tools.ts — pure constants.
 
 Commit:
+
 ```
 feat(agent-bridge): MCP tool definitions + LAP path mapping
 ```
@@ -420,6 +452,7 @@ feat(agent-bridge): MCP tool definitions + LAP path mapping
 ## Task 5: Bridge — MCP server + request handlers
 
 **Files:**
+
 - Create: `packages/agent-bridge/src/bridge.ts`
 - Create: `packages/agent-bridge/test/bridge.test.ts`
 
@@ -454,9 +487,12 @@ export function createBridgeServer(deps: BridgeDeps): McpServer {
     { capabilities: { tools: {}, prompts: {} } },
   )
 
-  server.setRequestHandler(ListToolsRequestSchema, async (): Promise<ListToolsResult> => ({
-    tools: TOOLS,
-  }))
+  server.setRequestHandler(
+    ListToolsRequestSchema,
+    async (): Promise<ListToolsResult> => ({
+      tools: TOOLS,
+    }),
+  )
 
   server.setRequestHandler(CallToolRequestSchema, async (req): Promise<CallToolResult> => {
     const { name, arguments: args = {} } = req.params
@@ -490,9 +526,7 @@ export function createBridgeServer(deps: BridgeDeps): McpServer {
     // Forwarded tools
     const binding = deps.bindings.get(deps.sessionId)
     if (!binding) {
-      return errorResult(
-        'not bound — ask the user to run /llui-connect <url> <token> first',
-      )
+      return errorResult('not bound — ask the user to run /llui-connect <url> <token> first')
     }
 
     // describe_app can serve from cache
@@ -550,11 +584,14 @@ let stateBody: object
 
 beforeEach(async () => {
   describeBody = {
-    name: 'TestApp', version: '1.0',
-    stateSchema: {}, messages: {},
+    name: 'TestApp',
+    version: '1.0',
+    stateSchema: {},
+    messages: {},
     docs: null,
     conventions: {
-      dispatchModel: 'TEA', confirmationModel: 'runtime-mediated',
+      dispatchModel: 'TEA',
+      confirmationModel: 'runtime-mediated',
       readSurfaces: ['state', 'query_dom', 'describe_visible_content', 'describe_context'],
     },
     schemaHash: 'h1',
@@ -563,10 +600,14 @@ beforeEach(async () => {
   lapCalls.length = 0
   lapServer = createServer((req, res) => {
     let data = ''
-    req.on('data', (c) => { data += c })
+    req.on('data', (c) => {
+      data += c
+    })
     req.on('end', () => {
       lapCalls.push({
-        path: req.url ?? '', body: data, auth: req.headers['authorization'] ?? '',
+        path: req.url ?? '',
+        body: data,
+        auth: req.headers['authorization'] ?? '',
       })
       if (req.url?.endsWith('/describe')) {
         res.writeHead(200, { 'content-type': 'application/json' })
@@ -575,7 +616,8 @@ beforeEach(async () => {
         res.writeHead(200, { 'content-type': 'application/json' })
         res.end(JSON.stringify(stateBody))
       } else {
-        res.writeHead(404); res.end()
+        res.writeHead(404)
+        res.end()
       }
     })
   })
@@ -592,7 +634,9 @@ describe('bridge — integration with fake LAP server', () => {
   it('llui_connect_session pings /describe and caches the response', async () => {
     const bindings = new BindingMap()
     const server = createBridgeServer({
-      sessionId: 's1', bindings, version: '0.0.0',
+      sessionId: 's1',
+      bindings,
+      version: '0.0.0',
     })
     // We can't easily exercise the MCP server's internal handlers without wiring a transport.
     // Instead, reach into the registered handler list — or test via the request handler directly.
@@ -633,6 +677,7 @@ describe('bridge — integration with fake LAP server', () => {
 NOTE: testing the McpServer's handlers directly without a transport is tricky with the SDK. The above test compromises by exercising the SAME code paths (forwardLap + BindingMap) that the bridge uses internally, plus confirms the server constructs without error. A full MCP round-trip test requires spinning up a Client with an in-process transport pair — see SDK docs for `InMemoryTransport`. If that's a small win, add it; otherwise the current coverage is sufficient for the bridge slice.
 
 Commit:
+
 ```
 feat(agent-bridge): bridge.ts — McpServer with ListTools + CallTool handlers
 
@@ -649,6 +694,7 @@ Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
 ## Task 6: MCP prompt — `/llui-connect`
 
 **Files:**
+
 - Create: `packages/agent-bridge/src/prompts.ts`
 
 The bridge registers an MCP prompt named `llui-connect` so Claude Desktop users see it as a slash completion. When invoked, it expands into a call to `llui_connect_session`.
@@ -663,18 +709,22 @@ import {
 } from '@modelcontextprotocol/sdk/types.js'
 
 export function registerPrompts(server: McpServer): void {
-  server.setRequestHandler(ListPromptsRequestSchema, async (): Promise<ListPromptsResult> => ({
-    prompts: [
-      {
-        name: 'llui-connect',
-        description: 'Bind this Claude conversation to an LLui app. Paste the URL and token the app showed you.',
-        arguments: [
-          { name: 'url', description: 'LAP base URL', required: true },
-          { name: 'token', description: 'Bearer token', required: true },
-        ],
-      },
-    ],
-  }))
+  server.setRequestHandler(
+    ListPromptsRequestSchema,
+    async (): Promise<ListPromptsResult> => ({
+      prompts: [
+        {
+          name: 'llui-connect',
+          description:
+            'Bind this Claude conversation to an LLui app. Paste the URL and token the app showed you.',
+          arguments: [
+            { name: 'url', description: 'LAP base URL', required: true },
+            { name: 'token', description: 'Bearer token', required: true },
+          ],
+        },
+      ],
+    }),
+  )
 
   server.setRequestHandler(GetPromptRequestSchema, async (req): Promise<GetPromptResult> => {
     if (req.params.name !== 'llui-connect') {
@@ -705,6 +755,7 @@ Modify `bridge.ts` to call `registerPrompts(server)` before returning.
 Lightweight test (append to bridge.test.ts or a new prompts.test.ts): assert that after construction, the server responds to ListPromptsRequestSchema with an entry named `llui-connect`. Use the same approach — if exercising handlers is hard without a transport, check that `registerPrompts` runs without error.
 
 Commit:
+
 ```
 feat(agent-bridge): register /llui-connect MCP prompt
 
@@ -720,6 +771,7 @@ Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
 ## Task 7: CLI entry
 
 **Files:**
+
 - Create: `packages/agent-bridge/src/cli.ts`
 
 ```ts
@@ -734,9 +786,13 @@ import { BindingMap } from './binding.js'
 const PACKAGE_VERSION = (() => {
   try {
     const here = dirname(fileURLToPath(import.meta.url))
-    const pkg = JSON.parse(readFileSync(resolve(here, '../package.json'), 'utf8')) as { version?: string }
+    const pkg = JSON.parse(readFileSync(resolve(here, '../package.json'), 'utf8')) as {
+      version?: string
+    }
     return typeof pkg.version === 'string' ? pkg.version : 'unknown'
-  } catch { return 'unknown' }
+  } catch {
+    return 'unknown'
+  }
 })()
 
 async function main(): Promise<void> {
@@ -759,6 +815,7 @@ Verify the file has a shebang + chmod handling: TypeScript's output preserves th
 Also ensure `dist/cli.js` has +x permission. npm's `bin` handling auto-chmods when installed, but during local dev you may need `chmod +x dist/cli.js` manually. Check whether prior `@llui/mcp` has any special handling — if yes, mirror; if no, leave it to npm.
 
 Commit:
+
 ```
 feat(agent-bridge): CLI entry — stdio MCP transport
 
@@ -774,9 +831,10 @@ Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
 ## Task 8: README
 
 **Files:**
+
 - Create: `packages/agent-bridge/README.md`
 
-```markdown
+````markdown
 # llui-agent
 
 MCP bridge for the [LLui Agent Protocol](../../docs/superpowers/specs/2026-04-19-llui-agent-design.md). Install once into your LLM client; paste a `/llui-connect <url> <token>` into any Claude conversation to bind it to a running LLui app.
@@ -795,6 +853,7 @@ Edit `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS) o
   }
 }
 ```
+````
 
 Restart Claude Desktop. The 11 LLui tools (`llui_connect_session`, `llui_disconnect_session`, `describe_app`, `get_state`, `list_actions`, `send_message`, `get_confirm_result`, `wait_for_change`, `query_dom`, `describe_visible_content`, `describe_context`) and the `/llui-connect` prompt now appear in Claude.
 
@@ -811,12 +870,15 @@ Each Claude chat is bound to ONE LLui app at a time. To switch, run `/llui-disco
 3. The bridge pings `POST {url}/describe` to validate and cache the app's schema.
 4. Subsequent Claude tool calls (`get_state`, `send_message`, etc.) forward to `{url}/<path>` with your token as a Bearer.
 5. Sensitive actions (`@requiresConfirm` in the app's code) route through a confirmation prompt that only the user can approve.
+
 ```
 
 Commit:
 ```
+
 docs(agent-bridge): README with Claude Desktop install instructions
-```
+
+````
 
 ---
 
@@ -829,7 +891,7 @@ pnpm turbo build
 pnpm turbo check
 pnpm turbo lint
 pnpm turbo test
-```
+````
 
 All must pass. `llui-agent` is a new workspace member; confirm turbo picked it up (`packages: 21 → 22` in the build output).
 

@@ -972,7 +972,13 @@ describe('dev code injection — MCP HMR auto-connect', () => {
   `
 
   it('emits __startRelay and the llui:mcp-ready HMR listener in dev mode', () => {
-    const result = transformLlui(componentSource, 'app.ts', /* devMode */ true, /* emitAgentMetadata */ false, 5200)
+    const result = transformLlui(
+      componentSource,
+      'app.ts',
+      /* devMode */ true,
+      /* emitAgentMetadata */ false,
+      5200,
+    )
     const out = result?.output ?? ''
 
     // Imports the relay starter
@@ -999,7 +1005,13 @@ describe('dev code injection — MCP HMR auto-connect', () => {
   })
 
   it('omits all dev injection in production mode', () => {
-    const result = transformLlui(componentSource, 'app.ts', /* devMode */ false, /* emitAgentMetadata */ false, 5200)
+    const result = transformLlui(
+      componentSource,
+      'app.ts',
+      /* devMode */ false,
+      /* emitAgentMetadata */ false,
+      5200,
+    )
     const out = result?.output ?? ''
     expect(out).not.toContain('startRelay')
     expect(out).not.toContain('enableDevTools')
@@ -1038,7 +1050,9 @@ export const App = component<State, Msg, never>({
     const out = tDev(source)
     expect(out).toContain('__msgAnnotations:')
     expect(out).toMatch(/inc:\s*\{\s*intent:\s*["']Increment the counter["']/)
-    expect(out).toMatch(/delete:\s*\{\s*intent:\s*["']Delete item["'][\s\S]*requiresConfirm:\s*true/)
+    expect(out).toMatch(
+      /delete:\s*\{\s*intent:\s*["']Delete item["'][\s\S]*requiresConfirm:\s*true/,
+    )
   })
 
   it('omits __msgAnnotations when no variants carry annotations', () => {
@@ -1164,7 +1178,8 @@ export const X = component<State, Msg, never>({
 
 describe('transformLlui — agent-mode metadata emission', () => {
   const tProd = (src: string, emitAgentMetadata: boolean) =>
-    transformLlui(src, 'test.ts', /* devMode */ false, /* emitAgentMetadata */ emitAgentMetadata)?.output ?? src
+    transformLlui(src, 'test.ts', /* devMode */ false, /* emitAgentMetadata */ emitAgentMetadata)
+      ?.output ?? src
 
   const sample = `
 import { component, button } from '@llui/dom'

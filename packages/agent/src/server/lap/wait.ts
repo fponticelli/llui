@@ -34,12 +34,18 @@ export async function handleLapWait(req: Request, deps: LapWaitDeps): Promise<Re
 
   const nowMs = (deps.now ?? (() => Date.now()))()
   await deps.auditSink.write({
-    at: nowMs, tid: auth.tid, uid: rec.uid,
-    event: 'lap-call', detail: { path: '/lap/v1/wait', outcome: result.status },
+    at: nowMs,
+    tid: auth.tid,
+    uid: rec.uid,
+    event: 'lap-call',
+    detail: { path: '/lap/v1/wait', outcome: result.status },
   })
   return json(out, 200)
 }
 
 function json(b: unknown, s: number): Response {
-  return new Response(JSON.stringify(b), { status: s, headers: { 'content-type': 'application/json' } })
+  return new Response(JSON.stringify(b), {
+    status: s,
+    headers: { 'content-type': 'application/json' },
+  })
 }

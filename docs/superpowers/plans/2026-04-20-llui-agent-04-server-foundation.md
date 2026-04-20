@@ -9,6 +9,7 @@
 **Tech Stack:** Node 22+, `node:crypto`, Web `Request`/`Response`, vitest.
 
 **Spec section coverage after this plan:**
+
 - §6.1 Token shape
 - §6.2 Mint flow (HTTP side)
 - §6.3 Resume flow (HTTP side)
@@ -60,6 +61,7 @@ packages/agent/test/server/
 ## Task 1: Scaffold the server module
 
 **Files:**
+
 - Modify: `packages/agent/src/server/index.ts` (currently an empty shell)
 - Create: `packages/agent/src/server/options.ts`
 
@@ -152,6 +154,7 @@ COMMIT
 ## Task 2: Token crypto — failing tests
 
 **Files:**
+
 - Create: `packages/agent/test/server/token.test.ts`
 
 - [ ] **Step 1: Write failing tests**
@@ -160,7 +163,7 @@ COMMIT
 import { describe, it, expect } from 'vitest'
 import { signToken, verifyToken, type TokenPayload } from '../../src/server/token.js'
 
-const key = 'x'.repeat(32)  // 32-byte HMAC key
+const key = 'x'.repeat(32) // 32-byte HMAC key
 
 describe('signToken / verifyToken', () => {
   it('round-trips a payload', () => {
@@ -224,6 +227,7 @@ Expected: FAIL (module not found).
 ## Task 3: Token crypto — implementation
 
 **Files:**
+
 - Create: `packages/agent/src/server/token.ts`
 
 - [ ] **Step 1: Implement**
@@ -357,6 +361,7 @@ COMMIT
 ## Task 4: TokenStore — failing tests
 
 **Files:**
+
 - Create: `packages/agent/test/server/token-store.test.ts`
 
 - [ ] **Step 1: Write**
@@ -367,7 +372,9 @@ import { InMemoryTokenStore } from '../../src/server/token-store.js'
 import type { TokenRecord } from '../../src/protocol.js'
 
 let store: InMemoryTokenStore
-beforeEach(() => { store = new InMemoryTokenStore() })
+beforeEach(() => {
+  store = new InMemoryTokenStore()
+})
 
 const baseRecord = (overrides: Partial<TokenRecord> = {}): TokenRecord => ({
   tid: 't1',
@@ -463,6 +470,7 @@ Expected: FAIL (module not found).
 ## Task 5: TokenStore — implementation
 
 **Files:**
+
 - Create: `packages/agent/src/server/token-store.ts`
 
 - [ ] **Step 1: Implement**
@@ -567,6 +575,7 @@ COMMIT
 ## Task 6: IdentityResolver — failing tests + impl
 
 **Files:**
+
 - Create: `packages/agent/test/server/identity.test.ts`
 - Create: `packages/agent/src/server/identity.ts`
 
@@ -574,7 +583,11 @@ COMMIT
 
 ```ts
 import { describe, it, expect } from 'vitest'
-import { defaultIdentityResolver, signCookieValue, type IdentityResolver } from '../../src/server/identity.js'
+import {
+  defaultIdentityResolver,
+  signCookieValue,
+  type IdentityResolver,
+} from '../../src/server/identity.js'
 
 const key = 'x'.repeat(32)
 
@@ -586,7 +599,10 @@ function mkReq(cookieHeader: string | null): Request {
 
 describe('defaultIdentityResolver', () => {
   it('returns null when the cookie is absent (no auth configured)', async () => {
-    const resolver: IdentityResolver = defaultIdentityResolver({ name: 'llui-agent-uid', signingKey: key })
+    const resolver: IdentityResolver = defaultIdentityResolver({
+      name: 'llui-agent-uid',
+      signingKey: key,
+    })
     expect(await resolver(mkReq(null))).toBeNull()
   })
 
@@ -646,9 +662,10 @@ export function defaultIdentityResolver(cfg: IdentityCookieConfig): IdentityReso
   if (!cfg.signingKey || (typeof cfg.signingKey === 'string' && cfg.signingKey.length < 32)) {
     throw new Error('IdentityCookie signingKey must be at least 32 bytes')
   }
-  const keyBuf = typeof cfg.signingKey === 'string'
-    ? Buffer.from(cfg.signingKey, 'utf8')
-    : Buffer.from(cfg.signingKey)
+  const keyBuf =
+    typeof cfg.signingKey === 'string'
+      ? Buffer.from(cfg.signingKey, 'utf8')
+      : Buffer.from(cfg.signingKey)
 
   return async (req) => {
     const cookie = req.headers.get('cookie')
@@ -680,9 +697,8 @@ export function defaultIdentityResolver(cfg: IdentityCookieConfig): IdentityReso
  * the resolver will accept.
  */
 export function signCookieValue(value: string, signingKey: string | Uint8Array): string {
-  const keyBuf = typeof signingKey === 'string'
-    ? Buffer.from(signingKey, 'utf8')
-    : Buffer.from(signingKey)
+  const keyBuf =
+    typeof signingKey === 'string' ? Buffer.from(signingKey, 'utf8') : Buffer.from(signingKey)
   const mac = createHmac('sha256', keyBuf).update(value).digest('base64url')
   return `${value}.${mac}`
 }
@@ -711,6 +727,7 @@ COMMIT
 ## Task 7: AuditSink + RateLimiter — combined TDD
 
 **Files:**
+
 - Create: `packages/agent/src/server/audit.ts`
 - Create: `packages/agent/src/server/rate-limit.ts`
 - Create: `packages/agent/test/server/audit.test.ts`
@@ -765,7 +782,9 @@ import { defaultRateLimiter } from '../../src/server/rate-limit.js'
 
 let clock = 0
 const now = () => clock
-beforeEach(() => { clock = 0 })
+beforeEach(() => {
+  clock = 0
+})
 
 describe('defaultRateLimiter — token bucket', () => {
   it('allows under-limit calls', async () => {
@@ -790,7 +809,7 @@ describe('defaultRateLimiter — token bucket', () => {
     await rl.check('t1', 'token')
     await rl.check('t1', 'token')
     expect((await rl.check('t1', 'token')).allowed).toBe(false)
-    clock = 1000  // 1 second — fully refilled
+    clock = 1000 // 1 second — fully refilled
     expect((await rl.check('t1', 'token')).allowed).toBe(true)
   })
 
@@ -888,6 +907,7 @@ COMMIT
 ## Task 8: Mint endpoint — failing integration test
 
 **Files:**
+
 - Create: `packages/agent/test/server/mint.test.ts`
 
 - [ ] **Step 1: Test**
@@ -911,7 +931,11 @@ beforeEach(() => {
   clock = 1_700_000_000
 })
 
-const audit = { write: (e: unknown) => { auditLog.push(e) } }
+const audit = {
+  write: (e: unknown) => {
+    auditLog.push(e)
+  },
+}
 
 describe('handleMint', () => {
   it('creates a pairing record and returns a signed token + wsUrl + lapUrl', async () => {
@@ -922,7 +946,7 @@ describe('handleMint', () => {
       identityResolver: async () => 'u1',
       auditSink: audit,
       lapBasePath: '/agent/lap/v1',
-      now: () => clock * 1000,  // ms-resolution wall clock
+      now: () => clock * 1000, // ms-resolution wall clock
       uuid: () => '11111111-1111-1111-1111-111111111111',
     })
     expect(res.status).toBe(200)
@@ -1000,6 +1024,7 @@ cd packages/agent && pnpm vitest run test/server/mint.test.ts
 ## Task 9: Mint endpoint — implementation
 
 **Files:**
+
 - Create: `packages/agent/src/server/http/mint.ts`
 
 - [ ] **Step 1: Implement**
@@ -1120,6 +1145,7 @@ COMMIT
 ## Task 10: Resume endpoints (list + claim) — combined TDD
 
 **Files:**
+
 - Create: `packages/agent/test/server/resume.test.ts`
 - Create: `packages/agent/src/server/http/resume.ts`
 
@@ -1140,12 +1166,17 @@ let log: unknown[]
 beforeEach(() => {
   store = new InMemoryTokenStore()
   log = []
-  audit = { write: (e) => { log.push(e) } }
+  audit = {
+    write: (e) => {
+      log.push(e)
+    },
+  }
 })
 
 const seedPendingResume = async (tid: string, uid: string | null, origin: string) => {
   const rec: TokenRecord = {
-    tid, uid,
+    tid,
+    uid,
     status: 'pending-resume',
     createdAt: 1000,
     lastSeenAt: 1000,
@@ -1405,6 +1436,7 @@ COMMIT
 ## Task 11: Revoke + Sessions endpoints
 
 **Files:**
+
 - Create: `packages/agent/test/server/revoke.test.ts`
 - Create: `packages/agent/test/server/sessions.test.ts`
 - Create: `packages/agent/src/server/http/revoke.ts`
@@ -1422,13 +1454,21 @@ let store: InMemoryTokenStore
 let log: unknown[]
 const audit = { write: (e: unknown) => log.push(e) }
 
-beforeEach(() => { store = new InMemoryTokenStore(); log = [] })
+beforeEach(() => {
+  store = new InMemoryTokenStore()
+  log = []
+})
 
 const seed = async (tid: string, uid: string | null) => {
   const rec: TokenRecord = {
-    tid, uid, status: 'active',
-    createdAt: 0, lastSeenAt: 0, pendingResumeUntil: null,
-    origin: 'https://app.example', label: null,
+    tid,
+    uid,
+    status: 'active',
+    createdAt: 0,
+    lastSeenAt: 0,
+    pendingResumeUntil: null,
+    origin: 'https://app.example',
+    label: null,
   }
   await store.create(rec)
 }
@@ -1437,7 +1477,8 @@ describe('handleRevoke', () => {
   it('flips status to revoked for caller-owned tokens', async () => {
     await seed('t1', 'u1')
     const req = new Request('https://app.example/agent/revoke', {
-      method: 'POST', headers: { 'content-type': 'application/json' },
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ tid: 't1' }),
     })
     const res = await handleRevoke(req, {
@@ -1455,7 +1496,8 @@ describe('handleRevoke', () => {
   it('refuses to revoke tokens owned by someone else', async () => {
     await seed('t1', 'u1')
     const req = new Request('https://app.example/agent/revoke', {
-      method: 'POST', headers: { 'content-type': 'application/json' },
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ tid: 't1' }),
     })
     const res = await handleRevoke(req, {
@@ -1506,7 +1548,10 @@ export async function handleRevoke(req: Request, deps: RevokeDeps): Promise<Resp
 }
 
 function json(b: unknown, s: number): Response {
-  return new Response(JSON.stringify(b), { status: s, headers: { 'content-type': 'application/json' } })
+  return new Response(JSON.stringify(b), {
+    status: s,
+    headers: { 'content-type': 'application/json' },
+  })
 }
 ```
 
@@ -1519,23 +1564,34 @@ import { InMemoryTokenStore } from '../../src/server/token-store.js'
 import type { TokenRecord, SessionsResponse } from '../../src/protocol.js'
 
 let store: InMemoryTokenStore
-beforeEach(() => { store = new InMemoryTokenStore() })
+beforeEach(() => {
+  store = new InMemoryTokenStore()
+})
 
 const base = (o: Partial<TokenRecord> = {}): TokenRecord => ({
-  tid: 't', uid: 'u1', status: 'active',
-  createdAt: 1, lastSeenAt: 1, pendingResumeUntil: null,
-  origin: 'https://app', label: null, ...o,
+  tid: 't',
+  uid: 'u1',
+  status: 'active',
+  createdAt: 1,
+  lastSeenAt: 1,
+  pendingResumeUntil: null,
+  origin: 'https://app',
+  label: null,
+  ...o,
 })
 
 describe('handleSessions', () => {
   it('returns active + pending-resume sessions for the caller, excludes revoked', async () => {
     await store.create(base({ tid: 't1', status: 'active' }))
-    await store.create(base({ tid: 't2', status: 'pending-resume', pendingResumeUntil: 9999, label: 'Claude' }))
+    await store.create(
+      base({ tid: 't2', status: 'pending-resume', pendingResumeUntil: 9999, label: 'Claude' }),
+    )
     await store.create(base({ tid: 't3', status: 'revoked' }))
     await store.create(base({ tid: 't4', uid: 'other', status: 'active' }))
     const req = new Request('https://app/agent/sessions', { method: 'GET' })
     const res = await handleSessions(req, {
-      tokenStore: store, identityResolver: async () => 'u1',
+      tokenStore: store,
+      identityResolver: async () => 'u1',
     })
     expect(res.status).toBe(200)
     const body = (await res.json()) as SessionsResponse
@@ -1546,7 +1602,8 @@ describe('handleSessions', () => {
     await store.create(base({ tid: 't1', uid: 'u1' }))
     const req = new Request('https://app/agent/sessions', { method: 'GET' })
     const res = await handleSessions(req, {
-      tokenStore: store, identityResolver: async () => null,
+      tokenStore: store,
+      identityResolver: async () => null,
     })
     const body = (await res.json()) as SessionsResponse
     expect(body.sessions).toEqual([])
@@ -1588,7 +1645,10 @@ export async function handleSessions(req: Request, deps: SessionsDeps): Promise<
 }
 
 function json(b: unknown, s: number): Response {
-  return new Response(JSON.stringify(b), { status: s, headers: { 'content-type': 'application/json' } })
+  return new Response(JSON.stringify(b), {
+    status: s,
+    headers: { 'content-type': 'application/json' },
+  })
 }
 ```
 
@@ -1615,6 +1675,7 @@ COMMIT
 ## Task 12: Router — combining HTTP handlers
 
 **Files:**
+
 - Create: `packages/agent/src/server/http/router.ts`
 - Create: `packages/agent/test/server/router.test.ts`
 
@@ -1715,6 +1776,7 @@ COMMIT
 ## Task 13: createLluiAgentServer factory
 
 **Files:**
+
 - Create: `packages/agent/src/server/factory.ts`
 - Create: `packages/agent/test/server/factory.test.ts`
 
@@ -1793,10 +1855,13 @@ describe('createLluiAgentServer — full HTTP lifecycle', () => {
     const listBody = (await listRes!.json()) as SessionsResponse
     expect(listBody.sessions.map((s) => s.tid)).toContain(mintBody.tid)
 
-    const revokeRes = await agent.router(new Request('https://app/agent/revoke', {
-      method: 'POST', headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ tid: mintBody.tid }),
-    }))
+    const revokeRes = await agent.router(
+      new Request('https://app/agent/revoke', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ tid: mintBody.tid }),
+      }),
+    )
     expect(revokeRes?.status).toBe(200)
 
     const postRevokeList = await agent.router(new Request('https://app/agent/sessions'))

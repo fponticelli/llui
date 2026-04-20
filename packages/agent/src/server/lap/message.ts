@@ -36,7 +36,9 @@ export async function handleLapMessage(req: Request, deps: LapMessageDeps): Prom
 
   let initial: LapMessageResponse
   try {
-    initial = (await deps.registry.rpc(auth.tid, 'send_message', body, { timeoutMs })) as LapMessageResponse
+    initial = (await deps.registry.rpc(auth.tid, 'send_message', body, {
+      timeoutMs,
+    })) as LapMessageResponse
   } catch (e: unknown) {
     const err = e as { code?: string; detail?: string }
     const status = err.code === 'paused' ? 503 : err.code === 'timeout' ? 504 : 500
@@ -46,9 +48,15 @@ export async function handleLapMessage(req: Request, deps: LapMessageDeps): Prom
   const nowMs = (deps.now ?? (() => Date.now()))()
   await deps.tokenStore.touch(auth.tid, nowMs)
 
-  if (initial.status === 'dispatched' || initial.status === 'confirmed' || initial.status === 'rejected') {
+  if (
+    initial.status === 'dispatched' ||
+    initial.status === 'confirmed' ||
+    initial.status === 'rejected'
+  ) {
     await deps.auditSink.write({
-      at: nowMs, tid: auth.tid, uid: rec.uid,
+      at: nowMs,
+      tid: auth.tid,
+      uid: rec.uid,
       event: initial.status === 'rejected' ? 'msg-blocked' : 'msg-dispatched',
       detail: { variant: body.msg.type, status: initial.status },
     })
@@ -57,7 +65,9 @@ export async function handleLapMessage(req: Request, deps: LapMessageDeps): Prom
 
   if (initial.status === 'pending-confirmation') {
     await deps.auditSink.write({
-      at: nowMs, tid: auth.tid, uid: rec.uid,
+      at: nowMs,
+      tid: auth.tid,
+      uid: rec.uid,
       event: 'confirm-proposed',
       detail: { variant: body.msg.type, confirmId: initial.confirmId },
     })
@@ -65,26 +75,33 @@ export async function handleLapMessage(req: Request, deps: LapMessageDeps): Prom
     const nowMs2 = (deps.now ?? (() => Date.now()))()
     if (resolved.outcome === 'confirmed') {
       await deps.auditSink.write({
-        at: nowMs2, tid: auth.tid, uid: rec.uid,
+        at: nowMs2,
+        tid: auth.tid,
+        uid: rec.uid,
         event: 'confirm-approved',
         detail: { variant: body.msg.type, confirmId: initial.confirmId },
       })
-      return json({ status: 'confirmed', stateAfter: resolved.stateAfter } satisfies LapMessageResponse, 200)
+      return json(
+        { status: 'confirmed', stateAfter: resolved.stateAfter } satisfies LapMessageResponse,
+        200,
+      )
     }
     await deps.auditSink.write({
-      at: nowMs2, tid: auth.tid, uid: rec.uid,
+      at: nowMs2,
+      tid: auth.tid,
+      uid: rec.uid,
       event: 'confirm-rejected',
       detail: { variant: body.msg.type, confirmId: initial.confirmId },
     })
-    return json(
-      { status: 'rejected', reason: 'user-cancelled' } satisfies LapMessageResponse,
-      200,
-    )
+    return json({ status: 'rejected', reason: 'user-cancelled' } satisfies LapMessageResponse, 200)
   }
 
   return json({ error: { code: 'internal', detail: 'unknown browser status' } }, 500)
 }
 
 function json(b: unknown, s: number): Response {
-  return new Response(JSON.stringify(b), { status: s, headers: { 'content-type': 'application/json' } })
+  return new Response(JSON.stringify(b), {
+    status: s,
+    headers: { 'content-type': 'application/json' },
+  })
 }

@@ -3307,15 +3307,9 @@ function injectSchemaHash(
     }
   }
 
-  const hashProp = f.createPropertyAssignment(
-    '__schemaHash',
-    f.createStringLiteral(hash),
-  )
+  const hashProp = f.createPropertyAssignment('__schemaHash', f.createStringLiteral(hash))
 
-  const newConfig = f.createObjectLiteralExpression(
-    [...configArg.properties, hashProp],
-    true,
-  )
+  const newConfig = f.createObjectLiteralExpression([...configArg.properties, hashProp], true)
 
   return f.createCallExpression(node.expression, node.typeArguments, [
     newConfig,
@@ -3413,10 +3407,7 @@ function injectBindingDescriptors(
     bindingDescriptorsToArrayLiteral(descs),
   )
 
-  const newConfig = f.createObjectLiteralExpression(
-    [...configArg.properties, descsProp],
-    true,
-  )
+  const newConfig = f.createObjectLiteralExpression([...configArg.properties, descsProp], true)
 
   return f.createCallExpression(node.expression, node.typeArguments, [
     newConfig,
@@ -3424,17 +3415,10 @@ function injectBindingDescriptors(
   ])
 }
 
-function bindingDescriptorsToArrayLiteral(
-  descs: BindingDescriptor[],
-): ts.ArrayLiteralExpression {
+function bindingDescriptorsToArrayLiteral(descs: BindingDescriptor[]): ts.ArrayLiteralExpression {
   const entries = descs.map((d) =>
     ts.factory.createObjectLiteralExpression(
-      [
-        ts.factory.createPropertyAssignment(
-          'variant',
-          ts.factory.createStringLiteral(d.variant),
-        ),
-      ],
+      [ts.factory.createPropertyAssignment('variant', ts.factory.createStringLiteral(d.variant))],
       false,
     ),
   )

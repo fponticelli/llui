@@ -31,11 +31,13 @@ Spec amendment (same plan): `docs/superpowers/specs/2026-04-19-llui-agent-design
 ## Task 1: Create package manifest
 
 **Files:**
+
 - Create: `packages/agent/package.json`
 
 - [ ] **Step 1: Create the package.json**
 
 Write `packages/agent/package.json`:
+
 ```json
 {
   "name": "@llui/agent",
@@ -98,12 +100,14 @@ git commit -m "feat(agent): package manifest scaffold"
 ## Task 2: Create tsconfig files
 
 **Files:**
+
 - Create: `packages/agent/tsconfig.json`
 - Create: `packages/agent/tsconfig.build.json`
 
 - [ ] **Step 1: Write tsconfig.json**
 
 `packages/agent/tsconfig.json`:
+
 ```json
 {
   "extends": "../../tsconfig.json",
@@ -119,6 +123,7 @@ git commit -m "feat(agent): package manifest scaffold"
 - [ ] **Step 2: Write tsconfig.build.json**
 
 `packages/agent/tsconfig.build.json`:
+
 ```json
 {
   "extends": "./tsconfig.json",
@@ -145,11 +150,13 @@ git commit -m "feat(agent): tsconfig scaffolding"
 ## Task 3: Create vitest config
 
 **Files:**
+
 - Create: `packages/agent/vitest.config.ts`
 
 - [ ] **Step 1: Write vitest.config.ts**
 
 Mirror `packages/mcp/vitest.config.ts` structure but drop the `fileParallelism: false` (we have no workspace-root marker file collisions):
+
 ```ts
 import { defineConfig } from 'vitest/config'
 
@@ -173,12 +180,14 @@ git commit -m "feat(agent): vitest config"
 ## Task 4: Write placeholder source files so the package builds
 
 **Files:**
+
 - Create: `packages/agent/src/server/index.ts`
 - Create: `packages/agent/src/client/index.ts`
 
 - [ ] **Step 1: Create server shell**
 
 `packages/agent/src/server/index.ts`:
+
 ```ts
 // Placeholder. Implementation lands in Plan 3.
 export {}
@@ -187,6 +196,7 @@ export {}
 - [ ] **Step 2: Create client shell**
 
 `packages/agent/src/client/index.ts`:
+
 ```ts
 // Placeholder. Implementation lands in Plan 4.
 export {}
@@ -204,11 +214,13 @@ git commit -m "feat(agent): empty server + client entry shells"
 ## Task 5: Write failing test for LAP request/response envelope types
 
 **Files:**
+
 - Create: `packages/agent/test/protocol.test.ts`
 
 - [ ] **Step 1: Write the failing test**
 
 `packages/agent/test/protocol.test.ts`:
+
 ```ts
 import { describe, it, expect } from 'vitest'
 import type {
@@ -350,9 +362,11 @@ describe('LAP types — sample value conformance', () => {
 - [ ] **Step 2: Run test to verify it fails**
 
 Run:
+
 ```bash
 cd packages/agent && pnpm vitest run test/protocol.test.ts
 ```
+
 Expected: FAIL with "Cannot find module '../src/protocol.js'" or similar.
 
 ---
@@ -360,11 +374,13 @@ Expected: FAIL with "Cannot find module '../src/protocol.js'" or similar.
 ## Task 6: Implement LAP types in protocol.ts
 
 **Files:**
+
 - Create: `packages/agent/src/protocol.ts`
 
 - [ ] **Step 1: Write the protocol module — LAP types**
 
 `packages/agent/src/protocol.ts` (part 1 — LAP request/response types; more sections appended in later tasks):
+
 ```ts
 // ── LAP — LLui Agent Protocol ────────────────────────────────────
 // JSON over HTTPS between the llui-agent bridge (MCP side) and the
@@ -502,9 +518,11 @@ export type LapResponse<P extends LapPath> = LapEndpointMap[P]['res']
 - [ ] **Step 2: Run test to verify it passes**
 
 Run:
+
 ```bash
 cd packages/agent && pnpm vitest run test/protocol.test.ts
 ```
+
 Expected: PASS (8 passing assertions so far).
 
 - [ ] **Step 3: Commit**
@@ -526,6 +544,7 @@ Per the spec §5.4 addition, the protocol carries two new author-facing authorin
 - `LapDescribeResponse` grows a new `docs: AgentDocs | null` field and updates its `readSurfaces` to include `describe_context`.
 
 **Files:**
+
 - Modify: `packages/agent/test/protocol.test.ts`
 - Modify: `packages/agent/src/protocol.ts`
 
@@ -534,11 +553,7 @@ Per the spec §5.4 addition, the protocol carries two new author-facing authorin
 Add to `packages/agent/test/protocol.test.ts`:
 
 ```ts
-import type {
-  AgentDocs,
-  AgentContext,
-  LapContextResponse,
-} from '../src/protocol.js'
+import type { AgentDocs, AgentContext, LapContextResponse } from '../src/protocol.js'
 
 describe('Documentation types', () => {
   it('AgentDocs minimal', () => {
@@ -550,10 +565,7 @@ describe('Documentation types', () => {
     const d: AgentDocs = {
       purpose: 'Kanban for a small team.',
       overview: 'Columns are To do / Doing / Done. Cards carry owner, due date, tags.',
-      cautions: [
-        'Do not delete a card with unfinished subtasks.',
-        'Moving to Done locks edits.',
-      ],
+      cautions: ['Do not delete a card with unfinished subtasks.', 'Moving to Done locks edits.'],
     }
     expect(d.cautions).toHaveLength(2)
   })
@@ -630,6 +642,7 @@ Two edits to `packages/agent/src/protocol.ts`:
 **3a.** Update the existing `LapDescribeResponse` to add `docs` and widen `readSurfaces`:
 
 Replace:
+
 ```ts
 export type LapDescribeResponse = {
   name: string
@@ -646,6 +659,7 @@ export type LapDescribeResponse = {
 ```
 
 With:
+
 ```ts
 export type LapDescribeResponse = {
   name: string
@@ -665,7 +679,6 @@ export type LapDescribeResponse = {
 **3b.** Append a new section at the end of the LAP block (before the `LapEndpointMap`):
 
 ```ts
-
 // ── App + context documentation ──────────────────────────────────
 // Static app-level docs (authored once on the component record) and
 // dynamic per-state context docs (pure function of state, served by
@@ -689,12 +702,14 @@ export type LapContextResponse = { context: AgentContext }
 **3c.** Extend `LapEndpointMap` with the new endpoint:
 
 Replace:
+
 ```ts
   '/lap/v1/describe-visible': { req: null; res: LapDescribeVisibleResponse }
 }
 ```
 
 With:
+
 ```ts
   '/lap/v1/describe-visible': { req: null; res: LapDescribeVisibleResponse }
   '/lap/v1/context': { req: null; res: LapContextResponse }
@@ -727,11 +742,13 @@ COMMIT
 ## Task 7: Write failing test for relay WS frame types
 
 **Files:**
+
 - Modify: `packages/agent/test/protocol.test.ts`
 
 - [ ] **Step 1: Append failing test**
 
 Add to `packages/agent/test/protocol.test.ts`:
+
 ```ts
 import type {
   ClientFrame,
@@ -752,7 +769,17 @@ describe('Relay WS frame types', () => {
       t: 'hello',
       appName: 'App',
       appVersion: '1.0',
-      msgSchema: { inc: { payload: {}, annotations: { intent: null, alwaysAffordable: false, requiresConfirm: false, humanOnly: false } } },
+      msgSchema: {
+        inc: {
+          payload: {},
+          annotations: {
+            intent: null,
+            alwaysAffordable: false,
+            requiresConfirm: false,
+            humanOnly: false,
+          },
+        },
+      },
       stateSchema: { type: 'object' },
       affordancesSample: [{ type: 'inc' }],
       docs: null,
@@ -817,7 +844,16 @@ describe('Relay WS frame types', () => {
 
   it('ClientFrame union is inhabited by all expected variants', () => {
     const frames: ClientFrame[] = [
-      { t: 'hello', appName: 'x', appVersion: '1', msgSchema: {}, stateSchema: {}, affordancesSample: [], docs: null, schemaHash: 'h' },
+      {
+        t: 'hello',
+        appName: 'x',
+        appVersion: '1',
+        msgSchema: {},
+        stateSchema: {},
+        affordancesSample: [],
+        docs: null,
+        schemaHash: 'h',
+      },
       { t: 'rpc-reply', id: 'r', result: null },
       { t: 'rpc-error', id: 'r', code: 'invalid' },
       { t: 'confirm-resolved', confirmId: 'c', outcome: 'user-cancelled' },
@@ -840,9 +876,11 @@ describe('Relay WS frame types', () => {
 - [ ] **Step 2: Run test to verify it fails**
 
 Run:
+
 ```bash
 cd packages/agent && pnpm vitest run test/protocol.test.ts
 ```
+
 Expected: FAIL — frame types not exported.
 
 ---
@@ -850,13 +888,14 @@ Expected: FAIL — frame types not exported.
 ## Task 8: Implement relay frame types
 
 **Files:**
+
 - Modify: `packages/agent/src/protocol.ts`
 
 - [ ] **Step 1: Append frame types to protocol.ts**
 
 Append to `packages/agent/src/protocol.ts`:
-```ts
 
+```ts
 // ── Relay WS frames ──────────────────────────────────────────────
 // Bidirectional framing between the LLui runtime in the browser and
 // the @llui/agent server over /agent/ws. See spec §10.5.
@@ -918,9 +957,11 @@ export type ServerFrame = RpcFrame | RevokedFrame
 - [ ] **Step 2: Run test to verify it passes**
 
 Run:
+
 ```bash
 cd packages/agent && pnpm vitest run test/protocol.test.ts
 ```
+
 Expected: PASS.
 
 - [ ] **Step 3: Commit**
@@ -935,11 +976,13 @@ git commit -m "feat(agent): relay WS frame types"
 ## Task 9: Write failing test for token + pairing types
 
 **Files:**
+
 - Modify: `packages/agent/test/protocol.test.ts`
 
 - [ ] **Step 1: Append failing test**
 
 Append to `packages/agent/test/protocol.test.ts`:
+
 ```ts
 import type {
   AgentToken,
@@ -1028,9 +1071,11 @@ describe('Token + pairing types', () => {
 - [ ] **Step 2: Run test to verify it fails**
 
 Run:
+
 ```bash
 cd packages/agent && pnpm vitest run test/protocol.test.ts
 ```
+
 Expected: FAIL — token types not exported.
 
 ---
@@ -1038,13 +1083,14 @@ Expected: FAIL — token types not exported.
 ## Task 10: Implement token + pairing types
 
 **Files:**
+
 - Modify: `packages/agent/src/protocol.ts`
 
 - [ ] **Step 1: Append token + pairing types**
 
 Append to `packages/agent/src/protocol.ts`:
-```ts
 
+```ts
 // ── Tokens + pairing ─────────────────────────────────────────────
 
 declare const TokenBrand: unique symbol
@@ -1109,9 +1155,11 @@ export type SessionsResponse = { sessions: AgentSession[] }
 - [ ] **Step 2: Run test to verify it passes**
 
 Run:
+
 ```bash
 cd packages/agent && pnpm vitest run test/protocol.test.ts
 ```
+
 Expected: PASS.
 
 - [ ] **Step 3: Commit**
@@ -1126,11 +1174,13 @@ git commit -m "feat(agent): token + pairing types"
 ## Task 11: Write failing test for audit entry types
 
 **Files:**
+
 - Modify: `packages/agent/test/protocol.test.ts`
 
 - [ ] **Step 1: Append failing test**
 
 Append to `packages/agent/test/protocol.test.ts`:
+
 ```ts
 import type { AuditEntry, AuditEvent } from '../src/protocol.js'
 
@@ -1180,9 +1230,11 @@ describe('Audit entry types', () => {
 - [ ] **Step 2: Run test to verify it fails**
 
 Run:
+
 ```bash
 cd packages/agent && pnpm vitest run test/protocol.test.ts
 ```
+
 Expected: FAIL — audit types not exported.
 
 ---
@@ -1190,13 +1242,14 @@ Expected: FAIL — audit types not exported.
 ## Task 12: Implement audit entry types
 
 **Files:**
+
 - Modify: `packages/agent/src/protocol.ts`
 
 - [ ] **Step 1: Append audit types**
 
 Append to `packages/agent/src/protocol.ts`:
-```ts
 
+```ts
 // ── Audit ────────────────────────────────────────────────────────
 
 export type AuditEvent =
@@ -1225,9 +1278,11 @@ export type AuditEntry = {
 - [ ] **Step 2: Run test to verify it passes**
 
 Run:
+
 ```bash
 cd packages/agent && pnpm vitest run test/protocol.test.ts
 ```
+
 Expected: PASS.
 
 - [ ] **Step 3: Commit**
@@ -1242,48 +1297,59 @@ git commit -m "feat(agent): audit entry types"
 ## Task 13: Wire up protocol export + verify workspace build
 
 **Files:**
+
 - Verify: `packages/agent/package.json` (already has `./protocol` export from Task 1)
 - Verify: root `turbo.json` (should already pick up new package via globs — no edit expected)
 
 - [ ] **Step 1: Install workspace deps**
 
 Run from repo root:
+
 ```bash
 pnpm install
 ```
+
 Expected: `@llui/agent` is picked up (you'll see the new package in the install summary). No errors.
 
 - [ ] **Step 2: Build the package**
 
 Run:
+
 ```bash
 pnpm --filter @llui/agent build
 ```
+
 Expected: `dist/protocol.js`, `dist/protocol.d.ts`, `dist/server/index.js`, `dist/client/index.js` produced. No errors.
 
 - [ ] **Step 3: Run full workspace build to ensure nothing else broke**
 
 Run from repo root:
+
 ```bash
 pnpm turbo build
 ```
+
 Expected: All packages build. `@llui/agent` appears in the completion list.
 
 - [ ] **Step 4: Run full workspace check + lint + test**
 
 Run from repo root:
+
 ```bash
 pnpm turbo check && pnpm turbo lint && pnpm turbo test
 ```
+
 Expected: All pass.
 
 - [ ] **Step 5: Commit**
 
 If any lockfile / generated files changed during `pnpm install`:
+
 ```bash
 git add pnpm-lock.yaml
 git commit -m "chore: refresh lockfile after @llui/agent scaffold"
 ```
+
 Otherwise skip.
 
 ---
@@ -1291,11 +1357,13 @@ Otherwise skip.
 ## Task 14: Add a placeholder README
 
 **Files:**
+
 - Create: `packages/agent/README.md`
 
 - [ ] **Step 1: Write minimal README**
 
 `packages/agent/README.md`:
+
 ```markdown
 # @llui/agent
 
@@ -1324,11 +1392,13 @@ git commit -m "docs(agent): placeholder README"
 ## Task 15: Amend the spec — drop `@llui/mcp-core`
 
 **Files:**
+
 - Modify: `docs/superpowers/specs/2026-04-19-llui-agent-design.md` (§13 package layout, §13.2 dep graph, §2 non-goals)
 
 - [ ] **Step 1: Remove the mcp-core tree entry from §13**
 
 Locate in `docs/superpowers/specs/2026-04-19-llui-agent-design.md`:
+
 ```
 packages/
   mcp-core/                           (new)
@@ -1341,6 +1411,7 @@ packages/
 ```
 
 Replace with:
+
 ```
 packages/
   mcp/                                (existing, unchanged)
@@ -1353,6 +1424,7 @@ In the same listing, the `packages/mcp/` entry no longer gets trimmed — shared
 - [ ] **Step 3: Update the `packages/agent/` subtree**
 
 Replace:
+
 ```
   agent/                              (new, publishes @llui/agent)
     src/
@@ -1364,6 +1436,7 @@ Replace:
 ```
 
 With:
+
 ```
   agent/                              (new, publishes @llui/agent)
     src/
@@ -1377,6 +1450,7 @@ With:
 - [ ] **Step 4: Update §13.2 dependency graph**
 
 Replace the graph with:
+
 ```
 @llui/agent/client    →  @llui/dom, @llui/effects, @llui/agent/protocol
 @llui/agent/server    →  @llui/agent/protocol, ws                                (no MCP SDK)
@@ -1389,6 +1463,7 @@ llui-agent (bridge)   →  @llui/agent/protocol,                                
 - [ ] **Step 5: Remove mcp-core from §17 (Open questions) if present, and add a one-line note**
 
 At the end of §13, insert:
+
 ```
 Rationale: the originally-planned `@llui/mcp-core` extraction was dropped. Inspection showed the actual shared code between `@llui/mcp` and `@llui/agent` is small enough — protocol types only — to live in `@llui/agent/protocol`. `validateMessage` already ships in `@llui/dom/devtools` and is not duplicated.
 ```

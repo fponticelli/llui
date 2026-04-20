@@ -55,10 +55,12 @@ export class WsPairingRegistry {
   private now: () => number
   private onLogAppend: ((tid: string, entry: LogEntry) => void) | null
 
-  constructor(opts: {
-    now?: () => number
-    onLogAppend?: (tid: string, entry: LogEntry) => void
-  } = {}) {
+  constructor(
+    opts: {
+      now?: () => number
+      onLogAppend?: (tid: string, entry: LogEntry) => void
+    } = {},
+  ) {
     this.now = opts.now ?? (() => Date.now())
     this.onLogAppend = opts.onLogAppend ?? null
   }
@@ -92,12 +94,7 @@ export class WsPairingRegistry {
     return this.pairings.get(tid)?.hello ?? null
   }
 
-  async rpc(
-    tid: string,
-    tool: string,
-    args: unknown,
-    opts: RpcOptions = {},
-  ): Promise<unknown> {
+  async rpc(tid: string, tool: string, args: unknown, opts: RpcOptions = {}): Promise<unknown> {
     const p = this.pairings.get(tid)
     if (!p || p.closed) {
       const err: RpcError = { code: 'paused' }

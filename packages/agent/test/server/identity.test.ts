@@ -1,5 +1,9 @@
 import { describe, it, expect } from 'vitest'
-import { defaultIdentityResolver, signCookieValue, type IdentityResolver } from '../../src/server/identity.js'
+import {
+  defaultIdentityResolver,
+  signCookieValue,
+  type IdentityResolver,
+} from '../../src/server/identity.js'
 
 const key = 'x'.repeat(32)
 
@@ -11,7 +15,10 @@ function mkReq(cookieHeader: string | null): Request {
 
 describe('defaultIdentityResolver', () => {
   it('returns null when the cookie is absent', async () => {
-    const resolver: IdentityResolver = defaultIdentityResolver({ name: 'llui-agent-uid', signingKey: key })
+    const resolver: IdentityResolver = defaultIdentityResolver({
+      name: 'llui-agent-uid',
+      signingKey: key,
+    })
     expect(await resolver(mkReq(null))).toBeNull()
   })
 

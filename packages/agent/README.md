@@ -34,9 +34,12 @@ const agent = createLluiAgentServer({
 const app = express()
 // The router is Web-standards; adapt it:
 app.use('/agent', async (req, res) => {
-  const webReq = expressToWebRequest(req)  // adapter
+  const webReq = expressToWebRequest(req) // adapter
   const webRes = await agent.router(webReq)
-  if (!webRes) { res.status(404).end(); return }
+  if (!webRes) {
+    res.status(404).end()
+    return
+  }
   webRes.headers.forEach((v, k) => res.setHeader(k, v))
   res.status(webRes.status).send(await webRes.text())
 })
@@ -113,12 +116,12 @@ export const App = component<State, Msg, Effect>({
 
 ## Annotations reference
 
-| Tag                  | Semantics                                                                  |
-| -------------------- | -------------------------------------------------------------------------- |
-| `@intent("...")`     | Human-readable label for Claude + confirmation UI + log                   |
-| `@alwaysAffordable`  | Surfaces to Claude even when no binding is currently visible              |
-| `@requiresConfirm`   | Claude must propose; user approves before dispatch                        |
-| `@humanOnly`         | Claude cannot dispatch; not in `list_actions`                             |
+| Tag                 | Semantics                                                    |
+| ------------------- | ------------------------------------------------------------ |
+| `@intent("...")`    | Human-readable label for Claude + confirmation UI + log      |
+| `@alwaysAffordable` | Surfaces to Claude even when no binding is currently visible |
+| `@requiresConfirm`  | Claude must propose; user approves before dispatch           |
+| `@humanOnly`        | Claude cannot dispatch; not in `list_actions`                |
 
 ## App state shape (host integration)
 
@@ -138,7 +141,7 @@ type Msg =
   // ...your app msgs...
   | { type: 'agent'; sub: 'connect'; msg: agentConnect.Msg }
   | { type: 'agent'; sub: 'confirm'; msg: agentConfirm.Msg }
-  | { type: 'agent'; sub: 'log';     msg: agentLog.Msg }
+  | { type: 'agent'; sub: 'log'; msg: agentLog.Msg }
 ```
 
 Delegate in `update`:
@@ -184,10 +187,13 @@ view: ({ send, branch, show }) => {
     // Renders the "Connect with Claude" button + token copy box + session list:
     div(connectParts.root, [
       button(connectParts.mintTrigger, ['Connect with Claude']),
-      ...show({ when: (s) => s.agent.connect.pendingToken !== null, render: () => [
-        pre(connectParts.pendingTokenBox),
-        button(connectParts.copyConnectSnippetButton, ['Copy']),
-      ]}),
+      ...show({
+        when: (s) => s.agent.connect.pendingToken !== null,
+        render: () => [
+          pre(connectParts.pendingTokenBox),
+          button(connectParts.copyConnectSnippetButton, ['Copy']),
+        ],
+      }),
     ]),
     // Renders pending confirmation cards:
     div(confirmParts.root),

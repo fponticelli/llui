@@ -66,23 +66,24 @@ type Msg =
   /** @intent("Increment the counter") */
   | { type: 'inc' }
   /** @intent("Set display name") */
-  | { type: 'setName', name: string }
+  | { type: 'setName'; name: string }
   /** @intent("Delete item") @requiresConfirm */
-  | { type: 'delete', id: string }
+  | { type: 'delete'; id: string }
   /** @intent("Place order") @humanOnly */
   | { type: 'checkout' }
   /** @intent("Navigate") @alwaysAffordable */
-  | { type: 'nav', to: 'reports' | 'settings' | 'home' }
+  | { type: 'nav'; to: 'reports' | 'settings' | 'home' }
 ```
 
-| Tag                  | Semantics                                                                                   |
-| -------------------- | ------------------------------------------------------------------------------------------- |
-| `@intent("...")`     | Human-readable label. Shown to Claude; shown in `agentConfirm` and `agentLog` to the user.  |
-| `@alwaysAffordable`  | Agent-surfaceable even when no binding is currently rendered.                               |
-| `@requiresConfirm`   | Claude must route through `agentConfirm`; user approves per dispatch.                       |
-| `@humanOnly`         | Agent cannot dispatch at all; not shown in `list_actions`; `send_message` returns `blocked`.|
+| Tag                 | Semantics                                                                                    |
+| ------------------- | -------------------------------------------------------------------------------------------- |
+| `@intent("...")`    | Human-readable label. Shown to Claude; shown in `agentConfirm` and `agentLog` to the user.   |
+| `@alwaysAffordable` | Agent-surfaceable even when no binding is currently rendered.                                |
+| `@requiresConfirm`  | Claude must route through `agentConfirm`; user approves per dispatch.                        |
+| `@humanOnly`        | Agent cannot dispatch at all; not shown in `list_actions`; `send_message` returns `blocked`. |
 
 Composition:
+
 - `@humanOnly` dominates; combining with others is redundant (lint warning).
 - `@alwaysAffordable` + `@requiresConfirm` + `@intent` is the common combination for nav/dialog actions that need confirmation.
 - `@intent` on every variant is strongly recommended; missing intent falls back to a human-readable synthesis of the variant name, with a lint warning.
@@ -93,10 +94,12 @@ The vite plugin emits a `__bindingDescriptors` table per component, parallel to 
 
 ```ts
 type BindingDescriptor = {
-  variant: string                              // Msg type discriminant
-  argsShape: Array<{ from: 'literal', value: unknown } | { from: 'state', path: string } | { from: 'event' }>
-  annotations: AnnotationSet                   // resolved from the Msg variant
-  selectorHint: string | null                  // best-effort CSS selector for observability
+  variant: string // Msg type discriminant
+  argsShape: Array<
+    { from: 'literal'; value: unknown } | { from: 'state'; path: string } | { from: 'event' }
+  >
+  annotations: AnnotationSet // resolved from the Msg variant
+  selectorHint: string | null // best-effort CSS selector for observability
 }
 ```
 
@@ -109,7 +112,9 @@ A new optional field on the component record:
 ```ts
 component<State, Msg, Effect>({
   name: 'App',
-  init, update, view,
+  init,
+  update,
+  view,
   agentAffordances: (state) => [
     { type: 'nav', to: 'reports' },
     { type: 'nav', to: 'settings' },
@@ -122,7 +127,7 @@ Pure function of state. Re-evaluated lazily on `list_actions` (not on every stat
 
 ### 5.4 App + context documentation
 
-Annotations tell Claude what individual Msgs *do*. Two additional authoring surfaces tell Claude what the app *is for* and what the user is *currently trying to do*:
+Annotations tell Claude what individual Msgs _do_. Two additional authoring surfaces tell Claude what the app _is for_ and what the user is _currently trying to do_:
 
 - **`agentDocs`** — static, declared once on the component record. Shipped as part of `describe_app`, cached by the bridge for the session. Free prose in structured slots.
 - **`agentContext(state)`** — dynamic, a pure function of state. Served by a dedicated `describe_context` tool. Regenerated lazily per call; not cached across turns.
@@ -131,25 +136,30 @@ Types:
 
 ```ts
 type AgentDocs = {
-  purpose: string                    // one-sentence elevator pitch
-  overview?: string                  // longer prose: data model, conventions, navigation
-  cautions?: string[]                // short warnings Claude should internalize
+  purpose: string // one-sentence elevator pitch
+  overview?: string // longer prose: data model, conventions, navigation
+  cautions?: string[] // short warnings Claude should internalize
 }
 
 type AgentContext = {
-  summary: string                    // one-paragraph description of where the user is
-  hints?: string[]                   // short action-level suggestions grounded in current state
-  cautions?: string[]                // state-specific warnings (e.g. "card is locked; reopen first")
+  summary: string // one-paragraph description of where the user is
+  hints?: string[] // short action-level suggestions grounded in current state
+  cautions?: string[] // state-specific warnings (e.g. "card is locked; reopen first")
 }
 ```
 
 Component record extensions:
+
 ```ts
 component<State, Msg, Effect>({
-  name, init, update, view, onEffect,
+  name,
+  init,
+  update,
+  view,
+  onEffect,
   agentAffordances,
-  agentDocs,                         // optional AgentDocs
-  agentContext,                      // optional (state: State) => AgentContext
+  agentDocs, // optional AgentDocs
+  agentContext, // optional (state: State) => AgentContext
 })
 ```
 
@@ -176,12 +186,13 @@ llui-agent_<base64url(payload)>.<base64url(hmac-sha256(payload))>
 ```
 
 Payload:
+
 ```ts
 {
-  tid: string      // token id (UUID, primary key in store)
-  iat: number      // issued-at (unix seconds)
-  exp: number      // hard expiry (issued + 24h ceiling, non-sliding)
-  scope: 'agent'   // reserved for future scopes
+  tid: string // token id (UUID, primary key in store)
+  iat: number // issued-at (unix seconds)
+  exp: number // hard expiry (issued + 24h ceiling, non-sliding)
+  scope: 'agent' // reserved for future scopes
 }
 ```
 
@@ -193,7 +204,9 @@ Sliding TTL (default 1 h) tracked in the store, not the token.
 2. Client `POST {origin}/agent/mint` (developer's auth cookies/headers ride along).
 3. Server calls `identityResolver(req)` to derive `uid`, generates `tid`, creates pairing record `{ tid, uid, status: 'awaiting-ws', origin, ... }`, signs and returns:
    ```ts
-   { token, tid, wsUrl, lapUrl, expiresAt }
+   {
+     ;(token, tid, wsUrl, lapUrl, expiresAt)
+   }
    ```
    `lapUrl` is the LAP endpoint the bridge will hit, e.g. `https://kanban.example.com/agent/lap/v1`.
 4. Client stores `tid` in `localStorage['llui-agent.tids']` (append, deduped), opens WS to `wsUrl` with `Authorization: Bearer <token>`.
@@ -213,7 +226,7 @@ Sliding TTL (default 1 h) tracked in the store, not the token.
 4. `agentConnect.resumable` populates.
 5. Developer renders a banner (or pick-list) from `agentConnect.resumable`; user picks one and clicks Resume.
 6. Client `POST {origin}/agent/resume/claim { tid }` → app server returns fresh `{ token, wsUrl }` → client opens new WS → pairing rebinds.
-7. Bridge's cached `{lapUrl, token}` binding for the Claude chat stays valid if the token is the same `tid`; resume rotates the token *value* but retains `tid`, so bridge entries keyed on tid persist. (Implementation detail: resume rotates the signed payload's `iat`/`exp`; the token string changes and the bridge receives the new one from the *next* user action. Cleanest UX: `agentConnect` surfaces a one-line `/llui-connect` refresh snippet so the user can optionally repaste if Claude is the active conversation. Otherwise the bridge's next tool call returns 401; bridge tells Claude "binding stale — ask user to re-paste /llui-connect".)
+7. Bridge's cached `{lapUrl, token}` binding for the Claude chat stays valid if the token is the same `tid`; resume rotates the token _value_ but retains `tid`, so bridge entries keyed on tid persist. (Implementation detail: resume rotates the signed payload's `iat`/`exp`; the token string changes and the bridge receives the new one from the _next_ user action. Cleanest UX: `agentConnect` surfaces a one-line `/llui-connect` refresh snippet so the user can optionally repaste if Claude is the active conversation. Otherwise the bridge's next tool call returns 401; bridge tells Claude "binding stale — ask user to re-paste /llui-connect".)
 8. Grace expires or user dismisses → app server revokes.
 
 ### 6.4 Identity
@@ -242,17 +255,17 @@ JSON over HTTPS. All endpoints under a developer-chosen base path (default `/age
 
 ### 7.1 Endpoints
 
-| Path                             | Method | Purpose                                                         |
-| -------------------------------- | ------ | --------------------------------------------------------------- |
-| `/lap/v1/describe`               | POST   | App name, version, state schema, message schema w/ annotations  |
-| `/lap/v1/state`                  | POST   | `{ path? }` → `{ state }`                                       |
-| `/lap/v1/actions`                | POST   | `{}` → `{ actions[] }`                                          |
-| `/lap/v1/message`                | POST   | `{ msg, reason?, waitFor?, timeoutMs? }` → discriminated result |
-| `/lap/v1/confirm-result`         | POST   | `{ confirmId, timeoutMs? }` → discriminated result              |
-| `/lap/v1/wait`                   | POST   | `{ path?, timeoutMs? }` → `changed` or `timeout` (long-poll)    |
-| `/lap/v1/query-dom`              | POST   | `{ name, multiple? }` → `{ elements[] }`                        |
-| `/lap/v1/describe-visible`       | POST   | `{}` → `{ outline[] }`                                          |
-| `/lap/v1/context`                | POST   | `{}` → `{ context: AgentContext }` (dynamic per-state docs)     |
+| Path                       | Method | Purpose                                                         |
+| -------------------------- | ------ | --------------------------------------------------------------- |
+| `/lap/v1/describe`         | POST   | App name, version, state schema, message schema w/ annotations  |
+| `/lap/v1/state`            | POST   | `{ path? }` → `{ state }`                                       |
+| `/lap/v1/actions`          | POST   | `{}` → `{ actions[] }`                                          |
+| `/lap/v1/message`          | POST   | `{ msg, reason?, waitFor?, timeoutMs? }` → discriminated result |
+| `/lap/v1/confirm-result`   | POST   | `{ confirmId, timeoutMs? }` → discriminated result              |
+| `/lap/v1/wait`             | POST   | `{ path?, timeoutMs? }` → `changed` or `timeout` (long-poll)    |
+| `/lap/v1/query-dom`        | POST   | `{ name, multiple? }` → `{ elements[] }`                        |
+| `/lap/v1/describe-visible` | POST   | `{}` → `{ outline[] }`                                          |
+| `/lap/v1/context`          | POST   | `{}` → `{ context: AgentContext }` (dynamic per-state docs)     |
 
 ### 7.2 Response envelope
 
@@ -261,7 +274,15 @@ Read calls return their payload directly (e.g. `{ state }`, `{ actions }`, `{ ou
 ```ts
 type LapError = {
   error: {
-    code: 'auth-failed' | 'revoked' | 'paused' | 'rate-limited' | 'invalid' | 'schema-error' | 'timeout' | 'internal'
+    code:
+      | 'auth-failed'
+      | 'revoked'
+      | 'paused'
+      | 'rate-limited'
+      | 'invalid'
+      | 'schema-error'
+      | 'timeout'
+      | 'internal'
     detail?: string
     retryAfterMs?: number
   }
@@ -280,9 +301,13 @@ type LapError = {
 ### 7.4 Schema handoff
 
 On WS open (browser → app server), the browser sends:
+
 ```ts
-{ t: 'hello', appName, appVersion, msgSchema, stateSchema, affordancesSample, docs, schemaHash }
+{
+  t: ('hello', appName, appVersion, msgSchema, stateSchema, affordancesSample, docs, schemaHash)
+}
 ```
+
 `docs` is the static `AgentDocs | null` from the component record — it's part of the schema handoff because it's static for the lifetime of the pairing.
 
 App server caches per-pairing. `/lap/v1/describe` serves from the cache. Browser re-sends `hello` when `schemaHash` changes (dev hot-reload).
@@ -304,20 +329,33 @@ The bridge registers these tools over MCP. Every tool maps 1:1 to a LAP endpoint
 ### 8.1 Bridge-local meta-tools
 
 #### `llui_connect_session`
+
 ```ts
 // Args
-{ url: string; token: string }
+{
+  url: string
+  token: string
+}
 // Response
-{ appName: string; appVersion: string; status: 'connected' }
+{
+  appName: string
+  appVersion: string
+  status: 'connected'
+}
 ```
+
 Records the binding for this MCP session, pings `/lap/v1/describe` to validate, caches the schema.
 
 #### `llui_disconnect_session`
+
 ```ts
 // Args: none
 // Response
-{ status: 'disconnected' }
+{
+  status: 'disconnected'
+}
 ```
+
 Clears the binding for this MCP session.
 
 ### 8.2 Forwarded tools
@@ -325,20 +363,24 @@ Clears the binding for this MCP session.
 Each forwards to the corresponding LAP endpoint using the session's bound `{url, token}`. If no binding, returns an error directing Claude to ask the user to run `/llui-connect`.
 
 #### `describe_app`
+
 ```ts
 // Response
 {
   name: string
   version: string
-  stateSchema: object           // JSON Schema from __stateSchema
-  messages: Record<string, {
-    payloadSchema: object
-    intent: string | null
-    alwaysAffordable: boolean
-    requiresConfirm: boolean
-    humanOnly: boolean
-  }>
-  docs: AgentDocs | null        // static app docs from the component record
+  stateSchema: object // JSON Schema from __stateSchema
+  messages: Record<
+    string,
+    {
+      payloadSchema: object
+      intent: string | null
+      alwaysAffordable: boolean
+      requiresConfirm: boolean
+      humanOnly: boolean
+    }
+  >
+  docs: AgentDocs | null // static app docs from the component record
   conventions: {
     dispatchModel: 'TEA'
     confirmationModel: 'runtime-mediated'
@@ -346,17 +388,23 @@ Each forwards to the corresponding LAP endpoint using the session's bound `{url,
   }
 }
 ```
+
 Bridge may serve from cache (keyed by session's `schemaHash`) after the first call.
 
 #### `describe_context`
+
 ```ts
 // Args: none
 // Response
-{ context: AgentContext }
+{
+  context: AgentContext
+}
 ```
+
 Forwards to `/lap/v1/context`. Never cached. Returns the dynamic per-state docs produced by the component's `agentContext(state)`; empty-summary fallback if the app didn't define one.
 
 #### `get_state`
+
 ```ts
 // Args
 { path?: string }               // JSON-pointer; default = root state
@@ -365,6 +413,7 @@ Forwards to `/lap/v1/context`. Never cached. Returns the dynamic per-state docs 
 ```
 
 #### `list_actions`
+
 ```ts
 // Args: none
 // Response
@@ -381,6 +430,7 @@ Forwards to `/lap/v1/context`. Never cached. Returns the dynamic per-state docs 
 ```
 
 #### `send_message`
+
 ```ts
 // Args
 {
@@ -397,6 +447,7 @@ Forwards to `/lap/v1/context`. Never cached. Returns the dynamic per-state docs 
 ```
 
 #### `get_confirm_result`
+
 ```ts
 // Args
 { confirmId: string; timeoutMs?: number }
@@ -407,6 +458,7 @@ Forwards to `/lap/v1/context`. Never cached. Returns the dynamic per-state docs 
 ```
 
 #### `wait_for_change`
+
 ```ts
 // Args
 { path?: string; timeoutMs?: number }   // default 10000
@@ -416,6 +468,7 @@ Forwards to `/lap/v1/context`. Never cached. Returns the dynamic per-state docs 
 ```
 
 #### `query_dom`
+
 ```ts
 // Args
 { name: string; multiple?: boolean }    // matches data-agent="<name>"
@@ -424,18 +477,19 @@ Forwards to `/lap/v1/context`. Never cached. Returns the dynamic per-state docs 
 ```
 
 #### `describe_visible_content`
+
 ```ts
 // Args: none
 // Response
 {
   outline: Array<
     | { kind: 'heading'; level: number; text: string }
-    | { kind: 'text';    text: string }
-    | { kind: 'list';    items: OutlineNode[] }
-    | { kind: 'item';    text: string; children?: OutlineNode[] }
-    | { kind: 'button';  text: string; disabled: boolean; actionVariant: string | null }
-    | { kind: 'input';   label: string | null; value: string | null; type: string }
-    | { kind: 'link';    text: string; href: string }
+    | { kind: 'text'; text: string }
+    | { kind: 'list'; items: OutlineNode[] }
+    | { kind: 'item'; text: string; children?: OutlineNode[] }
+    | { kind: 'button'; text: string; disabled: boolean; actionVariant: string | null }
+    | { kind: 'input'; label: string | null; value: string | null; type: string }
+    | { kind: 'link'; text: string; href: string }
   >
 }
 ```
@@ -457,7 +511,7 @@ type AgentConnectState = {
     token: string
     tid: string
     lapUrl: string
-    connectSnippet: string        // "/llui-connect <lapUrl> <token>"
+    connectSnippet: string // "/llui-connect <lapUrl> <token>"
     expiresAt: number
   } | null
   sessions: AgentSession[]
@@ -467,7 +521,7 @@ type AgentConnectState = {
 
 type AgentSession = {
   tid: string
-  label: string                   // e.g. "Claude Desktop · Opus 4.7"
+  label: string // e.g. "Claude Desktop · Opus 4.7"
   status: 'active' | 'pending-resume' | 'revoked'
   createdAt: number
   lastSeenAt: number
@@ -477,6 +531,7 @@ type AgentSession = {
 Msgs: `Mint`, `MintSucceeded(token, tid, lapUrl, wsUrl, expiresAt)`, `MintFailed(err)`, `WsOpened`, `WsClosed`, `ResumeList(tids)`, `ResumeListLoaded(sessions)`, `Resume(tid)`, `Revoke(tid)`, `ClearError`, `SessionsLoaded(sessions)`, `RefreshSessions`.
 
 Connect bag:
+
 ```ts
 agentConnect.connect<State>(slice, send, { mintUrl })
   => {
@@ -495,8 +550,11 @@ agentConnect.connect<State>(slice, send, { mintUrl })
 ```ts
 type AgentConfirmState = { pending: ConfirmEntry[] }
 type ConfirmEntry = {
-  id: string; variant: string; payload: unknown
-  intent: string; reason: string | null
+  id: string
+  variant: string
+  payload: unknown
+  intent: string
+  reason: string | null
   proposedAt: number
   status: 'pending' | 'approved' | 'rejected'
 }
@@ -507,6 +565,7 @@ Msgs: `Propose(entry)`, `Approve(id)`, `Reject(id)`, `ExpireStale(now)`.
 On `Approve`, `agentConfirm.update` emits a side-output naming the original Msg; the root `update` re-dispatches. Keeps TEA clean: each step is a pure Msg dispatch.
 
 Connect bag:
+
 ```ts
 agentConfirm.connect<State>(slice, send)
   => { root, entry(id): { card, approveButton, rejectButton, intentText, reasonText, payloadText }, empty }
@@ -516,16 +575,24 @@ agentConfirm.connect<State>(slice, send)
 
 ```ts
 type AgentLogState = {
-  entries: LogEntry[]             // capped ring buffer; default 100
+  entries: LogEntry[] // capped ring buffer; default 100
   filter: { kinds?: LogKind[]; since?: number }
 }
 type LogKind = 'proposed' | 'dispatched' | 'confirmed' | 'rejected' | 'blocked' | 'read' | 'error'
-type LogEntry = { id: string; at: number; kind: LogKind; variant?: string; intent?: string; detail?: string }
+type LogEntry = {
+  id: string
+  at: number
+  kind: LogKind
+  variant?: string
+  intent?: string
+  detail?: string
+}
 ```
 
 Msgs: `Append(entry)`, `Clear`, `SetFilter(filter)`.
 
 Connect bag:
+
 ```ts
 agentLog.connect<State>(slice, send)
   => { root, list, entryItem(id), filterControls }
@@ -534,10 +601,12 @@ agentLog.connect<State>(slice, send)
 ### 9.4 WS client wiring
 
 `ws-client.ts` subscribes to `agentConnect` state transitions:
+
 - `minting → pending-claude` with a non-null `pendingToken` → open WS to `pendingToken.wsUrl` with the token as Bearer.
 - `active → idle` (revocation, resume-claim by a new client) → close WS.
 
 On incoming frames:
+
 - `rpc` frames ≡ LAP requests forwarded from the bridge → route to the appropriate handler (`get_state` reads state, `message` either dispatches or proposes to `agentConfirm`, etc.).
 - `hello` is sent once outbound on WS open.
 
@@ -545,14 +614,15 @@ On incoming frames:
 
 ```ts
 type AgentEffect =
-  | { type: 'AgentMintRequest';   mintUrl: string }
-  | { type: 'AgentOpenWS';        token: string; wsUrl: string }
+  | { type: 'AgentMintRequest'; mintUrl: string }
+  | { type: 'AgentOpenWS'; token: string; wsUrl: string }
   | { type: 'AgentCloseWS' }
-  | { type: 'AgentResumeCheck';   tids: string[] }
-  | { type: 'AgentResumeClaim';   tid: string }
-  | { type: 'AgentRevoke';        tid: string }
+  | { type: 'AgentResumeCheck'; tids: string[] }
+  | { type: 'AgentResumeClaim'; tid: string }
+  | { type: 'AgentRevoke'; tid: string }
   | { type: 'AgentSessionsList' }
 ```
+
 Composes with the app's own effect handler via `handleEffects` from `@llui/effects`.
 
 ### 9.6 Host app integration
@@ -563,14 +633,14 @@ type State = {
   agent: {
     connect: agentConnect.State
     confirm: agentConfirm.State
-    log:     agentLog.State
+    log: agentLog.State
   }
 }
 type Msg =
   // app msgs...
   | { type: 'agent'; sub: 'connect'; msg: agentConnect.Msg }
   | { type: 'agent'; sub: 'confirm'; msg: agentConfirm.Msg }
-  | { type: 'agent'; sub: 'log';     msg: agentLog.Msg }
+  | { type: 'agent'; sub: 'log'; msg: agentLog.Msg }
 ```
 
 When `agentConnect` transitions to `pending-claude` with a token, the runtime opens the WS and routes incoming frames: confirm-gated msgs → `agentConfirm`, direct `send` for the rest, `agentLog.Append` across the board.
@@ -591,7 +661,7 @@ const agent = createLluiAgentServer({
   auditSink: consoleAuditSink,
   rateLimit: { perToken: '30/minute', perIdentity: '300/minute' },
   corsOrigins: ['https://myapp.com'],
-  lapBasePath: '/agent/lap/v1',          // default
+  lapBasePath: '/agent/lap/v1', // default
   pairingGraceMs: 15 * 60 * 1000,
   slidingTtlMs: 60 * 60 * 1000,
 })
@@ -602,15 +672,15 @@ server.on('upgrade', agent.wsUpgrade)
 
 ### 10.2 Endpoints
 
-| Path                         | Method | Purpose                                                 |
-| ---------------------------- | ------ | ------------------------------------------------------- |
-| `/agent/mint`                | POST   | Mint a new token + pairing record                        |
-| `/agent/resume/list`         | POST   | Given `tids`, return still-resumable ones                |
-| `/agent/resume/claim`        | POST   | Claim a `pending-resume` token; returns fresh `{token,wsUrl}` |
-| `/agent/revoke`              | POST   | Revoke by `tid`                                          |
-| `/agent/sessions`            | GET    | List sessions for current identity                       |
-| `/agent/lap/v1/*`            | POST   | LAP endpoints (§7)                                       |
-| `/agent/ws`                  | WS     | Browser bridge — token-authed                            |
+| Path                  | Method | Purpose                                                       |
+| --------------------- | ------ | ------------------------------------------------------------- |
+| `/agent/mint`         | POST   | Mint a new token + pairing record                             |
+| `/agent/resume/list`  | POST   | Given `tids`, return still-resumable ones                     |
+| `/agent/resume/claim` | POST   | Claim a `pending-resume` token; returns fresh `{token,wsUrl}` |
+| `/agent/revoke`       | POST   | Revoke by `tid`                                               |
+| `/agent/sessions`     | GET    | List sessions for current identity                            |
+| `/agent/lap/v1/*`     | POST   | LAP endpoints (§7)                                            |
+| `/agent/ws`           | WS     | Browser bridge — token-authed                                 |
 
 ### 10.3 Interfaces
 
@@ -636,24 +706,39 @@ type TokenRecord = {
   label: string | null
 }
 
-interface AuditSink { write(entry: AuditEntry): void | Promise<void> }
+interface AuditSink {
+  write(entry: AuditEntry): void | Promise<void>
+}
 
 type AuditEntry = {
   at: number
   tid: string | null
   uid: string | null
   event:
-    | 'mint' | 'claim' | 'resume' | 'revoke'
-    | 'lap-call' | 'msg-dispatched' | 'msg-blocked'
-    | 'confirm-proposed' | 'confirm-approved' | 'confirm-rejected'
-    | 'rate-limited' | 'auth-failed'
+    | 'mint'
+    | 'claim'
+    | 'resume'
+    | 'revoke'
+    | 'lap-call'
+    | 'msg-dispatched'
+    | 'msg-blocked'
+    | 'confirm-proposed'
+    | 'confirm-approved'
+    | 'confirm-rejected'
+    | 'rate-limited'
+    | 'auth-failed'
   detail: object
 }
 
-interface IdentityResolver { (req: Request): Promise<string | null> }       // Web-standards Request
+interface IdentityResolver {
+  (req: Request): Promise<string | null>
+} // Web-standards Request
 
 interface RateLimiter {
-  check(key: string, bucket: 'token' | 'identity'): Promise<{ allowed: boolean; retryAfterMs?: number }>
+  check(
+    key: string,
+    bucket: 'token' | 'identity',
+  ): Promise<{ allowed: boolean; retryAfterMs?: number }>
 }
 ```
 
@@ -675,16 +760,28 @@ Adapters (Node http / Express / Hono / Fastify) convert their native request sha
 
 ```ts
 type ClientFrame =
-  | { t: 'hello'; appName: string; appVersion: string; msgSchema: object; stateSchema: object; affordancesSample: object[]; docs: AgentDocs | null; schemaHash: string }
+  | {
+      t: 'hello'
+      appName: string
+      appVersion: string
+      msgSchema: object
+      stateSchema: object
+      affordancesSample: object[]
+      docs: AgentDocs | null
+      schemaHash: string
+    }
   | { t: 'rpc-reply'; id: string; result: unknown }
   | { t: 'rpc-error'; id: string; code: string; detail?: string }
-  | { t: 'confirm-resolved'; confirmId: string; outcome: 'confirmed' | 'user-cancelled'; stateAfter?: unknown }
+  | {
+      t: 'confirm-resolved'
+      confirmId: string
+      outcome: 'confirmed' | 'user-cancelled'
+      stateAfter?: unknown
+    }
   | { t: 'state-update'; path: string; stateAfter: unknown }
   | { t: 'log-append'; entry: LogEntry }
 
-type ServerFrame =
-  | { t: 'rpc'; id: string; tool: string; args: unknown }
-  | { t: 'revoked' }
+type ServerFrame = { t: 'rpc'; id: string; tool: string; args: unknown } | { t: 'revoked' }
 ```
 
 ### 10.6 Reference implementations
@@ -742,6 +839,7 @@ Runs as stdio MCP server by default (that's what Claude Desktop launches). `--ht
 ### 11.4 Request forwarding
 
 For each forwarded tool, the bridge:
+
 1. Looks up `Binding` by `sid`. If missing, returns an error-shaped response telling Claude to ask the user to run `/llui-connect`.
 2. Maps the tool name to a LAP path (`describe_app → /describe`, `get_state → /state`, …).
 3. `fetch(binding.url + path, { method: 'POST', headers: {Authorization: 'Bearer ' + binding.token, 'Content-Type': 'application/json'}, body: JSON.stringify(args) })`.
@@ -836,6 +934,7 @@ packages/
 ### 13.1 Entry points
 
 `@llui/agent`:
+
 ```json
 "exports": {
   "./server":   "./dist/server/index.js",
@@ -845,6 +944,7 @@ packages/
 ```
 
 `llui-agent`:
+
 ```json
 "bin": { "llui-agent": "./dist/cli.js" }
 ```
@@ -869,6 +969,7 @@ Implementation plan will start by verifying `llui-agent` is available on npm. If
 ## 14. Testing
 
 ### 14.1 Server (`packages/agent/test/server/`)
+
 - HTTP integration tests over Node http + a fake WS client: mint, resume-list, resume-claim, revoke, sessions.
 - LAP dispatch tests: forwarding, timeout, pending-confirmation long-hold, polling-fallback.
 - Audit emission tests: every code path writes the expected `AuditEntry`.
@@ -876,11 +977,13 @@ Implementation plan will start by verifying `llui-agent` is available on npm. If
 - Origin-pinning tests.
 
 ### 14.2 Client (`packages/agent/test/client/`)
+
 - `@llui/test` `testComponent` harness for each of `agentConnect` / `agentConfirm` / `agentLog`.
 - `propertyTest` the annotation-gating classifier.
 - WS-client state-machine tests with mock WS transport.
 
 ### 14.3 Bridge (`packages/agent-bridge/test/`)
+
 - Session-map lifecycle: bind, re-bind (new token), disconnect, MCP close.
 - Forwarder: happy path + every LAP error shape (auth-failed, revoked, paused, rate-limited, timeout).
 - Prompt registration: MCP prompt surface matches spec.
@@ -888,6 +991,7 @@ Implementation plan will start by verifying `llui-agent` is available on npm. If
 - Mock LAP server (Node http) used as the target.
 
 ### 14.4 End-to-end (`packages/agent/test/e2e/`)
+
 - Spin up agent server + headless browser + bridge (subprocess). Simulate an MCP client that runs `llui_connect_session`, `describe_app`, `send_message`; assert the browser state mutated and `agentLog` recorded the event.
 
 ## 15. Documentation

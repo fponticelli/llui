@@ -97,7 +97,12 @@ type Msg =
   | { type: 'a' }
 `
     const r = extractMsgAnnotations(src)
-    expect(r?.a).toEqual({ intent: 'x', alwaysAffordable: false, requiresConfirm: false, humanOnly: false })
+    expect(r?.a).toEqual({
+      intent: 'x',
+      alwaysAffordable: false,
+      requiresConfirm: false,
+      humanOnly: false,
+    })
   })
 
   it('prefers the alias literally named Msg over the last union', () => {

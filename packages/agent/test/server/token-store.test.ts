@@ -3,7 +3,9 @@ import { InMemoryTokenStore } from '../../src/server/token-store.js'
 import type { TokenRecord } from '../../src/protocol.js'
 
 let store: InMemoryTokenStore
-beforeEach(() => { store = new InMemoryTokenStore() })
+beforeEach(() => {
+  store = new InMemoryTokenStore()
+})
 
 const baseRecord = (overrides: Partial<TokenRecord> = {}): TokenRecord => ({
   tid: 't1',

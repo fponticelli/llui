@@ -7,7 +7,8 @@ import type { TokenRecord } from '../../../src/protocol.js'
 import type { RateLimiter } from '../../../src/server/rate-limit.js'
 
 const key = 'x'.repeat(32)
-const validToken = (tid: string) => signToken({ tid, iat: 0, exp: 9_999_999_999, scope: 'agent' }, key)
+const validToken = (tid: string) =>
+  signToken({ tid, iat: 0, exp: 9_999_999_999, scope: 'agent' }, key)
 
 describe('createLapRouter', () => {
   let store: InMemoryTokenStore
@@ -17,19 +18,29 @@ describe('createLapRouter', () => {
     store = new InMemoryTokenStore()
     registry = new WsPairingRegistry()
     const rec: TokenRecord = {
-      tid: 't1', uid: 'u1', status: 'active',
-      createdAt: 0, lastSeenAt: 0, pendingResumeUntil: null,
-      origin: 'https://app', label: null,
+      tid: 't1',
+      uid: 'u1',
+      status: 'active',
+      createdAt: 0,
+      lastSeenAt: 0,
+      pendingResumeUntil: null,
+      origin: 'https://app',
+      label: null,
     }
     await store.create(rec)
     vi.spyOn(registry, 'isPaired').mockReturnValue(true)
     vi.spyOn(registry, 'rpc').mockResolvedValue({ ok: true })
     const permissiveLimiter: RateLimiter = { check: async () => ({ allowed: true }) }
-    router = createLapRouter({
-      signingKey: key, tokenStore: store, registry,
-      auditSink: { write: () => {} },
-      rateLimiter: permissiveLimiter,
-    }, '/agent/lap/v1')
+    router = createLapRouter(
+      {
+        signingKey: key,
+        tokenStore: store,
+        registry,
+        auditSink: { write: () => {} },
+        rateLimiter: permissiveLimiter,
+      },
+      '/agent/lap/v1',
+    )
   })
 
   it('returns null for paths outside the base', async () => {
@@ -37,11 +48,16 @@ describe('createLapRouter', () => {
   })
 
   it('routes /agent/lap/v1/state', async () => {
-    const res = await router(new Request('https://app/agent/lap/v1/state', {
-      method: 'POST',
-      headers: { authorization: `Bearer ${validToken('t1')}`, 'content-type': 'application/json' },
-      body: JSON.stringify({}),
-    }))
+    const res = await router(
+      new Request('https://app/agent/lap/v1/state', {
+        method: 'POST',
+        headers: {
+          authorization: `Bearer ${validToken('t1')}`,
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify({}),
+      }),
+    )
     expect(res?.status).toBe(200)
   })
 

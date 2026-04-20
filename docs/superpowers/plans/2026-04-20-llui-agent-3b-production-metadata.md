@@ -24,6 +24,7 @@
 ## Task 1: Failing integration test — prod-mode + `agent: true` emits metadata
 
 **Files:**
+
 - Modify: `packages/vite-plugin/test/transform.test.ts`
 
 - [ ] **Step 1: Read the existing `transformLlui` signature**
@@ -38,7 +39,8 @@ Add a new describe block:
 describe('transformLlui — agent-mode metadata emission', () => {
   // Production-mode harness: devMode = false. emitAgentMetadata varies.
   const tProd = (src: string, emitAgentMetadata: boolean) =>
-    transformLlui(src, 'test.ts', /* devMode */ false, /* emitAgentMetadata */ emitAgentMetadata)?.output ?? src
+    transformLlui(src, 'test.ts', /* devMode */ false, /* emitAgentMetadata */ emitAgentMetadata)
+      ?.output ?? src
 
   const sample = `
 import { component, button } from '@llui/dom'
@@ -96,6 +98,7 @@ Expected: FAIL — `transformLlui` doesn't yet accept a 4th parameter; or if it 
 ## Task 2: Extend `transformLlui` signature + flip the emission gate
 
 **Files:**
+
 - Modify: `packages/vite-plugin/src/transform.ts`
 
 - [ ] **Step 1: Update the function signature**
@@ -107,7 +110,7 @@ export function transformLlui(
   code: string,
   id: string,
   devMode: boolean,
-  emitAgentMetadata: boolean = false,  // NEW — defaults false for backward-compat
+  emitAgentMetadata: boolean = false, // NEW — defaults false for backward-compat
 ): TransformResult | null
 ```
 
@@ -173,6 +176,7 @@ COMMIT
 ## Task 3: Surface the option in the plugin entry
 
 **Files:**
+
 - Modify: `packages/vite-plugin/src/index.ts`
 
 - [ ] **Step 1: Add `agent` to `LluiPluginOptions`**
@@ -237,27 +241,30 @@ COMMIT
 ## Task 4: Document the option
 
 **Files:**
+
 - Modify: `packages/vite-plugin/README.md`
 
 - [ ] **Step 1: Update the options section**
 
 Find the `## Options` section (around line 21–27). Replace with:
 
-```markdown
+````markdown
 ## Options
 
 ```ts
 llui({
   mcpPort: 5200, // MCP debug server port (default: 5200, false to disable)
-  agent: true,   // Emit LLui Agent metadata in prod builds (default: false)
+  agent: true, // Emit LLui Agent metadata in prod builds (default: false)
 })
 ```
+````
 
 - `mcpPort` — MCP debug bridge port. Default 5200. Set to `false` to disable.
 - `agent` — Opt into emitting schemas + binding descriptors in prod builds.
   Required when the app is deployed with `@llui/agent/client`. Default `false`
   (metadata is dev-only to keep production bundle size minimal).
-```
+
+````
 
 - [ ] **Step 2: Commit**
 
@@ -269,7 +276,7 @@ docs(vite-plugin): document agent option
 Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
 COMMIT
 )"
-```
+````
 
 ---
 

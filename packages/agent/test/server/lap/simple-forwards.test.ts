@@ -13,12 +13,18 @@ import type { TokenRecord } from '../../../src/protocol.js'
 import type { RateLimiter } from '../../../src/server/rate-limit.js'
 
 const key = 'x'.repeat(32)
-const validToken = (tid: string) => signToken({ tid, iat: 0, exp: 9_999_999_999, scope: 'agent' }, key)
+const validToken = (tid: string) =>
+  signToken({ tid, iat: 0, exp: 9_999_999_999, scope: 'agent' }, key)
 const seed = async (store: InMemoryTokenStore, tid: string) => {
   const rec: TokenRecord = {
-    tid, uid: 'u1', status: 'active',
-    createdAt: 0, lastSeenAt: 0, pendingResumeUntil: null,
-    origin: 'https://app', label: null,
+    tid,
+    uid: 'u1',
+    status: 'active',
+    createdAt: 0,
+    lastSeenAt: 0,
+    pendingResumeUntil: null,
+    origin: 'https://app',
+    label: null,
   }
   await store.create(rec)
 }
@@ -46,13 +52,18 @@ function mkReq(path: string, body: unknown): Request {
 const permissiveLimiter: RateLimiter = { check: async () => ({ allowed: true }) }
 
 const deps = () => ({
-  signingKey: key, tokenStore: store, registry,
-  auditSink: { write: () => {} }, now: () => 1,
+  signingKey: key,
+  tokenStore: store,
+  registry,
+  auditSink: { write: () => {} },
+  now: () => 1,
   rateLimiter: permissiveLimiter,
 })
 
 describe('LAP simple-forward handlers', () => {
-  beforeEach(async () => { await seed(store, 't1') })
+  beforeEach(async () => {
+    await seed(store, 't1')
+  })
 
   it('/state forwards get_state with {path}', async () => {
     const res = await handleLapState(mkReq('/lap/v1/state', { path: '/x' }), deps())
@@ -72,7 +83,10 @@ describe('LAP simple-forward handlers', () => {
   })
 
   it('/query-dom forwards {name, multiple}', async () => {
-    const res = await handleLapQueryDom(mkReq('/lap/v1/query-dom', { name: 'email', multiple: true }), deps())
+    const res = await handleLapQueryDom(
+      mkReq('/lap/v1/query-dom', { name: 'email', multiple: true }),
+      deps(),
+    )
     expect(res.status).toBe(200)
     expect(rpcSpy).toHaveBeenCalledWith('t1', 'query_dom', { name: 'email', multiple: true })
   })
@@ -110,7 +124,10 @@ describe('LAP simple-forward handlers', () => {
     const tightLimiter: RateLimiter = {
       check: vi.fn<RateLimiter['check']>(async () => ({ allowed: false, retryAfterMs: 500 })),
     }
-    const res = await handleLapState(mkReq('/lap/v1/state', {}), { ...deps(), rateLimiter: tightLimiter })
+    const res = await handleLapState(mkReq('/lap/v1/state', {}), {
+      ...deps(),
+      rateLimiter: tightLimiter,
+    })
     expect(res.status).toBe(429)
     const body = (await res.json()) as { error: { code: string; retryAfterMs: number } }
     expect(body.error.code).toBe('rate-limited')

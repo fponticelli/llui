@@ -37,6 +37,7 @@ Reference: mirror `packages/components/src/components/dialog.ts` structure — s
 ## Task 1: agentConnect — failing tests
 
 **Files:**
+
 - Create: `packages/agent/test/client/agentConnect.test.ts`
 
 Minimum test coverage (write comprehensively; 10+ cases):
@@ -56,6 +57,7 @@ Minimum test coverage (write comprehensively; 10+ cases):
 - `ClearError` nulls out `error`.
 
 Use inline fixtures:
+
 ```ts
 const token = 'llui-agent_abc.def'
 const tid = '11111111-1111-1111-1111-111111111111'
@@ -81,6 +83,7 @@ cd packages/agent && pnpm vitest run test/client/agentConnect.test.ts
 ## Task 2: agentConnect — implementation + effects.ts
 
 **Files:**
+
 - Create: `packages/agent/src/client/agentConnect.ts`
 - Create: `packages/agent/src/client/effects.ts`
 
@@ -114,7 +117,7 @@ export type AgentConnectPendingToken = {
   token: AgentToken
   tid: string
   lapUrl: string
-  connectSnippet: string  // "/llui-connect <lapUrl> <token>"
+  connectSnippet: string // "/llui-connect <lapUrl> <token>"
   expiresAt: number
 }
 
@@ -128,7 +131,14 @@ export type AgentConnectState = {
 
 export type AgentConnectMsg =
   | { type: 'Mint' }
-  | { type: 'MintSucceeded'; token: AgentToken; tid: string; lapUrl: string; wsUrl: string; expiresAt: number }
+  | {
+      type: 'MintSucceeded'
+      token: AgentToken
+      tid: string
+      lapUrl: string
+      wsUrl: string
+      expiresAt: number
+    }
   | { type: 'MintFailed'; error: { code: string; detail: string } }
   | { type: 'WsOpened' }
   | { type: 'WsClosed' }
@@ -163,7 +173,10 @@ export function update(
 ): [AgentConnectState, AgentEffect[]] {
   switch (msg.type) {
     case 'Mint':
-      return [{ ...state, status: 'minting' }, [{ type: 'AgentMintRequest', mintUrl: opts.mintUrl }]]
+      return [
+        { ...state, status: 'minting' },
+        [{ type: 'AgentMintRequest', mintUrl: opts.mintUrl }],
+      ]
     case 'MintSucceeded': {
       const pending: AgentConnectPendingToken = {
         token: msg.token,
@@ -213,6 +226,7 @@ export function update(
 Run tests — expect 13+ passing.
 
 Commit:
+
 ```
 feat(agent): agentConnect headless component + AgentEffect union
 
@@ -231,10 +245,10 @@ Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
 Add to the same `agentConnect.ts` file below `update`:
 
 ```ts
-import { type Send } from '@llui/dom'  // or wherever Send<M> lives — check via packages/components for reference
+import { type Send } from '@llui/dom' // or wherever Send<M> lives — check via packages/components for reference
 
 export type AgentConnectConnectOptions = {
-  id?: string  // optional DOM id prefix
+  id?: string // optional DOM id prefix
 }
 
 type ConnectBag = {
@@ -315,6 +329,7 @@ Add tests to `agentConnect.test.ts`:
 - `error.onClick` dispatches `ClearError`.
 
 Run + commit:
+
 ```
 feat(agent): agentConnect.connect — prop bags for user-facing UI
 
@@ -330,6 +345,7 @@ Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
 ## Task 4: agentConfirm — failing tests + impl
 
 **Files:**
+
 - Create: `packages/agent/test/client/agentConfirm.test.ts`
 - Create: `packages/agent/src/client/agentConfirm.ts`
 
@@ -338,6 +354,7 @@ Test coverage: ~8 cases — `Propose` appends; `Approve(id)` marks entry approve
 ### Critical design note — how does Approve dispatch the underlying Msg?
 
 The spec §9.2 says:
+
 > On `Approve`, `agentConfirm.update` emits a side-output naming the original Msg; the root `update` re-dispatches.
 
 This means `update` returns a third slot: a list of "emitted parent msgs." But `@llui/components/dialog.ts` returns `[State, never[]]` — no such slot. Choose one of:
@@ -347,9 +364,11 @@ This means `update` returns a third slot: a list of "emitted parent msgs." But `
 - (c) Pass in the root `send` via a closure and dispatch directly from inside `update`. Violates purity.
 
 **Pick (a)** — add to `AgentEffect`:
+
 ```ts
 | { type: 'AgentForwardMsg'; payload: unknown }
 ```
+
 The Plan 7 handler calls the app's root `send` with this payload. Clean, testable.
 
 ### agentConfirm.ts
@@ -391,7 +410,12 @@ export function update(
       if (!entry || entry.status !== 'pending') return [state, []]
       return [
         { pending: state.pending.map((e) => (e.id === msg.id ? { ...e, status: 'approved' } : e)) },
-        [{ type: 'AgentForwardMsg', payload: { type: entry.variant, ...(entry.payload as object) } }],
+        [
+          {
+            type: 'AgentForwardMsg',
+            payload: { type: entry.variant, ...(entry.payload as object) },
+          },
+        ],
       ]
     }
     case 'Reject':
@@ -402,7 +426,9 @@ export function update(
     case 'ExpireStale':
       return [
         {
-          pending: state.pending.filter((e) => msg.now - e.proposedAt <= msg.maxAgeMs || e.status !== 'pending'),
+          pending: state.pending.filter(
+            (e) => msg.now - e.proposedAt <= msg.maxAgeMs || e.status !== 'pending',
+          ),
         },
         [],
       ]
@@ -468,7 +494,7 @@ export type AgentEffect =
   | { type: 'AgentResumeClaim'; tid: string }
   | { type: 'AgentRevoke'; tid: string }
   | { type: 'AgentSessionsList' }
-  | { type: 'AgentForwardMsg'; payload: unknown }  // NEW
+  | { type: 'AgentForwardMsg'; payload: unknown } // NEW
 ```
 
 Verify + commit.
@@ -478,6 +504,7 @@ Verify + commit.
 ## Task 5: agentLog — TDD + impl
 
 **Files:**
+
 - Create: `packages/agent/test/client/agentLog.test.ts`
 - Create: `packages/agent/src/client/agentLog.ts`
 
@@ -494,7 +521,7 @@ export type AgentLogState = {
   filter: AgentLogFilter
 }
 
-export type AgentLogInitOpts = { maxEntries?: number }  // default 100
+export type AgentLogInitOpts = { maxEntries?: number } // default 100
 
 export type AgentLogMsg =
   | { type: 'Append'; entry: LogEntry }
@@ -583,6 +610,7 @@ Verify + commit.
 ## Task 6: Update `client/index.ts` entry + small re-exports
 
 **Files:**
+
 - Modify: `packages/agent/src/client/index.ts`
 
 ```ts
@@ -593,6 +621,7 @@ export type { AgentEffect, AgentEffectHandler } from './effects.js'
 ```
 
 Commit:
+
 ```
 feat(agent): client/index.ts re-exports agentConnect / agentConfirm / agentLog
 
@@ -618,6 +647,7 @@ pnpm turbo test
 All green. No commit.
 
 Commit the plan file:
+
 ```bash
 git add docs/superpowers/plans/2026-04-20-llui-agent-06-client-components.md
 git commit -m "$(cat <<'COMMIT'

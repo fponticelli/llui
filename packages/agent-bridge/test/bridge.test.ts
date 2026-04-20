@@ -12,11 +12,14 @@ let stateBody: object
 
 beforeEach(async () => {
   describeBody = {
-    name: 'TestApp', version: '1.0',
-    stateSchema: {}, messages: {},
+    name: 'TestApp',
+    version: '1.0',
+    stateSchema: {},
+    messages: {},
     docs: null,
     conventions: {
-      dispatchModel: 'TEA', confirmationModel: 'runtime-mediated',
+      dispatchModel: 'TEA',
+      confirmationModel: 'runtime-mediated',
       readSurfaces: ['state', 'query_dom', 'describe_visible_content', 'describe_context'],
     },
     schemaHash: 'h1',
@@ -25,10 +28,14 @@ beforeEach(async () => {
   lapCalls.length = 0
   lapServer = createServer((req, res) => {
     let data = ''
-    req.on('data', (c) => { data += c })
+    req.on('data', (c) => {
+      data += c
+    })
     req.on('end', () => {
       lapCalls.push({
-        path: req.url ?? '', body: data, auth: req.headers['authorization'] ?? '',
+        path: req.url ?? '',
+        body: data,
+        auth: req.headers['authorization'] ?? '',
       })
       if (req.url?.endsWith('/describe')) {
         res.writeHead(200, { 'content-type': 'application/json' })
@@ -37,7 +44,8 @@ beforeEach(async () => {
         res.writeHead(200, { 'content-type': 'application/json' })
         res.end(JSON.stringify(stateBody))
       } else {
-        res.writeHead(404); res.end()
+        res.writeHead(404)
+        res.end()
       }
     })
   })
@@ -54,7 +62,9 @@ describe('bridge — integration with fake LAP server', () => {
   it('llui_connect_session pings /describe and caches the response', async () => {
     const bindings = new BindingMap()
     const server = createBridgeServer({
-      sessionId: 's1', bindings, version: '0.0.0',
+      sessionId: 's1',
+      bindings,
+      version: '0.0.0',
     })
     // We can't easily exercise the MCP server's internal handlers without wiring a transport.
     // Instead, reach into the registered handler list — or test via the request handler directly.

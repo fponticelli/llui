@@ -9,6 +9,7 @@
 **Tech Stack:** TypeScript Compiler API (`ts.createSourceFile`, `ts.forEachChild`, `ts.getLeadingCommentRanges`), Node `crypto.createHash('sha256')`, vitest.
 
 **Spec section coverage after this plan:**
+
 - §5.1 Annotations — emission.
 - §12.1 Annotation extraction — implementation.
 - §12.3 `schemaHash` — implementation.
@@ -31,6 +32,7 @@
 ## Task 1: Write failing unit test for `extractMsgAnnotations` — happy path
 
 **Files:**
+
 - Create: `packages/vite-plugin/test/msg-annotations.test.ts`
 
 - [ ] **Step 1: Create the test file with a single failing test**
@@ -96,6 +98,7 @@ Expected: FAIL (module not found or extractor returns wrong shape).
 ## Task 2: Implement `extractMsgAnnotations`
 
 **Files:**
+
 - Create: `packages/vite-plugin/src/msg-annotations.ts`
 
 - [ ] **Step 1: Implement the extractor**
@@ -224,6 +227,7 @@ COMMIT
 ## Task 3: Add unit tests for edge cases
 
 **Files:**
+
 - Modify: `packages/vite-plugin/test/msg-annotations.test.ts`
 
 - [ ] **Step 1: Append edge-case tests**
@@ -282,7 +286,12 @@ type Msg =
   | { type: 'a' }
 `
     const r = extractMsgAnnotations(src)
-    expect(r?.a).toEqual({ intent: 'x', alwaysAffordable: false, requiresConfirm: false, humanOnly: false })
+    expect(r?.a).toEqual({
+      intent: 'x',
+      alwaysAffordable: false,
+      requiresConfirm: false,
+      humanOnly: false,
+    })
   })
 
   it('prefers the alias literally named Msg over the last union', () => {
@@ -340,6 +349,7 @@ COMMIT
 ## Task 4: Failing integration test — transform emits `__msgAnnotations`
 
 **Files:**
+
 - Modify: `packages/vite-plugin/test/transform.test.ts`
 
 - [ ] **Step 1: Read the existing test file to understand the transform-test fixture pattern**
@@ -379,7 +389,9 @@ export const App = component<State, Msg, never>({
     expect(out).toContain('__msgAnnotations:')
     // The emitted object literal should contain both variant keys:
     expect(out).toMatch(/inc:\s*\{\s*intent:\s*["']Increment the counter["']/)
-    expect(out).toMatch(/delete:\s*\{\s*intent:\s*["']Delete item["'][\s\S]*requiresConfirm:\s*true/)
+    expect(out).toMatch(
+      /delete:\s*\{\s*intent:\s*["']Delete item["'][\s\S]*requiresConfirm:\s*true/,
+    )
   })
 
   it('omits __msgAnnotations when no variants carry annotations (fallback to default behavior)', () => {
@@ -418,6 +430,7 @@ Expected: FAIL — the transform does not yet emit `__msgAnnotations`.
 ## Task 5: Integrate `extractMsgAnnotations` into Pass 2
 
 **Files:**
+
 - Modify: `packages/vite-plugin/src/transform.ts`
 
 - [ ] **Step 1: Import the extractor**
@@ -478,7 +491,9 @@ function annotationsToObjectLiteral(
           [
             ts.factory.createPropertyAssignment(
               'intent',
-              ann.intent === null ? ts.factory.createNull() : ts.factory.createStringLiteral(ann.intent),
+              ann.intent === null
+                ? ts.factory.createNull()
+                : ts.factory.createStringLiteral(ann.intent),
             ),
             ts.factory.createPropertyAssignment(
               'alwaysAffordable',
@@ -540,6 +555,7 @@ COMMIT
 ## Task 6: Failing unit test for `computeSchemaHash`
 
 **Files:**
+
 - Create: `packages/vite-plugin/test/schema-hash.test.ts`
 
 - [ ] **Step 1: Write the failing test**
@@ -610,12 +626,16 @@ describe('computeSchemaHash', () => {
     const a = computeSchemaHash({
       msgSchema: { discriminant: 'type', variants: { inc: {} } },
       stateSchema: {},
-      msgAnnotations: { inc: { intent: 'A', alwaysAffordable: false, requiresConfirm: false, humanOnly: false } },
+      msgAnnotations: {
+        inc: { intent: 'A', alwaysAffordable: false, requiresConfirm: false, humanOnly: false },
+      },
     })
     const b = computeSchemaHash({
       msgSchema: { discriminant: 'type', variants: { inc: {} } },
       stateSchema: {},
-      msgAnnotations: { inc: { intent: 'B', alwaysAffordable: false, requiresConfirm: false, humanOnly: false } },
+      msgAnnotations: {
+        inc: { intent: 'B', alwaysAffordable: false, requiresConfirm: false, humanOnly: false },
+      },
     })
     expect(a).not.toBe(b)
   })
@@ -649,6 +669,7 @@ Expected: FAIL (module not found).
 ## Task 7: Implement `computeSchemaHash`
 
 **Files:**
+
 - Create: `packages/vite-plugin/src/schema-hash.ts`
 
 - [ ] **Step 1: Write the implementation**
@@ -722,6 +743,7 @@ COMMIT
 ## Task 8: Failing integration test — transform emits `__schemaHash`
 
 **Files:**
+
 - Modify: `packages/vite-plugin/test/transform.test.ts`
 
 - [ ] **Step 1: Append failing test**
@@ -792,6 +814,7 @@ Expected: FAIL.
 ## Task 9: Integrate `computeSchemaHash` into Pass 2
 
 **Files:**
+
 - Modify: `packages/vite-plugin/src/transform.ts`
 
 - [ ] **Step 1: Import**
@@ -859,6 +882,7 @@ COMMIT
 ## Task 10: Extend `LluiComponentDef` in `@llui/dom` with new fields
 
 **Files:**
+
 - Modify: `packages/dom/src/types.ts`
 
 - [ ] **Step 1: Read current `LluiComponentDef`**
@@ -958,6 +982,7 @@ Expected: no `__msgAnnotations` match (example has no annotations today); `__sch
 ## Task 12: Commit the plan file
 
 **Files:**
+
 - Modify/Create: `docs/superpowers/plans/2026-04-20-llui-agent-02-vite-annotations.md` (this file)
 
 - [ ] **Step 1: Commit**

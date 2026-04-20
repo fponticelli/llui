@@ -42,7 +42,12 @@ export type LapDescribeResponse = {
   conventions: {
     dispatchModel: 'TEA'
     confirmationModel: 'runtime-mediated'
-    readSurfaces: readonly ('state' | 'query_dom' | 'describe_visible_content' | 'describe_context')[]
+    readSurfaces: readonly (
+      | 'state'
+      | 'query_dom'
+      | 'describe_visible_content'
+      | 'describe_context'
+    )[]
   }
   schemaHash: string
 }

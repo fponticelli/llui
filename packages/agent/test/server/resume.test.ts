@@ -12,12 +12,17 @@ let log: unknown[]
 beforeEach(() => {
   store = new InMemoryTokenStore()
   log = []
-  audit = { write: (e) => { log.push(e) } }
+  audit = {
+    write: (e) => {
+      log.push(e)
+    },
+  }
 })
 
 const seedPendingResume = async (tid: string, uid: string | null, origin: string) => {
   const rec: TokenRecord = {
-    tid, uid,
+    tid,
+    uid,
     status: 'pending-resume',
     createdAt: 1000,
     lastSeenAt: 1000,

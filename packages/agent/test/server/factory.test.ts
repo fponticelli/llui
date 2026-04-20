@@ -28,10 +28,13 @@ describe('createLluiAgentServer — full HTTP lifecycle', () => {
     const listBody = (await listRes!.json()) as SessionsResponse
     expect(listBody.sessions.map((s) => s.tid)).toContain(mintBody.tid)
 
-    const revokeRes = await agent.router(new Request('https://app/agent/revoke', {
-      method: 'POST', headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ tid: mintBody.tid }),
-    }))
+    const revokeRes = await agent.router(
+      new Request('https://app/agent/revoke', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ tid: mintBody.tid }),
+      }),
+    )
     expect(revokeRes?.status).toBe(200)
 
     const postRevokeList = await agent.router(new Request('https://app/agent/sessions'))

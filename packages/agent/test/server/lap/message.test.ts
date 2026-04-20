@@ -7,12 +7,18 @@ import type { TokenRecord, LapMessageResponse } from '../../../src/protocol.js'
 import type { RateLimiter } from '../../../src/server/rate-limit.js'
 
 const key = 'x'.repeat(32)
-const validToken = (tid: string) => signToken({ tid, iat: 0, exp: 9_999_999_999, scope: 'agent' }, key)
+const validToken = (tid: string) =>
+  signToken({ tid, iat: 0, exp: 9_999_999_999, scope: 'agent' }, key)
 const seed = async (store: InMemoryTokenStore, tid: string) => {
   const rec: TokenRecord = {
-    tid, uid: 'u1', status: 'active',
-    createdAt: 0, lastSeenAt: 0, pendingResumeUntil: null,
-    origin: 'https://app', label: null,
+    tid,
+    uid: 'u1',
+    status: 'active',
+    createdAt: 0,
+    lastSeenAt: 0,
+    pendingResumeUntil: null,
+    origin: 'https://app',
+    label: null,
   }
   await store.create(rec)
 }
@@ -28,8 +34,11 @@ beforeEach(() => {
 const permissiveLimiter: RateLimiter = { check: async () => ({ allowed: true }) }
 
 const deps = () => ({
-  signingKey: key, tokenStore: store, registry,
-  auditSink: { write: () => {} }, now: () => 1,
+  signingKey: key,
+  tokenStore: store,
+  registry,
+  auditSink: { write: () => {} },
+  now: () => 1,
   rateLimiter: permissiveLimiter,
 })
 
@@ -41,7 +50,9 @@ const mkReq = (body: unknown): Request =>
   })
 
 describe('handleLapMessage', () => {
-  beforeEach(async () => { await seed(store, 't1') })
+  beforeEach(async () => {
+    await seed(store, 't1')
+  })
 
   it('returns dispatched when browser replies dispatched', async () => {
     vi.spyOn(registry, 'rpc').mockResolvedValue({ status: 'dispatched', stateAfter: { n: 1 } })
@@ -94,7 +105,10 @@ describe('handleLapMessage', () => {
     const tightLimiter: RateLimiter = {
       check: vi.fn<RateLimiter['check']>(async () => ({ allowed: false, retryAfterMs: 500 })),
     }
-    const res = await handleLapMessage(mkReq({ msg: { type: 'inc' } }), { ...deps(), rateLimiter: tightLimiter })
+    const res = await handleLapMessage(mkReq({ msg: { type: 'inc' } }), {
+      ...deps(),
+      rateLimiter: tightLimiter,
+    })
     expect(res.status).toBe(429)
     const body = (await res.json()) as { error: { code: string; retryAfterMs: number } }
     expect(body.error.code).toBe('rate-limited')

@@ -36,9 +36,7 @@ export function makeForwardHandler(
       return json({ error: { code: 'rate-limited', retryAfterMs: rlCheck.retryAfterMs } }, 429)
     }
 
-    const rawBody = req.method === 'POST'
-      ? await req.json().catch(() => null)
-      : null
+    const rawBody = req.method === 'POST' ? await req.json().catch(() => null) : null
     const args = parseArgs(rawBody)
     if (args === null) return json({ error: { code: 'invalid' } }, 400)
 
@@ -47,7 +45,9 @@ export function makeForwardHandler(
       const nowMs = (deps.now ?? (() => Date.now()))()
       await deps.tokenStore.touch(auth.tid, nowMs)
       await deps.auditSink.write({
-        at: nowMs, tid: auth.tid, uid: rec.uid,
+        at: nowMs,
+        tid: auth.tid,
+        uid: rec.uid,
         event: 'lap-call',
         detail: { tool, ...auditDetail(auth.tid, args) },
       })
@@ -62,7 +62,10 @@ export function makeForwardHandler(
 }
 
 function json(b: unknown, s: number): Response {
-  return new Response(JSON.stringify(b), { status: s, headers: { 'content-type': 'application/json' } })
+  return new Response(JSON.stringify(b), {
+    status: s,
+    headers: { 'content-type': 'application/json' },
+  })
 }
 
 // Concrete handlers:

@@ -78,7 +78,7 @@ lintIdiomatic(source: string, filename?: string) => { violations: Violation[], s
 ### `lintIdiomatic()`
 
 Lint a single source file for LLui idiomatic anti-patterns.
-Returns violations and a numeric score (17 = perfect).
+Returns violations and a numeric score (20 = perfect).
 
 ```typescript
 function lintIdiomatic(source: string, filename = 'input.ts', options: LintOptions = {}): LintResult
