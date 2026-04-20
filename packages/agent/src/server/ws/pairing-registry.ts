@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import type { ClientFrame, ServerFrame, HelloFrame } from '../../protocol.js'
+import type { ClientFrame, ServerFrame, HelloFrame, LogEntry } from '../../protocol.js'
 
 /**
  * Thin abstraction over a WebSocket so the registry is testable with
@@ -53,9 +53,14 @@ export type RpcOptions = { timeoutMs?: number }
 export class WsPairingRegistry {
   private pairings = new Map<string, Pairing>()
   private now: () => number
+  private onLogAppend: ((tid: string, entry: LogEntry) => void) | null
 
-  constructor(opts: { now?: () => number } = {}) {
+  constructor(opts: {
+    now?: () => number
+    onLogAppend?: (tid: string, entry: LogEntry) => void
+  } = {}) {
     this.now = opts.now ?? (() => Date.now())
+    this.onLogAppend = opts.onLogAppend ?? null
   }
 
   register(tid: string, conn: PairingConnection): void {
@@ -208,8 +213,7 @@ export class WsPairingRegistry {
         break
       }
       case 'log-append': {
-        // Plan 5 does not yet plumb client-log appends to the audit sink.
-        // Plan 8 (polish) may add that wiring. Ignore for now.
+        this.onLogAppend?.(tid, frame.entry)
         break
       }
     }

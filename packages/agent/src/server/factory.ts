@@ -27,7 +27,17 @@ export function createLluiAgentServer(opts: ServerOptions): AgentServerHandle {
   const rateLimiter = opts.rateLimiter ?? defaultRateLimiter({ perBucket: '30/minute' })
   const lapBasePath = opts.lapBasePath ?? '/agent/lap/v1'
 
-  const registry = new WsPairingRegistry()
+  const registry = new WsPairingRegistry({
+    onLogAppend: (tid, entry) => {
+      void auditSink.write({
+        at: entry.at,
+        tid,
+        uid: null,
+        event: 'lap-call',
+        detail: { source: 'client-log', kind: entry.kind, variant: entry.variant, intent: entry.intent },
+      })
+    },
+  })
 
   const httpRouter = createHttpRouter({
     signingKey: opts.signingKey,

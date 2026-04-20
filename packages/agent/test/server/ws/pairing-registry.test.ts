@@ -40,6 +40,10 @@ const hello = (schemaHash = 'h1'): HelloFrame => ({
 let reg: WsPairingRegistry
 beforeEach(() => { reg = new WsPairingRegistry({ now: () => 1000 }) })
 
+function getConn(f: Fake) {
+  return (f as unknown as { __conn: Parameters<WsPairingRegistry['register']>[1] }).__conn
+}
+
 describe('WsPairingRegistry', () => {
   it('register stores the pairing keyed by tid', () => {
     const f = mkFake()
@@ -123,5 +127,18 @@ describe('WsPairingRegistry', () => {
     const p = reg.rpc('t1', 'get_state', {}, { timeoutMs: 10000 })
     f.emitClose()
     await expect(p).rejects.toMatchObject({ code: 'paused' })
+  })
+
+  it('onLogAppend callback is called with (tid, entry) when a log-append frame arrives', () => {
+    const onLogAppend = vi.fn()
+    const registry = new WsPairingRegistry({ onLogAppend })
+    const f = mkFake()
+    registry.register('t2', getConn(f))
+
+    const entry = { id: 'e1', at: 1000, kind: 'read' as const }
+    f.emit({ t: 'log-append', entry })
+
+    expect(onLogAppend).toHaveBeenCalledOnce()
+    expect(onLogAppend).toHaveBeenCalledWith('t2', entry)
   })
 })
