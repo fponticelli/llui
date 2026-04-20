@@ -41,10 +41,11 @@ export type LapDescribeResponse = {
   version: string
   stateSchema: object
   messages: Record<string, MessageSchemaEntry>
+  docs: AgentDocs | null
   conventions: {
     dispatchModel: 'TEA'
     confirmationModel: 'runtime-mediated'
-    readSurfaces: Array<'state' | 'query_dom' | 'describe_visible_content'>
+    readSurfaces: Array<'state' | 'query_dom' | 'describe_visible_content' | 'describe_context'>
   }
   schemaHash: string
 }
@@ -112,6 +113,25 @@ export type OutlineNode =
 
 export type LapDescribeVisibleResponse = { outline: OutlineNode[] }
 
+// ── App + context documentation ──────────────────────────────────
+// Static app-level docs (authored once on the component record) and
+// dynamic per-state context docs (pure function of state, served by
+// `/lap/v1/context`). See spec §5.4.
+
+export type AgentDocs = {
+  purpose: string
+  overview?: string
+  cautions?: string[]
+}
+
+export type AgentContext = {
+  summary: string
+  hints?: string[]
+  cautions?: string[]
+}
+
+export type LapContextResponse = { context: AgentContext }
+
 // LAP endpoint catalog — a compile-time map binding each path to its
 // request/response shape. Useful for the bridge's dispatcher and for
 // typed test helpers.
@@ -124,6 +144,7 @@ export type LapEndpointMap = {
   '/lap/v1/wait': { req: LapWaitRequest; res: LapWaitResponse }
   '/lap/v1/query-dom': { req: LapQueryDomRequest; res: LapQueryDomResponse }
   '/lap/v1/describe-visible': { req: null; res: LapDescribeVisibleResponse }
+  '/lap/v1/context': { req: null; res: LapContextResponse }
 }
 
 export type LapPath = keyof LapEndpointMap

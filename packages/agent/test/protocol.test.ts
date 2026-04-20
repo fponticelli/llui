@@ -31,6 +31,7 @@ describe('LAP types — sample value conformance', () => {
           humanOnly: false,
         },
       },
+      docs: null,
       conventions: {
         dispatchModel: 'TEA',
         confirmationModel: 'runtime-mediated',
@@ -131,5 +132,87 @@ describe('LAP types — sample value conformance', () => {
       error: { code: 'revoked', detail: 'token revoked by user' },
     }
     expect(err.error.code).toBe('revoked')
+  })
+})
+
+import type {
+  AgentDocs,
+  AgentContext,
+  LapContextResponse,
+} from '../src/protocol.js'
+
+describe('Documentation types', () => {
+  it('AgentDocs minimal', () => {
+    const d: AgentDocs = { purpose: 'Kanban for a small team.' }
+    expect(d.purpose).toContain('Kanban')
+  })
+
+  it('AgentDocs with overview + cautions', () => {
+    const d: AgentDocs = {
+      purpose: 'Kanban for a small team.',
+      overview: 'Columns are To do / Doing / Done. Cards carry owner, due date, tags.',
+      cautions: [
+        'Do not delete a card with unfinished subtasks.',
+        'Moving to Done locks edits.',
+      ],
+    }
+    expect(d.cautions).toHaveLength(2)
+  })
+
+  it('AgentContext minimal', () => {
+    const c: AgentContext = { summary: 'Viewing the board; no card focused.' }
+    expect(c.summary).toBeDefined()
+  })
+
+  it('AgentContext with hints + cautions', () => {
+    const c: AgentContext = {
+      summary: "Viewing 'Q1 Design' filtered to owner='Ana'. 6 cards visible.",
+      hints: ['Tab to list, arrow to select.', 'Enter on a focused card advances status.'],
+      cautions: ['Card 42 is locked; reopen first before editing.'],
+    }
+    expect(c.hints).toHaveLength(2)
+  })
+
+  it('LapContextResponse envelope', () => {
+    const r: LapContextResponse = {
+      context: { summary: 'Empty dashboard.', hints: [], cautions: [] },
+    }
+    expect(r.context.summary).toBe('Empty dashboard.')
+  })
+})
+
+describe('LapDescribeResponse — docs block + describe_context read surface', () => {
+  it('docs populated', () => {
+    const sample: import('../src/protocol.js').LapDescribeResponse = {
+      name: 'x',
+      version: '0',
+      stateSchema: {},
+      messages: {},
+      docs: { purpose: 'demo' },
+      conventions: {
+        dispatchModel: 'TEA',
+        confirmationModel: 'runtime-mediated',
+        readSurfaces: ['state', 'query_dom', 'describe_visible_content', 'describe_context'],
+      },
+      schemaHash: 'h',
+    }
+    expect(sample.docs?.purpose).toBe('demo')
+  })
+
+  it('docs null is allowed', () => {
+    const sample: import('../src/protocol.js').LapDescribeResponse = {
+      name: 'x',
+      version: '0',
+      stateSchema: {},
+      messages: {},
+      docs: null,
+      conventions: {
+        dispatchModel: 'TEA',
+        confirmationModel: 'runtime-mediated',
+        readSurfaces: ['state', 'query_dom', 'describe_visible_content', 'describe_context'],
+      },
+      schemaHash: 'h',
+    }
+    expect(sample.docs).toBeNull()
   })
 })
