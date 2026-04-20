@@ -40,10 +40,21 @@ export type WsClient = {
   close(): void
 }
 
+export type WsClientOpts = {
+  /** Called once when the server sends an `{t: 'active'}` frame. Idempotent. */
+  onActivated?: () => void
+}
+
 /**
  * Wires up a WebSocket to serve rpc requests from the server. See spec §9.4.
  */
-export function attachWsClient(ws: WsLike, rpc: RpcHosts, hello: HelloBuilder): WsClient {
+export function attachWsClient(
+  ws: WsLike,
+  rpc: RpcHosts,
+  hello: HelloBuilder,
+  opts: WsClientOpts = {},
+): WsClient {
+  let activated = false
   ws.addEventListener('open', () => {
     ws.send(JSON.stringify(hello()))
   })
@@ -57,6 +68,13 @@ export function attachWsClient(ws: WsLike, rpc: RpcHosts, hello: HelloBuilder): 
     }
     if (frame.t === 'revoked') {
       ws.close()
+      return
+    }
+    if (frame.t === 'active') {
+      if (!activated) {
+        activated = true
+        opts.onActivated?.()
+      }
       return
     }
     if (frame.t !== 'rpc') return

@@ -99,7 +99,7 @@ describe('agentConnect', () => {
   })
 
   describe('WsOpened', () => {
-    it('transitions pending-claude → active', () => {
+    it('stays at pending-claude (browser WS is up, but Claude has not bound yet)', () => {
       const [state0] = init(opts)
       const [minting] = send(state0, { type: 'Mint' })
       const [pending] = send(minting, {
@@ -111,6 +111,24 @@ describe('agentConnect', () => {
         expiresAt,
       })
       const [state1, effects] = send(pending, { type: 'WsOpened' })
+      expect(state1.status).toBe('pending-claude')
+      expect(effects).toEqual([])
+    })
+  })
+
+  describe('ActivatedByClaude', () => {
+    it('transitions pending-claude → active when the server signals Claude has bound', () => {
+      const [state0] = init(opts)
+      const [minting] = send(state0, { type: 'Mint' })
+      const [pending] = send(minting, {
+        type: 'MintSucceeded',
+        token,
+        tid,
+        lapUrl,
+        wsUrl,
+        expiresAt,
+      })
+      const [state1, effects] = send(pending, { type: 'ActivatedByClaude' })
       expect(state1.status).toBe('active')
       expect(effects).toEqual([])
     })
@@ -128,7 +146,7 @@ describe('agentConnect', () => {
         wsUrl,
         expiresAt,
       })
-      const [active] = send(pending, { type: 'WsOpened' })
+      const [active] = send(pending, { type: 'ActivatedByClaude' })
       const [state1, effects] = send(active, { type: 'WsClosed' })
       expect(state1.status).toBe('idle')
       expect(state1.pendingToken).toBeNull()
@@ -264,7 +282,7 @@ describe('agentConnect.connect', () => {
       connect<ParentState>((s) => s.agent, sendFn)({ agent: pending }).mintTrigger.disabled,
     ).toBe(true)
 
-    const [active] = update(pending, { type: 'WsOpened' }, opts)
+    const [active] = update(pending, { type: 'ActivatedByClaude' }, opts)
     expect(
       connect<ParentState>((s) => s.agent, sendFn)({ agent: active }).mintTrigger.disabled,
     ).toBe(true)

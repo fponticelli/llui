@@ -33,6 +33,7 @@ export type AgentConnectMsg =
   | { type: 'MintFailed'; error: { code: string; detail: string } }
   | { type: 'WsOpened' }
   | { type: 'WsClosed' }
+  | { type: 'ActivatedByClaude' }
   | { type: 'ResumeList'; tids: string[] }
   | { type: 'ResumeListLoaded'; sessions: AgentSession[] }
   | { type: 'Resume'; tid: string }
@@ -84,9 +85,12 @@ export function update(
     case 'MintFailed':
       return [{ ...state, status: 'error', error: msg.error }, []]
     case 'WsOpened':
-      return [{ ...state, status: 'active' }, []]
+      // WS is open but Claude hasn't bound yet; stay at pending-claude.
+      return [state, []]
     case 'WsClosed':
       return [{ ...state, status: 'idle', pendingToken: null }, []]
+    case 'ActivatedByClaude':
+      return [{ ...state, status: 'active' }, []]
     case 'ResumeList':
       return [state, [{ type: 'AgentResumeCheck', tids: msg.tids }]]
     case 'ResumeListLoaded':

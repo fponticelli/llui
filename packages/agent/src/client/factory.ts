@@ -84,7 +84,11 @@ export function createAgentClient<State, Msg>(
     openWs: (token, wsUrl) => {
       if (ws) ws.close()
       ws = new WebSocket(`${wsUrl}?token=${encodeURIComponent(token)}`)
-      wsClient = attachWsClient(ws as unknown as WsLike, rpcHost, helloBuilder)
+      wsClient = attachWsClient(ws as unknown as WsLike, rpcHost, helloBuilder, {
+        onActivated: () => {
+          opts.handle.send(opts.slices.wrapConnectMsg({ type: 'ActivatedByClaude' }))
+        },
+      })
       ws.addEventListener('open', () => {
         opts.handle.send(opts.slices.wrapConnectMsg({ type: 'WsOpened' }))
       })

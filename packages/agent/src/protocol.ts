@@ -207,8 +207,9 @@ export type ClientFrame =
 
 export type RpcFrame = { t: 'rpc'; id: string; tool: string; args: unknown }
 export type RevokedFrame = { t: 'revoked' }
+export type ActiveFrame = { t: 'active' }
 
-export type ServerFrame = RpcFrame | RevokedFrame
+export type ServerFrame = RpcFrame | RevokedFrame | ActiveFrame
 
 // ── Tokens + pairing ─────────────────────────────────────────────
 

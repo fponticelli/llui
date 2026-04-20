@@ -90,6 +90,20 @@ export class WsPairingRegistry {
     return !!p && !p.closed
   }
 
+  /**
+   * Send a ServerFrame to the paired browser connection, if one is live.
+   * No-op when unpaired or closed.
+   */
+  notify(tid: string, frame: ServerFrame): void {
+    const p = this.pairings.get(tid)
+    if (!p || p.closed) return
+    try {
+      p.conn.send(frame)
+    } catch {
+      // connection may have dropped between isPaired and notify; ignore
+    }
+  }
+
   getHello(tid: string): HelloFrame | null {
     return this.pairings.get(tid)?.hello ?? null
   }

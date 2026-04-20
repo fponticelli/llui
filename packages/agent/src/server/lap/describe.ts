@@ -51,8 +51,13 @@ export async function handleLapDescribe(req: Request, deps: LapDescribeDeps): Pr
   const nowMs = (deps.now ?? (() => Date.now()))()
   // Transition to active: Claude has made its first LAP call to /describe,
   // confirming both the browser WS and Claude are live.
+  const wasAwaitingClaude = rec.status === 'awaiting-claude'
   const label = rec.uid ?? 'Claude'
   await deps.tokenStore.markActive(auth.tid, label, nowMs)
+  // Fire the active signal to the browser only on the first transition.
+  if (wasAwaitingClaude) {
+    deps.registry.notify(auth.tid, { t: 'active' })
+  }
   await deps.auditSink.write({
     at: nowMs,
     tid: auth.tid,
