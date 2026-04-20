@@ -86,8 +86,8 @@ export function createWsUpgradeHandler(deps: UpgradeDeps) {
       }
       deps.registry.register(tid, conn)
 
-      // Store touch; audit
-      void deps.tokenStore.touch(tid, now())
+      // Transition status: browser WS is now live, waiting for Claude's first call.
+      void deps.tokenStore.markAwaitingClaude(tid, now())
       void deps.auditSink.write({
         at: now(),
         tid,

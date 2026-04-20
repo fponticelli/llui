@@ -116,6 +116,28 @@ describe('handleLapDescribe', () => {
     expect(res.status).toBe(503)
   })
 
+  it('transitions token status to active on successful describe', async () => {
+    await seed('t1')
+    await store.markAwaitingClaude('t1', 0)
+    const conn = fakeConn()
+    registry.register('t1', conn)
+    conn.emit({
+      t: 'hello',
+      appName: 'Kanban',
+      appVersion: '1.0',
+      msgSchema: {},
+      stateSchema: {},
+      affordancesSample: [],
+      docs: null,
+      schemaHash: 'abc',
+    })
+    const res = await handleLapDescribe(mkRequest(validToken('t1')), baseDeps())
+    expect(res.status).toBe(200)
+    const rec = await store.findByTid('t1')
+    expect(rec?.status).toBe('active')
+    expect(rec?.lastSeenAt).toBe(1000)
+  })
+
   it('rejects bearer-less requests with 401', async () => {
     const req = new Request('https://app/agent/lap/v1/describe', { method: 'POST' })
     const res = await handleLapDescribe(req, baseDeps())

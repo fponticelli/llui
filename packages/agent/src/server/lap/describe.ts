@@ -49,7 +49,10 @@ export async function handleLapDescribe(req: Request, deps: LapDescribeDeps): Pr
   }
 
   const nowMs = (deps.now ?? (() => Date.now()))()
-  await deps.tokenStore.touch(auth.tid, nowMs)
+  // Transition to active: Claude has made its first LAP call to /describe,
+  // confirming both the browser WS and Claude are live.
+  const label = rec.uid ?? 'Claude'
+  await deps.tokenStore.markActive(auth.tid, label, nowMs)
   await deps.auditSink.write({
     at: nowMs,
     tid: auth.tid,

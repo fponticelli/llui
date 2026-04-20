@@ -9,6 +9,8 @@ export interface TokenStore {
   listByIdentity(uid: string): Promise<TokenRecord[]>
   touch(tid: string, now: number): Promise<void>
   markPendingResume(tid: string, until: number): Promise<void>
+  /** Transition to awaiting-claude: browser WS is connected, waiting for Claude's first call. */
+  markAwaitingClaude(tid: string, now: number): Promise<void>
   markActive(tid: string, label: string, now: number): Promise<void>
   revoke(tid: string): Promise<void>
 }
@@ -43,6 +45,12 @@ export class InMemoryTokenStore implements TokenStore {
     const r = this.byTid.get(tid)
     if (!r) return
     this.byTid.set(tid, { ...r, status: 'pending-resume', pendingResumeUntil: until })
+  }
+
+  async markAwaitingClaude(tid: string, now: number): Promise<void> {
+    const r = this.byTid.get(tid)
+    if (!r) return
+    this.byTid.set(tid, { ...r, status: 'awaiting-claude', lastSeenAt: now })
   }
 
   async markActive(tid: string, label: string, now: number): Promise<void> {

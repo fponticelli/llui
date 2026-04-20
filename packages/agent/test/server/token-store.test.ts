@@ -62,6 +62,14 @@ describe('InMemoryTokenStore', () => {
     expect(got?.lastSeenAt).toBe(2000)
   })
 
+  it('markAwaitingClaude flips status to awaiting-claude and updates lastSeenAt', async () => {
+    await store.create(baseRecord({ status: 'awaiting-ws' }))
+    await store.markAwaitingClaude('t1', 3000)
+    const got = await store.findByTid('t1')
+    expect(got?.status).toBe('awaiting-claude')
+    expect(got?.lastSeenAt).toBe(3000)
+  })
+
   it('markPendingResume flips status and sets pendingResumeUntil', async () => {
     await store.create(baseRecord({ status: 'active' }))
     await store.markPendingResume('t1', 9999)
@@ -80,6 +88,7 @@ describe('InMemoryTokenStore', () => {
 
   it('mutations on a missing tid are no-ops (do not throw)', async () => {
     await store.touch('missing', 1)
+    await store.markAwaitingClaude('missing', 1)
     await store.markActive('missing', 'x', 1)
     await store.markPendingResume('missing', 1)
     await store.revoke('missing')

@@ -103,6 +103,19 @@ describe('createWsUpgradeHandler', () => {
     expect(registry.isPaired('t2')).toBe(false)
   })
 
+  it('transitions token status to awaiting-claude on WS connect', async () => {
+    await seed(store, 't3')
+    const token = makeToken('t3')
+    const ws = new WebSocket(`ws://127.0.0.1:${port}/agent/ws?token=${encodeURIComponent(token)}`)
+    await new Promise<void>((resolve) => ws.once('open', resolve))
+    // Give the server-side handler a tick to call markAwaitingClaude
+    await new Promise((resolve) => setTimeout(resolve, 10))
+    const rec = await store.findByTid('t3')
+    expect(rec?.status).toBe('awaiting-claude')
+    ws.close()
+    await new Promise<void>((resolve) => ws.once('close', resolve))
+  })
+
   it('ignores non /agent/ws upgrade paths', async () => {
     // Send a GET with Upgrade to /other → handler should do nothing; connection hangs.
     // Simulate by trying to upgrade a different path and asserting the socket closes.

@@ -20,7 +20,9 @@ describe('createLluiAgentServer — full HTTP lifecycle', () => {
     const mintBody = (await mintRes!.json()) as MintResponse
     expect(verifyToken(mintBody.token, key).kind).toBe('ok')
 
-    // Token is awaiting-ws immediately after mint — simulate WS connect
+    // Real flow: awaiting-ws → (WS upgrade) awaiting-claude → (describe) active.
+    // Simulate the full transition here (WS upgrade + describe) to put the token in active status.
+    await store.markAwaitingClaude(mintBody.tid, Date.now())
     await store.markActive(mintBody.tid, 'Claude Desktop · test', Date.now())
 
     const listRes = await agent.router(new Request('https://app/agent/sessions'))
