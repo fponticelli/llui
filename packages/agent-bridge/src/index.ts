@@ -1,2 +1,2 @@
-// agent-bridge package entry — exports populated in subsequent tasks
+// Intentionally empty — bridge is invoked via CLI, not imported as a library.
 export {}
