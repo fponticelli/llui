@@ -4,11 +4,29 @@
 import { component } from '@llui/dom'
 import { handleEffects } from '@llui/effects'
 import type { State, Msg, Effect } from './types'
+import { agentConnect, agentConfirm, agentLog } from './types'
+import type { AgentClient } from '@llui/agent/client'
 import { update } from './update'
 import { router, routing } from './router'
 import { header } from './views/header'
 import { searchView } from './views/search'
 import { repoPage } from './views/repo'
+import { agentPanel } from './views/agent-panel'
+
+// ── Late-bound agent client reference ────────────────────────────────────────
+// The client is created after mountApp/hydrateApp (in main.ts, browser only).
+// Agent effects can only fire after user interaction, by which time the client
+// is already bound.
+let agentClient: AgentClient | null = null
+
+export function setAgentClient(client: AgentClient): void {
+  agentClient = client
+}
+
+// ── Agent effect type guard ───────────────────────────────────────────────────
+function isAgentEffect(e: Effect): boolean {
+  return (e as { type: string }).type.startsWith('Agent')
+}
 
 export const appDef = component<State, Msg, Effect>({
   name: 'GitHubExplorer',
@@ -22,6 +40,7 @@ export const appDef = component<State, Msg, Effect>({
     const { send, branch } = h
     return [
       header(send),
+      agentPanel(send),
 
       ...routing.listener(send),
 
@@ -40,7 +59,13 @@ export const appDef = component<State, Msg, Effect>({
   },
   onEffect: handleEffects<Effect, Msg>()
     .use(routing.handleEffect)
-    .else((effect) => {
+    .else(({ effect }) => {
+      if (isAgentEffect(effect)) {
+        if (agentClient) {
+          void agentClient.effectHandler(effect as Parameters<typeof agentClient.effectHandler>[0])
+        }
+        return
+      }
       console.warn('[github-explorer] unhandled effect:', effect)
     }),
 })
@@ -51,5 +76,10 @@ export function initialState(url?: string): State {
   return {
     route,
     query: route.page === 'search' ? route.q : '',
+    agent: {
+      connect: agentConnect.init({ mintUrl: '/agent/mint' })[0],
+      confirm: agentConfirm.init()[0],
+      log: agentLog.init()[0],
+    },
   }
 }
