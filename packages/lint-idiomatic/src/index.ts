@@ -58,7 +58,7 @@ export type RuleName = (typeof RULE_NAMES)[number]
 
 /**
  * Lint a single source file for LLui idiomatic anti-patterns.
- * Returns violations and a numeric score (17 = perfect).
+ * Returns violations and a numeric score (20 = perfect).
  */
 export function lintIdiomatic(
   source: string,

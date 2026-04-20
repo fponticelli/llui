@@ -510,7 +510,7 @@ export function registerDebugApiTools(registry: ToolRegistry): void {
     {
       name: 'llui_lint',
       description:
-        "Lint LLui source code against @llui/lint-idiomatic's 17 anti-pattern rules. Returns violations grouped by rule with line/column/suggestion fields, plus a 0–17 score (17 = fully idiomatic). Pass either `source` (raw TypeScript code) or `path` (absolute file path on the dev machine) — exactly one is required. The optional `exclude` array skips specific rule names. Use this after writing or editing LLui code to self-correct: catches state mutation, missing memo(), each() closure violations, view-bag-import (use the bag inside component bodies, see llm-guide.md), missing exhaustive update() cases, async update() (must be sync), nested send() in update(), spread-in-children (use each() instead), imperative DOM in view(), and more. The same rules run as a Vite plugin in dev — this tool gives LLMs the same feedback without requiring a build.",
+        "Lint LLui source code against @llui/lint-idiomatic's 20 anti-pattern rules. Returns violations grouped by rule with line/column/suggestion fields, plus a 0–20 score (20 = fully idiomatic). Pass either `source` (raw TypeScript code) or `path` (absolute file path on the dev machine) — exactly one is required. The optional `exclude` array skips specific rule names. Use this after writing or editing LLui code to self-correct: catches state mutation, missing memo(), each() closure violations, view-bag-import (use the bag inside component bodies, see llm-guide.md), missing exhaustive update() cases, async update() (must be sync), nested send() in update(), spread-in-children (use each() instead), imperative DOM in view(), and more. The same rules run as a Vite plugin in dev — this tool gives LLMs the same feedback without requiring a build.",
       inputSchema: {
         type: 'object',
         properties: {
@@ -568,7 +568,7 @@ export function registerDebugApiTools(registry: ToolRegistry): void {
         file: filename,
         score: result.score,
         violations: result.violations,
-        summary: `${result.violations.length} violation(s), score ${result.score}/17`,
+        summary: `${result.violations.length} violation(s), score ${result.score}/20`,
       }
     },
   )

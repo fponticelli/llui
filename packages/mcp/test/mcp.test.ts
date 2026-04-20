@@ -169,11 +169,11 @@ describe('llui_lint tool', () => {
     expect(result.file).toBe('input.ts')
     expect(result.violations.length).toBeGreaterThan(0)
     expect(result.violations.some((v) => v.rule === 'state-mutation')).toBe(true)
-    expect(result.score).toBeLessThan(17)
+    expect(result.score).toBeLessThan(20)
     expect(result.summary).toContain('violation')
   })
 
-  it('returns score 17 and zero violations for clean source', async () => {
+  it('returns score 20 and zero violations for clean source', async () => {
     const server = new LluiMcpServer()
     const source = `
       import { component, div } from '@llui/dom'
@@ -195,7 +195,7 @@ describe('llui_lint tool', () => {
       score: number
       violations: unknown[]
     }
-    expect(result.score).toBe(17)
+    expect(result.score).toBe(20)
     expect(result.violations).toEqual([])
   })
 
