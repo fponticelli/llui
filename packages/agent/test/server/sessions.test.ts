@@ -36,4 +36,16 @@ describe('handleSessions', () => {
     const body = (await res.json()) as SessionsResponse
     expect(body.sessions).toEqual([])
   })
+
+  it('excludes awaiting-ws and awaiting-claude records (internal statuses)', async () => {
+    await store.create(base({ tid: 't1', status: 'awaiting-ws' }))
+    await store.create(base({ tid: 't2', status: 'awaiting-claude' }))
+    await store.create(base({ tid: 't3', status: 'active' }))
+    const req = new Request('https://app/agent/sessions', { method: 'GET' })
+    const res = await handleSessions(req, {
+      tokenStore: store, identityResolver: async () => 'u1',
+    })
+    const body = (await res.json()) as SessionsResponse
+    expect(body.sessions.map((s) => s.tid)).toEqual(['t3'])
+  })
 })
