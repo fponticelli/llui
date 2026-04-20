@@ -32,6 +32,8 @@ export interface ComponentDef<S, M, E = never, D = void> {
       humanOnly: boolean
     }
   >
+  /** @internal Compiler-emitted; one entry per send() call site in view(). See agent spec §5.2. */
+  __bindingDescriptors?: Array<{ variant: string }>
   /** @internal Compiler-injected; 32-char hex SHA-256 of schemas + annotations. See agent spec §12.3. */
   __schemaHash?: string
   /** @internal Compiler-injected — maps top-level state field → dirty-mask bit(s) */
@@ -101,6 +103,7 @@ export interface AnyComponentDef {
   __renderToString?: unknown
   __msgSchema?: unknown
   __msgAnnotations?: unknown
+  __bindingDescriptors?: unknown
   __schemaHash?: unknown
   __maskLegend?: unknown
   __componentMeta?: unknown
@@ -138,6 +141,7 @@ export interface LazyDef<D = void> {
   __renderToString?: unknown
   __msgSchema?: unknown
   __msgAnnotations?: unknown
+  __bindingDescriptors?: unknown
   __schemaHash?: unknown
   __maskLegend?: unknown
   __componentMeta?: unknown
