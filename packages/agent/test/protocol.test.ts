@@ -404,3 +404,47 @@ describe('Token + pairing types', () => {
     expect(sessions.sessions).toHaveLength(1)
   })
 })
+
+import type { AuditEntry, AuditEvent } from '../src/protocol.js'
+
+describe('Audit entry types', () => {
+  it('audit event enumeration', () => {
+    const events: AuditEvent[] = [
+      'mint',
+      'claim',
+      'resume',
+      'revoke',
+      'lap-call',
+      'msg-dispatched',
+      'msg-blocked',
+      'confirm-proposed',
+      'confirm-approved',
+      'confirm-rejected',
+      'rate-limited',
+      'auth-failed',
+    ]
+    expect(events).toHaveLength(12)
+  })
+
+  it('audit entry shape', () => {
+    const e: AuditEntry = {
+      at: Date.now(),
+      tid: 't1',
+      uid: 'u1',
+      event: 'msg-dispatched',
+      detail: { variant: 'inc' },
+    }
+    expect(e.event).toBe('msg-dispatched')
+  })
+
+  it('audit entry allows null tid/uid', () => {
+    const e: AuditEntry = {
+      at: 0,
+      tid: null,
+      uid: null,
+      event: 'rate-limited',
+      detail: { bucket: 'global' },
+    }
+    expect(e.tid).toBeNull()
+  })
+})

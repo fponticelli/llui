@@ -264,3 +264,27 @@ export type RevokeRequest = { tid: string }
 export type RevokeResponse = { status: 'revoked' }
 
 export type SessionsResponse = { sessions: AgentSession[] }
+
+// ── Audit ────────────────────────────────────────────────────────
+
+export type AuditEvent =
+  | 'mint'
+  | 'claim'
+  | 'resume'
+  | 'revoke'
+  | 'lap-call'
+  | 'msg-dispatched'
+  | 'msg-blocked'
+  | 'confirm-proposed'
+  | 'confirm-approved'
+  | 'confirm-rejected'
+  | 'rate-limited'
+  | 'auth-failed'
+
+export type AuditEntry = {
+  at: number
+  tid: string | null
+  uid: string | null
+  event: AuditEvent
+  detail: object
+}
