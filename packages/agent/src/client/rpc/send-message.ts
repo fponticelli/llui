@@ -21,6 +21,7 @@ export type SendMessageHost = {
     intent: string
     reason: string | null
     proposedAt: number
+    status: 'pending'
   }): void
 }
 
@@ -46,6 +47,7 @@ export async function handleSendMessage(
       intent: ann?.intent ?? args.msg.type,
       reason: args.reason ?? null,
       proposedAt: Date.now(),
+      status: 'pending',
     })
     return { status: 'pending-confirmation', confirmId: id }
   }
