@@ -43,3 +43,84 @@ type Msg =
     })
   })
 })
+
+describe('extractMsgAnnotations — edge cases', () => {
+  it('returns null when no Msg alias exists', () => {
+    expect(extractMsgAnnotations(`type Other = { foo: string }`)).toBeNull()
+  })
+
+  it('returns null when the alias is not a union', () => {
+    expect(extractMsgAnnotations(`type Msg = { type: 'x' }`)).toBeNull()
+  })
+
+  it('skips union members that are not object literals', () => {
+    const src = `
+type Msg =
+  /** @intent("real") */
+  | { type: 'ok' }
+  | string
+  | number
+`
+    expect(extractMsgAnnotations(src)).toEqual({
+      ok: { intent: 'real', alwaysAffordable: false, requiresConfirm: false, humanOnly: false },
+    })
+  })
+
+  it('skips union members without a string-literal discriminant', () => {
+    const src = `
+type Msg =
+  /** @intent("real") */
+  | { type: 'ok' }
+  | { type: string; id: number }
+`
+    expect(extractMsgAnnotations(src)).toEqual({
+      ok: { intent: 'real', alwaysAffordable: false, requiresConfirm: false, humanOnly: false },
+    })
+  })
+
+  it('defaults all fields when no JSDoc is attached', () => {
+    const src = `
+type Msg =
+  | { type: 'a' }
+  | { type: 'b' }
+`
+    expect(extractMsgAnnotations(src)).toEqual({
+      a: { intent: null, alwaysAffordable: false, requiresConfirm: false, humanOnly: false },
+      b: { intent: null, alwaysAffordable: false, requiresConfirm: false, humanOnly: false },
+    })
+  })
+
+  it('ignores unknown tags', () => {
+    const src = `
+type Msg =
+  /** @intent("x") @someOtherTag @foo */
+  | { type: 'a' }
+`
+    const r = extractMsgAnnotations(src)
+    expect(r?.a).toEqual({ intent: 'x', alwaysAffordable: false, requiresConfirm: false, humanOnly: false })
+  })
+
+  it('prefers the alias literally named Msg over the last union', () => {
+    const src = `
+type Other =
+  /** @intent("wrong") */
+  | { type: 'nope' }
+type Msg =
+  /** @intent("right") */
+  | { type: 'ok' }
+`
+    const r = extractMsgAnnotations(src)
+    expect(r).toEqual({
+      ok: { intent: 'right', alwaysAffordable: false, requiresConfirm: false, humanOnly: false },
+    })
+  })
+
+  it('handles @intent with straight double quotes only (curly optional)', () => {
+    const src = `
+type Msg =
+  /** @intent("straight") */
+  | { type: 'a' }
+`
+    expect(extractMsgAnnotations(src)?.a.intent).toBe('straight')
+  })
+})
