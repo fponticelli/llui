@@ -73,32 +73,65 @@ export type Route =
 
 import type { Async, ApiError, Effect as BuiltinEffect } from '@llui/effects'
 import type { RouterEffect } from '@llui/router/connect'
+import { agentConnect, agentConfirm, agentLog, type AgentEffect } from '@llui/agent/client'
 
 export type { Async, ApiError }
+
+type AgentConnectMsg = agentConnect.AgentConnectMsg
+type AgentConfirmMsg = agentConfirm.AgentConfirmMsg
+type AgentLogMsg = agentLog.AgentLogMsg
+
+export { agentConnect, agentConfirm, agentLog }
 
 export interface State {
   route: Route
   query: string
+  agent: {
+    connect: agentConnect.AgentConnectState
+    confirm: agentConfirm.AgentConfirmState
+    log: agentLog.AgentLogState
+  }
 }
 
 // ── Messages ─────────────────────────────────────────────────────
 
 export type Msg =
+  /** @intent("Navigate to a route") @alwaysAffordable */
   | { type: 'navigate'; route: Route }
+  /** @intent("Update the search query") */
   | { type: 'setQuery'; value: string }
+  /** @intent("Submit the current search query") */
   | { type: 'submitSearch' }
+  /** @humanOnly */
   | { type: 'searchOk'; payload: { total_count: number; items: Repo[] } }
+  /** @humanOnly */
   | { type: 'repoOk'; payload: Repo }
+  /** @humanOnly */
   | { type: 'contentsOk'; payload: TreeEntry[] | FileContent }
+  /** @humanOnly */
   | { type: 'readmeOk'; payload: string }
+  /** @humanOnly */
   | { type: 'issuesOk'; payload: Issue[] }
+  /** @humanOnly */
   | { type: 'apiError'; error: ApiError }
+  /** @humanOnly */
   | { type: 'readmeError'; error: ApiError }
+  /** @humanOnly */
   | { type: 'contentsError'; error: ApiError }
+  /** @intent("Go to the next page of results") */
   | { type: 'nextPage' }
+  /** @intent("Go to the previous page of results") */
   | { type: 'prevPage' }
+  /** @intent("Open a file or directory from the tree") @alwaysAffordable */
   | { type: 'openPath'; path: string; isDir: boolean }
+  // Agent sub-component messages (envelope pattern — internal routing, not dispatchable by Claude)
+  /** @humanOnly */
+  | { type: 'agent'; sub: 'connect'; msg: AgentConnectMsg }
+  /** @humanOnly */
+  | { type: 'agent'; sub: 'confirm'; msg: AgentConfirmMsg }
+  /** @humanOnly */
+  | { type: 'agent'; sub: 'log'; msg: AgentLogMsg }
 
 // ── Effects ──────────────────────────────────────────────────────
 
-export type Effect = BuiltinEffect | RouterEffect
+export type Effect = BuiltinEffect | RouterEffect | AgentEffect

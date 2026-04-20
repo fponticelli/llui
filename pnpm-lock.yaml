@@ -160,6 +160,9 @@ importers:
 
   examples/github-explorer:
     dependencies:
+      '@llui/agent':
+        specifier: workspace:*
+        version: link:../../packages/agent
       '@llui/dom':
         specifier: workspace:*
         version: link:../../packages/dom

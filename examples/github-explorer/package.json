@@ -11,6 +11,7 @@
     "check": "tsc --noEmit"
   },
   "dependencies": {
+    "@llui/agent": "workspace:*",
     "@llui/dom": "workspace:*",
     "@llui/effects": "workspace:*",
     "@llui/router": "workspace:*"
