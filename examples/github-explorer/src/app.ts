@@ -90,7 +90,12 @@ type AgentMeta = {
   }
   __msgAnnotations?: Record<
     string,
-    { intent: string | null; alwaysAffordable: boolean; requiresConfirm: boolean; humanOnly: boolean }
+    {
+      intent: string | null
+      alwaysAffordable: boolean
+      requiresConfirm: boolean
+      humanOnly: boolean
+    }
   >
   __bindingDescriptors?: Array<{ variant: string }>
   __schemaHash?: string
@@ -120,9 +125,7 @@ AppWithMeta.agentDocs = {
     'Start on the search page. Type into the query box and submit to search public repos. ' +
     'Click a result to open its repo page with tabs for code and issues. ' +
     'Open directories/files from the file tree. Use prev/next for search pagination.',
-  cautions: [
-    "GitHub's unauthenticated API is rate-limited. Repeated searches may get throttled.",
-  ],
+  cautions: ["GitHub's unauthenticated API is rate-limited. Repeated searches may get throttled."],
 }
 
 AppWithMeta.agentContext = (s: unknown) => {
@@ -217,7 +220,10 @@ AppWithMeta.__schemaHash = 'github-explorer-v1'
 //
 // payloadSchema values are JSON-Schema-ish fragments. Minimal here — the intent
 // text carries the important hints.
-const __msgSchema: Record<string, { payloadSchema: object; annotations: typeof AppWithMeta.__msgAnnotations[string] }> = {}
+const __msgSchema: Record<
+  string,
+  { payloadSchema: object; annotations: (typeof AppWithMeta.__msgAnnotations)[string] }
+> = {}
 for (const [variant, ann] of Object.entries(AppWithMeta.__msgAnnotations)) {
   const payloadSchema: Record<string, unknown> = (() => {
     switch (variant) {

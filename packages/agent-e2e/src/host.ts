@@ -143,7 +143,12 @@ type AgentMeta = {
   agentContext?: (state: unknown) => AgentContext
   __msgAnnotations?: Record<
     string,
-    { intent: string | null; alwaysAffordable: boolean; requiresConfirm: boolean; humanOnly: boolean }
+    {
+      intent: string | null
+      alwaysAffordable: boolean
+      requiresConfirm: boolean
+      humanOnly: boolean
+    }
   >
   __bindingDescriptors?: Array<{ variant: string }>
   __schemaHash?: string
@@ -171,10 +176,30 @@ AppWithMeta.agentContext = (s: unknown) => {
 }
 
 AppWithMeta.__msgAnnotations = {
-  inc: { intent: 'Increment the counter', alwaysAffordable: false, requiresConfirm: false, humanOnly: false },
-  dec: { intent: 'Decrement the counter', alwaysAffordable: false, requiresConfirm: false, humanOnly: false },
-  reset: { intent: 'Reset to zero', alwaysAffordable: false, requiresConfirm: false, humanOnly: false },
-  delete: { intent: 'Delete an item', alwaysAffordable: false, requiresConfirm: true, humanOnly: false },
+  inc: {
+    intent: 'Increment the counter',
+    alwaysAffordable: false,
+    requiresConfirm: false,
+    humanOnly: false,
+  },
+  dec: {
+    intent: 'Decrement the counter',
+    alwaysAffordable: false,
+    requiresConfirm: false,
+    humanOnly: false,
+  },
+  reset: {
+    intent: 'Reset to zero',
+    alwaysAffordable: false,
+    requiresConfirm: false,
+    humanOnly: false,
+  },
+  delete: {
+    intent: 'Delete an item',
+    alwaysAffordable: false,
+    requiresConfirm: true,
+    humanOnly: false,
+  },
   signOut: { intent: 'Sign out', alwaysAffordable: false, requiresConfirm: false, humanOnly: true },
   nav: { intent: 'Navigate', alwaysAffordable: true, requiresConfirm: false, humanOnly: false },
 }
@@ -200,8 +225,16 @@ client = createAgentClient<State, Msg>({
   slices: {
     getConnect: (s) => s.agent.connect,
     getConfirm: (s) => s.agent.confirm,
-    wrapConnectMsg: (m) => ({ type: 'agent', sub: 'connect', msg: m as agentConnect.AgentConnectMsg }),
-    wrapConfirmMsg: (m) => ({ type: 'agent', sub: 'confirm', msg: m as agentConfirm.AgentConfirmMsg }),
+    wrapConnectMsg: (m) => ({
+      type: 'agent',
+      sub: 'connect',
+      msg: m as agentConnect.AgentConnectMsg,
+    }),
+    wrapConfirmMsg: (m) => ({
+      type: 'agent',
+      sub: 'confirm',
+      msg: m as agentConfirm.AgentConfirmMsg,
+    }),
   },
 })
 

@@ -13,8 +13,7 @@ import { createLluiAgentServer } from '@llui/agent/server'
 // AGENT_SIGNING_KEY: set this to a strong random secret (≥ 32 bytes) in
 // production via the environment variable. The default 'dev-...' value is
 // safe only for local development — it has no entropy.
-const AGENT_SIGNING_KEY =
-  process.env['AGENT_SIGNING_KEY'] ?? 'dev-dev-dev-dev-dev-dev-dev-dev-x'
+const AGENT_SIGNING_KEY = process.env['AGENT_SIGNING_KEY'] ?? 'dev-dev-dev-dev-dev-dev-dev-dev-x'
 
 const PORT = 5173
 

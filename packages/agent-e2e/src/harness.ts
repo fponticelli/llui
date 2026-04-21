@@ -144,9 +144,13 @@ export async function setup(): Promise<E2EContext> {
   const page = await browser.newPage()
   await page.goto(`http://localhost:${httpPort}/`)
   // Wait until host.ts has finished bootstrapping and exposed the globals.
-  await page.waitForFunction(() => typeof (window as unknown as Record<string, unknown>)['__lluiE2eClient'] !== 'undefined', undefined, {
-    timeout: 10_000,
-  })
+  await page.waitForFunction(
+    () => typeof (window as unknown as Record<string, unknown>)['__lluiE2eClient'] !== 'undefined',
+    undefined,
+    {
+      timeout: 10_000,
+    },
+  )
 
   // ── Helper: mint + open WS ────────────────────────────────────────────────
   const mintToken = async (): Promise<MintResult> => {

@@ -22,14 +22,11 @@ describe('e2e: revoke', () => {
     expect(before.isError).toBeFalsy()
 
     // Revoke the token via the HTTP endpoint.
-    const revokeRes = await fetch(
-      `http://localhost:${ctx.httpPort}/agent/revoke`,
-      {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ tid: mint.tid }),
-      },
-    )
+    const revokeRes = await fetch(`http://localhost:${ctx.httpPort}/agent/revoke`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ tid: mint.tid }),
+    })
     expect(revokeRes.status).toBe(200)
     const revokeBody = (await revokeRes.json()) as { status: string }
     expect(revokeBody.status).toBe('revoked')

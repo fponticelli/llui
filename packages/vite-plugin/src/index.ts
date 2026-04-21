@@ -178,8 +178,7 @@ async function loadAgentServer(
       exports?: Record<string, { import?: string } | string>
     }
     const serverExport = pkg.exports?.['./server']
-    const rel =
-      typeof serverExport === 'string' ? serverExport : serverExport?.import
+    const rel = typeof serverExport === 'string' ? serverExport : serverExport?.import
     if (!rel) throw new Error('missing ./server export in package.json')
     const modUrl = new URL(`file://${resolve(pkgDir, rel)}`).href
     serverModule = (await import(modUrl)) as typeof serverModule
@@ -193,9 +192,7 @@ async function loadAgentServer(
 
   const { randomBytes } = await import('node:crypto')
   const signingKey: string =
-    cfg.signingKey ??
-    process.env['AGENT_SIGNING_KEY'] ??
-    randomBytes(32).toString('base64url')
+    cfg.signingKey ?? process.env['AGENT_SIGNING_KEY'] ?? randomBytes(32).toString('base64url')
 
   return serverModule.createLluiAgentServer({
     signingKey,
@@ -208,10 +205,7 @@ async function loadAgentServer(
  * Must be called synchronously from configureServer so registration
  * happens BEFORE Vite installs its catch-all SPA fallback.
  */
-function registerAgentMiddleware(
-  server: ViteDevServer,
-  agent: AgentServerInstance,
-): void {
+function registerAgentMiddleware(server: ViteDevServer, agent: AgentServerInstance): void {
   // Connect-style middleware. Vite's middleware chain runs in order, so
   // synchronous registration during configureServer places us ahead of
   // Vite's catch-all fallback.
@@ -306,8 +300,7 @@ export default function llui(options: LluiPluginOptions = {}): Plugin {
   const disabledWarnings = new Set<string>(options.disabledWarnings ?? [])
   const verbose = options.verbose === true
   const agent = options.agent ?? false
-  const agentConfig: AgentPluginConfig =
-    typeof agent === 'object' ? agent : {}
+  const agentConfig: AgentPluginConfig = typeof agent === 'object' ? agent : {}
   // Agent server instance — loaded in configResolved (async), registered
   // in configureServer (sync). Null until loaded, or if @llui/agent isn't
   // installed.

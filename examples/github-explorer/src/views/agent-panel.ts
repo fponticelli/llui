@@ -138,9 +138,11 @@ const ACTIVITY_KIND_CHIP = [
   'flex-shrink: 0',
 ].join('; ')
 
-const ACTIVITY_TIME = 'color: #94a3b8; font-size: 10px; flex-shrink: 0; font-variant-numeric: tabular-nums'
+const ACTIVITY_TIME =
+  'color: #94a3b8; font-size: 10px; flex-shrink: 0; font-variant-numeric: tabular-nums'
 
-const ACTIVITY_TEXT = 'color: #334155; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap'
+const ACTIVITY_TEXT =
+  'color: #334155; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap'
 
 function activityChipStyle(kind: LogEntry['kind']): string {
   const base = ACTIVITY_KIND_CHIP
@@ -198,12 +200,19 @@ export function agentPanel(send: Send<Msg>): HTMLElement {
         style: (s: State) =>
           `width: 10px; height: 10px; border-radius: 50%; background: ${statusDotColor(s.agent.connect.status)}; flex-shrink: 0`,
       }),
-      span({
-        style: 'font-weight: 600; font-size: 13px; color: #334155; flex: 1',
-      }, [text('Claude Agent')]),
-      span({
-        style: (s: State) => `font-size: 12px; color: ${s.agent.connect.status === 'active' ? '#059669' : s.agent.connect.status === 'error' ? '#dc2626' : '#64748b'}`,
-      }, [text((s: State) => statusLabel(s.agent.connect.status))]),
+      span(
+        {
+          style: 'font-weight: 600; font-size: 13px; color: #334155; flex: 1',
+        },
+        [text('Claude Agent')],
+      ),
+      span(
+        {
+          style: (s: State) =>
+            `font-size: 12px; color: ${s.agent.connect.status === 'active' ? '#059669' : s.agent.connect.status === 'error' ? '#dc2626' : '#64748b'}`,
+        },
+        [text((s: State) => statusLabel(s.agent.connect.status))],
+      ),
     ]),
 
     // ── Body ────────────────────────────────────────────────────────────────
@@ -222,10 +231,7 @@ export function agentPanel(send: Send<Msg>): HTMLElement {
             ),
           ],
           minting: () => [
-            button(
-              { style: BTN_PRIMARY_DISABLED, disabled: true },
-              [text('Minting token…')],
-            ),
+            button({ style: BTN_PRIMARY_DISABLED, disabled: true }, [text('Minting token…')]),
           ],
           'pending-claude': () => [
             p({ style: 'margin: 0 0 10px; font-size: 13px; color: #475569; line-height: 1.5' }, [
@@ -242,61 +248,76 @@ export function agentPanel(send: Send<Msg>): HTMLElement {
                     s.agent.ui.copied
                       ? BTN_COPY + '; background: #dcfce7; color: #166534'
                       : BTN_COPY,
-                  onClick: () =>
-                    send({ type: 'agent', sub: 'ui', msg: { type: 'Copy' } }),
+                  onClick: () => send({ type: 'agent', sub: 'ui', msg: { type: 'Copy' } }),
                 },
                 [text((s: State) => (s.agent.ui.copied ? 'Copied!' : 'Copy'))],
               ),
             ]),
-            p({
-              style: 'margin: 8px 0 0; font-size: 11px; color: #94a3b8; line-height: 1.4',
-            }, [
-              text(
-                'Tokens are signed with a per-session key — restarting the dev server invalidates them. Set AGENT_SIGNING_KEY for persistence.',
-              ),
-            ]),
+            p(
+              {
+                style: 'margin: 8px 0 0; font-size: 11px; color: #94a3b8; line-height: 1.4',
+              },
+              [
+                text(
+                  'Tokens are signed with a per-session key — restarting the dev server invalidates them. Set AGENT_SIGNING_KEY for persistence.',
+                ),
+              ],
+            ),
           ],
           active: () => [
             ...branch<State, Msg>({
               on: (s) => (s.agent.log.entries.length > 0 ? 'hidden' : 'visible'),
               cases: {
                 visible: () => [
-                  div({
-                    style: [
-                      'display: flex',
-                      'align-items: center',
-                      'gap: 8px',
-                      'padding: 10px 12px',
-                      'background: #f0fdf4',
-                      'border: 1px solid #86efac',
-                      'border-radius: 8px',
-                    ].join('; '),
-                  }, [
-                    span({ style: 'font-size: 18px' }, [text('✓')]),
-                    span({ style: 'font-size: 13px; color: #166534; font-weight: 500' }, [
-                      text('Claude is connected'),
-                    ]),
-                  ]),
+                  div(
+                    {
+                      style: [
+                        'display: flex',
+                        'align-items: center',
+                        'gap: 8px',
+                        'padding: 10px 12px',
+                        'background: #f0fdf4',
+                        'border: 1px solid #86efac',
+                        'border-radius: 8px',
+                      ].join('; '),
+                    },
+                    [
+                      span({ style: 'font-size: 18px' }, [text('✓')]),
+                      span({ style: 'font-size: 13px; color: #166534; font-weight: 500' }, [
+                        text('Claude is connected'),
+                      ]),
+                    ],
+                  ),
                 ],
                 hidden: () => [],
               },
             }),
           ],
           error: () => [
-            div({
-              style: [
-                'padding: 10px 12px',
-                'background: #fef2f2',
-                'border: 1px solid #fca5a5',
-                'border-radius: 8px',
-                'margin-bottom: 10px',
-              ].join('; '),
-            }, [
-              p({ style: 'margin: 0 0 4px; font-size: 13px; color: #991b1b; font-weight: 500' }, [text('Connection error')]),
-              p({ style: 'margin: 0; font-size: 12px; color: #b91c1c' }, [
-                text((s: State) => s.agent.connect.error?.detail ?? s.agent.connect.error?.code ?? 'Unknown error'),
-              ]),
-            ]),
+            div(
+              {
+                style: [
+                  'padding: 10px 12px',
+                  'background: #fef2f2',
+                  'border: 1px solid #fca5a5',
+                  'border-radius: 8px',
+                  'margin-bottom: 10px',
+                ].join('; '),
+              },
+              [
+                p({ style: 'margin: 0 0 4px; font-size: 13px; color: #991b1b; font-weight: 500' }, [
+                  text('Connection error'),
+                ]),
+                p({ style: 'margin: 0; font-size: 12px; color: #b91c1c' }, [
+                  text(
+                    (s: State) =>
+                      s.agent.connect.error?.detail ??
+                      s.agent.connect.error?.code ??
+                      'Unknown error',
+                  ),
+                ]),
+              ],
+            ),
             button(
               {
                 style: BTN_PRIMARY,
@@ -312,19 +333,22 @@ export function agentPanel(send: Send<Msg>): HTMLElement {
 
       // ── Pending confirmations ─────────────────────────────────────────────
       ...branch<State, Msg>({
-        on: (s) => s.agent.confirm.pending.some((e) => e.status === 'pending') ? 'has-pending' : 'none',
+        on: (s) =>
+          s.agent.confirm.pending.some((e) => e.status === 'pending') ? 'has-pending' : 'none',
         cases: {
           'has-pending': () => [
             div({ style: 'margin-top: 14px' }, [
-              p({ style: 'margin: 0 0 8px; font-size: 12px; font-weight: 600; color: #92400e; text-transform: uppercase; letter-spacing: 0.05em' }, [
-                text('Pending confirmations'),
-              ]),
+              p(
+                {
+                  style:
+                    'margin: 0 0 8px; font-size: 12px; font-weight: 600; color: #92400e; text-transform: uppercase; letter-spacing: 0.05em',
+                },
+                [text('Pending confirmations')],
+              ),
               ...each<State, ConfirmEntry, Msg>({
                 items: (s) => s.agent.confirm.pending.filter((e) => e.status === 'pending'),
                 key: (e) => e.id,
-                render: ({ item, send: innerSend }) => [
-                  confirmCard(item, innerSend),
-                ],
+                render: ({ item, send: innerSend }) => [confirmCard(item, innerSend)],
               }),
             ]),
           ],
@@ -356,9 +380,7 @@ function activityRow(item: ItemAccessor<LogEntry>): HTMLElement {
   const at = item((e) => e.at)()
   return div({ style: ACTIVITY_ROW }, [
     span({ style: activityChipStyle(kind) }, [text(kind)]),
-    span({ style: ACTIVITY_TEXT }, [
-      text(item((e) => e.intent ?? e.variant ?? '—')),
-    ]),
+    span({ style: ACTIVITY_TEXT }, [text(item((e) => e.intent ?? e.variant ?? '—'))]),
     span({ style: ACTIVITY_TIME }, [text(relativeTime(Date.now(), at))]),
   ])
 }

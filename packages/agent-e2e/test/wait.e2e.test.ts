@@ -41,9 +41,9 @@ describe('e2e: wait_for_change', () => {
     // Dispatch inc directly from the browser to trigger a state change.
     // All access is inlined — Node helpers are not available inside page.evaluate.
     await ctx.page.evaluate(() => {
-      const h = (
-        window as unknown as { __lluiE2eHandle: { send: (m: unknown) => void } }
-      )['__lluiE2eHandle']
+      const h = (window as unknown as { __lluiE2eHandle: { send: (m: unknown) => void } })[
+        '__lluiE2eHandle'
+      ]
       h.send({ type: 'inc' })
     })
 

@@ -41,18 +41,18 @@ type AppState = {
 async function waitForPending(page: E2EContext['page']): Promise<ConfirmEntry[]> {
   await page.waitForFunction(
     () => {
-      const h = (
-        window as unknown as { __lluiE2eHandle: { getState: () => AppState } }
-      )['__lluiE2eHandle']
+      const h = (window as unknown as { __lluiE2eHandle: { getState: () => AppState } })[
+        '__lluiE2eHandle'
+      ]
       return h.getState().agent.confirm.pending.length > 0
     },
     undefined,
     { timeout: 5_000 },
   )
   return page.evaluate(() => {
-    const h = (
-      window as unknown as { __lluiE2eHandle: { getState: () => AppState } }
-    )['__lluiE2eHandle']
+    const h = (window as unknown as { __lluiE2eHandle: { getState: () => AppState } })[
+      '__lluiE2eHandle'
+    ]
     return h.getState().agent.confirm.pending
   })
 }
@@ -81,9 +81,9 @@ describe('e2e: confirm flow', () => {
 
     // Reject the confirm to close the long-poll cleanly.
     await ctx.page.evaluate((id: string) => {
-      const h = (
-        window as unknown as { __lluiE2eHandle: { send: (m: unknown) => void } }
-      )['__lluiE2eHandle']
+      const h = (window as unknown as { __lluiE2eHandle: { send: (m: unknown) => void } })[
+        '__lluiE2eHandle'
+      ]
       h.send({ type: 'agent', sub: 'confirm', msg: { type: 'Reject', id } })
     }, pendingId)
 
@@ -112,9 +112,9 @@ describe('e2e: confirm flow', () => {
 
     // Approve
     await ctx.page.evaluate((id: string) => {
-      const h = (
-        window as unknown as { __lluiE2eHandle: { send: (m: unknown) => void } }
-      )['__lluiE2eHandle']
+      const h = (window as unknown as { __lluiE2eHandle: { send: (m: unknown) => void } })[
+        '__lluiE2eHandle'
+      ]
       h.send({ type: 'agent', sub: 'confirm', msg: { type: 'Approve', id } })
     }, pendingId)
 

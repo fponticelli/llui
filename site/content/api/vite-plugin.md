@@ -89,17 +89,36 @@ directory. Returns null if @llui/mcp isn't resolvable.
 function resolveMcpCliPath(root: string): string | null
 ```
 
-### `mountAgentDevEndpoints()`
+### `loadAgentServer()`
 
-Auto-mount `@llui/agent/server` on a Vite dev server. Dynamically imports
-so `@llui/agent` is an optional peer — apps without it just see a warning
-and the prod schema emission still works independently.
-HTTP: a connect-style middleware routes `/agent/*` to the agent router.
-WS: we hook `server.httpServer.on('upgrade')` with a path filter so
-Vite's HMR WebSocket on other paths keeps working.
+Dynamically load @llui/agent/server relative to the app root and
+construct an agent server instance. Returns null if @llui/agent isn't
+installed — the plugin degrades to "prod schema emission only" mode.
 
 ```typescript
-function mountAgentDevEndpoints(server: ViteDevServer, cfg: AgentPluginConfig): Promise<void>
+function loadAgentServer(
+  appRoot: string,
+  cfg: AgentPluginConfig,
+): Promise<AgentServerInstance | null>
+```
+
+### `registerAgentMiddleware()`
+
+Register the agent middleware + WS upgrade on the Vite dev server.
+Must be called synchronously from configureServer so registration
+happens BEFORE Vite installs its catch-all SPA fallback.
+
+```typescript
+function registerAgentMiddleware(server: ViteDevServer, agent: AgentServerInstance): void
+```
+
+### `findPackageDir()`
+
+Walk up from `start` looking for `node_modules/<pkgName>`. Returns the
+absolute path to the package directory, or null if not found.
+
+```typescript
+function findPackageDir(start: string, pkgName: string): string | null
 ```
 
 ### `handleAgentRequest()`
@@ -132,6 +151,19 @@ export type AgentPluginConfig = {
    * per-session random key (dev-only).
    */
   signingKey?: string
+}
+```
+
+### `AgentServerInstance`
+
+```typescript
+type AgentServerInstance = {
+  router: (req: Request) => Promise<Response | null>
+  wsUpgrade: (
+    req: import('http').IncomingMessage,
+    socket: import('stream').Duplex,
+    head: Buffer,
+  ) => void
 }
 ```
 
