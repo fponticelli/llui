@@ -3,7 +3,7 @@
  * Hydrates server-rendered HTML when present, otherwise mounts fresh.
  */
 import { mountApp, hydrateApp } from '@llui/dom'
-import { createAgentClient, agentConnect, agentConfirm } from '@llui/agent/client'
+import { createAgentClient, agentConnect, agentConfirm, agentLog } from '@llui/agent/client'
 import type { State, Msg } from './types'
 import { appDef, initialState, setAgentClient } from './app'
 
@@ -37,6 +37,11 @@ if (typeof window !== 'undefined') {
         type: 'agent',
         sub: 'confirm',
         msg: m as agentConfirm.AgentConfirmMsg,
+      }),
+      wrapLogMsg: (m) => ({
+        type: 'agent',
+        sub: 'log',
+        msg: m as agentLog.AgentLogMsg,
       }),
     },
   })

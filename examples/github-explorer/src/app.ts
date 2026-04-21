@@ -250,6 +250,7 @@ export function initialState(url?: string): State {
       connect: agentConnect.init({ mintUrl: '/agent/mint' })[0],
       confirm: agentConfirm.init()[0],
       log: agentLog.init()[0],
+      ui: { copied: false },
     },
   }
 }

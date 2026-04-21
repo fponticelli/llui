@@ -1,4 +1,11 @@
-import type { ClientFrame, ServerFrame, HelloFrame, LogEntry, LogKind } from '../protocol.js'
+import type {
+  ClientFrame,
+  ServerFrame,
+  HelloFrame,
+  LogEntry,
+  LogKind,
+  MessageAnnotations,
+} from '../protocol.js'
 import { handleGetState, type GetStateHost } from './rpc/get-state.js'
 import { handleSendMessage, type SendMessageHost } from './rpc/send-message.js'
 import { handleListActions, type ListActionsHost } from './rpc/list-actions.js'
@@ -43,6 +50,14 @@ export type WsClient = {
 export type WsClientOpts = {
   /** Called once when the server sends an `{t: 'active'}` frame. Idempotent. */
   onActivated?: () => void
+  /**
+   * Called with every LogEntry emitted by the ws-client (one per rpc
+   * dispatched or errored). Used by the factory to mirror the entries
+   * into the app's local `agent.log` slice so the UI can show activity.
+   * The ws-client still sends the outbound `log-append` frame to the
+   * server regardless.
+   */
+  onLogEntry?: (entry: LogEntry) => void
 }
 
 /**
@@ -111,8 +126,9 @@ export function attachWsClient(
       at: Date.now(),
       kind,
       variant: extractVariant(frame.tool, frame.args),
-      intent: undefined,
+      intent: buildIntent(frame.tool, frame.args, rpc.getMsgAnnotations()),
     }
+    opts.onLogEntry?.(logEntry)
     ws.send(JSON.stringify({ t: 'log-append', entry: logEntry } satisfies ClientFrame))
   })
 
@@ -192,4 +208,31 @@ function extractVariant(tool: string, args: unknown): string | undefined {
     return typeof t === 'string' ? t : undefined
   }
   return undefined
+}
+
+// Human-readable label for each rpc. For send_message, prefer the @intent
+// annotation authored on the Msg union; fall back to the raw variant name.
+// For read tools, return a short fixed label so the activity feed doesn't
+// show opaque tool ids like "describe_visible_content".
+function buildIntent(
+  tool: string,
+  args: unknown,
+  annotations: Record<string, MessageAnnotations> | null,
+): string {
+  if (tool === 'send_message') {
+    const a = args as { msg?: { type?: string } } | null
+    const variant = typeof a?.msg?.type === 'string' ? a.msg.type : undefined
+    const annotated = variant ? annotations?.[variant]?.intent : null
+    if (annotated) return annotated
+    return variant ?? 'Send message'
+  }
+  if (tool === 'get_state') return 'Read app state'
+  if (tool === 'list_actions') return 'List available actions'
+  if (tool === 'describe_context') return 'Read current context'
+  if (tool === 'describe_visible_content') return 'Read visible content'
+  if (tool === 'query_dom') {
+    const a = args as { name?: string } | null
+    return a?.name ? `Query DOM: ${a.name}` : 'Query DOM'
+  }
+  return tool
 }

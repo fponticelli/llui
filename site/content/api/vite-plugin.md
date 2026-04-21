@@ -89,10 +89,50 @@ directory. Returns null if @llui/mcp isn't resolvable.
 function resolveMcpCliPath(root: string): string | null
 ```
 
+### `mountAgentDevEndpoints()`
+
+Auto-mount `@llui/agent/server` on a Vite dev server. Dynamically imports
+so `@llui/agent` is an optional peer — apps without it just see a warning
+and the prod schema emission still works independently.
+HTTP: a connect-style middleware routes `/agent/*` to the agent router.
+WS: we hook `server.httpServer.on('upgrade')` with a path filter so
+Vite's HMR WebSocket on other paths keeps working.
+
+```typescript
+function mountAgentDevEndpoints(server: ViteDevServer, cfg: AgentPluginConfig): Promise<void>
+```
+
+### `handleAgentRequest()`
+
+Convert a Node http req → Web Request, call router, write the response.
+
+```typescript
+function handleAgentRequest(
+  req: import('http').IncomingMessage,
+  res: import('http').ServerResponse,
+  router: (req: Request) => Promise<Response | null>,
+): Promise<void>
+```
+
 ### `llui()`
 
 ```typescript
 function llui(options: LluiPluginOptions = {}): Plugin
+```
+
+## Types
+
+### `AgentPluginConfig`
+
+```typescript
+export type AgentPluginConfig = {
+  /**
+   * HMAC signing key for tokens. ≥32 bytes. Rotation invalidates all
+   * tokens. Falls back to `process.env.AGENT_SIGNING_KEY`, then to a
+   * per-session random key (dev-only).
+   */
+  signingKey?: string
+}
 ```
 
 ## Interfaces
@@ -151,12 +191,23 @@ export interface LluiPluginOptions {
   verbose?: boolean
 
   /**
-   * When true, include schemas and binding descriptors in prod builds so
-   * the @llui/agent runtime has metadata to advertise over its WS hello
-   * frame. Default false — matches prior behavior (metadata is dev-only).
-   * See agent spec §7.4 and Plan 3b.
+   * Enables two things together when set:
+   *
+   *   1. Emits schemas + binding descriptors in prod builds so the
+   *      @llui/agent runtime has metadata to advertise over its WS hello
+   *      frame (see agent spec §7.4).
+   *   2. Auto-mounts `@llui/agent/server`'s router at `/agent/*` and its
+   *      WS upgrade handler at `/agent/ws` on the Vite dev server — so
+   *      plain `vite dev` has working agent endpoints with no extra
+   *      server.ts wiring. Requires `@llui/agent` installed; if it isn't,
+   *      the plugin warns and skips dev mounting (prod emission still
+   *      works from Plan 3b).
+   *
+   * Pass `true` for defaults (random signing key per dev session;
+   * `identityResolver` returns `'dev-user'`). Pass an object to customize.
+   * Default `false` — metadata is dev-only, no agent endpoints.
    */
-  agent?: boolean
+  agent?: boolean | AgentPluginConfig
 }
 ```
 

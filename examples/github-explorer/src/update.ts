@@ -10,7 +10,7 @@ import type {
   Issue,
 } from './types'
 import { agentConnect, agentConfirm, agentLog } from './types'
-import { http, cancel, debounce } from '@llui/effects'
+import { http, cancel, debounce, timeout, clipboardWrite } from '@llui/effects'
 import {
   searchUrl,
   repoUrl,
@@ -194,6 +194,30 @@ export function update(state: State, msg: Msg): [State, Effect[]] {
         case 'log': {
           const [next, effects] = agentLog.update(state.agent.log, msg.msg)
           return [{ ...state, agent: { ...state.agent, log: next } }, effects]
+        }
+        case 'ui': {
+          switch (msg.msg.type) {
+            case 'Copy': {
+              const snippet = state.agent.connect.pendingToken?.connectSnippet ?? ''
+              if (!snippet) return [state, []]
+              return [
+                { ...state, agent: { ...state.agent, ui: { ...state.agent.ui, copied: true } } },
+                [
+                  clipboardWrite(snippet),
+                  timeout<Msg>(2000, {
+                    type: 'agent',
+                    sub: 'ui',
+                    msg: { type: 'CopyFaded' },
+                  }),
+                ],
+              ]
+            }
+            case 'CopyFaded':
+              return [
+                { ...state, agent: { ...state.agent, ui: { ...state.agent.ui, copied: false } } },
+                [],
+              ]
+          }
         }
       }
     }

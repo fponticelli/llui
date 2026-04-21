@@ -32,6 +32,13 @@ export type CreateAgentClientOpts<State, Msg> = {
     getConfirm: (s: State) => AgentConfirmState
     wrapConnectMsg: (m: unknown) => Msg
     wrapConfirmMsg: (m: unknown) => Msg
+    /**
+     * Optional: wrap an agentLog msg so the client-side activity feed
+     * mirrors what Claude is doing. If omitted, outbound log-append
+     * frames still go to the server, but the local agent.log slice
+     * stays empty (the UI won't show activity).
+     */
+    wrapLogMsg?: (m: unknown) => Msg
   }
 }
 
@@ -88,6 +95,11 @@ export function createAgentClient<State, Msg>(
         onActivated: () => {
           opts.handle.send(opts.slices.wrapConnectMsg({ type: 'ActivatedByClaude' }))
         },
+        onLogEntry: opts.slices.wrapLogMsg
+          ? (entry) => {
+              opts.handle.send(opts.slices.wrapLogMsg!({ type: 'Append', entry }))
+            }
+          : undefined,
       })
       ws.addEventListener('open', () => {
         opts.handle.send(opts.slices.wrapConnectMsg({ type: 'WsOpened' }))

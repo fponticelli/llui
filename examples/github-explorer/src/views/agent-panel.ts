@@ -2,8 +2,12 @@ import { div, button, span, p, text, branch, each } from '@llui/dom'
 import type { State, Msg } from '../types'
 import type { Send, ItemAccessor } from '@llui/dom'
 import { agentConfirm } from '@llui/agent/client'
+import type { LogEntry } from '@llui/agent/protocol'
 
 type ConfirmEntry = agentConfirm.ConfirmEntry
+
+// How many recent activity entries to show in the panel.
+const ACTIVITY_WINDOW = 8
 
 // ── Design tokens ──────────────────────────────────────────────────────────────
 
@@ -102,6 +106,70 @@ const CONFIRM_CARD = [
   'margin-top: 8px',
 ].join('; ')
 
+const SECTION_LABEL = [
+  'margin: 14px 0 8px',
+  'font-size: 11px',
+  'font-weight: 600',
+  'color: #64748b',
+  'text-transform: uppercase',
+  'letter-spacing: 0.06em',
+].join('; ')
+
+const ACTIVITY_ROW = [
+  'display: flex',
+  'align-items: baseline',
+  'gap: 8px',
+  'padding: 6px 0',
+  'border-top: 1px solid #f1f5f9',
+  'font-size: 12px',
+  'line-height: 1.4',
+].join('; ')
+
+const ACTIVITY_KIND_CHIP = [
+  'display: inline-block',
+  'min-width: 58px',
+  'padding: 2px 6px',
+  'border-radius: 4px',
+  'font-size: 10px',
+  'font-weight: 600',
+  'text-transform: uppercase',
+  'letter-spacing: 0.04em',
+  'text-align: center',
+  'flex-shrink: 0',
+].join('; ')
+
+const ACTIVITY_TIME = 'color: #94a3b8; font-size: 10px; flex-shrink: 0; font-variant-numeric: tabular-nums'
+
+const ACTIVITY_TEXT = 'color: #334155; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap'
+
+function activityChipStyle(kind: LogEntry['kind']): string {
+  const base = ACTIVITY_KIND_CHIP
+  switch (kind) {
+    case 'dispatched':
+    case 'confirmed':
+      return base + '; background: #dcfce7; color: #166534'
+    case 'read':
+      return base + '; background: #e0e7ff; color: #3730a3'
+    case 'proposed':
+      return base + '; background: #fef3c7; color: #92400e'
+    case 'blocked':
+    case 'rejected':
+      return base + '; background: #fee2e2; color: #991b1b'
+    case 'error':
+      return base + '; background: #fee2e2; color: #7f1d1d; font-weight: 700'
+    default:
+      return base + '; background: #e2e8f0; color: #475569'
+  }
+}
+
+function relativeTime(now: number, at: number): string {
+  const delta = Math.max(0, now - at)
+  if (delta < 1000) return 'now'
+  if (delta < 60_000) return `${Math.floor(delta / 1000)}s`
+  if (delta < 3_600_000) return `${Math.floor(delta / 60_000)}m`
+  return `${Math.floor(delta / 3_600_000)}h`
+}
+
 // ── Status dot ─────────────────────────────────────────────────────────────────
 
 function statusDotColor(status: string): string {
@@ -170,23 +238,16 @@ export function agentPanel(send: Send<Msg>): HTMLElement {
               ]),
               button(
                 {
-                  style: BTN_COPY,
-                  onClick: () => {
-                    const s = document.querySelector<HTMLElement>('[data-agent-snippet]')
-                    const snippet = s?.textContent ?? ''
-                    if (snippet && typeof navigator !== 'undefined' && 'clipboard' in navigator) {
-                      void navigator.clipboard.writeText(snippet)
-                    }
-                  },
+                  style: (s: State) =>
+                    s.agent.ui.copied
+                      ? BTN_COPY + '; background: #dcfce7; color: #166534'
+                      : BTN_COPY,
+                  onClick: () =>
+                    send({ type: 'agent', sub: 'ui', msg: { type: 'Copy' } }),
                 },
-                [text('Copy')],
+                [text((s: State) => (s.agent.ui.copied ? 'Copied!' : 'Copy'))],
               ),
             ]),
-            // hidden data-agent-snippet carrier for clipboard read
-            span({
-              'data-agent-snippet': '',
-              style: 'display: none',
-            }, [text((s: State) => s.agent.connect.pendingToken?.connectSnippet ?? '')]),
             p({
               style: 'margin: 8px 0 0; font-size: 11px; color: #94a3b8; line-height: 1.4',
             }, [
@@ -196,20 +257,30 @@ export function agentPanel(send: Send<Msg>): HTMLElement {
             ]),
           ],
           active: () => [
-            div({
-              style: [
-                'display: flex',
-                'align-items: center',
-                'gap: 8px',
-                'padding: 10px 12px',
-                'background: #f0fdf4',
-                'border: 1px solid #86efac',
-                'border-radius: 8px',
-              ].join('; '),
-            }, [
-              span({ style: 'font-size: 18px' }, [text('✓')]),
-              span({ style: 'font-size: 13px; color: #166534; font-weight: 500' }, [text('Claude is connected')]),
-            ]),
+            ...branch<State, Msg>({
+              on: (s) => (s.agent.log.entries.length > 0 ? 'hidden' : 'visible'),
+              cases: {
+                visible: () => [
+                  div({
+                    style: [
+                      'display: flex',
+                      'align-items: center',
+                      'gap: 8px',
+                      'padding: 10px 12px',
+                      'background: #f0fdf4',
+                      'border: 1px solid #86efac',
+                      'border-radius: 8px',
+                    ].join('; '),
+                  }, [
+                    span({ style: 'font-size: 18px' }, [text('✓')]),
+                    span({ style: 'font-size: 13px; color: #166534; font-weight: 500' }, [
+                      text('Claude is connected'),
+                    ]),
+                  ]),
+                ],
+                hidden: () => [],
+              },
+            }),
           ],
           error: () => [
             div({
@@ -260,7 +331,35 @@ export function agentPanel(send: Send<Msg>): HTMLElement {
           none: () => [],
         },
       }),
+
+      // ── Recent activity ───────────────────────────────────────────────────
+      ...branch<State, Msg>({
+        on: (s) => (s.agent.log.entries.length > 0 ? 'has-activity' : 'none'),
+        cases: {
+          'has-activity': () => [
+            p({ style: SECTION_LABEL }, [text('Recent activity')]),
+            ...each<State, LogEntry, Msg>({
+              items: (s) => s.agent.log.entries.slice(-ACTIVITY_WINDOW).slice().reverse(),
+              key: (e) => e.id,
+              render: ({ item }) => [activityRow(item)],
+            }),
+          ],
+          none: () => [],
+        },
+      }),
     ]),
+  ])
+}
+
+function activityRow(item: ItemAccessor<LogEntry>): HTMLElement {
+  const kind = item((e) => e.kind)()
+  const at = item((e) => e.at)()
+  return div({ style: ACTIVITY_ROW }, [
+    span({ style: activityChipStyle(kind) }, [text(kind)]),
+    span({ style: ACTIVITY_TEXT }, [
+      text(item((e) => e.intent ?? e.variant ?? '—')),
+    ]),
+    span({ style: ACTIVITY_TIME }, [text(relativeTime(Date.now(), at))]),
   ])
 }
 

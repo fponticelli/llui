@@ -83,6 +83,13 @@ type AgentLogMsg = agentLog.AgentLogMsg
 
 export { agentConnect, agentConfirm, agentLog }
 
+export type AgentUiState = {
+  /** True for ~2s after the user clicks the Copy snippet button. */
+  copied: boolean
+}
+
+export type AgentUiMsg = { type: 'Copy' } | { type: 'CopyFaded' }
+
 export interface State {
   route: Route
   query: string
@@ -90,6 +97,7 @@ export interface State {
     connect: agentConnect.AgentConnectState
     confirm: agentConfirm.AgentConfirmState
     log: agentLog.AgentLogState
+    ui: AgentUiState
   }
 }
 
@@ -131,6 +139,8 @@ export type Msg =
   | { type: 'agent'; sub: 'confirm'; msg: AgentConfirmMsg }
   /** @humanOnly */
   | { type: 'agent'; sub: 'log'; msg: AgentLogMsg }
+  /** @humanOnly */
+  | { type: 'agent'; sub: 'ui'; msg: AgentUiMsg }
 
 // ── Effects ──────────────────────────────────────────────────────
 
