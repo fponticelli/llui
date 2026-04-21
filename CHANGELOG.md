@@ -11,6 +11,80 @@ All notable changes to LLui packages are documented here. LLui is a pre-1.0 proj
 
 Packages version in lockstep at release time: `@llui/dom`, `@llui/vite-plugin`, `@llui/test`, `@llui/router`, `@llui/transitions`, `@llui/components`, `@llui/vike` share a version line. `@llui/effects`, `@llui/mcp`, and `@llui/lint-idiomatic` have their own cadence.
 
+## 2026-04-21 — 0.0.29
+
+**Released:** `@llui/{dom,vite-plugin,test,router,transitions,components,vike}@0.0.29`; `@llui/mcp@0.0.23`; `@llui/lint-idiomatic@0.0.13`; **`@llui/agent@0.0.29`** _(first release)_; **`llui-agent@0.0.1`** _(first release)_
+
+Inaugural release of the LLui agent stack: a full LAP (LLui Agent Protocol) server + browser client + Claude Desktop bridge that lets Claude drive any LLui app directly.
+
+### `@llui/agent@0.0.29` _(new package)_
+
+First release. Provides both the server-side LAP endpoint and the browser-side client slices needed to make a LLui app driveable by Claude.
+
+**Server (`@llui/agent/server`)**
+
+- **Added** `createLluiAgentServer(opts)` factory — mounts a full HTTP+WS agent server. HTTP routes: `POST /agent/mint`, `POST /agent/revoke`, `GET /agent/sessions`, `POST /agent/resume/list`, `POST /agent/resume/claim`. LAP routes: `/lap/v1/describe`, `/lap/v1/message`, `/lap/v1/wait`, `/lap/v1/confirm-result`.
+- **Added** WebSocket upgrade handler at `/agent/ws` — authenticates via HMAC token, pairs the browser to a Claude session, relays RPC frames.
+- **Added** `signToken` / `verifyToken` — HMAC-SHA256 mint/verify with configurable signing key; falls back to a random per-session key in dev.
+- **Added** `InMemoryTokenStore` — default token store; pluggable via the `tokenStore` option.
+- **Added** `defaultIdentityResolver` — signed-cookie identity; pluggable via `identityResolver`.
+- **Added** `defaultRateLimiter` — 60 req/min per identity; pluggable via `rateLimiter`.
+- **Added** `consoleAuditSink` — logs every LAP action to stdout; pluggable via `auditSink`.
+- **Added** 6 LAP RPC handlers: `get_state` (JSON-pointer path resolution), `list_actions` (bindings + affordances + annotations), `describe_context`, `query_dom`, `describe_visible_content`, `send_message` (annotation gating + confirm-propose flow).
+- **Added** `WsPairingRegistry` — tid→pairing map with rpc correlation and pending-confirmation long-poll support.
+
+**Client (`@llui/agent/client`)**
+
+- **Added** `createAgentClient(opts)` factory — composes the WebSocket client with the HTTP effect handler; accepts `wrapConnectMsg`, `wrapConfirmMsg`, `wrapLogMsg` slices for integration with the host app's `update()`.
+- **Added** `agentConnect` headless component — manages WS lifecycle (`awaiting-ws → awaiting-claude → active`), token minting, and the connect-snippet for Claude Desktop.
+- **Added** `agentConfirm` headless component — handles the pending-confirmation UI flow (propose → user accept/reject → resolved).
+- **Added** `agentLog` headless component — ring-buffered action log (`entries: LogEntry[]`); updated via `wrapLogMsg`.
+- **Added** `ws-client` — hello frame dispatch, RPC round-trip, `log-append` frame emission with human-readable intent labels built from `@intent` annotations and fixed labels for read tools (`"Read app state"`, `"List available actions"`, etc.).
+- **Added** State-update and log-append frame emission so the host app's local `agent.log` slice mirrors Claude's actions in real time.
+- **Fixed** Claude-bound activation signal — `ActivatedByClaude` fires only after the server sends `{t: "active"}`, preventing premature `active` status.
+- **Fixed** `WsOpened` / `WsClosed` dispatched to `agentConnect` slice on WebSocket events.
+- **Fixed** Unknown msg variants rejected early with a structured error; 500 responses now include real `Error` name/message/stack (first 5 frames) in `detail` so Claude sees actionable diagnostics.
+
+### `llui-agent@0.0.1` _(new package)_
+
+First release. A Claude Desktop MCP bridge CLI (`npx llui-agent`) that connects Claude to any running LLui app's agent endpoints.
+
+- **Added** stdio MCP transport — lists and calls LAP tools on behalf of Claude Desktop.
+- **Added** `BindingMap` — per-session `{url, token, describe}` state keyed by session ID.
+- **Added** `forwardLap` — generic POST dispatcher that proxies tool calls to the app's LAP routes.
+- **Added** `/llui-connect` MCP prompt — guides Claude through the connection handshake.
+- **Added** Full MCP tool surface: `llui_connect_session`, `get_state`, `list_actions`, `send_message`, `describe_context`, `query_dom`, `describe_visible_content`, `wait`, `confirm_result`.
+
+### `@llui/dom@0.0.29`
+
+- **Added** `AppHandle.subscribe(listener)` — post-update state-change listener. Called after every update cycle with `(newState, prevState)`. Returns an unsubscribe function. Safe to call from outside `view()`.
+- **Added** `LluiComponentDef.__msgAnnotations`, `.__bindingDescriptors`, `.__schemaHash` — injected by the compiler; consumed by `@llui/agent` to populate the hello frame without runtime reflection.
+
+### `@llui/vite-plugin@0.0.29`
+
+- **Added** `extractMsgAnnotations` — reads JSDoc tags (`@intent`, `@humanOnly`, `@alwaysAffordable`, `@readSurface`) from the `Msg` union and emits them as `__msgAnnotations` on the compiled `component()` call.
+- **Added** `extractBindingDescriptors` — walks `view()` to collect bound message variants and emits them as `__bindingDescriptors`.
+- **Added** `computeSchemaHash` — stable SHA-256 over the message schema; emitted as `__schemaHash` so the agent can detect schema drift without a full describe round-trip.
+- **Added** `agent?: boolean | AgentPluginConfig` — extends the existing `agent: true` shorthand with an object form accepting `signingKey`. When set, also auto-mounts `@llui/agent/server` HTTP and WS handlers on the Vite dev server so plain `vite dev` has working agent endpoints without a custom `server.ts`.
+
+### `@llui/lint-idiomatic@0.0.13`
+
+- **Added** Rule `agent-missing-intent` — warns when a user-dispatchable `Msg` variant lacks an `@intent` JSDoc tag, which Claude needs to understand what the action does.
+- **Added** Rule `agent-exclusive-annotations` — warns when `@humanOnly` and `@alwaysAffordable` appear on the same variant (mutually exclusive).
+- **Added** Rule `agent-nonextractable-handler` — warns when an `onEffect` handler can't be statically associated with an effect type, preventing the compiler from extracting its affordances.
+- **Fixed** `@humanOnly` variants are now exempt from `agent-missing-intent` — intent annotations on human-only messages were never required.
+- **Improved** Perfect-score threshold updated to 20 to account for the new agent rules.
+
+### `@llui/mcp@0.0.23`
+
+- **Improved** Perfect-score threshold updated to 20 to match the new `@llui/lint-idiomatic` rule set.
+
+### `@llui/{test,router,transitions,components,vike}@0.0.29`
+
+- Rebuilt against `@llui/dom@0.0.29`. No source changes.
+
+---
+
 ## 2026-04-19 — 0.0.28
 
 **Released:** `@llui/{dom,vite-plugin,test,router,transitions,components,vike}@0.0.28`; `@llui/mcp@0.0.22`
