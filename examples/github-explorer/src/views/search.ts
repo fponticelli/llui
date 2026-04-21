@@ -86,7 +86,7 @@ export function searchView(send: Send<Msg>): Node[] {
           loading: () => [div({ class: 'loading' }, [text('Searching...')])],
           empty: () => [div({ class: 'loading' }, [text('No repositories found.')])],
           results: ({ send }) => [
-            ul({ class: 'repo-list' }, [
+            ul({ class: 'repo-list', 'data-agent': 'search-results' }, [
               ...each<State, Repo, Msg>({
                 items: (s) => searchRepos(s),
                 key: (r) => r.id,
@@ -96,6 +96,7 @@ export function searchView(send: Send<Msg>): Node[] {
             div({ class: 'pagination' }, [
               button(
                 {
+                  'data-agent': 'prev-page',
                   disabled: (s: State) => currentPage(s) <= 1,
                   onClick: () => send({ type: 'prevPage' }),
                 },
@@ -108,6 +109,7 @@ export function searchView(send: Send<Msg>): Node[] {
               }),
               button(
                 {
+                  'data-agent': 'next-page',
                   disabled: (s: State) => currentPage(s) * 10 >= searchTotal(s),
                   onClick: () => send({ type: 'nextPage' }),
                 },

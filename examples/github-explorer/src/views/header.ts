@@ -20,6 +20,7 @@ export function header(send: Send<Msg>): HTMLElement {
           input({
             type: 'text',
             placeholder: 'Search repositories...',
+            'data-agent': 'search-input',
             value: (s: State) => s.query,
             onInput: (e: Event) =>
               send({ type: 'setQuery', value: (e.target as HTMLInputElement).value }),
