@@ -86,13 +86,24 @@ export function attachWsClient(
       ws.send(JSON.stringify(reply))
     } catch (e: unknown) {
       rpcErr = e as { code?: string; detail?: string }
+      // When a plain JS exception bubbles up (TypeError, RangeError, etc.),
+      // rpcErr has no .code/.detail. Enrich the detail with the actual
+      // message + stack so the server/Claude can see the real cause.
+      const detail =
+        rpcErr.detail ??
+        (e instanceof Error
+          ? `${e.name}: ${e.message}${e.stack ? '\n' + e.stack.split('\n').slice(0, 5).join('\n') : ''}`
+          : undefined)
       const errFrame: ClientFrame = {
         t: 'rpc-error',
         id: frame.id,
         code: rpcErr.code ?? 'internal',
-        detail: rpcErr.detail,
+        detail,
       }
       ws.send(JSON.stringify(errFrame))
+      // Also log to the browser console so operators see the real cause even
+      // when the server/Claude just show "internal".
+      console.error(`[llui-agent] rpc handler threw for ${frame.tool}:`, e)
     }
     const kind = getLogKindForTool(frame.tool, result, rpcErr)
     const logEntry: LogEntry = {

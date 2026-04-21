@@ -42,7 +42,20 @@ export async function handleLapMessage(req: Request, deps: LapMessageDeps): Prom
   } catch (e: unknown) {
     const err = e as { code?: string; detail?: string }
     const status = err.code === 'paused' ? 503 : err.code === 'timeout' ? 504 : 500
-    return json({ error: { code: err.code ?? 'internal', detail: err.detail } }, status)
+    // Build a detail string that surfaces whatever info we have — the rpc-error
+    // frame from the browser sometimes lacks `detail` (e.g., when a JS TypeError
+    // bubbles out of the handler). Falling back to the code + any Error-like
+    // fields gives Claude something actionable instead of an opaque 500.
+    const detail =
+      err.detail ??
+      (e instanceof Error ? `${e.name}: ${e.message}` : undefined) ??
+      (err.code ? `rpc rejected with code '${err.code}'` : 'rpc rejected without a code')
+    // Mirror to the server console so operators see the real cause even when
+    // the client just shows "internal".
+    console.error(
+      `[llui-agent] /lap/v1/message 500 — code=${err.code ?? 'internal'}, detail=${detail}`,
+    )
+    return json({ error: { code: err.code ?? 'internal', detail } }, status)
   }
 
   const nowMs = (deps.now ?? (() => Date.now()))()
