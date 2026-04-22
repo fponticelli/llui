@@ -11,6 +11,18 @@ All notable changes to LLui packages are documented here. LLui is a pre-1.0 proj
 
 Packages version in lockstep at release time: `@llui/dom`, `@llui/vite-plugin`, `@llui/test`, `@llui/router`, `@llui/transitions`, `@llui/components`, `@llui/vike` share a version line. `@llui/effects`, `@llui/mcp`, and `@llui/lint-idiomatic` have their own cadence.
 
+## 2026-04-22 — @llui/vike@0.0.30
+
+**Released:** `@llui/vike@0.0.30`
+
+Point-fix release for a client-navigation regression introduced in 0.0.26 that broke content-driven sites where multiple routes share a single `ComponentDef`. Reported against the llui.dev docs site; other lockstep packages ship unchanged at 0.0.29.
+
+### `@llui/vike@0.0.30`
+
+- **Fixed** Page layer is no longer counted as a "surviving layer" by the chain diff on client navigation. Since 0.0.26, two routes whose `+Page.ts` files resolved to the same `ComponentDef` reference — the normal pattern for content-driven sites where every page re-exports a shared component (e.g. `DocPage`) and per-route `+data.ts` supplies the content — were treated as a matching chain entry. `firstMismatch` advanced past the page slot, the adapter hit the `isNoOp` short-circuit, and only `onMount` fired: URL bar advanced, DOM stayed frozen on the previous route. The chain diff now bounds `firstMismatch` to the layout prefix, so the page slot is always divergent and `init(data)` re-runs on every nav regardless of `ComponentDef` identity — matching the contract the README already documented ("Navigating from `/dashboard/reports` to `/dashboard/overview` only disposes the `Page`"). Persistent layouts, `propsMsg` dispatch on surviving layouts, hydration envelope handling, and chain growth/shrink semantics are unchanged. Three regression tests cover the same-def nav scenario end-to-end.
+
+---
+
 ## 2026-04-21 — 0.0.29
 
 **Released:** `@llui/{dom,vite-plugin,test,router,transitions,components,vike}@0.0.29`; `@llui/mcp@0.0.23`; `@llui/lint-idiomatic@0.0.13`; **`@llui/agent@0.0.29`** _(first release)_; **`llui-agent@0.0.1`** _(first release)_
