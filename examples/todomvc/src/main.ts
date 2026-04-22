@@ -24,11 +24,17 @@ type State = {
 }
 
 type Msg =
+  /** @intent("Add a new to-do item") */
   | { type: 'add'; text: string }
+  /** @intent("Toggle the completion status of a to-do item") */
   | { type: 'toggle'; id: number }
+  /** @intent("Remove a to-do item") */
   | { type: 'remove'; id: number }
+  /** @intent("Toggle the completion status of all to-do items") */
   | { type: 'toggleAll' }
+  /** @intent("Set the filter for the to-do list") */
   | { type: 'setFilter'; filter: Filter }
+  /** @intent("Clear all completed to-do items") */
   | { type: 'clearCompleted' }
 
 const initialTodos: Todo[] = [

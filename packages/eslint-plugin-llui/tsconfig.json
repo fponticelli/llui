@@ -1,0 +1,10 @@
+{
+  "extends": "../../tsconfig.json",
+  "compilerOptions": {
+    "moduleResolution": "bundler",
+    "module": "ESNext",
+    "verbatimModuleSyntax": false,
+    "target": "ES2022"
+  },
+  "include": ["src", "test"]
+}

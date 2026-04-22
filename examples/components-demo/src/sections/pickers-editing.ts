@@ -30,7 +30,10 @@ const children = {
 } as const
 
 type State = ChildState<typeof children>
-type Msg = ChildMsg<typeof children> | { type: 'copyText'; value: string }
+type Msg =
+  | ChildMsg<typeof children>
+  /** @intent("Copy the given text to the clipboard") */
+  | { type: 'copyText'; value: string }
 
 let localSend: (m: Msg) => void = () => {
   throw new Error('send not initialized')

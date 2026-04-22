@@ -1,0 +1,36 @@
+{
+  "name": "eslint-plugin-llui",
+  "version": "0.0.1",
+  "type": "commonjs",
+  "exports": {
+    ".": "./dist/index.js"
+  },
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "check": "tsc --noEmit",
+    "lint": "eslint src",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@typescript-eslint/utils": "^8.59.0"
+  },
+  "peerDependencies": {
+    "eslint": ">=8.0.0"
+  },
+  "devDependencies": {
+    "@typescript-eslint/parser": "^8.59.0",
+    "@typescript-eslint/rule-tester": "^8.59.0",
+    "eslint": "^9.10.0"
+  },
+  "description": "ESLint plugin enforcing idiomatic LLui patterns",
+  "keywords": [
+    "eslint",
+    "eslintplugin",
+    "eslint-plugin",
+    "llui",
+    "idiomatic"
+  ],
+  "author": "Franco Ponticelli <franco.ponticelli@gmail.com>",
+  "license": "MIT"
+}

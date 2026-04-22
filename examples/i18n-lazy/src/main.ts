@@ -137,8 +137,11 @@ type State = {
 }
 
 type Msg =
+  /** @intent("Set the locale for the application") */
   | { type: 'setLocale'; key: LocaleKey }
+  /** @intent("Load statistics asynchronously") */
   | { type: 'loadStats' }
+  /** @intent("Handle dialog updates") */
   | { type: 'dialog'; msg: DialogMsg }
 
 // ── Component ───────────────────────────────────────────────────

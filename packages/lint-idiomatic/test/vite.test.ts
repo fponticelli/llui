@@ -149,63 +149,65 @@ describe('lintIdiomatic vite plugin', () => {
     expect(typeof plugin.transform).toBe('function')
   })
 
-  it('emits warnings via this.warn() for each violation', () => {
+  it('emits errors via this.error() for each violation by default', () => {
     const plugin = lintIdiomaticPlugin()
-    const { warnings, errors } = runTransform(plugin, STATE_MUTATION_SOURCE, '/app/main.ts')
-    expect(errors).toHaveLength(0)
-    expect(warnings.length).toBeGreaterThan(0)
-    expect(warnings.some((w) => w.msg.includes('state-mutation'))).toBe(true)
+    const { warnings, errors } = runTransform(plugin, STATE_MUTATION_SOURCE, '/app.ts')
+    expect(warnings).toHaveLength(0)
+    expect(errors.length).toBeGreaterThan(0)
+    expect(errors.some((e) => e.msg.includes('state-mutation'))).toBe(true)
   })
 
-  it('includes the rule name and suggestion in the warning message', () => {
+  it('includes the rule name and suggestion in the error message', () => {
     const plugin = lintIdiomaticPlugin()
-    const { warnings } = runTransform(plugin, STATE_MUTATION_SOURCE, '/app/main.ts')
-    const mutation = warnings.find((w) => w.msg.includes('state-mutation'))
+    const { errors } = runTransform(plugin, STATE_MUTATION_SOURCE, '/app.ts')
+    const mutation = errors.find((e) => e.msg.includes('state-mutation'))
     expect(mutation).toBeDefined()
     // Rule name is prefixed in brackets
     expect(mutation!.msg).toMatch(/^\[state-mutation\]/)
+    // Suggestion is appended
+    expect(mutation!.msg).toMatch(/ Suggestion: /)
   })
 
   it('skips files outside .ts/.tsx', () => {
     const plugin = lintIdiomaticPlugin()
-    const { warnings } = runTransform(plugin, STATE_MUTATION_SOURCE, '/app/main.js')
-    expect(warnings).toHaveLength(0)
+    const { errors } = runTransform(plugin, STATE_MUTATION_SOURCE, '/app/main.js')
+    expect(errors).toHaveLength(0)
   })
 
   it('skips node_modules by default', () => {
     const plugin = lintIdiomaticPlugin()
-    const { warnings } = runTransform(
+    const { errors } = runTransform(
       plugin,
       STATE_MUTATION_SOURCE,
       '/app/node_modules/some-pkg/main.ts',
     )
-    expect(warnings).toHaveLength(0)
+    expect(errors).toHaveLength(0)
   })
 
   it('excludes map-on-state-array by default (overlap with @llui/vite-plugin)', () => {
     const plugin = lintIdiomaticPlugin()
-    const { warnings } = runTransform(plugin, MAP_ON_STATE_SOURCE, '/app/main.ts')
-    expect(warnings.some((w) => w.msg.includes('map-on-state-array'))).toBe(false)
+    const { errors } = runTransform(plugin, MAP_ON_STATE_SOURCE, '/app/main.ts')
+    expect(errors.some((e) => e.msg.includes('map-on-state-array'))).toBe(false)
   })
 
   it('includes map-on-state-array when the user passes exclude: []', () => {
     const plugin = lintIdiomaticPlugin({ exclude: [] })
-    const { warnings } = runTransform(plugin, MAP_ON_STATE_SOURCE, '/app/main.ts')
-    expect(warnings.some((w) => w.msg.includes('map-on-state-array'))).toBe(true)
+    const { errors } = runTransform(plugin, MAP_ON_STATE_SOURCE, '/app/main.ts')
+    expect(errors.some((e) => e.msg.includes('map-on-state-array'))).toBe(true)
   })
 
   it('respects custom exclude list', () => {
     const plugin = lintIdiomaticPlugin({ exclude: ['state-mutation'] })
-    const { warnings } = runTransform(plugin, STATE_MUTATION_SOURCE, '/app/main.ts')
-    expect(warnings.some((w) => w.msg.includes('state-mutation'))).toBe(false)
+    const { errors } = runTransform(plugin, STATE_MUTATION_SOURCE, '/app/main.ts')
+    expect(errors.some((e) => e.msg.includes('state-mutation'))).toBe(false)
   })
 
-  it('calls this.error() when failOnError is true', () => {
-    const plugin = lintIdiomaticPlugin({ failOnError: true })
+  it('calls this.warn() when failOnError is false', () => {
+    const plugin = lintIdiomaticPlugin({ failOnError: false })
     const { warnings, errors } = runTransform(plugin, STATE_MUTATION_SOURCE, '/app/main.ts')
-    expect(warnings).toHaveLength(0)
-    expect(errors.length).toBeGreaterThan(0)
-    expect(errors.some((e) => e.msg.includes('state-mutation'))).toBe(true)
+    expect(errors).toHaveLength(0)
+    expect(warnings.length).toBeGreaterThan(0)
+    expect(warnings.some((w) => w.msg.includes('state-mutation'))).toBe(true)
   })
 
   it('invokes onLint callback for every transformed file', () => {

@@ -1,7 +1,13 @@
 import { component, mountApp, div, button } from '@llui/dom'
 
 type State = { count: number }
-type Msg = { type: 'inc' } | { type: 'dec' } | { type: 'reset' }
+type Msg =
+  /** @intent("Increment the counter") */
+  | { type: 'inc' }
+  /** @intent("Decrement the counter") */
+  | { type: 'dec' }
+  /** @intent("Reset the counter to 0") */
+  | { type: 'reset' }
 
 const Counter = component<State, Msg, never>({
   name: 'Counter',

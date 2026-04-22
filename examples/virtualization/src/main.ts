@@ -64,7 +64,11 @@ type State = {
   visible: number
 }
 
-type Msg = { type: 'setCount'; count: number } | { type: 'visibleChanged'; n: number }
+type Msg =
+  /** @intent("Set the number of logs to generate") */
+  | { type: 'setCount'; count: number }
+  /** @intent("Update the number of visible DOM nodes") */
+  | { type: 'visibleChanged'; n: number }
 
 // ── Component ───────────────────────────────────────────────────
 

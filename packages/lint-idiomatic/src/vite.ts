@@ -23,8 +23,8 @@ export interface LintIdiomaticPluginOptions {
   devOnly?: boolean
 
   /**
-   * Fail the build on any violation. Default `false` — violations are
-   * emitted as warnings.
+   * Fail the build on any violation. Default `true` — violations are
+   * emitted as errors.
    */
   failOnError?: boolean
 
@@ -67,7 +67,7 @@ const DEFAULT_SKIP: readonly RegExp[] = [/\/node_modules\//, /\/dist\//]
 export default function lintIdiomaticPlugin(options: LintIdiomaticPluginOptions = {}): Plugin {
   const exclude = options.exclude ?? DEFAULT_EXCLUDES
   const skip = options.skip ?? DEFAULT_SKIP
-  const failOnError = options.failOnError ?? false
+  const failOnError = options.failOnError ?? true
   const devOnly = options.devOnly ?? false
   const onLint = options.onLint
 

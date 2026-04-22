@@ -26,7 +26,12 @@ type Item = { id: number; label: string }
 const children = { toc, cascade: cascadeSelect, list: asyncList, presence, qr: qrCode } as const
 
 type State = ChildState<typeof children>
-type Msg = ChildMsg<typeof children> | { type: 'qrInput'; value: string } | { type: 'loadPage' }
+type Msg =
+  | ChildMsg<typeof children>
+  /** @intent("Update the input value for the QR code") */
+  | { type: 'qrInput'; value: string }
+  /** @intent("Load the next page of async list items") */
+  | { type: 'loadPage' }
 
 // uqr returns { data: boolean[][], size, version } — we just need the 2D
 // array in llui's matrix shape.

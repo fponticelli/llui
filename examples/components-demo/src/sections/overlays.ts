@@ -70,8 +70,11 @@ type State = ChildState<typeof children> & {
 }
 type Msg =
   | ChildMsg<typeof children>
+  /** @intent("Handle confirm dialog actions") */
   | { type: 'confirm'; msg: ConfirmDialogMsg }
+  /** @intent("Emit a new toast notification") */
   | { type: 'emitToast'; kind: ToastKind; title: string; description: string }
+  /** @intent("Ask for user confirmation") */
   | { type: 'askConfirm'; tag: string; title: string; description: string; destructive: boolean }
 
 let localSend: (m: Msg) => void = () => {

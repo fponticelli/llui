@@ -30,10 +30,15 @@ type State = {
 }
 
 type Msg =
+  /** @intent("Set the locale for the dashboard") */
   | { type: 'setLocale'; locale: string }
+  /** @intent("Handle charts intersection observer updates") */
   | { type: 'charts'; msg: InViewMsg }
+  /** @intent("Handle sorting updates for priorities") */
   | { type: 'sort'; msg: SortableMsg }
+  /** @intent("Reorder the priorities list") */
   | { type: 'reorderPriorities'; from: number; to: number }
+  /** @intent("Change the application theme") */
   | { type: 'setTheme'; theme: Theme }
 
 const INITIAL_PRIORITIES: Priority[] = [
