@@ -1743,6 +1743,7 @@ function checkSpreadInChildren(
         'virtualEach',
         'onMount',
         'provide',
+        'provideValue',
         'pageSlot',
       ])
       for (const arg of node.arguments) {
