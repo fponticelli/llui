@@ -216,11 +216,11 @@ describe('persistent layouts — surviving-layer prop updates', () => {
     expect(document.querySelector('.page-b')).not.toBeNull()
   })
 
-  it('updates surviving layers even on a no-op page nav (same Page def)', async () => {
-    // Edge case: if PageA → PageA (same def, no real page swap), the
-    // chain diff sees zero mismatches and the adapter would early-return
-    // BEFORE reaching the surviving-update loop unless we run it first.
-    // Verify that surviving layer updates happen even on a no-op nav.
+  it('updates surviving layers on a same-Page-def nav', async () => {
+    // Scenario: PageA → PageA with changed layout data. The page layer
+    // is always treated as divergent, so the page itself disposes and
+    // remounts; the surviving layout in front of it still needs its
+    // `propsMsg` dispatch. Verify both sides of that contract.
     const render = createOnRenderClient({ Layout: NavAwareLayout })
 
     await render({
@@ -229,6 +229,8 @@ describe('persistent layouts — surviving-layer prop updates', () => {
       isHydration: false,
     })
     expect(document.querySelector('.layout-pathname')!.textContent).toBe('/x')
+    const layoutBefore = document.querySelector('.layout')
+    const pageBefore = document.querySelector('.page-a')
 
     await render({
       Page: PageA, // ← same page def
@@ -238,5 +240,10 @@ describe('persistent layouts — surviving-layer prop updates', () => {
 
     expect(document.querySelector('.layout-pathname')!.textContent).toBe('/y')
     expect(document.querySelector('.layout-update-count')!.textContent).toBe('1')
+    // Layout DOM node preserved (surviving layer).
+    expect(document.querySelector('.layout')).toBe(layoutBefore)
+    // Page DOM node replaced — same def, but a fresh mount.
+    expect(document.querySelector('.page-a')).not.toBe(pageBefore)
+    expect(document.querySelector('.page-a')).not.toBeNull()
   })
 })

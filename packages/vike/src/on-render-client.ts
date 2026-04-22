@@ -308,9 +308,35 @@ async function renderClient(
     return
   }
 
-  // Subsequent nav — diff the chain to find the divergent suffix.
+  // Subsequent nav — diff the layout chain to find the divergent suffix.
+  //
+  // The page (innermost entry, always stored at chainHandles[length-1])
+  // is NEVER considered a surviving layer: every client navigation
+  // disposes the current page and mounts fresh, even when the incoming
+  // `pageContext.Page` happens to resolve to the same `ComponentDef`
+  // reference as the outgoing one.
+  //
+  // Rationale: the persistent-layout feature is about keeping app
+  // *chrome* alive across navigation — headers, sidebars, focus traps,
+  // session state. The page, by definition, is the thing that changes
+  // per route. Content-driven sites routinely share one `ComponentDef`
+  // across many routes (e.g. a docs site where every `+Page.ts`
+  // re-exports the same `DocPage` and per-route `+data.ts` supplies
+  // the content). Treating same-def page navs as no-ops would freeze
+  // those sites visually while the URL advances — a regression that
+  // shipped in 0.0.26 and was reported against the llui.dev site.
+  //
+  // `propsMsg` is still honored for *layouts* that want to react to
+  // nav-scoped data (pathname, session, breadcrumbs) without
+  // remounting — see the loop below. The page is deliberately excluded
+  // from that path because `init(data)` always re-runs for it.
   let firstMismatch = 0
-  const minLen = Math.min(chainHandles.length, newChain.length)
+  // `chainHandles` stores `[...layouts, page]`, so the layout prefix
+  // length is `chainHandles.length - 1` (or 0 on first fresh mount, when
+  // the chain is still empty). Bounding `minLen` by this length keeps
+  // `firstMismatch` from ever advancing into the page slot.
+  const prevLayoutLen = chainHandles.length === 0 ? 0 : chainHandles.length - 1
+  const minLen = Math.min(prevLayoutLen, layoutChain.length)
   while (firstMismatch < minLen && chainHandles[firstMismatch]!.def === newChain[firstMismatch]) {
     firstMismatch++
   }
@@ -327,6 +353,10 @@ async function renderClient(
   // to whole-value Object.is for primitives / non-records. This matches
   // child()'s prop-diff behavior, which is what the report asked us to
   // mirror. Layers without `propsMsg` are skipped silently — opt-in.
+  //
+  // This loop is layouts-only by construction: `firstMismatch` is
+  // bounded by `layoutChain.length` above, so indices [0, firstMismatch)
+  // never reach the page slot.
   for (let i = 0; i < firstMismatch; i++) {
     const entry = chainHandles[i]!
     const newData = newChainData[i]
@@ -343,19 +373,10 @@ async function renderClient(
   // Determine whether this nav replaces the entire root or only a suffix.
   // For the root swap, the outermost layer mounts/hydrates via mountApp/
   // hydrateApp on rootEl. For a deeper swap, the mount target is an
-  // anchor comment owned by the surviving layer's slot.
+  // anchor comment owned by the surviving layer's slot. `firstMismatch
+  // === 0` covers two cases: no layouts configured (page-only chain,
+  // every nav is a root swap) and all layouts diverging (full re-render).
   const isRootSwap = firstMismatch === 0
-
-  // If everything matches (same chain end-to-end with same defs), this
-  // is effectively a no-op nav — the page def hasn't changed. We still
-  // fire onMount so callers can run per-render side effects, and the
-  // surviving-layer data updates above already ran. But there's nothing
-  // to dispose or mount, so skip the rest of the work.
-  const isNoOp = firstMismatch === chainHandles.length && firstMismatch === newChain.length
-  if (isNoOp) {
-    options.onMount?.()
-    return
-  }
 
   // onLeave runs BEFORE any teardown. Outgoing DOM still mounted here.
   // Skip on the very first mount — there's no outgoing page to leave.

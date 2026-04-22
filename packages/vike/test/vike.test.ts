@@ -22,10 +22,11 @@ const TestPage = component<State, never, never>({
   view: () => [div({ class: 'page' }, [text((s: State) => s.greeting)])],
 })
 
-// Distinct second page for nav-lifecycle tests. The chain-diff logic
-// treats same-def navs as no-ops (correct: nothing actually changed),
-// so exercising real leave/mount/enter requires a *different* Page def
-// on the second call.
+// Distinct second page for nav-lifecycle tests. The page always
+// disposes and remounts on navigation regardless of def identity, but
+// using a different def here makes the lifecycle assertions unambiguous
+// — observed DOM changes and state transitions are clearly attributable
+// to the swap rather than to a chance match of `ComponentDef` refs.
 const OtherPage = component<State, never, never>({
   name: 'OtherPage',
   init: () => [{ greeting: 'hello again' }, []],
@@ -314,8 +315,10 @@ describe('createOnRenderClient — onLeave / onEnter lifecycle', () => {
 
     order.length = 0
     await render({ Page: OtherPage, isHydration: false })
-    // Second nav: leave → enter → mount. OtherPage !== TestPage so the
-    // diff picks up a mismatch at depth 0 and does a full re-render.
+    // Second nav: leave → enter → mount. The page layer is always
+    // disposed and remounted on nav — the firing of `leave` here
+    // would be identical if OtherPage were replaced by TestPage (see
+    // the "same Page def" regression test below).
     expect(order).toEqual(['leave', 'enter', 'mount'])
 
     teardown(container)
@@ -366,6 +369,117 @@ describe('createOnRenderClient — onLeave / onEnter lifecycle', () => {
     expect(container.textContent).toContain('hello')
 
     teardown(container)
+  })
+})
+
+describe('createOnRenderClient — same Page def across routes', () => {
+  // Regression coverage for the llui.dev docs site, where every
+  // `pages/*/+Page.ts` re-exports a single `DocPage` component and
+  // per-route `+data.ts` supplies the content. Before this fix, the
+  // chain diff treated a same-def page nav as a no-op (page layer was
+  // counted as a "surviving layer"), so the URL advanced while the
+  // DOM stayed frozen on the previous route's content. The fix treats
+  // the page layer as always-divergent: `init(data)` re-runs on every
+  // nav regardless of `ComponentDef` identity.
+
+  type DocState = { title: string; body: string }
+
+  const DocPage = component<DocState, never, never, DocState>({
+    name: 'DocPage',
+    init: (data) => [data, []],
+    update: (s) => [s, []],
+    view: ({ text }) => [
+      div({ class: 'doc' }, [
+        div({ class: 'title' }, [text((s: DocState) => s.title)]),
+        div({ class: 'body' }, [text((s: DocState) => s.body)]),
+      ]),
+    ],
+  })
+
+  beforeEach(() => {
+    _resetChainForTest()
+    document.body.innerHTML = ''
+    const container = document.createElement('div')
+    container.id = 'app'
+    document.body.appendChild(container)
+  })
+
+  it('re-inits the page with new data when the route changes but the Page def is identical', async () => {
+    const render = createOnRenderClient({})
+
+    await render({
+      Page: DocPage,
+      data: { title: 'Getting started', body: 'Install LLui…' },
+      isHydration: false,
+    })
+    expect(document.querySelector('.title')!.textContent).toBe('Getting started')
+    expect(document.querySelector('.body')!.textContent).toBe('Install LLui…')
+
+    // Same `DocPage` ComponentDef ref, different data — the scenario
+    // the bug stumbled on. Expect the new data in the DOM.
+    await render({
+      Page: DocPage,
+      data: { title: 'Cookbook', body: 'Forms, async, lists…' },
+      isHydration: false,
+    })
+    expect(document.querySelector('.title')!.textContent).toBe('Cookbook')
+    expect(document.querySelector('.body')!.textContent).toBe('Forms, async, lists…')
+  })
+
+  it('disposes the outgoing page instance on same-def nav (fresh DOM, no stale bindings)', async () => {
+    const render = createOnRenderClient({})
+
+    await render({
+      Page: DocPage,
+      data: { title: 'A', body: 'a' },
+      isHydration: false,
+    })
+    const firstTitleEl = document.querySelector('.title')
+    expect(firstTitleEl).not.toBeNull()
+
+    await render({
+      Page: DocPage,
+      data: { title: 'B', body: 'b' },
+      isHydration: false,
+    })
+    const secondTitleEl = document.querySelector('.title')
+    // The DOM node must be a fresh element from the new mount, not the
+    // previous instance's element with re-bound text. A surviving page
+    // would retain the same DOM node identity across the nav.
+    expect(secondTitleEl).not.toBe(firstTitleEl)
+    expect(secondTitleEl!.textContent).toBe('B')
+  })
+
+  it('fires onLeave + onEnter on same-def nav (page is never a surviving layer)', async () => {
+    const order: string[] = []
+    const render = createOnRenderClient({
+      onLeave: () => {
+        order.push('leave')
+      },
+      onEnter: () => {
+        order.push('enter')
+      },
+      onMount: () => {
+        order.push('mount')
+      },
+    })
+
+    await render({
+      Page: DocPage,
+      data: { title: 'A', body: 'a' },
+      isHydration: false,
+    })
+    // First mount: no outgoing page to leave.
+    expect(order).toEqual(['enter', 'mount'])
+
+    order.length = 0
+    await render({
+      Page: DocPage, // same def, new data
+      data: { title: 'B', body: 'b' },
+      isHydration: false,
+    })
+    // Nav: the page swaps even though the def ref matches.
+    expect(order).toEqual(['leave', 'enter', 'mount'])
   })
 })
 
