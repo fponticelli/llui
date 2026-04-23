@@ -1,11 +1,14 @@
 {
-  "name": "eslint-plugin-llui",
-  "version": "0.0.1",
+  "name": "@llui/eslint-plugin",
+  "version": "0.0.13",
   "type": "commonjs",
   "exports": {
     ".": "./dist/index.js"
   },
   "main": "dist/index.js",
+  "files": [
+    "dist"
+  ],
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
     "check": "tsc --noEmit",
@@ -19,6 +22,7 @@
     "eslint": ">=8.0.0"
   },
   "devDependencies": {
+    "@types/node": "^22.0.0",
     "@typescript-eslint/parser": "^8.59.0",
     "@typescript-eslint/rule-tester": "^8.59.0",
     "eslint": "^9.10.0"
@@ -32,5 +36,14 @@
     "idiomatic"
   ],
   "author": "Franco Ponticelli <franco.ponticelli@gmail.com>",
-  "license": "MIT"
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/fponticelli/llui.git",
+    "directory": "packages/eslint-plugin-llui"
+  },
+  "bugs": {
+    "url": "https://github.com/fponticelli/llui/issues"
+  },
+  "homepage": "https://github.com/fponticelli/llui/tree/main/packages/eslint-plugin-llui#readme"
 }

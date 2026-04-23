@@ -41,7 +41,7 @@ const llmsTxt = `# LLui
 - @llui/test — Test harness: testComponent, testView, propertyTest, replayTrace
 - @llui/vike — Vike SSR/SSG adapter
 - @llui/mcp — MCP server for LLM debug tools
-- @llui/lint-idiomatic — 15 anti-pattern rules
+- @llui/eslint-plugin — 20 anti-pattern rules
 
 ## Documentation
 

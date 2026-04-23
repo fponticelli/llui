@@ -77,7 +77,7 @@ export function siteLayout<S extends LayoutState, M extends LayoutMsg>({
           navLink<S>('/api/test', 'api/test', 'test', text),
           navLink<S>('/api/vike', 'api/vike', 'vike', text),
           navLink<S>('/api/mcp', 'api/mcp', 'mcp', text),
-          navLink<S>('/api/lint-idiomatic', 'api/lint-idiomatic', 'lint-idiomatic', text),
+          navLink<S>('/api/eslint-plugin-llui', 'api/eslint-plugin-llui', 'eslint-plugin', text),
         ],
       ),
 

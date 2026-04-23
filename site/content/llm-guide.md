@@ -80,7 +80,7 @@ implementation. The split exists only because TypeScript can't infer
   scratch scripts → **import directly** and annotate `(s: State) => …`
   where you read state.
 
-The `@llui/lint-idiomatic` plugin's `view-bag-import` rule enforces this
+The `@llui/eslint-plugin`'s `view-bag-import` rule enforces this
 automatically. It only fires inside files that contain a `component()`
 call, leaving helper modules alone.
 

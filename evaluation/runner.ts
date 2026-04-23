@@ -305,15 +305,21 @@ function checkCompile(filePath: string): { pass: boolean; errors: string[] } {
 
 function checkIdiomatic(filePath: string): number {
   try {
-    // Try to use @llui/lint-idiomatic if available
-    const source = readFileSync(filePath, 'utf8')
-    // Dynamic import would be used in production; for now return placeholder
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const { lintIdiomatic } = require('../packages/lint-idiomatic/dist/index.js') as {
-      lintIdiomatic: (source: string, filename?: string) => { score: number }
+    const { execSync } = require('child_process')
+    const output = execSync(`pnpm exec eslint --format json "${filePath}"`, { encoding: 'utf8' })
+    const results = JSON.parse(output)
+    const violations = results[0]?.messages || []
+    return Math.max(0, 20 - violations.length)
+  } catch (err: any) {
+    if (err.stdout) {
+      try {
+        const results = JSON.parse(err.stdout)
+        const violations = results[0]?.messages || []
+        return Math.max(0, 20 - violations.length)
+      } catch {
+        return -1
+      }
     }
-    return lintIdiomatic(source, filePath).score
-  } catch {
     return -1 // lint not available
   }
 }

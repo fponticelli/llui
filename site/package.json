@@ -14,7 +14,7 @@
     "vike": "^0.4.256"
   },
   "devDependencies": {
-    "@llui/lint-idiomatic": "workspace:*",
+    "@llui/eslint-plugin": "workspace:*",
     "@llui/vite-plugin": "workspace:*",
     "gray-matter": "^4.0.3",
     "rehype-stringify": "^10.0.1",

@@ -8,7 +8,7 @@ const PACKAGES = [
   'transitions',
   'vike',
   'mcp',
-  'lint-idiomatic',
+  'eslint-plugin-llui',
 ]
 
 export default (pageContext: { urlPathname: string }) => {

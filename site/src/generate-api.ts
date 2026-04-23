@@ -515,7 +515,7 @@ const PACKAGES: { name: string; sourceFiles?: string[] }[] = [
   { name: 'test', sourceFiles: ['index.ts'] },
   { name: 'vike', sourceFiles: ['on-render-html.ts', 'on-render-client.ts'] },
   { name: 'mcp', sourceFiles: ['index.ts'] },
-  { name: 'lint-idiomatic', sourceFiles: ['index.ts'] },
+  { name: 'eslint-plugin-llui', sourceFiles: ['index.ts'] },
   { name: 'vite-plugin', sourceFiles: ['index.ts'] },
 ]
 

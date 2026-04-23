@@ -63,23 +63,23 @@ LLui provides first-class tooling for AI workflows:
 - **[llms.txt](/llms.txt)** — concise framework reference for system prompts
 - **[llms-full.txt](/llms-full.txt)** — comprehensive reference with all APIs, patterns, and rules (~47KB, fits in most context windows)
 - **[@llui/mcp](/api/mcp)** — MCP server exposing debug tools directly to LLMs via Model Context Protocol
-- **[@llui/lint-idiomatic](/api/lint-idiomatic)** — 15 anti-pattern rules that catch common LLM mistakes before they reach production
+- **[@llui/eslint-plugin](/api/eslint-plugin-llui)** — 21 anti-pattern rules that catch common LLM mistakes before they reach production
 - **[LLM Guide](/llm-guide)** — system prompt and idiomatic patterns for AI code generation
 
 ## Packages
 
-| Package                                       | Description                                                                                |
-| --------------------------------------------- | ------------------------------------------------------------------------------------------ |
-| [`@llui/dom`](/api/dom)                       | Runtime — component, mount, scope tree, bindings, structural primitives, element helpers   |
-| [`@llui/vite-plugin`](/api/vite-plugin)       | Compiler — 3-pass TypeScript transform, template cloning, source maps                      |
-| [`@llui/effects`](/api/effects)               | Effect system — http, cancel, debounce, sequence, race, websocket, retry, upload           |
-| [`@llui/router`](/api/router)                 | Routing — structured path matching, history/hash mode, guards, link helper                 |
-| [`@llui/transitions`](/api/transitions)       | Animation helpers — `transition()`, `fade`, `slide`, `scale`, `collapse`, `flip`, `spring` |
-| [`@llui/components`](/api/components)         | 58 headless components + opt-in theme (CSS tokens, dark mode, Tailwind class helpers)      |
-| [`@llui/test`](/api/test)                     | Test harness — testComponent, testView, propertyTest, replayTrace                          |
-| [`@llui/vike`](/api/vike)                     | Vike SSR/SSG adapter — onRenderHtml, onRenderClient                                        |
-| [`@llui/mcp`](/api/mcp)                       | MCP server — LLM debug tools via Model Context Protocol                                    |
-| [`@llui/lint-idiomatic`](/api/lint-idiomatic) | Linter — 15 anti-pattern rules for idiomatic LLui                                          |
+| Package                                          | Description                                                                                |
+| ------------------------------------------------ | ------------------------------------------------------------------------------------------ |
+| [`@llui/dom`](/api/dom)                          | Runtime — component, mount, scope tree, bindings, structural primitives, element helpers   |
+| [`@llui/vite-plugin`](/api/vite-plugin)          | Compiler — 3-pass TypeScript transform, template cloning, source maps                      |
+| [`@llui/effects`](/api/effects)                  | Effect system — http, cancel, debounce, sequence, race, websocket, retry, upload           |
+| [`@llui/router`](/api/router)                    | Routing — structured path matching, history/hash mode, guards, link helper                 |
+| [`@llui/transitions`](/api/transitions)          | Animation helpers — `transition()`, `fade`, `slide`, `scale`, `collapse`, `flip`, `spring` |
+| [`@llui/components`](/api/components)            | 58 headless components + opt-in theme (CSS tokens, dark mode, Tailwind class helpers)      |
+| [`@llui/test`](/api/test)                        | Test harness — testComponent, testView, propertyTest, replayTrace                          |
+| [`@llui/vike`](/api/vike)                        | Vike SSR/SSG adapter — onRenderHtml, onRenderClient                                        |
+| [`@llui/mcp`](/api/mcp)                          | MCP server — LLM debug tools via Model Context Protocol                                    |
+| [`@llui/eslint-plugin`](/api/eslint-plugin-llui) | ESLint plugin — 21 anti-pattern rules for idiomatic LLui                                   |
 
 ## Performance
 

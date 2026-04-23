@@ -1,5 +1,4 @@
-import { existsSync, readFileSync } from 'node:fs'
-import { lintIdiomatic } from '@llui/lint-idiomatic'
+import { existsSync } from 'node:fs'
 import type { ToolRegistry } from '../tool-registry.js'
 import { generateReplayTest } from './replay-test-generator.js'
 import { domDiff, diffState } from '../util/diff.js'
@@ -510,65 +509,57 @@ export function registerDebugApiTools(registry: ToolRegistry): void {
     {
       name: 'llui_lint',
       description:
-        "Lint LLui source code against @llui/lint-idiomatic's 20 anti-pattern rules. Returns violations grouped by rule with line/column/suggestion fields, plus a 0–20 score (20 = fully idiomatic). Pass either `source` (raw TypeScript code) or `path` (absolute file path on the dev machine) — exactly one is required. The optional `exclude` array skips specific rule names. Use this after writing or editing LLui code to self-correct: catches state mutation, missing memo(), each() closure violations, view-bag-import (use the bag inside component bodies, see llm-guide.md), missing exhaustive update() cases, async update() (must be sync), nested send() in update(), spread-in-children (use each() instead), imperative DOM in view(), and more. The same rules run as a Vite plugin in dev — this tool gives LLMs the same feedback without requiring a build.",
+        "Lint LLui source code against ESLint LLui rules. Returns violations grouped by rule. Pass 'path' (absolute file path on the dev machine).",
       inputSchema: {
         type: 'object',
         properties: {
-          source: {
-            type: 'string',
-            description: 'TypeScript source code to lint. Mutually exclusive with `path`.',
-          },
           path: {
             type: 'string',
-            description:
-              'Absolute file path to read and lint (must be a .ts/.tsx file). Mutually exclusive with `source`.',
-          },
-          exclude: {
-            type: 'array',
-            items: { type: 'string' },
-            description:
-              "Rule names to skip (e.g. ['map-on-state-array']). Useful when running in a project that already gets that rule from @llui/vite-plugin's diagnose() pass.",
+            description: 'Absolute file path to read and lint.',
           },
         },
+        required: ['path'],
       },
     },
     'debug-api',
     async (args, _ctx) => {
-      const sourceArg = args.source as string | undefined
-      const pathArg = args.path as string | undefined
-      const excludeArg = args.exclude as string[] | undefined
+      const pathArg = args.path as string
 
-      if (sourceArg !== undefined && pathArg !== undefined) {
-        throw new Error("llui_lint: provide either 'source' or 'path', not both")
+      if (!pathArg.endsWith('.ts') && !pathArg.endsWith('.tsx')) {
+        throw new Error(`llui_lint: only .ts/.tsx files are supported, got: ${pathArg}`)
       }
-      if (sourceArg === undefined && pathArg === undefined) {
-        throw new Error("llui_lint: must provide either 'source' or 'path'")
+      if (!existsSync(pathArg)) {
+        throw new Error(`llui_lint: file not found: ${pathArg}`)
       }
 
-      let code: string
-      let filename: string
-      if (sourceArg !== undefined) {
-        code = sourceArg
-        filename = 'input.ts'
-      } else {
-        if (!pathArg!.endsWith('.ts') && !pathArg!.endsWith('.tsx')) {
-          throw new Error(`llui_lint: path must end in .ts or .tsx (got ${pathArg!})`)
+      const { execSync } = await import('node:child_process')
+      try {
+        const output = execSync(`pnpm exec eslint --format json "${pathArg}"`, { encoding: 'utf8' })
+        const results = JSON.parse(output)
+        const violations = results[0]?.messages || []
+        return {
+          file: pathArg,
+          score: Math.max(0, 20 - violations.length),
+          violations,
+          summary: `${violations.length} violation(s)`,
         }
-        if (!existsSync(pathArg!)) {
-          throw new Error(`llui_lint: file not found: ${pathArg!}`)
+      } catch (err: unknown) {
+        const e = err as { stdout?: string; message?: string }
+        if (e.stdout) {
+          try {
+            const results = JSON.parse(e.stdout)
+            const violations = results[0]?.messages || []
+            return {
+              file: pathArg,
+              score: Math.max(0, 20 - violations.length),
+              violations,
+              summary: `${violations.length} violation(s)`,
+            }
+          } catch {
+            // fall through to throw below
+          }
         }
-        code = readFileSync(pathArg!, 'utf8')
-        filename = pathArg!
-      }
-
-      const result = lintIdiomatic(code, filename, {
-        exclude: excludeArg,
-      })
-      return {
-        file: filename,
-        score: result.score,
-        violations: result.violations,
-        summary: `${result.violations.length} violation(s), score ${result.score}/20`,
+        throw new Error(`ESLint failed: ${e.message}`, { cause: err })
       }
     },
   )

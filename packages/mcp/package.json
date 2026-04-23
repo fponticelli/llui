@@ -23,7 +23,7 @@
   },
   "dependencies": {
     "@llui/dom": "workspace:*",
-    "@llui/lint-idiomatic": "workspace:*",
+    "@llui/eslint-plugin": "workspace:*",
     "@modelcontextprotocol/sdk": "^1.29.0",
     "ws": "^8.18.0"
   },
