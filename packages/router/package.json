@@ -1,6 +1,6 @@
 {
   "name": "@llui/router",
-  "version": "0.0.29",
+  "version": "0.0.30",
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -21,7 +21,7 @@
     "test": "vitest run"
   },
   "peerDependencies": {
-    "@llui/dom": "^0.0.29"
+    "@llui/dom": "^0.0.30"
   },
   "devDependencies": {
     "@llui/dom": "workspace:*",

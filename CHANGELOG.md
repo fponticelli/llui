@@ -9,7 +9,66 @@ All notable changes to LLui packages are documented here. LLui is a pre-1.0 proj
 
 **How to read this file:** entries are anchored by **release date**. Inside each release, fixes are grouped by **`@llui/<package>@<version>`** sub-sections so you always know exactly which package and version a bullet applies to. Cross-cutting changes that affect every package (like build-output fixes) live under a shared "All packages" section. Breaking changes and migration notes sit at the top of each release block because they usually cut across multiple packages.
 
-Packages version in lockstep at release time: `@llui/dom`, `@llui/vite-plugin`, `@llui/test`, `@llui/router`, `@llui/transitions`, `@llui/components`, `@llui/vike` share a version line. `@llui/effects`, `@llui/mcp`, and `@llui/lint-idiomatic` have their own cadence.
+Packages version in lockstep at release time: `@llui/dom`, `@llui/vite-plugin`, `@llui/test`, `@llui/router`, `@llui/transitions`, `@llui/components`, `@llui/vike` share a version line. `@llui/effects`, `@llui/mcp`, `@llui/eslint-plugin`, `@llui/agent`, and `llui-agent` have their own cadence.
+
+## 2026-04-24 — 0.0.30
+
+**Released:** `@llui/{dom,vite-plugin,test,router,transitions,components}@0.0.30`; `@llui/vike@0.0.31`; `@llui/mcp@0.0.24`; `@llui/eslint-plugin@0.0.14`; `@llui/agent@0.0.30`; `llui-agent@0.0.2`
+
+Two headline changes: `@llui/mcp` grows from 23 → 38+ tools across four new phases (CDP screenshots + a11y, compiler cache introspection, source grep + test/lint, SSR hydration + render). `@llui/agent` adds the `observe` tool and drained `send_message` semantics, cutting the "check state → act → check state" loop from five MCP round-trips to two.
+
+### Breaking
+
+- **`@llui/lint-idiomatic` is gone.** The rules have been migrated into `@llui/eslint-plugin`. Drop the `@llui/lint-idiomatic` dependency, replace imports with `@llui/eslint-plugin`, and remove the old package from any `eslint.config.ts` entries — the rule ids stay the same.
+
+### Migration
+
+- Remove `@llui/lint-idiomatic` from your `devDependencies`, add `@llui/eslint-plugin`, and adjust your ESLint config imports.
+- No code changes required for `@llui/agent` users: the new `observe` tool is additive and the new `waitFor: 'drained'` default for `send_message` is a faster, backward-compatible drop-in.
+
+### `@llui/dom@0.0.30`
+
+- **Added** `getCompiledSource`, `getMsgMaskMap`, `getBindingSource`, and `getHydrationReport` on `LluiDebugAPI` — the runtime hooks that back the new `@llui/mcp` compiler/SSR tools. Zero cost in production; only populated when `installDevTools` runs.
+
+### `@llui/vite-plugin@0.0.30`
+
+- **Added** 50-entry LRU compiler cache storing per-component pre/post transform source, Msg→mask map, and binding source locations. Emitted as non-enumerable `Object.defineProperty` calls so production bundles aren't bloated but MCP tooling can read them in dev.
+
+### `@llui/mcp@0.0.24`
+
+- **Added** 15 new tools across four phases:
+  - **CDP (6)** — `llui_screenshot`, `llui_a11y_tree`, `llui_network_tail`, `llui_console_tail`, `llui_uncaught_errors`, `llui_browser_close`. Backed by a lazy Playwright attach (`:9222` user-chrome first, fallback to headless) with ring buffers for console/network/errors.
+  - **Compiler (3)** — `llui_show_compiled`, `llui_explain_mask`, `llui_goto_binding_source`. Read from the vite-plugin's new compiler cache.
+  - **Source (4)** — `llui_find_msg_producers`, `llui_find_msg_handlers`, `llui_run_test`, `llui_lint_project`. Grep + vitest + ESLint at workspace scope.
+  - **SSR (2)** — `llui_hydration_report` (diff client vs server-rendered HTML from `data-llui-ssr-html`), `llui_ssr_render`.
+- **Added** CLI flags `--url` (dev-server target for Playwright) and `--headed` (visible browser window) so the CDP fallback can point at an existing dev server or run visibly for debugging.
+
+### `@llui/agent@0.0.30`
+
+- **Added** `observe` LAP endpoint + browser RPC handler. One call returns `{state, actions, description, context}`, folding in what used to take three separate calls (`describe_app` + `get_state` + `list_actions`).
+- **Added** drain semantics to `send_message`. The default `waitFor: 'drained'` waits for the message queue to go idle (http/delay/debounce round-trips feed back as messages, then quiesce), then returns the fresh state, actions, and a `drain` block with `effectsObserved`, `durationMs`, `timedOut`, and any unhandled effect errors captured during the window. New params: `drainQuietMs` (default 100ms) and `timeoutMs` (default 5000ms, down from 15s).
+- **Improved** Response envelope on `dispatched` now carries `actions` alongside `stateAfter`, so the LLM rarely needs a follow-up `observe` after a send.
+
+### `llui-agent@0.0.2` (agent-bridge)
+
+- **Added** `observe` MCP tool routed to `/lap/v1/observe`. `bridge.ts` caches the returned `description` so subsequent `describe_app` calls short-circuit.
+- **Improved** `send_message` tool schema advertises `waitFor: 'drained' | 'idle' | 'none'`, `drainQuietMs`, and `timeoutMs` controls. Tool descriptions updated to steer Claude toward the efficient path.
+
+### `@llui/eslint-plugin@0.0.14`
+
+- **Added** Rules migrated from the removed `@llui/lint-idiomatic` package: `agent-exclusive-annotations`, `agent-missing-intent`, `agent-nonextractable-handler`, `each-closure-violation`, and related idiomatic-LLui rules. Rule ids unchanged — only the importing package moved.
+
+### `@llui/vike@0.0.31`, `@llui/test@0.0.30`, `@llui/router@0.0.30`, `@llui/transitions@0.0.30`, `@llui/components@0.0.30`
+
+- **Improved** Cascade from `@llui/dom@0.0.30`. No user-visible behavior changes; `components`, `router`, `transitions` pick up the new `^0.0.30` peer range.
+
+### Docs
+
+- **Added** [`/api/agent`](https://llui.dev/api/agent) adoption guide (install, dev middleware, client wiring, `@intent` / `@requiresConfirm` / `@humanOnly` annotations, `agentDocs` / `agentContext` / `agentAffordances`, DOM tagging, production server setup, efficient tool usage, security).
+- **Added** [`/api/agent-bridge`](https://llui.dev/api/agent-bridge) CLI + Claude Desktop config + tool reference.
+- **Updated** Package table on the index page and `llms.txt` to list the agent stack.
+
+---
 
 ## 2026-04-22 — @llui/vike@0.0.30
 
