@@ -22,6 +22,23 @@ function parseHttpFlag(argv: string[]): number | null {
   return Number(process.env.LLUI_MCP_PORT ?? 5200)
 }
 
+/**
+ * Parse `--url <url>` from argv. Returns the URL if present, null otherwise.
+ */
+function parseUrlFlag(argv: string[]): string | null {
+  const idx = argv.indexOf('--url')
+  if (idx < 0) return null
+  const next = argv[idx + 1]
+  return next && !next.startsWith('-') ? next : null
+}
+
+/**
+ * Parse `--headed` from argv. Returns true if the flag is present.
+ */
+function parseHeadedFlag(argv: string[]): boolean {
+  return argv.includes('--headed')
+}
+
 const bridgePort = Number(process.env.LLUI_MCP_PORT ?? 5200)
 const args = process.argv.slice(2)
 const httpPort = parseHttpFlag(args)
@@ -46,7 +63,11 @@ async function main(): Promise<void> {
     // Stdio mode — Claude's `.mcp.json` spawns llui-mcp and talks over
     // stdin/stdout. The bridge runs on its own WebSocket server on
     // `bridgePort`.
-    const server = new LluiMcpServer(bridgePort)
+    const server = new LluiMcpServer({
+      bridgePort,
+      devUrl: parseUrlFlag(args) ?? undefined,
+      headed: parseHeadedFlag(args),
+    })
     server.startBridge()
     const transport = new StdioServerTransport()
     await server.connect(transport)
@@ -78,7 +99,12 @@ async function main(): Promise<void> {
   // file. All MCP sessions route tool calls through its relay via
   // `createSessionMcp()` — ensures the browser-connected state is
   // shared instead of each session creating its own dead relay.
-  const bridgeHost = new LluiMcpServer({ bridgePort: httpPort, attachTo: httpServer })
+  const bridgeHost = new LluiMcpServer({
+    bridgePort: httpPort,
+    attachTo: httpServer,
+    devUrl: parseUrlFlag(args) ?? undefined,
+    headed: parseHeadedFlag(args),
+  })
   bridgeHost.startBridge()
 
   httpServer.listen(httpPort, '127.0.0.1', () => {

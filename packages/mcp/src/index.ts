@@ -8,7 +8,7 @@ import type { Transport } from '@modelcontextprotocol/sdk/shared/transport.js'
 import { ListToolsRequestSchema, CallToolRequestSchema } from '@modelcontextprotocol/sdk/types.js'
 import { ToolRegistry, type ToolContext, type ToolDefinition } from './tool-registry.js'
 import { registerDebugApiTools } from './tools/index.js'
-import { WebSocketRelayTransport, RelayUnavailableError } from './transports/index.js'
+import { WebSocketRelayTransport, RelayUnavailableError, CdpSessionManager } from './transports/index.js'
 
 /**
  * Version advertised in the MCP `initialize` handshake. Read once from
@@ -93,6 +93,17 @@ export interface LluiMcpServerOptions {
    * connect).
    */
   attachTo?: HttpServer
+  /**
+   * Optional dev-server URL for CDP fallback navigation. When provided,
+   * the CDP session manager will use this URL as the target for Playwright
+   * browser instances.
+   */
+  devUrl?: string
+  /**
+   * Whether to run the Playwright browser in headed mode (visible window).
+   * Defaults to false (headless).
+   */
+  headed?: boolean
 }
 
 export class LluiMcpServer {
@@ -100,6 +111,7 @@ export class LluiMcpServer {
   private readonly relay: WebSocketRelayTransport
   private readonly bridgePort: number
   private readonly mcp: McpServer
+  private readonly cdp: CdpSessionManager
   private devUrl: string | null = null
 
   /**
@@ -125,6 +137,10 @@ export class LluiMcpServer {
       port: this.bridgePort,
       attachTo: opts.attachTo,
       markerPath: mcpActiveFilePath(),
+    })
+    this.cdp = new CdpSessionManager({
+      devUrl: opts.devUrl ?? null,
+      headed: opts.headed ?? false,
     })
     registerDebugApiTools(this.registry)
 
@@ -218,6 +234,7 @@ export class LluiMcpServer {
    */
   setDevUrl(url: string): void {
     this.devUrl = url
+    this.cdp.setDevUrl(url)
     if (this.relay.isServerRunning()) this.writeActiveFile()
   }
 
@@ -270,7 +287,7 @@ export class LluiMcpServer {
 
   /** Handle an MCP tool call */
   async handleToolCall(name: string, args: Record<string, unknown>): Promise<unknown> {
-    const ctx: ToolContext = { relay: this.relay, cdp: null }
+    const ctx: ToolContext = { relay: this.relay, cdp: this.cdp }
     return this.registry.dispatch(name, args, ctx)
   }
 }
