@@ -255,3 +255,44 @@ describe.skipIf(!playwright)('MCP auto-connect — real browser + real Vite', ()
     expect(h.consoleErrors.filter((e) => !e.includes('WebSocket'))).toEqual([])
   })
 })
+
+describe.skipIf(!playwright)('CDP tools via Playwright harness', () => {
+  let h: Harness
+
+  beforeAll(async () => {
+    h = await setupHarness()
+    h.mcp.setDevUrl(h.viteUrl)
+  }, 60_000)
+
+  afterAll(async () => {
+    if (h) await teardownHarness(h)
+  }, 10_000)
+
+  it('llui_screenshot returns base64 PNG', async () => {
+    const result = (await h.mcp.handleToolCall('llui_screenshot', {})) as {
+      data: string
+      format: string
+    }
+    expect(result.format).toBe('png')
+    expect(result.data.length).toBeGreaterThan(100)
+  }, 15_000)
+
+  it('llui_a11y_tree returns a truthy tree', async () => {
+    const result = await h.mcp.handleToolCall('llui_a11y_tree', {})
+    expect(result).toBeTruthy()
+  }, 10_000)
+
+  it('llui_console_tail returns array', async () => {
+    const result = (await h.mcp.handleToolCall('llui_console_tail', {})) as {
+      entries: unknown[]
+    }
+    expect(Array.isArray(result.entries)).toBe(true)
+  }, 10_000)
+
+  it('llui_browser_close tears down playwright browser', async () => {
+    const result = (await h.mcp.handleToolCall('llui_browser_close', {})) as {
+      closed: boolean
+    }
+    expect(result.closed).toBe(true)
+  }, 10_000)
+})
