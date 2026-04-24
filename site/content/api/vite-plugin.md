@@ -57,82 +57,6 @@ The compiler emits warnings for common issues:
 
 ## Functions
 
-### `findWorkspaceRoot()`
-
-Locate the workspace root so we share the MCP active marker file
-with @llui/mcp regardless of which subdirectory the dev server runs in.
-Mirrors `findWorkspaceRoot` from @llui/mcp — duplicated to avoid a
-vite-plugin → mcp dependency cycle. The contract must stay in sync.
-
-```typescript
-function findWorkspaceRoot(start: string = process.cwd()): string
-```
-
-### `hasMcpPackage()`
-
-Does `@llui/mcp` resolve from `root`'s node_modules? Uses
-`require.resolve` so monorepo workspaces and hoisted installs both
-work. Catches failures silently — the only consequence is that we
-leave `mcpPort` disabled, which is the safe default.
-
-```typescript
-function hasMcpPackage(root: string): boolean
-```
-
-### `resolveMcpCliPath()`
-
-Resolve the path to the llui-mcp CLI entry. Reads `bin.llui-mcp`
-from @llui/mcp's package.json and joins it against the package
-directory. Returns null if @llui/mcp isn't resolvable.
-
-```typescript
-function resolveMcpCliPath(root: string): string | null
-```
-
-### `loadAgentServer()`
-
-Dynamically load @llui/agent/server relative to the app root and
-construct an agent server instance. Returns null if @llui/agent isn't
-installed — the plugin degrades to "prod schema emission only" mode.
-
-```typescript
-function loadAgentServer(
-  appRoot: string,
-  cfg: AgentPluginConfig,
-): Promise<AgentServerInstance | null>
-```
-
-### `registerAgentMiddleware()`
-
-Register the agent middleware + WS upgrade on the Vite dev server.
-Must be called synchronously from configureServer so registration
-happens BEFORE Vite installs its catch-all SPA fallback.
-
-```typescript
-function registerAgentMiddleware(server: ViteDevServer, agent: AgentServerInstance): void
-```
-
-### `findPackageDir()`
-
-Walk up from `start` looking for `node_modules/<pkgName>`. Returns the
-absolute path to the package directory, or null if not found.
-
-```typescript
-function findPackageDir(start: string, pkgName: string): string | null
-```
-
-### `handleAgentRequest()`
-
-Convert a Node http req → Web Request, call router, write the response.
-
-```typescript
-function handleAgentRequest(
-  req: import('http').IncomingMessage,
-  res: import('http').ServerResponse,
-  router: (req: Request) => Promise<Response | null>,
-): Promise<void>
-```
-
 ### `llui()`
 
 ```typescript
@@ -151,19 +75,6 @@ export type AgentPluginConfig = {
    * per-session random key (dev-only).
    */
   signingKey?: string
-}
-```
-
-### `AgentServerInstance`
-
-```typescript
-type AgentServerInstance = {
-  router: (req: Request) => Promise<Response | null>
-  wsUpgrade: (
-    req: import('http').IncomingMessage,
-    socket: import('stream').Duplex,
-    head: Buffer,
-  ) => void
 }
 ```
 

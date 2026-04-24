@@ -88,18 +88,6 @@ The response envelope includes the new `stateAfter`, fresh `actions`, and a `dra
 function createBridgeServer(deps: BridgeDeps): McpServer
 ```
 
-### `okResult()`
-
-```typescript
-function okResult(body: unknown): CallToolResult
-```
-
-### `errorResult()`
-
-```typescript
-function errorResult(msg: string): CallToolResult
-```
-
 ## Types
 
 ### `BridgeDeps`

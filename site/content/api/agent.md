@@ -391,7 +391,669 @@ See [`@llui/agent-bridge`](/api/agent-bridge) for the full MCP tool list and CLI
 
 <!-- auto-api:start -->
 
+## Functions
+
+### `createLluiAgentCore()`
+
+Compose the runtime-neutral agent server. The returned handle has
+everything the LAP HTTP routes and the WebSocket acceptance
+plumbing need; runtime adapters wire the native upgrade API on
+top (see `@llui/agent/server` for Node, `@llui/agent/server/web`
+for WHATWG runtimes).
+
+```typescript
+function createLluiAgentCore(opts: CoreOptions): AgentCoreHandle
+```
+
+### `createLluiAgentServer()`
+
+Node adapter. Wraps the runtime-neutral core with a Node-specific
+`wsUpgrade` handler that uses the `ws` library. Imports `ws`
+eagerly, so this module only works where `ws` is available — use
+`@llui/agent/server/web` for Cloudflare Workers, Deno, or other
+WHATWG runtimes.
+Spec §10.1, §10.4.
+
+```typescript
+function createLluiAgentServer(opts: ServerOptions): AgentServerHandle
+```
+
+### `signToken()`
+
+Serialize a payload to `llui-agent_<base64url(json)>.<base64url(hmac)>`.
+See spec §6.1. Async because WebCrypto's HMAC sign/verify is the
+cross-runtime standard; Node, Cloudflare, Deno, and Bun all expose
+`crypto.subtle` identically.
+
+```typescript
+function signToken(payload: TokenPayload, key: string | Uint8Array): Promise<AgentToken>
+```
+
+### `verifyToken()`
+
+Verify the signature, parse the payload, and check expiry.
+`crypto.subtle.verify` does the constant-time compare internally,
+so we don't need a separate `timingSafeEqual`.
+
+```typescript
+function verifyToken(
+  token: string,
+  key: string | Uint8Array,
+  nowSec: number = Math.floor(Date.now() / 1000),
+): Promise<VerifyResult>
+```
+
+### `defaultIdentityResolver()`
+
+```typescript
+function defaultIdentityResolver(cfg: IdentityCookieConfig): IdentityResolver
+```
+
+### `signCookieValue()`
+
+Async because `crypto.subtle.sign` is the cross-runtime standard.
+Callers building a `Set-Cookie` header must `await` this.
+
+```typescript
+function signCookieValue(value: string, signingKey: string | Uint8Array): Promise<string>
+```
+
+### `defaultRateLimiter()`
+
+```typescript
+function defaultRateLimiter(cfg: RateLimitConfig, now: () => number = () => Date.now()): RateLimiter
+```
+
+### `rpc()`
+
+Send an `rpc` frame to the paired browser and await its
+matching `rpc-reply` / `rpc-error`. Runs its own one-shot frame
+subscription against the registry — no state stored on the
+registry itself, which keeps the registry small enough to
+implement in a Durable Object or other stateful primitive.
+Rejects with `{code: 'paused'}` when the pairing is absent,
+`{code: 'timeout'}` when the browser doesn't reply in time,
+or whatever the browser sent in its `rpc-error` frame otherwise.
+
+```typescript
+function rpc(
+  registry: PairingRegistry,
+  tid: string,
+  tool: string,
+  args: unknown,
+  opts: RpcOptions = {},
+): Promise<unknown>
+```
+
+### `waitForConfirm()`
+
+Await a `confirm-resolved` frame for the given `confirmId`.
+Resolves with `{outcome: 'user-cancelled'}` on timeout or pairing
+drop (approvals lapse when the user isn't present to act on them).
+
+```typescript
+function waitForConfirm(
+  registry: PairingRegistry,
+  tid: string,
+  confirmId: string,
+  timeoutMs: number,
+): Promise<{ outcome: 'confirmed' | 'user-cancelled'; stateAfter?: unknown }>
+```
+
+### `waitForChange()`
+
+Await a `state-update` frame whose path matches (exact or prefix).
+Used by the long-poll `/lap/v1/wait` endpoint for external state
+pushes (WebSocket messages, timers) arriving while the LLM is idle.
+
+```typescript
+function waitForChange(
+  registry: PairingRegistry,
+  tid: string,
+  path: string | undefined,
+  timeoutMs: number,
+): Promise<{ status: 'changed' | 'timeout'; stateAfter: unknown }>
+```
+
+### `createWHATWGPairingConnection()`
+
+Wrap a WHATWG `WebSocket` in a `PairingConnection`. This is the
+common denominator across Cloudflare Workers (`WebSocketPair`
+server half), Deno (`Deno.upgradeWebSocket().socket`), Bun's
+upgraded socket, and any other runtime that exposes a
+standards-compliant WebSocket object.
+The input type is intentionally the browser/global `WebSocket`
+interface — _not_ the Node `ws` library's variant, which uses an
+EventEmitter API (`on('message', ...)`) rather than
+`addEventListener('message', ...)`. Use `./node/upgrade.ts` for
+the `ws` library path.
+
+```typescript
+function createWHATWGPairingConnection(socket: WebSocket): PairingConnection
+```
+
+### `extractToken()`
+
+Extract the bearer token from a LAP WebSocket upgrade request.
+Accepts the token on either `?token=` or `Authorization: Bearer` —
+query-string is the common pattern because browsers can't set
+arbitrary headers on WebSocket construction.
+
+```typescript
+function extractToken(req: Request): string | null
+```
+
+### `handleCloudflareUpgrade()`
+
+Cloudflare Workers handler. Accepts a WebSocket upgrade using
+`WebSocketPair`, validates the token via
+`agent.acceptConnection`, and returns the 101 upgrade Response.
+Usage:
+
+```ts
+const agent = createLluiAgentCore({ signingKey: env.AGENT_KEY })
+export default {
+  async fetch(req, env) {
+    const url = new URL(req.url)
+    if (url.pathname === '/agent/ws') return handleCloudflareUpgrade(req, agent)
+    return (await agent.router(req)) ?? new Response('Not Found', { status: 404 })
+  },
+}
+```
+
+```typescript
+function handleCloudflareUpgrade(req: Request, agent: AgentCoreHandle): Promise<Response>
+```
+
+### `handleDenoUpgrade()`
+
+Deno handler. Uses `Deno.upgradeWebSocket(req)` to produce the
+response + socket pair, then plugs the socket into the registry.
+Usage:
+
+```ts
+Deno.serve(async (req) => {
+  const url = new URL(req.url)
+  if (url.pathname === '/agent/ws') return handleDenoUpgrade(req, agent)
+  return (await agent.router(req)) ?? new Response('Not Found', { status: 404 })
+})
+```
+
+```typescript
+function handleDenoUpgrade(req: Request, agent: AgentCoreHandle): Promise<Response>
+```
+
+### `routeToAgentDO()`
+
+Route an incoming Worker `fetch` request to the Durable Object
+that owns its `tid`.
+The token travels in three places depending on the route:
+
+- LAP HTTP calls: `Authorization: Bearer <token>` header
+- Mint / resume HTTP calls: no token (identity resolver runs
+  inside the DO via the LAP router; we route by origin or a
+  special `/agent/mint` path — see below)
+- WebSocket upgrade: `?token=<token>` in the URL
+  Requests that don't carry a tid (mint, resume-list, sessions) are
+  routed to a "root" DO named `__root`, which handles identity /
+  token store operations centrally. LAP and WS calls route to the
+  per-tid DO so the pairing state stays local.
+  This is the recommended entry for Cloudflare Workers deployments;
+  users who need custom routing can write their own and call the
+  underlying primitives (`verifyToken`, `namespace.get`, etc).
+
+```typescript
+function routeToAgentDO(
+  req: Request,
+  namespace: MinimalDurableObjectNamespace,
+  signingKey: string | Uint8Array,
+  opts: { rootName?: string } = {},
+): Promise<Response>
+```
+
+### `createAgentClient()`
+
+```typescript
+function createAgentClient<State, Msg>(opts: CreateAgentClientOpts<State, Msg>): AgentClient
+```
+
+### `init()`
+
+Component shape is [State, Effect[]] — consistent with @llui/components.
+
+```typescript
+function init(_opts: AgentConnectInitOpts): [AgentConnectState, AgentEffect[]]
+```
+
+### `update()`
+
+```typescript
+function update(
+  state: AgentConnectState,
+  msg: AgentConnectMsg,
+  opts: AgentConnectInitOpts,
+): [AgentConnectState, AgentEffect[]]
+```
+
+### `connect()`
+
+Builds prop bags for the view. See spec §9.1 and the @llui/components
+dialog.ts pattern.
+
+```typescript
+function connect<S>(
+  get: (s: S) => AgentConnectState,
+  send: Send<AgentConnectMsg>,
+  _opts: AgentConnectConnectOptions = {},
+): (state: S) => ConnectBag
+```
+
 ## Types
+
+### `CoreOptions`
+
+Options accepted by `createLluiAgentCore`. Strict subset of
+`ServerOptions` — everything needed to build the router, registry,
+and accept-connection primitive. The Node factory adds WebSocket
+upgrade wiring on top.
+
+```typescript
+export type CoreOptions = {
+  signingKey: ServerOptions['signingKey']
+  tokenStore?: TokenStore
+  identityResolver?: IdentityResolver
+  auditSink?: AuditSink
+  rateLimiter?: RateLimiter
+  lapBasePath?: string
+  /**
+   * Override the default `InMemoryPairingRegistry`. Web runtimes that
+   * need a different pairing implementation (e.g. a Cloudflare
+   * Durable Object that persists across isolates) pass it here.
+   */
+  registry?: PairingRegistry
+}
+```
+
+### `AcceptResult`
+
+```typescript
+export type AcceptResult =
+  | { ok: true; tid: string }
+  | { ok: false; status: number; code: 'auth-failed' | 'revoked' }
+```
+
+### `AgentCoreHandle`
+
+Handle returned by `createLluiAgentCore`. Purely runtime-neutral —
+`router` is a Fetch-style handler, `acceptConnection` is the
+primitive that runtime-specific WebSocket adapters call after
+accepting a socket in their native way.
+
+```typescript
+export type AgentCoreHandle = {
+  router: (req: Request) => Promise<Response | null>
+  registry: PairingRegistry
+  tokenStore: TokenStore
+  auditSink: AuditSink
+  /**
+   * Validate an agent token and register a `PairingConnection` with
+   * the registry. Use this after accepting a WebSocket upgrade via
+   * your runtime's native API (e.g. `WebSocketPair` on Cloudflare,
+   * `Deno.upgradeWebSocket` on Deno, `server.upgrade` on Bun).
+   *
+   * On success: marks the token `awaiting-claude`, writes an audit
+   * entry, and returns `{ok: true, tid}`. On failure: returns an
+   * appropriate HTTP status for the caller to encode into the
+   * upgrade response (401 for auth failure, 403 for revoked).
+   */
+  acceptConnection: (token: string, conn: PairingConnection) => Promise<AcceptResult>
+}
+```
+
+### `ServerOptions`
+
+Options accepted by `createLluiAgentServer`. All values except
+`signingKey` are optional and fall back to in-memory defaults.
+See spec §10.1.
+
+```typescript
+export type ServerOptions = {
+  /** HMAC key for signing tokens. ≥32 bytes; rotation invalidates all tokens. */
+  signingKey: string | Uint8Array
+
+  /** Token store. Defaults to an `InMemoryTokenStore`. */
+  tokenStore?: TokenStore
+
+  /** Identity resolver. Defaults to anonymous (always null). */
+  identityResolver?: IdentityResolver
+
+  /** Audit sink. Defaults to `consoleAuditSink`. */
+  auditSink?: AuditSink
+
+  /** Rate limiter. Defaults to `defaultRateLimiter` with 30/minute. */
+  rateLimiter?: RateLimiter
+
+  /** Base path prefix for LAP endpoints. Defaults to `/agent/lap/v1`. */
+  lapBasePath?: string
+
+  /** Pairing grace window after a tab closes, in ms. Default 15 min. */
+  pairingGraceMs?: number
+
+  /** Sliding TTL for active tokens, in ms. Default 1 h. */
+  slidingTtlMs?: number
+
+  /** Allowed origins for the HTTP surface (CORS). Empty = any. */
+  corsOrigins?: readonly string[]
+}
+```
+
+### `AgentServerHandle`
+
+Value returned by `createLluiAgentServer`. `router` matches any
+`/agent/*` request and returns a Response (or null to fall through).
+`wsUpgrade` handles Node HTTP upgrade events for `/agent/ws`.
+
+```typescript
+export type AgentServerHandle = {
+  router: (req: Request) => Promise<Response | null>
+  /**
+   * Handles Node HTTP upgrade events for `/agent/ws`. Returns a Promise
+   * because token verification uses WebCrypto (async). Node's
+   * `server.on('upgrade', handler)` fires the handler without awaiting,
+   * which is fine — the handler writes errors directly to the socket
+   * and never throws back to the caller.
+   */
+  wsUpgrade: (req: IncomingMessage, socket: Duplex, head: Buffer) => Promise<void>
+  /** The pairing registry. Runtime-neutral adapters may access it. */
+  registry: PairingRegistry
+  /** The active token store. */
+  tokenStore: TokenStore
+  /** The active audit sink. */
+  auditSink: AuditSink
+  /**
+   * Runtime-neutral WebSocket acceptance primitive. Validates a token
+   * and registers a `PairingConnection` with the registry. The Node
+   * `wsUpgrade` above calls this internally; web-runtime adapters
+   * (`@llui/agent/server/web`) use it after accepting a WebSocket via
+   * their native API.
+   */
+  acceptConnection: (token: string, conn: PairingConnection) => Promise<AcceptResult>
+}
+```
+
+### `TokenPayload`
+
+```typescript
+export type TokenPayload = {
+  tid: string
+  iat: number
+  exp: number
+  scope: 'agent'
+}
+```
+
+### `VerifyResult`
+
+```typescript
+export type VerifyResult =
+  | { kind: 'ok'; payload: TokenPayload }
+  | { kind: 'invalid'; reason: 'malformed' | 'bad-signature' | 'expired' }
+```
+
+### `IdentityResolver`
+
+```typescript
+export type IdentityResolver = (req: Request) => Promise<string | null>
+```
+
+### `IdentityCookieConfig`
+
+```typescript
+export type IdentityCookieConfig = {
+  name: string
+  signingKey: string | Uint8Array
+}
+```
+
+### `AuditSink`
+
+```typescript
+export type AuditSink = {
+  write: (entry: AuditEntry) => void | Promise<void>
+}
+```
+
+### `RateLimitResult`
+
+```typescript
+export type RateLimitResult = { allowed: true } | { allowed: false; retryAfterMs: number }
+```
+
+### `RateLimitConfig`
+
+```typescript
+export type RateLimitConfig = {
+  perBucket: string
+}
+```
+
+### `FrameSubscriber`
+
+A per-call frame subscriber. Return `true` to remove this
+subscriber (one-shot), or `false` to keep receiving. The registry
+dispatches every inbound `ClientFrame` to every active subscriber
+for the given `tid`; subscribers filter by `frame.t` + identifiers
+(correlation id, confirm id, state path) to find the one that
+belongs to their request.
+
+```typescript
+export type FrameSubscriber = (frame: ClientFrame) => boolean
+```
+
+### `RpcError`
+
+```typescript
+export type RpcError = {
+  code: 'paused' | 'invalid' | 'timeout' | 'schema-error' | 'internal' | string
+  detail?: string
+}
+```
+
+### `RpcOptions`
+
+```typescript
+export type RpcOptions = { timeoutMs?: number }
+```
+
+### `DurableObjectOptions`
+
+```typescript
+export type DurableObjectOptions = Omit<CoreOptions, 'registry'>
+```
+
+### `CreateAgentClientOpts`
+
+```typescript
+export type CreateAgentClientOpts<State, Msg> = {
+  handle: AppHandle
+  def: ComponentMetadata
+  appVersion?: string
+  rootElement: Element | null
+  slices: {
+    getConnect: (s: State) => unknown
+    getConfirm: (s: State) => AgentConfirmState
+    wrapConnectMsg: (m: unknown) => Msg
+    wrapConfirmMsg: (m: unknown) => Msg
+    /**
+     * Optional: wrap an agentLog msg so the client-side activity feed
+     * mirrors what Claude is doing. If omitted, outbound log-append
+     * frames still go to the server, but the local agent.log slice
+     * stays empty (the UI won't show activity).
+     */
+    wrapLogMsg?: (m: unknown) => Msg
+  }
+}
+```
+
+### `AgentClient`
+
+```typescript
+export type AgentClient = {
+  effectHandler: (effect: AgentEffect) => Promise<void>
+  start(): void
+  stop(): void
+}
+```
+
+### `AgentEffect`
+
+```typescript
+export type AgentEffect =
+  | { type: 'AgentMintRequest'; mintUrl: string }
+  | { type: 'AgentOpenWS'; token: AgentToken; wsUrl: string }
+  | { type: 'AgentCloseWS' }
+  | { type: 'AgentResumeCheck'; tids: string[] }
+  | { type: 'AgentResumeClaim'; tid: string }
+  | { type: 'AgentRevoke'; tid: string }
+  | { type: 'AgentSessionsList' }
+  | { type: 'AgentForwardMsg'; payload: unknown }
+```
+
+### `AgentEffectHandler`
+
+```typescript
+export type AgentEffectHandler = (effect: AgentEffect) => Promise<void>
+```
+
+### `AgentConnectStatus`
+
+```typescript
+export type AgentConnectStatus = 'idle' | 'minting' | 'pending-claude' | 'active' | 'error'
+```
+
+### `AgentConnectPendingToken`
+
+```typescript
+export type AgentConnectPendingToken = {
+  token: AgentToken
+  tid: string
+  lapUrl: string
+  connectSnippet: string // "/llui-connect <lapUrl> <token>"
+  expiresAt: number
+}
+```
+
+### `AgentConnectState`
+
+```typescript
+export type AgentConnectState = {
+  status: AgentConnectStatus
+  pendingToken: AgentConnectPendingToken | null
+  sessions: AgentSession[]
+  resumable: AgentSession[]
+  error: { code: string; detail: string } | null
+}
+```
+
+### `AgentConnectMsg`
+
+```typescript
+export type AgentConnectMsg =
+  | { type: 'Mint' }
+  | {
+      type: 'MintSucceeded'
+      token: AgentToken
+      tid: string
+      lapUrl: string
+      wsUrl: string
+      expiresAt: number
+    }
+  | { type: 'MintFailed'; error: { code: string; detail: string } }
+  | { type: 'WsOpened' }
+  | { type: 'WsClosed' }
+  | { type: 'ActivatedByClaude' }
+  | { type: 'ResumeList'; tids: string[] }
+  | { type: 'ResumeListLoaded'; sessions: AgentSession[] }
+  | { type: 'Resume'; tid: string }
+  | { type: 'Revoke'; tid: string }
+  | { type: 'ClearError' }
+  | { type: 'SessionsLoaded'; sessions: AgentSession[] }
+  | { type: 'RefreshSessions' }
+```
+
+### `AgentConnectInitOpts`
+
+```typescript
+export type AgentConnectInitOpts = { mintUrl: string }
+```
+
+### `AgentConnectConnectOptions`
+
+```typescript
+export type AgentConnectConnectOptions = {
+  id?: string // optional DOM id prefix
+}
+```
+
+### `ConfirmEntry`
+
+```typescript
+export type ConfirmEntry = {
+  id: string
+  variant: string
+  payload: unknown
+  intent: string
+  reason: string | null
+  proposedAt: number
+  status: 'pending' | 'approved' | 'rejected'
+}
+```
+
+### `AgentConfirmState`
+
+```typescript
+export type AgentConfirmState = { pending: ConfirmEntry[] }
+```
+
+### `AgentConfirmMsg`
+
+```typescript
+export type AgentConfirmMsg =
+  | { type: 'Propose'; entry: ConfirmEntry }
+  | { type: 'Approve'; id: string }
+  | { type: 'Reject'; id: string }
+  | { type: 'ExpireStale'; now: number; maxAgeMs: number }
+```
+
+### `AgentLogFilter`
+
+```typescript
+export type AgentLogFilter = { kinds?: LogKind[]; since?: number }
+```
+
+### `AgentLogState`
+
+```typescript
+export type AgentLogState = {
+  entries: LogEntry[]
+  filter: AgentLogFilter
+}
+```
+
+### `AgentLogInitOpts`
+
+```typescript
+export type AgentLogInitOpts = { maxEntries?: number }
+```
+
+### `AgentLogMsg`
+
+```typescript
+export type AgentLogMsg =
+  | { type: 'Append'; entry: LogEntry }
+  | { type: 'Clear' }
+  | { type: 'SetFilter'; filter: AgentLogFilter }
+```
 
 ### `LapErrorCode`
 
@@ -834,17 +1496,6 @@ export type ServerFrame = RpcFrame | RevokedFrame | ActiveFrame
 export type AgentToken = string & { readonly [TokenBrand]: 'AgentToken' }
 ```
 
-### `TokenPayload`
-
-```typescript
-export type TokenPayload = {
-  tid: string
-  iat: number
-  exp: number
-  scope: 'agent'
-}
-```
-
 ### `TokenStatus`
 
 ```typescript
@@ -973,12 +1624,233 @@ export type AuditEntry = {
 }
 ```
 
-## Constants
+## Interfaces
 
-### `TokenBrand`
+### `TokenStore`
+
+Append-only, read-friendly storage for token records. See spec §10.3.
 
 ```typescript
-const TokenBrand: unique symbol
+export interface TokenStore {
+  create(record: TokenRecord): Promise<void>
+  findByTid(tid: string): Promise<TokenRecord | null>
+  listByIdentity(uid: string): Promise<TokenRecord[]>
+  touch(tid: string, now: number): Promise<void>
+  markPendingResume(tid: string, until: number): Promise<void>
+  /** Transition to awaiting-claude: browser WS is connected, waiting for Claude's first call. */
+  markAwaitingClaude(tid: string, now: number): Promise<void>
+  markActive(tid: string, label: string, now: number): Promise<void>
+  revoke(tid: string): Promise<void>
+}
+```
+
+### `RateLimiter`
+
+```typescript
+export interface RateLimiter {
+  check(key: string, bucket: 'token' | 'identity'): Promise<RateLimitResult>
+}
+```
+
+### `PairingConnection`
+
+Thin abstraction over a single paired WebSocket. Consumed by the
+registry implementations; runtime-specific adapters (`ws`-lib,
+`WebSocketPair`, `Deno.upgradeWebSocket`, `Bun.serve` upgrade) build
+one of these and pass it to `registry.register()`.
+
+```typescript
+export interface PairingConnection {
+  send(frame: ServerFrame): void
+  onFrame(handler: (f: ClientFrame) => void): void
+  onClose(handler: () => void): void
+  close(): void
+}
+```
+
+### `PairingRegistry`
+
+Registry of live browser pairings. Pure routing + hello cache —
+request-lifecycle state (in-flight RPC promises, confirm waits,
+long-polls) lives in the LAP handlers that need it, not here.
+Two implementations ship today:
+
+- `InMemoryPairingRegistry` for long-lived server processes
+  (Node, Bun, Deno, Deno Deploy).
+- A Cloudflare Durable Object implementation (see
+  `server/cloudflare`) for stateless Worker runtimes.
+  Other runtimes can implement this interface the same way; the
+  contract is intentionally small.
+
+```typescript
+export interface PairingRegistry {
+  // ── Routing primitives ─────────────────────────────────────────
+  register(tid: string, conn: PairingConnection): void
+  unregister(tid: string): void
+  isPaired(tid: string): boolean
+  getHello(tid: string): HelloFrame | null
+  /** Send a frame. No-op when the pairing is absent or closed. */
+  send(tid: string, frame: ServerFrame): void
+  /**
+   * Subscribe to frames from the paired browser. Returns an
+   * unsubscribe function. A subscriber can remove itself mid-dispatch
+   * by returning `true` from its callback — useful for one-shot
+   * request/response correlation.
+   */
+  subscribe(tid: string, handler: FrameSubscriber): () => void
+  /**
+   * Observe the pairing closing (WebSocket drop, `unregister`, etc.).
+   * Handlers registered before close fire; handlers registered after
+   * close fire synchronously. Returns an unsubscribe function.
+   */
+  onClose(tid: string, handler: () => void): () => void
+
+  // ── Request/response helpers ───────────────────────────────────
+  // These are part of the contract (LAP handlers call them directly)
+  // but implementations almost always delegate to the free helpers in
+  // `./rpc.ts`, which are built on the routing primitives above. The
+  // Cloudflare Durable Object registry uses the same helpers; the
+  // split exists so the routing surface is small enough to implement
+  // across stateful boundaries (DO storage, WebSocket hibernation),
+  // while the correlation logic lives once in a runtime-neutral file.
+
+  /**
+   * Send a typed rpc frame and await its matching reply. See
+   * `./rpc.ts::rpc` for the full contract.
+   */
+  rpc(tid: string, tool: string, args: unknown, opts?: RpcOptions): Promise<unknown>
+  /** See `./rpc.ts::waitForConfirm`. */
+  waitForConfirm(
+    tid: string,
+    confirmId: string,
+    timeoutMs: number,
+  ): Promise<{ outcome: 'confirmed' | 'user-cancelled'; stateAfter?: unknown }>
+  /** See `./rpc.ts::waitForChange`. */
+  waitForChange(
+    tid: string,
+    path: string | undefined,
+    timeoutMs: number,
+  ): Promise<{ status: 'changed' | 'timeout'; stateAfter: unknown }>
+}
+```
+
+### `MinimalDurableObjectNamespace`
+
+Minimal DurableObjectNamespace surface we need — `idFromName` +
+`get` returning a `Stub` with `fetch(req)`. Kept structural so we
+don't depend on `@cloudflare/workers-types` (the user's project has
+them; we shouldn't duplicate).
+
+```typescript
+export interface MinimalDurableObjectNamespace {
+  idFromName(name: string): MinimalDurableObjectId
+  get(id: MinimalDurableObjectId): MinimalDurableObjectStub
+}
+```
+
+### `MinimalDurableObjectId`
+
+```typescript
+export interface MinimalDurableObjectId {
+  // Opaque, but DO ids are passed back into `namespace.get()`.
+  readonly name?: string
+}
+```
+
+### `MinimalDurableObjectStub`
+
+```typescript
+export interface MinimalDurableObjectStub {
+  fetch(req: Request): Promise<Response>
+}
+```
+
+## Classes
+
+### `InMemoryTokenStore`
+
+```typescript
+class InMemoryTokenStore implements TokenStore {
+  byTid
+  create(record: TokenRecord): Promise<void>
+  findByTid(tid: string): Promise<TokenRecord | null>
+  listByIdentity(uid: string): Promise<TokenRecord[]>
+  touch(tid: string, now: number): Promise<void>
+  markPendingResume(tid: string, until: number): Promise<void>
+  markAwaitingClaude(tid: string, now: number): Promise<void>
+  markActive(tid: string, label: string, now: number): Promise<void>
+  revoke(tid: string): Promise<void>
+}
+```
+
+### `InMemoryPairingRegistry`
+
+Single-process in-memory registry. Correct for Node/Bun/Deno/Deno
+Deploy — anywhere the server process can hold a long-lived
+WebSocket. Not suitable for stateless Worker isolates; use the
+Durable Object registry for Cloudflare.
+
+```typescript
+class InMemoryPairingRegistry implements PairingRegistry {
+  pairings
+  onLogAppend: ((tid: string, entry: LogEntry) => void) | null
+  constructor(
+    opts: {
+      onLogAppend?: (tid: string, entry: LogEntry) => void
+    } = {},
+  )
+  register(tid: string, conn: PairingConnection): void
+  unregister(tid: string): void
+  isPaired(tid: string): boolean
+  getHello(tid: string): HelloFrame | null
+  send(tid: string, frame: ServerFrame): void
+  subscribe(tid: string, handler: FrameSubscriber): () => void
+  onClose(tid: string, handler: () => void): () => void
+  dispatch(tid: string, frame: ClientFrame): void
+  rpc(tid: string, tool: string, args: unknown, opts: RpcOptions = {}): Promise<unknown>
+  waitForConfirm(
+    tid: string,
+    confirmId: string,
+    timeoutMs: number,
+  ): Promise<{ outcome: 'confirmed' | 'user-cancelled'; stateAfter?: unknown }>
+  waitForChange(
+    tid: string,
+    path: string | undefined,
+    timeoutMs: number,
+  ): Promise<{ status: 'changed' | 'timeout'; stateAfter: unknown }>
+  notify(tid: string, frame: ServerFrame): void
+  handleClose(tid: string): void
+}
+```
+
+### `AgentPairingDurableObject`
+
+Agent server instance scoped to a single Durable Object. All
+pairing state lives in the DO's in-process memory — which is safe
+here because the DO is a persistent addressable entity, not a
+one-shot Worker isolate.
+Users instantiate one of these inside their DO class's constructor
+and delegate `fetch` to `agent.fetch(req)`. LAP HTTP routes and
+WebSocket upgrades both flow through this single entry.
+
+```typescript
+class AgentPairingDurableObject {
+  agent: AgentCoreHandle
+  constructor(opts: DurableObjectOptions)
+  fetch(req: Request): Promise<Response>
+}
+```
+
+## Constants
+
+### `WsPairingRegistry`
+
+Back-compat alias for the prior class name. New code should use
+`InMemoryPairingRegistry`. Removed in a future major.
+@deprecated Use `InMemoryPairingRegistry` directly.
+
+```typescript
+const WsPairingRegistry
 ```
 
 <!-- auto-api:end -->

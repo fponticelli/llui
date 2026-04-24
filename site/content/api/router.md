@@ -148,50 +148,6 @@ function route<R = any>(
 function createRouter<R>(defs: RouteDef<any>[], config?: RouterConfig<R>): Router<R>
 ```
 
-### `matchDef()`
-
-```typescript
-function matchDef<R>(def: RouteDef<R>, pathSegments: string[]): Record<string, string> | null
-```
-
-### `tryFormat()`
-
-```typescript
-function tryFormat<R>(def: RouteDef<R>, r: R): string | null
-```
-
-### `parseQuery()`
-
-```typescript
-function parseQuery(qs: string): Record<string, string>
-```
-
-### `getUrlKeys()`
-
-Extract URL-relevant field names from a route definition
-
-```typescript
-function getUrlKeys<R>(def: RouteDef<R>): Set<string>
-```
-
-### `partialEqual()`
-
-Compare two objects only on the specified keys
-
-```typescript
-function partialEqual(
-  a: Record<string, unknown>,
-  b: Record<string, unknown>,
-  keys: Set<string>,
-): boolean
-```
-
-### `deepEqual()`
-
-```typescript
-function deepEqual(a: unknown, b: unknown): boolean
-```
-
 ### `connectRouter()`
 
 ```typescript
@@ -207,32 +163,6 @@ export type Segment = string | ParamSegment | RestSegment
 ```
 
 ## Interfaces
-
-### `ParamSegment`
-
-```typescript
-interface ParamSegment {
-  __kind: 'param'
-  name: string
-}
-```
-
-### `RestSegment`
-
-```typescript
-interface RestSegment {
-  __kind: 'rest'
-  name: string
-}
-```
-
-### `RouteDefOptions`
-
-```typescript
-interface RouteDefOptions {
-  query?: string[]
-}
-```
 
 ### `RouteDef`
 

@@ -117,7 +117,15 @@ function extractPackageExports(pkgDir: string, sourceFiles?: string[]): Exported
     const sf = readSource(filePath)
     const allowedNames = reExportedNames.get(filePath) // undefined = take all exports
 
-    const isAllowed = (name: string) => !allowedNames || allowedNames.has(name)
+    // When this file was reached via a re-export chain, the allowlist
+    // restricts us to the re-exported names. When it was supplied
+    // directly in the package's `sourceFiles` config, there's no
+    // allowlist — but we still must skip non-exported declarations, or
+    // internal helpers (`toBytes`, `parseRate`, etc.) leak into the
+    // public API reference.
+    const isAllowed = (name: string) => (allowedNames ? allowedNames.has(name) : true)
+    const passesExportFilter = (node: ts.Node): boolean =>
+      allowedNames !== undefined || hasExportModifier(node)
 
     // First pass: collect overload signatures
     ts.forEachChild(sf, (node) => {
@@ -134,6 +142,7 @@ function extractPackageExports(pkgDir: string, sourceFiles?: string[]): Exported
     ts.forEachChild(sf, (node) => {
       // Functions (with body)
       if (ts.isFunctionDeclaration(node) && node.name && node.body) {
+        if (!passesExportFilter(node)) return
         const name = node.name.text
         if (!isAllowed(name)) return
         if (seen.has(name)) return
@@ -161,6 +170,7 @@ function extractPackageExports(pkgDir: string, sourceFiles?: string[]): Exported
 
       // Interfaces
       if (ts.isInterfaceDeclaration(node)) {
+        if (!passesExportFilter(node)) return
         const name = node.name.text
         if (!isAllowed(name)) return
         if (seen.has(name)) return
@@ -175,6 +185,7 @@ function extractPackageExports(pkgDir: string, sourceFiles?: string[]): Exported
 
       // Type aliases
       if (ts.isTypeAliasDeclaration(node)) {
+        if (!passesExportFilter(node)) return
         const name = node.name.text
         if (!isAllowed(name)) return
         if (seen.has(name)) return
@@ -184,6 +195,7 @@ function extractPackageExports(pkgDir: string, sourceFiles?: string[]): Exported
 
       // Classes
       if (ts.isClassDeclaration(node) && node.name) {
+        if (!passesExportFilter(node)) return
         const name = node.name.text
         if (!isAllowed(name)) return
         if (seen.has(name)) return
@@ -218,6 +230,7 @@ function extractPackageExports(pkgDir: string, sourceFiles?: string[]): Exported
 
       // Exported const/let
       if (ts.isVariableStatement(node)) {
+        if (!passesExportFilter(node)) return
         for (const decl of node.declarationList.declarations) {
           const name = decl.name.getText(sf)
           if (!isAllowed(name)) continue
@@ -515,7 +528,36 @@ const PACKAGES: { name: string; sourceFiles?: string[] }[] = [
   { name: 'test', sourceFiles: ['index.ts'] },
   { name: 'vike', sourceFiles: ['on-render-html.ts', 'on-render-client.ts'] },
   { name: 'mcp', sourceFiles: ['index.ts'] },
-  { name: 'agent', sourceFiles: ['server/index.ts', 'client/index.ts', 'protocol.ts'] },
+  {
+    name: 'agent',
+    sourceFiles: [
+      // Server entry points — scan concrete source files rather than the
+      // `index.ts` re-exporters, because the extractor doesn't follow
+      // `export { … } from './x.js'` chains.
+      'server/core.ts',
+      'server/factory.ts',
+      'server/options.ts',
+      'server/token.ts',
+      'server/identity.ts',
+      'server/token-store.ts',
+      'server/audit.ts',
+      'server/rate-limit.ts',
+      'server/ws/pairing-registry.ts',
+      'server/ws/rpc.ts',
+      'server/web/adapter.ts',
+      'server/web/upgrade.ts',
+      'server/cloudflare/durable-object.ts',
+      'server/cloudflare/worker.ts',
+      // Client runtime:
+      'client/factory.ts',
+      'client/effects.ts',
+      'client/agentConnect.ts',
+      'client/agentConfirm.ts',
+      'client/agentLog.ts',
+      // Protocol types:
+      'protocol.ts',
+    ],
+  },
   { name: 'agent-bridge', sourceFiles: ['index.ts', 'tools.ts', 'bridge.ts'] },
   { name: 'eslint-plugin-llui', sourceFiles: ['index.ts'] },
   { name: 'vite-plugin', sourceFiles: ['index.ts'] },

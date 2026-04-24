@@ -87,15 +87,6 @@ The barrel export (`@llui/vike`) re-exports everything, but prefer sub-path impo
 
 ## Functions
 
-### `resolveLayoutChain()`
-
-```typescript
-function resolveLayoutChain(
-  layoutOption: RenderHtmlOptions['Layout'],
-  pageContext: PageContext,
-): LayoutChain
-```
-
 ### `onRenderHtml()`
 
 Default onRenderHtml hook — no layout, minimal document template,
@@ -135,12 +126,6 @@ export const onRenderHtml = createOnRenderHtml({
 function createOnRenderHtml(
   options: RenderHtmlOptions,
 ): (pageContext: PageContext) => Promise<RenderHtmlResult>
-```
-
-### `renderPage()`
-
-```typescript
-function renderPage(pageContext: PageContext, options: RenderHtmlOptions): Promise<RenderHtmlResult>
 ```
 
 ### `_renderChain()`
@@ -248,27 +233,6 @@ function createOnRenderClient(
 ): (pageContext: ClientPageContext) => Promise<void>
 ```
 
-### `renderClient()`
-
-```typescript
-function renderClient(pageContext: ClientPageContext, options: RenderClientOptions): Promise<void>
-```
-
-### `mountOrHydrateChain()`
-
-Walk the full chain for the first mount or hydration. Starts from
-depth 0 at the root container, threads each layer's slot into the
-next layer's mount target + parentLifetime.
-
-```typescript
-function mountOrHydrateChain(
-  chain: LayoutChain,
-  chainData: readonly unknown[],
-  rootEl: HTMLElement,
-  opts: MountOpts,
-): Promise<void>
-```
-
 ### `_mountChainSuffix()`
 
 Mount (or hydrate) `chain[startAt..end]` into `initialTarget`, with
@@ -292,43 +256,6 @@ function _mountChainSuffix(
   initialParentLifetime: Lifetime | undefined,
   opts: MountOpts,
 ): void
-```
-
-### `hasDataChanged()`
-
-Shallow-key data diff for the persistent-layer prop-update path.
-Returns true when `next` differs from `prev` enough to warrant
-dispatching a `propsMsg`. Mirrors `child()`'s prop-diff semantics:
-
-- `Object.is(prev, next)` short-circuits identical references.
-- For two plain-object records, walks the union of keys and returns
-  true on the first `Object.is` mismatch.
-- For anything else (primitives, arrays, class instances), falls
-  back to the top-level `Object.is` result — covers the cases where
-  the host populates `lluiLayoutData[i]` with a primitive or a
-  referentially-stable object.
-
-```typescript
-function hasDataChanged(prev: unknown, next: unknown): boolean
-```
-
-### `extractHydrationState()`
-
-```typescript
-function extractHydrationState(
-  envelope: unknown,
-  layerIndex: number,
-  chainLength: number,
-  def: AnyComponentDef,
-): unknown
-```
-
-## Types
-
-### `LayoutChain`
-
-```typescript
-type LayoutChain = ReadonlyArray<AnyComponentDef>
 ```
 
 ## Interfaces
@@ -422,19 +349,6 @@ export interface RenderHtmlOptions {
   domEnv: () => DomEnv | Promise<DomEnv>
 }
 ````
-
-### `HydrationEnvelope`
-
-Hydration envelope emitted into `window.__LLUI_STATE__`. Chain-aware
-by default — every layer (layouts + page) is represented by its own
-entry, keyed by component name so server/client mismatches fail loud.
-
-```typescript
-interface HydrationEnvelope {
-  layouts: Array<{ name: string; state: unknown }>
-  page: { name: string; state: unknown }
-}
-```
 
 ### `ClientPageContext`
 
@@ -552,60 +466,6 @@ export interface RenderClientOptions {
    */
   onMount?: () => void
 }
-```
-
-### `ChainEntry`
-
-One element of the live chain the adapter keeps between navs.
-`handle` is the AppHandle returned by mountApp/hydrateApp for this
-layer. `slotAnchor` / `slotLifetime` are set when the layer called
-`pageSlot()` during its view pass; they're null for the innermost
-layer (typically the page component, which doesn't have a slot).
-
-```typescript
-interface ChainEntry {
-  def: AnyComponentDef
-  handle: AppHandle
-  slotAnchor: Comment | null
-  slotLifetime: Lifetime | null
-  /**
-   * The data slice this layer was most recently mounted or updated
-   * with. Compared shallow-key against the next nav's `lluiLayoutData[i]`
-   * to decide whether a surviving layer needs a `propsMsg` dispatch.
-   * Layers that didn't receive any layout data carry `undefined` here.
-   */
-  data: unknown
-}
-```
-
-### `MountOpts`
-
-```typescript
-interface MountOpts {
-  mode: 'mount' | 'hydrate'
-  /** For hydration: the full `window.__LLUI_STATE__` envelope. */
-  serverStateEnvelope?: unknown
-}
-```
-
-## Constants
-
-### `DEFAULT_DOCUMENT`
-
-```typescript
-const DEFAULT_DOCUMENT
-```
-
-### `chainHandles`
-
-```typescript
-const chainHandles: ChainEntry[]
-```
-
-### `mountChainSuffix`
-
-```typescript
-const mountChainSuffix
 ```
 
 <!-- auto-api:end -->
