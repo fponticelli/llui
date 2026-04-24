@@ -11,6 +11,38 @@ All notable changes to LLui packages are documented here. LLui is a pre-1.0 proj
 
 Packages version in lockstep at release time: `@llui/dom`, `@llui/vite-plugin`, `@llui/test`, `@llui/router`, `@llui/transitions`, `@llui/components`, `@llui/vike` share a version line. `@llui/effects`, `@llui/mcp`, `@llui/eslint-plugin`, `@llui/agent`, and `llui-agent` have their own cadence.
 
+## 2026-04-24 — @llui/agent@0.0.31
+
+**Released:** `@llui/agent@0.0.31`
+
+Cross-runtime portability rework: `@llui/agent` now runs on Cloudflare Workers (via Durable Objects), Deno / Deno Deploy, and Bun in addition to Node. The `ws` library and `node:crypto` are no longer load-bearing in the runtime-neutral path — only the Node adapter imports them.
+
+### Breaking
+
+- **`@llui/agent@0.0.31` direct consumers of `signToken` / `verifyToken` / `signCookieValue`:** these are now async (return `Promise<T>`). The signatures use `crypto.subtle` HMAC-SHA256, which is web-standard and async by design. Wrap call sites in `await`. LAP server usage via `createLluiAgentServer` is unchanged — the async migration is handled internally.
+
+### Migration
+
+- `signToken(payload, key)` → `await signToken(payload, key)` — same for `verifyToken` and `signCookieValue`.
+- No changes needed if you only use `createLluiAgentServer({ ... })` at the top level. The Node path signature is unchanged.
+- Non-Node deployments: see [Runtime support](https://llui.dev/api/agent#runtime-support) for the Cloudflare / Deno / Bun recipes.
+
+### `@llui/agent@0.0.31`
+
+- **Added** `@llui/agent/server/core` sub-path — runtime-neutral entry that builds the LAP router, registry, and accept-connection primitive without importing `ws` or any `node:*` module. Works on Node, Bun, Deno, and Cloudflare.
+- **Added** `@llui/agent/server/web` sub-path — WHATWG WebSocket adapters. Exports `createWHATWGPairingConnection` (wraps any standard `WebSocket` in a `PairingConnection`), `handleCloudflareUpgrade` (uses `WebSocketPair`), `handleDenoUpgrade` (uses `Deno.upgradeWebSocket`), and `extractToken`.
+- **Added** `@llui/agent/server/cloudflare` sub-path — `AgentPairingDurableObject` class + `routeToAgentDO` Worker helper. A single Cloudflare Durable Object owns one session `tid`'s in-memory registry; the Worker's fetch handler routes LAP + WebSocket upgrade calls to the DO by token. Full recipe + `wrangler.toml` snippet in the docs.
+- **Added** `AgentCoreHandle.acceptConnection(token, conn)` primitive. Runtime adapters call this after accepting a WebSocket in their native way; it validates the token, updates the token store, writes an audit entry, and registers the `PairingConnection`.
+- **Added** `PairingRegistry` interface extracted from the `WsPairingRegistry` class. The in-memory implementation is now `InMemoryPairingRegistry` (backward-compatible `WsPairingRegistry` alias preserved). External implementations (e.g. the Durable Object registry) implement the interface directly. Routing primitives (`register`, `send`, `subscribe`, `onClose`) are separate from request/response helpers (`rpc`, `waitForConfirm`, `waitForChange`), which live in `server/ws/rpc.ts` and can be reused across registries.
+- **Improved** WebCrypto migration — HMAC sign/verify now go through `crypto.subtle` (standard across Node ≥ 15, Cloudflare, Deno, Bun). Removed `node:crypto` import. `crypto.randomUUID()` (global web standard) replaces `require('node:crypto').randomUUID`.
+- **Improved** LAP handler internals — the registry no longer owns in-flight RPC promise tracking or long-poll wait entries. Each handler subscribes to frames via `registry.subscribe(tid, filter)` for the duration of its call, then unsubscribes. This keeps the registry interface small enough that a Cloudflare Durable Object can implement it cleanly.
+
+### Docs
+
+- **Added** Runtime support matrix and full deployment recipes for Node, Deno, Bun, and Cloudflare + Durable Objects in [`/api/agent`](https://llui.dev/api/agent).
+
+---
+
 ## 2026-04-24 — 0.0.30
 
 **Released:** `@llui/{dom,vite-plugin,test,router,transitions,components}@0.0.30`; `@llui/vike@0.0.31`; `@llui/mcp@0.0.24`; `@llui/eslint-plugin@0.0.14`; `@llui/agent@0.0.30`; `llui-agent@0.0.2`

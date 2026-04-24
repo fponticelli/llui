@@ -1,12 +1,24 @@
 {
   "name": "@llui/agent",
-  "version": "0.0.30",
+  "version": "0.0.31",
   "type": "module",
   "sideEffects": false,
   "exports": {
     "./server": {
       "types": "./dist/server/index.d.ts",
       "import": "./dist/server/index.js"
+    },
+    "./server/core": {
+      "types": "./dist/server/core-entry.d.ts",
+      "import": "./dist/server/core-entry.js"
+    },
+    "./server/web": {
+      "types": "./dist/server/web/index.d.ts",
+      "import": "./dist/server/web/index.js"
+    },
+    "./server/cloudflare": {
+      "types": "./dist/server/cloudflare/index.d.ts",
+      "import": "./dist/server/cloudflare/index.js"
     },
     "./client": {
       "types": "./dist/client/index.d.ts",
