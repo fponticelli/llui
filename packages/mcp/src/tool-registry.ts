@@ -20,9 +20,53 @@ export interface RelayTransport {
   isAvailable(): boolean
 }
 
+export interface ConsoleEntry {
+  level: 'log' | 'info' | 'warn' | 'error' | 'debug'
+  text: string
+  timestamp: number
+  stackTrace?: string
+}
+
+export interface NetworkEntry {
+  requestId: string
+  url: string
+  method: string
+  status: number | null
+  startTime: number
+  endTime: number | null
+  durationMs: number | null
+  failed: boolean
+  failureReason?: string
+}
+
+export interface ErrorEntry {
+  text: string
+  stack: string
+  timestamp: number
+  url?: string
+  line?: number
+  column?: number
+}
+
 export interface CdpTransport {
   call(domain: string, method: string, params?: Record<string, unknown>): Promise<unknown>
   isAvailable(): boolean
+  screenshot(opts: {
+    selector?: string
+    fullPage?: boolean
+    format?: 'png' | 'jpeg'
+  }): Promise<{ data: string; format: string; mimeType: string }>
+  accessibilitySnapshot(opts: {
+    selector?: string
+    interestingOnly?: boolean
+  }): Promise<unknown>
+  getConsoleBuffer(limit?: number, level?: string): ConsoleEntry[]
+  getNetworkBuffer(
+    limit?: number,
+    filter?: { urlPattern?: string; status?: number },
+  ): NetworkEntry[]
+  getErrorBuffer(limit?: number): ErrorEntry[]
+  closeBrowser(): Promise<{ closed: boolean; reason?: string }>
 }
 
 export type ToolHandler = (args: Record<string, unknown>, ctx: ToolContext) => Promise<unknown>
