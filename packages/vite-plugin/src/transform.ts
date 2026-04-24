@@ -5,6 +5,7 @@ import { extractMsgAnnotations, type MessageAnnotations } from './msg-annotation
 import { extractStateSchema, type StateType } from './state-schema.js'
 import { computeSchemaHash } from './schema-hash.js'
 import { extractBindingDescriptors, type BindingDescriptor } from './binding-descriptors.js'
+import { compilerCache } from './compiler-cache.js'
 
 function createMaskLiteral(f: ts.NodeFactory, mask: number): ts.Expression {
   if (mask >= 0) return f.createNumericLiteral(mask)
@@ -377,6 +378,23 @@ export function transformLlui(
         if (bindingDescriptors.length > 0) {
           result = injectBindingDescriptors(result ?? node, bindingDescriptors, f)
         }
+
+        // Populate compiler cache — preSource and msgMaskMap are known now;
+        // postSource is filled in after the full output is assembled.
+        const cachedComponentName = extractComponentNameFromConfig(node)
+        if (cachedComponentName) {
+          const preSource = extractViewBody(source) ?? ''
+          const msgMaskMap: Record<string, number> = {}
+          for (const [path, bit] of fieldBits) {
+            msgMaskMap[path] = bit
+          }
+          compilerCache.set(cachedComponentName, {
+            preSource,
+            postSource: '',
+            msgMaskMap,
+            bindingSources: [],
+          })
+        }
       }
       if (devMode) {
         result = injectComponentMeta(result ?? node, node, sourceFile, _filename, f)
@@ -420,8 +438,9 @@ export function transformLlui(
 
   if (edits.length === 0) return null
 
-  // Find component declarations for HMR
-  const componentDecls = devMode ? findComponentDeclarations(sourceFile, lluiImport) : []
+  // Find component declarations for HMR and agent metadata
+  const componentDecls =
+    devMode || emitAgentMetadata ? findComponentDeclarations(sourceFile, lluiImport) : []
 
   // Build per-statement edits by comparing original vs transformed.
   // Only emit edits for statements that actually changed.
@@ -443,8 +462,11 @@ export function transformLlui(
       const { top: _top, bottom: _bottom } = devMode
         ? generateDevCode(componentDecls, mcpPort)
         : { top: '', bottom: '' }
-      const output =
+      let output =
         (_top ? _top + '\n' : '') + printer.printFile(transformed) + (_bottom ? '\n' + _bottom : '')
+      if (devMode || emitAgentMetadata) {
+        output = appendCompilerCacheProps(output, componentDecls)
+      }
       return { output, edits: [{ start: 0, end: source.length, replacement: output }] }
     }
 
@@ -477,6 +499,14 @@ export function transformLlui(
   let output = source
   for (const edit of sorted) {
     output = output.slice(0, edit.start) + edit.replacement + output.slice(edit.end)
+  }
+
+  // After output is assembled, update postSource in cache and emit non-enumerable props
+  if ((devMode || emitAgentMetadata) && componentDecls.length > 0) {
+    const cacheProps = appendCompilerCacheProps(output, componentDecls)
+    if (cacheProps !== output) {
+      output = cacheProps
+    }
   }
 
   return { output, edits: finalEdits }
@@ -4880,4 +4910,76 @@ export function hasUseClientDirective(source: string): boolean {
     break
   }
   return source.startsWith("'use client'", i) || source.startsWith('"use client"', i)
+}
+
+// ── Compiler cache helpers ────────────────────────────────────────
+
+/**
+ * Extract the view function body (the value of the `view:` property) from
+ * a component() config object literal.  Uses a regex heuristic — good enough
+ * for round-tripping source for dev/agent tools.
+ */
+export function extractViewBody(code: string): string | null {
+  const match =
+    /\bview\s*:\s*([\s\S]*?)(?=,\s*(?:onEffect|update|init|name|onMsg)\s*:|}\s*\))/m.exec(code)
+  return match?.[1]?.trim() ?? null
+}
+
+/**
+ * Extract the component `name:` string literal from a component() call's
+ * first argument object literal in the source text.
+ */
+export function extractComponentNameFromConfig(node: ts.CallExpression): string | null {
+  const configArg = node.arguments[0]
+  if (!configArg || !ts.isObjectLiteralExpression(configArg)) return null
+  for (const prop of configArg.properties) {
+    if (
+      ts.isPropertyAssignment(prop) &&
+      ts.isIdentifier(prop.name) &&
+      prop.name.text === 'name' &&
+      ts.isStringLiteral(prop.initializer)
+    ) {
+      return prop.initializer.text
+    }
+  }
+  return null
+}
+
+/**
+ * Generate Object.defineProperty calls for __preSource, __postSource,
+ * __msgMaskMap, and __bindingSources on a component variable.  These are
+ * non-enumerable so they don't appear in JSON.stringify(componentDef) but are
+ * visible to devtools.
+ */
+export function generateCompilerCacheProps(varName: string, componentName: string): string {
+  const entry = compilerCache.get(componentName)
+  if (!entry) return ''
+  return (
+    `\nObject.defineProperty(${varName}, '__preSource', { value: ${JSON.stringify(entry.preSource)}, enumerable: false, configurable: true })` +
+    `\nObject.defineProperty(${varName}, '__postSource', { value: ${JSON.stringify(entry.postSource)}, enumerable: false, configurable: true })` +
+    `\nObject.defineProperty(${varName}, '__msgMaskMap', { value: ${JSON.stringify(entry.msgMaskMap)}, enumerable: false, configurable: true })` +
+    `\nObject.defineProperty(${varName}, '__bindingSources', { value: ${JSON.stringify(entry.bindingSources)}, enumerable: false, configurable: true })`
+  )
+}
+
+/**
+ * After the full output string is assembled, update each cached component's
+ * postSource (extract view body from the transformed output), then append
+ * Object.defineProperty calls for all four compiler-cache properties.
+ */
+export function appendCompilerCacheProps(
+  output: string,
+  componentDecls: Array<{ varName: string; componentName: string }>,
+): string {
+  let result = output
+  for (const { varName, componentName } of componentDecls) {
+    const existing = compilerCache.get(componentName)
+    if (!existing) continue
+    // Update the cache entry with the post-transform view body
+    const postSource = extractViewBody(output) ?? ''
+    compilerCache.set(componentName, { ...existing, postSource })
+    // Append non-enumerable property definitions
+    result += generateCompilerCacheProps(varName, componentName)
+  }
+  return result
 }

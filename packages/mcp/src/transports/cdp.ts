@@ -52,11 +52,7 @@ export class CdpSessionManager implements CdpTransport {
     return this.session !== null
   }
 
-  async call(
-    domain: string,
-    method: string,
-    params?: Record<string, unknown>,
-  ): Promise<unknown> {
+  async call(domain: string, method: string, params?: Record<string, unknown>): Promise<unknown> {
     const s = await this.ensureSession()
     const cdpSession = await s.page.context().newCDPSession(s.page)
     try {

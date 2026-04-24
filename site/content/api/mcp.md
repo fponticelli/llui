@@ -175,6 +175,17 @@ export interface LluiMcpServerOptions {
    * connect).
    */
   attachTo?: HttpServer
+  /**
+   * Optional dev-server URL for CDP fallback navigation. When provided,
+   * the CDP session manager will use this URL as the target for Playwright
+   * browser instances.
+   */
+  devUrl?: string
+  /**
+   * Whether to run the Playwright browser in headed mode (visible window).
+   * Defaults to false (headless).
+   */
+  headed?: boolean
 }
 ```
 
@@ -188,6 +199,7 @@ class LluiMcpServer {
   relay: WebSocketRelayTransport
   bridgePort: number
   mcp: McpServer
+  cdp: CdpSessionManager
   devUrl: string | null
   constructor(optsOrPort: LluiMcpServerOptions | number = 5200)
   buildMcpServer(): McpServer

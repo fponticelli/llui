@@ -56,10 +56,7 @@ export interface CdpTransport {
     fullPage?: boolean
     format?: 'png' | 'jpeg'
   }): Promise<{ data: string; format: string; mimeType: string }>
-  accessibilitySnapshot(opts: {
-    selector?: string
-    interestingOnly?: boolean
-  }): Promise<unknown>
+  accessibilitySnapshot(opts: { selector?: string; interestingOnly?: boolean }): Promise<unknown>
   getConsoleBuffer(limit?: number, level?: string): ConsoleEntry[]
   getNetworkBuffer(
     limit?: number,

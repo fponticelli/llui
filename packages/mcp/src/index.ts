@@ -7,8 +7,18 @@ import { Server as McpServer } from '@modelcontextprotocol/sdk/server/index.js'
 import type { Transport } from '@modelcontextprotocol/sdk/shared/transport.js'
 import { ListToolsRequestSchema, CallToolRequestSchema } from '@modelcontextprotocol/sdk/types.js'
 import { ToolRegistry, type ToolContext, type ToolDefinition } from './tool-registry.js'
-import { registerDebugApiTools } from './tools/index.js'
-import { WebSocketRelayTransport, RelayUnavailableError, CdpSessionManager } from './transports/index.js'
+import {
+  registerDebugApiTools,
+  registerCdpTools,
+  registerCompilerTools,
+  registerSourceTools,
+  registerSsrTools,
+} from './tools/index.js'
+import {
+  WebSocketRelayTransport,
+  RelayUnavailableError,
+  CdpSessionManager,
+} from './transports/index.js'
 
 /**
  * Version advertised in the MCP `initialize` handshake. Read once from
@@ -143,6 +153,10 @@ export class LluiMcpServer {
       headed: opts.headed ?? false,
     })
     registerDebugApiTools(this.registry)
+    registerCdpTools(this.registry)
+    registerCompilerTools(this.registry)
+    registerSourceTools(this.registry)
+    registerSsrTools(this.registry)
 
     // SDK-managed MCP server — owns the JSON-RPC protocol, handshake,
     // session lifecycle. Transport is plugged in later via `connect()`.
@@ -300,5 +314,9 @@ export class LluiMcpServer {
 export const mcpToolDefinitions: ToolDefinition[] = (() => {
   const registry = new ToolRegistry()
   registerDebugApiTools(registry)
+  registerCdpTools(registry)
+  registerCompilerTools(registry)
+  registerSourceTools(registry)
+  registerSsrTools(registry)
   return registry.listDefinitions()
 })()

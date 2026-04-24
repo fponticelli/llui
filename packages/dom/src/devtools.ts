@@ -337,6 +337,14 @@ export interface LluiDebugAPI {
       dirtyBindingIndices: number[]
     }
   }
+  /** Returns the pre- and post-transform source of the view function injected by the compiler. Pass an optional viewFn name to select a specific view (currently unused — returns the component's view). Returns null if no source was injected. */
+  getCompiledSource(_viewFn?: string): { pre: string; post: string } | null
+  /** Returns the per-Msg-variant → dirty-mask map injected by the compiler. Lets tools explain which state fields a given message type will dirty. Returns null if not injected. */
+  getMsgMaskMap(): Record<string, number> | null
+  /** Returns the source location (file, line, column) for the binding at the given index, as recorded by the compiler. Returns null if the index is out of range or no source map was injected. */
+  getBindingSource(bindingIndex: number): { file: string; line: number; column: number } | null
+  /** Compare server-rendered HTML (stored in data-llui-ssr-html on the mount root) against the current client DOM. Returns an array of divergences — empty when hydration is clean. */
+  getHydrationReport(): HydrationDivergence[]
 }
 
 export interface ElementReport {
@@ -382,6 +390,57 @@ export interface ComponentInfo {
 export interface MessageSchemaInfo {
   discriminant: string
   variants: Record<string, Record<string, unknown>>
+}
+
+export interface HydrationDivergence {
+  path: string
+  kind: 'attribute' | 'text' | 'structural'
+  server: unknown
+  client: unknown
+}
+
+function diffNodes(
+  client: Element,
+  server: Element,
+  path: string,
+  out: HydrationDivergence[],
+): void {
+  const clientAttrs = new Map(Array.from(client.attributes).map((a) => [a.name, a.value]))
+  const serverAttrs = new Map(Array.from(server.attributes).map((a) => [a.name, a.value]))
+  for (const [name, val] of serverAttrs) {
+    if (clientAttrs.get(name) !== val) {
+      out.push({
+        path,
+        kind: 'attribute',
+        server: `${name}="${val}"`,
+        client: `${name}="${clientAttrs.get(name) ?? ''}"`,
+      })
+    }
+  }
+  if (client.children.length === 0 && server.children.length === 0) {
+    if (client.textContent !== server.textContent) {
+      out.push({ path, kind: 'text', server: server.textContent, client: client.textContent })
+    }
+    return
+  }
+  if (client.children.length !== server.children.length) {
+    out.push({
+      path,
+      kind: 'structural',
+      server: server.children.length,
+      client: client.children.length,
+    })
+    return
+  }
+  for (let i = 0; i < client.children.length; i++) {
+    const tag = client.children[i]!.tagName.toLowerCase()
+    diffNodes(
+      client.children[i] as Element,
+      server.children[i] as Element,
+      `${path} > ${tag}:nth-child(${i + 1})`,
+      out,
+    )
+  }
 }
 
 const MAX_HISTORY = 1000
@@ -972,6 +1031,47 @@ export function installDevTools(inst: object): void {
       const schema = ci.def.__msgSchema as { variants?: Record<string, unknown> } | undefined
       const known = schema?.variants ? Object.keys(schema.variants) : undefined
       return ci._coverage.snapshot(known)
+    },
+
+    getCompiledSource(_viewFn?: string): { pre: string; post: string } | null {
+      const def = ci.def as unknown as Record<string, unknown>
+      const pre = def['__preSource']
+      const post = def['__postSource']
+      if (typeof pre !== 'string' || typeof post !== 'string') return null
+      return { pre, post }
+    },
+
+    getMsgMaskMap(): Record<string, number> | null {
+      const def = ci.def as unknown as Record<string, unknown>
+      const map = def['__msgMaskMap']
+      return map != null && typeof map === 'object' ? (map as Record<string, number>) : null
+    },
+
+    getBindingSource(bindingIndex: number): { file: string; line: number; column: number } | null {
+      const def = ci.def as unknown as Record<string, unknown>
+      const sources = def['__bindingSources']
+      if (!Array.isArray(sources)) return null
+      const entry = (
+        sources as Array<{ bindingIndex: number; file: string; line: number; column: number }>
+      ).find((s) => s.bindingIndex === bindingIndex)
+      return entry ? { file: entry.file, line: entry.line, column: entry.column } : null
+    },
+
+    getHydrationReport(): HydrationDivergence[] {
+      if (typeof document === 'undefined') return []
+      // Find a mounted element that carries the server-rendered HTML attribute.
+      // @llui/vike stamps this attribute during SSR so the client can compare.
+      const root = document.querySelector('[data-llui-ssr-html]')
+      if (!root) return []
+      const serverHtml = root.getAttribute('data-llui-ssr-html')
+      if (!serverHtml) return []
+      const parser = new DOMParser()
+      const serverDoc = parser.parseFromString(serverHtml, 'text/html')
+      const serverRoot = serverDoc.body.firstChild as Element | null
+      if (!serverRoot) return []
+      const divergences: HydrationDivergence[] = []
+      diffNodes(root, serverRoot, 'root', divergences)
+      return divergences
     },
 
     evalInPage(code: string) {
