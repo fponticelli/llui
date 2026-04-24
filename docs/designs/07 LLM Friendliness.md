@@ -1023,6 +1023,41 @@ The Vite dev server already maintains a WebSocket for HMR. The LLui Vite plugin 
 | `llui_search_history`     | Filter history by type, statePath change, effectType, or index range.               |
 | `llui_eval`               | Arbitrary JS in page context; returns result + observability envelope.              |
 
+**Phase 2 additions (6 CDP tools):**
+
+| Tool                    | Description                                                                                  |
+| ----------------------- | -------------------------------------------------------------------------------------------- |
+| `llui_screenshot`       | Capture a screenshot of the browser page or a specific element. Returns base64 PNG or JPEG. |
+| `llui_a11y_tree`        | Return the accessibility tree for the page or element. Verifies ARIA roles and labels.       |
+| `llui_network_tail`     | Return recent network requests with URL, method, status, timing, and failure info.           |
+| `llui_console_tail`     | Return recent browser console entries (log, info, warn, error, debug).                       |
+| `llui_uncaught_errors`  | Return recent uncaught JavaScript exceptions captured since the CDP session started.         |
+| `llui_browser_close`    | Close the Playwright-owned fallback browser. No-op for user-owned browsers (:9222).          |
+
+**Phase 3 additions (3 compiler metadata tools):**
+
+| Tool                         | Description                                                                               |
+| ---------------------------- | ----------------------------------------------------------------------------------------- |
+| `llui_show_compiled`         | Return pre- and post-transform source for the active component's view function.           |
+| `llui_explain_mask`          | Look up the mask bit and related state paths for a given state-path key.                  |
+| `llui_goto_binding_source`   | Return the source file, line, and column of the view() expression for a binding index.   |
+
+**Phase 4 additions (4 source-scan tools):**
+
+| Tool                        | Description                                                                                |
+| --------------------------- | ------------------------------------------------------------------------------------------ |
+| `llui_find_msg_producers`   | Grep the project for send({type: "..."}) call sites. Returns file, line, and context.     |
+| `llui_find_msg_handlers`    | Grep the project for update() case branches for a specific Msg variant.                   |
+| `llui_run_test`             | Run a vitest test file and return pass/fail status with captured output.                  |
+| `llui_lint_project`         | Run @llui/eslint-plugin across a directory. Returns a 0–20 score and per-file violations. |
+
+**Phase 5 additions (2 SSR tools):**
+
+| Tool                      | Description                                                                                     |
+| ------------------------- | ----------------------------------------------------------------------------------------------- |
+| `llui_hydration_report`   | Compare server-rendered HTML against client DOM; return divergences (attribute/text/structural). |
+| `llui_ssr_render`         | Server-render the active component with its current state; returns the HTML string.             |
+
 **`llui_send_message` validates before dispatching.** When the LLM calls `llui_send_message({ type: 'addItem', text: 'test' })`, the MCP server first calls `validateMessage` against the component's Msg type. If validation fails, the tool returns the validation errors _without sending the message_. This feedback loop is immediate and structured — the LLM sees `{ errors: [{ path: '.id', expected: 'string', received: 'undefined', message: 'missing required field "id"' }] }` and corrects its next attempt. No other framework derives runtime-accessible message validation metadata directly from TypeScript discriminated union types at compile time — other approaches require manually written schemas (Zod, io-ts) or lose type information at runtime.
 
 **`llui_eval_update` enables speculative debugging.** The LLM can ask "what would happen if the user clicked 'submit' right now?" without changing the app. It calls `llui_eval_update({ type: 'submit' })` and reads the resulting state and effects. If the result reveals a bug ("the state transitions to `loading` but no `http` effect is emitted"), the LLM has found the problem without executing any side effects. It can then inspect the `update()` source, identify the missing effect, and propose a fix — all without the app ever leaving its current state.
