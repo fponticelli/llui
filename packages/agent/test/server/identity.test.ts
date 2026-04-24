@@ -28,13 +28,13 @@ describe('defaultIdentityResolver', () => {
   })
 
   it('returns the uid when the signed cookie validates', async () => {
-    const signed = signCookieValue('user-42', key)
+    const signed = await signCookieValue('user-42', key)
     const resolver = defaultIdentityResolver({ name: 'llui-agent-uid', signingKey: key })
     expect(await resolver(mkReq(`llui-agent-uid=${signed}`))).toBe('user-42')
   })
 
   it('ignores cookies other than the configured name', async () => {
-    const signed = signCookieValue('user-42', key)
+    const signed = await signCookieValue('user-42', key)
     const resolver = defaultIdentityResolver({ name: 'llui-agent-uid', signingKey: key })
     expect(await resolver(mkReq(`session=abc; llui-agent-uid=${signed}; csrf=xyz`))).toBe('user-42')
   })

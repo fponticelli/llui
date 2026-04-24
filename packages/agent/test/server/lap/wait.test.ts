@@ -39,10 +39,13 @@ const deps = () => ({
   rateLimiter: permissiveLimiter,
 })
 
-const req = (body: unknown): Request =>
+const req = async (body: unknown): Promise<Request> =>
   new Request('https://app/lap/v1/wait', {
     method: 'POST',
-    headers: { authorization: `Bearer ${validToken('t1')}`, 'content-type': 'application/json' },
+    headers: {
+      authorization: `Bearer ${await validToken('t1')}`,
+      'content-type': 'application/json',
+    },
     body: JSON.stringify(body),
   })
 
@@ -52,14 +55,14 @@ describe('handleLapWait', () => {
       status: 'changed',
       stateAfter: { n: 2 },
     })
-    const res = await handleLapWait(req({ path: '/count' }), deps())
+    const res = await handleLapWait(await req({ path: '/count' }), deps())
     const body = (await res.json()) as LapWaitResponse
     expect(body.status).toBe('changed')
   })
 
   it('returns timeout when registry times out', async () => {
     vi.spyOn(registry, 'waitForChange').mockResolvedValue({ status: 'timeout', stateAfter: null })
-    const res = await handleLapWait(req({ timeoutMs: 1 }), deps())
+    const res = await handleLapWait(await req({ timeoutMs: 1 }), deps())
     const body = (await res.json()) as LapWaitResponse
     expect(body.status).toBe('timeout')
   })
@@ -68,7 +71,7 @@ describe('handleLapWait', () => {
     const tightLimiter: RateLimiter = {
       check: vi.fn<RateLimiter['check']>(async () => ({ allowed: false, retryAfterMs: 500 })),
     }
-    const res = await handleLapWait(req({ path: '/count' }), {
+    const res = await handleLapWait(await req({ path: '/count' }), {
       ...deps(),
       rateLimiter: tightLimiter,
     })

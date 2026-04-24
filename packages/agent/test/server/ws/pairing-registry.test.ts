@@ -45,7 +45,7 @@ const hello = (schemaHash = 'h1'): HelloFrame => ({
 
 let reg: WsPairingRegistry
 beforeEach(() => {
-  reg = new WsPairingRegistry({ now: () => 1000 })
+  reg = new WsPairingRegistry()
 })
 
 function getConn(f: Fake) {

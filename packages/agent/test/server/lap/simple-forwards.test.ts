@@ -41,10 +41,13 @@ beforeEach(() => {
   vi.spyOn(registry, 'isPaired').mockReturnValue(true)
 })
 
-function mkReq(path: string, body: unknown): Request {
+async function mkReq(path: string, body: unknown): Promise<Request> {
   return new Request(`https://app${path}`, {
     method: 'POST',
-    headers: { authorization: `Bearer ${validToken('t1')}`, 'content-type': 'application/json' },
+    headers: {
+      authorization: `Bearer ${await validToken('t1')}`,
+      'content-type': 'application/json',
+    },
     body: body === undefined ? undefined : JSON.stringify(body),
   })
 }
@@ -66,25 +69,25 @@ describe('LAP simple-forward handlers', () => {
   })
 
   it('/state forwards get_state with {path}', async () => {
-    const res = await handleLapState(mkReq('/lap/v1/state', { path: '/x' }), deps())
+    const res = await handleLapState(await mkReq('/lap/v1/state', { path: '/x' }), deps())
     expect(res.status).toBe(200)
     expect(rpcSpy).toHaveBeenCalledWith('t1', 'get_state', { path: '/x' })
   })
 
   it('/state rejects a non-string path with 400', async () => {
-    const res = await handleLapState(mkReq('/lap/v1/state', { path: 123 }), deps())
+    const res = await handleLapState(await mkReq('/lap/v1/state', { path: 123 }), deps())
     expect(res.status).toBe(400)
   })
 
   it('/actions forwards list_actions with {}', async () => {
-    const res = await handleLapActions(mkReq('/lap/v1/actions', {}), deps())
+    const res = await handleLapActions(await mkReq('/lap/v1/actions', {}), deps())
     expect(res.status).toBe(200)
     expect(rpcSpy).toHaveBeenCalledWith('t1', 'list_actions', {})
   })
 
   it('/query-dom forwards {name, multiple}', async () => {
     const res = await handleLapQueryDom(
-      mkReq('/lap/v1/query-dom', { name: 'email', multiple: true }),
+      await mkReq('/lap/v1/query-dom', { name: 'email', multiple: true }),
       deps(),
     )
     expect(res.status).toBe(200)
@@ -92,31 +95,31 @@ describe('LAP simple-forward handlers', () => {
   })
 
   it('/query-dom rejects missing name', async () => {
-    const res = await handleLapQueryDom(mkReq('/lap/v1/query-dom', {}), deps())
+    const res = await handleLapQueryDom(await mkReq('/lap/v1/query-dom', {}), deps())
     expect(res.status).toBe(400)
   })
 
   it('/describe-visible forwards describe_visible_content with {}', async () => {
-    const res = await handleLapDescribeVisible(mkReq('/lap/v1/describe-visible', {}), deps())
+    const res = await handleLapDescribeVisible(await mkReq('/lap/v1/describe-visible', {}), deps())
     expect(res.status).toBe(200)
     expect(rpcSpy).toHaveBeenCalledWith('t1', 'describe_visible_content', {})
   })
 
   it('/context forwards describe_context with {}', async () => {
-    const res = await handleLapContext(mkReq('/lap/v1/context', {}), deps())
+    const res = await handleLapContext(await mkReq('/lap/v1/context', {}), deps())
     expect(res.status).toBe(200)
     expect(rpcSpy).toHaveBeenCalledWith('t1', 'describe_context', {})
   })
 
   it('returns 503 paused when registry rpc rejects with paused', async () => {
     rpcSpy.mockRejectedValueOnce({ code: 'paused' })
-    const res = await handleLapState(mkReq('/lap/v1/state', {}), deps())
+    const res = await handleLapState(await mkReq('/lap/v1/state', {}), deps())
     expect(res.status).toBe(503)
   })
 
   it('returns 504 timeout when registry rpc rejects with timeout', async () => {
     rpcSpy.mockRejectedValueOnce({ code: 'timeout' })
-    const res = await handleLapState(mkReq('/lap/v1/state', {}), deps())
+    const res = await handleLapState(await mkReq('/lap/v1/state', {}), deps())
     expect(res.status).toBe(504)
   })
 
@@ -124,7 +127,7 @@ describe('LAP simple-forward handlers', () => {
     const tightLimiter: RateLimiter = {
       check: vi.fn<RateLimiter['check']>(async () => ({ allowed: false, retryAfterMs: 500 })),
     }
-    const res = await handleLapState(mkReq('/lap/v1/state', {}), {
+    const res = await handleLapState(await mkReq('/lap/v1/state', {}), {
       ...deps(),
       rateLimiter: tightLimiter,
     })

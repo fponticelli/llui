@@ -49,7 +49,7 @@ afterEach(async () => {
   await new Promise<void>((resolve) => server.close(() => resolve()))
 })
 
-function makeToken(tid: string): string {
+function makeToken(tid: string): Promise<string> {
   const payload: TokenPayload = {
     tid,
     iat: 0,
@@ -62,7 +62,7 @@ function makeToken(tid: string): string {
 describe('createWsUpgradeHandler', () => {
   it('accepts a WS connection with a valid token and registers the pairing', async () => {
     await seed(store, 't1')
-    const token = makeToken('t1')
+    const token = await makeToken('t1')
     const ws = new WebSocket(`ws://127.0.0.1:${port}/agent/ws?token=${encodeURIComponent(token)}`)
     await new Promise<void>((resolve) => ws.once('open', resolve))
     expect(registry.isPaired('t1')).toBe(true)
@@ -94,7 +94,7 @@ describe('createWsUpgradeHandler', () => {
 
   it('unregisters on socket close', async () => {
     await seed(store, 't2')
-    const token = makeToken('t2')
+    const token = await makeToken('t2')
     const ws = new WebSocket(`ws://127.0.0.1:${port}/agent/ws?token=${encodeURIComponent(token)}`)
     await new Promise<void>((resolve) => ws.once('open', resolve))
     ws.close()
@@ -105,7 +105,7 @@ describe('createWsUpgradeHandler', () => {
 
   it('transitions token status to awaiting-claude on WS connect', async () => {
     await seed(store, 't3')
-    const token = makeToken('t3')
+    const token = await makeToken('t3')
     const ws = new WebSocket(`ws://127.0.0.1:${port}/agent/ws?token=${encodeURIComponent(token)}`)
     await new Promise<void>((resolve) => ws.once('open', resolve))
     // Give the server-side handler a tick to call markAwaitingClaude

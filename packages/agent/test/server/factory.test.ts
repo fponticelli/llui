@@ -18,7 +18,7 @@ describe('createLluiAgentServer — full HTTP lifecycle', () => {
     const mintRes = await agent.router(new Request('https://app/agent/mint', { method: 'POST' }))
     expect(mintRes?.status).toBe(200)
     const mintBody = (await mintRes!.json()) as MintResponse
-    expect(verifyToken(mintBody.token, key).kind).toBe('ok')
+    expect((await verifyToken(mintBody.token, key)).kind).toBe('ok')
 
     // Real flow: awaiting-ws → (WS upgrade) awaiting-claude → (describe) active.
     // Simulate the full transition here (WS upgrade + describe) to put the token in active status.

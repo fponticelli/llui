@@ -39,10 +39,13 @@ const deps = () => ({
   rateLimiter: permissiveLimiter,
 })
 
-const req = (body: unknown): Request =>
+const req = async (body: unknown): Promise<Request> =>
   new Request('https://app/lap/v1/confirm-result', {
     method: 'POST',
-    headers: { authorization: `Bearer ${validToken('t1')}`, 'content-type': 'application/json' },
+    headers: {
+      authorization: `Bearer ${await validToken('t1')}`,
+      'content-type': 'application/json',
+    },
     body: JSON.stringify(body),
   })
 
@@ -52,21 +55,21 @@ describe('handleLapConfirmResult', () => {
       outcome: 'confirmed',
       stateAfter: { n: 2 },
     })
-    const res = await handleLapConfirmResult(req({ confirmId: 'c1' }), deps())
+    const res = await handleLapConfirmResult(await req({ confirmId: 'c1' }), deps())
     const body = (await res.json()) as { status: string }
     expect(body.status).toBe('confirmed')
   })
 
   it('returns rejected user-cancelled when waitForConfirm resolves cancelled', async () => {
     vi.spyOn(registry, 'waitForConfirm').mockResolvedValue({ outcome: 'user-cancelled' })
-    const res = await handleLapConfirmResult(req({ confirmId: 'c1' }), deps())
+    const res = await handleLapConfirmResult(await req({ confirmId: 'c1' }), deps())
     const body = (await res.json()) as { status: string; reason?: string }
     expect(body.status).toBe('rejected')
     expect(body.reason).toBe('user-cancelled')
   })
 
   it('rejects missing confirmId', async () => {
-    const res = await handleLapConfirmResult(req({}), deps())
+    const res = await handleLapConfirmResult(await req({}), deps())
     expect(res.status).toBe(400)
   })
 
@@ -74,7 +77,7 @@ describe('handleLapConfirmResult', () => {
     const tightLimiter: RateLimiter = {
       check: vi.fn<RateLimiter['check']>(async () => ({ allowed: false, retryAfterMs: 500 })),
     }
-    const res = await handleLapConfirmResult(req({ confirmId: 'c1' }), {
+    const res = await handleLapConfirmResult(await req({ confirmId: 'c1' }), {
       ...deps(),
       rateLimiter: tightLimiter,
     })

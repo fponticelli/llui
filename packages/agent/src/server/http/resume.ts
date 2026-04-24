@@ -68,7 +68,7 @@ export async function handleResumeClaim(req: Request, deps: ResumeDeps): Promise
   const iat = Math.floor(nowMs / 1000)
   const exp = Math.floor((nowMs + hardExpiryMs) / 1000)
   const payload: TokenPayload = { tid: rec.tid, iat, exp, scope: 'agent' }
-  const token = signToken(payload, deps.signingKey)
+  const token = await signToken(payload, deps.signingKey)
 
   await deps.tokenStore.markActive(rec.tid, rec.label ?? '(resumed)', nowMs)
 

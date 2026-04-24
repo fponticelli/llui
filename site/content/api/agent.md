@@ -111,12 +111,16 @@ Open your app (`vite dev`), use the in-app UI to mint a token (the `agentConnect
 
 Claude decides what to dispatch by reading your `Msg` discriminated union. JSDoc tags on each variant classify its agent affordability:
 
+<!-- prettier-ignore -->
 ```ts
 type Msg =
-  | /** @intent("increment the counter") */
-  { type: 'inc' } /** @intent("reset to zero") @requiresConfirm */
-  | { type: 'reset' } /** @humanOnly */
-  | { type: 'internalWheelDelta'; dy: number } /** @alwaysAffordable @intent("navigate to route") */
+  /** @intent("increment the counter") */
+  | { type: 'inc' }
+  /** @intent("reset to zero") @requiresConfirm */
+  | { type: 'reset' }
+  /** @humanOnly */
+  | { type: 'internalWheelDelta'; dy: number }
+  /** @alwaysAffordable @intent("navigate to route") */
   | { type: 'navigate'; to: string }
 ```
 
@@ -185,9 +189,24 @@ ul({ class: 'repo-list', 'data-agent': 'search-results' }, [
 
 The `query_dom` tool reads by `data-agent` name; `describe_visible_content` walks the visible subtree and emits a structured outline.
 
-## Production deployment
+## Runtime support
 
-`{ agent: true }` works in dev only. In production, mount the server yourself. `@llui/agent/server` exports `createLluiAgentServer`, which returns an HTTP router and a WebSocket upgrade handler you attach to your Node server:
+The agent server needs a runtime that can hold a long-lived WebSocket. `{ agent: true }` in the vite-plugin is dev-only; production deployment depends on where your backend runs.
+
+| Runtime                              | Supported | Entry point                                          | Notes                                                            |
+| ------------------------------------ | --------- | ---------------------------------------------------- | ---------------------------------------------------------------- |
+| Node.js (server process)             | yes       | `@llui/agent/server`                                 | Uses the `ws` library. Default path.                             |
+| Bun (server process)                 | yes       | `@llui/agent/server/core` + `@llui/agent/server/web` | Wire `server.upgrade()` + `createWHATWGPairingConnection`.       |
+| Deno / Deno Deploy                   | yes       | `@llui/agent/server/core` + `@llui/agent/server/web` | Uses `handleDenoUpgrade()`.                                      |
+| Cloudflare Workers + Durable Objects | yes       | `@llui/agent/server/cloudflare`                      | Pairing state lives in a DO. See below.                          |
+| Cloudflare Workers (bare, no DO)     | **no**    | —                                                    | Worker isolates are stateless; can't own a long-lived WebSocket. |
+| Vercel Edge, plain Lambda            | **no**    | —                                                    | No native WebSocket + stateless. Not viable.                     |
+
+All supported paths share the same LAP wire protocol and MCP bridge — the runtime differences are just in how each one accepts a WebSocket upgrade.
+
+## Node deployment
+
+`@llui/agent/server` exports `createLluiAgentServer`, which returns an HTTP router and a WebSocket upgrade handler you attach to your Node server:
 
 ```ts
 // server.ts
@@ -219,6 +238,113 @@ server.listen(3000)
 ```
 
 The defaults (`InMemoryTokenStore`, `consoleAuditSink`, 30-req/min limiter) are fine for a single-process dev server. For production, swap in a persistent `TokenStore`, an `IdentityResolver` tied to your auth system, and a durable `AuditSink`.
+
+## Deno deployment
+
+Import the runtime-neutral core + the web upgrade helper:
+
+```ts
+import { createLluiAgentCore } from '@llui/agent/server/core'
+import { handleDenoUpgrade } from '@llui/agent/server/web'
+
+const agent = createLluiAgentCore({ signingKey: Deno.env.get('AGENT_SIGNING_KEY')! })
+
+Deno.serve(async (req) => {
+  const url = new URL(req.url)
+  if (url.pathname === '/agent/ws') return handleDenoUpgrade(req, agent)
+  return (await agent.router(req)) ?? new Response('Not Found', { status: 404 })
+})
+```
+
+## Bun deployment
+
+Bun's `server.upgrade()` hands the socket to your `websocket.open()` handler. Wire it to `createWHATWGPairingConnection` and call `agent.acceptConnection`:
+
+```ts
+import { createLluiAgentCore } from '@llui/agent/server/core'
+import { createWHATWGPairingConnection } from '@llui/agent/server/web'
+
+const agent = createLluiAgentCore({ signingKey: Bun.env.AGENT_SIGNING_KEY! })
+
+Bun.serve({
+  fetch(req, server) {
+    const url = new URL(req.url)
+    if (url.pathname === '/agent/ws') {
+      const token = url.searchParams.get('token')
+      if (!token) return new Response('Unauthorized', { status: 401 })
+      if (server.upgrade(req, { data: { token } })) return undefined
+      return new Response('Upgrade failed', { status: 500 })
+    }
+    return agent.router(req).then((r) => r ?? new Response('Not Found', { status: 404 }))
+  },
+  websocket: {
+    async open(ws) {
+      const conn = createWHATWGPairingConnection(ws as unknown as WebSocket)
+      const { token } = ws.data as { token: string }
+      const result = await agent.acceptConnection(token, conn)
+      if (!result.ok) ws.close()
+    },
+  },
+})
+```
+
+## Cloudflare deployment
+
+Cloudflare Workers are stateless isolates — a bare Worker cannot own a long-lived WebSocket. The agent's pairing state lives in a **Durable Object** (one DO per session `tid`). The DO IS the registry; the Worker just routes requests to the right DO.
+
+```ts
+// worker.ts
+import { AgentPairingDurableObject, routeToAgentDO } from '@llui/agent/server/cloudflare'
+
+export interface Env {
+  AGENT_SIGNING_KEY: string
+  AGENT_DO: DurableObjectNamespace
+}
+
+export class AgentDO {
+  private agent: AgentPairingDurableObject
+  constructor(_state: DurableObjectState, env: Env) {
+    this.agent = new AgentPairingDurableObject({
+      signingKey: env.AGENT_SIGNING_KEY,
+    })
+  }
+  fetch(req: Request): Promise<Response> {
+    return this.agent.fetch(req)
+  }
+}
+
+export default {
+  async fetch(req: Request, env: Env): Promise<Response> {
+    return routeToAgentDO(req, env.AGENT_DO, env.AGENT_SIGNING_KEY)
+  },
+}
+```
+
+`wrangler.toml`:
+
+```toml
+[[durable_objects.bindings]]
+name = "AGENT_DO"
+class_name = "AgentDO"
+
+[[migrations]]
+tag = "v1"
+new_classes = ["AgentDO"]
+```
+
+Set the signing key via `wrangler secret put AGENT_SIGNING_KEY` in production.
+
+How it routes:
+
+- `POST /agent/mint`, `/agent/resume/*`, `/agent/sessions`, `/agent/revoke` → all go to a shared root DO (`__root`) that owns the token store.
+- `POST /agent/lap/v1/*` → routed by the `tid` in the `Authorization: Bearer` token to the per-session DO.
+- `GET /agent/ws` (WebSocket upgrade) → routed by the `tid` in `?token=` to the per-session DO.
+
+Each session DO holds its own `InMemoryPairingRegistry` + open WebSocket. Cloudflare's DO instance affinity by name guarantees every request for a given `tid` hits the same isolate, so pairing state stays consistent without external sync.
+
+### Crypto
+
+All HMAC operations use the WebCrypto standard (`crypto.subtle`), available in Node ≥ 15, Cloudflare Workers, Deno, and Bun. The agent package does not depend on `node:crypto`; that was removed in 0.0.31.
 
 ## Efficient tool usage
 

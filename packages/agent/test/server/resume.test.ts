@@ -94,7 +94,7 @@ describe('handleResumeClaim', () => {
     const body = (await res.json()) as ResumeClaimResponse
     expect(body.token).toBeDefined()
     expect(body.wsUrl).toMatch(/\/agent\/ws$/)
-    const verified = verifyToken(body.token, key, 5)
+    const verified = await verifyToken(body.token, key, 5)
     expect(verified.kind).toBe('ok')
 
     const stored = await store.findByTid('t1')

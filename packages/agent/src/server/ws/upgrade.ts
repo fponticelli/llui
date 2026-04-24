@@ -2,7 +2,7 @@ import { WebSocketServer } from 'ws'
 import type { WebSocket } from 'ws'
 import type { IncomingMessage } from 'node:http'
 import type { Duplex } from 'node:stream'
-import type { WsPairingRegistry, PairingConnection } from './pairing-registry.js'
+import type { PairingRegistry, PairingConnection } from './pairing-registry.js'
 import type { TokenStore } from '../token-store.js'
 import type { AuditSink } from '../audit.js'
 import { verifyToken } from '../token.js'
@@ -11,7 +11,7 @@ import type { ClientFrame, ServerFrame } from '../../protocol.js'
 export type UpgradeDeps = {
   signingKey: string | Uint8Array
   tokenStore: TokenStore
-  registry: WsPairingRegistry
+  registry: PairingRegistry
   auditSink: AuditSink
   now?: () => number
 }
@@ -29,7 +29,7 @@ export function createWsUpgradeHandler(deps: UpgradeDeps) {
   const wss = new WebSocketServer({ noServer: true })
   const now = deps.now ?? (() => Date.now())
 
-  return (req: IncomingMessage, socket: Duplex, head: Buffer): void => {
+  return async (req: IncomingMessage, socket: Duplex, head: Buffer): Promise<void> => {
     // Path check
     const url = new URL(req.url ?? '/', 'http://localhost')
     if (url.pathname !== '/agent/ws') {
@@ -52,7 +52,7 @@ export function createWsUpgradeHandler(deps: UpgradeDeps) {
       return
     }
 
-    const verified = verifyToken(token, deps.signingKey)
+    const verified = await verifyToken(token, deps.signingKey)
     if (verified.kind !== 'ok') {
       socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n')
       socket.destroy()

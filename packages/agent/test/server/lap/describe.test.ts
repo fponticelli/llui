@@ -62,7 +62,7 @@ const mkRequest = (token: string): Request =>
     headers: { authorization: `Bearer ${token}` },
   })
 
-const validToken = (tid: string): string =>
+const validToken = (tid: string): Promise<string> =>
   signToken({ tid, iat: 0, exp: 9_999_999_999, scope: 'agent' }, key)
 
 describe('handleLapDescribe', () => {
@@ -90,7 +90,7 @@ describe('handleLapDescribe', () => {
       docs: { purpose: 'Demo' },
       schemaHash: 'abc',
     })
-    const res = await handleLapDescribe(mkRequest(validToken('t1')), baseDeps())
+    const res = await handleLapDescribe(mkRequest(await validToken('t1')), baseDeps())
     expect(res.status).toBe(200)
     const body = (await res.json()) as LapDescribeResponse
     expect(body.name).toBe('Kanban')
@@ -102,7 +102,7 @@ describe('handleLapDescribe', () => {
   it('returns 503 paused when no pairing is live', async () => {
     await seed('t1')
     // No registry.register(...)
-    const res = await handleLapDescribe(mkRequest(validToken('t1')), baseDeps())
+    const res = await handleLapDescribe(mkRequest(await validToken('t1')), baseDeps())
     expect(res.status).toBe(503)
     const body = (await res.json()) as { error: { code: string } }
     expect(body.error.code).toBe('paused')
@@ -112,7 +112,7 @@ describe('handleLapDescribe', () => {
     await seed('t1')
     const conn = fakeConn()
     registry.register('t1', conn)
-    const res = await handleLapDescribe(mkRequest(validToken('t1')), baseDeps())
+    const res = await handleLapDescribe(mkRequest(await validToken('t1')), baseDeps())
     expect(res.status).toBe(503)
   })
 
@@ -131,7 +131,7 @@ describe('handleLapDescribe', () => {
       docs: null,
       schemaHash: 'abc',
     })
-    const res = await handleLapDescribe(mkRequest(validToken('t1')), baseDeps())
+    const res = await handleLapDescribe(mkRequest(await validToken('t1')), baseDeps())
     expect(res.status).toBe(200)
     const rec = await store.findByTid('t1')
     expect(rec?.status).toBe('active')
@@ -147,7 +147,7 @@ describe('handleLapDescribe', () => {
   it('rejects revoked tokens with 403', async () => {
     await seed('t1')
     await store.revoke('t1')
-    const res = await handleLapDescribe(mkRequest(validToken('t1')), baseDeps())
+    const res = await handleLapDescribe(mkRequest(await validToken('t1')), baseDeps())
     expect(res.status).toBe(403)
   })
 
@@ -168,7 +168,7 @@ describe('handleLapDescribe', () => {
     const tightLimiter: RateLimiter = {
       check: vi.fn<RateLimiter['check']>(async () => ({ allowed: false, retryAfterMs: 500 })),
     }
-    const res = await handleLapDescribe(mkRequest(validToken('t1')), {
+    const res = await handleLapDescribe(mkRequest(await validToken('t1')), {
       ...baseDeps(),
       rateLimiter: tightLimiter,
     })

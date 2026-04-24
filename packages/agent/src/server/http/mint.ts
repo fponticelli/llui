@@ -3,7 +3,6 @@ import type { IdentityResolver } from '../identity.js'
 import type { AuditSink } from '../audit.js'
 import { signToken } from '../token.js'
 import type { MintResponse, TokenPayload, TokenRecord } from '../../protocol.js'
-import { randomUUID } from 'node:crypto'
 
 export type MintDeps = {
   signingKey: string | Uint8Array
@@ -33,7 +32,7 @@ export async function handleMint(req: Request, deps: MintDeps): Promise<Response
   }
 
   const now = deps.now ?? (() => Date.now())
-  const uuid = deps.uuid ?? randomUUID
+  const uuid = deps.uuid ?? (() => crypto.randomUUID())
   const hardExpiryMs = deps.hardExpiryMs ?? 24 * 60 * 60 * 1000
 
   const uid = await deps.identityResolver(req)
@@ -44,7 +43,7 @@ export async function handleMint(req: Request, deps: MintDeps): Promise<Response
   const origin = new URL(req.url).origin
 
   const payload: TokenPayload = { tid, iat, exp, scope: 'agent' }
-  const token = signToken(payload, deps.signingKey)
+  const token = await signToken(payload, deps.signingKey)
 
   const record: TokenRecord = {
     tid,

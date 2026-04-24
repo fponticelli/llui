@@ -26,10 +26,13 @@ async function seed(store: InMemoryTokenStore, tid: string): Promise<void> {
 
 const permissiveLimiter: RateLimiter = { check: async () => ({ allowed: true }) }
 
-function mkReq(): Request {
+async function mkReq(): Promise<Request> {
   return new Request('https://app/lap/v1/observe', {
     method: 'POST',
-    headers: { authorization: `Bearer ${validToken('t1')}`, 'content-type': 'application/json' },
+    headers: {
+      authorization: `Bearer ${await validToken('t1')}`,
+      'content-type': 'application/json',
+    },
     body: JSON.stringify({}),
   })
 }
@@ -91,7 +94,7 @@ const deps = () => ({
 
 describe('handleLapObserve', () => {
   it('composes state+actions+context from browser with description from hello cache', async () => {
-    const res = await handleLapObserve(mkReq(), deps())
+    const res = await handleLapObserve(await mkReq(), deps())
     expect(res.status).toBe(200)
     const body = (await res.json()) as Record<string, unknown>
 
@@ -111,19 +114,19 @@ describe('handleLapObserve', () => {
 
   it('returns 503 paused when hello cache is empty (browser not connected)', async () => {
     helloSpy.mockReturnValueOnce(undefined)
-    const res = await handleLapObserve(mkReq(), deps())
+    const res = await handleLapObserve(await mkReq(), deps())
     expect(res.status).toBe(503)
   })
 
   it('returns 504 timeout when rpc times out', async () => {
     rpcSpy.mockRejectedValueOnce({ code: 'timeout' })
-    const res = await handleLapObserve(mkReq(), deps())
+    const res = await handleLapObserve(await mkReq(), deps())
     expect(res.status).toBe(504)
   })
 
   it('returns 503 paused when rpc rejects with paused', async () => {
     rpcSpy.mockRejectedValueOnce({ code: 'paused' })
-    const res = await handleLapObserve(mkReq(), deps())
+    const res = await handleLapObserve(await mkReq(), deps())
     expect(res.status).toBe(503)
   })
 })

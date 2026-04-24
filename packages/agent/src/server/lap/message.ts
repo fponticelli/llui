@@ -1,5 +1,5 @@
 import type { TokenStore } from '../token-store.js'
-import type { WsPairingRegistry } from '../ws/pairing-registry.js'
+import type { PairingRegistry } from '../ws/pairing-registry.js'
 import type { AuditSink } from '../audit.js'
 import type { RateLimiter } from '../rate-limit.js'
 import { verifyAndReadTid } from './describe.js'
@@ -8,14 +8,14 @@ import type { LapMessageRequest, LapMessageResponse } from '../../protocol.js'
 export type LapMessageDeps = {
   signingKey: string | Uint8Array
   tokenStore: TokenStore
-  registry: WsPairingRegistry
+  registry: PairingRegistry
   auditSink: AuditSink
   rateLimiter: RateLimiter
   now?: () => number
 }
 
 export async function handleLapMessage(req: Request, deps: LapMessageDeps): Promise<Response> {
-  const auth = verifyAndReadTid(req, deps.signingKey)
+  const auth = await verifyAndReadTid(req, deps.signingKey)
   if (!auth.ok) return json({ error: { code: auth.code } }, auth.status)
 
   const rec = await deps.tokenStore.findByTid(auth.tid)

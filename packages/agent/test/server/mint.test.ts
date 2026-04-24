@@ -46,7 +46,7 @@ describe('handleMint', () => {
     expect(stored?.status).toBe('awaiting-ws')
     expect(stored?.origin).toBe('https://app.example')
 
-    const verified = verifyToken(body.token, key, clock)
+    const verified = await verifyToken(body.token, key, clock)
     expect(verified.kind).toBe('ok')
   })
 

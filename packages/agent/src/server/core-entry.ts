@@ -1,13 +1,13 @@
 /**
- * Default entry for Node server processes. Bundles the runtime-neutral
- * core with a `ws`-library-based WebSocket upgrade handler. For web
- * runtimes (Cloudflare Workers, Deno, Bun) where `ws` isn't
- * available, use `@llui/agent/server/core` + `@llui/agent/server/web`
- * instead.
+ * Runtime-neutral entry point. Import from `@llui/agent/server/core`
+ * when targeting runtimes without the Node `ws` library (Cloudflare
+ * Workers, Deno, Bun, Deno Deploy). Pair with
+ * `@llui/agent/server/web` for WebSocket upgrade helpers.
+ *
+ * Node/standard server processes should keep using the default
+ * `@llui/agent/server` entry, which includes this plus the `ws`-based
+ * upgrade handler.
  */
-export { createLluiAgentServer } from './factory.js'
-export type { ServerOptions, AgentServerHandle } from './options.js'
-// Runtime-neutral core — re-exported so Node users don't need a second import.
 export { createLluiAgentCore } from './core.js'
 export type { CoreOptions, AgentCoreHandle, AcceptResult } from './core.js'
 export { InMemoryPairingRegistry } from './ws/pairing-registry.js'

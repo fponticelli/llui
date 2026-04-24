@@ -42,10 +42,13 @@ const deps = () => ({
   rateLimiter: permissiveLimiter,
 })
 
-const mkReq = (body: unknown): Request =>
+const mkReq = async (body: unknown): Promise<Request> =>
   new Request('https://app/lap/v1/message', {
     method: 'POST',
-    headers: { authorization: `Bearer ${validToken('t1')}`, 'content-type': 'application/json' },
+    headers: {
+      authorization: `Bearer ${await validToken('t1')}`,
+      'content-type': 'application/json',
+    },
     body: JSON.stringify(body),
   })
 
@@ -56,7 +59,7 @@ describe('handleLapMessage', () => {
 
   it('returns dispatched when browser replies dispatched', async () => {
     vi.spyOn(registry, 'rpc').mockResolvedValue({ status: 'dispatched', stateAfter: { n: 1 } })
-    const res = await handleLapMessage(mkReq({ msg: { type: 'inc' } }), deps())
+    const res = await handleLapMessage(await mkReq({ msg: { type: 'inc' } }), deps())
     expect(res.status).toBe(200)
     const body = (await res.json()) as LapMessageResponse
     expect(body.status).toBe('dispatched')
@@ -64,7 +67,7 @@ describe('handleLapMessage', () => {
 
   it('returns rejected when browser replies rejected', async () => {
     vi.spyOn(registry, 'rpc').mockResolvedValue({ status: 'rejected', reason: 'humanOnly' })
-    const res = await handleLapMessage(mkReq({ msg: { type: 'delete' } }), deps())
+    const res = await handleLapMessage(await mkReq({ msg: { type: 'delete' } }), deps())
     const body = (await res.json()) as LapMessageResponse
     expect(body.status).toBe('rejected')
   })
@@ -75,7 +78,7 @@ describe('handleLapMessage', () => {
       outcome: 'confirmed',
       stateAfter: { ok: true },
     })
-    const res = await handleLapMessage(mkReq({ msg: { type: 'delete' } }), deps())
+    const res = await handleLapMessage(await mkReq({ msg: { type: 'delete' } }), deps())
     const body = (await res.json()) as LapMessageResponse
     expect(body.status).toBe('confirmed')
     if (body.status === 'confirmed') expect(body.stateAfter).toEqual({ ok: true })
@@ -84,26 +87,26 @@ describe('handleLapMessage', () => {
   it('long-polls on pending-confirmation and resolves to rejected on user-cancelled', async () => {
     vi.spyOn(registry, 'rpc').mockResolvedValue({ status: 'pending-confirmation', confirmId: 'c1' })
     vi.spyOn(registry, 'waitForConfirm').mockResolvedValue({ outcome: 'user-cancelled' })
-    const res = await handleLapMessage(mkReq({ msg: { type: 'delete' } }), deps())
+    const res = await handleLapMessage(await mkReq({ msg: { type: 'delete' } }), deps())
     const body = (await res.json()) as LapMessageResponse
     expect(body.status).toBe('rejected')
     if (body.status === 'rejected') expect(body.reason).toBe('user-cancelled')
   })
 
   it('rejects missing msg.type with 400', async () => {
-    const res = await handleLapMessage(mkReq({}), deps())
+    const res = await handleLapMessage(await mkReq({}), deps())
     expect(res.status).toBe(400)
   })
 
   it('returns 503 paused when registry rpc rejects with paused', async () => {
     vi.spyOn(registry, 'rpc').mockRejectedValue({ code: 'paused' })
-    const res = await handleLapMessage(mkReq({ msg: { type: 'inc' } }), deps())
+    const res = await handleLapMessage(await mkReq({ msg: { type: 'inc' } }), deps())
     expect(res.status).toBe(503)
   })
 
   it('returns 500 with descriptive detail when browser replies an unknown status', async () => {
     vi.spyOn(registry, 'rpc').mockResolvedValue({ status: 'mystery-status-xyz' })
-    const res = await handleLapMessage(mkReq({ msg: { type: 'inc' } }), deps())
+    const res = await handleLapMessage(await mkReq({ msg: { type: 'inc' } }), deps())
     expect(res.status).toBe(500)
     const body = (await res.json()) as { error: { code: string; detail: string } }
     expect(body.error.code).toBe('internal')
@@ -114,7 +117,7 @@ describe('handleLapMessage', () => {
     const tightLimiter: RateLimiter = {
       check: vi.fn<RateLimiter['check']>(async () => ({ allowed: false, retryAfterMs: 500 })),
     }
-    const res = await handleLapMessage(mkReq({ msg: { type: 'inc' } }), {
+    const res = await handleLapMessage(await mkReq({ msg: { type: 'inc' } }), {
       ...deps(),
       rateLimiter: tightLimiter,
     })

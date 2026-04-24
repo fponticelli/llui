@@ -1,6 +1,6 @@
 import { verifyToken } from '../token.js'
 import type { TokenStore } from '../token-store.js'
-import type { WsPairingRegistry } from '../ws/pairing-registry.js'
+import type { PairingRegistry } from '../ws/pairing-registry.js'
 import type { AuditSink } from '../audit.js'
 import type { RateLimiter } from '../rate-limit.js'
 import type { LapDescribeResponse, MessageSchemaEntry } from '../../protocol.js'
@@ -8,14 +8,14 @@ import type { LapDescribeResponse, MessageSchemaEntry } from '../../protocol.js'
 export type LapDescribeDeps = {
   signingKey: string | Uint8Array
   tokenStore: TokenStore
-  registry: WsPairingRegistry
+  registry: PairingRegistry
   auditSink: AuditSink
   rateLimiter: RateLimiter
   now?: () => number
 }
 
 export async function handleLapDescribe(req: Request, deps: LapDescribeDeps): Promise<Response> {
-  const auth = verifyAndReadTid(req, deps.signingKey)
+  const auth = await verifyAndReadTid(req, deps.signingKey)
   if (!auth.ok) return json({ error: { code: auth.code } }, auth.status)
 
   const rec = await deps.tokenStore.findByTid(auth.tid)
@@ -56,7 +56,7 @@ export async function handleLapDescribe(req: Request, deps: LapDescribeDeps): Pr
   await deps.tokenStore.markActive(auth.tid, label, nowMs)
   // Fire the active signal to the browser only on the first transition.
   if (wasAwaitingClaude) {
-    deps.registry.notify(auth.tid, { t: 'active' })
+    deps.registry.send(auth.tid, { t: 'active' })
   }
   await deps.auditSink.write({
     at: nowMs,
@@ -68,14 +68,14 @@ export async function handleLapDescribe(req: Request, deps: LapDescribeDeps): Pr
   return json(out, 200)
 }
 
-export function verifyAndReadTid(
+export async function verifyAndReadTid(
   req: Request,
   key: string | Uint8Array,
-): { ok: true; tid: string } | { ok: false; status: number; code: string } {
+): Promise<{ ok: true; tid: string } | { ok: false; status: number; code: string }> {
   const auth = req.headers.get('authorization')
   if (!auth || !auth.startsWith('Bearer ')) return { ok: false, status: 401, code: 'auth-failed' }
   const token = auth.slice('Bearer '.length)
-  const v = verifyToken(token, key)
+  const v = await verifyToken(token, key)
   if (v.kind !== 'ok') return { ok: false, status: 401, code: 'auth-failed' }
   return { ok: true, tid: v.payload.tid }
 }

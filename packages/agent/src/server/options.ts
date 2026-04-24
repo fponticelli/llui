@@ -4,6 +4,9 @@ import type { TokenStore } from './token-store.js'
 import type { IdentityResolver } from './identity.js'
 import type { AuditSink } from './audit.js'
 import type { RateLimiter } from './rate-limit.js'
+import type { PairingRegistry } from './ws/pairing-registry.js'
+import type { AcceptResult } from './core.js'
+import type { PairingConnection } from './ws/pairing-registry.js'
 
 /**
  * Options accepted by `createLluiAgentServer`. All values except
@@ -46,5 +49,26 @@ export type ServerOptions = {
  */
 export type AgentServerHandle = {
   router: (req: Request) => Promise<Response | null>
-  wsUpgrade: (req: IncomingMessage, socket: Duplex, head: Buffer) => void
+  /**
+   * Handles Node HTTP upgrade events for `/agent/ws`. Returns a Promise
+   * because token verification uses WebCrypto (async). Node's
+   * `server.on('upgrade', handler)` fires the handler without awaiting,
+   * which is fine — the handler writes errors directly to the socket
+   * and never throws back to the caller.
+   */
+  wsUpgrade: (req: IncomingMessage, socket: Duplex, head: Buffer) => Promise<void>
+  /** The pairing registry. Runtime-neutral adapters may access it. */
+  registry: PairingRegistry
+  /** The active token store. */
+  tokenStore: TokenStore
+  /** The active audit sink. */
+  auditSink: AuditSink
+  /**
+   * Runtime-neutral WebSocket acceptance primitive. Validates a token
+   * and registers a `PairingConnection` with the registry. The Node
+   * `wsUpgrade` above calls this internally; web-runtime adapters
+   * (`@llui/agent/server/web`) use it after accepting a WebSocket via
+   * their native API.
+   */
+  acceptConnection: (token: string, conn: PairingConnection) => Promise<AcceptResult>
 }

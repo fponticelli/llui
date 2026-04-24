@@ -52,7 +52,7 @@ describe('createLapRouter', () => {
       new Request('https://app/agent/lap/v1/state', {
         method: 'POST',
         headers: {
-          authorization: `Bearer ${validToken('t1')}`,
+          authorization: `Bearer ${await validToken('t1')}`,
           'content-type': 'application/json',
         },
         body: JSON.stringify({}),
