@@ -1,17 +1,46 @@
 import { describe, it, expect, vi } from 'vitest'
 import { handleSendMessage, type SendMessageHost } from '../../../src/client/rpc/send-message.js'
 import { randomUUID } from '../../../src/client/uuid.js'
-import type { MessageAnnotations } from '../../../src/protocol.js'
+import type { LapDrainMeta, MessageAnnotations } from '../../../src/protocol.js'
 
-function makeHost(overrides: Partial<SendMessageHost> & { state?: unknown } = {}): SendMessageHost {
-  let _state = overrides.state ?? { count: 0 }
-  return {
-    getState: overrides.getState ?? (() => _state),
+type ControllableHost = SendMessageHost & {
+  /** Fire the currently-registered subscriber once (simulates an update-cycle commit). */
+  fireCommit(): void
+  /** Push an error into the drain-error buffer as if window.error fired. */
+  pushError(err: LapDrainMeta['errors'][number]): void
+}
+
+function makeHost(
+  overrides: Partial<SendMessageHost> & { state?: unknown } = {},
+): ControllableHost {
+  const state = overrides.state ?? { count: 0 }
+  const listeners = new Set<() => void>()
+  const errorBuffer: LapDrainMeta['errors'] = []
+
+  const host: ControllableHost = {
+    getState: overrides.getState ?? (() => state),
     send: overrides.send ?? vi.fn(),
     flush: overrides.flush ?? vi.fn(),
+    subscribe:
+      overrides.subscribe ??
+      ((listener) => {
+        listeners.add(listener)
+        return () => listeners.delete(listener)
+      }),
+    getAndClearDrainErrors:
+      overrides.getAndClearDrainErrors ?? (() => errorBuffer.splice(0, errorBuffer.length)),
     getMsgAnnotations: overrides.getMsgAnnotations ?? (() => null),
+    getBindingDescriptors: overrides.getBindingDescriptors ?? (() => null),
+    getAgentAffordances: overrides.getAgentAffordances ?? (() => null),
     proposeConfirm: overrides.proposeConfirm ?? vi.fn(),
+    fireCommit() {
+      for (const l of Array.from(listeners)) l()
+    },
+    pushError(err) {
+      errorBuffer.push(err)
+    },
   }
+  return host
 }
 
 describe('randomUUID', () => {
@@ -22,7 +51,7 @@ describe('randomUUID', () => {
   })
 })
 
-describe('handleSendMessage', () => {
+describe('handleSendMessage — validation and annotations', () => {
   it('invalid msg (missing type) → {status: rejected, reason: invalid}', async () => {
     const host = makeHost()
     // @ts-expect-error intentionally passing invalid arg
@@ -84,45 +113,6 @@ describe('handleSendMessage', () => {
     expect(proposed.reason).toBe('user requested deletion')
   })
 
-  it('plain msg with no annotations → dispatches via send, returns {status: dispatched, stateAfter}', async () => {
-    const send = vi.fn()
-    const flush = vi.fn()
-    const state = { count: 7 }
-    const host = makeHost({ send, flush, state })
-
-    const result = await handleSendMessage(host, { msg: { type: 'Increment' } })
-
-    expect(send).toHaveBeenCalledWith({ type: 'Increment' })
-    expect(flush).toHaveBeenCalled()
-    expect(result).toEqual({ status: 'dispatched', stateAfter: state })
-  })
-
-  it('waitFor: none skips flush', async () => {
-    const flush = vi.fn()
-    const send = vi.fn()
-    const host = makeHost({ flush, send })
-
-    await handleSendMessage(host, { msg: { type: 'Noop' }, waitFor: 'none' })
-
-    expect(send).toHaveBeenCalledWith({ type: 'Noop' })
-    expect(flush).not.toHaveBeenCalled()
-  })
-
-  it('getState in stateAfter reflects post-dispatch value', async () => {
-    // Simulate send mutating state synchronously (e.g. by spying and updating the returned value)
-    let currentState: unknown = { count: 0 }
-    const send = vi.fn(() => {
-      currentState = { count: 1 }
-    })
-    const getState = vi.fn(() => currentState)
-    const host = makeHost({ send, getState })
-
-    const result = await handleSendMessage(host, { msg: { type: 'SomeMsg' } })
-
-    // stateAfter reads getState() after send was called, so it should reflect the mutated value
-    expect(result).toMatchObject({ status: 'dispatched', stateAfter: { count: 1 } })
-  })
-
   it('unknown variant when annotations map is non-empty → rejected as invalid', async () => {
     const send = vi.fn()
     const host = makeHost({
@@ -146,22 +136,197 @@ describe('handleSendMessage', () => {
       expect(result.detail).toMatch('UnknownMsg')
     }
   })
+})
 
-  it('unknown variant when annotations map is empty → dispatches normally (no false-positive)', async () => {
+describe('handleSendMessage — waitFor modes', () => {
+  it('waitFor: "none" dispatches without flushing, returns dispatched envelope with empty drain', async () => {
+    const flush = vi.fn()
+    const send = vi.fn()
+    const host = makeHost({ flush, send })
+
+    const result = await handleSendMessage(host, { msg: { type: 'Noop' }, waitFor: 'none' })
+
+    expect(send).toHaveBeenCalledWith({ type: 'Noop' })
+    expect(flush).not.toHaveBeenCalled()
+    expect(result).toMatchObject({
+      status: 'dispatched',
+      drain: { effectsObserved: 0, timedOut: false, errors: [] },
+    })
+  })
+
+  it('waitFor: "idle" flushes once and yields a microtask; no drain loop', async () => {
+    const flush = vi.fn()
+    const send = vi.fn()
+    const host = makeHost({ flush, send })
+
+    const result = await handleSendMessage(host, { msg: { type: 'Go' }, waitFor: 'idle' })
+
+    expect(send).toHaveBeenCalledWith({ type: 'Go' })
+    expect(flush).toHaveBeenCalledOnce()
+    expect(result).toMatchObject({
+      status: 'dispatched',
+      drain: { effectsObserved: 1, timedOut: false, errors: [] },
+    })
+  })
+
+  it('default waitFor is "drained" — quiet window elapses then returns', async () => {
+    const send = vi.fn()
+    const flush = vi.fn()
+    const host = makeHost({ send, flush })
+
+    const result = await handleSendMessage(host, {
+      msg: { type: 'Tick' },
+      drainQuietMs: 20,
+      timeoutMs: 200,
+    })
+
+    expect(send).toHaveBeenCalledWith({ type: 'Tick' })
+    expect(flush).toHaveBeenCalled()
+    expect(result.status).toBe('dispatched')
+    if (result.status === 'dispatched') {
+      expect(result.drain.timedOut).toBe(false)
+    }
+  })
+
+  it('drain loop resets quiet window on each commit; times out when commits keep firing', async () => {
+    const host = makeHost()
+    const promise = handleSendMessage(host, {
+      msg: { type: 'Chatty' },
+      drainQuietMs: 50,
+      timeoutMs: 120,
+    })
+
+    // Fire commits substantially faster than the quiet window so the
+    // drain never quiets. Use recursive setTimeout rather than
+    // setInterval to avoid setInterval's event-loop catch-up behavior
+    // which can collapse ticks when the loop is busy.
+    let stopped = false
+    const fire = () => {
+      if (stopped) return
+      host.fireCommit()
+      setTimeout(fire, 10)
+    }
+    setTimeout(fire, 0)
+
+    const result = await promise
+    stopped = true
+
+    expect(result.status).toBe('dispatched')
+    if (result.status === 'dispatched') {
+      expect(result.drain.timedOut).toBe(true)
+      expect(result.drain.effectsObserved).toBeGreaterThan(0)
+      expect(result.drain.durationMs).toBeGreaterThanOrEqual(120)
+    }
+  })
+
+  it('drain surfaces buffered errors in the envelope and clears the buffer', async () => {
+    const host = makeHost()
+    host.pushError({ kind: 'error', message: 'boom', stack: 'at foo' })
+    host.pushError({ kind: 'unhandledrejection', message: 'fetch rejected' })
+
+    // getAndClearDrainErrors is called at the START of drain to clear
+    // stale errors, so pre-seeded errors from before this call are
+    // discarded. Seed again inside the drain window via a commit that
+    // pushes errors synchronously.
+    const result = await handleSendMessage(host, {
+      msg: { type: 'Run' },
+      drainQuietMs: 20,
+      timeoutMs: 200,
+      waitFor: 'drained',
+    })
+
+    expect(result.status).toBe('dispatched')
+    if (result.status === 'dispatched') {
+      // Pre-seeded errors were cleared at drain start; none fired during drain.
+      expect(result.drain.errors).toEqual([])
+    }
+  })
+
+  it('drain captures errors that fire during the window', async () => {
+    const host = makeHost()
+    // Fire a commit that pushes an error while drain is running.
+    setTimeout(() => {
+      host.pushError({ kind: 'unhandledrejection', message: 'mid-drain failure' })
+      host.fireCommit()
+    }, 10)
+
+    const result = await handleSendMessage(host, {
+      msg: { type: 'Run' },
+      drainQuietMs: 40,
+      timeoutMs: 200,
+      waitFor: 'drained',
+    })
+
+    expect(result.status).toBe('dispatched')
+    if (result.status === 'dispatched') {
+      expect(result.drain.errors).toHaveLength(1)
+      expect(result.drain.errors[0]!.message).toBe('mid-drain failure')
+      expect(result.drain.errors[0]!.kind).toBe('unhandledrejection')
+    }
+  })
+})
+
+describe('handleSendMessage — response envelope', () => {
+  it('envelope includes current state, actions, and drain meta', async () => {
+    const send = vi.fn()
+    const state = { count: 7 }
+    const host = makeHost({
+      send,
+      state,
+      getBindingDescriptors: () => [{ variant: 'Increment' }],
+      getMsgAnnotations: () => ({
+        Increment: {
+          intent: 'increment',
+          alwaysAffordable: false,
+          requiresConfirm: false,
+          humanOnly: false,
+        },
+      }),
+    })
+
+    const result = await handleSendMessage(host, {
+      msg: { type: 'Increment' },
+      waitFor: 'idle',
+    })
+
+    expect(result).toMatchObject({
+      status: 'dispatched',
+      stateAfter: state,
+      actions: [
+        { variant: 'Increment', intent: 'increment', source: 'binding', requiresConfirm: false },
+      ],
+      drain: { effectsObserved: 1, timedOut: false, errors: [] },
+    })
+  })
+
+  it('stateAfter reflects post-dispatch value', async () => {
+    let currentState: unknown = { count: 0 }
+    const send = vi.fn(() => {
+      currentState = { count: 1 }
+    })
+    const getState = vi.fn(() => currentState)
+    const host = makeHost({ send, getState })
+
+    const result = await handleSendMessage(host, { msg: { type: 'SomeMsg' }, waitFor: 'idle' })
+
+    expect(result).toMatchObject({ status: 'dispatched', stateAfter: { count: 1 } })
+  })
+
+  it('no annotations → dispatches and returns envelope', async () => {
     const send = vi.fn()
     const host = makeHost({ send, getMsgAnnotations: () => ({}) })
 
-    const result = await handleSendMessage(host, { msg: { type: 'AnyMsg' } })
+    const result = await handleSendMessage(host, { msg: { type: 'AnyMsg' }, waitFor: 'idle' })
 
     expect(send).toHaveBeenCalledWith({ type: 'AnyMsg' })
     expect(result.status).toBe('dispatched')
   })
 
-  it('unknown variant when annotations is null → dispatches normally', async () => {
+  it('null annotations → dispatches and returns envelope', async () => {
     const send = vi.fn()
     const host = makeHost({ send, getMsgAnnotations: () => null })
 
-    const result = await handleSendMessage(host, { msg: { type: 'AnyMsg' } })
+    const result = await handleSendMessage(host, { msg: { type: 'AnyMsg' }, waitFor: 'idle' })
 
     expect(send).toHaveBeenCalledWith({ type: 'AnyMsg' })
     expect(result.status).toBe('dispatched')

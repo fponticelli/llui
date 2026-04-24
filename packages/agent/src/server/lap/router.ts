@@ -10,6 +10,7 @@ import {
 import { handleLapMessage } from './message.js'
 import { handleLapWait } from './wait.js'
 import { handleLapConfirmResult } from './confirm-result.js'
+import { handleLapObserve } from './observe.js'
 
 export type LapRouterDeps = ForwardDeps
 
@@ -41,6 +42,8 @@ export function createLapRouter(
         return handleLapDescribeVisible(req, deps)
       case '/context':
         return handleLapContext(req, deps)
+      case '/observe':
+        return handleLapObserve(req, deps)
       default:
         return null
     }

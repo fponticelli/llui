@@ -1,18 +1,48 @@
 import { randomUUID } from '../uuid.js'
-import type { LapMessageResponse, MessageAnnotations } from '../../protocol.js'
+import { handleListActions, type ListActionsHost } from './list-actions.js'
+import type {
+  LapActionsResponse,
+  LapDrainMeta,
+  LapMessageResponse,
+  MessageAnnotations,
+} from '../../protocol.js'
 
 export type SendMessageArgs = {
   msg: { type: string; [k: string]: unknown }
   reason?: string
-  waitFor?: 'idle' | 'none'
+  /** See LapMessageRequest['waitFor']. Default: 'drained'. */
+  waitFor?: 'drained' | 'idle' | 'none'
+  /** See LapMessageRequest['drainQuietMs']. Default: 100ms. */
+  drainQuietMs?: number
+  /** See LapMessageRequest['timeoutMs']. Default: 5000ms. */
   timeoutMs?: number
 }
 
-export type SendMessageHost = {
+export type SendMessageHost = ListActionsHost & {
   getState(): unknown
   send(msg: unknown): void
   flush(): void
+  /**
+   * Register a listener called after every update cycle commits —
+   * backed by `AppHandle.subscribe`. Returns an unsubscribe function.
+   * The drain loop uses this to detect message-queue quiescence: each
+   * listener fire resets the quiet-window timer; no fires for
+   * `drainQuietMs` means the loop has gone idle and async effects (if
+   * any) have either completed or are persistent
+   * (websocket/interval/storageWatch).
+   */
+  subscribe(listener: () => void): () => void
   getMsgAnnotations(): Record<string, MessageAnnotations> | null
+  /**
+   * Snapshot and clear the drain-error buffer. The agent factory
+   * installs persistent `window.error` / `unhandledrejection`
+   * listeners that accumulate into this buffer; calling this at the
+   * start of a drain discards stale errors from prior windows, and
+   * calling it at the end yields just the errors that fired during
+   * this drain. Optional — when omitted (e.g., Node test harness
+   * without `window`), the drain envelope records an empty array.
+   */
+  getAndClearDrainErrors?: () => LapDrainMeta['errors']
   /** Called when @requiresConfirm; caller stores a ConfirmEntry in state. */
   proposeConfirm(entry: {
     id: string
@@ -24,6 +54,9 @@ export type SendMessageHost = {
     status: 'pending'
   }): void
 }
+
+const DEFAULT_QUIET_MS = 100
+const DEFAULT_TIMEOUT_MS = 5_000
 
 export async function handleSendMessage(
   host: SendMessageHost,
@@ -61,11 +94,106 @@ export async function handleSendMessage(
     return { status: 'pending-confirmation', confirmId: id }
   }
 
-  host.send(args.msg)
-  if (args.waitFor !== 'none') {
-    host.flush()
-    // Let the microtask queue settle:
-    await Promise.resolve()
+  const waitFor = args.waitFor ?? 'drained'
+  const quietMs = Math.max(0, args.drainQuietMs ?? DEFAULT_QUIET_MS)
+  const capMs = Math.max(0, args.timeoutMs ?? DEFAULT_TIMEOUT_MS)
+
+  if (waitFor === 'none') {
+    host.send(args.msg)
+    return dispatched(host, emptyDrain())
   }
-  return { status: 'dispatched', stateAfter: host.getState() }
+
+  if (waitFor === 'idle') {
+    host.send(args.msg)
+    host.flush()
+    await Promise.resolve()
+    return dispatched(host, { effectsObserved: 1, durationMs: 0, timedOut: false, errors: [] })
+  }
+
+  // waitFor === 'drained' — message-queue quiescence detection.
+  // Clear any errors buffered before this call so `drain.errors`
+  // attributes only to this window.
+  host.getAndClearDrainErrors?.()
+
+  const t0 = now()
+  let observed = 0
+  let wake: ((reason: 'msg' | 'timeout') => void) | null = null
+  const unsub = host.subscribe(() => {
+    observed++
+    const w = wake
+    wake = null
+    w?.('msg')
+  })
+  try {
+    host.send(args.msg)
+    host.flush()
+
+    while (true) {
+      const elapsed = now() - t0
+      if (elapsed >= capMs) {
+        return dispatched(host, {
+          effectsObserved: observed,
+          durationMs: elapsed,
+          timedOut: true,
+          errors: host.getAndClearDrainErrors?.() ?? [],
+        })
+      }
+      const budget = Math.min(quietMs, capMs - elapsed)
+      const reason = await awaitQuietOrMsg(budget, (resolve) => {
+        wake = resolve
+      })
+      if (reason === 'timeout') {
+        return dispatched(host, {
+          effectsObserved: observed,
+          durationMs: now() - t0,
+          timedOut: false,
+          errors: host.getAndClearDrainErrors?.() ?? [],
+        })
+      }
+      // A commit fired during the wait — flush any queued follow-ups so
+      // effects dispatched by that cycle run before we re-check.
+      host.flush()
+    }
+  } finally {
+    unsub()
+  }
 }
+
+function dispatched(host: SendMessageHost, drain: LapDrainMeta): LapMessageResponse {
+  return {
+    status: 'dispatched',
+    stateAfter: host.getState(),
+    actions: handleListActions(host).actions,
+    drain,
+  }
+}
+
+function emptyDrain(): LapDrainMeta {
+  return { effectsObserved: 0, durationMs: 0, timedOut: false, errors: [] }
+}
+
+function awaitQuietOrMsg(
+  budgetMs: number,
+  registerWake: (resolve: (r: 'msg' | 'timeout') => void) => void,
+): Promise<'msg' | 'timeout'> {
+  return new Promise<'msg' | 'timeout'>((resolve) => {
+    let settled = false
+    const guarded = (r: 'msg' | 'timeout') => {
+      if (settled) return
+      settled = true
+      resolve(r)
+    }
+    registerWake(guarded)
+    setTimeout(() => guarded('timeout'), budgetMs)
+  })
+}
+
+function now(): number {
+  return typeof performance !== 'undefined' && typeof performance.now === 'function'
+    ? performance.now()
+    : Date.now()
+}
+
+// Helper types for external callers that want the dispatched envelope.
+export type DispatchedEnvelope = Extract<LapMessageResponse, { status: 'dispatched' }>
+export type { LapActionsResponse }

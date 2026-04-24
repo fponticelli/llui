@@ -32,12 +32,17 @@ export async function handleLapMessage(req: Request, deps: LapMessageDeps): Prom
     return json({ error: { code: 'invalid' } }, 400)
   }
 
-  const timeoutMs = body.timeoutMs ?? 15_000
+  const timeoutMs = body.timeoutMs ?? 5_000
+
+  // The browser-side drain loop caps at `timeoutMs`; give the outer
+  // RPC a small buffer so a near-edge drain doesn't race the transport
+  // timeout and come back as a false 504.
+  const rpcTimeoutMs = timeoutMs + 1_000
 
   let initial: LapMessageResponse
   try {
     initial = (await deps.registry.rpc(auth.tid, 'send_message', body, {
-      timeoutMs,
+      timeoutMs: rpcTimeoutMs,
     })) as LapMessageResponse
   } catch (e: unknown) {
     const err = e as { code?: string; detail?: string }

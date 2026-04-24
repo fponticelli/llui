@@ -60,6 +60,8 @@ function makeRpcHosts(): RpcHosts {
     getState: () => ({ count: 5 }),
     send: vi.fn(),
     flush: vi.fn(),
+    subscribe: () => () => {},
+    getAndClearDrainErrors: () => [],
     getMsgAnnotations: () => null,
     getBindingDescriptors: () => null,
     getAgentAffordances: () => null,

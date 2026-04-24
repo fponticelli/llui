@@ -69,7 +69,31 @@ export type LapActionsResponse = {
 export type LapMessageRequest = {
   msg: { type: string; [k: string]: unknown }
   reason?: string
-  waitFor?: 'idle' | 'none'
+  /**
+   * Backpressure contract for how long `/message` waits before returning:
+   * - `drained` (default): dispatch, then loop until the message queue is
+   *   idle for `drainQuietMs` ms or the 5s hard cap trips. Captures any
+   *   effect round-trips (http/delay/debounce) that feed back as messages.
+   * - `idle`: dispatch + flush + one microtask yield. Captures the
+   *   synchronous update cycle but not async effects.
+   * - `none`: dispatch and return without flushing. For high-throughput
+   *   fire-and-forget dispatch.
+   */
+  waitFor?: 'drained' | 'idle' | 'none'
+  /**
+   * Quiescence window when `waitFor === 'drained'`. Drain completes when
+   * no new update cycle fires for this many ms. Default 100ms — long
+   * enough for a localhost HTTP round-trip, short enough to be
+   * imperceptible. Ignored for `idle` / `none`.
+   */
+  drainQuietMs?: number
+  /**
+   * Hard cap on total wait time. When `waitFor === 'drained'`, this is
+   * the upper bound on how long the drain loop can run; if reached, the
+   * response carries `drain.timedOut: true` with partial results. For
+   * `pending-confirmation` messages, this is how long to wait for
+   * the user's confirm/reject. Default 5_000ms.
+   */
   timeoutMs?: number
 }
 
@@ -82,10 +106,42 @@ export type LapMessageRejectReason =
   | 'revoked'
   | 'paused'
 
+/**
+ * Drain metadata attached to `dispatched` / `confirmed` responses.
+ * `effectsObserved` counts update-cycle commits (not individual effects) —
+ * it's a proxy for "how much activity happened during the drain window."
+ * `errors` surfaces sync throws from `onEffect` and unhandled rejections
+ * from effect handlers that fired during the drain window, so the LLM
+ * can see when an HTTP handler crashed silently.
+ */
+export type LapDrainMeta = {
+  effectsObserved: number
+  durationMs: number
+  timedOut: boolean
+  errors: Array<{ kind: 'error' | 'unhandledrejection'; message: string; stack?: string }>
+}
+
 export type LapMessageResponse =
-  | { status: 'dispatched'; stateAfter: unknown }
+  | {
+      status: 'dispatched'
+      stateAfter: unknown
+      actions: LapActionsResponse['actions']
+      drain: LapDrainMeta
+    }
   | { status: 'pending-confirmation'; confirmId: string }
-  | { status: 'confirmed'; stateAfter: unknown }
+  | {
+      /**
+       * The user approved a `pending-confirmation` message. `stateAfter`
+       * is the state snapshot captured when the approve was resolved;
+       * effects produced by the approved dispatch may still be in
+       * flight. The LLM should follow up with an `observe` call to
+       * pick up a drained view and fresh actions — by design the
+       * confirm path doesn't carry drain semantics because approval
+       * can arrive arbitrarily later than the original request.
+       */
+      status: 'confirmed'
+      stateAfter: unknown
+    }
   | { status: 'rejected'; reason: LapMessageRejectReason; detail?: string }
 
 export type LapConfirmResultRequest = { confirmId: string; timeoutMs?: number }
@@ -134,6 +190,21 @@ export type AgentContext = {
 
 export type LapContextResponse = { context: AgentContext }
 
+// ── Unified observe ──────────────────────────────────────────────
+// Single-call bootstrap. Replaces the get_state + list_actions +
+// describe_app trio for the common "what can I see, what can I do"
+// question. Returns the dynamic state + actions slice alongside the
+// static description (name/version/messages/docs) and any
+// state-derived context so one round-trip gives the LLM everything it
+// needs to decide its next action.
+
+export type LapObserveResponse = {
+  state: unknown
+  actions: LapActionsResponse['actions']
+  description: LapDescribeResponse
+  context: AgentContext | null
+}
+
 // LAP endpoint catalog — a compile-time map binding each path to its
 // request/response shape. Useful for the bridge's dispatcher and for
 // typed test helpers.
@@ -147,6 +218,7 @@ export type LapEndpointMap = {
   '/lap/v1/query-dom': { req: LapQueryDomRequest; res: LapQueryDomResponse }
   '/lap/v1/describe-visible': { req: null; res: LapDescribeVisibleResponse }
   '/lap/v1/context': { req: null; res: LapContextResponse }
+  '/lap/v1/observe': { req: null; res: LapObserveResponse }
 }
 
 export type LapPath = keyof LapEndpointMap

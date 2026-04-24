@@ -96,6 +96,8 @@ function makeFakeRpcHost(state: unknown): RpcHosts {
     getState: () => state,
     send: () => {},
     flush: () => {},
+    subscribe: () => () => {},
+    getAndClearDrainErrors: () => [],
     getMsgAnnotations: () => null,
     getBindingDescriptors: () => null,
     getAgentAffordances: () => null,

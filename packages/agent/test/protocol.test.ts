@@ -82,7 +82,12 @@ describe('LAP types — sample value conformance', () => {
       waitFor: 'idle',
       timeoutMs: 15000,
     }
-    const dispatched: LapMessageResponse = { status: 'dispatched', stateAfter: {} }
+    const dispatched: LapMessageResponse = {
+      status: 'dispatched',
+      stateAfter: {},
+      actions: [],
+      drain: { effectsObserved: 0, durationMs: 0, timedOut: false, errors: [] },
+    }
     const pending: LapMessageResponse = { status: 'pending-confirmation', confirmId: 'c1' }
     const confirmed: LapMessageResponse = { status: 'confirmed', stateAfter: {} }
     const rejected: LapMessageResponse = { status: 'rejected', reason: 'humanOnly' }

@@ -15,6 +15,7 @@ import {
   type DescribeVisibleHost,
 } from './rpc/describe-visible-content.js'
 import { handleDescribeContext, type DescribeContextHost } from './rpc/describe-context.js'
+import { handleObserve, type ObserveHost } from './rpc/observe.js'
 
 export interface WsLike {
   send(data: string): void
@@ -28,7 +29,8 @@ export type RpcHosts = GetStateHost &
   ListActionsHost &
   QueryDomHost &
   DescribeVisibleHost &
-  DescribeContextHost
+  DescribeContextHost &
+  ObserveHost
 
 export type HelloBuilder = () => HelloFrame
 
@@ -170,6 +172,8 @@ async function dispatch(tool: string, args: unknown, rpc: RpcHosts): Promise<unk
       return handleDescribeVisibleContent(rpc)
     case 'describe_context':
       return handleDescribeContext(rpc)
+    case 'observe':
+      return handleObserve(rpc)
     default:
       throw { code: 'invalid', detail: `unknown tool: ${tool}` }
   }
@@ -181,6 +185,7 @@ const READ_TOOLS = new Set([
   'describe_context',
   'query_dom',
   'describe_visible_content',
+  'observe',
 ])
 
 function getLogKindForTool(

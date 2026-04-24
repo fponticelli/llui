@@ -8,7 +8,7 @@ import {
 import { TOOLS, TOOL_TO_LAP_PATH } from './tools.js'
 import { BindingMap } from './binding.js'
 import { forwardLap } from './forwarder.js'
-import type { LapDescribeResponse } from '@llui/agent/protocol'
+import type { LapDescribeResponse, LapObserveResponse } from '@llui/agent/protocol'
 import { registerPrompts } from './prompts.js'
 
 export type BridgeDeps = {
@@ -86,6 +86,14 @@ export function createBridgeServer(deps: BridgeDeps): McpServer {
     // Cache describe_app responses after the first call too
     if (name === 'describe_app') {
       deps.bindings.setDescribe(deps.sessionId, res.body as LapDescribeResponse)
+    }
+
+    // observe returns description on every call; cache it so a later
+    // describe_app hit can serve from cache and short-circuit the LAP
+    // round-trip.
+    if (name === 'observe') {
+      const obs = res.body as LapObserveResponse
+      if (obs?.description) deps.bindings.setDescribe(deps.sessionId, obs.description)
     }
 
     return okResult(res.body)

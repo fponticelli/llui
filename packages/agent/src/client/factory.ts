@@ -4,6 +4,7 @@ import type { AgentConfirmState } from './agentConfirm.js'
 import type {
   AgentDocs,
   AgentContext,
+  LapDrainMeta,
   MessageAnnotations,
   MessageSchemaEntry,
 } from '../protocol.js'
@@ -57,10 +58,55 @@ export function createAgentClient<State, Msg>(
   let stateSubscription: (() => void) | null = null
   const resolvedConfirms = new Set<string>()
 
+  // Drain-error buffer: populated by persistent `window.error` and
+  // `window.unhandledrejection` listeners installed on `start()`. The
+  // send-message drain loop consumes and clears it per call so the
+  // envelope surfaces only errors that fired during that window.
+  const drainErrors: LapDrainMeta['errors'] = []
+  let errorListenersInstalled = false
+  let onErrorEvt: ((e: ErrorEvent) => void) | null = null
+  let onRejectionEvt: ((e: PromiseRejectionEvent) => void) | null = null
+
+  function installErrorListeners(): void {
+    if (errorListenersInstalled) return
+    if (typeof window === 'undefined') return
+    onErrorEvt = (e: ErrorEvent) => {
+      drainErrors.push({
+        kind: 'error',
+        message: e.message ?? String(e.error ?? 'unknown error'),
+        stack: e.error instanceof Error ? e.error.stack : undefined,
+      })
+    }
+    onRejectionEvt = (e: PromiseRejectionEvent) => {
+      const r = e.reason
+      const message = r instanceof Error ? r.message : typeof r === 'string' ? r : safeStringify(r)
+      drainErrors.push({
+        kind: 'unhandledrejection',
+        message,
+        stack: r instanceof Error ? r.stack : undefined,
+      })
+    }
+    window.addEventListener('error', onErrorEvt)
+    window.addEventListener('unhandledrejection', onRejectionEvt)
+    errorListenersInstalled = true
+  }
+
+  function removeErrorListeners(): void {
+    if (!errorListenersInstalled) return
+    if (typeof window === 'undefined') return
+    if (onErrorEvt) window.removeEventListener('error', onErrorEvt)
+    if (onRejectionEvt) window.removeEventListener('unhandledrejection', onRejectionEvt)
+    onErrorEvt = null
+    onRejectionEvt = null
+    errorListenersInstalled = false
+  }
+
   const rpcHost: RpcHosts = {
     getState: () => opts.handle.getState(),
     send: (m) => opts.handle.send(m),
     flush: () => opts.handle.flush(),
+    subscribe: (listener) => opts.handle.subscribe(() => listener()),
+    getAndClearDrainErrors: () => drainErrors.splice(0, drainErrors.length),
     getMsgAnnotations: () => opts.def.__msgAnnotations ?? null,
     getBindingDescriptors: () => opts.def.__bindingDescriptors ?? null,
     getAgentAffordances: () => opts.def.agentAffordances ?? null,
@@ -139,6 +185,7 @@ export function createAgentClient<State, Msg>(
           wsClient?.emitStateUpdate('/', state)
         })
       }
+      installErrorListeners()
     },
     stop() {
       if (confirmPollTimer) clearInterval(confirmPollTimer)
@@ -147,7 +194,17 @@ export function createAgentClient<State, Msg>(
         stateSubscription()
         stateSubscription = null
       }
+      removeErrorListeners()
+      drainErrors.length = 0
       wsClient?.close()
     },
+  }
+}
+
+function safeStringify(v: unknown): string {
+  try {
+    return JSON.stringify(v)
+  } catch {
+    return String(v)
   }
 }
