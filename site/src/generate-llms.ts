@@ -41,6 +41,8 @@ const llmsTxt = `# LLui
 - @llui/test — Test harness: testComponent, testView, propertyTest, replayTrace
 - @llui/vike — Vike SSR/SSG adapter
 - @llui/mcp — MCP server for LLM debug tools
+- @llui/agent — LLM control surface: LAP server + browser client (observe/send_message with drain semantics)
+- @llui/agent-bridge — MCP bridge CLI (llui-agent) translating Claude Desktop tool calls to LAP
 - @llui/eslint-plugin — 20 anti-pattern rules
 
 ## Documentation

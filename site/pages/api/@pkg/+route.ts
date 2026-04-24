@@ -8,6 +8,8 @@ const PACKAGES = [
   'transitions',
   'vike',
   'mcp',
+  'agent',
+  'agent-bridge',
   'eslint-plugin-llui',
 ]
 

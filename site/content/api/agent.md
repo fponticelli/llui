@@ -1,0 +1,858 @@
+---
+title: '@llui/agent'
+description: 'LLM-driven control surface: LAP server + browser client runtime for driving LLui apps from Claude and other LLM clients'
+---
+
+# @llui/agent
+
+The agent package lets an LLM drive a running LLui app — read state, enumerate available actions, dispatch messages, and observe the result. It is **not** a debugging surface (see [`@llui/mcp`](/api/mcp) for that). It is a production-intended control channel authored into your app.
+
+```bash
+pnpm add @llui/agent
+```
+
+## The two packages
+
+| Package                                   | Runs in                    | Purpose                                                               |
+| ----------------------------------------- | -------------------------- | --------------------------------------------------------------------- |
+| [`@llui/agent`](/api/agent)               | Your app server + browser  | LAP server (HTTP + WebSocket) and client runtime; defines the surface |
+| [`@llui/agent-bridge`](/api/agent-bridge) | Claude Desktop (stdio MCP) | Translates MCP tool calls into LAP requests; the CLI is `llui-agent`  |
+
+The user connects Claude to a running instance of your app by pasting a one-line command (`/llui-connect <url> <token>`) after the app mints a token. From there Claude calls MCP tools (`observe`, `send_message`, …), the bridge forwards them to the LAP server, and the LAP server RPCs the paired browser tab.
+
+## Quick start
+
+### 1. Enable the dev middleware
+
+The easiest way to try the agent surface is via the Vite plugin option:
+
+```ts
+// vite.config.ts
+import { defineConfig } from 'vite'
+import llui from '@llui/vite-plugin'
+
+export default defineConfig({
+  plugins: [llui({ agent: true })],
+})
+```
+
+With `agent: true`, the plugin dynamically loads `@llui/agent/server` and mounts `/agent/*` (HTTP) and `/agent/ws` (WebSocket upgrade) on your dev server. No further backend wiring is required for local development.
+
+### 2. Wire the client runtime
+
+After `mountApp`, construct the agent client and start it. The client owns three state slices — `connect`, `confirm`, `log` — that you fold into your app's reducer.
+
+```ts
+// main.ts
+import { mountApp } from '@llui/dom'
+import { createAgentClient, agentConnect, agentConfirm, agentLog } from '@llui/agent/client'
+import { appDef } from './app'
+import type { State, Msg } from './types'
+
+const container = document.getElementById('app')!
+const handle = mountApp(container, appDef)
+
+const agentClient = createAgentClient<State, Msg>({
+  handle,
+  def: appDef,
+  rootElement: container,
+  slices: {
+    getConnect: (s) => s.agent.connect,
+    getConfirm: (s) => s.agent.confirm,
+    wrapConnectMsg: (m) => ({ type: 'agent', sub: 'connect', msg: m }),
+    wrapConfirmMsg: (m) => ({ type: 'agent', sub: 'confirm', msg: m }),
+    wrapLogMsg: (m) => ({ type: 'agent', sub: 'log', msg: m }),
+  },
+})
+agentClient.start()
+```
+
+In your app's `update`, route the `agent.connect`, `agent.confirm`, and `agent.log` cases to each sub-module's `update`. Initial state:
+
+```ts
+init: () => [
+  {
+    // …your state
+    agent: {
+      connect: agentConnect.init({ mintUrl: '/agent/mint' })[0],
+      confirm: agentConfirm.init()[0],
+      log: agentLog.init()[0],
+    },
+  },
+  [],
+]
+```
+
+### 3. Install the MCP bridge
+
+Install the CLI globally (or add it to your dev-deps and call via `npx`):
+
+```bash
+npm install -g llui-agent
+```
+
+Add it to Claude Desktop's MCP config (`~/Library/Application Support/Claude/claude_desktop_config.json` on macOS):
+
+```json
+{
+  "mcpServers": {
+    "llui": { "command": "llui-agent" }
+  }
+}
+```
+
+Restart Claude Desktop. The `llui_connect_session`, `observe`, `send_message`, and related tools will appear in the tool picker.
+
+### 4. Connect
+
+Open your app (`vite dev`), use the in-app UI to mint a token (the `agentConnect` slice provides the state machine — render a button that dispatches `{ type: 'agent', sub: 'connect', msg: { type: 'RequestMint' } }`), copy the resulting `/llui-connect <url> <token>` command, and paste it into your Claude conversation. Claude calls `llui_connect_session`, then `observe`, and you're live.
+
+## Annotating messages
+
+Claude decides what to dispatch by reading your `Msg` discriminated union. JSDoc tags on each variant classify its agent affordability:
+
+```ts
+type Msg =
+  | /** @intent("increment the counter") */
+  { type: 'inc' } /** @intent("reset to zero") @requiresConfirm */
+  | { type: 'reset' } /** @humanOnly */
+  | { type: 'internalWheelDelta'; dy: number } /** @alwaysAffordable @intent("navigate to route") */
+  | { type: 'navigate'; to: string }
+```
+
+| Tag                 | Effect                                                                                                      |
+| ------------------- | ----------------------------------------------------------------------------------------------------------- |
+| `@intent("...")`    | Human-readable label shown to the LLM. Without it, the variant name is used directly.                       |
+| `@requiresConfirm`  | The LLM's `send_message` returns `pending-confirmation`; a user must approve in the app UI before dispatch. |
+| `@humanOnly`        | Hard-block — the LLM cannot dispatch. Use for pointer-event plumbing, internal UI wiring.                   |
+| `@alwaysAffordable` | The variant is listed in actions even when no UI binding currently references it (e.g. hidden commands).    |
+
+The Vite compiler extracts these tags into `__msgAnnotations` on the component. No runtime cost if the tags aren't present.
+
+## Component-level metadata
+
+Three optional functions on the `ComponentDef` give Claude context beyond the types:
+
+```ts
+export const App = component<State, Msg, Effect>({
+  name: 'App',
+  init,
+  update,
+  view,
+})
+
+// Purpose + static cautions — shown in `observe`'s description slice.
+App.agentDocs = {
+  purpose: 'Browse GitHub repositories — search, inspect code, READMEs, and issues.',
+  overview:
+    'Start on the search page. Type a query, submit, then open results. ' +
+    'Tabs switch between code and issues; the file tree opens directories.',
+  cautions: ["GitHub's unauthenticated API is rate-limited."],
+}
+
+// Dynamic per-state narrative — shown in `observe`'s context slice.
+App.agentContext = (state) => {
+  switch (state.route.page) {
+    case 'search':
+      return {
+        summary: `On the search page. Query: "${state.query}".`,
+        hints: ['Dispatch setQuery then submitSearch, or a single navigate Msg.'],
+      }
+    case 'repo':
+      return { summary: `Viewing ${state.route.owner}/${state.route.name}.` }
+  }
+}
+
+// Extra affordances not reachable via visible bindings — e.g. "back" or hotkeys.
+App.agentAffordances = (state) => [{ type: 'navigate', to: '/search' }]
+```
+
+## DOM tagging
+
+Mark elements you want Claude to be able to read or address with `data-agent`:
+
+```ts
+input({
+  type: 'search',
+  'data-agent': 'search-input',
+  onInput: (e) => send({ type: 'setQuery', q: e.currentTarget.value }),
+})
+
+ul({ class: 'repo-list', 'data-agent': 'search-results' }, [
+  // …
+])
+```
+
+The `query_dom` tool reads by `data-agent` name; `describe_visible_content` walks the visible subtree and emits a structured outline.
+
+## Production deployment
+
+`{ agent: true }` works in dev only. In production, mount the server yourself. `@llui/agent/server` exports `createLluiAgentServer`, which returns an HTTP router and a WebSocket upgrade handler you attach to your Node server:
+
+```ts
+// server.ts
+import { createServer } from 'node:http'
+import { createLluiAgentServer } from '@llui/agent/server'
+
+const agent = createLluiAgentServer({
+  signingKey: process.env.AGENT_SIGNING_KEY!, // ≥ 32 bytes
+  // Optional — defaults are in-memory, single-process:
+  // tokenStore: myRedisTokenStore,
+  // identityResolver: myAuthResolver,
+  // auditSink: myAuditSink,
+  // rateLimiter: defaultRateLimiter({ perBucket: '30/minute' }),
+  // corsOrigins: ['https://app.example.com'],
+})
+
+const server = createServer(async (req, res) => {
+  // Convert Node req → Fetch Request, hand to agent.router first
+  // (fall through to your own router on null)
+  // …
+})
+
+server.on('upgrade', (req, socket, head) => {
+  if (req.url?.startsWith('/agent/ws')) agent.wsUpgrade(req, socket, head)
+  else socket.destroy()
+})
+
+server.listen(3000)
+```
+
+The defaults (`InMemoryTokenStore`, `consoleAuditSink`, 30-req/min limiter) are fine for a single-process dev server. For production, swap in a persistent `TokenStore`, an `IdentityResolver` tied to your auth system, and a durable `AuditSink`.
+
+## Efficient tool usage
+
+The bridge exposes a two-tier tool surface:
+
+**Recommended path:** `observe` + `send_message`. One `observe` call returns state, actions, description, and context together — replacing `describe_app + get_state + list_actions`. `send_message` defaults to `waitFor: 'drained'`, which blocks until the message queue goes idle (`http`/`delay`/`debounce` round-trips feed back as messages), then returns the fresh state and actions in the response. Two round-trips per interaction instead of five.
+
+```jsonc
+// observe →
+{
+  "state": { "count": 0, "loading": false, "results": [] },
+  "actions": [{ "variant": "search", "intent": "run search", "requiresConfirm": false, "source": "binding" }],
+  "description": { "name": "Explorer", "messages": { /* schemas */ }, "docs": { /* agentDocs */ } },
+  "context": { "summary": "On the search page", "hints": [ /* */ ] }
+}
+
+// send_message { msg: { type: "search", q: "llui" } } →
+{
+  "status": "dispatched",
+  "stateAfter": { "count": 0, "loading": false, "results": [ /* 10 items */ ] },
+  "actions": [ /* now includes nextPage */ ],
+  "drain": { "effectsObserved": 3, "durationMs": 184, "timedOut": false, "errors": [] }
+}
+```
+
+`send_message` controls:
+
+- `waitFor: 'drained' | 'idle' | 'none'` — `'drained'` (default) waits for quiescence; `'idle'` flushes the synchronous update cycle only (no async effects); `'none'` is fire-and-forget.
+- `drainQuietMs` — quiet-window size. Drain completes when no commit fires for this many ms. Default 100.
+- `timeoutMs` — hard cap. Default 5000. If reached, `drain.timedOut: true` returns a partial snapshot; call `observe` again once activity settles.
+
+**Legacy path:** `describe_app`, `get_state`, `list_actions`, `wait_for_change`. Kept for back-compat and specialized cases (e.g. JSON-pointer state slices, long-polling for externally-pushed state changes like WebSocket events arriving while the LLM is idle).
+
+See [`@llui/agent-bridge`](/api/agent-bridge) for the full MCP tool list and CLI reference.
+
+## Security notes
+
+- `signingKey` must be ≥ 32 bytes. Rotating it invalidates all outstanding tokens.
+- Tokens are stored with a 1-hour sliding TTL by default; re-configure via `slidingTtlMs`.
+- Rate limiting applies per-token. The default `30/minute` limiter is a coarse ceiling — tune it for your workload.
+- `@humanOnly` is a hard block at the browser RPC layer, not just a convention.
+- `@requiresConfirm` flows a confirmation message through state; approval requires the user to interact with the app UI, not just the LLM.
+- The `corsOrigins` option defaults to "any" — set it explicitly in production.
+
+<!-- auto-api:start -->
+
+## Types
+
+### `LapErrorCode`
+
+```typescript
+export type LapErrorCode =
+  | 'auth-failed'
+  | 'revoked'
+  | 'paused'
+  | 'rate-limited'
+  | 'invalid'
+  | 'schema-error'
+  | 'timeout'
+  | 'internal'
+```
+
+### `LapError`
+
+```typescript
+export type LapError = {
+  error: {
+    code: LapErrorCode
+    detail?: string
+    retryAfterMs?: number
+  }
+}
+```
+
+### `MessageAnnotations`
+
+```typescript
+export type MessageAnnotations = {
+  intent: string | null
+  alwaysAffordable: boolean
+  requiresConfirm: boolean
+  humanOnly: boolean
+}
+```
+
+### `MessageSchemaEntry`
+
+```typescript
+export type MessageSchemaEntry = {
+  payloadSchema: object
+  annotations: MessageAnnotations
+}
+```
+
+### `LapDescribeResponse`
+
+```typescript
+export type LapDescribeResponse = {
+  name: string
+  version: string
+  stateSchema: object
+  messages: Record<string, MessageSchemaEntry>
+  docs: AgentDocs | null
+  conventions: {
+    dispatchModel: 'TEA'
+    confirmationModel: 'runtime-mediated'
+    readSurfaces: readonly (
+      | 'state'
+      | 'query_dom'
+      | 'describe_visible_content'
+      | 'describe_context'
+    )[]
+  }
+  schemaHash: string
+}
+```
+
+### `LapStateRequest`
+
+```typescript
+export type LapStateRequest = { path?: string }
+```
+
+### `LapStateResponse`
+
+```typescript
+export type LapStateResponse = { state: unknown }
+```
+
+### `LapActionsResponse`
+
+```typescript
+export type LapActionsResponse = {
+  actions: Array<{
+    variant: string
+    intent: string
+    requiresConfirm: boolean
+    source: 'binding' | 'always-affordable'
+    selectorHint: string | null
+    payloadHint: object | null
+  }>
+}
+```
+
+### `LapMessageRequest`
+
+```typescript
+export type LapMessageRequest = {
+  msg: { type: string; [k: string]: unknown }
+  reason?: string
+  /**
+   * Backpressure contract for how long `/message` waits before returning:
+   * - `drained` (default): dispatch, then loop until the message queue is
+   *   idle for `drainQuietMs` ms or the 5s hard cap trips. Captures any
+   *   effect round-trips (http/delay/debounce) that feed back as messages.
+   * - `idle`: dispatch + flush + one microtask yield. Captures the
+   *   synchronous update cycle but not async effects.
+   * - `none`: dispatch and return without flushing. For high-throughput
+   *   fire-and-forget dispatch.
+   */
+  waitFor?: 'drained' | 'idle' | 'none'
+  /**
+   * Quiescence window when `waitFor === 'drained'`. Drain completes when
+   * no new update cycle fires for this many ms. Default 100ms — long
+   * enough for a localhost HTTP round-trip, short enough to be
+   * imperceptible. Ignored for `idle` / `none`.
+   */
+  drainQuietMs?: number
+  /**
+   * Hard cap on total wait time. When `waitFor === 'drained'`, this is
+   * the upper bound on how long the drain loop can run; if reached, the
+   * response carries `drain.timedOut: true` with partial results. For
+   * `pending-confirmation` messages, this is how long to wait for
+   * the user's confirm/reject. Default 5_000ms.
+   */
+  timeoutMs?: number
+}
+```
+
+### `LapMessageRejectReason`
+
+```typescript
+export type LapMessageRejectReason =
+  | 'humanOnly'
+  | 'user-cancelled'
+  | 'timeout'
+  | 'invalid'
+  | 'schema-error'
+  | 'revoked'
+  | 'paused'
+```
+
+### `LapDrainMeta`
+
+Drain metadata attached to `dispatched` / `confirmed` responses.
+`effectsObserved` counts update-cycle commits (not individual effects) —
+it's a proxy for "how much activity happened during the drain window."
+`errors` surfaces sync throws from `onEffect` and unhandled rejections
+from effect handlers that fired during the drain window, so the LLM
+can see when an HTTP handler crashed silently.
+
+```typescript
+export type LapDrainMeta = {
+  effectsObserved: number
+  durationMs: number
+  timedOut: boolean
+  errors: Array<{ kind: 'error' | 'unhandledrejection'; message: string; stack?: string }>
+}
+```
+
+### `LapMessageResponse`
+
+```typescript
+export type LapMessageResponse =
+  | {
+      status: 'dispatched'
+      stateAfter: unknown
+      actions: LapActionsResponse['actions']
+      drain: LapDrainMeta
+    }
+  | { status: 'pending-confirmation'; confirmId: string }
+  | {
+      /**
+       * The user approved a `pending-confirmation` message. `stateAfter`
+       * is the state snapshot captured when the approve was resolved;
+       * effects produced by the approved dispatch may still be in
+       * flight. The LLM should follow up with an `observe` call to
+       * pick up a drained view and fresh actions — by design the
+       * confirm path doesn't carry drain semantics because approval
+       * can arrive arbitrarily later than the original request.
+       */
+      status: 'confirmed'
+      stateAfter: unknown
+    }
+  | { status: 'rejected'; reason: LapMessageRejectReason; detail?: string }
+```
+
+### `LapConfirmResultRequest`
+
+```typescript
+export type LapConfirmResultRequest = { confirmId: string; timeoutMs?: number }
+```
+
+### `LapConfirmResultResponse`
+
+```typescript
+export type LapConfirmResultResponse =
+  | { status: 'confirmed'; stateAfter: unknown }
+  | { status: 'rejected'; reason: 'user-cancelled' | 'timeout' }
+  | { status: 'still-pending' }
+```
+
+### `LapWaitRequest`
+
+```typescript
+export type LapWaitRequest = { path?: string; timeoutMs?: number }
+```
+
+### `LapWaitResponse`
+
+```typescript
+export type LapWaitResponse =
+  | { status: 'changed'; stateAfter: unknown }
+  | { status: 'timeout'; stateAfter: unknown }
+```
+
+### `LapQueryDomRequest`
+
+```typescript
+export type LapQueryDomRequest = { name: string; multiple?: boolean }
+```
+
+### `LapQueryDomResponse`
+
+```typescript
+export type LapQueryDomResponse = {
+  elements: Array<{ text: string; attrs: Record<string, string>; path: number[] }>
+}
+```
+
+### `OutlineNode`
+
+```typescript
+export type OutlineNode =
+  | { kind: 'heading'; level: number; text: string }
+  | { kind: 'text'; text: string }
+  | { kind: 'list'; items: OutlineNode[] }
+  | { kind: 'item'; text: string; children?: OutlineNode[] }
+  | { kind: 'button'; text: string; disabled: boolean; actionVariant: string | null }
+  | { kind: 'input'; label: string | null; value: string | null; type: string }
+  | { kind: 'link'; text: string; href: string }
+```
+
+### `LapDescribeVisibleResponse`
+
+```typescript
+export type LapDescribeVisibleResponse = { outline: OutlineNode[] }
+```
+
+### `AgentDocs`
+
+```typescript
+export type AgentDocs = {
+  purpose: string
+  overview?: string
+  cautions?: string[]
+}
+```
+
+### `AgentContext`
+
+```typescript
+export type AgentContext = {
+  summary: string
+  hints?: string[]
+  cautions?: string[]
+}
+```
+
+### `LapContextResponse`
+
+```typescript
+export type LapContextResponse = { context: AgentContext }
+```
+
+### `LapObserveResponse`
+
+```typescript
+export type LapObserveResponse = {
+  state: unknown
+  actions: LapActionsResponse['actions']
+  description: LapDescribeResponse
+  context: AgentContext | null
+}
+```
+
+### `LapEndpointMap`
+
+```typescript
+export type LapEndpointMap = {
+  '/lap/v1/describe': { req: null; res: LapDescribeResponse }
+  '/lap/v1/state': { req: LapStateRequest; res: LapStateResponse }
+  '/lap/v1/actions': { req: null; res: LapActionsResponse }
+  '/lap/v1/message': { req: LapMessageRequest; res: LapMessageResponse }
+  '/lap/v1/confirm-result': { req: LapConfirmResultRequest; res: LapConfirmResultResponse }
+  '/lap/v1/wait': { req: LapWaitRequest; res: LapWaitResponse }
+  '/lap/v1/query-dom': { req: LapQueryDomRequest; res: LapQueryDomResponse }
+  '/lap/v1/describe-visible': { req: null; res: LapDescribeVisibleResponse }
+  '/lap/v1/context': { req: null; res: LapContextResponse }
+  '/lap/v1/observe': { req: null; res: LapObserveResponse }
+}
+```
+
+### `LapPath`
+
+```typescript
+export type LapPath = keyof LapEndpointMap
+```
+
+### `LapRequest`
+
+```typescript
+export type LapRequest<P extends LapPath> = LapEndpointMap[P]['req']
+```
+
+### `LapResponse`
+
+```typescript
+export type LapResponse<P extends LapPath> = LapEndpointMap[P]['res']
+```
+
+### `LogKind`
+
+```typescript
+export type LogKind =
+  | 'proposed'
+  | 'dispatched'
+  | 'confirmed'
+  | 'rejected'
+  | 'blocked'
+  | 'read'
+  | 'error'
+```
+
+### `LogEntry`
+
+```typescript
+export type LogEntry = {
+  id: string
+  at: number
+  kind: LogKind
+  variant?: string
+  intent?: string
+  detail?: string
+}
+```
+
+### `HelloFrame`
+
+```typescript
+export type HelloFrame = {
+  t: 'hello'
+  appName: string
+  appVersion: string
+  msgSchema: Record<string, MessageSchemaEntry>
+  stateSchema: object
+  affordancesSample: object[]
+  docs: AgentDocs | null
+  schemaHash: string
+}
+```
+
+### `RpcReplyFrame`
+
+```typescript
+export type RpcReplyFrame = { t: 'rpc-reply'; id: string; result: unknown }
+```
+
+### `RpcErrorFrame`
+
+```typescript
+export type RpcErrorFrame = { t: 'rpc-error'; id: string; code: string; detail?: string }
+```
+
+### `ConfirmResolvedFrame`
+
+```typescript
+export type ConfirmResolvedFrame = {
+  t: 'confirm-resolved'
+  confirmId: string
+  outcome: 'confirmed' | 'user-cancelled'
+  stateAfter?: unknown
+}
+```
+
+### `StateUpdateFrame`
+
+```typescript
+export type StateUpdateFrame = { t: 'state-update'; path: string; stateAfter: unknown }
+```
+
+### `LogAppendFrame`
+
+```typescript
+export type LogAppendFrame = { t: 'log-append'; entry: LogEntry }
+```
+
+### `ClientFrame`
+
+```typescript
+export type ClientFrame =
+  | HelloFrame
+  | RpcReplyFrame
+  | RpcErrorFrame
+  | ConfirmResolvedFrame
+  | StateUpdateFrame
+  | LogAppendFrame
+```
+
+### `RpcFrame`
+
+```typescript
+export type RpcFrame = { t: 'rpc'; id: string; tool: string; args: unknown }
+```
+
+### `RevokedFrame`
+
+```typescript
+export type RevokedFrame = { t: 'revoked' }
+```
+
+### `ActiveFrame`
+
+```typescript
+export type ActiveFrame = { t: 'active' }
+```
+
+### `ServerFrame`
+
+```typescript
+export type ServerFrame = RpcFrame | RevokedFrame | ActiveFrame
+```
+
+### `AgentToken`
+
+```typescript
+export type AgentToken = string & { readonly [TokenBrand]: 'AgentToken' }
+```
+
+### `TokenPayload`
+
+```typescript
+export type TokenPayload = {
+  tid: string
+  iat: number
+  exp: number
+  scope: 'agent'
+}
+```
+
+### `TokenStatus`
+
+```typescript
+export type TokenStatus =
+  | 'awaiting-ws'
+  | 'awaiting-claude'
+  | 'active'
+  | 'pending-resume'
+  | 'revoked'
+```
+
+### `TokenRecord`
+
+```typescript
+export type TokenRecord = {
+  tid: string
+  uid: string | null
+  status: TokenStatus
+  createdAt: number
+  lastSeenAt: number
+  pendingResumeUntil: number | null
+  origin: string
+  label: string | null
+}
+```
+
+### `AgentSession`
+
+```typescript
+export type AgentSession = {
+  tid: string
+  label: string
+  status: 'active' | 'pending-resume' | 'revoked'
+  createdAt: number
+  lastSeenAt: number
+}
+```
+
+### `MintRequest`
+
+```typescript
+export type MintRequest = Record<string, never>
+```
+
+### `MintResponse`
+
+```typescript
+export type MintResponse = {
+  token: AgentToken
+  tid: string
+  wsUrl: string
+  lapUrl: string
+  expiresAt: number
+}
+```
+
+### `ResumeListRequest`
+
+```typescript
+export type ResumeListRequest = { tids: string[] }
+```
+
+### `ResumeListResponse`
+
+```typescript
+export type ResumeListResponse = { sessions: AgentSession[] }
+```
+
+### `ResumeClaimRequest`
+
+```typescript
+export type ResumeClaimRequest = { tid: string }
+```
+
+### `ResumeClaimResponse`
+
+```typescript
+export type ResumeClaimResponse = { token: AgentToken; wsUrl: string }
+```
+
+### `RevokeRequest`
+
+```typescript
+export type RevokeRequest = { tid: string }
+```
+
+### `RevokeResponse`
+
+```typescript
+export type RevokeResponse = { status: 'revoked' }
+```
+
+### `SessionsResponse`
+
+```typescript
+export type SessionsResponse = { sessions: AgentSession[] }
+```
+
+### `AuditEvent`
+
+```typescript
+export type AuditEvent =
+  | 'mint'
+  | 'claim'
+  | 'resume'
+  | 'revoke'
+  | 'lap-call'
+  | 'msg-dispatched'
+  | 'msg-blocked'
+  | 'confirm-proposed'
+  | 'confirm-approved'
+  | 'confirm-rejected'
+  | 'rate-limited'
+  | 'auth-failed'
+```
+
+### `AuditEntry`
+
+```typescript
+export type AuditEntry = {
+  at: number
+  tid: string | null
+  uid: string | null
+  event: AuditEvent
+  detail: object
+}
+```
+
+## Constants
+
+### `TokenBrand`
+
+```typescript
+const TokenBrand: unique symbol
+```
+
+<!-- auto-api:end -->

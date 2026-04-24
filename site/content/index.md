@@ -62,6 +62,7 @@ LLui provides first-class tooling for AI workflows:
 
 - **[llms.txt](/llms.txt)** — concise framework reference for system prompts
 - **[llms-full.txt](/llms-full.txt)** — comprehensive reference with all APIs, patterns, and rules (~47KB, fits in most context windows)
+- **[@llui/agent](/api/agent)** — LLM-driven control surface: Claude reads state, enumerates actions, dispatches messages into the live app
 - **[@llui/mcp](/api/mcp)** — MCP server exposing debug tools directly to LLMs via Model Context Protocol
 - **[@llui/eslint-plugin](/api/eslint-plugin-llui)** — 21 anti-pattern rules that catch common LLM mistakes before they reach production
 - **[LLM Guide](/llm-guide)** — system prompt and idiomatic patterns for AI code generation
@@ -79,6 +80,8 @@ LLui provides first-class tooling for AI workflows:
 | [`@llui/test`](/api/test)                        | Test harness — testComponent, testView, propertyTest, replayTrace                          |
 | [`@llui/vike`](/api/vike)                        | Vike SSR/SSG adapter — onRenderHtml, onRenderClient                                        |
 | [`@llui/mcp`](/api/mcp)                          | MCP server — LLM debug tools via Model Context Protocol                                    |
+| [`@llui/agent`](/api/agent)                      | LLM control surface — LAP server + browser client; Claude drives the app in production     |
+| [`@llui/agent-bridge`](/api/agent-bridge)        | MCP bridge CLI (`llui-agent`) — translates Claude Desktop tool calls to LAP                |
 | [`@llui/eslint-plugin`](/api/eslint-plugin-llui) | ESLint plugin — 21 anti-pattern rules for idiomatic LLui                                   |
 
 ## Performance
