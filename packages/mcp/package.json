@@ -27,9 +27,18 @@
     "@modelcontextprotocol/sdk": "^1.29.0",
     "ws": "^8.18.0"
   },
+  "peerDependencies": {
+    "playwright": ">=1.0.0"
+  },
+  "peerDependenciesMeta": {
+    "playwright": {
+      "optional": true
+    }
+  },
   "devDependencies": {
     "@types/node": "^22.0.0",
-    "@types/ws": "^8.5.13"
+    "@types/ws": "^8.5.13",
+    "playwright": "*"
   },
   "description": "LLui MCP server — LLM debug tools via Model Context Protocol",
   "keywords": [
