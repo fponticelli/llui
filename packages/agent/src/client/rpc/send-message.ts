@@ -139,6 +139,12 @@ export async function handleSendMessage(
         })
       }
       const budget = Math.min(quietMs, capMs - elapsed)
+      // When the cap is within `quietMs` of `elapsed`, the quiet
+      // window is truncated. In that case a timeout resolution does
+      // NOT mean we detected quiescence — it means the cap cut the
+      // window short. Only a full-length quiet window that elapses
+      // without a new commit counts as real idle.
+      const fullQuiet = budget >= quietMs
       const reason = await awaitQuietOrMsg(budget, (resolve) => {
         wake = resolve
       })
@@ -146,7 +152,7 @@ export async function handleSendMessage(
         return dispatched(host, {
           effectsObserved: observed,
           durationMs: now() - t0,
-          timedOut: false,
+          timedOut: !fullQuiet,
           errors: host.getAndClearDrainErrors?.() ?? [],
         })
       }
