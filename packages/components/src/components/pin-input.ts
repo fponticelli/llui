@@ -20,15 +20,15 @@ export interface PinInputState {
 }
 
 export type PinInputMsg =
-  /** @intent("Set Value") */
+  /** @intent("Set the character at a given field index (auto-advances focus on accept)") */
   | { type: 'setValue'; index: number; value: string }
-  /** @intent("Set All") */
+  /** @intent("Replace every field at once (typically from paste)") */
   | { type: 'setAll'; values: string[] }
-  /** @intent("Focus") */
+  /** @humanOnly */
   | { type: 'focus'; index: number }
-  /** @intent("Clear") */
+  /** @intent("Clear every field") */
   | { type: 'clear' }
-  /** @intent("Backspace") */
+  /** @humanOnly */
   | { type: 'backspace'; index: number }
 
 export interface PinInputInit {

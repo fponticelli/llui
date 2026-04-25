@@ -44,6 +44,7 @@ export interface ScrollAreaState extends ScrollDims {
 }
 
 export type ScrollAreaMsg =
+  /** @humanOnly */
   | {
       type: 'setScroll'
       scrollTop: number
@@ -53,7 +54,9 @@ export type ScrollAreaMsg =
       clientWidth: number
       clientHeight: number
     }
+  /** @humanOnly */
   | { type: 'setScrolling'; scrolling: boolean }
+  /** @humanOnly */
   | { type: 'setHovered'; hovered: boolean }
 
 export interface ScrollAreaInit {

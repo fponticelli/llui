@@ -31,15 +31,15 @@ export interface DateInputState {
 }
 
 export type DateInputMsg =
-  /** @intent("Set Input") */
+  /** @intent("Update the raw text the user has typed (re-parses to a Date)") */
   | { type: 'setInput'; value: string }
-  /** @intent("Set Value") */
+  /** @intent("Set the parsed date directly (also updates the displayed text)") */
   | { type: 'setValue'; value: Date | null }
-  /** @intent("Clear") */
+  /** @intent("Clear the input and the parsed date") */
   | { type: 'clear' }
-  /** @intent("Set Min") */
+  /** @humanOnly */
   | { type: 'setMin'; min: Date | null }
-  /** @intent("Set Max") */
+  /** @humanOnly */
   | { type: 'setMax'; max: Date | null }
   /** @humanOnly */
   | { type: 'setDisabled'; disabled: boolean }

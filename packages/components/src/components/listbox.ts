@@ -26,11 +26,11 @@ export interface ListboxState {
 }
 
 export type ListboxMsg =
-  /** @intent("Select") */
+  /** @intent("Pick the option with the given value (toggles in multi-select)") */
   | { type: 'select'; value: string }
-  /** @intent("Set Value") */
+  /** @intent("Replace the selected values with the provided list") */
   | { type: 'setValue'; value: string[] }
-  /** @intent("Clear") */
+  /** @intent("Clear all selected values") */
   | { type: 'clear' }
   /** @humanOnly */
   | { type: 'highlight'; index: number | null }
@@ -42,11 +42,11 @@ export type ListboxMsg =
   | { type: 'highlightFirst' }
   /** @humanOnly */
   | { type: 'highlightLast' }
-  /** @intent("Select Highlighted") */
+  /** @intent("Pick the currently-highlighted option") */
   | { type: 'selectHighlighted' }
   /** @humanOnly */
   | { type: 'setItems'; items: string[]; disabled?: string[] }
-  /** @intent("Typeahead") */
+  /** @humanOnly */
   | { type: 'typeahead'; char: string; now: number }
 
 export interface ListboxInit {

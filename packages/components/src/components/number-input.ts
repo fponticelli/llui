@@ -21,19 +21,19 @@ export interface NumberInputState {
 }
 
 export type NumberInputMsg =
-  /** @intent("Set Value") */
+  /** @intent("Set the numeric value (clamped to min/max, snapped to step)") */
   | { type: 'setValue'; value: number | null }
-  /** @intent("Set Raw Text") */
+  /** @humanOnly */
   | { type: 'setRawText'; text: string }
-  /** @intent("Commit") */
+  /** @intent("Commit the in-progress text input — parse, clamp, snap, and update value") */
   | { type: 'commit' }
-  /** @intent("Increment") */
+  /** @intent("Increase value by step (or step × multiplier)") */
   | { type: 'increment'; multiplier?: number }
-  /** @intent("Decrement") */
+  /** @intent("Decrease value by step (or step × multiplier)") */
   | { type: 'decrement'; multiplier?: number }
-  /** @intent("To Min") */
+  /** @intent("Snap value to the configured minimum") */
   | { type: 'toMin' }
-  /** @intent("To Max") */
+  /** @intent("Snap value to the configured maximum") */
   | { type: 'toMax' }
   /** @humanOnly */
   | { type: 'setDisabled'; disabled: boolean }

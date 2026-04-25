@@ -86,17 +86,17 @@ export interface SortableState {
 }
 
 export type SortableMsg =
-  /** @intent("Start") */
+  /** @humanOnly */
   | { type: 'start'; id: string; index: number; container: string; x: number; y: number }
-  /** @intent("Move") */
+  /** @humanOnly */
   | { type: 'move'; index: number; container: string; x: number; y: number }
-  /** @intent("Drop") */
+  /** @humanOnly */
   | { type: 'drop' }
-  /** @intent("Cancel") */
+  /** @humanOnly */
   | { type: 'cancel' }
-  // Keyboard: toggle between picking up and dropping at current position
+  /** @humanOnly */
   | { type: 'toggleGrab'; id: string; index: number; container: string }
-  // Keyboard: shift currentIndex by delta (clamped ≥ 0)
+  /** @humanOnly */
   | { type: 'moveBy'; delta: number }
 
 export function init(): SortableState {

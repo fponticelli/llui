@@ -65,7 +65,14 @@ export type AgentConnectMsg =
    */
   | { type: 'CopyConnectSnippet' }
 
-export type AgentConnectInitOpts = { mintUrl: string }
+/**
+ * Options threaded through `init()` and `update()`. `mintUrl` is
+ * optional — when omitted the agent effect handler derives it from
+ * `EffectHandlerHost.agentBasePath` (default `/agent` → `/agent/mint`).
+ * Set explicitly only when the mint endpoint lives outside the
+ * configured base path.
+ */
+export type AgentConnectInitOpts = { mintUrl?: string }
 
 /** Component shape is [State, Effect[]] — consistent with @llui/components. */
 export function init(_opts: AgentConnectInitOpts): [AgentConnectState, AgentEffect[]] {
@@ -84,14 +91,19 @@ export function init(_opts: AgentConnectInitOpts): [AgentConnectState, AgentEffe
 export function update(
   state: AgentConnectState,
   msg: AgentConnectMsg,
-  opts: AgentConnectInitOpts,
+  opts: AgentConnectInitOpts = {},
 ): [AgentConnectState, AgentEffect[]] {
   switch (msg.type) {
-    case 'Mint':
-      return [
-        { ...state, status: 'minting' },
-        [{ type: 'AgentMintRequest', mintUrl: opts.mintUrl }],
-      ]
+    case 'Mint': {
+      // mintUrl: undefined means "let the effect handler derive it
+      // from agentBasePath". Only include the property when explicitly
+      // set, so the effect's discriminated shape stays clean.
+      const mintEffect: AgentEffect =
+        opts.mintUrl !== undefined
+          ? { type: 'AgentMintRequest', mintUrl: opts.mintUrl }
+          : { type: 'AgentMintRequest' }
+      return [{ ...state, status: 'minting' }, [mintEffect]]
+    }
     case 'MintSucceeded': {
       const pending: AgentConnectPendingToken = {
         token: msg.token,

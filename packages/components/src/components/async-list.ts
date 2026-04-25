@@ -30,11 +30,17 @@ export interface AsyncListState<T = unknown> {
 }
 
 export type AsyncListMsg<T = unknown> =
+  /** @intent("Request the next page of items") */
   | { type: 'loadMore' }
+  /** @humanOnly */
   | { type: 'pageLoaded'; items: T[]; hasMore: boolean }
+  /** @humanOnly */
   | { type: 'pageFailed'; error: string }
+  /** @intent("Discard the loaded items and reset back to page 0") */
   | { type: 'reset' }
+  /** @humanOnly */
   | { type: 'setItems'; items: T[]; hasMore?: boolean }
+  /** @intent("Retry the last failed page request") */
   | { type: 'retry' }
 
 export interface AsyncListInit<T = unknown> {

@@ -1,7 +1,14 @@
 import type { AgentToken } from '../protocol.js'
 
 export type AgentEffect =
-  | { type: 'AgentMintRequest'; mintUrl: string }
+  /**
+   * Mint a fresh agent token. `mintUrl` is optional — when omitted the
+   * effect handler derives it from `EffectHandlerHost.agentBasePath`
+   * (default `/agent`), producing `<agentBasePath>/mint`. Pass an
+   * explicit value when the mint endpoint lives outside the configured
+   * base path.
+   */
+  | { type: 'AgentMintRequest'; mintUrl?: string }
   | { type: 'AgentOpenWS'; token: AgentToken; wsUrl: string }
   | { type: 'AgentCloseWS' }
   | { type: 'AgentResumeCheck'; tids: string[] }

@@ -36,27 +36,27 @@ export interface ImageCropperState {
 }
 
 export type ImageCropperMsg =
-  /** @intent("Set Image") */
+  /** @humanOnly */
   | { type: 'setImage'; width: number; height: number }
-  /** @intent("Set Crop") */
+  /** @intent("Set the crop rectangle (x/y/width/height in image-native pixels)") */
   | { type: 'setCrop'; crop: CropRect }
-  /** @intent("Set Aspect Ratio") */
+  /** @intent("Lock the crop to a specific aspect ratio (width/height), or null for free-form") */
   | { type: 'setAspectRatio'; ratio: number | null }
-  /** @intent("Drag Start") */
+  /** @humanOnly */
   | { type: 'dragStart' }
-  /** @intent("Drag Move") */
+  /** @humanOnly */
   | { type: 'dragMove'; dx: number; dy: number }
-  /** @intent("Drag End") */
+  /** @humanOnly */
   | { type: 'dragEnd' }
-  /** @intent("Resize Start") */
+  /** @humanOnly */
   | { type: 'resizeStart'; handle: ResizeHandle }
-  /** @intent("Resize Move") */
+  /** @humanOnly */
   | { type: 'resizeMove'; dx: number; dy: number }
-  /** @intent("Resize End") */
+  /** @humanOnly */
   | { type: 'resizeEnd' }
-  /** @intent("Reset") */
+  /** @intent("Reset the crop to a default selection (full image or aspect-fit)") */
   | { type: 'reset' }
-  /** @intent("Center Fill") */
+  /** @intent("Set the crop to a maximum-area centered selection") */
   | { type: 'centerFill' }
 
 export interface ImageCropperInit {

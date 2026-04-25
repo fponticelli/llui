@@ -19,13 +19,13 @@ export interface PopoverState {
 }
 
 export type PopoverMsg =
-  /** @intent("Open") */
+  /** @intent("Open the popover") */
   | { type: 'open' }
-  /** @intent("Close") */
+  /** @intent("Close the popover") */
   | { type: 'close' }
-  /** @intent("Toggle") */
+  /** @intent("Toggle the popover open/closed") */
   | { type: 'toggle' }
-  /** @intent("Set Open") */
+  /** @intent("Set the popover's open state to a specific value") */
   | { type: 'setOpen'; open: boolean }
 
 export interface PopoverInit {

@@ -7,10 +7,10 @@
  *   - focus* / highlight* — keyboard-only; agents can't drive a focus
  *     model, mark @humanOnly
  *   - setItems / setOptions / setDisabled / setLoading / setReadOnly /
- *     setError / setValid — programmatic configuration, host-driven,
- *     @humanOnly
- *   - *KeyDown / *KeyUp / *MouseDown / *MouseUp — DOM events,
- *     @humanOnly
+ *     setError / setValid / setScroll* / setHovered — programmatic
+ *     configuration or DOM-event echoes, host-driven, @humanOnly
+ *   - *KeyDown / *KeyUp / *MouseDown / *MouseUp / *Pointer* — DOM
+ *     events, @humanOnly
  *   - everything else — @intent("<verb-cased name>")
  *
  * The intent text is approximate: title-cased variant name. Maintainers
@@ -20,6 +20,16 @@
  *
  * Idempotent — skips variants that already have a JSDoc tag (any of
  * @intent, @humanOnly, @agentOnly, @requiresConfirm, @alwaysAffordable).
+ *
+ * Handles three variant shapes:
+ *   1. Single-line:    `| { type: 'foo'; ... }`
+ *   2. Multi-line:     `| {\n      type: 'foo'\n      ...\n    }`
+ *   3. Bare line:      (multiple variants with line comments between)
+ *
+ * Continues across non-variant lines inside a union (line comments,
+ * existing JSDoc) instead of breaking — only stops at the first
+ * top-level statement (`export`, `interface`, `function`) or end of
+ * file.
  */
 
 import { readFileSync, readdirSync, writeFileSync } from 'node:fs'
@@ -42,6 +52,9 @@ const HUMAN_ONLY_PATTERNS = [
   /^setValid$/,
   /^setRequired$/,
   /^setReadonly$/,
+  /^setScroll/,
+  /^setHovered/,
+  /^setScrolling/,
   /^.*KeyDown$/,
   /^.*KeyUp$/,
   /^.*MouseDown$/,
@@ -57,83 +70,139 @@ function classify(variantName) {
 }
 
 function intentText(variant) {
-  // camelCase → "Camel case" (rough; user can polish individual cases).
   return variant
     .replace(/([A-Z])/g, ' $1')
     .replace(/^./, (c) => c.toUpperCase())
     .trim()
 }
 
+const TAG_RE = /@intent\b|@humanOnly\b|@agentOnly\b|@requiresConfirm\b|@alwaysAffordable\b/
+
 /**
- * Parse a Msg union, find each variant, and rewrite the source with
- * JSDoc annotations inserted before each variant. Preserves existing
- * JSDoc that contains LAP tags.
+ * Scan a Msg union starting at lines[startIdx] (the line after `export
+ * type XxxMsg =`). Returns the rewritten lines and edit count.
  */
+function annotateUnion(lines, startIdx) {
+  const out = []
+  let i = startIdx
+  let edits = 0
+  // pending tracks comment/JSDoc lines accumulated since the last variant
+  // — these are what we look at for an existing tag.
+  let pending = []
+
+  while (i < lines.length) {
+    const cur = lines[i]
+    const trimmed = cur.trim()
+
+    // Stop at top-level statements.
+    if (/^(export|interface|function)\s/.test(cur) || /^type\s/.test(cur)) {
+      // Flush pending and return.
+      out.push(...pending)
+      return { rewritten: out, consumed: i - startIdx, edits }
+    }
+
+    // Single-line variant
+    const single = /^(\s*)\|\s*\{\s*type:\s*['"]([^'"]+)['"]/.exec(cur)
+    // Multi-line variant header (` | {` on its own line)
+    const multi = /^(\s*)\|\s*\{\s*$/.test(cur)
+
+    let typeName = null
+    let indent = ''
+    let multiTypeIdx = -1
+    if (single) {
+      typeName = single[2]
+      indent = single[1]
+    } else if (multi) {
+      indent = /^(\s*)/.exec(cur)[1]
+      for (let j = i + 1; j < Math.min(i + 12, lines.length); j++) {
+        const tm = /^\s*type:\s*['"]([^'"]+)['"]/.exec(lines[j])
+        if (tm) {
+          typeName = tm[1]
+          multiTypeIdx = j
+          break
+        }
+      }
+    }
+
+    if (typeName) {
+      const pendingText = pending.join('\n')
+      const hasTag = TAG_RE.test(pendingText)
+      // Flush any pending comment lines verbatim
+      out.push(...pending)
+      pending = []
+      if (!hasTag) {
+        const kind = classify(typeName)
+        const tag =
+          kind === 'humanOnly' ? '/** @humanOnly */' : `/** @intent("${intentText(typeName)}") */`
+        out.push(`${indent}${tag}`)
+        edits++
+      }
+      // Emit the variant. For multi-line variants, emit the whole block.
+      out.push(cur)
+      i++
+      if (multi && multiTypeIdx >= 0) {
+        // Find the closing brace of the multi-line variant
+        let depth = 1
+        while (i < lines.length && depth > 0) {
+          const ln = lines[i]
+          for (const ch of ln) {
+            if (ch === '{') depth++
+            else if (ch === '}') depth--
+          }
+          out.push(ln)
+          i++
+          if (depth === 0) break
+        }
+      }
+      continue
+    }
+
+    // Not a variant. If it's a comment/JSDoc, accumulate. If blank, drop pending. Else flush.
+    if (/^\/\*\*|^\*|^\*\/|^\/\//.test(trimmed) && trimmed !== '') {
+      pending.push(cur)
+    } else if (trimmed === '') {
+      // Blank line — flush pending verbatim, reset.
+      out.push(...pending)
+      pending = []
+      out.push(cur)
+    } else {
+      // Other content — likely the union's right-hand-side has ended (e.g. a
+      // type expression on its own line). Flush and stop.
+      out.push(...pending)
+      pending = []
+      out.push(cur)
+      i++
+      return { rewritten: out, consumed: i - startIdx, edits }
+    }
+    i++
+  }
+
+  out.push(...pending)
+  return { rewritten: out, consumed: i - startIdx, edits }
+}
+
 function annotateFile(source) {
-  // Find every `export type XxxMsg = | { type: 'foo', ... } | { type: 'bar' }`.
-  // We process each Msg union independently. Inside the union, we
-  // walk variant by variant, looking at the comment that precedes it.
   const lines = source.split('\n')
   const out = []
   let i = 0
-  let edits = 0
+  let totalEdits = 0
 
   while (i < lines.length) {
     const line = lines[i]
-    const isMsgUnionStart = /^export type \w+Msg\s*=\s*$/.test(line.trim())
-    if (!isMsgUnionStart) {
+    if (/^export type \w+Msg(<[^>]*>)?\s*=\s*$/.test(line.trim())) {
       out.push(line)
       i++
-      continue
-    }
-    out.push(line) // keep the `export type ... =` line
-
-    i++
-    while (i < lines.length) {
-      const cur = lines[i]
-      // A variant line looks like: `  | { type: 'xxx'; ... }` or just
-      // `  | { type: 'xxx' }`. Stop when we leave the union.
-      const variantMatch = /^(\s*)\| \{ type: ['"]([^'"]+)['"]/.exec(cur)
-      if (!variantMatch) {
-        // End of union (next is a blank line, another statement, etc.)
-        break
-      }
-      const indent = variantMatch[1]
-      const variantName = variantMatch[2]
-
-      // Look back through `out` for an existing JSDoc immediately
-      // above this variant. If present and contains an LAP tag, don't
-      // re-annotate.
-      let lookback = out.length - 1
-      let existingDoc = ''
-      while (lookback >= 0 && /^\s*\*/.test(out[lookback])) lookback--
-      if (lookback >= 0 && /^\s*\/\*\*/.test(out[lookback])) {
-        existingDoc = out.slice(lookback).join('\n')
-      } else if (lookback >= 0 && /^\s*\/\*\*[^*]*\*\/$/.test(out[lookback])) {
-        existingDoc = out[lookback]
-      }
-      const hasLapTag =
-        /@intent\b|@humanOnly\b|@agentOnly\b|@requiresConfirm\b|@alwaysAffordable\b/.test(
-          existingDoc,
-        )
-      if (hasLapTag) {
-        out.push(cur)
-        i++
-        continue
-      }
-
-      // Insert JSDoc before this variant.
-      const kind = classify(variantName)
-      const tag =
-        kind === 'humanOnly' ? '/** @humanOnly */' : `/** @intent("${intentText(variantName)}") */`
-      out.push(`${indent}${tag}`)
-      out.push(cur)
-      edits++
+      const { rewritten, consumed, edits } = annotateUnion(lines, i)
+      out.push(...rewritten)
+      i += consumed
+      totalEdits += edits
+    } else {
+      out.push(line)
       i++
     }
   }
 
-  return { source: out.join('\n'), edits }
+  return { source: out.join('\n'), edits: totalEdits }
 }
 
 const files = readdirSync(componentsDir).filter((f) => f.endsWith('.ts') && !f.endsWith('.test.ts'))
@@ -142,7 +211,7 @@ let touchedFiles = 0
 for (const file of files) {
   const path = join(componentsDir, file)
   const source = readFileSync(path, 'utf8')
-  if (!/export type \w+Msg\s*=/.test(source)) continue
+  if (!/export type \w+Msg(<[^>]*>)?\s*=/.test(source)) continue
   const { source: rewritten, edits } = annotateFile(source)
   if (edits > 0) {
     writeFileSync(path, rewritten)

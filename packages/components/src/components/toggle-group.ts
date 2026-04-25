@@ -21,9 +21,9 @@ export interface ToggleGroupState {
 }
 
 export type ToggleGroupMsg =
-  /** @intent("Toggle") */
+  /** @intent("Toggle the button with the given value (in single mode, replaces selection)") */
   | { type: 'toggle'; value: string }
-  /** @intent("Set Value") */
+  /** @intent("Replace the pressed-value set with the provided list") */
   | { type: 'setValue'; value: string[] }
   /** @humanOnly */
   | { type: 'setItems'; items: string[]; disabled?: string[] }

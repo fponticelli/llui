@@ -14,11 +14,11 @@ export interface PasswordInputState {
 }
 
 export type PasswordInputMsg =
-  /** @intent("Set Value") */
+  /** @intent("Update the password value as the user types") */
   | { type: 'setValue'; value: string }
-  /** @intent("Toggle Visibility") */
+  /** @intent("Toggle the show/hide-password state") */
   | { type: 'toggleVisibility' }
-  /** @intent("Set Visible") */
+  /** @intent("Set the show/hide-password state to a specific value") */
   | { type: 'setVisible'; visible: boolean }
 
 export interface PasswordInputInit {

@@ -32,37 +32,37 @@ export interface FloatingPanelState {
 }
 
 export type FloatingPanelMsg =
-  /** @intent("Open") */
+  /** @intent("Open the floating panel") */
   | { type: 'open' }
-  /** @intent("Close") */
+  /** @intent("Close the floating panel") */
   | { type: 'close' }
-  /** @intent("Minimize") */
+  /** @intent("Minimize the panel (collapses to title bar)") */
   | { type: 'minimize' }
-  /** @intent("Restore From Minimized") */
+  /** @intent("Restore the panel from its minimized state") */
   | { type: 'restoreFromMinimized' }
-  /** @intent("Maximize") */
+  /** @intent("Maximize the panel (fills the viewport)") */
   | { type: 'maximize' }
-  /** @intent("Restore From Maximized") */
+  /** @intent("Restore the panel to its pre-maximize geometry") */
   | { type: 'restoreFromMaximized' }
-  /** @intent("Toggle Minimize") */
+  /** @intent("Toggle between minimized and normal") */
   | { type: 'toggleMinimize' }
-  /** @intent("Toggle Maximize") */
+  /** @intent("Toggle between maximized and normal") */
   | { type: 'toggleMaximize' }
-  /** @intent("Drag Start") */
+  /** @humanOnly */
   | { type: 'dragStart' }
-  /** @intent("Drag Move") */
+  /** @humanOnly */
   | { type: 'dragMove'; dx: number; dy: number }
-  /** @intent("Drag End") */
+  /** @humanOnly */
   | { type: 'dragEnd' }
-  /** @intent("Resize Start") */
+  /** @humanOnly */
   | { type: 'resizeStart'; handle: ResizeHandle }
-  /** @intent("Resize Move") */
+  /** @humanOnly */
   | { type: 'resizeMove'; dx: number; dy: number }
-  /** @intent("Resize End") */
+  /** @humanOnly */
   | { type: 'resizeEnd' }
-  /** @intent("Set Position") */
+  /** @intent("Set the panel's top-left position in pixels") */
   | { type: 'setPosition'; x: number; y: number }
-  /** @intent("Set Size") */
+  /** @intent("Set the panel's size in pixels (clamped to min/max)") */
   | { type: 'setSize'; width: number; height: number }
 
 export interface FloatingPanelInit {

@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
+import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import {
   component,
   mountApp,
@@ -8,7 +8,12 @@ import {
   div,
   type ComponentDef,
 } from '../src/index.js'
-import { _setDevToolsInstall, _setHmrModule } from '../src/mount.js'
+import {
+  _setDevToolsInstall,
+  _setHmrModule,
+  _getHmrModule,
+  _getDevToolsInstall,
+} from '../src/mount.js'
 
 /**
  * Parity tests across the four mount paths:
@@ -81,21 +86,25 @@ function setup(): {
   return { devToolsCalls, hmrRegisterContainerCalls, hmrRegisterAnchorCalls, hmrUnregisterCalls }
 }
 
+// Snapshot whatever the test runtime had installed before any of these
+// tests ran (typically `null`/`null` since nothing imports the hmr or
+// devtools entries here). Restoring to the snapshot — instead of a
+// no-op stub — keeps this suite from leaking hooks to other suites that
+// share the module instance.
+let priorHmrModule: ReturnType<typeof _getHmrModule> = null
+let priorDevToolsInstall: ReturnType<typeof _getDevToolsInstall> = null
+
 beforeEach(() => {
-  // Each test installs its own stubs via setup(); reset before to be safe.
+  priorHmrModule = _getHmrModule()
+  priorDevToolsInstall = _getDevToolsInstall()
+  // Reset to a known clean state before setup() installs its stubs.
   _setDevToolsInstall(null)
+  _setHmrModule(null)
 })
 
 afterEach(() => {
-  _setDevToolsInstall(null)
-  // Restore HMR module to whatever the runtime entry installed (none in tests).
-  // The internal seam allows null reset by passing a no-op stub; use a
-  // dummy that no-ops to clear our hooks.
-  _setHmrModule({
-    registerForHmr: (() => {}) as never,
-    registerForAnchor: (() => {}) as never,
-    unregisterForHmr: (() => {}) as never,
-  } as never)
+  _setDevToolsInstall(priorDevToolsInstall)
+  _setHmrModule(priorHmrModule)
 })
 
 describe('mount-path parity — devtools + HMR registration', () => {

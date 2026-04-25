@@ -23,17 +23,17 @@ export interface SliderState {
 }
 
 export type SliderMsg =
-  /** @intent("Set Value") */
+  /** @intent("Replace all thumb values at once") */
   | { type: 'setValue'; value: number[] }
-  /** @intent("Set Thumb") */
+  /** @intent("Set the value of the thumb at the given index") */
   | { type: 'setThumb'; index: number; value: number }
-  /** @intent("Increment") */
+  /** @intent("Move the thumb at the given index up by one step (or step × multiplier)") */
   | { type: 'increment'; index: number; multiplier?: number }
-  /** @intent("Decrement") */
+  /** @intent("Move the thumb at the given index down by one step (or step × multiplier)") */
   | { type: 'decrement'; index: number; multiplier?: number }
-  /** @intent("To Min") */
+  /** @intent("Snap the thumb at the given index to the slider's minimum") */
   | { type: 'toMin'; index: number }
-  /** @intent("To Max") */
+  /** @intent("Snap the thumb at the given index to the slider's maximum") */
   | { type: 'toMax'; index: number }
   /** @humanOnly */
   | { type: 'setDisabled'; disabled: boolean }

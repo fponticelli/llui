@@ -26,17 +26,17 @@ export interface ComboboxState {
 }
 
 export type ComboboxMsg =
-  /** @intent("Open") */
+  /** @intent("Open the combobox dropdown") */
   | { type: 'open' }
-  /** @intent("Close") */
+  /** @intent("Close the combobox dropdown") */
   | { type: 'close' }
-  /** @intent("Set Input Value") */
+  /** @intent("Set the text input contents (re-runs the filter)") */
   | { type: 'setInputValue'; value: string }
-  /** @intent("Select Option") */
+  /** @intent("Pick the option with the given value (toggles in multi-select)") */
   | { type: 'selectOption'; value: string }
-  /** @intent("Set Value") */
+  /** @intent("Replace the selected values with the provided list") */
   | { type: 'setValue'; value: string[] }
-  /** @intent("Clear") */
+  /** @intent("Clear all selected values and the input text") */
   | { type: 'clear' }
   /** @humanOnly */
   | { type: 'highlightNext' }
@@ -48,7 +48,7 @@ export type ComboboxMsg =
   | { type: 'highlightLast' }
   /** @humanOnly */
   | { type: 'highlight'; index: number | null }
-  /** @intent("Select Highlighted") */
+  /** @intent("Pick the currently-highlighted option in the filtered list") */
   | { type: 'selectHighlighted' }
   /** @humanOnly */
   | { type: 'setItems'; items: string[]; disabled?: string[] }

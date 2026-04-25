@@ -40,13 +40,13 @@ export interface TocState {
 export type TocMsg =
   /** @humanOnly */
   | { type: 'setItems'; items: TocEntry[] }
-  /** @intent("Set Active") */
+  /** @humanOnly */
   | { type: 'setActive'; id: string | null }
-  /** @intent("Toggle Expanded") */
+  /** @intent("Toggle the expanded state of the entry with the given id") */
   | { type: 'toggleExpanded'; id: string }
-  /** @intent("Expand All") */
+  /** @intent("Expand every collapsible entry") */
   | { type: 'expandAll' }
-  /** @intent("Collapse All") */
+  /** @intent("Collapse every expanded entry") */
   | { type: 'collapseAll' }
 
 export interface TocInit {

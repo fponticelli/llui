@@ -21,9 +21,9 @@ export interface ContextMenuState {
 }
 
 export type ContextMenuMsg =
-  /** @intent("Open At") */
+  /** @humanOnly */
   | { type: 'openAt'; x: number; y: number }
-  /** @intent("Close") */
+  /** @intent("Close the context menu") */
   | { type: 'close' }
   /** @humanOnly */
   | { type: 'highlight'; value: string | null }
@@ -31,9 +31,9 @@ export type ContextMenuMsg =
   | { type: 'highlightNext' }
   /** @humanOnly */
   | { type: 'highlightPrev' }
-  /** @intent("Select Highlighted") */
+  /** @intent("Activate the currently-highlighted menu item") */
   | { type: 'selectHighlighted' }
-  /** @intent("Select") */
+  /** @intent("Activate the menu item with the given value") */
   | { type: 'select'; value: string }
   /** @humanOnly */
   | { type: 'setItems'; items: string[]; disabled?: string[] }

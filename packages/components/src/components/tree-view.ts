@@ -56,21 +56,21 @@ export interface TreeViewState {
 }
 
 export type TreeViewMsg =
-  /** @intent("Toggle Branch") */
+  /** @intent("Toggle the branch with the given id expanded/collapsed") */
   | { type: 'toggleBranch'; id: string }
-  /** @intent("Expand") */
+  /** @intent("Expand the branch with the given id") */
   | { type: 'expand'; id: string }
-  /** @intent("Collapse") */
+  /** @intent("Collapse the branch with the given id") */
   | { type: 'collapse'; id: string }
-  /** @intent("Expand All") */
+  /** @intent("Expand every branch in the provided id list") */
   | { type: 'expandAll'; ids: string[] }
-  /** @intent("Collapse All") */
+  /** @intent("Collapse every expanded branch") */
   | { type: 'collapseAll' }
-  /** @intent("Select") */
+  /** @intent("Select the item with the given id (additive=true extends multi-selection)") */
   | { type: 'select'; id: string; additive?: boolean }
-  /** @intent("Set Selected") */
+  /** @intent("Replace the selected-id set with the provided list") */
   | { type: 'setSelected'; ids: string[] }
-  /** @intent("Focus") */
+  /** @humanOnly */
   | { type: 'focus'; id: string | null }
   /** @humanOnly */
   | { type: 'focusNext' }
@@ -80,31 +80,31 @@ export type TreeViewMsg =
   | { type: 'focusFirst' }
   /** @humanOnly */
   | { type: 'focusLast' }
-  /** @intent("Set Visible Items") */
+  /** @humanOnly */
   | { type: 'setVisibleItems'; ids: string[]; labels?: string[] }
-  /** @intent("Typeahead") */
+  /** @humanOnly */
   | { type: 'typeahead'; char: string; now: number }
-  /** @intent("Arrow Left From") */
+  /** @humanOnly */
   | { type: 'arrowLeftFrom'; id: string; isBranch: boolean; parentId: string | null }
-  /** @intent("Arrow Right From") */
+  /** @humanOnly */
   | { type: 'arrowRightFrom'; id: string }
-  /** @intent("Toggle Checked") */
+  /** @intent("Toggle the checkbox on the item with the given id (descendantIds drives recursive check)") */
   | { type: 'toggleChecked'; id: string; descendantIds?: string[] }
-  /** @intent("Set Checked") */
+  /** @intent("Replace the checked-id set with the provided list") */
   | { type: 'setChecked'; ids: string[] }
-  /** @intent("Set Indeterminate") */
+  /** @humanOnly */
   | { type: 'setIndeterminate'; ids: string[] }
-  /** @intent("Rename Start") */
+  /** @intent("Begin renaming the item with the given id (seeds the rename input with `initial`)") */
   | { type: 'renameStart'; id: string; initial: string }
-  /** @intent("Rename Change") */
+  /** @intent("Update the rename draft as the user types") */
   | { type: 'renameChange'; value: string }
-  /** @intent("Rename Commit") */
+  /** @intent("Commit the in-progress rename (clears the rename state)") */
   | { type: 'renameCommit' }
-  /** @intent("Rename Cancel") */
+  /** @intent("Cancel the in-progress rename without applying changes") */
   | { type: 'renameCancel' }
-  /** @intent("Loading Start") */
+  /** @intent("Mark the branch with the given id as loading children (typically before an async fetch)") */
   | { type: 'loadingStart'; id: string }
-  /** @intent("Loading End") */
+  /** @intent("Clear the loading state for the given branch id (after async fetch completes)") */
   | { type: 'loadingEnd'; id: string }
 
 export interface TreeViewInit {

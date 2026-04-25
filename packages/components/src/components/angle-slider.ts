@@ -25,15 +25,15 @@ export interface AngleSliderState {
 }
 
 export type AngleSliderMsg =
-  /** @intent("Set Value") */
+  /** @intent("Set the angle in degrees (clamped to min/max, snapped to step)") */
   | { type: 'setValue'; value: number }
-  /** @intent("Increment") */
+  /** @intent("Increase the angle by `steps` × step (default: 1 step)") */
   | { type: 'increment'; steps?: number }
-  /** @intent("Decrement") */
+  /** @intent("Decrease the angle by `steps` × step (default: 1 step)") */
   | { type: 'decrement'; steps?: number }
-  /** @intent("Set Min") */
+  /** @humanOnly */
   | { type: 'setMin'; min: number }
-  /** @intent("Set Max") */
+  /** @humanOnly */
   | { type: 'setMax'; max: number }
 
 export interface AngleSliderInit {

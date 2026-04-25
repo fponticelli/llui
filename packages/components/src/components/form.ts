@@ -46,17 +46,17 @@ export interface FormState {
 }
 
 export type FormMsg =
-  /** @intent("Touch") */
+  /** @intent("Mark a single field as touched (typically on blur)") */
   | { type: 'touch'; field: string }
-  /** @intent("Touch All") */
+  /** @intent("Mark every named field as touched (typically on submit attempt)") */
   | { type: 'touchAll'; fields: string[] }
-  /** @intent("Submit") */
+  /** @intent("Begin form submission — validate and dispatch the save effect") */
   | { type: 'submit' }
-  /** @intent("Submit Success") */
+  /** @intent("Mark the in-flight submission as successful") */
   | { type: 'submitSuccess' }
-  /** @intent("Submit Error") */
+  /** @intent("Mark the in-flight submission as failed with the given error message") */
   | { type: 'submitError'; error: string }
-  /** @intent("Reset") */
+  /** @intent("Reset the form to its initial state (clears touched flags and submit status)") */
   | { type: 'reset' }
 
 export function init(): FormState {

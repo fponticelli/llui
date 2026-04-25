@@ -78,8 +78,13 @@ async function handleMintRequest(
   effect: Extract<AgentEffect, { type: 'AgentMintRequest' }>,
   doFetch: Fetch,
 ): Promise<void> {
+  // Derive a default `mintUrl` from `agentBasePath` so consumers can
+  // change the base path in one place (the effect handler) without
+  // also having to keep the `agentConnect` opts in sync.
+  const basePath = host.agentBasePath ?? '/agent'
+  const mintUrl = effect.mintUrl ?? `${basePath}/mint`
   try {
-    const res = await doFetch(effect.mintUrl, { method: 'POST', credentials: 'include' })
+    const res = await doFetch(mintUrl, { method: 'POST', credentials: 'include' })
     if (!res.ok) {
       const detail = await safeText(res)
       host.send(

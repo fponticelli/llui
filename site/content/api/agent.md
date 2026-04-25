@@ -631,7 +631,7 @@ function init(_opts: AgentConnectInitOpts): [AgentConnectState, AgentEffect[]]
 function update(
   state: AgentConnectState,
   msg: AgentConnectMsg,
-  opts: AgentConnectInitOpts,
+  opts: AgentConnectInitOpts = {},
 ): [AgentConnectState, AgentEffect[]]
 ```
 
@@ -910,7 +910,14 @@ export type AgentClient = {
 
 ```typescript
 export type AgentEffect =
-  | { type: 'AgentMintRequest'; mintUrl: string }
+  /**
+   * Mint a fresh agent token. `mintUrl` is optional — when omitted the
+   * effect handler derives it from `EffectHandlerHost.agentBasePath`
+   * (default `/agent`), producing `<agentBasePath>/mint`. Pass an
+   * explicit value when the mint endpoint lives outside the configured
+   * base path.
+   */
+  | { type: 'AgentMintRequest'; mintUrl?: string }
   | { type: 'AgentOpenWS'; token: AgentToken; wsUrl: string }
   | { type: 'AgentCloseWS' }
   | { type: 'AgentResumeCheck'; tids: string[] }
@@ -1012,8 +1019,14 @@ export type AgentConnectMsg =
 
 ### `AgentConnectInitOpts`
 
+Options threaded through `init()` and `update()`. `mintUrl` is
+optional — when omitted the agent effect handler derives it from
+`EffectHandlerHost.agentBasePath` (default `/agent` → `/agent/mint`).
+Set explicitly only when the mint endpoint lives outside the
+configured base path.
+
 ```typescript
-export type AgentConnectInitOpts = { mintUrl: string }
+export type AgentConnectInitOpts = { mintUrl?: string }
 ```
 
 ### `AgentConnectConnectOptions`

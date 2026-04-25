@@ -33,15 +33,15 @@ export interface NavMenuState {
 }
 
 export type NavMenuMsg =
-  /** @intent("Open Branch") */
+  /** @intent("Open the submenu identified by id, closing any open siblings") */
   | { type: 'openBranch'; id: string; ancestorIds: string[] }
-  /** @intent("Close Branch") */
+  /** @intent("Close the submenu identified by id (also closes its descendants)") */
   | { type: 'closeBranch'; id: string }
-  /** @intent("Toggle Branch") */
+  /** @intent("Toggle the submenu identified by id open/closed") */
   | { type: 'toggleBranch'; id: string; ancestorIds: string[] }
-  /** @intent("Close All") */
+  /** @intent("Close every open submenu") */
   | { type: 'closeAll' }
-  /** @intent("Focus") */
+  /** @humanOnly */
   | { type: 'focus'; id: string | null }
 
 export interface NavMenuInit {

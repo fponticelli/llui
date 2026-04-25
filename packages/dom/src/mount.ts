@@ -53,9 +53,18 @@ declare global {
 
 let hmrModule: typeof import('./hmr') | null = null
 
-/** @internal Called by enableHmr in the hmr module */
-export function _setHmrModule(m: typeof import('./hmr')): void {
+/**
+ * @internal Called by enableHmr in the hmr module. Tests use this
+ * (paired with `_getHmrModule`) to snapshot/restore prior state across
+ * suite boundaries — pass `null` to clear.
+ */
+export function _setHmrModule(m: typeof import('./hmr') | null): void {
   hmrModule = m
+}
+
+/** @internal Read the currently-installed HMR module (or null). */
+export function _getHmrModule(): typeof import('./hmr') | null {
+  return hmrModule
 }
 
 // ── DevTools auto-install (dev only) ────────────────────────────
@@ -66,6 +75,11 @@ let devToolsInstall: ((inst: object) => void) | null = null
 /** @internal Called by enableDevTools in the devtools module */
 export function _setDevToolsInstall(fn: ((inst: object) => void) | null): void {
   devToolsInstall = fn
+}
+
+/** @internal Read the currently-installed devtools-install hook (or null). */
+export function _getDevToolsInstall(): ((inst: object) => void) | null {
+  return devToolsInstall
 }
 
 export interface MountOptions {
@@ -452,6 +466,8 @@ export function hydrateAtAnchor<S, M, E, D = void>(
   // via `MountOptions.runInitEffectsOnHydrate: true`.
   if (options?.runInitEffectsOnHydrate) {
     dispatchInitialEffects(inst)
+  } else {
+    warnDroppedInitEffects(inst, 'hydrateAtAnchor')
   }
   return buildAppHandle(inst, def.name ?? null, () => {
     _removeBetween(anchor, endSentinel)
@@ -467,6 +483,27 @@ function dispatchInitialEffects<S, M, E>(
     inst.def.onEffect({ effect, send: inst.send, signal: inst.signal })
   }
   inst.initialEffects = []
+}
+
+/**
+ * Dev-only warning when a hydrate path silently drops a non-empty
+ * `initialEffects` array. The default-skip behavior is deliberate (the
+ * server already ran them), but if `init()` produces effects that
+ * weren't run on the server — typically client-only init pipelines —
+ * silent drop is a footgun. Surface the count and the opt-in.
+ */
+function warnDroppedInitEffects<S, M, E>(
+  inst: ReturnType<typeof createComponentInstance<S, M, E>>,
+  via: 'hydrateApp' | 'hydrateAtAnchor',
+): void {
+  if (!import.meta.env?.DEV) return
+  if (inst.initialEffects.length === 0) return
+  const name = inst.def.name ?? '<anonymous>'
+  console.warn(
+    `[LLui] ${via}: skipped ${inst.initialEffects.length} init effect(s) for "${name}". ` +
+      `Hydration drops init effects by default since the server already ran them. ` +
+      `If these effects only fire on the client, pass \`runInitEffectsOnHydrate: true\` to opt in.`,
+  )
 }
 
 /**
@@ -620,6 +657,8 @@ export function hydrateApp<S, M, E, D = void>(
   // a `loaded` flag and returns `[]` on the server).
   if (options?.runInitEffectsOnHydrate) {
     dispatchInitialEffects(inst)
+  } else {
+    warnDroppedInitEffects(inst, 'hydrateApp')
   }
 
   registerInstance(inst)

@@ -19,19 +19,19 @@ export interface PaginationState {
 }
 
 export type PaginationMsg =
-  /** @intent("Go To") */
+  /** @intent("Jump to a specific 1-based page number") */
   | { type: 'goTo'; page: number }
-  /** @intent("Next") */
+  /** @intent("Advance to the next page") */
   | { type: 'next' }
-  /** @intent("Prev") */
+  /** @intent("Go back to the previous page") */
   | { type: 'prev' }
-  /** @intent("First") */
+  /** @intent("Jump to the first page") */
   | { type: 'first' }
-  /** @intent("Last") */
+  /** @intent("Jump to the last page") */
   | { type: 'last' }
-  /** @intent("Set Page Size") */
+  /** @intent("Change how many items each page contains") */
   | { type: 'setPageSize'; pageSize: number }
-  /** @intent("Set Total") */
+  /** @humanOnly */
   | { type: 'setTotal'; total: number }
 
 export interface PaginationInit {

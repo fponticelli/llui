@@ -13,15 +13,15 @@ export interface EditableState {
 }
 
 export type EditableMsg =
-  /** @intent("Edit") */
+  /** @intent("Enter edit mode (seeds the draft from the current value)") */
   | { type: 'edit' }
-  /** @intent("Set Draft") */
+  /** @intent("Update the in-progress draft as the user types") */
   | { type: 'setDraft'; draft: string }
-  /** @intent("Submit") */
+  /** @intent("Commit the draft as the new value and exit edit mode") */
   | { type: 'submit' }
-  /** @intent("Cancel") */
+  /** @intent("Discard the draft and exit edit mode without changing the value") */
   | { type: 'cancel' }
-  /** @intent("Set Value") */
+  /** @intent("Set the value directly without going through edit mode") */
   | { type: 'setValue'; value: string }
 
 export interface EditableInit {

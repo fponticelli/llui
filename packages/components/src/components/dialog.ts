@@ -44,13 +44,13 @@ export interface DialogState {
 }
 
 export type DialogMsg =
-  /** @intent("Open") */
+  /** @intent("Open the dialog") */
   | { type: 'open' }
-  /** @intent("Close") */
+  /** @intent("Close the dialog") */
   | { type: 'close' }
-  /** @intent("Toggle") */
+  /** @intent("Toggle the dialog open/closed") */
   | { type: 'toggle' }
-  /** @intent("Set Open") */
+  /** @intent("Set the dialog's open state to a specific value") */
   | { type: 'setOpen'; open: boolean }
 
 export interface DialogInit {

@@ -11,13 +11,13 @@ export interface CollapsibleState {
 }
 
 export type CollapsibleMsg =
-  /** @intent("Toggle") */
+  /** @intent("Toggle the collapsible panel open/closed") */
   | { type: 'toggle' }
-  /** @intent("Open") */
+  /** @intent("Expand the collapsible panel") */
   | { type: 'open' }
-  /** @intent("Close") */
+  /** @intent("Collapse the panel") */
   | { type: 'close' }
-  /** @intent("Set Open") */
+  /** @intent("Set the panel's open state to a specific value") */
   | { type: 'setOpen'; open: boolean }
 
 export interface CollapsibleInit {

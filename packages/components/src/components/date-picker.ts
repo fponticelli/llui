@@ -32,21 +32,21 @@ export interface DatePickerState {
 }
 
 export type DatePickerMsg =
-  /** @intent("Set Value") */
+  /** @intent("Set the selected date (YYYY-MM-DD), or null to clear") */
   | { type: 'setValue'; value: string | null }
-  /** @intent("Set Focused") */
+  /** @humanOnly */
   | { type: 'setFocused'; date: string }
-  /** @intent("Prev Month") */
+  /** @intent("Show the previous month in the calendar") */
   | { type: 'prevMonth' }
-  /** @intent("Next Month") */
+  /** @intent("Show the next month in the calendar") */
   | { type: 'nextMonth' }
-  /** @intent("Prev Year") */
+  /** @intent("Show the previous year (same month)") */
   | { type: 'prevYear' }
-  /** @intent("Next Year") */
+  /** @intent("Show the next year (same month)") */
   | { type: 'nextYear' }
-  /** @intent("Select Focused") */
+  /** @intent("Select the currently-focused date") */
   | { type: 'selectFocused' }
-  /** @intent("Move Focus") */
+  /** @humanOnly */
   | { type: 'moveFocus'; days: number }
   /** @humanOnly */
   | { type: 'focusStartOfWeek' }
@@ -54,7 +54,7 @@ export type DatePickerMsg =
   | { type: 'focusEndOfWeek' }
   /** @humanOnly */
   | { type: 'focusToday' }
-  /** @intent("Clear") */
+  /** @intent("Clear the selected date") */
   | { type: 'clear' }
 
 export interface DatePickerInit {

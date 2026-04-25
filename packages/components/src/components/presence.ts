@@ -29,15 +29,15 @@ export interface PresenceState {
 }
 
 export type PresenceMsg =
-  /** @intent("Open") */
+  /** @intent("Begin opening the element (closed → opening, plays enter animation)") */
   | { type: 'open' }
-  /** @intent("Close") */
+  /** @intent("Begin closing the element (open → closing, plays exit animation)") */
   | { type: 'close' }
-  /** @intent("Toggle") */
+  /** @intent("Toggle between open and closed states") */
   | { type: 'toggle' }
-  /** @intent("Animation End") */
+  /** @humanOnly */
   | { type: 'animationEnd' }
-  /** @intent("Set Present") */
+  /** @intent("Set the desired presence directly (true = open, false = closed)") */
   | { type: 'setPresent'; present: boolean }
 
 export interface PresenceInit {

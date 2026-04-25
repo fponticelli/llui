@@ -17,17 +17,17 @@ export interface RadioGroupState {
 }
 
 export type RadioGroupMsg =
-  /** @intent("Set Value") */
+  /** @intent("Pick the radio option with the given value") */
   | { type: 'setValue'; value: string }
   /** @humanOnly */
   | { type: 'setItems'; items: string[]; disabled?: string[] }
-  /** @intent("Select Next") */
+  /** @intent("Move selection to the next enabled option after the given value") */
   | { type: 'selectNext'; from: string }
-  /** @intent("Select Prev") */
+  /** @intent("Move selection to the previous enabled option before the given value") */
   | { type: 'selectPrev'; from: string }
-  /** @intent("Select First") */
+  /** @intent("Select the first enabled option") */
   | { type: 'selectFirst' }
-  /** @intent("Select Last") */
+  /** @intent("Select the last enabled option") */
   | { type: 'selectLast' }
 
 export interface RadioGroupInit {

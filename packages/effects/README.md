@@ -34,11 +34,12 @@ function update(state: State, msg: Msg): [State, Effect[]] {
 }
 
 // Wire up in component
-const handler = handleEffects<Effect, Msg>()
-  .use(httpPlugin)
-  .else((effect, send) => {
-    /* custom effects */
-  })
+const onEffect = handleEffects<Effect, Msg>().else(({ effect, send, signal }) => {
+  // Custom effects beyond the built-in catalogue (http, cancel,
+  // debounce, etc.) — handle them here. Built-ins are processed by
+  // handleEffects internally; you do not need to register a plugin
+  // for them.
+})
 ```
 
 ## API
@@ -56,13 +57,17 @@ const handler = handleEffects<Effect, Msg>()
 | `storageGet(key, onResult, storage?)`                      | Read from storage                               |
 | `storageRemove(key, storage?)`                             | Remove from storage                             |
 | `storageWatch(key, onChange)`                              | Watch storage for changes                       |
+| `storageLoad<T>(key, scope?)`                              | Synchronous read helper (not an effect)         |
 | `broadcast(channel, data)`                                 | Send on BroadcastChannel                        |
 | `broadcastListen(channel, onMsg)`                          | Listen on BroadcastChannel                      |
+| `websocket({ url, key, onOpen, onMessage, onClose? })`     | Open and subscribe to a WebSocket               |
+| `wsSend(key, data)`                                        | Send a frame on a `key`-identified WebSocket    |
 | `sequence([...effects])`                                   | Run effects in order                            |
 | `race([...effects])`                                       | Run effects concurrently, first wins            |
+| `retry(inner, { maxAttempts, delayMs })`                   | Retry inner effect with linear backoff          |
 | `upload({ url, body, onProgress, onSuccess, onError })`    | File upload with progress via XHR               |
 | `clipboardRead({ onSuccess, onError })`                    | Read text from clipboard                        |
-| `clipboardWrite(text)`                                     | Write text to clipboard (fire-and-forget)       |
+| `clipboardWrite(text)`                                     | Write text to clipboard                         |
 | `notification(title, opts?)`                               | Show browser notification (requests permission) |
 | `geolocation({ onSuccess, onError, enableHighAccuracy? })` | One-shot geolocation position                   |
 
@@ -88,19 +93,25 @@ const effect = upload({
 
 ### Clipboard
 
-Read and write text via the Clipboard API:
+Read and write text via the Clipboard API. Both functions return an
+effect that you yield from `update()`:
 
 ```ts
 import { clipboardRead, clipboardWrite } from '@llui/effects'
 
-// Copy text to clipboard (fire-and-forget)
-clipboardWrite('Hello, world!')
+// Copy: yield clipboardWrite from update()
+return [state, [clipboardWrite('Hello, world!')]]
 
-// Read text from clipboard
-clipboardRead({
-  onSuccess: (text) => ({ type: 'pasted', text }),
-  onError: (error) => ({ type: 'clipError', error }),
-})
+// Read: yield clipboardRead from update()
+return [
+  state,
+  [
+    clipboardRead({
+      onSuccess: (text) => ({ type: 'pasted', text }),
+      onError: (error) => ({ type: 'clipError', error }),
+    }),
+  ],
+]
 ```
 
 ### Notification

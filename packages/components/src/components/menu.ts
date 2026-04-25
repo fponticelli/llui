@@ -31,11 +31,11 @@ export interface MenuState {
 }
 
 export type MenuMsg =
-  /** @intent("Open") */
+  /** @intent("Open the menu") */
   | { type: 'open' }
-  /** @intent("Close") */
+  /** @intent("Close the menu") */
   | { type: 'close' }
-  /** @intent("Toggle") */
+  /** @intent("Toggle the menu open/closed") */
   | { type: 'toggle' }
   /** @humanOnly */
   | { type: 'highlight'; value: string | null }
@@ -47,13 +47,13 @@ export type MenuMsg =
   | { type: 'highlightFirst' }
   /** @humanOnly */
   | { type: 'highlightLast' }
-  /** @intent("Select Highlighted") */
+  /** @intent("Activate the currently-highlighted menu item") */
   | { type: 'selectHighlighted' }
-  /** @intent("Select") */
+  /** @intent("Activate the menu item with the given value") */
   | { type: 'select'; value: string }
   /** @humanOnly */
   | { type: 'setItems'; items: string[]; disabled?: string[] }
-  /** @intent("Typeahead") */
+  /** @humanOnly */
   | { type: 'typeahead'; char: string; now: number }
 
 export interface MenuInit {

@@ -19,9 +19,9 @@ export interface CheckboxState {
 }
 
 export type CheckboxMsg =
-  /** @intent("Toggle") */
+  /** @intent("Toggle the checkbox between checked and unchecked") */
   | { type: 'toggle' }
-  /** @intent("Set Checked") */
+  /** @intent("Set the checkbox state to checked, unchecked, or indeterminate") */
   | { type: 'setChecked'; checked: CheckedState }
   /** @humanOnly */
   | { type: 'setDisabled'; disabled: boolean }

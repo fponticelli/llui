@@ -13,13 +13,13 @@ export interface AvatarState {
 }
 
 export type AvatarMsg =
-  /** @intent("Load Start") */
+  /** @humanOnly */
   | { type: 'loadStart' }
-  /** @intent("Loaded") */
+  /** @humanOnly */
   | { type: 'loaded' }
-  /** @intent("Error") */
+  /** @humanOnly */
   | { type: 'error' }
-  /** @intent("Reset") */
+  /** @intent("Reset the avatar's load status back to idle") */
   | { type: 'reset' }
 
 export interface AvatarInit {

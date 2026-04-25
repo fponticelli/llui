@@ -22,19 +22,19 @@ export interface StepsState {
 }
 
 export type StepsMsg =
-  /** @intent("Go To") */
+  /** @intent("Jump to a specific step by zero-based index") */
   | { type: 'goTo'; step: number }
-  /** @intent("Next") */
+  /** @intent("Advance to the next step") */
   | { type: 'next' }
-  /** @intent("Prev") */
+  /** @intent("Go back to the previous step") */
   | { type: 'prev' }
-  /** @intent("Complete") */
+  /** @intent("Mark the given step as completed") */
   | { type: 'complete'; step: number }
-  /** @intent("Mark Error") */
+  /** @intent("Mark the given step as having an error") */
   | { type: 'markError'; step: number }
-  /** @intent("Clear Error") */
+  /** @intent("Clear the error flag on the given step") */
   | { type: 'clearError'; step: number }
-  /** @intent("Reset") */
+  /** @intent("Reset progress back to the first step (clears completed and errors)") */
   | { type: 'reset' }
 
 export interface StepsInit {

@@ -31,17 +31,17 @@ export interface SelectState {
 }
 
 export type SelectMsg =
-  /** @intent("Open") */
+  /** @intent("Open the select dropdown") */
   | { type: 'open' }
-  /** @intent("Close") */
+  /** @intent("Close the select dropdown") */
   | { type: 'close' }
-  /** @intent("Toggle") */
+  /** @intent("Toggle the select dropdown open/closed") */
   | { type: 'toggle' }
-  /** @intent("Select Option") */
+  /** @intent("Pick the option with the given value (toggles in multi-select)") */
   | { type: 'selectOption'; value: string }
-  /** @intent("Set Value") */
+  /** @intent("Replace the selected values with the provided list") */
   | { type: 'setValue'; value: string[] }
-  /** @intent("Clear") */
+  /** @intent("Clear all selected values") */
   | { type: 'clear' }
   /** @humanOnly */
   | { type: 'highlight'; index: number | null }
@@ -53,11 +53,11 @@ export type SelectMsg =
   | { type: 'highlightFirst' }
   /** @humanOnly */
   | { type: 'highlightLast' }
-  /** @intent("Select Highlighted") */
+  /** @intent("Pick the currently-highlighted option") */
   | { type: 'selectHighlighted' }
   /** @humanOnly */
   | { type: 'setItems'; items: string[]; disabled?: string[] }
-  /** @intent("Typeahead") */
+  /** @humanOnly */
   | { type: 'typeahead'; char: string; now: number }
 
 export interface SelectInit {

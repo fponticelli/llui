@@ -28,7 +28,7 @@ export interface TabsState {
 }
 
 export type TabsMsg =
-  /** @intent("Set Value") */
+  /** @intent("Switch to the tab with the given value") */
   | { type: 'setValue'; value: string }
   /** @humanOnly */
   | { type: 'setItems'; items: string[]; disabled?: string[] }
@@ -42,7 +42,7 @@ export type TabsMsg =
   | { type: 'focusFirst' }
   /** @humanOnly */
   | { type: 'focusLast' }
-  /** @intent("Activate Focused") */
+  /** @intent("Activate the currently-focused tab (for manual activation mode)") */
   | { type: 'activateFocused' }
 
 export interface TabsInit {

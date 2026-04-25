@@ -23,15 +23,15 @@ export interface TagsInputState {
 }
 
 export type TagsInputMsg =
-  /** @intent("Set Input") */
+  /** @intent("Update the in-progress text in the input field") */
   | { type: 'setInput'; value: string }
-  /** @intent("Add Tag") */
+  /** @intent("Commit a new tag (defaults to the current input value)") */
   | { type: 'addTag'; value?: string }
-  /** @intent("Remove Tag") */
+  /** @intent("Remove the tag at the given index") */
   | { type: 'removeTag'; index: number }
-  /** @intent("Remove Last") */
+  /** @intent("Remove the last tag (typically backspace on empty input)") */
   | { type: 'removeLast' }
-  /** @intent("Set Value") */
+  /** @intent("Replace the full tag list with the provided values") */
   | { type: 'setValue'; value: string[] }
   /** @humanOnly */
   | { type: 'focusTag'; index: number | null }
@@ -39,7 +39,7 @@ export type TagsInputMsg =
   | { type: 'focusTagNext' }
   /** @humanOnly */
   | { type: 'focusTagPrev' }
-  /** @intent("Clear All") */
+  /** @intent("Remove every tag and reset the input") */
   | { type: 'clearAll' }
 
 export interface TagsInputInit {

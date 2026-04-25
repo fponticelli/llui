@@ -20,13 +20,13 @@ export interface DrawerState {
 }
 
 export type DrawerMsg =
-  /** @intent("Open") */
+  /** @intent("Open the drawer") */
   | { type: 'open' }
-  /** @intent("Close") */
+  /** @intent("Close the drawer") */
   | { type: 'close' }
-  /** @intent("Toggle") */
+  /** @intent("Toggle the drawer open/closed") */
   | { type: 'toggle' }
-  /** @intent("Set Open") */
+  /** @intent("Set the drawer's open state to a specific value") */
   | { type: 'setOpen'; open: boolean }
 
 export interface DrawerInit {

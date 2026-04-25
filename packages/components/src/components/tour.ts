@@ -47,17 +47,17 @@ export interface TourState {
 }
 
 export type TourMsg =
-  /** @intent("Start") */
+  /** @intent("Begin the tour at the first step (or current index if resuming)") */
   | { type: 'start' }
-  /** @intent("Stop") */
+  /** @intent("Close the tour without finishing (does not reset progress)") */
   | { type: 'stop' }
-  /** @intent("Next") */
+  /** @intent("Advance to the next step (closes the tour after the last step)") */
   | { type: 'next' }
-  /** @intent("Prev") */
+  /** @intent("Go back to the previous step") */
   | { type: 'prev' }
-  /** @intent("Goto") */
+  /** @intent("Jump to a specific step by zero-based index") */
   | { type: 'goto'; index: number }
-  /** @intent("Set Steps") */
+  /** @humanOnly */
   | { type: 'setSteps'; steps: TourStep[] }
 
 export interface TourInit {

@@ -44,21 +44,21 @@ export interface ToasterState {
 }
 
 export type ToasterMsg =
-  /** @intent("Create") */
+  /** @intent("Show a new toast notification") */
   | { type: 'create'; toast: Omit<Toast, 'paused'> & { paused?: boolean } }
-  /** @intent("Dismiss") */
+  /** @intent("Dismiss the toast with the given id") */
   | { type: 'dismiss'; id: string }
-  /** @intent("Dismiss All") */
+  /** @intent("Dismiss every toast currently visible") */
   | { type: 'dismissAll' }
-  /** @intent("Update") */
+  /** @intent("Patch fields on the toast with the given id (title, description, type, etc.)") */
   | { type: 'update'; id: string; patch: Partial<Toast> }
-  /** @intent("Pause") */
+  /** @intent("Pause auto-dismiss countdown for the toast with the given id") */
   | { type: 'pause'; id: string }
-  /** @intent("Resume") */
+  /** @intent("Resume auto-dismiss countdown for the toast with the given id") */
   | { type: 'resume'; id: string }
-  /** @intent("Pause All") */
+  /** @intent("Pause auto-dismiss for every visible toast") */
   | { type: 'pauseAll' }
-  /** @intent("Resume All") */
+  /** @intent("Resume auto-dismiss for every visible toast") */
   | { type: 'resumeAll' }
 
 export interface ToasterInit {

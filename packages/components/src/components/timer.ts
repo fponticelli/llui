@@ -35,15 +35,15 @@ export interface TimerState {
 }
 
 export type TimerMsg =
-  /** @intent("Start") */
+  /** @intent("Start (or resume) the timer running") */
   | { type: 'start'; now: number }
-  /** @intent("Pause") */
+  /** @intent("Pause the timer (preserves accumulated elapsed time)") */
   | { type: 'pause'; now: number }
-  /** @intent("Reset") */
+  /** @intent("Reset the timer back to zero elapsed and pause it") */
   | { type: 'reset' }
-  /** @intent("Tick") */
+  /** @humanOnly */
   | { type: 'tick'; now: number }
-  /** @intent("Set Target") */
+  /** @intent("Set the countdown target (in milliseconds; 0 disables countdown)") */
   | { type: 'setTarget'; targetMs: number }
 
 export interface TimerInit {

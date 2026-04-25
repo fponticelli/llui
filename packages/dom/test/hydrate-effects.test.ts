@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi } from 'vitest'
 import { hydrateApp, div, text } from '../src'
 import type { ComponentDef } from '../src/types'
 
@@ -76,6 +76,89 @@ describe('hydrateApp — init-time effects', () => {
       expect(container.textContent).toBe('99') // hydrated with serverState, not init's 0
     } finally {
       handle.dispose()
+    }
+  })
+
+  it('warns in dev when non-empty init effects are silently dropped', () => {
+    type State = { value: number }
+    type Msg = { type: 'noop' }
+    type Effect = { type: 'loadSession' }
+
+    const def: ComponentDef<State, Msg, Effect> = {
+      name: 'WarnsOnDrop',
+      init: () => [{ value: 0 }, [{ type: 'loadSession' }]],
+      update: (s) => [s, []],
+      view: ({ text: t }) => [div([t((s: State) => String(s.value))])],
+      onEffect: () => {},
+    }
+
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    try {
+      const container = document.createElement('div')
+      const handle = hydrateApp(container, def, { value: 1 })
+      try {
+        expect(warn).toHaveBeenCalledTimes(1)
+        const msg = warn.mock.calls[0]?.[0] as string
+        expect(msg).toMatch(/hydrateApp: skipped 1 init effect/)
+        expect(msg).toMatch(/WarnsOnDrop/)
+        expect(msg).toMatch(/runInitEffectsOnHydrate: true/)
+      } finally {
+        handle.dispose()
+      }
+    } finally {
+      warn.mockRestore()
+    }
+  })
+
+  it('does not warn when runInitEffectsOnHydrate=true', () => {
+    type State = { value: number }
+    type Msg = { type: 'noop' }
+    type Effect = { type: 'loadSession' }
+
+    const def: ComponentDef<State, Msg, Effect> = {
+      name: 'NoWarnOnOptIn',
+      init: () => [{ value: 0 }, [{ type: 'loadSession' }]],
+      update: (s) => [s, []],
+      view: ({ text: t }) => [div([t((s: State) => String(s.value))])],
+      onEffect: () => {},
+    }
+
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    try {
+      const container = document.createElement('div')
+      const handle = hydrateApp(container, def, { value: 1 }, { runInitEffectsOnHydrate: true })
+      try {
+        expect(warn).not.toHaveBeenCalled()
+      } finally {
+        handle.dispose()
+      }
+    } finally {
+      warn.mockRestore()
+    }
+  })
+
+  it('does not warn when init returns no effects', () => {
+    type State = { value: number }
+    type Msg = { type: 'noop' }
+
+    const def: ComponentDef<State, Msg, never> = {
+      name: 'NoEffectsNoWarn',
+      init: () => [{ value: 0 }, []],
+      update: (s) => [s, []],
+      view: ({ text: t }) => [div([t((s: State) => String(s.value))])],
+    }
+
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    try {
+      const container = document.createElement('div')
+      const handle = hydrateApp(container, def, { value: 1 })
+      try {
+        expect(warn).not.toHaveBeenCalled()
+      } finally {
+        handle.dispose()
+      }
+    } finally {
+      warn.mockRestore()
     }
   })
 

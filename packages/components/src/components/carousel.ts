@@ -20,19 +20,19 @@ export interface CarouselState {
 }
 
 export type CarouselMsg =
-  /** @intent("Go To") */
+  /** @intent("Jump to a specific slide by zero-based index") */
   | { type: 'goTo'; index: number }
-  /** @intent("Next") */
+  /** @intent("Advance to the next slide (wraps if loop is enabled)") */
   | { type: 'next' }
-  /** @intent("Prev") */
+  /** @intent("Go back to the previous slide (wraps if loop is enabled)") */
   | { type: 'prev' }
-  /** @intent("Set Count") */
+  /** @humanOnly */
   | { type: 'setCount'; count: number }
-  /** @intent("Pause") */
+  /** @intent("Pause autoplay (typically while user hovers or focuses the carousel)") */
   | { type: 'pause' }
-  /** @intent("Resume") */
+  /** @intent("Resume autoplay after a pause") */
   | { type: 'resume' }
-  /** @intent("Set Autoplay") */
+  /** @intent("Turn autoplay on or off") */
   | { type: 'setAutoplay'; autoplay: boolean }
 
 export interface CarouselInit {

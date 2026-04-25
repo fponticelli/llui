@@ -20,19 +20,19 @@ export interface SplitterState {
 }
 
 export type SplitterMsg =
-  /** @intent("Set Position") */
+  /** @intent("Set the splitter handle position (0–100, clamped to min/max)") */
   | { type: 'setPosition'; position: number }
-  /** @intent("Increment") */
+  /** @intent("Move the handle by step (or step × multiplier) toward max") */
   | { type: 'increment'; multiplier?: number }
-  /** @intent("Decrement") */
+  /** @intent("Move the handle by step (or step × multiplier) toward min") */
   | { type: 'decrement'; multiplier?: number }
-  /** @intent("To Min") */
+  /** @intent("Snap the handle to its minimum position") */
   | { type: 'toMin' }
-  /** @intent("To Max") */
+  /** @intent("Snap the handle to its maximum position") */
   | { type: 'toMax' }
-  /** @intent("Start Drag") */
+  /** @humanOnly */
   | { type: 'startDrag' }
-  /** @intent("End Drag") */
+  /** @humanOnly */
   | { type: 'endDrag' }
 
 export interface SplitterInit {

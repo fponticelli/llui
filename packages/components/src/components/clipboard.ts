@@ -16,13 +16,13 @@ export interface ClipboardState {
 }
 
 export type ClipboardMsg =
-  /** @intent("Set Value") */
+  /** @intent("Update the value to be copied") */
   | { type: 'setValue'; value: string }
-  /** @intent("Copy") */
+  /** @intent("Initiate a clipboard copy of the current value") */
   | { type: 'copy' }
-  /** @intent("Copied") */
+  /** @humanOnly */
   | { type: 'copied' }
-  /** @intent("Reset") */
+  /** @intent("Clear the transient \"copied\" feedback state") */
   | { type: 'reset' }
 
 export interface ClipboardInit {

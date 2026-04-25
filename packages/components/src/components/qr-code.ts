@@ -42,11 +42,11 @@ export interface QrCodeState {
 }
 
 export type QrCodeMsg =
-  /** @intent("Set Value") */
+  /** @intent("Set the encoded value (consumer encodes externally and dispatches setMatrix)") */
   | { type: 'setValue'; value: string }
-  /** @intent("Set Matrix") */
+  /** @humanOnly */
   | { type: 'setMatrix'; matrix: boolean[][] }
-  /** @intent("Set Error Correction") */
+  /** @intent("Change the QR error-correction level (L/M/Q/H)") */
   | { type: 'setErrorCorrection'; level: ErrorCorrectionLevel }
 
 export interface QrCodeInit {

@@ -17,19 +17,19 @@ export interface RatingGroupState {
 }
 
 export type RatingGroupMsg =
-  /** @intent("Set Value") */
+  /** @intent("Set the rating value directly (clamped to 0..count, snapped to 0.5 if allowHalf)") */
   | { type: 'setValue'; value: number }
-  /** @intent("Hover") */
+  /** @humanOnly */
   | { type: 'hover'; value: number | null }
-  /** @intent("Click Item") */
+  /** @humanOnly */
   | { type: 'clickItem'; index: number; isLeftHalf: boolean }
-  /** @intent("Hover Item") */
+  /** @humanOnly */
   | { type: 'hoverItem'; index: number; isLeftHalf: boolean }
-  /** @intent("Increment Value") */
+  /** @intent("Increase the rating by step (default: 0.5 if allowHalf, else 1)") */
   | { type: 'incrementValue'; step?: number }
-  /** @intent("Decrement Value") */
+  /** @intent("Decrease the rating by step (default: 0.5 if allowHalf, else 1)") */
   | { type: 'decrementValue'; step?: number }
-  /** @intent("To End") */
+  /** @intent("Snap the rating to its maximum (count)") */
   | { type: 'toEnd' }
 
 export interface RatingGroupInit {

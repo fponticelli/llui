@@ -26,23 +26,23 @@ export interface TimePickerState {
 }
 
 export type TimePickerMsg =
-  /** @intent("Set Value") */
+  /** @intent("Set the full time value (hours/minutes/seconds)") */
   | { type: 'setValue'; value: TimeValue }
-  /** @intent("Set Hours") */
+  /** @intent("Set the hours field directly") */
   | { type: 'setHours'; hours: number }
-  /** @intent("Set Minutes") */
+  /** @intent("Set the minutes field directly") */
   | { type: 'setMinutes'; minutes: number }
-  /** @intent("Set Seconds") */
+  /** @intent("Set the seconds field directly") */
   | { type: 'setSeconds'; seconds: number }
-  /** @intent("Increment Hours") */
+  /** @intent("Bump hours up by 1 (wraps at 24/12)") */
   | { type: 'incrementHours' }
-  /** @intent("Decrement Hours") */
+  /** @intent("Bump hours down by 1") */
   | { type: 'decrementHours' }
-  /** @intent("Increment Minutes") */
+  /** @intent("Bump minutes up by minuteStep") */
   | { type: 'incrementMinutes' }
-  /** @intent("Decrement Minutes") */
+  /** @intent("Bump minutes down by minuteStep") */
   | { type: 'decrementMinutes' }
-  /** @intent("Toggle Am Pm") */
+  /** @intent("Flip between AM and PM (12-hour format only)") */
   | { type: 'toggleAmPm' }
 
 export interface TimePickerInit {

@@ -177,8 +177,10 @@ view: ({ send, branch, show }) => {
   const connectParts = agentConnect.connect(
     (s) => s.agent.connect,
     (m) => send({ type: 'agent', sub: 'connect', msg: m }),
-    { mintUrl: '/agent/mint' },
   )
+  // `mintUrl` is optional — the agent effect handler derives it from
+  // `EffectHandlerHost.agentBasePath` (default `/agent`). Pass an
+  // explicit `{ mintUrl }` only when minting from a non-default path.
 
   const confirmParts = agentConfirm.connect(
     (s) => s.agent.confirm,
@@ -210,3 +212,19 @@ view: ({ send, branch, show }) => {
 - `@llui/agent/client` — `createAgentClient`, `agentConnect`, `agentConfirm`, `agentLog`, `AgentEffect`.
 
 See the [Agent Protocol doc](../../docs/designs/10%20Agent%20Protocol.md) for the full wire protocol and security model.
+
+## Cloudflare-vite dual paths (dev only)
+
+When a project ships `@cloudflare/vite-plugin`, that plugin proxies every
+non-`/cdn-cgi/*` request to the worker — which shadows the canonical
+`/agent/*` LAP routes. To keep agent flows working in dev, `@llui/vite-plugin`
+registers the LAP middleware at **both** `/agent/*` and `/cdn-cgi/agent/*`,
+and the client opts in by passing `agentBasePath: '/cdn-cgi/agent'`.
+
+**This dual-path lives in the dev middleware only.** Production deployments
+serve LAP routes from your own server (Express, Hono, the Cloudflare Worker
+in `@llui/agent/server/cloudflare`, etc.); whichever base path you mount
+there is what the client should target. The `/cdn-cgi/*` shim does not
+exist in production and you do not need it — pick one canonical path
+(`/agent` or whatever you mount), point `agentBasePath` at it, and you're
+done.

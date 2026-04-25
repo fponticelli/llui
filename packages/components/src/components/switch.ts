@@ -11,9 +11,9 @@ export interface SwitchState {
 }
 
 export type SwitchMsg =
-  /** @intent("Toggle") */
+  /** @intent("Flip the switch on/off") */
   | { type: 'toggle' }
-  /** @intent("Set Checked") */
+  /** @intent("Set the switch's checked state to a specific value") */
   | { type: 'setChecked'; checked: boolean }
   /** @humanOnly */
   | { type: 'setDisabled'; disabled: boolean }

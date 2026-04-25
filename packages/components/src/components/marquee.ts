@@ -28,19 +28,19 @@ export interface MarqueeState {
 }
 
 export type MarqueeMsg =
-  /** @intent("Play") */
+  /** @intent("Resume the marquee scrolling") */
   | { type: 'play' }
-  /** @intent("Pause") */
+  /** @intent("Pause the marquee scrolling") */
   | { type: 'pause' }
-  /** @intent("Toggle") */
+  /** @intent("Toggle the marquee between playing and paused") */
   | { type: 'toggle' }
-  /** @intent("Hover Pause") */
+  /** @humanOnly */
   | { type: 'hoverPause' }
-  /** @intent("Hover Resume") */
+  /** @humanOnly */
   | { type: 'hoverResume' }
-  /** @intent("Set Direction") */
+  /** @intent("Change the scroll direction (left/right/up/down)") */
   | { type: 'setDirection'; direction: MarqueeDirection }
-  /** @intent("Set Duration") */
+  /** @intent("Change the loop duration in seconds (larger = slower)") */
   | { type: 'setDuration'; durationSec: number }
 
 export interface MarqueeInit {

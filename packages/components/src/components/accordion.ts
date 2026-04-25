@@ -22,13 +22,13 @@ export interface AccordionState {
 }
 
 export type AccordionMsg =
-  /** @intent("Toggle") */
+  /** @intent("Toggle the named accordion item open/closed") */
   | { type: 'toggle'; value: string }
-  /** @intent("Open") */
+  /** @intent("Open the named accordion item") */
   | { type: 'open'; value: string }
-  /** @intent("Close") */
+  /** @intent("Close the named accordion item") */
   | { type: 'close'; value: string }
-  /** @intent("Set Value") */
+  /** @intent("Replace the set of currently-open items with the provided values") */
   | { type: 'setValue'; value: string[] }
   /** @humanOnly */
   | { type: 'setItems'; items: string[] }
