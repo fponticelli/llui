@@ -37,7 +37,7 @@ jobs:
       - run: pnpm install --frozen-lockfile
 
       - name: Build LLui packages
-        run: pnpm turbo build --filter=@llui/dom --filter=@llui/vite-plugin --filter=@llui/vike --filter=@llui/lint-idiomatic
+        run: pnpm turbo build --filter=@llui/dom --filter=@llui/vite-plugin --filter=@llui/vike --filter=@llui/eslint-plugin
 
       - name: Generate benchmarks + API docs + LLM files
         run: cd site && npx tsx src/generate-benchmarks.ts && npx tsx src/generate-api.ts && npx tsx src/generate-llms.ts
