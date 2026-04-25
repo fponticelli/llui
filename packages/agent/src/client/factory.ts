@@ -50,6 +50,19 @@ export type CreateAgentClientOpts<State, Msg> = {
    * file uploads). See `@llui/agent/codecs` for the convention.
    */
   codecs?: CodecRegistry
+  /**
+   * Base path for agent HTTP endpoints. Default: `'/agent'` (matches
+   * the canonical paths in `@llui/vite-plugin`'s dev middleware and
+   * `@llui/agent/server`). The mint URL, resume URLs, and revoke URL
+   * derive from this so consumers don't have to keep them in sync.
+   *
+   * Override when:
+   *   - **Cross-origin agent server**: pass the full base, e.g.
+   *     `'https://api.example.com/agent'` or `'http://localhost:8787/agent'`.
+   *   - **`@cloudflare/vite-plugin` in dev**: pass `'/cdn-cgi/agent'`
+   *     because cloudflare-vite shadows non-`/cdn-cgi/*` routes.
+   */
+  agentBasePath?: string
 }
 
 export type AgentClient = {
@@ -149,6 +162,7 @@ export function createAgentClient<State, Msg>(
     send: (m) => opts.handle.send(m),
     wrapAgentConnect: (m) => opts.slices.wrapConnectMsg(m),
     forward: (payload) => opts.handle.send(payload),
+    agentBasePath: opts.agentBasePath,
     openWs: (token, wsUrl) => {
       if (ws) ws.close()
       ws = new WebSocket(`${wsUrl}?token=${encodeURIComponent(token)}`)

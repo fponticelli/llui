@@ -80,9 +80,11 @@ async function handleMintRequest(
 ): Promise<void> {
   // Derive a default `mintUrl` from `agentBasePath` so consumers can
   // change the base path in one place (the effect handler) without
-  // also having to keep the `agentConnect` opts in sync.
-  const basePath = host.agentBasePath ?? '/agent'
-  const mintUrl = effect.mintUrl ?? `${basePath}/mint`
+  // also having to keep the `agentConnect` opts in sync. `agentBase`
+  // accepts both absolute paths and full URLs.
+  const base = agentBase(host)
+  if (!base) return
+  const mintUrl = effect.mintUrl ?? `${base}/mint`
   try {
     const res = await doFetch(mintUrl, { method: 'POST', credentials: 'include' })
     if (!res.ok) {
@@ -121,11 +123,10 @@ async function handleResumeCheck(
   effect: Extract<AgentEffect, { type: 'AgentResumeCheck' }>,
   doFetch: Fetch,
 ): Promise<void> {
-  const origin = deriveOrigin()
-  if (!origin) return
   const base = agentBase(host)
+  if (!base) return
   try {
-    const res = await doFetch(`${origin}${base}/resume/list`, {
+    const res = await doFetch(`${base}/resume/list`, {
       method: 'POST',
       credentials: 'include',
       headers: { 'content-type': 'application/json' },
@@ -144,11 +145,10 @@ async function handleResumeClaim(
   effect: Extract<AgentEffect, { type: 'AgentResumeClaim' }>,
   doFetch: Fetch,
 ): Promise<void> {
-  const origin = deriveOrigin()
-  if (!origin) return
   const base = agentBase(host)
+  if (!base) return
   try {
-    const res = await doFetch(`${origin}${base}/resume/claim`, {
+    const res = await doFetch(`${base}/resume/claim`, {
       method: 'POST',
       credentials: 'include',
       headers: { 'content-type': 'application/json' },
@@ -168,11 +168,10 @@ async function handleRevoke(
   effect: Extract<AgentEffect, { type: 'AgentRevoke' }>,
   doFetch: Fetch,
 ): Promise<void> {
-  const origin = deriveOrigin()
-  if (!origin) return
   const base = agentBase(host)
+  if (!base) return
   try {
-    await doFetch(`${origin}${base}/revoke`, {
+    await doFetch(`${base}/revoke`, {
       method: 'POST',
       credentials: 'include',
       headers: { 'content-type': 'application/json' },
@@ -184,11 +183,10 @@ async function handleRevoke(
 }
 
 async function handleSessionsList(host: EffectHandlerHost, doFetch: Fetch): Promise<void> {
-  const origin = deriveOrigin()
-  if (!origin) return
   const base = agentBase(host)
+  if (!base) return
   try {
-    const res = await doFetch(`${origin}${base}/sessions`, {
+    const res = await doFetch(`${base}/sessions`, {
       method: 'GET',
       credentials: 'include',
     })
@@ -247,19 +245,27 @@ async function safeText(res: Response): Promise<string> {
 }
 
 function deriveOrigin(): string | null {
-  // When running in the browser, `location.origin` is correct (the agent endpoints
-  // are same-origin with the app per spec §6.2). When not in a browser (tests),
-  // tests can override the host.fetch and short-circuit before this is reached.
+  // When running in the browser, `location.origin` is correct for
+  // same-origin agent endpoints. Tests override `host.fetch` and
+  // short-circuit before this is reached.
   if (typeof location !== 'undefined') return location.origin
   return null
 }
 
+const ABSOLUTE_URL_RE = /^https?:\/\//i
+
 /**
- * Resolve the agent endpoint base path. Default `/agent`. Trailing
- * slashes are normalized away so callers can always concatenate with
- * `${base}/resume/list` etc.
+ * Resolve the absolute base URL for agent HTTP endpoints. Accepts both
+ * absolute paths (`/agent`) and full URLs (`https://api.example/agent`)
+ * — the absolute URL form lets consumers point at a cross-origin agent
+ * server without pre-composing every endpoint URL. Trailing slashes
+ * are normalized so callers can always concatenate `${base}/mint`.
  */
-function agentBase(host: EffectHandlerHost): string {
+function agentBase(host: EffectHandlerHost): string | null {
   const raw = host.agentBasePath ?? '/agent'
-  return raw.endsWith('/') ? raw.slice(0, -1) : raw
+  const trimmed = raw.endsWith('/') ? raw.slice(0, -1) : raw
+  if (ABSOLUTE_URL_RE.test(trimmed)) return trimmed
+  const origin = deriveOrigin()
+  if (!origin) return null
+  return `${origin}${trimmed}`
 }
