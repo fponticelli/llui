@@ -11,6 +11,102 @@ All notable changes to LLui packages are documented here. LLui is a pre-1.0 proj
 
 Packages version in lockstep at release time: `@llui/dom`, `@llui/vite-plugin`, `@llui/test`, `@llui/router`, `@llui/transitions`, `@llui/components`, `@llui/vike` share a version line. `@llui/effects`, `@llui/mcp`, `@llui/eslint-plugin`, `@llui/agent`, and `llui-agent` have their own cadence.
 
+## 2026-04-25 — 0.0.31
+
+**Released:** `@llui/{dom,vite-plugin,test,router,transitions,components}@0.0.31`; `@llui/vike@0.0.33`; `@llui/agent@0.0.33`; `@llui/mcp@0.0.26`; `@llui/eslint-plugin@0.0.16`; `llui-agent@0.0.3`
+
+A consolidated batch shipping the agent surface improvements, hydrate parity work, cross-file/composition resolver, lint-rule hardening, components Msg JSDoc sweep, and the four-mount-path refactor accumulated since the previous release. Several behavior-breaking changes — read the Migration section before upgrading.
+
+### Breaking
+
+- **`@llui/dom@0.0.31`** — `hydrateApp` and `hydrateAtAnchor` no longer dispatch the effects returned by `init()` on hydration. The SSR pass already ran them on the server; re-running on the client typically produced duplicate fetches / subscriptions. Opt back in via `MountOptions.runInitEffectsOnHydrate: true`.
+- **`@llui/agent@0.0.33`** — `agentConnect.connect()`, `agentConfirm.connect()`, `agentLog.connect()` now return a static prop bag with reactive accessors (matching the `@llui/components` convention) instead of `(state) => bag`. Previous shape was incompatible with the documented "spread into element helpers" usage. The `copyConnectSnippetButton.onClick` now dispatches a new `CopyConnectSnippet` Msg → `AgentClipboardWrite` effect rather than reading state synchronously.
+- **`@llui/agent@0.0.33`** — `MessageAnnotations.humanOnly: boolean` replaced with `dispatchMode: 'shared' | 'human-only' | 'agent-only'`. `LapMessageRejectReason: 'humanOnly'` renamed `'human-only'` to match.
+- **`@llui/agent@0.0.33`** — agent-only Msg variants (no UI affordance, LLM-only dispatch) are now expressible via `@agentOnly` JSDoc tag and surface in `list_actions`'s `dispatchMode` field.
+- **`@llui/eslint-plugin@0.0.16`** — `agent-missing-intent` and `agent-nonextractable-handler` are now `error` (not `warn`) in `configs.recommended`. CI failures expected on first upgrade for unannotated Msg variants — fix is to add `@intent("...")` or `@humanOnly` JSDoc. The `@humanOnly` JSDoc exemption silences the rule on internal-only variants.
+- **`@llui/eslint-plugin@0.0.16`** — Dropped name-based heuristics (`name === 'Msg'` / `endsWith('Msg')`) in favour of typed-lint cross-file detection. Rules now use `parserOptions.projectService` when available; fall back to same-file `component<S, M, E>()` arg names otherwise. Configure typed lint for full coverage.
+
+### Migration
+
+- **Hydrate effects.** If your app relied on `init()` effects firing on hydration, set `MountOptions.runInitEffectsOnHydrate: true` (or `RenderClientOptions.runInitEffectsOnHydrate: true` if using `@llui/vike`). Otherwise no action — the default-off direction is the safer one for SSR setups.
+- **Agent connect bag.** Replace `connectParts(state).foo` patterns with `connectParts.foo` (static spread). For `connectParts.foo.bar` reactive accessors, the runtime evaluates them per binding-mask hit; in tests, call them as functions: `connectParts.foo.bar(state)`.
+- **`humanOnly` reject reason.** Anywhere your code reads `LapMessageRejectReason === 'humanOnly'`, change to `'human-only'`.
+- **`MessageAnnotations.humanOnly`.** Anywhere your code reads `annotations.humanOnly`, change to `annotations.dispatchMode === 'human-only'`.
+- **Lint failures on upgrade.** Add `@intent("...")` JSDoc above each agent-dispatchable Msg variant, or `@humanOnly` for variants that are framework-internal / UI-only.
+- **Typed-lint upgrade path** (recommended): set `parserOptions.projectService: true` in your ESLint config to get cross-file Msg detection and the most precise `agent-msg-resolvable` checks. Without typed lint the rules emit a one-line "Tip: enable parserOptions.projectService" reminder in their error messages.
+
+### `@llui/dom@0.0.31`
+
+- **Fixed** `hydrateApp` now wires devtools and HMR registration the same way `mountApp` / `mountAtAnchor` / `hydrateAtAnchor` do. Previously SSR-hydrated layouts (e.g. the outermost `@llui/vike` app layout) silently dropped out of `window.__lluiComponents`, never set `window.__lluiDebug`, and `replaceComponent(name, def)` was a no-op against them. New `mount-path-parity.test.ts` enforces the wiring across all four entry points.
+- **Improved** `MountOptions.runInitEffectsOnHydrate` flag (default `false`) gates the post-swap dispatch of `init()`-time effects on hydration. See top of release block.
+- **Improved** the four mount entry points share a `buildAppHandle()` helper for the AppHandle dispose / flush / send / getState / subscribe surface — ~120 lines of duplicate code eliminated. The parity test guarantees behavioral equivalence.
+- **Improved** `__llui_mcp_status` discovery now tries both `/__llui_mcp_status` and `/cdn-cgi/llui_mcp_status` so MCP auto-discovery survives `@cloudflare/vite-plugin`'s catch-all worker routing. Distinguishes 404-from-live-server (don't fall back) from network-error (fall back to compile-time port).
+
+### `@llui/vite-plugin@0.0.32`
+
+- **Fixed** all property-key emission goes through `ts.factory.createStringLiteral` instead of bare strings. Discriminants like `'Router/RouteChanged'`, `'order-cancel'`, or reserved words like `'delete'` now serialize as quoted keys instead of bare identifiers (which produces invalid JS).
+- **Improved** new `cross-file-resolver.ts` module follows imports + named re-exports + `export *` barrels (with rename, multi-hop, cycle detection) to locate the file declaring a Msg / State / Effect type. Composed unions like `type Msg = ImportedFoo | { type: 'extra' }` get every variant in `__msgAnnotations` and `__msgSchema` regardless of where the variants are declared. Previously the file-local extractors silently dropped non-co-located variants.
+- **Improved** `/agent/*` dev middleware also handles `/cdn-cgi/agent/*` with prefix-strip forwarding — same shadowing fix as `__llui_mcp_status` for cloudflare-vite consumers.
+- **Improved** `add-js-extensions.mjs` now discovers packages dynamically. The hardcoded `lint-idiomatic` had been silently skipping the renamed `eslint-plugin-llui` for several releases.
+
+### `@llui/test@0.0.32`
+
+- **Improved** README now shows a real, type-checking testComponent example with `send` / `flush` / `state` / `effects` + `assertEffects`. Replaces the API-signature pseudocode that didn't compile and didn't help users get started.
+
+### `@llui/router@0.0.31`
+
+- **Improved** `@llui/dom` peer range bumped to `^0.0.31`.
+
+### `@llui/transitions@0.0.31`
+
+- **Improved** README snippets tagged `// @doc-skip` where they use illustrative `[...]` placeholders.
+- **Improved** `@llui/dom` peer range bumped to `^0.0.31`.
+
+### `@llui/components@0.0.31`
+
+- **Improved** all 57 Msg unions now carry `@intent("…")` / `@humanOnly` JSDoc on every variant (362 variants annotated). Composes correctly into downstream apps' annotation maps via `@llui/vite-plugin`'s cross-file resolver — Claude no longer sees synthesized intent labels for `dialog.open`, `tabs.setValue`, etc. Intent text is approximate (camelCase variant names → "Camel case"); maintainers can polish per-variant. Keyboard-only / programmatic-config variants (`focus*`, `highlight*`, `setItems`, `setDisabled`, …) marked `@humanOnly`.
+
+### `@llui/vike@0.0.33`
+
+- **Added** `getLayoutChain(): readonly AppHandle[]` exported function and widened `RenderClientOptions.onMount` to receive `(chain: readonly AppHandle[])`. Consumers wiring observability bridges, custom devtools, or the LAP agent client at the layout level now have a supported API; the old workaround (`window.__lluiComponents[layoutName]`) was unreliable due to the hydrateApp parity bug fixed in this release.
+- **Added** `RenderClientOptions.runInitEffectsOnHydrate` forwarded to every layer in the layout chain. Defaults to `false` matching `@llui/dom`'s default.
+- **Added** in the `llui_connect_session` MCP tool result: full `observe` bundle (state + actions + description + context) so Claude has everything it needs to act after the connect call. Previous shape returned only `{appName, appVersion, status}` and Claude had to follow up with separate `observe` / `describe_app` / `get_state` calls.
+
+### `@llui/mcp@0.0.26`
+
+- **Improved** `@llui/dom` peer range bumped to `^0.0.31`.
+- **Improved** `@llui/eslint-plugin` dependency picks up the typed-lint hint and rule changes via cascade.
+
+### `@llui/eslint-plugin@0.0.16`
+
+- **Added** new rule `agent-msg-resolvable`: at every `component<S, M, E>()` call, errors when the M type is unresolvable (typo, missing import, namespace import, complex type). Three distinct messages so the fix is obvious. In `configs.recommended` and `configs.agent` at error severity.
+- **Added** typed-lint cross-file detection in `agent-missing-intent` and `agent-exclusive-annotations`. With `parserOptions.projectService` configured, the rules walk the whole `ts.Program` (cached on a WeakMap) and match Msg unions by symbol identity — finds aliases declared in separate files with unconventional names. Fall-back to same-file heuristic when typed lint isn't configured.
+- **Added** `agentExclusiveAnnotationsRule.modeConflict` flags `@humanOnly` and `@agentOnly` on the same variant.
+- **Improved** `createRule` URL repointed at `.../src/rules/${name}.ts` since the previous `docs/rules/${name}.md` path 404'd.
+- **Improved** every error message appends a "Tip: enable `parserOptions.projectService`" hint when typed lint isn't configured.
+- **Fixed** drop name-based heuristics (`name === 'Msg'`, `endsWith('Msg')`) — false-positive prone on unrelated `*Msg`-named types and redundant once typed lint is enabled.
+
+### `@llui/agent@0.0.33`
+
+- **Breaking** `connect()` static-bag refactor + `dispatchMode` enum + `LapMessageRejectReason 'human-only'` — see top of release block.
+- **Added** `@agentOnly` JSDoc tag for Msg variants the LLM can dispatch but the UI doesn't bind. Surfaces in `list_actions[].dispatchMode`.
+- **Added** `EffectHandlerHost.agentBasePath` configuration so consumers under `@cloudflare/vite-plugin` can route through `/cdn-cgi/agent/*` (the canonical `/agent/*` paths are shadowed by the cloudflare worker catch-all).
+- **Added** `CopyConnectSnippet` Msg + `AgentClipboardWrite` effect for the connect snippet copy affordance, replacing the old synchronous-state-read in the click handler.
+- **Added** `llui_connect_session` returns the full `observe` bundle. Eliminates the round-trip pattern where Claude had to call `list_actions` + `describe_visible_content` separately after connect.
+- **Improved** every variant of `AgentConnectMsg`, `AgentConfirmMsg`, `AgentLogMsg` carries `@intent` (user-actionable) or `@humanOnly` (framework-internal) JSDoc. Phase D1 composition merges these into downstream apps' annotation maps; previously Claude saw synthesized labels for the agent's own message types.
+- **Improved** `effect-handler.ts` split into per-effect handler functions with a thin top-level dispatcher (was a 9-case 150-line monolith).
+- **Improved** `agentLog.visibleEntries` memoized by parent-state reference. `each(bag.visibleEntries, …)` no longer re-filters per item.
+- **Improved** `@llui/dom` peer range bumped to `^0.0.31`.
+
+### `llui-agent@0.0.3`
+
+- **Improved** `@llui/agent` cascade — picks up the connect-bag refactor, dispatchMode enum, and effects-handler split via dependency.
+
+### Docs
+
+- **Added** `scripts/check-readme-examples.mjs` extracts every fenced `ts/tsx` block from each package's README, runs `tsc` against per-package mini-tsconfigs. Wired to `pnpm verify`. Catches docs that drift from the actual API. `// @doc-skip` opt-out for illustrative-only blocks.
+- **Added** `scripts/annotate-component-msg.mjs` is the one-shot sweep that produced the components Msg JSDoc above. Idempotent — skips variants that already carry an LAP tag.
+
 ## 2026-04-25 — peer-dep packaging fix
 
 **Released:** `@llui/vite-plugin@0.0.31`, `@llui/test@0.0.31`, `@llui/vike@0.0.32`, `@llui/mcp@0.0.25`, `@llui/eslint-plugin@0.0.15`, `@llui/agent@0.0.32`
