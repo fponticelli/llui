@@ -112,7 +112,7 @@ Name the file `Layout.ts`, `app-layout.ts`, or anywhere outside
 ```ts
 // pages/+onRenderHtml.ts
 import { createOnRenderHtml } from '@llui/vike/server'
-import { AppLayout } from './Layout' // ← NOT './+Layout'
+import { AppLayout } from './Layout.js' // ← NOT './+Layout'
 export const onRenderHtml = createOnRenderHtml({
   Layout: AppLayout,
   document: ({ html, state, head }) => `<!DOCTYPE html>
@@ -219,7 +219,7 @@ that Vike won't scan, and import it here by path.
 // pages/+onRenderClient.ts
 import { createOnRenderClient, fromTransition } from '@llui/vike/client'
 import { routeTransition } from '@llui/transitions'
-import { AppLayout } from './Layout' // ← NOT './+Layout'
+import { AppLayout } from './Layout.js' // ← NOT './+Layout'
 export const onRenderClient = createOnRenderClient({
   Layout: AppLayout,
   ...fromTransition(routeTransition({ duration: 200 })),
