@@ -1,12 +1,17 @@
 import { describe, it, expect, vi } from 'vitest'
+import { z } from 'zod'
 import { ToolRegistry, type ToolHandler } from '../src/tool-registry'
 
 describe('ToolRegistry', () => {
-  it('registers and dispatches a tool by name', async () => {
+  it('registers and dispatches a tool by name, passing the parsed args through', async () => {
     const registry = new ToolRegistry()
     const handler: ToolHandler = vi.fn(async (_args) => ({ ok: true }))
     registry.register(
-      { name: 'x_test', description: 'test', inputSchema: { type: 'object', properties: {} } },
+      {
+        name: 'x_test',
+        description: 'test',
+        schema: z.object({ foo: z.string().optional() }),
+      },
       'debug-api',
       handler,
     )
@@ -22,19 +27,45 @@ describe('ToolRegistry', () => {
     )
   })
 
-  it('lists all registered tool definitions', () => {
+  it('rejects invalid args via the Zod schema before invoking the handler', async () => {
+    const registry = new ToolRegistry()
+    const handler: ToolHandler = vi.fn(async () => ({ ok: true }))
+    registry.register(
+      {
+        name: 'needs_path',
+        description: 't',
+        schema: z.object({ path: z.string() }),
+      },
+      'debug-api',
+      handler,
+    )
+    await expect(registry.dispatch('needs_path', {}, { relay: null, cdp: null })).rejects.toThrow(
+      /Invalid args for needs_path/,
+    )
+    expect(handler).not.toHaveBeenCalled()
+  })
+
+  it('lists tool definitions in the back-compat JSON-Schema shape', () => {
     const registry = new ToolRegistry()
     registry.register(
-      { name: 'a', description: 'a', inputSchema: { type: 'object', properties: {} } },
+      { name: 'a', description: 'a', schema: z.object({}) },
       'debug-api',
       async () => null,
     )
     registry.register(
-      { name: 'b', description: 'b', inputSchema: { type: 'object', properties: {} } },
+      {
+        name: 'b',
+        description: 'b',
+        schema: z.object({ count: z.number() }),
+      },
       'cdp',
       async () => null,
     )
     const tools = registry.listDefinitions()
     expect(tools.map((t) => t.name).sort()).toEqual(['a', 'b'])
+    const b = tools.find((t) => t.name === 'b')!
+    expect(b.inputSchema.type).toBe('object')
+    expect(b.inputSchema.properties).toHaveProperty('count')
+    expect(b.inputSchema.required).toEqual(['count'])
   })
 })

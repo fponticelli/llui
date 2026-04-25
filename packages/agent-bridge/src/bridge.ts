@@ -1,11 +1,6 @@
-import { Server as McpServer } from '@modelcontextprotocol/sdk/server/index.js'
-import {
-  CallToolRequestSchema,
-  ListToolsRequestSchema,
-  type CallToolResult,
-  type ListToolsResult,
-} from '@modelcontextprotocol/sdk/types.js'
-import { TOOLS, TOOL_TO_LAP_PATH } from './tools.js'
+import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
+import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js'
+import { TOOL_DESCRIPTORS, type ToolDescriptor } from './tools.js'
 import { BindingMap } from './binding.js'
 import { forwardLap } from './forwarder.js'
 import type { LapDescribeResponse, LapObserveResponse } from '@llui/agent/protocol'
@@ -22,36 +17,60 @@ export type BridgeDeps = {
   version: string
 }
 
+/**
+ * Builds the bridge's MCP server using the high-level `McpServer`
+ * registrars. Each tool's Zod schema (declared once in `tools.ts`)
+ * drives both runtime input validation and the JSON Schema published
+ * to `tools/list` — eliminating the hand-written-schema-vs-handler
+ * drift that the low-level `setRequestHandler` pattern is prone to.
+ *
+ * Forwarded tools (`kind: 'forward'`) share a generic forwarder that
+ * looks up the binding, dispatches to LAP, and caches description
+ * payloads where applicable. The two meta tools
+ * (`llui_connect_session`, `llui_disconnect_session`) carry custom
+ * handlers that mutate the BindingMap directly.
+ */
 export function createBridgeServer(deps: BridgeDeps): McpServer {
   const server = new McpServer(
     { name: 'llui-agent', version: deps.version },
     { capabilities: { tools: {}, prompts: {} } },
   )
 
-  server.setRequestHandler(
-    ListToolsRequestSchema,
-    async (): Promise<ListToolsResult> => ({
-      tools: TOOLS,
-    }),
-  )
+  for (const desc of TOOL_DESCRIPTORS) {
+    registerToolDescriptor(server, deps, desc)
+  }
 
-  server.setRequestHandler(CallToolRequestSchema, async (req): Promise<CallToolResult> => {
-    const { name, arguments: args = {} } = req.params
+  registerPrompts(server)
 
-    if (name === 'llui_connect_session') {
-      const { url, token } = args as { url?: string; token?: string }
-      if (typeof url !== 'string' || typeof token !== 'string') {
-        return errorResult('invalid: url and token required')
-      }
+  return server
+}
+
+function registerToolDescriptor(server: McpServer, deps: BridgeDeps, desc: ToolDescriptor): void {
+  if (desc.kind === 'meta') {
+    if (desc.name === 'llui_connect_session') {
+      registerConnectSession(server, deps, desc)
+    } else if (desc.name === 'llui_disconnect_session') {
+      registerDisconnectSession(server, deps, desc)
+    }
+    return
+  }
+  registerForwardedTool(server, deps, desc)
+}
+
+function registerConnectSession(server: McpServer, deps: BridgeDeps, desc: ToolDescriptor): void {
+  server.registerTool(
+    desc.name,
+    { description: desc.description, inputSchema: desc.schema.shape },
+    async (args) => {
+      const { url, token } = args as { url: string; token: string }
       deps.bindings.set(deps.sessionId, url, token)
-      // Validate AND prefetch the full bootstrap bundle in one call.
-      // /observe returns {state, actions, description, context} — exactly
-      // what the LLM needs to start acting. Without this, Claude has to
-      // follow up with `observe` (or worse, the legacy
-      // `list_actions` + `describe_visible_content` pair) to get
-      // anything usable, which costs round-trips and introduces a
-      // window where the connect tool's "you are now connected" result
-      // is the entire context the LLM has to reason about.
+      // Validate AND prefetch the bootstrap bundle in one call.
+      // /observe returns {state, actions, description, context} —
+      // exactly what the LLM needs to start acting. Without this,
+      // Claude has to follow up with `observe` to get anything
+      // usable, costing round-trips and creating a window where
+      // the connect tool's "you are now connected" result is the
+      // entire context the LLM has to reason about.
       const res = await forwardLap(url, token, '/observe', {}, { fetch: deps.fetch })
       if (!res.ok) {
         deps.bindings.clear(deps.sessionId)
@@ -71,55 +90,81 @@ export function createBridgeServer(deps: BridgeDeps): McpServer {
         description: observe.description,
         context: observe.context,
       })
-    }
+    },
+  )
+}
 
-    if (name === 'llui_disconnect_session') {
+function registerDisconnectSession(
+  server: McpServer,
+  deps: BridgeDeps,
+  desc: ToolDescriptor,
+): void {
+  server.registerTool(
+    desc.name,
+    { description: desc.description, inputSchema: desc.schema.shape },
+    async () => {
       deps.bindings.clear(deps.sessionId)
       return okResult({ status: 'disconnected' })
-    }
+    },
+  )
+}
 
-    // Forwarded tools
-    const binding = deps.bindings.get(deps.sessionId)
-    if (!binding) {
-      return errorResult('not bound — ask the user to run /llui-connect <url> <token> first')
-    }
+function registerForwardedTool(
+  server: McpServer,
+  deps: BridgeDeps,
+  desc: Extract<ToolDescriptor, { kind: 'forward' }>,
+): void {
+  server.registerTool(
+    desc.name,
+    { description: desc.description, inputSchema: desc.schema.shape },
+    async (args) => {
+      const binding = deps.bindings.get(deps.sessionId)
+      if (!binding) {
+        return errorResult(
+          'not bound — ask the user to copy the connect snippet from the LLui app, ' +
+            'or call `llui_connect_session` with the url and token they provide. ' +
+            '(In Claude Desktop only, the snippet is also available as the slash command `/llui-connect`.)',
+        )
+      }
 
-    // describe_app can serve from cache
-    if (name === 'describe_app' && binding.describe) {
-      return okResult(binding.describe)
-    }
+      // describe_app can serve from cache when one is available.
+      if (desc.name === 'describe_app' && binding.describe) {
+        return okResult(binding.describe)
+      }
 
-    const lapPath = TOOL_TO_LAP_PATH[name]
-    if (!lapPath) return errorResult(`unknown tool: ${name}`)
+      const res = await forwardLap(binding.url, binding.token, desc.lapPath, args ?? {}, {
+        fetch: deps.fetch,
+      })
+      if (!res.ok) {
+        return errorResult(
+          `LAP ${desc.lapPath} failed: status=${res.status} ${JSON.stringify(res.error)}`,
+        )
+      }
 
-    const res = await forwardLap(binding.url, binding.token, lapPath, args, { fetch: deps.fetch })
-    if (!res.ok) {
-      return errorResult(`LAP ${lapPath} failed: status=${res.status} ${JSON.stringify(res.error)}`)
-    }
+      // Cache describe_app responses after the first call too.
+      if (desc.name === 'describe_app') {
+        deps.bindings.setDescribe(deps.sessionId, res.body as LapDescribeResponse)
+      }
 
-    // Cache describe_app responses after the first call too
-    if (name === 'describe_app') {
-      deps.bindings.setDescribe(deps.sessionId, res.body as LapDescribeResponse)
-    }
+      // observe returns description on every call; cache it so a later
+      // describe_app can short-circuit the LAP round-trip.
+      if (desc.name === 'observe') {
+        const obs = res.body as LapObserveResponse
+        if (obs?.description) deps.bindings.setDescribe(deps.sessionId, obs.description)
+      }
 
-    // observe returns description on every call; cache it so a later
-    // describe_app hit can serve from cache and short-circuit the LAP
-    // round-trip.
-    if (name === 'observe') {
-      const obs = res.body as LapObserveResponse
-      if (obs?.description) deps.bindings.setDescribe(deps.sessionId, obs.description)
-    }
-
-    return okResult(res.body)
-  })
-
-  registerPrompts(server)
-
-  return server
+      return okResult(res.body)
+    },
+  )
 }
 
 function okResult(body: unknown): CallToolResult {
+  // structuredContent is what current Claude clients (Desktop + CC)
+  // consume preferentially when present — typed JSON instead of a
+  // stringified blob. The `content` array stays as a `text` fallback
+  // so older clients still see something sensible.
   return {
+    structuredContent: body as Record<string, unknown>,
     content: [{ type: 'text', text: JSON.stringify(body) }],
   }
 }

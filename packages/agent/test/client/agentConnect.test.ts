@@ -79,7 +79,10 @@ describe('agentConnect', () => {
       expect(state1.pendingToken!.token).toBe(token)
       expect(state1.pendingToken!.tid).toBe(tid)
       expect(state1.pendingToken!.lapUrl).toBe(lapUrl)
-      expect(state1.pendingToken!.connectSnippet).toBe(`/llui-connect ${lapUrl} ${token}`)
+      expect(state1.pendingToken!.connectSnippet).toBe(
+        `Connect this session to the LLui app — call \`llui_connect_session\` ` +
+          `with url=${JSON.stringify(lapUrl)} and token=${JSON.stringify(token)}.`,
+      )
       expect(state1.pendingToken!.expiresAt).toBe(expiresAt)
       expect(state1.error).toBeNull()
       expect(effects).toEqual([{ type: 'AgentOpenWS', token, wsUrl }])
@@ -323,7 +326,12 @@ describe('agentConnect.connect', () => {
     )
     const [, effects] = update(pending, { type: 'CopyConnectSnippet' }, opts)
     expect(effects).toEqual([
-      { type: 'AgentClipboardWrite', text: `/llui-connect ${lapUrl} ${token}` },
+      {
+        type: 'AgentClipboardWrite',
+        text:
+          `Connect this session to the LLui app — call \`llui_connect_session\` ` +
+          `with url=${JSON.stringify(lapUrl)} and token=${JSON.stringify(token)}.`,
+      },
     ])
   })
 

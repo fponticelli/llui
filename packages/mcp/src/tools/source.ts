@@ -1,6 +1,7 @@
 import { execSync } from 'node:child_process'
 import { existsSync } from 'node:fs'
 import { resolve } from 'node:path'
+import { z } from 'zod'
 import type { ToolRegistry } from '../tool-registry.js'
 import { findWorkspaceRoot } from '../index.js'
 
@@ -10,25 +11,20 @@ export function registerSourceTools(registry: ToolRegistry): void {
       name: 'llui_find_msg_producers',
       description:
         'Find all send({type: "msgType"}) call sites in the project source. Returns file path, line, column, and surrounding context for each hit.',
-      inputSchema: {
-        type: 'object',
-        properties: {
-          msgType: { type: 'string', description: 'The Msg variant type string to search for' },
-          rootDir: {
-            type: 'string',
-            description: 'Root directory to search (defaults to workspace root)',
-          },
-        },
-        required: ['msgType'],
-      },
+      schema: z.object({
+        msgType: z.string().describe('The Msg variant type string to search for'),
+        rootDir: z
+          .string()
+          .optional()
+          .describe('Root directory to search (defaults to workspace root)'),
+      }),
     },
     'source',
     async (args, _ctx) => {
-      const msgType = args.msgType as string
-      const rootDir = (args.rootDir as string | undefined) ?? findWorkspaceRoot()
-      const pattern = `send\\(\\{[^}]*type:\\s*['"]${msgType}['"]`
+      const rootDir = args.rootDir ?? findWorkspaceRoot()
+      const pattern = `send\\(\\{[^}]*type:\\s*['"]${args.msgType}['"]`
       const hits = grepHits(pattern, rootDir, ['*.ts', '*.tsx'])
-      return { msgType, hits }
+      return { msgType: args.msgType, hits }
     },
   )
 
@@ -37,25 +33,20 @@ export function registerSourceTools(registry: ToolRegistry): void {
       name: 'llui_find_msg_handlers',
       description:
         'Find all update() function branches that handle a specific Msg variant. Returns file, line, column, and context for each case arm.',
-      inputSchema: {
-        type: 'object',
-        properties: {
-          msgType: { type: 'string', description: 'The Msg variant type string to search for' },
-          rootDir: {
-            type: 'string',
-            description: 'Root directory to search (defaults to workspace root)',
-          },
-        },
-        required: ['msgType'],
-      },
+      schema: z.object({
+        msgType: z.string().describe('The Msg variant type string to search for'),
+        rootDir: z
+          .string()
+          .optional()
+          .describe('Root directory to search (defaults to workspace root)'),
+      }),
     },
     'source',
     async (args, _ctx) => {
-      const msgType = args.msgType as string
-      const rootDir = (args.rootDir as string | undefined) ?? findWorkspaceRoot()
-      const pattern = `case\\s+['"]${msgType}['"]\\s*:`
+      const rootDir = args.rootDir ?? findWorkspaceRoot()
+      const pattern = `case\\s+['"]${args.msgType}['"]\\s*:`
       const hits = grepHits(pattern, rootDir, ['*.ts', '*.tsx'])
-      return { msgType, hits }
+      return { msgType: args.msgType, hits }
     },
   )
 
@@ -64,20 +55,17 @@ export function registerSourceTools(registry: ToolRegistry): void {
       name: 'llui_run_test',
       description:
         'Run a vitest test file (and optionally a specific test name). Returns pass/fail status and captured output.',
-      inputSchema: {
-        type: 'object',
-        properties: {
-          file: { type: 'string', description: 'Absolute path to the test file' },
-          testName: { type: 'string', description: 'Test name pattern to filter (-t flag)' },
-        },
-      },
+      schema: z.object({
+        file: z.string().optional().describe('Absolute path to the test file'),
+        testName: z.string().optional().describe('Test name pattern to filter (-t flag)'),
+      }),
     },
     'source',
     async (args, _ctx) => {
       const workspaceRoot = findWorkspaceRoot()
       let cmd = `pnpm exec vitest run`
-      if (args.file) cmd += ` "${args.file as string}"`
-      if (args.testName) cmd += ` -t "${args.testName as string}"`
+      if (args.file) cmd += ` "${args.file}"`
+      if (args.testName) cmd += ` -t "${args.testName}"`
       try {
         const output = execSync(cmd, {
           cwd: workspaceRoot,
@@ -99,19 +87,13 @@ export function registerSourceTools(registry: ToolRegistry): void {
       name: 'llui_lint_project',
       description:
         'Run @llui/eslint-plugin rules across all TypeScript files in a directory. Returns a 0–20 idiomatic score, violation count, and per-file violations.',
-      inputSchema: {
-        type: 'object',
-        properties: {
-          rootDir: {
-            type: 'string',
-            description: 'Directory to lint (defaults to workspace root)',
-          },
-        },
-      },
+      schema: z.object({
+        rootDir: z.string().optional().describe('Directory to lint (defaults to workspace root)'),
+      }),
     },
     'source',
     async (args, _ctx) => {
-      const rootDir = (args.rootDir as string | undefined) ?? findWorkspaceRoot()
+      const rootDir = args.rootDir ?? findWorkspaceRoot()
       const workspaceRoot = findWorkspaceRoot()
       const target = resolve(rootDir, '**/*.{ts,tsx}')
       const cmd = `pnpm exec eslint --format json "${target}"`

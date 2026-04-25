@@ -3,9 +3,9 @@ import { mkdirSync, readFileSync, writeFileSync, unlinkSync, existsSync } from '
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import type { Server as HttpServer } from 'node:http'
-import { Server as McpServer } from '@modelcontextprotocol/sdk/server/index.js'
+import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import type { Transport } from '@modelcontextprotocol/sdk/shared/transport.js'
-import { ListToolsRequestSchema, CallToolRequestSchema } from '@modelcontextprotocol/sdk/types.js'
+import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js'
 import { ToolRegistry, type ToolContext, type ToolDefinition } from './tool-registry.js'
 import {
   registerDebugApiTools,
@@ -170,44 +170,57 @@ export class LluiMcpServer {
    * deployments where every session needs its own SDK Server — each
    * routes tool calls through the shared relay, so the single
    * bridgeHost owns all the browser-facing state.
+   *
+   * Uses the high-level `McpServer.registerTool` API: each tool's
+   * Zod schema (declared once in the registry) drives both runtime
+   * input validation and the JSON Schema published to `tools/list`.
    */
   private buildMcpServer(): McpServer {
     const mcp = new McpServer(
       { name: '@llui/mcp', version: PACKAGE_VERSION },
       { capabilities: { tools: {} } },
     )
-    mcp.setRequestHandler(ListToolsRequestSchema, async () => ({
-      tools: this.getTools().map((t) => ({
-        name: t.name,
-        description: t.description,
-        inputSchema: t.inputSchema,
-      })),
-    }))
-    mcp.setRequestHandler(CallToolRequestSchema, async (request) => {
-      const { name, arguments: args } = request.params
-      try {
-        const result = await this.handleToolCall(name, args ?? {})
-        return {
-          content: [{ type: 'text' as const, text: JSON.stringify(result, null, 2) }],
-        }
-      } catch (err) {
-        // Bridge-unavailable errors carry a structured diagnostic — surface
-        // it as an isError tool result so the caller (typically Claude) sees
-        // WHY the browser isn't reachable, not just that it failed.
-        if (err instanceof RelayUnavailableError) {
-          return {
-            isError: true,
-            content: [
-              {
-                type: 'text' as const,
-                text: JSON.stringify({ error: 'bridge-unavailable', ...err.diagnostic }, null, 2),
-              },
-            ],
+    for (const { spec, handler } of this.registry.listEntries()) {
+      mcp.registerTool(
+        spec.name,
+        { description: spec.description, inputSchema: spec.schema.shape },
+        async (args) => {
+          const ctx: ToolContext = { relay: this.relay, cdp: this.cdp }
+          try {
+            const result = await handler(args as Record<string, unknown>, ctx)
+            // structuredContent is what current Claude clients
+            // (Desktop + CC) consume preferentially when present —
+            // typed JSON instead of a stringified blob. The text
+            // content stays as a fallback for older clients.
+            return {
+              structuredContent: result as Record<string, unknown>,
+              content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
+            } satisfies CallToolResult
+          } catch (err) {
+            // Bridge-unavailable errors carry a structured diagnostic —
+            // surface it as an isError tool result so the caller
+            // (typically Claude) sees WHY the browser isn't reachable,
+            // not just that it failed.
+            if (err instanceof RelayUnavailableError) {
+              return {
+                isError: true,
+                content: [
+                  {
+                    type: 'text',
+                    text: JSON.stringify(
+                      { error: 'bridge-unavailable', ...err.diagnostic },
+                      null,
+                      2,
+                    ),
+                  },
+                ],
+              } satisfies CallToolResult
+            }
+            throw err
           }
-        }
-        throw err
-      }
-    })
+        },
+      )
+    }
     return mcp
   }
 

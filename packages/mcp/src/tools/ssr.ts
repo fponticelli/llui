@@ -1,3 +1,4 @@
+import { z } from 'zod'
 import type { ToolRegistry } from '../tool-registry.js'
 
 export function registerSsrTools(registry: ToolRegistry): void {
@@ -6,7 +7,7 @@ export function registerSsrTools(registry: ToolRegistry): void {
       name: 'llui_hydration_report',
       description:
         'Compare the server-rendered HTML (from @llui/vike) against the current client DOM and return divergences. Each divergence includes the DOM path, kind (attribute/text/structural), and the server vs client values. Returns an empty array when hydration is clean.',
-      inputSchema: { type: 'object', properties: {} },
+      schema: z.object({}),
     },
     'debug-api',
     async (_args, ctx) => {
@@ -20,15 +21,12 @@ export function registerSsrTools(registry: ToolRegistry): void {
       name: 'llui_ssr_render',
       description:
         'Server-render the active component using its current state and return the resulting HTML string. Requires @llui/vike to be installed. Useful for verifying that the server output matches what you expect before hydration.',
-      inputSchema: {
-        type: 'object',
-        properties: {
-          state: {
-            type: 'object',
-            description: 'State override (defaults to current component state)',
-          },
-        },
-      },
+      schema: z.object({
+        state: z
+          .record(z.string(), z.unknown())
+          .optional()
+          .describe('State override (defaults to current component state)'),
+      }),
     },
     'debug-api',
     async (args, ctx) => {

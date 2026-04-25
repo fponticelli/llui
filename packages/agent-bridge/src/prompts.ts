@@ -1,36 +1,26 @@
-import type { Server as McpServer } from '@modelcontextprotocol/sdk/server/index.js'
-import {
-  GetPromptRequestSchema,
-  ListPromptsRequestSchema,
-  type ListPromptsResult,
-  type GetPromptResult,
-} from '@modelcontextprotocol/sdk/types.js'
+import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
+import { z } from 'zod'
 
+/**
+ * Registers the bundled `llui-connect` MCP prompt. Both Claude Desktop
+ * and Claude Code surface it as a slash command (Desktop:
+ * `/llui-connect <url> <token>`; CC: `/mcp__<server>__llui-connect …`).
+ * The prompt body Claude sees is the same natural-language instruction
+ * the LLui app shows in its connect snippet — so pasting either form
+ * lands the same `llui_connect_session` tool call.
+ */
 export function registerPrompts(server: McpServer): void {
-  server.setRequestHandler(
-    ListPromptsRequestSchema,
-    async (): Promise<ListPromptsResult> => ({
-      prompts: [
-        {
-          name: 'llui-connect',
-          description:
-            'Bind this Claude conversation to an LLui app. Paste the URL and token the app showed you.',
-          arguments: [
-            { name: 'url', description: 'LAP base URL', required: true },
-            { name: 'token', description: 'Bearer token', required: true },
-          ],
-        },
-      ],
-    }),
-  )
-
-  server.setRequestHandler(GetPromptRequestSchema, async (req): Promise<GetPromptResult> => {
-    if (req.params.name !== 'llui-connect') {
-      throw new Error(`unknown prompt: ${req.params.name}`)
-    }
-    const url = req.params.arguments?.['url'] ?? ''
-    const token = req.params.arguments?.['token'] ?? ''
-    return {
+  server.registerPrompt(
+    'llui-connect',
+    {
+      description:
+        'Bind this Claude conversation to an LLui app. Paste the URL and token the app showed you.',
+      argsSchema: {
+        url: z.string().describe('LAP base URL'),
+        token: z.string().describe('Bearer token'),
+      },
+    },
+    ({ url, token }) => ({
       description: `Bind to LLui app at ${url}`,
       messages: [
         {
@@ -43,6 +33,6 @@ export function registerPrompts(server: McpServer): void {
           },
         },
       ],
-    }
-  })
+    }),
+  )
 }

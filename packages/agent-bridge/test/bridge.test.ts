@@ -76,16 +76,12 @@ describe('bridge — integration with fake LAP server', () => {
       bindings,
       version: '0.0.0',
     })
-    // We can't easily exercise the MCP server's internal handlers without wiring a transport.
-    // Instead, reach into the registered handler list — or test via the request handler directly.
-    // For v1, exercise the logic through the forwardLap function + BindingMap rather than the full MCP round-trip.
-    // The TRUE MCP round-trip integration test lives in a follow-up Node-spawn-based test, which is out of scope here.
-
-    // Sanity pass: since we can't call setRequestHandler handlers directly without a transport,
-    // assert the server was constructed and the tool list advertises the expected 11 tools.
+    // Exercising the MCP server's tool/prompt handlers end-to-end
+    // requires wiring a transport; that path is covered by the Plan 7
+    // Node-spawn-based integration test (out of scope here). Detailed
+    // forwarder + binding behavior is covered by the forwardLap tests
+    // and BindingMap tests below.
     expect(server).toBeDefined()
-    // (If the SDK exposes server.getTools() or similar, use it here. Otherwise the detailed
-    // behavior is covered by the forwardLap tests + BindingMap tests + the Plan 7 integration test.)
   })
 
   it('forwardLap + BindingMap — end to end bind → describe → state', async () => {

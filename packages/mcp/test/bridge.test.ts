@@ -110,12 +110,38 @@ describe('MCP bridge (WebSocket)', () => {
     })
     await new Promise((r) => setTimeout(r, 20))
 
+    // Pass a structurally-valid msg (object with `type`) so it gets past the
+    // registry's Zod schema. The relay's stub `validateMessage` then returns
+    // errors, which the handler reports without calling `send`. That's the
+    // path under test here — Msg-shape validation is now handled separately
+    // and tested by the registry tests.
     const result = (await server.handleToolCall('llui_send_message', {
-      msg: 'invalid',
+      msg: { type: 'badVariant' },
     })) as { errors: unknown[]; sent: boolean }
 
     expect(result.sent).toBe(false)
     expect(result.errors).toHaveLength(1)
+    expect(sendCalled).toBe(false)
+
+    browser.close()
+  })
+
+  it('rejects calls whose args fail the Zod schema before they reach the handler', async () => {
+    port = 5310
+    server = new LluiMcpServer(port)
+    server.startBridge()
+    let sendCalled = false
+    const browser = await setupBrowserRelay(port, {
+      send: () => {
+        sendCalled = true
+        return undefined
+      },
+    })
+    await new Promise((r) => setTimeout(r, 20))
+
+    await expect(
+      server.handleToolCall('llui_send_message', { msg: 'not-an-object' }),
+    ).rejects.toThrow(/Invalid args for llui_send_message/)
     expect(sendCalled).toBe(false)
 
     browser.close()

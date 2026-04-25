@@ -1,3 +1,4 @@
+import { z } from 'zod'
 import type { ToolRegistry } from '../tool-registry.js'
 
 export function registerCompilerTools(registry: ToolRegistry): void {
@@ -6,15 +7,9 @@ export function registerCompilerTools(registry: ToolRegistry): void {
       name: 'llui_show_compiled',
       description:
         "Return the pre-transform and post-transform source for the active component's view function. Useful for understanding what the Vite plugin compiled and why a binding exists.",
-      inputSchema: {
-        type: 'object',
-        properties: {
-          viewFn: {
-            type: 'string',
-            description: 'Specific view helper name to extract (optional)',
-          },
-        },
-      },
+      schema: z.object({
+        viewFn: z.string().optional().describe('Specific view helper name to extract (optional)'),
+      }),
     },
     'compiler',
     async (args, ctx) => {
@@ -31,16 +26,9 @@ export function registerCompilerTools(registry: ToolRegistry): void {
       name: 'llui_explain_mask',
       description:
         'For a given state-path key, return the mask bit and related paths. Helps diagnose why a binding does or does not update when a message fires.',
-      inputSchema: {
-        type: 'object',
-        properties: {
-          msgType: {
-            type: 'string',
-            description: 'State path key to look up in the mask map',
-          },
-        },
-        required: ['msgType'],
-      },
+      schema: z.object({
+        msgType: z.string().describe('State path key to look up in the mask map'),
+      }),
     },
     'compiler',
     async (args, ctx) => {
@@ -52,7 +40,7 @@ export function registerCompilerTools(registry: ToolRegistry): void {
           error: 'No mask map available — component may not have agent metadata emitted',
         }
       }
-      const mask = map[args.msgType as string] ?? 0
+      const mask = map[args.msgType] ?? 0
       const paths = Object.entries(map)
         .filter(([, bit]) => bit === mask && mask !== 0)
         .map(([path]) => path)
@@ -65,13 +53,9 @@ export function registerCompilerTools(registry: ToolRegistry): void {
       name: 'llui_goto_binding_source',
       description:
         'Return the source file, line, and column of the view() expression that created a specific binding index. Use with llui_get_bindings to map binding indices to their origin.',
-      inputSchema: {
-        type: 'object',
-        properties: {
-          bindingIndex: { type: 'number', description: 'The binding index (0-based)' },
-        },
-        required: ['bindingIndex'],
-      },
+      schema: z.object({
+        bindingIndex: z.number().describe('The binding index (0-based)'),
+      }),
     },
     'compiler',
     async (args, ctx) => {

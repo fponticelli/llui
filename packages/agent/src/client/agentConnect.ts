@@ -8,7 +8,14 @@ export type AgentConnectPendingToken = {
   token: AgentToken
   tid: string
   lapUrl: string
-  connectSnippet: string // "/llui-connect <lapUrl> <token>"
+  /**
+   * Natural-language connect instruction the user copies into Claude.
+   * Includes URL, token, and the explicit `llui_connect_session` tool
+   * call. Works in any Claude client (Desktop, CC CLI, etc.) — the
+   * Desktop-specific `/llui-connect` slash command is sugar over the
+   * same tool call.
+   */
+  connectSnippet: string
   expiresAt: number
 }
 
@@ -105,11 +112,19 @@ export function update(
       return [{ ...state, status: 'minting' }, [mintEffect]]
     }
     case 'MintSucceeded': {
+      // The connect snippet has to work across every Claude surface
+      // — Claude Desktop turns the bridge's `llui-connect` MCP prompt
+      // into a slash command, but Claude Code CLI does not surface
+      // MCP prompts as slash commands. Natural-language form with an
+      // explicit tool name works everywhere: the user pastes it,
+      // Claude reads it, the model calls `llui_connect_session`.
       const pending: AgentConnectPendingToken = {
         token: msg.token,
         tid: msg.tid,
         lapUrl: msg.lapUrl,
-        connectSnippet: `/llui-connect ${msg.lapUrl} ${msg.token}`,
+        connectSnippet:
+          `Connect this session to the LLui app — call \`llui_connect_session\` ` +
+          `with url=${JSON.stringify(msg.lapUrl)} and token=${JSON.stringify(msg.token)}.`,
         expiresAt: msg.expiresAt,
       }
       return [
