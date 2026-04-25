@@ -5,12 +5,15 @@ export interface MsgSchema {
   variants: Record<string, Record<string, string | { enum: string[] }>>
 }
 
-export function extractMsgSchema(source: string): MsgSchema | null {
-  return extractDiscriminatedUnionSchema(source, 'Msg')
+export function extractMsgSchema(source: string, typeName: string = 'Msg'): MsgSchema | null {
+  return extractDiscriminatedUnionSchema(source, typeName)
 }
 
-export function extractEffectSchema(source: string): MsgSchema | null {
-  return extractDiscriminatedUnionSchema(source, 'Effect')
+export function extractEffectSchema(
+  source: string,
+  typeName: string = 'Effect',
+): MsgSchema | null {
+  return extractDiscriminatedUnionSchema(source, typeName)
 }
 
 function extractDiscriminatedUnionSchema(source: string, typeName: string): MsgSchema | null {
@@ -71,7 +74,7 @@ function collectVariants(type: ts.TypeNode, variants: MsgSchema['variants']): vo
   }
 }
 
-function resolveFieldType(type: ts.TypeNode): string | { enum: string[] } {
+export function resolveFieldType(type: ts.TypeNode): string | { enum: string[] } {
   // Primitive keywords
   if (type.kind === ts.SyntaxKind.StringKeyword) return 'string'
   if (type.kind === ts.SyntaxKind.NumberKeyword) return 'number'

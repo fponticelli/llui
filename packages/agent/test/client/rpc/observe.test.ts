@@ -25,7 +25,7 @@ describe('handleObserve', () => {
             intent: 'go to settings',
             alwaysAffordable: false,
             requiresConfirm: false,
-            humanOnly: false,
+            dispatchMode: 'shared',
           },
         }) as Record<string, MessageAnnotations>,
       getAgentContext: () => (s) => ({
@@ -56,7 +56,7 @@ describe('handleObserve', () => {
     expect(result.context).toBeNull()
   })
 
-  it('filters humanOnly actions out of the envelope', () => {
+  it('filters human-only actions out of the envelope', () => {
     const host = makeHost({
       getBindingDescriptors: () => [{ variant: 'Click' }, { variant: 'AdminOnly' }],
       getMsgAnnotations: () =>
@@ -65,13 +65,13 @@ describe('handleObserve', () => {
             intent: 'click',
             alwaysAffordable: false,
             requiresConfirm: false,
-            humanOnly: false,
+            dispatchMode: 'shared',
           },
           AdminOnly: {
             intent: 'admin',
             alwaysAffordable: false,
             requiresConfirm: false,
-            humanOnly: true,
+            dispatchMode: 'human-only',
           },
         }) as Record<string, MessageAnnotations>,
     })

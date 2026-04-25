@@ -1,17 +1,19 @@
 import ts from 'typescript'
 
+export type DispatchMode = 'shared' | 'human-only' | 'agent-only'
+
 export type MessageAnnotations = {
   intent: string | null
   alwaysAffordable: boolean
   requiresConfirm: boolean
-  humanOnly: boolean
+  dispatchMode: DispatchMode
 }
 
 const DEFAULT: MessageAnnotations = {
   intent: null,
   alwaysAffordable: false,
   requiresConfirm: false,
-  humanOnly: false,
+  dispatchMode: 'shared',
 }
 
 /**
@@ -23,20 +25,38 @@ const DEFAULT: MessageAnnotations = {
  *   @intent("human readable")
  *   @alwaysAffordable
  *   @requiresConfirm
- *   @humanOnly
+ *   @humanOnly       — sugar for dispatchMode: 'human-only'
+ *   @agentOnly       — sugar for dispatchMode: 'agent-only'
  *
  * Unknown tags are ignored; malformed @intent (no quoted string) is
- * treated as "no intent". The four flags are booleans; any occurrence
- * of the tag sets it true.
+ * treated as "no intent". `@humanOnly` and `@agentOnly` are mutually
+ * exclusive — if both are present (which the ESLint rule
+ * `agent-exclusive-annotations` reports as an error), the parser
+ * falls back to `'shared'` so a misconfigured Msg variant doesn't
+ * silently lock out one audience.
  */
-export function extractMsgAnnotations(source: string): Record<string, MessageAnnotations> | null {
+export function extractMsgAnnotations(
+  source: string,
+  /**
+   * Name of the type alias to extract from. Defaults to `'Msg'` for
+   * convention. Passed by the cross-file resolver when the alias has
+   * been renamed through imports/re-exports — its local name in the
+   * declaring file may differ from `'Msg'`.
+   */
+  typeName: string = 'Msg',
+): Record<string, MessageAnnotations> | null {
   const sf = ts.createSourceFile('msg.ts', source, ts.ScriptTarget.Latest, true)
   const aliases: ts.TypeAliasDeclaration[] = []
   sf.forEachChild((n) => {
     if (ts.isTypeAliasDeclaration(n)) aliases.push(n)
   })
-  const named = aliases.find((a) => a.name.text === 'Msg')
-  const alias = named ?? aliases.find((a) => ts.isUnionTypeNode(a.type))
+  const named = aliases.find((a) => a.name.text === typeName)
+  // Fallback: only when looking for the conventional 'Msg' name AND the
+  // file has no `type Msg = …`; pick any union type alias. With an
+  // explicit `typeName` from the resolver, we don't fall back — that
+  // would silently match the wrong alias.
+  const alias =
+    named ?? (typeName === 'Msg' ? aliases.find((a) => ts.isUnionTypeNode(a.type)) : undefined)
   if (!alias || !ts.isUnionTypeNode(alias.type)) return null
 
   const result: Record<string, MessageAnnotations> = {}
@@ -81,11 +101,18 @@ function readLeadingJSDoc(source: string, scanPos: number): string {
 function parseAnnotations(comment: string): MessageAnnotations {
   if (!comment) return { ...DEFAULT }
   const intent = readIntent(comment)
+  const human = /@humanOnly\b/.test(comment)
+  const agent = /@agentOnly\b/.test(comment)
+  // Mutual-exclusion fallback: both tags present means a config bug;
+  // the ESLint rule reports it. At parse time, default to 'shared' so
+  // we don't silently lock out one audience based on tag order.
+  const dispatchMode: DispatchMode =
+    human && !agent ? 'human-only' : agent && !human ? 'agent-only' : 'shared'
   return {
     intent,
     alwaysAffordable: /@alwaysAffordable\b/.test(comment),
     requiresConfirm: /@requiresConfirm\b/.test(comment),
-    humanOnly: /@humanOnly\b/.test(comment),
+    dispatchMode,
   }
 }
 

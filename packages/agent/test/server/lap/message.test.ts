@@ -66,7 +66,7 @@ describe('handleLapMessage', () => {
   })
 
   it('returns rejected when browser replies rejected', async () => {
-    vi.spyOn(registry, 'rpc').mockResolvedValue({ status: 'rejected', reason: 'humanOnly' })
+    vi.spyOn(registry, 'rpc').mockResolvedValue({ status: 'rejected', reason: 'human-only' })
     const res = await handleLapMessage(await mkReq({ msg: { type: 'delete' } }), deps())
     const body = (await res.json()) as LapMessageResponse
     expect(body.status).toBe('rejected')

@@ -9,11 +9,15 @@ const SRC_WITH_WARNING = `
   export const x = 1
 `
 
-function runTransform(
+async function runTransform(
   plugin: Plugin,
   code: string,
   id: string,
-): { warn: ReturnType<typeof vi.fn>; error: ReturnType<typeof vi.fn>; threw: Error | null } {
+): Promise<{
+  warn: ReturnType<typeof vi.fn>
+  error: ReturnType<typeof vi.fn>
+  threw: Error | null
+}> {
   const warn = vi.fn()
   const error = vi.fn((msg: unknown) => {
     const text =
@@ -24,13 +28,17 @@ function runTransform(
           : String(msg)
     throw new Error(text)
   })
-  const ctx = { warn, error } as unknown as ThisParameterType<
+  // Stub Rollup's `this.resolve` — the cross-file resolver calls it
+  // during pre-resolution. For test sources without imports it's never
+  // hit, but the plugin still wires it through.
+  const resolveStub = vi.fn(async () => null)
+  const ctx = { warn, error, resolve: resolveStub } as unknown as ThisParameterType<
     Extract<Plugin['transform'], (...a: never) => unknown>
   >
   let threw: Error | null = null
   try {
     const transform = plugin.transform as (this: unknown, c: string, i: string) => unknown
-    transform.call(ctx, code, id)
+    await transform.call(ctx, code, id)
   } catch (err) {
     threw = err as Error
   }
@@ -38,47 +46,47 @@ function runTransform(
 }
 
 describe('failOnWarning plugin option', () => {
-  it('defaults to warning (non-fatal) when option is omitted', () => {
+  it('defaults to warning (non-fatal) when option is omitted', async () => {
     const plugin = llui()
-    const { warn, error, threw } = runTransform(plugin, SRC_WITH_WARNING, '/tmp/a.ts')
+    const { warn, error, threw } = await runTransform(plugin, SRC_WITH_WARNING, '/tmp/a.ts')
     expect(warn).toHaveBeenCalled()
     expect(error).not.toHaveBeenCalled()
     expect(threw).toBeNull()
   })
 
-  it('prefixes each warning with file:line:column', () => {
+  it('prefixes each warning with file:line:column', async () => {
     const plugin = llui()
-    const { warn } = runTransform(plugin, SRC_WITH_WARNING, '/tmp/my-file.ts')
+    const { warn } = await runTransform(plugin, SRC_WITH_WARNING, '/tmp/my-file.ts')
     const [message] = warn.mock.calls[0] as [string]
     expect(message).toMatch(/my-file\.ts:\d+:\d+:/)
   })
 
-  it('carries the same prefix through this.error when failOnWarning is set', () => {
+  it('carries the same prefix through this.error when failOnWarning is set', async () => {
     const plugin = llui({ failOnWarning: true })
-    const { error } = runTransform(plugin, SRC_WITH_WARNING, '/tmp/my-file.ts')
+    const { error } = await runTransform(plugin, SRC_WITH_WARNING, '/tmp/my-file.ts')
     const [arg] = error.mock.calls[0] as [{ message: string }]
     expect(arg.message).toMatch(/my-file\.ts:\d+:\d+:/)
   })
 
-  it('defaults to warning when failOnWarning is explicitly false', () => {
+  it('defaults to warning when failOnWarning is explicitly false', async () => {
     const plugin = llui({ failOnWarning: false })
-    const { warn, error, threw } = runTransform(plugin, SRC_WITH_WARNING, '/tmp/a.ts')
+    const { warn, error, threw } = await runTransform(plugin, SRC_WITH_WARNING, '/tmp/a.ts')
     expect(warn).toHaveBeenCalled()
     expect(error).not.toHaveBeenCalled()
     expect(threw).toBeNull()
   })
 
-  it('routes diagnostics through this.error when failOnWarning is true', () => {
+  it('routes diagnostics through this.error when failOnWarning is true', async () => {
     const plugin = llui({ failOnWarning: true })
-    const { warn, error, threw } = runTransform(plugin, SRC_WITH_WARNING, '/tmp/a.ts')
+    const { warn, error, threw } = await runTransform(plugin, SRC_WITH_WARNING, '/tmp/a.ts')
     expect(error).toHaveBeenCalled()
     expect(warn).not.toHaveBeenCalled()
     expect(threw).not.toBeNull()
   })
 
-  it('does not fire on files without diagnostics', () => {
+  it('does not fire on files without diagnostics', async () => {
     const plugin = llui({ failOnWarning: true })
-    const { warn, error, threw } = runTransform(
+    const { warn, error, threw } = await runTransform(
       plugin,
       `import { div } from '@llui/dom'\nexport const x = div({ class: 'ok' }, [])`,
       '/tmp/a.ts',

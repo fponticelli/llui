@@ -20,25 +20,25 @@ type Msg =
         intent: 'Increment the counter',
         alwaysAffordable: false,
         requiresConfirm: false,
-        humanOnly: false,
+        dispatchMode: 'shared',
       },
       delete: {
         intent: 'Delete item',
         alwaysAffordable: false,
         requiresConfirm: true,
-        humanOnly: false,
+        dispatchMode: 'shared',
       },
       checkout: {
         intent: 'Place order',
         alwaysAffordable: false,
         requiresConfirm: false,
-        humanOnly: true,
+        dispatchMode: 'human-only',
       },
       nav: {
         intent: 'Navigate',
         alwaysAffordable: true,
         requiresConfirm: false,
-        humanOnly: false,
+        dispatchMode: 'shared',
       },
     })
   })
@@ -62,7 +62,7 @@ type Msg =
   | number
 `
     expect(extractMsgAnnotations(src)).toEqual({
-      ok: { intent: 'real', alwaysAffordable: false, requiresConfirm: false, humanOnly: false },
+      ok: { intent: 'real', alwaysAffordable: false, requiresConfirm: false, dispatchMode: 'shared' },
     })
   })
 
@@ -74,7 +74,7 @@ type Msg =
   | { type: string; id: number }
 `
     expect(extractMsgAnnotations(src)).toEqual({
-      ok: { intent: 'real', alwaysAffordable: false, requiresConfirm: false, humanOnly: false },
+      ok: { intent: 'real', alwaysAffordable: false, requiresConfirm: false, dispatchMode: 'shared' },
     })
   })
 
@@ -85,8 +85,8 @@ type Msg =
   | { type: 'b' }
 `
     expect(extractMsgAnnotations(src)).toEqual({
-      a: { intent: null, alwaysAffordable: false, requiresConfirm: false, humanOnly: false },
-      b: { intent: null, alwaysAffordable: false, requiresConfirm: false, humanOnly: false },
+      a: { intent: null, alwaysAffordable: false, requiresConfirm: false, dispatchMode: 'shared' },
+      b: { intent: null, alwaysAffordable: false, requiresConfirm: false, dispatchMode: 'shared' },
     })
   })
 
@@ -101,7 +101,7 @@ type Msg =
       intent: 'x',
       alwaysAffordable: false,
       requiresConfirm: false,
-      humanOnly: false,
+      dispatchMode: 'shared',
     })
   })
 
@@ -116,7 +116,7 @@ type Msg =
 `
     const r = extractMsgAnnotations(src)
     expect(r).toEqual({
-      ok: { intent: 'right', alwaysAffordable: false, requiresConfirm: false, humanOnly: false },
+      ok: { intent: 'right', alwaysAffordable: false, requiresConfirm: false, dispatchMode: 'shared' },
     })
   })
 
@@ -127,5 +127,32 @@ type Msg =
   | { type: 'a' }
 `
     expect(extractMsgAnnotations(src)?.a?.intent).toBe('straight')
+  })
+
+  it('@agentOnly sets dispatchMode to agent-only', () => {
+    const src = `
+type Msg =
+  /** @intent("Run bulk import") @agentOnly */
+  | { type: 'bulkImport' }
+`
+    expect(extractMsgAnnotations(src)?.bulkImport).toEqual({
+      intent: 'Run bulk import',
+      alwaysAffordable: false,
+      requiresConfirm: false,
+      dispatchMode: 'agent-only',
+    })
+  })
+
+  // The ESLint rule `agent-exclusive-annotations` reports this as an
+  // error, but the parser still has to do *something*. Falling back
+  // to 'shared' avoids silently locking out one audience based on
+  // which tag happens to appear first in the JSDoc.
+  it("falls back to 'shared' when both @humanOnly and @agentOnly are present", () => {
+    const src = `
+type Msg =
+  /** @humanOnly @agentOnly */
+  | { type: 'confused' }
+`
+    expect(extractMsgAnnotations(src)?.confused?.dispatchMode).toBe('shared')
   })
 })

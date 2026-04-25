@@ -81,7 +81,7 @@ describe('handleLapDescribe', () => {
             intent: 'inc',
             alwaysAffordable: false,
             requiresConfirm: false,
-            humanOnly: false,
+            dispatchMode: 'shared',
           },
         },
       },

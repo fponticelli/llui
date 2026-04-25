@@ -23,7 +23,7 @@ export const TOOLS: ListToolsResult['tools'] = [
   {
     name: 'llui_connect_session',
     description:
-      'Bind this Claude conversation to a specific LLui app. Call ONCE per chat when the user pastes /llui-connect <url> <token>. Subsequent LLui tool calls target the bound app.',
+      'Bind this Claude conversation to a specific LLui app. Call ONCE per chat when the user pastes /llui-connect <url> <token>. The result includes the full observe bundle ({state, actions, description, context}) so you have everything you need to start acting — no separate describe_app / get_state / list_actions / describe_context follow-up is required on the first turn. Use observe later when you want a refreshed snapshot.',
     inputSchema: {
       type: 'object',
       properties: {

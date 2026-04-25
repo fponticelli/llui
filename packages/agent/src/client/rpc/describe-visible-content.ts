@@ -1,4 +1,4 @@
-import type { OutlineNode } from '../../protocol.js'
+import type { MessageAnnotations, OutlineNode } from '../../protocol.js'
 
 export type DescribeVisibleArgs = Record<string, never>
 export type DescribeVisibleResult = { outline: OutlineNode[] }
@@ -6,7 +6,7 @@ export type DescribeVisibleResult = { outline: OutlineNode[] }
 export type DescribeVisibleHost = {
   getRootElement(): Element | null
   getBindingDescriptors(): Array<{ variant: string }> | null
-  getMsgAnnotations(): Record<string, { intent: string | null; humanOnly: boolean }> | null
+  getMsgAnnotations(): Record<string, MessageAnnotations> | null
 }
 
 /**

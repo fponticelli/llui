@@ -22,20 +22,20 @@ describe('handleListActions', () => {
     expect(result).toEqual({ actions: [] })
   })
 
-  it('humanOnly binding is filtered out', () => {
+  it('human-only binding is filtered out', () => {
     const result = handleListActions(
       makeHost({
         descriptors: [{ variant: 'Delete' }, { variant: 'Save' }],
         annotations: {
           Delete: {
             intent: 'delete item',
-            humanOnly: true,
+            dispatchMode: 'human-only',
             requiresConfirm: false,
             alwaysAffordable: false,
           },
           Save: {
             intent: 'save item',
-            humanOnly: false,
+            dispatchMode: 'shared',
             requiresConfirm: false,
             alwaysAffordable: false,
           },
@@ -53,7 +53,7 @@ describe('handleListActions', () => {
         annotations: {
           Toggle: {
             intent: null,
-            humanOnly: false,
+            dispatchMode: 'shared',
             requiresConfirm: false,
             alwaysAffordable: false,
           },

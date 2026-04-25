@@ -1,5 +1,10 @@
 import { AST_NODE_TYPES, TSESTree } from '@typescript-eslint/utils'
 import { createRule } from '../createRule.js'
+import {
+  buildMsgUnionDetectionContext,
+  isLikelyMsgUnion,
+  type MsgUnionDetectionContext,
+} from '../util/msg-union-detection.js'
 
 export const agentMissingIntentRule = createRule({
   name: 'agent-missing-intent',
@@ -34,9 +39,18 @@ export const agentMissingIntentRule = createRule({
       return null
     }
 
+    // Detection context combines:
+    //  - Same-file `component<S, M, E>()` argument identifiers (always)
+    //  - Project-wide M argument symbols when typed lint is configured
+    // Populated in the Program visitor (runs first) so per-alias visits
+    // can consult it.
+    let detection: MsgUnionDetectionContext | null = null
     return {
+      Program(node) {
+        detection = buildMsgUnionDetectionContext(context, node)
+      },
       TSTypeAliasDeclaration(node) {
-        if (node.id.type !== AST_NODE_TYPES.Identifier || node.id.name !== 'Msg') return
+        if (!detection || !isLikelyMsgUnion(node, detection)) return
         if (node.typeAnnotation.type !== AST_NODE_TYPES.TSUnionType) return
 
         const types = node.typeAnnotation.types

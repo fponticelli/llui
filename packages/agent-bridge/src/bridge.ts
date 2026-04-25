@@ -44,18 +44,32 @@ export function createBridgeServer(deps: BridgeDeps): McpServer {
         return errorResult('invalid: url and token required')
       }
       deps.bindings.set(deps.sessionId, url, token)
-      // Validate immediately by pinging /describe
-      const res = await forwardLap(url, token, '/describe', {}, { fetch: deps.fetch })
+      // Validate AND prefetch the full bootstrap bundle in one call.
+      // /observe returns {state, actions, description, context} — exactly
+      // what the LLM needs to start acting. Without this, Claude has to
+      // follow up with `observe` (or worse, the legacy
+      // `list_actions` + `describe_visible_content` pair) to get
+      // anything usable, which costs round-trips and introduces a
+      // window where the connect tool's "you are now connected" result
+      // is the entire context the LLM has to reason about.
+      const res = await forwardLap(url, token, '/observe', {}, { fetch: deps.fetch })
       if (!res.ok) {
         deps.bindings.clear(deps.sessionId)
         return errorResult(`connect failed: ${JSON.stringify(res.error)}`)
       }
-      const describe = res.body as LapDescribeResponse
-      deps.bindings.setDescribe(deps.sessionId, describe)
+      const observe = res.body as LapObserveResponse
+      deps.bindings.setDescribe(deps.sessionId, observe.description)
       return okResult({
-        appName: describe.name,
-        appVersion: describe.version,
         status: 'connected',
+        appName: observe.description.name,
+        appVersion: observe.description.version,
+        // Full observe payload — same shape the `observe` tool returns —
+        // so a `describe_app` / `get_state` / `list_actions` /
+        // `describe_context` follow-up is unnecessary on the first turn.
+        state: observe.state,
+        actions: observe.actions,
+        description: observe.description,
+        context: observe.context,
       })
     }
 

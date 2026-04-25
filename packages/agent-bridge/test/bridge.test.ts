@@ -9,6 +9,7 @@ let lapUrl: string
 const lapCalls: Array<{ path: string; body: string; auth: string }> = []
 let describeBody: object
 let stateBody: object
+let observeBody: object
 
 beforeEach(async () => {
   describeBody = {
@@ -25,6 +26,12 @@ beforeEach(async () => {
     schemaHash: 'h1',
   }
   stateBody = { state: { count: 7 } }
+  observeBody = {
+    state: { count: 7 },
+    actions: [],
+    description: describeBody,
+    context: null,
+  }
   lapCalls.length = 0
   lapServer = createServer((req, res) => {
     let data = ''
@@ -37,7 +44,10 @@ beforeEach(async () => {
         body: data,
         auth: req.headers['authorization'] ?? '',
       })
-      if (req.url?.endsWith('/describe')) {
+      if (req.url?.endsWith('/observe')) {
+        res.writeHead(200, { 'content-type': 'application/json' })
+        res.end(JSON.stringify(observeBody))
+      } else if (req.url?.endsWith('/describe')) {
         res.writeHead(200, { 'content-type': 'application/json' })
         res.end(JSON.stringify(describeBody))
       } else if (req.url?.endsWith('/state')) {
@@ -59,7 +69,7 @@ afterEach(async () => {
 })
 
 describe('bridge — integration with fake LAP server', () => {
-  it('llui_connect_session pings /describe and caches the response', async () => {
+  it('llui_connect_session calls /observe and caches the description from the bundle', async () => {
     const bindings = new BindingMap()
     const server = createBridgeServer({
       sessionId: 's1',

@@ -225,7 +225,7 @@ describe('attachWsClient', () => {
           intent: 'Increment',
           alwaysAffordable: true,
           requiresConfirm: false,
-          humanOnly: false,
+          dispatchMode: 'shared',
         },
       }),
     }

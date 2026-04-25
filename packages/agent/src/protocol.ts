@@ -21,11 +21,29 @@ export type LapError = {
   }
 }
 
+/**
+ * Who can dispatch a Msg variant.
+ *
+ * - `'shared'` (default) — both UI bindings and the agent can dispatch.
+ * - `'human-only'` — UI-only. Agent calls to `/message` for these variants
+ *   are rejected with `LapMessageRejectReason: 'human-only'`. Use for
+ *   internal UI events (focus/blur, scroll, hover) the LLM has no business
+ *   triggering.
+ * - `'agent-only'` — no UI binding exists. Reserved for LLM-driven flows
+ *   like batch operations or "explain this state" introspection variants.
+ *   Lint warns if a view references one via `send({ type: 'X' })`.
+ *
+ * JSDoc sugar: `@humanOnly` → `'human-only'`, `@agentOnly` → `'agent-only'`.
+ * Absence of either tag → `'shared'`. The two tags are mutually exclusive
+ * (enforced by `llui/agent-exclusive-annotations` ESLint rule).
+ */
+export type DispatchMode = 'shared' | 'human-only' | 'agent-only'
+
 export type MessageAnnotations = {
   intent: string | null
   alwaysAffordable: boolean
   requiresConfirm: boolean
-  humanOnly: boolean
+  dispatchMode: DispatchMode
 }
 
 export type MessageSchemaEntry = {
@@ -60,6 +78,12 @@ export type LapActionsResponse = {
     variant: string
     intent: string
     requiresConfirm: boolean
+    /**
+     * `'shared'` — both UI and agent can dispatch. `'agent-only'` — no UI
+     * binding exists; the agent is the sole dispatcher. `'human-only'`
+     * variants never appear here (filtered before serialization).
+     */
+    dispatchMode: 'shared' | 'agent-only'
     source: 'binding' | 'always-affordable'
     selectorHint: string | null
     payloadHint: object | null
@@ -98,7 +122,7 @@ export type LapMessageRequest = {
 }
 
 export type LapMessageRejectReason =
-  | 'humanOnly'
+  | 'human-only'
   | 'user-cancelled'
   | 'timeout'
   | 'invalid'

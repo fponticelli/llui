@@ -18,15 +18,19 @@ const SRC_NO_COMPONENT = `
   export const x = 1
 `
 
-function runTransform(plugin: Plugin, code: string, id: string): void {
+async function runTransform(plugin: Plugin, code: string, id: string): Promise<void> {
   const warn = vi.fn()
   const error = vi.fn()
-  const ctx = { warn, error } as unknown as ThisParameterType<
+  // Stub Rollup's `this.resolve` for the cross-file resolver. Returning
+  // null defers to the local extractor, which is the right answer for
+  // self-contained test sources.
+  const resolve = vi.fn(async () => null)
+  const ctx = { warn, error, resolve } as unknown as ThisParameterType<
     Extract<Plugin['transform'], (...a: never) => unknown>
   >
   const transform = plugin.transform as (this: unknown, c: string, i: string) => unknown
   try {
-    transform.call(ctx, code, id)
+    await transform.call(ctx, code, id)
   } catch {
     // ignore this.error paths
   }
@@ -43,21 +47,21 @@ describe('verbose plugin option', () => {
     infoSpy.mockRestore()
   })
 
-  it('stays silent when verbose is omitted', () => {
+  it('stays silent when verbose is omitted', async () => {
     const plugin = llui()
-    runTransform(plugin, SRC_WITH_COMPONENT, '/tmp/a.ts')
+    await runTransform(plugin, SRC_WITH_COMPONENT, '/tmp/a.ts')
     expect(infoSpy).not.toHaveBeenCalled()
   })
 
-  it('stays silent when verbose is false', () => {
+  it('stays silent when verbose is false', async () => {
     const plugin = llui({ verbose: false })
-    runTransform(plugin, SRC_WITH_COMPONENT, '/tmp/a.ts')
+    await runTransform(plugin, SRC_WITH_COMPONENT, '/tmp/a.ts')
     expect(infoSpy).not.toHaveBeenCalled()
   })
 
-  it('logs a tagged entry per transformed component file when verbose is true', () => {
+  it('logs a tagged entry per transformed component file when verbose is true', async () => {
     const plugin = llui({ verbose: true })
-    runTransform(plugin, SRC_WITH_COMPONENT, '/tmp/a.ts')
+    await runTransform(plugin, SRC_WITH_COMPONENT, '/tmp/a.ts')
     const messages = infoSpy.mock.calls.map((call: unknown[]) => call.join(' '))
     // At least one message tagged with [llui]
     expect(messages.some((m: string) => m.includes('[llui]'))).toBe(true)
@@ -67,9 +71,9 @@ describe('verbose plugin option', () => {
     expect(messages.some((m: string) => /count|label/.test(m))).toBe(true)
   })
 
-  it('does not log non-component files even with verbose', () => {
+  it('does not log non-component files even with verbose', async () => {
     const plugin = llui({ verbose: true })
-    runTransform(plugin, SRC_NO_COMPONENT, '/tmp/a.ts')
+    await runTransform(plugin, SRC_NO_COMPONENT, '/tmp/a.ts')
     expect(infoSpy).not.toHaveBeenCalled()
   })
 })

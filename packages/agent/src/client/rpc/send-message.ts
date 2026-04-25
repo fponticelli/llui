@@ -76,8 +76,8 @@ export async function handleSendMessage(
     return { status: 'rejected', reason: 'invalid', detail: `unknown variant: ${args.msg.type}` }
   }
 
-  if (ann?.humanOnly) {
-    return { status: 'rejected', reason: 'humanOnly' }
+  if (ann?.dispatchMode === 'human-only') {
+    return { status: 'rejected', reason: 'human-only' }
   }
   if (ann?.requiresConfirm) {
     const id = randomUUID()

@@ -66,7 +66,7 @@ describe('handleSendMessage — validation and annotations', () => {
     expect(result).toEqual({ status: 'rejected', reason: 'invalid' })
   })
 
-  it('humanOnly annotation → {status: rejected, reason: humanOnly}, no side effects', async () => {
+  it('human-only annotation → {status: rejected, reason: human-only}, no side effects', async () => {
     const send = vi.fn()
     const proposeConfirm = vi.fn()
     const annotations: Record<string, MessageAnnotations> = {
@@ -74,14 +74,14 @@ describe('handleSendMessage — validation and annotations', () => {
         intent: 'click button',
         alwaysAffordable: false,
         requiresConfirm: false,
-        humanOnly: true,
+        dispatchMode: 'human-only',
       },
     }
     const host = makeHost({ send, proposeConfirm, getMsgAnnotations: () => annotations })
 
     const result = await handleSendMessage(host, { msg: { type: 'ClickButton' } })
 
-    expect(result).toEqual({ status: 'rejected', reason: 'humanOnly' })
+    expect(result).toEqual({ status: 'rejected', reason: 'human-only' })
     expect(send).not.toHaveBeenCalled()
     expect(proposeConfirm).not.toHaveBeenCalled()
   })
@@ -93,7 +93,7 @@ describe('handleSendMessage — validation and annotations', () => {
         intent: 'delete account',
         alwaysAffordable: false,
         requiresConfirm: true,
-        humanOnly: false,
+        dispatchMode: 'shared',
       },
     }
     const host = makeHost({ proposeConfirm, getMsgAnnotations: () => annotations })
@@ -122,7 +122,7 @@ describe('handleSendMessage — validation and annotations', () => {
           intent: 'other',
           alwaysAffordable: false,
           requiresConfirm: false,
-          humanOnly: false,
+          dispatchMode: 'shared',
         },
       }),
     })
@@ -284,7 +284,7 @@ describe('handleSendMessage — response envelope', () => {
           intent: 'increment',
           alwaysAffordable: false,
           requiresConfirm: false,
-          humanOnly: false,
+          dispatchMode: 'shared',
         },
       }),
     })

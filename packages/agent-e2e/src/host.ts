@@ -147,7 +147,7 @@ type AgentMeta = {
       intent: string | null
       alwaysAffordable: boolean
       requiresConfirm: boolean
-      humanOnly: boolean
+      dispatchMode: 'shared' | 'human-only' | 'agent-only'
     }
   >
   __bindingDescriptors?: Array<{ variant: string }>
@@ -180,28 +180,28 @@ AppWithMeta.__msgAnnotations = {
     intent: 'Increment the counter',
     alwaysAffordable: false,
     requiresConfirm: false,
-    humanOnly: false,
+    dispatchMode: 'shared',
   },
   dec: {
     intent: 'Decrement the counter',
     alwaysAffordable: false,
     requiresConfirm: false,
-    humanOnly: false,
+    dispatchMode: 'shared',
   },
   reset: {
     intent: 'Reset to zero',
     alwaysAffordable: false,
     requiresConfirm: false,
-    humanOnly: false,
+    dispatchMode: 'shared',
   },
   delete: {
     intent: 'Delete an item',
     alwaysAffordable: false,
     requiresConfirm: true,
-    humanOnly: false,
+    dispatchMode: 'shared',
   },
-  signOut: { intent: 'Sign out', alwaysAffordable: false, requiresConfirm: false, humanOnly: true },
-  nav: { intent: 'Navigate', alwaysAffordable: true, requiresConfirm: false, humanOnly: false },
+  signOut: { intent: 'Sign out', alwaysAffordable: false, requiresConfirm: false, dispatchMode: 'human-only' },
+  nav: { intent: 'Navigate', alwaysAffordable: true, requiresConfirm: false, dispatchMode: 'shared' },
 }
 
 AppWithMeta.__bindingDescriptors = [

@@ -1,13 +1,208 @@
 import type { Plugin, ViteDevServer } from 'vite'
 import MagicString from 'magic-string'
 import { existsSync, readFileSync, writeFileSync, watch as fsWatch, type FSWatcher } from 'node:fs'
+import { readFile } from 'node:fs/promises'
 import { dirname, relative, resolve } from 'node:path'
 import { createRequire } from 'node:module'
 import { spawn, type ChildProcess } from 'node:child_process'
-import { transformLlui, transformUseClientSsr, hasUseClientDirective } from './transform.js'
+import {
+  transformLlui,
+  transformUseClientSsr,
+  hasUseClientDirective,
+  type ExternalTypeSources,
+  type PreExtractedSchemas,
+} from './transform.js'
 import { diagnose, type DiagnosticRule } from './diagnostics.js'
+import {
+  findTypeSource,
+  readComponentTypeArgNames,
+  extractMsgAnnotationsCrossFile,
+  extractDiscriminatedUnionSchemaCrossFile,
+  type ResolveContext,
+} from './cross-file-resolver.js'
+import ts from 'typescript'
 
 export type { DiagnosticRule } from './diagnostics.js'
+
+/**
+ * Pre-resolution step run before `transformLlui`. Scans the source for
+ * `component<State, Msg, Effect>(...)` calls; for each type argument that
+ * is an identifier (the common case), walks imports and re-exports to
+ * find the source file declaring that alias. The result is plumbed into
+ * `transformLlui` so the schema/annotation extractors operate on the
+ * declaring file's source instead of silently returning `null` when the
+ * type lives in a separate file.
+ *
+ * Returns `undefined` (no external sources) when:
+ *   - No `component<...>()` call is in the file
+ *   - No type arguments are identifiers we can chase
+ *   - All type arguments are declared locally (the resolver returns the
+ *     same source we already have, so external sources are redundant)
+ *
+ * `resolveModule` comes from Rollup's `this.resolve()`; we wrap it to
+ * return the absolute id (or null when unresolved) and read the source
+ * via `fs/promises.readFile`.
+ */
+async function preResolveTypeSources(
+  source: string,
+  filePath: string,
+  rollupResolve: (
+    spec: string,
+    importer: string,
+  ) => Promise<{ id: string; external?: boolean | 'absolute' | 'relative' } | null>,
+): Promise<ExternalTypeSources | undefined> {
+  // Cheap filter: nothing to resolve unless the file contains a
+  // component<...>() call. Avoids parsing every TS file in the project.
+  if (!/\bcomponent\s*</.test(source)) return undefined
+
+  // Find the first component<...>() call and read its type arg names.
+  // Multiple component() calls in one file would each technically need
+  // their own type-arg lookup; we resolve based on the first call and
+  // accept the (rare) edge case where two component() calls in one file
+  // use different non-local Msg types. The lint rule catches divergence.
+  const sf = ts.createSourceFile(filePath, source, ts.ScriptTarget.Latest, true)
+  const args = findFirstComponentTypeArgs(sf)
+  if (!args) return undefined
+
+  const ctx: ResolveContext = {
+    resolveModule: async (spec, importer) => {
+      const result = await rollupResolve(spec, importer)
+      if (!result || result.external) return null
+      // Rollup ids can include query/hash suffixes for virtual modules;
+      // strip those so fs.readFile sees a real path. Also skip files
+      // outside our control (node_modules) — we don't want to follow
+      // imports into third-party packages just to scrape types.
+      const idStripped = result.id.split('?')[0]?.split('#')[0]
+      if (!idStripped) return null
+      if (idStripped.includes('/node_modules/')) return null
+      return idStripped
+    },
+    readSource: async (p) => {
+      return await readFile(p, 'utf8')
+    },
+  }
+
+  // Helper to resolve one type-arg name into an external source if it
+  // isn't declared locally (or if the resolver chases through imports).
+  const resolve = async (
+    typeName: string | null,
+  ): Promise<{ source: string; typeName: string } | undefined> => {
+    if (!typeName) return undefined
+    const found = await findTypeSource(typeName, source, filePath, ctx)
+    if (!found) return undefined
+    // If the alias was declared locally, the existing extractor path
+    // already handles it — no need to populate external sources.
+    if (found.filePath === filePath) return undefined
+    return { source: found.source, typeName: found.localName }
+  }
+
+  const [state, msg, effect] = await Promise.all([
+    resolve(args.state),
+    resolve(args.msg),
+    resolve(args.effect),
+  ])
+
+  if (!state && !msg && !effect) return undefined
+  return { state, msg, effect }
+}
+
+/**
+ * Cross-file + composition-aware schema extraction. The extractors
+ * follow imports/re-exports AND walk into TypeReferences inside Msg /
+ * Effect unions, so a developer who organises types as
+ * `type Msg = ImportedFoo | { type: 'extra' }` gets every variant in
+ * `__msgAnnotations` and `__msgSchema`. Without this step the
+ * file-local sync extractors would silently emit half-annotations
+ * (only the inline TypeLiteral members) — the worst kind of failure
+ * mode because the build appears to succeed.
+ *
+ * Returns `undefined` (no pre-extraction) when there's no
+ * `component()` call to resolve types for.
+ */
+async function preExtractCompositional(
+  source: string,
+  filePath: string,
+  rollupResolve: (
+    spec: string,
+    importer: string,
+  ) => Promise<{ id: string; external?: boolean | 'absolute' | 'relative' } | null>,
+): Promise<PreExtractedSchemas | undefined> {
+  if (!/\bcomponent\s*</.test(source)) return undefined
+  const sf = ts.createSourceFile(filePath, source, ts.ScriptTarget.Latest, true)
+  const args = findFirstComponentTypeArgs(sf)
+  if (!args) return undefined
+  // No identifier type args at all → nothing for the resolver to chase.
+  if (!args.msg && !args.effect && !args.state) return undefined
+
+  const ctx: ResolveContext = {
+    resolveModule: async (spec, importer) => {
+      const result = await rollupResolve(spec, importer)
+      if (!result || result.external) return null
+      const idStripped = result.id.split('?')[0]?.split('#')[0]
+      if (!idStripped) return null
+      if (idStripped.includes('/node_modules/')) return null
+      return idStripped
+    },
+    readSource: async (p) => readFile(p, 'utf8'),
+  }
+
+  const [msgAnnotations, msgSchema, effectSchema] = await Promise.all([
+    args.msg
+      ? extractMsgAnnotationsCrossFile(source, args.msg, filePath, ctx)
+      : Promise.resolve(null),
+    args.msg
+      ? extractDiscriminatedUnionSchemaCrossFile(source, args.msg, filePath, ctx)
+      : Promise.resolve(null),
+    args.effect
+      ? extractDiscriminatedUnionSchemaCrossFile(source, args.effect, filePath, ctx)
+      : Promise.resolve(null),
+  ])
+
+  // Only return a populated payload when we actually extracted
+  // something useful. Returning `undefined` lets transformLlui fall
+  // back to its file-local extractors, which is the right behavior
+  // for the (rare) case where every type the resolver sees is
+  // unreachable.
+  if (msgAnnotations === null && msgSchema === null && effectSchema === null) return undefined
+
+  // Note: state schema isn't a discriminated union, so composition
+  // doesn't apply. We leave state on the simpler `typeSources` path
+  // (already plumbed through preResolveTypeSources) which the
+  // file-local `extractStateSchema` consumes.
+  const out: PreExtractedSchemas = {}
+  if (msgAnnotations !== null) out.msgAnnotations = msgAnnotations
+  if (msgSchema !== null) out.msgSchema = msgSchema
+  if (effectSchema !== null) out.effectSchema = effectSchema
+  return out
+}
+
+function findFirstComponentTypeArgs(
+  sf: ts.SourceFile,
+): { state: string | null; msg: string | null; effect: string | null } | null {
+  let result: ReturnType<typeof readComponentTypeArgNames> | null = null
+  const visit = (node: ts.Node): boolean => {
+    if (result) return true
+    if (
+      ts.isCallExpression(node) &&
+      ts.isIdentifier(node.expression) &&
+      node.expression.text === 'component' &&
+      node.typeArguments
+    ) {
+      result = readComponentTypeArgNames(node)
+      return true
+    }
+    let stopped = false
+    ts.forEachChild(node, (child) => {
+      if (stopped) return
+      if (visit(child)) stopped = true
+    })
+    return stopped
+  }
+  ts.forEachChild(sf, (child) => {
+    visit(child)
+  })
+  return result
+}
 
 /**
  * Locate the workspace root so we share the MCP active marker file
@@ -555,7 +750,7 @@ export default function llui(options: LluiPluginOptions = {}): Plugin {
       // there server.httpServer is null so the upgrade hook is a no-op.
     },
 
-    transform(code, id, options) {
+    async transform(code, id, options) {
       if (!id.endsWith('.ts') && !id.endsWith('.tsx')) return
 
       // `'use client'` directive — SSR builds replace the module with a
@@ -595,7 +790,41 @@ export default function llui(options: LluiPluginOptions = {}): Plugin {
         }
       }
 
-      const result = transformLlui(code, id, devMode, Boolean(agent), mcpPort, verbose)
+      // Pre-resolve cross-file type sources for any `component<S, M, E>()`
+      // call in this file. The extractors look for `type Msg = ...` etc.
+      // in a single source string; if the user keeps `Msg` in a sibling
+      // file, the local extraction returns null and the plugin emits no
+      // annotations. Pre-resolution chases imports and re-exports to
+      // find the declaring file, so the schema/annotation extractors run
+      // against the right source. See cross-file-resolver.ts.
+      //
+      // `this.resolve` may be undefined in test harnesses that call the
+      // hook directly without going through Rollup; in that case skip
+      // pre-resolution and the local extractors handle whatever's in
+      // the source string.
+      const resolverAvailable = typeof this.resolve === 'function'
+      const [typeSources, preExtracted] = resolverAvailable
+        ? await Promise.all([
+            preResolveTypeSources(code, id, this.resolve.bind(this)),
+            // Cross-file + composition-aware extraction. Replaces the
+            // file-local sync extractors when active. Without this step
+            // a `type Msg = ImportedFoo | { type: 'extra' }`
+            // composition would only see the inline `'extra'` variant
+            // and silently emit half-annotations.
+            preExtractCompositional(code, id, this.resolve.bind(this)),
+          ])
+        : [undefined, undefined]
+
+      const result = transformLlui(
+        code,
+        id,
+        devMode,
+        Boolean(agent),
+        mcpPort,
+        verbose,
+        typeSources,
+        preExtracted,
+      )
       if (!result) return undefined
 
       // Apply per-statement edits via MagicString for accurate source maps.

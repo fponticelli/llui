@@ -185,6 +185,42 @@ export interface TransformEdit {
   replacement: string
 }
 
+/**
+ * Pre-resolved external type sources from the cross-file resolver.
+ * When the plugin's vite hook detects that `State` / `Msg` / `Effect`
+ * for a `component<...>()` call are imported (not declared in the
+ * current file), it walks the imports and re-exports to find the
+ * declaring file, then passes the source + local name here. Each
+ * extractor below uses the resolved source instead of falling back to
+ * the file-local search (which would miss the type entirely).
+ */
+export interface ExternalTypeSources {
+  state?: { source: string; typeName: string }
+  msg?: { source: string; typeName: string }
+  effect?: { source: string; typeName: string }
+}
+
+/**
+ * Schemas already extracted by the plugin's async hook before invoking
+ * the sync transform. Used for cases the file-local sync extractors
+ * can't handle on their own:
+ *   - The Msg/Effect/State alias lives in another file (cross-file
+ *     resolution, see `cross-file-resolver.ts`).
+ *   - The Msg/Effect alias is a *composition* — a union mixing inline
+ *     `{ type: 'literal' }` members with TypeReferences pointing at
+ *     other (often imported) Msg unions.
+ *
+ * When provided, transformLlui uses these instead of running its own
+ * file-local extractors. When omitted (the test path that constructs
+ * a single-source string), the file-local extractors run as before.
+ */
+export interface PreExtractedSchemas {
+  msgSchema?: ReturnType<typeof extractMsgSchema>
+  msgAnnotations?: ReturnType<typeof extractMsgAnnotations>
+  stateSchema?: ReturnType<typeof extractStateSchema>
+  effectSchema?: ReturnType<typeof extractEffectSchema>
+}
+
 export function transformLlui(
   source: string,
   _filename: string,
@@ -192,6 +228,8 @@ export function transformLlui(
   emitAgentMetadata = false,
   mcpPort: number | null = 5200,
   verbose = false,
+  typeSources?: ExternalTypeSources,
+  preExtracted?: PreExtractedSchemas,
 ): { output: string; edits: TransformEdit[] } | null {
   const sourceFile = ts.createSourceFile('input.ts', source, ts.ScriptTarget.Latest, true)
 
@@ -354,9 +392,39 @@ export function transformLlui(
 
       // Extract schema data once — used both for devMode injections and the
       // unconditional __schemaHash (spec §7.4: hash ships in prod too).
-      const msgSchema = extractMsgSchema(source)
-      const msgAnnotations = extractMsgAnnotations(source)
-      const stateSchema = extractStateSchema(source)
+      //
+      // Resolution priority for each schema:
+      //  1. preExtracted.* — used when the plugin's async hook has already
+      //     done cross-file + composition extraction (the production path).
+      //  2. typeSources.* — file-local extraction against an alternate
+      //     source file (legacy path; covers cross-file but not composition).
+      //  3. file-local — the test path: extract from `source` itself.
+      //
+      // When `preExtracted` is provided, treat it as authoritative even
+      // when the value is `null` (the resolver was run and found
+      // nothing) — falling back to local extraction would mask the
+      // resolver's "not extractable" verdict.
+      const msgSchema =
+        preExtracted?.msgSchema !== undefined
+          ? preExtracted.msgSchema
+          : extractMsgSchema(
+              typeSources?.msg?.source ?? source,
+              typeSources?.msg?.typeName ?? 'Msg',
+            )
+      const msgAnnotations =
+        preExtracted?.msgAnnotations !== undefined
+          ? preExtracted.msgAnnotations
+          : extractMsgAnnotations(
+              typeSources?.msg?.source ?? source,
+              typeSources?.msg?.typeName ?? 'Msg',
+            )
+      const stateSchema =
+        preExtracted?.stateSchema !== undefined
+          ? preExtracted.stateSchema
+          : extractStateSchema(
+              typeSources?.state?.source ?? source,
+              typeSources?.state?.typeName ?? 'State',
+            )
 
       const bindingDescriptors = extractBindingDescriptors(source)
 
@@ -371,7 +439,13 @@ export function transformLlui(
         if (stateSchema) {
           result = injectStateSchema(result ?? node, stateSchema.fields, f)
         }
-        const effectSchema = extractEffectSchema(source)
+        const effectSchema =
+          preExtracted?.effectSchema !== undefined
+            ? preExtracted.effectSchema
+            : extractEffectSchema(
+                typeSources?.effect?.source ?? source,
+                typeSources?.effect?.typeName ?? 'Effect',
+              )
         if (effectSchema) {
           result = injectEffectSchema(result ?? node, effectSchema, f)
         }
@@ -1328,7 +1402,10 @@ function tryInjectDirty(
   // it changes. Lets introspection tools decode runtime dirty masks to field names.
   const legendProps: ts.PropertyAssignment[] = []
   for (const [field, bit] of topLevelBits) {
-    legendProps.push(f.createPropertyAssignment(field, createMaskLiteral(f, bit)))
+    // Use string literal — state field names declared via string keys
+    // (e.g. `{ "weird-key": ... }`) would otherwise emit as bare
+    // identifiers and break the printed output.
+    legendProps.push(f.createPropertyAssignment(f.createStringLiteral(field), createMaskLiteral(f, bit)))
   }
   const legendProp = f.createPropertyAssignment(
     '__maskLegend',
@@ -3117,7 +3194,7 @@ function stateTypeToLiteral(t: StateType, f: ts.NodeFactory): ts.Expression {
   // object
   const fieldProps: ts.PropertyAssignment[] = []
   for (const [k, v] of Object.entries(t.fields)) {
-    fieldProps.push(f.createPropertyAssignment(k, stateTypeToLiteral(v, f)))
+    fieldProps.push(f.createPropertyAssignment(f.createStringLiteral(k), stateTypeToLiteral(v, f)))
   }
   return f.createObjectLiteralExpression([
     f.createPropertyAssignment('kind', f.createStringLiteral('object')),
@@ -3194,12 +3271,17 @@ function injectMsgSchema(
   for (const [variant, fields] of Object.entries(schema.variants)) {
     const fieldProps: ts.PropertyAssignment[] = []
     for (const [field, type] of Object.entries(fields)) {
+      // Always wrap user-derived keys with createStringLiteral — bare
+      // strings get printed as identifiers, which breaks fields named
+      // with reserved words ('delete'), hyphens, or other non-id chars.
       if (typeof type === 'string') {
-        fieldProps.push(f.createPropertyAssignment(field, f.createStringLiteral(type)))
+        fieldProps.push(
+          f.createPropertyAssignment(f.createStringLiteral(field), f.createStringLiteral(type)),
+        )
       } else {
         fieldProps.push(
           f.createPropertyAssignment(
-            field,
+            f.createStringLiteral(field),
             f.createObjectLiteralExpression([
               f.createPropertyAssignment(
                 'enum',
@@ -3241,7 +3323,7 @@ function hasNonDefaultAnnotation(a: Record<string, MessageAnnotations>): boolean
     if (v.intent !== null) return true
     if (v.alwaysAffordable) return true
     if (v.requiresConfirm) return true
-    if (v.humanOnly) return true
+    if (v.dispatchMode !== 'shared') return true
   }
   return false
 }
@@ -3253,7 +3335,11 @@ function annotationsToObjectLiteral(
   for (const [variant, ann] of Object.entries(a)) {
     props.push(
       ts.factory.createPropertyAssignment(
-        variant,
+        // Wrap with createStringLiteral — the printer treats bare strings
+        // as identifiers, which produces invalid JS for discriminants
+        // containing characters like '/' (e.g. 'Router/RouteChanged'),
+        // reserved words ('delete'), or hyphens.
+        ts.factory.createStringLiteral(variant),
         ts.factory.createObjectLiteralExpression(
           [
             ts.factory.createPropertyAssignment(
@@ -3271,8 +3357,8 @@ function annotationsToObjectLiteral(
               ann.requiresConfirm ? ts.factory.createTrue() : ts.factory.createFalse(),
             ),
             ts.factory.createPropertyAssignment(
-              'humanOnly',
-              ann.humanOnly ? ts.factory.createTrue() : ts.factory.createFalse(),
+              'dispatchMode',
+              ts.factory.createStringLiteral(ann.dispatchMode),
             ),
           ],
           true,
@@ -3372,12 +3458,16 @@ function injectEffectSchema(
   for (const [variant, fields] of Object.entries(schema.variants)) {
     const fieldProps: ts.PropertyAssignment[] = []
     for (const [field, type] of Object.entries(fields)) {
+      // Always wrap user-derived keys with createStringLiteral — see
+      // injectMsgSchema for rationale.
       if (typeof type === 'string') {
-        fieldProps.push(f.createPropertyAssignment(field, f.createStringLiteral(type)))
+        fieldProps.push(
+          f.createPropertyAssignment(f.createStringLiteral(field), f.createStringLiteral(type)),
+        )
       } else {
         fieldProps.push(
           f.createPropertyAssignment(
-            field,
+            f.createStringLiteral(field),
             f.createObjectLiteralExpression([
               f.createPropertyAssignment(
                 'enum',

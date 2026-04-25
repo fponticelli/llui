@@ -72,7 +72,7 @@ beforeEach(async () => {
           intent: 'increment',
           alwaysAffordable: false,
           requiresConfirm: false,
-          humanOnly: false,
+          dispatchMode: 'shared',
         },
       },
     },

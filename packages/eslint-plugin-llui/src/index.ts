@@ -18,6 +18,7 @@ import { formBoilerplateRule } from './rules/form-boilerplate.js'
 import { agentMissingIntentRule } from './rules/agent-missing-intent.js'
 import { agentExclusiveAnnotationsRule } from './rules/agent-exclusive-annotations.js'
 import { agentNonextractableHandlerRule } from './rules/agent-nonextractable-handler.js'
+import { agentMsgResolvableRule } from './rules/agent-msg-resolvable.js'
 import { pureUpdateFunctionRule } from './rules/pure-update-function.js'
 
 export const rules = {
@@ -41,6 +42,7 @@ export const rules = {
   'agent-missing-intent': agentMissingIntentRule,
   'agent-exclusive-annotations': agentExclusiveAnnotationsRule,
   'agent-nonextractable-handler': agentNonextractableHandlerRule,
+  'agent-msg-resolvable': agentMsgResolvableRule,
   'pure-update-function': pureUpdateFunctionRule,
 }
 
@@ -80,6 +82,7 @@ export const configs = {
       'llui/agent-missing-intent': 'error',
       'llui/agent-exclusive-annotations': 'error',
       'llui/agent-nonextractable-handler': 'error',
+      'llui/agent-msg-resolvable': 'error',
       'llui/pure-update-function': 'error',
     },
   },
@@ -92,6 +95,7 @@ export const configs = {
       'llui/agent-missing-intent': 'error',
       'llui/agent-exclusive-annotations': 'error',
       'llui/agent-nonextractable-handler': 'error',
+      'llui/agent-msg-resolvable': 'error',
     },
   },
 }

@@ -29,7 +29,7 @@ describe('LAP types — sample value conformance', () => {
             intent: 'Increment',
             alwaysAffordable: false,
             requiresConfirm: false,
-            humanOnly: false,
+            dispatchMode: 'shared',
           },
         },
       },
@@ -58,6 +58,7 @@ describe('LAP types — sample value conformance', () => {
           variant: 'inc',
           intent: 'Increment',
           requiresConfirm: false,
+          dispatchMode: 'shared',
           source: 'binding',
           selectorHint: 'button.inc',
           payloadHint: null,
@@ -66,6 +67,7 @@ describe('LAP types — sample value conformance', () => {
           variant: 'nav',
           intent: 'Navigate',
           requiresConfirm: false,
+          dispatchMode: 'agent-only',
           source: 'always-affordable',
           selectorHint: null,
           payloadHint: { to: 'reports' },
@@ -90,7 +92,7 @@ describe('LAP types — sample value conformance', () => {
     }
     const pending: LapMessageResponse = { status: 'pending-confirmation', confirmId: 'c1' }
     const confirmed: LapMessageResponse = { status: 'confirmed', stateAfter: {} }
-    const rejected: LapMessageResponse = { status: 'rejected', reason: 'humanOnly' }
+    const rejected: LapMessageResponse = { status: 'rejected', reason: 'human-only' }
     expect(req.msg.type).toBe('delete')
     expect(dispatched.status).toBe('dispatched')
     expect(pending.status).toBe('pending-confirmation')
@@ -243,7 +245,7 @@ describe('Relay WS frame types', () => {
             intent: null,
             alwaysAffordable: false,
             requiresConfirm: false,
-            humanOnly: false,
+            dispatchMode: 'shared',
           },
         },
       },

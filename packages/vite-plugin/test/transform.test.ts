@@ -1049,9 +1049,13 @@ export const App = component<State, Msg, never>({
 `
     const out = tDev(source)
     expect(out).toContain('__msgAnnotations:')
-    expect(out).toMatch(/inc:\s*\{\s*intent:\s*["']Increment the counter["']/)
+    // After the createStringLiteral codegen fix, variant keys are
+    // emitted as string literals (`"inc": …`). Tolerate both forms in
+    // case future tweaks change quoting back — what matters is the
+    // structural presence of intent text and requiresConfirm.
+    expect(out).toMatch(/["']?inc["']?:\s*\{\s*intent:\s*["']Increment the counter["']/)
     expect(out).toMatch(
-      /delete:\s*\{\s*intent:\s*["']Delete item["'][\s\S]*requiresConfirm:\s*true/,
+      /["']?delete["']?:\s*\{\s*intent:\s*["']Delete item["'][\s\S]*requiresConfirm:\s*true/,
     )
   })
 
@@ -1071,6 +1075,155 @@ export const App = component<State, Msg, never>({
 `
     const out = tDev(source)
     expect(out).not.toContain('__msgAnnotations:')
+  })
+
+  // Regression: a composed Msg union — `type Msg = ImportedFoo | { type: 'extra' }` —
+  // pre-extracted via the plugin's cross-file path produces all variants
+  // (the imported half + the inline half). Feeding `transformLlui` the
+  // pre-extracted result simulates what the plugin's async hook does in
+  // production.
+  it('emits annotations for a composed Msg via preExtracted (plugin-path simulation)', () => {
+    const componentSource = `
+import { component } from '@llui/dom'
+import type { Msg } from './msg'
+
+type State = { count: number }
+
+export const App = component<State, Msg, never>({
+  name: 'App',
+  init: () => [{ count: 0 }, []],
+  update: (s, _m) => [s, []],
+  view: ({ text }) => [text((s) => String(s.count))],
+})
+`
+    const result = transformLlui(
+      componentSource,
+      'app.ts',
+      /* devMode */ true,
+      false,
+      null,
+      false,
+      undefined, // typeSources unused — preExtracted takes priority
+      {
+        msgAnnotations: {
+          inc: {
+            intent: 'Increment',
+            alwaysAffordable: false,
+            requiresConfirm: false,
+            dispatchMode: 'shared',
+          },
+          dec: {
+            intent: 'Decrement',
+            alwaysAffordable: false,
+            requiresConfirm: false,
+            dispatchMode: 'shared',
+          },
+          reset: {
+            intent: 'Reset',
+            alwaysAffordable: false,
+            requiresConfirm: true,
+            dispatchMode: 'shared',
+          },
+        },
+      },
+    )
+    const out = result?.output ?? componentSource
+    expect(out).toContain('__msgAnnotations:')
+    // All three variants — inc + dec from the imported half, reset
+    // from the inline half — appear together in the emitted object.
+    expect(out).toMatch(/["']?inc["']?:\s*\{/)
+    expect(out).toMatch(/["']?dec["']?:\s*\{/)
+    expect(out).toMatch(/["']?reset["']?:[\s\S]*requiresConfirm:\s*true/)
+  })
+
+  // Regression: when Msg lives in a separate file and is imported into
+  // the file containing `component()`, the plugin's pre-resolution
+  // step follows the import and the extractors find the alias in the
+  // declaring file. Without cross-file resolution, the local extractor
+  // sees no `type Msg = ...` and returns null, silently disabling LAP
+  // annotation emission.
+  //
+  // We can't run the full plugin from a unit test (it needs a Rollup
+  // context with `this.resolve`), so we feed `transformLlui` an
+  // explicit `typeSources` payload that mimics what the plugin
+  // produces after pre-resolution. The expectation is that annotations
+  // get emitted against the imported source.
+  it('emits annotations from an imported Msg via typeSources param', () => {
+    const componentSource = `
+import { component } from '@llui/dom'
+import type { Msg } from './msg'
+
+type State = { count: number }
+
+export const App = component<State, Msg, never>({
+  name: 'App',
+  init: () => [{ count: 0 }, []],
+  update: (s, _m) => [s, []],
+  view: ({ text }) => [text((s) => String(s.count))],
+})
+`
+    const externalMsgSource = `
+export type Msg =
+  /** @intent("Increment the counter") */
+  | { type: 'inc' }
+  /** @intent("Decrement") @requiresConfirm */
+  | { type: 'dec' }
+`
+    const result = transformLlui(componentSource, 'app.ts', /* devMode */ true, false, null, false, {
+      msg: { source: externalMsgSource, typeName: 'Msg' },
+    })
+    const out = result?.output ?? componentSource
+    expect(out).toContain('__msgAnnotations:')
+    expect(out).toMatch(/["']?inc["']?:\s*\{\s*intent:\s*["']Increment the counter["']/)
+    expect(out).toMatch(
+      /["']?dec["']?:\s*\{\s*intent:\s*["']Decrement["'][\s\S]*requiresConfirm:\s*true/,
+    )
+  })
+
+  // Regression: discriminants containing characters invalid in JS
+  // identifiers ('/', '-', reserved words) must serialize as quoted
+  // string keys, not bare identifiers. Earlier emission passed `variant`
+  // as a string to ts.factory.createPropertyAssignment, which the
+  // printer treats as an identifier and produces invalid JS like
+  // `Router/RouteChanged: { ... }` rather than `"Router/RouteChanged":
+  // { ... }`. The fix wraps with createStringLiteral.
+  it('quotes Msg variant keys when the discriminant has non-identifier characters', () => {
+    const source = `
+import { component } from '@llui/dom'
+
+type State = { current: string }
+type Msg =
+  /** @intent("Route changed") */
+  | { type: 'Router/RouteChanged', to: string }
+  /** @intent("Cancel order") @requiresConfirm */
+  | { type: 'order-cancel' }
+  /** @intent("Reset") */
+  | { type: 'delete' }
+
+export const App = component<State, Msg, never>({
+  name: 'App',
+  init: () => [{ current: '/' }, []],
+  update: (s, m) => {
+    switch (m.type) {
+      case 'Router/RouteChanged': return [{ ...s, current: m.to }, []]
+      case 'order-cancel': return [s, []]
+      case 'delete': return [s, []]
+    }
+  },
+  view: ({ text }) => [text((s) => s.current)],
+})
+`
+    const out = tDev(source)
+    expect(out).toContain('__msgAnnotations:')
+    // Each variant key must be a string literal in the emitted JS
+    // (printer puts it in quotes), not a bare identifier.
+    expect(out).toMatch(/["']Router\/RouteChanged["']:\s*\{/)
+    expect(out).toMatch(/["']order-cancel["']:\s*\{/)
+    expect(out).toMatch(/["']delete["']:\s*\{/)
+    // Sanity — the bug would emit an unquoted Router/RouteChanged
+    // identifier; if that ever appeared the file would not even parse,
+    // but assert directly so the regression has a legible failure msg.
+    expect(out).not.toMatch(/\n\s+Router\/RouteChanged:/)
   })
 })
 

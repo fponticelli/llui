@@ -119,7 +119,7 @@ function makeHelloBuilder(appName: string): () => HelloFrame {
           intent: 'Ping the app',
           alwaysAffordable: true,
           requiresConfirm: false,
-          humanOnly: false,
+          dispatchMode: 'shared',
         },
       },
     },
