@@ -140,6 +140,19 @@ export function createEffectHandler(host: EffectHandlerHost) {
         host.forward(effect.payload)
         return
       }
+      case 'AgentClipboardWrite': {
+        // Browser-only — `navigator.clipboard` is undefined in
+        // Node/jsdom test environments. Silently no-op rather than
+        // throw, matching the rest of the agent effect handlers'
+        // failure-quiet pattern.
+        if (typeof navigator === 'undefined' || !('clipboard' in navigator)) return
+        try {
+          await navigator.clipboard.writeText(effect.text)
+        } catch {
+          /* quiet — clipboard permission denied or document not focused */
+        }
+        return
+      }
     }
   }
 }

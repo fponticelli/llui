@@ -162,9 +162,13 @@ function connectRelay(port: number, isInitial: boolean): void {
  *    by `@llui/mcp`. If the MCP server is running, the response gives
  *    us the actual port — we connect immediately. This avoids the race
  *    where HMR events fire before the listener registers, and handles
- *    cases where MCP runs on a non-default port.
- * 2. **Compile-time fallback**: if the status endpoint is unavailable
- *    (404, network error, non-Vite environment), we attempt a single
+ *    cases where MCP runs on a non-default port. When the canonical
+ *    path is shadowed (e.g. `@cloudflare/vite-plugin` routes every
+ *    HTTP request to the worker), the client falls back to
+ *    `/cdn-cgi/llui_mcp_status` which the Vite plugin also registers
+ *    — Cloudflare lets `/cdn-cgi/*` paths through to the dev server.
+ * 2. **Compile-time fallback**: if both endpoints are unavailable
+ *    (network error, non-Vite environment), we attempt a single
  *    connection to the compiled-in `port` parameter as a best-effort.
  *
  * Either way: no retry loop. If both fail, `window.__lluiConnect(port?)`
@@ -184,27 +188,59 @@ export function startRelay(port = 5200): void {
     connectRelay(p ?? relayPort, false)
   }
 
-  // Try the Vite middleware first (knows the actual port from the marker file)
   if (typeof fetch !== 'undefined') {
-    fetch('/__llui_mcp_status')
-      .then((res) => (res.ok ? (res.json() as Promise<{ port: number }>) : null))
-      .then((data) => {
-        if (data && typeof data.port === 'number') {
-          relayPort = data.port
-          connectRelay(data.port, true)
-        } else {
-          // Endpoint replied 404 — MCP not running. Don't fall back to the
-          // compile-time port; the HMR event will fire if MCP starts later.
-        }
-      })
-      .catch(() => {
-        // Network error or non-Vite environment — fall back to compile-time port
+    void resolveMcpStatus().then((result) => {
+      if (result.kind === 'found') {
+        relayPort = result.port
+        connectRelay(result.port, true)
+      } else if (result.kind === 'network-error') {
+        // No Vite server reachable (e.g., production build, test
+        // harness without a server). Fall back to the compile-time
+        // port; the WS connect will either succeed or quietly fail.
         connectRelay(port, true)
-      })
+      }
+      // result.kind === 'not-running' → both endpoints 404'd. MCP isn't
+      // active. Don't fall back to the compile-time port; the HMR
+      // `llui:mcp-ready` event fires if MCP starts later, and manual
+      // `window.__lluiConnect()` is the escape hatch.
+    })
   } else {
     // No fetch available — use the compile-time port directly
     connectRelay(port, true)
   }
+}
+
+type McpStatusResult =
+  | { kind: 'found'; port: number }
+  | { kind: 'not-running' } // every path responded but with non-200/no port
+  | { kind: 'network-error' } // every path threw — no server reachable
+
+/**
+ * Try the canonical Vite middleware path; if it 404s (Cloudflare
+ * plugin's catch-all routes everything to the worker), fall back to
+ * `/cdn-cgi/llui_mcp_status` which the Vite plugin also registers.
+ *
+ * Distinguishes "MCP not running" (404 from a real Vite server) from
+ * "no Vite server" (fetch threw). Callers handle these differently —
+ * the former should NOT fall back to the compile-time port (avoids
+ * spurious WS connection attempts), the latter SHOULD.
+ */
+async function resolveMcpStatus(): Promise<McpStatusResult> {
+  let allThrew = true
+  for (const path of ['/__llui_mcp_status', '/cdn-cgi/llui_mcp_status']) {
+    try {
+      const res = await fetch(path)
+      // We got a response — even a 404 means a server is live; don't
+      // treat this as a network error.
+      allThrew = false
+      if (!res.ok) continue
+      const data = (await res.json()) as { port?: unknown }
+      if (typeof data.port === 'number') return { kind: 'found', port: data.port }
+    } catch {
+      // Network error on this path — try the next.
+    }
+  }
+  return allThrew ? { kind: 'network-error' } : { kind: 'not-running' }
 }
 
 export interface MessageRecord {

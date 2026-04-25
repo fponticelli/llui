@@ -87,9 +87,10 @@ describe('agentLog: SetFilter', () => {
 })
 
 describe('agentLog: filtering via visibleEntries (connect)', () => {
-  const buildBag = (state: AgentLogState, send = vi.fn()) => {
-    const connector = connect<AgentLogState>((s) => s, send)
-    return { bag: connector(state), send }
+  // Bag is now static; reactive accessors take state at call time.
+  const buildBag = (send = vi.fn()) => {
+    const bag = connect<AgentLogState>((s) => s, send)
+    return { bag, send }
   }
 
   it('SetFilter by kinds — other kinds excluded from visibleEntries', () => {
@@ -100,8 +101,8 @@ describe('agentLog: filtering via visibleEntries (connect)', () => {
     })
     ;[state] = update(state, { type: 'Append', entry: makeEntry({ id: 'e2', kind: 'proposed' }) })
     ;[state] = update(state, { type: 'SetFilter', filter: { kinds: ['dispatched'] } })
-    const { bag } = buildBag(state)
-    expect(bag.visibleEntries.map((e) => e.id)).toEqual(['e1'])
+    const { bag } = buildBag()
+    expect(bag.visibleEntries(state).map((e) => e.id)).toEqual(['e1'])
   })
 
   it('SetFilter by since — entries before ts excluded from visibleEntries', () => {
@@ -109,8 +110,8 @@ describe('agentLog: filtering via visibleEntries (connect)', () => {
     ;[state] = update(state, { type: 'Append', entry: makeEntry({ id: 'old', at: 999 }) })
     ;[state] = update(state, { type: 'Append', entry: makeEntry({ id: 'new', at: 2_000 }) })
     ;[state] = update(state, { type: 'SetFilter', filter: { since: 1_000 } })
-    const { bag } = buildBag(state)
-    expect(bag.visibleEntries.map((e) => e.id)).toEqual(['new'])
+    const { bag } = buildBag()
+    expect(bag.visibleEntries(state).map((e) => e.id)).toEqual(['new'])
   })
 
   it('list.data-count reflects visible count not raw count', () => {
@@ -121,11 +122,11 @@ describe('agentLog: filtering via visibleEntries (connect)', () => {
     })
     ;[state] = update(state, { type: 'Append', entry: makeEntry({ id: 'e2', kind: 'proposed' }) })
     ;[state] = update(state, { type: 'SetFilter', filter: { kinds: ['dispatched'] } })
-    const { bag } = buildBag(state)
-    expect(bag.list['data-count']).toBe(1)
+    const { bag } = buildBag()
+    expect(bag.list['data-count'](state)).toBe(1)
   })
 
-  it('entryItem(id) returns null for id not in visible', () => {
+  it("entryItem(id) returns 'missing' kind for an id not in visible", () => {
     let state = init()[0]
     ;[state] = update(state, {
       type: 'Append',
@@ -133,48 +134,44 @@ describe('agentLog: filtering via visibleEntries (connect)', () => {
     })
     ;[state] = update(state, { type: 'Append', entry: makeEntry({ id: 'e2', kind: 'proposed' }) })
     ;[state] = update(state, { type: 'SetFilter', filter: { kinds: ['dispatched'] } })
-    const { bag } = buildBag(state)
-    // e2 is filtered out → not in visible
-    expect(bag.entryItem('e2')).toBeNull()
+    const { bag } = buildBag()
+    // e2 is filtered out → 'missing' kind
+    expect(bag.entryItem('e2')['data-kind'](state)).toBe('missing')
   })
 
-  it('entryItem(id) returns entry bag for visible entry', () => {
+  it('entryItem(id) returns reactive accessors for a visible entry', () => {
     let state = init()[0]
     ;[state] = update(state, {
       type: 'Append',
       entry: makeEntry({ id: 'e1', kind: 'dispatched' }),
     })
-    const { bag } = buildBag(state)
+    const { bag } = buildBag()
     const item = bag.entryItem('e1')
-    expect(item).not.toBeNull()
-    expect(item!['data-id']).toBe('e1')
-    expect(item!['data-kind']).toBe('dispatched')
+    expect(item['data-id']).toBe('e1')
+    expect(item['data-kind'](state)).toBe('dispatched')
   })
 
   it('filterControls.clearButton.disabled when entries is empty', () => {
     const [s0] = init()
-    const { bag } = buildBag(s0)
-    expect(bag.filterControls.clearButton.disabled).toBe(true)
+    const { bag } = buildBag()
+    expect(bag.filterControls.clearButton.disabled(s0)).toBe(true)
   })
 
   it('filterControls.clearButton.disabled is false when entries exist', () => {
     let state = init()[0]
     ;[state] = update(state, { type: 'Append', entry: makeEntry({ id: 'e1' }) })
-    const { bag } = buildBag(state)
-    expect(bag.filterControls.clearButton.disabled).toBe(false)
+    const { bag } = buildBag()
+    expect(bag.filterControls.clearButton.disabled(state)).toBe(false)
   })
 
   it('filterControls.clearButton.onClick dispatches Clear', () => {
-    let state = init()[0]
-    ;[state] = update(state, { type: 'Append', entry: makeEntry({ id: 'e1' }) })
-    const { bag, send } = buildBag(state)
+    const { bag, send } = buildBag()
     bag.filterControls.clearButton.onClick()
     expect(send).toHaveBeenCalledWith({ type: 'Clear' })
   })
 
   it('filterControls.setFilter dispatches SetFilter', () => {
-    const [s0] = init()
-    const { bag, send } = buildBag(s0)
+    const { bag, send } = buildBag()
     bag.filterControls.setFilter({ kinds: ['error'] })
     expect(send).toHaveBeenCalledWith({ type: 'SetFilter', filter: { kinds: ['error'] } })
   })

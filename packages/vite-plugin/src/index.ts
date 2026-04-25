@@ -1,4 +1,12 @@
 import type { Plugin, ViteDevServer } from 'vite'
+
+// Minimal subset of `http.ServerResponse` we use in the MCP-status
+// handler. Avoids a heavy `node:http` import at the top of the file.
+interface ServerResponseLike {
+  statusCode: number
+  setHeader(name: string, value: string): void
+  end(body?: string): void
+}
 import MagicString from 'magic-string'
 import { existsSync, readFileSync, writeFileSync, watch as fsWatch, type FSWatcher } from 'node:fs'
 import { readFile } from 'node:fs/promises'
@@ -656,7 +664,17 @@ export default function llui(options: LluiPluginOptions = {}): Plugin {
       // the import.meta.hot listener registers get dropped — and lets
       // the browser connect to the actual port (which may differ from
       // the compile-time default if MCP was started with LLUI_MCP_PORT).
-      server.middlewares.use('/__llui_mcp_status', (_req, res) => {
+      //
+      // Two paths register the same handler:
+      //  * `/__llui_mcp_status` — canonical, served from any Vite
+      //    project.
+      //  * `/cdn-cgi/llui_mcp_status` — fallback for projects that
+      //    bundle `@cloudflare/vite-plugin`. The cloudflare plugin
+      //    intercepts every HTTP request in `configureServer` and
+      //    routes it to the worker, except `/cdn-cgi/*` which it
+      //    explicitly lets through. Without this fallback, MCP
+      //    auto-discovery silently fails under workerd.
+      const mcpStatusHandler = (_req: unknown, res: ServerResponseLike): void => {
         const marker = readMcpMarker()
         if (marker === null) {
           res.statusCode = 404
@@ -666,7 +684,9 @@ export default function llui(options: LluiPluginOptions = {}): Plugin {
         res.statusCode = 200
         res.setHeader('content-type', 'application/json')
         res.end(JSON.stringify({ port: marker.port }))
-      })
+      }
+      server.middlewares.use('/__llui_mcp_status', mcpStatusHandler)
+      server.middlewares.use('/cdn-cgi/llui_mcp_status', mcpStatusHandler)
 
       // Watch the marker file for create/delete. fs.watch on the parent
       // directory catches both events; the file itself may not exist

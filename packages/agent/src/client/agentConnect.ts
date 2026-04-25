@@ -41,6 +41,10 @@ export type AgentConnectMsg =
   | { type: 'ClearError' }
   | { type: 'SessionsLoaded'; sessions: AgentSession[] }
   | { type: 'RefreshSessions' }
+  /** User clicked the "Copy connect snippet" affordance. Resolves the
+   *  pendingToken's snippet in update() (state-reading is what update()
+   *  is for) and dispatches a clipboard-write effect. */
+  | { type: 'CopyConnectSnippet' }
 
 export type AgentConnectInitOpts = { mintUrl: string }
 
@@ -114,6 +118,13 @@ export function update(
       return [{ ...state, sessions: msg.sessions }, []]
     case 'RefreshSessions':
       return [state, [{ type: 'AgentSessionsList' }]]
+    case 'CopyConnectSnippet': {
+      // No-op when there's no pending token — the button's
+      // `disabled` accessor already gates the click, but we accept
+      // the message for runtime safety.
+      if (!state.pendingToken) return [state, []]
+      return [state, [{ type: 'AgentClipboardWrite', text: state.pendingToken.connectSnippet }]]
+    }
   }
 }
 
@@ -123,68 +134,91 @@ export type AgentConnectConnectOptions = {
   id?: string // optional DOM id prefix
 }
 
-type ConnectBag = {
-  root: { 'data-scope': string; 'data-state': string }
-  mintTrigger: { onClick: () => void; disabled: boolean }
-  pendingTokenBox: { 'data-part': string; 'data-visible': boolean }
-  copyConnectSnippetButton: { onClick: () => void; disabled: boolean }
-  sessionsList: { 'data-part': string }
-  sessionItem: (tid: string) => { 'data-part': string; 'data-tid': string }
+/**
+ * Static prop bag with reactive accessors. Mirrors the @llui/components
+ * pattern (e.g. `dialog.connect`): callers spread bag keys directly
+ * into element helpers, and function-valued props re-evaluate per
+ * binding-mask hit. The previous shape — `(state) => bag` — required
+ * callers to wrap every prop access in their own arrow, which the
+ * documented usage didn't do (and silently produced `undefined` props
+ * when spread).
+ */
+export type ConnectBag<S> = {
+  root: { 'data-scope': 'agent-connect'; 'data-state': (s: S) => AgentConnectStatus }
+  mintTrigger: { onClick: () => void; disabled: (s: S) => boolean }
+  pendingTokenBox: { 'data-part': 'pending-token'; 'data-visible': (s: S) => boolean }
+  copyConnectSnippetButton: { onClick: () => void; disabled: (s: S) => boolean }
+  sessionsList: { 'data-part': 'sessions-list' }
+  sessionItem: (tid: string) => { 'data-part': 'session-item'; 'data-tid': string }
   revokeButton: (tid: string) => { onClick: () => void }
-  resumeBanner: { 'data-part': string; 'data-visible': boolean }
-  resumeItem: (tid: string) => { 'data-part': string; 'data-tid': string }
+  resumeBanner: { 'data-part': 'resume-banner'; 'data-visible': (s: S) => boolean }
+  resumeItem: (tid: string) => { 'data-part': 'resume-item'; 'data-tid': string }
   resumeButton: (tid: string) => { onClick: () => void }
   dismissButton: (tid: string) => { onClick: () => void }
-  error: { 'data-part': string; 'data-visible': boolean; onClick: () => void }
+  error: {
+    'data-part': 'error'
+    'data-visible': (s: S) => boolean
+    onClick: () => void
+  }
 }
 
 /**
- * Builds prop bags for the view. See spec §9.1 and the @llui/components
- * dialog.ts pattern.
+ * Builds prop bags for the view. Static-bag-with-reactive-accessors
+ * shape (matches the @llui/components convention); spread directly
+ * into element helpers.
  */
 export function connect<S>(
   get: (s: S) => AgentConnectState,
   send: Send<AgentConnectMsg>,
   _opts: AgentConnectConnectOptions = {},
-): (state: S) => ConnectBag {
-  return (state) => {
-    const s = get(state)
-    return {
-      root: { 'data-scope': 'agent-connect', 'data-state': s.status },
-      mintTrigger: {
-        onClick: () => send({ type: 'Mint' }),
-        disabled: s.status === 'minting' || s.status === 'pending-claude' || s.status === 'active',
+): ConnectBag<S> {
+  return {
+    root: {
+      'data-scope': 'agent-connect',
+      'data-state': (s) => get(s).status,
+    },
+    mintTrigger: {
+      onClick: () => send({ type: 'Mint' }),
+      disabled: (s) => {
+        const cs = get(s)
+        return cs.status === 'minting' || cs.status === 'pending-claude' || cs.status === 'active'
       },
-      pendingTokenBox: { 'data-part': 'pending-token', 'data-visible': s.pendingToken !== null },
-      copyConnectSnippetButton: {
-        onClick: () => {
-          if (s.pendingToken && typeof navigator !== 'undefined' && 'clipboard' in navigator) {
-            void navigator.clipboard.writeText(s.pendingToken.connectSnippet)
-          }
-        },
-        disabled: s.pendingToken === null,
-      },
-      sessionsList: { 'data-part': 'sessions-list' },
-      sessionItem: (tid) => ({ 'data-part': 'session-item', 'data-tid': tid }),
-      revokeButton: (tid) => ({ onClick: () => send({ type: 'Revoke', tid }) }),
-      resumeBanner: { 'data-part': 'resume-banner', 'data-visible': s.resumable.length > 0 },
-      resumeItem: (tid) => ({ 'data-part': 'resume-item', 'data-tid': tid }),
-      resumeButton: (tid) => ({ onClick: () => send({ type: 'Resume', tid }) }),
-      dismissButton: (tid) => ({
-        // For dismiss, we currently just remove the resumable record locally.
-        // A "dismiss forever" flag could land in a follow-up; for v1, dismiss
-        // is a client-side-only state prune by reusing the Revoke Msg path
-        // with intent-split; for now Emit Revoke which both revokes server-side
-        // AND removes locally. Alternative: emit a new DismissResume msg —
-        // spec §9.1 lists dismissButton but doesn't spell out the emitted msg.
-        // V1 pragmatic choice: same as revoke (mark revoked on server).
-        onClick: () => send({ type: 'Revoke', tid }),
-      }),
-      error: {
-        'data-part': 'error',
-        'data-visible': s.error !== null,
-        onClick: () => send({ type: 'ClearError' }),
-      },
-    }
+    },
+    pendingTokenBox: {
+      'data-part': 'pending-token',
+      'data-visible': (s) => get(s).pendingToken !== null,
+    },
+    copyConnectSnippetButton: {
+      // The handler reads state at click time via the Msg/effect path:
+      // CopyConnectSnippet → update() reads pendingToken.connectSnippet
+      // → effect AgentClipboardWrite writes to navigator.clipboard.
+      // Routing through update() keeps state reads out of event
+      // handlers, which is what makes the static-bag-with-reactive-
+      // accessors shape work cleanly.
+      onClick: () => send({ type: 'CopyConnectSnippet' }),
+      disabled: (s) => get(s).pendingToken === null,
+    },
+    sessionsList: { 'data-part': 'sessions-list' },
+    sessionItem: (tid) => ({ 'data-part': 'session-item', 'data-tid': tid }),
+    revokeButton: (tid) => ({ onClick: () => send({ type: 'Revoke', tid }) }),
+    resumeBanner: {
+      'data-part': 'resume-banner',
+      'data-visible': (s) => get(s).resumable.length > 0,
+    },
+    resumeItem: (tid) => ({ 'data-part': 'resume-item', 'data-tid': tid }),
+    resumeButton: (tid) => ({ onClick: () => send({ type: 'Resume', tid }) }),
+    dismissButton: (tid) => ({
+      // For dismiss, we currently just remove the resumable record
+      // locally. A "dismiss forever" flag could land in a follow-up;
+      // for v1, dismiss is a client-side-only state prune by reusing
+      // the Revoke Msg path with intent-split; for now emit Revoke
+      // which both revokes server-side AND removes locally.
+      onClick: () => send({ type: 'Revoke', tid }),
+    }),
+    error: {
+      'data-part': 'error',
+      'data-visible': (s) => get(s).error !== null,
+      onClick: () => send({ type: 'ClearError' }),
+    },
   }
 }

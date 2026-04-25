@@ -44,45 +44,63 @@ export function update(
 // Connect bag:
 import { type Send } from '@llui/dom'
 
-type ConnectBag = {
-  root: { 'data-scope': string }
-  list: { 'data-part': string; 'data-count': number }
-  entryItem: (id: string) => { 'data-part': string; 'data-id': string; 'data-kind': string } | null
+/**
+ * Static prop bag with reactive accessors. See agentConnect.ts for
+ * the rationale.
+ *
+ * `visibleEntries` is exposed as a reactive accessor returning the
+ * filtered entry list — pass it to `each` directly:
+ *   each(bag.visibleEntries, (e) => …)
+ */
+export type ConnectBag<S> = {
+  root: { 'data-scope': 'agent-log' }
+  list: { 'data-part': 'list'; 'data-count': (s: S) => number }
+  entryItem: (id: string) => {
+    'data-part': 'entry'
+    'data-id': string
+    'data-kind': (s: S) => LogKind | 'missing'
+  }
   filterControls: {
-    clearButton: { onClick: () => void; disabled: boolean }
+    clearButton: { onClick: () => void; disabled: (s: S) => boolean }
     setFilter: (filter: AgentLogFilter) => void
   }
   /** Filtered view of entries — respects state.filter. */
-  visibleEntries: LogEntry[]
+  visibleEntries: (s: S) => LogEntry[]
 }
 
 export function connect<S>(
   get: (s: S) => AgentLogState,
   send: Send<AgentLogMsg>,
-): (state: S) => ConnectBag {
-  return (state) => {
+): ConnectBag<S> {
+  const visible = (state: S): LogEntry[] => {
     const s = get(state)
-    const visible = s.entries.filter((e) => {
+    return s.entries.filter((e) => {
       if (s.filter.kinds && !s.filter.kinds.includes(e.kind)) return false
       if (s.filter.since !== undefined && e.at < s.filter.since) return false
       return true
     })
-    return {
-      root: { 'data-scope': 'agent-log' },
-      list: { 'data-part': 'list', 'data-count': visible.length },
-      entryItem: (id) => {
-        const e = visible.find((x) => x.id === id)
-        if (!e) return null
-        return { 'data-part': 'entry', 'data-id': e.id, 'data-kind': e.kind }
+  }
+  const findVisible = (state: S, id: string): LogEntry | undefined =>
+    visible(state).find((x) => x.id === id)
+
+  return {
+    root: { 'data-scope': 'agent-log' },
+    list: {
+      'data-part': 'list',
+      'data-count': (s) => visible(s).length,
+    },
+    entryItem: (id) => ({
+      'data-part': 'entry',
+      'data-id': id,
+      'data-kind': (s) => findVisible(s, id)?.kind ?? 'missing',
+    }),
+    filterControls: {
+      clearButton: {
+        onClick: () => send({ type: 'Clear' }),
+        disabled: (s) => get(s).entries.length === 0,
       },
-      filterControls: {
-        clearButton: {
-          onClick: () => send({ type: 'Clear' }),
-          disabled: s.entries.length === 0,
-        },
-        setFilter: (filter) => send({ type: 'SetFilter', filter }),
-      },
-      visibleEntries: visible,
-    }
+      setFilter: (filter) => send({ type: 'SetFilter', filter }),
+    },
+    visibleEntries: visible,
   }
 }

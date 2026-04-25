@@ -62,46 +62,70 @@ export function update(
 // Connect bag:
 import { type Send } from '@llui/dom'
 
-type ConnectBag = {
-  root: { 'data-scope': string }
+/**
+ * Static prop bag with reactive accessors. See agentConnect.ts for
+ * the rationale; spread directly into element helpers and the LLui
+ * runtime re-evaluates function-valued props on dirty bits.
+ *
+ * Per-entry props are exposed as a function `entry(id)` that returns
+ * a sub-bag whose values are themselves reactive — caller passes the
+ * id once, gets back a bag they can spread.
+ */
+export type ConnectBag<S> = {
+  root: { 'data-scope': 'agent-confirm' }
+  /**
+   * Resolves a per-entry sub-bag. The returned bag's accessors look
+   * up the entry by `id` lazily, so the bag stays valid even after
+   * approve/reject mutates the entry's status.
+   */
   entry: (id: string) => {
-    card: { 'data-part': string; 'data-status': string; 'data-id': string }
-    approveButton: { onClick: () => void; disabled: boolean }
-    rejectButton: { onClick: () => void; disabled: boolean }
-    intentText: string
-    reasonText: string | null
-    payloadText: string
-  } | null
-  empty: { 'data-part': string; 'data-visible': boolean }
+    card: {
+      'data-part': 'entry'
+      'data-status': (s: S) => 'pending' | 'approved' | 'rejected' | 'missing'
+      'data-id': string
+    }
+    approveButton: { onClick: () => void; disabled: (s: S) => boolean }
+    rejectButton: { onClick: () => void; disabled: (s: S) => boolean }
+    intentText: (s: S) => string
+    reasonText: (s: S) => string | null
+    payloadText: (s: S) => string
+  }
+  empty: { 'data-part': 'empty'; 'data-visible': (s: S) => boolean }
 }
 
 export function connect<S>(
   get: (s: S) => AgentConfirmState,
   send: Send<AgentConfirmMsg>,
-): (state: S) => ConnectBag {
-  return (state) => {
-    const s = get(state)
-    return {
-      root: { 'data-scope': 'agent-confirm' },
-      entry: (id) => {
-        const e = s.pending.find((x) => x.id === id)
-        if (!e) return null
-        return {
-          card: { 'data-part': 'entry', 'data-status': e.status, 'data-id': e.id },
-          approveButton: {
-            onClick: () => send({ type: 'Approve', id }),
-            disabled: e.status !== 'pending',
-          },
-          rejectButton: {
-            onClick: () => send({ type: 'Reject', id }),
-            disabled: e.status !== 'pending',
-          },
-          intentText: e.intent,
-          reasonText: e.reason,
-          payloadText: JSON.stringify(e.payload, null, 2),
-        }
+): ConnectBag<S> {
+  const findEntry = (state: S, id: string): ConfirmEntry | undefined =>
+    get(state).pending.find((e) => e.id === id)
+
+  return {
+    root: { 'data-scope': 'agent-confirm' },
+    entry: (id) => ({
+      card: {
+        'data-part': 'entry',
+        'data-status': (s) => findEntry(s, id)?.status ?? 'missing',
+        'data-id': id,
       },
-      empty: { 'data-part': 'empty', 'data-visible': s.pending.length === 0 },
-    }
+      approveButton: {
+        onClick: () => send({ type: 'Approve', id }),
+        disabled: (s) => findEntry(s, id)?.status !== 'pending',
+      },
+      rejectButton: {
+        onClick: () => send({ type: 'Reject', id }),
+        disabled: (s) => findEntry(s, id)?.status !== 'pending',
+      },
+      intentText: (s) => findEntry(s, id)?.intent ?? '',
+      reasonText: (s) => findEntry(s, id)?.reason ?? null,
+      payloadText: (s) => {
+        const e = findEntry(s, id)
+        return e ? JSON.stringify(e.payload, null, 2) : ''
+      },
+    }),
+    empty: {
+      'data-part': 'empty',
+      'data-visible': (s) => get(s).pending.length === 0,
+    },
   }
 }

@@ -604,6 +604,15 @@ export function hydrateApp<S, M, E, D = void>(
     options?.env,
   )
 
+  // Dev-only: auto-install devtools if enabled via '@llui/dom/devtools'
+  // import. The other three mount paths (mountApp / mountAtAnchor /
+  // hydrateAtAnchor) all call this; without it, the hydrated layout
+  // never appears in `window.__lluiComponents`, never sets
+  // `window.__lluiDebug`, and is invisible to MCP / agent client /
+  // devtools console — so a vike SSR app's outermost layout silently
+  // drops out of every observability surface.
+  if (devToolsInstall) devToolsInstall(inst)
+
   // Build the component DOM and swap atomically with server HTML.
   // Server HTML remains visible until JS finishes — no flash.
   // onMount callbacks are collected in a queue and flushed synchronously
@@ -632,6 +641,13 @@ export function hydrateApp<S, M, E, D = void>(
   dispatchInitialEffects(inst)
 
   registerInstance(inst)
+  // HMR registration — same as mountApp / mountAtAnchor /
+  // hydrateAtAnchor. Without it, replaceComponent(name, newDef)
+  // silently no-ops on the hydrated layout layer because the HMR
+  // registry has no entry for it.
+  if (hmrModule && hydrateDef.name) {
+    hmrModule.registerForHmr(hydrateDef.name, inst, container)
+  }
   let disposed = false
   const listeners = new Set<(s: unknown) => void>()
 
@@ -651,6 +667,7 @@ export function hydrateApp<S, M, E, D = void>(
       disposed = true
       listeners.clear()
       inst._onCommit = undefined
+      if (hmrModule && hydrateDef.name) hmrModule.unregisterForHmr(hydrateDef.name, inst)
       inst.abortController.abort()
       unregisterInstance(inst)
       // Tag the root scope so the disposer log reports app-level
