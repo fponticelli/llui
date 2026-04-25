@@ -53,7 +53,9 @@ mountApp(document.getElementById('app')!, Counter)
 | [`@llui/test`](packages/test)                     | Test harness — testComponent, testView, propertyTest, replayTrace                                   |
 | [`@llui/vike`](packages/vike)                     | Vike SSR adapter — onRenderHtml, onRenderClient                                                     |
 | [`@llui/mcp`](packages/mcp)                       | MCP server — LLM debug tools via Model Context Protocol                                             |
-| [`@llui/lint-idiomatic`](packages/lint-idiomatic) | Linter — 6 anti-pattern rules for idiomatic LLui                                                    |
+| [`@llui/eslint-plugin`](packages/eslint-plugin-llui) | ESLint plugin — 21 anti-pattern rules that catch common LLM mistakes                             |
+| [`@llui/agent`](packages/agent)                   | LAP server + browser client runtime for driving LLui apps from LLM clients                          |
+| [`llui-agent`](packages/agent-bridge)             | MCP CLI bridging Claude / other LLM clients to a running `@llui/agent` server                       |
 
 ## Quick Start
 

@@ -49,15 +49,29 @@ LAST_RELEASE=$(git log --grep='^release:' --format=%H -n 1)
 
 If no `release:` commit exists, treat all packages as changed.
 
-For each of the 10 packages (`dom`, `effects`, `vite-plugin`, `test`, `router`, `transitions`, `components`, `vike`, `mcp`, `lint-idiomatic`), check whether any files under `packages/<name>/` changed since `$LAST_RELEASE`:
+Discover the publishable package directories dynamically — every directory under `packages/` whose `package.json` lacks `private: true`:
 
 ```bash
-for pkg in dom effects vite-plugin test router transitions components vike mcp lint-idiomatic; do
+PUBLISHABLE=$(node -e '
+const fs = require("fs");
+for (const dir of fs.readdirSync("packages")) {
+  const p = `packages/${dir}/package.json`;
+  if (!fs.existsSync(p)) continue;
+  const pkg = JSON.parse(fs.readFileSync(p, "utf8"));
+  if (pkg.private) continue;
+  console.log(dir);
+}
+')
+
+for pkg in $PUBLISHABLE; do
   if [ -n "$(git diff --name-only "$LAST_RELEASE"..HEAD -- "packages/$pkg/")" ]; then
-    echo "CHANGED: @llui/$pkg"
+    name=$(node -e "console.log(require('./packages/$pkg/package.json').name)")
+    echo "CHANGED: $name"
   fi
 done
 ```
+
+Note: directory names don't always match the published package name. `eslint-plugin-llui/` publishes as `@llui/eslint-plugin`; `agent-bridge/` publishes as `llui-agent`. The detection loop reads `package.json` for the name; downstream steps that reference the package use the directory name (since publish.sh and add-js-extensions.mjs operate on directories).
 
 Also check root-level changes that affect all package build output:
 
@@ -73,17 +87,19 @@ If `--all` was passed on the command line, skip detection entirely.
 If a dependency changed, every package that imports from it at runtime must also bump so consumers pick up the new behavior. The graph:
 
 ```
-Tier 1 (no in-repo deps): dom, effects, lint-idiomatic
+Tier 1 (no in-repo deps): dom, effects, eslint-plugin-llui
 Tier 2 (depend on tier 1):
-  dom             → vite-plugin, test, router, transitions, components, vike, mcp
-  effects         → (no in-repo dependents)
-  lint-idiomatic  → mcp
+  dom              → vite-plugin, test, router, transitions, components, vike, mcp, agent
+  effects          → (no in-repo dependents)
+  eslint-plugin    → mcp
+Tier 3 (depend on tier 2):
+  agent            → agent-bridge (publishes as llui-agent)
 ```
 
 Cascade rules:
 
-- `dom` changed → add `vite-plugin`, `test`, `router`, `transitions`, `components`, `vike`, `mcp` to the changed set.
-- `lint-idiomatic` changed → add `mcp`.
+- `dom` changed → add **every package whose `peerDependencies["@llui/dom"]` is set** to the changed set. As of writing that's `vite-plugin`, `test`, `router`, `transitions`, `components`, `vike`, `mcp`, `agent`. Don't hand-maintain this list — derive it from the snippet above so a newly-added peer can't be silently skipped. Type-only consumers (`agent`, `mcp`) still need a bump because their peer-range declaration changes.
+- `eslint-plugin` changed → add `mcp`.
 - `effects` has no in-repo dependents today — no cascade.
 
 Several packages carry runtime `peerDependencies` pointing at `@llui/dom`. These must be updated to the new `dom` version during the bump (step 5):
@@ -91,8 +107,52 @@ Several packages carry runtime `peerDependencies` pointing at `@llui/dom`. These
 - `packages/components/package.json` → `peerDependencies["@llui/dom"]`
 - `packages/router/package.json` → `peerDependencies["@llui/dom"]`
 - `packages/transitions/package.json` → `peerDependencies["@llui/dom"]`
+- `packages/vike/package.json` → `peerDependencies["@llui/dom"]`
+- `packages/test/package.json` → `peerDependencies["@llui/dom"]`
+- `packages/mcp/package.json` → `peerDependencies["@llui/dom"]`
+- `packages/agent/package.json` → `peerDependencies["@llui/dom"]`
+
+**Always derive this list from the actual files**, not from this README — run the snippet below before bumping to catch any package that's quietly grown or lost a peer:
+
+```bash
+node -e '
+const fs = require("fs");
+for (const dir of fs.readdirSync("packages")) {
+  const p = `packages/${dir}/package.json`;
+  if (!fs.existsSync(p)) continue;
+  const pkg = JSON.parse(fs.readFileSync(p, "utf8"));
+  if (pkg.peerDependencies?.["@llui/dom"]) {
+    console.log(`${pkg.name}: peer @llui/dom = ${pkg.peerDependencies["@llui/dom"]}`);
+  }
+}
+'
+```
 
 Other cross-package references use `workspace:*` which `pnpm publish` rewrites automatically — no manual update needed for those.
+
+**Anti-pattern check — `@llui/dom` must NOT appear in `dependencies` of any package.** If it does, the published tarball pins the exact resolved version, and consumers whose own `@llui/dom` differs end up with two physical installs in `node_modules/.pnpm`. Vite's dep optimizer chunks them separately, each chunk gets its own module-scoped `currentContext`, and every `provide()` call in the consumer's view throws `provide() can only be called inside a component's view() function` — even though it manifestly is. The escape hatch (`pnpm.overrides`) papers over the symptom; the fix is to ship `@llui/dom` as a peer.
+
+Run this **before bumping** and refuse to proceed if it returns anything (skips `private: true` packages — those never get published, so the pin-rewrite path doesn't apply):
+
+```bash
+node -e '
+const fs = require("fs");
+let bad = 0;
+for (const dir of fs.readdirSync("packages")) {
+  const p = `packages/${dir}/package.json`;
+  if (!fs.existsSync(p)) continue;
+  const pkg = JSON.parse(fs.readFileSync(p, "utf8"));
+  if (pkg.private) continue;
+  if (pkg.dependencies?.["@llui/dom"]) {
+    console.error(`✗ ${pkg.name}: @llui/dom in dependencies (must be peer + dev)`);
+    bad++;
+  }
+}
+process.exit(bad ? 1 : 0);
+'
+```
+
+If this fires, stop and convert the offending package before bumping: move `@llui/dom` from `dependencies` to `peerDependencies` (with a hand-written range like `^X.Y.Z`) and add it to `devDependencies` as `workspace:*`. The same anti-pattern applies to any future package that touches the render context — `@llui/effects`, `@llui/router`, etc. — but `@llui/dom` is the only one that's bitten us in production so far, so it's the only one this check enforces.
 
 ### 4. Present the plan and get confirmation
 
@@ -153,13 +213,32 @@ for (const [f, [from, to]] of Object.entries(bumps)) {
 '
 ```
 
-After the script runs, **verify the peerDependency updates actually landed**:
+After the script runs, **verify the peerDependency updates actually landed across every package that declares one** — don't hard-code the list, derive it:
 
 ```bash
-grep '"@llui/dom"' packages/{components,router,transitions}/package.json
+DOM_TO="0.0.15"  # set to the new dom version
+node -e '
+const fs = require("fs");
+const want = process.env.DOM_TO;
+let bad = 0;
+for (const dir of fs.readdirSync("packages")) {
+  const p = `packages/${dir}/package.json`;
+  if (!fs.existsSync(p)) continue;
+  const pkg = JSON.parse(fs.readFileSync(p, "utf8"));
+  const peer = pkg.peerDependencies?.["@llui/dom"];
+  if (!peer) continue;
+  if (peer !== `^${want}`) {
+    console.error(`✗ ${pkg.name}: peer @llui/dom = ${peer} (expected ^${want})`);
+    bad++;
+  } else {
+    console.log(`✓ ${pkg.name}: peer @llui/dom = ${peer}`);
+  }
+}
+process.exit(bad ? 1 : 0);
+' DOM_TO="$DOM_TO"
 ```
 
-All three should show `^<new dom version>`. The bump script can silently miss them if the peer range was specified differently (e.g. `~0.0.14` instead of `^0.0.14`) — check explicitly.
+Every package declaring a `@llui/dom` peer must show `^<new dom version>`. The bump script only updates packages in the explicit `bumps` map, so any peer holder missing from that map is silently skipped — this check catches it. The bump script can also miss packages whose peer range was specified differently (e.g. `~0.0.14` instead of `^0.0.14`) — fix the bump script equality check or hand-edit before continuing.
 
 ### 6. Write the CHANGELOG entry
 
@@ -204,8 +283,8 @@ Read `CHANGELOG.md` and prepend a new entry at the top, below the intro paragrap
 **Heading conventions:**
 
 - `## YYYY-MM-DD — <qualifier>` — date first so the anchor is stable across lockstep-vs-split releases.
-- `<qualifier>` is the tier-1 lockstep version when tier-1 packages bumped (e.g. `2026-04-14 — 0.0.14`). Even when `@llui/effects` / `@llui/mcp` / `@llui/lint-idiomatic` shipped at different numbers on the same day, the tier-1 version is the primary anchor — the full version list goes in the **Released:** line immediately below.
-- When only one or two off-cadence packages shipped, use them as the qualifier instead: `2026-04-13 — @llui/lint-idiomatic@0.0.10, @llui/mcp@0.0.7`.
+- `<qualifier>` is the tier-1 lockstep version when tier-1 packages bumped (e.g. `2026-04-14 — 0.0.14`). Even when `@llui/effects` / `@llui/mcp` / `@llui/eslint-plugin` shipped at different numbers on the same day, the tier-1 version is the primary anchor — the full version list goes in the **Released:** line immediately below.
+- When only one or two off-cadence packages shipped, use them as the qualifier instead: `2026-04-13 — @llui/eslint-plugin@0.0.10, @llui/mcp@0.0.7`.
 - The `**Released:**` line directly below the heading spells out the concrete bumps. Always include it, even when the qualifier covers everything, so readers can grep a package name and find every release it appears in.
 
 **Bullet conventions:**
@@ -220,7 +299,7 @@ Read `CHANGELOG.md` and prepend a new entry at the top, below the intro paragrap
 1. **Breaking** — at the top, before any per-package section. Users evaluating an upgrade read this first.
 2. **Migration** — immediately after Breaking, when actions are needed.
 3. **Tier-1 packages first** — usually `@llui/dom` then `@llui/vite-plugin`, then the rest in rough dependency order.
-4. **Off-cadence packages** — `@llui/effects`, `@llui/mcp`, `@llui/lint-idiomatic` after tier-1.
+4. **Off-cadence packages** — `@llui/effects`, `@llui/mcp`, `@llui/eslint-plugin`, `@llui/agent`, `llui-agent` after tier-1.
 5. **All packages — build output** — near the end, before Docs.
 6. **Docs** — if there's anything worth noting.
 
@@ -308,8 +387,8 @@ Ready to publish. Run:
 
   ./scripts/publish.sh <space-separated list of bumped packages>
 
-Example (all 10 from a full release):
-  ./scripts/publish.sh dom effects lint-idiomatic vite-plugin test router transitions components vike mcp
+Example (full release):
+  ./scripts/publish.sh dom effects eslint-plugin vite-plugin test router transitions components vike mcp agent
 
 (Only list the packages that were actually bumped in step 5. The script
 enforces tier 1 → tier 2 order internally, so argument order doesn't
@@ -331,5 +410,7 @@ Then stop. The user runs the command when they're ready.
 **Why force a clean working tree:** the release commit must name exactly what ships on npm. If uncommitted fixes end up in the release commit, the CHANGELOG entry we write will describe commits we didn't actually include (and the reverse — commits we did include won't appear in the notes). Easier to refuse and make the user run `/commit` first than to try to reason about mixed state.
 
 **Why bump `peerDependencies` explicitly:** `workspace:*` gets rewritten automatically by `pnpm publish`, but `peerDependencies` declared as concrete ranges (`^0.0.14`) stay whatever is in the committed `package.json`. Forgetting to update these produces packages that declare compatibility with an old dom version while actually importing from a new one — silent version drift for consumers. Always grep to verify after the bump script runs.
+
+**Why `@llui/dom` must be a peer, not a direct dep:** anything that declares `dependencies["@llui/dom"]` ships a tarball where `pnpm publish` rewrites `workspace:*` to the exact resolved version. A consumer whose own `@llui/dom` is one patch ahead ends up with two physical installs in `node_modules/.pnpm`. Vite's dep optimizer chunks them separately; each chunk gets its own module-scoped `currentContext` in `render-context.ts`. The setter (called from `mountApp` / `renderNodes`) writes one copy; the getter (called from primitives like `provide`, `el`, `branch`) reads the other. Result: every primitive call from the consumer's view throws `provide() can only be called inside a component's view() function` even though it manifestly is. The 2026-04-25 outage on `@llui/vike@0.0.30` was this — escape hatch is `pnpm.overrides`, real fix is the peer-dep pattern. The anti-pattern check in step 3 enforces this on every release.
 
 **Why pass the commit message via HEREDOC:** multi-line commit messages with `-m "..."` lose formatting. HEREDOC preserves the body exactly, which matters because the brace-expanded `release:` subject can get long and the body typically has a structured one-line summary.

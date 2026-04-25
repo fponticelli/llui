@@ -39,11 +39,13 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@llui/dom": "workspace:*",
-    "@llui/effects": "workspace:*",
     "ws": "^8.18.0"
   },
+  "peerDependencies": {
+    "@llui/dom": "^0.0.30"
+  },
   "devDependencies": {
+    "@llui/dom": "workspace:*",
     "@types/node": "^22.0.0",
     "@types/ws": "^8.5.13"
   },

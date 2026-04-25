@@ -32,18 +32,19 @@ import { resolve, join, relative } from 'node:path'
 const ROOT = resolve(import.meta.dirname, '..')
 const DRY = process.argv.includes('--dry')
 
-const PACKAGES = [
-  'dom',
-  'effects',
-  'vite-plugin',
-  'test',
-  'router',
-  'transitions',
-  'components',
-  'vike',
-  'mcp',
-  'lint-idiomatic',
-]
+// Discover packages dynamically — every directory under `packages/` with a
+// `src/` subdirectory is a candidate. Avoids the "stale hardcoded list misses
+// a newly-added package" failure mode that left @llui/eslint-plugin without
+// .js extension rewrites for several releases.
+const PACKAGES = readdirSync(join(ROOT, 'packages'))
+  .filter((name) => {
+    try {
+      return statSync(join(ROOT, 'packages', name, 'src')).isDirectory()
+    } catch {
+      return false
+    }
+  })
+  .sort()
 
 const SKIP_EXTENSIONS = new Set(['.js', '.ts', '.tsx', '.mjs', '.cjs', '.css', '.json', '.svg'])
 

@@ -18,7 +18,10 @@
     "lint": "eslint src",
     "test": "vitest run"
   },
-  "dependencies": {
+  "peerDependencies": {
+    "@llui/dom": "^0.0.30"
+  },
+  "devDependencies": {
     "@llui/dom": "workspace:*"
   },
   "description": "LLui test harness — testComponent, testView, propertyTest, replayTrace, assertEffects",

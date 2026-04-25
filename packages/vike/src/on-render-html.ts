@@ -132,7 +132,7 @@ export async function onRenderHtml(pageContext: PageContext): Promise<RenderHtml
  * ```ts
  * // pages/+onRenderHtml.ts
  * import { createOnRenderHtml } from '@llui/vike/server'
- * import { AppLayout } from './Layout' // ← NOT './+Layout'
+ * import { AppLayout } from './Layout.js' // ← NOT './+Layout'
  *
  * export const onRenderHtml = createOnRenderHtml({
  *   Layout: AppLayout,

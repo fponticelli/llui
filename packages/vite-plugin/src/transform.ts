@@ -4765,10 +4765,10 @@ export interface UseClientTransformResult {
  *   - `export function foo() {}` and `export class Foo {}` — rewritten
  *     as stubs but the caller may be surprised that `foo` and `Foo` are
  *     ComponentDef-shaped objects during SSR.
- *   - `export { a, b } from './other'` — re-export forms are not
+ *   - `export { a, b } from './other.js'` — re-export forms are not
  *     detected; they pass through and will still pull `./other` into
  *     the SSR graph.
- *   - `export * from './other'` — same as above.
+ *   - `export * from './other.js'` — same as above.
  *   - `export type ...` — type exports are erased by TS so nothing to
  *     stub; left untouched.
  */
@@ -4841,7 +4841,7 @@ export function transformUseClientSsr(
       continue
     }
 
-    // `export { a, b }` / `export { a } from './x'` / `export * from './x'`
+    // `export { a, b }` / `export { a } from './x.js'` / `export * from './x.js'`
     if (ts.isExportDeclaration(stmt)) {
       if (stmt.moduleSpecifier) {
         warnings.push(

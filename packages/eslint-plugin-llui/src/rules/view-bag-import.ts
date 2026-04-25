@@ -1,5 +1,5 @@
 import { AST_NODE_TYPES } from '@typescript-eslint/utils'
-import { createRule } from '../createRule'
+import { createRule } from '../createRule.js'
 
 const VIEW_BAG_NAMES = new Set(['text', 'each', 'show', 'branch', 'memo', 'selector'])
 

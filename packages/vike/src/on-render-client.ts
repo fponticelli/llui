@@ -264,7 +264,7 @@ export async function onRenderClient(pageContext: ClientPageContext): Promise<vo
  * // pages/+onRenderClient.ts
  * import { createOnRenderClient, fromTransition } from '@llui/vike/client'
  * import { routeTransition } from '@llui/transitions'
- * import { AppLayout } from './Layout' // ← NOT './+Layout'
+ * import { AppLayout } from './Layout.js' // ← NOT './+Layout'
  *
  * export const onRenderClient = createOnRenderClient({
  *   Layout: AppLayout,

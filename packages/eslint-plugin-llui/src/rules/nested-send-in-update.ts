@@ -1,5 +1,5 @@
 import { AST_NODE_TYPES, TSESTree } from '@typescript-eslint/utils'
-import { createRule } from '../createRule'
+import { createRule } from '../createRule.js'
 
 function isDirectlyInsideUpdate(node: TSESTree.Node): boolean {
   let current: TSESTree.Node | undefined = node.parent

@@ -1,5 +1,5 @@
 import { AST_NODE_TYPES } from '@typescript-eslint/utils'
-import { createRule } from '../createRule'
+import { createRule } from '../createRule.js'
 
 const callbackProps = new Set(['onSuccess', 'onError', 'onLoad', 'onChange', 'onMessage'])
 

@@ -16,9 +16,17 @@ set -e
 #   ./scripts/publish.sh              # publish all packages
 #   ./scripts/publish.sh dom effects  # publish specific packages
 
-TIER1=(dom effects)
-TIER2=(vite-plugin test router transitions components vike mcp lint-idiomatic)
-ALL_PKGS=("${TIER1[@]}" "${TIER2[@]}")
+# Tier 1: no in-repo runtime deps — publish first.
+# Tier 2: depend on tier 1 (peer or runtime). Order within the tier doesn't
+#   matter for safety, but listed roughly by who-depends-on-whom for log
+#   readability. `mcp` depends on `eslint-plugin` (via @llui/eslint-plugin),
+#   so eslint-plugin lives in tier 1 even though it ships a published package.
+# Tier 3: depend on tier 2. `agent-bridge` consumes `@llui/agent` and
+#   publishes as `llui-agent`.
+TIER1=(dom effects eslint-plugin-llui)
+TIER2=(vite-plugin test router transitions components vike mcp agent)
+TIER3=(agent-bridge)
+ALL_PKGS=("${TIER1[@]}" "${TIER2[@]}" "${TIER3[@]}")
 
 # If args provided, use them; otherwise publish all
 if [ $# -gt 0 ]; then
@@ -94,8 +102,14 @@ for pkg in "${PKGS[@]}"; do
     continue
   fi
 
-  version=$(node -e "console.log(require('./$dir/package.json').version)")
-  echo "Publishing @llui/$pkg@$version..."
+  # Read both name and version from package.json — directory name is not
+  # always the published name (eslint-plugin-llui → @llui/eslint-plugin,
+  # agent-bridge → llui-agent).
+  read -r name version < <(node -e "
+    const p = require('./$dir/package.json');
+    process.stdout.write(p.name + ' ' + p.version + '\n');
+  ")
+  echo "Publishing $name@$version..."
 
   # pnpm publish substitutes workspace:* with the concrete dependency
   # version at pack time, so the published tarball has real semver ranges
@@ -103,11 +117,11 @@ for pkg in "${PKGS[@]}"; do
   # --no-git-checks skips pnpm's "you have uncommitted changes" guard —
   # we've already committed the bump in the calling flow.
   if (cd "$dir" && pnpm publish --access public --no-git-checks 2>&1); then
-    SUCCEEDED+=("@llui/$pkg@$version")
-    echo "✓ @llui/$pkg@$version published"
+    SUCCEEDED+=("$name@$version")
+    echo "✓ $name@$version published"
   else
-    FAILED+=("@llui/$pkg")
-    echo "✗ @llui/$pkg failed"
+    FAILED+=("$name")
+    echo "✗ $name failed"
   fi
   echo ""
 done
