@@ -28,13 +28,21 @@ export interface TabsState {
 }
 
 export type TabsMsg =
+  /** @intent("Set Value") */
   | { type: 'setValue'; value: string }
+  /** @humanOnly */
   | { type: 'setItems'; items: string[]; disabled?: string[] }
+  /** @humanOnly */
   | { type: 'focusTab'; value: string }
+  /** @humanOnly */
   | { type: 'focusNext'; from: string }
+  /** @humanOnly */
   | { type: 'focusPrev'; from: string }
+  /** @humanOnly */
   | { type: 'focusFirst' }
+  /** @humanOnly */
   | { type: 'focusLast' }
+  /** @intent("Activate Focused") */
   | { type: 'activateFocused' }
 
 export interface TabsInit {

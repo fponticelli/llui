@@ -56,30 +56,55 @@ export interface TreeViewState {
 }
 
 export type TreeViewMsg =
+  /** @intent("Toggle Branch") */
   | { type: 'toggleBranch'; id: string }
+  /** @intent("Expand") */
   | { type: 'expand'; id: string }
+  /** @intent("Collapse") */
   | { type: 'collapse'; id: string }
+  /** @intent("Expand All") */
   | { type: 'expandAll'; ids: string[] }
+  /** @intent("Collapse All") */
   | { type: 'collapseAll' }
+  /** @intent("Select") */
   | { type: 'select'; id: string; additive?: boolean }
+  /** @intent("Set Selected") */
   | { type: 'setSelected'; ids: string[] }
+  /** @intent("Focus") */
   | { type: 'focus'; id: string | null }
+  /** @humanOnly */
   | { type: 'focusNext' }
+  /** @humanOnly */
   | { type: 'focusPrev' }
+  /** @humanOnly */
   | { type: 'focusFirst' }
+  /** @humanOnly */
   | { type: 'focusLast' }
+  /** @intent("Set Visible Items") */
   | { type: 'setVisibleItems'; ids: string[]; labels?: string[] }
+  /** @intent("Typeahead") */
   | { type: 'typeahead'; char: string; now: number }
+  /** @intent("Arrow Left From") */
   | { type: 'arrowLeftFrom'; id: string; isBranch: boolean; parentId: string | null }
+  /** @intent("Arrow Right From") */
   | { type: 'arrowRightFrom'; id: string }
+  /** @intent("Toggle Checked") */
   | { type: 'toggleChecked'; id: string; descendantIds?: string[] }
+  /** @intent("Set Checked") */
   | { type: 'setChecked'; ids: string[] }
+  /** @intent("Set Indeterminate") */
   | { type: 'setIndeterminate'; ids: string[] }
+  /** @intent("Rename Start") */
   | { type: 'renameStart'; id: string; initial: string }
+  /** @intent("Rename Change") */
   | { type: 'renameChange'; value: string }
+  /** @intent("Rename Commit") */
   | { type: 'renameCommit' }
+  /** @intent("Rename Cancel") */
   | { type: 'renameCancel' }
+  /** @intent("Loading Start") */
   | { type: 'loadingStart'; id: string }
+  /** @intent("Loading End") */
   | { type: 'loadingEnd'; id: string }
 
 export interface TreeViewInit {

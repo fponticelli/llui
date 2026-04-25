@@ -26,16 +26,27 @@ export interface ListboxState {
 }
 
 export type ListboxMsg =
+  /** @intent("Select") */
   | { type: 'select'; value: string }
+  /** @intent("Set Value") */
   | { type: 'setValue'; value: string[] }
+  /** @intent("Clear") */
   | { type: 'clear' }
+  /** @humanOnly */
   | { type: 'highlight'; index: number | null }
+  /** @humanOnly */
   | { type: 'highlightNext' }
+  /** @humanOnly */
   | { type: 'highlightPrev' }
+  /** @humanOnly */
   | { type: 'highlightFirst' }
+  /** @humanOnly */
   | { type: 'highlightLast' }
+  /** @intent("Select Highlighted") */
   | { type: 'selectHighlighted' }
+  /** @humanOnly */
   | { type: 'setItems'; items: string[]; disabled?: string[] }
+  /** @intent("Typeahead") */
   | { type: 'typeahead'; char: string; now: number }
 
 export interface ListboxInit {

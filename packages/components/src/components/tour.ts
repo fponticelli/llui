@@ -47,11 +47,17 @@ export interface TourState {
 }
 
 export type TourMsg =
+  /** @intent("Start") */
   | { type: 'start' }
+  /** @intent("Stop") */
   | { type: 'stop' }
+  /** @intent("Next") */
   | { type: 'next' }
+  /** @intent("Prev") */
   | { type: 'prev' }
+  /** @intent("Goto") */
   | { type: 'goto'; index: number }
+  /** @intent("Set Steps") */
   | { type: 'setSteps'; steps: TourStep[] }
 
 export interface TourInit {

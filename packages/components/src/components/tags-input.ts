@@ -23,14 +23,23 @@ export interface TagsInputState {
 }
 
 export type TagsInputMsg =
+  /** @intent("Set Input") */
   | { type: 'setInput'; value: string }
+  /** @intent("Add Tag") */
   | { type: 'addTag'; value?: string }
+  /** @intent("Remove Tag") */
   | { type: 'removeTag'; index: number }
+  /** @intent("Remove Last") */
   | { type: 'removeLast' }
+  /** @intent("Set Value") */
   | { type: 'setValue'; value: string[] }
+  /** @humanOnly */
   | { type: 'focusTag'; index: number | null }
+  /** @humanOnly */
   | { type: 'focusTagNext' }
+  /** @humanOnly */
   | { type: 'focusTagPrev' }
+  /** @intent("Clear All") */
   | { type: 'clearAll' }
 
 export interface TagsInputInit {

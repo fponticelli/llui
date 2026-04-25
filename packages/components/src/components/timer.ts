@@ -35,10 +35,15 @@ export interface TimerState {
 }
 
 export type TimerMsg =
+  /** @intent("Start") */
   | { type: 'start'; now: number }
+  /** @intent("Pause") */
   | { type: 'pause'; now: number }
+  /** @intent("Reset") */
   | { type: 'reset' }
+  /** @intent("Tick") */
   | { type: 'tick'; now: number }
+  /** @intent("Set Target") */
   | { type: 'setTarget'; targetMs: number }
 
 export interface TimerInit {

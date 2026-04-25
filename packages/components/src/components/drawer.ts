@@ -20,9 +20,13 @@ export interface DrawerState {
 }
 
 export type DrawerMsg =
+  /** @intent("Open") */
   | { type: 'open' }
+  /** @intent("Close") */
   | { type: 'close' }
+  /** @intent("Toggle") */
   | { type: 'toggle' }
+  /** @intent("Set Open") */
   | { type: 'setOpen'; open: boolean }
 
 export interface DrawerInit {

@@ -38,10 +38,15 @@ export interface TocState {
 }
 
 export type TocMsg =
+  /** @humanOnly */
   | { type: 'setItems'; items: TocEntry[] }
+  /** @intent("Set Active") */
   | { type: 'setActive'; id: string | null }
+  /** @intent("Toggle Expanded") */
   | { type: 'toggleExpanded'; id: string }
+  /** @intent("Expand All") */
   | { type: 'expandAll' }
+  /** @intent("Collapse All") */
   | { type: 'collapseAll' }
 
 export interface TocInit {

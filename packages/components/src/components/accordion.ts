@@ -22,14 +22,23 @@ export interface AccordionState {
 }
 
 export type AccordionMsg =
+  /** @intent("Toggle") */
   | { type: 'toggle'; value: string }
+  /** @intent("Open") */
   | { type: 'open'; value: string }
+  /** @intent("Close") */
   | { type: 'close'; value: string }
+  /** @intent("Set Value") */
   | { type: 'setValue'; value: string[] }
+  /** @humanOnly */
   | { type: 'setItems'; items: string[] }
+  /** @humanOnly */
   | { type: 'focusNext'; value: string }
+  /** @humanOnly */
   | { type: 'focusPrev'; value: string }
+  /** @humanOnly */
   | { type: 'focusFirst' }
+  /** @humanOnly */
   | { type: 'focusLast' }
 
 export interface AccordionInit {

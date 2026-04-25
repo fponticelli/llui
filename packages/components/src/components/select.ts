@@ -31,19 +31,33 @@ export interface SelectState {
 }
 
 export type SelectMsg =
+  /** @intent("Open") */
   | { type: 'open' }
+  /** @intent("Close") */
   | { type: 'close' }
+  /** @intent("Toggle") */
   | { type: 'toggle' }
+  /** @intent("Select Option") */
   | { type: 'selectOption'; value: string }
+  /** @intent("Set Value") */
   | { type: 'setValue'; value: string[] }
+  /** @intent("Clear") */
   | { type: 'clear' }
+  /** @humanOnly */
   | { type: 'highlight'; index: number | null }
+  /** @humanOnly */
   | { type: 'highlightNext' }
+  /** @humanOnly */
   | { type: 'highlightPrev' }
+  /** @humanOnly */
   | { type: 'highlightFirst' }
+  /** @humanOnly */
   | { type: 'highlightLast' }
+  /** @intent("Select Highlighted") */
   | { type: 'selectHighlighted' }
+  /** @humanOnly */
   | { type: 'setItems'; items: string[]; disabled?: string[] }
+  /** @intent("Typeahead") */
   | { type: 'typeahead'; char: string; now: number }
 
 export interface SelectInit {

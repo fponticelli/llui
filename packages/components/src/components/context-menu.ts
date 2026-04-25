@@ -21,13 +21,21 @@ export interface ContextMenuState {
 }
 
 export type ContextMenuMsg =
+  /** @intent("Open At") */
   | { type: 'openAt'; x: number; y: number }
+  /** @intent("Close") */
   | { type: 'close' }
+  /** @humanOnly */
   | { type: 'highlight'; value: string | null }
+  /** @humanOnly */
   | { type: 'highlightNext' }
+  /** @humanOnly */
   | { type: 'highlightPrev' }
+  /** @intent("Select Highlighted") */
   | { type: 'selectHighlighted' }
+  /** @intent("Select") */
   | { type: 'select'; value: string }
+  /** @humanOnly */
   | { type: 'setItems'; items: string[]; disabled?: string[] }
 
 export interface ContextMenuInit {

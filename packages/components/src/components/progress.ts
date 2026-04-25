@@ -16,7 +16,9 @@ export interface ProgressState {
 }
 
 export type ProgressMsg =
+  /** @intent("Set Value") */
   | { type: 'setValue'; value: number | null }
+  /** @intent("Set Max") */
   | { type: 'setMax'; max: number }
 
 export interface ProgressInit {

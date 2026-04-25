@@ -16,9 +16,13 @@ export interface ClipboardState {
 }
 
 export type ClipboardMsg =
+  /** @intent("Set Value") */
   | { type: 'setValue'; value: string }
+  /** @intent("Copy") */
   | { type: 'copy' }
+  /** @intent("Copied") */
   | { type: 'copied' }
+  /** @intent("Reset") */
   | { type: 'reset' }
 
 export interface ClipboardInit {

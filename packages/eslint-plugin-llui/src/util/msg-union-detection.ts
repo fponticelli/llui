@@ -14,6 +14,20 @@ interface ParserServicesWithTypeInformation {
 }
 
 /**
+ * Hint suffix appended to error messages when typed-lint isn't
+ * configured. Cross-file Msg detection requires
+ * `parserOptions.projectService: true` (or `parserOptions.project`)
+ * to resolve symbols across files. Without it, the rules fall back to
+ * a same-file heuristic that can miss Msg unions declared in a
+ * separate file with an unconventional name.
+ *
+ * Exported so multiple rules append the same wording — keeps the
+ * upgrade path consistent across error messages.
+ */
+export const TYPED_LINT_HINT =
+  ' Tip: enable `parserOptions.projectService: true` (or `parserOptions.project`) so this rule and `agent-missing-intent` can resolve Msg unions across files.'
+
+/**
  * Decide whether a type alias is "definitely" or "probably" an LLui
  * Msg union, using typed-lint when available and falling back to a
  * single same-file heuristic otherwise.

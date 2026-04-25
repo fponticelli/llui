@@ -20,10 +20,15 @@ export interface PinInputState {
 }
 
 export type PinInputMsg =
+  /** @intent("Set Value") */
   | { type: 'setValue'; index: number; value: string }
+  /** @intent("Set All") */
   | { type: 'setAll'; values: string[] }
+  /** @intent("Focus") */
   | { type: 'focus'; index: number }
+  /** @intent("Clear") */
   | { type: 'clear' }
+  /** @intent("Backspace") */
   | { type: 'backspace'; index: number }
 
 export interface PinInputInit {

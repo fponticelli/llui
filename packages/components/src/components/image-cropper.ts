@@ -36,16 +36,27 @@ export interface ImageCropperState {
 }
 
 export type ImageCropperMsg =
+  /** @intent("Set Image") */
   | { type: 'setImage'; width: number; height: number }
+  /** @intent("Set Crop") */
   | { type: 'setCrop'; crop: CropRect }
+  /** @intent("Set Aspect Ratio") */
   | { type: 'setAspectRatio'; ratio: number | null }
+  /** @intent("Drag Start") */
   | { type: 'dragStart' }
+  /** @intent("Drag Move") */
   | { type: 'dragMove'; dx: number; dy: number }
+  /** @intent("Drag End") */
   | { type: 'dragEnd' }
+  /** @intent("Resize Start") */
   | { type: 'resizeStart'; handle: ResizeHandle }
+  /** @intent("Resize Move") */
   | { type: 'resizeMove'; dx: number; dy: number }
+  /** @intent("Resize End") */
   | { type: 'resizeEnd' }
+  /** @intent("Reset") */
   | { type: 'reset' }
+  /** @intent("Center Fill") */
   | { type: 'centerFill' }
 
 export interface ImageCropperInit {

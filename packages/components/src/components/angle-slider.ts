@@ -25,10 +25,15 @@ export interface AngleSliderState {
 }
 
 export type AngleSliderMsg =
+  /** @intent("Set Value") */
   | { type: 'setValue'; value: number }
+  /** @intent("Increment") */
   | { type: 'increment'; steps?: number }
+  /** @intent("Decrement") */
   | { type: 'decrement'; steps?: number }
+  /** @intent("Set Min") */
   | { type: 'setMin'; min: number }
+  /** @intent("Set Max") */
   | { type: 'setMax'; max: number }
 
 export interface AngleSliderInit {

@@ -19,8 +19,11 @@ export interface CheckboxState {
 }
 
 export type CheckboxMsg =
+  /** @intent("Toggle") */
   | { type: 'toggle' }
+  /** @intent("Set Checked") */
   | { type: 'setChecked'; checked: CheckedState }
+  /** @humanOnly */
   | { type: 'setDisabled'; disabled: boolean }
 
 export interface CheckboxInit {

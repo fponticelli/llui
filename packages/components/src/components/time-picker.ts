@@ -26,14 +26,23 @@ export interface TimePickerState {
 }
 
 export type TimePickerMsg =
+  /** @intent("Set Value") */
   | { type: 'setValue'; value: TimeValue }
+  /** @intent("Set Hours") */
   | { type: 'setHours'; hours: number }
+  /** @intent("Set Minutes") */
   | { type: 'setMinutes'; minutes: number }
+  /** @intent("Set Seconds") */
   | { type: 'setSeconds'; seconds: number }
+  /** @intent("Increment Hours") */
   | { type: 'incrementHours' }
+  /** @intent("Decrement Hours") */
   | { type: 'decrementHours' }
+  /** @intent("Increment Minutes") */
   | { type: 'incrementMinutes' }
+  /** @intent("Decrement Minutes") */
   | { type: 'decrementMinutes' }
+  /** @intent("Toggle Am Pm") */
   | { type: 'toggleAmPm' }
 
 export interface TimePickerInit {

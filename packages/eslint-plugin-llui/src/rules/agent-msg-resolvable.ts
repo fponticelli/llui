@@ -1,20 +1,9 @@
 import { AST_NODE_TYPES, ESLintUtils, TSESTree, type TSESLint } from '@typescript-eslint/utils'
 import { createRule } from '../createRule.js'
+import { TYPED_LINT_HINT } from '../util/msg-union-detection.js'
 
 type MessageId = 'unresolvable' | 'complexTypeArg' | 'namespaceImport'
 type RuleContext = TSESLint.RuleContext<MessageId, []>
-
-/**
- * Hint suffix appended to error messages when typed-lint isn't
- * configured. Cross-file Msg detection (in the companion rules
- * `agent-missing-intent` / `agent-exclusive-annotations`) requires
- * `parserOptions.projectService: true` (or `parserOptions.project`)
- * to resolve symbols across files. The rule itself works without
- * typed-lint by using same-file heuristics; the hint just nudges
- * users toward the more precise mode.
- */
-const TYPED_LINT_HINT =
-  ' Tip: enable `parserOptions.projectService: true` (or `parserOptions.project`) so this rule and `agent-missing-intent` can resolve Msg unions across files.'
 
 function hasTypedLint(context: RuleContext): boolean {
   const services = ESLintUtils.getParserServices(context, /* allowWithoutTypeInfo */ true)

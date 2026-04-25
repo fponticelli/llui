@@ -32,21 +32,37 @@ export interface FloatingPanelState {
 }
 
 export type FloatingPanelMsg =
+  /** @intent("Open") */
   | { type: 'open' }
+  /** @intent("Close") */
   | { type: 'close' }
+  /** @intent("Minimize") */
   | { type: 'minimize' }
+  /** @intent("Restore From Minimized") */
   | { type: 'restoreFromMinimized' }
+  /** @intent("Maximize") */
   | { type: 'maximize' }
+  /** @intent("Restore From Maximized") */
   | { type: 'restoreFromMaximized' }
+  /** @intent("Toggle Minimize") */
   | { type: 'toggleMinimize' }
+  /** @intent("Toggle Maximize") */
   | { type: 'toggleMaximize' }
+  /** @intent("Drag Start") */
   | { type: 'dragStart' }
+  /** @intent("Drag Move") */
   | { type: 'dragMove'; dx: number; dy: number }
+  /** @intent("Drag End") */
   | { type: 'dragEnd' }
+  /** @intent("Resize Start") */
   | { type: 'resizeStart'; handle: ResizeHandle }
+  /** @intent("Resize Move") */
   | { type: 'resizeMove'; dx: number; dy: number }
+  /** @intent("Resize End") */
   | { type: 'resizeEnd' }
+  /** @intent("Set Position") */
   | { type: 'setPosition'; x: number; y: number }
+  /** @intent("Set Size") */
   | { type: 'setSize'; width: number; height: number }
 
 export interface FloatingPanelInit {

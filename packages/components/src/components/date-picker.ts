@@ -32,17 +32,29 @@ export interface DatePickerState {
 }
 
 export type DatePickerMsg =
+  /** @intent("Set Value") */
   | { type: 'setValue'; value: string | null }
+  /** @intent("Set Focused") */
   | { type: 'setFocused'; date: string }
+  /** @intent("Prev Month") */
   | { type: 'prevMonth' }
+  /** @intent("Next Month") */
   | { type: 'nextMonth' }
+  /** @intent("Prev Year") */
   | { type: 'prevYear' }
+  /** @intent("Next Year") */
   | { type: 'nextYear' }
+  /** @intent("Select Focused") */
   | { type: 'selectFocused' }
+  /** @intent("Move Focus") */
   | { type: 'moveFocus'; days: number }
+  /** @humanOnly */
   | { type: 'focusStartOfWeek' }
+  /** @humanOnly */
   | { type: 'focusEndOfWeek' }
+  /** @humanOnly */
   | { type: 'focusToday' }
+  /** @intent("Clear") */
   | { type: 'clear' }
 
 export interface DatePickerInit {

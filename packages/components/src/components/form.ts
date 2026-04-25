@@ -46,11 +46,17 @@ export interface FormState {
 }
 
 export type FormMsg =
+  /** @intent("Touch") */
   | { type: 'touch'; field: string }
+  /** @intent("Touch All") */
   | { type: 'touchAll'; fields: string[] }
+  /** @intent("Submit") */
   | { type: 'submit' }
+  /** @intent("Submit Success") */
   | { type: 'submitSuccess' }
+  /** @intent("Submit Error") */
   | { type: 'submitError'; error: string }
+  /** @intent("Reset") */
   | { type: 'reset' }
 
 export function init(): FormState {

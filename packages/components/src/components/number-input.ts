@@ -21,13 +21,21 @@ export interface NumberInputState {
 }
 
 export type NumberInputMsg =
+  /** @intent("Set Value") */
   | { type: 'setValue'; value: number | null }
+  /** @intent("Set Raw Text") */
   | { type: 'setRawText'; text: string }
+  /** @intent("Commit") */
   | { type: 'commit' }
+  /** @intent("Increment") */
   | { type: 'increment'; multiplier?: number }
+  /** @intent("Decrement") */
   | { type: 'decrement'; multiplier?: number }
+  /** @intent("To Min") */
   | { type: 'toMin' }
+  /** @intent("To Max") */
   | { type: 'toMax' }
+  /** @humanOnly */
   | { type: 'setDisabled'; disabled: boolean }
 
 export interface NumberInputInit {

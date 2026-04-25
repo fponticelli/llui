@@ -10,6 +10,12 @@ const ruleTester = new RuleTester({
   },
 })
 
+// Typed-lint hint suffix — appended to every error message when
+// parserOptions.projectService isn't configured. These tests run
+// without typed-lint, so the hint always fires.
+const HINT =
+  ' Tip: enable `parserOptions.projectService: true` (or `parserOptions.project`) so this rule and `agent-missing-intent` can resolve Msg unions across files.'
+
 // Each fixture includes an in-file `component<S, M, E>()` call so the
 // rule's same-file detection path picks up the Msg alias. The dropped
 // name heuristics would have detected isolated `type Msg = ...` even
@@ -67,7 +73,7 @@ ruleTester.run('agent-exclusive-annotations', agentExclusiveAnnotationsRule, {
       errors: [
         {
           messageId: 'redundant',
-          data: { variant: 'increment', conflictList: '@requiresConfirm' },
+          data: { variant: 'increment', conflictList: '@requiresConfirm', typedLintHint: HINT },
         },
       ],
     },
@@ -87,7 +93,7 @@ ruleTester.run('agent-exclusive-annotations', agentExclusiveAnnotationsRule, {
       errors: [
         {
           messageId: 'modeConflict',
-          data: { variant: 'confused' },
+          data: { variant: 'confused', typedLintHint: HINT },
         },
       ],
     },

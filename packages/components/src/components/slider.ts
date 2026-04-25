@@ -23,12 +23,19 @@ export interface SliderState {
 }
 
 export type SliderMsg =
+  /** @intent("Set Value") */
   | { type: 'setValue'; value: number[] }
+  /** @intent("Set Thumb") */
   | { type: 'setThumb'; index: number; value: number }
+  /** @intent("Increment") */
   | { type: 'increment'; index: number; multiplier?: number }
+  /** @intent("Decrement") */
   | { type: 'decrement'; index: number; multiplier?: number }
+  /** @intent("To Min") */
   | { type: 'toMin'; index: number }
+  /** @intent("To Max") */
   | { type: 'toMax'; index: number }
+  /** @humanOnly */
   | { type: 'setDisabled'; disabled: boolean }
 
 export interface SliderInit {

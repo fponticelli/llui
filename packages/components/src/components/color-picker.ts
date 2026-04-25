@@ -22,11 +22,17 @@ export interface ColorPickerState {
 }
 
 export type ColorPickerMsg =
+  /** @intent("Set Hsl") */
   | { type: 'setHsl'; hsl: Hsl }
+  /** @intent("Set Hue") */
   | { type: 'setHue'; h: number }
+  /** @intent("Set Saturation") */
   | { type: 'setSaturation'; s: number }
+  /** @intent("Set Lightness") */
   | { type: 'setLightness'; l: number }
+  /** @intent("Set Alpha") */
   | { type: 'setAlpha'; alpha: number }
+  /** @intent("Set Hex") */
   | { type: 'setHex'; hex: string }
 
 export interface ColorPickerInit {

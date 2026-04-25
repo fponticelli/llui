@@ -3,6 +3,7 @@ import { createRule } from '../createRule.js'
 import {
   buildMsgUnionDetectionContext,
   isLikelyMsgUnion,
+  TYPED_LINT_HINT,
   type MsgUnionDetectionContext,
 } from '../util/msg-union-detection.js'
 
@@ -16,7 +17,7 @@ export const agentMissingIntentRule = createRule({
     schema: [],
     messages: {
       missing:
-        'Msg variant "{{variant}}" is missing @intent("...") — Claude will see a synthesized intent label.',
+        'Msg variant "{{variant}}" is missing @intent("...") — Claude will see a synthesized intent label.{{typedLintHint}}',
     },
   },
   defaultOptions: [],
@@ -52,6 +53,7 @@ export const agentMissingIntentRule = createRule({
       TSTypeAliasDeclaration(node) {
         if (!detection || !isLikelyMsgUnion(node, detection)) return
         if (node.typeAnnotation.type !== AST_NODE_TYPES.TSUnionType) return
+        const typedLintHint = detection.services ? '' : TYPED_LINT_HINT
 
         const types = node.typeAnnotation.types
         for (let i = 0; i < types.length; i++) {
@@ -71,7 +73,7 @@ export const agentMissingIntentRule = createRule({
             context.report({
               node: member,
               messageId: 'missing',
-              data: { variant },
+              data: { variant, typedLintHint },
             })
           }
         }

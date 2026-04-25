@@ -20,12 +20,19 @@ export interface SplitterState {
 }
 
 export type SplitterMsg =
+  /** @intent("Set Position") */
   | { type: 'setPosition'; position: number }
+  /** @intent("Increment") */
   | { type: 'increment'; multiplier?: number }
+  /** @intent("Decrement") */
   | { type: 'decrement'; multiplier?: number }
+  /** @intent("To Min") */
   | { type: 'toMin' }
+  /** @intent("To Max") */
   | { type: 'toMax' }
+  /** @intent("Start Drag") */
   | { type: 'startDrag' }
+  /** @intent("End Drag") */
   | { type: 'endDrag' }
 
 export interface SplitterInit {

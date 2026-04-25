@@ -42,8 +42,11 @@ export interface QrCodeState {
 }
 
 export type QrCodeMsg =
+  /** @intent("Set Value") */
   | { type: 'setValue'; value: string }
+  /** @intent("Set Matrix") */
   | { type: 'setMatrix'; matrix: boolean[][] }
+  /** @intent("Set Error Correction") */
   | { type: 'setErrorCorrection'; level: ErrorCorrectionLevel }
 
 export interface QrCodeInit {

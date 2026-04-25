@@ -47,15 +47,25 @@ export interface FileUploadState {
 }
 
 export type FileUploadMsg =
+  /** @intent("Set Files") */
   | { type: 'setFiles'; files: File[]; customRejected?: RejectedFile[] }
+  /** @intent("Add Files") */
   | { type: 'addFiles'; files: File[]; customRejected?: RejectedFile[] }
+  /** @intent("Remove File") */
   | { type: 'removeFile'; index: number }
+  /** @intent("Remove Rejected") */
   | { type: 'removeRejected'; index: number }
+  /** @intent("Clear") */
   | { type: 'clear' }
+  /** @intent("Clear Rejected") */
   | { type: 'clearRejected' }
+  /** @intent("Drag Enter") */
   | { type: 'dragEnter' }
+  /** @intent("Drag Leave") */
   | { type: 'dragLeave' }
+  /** @intent("Drop") */
   | { type: 'drop' }
+  /** @intent("Set Invalid") */
   | { type: 'setInvalid'; invalid: boolean }
 
 export interface FileUploadInit {

@@ -17,12 +17,19 @@ export interface RatingGroupState {
 }
 
 export type RatingGroupMsg =
+  /** @intent("Set Value") */
   | { type: 'setValue'; value: number }
+  /** @intent("Hover") */
   | { type: 'hover'; value: number | null }
+  /** @intent("Click Item") */
   | { type: 'clickItem'; index: number; isLeftHalf: boolean }
+  /** @intent("Hover Item") */
   | { type: 'hoverItem'; index: number; isLeftHalf: boolean }
+  /** @intent("Increment Value") */
   | { type: 'incrementValue'; step?: number }
+  /** @intent("Decrement Value") */
   | { type: 'decrementValue'; step?: number }
+  /** @intent("To End") */
   | { type: 'toEnd' }
 
 export interface RatingGroupInit {

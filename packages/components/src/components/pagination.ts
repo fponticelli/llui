@@ -19,12 +19,19 @@ export interface PaginationState {
 }
 
 export type PaginationMsg =
+  /** @intent("Go To") */
   | { type: 'goTo'; page: number }
+  /** @intent("Next") */
   | { type: 'next' }
+  /** @intent("Prev") */
   | { type: 'prev' }
+  /** @intent("First") */
   | { type: 'first' }
+  /** @intent("Last") */
   | { type: 'last' }
+  /** @intent("Set Page Size") */
   | { type: 'setPageSize'; pageSize: number }
+  /** @intent("Set Total") */
   | { type: 'setTotal'; total: number }
 
 export interface PaginationInit {

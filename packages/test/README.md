@@ -21,6 +21,53 @@ expect(harness.text('[data-testid="display"]')).toBe('1')
 harness.unmount()
 ```
 
+## A complete example
+
+```ts
+import { describe, it, expect } from 'vitest'
+import { component, type ComponentDef } from '@llui/dom'
+import { testComponent, testView, assertEffects } from '@llui/test'
+
+type State = { count: number }
+type Msg = { type: 'inc' } | { type: 'dec' } | { type: 'reset' }
+type Effect = { type: 'logged'; level: 'info' | 'warn'; payload: unknown }
+
+const Counter: ComponentDef<State, Msg, Effect> = component<State, Msg, Effect>({
+  name: 'Counter',
+  init: () => [{ count: 0 }, [{ type: 'logged', level: 'info', payload: 'mount' }]],
+  update: (state, msg) => {
+    switch (msg.type) {
+      case 'inc':
+        return [{ count: state.count + 1 }, []]
+      case 'dec':
+        return [{ count: state.count - 1 }, []]
+      case 'reset':
+        return [
+          { count: 0 },
+          [{ type: 'logged', level: 'warn', payload: { reason: 'reset' } }],
+        ]
+    }
+  },
+  view: () => [],
+})
+
+describe('Counter', () => {
+  it('drives state via send + flush, reads effects', () => {
+    const harness = testComponent(Counter)
+    harness.send({ type: 'inc' })
+    harness.send({ type: 'inc' })
+    harness.flush()
+    expect(harness.state.count).toBe(2)
+
+    // assertEffects deep-equals the recorded effect log; init() emits
+    // a 'logged' on mount, then nothing for inc/inc.
+    assertEffects(harness.effects, [{ type: 'logged', level: 'info', payload: 'mount' }])
+  })
+})
+```
+
+For DOM-level assertions (clicking buttons, reading text), use `testView` against a component whose `view()` renders elements — see the [Usage](#usage) snippet above.
+
 ## API
 
 ### testComponent

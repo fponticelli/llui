@@ -41,13 +41,21 @@ export interface SignaturePadState {
 }
 
 export type SignaturePadMsg =
+  /** @intent("Stroke Start") */
   | { type: 'strokeStart'; x: number; y: number; pressure?: number }
+  /** @intent("Stroke Point") */
   | { type: 'strokePoint'; x: number; y: number; pressure?: number }
+  /** @intent("Stroke End") */
   | { type: 'strokeEnd' }
+  /** @intent("Stroke Cancel") */
   | { type: 'strokeCancel' }
+  /** @intent("Undo") */
   | { type: 'undo' }
+  /** @intent("Redo") */
   | { type: 'redo'; stroke: Stroke }
+  /** @intent("Clear") */
   | { type: 'clear' }
+  /** @intent("Set Strokes") */
   | { type: 'setStrokes'; strokes: Stroke[] }
 
 export interface SignaturePadInit {

@@ -29,10 +29,15 @@ export interface PresenceState {
 }
 
 export type PresenceMsg =
+  /** @intent("Open") */
   | { type: 'open' }
+  /** @intent("Close") */
   | { type: 'close' }
+  /** @intent("Toggle") */
   | { type: 'toggle' }
+  /** @intent("Animation End") */
   | { type: 'animationEnd' }
+  /** @intent("Set Present") */
   | { type: 'setPresent'; present: boolean }
 
 export interface PresenceInit {

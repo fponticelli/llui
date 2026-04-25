@@ -86,9 +86,13 @@ export interface SortableState {
 }
 
 export type SortableMsg =
+  /** @intent("Start") */
   | { type: 'start'; id: string; index: number; container: string; x: number; y: number }
+  /** @intent("Move") */
   | { type: 'move'; index: number; container: string; x: number; y: number }
+  /** @intent("Drop") */
   | { type: 'drop' }
+  /** @intent("Cancel") */
   | { type: 'cancel' }
   // Keyboard: toggle between picking up and dropping at current position
   | { type: 'toggleGrab'; id: string; index: number; container: string }

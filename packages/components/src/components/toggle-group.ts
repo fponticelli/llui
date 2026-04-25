@@ -21,10 +21,15 @@ export interface ToggleGroupState {
 }
 
 export type ToggleGroupMsg =
+  /** @intent("Toggle") */
   | { type: 'toggle'; value: string }
+  /** @intent("Set Value") */
   | { type: 'setValue'; value: string[] }
+  /** @humanOnly */
   | { type: 'setItems'; items: string[]; disabled?: string[] }
+  /** @humanOnly */
   | { type: 'focusNext'; from: string }
+  /** @humanOnly */
   | { type: 'focusPrev'; from: string }
 
 export interface ToggleGroupInit {

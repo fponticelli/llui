@@ -13,9 +13,13 @@ export interface AvatarState {
 }
 
 export type AvatarMsg =
+  /** @intent("Load Start") */
   | { type: 'loadStart' }
+  /** @intent("Loaded") */
   | { type: 'loaded' }
+  /** @intent("Error") */
   | { type: 'error' }
+  /** @intent("Reset") */
   | { type: 'reset' }
 
 export interface AvatarInit {

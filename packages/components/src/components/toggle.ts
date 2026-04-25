@@ -12,8 +12,11 @@ export interface ToggleState {
 }
 
 export type ToggleMsg =
+  /** @intent("Toggle") */
   | { type: 'toggle' }
+  /** @intent("Set Pressed") */
   | { type: 'setPressed'; pressed: boolean }
+  /** @humanOnly */
   | { type: 'setDisabled'; disabled: boolean }
 
 export interface ToggleInit {

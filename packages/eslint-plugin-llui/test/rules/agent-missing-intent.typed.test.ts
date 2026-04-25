@@ -41,7 +41,10 @@ export type Action =
   | { type: 'taggedFromExternalFile' }
 `,
       filename: path.join(fixtureDir, 'external-msg.ts'),
-      errors: [{ messageId: 'missing', data: { variant: 'untaggedFromExternalFile' } }],
+      // typedLintHint is empty when typed-lint is configured.
+      errors: [
+        { messageId: 'missing', data: { variant: 'untaggedFromExternalFile', typedLintHint: '' } },
+      ],
     },
   ],
 })

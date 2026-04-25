@@ -13,10 +13,15 @@ export interface EditableState {
 }
 
 export type EditableMsg =
+  /** @intent("Edit") */
   | { type: 'edit' }
+  /** @intent("Set Draft") */
   | { type: 'setDraft'; draft: string }
+  /** @intent("Submit") */
   | { type: 'submit' }
+  /** @intent("Cancel") */
   | { type: 'cancel' }
+  /** @intent("Set Value") */
   | { type: 'setValue'; value: string }
 
 export interface EditableInit {

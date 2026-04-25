@@ -28,12 +28,19 @@ export interface MarqueeState {
 }
 
 export type MarqueeMsg =
+  /** @intent("Play") */
   | { type: 'play' }
+  /** @intent("Pause") */
   | { type: 'pause' }
+  /** @intent("Toggle") */
   | { type: 'toggle' }
+  /** @intent("Hover Pause") */
   | { type: 'hoverPause' }
+  /** @intent("Hover Resume") */
   | { type: 'hoverResume' }
+  /** @intent("Set Direction") */
   | { type: 'setDirection'; direction: MarqueeDirection }
+  /** @intent("Set Duration") */
   | { type: 'setDuration'; durationSec: number }
 
 export interface MarqueeInit {

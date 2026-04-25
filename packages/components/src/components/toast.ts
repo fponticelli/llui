@@ -44,13 +44,21 @@ export interface ToasterState {
 }
 
 export type ToasterMsg =
+  /** @intent("Create") */
   | { type: 'create'; toast: Omit<Toast, 'paused'> & { paused?: boolean } }
+  /** @intent("Dismiss") */
   | { type: 'dismiss'; id: string }
+  /** @intent("Dismiss All") */
   | { type: 'dismissAll' }
+  /** @intent("Update") */
   | { type: 'update'; id: string; patch: Partial<Toast> }
+  /** @intent("Pause") */
   | { type: 'pause'; id: string }
+  /** @intent("Resume") */
   | { type: 'resume'; id: string }
+  /** @intent("Pause All") */
   | { type: 'pauseAll' }
+  /** @intent("Resume All") */
   | { type: 'resumeAll' }
 
 export interface ToasterInit {

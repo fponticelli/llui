@@ -29,8 +29,11 @@ export interface CascadeSelectState {
 }
 
 export type CascadeSelectMsg =
+  /** @intent("Set Levels") */
   | { type: 'setLevels'; levels: CascadeLevel[] }
+  /** @intent("Set Value") */
   | { type: 'setValue'; levelIndex: number; value: string | null }
+  /** @intent("Clear") */
   | { type: 'clear' }
 
 export interface CascadeSelectInit {

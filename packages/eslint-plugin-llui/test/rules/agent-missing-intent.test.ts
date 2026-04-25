@@ -10,6 +10,12 @@ const ruleTester = new RuleTester({
   },
 })
 
+// Typed-lint hint suffix — appended to every error message when
+// parserOptions.projectService isn't configured. These tests run
+// without typed-lint, so the hint always fires.
+const HINT =
+  ' Tip: enable `parserOptions.projectService: true` (or `parserOptions.project`) so this rule and `agent-missing-intent` can resolve Msg unions across files.'
+
 // Detection requires an in-file `component<S, M, E>()` call (the
 // untyped-fallback path) or typed lint configured (the cross-file
 // path). Tests use the in-file path, which is what most LLui projects
@@ -45,7 +51,7 @@ ruleTester.run('agent-missing-intent', agentMissingIntentRule, {
         | { type: 'decrement' }
       const App = component<State, Msg, never>({} as any)
       `,
-      errors: [{ messageId: 'missing', data: { variant: 'increment' } }],
+      errors: [{ messageId: 'missing', data: { variant: 'increment', typedLintHint: HINT } }],
     },
     // @agentOnly does NOT exempt — the agent IS the dispatcher and still
     // needs the intent label. Otherwise Claude sees a synthesized name.
@@ -58,7 +64,7 @@ ruleTester.run('agent-missing-intent', agentMissingIntentRule, {
         | { type: 'bulkImport' }
       const App = component<State, Msg, never>({} as any)
       `,
-      errors: [{ messageId: 'missing', data: { variant: 'bulkImport' } }],
+      errors: [{ messageId: 'missing', data: { variant: 'bulkImport', typedLintHint: HINT } }],
     },
     // Non-conventional name (`Action`) detected because it's used as
     // the M arg of an in-file component<>() call. The dropped name
@@ -75,7 +81,7 @@ ruleTester.run('agent-missing-intent', agentMissingIntentRule, {
         | { type: 'ok' }
       const App = component<State, Action, never>({} as any)
       `,
-      errors: [{ messageId: 'missing', data: { variant: 'untagged' } }],
+      errors: [{ messageId: 'missing', data: { variant: 'untagged', typedLintHint: HINT } }],
     },
   ],
 })

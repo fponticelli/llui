@@ -11,8 +11,11 @@ export interface SwitchState {
 }
 
 export type SwitchMsg =
+  /** @intent("Toggle") */
   | { type: 'toggle' }
+  /** @intent("Set Checked") */
   | { type: 'setChecked'; checked: boolean }
+  /** @humanOnly */
   | { type: 'setDisabled'; disabled: boolean }
 
 export interface SwitchInit {

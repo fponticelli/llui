@@ -17,9 +17,13 @@ export interface TooltipState {
 }
 
 export type TooltipMsg =
+  /** @intent("Show") */
   | { type: 'show' }
+  /** @intent("Hide") */
   | { type: 'hide' }
+  /** @intent("Toggle") */
   | { type: 'toggle' }
+  /** @intent("Set Open") */
   | { type: 'setOpen'; open: boolean }
 
 export interface TooltipInit {

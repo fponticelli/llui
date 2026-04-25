@@ -20,12 +20,19 @@ export interface CarouselState {
 }
 
 export type CarouselMsg =
+  /** @intent("Go To") */
   | { type: 'goTo'; index: number }
+  /** @intent("Next") */
   | { type: 'next' }
+  /** @intent("Prev") */
   | { type: 'prev' }
+  /** @intent("Set Count") */
   | { type: 'setCount'; count: number }
+  /** @intent("Pause") */
   | { type: 'pause' }
+  /** @intent("Resume") */
   | { type: 'resume' }
+  /** @intent("Set Autoplay") */
   | { type: 'setAutoplay'; autoplay: boolean }
 
 export interface CarouselInit {

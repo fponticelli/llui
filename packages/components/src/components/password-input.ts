@@ -14,8 +14,11 @@ export interface PasswordInputState {
 }
 
 export type PasswordInputMsg =
+  /** @intent("Set Value") */
   | { type: 'setValue'; value: string }
+  /** @intent("Toggle Visibility") */
   | { type: 'toggleVisibility' }
+  /** @intent("Set Visible") */
   | { type: 'setVisible'; visible: boolean }
 
 export interface PasswordInputInit {

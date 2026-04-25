@@ -33,10 +33,15 @@ export interface NavMenuState {
 }
 
 export type NavMenuMsg =
+  /** @intent("Open Branch") */
   | { type: 'openBranch'; id: string; ancestorIds: string[] }
+  /** @intent("Close Branch") */
   | { type: 'closeBranch'; id: string }
+  /** @intent("Toggle Branch") */
   | { type: 'toggleBranch'; id: string; ancestorIds: string[] }
+  /** @intent("Close All") */
   | { type: 'closeAll' }
+  /** @intent("Focus") */
   | { type: 'focus'; id: string | null }
 
 export interface NavMenuInit {

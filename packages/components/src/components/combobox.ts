@@ -26,18 +26,31 @@ export interface ComboboxState {
 }
 
 export type ComboboxMsg =
+  /** @intent("Open") */
   | { type: 'open' }
+  /** @intent("Close") */
   | { type: 'close' }
+  /** @intent("Set Input Value") */
   | { type: 'setInputValue'; value: string }
+  /** @intent("Select Option") */
   | { type: 'selectOption'; value: string }
+  /** @intent("Set Value") */
   | { type: 'setValue'; value: string[] }
+  /** @intent("Clear") */
   | { type: 'clear' }
+  /** @humanOnly */
   | { type: 'highlightNext' }
+  /** @humanOnly */
   | { type: 'highlightPrev' }
+  /** @humanOnly */
   | { type: 'highlightFirst' }
+  /** @humanOnly */
   | { type: 'highlightLast' }
+  /** @humanOnly */
   | { type: 'highlight'; index: number | null }
+  /** @intent("Select Highlighted") */
   | { type: 'selectHighlighted' }
+  /** @humanOnly */
   | { type: 'setItems'; items: string[]; disabled?: string[] }
 
 export interface ComboboxInit {

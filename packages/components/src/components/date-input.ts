@@ -31,11 +31,17 @@ export interface DateInputState {
 }
 
 export type DateInputMsg =
+  /** @intent("Set Input") */
   | { type: 'setInput'; value: string }
+  /** @intent("Set Value") */
   | { type: 'setValue'; value: Date | null }
+  /** @intent("Clear") */
   | { type: 'clear' }
+  /** @intent("Set Min") */
   | { type: 'setMin'; min: Date | null }
+  /** @intent("Set Max") */
   | { type: 'setMax'; max: Date | null }
+  /** @humanOnly */
   | { type: 'setDisabled'; disabled: boolean }
 
 export interface DateInputInit {

@@ -3,6 +3,7 @@ import { createRule } from '../createRule.js'
 import {
   buildMsgUnionDetectionContext,
   isLikelyMsgUnion,
+  TYPED_LINT_HINT,
   type MsgUnionDetectionContext,
 } from '../util/msg-union-detection.js'
 
@@ -17,9 +18,9 @@ export const agentExclusiveAnnotationsRule = createRule({
     schema: [],
     messages: {
       redundant:
-        'Msg variant "{{variant}}" has @humanOnly combined with {{conflictList}}; @humanOnly dominates and makes the other redundant.',
+        'Msg variant "{{variant}}" has @humanOnly combined with {{conflictList}}; @humanOnly dominates and makes the other redundant.{{typedLintHint}}',
       modeConflict:
-        'Msg variant "{{variant}}" has both @humanOnly and @agentOnly. Pick one — they describe opposite dispatch audiences.',
+        'Msg variant "{{variant}}" has both @humanOnly and @agentOnly. Pick one — they describe opposite dispatch audiences.{{typedLintHint}}',
     },
   },
   defaultOptions: [],
@@ -53,6 +54,7 @@ export const agentExclusiveAnnotationsRule = createRule({
       TSTypeAliasDeclaration(node) {
         if (!detection || !isLikelyMsgUnion(node, detection)) return
         if (node.typeAnnotation.type !== AST_NODE_TYPES.TSUnionType) return
+        const typedLintHint = detection.services ? '' : TYPED_LINT_HINT
 
         const types = node.typeAnnotation.types
         for (let i = 0; i < types.length; i++) {
@@ -76,7 +78,7 @@ export const agentExclusiveAnnotationsRule = createRule({
             context.report({
               node: member,
               messageId: 'modeConflict',
-              data: { variant },
+              data: { variant, typedLintHint },
             })
             continue
           }
@@ -96,7 +98,7 @@ export const agentExclusiveAnnotationsRule = createRule({
           context.report({
             node: member,
             messageId: 'redundant',
-            data: { variant, conflictList },
+            data: { variant, conflictList, typedLintHint },
           })
         }
       },

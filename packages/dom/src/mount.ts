@@ -200,58 +200,9 @@ export function mountApp<S, M, E, D>(
     hmrModule.registerForHmr(def.name, inst, container)
   }
   dispatchInitialEffects(inst)
-  let disposed = false
-  const listeners = new Set<(s: unknown) => void>()
-
-  inst._onCommit = (state: unknown) => {
-    for (const l of Array.from(listeners)) {
-      try {
-        l(state)
-      } catch (err) {
-        console.error('[llui] listener threw:', err)
-      }
-    }
-  }
-
-  return {
-    dispose() {
-      if (disposed) return
-      disposed = true
-      listeners.clear()
-      inst._onCommit = undefined
-      if (hmrModule && def.name) hmrModule.unregisterForHmr(def.name, inst)
-      inst.abortController.abort()
-      unregisterInstance(inst)
-      // Tag the root scope so the disposer log reports app-level
-      // teardown distinct from in-tree component-unmount events.
-      inst.rootLifetime.disposalCause = 'app-unmount'
-      disposeLifetime(inst.rootLifetime)
-      container.textContent = ''
-    },
-    flush() {
-      if (disposed) return
-      flushInstance(inst)
-    },
-    send(msg: unknown) {
-      if (disposed) return
-      ;(inst.send as (m: unknown) => void)(msg)
-    },
-    getState() {
-      if (disposed) {
-        throw new Error(
-          '[LLui] AppHandle.getState() called after dispose — handle is dead. ' +
-            'Detach your event listener / cancel your timer when the handle ' +
-            'is disposed to avoid stale reads.',
-        )
-      }
-      return inst.state
-    },
-    subscribe(listener: (state: unknown) => void) {
-      if (disposed) return () => {}
-      listeners.add(listener)
-      return () => listeners.delete(listener)
-    },
-  }
+  return buildAppHandle(inst, def.name ?? null, () => {
+    container.textContent = ''
+  })
 }
 
 // Walks an object graph looking for non-JSON-serializable values. Returns the
@@ -410,53 +361,10 @@ export function mountAtAnchor<S, M, E, D>(
     hmrModule.registerForAnchor(def.name, inst, anchor, endSentinel)
   }
   dispatchInitialEffects(inst)
-  let disposed = false
-  const listeners = new Set<(s: unknown) => void>()
-
-  inst._onCommit = (state: unknown) => {
-    for (const l of Array.from(listeners)) {
-      try {
-        l(state)
-      } catch (err) {
-        console.error('[llui] listener threw:', err)
-      }
-    }
-  }
-
-  return {
-    dispose() {
-      if (disposed) return
-      disposed = true
-      listeners.clear()
-      inst._onCommit = undefined
-      if (hmrModule && def.name) hmrModule.unregisterForHmr(def.name, inst)
-      inst.abortController.abort()
-      unregisterInstance(inst)
-      inst.rootLifetime.disposalCause = 'app-unmount'
-      disposeLifetime(inst.rootLifetime)
-      _removeBetween(anchor, endSentinel)
-      endSentinel.parentNode?.removeChild(endSentinel)
-    },
-    flush() {
-      if (disposed) return
-      flushInstance(inst)
-    },
-    send(msg: unknown) {
-      if (disposed) return
-      ;(inst.send as (m: unknown) => void)(msg)
-    },
-    getState() {
-      if (disposed) {
-        throw new Error('[LLui] AppHandle.getState() called after dispose — handle is dead.')
-      }
-      return inst.state
-    },
-    subscribe(listener: (state: unknown) => void) {
-      if (disposed) return () => {}
-      listeners.add(listener)
-      return () => listeners.delete(listener)
-    },
-  }
+  return buildAppHandle(inst, def.name ?? null, () => {
+    _removeBetween(anchor, endSentinel)
+    endSentinel.parentNode?.removeChild(endSentinel)
+  })
 }
 
 /**
@@ -545,6 +453,51 @@ export function hydrateAtAnchor<S, M, E, D = void>(
   if (options?.runInitEffectsOnHydrate) {
     dispatchInitialEffects(inst)
   }
+  return buildAppHandle(inst, def.name ?? null, () => {
+    _removeBetween(anchor, endSentinel)
+    endSentinel.parentNode?.removeChild(endSentinel)
+  })
+}
+
+function dispatchInitialEffects<S, M, E>(
+  inst: ReturnType<typeof createComponentInstance<S, M, E>>,
+): void {
+  if (inst.initialEffects.length === 0 || !inst.def.onEffect) return
+  for (const effect of inst.initialEffects) {
+    inst.def.onEffect({ effect, send: inst.send, signal: inst.signal })
+  }
+  inst.initialEffects = []
+}
+
+/**
+ * Build the `AppHandle` returned by every mount/hydrate path. Captures
+ * the `_onCommit` listener registry, the `disposed` flag, and the
+ * standard `flush` / `send` / `getState` / `subscribe` shape — all
+ * code that was previously duplicated four times across `mountApp`,
+ * `mountAtAnchor`, `hydrateApp`, and `hydrateAtAnchor`.
+ *
+ * Variation lives in the two parameters:
+ *   - `hmrName` — the def's name used to call `hmrModule.unregisterForHmr`
+ *     on dispose. Pass `null` to skip HMR unregistration (no current
+ *     mount path needs that, but it keeps the helper honest).
+ *   - `domCleanup` — final teardown step that detaches mounted nodes.
+ *     Container-rooted paths set `container.textContent = ''`;
+ *     anchor-rooted paths call `_removeBetween(anchor, endSentinel)`
+ *     and detach the end sentinel. Runs LAST in the dispose chain to
+ *     match the historical ordering exactly (lifetime is disposed
+ *     before nodes are detached, so binding teardown sees attached
+ *     DOM until the very end).
+ *
+ * The mount-path-parity test in `mount-path-parity.test.ts` enforces
+ * that each public entry point produces structurally identical
+ * AppHandle behavior — this helper is the realisation of that
+ * promise.
+ */
+function buildAppHandle<S, M, E>(
+  inst: ReturnType<typeof createComponentInstance<S, M, E>>,
+  hmrName: string | null,
+  domCleanup: () => void,
+): AppHandle {
   let disposed = false
   const listeners = new Set<(s: unknown) => void>()
 
@@ -564,13 +517,14 @@ export function hydrateAtAnchor<S, M, E, D = void>(
       disposed = true
       listeners.clear()
       inst._onCommit = undefined
-      if (hmrModule && def.name) hmrModule.unregisterForHmr(def.name, inst)
+      if (hmrModule && hmrName) hmrModule.unregisterForHmr(hmrName, inst)
       inst.abortController.abort()
       unregisterInstance(inst)
+      // Tag the root scope so the disposer log reports app-level
+      // teardown distinct from in-tree component-unmount events.
       inst.rootLifetime.disposalCause = 'app-unmount'
       disposeLifetime(inst.rootLifetime)
-      _removeBetween(anchor, endSentinel)
-      endSentinel.parentNode?.removeChild(endSentinel)
+      domCleanup()
     },
     flush() {
       if (disposed) return
@@ -582,7 +536,11 @@ export function hydrateAtAnchor<S, M, E, D = void>(
     },
     getState() {
       if (disposed) {
-        throw new Error('[LLui] AppHandle.getState() called after dispose — handle is dead.')
+        throw new Error(
+          '[LLui] AppHandle.getState() called after dispose — handle is dead. ' +
+            'Detach your event listener / cancel your timer when the handle ' +
+            'is disposed to avoid stale reads.',
+        )
       }
       return inst.state
     },
@@ -592,16 +550,6 @@ export function hydrateAtAnchor<S, M, E, D = void>(
       return () => listeners.delete(listener)
     },
   }
-}
-
-function dispatchInitialEffects<S, M, E>(
-  inst: ReturnType<typeof createComponentInstance<S, M, E>>,
-): void {
-  if (inst.initialEffects.length === 0 || !inst.def.onEffect) return
-  for (const effect of inst.initialEffects) {
-    inst.def.onEffect({ effect, send: inst.send, signal: inst.signal })
-  }
-  inst.initialEffects = []
 }
 
 export function hydrateApp<S, M, E, D = void>(
@@ -682,52 +630,7 @@ export function hydrateApp<S, M, E, D = void>(
   if (hmrModule && hydrateDef.name) {
     hmrModule.registerForHmr(hydrateDef.name, inst, container)
   }
-  let disposed = false
-  const listeners = new Set<(s: unknown) => void>()
-
-  inst._onCommit = (state: unknown) => {
-    for (const l of Array.from(listeners)) {
-      try {
-        l(state)
-      } catch (err) {
-        console.error('[llui] listener threw:', err)
-      }
-    }
-  }
-
-  return {
-    dispose() {
-      if (disposed) return
-      disposed = true
-      listeners.clear()
-      inst._onCommit = undefined
-      if (hmrModule && hydrateDef.name) hmrModule.unregisterForHmr(hydrateDef.name, inst)
-      inst.abortController.abort()
-      unregisterInstance(inst)
-      // Tag the root scope so the disposer log reports app-level
-      // teardown distinct from in-tree component-unmount events.
-      inst.rootLifetime.disposalCause = 'app-unmount'
-      disposeLifetime(inst.rootLifetime)
-      container.textContent = ''
-    },
-    flush() {
-      if (disposed) return
-      flushInstance(inst)
-    },
-    send(msg: unknown) {
-      if (disposed) return
-      ;(inst.send as (m: unknown) => void)(msg)
-    },
-    getState() {
-      if (disposed) {
-        throw new Error('[LLui] AppHandle.getState() called after dispose — handle is dead.')
-      }
-      return inst.state
-    },
-    subscribe(listener: (state: unknown) => void) {
-      if (disposed) return () => {}
-      listeners.add(listener)
-      return () => listeners.delete(listener)
-    },
-  }
+  return buildAppHandle(inst, hydrateDef.name ?? null, () => {
+    container.textContent = ''
+  })
 }

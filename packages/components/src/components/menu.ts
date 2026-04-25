@@ -31,17 +31,29 @@ export interface MenuState {
 }
 
 export type MenuMsg =
+  /** @intent("Open") */
   | { type: 'open' }
+  /** @intent("Close") */
   | { type: 'close' }
+  /** @intent("Toggle") */
   | { type: 'toggle' }
+  /** @humanOnly */
   | { type: 'highlight'; value: string | null }
+  /** @humanOnly */
   | { type: 'highlightNext' }
+  /** @humanOnly */
   | { type: 'highlightPrev' }
+  /** @humanOnly */
   | { type: 'highlightFirst' }
+  /** @humanOnly */
   | { type: 'highlightLast' }
+  /** @intent("Select Highlighted") */
   | { type: 'selectHighlighted' }
+  /** @intent("Select") */
   | { type: 'select'; value: string }
+  /** @humanOnly */
   | { type: 'setItems'; items: string[]; disabled?: string[] }
+  /** @intent("Typeahead") */
   | { type: 'typeahead'; char: string; now: number }
 
 export interface MenuInit {
