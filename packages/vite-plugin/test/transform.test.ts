@@ -1235,12 +1235,12 @@ export const App = component<State, Msg, never>({
   })
 })
 
-describe('Pass 2 — __bindingDescriptors emission', () => {
+describe('Pass 1 — event-handler send tagging (runtime binding descriptors)', () => {
   function tDev(source: string): string {
     return transformLlui(source, 'test.ts', /* devMode */ true)?.output ?? source
   }
 
-  it('emits __bindingDescriptors reflecting send() call sites in view', () => {
+  it('wraps event-handler arrows that contain literal sends with __lluiVariants metadata', () => {
     const source = `
 import { component, button } from '@llui/dom'
 
@@ -1263,12 +1263,19 @@ export const App = component<State, Msg, never>({
 })
 `
     const out = tDev(source)
-    expect(out).toContain('__bindingDescriptors:')
-    expect(out).toMatch(/\{\s*variant:\s*["']inc["']\s*\}/)
-    expect(out).toMatch(/\{\s*variant:\s*["']dec["']\s*\}/)
+    // Compiler emits Object.assign(handler, { __lluiVariants: ['…'] }).
+    // The runtime (in @llui/dom elements.ts) reads the metadata and
+    // registers the variants on the active component instance for
+    // the lifetime of the binding's scope.
+    expect(out).toContain('__lluiVariants:')
+    expect(out).toMatch(/__lluiVariants:\s*\[\s*["']inc["']\s*\]/)
+    expect(out).toMatch(/__lluiVariants:\s*\[\s*["']dec["']\s*\]/)
+    // Static def-level emission is gone — descriptors are now
+    // collected at runtime from compiler-tagged handlers.
+    expect(out).not.toContain('__bindingDescriptors:')
   })
 
-  it('omits __bindingDescriptors when view has no send() calls', () => {
+  it('does not tag handlers when the view has no literal sends', () => {
     const source = `
 import { component, text } from '@llui/dom'
 type State = { n: number }; type Msg = { type: 'noop' }
@@ -1278,6 +1285,7 @@ export const App = component<State, Msg, never>({
 })
 `
     const out = tDev(source)
+    expect(out).not.toContain('__lluiVariants')
     expect(out).not.toContain('__bindingDescriptors:')
   })
 })
@@ -1357,22 +1365,27 @@ export const App = component<State, Msg, never>({
 })
 `
 
-  it('omits schemas and descriptors in prod mode with agent: false (baseline)', () => {
+  it('omits schemas and tagged handlers in prod mode with agent: false (baseline)', () => {
     const out = tProd(sample, false)
     expect(out).not.toContain('__msgSchema:')
     expect(out).not.toContain('__stateSchema:')
     expect(out).not.toContain('__msgAnnotations:')
+    // No def-level descriptor array (gone since runtime collection)
+    // and no per-handler tagger output without agent: true either.
     expect(out).not.toContain('__bindingDescriptors:')
+    expect(out).not.toContain('__lluiVariants')
     // __schemaHash is already always-emitted:
     expect(out).toMatch(/__schemaHash:/)
   })
 
-  it('emits schemas and descriptors in prod mode with agent: true', () => {
+  it('emits schemas + tags event-handler sends in prod mode with agent: true', () => {
     const out = tProd(sample, true)
     expect(out).toContain('__msgSchema:')
     expect(out).toContain('__stateSchema:')
     expect(out).toContain('__msgAnnotations:')
-    expect(out).toContain('__bindingDescriptors:')
+    // Runtime descriptors live on tagged handlers, not on the def.
+    expect(out).not.toContain('__bindingDescriptors:')
+    expect(out).toMatch(/__lluiVariants:\s*\[\s*["']inc["']\s*\]/)
     expect(out).toMatch(/__schemaHash:/)
   })
 

@@ -87,6 +87,15 @@ export interface ComponentInstance<S = unknown, M = unknown, E = unknown> {
    * Undefined until the first subscriber registers.
    */
   _onCommit?: (state: unknown) => void
+  /**
+   * @internal — live registry of currently-mounted Msg variants
+   * dispatchable from rendered UI. Lazily allocated when the first
+   * compiler-tagged event handler binds. Read by the agent layer (via
+   * `AppHandle.getBindingDescriptors()`) to surface live affordances
+   * to the LLM. See `binding-descriptors.ts` for the registration
+   * protocol and `@llui/vite-plugin`'s tagger pass for the tag emission.
+   */
+  _bindingDescriptors?: import('./binding-descriptors.js').BindingDescriptorRegistry
 }
 
 export function createComponentInstance<S, M, E, D = void>(

@@ -1,125 +1,133 @@
 import { describe, it, expect } from 'vitest'
-import { extractBindingDescriptors } from '../src/binding-descriptors.js'
+import ts from 'typescript'
+import { tagEventHandlerSends } from '../src/binding-descriptors.js'
 
-describe('extractBindingDescriptors', () => {
-  it('extracts send({type: "..."}) calls from a component view', () => {
-    const source = `
-import { component, div, button } from '@llui/dom'
+/**
+ * Run the tagger pass against a source snippet and emit the
+ * resulting JS so assertions can match on the textual output.
+ * Snapshot-style: easier to read and resilient to whitespace
+ * differences than walking the AST node-by-node.
+ */
+function emit(source: string): string {
+  const sf = ts.createSourceFile('view.ts', source, ts.ScriptTarget.Latest, true)
+  const tagged = tagEventHandlerSends(sf, ts.factory)
+  const printer = ts.createPrinter({ newLine: ts.NewLineKind.LineFeed })
+  return printer.printFile(tagged)
+}
 
-type State = { count: number }
-type Msg = { type: 'inc' } | { type: 'dec' } | { type: 'reset' }
+describe('tagEventHandlerSends — happy path', () => {
+  it('wraps a literal-send onClick with Object.assign + __lluiVariants', () => {
+    const out = emit(`
+      const v = button({ onClick: () => send({ type: 'inc' }) }, [])
+    `)
+    // Inner send keeps the source's quote style ('inc'); the
+    // compiler-emitted variant array uses double quotes from
+    // ts.factory.createStringLiteral.
+    expect(out).toContain(
+      `onClick: Object.assign(() => send({ type: 'inc' }), { __lluiVariants: ["inc"] })`,
+    )
+  })
 
-export const App = component<State, Msg, never>({
-  name: 'App',
-  init: () => [{ count: 0 }, []],
-  update: (s, _m) => [s, []],
-  view: ({ send, text }) => [
-    div({}, [
-      button({ onClick: () => send({ type: 'inc' }) }, [text('+')]),
-      button({ onClick: () => send({ type: 'dec' }) }, [text('-')]),
-      button({ onClick: () => send({ type: 'reset' }) }, [text('reset')]),
-    ]),
-  ],
-})
-`
-    const result = extractBindingDescriptors(source)
-    expect(result).toEqual([{ variant: 'inc' }, { variant: 'dec' }, { variant: 'reset' }])
+  it('discovers multiple variants in one handler (ternary, branched dispatch)', () => {
+    const out = emit(`
+      const v = button({
+        onClick: (e) => e.shiftKey ? send({ type: 'a' }) : send({ type: 'b' })
+      }, [])
+    `)
+    expect(out).toContain(`__lluiVariants: ["a", "b"]`)
+  })
+
+  it('de-dupes repeated variants in the same handler body', () => {
+    const out = emit(`
+      const v = button({
+        onClick: () => {
+          if (cond) send({ type: 'X' })
+          else { send({ type: 'X' }); send({ type: 'Y' }) }
+        }
+      }, [])
+    `)
+    expect(out).toContain(`__lluiVariants: ["X", "Y"]`)
+  })
+
+  it('walks block-bodied arrow handlers and finds nested sends', () => {
+    const out = emit(`
+      const v = button({
+        onClick: () => {
+          const ok = compute()
+          if (ok) {
+            send({ type: 'commit' })
+          }
+        }
+      }, [])
+    `)
+    expect(out).toContain(`__lluiVariants: ["commit"]`)
+  })
+
+  it('handles multiple event handlers on the same element independently', () => {
+    const out = emit(`
+      const v = input({
+        onInput: (e) => send({ type: 'edit', value: e.target.value }),
+        onBlur: () => send({ type: 'commit' }),
+      }, [])
+    `)
+    expect(out).toContain(`onInput: Object.assign((e) => send({ type: 'edit'`)
+    expect(out).toContain(`onBlur: Object.assign(() => send({ type: 'commit' })`)
+  })
+
+  it('tags handlers across nested elements (per-item bindings)', () => {
+    const out = emit(`
+      const tree = ul({}, items.map((item) =>
+        li({ onClick: () => send({ type: 'pick', id: item.id }) }, [text(item.label)])
+      ))
+    `)
+    expect(out).toContain(`__lluiVariants: ["pick"]`)
   })
 })
 
-describe('extractBindingDescriptors — edge cases', () => {
-  it('returns empty array when no component() call exists', () => {
-    expect(extractBindingDescriptors(`export const x = 1`)).toEqual([])
+describe('tagEventHandlerSends — non-tagging cases', () => {
+  it('leaves handlers without literal sends untouched', () => {
+    const src = `const v = button({ onClick: () => doSomething() }, [])`
+    expect(emit(src)).not.toContain('__lluiVariants')
   })
 
-  it('returns empty array when view has no send() calls', () => {
+  it('leaves event-handler keys whose value is not a function untouched', () => {
+    // A handler value of `null` is a no-op listener some apps assign
+    // conditionally. The tagger must skip non-function values rather
+    // than throw or wrap the literal.
+    const src = `const v = button({ onClick: null }, [])`
+    expect(emit(src)).not.toContain('__lluiVariants')
+  })
+
+  it('does not tag non-event properties that happen to contain sends', () => {
+    // `class: (s) => send(...)` is nonsensical but the tagger should
+    // only react to keys matching /^on[A-Z]/ — accidentally tagging
+    // any prop with a function value would over-register variants.
     const src = `
-import { component, div } from '@llui/dom'
-type State = { n: number }; type Msg = { type: 'noop' }
-export const App = component<State, Msg, never>({
-  name: 'X', init: () => [{ n: 0 }, []], update: (s, _m) => [s, []],
-  view: ({ text }) => [div({}, [text('hello')])],
-})
-`
-    expect(extractBindingDescriptors(src)).toEqual([])
+      const v = button({
+        class: () => send({ type: 'X' }),
+        title: () => send({ type: 'Y' }),
+      }, [])
+    `
+    expect(emit(src)).not.toContain('__lluiVariants')
   })
 
-  it('skips send() with a non-literal type field', () => {
+  it('skips dynamic-type sends (non-literal type field)', () => {
     const src = `
-import { component, button } from '@llui/dom'
-type State = { nextKind: 'a' | 'b' }; type Msg = { type: 'a' } | { type: 'b' }
-export const App = component<State, Msg, never>({
-  name: 'X', init: () => [{ nextKind: 'a' }, []], update: (s, _m) => [s, []],
-  view: ({ send }) => [
-    button({ onClick: () => send({ type: 'a' }) }, []),
-    button({ onClick: (_e, s) => send({ type: s.nextKind }) }, []),
-  ],
-})
-`
-    expect(extractBindingDescriptors(src)).toEqual([{ variant: 'a' }])
+      const v = button({
+        onClick: () => send({ type: msgType, payload })
+      }, [])
+    `
+    expect(emit(src)).not.toContain('__lluiVariants')
   })
 
-  it('deduplicates nothing — every call site is its own entry', () => {
-    const src = `
-import { component, button } from '@llui/dom'
-type State = { n: number }; type Msg = { type: 'inc' }
-export const App = component<State, Msg, never>({
-  name: 'X', init: () => [{ n: 0 }, []], update: (s, _m) => [s, []],
-  view: ({ send }) => [
-    button({ onClick: () => send({ type: 'inc' }) }, []),
-    button({ onClick: () => send({ type: 'inc' }) }, []),
-  ],
-})
-`
-    expect(extractBindingDescriptors(src)).toEqual([{ variant: 'inc' }, { variant: 'inc' }])
+  it('treats no-substitution template literals as valid type sources', () => {
+    // `X` (no interpolations) is a literal string — should tag.
+    const out = emit('const v = button({ onClick: () => send({ type: `X` }) }, [])')
+    expect(out).toContain(`__lluiVariants: ["X"]`)
   })
 
-  it('finds send() nested inside branch/show/each bodies', () => {
-    const src = `
-import { component, branch, button } from '@llui/dom'
-type State = { show: boolean }; type Msg = { type: 'a' } | { type: 'b' }
-export const App = component<State, Msg, never>({
-  name: 'X', init: () => [{ show: true }, []], update: (s, _m) => [s, []],
-  view: ({ send, branch }) => [
-    branch(s => s.show, [
-      button({ onClick: () => send({ type: 'a' }) }, []),
-    ]),
-    button({ onClick: () => send({ type: 'b' }) }, []),
-  ],
-})
-`
-    expect(extractBindingDescriptors(src)).toEqual([{ variant: 'a' }, { variant: 'b' }])
-  })
-
-  it('ignores calls whose first argument is not an object literal', () => {
-    const src = `
-import { component, button } from '@llui/dom'
-type State = { n: number }; type Msg = { type: 'real' }
-export const App = component<State, Msg, never>({
-  name: 'X', init: () => [{ n: 0 }, []], update: (s, _m) => [s, []],
-  view: ({ send }) => [
-    button({ onClick: () => send({ type: 'real' }) }, []),
-    button({ onClick: () => someOtherFn('not an object') }, []),
-  ],
-})
-`
-    expect(extractBindingDescriptors(src)).toEqual([{ variant: 'real' }])
-  })
-
-  it('handles multiple top-level component() calls', () => {
-    const src = `
-import { component, button } from '@llui/dom'
-type S1 = {}; type M1 = { type: 'a' }
-type S2 = {}; type M2 = { type: 'b' }
-export const A = component<S1, M1, never>({
-  name: 'A', init: () => [{}, []], update: (s, _m) => [s, []],
-  view: ({ send }) => [button({ onClick: () => send({ type: 'a' }) }, [])],
-})
-export const B = component<S2, M2, never>({
-  name: 'B', init: () => [{}, []], update: (s, _m) => [s, []],
-  view: ({ send }) => [button({ onClick: () => send({ type: 'b' }) }, [])],
-})
-`
-    expect(extractBindingDescriptors(src)).toEqual([{ variant: 'a' }, { variant: 'b' }])
+  it('skips template literals with interpolations', () => {
+    const out = emit('const v = button({ onClick: () => send({ type: `cmd:${suffix}` }) }, [])')
+    expect(out).not.toContain('__lluiVariants')
   })
 })

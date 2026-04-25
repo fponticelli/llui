@@ -4,7 +4,7 @@ import { extractMsgSchema, extractEffectSchema } from './msg-schema.js'
 import { extractMsgAnnotations, type MessageAnnotations } from './msg-annotations.js'
 import { extractStateSchema, type StateType } from './state-schema.js'
 import { computeSchemaHash } from './schema-hash.js'
-import { extractBindingDescriptors, type BindingDescriptor } from './binding-descriptors.js'
+import { tagEventHandlerSends } from './binding-descriptors.js'
 import { compilerCache } from './compiler-cache.js'
 
 function createMaskLiteral(f: ts.NodeFactory, mask: number): ts.Expression {
@@ -231,7 +231,7 @@ export function transformLlui(
   typeSources?: ExternalTypeSources,
   preExtracted?: PreExtractedSchemas,
 ): { output: string; edits: TransformEdit[] } | null {
-  const sourceFile = ts.createSourceFile('input.ts', source, ts.ScriptTarget.Latest, true)
+  let sourceFile = ts.createSourceFile('input.ts', source, ts.ScriptTarget.Latest, true)
 
   // Find the @llui/dom import
   const imp = findLluiImport(sourceFile)
@@ -241,6 +241,19 @@ export function transformLlui(
   // Collect imported element helper names (local → original)
   const importedHelpers = getImportedHelpers(lluiImport)
   if (importedHelpers.size === 0 && !hasReactiveAccessors(sourceFile)) return null
+
+  // Tagger pass: wrap event-handler arrow functions whose body
+  // contains literal `send({type:'X'})` calls with
+  // `Object.assign(arrow, { __lluiVariants: ['X'] })`. The runtime
+  // (in `@llui/dom` `elements.ts`) reads the metadata and registers
+  // each variant on the active component instance for the lifetime
+  // of the binding's scope, so the agent layer's `list_actions` sees
+  // exactly the affordances currently rendered. Gated on
+  // dev/agent-metadata mode so production bundles without agent
+  // integration don't pay the per-handler `Object.assign` cost.
+  if (devMode || emitAgentMetadata) {
+    sourceFile = tagEventHandlerSends(sourceFile, ts.factory)
+  }
 
   // Pass 2 pre-scan: collect all state access paths
   // Only use precise masks in files that define a component() — the __dirty
@@ -426,8 +439,6 @@ export function transformLlui(
               typeSources?.state?.typeName ?? 'State',
             )
 
-      const bindingDescriptors = extractBindingDescriptors(source)
-
       const shouldEmitAgentMetadata = devMode || emitAgentMetadata
       if (shouldEmitAgentMetadata) {
         if (msgSchema) {
@@ -449,9 +460,12 @@ export function transformLlui(
         if (effectSchema) {
           result = injectEffectSchema(result ?? node, effectSchema, f)
         }
-        if (bindingDescriptors.length > 0) {
-          result = injectBindingDescriptors(result ?? node, bindingDescriptors, f)
-        }
+        // Note: binding descriptors are no longer emitted on the
+        // component def. They're now collected at runtime by walking
+        // event-handler arrows that the `tagEventHandlerSends` pass
+        // wrapped with `__lluiVariants` metadata. See
+        // `binding-descriptors.ts` (compiler) and the matching
+        // `@llui/dom binding-descriptors.ts` (runtime registry).
 
         // Populate compiler cache — preSource and msgMaskMap are known now;
         // postSource is filled in after the full output is assembled.
@@ -3503,48 +3517,6 @@ function injectEffectSchema(
     newConfig,
     ...node.arguments.slice(1),
   ])
-}
-
-function injectBindingDescriptors(
-  node: ts.CallExpression,
-  descs: BindingDescriptor[],
-  f: ts.NodeFactory,
-): ts.CallExpression {
-  const configArg = node.arguments[0]
-  if (!configArg || !ts.isObjectLiteralExpression(configArg)) return node
-
-  // Don't inject if already present
-  for (const prop of configArg.properties) {
-    if (
-      ts.isPropertyAssignment(prop) &&
-      ts.isIdentifier(prop.name) &&
-      prop.name.text === '__bindingDescriptors'
-    ) {
-      return node
-    }
-  }
-
-  const descsProp = f.createPropertyAssignment(
-    '__bindingDescriptors',
-    bindingDescriptorsToArrayLiteral(descs),
-  )
-
-  const newConfig = f.createObjectLiteralExpression([...configArg.properties, descsProp], true)
-
-  return f.createCallExpression(node.expression, node.typeArguments, [
-    newConfig,
-    ...node.arguments.slice(1),
-  ])
-}
-
-function bindingDescriptorsToArrayLiteral(descs: BindingDescriptor[]): ts.ArrayLiteralExpression {
-  const entries = descs.map((d) =>
-    ts.factory.createObjectLiteralExpression(
-      [ts.factory.createPropertyAssignment('variant', ts.factory.createStringLiteral(d.variant))],
-      false,
-    ),
-  )
-  return ts.factory.createArrayLiteralExpression(entries, true)
 }
 
 // ── Per-item accessor detection ──────────────────────────────────

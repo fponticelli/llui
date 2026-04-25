@@ -4,6 +4,7 @@ import { createComponentInstance, flushInstance, type ComponentInstance } from '
 import { disposeLifetime } from './lifetime.js'
 import { setRenderContext, clearRenderContext } from './render-context.js'
 import { setFlatBindings } from './binding.js'
+import { getBindingDescriptors } from './binding-descriptors.js'
 import { registerInstance, unregisterInstance } from './runtime.js'
 import { createView } from './view-helpers.js'
 import { pushMountQueue, popMountQueue, flushMountQueue } from './primitives/on-mount.js'
@@ -585,6 +586,10 @@ function buildAppHandle<S, M, E>(
       if (disposed) return () => {}
       listeners.add(listener)
       return () => listeners.delete(listener)
+    },
+    getBindingDescriptors() {
+      if (disposed) return []
+      return getBindingDescriptors(inst as ComponentInstance)
     },
   }
 }

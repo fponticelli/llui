@@ -16,7 +16,6 @@ type ComponentMetadata = {
   __msgSchema?: unknown
   __stateSchema?: unknown
   __msgAnnotations?: Record<string, MessageAnnotations>
-  __bindingDescriptors?: Array<{ variant: string }>
   __schemaHash?: string
   name: string
   agentAffordances?: (state: unknown) => Array<{ type: string; [k: string]: unknown }>
@@ -136,7 +135,13 @@ export function createAgentClient<State, Msg>(
     subscribe: (listener) => opts.handle.subscribe(() => listener()),
     getAndClearDrainErrors: () => drainErrors.splice(0, drainErrors.length),
     getMsgAnnotations: () => opts.def.__msgAnnotations ?? null,
-    getBindingDescriptors: () => opts.def.__bindingDescriptors ?? null,
+    // Live binding descriptors: read from the runtime registry that
+    // tracks which Msg variants are dispatchable from currently-mounted
+    // event handlers. Empty array when the app wasn't compiled with
+    // agent metadata (no tagger pass) or has no view bindings yet —
+    // both produce the same "no live affordances" signal at the agent
+    // layer.
+    getBindingDescriptors: () => opts.handle.getBindingDescriptors(),
     getAgentAffordances: () => opts.def.agentAffordances ?? null,
     getAgentContext: () => opts.def.agentContext ?? null,
     getRootElement: () => opts.rootElement,

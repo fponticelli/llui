@@ -2,6 +2,7 @@ import type { BindingKind } from './types.js'
 import { getRenderContext } from './render-context.js'
 import { createBinding, applyBinding } from './binding.js'
 import { FULL_MASK } from './update-loop.js'
+import { registerBindingVariants } from './binding-descriptors.js'
 
 type ElementProps = Record<string, unknown>
 type Child = Node | string | Node[]
@@ -70,6 +71,19 @@ function createElement<K extends keyof HTMLElementTagNameMap>(
       // Event handler
       if (/^on[A-Z]/.test(rawKey)) {
         const eventName = rawKey.slice(2).toLowerCase()
+        // Compiler-tagged variants: when the handler arrow contains
+        // literal `send({type: 'X'})` calls, the @llui/vite-plugin
+        // tagger pass attaches `__lluiVariants: ['X', …]` to the
+        // function. Register those with the active component's live
+        // descriptor registry so the agent layer can surface them
+        // through `list_actions`. The lifetime hook removes the
+        // entries on scope dispose (item unmount, branch swap, etc.)
+        // so the LLM sees only what's currently affordable.
+        const tagged = (value as { __lluiVariants?: readonly string[] } | null | undefined)
+          ?.__lluiVariants
+        if (tagged && tagged.length > 0 && ctx.instance) {
+          registerBindingVariants(ctx.instance, ctx.rootLifetime, tagged)
+        }
         el.addEventListener(eventName, value as EventListener)
         continue
       }

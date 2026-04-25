@@ -85,6 +85,11 @@ function makeHandle(initialState: FakeState) {
       state = s
       for (const l of listeners) l(s)
     },
+    // Stub the runtime descriptor registry. The agent factory now
+    // reads live descriptors from this method instead of the static
+    // `def.__bindingDescriptors`. Tests that don't exercise list-actions
+    // can return an empty array; tests that do should override.
+    getBindingDescriptors: () => [] as Array<{ variant: string }>,
   }
   return handle
 }
@@ -316,6 +321,7 @@ describe('createAgentClient', () => {
         state = s
         for (const l of listeners) l(s)
       },
+      getBindingDescriptors: () => [] as Array<{ variant: string }>,
     }
     const opts: CreateAgentClientOpts<DateState, unknown> = {
       handle: handle as never,

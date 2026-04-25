@@ -221,6 +221,20 @@ export interface AppHandle {
    * unsubscribe). See agent spec §10.5 (state-update frames).
    */
   subscribe(listener: (state: unknown) => void): () => void
+  /**
+   * Snapshot the Msg variants currently dispatchable from rendered UI.
+   * Each entry corresponds to one or more event-handler bindings the
+   * compiler tagged with literal `send({type: '<variant>'})` calls;
+   * the registry tracks live mounts via lifetime refcounts so the
+   * snapshot reflects what the user can click *right now*, not the
+   * static catalogue of every variant the app could ever accept.
+   *
+   * Used by `@llui/agent` to populate `list_actions`. Apps that don't
+   * use the LLui compiler tagger pass (or whose views contain no
+   * literal sends) get an empty array — agents fall back to the Msg
+   * schema for affordance discovery.
+   */
+  getBindingDescriptors(): Array<{ variant: string }>
 }
 
 // ── Lifetime ─────────────────────────────────────────────────────────

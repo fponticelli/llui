@@ -4,6 +4,7 @@ import { flushInstance } from './update-loop.js'
 import { createLifetime, disposeLifetime } from './lifetime.js'
 import { setRenderContext, clearRenderContext } from './render-context.js'
 import { setFlatBindings } from './binding.js'
+import { getBindingDescriptors } from './binding-descriptors.js'
 import { unregisterInstance } from './runtime.js'
 import { _setHmrModule } from './mount.js'
 import { createView } from './view-helpers.js'
@@ -204,6 +205,10 @@ function makeReplacementHandle<S, M, E>(
       if (disposed) return () => {}
       listeners.add(listener)
       return () => listeners.delete(listener)
+    },
+    getBindingDescriptors() {
+      if (disposed) return []
+      return getBindingDescriptors(typedInst as ComponentInstance)
     },
   }
 }
