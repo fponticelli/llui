@@ -62,7 +62,12 @@ type Msg =
   | number
 `
     expect(extractMsgAnnotations(src)).toEqual({
-      ok: { intent: 'real', alwaysAffordable: false, requiresConfirm: false, dispatchMode: 'shared' },
+      ok: {
+        intent: 'real',
+        alwaysAffordable: false,
+        requiresConfirm: false,
+        dispatchMode: 'shared',
+      },
     })
   })
 
@@ -74,7 +79,12 @@ type Msg =
   | { type: string; id: number }
 `
     expect(extractMsgAnnotations(src)).toEqual({
-      ok: { intent: 'real', alwaysAffordable: false, requiresConfirm: false, dispatchMode: 'shared' },
+      ok: {
+        intent: 'real',
+        alwaysAffordable: false,
+        requiresConfirm: false,
+        dispatchMode: 'shared',
+      },
     })
   })
 
@@ -116,7 +126,12 @@ type Msg =
 `
     const r = extractMsgAnnotations(src)
     expect(r).toEqual({
-      ok: { intent: 'right', alwaysAffordable: false, requiresConfirm: false, dispatchMode: 'shared' },
+      ok: {
+        intent: 'right',
+        alwaysAffordable: false,
+        requiresConfirm: false,
+        dispatchMode: 'shared',
+      },
     })
   })
 

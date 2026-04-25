@@ -1405,7 +1405,9 @@ function tryInjectDirty(
     // Use string literal — state field names declared via string keys
     // (e.g. `{ "weird-key": ... }`) would otherwise emit as bare
     // identifiers and break the printed output.
-    legendProps.push(f.createPropertyAssignment(f.createStringLiteral(field), createMaskLiteral(f, bit)))
+    legendProps.push(
+      f.createPropertyAssignment(f.createStringLiteral(field), createMaskLiteral(f, bit)),
+    )
   }
   const legendProp = f.createPropertyAssignment(
     '__maskLegend',

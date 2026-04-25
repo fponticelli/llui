@@ -33,7 +33,9 @@ interface PageState {
   m: number
 }
 
-function makeLayoutWithInitEffect(seen: LayoutEffect[]): ComponentDef<LayoutState, never, LayoutEffect> {
+function makeLayoutWithInitEffect(
+  seen: LayoutEffect[],
+): ComponentDef<LayoutState, never, LayoutEffect> {
   return component<LayoutState, never, LayoutEffect>({
     name: 'LayoutWithInit',
     init: () => [{ n: 0 }, [{ type: 'layoutInit' }]],

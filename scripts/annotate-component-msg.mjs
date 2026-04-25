@@ -112,9 +112,10 @@ function annotateFile(source) {
       } else if (lookback >= 0 && /^\s*\/\*\*[^*]*\*\/$/.test(out[lookback])) {
         existingDoc = out[lookback]
       }
-      const hasLapTag = /@intent\b|@humanOnly\b|@agentOnly\b|@requiresConfirm\b|@alwaysAffordable\b/.test(
-        existingDoc,
-      )
+      const hasLapTag =
+        /@intent\b|@humanOnly\b|@agentOnly\b|@requiresConfirm\b|@alwaysAffordable\b/.test(
+          existingDoc,
+        )
       if (hasLapTag) {
         out.push(cur)
         i++

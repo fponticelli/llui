@@ -200,8 +200,18 @@ AppWithMeta.__msgAnnotations = {
     requiresConfirm: true,
     dispatchMode: 'shared',
   },
-  signOut: { intent: 'Sign out', alwaysAffordable: false, requiresConfirm: false, dispatchMode: 'human-only' },
-  nav: { intent: 'Navigate', alwaysAffordable: true, requiresConfirm: false, dispatchMode: 'shared' },
+  signOut: {
+    intent: 'Sign out',
+    alwaysAffordable: false,
+    requiresConfirm: false,
+    dispatchMode: 'human-only',
+  },
+  nav: {
+    intent: 'Navigate',
+    alwaysAffordable: true,
+    requiresConfirm: false,
+    dispatchMode: 'shared',
+  },
 }
 
 AppWithMeta.__bindingDescriptors = [

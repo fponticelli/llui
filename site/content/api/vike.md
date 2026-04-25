@@ -233,6 +233,23 @@ function createOnRenderClient(
 ): (pageContext: ClientPageContext) => Promise<void>
 ```
 
+### `getLayoutChain()`
+
+Public read of the current layout chain. Returns the live
+`AppHandle`s for `[...layouts, page]`, outermost first. Empty array
+before the first mount; updates after every navigation.
+Returns a fresh array each call, but the AppHandle references are
+shared with the live chain — calling `.send()` / `.dispose()` /
+`.subscribe()` operates on the same instance the framework manages.
+Prefer the `onMount(chain)` callback for lifecycle-coupled wiring
+(the framework guarantees the chain is fully populated when it
+fires); use this getter for ad-hoc reads where the caller can't
+thread state through `onMount`.
+
+```typescript
+function getLayoutChain(): readonly AppHandle[]
+```
+
 ### `_mountChainSuffix()`
 
 Mount (or hydrate) `chain[startAt..end]` into `initialTarget`, with
@@ -415,7 +432,7 @@ called — there's no outgoing page to leave and no animation to enter.
 Use `onMount` for code that should run on every render including the
 initial one.
 
-```typescript
+````typescript
 export interface RenderClientOptions {
   /** CSS selector for the mount container. Default: `'#app'`. */
   container?: string
@@ -463,9 +480,52 @@ export interface RenderClientOptions {
    * Called after mount or hydration completes. Fires on every render
    * including the initial hydration. Use for per-render side effects
    * that don't fit the animation hooks.
+   *
+   * Receives the live layout chain — `[...layouts, page]`, outermost
+   * first — as `AppHandle`s. Consumers wiring observability bridges,
+   * the LAP agent client, custom devtools, or any tool that needs
+   * `getState` / `send` / `subscribe` for the *outermost layout*
+   * (which `window.__lluiComponents` did not reliably expose for
+   * hydrated apps until @llui/dom@0.0.31) can read it from here:
+   *
+   * ```ts
+   * createOnRenderClient({
+   *   Layout: AppLayout,
+   *   onMount: (chain) => {
+   *     const layout = chain[0]    // outermost layout
+   *     const page = chain.at(-1)  // current page
+   *   },
+   * })
+   * ```
+   *
+   * The array is a snapshot at call time; consumers should not retain
+   * references to handles past the next navigation, since surviving
+   * layers stay live but disposed layers do not.
    */
-  onMount?: () => void
+  onMount?: (chain: readonly AppHandle[]) => void
+
+  /**
+   * Forwarded to `@llui/dom`'s `hydrateApp` / `hydrateAtAnchor` for
+   * every layer in the layout chain on initial hydration. When `true`,
+   * effects returned by each component's `init()` are dispatched
+   * post-swap on the client. When `false` (default), they are skipped
+   * — the SSR pass already ran them on the server, and re-running on
+   * the client typically produces duplicate fetches / subscriptions.
+   *
+   * Opt in only when:
+   *   - `init()` returns no effects, OR
+   *   - all returned effects are idempotent / client-only (e.g. attaching
+   *     a `window` listener), AND
+   *   - the SSR path didn't run them (typically because `init()` checks
+   *     a `loaded` flag in state and returns `[]` when serverState
+   *     already has the data loaded).
+   *
+   * Subsequent client-side navigation always uses `mountApp` /
+   * `mountAtAnchor` (fresh mount), which always fires init effects
+   * regardless of this flag.
+   */
+  runInitEffectsOnHydrate?: boolean
 }
-```
+````
 
 <!-- auto-api:end -->

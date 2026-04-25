@@ -64,14 +64,24 @@ describe('computeSchemaHash', () => {
       msgSchema: { discriminant: 'type', variants: { inc: {} } },
       stateSchema: {},
       msgAnnotations: {
-        inc: { intent: 'A', alwaysAffordable: false, requiresConfirm: false, dispatchMode: 'shared' },
+        inc: {
+          intent: 'A',
+          alwaysAffordable: false,
+          requiresConfirm: false,
+          dispatchMode: 'shared',
+        },
       },
     })
     const b = computeSchemaHash({
       msgSchema: { discriminant: 'type', variants: { inc: {} } },
       stateSchema: {},
       msgAnnotations: {
-        inc: { intent: 'B', alwaysAffordable: false, requiresConfirm: false, dispatchMode: 'shared' },
+        inc: {
+          intent: 'B',
+          alwaysAffordable: false,
+          requiresConfirm: false,
+          dispatchMode: 'shared',
+        },
       },
     })
     expect(a).not.toBe(b)

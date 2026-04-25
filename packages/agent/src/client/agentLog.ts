@@ -79,10 +79,7 @@ export type ConnectBag<S> = {
   visibleEntries: (s: S) => LogEntry[]
 }
 
-export function connect<S>(
-  get: (s: S) => AgentLogState,
-  send: Send<AgentLogMsg>,
-): ConnectBag<S> {
+export function connect<S>(get: (s: S) => AgentLogState, send: Send<AgentLogMsg>): ConnectBag<S> {
   // Memoize the filter result by parent-state reference. Each render
   // pass typically calls `visibleEntries`, `list['data-count']`, and
   // every `entryItem(id)['data-kind']` — without this, an `each` loop

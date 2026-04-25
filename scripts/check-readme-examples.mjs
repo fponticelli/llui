@@ -77,14 +77,18 @@ function checkPackage(pkgDir) {
     for (const line of block.split('\n')) {
       // Hoist `import ... from '...'` and `import '...'` lines
       // (don't hoist `dynamic import()` calls — those have parens).
-      if (/^\s*import\s+(?:type\s+)?[\s\S]*?from\s+['"][^'"]+['"]\s*;?\s*$/.test(line) ||
-          /^\s*import\s+['"][^'"]+['"]\s*;?\s*$/.test(line)) {
+      if (
+        /^\s*import\s+(?:type\s+)?[\s\S]*?from\s+['"][^'"]+['"]\s*;?\s*$/.test(line) ||
+        /^\s*import\s+['"][^'"]+['"]\s*;?\s*$/.test(line)
+      ) {
         allImports.add(line.trim())
       } else {
         bodyLines.push(line)
       }
     }
-    wrappedBodies.push(`// ── block ${i} ─────────────────────────────────\nasync function _block_${i}() {\n${bodyLines.join('\n')}\n}\nvoid _block_${i}\n`)
+    wrappedBodies.push(
+      `// ── block ${i} ─────────────────────────────────\nasync function _block_${i}() {\n${bodyLines.join('\n')}\n}\nvoid _block_${i}\n`,
+    )
   }
 
   const synthetic =
@@ -92,7 +96,7 @@ function checkPackage(pkgDir) {
     pkgDir.split('/').slice(-1)[0] +
     '/README.md\n' +
     '// @ts-nocheck — disabled per-line where snippets reference values\n' +
-    '// the type checker can\'t see (mock APIs, runtime stubs). The\n' +
+    "// the type checker can't see (mock APIs, runtime stubs). The\n" +
     '// surrounding lines still parse-check structure.\n\n' +
     [...allImports].join('\n') +
     '\n\n' +
@@ -173,7 +177,12 @@ for (const pkg of targets) {
   } else {
     failed++
     process.stdout.write(`✗ ${pkg}\n`)
-    process.stdout.write(diagnostics.split('\n').map((l) => `    ${l}`).join('\n'))
+    process.stdout.write(
+      diagnostics
+        .split('\n')
+        .map((l) => `    ${l}`)
+        .join('\n'),
+    )
     process.stdout.write('\n')
   }
 }

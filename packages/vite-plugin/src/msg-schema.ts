@@ -9,10 +9,7 @@ export function extractMsgSchema(source: string, typeName: string = 'Msg'): MsgS
   return extractDiscriminatedUnionSchema(source, typeName)
 }
 
-export function extractEffectSchema(
-  source: string,
-  typeName: string = 'Effect',
-): MsgSchema | null {
+export function extractEffectSchema(source: string, typeName: string = 'Effect'): MsgSchema | null {
   return extractDiscriminatedUnionSchema(source, typeName)
 }
 

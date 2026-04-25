@@ -42,10 +42,7 @@ const Counter: ComponentDef<State, Msg, Effect> = component<State, Msg, Effect>(
       case 'dec':
         return [{ count: state.count - 1 }, []]
       case 'reset':
-        return [
-          { count: 0 },
-          [{ type: 'logged', level: 'warn', payload: { reason: 'reset' } }],
-        ]
+        return [{ count: 0 }, [{ type: 'logged', level: 'warn', payload: { reason: 'reset' } }]]
     }
   },
   view: () => [],

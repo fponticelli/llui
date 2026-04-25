@@ -1169,9 +1169,17 @@ export type Msg =
   /** @intent("Decrement") @requiresConfirm */
   | { type: 'dec' }
 `
-    const result = transformLlui(componentSource, 'app.ts', /* devMode */ true, false, null, false, {
-      msg: { source: externalMsgSource, typeName: 'Msg' },
-    })
+    const result = transformLlui(
+      componentSource,
+      'app.ts',
+      /* devMode */ true,
+      false,
+      null,
+      false,
+      {
+        msg: { source: externalMsgSource, typeName: 'Msg' },
+      },
+    )
     const out = result?.output ?? componentSource
     expect(out).toContain('__msgAnnotations:')
     expect(out).toMatch(/["']?inc["']?:\s*\{\s*intent:\s*["']Increment the counter["']/)

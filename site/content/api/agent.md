@@ -637,15 +637,16 @@ function update(
 
 ### `connect()`
 
-Builds prop bags for the view. See spec §9.1 and the @llui/components
-dialog.ts pattern.
+Builds prop bags for the view. Static-bag-with-reactive-accessors
+shape (matches the @llui/components convention); spread directly
+into element helpers.
 
 ```typescript
 function connect<S>(
   get: (s: S) => AgentConnectState,
   send: Send<AgentConnectMsg>,
   _opts: AgentConnectConnectOptions = {},
-): (state: S) => ConnectBag
+): ConnectBag<S>
 ```
 
 ## Types
@@ -917,6 +918,11 @@ export type AgentEffect =
   | { type: 'AgentRevoke'; tid: string }
   | { type: 'AgentSessionsList' }
   | { type: 'AgentForwardMsg'; payload: unknown }
+  // Handler reads `text` (no state lookup needed at handler time —
+  // update() resolved it from the current state.pendingToken). Lets
+  // the static-bag `connect()` shape avoid leaking state-reads into
+  // event handlers.
+  | { type: 'AgentClipboardWrite'; text: string }
 ```
 
 ### `AgentEffectHandler`
@@ -959,7 +965,13 @@ export type AgentConnectState = {
 
 ```typescript
 export type AgentConnectMsg =
+  /** @intent("Mint a new agent token and open the pairing WebSocket") */
   | { type: 'Mint' }
+  /**
+   * @humanOnly — internal: dispatched by the AgentMintRequest effect
+   * handler when the mint endpoint replies success. Carries the token
+   * and connection URLs into state.
+   */
   | {
       type: 'MintSucceeded'
       token: AgentToken
@@ -968,17 +980,34 @@ export type AgentConnectMsg =
       wsUrl: string
       expiresAt: number
     }
+  /** @humanOnly — internal: dispatched by the AgentMintRequest handler on failure. */
   | { type: 'MintFailed'; error: { code: string; detail: string } }
+  /** @humanOnly — internal: WS adapter signalled the pairing socket is open. */
   | { type: 'WsOpened' }
+  /** @humanOnly — internal: WS adapter signalled the pairing socket is closed. */
   | { type: 'WsClosed' }
+  /** @humanOnly — internal: Claude bound the session via /agent/claim. */
   | { type: 'ActivatedByClaude' }
+  /** @intent("Check which previously-issued agent sessions can be resumed") */
   | { type: 'ResumeList'; tids: string[] }
+  /** @humanOnly — internal: AgentResumeCheck effect handler returned the list. */
   | { type: 'ResumeListLoaded'; sessions: AgentSession[] }
+  /** @intent("Resume an existing agent session by tid") */
   | { type: 'Resume'; tid: string }
+  /** @intent("Revoke an agent session by tid") */
   | { type: 'Revoke'; tid: string }
+  /** @intent("Dismiss the current agent connect error") */
   | { type: 'ClearError' }
+  /** @humanOnly — internal: AgentSessionsList effect handler returned the list. */
   | { type: 'SessionsLoaded'; sessions: AgentSession[] }
+  /** @intent("Refresh the list of active agent sessions") */
   | { type: 'RefreshSessions' }
+  /**
+   * @intent("Copy the agent connect snippet to the clipboard")
+   * Resolves the pendingToken's snippet in update() (state-reading is
+   * what update() is for) and dispatches a clipboard-write effect.
+   */
+  | { type: 'CopyConnectSnippet' }
 ```
 
 ### `AgentConnectInitOpts`
@@ -992,6 +1021,37 @@ export type AgentConnectInitOpts = { mintUrl: string }
 ```typescript
 export type AgentConnectConnectOptions = {
   id?: string // optional DOM id prefix
+}
+```
+
+### `ConnectBag`
+
+Static prop bag with reactive accessors. Mirrors the @llui/components
+pattern (e.g. `dialog.connect`): callers spread bag keys directly
+into element helpers, and function-valued props re-evaluate per
+binding-mask hit. The previous shape — `(state) => bag` — required
+callers to wrap every prop access in their own arrow, which the
+documented usage didn't do (and silently produced `undefined` props
+when spread).
+
+```typescript
+export type ConnectBag<S> = {
+  root: { 'data-scope': 'agent-connect'; 'data-state': (s: S) => AgentConnectStatus }
+  mintTrigger: { onClick: () => void; disabled: (s: S) => boolean }
+  pendingTokenBox: { 'data-part': 'pending-token'; 'data-visible': (s: S) => boolean }
+  copyConnectSnippetButton: { onClick: () => void; disabled: (s: S) => boolean }
+  sessionsList: { 'data-part': 'sessions-list' }
+  sessionItem: (tid: string) => { 'data-part': 'session-item'; 'data-tid': string }
+  revokeButton: (tid: string) => { onClick: () => void }
+  resumeBanner: { 'data-part': 'resume-banner'; 'data-visible': (s: S) => boolean }
+  resumeItem: (tid: string) => { 'data-part': 'resume-item'; 'data-tid': string }
+  resumeButton: (tid: string) => { onClick: () => void }
+  dismissButton: (tid: string) => { onClick: () => void }
+  error: {
+    'data-part': 'error'
+    'data-visible': (s: S) => boolean
+    onClick: () => void
+  }
 }
 ```
 
@@ -1019,9 +1079,22 @@ export type AgentConfirmState = { pending: ConfirmEntry[] }
 
 ```typescript
 export type AgentConfirmMsg =
+  /**
+   * @humanOnly — internal: dispatched by `handleSendMessage` on the
+   * @llui/dom side when an agent message is gated by @requiresConfirm.
+   * Adds a pending entry to state; the user (not the agent) decides
+   * with Approve / Reject.
+   */
   | { type: 'Propose'; entry: ConfirmEntry }
+  /** @intent("Approve a pending agent action") */
   | { type: 'Approve'; id: string }
+  /** @intent("Reject a pending agent action") */
   | { type: 'Reject'; id: string }
+  /**
+   * @humanOnly — internal: the host app dispatches this on a timer to
+   * garbage-collect entries that have been pending past `maxAgeMs`.
+   * Agents have no business poking at the timer wheel directly.
+   */
   | { type: 'ExpireStale'; now: number; maxAgeMs: number }
 ```
 
@@ -1050,8 +1123,15 @@ export type AgentLogInitOpts = { maxEntries?: number }
 
 ```typescript
 export type AgentLogMsg =
+  /**
+   * @humanOnly — internal: WS frame router dispatches this on every
+   * `log-append` frame from the runtime. Agents observe the log via
+   * the LAP read surface, not by emitting Append themselves.
+   */
   | { type: 'Append'; entry: LogEntry }
+  /** @intent("Clear the agent activity log") */
   | { type: 'Clear' }
+  /** @intent("Set the visibility filter for the agent log") */
   | { type: 'SetFilter'; filter: AgentLogFilter }
 ```
 
@@ -1081,6 +1161,26 @@ export type LapError = {
 }
 ```
 
+### `DispatchMode`
+
+Who can dispatch a Msg variant.
+
+- `'shared'` (default) — both UI bindings and the agent can dispatch.
+- `'human-only'` — UI-only. Agent calls to `/message` for these variants
+  are rejected with `LapMessageRejectReason: 'human-only'`. Use for
+  internal UI events (focus/blur, scroll, hover) the LLM has no business
+  triggering.
+- `'agent-only'` — no UI binding exists. Reserved for LLM-driven flows
+  like batch operations or "explain this state" introspection variants.
+  Lint warns if a view references one via `send({ type: 'X' })`.
+  JSDoc sugar: `@humanOnly` → `'human-only'`, `@agentOnly` → `'agent-only'`.
+  Absence of either tag → `'shared'`. The two tags are mutually exclusive
+  (enforced by `llui/agent-exclusive-annotations` ESLint rule).
+
+```typescript
+export type DispatchMode = 'shared' | 'human-only' | 'agent-only'
+```
+
 ### `MessageAnnotations`
 
 ```typescript
@@ -1088,7 +1188,7 @@ export type MessageAnnotations = {
   intent: string | null
   alwaysAffordable: boolean
   requiresConfirm: boolean
-  humanOnly: boolean
+  dispatchMode: DispatchMode
 }
 ```
 
@@ -1144,6 +1244,12 @@ export type LapActionsResponse = {
     variant: string
     intent: string
     requiresConfirm: boolean
+    /**
+     * `'shared'` — both UI and agent can dispatch. `'agent-only'` — no UI
+     * binding exists; the agent is the sole dispatcher. `'human-only'`
+     * variants never appear here (filtered before serialization).
+     */
+    dispatchMode: 'shared' | 'agent-only'
     source: 'binding' | 'always-affordable'
     selectorHint: string | null
     payloadHint: object | null
@@ -1190,7 +1296,7 @@ export type LapMessageRequest = {
 
 ```typescript
 export type LapMessageRejectReason =
-  | 'humanOnly'
+  | 'human-only'
   | 'user-cancelled'
   | 'timeout'
   | 'invalid'

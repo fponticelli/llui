@@ -193,11 +193,7 @@ export function findProjectMsgArgSymbols(
   return out
 }
 
-function visitForComponentCalls(
-  node: ts.Node,
-  checker: ts.TypeChecker,
-  out: Set<ts.Symbol>,
-): void {
+function visitForComponentCalls(node: ts.Node, checker: ts.TypeChecker, out: Set<ts.Symbol>): void {
   if (
     ts.isCallExpression(node) &&
     ts.isIdentifier(node.expression) &&
@@ -212,8 +208,7 @@ function visitForComponentCalls(
         // local symbol points at the import alias; resolve to the
         // underlying declaration symbol so it matches the alias's own
         // symbol when we visit it later.
-        const resolved =
-          sym.flags & ts.SymbolFlags.Alias ? checker.getAliasedSymbol(sym) : sym
+        const resolved = sym.flags & ts.SymbolFlags.Alias ? checker.getAliasedSymbol(sym) : sym
         out.add(resolved)
       }
     }

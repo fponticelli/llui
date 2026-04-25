@@ -226,12 +226,7 @@ async function collectMsgVariants(
   if (visitedAliases.has(aliasKey)) return true
   visitedAliases.add(aliasKey)
 
-  const sf = ts.createSourceFile(
-    located.filePath,
-    located.source,
-    ts.ScriptTarget.Latest,
-    true,
-  )
+  const sf = ts.createSourceFile(located.filePath, located.source, ts.ScriptTarget.Latest, true)
   const aliases: ts.TypeAliasDeclaration[] = []
   sf.forEachChild((n) => {
     if (ts.isTypeAliasDeclaration(n)) aliases.push(n)
@@ -384,12 +379,7 @@ async function collectSchemaVariants(
   if (visitedAliases.has(aliasKey)) return true
   visitedAliases.add(aliasKey)
 
-  const sf = ts.createSourceFile(
-    located.filePath,
-    located.source,
-    ts.ScriptTarget.Latest,
-    true,
-  )
+  const sf = ts.createSourceFile(located.filePath, located.source, ts.ScriptTarget.Latest, true)
   const aliases: ts.TypeAliasDeclaration[] = []
   sf.forEachChild((n) => {
     if (ts.isTypeAliasDeclaration(n)) aliases.push(n)
@@ -455,9 +445,11 @@ function collectOneVariant(lit: ts.TypeLiteralNode, variants: MsgSchema['variant
  *
  * Order: `[State, Msg, Effect]` matching `component<State, Msg, Effect>`.
  */
-export function readComponentTypeArgNames(
-  call: ts.CallExpression,
-): { state: string | null; msg: string | null; effect: string | null } {
+export function readComponentTypeArgNames(call: ts.CallExpression): {
+  state: string | null
+  msg: string | null
+  effect: string | null
+} {
   const args = call.typeArguments
   const get = (i: number): string | null => {
     const t = args?.[i]
