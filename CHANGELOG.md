@@ -11,6 +11,52 @@ All notable changes to LLui packages are documented here. LLui is a pre-1.0 proj
 
 Packages version in lockstep at release time: `@llui/dom`, `@llui/vite-plugin`, `@llui/test`, `@llui/router`, `@llui/transitions`, `@llui/components`, `@llui/vike` share a version line. `@llui/effects`, `@llui/mcp`, `@llui/eslint-plugin`, `@llui/agent`, and `llui-agent` have their own cadence.
 
+## 2026-04-25 — peer-dep packaging fix
+
+**Released:** `@llui/vite-plugin@0.0.31`, `@llui/test@0.0.31`, `@llui/vike@0.0.32`, `@llui/mcp@0.0.25`, `@llui/eslint-plugin@0.0.15`, `@llui/agent@0.0.32`
+
+Critical packaging fix for `@llui/{vike,test,mcp,agent}`: ship `@llui/dom` as a peer dependency instead of a runtime dependency. The old packaging caused dual `@llui/dom` installs in any consumer whose own `@llui/dom` version differed from what the package was pinned to at publish time, producing `provide() can only be called inside a component's view() function` errors from inside view callbacks where the call was manifestly correct.
+
+### Breaking
+
+- **`@llui/vike@0.0.32`, `@llui/test@0.0.31`, `@llui/mcp@0.0.25`, `@llui/agent@0.0.32`** — `@llui/dom` is now a peer dependency, not a transitive runtime dep. Consumers who relied on transitive resolution must declare `@llui/dom` explicitly in their own project's `dependencies`.
+
+### Migration
+
+- Add `@llui/dom` to your project's dependencies if it isn't there: `pnpm add @llui/dom`. Most projects already import from `@llui/dom` directly and have it declared — only ones that relied purely on transitive resolution will hit "cannot find module".
+- If you'd applied a `pnpm.overrides` workaround to force a single `@llui/dom` instance, you can remove it — the peer pattern handles deduplication natively.
+
+### `@llui/vite-plugin@0.0.31`
+
+- **Fixed** `transform.ts` picked up a `.js` extension on one relative import that `add-js-extensions.mjs` had missed.
+
+### `@llui/test@0.0.31`
+
+- **Fixed** `@llui/dom` ships as `peerDependencies` + `devDependencies` instead of `dependencies`. Same dual-install fix as `@llui/vike`.
+
+### `@llui/vike@0.0.32`
+
+- **Fixed** `@llui/dom` ships as `peerDependencies` + `devDependencies` instead of `dependencies`. Resolves dual-install / `provide()`-from-view errors. See top of release block for migration.
+- **Added** Cloudflare Workers section in the README — documents the `worker.ts` pattern with `import.meta.env.PROD` guard around the `dist/server/entry.mjs` import. Without the guard, dev workerd loads the stale prod build and trips Vike's prod-in-dev detector. The brillout-recommended `process.env.NODE_ENV` snippet silently fails under workerd (no Node `process`).
+
+### `@llui/mcp@0.0.25`
+
+- **Fixed** `@llui/dom` ships as `peerDependencies` + `devDependencies` instead of `dependencies`. Type-only usage in mcp's source, but the packaging anti-pattern was identical.
+
+### `@llui/eslint-plugin@0.0.15`
+
+- **Fixed** 11 source files now have explicit `.js` extensions on relative imports. The `add-js-extensions.mjs` build pass had been silently skipping this package since the `lint-idiomatic` → `eslint-plugin` rename — its hardcoded list still pointed at the old name. No runtime effect (the package is CommonJS), but now consistent with the rest of the monorepo.
+
+### `@llui/agent@0.0.32`
+
+- **Fixed** `@llui/dom` ships as `peerDependencies` + `devDependencies` instead of `dependencies`. Type-only consumer (`Send`, `AppHandle` from agent's client adapters).
+- **Fixed** removed phantom `@llui/effects` dependency. The package never imported from `@llui/effects` — only the README example does, and that's user-side app code. Consumers using `handleEffects` in their own app should declare `@llui/effects` themselves (most already do).
+
+### Docs
+
+- **Improved** root `README.md` package table: replaced the stale `@llui/lint-idiomatic` row with `@llui/eslint-plugin`, and added `@llui/agent` + `llui-agent` rows that had been missing.
+- **Improved** `/publish` skill now refuses to bump versions if any non-private package has `@llui/dom` in `dependencies` instead of `peerDependencies`. Cascade list derived from `package.json` files instead of a hand-maintained enumeration, so a newly-added peer can't be silently skipped on the next release.
+
 ## 2026-04-24 — @llui/agent@0.0.31
 
 **Released:** `@llui/agent@0.0.31`
