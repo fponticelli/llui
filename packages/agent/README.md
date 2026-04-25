@@ -213,6 +213,67 @@ view: ({ send, branch, show }) => {
 
 See the [Agent Protocol doc](../../docs/designs/10%20Agent%20Protocol.md) for the full wire protocol and security model.
 
+## Custom serialization (codecs)
+
+JSON natively supports `string | number | boolean | null | array | object`. Component messages and state often carry values that don't round-trip through JSON: `Date`, `Blob`, `File`, `Map`, `Set`, `BigInt`. The agent ships a codec convention that lets these values cross the LAP boundary cleanly without forcing every component to invent its own envelope.
+
+**Wire format.** A non-JSON-safe runtime value travels as a tagged object:
+
+```json
+{ "__codec": "iso-date", "wire": "2026-04-25T12:00:00.000Z" }
+```
+
+The runtime walks every value crossing the LAP boundary symmetrically:
+
+- **Outgoing** (`stateAfter` snapshots, action arguments): the encoder looks up a codec whose `matchesRuntime` claims the value and replaces it with the tagged shape.
+- **Incoming** (`msg` payloads dispatched by the agent): the decoder detects the tagged shape and substitutes the runtime value before `update()` runs.
+
+Reducers never see the tagged form. By the time `update()` is called, real `Date` / `Blob` / etc. are in place.
+
+**Default codecs.** `makeDefaultCodecs()` ships with:
+
+| Codec name     | Encodes | Wire form          |
+| -------------- | ------- | ------------------ |
+| `iso-date`     | `Date`  | ISO 8601 string    |
+| `epoch-millis` | `Date`  | epoch milliseconds |
+
+By default `iso-date` claims `Date` values. `epoch-millis` is registered but its `matchesRuntime` returns `false` so it doesn't shadow `iso-date` on encode — it's still available for explicit decode and for consumers who register a millis-first registry.
+
+**Authoring.** Tag the variant's JSDoc with both `@intent` and `@codec("<name>")`:
+
+```ts
+type DateInputMsg = {
+  /**
+   * @intent("Set the parsed date directly")
+   * @codec("iso-date")
+   */
+  type: 'setValue'
+  value: Date | null
+}
+```
+
+The `@codec` tag is documentation for human readers and the (eventual) schema generator. The runtime encode/decode is registry-driven and doesn't need per-field metadata at runtime.
+
+**Custom codecs.** Pass a registry to `createAgentClient`:
+
+```ts
+// @doc-skip — illustration uses placeholder encode/decode bodies
+import { CodecRegistry, isoDateCodec } from '@llui/agent/codecs'
+
+const codecs = new CodecRegistry()
+codecs.register(isoDateCodec)
+codecs.register({
+  name: 'base64-blob',
+  matchesRuntime: (v) => v instanceof Blob,
+  encode: async (b) => ({ name: b.name, type: b.type, base64: '...' }),
+  decode: (wire) => new Blob([], { type: wire.type }),
+})
+
+createAgentClient({ ..., codecs })
+```
+
+`File`/`Blob` codecs are not in the default registry — handling is environment-specific (browser File API vs. Node Buffer vs. workers) and the encoded form is large enough that consumers should opt in deliberately.
+
 ## Cloudflare-vite dual paths (dev only)
 
 When a project ships `@cloudflare/vite-plugin`, that plugin proxies every

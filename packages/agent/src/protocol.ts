@@ -390,3 +390,22 @@ export type AuditEntry = {
   event: AuditEvent
   detail: object
 }
+
+// ── Codec exports ─────────────────────────────────────────────────
+//
+// Re-exported here so consumers can `import { ..., type AgentCodec }
+// from '@llui/agent/protocol'`. The implementation lives in
+// `./codecs.ts` to keep the protocol type surface together but the
+// runtime registry/walkers separate.
+
+export {
+  WIRE_TAG,
+  WIRE_VALUE,
+  CodecRegistry,
+  isoDateCodec,
+  epochMillisCodec,
+  makeDefaultCodecs,
+  encodeForWire,
+  decodeFromWire,
+  type AgentCodec,
+} from './codecs.js'

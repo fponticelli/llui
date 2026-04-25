@@ -33,7 +33,10 @@ export interface DateInputState {
 export type DateInputMsg =
   /** @intent("Update the raw text the user has typed (re-parses to a Date)") */
   | { type: 'setInput'; value: string }
-  /** @intent("Set the parsed date directly (also updates the displayed text)") */
+  /**
+   * @intent("Set the parsed date directly (also updates the displayed text)")
+   * @codec("iso-date")
+   */
   | { type: 'setValue'; value: Date | null }
   /** @intent("Clear the input and the parsed date") */
   | { type: 'clear' }

@@ -294,4 +294,114 @@ describe('createAgentClient', () => {
 
     client.stop()
   })
+
+  it('codec wiring: state-update frames encode Date as iso-date wire form', async () => {
+    type DateState = { connect: unknown; confirm: AgentConfirmState; when: Date }
+    let state: DateState = {
+      connect: {},
+      confirm: { pending: [] },
+      when: new Date('2026-04-25T00:00:00.000Z'),
+    }
+    const listeners = new Set<(s: unknown) => void>()
+    const handle = {
+      getState: () => state,
+      send: vi.fn(),
+      flush: vi.fn(),
+      dispose: vi.fn(),
+      subscribe: (l: (s: unknown) => void) => {
+        listeners.add(l)
+        return () => listeners.delete(l)
+      },
+      setState: (s: DateState) => {
+        state = s
+        for (const l of listeners) l(s)
+      },
+    }
+    const opts: CreateAgentClientOpts<DateState, unknown> = {
+      handle: handle as never,
+      def: { name: 'date-app', __schemaHash: 'h' },
+      appVersion: '1.0.0',
+      rootElement: null,
+      slices: {
+        getConnect: (s) => s.connect,
+        getConfirm: (s) => s.confirm,
+        wrapConnectMsg: (m) => ({ type: 'AgentMsg', inner: m }),
+        wrapConfirmMsg: (m) => ({ type: 'ConfirmMsg', inner: m }),
+      },
+    }
+    const client = createAgentClient(opts)
+    await client.effectHandler({
+      type: 'AgentOpenWS',
+      token: 'tok' as AgentToken,
+      wsUrl: 'ws://localhost:9000/agent/ws',
+    })
+    lastFakeWs!.emit('open')
+    client.start()
+    lastFakeWs!.sent.length = 0
+
+    handle.setState({
+      connect: {},
+      confirm: { pending: [] },
+      when: new Date('2026-04-26T12:34:56.000Z'),
+    })
+
+    const stateFrame = lastFakeWs!.sent
+      .map((s) => JSON.parse(s))
+      .find((f) => f.t === 'state-update')
+    expect(stateFrame).toBeDefined()
+    expect(stateFrame.stateAfter.when).toEqual({
+      __codec: 'iso-date',
+      wire: '2026-04-26T12:34:56.000Z',
+    })
+
+    client.stop()
+  })
+
+  it('codec wiring: incoming msg with iso-date wire form decodes to Date before reaching handle.send', async () => {
+    const handle = makeHandle({ connect: {}, confirm: { pending: [] } })
+    const client = createAgentClient(makeOpts(handle, () => ({ pending: [] })))
+    await client.effectHandler({
+      type: 'AgentOpenWS',
+      token: 'tok' as AgentToken,
+      wsUrl: 'ws://localhost:9000/agent/ws',
+    })
+    lastFakeWs!.emit('open')
+    client.start()
+
+    // Clear the WsOpened call from the open event; only the rpc-driven
+    // dispatch should remain after we emit the rpc-request.
+    handle.send.mockClear()
+
+    // Simulate the server invoking the send_message rpc with a Date payload
+    // in tagged-wire form. The send-message handler will call host.send,
+    // which the factory wraps with decodeFromWire — so the call to
+    // handle.send should see a real Date, not the tagged shape.
+    lastFakeWs!.emit(
+      'message',
+      JSON.stringify({
+        t: 'rpc',
+        id: 'rpc-1',
+        tool: 'send_message',
+        args: {
+          msg: {
+            type: 'setValue',
+            value: { __codec: 'iso-date', wire: '2026-04-25T00:00:00.000Z' },
+          },
+          waitFor: 'none',
+        },
+      }),
+    )
+
+    // Allow the rpc to flush (microtask)
+    await Promise.resolve()
+    await Promise.resolve()
+
+    expect(handle.send).toHaveBeenCalled()
+    const dispatched = handle.send.mock.calls[0]?.[0] as { type: string; value: unknown }
+    expect(dispatched.type).toBe('setValue')
+    expect(dispatched.value).toBeInstanceOf(Date)
+    expect((dispatched.value as Date).toISOString()).toBe('2026-04-25T00:00:00.000Z')
+
+    client.stop()
+  })
 })

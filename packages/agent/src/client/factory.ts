@@ -10,6 +10,7 @@ import type {
 } from '../protocol.js'
 import { attachWsClient, type WsLike, type RpcHosts } from './ws-client.js'
 import { createEffectHandler } from './effect-handler.js'
+import { makeDefaultCodecs, encodeForWire, decodeFromWire, type CodecRegistry } from '../codecs.js'
 
 type ComponentMetadata = {
   __msgSchema?: unknown
@@ -41,6 +42,14 @@ export type CreateAgentClientOpts<State, Msg> = {
      */
     wrapLogMsg?: (m: unknown) => Msg
   }
+  /**
+   * Codec registry for non-JSON-safe values (Date, Blob, Map, …)
+   * crossing the LAP boundary. Defaults to `makeDefaultCodecs()`
+   * which ships `iso-date` and `epoch-millis`. Provide a custom
+   * registry to register additional codecs (e.g. `base64-blob` for
+   * file uploads). See `@llui/agent/codecs` for the convention.
+   */
+  codecs?: CodecRegistry
 }
 
 export type AgentClient = {
@@ -101,9 +110,15 @@ export function createAgentClient<State, Msg>(
     errorListenersInstalled = false
   }
 
+  // Codec registry handles non-JSON-safe values (Date, etc.) crossing
+  // the LAP boundary. `getState` encodes outgoing snapshots; `send`
+  // decodes incoming agent messages before they hit the reducer. The
+  // tagged-value convention is documented in `@llui/agent/codecs`.
+  const codecs = opts.codecs ?? makeDefaultCodecs()
+
   const rpcHost: RpcHosts = {
-    getState: () => opts.handle.getState(),
-    send: (m) => opts.handle.send(m),
+    getState: () => encodeForWire(opts.handle.getState(), codecs),
+    send: (m) => opts.handle.send(decodeFromWire(m, codecs)),
     flush: () => opts.handle.flush(),
     subscribe: (listener) => opts.handle.subscribe(() => listener()),
     getAndClearDrainErrors: () => drainErrors.splice(0, drainErrors.length),
@@ -169,7 +184,11 @@ export function createAgentClient<State, Msg>(
       if (resolvedConfirms.has(entry.id)) continue
       resolvedConfirms.add(entry.id)
       if (entry.status === 'approved') {
-        wsClient?.resolveConfirm(entry.id, 'confirmed', opts.handle.getState())
+        wsClient?.resolveConfirm(
+          entry.id,
+          'confirmed',
+          encodeForWire(opts.handle.getState(), codecs),
+        )
       } else if (entry.status === 'rejected') {
         wsClient?.resolveConfirm(entry.id, 'user-cancelled')
       }
@@ -182,7 +201,10 @@ export function createAgentClient<State, Msg>(
       if (!confirmPollTimer) confirmPollTimer = setInterval(pollConfirms, 200)
       if (!stateSubscription) {
         stateSubscription = opts.handle.subscribe((state) => {
-          wsClient?.emitStateUpdate('/', state)
+          // Same codec convention as `getState`: outgoing snapshots
+          // pass through the encoder so non-JSON-safe values (Date,
+          // etc.) become tagged-wire form.
+          wsClient?.emitStateUpdate('/', encodeForWire(state, codecs))
         })
       }
       installErrorListeners()
