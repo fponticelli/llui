@@ -44,6 +44,18 @@ export const rules = {
   'pure-update-function': pureUpdateFunctionRule,
 }
 
+// Severity rationale:
+// - `error`  = correctness bug or LAP-protocol-breaking issue. CI must reject.
+// - `warn`   = stylistic / nudge. Project may legitimately deviate.
+//
+// All `agent-*` rules ship as `error` because they affect what Claude (or
+// any LLM client) actually sees over the LAP wire. A missing `@intent` makes
+// Claude reason about a synthesized label instead of the developer's
+// intended verb; a non-extractable handler crashes the action; exclusive
+// annotations conflicting silently misroute. None of these are stylistic.
+// Projects that don't ship `@llui/agent` won't have `Msg` variants tagged
+// for the agent surface — the rule's `@humanOnly` exemption silences the
+// signal on purely-internal variants.
 export const configs = {
   recommended: {
     plugins: ['llui'],
@@ -65,10 +77,21 @@ export const configs = {
       'llui/map-on-state-array': 'warn',
       'llui/unnecessary-child': 'warn',
       'llui/form-boilerplate': 'warn',
-      'llui/agent-missing-intent': 'warn',
+      'llui/agent-missing-intent': 'error',
       'llui/agent-exclusive-annotations': 'error',
-      'llui/agent-nonextractable-handler': 'warn',
+      'llui/agent-nonextractable-handler': 'error',
       'llui/pure-update-function': 'error',
+    },
+  },
+  // Standalone overlay that errors on the `agent-*` rules. Useful for
+  // projects that don't extend `recommended` but ship `@llui/agent` and
+  // want LAP-correctness gates without the rest of the recommended set.
+  agent: {
+    plugins: ['llui'],
+    rules: {
+      'llui/agent-missing-intent': 'error',
+      'llui/agent-exclusive-annotations': 'error',
+      'llui/agent-nonextractable-handler': 'error',
     },
   },
 }
