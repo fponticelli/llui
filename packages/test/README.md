@@ -26,6 +26,7 @@ harness.unmount()
 ### testComponent
 
 ```ts
+// @doc-skip — API signature illustration, not runnable code
 testComponent(def) => { state, send, flush, effects }
 ```
 
@@ -34,6 +35,7 @@ Mount a component definition headlessly. Returns current state snapshot and mess
 ### testView
 
 ```ts
+// @doc-skip — API signature illustration
 testView(def, state?) => ViewHarness<M>
 ```
 
@@ -55,6 +57,7 @@ Mount a component into jsdom with full DOM. Returns a harness with DOM query and
 ### assertEffects
 
 ```ts
+// @doc-skip — API signature illustration
 assertEffects(effects, expected) => void
 ```
 
@@ -63,6 +66,7 @@ Deep-equal assertion on effect arrays. Provides clear diff output on mismatch.
 ### propertyTest
 
 ```ts
+// @doc-skip — API signature illustration
 propertyTest(gen, prop) => void
 ```
 
@@ -71,6 +75,7 @@ Property-based testing. Generates random inputs via `gen` and checks `prop` hold
 ### replayTrace
 
 ```ts
+// @doc-skip — API signature illustration
 replayTrace(def, trace) => void
 ```
 

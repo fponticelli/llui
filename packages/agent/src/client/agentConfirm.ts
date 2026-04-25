@@ -13,9 +13,22 @@ export type ConfirmEntry = {
 export type AgentConfirmState = { pending: ConfirmEntry[] }
 
 export type AgentConfirmMsg =
+  /**
+   * @humanOnly — internal: dispatched by `handleSendMessage` on the
+   * @llui/dom side when an agent message is gated by @requiresConfirm.
+   * Adds a pending entry to state; the user (not the agent) decides
+   * with Approve / Reject.
+   */
   | { type: 'Propose'; entry: ConfirmEntry }
+  /** @intent("Approve a pending agent action") */
   | { type: 'Approve'; id: string }
+  /** @intent("Reject a pending agent action") */
   | { type: 'Reject'; id: string }
+  /**
+   * @humanOnly — internal: the host app dispatches this on a timer to
+   * garbage-collect entries that have been pending past `maxAgeMs`.
+   * Agents have no business poking at the timer wheel directly.
+   */
   | { type: 'ExpireStale'; now: number; maxAgeMs: number }
 
 export function init(): [AgentConfirmState, AgentEffect[]] {

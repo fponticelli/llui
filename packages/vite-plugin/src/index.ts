@@ -412,12 +412,30 @@ function registerAgentMiddleware(server: ViteDevServer, agent: AgentServerInstan
   // Connect-style middleware. Vite's middleware chain runs in order, so
   // synchronous registration during configureServer places us ahead of
   // Vite's catch-all fallback.
+  //
+  // Dual-path: handle the canonical `/agent/*` (every project) AND
+  // `/cdn-cgi/agent/*` (defensive — Cloudflare's `@cloudflare/vite-plugin`
+  // routes everything except `/cdn-cgi/*` to the worker, which means
+  // canonical `/agent/*` paths are shadowed in cloudflare-vite projects).
+  // The cdn-cgi prefix is stripped before forwarding so the agent
+  // server's router sees its own canonical paths regardless of which
+  // public URL the client used. This matches the dual-path strategy
+  // used for `/__llui_mcp_status`.
   server.middlewares.use((req, res, next) => {
     const url = req.url ?? '/'
-    if (!url.startsWith('/agent/') && url !== '/agent') {
+    let stripped: string | null = null
+    if (url.startsWith('/agent/') || url === '/agent') stripped = url
+    else if (url.startsWith('/cdn-cgi/agent/') || url === '/cdn-cgi/agent') {
+      stripped = url.slice('/cdn-cgi'.length)
+    }
+    if (stripped === null) {
       next()
       return
     }
+    // Rewrite the request URL in-place so handleAgentRequest's path
+    // matching sees `/agent/*`. Connect middleware can mutate req.url
+    // for downstream handlers; we own the request from here.
+    req.url = stripped
     void handleAgentRequest(req, res, agent.router).catch((e) => {
       console.error('[llui] agent middleware error:', e)
       next(e)
@@ -426,16 +444,20 @@ function registerAgentMiddleware(server: ViteDevServer, agent: AgentServerInstan
 
   // WS upgrade: only /agent/ws goes to the agent. Vite's own HMR upgrade
   // uses a different path and runs as a separate listener on the same
-  // event, so this filter keeps both coexisting.
+  // event, so this filter keeps both coexisting. Same dual-path
+  // accommodation as the HTTP middleware — the WS-upgrade path doesn't
+  // actually matter to most cloudflare setups (the worker handles WS
+  // upgrades natively), but keeping the parity simplifies the mental
+  // model for ops.
   server.httpServer?.on('upgrade', (req, socket, head) => {
     const url = new URL(req.url ?? '/', 'http://localhost')
-    if (url.pathname === '/agent/ws') {
+    if (url.pathname === '/agent/ws' || url.pathname === '/cdn-cgi/agent/ws') {
       agent.wsUpgrade(req, socket, head)
     }
   })
 
   console.info(
-    '[llui] agent dev endpoints active: POST /agent/mint, WS /agent/ws, LAP /agent/lap/v1/*',
+    '[llui] agent dev endpoints active: POST /agent/mint, WS /agent/ws, LAP /agent/lap/v1/* (also reachable under /cdn-cgi/agent/* for cloudflare-vite parity)',
   )
 }
 

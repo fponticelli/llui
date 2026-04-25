@@ -44,6 +44,7 @@ mountApp(document.getElementById('app')!, Counter)
 `view` receives a single `View<S, M>` bag. Destructure what you need — `send` plus any state-bound helpers. TypeScript infers `S` from the component definition, so no per-call generics:
 
 ```typescript
+// @doc-skip — illustrative shape; uses `[...]` placeholders for render results
 view: ({ send, text, show, each, branch, memo }) => [
   text(s => s.label),                    // s is State — inferred
   ...show({ when: s => s.visible, render: () => [...] }),

@@ -51,6 +51,7 @@ server.on('upgrade', agent.wsUpgrade)
 ## Client
 
 ```ts
+// @doc-skip — illustration uses `...` placeholders for handlers
 import { mountApp } from '@llui/dom'
 import { createAgentClient, agentConnect, agentConfirm, agentLog } from '@llui/agent/client'
 import { handleEffects } from '@llui/effects'
@@ -81,6 +82,7 @@ const onEffect = handleEffects<MyEffect | AgentEffect>()
 ## App-side annotations
 
 ```ts
+// @doc-skip — illustration uses `...` placeholders for init/update/view
 type Msg =
   /** @intent("Increment the counter") */
   | { type: 'inc' }

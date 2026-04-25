@@ -11,8 +11,15 @@ export type AgentLogState = {
 export type AgentLogInitOpts = { maxEntries?: number } // default 100
 
 export type AgentLogMsg =
+  /**
+   * @humanOnly — internal: WS frame router dispatches this on every
+   * `log-append` frame from the runtime. Agents observe the log via
+   * the LAP read surface, not by emitting Append themselves.
+   */
   | { type: 'Append'; entry: LogEntry }
+  /** @intent("Clear the agent activity log") */
   | { type: 'Clear' }
+  /** @intent("Set the visibility filter for the agent log") */
   | { type: 'SetFilter'; filter: AgentLogFilter }
 
 const DEFAULT_MAX = 100
@@ -44,6 +51,10 @@ export function update(
 // Connect bag:
 import { type Send } from '@llui/dom'
 
+// Sentinel for the memoization slot — distinguishable from any
+// possible parent state value (including null/undefined).
+const UNSET: unique symbol = Symbol('agent-log-visible-unset')
+
 /**
  * Static prop bag with reactive accessors. See agentConnect.ts for
  * the rationale.
@@ -72,13 +83,25 @@ export function connect<S>(
   get: (s: S) => AgentLogState,
   send: Send<AgentLogMsg>,
 ): ConnectBag<S> {
+  // Memoize the filter result by parent-state reference. Each render
+  // pass typically calls `visibleEntries`, `list['data-count']`, and
+  // every `entryItem(id)['data-kind']` — without this, an `each` loop
+  // over visibleEntries triggers O(n) filter recomputes per item.
+  // Parent state is immutable (TEA), so reference equality is enough.
+  // Using a single-slot cache rather than a WeakMap because consumers
+  // call from a hot path and a single recent state covers >99% of hits.
+  let lastState: S | typeof UNSET = UNSET
+  let lastResult: LogEntry[] = []
   const visible = (state: S): LogEntry[] => {
+    if (state === lastState) return lastResult
     const s = get(state)
-    return s.entries.filter((e) => {
+    lastResult = s.entries.filter((e) => {
       if (s.filter.kinds && !s.filter.kinds.includes(e.kind)) return false
       if (s.filter.since !== undefined && e.at < s.filter.since) return false
       return true
     })
+    lastState = state
+    return lastResult
   }
   const findVisible = (state: S, id: string): LogEntry | undefined =>
     visible(state).find((x) => x.id === id)

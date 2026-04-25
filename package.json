@@ -12,7 +12,8 @@
     "test": "turbo run test",
     "test:coverage": "turbo run test:coverage",
     "test:e2e": "pnpm --filter @llui/mcp test",
-    "verify": "pnpm format && turbo run build check lint test",
+    "check:docs": "node scripts/check-readme-examples.mjs",
+    "verify": "pnpm format && turbo run build check lint test && pnpm check:docs",
     "bench": "tsx benchmarks/run-jfb.ts",
     "bench:build": "pnpm --filter js-framework-benchmark-keyed-llui build-prod",
     "bench:setup": "git clone https://github.com/krausest/js-framework-benchmark.git benchmarks/js-framework-benchmark-repo 2>/dev/null || true && cd benchmarks/js-framework-benchmark-repo && npm ci && cd server && npm ci && cd ../webdriver-ts && npm ci && npm run compile"

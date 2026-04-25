@@ -117,10 +117,42 @@ export async function findTypeSource(
 
   // 3. Local re-binding: `export { X } from elsewhere` shorthand was
   //    handled above. A separate case is `import { X } from ... ; export
-  //    { X }` — the import already declares X locally, so step 4 picks
+  //    { X }` — the import already declares X locally, so step 5 picks
   //    it up.
 
-  // 4. Imports: `import { X } from './y'` or `import { X as Y } from './y'`.
+  // 4. Star re-exports: `export * from './y'`. The barrel re-exports
+  //    every named member of `./y` under the same name. Walk each
+  //    barrel target and return the first hit. Order: textual order
+  //    in the source file (matches TypeScript's behaviour for
+  //    multi-barrel name collisions, where the first declared wins).
+  //
+  //    Multiple `export *` declarations are common in monorepo barrel
+  //    files (`export * from './msg'; export * from './effects'`).
+  //    Without this step, the resolver returns `null` and the plugin
+  //    silently emits empty annotations for any consumer that points
+  //    at a barrel.
+  for (const stmt of sf.statements) {
+    if (!ts.isExportDeclaration(stmt)) continue
+    // `export * from './y'` has no exportClause; `export {} from './y'`
+    // is a different beast (re-exports nothing). Skip the latter.
+    if (stmt.exportClause) continue
+    if (!stmt.moduleSpecifier || !ts.isStringLiteral(stmt.moduleSpecifier)) continue
+
+    const resolved = await ctx.resolveModule(stmt.moduleSpecifier.text, filePath)
+    if (!resolved) continue
+    let subSource: string
+    try {
+      subSource = await ctx.readSource(resolved)
+    } catch {
+      // Module path resolved but the file isn't readable (deleted,
+      // dynamic-only, etc.). Continue to the next barrel.
+      continue
+    }
+    const found = await findTypeSource(typeName, subSource, resolved, ctx, visited)
+    if (found) return found
+  }
+
+  // 5. Imports: `import { X } from './y'` or `import { X as Y } from './y'`.
   //    Walk to the source module using the original (imported) name.
   for (const stmt of sf.statements) {
     if (!ts.isImportDeclaration(stmt)) continue

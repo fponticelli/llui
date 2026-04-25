@@ -10,6 +10,12 @@ const ruleTester = new RuleTester({
   },
 })
 
+// The rule appends a "Tip: enable parserOptions.projectService" hint
+// to every error when typed-lint isn't configured. These tests run
+// without typed-lint, so the hint always fires.
+const HINT =
+  ' Tip: enable `parserOptions.projectService: true` (or `parserOptions.project`) so this rule and `agent-missing-intent` can resolve Msg unions across files.'
+
 ruleTester.run('agent-msg-resolvable', agentMsgResolvableRule, {
   valid: [
     // Locally declared Msg — passes.
@@ -95,6 +101,7 @@ ruleTester.run('agent-msg-resolvable', agentMsgResolvableRule, {
             effect: 'never',
             importBraceOpen: '{',
             importBraceClose: '}',
+            typedLintHint: HINT,
           },
         },
       ],
@@ -118,6 +125,7 @@ ruleTester.run('agent-msg-resolvable', agentMsgResolvableRule, {
             effect: 'never',
             importBraceOpen: '{',
             importBraceClose: '}',
+            typedLintHint: HINT,
           },
         },
       ],
@@ -137,6 +145,7 @@ ruleTester.run('agent-msg-resolvable', agentMsgResolvableRule, {
             state: 'State',
             msgText: 'Box<number>',
             effect: 'never',
+            typedLintHint: HINT,
           },
         },
       ],
@@ -158,6 +167,7 @@ ruleTester.run('agent-msg-resolvable', agentMsgResolvableRule, {
             state: 'State',
             msgText: "{ type: 'inline' }",
             effect: 'never',
+            typedLintHint: HINT,
           },
         },
       ],

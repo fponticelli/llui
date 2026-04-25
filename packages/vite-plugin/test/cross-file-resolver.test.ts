@@ -163,6 +163,94 @@ describe('findTypeSource', () => {
     const result = await findTypeSource('Foo', files['/proj/app.ts']!, '/proj/app.ts', ctx)
     expect(result?.localName).toBe('Foo')
   })
+
+  it("follows `export * from './y'` to find the type in the barrel target", async () => {
+    const files = {
+      '/proj/app.ts': `
+        import { Msg } from './state'
+      `,
+      '/proj/state.ts': `
+        export * from './msg'
+      `,
+      '/proj/msg.ts': `
+        export type Msg = { type: 'inc' }
+      `,
+    }
+    const ctx = memoryCtx(files)
+    const result = await findTypeSource('Msg', files['/proj/app.ts']!, '/proj/app.ts', ctx)
+    expect(result?.filePath).toBe('/proj/msg.ts')
+    expect(result?.localName).toBe('Msg')
+  })
+
+  it('walks multiple `export *` declarations in the same barrel', async () => {
+    // `state.ts` has two `export *` declarations; `Msg` only lives in
+    // the second one. The resolver tries each in order until it finds
+    // the type — silently giving up on the first miss would mask the
+    // common monorepo barrel-with-multiple-modules pattern.
+    const files = {
+      '/proj/app.ts': `
+        import { Msg } from './state'
+      `,
+      '/proj/state.ts': `
+        export * from './effects'
+        export * from './msg'
+      `,
+      '/proj/effects.ts': `
+        export type Effect = { type: 'http' }
+      `,
+      '/proj/msg.ts': `
+        export type Msg = { type: 'go' }
+      `,
+    }
+    const ctx = memoryCtx(files)
+    const result = await findTypeSource('Msg', files['/proj/app.ts']!, '/proj/app.ts', ctx)
+    expect(result?.filePath).toBe('/proj/msg.ts')
+  })
+
+  it('follows nested `export *` chains (barrel → barrel → leaf)', async () => {
+    const files = {
+      '/proj/app.ts': `
+        import { Msg } from './a'
+      `,
+      '/proj/a.ts': `
+        export * from './b'
+      `,
+      '/proj/b.ts': `
+        export * from './msg'
+      `,
+      '/proj/msg.ts': `
+        export type Msg = { type: 'deep' }
+      `,
+    }
+    const ctx = memoryCtx(files)
+    const result = await findTypeSource('Msg', files['/proj/app.ts']!, '/proj/app.ts', ctx)
+    expect(result?.filePath).toBe('/proj/msg.ts')
+  })
+
+  it('named re-export wins over `export *` when both reach the same name', async () => {
+    // `state.ts` has both an explicit `export { Msg }` from one path
+    // AND a barrel `export *` from another. The named re-export comes
+    // first in the resolver's order — that's what TypeScript itself
+    // does for symbol resolution.
+    const files = {
+      '/proj/app.ts': `
+        import { Msg } from './state'
+      `,
+      '/proj/state.ts': `
+        export { Msg } from './explicit'
+        export * from './barrel'
+      `,
+      '/proj/explicit.ts': `
+        export type Msg = { type: 'explicit' }
+      `,
+      '/proj/barrel.ts': `
+        export type Msg = { type: 'barrel' }
+      `,
+    }
+    const ctx = memoryCtx(files)
+    const result = await findTypeSource('Msg', files['/proj/app.ts']!, '/proj/app.ts', ctx)
+    expect(result?.filePath).toBe('/proj/explicit.ts')
+  })
 })
 
 describe('extractMsgAnnotationsCrossFile — composition', () => {

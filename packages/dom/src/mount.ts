@@ -90,6 +90,28 @@ export interface MountOptions {
    * shadow root).
    */
   env?: DomEnv
+  /**
+   * **`hydrateApp` / `hydrateAtAnchor` only.** When `true`, fire the
+   * effects that `init()` returned during hydration the same way
+   * `mountApp` does on a fresh mount. Defaults to `false` because the
+   * SSR render already ran `init()` on the server, and re-running its
+   * effects on the client typically produces duplicate work — an
+   * `httpGet` issued from `init()` would fetch on the server *and* on
+   * hydration; a subscription would attach twice; etc.
+   *
+   * Opt in only when:
+   *   - `init()` returns no effects, OR
+   *   - all returned effects are idempotent / client-only (e.g.
+   *     wiring a `window` event listener, opening a `WebSocket`), AND
+   *   - the SSR path didn't run them (typically when `init()` checks a
+   *     `loaded` flag in state and returns `[]` on the server).
+   *
+   * Pre-0.0.31 behavior was to always run init effects on hydrate;
+   * the option preserves it on demand for projects that depended on
+   * it. The default-off direction matches the safer expectation that
+   * "hydration should be cheap and side-effect-free."
+   */
+  runInitEffectsOnHydrate?: boolean
 }
 
 export function mountApp<S, M, E>(
@@ -516,7 +538,13 @@ export function hydrateAtAnchor<S, M, E, D = void>(
   if (hmrModule && def.name) {
     hmrModule.registerForAnchor(def.name, inst, anchor, endSentinel)
   }
-  dispatchInitialEffects(inst)
+  // Hydration: skip init's effects by default. The SSR pass already ran
+  // them on the server; re-running on the client typically produces
+  // duplicate work (double fetches, double subscriptions). Opt back in
+  // via `MountOptions.runInitEffectsOnHydrate: true`.
+  if (options?.runInitEffectsOnHydrate) {
+    dispatchInitialEffects(inst)
+  }
   let disposed = false
   const listeners = new Set<(s: unknown) => void>()
 
@@ -636,9 +664,15 @@ export function hydrateApp<S, M, E, D = void>(
   // Flush onMount callbacks synchronously now that the DOM is in place.
   flushMountQueue(onMountQueue)
 
-  // Fire the original init's effects post-swap, matching mountApp's
-  // lifecycle. Previously these were silently dropped.
-  dispatchInitialEffects(inst)
+  // Hydration: skip init's effects by default. The SSR pass already ran
+  // them on the server; re-running on the client typically produces
+  // duplicate work (double fetches, double subscriptions). Opt back in
+  // via `MountOptions.runInitEffectsOnHydrate: true` for projects that
+  // need the post-swap dispatch (typically when `init()` is gated by
+  // a `loaded` flag and returns `[]` on the server).
+  if (options?.runInitEffectsOnHydrate) {
+    dispatchInitialEffects(inst)
+  }
 
   registerInstance(inst)
   // HMR registration — same as mountApp / mountAtAnchor /

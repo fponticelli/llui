@@ -1,8 +1,28 @@
-import { AST_NODE_TYPES, TSESTree, type TSESLint } from '@typescript-eslint/utils'
+import { AST_NODE_TYPES, ESLintUtils, TSESTree, type TSESLint } from '@typescript-eslint/utils'
 import { createRule } from '../createRule.js'
 
 type MessageId = 'unresolvable' | 'complexTypeArg' | 'namespaceImport'
 type RuleContext = TSESLint.RuleContext<MessageId, []>
+
+/**
+ * Hint suffix appended to error messages when typed-lint isn't
+ * configured. Cross-file Msg detection (in the companion rules
+ * `agent-missing-intent` / `agent-exclusive-annotations`) requires
+ * `parserOptions.projectService: true` (or `parserOptions.project`)
+ * to resolve symbols across files. The rule itself works without
+ * typed-lint by using same-file heuristics; the hint just nudges
+ * users toward the more precise mode.
+ */
+const TYPED_LINT_HINT =
+  ' Tip: enable `parserOptions.projectService: true` (or `parserOptions.project`) so this rule and `agent-missing-intent` can resolve Msg unions across files.'
+
+function hasTypedLint(context: RuleContext): boolean {
+  const services = ESLintUtils.getParserServices(context, /* allowWithoutTypeInfo */ true)
+  // When typed-lint isn't configured, getParserServices returns a
+  // services bag with `program: null`. Truthy program means the type
+  // checker is wired.
+  return Boolean((services as { program?: unknown }).program)
+}
 
 /**
  * Verifies that the `Msg` type argument of every `component<S, M, E>()`
@@ -32,15 +52,16 @@ export const agentMsgResolvableRule = createRule({
     schema: [],
     messages: {
       unresolvable:
-        'component<{{state}}, {{msg}}, {{effect}}>(): Msg type "{{msg}}" is neither declared in this file nor imported with a named import. The plugin will emit no annotations and LAP validation will silently disable. Either declare `type {{msg}} = ...` here, import it with `import {{importBraceOpen}} {{msg}} {{importBraceClose}} from "..."`, or replace it with an inline union.',
+        'component<{{state}}, {{msg}}, {{effect}}>(): Msg type "{{msg}}" is neither declared in this file nor imported with a named import. The plugin will emit no annotations and LAP validation will silently disable. Either declare `type {{msg}} = ...` here, import it with `import {{importBraceOpen}} {{msg}} {{importBraceClose}} from "..."`, or replace it with an inline union.{{typedLintHint}}',
       complexTypeArg:
-        'component<{{state}}, {{msgText}}, {{effect}}>(): Msg type argument is not a plain identifier. The LLui compiler can only chase identifier-typed type arguments — generics like `Msg<T>`, namespace-qualified names like `m.Msg`, or inline literal unions are not followed. Replace with a named type alias.',
+        'component<{{state}}, {{msgText}}, {{effect}}>(): Msg type argument is not a plain identifier. The LLui compiler can only chase identifier-typed type arguments — generics like `Msg<T>`, namespace-qualified names like `m.Msg`, or inline literal unions are not followed. Replace with a named type alias.{{typedLintHint}}',
       namespaceImport:
-        'component<{{state}}, {{msg}}, {{effect}}>(): Msg type "{{msg}}" comes from a namespace import (`import * as ...`). The cross-file resolver does not follow namespace imports — replace with a named import: `import {{importBraceOpen}} {{msg}} {{importBraceClose}} from "..."`.',
+        'component<{{state}}, {{msg}}, {{effect}}>(): Msg type "{{msg}}" comes from a namespace import (`import * as ...`). The cross-file resolver does not follow namespace imports — replace with a named import: `import {{importBraceOpen}} {{msg}} {{importBraceClose}} from "..."`.{{typedLintHint}}',
     },
   },
   defaultOptions: [],
   create(context) {
+    const typedLintHint = hasTypedLint(context) ? '' : TYPED_LINT_HINT
     return {
       CallExpression(node) {
         if (!isComponentCall(node)) return
@@ -67,6 +88,7 @@ export const agentMsgResolvableRule = createRule({
                 state: stateText,
                 msgText: sourceText(context, msgArg),
                 effect: effectText,
+                typedLintHint,
               },
             })
           }
@@ -98,6 +120,7 @@ export const agentMsgResolvableRule = createRule({
               effect: effectText,
               importBraceOpen: '{',
               importBraceClose: '}',
+              typedLintHint,
             },
           })
           return
@@ -115,6 +138,7 @@ export const agentMsgResolvableRule = createRule({
             effect: effectText,
             importBraceOpen: '{',
             importBraceClose: '}',
+            typedLintHint,
           },
         })
       },

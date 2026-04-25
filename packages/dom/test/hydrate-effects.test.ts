@@ -2,13 +2,38 @@ import { describe, it, expect } from 'vitest'
 import { hydrateApp, div, text } from '../src'
 import type { ComponentDef } from '../src/types'
 
-// REPRO: Bug 3 — hydrateApp should NOT silently drop init-time effects.
-// Previously mount.ts:180 replaced `init` with a stub returning
-// `[serverState, []]`, discarding whatever effects the original init
-// returned. Components that "load data on mount" or attach global
-// listeners via the TEA effect system silently failed after SSR.
 describe('hydrateApp — init-time effects', () => {
-  it('dispatches effects returned by the original init', () => {
+  // Default behavior: hydration does NOT re-run init's effects. The
+  // SSR pass already ran init() on the server (where `init()` was
+  // expected to gate effects with a `loaded` flag); re-firing on the
+  // client typically produces duplicate work. Opt back in via
+  // `MountOptions.runInitEffectsOnHydrate: true`.
+  it('skips init effects by default on hydrate', () => {
+    type State = { value: number }
+    type Msg = { type: 'noop' }
+    type Effect = { type: 'loadSession' } | { type: 'subscribe' }
+
+    const seen: Effect[] = []
+    const def: ComponentDef<State, Msg, Effect> = {
+      name: 'App',
+      init: () => [{ value: 0 }, [{ type: 'loadSession' }, { type: 'subscribe' }]],
+      update: (s, _m) => [s, []],
+      view: ({ text: t }) => [div([t((s: State) => String(s.value))])],
+      onEffect: ({ effect }) => {
+        seen.push(effect)
+      },
+    }
+
+    const container = document.createElement('div')
+    const handle = hydrateApp(container, def, { value: 42 })
+    try {
+      expect(seen).toEqual([])
+    } finally {
+      handle.dispose()
+    }
+  })
+
+  it('dispatches init effects on hydrate when runInitEffectsOnHydrate=true', () => {
     type State = { value: number }
     type Msg = { type: 'noop' }
     type Effect = { type: 'loadSession' } | { type: 'subscribe' }
@@ -26,7 +51,7 @@ describe('hydrateApp — init-time effects', () => {
     }
 
     const container = document.createElement('div')
-    const handle = hydrateApp(container, def, { value: 42 })
+    const handle = hydrateApp(container, def, { value: 42 }, { runInitEffectsOnHydrate: true })
     try {
       expect(seen).toEqual([{ type: 'loadSession' }, { type: 'subscribe' }])
     } finally {

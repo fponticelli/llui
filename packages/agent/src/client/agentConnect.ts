@@ -21,7 +21,13 @@ export type AgentConnectState = {
 }
 
 export type AgentConnectMsg =
+  /** @intent("Mint a new agent token and open the pairing WebSocket") */
   | { type: 'Mint' }
+  /**
+   * @humanOnly — internal: dispatched by the AgentMintRequest effect
+   * handler when the mint endpoint replies success. Carries the token
+   * and connection URLs into state.
+   */
   | {
       type: 'MintSucceeded'
       token: AgentToken
@@ -30,20 +36,33 @@ export type AgentConnectMsg =
       wsUrl: string
       expiresAt: number
     }
+  /** @humanOnly — internal: dispatched by the AgentMintRequest handler on failure. */
   | { type: 'MintFailed'; error: { code: string; detail: string } }
+  /** @humanOnly — internal: WS adapter signalled the pairing socket is open. */
   | { type: 'WsOpened' }
+  /** @humanOnly — internal: WS adapter signalled the pairing socket is closed. */
   | { type: 'WsClosed' }
+  /** @humanOnly — internal: Claude bound the session via /agent/claim. */
   | { type: 'ActivatedByClaude' }
+  /** @intent("Check which previously-issued agent sessions can be resumed") */
   | { type: 'ResumeList'; tids: string[] }
+  /** @humanOnly — internal: AgentResumeCheck effect handler returned the list. */
   | { type: 'ResumeListLoaded'; sessions: AgentSession[] }
+  /** @intent("Resume an existing agent session by tid") */
   | { type: 'Resume'; tid: string }
+  /** @intent("Revoke an agent session by tid") */
   | { type: 'Revoke'; tid: string }
+  /** @intent("Dismiss the current agent connect error") */
   | { type: 'ClearError' }
+  /** @humanOnly — internal: AgentSessionsList effect handler returned the list. */
   | { type: 'SessionsLoaded'; sessions: AgentSession[] }
+  /** @intent("Refresh the list of active agent sessions") */
   | { type: 'RefreshSessions' }
-  /** User clicked the "Copy connect snippet" affordance. Resolves the
-   *  pendingToken's snippet in update() (state-reading is what update()
-   *  is for) and dispatches a clipboard-write effect. */
+  /**
+   * @intent("Copy the agent connect snippet to the clipboard")
+   * Resolves the pendingToken's snippet in update() (state-reading is
+   * what update() is for) and dispatches a clipboard-write effect.
+   */
   | { type: 'CopyConnectSnippet' }
 
 export type AgentConnectInitOpts = { mintUrl: string }

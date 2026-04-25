@@ -167,6 +167,28 @@ export interface RenderClientOptions {
    * layers stay live but disposed layers do not.
    */
   onMount?: (chain: readonly AppHandle[]) => void
+
+  /**
+   * Forwarded to `@llui/dom`'s `hydrateApp` / `hydrateAtAnchor` for
+   * every layer in the layout chain on initial hydration. When `true`,
+   * effects returned by each component's `init()` are dispatched
+   * post-swap on the client. When `false` (default), they are skipped
+   * — the SSR pass already ran them on the server, and re-running on
+   * the client typically produces duplicate fetches / subscriptions.
+   *
+   * Opt in only when:
+   *   - `init()` returns no effects, OR
+   *   - all returned effects are idempotent / client-only (e.g. attaching
+   *     a `window` listener), AND
+   *   - the SSR path didn't run them (typically because `init()` checks
+   *     a `loaded` flag in state and returns `[]` when serverState
+   *     already has the data loaded).
+   *
+   * Subsequent client-side navigation always uses `mountApp` /
+   * `mountAtAnchor` (fresh mount), which always fires init effects
+   * regardless of this flag.
+   */
+  runInitEffectsOnHydrate?: boolean
 }
 
 /**
@@ -231,8 +253,29 @@ interface ChainEntry {
   data: unknown
 }
 
-// Live chain of mounted layers. Module-level state: there's exactly
-// one chain per Vike-managed app per page load.
+/**
+ * Live chain of mounted layers — module-level singleton.
+ *
+ * Vike runs one client-side adapter per browser tab. Within one tab,
+ * a single `chainHandles` array holds the AppHandle for every active
+ * layer, indexed `[outermostLayout, ..., innerLayout, page]`. The
+ * array mutates in place across navigations: shared layout layers
+ * stay live, divergent suffix layers dispose, new layers append.
+ *
+ * **Module-level scope is correct for the browser**, where the
+ * adapter has exactly one consumer per page load. It would be
+ * INCORRECT in a long-running multi-tenant Node SSR worker that
+ * imports `@llui/vike/client` and tries to render multiple requests
+ * concurrently — every request would clobber the same array. That
+ * usage isn't supported today (the client adapter assumes a browser
+ * runtime; the SSR side lives in `@llui/vike/server`'s `_renderChain`
+ * which keeps state per-call), but the constraint should be made
+ * explicit if the adapter ever grows a Node SSR consumer. If you're
+ * here to add such a consumer: convert `chainHandles` and the
+ * pending-slot register to per-call locals threaded through the
+ * adapter API instead of module state, and audit `getLayoutChain`
+ * and `_resetChainForTest` for the same change.
+ */
 let chainHandles: ChainEntry[] = []
 
 /**
@@ -324,6 +367,7 @@ async function renderClient(
     await mountOrHydrateChain(newChain, newChainData, rootEl, {
       mode: 'hydrate',
       serverStateEnvelope: window.__LLUI_STATE__,
+      runInitEffectsOnHydrate: options.runInitEffectsOnHydrate,
     })
     options.onMount?.(snapshotLayoutChain())
     return
@@ -482,6 +526,8 @@ interface MountOpts {
   mode: 'mount' | 'hydrate'
   /** For hydration: the full `window.__LLUI_STATE__` envelope. */
   serverStateEnvelope?: unknown
+  /** Forwarded to `hydrateApp` / `hydrateAtAnchor`. Mount mode ignores. */
+  runInitEffectsOnHydrate?: boolean
 }
 
 /**
@@ -537,7 +583,7 @@ export function _mountChainSuffix(
           mountTarget as HTMLElement,
           def as unknown as Parameters<typeof hydrateApp>[1],
           layerState,
-          { parentLifetime },
+          { parentLifetime, runInitEffectsOnHydrate: opts.runInitEffectsOnHydrate },
         )
       } else {
         // Comment anchor — inner layer, use hydrateAtAnchor.
@@ -545,7 +591,7 @@ export function _mountChainSuffix(
           mountTarget as Comment,
           def as unknown as Parameters<typeof hydrateAtAnchor>[1],
           layerState as never,
-          { parentLifetime },
+          { parentLifetime, runInitEffectsOnHydrate: opts.runInitEffectsOnHydrate },
         )
       }
     } else {

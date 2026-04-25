@@ -9,6 +9,7 @@ pnpm add @llui/transitions
 ## Usage
 
 ```ts
+// @doc-skip — illustrative; uses bare `view({...})` shorthand and `text((s) => …)` placeholder values
 import { fade, slide, mergeTransitions } from '@llui/transitions'
 import { div } from '@llui/dom'
 
@@ -72,6 +73,7 @@ show({
 Convenience wrapper for animating page transitions in a `branch()`:
 
 ```ts
+// @doc-skip — uses `[...]` render-result placeholders
 import { routeTransition, fade } from '@llui/transitions'
 
 // Default: fade + slight upward slide (250ms)
@@ -100,6 +102,7 @@ branch({ on, cases, ...routeTransition(fade({ duration: 200 })) })
 Wraps any transition preset so batch-entered items animate with incremental delays:
 
 ```ts
+// @doc-skip — uses `[...]` render-result placeholder
 import { stagger, fade, slide } from '@llui/transitions'
 
 each({

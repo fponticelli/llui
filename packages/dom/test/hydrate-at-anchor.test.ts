@@ -75,7 +75,7 @@ describe('hydrateAtAnchor', () => {
     expect(n1.nextSibling).toBe(endSentinel)
   })
 
-  it('starts with serverState as the initial state; init() effects are dispatched post-swap', () => {
+  it('starts with serverState as the initial state; skips init effects by default', () => {
     const { anchor } = makeAnchor()
     type S = { n: number; loaded: boolean }
     type E = { type: 'log'; message: string }
@@ -90,7 +90,25 @@ describe('hydrateAtAnchor', () => {
       },
     })
     hydrateAtAnchor(anchor, def, { n: 5, loaded: true })
-    // Effects from the original init() were dispatched even though state was overridden
+    // Default: no init effects on hydrate. The SSR pass already ran them.
+    expect(dispatched).toEqual([])
+  })
+
+  it('dispatches init effects on hydrate when runInitEffectsOnHydrate=true', () => {
+    const { anchor } = makeAnchor()
+    type S = { n: number; loaded: boolean }
+    type E = { type: 'log'; message: string }
+    const dispatched: E[] = []
+    const def = component<S, never, E>({
+      name: 'WithEffect',
+      init: () => [{ n: 0, loaded: false }, [{ type: 'log', message: 'init-fired' }]],
+      update: (s) => [s, []],
+      view: () => [div({}, [])],
+      onEffect: ({ effect }) => {
+        dispatched.push(effect)
+      },
+    })
+    hydrateAtAnchor(anchor, def, { n: 5, loaded: true }, { runInitEffectsOnHydrate: true })
     expect(dispatched).toEqual([{ type: 'log', message: 'init-fired' }])
   })
 
