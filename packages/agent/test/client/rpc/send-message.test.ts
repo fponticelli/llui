@@ -118,6 +118,212 @@ describe('handleSendMessage — validation and annotations', () => {
     expect(proposed.reason).toBe('user requested deletion')
   })
 
+  it('schema mismatch (missing required field) → rejected with explanation', async () => {
+    // The motivating case: agent constructs a payload from
+    // payloadHint but forgets a required field. Schema validation
+    // catches this before the reducer runs and reports which field
+    // is missing.
+    const send = vi.fn()
+    const host = makeHost({
+      send,
+      getMsgAnnotations: () => ({
+        SetCell: {
+          intent: 'Set a cell value',
+          alwaysAffordable: false,
+          requiresConfirm: false,
+          dispatchMode: 'shared',
+          examples: [],
+          warning: null,
+        },
+      }),
+      getMsgSchema: () => ({
+        discriminant: 'type',
+        variants: {
+          SetCell: {
+            criterionId: 'string',
+            value: 'number',
+          },
+        },
+      }),
+    })
+
+    const result = await handleSendMessage(host, {
+      msg: { type: 'SetCell', criterionId: 'c1' },
+    })
+
+    expect(send).not.toHaveBeenCalled()
+    expect(result.status).toBe('rejected')
+    if (result.status === 'rejected') {
+      expect(result.reason).toBe('invalid')
+      expect(result.detail).toContain("missing required field 'value'")
+    }
+  })
+
+  it('schema mismatch (wrong type) → rejected with type detail', async () => {
+    const send = vi.fn()
+    const host = makeHost({
+      send,
+      getMsgAnnotations: () => ({
+        SetCell: {
+          intent: null,
+          alwaysAffordable: false,
+          requiresConfirm: false,
+          dispatchMode: 'shared',
+          examples: [],
+          warning: null,
+        },
+      }),
+      getMsgSchema: () => ({
+        discriminant: 'type',
+        variants: { SetCell: { value: 'number' } },
+      }),
+    })
+
+    const result = await handleSendMessage(host, {
+      msg: { type: 'SetCell', value: 'not a number' },
+    })
+
+    expect(send).not.toHaveBeenCalled()
+    if (result.status === 'rejected') {
+      expect(result.detail).toContain('expected number')
+      expect(result.detail).toContain('got string')
+    }
+  })
+
+  it('schema mismatch (enum value not in list) → rejected', async () => {
+    const send = vi.fn()
+    const host = makeHost({
+      send,
+      getMsgAnnotations: () => ({
+        SetSharing: {
+          intent: null,
+          alwaysAffordable: false,
+          requiresConfirm: false,
+          dispatchMode: 'shared',
+          examples: [],
+          warning: null,
+        },
+      }),
+      getMsgSchema: () => ({
+        discriminant: 'type',
+        variants: {
+          SetSharing: {
+            level: { enum: ['private', 'unlisted', 'public'] },
+          },
+        },
+      }),
+    })
+
+    const result = await handleSendMessage(host, {
+      msg: { type: 'SetSharing', level: 'secret' },
+    })
+
+    expect(send).not.toHaveBeenCalled()
+    if (result.status === 'rejected') {
+      expect(result.detail).toContain('expected one of')
+      expect(result.detail).toContain('"secret"')
+    }
+  })
+
+  it('schema validation tolerates optional fields when omitted', async () => {
+    // Optional fields (TS `?:` or @should-flagged) don't fail
+    // validation when absent — required fields do.
+    const send = vi.fn()
+    const host = makeHost({
+      send,
+      getMsgAnnotations: () => ({
+        Save: {
+          intent: null,
+          alwaysAffordable: false,
+          requiresConfirm: false,
+          dispatchMode: 'shared',
+          examples: [],
+          warning: null,
+        },
+      }),
+      getMsgSchema: () => ({
+        discriminant: 'type',
+        variants: {
+          Save: {
+            title: 'string',
+            description: { type: 'string', optional: true },
+          },
+        },
+      }),
+    })
+
+    const result = await handleSendMessage(host, {
+      msg: { type: 'Save', title: 'hello' },
+      waitFor: 'none',
+    })
+
+    expect(send).toHaveBeenCalledOnce()
+    expect(result.status).toBe('dispatched')
+  })
+
+  it('schema validation passes through unknown-typed fields without checking', async () => {
+    // `'unknown'` in the schema means the compiler couldn't resolve
+    // the type; the validator must accept any value at that position
+    // (the reducer takes responsibility from there).
+    const send = vi.fn()
+    const host = makeHost({
+      send,
+      getMsgAnnotations: () => ({
+        Set: {
+          intent: null,
+          alwaysAffordable: false,
+          requiresConfirm: false,
+          dispatchMode: 'shared',
+          examples: [],
+          warning: null,
+        },
+      }),
+      getMsgSchema: () => ({
+        discriminant: 'type',
+        variants: { Set: { matrix: 'unknown' } },
+      }),
+    })
+
+    const result = await handleSendMessage(host, {
+      msg: { type: 'Set', matrix: { whatever: 'shape' } },
+      waitFor: 'none',
+    })
+
+    expect(send).toHaveBeenCalledOnce()
+    expect(result.status).toBe('dispatched')
+  })
+
+  it('extra fields not in schema are tolerated', async () => {
+    // Adding a field via update.ts before regenerating the schema
+    // shouldn't bounce all dispatches. Be lenient on extras.
+    const send = vi.fn()
+    const host = makeHost({
+      send,
+      getMsgAnnotations: () => ({
+        Inc: {
+          intent: null,
+          alwaysAffordable: false,
+          requiresConfirm: false,
+          dispatchMode: 'shared',
+          examples: [],
+          warning: null,
+        },
+      }),
+      getMsgSchema: () => ({
+        discriminant: 'type',
+        variants: { Inc: {} },
+      }),
+    })
+
+    const result = await handleSendMessage(host, {
+      msg: { type: 'Inc', extraField: 'also fine' },
+      waitFor: 'none',
+    })
+
+    expect(send).toHaveBeenCalledOnce()
+    expect(result.status).toBe('dispatched')
+  })
+
   it('unknown variant when annotations map is non-empty → rejected as invalid', async () => {
     const send = vi.fn()
     const host = makeHost({

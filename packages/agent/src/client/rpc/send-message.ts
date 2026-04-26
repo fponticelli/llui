@@ -1,6 +1,7 @@
 import { randomUUID } from '../uuid.js'
 import { handleListActions, type ListActionsHost } from './list-actions.js'
 import { computeStateDiff } from '../../state-diff.js'
+import type { MsgSchemaField } from '../factory.js'
 import type {
   LapActionsResponse,
   LapDrainMeta,
@@ -80,6 +81,22 @@ export async function handleSendMessage(
   if (ann?.dispatchMode === 'human-only') {
     return { status: 'rejected', reason: 'human-only' }
   }
+
+  // Schema validation: when the compiler emitted a `__msgSchema`,
+  // check the payload against this variant's field shape before
+  // dispatch. Catches the everyday agent bug — missing required
+  // field, type-mismatched value, typo in a key name — early, with a
+  // structured error the LLM can correct from. The reducer is the
+  // last line of defense; this is the first.
+  const schema = host.getMsgSchema?.()
+  const schemaVariant = schema?.variants[args.msg.type]
+  if (schemaVariant !== undefined) {
+    const violation = validatePayload(args.msg, schemaVariant)
+    if (violation !== null) {
+      return { status: 'rejected', reason: 'invalid', detail: violation }
+    }
+  }
+
   if (ann?.requiresConfirm) {
     const id = randomUUID()
     const { type: _type, ...payload } = args.msg
@@ -229,3 +246,77 @@ function now(): number {
 // Helper types for external callers that want the dispatched envelope.
 export type DispatchedEnvelope = Extract<LapMessageResponse, { status: 'dispatched' }>
 export type { LapActionsResponse }
+
+/**
+ * Validate `msg` against the variant's field schema. Returns null on
+ * pass, a human-readable error string on fail. The check is shallow:
+ * only top-level fields are walked, and `'unknown'` types pass any
+ * value (the compiler couldn't statically resolve the type, so the
+ * agent has to take what update() will accept on faith).
+ *
+ * Extra fields not in the schema are tolerated. TypeScript's structural
+ * subtyping is permissive here too, and Msg payloads often carry
+ * fields the discriminator didn't list (analytics tags, request IDs,
+ * etc.). Rejecting them would be both surprising and blocked by edits
+ * to update.ts that add fields ahead of the schema regenerating.
+ */
+function validatePayload(
+  msg: { type: string; [k: string]: unknown },
+  fields: Record<string, MsgSchemaField>,
+): string | null {
+  for (const [name, descriptor] of Object.entries(fields)) {
+    const fieldType = unwrapFieldType(descriptor)
+    const optional = isFieldOptional(descriptor)
+    const present = name in msg
+    if (!present) {
+      if (!optional) {
+        return `${msg.type}: missing required field '${name}' (expected ${formatType(fieldType)})`
+      }
+      continue
+    }
+    const value = msg[name]
+    const typeError = checkType(value, fieldType)
+    if (typeError !== null) {
+      return `${msg.type}: field '${name}' ${typeError}`
+    }
+  }
+  return null
+}
+
+function unwrapFieldType(d: MsgSchemaField): string | { enum: string[] } {
+  return typeof d === 'object' && 'type' in d ? d.type : (d as string | { enum: string[] })
+}
+
+function isFieldOptional(d: MsgSchemaField): boolean {
+  return typeof d === 'object' && 'type' in d && d.optional === true
+}
+
+function checkType(value: unknown, t: string | { enum: string[] }): string | null {
+  if (typeof t === 'string') {
+    if (t === 'unknown') return null
+    if (t === 'string') return typeof value === 'string' ? null : `expected string, got ${typeof value}`
+    if (t === 'number') return typeof value === 'number' ? null : `expected number, got ${typeof value}`
+    if (t === 'boolean')
+      return typeof value === 'boolean' ? null : `expected boolean, got ${typeof value}`
+    // Unknown literal type code — be lenient. The compiler emits these
+    // for keywords the resolver doesn't recognize; rejecting would
+    // false-positive on every release that added a new primitive.
+    return null
+  }
+  // Enum: value must be one of the listed strings.
+  if (typeof value !== 'string') {
+    return `expected one of ${formatEnum(t)}, got ${typeof value}`
+  }
+  if (!t.enum.includes(value)) {
+    return `expected one of ${formatEnum(t)}, got ${JSON.stringify(value)}`
+  }
+  return null
+}
+
+function formatType(t: string | { enum: string[] }): string {
+  return typeof t === 'string' ? t : formatEnum(t)
+}
+
+function formatEnum(t: { enum: string[] }): string {
+  return `[${t.enum.map((v) => JSON.stringify(v)).join(', ')}]`
+}
