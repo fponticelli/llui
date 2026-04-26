@@ -3,7 +3,6 @@ import type {
   Msg,
   Effect,
   Route,
-  SearchData,
   Repo,
   TreeEntry,
   FileContent,
@@ -263,15 +262,6 @@ function loadRoute(state: State, route: Route): [State, Effect[]] {
 
 function setRouteData(state: State, data: { type: string; [k: string]: unknown }): State {
   return { ...state, route: { ...state.route, data } as Route }
-}
-
-function withSearchData(
-  state: State,
-  build: () => { type: 'success'; data: SearchData },
-): [State, Effect[]] {
-  const r = state.route
-  if (r.page !== 'search') return [state, []]
-  return [{ ...state, route: { ...r, data: build() } }, []]
 }
 
 function withRepoLoaded(state: State, repo: Repo): [State, Effect[]] {

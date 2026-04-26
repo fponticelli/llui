@@ -24,6 +24,14 @@ import { agentExampleOnPayloadRule } from './rules/agent-example-on-payload.js'
 import { agentEmitsDriftRule } from './rules/agent-emits-drift.js'
 import { agentOptionalFieldUndocumentedRule } from './rules/agent-optional-field-undocumented.js'
 import { pureUpdateFunctionRule } from './rules/pure-update-function.js'
+import { emptyPropsRule } from './rules/empty-props.js'
+import { namespaceImportRule } from './rules/namespace-import.js'
+import { accessibilityRule } from './rules/accessibility.js'
+import { controlledInputRule } from './rules/controlled-input.js'
+import { childStaticPropsRule } from './rules/child-static-props.js'
+import { staticOnRule } from './rules/static-on.js'
+import { exhaustiveUpdateRule } from './rules/exhaustive-update.js'
+import { bitmaskOverflowRule } from './rules/bitmask-overflow.js'
 
 export const rules = {
   'accessor-side-effect': accessorSideEffectRule,
@@ -52,20 +60,32 @@ export const rules = {
   'agent-emits-drift': agentEmitsDriftRule,
   'agent-optional-field-undocumented': agentOptionalFieldUndocumentedRule,
   'pure-update-function': pureUpdateFunctionRule,
+  'empty-props': emptyPropsRule,
+  'namespace-import': namespaceImportRule,
+  'accessibility': accessibilityRule,
+  'controlled-input': controlledInputRule,
+  'child-static-props': childStaticPropsRule,
+  'static-on': staticOnRule,
+  'exhaustive-update': exhaustiveUpdateRule,
+  'bitmask-overflow': bitmaskOverflowRule,
 }
 
 // Severity rationale:
-// - `error`  = correctness bug or LAP-protocol-breaking issue. CI must reject.
-// - `warn`   = stylistic / nudge. Project may legitimately deviate.
 //
-// All `agent-*` rules ship as `error` because they affect what Claude (or
-// any LLM client) actually sees over the LAP wire. A missing `@intent` makes
-// Claude reason about a synthesized label instead of the developer's
-// intended verb; a non-extractable handler crashes the action; exclusive
-// annotations conflicting silently misroute. None of these are stylistic.
-// Projects that don't ship `@llui/agent` won't have `Msg` variants tagged
-// for the agent surface — the rule's `@humanOnly` exemption silences the
-// signal on purely-internal variants.
+// All rules in `recommended` ship at `error`. The reason isn't strictly
+// LAP-correctness — it's audience. LLMs (Claude in the editor, IDE
+// agents driving the codebase, CI bots running a test loop) overwhelmingly
+// only act on `error`-level diagnostics. Warnings get reported but not
+// fixed, so anything we ship as `warn` effectively never improves on its
+// own — it just accumulates. Erroring is the only way to make the
+// signal stick.
+//
+// Where a rule has known false-positive scenarios (e.g.
+// `agent-emits-drift`'s "orphaned emit" half can't see helper-emit
+// patterns like `track('foo')`), the rule itself documents the
+// limitation and projects can downgrade per-package. Defaulting to
+// `error` is the right policy; per-rule escape hatches handle edge
+// cases.
 export const configs = {
   recommended: {
     plugins: ['llui'],
@@ -82,31 +102,32 @@ export const configs = {
       'llui/exhaustive-effect-handling': 'error',
       'llui/direct-state-in-view': 'error',
       'llui/state-mutation': 'error',
-      'llui/missing-memo': 'warn',
+      'llui/missing-memo': 'error',
       'llui/each-closure-violation': 'error',
-      'llui/map-on-state-array': 'warn',
-      'llui/unnecessary-child': 'warn',
-      'llui/form-boilerplate': 'warn',
+      'llui/map-on-state-array': 'error',
+      'llui/unnecessary-child': 'error',
+      'llui/form-boilerplate': 'error',
       'llui/agent-missing-intent': 'error',
       'llui/agent-exclusive-annotations': 'error',
       'llui/agent-nonextractable-handler': 'error',
       'llui/agent-msg-resolvable': 'error',
-      // The two new annotation-completeness rules ship as `warn`
-      // because missing @warning / @example don't break the LAP wire
-      // — they just hide context from the LLM. Apps that want CI to
-      // gate on full LLM-readability can bump to `error` themselves.
-      'llui/agent-warning-on-confirm': 'warn',
-      'llui/agent-example-on-payload': 'warn',
-      // `agent-emits-drift` is `warn` because the static analysis
-      // can't see effects emitted via helpers (`track('foo')`),
-      // so the orphaned-emit half is best-effort. The undeclared-
-      // emit half (literal `{kind: 'X'}` not in @emits) is reliable
-      // and would justify `error`, but mixing severities for one
-      // rule isn't supported. `warn` errs on the side of not
-      // breaking CI on edge cases.
-      'llui/agent-emits-drift': 'warn',
-      'llui/agent-optional-field-undocumented': 'warn',
+      'llui/agent-warning-on-confirm': 'error',
+      'llui/agent-example-on-payload': 'error',
+      'llui/agent-emits-drift': 'error',
+      'llui/agent-optional-field-undocumented': 'error',
       'llui/pure-update-function': 'error',
+      // Rules ported from the Vite plugin's compile-time diagnostics.
+      // The Vite plugin no longer emits these; the lint pipeline is
+      // the single source of truth, surfacing them as editor squiggles
+      // rather than build-only console output.
+      'llui/empty-props': 'error',
+      'llui/namespace-import': 'error',
+      'llui/accessibility': 'error',
+      'llui/controlled-input': 'error',
+      'llui/child-static-props': 'error',
+      'llui/static-on': 'error',
+      'llui/exhaustive-update': 'error',
+      'llui/bitmask-overflow': 'error',
     },
   },
   // Standalone overlay that errors on the `agent-*` rules. Useful for
@@ -119,10 +140,10 @@ export const configs = {
       'llui/agent-exclusive-annotations': 'error',
       'llui/agent-nonextractable-handler': 'error',
       'llui/agent-msg-resolvable': 'error',
-      'llui/agent-warning-on-confirm': 'warn',
-      'llui/agent-example-on-payload': 'warn',
-      'llui/agent-emits-drift': 'warn',
-      'llui/agent-optional-field-undocumented': 'warn',
+      'llui/agent-warning-on-confirm': 'error',
+      'llui/agent-example-on-payload': 'error',
+      'llui/agent-emits-drift': 'error',
+      'llui/agent-optional-field-undocumented': 'error',
     },
   },
 }

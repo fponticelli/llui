@@ -18,6 +18,8 @@ export type SendMessageArgs = {
   drainQuietMs?: number
   /** See LapMessageRequest['timeoutMs']. Default: 5000ms. */
   timeoutMs?: number
+  /** See LapMessageRequest['includeState']. Default: false. */
+  includeState?: boolean
 }
 
 export type SendMessageHost = ListActionsHost & {
@@ -123,9 +125,11 @@ export async function handleSendMessage(
   // so the reference stays valid).
   const prevState = host.getState()
 
+  const includeState = args.includeState === true
+
   if (waitFor === 'none') {
     host.send(args.msg)
-    return dispatched(host, emptyDrain(), prevState)
+    return dispatched(host, emptyDrain(), prevState, includeState)
   }
 
   if (waitFor === 'idle') {
@@ -136,6 +140,7 @@ export async function handleSendMessage(
       host,
       { effectsObserved: 1, durationMs: 0, timedOut: false, errors: [] },
       prevState,
+      includeState,
     )
   }
 
@@ -169,6 +174,7 @@ export async function handleSendMessage(
             errors: host.getAndClearDrainErrors?.() ?? [],
           },
           prevState,
+          includeState,
         )
       }
       const budget = Math.min(quietMs, capMs - elapsed)
@@ -191,6 +197,7 @@ export async function handleSendMessage(
             errors: host.getAndClearDrainErrors?.() ?? [],
           },
           prevState,
+          includeState,
         )
       }
       // A commit fired during the wait — flush any queued follow-ups so
@@ -206,15 +213,16 @@ function dispatched(
   host: SendMessageHost,
   drain: LapDrainMeta,
   prevState: unknown,
+  includeState: boolean,
 ): LapMessageResponse {
   const stateAfter = host.getState()
-  return {
-    status: 'dispatched',
-    stateAfter,
+  const base = {
+    status: 'dispatched' as const,
     stateDiff: computeStateDiff(prevState, stateAfter),
     actions: handleListActions(host).actions,
     drain,
   }
+  return includeState ? { ...base, stateAfter } : base
 }
 
 function emptyDrain(): LapDrainMeta {

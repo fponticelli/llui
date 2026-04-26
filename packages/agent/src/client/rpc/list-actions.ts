@@ -30,7 +30,13 @@ export type ListActionsHost = {
 export type ListActionsResult = {
   actions: Array<{
     variant: string
-    intent: string
+    /**
+     * Human-readable phrase from `@intent("…")`, or `null` when the
+     * variant is unannotated. Mirror of LapActionsResponse.intent —
+     * callers should treat `null` as a documentation gap and not as
+     * "missing label, fall back to variant name".
+     */
+    intent: string | null
     requiresConfirm: boolean
     dispatchMode: 'shared' | 'agent-only'
     source: 'binding' | 'always-affordable' | 'schema'
@@ -47,6 +53,18 @@ export type ListActionsResult = {
      * save = bad") and for confirming destructive flows.
      */
     emits: string[]
+    /**
+     * Per-field guidance lifted from `@should("…")` JSDoc on payload
+     * fields. Path is dot/bracket notation rooted at the payload
+     * (e.g. `"cells"` for a top-level field, `"cells[].meta"` for an
+     * array element's nested field). Useful when the field is typed
+     * as `unknown` or as a polymorphic shape — the hint says "type
+     * matches the criterion's kind: number for quantity, …" so the
+     * agent doesn't have to guess from the bare schema.
+     *
+     * Empty when no field on this variant carries an `@should` hint.
+     */
+    fieldHints: Array<{ path: string; hint: string }>
   }>
 }
 
@@ -68,9 +86,10 @@ export function handleListActions(host: ListActionsHost): ListActionsResult {
     const ann = annotations[d.variant]
     if (ann?.dispatchMode === 'human-only') continue
     seen.add(d.variant)
+    const variantSchema = schema?.variants[d.variant]
     out.push({
       variant: d.variant,
-      intent: ann?.intent ?? d.variant,
+      intent: ann?.intent ?? null,
       requiresConfirm: ann?.requiresConfirm ?? false,
       dispatchMode: ann?.dispatchMode === 'agent-only' ? 'agent-only' : 'shared',
       source: 'binding',
@@ -79,6 +98,7 @@ export function handleListActions(host: ListActionsHost): ListActionsResult {
       warning: ann?.warning ?? null,
       examples: ann?.examples ?? [],
       emits: ann?.emits ?? [],
+      fieldHints: variantSchema ? collectFieldHints(variantSchema) : [],
     })
   }
 
@@ -88,9 +108,10 @@ export function handleListActions(host: ListActionsHost): ListActionsResult {
     if (ann?.dispatchMode === 'human-only') continue
     seen.add(msg.type)
     const { type, ...rest } = msg
+    const variantSchema = schema?.variants[type]
     out.push({
       variant: type,
-      intent: ann?.intent ?? type,
+      intent: ann?.intent ?? null,
       requiresConfirm: ann?.requiresConfirm ?? false,
       dispatchMode: ann?.dispatchMode === 'agent-only' ? 'agent-only' : 'shared',
       source: 'always-affordable',
@@ -99,36 +120,49 @@ export function handleListActions(host: ListActionsHost): ListActionsResult {
       warning: ann?.warning ?? null,
       examples: ann?.examples ?? [],
       emits: ann?.emits ?? [],
+      fieldHints: variantSchema ? collectFieldHints(variantSchema) : [],
     })
   }
 
-  // From schema — only `@agentOnly` variants that aren't already
-  // surfaced as bindings or always-affordable. These are the bulk-
-  // edit and admin-style affordances that an app exposes specifically
-  // to the agent (no UI button maps to them) and that `agentAffordances`
-  // hasn't enumerated. Including them here lets the LLM discover the
-  // full set of dispatches without having to read the Msg schema and
-  // construct payloads from scratch.
+  // From schema — variants that aren't already surfaced as bindings
+  // or always-affordable, and that the author intentionally documented
+  // for agent use. Two cases land here:
+  //
+  //   1. `@agentOnly` variants — the canonical "no UI button maps to
+  //      this; the agent is the only dispatcher." Bulk edits, imports,
+  //      admin operations.
+  //   2. `'shared'` variants with `@intent` but no live binding — the
+  //      author wrote a description for the variant, signalling it's
+  //      a real agent-callable dispatch even when the corresponding UI
+  //      affordance is closed (e.g. `Matrix/SetQuantityValue` lives
+  //      inside the cell editor; without this case, an agent that
+  //      wants to set one cell is forced to use the bulk
+  //      `Matrix/SetManyCells` with a 1-element array).
+  //
+  // `'shared'` variants WITHOUT `@intent` stay hidden — undocumented
+  // shared variants are usually internal (effect-result messages,
+  // router-internal acks) that aren't intended as agent affordances.
+  // `'human-only'` is always filtered.
   if (schema) {
     for (const [variant, fields] of Object.entries(schema.variants)) {
       if (seen.has(variant)) continue
       const ann = annotations[variant]
-      // Only `@agentOnly` is surfaced here. `'shared'` variants without
-      // a live binding are intentionally hidden — if the human can't
-      // click them right now, the agent shouldn't fire them either.
-      // `'human-only'` is always filtered.
-      if (ann?.dispatchMode !== 'agent-only') continue
+      if (ann?.dispatchMode === 'human-only') continue
+      const isAgentOnly = ann?.dispatchMode === 'agent-only'
+      const isDocumentedShared = ann?.dispatchMode !== 'agent-only' && Boolean(ann?.intent)
+      if (!isAgentOnly && !isDocumentedShared) continue
       out.push({
         variant,
-        intent: ann?.intent ?? variant,
+        intent: ann?.intent ?? null,
         requiresConfirm: ann?.requiresConfirm ?? false,
-        dispatchMode: 'agent-only',
+        dispatchMode: isAgentOnly ? 'agent-only' : 'shared',
         source: 'schema',
         selectorHint: null,
         payloadHint: synthesizePayload(variant, fields),
         warning: ann?.warning ?? null,
         examples: ann?.examples ?? [],
         emits: ann?.emits ?? [],
+        fieldHints: collectFieldHints(fields),
       })
     }
   }
@@ -157,6 +191,62 @@ function synthesizePayload(variant: string, fields: Record<string, MsgSchemaFiel
     out[name] = exampleValue(descriptor)
   }
   return out
+}
+
+/**
+ * Walk a variant's field tree and collect every `@should` hint into a
+ * flat list keyed by field path. Path conventions:
+ *   - top-level field: `"cells"`
+ *   - nested object property: `"cells.value"`
+ *   - array element: `"cells[]"` for the element itself; descendants
+ *     use `"cells[].meta"` and so on.
+ *
+ * Surfaces the same hints that show up nested inside
+ * `description.messages.variants[X].field.hint` so callers don't have
+ * to dig through the schema tree to find them.
+ */
+function collectFieldHints(
+  fields: Record<string, MsgSchemaField>,
+): Array<{ path: string; hint: string }> {
+  const out: Array<{ path: string; hint: string }> = []
+  for (const [name, descriptor] of Object.entries(fields)) {
+    walkHint(name, descriptor, out)
+  }
+  return out
+}
+
+function walkHint(
+  path: string,
+  d: MsgSchemaField,
+  out: Array<{ path: string; hint: string }>,
+): void {
+  // Rich descriptor with a hint at this position.
+  if (typeof d === 'object' && d !== null && 'type' in d) {
+    if (typeof d.hint === 'string' && d.hint.length > 0) {
+      out.push({ path, hint: d.hint })
+    }
+    walkHintBare(path, d.type, out)
+    return
+  }
+  walkHintBare(path, d, out)
+}
+
+function walkHintBare(
+  path: string,
+  t: unknown,
+  out: Array<{ path: string; hint: string }>,
+): void {
+  if (t === null || typeof t !== 'object') return
+  const obj = t as Record<string, unknown>
+  if (obj.kind === 'object' && obj.shape !== null && typeof obj.shape === 'object') {
+    for (const [name, descriptor] of Object.entries(obj.shape as Record<string, MsgSchemaField>)) {
+      walkHint(`${path}.${name}`, descriptor, out)
+    }
+    return
+  }
+  if (obj.kind === 'array') {
+    walkHint(`${path}[]`, obj.element as MsgSchemaField, out)
+  }
 }
 
 function isOptional(d: MsgSchemaField): boolean {

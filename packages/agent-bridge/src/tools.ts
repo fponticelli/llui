@@ -141,7 +141,7 @@ export const TOOL_DESCRIPTORS: ToolDescriptor[] = [
     kind: 'forward',
     name: 'send_message',
     description:
-      'Dispatch a message to the app. Blocks by default until the message queue goes idle (drain semantics — captures http/delay/debounce round-trips that feed back as messages). Returns {status, stateAfter, actions, drain} on dispatched, {status: "pending-confirmation", confirmId} when the variant is @requiresConfirm, or {status: "rejected", reason} on validation failures. `drain.timedOut: true` means the 5s cap was hit while messages were still arriving — follow up with `observe` to resync. `actions` in the response reflects the new state, so you normally do not need a separate `observe` after a send.',
+      'Dispatch a message to the app. Blocks by default until the message queue goes idle (drain semantics — captures http/delay/debounce round-trips that feed back as messages). Returns {status, stateDiff, actions, drain} on dispatched, {status: "pending-confirmation", confirmId} when the variant is @requiresConfirm, or {status: "rejected", reason} on validation failures. By default the response carries `stateDiff` (a JSON-Patch-shaped delta) and not the full post-state — apply the diff to the snapshot you got from `connect`/`observe`. Pass `includeState: true` if you want the full snapshot back (rare; expensive on bandwidth and context for large states). `drain.timedOut: true` means the 5s cap was hit while messages were still arriving — follow up with `observe` to resync. `actions` in the response reflects the new state, so you normally do not need a separate `observe` after a send.',
     schema: z.object({
       msg: z
         .object({ type: z.string() })
@@ -168,6 +168,12 @@ export const TOOL_DESCRIPTORS: ToolDescriptor[] = [
         .optional()
         .describe(
           'Hard cap on total wait. Default 5000. For waitFor:"drained", this bounds how long the drain loop runs; for pending-confirmation, how long to wait for user approval.',
+        ),
+      includeState: z
+        .boolean()
+        .optional()
+        .describe(
+          'Include the full post-drain `stateAfter` snapshot in the response. Default false — `stateDiff` is what callers normally need, and resending the full state on every dispatch wastes bandwidth and context. Set true only when you need a fresh snapshot back (e.g., after a long-running effect that may have produced changes the diff misses).',
         ),
     }),
     lapPath: '/message',

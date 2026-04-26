@@ -99,7 +99,17 @@ export type LapStateResponse = { state: unknown }
 export type LapActionsResponse = {
   actions: Array<{
     variant: string
-    intent: string
+    /**
+     * Human-readable phrase from `@intent("…")`, or `null` when the
+     * variant has no `@intent` annotation. Callers that surface
+     * affordances to an LLM should treat `null` as "this action is
+     * undocumented" — neither synthesise a label from the variant name
+     * nor invent one. Pre-`@intent` variants would previously surface
+     * as `intent: "<variant>"` here, which made unannotated actions
+     * indistinguishable from properly-labelled ones; emitting `null`
+     * keeps the gap visible.
+     */
+    intent: string | null
     requiresConfirm: boolean
     /**
      * `'shared'` — both UI and agent can dispatch. `'agent-only'` — no UI
@@ -122,6 +132,23 @@ export type LapActionsResponse = {
     source: 'binding' | 'always-affordable' | 'schema'
     selectorHint: string | null
     payloadHint: object | null
+    /** Cautionary text from `@warning` JSDoc, or null. */
+    warning: string | null
+    /** Concrete examples from `@example` JSDoc, in source order. */
+    examples: string[]
+    /**
+     * Effect kinds this variant emits, from `@emits("k1", "k2")`.
+     * Empty when not annotated.
+     */
+    emits: string[]
+    /**
+     * Per-field guidance lifted from `@should("…")` JSDoc on payload
+     * fields. Path is dot/bracket notation rooted at the payload (e.g.
+     * `"cells[].meta"`). Surfaces hints that would otherwise be buried
+     * inside the schema tree, so callers can read them alongside
+     * `examples` without diving into `description.messages.variants`.
+     */
+    fieldHints: Array<{ path: string; hint: string }>
   }>
 }
 
@@ -154,6 +181,20 @@ export type LapMessageRequest = {
    * the user's confirm/reject. Default 5_000ms.
    */
   timeoutMs?: number
+  /**
+   * Include the full post-drain `stateAfter` snapshot in the response.
+   * Default `false` — the response carries `stateDiff` only and the
+   * caller applies it to the prior snapshot (from connect/observe). For
+   * apps with non-trivial state, the diff is orders of magnitude
+   * smaller than the full state, and resending the snapshot on every
+   * dispatch wastes bandwidth and (for LLM callers) context budget.
+   *
+   * Set `true` when the caller doesn't track state incrementally and
+   * wants the snapshot back. The legacy `confirmed` and `wait` paths
+   * always carry `stateAfter` because their flow is asynchronous and
+   * a diff would be ambiguous.
+   */
+  includeState?: boolean
 }
 
 export type LapMessageRejectReason =
@@ -183,15 +224,20 @@ export type LapDrainMeta = {
 export type LapMessageResponse =
   | {
       status: 'dispatched'
-      stateAfter: unknown
+      /**
+       * Full post-drain state snapshot. Present only when the caller
+       * passed `includeState: true` in the request — by default,
+       * `stateDiff` is the only state-shaped field on the response
+       * because callers can apply the diff to the prior snapshot from
+       * `connect` / `observe`. See `LapMessageRequest.includeState`.
+       */
+      stateAfter?: unknown
       /**
        * Structural diff from pre-dispatch state to post-drain state,
        * in JSON-Patch shape (RFC 6902 subset: `add`, `remove`,
        * `replace`). Empty when the dispatch produced no observable
-       * state change. Useful when the agent wants "what changed?"
-       * without diffing the full state itself; for very large states
-       * this is also smaller than the full `stateAfter`. Both fields
-       * are present so callers can pick whichever fits their use.
+       * state change. The default state surface for callers — apply
+       * incrementally to the snapshot from `connect`/`observe`.
        */
       stateDiff: import('./state-diff.js').StateDiff
       actions: LapActionsResponse['actions']
@@ -238,7 +284,24 @@ export type OutlineNode =
   | { kind: 'input'; label: string | null; value: string | null; type: string }
   | { kind: 'link'; text: string; href: string }
 
-export type LapDescribeVisibleResponse = { outline: OutlineNode[] }
+export type LapDescribeVisibleResponse = {
+  outline: OutlineNode[]
+  /**
+   * Where the outline came from:
+   *   - `'data-agent'`: the app has `data-agent`-tagged zones and the
+   *     walker scoped the outline to them. The author chose what to
+   *     surface; trust the result.
+   *   - `'fallback'`: no `data-agent` tags exist; the walker fell back
+   *     to a depth- and count-limited semantic walk of the entire
+   *     root element. Useful for first-pass dogfood targets that
+   *     haven't tagged their views.
+   *   - `'truncated'`: same as `'fallback'` but the cap (200 nodes)
+   *     was hit before the walk finished. The visible content beyond
+   *     that point is not represented; reach for `query_dom` or state
+   *     reads if you need more.
+   */
+  source: 'data-agent' | 'fallback' | 'truncated'
+}
 
 // ── App + context documentation ──────────────────────────────────
 // Static app-level docs (authored once on the component record) and

@@ -55,7 +55,12 @@ describe('handleListActions', () => {
     expect(result.actions.at(0)?.variant).toBe('Save')
   })
 
-  it('intent fallback to variant name when annotation has null intent', () => {
+  it('null annotation intent surfaces as null (not synthesised from variant name)', () => {
+    // Pre-`@intent` (or eslint-disabled) variants used to fall back to
+    // `intent: <variant>` here. That made unannotated actions
+    // indistinguishable from annotated ones on the LLM surface and
+    // hid genuine documentation gaps. The agent now sees `null` and
+    // can treat it as "this action is undocumented".
     const result = handleListActions(
       makeHost({
         descriptors: [{ variant: 'Toggle' }],
@@ -72,7 +77,7 @@ describe('handleListActions', () => {
         },
       }),
     )
-    expect(result.actions.at(0)?.intent).toBe('Toggle')
+    expect(result.actions.at(0)?.intent).toBeNull()
   })
 
   it('affordances with payload sets payloadHint', () => {
@@ -90,7 +95,7 @@ describe('handleListActions', () => {
     })
   })
 
-  it('missing annotations defaults: intent=variant, requiresConfirm=false', () => {
+  it('missing annotations defaults: intent=null, requiresConfirm=false', () => {
     const result = handleListActions(
       makeHost({
         descriptors: [{ variant: 'Increment' }],
@@ -99,7 +104,7 @@ describe('handleListActions', () => {
     )
     expect(result.actions.at(0)).toMatchObject({
       variant: 'Increment',
-      intent: 'Increment',
+      intent: null,
       requiresConfirm: false,
       source: 'binding',
       selectorHint: null,
@@ -191,11 +196,11 @@ describe('handleListActions', () => {
     expect(result.actions.at(0)?.source).toBe('binding')
   })
 
-  it('skips shared variants without a live binding (only @agentOnly synthesizes)', () => {
-    // Shared variants need an actual UI binding to be affordable —
-    // surfacing them from the schema would let the agent fire Msgs
-    // the human can't currently click, which violates the parity
-    // contract.
+  it('skips undocumented shared variants without a live binding', () => {
+    // `'shared'` variants without `@intent` are usually internal —
+    // effect-result acks, router-internal messages — that aren't
+    // intended as agent affordances. Surfacing them would pollute
+    // the action list with internal plumbing.
     const result = handleListActions(
       makeHost({
         descriptors: [],
@@ -217,6 +222,53 @@ describe('handleListActions', () => {
       }),
     )
     expect(result.actions).toHaveLength(0)
+  })
+
+  it('surfaces documented shared variants from schema even without a live binding', () => {
+    // A `'shared'` variant with `@intent` is documented for agent use.
+    // Without this case, an agent that wanted to set one cell would
+    // be forced to use bulk operations like `Matrix/SetManyCells` with
+    // a 1-element array, even though `Matrix/SetQuantityValue` is the
+    // direct path. The author's `@intent` is the explicit signal.
+    const result = handleListActions(
+      makeHost({
+        descriptors: [],
+        annotations: {
+          'Matrix/SetQuantityValue': {
+            intent: 'Set a numeric quantity value in a matrix cell',
+            dispatchMode: 'shared',
+            requiresConfirm: false,
+            alwaysAffordable: false,
+            examples: [],
+            warning: null,
+            emits: [],
+          },
+        },
+        schema: {
+          discriminant: 'type',
+          variants: {
+            'Matrix/SetQuantityValue': {
+              criterionId: 'string',
+              alternativeId: 'string',
+              value: 'number',
+            },
+          },
+        },
+      }),
+    )
+    expect(result.actions).toHaveLength(1)
+    expect(result.actions.at(0)).toMatchObject({
+      variant: 'Matrix/SetQuantityValue',
+      intent: 'Set a numeric quantity value in a matrix cell',
+      dispatchMode: 'shared',
+      source: 'schema',
+    })
+    expect(result.actions.at(0)?.payloadHint).toEqual({
+      type: 'Matrix/SetQuantityValue',
+      criterionId: '',
+      alternativeId: '',
+      value: 0,
+    })
   })
 
   it('synthesizes example values from primitive types', () => {
@@ -319,5 +371,60 @@ describe('handleListActions', () => {
       }),
     )
     expect(result.actions).toHaveLength(0)
+  })
+
+  it('lifts @should hints onto the action as fieldHints', () => {
+    // Hints in the schema tree (priority: 'should' + hint string) get
+    // surfaced flat on the action so callers don't have to dig into
+    // `description.messages.variants[X].cells.hint`.
+    const result = handleListActions(
+      makeHost({
+        descriptors: [],
+        annotations: {
+          'Matrix/SetManyCells': {
+            intent: 'Set many cells in one transaction',
+            dispatchMode: 'agent-only',
+            requiresConfirm: false,
+            alwaysAffordable: false,
+            examples: [],
+            warning: null,
+            emits: [],
+          },
+        },
+        schema: {
+          discriminant: 'type',
+          variants: {
+            'Matrix/SetManyCells': {
+              cells: {
+                type: {
+                  kind: 'array',
+                  element: {
+                    kind: 'object',
+                    shape: {
+                      criterionId: 'string',
+                      alternativeId: 'string',
+                      value: 'unknown',
+                      meta: {
+                        type: 'unknown',
+                        optional: true,
+                        priority: 'should',
+                        hint: 'Cite where the value came from.',
+                      },
+                    },
+                  },
+                },
+                priority: 'should',
+                hint: 'Each entry: {criterionId, alternativeId, value, meta?}.',
+              },
+            },
+          },
+        },
+      }),
+    )
+    const a = result.actions.at(0)
+    expect(a?.fieldHints).toEqual([
+      { path: 'cells', hint: 'Each entry: {criterionId, alternativeId, value, meta?}.' },
+      { path: 'cells[].meta', hint: 'Cite where the value came from.' },
+    ])
   })
 })

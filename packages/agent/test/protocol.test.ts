@@ -65,6 +65,10 @@ describe('LAP types — sample value conformance', () => {
           source: 'binding',
           selectorHint: 'button.inc',
           payloadHint: null,
+          warning: null,
+          examples: [],
+          emits: [],
+          fieldHints: [],
         },
         {
           variant: 'nav',
@@ -74,6 +78,10 @@ describe('LAP types — sample value conformance', () => {
           source: 'always-affordable',
           selectorHint: null,
           payloadHint: { to: 'reports' },
+          warning: null,
+          examples: ['{"type":"nav","to":"reports"}'],
+          emits: [],
+          fieldHints: [{ path: 'to', hint: 'one of: home, reports' }],
         },
       ],
     }
@@ -87,13 +95,23 @@ describe('LAP types — sample value conformance', () => {
       waitFor: 'idle',
       timeoutMs: 15000,
     }
+    // `stateAfter` is opt-in via `LapMessageRequest.includeState: true`.
+    // When omitted, the response carries `stateDiff` (and the caller
+    // applies it to the snapshot from `connect`/`observe`).
     const dispatched: LapMessageResponse = {
+      status: 'dispatched',
+      stateDiff: [],
+      actions: [],
+      drain: { effectsObserved: 0, durationMs: 0, timedOut: false, errors: [] },
+    }
+    const dispatchedWithState: LapMessageResponse = {
       status: 'dispatched',
       stateAfter: {},
       stateDiff: [],
       actions: [],
       drain: { effectsObserved: 0, durationMs: 0, timedOut: false, errors: [] },
     }
+    expect(dispatchedWithState.status).toBe('dispatched')
     const pending: LapMessageResponse = { status: 'pending-confirmation', confirmId: 'c1' }
     const confirmed: LapMessageResponse = { status: 'confirmed', stateAfter: {} }
     const rejected: LapMessageResponse = { status: 'rejected', reason: 'human-only' }
@@ -136,6 +154,7 @@ describe('LAP types — sample value conformance', () => {
         { kind: 'heading', level: 1, text: 'Inbox' },
         { kind: 'button', text: 'Compose', disabled: false, actionVariant: 'compose' },
       ],
+      source: 'data-agent',
     }
     expect(res.outline).toHaveLength(2)
   })

@@ -44,12 +44,11 @@ The compiler runs 3 passes over every `.ts`/`.tsx` file using the TypeScript Com
 
 ## Diagnostics
 
-The compiler emits warnings for common issues:
-
-| Diagnostic            | Description                                      |
-| --------------------- | ------------------------------------------------ |
-| Missing alt attribute | Accessibility: `img` without `alt`               |
-| Non-exhaustive update | `update()` switch missing msg type cases         |
-| Empty props           | Element helper called with empty props object    |
-| Namespace imports     | `import * as` prevents tree-shaking              |
-| Spread children       | Spread in children array defeats static analysis |
+Static analysis lives in `@llui/eslint-plugin`. The compiler used to emit
+its own warnings during `transform()`; those have all migrated to ESLint
+rules so they surface as editor squiggles instead of build-time console
+output. Install the plugin and enable its `recommended` config to get the
+full set — `empty-props`, `namespace-import`, `spread-in-children`,
+`map-on-state-array`, `exhaustive-update`, `accessibility`,
+`controlled-input`, `child-static-props`, `bitmask-overflow`,
+`static-on`, and the `agent-*` annotation rules.

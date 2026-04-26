@@ -95,13 +95,27 @@ function buildData(count: number): Row[] {
 
 type State = { rows: Row[]; selected: number }
 type Msg =
+  /** @intent("Replace rows with 1,000 freshly generated entries") */
   | { type: 'run' }
+  /** @intent("Replace rows with 10,000 freshly generated entries") */
   | { type: 'runlots' }
+  /** @intent("Append 1,000 more rows to the existing list") */
   | { type: 'add' }
+  /** @intent("Mutate every 10th row's label by appending '!!!'") */
   | { type: 'update' }
+  /** @intent("Clear all rows and reset selection") */
   | { type: 'clear' }
+  /** @intent("Swap rows at indices 1 and 998") */
   | { type: 'swaprows' }
+  /**
+   * @intent("Mark the given row as selected; clears any prior selection")
+   * @example({"type":"select","id":42})
+   */
   | { type: 'select'; id: number }
+  /**
+   * @intent("Remove the row with the given id from the list")
+   * @example({"type":"remove","id":42})
+   */
   | { type: 'remove'; id: number }
 
 const App = component<State, Msg, never>({

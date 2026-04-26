@@ -20,7 +20,6 @@ import {
   type ExternalTypeSources,
   type PreExtractedSchemas,
 } from './transform.js'
-import { diagnose, type DiagnosticRule } from './diagnostics.js'
 import {
   findTypeSource,
   readComponentTypeArgNames,
@@ -29,8 +28,6 @@ import {
   type ResolveContext,
 } from './cross-file-resolver.js'
 import ts from 'typescript'
-
-export type { DiagnosticRule } from './diagnostics.js'
 
 /**
  * Pre-resolution step run before `transformLlui`. Scans the source for
@@ -247,30 +244,6 @@ export interface LluiPluginOptions {
    * silently skips the connection — no retry noise.
    */
   mcpPort?: number | false
-
-  /**
-   * Treat every compiler diagnostic as a build error.
-   *
-   * Default `false` — diagnostics are emitted via rollup's `this.warn` and
-   * can be ignored. Set to `true` in CI so lint-style regressions (namespace
-   * imports, bitmask overflow, spread-in-children, `.map()` on state, etc.)
-   * fail the build without requiring a custom `build.rollupOptions.onwarn`
-   * handler.
-   */
-  failOnWarning?: boolean
-
-  /**
-   * Silence specific diagnostic rules without disabling the whole lint
-   * pass. Each message is tagged with a rule name (shown in brackets at
-   * the start of every warning, e.g. `[spread-in-children]`). Listing
-   * a rule here drops all diagnostics with that tag before rollup sees
-   * them — so they don't fire via `this.warn` and don't fail the build
-   * even when `failOnWarning` is enabled.
-   *
-   * The valid rule names are enumerated by the `DiagnosticRule` type
-   * re-exported from this module. Unknown rule names are ignored.
-   */
-  disabledWarnings?: readonly DiagnosticRule[]
 
   /**
    * Emit `[llui]`-prefixed `console.info` logs for every transformed
@@ -521,8 +494,6 @@ export default function llui(options: LluiPluginOptions = {}): Plugin {
   let mcpMode: 'disabled' | 'wire' | 'spawn' = 'disabled'
   let mcpCliPath: string | null = null
   let mcpChild: ChildProcess | null = null
-  const failOnWarning = options.failOnWarning === true
-  const disabledWarnings = new Set<string>(options.disabledWarnings ?? [])
   const verbose = options.verbose === true
   const agent = options.agent ?? false
   const agentConfig: AgentPluginConfig = typeof agent === 'object' ? agent : {}
@@ -809,26 +780,6 @@ export default function llui(options: LluiPluginOptions = {}): Plugin {
             this.warn(`${display}: ${warning}`)
           }
           return { code: result.output, map: { mappings: '' } }
-        }
-      }
-
-      const diagnostics = diagnose(code)
-      if (diagnostics.length > 0) {
-        // Prefix every diagnostic with `<file>:<line>:<col>` plus the
-        // `[rule-name]` tag so consumers logging `warning.message` in a
-        // custom onwarn handler see both the location and the rule they
-        // could silence via `disabledWarnings`.
-        const cwd = process.cwd()
-        const rel = relative(cwd, id)
-        const display = rel.startsWith('..') ? id : rel
-        for (const d of diagnostics) {
-          if (disabledWarnings.has(d.rule)) continue
-          const message = `${display}:${d.line}:${d.column}: [${d.rule}] ${d.message}`
-          if (failOnWarning) {
-            this.error({ message, loc: { line: d.line, column: d.column, file: id } })
-          } else {
-            this.warn(message, { line: d.line, column: d.column })
-          }
         }
       }
 

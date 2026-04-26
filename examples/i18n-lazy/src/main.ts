@@ -137,11 +137,17 @@ type State = {
 }
 
 type Msg =
-  /** @intent("Set the locale for the application") */
+  /**
+   * @intent("Set the locale for the application")
+   * @example({"type":"setLocale","key":"fr"})
+   */
   | { type: 'setLocale'; key: LocaleKey }
   /** @intent("Load statistics asynchronously") */
   | { type: 'loadStats' }
-  /** @intent("Handle dialog updates") */
+  /**
+   * @intent("Forward a sub-message to the dialog component")
+   * @example({"type":"dialog","msg":{"type":"open"}})
+   */
   | { type: 'dialog'; msg: DialogMsg }
 
 // ── Component ───────────────────────────────────────────────────

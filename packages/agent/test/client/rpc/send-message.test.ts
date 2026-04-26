@@ -494,7 +494,7 @@ describe('handleSendMessage — waitFor modes', () => {
 })
 
 describe('handleSendMessage — response envelope', () => {
-  it('envelope includes current state, actions, and drain meta', async () => {
+  it('envelope includes actions and drain meta but omits stateAfter by default', async () => {
     const send = vi.fn()
     const state = { count: 7 }
     const host = makeHost({
@@ -521,15 +521,33 @@ describe('handleSendMessage — response envelope', () => {
 
     expect(result).toMatchObject({
       status: 'dispatched',
-      stateAfter: state,
       actions: [
         { variant: 'Increment', intent: 'increment', source: 'binding', requiresConfirm: false },
       ],
       drain: { effectsObserved: 1, timedOut: false, errors: [] },
     })
+    // stateAfter is opt-in via includeState: true. Not requested → must not be on the response.
+    expect(result).not.toHaveProperty('stateAfter')
   })
 
-  it('stateAfter reflects post-dispatch value', async () => {
+  it('includeState: true echoes the post-dispatch snapshot', async () => {
+    let currentState: unknown = { count: 0 }
+    const send = vi.fn(() => {
+      currentState = { count: 1 }
+    })
+    const getState = vi.fn(() => currentState)
+    const host = makeHost({ send, getState })
+
+    const result = await handleSendMessage(host, {
+      msg: { type: 'SomeMsg' },
+      waitFor: 'idle',
+      includeState: true,
+    })
+
+    expect(result).toMatchObject({ status: 'dispatched', stateAfter: { count: 1 } })
+  })
+
+  it('default (no includeState) suppresses stateAfter even when state changed', async () => {
     let currentState: unknown = { count: 0 }
     const send = vi.fn(() => {
       currentState = { count: 1 }
@@ -539,7 +557,8 @@ describe('handleSendMessage — response envelope', () => {
 
     const result = await handleSendMessage(host, { msg: { type: 'SomeMsg' }, waitFor: 'idle' })
 
-    expect(result).toMatchObject({ status: 'dispatched', stateAfter: { count: 1 } })
+    expect(result.status).toBe('dispatched')
+    expect(result).not.toHaveProperty('stateAfter')
   })
 
   it('no annotations → dispatches and returns envelope', async () => {

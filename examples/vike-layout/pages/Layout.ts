@@ -14,9 +14,22 @@ type AppLayoutState = {
 }
 
 type AppLayoutMsg =
+  /**
+   * @intent("Set the logged-in user; pages observe via SessionContext")
+   * @example({"type":"session/login","user":"alice"})
+   */
   | { type: 'session/login'; user: string }
+  /** @intent("Clear the logged-in user; pages observe via SessionContext") */
   | { type: 'session/logout' }
+  /**
+   * @intent("Push a transient notification onto the layout's toast stack")
+   * @example({"type":"toast/show","msg":"Saved."})
+   */
   | { type: 'toast/show'; msg: string }
+  /**
+   * @intent("Remove a previously-shown toast by id")
+   * @example({"type":"toast/dismiss","id":3})
+   */
   | { type: 'toast/dismiss'; id: number }
 
 /**

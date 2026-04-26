@@ -32,7 +32,10 @@ const children = {
 type State = ChildState<typeof children>
 type Msg =
   | ChildMsg<typeof children>
-  /** @intent("Copy the given text to the clipboard") */
+  /**
+   * @intent("Copy the given text to the clipboard")
+   * @example({"type":"copyText","value":"https://llui.dev"})
+   */
   | { type: 'copyText'; value: string }
 
 let localSend: (m: Msg) => void = () => {
@@ -193,7 +196,7 @@ export const App = component<State, Msg, never>({
                       'inline-flex items-center justify-center w-9 h-9 rounded-md text-sm cursor-pointer bg-transparent border-none text-text hover:bg-surface-hover transition-colors duration-fast data-[selected]:bg-primary data-[selected]:text-text-inverted data-[today]:font-bold data-[in-month=false]:opacity-40',
                     'data-date': cell.iso,
                     'data-in-month': cell.inMonth ? 'true' : 'false',
-                    'data-today': (s: State) => (cell.iso === todayIsoString() ? '' : undefined),
+                    'data-today': () => (cell.iso === todayIsoString() ? '' : undefined),
                     'data-selected': (s: State) =>
                       s.datePicker.value === cell.iso ? '' : undefined,
                     'data-focused': (s: State) =>

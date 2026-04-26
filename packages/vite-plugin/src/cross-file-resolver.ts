@@ -3,7 +3,12 @@ import {
   type MessageAnnotations,
   type DispatchMode as MessageDispatchMode,
 } from './msg-annotations.js'
-import { type MsgSchema, type MsgField, buildFieldDescriptor } from './msg-schema.js'
+import {
+  type MsgSchema,
+  type MsgField,
+  type TypeIndex,
+  buildFieldDescriptor,
+} from './msg-schema.js'
 
 /**
  * Cross-file type resolver.
@@ -429,9 +434,18 @@ async function collectSchemaVariants(
     ? [...alias.type.types]
     : [alias.type]
 
+  // Build a typeIndex that combines this file's local types with any
+  // *imported* type aliases referenced inside the variant payloads.
+  // Without this enrichment, a field typed as `GridSorting` (declared
+  // in `./state.ts` and imported here) would resolve to `'unknown'`
+  // because the local index doesn't know about it. The synthesizer
+  // would then emit `null` and the agent would have to guess at the
+  // permissible literal-union values.
+  const typeIndex = await buildEnrichedTypeIndex(sf, located.source, located.filePath, ctx)
+
   for (const member of memberNodes) {
     if (ts.isTypeLiteralNode(member)) {
-      collectOneVariant(member, variants, located.source)
+      collectOneVariant(member, variants, located.source, typeIndex)
       continue
     }
     if (ts.isTypeReferenceNode(member) && ts.isIdentifier(member.typeName)) {
@@ -453,6 +467,7 @@ function collectOneVariant(
   lit: ts.TypeLiteralNode,
   variants: MsgSchema['variants'],
   source: string,
+  typeIndex: TypeIndex,
 ): void {
   let discriminantValue: string | null = null
   const fields: Record<string, MsgField> = {}
@@ -466,11 +481,89 @@ function collectOneVariant(
       }
       continue
     }
-    fields[name] = buildFieldDescriptor(member, source)
+    fields[name] = buildFieldDescriptor(member, source, typeIndex)
   }
   if (discriminantValue && variants[discriminantValue] === undefined) {
     variants[discriminantValue] = fields
   }
+}
+
+/**
+ * Build a TypeIndex that includes the locally-declared types in `sf`
+ * AND any types imported by name into `sf`. Following the imports
+ * picks up sibling-file aliases like `GridSorting`, `ScoreMode`,
+ * `ConfirmRequest` that an app commonly extracts to a state module.
+ *
+ * Limitations:
+ *  - Only follows direct named imports (`import type { X } from './y'`).
+ *    Namespace imports and `export *` aren't followed (the lint rule
+ *    `agent-msg-resolvable` already catches the namespace case).
+ *  - The resolved external type must itself be a type alias or
+ *    interface in the target file — chained re-exports beyond the first
+ *    hop fall back to `'unknown'`.
+ *  - Best-effort: any failure to resolve an import is silent. The
+ *    field type just stays `'unknown'` as it would have without
+ *    enrichment.
+ */
+async function buildEnrichedTypeIndex(
+  sf: ts.SourceFile,
+  source: string,
+  filePath: string,
+  ctx: ResolveContext,
+): Promise<TypeIndex> {
+  const index: TypeIndex = new Map()
+
+  // 1. Locally-declared aliases / interfaces.
+  for (const stmt of sf.statements) {
+    if (ts.isTypeAliasDeclaration(stmt)) {
+      index.set(stmt.name.text, stmt.type)
+    } else if (ts.isInterfaceDeclaration(stmt)) {
+      index.set(stmt.name.text, stmt)
+    }
+  }
+
+  // 2. Walk imports and resolve named-imported types via the resolver.
+  //    Each successful resolve adds the target's declaration to the
+  //    index under the local name. Type-only imports
+  //    (`import type { X }`) are followed exactly the same as value
+  //    imports — TypeScript's `isTypeOnly` flag doesn't change the
+  //    referent.
+  for (const stmt of sf.statements) {
+    if (!ts.isImportDeclaration(stmt)) continue
+    const named = stmt.importClause?.namedBindings
+    if (!named || !ts.isNamedImports(named)) continue
+    for (const spec of named.elements) {
+      const localName = spec.name.text
+      const importedName = spec.propertyName?.text ?? localName
+      if (index.has(localName)) continue
+      const located = await findTypeSource(importedName, source, filePath, ctx, new Set())
+      if (!located) continue
+      const targetSf = ts.createSourceFile(
+        located.filePath,
+        located.source,
+        ts.ScriptTarget.Latest,
+        true,
+      )
+      for (const targetStmt of targetSf.statements) {
+        if (
+          ts.isTypeAliasDeclaration(targetStmt) &&
+          targetStmt.name.text === located.localName
+        ) {
+          index.set(localName, targetStmt.type)
+          break
+        }
+        if (
+          ts.isInterfaceDeclaration(targetStmt) &&
+          targetStmt.name.text === located.localName
+        ) {
+          index.set(localName, targetStmt)
+          break
+        }
+      }
+    }
+  }
+
+  return index
 }
 
 /**

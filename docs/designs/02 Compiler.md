@@ -243,89 +243,26 @@ As described in Pass 3. The `elements.ts` module is eliminated from production b
 
 Without masks, a component with 100 bindings re-evaluates all 100 on every state change. With per-binding masks, the cost of an update scales with the number of bindings that depend on the changed fields, not the total number of bindings. This makes large components with many independent sub-trees cheap to update when only one sub-tree's data changes.
 
-### `each()` scoped accessor diagnostic
+### Static analysis lives in `@llui/eslint-plugin`
 
-The `each()` render callback receives a scoped accessor `item` typed as `<R>(selector: (t: T) => R) => R` and an index accessor `index` typed as `() => number`. The compiler performs a targeted diagnostic pass on `each()` render callbacks to detect common misuse patterns:
+The Vite plugin used to emit a stack of usage-pattern diagnostics during transform — `empty-props`, `namespace-import`, `spread-in-children`, `map-on-state`, `exhaustive-update`, `accessibility`, `controlled-input`, `child-static-props`, `bitmask-overflow`, `static-on`. Those have all moved to ESLint rules in `@llui/eslint-plugin`. The compiler proper now does only the work that requires it: prop classification, dependency analysis, mask injection, import cleanup. Anything that is purely "this AST shape is suspect" runs in the lint pipeline.
 
-1. **Direct property access on `item`** — `item.text` where `item` is the scoped accessor parameter. Since `item` is a function, `item.text` accesses `Function.prototype.text` (which is `undefined`). The compiler detects `PropertyAccessExpression` on the `item` parameter name and emits: `"Direct property access 'item.text' on each() scoped accessor at line 42. Use 'item(t => t.text)' to read the item's property reactively."`
+The motivation for the move: editor squiggles, autofix capability where applicable, per-rule severity per project, and a single source of truth for static analysis. The previous "build-only" surfacing meant warnings only showed up on `vite build` console output; many were missed in the dev loop until a teammate's CI failed.
 
-2. **Bare call without selector** — `item()` with no arguments. This is a type error (the selector argument is required), but the compiler provides a more helpful message than TypeScript's generic error: `"each() scoped accessor 'item' requires a selector function: item(t => t.text), not item()."`
+What's now in the lint plugin:
 
-3. **Item captured from outer scope** — inside an `each()` render callback, accessing `s.todos[i]` or another expression that reads from the component state parameter to obtain the item, rather than using the provided `item` accessor. The compiler detects references to the component's state parameter inside `each()` render callbacks and warns: `"Accessing state directly inside each() render callback bypasses per-item stability. Use the 'item' scoped accessor instead."`
+- `empty-props` — `div({}, [...])` redundancy.
+- `namespace-import` — `import * as L from '@llui/dom'` disables the helper-call matcher and silently turns off template-clone for the whole file.
+- `spread-in-children` — scope-aware: only fires on genuinely-dynamic spreads. Bounded array literals and `<known-array>.map(...)` cases stay silent because the child count is statically determinable.
+- `map-on-state` (as `map-on-state-array`) — `.map()` on a state-derived array in `view()`; recommend `each()`.
+- `exhaustive-update` — verifies `update()`'s switch handles every variant of the local `Msg` union; `default:` clauses suppress.
+- `accessibility` — `<img>` without `alt`, `onClick` on non-interactive element without `role`.
+- `controlled-input` — reactive `value` binding without `onInput`/`onChange`. Mirrors the binding-model correctness issue: the DOM property would be overwritten on every Phase 2 pass that matches the mask, erasing keystrokes.
+- `child-static-props` — `child()` with a static-literal `props` (never updates) or with an accessor returning fresh nested literals (propsMsg fires every render via `Object.is` reference inequality).
+- `bitmask-overflow` — >31 unique state paths fall back to `FULL_MASK`. Includes co-occurrence detection: when every sub-path under a top-level field always fires together, the rule recommends bundling into a single `s.field` read for cheaper budget relief than `child()` extraction.
+- `static-on` — `scope`/`branch`'s `on` accessor reads no state, so the key never changes and the subtree mounts once and stagnates.
 
-These diagnostics are emitted during Pass 2 as part of the accessor analysis. They do not affect code generation — they are advisory warnings that help the developer use the correct pattern.
-
-### `.map()` on state arrays inside `view()`
-
-Because `view()` runs once at mount time, calling `.map()` on a state-derived array inside a view function creates static DOM nodes from the initial array that never update when the array changes. The correct pattern is `each()`.
-
-The compiler detects `CallExpression` nodes of the form `<expr>.map(...)` inside view function bodies where `<expr>` contains a reference to the component's state parameter. It emits: `"Array .map() on state-derived value at line 15. Use each() for reactive lists that update when the array changes. .map() creates static nodes that do not react to state changes."`
-
-This diagnostic catches the most common LLM error pattern: LLMs trained on React default to `.map()` for list rendering. In LLui, `.map()` is only valid for truly static arrays (constants defined outside view) that never change for the component's lifetime.
-
-### Exhaustive `update()` enforcement
-
-The `update()` function must handle every variant in the component's `Msg` discriminated union. A missing case is not a style issue — it means a message dispatched at runtime will hit the default branch (if one exists) or fall through silently, producing incorrect state. The compiler enforces exhaustiveness as a hard diagnostic.
-
-The compiler identifies the `update` property of the `ComponentDef` object literal, resolves the `Msg` type parameter, enumerates the discriminant values of the union, and checks the `switch` statement in the `update` body for coverage.
-
-**Detection:** The compiler reads the `switch` statement's `case` clauses and collects the set of handled discriminant values. It then compares against the full set of discriminant values from the `Msg` type. Missing values produce a diagnostic error (not a warning):
-
-`"update() does not handle message type 'removeItem' at line 25. All Msg variants must be handled. Missing: 'removeItem', 'clearCompleted'."`
-
-**Scope of analysis:** The compiler handles the common patterns:
-
-- `switch (msg.type)` with `case` clauses — enumerate handled string literals.
-- `if (msg.type === 'x')` / `else if` chains — enumerate compared string literals.
-- `default` clause or final `else` — treated as covering all remaining variants, suppressing the diagnostic. The `default` may still be flagged by TypeScript's `noImplicitReturns` if it doesn't return, but the LLui compiler considers coverage satisfied.
-
-**What the compiler does NOT do:** It does not perform flow analysis on delegated switches (e.g., `update()` that calls a helper function for some cases). If the switch delegates `case 'toolbar': return handleToolbar(state, msg)`, the compiler does not enter `handleToolbar` to verify it handles sub-cases. This is a limitation of syntactic analysis; TypeScript's own exhaustiveness checking (via `never` in the default case) covers delegated patterns. The LLui compiler's diagnostic is a first-line defense, not a replacement for TypeScript's type system.
-
-**Interaction with the type system:** When `noImplicitReturns` and `strictNullChecks` are enabled (which LLui requires), TypeScript itself enforces that `update()` returns `[S, E[]]` for every code path. The LLui compiler's diagnostic provides a more specific and actionable error message than TypeScript's generic "not all code paths return a value" — it names the exact missing message types and points to the `update` function.
-
-### Exhaustive `branch()` cases enforcement
-
-`branch({ on: s => s.phase, cases: { idle: () => ..., loading: () => ... } })` must cover every possible value the discriminant can produce. If `s.phase` is typed as `'idle' | 'loading' | 'error'` and the `cases` object only has `idle` and `loading`, the `error` case will produce no DOM nodes at runtime — a silent rendering gap.
-
-The compiler detects `branch()` calls, resolves the return type of the `on` accessor, and compares it against the keys of the `cases` object literal.
-
-**Detection for string/number literal unions:** If the `on` accessor's return type is a union of string or number literals, the compiler enumerates them and checks that every member appears as a key in `cases`. Missing keys produce a diagnostic:
-
-`"branch() at line 42 does not handle discriminant value 'error'. The accessor returns 'idle' | 'loading' | 'error' but cases only covers: 'idle', 'loading'."`
-
-**Detection for boolean:** If the `on` accessor returns `boolean`, the compiler checks for both `true` and `false` keys (or suggests using `show()` instead if only one branch is needed).
-
-**Fallback for non-literal types:** If the return type is `string` or `number` (not a literal union), the compiler cannot enumerate possible values and does not emit a diagnostic. This is the expected behavior for dynamic discriminants where the case set is open-ended.
-
-**Interaction with `show()`:** `show()` is a two-case branch (render or nothing). It does not need exhaustiveness checking because the "else" case is always "render nothing" — that is the semantic contract of `show()`.
-
-### Accessibility diagnostics
-
-The compiler walks the full element tree during Pass 2. It already classifies every prop and child for every element. This gives it enough information to detect common accessibility violations at compile time — something no other framework does, because no other framework has compile-time visibility into the DOM tree structure.
-
-These diagnostics are warnings, not errors. They are emitted during Pass 2 alongside the bitmask analysis.
-
-**1. Image without `alt`.** Any `img()` call without an `alt` prop — static or reactive — produces: `"<img> at line 42 has no 'alt' attribute. Add alt text for screen readers, or alt='' for decorative images."` The check is trivial: after prop classification, verify that the string `'alt'` appears in the prop keys. Both `alt: 'photo'` (static) and `alt: s => s.imageDesc` (reactive) satisfy the check. An explicit `alt: ''` satisfies it — the developer has consciously marked the image as decorative.
-
-**2. Interactive element without accessible name.** A `button()` or `a()` call that has neither text content children nor an `aria-label` / `aria-labelledby` prop produces: `"<button> at line 18 has no accessible name. Add text content or an aria-label attribute."` Detection: check whether the element has at least one `text()` child (static or reactive) or an `aria-label` / `aria-labelledby` prop. Elements with only icon children (e.g., `span({ class: 'icon-close' })`) need explicit labelling.
-
-**3. Click handler on non-interactive element.** An `onClick` prop on a `div()`, `span()`, `li()`, or other non-interactive element without `role` and `tabIndex` props produces: `"onClick on <div> at line 25 without role and tabIndex. Non-interactive elements with click handlers are not keyboard-accessible. Add role='button' and tabIndex={0}, or use <button>."` Detection: maintain a set of interactive element tags (`button`, `a`, `input`, `select`, `textarea`, `details`, `summary`). If the element tag is not in the set and `onClick` is present, check for `role` and `tabIndex`.
-
-**4. Form input without label association.** An `input()`, `select()`, or `textarea()` without an `id` prop (for external `<label for="">` association) and without `aria-label` / `aria-labelledby` produces: `"<input> at line 30 has no associated label. Add an id and a matching <label>, or add aria-label."` Detection: check for `id`, `aria-label`, or `aria-labelledby` in the prop keys. The compiler cannot verify that a matching `<label>` exists elsewhere in the tree (that requires cross-element analysis), so the `id` check is a necessary-but-not-sufficient heuristic. The diagnostic is advisory.
-
-**5. Missing controlled input handler.** An `input()` or `textarea()` with a reactive `value` prop but no `onInput` handler produces: `"<input> at line 35 has a reactive value binding but no onInput handler. Without onInput, the user cannot type — the binding will overwrite each keystroke."` This is both an accessibility and a correctness diagnostic. Detection: if `value` is classified as a reactive prop (has an accessor), check that `onInput` (or `onChange` for checkboxes/selects) is present in the prop keys.
-
-**Scope of analysis.** These diagnostics are per-element, per-file. The compiler does not perform cross-element analysis (e.g., verifying that a `<label for="email">` matches an `<input id="email">`). Cross-element accessibility analysis requires a full tree walk that spans structural primitives (`branch`, `each`, `show`), which the compiler does not have visibility into because those subtrees are built at runtime. The per-element checks catch the most impactful violations — the ones that appear in every accessibility audit.
-
-### Controlled input without handler (forms diagnostic)
-
-Beyond the accessibility angle, the missing-handler diagnostic has a correctness dimension specific to LLui's binding model. In LLui, a reactive `value` binding on an `<input>` means the DOM property is overwritten on every Phase 2 pass where the mask matches. If the user types a character, the browser updates the input's value, but the next update cycle re-evaluates the binding and resets it to the state value — erasing the keystroke. This is the "controlled input" problem.
-
-The compiler detects this pattern: `input({ value: s => s.field })` without a corresponding `onInput` (or `onChange` for checkboxes and selects). The diagnostic:
-
-`"Controlled input at line 35: reactive 'value' binding without 'onInput' handler. The binding will overwrite user input on every state update. Add onInput to dispatch a message that updates the state field."`
-
-This diagnostic applies to `input()`, `textarea()`, and `select()`. It does not apply to inputs with a static `value` prop (those are not controlled — the value is set once at mount). It does not apply to `input({ type: 'hidden' })` or `input({ type: 'submit' })` which are not user-editable.
+The Vite plugin still emits the `[llui]`-prefixed `console.info` logs from `verbose: true` (per-file bit assignments, helper compile/bail counts) — those are pure tracing and not subject to lint policy. Nothing else gets surfaced from the transform anymore.
 
 ---
 

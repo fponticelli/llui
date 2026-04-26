@@ -113,13 +113,43 @@ describe('handleDescribeVisibleContent', () => {
     expect(result.outline).toEqual([{ kind: 'link', text: 'Home', href: '/home' }])
   })
 
-  it('no data-agent-tagged elements → empty outline', () => {
+  it('no data-agent-tagged elements → falls back to a generic semantic walk', () => {
+    // Pre-fallback behaviour returned `outline: []` and made the tool
+    // useless on apps without data-agent annotations. The fallback
+    // walker emits headings, buttons, links, lists, and bare text
+    // inside the cap, with `source: 'fallback'` so callers know
+    // they're getting best-effort output.
     const container = document.createElement('div')
+    const h1 = document.createElement('h1')
+    h1.textContent = 'Welcome'
+    container.appendChild(h1)
     const p = document.createElement('p')
     p.textContent = 'Untagged content'
     container.appendChild(p)
+    const button = document.createElement('button')
+    button.textContent = 'Click me'
+    container.appendChild(button)
 
     const result = handleDescribeVisibleContent(makeHost(container))
-    expect(result.outline).toEqual([])
+    expect(result.source).toBe('fallback')
+    expect(result.outline).toEqual([
+      { kind: 'heading', level: 1, text: 'Welcome' },
+      { kind: 'text', text: 'Untagged content' },
+      { kind: 'button', text: 'Click me', disabled: false, actionVariant: null },
+    ])
+  })
+
+  it('data-agent-tagged subtrees → source: "data-agent"', () => {
+    const container = document.createElement('div')
+    const zone = document.createElement('div')
+    zone.setAttribute('data-agent', 'main')
+    const h2 = document.createElement('h2')
+    h2.textContent = 'Section'
+    zone.appendChild(h2)
+    container.appendChild(zone)
+
+    const result = handleDescribeVisibleContent(makeHost(container))
+    expect(result.source).toBe('data-agent')
+    expect(result.outline).toEqual([{ kind: 'heading', level: 2, text: 'Section' }])
   })
 })

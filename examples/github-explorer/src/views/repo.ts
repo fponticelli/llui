@@ -162,7 +162,7 @@ function breadcrumb(currentRoute: Route, send: Send<Msg>): Node[] {
   return [div({ class: 'breadcrumb' }, crumbs)]
 }
 
-function fileTree(h: View<State, Msg>, send: Send<Msg>): Node[] {
+function fileTree(h: View<State, Msg>, _send: Send<Msg>): Node[] {
   const { each } = h
   return [
     div({ class: 'file-tree' }, [

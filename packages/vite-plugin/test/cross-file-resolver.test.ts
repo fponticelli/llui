@@ -402,4 +402,67 @@ describe('extractDiscriminatedUnionSchemaCrossFile — composition', () => {
     expect(result?.variants.dec).toEqual({ by: 'number' })
     expect(result?.variants.reset).toEqual({})
   })
+
+  it('follows imported type aliases used as field types — literal unions resolve to enum', async () => {
+    // Closes friction note #6 from the dogfood: a Msg variant whose
+    // payload field is typed as `GridSorting` (declared in a sibling
+    // file) used to surface as `'unknown'` because the local typeIndex
+    // didn't know about external aliases. With the enriched index, the
+    // synthesizer now sees `{enum: ['rank', 'score']}` and the agent
+    // gets a tight discriminator instead of a `null` placeholder.
+    const files = {
+      '/proj/state.ts': `
+        export type GridSorting = 'rank' | 'score'
+        export type ScoreMode = 'absolute' | 'relative'
+      `,
+      '/proj/msg.ts': `
+        import type { GridSorting, ScoreMode } from './state'
+        export type Msg =
+          | { type: 'Grid/SetSorting'; sorting: GridSorting }
+          | { type: 'Grid/SetScoreMode'; mode: ScoreMode }
+      `,
+    }
+    const ctx = memoryCtx(files)
+    const result = await extractDiscriminatedUnionSchemaCrossFile(
+      files['/proj/msg.ts']!,
+      'Msg',
+      '/proj/msg.ts',
+      ctx,
+    )
+    expect(result?.variants['Grid/SetSorting']).toEqual({
+      sorting: { enum: ['rank', 'score'] },
+    })
+    expect(result?.variants['Grid/SetScoreMode']).toEqual({
+      mode: { enum: ['absolute', 'relative'] },
+    })
+  })
+
+  it('follows imported interfaces used as field types — emits nested object shape', async () => {
+    const files = {
+      '/proj/domain.ts': `
+        export interface Criterion {
+          id: string
+          title: string
+          weight: number
+        }
+      `,
+      '/proj/msg.ts': `
+        import type { Criterion } from './domain'
+        export type Msg = { type: 'Criterion/Save'; criterion: Criterion }
+      `,
+    }
+    const ctx = memoryCtx(files)
+    const result = await extractDiscriminatedUnionSchemaCrossFile(
+      files['/proj/msg.ts']!,
+      'Msg',
+      '/proj/msg.ts',
+      ctx,
+    )
+    expect(result?.variants['Criterion/Save']).toEqual({
+      criterion: {
+        kind: 'object',
+        shape: { id: 'string', title: 'string', weight: 'number' },
+      },
+    })
+  })
 })

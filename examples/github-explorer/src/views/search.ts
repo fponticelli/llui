@@ -45,7 +45,7 @@ function currentPage(s: State): number {
   return s.route.page === 'search' ? s.route.p : 1
 }
 
-export function searchView(send: Send<Msg>): Node[] {
+export function searchView(_send: Send<Msg>): Node[] {
   return [
     div({ class: 'container' }, [
       // Error

@@ -65,9 +65,15 @@ type State = {
 }
 
 type Msg =
-  /** @intent("Set the number of logs to generate") */
+  /**
+   * @intent("Regenerate the log dataset with the given row count")
+   * @example({"type":"setCount","count":10000})
+   */
   | { type: 'setCount'; count: number }
-  /** @intent("Update the number of visible DOM nodes") */
+  /**
+   * @intent("Report the current number of DOM-rendered rows after a virtualization pass")
+   * @example({"type":"visibleChanged","n":48})
+   */
   | { type: 'visibleChanged'; n: number }
 
 // ── Component ───────────────────────────────────────────────────

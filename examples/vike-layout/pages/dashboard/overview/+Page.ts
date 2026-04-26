@@ -1,7 +1,14 @@
 import { component, div, h1, p, ul, li, button } from '@llui/dom'
 
 type OverviewState = { widgets: readonly string[] }
-type OverviewMsg = { type: 'add' } | { type: 'remove'; idx: number }
+type OverviewMsg =
+  /** @intent("Append a new widget to the overview list") */
+  | { type: 'add' }
+  /**
+   * @intent("Remove the widget at the given index from the overview list")
+   * @example({"type":"remove","idx":0})
+   */
+  | { type: 'remove'; idx: number }
 
 /**
  * Dashboard / Overview — mounted inside the nested chain

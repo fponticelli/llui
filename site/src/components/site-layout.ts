@@ -41,9 +41,11 @@ export function siteLayout<S extends LayoutState, M extends LayoutMsg>({
           },
           [span({ class: 'theme-icon' }, [text('\u263D')])],
         ),
-        div(
+        button(
           {
+            type: 'button',
             class: 'menu-toggle',
+            'aria-label': 'Toggle navigation menu',
             onClick: () => send({ type: 'toggleMenu' } as M),
           },
           [text('\u2630')],

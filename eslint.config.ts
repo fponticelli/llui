@@ -75,28 +75,58 @@ export default tseslint.config(
       llui: lluiPlugin,
     },
     /**
-     * All agent-* rules ship as `warn` initially because the example
-     * apps + agent-e2e harness predate the rules and have annotation
-     * gaps that need real app-domain knowledge to fix (an `@intent`
-     * has to describe what the action *does*, not just acknowledge
-     * the rule). Surfacing them as warnings makes CI green while
-     * keeping the gaps visible for incremental cleanup.
-     *
-     * Per-package promotion path: apps that have closed all their
-     * gaps can override these to `error` in their own `eslint.config`
-     * (or via `// eslint-disable` comments for any documented
-     * exceptions). The plugin's `recommended` preset still runs at
-     * `error` for projects that import it directly.
+     * All agent-* rules run at `error`. LLMs (Claude, IDE agents, CI
+     * bots) only act on errors — warnings get reported and ignored, so
+     * anything we ship as `warn` effectively never improves. Errors are
+     * the only severity that drives self-healing behaviour.
      */
     rules: {
-      'llui/agent-missing-intent': 'warn',
-      'llui/agent-exclusive-annotations': 'warn',
-      'llui/agent-nonextractable-handler': 'warn',
-      'llui/agent-msg-resolvable': 'warn',
-      'llui/agent-warning-on-confirm': 'warn',
-      'llui/agent-example-on-payload': 'warn',
-      'llui/agent-emits-drift': 'warn',
-      'llui/agent-optional-field-undocumented': 'warn',
+      'llui/agent-missing-intent': 'error',
+      'llui/agent-exclusive-annotations': 'error',
+      'llui/agent-nonextractable-handler': 'error',
+      'llui/agent-msg-resolvable': 'error',
+      'llui/agent-warning-on-confirm': 'error',
+      'llui/agent-example-on-payload': 'error',
+      'llui/agent-emits-drift': 'error',
+      'llui/agent-optional-field-undocumented': 'error',
+    },
+  },
+  // ── Compiler-pattern overlay ─────────────────────────────────────
+  // Rules ported from `@llui/vite-plugin`'s compile-time diagnostics.
+  // Apply anywhere LLui's element helpers / `component()` are used —
+  // app code, headless component packages, the docs site, the bench
+  // app. Excluded from framework internals (`packages/dom`,
+  // `packages/vite-plugin`, …) where the surface is intentionally
+  // primitive.
+  //
+  // All rules run at `error`. LLMs and IDE agents only fix what they
+  // see as an error — warnings accumulate and never get cleaned up.
+  // Even nudges like `empty-props` or `bitmask-overflow` are worth
+  // gating, because the cost of a quick fix is much smaller than the
+  // cost of letting them pile up.
+  {
+    files: [
+      'examples/**/*.ts',
+      'examples/**/*.tsx',
+      'packages/agent/src/**/*.ts',
+      'packages/agent-e2e/src/**/*.ts',
+      'packages/components/src/**/*.ts',
+      'benchmarks/js-framework-benchmark/src/**/*.ts',
+      'site/src/**/*.ts',
+      'site/pages/**/*.ts',
+    ],
+    plugins: {
+      llui: lluiPlugin,
+    },
+    rules: {
+      'llui/empty-props': 'error',
+      'llui/namespace-import': 'error',
+      'llui/accessibility': 'error',
+      'llui/controlled-input': 'error',
+      'llui/child-static-props': 'error',
+      'llui/static-on': 'error',
+      'llui/exhaustive-update': 'error',
+      'llui/bitmask-overflow': 'error',
     },
   },
 )

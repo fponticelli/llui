@@ -89,15 +89,17 @@ function extractDiscriminatedUnionSchema(source: string, typeName: string): MsgS
 }
 
 /**
- * Index of locally-declared type aliases and interfaces, keyed by
- * name. Lets the field-type resolver follow `Criterion[]` →
+ * Index of type aliases and interfaces visible from a source file,
+ * keyed by name. Lets the field-type resolver follow `Criterion[]` →
  * `interface Criterion { … }` and emit a nested object shape rather
- * than `'unknown'`. Cross-file references stay `'unknown'` — the
- * cross-file resolver pipeline doesn't share this index, and chasing
- * imports would require module-resolution machinery that's out of
- * scope here.
+ * than `'unknown'`.
+ *
+ * The cross-file resolver pipeline (`cross-file-resolver.ts`) builds
+ * an enriched index that includes types imported from sibling files —
+ * follow `GridSorting` → `'rank' | 'crit-X' | 'crit-Y'` → `{enum: […]}`
+ * even when the alias lives in `./state.ts` not the Msg-defining file.
  */
-type TypeIndex = Map<string, ts.TypeNode | ts.InterfaceDeclaration>
+export type TypeIndex = Map<string, ts.TypeNode | ts.InterfaceDeclaration>
 
 function buildTypeIndex(sf: ts.SourceFile): TypeIndex {
   const index: TypeIndex = new Map()

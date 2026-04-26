@@ -65,9 +65,16 @@ export const agentMsgResolvableRule = createRule({
         const stateText = stateArg ? sourceText(context, stateArg) : '?'
         const effectText = effectArg ? sourceText(context, effectArg) : 'never'
 
-        // Reject anything that isn't a plain identifier. The plugin's
-        // cross-file resolver works on identifiers; everything else
-        // (Foo<T>, ns.Foo, inline literals) is undefined behavior.
+        // `never` is the canonical "this component has no messages"
+        // declaration — a stateless display component, a pure render
+        // module loaded via lazy(). The compiler emits no Msg
+        // annotations for it (correctly), so there's nothing for the
+        // resolver to chase. Pass.
+        if (msgArg && msgArg.type === AST_NODE_TYPES.TSNeverKeyword) return
+
+        // Reject anything else that isn't a plain identifier. The
+        // plugin's cross-file resolver works on identifiers; everything
+        // else (Foo<T>, ns.Foo, inline literals) is undefined behavior.
         if (!msgArg || !isIdentifierTypeRef(msgArg)) {
           if (msgArg) {
             context.report({

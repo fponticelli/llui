@@ -45,13 +45,19 @@ type State = {
 }
 
 type Msg =
-  /** @intent("Set the value of a form field") */
+  /**
+   * @intent("Set the value of a form field")
+   * @example({"type":"setField","field":"email","value":"alice@example.com"})
+   */
   | { type: 'setField'; field: keyof State['values']; value: string }
   /** @intent("Submit the form") */
   | { type: 'submit' }
   /** @intent("Reset the form to its initial state") */
   | { type: 'reset' }
-  /** @intent("Handle blur event on a form field") */
+  /**
+   * @intent("Mark a form field as touched after blur (for validation timing)")
+   * @example({"type":"fieldBlur","field":"email"})
+   */
   | { type: 'fieldBlur'; field: string }
 
 // ── Component ───────────────────────────────────────────────────

@@ -24,15 +24,27 @@ type State = {
 }
 
 type Msg =
-  /** @intent("Add a new to-do item") */
+  /**
+   * @intent("Add a new to-do item with the given text")
+   * @example({"type":"add","text":"Buy milk"})
+   */
   | { type: 'add'; text: string }
-  /** @intent("Toggle the completion status of a to-do item") */
+  /**
+   * @intent("Toggle the completion status of a to-do item")
+   * @example({"type":"toggle","id":1})
+   */
   | { type: 'toggle'; id: number }
-  /** @intent("Remove a to-do item") */
+  /**
+   * @intent("Remove a to-do item by id")
+   * @example({"type":"remove","id":1})
+   */
   | { type: 'remove'; id: number }
   /** @intent("Toggle the completion status of all to-do items") */
   | { type: 'toggleAll' }
-  /** @intent("Set the filter for the to-do list") */
+  /**
+   * @intent("Set the visibility filter for the to-do list")
+   * @example({"type":"setFilter","filter":"active"})
+   */
   | { type: 'setFilter'; filter: Filter }
   /** @intent("Clear all completed to-do items") */
   | { type: 'clearCompleted' }

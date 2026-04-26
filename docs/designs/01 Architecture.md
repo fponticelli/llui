@@ -631,7 +631,7 @@ button({ disabled: (s) => !isValid(s) || !isDirty(s), onClick: () => send({ type
 ])
 ```
 
-The compiler's controlled-input diagnostic (02 Compiler.md) catches the most common form bug: an `input({ value: s => s.fields.name })` without an `onInput` handler. Per-field rendering follows the standard element pattern — no special form primitive needed.
+The `controlled-input` lint rule (in `@llui/eslint-plugin`) catches the most common form bug: an `input({ value: s => s.fields.name })` without an `onInput` handler. Per-field rendering follows the standard element pattern — no special form primitive needed.
 
 **Todo list.** `each({ items: memo(filteredTodos), key: t => t.id, render: renderItem })` is the idiomatic form. The `memo` wrapper prevents the filter from running once per each binding per update. The scoped accessor `item` in the render callback enables per-item bindings like `item(t => t.text)` that are automatically stable-checked: unchanged todo items pay zero Phase 2 cost. Adding a todo appends to the array reference, triggering structural reconciliation for the new entry only.
 

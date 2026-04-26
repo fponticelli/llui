@@ -101,30 +101,6 @@ export interface LluiPluginOptions {
   mcpPort?: number | false
 
   /**
-   * Treat every compiler diagnostic as a build error.
-   *
-   * Default `false` — diagnostics are emitted via rollup's `this.warn` and
-   * can be ignored. Set to `true` in CI so lint-style regressions (namespace
-   * imports, bitmask overflow, spread-in-children, `.map()` on state, etc.)
-   * fail the build without requiring a custom `build.rollupOptions.onwarn`
-   * handler.
-   */
-  failOnWarning?: boolean
-
-  /**
-   * Silence specific diagnostic rules without disabling the whole lint
-   * pass. Each message is tagged with a rule name (shown in brackets at
-   * the start of every warning, e.g. `[spread-in-children]`). Listing
-   * a rule here drops all diagnostics with that tag before rollup sees
-   * them — so they don't fire via `this.warn` and don't fail the build
-   * even when `failOnWarning` is enabled.
-   *
-   * The valid rule names are enumerated by the `DiagnosticRule` type
-   * re-exported from this module. Unknown rule names are ignored.
-   */
-  disabledWarnings?: readonly DiagnosticRule[]
-
-  /**
    * Emit `[llui]`-prefixed `console.info` logs for every transformed
    * component file — state-path bit assignments, mask injections, and
    * helper compile/bail counts. Useful when diagnosing why a binding

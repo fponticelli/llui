@@ -872,6 +872,51 @@ export type RpcOptions = { timeoutMs?: number }
 export type DurableObjectOptions = Omit<CoreOptions, 'registry'>
 ```
 
+### `MsgSchemaBareType`
+
+The shape the compiler emits as `__msgSchema`. Mirrors `MsgField`
+from `@llui/vite-plugin/src/msg-schema.ts`. Three coexisting forms:
+
+1. Bare primitive: `'string' | 'number' | 'boolean' | 'unknown'`
+   and bare enum: `{enum: [...]}`. Compact form for unannotated
+   required fields.
+2. Bare nested types: `{kind: 'object', shape}` for inline /
+   followed-via-typeIndex shapes; `{kind: 'array', element}` for
+   `T[]` / `readonly T[]` / `Array<T>`. The synthesizer recurses
+   to build copy-paste-ready nested examples.
+3. Rich descriptor: wraps any of the above with `{optional?,
+priority?, hint?}` carrying TS optionality and `@should` hints.
+
+```typescript
+export type MsgSchemaBareType =
+  | string
+  | { enum: string[] }
+  | { kind: 'object'; shape: Record<string, MsgSchemaField> }
+  | { kind: 'array'; element: MsgSchemaBareType }
+```
+
+### `MsgSchemaField`
+
+```typescript
+export type MsgSchemaField =
+  | MsgSchemaBareType
+  | {
+      type: MsgSchemaBareType
+      optional?: boolean
+      priority?: 'should'
+      hint?: string
+    }
+```
+
+### `MsgSchemaShape`
+
+```typescript
+export type MsgSchemaShape = {
+  discriminant: string
+  variants: Record<string, Record<string, MsgSchemaField>>
+}
+```
+
 ### `CreateAgentClientOpts`
 
 ```typescript
@@ -1230,6 +1275,29 @@ export type MessageAnnotations = {
   alwaysAffordable: boolean
   requiresConfirm: boolean
   dispatchMode: DispatchMode
+  /**
+   * Concrete copy-paste example dispatches authored as `@example`
+   * JSDoc tags. Multiple tags on one variant become multiple
+   * entries (mix typical / edge cases without nesting strings).
+   */
+  examples: string[]
+  /**
+   * Non-blocking caution authored as `@warning`. Distinct from
+   * `requiresConfirm` (runtime user gate); this informs the LLM at
+   * affordance time so it can decide whether the dispatch's
+   * downstream is acceptable.
+   */
+  warning: string | null
+  /**
+   * Effect kinds this variant emits when dispatched, declared via
+   * `@emits("kind1", "kind2")`. Lets the agent reason about side
+   * effects (cloud writes, analytics, persistent state changes)
+   * before dispatching, and chunk multi-step flows accordingly
+   * ("don't dispatch X 100 times — each one fires cloud/save").
+   * Empty when the variant doesn't emit effects or the author hasn't
+   * annotated it yet.
+   */
+  emits: string[]
 }
 ```
 
@@ -1283,7 +1351,17 @@ export type LapStateResponse = { state: unknown }
 export type LapActionsResponse = {
   actions: Array<{
     variant: string
-    intent: string
+    /**
+     * Human-readable phrase from `@intent("…")`, or `null` when the
+     * variant has no `@intent` annotation. Callers that surface
+     * affordances to an LLM should treat `null` as "this action is
+     * undocumented" — neither synthesise a label from the variant name
+     * nor invent one. Pre-`@intent` variants would previously surface
+     * as `intent: "<variant>"` here, which made unannotated actions
+     * indistinguishable from properly-labelled ones; emitting `null`
+     * keeps the gap visible.
+     */
+    intent: string | null
     requiresConfirm: boolean
     /**
      * `'shared'` — both UI and agent can dispatch. `'agent-only'` — no UI
@@ -1291,9 +1369,38 @@ export type LapActionsResponse = {
      * variants never appear here (filtered before serialization).
      */
     dispatchMode: 'shared' | 'agent-only'
-    source: 'binding' | 'always-affordable'
+    /**
+     * Where this affordance came from:
+     *   - `'binding'`           — a tagged event handler is currently
+     *     mounted in the rendered DOM.
+     *   - `'always-affordable'` — the app's `agentAffordances(state)`
+     *     hook listed it as available right now.
+     *   - `'schema'`            — neither of the above; the variant
+     *     is in the Msg union and annotated `@agentOnly`. The
+     *     `payloadHint` carries a synthesized example from the
+     *     compiler-derived field types — copy-paste-ready for
+     *     `send_message`. Bulk-edit operations land here.
+     */
+    source: 'binding' | 'always-affordable' | 'schema'
     selectorHint: string | null
     payloadHint: object | null
+    /** Cautionary text from `@warning` JSDoc, or null. */
+    warning: string | null
+    /** Concrete examples from `@example` JSDoc, in source order. */
+    examples: string[]
+    /**
+     * Effect kinds this variant emits, from `@emits("k1", "k2")`.
+     * Empty when not annotated.
+     */
+    emits: string[]
+    /**
+     * Per-field guidance lifted from `@should("…")` JSDoc on payload
+     * fields. Path is dot/bracket notation rooted at the payload (e.g.
+     * `"cells[].meta"`). Surfaces hints that would otherwise be buried
+     * inside the schema tree, so callers can read them alongside
+     * `examples` without diving into `description.messages.variants`.
+     */
+    fieldHints: Array<{ path: string; hint: string }>
   }>
 }
 ```
@@ -1330,6 +1437,20 @@ export type LapMessageRequest = {
    * the user's confirm/reject. Default 5_000ms.
    */
   timeoutMs?: number
+  /**
+   * Include the full post-drain `stateAfter` snapshot in the response.
+   * Default `false` — the response carries `stateDiff` only and the
+   * caller applies it to the prior snapshot (from connect/observe). For
+   * apps with non-trivial state, the diff is orders of magnitude
+   * smaller than the full state, and resending the snapshot on every
+   * dispatch wastes bandwidth and (for LLM callers) context budget.
+   *
+   * Set `true` when the caller doesn't track state incrementally and
+   * wants the snapshot back. The legacy `confirmed` and `wait` paths
+   * always carry `stateAfter` because their flow is asynchronous and
+   * a diff would be ambiguous.
+   */
+  includeState?: boolean
 }
 ```
 
@@ -1370,7 +1491,22 @@ export type LapDrainMeta = {
 export type LapMessageResponse =
   | {
       status: 'dispatched'
-      stateAfter: unknown
+      /**
+       * Full post-drain state snapshot. Present only when the caller
+       * passed `includeState: true` in the request — by default,
+       * `stateDiff` is the only state-shaped field on the response
+       * because callers can apply the diff to the prior snapshot from
+       * `connect` / `observe`. See `LapMessageRequest.includeState`.
+       */
+      stateAfter?: unknown
+      /**
+       * Structural diff from pre-dispatch state to post-drain state,
+       * in JSON-Patch shape (RFC 6902 subset: `add`, `remove`,
+       * `replace`). Empty when the dispatch produced no observable
+       * state change. The default state surface for callers — apply
+       * incrementally to the snapshot from `connect`/`observe`.
+       */
+      stateDiff: import('./state-diff.js').StateDiff
       actions: LapActionsResponse['actions']
       drain: LapDrainMeta
     }
@@ -1450,7 +1586,24 @@ export type OutlineNode =
 ### `LapDescribeVisibleResponse`
 
 ```typescript
-export type LapDescribeVisibleResponse = { outline: OutlineNode[] }
+export type LapDescribeVisibleResponse = {
+  outline: OutlineNode[]
+  /**
+   * Where the outline came from:
+   *   - `'data-agent'`: the app has `data-agent`-tagged zones and the
+   *     walker scoped the outline to them. The author chose what to
+   *     surface; trust the result.
+   *   - `'fallback'`: no `data-agent` tags exist; the walker fell back
+   *     to a depth- and count-limited semantic walk of the entire
+   *     root element. Useful for first-pass dogfood targets that
+   *     haven't tagged their views.
+   *   - `'truncated'`: same as `'fallback'` but the cap (200 nodes)
+   *     was hit before the walk finished. The visible content beyond
+   *     that point is not represented; reach for `query_dom` or state
+   *     reads if you need more.
+   */
+  source: 'data-agent' | 'fallback' | 'truncated'
+}
 ```
 
 ### `AgentDocs`
@@ -1460,6 +1613,14 @@ export type AgentDocs = {
   purpose: string
   overview?: string
   cautions?: string[]
+  /**
+   * Free-form idiomatic-usage examples authored by the app: typical
+   * sequences of dispatches the LLM should know about, like "to
+   * delete a saved matrix: dispatch Confirm/Ask first, then on
+   * approve dispatch Cloud/Delete." Each entry is one example;
+   * order is up to the author.
+   */
+  examples?: string[]
 }
 ```
 
@@ -1548,6 +1709,15 @@ export type LogEntry = {
   variant?: string
   intent?: string
   detail?: string
+  /**
+   * Structural diff from pre-dispatch state to post-drain state, in
+   * JSON-Patch shape. Populated only for `kind: 'dispatched'` entries
+   * — read entries (get_state / list_actions / observe / …) don't
+   * mutate state, and an empty diff would just be noise. Lets the
+   * agent reconstruct what each past action did without re-fetching
+   * state snapshots.
+   */
+  stateDiff?: import('./state-diff.js').StateDiff
 }
 ```
 
@@ -1852,6 +2022,15 @@ export interface PairingRegistry {
    */
   onClose(tid: string, handler: () => void): () => void
 
+  /**
+   * Read the most recent `n` log entries for a tid (newest first).
+   * Backed by an in-memory ring buffer populated as the registry
+   * sees `log-append` frames; capped per-tid to bound memory across
+   * long-lived sessions. Drained on close. Returns an empty array
+   * for unknown tids.
+   */
+  getRecentLog(tid: string, n: number): LogEntry[]
+
   // ── Request/response helpers ───────────────────────────────────
   // These are part of the contract (LAP handlers call them directly)
   // but implementations almost always delegate to the free helpers in
@@ -1932,20 +2111,17 @@ class InMemoryTokenStore implements TokenStore {
 
 ### `InMemoryPairingRegistry`
 
-Single-process in-memory registry. Correct for Node/Bun/Deno/Deno
-Deploy — anywhere the server process can hold a long-lived
-WebSocket. Not suitable for stateless Worker isolates; use the
-Durable Object registry for Cloudflare.
-
 ```typescript
 class InMemoryPairingRegistry implements PairingRegistry {
   pairings
   onLogAppend: ((tid: string, entry: LogEntry) => void) | null
+  recentLog
   constructor(
     opts: {
       onLogAppend?: (tid: string, entry: LogEntry) => void
     } = {},
   )
+  getRecentLog(tid: string, n: number): LogEntry[]
   register(tid: string, conn: PairingConnection): void
   unregister(tid: string): void
   isPaired(tid: string): boolean

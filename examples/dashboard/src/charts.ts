@@ -1,4 +1,4 @@
-import { svg, g, rect, line, path, circle, svgText } from '@llui/dom'
+import { svg, rect, line, path, circle, svgText } from '@llui/dom'
 
 interface BarDatum {
   label: string

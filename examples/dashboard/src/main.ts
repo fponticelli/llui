@@ -30,15 +30,30 @@ type State = {
 }
 
 type Msg =
-  /** @intent("Set the locale for the dashboard") */
+  /**
+   * @intent("Set the locale for the dashboard")
+   * @example({"type":"setLocale","locale":"en-US"})
+   */
   | { type: 'setLocale'; locale: string }
-  /** @intent("Handle charts intersection observer updates") */
+  /**
+   * @intent("Handle charts intersection observer updates")
+   * @example({"type":"charts","msg":{"type":"observe","key":"sales"}})
+   */
   | { type: 'charts'; msg: InViewMsg }
-  /** @intent("Handle sorting updates for priorities") */
+  /**
+   * @intent("Handle sorting updates for priorities")
+   * @example({"type":"sort","msg":{"type":"start","id":"p1"}})
+   */
   | { type: 'sort'; msg: SortableMsg }
-  /** @intent("Reorder the priorities list") */
+  /**
+   * @intent("Reorder the priorities list by moving item at `from` to position `to`")
+   * @example({"type":"reorderPriorities","from":0,"to":2})
+   */
   | { type: 'reorderPriorities'; from: number; to: number }
-  /** @intent("Change the application theme") */
+  /**
+   * @intent("Change the application theme")
+   * @example({"type":"setTheme","theme":"dark"})
+   */
   | { type: 'setTheme'; theme: Theme }
 
 const INITIAL_PRIORITIES: Priority[] = [

@@ -7,9 +7,16 @@ type SettingsState = {
   displayName: string
 }
 type SettingsMsg =
+  /** @intent("Flip the notifications-enabled flag") */
   | { type: 'toggleNotifications' }
+  /** @intent("Flip the auto-save-enabled flag") */
   | { type: 'toggleAutoSave' }
+  /**
+   * @intent("Update the user's display name")
+   * @example({"type":"setDisplayName","value":"Alice"})
+   */
   | { type: 'setDisplayName'; value: string }
+  /** @intent("Persist the current settings and show a confirmation toast") */
   | { type: 'save' }
 
 /**

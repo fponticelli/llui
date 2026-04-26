@@ -83,6 +83,16 @@ ruleTester.run('agent-msg-resolvable', agentMsgResolvableRule, {
         function foo<T>(): T { return 0 as T }
       `,
     },
+    // Stateless component with `never` as the Msg arg — explicit "this
+    // component dispatches no messages". The compiler emits no Msg
+    // annotations, so the resolver has nothing to chase. Pass.
+    {
+      code: `
+        import { component } from '@llui/dom'
+        type State = { x: number }
+        export const App = component<State, never, never>({} as any)
+      `,
+    },
   ],
   invalid: [
     // Msg referenced but neither declared locally nor imported.

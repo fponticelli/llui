@@ -70,11 +70,20 @@ type State = ChildState<typeof children> & {
 }
 type Msg =
   | ChildMsg<typeof children>
-  /** @intent("Handle confirm dialog actions") */
+  /**
+   * @intent("Handle confirm dialog actions")
+   * @example({"type":"confirm","msg":{"type":"confirm"}})
+   */
   | { type: 'confirm'; msg: ConfirmDialogMsg }
-  /** @intent("Emit a new toast notification") */
+  /**
+   * @intent("Emit a new toast notification")
+   * @example({"type":"emitToast","kind":"success","title":"Saved","description":"Changes persisted."})
+   */
   | { type: 'emitToast'; kind: ToastKind; title: string; description: string }
-  /** @intent("Ask for user confirmation") */
+  /**
+   * @intent("Ask for user confirmation before a destructive action")
+   * @example({"type":"askConfirm","tag":"deleteAccount","title":"Delete account?","description":"This cannot be undone.","destructive":true})
+   */
   | { type: 'askConfirm'; tag: string; title: string; description: string; destructive: boolean }
 
 let localSend: (m: Msg) => void = () => {
@@ -223,7 +232,6 @@ export const App = component<State, Msg, never>({
     const ctxMenuItems = (): Node[] =>
       ['Cut', 'Copy', 'Paste', 'Delete'].map((v) => div({ ...cm.item(v).item }, [text(v)]))
 
-    type Toast = { id: string; type: string; title?: string; description?: string }
     const toastRegion = div(
       { ...toastParts.region },
       each({
