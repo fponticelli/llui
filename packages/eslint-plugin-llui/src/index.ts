@@ -22,6 +22,7 @@ import { agentMsgResolvableRule } from './rules/agent-msg-resolvable.js'
 import { agentWarningOnConfirmRule } from './rules/agent-warning-on-confirm.js'
 import { agentExampleOnPayloadRule } from './rules/agent-example-on-payload.js'
 import { agentEmitsDriftRule } from './rules/agent-emits-drift.js'
+import { agentOptionalFieldUndocumentedRule } from './rules/agent-optional-field-undocumented.js'
 import { pureUpdateFunctionRule } from './rules/pure-update-function.js'
 
 export const rules = {
@@ -49,6 +50,7 @@ export const rules = {
   'agent-warning-on-confirm': agentWarningOnConfirmRule,
   'agent-example-on-payload': agentExampleOnPayloadRule,
   'agent-emits-drift': agentEmitsDriftRule,
+  'agent-optional-field-undocumented': agentOptionalFieldUndocumentedRule,
   'pure-update-function': pureUpdateFunctionRule,
 }
 
@@ -103,6 +105,7 @@ export const configs = {
       // rule isn't supported. `warn` errs on the side of not
       // breaking CI on edge cases.
       'llui/agent-emits-drift': 'warn',
+      'llui/agent-optional-field-undocumented': 'warn',
       'llui/pure-update-function': 'error',
     },
   },
@@ -119,6 +122,7 @@ export const configs = {
       'llui/agent-warning-on-confirm': 'warn',
       'llui/agent-example-on-payload': 'warn',
       'llui/agent-emits-drift': 'warn',
+      'llui/agent-optional-field-undocumented': 'warn',
     },
   },
 }

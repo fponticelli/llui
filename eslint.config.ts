@@ -96,6 +96,7 @@ export default tseslint.config(
       'llui/agent-warning-on-confirm': 'warn',
       'llui/agent-example-on-payload': 'warn',
       'llui/agent-emits-drift': 'warn',
+      'llui/agent-optional-field-undocumented': 'warn',
     },
   },
 )
