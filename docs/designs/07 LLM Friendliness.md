@@ -2,6 +2,8 @@
 
 This document is about LLMs generating application code that uses LLui — not about LLMs implementing LLui internals. The distinction matters. An LLM implementing a framework needs deep knowledge of browser APIs, scope trees, and bitmask arithmetic. An LLM writing a component needs to know: what is the shape of state, how do I express a message, how do I render a list. These are very different knowledge surfaces, and friendliness for one does not imply friendliness for the other.
 
+> **For agent-driven runtime use** — where an LLM operates a _running_ LLui app via the `@llui/agent` MCP bridge, rather than authoring code — the operational reference is **doc 11 (Agent Annotations and Tools)**. That doc covers the JSDoc annotation grammar (`@intent`, `@should`, `@warning`, `@example`, `@emits`, `@humanOnly`, `@agentOnly`, etc.) and the full agent tool surface (`observe`, `query_state`, `would_dispatch`, `describe_recent_actions`, etc.). The wire protocol below those tools lives in doc 10 (Agent Protocol).
+
 ---
 
 ## 1. First Principles of LLM-Friendliness
