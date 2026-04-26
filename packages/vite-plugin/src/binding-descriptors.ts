@@ -126,13 +126,18 @@ export function injectScopeVariantRegistrations(
   let injected = false
 
   const transformer: ts.TransformerFactory<ts.SourceFile> = (ctx) => {
+    /**
+     * Tracks whether we're inside a function body. Top-level
+     * (module-scope) connect calls are skipped — there's no render
+     * context active when module code runs, so the registration
+     * would silently no-op anyway, and emitting it adds noise. Apps
+     * with module-scope translators (a single shared `parts` re-used
+     * across views) declare `agentAffordances` instead.
+     */
+    let inFunction = 0
+
     function rewriteBlock<B extends ts.Block | ts.SourceFile>(block: B): B {
       const stmts = (block as ts.Block | ts.SourceFile).statements
-      // Resolve identifier references in this block: any `const fn =
-      // (m) => { ... dispatch({type:'X'}) ... }` declaration becomes
-      // an entry in the lookup table so an identifier passed to
-      // `*.connect(get, fn, ...)` later in the same block resolves
-      // to its body.
       const localFns = collectLocalFns(stmts)
       const out: ts.Statement[] = []
       for (const stmt of stmts) {
@@ -152,7 +157,21 @@ export function injectScopeVariantRegistrations(
       if (ts.isBlock(n)) {
         return rewriteBlock(n)
       }
-      if (ts.isCallExpression(n) && isConnectCallShape(n)) {
+      // Track function-body nesting so we know whether the current
+      // call site can plausibly run within a render context. Arrow
+      // functions and function expressions/declarations both qualify.
+      if (
+        ts.isArrowFunction(n) ||
+        ts.isFunctionExpression(n) ||
+        ts.isFunctionDeclaration(n) ||
+        ts.isMethodDeclaration(n)
+      ) {
+        inFunction++
+        const r = ts.visitEachChild(n, (c) => visitNode(c, localFns), ctx)
+        inFunction--
+        return r
+      }
+      if (ts.isCallExpression(n) && inFunction > 0 && isConnectCallShape(n)) {
         const sendArg = n.arguments[1]!
         const sendFn = resolveSendFn(sendArg, localFns)
         if (sendFn) {
@@ -164,9 +183,9 @@ export function injectScopeVariantRegistrations(
             // `const parts = popover.connect(...)` still binds the
             // original return), and ensures the registration fires
             // *before* the call returns. This positions correctly
-            // regardless of the surrounding context: top-level view
-            // body, inside an each() render callback, or any nested
-            // scope.
+            // regardless of the surrounding function context: view
+            // body, render callback inside `each(...)`, or any
+            // nested helper called from within a view.
             injected = true
             const inner = ts.visitEachChild(
               n,

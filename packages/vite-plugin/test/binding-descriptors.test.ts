@@ -145,13 +145,22 @@ function emitInject(source: string): { out: string; injected: boolean } {
 }
 
 describe('injectScopeVariantRegistrations — happy path', () => {
-  it('emits __registerScopeVariants adjacent to *.connect calls with literal-dispatch sendFns', () => {
+  it('emits __registerScopeVariants adjacent to *.connect calls with literal-dispatch sendFns inside a function', () => {
+    // Wrapped in a view function so the call is in scope; module-
+    // top-level connects are intentionally skipped (no render
+    // context exists when module code runs — the registration would
+    // silently no-op).
     const { out, injected } = emitInject(`
-      const sendPopover = (m) => {
-        if (m.type === 'open') dispatch({ type: 'Editor/OpenCell' })
-        else dispatch({ type: 'Editor/Close' })
-      }
-      const parts = popover.connect(getPopoverState, sendPopover, { id })
+      const App = component({
+        view: () => {
+          const sendPopover = (m) => {
+            if (m.type === 'open') dispatch({ type: 'Editor/OpenCell' })
+            else dispatch({ type: 'Editor/Close' })
+          }
+          const parts = popover.connect(getPopoverState, sendPopover, { id })
+          return [div(parts.trigger, [])]
+        }
+      })
     `)
     expect(injected).toBe(true)
     // Comma-expression form: keeps the connect call's return value
@@ -164,9 +173,14 @@ describe('injectScopeVariantRegistrations — happy path', () => {
 
   it('handles inline arrow as the sendFn argument', () => {
     const { out, injected } = emitInject(`
-      const parts = dialog.connect(get, (m) => {
-        if (m.type === 'close') dispatch({ type: 'Confirm/Close' })
-      }, opts)
+      const App = component({
+        view: () => {
+          const parts = dialog.connect(get, (m) => {
+            if (m.type === 'close') dispatch({ type: 'Confirm/Close' })
+          }, opts)
+          return [parts.root]
+        }
+      })
     `)
     expect(injected).toBe(true)
     expect(out).toContain(`__registerScopeVariants(["Confirm/Close"])`)
@@ -174,16 +188,26 @@ describe('injectScopeVariantRegistrations — happy path', () => {
 
   it('does nothing when the sendFn body has no literal dispatches', () => {
     const { injected } = emitInject(`
-      const sendThru = (m) => libCall(m)
-      const parts = popover.connect(get, sendThru, opts)
+      const App = component({
+        view: () => {
+          const sendThru = (m) => libCall(m)
+          const parts = popover.connect(get, sendThru, opts)
+          return [parts.root]
+        }
+      })
     `)
     expect(injected).toBe(false)
   })
 
   it('skips non-connect call patterns even if they look similar', () => {
     const { out, injected } = emitInject(`
-      const sendPopover = (m) => dispatch({ type: 'X' })
-      const result = popover.attach(get, sendPopover, opts)
+      const App = component({
+        view: () => {
+          const sendPopover = (m) => dispatch({ type: 'X' })
+          const result = popover.attach(get, sendPopover, opts)
+          return []
+        }
+      })
     `)
     expect(injected).toBe(false)
     expect(out).not.toContain('__registerScopeVariants')
@@ -191,10 +215,15 @@ describe('injectScopeVariantRegistrations — happy path', () => {
 
   it('matches multiple connect calls in the same scope', () => {
     const { out, injected } = emitInject(`
-      const sendA = (m) => dispatch({ type: 'A' })
-      const sendB = (m) => dispatch({ type: 'B' })
-      const a = popover.connect(get, sendA)
-      const b = dialog.connect(get, sendB)
+      const App = component({
+        view: () => {
+          const sendA = (m) => dispatch({ type: 'A' })
+          const sendB = (m) => dispatch({ type: 'B' })
+          const a = popover.connect(get, sendA)
+          const b = dialog.connect(get, sendB)
+          return [a.root, b.root]
+        }
+      })
     `)
     expect(injected).toBe(true)
     expect(out).toContain('__registerScopeVariants(["A"])')
@@ -203,10 +232,12 @@ describe('injectScopeVariantRegistrations — happy path', () => {
 
   it('matches a connect call deep inside a render callback (each item)', () => {
     const { out, injected } = emitInject(`
-      view: ({ each }) => each((s) => s.cells, (cell) => {
-        const sendPopover = (m) => dispatch({ type: 'Editor/OpenCell' })
-        const parts = popover.connect(get, sendPopover)
-        return div(parts.trigger, [])
+      const App = component({
+        view: ({ each }) => each((s) => s.cells, (cell) => {
+          const sendPopover = (m) => dispatch({ type: 'Editor/OpenCell' })
+          const parts = popover.connect(get, sendPopover)
+          return div(parts.trigger, [])
+        })
       })
     `)
     expect(injected).toBe(true)
@@ -215,8 +246,13 @@ describe('injectScopeVariantRegistrations — happy path', () => {
 
   it('skips when the sendFn identifier resolves to a non-function', () => {
     const { injected } = emitInject(`
-      const notAFn = { foo: 'bar' }
-      const parts = popover.connect(get, notAFn, opts)
+      const App = component({
+        view: () => {
+          const notAFn = { foo: 'bar' }
+          const parts = popover.connect(get, notAFn, opts)
+          return [parts.root]
+        }
+      })
     `)
     expect(injected).toBe(false)
   })
@@ -228,8 +264,27 @@ describe('injectScopeVariantRegistrations — happy path', () => {
     // on imported send translators declare `agentAffordances`
     // instead.
     const { injected } = emitInject(`
-      const parts = popover.connect(get, importedSend, opts)
+      const App = component({
+        view: () => {
+          const parts = popover.connect(get, importedSend, opts)
+          return [parts.root]
+        }
+      })
     `)
     expect(injected).toBe(false)
+  })
+
+  it('skips connect calls at module top-level (no render context to register against)', () => {
+    // Real pattern from decisive.space-2/auth-section.ts: the bag is
+    // built once at module load and shared across views. There's no
+    // render context active when module code runs, so emitting a
+    // registration would crash. Apps using this pattern declare
+    // `agentAffordances` for the affordances they want surfaced.
+    const { out, injected } = emitInject(`
+      const sendMenu = (m) => dispatch({ type: 'Auth/UserMenu' })
+      const parts = menu.connect(get, sendMenu, { id: 'user-menu' })
+    `)
+    expect(injected).toBe(false)
+    expect(out).not.toContain('__registerScopeVariants')
   })
 })

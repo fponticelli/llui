@@ -110,12 +110,36 @@ export function getBindingDescriptors(inst: ComponentInstance): BindingDescripto
  * `rootLifetime` is the per-item scope, so the registration ties to
  * that item's lifetime and unregisters on item removal.
  *
- * No-op outside a render context (the compiler shouldn't emit it
- * elsewhere, but defending against runtime mis-use is cheap).
+ * **No-op when called outside a render context.** The compiler tries
+ * to skip emission at module top-level, but tooling never has full
+ * scope visibility (re-exports, transformations, generated code), so
+ * the helper itself defensively short-circuits rather than throwing.
+ * The translator's variants simply don't surface — the app still
+ * functions; agents can fall back to declared `agentAffordances` or
+ * the message schema.
  */
 export function __registerScopeVariants(variants: readonly string[]): void {
   if (variants.length === 0) return
-  const ctx = getRenderContext('__registerScopeVariants')
-  if (!ctx.instance) return
+  // Probe the render context without throwing — the helper is allowed
+  // outside a view (no-op rather than fatal). `getRenderContext`
+  // throws when there's no context, so we pre-check with the module-
+  // private accessor pattern: import the same module and read the
+  // current context manually.
+  const ctx = getCurrentRenderContext()
+  if (!ctx || !ctx.instance) return
   registerBindingVariants(ctx.instance, ctx.rootLifetime, variants)
+}
+
+/**
+ * Internal helper: read the current render context without throwing.
+ * Returns null when no context is active (module top-level, async
+ * callbacks, etc.) so callers can degrade gracefully instead of
+ * crashing.
+ */
+function getCurrentRenderContext(): import('./render-context.js').RenderContext | null {
+  try {
+    return getRenderContext('__registerScopeVariants')
+  } catch {
+    return null
+  }
 }
