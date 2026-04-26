@@ -893,6 +893,27 @@ export type CreateAgentClientOpts<State, Msg> = {
      */
     wrapLogMsg?: (m: unknown) => Msg
   }
+  /**
+   * Codec registry for non-JSON-safe values (Date, Blob, Map, …)
+   * crossing the LAP boundary. Defaults to `makeDefaultCodecs()`
+   * which ships `iso-date` and `epoch-millis`. Provide a custom
+   * registry to register additional codecs (e.g. `base64-blob` for
+   * file uploads). See `@llui/agent/codecs` for the convention.
+   */
+  codecs?: CodecRegistry
+  /**
+   * Base path for agent HTTP endpoints. Default: `'/agent'` (matches
+   * the canonical paths in `@llui/vite-plugin`'s dev middleware and
+   * `@llui/agent/server`). The mint URL, resume URLs, and revoke URL
+   * derive from this so consumers don't have to keep them in sync.
+   *
+   * Override when:
+   *   - **Cross-origin agent server**: pass the full base, e.g.
+   *     `'https://api.example.com/agent'` or `'http://localhost:8787/agent'`.
+   *   - **`@cloudflare/vite-plugin` in dev**: pass `'/cdn-cgi/agent'`
+   *     because cloudflare-vite shadows non-`/cdn-cgi/*` routes.
+   */
+  agentBasePath?: string
 }
 ```
 
@@ -951,7 +972,14 @@ export type AgentConnectPendingToken = {
   token: AgentToken
   tid: string
   lapUrl: string
-  connectSnippet: string // "/llui-connect <lapUrl> <token>"
+  /**
+   * Natural-language connect instruction the user copies into Claude.
+   * Includes URL, token, and the explicit `llui_connect_session` tool
+   * call. Works in any Claude client (Desktop, CC CLI, etc.) — the
+   * Desktop-specific `/llui-connect` slash command is sugar over the
+   * same tool call.
+   */
+  connectSnippet: string
   expiresAt: number
 }
 ```

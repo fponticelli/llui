@@ -84,11 +84,28 @@ The response envelope includes the new `stateAfter`, fresh `actions`, and a `dra
 
 ### `createBridgeServer()`
 
+Builds the bridge's MCP server using the high-level `McpServer`
+registrars. Each tool's Zod schema (declared once in `tools.ts`)
+drives both runtime input validation and the JSON Schema published
+to `tools/list` — eliminating the hand-written-schema-vs-handler
+drift that the low-level `setRequestHandler` pattern is prone to.
+Forwarded tools (`kind: 'forward'`) share a generic forwarder that
+looks up the binding, dispatches to LAP, and caches description
+payloads where applicable. The two meta tools
+(`llui_connect_session`, `llui_disconnect_session`) carry custom
+handlers that mutate the BindingMap directly.
+
 ```typescript
 function createBridgeServer(deps: BridgeDeps): McpServer
 ```
 
 ## Types
+
+### `ToolDescriptor`
+
+```typescript
+export type ToolDescriptor = ForwardedToolDescriptor | MetaToolDescriptor
+```
 
 ### `BridgeDeps`
 
@@ -105,28 +122,43 @@ export type BridgeDeps = {
 }
 ```
 
-## Constants
+## Interfaces
 
-### `TOOLS`
+### `ForwardedToolDescriptor`
 
-The MCP tools Claude sees. Two tiers:
-
-- Efficient path (recommended): `observe` + `send_message`.
-  `observe` returns state + actions + description + context in one
-  call — replacing the old describe_app + get_state + list_actions
-  trio. `send_message` defaults to `waitFor: 'drained'`, blocking
-  until the message queue goes idle (http/delay/debounce round
-  trips complete), then returns the new state + actions + drain
-  meta. Together these cut the "check state → act → check state"
-  loop from 5 round-trips to 2.
-- Legacy / specialized: `describe_app`, `get_state`, `list_actions`,
-  `wait_for_change`. Kept for back-compat and niche uses (e.g.
-  scoped state reads via JSON pointer, external state pushes). New
-  integrations should prefer `observe`.
-  Spec §8.
+Descriptor for a tool that forwards directly to the bound LAP server.
 
 ```typescript
-const TOOLS: ListToolsResult['tools']
+export interface ForwardedToolDescriptor {
+  kind: 'forward'
+  name: string
+  description: string
+  /** Zod schema defining the tool's input shape. */
+  schema: z.ZodObject<z.ZodRawShape>
+  /** LAP endpoint path (relative to the binding's base URL). */
+  lapPath: string
+}
+```
+
+### `MetaToolDescriptor`
+
+Descriptor for a tool whose handler is implemented in the bridge itself.
+
+```typescript
+export interface MetaToolDescriptor {
+  kind: 'meta'
+  name: string
+  description: string
+  schema: z.ZodObject<z.ZodRawShape>
+}
+```
+
+## Constants
+
+### `TOOL_DESCRIPTORS`
+
+```typescript
+const TOOL_DESCRIPTORS: ToolDescriptor[]
 ```
 
 <!-- auto-api:end -->
