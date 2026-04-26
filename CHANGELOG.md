@@ -11,6 +11,67 @@ All notable changes to LLui packages are documented here. LLui is a pre-1.0 proj
 
 Packages version in lockstep at release time: `@llui/dom`, `@llui/vite-plugin`, `@llui/test`, `@llui/router`, `@llui/transitions`, `@llui/components`, `@llui/vike` share a version line. `@llui/effects`, `@llui/mcp`, `@llui/eslint-plugin`, `@llui/agent`, and `llui-agent` have their own cadence.
 
+## 2026-04-26 — 0.0.32
+
+**Released:** `@llui/{dom,test,router,transitions,components}@0.0.32`; `@llui/vite-plugin@0.0.33`; `@llui/vike@0.0.34`; `@llui/agent@0.0.34`; `@llui/mcp@0.0.27`; `@llui/eslint-plugin@0.0.17`; `@llui/effects@0.0.10`; `llui-agent@0.0.4`
+
+The agent surface gets a major hardening pass driven by dogfooding `decisive.space-2`: `send_message` defaults to a tight diff-only response, missing `@intent` surfaces as `null` instead of synthesising the variant name, the schema tier surfaces documented shared variants without a live binding, and `describe_visible_content` falls back to a generic semantic walk when the app has no `[data-agent]` tags. The Vite plugin's compile-time diagnostics move to ESLint rules; the `@llui/eslint-plugin` recommended config promotes everything to `error` so LLMs (which only act on errors) actually fix what they see.
+
+### Breaking
+
+- **`@llui/agent@0.0.34`** — `LapMessageResponse.stateAfter` is now opt-in. By default `send_message` returns `stateDiff` only; pass `includeState: true` in the request to get the full snapshot back. Callers that tracked state from the response need to either apply diffs against their snapshot from `connect`/`observe` or set the new flag explicitly.
+- **`@llui/agent@0.0.34`** — `LapActionsResponse.actions[].intent` is `string | null`. Variants without `@intent` annotation surface as `null` rather than the variant name. Callers that surface affordances to LLMs should treat `null` as "this action is undocumented" — neither synthesise a label from the variant name nor invent one.
+- **`@llui/vite-plugin@0.0.33`** — `failOnWarning` and `disabledWarnings` plugin options removed; `DiagnosticRule` export removed. The compile-time `diagnose()` pass is gone — install `@llui/eslint-plugin` and enable its `recommended` config to get the equivalent (and more) checks at lint time. Apps using `disabledWarnings` should remove the option from `vite.config.ts` and selectively disable rules in their `eslint.config.ts` instead.
+- **`@llui/eslint-plugin@0.0.17`** — `configs.recommended` promotes every rule to `error`. The `warn` severity tier is gone. Rationale: warnings get reported but not fixed, so anything we shipped as `warn` effectively never improved on its own. Per-package overrides remain the escape hatch for known false positives.
+
+### Migration
+
+- **`stateAfter`.** If your code reads `result.stateAfter` after a `send_message`, either pass `{ includeState: true }` in the request or apply `result.stateDiff` to your prior snapshot.
+- **`intent: null`.** Where you previously read `action.intent` as a non-null string, handle the null case (skip the action, ask the user, or display a "no intent" placeholder).
+- **`disabledWarnings` → ESLint config.** Move per-rule mutes from `vite.config.ts`'s `disabledWarnings` array to `eslint.config.ts`: `'llui/<rule>': 'off'`. Same rule names — `empty-props`, `namespace-import`, `accessibility`, `controlled-input`, `child-static-props`, `static-on`, `exhaustive-update`, `bitmask-overflow`, `spread-in-children`, `map-on-state-array`.
+- **CI red on first upgrade.** Apps not previously running `@llui/eslint-plugin` will see a wave of new errors from the ported diagnostics. Expected — fix or downgrade per-rule.
+
+### `@llui/agent@0.0.34`
+
+- **Added** `includeState: true` request flag on `send_message`. Default is now to omit `stateAfter` and return `stateDiff` only. For a 100-cell matrix that's ~50kb saved per dispatch.
+- **Added** `fieldHints: Array<{path, hint}>` on every action. Lifts `@should("…")` JSDoc hints from the schema tree to the action surface so callers don't have to dig through `description.messages.variants[X].field.hint`. Path is dot/bracket notation rooted at the payload (`"cells[].meta"`).
+- **Improved** schema-tier action surfacing. Documented `'shared'` variants (those with `@intent`) now appear in `actions` even without a live UI binding, so an agent can dispatch e.g. `Matrix/SetQuantityValue` directly without first opening the cell editor. Previously only `@agentOnly` variants surfaced from the schema tier.
+- **Improved** `describe_visible_content` falls back to a depth- and count-capped semantic walk of the entire root when the app has no `[data-agent]` tagged subtrees. New `source: 'data-agent' | 'fallback' | 'truncated'` field on the response signals which path produced the outline.
+- **Breaking** `intent: string | null` and `stateAfter` opt-in — see top of release block.
+
+### `@llui/vite-plugin@0.0.33`
+
+- **Improved** cross-file resolver builds an enriched `TypeIndex` that follows named imports for type aliases referenced inside Msg variant payloads. Literal unions like `GridSorting = 'rank' | 'score'` declared in a sibling file now resolve to `{enum: ['rank', 'score']}` in the schema, instead of `'unknown'`.
+- **Breaking** `failOnWarning` / `disabledWarnings` removed — see top of release block.
+
+### `@llui/eslint-plugin@0.0.17`
+
+- **Added** eight rules ported from the Vite plugin's compile-time diagnostics: `empty-props`, `namespace-import`, `accessibility`, `controlled-input`, `child-static-props`, `static-on`, `exhaustive-update`, `bitmask-overflow`. All run as editor squiggles instead of build-only console output, with autofix on the trivial cases.
+- **Improved** `spread-in-children` is now scope-aware: only fires on genuinely-dynamic spreads. Bounded array literals (`const items = [...]; div([...items.map(...)])`) and known structural-call results stay silent — that footgun was migrated from the Vite version's scanner.
+- **Improved** `agent-msg-resolvable` accepts `never` as a valid Msg type argument for stateless components — the canonical "this component dispatches no messages" declaration. Stops the rule from firing on legitimate display modules.
+- **Breaking** `recommended` promoted to all-error — see top of release block.
+
+### `@llui/mcp@0.0.27`
+
+- **Improved** picks up the agent surface improvements via the bumped `@llui/agent` peer.
+
+### `@llui/effects@0.0.10`
+
+- **Improved** no behaviour changes; published in lockstep so consumers see a clean set.
+
+### `llui-agent@0.0.4`
+
+- **Added** `send_message` tool advertises the new `includeState` parameter in its zod schema and description; default behaviour mirrors the `@llui/agent` server (diff-only).
+
+### `@llui/{dom,test,router,transitions,components,vike}@0.0.32` (and `@llui/vike@0.0.34`)
+
+- **Improved** lockstep bump to keep peer-dep ranges aligned with `@llui/dom@0.0.32`. No behaviour changes.
+
+### Docs
+
+- **Updated** `docs/designs/02 Compiler.md` to reflect the diagnostics → ESLint move; the doc now points at the lint plugin for static-analysis rules and keeps the compiler's three-pass focus on prop classification, mask injection, and import cleanup.
+- **Updated** `packages/vite-plugin/README.md` with the same redirection.
+
 ## 2026-04-25 — 0.0.31
 
 **Released:** `@llui/{dom,vite-plugin,test,router,transitions,components}@0.0.31`; `@llui/vike@0.0.33`; `@llui/agent@0.0.33`; `@llui/mcp@0.0.26`; `@llui/eslint-plugin@0.0.16`; `llui-agent@0.0.3`
