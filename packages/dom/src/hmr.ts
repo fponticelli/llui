@@ -97,6 +97,18 @@ export function replaceComponent<S, M, E, D = void>(
       __handlers: newDef.__handlers,
     }
 
+    // Snapshot focus + selection + scroll BEFORE disposal — once the
+    // root lifetime tears down its DOM, the activeElement and any
+    // scrollable subtree are detached and can't be queried. We
+    // restore best-effort after the new view renders. The cost of
+    // skipping this step is the every-edit experience: the user
+    // types in an input, saves, the input rebuilds and loses focus
+    // and cursor position. That kills incremental editing flow.
+    const ownerRoot: ParentNode | null =
+      entry.kind === 'container' ? entry.container : (entry.anchor.parentElement ?? null)
+    const focusSnapshot = ownerRoot ? captureFocus(ownerRoot) : null
+    const scrollSnapshot = ownerRoot ? captureScroll(ownerRoot) : null
+
     disposeLifetime(typedInst.rootLifetime)
 
     // Clear the owned region per-kind.
@@ -142,6 +154,18 @@ export function replaceComponent<S, M, E, D = void>(
       for (const node of nodes) {
         entry.anchor.parentNode!.insertBefore(node, entry.endSentinel)
       }
+    }
+
+    // Restore focus, selection, and scroll positions in the freshly
+    // rendered DOM. Best-effort: when the new view's DOM has diverged
+    // structurally (different IDs, different element ordering, the
+    // input that was focused no longer exists), the restorers no-op
+    // silently. This is the right tradeoff — failing loudly on
+    // structural divergence would just mean every meaningful view
+    // edit prints an error.
+    if (ownerRoot) {
+      if (focusSnapshot) restoreFocus(ownerRoot, focusSnapshot)
+      if (scrollSnapshot) restoreScroll(ownerRoot, scrollSnapshot)
     }
 
     if (!handle) {
@@ -219,4 +243,174 @@ function makeReplacementHandle<S, M, E>(
       }
     },
   }
+}
+
+// ── Focus / selection / scroll preservation across HMR ──────────
+
+/**
+ * What we record before disposing the root DOM. The locator is a
+ * structural pointer: prefer `id` (resilient to view restructuring),
+ * fall back to a child-index path through the rendered subtree. If
+ * the new DOM doesn't match either, the restore call no-ops.
+ */
+type FocusSnapshot = {
+  /** The element's `id` if it had one, else `null`. */
+  id: string | null
+  /** Sibling-index path from `ownerRoot` down to the focused element. */
+  path: number[]
+  /** Selection range if the focused element is a text input/textarea. */
+  selection: { start: number; end: number; direction: 'forward' | 'backward' | 'none' } | null
+}
+
+type ScrollSnapshot = Array<{
+  id: string | null
+  path: number[]
+  scrollTop: number
+  scrollLeft: number
+}>
+
+function captureFocus(root: ParentNode): FocusSnapshot | null {
+  const doc = (root as Element).ownerDocument ?? globalThis.document
+  if (!doc) return null
+  const active = doc.activeElement
+  if (!active || active === doc.body) return null
+  // Only capture focus for elements inside our owned subtree —
+  // anything outside is not ours to restore.
+  if (!(root as ParentNode & Node).contains(active)) return null
+
+  const path = pathFromAncestor(root as Node, active)
+  if (path === null) return null
+
+  let selection: FocusSnapshot['selection'] = null
+  if (active instanceof HTMLInputElement || active instanceof HTMLTextAreaElement) {
+    // Some input types (number, email, etc.) reject selectionStart access.
+    // Wrapper try/catch keeps the snapshot resilient to those cases.
+    try {
+      if (active.selectionStart !== null && active.selectionEnd !== null) {
+        selection = {
+          start: active.selectionStart,
+          end: active.selectionEnd,
+          direction: (active.selectionDirection ?? 'none') as 'forward' | 'backward' | 'none',
+        }
+      }
+    } catch {
+      selection = null
+    }
+  }
+
+  return {
+    id: active.id || null,
+    path,
+    selection,
+  }
+}
+
+function restoreFocus(root: ParentNode, snap: FocusSnapshot): void {
+  const target = locate(root, snap.id, snap.path)
+  if (!target || !(target instanceof HTMLElement)) return
+  try {
+    target.focus({ preventScroll: true })
+  } catch {
+    return
+  }
+  if (
+    snap.selection &&
+    (target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement)
+  ) {
+    try {
+      target.setSelectionRange(snap.selection.start, snap.selection.end, snap.selection.direction)
+    } catch {
+      // Some input types throw on setSelectionRange; ignore.
+    }
+  }
+}
+
+function captureScroll(root: ParentNode): ScrollSnapshot {
+  // Walk the subtree and snapshot every element with non-zero
+  // scroll. Most subtrees have at most a handful, so the per-edit
+  // cost is small. Capturing all-zeroes wastes the restore work for
+  // no benefit; the filter keeps things tight.
+  const out: ScrollSnapshot = []
+  const walk = (node: Node): void => {
+    if (node instanceof HTMLElement) {
+      if (node.scrollTop !== 0 || node.scrollLeft !== 0) {
+        const path = pathFromAncestor(root as Node, node)
+        if (path !== null) {
+          out.push({
+            id: node.id || null,
+            path,
+            scrollTop: node.scrollTop,
+            scrollLeft: node.scrollLeft,
+          })
+        }
+      }
+    }
+    for (let c = node.firstChild; c !== null; c = c.nextSibling) {
+      walk(c)
+    }
+  }
+  walk(root as Node)
+  return out
+}
+
+function restoreScroll(root: ParentNode, snap: ScrollSnapshot): void {
+  for (const s of snap) {
+    const target = locate(root, s.id, s.path)
+    if (!target || !(target instanceof HTMLElement)) continue
+    target.scrollTop = s.scrollTop
+    target.scrollLeft = s.scrollLeft
+  }
+}
+
+/**
+ * Compute the child-index path from `ancestor` down to `target`, or
+ * `null` if `target` isn't in the subtree. The path is what gets
+ * walked on restore — no document-wide selectors, no string-encoded
+ * selectors that can break on punctuation in IDs.
+ */
+function pathFromAncestor(ancestor: Node, target: Node): number[] | null {
+  const path: number[] = []
+  let cur: Node | null = target
+  while (cur !== null && cur !== ancestor) {
+    const parent: Node | null = cur.parentNode
+    if (parent === null) return null
+    let idx = 0
+    let sib: Node | null = parent.firstChild
+    while (sib !== null && sib !== cur) {
+      idx++
+      sib = sib.nextSibling
+    }
+    if (sib === null) return null
+    path.push(idx)
+    cur = parent
+  }
+  if (cur !== ancestor) return null
+  return path.reverse()
+}
+
+/**
+ * Restore lookup: try `id` first (cheap and resilient to structural
+ * change), then walk the captured child-index path. Returns `null`
+ * if neither lookup succeeds — the restore caller silently no-ops.
+ */
+function locate(root: ParentNode, id: string | null, path: number[]): Element | null {
+  if (id) {
+    const doc = (root as Element).ownerDocument ?? globalThis.document
+    if (doc) {
+      const byId = doc.getElementById(id)
+      if (byId && (root as ParentNode & Node).contains(byId)) return byId
+    }
+  }
+  let cur: Node = root as Node
+  for (const idx of path) {
+    let child = cur.firstChild
+    let i = 0
+    while (child && i < idx) {
+      child = child.nextSibling
+      i++
+    }
+    if (!child) return null
+    cur = child
+  }
+  return cur instanceof Element ? cur : null
 }
