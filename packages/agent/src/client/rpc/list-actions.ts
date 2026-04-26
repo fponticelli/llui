@@ -36,6 +36,10 @@ export type ListActionsResult = {
     source: 'binding' | 'always-affordable' | 'schema'
     selectorHint: string | null
     payloadHint: object | null
+    /** Cautionary text from `@warning` JSDoc, or null. */
+    warning: string | null
+    /** Concrete examples from `@example` JSDoc, in source order. */
+    examples: string[]
   }>
 }
 
@@ -65,6 +69,8 @@ export function handleListActions(host: ListActionsHost): ListActionsResult {
       source: 'binding',
       selectorHint: null,
       payloadHint: null,
+      warning: ann?.warning ?? null,
+      examples: ann?.examples ?? [],
     })
   }
 
@@ -82,6 +88,8 @@ export function handleListActions(host: ListActionsHost): ListActionsResult {
       source: 'always-affordable',
       selectorHint: null,
       payloadHint: Object.keys(rest).length > 0 ? rest : null,
+      warning: ann?.warning ?? null,
+      examples: ann?.examples ?? [],
     })
   }
 
@@ -109,6 +117,8 @@ export function handleListActions(host: ListActionsHost): ListActionsResult {
         source: 'schema',
         selectorHint: null,
         payloadHint: synthesizePayload(variant, fields),
+        warning: ann?.warning ?? null,
+        examples: ann?.examples ?? [],
       })
     }
   }

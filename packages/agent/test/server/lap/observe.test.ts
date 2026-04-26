@@ -73,6 +73,8 @@ beforeEach(async () => {
           alwaysAffordable: false,
           requiresConfirm: false,
           dispatchMode: 'shared',
+        examples: [],
+        warning: null,
         },
       },
     },

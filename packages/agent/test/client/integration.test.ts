@@ -121,6 +121,8 @@ function makeHelloBuilder(appName: string): () => HelloFrame {
           alwaysAffordable: true,
           requiresConfirm: false,
           dispatchMode: 'shared',
+        examples: [],
+        warning: null,
         },
       },
     },

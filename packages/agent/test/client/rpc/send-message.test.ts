@@ -76,6 +76,8 @@ describe('handleSendMessage — validation and annotations', () => {
         alwaysAffordable: false,
         requiresConfirm: false,
         dispatchMode: 'human-only',
+      examples: [],
+      warning: null,
       },
     }
     const host = makeHost({ send, proposeConfirm, getMsgAnnotations: () => annotations })
@@ -95,6 +97,8 @@ describe('handleSendMessage — validation and annotations', () => {
         alwaysAffordable: false,
         requiresConfirm: true,
         dispatchMode: 'shared',
+      examples: [],
+      warning: null,
       },
     }
     const host = makeHost({ proposeConfirm, getMsgAnnotations: () => annotations })
@@ -124,6 +128,8 @@ describe('handleSendMessage — validation and annotations', () => {
           alwaysAffordable: false,
           requiresConfirm: false,
           dispatchMode: 'shared',
+        examples: [],
+        warning: null,
         },
       }),
     })
@@ -286,6 +292,8 @@ describe('handleSendMessage — response envelope', () => {
           alwaysAffordable: false,
           requiresConfirm: false,
           dispatchMode: 'shared',
+        examples: [],
+        warning: null,
         },
       }),
     })

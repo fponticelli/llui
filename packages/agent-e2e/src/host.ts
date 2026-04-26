@@ -148,6 +148,8 @@ type AgentMeta = {
       alwaysAffordable: boolean
       requiresConfirm: boolean
       dispatchMode: 'shared' | 'human-only' | 'agent-only'
+      examples: string[]
+      warning: string | null
     }
   >
   __bindingDescriptors?: Array<{ variant: string }>
@@ -181,36 +183,48 @@ AppWithMeta.__msgAnnotations = {
     alwaysAffordable: false,
     requiresConfirm: false,
     dispatchMode: 'shared',
+  examples: [],
+  warning: null,
   },
   dec: {
     intent: 'Decrement the counter',
     alwaysAffordable: false,
     requiresConfirm: false,
     dispatchMode: 'shared',
+  examples: [],
+  warning: null,
   },
   reset: {
     intent: 'Reset to zero',
     alwaysAffordable: false,
     requiresConfirm: false,
     dispatchMode: 'shared',
+  examples: [],
+  warning: null,
   },
   delete: {
     intent: 'Delete an item',
     alwaysAffordable: false,
     requiresConfirm: true,
     dispatchMode: 'shared',
+  examples: [],
+  warning: null,
   },
   signOut: {
     intent: 'Sign out',
     alwaysAffordable: false,
     requiresConfirm: false,
     dispatchMode: 'human-only',
+  examples: [],
+  warning: null,
   },
   nav: {
     intent: 'Navigate',
     alwaysAffordable: true,
     requiresConfirm: false,
     dispatchMode: 'shared',
+  examples: [],
+  warning: null,
   },
 }
 

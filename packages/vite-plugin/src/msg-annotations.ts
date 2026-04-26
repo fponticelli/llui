@@ -7,6 +7,22 @@ export type MessageAnnotations = {
   alwaysAffordable: boolean
   requiresConfirm: boolean
   dispatchMode: DispatchMode
+  /**
+   * Concrete example dispatches the LLM can copy from. Populated by
+   * `@example("text")` JSDoc tags. Each tag becomes one entry, in
+   * source order, so authors can mix scenarios ("typical case",
+   * "edge case with auth", etc.) without nesting them in a single
+   * string.
+   */
+  examples: string[]
+  /**
+   * Non-blocking caution. Surfaced verbatim to the agent at affordance
+   * time so the LLM can weigh the consequence ("this overwrites the
+   * cloud version", "fires analytics that can't be retracted") before
+   * dispatching. Distinct from `requiresConfirm`, which is a runtime
+   * gate the user must acknowledge.
+   */
+  warning: string | null
 }
 
 const DEFAULT: MessageAnnotations = {
@@ -14,6 +30,8 @@ const DEFAULT: MessageAnnotations = {
   alwaysAffordable: false,
   requiresConfirm: false,
   dispatchMode: 'shared',
+  examples: [],
+  warning: null,
 }
 
 /**
@@ -99,7 +117,7 @@ function readLeadingJSDoc(source: string, scanPos: number): string {
 }
 
 function parseAnnotations(comment: string): MessageAnnotations {
-  if (!comment) return { ...DEFAULT }
+  if (!comment) return { ...DEFAULT, examples: [] }
   const intent = readIntent(comment)
   const human = /@humanOnly\b/.test(comment)
   const agent = /@agentOnly\b/.test(comment)
@@ -113,10 +131,33 @@ function parseAnnotations(comment: string): MessageAnnotations {
     alwaysAffordable: /@alwaysAffordable\b/.test(comment),
     requiresConfirm: /@requiresConfirm\b/.test(comment),
     dispatchMode,
+    examples: readExamples(comment),
+    warning: readWarning(comment),
   }
 }
 
 function readIntent(comment: string): string | null {
   const match = comment.match(/@intent\s*\(\s*["\u201c]([^"\u201d]*)["\u201d]\s*\)/)
+  return match?.[1] ?? null
+}
+
+/**
+ * Match every `@example("\u2026")` (and curly-quote variant) in source
+ * order. Multiple tags on one variant are common \u2014 typical-case,
+ * edge-case-with-auth, etc. \u2014 so the parser collects all of them
+ * rather than picking the first.
+ */
+function readExamples(comment: string): string[] {
+  const out: string[] = []
+  const re = /@example\s*\(\s*["\u201c]([^"\u201d]*)["\u201d]\s*\)/g
+  let m: RegExpExecArray | null
+  while ((m = re.exec(comment)) !== null) {
+    if (m[1] !== undefined) out.push(m[1])
+  }
+  return out
+}
+
+function readWarning(comment: string): string | null {
+  const match = comment.match(/@warning\s*\(\s*["\u201c]([^"\u201d]*)["\u201d]\s*\)/)
   return match?.[1] ?? null
 }

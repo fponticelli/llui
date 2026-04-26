@@ -27,6 +27,8 @@ describe('handleObserve', () => {
             alwaysAffordable: false,
             requiresConfirm: false,
             dispatchMode: 'shared',
+          examples: [],
+          warning: null,
           },
         }) as Record<string, MessageAnnotations>,
       getAgentContext: () => (s) => ({
@@ -67,12 +69,16 @@ describe('handleObserve', () => {
             alwaysAffordable: false,
             requiresConfirm: false,
             dispatchMode: 'shared',
+          examples: [],
+          warning: null,
           },
           AdminOnly: {
             intent: 'admin',
             alwaysAffordable: false,
             requiresConfirm: false,
             dispatchMode: 'human-only',
+          examples: [],
+          warning: null,
           },
         }) as Record<string, MessageAnnotations>,
     })

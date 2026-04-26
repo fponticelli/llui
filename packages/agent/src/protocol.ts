@@ -44,6 +44,19 @@ export type MessageAnnotations = {
   alwaysAffordable: boolean
   requiresConfirm: boolean
   dispatchMode: DispatchMode
+  /**
+   * Concrete copy-paste example dispatches authored as `@example`
+   * JSDoc tags. Multiple tags on one variant become multiple
+   * entries (mix typical / edge cases without nesting strings).
+   */
+  examples: string[]
+  /**
+   * Non-blocking caution authored as `@warning`. Distinct from
+   * `requiresConfirm` (runtime user gate); this informs the LLM at
+   * affordance time so it can decide whether the dispatch's
+   * downstream is acceptable.
+   */
+  warning: string | null
 }
 
 export type MessageSchemaEntry = {
@@ -216,6 +229,14 @@ export type AgentDocs = {
   purpose: string
   overview?: string
   cautions?: string[]
+  /**
+   * Free-form idiomatic-usage examples authored by the app: typical
+   * sequences of dispatches the LLM should know about, like "to
+   * delete a saved matrix: dispatch Confirm/Ask first, then on
+   * approve dispatch Cloud/Delete." Each entry is one example;
+   * order is up to the author.
+   */
+  examples?: string[]
 }
 
 export type AgentContext = {

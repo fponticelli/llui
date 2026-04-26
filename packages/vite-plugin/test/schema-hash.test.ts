@@ -69,6 +69,8 @@ describe('computeSchemaHash', () => {
           alwaysAffordable: false,
           requiresConfirm: false,
           dispatchMode: 'shared',
+          examples: [],
+          warning: null,
         },
       },
     })
@@ -81,6 +83,8 @@ describe('computeSchemaHash', () => {
           alwaysAffordable: false,
           requiresConfirm: false,
           dispatchMode: 'shared',
+          examples: [],
+          warning: null,
         },
       },
     })

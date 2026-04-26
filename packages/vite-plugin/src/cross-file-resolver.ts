@@ -327,7 +327,24 @@ function parseMessageAnnotations(comment: string): MessageAnnotations {
     alwaysAffordable: /@alwaysAffordable\b/.test(comment),
     requiresConfirm: /@requiresConfirm\b/.test(comment),
     dispatchMode,
+    examples: readExamplesTag(comment),
+    warning: readWarningTag(comment),
   }
+}
+
+function readExamplesTag(comment: string): string[] {
+  const out: string[] = []
+  const re = /@example\s*\(\s*["“]([^"”]*)["”]\s*\)/g
+  let m: RegExpExecArray | null
+  while ((m = re.exec(comment)) !== null) {
+    if (m[1] !== undefined) out.push(m[1])
+  }
+  return out
+}
+
+function readWarningTag(comment: string): string | null {
+  const match = comment.match(/@warning\s*\(\s*["“]([^"”]*)["”]\s*\)/)
+  return match?.[1] ?? null
 }
 
 function defaultMessageAnnotations(): MessageAnnotations {
@@ -336,6 +353,8 @@ function defaultMessageAnnotations(): MessageAnnotations {
     alwaysAffordable: false,
     requiresConfirm: false,
     dispatchMode: 'shared',
+    examples: [],
+    warning: null,
   }
 }
 

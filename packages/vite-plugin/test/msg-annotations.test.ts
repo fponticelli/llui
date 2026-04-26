@@ -21,26 +21,93 @@ type Msg =
         alwaysAffordable: false,
         requiresConfirm: false,
         dispatchMode: 'shared',
+        examples: [],
+        warning: null,
       },
       delete: {
         intent: 'Delete item',
         alwaysAffordable: false,
         requiresConfirm: true,
         dispatchMode: 'shared',
+        examples: [],
+        warning: null,
       },
       checkout: {
         intent: 'Place order',
         alwaysAffordable: false,
         requiresConfirm: false,
         dispatchMode: 'human-only',
+        examples: [],
+        warning: null,
       },
       nav: {
         intent: 'Navigate',
         alwaysAffordable: true,
         requiresConfirm: false,
         dispatchMode: 'shared',
+        examples: [],
+        warning: null,
       },
     })
+  })
+
+  // ── @example and @warning ──────────────────────────────────────
+
+  it('extracts a single @example into examples array', () => {
+    const src = `
+type Msg =
+  /** @intent("Save the matrix") @example("dispatch when the user clicks Save") */
+  | { type: 'Save' }
+`
+    expect(extractMsgAnnotations(src)?.Save?.examples).toEqual([
+      'dispatch when the user clicks Save',
+    ])
+  })
+
+  it('extracts multiple @example tags in source order', () => {
+    const src = `
+type Msg =
+  /**
+   * @intent("Set a cell value")
+   * @example("typical: dispatch from inline cell editor")
+   * @example("bulk: prefer Matrix/SetManyCells when setting >5 cells")
+   */
+  | { type: 'SetCell'; value: number }
+`
+    expect(extractMsgAnnotations(src)?.SetCell?.examples).toEqual([
+      'typical: dispatch from inline cell editor',
+      'bulk: prefer Matrix/SetManyCells when setting >5 cells',
+    ])
+  })
+
+  it('extracts @warning into a separate field, distinct from requiresConfirm', () => {
+    const src = `
+type Msg =
+  /**
+   * @intent("Save and overwrite the cloud version")
+   * @warning("Overwrites any concurrent edits from other clients without merging.")
+   */
+  | { type: 'Save' }
+`
+    const ann = extractMsgAnnotations(src)?.Save
+    expect(ann?.warning).toBe(
+      'Overwrites any concurrent edits from other clients without merging.',
+    )
+    expect(ann?.requiresConfirm).toBe(false)
+  })
+
+  it('tolerates curly quotes in @example and @warning', () => {
+    const src = `
+type Msg =
+  /**
+   * @example(“fancy ok”)
+   * @warning(“also fancy”)
+   */
+  | { type: 'Y' }
+`
+    const ann = extractMsgAnnotations(src)?.Y
+    expect(ann?.examples).toEqual(['fancy ok'])
+    expect(ann?.warning).toBe('also fancy')
   })
 })
 
@@ -67,6 +134,8 @@ type Msg =
         alwaysAffordable: false,
         requiresConfirm: false,
         dispatchMode: 'shared',
+      examples: [],
+      warning: null,
       },
     })
   })
@@ -84,6 +153,8 @@ type Msg =
         alwaysAffordable: false,
         requiresConfirm: false,
         dispatchMode: 'shared',
+      examples: [],
+      warning: null,
       },
     })
   })
@@ -95,8 +166,22 @@ type Msg =
   | { type: 'b' }
 `
     expect(extractMsgAnnotations(src)).toEqual({
-      a: { intent: null, alwaysAffordable: false, requiresConfirm: false, dispatchMode: 'shared' },
-      b: { intent: null, alwaysAffordable: false, requiresConfirm: false, dispatchMode: 'shared' },
+      a: {
+        intent: null,
+        alwaysAffordable: false,
+        requiresConfirm: false,
+        dispatchMode: 'shared',
+        examples: [],
+        warning: null,
+      },
+      b: {
+        intent: null,
+        alwaysAffordable: false,
+        requiresConfirm: false,
+        dispatchMode: 'shared',
+        examples: [],
+        warning: null,
+      },
     })
   })
 
@@ -112,6 +197,8 @@ type Msg =
       alwaysAffordable: false,
       requiresConfirm: false,
       dispatchMode: 'shared',
+    examples: [],
+    warning: null,
     })
   })
 
@@ -131,6 +218,8 @@ type Msg =
         alwaysAffordable: false,
         requiresConfirm: false,
         dispatchMode: 'shared',
+      examples: [],
+      warning: null,
       },
     })
   })
@@ -155,6 +244,8 @@ type Msg =
       alwaysAffordable: false,
       requiresConfirm: false,
       dispatchMode: 'agent-only',
+    examples: [],
+    warning: null,
     })
   })
 
