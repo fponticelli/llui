@@ -76,9 +76,9 @@ describe('handleSendMessage — validation and annotations', () => {
         alwaysAffordable: false,
         requiresConfirm: false,
         dispatchMode: 'human-only',
-      examples: [],
-      warning: null,
-      emits: [],
+        examples: [],
+        warning: null,
+        emits: [],
       },
     }
     const host = makeHost({ send, proposeConfirm, getMsgAnnotations: () => annotations })
@@ -98,9 +98,9 @@ describe('handleSendMessage — validation and annotations', () => {
         alwaysAffordable: false,
         requiresConfirm: true,
         dispatchMode: 'shared',
-      examples: [],
-      warning: null,
-      emits: [],
+        examples: [],
+        warning: null,
+        emits: [],
       },
     }
     const host = makeHost({ proposeConfirm, getMsgAnnotations: () => annotations })
@@ -136,7 +136,7 @@ describe('handleSendMessage — validation and annotations', () => {
           dispatchMode: 'shared',
           examples: [],
           warning: null,
-        emits: [],
+          emits: [],
         },
       }),
       getMsgSchema: () => ({
@@ -174,7 +174,7 @@ describe('handleSendMessage — validation and annotations', () => {
           dispatchMode: 'shared',
           examples: [],
           warning: null,
-        emits: [],
+          emits: [],
         },
       }),
       getMsgSchema: () => ({
@@ -206,7 +206,7 @@ describe('handleSendMessage — validation and annotations', () => {
           dispatchMode: 'shared',
           examples: [],
           warning: null,
-        emits: [],
+          emits: [],
         },
       }),
       getMsgSchema: () => ({
@@ -244,7 +244,7 @@ describe('handleSendMessage — validation and annotations', () => {
           dispatchMode: 'shared',
           examples: [],
           warning: null,
-        emits: [],
+          emits: [],
         },
       }),
       getMsgSchema: () => ({
@@ -282,7 +282,7 @@ describe('handleSendMessage — validation and annotations', () => {
           dispatchMode: 'shared',
           examples: [],
           warning: null,
-        emits: [],
+          emits: [],
         },
       }),
       getMsgSchema: () => ({
@@ -314,7 +314,7 @@ describe('handleSendMessage — validation and annotations', () => {
           dispatchMode: 'shared',
           examples: [],
           warning: null,
-        emits: [],
+          emits: [],
         },
       }),
       getMsgSchema: () => ({
@@ -342,9 +342,9 @@ describe('handleSendMessage — validation and annotations', () => {
           alwaysAffordable: false,
           requiresConfirm: false,
           dispatchMode: 'shared',
-        examples: [],
-        warning: null,
-        emits: [],
+          examples: [],
+          warning: null,
+          emits: [],
         },
       }),
     })
@@ -507,9 +507,9 @@ describe('handleSendMessage — response envelope', () => {
           alwaysAffordable: false,
           requiresConfirm: false,
           dispatchMode: 'shared',
-        examples: [],
-        warning: null,
-        emits: [],
+          examples: [],
+          warning: null,
+          emits: [],
         },
       }),
     })

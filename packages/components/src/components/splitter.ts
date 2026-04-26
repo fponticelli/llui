@@ -1,3 +1,4 @@
+import { tagSend } from '@llui/dom'
 import type { Send } from '@llui/dom'
 import { flipArrow } from '../utils/direction.js'
 
@@ -172,7 +173,7 @@ export function connect<S>(
       'data-part': 'resize-trigger',
       'data-orientation': (s) => get(s).orientation,
       tabIndex: (s) => (get(s).disabled ? -1 : 0),
-      onKeyDown: (e) => {
+      onKeyDown: tagSend(send, ['increment', 'decrement', 'toMin', 'toMax'], (e) => {
         const key = flipArrow(e.key, e.currentTarget as Element)
         switch (key) {
           case 'ArrowRight':
@@ -202,11 +203,11 @@ export function connect<S>(
             send({ type: 'toMax' })
             return
         }
-      },
-      onPointerDown: (e) => {
+      }),
+      onPointerDown: tagSend(send, ['startDrag'], (e) => {
         e.preventDefault()
         send({ type: 'startDrag' })
-      },
+      }),
     },
   }
 }

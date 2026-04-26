@@ -10,10 +10,7 @@ import {
 import { extractMsgAnnotations, type MessageAnnotations } from './msg-annotations.js'
 import { extractStateSchema, type StateType } from './state-schema.js'
 import { computeSchemaHash } from './schema-hash.js'
-import {
-  tagDispatchHandlers,
-  injectScopeVariantRegistrations,
-} from './binding-descriptors.js'
+import { tagDispatchHandlers, injectScopeVariantRegistrations } from './binding-descriptors.js'
 import { compilerCache } from './compiler-cache.js'
 
 function createMaskLiteral(f: ts.NodeFactory, mask: number): ts.Expression {

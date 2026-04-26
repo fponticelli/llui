@@ -1,3 +1,4 @@
+import { tagSend } from '@llui/dom'
 import type { Send } from '@llui/dom'
 
 /**
@@ -102,7 +103,7 @@ export function connect<S>(
       'data-disabled': (s) => (get(s).disabled ? '' : undefined),
       'data-scope': 'collapsible',
       'data-part': 'trigger',
-      onClick: () => send({ type: 'toggle' }),
+      onClick: tagSend(send, ['toggle'], () => send({ type: 'toggle' })),
     },
     content: {
       role: 'region',

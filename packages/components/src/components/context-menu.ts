@@ -1,5 +1,5 @@
 import type { Send, TransitionOptions } from '@llui/dom'
-import { show, portal, onMount, div } from '@llui/dom'
+import { show, portal, onMount, div, tagSend } from '@llui/dom'
 import { pushDismissable } from '../utils/dismissable.js'
 
 /**
@@ -180,10 +180,10 @@ export function connect<S>(
     trigger: {
       'data-scope': 'context-menu',
       'data-part': 'trigger',
-      onContextMenu: (e) => {
+      onContextMenu: tagSend(send, ['openAt'], (e) => {
         e.preventDefault()
         send({ type: 'openAt', x: e.clientX, y: e.clientY })
-      },
+      }),
     },
     positioner: {
       'data-scope': 'context-menu',
@@ -200,27 +200,31 @@ export function connect<S>(
       'data-state': (s) => (get(s).open ? 'open' : 'closed'),
       'data-scope': 'context-menu',
       'data-part': 'content',
-      onKeyDown: (e) => {
-        switch (e.key) {
-          case 'ArrowDown':
-            e.preventDefault()
-            send({ type: 'highlightNext' })
-            return
-          case 'ArrowUp':
-            e.preventDefault()
-            send({ type: 'highlightPrev' })
-            return
-          case 'Enter':
-          case ' ':
-            e.preventDefault()
-            send({ type: 'selectHighlighted' })
-            return
-          case 'Escape':
-            e.preventDefault()
-            send({ type: 'close' })
-            return
-        }
-      },
+      onKeyDown: tagSend(
+        send,
+        ['highlightNext', 'highlightPrev', 'selectHighlighted', 'close'],
+        (e) => {
+          switch (e.key) {
+            case 'ArrowDown':
+              e.preventDefault()
+              send({ type: 'highlightNext' })
+              return
+            case 'ArrowUp':
+              e.preventDefault()
+              send({ type: 'highlightPrev' })
+              return
+            case 'Enter':
+            case ' ':
+              e.preventDefault()
+              send({ type: 'selectHighlighted' })
+              return
+            case 'Escape':
+              e.preventDefault()
+              send({ type: 'close' })
+              return
+          }
+        },
+      ),
     },
     item: (value: string): ContextMenuItemParts<S> => ({
       item: {
@@ -233,11 +237,11 @@ export function connect<S>(
         'data-part': 'item',
         'data-value': value,
         tabIndex: -1,
-        onClick: () => {
+        onClick: tagSend(send, ['select'], () => {
           send({ type: 'select', value })
           opts.onSelect?.(value)
-        },
-        onPointerMove: () => send({ type: 'highlight', value }),
+        }),
+        onPointerMove: tagSend(send, ['highlight'], () => send({ type: 'highlight', value })),
       },
     }),
   }

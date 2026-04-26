@@ -1,5 +1,5 @@
 import type { Send } from '@llui/dom'
-import { useContext } from '@llui/dom'
+import { useContext, tagSend } from '@llui/dom'
 import { LocaleContext } from '../locale.js'
 import type { Locale } from '../locale.js'
 
@@ -231,7 +231,7 @@ export function connect<S>(
       disabled: (s) => isEmpty(get(s)),
       'data-scope': 'signature-pad',
       'data-part': 'clear-trigger',
-      onClick: () => send({ type: 'clear' }),
+      onClick: tagSend(send, ['clear'], () => send({ type: 'clear' })),
     },
     undoTrigger: {
       type: 'button',
@@ -239,7 +239,7 @@ export function connect<S>(
       disabled: (s) => get(s).strokes.length === 0,
       'data-scope': 'signature-pad',
       'data-part': 'undo-trigger',
-      onClick: () => send({ type: 'undo' }),
+      onClick: tagSend(send, ['undo'], () => send({ type: 'undo' })),
     },
     guide: {
       'data-scope': 'signature-pad',

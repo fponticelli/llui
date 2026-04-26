@@ -1,3 +1,4 @@
+import { tagSend } from '@llui/dom'
 import type { Send } from '@llui/dom'
 
 /**
@@ -197,14 +198,18 @@ export function connect<S>(
       'data-part': 'root',
       'data-scrolling': (s) => (get(s).scrolling ? '' : undefined),
       'data-hovered': (s) => (get(s).hovered ? '' : undefined),
-      onMouseEnter: () => send({ type: 'setHovered', hovered: true }),
-      onMouseLeave: () => send({ type: 'setHovered', hovered: false }),
+      onMouseEnter: tagSend(send, ['setHovered'], () =>
+        send({ type: 'setHovered', hovered: true }),
+      ),
+      onMouseLeave: tagSend(send, ['setHovered'], () =>
+        send({ type: 'setHovered', hovered: false }),
+      ),
     },
     viewport: {
       tabIndex: 0,
       'data-scope': 'scroll-area',
       'data-part': 'viewport',
-      onScroll: (e) => {
+      onScroll: tagSend(send, ['setScroll'], (e) => {
         const el = e.target as HTMLElement
         send({
           type: 'setScroll',
@@ -215,7 +220,7 @@ export function connect<S>(
           clientWidth: el.clientWidth,
           clientHeight: el.clientHeight,
         })
-      },
+      }),
     },
     content: {
       'data-scope': 'scroll-area',

@@ -1,3 +1,4 @@
+import { tagSend } from '@llui/dom'
 import type { Send } from '@llui/dom'
 
 /**
@@ -167,14 +168,14 @@ export function connect<S, T>(
       },
       'data-scope': 'async-list',
       'data-part': 'load-more-trigger',
-      onClick: () => send({ type: 'loadMore' }),
+      onClick: tagSend(send, ['loadMore'], () => send({ type: 'loadMore' })),
     },
     retryTrigger: {
       type: 'button',
       'data-scope': 'async-list',
       'data-part': 'retry-trigger',
       hidden: (s) => get(s).status !== 'error',
-      onClick: () => send({ type: 'retry' }),
+      onClick: tagSend(send, ['retry'], () => send({ type: 'retry' })),
     },
     errorText: {
       role: 'alert',

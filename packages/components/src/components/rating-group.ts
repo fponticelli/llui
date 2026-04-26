@@ -1,3 +1,4 @@
+import { tagSend } from '@llui/dom'
 import type { Send } from '@llui/dom'
 import { flipArrow } from '../utils/direction.js'
 
@@ -165,18 +166,18 @@ export function connect<S>(
           const active = Math.ceil(st.value) || 1
           return active === index + 1 ? 0 : -1
         },
-        onClick: (e) => {
+        onClick: tagSend(send, ['clickItem'], (e) => {
           const rect = (e.currentTarget as HTMLElement).getBoundingClientRect()
           const isLeftHalf = e.clientX - rect.left < rect.width / 2
           send({ type: 'clickItem', index, isLeftHalf })
-        },
-        onPointerMove: (e) => {
+        }),
+        onPointerMove: tagSend(send, ['hoverItem'], (e) => {
           const rect = (e.currentTarget as HTMLElement).getBoundingClientRect()
           const isLeftHalf = e.clientX - rect.left < rect.width / 2
           send({ type: 'hoverItem', index, isLeftHalf })
-        },
-        onPointerLeave: () => send({ type: 'hover', value: null }),
-        onKeyDown: (e) => {
+        }),
+        onPointerLeave: tagSend(send, ['hover'], () => send({ type: 'hover', value: null })),
+        onKeyDown: tagSend(send, ['incrementValue', 'decrementValue', 'setValue', 'toEnd'], (e) => {
           const key = flipArrow(e.key, e.currentTarget as Element)
           switch (key) {
             case 'ArrowRight':
@@ -198,7 +199,7 @@ export function connect<S>(
               send({ type: 'toEnd' })
               return
           }
-        },
+        }),
       },
     }),
   }

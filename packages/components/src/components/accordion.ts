@@ -1,3 +1,4 @@
+import { tagSend } from '@llui/dom'
 import type { Send } from '@llui/dom'
 
 /**
@@ -172,32 +173,36 @@ export function connect<S>(
         'data-scope': 'accordion',
         'data-part': 'trigger',
         'data-value': value,
-        onClick: () => send({ type: 'toggle', value }),
-        onKeyDown: (e: KeyboardEvent) => {
-          switch (e.key) {
-            case 'ArrowDown':
-              e.preventDefault()
-              send({ type: 'focusNext', value })
-              return
-            case 'ArrowUp':
-              e.preventDefault()
-              send({ type: 'focusPrev', value })
-              return
-            case 'Home':
-              e.preventDefault()
-              send({ type: 'focusFirst' })
-              return
-            case 'End':
-              e.preventDefault()
-              send({ type: 'focusLast' })
-              return
-            case ' ':
-            case 'Enter':
-              e.preventDefault()
-              send({ type: 'toggle', value })
-              return
-          }
-        },
+        onClick: tagSend(send, ['toggle'], () => send({ type: 'toggle', value })),
+        onKeyDown: tagSend(
+          send,
+          ['focusNext', 'focusPrev', 'focusFirst', 'focusLast', 'toggle'],
+          (e: KeyboardEvent) => {
+            switch (e.key) {
+              case 'ArrowDown':
+                e.preventDefault()
+                send({ type: 'focusNext', value })
+                return
+              case 'ArrowUp':
+                e.preventDefault()
+                send({ type: 'focusPrev', value })
+                return
+              case 'Home':
+                e.preventDefault()
+                send({ type: 'focusFirst' })
+                return
+              case 'End':
+                e.preventDefault()
+                send({ type: 'focusLast' })
+                return
+              case ' ':
+              case 'Enter':
+                e.preventDefault()
+                send({ type: 'toggle', value })
+                return
+            }
+          },
+        ),
       },
       content: {
         role: 'region',

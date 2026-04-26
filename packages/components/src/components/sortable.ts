@@ -1,3 +1,4 @@
+import { tagSend } from '@llui/dom'
 import type { Send } from '@llui/dom'
 
 /**
@@ -355,7 +356,7 @@ export function connect<S>(
       'data-part': 'root',
       'data-container-id': containerId,
       'data-dragging': (s) => (get(s).dragging ? '' : undefined),
-      onPointerMove: (e) => {
+      onPointerMove: tagSend(send, ['move'], (e) => {
         if (!e.buttons) return
         const hit = findTargetAt(e)
         if (hit !== null)
@@ -366,15 +367,15 @@ export function connect<S>(
             x: e.clientX,
             y: e.clientY,
           })
-      },
-      onPointerUp: () => {
+      }),
+      onPointerUp: tagSend(send, ['drop'], () => {
         snapshots.clear()
         send({ type: 'drop' })
-      },
-      onPointerCancel: () => {
+      }),
+      onPointerCancel: tagSend(send, ['cancel'], () => {
         snapshots.clear()
         send({ type: 'cancel' })
-      },
+      }),
     },
     item: (id, index) => ({
       'data-scope': 'sortable',
@@ -489,7 +490,7 @@ export function connect<S>(
       },
       'aria-label':
         'Drag handle. Press space to pick up, arrow keys to move, space again to drop, escape to cancel.',
-      onPointerDown: (e) => {
+      onPointerDown: tagSend(send, ['start'], (e) => {
         e.preventDefault()
         const target = e.currentTarget as Element | null
         if (target && 'setPointerCapture' in target) {
@@ -539,8 +540,8 @@ export function connect<S>(
           x: e.clientX,
           y: e.clientY,
         })
-      },
-      onKeyDown: (e) => {
+      }),
+      onKeyDown: tagSend(send, ['toggleGrab', 'cancel', 'moveBy'], (e) => {
         switch (e.key) {
           case ' ':
           case 'Enter':
@@ -562,7 +563,7 @@ export function connect<S>(
             send({ type: 'moveBy', delta: -1 })
             return
         }
-      },
+      }),
     }),
   }
 }

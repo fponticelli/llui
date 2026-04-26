@@ -146,10 +146,7 @@ export function handleListActions(host: ListActionsHost): ListActionsResult {
  * The first key is `type` so the payload reads as a complete Msg
  * shape — copy-paste-ready into `send_message`.
  */
-function synthesizePayload(
-  variant: string,
-  fields: Record<string, MsgSchemaField>,
-): object {
+function synthesizePayload(variant: string, fields: Record<string, MsgSchemaField>): object {
   const out: Record<string, unknown> = { type: variant }
   for (const [name, descriptor] of Object.entries(fields)) {
     const optional = isOptional(descriptor)
@@ -172,7 +169,12 @@ function isShould(d: MsgSchemaField): 'should' | undefined {
 
 function exampleValue(d: MsgSchemaField): unknown {
   // Unwrap rich descriptor to get the bare type for synthesis.
-  const t = typeof d === 'object' && 'type' in d ? d.type : (d as Exclude<MsgSchemaField, object> | Extract<MsgSchemaField, { kind?: string; enum?: string[] }>)
+  const t =
+    typeof d === 'object' && 'type' in d
+      ? d.type
+      : (d as
+          | Exclude<MsgSchemaField, object>
+          | Extract<MsgSchemaField, { kind?: string; enum?: string[] }>)
   return synthesizeBare(t as never)
 }
 
@@ -194,9 +196,7 @@ function synthesizeBare(t: unknown): unknown {
     // top-level synthesizer: required fields appear, optional ones
     // appear only when @should-flagged.
     const out: Record<string, unknown> = {}
-    for (const [name, descriptor] of Object.entries(
-      obj.shape as Record<string, MsgSchemaField>,
-    )) {
+    for (const [name, descriptor] of Object.entries(obj.shape as Record<string, MsgSchemaField>)) {
       const isOpt = isOptional(descriptor)
       const pri = isShould(descriptor)
       if (isOpt && pri !== 'should') continue

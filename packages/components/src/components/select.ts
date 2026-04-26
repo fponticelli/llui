@@ -1,5 +1,5 @@
 import type { Send, TransitionOptions } from '@llui/dom'
-import { show, portal, onMount, div } from '@llui/dom'
+import { show, portal, onMount, div, tagSend } from '@llui/dom'
 import { pushDismissable } from '../utils/dismissable.js'
 import { attachFloating, type Placement } from '../utils/floating.js'
 import {
@@ -391,7 +391,7 @@ export function connect<S>(
       'data-state': (s) => (get(s).open ? 'open' : 'closed'),
       'data-scope': 'select',
       'data-part': 'trigger',
-      onClick: () => send({ type: 'toggle' }),
+      onClick: tagSend(send, ['toggle'], () => send({ type: 'toggle' })),
       onKeyDown: handleTriggerKey,
     },
     positioner: {
@@ -433,8 +433,8 @@ export function connect<S>(
         'data-part': 'item',
         'data-value': value,
         'data-index': String(index),
-        onClick: () => send({ type: 'selectOption', value }),
-        onPointerMove: () => send({ type: 'highlight', index }),
+        onClick: tagSend(send, ['selectOption'], () => send({ type: 'selectOption', value })),
+        onPointerMove: tagSend(send, ['highlight'], () => send({ type: 'highlight', index })),
       },
     }),
     valueText: (s) => {

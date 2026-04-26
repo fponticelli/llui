@@ -44,15 +44,11 @@ describe('handleWouldDispatch', () => {
     // them.
     const reducer = vi.fn(() => ({
       state: { saved: true },
-      effects: [
-        { kind: 'cloud/save' },
-        { kind: 'analytics/track', event: 'matrix_save' },
-      ],
+      effects: [{ kind: 'cloud/save' }, { kind: 'analytics/track', event: 'matrix_save' }],
     }))
-    const result = handleWouldDispatch(
-      mkHost({ state: { saved: false }, reducer }),
-      { msg: { type: 'Save' } },
-    )
+    const result = handleWouldDispatch(mkHost({ state: { saved: false }, reducer }), {
+      msg: { type: 'Save' },
+    })
     if (result.status === 'predicted') {
       expect(result.effects).toEqual([
         { kind: 'cloud/save' },
@@ -69,10 +65,9 @@ describe('handleWouldDispatch', () => {
     // entries. The agent uses an empty diff as a signal that the
     // candidate dispatch wouldn't change anything.
     const state = { x: 1 }
-    const result = handleWouldDispatch(
-      mkHost({ state, reducer: () => ({ state, effects: [] }) }),
-      { msg: { type: 'noop' } },
-    )
+    const result = handleWouldDispatch(mkHost({ state, reducer: () => ({ state, effects: [] }) }), {
+      msg: { type: 'noop' },
+    })
     if (result.status === 'predicted') {
       expect(result.stateDiff).toEqual([])
     }
@@ -92,10 +87,7 @@ describe('handleWouldDispatch', () => {
   })
 
   it('rejects when the host has no reducer (e.g. test harness without instance)', () => {
-    const result = handleWouldDispatch(
-      mkHost({ state: {}, reducer: null }),
-      { msg: { type: 'X' } },
-    )
+    const result = handleWouldDispatch(mkHost({ state: {}, reducer: null }), { msg: { type: 'X' } })
     expect(result.status).toBe('rejected')
     if (result.status === 'rejected') {
       expect(result.reason).toBe('unsupported')
@@ -108,7 +100,8 @@ describe('handleWouldDispatch', () => {
     const state = { count: 0 }
     const host = mkHost({
       state,
-      reducer: (msg) => (msg.type === 'inc' ? { state: { count: 1 }, effects: [] } : { state, effects: [] }),
+      reducer: (msg) =>
+        msg.type === 'inc' ? { state: { count: 1 }, effects: [] } : { state, effects: [] },
     })
     handleWouldDispatch(host, { msg: { type: 'inc' } })
     expect(host.getState()).toBe(state) // same reference

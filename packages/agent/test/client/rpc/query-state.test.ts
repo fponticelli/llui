@@ -65,23 +65,26 @@ describe('handleQueryState', () => {
   })
 
   it('unescapes ~1 → / in segment', () => {
-    expect(
-      handleQueryState(mkHost({ 'a/b': 'value' }), { path: '/a~1b' }),
-    ).toEqual({ found: true, value: 'value' })
+    expect(handleQueryState(mkHost({ 'a/b': 'value' }), { path: '/a~1b' })).toEqual({
+      found: true,
+      value: 'value',
+    })
   })
 
   it('unescapes ~0 → ~ in segment', () => {
-    expect(
-      handleQueryState(mkHost({ 'c~d': 'value' }), { path: '/c~0d' }),
-    ).toEqual({ found: true, value: 'value' })
+    expect(handleQueryState(mkHost({ 'c~d': 'value' }), { path: '/c~0d' })).toEqual({
+      found: true,
+      value: 'value',
+    })
   })
 
   it('handles ~ followed by 1 in original key (round-trip with state-diff escaping)', () => {
     // The escaping rule preserves any literal `~1` in a key as
     // `~01`. Decoding `~01` should restore the literal `~1`.
-    expect(
-      handleQueryState(mkHost({ '~1': 'literal' }), { path: '/~01' }),
-    ).toEqual({ found: true, value: 'literal' })
+    expect(handleQueryState(mkHost({ '~1': 'literal' }), { path: '/~01' })).toEqual({
+      found: true,
+      value: 'literal',
+    })
   })
 
   it('rejects malformed path (no leading slash) with found: false', () => {

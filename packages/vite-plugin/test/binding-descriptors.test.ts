@@ -1,9 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import ts from 'typescript'
-import {
-  tagDispatchHandlers,
-  injectScopeVariantRegistrations,
-} from '../src/binding-descriptors.js'
+import { tagDispatchHandlers, injectScopeVariantRegistrations } from '../src/binding-descriptors.js'
 
 /**
  * Run the tagger pass against a source snippet and emit the
@@ -171,9 +168,7 @@ describe('tagDispatchHandlers — universal coverage of non-handler arrows', () 
     // Inner arrow tagged
     expect(out).toContain(`Object.assign(() => send({ type: 'X' })`)
     // Outer arrow (factory) NOT tagged — its body just returns the inner.
-    expect(out).not.toMatch(
-      /Object\.assign\(\(\) => Object\.assign\(\(\) => send/,
-    )
+    expect(out).not.toMatch(/Object\.assign\(\(\) => Object\.assign\(\(\) => send/)
   })
 
   it('does NOT treat element-helper calls as dispatch sites', () => {
@@ -212,9 +207,9 @@ describe('tagDispatchHandlers — universal coverage of non-handler arrows', () 
     expect(emit(`const v = button({onClick: () => send({type:'X'})}, [])`)).toContain(
       `__lluiVariants: ["X"]`,
     )
-    expect(
-      emit(`const v = button({onClick: () => dispatch({type:'Y'})}, [])`),
-    ).toContain(`__lluiVariants: ["Y"]`)
+    expect(emit(`const v = button({onClick: () => dispatch({type:'Y'})}, [])`)).toContain(
+      `__lluiVariants: ["Y"]`,
+    )
     expect(emit(`const v = button({onClick: () => sendMenu({type:'open'})}, [])`)).toContain(
       `__lluiVariants: ["open"]`,
     )

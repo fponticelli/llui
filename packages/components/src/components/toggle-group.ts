@@ -1,3 +1,4 @@
+import { tagSend } from '@llui/dom'
 import type { Send } from '@llui/dom'
 import { flipArrow } from '../utils/direction.js'
 
@@ -142,8 +143,8 @@ export function connect<S>(
         'data-scope': 'toggle-group',
         'data-part': 'item',
         'data-value': value,
-        onClick: () => send({ type: 'toggle', value }),
-        onKeyDown: (e) => {
+        onClick: tagSend(send, ['toggle'], () => send({ type: 'toggle', value })),
+        onKeyDown: tagSend(send, ['focusNext', 'focusPrev', 'toggle'], (e) => {
           const key = flipArrow(e.key, e.currentTarget as Element)
           switch (key) {
             case 'ArrowRight':
@@ -162,7 +163,7 @@ export function connect<S>(
               send({ type: 'toggle', value })
               return
           }
-        },
+        }),
       },
     }),
   }

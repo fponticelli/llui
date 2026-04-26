@@ -1,5 +1,5 @@
 import type { Send, TransitionOptions } from '@llui/dom'
-import { show, portal, onMount, div, useContext } from '@llui/dom'
+import { show, portal, onMount, div, useContext, tagSend } from '@llui/dom'
 import { LocaleContext } from '../locale.js'
 import type { Locale } from '../locale.js'
 import { pushDismissable } from '../utils/dismissable.js'
@@ -134,7 +134,7 @@ export function connect<S>(
       'data-state': (s) => (get(s).open ? 'open' : 'closed'),
       'data-scope': 'drawer',
       'data-part': 'trigger',
-      onClick: () => send({ type: 'open' }),
+      onClick: tagSend(send, ['open'], () => send({ type: 'open' })),
     },
     backdrop: {
       'data-state': (s) => (get(s).open ? 'open' : 'closed'),
@@ -173,7 +173,7 @@ export function connect<S>(
       'aria-label': closeLabel,
       'data-scope': 'drawer',
       'data-part': 'close-trigger',
-      onClick: () => send({ type: 'close' }),
+      onClick: tagSend(send, ['close'], () => send({ type: 'close' })),
     },
   }
 }

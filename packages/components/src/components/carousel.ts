@@ -1,5 +1,5 @@
 import type { Send } from '@llui/dom'
-import { useContext } from '@llui/dom'
+import { useContext, tagSend } from '@llui/dom'
 import { LocaleContext, en } from '../locale.js'
 import type { Locale } from '../locale.js'
 
@@ -203,10 +203,10 @@ export function connect<S>(
       'data-scope': 'carousel',
       'data-part': 'root',
       'data-paused': (s) => (get(s).paused ? '' : undefined),
-      onPointerEnter: () => send({ type: 'pause' }),
-      onPointerLeave: () => send({ type: 'resume' }),
-      onFocus: () => send({ type: 'pause' }),
-      onBlur: () => send({ type: 'resume' }),
+      onPointerEnter: tagSend(send, ['pause'], () => send({ type: 'pause' })),
+      onPointerLeave: tagSend(send, ['resume'], () => send({ type: 'resume' })),
+      onFocus: tagSend(send, ['pause'], () => send({ type: 'pause' })),
+      onBlur: tagSend(send, ['resume'], () => send({ type: 'resume' })),
     },
     viewport: {
       'data-scope': 'carousel',
@@ -224,7 +224,7 @@ export function connect<S>(
       disabled: (s) => !canGoNext(get(s)),
       'data-scope': 'carousel',
       'data-part': 'next-trigger',
-      onClick: () => send({ type: 'next' }),
+      onClick: tagSend(send, ['next'], () => send({ type: 'next' })),
     },
     prevTrigger: {
       type: 'button',
@@ -232,7 +232,7 @@ export function connect<S>(
       disabled: (s) => !canGoPrev(get(s)),
       'data-scope': 'carousel',
       'data-part': 'prev-trigger',
-      onClick: () => send({ type: 'prev' }),
+      onClick: tagSend(send, ['prev'], () => send({ type: 'prev' })),
     },
     slide: (index: number): CarouselSlideParts<S> => ({
       slide: {
@@ -256,7 +256,7 @@ export function connect<S>(
         'data-part': 'indicator',
         'data-index': String(index),
         'data-active': (s) => (get(s).current === index ? '' : undefined),
-        onClick: () => send({ type: 'goTo', index }),
+        onClick: tagSend(send, ['goTo'], () => send({ type: 'goTo', index })),
       },
     }),
   }

@@ -1,5 +1,5 @@
 import type { Send } from '@llui/dom'
-import { useContext } from '@llui/dom'
+import { useContext, tagSend } from '@llui/dom'
 import { LocaleContext } from '../locale.js'
 import type { Locale } from '../locale.js'
 
@@ -217,9 +217,9 @@ export function connect<S>(
       'data-scope': 'tour',
       'data-part': 'backdrop',
       'aria-hidden': 'true',
-      onClick: () => {
+      onClick: tagSend(send, ['stop'], () => {
         if (closeOnBackdrop) send({ type: 'stop' })
-      },
+      }),
     },
     spotlight: {
       'data-scope': 'tour',
@@ -245,21 +245,21 @@ export function connect<S>(
       disabled: (s) => isFirst(get(s)),
       'data-scope': 'tour',
       'data-part': 'prev-trigger',
-      onClick: () => send({ type: 'prev' }),
+      onClick: tagSend(send, ['prev'], () => send({ type: 'prev' })),
     },
     nextTrigger: {
       type: 'button',
       'data-scope': 'tour',
       'data-part': 'next-trigger',
       'data-last': (s) => (isLast(get(s)) ? '' : undefined),
-      onClick: () => send({ type: 'next' }),
+      onClick: tagSend(send, ['next'], () => send({ type: 'next' })),
     },
     closeTrigger: {
       type: 'button',
       'aria-label': opts.closeLabel ?? ((s: S) => locale(s).tour.close),
       'data-scope': 'tour',
       'data-part': 'close-trigger',
-      onClick: () => send({ type: 'stop' }),
+      onClick: tagSend(send, ['stop'], () => send({ type: 'stop' })),
     },
   }
 }

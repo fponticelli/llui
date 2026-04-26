@@ -1,3 +1,4 @@
+import { tagSend } from '@llui/dom'
 import type { Send } from '@llui/dom'
 
 /**
@@ -89,13 +90,13 @@ export function connect<S>(get: (s: S) => SwitchState, send: Send<SwitchMsg>): S
       'data-scope': 'switch',
       'data-part': 'root',
       tabIndex: (s) => (get(s).disabled ? -1 : 0),
-      onClick: () => send({ type: 'toggle' }),
-      onKeyDown: (e) => {
+      onClick: tagSend(send, ['toggle'], () => send({ type: 'toggle' })),
+      onKeyDown: tagSend(send, ['toggle'], (e) => {
         if (e.key === ' ' || e.key === 'Enter') {
           e.preventDefault()
           send({ type: 'toggle' })
         }
-      },
+      }),
     },
     track: {
       'data-state': (s) => (get(s).checked ? 'checked' : 'unchecked'),

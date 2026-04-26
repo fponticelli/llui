@@ -1,5 +1,5 @@
 import type { Send } from '@llui/dom'
-import { useContext } from '@llui/dom'
+import { useContext, tagSend } from '@llui/dom'
 import { LocaleContext } from '../locale.js'
 import type { Locale } from '../locale.js'
 
@@ -441,21 +441,21 @@ export function connect<S>(
       'data-part': 'dropzone',
       'data-dragging': (s) => (get(s).dragging ? '' : undefined),
       onClick: openPicker,
-      onDragEnter: (e) => {
+      onDragEnter: tagSend(send, ['dragEnter'], (e) => {
         e.preventDefault()
         send({ type: 'dragEnter' })
-      },
+      }),
       onDragOver: (e) => e.preventDefault(),
-      onDragLeave: (e) => {
+      onDragLeave: tagSend(send, ['dragLeave'], (e) => {
         e.preventDefault()
         send({ type: 'dragLeave' })
-      },
-      onDrop: (e) => {
+      }),
+      onDrop: tagSend(send, ['drop'], (e) => {
         e.preventDefault()
         const files = Array.from(e.dataTransfer?.files ?? [])
         send({ type: 'drop' })
         dispatchAdd(files)
-      },
+      }),
     },
     trigger: {
       type: 'button',
@@ -496,7 +496,7 @@ export function connect<S>(
       'aria-label': clearLabel,
       'data-scope': 'file-upload',
       'data-part': 'clear-trigger',
-      onClick: () => send({ type: 'clear' }),
+      onClick: tagSend(send, ['clear'], () => send({ type: 'clear' })),
     },
     itemGroup: {
       'data-scope': 'file-upload',
@@ -525,14 +525,14 @@ export function connect<S>(
         'aria-label': removeLabel,
         'data-scope': 'file-upload',
         'data-part': 'item-remove',
-        onClick: () => send({ type: 'removeFile', index }),
+        onClick: tagSend(send, ['removeFile'], () => send({ type: 'removeFile', index })),
       },
       itemDeleteTrigger: {
         type: 'button',
         'aria-label': removeLabel,
         'data-scope': 'file-upload',
         'data-part': 'item-delete-trigger',
-        onClick: () => send({ type: 'removeFile', index }),
+        onClick: tagSend(send, ['removeFile'], () => send({ type: 'removeFile', index })),
       },
     }),
   }

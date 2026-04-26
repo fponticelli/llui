@@ -1,3 +1,4 @@
+import { tagSend } from '@llui/dom'
 import type { Send } from '@llui/dom'
 import type { StandardSchemaV1 } from '@standard-schema/spec'
 
@@ -128,7 +129,7 @@ export function connect<S>(
       'data-part': 'field',
       'data-touched': (s) => (get(s).touched[name] ? '' : undefined),
       touched: (s) => !!get(s).touched[name],
-      onBlur: () => send({ type: 'touch', field: name }),
+      onBlur: tagSend(send, ['touch'], () => send({ type: 'touch', field: name })),
     }),
     submit: {
       type: 'submit',

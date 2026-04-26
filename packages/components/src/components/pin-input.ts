@@ -1,3 +1,4 @@
+import { tagSend } from '@llui/dom'
 import type { Send } from '@llui/dom'
 import { flipArrow } from '../utils/direction.js'
 import { en } from '../locale.js'
@@ -190,15 +191,15 @@ export function connect<S>(
       'data-scope': 'pin-input',
       'data-part': 'input',
       'data-index': String(index),
-      onInput: (e) => {
+      onInput: tagSend(send, ['setValue'], (e) => {
         const value = (e.target as HTMLInputElement).value
         if (validate && value !== '') {
           const errors = validate(value.slice(-1))
           if (errors && errors.length > 0) return
         }
         send({ type: 'setValue', index, value })
-      },
-      onKeyDown: (e) => {
+      }),
+      onKeyDown: tagSend(send, ['backspace', 'focus'], (e) => {
         const key = flipArrow(e.key, e.currentTarget as Element)
         if (key === 'Backspace') {
           send({ type: 'backspace', index })
@@ -209,13 +210,13 @@ export function connect<S>(
           e.preventDefault()
           send({ type: 'focus', index: index + 1 })
         }
-      },
-      onFocus: () => send({ type: 'focus', index }),
-      onPaste: (e) => {
+      }),
+      onFocus: tagSend(send, ['focus'], () => send({ type: 'focus', index })),
+      onPaste: tagSend(send, ['setAll'], (e) => {
         e.preventDefault()
         const text = e.clipboardData?.getData('text') ?? ''
         send({ type: 'setAll', values: text.split('') })
-      },
+      }),
     }),
   }
 }

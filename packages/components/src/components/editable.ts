@@ -1,3 +1,4 @@
+import { tagSend } from '@llui/dom'
 import type { Send } from '@llui/dom'
 
 /**
@@ -143,16 +144,16 @@ export function connect<S>(
       'data-scope': 'editable',
       'data-part': 'preview',
       hidden: (s) => get(s).editing,
-      onClick: () => send({ type: 'edit' }),
-      onFocus: () => {
+      onClick: tagSend(send, ['edit'], () => send({ type: 'edit' })),
+      onFocus: tagSend(send, ['edit'], () => {
         if (activateOnFocus) send({ type: 'edit' })
-      },
-      onKeyDown: (e) => {
+      }),
+      onKeyDown: tagSend(send, ['edit'], (e) => {
         if (e.key === 'Enter' || e.key === ' ' || e.key === 'F2') {
           e.preventDefault()
           send({ type: 'edit' })
         }
-      },
+      }),
     },
     input: {
       'data-scope': 'editable',
@@ -160,12 +161,12 @@ export function connect<S>(
       hidden: (s) => !get(s).editing,
       value: (s) => get(s).draft,
       disabled: (s) => get(s).disabled,
-      onInput: (e) => {
+      onInput: tagSend(send, ['setDraft'], (e) => {
         const draft = (e.target as HTMLInputElement).value
         currentDraft = draft
         send({ type: 'setDraft', draft })
-      },
-      onKeyDown: (e) => {
+      }),
+      onKeyDown: tagSend(send, ['cancel'], (e) => {
         if (e.key === 'Enter') {
           e.preventDefault()
           trySubmit()
@@ -173,11 +174,11 @@ export function connect<S>(
           e.preventDefault()
           send({ type: 'cancel' })
         }
-      },
-      onBlur: () => {
+      }),
+      onBlur: tagSend(send, ['cancel'], () => {
         if (submitOnBlur) trySubmit()
         else send({ type: 'cancel' })
-      },
+      }),
     },
     submitTrigger: {
       type: 'button',
@@ -189,13 +190,13 @@ export function connect<S>(
       type: 'button',
       'data-scope': 'editable',
       'data-part': 'cancel-trigger',
-      onClick: () => send({ type: 'cancel' }),
+      onClick: tagSend(send, ['cancel'], () => send({ type: 'cancel' })),
     },
     editTrigger: {
       type: 'button',
       'data-scope': 'editable',
       'data-part': 'edit-trigger',
-      onClick: () => send({ type: 'edit' }),
+      onClick: tagSend(send, ['edit'], () => send({ type: 'edit' })),
     },
   }
 }

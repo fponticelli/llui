@@ -1,5 +1,5 @@
 import type { Send } from '@llui/dom'
-import { useContext } from '@llui/dom'
+import { useContext, tagSend } from '@llui/dom'
 import { LocaleContext } from '../locale.js'
 import type { Locale } from '../locale.js'
 
@@ -161,7 +161,7 @@ export function connect<S>(
       disabled: (s) => get(s).values.every((v) => v === null),
       'data-scope': 'cascade-select',
       'data-part': 'clear-trigger',
-      onClick: () => send({ type: 'clear' }),
+      onClick: tagSend(send, ['clear'], () => send({ type: 'clear' })),
     },
     level: (index: number): CascadeLevelParts<S> => ({
       label: {
@@ -177,10 +177,10 @@ export function connect<S>(
         'data-part': 'level-select',
         'data-level': String(index),
         'data-ready': (s) => (isLevelReady(get(s), index) ? '' : undefined),
-        onChange: (e) => {
+        onChange: tagSend(send, ['setValue'], (e) => {
           const el = e.target as HTMLSelectElement
           send({ type: 'setValue', levelIndex: index, value: el.value || null })
-        },
+        }),
       },
     }),
   }

@@ -1,5 +1,5 @@
 import type { Send } from '@llui/dom'
-import { useContext } from '@llui/dom'
+import { useContext, tagSend } from '@llui/dom'
 import { LocaleContext } from '../locale.js'
 import type { Locale } from '../locale.js'
 
@@ -189,7 +189,7 @@ export function connect<S>(
       },
       'data-scope': 'steps',
       'data-part': 'next-trigger',
-      onClick: () => send({ type: 'next' }),
+      onClick: tagSend(send, ['next'], () => send({ type: 'next' })),
     },
     prevTrigger: {
       type: 'button',
@@ -199,7 +199,7 @@ export function connect<S>(
       },
       'data-scope': 'steps',
       'data-part': 'prev-trigger',
-      onClick: () => send({ type: 'prev' }),
+      onClick: tagSend(send, ['prev'], () => send({ type: 'prev' })),
     },
     item: (index: number): StepsItemParts<S> => ({
       item: {
@@ -216,7 +216,7 @@ export function connect<S>(
         'data-scope': 'steps',
         'data-part': 'trigger',
         'data-status': (s) => stepStatus(get(s), index),
-        onClick: () => send({ type: 'goTo', step: index }),
+        onClick: tagSend(send, ['goTo'], () => send({ type: 'goTo', step: index })),
       },
       separator: {
         'data-scope': 'steps',

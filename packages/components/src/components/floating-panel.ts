@@ -1,5 +1,5 @@
 import type { Send } from '@llui/dom'
-import { useContext } from '@llui/dom'
+import { useContext, tagSend } from '@llui/dom'
 import { LocaleContext } from '../locale.js'
 import type { Locale } from '../locale.js'
 
@@ -308,7 +308,7 @@ export function connect<S>(
     dragHandle: {
       'data-scope': 'floating-panel',
       'data-part': 'drag-handle',
-      onPointerDown: () => send({ type: 'dragStart' }),
+      onPointerDown: tagSend(send, ['dragStart'], () => send({ type: 'dragStart' })),
     },
     content: {
       'data-scope': 'floating-panel',
@@ -320,27 +320,27 @@ export function connect<S>(
       'aria-label': opts.minimizeLabel ?? ((s: S) => locale(s).floatingPanel.minimize),
       'data-scope': 'floating-panel',
       'data-part': 'minimize-trigger',
-      onClick: () => send({ type: 'toggleMinimize' }),
+      onClick: tagSend(send, ['toggleMinimize'], () => send({ type: 'toggleMinimize' })),
     },
     maximizeTrigger: {
       type: 'button',
       'aria-label': opts.maximizeLabel ?? ((s: S) => locale(s).floatingPanel.maximize),
       'data-scope': 'floating-panel',
       'data-part': 'maximize-trigger',
-      onClick: () => send({ type: 'toggleMaximize' }),
+      onClick: tagSend(send, ['toggleMaximize'], () => send({ type: 'toggleMaximize' })),
     },
     closeTrigger: {
       type: 'button',
       'aria-label': opts.closeLabel ?? ((s: S) => locale(s).floatingPanel.close),
       'data-scope': 'floating-panel',
       'data-part': 'close-trigger',
-      onClick: () => send({ type: 'close' }),
+      onClick: tagSend(send, ['close'], () => send({ type: 'close' })),
     },
     resizeHandle: (handle: ResizeHandle) => ({
       'data-scope': 'floating-panel',
       'data-part': 'resize-handle',
       'data-handle': handle,
-      onPointerDown: () => send({ type: 'resizeStart', handle }),
+      onPointerDown: tagSend(send, ['resizeStart'], () => send({ type: 'resizeStart', handle })),
     }),
   }
 }

@@ -1,3 +1,4 @@
+import { tagSend } from '@llui/dom'
 import type { Send } from '@llui/dom'
 import { flipArrow } from '../utils/direction.js'
 
@@ -197,47 +198,51 @@ export function connect<S>(
           }
           return -1
         },
-        onClick: () => send({ type: 'setValue', value }),
-        onKeyDown: (e) => {
-          const key = flipArrow(e.key, e.currentTarget as Element)
-          const isVertical =
-            (e.currentTarget as HTMLElement | null)?.closest('[data-orientation="vertical"]') !==
-            null
-          switch (key) {
-            case 'ArrowDown':
-              if (isVertical) {
+        onClick: tagSend(send, ['setValue'], () => send({ type: 'setValue', value })),
+        onKeyDown: tagSend(
+          send,
+          ['selectNext', 'selectPrev', 'selectFirst', 'selectLast', 'setValue'],
+          (e) => {
+            const key = flipArrow(e.key, e.currentTarget as Element)
+            const isVertical =
+              (e.currentTarget as HTMLElement | null)?.closest('[data-orientation="vertical"]') !==
+              null
+            switch (key) {
+              case 'ArrowDown':
+                if (isVertical) {
+                  e.preventDefault()
+                  send({ type: 'selectNext', from: value })
+                }
+                return
+              case 'ArrowUp':
+                if (isVertical) {
+                  e.preventDefault()
+                  send({ type: 'selectPrev', from: value })
+                }
+                return
+              case 'ArrowRight':
                 e.preventDefault()
                 send({ type: 'selectNext', from: value })
-              }
-              return
-            case 'ArrowUp':
-              if (isVertical) {
+                return
+              case 'ArrowLeft':
                 e.preventDefault()
                 send({ type: 'selectPrev', from: value })
-              }
-              return
-            case 'ArrowRight':
-              e.preventDefault()
-              send({ type: 'selectNext', from: value })
-              return
-            case 'ArrowLeft':
-              e.preventDefault()
-              send({ type: 'selectPrev', from: value })
-              return
-            case 'Home':
-              e.preventDefault()
-              send({ type: 'selectFirst' })
-              return
-            case 'End':
-              e.preventDefault()
-              send({ type: 'selectLast' })
-              return
-            case ' ':
-              e.preventDefault()
-              send({ type: 'setValue', value })
-              return
-          }
-        },
+                return
+              case 'Home':
+                e.preventDefault()
+                send({ type: 'selectFirst' })
+                return
+              case 'End':
+                e.preventDefault()
+                send({ type: 'selectLast' })
+                return
+              case ' ':
+                e.preventDefault()
+                send({ type: 'setValue', value })
+                return
+            }
+          },
+        ),
       },
       label: {
         'data-scope': 'radio-group',

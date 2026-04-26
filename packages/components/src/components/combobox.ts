@@ -1,5 +1,5 @@
 import type { Send, TransitionOptions } from '@llui/dom'
-import { show, portal, onMount, div, useContext } from '@llui/dom'
+import { show, portal, onMount, div, useContext, tagSend } from '@llui/dom'
 import { LocaleContext } from '../locale.js'
 import type { Locale } from '../locale.js'
 import { pushDismissable } from '../utils/dismissable.js'
@@ -370,41 +370,53 @@ export function connect<S>(
       value: (s) => get(s).inputValue,
       'data-scope': 'combobox',
       'data-part': 'input',
-      onInput: (e) => {
+      onInput: tagSend(send, ['setInputValue'], (e) => {
         const value = (e.target as HTMLInputElement).value
         send({ type: 'setInputValue', value })
-      },
-      onKeyDown: (e) => {
-        switch (e.key) {
-          case 'ArrowDown':
-            e.preventDefault()
-            send({ type: 'open' })
-            send({ type: 'highlightNext' })
-            return
-          case 'ArrowUp':
-            e.preventDefault()
-            send({ type: 'open' })
-            send({ type: 'highlightPrev' })
-            return
-          case 'Home':
-            e.preventDefault()
-            send({ type: 'highlightFirst' })
-            return
-          case 'End':
-            e.preventDefault()
-            send({ type: 'highlightLast' })
-            return
-          case 'Enter':
-            e.preventDefault()
-            send({ type: 'selectHighlighted' })
-            return
-          case 'Escape':
-            e.preventDefault()
-            send({ type: 'close' })
-            return
-        }
-      },
-      onFocus: () => send({ type: 'open' }),
+      }),
+      onKeyDown: tagSend(
+        send,
+        [
+          'open',
+          'highlightNext',
+          'highlightPrev',
+          'highlightFirst',
+          'highlightLast',
+          'selectHighlighted',
+          'close',
+        ],
+        (e) => {
+          switch (e.key) {
+            case 'ArrowDown':
+              e.preventDefault()
+              send({ type: 'open' })
+              send({ type: 'highlightNext' })
+              return
+            case 'ArrowUp':
+              e.preventDefault()
+              send({ type: 'open' })
+              send({ type: 'highlightPrev' })
+              return
+            case 'Home':
+              e.preventDefault()
+              send({ type: 'highlightFirst' })
+              return
+            case 'End':
+              e.preventDefault()
+              send({ type: 'highlightLast' })
+              return
+            case 'Enter':
+              e.preventDefault()
+              send({ type: 'selectHighlighted' })
+              return
+            case 'Escape':
+              e.preventDefault()
+              send({ type: 'close' })
+              return
+          }
+        },
+      ),
+      onFocus: tagSend(send, ['open'], () => send({ type: 'open' })),
     },
     trigger: {
       type: 'button',
@@ -414,7 +426,7 @@ export function connect<S>(
       tabIndex: -1,
       'data-scope': 'combobox',
       'data-part': 'trigger',
-      onClick: () => send({ type: 'open' }),
+      onClick: tagSend(send, ['open'], () => send({ type: 'open' })),
     },
     positioner: {
       'data-scope': 'combobox',
@@ -443,8 +455,8 @@ export function connect<S>(
         'data-part': 'item',
         'data-value': value,
         'data-index': String(index),
-        onClick: () => send({ type: 'selectOption', value }),
-        onPointerMove: () => send({ type: 'highlight', index }),
+        onClick: tagSend(send, ['selectOption'], () => send({ type: 'selectOption', value })),
+        onPointerMove: tagSend(send, ['highlight'], () => send({ type: 'highlight', index })),
       },
     }),
     empty: {

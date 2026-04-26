@@ -1,3 +1,4 @@
+import { tagSend } from '@llui/dom'
 import type { Send } from '@llui/dom'
 
 /**
@@ -118,13 +119,13 @@ export function connect<S>(
       'data-scope': 'checkbox',
       'data-part': 'root',
       tabIndex: (s) => (get(s).disabled ? -1 : 0),
-      onClick: () => send({ type: 'toggle' }),
-      onKeyDown: (e: KeyboardEvent) => {
+      onClick: tagSend(send, ['toggle'], () => send({ type: 'toggle' })),
+      onKeyDown: tagSend(send, ['toggle'], (e: KeyboardEvent) => {
         if (e.key === ' ') {
           e.preventDefault()
           send({ type: 'toggle' })
         }
-      },
+      }),
     },
     hiddenInput: {
       type: 'checkbox',

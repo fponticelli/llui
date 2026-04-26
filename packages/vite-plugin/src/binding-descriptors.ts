@@ -110,9 +110,7 @@ export function tagDispatchHandlers(node: ts.SourceFile, f: ts.NodeFactory): ts.
         // function bodies (that would cause an outer arrow to inherit
         // every dispatch from every closure within it, which is too
         // permissive).
-        const inner = ts.visitEachChild(n, visit, ctx) as
-          | ts.ArrowFunction
-          | ts.FunctionExpression
+        const inner = ts.visitEachChild(n, visit, ctx) as ts.ArrowFunction | ts.FunctionExpression
         const variants = collectLiteralSendVariants(inner.body)
         if (variants.length > 0) {
           return wrapWithVariants(inner, variants, f)

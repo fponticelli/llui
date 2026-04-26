@@ -1,5 +1,5 @@
 import type { Send } from '@llui/dom'
-import { useContext } from '@llui/dom'
+import { useContext, tagSend } from '@llui/dom'
 import { LocaleContext } from '../locale.js'
 import type { Locale } from '../locale.js'
 
@@ -108,7 +108,9 @@ export function connect<S>(
       value: (s) => get(s).value,
       'data-scope': 'password-input',
       'data-part': 'input',
-      onInput: (e) => send({ type: 'setValue', value: (e.target as HTMLInputElement).value }),
+      onInput: tagSend(send, ['setValue'], (e) =>
+        send({ type: 'setValue', value: (e.target as HTMLInputElement).value }),
+      ),
     },
     visibilityTrigger: {
       type: 'button',
@@ -121,7 +123,7 @@ export function connect<S>(
       tabIndex: -1,
       'data-scope': 'password-input',
       'data-part': 'visibility-trigger',
-      onClick: () => send({ type: 'toggleVisibility' }),
+      onClick: tagSend(send, ['toggleVisibility'], () => send({ type: 'toggleVisibility' })),
     },
   }
 }

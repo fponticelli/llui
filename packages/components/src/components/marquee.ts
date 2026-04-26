@@ -1,3 +1,4 @@
+import { tagSend } from '@llui/dom'
 import type { Send } from '@llui/dom'
 
 /**
@@ -136,8 +137,8 @@ export function connect<S>(get: (s: S) => MarqueeState, send: Send<MarqueeMsg>):
       },
       // Always fire hover messages; the reducer no-ops unless
       // state.pauseOnHover is true.
-      onMouseEnter: () => send({ type: 'hoverPause' }),
-      onMouseLeave: () => send({ type: 'hoverResume' }),
+      onMouseEnter: tagSend(send, ['hoverPause'], () => send({ type: 'hoverPause' })),
+      onMouseLeave: tagSend(send, ['hoverResume'], () => send({ type: 'hoverResume' })),
     },
     content: {
       'data-scope': 'marquee',

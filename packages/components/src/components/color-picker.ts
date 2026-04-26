@@ -1,5 +1,5 @@
 import type { Send } from '@llui/dom'
-import { useContext } from '@llui/dom'
+import { useContext, tagSend } from '@llui/dom'
 import { LocaleContext } from '../locale.js'
 import type { Locale } from '../locale.js'
 
@@ -232,7 +232,9 @@ export function connect<S>(
       value: (s) => String(get(s).hsl.h),
       'data-scope': 'color-picker',
       'data-part': 'hue-slider',
-      onInput: (e) => send({ type: 'setHue', h: Number((e.target as HTMLInputElement).value) }),
+      onInput: tagSend(send, ['setHue'], (e) =>
+        send({ type: 'setHue', h: Number((e.target as HTMLInputElement).value) }),
+      ),
     },
     saturationSlider: {
       type: 'range',
@@ -248,8 +250,9 @@ export function connect<S>(
       },
       'data-scope': 'color-picker',
       'data-part': 'saturation-slider',
-      onInput: (e) =>
+      onInput: tagSend(send, ['setSaturation'], (e) =>
         send({ type: 'setSaturation', s: Number((e.target as HTMLInputElement).value) }),
+      ),
     },
     lightnessSlider: {
       type: 'range',
@@ -265,8 +268,9 @@ export function connect<S>(
       },
       'data-scope': 'color-picker',
       'data-part': 'lightness-slider',
-      onInput: (e) =>
+      onInput: tagSend(send, ['setLightness'], (e) =>
         send({ type: 'setLightness', l: Number((e.target as HTMLInputElement).value) }),
+      ),
     },
     hexInput: {
       type: 'text',
@@ -276,7 +280,9 @@ export function connect<S>(
       value: (s) => toHex(get(s).hsl),
       'data-scope': 'color-picker',
       'data-part': 'hex-input',
-      onInput: (e) => send({ type: 'setHex', hex: (e.target as HTMLInputElement).value }),
+      onInput: tagSend(send, ['setHex'], (e) =>
+        send({ type: 'setHex', hex: (e.target as HTMLInputElement).value }),
+      ),
     },
     swatch: {
       'data-scope': 'color-picker',

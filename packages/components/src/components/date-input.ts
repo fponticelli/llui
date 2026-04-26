@@ -1,5 +1,5 @@
 import type { Send } from '@llui/dom'
-import { useContext } from '@llui/dom'
+import { useContext, tagSend } from '@llui/dom'
 import { LocaleContext } from '../locale.js'
 import type { Locale } from '../locale.js'
 
@@ -226,10 +226,10 @@ export function connect<S>(
       ...(opts.placeholder !== undefined ? { placeholder: opts.placeholder } : {}),
       'data-scope': 'date-input',
       'data-part': 'input',
-      onInput: (e) => {
+      onInput: tagSend(send, ['setInput'], (e) => {
         const el = e.target as HTMLInputElement
         send({ type: 'setInput', value: el.value })
-      },
+      }),
       onBlur: () => {
         /* consumers can add their own blur handling */
       },
@@ -240,7 +240,7 @@ export function connect<S>(
       disabled: (s) => get(s).input === '',
       'data-scope': 'date-input',
       'data-part': 'clear-trigger',
-      onClick: () => send({ type: 'clear' }),
+      onClick: tagSend(send, ['clear'], () => send({ type: 'clear' })),
     },
     errorText: {
       role: 'alert',

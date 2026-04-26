@@ -1,3 +1,4 @@
+import { tagSend } from '@llui/dom'
 import type { Send } from '@llui/dom'
 
 /**
@@ -142,7 +143,7 @@ export function connect<S>(
       'data-theme': theme,
       'aria-pressed': (s) => get(s).theme === theme,
       'aria-label': LABELS[theme],
-      onClick: () => send({ type: 'setTheme', theme }),
+      onClick: tagSend(send, ['setTheme'], () => send({ type: 'setTheme', theme })),
     }),
     toggle: {
       type: 'button',
@@ -150,7 +151,7 @@ export function connect<S>(
       'data-part': 'toggle',
       'data-theme': (s) => get(s).theme,
       'aria-label': 'Toggle theme',
-      onClick: () => send({ type: 'toggle' }),
+      onClick: tagSend(send, ['toggle'], () => send({ type: 'toggle' })),
     },
   }
 }

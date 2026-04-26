@@ -296,8 +296,10 @@ function isFieldOptional(d: MsgSchemaField): boolean {
 function checkType(value: unknown, t: BareType): string | null {
   if (typeof t === 'string') {
     if (t === 'unknown') return null
-    if (t === 'string') return typeof value === 'string' ? null : `expected string, got ${typeof value}`
-    if (t === 'number') return typeof value === 'number' ? null : `expected number, got ${typeof value}`
+    if (t === 'string')
+      return typeof value === 'string' ? null : `expected string, got ${typeof value}`
+    if (t === 'number')
+      return typeof value === 'number' ? null : `expected number, got ${typeof value}`
     if (t === 'boolean')
       return typeof value === 'boolean' ? null : `expected boolean, got ${typeof value}`
     // Unknown literal type code — be lenient. The compiler emits these

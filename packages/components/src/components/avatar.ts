@@ -1,3 +1,4 @@
+import { tagSend } from '@llui/dom'
 import type { Send } from '@llui/dom'
 
 /**
@@ -90,9 +91,9 @@ export function connect<S>(
       'data-status': (s) => get(s).status,
       hidden: (s) => get(s).status !== 'loaded',
       alt,
-      onLoad: () => send({ type: 'loaded' }),
-      onError: () => send({ type: 'error' }),
-      onLoadStart: () => send({ type: 'loadStart' }),
+      onLoad: tagSend(send, ['loaded'], () => send({ type: 'loaded' })),
+      onError: tagSend(send, ['error'], () => send({ type: 'error' })),
+      onLoadStart: tagSend(send, ['loadStart'], () => send({ type: 'loadStart' })),
     },
     fallback: {
       'data-scope': 'avatar',

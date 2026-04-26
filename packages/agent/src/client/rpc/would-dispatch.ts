@@ -39,9 +39,10 @@ export type WouldDispatchHost = {
    * test harnesses with no live instance) return null and the
    * tool reports unsupported.
    */
-  runReducer(msg: { type: string; [k: string]: unknown }):
-    | { state: unknown; effects: unknown[] }
-    | null
+  runReducer(msg: {
+    type: string
+    [k: string]: unknown
+  }): { state: unknown; effects: unknown[] } | null
 }
 
 export type WouldDispatchArgs = {

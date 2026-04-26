@@ -1,5 +1,5 @@
 import type { Send, TransitionOptions } from '@llui/dom'
-import { show, portal, onMount, div } from '@llui/dom'
+import { show, portal, onMount, div, tagSend } from '@llui/dom'
 import { attachFloating, type Placement } from '../utils/floating.js'
 
 /**
@@ -153,12 +153,12 @@ export function connect<S>(
         if (openOnFocus) scheduleShow(0)
       },
       onBlur: () => scheduleHide(0),
-      onKeyDown: (e: KeyboardEvent) => {
+      onKeyDown: tagSend(send, ['hide'], (e: KeyboardEvent) => {
         if (e.key === 'Escape') {
           clearTimers()
           send({ type: 'hide' })
         }
-      },
+      }),
     },
     positioner: {
       'data-scope': 'tooltip',

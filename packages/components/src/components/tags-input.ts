@@ -1,5 +1,5 @@
 import type { Send } from '@llui/dom'
-import { useContext } from '@llui/dom'
+import { useContext, tagSend } from '@llui/dom'
 import { flipArrow } from '../utils/direction.js'
 import { LocaleContext } from '../locale.js'
 import type { Locale } from '../locale.js'
@@ -208,11 +208,11 @@ export function connect<S>(
       value: (s) => get(s).inputValue,
       'data-scope': 'tags-input',
       'data-part': 'input',
-      onInput: (e) => {
+      onInput: tagSend(send, ['setInput'], (e) => {
         currentInput = (e.target as HTMLInputElement).value
         send({ type: 'setInput', value: currentInput })
-      },
-      onKeyDown: (e) => {
+      }),
+      onKeyDown: tagSend(send, ['removeLast', 'focusTagPrev'], (e) => {
         const key = flipArrow(e.key, e.currentTarget as Element)
         if (key === 'Enter') {
           e.preventDefault()
@@ -232,7 +232,7 @@ export function connect<S>(
             send({ type: 'focusTagPrev' })
           }
         }
-      },
+      }),
       onBlur: () => {
         if (commitOnBlur) tryAddTag()
       },
@@ -245,8 +245,8 @@ export function connect<S>(
         'data-value': value,
         'data-index': String(index),
         'data-focused': (s) => (get(s).focusedIndex === index ? '' : undefined),
-        onFocus: () => send({ type: 'focusTag', index }),
-        onKeyDown: (e) => {
+        onFocus: tagSend(send, ['focusTag'], () => send({ type: 'focusTag', index })),
+        onKeyDown: tagSend(send, ['focusTagPrev', 'focusTagNext', 'removeTag'], (e) => {
           const key = flipArrow(e.key, e.currentTarget as Element)
           if (key === 'ArrowLeft') {
             e.preventDefault()
@@ -258,7 +258,7 @@ export function connect<S>(
             e.preventDefault()
             send({ type: 'removeTag', index })
           }
-        },
+        }),
       },
       remove: {
         type: 'button',
@@ -266,7 +266,7 @@ export function connect<S>(
         tabIndex: -1,
         'data-scope': 'tags-input',
         'data-part': 'tag-remove',
-        onClick: () => send({ type: 'removeTag', index }),
+        onClick: tagSend(send, ['removeTag'], () => send({ type: 'removeTag', index })),
       },
     }),
     clearTrigger: {
@@ -274,7 +274,7 @@ export function connect<S>(
       'aria-label': clearLabel,
       'data-scope': 'tags-input',
       'data-part': 'clear-trigger',
-      onClick: () => send({ type: 'clearAll' }),
+      onClick: tagSend(send, ['clearAll'], () => send({ type: 'clearAll' })),
     },
   }
 }

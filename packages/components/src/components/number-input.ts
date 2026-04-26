@@ -1,5 +1,5 @@
 import type { Send } from '@llui/dom'
-import { useContext } from '@llui/dom'
+import { useContext, tagSend } from '@llui/dom'
 import { LocaleContext } from '../locale.js'
 import type { Locale } from '../locale.js'
 
@@ -220,14 +220,14 @@ export function connect<S>(
       value: (s) => get(s).rawText,
       'data-scope': 'number-input',
       'data-part': 'input',
-      onInput: (e) => {
+      onInput: tagSend(send, ['setRawText'], (e) => {
         const text = (e.target as HTMLInputElement).value
         send({ type: 'setRawText', text })
         const parsed = parseFloat(text)
         if (!isNaN(parsed)) trySetValue(parsed)
-      },
-      onBlur: () => send({ type: 'commit' }),
-      onKeyDown: (e) => {
+      }),
+      onBlur: tagSend(send, ['commit'], () => send({ type: 'commit' })),
+      onKeyDown: tagSend(send, ['increment', 'decrement', 'toMin', 'toMax', 'commit'], (e) => {
         switch (e.key) {
           case 'ArrowUp':
             e.preventDefault()
@@ -258,7 +258,7 @@ export function connect<S>(
             send({ type: 'commit' })
             return
         }
-      },
+      }),
     },
     increment: {
       type: 'button',
@@ -271,7 +271,7 @@ export function connect<S>(
       'data-scope': 'number-input',
       'data-part': 'increment',
       tabIndex: -1,
-      onClick: () => send({ type: 'increment' }),
+      onClick: tagSend(send, ['increment'], () => send({ type: 'increment' })),
     },
     decrement: {
       type: 'button',
@@ -284,7 +284,7 @@ export function connect<S>(
       'data-scope': 'number-input',
       'data-part': 'decrement',
       tabIndex: -1,
-      onClick: () => send({ type: 'decrement' }),
+      onClick: tagSend(send, ['decrement'], () => send({ type: 'decrement' })),
     },
   }
 }

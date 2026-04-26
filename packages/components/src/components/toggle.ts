@@ -1,3 +1,4 @@
+import { tagSend } from '@llui/dom'
 import type { Send } from '@llui/dom'
 
 /**
@@ -71,13 +72,13 @@ export function connect<S>(get: (s: S) => ToggleState, send: Send<ToggleMsg>): T
       'data-disabled': (s) => (get(s).disabled ? '' : undefined),
       'data-scope': 'toggle',
       'data-part': 'root',
-      onClick: () => send({ type: 'toggle' }),
-      onKeyDown: (e: KeyboardEvent) => {
+      onClick: tagSend(send, ['toggle'], () => send({ type: 'toggle' })),
+      onKeyDown: tagSend(send, ['toggle'], (e: KeyboardEvent) => {
         if (e.key === ' ' || e.key === 'Enter') {
           e.preventDefault()
           send({ type: 'toggle' })
         }
-      },
+      }),
     },
   }
 }

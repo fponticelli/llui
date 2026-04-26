@@ -1,3 +1,4 @@
+import { tagSend } from '@llui/dom'
 import type { Send } from '@llui/dom'
 import { flipArrow } from '../utils/direction.js'
 
@@ -269,51 +270,55 @@ export function connect<S>(
         'data-part': 'trigger',
         'data-value': value,
         tabIndex: (s) => (get(s).value === value ? 0 : -1),
-        onClick: () => {
+        onClick: tagSend(send, ['focusTab'], () => {
           send({ type: 'focusTab', value })
           opts.onNavigate?.(value)
-        },
-        onFocus: () => {
+        }),
+        onFocus: tagSend(send, ['focusTab'], () => {
           // `focusTab` handles automatic activation
           send({ type: 'focusTab', value })
-        },
-        onKeyDown: (e: KeyboardEvent) => {
-          // Read orientation from the ancestor [data-part="list"] so the
-          // handler can dispatch the correct arrow keys per WAI-ARIA.
-          // Horizontal tabs: ArrowLeft/Right navigate; vertical: Up/Down.
-          const target = e.currentTarget as HTMLElement | null
-          const list = target?.closest(
-            '[data-scope="tabs"][data-part="list"]',
-          ) as HTMLElement | null
-          const orientation =
-            (list?.getAttribute('aria-orientation') as Orientation | null) ?? 'horizontal'
-          const key = flipArrow(e.key, e.currentTarget as Element)
-          const nextKey = orientation === 'vertical' ? 'ArrowDown' : 'ArrowRight'
-          const prevKey = orientation === 'vertical' ? 'ArrowUp' : 'ArrowLeft'
-          switch (key) {
-            case nextKey:
-              e.preventDefault()
-              send({ type: 'focusNext', from: value })
-              return
-            case prevKey:
-              e.preventDefault()
-              send({ type: 'focusPrev', from: value })
-              return
-            case 'Home':
-              e.preventDefault()
-              send({ type: 'focusFirst' })
-              return
-            case 'End':
-              e.preventDefault()
-              send({ type: 'focusLast' })
-              return
-            case 'Enter':
-            case ' ':
-              e.preventDefault()
-              send({ type: 'activateFocused' })
-              return
-          }
-        },
+        }),
+        onKeyDown: tagSend(
+          send,
+          ['focusNext', 'focusPrev', 'focusFirst', 'focusLast', 'activateFocused'],
+          (e: KeyboardEvent) => {
+            // Read orientation from the ancestor [data-part="list"] so the
+            // handler can dispatch the correct arrow keys per WAI-ARIA.
+            // Horizontal tabs: ArrowLeft/Right navigate; vertical: Up/Down.
+            const target = e.currentTarget as HTMLElement | null
+            const list = target?.closest(
+              '[data-scope="tabs"][data-part="list"]',
+            ) as HTMLElement | null
+            const orientation =
+              (list?.getAttribute('aria-orientation') as Orientation | null) ?? 'horizontal'
+            const key = flipArrow(e.key, e.currentTarget as Element)
+            const nextKey = orientation === 'vertical' ? 'ArrowDown' : 'ArrowRight'
+            const prevKey = orientation === 'vertical' ? 'ArrowUp' : 'ArrowLeft'
+            switch (key) {
+              case nextKey:
+                e.preventDefault()
+                send({ type: 'focusNext', from: value })
+                return
+              case prevKey:
+                e.preventDefault()
+                send({ type: 'focusPrev', from: value })
+                return
+              case 'Home':
+                e.preventDefault()
+                send({ type: 'focusFirst' })
+                return
+              case 'End':
+                e.preventDefault()
+                send({ type: 'focusLast' })
+                return
+              case 'Enter':
+              case ' ':
+                e.preventDefault()
+                send({ type: 'activateFocused' })
+                return
+            }
+          },
+        ),
       },
       panel: {
         role: 'tabpanel',

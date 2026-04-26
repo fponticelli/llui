@@ -1,3 +1,4 @@
+import { tagSend } from '@llui/dom'
 import type { Send } from '@llui/dom'
 import { flipArrow } from '../utils/direction.js'
 import {
@@ -403,65 +404,79 @@ export function connect<S>(
         'data-selected': (s) => (isSelected(get(s), id) ? '' : undefined),
         'data-focused': (s) => (get(s).focused === id ? '' : undefined),
         'data-loading': (s) => (isLoading(get(s), id) ? '' : undefined),
-        onClick: (e) => {
+        onClick: tagSend(send, ['select', 'toggleBranch'], (e) => {
           send({ type: 'select', id, additive: e.metaKey || e.ctrlKey })
           if (expandOnClick && isBranch) send({ type: 'toggleBranch', id })
-        },
-        onFocus: () => send({ type: 'focus', id }),
-        onKeyDown: (e) => {
-          const key = flipArrow(e.key, e.currentTarget as Element)
-          switch (key) {
-            case 'ArrowDown':
-              e.preventDefault()
-              send({ type: 'focusNext' })
-              return
-            case 'ArrowUp':
-              e.preventDefault()
-              send({ type: 'focusPrev' })
-              return
-            case 'ArrowRight':
-              // WAI-ARIA: closed branch → expand (stay); open branch →
-              // focus first child. Leaf → nothing. The reducer decides
-              // based on current expanded state.
-              if (!isBranch) return
-              e.preventDefault()
-              send({ type: 'arrowRightFrom', id })
-              return
-            case 'ArrowLeft':
-              // WAI-ARIA: open branch → collapse (stay); closed branch or
-              // leaf → focus parent (if known). Root end-nodes → nothing.
-              e.preventDefault()
-              send({ type: 'arrowLeftFrom', id, isBranch, parentId })
-              return
-            case 'Home':
-              e.preventDefault()
-              send({ type: 'focusFirst' })
-              return
-            case 'End':
-              e.preventDefault()
-              send({ type: 'focusLast' })
-              return
-            case 'Enter':
-            case ' ':
-              e.preventDefault()
-              send({ type: 'select', id, additive: e.metaKey || e.ctrlKey })
-              if (isBranch) send({ type: 'toggleBranch', id })
-              return
-            default:
-              if (isTypeaheadKey(e)) {
-                send({ type: 'typeahead', char: e.key, now: Date.now() })
-              }
-          }
-        },
+        }),
+        onFocus: tagSend(send, ['focus'], () => send({ type: 'focus', id })),
+        onKeyDown: tagSend(
+          send,
+          [
+            'focusNext',
+            'focusPrev',
+            'arrowRightFrom',
+            'arrowLeftFrom',
+            'focusFirst',
+            'focusLast',
+            'select',
+            'toggleBranch',
+            'typeahead',
+          ],
+          (e) => {
+            const key = flipArrow(e.key, e.currentTarget as Element)
+            switch (key) {
+              case 'ArrowDown':
+                e.preventDefault()
+                send({ type: 'focusNext' })
+                return
+              case 'ArrowUp':
+                e.preventDefault()
+                send({ type: 'focusPrev' })
+                return
+              case 'ArrowRight':
+                // WAI-ARIA: closed branch → expand (stay); open branch →
+                // focus first child. Leaf → nothing. The reducer decides
+                // based on current expanded state.
+                if (!isBranch) return
+                e.preventDefault()
+                send({ type: 'arrowRightFrom', id })
+                return
+              case 'ArrowLeft':
+                // WAI-ARIA: open branch → collapse (stay); closed branch or
+                // leaf → focus parent (if known). Root end-nodes → nothing.
+                e.preventDefault()
+                send({ type: 'arrowLeftFrom', id, isBranch, parentId })
+                return
+              case 'Home':
+                e.preventDefault()
+                send({ type: 'focusFirst' })
+                return
+              case 'End':
+                e.preventDefault()
+                send({ type: 'focusLast' })
+                return
+              case 'Enter':
+              case ' ':
+                e.preventDefault()
+                send({ type: 'select', id, additive: e.metaKey || e.ctrlKey })
+                if (isBranch) send({ type: 'toggleBranch', id })
+                return
+              default:
+                if (isTypeaheadKey(e)) {
+                  send({ type: 'typeahead', char: e.key, now: Date.now() })
+                }
+            }
+          },
+        ),
       },
       branchTrigger: {
         'data-scope': 'tree-view',
         'data-part': 'branch-trigger',
         'data-state': (s) => (isExpanded(get(s), id) ? 'open' : 'closed'),
-        onClick: (e) => {
+        onClick: tagSend(send, ['toggleBranch'], (e) => {
           e.stopPropagation()
           send({ type: 'toggleBranch', id })
-        },
+        }),
       },
       checkbox: {
         role: 'checkbox',

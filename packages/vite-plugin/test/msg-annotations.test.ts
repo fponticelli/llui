@@ -23,7 +23,7 @@ type Msg =
         dispatchMode: 'shared',
         examples: [],
         warning: null,
-      emits: [],
+        emits: [],
       },
       delete: {
         intent: 'Delete item',
@@ -32,7 +32,7 @@ type Msg =
         dispatchMode: 'shared',
         examples: [],
         warning: null,
-      emits: [],
+        emits: [],
       },
       checkout: {
         intent: 'Place order',
@@ -41,7 +41,7 @@ type Msg =
         dispatchMode: 'human-only',
         examples: [],
         warning: null,
-      emits: [],
+        emits: [],
       },
       nav: {
         intent: 'Navigate',
@@ -50,7 +50,7 @@ type Msg =
         dispatchMode: 'shared',
         examples: [],
         warning: null,
-      emits: [],
+        emits: [],
       },
     })
   })
@@ -94,9 +94,7 @@ type Msg =
   | { type: 'Save' }
 `
     const ann = extractMsgAnnotations(src)?.Save
-    expect(ann?.warning).toBe(
-      'Overwrites any concurrent edits from other clients without merging.',
-    )
+    expect(ann?.warning).toBe('Overwrites any concurrent edits from other clients without merging.')
     expect(ann?.requiresConfirm).toBe(false)
   })
 
@@ -181,9 +179,9 @@ type Msg =
         alwaysAffordable: false,
         requiresConfirm: false,
         dispatchMode: 'shared',
-      examples: [],
-      warning: null,
-      emits: [],
+        examples: [],
+        warning: null,
+        emits: [],
       },
     })
   })
@@ -201,9 +199,9 @@ type Msg =
         alwaysAffordable: false,
         requiresConfirm: false,
         dispatchMode: 'shared',
-      examples: [],
-      warning: null,
-      emits: [],
+        examples: [],
+        warning: null,
+        emits: [],
       },
     })
   })
@@ -222,7 +220,7 @@ type Msg =
         dispatchMode: 'shared',
         examples: [],
         warning: null,
-      emits: [],
+        emits: [],
       },
       b: {
         intent: null,
@@ -231,7 +229,7 @@ type Msg =
         dispatchMode: 'shared',
         examples: [],
         warning: null,
-      emits: [],
+        emits: [],
       },
     })
   })
@@ -248,9 +246,9 @@ type Msg =
       alwaysAffordable: false,
       requiresConfirm: false,
       dispatchMode: 'shared',
-    examples: [],
-    warning: null,
-    emits: [],
+      examples: [],
+      warning: null,
+      emits: [],
     })
   })
 
@@ -270,9 +268,9 @@ type Msg =
         alwaysAffordable: false,
         requiresConfirm: false,
         dispatchMode: 'shared',
-      examples: [],
-      warning: null,
-      emits: [],
+        examples: [],
+        warning: null,
+        emits: [],
       },
     })
   })
@@ -297,9 +295,9 @@ type Msg =
       alwaysAffordable: false,
       requiresConfirm: false,
       dispatchMode: 'agent-only',
-    examples: [],
-    warning: null,
-    emits: [],
+      examples: [],
+      warning: null,
+      emits: [],
     })
   })
 

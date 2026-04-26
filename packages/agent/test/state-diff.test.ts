@@ -18,9 +18,7 @@ describe('computeStateDiff', () => {
   it('replace nested primitive', () => {
     const prev = { count: 0 }
     const next = { count: 5 }
-    expect(computeStateDiff(prev, next)).toEqual([
-      { op: 'replace', path: '/count', value: 5 },
-    ])
+    expect(computeStateDiff(prev, next)).toEqual([{ op: 'replace', path: '/count', value: 5 }])
   })
 
   it('add new top-level key', () => {
@@ -30,9 +28,7 @@ describe('computeStateDiff', () => {
   })
 
   it('remove top-level key', () => {
-    expect(computeStateDiff({ a: 1, b: 2 }, { a: 1 })).toEqual([
-      { op: 'remove', path: '/b' },
-    ])
+    expect(computeStateDiff({ a: 1, b: 2 }, { a: 1 })).toEqual([{ op: 'remove', path: '/b' }])
   })
 
   it('escapes / and ~ in path segments per RFC 6901', () => {
@@ -52,9 +48,7 @@ describe('computeStateDiff', () => {
   })
 
   it('arrays: append shows as add at the new index', () => {
-    expect(computeStateDiff([1, 2], [1, 2, 3])).toEqual([
-      { op: 'add', path: '/2', value: 3 },
-    ])
+    expect(computeStateDiff([1, 2], [1, 2, 3])).toEqual([{ op: 'add', path: '/2', value: 3 }])
   })
 
   it('arrays: shrink shows as remove from the end (descending index order)', () => {
@@ -141,8 +135,6 @@ describe('computeStateDiff', () => {
       { id: 'a', value: 99 }, // changed
       { id: 'b', value: 2 }, // unchanged
     ]
-    expect(computeStateDiff(prev, next)).toEqual([
-      { op: 'replace', path: '/0/value', value: 99 },
-    ])
+    expect(computeStateDiff(prev, next)).toEqual([{ op: 'replace', path: '/0/value', value: 99 }])
   })
 })

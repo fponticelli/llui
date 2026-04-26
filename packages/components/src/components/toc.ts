@@ -1,5 +1,5 @@
 import type { Send } from '@llui/dom'
-import { useContext } from '@llui/dom'
+import { useContext, tagSend } from '@llui/dom'
 import { LocaleContext } from '../locale.js'
 import type { Locale } from '../locale.js'
 
@@ -183,7 +183,9 @@ export function connect<S>(
         'data-scope': 'toc',
         'data-part': 'expand-trigger',
         'data-state': (s) => (isExpanded(get(s), entry.id) ? 'open' : 'closed'),
-        onClick: () => send({ type: 'toggleExpanded', id: entry.id }),
+        onClick: tagSend(send, ['toggleExpanded'], () =>
+          send({ type: 'toggleExpanded', id: entry.id }),
+        ),
       },
     }),
   }

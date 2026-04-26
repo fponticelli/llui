@@ -116,15 +116,13 @@ export const handleLapWouldDispatch = makeForwardHandler('would_dispatch', (body
  * server (registry-owned), not the browser. The auth + paused +
  * rate-limit gates run identically.
  */
-export async function handleLapRecentActions(
-  req: Request,
-  deps: ForwardDeps,
-): Promise<Response> {
+export async function handleLapRecentActions(req: Request, deps: ForwardDeps): Promise<Response> {
   const auth = await verifyAndReadTid(req, deps.signingKey)
-  if (!auth.ok) return new Response(JSON.stringify({ error: { code: auth.code } }), {
-    status: auth.status,
-    headers: { 'content-type': 'application/json' },
-  })
+  if (!auth.ok)
+    return new Response(JSON.stringify({ error: { code: auth.code } }), {
+      status: auth.status,
+      headers: { 'content-type': 'application/json' },
+    })
 
   const rec = await deps.tokenStore.findByTid(auth.tid)
   if (!rec || rec.status === 'revoked') {

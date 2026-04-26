@@ -36,11 +36,7 @@ describe('recordAgentSession + replayAgentSession', () => {
     const fixture = r.stop()
 
     expect(fixture.initialState).toEqual({ count: 0, lastDelete: null })
-    expect(fixture.msgs).toEqual([
-      { type: 'inc' },
-      { type: 'inc' },
-      { type: 'delete', id: 'x' },
-    ])
+    expect(fixture.msgs).toEqual([{ type: 'inc' }, { type: 'inc' }, { type: 'delete', id: 'x' }])
     expect(fixture.finalState).toEqual({ count: 2, lastDelete: 'x' })
 
     handle.dispose()

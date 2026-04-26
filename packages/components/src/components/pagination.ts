@@ -1,5 +1,5 @@
 import type { Send } from '@llui/dom'
-import { useContext } from '@llui/dom'
+import { useContext, tagSend } from '@llui/dom'
 import { LocaleContext, en } from '../locale.js'
 import type { Locale } from '../locale.js'
 
@@ -205,7 +205,7 @@ export function connect<S>(
       disabled: (s) => get(s).page <= 1 || get(s).disabled,
       'data-scope': 'pagination',
       'data-part': 'prev-trigger',
-      onClick: () => send({ type: 'prev' }),
+      onClick: tagSend(send, ['prev'], () => send({ type: 'prev' })),
     },
     nextTrigger: {
       type: 'button',
@@ -220,7 +220,7 @@ export function connect<S>(
       },
       'data-scope': 'pagination',
       'data-part': 'next-trigger',
-      onClick: () => send({ type: 'next' }),
+      onClick: tagSend(send, ['next'], () => send({ type: 'next' })),
     },
     item: (page: number) => ({
       type: 'button',
@@ -230,7 +230,7 @@ export function connect<S>(
       'data-scope': 'pagination',
       'data-part': 'item',
       'data-value': String(page),
-      onClick: () => send({ type: 'goTo', page }),
+      onClick: tagSend(send, ['goTo'], () => send({ type: 'goTo', page })),
     }),
     ellipsis: (position: 'start' | 'end') => ({
       'aria-hidden': 'true',

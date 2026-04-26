@@ -1,5 +1,5 @@
 import type { Send } from '@llui/dom'
-import { useContext } from '@llui/dom'
+import { useContext, tagSend } from '@llui/dom'
 import { LocaleContext } from '../locale.js'
 import type { Locale } from '../locale.js'
 
@@ -208,11 +208,11 @@ export function connect<S>(
       value: (s) => String(displayHours(get(s))).padStart(2, '0'),
       'data-scope': 'time-picker',
       'data-part': 'hours-input',
-      onInput: (e) => {
+      onInput: tagSend(send, ['setHours'], (e) => {
         const n = parseInt((e.target as HTMLInputElement).value, 10)
         if (!isNaN(n)) send({ type: 'setHours', hours: n })
-      },
-      onKeyDown: (e) => {
+      }),
+      onKeyDown: tagSend(send, ['incrementHours', 'decrementHours'], (e) => {
         if (e.key === 'ArrowUp') {
           e.preventDefault()
           send({ type: 'incrementHours' })
@@ -220,7 +220,7 @@ export function connect<S>(
           e.preventDefault()
           send({ type: 'decrementHours' })
         }
-      },
+      }),
     },
     minutesInput: {
       type: 'number',
@@ -233,11 +233,11 @@ export function connect<S>(
       value: (s) => String(get(s).value.minutes).padStart(2, '0'),
       'data-scope': 'time-picker',
       'data-part': 'minutes-input',
-      onInput: (e) => {
+      onInput: tagSend(send, ['setMinutes'], (e) => {
         const n = parseInt((e.target as HTMLInputElement).value, 10)
         if (!isNaN(n)) send({ type: 'setMinutes', minutes: n })
-      },
-      onKeyDown: (e) => {
+      }),
+      onKeyDown: tagSend(send, ['incrementMinutes', 'decrementMinutes'], (e) => {
         if (e.key === 'ArrowUp') {
           e.preventDefault()
           send({ type: 'incrementMinutes' })
@@ -245,7 +245,7 @@ export function connect<S>(
           e.preventDefault()
           send({ type: 'decrementMinutes' })
         }
-      },
+      }),
     },
     periodTrigger: {
       type: 'button',
@@ -254,7 +254,7 @@ export function connect<S>(
       'data-scope': 'time-picker',
       'data-part': 'period-trigger',
       'data-period': (s) => period(get(s)),
-      onClick: () => send({ type: 'toggleAmPm' }),
+      onClick: tagSend(send, ['toggleAmPm'], () => send({ type: 'toggleAmPm' })),
       hidden: (s) => get(s).format === '24',
     },
   }

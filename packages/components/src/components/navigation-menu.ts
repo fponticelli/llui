@@ -1,5 +1,5 @@
 import type { Send } from '@llui/dom'
-import { useContext } from '@llui/dom'
+import { useContext, tagSend } from '@llui/dom'
 import { LocaleContext } from '../locale.js'
 import type { Locale } from '../locale.js'
 
@@ -199,18 +199,18 @@ export function connect<S>(
           'data-state': (s) => (isOpen(get(s), id) ? 'open' : 'closed'),
           'data-value': id,
           tabIndex: (s) => (get(s).focused === id ? 0 : -1),
-          onClick: () => {
+          onClick: tagSend(send, ['toggleBranch'], () => {
             if (options.isBranch) {
               send({ type: 'toggleBranch', id, ancestorIds })
             }
-          },
-          onPointerEnter: () => {
+          }),
+          onPointerEnter: tagSend(send, ['openBranch'], () => {
             cancelClose()
             if (options.isBranch) {
               send({ type: 'openBranch', id, ancestorIds })
             }
-          },
-          onFocus: () => send({ type: 'focus', id }),
+          }),
+          onFocus: tagSend(send, ['focus'], () => send({ type: 'focus', id })),
         },
         content: {
           role: 'menu',
@@ -220,12 +220,12 @@ export function connect<S>(
           'data-part': 'content',
           'data-state': (s) => (isOpen(get(s), id) ? 'open' : 'closed'),
           hidden: (s) => !isOpen(get(s), id),
-          onPointerEnter: () => {
+          onPointerEnter: tagSend(send, ['openBranch'], () => {
             cancelClose()
             if (options.isBranch) {
               send({ type: 'openBranch', id, ancestorIds })
             }
-          },
+          }),
         },
       }
     },

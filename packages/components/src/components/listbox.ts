@@ -1,3 +1,4 @@
+import { tagSend } from '@llui/dom'
 import type { Send } from '@llui/dom'
 import {
   typeaheadAccumulate,
@@ -236,35 +237,46 @@ export function connect<S>(
       'data-scope': 'listbox',
       'data-part': 'root',
       'data-disabled': (s) => (get(s).disabled ? '' : undefined),
-      onKeyDown: (e) => {
-        switch (e.key) {
-          case 'ArrowDown':
-            e.preventDefault()
-            send({ type: 'highlightNext' })
-            return
-          case 'ArrowUp':
-            e.preventDefault()
-            send({ type: 'highlightPrev' })
-            return
-          case 'Home':
-            e.preventDefault()
-            send({ type: 'highlightFirst' })
-            return
-          case 'End':
-            e.preventDefault()
-            send({ type: 'highlightLast' })
-            return
-          case 'Enter':
-          case ' ':
-            e.preventDefault()
-            send({ type: 'selectHighlighted' })
-            return
-          default:
-            if (isTypeaheadKey(e)) {
-              send({ type: 'typeahead', char: e.key, now: Date.now() })
-            }
-        }
-      },
+      onKeyDown: tagSend(
+        send,
+        [
+          'highlightNext',
+          'highlightPrev',
+          'highlightFirst',
+          'highlightLast',
+          'selectHighlighted',
+          'typeahead',
+        ],
+        (e) => {
+          switch (e.key) {
+            case 'ArrowDown':
+              e.preventDefault()
+              send({ type: 'highlightNext' })
+              return
+            case 'ArrowUp':
+              e.preventDefault()
+              send({ type: 'highlightPrev' })
+              return
+            case 'Home':
+              e.preventDefault()
+              send({ type: 'highlightFirst' })
+              return
+            case 'End':
+              e.preventDefault()
+              send({ type: 'highlightLast' })
+              return
+            case 'Enter':
+            case ' ':
+              e.preventDefault()
+              send({ type: 'selectHighlighted' })
+              return
+            default:
+              if (isTypeaheadKey(e)) {
+                send({ type: 'typeahead', char: e.key, now: Date.now() })
+              }
+          }
+        },
+      ),
     },
     item: (value: string, index: number): ListboxItemParts<S> => ({
       root: {
@@ -279,8 +291,8 @@ export function connect<S>(
         'data-part': 'item',
         'data-value': value,
         'data-index': String(index),
-        onClick: () => send({ type: 'select', value }),
-        onPointerMove: () => send({ type: 'highlight', index }),
+        onClick: tagSend(send, ['select'], () => send({ type: 'select', value })),
+        onPointerMove: tagSend(send, ['highlight'], () => send({ type: 'highlight', index })),
       },
     }),
   }

@@ -1,5 +1,5 @@
 import type { Send } from '@llui/dom'
-import { useContext } from '@llui/dom'
+import { useContext, tagSend } from '@llui/dom'
 import { LocaleContext } from '../locale.js'
 import type { Locale } from '../locale.js'
 
@@ -286,10 +286,10 @@ export function connect<S>(
     image: {
       'data-scope': 'image-cropper',
       'data-part': 'image',
-      onLoad: (e) => {
+      onLoad: tagSend(send, ['setImage'], (e) => {
         const img = e.target as HTMLImageElement
         send({ type: 'setImage', width: img.naturalWidth, height: img.naturalHeight })
-      },
+      }),
       draggable: false,
     },
     cropBox: {
@@ -305,20 +305,20 @@ export function connect<S>(
         const hp = (st.crop.height / st.image.height) * 100
         return `left:${xp}%;top:${yp}%;width:${wp}%;height:${hp}%;`
       },
-      onPointerDown: () => send({ type: 'dragStart' }),
+      onPointerDown: tagSend(send, ['dragStart'], () => send({ type: 'dragStart' })),
     },
     resizeHandle: (handle: ResizeHandle) => ({
       'data-scope': 'image-cropper',
       'data-part': 'resize-handle',
       'data-handle': handle,
-      onPointerDown: () => send({ type: 'resizeStart', handle }),
+      onPointerDown: tagSend(send, ['resizeStart'], () => send({ type: 'resizeStart', handle })),
     }),
     resetTrigger: {
       type: 'button',
       'aria-label': opts.resetLabel ?? ((s: S) => locale(s).imageCropper.reset),
       'data-scope': 'image-cropper',
       'data-part': 'reset-trigger',
-      onClick: () => send({ type: 'reset' }),
+      onClick: tagSend(send, ['reset'], () => send({ type: 'reset' })),
     },
   }
 }

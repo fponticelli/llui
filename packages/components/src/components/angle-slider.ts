@@ -1,3 +1,4 @@
+import { tagSend } from '@llui/dom'
 import type { Send } from '@llui/dom'
 import { flipArrow } from '../utils/direction.js'
 
@@ -196,7 +197,7 @@ export function connect<S>(
       'data-scope': 'angle-slider',
       'data-part': 'root',
       'data-disabled': (s) => (get(s).disabled ? '' : undefined),
-      onKeyDown: (e) => {
+      onKeyDown: tagSend(send, ['increment', 'decrement', 'setValue'], (e) => {
         const key = flipArrow(e.key, e.currentTarget as Element)
         switch (key) {
           case 'ArrowRight':
@@ -226,7 +227,7 @@ export function connect<S>(
             send({ type: 'setValue', value: Infinity })
             return
         }
-      },
+      }),
     },
     control: {
       'data-scope': 'angle-slider',

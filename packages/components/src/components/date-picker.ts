@@ -1,5 +1,5 @@
 import type { Send } from '@llui/dom'
-import { useContext } from '@llui/dom'
+import { useContext, tagSend } from '@llui/dom'
 import { flipArrow } from '../utils/direction.js'
 import { LocaleContext, en } from '../locale.js'
 import type { Locale } from '../locale.js'
@@ -371,7 +371,7 @@ export function connect<S>(
       disabled: (s) => get(s).disabled,
       'data-scope': 'date-picker',
       'data-part': 'prev-month-trigger',
-      onClick: () => send({ type: 'prevMonth' }),
+      onClick: tagSend(send, ['prevMonth'], () => send({ type: 'prevMonth' })),
     },
     nextMonthTrigger: {
       type: 'button',
@@ -379,7 +379,7 @@ export function connect<S>(
       disabled: (s) => get(s).disabled,
       'data-scope': 'date-picker',
       'data-part': 'next-month-trigger',
-      onClick: () => send({ type: 'nextMonth' }),
+      onClick: tagSend(send, ['nextMonth'], () => send({ type: 'nextMonth' })),
     },
     dayCell: (cell: DayCell): DayCellParts<S> => ({
       cell: {
@@ -395,54 +395,65 @@ export function connect<S>(
         'data-selected': cell.isSelected ? '' : undefined,
         'data-focused': cell.isFocused ? '' : undefined,
         'data-disabled': cell.isDisabled ? '' : undefined,
-        onClick: () => {
+        onClick: tagSend(send, ['setFocused', 'selectFocused'], () => {
           if (cell.isDisabled) return
           send({ type: 'setFocused', date: cell.iso })
           send({ type: 'selectFocused' })
-        },
-        onFocus: () => send({ type: 'setFocused', date: cell.iso }),
-        onKeyDown: (e) => {
-          const key = flipArrow(e.key, e.currentTarget as Element)
-          switch (key) {
-            case 'ArrowLeft':
-              e.preventDefault()
-              send({ type: 'moveFocus', days: -1 })
-              return
-            case 'ArrowRight':
-              e.preventDefault()
-              send({ type: 'moveFocus', days: 1 })
-              return
-            case 'ArrowUp':
-              e.preventDefault()
-              send({ type: 'moveFocus', days: -7 })
-              return
-            case 'ArrowDown':
-              e.preventDefault()
-              send({ type: 'moveFocus', days: 7 })
-              return
-            case 'PageUp':
-              e.preventDefault()
-              send({ type: 'prevMonth' })
-              return
-            case 'PageDown':
-              e.preventDefault()
-              send({ type: 'nextMonth' })
-              return
-            case 'Home':
-              e.preventDefault()
-              send({ type: 'focusStartOfWeek' })
-              return
-            case 'End':
-              e.preventDefault()
-              send({ type: 'focusEndOfWeek' })
-              return
-            case 'Enter':
-            case ' ':
-              e.preventDefault()
-              send({ type: 'selectFocused' })
-              return
-          }
-        },
+        }),
+        onFocus: tagSend(send, ['setFocused'], () => send({ type: 'setFocused', date: cell.iso })),
+        onKeyDown: tagSend(
+          send,
+          [
+            'moveFocus',
+            'prevMonth',
+            'nextMonth',
+            'focusStartOfWeek',
+            'focusEndOfWeek',
+            'selectFocused',
+          ],
+          (e) => {
+            const key = flipArrow(e.key, e.currentTarget as Element)
+            switch (key) {
+              case 'ArrowLeft':
+                e.preventDefault()
+                send({ type: 'moveFocus', days: -1 })
+                return
+              case 'ArrowRight':
+                e.preventDefault()
+                send({ type: 'moveFocus', days: 1 })
+                return
+              case 'ArrowUp':
+                e.preventDefault()
+                send({ type: 'moveFocus', days: -7 })
+                return
+              case 'ArrowDown':
+                e.preventDefault()
+                send({ type: 'moveFocus', days: 7 })
+                return
+              case 'PageUp':
+                e.preventDefault()
+                send({ type: 'prevMonth' })
+                return
+              case 'PageDown':
+                e.preventDefault()
+                send({ type: 'nextMonth' })
+                return
+              case 'Home':
+                e.preventDefault()
+                send({ type: 'focusStartOfWeek' })
+                return
+              case 'End':
+                e.preventDefault()
+                send({ type: 'focusEndOfWeek' })
+                return
+              case 'Enter':
+              case ' ':
+                e.preventDefault()
+                send({ type: 'selectFocused' })
+                return
+            }
+          },
+        ),
       },
     }),
   }

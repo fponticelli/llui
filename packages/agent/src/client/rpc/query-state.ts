@@ -21,9 +21,7 @@ export type QueryStateHost = {
   getState(): unknown
 }
 
-export type QueryStateResult =
-  | { found: true; value: unknown }
-  | { found: false; detail: string }
+export type QueryStateResult = { found: true; value: unknown } | { found: false; detail: string }
 
 export function handleQueryState(host: QueryStateHost, args: { path: string }): QueryStateResult {
   return resolvePath(host.getState(), args.path)

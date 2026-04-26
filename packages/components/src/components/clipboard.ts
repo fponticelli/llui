@@ -1,5 +1,5 @@
 import type { Send } from '@llui/dom'
-import { useContext } from '@llui/dom'
+import { useContext, tagSend } from '@llui/dom'
 import { LocaleContext } from '../locale.js'
 import type { Locale } from '../locale.js'
 
@@ -123,10 +123,10 @@ export function connect<S>(
       'data-scope': 'clipboard',
       'data-part': 'trigger',
       'data-copied': (s) => (get(s).copied ? '' : undefined),
-      onClick: () => {
+      onClick: tagSend(send, ['copy'], () => {
         send({ type: 'copy' })
         opts.onCopy?.('')
-      },
+      }),
     },
     input: {
       type: 'text',

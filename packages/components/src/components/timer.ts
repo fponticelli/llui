@@ -1,5 +1,5 @@
 import type { Send } from '@llui/dom'
-import { useContext } from '@llui/dom'
+import { useContext, tagSend } from '@llui/dom'
 import { LocaleContext } from '../locale.js'
 import type { Locale } from '../locale.js'
 
@@ -208,7 +208,7 @@ export function connect<S>(
       'data-scope': 'timer',
       'data-part': 'start-trigger',
       disabled: (s) => get(s).running,
-      onClick: () => send({ type: 'start', now: Date.now() }),
+      onClick: tagSend(send, ['start'], () => send({ type: 'start', now: Date.now() })),
     },
     pauseTrigger: {
       type: 'button',
@@ -216,14 +216,14 @@ export function connect<S>(
       'data-scope': 'timer',
       'data-part': 'pause-trigger',
       disabled: (s) => !get(s).running,
-      onClick: () => send({ type: 'pause', now: Date.now() }),
+      onClick: tagSend(send, ['pause'], () => send({ type: 'pause', now: Date.now() })),
     },
     resetTrigger: {
       type: 'button',
       'aria-label': opts.resetLabel ?? ((s: S) => locale(s).timer.reset),
       'data-scope': 'timer',
       'data-part': 'reset-trigger',
-      onClick: () => send({ type: 'reset' }),
+      onClick: tagSend(send, ['reset'], () => send({ type: 'reset' })),
     },
   }
 }

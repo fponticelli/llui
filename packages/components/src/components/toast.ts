@@ -1,5 +1,5 @@
 import type { Send } from '@llui/dom'
-import { useContext } from '@llui/dom'
+import { useContext, tagSend } from '@llui/dom'
 import { LocaleContext } from '../locale.js'
 import type { Locale } from '../locale.js'
 
@@ -204,10 +204,10 @@ export function connect<S>(
         'data-part': 'root',
         'data-type': toast.type,
         'data-id': toast.id,
-        onPointerEnter: () => send({ type: 'pause', id: toast.id }),
-        onPointerLeave: () => send({ type: 'resume', id: toast.id }),
-        onFocus: () => send({ type: 'pause', id: toast.id }),
-        onBlur: () => send({ type: 'resume', id: toast.id }),
+        onPointerEnter: tagSend(send, ['pause'], () => send({ type: 'pause', id: toast.id })),
+        onPointerLeave: tagSend(send, ['resume'], () => send({ type: 'resume', id: toast.id })),
+        onFocus: tagSend(send, ['pause'], () => send({ type: 'pause', id: toast.id })),
+        onBlur: tagSend(send, ['resume'], () => send({ type: 'resume', id: toast.id })),
       },
       title: {
         id: `${toast.id}:title`,
@@ -224,7 +224,7 @@ export function connect<S>(
         'aria-label': closeLabel,
         'data-scope': 'toast',
         'data-part': 'close-trigger',
-        onClick: () => send({ type: 'dismiss', id: toast.id }),
+        onClick: tagSend(send, ['dismiss'], () => send({ type: 'dismiss', id: toast.id })),
       },
     }),
   }
