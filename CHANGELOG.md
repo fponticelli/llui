@@ -11,6 +11,14 @@ All notable changes to LLui packages are documented here. LLui is a pre-1.0 proj
 
 Packages version in lockstep at release time: `@llui/dom`, `@llui/vite-plugin`, `@llui/test`, `@llui/router`, `@llui/transitions`, `@llui/components`, `@llui/vike` share a version line. `@llui/effects`, `@llui/mcp`, `@llui/eslint-plugin`, `@llui/agent`, and `llui-agent` have their own cadence.
 
+## 2026-04-26 — @llui/eslint-plugin@0.0.18
+
+**Released:** `@llui/eslint-plugin@0.0.18`
+
+### `@llui/eslint-plugin@0.0.18`
+
+- **Fixed** `controlled-input` rule no longer false-positives on `onBlur`-committed inputs. The blur-commit pattern is a legitimate way to wire a reactive `value` binding: state doesn't change during typing, so the binding doesn't overwrite mid-keystroke; blur fires the dispatch that commits the final value. The accepted commit handlers are now `onInput`, `onChange`, or `onBlur`.
+
 ## 2026-04-26 — 0.0.32
 
 **Released:** `@llui/{dom,test,router,transitions,components}@0.0.32`; `@llui/vite-plugin@0.0.33`; `@llui/vike@0.0.34`; `@llui/agent@0.0.34`; `@llui/mcp@0.0.27`; `@llui/eslint-plugin@0.0.17`; `@llui/effects@0.0.10`; `llui-agent@0.0.4`

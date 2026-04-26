@@ -15,6 +15,10 @@ ruleTester.run('controlled-input', controlledInputRule, {
     },
     // Reactive value with onChange — also fine.
     { code: `input({ value: (s) => s.name, onChange: (e) => {} })` },
+    // Reactive value with onBlur — commits on edit-complete; the
+    // binding doesn't overwrite mid-keystroke because state isn't
+    // changing during typing. Common pattern for "commit on blur" UX.
+    { code: `input({ value: (s) => s.name, onBlur: (e) => {} })` },
     // Constant value — no reactive binding to overwrite user input.
     { code: `input({ value: 'static' })` },
     // textarea variant.
