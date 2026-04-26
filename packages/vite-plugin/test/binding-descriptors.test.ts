@@ -176,6 +176,66 @@ describe('tagDispatchHandlers — universal coverage of non-handler arrows', () 
     )
   })
 
+  it('does NOT treat element-helper calls as dispatch sites', () => {
+    // Real-world false-positive: LLui's element helpers use `type:`
+    // for HTML attribute values, syntactically matching the Msg
+    // discriminator pattern. Without a callee-name filter, tagging
+    // `view: () => button({type: 'submit', ...})` would wrap the
+    // arrow with `__lluiVariants: ['submit']` — a phantom variant
+    // that would surface as an agent affordance. The dispatcher-
+    // name filter (send*/dispatch* prefix) cuts this off cleanly.
+    const out = emit(`
+      const formView = () => [
+        input({ type: 'email', name: 'email' }, []),
+        input({ type: 'password', name: 'password' }, []),
+        button({ type: 'submit' }, []),
+      ]
+    `)
+    expect(out).not.toContain('__lluiVariants')
+  })
+
+  it('does NOT tag arrows whose only "dispatch" is from element helpers', () => {
+    // A view function constructs DOM with element helpers — none of
+    // its calls are real dispatchers, so it shouldn't be tagged
+    // even though `button({type:'X'})` syntactically matches the
+    // dispatch shape.
+    const out = emit(`
+      const v = () => button({ type: 'button', class: 'btn' }, [text('Click')])
+    `)
+    expect(out).not.toContain('__lluiVariants')
+  })
+
+  it('still tags real dispatchers (send, dispatch, sendMenu, dispatchSomething)', () => {
+    // The filter must be permissive enough for the convention. send
+    // and dispatch are the framework primitives; named translators
+    // like sendMenu and dispatchAuth are the app-level pattern.
+    expect(emit(`const v = button({onClick: () => send({type:'X'})}, [])`)).toContain(
+      `__lluiVariants: ["X"]`,
+    )
+    expect(
+      emit(`const v = button({onClick: () => dispatch({type:'Y'})}, [])`),
+    ).toContain(`__lluiVariants: ["Y"]`)
+    expect(emit(`const v = button({onClick: () => sendMenu({type:'open'})}, [])`)).toContain(
+      `__lluiVariants: ["open"]`,
+    )
+    expect(emit(`const v = button({onClick: () => dispatchAuth({type:'sign-in'})}, [])`)).toContain(
+      `__lluiVariants: ["sign-in"]`,
+    )
+  })
+
+  it('skips unconventional dispatcher names (notify, forward, etc.)', () => {
+    // Apps that name their dispatcher something other than send/dispatch
+    // need to either rename or use the runtime `tagVariants` helper.
+    // Documented limitation; the alternative (tag-everything) is what
+    // produced the phantom-variant problem in the first place.
+    expect(emit(`const v = button({onClick: () => notify({type:'X'})}, [])`)).not.toContain(
+      '__lluiVariants',
+    )
+    expect(emit(`const v = button({onClick: () => emit({type:'X'})}, [])`)).not.toContain(
+      '__lluiVariants',
+    )
+  })
+
   it('does NOT count nested-closure dispatches against the enclosing arrow', () => {
     // `setTimeout(() => send({type:'X'}), 100)` does eventually fire
     // 'X', but the OUTER arrow doesn't dispatch directly. We tag the

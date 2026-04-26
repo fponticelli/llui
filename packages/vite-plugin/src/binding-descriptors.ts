@@ -344,7 +344,13 @@ function collectLiteralSendVariants(body: ts.Node): string[] {
     if (ts.isCallExpression(n)) {
       const callee = n.expression
       const first = n.arguments[0]
-      if (callee && ts.isIdentifier(callee) && first && ts.isObjectLiteralExpression(first)) {
+      if (
+        callee &&
+        ts.isIdentifier(callee) &&
+        isDispatcherName(callee.text) &&
+        first &&
+        ts.isObjectLiteralExpression(first)
+      ) {
         const variant = readTypeLiteral(first)
         if (variant !== null && !seen.has(variant)) {
           seen.add(variant)
@@ -356,6 +362,30 @@ function collectLiteralSendVariants(body: ts.Node): string[] {
   }
   visit(body)
   return out
+}
+
+/**
+ * Recognize a callee as a dispatcher by name. The convention in LLui
+ * apps is `send` (the framework-provided dispatch) or `dispatch` (a
+ * common app-level alias), plus `send*` / `dispatch*` prefixes for
+ * named translators (`sendMenu`, `dispatchMenu`).
+ *
+ * Without this filter, the tagger would treat element-helper calls
+ * like `button({type: 'button'})` and `input({type: 'email'})` as
+ * dispatch sites — they syntactically match `<Identifier>({type:
+ * literal})`, but they construct DOM, not Msgs. Phantom variants
+ * like `button` and `email` would then leak into the binding-
+ * descriptor registry and surface as agent affordances. Filtering
+ * by name keeps the convention narrow enough that false positives
+ * are nearly zero while leaving room for translator naming.
+ *
+ * Apps that use unconventional dispatcher names (`forward`,
+ * `tellMenu`) need to either rename to the convention or wrap their
+ * handlers with the runtime `tagSend`/`tagVariants` helpers
+ * explicitly — the same escape hatch library code already uses.
+ */
+function isDispatcherName(name: string): boolean {
+  return /^(send|dispatch)/i.test(name)
 }
 
 function readTypeLiteral(obj: ts.ObjectLiteralExpression): string | null {
