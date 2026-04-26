@@ -5,9 +5,8 @@ import { extractMsgAnnotations, type MessageAnnotations } from './msg-annotation
 import { extractStateSchema, type StateType } from './state-schema.js'
 import { computeSchemaHash } from './schema-hash.js'
 import {
-  tagEventHandlerSends,
+  tagDispatchHandlers,
   injectScopeVariantRegistrations,
-  tagDispatchTranslators,
 } from './binding-descriptors.js'
 import { compilerCache } from './compiler-cache.js'
 
@@ -246,37 +245,37 @@ export function transformLlui(
   const importedHelpers = getImportedHelpers(lluiImport)
   if (importedHelpers.size === 0 && !hasReactiveAccessors(sourceFile)) return null
 
-  // Tagger pass: wrap event-handler arrow functions whose body
-  // contains literal `send({type:'X'})` calls with
-  // `Object.assign(arrow, { __lluiVariants: ['X'] })`. The runtime
-  // (in `@llui/dom` `elements.ts`) reads the metadata and registers
-  // each variant on the active component instance for the lifetime
-  // of the binding's scope, so the agent layer's `list_actions` sees
-  // exactly the affordances currently rendered. Gated on
-  // dev/agent-metadata mode so production bundles without agent
-  // integration don't pay the per-handler `Object.assign` cost.
+  // Connect-pattern pass: detects `*.connect(get, sendFn, …)` call
+  // sites and inserts a runtime `__registerScopeVariants([...])`
+  // adjacent to each, with the variants statically extracted from the
+  // sendFn's body. Handles the dispatch-translation case at the
+  // syntactic level — handler propagation via `tagSend` covers the
+  // rest. Runs FIRST so its `collectLocalFns` resolver still sees raw
+  // arrow initializers in const declarations (the universal tagger
+  // below replaces those initializers with `Object.assign(...)`
+  // wrappers).
+  //
+  // Universal handler-tagger pass: walks every arrow/function
+  // expression and wraps any whose body contains literal
+  // `send({type:'X'})` / `dispatch({type:'X'})` calls with
+  // `Object.assign(arrow, {__lluiVariants: ['X']})`. The runtime
+  // (`@llui/dom` `elements.ts` / `el-split.ts`) reads the tag from
+  // event-handler bindings only — so tags placed on functions in
+  // non-handler positions are runtime-inert. This deliberately covers
+  // three patterns at once:
+  //   • Inline event handlers (`onClick: () => send(...)`)
+  //   • Const-bound translators (`const sendMenu = (m) => dispatch(...)`)
+  //   • Positional-arg helpers (`navButton(label, () => dispatch(...))`)
+  //
+  // Both passes gated on dev/agent-metadata so production bundles
+  // without agent integration don't pay the per-handler `Object.assign`
+  // cost.
   let scopeRegistrationsInjected = false
   if (devMode || emitAgentMetadata) {
-    sourceFile = tagEventHandlerSends(sourceFile, ts.factory)
-    // Connect-pattern pass: detects `*.connect(get, sendFn, …)` call
-    // sites and inserts a runtime `__registerScopeVariants([...])`
-    // adjacent to each, with the variants statically extracted from
-    // the sendFn's body. Handles the dispatch-translation case the
-    // event-handler tagger can't follow (library onClick → user's
-    // sendFn → user's dispatch).
     const injection = injectScopeVariantRegistrations(sourceFile, ts.factory)
     sourceFile = injection.sf
     scopeRegistrationsInjected = injection.injected
-    // Translator-tagger pass: wraps const/let/var-bound arrow and
-    // function expressions whose body contains literal dispatches with
-    // `Object.assign(fn, {__lluiVariants: [...]})`. The tag travels
-    // with the function reference; downstream library `*.connect`
-    // implementations propagate it onto returned handlers via
-    // `tagSend`. Closes the module-scope translator gap that Pass 2
-    // skips by design (eager registration would no-op outside a
-    // render context). Runs last so Pass 2's `collectLocalFns` still
-    // sees raw arrow initializers when resolving sendFn references.
-    sourceFile = tagDispatchTranslators(sourceFile, ts.factory)
+    sourceFile = tagDispatchHandlers(sourceFile, ts.factory)
   }
 
   // Pass 2 pre-scan: collect all state access paths

@@ -1,9 +1,8 @@
 import { describe, it, expect } from 'vitest'
 import ts from 'typescript'
 import {
-  tagEventHandlerSends,
+  tagDispatchHandlers,
   injectScopeVariantRegistrations,
-  tagDispatchTranslators,
 } from '../src/binding-descriptors.js'
 
 /**
@@ -14,12 +13,12 @@ import {
  */
 function emit(source: string): string {
   const sf = ts.createSourceFile('view.ts', source, ts.ScriptTarget.Latest, true)
-  const tagged = tagEventHandlerSends(sf, ts.factory)
+  const tagged = tagDispatchHandlers(sf, ts.factory)
   const printer = ts.createPrinter({ newLine: ts.NewLineKind.LineFeed })
   return printer.printFile(tagged)
 }
 
-describe('tagEventHandlerSends — happy path', () => {
+describe('tagDispatchHandlers — event-handler arrows', () => {
   it('wraps a literal-send onClick with Object.assign + __lluiVariants', () => {
     const out = emit(`
       const v = button({ onClick: () => send({ type: 'inc' }) }, [])
@@ -88,7 +87,7 @@ describe('tagEventHandlerSends — happy path', () => {
   })
 })
 
-describe('tagEventHandlerSends — non-tagging cases', () => {
+describe('tagDispatchHandlers — non-tagging cases', () => {
   it('leaves handlers without literal sends untouched', () => {
     const src = `const v = button({ onClick: () => doSomething() }, [])`
     expect(emit(src)).not.toContain('__lluiVariants')
@@ -99,19 +98,6 @@ describe('tagEventHandlerSends — non-tagging cases', () => {
     // conditionally. The tagger must skip non-function values rather
     // than throw or wrap the literal.
     const src = `const v = button({ onClick: null }, [])`
-    expect(emit(src)).not.toContain('__lluiVariants')
-  })
-
-  it('does not tag non-event properties that happen to contain sends', () => {
-    // `class: (s) => send(...)` is nonsensical but the tagger should
-    // only react to keys matching /^on[A-Z]/ — accidentally tagging
-    // any prop with a function value would over-register variants.
-    const src = `
-      const v = button({
-        class: () => send({ type: 'X' }),
-        title: () => send({ type: 'Y' }),
-      }, [])
-    `
     expect(emit(src)).not.toContain('__lluiVariants')
   })
 
@@ -133,6 +119,77 @@ describe('tagEventHandlerSends — non-tagging cases', () => {
   it('skips template literals with interpolations', () => {
     const out = emit('const v = button({ onClick: () => send({ type: `cmd:${suffix}` }) }, [])')
     expect(out).not.toContain('__lluiVariants')
+  })
+})
+
+describe('tagDispatchHandlers — universal coverage of non-handler arrows', () => {
+  // The universal tagger replaces the original Pass 1 (event-handler
+  // arrows only) with a walk over every arrow/function expression.
+  // Tags placed on non-handler arrows are runtime-inert — the runtime
+  // only reads `__lluiVariants` from event-handler bindings — but the
+  // wider scope catches three previously-uncovered cases.
+
+  it('tags arrows passed positionally to helper functions', () => {
+    // The motivating case: helpers like `navButton(label, onClick)`
+    // assign their second arg as the bound onClick. The arrow is
+    // syntactically a positional argument, not an `on*` property,
+    // but at runtime it ends up as the event handler.
+    const out = emit(`
+      const v = navButton('Sign in', () => dispatch({ type: 'Auth/OpenDialog' }))
+    `)
+    expect(out).toContain(`__lluiVariants: ["Auth/OpenDialog"]`)
+    expect(out).toContain(
+      `Object.assign(() => dispatch({ type: 'Auth/OpenDialog' }), { __lluiVariants: ["Auth/OpenDialog"] })`,
+    )
+  })
+
+  it('tags arrows in non-handler property positions (runtime-inert)', () => {
+    // `class:` and `title:` aren't event-handler keys, so the runtime
+    // never reads the tag from them. The tagger still wraps the
+    // arrow — keeping the rule "any arrow with literal dispatches
+    // gets a tag" simple — and accepts the dead bytes as the cost of
+    // that simplicity. No false registrations happen at runtime.
+    const out = emit(`
+      const v = button({
+        class: () => send({ type: 'X' }),
+        title: () => send({ type: 'Y' }),
+      }, [])
+    `)
+    expect(out).toContain(`__lluiVariants: ["X"]`)
+    expect(out).toContain(`__lluiVariants: ["Y"]`)
+  })
+
+  it('does NOT tag an outer arrow whose body only contains nested arrows', () => {
+    // Outer arrow returns inner arrow without invoking it — the dispatch
+    // doesn't fire when the outer arrow is called, so its tag would be
+    // wrong. `collectLiteralSendVariants` stops at nested function
+    // boundaries; the inner arrow is tagged independently when the
+    // tagger's walk reaches it.
+    const out = emit(`
+      const factory = () => () => send({ type: 'X' })
+    `)
+    // Inner arrow tagged
+    expect(out).toContain(`Object.assign(() => send({ type: 'X' })`)
+    // Outer arrow (factory) NOT tagged — its body just returns the inner.
+    expect(out).not.toMatch(
+      /Object\.assign\(\(\) => Object\.assign\(\(\) => send/,
+    )
+  })
+
+  it('does NOT count nested-closure dispatches against the enclosing arrow', () => {
+    // `setTimeout(() => send({type:'X'}), 100)` does eventually fire
+    // 'X', but the OUTER arrow doesn't dispatch directly. We tag the
+    // inner arrow (which IS the dispatcher) and leave the outer
+    // alone. This prevents views and helpers from accumulating tags
+    // for every dispatch in every closure they construct.
+    const out = emit(`
+      const handler = () => setTimeout(() => send({ type: 'Inner' }), 100)
+    `)
+    expect(out).toContain(`__lluiVariants: ["Inner"]`)
+    // Outer arrow's tag (if it existed) would be redundant — confirm
+    // we don't see two stacked Object.assigns wrapping the outer.
+    const objectAssignCount = (out.match(/Object\.assign/g) ?? []).length
+    expect(objectAssignCount).toBe(1)
   })
 })
 
@@ -293,16 +350,22 @@ describe('injectScopeVariantRegistrations — happy path', () => {
   })
 })
 
-// ── Pass 3: dispatch-translator tagger ──────────────────────────────
+// ── Universal tagger: const-bound translator coverage ──────────────
+
+// These tests originally targeted a separate `tagDispatchTranslators`
+// pass that only tagged variable-bound arrows. The universal tagger
+// subsumes that pass — any arrow/function expression with literal
+// dispatches gets wrapped, regardless of declaration context — so the
+// expectations still hold.
 
 function emitTrans(source: string): string {
   const sf = ts.createSourceFile('view.ts', source, ts.ScriptTarget.Latest, true)
-  const tagged = tagDispatchTranslators(sf, ts.factory)
+  const tagged = tagDispatchHandlers(sf, ts.factory)
   const printer = ts.createPrinter({ newLine: ts.NewLineKind.LineFeed })
   return printer.printFile(tagged)
 }
 
-describe('tagDispatchTranslators — happy path', () => {
+describe('tagDispatchHandlers — const-bound translator coverage', () => {
   it('tags a const-bound arrow translator at module scope', () => {
     // The motivating case: module-scope translator paired with a
     // module-scope `*.connect(...)` (decisive.space-2 auth-section).
@@ -359,7 +422,7 @@ describe('tagDispatchTranslators — happy path', () => {
   })
 })
 
-describe('tagDispatchTranslators — non-tagging cases', () => {
+describe('tagDispatchHandlers — const-bound non-tagging cases', () => {
   it('skips functions whose body has no literal dispatches', () => {
     expect(emitTrans(`const sendMenu = (m) => doSomething(m)`)).not.toContain('__lluiVariants')
   })
@@ -370,12 +433,19 @@ describe('tagDispatchTranslators — non-tagging cases', () => {
     )
   })
 
-  it('leaves already-wrapped initializers alone', () => {
-    // User-applied `tagSend(...)` (or output of a previous run) shows
-    // up as a CallExpression in the initializer slot — not a bare
-    // arrow/function — so Pass 3 must not double-wrap.
+  it('still tags the inner arrow inside a user-applied Object.assign wrapper', () => {
+    // The universal tagger walks every arrow regardless of context,
+    // including arrows that the user manually wrapped with
+    // `Object.assign(arrow, {…})`. The result is a stacked wrap:
+    // `Object.assign(Object.assign(arrow, {__lluiVariants}), {extra})`.
+    // Both objects merge onto the underlying function — `__lluiVariants`
+    // and `extra` both end up readable. Stacking is harmless; the
+    // alternative (skipping wrapped contexts) would silently disable
+    // tagging for arrows the user wraps for unrelated reasons.
     const src = `const sendMenu = Object.assign((m) => dispatch({ type: 'X' }), { extra: true })`
-    expect(emitTrans(src)).not.toContain('__lluiVariants')
+    const out = emitTrans(src)
+    expect(out).toContain(`__lluiVariants: ["X"]`)
+    expect(out).toContain(`extra: true`)
   })
 
   it('skips destructured bindings (no plain identifier name)', () => {

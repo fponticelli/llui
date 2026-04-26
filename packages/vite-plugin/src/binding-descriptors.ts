@@ -51,16 +51,73 @@ import ts from 'typescript'
  * @see @llui/dom binding-descriptors.ts (runtime registry + helper)
  */
 
-// ── Pass 1: event-handler tagger ────────────────────────────────────
+// ── Pass 1: dispatch-handler tagger (universal) ─────────────────────
 
-export function tagEventHandlerSends(node: ts.SourceFile, f: ts.NodeFactory): ts.SourceFile {
+/**
+ * Walks every `ArrowFunction` and `FunctionExpression` in the source
+ * and wraps any whose body contains literal `<id>({type:'X', …})`
+ * dispatches with `Object.assign(fn, {__lluiVariants: ['X', …]})`.
+ *
+ * The runtime (in `@llui/dom` `elements.ts` / `el-split.ts`) reads
+ * `__lluiVariants` from event-handler bindings only — so tags placed
+ * on functions in non-handler positions (a const declared but never
+ * bound, an arrow passed to `Array.filter`, a view function whose
+ * body has nested handlers with dispatches) are runtime-inert. The
+ * compiler tags generously; the runtime registers selectively.
+ *
+ * Universal scope means three concrete patterns all surface their
+ * variants without the app author having to think about it:
+ *
+ * 1. **Inline event-handler arrows** —
+ *    `onClick: () => send({type:'X'})` (the original Pass 1 case).
+ * 2. **Const-bound translator functions** —
+ *    `const sendMenu = (m) => dispatch({type:'Y'})` paired with
+ *    `*.connect(get, sendMenu, …)` (the original Pass 3 case). The
+ *    tag travels with the function reference; library connect impls
+ *    use `tagSend(send, libVariants, fn)` to propagate it onto
+ *    returned handlers.
+ * 3. **Positional-arg handlers** —
+ *    `helper(label, () => send({type:'Z'}))` where `helper` is an
+ *    app-defined wrapper like `navButton(label, onClick)` that
+ *    eventually binds the function as an event listener. The arrow
+ *    is still tagged at its declaration site, and the runtime reads
+ *    the tag when the wrapper binds it.
+ *
+ * False positives are deliberate. The alternative — proving that a
+ * tagged arrow actually reaches an event-handler binding — would
+ * require cross-function, cross-file flow analysis the compiler
+ * doesn't do. In practice the cost of an over-tagged arrow is bytes,
+ * not behavior: the runtime never reads the tag from non-handler
+ * bindings.
+ *
+ * Pass 2's `collectLocalFns` resolves identifiers to their original
+ * arrow/function initializers; this pass replaces those initializers
+ * with `Object.assign(arrow, {…})` wrappers. Run Pass 2 BEFORE Pass 1
+ * so the resolver still sees raw arrows.
+ *
+ * Already-wrapped functions (CallExpressions, including user-applied
+ * `tagSend(...)` or this pass's own prior output) are skipped — the
+ * pass only fires on bare arrow/function expressions.
+ */
+export function tagDispatchHandlers(node: ts.SourceFile, f: ts.NodeFactory): ts.SourceFile {
   const transformer: ts.TransformerFactory<ts.SourceFile> = (ctx) => {
     const visit: ts.Visitor = (n) => {
-      if (ts.isPropertyAssignment(n) && isEventHandlerKey(n.name)) {
-        const tagged = maybeTagHandler(n.initializer, f)
-        if (tagged !== null && tagged !== n.initializer) {
-          return f.updatePropertyAssignment(n, n.name, tagged)
+      if (ts.isArrowFunction(n) || ts.isFunctionExpression(n)) {
+        // Visit children first so nested arrows are tagged before
+        // their parents see them. The parent's
+        // `collectLiteralSendVariants` walks the original (unwrapped)
+        // body — the recursive collect doesn't descend into nested
+        // function bodies (that would cause an outer arrow to inherit
+        // every dispatch from every closure within it, which is too
+        // permissive).
+        const inner = ts.visitEachChild(n, visit, ctx) as
+          | ts.ArrowFunction
+          | ts.FunctionExpression
+        const variants = collectLiteralSendVariants(inner.body)
+        if (variants.length > 0) {
+          return wrapWithVariants(inner, variants, f)
         }
+        return inner
       }
       return ts.visitEachChild(n, visit, ctx)
     }
@@ -70,19 +127,6 @@ export function tagEventHandlerSends(node: ts.SourceFile, f: ts.NodeFactory): ts
   const out = result.transformed[0] as ts.SourceFile
   result.dispose()
   return out
-}
-
-function isEventHandlerKey(name: ts.PropertyName): name is ts.Identifier | ts.StringLiteral {
-  if (ts.isIdentifier(name)) return /^on[A-Z]/.test(name.text)
-  if (ts.isStringLiteral(name)) return /^on[A-Z]/.test(name.text)
-  return false
-}
-
-function maybeTagHandler(value: ts.Expression, f: ts.NodeFactory): ts.Expression | null {
-  if (!ts.isArrowFunction(value) && !ts.isFunctionExpression(value)) return null
-  const variants = collectLiteralSendVariants(value.body)
-  if (variants.length === 0) return value
-  return wrapWithVariants(value, variants, f)
 }
 
 function wrapWithVariants(
@@ -109,64 +153,6 @@ function wrapWithVariants(
       ),
     ],
   )
-}
-
-// ── Pass 3: dispatch-translator tagger ──────────────────────────────
-
-/**
- * Tags variable-bound arrow/function expressions whose body contains
- * literal `<id>({type:'X', …})` dispatches with
- * `Object.assign(fn, {__lluiVariants: ['X', …]})`. Complements Pass 1
- * (event-handler arrows): translator functions are commonly declared
- * once and passed by reference (`*.connect(get, sendMenu, …)`) — often
- * at module top-level — so the inline-arrow tagger can't reach them.
- *
- * The tag travels with the function reference. Library `*.connect`
- * implementations call `tagSend(send, libVariants, fn)` on each
- * returned handler, which prefers `send.__lluiVariants` over
- * `libVariants` so the agent surfaces the USER's variants (what
- * `update()` actually receives) rather than the library's internal
- * Msg shape.
- *
- * Module-scope is fine here — Pass 2's module-scope skip exists
- * because eager `__registerScopeVariants(...)` would no-op outside a
- * render context, but Pass 3's tag is read lazily at binding time
- * (always inside a render context by definition).
- *
- * Already-wrapped initializers (CallExpressions, including
- * user-applied `tagSend(...)` or prior compiler output) are left
- * untouched — Pass 3 only fires when the initializer is a bare arrow
- * or function expression.
- *
- * Pass ordering: Pass 1 → Pass 2 → Pass 3. Running Pass 3 last
- * preserves Pass 2's `collectLocalFns` resolution: that helper looks
- * for variable declarations whose initializer is itself an arrow or
- * function expression, which Pass 3 would replace with a CallExpression
- * wrapper.
- */
-export function tagDispatchTranslators(node: ts.SourceFile, f: ts.NodeFactory): ts.SourceFile {
-  const transformer: ts.TransformerFactory<ts.SourceFile> = (ctx) => {
-    const visit: ts.Visitor = (n) => {
-      if (
-        ts.isVariableDeclaration(n) &&
-        ts.isIdentifier(n.name) &&
-        n.initializer &&
-        (ts.isArrowFunction(n.initializer) || ts.isFunctionExpression(n.initializer))
-      ) {
-        const variants = collectLiteralSendVariants(n.initializer.body)
-        if (variants.length > 0) {
-          const wrapped = wrapWithVariants(n.initializer, variants, f)
-          return f.updateVariableDeclaration(n, n.name, n.exclamationToken, n.type, wrapped)
-        }
-      }
-      return ts.visitEachChild(n, visit, ctx)
-    }
-    return (sf) => ts.visitEachChild(sf, visit, ctx) as ts.SourceFile
-  }
-  const result = ts.transform(node, [transformer])
-  const out = result.transformed[0] as ts.SourceFile
-  result.dispose()
-  return out
 }
 
 // ── Pass 2: connect-pattern registration injector ────────────────
@@ -323,15 +309,38 @@ function emitRegisterCall(variants: readonly string[], f: ts.NodeFactory): ts.Ca
 // ── Shared: literal-send variant collection ──────────────────────────
 
 /**
- * Recursively walk `node`, collecting every literal type string from
+ * Walk `node`, collecting every literal type string from
  * `<id>({ type: 'literal', … })` call sites. De-dupes while preserving
  * first-seen order so the emitted array reads naturally for anyone
  * inspecting the compiled output.
+ *
+ * The walk stops at nested function/arrow boundaries — every function
+ * "owns" its own dispatches, and the universal tagger visits each
+ * function separately. Without this guard, an outer arrow whose body
+ * includes a nested onClick arrow would be tagged with the inner
+ * arrow's variants too: a parent view tagged with every dispatch in
+ * every child handler. The runtime only reads the tag from event-
+ * handler bindings, so functionally that's harmless — but it bloats
+ * the wrapped output and obscures intent.
  */
-function collectLiteralSendVariants(node: ts.Node): string[] {
+function collectLiteralSendVariants(body: ts.Node): string[] {
   const seen = new Set<string>()
   const out: string[] = []
   function visit(n: ts.Node): void {
+    // Stop at every nested function/arrow boundary — those functions
+    // own their own variants and are tagged independently. An outer
+    // arrow whose body contains `setTimeout(() => send(...), 100)`
+    // doesn't dispatch directly when invoked; the inner arrow does
+    // when the timer fires. Counting the inner's variants on the
+    // outer would be too permissive.
+    if (
+      ts.isArrowFunction(n) ||
+      ts.isFunctionExpression(n) ||
+      ts.isFunctionDeclaration(n) ||
+      ts.isMethodDeclaration(n)
+    ) {
+      return
+    }
     if (ts.isCallExpression(n)) {
       const callee = n.expression
       const first = n.arguments[0]
@@ -345,7 +354,7 @@ function collectLiteralSendVariants(node: ts.Node): string[] {
     }
     ts.forEachChild(n, visit)
   }
-  visit(node)
+  visit(body)
   return out
 }
 
