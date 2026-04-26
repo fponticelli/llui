@@ -283,15 +283,17 @@ function validatePayload(
   return null
 }
 
-function unwrapFieldType(d: MsgSchemaField): string | { enum: string[] } {
-  return typeof d === 'object' && 'type' in d ? d.type : (d as string | { enum: string[] })
+type BareType = Exclude<MsgSchemaField, { type: unknown }>
+
+function unwrapFieldType(d: MsgSchemaField): BareType {
+  return typeof d === 'object' && d !== null && 'type' in d ? (d.type as BareType) : (d as BareType)
 }
 
 function isFieldOptional(d: MsgSchemaField): boolean {
-  return typeof d === 'object' && 'type' in d && d.optional === true
+  return typeof d === 'object' && d !== null && 'type' in d && d.optional === true
 }
 
-function checkType(value: unknown, t: string | { enum: string[] }): string | null {
+function checkType(value: unknown, t: BareType): string | null {
   if (typeof t === 'string') {
     if (t === 'unknown') return null
     if (t === 'string') return typeof value === 'string' ? null : `expected string, got ${typeof value}`
@@ -303,18 +305,34 @@ function checkType(value: unknown, t: string | { enum: string[] }): string | nul
     // false-positive on every release that added a new primitive.
     return null
   }
-  // Enum: value must be one of the listed strings.
-  if (typeof value !== 'string') {
-    return `expected one of ${formatEnum(t)}, got ${typeof value}`
+  if ('enum' in t) {
+    // Enum: value must be one of the listed strings.
+    if (typeof value !== 'string') {
+      return `expected one of ${formatEnum(t)}, got ${typeof value}`
+    }
+    if (!t.enum.includes(value)) {
+      return `expected one of ${formatEnum(t)}, got ${JSON.stringify(value)}`
+    }
+    return null
   }
-  if (!t.enum.includes(value)) {
-    return `expected one of ${formatEnum(t)}, got ${JSON.stringify(value)}`
+  // Object/array nested types — defer to the reducer for deep
+  // validation. The compiler chased the shape into the schema for
+  // synthesis purposes only; deep-checking every nested field would
+  // be slow, hard to express good errors for, and duplicates what
+  // TypeScript already does at the call site.
+  if (t.kind === 'object') {
+    return value === null || typeof value !== 'object'
+      ? `expected object, got ${value === null ? 'null' : typeof value}`
+      : null
   }
-  return null
+  // 'array'
+  return Array.isArray(value) ? null : `expected array, got ${typeof value}`
 }
 
-function formatType(t: string | { enum: string[] }): string {
-  return typeof t === 'string' ? t : formatEnum(t)
+function formatType(t: BareType): string {
+  if (typeof t === 'string') return t
+  if ('enum' in t) return formatEnum(t)
+  return t.kind
 }
 
 function formatEnum(t: { enum: string[] }): string {

@@ -162,13 +162,42 @@ function isShould(d: MsgSchemaField): 'should' | undefined {
 
 function exampleValue(d: MsgSchemaField): unknown {
   // Unwrap rich descriptor to get the bare type for synthesis.
-  const t: string | { enum: string[] } =
-    typeof d === 'object' && 'type' in d ? d.type : (d as string | { enum: string[] })
+  const t = typeof d === 'object' && 'type' in d ? d.type : (d as Exclude<MsgSchemaField, object> | Extract<MsgSchemaField, { kind?: string; enum?: string[] }>)
+  return synthesizeBare(t as never)
+}
+
+function synthesizeBare(t: unknown): unknown {
   if (typeof t === 'string') {
     if (t === 'string') return ''
     if (t === 'number') return 0
     if (t === 'boolean') return false
-    return null // 'unknown' or any other → placeholder
+    return null // 'unknown' or unrecognized keyword → placeholder
   }
-  return t.enum[0] ?? null
+  if (t === null || typeof t !== 'object') return null
+  const obj = t as Record<string, unknown>
+  if ('enum' in obj && Array.isArray(obj.enum)) {
+    // First option doubles as the canonical example.
+    return obj.enum[0] ?? null
+  }
+  if (obj.kind === 'object' && obj.shape !== null && typeof obj.shape === 'object') {
+    // Recurse into the nested shape. Same optional-skip rule as the
+    // top-level synthesizer: required fields appear, optional ones
+    // appear only when @should-flagged.
+    const out: Record<string, unknown> = {}
+    for (const [name, descriptor] of Object.entries(
+      obj.shape as Record<string, MsgSchemaField>,
+    )) {
+      const isOpt = isOptional(descriptor)
+      const pri = isShould(descriptor)
+      if (isOpt && pri !== 'should') continue
+      out[name] = exampleValue(descriptor)
+    }
+    return out
+  }
+  if (obj.kind === 'array') {
+    // Wrap the synthesized element in a one-item array. Lets the LLM
+    // see the per-entry shape without us guessing at array length.
+    return [synthesizeBare(obj.element)]
+  }
+  return null
 }

@@ -13,18 +13,29 @@ import { createEffectHandler } from './effect-handler.js'
 import { makeDefaultCodecs, encodeForWire, decodeFromWire, type CodecRegistry } from '../codecs.js'
 
 /**
- * The shape the compiler emits as `__msgSchema`. The field type union
- * mirrors `MsgField` from `@llui/vite-plugin/src/msg-schema.ts`:
- * either a bare type (string keyword like 'string'/'number' or
- * `{enum: [...]}`) or a rich descriptor `{type, optional?, priority?, hint?}`.
- * The wire layer leaves the structure as-is — consumers like
- * `handleListActions` walk it for synthesis.
+ * The shape the compiler emits as `__msgSchema`. Mirrors `MsgField`
+ * from `@llui/vite-plugin/src/msg-schema.ts`. Three coexisting forms:
+ *
+ *   1. Bare primitive: `'string' | 'number' | 'boolean' | 'unknown'`
+ *      and bare enum: `{enum: [...]}`. Compact form for unannotated
+ *      required fields.
+ *   2. Bare nested types: `{kind: 'object', shape}` for inline /
+ *      followed-via-typeIndex shapes; `{kind: 'array', element}` for
+ *      `T[]` / `readonly T[]` / `Array<T>`. The synthesizer recurses
+ *      to build copy-paste-ready nested examples.
+ *   3. Rich descriptor: wraps any of the above with `{optional?,
+ *      priority?, hint?}` carrying TS optionality and `@should` hints.
  */
-export type MsgSchemaField =
+export type MsgSchemaBareType =
   | string
   | { enum: string[] }
+  | { kind: 'object'; shape: Record<string, MsgSchemaField> }
+  | { kind: 'array'; element: MsgSchemaBareType }
+
+export type MsgSchemaField =
+  | MsgSchemaBareType
   | {
-      type: string | { enum: string[] }
+      type: MsgSchemaBareType
       optional?: boolean
       priority?: 'should'
       hint?: string

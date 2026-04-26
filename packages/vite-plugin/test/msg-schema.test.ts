@@ -189,6 +189,108 @@ describe('extractMsgSchema', () => {
     })
   })
 
+  // ── Deep type resolution ───────────────────────────────────────
+
+  it('follows local interface references into nested object shapes', () => {
+    // Real motivating case from decisive.space-2: Msg fields
+    // referencing app-defined interfaces like Criterion. Without
+    // recursion these collapsed to 'unknown'; the LLM had to guess
+    // at the shape from external docs. Now the synthesizer sees a
+    // copy-paste-ready skeleton.
+    const src = `
+      interface Criterion {
+        id: string
+        title: string
+        weight: number
+      }
+      type Msg =
+        | { type: 'AddCriterion'; criterion: Criterion }
+    `
+    const schema = extractMsgSchema(src)
+    expect(schema?.variants.AddCriterion?.criterion).toEqual({
+      kind: 'object',
+      shape: {
+        id: 'string',
+        title: 'string',
+        weight: 'number',
+      },
+    })
+  })
+
+  it('follows local type aliases the same way as interfaces', () => {
+    const src = `
+      type Coord = { x: number; y: number }
+      type Msg =
+        | { type: 'Move'; from: Coord; to: Coord }
+    `
+    const schema = extractMsgSchema(src)
+    expect(schema?.variants.Move?.from).toMatchObject({
+      kind: 'object',
+      shape: { x: 'number', y: 'number' },
+    })
+  })
+
+  it('handles array types — T[], readonly T[], Array<T>, ReadonlyArray<T>', () => {
+    const src = `
+      interface Item { id: string }
+      type Msg =
+        | { type: 'A'; items: Item[] }
+        | { type: 'B'; items: readonly Item[] }
+        | { type: 'C'; items: Array<Item> }
+        | { type: 'D'; items: ReadonlyArray<Item> }
+    `
+    const schema = extractMsgSchema(src)
+    const expected = {
+      kind: 'array',
+      element: { kind: 'object', shape: { id: 'string' } },
+    }
+    expect(schema?.variants.A?.items).toEqual(expected)
+    expect(schema?.variants.B?.items).toEqual(expected)
+    expect(schema?.variants.C?.items).toEqual(expected)
+    expect(schema?.variants.D?.items).toEqual(expected)
+  })
+
+  it('emits inline object literal types directly', () => {
+    // No type alias indirection — the literal is the type.
+    const src = `
+      type Msg =
+        | { type: 'Set'; pos: { x: number; y: number } }
+    `
+    expect(extractMsgSchema(src)?.variants.Set?.pos).toEqual({
+      kind: 'object',
+      shape: { x: 'number', y: 'number' },
+    })
+  })
+
+  it('caps depth — stops recursion at MAX_FIELD_DEPTH', () => {
+    // Self-referential types like a tree node would otherwise spiral.
+    // The cap (3) means the agent sees up to a few levels of shape
+    // before falling back to 'unknown'. Test passes if extraction
+    // completes (no stack overflow) and produces some shape.
+    const src = `
+      interface Node { id: string; children: Node[] }
+      type Msg = | { type: 'Add'; root: Node }
+    `
+    const schema = extractMsgSchema(src)
+    // Outer object shape resolved; inner children collapse to
+    // 'unknown' once depth runs out.
+    const outer = schema?.variants.Add?.root
+    expect(outer).toMatchObject({ kind: 'object' })
+    expect(JSON.stringify(outer)).toContain('"id":"string"')
+  })
+
+  it('cross-file references stay unknown (no module resolution)', () => {
+    // Type imported from another file isn't in the local index.
+    // Falls back to 'unknown' rather than fabricating a shape — the
+    // cross-file resolver pipeline handles top-level Msg unions, but
+    // not nested type references.
+    const src = `
+      import type { Criterion } from '@decisive/domain'
+      type Msg = | { type: 'X'; criterion: Criterion }
+    `
+    expect(extractMsgSchema(src)?.variants.X?.criterion).toBe('unknown')
+  })
+
   it('preserves enum types inside rich descriptors', () => {
     const src = `
       type Msg =

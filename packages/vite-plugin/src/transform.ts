@@ -3390,12 +3390,37 @@ function buildFieldDescriptorExpr(descriptor: MsgField, f: ts.NodeFactory): ts.E
     }
     return f.createObjectLiteralExpression(props)
   }
-  // Bare enum — `{enum: [...]}` form (no `type` key).
+  // The remaining cases are bare type-shape variants emitted by
+  // `resolveFieldType`: enum, object, array. Discriminate by which
+  // key is present so we never confuse an inline object literal
+  // ({enum: [...]}) with a deeply-nested shape descriptor.
+  if ('enum' in descriptor) {
+    return f.createObjectLiteralExpression([
+      f.createPropertyAssignment(
+        'enum',
+        f.createArrayLiteralExpression(descriptor.enum.map((v) => f.createStringLiteral(v))),
+      ),
+    ])
+  }
+  if ('kind' in descriptor && descriptor.kind === 'object') {
+    // Nested object shape — recurse per field. Fields may themselves
+    // be rich descriptors (optional, etc.), so route each through the
+    // same builder.
+    const shapeProps: ts.PropertyAssignment[] = []
+    for (const [k, v] of Object.entries(descriptor.shape)) {
+      shapeProps.push(
+        f.createPropertyAssignment(f.createStringLiteral(k), buildFieldDescriptorExpr(v, f)),
+      )
+    }
+    return f.createObjectLiteralExpression([
+      f.createPropertyAssignment('kind', f.createStringLiteral('object')),
+      f.createPropertyAssignment('shape', f.createObjectLiteralExpression(shapeProps)),
+    ])
+  }
+  // Array — `{kind: 'array', element: <bare type>}`.
   return f.createObjectLiteralExpression([
-    f.createPropertyAssignment(
-      'enum',
-      f.createArrayLiteralExpression(descriptor.enum.map((v) => f.createStringLiteral(v))),
-    ),
+    f.createPropertyAssignment('kind', f.createStringLiteral('array')),
+    f.createPropertyAssignment('element', buildFieldDescriptorExpr(descriptor.element, f)),
   ])
 }
 
