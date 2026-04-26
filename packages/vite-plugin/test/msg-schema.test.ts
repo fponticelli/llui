@@ -167,6 +167,28 @@ describe('extractMsgSchema', () => {
     expect(f).toMatchObject({ hint: 'fancy quotes' })
   })
 
+  it('extracts @should from multi-line JSDoc on readonly properties', () => {
+    // Real-world apps tend to write JSDoc like this — block comment
+    // wrapping a long @should hint, with `readonly` modifiers on
+    // property signatures. The parser must read the leading comment
+    // range before the `readonly` token, not just the property name.
+    const src = `
+      type Msg =
+        | {
+            readonly type: 'Add'
+            /**
+             * @should("Cite where the value came from.")
+             */
+            readonly items: readonly string[]
+          }
+    `
+    const schema = extractMsgSchema(src)
+    expect(schema?.variants.Add?.items).toMatchObject({
+      priority: 'should',
+      hint: 'Cite where the value came from.',
+    })
+  })
+
   it('preserves enum types inside rich descriptors', () => {
     const src = `
       type Msg =

@@ -3,7 +3,7 @@ import {
   type MessageAnnotations,
   type DispatchMode as MessageDispatchMode,
 } from './msg-annotations.js'
-import { type MsgSchema, type MsgField, resolveFieldType } from './msg-schema.js'
+import { type MsgSchema, type MsgField, buildFieldDescriptor } from './msg-schema.js'
 
 /**
  * Cross-file type resolver.
@@ -393,7 +393,7 @@ async function collectSchemaVariants(
 
   for (const member of memberNodes) {
     if (ts.isTypeLiteralNode(member)) {
-      collectOneVariant(member, variants)
+      collectOneVariant(member, variants, located.source)
       continue
     }
     if (ts.isTypeReferenceNode(member) && ts.isIdentifier(member.typeName)) {
@@ -411,7 +411,11 @@ async function collectSchemaVariants(
   return true
 }
 
-function collectOneVariant(lit: ts.TypeLiteralNode, variants: MsgSchema['variants']): void {
+function collectOneVariant(
+  lit: ts.TypeLiteralNode,
+  variants: MsgSchema['variants'],
+  source: string,
+): void {
   let discriminantValue: string | null = null
   const fields: Record<string, MsgField> = {}
   for (const member of lit.members) {
@@ -424,11 +428,7 @@ function collectOneVariant(lit: ts.TypeLiteralNode, variants: MsgSchema['variant
       }
       continue
     }
-    if (!memberType) {
-      fields[name] = 'unknown'
-      continue
-    }
-    fields[name] = resolveFieldType(memberType)
+    fields[name] = buildFieldDescriptor(member, source)
   }
   if (discriminantValue && variants[discriminantValue] === undefined) {
     variants[discriminantValue] = fields

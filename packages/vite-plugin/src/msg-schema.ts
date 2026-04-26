@@ -100,30 +100,43 @@ function collectVariants(
         continue
       }
 
-      const baseType: MsgFieldType = memberType ? resolveFieldType(memberType) : 'unknown'
-      const optional = member.questionToken !== undefined
-      const jsdoc = readMemberJSDoc(source, member)
-      const hint = readShouldHint(jsdoc)
-
-      // Emit bare form when there's nothing to add — saves bytes on
-      // the typical case where most fields are required and unannotated.
-      if (!optional && hint === null) {
-        fields[name] = baseType
-      } else {
-        const rich: MsgFieldRich = { type: baseType }
-        if (optional) rich.optional = true
-        if (hint !== null) {
-          rich.priority = 'should'
-          rich.hint = hint
-        }
-        fields[name] = rich
-      }
+      fields[name] = buildFieldDescriptor(member, source)
     }
 
     if (discriminantValue) {
       variants[discriminantValue] = fields
     }
   }
+}
+
+/**
+ * Build a single field descriptor from a property signature: type,
+ * optionality, and any `@should("…")` JSDoc hint. Emits the compact
+ * bare form when there's nothing extra to communicate; otherwise the
+ * rich `{type, optional?, priority?, hint?}` shape.
+ *
+ * Exported so the cross-file resolver (which walks the same property
+ * signatures when the Msg type lives in a different file from the
+ * `component()` call) can produce identical descriptors. Without
+ * sharing this helper, JSDoc hints would silently disappear whenever
+ * a Msg union got resolved across module boundaries.
+ */
+export function buildFieldDescriptor(member: ts.PropertySignature, source: string): MsgField {
+  const baseType: MsgFieldType = member.type ? resolveFieldType(member.type) : 'unknown'
+  const optional = member.questionToken !== undefined
+  const jsdoc = readMemberJSDoc(source, member)
+  const hint = readShouldHint(jsdoc)
+
+  if (!optional && hint === null) {
+    return baseType
+  }
+  const rich: MsgFieldRich = { type: baseType }
+  if (optional) rich.optional = true
+  if (hint !== null) {
+    rich.priority = 'should'
+    rich.hint = hint
+  }
+  return rich
 }
 
 export function resolveFieldType(type: ts.TypeNode): MsgFieldType {
