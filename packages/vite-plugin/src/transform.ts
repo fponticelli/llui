@@ -1,6 +1,12 @@
 import ts from 'typescript'
 import { collectDeps } from './collect-deps.js'
-import { extractMsgSchema, extractEffectSchema } from './msg-schema.js'
+import {
+  extractMsgSchema,
+  extractEffectSchema,
+  isRichField,
+  type MsgField,
+  type MsgSchema,
+} from './msg-schema.js'
 import { extractMsgAnnotations, type MessageAnnotations } from './msg-annotations.js'
 import { extractStateSchema, type StateType } from './state-schema.js'
 import { computeSchemaHash } from './schema-hash.js'
@@ -3300,10 +3306,7 @@ function injectComponentMeta(
 
 function injectMsgSchema(
   node: ts.CallExpression,
-  schema: {
-    discriminant: string
-    variants: Record<string, Record<string, string | { enum: string[] }>>
-  },
+  schema: MsgSchema,
   f: ts.NodeFactory,
 ): ts.CallExpression {
   const configArg = node.arguments[0]
@@ -3324,27 +3327,16 @@ function injectMsgSchema(
   const variantProps: ts.PropertyAssignment[] = []
   for (const [variant, fields] of Object.entries(schema.variants)) {
     const fieldProps: ts.PropertyAssignment[] = []
-    for (const [field, type] of Object.entries(fields)) {
+    for (const [field, descriptor] of Object.entries(fields)) {
       // Always wrap user-derived keys with createStringLiteral — bare
       // strings get printed as identifiers, which breaks fields named
       // with reserved words ('delete'), hyphens, or other non-id chars.
-      if (typeof type === 'string') {
-        fieldProps.push(
-          f.createPropertyAssignment(f.createStringLiteral(field), f.createStringLiteral(type)),
-        )
-      } else {
-        fieldProps.push(
-          f.createPropertyAssignment(
-            f.createStringLiteral(field),
-            f.createObjectLiteralExpression([
-              f.createPropertyAssignment(
-                'enum',
-                f.createArrayLiteralExpression(type.enum.map((v) => f.createStringLiteral(v))),
-              ),
-            ]),
-          ),
-        )
-      }
+      fieldProps.push(
+        f.createPropertyAssignment(
+          f.createStringLiteral(field),
+          buildFieldDescriptorExpr(descriptor, f),
+        ),
+      )
     }
     variantProps.push(
       f.createPropertyAssignment(
@@ -3369,6 +3361,41 @@ function injectMsgSchema(
   return f.createCallExpression(node.expression, node.typeArguments, [
     newConfig,
     ...node.arguments.slice(1),
+  ])
+}
+
+/**
+ * Emit the AST for a single field descriptor. Bare forms (`'string'`,
+ * `{enum: [...]}`) print as their compact form; rich descriptors emit
+ * an object literal carrying `type`, `optional`, `priority`, and `hint`
+ * properties as set.
+ */
+function buildFieldDescriptorExpr(descriptor: MsgField, f: ts.NodeFactory): ts.Expression {
+  if (typeof descriptor === 'string') {
+    return f.createStringLiteral(descriptor)
+  }
+  if (isRichField(descriptor)) {
+    const props: ts.PropertyAssignment[] = []
+    // `type` is the bare type; recurse to emit either a string or the
+    // enum object.
+    props.push(f.createPropertyAssignment('type', buildFieldDescriptorExpr(descriptor.type, f)))
+    if (descriptor.optional) {
+      props.push(f.createPropertyAssignment('optional', f.createTrue()))
+    }
+    if (descriptor.priority) {
+      props.push(f.createPropertyAssignment('priority', f.createStringLiteral(descriptor.priority)))
+    }
+    if (descriptor.hint !== undefined) {
+      props.push(f.createPropertyAssignment('hint', f.createStringLiteral(descriptor.hint)))
+    }
+    return f.createObjectLiteralExpression(props)
+  }
+  // Bare enum — `{enum: [...]}` form (no `type` key).
+  return f.createObjectLiteralExpression([
+    f.createPropertyAssignment(
+      'enum',
+      f.createArrayLiteralExpression(descriptor.enum.map((v) => f.createStringLiteral(v))),
+    ),
   ])
 }
 
@@ -3489,10 +3516,7 @@ function injectSchemaHash(
 
 function injectEffectSchema(
   node: ts.CallExpression,
-  schema: {
-    discriminant: string
-    variants: Record<string, Record<string, string | { enum: string[] }>>
-  },
+  schema: MsgSchema,
   f: ts.NodeFactory,
 ): ts.CallExpression {
   const configArg = node.arguments[0]
@@ -3511,26 +3535,17 @@ function injectEffectSchema(
   const variantProps: ts.PropertyAssignment[] = []
   for (const [variant, fields] of Object.entries(schema.variants)) {
     const fieldProps: ts.PropertyAssignment[] = []
-    for (const [field, type] of Object.entries(fields)) {
-      // Always wrap user-derived keys with createStringLiteral — see
-      // injectMsgSchema for rationale.
-      if (typeof type === 'string') {
-        fieldProps.push(
-          f.createPropertyAssignment(f.createStringLiteral(field), f.createStringLiteral(type)),
-        )
-      } else {
-        fieldProps.push(
-          f.createPropertyAssignment(
-            f.createStringLiteral(field),
-            f.createObjectLiteralExpression([
-              f.createPropertyAssignment(
-                'enum',
-                f.createArrayLiteralExpression(type.enum.map((v) => f.createStringLiteral(v))),
-              ),
-            ]),
-          ),
-        )
-      }
+    for (const [field, descriptor] of Object.entries(fields)) {
+      // Effects share the same descriptor pipeline as messages — they
+      // can carry @should/optional annotations too, even though typical
+      // Effect unions don't need them. Reusing the helper keeps both
+      // schemas's wire formats consistent.
+      fieldProps.push(
+        f.createPropertyAssignment(
+          f.createStringLiteral(field),
+          buildFieldDescriptorExpr(descriptor, f),
+        ),
+      )
     }
     variantProps.push(
       f.createPropertyAssignment(

@@ -1,4 +1,5 @@
 import type { MessageAnnotations } from '../../protocol.js'
+import type { MsgSchemaShape, MsgSchemaField } from '../factory.js'
 
 type Binding = { variant: string }
 type Annotations = Record<string, MessageAnnotations>
@@ -7,6 +8,7 @@ export type ListActionsHost = {
   getState(): unknown
   getBindingDescriptors(): Binding[] | null
   getMsgAnnotations(): Annotations | null
+  getMsgSchema(): MsgSchemaShape | null
   getAgentAffordances(): ((state: unknown) => Array<{ type: string; [k: string]: unknown }>) | null
 }
 
@@ -15,6 +17,15 @@ export type ListActionsHost = {
  * a UI affordance) or `'agent-only'` (no UI binding — agent is the only
  * dispatcher). `'human-only'` variants are filtered out before this
  * point — they never reach the LLM.
+ *
+ * `source` distinguishes WHERE the affordance came from:
+ *   - `'binding'`     — a tagged event handler is currently mounted.
+ *   - `'always-affordable'` — the app's `agentAffordances(state)` hook
+ *     listed it as available right now.
+ *   - `'schema'`      — neither of the above; the variant is in the
+ *     Msg union, annotated `@agentOnly`, and the payload is example-
+ *     only (no live UI binding maps to it). Bulk-edit operations
+ *     typically land here.
  */
 export type ListActionsResult = {
   actions: Array<{
@@ -22,7 +33,7 @@ export type ListActionsResult = {
     intent: string
     requiresConfirm: boolean
     dispatchMode: 'shared' | 'agent-only'
-    source: 'binding' | 'always-affordable'
+    source: 'binding' | 'always-affordable' | 'schema'
     selectorHint: string | null
     payloadHint: object | null
   }>
@@ -33,8 +44,10 @@ export function handleListActions(host: ListActionsHost): ListActionsResult {
   const state = host.getState()
   const descriptors = host.getBindingDescriptors() ?? []
   const affordances = host.getAgentAffordances()?.(state) ?? []
+  const schema = host.getMsgSchema()
 
   const out: ListActionsResult['actions'] = []
+  const seen = new Set<string>()
 
   // From bindings — these have UI affordances by definition, so they're
   // either 'shared' (default) or, in the malformed case where someone
@@ -43,6 +56,7 @@ export function handleListActions(host: ListActionsHost): ListActionsResult {
   for (const d of descriptors) {
     const ann = annotations[d.variant]
     if (ann?.dispatchMode === 'human-only') continue
+    seen.add(d.variant)
     out.push({
       variant: d.variant,
       intent: ann?.intent ?? d.variant,
@@ -58,6 +72,7 @@ export function handleListActions(host: ListActionsHost): ListActionsResult {
   for (const msg of affordances) {
     const ann = annotations[msg.type]
     if (ann?.dispatchMode === 'human-only') continue
+    seen.add(msg.type)
     const { type, ...rest } = msg
     out.push({
       variant: type,
@@ -70,5 +85,80 @@ export function handleListActions(host: ListActionsHost): ListActionsResult {
     })
   }
 
+  // From schema — only `@agentOnly` variants that aren't already
+  // surfaced as bindings or always-affordable. These are the bulk-
+  // edit and admin-style affordances that an app exposes specifically
+  // to the agent (no UI button maps to them) and that `agentAffordances`
+  // hasn't enumerated. Including them here lets the LLM discover the
+  // full set of dispatches without having to read the Msg schema and
+  // construct payloads from scratch.
+  if (schema) {
+    for (const [variant, fields] of Object.entries(schema.variants)) {
+      if (seen.has(variant)) continue
+      const ann = annotations[variant]
+      // Only `@agentOnly` is surfaced here. `'shared'` variants without
+      // a live binding are intentionally hidden — if the human can't
+      // click them right now, the agent shouldn't fire them either.
+      // `'human-only'` is always filtered.
+      if (ann?.dispatchMode !== 'agent-only') continue
+      out.push({
+        variant,
+        intent: ann?.intent ?? variant,
+        requiresConfirm: ann?.requiresConfirm ?? false,
+        dispatchMode: 'agent-only',
+        source: 'schema',
+        selectorHint: null,
+        payloadHint: synthesizePayload(variant, fields),
+      })
+    }
+  }
+
   return { actions: out }
+}
+
+/**
+ * Build an example payload object the LLM can fill in. Required
+ * fields always appear; optional fields appear only when annotated
+ * `@should` (LLM is encouraged to fill them in). Fields without a
+ * concrete primitive type (`'unknown'`) emit `null` placeholders the
+ * LLM is expected to replace.
+ *
+ * The first key is `type` so the payload reads as a complete Msg
+ * shape — copy-paste-ready into `send_message`.
+ */
+function synthesizePayload(
+  variant: string,
+  fields: Record<string, MsgSchemaField>,
+): object {
+  const out: Record<string, unknown> = { type: variant }
+  for (const [name, descriptor] of Object.entries(fields)) {
+    const optional = isOptional(descriptor)
+    const priority = isShould(descriptor)
+    // Skip optional fields unless they're @should-flagged. Required
+    // fields always appear.
+    if (optional && priority !== 'should') continue
+    out[name] = exampleValue(descriptor)
+  }
+  return out
+}
+
+function isOptional(d: MsgSchemaField): boolean {
+  return typeof d === 'object' && 'type' in d && d.optional === true
+}
+
+function isShould(d: MsgSchemaField): 'should' | undefined {
+  return typeof d === 'object' && 'type' in d ? d.priority : undefined
+}
+
+function exampleValue(d: MsgSchemaField): unknown {
+  // Unwrap rich descriptor to get the bare type for synthesis.
+  const t: string | { enum: string[] } =
+    typeof d === 'object' && 'type' in d ? d.type : (d as string | { enum: string[] })
+  if (typeof t === 'string') {
+    if (t === 'string') return ''
+    if (t === 'number') return 0
+    if (t === 'boolean') return false
+    return null // 'unknown' or any other → placeholder
+  }
+  return t.enum[0] ?? null
 }

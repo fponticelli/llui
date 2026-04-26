@@ -30,6 +30,7 @@ function makeHost(
     getAndClearDrainErrors:
       overrides.getAndClearDrainErrors ?? (() => errorBuffer.splice(0, errorBuffer.length)),
     getMsgAnnotations: overrides.getMsgAnnotations ?? (() => null),
+    getMsgSchema: overrides.getMsgSchema ?? (() => null),
     getBindingDescriptors: overrides.getBindingDescriptors ?? (() => null),
     getAgentAffordances: overrides.getAgentAffordances ?? (() => null),
     proposeConfirm: overrides.proposeConfirm ?? vi.fn(),

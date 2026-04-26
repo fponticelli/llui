@@ -8,6 +8,7 @@ function makeHost(overrides: Partial<ObserveHost> & { state?: unknown } = {}): O
     getState: overrides.getState ?? (() => state),
     getBindingDescriptors: overrides.getBindingDescriptors ?? (() => null),
     getMsgAnnotations: overrides.getMsgAnnotations ?? (() => null),
+    getMsgSchema: overrides.getMsgSchema ?? (() => null),
     getAgentAffordances: overrides.getAgentAffordances ?? (() => null),
     getAgentContext: overrides.getAgentContext ?? (() => null),
   }

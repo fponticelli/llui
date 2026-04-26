@@ -3,7 +3,7 @@ import {
   type MessageAnnotations,
   type DispatchMode as MessageDispatchMode,
 } from './msg-annotations.js'
-import { type MsgSchema, resolveFieldType } from './msg-schema.js'
+import { type MsgSchema, type MsgField, resolveFieldType } from './msg-schema.js'
 
 /**
  * Cross-file type resolver.
@@ -413,7 +413,7 @@ async function collectSchemaVariants(
 
 function collectOneVariant(lit: ts.TypeLiteralNode, variants: MsgSchema['variants']): void {
   let discriminantValue: string | null = null
-  const fields: Record<string, string | { enum: string[] }> = {}
+  const fields: Record<string, MsgField> = {}
   for (const member of lit.members) {
     if (!ts.isPropertySignature(member) || !member.name || !ts.isIdentifier(member.name)) continue
     const name = member.name.text

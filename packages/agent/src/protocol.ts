@@ -84,7 +84,19 @@ export type LapActionsResponse = {
      * variants never appear here (filtered before serialization).
      */
     dispatchMode: 'shared' | 'agent-only'
-    source: 'binding' | 'always-affordable'
+    /**
+     * Where this affordance came from:
+     *   - `'binding'`           — a tagged event handler is currently
+     *     mounted in the rendered DOM.
+     *   - `'always-affordable'` — the app's `agentAffordances(state)`
+     *     hook listed it as available right now.
+     *   - `'schema'`            — neither of the above; the variant
+     *     is in the Msg union and annotated `@agentOnly`. The
+     *     `payloadHint` carries a synthesized example from the
+     *     compiler-derived field types — copy-paste-ready for
+     *     `send_message`. Bulk-edit operations land here.
+     */
+    source: 'binding' | 'always-affordable' | 'schema'
     selectorHint: string | null
     payloadHint: object | null
   }>

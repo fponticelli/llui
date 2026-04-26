@@ -12,6 +12,29 @@ import { attachWsClient, type WsLike, type RpcHosts } from './ws-client.js'
 import { createEffectHandler } from './effect-handler.js'
 import { makeDefaultCodecs, encodeForWire, decodeFromWire, type CodecRegistry } from '../codecs.js'
 
+/**
+ * The shape the compiler emits as `__msgSchema`. The field type union
+ * mirrors `MsgField` from `@llui/vite-plugin/src/msg-schema.ts`:
+ * either a bare type (string keyword like 'string'/'number' or
+ * `{enum: [...]}`) or a rich descriptor `{type, optional?, priority?, hint?}`.
+ * The wire layer leaves the structure as-is — consumers like
+ * `handleListActions` walk it for synthesis.
+ */
+export type MsgSchemaField =
+  | string
+  | { enum: string[] }
+  | {
+      type: string | { enum: string[] }
+      optional?: boolean
+      priority?: 'should'
+      hint?: string
+    }
+
+export type MsgSchemaShape = {
+  discriminant: string
+  variants: Record<string, Record<string, MsgSchemaField>>
+}
+
 type ComponentMetadata = {
   __msgSchema?: unknown
   __stateSchema?: unknown
@@ -135,6 +158,11 @@ export function createAgentClient<State, Msg>(
     subscribe: (listener) => opts.handle.subscribe(() => listener()),
     getAndClearDrainErrors: () => drainErrors.splice(0, drainErrors.length),
     getMsgAnnotations: () => opts.def.__msgAnnotations ?? null,
+    // The compiler-injected message schema. Used by `list_actions` to
+    // synthesize payload examples for `@agentOnly` variants that have
+    // no live UI binding — the agent should still see them as
+    // affordances even though no human can click them.
+    getMsgSchema: () => (opts.def.__msgSchema as MsgSchemaShape | undefined) ?? null,
     // Live binding descriptors: read from the runtime registry that
     // tracks which Msg variants are dispatchable from currently-mounted
     // event handlers. Empty array when the app wasn't compiled with
