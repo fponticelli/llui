@@ -84,6 +84,7 @@ describe('handleLapDescribe', () => {
             dispatchMode: 'shared',
           examples: [],
           warning: null,
+          emits: [],
           },
         },
       },

@@ -123,6 +123,7 @@ function makeHelloBuilder(appName: string): () => HelloFrame {
           dispatchMode: 'shared',
         examples: [],
         warning: null,
+        emits: [],
         },
       },
     },

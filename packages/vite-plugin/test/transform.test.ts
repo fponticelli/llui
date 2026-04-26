@@ -1113,6 +1113,7 @@ export const App = component<State, Msg, never>({
             dispatchMode: 'shared',
             examples: [],
             warning: null,
+            emits: [],
           },
           dec: {
             intent: 'Decrement',
@@ -1121,6 +1122,7 @@ export const App = component<State, Msg, never>({
             dispatchMode: 'shared',
             examples: [],
             warning: null,
+            emits: [],
           },
           reset: {
             intent: 'Reset',
@@ -1129,6 +1131,7 @@ export const App = component<State, Msg, never>({
             dispatchMode: 'shared',
             examples: [],
             warning: null,
+            emits: [],
           },
         },
       },

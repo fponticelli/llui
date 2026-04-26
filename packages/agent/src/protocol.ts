@@ -57,6 +57,16 @@ export type MessageAnnotations = {
    * downstream is acceptable.
    */
   warning: string | null
+  /**
+   * Effect kinds this variant emits when dispatched, declared via
+   * `@emits("kind1", "kind2")`. Lets the agent reason about side
+   * effects (cloud writes, analytics, persistent state changes)
+   * before dispatching, and chunk multi-step flows accordingly
+   * ("don't dispatch X 100 times — each one fires cloud/save").
+   * Empty when the variant doesn't emit effects or the author hasn't
+   * annotated it yet.
+   */
+  emits: string[]
 }
 
 export type MessageSchemaEntry = {

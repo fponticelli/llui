@@ -40,6 +40,13 @@ export type ListActionsResult = {
     warning: string | null
     /** Concrete examples from `@example` JSDoc, in source order. */
     examples: string[]
+    /**
+     * Effect kinds this variant emits, from `@emits("k1", "k2")`.
+     * Empty when not annotated. Lets the agent know what side
+     * effects fire — useful for batching ("100 dispatches × cloud-
+     * save = bad") and for confirming destructive flows.
+     */
+    emits: string[]
   }>
 }
 
@@ -71,6 +78,7 @@ export function handleListActions(host: ListActionsHost): ListActionsResult {
       payloadHint: null,
       warning: ann?.warning ?? null,
       examples: ann?.examples ?? [],
+      emits: ann?.emits ?? [],
     })
   }
 
@@ -90,6 +98,7 @@ export function handleListActions(host: ListActionsHost): ListActionsResult {
       payloadHint: Object.keys(rest).length > 0 ? rest : null,
       warning: ann?.warning ?? null,
       examples: ann?.examples ?? [],
+      emits: ann?.emits ?? [],
     })
   }
 
@@ -119,6 +128,7 @@ export function handleListActions(host: ListActionsHost): ListActionsResult {
         payloadHint: synthesizePayload(variant, fields),
         warning: ann?.warning ?? null,
         examples: ann?.examples ?? [],
+        emits: ann?.emits ?? [],
       })
     }
   }

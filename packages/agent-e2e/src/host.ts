@@ -150,6 +150,7 @@ type AgentMeta = {
       dispatchMode: 'shared' | 'human-only' | 'agent-only'
       examples: string[]
       warning: string | null
+      emits: string[]
     }
   >
   __bindingDescriptors?: Array<{ variant: string }>
@@ -185,6 +186,7 @@ AppWithMeta.__msgAnnotations = {
     dispatchMode: 'shared',
   examples: [],
   warning: null,
+  emits: [],
   },
   dec: {
     intent: 'Decrement the counter',
@@ -193,6 +195,7 @@ AppWithMeta.__msgAnnotations = {
     dispatchMode: 'shared',
   examples: [],
   warning: null,
+  emits: [],
   },
   reset: {
     intent: 'Reset to zero',
@@ -201,6 +204,7 @@ AppWithMeta.__msgAnnotations = {
     dispatchMode: 'shared',
   examples: [],
   warning: null,
+  emits: [],
   },
   delete: {
     intent: 'Delete an item',
@@ -209,6 +213,7 @@ AppWithMeta.__msgAnnotations = {
     dispatchMode: 'shared',
   examples: [],
   warning: null,
+  emits: [],
   },
   signOut: {
     intent: 'Sign out',
@@ -217,6 +222,7 @@ AppWithMeta.__msgAnnotations = {
     dispatchMode: 'human-only',
   examples: [],
   warning: null,
+  emits: [],
   },
   nav: {
     intent: 'Navigate',
@@ -225,6 +231,7 @@ AppWithMeta.__msgAnnotations = {
     dispatchMode: 'shared',
   examples: [],
   warning: null,
+  emits: [],
   },
 }
 

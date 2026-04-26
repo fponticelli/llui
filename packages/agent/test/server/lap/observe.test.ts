@@ -75,6 +75,7 @@ beforeEach(async () => {
           dispatchMode: 'shared',
         examples: [],
         warning: null,
+        emits: [],
         },
       },
     },

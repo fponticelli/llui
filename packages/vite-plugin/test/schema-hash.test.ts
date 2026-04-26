@@ -71,6 +71,7 @@ describe('computeSchemaHash', () => {
           dispatchMode: 'shared',
           examples: [],
           warning: null,
+        emits: [],
         },
       },
     })
@@ -85,6 +86,7 @@ describe('computeSchemaHash', () => {
           dispatchMode: 'shared',
           examples: [],
           warning: null,
+        emits: [],
         },
       },
     })

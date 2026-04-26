@@ -329,7 +329,25 @@ function parseMessageAnnotations(comment: string): MessageAnnotations {
     dispatchMode,
     examples: readExamplesTag(comment),
     warning: readWarningTag(comment),
+    emits: readEmitsTag(comment),
   }
+}
+
+function readEmitsTag(comment: string): string[] {
+  const outer = comment.match(/@emits\s*\(([^)]*)\)/)
+  if (!outer || outer[1] === undefined) return []
+  const inner = outer[1]
+  const seen = new Set<string>()
+  const out: string[] = []
+  const re = /["“]([^"”]*)["”]/g
+  let m: RegExpExecArray | null
+  while ((m = re.exec(inner)) !== null) {
+    const v = m[1]
+    if (v === undefined || seen.has(v)) continue
+    seen.add(v)
+    out.push(v)
+  }
+  return out
 }
 
 function readExamplesTag(comment: string): string[] {
@@ -355,6 +373,7 @@ function defaultMessageAnnotations(): MessageAnnotations {
     dispatchMode: 'shared',
     examples: [],
     warning: null,
+    emits: [],
   }
 }
 

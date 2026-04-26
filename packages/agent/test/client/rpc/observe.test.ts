@@ -29,6 +29,7 @@ describe('handleObserve', () => {
             dispatchMode: 'shared',
           examples: [],
           warning: null,
+          emits: [],
           },
         }) as Record<string, MessageAnnotations>,
       getAgentContext: () => (s) => ({
@@ -71,6 +72,7 @@ describe('handleObserve', () => {
             dispatchMode: 'shared',
           examples: [],
           warning: null,
+          emits: [],
           },
           AdminOnly: {
             intent: 'admin',
@@ -79,6 +81,7 @@ describe('handleObserve', () => {
             dispatchMode: 'human-only',
           examples: [],
           warning: null,
+          emits: [],
           },
         }) as Record<string, MessageAnnotations>,
     })

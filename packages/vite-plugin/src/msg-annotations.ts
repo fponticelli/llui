@@ -23,6 +23,20 @@ export type MessageAnnotations = {
    * gate the user must acknowledge.
    */
   warning: string | null
+  /**
+   * Effect kinds this variant emits when dispatched, declared by the
+   * author via `@emits("kind1", "kind2")`. Lets the agent reason
+   * about side effects ("this dispatch hits the cloud, so I should
+   * batch") without the compiler having to walk update.ts. Authored
+   * rather than auto-extracted because real apps emit effects
+   * through helpers (`track('foo')`, `saveDelta(d)`) — auto-detecting
+   * those would require helper-return-shape analysis with
+   * ergonomically-painful failure modes; the declarative form trades
+   * automatic discovery for accuracy and simplicity.
+   *
+   * Empty when no `@emits` tag is present.
+   */
+  emits: string[]
 }
 
 const DEFAULT: MessageAnnotations = {
@@ -32,6 +46,7 @@ const DEFAULT: MessageAnnotations = {
   dispatchMode: 'shared',
   examples: [],
   warning: null,
+  emits: [],
 }
 
 /**
@@ -133,7 +148,36 @@ function parseAnnotations(comment: string): MessageAnnotations {
     dispatchMode,
     examples: readExamples(comment),
     warning: readWarning(comment),
+    emits: readEmits(comment),
   }
+}
+
+/**
+ * Match `@emits("k1", "k2", ...)` — comma-separated list of effect
+ * kind strings. Each entry can use straight or curly quotes; the
+ * separator is `,` with arbitrary whitespace. Returns the kinds in
+ * source order (deduped). Empty when the tag is absent or has no
+ * quoted strings.
+ */
+function readEmits(comment: string): string[] {
+  // Match the whole `@emits(...)` parenthesized group so we can
+  // re-parse the inner content for individual quoted strings. The
+  // outer match is non-greedy on the closing paren to avoid eating
+  // through later JSDoc.
+  const outer = comment.match(/@emits\s*\(([^)]*)\)/)
+  if (!outer || outer[1] === undefined) return []
+  const inner = outer[1]
+  const seen = new Set<string>()
+  const out: string[] = []
+  const re = /["“]([^"”]*)["”]/g
+  let m: RegExpExecArray | null
+  while ((m = re.exec(inner)) !== null) {
+    const v = m[1]
+    if (v === undefined || seen.has(v)) continue
+    seen.add(v)
+    out.push(v)
+  }
+  return out
 }
 
 function readIntent(comment: string): string | null {

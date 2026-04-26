@@ -37,6 +37,7 @@ describe('handleListActions', () => {
             alwaysAffordable: false,
           examples: [],
           warning: null,
+          emits: [],
           },
           Save: {
             intent: 'save item',
@@ -45,6 +46,7 @@ describe('handleListActions', () => {
             alwaysAffordable: false,
           examples: [],
           warning: null,
+          emits: [],
           },
         },
       }),
@@ -65,6 +67,7 @@ describe('handleListActions', () => {
             alwaysAffordable: false,
           examples: [],
           warning: null,
+          emits: [],
           },
         },
       }),
@@ -133,6 +136,7 @@ describe('handleListActions', () => {
             alwaysAffordable: false,
           examples: [],
           warning: null,
+          emits: [],
           },
         },
         schema: {
@@ -174,6 +178,7 @@ describe('handleListActions', () => {
             alwaysAffordable: false,
           examples: [],
           warning: null,
+          emits: [],
           },
         },
         schema: {
@@ -202,6 +207,7 @@ describe('handleListActions', () => {
             alwaysAffordable: false,
           examples: [],
           warning: null,
+          emits: [],
           },
         },
         schema: {
@@ -225,6 +231,7 @@ describe('handleListActions', () => {
             alwaysAffordable: false,
           examples: [],
           warning: null,
+          emits: [],
           },
         },
         schema: {
@@ -264,6 +271,7 @@ describe('handleListActions', () => {
             alwaysAffordable: false,
           examples: [],
           warning: null,
+          emits: [],
           },
         },
         schema: {
@@ -301,6 +309,7 @@ describe('handleListActions', () => {
             alwaysAffordable: false,
           examples: [],
           warning: null,
+          emits: [],
           },
         },
         schema: {

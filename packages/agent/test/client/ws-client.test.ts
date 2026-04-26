@@ -227,8 +227,9 @@ describe('attachWsClient', () => {
           alwaysAffordable: true,
           requiresConfirm: false,
           dispatchMode: 'shared',
-        examples: [],
-        warning: null,
+          examples: [],
+          warning: null,
+          emits: [],
         },
       }),
     }

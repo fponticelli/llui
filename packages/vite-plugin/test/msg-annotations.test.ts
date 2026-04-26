@@ -23,6 +23,7 @@ type Msg =
         dispatchMode: 'shared',
         examples: [],
         warning: null,
+      emits: [],
       },
       delete: {
         intent: 'Delete item',
@@ -31,6 +32,7 @@ type Msg =
         dispatchMode: 'shared',
         examples: [],
         warning: null,
+      emits: [],
       },
       checkout: {
         intent: 'Place order',
@@ -39,6 +41,7 @@ type Msg =
         dispatchMode: 'human-only',
         examples: [],
         warning: null,
+      emits: [],
       },
       nav: {
         intent: 'Navigate',
@@ -47,6 +50,7 @@ type Msg =
         dispatchMode: 'shared',
         examples: [],
         warning: null,
+      emits: [],
       },
     })
   })
@@ -96,6 +100,49 @@ type Msg =
     expect(ann?.requiresConfirm).toBe(false)
   })
 
+  it('extracts comma-separated effect kinds from @emits', () => {
+    // Authored declaration of "this dispatch fires these effects"
+    // — the agent reads it before dispatching to reason about
+    // batching ("don't dispatch X 100 times each fires cloud-save")
+    // and consequence ("delete fires telemetry that can't be undone").
+    const src = `
+type Msg =
+  /**
+   * @intent("Save and overwrite the cloud version")
+   * @emits("cloud/save", "analytics/track")
+   */
+  | { type: 'Save' }
+`
+    expect(extractMsgAnnotations(src)?.Save?.emits).toEqual(['cloud/save', 'analytics/track'])
+  })
+
+  it('@emits with a single kind works', () => {
+    const src = `
+type Msg =
+  /** @emits("matrix/persist") */
+  | { type: 'Mutate' }
+`
+    expect(extractMsgAnnotations(src)?.Mutate?.emits).toEqual(['matrix/persist'])
+  })
+
+  it('@emits dedupes repeated kinds while preserving first-seen order', () => {
+    const src = `
+type Msg =
+  /** @emits("cloud/save", "cloud/save", "analytics/track") */
+  | { type: 'Save' }
+`
+    expect(extractMsgAnnotations(src)?.Save?.emits).toEqual(['cloud/save', 'analytics/track'])
+  })
+
+  it('defaults @emits to [] when absent', () => {
+    const src = `
+type Msg =
+  /** @intent("plain") */
+  | { type: 'X' }
+`
+    expect(extractMsgAnnotations(src)?.X?.emits).toEqual([])
+  })
+
   it('tolerates curly quotes in @example and @warning', () => {
     const src = `
 type Msg =
@@ -136,6 +183,7 @@ type Msg =
         dispatchMode: 'shared',
       examples: [],
       warning: null,
+      emits: [],
       },
     })
   })
@@ -155,6 +203,7 @@ type Msg =
         dispatchMode: 'shared',
       examples: [],
       warning: null,
+      emits: [],
       },
     })
   })
@@ -173,6 +222,7 @@ type Msg =
         dispatchMode: 'shared',
         examples: [],
         warning: null,
+      emits: [],
       },
       b: {
         intent: null,
@@ -181,6 +231,7 @@ type Msg =
         dispatchMode: 'shared',
         examples: [],
         warning: null,
+      emits: [],
       },
     })
   })
@@ -199,6 +250,7 @@ type Msg =
       dispatchMode: 'shared',
     examples: [],
     warning: null,
+    emits: [],
     })
   })
 
@@ -220,6 +272,7 @@ type Msg =
         dispatchMode: 'shared',
       examples: [],
       warning: null,
+      emits: [],
       },
     })
   })
@@ -246,6 +299,7 @@ type Msg =
       dispatchMode: 'agent-only',
     examples: [],
     warning: null,
+    emits: [],
     })
   })
 

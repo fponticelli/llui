@@ -78,6 +78,7 @@ describe('handleSendMessage — validation and annotations', () => {
         dispatchMode: 'human-only',
       examples: [],
       warning: null,
+      emits: [],
       },
     }
     const host = makeHost({ send, proposeConfirm, getMsgAnnotations: () => annotations })
@@ -99,6 +100,7 @@ describe('handleSendMessage — validation and annotations', () => {
         dispatchMode: 'shared',
       examples: [],
       warning: null,
+      emits: [],
       },
     }
     const host = makeHost({ proposeConfirm, getMsgAnnotations: () => annotations })
@@ -134,6 +136,7 @@ describe('handleSendMessage — validation and annotations', () => {
           dispatchMode: 'shared',
           examples: [],
           warning: null,
+        emits: [],
         },
       }),
       getMsgSchema: () => ({
@@ -171,6 +174,7 @@ describe('handleSendMessage — validation and annotations', () => {
           dispatchMode: 'shared',
           examples: [],
           warning: null,
+        emits: [],
         },
       }),
       getMsgSchema: () => ({
@@ -202,6 +206,7 @@ describe('handleSendMessage — validation and annotations', () => {
           dispatchMode: 'shared',
           examples: [],
           warning: null,
+        emits: [],
         },
       }),
       getMsgSchema: () => ({
@@ -239,6 +244,7 @@ describe('handleSendMessage — validation and annotations', () => {
           dispatchMode: 'shared',
           examples: [],
           warning: null,
+        emits: [],
         },
       }),
       getMsgSchema: () => ({
@@ -276,6 +282,7 @@ describe('handleSendMessage — validation and annotations', () => {
           dispatchMode: 'shared',
           examples: [],
           warning: null,
+        emits: [],
         },
       }),
       getMsgSchema: () => ({
@@ -307,6 +314,7 @@ describe('handleSendMessage — validation and annotations', () => {
           dispatchMode: 'shared',
           examples: [],
           warning: null,
+        emits: [],
         },
       }),
       getMsgSchema: () => ({
@@ -336,6 +344,7 @@ describe('handleSendMessage — validation and annotations', () => {
           dispatchMode: 'shared',
         examples: [],
         warning: null,
+        emits: [],
         },
       }),
     })
@@ -500,6 +509,7 @@ describe('handleSendMessage — response envelope', () => {
           dispatchMode: 'shared',
         examples: [],
         warning: null,
+        emits: [],
         },
       }),
     })
