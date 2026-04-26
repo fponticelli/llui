@@ -10,6 +10,9 @@ importers:
       '@eslint/js':
         specifier: ^10.0.1
         version: 10.0.1(eslint@10.1.0(jiti@2.6.1))
+      '@llui/eslint-plugin':
+        specifier: workspace:*
+        version: link:packages/eslint-plugin-llui
       '@vitest/coverage-v8':
         specifier: ^4.1.2
         version: 4.1.2(vitest@4.1.2(@types/node@22.19.15)(jsdom@29.0.1)(vite@8.0.3(@emnapi/core@1.9.1)(@emnapi/runtime@1.9.1)(@types/node@22.19.15)(esbuild@0.27.5)(jiti@2.6.1)(tsx@4.21.0)))
