@@ -1,53 +1,58 @@
 import ts from 'typescript'
 
 /**
- * Compiler pass that tags event-handler arrow functions with the Msg
- * variants they dispatch. Replaces the older static-extract approach
- * (which only walked the inline `view` arrow body of a `component({…})`
- * literal, missing every send inside imported view fragments — i.e.
- * every realistic LLui app).
+ * Compiler passes that surface the Msg variants currently dispatchable
+ * from rendered UI to the agent layer's `list_actions`. Two passes
+ * cover two distinct dispatch shapes:
  *
- * Detection
- * ---------
- * Walks the AST looking for object-literal properties whose name
- * matches `/^on[A-Z]/` (DOM event handler convention) and whose value
- * is an arrow / function expression. Inside that handler body, any
- * `<identifier>({ type: 'literal', … })` call site is treated as a
- * `send(…)`-equivalent dispatch and the literal `type` string is
- * collected.
+ * 1. `tagEventHandlerSends` — tags event-handler arrow functions
+ *    (`onClick`, `onInput`, …) whose body contains literal
+ *    `<id>({type: 'X', …})` call sites. Wraps with
+ *    `Object.assign(arrow, { __lluiVariants: ['X', …] })`. The
+ *    runtime in `@llui/dom` `elements.ts` / `el-split.ts` reads the
+ *    metadata at bind time and registers the variants on the active
+ *    component instance for the lifetime of the binding's scope.
  *
- * False positives are deliberate: the alternative — proving the
- * callee resolves to the destructured `send` from a `View` bag —
- * would require full scope tracking across re-exports, which the
- * compiler doesn't do. In practice the pattern `id({ type: 'X', … })`
- * is vanishingly rare outside dispatches, and an extra entry in the
- * live descriptor registry just means the agent sees one more
- * "affordable variant" than necessary — never a wrong dispatch, never
- * a runtime error. Net safe to be permissive.
+ * 2. `injectScopeVariantRegistrations` — handles the
+ *    dispatch-translation case that pass (1) can't follow:
+ *    `<bag>.connect(get, sendFn, …)` where `sendFn` is a user-
+ *    defined function that translates library Msgs into app Msgs via
+ *    `dispatch({type: 'X', …})`. Static analysis of the library's
+ *    internal onClick can't see across this hop. The pass detects the
+ *    `*.connect(get, sendFn, …)` syntactic pattern, follows `sendFn`
+ *    to its declaration, scans the body for literal dispatches, and
+ *    inserts a runtime `__registerScopeVariants(['X', …])` call
+ *    immediately before the connect call. Lifetime semantics fall
+ *    out of the render context: the call's active scope is whatever
+ *    `each(...)` / `branch(...)` / root scope happens to be live when
+ *    the view evaluates that statement.
  *
- * False negatives: non-literal `type` (e.g. `send({ type: nextStep })`)
- * are skipped. Same reasoning as the old extractor — we can only
- * record statically-known variants. Apps that route through dynamic
- * dispatch should declare `agentAffordances` for the variants they
- * want the agent to see.
+ * Both passes are gated on `devMode || emitAgentMetadata` in
+ * `transform.ts`. Production bundles without agent integration get
+ * neither the per-handler `Object.assign` cost nor the registration
+ * statements.
  *
- * Emission
- * --------
- * Each event-handler arrow with at least one collected variant is
- * wrapped with `Object.assign(<arrow>, { __lluiVariants: ['X', …] })`.
- * `Object.assign` returns the original function (so DOM
- * `addEventListener` still gets a callable) with an extra read-only
- * metadata field that the runtime inspects in `elements.ts` to
- * register the variants on the active component instance.
+ * False positives are deliberate. The alternative — proving the
+ * callee resolves to the destructured `send` from a `View` bag, or
+ * tracing function calls across files — would require full scope
+ * tracking the compiler doesn't do. In practice the patterns
+ * `<id>({type:'X',…})` and `*.connect(get, fn, …)` are reliable
+ * shape-level signals; an extra entry in the live descriptor
+ * registry just means the agent sees one more "affordable variant"
+ * than necessary — never a wrong dispatch, never a runtime error.
  *
- * Why `Object.assign` rather than a runtime helper import: zero new
- * imports in user code, zero call-graph friction, the optimizer
- * inlines it. Cost is one extra property assignment per tagged
- * handler at view-evaluation time.
+ * False negatives stay where they were: non-literal `type` values
+ * (`send({ type: nextStep })`), and dispatch translators bound via
+ * patterns other than `*.connect(get, fn, …)`. Apps that hit those
+ * cases declare `agentAffordances` on the component def — the
+ * documented escape hatch.
  *
  * @see agent spec §5.2, §12.2
- * @see @llui/dom binding-descriptors.ts (runtime registration)
+ * @see @llui/dom binding-descriptors.ts (runtime registry + helper)
  */
+
+// ── Pass 1: event-handler tagger ────────────────────────────────────
+
 export function tagEventHandlerSends(node: ts.SourceFile, f: ts.NodeFactory): ts.SourceFile {
   const transformer: ts.TransformerFactory<ts.SourceFile> = (ctx) => {
     const visit: ts.Visitor = (n) => {
@@ -73,15 +78,6 @@ function isEventHandlerKey(name: ts.PropertyName): name is ts.Identifier | ts.St
   return false
 }
 
-/**
- * If `value` is an arrow / function expression containing literal
- * sends, return the wrapped form. If it's a function with no
- * discoverable variants, or not a function at all, return the
- * original `value` (or null when nothing applies) so the AST stays
- * untouched in the common no-send case — `onMount` handlers that
- * perform DOM measurement, `onInput` callbacks that just call
- * non-send functions, etc.
- */
 function maybeTagHandler(value: ts.Expression, f: ts.NodeFactory): ts.Expression | null {
   if (!ts.isArrowFunction(value) && !ts.isFunctionExpression(value)) return null
   const variants = collectLiteralSendVariants(value.body)
@@ -89,11 +85,171 @@ function maybeTagHandler(value: ts.Expression, f: ts.NodeFactory): ts.Expression
   return wrapWithVariants(value, variants, f)
 }
 
+function wrapWithVariants(
+  arrow: ts.ArrowFunction | ts.FunctionExpression,
+  variants: readonly string[],
+  f: ts.NodeFactory,
+): ts.CallExpression {
+  return f.createCallExpression(
+    f.createPropertyAccessExpression(f.createIdentifier('Object'), 'assign'),
+    undefined,
+    [
+      arrow,
+      f.createObjectLiteralExpression(
+        [
+          f.createPropertyAssignment(
+            '__lluiVariants',
+            f.createArrayLiteralExpression(
+              variants.map((v) => f.createStringLiteral(v)),
+              false,
+            ),
+          ),
+        ],
+        false,
+      ),
+    ],
+  )
+}
+
+// ── Pass 2: connect-pattern registration injector ────────────────
+
+export interface InjectResult {
+  sf: ts.SourceFile
+  /** True when at least one `__registerScopeVariants(...)` call was inserted. */
+  injected: boolean
+}
+
+export function injectScopeVariantRegistrations(
+  node: ts.SourceFile,
+  f: ts.NodeFactory,
+): InjectResult {
+  let injected = false
+
+  const transformer: ts.TransformerFactory<ts.SourceFile> = (ctx) => {
+    function rewriteBlock<B extends ts.Block | ts.SourceFile>(block: B): B {
+      const stmts = (block as ts.Block | ts.SourceFile).statements
+      // Resolve identifier references in this block: any `const fn =
+      // (m) => { ... dispatch({type:'X'}) ... }` declaration becomes
+      // an entry in the lookup table so an identifier passed to
+      // `*.connect(get, fn, ...)` later in the same block resolves
+      // to its body.
+      const localFns = collectLocalFns(stmts)
+      const out: ts.Statement[] = []
+      for (const stmt of stmts) {
+        const visited = ts.visitNode(stmt, (n) => visitNode(n, localFns)) as ts.Statement
+        out.push(visited)
+      }
+      if (ts.isSourceFile(block)) {
+        return f.updateSourceFile(block, out) as B
+      }
+      return f.updateBlock(block, out) as B
+    }
+
+    function visitNode(
+      n: ts.Node,
+      localFns: Map<string, ts.ArrowFunction | ts.FunctionExpression>,
+    ): ts.Node {
+      if (ts.isBlock(n)) {
+        return rewriteBlock(n)
+      }
+      if (ts.isCallExpression(n) && isConnectCallShape(n)) {
+        const sendArg = n.arguments[1]!
+        const sendFn = resolveSendFn(sendArg, localFns)
+        if (sendFn) {
+          const variants = collectLiteralSendVariants(sendFn.body)
+          if (variants.length > 0) {
+            // Replace the call expression with a comma expression:
+            //   (__registerScopeVariants([...]), originalCall)
+            // The comma keeps the call's value position intact (so
+            // `const parts = popover.connect(...)` still binds the
+            // original return), and ensures the registration fires
+            // *before* the call returns. This positions correctly
+            // regardless of the surrounding context: top-level view
+            // body, inside an each() render callback, or any nested
+            // scope.
+            injected = true
+            const inner = ts.visitEachChild(
+              n,
+              (c) => visitNode(c, localFns),
+              ctx,
+            ) as ts.CallExpression
+            return f.createParenthesizedExpression(
+              f.createBinaryExpression(
+                emitRegisterCall(variants, f),
+                f.createToken(ts.SyntaxKind.CommaToken),
+                inner,
+              ),
+            )
+          }
+        }
+      }
+      return ts.visitEachChild(n, (c) => visitNode(c, localFns), ctx)
+    }
+
+    return (sf) => rewriteBlock(sf)
+  }
+
+  const result = ts.transform(node, [transformer])
+  const out = result.transformed[0] as ts.SourceFile
+  result.dispose()
+  return { sf: out, injected }
+}
+
 /**
- * Recursively walk the handler body collecting every literal type
- * string from `<id>({ type: 'literal', … })` call sites. De-dupes
- * while preserving first-seen order so the emitted array reads
- * naturally for anyone inspecting the compiled output.
+ * Collect `const fn = (m) => { … }` / `const fn = function(m){ … }`
+ * declarations in `stmts` so an identifier passed to a connect call
+ * later in the same scope can resolve to its body. Conservative —
+ * only direct function-valued initializers count; aliasing
+ * (`const a = b`) is not followed.
+ */
+function collectLocalFns(
+  stmts: ts.NodeArray<ts.Statement>,
+): Map<string, ts.ArrowFunction | ts.FunctionExpression> {
+  const out = new Map<string, ts.ArrowFunction | ts.FunctionExpression>()
+  for (const stmt of stmts) {
+    if (!ts.isVariableStatement(stmt)) continue
+    for (const decl of stmt.declarationList.declarations) {
+      if (!ts.isIdentifier(decl.name)) continue
+      const init = decl.initializer
+      if (init && (ts.isArrowFunction(init) || ts.isFunctionExpression(init))) {
+        out.set(decl.name.text, init)
+      }
+    }
+  }
+  return out
+}
+
+function isConnectCallShape(node: ts.CallExpression): boolean {
+  if (!ts.isPropertyAccessExpression(node.expression)) return false
+  if (node.expression.name.text !== 'connect') return false
+  return node.arguments.length >= 2
+}
+
+function resolveSendFn(
+  arg: ts.Expression,
+  localFns: Map<string, ts.ArrowFunction | ts.FunctionExpression>,
+): ts.ArrowFunction | ts.FunctionExpression | null {
+  if (ts.isArrowFunction(arg) || ts.isFunctionExpression(arg)) return arg
+  if (ts.isIdentifier(arg)) return localFns.get(arg.text) ?? null
+  return null
+}
+
+function emitRegisterCall(variants: readonly string[], f: ts.NodeFactory): ts.CallExpression {
+  return f.createCallExpression(f.createIdentifier('__registerScopeVariants'), undefined, [
+    f.createArrayLiteralExpression(
+      variants.map((v) => f.createStringLiteral(v)),
+      false,
+    ),
+  ])
+}
+
+// ── Shared: literal-send variant collection ──────────────────────────
+
+/**
+ * Recursively walk `node`, collecting every literal type string from
+ * `<id>({ type: 'literal', … })` call sites. De-dupes while preserving
+ * first-seen order so the emitted array reads naturally for anyone
+ * inspecting the compiled output.
  */
 function collectLiteralSendVariants(node: ts.Node): string[] {
   const seen = new Set<string>()
@@ -129,39 +285,4 @@ function readTypeLiteral(obj: ts.ObjectLiteralExpression): string | null {
     if (ts.isNoSubstitutionTemplateLiteral(init)) return init.text
   }
   return null
-}
-
-/**
- * Build `Object.assign(<arrow>, { __lluiVariants: ['X', 'Y'] })`.
- *
- * The wrapper is intentionally a member-call expression rather than a
- * runtime helper from `@llui/dom`: emitting an Object.assign call
- * keeps the compiled output inspectable (no opaque imports), avoids
- * dragging a new identifier into the user's import list, and lets the
- * JS engine inline the assignment cheaply.
- */
-function wrapWithVariants(
-  arrow: ts.ArrowFunction | ts.FunctionExpression,
-  variants: readonly string[],
-  f: ts.NodeFactory,
-): ts.CallExpression {
-  return f.createCallExpression(
-    f.createPropertyAccessExpression(f.createIdentifier('Object'), 'assign'),
-    undefined,
-    [
-      arrow,
-      f.createObjectLiteralExpression(
-        [
-          f.createPropertyAssignment(
-            '__lluiVariants',
-            f.createArrayLiteralExpression(
-              variants.map((v) => f.createStringLiteral(v)),
-              false,
-            ),
-          ),
-        ],
-        false,
-      ),
-    ],
-  )
 }

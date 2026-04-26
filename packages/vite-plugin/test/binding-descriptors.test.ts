@@ -1,6 +1,9 @@
 import { describe, it, expect } from 'vitest'
 import ts from 'typescript'
-import { tagEventHandlerSends } from '../src/binding-descriptors.js'
+import {
+  tagEventHandlerSends,
+  injectScopeVariantRegistrations,
+} from '../src/binding-descriptors.js'
 
 /**
  * Run the tagger pass against a source snippet and emit the
@@ -129,5 +132,104 @@ describe('tagEventHandlerSends — non-tagging cases', () => {
   it('skips template literals with interpolations', () => {
     const out = emit('const v = button({ onClick: () => send({ type: `cmd:${suffix}` }) }, [])')
     expect(out).not.toContain('__lluiVariants')
+  })
+})
+
+// ── Pass 2: connect-pattern injector ────────────────────────────────
+
+function emitInject(source: string): { out: string; injected: boolean } {
+  const sf = ts.createSourceFile('view.ts', source, ts.ScriptTarget.Latest, true)
+  const result = injectScopeVariantRegistrations(sf, ts.factory)
+  const printer = ts.createPrinter({ newLine: ts.NewLineKind.LineFeed })
+  return { out: printer.printFile(result.sf), injected: result.injected }
+}
+
+describe('injectScopeVariantRegistrations — happy path', () => {
+  it('emits __registerScopeVariants adjacent to *.connect calls with literal-dispatch sendFns', () => {
+    const { out, injected } = emitInject(`
+      const sendPopover = (m) => {
+        if (m.type === 'open') dispatch({ type: 'Editor/OpenCell' })
+        else dispatch({ type: 'Editor/Close' })
+      }
+      const parts = popover.connect(getPopoverState, sendPopover, { id })
+    `)
+    expect(injected).toBe(true)
+    // Comma-expression form: keeps the connect call's return value
+    // (so `const parts = ...` still binds it) while ensuring the
+    // registration fires before the call itself.
+    expect(out).toContain(
+      `(__registerScopeVariants(["Editor/OpenCell", "Editor/Close"]), popover.connect(`,
+    )
+  })
+
+  it('handles inline arrow as the sendFn argument', () => {
+    const { out, injected } = emitInject(`
+      const parts = dialog.connect(get, (m) => {
+        if (m.type === 'close') dispatch({ type: 'Confirm/Close' })
+      }, opts)
+    `)
+    expect(injected).toBe(true)
+    expect(out).toContain(`__registerScopeVariants(["Confirm/Close"])`)
+  })
+
+  it('does nothing when the sendFn body has no literal dispatches', () => {
+    const { injected } = emitInject(`
+      const sendThru = (m) => libCall(m)
+      const parts = popover.connect(get, sendThru, opts)
+    `)
+    expect(injected).toBe(false)
+  })
+
+  it('skips non-connect call patterns even if they look similar', () => {
+    const { out, injected } = emitInject(`
+      const sendPopover = (m) => dispatch({ type: 'X' })
+      const result = popover.attach(get, sendPopover, opts)
+    `)
+    expect(injected).toBe(false)
+    expect(out).not.toContain('__registerScopeVariants')
+  })
+
+  it('matches multiple connect calls in the same scope', () => {
+    const { out, injected } = emitInject(`
+      const sendA = (m) => dispatch({ type: 'A' })
+      const sendB = (m) => dispatch({ type: 'B' })
+      const a = popover.connect(get, sendA)
+      const b = dialog.connect(get, sendB)
+    `)
+    expect(injected).toBe(true)
+    expect(out).toContain('__registerScopeVariants(["A"])')
+    expect(out).toContain('__registerScopeVariants(["B"])')
+  })
+
+  it('matches a connect call deep inside a render callback (each item)', () => {
+    const { out, injected } = emitInject(`
+      view: ({ each }) => each((s) => s.cells, (cell) => {
+        const sendPopover = (m) => dispatch({ type: 'Editor/OpenCell' })
+        const parts = popover.connect(get, sendPopover)
+        return div(parts.trigger, [])
+      })
+    `)
+    expect(injected).toBe(true)
+    expect(out).toContain('__registerScopeVariants(["Editor/OpenCell"])')
+  })
+
+  it('skips when the sendFn identifier resolves to a non-function', () => {
+    const { injected } = emitInject(`
+      const notAFn = { foo: 'bar' }
+      const parts = popover.connect(get, notAFn, opts)
+    `)
+    expect(injected).toBe(false)
+  })
+
+  it('skips when the sendFn identifier is not declared locally (cross-file ref)', () => {
+    // `importedSend` could be a tagged function in a different
+    // module. The compiler's analysis is per-file; cross-file
+    // resolution is intentionally not performed here. Apps relying
+    // on imported send translators declare `agentAffordances`
+    // instead.
+    const { injected } = emitInject(`
+      const parts = popover.connect(get, importedSend, opts)
+    `)
+    expect(injected).toBe(false)
   })
 })

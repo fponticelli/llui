@@ -1,6 +1,7 @@
 import type { ComponentInstance } from './update-loop.js'
 import type { Lifetime } from './types.js'
 import { addDisposer } from './lifetime.js'
+import { getRenderContext } from './render-context.js'
 
 /**
  * A single agent-dispatchable variant tied to currently-rendered UI.
@@ -90,4 +91,31 @@ export function getBindingDescriptors(inst: ComponentInstance): BindingDescripto
   const out: BindingDescriptor[] = []
   for (const variant of reg.counts.keys()) out.push({ variant })
   return out
+}
+
+/**
+ * Compiler-emitted runtime helper. The vite-plugin's `*.connect(get,
+ * sendFn, ...)` pattern matcher emits a call to this function
+ * immediately before each connect call, with the variants statically
+ * discovered in `sendFn`'s body — covering the dispatch-translation
+ * layers that the event-handler tagger can't follow (a library
+ * onClick calls the user's `sendFn`, which in turn calls
+ * `dispatch(translatedMsg)`; static analysis of the library's onClick
+ * can't see across that hop).
+ *
+ * Reads the active render context's `instance` and `rootLifetime` —
+ * which is the right scope automatically: when invoked from the
+ * top-level view body, registers on the component's root scope; when
+ * invoked from inside an `each(...)` render callback, the active
+ * `rootLifetime` is the per-item scope, so the registration ties to
+ * that item's lifetime and unregisters on item removal.
+ *
+ * No-op outside a render context (the compiler shouldn't emit it
+ * elsewhere, but defending against runtime mis-use is cheap).
+ */
+export function __registerScopeVariants(variants: readonly string[]): void {
+  if (variants.length === 0) return
+  const ctx = getRenderContext('__registerScopeVariants')
+  if (!ctx.instance) return
+  registerBindingVariants(ctx.instance, ctx.rootLifetime, variants)
 }

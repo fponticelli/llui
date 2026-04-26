@@ -4,7 +4,7 @@ import { extractMsgSchema, extractEffectSchema } from './msg-schema.js'
 import { extractMsgAnnotations, type MessageAnnotations } from './msg-annotations.js'
 import { extractStateSchema, type StateType } from './state-schema.js'
 import { computeSchemaHash } from './schema-hash.js'
-import { tagEventHandlerSends } from './binding-descriptors.js'
+import { tagEventHandlerSends, injectScopeVariantRegistrations } from './binding-descriptors.js'
 import { compilerCache } from './compiler-cache.js'
 
 function createMaskLiteral(f: ts.NodeFactory, mask: number): ts.Expression {
@@ -251,8 +251,18 @@ export function transformLlui(
   // exactly the affordances currently rendered. Gated on
   // dev/agent-metadata mode so production bundles without agent
   // integration don't pay the per-handler `Object.assign` cost.
+  let scopeRegistrationsInjected = false
   if (devMode || emitAgentMetadata) {
     sourceFile = tagEventHandlerSends(sourceFile, ts.factory)
+    // Connect-pattern pass: detects `*.connect(get, sendFn, …)` call
+    // sites and inserts a runtime `__registerScopeVariants([...])`
+    // adjacent to each, with the variants statically extracted from
+    // the sendFn's body. Handles the dispatch-translation case the
+    // event-handler tagger can't follow (library onClick → user's
+    // sendFn → user's dispatch).
+    const injection = injectScopeVariantRegistrations(sourceFile, ts.factory)
+    sourceFile = injection.sf
+    scopeRegistrationsInjected = injection.injected
   }
 
   // Pass 2 pre-scan: collect all state access paths
@@ -521,6 +531,7 @@ export function transformLlui(
     usesMemo,
     usesApplyBinding,
     usesCloneStaticTemplate,
+    scopeRegistrationsInjected,
     f,
   )
 
@@ -3071,6 +3082,7 @@ function cleanupImports(
   usesMemo: boolean,
   usesApplyBinding: boolean,
   usesCloneStaticTemplate: boolean,
+  usesRegisterScopeVariants: boolean,
   f: ts.NodeFactory,
 ): ts.SourceFile {
   if (
@@ -3079,7 +3091,8 @@ function cleanupImports(
     !usesElSplit &&
     !usesMemo &&
     !usesApplyBinding &&
-    !usesCloneStaticTemplate
+    !usesCloneStaticTemplate &&
+    !usesRegisterScopeVariants
   )
     return sf
 
@@ -3119,6 +3132,18 @@ function cleanupImports(
     if (!clause.namedBindings.elements.some((s) => s.name.text === '__handleMsg')) {
       remaining.push(f.createImportSpecifier(false, undefined, f.createIdentifier('__handleMsg')))
     }
+  }
+
+  // The connect-pattern injector (binding-descriptors.ts) emits
+  // `__registerScopeVariants([...])` calls; ensure the runtime
+  // helper is imported when at least one was inserted.
+  const hasRegisterScopeVariants = clause.namedBindings.elements.some(
+    (s) => s.name.text === '__registerScopeVariants',
+  )
+  if (!hasRegisterScopeVariants && usesRegisterScopeVariants) {
+    remaining.push(
+      f.createImportSpecifier(false, undefined, f.createIdentifier('__registerScopeVariants')),
+    )
   }
 
   const newBindings = f.createNamedImports(remaining)

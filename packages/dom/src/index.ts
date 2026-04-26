@@ -27,6 +27,11 @@ export { createView, type View } from './view-helpers.js'
 
 export { mountApp, hydrateApp, mountAtAnchor, hydrateAtAnchor, type MountOptions } from './mount.js'
 export type { BindingDescriptor } from './binding-descriptors.js'
+// Compiler-emitted runtime helper for the `*.connect(get, sendFn, …)`
+// pattern. User code never imports this directly — the vite-plugin's
+// connect-pattern matcher inserts the import + call sites
+// automatically alongside the existing event-handler tagger.
+export { __registerScopeVariants } from './binding-descriptors.js'
 // installDevTools is NOT re-exported here to keep it out of production bundles.
 // Import directly: import { installDevTools } from '@llui/dom/devtools'
 export type { LluiDebugAPI, ElementReport, MessageRecord, StateDiff } from './devtools.js'

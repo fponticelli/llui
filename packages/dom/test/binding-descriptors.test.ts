@@ -144,6 +144,44 @@ describe('binding-descriptors — runtime registry', () => {
     }
   })
 
+  it('__registerScopeVariants registers against the active render scope', async () => {
+    // The compiler emits `__registerScopeVariants(['…'])` adjacent to
+    // every `<bag>.connect(get, sendFn, …)` call site, with the
+    // variants statically extracted from `sendFn`'s body. This test
+    // exercises the helper directly (compiler emission is tested in
+    // @llui/vite-plugin) and verifies the scope plumbing.
+    const { __registerScopeVariants } = await import('../src/binding-descriptors.js')
+
+    type State = { n: number }
+    type Msg = { type: 'noop' }
+    const App: ComponentDef<State, Msg, never> = component<State, Msg, never>({
+      name: 'ScopeRegister',
+      init: () => [{ n: 0 }, []],
+      update: (s) => [s, []],
+      view: () => {
+        // Calling the helper at view-eval time mirrors what the
+        // compiler does — runs inside the render context, registers
+        // on the component's root scope.
+        __registerScopeVariants(['Editor/OpenCell', 'Editor/Close'])
+        return [div([text('view')])]
+      },
+    })
+
+    const root = document.createElement('div')
+    document.body.appendChild(root)
+    const handle = mountApp(root, App)
+    try {
+      const variants = handle
+        .getBindingDescriptors()
+        .map((d) => d.variant)
+        .sort()
+      expect(variants).toEqual(['Editor/Close', 'Editor/OpenCell'])
+    } finally {
+      handle.dispose()
+      root.remove()
+    }
+  })
+
   it('records multiple distinct variants from one handler', () => {
     type State = { n: number }
     type Msg = { type: 'a' } | { type: 'b' }
