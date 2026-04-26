@@ -19,6 +19,8 @@ import { agentMissingIntentRule } from './rules/agent-missing-intent.js'
 import { agentExclusiveAnnotationsRule } from './rules/agent-exclusive-annotations.js'
 import { agentNonextractableHandlerRule } from './rules/agent-nonextractable-handler.js'
 import { agentMsgResolvableRule } from './rules/agent-msg-resolvable.js'
+import { agentWarningOnConfirmRule } from './rules/agent-warning-on-confirm.js'
+import { agentExampleOnPayloadRule } from './rules/agent-example-on-payload.js'
 import { pureUpdateFunctionRule } from './rules/pure-update-function.js'
 
 export const rules = {
@@ -43,6 +45,8 @@ export const rules = {
   'agent-exclusive-annotations': agentExclusiveAnnotationsRule,
   'agent-nonextractable-handler': agentNonextractableHandlerRule,
   'agent-msg-resolvable': agentMsgResolvableRule,
+  'agent-warning-on-confirm': agentWarningOnConfirmRule,
+  'agent-example-on-payload': agentExampleOnPayloadRule,
   'pure-update-function': pureUpdateFunctionRule,
 }
 
@@ -83,6 +87,12 @@ export const configs = {
       'llui/agent-exclusive-annotations': 'error',
       'llui/agent-nonextractable-handler': 'error',
       'llui/agent-msg-resolvable': 'error',
+      // The two new annotation-completeness rules ship as `warn`
+      // because missing @warning / @example don't break the LAP wire
+      // — they just hide context from the LLM. Apps that want CI to
+      // gate on full LLM-readability can bump to `error` themselves.
+      'llui/agent-warning-on-confirm': 'warn',
+      'llui/agent-example-on-payload': 'warn',
       'llui/pure-update-function': 'error',
     },
   },
@@ -96,6 +106,8 @@ export const configs = {
       'llui/agent-exclusive-annotations': 'error',
       'llui/agent-nonextractable-handler': 'error',
       'llui/agent-msg-resolvable': 'error',
+      'llui/agent-warning-on-confirm': 'warn',
+      'llui/agent-example-on-payload': 'warn',
     },
   },
 }
