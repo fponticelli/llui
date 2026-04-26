@@ -242,6 +242,13 @@ function makeReplacementHandle<S, M, E>(
         ;(typedInst.def as { onEffect?: typeof newOnEffect }).onEffect = newOnEffect
       }
     },
+    runReducer(msg) {
+      if (disposed) return null
+      const [state, effects] = (
+        typedInst.def.update as (s: unknown, m: unknown) => [unknown, unknown[]]
+      )(typedInst.state, msg)
+      return { state, effects: effects as unknown[] }
+    },
   }
 }
 

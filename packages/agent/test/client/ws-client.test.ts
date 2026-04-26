@@ -69,6 +69,7 @@ function makeRpcHosts(): RpcHosts {
     getAgentContext: () => null,
     getRootElement: () => null,
     proposeConfirm: vi.fn(),
+    runReducer: () => null,
   }
 }
 

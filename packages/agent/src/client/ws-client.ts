@@ -8,6 +8,7 @@ import type {
 } from '../protocol.js'
 import { handleGetState, type GetStateHost } from './rpc/get-state.js'
 import { handleQueryState, type QueryStateHost } from './rpc/query-state.js'
+import { handleWouldDispatch, type WouldDispatchHost } from './rpc/would-dispatch.js'
 import { handleSendMessage, type SendMessageHost } from './rpc/send-message.js'
 import { handleListActions, type ListActionsHost } from './rpc/list-actions.js'
 import { handleQueryDom, type QueryDomHost } from './rpc/query-dom.js'
@@ -32,7 +33,8 @@ export type RpcHosts = GetStateHost &
   QueryDomHost &
   DescribeVisibleHost &
   DescribeContextHost &
-  ObserveHost
+  ObserveHost &
+  WouldDispatchHost
 
 export type HelloBuilder = () => HelloFrame
 
@@ -186,6 +188,8 @@ async function dispatch(tool: string, args: unknown, rpc: RpcHosts): Promise<unk
       return handleDescribeContext(rpc)
     case 'observe':
       return handleObserve(rpc)
+    case 'would_dispatch':
+      return handleWouldDispatch(rpc, args as never)
     default:
       throw { code: 'invalid', detail: `unknown tool: ${tool}` }
   }
@@ -199,6 +203,7 @@ const READ_TOOLS = new Set([
   'query_dom',
   'describe_visible_content',
   'observe',
+  'would_dispatch',
 ])
 
 function getLogKindForTool(

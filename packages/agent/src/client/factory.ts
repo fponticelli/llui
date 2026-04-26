@@ -174,6 +174,10 @@ export function createAgentClient<State, Msg>(
     // no live UI binding — the agent should still see them as
     // affordances even though no human can click them.
     getMsgSchema: () => (opts.def.__msgSchema as MsgSchemaShape | undefined) ?? null,
+    // Run the reducer in isolation for `would_dispatch`. Wraps the
+    // AppHandle's same-named method so the host doesn't need a direct
+    // reference to the live ComponentInstance.
+    runReducer: (msg) => opts.handle.runReducer(msg),
     // Live binding descriptors: read from the runtime registry that
     // tracks which Msg variants are dispatchable from currently-mounted
     // event handlers. Empty array when the app wasn't compiled with

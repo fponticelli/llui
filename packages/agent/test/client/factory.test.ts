@@ -91,6 +91,7 @@ function makeHandle(initialState: FakeState) {
     // can return an empty array; tests that do should override.
     getBindingDescriptors: () => [] as Array<{ variant: string }>,
     swapUpdate: vi.fn(),
+    runReducer: () => null,
   }
   return handle
 }

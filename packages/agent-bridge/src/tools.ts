@@ -118,6 +118,19 @@ export const TOOL_DESCRIPTORS: ToolDescriptor[] = [
   },
   {
     kind: 'forward',
+    name: 'would_dispatch',
+    description:
+      'Predict what dispatching `msg` would do without committing it. Runs the reducer in isolation against current state and returns `{stateDiff, effects}`. Effects are listed but NOT executed — the cloud is not hit, analytics do not fire. Use this to weigh a candidate action before sending: "if I dispatch X, will it change Y?" Pure-reducer assumption: if the reducer branches on Date.now() / localStorage / random, prediction drifts from real dispatch by exactly that impurity.',
+    schema: z.object({
+      msg: z
+        .object({ type: z.string() })
+        .passthrough()
+        .describe('The candidate message; must have a `type` string'),
+    }),
+    lapPath: '/would-dispatch',
+  },
+  {
+    kind: 'forward',
     name: 'list_actions',
     description:
       'Return the currently-affordable actions: visible UI bindings plus agent-affordable registry entries, filtered by annotation gates. Legacy — prefer `observe`, which includes this as `actions`.',

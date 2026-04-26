@@ -272,6 +272,25 @@ export interface AppHandle {
     newUpdate: (state: unknown, msg: unknown) => [unknown, unknown[]],
     newOnEffect?: unknown,
   ): void
+  /**
+   * Run the reducer in isolation against the current state. Returns
+   * `[newState, effects]` — the reducer's literal output without any
+   * commit, flush, or effect-handler invocation. Used by the agent's
+   * `would_dispatch` tool to predict what a candidate dispatch would
+   * do before committing to it.
+   *
+   * Pure-reducer assumption: TEA mandates `update` be pure. LLui's
+   * runtime treats it that way too (no speculative re-runs for any
+   * other reason). Apps whose reducers branch on `Date.now()` or
+   * read `localStorage` will see prediction drift from real dispatch
+   * by exactly that amount of impurity — surface as documented at
+   * the agent's call site, not silently corrected here.
+   *
+   * **No effects fire.** Effect descriptors are returned for the
+   * agent to inspect; `onEffect` is not called. This is the entire
+   * point of the API.
+   */
+  runReducer(msg: unknown): { state: unknown; effects: unknown[] } | null
 }
 
 // ── Lifetime ─────────────────────────────────────────────────────────

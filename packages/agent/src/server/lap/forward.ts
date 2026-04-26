@@ -93,6 +93,19 @@ export const handleLapDescribeVisible = makeForwardHandler('describe_visible_con
 
 export const handleLapContext = makeForwardHandler('describe_context', () => ({}))
 
+export const handleLapWouldDispatch = makeForwardHandler('would_dispatch', (body) => {
+  const b = (body ?? {}) as { msg?: unknown }
+  if (
+    b.msg === null ||
+    b.msg === undefined ||
+    typeof b.msg !== 'object' ||
+    typeof (b.msg as { type?: unknown }).type !== 'string'
+  ) {
+    return null
+  }
+  return { msg: b.msg }
+})
+
 /**
  * Read recent log entries from the pairing registry's ring buffer.
  * Server-side only — no round-trip to the browser. Used by the

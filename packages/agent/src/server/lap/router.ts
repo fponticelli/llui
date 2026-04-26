@@ -7,6 +7,7 @@ import {
   handleLapDescribeVisible,
   handleLapContext,
   handleLapRecentActions,
+  handleLapWouldDispatch,
   type ForwardDeps,
 } from './forward.js'
 import { handleLapMessage } from './message.js'
@@ -50,6 +51,8 @@ export function createLapRouter(
         return handleLapObserve(req, deps)
       case '/recent-actions':
         return handleLapRecentActions(req, deps)
+      case '/would-dispatch':
+        return handleLapWouldDispatch(req, deps)
       default:
         return null
     }

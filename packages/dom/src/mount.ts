@@ -610,6 +610,18 @@ function buildAppHandle<S, M, E>(
         ;(inst.def as { onEffect?: typeof newOnEffect }).onEffect = newOnEffect
       }
     },
+    runReducer(msg) {
+      if (disposed) return null
+      // Direct invocation against current state. No subscribe, no
+      // flush, no effect handler. The reducer's contract per TEA is
+      // a pure function — calling it twice with the same args is a
+      // no-op other than allocations. Returning the raw tuple
+      // shape lets the agent inspect both halves without interpreting.
+      const [state, effects] = (
+        inst.def.update as (s: unknown, m: unknown) => [unknown, unknown[]]
+      )(inst.state, msg)
+      return { state, effects: effects as unknown[] }
+    },
   }
 }
 

@@ -105,6 +105,7 @@ function makeFakeRpcHost(state: unknown): RpcHosts {
     getAgentContext: () => null,
     getRootElement: () => null,
     proposeConfirm: () => {},
+    runReducer: () => null,
   }
 }
 
