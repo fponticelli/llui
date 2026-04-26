@@ -113,6 +113,37 @@ describe('binding-descriptors — runtime registry', () => {
     root.remove()
   })
 
+  it('also registers via the compiled elSplit path', async () => {
+    // The compiler rewrites `button({onClick: …}, [...])` into
+    // `elSplit('button', staticFn, events, bindings, children)`. The
+    // raw and compiled paths must both honor the `__lluiVariants`
+    // tag so live agent affordances work in built apps too.
+    const { elSplit } = await import('../src/el-split.js')
+
+    type State = { n: number }
+    type Msg = { type: 'inc' }
+    const App: ComponentDef<State, Msg, never> = component<State, Msg, never>({
+      name: 'ElSplitPath',
+      init: () => [{ n: 0 }, []],
+      update: (s) => [s, []],
+      view: ({ send }) => [
+        elSplit('button', null, [['click', tag(() => send({ type: 'inc' }), ['inc'])]], null, [
+          '+',
+        ]),
+      ],
+    })
+
+    const root = document.createElement('div')
+    document.body.appendChild(root)
+    const handle = mountApp(root, App)
+    try {
+      expect(handle.getBindingDescriptors()).toEqual([{ variant: 'inc' }])
+    } finally {
+      handle.dispose()
+      root.remove()
+    }
+  })
+
   it('records multiple distinct variants from one handler', () => {
     type State = { n: number }
     type Msg = { type: 'a' } | { type: 'b' }

@@ -2,6 +2,7 @@ import type { BindingKind } from './types.js'
 import { getRenderContext } from './render-context.js'
 import { createBinding, applyBinding } from './binding.js'
 import { addCheckedItemUpdater } from './lifetime.js'
+import { registerBindingVariants } from './binding-descriptors.js'
 
 export function elSplit(
   tag: string,
@@ -24,6 +25,17 @@ export function elSplit(
 
   if (events) {
     for (const [eventName, handler] of events) {
+      // Compiler-tagged variants — same protocol as the raw
+      // `createElement` path in `elements.ts`. The vite-plugin's
+      // tagger wraps event-handler arrows containing literal
+      // `send({type:'X'})` calls with `Object.assign(arrow,
+      // {__lluiVariants: ['X', …]})`. Register those so the agent
+      // layer's `list_actions` reflects the live UI affordances.
+      const variants = (handler as { __lluiVariants?: readonly string[] } | null | undefined)
+        ?.__lluiVariants
+      if (variants && variants.length > 0 && ctx.instance) {
+        registerBindingVariants(ctx.instance, ctx.rootLifetime, variants)
+      }
       el.addEventListener(eventName, handler)
     }
   }
