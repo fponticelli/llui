@@ -3,6 +3,7 @@ import ts from 'typescript'
 import {
   tagEventHandlerSends,
   injectScopeVariantRegistrations,
+  tagDispatchTranslators,
 } from '../src/binding-descriptors.js'
 
 /**
@@ -278,13 +279,119 @@ describe('injectScopeVariantRegistrations — happy path', () => {
     // Real pattern from decisive.space-2/auth-section.ts: the bag is
     // built once at module load and shared across views. There's no
     // render context active when module code runs, so emitting a
-    // registration would crash. Apps using this pattern declare
-    // `agentAffordances` for the affordances they want surfaced.
+    // registration would crash. The translator tagger (Pass 3) closes
+    // this gap by tagging `sendMenu` itself; library `*.connect`
+    // impls then propagate the tag onto returned handlers via
+    // `tagSend`, so module-scope translators surface their variants
+    // when the user spreads bag keys onto an element in some view.
     const { out, injected } = emitInject(`
       const sendMenu = (m) => dispatch({ type: 'Auth/UserMenu' })
       const parts = menu.connect(get, sendMenu, { id: 'user-menu' })
     `)
     expect(injected).toBe(false)
     expect(out).not.toContain('__registerScopeVariants')
+  })
+})
+
+// ── Pass 3: dispatch-translator tagger ──────────────────────────────
+
+function emitTrans(source: string): string {
+  const sf = ts.createSourceFile('view.ts', source, ts.ScriptTarget.Latest, true)
+  const tagged = tagDispatchTranslators(sf, ts.factory)
+  const printer = ts.createPrinter({ newLine: ts.NewLineKind.LineFeed })
+  return printer.printFile(tagged)
+}
+
+describe('tagDispatchTranslators — happy path', () => {
+  it('tags a const-bound arrow translator at module scope', () => {
+    // The motivating case: module-scope translator paired with a
+    // module-scope `*.connect(...)` (decisive.space-2 auth-section).
+    // Pass 2 deliberately skips this because eager registration would
+    // run outside any render context. Pass 3 instead tags the
+    // function so the variants ride along with the reference; the
+    // library `*.connect` impl propagates them onto returned handlers
+    // via `tagSend`, and the variants finally register at element
+    // bind time (which is always inside a render context).
+    const out = emitTrans(`const sendMenu = (m) => dispatch({ type: 'Auth/UserMenu' })`)
+    expect(out).toContain(`__lluiVariants: ["Auth/UserMenu"]`)
+    expect(out).toContain(`Object.assign((m) => dispatch({ type: 'Auth/UserMenu' })`)
+  })
+
+  it('tags a const-bound function expression translator', () => {
+    const out = emitTrans(`const sendMenu = function (m) { dispatch({ type: 'X' }) }`)
+    expect(out).toContain(`__lluiVariants: ["X"]`)
+  })
+
+  it('discovers multiple variants from branched translator dispatches', () => {
+    const out = emitTrans(`
+      const sendMenu = (m) => {
+        if (m.type === 'open') dispatch({ type: 'Open' })
+        else dispatch({ type: 'Close' })
+      }
+    `)
+    expect(out).toContain(`__lluiVariants: ["Open", "Close"]`)
+  })
+
+  it('tags translators declared inside a view function', () => {
+    // Same as Pass 2 covers via __registerScopeVariants, but Pass 3
+    // produces a redundant tag on the function itself. The double
+    // registration (one eager via Pass 2, one lazy via the binding)
+    // refcounts cleanly: each path increments and decrements the same
+    // variant key independently.
+    const out = emitTrans(`
+      const App = component({
+        view: () => {
+          const sendPopover = (m) => dispatch({ type: 'X' })
+          return [div({}, [])]
+        }
+      })
+    `)
+    expect(out).toContain(`__lluiVariants: ["X"]`)
+  })
+
+  it('tags let and var declarations', () => {
+    expect(emitTrans(`let sendMenu = (m) => dispatch({ type: 'X' })`)).toContain(
+      `__lluiVariants: ["X"]`,
+    )
+    expect(emitTrans(`var sendMenu = (m) => dispatch({ type: 'Y' })`)).toContain(
+      `__lluiVariants: ["Y"]`,
+    )
+  })
+})
+
+describe('tagDispatchTranslators — non-tagging cases', () => {
+  it('skips functions whose body has no literal dispatches', () => {
+    expect(emitTrans(`const sendMenu = (m) => doSomething(m)`)).not.toContain('__lluiVariants')
+  })
+
+  it('skips dispatches with non-literal type fields', () => {
+    expect(emitTrans(`const sendMenu = (m) => dispatch({ type: msgType })`)).not.toContain(
+      '__lluiVariants',
+    )
+  })
+
+  it('leaves already-wrapped initializers alone', () => {
+    // User-applied `tagSend(...)` (or output of a previous run) shows
+    // up as a CallExpression in the initializer slot — not a bare
+    // arrow/function — so Pass 3 must not double-wrap.
+    const src = `const sendMenu = Object.assign((m) => dispatch({ type: 'X' }), { extra: true })`
+    expect(emitTrans(src)).not.toContain('__lluiVariants')
+  })
+
+  it('skips destructured bindings (no plain identifier name)', () => {
+    expect(emitTrans(`const { sendMenu } = createMenu()`)).not.toContain('__lluiVariants')
+  })
+
+  it('skips dispatches via property-access callee (e.g. store.dispatch)', () => {
+    // collectLiteralSendVariants only matches `<id>({type:'X'})`. A
+    // PropertyAccessExpression callee like `store.dispatch` is too
+    // ambiguous to treat as a Msg dispatcher — could be any setter.
+    expect(emitTrans(`const sendMenu = (m) => store.dispatch({ type: 'X' })`)).not.toContain(
+      '__lluiVariants',
+    )
+  })
+
+  it('skips non-function initializers', () => {
+    expect(emitTrans(`const config = { type: 'X' }`)).not.toContain('__lluiVariants')
   })
 })

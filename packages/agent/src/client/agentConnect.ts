@@ -1,4 +1,4 @@
-import type { Send } from '@llui/dom'
+import { tagSend, type Send } from '@llui/dom'
 import type { AgentSession, AgentToken } from '../protocol.js'
 import type { AgentEffect } from './effects.js'
 
@@ -224,7 +224,7 @@ export function connect<S>(
       'data-state': (s) => get(s).status,
     },
     mintTrigger: {
-      onClick: () => send({ type: 'Mint' }),
+      onClick: tagSend(send, ['Mint'], () => send({ type: 'Mint' })),
       disabled: (s) => {
         const cs = get(s)
         return cs.status === 'minting' || cs.status === 'pending-claude' || cs.status === 'active'
@@ -241,30 +241,34 @@ export function connect<S>(
       // Routing through update() keeps state reads out of event
       // handlers, which is what makes the static-bag-with-reactive-
       // accessors shape work cleanly.
-      onClick: () => send({ type: 'CopyConnectSnippet' }),
+      onClick: tagSend(send, ['CopyConnectSnippet'], () => send({ type: 'CopyConnectSnippet' })),
       disabled: (s) => get(s).pendingToken === null,
     },
     sessionsList: { 'data-part': 'sessions-list' },
     sessionItem: (tid) => ({ 'data-part': 'session-item', 'data-tid': tid }),
-    revokeButton: (tid) => ({ onClick: () => send({ type: 'Revoke', tid }) }),
+    revokeButton: (tid) => ({
+      onClick: tagSend(send, ['Revoke'], () => send({ type: 'Revoke', tid })),
+    }),
     resumeBanner: {
       'data-part': 'resume-banner',
       'data-visible': (s) => get(s).resumable.length > 0,
     },
     resumeItem: (tid) => ({ 'data-part': 'resume-item', 'data-tid': tid }),
-    resumeButton: (tid) => ({ onClick: () => send({ type: 'Resume', tid }) }),
+    resumeButton: (tid) => ({
+      onClick: tagSend(send, ['Resume'], () => send({ type: 'Resume', tid })),
+    }),
     dismissButton: (tid) => ({
       // For dismiss, we currently just remove the resumable record
       // locally. A "dismiss forever" flag could land in a follow-up;
       // for v1, dismiss is a client-side-only state prune by reusing
       // the Revoke Msg path with intent-split; for now emit Revoke
       // which both revokes server-side AND removes locally.
-      onClick: () => send({ type: 'Revoke', tid }),
+      onClick: tagSend(send, ['Revoke'], () => send({ type: 'Revoke', tid })),
     }),
     error: {
       'data-part': 'error',
       'data-visible': (s) => get(s).error !== null,
-      onClick: () => send({ type: 'ClearError' }),
+      onClick: tagSend(send, ['ClearError'], () => send({ type: 'ClearError' })),
     },
   }
 }

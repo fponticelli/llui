@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { component, mountApp, button, div, text } from '../src/index.js'
+import { component, mountApp, button, div, text, tagSend } from '../src/index.js'
 import type { ComponentDef } from '../src/types.js'
 
 /**
@@ -211,6 +211,116 @@ describe('binding-descriptors — runtime registry', () => {
     try {
       const descriptors = handle.getBindingDescriptors()
       expect(descriptors.map((d) => d.variant).sort()).toEqual(['a', 'b'])
+    } finally {
+      handle.dispose()
+      root.remove()
+    }
+  })
+})
+
+describe('tagSend — library helper for *.connect implementations', () => {
+  it('tags fn with libraryVariants when send is untagged (raw component send)', () => {
+    // Path 1: user passed their raw component send. The library's
+    // internal Msg is what update() receives directly, so the
+    // library's hand-listed variants ARE the user variants.
+    const send = (() => {}) as unknown as (m: { type: string }) => void
+    const handler = () => send({ type: 'open' })
+    const tagged = tagSend(send, ['open'], handler) as typeof handler & {
+      __lluiVariants?: readonly string[]
+    }
+    expect(tagged.__lluiVariants).toEqual(['open'])
+    // Identity-stable: the helper mutates fn, returns the same reference.
+    expect(tagged).toBe(handler)
+  })
+
+  it('prefers send.__lluiVariants when send is a tagged translator', () => {
+    // Path 2/3: user wrote `const sendMenu = (m) => dispatch({type:'X'})`.
+    // The compiler (Pass 3) tagged sendMenu. When the library calls
+    // `tagSend(sendMenu, ['open'], () => sendMenu(...))`, the agent
+    // should see 'X' (what update receives) — not 'open' (the
+    // library's internal Msg shape).
+    const sendMenu = Object.assign((_m: { type: string }) => {}, {
+      __lluiVariants: ['Auth/UserMenu', 'Auth/SignOut'] as const,
+    })
+    const handler = () => sendMenu({ type: 'open' })
+    const tagged = tagSend(sendMenu, ['open'], handler) as typeof handler & {
+      __lluiVariants?: readonly string[]
+    }
+    expect(tagged.__lluiVariants).toEqual(['Auth/UserMenu', 'Auth/SignOut'])
+  })
+
+  it('falls back to libraryVariants when send.__lluiVariants is empty', () => {
+    // An empty translator tag is treated as untagged. Defensive: a
+    // user that wrote `Object.assign(send, {__lluiVariants: []})`
+    // shouldn't accidentally suppress the library's own variants.
+    const send = Object.assign((_m: { type: string }) => {}, {
+      __lluiVariants: [] as readonly string[],
+    })
+    const handler = () => send({ type: 'open' })
+    const tagged = tagSend(send, ['open'], handler) as typeof handler & {
+      __lluiVariants?: readonly string[]
+    }
+    expect(tagged.__lluiVariants).toEqual(['open'])
+  })
+
+  it('skips tagging when both libraryVariants and send tag are empty', () => {
+    const send = (() => {}) as unknown as (m: { type: string }) => void
+    const handler = () => send({ type: 'open' })
+    const tagged = tagSend(send, [], handler) as typeof handler & {
+      __lluiVariants?: readonly string[]
+    }
+    expect(tagged.__lluiVariants).toBeUndefined()
+  })
+
+  it('tolerates null/undefined send arguments', () => {
+    // Some test harnesses pass null/undefined; the helper should
+    // degrade to libraryVariants rather than throw.
+    const handler = () => {}
+    const taggedNull = tagSend(null, ['X'], handler) as typeof handler & {
+      __lluiVariants?: readonly string[]
+    }
+    expect(taggedNull.__lluiVariants).toEqual(['X'])
+    const handler2 = () => {}
+    const taggedUndef = tagSend(undefined, ['Y'], handler2) as typeof handler2 & {
+      __lluiVariants?: readonly string[]
+    }
+    expect(taggedUndef.__lluiVariants).toEqual(['Y'])
+  })
+
+  it('end-to-end: tagged handler registers variants when bound to an element', () => {
+    // Simulates the full library pattern: user's translator passed to
+    // a library connect that wraps onClick with tagSend, then user
+    // spreads the bag onto a button. The variant should surface in
+    // getBindingDescriptors.
+    type State = { n: number }
+    type Msg = { type: 'Auth/UserMenu' }
+    const App: ComponentDef<State, Msg, never> = component<State, Msg, never>({
+      name: 'TagSendE2E',
+      init: () => [{ n: 0 }, []],
+      update: (s) => [s, []],
+      view: ({ send }) => {
+        // The user-written translator (Pass 3 would tag this in
+        // production; here we tag manually since this test file
+        // bypasses the compiler).
+        const sendMenu = Object.assign((_m: { type: string }) => send({ type: 'Auth/UserMenu' }), {
+          __lluiVariants: ['Auth/UserMenu'] as const,
+        })
+        // Simulate what `menu.connect(...)` would return:
+        const trigger = {
+          onClick: tagSend(sendMenu, ['open'], () => sendMenu({ type: 'open' })),
+        }
+        return [button(trigger, [text('menu')])]
+      },
+    })
+
+    const root = document.createElement('div')
+    document.body.appendChild(root)
+    const handle = mountApp(root, App)
+    try {
+      const descriptors = handle.getBindingDescriptors()
+      // Should be 'Auth/UserMenu' (translator's tag), NOT 'open'
+      // (library's internal variant). Translator tag wins.
+      expect(descriptors.map((d) => d.variant)).toEqual(['Auth/UserMenu'])
     } finally {
       handle.dispose()
       root.remove()

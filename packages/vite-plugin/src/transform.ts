@@ -4,7 +4,11 @@ import { extractMsgSchema, extractEffectSchema } from './msg-schema.js'
 import { extractMsgAnnotations, type MessageAnnotations } from './msg-annotations.js'
 import { extractStateSchema, type StateType } from './state-schema.js'
 import { computeSchemaHash } from './schema-hash.js'
-import { tagEventHandlerSends, injectScopeVariantRegistrations } from './binding-descriptors.js'
+import {
+  tagEventHandlerSends,
+  injectScopeVariantRegistrations,
+  tagDispatchTranslators,
+} from './binding-descriptors.js'
 import { compilerCache } from './compiler-cache.js'
 
 function createMaskLiteral(f: ts.NodeFactory, mask: number): ts.Expression {
@@ -263,6 +267,16 @@ export function transformLlui(
     const injection = injectScopeVariantRegistrations(sourceFile, ts.factory)
     sourceFile = injection.sf
     scopeRegistrationsInjected = injection.injected
+    // Translator-tagger pass: wraps const/let/var-bound arrow and
+    // function expressions whose body contains literal dispatches with
+    // `Object.assign(fn, {__lluiVariants: [...]})`. The tag travels
+    // with the function reference; downstream library `*.connect`
+    // implementations propagate it onto returned handlers via
+    // `tagSend`. Closes the module-scope translator gap that Pass 2
+    // skips by design (eager registration would no-op outside a
+    // render context). Runs last so Pass 2's `collectLocalFns` still
+    // sees raw arrow initializers when resolving sendFn references.
+    sourceFile = tagDispatchTranslators(sourceFile, ts.factory)
   }
 
   // Pass 2 pre-scan: collect all state access paths

@@ -32,6 +32,11 @@ export type { BindingDescriptor } from './binding-descriptors.js'
 // connect-pattern matcher inserts the import + call sites
 // automatically alongside the existing event-handler tagger.
 export { __registerScopeVariants } from './binding-descriptors.js'
+// Library helper for `*.connect` implementations — tags returned
+// event handlers with the variants they dispatch, so the runtime
+// binding-descriptor registry surfaces them to the agent layer's
+// `list_actions`. Library authors call this once per onClick.
+export { tagSend } from './binding-descriptors.js'
 // installDevTools is NOT re-exported here to keep it out of production bundles.
 // Import directly: import { installDevTools } from '@llui/dom/devtools'
 export type { LluiDebugAPI, ElementReport, MessageRecord, StateDiff } from './devtools.js'

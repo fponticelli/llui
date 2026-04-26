@@ -49,7 +49,7 @@ export function update(
 }
 
 // Connect bag:
-import { type Send } from '@llui/dom'
+import { tagSend, type Send } from '@llui/dom'
 
 // Sentinel for the memoization slot — distinguishable from any
 // possible parent state value (including null/undefined).
@@ -116,7 +116,7 @@ export function connect<S>(get: (s: S) => AgentLogState, send: Send<AgentLogMsg>
     }),
     filterControls: {
       clearButton: {
-        onClick: () => send({ type: 'Clear' }),
+        onClick: tagSend(send, ['Clear'], () => send({ type: 'Clear' })),
         disabled: (s) => get(s).entries.length === 0,
       },
       setFilter: (filter) => send({ type: 'SetFilter', filter }),

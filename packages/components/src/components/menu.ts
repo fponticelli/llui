@@ -1,5 +1,5 @@
 import type { Send, TransitionOptions } from '@llui/dom'
-import { show, portal, onMount, div } from '@llui/dom'
+import { show, portal, onMount, div, tagSend } from '@llui/dom'
 import { pushDismissable } from '../utils/dismissable.js'
 import { attachFloating, type Placement } from '../utils/floating.js'
 import {
@@ -236,39 +236,57 @@ export function connect<S>(
   const contentId = `${base}:content`
   const itemId = (v: string): string => `${base}:item:${v}`
 
-  const handleMenuKey = (e: KeyboardEvent): void => {
-    switch (e.key) {
-      case 'ArrowDown':
-        e.preventDefault()
-        send({ type: 'highlightNext' })
-        return
-      case 'ArrowUp':
-        e.preventDefault()
-        send({ type: 'highlightPrev' })
-        return
-      case 'Home':
-        e.preventDefault()
-        send({ type: 'highlightFirst' })
-        return
-      case 'End':
-        e.preventDefault()
-        send({ type: 'highlightLast' })
-        return
-      case 'Enter':
-      case ' ':
-        e.preventDefault()
-        send({ type: 'selectHighlighted' })
-        return
-      case 'Escape':
-        e.preventDefault()
-        send({ type: 'close' })
-        return
-      default:
-        if (isTypeaheadKey(e)) {
-          send({ type: 'typeahead', char: e.key, now: Date.now() })
-        }
-    }
-  }
+  // Keyboard navigation dispatches a fixed vocabulary of MenuMsg
+  // variants. `tagSend` propagates the user's translator tag (when
+  // `send` is a tagged dispatch translator) onto this handler so the
+  // agent's `list_actions` surfaces the user-side variants the
+  // translator forwards. Without a translator, the library variants
+  // listed here are what `update()` actually receives.
+  const handleMenuKey = tagSend(
+    send,
+    [
+      'highlightNext',
+      'highlightPrev',
+      'highlightFirst',
+      'highlightLast',
+      'selectHighlighted',
+      'close',
+      'typeahead',
+    ],
+    (e: KeyboardEvent): void => {
+      switch (e.key) {
+        case 'ArrowDown':
+          e.preventDefault()
+          send({ type: 'highlightNext' })
+          return
+        case 'ArrowUp':
+          e.preventDefault()
+          send({ type: 'highlightPrev' })
+          return
+        case 'Home':
+          e.preventDefault()
+          send({ type: 'highlightFirst' })
+          return
+        case 'End':
+          e.preventDefault()
+          send({ type: 'highlightLast' })
+          return
+        case 'Enter':
+        case ' ':
+          e.preventDefault()
+          send({ type: 'selectHighlighted' })
+          return
+        case 'Escape':
+          e.preventDefault()
+          send({ type: 'close' })
+          return
+        default:
+          if (isTypeaheadKey(e)) {
+            send({ type: 'typeahead', char: e.key, now: Date.now() })
+          }
+      }
+    },
+  )
 
   return {
     trigger: {
@@ -280,8 +298,8 @@ export function connect<S>(
       'data-state': (s) => (get(s).open ? 'open' : 'closed'),
       'data-scope': 'menu',
       'data-part': 'trigger',
-      onClick: () => send({ type: 'toggle' }),
-      onKeyDown: (e: KeyboardEvent) => {
+      onClick: tagSend(send, ['toggle'], () => send({ type: 'toggle' })),
+      onKeyDown: tagSend(send, ['open', 'highlightLast'], (e: KeyboardEvent) => {
         if (e.key === 'ArrowDown' || e.key === 'Enter' || e.key === ' ') {
           e.preventDefault()
           send({ type: 'open' })
@@ -290,7 +308,7 @@ export function connect<S>(
           send({ type: 'open' })
           send({ type: 'highlightLast' })
         }
-      },
+      }),
     },
     positioner: {
       'data-scope': 'menu',
@@ -318,11 +336,11 @@ export function connect<S>(
         'data-part': 'item',
         'data-value': value,
         tabIndex: -1,
-        onClick: () => {
+        onClick: tagSend(send, ['select'], () => {
           send({ type: 'select', value })
           opts.onSelect?.(value)
-        },
-        onPointerMove: () => send({ type: 'highlight', value }),
+        }),
+        onPointerMove: tagSend(send, ['highlight'], () => send({ type: 'highlight', value })),
       },
     }),
   }

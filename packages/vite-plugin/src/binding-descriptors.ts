@@ -111,6 +111,64 @@ function wrapWithVariants(
   )
 }
 
+// ── Pass 3: dispatch-translator tagger ──────────────────────────────
+
+/**
+ * Tags variable-bound arrow/function expressions whose body contains
+ * literal `<id>({type:'X', …})` dispatches with
+ * `Object.assign(fn, {__lluiVariants: ['X', …]})`. Complements Pass 1
+ * (event-handler arrows): translator functions are commonly declared
+ * once and passed by reference (`*.connect(get, sendMenu, …)`) — often
+ * at module top-level — so the inline-arrow tagger can't reach them.
+ *
+ * The tag travels with the function reference. Library `*.connect`
+ * implementations call `tagSend(send, libVariants, fn)` on each
+ * returned handler, which prefers `send.__lluiVariants` over
+ * `libVariants` so the agent surfaces the USER's variants (what
+ * `update()` actually receives) rather than the library's internal
+ * Msg shape.
+ *
+ * Module-scope is fine here — Pass 2's module-scope skip exists
+ * because eager `__registerScopeVariants(...)` would no-op outside a
+ * render context, but Pass 3's tag is read lazily at binding time
+ * (always inside a render context by definition).
+ *
+ * Already-wrapped initializers (CallExpressions, including
+ * user-applied `tagSend(...)` or prior compiler output) are left
+ * untouched — Pass 3 only fires when the initializer is a bare arrow
+ * or function expression.
+ *
+ * Pass ordering: Pass 1 → Pass 2 → Pass 3. Running Pass 3 last
+ * preserves Pass 2's `collectLocalFns` resolution: that helper looks
+ * for variable declarations whose initializer is itself an arrow or
+ * function expression, which Pass 3 would replace with a CallExpression
+ * wrapper.
+ */
+export function tagDispatchTranslators(node: ts.SourceFile, f: ts.NodeFactory): ts.SourceFile {
+  const transformer: ts.TransformerFactory<ts.SourceFile> = (ctx) => {
+    const visit: ts.Visitor = (n) => {
+      if (
+        ts.isVariableDeclaration(n) &&
+        ts.isIdentifier(n.name) &&
+        n.initializer &&
+        (ts.isArrowFunction(n.initializer) || ts.isFunctionExpression(n.initializer))
+      ) {
+        const variants = collectLiteralSendVariants(n.initializer.body)
+        if (variants.length > 0) {
+          const wrapped = wrapWithVariants(n.initializer, variants, f)
+          return f.updateVariableDeclaration(n, n.name, n.exclamationToken, n.type, wrapped)
+        }
+      }
+      return ts.visitEachChild(n, visit, ctx)
+    }
+    return (sf) => ts.visitEachChild(sf, visit, ctx) as ts.SourceFile
+  }
+  const result = ts.transform(node, [transformer])
+  const out = result.transformed[0] as ts.SourceFile
+  result.dispose()
+  return out
+}
+
 // ── Pass 2: connect-pattern registration injector ────────────────
 
 export interface InjectResult {

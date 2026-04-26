@@ -73,7 +73,7 @@ export function update(
 }
 
 // Connect bag:
-import { type Send } from '@llui/dom'
+import { tagSend, type Send } from '@llui/dom'
 
 /**
  * Static prop bag with reactive accessors. See agentConnect.ts for
@@ -122,11 +122,11 @@ export function connect<S>(
         'data-id': id,
       },
       approveButton: {
-        onClick: () => send({ type: 'Approve', id }),
+        onClick: tagSend(send, ['Approve'], () => send({ type: 'Approve', id })),
         disabled: (s) => findEntry(s, id)?.status !== 'pending',
       },
       rejectButton: {
-        onClick: () => send({ type: 'Reject', id }),
+        onClick: tagSend(send, ['Reject'], () => send({ type: 'Reject', id })),
         disabled: (s) => findEntry(s, id)?.status !== 'pending',
       },
       intentText: (s) => findEntry(s, id)?.intent ?? '',
