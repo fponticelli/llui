@@ -31,9 +31,7 @@ const ARRAY_ITERATION_METHODS = new Set([
  * `VariableDeclarator` initialiser. Mirrors the Vite scanner's
  * `findVariableDeclarationInScope`.
  */
-function resolveBindingInitializer(
-  ident: TSESTree.Identifier,
-): TSESTree.Expression | null {
+function resolveBindingInitializer(ident: TSESTree.Identifier): TSESTree.Expression | null {
   let scope: TSESTree.Node | undefined = ident.parent
   const seenFunctionBoundary = false
   void seenFunctionBoundary

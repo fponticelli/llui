@@ -90,8 +90,7 @@ export const exhaustiveUpdateRule = createRule({
     },
     schema: [],
     messages: {
-      missing:
-        "update() does not handle message type{{plural}} {{names}}.",
+      missing: 'update() does not handle message type{{plural}} {{names}}.',
     },
   },
   defaultOptions: [],

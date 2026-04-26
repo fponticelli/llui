@@ -545,17 +545,11 @@ async function buildEnrichedTypeIndex(
         true,
       )
       for (const targetStmt of targetSf.statements) {
-        if (
-          ts.isTypeAliasDeclaration(targetStmt) &&
-          targetStmt.name.text === located.localName
-        ) {
+        if (ts.isTypeAliasDeclaration(targetStmt) && targetStmt.name.text === located.localName) {
           index.set(localName, targetStmt.type)
           break
         }
-        if (
-          ts.isInterfaceDeclaration(targetStmt) &&
-          targetStmt.name.text === located.localName
-        ) {
+        if (ts.isInterfaceDeclaration(targetStmt) && targetStmt.name.text === located.localName) {
           index.set(localName, targetStmt)
           break
         }

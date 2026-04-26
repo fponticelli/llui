@@ -74,7 +74,7 @@ export const bitmaskOverflowRule = createRule({
     schema: [],
     messages: {
       overflow:
-        'Component has {{count}} unique state access paths ({{overflow}} past the 31-path limit). Paths 32..{{count}} fall back to FULL_MASK — their changes re-evaluate every binding in the component, negating the bitmask optimization for those updates.\n\nTop-level fields by path count: {{breakdown}}.{{cooccurrenceNote}}\n\nRecommended fix: extract {{candidateList}} into {{aOrEmpty}} child component{{plural}} via `child()` (see /api/dom#child). Each child gets its own 31-path bitmask, so the extracted paths no longer count against the parent\'s limit. Alternative: use `sliceHandler` to embed a state machine that owns the field\'s reducer.',
+        "Component has {{count}} unique state access paths ({{overflow}} past the 31-path limit). Paths 32..{{count}} fall back to FULL_MASK — their changes re-evaluate every binding in the component, negating the bitmask optimization for those updates.\n\nTop-level fields by path count: {{breakdown}}.{{cooccurrenceNote}}\n\nRecommended fix: extract {{candidateList}} into {{aOrEmpty}} child component{{plural}} via `child()` (see /api/dom#child). Each child gets its own 31-path bitmask, so the extracted paths no longer count against the parent's limit. Alternative: use `sliceHandler` to embed a state machine that owns the field's reducer.",
     },
   },
   defaultOptions: [],

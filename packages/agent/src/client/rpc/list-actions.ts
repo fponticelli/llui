@@ -231,11 +231,7 @@ function walkHint(
   walkHintBare(path, d, out)
 }
 
-function walkHintBare(
-  path: string,
-  t: unknown,
-  out: Array<{ path: string; hint: string }>,
-): void {
+function walkHintBare(path: string, t: unknown, out: Array<{ path: string; hint: string }>): void {
   if (t === null || typeof t !== 'object') return
   const obj = t as Record<string, unknown>
   if (obj.kind === 'object' && obj.shape !== null && typeof obj.shape === 'object') {

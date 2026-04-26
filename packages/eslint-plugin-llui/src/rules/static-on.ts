@@ -32,11 +32,7 @@ function readsParam(node: TSESTree.Node, paramName: string): boolean {
     ) {
       // Skip when it's the `object` of a MemberExpression handled above.
       const parent = (n as { parent?: TSESTree.Node }).parent
-      if (
-        parent &&
-        parent.type === AST_NODE_TYPES.MemberExpression &&
-        parent.object === n
-      ) {
+      if (parent && parent.type === AST_NODE_TYPES.MemberExpression && parent.object === n) {
         // Already counted via MemberExpression case.
         return
       }

@@ -90,10 +90,7 @@ function isReactiveAccessor(fn: AccessorFn): boolean {
  * depth-2 string `"user.name"`. Returns null if the chain doesn't start
  * at the parameter or if it's empty.
  */
-function resolveMemberChain(
-  node: TSESTree.MemberExpression,
-  paramName: string,
-): string | null {
+function resolveMemberChain(node: TSESTree.MemberExpression, paramName: string): string | null {
   const parts: string[] = []
   let current: TSESTree.Expression | TSESTree.PrivateIdentifier = node
   while (
@@ -109,10 +106,7 @@ function resolveMemberChain(
   return parts.slice(0, 2).join('.')
 }
 
-function resolveBracketAccess(
-  node: TSESTree.MemberExpression,
-  paramName: string,
-): string | null {
+function resolveBracketAccess(node: TSESTree.MemberExpression, paramName: string): string | null {
   if (!node.computed) return null
   if (node.object.type !== AST_NODE_TYPES.Identifier || node.object.name !== paramName) {
     return null
@@ -127,12 +121,12 @@ function extractPaths(node: TSESTree.Node, paramName: string, out: Set<string>):
     if (node.computed) {
       const path = resolveBracketAccess(node, paramName)
       if (path) out.add(path)
-    } else if (node.parent?.type === AST_NODE_TYPES.MemberExpression && node.parent.object === node) {
-      // Intermediate node — handled when leaf is visited.
     } else if (
-      node.parent?.type === AST_NODE_TYPES.CallExpression &&
-      node.parent.callee === node
+      node.parent?.type === AST_NODE_TYPES.MemberExpression &&
+      node.parent.object === node
     ) {
+      // Intermediate node — handled when leaf is visited.
+    } else if (node.parent?.type === AST_NODE_TYPES.CallExpression && node.parent.callee === node) {
       // Method call — record the receiver's chain, not the method.
       if (node.object.type === AST_NODE_TYPES.MemberExpression) {
         const chain = resolveMemberChain(node.object, paramName)
@@ -148,7 +142,8 @@ function extractPaths(node: TSESTree.Node, paramName: string, out: Set<string>):
     const child = node[key] as unknown
     if (Array.isArray(child)) {
       for (const c of child) {
-        if (c && typeof c === 'object' && 'type' in c) extractPaths(c as TSESTree.Node, paramName, out)
+        if (c && typeof c === 'object' && 'type' in c)
+          extractPaths(c as TSESTree.Node, paramName, out)
       }
     } else if (child && typeof child === 'object' && 'type' in (child as object)) {
       extractPaths(child as TSESTree.Node, paramName, out)

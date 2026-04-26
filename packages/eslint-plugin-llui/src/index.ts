@@ -62,7 +62,7 @@ export const rules = {
   'pure-update-function': pureUpdateFunctionRule,
   'empty-props': emptyPropsRule,
   'namespace-import': namespaceImportRule,
-  'accessibility': accessibilityRule,
+  accessibility: accessibilityRule,
   'controlled-input': controlledInputRule,
   'child-static-props': childStaticPropsRule,
   'static-on': staticOnRule,
