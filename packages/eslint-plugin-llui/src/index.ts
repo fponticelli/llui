@@ -21,6 +21,7 @@ import { agentNonextractableHandlerRule } from './rules/agent-nonextractable-han
 import { agentMsgResolvableRule } from './rules/agent-msg-resolvable.js'
 import { agentWarningOnConfirmRule } from './rules/agent-warning-on-confirm.js'
 import { agentExampleOnPayloadRule } from './rules/agent-example-on-payload.js'
+import { agentEmitsDriftRule } from './rules/agent-emits-drift.js'
 import { pureUpdateFunctionRule } from './rules/pure-update-function.js'
 
 export const rules = {
@@ -47,6 +48,7 @@ export const rules = {
   'agent-msg-resolvable': agentMsgResolvableRule,
   'agent-warning-on-confirm': agentWarningOnConfirmRule,
   'agent-example-on-payload': agentExampleOnPayloadRule,
+  'agent-emits-drift': agentEmitsDriftRule,
   'pure-update-function': pureUpdateFunctionRule,
 }
 
@@ -93,6 +95,14 @@ export const configs = {
       // gate on full LLM-readability can bump to `error` themselves.
       'llui/agent-warning-on-confirm': 'warn',
       'llui/agent-example-on-payload': 'warn',
+      // `agent-emits-drift` is `warn` because the static analysis
+      // can't see effects emitted via helpers (`track('foo')`),
+      // so the orphaned-emit half is best-effort. The undeclared-
+      // emit half (literal `{kind: 'X'}` not in @emits) is reliable
+      // and would justify `error`, but mixing severities for one
+      // rule isn't supported. `warn` errs on the side of not
+      // breaking CI on edge cases.
+      'llui/agent-emits-drift': 'warn',
       'llui/pure-update-function': 'error',
     },
   },
@@ -108,6 +118,7 @@ export const configs = {
       'llui/agent-msg-resolvable': 'error',
       'llui/agent-warning-on-confirm': 'warn',
       'llui/agent-example-on-payload': 'warn',
+      'llui/agent-emits-drift': 'warn',
     },
   },
 }
