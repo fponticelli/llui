@@ -90,6 +90,7 @@ function makeHandle(initialState: FakeState) {
     // `def.__bindingDescriptors`. Tests that don't exercise list-actions
     // can return an empty array; tests that do should override.
     getBindingDescriptors: () => [] as Array<{ variant: string }>,
+    swapUpdate: vi.fn(),
   }
   return handle
 }

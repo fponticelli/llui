@@ -591,6 +591,25 @@ function buildAppHandle<S, M, E>(
       if (disposed) return []
       return getBindingDescriptors(inst as ComponentInstance)
     },
+    swapUpdate(newUpdate, newOnEffect) {
+      if (disposed) return
+      // Drain pending messages with the OLD update first — anything
+      // already in the queue was constructed under the old contract,
+      // and re-routing it through a new reducer mid-flight could mix
+      // half of one transition with half of another (e.g. a payload
+      // shape the new update no longer accepts).
+      flushInstance(inst)
+      // Mutate the def in place so subsequent `inst.def.update`
+      // reads — including the per-message read in `flushInstance`'s
+      // generic loop — pick up the new function. We deliberately
+      // don't replace `inst.def` itself: existing closures, the
+      // `__update` fast path, and `__handlers` all stay valid; only
+      // the user-visible reducer function changes.
+      ;(inst.def as { update: typeof newUpdate }).update = newUpdate
+      if (newOnEffect !== undefined) {
+        ;(inst.def as { onEffect?: typeof newOnEffect }).onEffect = newOnEffect
+      }
+    },
   }
 }
 

@@ -105,6 +105,90 @@ describe('mountApp', () => {
     expect(captured!.ctx).toBeTypeOf('function')
   })
 
+  describe('swapUpdate', () => {
+    // The lightweight HMR escape hatch: replace the reducer without
+    // rebuilding the DOM. Useful when only `update.ts` changed and
+    // `view`/`__dirty`/event listeners can stay live. The full
+    // `replaceComponent` HMR path disposes the root lifetime and
+    // re-runs the view, which loses focus/scroll/etc. — overkill
+    // for pure reducer changes.
+
+    it('next dispatch goes through the new update', () => {
+      const container = document.createElement('div')
+      const handle = mountApp(container, counterDef())
+
+      handle.send({ type: 'inc' })
+      handle.flush()
+      expect((handle.getState() as State).count).toBe(1)
+
+      // New update fn: increments by 10 instead of 1. Same Msg shape;
+      // same State shape — only the transition changes.
+      const newUpdate = (state: State, msg: Msg): [State, never[]] => {
+        if (msg.type === 'inc') return [{ ...state, count: state.count + 10 }, []]
+        return [state, []]
+      }
+      handle.swapUpdate(newUpdate as (s: unknown, m: unknown) => [unknown, unknown[]])
+
+      handle.send({ type: 'inc' })
+      handle.flush()
+      expect((handle.getState() as State).count).toBe(11)
+    })
+
+    it('drains pending messages with the OLD update before swapping', () => {
+      // Messages already in the queue were authored against the old
+      // contract; running them under the new reducer mid-flight could
+      // mix half of one transition with half of another. swapUpdate
+      // flushes first.
+      const container = document.createElement('div')
+      const handle = mountApp(container, counterDef())
+
+      // Queue a message synchronously. The dispatch is microtask-
+      // batched, so it hasn't been applied yet.
+      handle.send({ type: 'inc' })
+
+      // Swap before the microtask drains. Implementation flushes first,
+      // so the queued inc runs against the old (+1) reducer.
+      let newUpdateCalls = 0
+      const newUpdate = (state: State, msg: Msg): [State, never[]] => {
+        newUpdateCalls++
+        if (msg.type === 'inc') return [{ ...state, count: state.count + 100 }, []]
+        return [state, []]
+      }
+      handle.swapUpdate(newUpdate as (s: unknown, m: unknown) => [unknown, unknown[]])
+
+      // Pending message was applied with old update (+1), not new (+100).
+      expect((handle.getState() as State).count).toBe(1)
+      expect(newUpdateCalls).toBe(0)
+    })
+
+    it('no-op after dispose', () => {
+      const container = document.createElement('div')
+      const handle = mountApp(container, counterDef())
+      handle.dispose()
+      // Should not throw or have any effect.
+      handle.swapUpdate((s) => [s, []])
+    })
+
+    it('preserves the rendered DOM (no rebuild)', () => {
+      // The motivating reason for this API over replaceComponent: the
+      // root lifetime stays live, so the DOM nodes, event listeners,
+      // focus, and any imperative state attached to elements survive
+      // the swap.
+      const container = document.createElement('div')
+      const handle = mountApp(container, counterDef())
+      const buttonBefore = container.querySelector('button')!
+      // Stash a custom property on the DOM node — replaceComponent
+      // would create a fresh button and lose this.
+      ;(buttonBefore as unknown as { _testMarker: string })._testMarker = 'kept'
+
+      handle.swapUpdate((s) => [s, []])
+
+      const buttonAfter = container.querySelector('button')!
+      expect(buttonAfter).toBe(buttonBefore)
+      expect((buttonAfter as unknown as { _testMarker: string })._testMarker).toBe('kept')
+    })
+  })
+
   it('each() works when destructured from View bag', () => {
     type S = { items: string[] }
     const def: ComponentDef<S, never, never> = {

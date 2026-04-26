@@ -235,6 +235,43 @@ export interface AppHandle {
    * schema for affordance discovery.
    */
   getBindingDescriptors(): Array<{ variant: string }>
+  /**
+   * Hot-swap the component's `update` function (and optionally
+   * `onEffect`) without rebuilding the DOM. Pending messages are
+   * drained against the OLD `update` first so a half-applied
+   * transition can't leave the state ill-formed; subsequent
+   * dispatches go through the new function.
+   *
+   * This is the lightweight HMR escape hatch for cases where the
+   * full `replaceComponent` flow (in `@llui/dom/hmr`) is overkill —
+   * pure `update.ts` edits don't change the view, so disposing the
+   * root lifetime and re-running the view just to install a new
+   * function is wasteful and loses focus / scroll / transient DOM
+   * state. Wire it via `import.meta.hot`:
+   *
+   * ```ts
+   * // main.ts
+   * const handle = mountApp(root, App)
+   * if (import.meta.hot) {
+   *   import.meta.hot.accept('./app/update', (mod) => {
+   *     if (mod) handle.swapUpdate(mod.update)
+   *   })
+   * }
+   * ```
+   *
+   * Caveats:
+   *   - Doesn't compensate for State shape changes — if the new
+   *     `update` reads a field the old state doesn't have, you'll
+   *     see runtime errors. Hard-reload after structural state
+   *     changes.
+   *   - Doesn't swap `view` or compiler-emitted `__update`/`__dirty`
+   *     — for those, prefer the auto-injected component-level HMR
+   *     accept callback (which routes through `replaceComponent`).
+   */
+  swapUpdate(
+    newUpdate: (state: unknown, msg: unknown) => [unknown, unknown[]],
+    newOnEffect?: unknown,
+  ): void
 }
 
 // ── Lifetime ─────────────────────────────────────────────────────────

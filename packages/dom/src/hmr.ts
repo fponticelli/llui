@@ -210,5 +210,13 @@ function makeReplacementHandle<S, M, E>(
       if (disposed) return []
       return getBindingDescriptors(typedInst as ComponentInstance)
     },
+    swapUpdate(newUpdate, newOnEffect) {
+      if (disposed) return
+      flushInstance(entry.inst)
+      ;(typedInst.def as { update: typeof newUpdate }).update = newUpdate
+      if (newOnEffect !== undefined) {
+        ;(typedInst.def as { onEffect?: typeof newOnEffect }).onEffect = newOnEffect
+      }
+    },
   }
 }
