@@ -7,6 +7,7 @@ import type {
   MessageAnnotations,
 } from '../protocol.js'
 import { handleGetState, type GetStateHost } from './rpc/get-state.js'
+import { handleQueryState, type QueryStateHost } from './rpc/query-state.js'
 import { handleSendMessage, type SendMessageHost } from './rpc/send-message.js'
 import { handleListActions, type ListActionsHost } from './rpc/list-actions.js'
 import { handleQueryDom, type QueryDomHost } from './rpc/query-dom.js'
@@ -25,6 +26,7 @@ export interface WsLike {
 }
 
 export type RpcHosts = GetStateHost &
+  QueryStateHost &
   SendMessageHost &
   ListActionsHost &
   QueryDomHost &
@@ -130,6 +132,14 @@ export function attachWsClient(
       variant: extractVariant(frame.tool, frame.args),
       intent: buildIntent(frame.tool, frame.args, rpc.getMsgAnnotations()),
     }
+    // For successful send_message dispatches, the stateDiff is part
+    // of the response. Lifting it into the log entry means the agent
+    // can read its own past actions with full "what changed" detail
+    // without re-querying state — essential for self-correcting
+    // behavior over multi-step flows.
+    if (frame.tool === 'send_message' && rpcErr === null && isDispatchedResult(result)) {
+      logEntry.stateDiff = result.stateDiff
+    }
     opts.onLogEntry?.(logEntry)
     ws.send(JSON.stringify({ t: 'log-append', entry: logEntry } satisfies ClientFrame))
   })
@@ -162,6 +172,8 @@ async function dispatch(tool: string, args: unknown, rpc: RpcHosts): Promise<unk
   switch (tool) {
     case 'get_state':
       return handleGetState(rpc, (args ?? {}) as { path?: string })
+    case 'query_state':
+      return handleQueryState(rpc, (args ?? {}) as { path: string })
     case 'list_actions':
       return handleListActions(rpc)
     case 'send_message':
@@ -181,6 +193,7 @@ async function dispatch(tool: string, args: unknown, rpc: RpcHosts): Promise<unk
 
 const READ_TOOLS = new Set([
   'get_state',
+  'query_state',
   'list_actions',
   'describe_context',
   'query_dom',
@@ -204,6 +217,22 @@ function getLogKindForTool(
   }
   if (READ_TOOLS.has(tool)) return 'read'
   return 'read'
+}
+
+/**
+ * Type guard for the `dispatched` shape of `LapMessageResponse`.
+ * Used to lift the stateDiff into the log entry without polluting
+ * the type chain with cross-cutting imports.
+ */
+function isDispatchedResult(
+  result: unknown,
+): result is { status: 'dispatched'; stateDiff: import('../state-diff.js').StateDiff } {
+  return (
+    result !== null &&
+    typeof result === 'object' &&
+    (result as { status?: unknown }).status === 'dispatched' &&
+    Array.isArray((result as { stateDiff?: unknown }).stateDiff)
+  )
 }
 
 function extractVariant(tool: string, args: unknown): string | undefined {
@@ -232,6 +261,7 @@ function buildIntent(
     return variant ?? 'Send message'
   }
   if (tool === 'get_state') return 'Read app state'
+  if (tool === 'query_state') return 'Read state slice'
   if (tool === 'list_actions') return 'List available actions'
   if (tool === 'describe_context') return 'Read current context'
   if (tool === 'describe_visible_content') return 'Read visible content'

@@ -75,6 +75,12 @@ export const handleLapState = makeForwardHandler('get_state', (body) => {
   return { path: b.path }
 })
 
+export const handleLapQueryState = makeForwardHandler('query_state', (body) => {
+  const b = (body ?? {}) as { path?: unknown }
+  if (typeof b.path !== 'string') return null
+  return { path: b.path }
+})
+
 export const handleLapActions = makeForwardHandler('list_actions', () => ({}))
 
 export const handleLapQueryDom = makeForwardHandler('query_dom', (body) => {
@@ -86,3 +92,73 @@ export const handleLapQueryDom = makeForwardHandler('query_dom', (body) => {
 export const handleLapDescribeVisible = makeForwardHandler('describe_visible_content', () => ({}))
 
 export const handleLapContext = makeForwardHandler('describe_context', () => ({}))
+
+/**
+ * Read recent log entries from the pairing registry's ring buffer.
+ * Server-side only — no round-trip to the browser. Used by the
+ * agent's `describe_recent_actions` tool to introspect its own
+ * activity history without re-fetching state.
+ *
+ * Diverges from `makeForwardHandler` because the data lives on the
+ * server (registry-owned), not the browser. The auth + paused +
+ * rate-limit gates run identically.
+ */
+export async function handleLapRecentActions(
+  req: Request,
+  deps: ForwardDeps,
+): Promise<Response> {
+  const auth = await verifyAndReadTid(req, deps.signingKey)
+  if (!auth.ok) return new Response(JSON.stringify({ error: { code: auth.code } }), {
+    status: auth.status,
+    headers: { 'content-type': 'application/json' },
+  })
+
+  const rec = await deps.tokenStore.findByTid(auth.tid)
+  if (!rec || rec.status === 'revoked') {
+    return new Response(JSON.stringify({ error: { code: 'revoked' } }), {
+      status: 403,
+      headers: { 'content-type': 'application/json' },
+    })
+  }
+  if (!deps.registry.isPaired(auth.tid)) {
+    return new Response(JSON.stringify({ error: { code: 'paused' } }), {
+      status: 503,
+      headers: { 'content-type': 'application/json' },
+    })
+  }
+
+  const rlCheck = await deps.rateLimiter.check(auth.tid, 'token')
+  if (!rlCheck.allowed) {
+    return new Response(
+      JSON.stringify({ error: { code: 'rate-limited', retryAfterMs: rlCheck.retryAfterMs } }),
+      { status: 429, headers: { 'content-type': 'application/json' } },
+    )
+  }
+
+  const body = req.method === 'POST' ? await req.json().catch(() => null) : null
+  const b = (body ?? {}) as { n?: unknown; kind?: unknown }
+  const n = typeof b.n === 'number' && b.n > 0 ? Math.floor(b.n) : 10
+  // Allow filtering by kind so the agent can ask for "just dispatches"
+  // without sifting through reads. Default `null` returns all kinds.
+  const kindFilter = typeof b.kind === 'string' ? b.kind : null
+
+  let entries = deps.registry.getRecentLog(auth.tid, kindFilter !== null ? 100 : n)
+  if (kindFilter !== null) {
+    entries = entries.filter((e) => e.kind === kindFilter).slice(0, n)
+  }
+
+  const nowMs = (deps.now ?? (() => Date.now()))()
+  await deps.tokenStore.touch(auth.tid, nowMs)
+  await deps.auditSink.write({
+    at: nowMs,
+    tid: auth.tid,
+    uid: rec.uid,
+    event: 'lap-call',
+    detail: { tool: 'describe_recent_actions', count: entries.length, kindFilter },
+  })
+
+  return new Response(JSON.stringify({ entries }), {
+    status: 200,
+    headers: { 'content-type': 'application/json' },
+  })
+}

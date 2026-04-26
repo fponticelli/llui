@@ -68,6 +68,15 @@ export interface PairingRegistry {
    */
   onClose(tid: string, handler: () => void): () => void
 
+  /**
+   * Read the most recent `n` log entries for a tid (newest first).
+   * Backed by an in-memory ring buffer populated as the registry
+   * sees `log-append` frames; capped per-tid to bound memory across
+   * long-lived sessions. Drained on close. Returns an empty array
+   * for unknown tids.
+   */
+  getRecentLog(tid: string, n: number): LogEntry[]
+
   // ── Request/response helpers ───────────────────────────────────
   // These are part of the contract (LAP handlers call them directly)
   // but implementations almost always delegate to the free helpers in
@@ -110,9 +119,25 @@ type Pairing = {
  * WebSocket. Not suitable for stateless Worker isolates; use the
  * Durable Object registry for Cloudflare.
  */
+/**
+ * Per-tid cap on the recent-log ring buffer. Sized to cover a few
+ * minutes of agent activity at typical dispatch rates without
+ * growing unboundedly for long-lived sessions. Reads via
+ * `getRecentLog` clamp to this; agents asking for more get whatever
+ * the buffer currently holds.
+ */
+const RECENT_LOG_CAP = 100
+
 export class InMemoryPairingRegistry implements PairingRegistry {
   private pairings = new Map<string, Pairing>()
   private onLogAppend: ((tid: string, entry: LogEntry) => void) | null
+  /**
+   * Per-tid ring buffer of recent log entries. Populated as the
+   * registry sees `log-append` frames; trimmed to RECENT_LOG_CAP.
+   * The agent reads this via `describe_recent_actions` to introspect
+   * its own activity history with stateDiffs intact.
+   */
+  private recentLog = new Map<string, LogEntry[]>()
 
   constructor(
     opts: {
@@ -120,6 +145,21 @@ export class InMemoryPairingRegistry implements PairingRegistry {
     } = {},
   ) {
     this.onLogAppend = opts.onLogAppend ?? null
+  }
+
+  /**
+   * Read the most recent `n` log entries for a tid, newest-first. Returns
+   * an empty array when the tid is unknown or has no recorded activity.
+   * Drained from the in-memory ring buffer; entries older than
+   * RECENT_LOG_CAP have already been trimmed.
+   */
+  getRecentLog(tid: string, n: number): LogEntry[] {
+    const buf = this.recentLog.get(tid)
+    if (!buf || buf.length === 0) return []
+    const count = Math.min(Math.max(0, Math.floor(n)), buf.length)
+    if (count === 0) return []
+    // Buffer is append-order; return the tail reversed so newest is first.
+    return buf.slice(-count).reverse()
   }
 
   register(tid: string, conn: PairingConnection): void {
@@ -191,6 +231,19 @@ export class InMemoryPairingRegistry implements PairingRegistry {
       return
     }
     if (frame.t === 'log-append') {
+      // Push into the ring buffer for `describe_recent_actions`,
+      // capped to RECENT_LOG_CAP. The audit-sink callback runs
+      // alongside; both are independent observers of the same
+      // log-append stream.
+      let buf = this.recentLog.get(tid)
+      if (!buf) {
+        buf = []
+        this.recentLog.set(tid, buf)
+      }
+      buf.push(frame.entry)
+      if (buf.length > RECENT_LOG_CAP) {
+        buf.splice(0, buf.length - RECENT_LOG_CAP)
+      }
       this.onLogAppend?.(tid, frame.entry)
       return
     }
@@ -255,6 +308,11 @@ export class InMemoryPairingRegistry implements PairingRegistry {
     p.closeHandlers.clear()
     p.subscribers.clear()
     this.pairings.delete(tid)
+    // Drop the recent-log ring buffer — once the pairing is gone,
+    // `describe_recent_actions` will reject anyway (paused/revoked
+    // gates run before the registry lookup), but holding the entries
+    // would leak memory across reconnects.
+    this.recentLog.delete(tid)
   }
 }
 

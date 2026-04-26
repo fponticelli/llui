@@ -1,5 +1,6 @@
 import { randomUUID } from '../uuid.js'
 import { handleListActions, type ListActionsHost } from './list-actions.js'
+import { computeStateDiff } from '../../state-diff.js'
 import type {
   LapActionsResponse,
   LapDrainMeta,
@@ -98,16 +99,27 @@ export async function handleSendMessage(
   const quietMs = Math.max(0, args.drainQuietMs ?? DEFAULT_QUIET_MS)
   const capMs = Math.max(0, args.timeoutMs ?? DEFAULT_TIMEOUT_MS)
 
+  // Snapshot pre-dispatch state for diffing. The host's `getState`
+  // returns a reference; capturing it here keeps a pre-mutation
+  // pointer even after `host.send` triggers reducer-driven state
+  // replacement (state itself is immutable per LLui's TEA contract,
+  // so the reference stays valid).
+  const prevState = host.getState()
+
   if (waitFor === 'none') {
     host.send(args.msg)
-    return dispatched(host, emptyDrain())
+    return dispatched(host, emptyDrain(), prevState)
   }
 
   if (waitFor === 'idle') {
     host.send(args.msg)
     host.flush()
     await Promise.resolve()
-    return dispatched(host, { effectsObserved: 1, durationMs: 0, timedOut: false, errors: [] })
+    return dispatched(
+      host,
+      { effectsObserved: 1, durationMs: 0, timedOut: false, errors: [] },
+      prevState,
+    )
   }
 
   // waitFor === 'drained' — message-queue quiescence detection.
@@ -131,12 +143,16 @@ export async function handleSendMessage(
     while (true) {
       const elapsed = now() - t0
       if (elapsed >= capMs) {
-        return dispatched(host, {
-          effectsObserved: observed,
-          durationMs: elapsed,
-          timedOut: true,
-          errors: host.getAndClearDrainErrors?.() ?? [],
-        })
+        return dispatched(
+          host,
+          {
+            effectsObserved: observed,
+            durationMs: elapsed,
+            timedOut: true,
+            errors: host.getAndClearDrainErrors?.() ?? [],
+          },
+          prevState,
+        )
       }
       const budget = Math.min(quietMs, capMs - elapsed)
       // When the cap is within `quietMs` of `elapsed`, the quiet
@@ -149,12 +165,16 @@ export async function handleSendMessage(
         wake = resolve
       })
       if (reason === 'timeout') {
-        return dispatched(host, {
-          effectsObserved: observed,
-          durationMs: now() - t0,
-          timedOut: !fullQuiet,
-          errors: host.getAndClearDrainErrors?.() ?? [],
-        })
+        return dispatched(
+          host,
+          {
+            effectsObserved: observed,
+            durationMs: now() - t0,
+            timedOut: !fullQuiet,
+            errors: host.getAndClearDrainErrors?.() ?? [],
+          },
+          prevState,
+        )
       }
       // A commit fired during the wait — flush any queued follow-ups so
       // effects dispatched by that cycle run before we re-check.
@@ -165,10 +185,16 @@ export async function handleSendMessage(
   }
 }
 
-function dispatched(host: SendMessageHost, drain: LapDrainMeta): LapMessageResponse {
+function dispatched(
+  host: SendMessageHost,
+  drain: LapDrainMeta,
+  prevState: unknown,
+): LapMessageResponse {
+  const stateAfter = host.getState()
   return {
     status: 'dispatched',
-    stateAfter: host.getState(),
+    stateAfter,
+    stateDiff: computeStateDiff(prevState, stateAfter),
     actions: handleListActions(host).actions,
     drain,
   }

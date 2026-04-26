@@ -174,6 +174,16 @@ export type LapMessageResponse =
   | {
       status: 'dispatched'
       stateAfter: unknown
+      /**
+       * Structural diff from pre-dispatch state to post-drain state,
+       * in JSON-Patch shape (RFC 6902 subset: `add`, `remove`,
+       * `replace`). Empty when the dispatch produced no observable
+       * state change. Useful when the agent wants "what changed?"
+       * without diffing the full state itself; for very large states
+       * this is also smaller than the full `stateAfter`. Both fields
+       * are present so callers can pick whichever fits their use.
+       */
+      stateDiff: import('./state-diff.js').StateDiff
       actions: LapActionsResponse['actions']
       drain: LapDrainMeta
     }
@@ -302,6 +312,15 @@ export type LogEntry = {
   variant?: string
   intent?: string
   detail?: string
+  /**
+   * Structural diff from pre-dispatch state to post-drain state, in
+   * JSON-Patch shape. Populated only for `kind: 'dispatched'` entries
+   * — read entries (get_state / list_actions / observe / …) don't
+   * mutate state, and an empty diff would just be noise. Lets the
+   * agent reconstruct what each past action did without re-fetching
+   * state snapshots.
+   */
+  stateDiff?: import('./state-diff.js').StateDiff
 }
 
 export type HelloFrame = {

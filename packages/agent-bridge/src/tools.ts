@@ -94,6 +94,30 @@ export const TOOL_DESCRIPTORS: ToolDescriptor[] = [
   },
   {
     kind: 'forward',
+    name: 'query_state',
+    description:
+      'Read a single slice of state via JSON-pointer path. Returns `{found: true, value}` on hit or `{found: false, detail}` on miss (missing key, walking through null, etc.). Cheaper than `observe` when checking one field. Path syntax: `""` (whole state), `"/auth/user"`, `"/items/0/id"`, `"/key~1with~1slash"` (escaped `/`), `"/key~0tilde"` (escaped `~`).',
+    schema: z.object({
+      path: z.string().describe('JSON-pointer (RFC 6901) — `/auth/user` or `""` for whole state'),
+    }),
+    lapPath: '/query-state',
+  },
+  {
+    kind: 'forward',
+    name: 'describe_recent_actions',
+    description:
+      'Return the most recent log entries for this session (newest first). Each `dispatched` entry includes a `stateDiff` showing what changed. Useful for self-correction over multi-step flows — read your own past dispatches without re-querying full state. Filter by `kind` (e.g. `"dispatched"`) to skip read-only entries.',
+    schema: z.object({
+      n: z.number().int().positive().optional().describe('How many entries to return (default 10)'),
+      kind: z
+        .string()
+        .optional()
+        .describe('Filter to a specific kind (e.g. "dispatched", "read", "error")'),
+    }),
+    lapPath: '/recent-actions',
+  },
+  {
+    kind: 'forward',
     name: 'list_actions',
     description:
       'Return the currently-affordable actions: visible UI bindings plus agent-affordable registry entries, filtered by annotation gates. Legacy — prefer `observe`, which includes this as `actions`.',

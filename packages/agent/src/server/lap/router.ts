@@ -1,10 +1,12 @@
 import { handleLapDescribe } from './describe.js'
 import {
   handleLapState,
+  handleLapQueryState,
   handleLapActions,
   handleLapQueryDom,
   handleLapDescribeVisible,
   handleLapContext,
+  handleLapRecentActions,
   type ForwardDeps,
 } from './forward.js'
 import { handleLapMessage } from './message.js'
@@ -28,6 +30,8 @@ export function createLapRouter(
         return handleLapDescribe(req, deps)
       case '/state':
         return handleLapState(req, deps)
+      case '/query-state':
+        return handleLapQueryState(req, deps)
       case '/actions':
         return handleLapActions(req, deps)
       case '/message':
@@ -44,6 +48,8 @@ export function createLapRouter(
         return handleLapContext(req, deps)
       case '/observe':
         return handleLapObserve(req, deps)
+      case '/recent-actions':
+        return handleLapRecentActions(req, deps)
       default:
         return null
     }

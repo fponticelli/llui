@@ -89,6 +89,7 @@ describe('LAP types — sample value conformance', () => {
     const dispatched: LapMessageResponse = {
       status: 'dispatched',
       stateAfter: {},
+      stateDiff: [],
       actions: [],
       drain: { effectsObserved: 0, durationMs: 0, timedOut: false, errors: [] },
     }
