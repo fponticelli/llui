@@ -437,13 +437,6 @@ export type ServerFrame = RpcFrame | RevokedFrame | ActiveFrame
 declare const TokenBrand: unique symbol
 export type AgentToken = string & { readonly [TokenBrand]: 'AgentToken' }
 
-export type TokenPayload = {
-  tid: string
-  iat: number
-  exp: number
-  scope: 'agent'
-}
-
 export type TokenStatus =
   | 'awaiting-ws'
   | 'awaiting-claude'
@@ -453,9 +446,26 @@ export type TokenStatus =
 
 export type TokenRecord = {
   tid: string
+  /**
+   * SHA-256 hex of the bearer token. The plaintext token is never
+   * stored — incoming requests hash their `Authorization: Bearer …`
+   * value and look up by this field. Hash-only storage keeps a leaked
+   * store from being a live-token leak. Mirrors the standard session-
+   * cookie / API-key pattern.
+   */
+  tokenHash: string
   uid: string | null
   status: TokenStatus
   createdAt: number
+  /**
+   * Hard-expiry in milliseconds since epoch. The mint endpoint sets
+   * this to `now + hardExpiryMs`; the verify path rejects requests
+   * presenting tokens whose record has `expiresAt <= now`. Pre-0.0.35
+   * the equivalent value lived inside the JWT payload as `exp` (in
+   * seconds); the new opaque-token flow keeps it server-side so the
+   * record is the single source of truth.
+   */
+  expiresAt: number
   lastSeenAt: number
   pendingResumeUntil: number | null
   origin: string

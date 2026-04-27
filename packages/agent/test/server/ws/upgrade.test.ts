@@ -5,24 +5,7 @@ import type { AddressInfo } from 'node:net'
 import { createWsUpgradeHandler } from '../../../src/server/ws/upgrade.js'
 import { WsPairingRegistry } from '../../../src/server/ws/pairing-registry.js'
 import { InMemoryTokenStore } from '../../../src/server/token-store.js'
-import { signToken } from '../../../src/server/token.js'
-import type { TokenPayload, TokenRecord } from '../../../src/protocol.js'
-
-const key = 'x'.repeat(32)
-
-function seed(store: InMemoryTokenStore, tid: string): Promise<void> {
-  const rec: TokenRecord = {
-    tid,
-    uid: 'u1',
-    status: 'awaiting-ws',
-    createdAt: 0,
-    lastSeenAt: 0,
-    pendingResumeUntil: null,
-    origin: 'http://localhost',
-    label: null,
-  }
-  return store.create(rec)
-}
+import { seedToken } from '../_token-helper.js'
 
 let server: Server
 let registry: WsPairingRegistry
@@ -34,7 +17,6 @@ beforeEach(async () => {
   store = new InMemoryTokenStore()
   server = createServer()
   const upgrade = createWsUpgradeHandler({
-    signingKey: key,
     tokenStore: store,
     registry,
     auditSink: { write: () => {} },
@@ -49,20 +31,9 @@ afterEach(async () => {
   await new Promise<void>((resolve) => server.close(() => resolve()))
 })
 
-function makeToken(tid: string): Promise<string> {
-  const payload: TokenPayload = {
-    tid,
-    iat: 0,
-    exp: 9_999_999_999,
-    scope: 'agent',
-  }
-  return signToken(payload, key)
-}
-
 describe('createWsUpgradeHandler', () => {
   it('accepts a WS connection with a valid token and registers the pairing', async () => {
-    await seed(store, 't1')
-    const token = await makeToken('t1')
+    const { token } = await seedToken(store, { tid: 't1', uid: 'u1', status: 'awaiting-ws' })
     const ws = new WebSocket(`ws://127.0.0.1:${port}/agent/ws?token=${encodeURIComponent(token)}`)
     await new Promise<void>((resolve) => ws.once('open', resolve))
     expect(registry.isPaired('t1')).toBe(true)
@@ -81,8 +52,9 @@ describe('createWsUpgradeHandler', () => {
     })
   })
 
-  it('rejects a connection with a bad-signature token', async () => {
-    const ws = new WebSocket(`ws://127.0.0.1:${port}/agent/ws?token=llui-agent_bogus.sig`)
+  it('rejects a connection with an unknown opaque token (401)', async () => {
+    // Well-formed prefix, but no record in the store maps to this hash.
+    const ws = new WebSocket(`ws://127.0.0.1:${port}/agent/ws?token=llui-agent_unknown`)
     await new Promise<void>((resolve) => {
       ws.on('unexpected-response', (_req, res) => {
         expect(res.statusCode).toBe(401)
@@ -93,8 +65,7 @@ describe('createWsUpgradeHandler', () => {
   })
 
   it('unregisters on socket close', async () => {
-    await seed(store, 't2')
-    const token = await makeToken('t2')
+    const { token } = await seedToken(store, { tid: 't2', uid: 'u1', status: 'awaiting-ws' })
     const ws = new WebSocket(`ws://127.0.0.1:${port}/agent/ws?token=${encodeURIComponent(token)}`)
     await new Promise<void>((resolve) => ws.once('open', resolve))
     ws.close()
@@ -104,8 +75,7 @@ describe('createWsUpgradeHandler', () => {
   })
 
   it('transitions token status to awaiting-claude on WS connect', async () => {
-    await seed(store, 't3')
-    const token = await makeToken('t3')
+    const { token } = await seedToken(store, { tid: 't3', uid: 'u1', status: 'awaiting-ws' })
     const ws = new WebSocket(`ws://127.0.0.1:${port}/agent/ws?token=${encodeURIComponent(token)}`)
     await new Promise<void>((resolve) => ws.once('open', resolve))
     // Give the server-side handler a tick to call markAwaitingClaude

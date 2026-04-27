@@ -1,4 +1,3 @@
-import { verifyToken } from '../token.js'
 
 /**
  * Minimal DurableObjectNamespace surface we need — `idFromName` +
@@ -36,12 +35,20 @@ export interface MinimalDurableObjectStub {
  *
  * This is the recommended entry for Cloudflare Workers deployments;
  * users who need custom routing can write their own and call the
- * underlying primitives (`verifyToken`, `namespace.get`, etc).
+ * underlying primitives directly.
+ *
+ * As of 0.0.35 the token format is opaque (random, not signed), so we
+ * can't recover `tid` from the token alone. The caller passes a
+ * `resolveTid` callback — typically `(token) => stub.fetch(...)` to
+ * the root DO's token-resolution endpoint — that turns a bearer into
+ * its tid via the shared token store. Callers that don't shard by
+ * tid can pass `() => Promise.resolve(rootName)` to route everything
+ * through the root DO.
  */
 export async function routeToAgentDO(
   req: Request,
   namespace: MinimalDurableObjectNamespace,
-  signingKey: string | Uint8Array,
+  resolveTid: (token: string) => Promise<string | null>,
   opts: { rootName?: string } = {},
 ): Promise<Response> {
   const rootName = opts.rootName ?? '__root'
@@ -66,10 +73,10 @@ export async function routeToAgentDO(
   const token = extractTokenFromRequest(req)
   if (!token) return new Response('Unauthorized', { status: 401 })
 
-  const verified = await verifyToken(token, signingKey)
-  if (verified.kind !== 'ok') return new Response('Unauthorized', { status: 401 })
+  const tid = await resolveTid(token)
+  if (!tid) return new Response('Unauthorized', { status: 401 })
 
-  const stub = namespace.get(namespace.idFromName(verified.payload.tid))
+  const stub = namespace.get(namespace.idFromName(tid))
   return stub.fetch(req)
 }
 

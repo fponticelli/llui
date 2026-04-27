@@ -1,4 +1,4 @@
-import { verifyToken } from '../token.js'
+import { tokenHashOf } from '../token.js'
 import type { TokenStore } from '../token-store.js'
 import type { PairingRegistry } from '../ws/pairing-registry.js'
 import type { AuditSink } from '../audit.js'
@@ -6,7 +6,6 @@ import type { RateLimiter } from '../rate-limit.js'
 import type { LapDescribeResponse, MessageSchemaEntry } from '../../protocol.js'
 
 export type LapDescribeDeps = {
-  signingKey: string | Uint8Array
   tokenStore: TokenStore
   registry: PairingRegistry
   auditSink: AuditSink
@@ -15,7 +14,7 @@ export type LapDescribeDeps = {
 }
 
 export async function handleLapDescribe(req: Request, deps: LapDescribeDeps): Promise<Response> {
-  const auth = await verifyAndReadTid(req, deps.signingKey)
+  const auth = await verifyAndReadTid(req, deps.tokenStore)
   if (!auth.ok) return json({ error: { code: auth.code } }, auth.status)
 
   const rec = await deps.tokenStore.findByTid(auth.tid)
@@ -68,16 +67,32 @@ export async function handleLapDescribe(req: Request, deps: LapDescribeDeps): Pr
   return json(out, 200)
 }
 
+/**
+ * Resolve the bearer token on a request to a `tid`. The opaque-token
+ * scheme means "verify" is "look up the SHA-256 hash in the store and
+ * check expiry." A missing prefix, an unknown hash, or an expired
+ * record all collapse to the same `auth-failed` so a probe-by-hash
+ * leak surface is uniform.
+ *
+ * Status check (revoked / paused / etc.) is the caller's job — every
+ * LAP handler does its own follow-up `findByTid` to read the current
+ * status. This function only cares whether the bearer is one of ours
+ * and unexpired.
+ */
 export async function verifyAndReadTid(
   req: Request,
-  key: string | Uint8Array,
+  tokenStore: TokenStore,
+  nowMs: number = Date.now(),
 ): Promise<{ ok: true; tid: string } | { ok: false; status: number; code: string }> {
   const auth = req.headers.get('authorization')
   if (!auth || !auth.startsWith('Bearer ')) return { ok: false, status: 401, code: 'auth-failed' }
   const token = auth.slice('Bearer '.length)
-  const v = await verifyToken(token, key)
-  if (v.kind !== 'ok') return { ok: false, status: 401, code: 'auth-failed' }
-  return { ok: true, tid: v.payload.tid }
+  const hash = await tokenHashOf(token)
+  if (!hash) return { ok: false, status: 401, code: 'auth-failed' }
+  const rec = await tokenStore.findByTokenHash(hash)
+  if (!rec) return { ok: false, status: 401, code: 'auth-failed' }
+  if (rec.expiresAt <= nowMs) return { ok: false, status: 401, code: 'auth-failed' }
+  return { ok: true, tid: rec.tid }
 }
 
 function json(b: unknown, s: number): Response {

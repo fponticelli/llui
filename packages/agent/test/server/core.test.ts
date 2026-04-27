@@ -2,9 +2,7 @@ import { describe, it, expect } from 'vitest'
 import { createLluiAgentCore } from '../../src/server/core.js'
 import { InMemoryPairingRegistry } from '../../src/server/ws/pairing-registry.js'
 import type { PairingConnection } from '../../src/server/ws/pairing-registry.js'
-import { signToken } from '../../src/server/token.js'
-
-const key = 'x'.repeat(32)
+import { seedToken } from './_token-helper.js'
 
 function mkConn(): PairingConnection & { __frames: unknown[] } {
   const frames: unknown[] = []
@@ -21,7 +19,7 @@ function mkConn(): PairingConnection & { __frames: unknown[] } {
 
 describe('createLluiAgentCore', () => {
   it('builds a runtime-neutral handle with router + registry + acceptConnection', () => {
-    const core = createLluiAgentCore({ signingKey: key })
+    const core = createLluiAgentCore()
     expect(typeof core.router).toBe('function')
     expect(typeof core.acceptConnection).toBe('function')
     expect(core.registry).toBeInstanceOf(InMemoryPairingRegistry)
@@ -29,57 +27,51 @@ describe('createLluiAgentCore', () => {
     expect(core.auditSink).toBeDefined()
   })
 
-  it('acceptConnection rejects unsigned tokens', async () => {
-    const core = createLluiAgentCore({ signingKey: key })
+  it('acceptConnection rejects malformed tokens', async () => {
+    const core = createLluiAgentCore()
     const conn = mkConn()
     const result = await core.acceptConnection('not-a-token', conn)
     expect(result.ok).toBe(false)
     if (!result.ok) expect(result.status).toBe(401)
   })
 
-  it('acceptConnection rejects tokens signed with a different key', async () => {
-    const core = createLluiAgentCore({ signingKey: key })
-    const other = await signToken(
-      { tid: 't1', iat: 0, exp: 9_999_999_999, scope: 'agent' },
-      'y'.repeat(32),
-    )
-    const result = await core.acceptConnection(other, mkConn())
-    expect(result.ok).toBe(false)
-    if (!result.ok) expect(result.status).toBe(401)
-  })
-
-  it('acceptConnection rejects when the tid has no TokenRecord', async () => {
-    const core = createLluiAgentCore({ signingKey: key })
-    const token = await signToken(
-      { tid: 'unseeded', iat: 0, exp: 9_999_999_999, scope: 'agent' },
-      key,
-    )
-    const result = await core.acceptConnection(token, mkConn())
+  it('acceptConnection rejects unknown opaque tokens (no record)', async () => {
+    const core = createLluiAgentCore()
+    // Well-formed prefix but no record exists for this hash.
+    const result = await core.acceptConnection('llui-agent_unseededOpaque', mkConn())
     expect(result.ok).toBe(false)
     if (!result.ok) {
-      expect(result.status).toBe(403)
-      expect(result.code).toBe('revoked')
+      expect(result.status).toBe(401)
+      expect(result.code).toBe('auth-failed')
     }
   })
 
   it('acceptConnection registers the pairing on success', async () => {
-    const core = createLluiAgentCore({ signingKey: key })
-    // Seed a token record for 't1'
-    await core.tokenStore.create({
+    const core = createLluiAgentCore()
+    const { token } = await seedToken(core.tokenStore, {
       tid: 't1',
       uid: 'u1',
       status: 'awaiting-ws',
-      createdAt: 0,
-      lastSeenAt: 0,
-      pendingResumeUntil: null,
-      origin: 'https://app',
-      label: null,
     })
-    const token = await signToken({ tid: 't1', iat: 0, exp: 9_999_999_999, scope: 'agent' }, key)
     const result = await core.acceptConnection(token, mkConn())
     expect(result).toEqual({ ok: true, tid: 't1' })
     expect(core.registry.isPaired('t1')).toBe(true)
     const rec = await core.tokenStore.findByTid('t1')
     expect(rec?.status).toBe('awaiting-claude')
+  })
+
+  it('acceptConnection rejects revoked tokens with 403', async () => {
+    const core = createLluiAgentCore()
+    const { token } = await seedToken(core.tokenStore, {
+      tid: 't-rev',
+      uid: 'u1',
+      status: 'revoked',
+    })
+    const res = await core.acceptConnection(token, mkConn())
+    expect(res.ok).toBe(false)
+    if (!res.ok) {
+      expect(res.status).toBe(403)
+      expect(res.code).toBe('revoked')
+    }
   })
 })

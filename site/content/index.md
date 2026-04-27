@@ -65,7 +65,8 @@ LLui provides first-class tooling for AI workflows:
 - **[@llui/agent](/api/agent)** — LLM-driven control surface: Claude reads state, enumerates actions, dispatches messages into the live app
 - **[@llui/mcp](/api/mcp)** — MCP server exposing debug tools directly to LLMs via Model Context Protocol
 - **[@llui/eslint-plugin](/api/eslint-plugin-llui)** — 21 anti-pattern rules that catch common LLM mistakes before they reach production
-- **[LLM Guide](/llm-guide)** — system prompt and idiomatic patterns for AI code generation
+- **[Debugging](/debugging)** — debug LLui apps interactively from the browser console or an MCP-connected LLM
+- **[Agents](/agents)** — drive any LLui-built app from a Claude conversation
 
 ## Packages
 

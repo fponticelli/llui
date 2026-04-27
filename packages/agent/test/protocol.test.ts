@@ -369,7 +369,6 @@ describe('Relay WS frame types', () => {
 
 import type {
   AgentToken,
-  TokenPayload,
   TokenRecord,
   TokenStatus,
   AgentSession,
@@ -380,16 +379,9 @@ import type {
 } from '../src/protocol.js'
 
 describe('Token + pairing types', () => {
-  it('token brand and payload', () => {
-    const t: AgentToken = 'llui-agent_payload.signature' as AgentToken
-    const p: TokenPayload = {
-      tid: '11111111-1111-1111-1111-111111111111',
-      iat: 0,
-      exp: 86400,
-      scope: 'agent',
-    }
+  it('token brand', () => {
+    const t: AgentToken = 'llui-agent_opaque-bearer' as AgentToken
     expect(typeof t).toBe('string')
-    expect(p.scope).toBe('agent')
   })
 
   it('token record status values', () => {
@@ -403,9 +395,11 @@ describe('Token + pairing types', () => {
     expect(statuses).toHaveLength(5)
     const rec: TokenRecord = {
       tid: 't1',
+      tokenHash: 'a'.repeat(64),
       uid: 'u1',
       status: 'active',
       createdAt: 0,
+      expiresAt: 86_400_000,
       lastSeenAt: 0,
       pendingResumeUntil: null,
       origin: 'https://app.example',
@@ -427,7 +421,7 @@ describe('Token + pairing types', () => {
 
   it('mint + resume response shapes', () => {
     const mint: MintResponse = {
-      token: 'llui-agent_x.y' as AgentToken,
+      token: 'llui-agent_opaque' as AgentToken,
       tid: 't1',
       wsUrl: 'wss://app/agent/ws',
       lapUrl: 'https://app/agent/lap/v1',
@@ -437,7 +431,7 @@ describe('Token + pairing types', () => {
       sessions: [{ tid: 't1', label: 'x', status: 'pending-resume', createdAt: 0, lastSeenAt: 0 }],
     }
     const resumeClaim: ResumeClaimResponse = {
-      token: 'llui-agent_new.sig' as AgentToken,
+      token: 'llui-agent_resumed' as AgentToken,
       wsUrl: 'wss://app/agent/ws',
     }
     const sessions: SessionsResponse = {

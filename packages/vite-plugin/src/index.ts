@@ -274,14 +274,14 @@ export interface LluiPluginOptions {
   agent?: boolean | AgentPluginConfig
 }
 
-export type AgentPluginConfig = {
-  /**
-   * HMAC signing key for tokens. ≥32 bytes. Rotation invalidates all
-   * tokens. Falls back to `process.env.AGENT_SIGNING_KEY`, then to a
-   * per-session random key (dev-only).
-   */
-  signingKey?: string
-}
+/**
+ * Reserved for future agent-server config. Empty today — opaque tokens
+ * (post-0.0.35) need no signing key, and the dev server hard-codes the
+ * identity resolver to `'dev-user'`. The shape is kept so callers can
+ * pass `agent: { ... }` and we can grow options without churning the
+ * public type.
+ */
+export type AgentPluginConfig = Record<string, never>
 
 /**
  * Does `@llui/mcp` resolve from `root`'s node_modules? Uses
@@ -335,11 +335,10 @@ type AgentServerInstance = {
  */
 async function loadAgentServer(
   appRoot: string,
-  cfg: AgentPluginConfig,
+  _cfg: AgentPluginConfig,
 ): Promise<AgentServerInstance | null> {
   let serverModule: {
     createLluiAgentServer: (opts: {
-      signingKey: string
       identityResolver?: (req: Request) => Promise<string | null>
     }) => AgentServerInstance
   }
@@ -366,12 +365,11 @@ async function loadAgentServer(
     return null
   }
 
-  const { randomBytes } = await import('node:crypto')
-  const signingKey: string =
-    cfg.signingKey ?? process.env['AGENT_SIGNING_KEY'] ?? randomBytes(32).toString('base64url')
-
+  // The pre-0.0.35 agent server required an HMAC signingKey for JWT
+  // tokens. The opaque-token rewrite removed that option; the dev
+  // server here just calls the factory with no auth config — the
+  // in-memory token store is the source of truth.
   return serverModule.createLluiAgentServer({
-    signingKey,
     identityResolver: async () => 'dev-user',
   })
 }

@@ -54,7 +54,6 @@ export async function setup(): Promise<E2EContext> {
 
   // 2. Create the LLui agent server (manages minting, LAP routing, WS pairing).
   const agent = createLluiAgentServer({
-    signingKey: 'x'.repeat(32),
     tokenStore: new InMemoryTokenStore(),
     identityResolver: async () => 'e2e-user',
     auditSink: { write: async () => undefined },

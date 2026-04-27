@@ -1,11 +1,10 @@
 import type { TokenStore } from '../token-store.js'
 import type { IdentityResolver } from '../identity.js'
 import type { AuditSink } from '../audit.js'
-import { signToken } from '../token.js'
-import type { MintResponse, TokenPayload, TokenRecord } from '../../protocol.js'
+import { mintToken } from '../token.js'
+import type { MintResponse, TokenRecord } from '../../protocol.js'
 
 export type MintDeps = {
-  signingKey: string | Uint8Array
   tokenStore: TokenStore
   identityResolver: IdentityResolver
   auditSink: AuditSink
@@ -16,6 +15,11 @@ export type MintDeps = {
   uuid?: () => string
   /** Hard-expiry window, default 24 h. */
   hardExpiryMs?: number
+  /**
+   * Override the token mint primitive (for tests that need a known
+   * token value). Production uses the default opaque mint.
+   */
+  mint?: typeof mintToken
 }
 
 /**
@@ -38,18 +42,23 @@ export async function handleMint(req: Request, deps: MintDeps): Promise<Response
   const uid = await deps.identityResolver(req)
   const tid = uuid()
   const nowMs = now()
-  const iat = Math.floor(nowMs / 1000)
-  const exp = Math.floor((nowMs + hardExpiryMs) / 1000)
+  const expiresAt = nowMs + hardExpiryMs
   const origin = new URL(req.url).origin
 
-  const payload: TokenPayload = { tid, iat, exp, scope: 'agent' }
-  const token = await signToken(payload, deps.signingKey)
+  // Mint an opaque random token + the SHA-256 hash we'll persist. The
+  // plaintext token is returned to the caller in this single HTTP
+  // response; from this point on, the server only knows the hash. See
+  // token.ts for the security rationale.
+  const mint = deps.mint ?? mintToken
+  const { token, tokenHash } = await mint()
 
   const record: TokenRecord = {
     tid,
+    tokenHash,
     uid,
     status: 'awaiting-ws',
     createdAt: nowMs,
+    expiresAt,
     lastSeenAt: nowMs,
     pendingResumeUntil: null,
     origin,
@@ -73,7 +82,10 @@ export async function handleMint(req: Request, deps: MintDeps): Promise<Response
     tid,
     wsUrl,
     lapUrl,
-    expiresAt: exp,
+    // Wire format keeps the seconds-since-epoch convention from the
+    // pre-0.0.35 JWT-payload `exp` so existing clients reading
+    // `expiresAt` see the same units.
+    expiresAt: Math.floor(expiresAt / 1000),
   }
   return new Response(JSON.stringify(body), {
     status: 200,

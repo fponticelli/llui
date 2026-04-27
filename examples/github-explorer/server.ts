@@ -10,11 +10,6 @@ import { readFileSync } from 'fs'
 import type { IncomingMessage } from 'node:http'
 import { createLluiAgentServer } from '@llui/agent/server'
 
-// AGENT_SIGNING_KEY: set this to a strong random secret (≥ 32 bytes) in
-// production via the environment variable. The default 'dev-...' value is
-// safe only for local development — it has no entropy.
-const AGENT_SIGNING_KEY = process.env['AGENT_SIGNING_KEY'] ?? 'dev-dev-dev-dev-dev-dev-dev-dev-x'
-
 const PORT = 5173
 
 async function readBody(req: IncomingMessage): Promise<Buffer> {
@@ -42,8 +37,9 @@ async function main() {
   })
 
   // Create the agent server (HTTP management + LAP router + WS pairing).
+  // Tokens are opaque random bearers (see @llui/agent/server/token.ts);
+  // no signing key needed — the in-memory store is the source of truth.
   const agent = createLluiAgentServer({
-    signingKey: AGENT_SIGNING_KEY,
     identityResolver: async () => 'demo-user',
   })
 

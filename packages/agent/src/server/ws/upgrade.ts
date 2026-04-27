@@ -5,11 +5,10 @@ import type { Duplex } from 'node:stream'
 import type { PairingRegistry, PairingConnection } from './pairing-registry.js'
 import type { TokenStore } from '../token-store.js'
 import type { AuditSink } from '../audit.js'
-import { verifyToken } from '../token.js'
+import { tokenHashOf } from '../token.js'
 import type { ClientFrame, ServerFrame } from '../../protocol.js'
 
 export type UpgradeDeps = {
-  signingKey: string | Uint8Array
   tokenStore: TokenStore
   registry: PairingRegistry
   auditSink: AuditSink
@@ -52,13 +51,21 @@ export function createWsUpgradeHandler(deps: UpgradeDeps) {
       return
     }
 
-    const verified = await verifyToken(token, deps.signingKey)
-    if (verified.kind !== 'ok') {
+    // Same hash-lookup verify path as the LAP HTTP handlers — see
+    // describe.ts:verifyAndReadTid for the rationale.
+    const hash = await tokenHashOf(token)
+    if (!hash) {
       socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n')
       socket.destroy()
       return
     }
-    const { tid } = verified.payload
+    const rec = await deps.tokenStore.findByTokenHash(hash)
+    if (!rec || rec.expiresAt <= now()) {
+      socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n')
+      socket.destroy()
+      return
+    }
+    const tid = rec.tid
 
     // Perform upgrade, wire to registry
     wss.handleUpgrade(req, socket, head, (ws: WebSocket) => {

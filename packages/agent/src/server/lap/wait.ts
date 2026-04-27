@@ -6,7 +6,6 @@ import { verifyAndReadTid } from './describe.js'
 import type { LapWaitRequest, LapWaitResponse } from '../../protocol.js'
 
 export type LapWaitDeps = {
-  signingKey: string | Uint8Array
   tokenStore: TokenStore
   registry: PairingRegistry
   auditSink: AuditSink
@@ -15,7 +14,7 @@ export type LapWaitDeps = {
 }
 
 export async function handleLapWait(req: Request, deps: LapWaitDeps): Promise<Response> {
-  const auth = await verifyAndReadTid(req, deps.signingKey)
+  const auth = await verifyAndReadTid(req, deps.tokenStore)
   if (!auth.ok) return json({ error: { code: auth.code } }, auth.status)
 
   const rec = await deps.tokenStore.findByTid(auth.tid)

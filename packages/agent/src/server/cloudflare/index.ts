@@ -16,9 +16,8 @@
  * export class AgentDO {
  *   private agent: AgentPairingDurableObject
  *   constructor(_state: DurableObjectState, env: Env) {
- *     this.agent = new AgentPairingDurableObject({
- *       signingKey: env.AGENT_SIGNING_KEY,
- *     })
+ *     // Tokens are opaque (see token.ts) — no signing key needed.
+ *     this.agent = new AgentPairingDurableObject({})
  *   }
  *   fetch(req: Request) {
  *     return this.agent.fetch(req)
@@ -27,7 +26,12 @@
  *
  * export default {
  *   async fetch(req: Request, env: Env) {
- *     return routeToAgentDO(req, env.AGENT_DO, env.AGENT_SIGNING_KEY)
+ *     return routeToAgentDO(req, env.AGENT_DO, async (token) => {
+ *       const stub = env.AGENT_DO.get(env.AGENT_DO.idFromName('__root'))
+ *       const r = await stub.fetch(`http://internal/__resolve?token=${encodeURIComponent(token)}`)
+ *       const body = (await r.json()) as { tid: string | null }
+ *       return body.tid
+ *     })
  *   },
  * }
  * ```

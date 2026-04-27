@@ -50,7 +50,8 @@ const llmsTxt = `# LLui
 - Getting Started: https://llui.dev/getting-started
 - Cookbook: https://llui.dev/cookbook
 - Architecture: https://llui.dev/architecture
-- LLM Guide: https://llui.dev/llm-guide
+- Debugging: https://llui.dev/debugging
+- Agents: https://llui.dev/agents
 - Full API Reference: https://llui.dev/llms-full.txt
 
 ## Example

@@ -1,5 +1,5 @@
 import { loadDoc } from '../../src/markdown'
 
 export async function data() {
-  return loadDoc('llm-guide')
+  return loadDoc('agents')
 }

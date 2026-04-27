@@ -2,13 +2,10 @@ import { describe, it, expect } from 'vitest'
 import { createLluiAgentServer, InMemoryTokenStore } from '../../src/server/index.js'
 import type { MintResponse } from '../../src/protocol.js'
 
-const key = 'x'.repeat(32)
-
 describe('full LAP flow — mint → register → describe → message', () => {
   it('end-to-end dispatched path', async () => {
     const store = new InMemoryTokenStore()
     const agent = createLluiAgentServer({
-      signingKey: key,
       tokenStore: store,
       identityResolver: async () => 'u1',
       auditSink: { write: () => {} },

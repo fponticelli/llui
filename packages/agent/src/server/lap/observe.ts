@@ -12,7 +12,6 @@ import type {
 } from '../../protocol.js'
 
 export type LapObserveDeps = {
-  signingKey: string | Uint8Array
   tokenStore: TokenStore
   registry: PairingRegistry
   auditSink: AuditSink
@@ -34,7 +33,7 @@ export type LapObserveDeps = {
  * is one call instead of three.
  */
 export async function handleLapObserve(req: Request, deps: LapObserveDeps): Promise<Response> {
-  const auth = await verifyAndReadTid(req, deps.signingKey)
+  const auth = await verifyAndReadTid(req, deps.tokenStore)
   if (!auth.ok) return json({ error: { code: auth.code } }, auth.status)
 
   const rec = await deps.tokenStore.findByTid(auth.tid)

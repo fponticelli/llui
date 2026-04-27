@@ -9,7 +9,6 @@
  * (`createLluiAgentServer`); web runtimes use `./web/` adapters on
  * top of this core.
  */
-import type { ServerOptions } from './options.js'
 import type { TokenStore } from './token-store.js'
 import type { IdentityResolver } from './identity.js'
 import type { AuditSink } from './audit.js'
@@ -21,7 +20,7 @@ import { defaultRateLimiter } from './rate-limit.js'
 import { createHttpRouter } from './http/router.js'
 import { createLapRouter } from './lap/router.js'
 import { InMemoryPairingRegistry } from './ws/pairing-registry.js'
-import { verifyToken } from './token.js'
+import { tokenHashOf } from './token.js'
 
 const ANONYMOUS_RESOLVER: IdentityResolver = async () => null
 
@@ -32,7 +31,6 @@ const ANONYMOUS_RESOLVER: IdentityResolver = async () => null
  * upgrade wiring on top.
  */
 export type CoreOptions = {
-  signingKey: ServerOptions['signingKey']
   tokenStore?: TokenStore
   identityResolver?: IdentityResolver
   auditSink?: AuditSink
@@ -82,11 +80,7 @@ export type AgentCoreHandle = {
  * top (see `@llui/agent/server` for Node, `@llui/agent/server/web`
  * for WHATWG runtimes).
  */
-export function createLluiAgentCore(opts: CoreOptions): AgentCoreHandle {
-  if (!opts.signingKey) {
-    throw new Error('createLluiAgentCore: signingKey is required')
-  }
-
+export function createLluiAgentCore(opts: CoreOptions = {}): AgentCoreHandle {
   const tokenStore = opts.tokenStore ?? new InMemoryTokenStore()
   const identityResolver = opts.identityResolver ?? ANONYMOUS_RESOLVER
   const auditSink = opts.auditSink ?? consoleAuditSink
@@ -113,7 +107,6 @@ export function createLluiAgentCore(opts: CoreOptions): AgentCoreHandle {
     })
 
   const httpRouter = createHttpRouter({
-    signingKey: opts.signingKey,
     tokenStore,
     identityResolver,
     auditSink,
@@ -122,7 +115,6 @@ export function createLluiAgentCore(opts: CoreOptions): AgentCoreHandle {
 
   const lapRouter = createLapRouter(
     {
-      signingKey: opts.signingKey,
       tokenStore,
       registry,
       auditSink,
@@ -138,11 +130,15 @@ export function createLluiAgentCore(opts: CoreOptions): AgentCoreHandle {
   }
 
   const acceptConnection: AgentCoreHandle['acceptConnection'] = async (token, conn) => {
-    const verified = await verifyToken(token, opts.signingKey)
-    if (verified.kind !== 'ok') return { ok: false, status: 401, code: 'auth-failed' }
-    const { tid } = verified.payload
-    const rec = await tokenStore.findByTid(tid)
-    if (!rec || rec.status === 'revoked') return { ok: false, status: 403, code: 'revoked' }
+    // Same hash-lookup path as the LAP HTTP routes — keeps the auth
+    // story uniform across HTTP and WS surfaces.
+    const hash = await tokenHashOf(token)
+    if (!hash) return { ok: false, status: 401, code: 'auth-failed' }
+    const rec = await tokenStore.findByTokenHash(hash)
+    if (!rec) return { ok: false, status: 401, code: 'auth-failed' }
+    if (rec.expiresAt <= Date.now()) return { ok: false, status: 401, code: 'auth-failed' }
+    if (rec.status === 'revoked') return { ok: false, status: 403, code: 'revoked' }
+    const tid = rec.tid
     registry.register(tid, conn)
     const nowMs = Date.now()
     await tokenStore.markAwaitingClaude(tid, nowMs)

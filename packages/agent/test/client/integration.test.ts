@@ -18,8 +18,6 @@ import type { AgentServerHandle } from '../../src/server/options.js'
 // Server setup
 // ---------------------------------------------------------------------------
 
-const key = 'x'.repeat(32)
-
 let server: Server
 let agent: AgentServerHandle
 let store: InMemoryTokenStore
@@ -33,7 +31,6 @@ let port: number
 beforeEach(async () => {
   store = new InMemoryTokenStore()
   agent = createLluiAgentServer({
-    signingKey: key,
     tokenStore: store,
     identityResolver: async () => 'u1',
     auditSink: { write: () => {} },

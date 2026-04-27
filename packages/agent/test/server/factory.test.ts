@@ -1,15 +1,12 @@
 import { describe, it, expect } from 'vitest'
 import { createLluiAgentServer, InMemoryTokenStore } from '../../src/server/index.js'
-import { verifyToken } from '../../src/server/token.js'
+import { tokenHashOf } from '../../src/server/token.js'
 import type { MintResponse, SessionsResponse } from '../../src/protocol.js'
-
-const key = 'x'.repeat(32)
 
 describe('createLluiAgentServer — full HTTP lifecycle', () => {
   it('mints then lists then revokes through the public handle', async () => {
     const store = new InMemoryTokenStore()
     const agent = createLluiAgentServer({
-      signingKey: key,
       tokenStore: store,
       identityResolver: async () => 'u1',
       auditSink: { write: () => {} },
@@ -18,7 +15,12 @@ describe('createLluiAgentServer — full HTTP lifecycle', () => {
     const mintRes = await agent.router(new Request('https://app/agent/mint', { method: 'POST' }))
     expect(mintRes?.status).toBe(200)
     const mintBody = (await mintRes!.json()) as MintResponse
-    expect((await verifyToken(mintBody.token, key)).kind).toBe('ok')
+
+    // The minted bearer maps to a TokenRecord in the store via its hash.
+    const hash = await tokenHashOf(mintBody.token)
+    expect(hash).not.toBeNull()
+    const rec = await store.findByTokenHash(hash!)
+    expect(rec?.tid).toBe(mintBody.tid)
 
     // Real flow: awaiting-ws → (WS upgrade) awaiting-claude → (describe) active.
     // Simulate the full transition here (WS upgrade + describe) to put the token in active status.
@@ -44,12 +46,8 @@ describe('createLluiAgentServer — full HTTP lifecycle', () => {
     expect(postRevokeBody.sessions.map((s) => s.tid)).not.toContain(mintBody.tid)
   })
 
-  it('throws when signingKey is missing', () => {
-    expect(() => createLluiAgentServer({ signingKey: '' } as any)).toThrow()
-  })
-
-  it('uses sensible defaults when only signingKey is provided', () => {
-    const agent = createLluiAgentServer({ signingKey: key })
+  it('uses sensible defaults when called with no options', () => {
+    const agent = createLluiAgentServer()
     expect(typeof agent.router).toBe('function')
   })
 })

@@ -1,10 +1,10 @@
 import { describe, it, expect, beforeEach } from 'vitest'
 import { handleResumeList, handleResumeClaim } from '../../src/server/http/resume.js'
 import { InMemoryTokenStore } from '../../src/server/token-store.js'
-import { verifyToken } from '../../src/server/token.js'
-import type { TokenRecord, ResumeListResponse, ResumeClaimResponse } from '../../src/protocol.js'
+import { tokenHashOf } from '../../src/server/token.js'
+import type { ResumeListResponse, ResumeClaimResponse } from '../../src/protocol.js'
+import { seedToken } from './_token-helper.js'
 
-const key = 'x'.repeat(32)
 let store: InMemoryTokenStore
 let audit: { write: (e: unknown) => void }
 let log: unknown[]
@@ -20,17 +20,16 @@ beforeEach(() => {
 })
 
 const seedPendingResume = async (tid: string, uid: string | null, origin: string) => {
-  const rec: TokenRecord = {
+  await seedToken(store, {
     tid,
     uid,
     status: 'pending-resume',
-    createdAt: 1000,
-    lastSeenAt: 1000,
-    pendingResumeUntil: 9999,
+    now: 1000,
+    expiresAt: 9_999_999,
     origin,
     label: 'Claude · Opus',
-  }
-  await store.create(rec)
+    pendingResumeUntil: 9999,
+  })
 }
 
 describe('handleResumeList', () => {
@@ -75,7 +74,7 @@ describe('handleResumeList', () => {
 })
 
 describe('handleResumeClaim', () => {
-  it('returns a fresh token + wsUrl and flips the record to active', async () => {
+  it('returns a fresh token + wsUrl, rotates the token hash, and flips the record to active', async () => {
     await seedPendingResume('t1', 'u1', 'https://app.example')
     const req = new Request('https://app.example/agent/resume/claim', {
       method: 'POST',
@@ -86,7 +85,6 @@ describe('handleResumeClaim', () => {
       tokenStore: store,
       identityResolver: async () => 'u1',
       auditSink: audit,
-      signingKey: key,
       now: () => 5000,
       hardExpiryMs: 3600_000,
     })
@@ -94,11 +92,14 @@ describe('handleResumeClaim', () => {
     const body = (await res.json()) as ResumeClaimResponse
     expect(body.token).toBeDefined()
     expect(body.wsUrl).toMatch(/\/agent\/ws$/)
-    const verified = await verifyToken(body.token, key, 5)
-    expect(verified.kind).toBe('ok')
 
+    // The new bearer's hash matches the rotated record's tokenHash.
+    const newHash = await tokenHashOf(body.token)
+    expect(newHash).not.toBeNull()
     const stored = await store.findByTid('t1')
     expect(stored?.status).toBe('active')
+    expect(stored?.tokenHash).toBe(newHash)
+    expect(stored?.expiresAt).toBe(5000 + 3600_000)
   })
 
   it('rejects when the identity does not own the tid', async () => {
@@ -112,7 +113,6 @@ describe('handleResumeClaim', () => {
       tokenStore: store,
       identityResolver: async () => 'u-someone-else',
       auditSink: audit,
-      signingKey: key,
       now: () => 5000,
       hardExpiryMs: 3600_000,
     })
@@ -130,7 +130,6 @@ describe('handleResumeClaim', () => {
       tokenStore: store,
       identityResolver: async () => 'u1',
       auditSink: audit,
-      signingKey: key,
       now: () => 5000,
       hardExpiryMs: 3600_000,
     })

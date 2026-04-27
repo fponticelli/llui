@@ -2,10 +2,21 @@ import type { TokenRecord } from '../protocol.js'
 
 /**
  * Append-only, read-friendly storage for token records. See spec §10.3.
+ *
+ * Tokens are looked up by `tokenHash` (SHA-256 of the presented bearer
+ * value) on every authenticated request. The `tid` index is kept for
+ * the resume / revoke / sessions surfaces — those operate on session
+ * IDs the user can see and copy.
  */
 export interface TokenStore {
   create(record: TokenRecord): Promise<void>
   findByTid(tid: string): Promise<TokenRecord | null>
+  /**
+   * Look up a record by the SHA-256 hash of its bearer token. Returns
+   * `null` when the hash isn't in the store (the typical "this token
+   * isn't ours / has been revoked / never existed" case).
+   */
+  findByTokenHash(tokenHash: string): Promise<TokenRecord | null>
   listByIdentity(uid: string): Promise<TokenRecord[]>
   touch(tid: string, now: number): Promise<void>
   markPendingResume(tid: string, until: number): Promise<void>
@@ -13,16 +24,36 @@ export interface TokenStore {
   markAwaitingClaude(tid: string, now: number): Promise<void>
   markActive(tid: string, label: string, now: number): Promise<void>
   revoke(tid: string): Promise<void>
+  /**
+   * Replace the bearer token's hash and bump expiry. Used by the
+   * resume-claim flow: the old token is invalidated (its hash is no
+   * longer indexed) and a freshly-minted opaque token takes its
+   * place. The `tid` stays stable so existing audit / pairing state
+   * carries over.
+   */
+  rotateTokenHash(tid: string, newTokenHash: string, expiresAt: number): Promise<void>
 }
 
 export class InMemoryTokenStore implements TokenStore {
   private byTid = new Map<string, TokenRecord>()
+  // Secondary index for the auth hot path. Kept in sync with `byTid`
+  // on `create`. Persistent stores would index this column at schema
+  // time; the in-memory map is the same idea minus the DB.
+  private tidByTokenHash = new Map<string, string>()
 
   async create(record: TokenRecord): Promise<void> {
     this.byTid.set(record.tid, { ...record })
+    this.tidByTokenHash.set(record.tokenHash, record.tid)
   }
 
   async findByTid(tid: string): Promise<TokenRecord | null> {
+    const r = this.byTid.get(tid)
+    return r ? { ...r } : null
+  }
+
+  async findByTokenHash(tokenHash: string): Promise<TokenRecord | null> {
+    const tid = this.tidByTokenHash.get(tokenHash)
+    if (!tid) return null
     const r = this.byTid.get(tid)
     return r ? { ...r } : null
   }
@@ -69,5 +100,17 @@ export class InMemoryTokenStore implements TokenStore {
     const r = this.byTid.get(tid)
     if (!r) return
     this.byTid.set(tid, { ...r, status: 'revoked', pendingResumeUntil: null })
+    // Drop the hash index entry so revoked tokens fail at the auth
+    // boundary even if the bearer leaks. The byTid record stays for
+    // audit / replay purposes.
+    this.tidByTokenHash.delete(r.tokenHash)
+  }
+
+  async rotateTokenHash(tid: string, newTokenHash: string, expiresAt: number): Promise<void> {
+    const r = this.byTid.get(tid)
+    if (!r) return
+    this.tidByTokenHash.delete(r.tokenHash)
+    this.byTid.set(tid, { ...r, tokenHash: newTokenHash, expiresAt })
+    this.tidByTokenHash.set(newTokenHash, tid)
   }
 }

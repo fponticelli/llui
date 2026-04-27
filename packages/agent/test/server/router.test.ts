@@ -2,13 +2,10 @@ import { describe, it, expect } from 'vitest'
 import { createHttpRouter } from '../../src/server/http/router.js'
 import { InMemoryTokenStore } from '../../src/server/token-store.js'
 
-const key = 'x'.repeat(32)
-
 const mkRouter = () => {
   const store = new InMemoryTokenStore()
   const audit = { write: () => {} }
   return createHttpRouter({
-    signingKey: key,
     tokenStore: store,
     identityResolver: async () => 'u1',
     auditSink: audit,

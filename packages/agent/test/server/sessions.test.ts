@@ -10,9 +10,11 @@ beforeEach(() => {
 
 const base = (o: Partial<TokenRecord> = {}): TokenRecord => ({
   tid: 't',
+  tokenHash: `hash-${o.tid ?? 't'}`,
   uid: 'u1',
   status: 'active',
   createdAt: 1,
+  expiresAt: Number.MAX_SAFE_INTEGER,
   lastSeenAt: 1,
   pendingResumeUntil: null,
   origin: 'https://app',

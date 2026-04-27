@@ -1,15 +1,13 @@
 import { describe, it, expect, beforeEach } from 'vitest'
 import { handleMint } from '../../src/server/http/mint.js'
 import { InMemoryTokenStore } from '../../src/server/token-store.js'
-import { verifyToken } from '../../src/server/token.js'
+import { tokenHashOf } from '../../src/server/token.js'
 import type { MintResponse } from '../../src/protocol.js'
 
-const key = 'x'.repeat(32)
 let store: InMemoryTokenStore
 let auditLog: unknown[]
 let clock = 1_700_000_000
 
-const now = () => clock
 beforeEach(() => {
   store = new InMemoryTokenStore()
   auditLog = []
@@ -23,10 +21,9 @@ const audit = {
 }
 
 describe('handleMint', () => {
-  it('creates a pairing record and returns a signed token + wsUrl + lapUrl', async () => {
+  it('creates a pairing record and returns an opaque token + wsUrl + lapUrl', async () => {
     const req = new Request('https://app.example/agent/mint', { method: 'POST' })
     const res = await handleMint(req, {
-      signingKey: key,
       tokenStore: store,
       identityResolver: async () => 'u1',
       auditSink: audit,
@@ -40,20 +37,25 @@ describe('handleMint', () => {
     expect(body.lapUrl).toBe('https://app.example/agent/lap/v1')
     expect(body.wsUrl).toMatch(/^wss?:\/\/app\.example\/agent\/ws$/)
     expect(body.expiresAt).toBeGreaterThan(clock)
+    expect(body.token.startsWith('llui-agent_')).toBe(true)
 
     const stored = await store.findByTid(body.tid)
     expect(stored?.uid).toBe('u1')
     expect(stored?.status).toBe('awaiting-ws')
     expect(stored?.origin).toBe('https://app.example')
 
-    const verified = await verifyToken(body.token, key, clock)
-    expect(verified.kind).toBe('ok')
+    // The opaque bearer hashes to the record's tokenHash, and the
+    // record is reachable by hash on the auth hot path.
+    const hash = await tokenHashOf(body.token)
+    expect(hash).not.toBeNull()
+    expect(stored?.tokenHash).toBe(hash)
+    const fromHash = await store.findByTokenHash(hash!)
+    expect(fromHash?.tid).toBe(body.tid)
   })
 
   it('tolerates a null identity (anonymous app)', async () => {
     const req = new Request('https://app.example/agent/mint', { method: 'POST' })
     const res = await handleMint(req, {
-      signingKey: key,
       tokenStore: store,
       identityResolver: async () => null,
       auditSink: audit,
@@ -70,7 +72,6 @@ describe('handleMint', () => {
   it('writes a mint audit entry', async () => {
     const req = new Request('https://app.example/agent/mint', { method: 'POST' })
     await handleMint(req, {
-      signingKey: key,
       tokenStore: store,
       identityResolver: async () => 'u1',
       auditSink: audit,
@@ -85,7 +86,6 @@ describe('handleMint', () => {
   it('rejects non-POST methods', async () => {
     const req = new Request('https://app.example/agent/mint', { method: 'GET' })
     const res = await handleMint(req, {
-      signingKey: key,
       tokenStore: store,
       identityResolver: async () => null,
       auditSink: audit,

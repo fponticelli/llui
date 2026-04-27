@@ -19,9 +19,11 @@ beforeEach(() => {
 const seed = async (tid: string, uid: string | null) => {
   const rec: TokenRecord = {
     tid,
+    tokenHash: `hash-${tid}`,
     uid,
     status: 'active',
     createdAt: 0,
+    expiresAt: Number.MAX_SAFE_INTEGER,
     lastSeenAt: 0,
     pendingResumeUntil: null,
     origin: 'https://app.example',

@@ -67,15 +67,14 @@ function llui(options: LluiPluginOptions = {}): Plugin
 
 ### `AgentPluginConfig`
 
+Reserved for future agent-server config. Empty today — opaque tokens
+(post-0.0.35) need no signing key, and the dev server hard-codes the
+identity resolver to `'dev-user'`. The shape is kept so callers can
+pass `agent: { ... }` and we can grow options without churning the
+public type.
+
 ```typescript
-export type AgentPluginConfig = {
-  /**
-   * HMAC signing key for tokens. ≥32 bytes. Rotation invalidates all
-   * tokens. Falls back to `process.env.AGENT_SIGNING_KEY`, then to a
-   * per-session random key (dev-only).
-   */
-  signingKey?: string
-}
+export type AgentPluginConfig = Record<string, never>
 ```
 
 ## Interfaces

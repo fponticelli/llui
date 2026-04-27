@@ -6,7 +6,6 @@ import { verifyAndReadTid } from './describe.js'
 import type { LapConfirmResultRequest, LapConfirmResultResponse } from '../../protocol.js'
 
 export type LapConfirmResultDeps = {
-  signingKey: string | Uint8Array
   tokenStore: TokenStore
   registry: PairingRegistry
   auditSink: AuditSink
@@ -18,7 +17,7 @@ export async function handleLapConfirmResult(
   req: Request,
   deps: LapConfirmResultDeps,
 ): Promise<Response> {
-  const auth = await verifyAndReadTid(req, deps.signingKey)
+  const auth = await verifyAndReadTid(req, deps.tokenStore)
   if (!auth.ok) return json({ error: { code: auth.code } }, auth.status)
 
   const rec = await deps.tokenStore.findByTid(auth.tid)

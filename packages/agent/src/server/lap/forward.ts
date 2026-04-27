@@ -5,7 +5,6 @@ import type { RateLimiter } from '../rate-limit.js'
 import { verifyAndReadTid } from './describe.js'
 
 export type ForwardDeps = {
-  signingKey: string | Uint8Array
   tokenStore: TokenStore
   registry: PairingRegistry
   auditSink: AuditSink
@@ -24,7 +23,7 @@ export function makeForwardHandler(
   auditDetail: (tid: string, args: object) => Record<string, unknown> = () => ({}),
 ) {
   return async (req: Request, deps: ForwardDeps): Promise<Response> => {
-    const auth = await verifyAndReadTid(req, deps.signingKey)
+    const auth = await verifyAndReadTid(req, deps.tokenStore)
     if (!auth.ok) return json({ error: { code: auth.code } }, auth.status)
 
     const rec = await deps.tokenStore.findByTid(auth.tid)
@@ -117,7 +116,7 @@ export const handleLapWouldDispatch = makeForwardHandler('would_dispatch', (body
  * rate-limit gates run identically.
  */
 export async function handleLapRecentActions(req: Request, deps: ForwardDeps): Promise<Response> {
-  const auth = await verifyAndReadTid(req, deps.signingKey)
+  const auth = await verifyAndReadTid(req, deps.tokenStore)
   if (!auth.ok)
     return new Response(JSON.stringify({ error: { code: auth.code } }), {
       status: auth.status,

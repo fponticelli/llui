@@ -11,11 +11,10 @@ import { createWsUpgradeHandler } from './ws/upgrade.js'
  *
  * Spec §10.1, §10.4.
  */
-export function createLluiAgentServer(opts: ServerOptions): AgentServerHandle {
+export function createLluiAgentServer(opts: ServerOptions = {}): AgentServerHandle {
   const core = createLluiAgentCore(opts)
 
   const wsUpgrade = createWsUpgradeHandler({
-    signingKey: opts.signingKey,
     tokenStore: core.tokenStore,
     registry: core.registry,
     auditSink: core.auditSink,

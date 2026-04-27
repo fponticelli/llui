@@ -1,13 +1,12 @@
 import type { TokenStore } from '../token-store.js'
 import type { IdentityResolver } from '../identity.js'
 import type { AuditSink } from '../audit.js'
-import { signToken } from '../token.js'
+import { mintToken } from '../token.js'
 import type {
   ResumeListRequest,
   ResumeListResponse,
   ResumeClaimRequest,
   ResumeClaimResponse,
-  TokenPayload,
   AgentSession,
 } from '../../protocol.js'
 
@@ -15,9 +14,10 @@ export type ResumeDeps = {
   tokenStore: TokenStore
   identityResolver: IdentityResolver
   auditSink: AuditSink
-  signingKey?: string | Uint8Array
   now?: () => number
   hardExpiryMs?: number
+  /** Override mint primitive for tests. */
+  mint?: typeof mintToken
 }
 
 export async function handleResumeList(req: Request, deps: ResumeDeps): Promise<Response> {
@@ -49,7 +49,6 @@ export async function handleResumeList(req: Request, deps: ResumeDeps): Promise<
 
 export async function handleResumeClaim(req: Request, deps: ResumeDeps): Promise<Response> {
   if (req.method !== 'POST') return methodNotAllowed()
-  if (!deps.signingKey) return new Response(null, { status: 500 })
 
   const body = (await req.json().catch(() => null)) as ResumeClaimRequest | null
   if (!body || typeof body.tid !== 'string') return badRequest()
@@ -65,11 +64,15 @@ export async function handleResumeClaim(req: Request, deps: ResumeDeps): Promise
 
   const nowMs = (deps.now ?? (() => Date.now()))()
   const hardExpiryMs = deps.hardExpiryMs ?? 24 * 60 * 60 * 1000
-  const iat = Math.floor(nowMs / 1000)
-  const exp = Math.floor((nowMs + hardExpiryMs) / 1000)
-  const payload: TokenPayload = { tid: rec.tid, iat, exp, scope: 'agent' }
-  const token = await signToken(payload, deps.signingKey)
+  const expiresAt = nowMs + hardExpiryMs
 
+  // Resume mints a fresh opaque token bound to the existing `tid` and
+  // rotates the stored hash. The previous bearer is dropped from the
+  // hash index immediately, so a leaked old token can't continue
+  // using the resumed session. Same record, new bearer.
+  const mint = deps.mint ?? mintToken
+  const { token, tokenHash } = await mint()
+  await deps.tokenStore.rotateTokenHash(rec.tid, tokenHash, expiresAt)
   await deps.tokenStore.markActive(rec.tid, rec.label ?? '(resumed)', nowMs)
 
   await deps.auditSink.write({

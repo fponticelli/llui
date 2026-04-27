@@ -9,9 +9,11 @@ beforeEach(() => {
 
 const baseRecord = (overrides: Partial<TokenRecord> = {}): TokenRecord => ({
   tid: 't1',
+  tokenHash: `hash-${overrides.tid ?? 't1'}`,
   uid: 'u1',
   status: 'awaiting-ws',
   createdAt: 1000,
+  expiresAt: Number.MAX_SAFE_INTEGER,
   lastSeenAt: 1000,
   pendingResumeUntil: null,
   origin: 'https://app.example',

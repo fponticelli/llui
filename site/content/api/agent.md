@@ -402,7 +402,7 @@ top (see `@llui/agent/server` for Node, `@llui/agent/server/web`
 for WHATWG runtimes).
 
 ```typescript
-function createLluiAgentCore(opts: CoreOptions): AgentCoreHandle
+function createLluiAgentCore(opts: CoreOptions = {}): AgentCoreHandle
 ```
 
 ### `createLluiAgentServer()`
@@ -415,32 +415,38 @@ WHATWG runtimes.
 Spec §10.1, §10.4.
 
 ```typescript
-function createLluiAgentServer(opts: ServerOptions): AgentServerHandle
+function createLluiAgentServer(opts: ServerOptions = {}): AgentServerHandle
 ```
 
-### `signToken()`
+### `mintToken()`
 
-Serialize a payload to `llui-agent_<base64url(json)>.<base64url(hmac)>`.
-See spec §6.1. Async because WebCrypto's HMAC sign/verify is the
-cross-runtime standard; Node, Cloudflare, Deno, and Bun all expose
-`crypto.subtle` identically.
+Mint an opaque random bearer token + the SHA-256 hash the server
+stores as a lookup key. Tokens are 32 bytes of CSPRNG entropy (256
+bits) base64url-encoded with the `llui-agent_` prefix — total
+54–55 chars, vs the previous JWT format's ~250.
+The token itself never persists; only the hash does. A leaked store
+therefore does not compromise live tokens, since the bearer secret
+isn't recoverable from the hash. This matches the standard "session
+cookie / API key" pattern.
+The opaque form is the only token format the server understands as
+of 0.0.35. The previous HMAC-signed JWT format is gone; clients
+carrying old tokens will fail with `unknown` on first call and need
+to remint. See CHANGELOG.
 
 ```typescript
-function signToken(payload: TokenPayload, key: string | Uint8Array): Promise<AgentToken>
+function mintToken(): Promise<{ token: AgentToken; tokenHash: string }>
 ```
 
-### `verifyToken()`
+### `tokenHashOf()`
 
-Verify the signature, parse the payload, and check expiry.
-`crypto.subtle.verify` does the constant-time compare internally,
-so we don't need a separate `timingSafeEqual`.
+Compute the SHA-256 hash of a presented bearer token. Returns `null`
+when the prefix is missing — the verify path uses that to fail-fast
+on garbage-shaped Authorization headers without a crypto round-trip.
+Hash is hex-encoded for portability across stores (Postgres `text`,
+KV string, etc.).
 
 ```typescript
-function verifyToken(
-  token: string,
-  key: string | Uint8Array,
-  nowSec: number = Math.floor(Date.now() / 1000),
-): Promise<VerifyResult>
+function tokenHashOf(token: string): Promise<string | null>
 ```
 
 ### `defaultIdentityResolver()`
@@ -551,7 +557,7 @@ Cloudflare Workers handler. Accepts a WebSocket upgrade using
 Usage:
 
 ```ts
-const agent = createLluiAgentCore({ signingKey: env.AGENT_KEY })
+const agent = createLluiAgentCore()
 export default {
   async fetch(req, env) {
     const url = new URL(req.url)
@@ -600,13 +606,20 @@ The token travels in three places depending on the route:
   per-tid DO so the pairing state stays local.
   This is the recommended entry for Cloudflare Workers deployments;
   users who need custom routing can write their own and call the
-  underlying primitives (`verifyToken`, `namespace.get`, etc).
+  underlying primitives directly.
+  As of 0.0.35 the token format is opaque (random, not signed), so we
+  can't recover `tid` from the token alone. The caller passes a
+  `resolveTid` callback — typically `(token) => stub.fetch(...)` to
+  the root DO's token-resolution endpoint — that turns a bearer into
+  its tid via the shared token store. Callers that don't shard by
+  tid can pass `() => Promise.resolve(rootName)` to route everything
+  through the root DO.
 
 ```typescript
 function routeToAgentDO(
   req: Request,
   namespace: MinimalDurableObjectNamespace,
-  signingKey: string | Uint8Array,
+  resolveTid: (token: string) => Promise<string | null>,
   opts: { rootName?: string } = {},
 ): Promise<Response>
 ```
@@ -660,7 +673,6 @@ upgrade wiring on top.
 
 ```typescript
 export type CoreOptions = {
-  signingKey: ServerOptions['signingKey']
   tokenStore?: TokenStore
   identityResolver?: IdentityResolver
   auditSink?: AuditSink
@@ -713,15 +725,15 @@ export type AgentCoreHandle = {
 
 ### `ServerOptions`
 
-Options accepted by `createLluiAgentServer`. All values except
-`signingKey` are optional and fall back to in-memory defaults.
-See spec §10.1.
+Options accepted by `createLluiAgentServer`. All values are
+optional and fall back to in-memory defaults. See spec §10.1.
+Pre-0.0.35 this required a `signingKey` for HMAC-signed JWT tokens.
+The new opaque-token scheme (token.ts) doesn't sign anything — the
+server stores the SHA-256 hash and looks tokens up. The option is
+gone; existing config that passed `signingKey` should drop it.
 
 ```typescript
 export type ServerOptions = {
-  /** HMAC key for signing tokens. ≥32 bytes; rotation invalidates all tokens. */
-  signingKey: string | Uint8Array
-
   /** Token store. Defaults to an `InMemoryTokenStore`. */
   tokenStore?: TokenStore
 
@@ -782,23 +794,17 @@ export type AgentServerHandle = {
 }
 ```
 
-### `TokenPayload`
-
-```typescript
-export type TokenPayload = {
-  tid: string
-  iat: number
-  exp: number
-  scope: 'agent'
-}
-```
-
 ### `VerifyResult`
+
+Result of looking up a presented token. The `expired` reason is
+returned by the verify path when the token's record exists but its
+hard-expiry has passed; `unknown` covers both "no record" and
+"wrong hash" so a probe-by-hash leak surface is uniform.
 
 ```typescript
 export type VerifyResult =
-  | { kind: 'ok'; payload: TokenPayload }
-  | { kind: 'invalid'; reason: 'malformed' | 'bad-signature' | 'expired' }
+  | { kind: 'ok'; tid: string }
+  | { kind: 'invalid'; reason: 'malformed' | 'unknown' | 'expired' }
 ```
 
 ### `IdentityResolver`
@@ -1829,9 +1835,26 @@ export type TokenStatus =
 ```typescript
 export type TokenRecord = {
   tid: string
+  /**
+   * SHA-256 hex of the bearer token. The plaintext token is never
+   * stored — incoming requests hash their `Authorization: Bearer …`
+   * value and look up by this field. Hash-only storage keeps a leaked
+   * store from being a live-token leak. Mirrors the standard session-
+   * cookie / API-key pattern.
+   */
+  tokenHash: string
   uid: string | null
   status: TokenStatus
   createdAt: number
+  /**
+   * Hard-expiry in milliseconds since epoch. The mint endpoint sets
+   * this to `now + hardExpiryMs`; the verify path rejects requests
+   * presenting tokens whose record has `expiresAt <= now`. Pre-0.0.35
+   * the equivalent value lived inside the JWT payload as `exp` (in
+   * seconds); the new opaque-token flow keeps it server-side so the
+   * record is the single source of truth.
+   */
+  expiresAt: number
   lastSeenAt: number
   pendingResumeUntil: number | null
   origin: string
@@ -1946,11 +1969,21 @@ export type AuditEntry = {
 ### `TokenStore`
 
 Append-only, read-friendly storage for token records. See spec §10.3.
+Tokens are looked up by `tokenHash` (SHA-256 of the presented bearer
+value) on every authenticated request. The `tid` index is kept for
+the resume / revoke / sessions surfaces — those operate on session
+IDs the user can see and copy.
 
 ```typescript
 export interface TokenStore {
   create(record: TokenRecord): Promise<void>
   findByTid(tid: string): Promise<TokenRecord | null>
+  /**
+   * Look up a record by the SHA-256 hash of its bearer token. Returns
+   * `null` when the hash isn't in the store (the typical "this token
+   * isn't ours / has been revoked / never existed" case).
+   */
+  findByTokenHash(tokenHash: string): Promise<TokenRecord | null>
   listByIdentity(uid: string): Promise<TokenRecord[]>
   touch(tid: string, now: number): Promise<void>
   markPendingResume(tid: string, until: number): Promise<void>
@@ -1958,6 +1991,14 @@ export interface TokenStore {
   markAwaitingClaude(tid: string, now: number): Promise<void>
   markActive(tid: string, label: string, now: number): Promise<void>
   revoke(tid: string): Promise<void>
+  /**
+   * Replace the bearer token's hash and bump expiry. Used by the
+   * resume-claim flow: the old token is invalidated (its hash is no
+   * longer indexed) and a freshly-minted opaque token takes its
+   * place. The `tid` stays stable so existing audit / pairing state
+   * carries over.
+   */
+  rotateTokenHash(tid: string, newTokenHash: string, expiresAt: number): Promise<void>
 }
 ```
 
@@ -2098,14 +2139,17 @@ export interface MinimalDurableObjectStub {
 ```typescript
 class InMemoryTokenStore implements TokenStore {
   byTid
+  tidByTokenHash
   create(record: TokenRecord): Promise<void>
   findByTid(tid: string): Promise<TokenRecord | null>
+  findByTokenHash(tokenHash: string): Promise<TokenRecord | null>
   listByIdentity(uid: string): Promise<TokenRecord[]>
   touch(tid: string, now: number): Promise<void>
   markPendingResume(tid: string, until: number): Promise<void>
   markAwaitingClaude(tid: string, now: number): Promise<void>
   markActive(tid: string, label: string, now: number): Promise<void>
   revoke(tid: string): Promise<void>
+  rotateTokenHash(tid: string, newTokenHash: string, expiresAt: number): Promise<void>
 }
 ```
 

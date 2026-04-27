@@ -9,14 +9,15 @@ import type { AcceptResult } from './core.js'
 import type { PairingConnection } from './ws/pairing-registry.js'
 
 /**
- * Options accepted by `createLluiAgentServer`. All values except
- * `signingKey` are optional and fall back to in-memory defaults.
- * See spec §10.1.
+ * Options accepted by `createLluiAgentServer`. All values are
+ * optional and fall back to in-memory defaults. See spec §10.1.
+ *
+ * Pre-0.0.35 this required a `signingKey` for HMAC-signed JWT tokens.
+ * The new opaque-token scheme (token.ts) doesn't sign anything — the
+ * server stores the SHA-256 hash and looks tokens up. The option is
+ * gone; existing config that passed `signingKey` should drop it.
  */
 export type ServerOptions = {
-  /** HMAC key for signing tokens. ≥32 bytes; rotation invalidates all tokens. */
-  signingKey: string | Uint8Array
-
   /** Token store. Defaults to an `InMemoryTokenStore`. */
   tokenStore?: TokenStore
 

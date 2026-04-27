@@ -23,7 +23,7 @@ export function extractToken(req: Request): string | null {
  *
  * Usage:
  * ```ts
- * const agent = createLluiAgentCore({ signingKey: env.AGENT_KEY })
+ * const agent = createLluiAgentCore()
  * export default {
  *   async fetch(req, env) {
  *     const url = new URL(req.url)
