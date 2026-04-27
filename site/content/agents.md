@@ -60,6 +60,35 @@ a new session). The same eleven tools become available.
 > }
 > ```
 
+## Upgrading an existing install
+
+`npx -y llui-agent` caches the first-resolved version under
+`~/.npm/_npx/`, so subsequent invocations don't re-check npm — an
+existing user stays pinned to whatever shipped the day they ran the
+install command. To pick up a new release:
+
+1. **Pin `@latest` in the MCP config** so the cache key changes. In
+   Claude Desktop, edit the `args` to `["-y", "llui-agent@latest"]`. In
+   Claude Code, run:
+   ```bash
+   claude mcp remove llui
+   claude mcp add --transport stdio llui -- npx -y llui-agent@latest
+   ```
+   Alternative: leave the spec alone and clear the cache once with
+   `rm -rf ~/.npm/_npx`. Same effect, fewer config edits — but you'll
+   need the same poke at the next breaking release.
+2. **Restart the MCP client.** The tool list is fixed at session start,
+   so quit + reopen Claude Desktop, or start a new Claude Code session.
+3. **Start a fresh chat.** A conversation that was bound under old
+   tool names won't see the new ones until it restarts. Paste a fresh
+   connect snippet from the app — the snippet wording also evolves
+   between releases, so the new one is worth grabbing.
+
+Verify with `claude mcp list` (Code) or by checking the tool picker
+(Desktop). Tool names from `llui-agent@0.0.5+` are `connect_session` /
+`disconnect_session` (no `llui_` prefix); earlier releases used
+`llui_connect_session` / `llui_disconnect_session`.
+
 ## Use it
 
 Open any app built with `@llui/agent/client`. Click "Connect with
