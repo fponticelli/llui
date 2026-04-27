@@ -11,6 +11,44 @@ All notable changes to LLui packages are documented here. LLui is a pre-1.0 proj
 
 Packages version in lockstep at release time: `@llui/dom`, `@llui/vite-plugin`, `@llui/test`, `@llui/router`, `@llui/transitions`, `@llui/components`, `@llui/vike` share a version line. `@llui/effects`, `@llui/mcp`, `@llui/eslint-plugin`, `@llui/agent`, and `llui-agent` have their own cadence.
 
+## 2026-04-27 — @llui/agent@0.0.35, llui-agent@0.0.5, @llui/vite-plugin@0.0.34
+
+**Released:** `@llui/agent@0.0.35`; `llui-agent@0.0.5`; `@llui/vite-plugin@0.0.34`
+
+Two breaking agent-surface changes ship together: opaque random tokens replace JWTs, and the bridge's session tools drop their redundant `llui_` prefix.
+
+### Breaking
+
+- **`@llui/agent@0.0.35`** — agent tokens are now opaque random bearer strings (`llui-agent_<43-base64url>`, ~54 chars) instead of JWTs (~250 chars). Tokens are stored as SHA-256 hashes server-side. The `signingKey` option is gone from `ServerOptions` / `CoreOptions` / every LAP handler / WS upgrade. `routeToAgentDO`'s third argument is now a `resolveTid: (token) => Promise<string | null>` callback (the worker no longer verifies signatures locally; `TokenStore.findByTokenHash` does the lookup).
+- **`llui-agent@0.0.5`** — session-management MCP tools renamed: `llui_connect_session` → `connect_session`, `llui_disconnect_session` → `disconnect_session`. In Claude Code these now appear as the cleaner `mcp__llui__connect_session` instead of the doubled `mcp__llui__llui_connect_session`. The forwarded LAP tools (`describe_app`, `get_state`, `send_message`, …) keep their existing names.
+- **`@llui/vite-plugin@0.0.34`** — `AgentPluginConfig.signingKey` is gone (mirrors the agent-server removal). The type is now an empty reserved-for-future-options shape (`Record<string, never>`).
+
+### Migration
+
+- Drop any `signingKey` from your `createLluiAgentServer({ … })` call and from `llui({ agent: { signingKey } })` in `vite.config.ts`.
+- Drop `process.env.AGENT_SIGNING_KEY` if you set it — it's no longer read.
+- Anywhere you reference the bridge tools by name in your own code, scripts, or prompt instructions, drop the `llui_` prefix from the two session tools.
+- If you have stuck Claude sessions where `connect_session` "isn't available" / "doesn't appear in the loaded tools", paste a fresh snippet — the new wording in `@llui/agent@0.0.35` tells the model to look for `mcp__<server>__connect_session` and search for it via tool search if it's deferred (the cause of those failures).
+
+### `@llui/agent@0.0.35`
+
+- **Breaking** opaque tokens replace JWT signing. See top of release block.
+- **Added** `TokenStore.findByTokenHash()` and `TokenStore.rotateTokenHash()`.
+- **Improved** connect snippet now names the LLui MCP server explicitly and flags Claude Code's deferred-tool behavior, so the model can resolve the namespaced tool on either platform.
+
+### `llui-agent@0.0.5`
+
+- **Breaking** session tools renamed to `connect_session` / `disconnect_session`. See top of release block.
+- **Improved** the "not bound" error and the bundled `llui-connect` prompt body now name the LLui MCP server and the CC namespacing pattern, matching the new connect-snippet wording.
+
+### `@llui/vite-plugin@0.0.34`
+
+- **Breaking** `AgentPluginConfig.signingKey` removed. See top of release block.
+
+### Docs
+
+- Replaced `/llm-guide` (which duplicated `llms-full.txt`) with two focused pages: `/debugging` (developer-facing — `__lluiDebug`, `@llui/mcp`, `llui_lint`, `llui-mcp doctor`, ESLint rules, trace export/replay) and `/agents` (end-user + app-author — bridge install, connect snippet flow, `@requiresConfirm`, `@llui/agent` integration recipe).
+
 ## 2026-04-26 — @llui/eslint-plugin@0.0.18
 
 **Released:** `@llui/eslint-plugin@0.0.18`
