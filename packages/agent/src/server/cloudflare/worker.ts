@@ -1,4 +1,3 @@
-
 /**
  * Minimal DurableObjectNamespace surface we need — `idFromName` +
  * `get` returning a `Stub` with `fetch(req)`. Kept structural so we
