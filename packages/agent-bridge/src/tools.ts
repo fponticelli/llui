@@ -51,7 +51,7 @@ export type ToolDescriptor = ForwardedToolDescriptor | MetaToolDescriptor
 export const TOOL_DESCRIPTORS: ToolDescriptor[] = [
   {
     kind: 'meta',
-    name: 'llui_connect_session',
+    name: 'connect_session',
     description:
       'Bind this Claude conversation to a specific LLui app. Call ONCE per chat when the user pastes a connect snippet from the LLui app — the snippet contains the url and token to forward here. The result includes the full observe bundle ({state, actions, description, context}) so you have everything you need to start acting — no separate describe_app / get_state / list_actions / describe_context follow-up is required on the first turn. Use observe later when you want a refreshed snapshot.',
     schema: z.object({
@@ -61,7 +61,7 @@ export const TOOL_DESCRIPTORS: ToolDescriptor[] = [
   },
   {
     kind: 'meta',
-    name: 'llui_disconnect_session',
+    name: 'disconnect_session',
     description:
       'Clear the binding for this Claude conversation. Subsequent LLui tool calls will fail until rebind.',
     schema: empty,

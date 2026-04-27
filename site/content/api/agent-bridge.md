@@ -33,18 +33,18 @@ Each conversation targets at most one LLui app. Before any LLui tool call, bind 
 
 1. In your app, mint a token (your app's agent connect slice produces the mint request).
 2. The app displays `/llui-connect <lap-url> <token>` — copy it.
-3. Paste it into Claude. Claude calls `llui_connect_session`; the bridge caches the URL + token for this session and validates by pinging `/describe`.
+3. Paste it into Claude. Claude calls `connect_session`; the bridge caches the URL + token for this session and validates by pinging `/describe`.
 
-From then on, every MCP tool Claude calls routes through the bound LAP endpoint. `llui_disconnect_session` clears the binding.
+From then on, every MCP tool Claude calls routes through the bound LAP endpoint. `disconnect_session` clears the binding.
 
 ## Tools
 
 ### Meta tools
 
-| Tool                      | Purpose                                             |
-| ------------------------- | --------------------------------------------------- |
-| `llui_connect_session`    | Bind this conversation to a LAP URL + bearer token. |
-| `llui_disconnect_session` | Clear the binding.                                  |
+| Tool                 | Purpose                                             |
+| -------------------- | --------------------------------------------------- |
+| `connect_session`    | Bind this conversation to a LAP URL + bearer token. |
+| `disconnect_session` | Clear the binding.                                  |
 
 ### Recommended path
 
@@ -92,7 +92,7 @@ drift that the low-level `setRequestHandler` pattern is prone to.
 Forwarded tools (`kind: 'forward'`) share a generic forwarder that
 looks up the binding, dispatches to LAP, and caches description
 payloads where applicable. The two meta tools
-(`llui_connect_session`, `llui_disconnect_session`) carry custom
+(`connect_session`, `disconnect_session`) carry custom
 handlers that mutate the BindingMap directly.
 
 ```typescript

@@ -17,7 +17,7 @@ Edit `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS) o
 }
 ```
 
-Restart Claude Desktop. The 11 LLui tools (`llui_connect_session`, `llui_disconnect_session`, `describe_app`, `get_state`, `list_actions`, `send_message`, `get_confirm_result`, `wait_for_change`, `query_dom`, `describe_visible_content`, `describe_context`) now appear. Desktop exposes the bundled `llui-connect` MCP prompt as a slash command — see "Slash shortcuts" below.
+Restart Claude Desktop. The 11 LLui tools (`connect_session`, `disconnect_session`, `describe_app`, `get_state`, `list_actions`, `send_message`, `get_confirm_result`, `wait_for_change`, `query_dom`, `describe_visible_content`, `describe_context`) now appear. Desktop exposes the bundled `llui-connect` MCP prompt as a slash command — see "Slash shortcuts" below.
 
 ## Install (Claude Code CLI)
 
@@ -50,9 +50,9 @@ Run `/mcp` inside CC to confirm the server connected (or start a new session). T
 
 ## Use
 
-Open any LLui app built with `@llui/agent/client`. Click "Connect with Claude" in the app and copy the generated snippet. Paste it into Claude — the snippet is a natural-language instruction containing the URL and token. Claude reads it and calls `llui_connect_session` to bind. The same snippet works in Desktop and CC.
+Open any LLui app built with `@llui/agent/client`. Click "Connect with Claude" in the app and copy the generated snippet. Paste it into Claude — the snippet is a natural-language instruction containing the URL and token. Claude reads it and calls `connect_session` to bind. The same snippet works in Desktop and CC.
 
-Each Claude chat is bound to ONE LLui app at a time. To switch, ask Claude to call `llui_disconnect_session` and paste a new snippet.
+Each Claude chat is bound to ONE LLui app at a time. To switch, ask Claude to call `disconnect_session` and paste a new snippet.
 
 ## Slash shortcuts (optional)
 
@@ -68,7 +68,7 @@ The `<server-name>` in CC is whatever you passed to `claude mcp add` — `llui` 
 ## How it works
 
 1. Your LLui app mints a per-browser-session token and renders a connect snippet — a one-line instruction containing the LAP URL and the bearer token.
-2. You paste into Claude — Claude reads the snippet, calls `llui_connect_session`, and the bridge records `{url, token}` for this chat.
+2. You paste into Claude — Claude reads the snippet, calls `connect_session`, and the bridge records `{url, token}` for this chat.
 3. The bridge pings `POST {url}/describe` to validate and cache the app's schema.
 4. Subsequent Claude tool calls (`get_state`, `send_message`, etc.) forward to `{url}/<path>` with your token as a Bearer.
 5. Sensitive actions (`@requiresConfirm` in the app's code) route through a confirmation prompt that only the user can approve.

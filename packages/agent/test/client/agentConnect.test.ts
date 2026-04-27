@@ -80,8 +80,11 @@ describe('agentConnect', () => {
       expect(state1.pendingToken!.tid).toBe(tid)
       expect(state1.pendingToken!.lapUrl).toBe(lapUrl)
       expect(state1.pendingToken!.connectSnippet).toBe(
-        `Connect this session to the LLui app — call \`llui_connect_session\` ` +
-          `with url=${JSON.stringify(lapUrl)} and token=${JSON.stringify(token)}.`,
+        `Connect this Claude session to the LLui app. Call the LLui MCP server's ` +
+          `\`connect_session\` tool with url=${JSON.stringify(lapUrl)} and ` +
+          `token=${JSON.stringify(token)}. ` +
+          `(In Claude Code the tool may be namespaced as ` +
+          `\`mcp__<server>__connect_session\` and deferred — load it via tool search if needed.)`,
       )
       expect(state1.pendingToken!.expiresAt).toBe(expiresAt)
       expect(state1.error).toBeNull()
@@ -329,8 +332,11 @@ describe('agentConnect.connect', () => {
       {
         type: 'AgentClipboardWrite',
         text:
-          `Connect this session to the LLui app — call \`llui_connect_session\` ` +
-          `with url=${JSON.stringify(lapUrl)} and token=${JSON.stringify(token)}.`,
+          `Connect this Claude session to the LLui app. Call the LLui MCP server's ` +
+          `\`connect_session\` tool with url=${JSON.stringify(lapUrl)} and ` +
+          `token=${JSON.stringify(token)}. ` +
+          `(In Claude Code the tool may be namespaced as ` +
+          `\`mcp__<server>__connect_session\` and deferred — load it via tool search if needed.)`,
       },
     ])
   })

@@ -69,7 +69,7 @@ afterEach(async () => {
 })
 
 describe('bridge — integration with fake LAP server', () => {
-  it('llui_connect_session calls /observe and caches the description from the bundle', async () => {
+  it('connect_session calls /observe and caches the description from the bundle', async () => {
     const bindings = new BindingMap()
     const server = createBridgeServer({
       sessionId: 's1',

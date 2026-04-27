@@ -49,12 +49,12 @@ describe('MCP tool registry', () => {
   })
 
   it('preserves meta-tools (connect/disconnect)', () => {
-    expect(findDesc('llui_connect_session')?.kind).toBe('meta')
-    expect(findDesc('llui_disconnect_session')?.kind).toBe('meta')
+    expect(findDesc('connect_session')?.kind).toBe('meta')
+    expect(findDesc('disconnect_session')?.kind).toBe('meta')
   })
 
-  it('llui_connect_session validates url and token are required strings', () => {
-    const t = findDesc('llui_connect_session')!
+  it('connect_session validates url and token are required strings', () => {
+    const t = findDesc('connect_session')!
     expect(t.schema.safeParse({ url: 'http://x', token: 'abc' }).success).toBe(true)
     expect(t.schema.safeParse({ url: 'http://x' }).success).toBe(false)
     expect(t.schema.safeParse({ url: 123, token: 'abc' }).success).toBe(false)

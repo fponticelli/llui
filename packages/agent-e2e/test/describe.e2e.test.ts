@@ -11,22 +11,22 @@ afterEach(async () => {
 })
 
 describe('e2e: describe_app', () => {
-  it('llui_connect_session succeeds and reports connected', async () => {
+  it('connect_session succeeds and reports connected', async () => {
     // mintAndBind retries until the WS hello frame is ready, then returns the
     // MintResult. bindClaude (called internally) also validates via /describe.
     // After mintAndBind, /describe is already confirmed to return 200, so a
-    // second llui_connect_session call will also succeed — but we can just
+    // second connect_session call will also succeed — but we can just
     // verify the return value from mintAndBind's internal connect call by
     // calling bindClaude one more time on a fresh mint.
     const mint = await ctx.mintToken()
 
-    // Retry llui_connect_session until the WS hello frame arrives.
+    // Retry connect_session until the WS hello frame arrives.
     let connected = false
     const deadline = Date.now() + 5_000
     let lastBody: { status?: string; appName?: string } = {}
     while (Date.now() < deadline) {
       const result = await ctx.mcpClient.callTool({
-        name: 'llui_connect_session',
+        name: 'connect_session',
         arguments: { url: mint.lapUrl, token: mint.token },
       })
       if (!result.isError) {

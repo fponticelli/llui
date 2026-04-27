@@ -378,7 +378,7 @@ awaiting-ws ──(WS open)──▶ awaiting-claude ──(describe called)─�
    ```
    /llui-connect https://myapp.com/agent/lap/v1 llui-agent_…
    ```
-6. User pastes into Claude Desktop. Bridge calls `llui_connect_session({ url, token })`, pings `/lap/v1/describe`, caches schema, marks pairing `active`.
+6. User pastes into Claude Desktop. Bridge calls `connect_session({ url, token })`, pings `/lap/v1/describe`, caches schema, marks pairing `active`.
 
 ### 5.3 Resume flow
 
@@ -561,7 +561,7 @@ Map<sid, Binding>
 Binding = { lapUrl: string; token: string; appName: string; schema: LapDescribeResponse; schemaHash: string }
 ```
 
-Each MCP session `sid` (one per Claude chat) has at most one binding. `llui_connect_session({url, token})` sets it; `llui_disconnect_session()` clears it. MCP session close clears it.
+Each MCP session `sid` (one per Claude chat) has at most one binding. `connect_session({url, token})` sets it; `disconnect_session()` clears it. MCP session close clears it.
 
 Tool → LAP path mapping:
 

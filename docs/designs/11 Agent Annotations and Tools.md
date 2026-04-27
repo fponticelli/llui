@@ -221,7 +221,7 @@ Result is mutated in place (`Object.assign(fn, {__lluiVariants})`); the returned
 
 ## 3. Agent Tool Surface
 
-The MCP bridge exposes these tools to the LLM. All except `llui_connect_session` / `llui_disconnect_session` operate against the currently-bound app session.
+The MCP bridge exposes these tools to the LLM. All except `connect_session` / `disconnect_session` operate against the currently-bound app session.
 
 ### 3.1 Read tools
 
@@ -327,13 +327,13 @@ Long-poll the result of a `@requiresConfirm`-gated dispatch. Returns `{status: '
 
 ### 3.3 Session tools
 
-#### `llui_connect_session({url, token})`
+#### `connect_session({url, token})`
 
 Bind the conversation to a specific app via the URL + token from the app's connect snippet. Call once per chat. Returns the same shape as `observe()` so the first turn doesn't need a separate read.
 
-#### `llui_disconnect_session()`
+#### `disconnect_session()`
 
-Unbind. Subsequent tool calls fail until a fresh `llui_connect_session`.
+Unbind. Subsequent tool calls fail until a fresh `connect_session`.
 
 ### 3.4 Wait
 

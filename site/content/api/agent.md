@@ -101,11 +101,11 @@ Add it to Claude Desktop's MCP config (`~/Library/Application Support/Claude/cla
 }
 ```
 
-Restart Claude Desktop. The `llui_connect_session`, `observe`, `send_message`, and related tools will appear in the tool picker.
+Restart Claude Desktop. The `connect_session`, `observe`, `send_message`, and related tools will appear in the tool picker.
 
 ### 4. Connect
 
-Open your app (`vite dev`), use the in-app UI to mint a token (the `agentConnect` slice provides the state machine — render a button that dispatches `{ type: 'agent', sub: 'connect', msg: { type: 'RequestMint' } }`), copy the resulting `/llui-connect <url> <token>` command, and paste it into your Claude conversation. Claude calls `llui_connect_session`, then `observe`, and you're live.
+Open your app (`vite dev`), use the in-app UI to mint a token (the `agentConnect` slice provides the state machine — render a button that dispatches `{ type: 'agent', sub: 'connect', msg: { type: 'RequestMint' } }`), copy the resulting `/llui-connect <url> <token>` command, and paste it into your Claude conversation. Claude calls `connect_session`, then `observe`, and you're live.
 
 ## Annotating messages
 
@@ -1025,7 +1025,7 @@ export type AgentConnectPendingToken = {
   lapUrl: string
   /**
    * Natural-language connect instruction the user copies into Claude.
-   * Includes URL, token, and the explicit `llui_connect_session` tool
+   * Includes URL, token, and the explicit `connect_session` tool
    * call. Works in any Claude client (Desktop, CC CLI, etc.) — the
    * Desktop-specific `/llui-connect` slash command is sugar over the
    * same tool call.

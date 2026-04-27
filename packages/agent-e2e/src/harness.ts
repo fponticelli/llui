@@ -174,7 +174,7 @@ export async function setup(): Promise<E2EContext> {
   // ── Helper: bind the MCP bridge to the app session ───────────────────────
   const bindClaude = async (lapUrl: string, token: string): Promise<void> => {
     const result = await mcpClient.callTool({
-      name: 'llui_connect_session',
+      name: 'connect_session',
       arguments: { url: lapUrl, token },
     })
     // If the tool returned an error result, surface it.

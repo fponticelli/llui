@@ -27,7 +27,7 @@ export type BridgeDeps = {
  * Forwarded tools (`kind: 'forward'`) share a generic forwarder that
  * looks up the binding, dispatches to LAP, and caches description
  * payloads where applicable. The two meta tools
- * (`llui_connect_session`, `llui_disconnect_session`) carry custom
+ * (`connect_session`, `disconnect_session`) carry custom
  * handlers that mutate the BindingMap directly.
  */
 export function createBridgeServer(deps: BridgeDeps): McpServer {
@@ -47,9 +47,9 @@ export function createBridgeServer(deps: BridgeDeps): McpServer {
 
 function registerToolDescriptor(server: McpServer, deps: BridgeDeps, desc: ToolDescriptor): void {
   if (desc.kind === 'meta') {
-    if (desc.name === 'llui_connect_session') {
+    if (desc.name === 'connect_session') {
       registerConnectSession(server, deps, desc)
-    } else if (desc.name === 'llui_disconnect_session') {
+    } else if (desc.name === 'disconnect_session') {
       registerDisconnectSession(server, deps, desc)
     }
     return
@@ -122,8 +122,9 @@ function registerForwardedTool(
       if (!binding) {
         return errorResult(
           'not bound — ask the user to copy the connect snippet from the LLui app, ' +
-            'or call `llui_connect_session` with the url and token they provide. ' +
-            '(In Claude Desktop only, the snippet is also available as the slash command `/llui-connect`.)',
+            "or call the LLui MCP server's `connect_session` tool with the url and token they provide. " +
+            '(In Claude Code the tool is namespaced as `mcp__<server>__connect_session` and may be deferred. ' +
+            'In Claude Desktop, the snippet is also available as the slash command `/llui-connect`.)',
         )
       }
 

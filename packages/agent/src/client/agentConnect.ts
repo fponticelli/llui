@@ -10,7 +10,7 @@ export type AgentConnectPendingToken = {
   lapUrl: string
   /**
    * Natural-language connect instruction the user copies into Claude.
-   * Includes URL, token, and the explicit `llui_connect_session` tool
+   * Includes URL, token, and the explicit `connect_session` tool
    * call. Works in any Claude client (Desktop, CC CLI, etc.) — the
    * Desktop-specific `/llui-connect` slash command is sugar over the
    * same tool call.
@@ -112,19 +112,23 @@ export function update(
       return [{ ...state, status: 'minting' }, [mintEffect]]
     }
     case 'MintSucceeded': {
-      // The connect snippet has to work across every Claude surface
-      // — Claude Desktop turns the bridge's `llui-connect` MCP prompt
-      // into a slash command, but Claude Code CLI does not surface
-      // MCP prompts as slash commands. Natural-language form with an
-      // explicit tool name works everywhere: the user pastes it,
-      // Claude reads it, the model calls `llui_connect_session`.
+      // The connect snippet has to work across every Claude surface.
+      // Claude Desktop exposes MCP tools as bare names (`connect_session`),
+      // but Claude Code namespaces them (`mcp__<server>__connect_session`)
+      // and may defer-load them — so an LLM that searches its tool list for
+      // a literal `connect_session` won't find it. Naming the LLui MCP
+      // server explicitly gives the model enough to resolve the right tool
+      // on either platform.
       const pending: AgentConnectPendingToken = {
         token: msg.token,
         tid: msg.tid,
         lapUrl: msg.lapUrl,
         connectSnippet:
-          `Connect this session to the LLui app — call \`llui_connect_session\` ` +
-          `with url=${JSON.stringify(msg.lapUrl)} and token=${JSON.stringify(msg.token)}.`,
+          `Connect this Claude session to the LLui app. Call the LLui MCP server's ` +
+          `\`connect_session\` tool with url=${JSON.stringify(msg.lapUrl)} and ` +
+          `token=${JSON.stringify(msg.token)}. ` +
+          `(In Claude Code the tool may be namespaced as ` +
+          `\`mcp__<server>__connect_session\` and deferred — load it via tool search if needed.)`,
         expiresAt: msg.expiresAt,
       }
       return [

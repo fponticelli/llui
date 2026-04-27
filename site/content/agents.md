@@ -31,7 +31,7 @@ Edit `~/Library/Application Support/Claude/claude_desktop_config.json`
 ```
 
 Restart Claude Desktop. Eleven LLui tools become available:
-`llui_connect_session`, `llui_disconnect_session`, `describe_app`,
+`connect_session`, `disconnect_session`, `describe_app`,
 `get_state`, `list_actions`, `send_message`, `get_confirm_result`,
 `wait_for_change`, `query_dom`, `describe_visible_content`,
 `describe_context`.
@@ -65,11 +65,23 @@ a new session). The same eleven tools become available.
 Open any app built with `@llui/agent/client`. Click "Connect with
 Claude" and copy the generated snippet — a one-line natural-language
 instruction containing the LAP URL and the bearer token. Paste it into
-Claude. Claude reads the snippet, calls `llui_connect_session`, and the
+Claude. Claude reads the snippet, calls `connect_session`, and the
 chat is now bound to that app.
 
 Each Claude chat is bound to **one LLui app at a time**. To switch, ask
-Claude to call `llui_disconnect_session` and paste a new snippet.
+Claude to call `disconnect_session` and paste a new snippet.
+
+### Troubleshooting: "tool isn't available in this session"
+
+If Claude reports that `connect_session` "isn't available" or
+"doesn't appear in the list of deferred or loaded tools", check that
+`claude mcp list` shows the LLui MCP server as Connected. If it is, the
+issue is tool-name resolution: Claude Code namespaces MCP tools as
+`mcp__<server-name>__<tool-name>` and may defer-load them. Tell Claude
+to look for `mcp__<server>__connect_session` and search for it via
+the tool-search facility — it will load and become callable. The
+snippets shipped by recent `@llui/agent` releases already include this
+hint; paste a fresh snippet if you're stuck.
 
 ## Slash shortcuts (optional)
 
@@ -92,7 +104,7 @@ choice; the slash form is a power-user shortcut.
    connect snippet — a one-line instruction containing the LAP URL and
    the bearer token.
 2. You paste into Claude. Claude reads the snippet, calls
-   `llui_connect_session`, and the bridge records `{url, token}` for
+   `connect_session`, and the bridge records `{url, token}` for
    this chat.
 3. The bridge calls `POST {url}/describe` to validate and cache the
    app's schema (Msg union, intents, annotations).

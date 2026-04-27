@@ -7,7 +7,7 @@ import { z } from 'zod'
  * `/llui-connect <url> <token>`; CC: `/mcp__<server>__llui-connect …`).
  * The prompt body Claude sees is the same natural-language instruction
  * the LLui app shows in its connect snippet — so pasting either form
- * lands the same `llui_connect_session` tool call.
+ * lands the same `connect_session` tool call.
  */
 export function registerPrompts(server: McpServer): void {
   server.registerPrompt(
@@ -29,7 +29,10 @@ export function registerPrompts(server: McpServer): void {
             type: 'text',
             text:
               `Please connect this conversation to the LLui app at ${url}. ` +
-              `Call llui_connect_session with url=${JSON.stringify(url)} and token=${JSON.stringify(token)}.`,
+              `Call the LLui MCP server's \`connect_session\` tool ` +
+              `with url=${JSON.stringify(url)} and token=${JSON.stringify(token)}. ` +
+              `(In Claude Code the tool may be namespaced as ` +
+              `\`mcp__<server>__connect_session\` and deferred — load it via tool search if needed.)`,
           },
         },
       ],
