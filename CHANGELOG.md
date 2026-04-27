@@ -11,6 +11,35 @@ All notable changes to LLui packages are documented here. LLui is a pre-1.0 proj
 
 Packages version in lockstep at release time: `@llui/dom`, `@llui/vite-plugin`, `@llui/test`, `@llui/router`, `@llui/transitions`, `@llui/components`, `@llui/vike` share a version line. `@llui/effects`, `@llui/mcp`, `@llui/eslint-plugin`, `@llui/agent`, and `llui-agent` have their own cadence.
 
+## 2026-04-27 — @llui/agent@0.0.36
+
+**Released:** `@llui/agent@0.0.36`
+
+`list_actions` now derives the agent's affordance surface from the live binding graph only — what the user can click *right now*. Apps that exposed the full `@intent`-tagged Msg union to the LLM no longer cause "UI mysteriously rearranges when the agent dispatches" because hidden Msgs simply aren't listed.
+
+### Breaking
+
+- **`@llui/agent@0.0.36`** — `list_actions` no longer surfaces `'shared'` Msg variants from the schema fallback. The new default is "what's affordable to the user right now": a `'shared'` variant is offered exactly when a tagged event handler is mounted in a live scope (refcount > 0). Variants in dead branches — `show({when: false})`, unmounted `branch()` cases, removed `each` items — auto-vanish via the existing `addDisposer` machinery. The explicit knobs for "agent should reach this regardless of UI state" are `@alwaysAffordable` (per-variant tag, now read by the runtime) and `agentAffordances(state) => Msg[]` on the component definition. `@agentOnly` remains the canonical "no human path at all."
+
+### Migration
+
+- Tag the bulk seed Msgs and agent-driven navigation that don't have a live UI binding with `@alwaysAffordable` (or `@agentOnly` if no human path exists at all). Concrete examples: `Matrix/AddCriteria`, `Matrix/AddAlternatives`, `Matrix/SetManyCells`, `Matrix/Replace`, `Route/Navigate`.
+- For `'shared'` variants whose UI is currently open in the user's screen, no change is needed — their bindings are live, so they continue to surface.
+- For `'shared'` variants whose UI is closed but you still want the agent to reach (e.g. cell-edit Msgs the agent should be able to dispatch without opening the editor first), tag them `@alwaysAffordable` or list them from `agentAffordances(state)` for the screens where they should be reachable.
+- Escape hatch for the old behavior: `agentAffordances: () => allIntentVariants` on the root component (returns every Msg unconditionally). Almost certainly wrong for non-trivial apps but useful as a temporary unblock.
+
+### `@llui/agent@0.0.36`
+
+- **Breaking** `list_actions` default surface tightened — see top of release block.
+- **Added** `@alwaysAffordable` JSDoc tag is now read by the runtime: tagged variants surface as `source: 'always-affordable'` regardless of binding state. Previously the tag was extracted by the compiler but ignored at runtime.
+- **Fixed** "UI gets messed up when the agent dispatches a Msg" — the agent's affordance surface now mirrors the user's, so dispatching a Msg never pops a hidden subtree into view in places the user didn't navigate to.
+
+### Docs
+
+- Design doc 11 §1.1.4 (`@alwaysAffordable`) and §4 (Source Tier) explain the new default and why off-screen `'shared'` variants are deliberately hidden.
+- `@llui/agent` README's annotation table notes the default behavior and the `@alwaysAffordable` / `agentAffordances` opt-in.
+- New `/agents` site section "Upgrading an existing install" explains the `npx -y llui-agent@latest` cache-poke needed to pick up new releases.
+
 ## 2026-04-27 — @llui/agent@0.0.35, llui-agent@0.0.5, @llui/vite-plugin@0.0.34
 
 **Released:** `@llui/agent@0.0.35`; `llui-agent@0.0.5`; `@llui/vite-plugin@0.0.34`
