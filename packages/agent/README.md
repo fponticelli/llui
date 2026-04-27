@@ -27,7 +27,6 @@ import { createLluiAgentServer } from '@llui/agent/server'
 import express from 'express'
 
 const agent = createLluiAgentServer({
-  signingKey: process.env.LLUI_AGENT_KEY!,
   identityResolver: async (req) => req.cookies.user_id ?? null,
 })
 
@@ -118,13 +117,13 @@ export const App = component<State, Msg, Effect>({
 
 ## Annotations reference
 
-| Tag                 | Semantics                                                                  |
-| ------------------- | -------------------------------------------------------------------------- |
-| `@intent("...")`    | Human-readable label for Claude + confirmation UI + log                    |
-| `@alwaysAffordable` | Surfaces to Claude even when no live UI binding is currently mounted       |
-| `@agentOnly`        | No human UI binding exists; agent is the sole dispatcher                   |
-| `@requiresConfirm`  | Claude must propose; user approves before dispatch                         |
-| `@humanOnly`        | Claude cannot dispatch; not in `list_actions`                              |
+| Tag                 | Semantics                                                            |
+| ------------------- | -------------------------------------------------------------------- |
+| `@intent("...")`    | Human-readable label for Claude + confirmation UI + log              |
+| `@alwaysAffordable` | Surfaces to Claude even when no live UI binding is currently mounted |
+| `@agentOnly`        | No human UI binding exists; agent is the sole dispatcher             |
+| `@requiresConfirm`  | Claude must propose; user approves before dispatch                   |
+| `@humanOnly`        | Claude cannot dispatch; not in `list_actions`                        |
 
 **Default (no tag).** A `'shared'` variant — both audiences can dispatch — is offered to the agent only when a live UI binding maps to it (e.g. an `onClick` is currently mounted). When the user navigates away and the corresponding subtree unmounts, the variant disappears from `list_actions`. This mirrors what the human can click. Tag `@alwaysAffordable` (or list the Msg from `agentAffordances(state)`) to keep an agent-driven Msg available regardless of UI state.
 
