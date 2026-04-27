@@ -224,12 +224,15 @@ describe('handleListActions', () => {
     expect(result.actions).toHaveLength(0)
   })
 
-  it('surfaces documented shared variants from schema even without a live binding', () => {
-    // A `'shared'` variant with `@intent` is documented for agent use.
-    // Without this case, an agent that wanted to set one cell would
-    // be forced to use bulk operations like `Matrix/SetManyCells` with
-    // a 1-element array, even though `Matrix/SetQuantityValue` is the
-    // direct path. The author's `@intent` is the explicit signal.
+  it('hides documented shared variants from schema when no live binding maps to them', () => {
+    // `'shared'` variants are reached through UI affordances. When no
+    // binding currently surfaces them (e.g. the cell editor is closed),
+    // the variant is genuinely unreachable for the human user — and the
+    // agent shouldn't see it either, because dispatching it would flip
+    // hidden state and pop UI in places the user didn't navigate to.
+    // The explicit knob for "agent can reach this regardless of UI" is
+    // `@alwaysAffordable`; absent that, schema-only `'shared'` variants
+    // stay hidden.
     const result = handleListActions(
       makeHost({
         descriptors: [],
@@ -256,19 +259,136 @@ describe('handleListActions', () => {
         },
       }),
     )
+    expect(result.actions).toHaveLength(0)
+  })
+
+  // ── @alwaysAffordable annotation ───────────────────────────────
+
+  it('surfaces @alwaysAffordable variants from annotations even without a live binding', () => {
+    // `@alwaysAffordable` is the explicit "agent can reach this even
+    // when no UI binding maps to it" knob. Bulk seed ops typically
+    // carry it: `Matrix/AddAlternatives` is dispatched once to populate
+    // a fresh matrix; there's no human-facing affordance for it.
+    const result = handleListActions(
+      makeHost({
+        descriptors: [],
+        annotations: {
+          'Matrix/AddAlternatives': {
+            intent: 'Append multiple alternatives in one transaction',
+            dispatchMode: 'shared',
+            requiresConfirm: false,
+            alwaysAffordable: true,
+            examples: [],
+            warning: null,
+            emits: [],
+          },
+        },
+        schema: {
+          discriminant: 'type',
+          variants: {
+            'Matrix/AddAlternatives': {
+              alternatives: 'unknown',
+            },
+          },
+        },
+      }),
+    )
+    expect(result.actions).toHaveLength(1)
+    const a = result.actions.at(0)
+    expect(a).toMatchObject({
+      variant: 'Matrix/AddAlternatives',
+      intent: 'Append multiple alternatives in one transaction',
+      dispatchMode: 'shared',
+      source: 'always-affordable',
+    })
+    expect(a?.payloadHint).toEqual({
+      type: 'Matrix/AddAlternatives',
+      alternatives: null, // 'unknown' → null placeholder
+    })
+  })
+
+  it('skips @alwaysAffordable variants already covered by a live binding', () => {
+    // Dedup: if the variant has a binding, the binding entry already
+    // provides the affordance. An additional 'always-affordable' entry
+    // would be noise. Same rule as the schema-source dedup.
+    const result = handleListActions(
+      makeHost({
+        descriptors: [{ variant: 'Save' }],
+        annotations: {
+          Save: {
+            intent: 'save the matrix',
+            dispatchMode: 'shared',
+            requiresConfirm: false,
+            alwaysAffordable: true,
+            examples: [],
+            warning: null,
+            emits: [],
+          },
+        },
+        schema: { discriminant: 'type', variants: { Save: {} } },
+      }),
+    )
+    expect(result.actions).toHaveLength(1)
+    expect(result.actions.at(0)?.source).toBe('binding')
+  })
+
+  it('skips @alwaysAffordable variants already returned by agentAffordances', () => {
+    // If the integrator's affordances callback already returned the
+    // variant with a payload, that's strictly more informative than
+    // the schema-synthesized one. The annotation pass defers.
+    const result = handleListActions(
+      makeHost({
+        descriptors: [],
+        annotations: {
+          'Matrix/AddAlternatives': {
+            intent: null,
+            dispatchMode: 'shared',
+            requiresConfirm: false,
+            alwaysAffordable: true,
+            examples: [],
+            warning: null,
+            emits: [],
+          },
+        },
+        affordances: () => [
+          { type: 'Matrix/AddAlternatives', alternatives: [{ id: 'a1', title: 'first' }] },
+        ],
+        schema: {
+          discriminant: 'type',
+          variants: { 'Matrix/AddAlternatives': { alternatives: 'unknown' } },
+        },
+      }),
+    )
     expect(result.actions).toHaveLength(1)
     expect(result.actions.at(0)).toMatchObject({
-      variant: 'Matrix/SetQuantityValue',
-      intent: 'Set a numeric quantity value in a matrix cell',
-      dispatchMode: 'shared',
-      source: 'schema',
+      variant: 'Matrix/AddAlternatives',
+      source: 'always-affordable',
+      payloadHint: { alternatives: [{ id: 'a1', title: 'first' }] },
     })
-    expect(result.actions.at(0)?.payloadHint).toEqual({
-      type: 'Matrix/SetQuantityValue',
-      criterionId: '',
-      alternativeId: '',
-      value: 0,
-    })
+  })
+
+  it('@alwaysAffordable + human-only is filtered out (defense in depth)', () => {
+    // The combination is rejected by ESLint
+    // (`agent-exclusive-annotations`), but if it sneaks past the lint
+    // rule the runtime still treats `human-only` as the dominant tag.
+    const result = handleListActions(
+      makeHost({
+        descriptors: [],
+        annotations: {
+          'X/Internal': {
+            intent: 'internal',
+            dispatchMode: 'human-only',
+            requiresConfirm: false,
+            alwaysAffordable: true,
+            examples: [],
+            warning: null,
+            emits: [],
+          },
+        },
+        schema: { discriminant: 'type', variants: { 'X/Internal': {} } },
+      }),
+    )
+    expect(result.actions).toHaveLength(0)
   })
 
   it('synthesizes example values from primitive types', () => {

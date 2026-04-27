@@ -19,13 +19,30 @@ export type ListActionsHost = {
  * point — they never reach the LLM.
  *
  * `source` distinguishes WHERE the affordance came from:
- *   - `'binding'`     — a tagged event handler is currently mounted.
- *   - `'always-affordable'` — the app's `agentAffordances(state)` hook
- *     listed it as available right now.
- *   - `'schema'`      — neither of the above; the variant is in the
- *     Msg union, annotated `@agentOnly`, and the payload is example-
- *     only (no live UI binding maps to it). Bulk-edit operations
- *     typically land here.
+ *   - `'binding'` — a tagged event handler is currently mounted in a
+ *     live scope (refcount > 0). Variants inside dead branches —
+ *     `show({when: false})`, unmounted `branch()` cases, removed `each`
+ *     items — auto-vanish from this set as their lifetimes dispose.
+ *     This is the framework's "what can the user click right now"
+ *     answer, and it's the default surface for the agent.
+ *   - `'always-affordable'` — either the app's `agentAffordances(state)`
+ *     hook listed the variant, or the variant carries the
+ *     `@alwaysAffordable` JSDoc tag. Both are the explicit "agent can
+ *     reach this even when no live UI binding maps to it" knob — bulk
+ *     seed ops (`Matrix/AddAlternatives`) and similar agent-driven
+ *     paths typically land here.
+ *   - `'schema'` — variant is annotated `@agentOnly` (the canonical
+ *     "no UI button maps to this; the agent is the only dispatcher")
+ *     and isn't already covered above. The payload is schema-synthesized
+ *     and the agent fills it in.
+ *
+ * `'shared'` variants WITHOUT a live binding, without
+ * `agentAffordances` mention, and without `@alwaysAffordable` are
+ * **deliberately hidden**. They're reachable through UI navigation —
+ * the human user can't click them right now, and dispatching them
+ * blindly would mutate state that drives `show()`/`branch()` gates,
+ * popping hidden UI subtrees into view in places the user didn't
+ * navigate to.
  */
 export type ListActionsResult = {
   actions: Array<{
@@ -102,7 +119,8 @@ export function handleListActions(host: ListActionsHost): ListActionsResult {
     })
   }
 
-  // From always-affordable
+  // From `agentAffordances(state)` — the integrator's explicit list of
+  // currently-reachable Msgs, with concrete payloads they author.
   for (const msg of affordances) {
     const ann = annotations[msg.type]
     if (ann?.dispatchMode === 'human-only') continue
@@ -124,44 +142,60 @@ export function handleListActions(host: ListActionsHost): ListActionsResult {
     })
   }
 
-  // From schema — variants that aren't already surfaced as bindings
-  // or always-affordable, and that the author intentionally documented
-  // for agent use. Two cases land here:
+  // From `@alwaysAffordable` annotations — the per-variant equivalent
+  // of `agentAffordances`. Variants tagged this way surface regardless
+  // of whether a live binding maps to them, so bulk seed ops
+  // (`Matrix/AddAlternatives`) and similar agent-driven paths are
+  // available even when their UI counterparts (if any) aren't mounted.
+  // The payload is schema-synthesized — `agentAffordances` is the way
+  // to ship a concrete pre-filled payload alongside the affordance.
+  for (const [variant, ann] of Object.entries(annotations)) {
+    if (seen.has(variant)) continue
+    if (ann.dispatchMode === 'human-only') continue
+    if (!ann.alwaysAffordable) continue
+    seen.add(variant)
+    const fields = schema?.variants[variant]
+    out.push({
+      variant,
+      intent: ann.intent,
+      requiresConfirm: ann.requiresConfirm,
+      dispatchMode: ann.dispatchMode === 'agent-only' ? 'agent-only' : 'shared',
+      source: 'always-affordable',
+      selectorHint: null,
+      payloadHint: fields ? synthesizePayload(variant, fields) : null,
+      warning: ann.warning,
+      examples: ann.examples,
+      emits: ann.emits,
+      fieldHints: fields ? collectFieldHints(fields) : [],
+    })
+  }
+
+  // From schema — variants that aren't already surfaced above and that
+  // the author marked `@agentOnly`. The canonical "no UI button maps
+  // to this; the agent is the only dispatcher." Bulk edits, imports,
+  // admin operations that have no human-facing affordance at all.
   //
-  //   1. `@agentOnly` variants — the canonical "no UI button maps to
-  //      this; the agent is the only dispatcher." Bulk edits, imports,
-  //      admin operations.
-  //   2. `'shared'` variants with `@intent` but no live binding — the
-  //      author wrote a description for the variant, signalling it's
-  //      a real agent-callable dispatch even when the corresponding UI
-  //      affordance is closed (e.g. `Matrix/SetQuantityValue` lives
-  //      inside the cell editor; without this case, an agent that
-  //      wants to set one cell is forced to use the bulk
-  //      `Matrix/SetManyCells` with a 1-element array).
-  //
-  // `'shared'` variants WITHOUT `@intent` stay hidden — undocumented
-  // shared variants are usually internal (effect-result messages,
-  // router-internal acks) that aren't intended as agent affordances.
-  // `'human-only'` is always filtered.
+  // `'shared'` variants WITHOUT a live binding stay hidden here — they
+  // are reachable through UI navigation, and dispatching them while
+  // their UI subtree is unmounted would pop hidden state in places the
+  // user didn't navigate to. The explicit knobs are `@alwaysAffordable`
+  // (handled above) or `agentAffordances(state)`.
   if (schema) {
     for (const [variant, fields] of Object.entries(schema.variants)) {
       if (seen.has(variant)) continue
       const ann = annotations[variant]
-      if (ann?.dispatchMode === 'human-only') continue
-      const isAgentOnly = ann?.dispatchMode === 'agent-only'
-      const isDocumentedShared = ann?.dispatchMode !== 'agent-only' && Boolean(ann?.intent)
-      if (!isAgentOnly && !isDocumentedShared) continue
+      if (ann?.dispatchMode !== 'agent-only') continue
       out.push({
         variant,
-        intent: ann?.intent ?? null,
-        requiresConfirm: ann?.requiresConfirm ?? false,
-        dispatchMode: isAgentOnly ? 'agent-only' : 'shared',
+        intent: ann.intent,
+        requiresConfirm: ann.requiresConfirm,
+        dispatchMode: 'agent-only',
         source: 'schema',
         selectorHint: null,
         payloadHint: synthesizePayload(variant, fields),
-        warning: ann?.warning ?? null,
-        examples: ann?.examples ?? [],
-        emits: ann?.emits ?? [],
+        warning: ann.warning,
+        examples: ann.examples,
+        emits: ann.emits,
         fieldHints: collectFieldHints(fields),
       })
     }

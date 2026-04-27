@@ -92,7 +92,9 @@ The `agent-exclusive-annotations` rule errors on the malformed `@humanOnly @agen
 
 #### `@alwaysAffordable`
 
-Marks the variant as always available regardless of UI binding state. Useful for navigation or always-relevant commands. Surfaced as `source: 'always-affordable'` in `list_actions` (alongside the app's `agentAffordances(state)` registry).
+Marks the variant as always available regardless of UI binding state. Surfaced as `source: 'always-affordable'` in `list_actions` (alongside the app's `agentAffordances(state)` registry). The per-variant equivalent of `agentAffordances`: tag bulk seed ops (`Matrix/AddAlternatives`), navigation Msgs, and other agent-driven paths that have no UI counterpart — or whose UI counterpart is gated behind navigation the agent shouldn't have to perform first.
+
+**Why this matters as a default.** `'shared'` variants (the unannotated default) reach the agent through one path only: a live binding in the currently-rendered scope tree. When the user closes the cell editor, the cell-edit Msgs leave `list_actions`. When the user is on the home page, matrix-edit Msgs aren't listed. This mirrors what the human user can click — and crucially, dispatching a `'shared'` Msg whose UI is closed would mutate state that drives `show()`/`branch()` gates, popping hidden subtrees into view in places the user didn't navigate to. `@alwaysAffordable` is the explicit opt-in for "yes, the agent should see this regardless of where the user is looking."
 
 ### 1.2 Per-field tags (within a Msg variant payload)
 
@@ -347,9 +349,11 @@ Long-poll for a change at the given path (or anywhere if absent). Returns `{stat
 
 Every affordance entry carries a `source` discriminator explaining where it came from:
 
-- **`'binding'`** — a tagged event handler is currently mounted in the rendered DOM. Human can click; agent can dispatch.
-- **`'always-affordable'`** — the app's `agentAffordances(state)` hook listed it. No specific UI binding; both audiences dispatch directly.
-- **`'schema'`** — neither of the above; the variant is in the Msg union and annotated `@agentOnly`. The `payloadHint` is a synthesized example from the field types — copy-paste-ready into `send_message`. Bulk-edit operations (`Matrix/AddCriteria`, etc.) typically land here.
+- **`'binding'`** — a tagged event handler is currently mounted in a live scope (refcount > 0). Variants inside dead branches — `show({when: false})`, unmounted `branch()` cases, removed `each` items — auto-vanish from this set as their lifetimes dispose. This is the framework's "what can the user click right now" answer, and it's the default surface for the agent.
+- **`'always-affordable'`** — either the app's `agentAffordances(state)` hook listed the variant, or the variant carries the `@alwaysAffordable` JSDoc tag. Both are the explicit "agent can reach this even when no live UI binding maps to it" knob.
+- **`'schema'`** — variant is annotated `@agentOnly` (the canonical "no UI button maps to this; the agent is the only dispatcher") and isn't already covered above. The `payloadHint` is schema-synthesized.
+
+**`'shared'` variants without a binding, without `agentAffordances` mention, and without `@alwaysAffordable` are deliberately hidden.** They're reachable through UI navigation but not affordable from the current screen — the human user can't click them, and the agent shouldn't either, because dispatching them would flip hidden state and pop UI in places the user didn't navigate to. (Older versions of this doc described surfacing all `@intent`-tagged variants from schema; that default was wrong-by-default for non-trivial apps and was changed.)
 
 ---
 
