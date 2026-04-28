@@ -209,7 +209,7 @@ export interface Router<R> {
 ```typescript
 export interface RouterEffect {
   type: '__router'
-  action: 'push' | 'replace' | 'back' | 'forward' | 'scroll'
+  action: 'push' | 'replace' | 'navigate' | 'back' | 'forward' | 'scroll'
   path?: string
   x?: number
   y?: number
@@ -240,10 +240,44 @@ export interface ConnectOptions<R> {
 
 ```typescript
 export interface ConnectedRouter<R> {
-  /** Effect: push a new route onto history */
+  /**
+   * Effect: push a new history entry — URL only.
+   *
+   * Use when the reducer that emitted the effect has already updated
+   * `state.route` itself (e.g. a `Router/Navigate` handler that bundles
+   * state changes inline before delegating URL work). For
+   * navigate-and-let-the-app-react flows from anywhere else, prefer
+   * `navigate()` — it dispatches the listener-captured navigate
+   * message after pushState so `state.route` and route-side-effects
+   * stay in sync without each reducer re-implementing the delegation.
+   */
   push(route: R): RouterEffect
-  /** Effect: replace current history entry */
+  /**
+   * Effect: replace the current history entry — URL only. Same
+   * URL-only contract as `push()`. For replace-and-react flows, see
+   * `navigate()` (push semantics) — there's no `replaceAndDispatch`
+   * variant yet because the use case hasn't surfaced; if it does,
+   * model it the same way.
+   */
   replace(route: R): RouterEffect
+  /**
+   * Effect: push history AND dispatch the listener-captured navigate
+   * message so the reducer can update `state.route` and run any
+   * route-side-effects (data fetches, page-meta resets, analytics).
+   *
+   * Resolves the asymmetry where `link()` did pushState + send while
+   * `push()` did pushState only — apps that wanted programmatic
+   * navigation from arbitrary reducers had to either re-implement the
+   * delegation or live with desynced `state.route`.
+   *
+   * Requires that the app has mounted `listener()` (typically inside
+   * the shell view) — the navigate effect uses the send/factory
+   * captured there. If `navigate()` runs before `listener()` mounts,
+   * the URL still updates but no message is dispatched and a
+   * `console.warn` surfaces the gap. After listener unmount the same
+   * fallback applies.
+   */
+  navigate(route: R): RouterEffect
   /** Effect: go back */
   back(): RouterEffect
   /** Effect: go forward */
