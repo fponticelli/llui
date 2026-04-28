@@ -180,6 +180,11 @@ export function createAgentClient<State, Msg>(
   // tagged-value convention is documented in `@llui/agent/codecs`.
   const codecs = opts.codecs ?? makeDefaultCodecs()
 
+  // Track the most recent send_message outcome so `describe_context`
+  // can prepend a synthetic hint about it. Apps used to roll their
+  // own `lastDispatchError` state field; the framework now owns it.
+  let lastDispatchOutcome: import('./rpc/describe-context.js').LastDispatchOutcome | null = null
+
   const rpcHost: RpcHosts = {
     getState: () => encodeForWire(opts.handle.getState(), codecs),
     send: (m) => opts.handle.send(decodeFromWire(m, codecs)),
@@ -205,10 +210,18 @@ export function createAgentClient<State, Msg>(
     getBindingDescriptors: () => opts.handle.getBindingDescriptors(),
     getAgentAffordances: () => opts.def.agentAffordances ?? null,
     getAgentContext: () => opts.def.agentContext ?? null,
+    getLastDispatchOutcome: () => lastDispatchOutcome,
     getRootElement: () => opts.rootElement,
     proposeConfirm: (entry) => {
       opts.handle.send(opts.slices.wrapConfirmMsg({ type: 'Propose', entry }))
     },
+  }
+
+  // Exposed so the WS client can update on each send_message reply.
+  // Closure scope keeps the field write-protected — only the WS layer
+  // mutates it; everyone else reads through the getter above.
+  const recordDispatchOutcome = (outcome: typeof lastDispatchOutcome): void => {
+    lastDispatchOutcome = outcome
   }
 
   const helloBuilder = () => ({
@@ -241,6 +254,7 @@ export function createAgentClient<State, Msg>(
               opts.handle.send(opts.slices.wrapLogMsg!({ type: 'Append', entry }))
             }
           : undefined,
+        onDispatchOutcome: recordDispatchOutcome,
       })
       ws.addEventListener('open', () => {
         opts.handle.send(opts.slices.wrapConnectMsg({ type: 'WsOpened' }))

@@ -47,6 +47,14 @@ export type SendMessageHost = ListActionsHost & {
    * without `window`), the drain envelope records an empty array.
    */
   getAndClearDrainErrors?: () => LapDrainMeta['errors']
+  /**
+   * Optional dispatch-policy accessor — when defined, returns the
+   * server's configured `'strict' | 'lenient'` policy for payload
+   * validation. Strict mode rejects fields not in the schema and
+   * emits warnings for `'unknown'`-typed fields the agent provided
+   * values for. Default is lenient (omit / undefined).
+   */
+  getDispatchPolicy?: () => 'strict' | 'lenient'
   /** Called when @requiresConfirm; caller stores a ConfirmEntry in state. */
   proposeConfirm(entry: {
     id: string
@@ -92,7 +100,8 @@ export async function handleSendMessage(
   // correct from in one round trip. Reducers stay the last line of
   // defense; this is the first.
   const schema = host.getMsgSchema?.() ?? null
-  const validation = validatePayload(args.msg, schema)
+  const policy = host.getDispatchPolicy?.() ?? 'lenient'
+  const validation = validatePayload(args.msg, schema, { policy })
   if (!validation.ok) {
     return {
       status: 'rejected',
@@ -100,6 +109,11 @@ export async function handleSendMessage(
       detail: validation.errors.map((e) => `${e.path}: ${e.message}`).join('; '),
     }
   }
+  // Warnings from the validator (strict-mode `untyped-field` flags etc.)
+  // ride along to `drain.warnings` so the agent sees them on the
+  // dispatched envelope. Lenient mode never emits warnings; this is
+  // a no-op array for the default path.
+  const validationWarnings = validation.warnings ?? []
 
   if (ann?.requiresConfirm) {
     const id = randomUUID()
@@ -131,7 +145,7 @@ export async function handleSendMessage(
 
   if (waitFor === 'none') {
     safeSend(host, args.msg, [])
-    return dispatched(host, emptyDrain(), prevState, includeState)
+    return dispatched(host, emptyDrain(), prevState, includeState, validationWarnings)
   }
 
   if (waitFor === 'idle') {
@@ -143,6 +157,7 @@ export async function handleSendMessage(
       { effectsObserved: 1, durationMs: 0, timedOut: false, errors: dispatchErrors },
       prevState,
       includeState,
+      validationWarnings,
     )
   }
 
@@ -181,6 +196,7 @@ export async function handleSendMessage(
           },
           prevState,
           includeState,
+          validationWarnings,
         )
       }
       const budget = Math.min(quietMs, capMs - elapsed)
@@ -204,6 +220,7 @@ export async function handleSendMessage(
           },
           prevState,
           includeState,
+          validationWarnings,
         )
       }
       // A commit fired during the wait — flush any queued follow-ups so
@@ -283,13 +300,16 @@ function dispatched(
   drain: LapDrainMeta,
   prevState: unknown,
   includeState: boolean,
+  validationWarnings: NonNullable<LapDrainMeta['warnings']> = [],
 ): LapMessageResponse {
   const stateAfter = host.getState()
+  const drainWithWarnings: LapDrainMeta =
+    validationWarnings.length === 0 ? drain : { ...drain, warnings: validationWarnings }
   const base = {
     status: 'dispatched' as const,
     stateDiff: computeStateDiff(prevState, stateAfter),
     actions: handleListActions(host).actions,
-    drain,
+    drain: drainWithWarnings,
   }
   return includeState ? { ...base, stateAfter } : base
 }

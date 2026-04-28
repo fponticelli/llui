@@ -493,6 +493,132 @@ describe('handleListActions', () => {
     expect(result.actions).toHaveLength(0)
   })
 
+  // ── Schema-membership filter on bindings ───────────────────────
+
+  it('filters bindings whose variant is not in the Msg schema (lib internals)', () => {
+    // Sortable / library components route through `tagSend`. When the
+    // translator wiring is wrong (or the component author didn't
+    // translate at all), library-internal Msgs (`move`, `drop`, …)
+    // leak into the live binding registry. The schema is the source of
+    // truth for "what the agent's update.ts can dispatch" — anything
+    // not in the schema is library noise that pollutes the affordance
+    // list and would be rejected at send_message time anyway.
+    const result = handleListActions(
+      makeHost({
+        descriptors: [
+          { variant: 'Save' }, // legitimate, in schema
+          { variant: 'move' }, // sortable lib internal — should be filtered
+          { variant: 'drop' }, // ditto
+          { variant: 'cancel' }, // ditto
+        ],
+        annotations: {
+          Save: {
+            intent: 'save',
+            dispatchMode: 'shared',
+            requiresConfirm: false,
+            alwaysAffordable: false,
+            examples: [],
+            warning: null,
+            emits: [],
+          },
+        },
+        schema: {
+          discriminant: 'type',
+          variants: { Save: {} },
+        },
+      }),
+    )
+    expect(result.actions).toHaveLength(1)
+    expect(result.actions.at(0)?.variant).toBe('Save')
+  })
+
+  it('passes through binding variants when no schema is available', () => {
+    // No schema = no source of truth for filtering. The runtime can't
+    // tell library Msgs from app Msgs, so be permissive — matches the
+    // pre-filter behaviour and avoids hiding legitimate bindings in
+    // builds that predate schema emission.
+    const result = handleListActions(
+      makeHost({
+        descriptors: [{ variant: 'Save' }, { variant: 'move' }],
+        schema: null,
+      }),
+    )
+    expect(result.actions.map((a) => a.variant).sort()).toEqual(['Save', 'move'])
+  })
+
+  // ── @validates surfaces as a fieldHint ─────────────────────────
+
+  it('surfaces @validates predicate text as a fieldHint', () => {
+    // The agent sees the constraint at affordance time so it ships a
+    // valid value first try, instead of dispatching, getting rejected
+    // with `validates-failed`, and retrying.
+    const result = handleListActions(
+      makeHost({
+        descriptors: [],
+        annotations: {
+          'Criterion/SetWeight': {
+            intent: 'Set the weight',
+            dispatchMode: 'agent-only',
+            requiresConfirm: false,
+            alwaysAffordable: false,
+            examples: [],
+            warning: null,
+            emits: [],
+          },
+        },
+        schema: {
+          discriminant: 'type',
+          variants: {
+            'Criterion/SetWeight': {
+              weight: { type: 'number', validates: 'v >= 0 && v <= 100' },
+            },
+          },
+        },
+      }),
+    )
+    const a = result.actions.at(0)
+    expect(a?.fieldHints).toContainEqual({
+      path: 'weight',
+      hint: 'validates: v >= 0 && v <= 100',
+    })
+  })
+
+  it('combines @should hint and @validates predicate as separate hints', () => {
+    const result = handleListActions(
+      makeHost({
+        descriptors: [],
+        annotations: {
+          X: {
+            intent: 'X',
+            dispatchMode: 'agent-only',
+            requiresConfirm: false,
+            alwaysAffordable: false,
+            examples: [],
+            warning: null,
+            emits: [],
+          },
+        },
+        schema: {
+          discriminant: 'type',
+          variants: {
+            X: {
+              url: {
+                type: 'string',
+                optional: true,
+                priority: 'should',
+                hint: 'Cite the source.',
+                validates: 'v.length > 0',
+              },
+            },
+          },
+        },
+      }),
+    )
+    const hints = result.actions.at(0)?.fieldHints ?? []
+    expect(hints).toContainEqual({ path: 'url', hint: 'Cite the source.' })
+    expect(hints).toContainEqual({ path: 'url', hint: 'validates: v.length > 0' })
+  })
+
   // ── Discriminated unions ───────────────────────────────────────
 
   it('synthesizes the first branch of a discriminated-union field as the example', () => {

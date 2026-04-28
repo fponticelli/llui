@@ -31,6 +31,7 @@ function makeHost(
       overrides.getAndClearDrainErrors ?? (() => errorBuffer.splice(0, errorBuffer.length)),
     getMsgAnnotations: overrides.getMsgAnnotations ?? (() => null),
     getMsgSchema: overrides.getMsgSchema ?? (() => null),
+    getDispatchPolicy: overrides.getDispatchPolicy,
     getBindingDescriptors: overrides.getBindingDescriptors ?? (() => null),
     getAgentAffordances: overrides.getAgentAffordances ?? (() => null),
     proposeConfirm: overrides.proposeConfirm ?? vi.fn(),
@@ -539,6 +540,68 @@ describe('handleSendMessage — waitFor modes', () => {
     }
     expect(send).toHaveBeenCalledOnce()
     expect(flush).not.toHaveBeenCalled()
+  })
+
+  it('strict-mode validation warnings propagate to drain.warnings', async () => {
+    // The host opts into strict policy. The dispatch lands (the agent
+    // gave a value the validator can't structurally check, but
+    // unknown-typed fields are still accepted), and the warning
+    // surfaces in drain.warnings so the LLM sees "we accepted this
+    // but didn't validate it" — useful for self-correcting on the
+    // next attempt.
+    const host = makeHost({
+      getMsgSchema: () => ({
+        discriminant: 'type',
+        variants: { Set: { payload: 'unknown' } },
+      }),
+      getMsgAnnotations: () => ({
+        Set: {
+          intent: null,
+          dispatchMode: 'shared',
+          requiresConfirm: false,
+          alwaysAffordable: false,
+          examples: [],
+          warning: null,
+          emits: [],
+        },
+      }),
+      getDispatchPolicy: () => 'strict',
+    })
+
+    const result = await handleSendMessage(host, {
+      msg: { type: 'Set', payload: { whatever: 1 } },
+      drainQuietMs: 10,
+      timeoutMs: 100,
+    })
+
+    expect(result.status).toBe('dispatched')
+    if (result.status === 'dispatched') {
+      expect(result.drain.warnings).toBeDefined()
+      expect(result.drain.warnings?.[0]).toMatchObject({
+        path: 'payload',
+        code: 'untyped-field',
+      })
+    }
+  })
+
+  it('lenient-mode (default) omits drain.warnings entirely', async () => {
+    // No `warnings` key on the drain envelope — keeps wire shape
+    // minimal for the common case.
+    const host = makeHost({
+      getMsgSchema: () => ({
+        discriminant: 'type',
+        variants: { Set: { payload: 'unknown' } },
+      }),
+    })
+    const result = await handleSendMessage(host, {
+      msg: { type: 'Set', payload: { whatever: 1 } },
+      drainQuietMs: 10,
+      timeoutMs: 100,
+    })
+    expect(result.status).toBe('dispatched')
+    if (result.status === 'dispatched') {
+      expect(result.drain.warnings).toBeUndefined()
+    }
   })
 
   it('drain captures errors that fire during the window', async () => {

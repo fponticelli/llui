@@ -36,6 +36,7 @@ import { noEagerItemAccessorRule } from './rules/no-eager-item-accessor.js'
 import { noListRenderInSampleRule } from './rules/no-list-render-in-sample.js'
 import { noSampleInReactivePositionRule } from './rules/no-sample-in-reactive-position.js'
 import { staticItemsRule } from './rules/static-items.js'
+import { agentTagsendTranslatorMissingRule } from './rules/agent-tagsend-translator-missing.js'
 
 export const rules = {
   'accessor-side-effect': accessorSideEffectRule,
@@ -76,6 +77,7 @@ export const rules = {
   'no-list-render-in-sample': noListRenderInSampleRule,
   'no-sample-in-reactive-position': noSampleInReactivePositionRule,
   'static-items': staticItemsRule,
+  'agent-tagsend-translator-missing': agentTagsendTranslatorMissingRule,
 }
 
 // Severity rationale:
@@ -140,6 +142,7 @@ export const configs = {
       'llui/no-list-render-in-sample': 'error',
       'llui/no-sample-in-reactive-position': 'error',
       'llui/static-items': 'error',
+      'llui/agent-tagsend-translator-missing': 'error',
     },
   },
   // Standalone overlay that errors on the `agent-*` rules. Useful for
@@ -156,6 +159,7 @@ export const configs = {
       'llui/agent-example-on-payload': 'error',
       'llui/agent-emits-drift': 'error',
       'llui/agent-optional-field-undocumented': 'error',
+      'llui/agent-tagsend-translator-missing': 'error',
     },
   },
 }

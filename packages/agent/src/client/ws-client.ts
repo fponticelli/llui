@@ -16,7 +16,11 @@ import {
   handleDescribeVisibleContent,
   type DescribeVisibleHost,
 } from './rpc/describe-visible-content.js'
-import { handleDescribeContext, type DescribeContextHost } from './rpc/describe-context.js'
+import {
+  handleDescribeContext,
+  type DescribeContextHost,
+  type LastDispatchOutcome,
+} from './rpc/describe-context.js'
 import { handleObserve, type ObserveHost } from './rpc/observe.js'
 
 export interface WsLike {
@@ -64,6 +68,15 @@ export type WsClientOpts = {
    * server regardless.
    */
   onLogEntry?: (entry: LogEntry) => void
+  /**
+   * Called with the outcome of every `send_message` rpc — `dispatched`
+   * (with optional errors / warnings), `rejected` (with errors), or
+   * `reducer-threw`. The factory uses this to maintain a "last
+   * outcome" snapshot that `describe_context` injects as a synthetic
+   * hint, so apps don't have to maintain their own
+   * `lastDispatchError` state field.
+   */
+  onDispatchOutcome?: (outcome: LastDispatchOutcome | null) => void
 }
 
 /**
@@ -141,6 +154,13 @@ export function attachWsClient(
     // behavior over multi-step flows.
     if (frame.tool === 'send_message' && rpcErr === null && isDispatchedResult(result)) {
       logEntry.stateDiff = result.stateDiff
+    }
+    if (frame.tool === 'send_message') {
+      // Capture the outcome so `describe_context` can surface it as a
+      // synthetic "Last dispatch …" hint. Apps used to roll their
+      // own `lastDispatchError` field; the framework owns it now.
+      const outcome = extractDispatchOutcome(frame.args, result, rpcErr)
+      if (outcome !== null) opts.onDispatchOutcome?.(outcome)
     }
     opts.onLogEntry?.(logEntry)
     ws.send(JSON.stringify({ t: 'log-append', entry: logEntry } satisfies ClientFrame))
@@ -238,6 +258,75 @@ function isDispatchedResult(
     (result as { status?: unknown }).status === 'dispatched' &&
     Array.isArray((result as { stateDiff?: unknown }).stateDiff)
   )
+}
+
+/**
+ * Build a `LastDispatchOutcome` snapshot from the send_message rpc's
+ * result/error pair. Returns null when the args don't carry a variant
+ * name (malformed dispatch — would never have been logged anyway).
+ *
+ * Status mapping:
+ *   - { status: 'dispatched' }                        → 'dispatched' (with errors/warnings)
+ *   - { status: 'rejected' }                          → 'rejected'
+ *   - rpcErr (rpc handler threw, including reducer-throw on the predict path) → 'reducer-threw'
+ *
+ * The outcome is consumed by `describe_context` to prepend a synthetic
+ * "Last dispatch …" hint. Clean dispatched outcomes (no errors, no
+ * warnings) still get tracked — `formatLastOutcomeHint` decides whether
+ * to surface them.
+ */
+function extractDispatchOutcome(
+  args: unknown,
+  result: unknown,
+  rpcErr: { code?: string; detail?: string } | null,
+): LastDispatchOutcome | null {
+  const variant = extractVariant('send_message', args)
+  if (variant === undefined) return null
+
+  const at = Date.now()
+
+  if (rpcErr !== null) {
+    // The rpc handler itself threw — most often this is a reducer
+    // throw that bubbled past the catch in send-message.ts (e.g.
+    // would_dispatch's reducer threw in a non-send-message tool that
+    // shares the path). Treat as `reducer-threw` so the agent reads
+    // "state may be partially advanced; observe before retrying."
+    return {
+      variant,
+      status: 'reducer-threw',
+      errors: [{ message: rpcErr.detail ?? rpcErr.code ?? 'rpc handler threw' }],
+      at,
+    }
+  }
+  if (result === null || typeof result !== 'object') return null
+  const r = result as {
+    status?: string
+    drain?: {
+      errors?: ReadonlyArray<{ message: string }>
+      warnings?: ReadonlyArray<{ path: string; message: string }>
+    }
+    detail?: string
+  }
+  if (r.status === 'dispatched') {
+    const errors = r.drain?.errors ?? []
+    const warnings = r.drain?.warnings ?? []
+    const out: LastDispatchOutcome = { variant, status: 'dispatched', at }
+    if (errors.length > 0) out.errors = errors
+    if (warnings.length > 0) out.warnings = warnings
+    return out
+  }
+  if (r.status === 'rejected') {
+    const detail = r.detail ?? 'rejected'
+    return {
+      variant,
+      status: 'rejected',
+      errors: [{ message: detail }],
+      at,
+    }
+  }
+  // Other statuses (`pending-confirmation`, etc.) — don't update the
+  // last-outcome cache. The dispatch hasn't really concluded yet.
+  return null
 }
 
 function extractVariant(tool: string, args: unknown): string | undefined {

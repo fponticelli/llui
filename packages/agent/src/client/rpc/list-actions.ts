@@ -99,7 +99,18 @@ export function handleListActions(host: ListActionsHost): ListActionsResult {
   // either 'shared' (default) or, in the malformed case where someone
   // bound an `@agentOnly` Msg in a view, 'agent-only'. Either way the
   // agent can dispatch them.
+  //
+  // Filtered against the Msg schema: a binding whose variant isn't in
+  // the user's Msg union is a library-internal Msg leaking through
+  // `tagSend` translator wiring (the sortable component's `move`,
+  // `drop`, `cancel`, etc. — they're routed into the user's update.ts
+  // via a different shape but their lib names slip into the binding
+  // registry). The agent has no use for those names — `would_dispatch`
+  // / `send_message` would reject them as `unknown-variant` anyway —
+  // so they pollute the affordance list. When a schema is available,
+  // the schema's variant set is the source of truth.
   for (const d of descriptors) {
+    if (schema && !(d.variant in schema.variants)) continue
     const ann = annotations[d.variant]
     if (ann?.dispatchMode === 'human-only') continue
     seen.add(d.variant)
@@ -258,6 +269,15 @@ function walkHint(
   if (typeof d === 'object' && d !== null && 'type' in d) {
     if (typeof d.hint === 'string' && d.hint.length > 0) {
       out.push({ path, hint: d.hint })
+    }
+    // `@validates(...)` predicates surface alongside `@should` hints
+    // so the agent sees the constraint at affordance time rather than
+    // only as a post-dispatch rejection. The verbatim predicate text
+    // is what the runtime evaluates; agents trained on JS read it
+    // directly. Prefix `validates: ` to disambiguate from freeform
+    // `@should` text.
+    if (typeof d.validates === 'string' && d.validates.length > 0) {
+      out.push({ path, hint: `validates: ${d.validates}` })
     }
     walkHintBare(path, d.type, out)
     return

@@ -1499,6 +1499,13 @@ it's a proxy for "how much activity happened during the drain window."
 `errors` surfaces sync throws from `onEffect` and unhandled rejections
 from effect handlers that fired during the drain window, so the LLM
 can see when an HTTP handler crashed silently.
+`warnings` surfaces non-blocking observations from the schema
+validator — typically `untyped-field` flags raised in strict mode
+when the agent provided a value for an `'unknown'`-typed field. The
+dispatch landed (we accepted the value) but the validator couldn't
+structurally check it, so the agent learns of the gap and can
+tighten the next try if needed. Lenient mode never emits warnings;
+the field is omitted in that case.
 
 ```typescript
 export type LapDrainMeta = {
@@ -1506,6 +1513,7 @@ export type LapDrainMeta = {
   durationMs: number
   timedOut: boolean
   errors: Array<{ kind: 'error' | 'unhandledrejection'; message: string; stack?: string }>
+  warnings?: Array<{ path: string; code: string; message: string }>
 }
 ```
 

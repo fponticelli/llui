@@ -82,6 +82,26 @@ export type WouldDispatchResult =
       reason: 'schema-mismatch'
       errors: ValidationError[]
     }
+  | {
+      /**
+       * The reducer threw while running against the candidate Msg.
+       * State is poisoned (or the reducer has a latent bug); a real
+       * `send_message` would land state change + an error in
+       * `drain.errors`. `would_dispatch` mirrors that contract: the
+       * "diff" is empty (we couldn't compute it), and the throw text
+       * is surfaced so the agent knows to back off rather than
+       * retrying the same payload.
+       *
+       * Distinct from `'rejected'` because the agent learned something
+       * different: the reducer DOES accept this Msg shape but errors
+       * downstream. Often that means earlier state needs fixing first
+       * (a previously-dispatched bad Msg poisoned a derived path),
+       * not that this candidate is malformed.
+       */
+      status: 'reducer-threw'
+      message: string
+      stack?: string
+    }
 
 export function handleWouldDispatch(
   host: WouldDispatchHost,
@@ -101,7 +121,19 @@ export function handleWouldDispatch(
     return { status: 'rejected', reason: 'schema-mismatch', errors: validation.errors }
   }
 
-  const result = host.runReducer(args.msg)
+  let result: { state: unknown; effects: unknown[] } | null
+  try {
+    result = host.runReducer(args.msg)
+  } catch (e) {
+    // The reducer threw — same Phase-5 contract as `send_message`:
+    // surface the throw as structured data instead of letting it
+    // become an HTTP 500 the agent reads as "transport failure."
+    const err = e instanceof Error ? e : new Error(String(e))
+    const stack = err.stack ? err.stack.split('\n').slice(0, 8).join('\n') : undefined
+    return stack !== undefined
+      ? { status: 'reducer-threw', message: `${err.name}: ${err.message}`, stack }
+      : { status: 'reducer-threw', message: `${err.name}: ${err.message}` }
+  }
   if (result === null) {
     return {
       status: 'rejected',

@@ -193,6 +193,41 @@ describe('handleWouldDispatch', () => {
     expect(reducer).toHaveBeenCalledOnce()
   })
 
+  // ── Reducer throw mid-prediction ───────────────────────────────
+
+  it('surfaces a reducer throw as `reducer-threw` instead of HTTP 500', () => {
+    // The agent uses `would_dispatch` to weigh a candidate before
+    // committing. If the reducer throws while predicting, the agent
+    // should learn that — not get an opaque transport failure that
+    // reads as "the tool itself broke." The structured `reducer-threw`
+    // status tells the agent: the Msg shape was accepted but the
+    // reducer errored; usually means earlier state needs fixing.
+    const reducer = vi.fn(() => {
+      throw new Error('scoring crashed: unexpected ease value')
+    })
+    const result = handleWouldDispatch(mkHost({ state: {}, reducer }), {
+      msg: { type: 'Run' },
+    })
+    expect(result.status).toBe('reducer-threw')
+    if (result.status === 'reducer-threw') {
+      expect(result.message).toContain('scoring crashed')
+    }
+  })
+
+  it('reducer-threw includes a truncated stack for debugging', () => {
+    const reducer = vi.fn(() => {
+      const e = new Error('boom')
+      throw e
+    })
+    const result = handleWouldDispatch(mkHost({ state: {}, reducer }), {
+      msg: { type: 'X' },
+    })
+    if (result.status === 'reducer-threw') {
+      // Stack present (Error has a stack on every modern runtime).
+      expect(result.stack).toBeDefined()
+    }
+  })
+
   it('does not affect host state — predict is non-mutating', () => {
     // The reducer is pure by TEA contract; the host's getState
     // pointer doesn't change as a result of prediction.
