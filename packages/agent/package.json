@@ -1,6 +1,6 @@
 {
   "name": "@llui/agent",
-  "version": "0.0.37",
+  "version": "0.0.38",
   "type": "module",
   "sideEffects": false,
   "exports": {
@@ -46,7 +46,7 @@
     "ws": "^8.18.0"
   },
   "peerDependencies": {
-    "@llui/dom": "^0.0.32"
+    "@llui/dom": "^0.0.33"
   },
   "devDependencies": {
     "@llui/dom": "workspace:*",

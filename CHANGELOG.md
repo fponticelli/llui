@@ -11,6 +11,36 @@ All notable changes to LLui packages are documented here. LLui is a pre-1.0 proj
 
 Packages version in lockstep at release time: `@llui/dom`, `@llui/vite-plugin`, `@llui/test`, `@llui/router`, `@llui/transitions`, `@llui/components`, `@llui/vike` share a version line. `@llui/effects`, `@llui/mcp`, `@llui/eslint-plugin`, `@llui/agent`, and `llui-agent` have their own cadence.
 
+## 2026-04-27 — 0.0.33 + @llui/agent@0.0.38, @llui/vike@0.0.35, @llui/mcp@0.0.28, @llui/eslint-plugin@0.0.19
+
+**Released:** `@llui/{dom,router,transitions,components}@0.0.33`; `@llui/test@0.0.34`; `@llui/vike@0.0.35`; `@llui/mcp@0.0.28`; `@llui/agent@0.0.38`; `@llui/eslint-plugin@0.0.19`
+
+Reactive ItemAccessor reads at the obvious call site (`text(item.title)`, `show({when: () => item.banned()})`, `branch({on: () => item.kind()})`), a cookbook recipe + `sample` doc warning for variable-length lists, and two ESLint rules to catch the silent-staleness footgun before it ships.
+
+### Breaking
+
+- **`@llui/eslint-plugin@0.0.19`** — `static-on` rule loosens for zero-arg accessors that read from item / memo / closure sources (`on: () => item.kind()` is now valid). Bare-literal zero-arg bodies (`on: () => 'tab'`) still fire. Apps using the new pattern stop false-positiving; apps with literal-bodied accessors see the same error as before.
+
+### `@llui/dom@0.0.33`
+
+- **Added** `text` and `unsafeHtml` on the View bag and primitives accept `() => V` alongside `(s: S) => V`. The runtime already detected zero-arg accessors and routed them through the per-item updater path; the type widening lets `text(item.title)` typecheck. Eliminates the `text(_ => item.title())` papercut that made the static-vs-reactive distinction easy to misread inside an `each.render` callback.
+- **Added** `show.when`, `branch.on`, `scope.on` accept `() => V` similarly. Same runtime path; same ergonomic win.
+- **Improved** `sample()` docstring spells out the variable-length-list footgun and redirects to the cookbook recipe. The pattern (`sample((s) => s.list.items.map(rowFn))`) looks idiomatic but silently captures rows in closure; cells go stale on in-place updates.
+
+### `@llui/eslint-plugin@0.0.19`
+
+- **Added** `no-eager-item-accessor` flags `text(item.X())` / `unsafeHtml(item.X())` — eager invocation captures the value at view-construction; the cell never updates when row state changes. Fix is to drop the `()`: `text(item.X)` reads reactively. Ships in `recommended` at error severity.
+- **Added** `no-list-render-in-sample` flags `.map()` over a state-derived array inside a `sample()` callback — exactly the antipattern that produces stale rendered rows. Use `each` + `ItemAccessor` for variable-length lists. Ships in `recommended` at error severity.
+- **Improved** `static-on` accepts zero-arg accessors whose body contains a CallExpression or MemberExpression (item accessors, memo readers, closure-captured selectors). Bare-literal bodies still fire.
+
+### Cascade releases
+
+- **`@llui/{router,transitions,components}@0.0.33`**, **`@llui/test@0.0.34`**, **`@llui/vike@0.0.35`**, **`@llui/mcp@0.0.28`**, **`@llui/agent@0.0.38`** — peer-dependency cascade for `@llui/dom@0.0.33`. No package-level changes.
+
+### Docs
+
+- New cookbook recipe "List of editable rows — reactive cells over `each`" walks through the correct `each` + `ItemAccessor` + reactive bindings shape, including the explicit anti-pattern note on wrapping a list in `sample()`.
+
 ## 2026-04-27 — @llui/agent@0.0.37, @llui/vite-plugin@0.0.35
 
 **Released:** `@llui/agent@0.0.37`; `@llui/vite-plugin@0.0.35`
