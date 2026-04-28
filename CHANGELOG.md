@@ -11,6 +11,37 @@ All notable changes to LLui packages are documented here. LLui is a pre-1.0 proj
 
 Packages version in lockstep at release time: `@llui/dom`, `@llui/vite-plugin`, `@llui/test`, `@llui/router`, `@llui/transitions`, `@llui/components`, `@llui/vike` share a version line. `@llui/effects`, `@llui/mcp`, `@llui/eslint-plugin`, `@llui/agent`, and `llui-agent` have their own cadence.
 
+## 2026-04-28 — 0.0.34 + @llui/agent@0.0.41, @llui/vite-plugin@0.0.37, @llui/test@0.0.35, @llui/vike@0.0.36, @llui/mcp@0.0.29
+
+**Released:** `@llui/{dom,components,router,transitions}@0.0.34`; `@llui/test@0.0.35`; `@llui/vike@0.0.36`; `@llui/mcp@0.0.29`; `@llui/agent@0.0.41`; `@llui/vite-plugin@0.0.37`
+
+Four post-dogfood improvements: `@agentOnly` respects `agentAffordances`, per-binding throw isolation in the runtime, current URL on `describe_visible_content`, and a new `@routeGated` JSDoc tag for compile-time affordance gating.
+
+### Breaking
+
+- **`@llui/dom@0.0.34`** — `AppHandle` adds `setOnBindingError(hook | null): void`. Custom AppHandle implementations (test fakes, mocks, adapter layers) need to provide it; `setOnBindingError: () => {}` is a fine no-op for callers that don't need the hook.
+- **`@llui/agent@0.0.41`** — `DescribeVisibleResult` adds `url: string | null`. `MessageAnnotations` adds `routeGate?: string | null`. Both shapes are additive; exhaustive type assertions over the result need updating.
+
+### `@llui/dom@0.0.34`
+
+- **Added** Per-binding throw isolation in the Phase-2 update loop. A single accessor that throws (e.g. scoring fails on a malformed criterion) now leaves its binding's `lastValue` unchanged — DOM stays at the previous value rather than going blank — and continues with sibling bindings on the same commit. Reverses the previous "one bad accessor freezes the entire view" UX.
+- **Added** `inst._onBindingError` runtime hook (internal field) and the public `AppHandle.setOnBindingError(hook)` accessor. The agent factory wires it into the dispatch envelope's `drain.errors`, so the LLM sees that a binding crashed without the dispatch reporting transport failure. Without a hook, throws fall back to `console.error` (dev mode, with the existing rich wrapped error message — component name, kind, node descriptor, accessor source) or `console.warn` (prod).
+
+### `@llui/agent@0.0.41`
+
+- **Added** `@agentOnly` schema-source variants now respect `agentAffordances(state)`. When the app provides an affordances hook, `@agentOnly` Msgs surface only when the hook returns them — bulk-edit Msgs like `Matrix/AddCriteria` stop surfacing on routes where they don't apply. Apps without `agentAffordances` keep the previous permissive default ("everything tagged `@agentOnly` is always available").
+- **Added** `describe_visible_content` returns the user's current URL (`url: string | null`, read from `window.location.href`). The agent uses this to verify "did my dispatch actually navigate the user?" — apps that bundle navigation into a Msg's effect chain update the URL on commit; the agent reads it back here to confirm the user's view tracked the state change.
+- **Added** `@routeGated("predicate")` annotation evaluated at affordance time. The compiler captures the predicate verbatim; the runtime evaluates with `state` bound and gates the variant from `list_actions` when the predicate returns falsy. Compile-time alternative to runtime `agentAffordances(state) => Msg[]` for the common "this Msg is reachable when state.X looks like Y" case.
+- **Improved** Agent factory wires `setOnBindingError` to push entries into `drain.errors`. A binding crash during a dispatch lands in the dispatched envelope (`status: 'dispatched'` with the error reported) — sibling bindings update normally, so the page survives.
+
+### `@llui/vite-plugin@0.0.37`
+
+- **Added** `@routeGated("predicate")` JSDoc tag captured into `MessageAnnotations.routeGate` and emitted into the runtime annotations object. Mirrors `@validates`'s grammar but with `state` as the bound variable instead of `v` (the predicate sees the whole app state, not a single field value).
+
+### Cascade releases
+
+- **`@llui/{components,router,transitions}@0.0.34`**, **`@llui/test@0.0.35`**, **`@llui/vike@0.0.36`**, **`@llui/mcp@0.0.29`** — peer-dependency cascade for `@llui/dom@0.0.34`. No package-level changes.
+
 ## 2026-04-28 — @llui/agent@0.0.40, @llui/eslint-plugin@0.0.21
 
 **Released:** `@llui/agent@0.0.40`; `@llui/eslint-plugin@0.0.21`

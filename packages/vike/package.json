@@ -1,6 +1,6 @@
 {
   "name": "@llui/vike",
-  "version": "0.0.35",
+  "version": "0.0.36",
   "type": "module",
   "sideEffects": false,
   "exports": {
@@ -28,7 +28,7 @@
     "test:coverage": "vitest run --coverage"
   },
   "peerDependencies": {
-    "@llui/dom": "^0.0.33",
+    "@llui/dom": "^0.0.34",
     "jsdom": "*"
   },
   "peerDependenciesMeta": {
