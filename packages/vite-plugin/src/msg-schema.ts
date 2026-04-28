@@ -36,9 +36,10 @@ export type MsgFieldType =
 /**
  * Rich per-field descriptor. Emitted only when there's something
  * beyond the bare type to communicate — optionality, an explicit
- * priority hint, or a freeform agent hint. When everything but `type`
- * is unset, the producer emits the bare `MsgFieldType` instead so
- * variants without annotations stay byte-cheap in the bundle.
+ * priority hint, a freeform agent hint, or a runtime validation
+ * predicate. When everything but `type` is unset, the producer emits
+ * the bare `MsgFieldType` instead so variants without annotations
+ * stay byte-cheap in the bundle.
  */
 export interface MsgFieldRich {
   type: MsgFieldType
@@ -55,6 +56,25 @@ export interface MsgFieldRich {
   /** Freeform consequence-shaped explanation. Surfaced verbatim to
    *  the LLM at affordance time. */
   hint?: string
+  /**
+   * Boolean JS expression that must hold for the field's value to be
+   * accepted. The expression has `v` bound to the field's runtime
+   * value; everything else is global (Math, JSON, RegExp, etc.).
+   * Authored as `@validates("expr")` JSDoc — the compiler captures
+   * the source string verbatim and the validator compiles it lazily
+   * with `new Function`, caching across calls.
+   *
+   * Examples:
+   *   @validates("v >= 0 && v <= 100")        // weight 0–100
+   *   @validates("v.length > 0")              // non-empty string
+   *   @validates("/^[a-z0-9-]+$/.test(v)")    // slug format
+   *
+   * The predicate runs ONLY at the agent boundary. Human-driven
+   * dispatches bypass it because TypeScript already validated the
+   * call site. Use for invariants the type system can't express
+   * (numeric ranges, format predicates, length bounds).
+   */
+  validates?: string
 }
 
 export type MsgField = MsgFieldType | MsgFieldRich
@@ -189,8 +209,9 @@ export function buildFieldDescriptor(
   const optional = member.questionToken !== undefined
   const jsdoc = readMemberJSDoc(source, member)
   const hint = readShouldHint(jsdoc)
+  const validates = readValidatesTag(jsdoc)
 
-  if (!optional && hint === null) {
+  if (!optional && hint === null && validates === null) {
     return baseType
   }
   const rich: MsgFieldRich = { type: baseType }
@@ -198,6 +219,9 @@ export function buildFieldDescriptor(
   if (hint !== null) {
     rich.priority = 'should'
     rich.hint = hint
+  }
+  if (validates !== null) {
+    rich.validates = validates
   }
   return rich
 }
@@ -409,6 +433,76 @@ function interfaceToTypeLiteralLike(iface: ts.InterfaceDeclaration): ts.TypeLite
 }
 
 /**
+ * Detect a branded-primitive intersection — `string & {__brand: B}`,
+ * `number & {readonly __brand: 'UID'}`, etc. Returns the underlying
+ * primitive keyword on success; null when the intersection isn't this
+ * shape.
+ *
+ * Conventional encodings recognised:
+ *   string & {__brand: T}          // type-fest's basic brand
+ *   string & { __brand: 'UID' }    // hand-rolled
+ *   number & { readonly __brand }  // readonly form
+ *
+ * Branches:
+ *  - Exactly one primitive-keyword member (StringKeyword, NumberKeyword,
+ *    BooleanKeyword) — the runtime base type.
+ *  - One or more TypeLiteralNode members whose every property is a
+ *    `__brand`-prefixed marker. Other property names disqualify (the
+ *    intersection is mixing in real fields, not a brand).
+ */
+function tryExtractBrandedPrimitive(intersection: ts.IntersectionTypeNode): MsgFieldType | null {
+  let primitive: 'string' | 'number' | 'boolean' | null = null
+  let sawBrandTag = false
+
+  for (const member of intersection.types) {
+    if (member.kind === ts.SyntaxKind.StringKeyword) {
+      if (primitive !== null) return null
+      primitive = 'string'
+      continue
+    }
+    if (member.kind === ts.SyntaxKind.NumberKeyword) {
+      if (primitive !== null) return null
+      primitive = 'number'
+      continue
+    }
+    if (member.kind === ts.SyntaxKind.BooleanKeyword) {
+      if (primitive !== null) return null
+      primitive = 'boolean'
+      continue
+    }
+    if (ts.isTypeLiteralNode(member)) {
+      // Every property in this literal must look like a brand marker
+      // (`__brand`, `__type`, etc. — anything starting with `__`). If
+      // a real-named field appears, this isn't a brand intersection.
+      let onlyBrandFields = true
+      let hasField = false
+      for (const prop of member.members) {
+        if (!ts.isPropertySignature(prop) || !prop.name) continue
+        hasField = true
+        const propName = ts.isIdentifier(prop.name)
+          ? prop.name.text
+          : ts.isStringLiteral(prop.name)
+            ? prop.name.text
+            : ''
+        if (!propName.startsWith('__')) {
+          onlyBrandFields = false
+          break
+        }
+      }
+      if (!onlyBrandFields || !hasField) return null
+      sawBrandTag = true
+      continue
+    }
+    // Any other member shape (e.g. another intersection, generic
+    // reference, etc.) — bail to be conservative.
+    return null
+  }
+
+  if (primitive === null || !sawBrandTag) return null
+  return primitive
+}
+
+/**
  * Read a string-literal property value from an object-literal-like
  * member list, or null if the named property isn't present, isn't a
  * property signature, or isn't typed as a string literal.
@@ -466,6 +560,25 @@ export function resolveFieldType(
       const discResult = tryExtractDiscriminatedUnion(type, typeIndex, depth - 1)
       if (discResult !== null) return discResult
     }
+  }
+
+  // Branded primitive intersection — `string & {__brand: B}`,
+  // `number & {__brand: 'UID'}`, etc. The brand tag is a TS-only
+  // distinction that doesn't survive into runtime; from the
+  // validator's POV the value is just the underlying primitive. We
+  // unwrap to the primitive so the schema records the right runtime
+  // shape rather than collapsing to `'unknown'`.
+  //
+  // Heuristic: any IntersectionTypeNode where exactly one member is
+  // a primitive keyword and every other member is a TypeLiteralNode
+  // (the brand tag, conventionally `{__brand: …}` or
+  // `{readonly __brand: …}`). Real-world brands also use the form
+  // `Opaque<string, 'UID'>` from libraries like type-fest — those
+  // resolve via the typeIndex and are handled in the named-reference
+  // branch below.
+  if (ts.isIntersectionTypeNode(type)) {
+    const brandResult = tryExtractBrandedPrimitive(type)
+    if (brandResult !== null) return brandResult
   }
 
   // Below this point, all branches need depth budget. Bail out cheaply.
@@ -610,5 +723,19 @@ function readMemberJSDoc(source: string, member: ts.PropertySignature): string {
 function readShouldHint(comment: string): string | null {
   if (!comment) return null
   const match = comment.match(/@should\s*\(\s*["“]([^"”]*)["”]\s*\)/)
+  return match?.[1] ?? null
+}
+
+/**
+ * Match `@validates("predicate-expression")` (and curly-quote variant)
+ * anywhere in the JSDoc. Returns the verbatim predicate string —
+ * runtime validator compiles it with `new Function('v', 'return (' +
+ * src + ')')`. Quote characters inside the predicate must be escaped
+ * as the predicate runs through a regex match; for predicates that
+ * need embedded quotes, use a regex literal or a named character class.
+ */
+function readValidatesTag(comment: string): string | null {
+  if (!comment) return null
+  const match = comment.match(/@validates\s*\(\s*["“]([^"”]*)["”]\s*\)/)
   return match?.[1] ?? null
 }

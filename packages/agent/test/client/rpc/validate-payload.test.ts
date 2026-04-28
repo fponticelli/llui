@@ -224,6 +224,192 @@ describe('validatePayload', () => {
     }
   })
 
+  // ── Strict mode ────────────────────────────────────────────────
+
+  it('strict mode rejects fields not in the schema', () => {
+    // The agent typo'd `tilte` for `title` — lenient mode passes it
+    // through; strict mode catches it. Hallucinated extra fields land
+    // here too.
+    const schema: MsgSchemaShape = {
+      discriminant: 'type',
+      variants: { Save: { title: 'string' } },
+    }
+    const r = validatePayload({ type: 'Save', title: 'X', tilte: 'X' }, schema, {
+      policy: 'strict',
+    })
+    expect(r.ok).toBe(false)
+    if (!r.ok) {
+      expect(r.errors[0]).toMatchObject({
+        path: 'tilte',
+        code: 'unexpected-field',
+      })
+    }
+  })
+
+  it('lenient mode (default) accepts extras silently', () => {
+    const schema: MsgSchemaShape = {
+      discriminant: 'type',
+      variants: { Save: { title: 'string' } },
+    }
+    expect(validatePayload({ type: 'Save', title: 'X', extra: 1 }, schema)).toEqual({ ok: true })
+    expect(
+      validatePayload({ type: 'Save', title: 'X', extra: 1 }, schema, { policy: 'lenient' }),
+    ).toEqual({ ok: true })
+  })
+
+  it('strict mode warns when the agent provides a value for an `unknown`-typed field', () => {
+    // `unknown` schema entries usually mean cross-file resolution
+    // didn't reach that deep — the field IS expected, just untyped.
+    // Strict mode accepts the value (we can't validate it) but
+    // surfaces the gap as a warning so the LLM knows it wasn't
+    // checked. Lenient mode stays silent.
+    const schema: MsgSchemaShape = {
+      discriminant: 'type',
+      variants: { X: { payload: 'unknown' } },
+    }
+    const strict = validatePayload({ type: 'X', payload: { whatever: 1 } }, schema, {
+      policy: 'strict',
+    })
+    expect(strict.ok).toBe(true)
+    if (strict.ok) {
+      expect(strict.warnings).toEqual([
+        {
+          path: 'payload',
+          code: 'untyped-field',
+          message: expect.stringContaining("'unknown'"),
+        },
+      ])
+    }
+
+    const lenient = validatePayload({ type: 'X', payload: { whatever: 1 } }, schema)
+    expect(lenient).toEqual({ ok: true }) // no warnings field in lenient
+  })
+
+  it('strict mode catches typos in nested object shapes', () => {
+    const schema: MsgSchemaShape = {
+      discriminant: 'type',
+      variants: {
+        Save: {
+          row: {
+            kind: 'object',
+            shape: { id: 'string', label: 'string' },
+          },
+        },
+      },
+    }
+    const r = validatePayload({ type: 'Save', row: { id: 'r1', lable: 'hello' } }, schema, {
+      policy: 'strict',
+    })
+    expect(r.ok).toBe(false)
+    if (!r.ok) {
+      // Two errors expected: `label` is missing (typo became `lable`)
+      // AND `lable` is an unexpected field.
+      expect(r.errors).toContainEqual(
+        expect.objectContaining({ path: 'row.label', code: 'missing' }),
+      )
+      expect(r.errors).toContainEqual(
+        expect.objectContaining({ path: 'row.lable', code: 'unexpected-field' }),
+      )
+    }
+  })
+
+  // ── @validates predicate ──────────────────────────────────────
+
+  it('rejects values that fail the @validates predicate', () => {
+    // weight: number with @validates("v >= 0 && v <= 100"). Any
+    // value outside the range is rejected with a clear pointer at
+    // the predicate source.
+    const schema: MsgSchemaShape = {
+      discriminant: 'type',
+      variants: {
+        SetWeight: {
+          weight: { type: 'number', validates: 'v >= 0 && v <= 100' },
+        },
+      },
+    }
+    expect(validatePayload({ type: 'SetWeight', weight: 50 }, schema)).toEqual({ ok: true })
+    const r = validatePayload({ type: 'SetWeight', weight: 150 }, schema)
+    expect(r.ok).toBe(false)
+    if (!r.ok) {
+      expect(r.errors[0]).toMatchObject({
+        path: 'weight',
+        code: 'validates-failed',
+        message: expect.stringContaining('v >= 0 && v <= 100'),
+      })
+    }
+  })
+
+  it('@validates fires after structural validation passes', () => {
+    // Structural error trumps the predicate — if the value isn't even
+    // the right type, we don't try to evaluate the predicate.
+    const schema: MsgSchemaShape = {
+      discriminant: 'type',
+      variants: {
+        X: {
+          weight: { type: 'number', validates: 'v >= 0' },
+        },
+      },
+    }
+    const r = validatePayload({ type: 'X', weight: 'a string' }, schema)
+    expect(r.ok).toBe(false)
+    if (!r.ok) {
+      expect(r.errors[0]?.code).toBe('wrong-type')
+      expect(r.errors.some((e) => e.code === 'validates-failed')).toBe(false)
+    }
+  })
+
+  it('@validates supports regex predicates for format checks', () => {
+    const schema: MsgSchemaShape = {
+      discriminant: 'type',
+      variants: {
+        SetSlug: {
+          slug: { type: 'string', validates: '/^[a-z0-9-]+$/.test(v)' },
+        },
+      },
+    }
+    expect(validatePayload({ type: 'SetSlug', slug: 'my-cool-slug' }, schema)).toEqual({
+      ok: true,
+    })
+    const r = validatePayload({ type: 'SetSlug', slug: 'My Slug!' }, schema)
+    expect(r.ok).toBe(false)
+    if (!r.ok) {
+      expect(r.errors[0]).toMatchObject({ path: 'slug', code: 'validates-failed' })
+    }
+  })
+
+  it('@validates: a malformed predicate is treated as accept (no break)', () => {
+    // Build-time lint is the right place to catch syntactic issues;
+    // runtime degrades gracefully so a single typo doesn't paralyze
+    // every dispatch.
+    const schema: MsgSchemaShape = {
+      discriminant: 'type',
+      variants: {
+        X: {
+          weight: { type: 'number', validates: 'v >= 0 &&' }, // syntax error
+        },
+      },
+    }
+    const r = validatePayload({ type: 'X', weight: 50 }, schema)
+    expect(r.ok).toBe(true)
+  })
+
+  it('@validates: a predicate that throws at evaluation is treated as fail', () => {
+    // If the predicate throws on a particular value (e.g. v.length on
+    // null), we fail closed — the value clearly isn't what the author
+    // expected.
+    const schema: MsgSchemaShape = {
+      discriminant: 'type',
+      variants: {
+        X: {
+          payload: { type: 'unknown', validates: 'v.length > 0' },
+        },
+      },
+    }
+    const r = validatePayload({ type: 'X', payload: null }, schema)
+    expect(r.ok).toBe(false)
+    if (!r.ok) expect(r.errors[0]?.code).toBe('validates-failed')
+  })
+
   // ── Multiple errors collected in one pass ─────────────────────
 
   it('collects all errors before returning', () => {

@@ -470,6 +470,77 @@ describe('handleSendMessage — waitFor modes', () => {
     }
   })
 
+  it('reducer/binding throw during flush surfaces in drain.errors, dispatch is `dispatched`', async () => {
+    // Phase 5: when host.flush() throws (e.g. a binding's accessor
+    // crashes during the post-reducer view-update), the dispatch is
+    // STILL considered dispatched — the agent gets the stateDiff and
+    // the throw lands in drain.errors. Returning HTTP 500 / status
+    // rejected would be misleading: the reducer ran, state advanced,
+    // and the agent retrying the same dispatch wouldn't help.
+    let stateBox: { x: number } = { x: 0 }
+    const send = vi.fn(() => {
+      stateBox = { x: 1 }
+    })
+    const flush = vi.fn(() => {
+      throw new Error('scoring crashed: unexpected ease value')
+    })
+    const host = makeHost({
+      state: stateBox,
+      getState: () => stateBox,
+      send,
+      flush,
+    })
+
+    const result = await handleSendMessage(host, {
+      msg: { type: 'Run' },
+      drainQuietMs: 20,
+      timeoutMs: 200,
+      waitFor: 'drained',
+    })
+
+    expect(result.status).toBe('dispatched')
+    if (result.status === 'dispatched') {
+      expect(result.drain.errors.length).toBeGreaterThan(0)
+      expect(result.drain.errors[0]).toMatchObject({
+        kind: 'error',
+        message: expect.stringContaining('scoring crashed'),
+      })
+    }
+    expect(send).toHaveBeenCalledOnce()
+    expect(flush).toHaveBeenCalledOnce()
+  })
+
+  it('reducer throw at host.send time also surfaces — flush skipped', async () => {
+    // If host.send itself throws (the reducer threw synchronously in
+    // a non-microtask path, or the host's queue rejected the Msg),
+    // we don't try to flush a Msg that wasn't queued. The error
+    // still lands in drain.errors and the dispatch reports as
+    // `dispatched` so the agent gets a structured response rather
+    // than HTTP 500.
+    const send = vi.fn(() => {
+      throw new TypeError('cannot read property of null')
+    })
+    const flush = vi.fn()
+    const host = makeHost({ send, flush })
+
+    const result = await handleSendMessage(host, {
+      msg: { type: 'Boom' },
+      drainQuietMs: 10,
+      timeoutMs: 100,
+      waitFor: 'drained',
+    })
+
+    expect(result.status).toBe('dispatched')
+    if (result.status === 'dispatched') {
+      expect(result.drain.errors[0]).toMatchObject({
+        kind: 'error',
+        message: expect.stringContaining('cannot read property'),
+      })
+    }
+    expect(send).toHaveBeenCalledOnce()
+    expect(flush).not.toHaveBeenCalled()
+  })
+
   it('drain captures errors that fire during the window', async () => {
     const host = makeHost()
     // Fire a commit that pushes an error while drain is running.

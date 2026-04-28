@@ -522,36 +522,101 @@ async function buildEnrichedTypeIndex(
     }
   }
 
-  // 2. Walk imports and resolve named-imported types via the resolver.
-  //    Each successful resolve adds the target's declaration to the
-  //    index under the local name. Type-only imports
-  //    (`import type { X }`) are followed exactly the same as value
-  //    imports — TypeScript's `isTypeOnly` flag doesn't change the
-  //    referent.
-  for (const stmt of sf.statements) {
-    if (!ts.isImportDeclaration(stmt)) continue
-    const named = stmt.importClause?.namedBindings
-    if (!named || !ts.isNamedImports(named)) continue
-    for (const spec of named.elements) {
-      const localName = spec.name.text
-      const importedName = spec.propertyName?.text ?? localName
-      if (index.has(localName)) continue
-      const located = await findTypeSource(importedName, source, filePath, ctx, new Set())
-      if (!located) continue
-      const targetSf = ts.createSourceFile(
-        located.filePath,
-        located.source,
-        ts.ScriptTarget.Latest,
-        true,
-      )
-      for (const targetStmt of targetSf.statements) {
-        if (ts.isTypeAliasDeclaration(targetStmt) && targetStmt.name.text === located.localName) {
-          index.set(localName, targetStmt.type)
-          break
+  // 2. Walk imports transitively. Each file's named imports are
+  //    resolved, the target declarations are added to the index under
+  //    their local name, and the target's OWN file is then queued so
+  //    its imports are followed too. This is what makes
+  //    `Matrix/AddCriteria.criteria[].type.ease` resolve all the way
+  //    to its discriminated-union descriptor: `Criterion` is imported
+  //    from `@decisive/domain`, and `EaseFunction` is in turn imported
+  //    by Criterion's home file. Without transitivity the inner types
+  //    collapse to `'unknown'` and the agent has to guess the shape.
+  //
+  //    Type-only imports (`import type { X }`) are followed exactly
+  //    the same as value imports — TypeScript's `isTypeOnly` flag
+  //    doesn't change the referent.
+  //
+  //    Name collisions are first-write-wins: a local declaration
+  //    shadows an imported one of the same name, and the first
+  //    transitively-discovered import wins over later same-name
+  //    imports. Intentional — root files almost always import the
+  //    canonical name, and shallower-import names are more likely
+  //    correct than deep-import collisions.
+  const fileQueue: Array<{ source: string; filePath: string; sf: ts.SourceFile }> = [
+    { source, filePath, sf },
+  ]
+  const visitedFiles = new Set<string>([filePath])
+
+  while (fileQueue.length > 0) {
+    const cur = fileQueue.shift()
+    if (!cur) break
+
+    // Add this file's *own* local type declarations to the index so
+    // sibling references inside the file's exported types resolve.
+    // Without this, a Criterion in domain.ts referencing EaseMode
+    // (declared right next to it) would collapse to 'unknown' even
+    // though we already followed the import chain to domain.ts.
+    // First-write-wins: a local declaration in the entry file
+    // shadows a same-named declaration in a transitively-walked
+    // file (intentional — entry-file names are canonical).
+    if (cur.filePath !== filePath) {
+      for (const stmt of cur.sf.statements) {
+        if (ts.isTypeAliasDeclaration(stmt)) {
+          if (!index.has(stmt.name.text)) index.set(stmt.name.text, stmt.type)
+        } else if (ts.isInterfaceDeclaration(stmt)) {
+          if (!index.has(stmt.name.text)) index.set(stmt.name.text, stmt)
         }
-        if (ts.isInterfaceDeclaration(targetStmt) && targetStmt.name.text === located.localName) {
-          index.set(localName, targetStmt)
-          break
+      }
+    }
+
+    for (const stmt of cur.sf.statements) {
+      if (!ts.isImportDeclaration(stmt)) continue
+      const named = stmt.importClause?.namedBindings
+      if (!named || !ts.isNamedImports(named)) continue
+      for (const spec of named.elements) {
+        const localName = spec.name.text
+        const importedName = spec.propertyName?.text ?? localName
+        if (index.has(localName)) continue
+        // Best-effort: any failure to resolve / read silently bails.
+        // Bare-specifier imports like `'fs'` resolve to vite's
+        // `__vite-browser-external` sentinel, which then ENOENTs at
+        // readSource — those imports aren't type-relevant for schema
+        // extraction anyway, so the failure is benign.
+        let located: ResolvedTypeSource | null
+        try {
+          located = await findTypeSource(importedName, cur.source, cur.filePath, ctx, new Set())
+        } catch {
+          located = null
+        }
+        if (!located) continue
+        const targetSf = ts.createSourceFile(
+          located.filePath,
+          located.source,
+          ts.ScriptTarget.Latest,
+          true,
+        )
+        let added = false
+        for (const targetStmt of targetSf.statements) {
+          if (ts.isTypeAliasDeclaration(targetStmt) && targetStmt.name.text === located.localName) {
+            index.set(localName, targetStmt.type)
+            added = true
+            break
+          }
+          if (ts.isInterfaceDeclaration(targetStmt) && targetStmt.name.text === located.localName) {
+            index.set(localName, targetStmt)
+            added = true
+            break
+          }
+        }
+        // Queue the target file so its own imports — and own local
+        // declarations — flow into the index. Only queue once per file.
+        if (added && !visitedFiles.has(located.filePath)) {
+          visitedFiles.add(located.filePath)
+          fileQueue.push({
+            source: located.source,
+            filePath: located.filePath,
+            sf: targetSf,
+          })
         }
       }
     }

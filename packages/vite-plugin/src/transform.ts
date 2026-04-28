@@ -3385,6 +3385,11 @@ function buildFieldDescriptorExpr(descriptor: MsgField, f: ts.NodeFactory): ts.E
     if (descriptor.hint !== undefined) {
       props.push(f.createPropertyAssignment('hint', f.createStringLiteral(descriptor.hint)))
     }
+    if (descriptor.validates !== undefined) {
+      props.push(
+        f.createPropertyAssignment('validates', f.createStringLiteral(descriptor.validates)),
+      )
+    }
     return f.createObjectLiteralExpression(props)
   }
   // The remaining cases are bare type-shape variants emitted by

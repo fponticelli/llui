@@ -368,6 +368,58 @@ describe('extractMsgSchema', () => {
     expect(schema?.variants.X?.payload).toBe('unknown')
   })
 
+  // ── Branded primitives ─────────────────────────────────────────
+
+  it('extracts a branded string as the base primitive', () => {
+    // `type UID = string & {__brand: 'UID'}` is the canonical brand
+    // shape. The brand tag is TS-only; runtime values are just strings.
+    // Schema records `'string'` so the validator's typeof check passes
+    // for any string value.
+    const src = `
+      type UID = string & { __brand: 'UID' }
+      type Msg = | { type: 'X'; id: UID }
+    `
+    const schema = extractMsgSchema(src)
+    expect(schema?.variants.X?.id).toBe('string')
+  })
+
+  it('extracts a branded number as number', () => {
+    const src = `
+      type Cents = number & { __brand: 'Cents' }
+      type Msg = | { type: 'X'; price: Cents }
+    `
+    expect(extractMsgSchema(src)?.variants.X?.price).toBe('number')
+  })
+
+  it('extracts a branded type with readonly modifier', () => {
+    // The readonly form is common in lockdown-heavy codebases.
+    const src = `
+      type UID = string & { readonly __brand: 'UID' }
+      type Msg = | { type: 'X'; id: UID }
+    `
+    expect(extractMsgSchema(src)?.variants.X?.id).toBe('string')
+  })
+
+  it('rejects intersections that mix in real fields (not brands)', () => {
+    // `string & {field: number}` isn't a brand — it's a constructive
+    // intersection. We don't try to model that; bail to 'unknown'.
+    const src = `
+      type Weird = string & { field: number }
+      type Msg = | { type: 'X'; payload: Weird }
+    `
+    expect(extractMsgSchema(src)?.variants.X?.payload).toBe('unknown')
+  })
+
+  it('rejects intersections without a primitive base', () => {
+    // `{__brand:'A'} & {__brand:'B'}` — no underlying primitive to
+    // unwrap to. Bail rather than guess.
+    const src = `
+      type AB = { __brand: 'A' } & { __brand: 'B' }
+      type Msg = | { type: 'X'; payload: AB }
+    `
+    expect(extractMsgSchema(src)?.variants.X?.payload).toBe('unknown')
+  })
+
   // ── Number / boolean literal unions ────────────────────────────
 
   it('handles number-literal unions as enum', () => {
@@ -421,6 +473,52 @@ describe('extractMsgSchema', () => {
           },
         },
       },
+    })
+  })
+
+  // ── @validates predicate ───────────────────────────────────────
+
+  it('extracts @validates JSDoc into the rich descriptor', () => {
+    // The motivating use: domain invariants TypeScript can't express
+    // (numeric ranges, format predicates, length bounds). The compiler
+    // captures the predicate verbatim; the runtime validator compiles
+    // it lazily with `new Function('v', 'return (' + src + ')')`.
+    const src = `
+      type Msg =
+        | {
+            type: 'SetWeight'
+            /** @validates("v >= 0 && v <= 100") */
+            weight: number
+          }
+    `
+    const schema = extractMsgSchema(src)
+    expect(schema?.variants.SetWeight?.weight).toEqual({
+      type: 'number',
+      validates: 'v >= 0 && v <= 100',
+    })
+  })
+
+  it('combines @validates with @should and optional', () => {
+    // All three rich-descriptor signals on a single field — exercises
+    // the producer's emit path for the kitchen-sink case.
+    const src = `
+      type Msg =
+        | {
+            type: 'X'
+            /**
+             * @should("Cite the source.")
+             * @validates("v.length > 0")
+             */
+            url?: string
+          }
+    `
+    const schema = extractMsgSchema(src)
+    expect(schema?.variants.X?.url).toEqual({
+      type: 'string',
+      optional: true,
+      priority: 'should',
+      hint: 'Cite the source.',
+      validates: 'v.length > 0',
     })
   })
 

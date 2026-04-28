@@ -41,12 +41,44 @@ export type ValidationError = {
     | 'not-object'
     | 'missing-discriminant'
     | 'unknown-discriminant-value'
+    | 'unexpected-field'
+    | 'validates-failed'
   message: string
 }
 
-export type ValidationResult = { ok: true } | { ok: false; errors: ValidationError[] }
+export type ValidationWarning = {
+  path: string
+  code: 'untyped-field'
+  message: string
+}
 
-export function validatePayload(msg: unknown, schema: MsgSchemaShape | null): ValidationResult {
+export type ValidationResult =
+  | { ok: true; warnings?: ValidationWarning[] }
+  | { ok: false; errors: ValidationError[]; warnings?: ValidationWarning[] }
+
+export type ValidationOptions = {
+  /**
+   * `'strict'` rejects fields that aren't declared in the schema (typos,
+   * extra keys, fields the LLM hallucinated). Also emits warnings when
+   * the agent provides a value for a field whose schema is `'unknown'`
+   * — the validator can't structurally check the value, so the warning
+   * surfaces the gap to the LLM ("we accepted this but didn't validate
+   * it"). `'lenient'` (default) accepts extras silently and treats
+   * `'unknown'` as a passthrough.
+   *
+   * Strict mode pairs with the cross-file schema fidelity in
+   * `@llui/vite-plugin`@0.0.36+: with most fields fully resolved, strict
+   * is rarely surprising. Apps that haven't migrated yet may find
+   * strict overzealous and should stay on lenient.
+   */
+  policy?: 'strict' | 'lenient'
+}
+
+export function validatePayload(
+  msg: unknown,
+  schema: MsgSchemaShape | null,
+  opts: ValidationOptions = {},
+): ValidationResult {
   if (msg === null || typeof msg !== 'object' || Array.isArray(msg)) {
     return {
       ok: false,
@@ -92,12 +124,17 @@ export function validatePayload(msg: unknown, schema: MsgSchemaShape | null): Va
   }
 
   const errors: ValidationError[] = []
+  const warnings: ValidationWarning[] = []
+  const policy = opts.policy ?? 'lenient'
   const payload: Record<string, unknown> = {}
   for (const [k, v] of Object.entries(m)) {
     if (k !== schema.discriminant) payload[k] = v
   }
-  validateObjectShape(payload, variantSchema, '', errors)
-  return errors.length === 0 ? { ok: true } : { ok: false, errors }
+  validateObjectShape(payload, variantSchema, '', errors, warnings, policy)
+  if (errors.length === 0) {
+    return warnings.length === 0 ? { ok: true } : { ok: true, warnings }
+  }
+  return warnings.length === 0 ? { ok: false, errors } : { ok: false, errors, warnings }
 }
 
 function validateObjectShape(
@@ -105,6 +142,8 @@ function validateObjectShape(
   shape: Record<string, MsgSchemaField>,
   pathPrefix: string,
   errors: ValidationError[],
+  warnings: ValidationWarning[],
+  policy: 'strict' | 'lenient',
 ): void {
   for (const [name, descriptor] of Object.entries(shape)) {
     const fieldPath = pathPrefix === '' ? name : `${pathPrefix}.${name}`
@@ -123,7 +162,64 @@ function validateObjectShape(
       continue
     }
 
-    validateField(fieldValue, fieldType(descriptor), fieldPath, errors)
+    const ft = fieldType(descriptor)
+    if (ft === 'unknown' && policy === 'strict') {
+      warnings.push({
+        path: fieldPath,
+        code: 'untyped-field',
+        message: `value accepted but field schema is 'unknown' — the validator could not structurally check it. If this field is reachable across file boundaries, consider whether @llui/vite-plugin can resolve it.`,
+      })
+    }
+
+    const errCountBefore = errors.length
+    validateField(fieldValue, ft, fieldPath, errors, warnings, policy)
+    const structurallyValid = errors.length === errCountBefore
+
+    // Domain-invariant predicate (`@validates("expr")`). Runs only
+    // when structural validation passed for this field — without the
+    // right shape, the predicate would either throw (and we'd have to
+    // double-report) or accidentally pass (e.g. `v.length` on a string
+    // when we expected a number array). Predicate failures are errors
+    // regardless of policy — the author opted into the constraint
+    // deliberately.
+    if (structurallyValid) {
+      const validates = fieldValidatesPredicate(descriptor)
+      if (validates !== null) {
+        const predicate = compilePredicate(validates)
+        let passed: boolean
+        try {
+          passed = Boolean(predicate(fieldValue))
+        } catch {
+          passed = false
+        }
+        if (!passed) {
+          errors.push({
+            path: fieldPath,
+            code: 'validates-failed',
+            message: `value violates \`@validates("${validates}")\``,
+          })
+        }
+      }
+    }
+  }
+
+  // Strict mode: reject fields the schema doesn't declare. Catches
+  // typos (`{tile: 'X'}` instead of `{title: 'X'}`), hallucinated
+  // fields, and stale field names from before a refactor. Lenient
+  // mode accepts extras silently — same shape TypeScript's structural
+  // subtyping accepts at the call site.
+  if (policy === 'strict') {
+    for (const key of Object.keys(value)) {
+      if (key in shape) continue
+      const fieldPath = pathPrefix === '' ? key : `${pathPrefix}.${key}`
+      errors.push({
+        path: fieldPath,
+        code: 'unexpected-field',
+        message: `field '${key}' is not in the schema. Legal fields: ${Object.keys(shape)
+          .map((k) => `'${k}'`)
+          .join(', ')}.`,
+      })
+    }
   }
 }
 
@@ -132,6 +228,8 @@ function validateField(
   type: MsgSchemaBareType,
   path: string,
   errors: ValidationError[],
+  warnings: ValidationWarning[],
+  policy: 'strict' | 'lenient',
 ): void {
   if (type === 'unknown') return // schema gap; accept anything
   if (typeof type === 'string') {
@@ -169,7 +267,14 @@ function validateField(
       })
       return
     }
-    validateObjectShape(value as Record<string, unknown>, type.shape, path, errors)
+    validateObjectShape(
+      value as Record<string, unknown>,
+      type.shape,
+      path,
+      errors,
+      warnings,
+      policy,
+    )
     return
   }
   if (type.kind === 'array') {
@@ -182,7 +287,7 @@ function validateField(
       return
     }
     for (let i = 0; i < value.length; i++) {
-      validateField(value[i], type.element, `${path}[${i}]`, errors)
+      validateField(value[i], type.element, `${path}[${i}]`, errors, warnings, policy)
     }
     return
   }
@@ -227,7 +332,7 @@ function validateField(
       if (k !== type.discriminant) branchPayload[k] = v
     }
     const branchPath = `${path}(${type.discriminant}=${discValue})`
-    validateObjectShape(branchPayload, branchSchema, branchPath, errors)
+    validateObjectShape(branchPayload, branchSchema, branchPath, errors, warnings, policy)
   }
 }
 
@@ -238,6 +343,39 @@ function isOptional(d: MsgSchemaField): boolean {
 function fieldType(d: MsgSchemaField): MsgSchemaBareType {
   if (typeof d === 'object' && d !== null && 'type' in d) return d.type
   return d
+}
+
+function fieldValidatesPredicate(d: MsgSchemaField): string | null {
+  if (typeof d === 'object' && d !== null && 'type' in d && typeof d.validates === 'string') {
+    return d.validates
+  }
+  return null
+}
+
+const predicateCache = new Map<string, (v: unknown) => boolean>()
+
+/**
+ * Compile a `@validates(...)` predicate string into a runtime function.
+ * Caches across calls — the schema is static at runtime, so each
+ * predicate is compiled at most once.
+ *
+ * The predicate sees `v` as the field's value and inherits the host
+ * environment's globals (Math, JSON, RegExp, etc.). On any compile
+ * error, returns a no-op `() => true` so a malformed predicate doesn't
+ * break dispatch — the build-time linter (`agent-validates-syntax`,
+ * future) is the right place to catch syntactic issues.
+ */
+function compilePredicate(src: string): (v: unknown) => boolean {
+  let fn = predicateCache.get(src)
+  if (fn) return fn
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-implied-eval
+    fn = new Function('v', `return (${src})`) as (v: unknown) => boolean
+  } catch {
+    fn = () => true
+  }
+  predicateCache.set(src, fn)
+  return fn
 }
 
 function describeType(v: unknown): string {

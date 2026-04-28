@@ -48,6 +48,15 @@ export type MsgSchemaField =
       optional?: boolean
       priority?: 'should'
       hint?: string
+      /**
+       * Boolean JS expression authored with `@validates("expr")` JSDoc.
+       * Has `v` bound to the field value at runtime; the validator
+       * compiles it lazily with `new Function('v', 'return (' + src +
+       * ')')` and caches the function across calls. Use for invariants
+       * the type system can't express — numeric ranges, format
+       * predicates, length bounds.
+       */
+      validates?: string
     }
 
 export type MsgSchemaShape = {

@@ -465,4 +465,83 @@ describe('extractDiscriminatedUnionSchemaCrossFile — composition', () => {
       },
     })
   })
+
+  it('resolves transitively across files — Msg → Criterion → EaseFunction', async () => {
+    // The motivating real-world case from decisive.space-2 dogfood:
+    // a Criterion (in domain.ts) references EaseFunction (in ease.ts).
+    // Pre-fix, the typeIndex knew about Criterion (root.ts imports it)
+    // but not EaseFunction (which is imported by domain.ts, not root.ts).
+    // EaseFunction collapsed to 'unknown' and the agent guessed
+    // `ease: 'linear'` instead of `ease: {kind: 'linear'}` — leading to
+    // a runtime scoring crash. With transitive enrichment, every
+    // import-of-an-import is queued and resolved, so the full
+    // discriminated-union shape lands in the schema.
+    const files = {
+      '/proj/ease.ts': `
+        export type EaseMode = 'in' | 'out' | 'inOut'
+        export type EaseFunction =
+          | { kind: 'linear' }
+          | { kind: 'sine'; mode: EaseMode }
+          | { kind: 'quad'; mode: EaseMode }
+      `,
+      '/proj/domain.ts': `
+        import type { EaseFunction } from './ease'
+        export interface Criterion {
+          id: string
+          title: string
+          ease: EaseFunction
+        }
+      `,
+      '/proj/msg.ts': `
+        import type { Criterion } from './domain'
+        export type Msg = { type: 'Matrix/AddCriteria'; criteria: Criterion[] }
+      `,
+    }
+    const ctx = memoryCtx(files)
+    const result = await extractDiscriminatedUnionSchemaCrossFile(
+      files['/proj/msg.ts']!,
+      'Msg',
+      '/proj/msg.ts',
+      ctx,
+    )
+    const ease = (
+      result?.variants['Matrix/AddCriteria']?.criteria as {
+        kind: 'array'
+        element: { kind: 'object'; shape: Record<string, unknown> }
+      }
+    ).element.shape.ease
+    expect(ease).toEqual({
+      kind: 'discriminated-union',
+      discriminant: 'kind',
+      variants: {
+        linear: {},
+        sine: { mode: { enum: ['in', 'out', 'inOut'] } },
+        quad: { mode: { enum: ['in', 'out', 'inOut'] } },
+      },
+    })
+  })
+
+  it('extracts branded primitives across file boundaries', async () => {
+    // `UID = string & {__brand}` declared in a sibling file. The
+    // schema records `'string'` so the validator's typeof check
+    // passes for any string value rather than rejecting against
+    // 'unknown'.
+    const files = {
+      '/proj/brand.ts': `
+        export type UID = string & { __brand: 'UID' }
+      `,
+      '/proj/msg.ts': `
+        import type { UID } from './brand'
+        export type Msg = { type: 'X'; id: UID }
+      `,
+    }
+    const ctx = memoryCtx(files)
+    const result = await extractDiscriminatedUnionSchemaCrossFile(
+      files['/proj/msg.ts']!,
+      'Msg',
+      '/proj/msg.ts',
+      ctx,
+    )
+    expect(result?.variants.X?.id).toBe('string')
+  })
 })

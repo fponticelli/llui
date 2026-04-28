@@ -130,17 +130,17 @@ export async function handleSendMessage(
   const includeState = args.includeState === true
 
   if (waitFor === 'none') {
-    host.send(args.msg)
+    safeSend(host, args.msg, [])
     return dispatched(host, emptyDrain(), prevState, includeState)
   }
 
   if (waitFor === 'idle') {
-    host.send(args.msg)
-    host.flush()
+    const dispatchErrors: LapDrainMeta['errors'] = []
+    safeSendAndFlush(host, args.msg, dispatchErrors)
     await Promise.resolve()
     return dispatched(
       host,
-      { effectsObserved: 1, durationMs: 0, timedOut: false, errors: [] },
+      { effectsObserved: 1, durationMs: 0, timedOut: false, errors: dispatchErrors },
       prevState,
       includeState,
     )
@@ -160,9 +160,13 @@ export async function handleSendMessage(
     wake = null
     w?.('msg')
   })
+  // Synchronous throws during send/flush — captured here and folded
+  // into drain.errors. Async post-flush errors come in via
+  // `getAndClearDrainErrors` (effect handler crashes, async rejections
+  // observed by the runtime) and are merged at response time.
+  const dispatchErrors: LapDrainMeta['errors'] = []
   try {
-    host.send(args.msg)
-    host.flush()
+    safeSendAndFlush(host, args.msg, dispatchErrors)
 
     while (true) {
       const elapsed = now() - t0
@@ -173,7 +177,7 @@ export async function handleSendMessage(
             effectsObserved: observed,
             durationMs: elapsed,
             timedOut: true,
-            errors: host.getAndClearDrainErrors?.() ?? [],
+            errors: mergeDrainErrors(dispatchErrors, host.getAndClearDrainErrors?.()),
           },
           prevState,
           includeState,
@@ -196,7 +200,7 @@ export async function handleSendMessage(
             effectsObserved: observed,
             durationMs: now() - t0,
             timedOut: !fullQuiet,
-            errors: host.getAndClearDrainErrors?.() ?? [],
+            errors: mergeDrainErrors(dispatchErrors, host.getAndClearDrainErrors?.()),
           },
           prevState,
           includeState,
@@ -204,11 +208,74 @@ export async function handleSendMessage(
       }
       // A commit fired during the wait — flush any queued follow-ups so
       // effects dispatched by that cycle run before we re-check.
-      host.flush()
+      try {
+        host.flush()
+      } catch (e) {
+        dispatchErrors.push(toDrainError(e))
+      }
     }
   } finally {
     unsub()
   }
+}
+
+/**
+ * Send a Msg and capture any synchronous throw into `errors` rather
+ * than letting it propagate to the WS RPC layer. By the time `send`
+ * has thrown, the reducer may have partially run (state can advance),
+ * but bindings or downstream effects on the same commit may have
+ * crashed mid-flight. From the agent's POV: the dispatch IS dispatched,
+ * the state diff reflects what actually changed, and `drain.errors`
+ * reports the in-flight crash. That's strictly more useful than HTTP
+ * 500, which the agent reads as "the dispatch never happened."
+ */
+function safeSend(
+  host: SendMessageHost,
+  msg: { type: string; [k: string]: unknown },
+  errors: LapDrainMeta['errors'],
+): void {
+  try {
+    host.send(msg)
+  } catch (e) {
+    errors.push(toDrainError(e))
+  }
+}
+
+function safeSendAndFlush(
+  host: SendMessageHost,
+  msg: { type: string; [k: string]: unknown },
+  errors: LapDrainMeta['errors'],
+): void {
+  try {
+    host.send(msg)
+  } catch (e) {
+    errors.push(toDrainError(e))
+    return // can't flush something we never sent
+  }
+  try {
+    host.flush()
+  } catch (e) {
+    errors.push(toDrainError(e))
+  }
+}
+
+function toDrainError(e: unknown): LapDrainMeta['errors'][number] {
+  if (e instanceof Error) {
+    const stack = e.stack ? e.stack.split('\n').slice(0, 8).join('\n') : undefined
+    return stack !== undefined
+      ? { kind: 'error', message: `${e.name}: ${e.message}`, stack }
+      : { kind: 'error', message: `${e.name}: ${e.message}` }
+  }
+  return { kind: 'error', message: String(e) }
+}
+
+function mergeDrainErrors(
+  fromDispatch: LapDrainMeta['errors'],
+  fromHost: LapDrainMeta['errors'] | undefined,
+): LapDrainMeta['errors'] {
+  if (!fromHost || fromHost.length === 0) return fromDispatch
+  if (fromDispatch.length === 0) return fromHost
+  return [...fromDispatch, ...fromHost]
 }
 
 function dispatched(
