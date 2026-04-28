@@ -34,6 +34,8 @@ import { exhaustiveUpdateRule } from './rules/exhaustive-update.js'
 import { bitmaskOverflowRule } from './rules/bitmask-overflow.js'
 import { noEagerItemAccessorRule } from './rules/no-eager-item-accessor.js'
 import { noListRenderInSampleRule } from './rules/no-list-render-in-sample.js'
+import { noSampleInReactivePositionRule } from './rules/no-sample-in-reactive-position.js'
+import { staticItemsRule } from './rules/static-items.js'
 
 export const rules = {
   'accessor-side-effect': accessorSideEffectRule,
@@ -72,6 +74,8 @@ export const rules = {
   'bitmask-overflow': bitmaskOverflowRule,
   'no-eager-item-accessor': noEagerItemAccessorRule,
   'no-list-render-in-sample': noListRenderInSampleRule,
+  'no-sample-in-reactive-position': noSampleInReactivePositionRule,
+  'static-items': staticItemsRule,
 }
 
 // Severity rationale:
@@ -134,6 +138,8 @@ export const configs = {
       'llui/bitmask-overflow': 'error',
       'llui/no-eager-item-accessor': 'error',
       'llui/no-list-render-in-sample': 'error',
+      'llui/no-sample-in-reactive-position': 'error',
+      'llui/static-items': 'error',
     },
   },
   // Standalone overlay that errors on the `agent-*` rules. Useful for
