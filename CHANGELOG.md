@@ -11,6 +11,37 @@ All notable changes to LLui packages are documented here. LLui is a pre-1.0 proj
 
 Packages version in lockstep at release time: `@llui/dom`, `@llui/vite-plugin`, `@llui/test`, `@llui/router`, `@llui/transitions`, `@llui/components`, `@llui/vike` share a version line. `@llui/effects`, `@llui/mcp`, `@llui/eslint-plugin`, `@llui/agent`, and `llui-agent` have their own cadence.
 
+## 2026-04-28 — @llui/agent@0.0.39, @llui/vite-plugin@0.0.36
+
+**Released:** `@llui/agent@0.0.39`; `@llui/vite-plugin@0.0.36`
+
+Five-phase upgrade to agent-boundary validation. The framework now generates a runtime validator from the Msg union's TS types (cross-file shape transitivity, branded primitives, discriminated unions, optional `@validates` predicates), runs it for agent-driven dispatches, and catches downstream throws so a partial-failure dispatch reports as `dispatched` with errors in `drain.errors` rather than masquerading as HTTP 500. Reducers can now trust their inputs are well-formed.
+
+### Breaking
+
+- **`@llui/vite-plugin@0.0.36`** — `MsgFieldType` adds a new richer-descriptor field `validates?: string` (the captured `@validates(...)` predicate). The compiler emits it alongside `optional`/`priority`/`hint`. Code that read `__msgSchema` directly and exhaustively typed the rich-descriptor shape needs to widen for the new field. Apps that didn't poke at the schema directly are unaffected.
+- **`@llui/agent@0.0.39`** — `validatePayload` adds new error codes `'unexpected-field'` (strict mode catches typos / hallucinated keys) and `'validates-failed'` (predicate rejection). Existing handlers that exhaustively switch on `code` need to add cases or fall through. New optional 3rd argument to `validatePayload`: `{ policy: 'strict' | 'lenient' }`. Default stays lenient.
+
+### Migration
+
+- For most apps: no migration needed. The schema gets richer automatically; the validator gets stricter only when you opt in via `policy: 'strict'`.
+- If you had reducers with hand-written semantic guards (e.g. "this criterion's `ease` field must be a `{kind: ...}` object, not a string"), those guards are now redundant for agent-driven dispatches — the cross-file resolver fully resolves the shape and the validator rejects malformed payloads upstream of the reducer.
+- For domain invariants the type system can't express (numeric ranges, format predicates, length bounds), tag the field with `@validates("predicate-expression")`. The predicate has `v` bound to the field value at runtime.
+
+### `@llui/vite-plugin@0.0.36`
+
+- **Added** transitive cross-file shape resolution. The `buildEnrichedTypeIndex` walk now follows imports recursively — when `Criterion` is imported from `domain.ts` and `Criterion` itself references `EaseFunction` (imported by `domain.ts` from `ease.ts`), the resolver pulls `ease.ts`'s declarations into the index too. Previously the inner types collapsed to `'unknown'`; now the full discriminated-union descriptor lands in the schema. Closes the schema gap that produced the `ease: 'linear'` agent-side guess in dogfood testing.
+- **Added** branded-primitive resolution. `string & {__brand: 'UID'}`, `number & {readonly __brand: 'Cents'}`, etc. emit as their underlying primitive (`'string'`, `'number'`) so the validator's typeof check passes for any primitive value rather than rejecting against `'unknown'`. Intersections that mix in real (non-`__`-prefixed) fields are left alone — those aren't brands.
+- **Added** `@validates("predicate")` JSDoc tag captured into the rich field descriptor. Examples: `@validates("v >= 0 && v <= 100")` for a numeric range; `@validates("/^[a-z0-9-]+$/.test(v)")` for a slug format; `@validates("v.length > 0")` for a non-empty string. Predicates run at the agent boundary only — TypeScript validates the call site for human dispatches.
+- **Improved** transitive walk silently skips imports that fail to resolve (bare specifiers like `'fs'`, vite-externalized modules) rather than throwing. Consequence: the schema extractor is robust to non-type-relevant imports anywhere in the transitive closure.
+
+### `@llui/agent@0.0.39`
+
+- **Added** `validatePayload(msg, schema, opts?)` accepts a new `policy` option. `'strict'` rejects fields not in the schema (typos, hallucinated keys) with `code: 'unexpected-field'` and emits warnings for `'unknown'`-typed fields the agent provided values for (`code: 'untyped-field'`). `'lenient'` (default) accepts extras silently; `'unknown'` is a passthrough.
+- **Added** `@validates("...")` predicate execution. The compiler emits the predicate string in `MsgSchemaField.validates`; the validator compiles it lazily with `new Function('v', 'return (' + src + ')')` and caches. Predicate failures emit `code: 'validates-failed'` with the predicate source in the message. Predicates run only after structural validation passes — a wrong-type field doesn't double-report. Malformed predicates degrade to no-op rather than breaking dispatch; predicates that throw at evaluation are treated as fail-closed.
+- **Added** Phase 5 catch-and-report at the dispatch boundary. A throw inside `host.send` / `host.flush` during a `send_message` (reducer crash, binding-evaluation crash, persist-effect crash) now lands in `drain.errors` and the dispatch returns `{status: 'dispatched', stateDiff, drain: {errors: [...]}}` — instead of HTTP 500 / `{status: 'rejected'}`. The agent gets a structured "dispatch landed AND something errored downstream" signal and can self-correct or back off rather than retrying the same payload.
+- **Improved** `MsgSchemaField` rich-descriptor type extended with `validates?: string`. The validator unwraps it via the existing `fieldType()` accessor pattern.
+
 ## 2026-04-27 — @llui/eslint-plugin@0.0.20
 
 **Released:** `@llui/eslint-plugin@0.0.20`
