@@ -18,6 +18,16 @@ describe('handleDescribeVisibleContent', () => {
     expect(result.outline).toEqual([])
   })
 
+  it('includes the current URL so the agent can verify navigation', () => {
+    // The agent has no other way to detect "did my dispatch actually
+    // navigate the user?" The URL on the response lets it compare
+    // before/after state-creating dispatches.
+    const result = handleDescribeVisibleContent(makeHost(null))
+    // jsdom default is "http://localhost/" — anything truthy is fine.
+    expect(typeof result.url).toBe('string')
+    expect(result.url).toContain('http')
+  })
+
   it('walks data-agent-tagged subtree: headings h1-h6', () => {
     const container = document.createElement('div')
     const zone = document.createElement('section')

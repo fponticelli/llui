@@ -37,6 +37,28 @@ export type MessageAnnotations = {
    * Empty when no `@emits` tag is present.
    */
   emits: string[]
+  /**
+   * Boolean predicate gating whether the variant surfaces in
+   * `list_actions`. Authored as `@routeGated("expr")`; the compiler
+   * captures the predicate string verbatim and the runtime evaluates
+   * it with `state` bound to the current state. The variant only
+   * appears in the agent's affordance list when the predicate
+   * returns true.
+   *
+   * Compile-time alternative to `agentAffordances(state) => Msg[]`
+   * for the common case of "this Msg is reachable when state.X
+   * looks like Y." Co-located with the Msg definition rather than
+   * threaded through a separate hook.
+   *
+   * Examples:
+   *   @routeGated("state.matrixState.kind === 'loaded'")
+   *   @routeGated("state.route.kind === 'page' && state.route.slug === 'ranking'")
+   *   @routeGated("state.auth.status === 'authenticated'")
+   *
+   * Null when no `@routeGated` tag is present (variant defaults to
+   * its dispatchMode-driven affordance behavior).
+   */
+  routeGate: string | null
 }
 
 const DEFAULT: MessageAnnotations = {
@@ -47,6 +69,7 @@ const DEFAULT: MessageAnnotations = {
   examples: [],
   warning: null,
   emits: [],
+  routeGate: null,
 }
 
 /**
@@ -149,7 +172,23 @@ function parseAnnotations(comment: string): MessageAnnotations {
     examples: readExamples(comment),
     warning: readWarning(comment),
     emits: readEmits(comment),
+    routeGate: readRouteGate(comment),
   }
+}
+
+/**
+ * Match `@routeGated("predicate-expression")` (and curly-quote
+ * variant). Returns the verbatim predicate string — the runtime
+ * compiles it with `new Function('state', 'return (' + src + ')')`
+ * and evaluates against the current state to gate affordances.
+ *
+ * Mirrors `@validates`'s grammar but with `state` as the bound
+ * variable instead of `v` (since the predicate sees the whole app
+ * state, not a single field value).
+ */
+function readRouteGate(comment: string): string | null {
+  const match = comment.match(/@routeGated\s*\(\s*["“]([^"”]*)["”]\s*\)/)
+  return match?.[1] ?? null
 }
 
 /**

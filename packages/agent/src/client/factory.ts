@@ -302,6 +302,18 @@ export function createAgentClient<State, Msg>(
         })
       }
       installErrorListeners()
+      // Catch per-binding throws into drain.errors so a single bad
+      // binding doesn't blank the page AND the agent learns about it.
+      // Runtime contract: leaves the binding's `lastValue` unchanged
+      // (DOM stays at last-rendered value), continues with siblings,
+      // calls this hook once per binding throw.
+      opts.handle.setOnBindingError((info) => {
+        drainErrors.push({
+          kind: 'error',
+          message: `[binding ${info.kind}${info.key ? `:${info.key}` : ''}] ${info.message}`,
+          stack: info.stack,
+        })
+      })
     },
     stop() {
       if (confirmPollTimer) clearInterval(confirmPollTimer)
@@ -311,6 +323,7 @@ export function createAgentClient<State, Msg>(
         stateSubscription = null
       }
       removeErrorListeners()
+      opts.handle.setOnBindingError(null)
       drainErrors.length = 0
       wsClient?.close()
     },

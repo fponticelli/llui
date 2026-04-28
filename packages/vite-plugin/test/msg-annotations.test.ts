@@ -24,6 +24,7 @@ type Msg =
         examples: [],
         warning: null,
         emits: [],
+        routeGate: null,
       },
       delete: {
         intent: 'Delete item',
@@ -33,6 +34,7 @@ type Msg =
         examples: [],
         warning: null,
         emits: [],
+        routeGate: null,
       },
       checkout: {
         intent: 'Place order',
@@ -42,6 +44,7 @@ type Msg =
         examples: [],
         warning: null,
         emits: [],
+        routeGate: null,
       },
       nav: {
         intent: 'Navigate',
@@ -51,6 +54,7 @@ type Msg =
         examples: [],
         warning: null,
         emits: [],
+        routeGate: null,
       },
     })
   })
@@ -182,6 +186,7 @@ type Msg =
         examples: [],
         warning: null,
         emits: [],
+        routeGate: null,
       },
     })
   })
@@ -202,6 +207,7 @@ type Msg =
         examples: [],
         warning: null,
         emits: [],
+        routeGate: null,
       },
     })
   })
@@ -221,6 +227,7 @@ type Msg =
         examples: [],
         warning: null,
         emits: [],
+        routeGate: null,
       },
       b: {
         intent: null,
@@ -230,6 +237,7 @@ type Msg =
         examples: [],
         warning: null,
         emits: [],
+        routeGate: null,
       },
     })
   })
@@ -249,6 +257,7 @@ type Msg =
       examples: [],
       warning: null,
       emits: [],
+      routeGate: null,
     })
   })
 
@@ -271,6 +280,7 @@ type Msg =
         examples: [],
         warning: null,
         emits: [],
+        routeGate: null,
       },
     })
   })
@@ -298,6 +308,7 @@ type Msg =
       examples: [],
       warning: null,
       emits: [],
+      routeGate: null,
     })
   })
 
@@ -312,5 +323,33 @@ type Msg =
   | { type: 'confused' }
 `
     expect(extractMsgAnnotations(src)?.confused?.dispatchMode).toBe('shared')
+  })
+
+  // ── @routeGated ────────────────────────────────────────────────
+
+  it('extracts @routeGated predicate verbatim into routeGate', () => {
+    // Compile-time alternative to runtime agentAffordances. The
+    // predicate string is captured as-authored; the runtime compiles
+    // it lazily and evaluates against state at affordance time.
+    const src = `
+type Msg =
+  /**
+   * @intent("Add criteria")
+   * @agentOnly
+   * @routeGated("state.matrixState.kind === 'loaded'")
+   */
+  | { type: 'Matrix/AddCriteria' }
+`
+    const r = extractMsgAnnotations(src)
+    expect(r?.['Matrix/AddCriteria']?.routeGate).toBe("state.matrixState.kind === 'loaded'")
+  })
+
+  it('routeGate defaults to null when @routeGated is absent', () => {
+    const src = `
+type Msg =
+  /** @intent("Plain") */
+  | { type: 'Plain' }
+`
+    expect(extractMsgAnnotations(src)?.Plain?.routeGate).toBeNull()
   })
 })

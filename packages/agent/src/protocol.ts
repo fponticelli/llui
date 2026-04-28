@@ -67,6 +67,16 @@ export type MessageAnnotations = {
    * annotated it yet.
    */
   emits: string[]
+  /**
+   * Boolean predicate authored as `@routeGated("expr")` JSDoc, with
+   * `state` bound at evaluation time. The variant only surfaces in
+   * `list_actions` when the predicate returns true. Compile-time
+   * alternative to `agentAffordances(state) => Msg[]` for the common
+   * case of "this Msg is reachable when state.X looks like Y." Null
+   * when the variant has no `@routeGated` tag (default affordance
+   * behavior applies).
+   */
+  routeGate?: string | null
 }
 
 export type MessageSchemaEntry = {

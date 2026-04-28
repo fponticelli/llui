@@ -72,6 +72,7 @@ describe('computeSchemaHash', () => {
           examples: [],
           warning: null,
           emits: [],
+          routeGate: null,
         },
       },
     })
@@ -87,6 +88,7 @@ describe('computeSchemaHash', () => {
           examples: [],
           warning: null,
           emits: [],
+          routeGate: null,
         },
       },
     })

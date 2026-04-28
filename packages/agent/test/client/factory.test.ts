@@ -92,6 +92,7 @@ function makeHandle(initialState: FakeState) {
     getBindingDescriptors: () => [] as Array<{ variant: string }>,
     swapUpdate: vi.fn(),
     runReducer: () => null,
+    setOnBindingError: () => {},
   }
   return handle
 }
@@ -324,6 +325,7 @@ describe('createAgentClient', () => {
         for (const l of listeners) l(s)
       },
       getBindingDescriptors: () => [] as Array<{ variant: string }>,
+      setOnBindingError: () => {},
     }
     const opts: CreateAgentClientOpts<DateState, unknown> = {
       handle: handle as never,

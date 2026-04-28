@@ -493,6 +493,185 @@ describe('handleListActions', () => {
     expect(result.actions).toHaveLength(0)
   })
 
+  // ── @routeGated predicate ──────────────────────────────────────
+
+  it('hides variants whose @routeGated predicate evaluates falsy', () => {
+    // Compile-time alternative to runtime agentAffordances. The
+    // predicate sees `state` at the call site; if it's falsy, the
+    // variant doesn't surface in list_actions. Same effect as
+    // explicitly NOT including the variant in agentAffordances —
+    // just authored at the Msg definition instead of in a separate
+    // hook.
+    const result = handleListActions(
+      makeHost({
+        descriptors: [],
+        state: { matrixState: { kind: 'idle' } }, // not loaded
+        annotations: {
+          'Matrix/AddCriteria': {
+            intent: 'Add criteria',
+            dispatchMode: 'agent-only',
+            requiresConfirm: false,
+            alwaysAffordable: false,
+            examples: [],
+            warning: null,
+            emits: [],
+            routeGate: "state.matrixState.kind === 'loaded'",
+          },
+        },
+        schema: {
+          discriminant: 'type',
+          variants: { 'Matrix/AddCriteria': { criteria: 'unknown' } },
+        },
+      }),
+    )
+    expect(result.actions).toHaveLength(0)
+  })
+
+  it('surfaces variants whose @routeGated predicate evaluates truthy', () => {
+    const result = handleListActions(
+      makeHost({
+        descriptors: [],
+        state: { matrixState: { kind: 'loaded' } }, // gate passes
+        annotations: {
+          'Matrix/AddCriteria': {
+            intent: 'Add criteria',
+            dispatchMode: 'agent-only',
+            requiresConfirm: false,
+            alwaysAffordable: false,
+            examples: [],
+            warning: null,
+            emits: [],
+            routeGate: "state.matrixState.kind === 'loaded'",
+          },
+        },
+        schema: {
+          discriminant: 'type',
+          variants: { 'Matrix/AddCriteria': { criteria: 'unknown' } },
+        },
+      }),
+    )
+    expect(result.actions).toHaveLength(1)
+    expect(result.actions[0]?.variant).toBe('Matrix/AddCriteria')
+  })
+
+  it('routeGate predicate that throws is treated as fail-closed (variant hidden)', () => {
+    // Predicate references state.foo but state has no foo — TypeError
+    // bubbles up and we treat it as "predicate said no." Avoids
+    // surfacing variants the author meant to gate.
+    const result = handleListActions(
+      makeHost({
+        descriptors: [],
+        state: {}, // no nested keys
+        annotations: {
+          X: {
+            intent: 'X',
+            dispatchMode: 'agent-only',
+            requiresConfirm: false,
+            alwaysAffordable: false,
+            examples: [],
+            warning: null,
+            emits: [],
+            routeGate: 'state.deeply.nested.value === 1',
+          },
+        },
+        schema: { discriminant: 'type', variants: { X: {} } },
+      }),
+    )
+    expect(result.actions).toHaveLength(0)
+  })
+
+  // ── @agentOnly gated by agentAffordances ───────────────────────
+
+  it('gates @agentOnly schema variants behind agentAffordances when defined', () => {
+    // Decisive's pattern: bulk Msgs like Matrix/AddCriteria are
+    // @agentOnly. Pre-fix they were ALWAYS surfaced from schema, even
+    // on the home page where there's no matrix to add to. With this
+    // change, an app that defines `agentAffordances` opts into
+    // route/state-aware affordance control: @agentOnly variants
+    // surface only when the hook returns them.
+    const homeResult = handleListActions(
+      makeHost({
+        descriptors: [],
+        affordances: () => [], // empty: no matrix loaded, no bulk ops applicable
+        annotations: {
+          'Matrix/AddCriteria': {
+            intent: 'Add criteria',
+            dispatchMode: 'agent-only',
+            requiresConfirm: false,
+            alwaysAffordable: false,
+            examples: [],
+            warning: null,
+            emits: [],
+          },
+        },
+        schema: {
+          discriminant: 'type',
+          variants: { 'Matrix/AddCriteria': { criteria: 'unknown' } },
+        },
+      }),
+    )
+    expect(homeResult.actions).toHaveLength(0)
+
+    // On the matrix page, agentAffordances includes the bulk Msg.
+    const matrixResult = handleListActions(
+      makeHost({
+        descriptors: [],
+        affordances: () => [{ type: 'Matrix/AddCriteria' }],
+        annotations: {
+          'Matrix/AddCriteria': {
+            intent: 'Add criteria',
+            dispatchMode: 'agent-only',
+            requiresConfirm: false,
+            alwaysAffordable: false,
+            examples: [],
+            warning: null,
+            emits: [],
+          },
+        },
+        schema: {
+          discriminant: 'type',
+          variants: { 'Matrix/AddCriteria': { criteria: 'unknown' } },
+        },
+      }),
+    )
+    // The variant surfaces from `agentAffordances` (source:
+    // 'always-affordable'), and the schema pass also accepts it
+    // (matches the affordance set). De-dup via `seen` ensures only
+    // one entry, and it's the affordance one (richer payloadHint).
+    expect(matrixResult.actions).toHaveLength(1)
+    expect(matrixResult.actions[0]?.source).toBe('always-affordable')
+  })
+
+  it('keeps backward-compat: @agentOnly always surfaces when no agentAffordances is provided', () => {
+    // Apps that haven't migrated keep the previous "everything's
+    // available" behavior. Only flipping the default once an app
+    // explicitly opts into agentAffordances avoids breaking
+    // consumers.
+    const result = handleListActions(
+      makeHost({
+        descriptors: [],
+        affordances: null, // not provided
+        annotations: {
+          'Matrix/AddCriteria': {
+            intent: 'Add criteria',
+            dispatchMode: 'agent-only',
+            requiresConfirm: false,
+            alwaysAffordable: false,
+            examples: [],
+            warning: null,
+            emits: [],
+          },
+        },
+        schema: {
+          discriminant: 'type',
+          variants: { 'Matrix/AddCriteria': { criteria: 'unknown' } },
+        },
+      }),
+    )
+    expect(result.actions).toHaveLength(1)
+    expect(result.actions[0]?.source).toBe('schema')
+  })
+
   // ── Schema-membership filter on bindings ───────────────────────
 
   it('filters bindings whose variant is not in the Msg schema (lib internals)', () => {

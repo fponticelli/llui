@@ -3471,6 +3471,7 @@ function hasNonDefaultAnnotation(a: Record<string, MessageAnnotations>): boolean
     if (v.alwaysAffordable) return true
     if (v.requiresConfirm) return true
     if (v.dispatchMode !== 'shared') return true
+    if (v.routeGate != null) return true
   }
   return false
 }
@@ -3507,6 +3508,20 @@ function annotationsToObjectLiteral(
               'dispatchMode',
               ts.factory.createStringLiteral(ann.dispatchMode),
             ),
+            // Only emit `routeGate` when non-null. The runtime treats
+            // missing as the no-gate default ("variant follows its
+            // dispatchMode-driven affordance behavior") — keeping the
+            // wire shape minimal for the common case of un-gated Msgs.
+            // Use loose `!= null` so test fixtures that omit the
+            // field entirely also fall through to the no-emit path.
+            ...(ann.routeGate != null
+              ? [
+                  ts.factory.createPropertyAssignment(
+                    'routeGate',
+                    ts.factory.createStringLiteral(ann.routeGate),
+                  ),
+                ]
+              : []),
           ],
           true,
         ),

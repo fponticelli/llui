@@ -2,6 +2,20 @@ import type { MessageAnnotations, OutlineNode } from '../../protocol.js'
 
 export type DescribeVisibleArgs = Record<string, never>
 export type DescribeVisibleResult = {
+  /**
+   * The user's current URL — `window.location.href`, or `null` when
+   * running outside a browser (SSR / Node test harness).
+   *
+   * Why this is on the visible-content tool: the agent has no other
+   * way to verify "did my dispatch actually navigate the user?" Apps
+   * that bundle navigation into a Msg's effect chain (the canonical
+   * pattern) update the URL on commit; the agent reads it back here
+   * to confirm the user's view tracked the state change. When the URL
+   * doesn't move after a state-creating dispatch, the agent learns
+   * the dispatch landed but the navigation didn't — common when the
+   * Msg returned partial effects.
+   */
+  url: string | null
   outline: OutlineNode[]
   /**
    * `'data-agent'` when the outline was scoped to author-tagged zones.
@@ -45,8 +59,9 @@ const FALLBACK_MAX_DEPTH = 8
  * can tell the outline is best-effort.
  */
 export function handleDescribeVisibleContent(host: DescribeVisibleHost): DescribeVisibleResult {
+  const url = readCurrentUrl()
   const root = host.getRootElement()
-  if (!root) return { outline: [], source: 'data-agent' }
+  if (!root) return { url, outline: [], source: 'data-agent' }
   const allZones = Array.from(root.querySelectorAll('[data-agent]'))
   if (allZones.length > 0) {
     const out: OutlineNode[] = []
@@ -57,14 +72,26 @@ export function handleDescribeVisibleContent(host: DescribeVisibleHost): Describ
     for (const zone of topLevel) {
       walk(zone, out)
     }
-    return { outline: out, source: 'data-agent' }
+    return { url, outline: out, source: 'data-agent' }
   }
   // Fallback: walk the entire root with caps. Useful for apps without
   // any data-agent annotations — at minimum the agent gets headings,
   // buttons, links, lists, and visible text it can use to orient.
   const out: OutlineNode[] = []
   const truncated = walkFallback(root, out, 0)
-  return { outline: out, source: truncated ? 'truncated' : 'fallback' }
+  return { url, outline: out, source: truncated ? 'truncated' : 'fallback' }
+}
+
+/**
+ * Read `window.location.href` defensively. Returns null when running
+ * outside a browser (SSR, Node test harness) — same contract as
+ * `getRootElement` returning null. Callers don't have to special-case
+ * non-browser environments.
+ */
+function readCurrentUrl(): string | null {
+  if (typeof window === 'undefined') return null
+  if (typeof window.location === 'undefined') return null
+  return window.location.href
 }
 
 function walk(el: Element, out: OutlineNode[]): void {

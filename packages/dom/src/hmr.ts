@@ -249,6 +249,10 @@ function makeReplacementHandle<S, M, E>(
       )(typedInst.state, msg)
       return { state, effects: effects as unknown[] }
     },
+    setOnBindingError(hook) {
+      if (disposed) return
+      typedInst._onBindingError = hook ?? undefined
+    },
   }
 }
 

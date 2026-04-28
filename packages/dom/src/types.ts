@@ -291,6 +291,26 @@ export interface AppHandle {
    * point of the API.
    */
   runReducer(msg: unknown): { state: unknown; effects: unknown[] } | null
+  /**
+   * Install a hook called whenever a binding's accessor throws during
+   * the update cycle. The runtime catches the throw, leaves the
+   * binding's `lastValue` unchanged (DOM stays at its previous value
+   * rather than blanking), continues with sibling bindings, and
+   * notifies this hook with `{kind, key?, message, stack?}`.
+   *
+   * Used by `@llui/agent` to fold binding-evaluation throws into the
+   * dispatch envelope's `drain.errors` — so an LLM dispatching a Msg
+   * that breaks scoring doesn't get HTTP 500 + a frozen UI; instead
+   * the dispatch reports as `{status: 'dispatched', drain: {errors:
+   * [...]}}` with the rest of the page rendering normally.
+   *
+   * Pass `null` to remove the hook. Without a hook, throws fall back
+   * to `console.error` (dev mode) or `console.warn` (prod) so they
+   * aren't silently swallowed.
+   */
+  setOnBindingError(
+    hook: ((info: { kind: string; key?: string; message: string; stack?: string }) => void) | null,
+  ): void
 }
 
 // ── Lifetime ─────────────────────────────────────────────────────────

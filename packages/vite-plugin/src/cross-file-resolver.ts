@@ -335,7 +335,13 @@ function parseMessageAnnotations(comment: string): MessageAnnotations {
     examples: readExamplesTag(comment),
     warning: readWarningTag(comment),
     emits: readEmitsTag(comment),
+    routeGate: readRouteGateTag(comment),
   }
+}
+
+function readRouteGateTag(comment: string): string | null {
+  const match = comment.match(/@routeGated\s*\(\s*["“]([^"”]*)["”]\s*\)/)
+  return match?.[1] ?? null
 }
 
 function readEmitsTag(comment: string): string[] {
@@ -379,6 +385,7 @@ function defaultMessageAnnotations(): MessageAnnotations {
     examples: [],
     warning: null,
     emits: [],
+    routeGate: null,
   }
 }
 

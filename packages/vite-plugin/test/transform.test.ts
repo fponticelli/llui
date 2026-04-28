@@ -1114,6 +1114,7 @@ export const App = component<State, Msg, never>({
             examples: [],
             warning: null,
             emits: [],
+            routeGate: null,
           },
           dec: {
             intent: 'Decrement',
@@ -1123,6 +1124,7 @@ export const App = component<State, Msg, never>({
             examples: [],
             warning: null,
             emits: [],
+            routeGate: null,
           },
           reset: {
             intent: 'Reset',
@@ -1132,6 +1134,7 @@ export const App = component<State, Msg, never>({
             examples: [],
             warning: null,
             emits: [],
+            routeGate: null,
           },
         },
       },

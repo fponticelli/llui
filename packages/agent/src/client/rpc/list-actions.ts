@@ -89,7 +89,20 @@ export function handleListActions(host: ListActionsHost): ListActionsResult {
   const annotations = host.getMsgAnnotations() ?? {}
   const state = host.getState()
   const descriptors = host.getBindingDescriptors() ?? []
-  const affordances = host.getAgentAffordances()?.(state) ?? []
+  const affordancesFn = host.getAgentAffordances()
+  const affordances = affordancesFn ? affordancesFn(state) : []
+  // When the app provides `agentAffordances(state)`, it's opted into
+  // explicit affordance control: only state-relevant Msgs are listed.
+  // `@agentOnly` schema-source variants are then filtered to those the
+  // hook returned — so a bulk-edit Msg like `Matrix/AddCriteria`
+  // doesn't surface on the home page just because it's tagged
+  // `@agentOnly`. Apps without `agentAffordances` keep the previous
+  // permissive default ("everything's available unless you say
+  // otherwise") since flipping that without explicit opt-in would
+  // break consumers who rely on schema-source surfacing of
+  // bulk Msgs.
+  const explicitAffordances = affordancesFn !== null
+  const affordanceVariants = new Set(affordances.map((m) => m.type))
   const schema = host.getMsgSchema()
 
   const out: ListActionsResult['actions'] = []
@@ -113,6 +126,7 @@ export function handleListActions(host: ListActionsHost): ListActionsResult {
     if (schema && !(d.variant in schema.variants)) continue
     const ann = annotations[d.variant]
     if (ann?.dispatchMode === 'human-only') continue
+    if (!passesRouteGate(ann, state)) continue
     seen.add(d.variant)
     const variantSchema = schema?.variants[d.variant]
     out.push({
@@ -135,6 +149,7 @@ export function handleListActions(host: ListActionsHost): ListActionsResult {
   for (const msg of affordances) {
     const ann = annotations[msg.type]
     if (ann?.dispatchMode === 'human-only') continue
+    if (!passesRouteGate(ann, state)) continue
     seen.add(msg.type)
     const { type, ...rest } = msg
     const variantSchema = schema?.variants[type]
@@ -164,6 +179,7 @@ export function handleListActions(host: ListActionsHost): ListActionsResult {
     if (seen.has(variant)) continue
     if (ann.dispatchMode === 'human-only') continue
     if (!ann.alwaysAffordable) continue
+    if (!passesRouteGate(ann, state)) continue
     seen.add(variant)
     const fields = schema?.variants[variant]
     out.push({
@@ -191,11 +207,21 @@ export function handleListActions(host: ListActionsHost): ListActionsResult {
   // their UI subtree is unmounted would pop hidden state in places the
   // user didn't navigate to. The explicit knobs are `@alwaysAffordable`
   // (handled above) or `agentAffordances(state)`.
+  //
+  // When the app provides `agentAffordances`, this pass is filtered:
+  // an `@agentOnly` variant only surfaces if the hook returned it.
+  // That makes route-gated bulk Msgs (`Matrix/AddCriteria` available
+  // only when a matrix is loaded) work as expected — they stop
+  // appearing on the home page just because they're tagged
+  // `@agentOnly`. Apps without `agentAffordances` keep the previous
+  // permissive default.
   if (schema) {
     for (const [variant, fields] of Object.entries(schema.variants)) {
       if (seen.has(variant)) continue
       const ann = annotations[variant]
       if (ann?.dispatchMode !== 'agent-only') continue
+      if (explicitAffordances && !affordanceVariants.has(variant)) continue
+      if (!passesRouteGate(ann, state)) continue
       out.push({
         variant,
         intent: ann.intent,
@@ -225,6 +251,45 @@ export function handleListActions(host: ListActionsHost): ListActionsResult {
  * The first key is `type` so the payload reads as a complete Msg
  * shape — copy-paste-ready into `send_message`.
  */
+/**
+ * Evaluate `@routeGated("predicate")` against the current state.
+ * Returns true (variant passes) when:
+ *   - the variant has no `@routeGated` annotation, OR
+ *   - the predicate evaluates truthy with `state` bound.
+ *
+ * Predicate is compiled lazily via `new Function('state', 'return (' +
+ * src + ')')` and cached in a module-level Map. Compile failures
+ * (syntactically broken predicates) degrade to "true" so a single
+ * malformed annotation doesn't paralyze the affordance pass — the
+ * build-time linter is the right place to catch syntactic issues.
+ * Evaluation throws fail-closed (return false) since a predicate that
+ * crashes on the current state shouldn't surface the variant.
+ */
+function passesRouteGate(ann: MessageAnnotations | undefined, state: unknown): boolean {
+  const src = ann?.routeGate
+  if (!src) return true
+  const predicate = compileRouteGate(src)
+  try {
+    return Boolean(predicate(state))
+  } catch {
+    return false
+  }
+}
+
+const routeGateCache = new Map<string, (state: unknown) => boolean>()
+function compileRouteGate(src: string): (state: unknown) => boolean {
+  let fn = routeGateCache.get(src)
+  if (fn) return fn
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-implied-eval
+    fn = new Function('state', `return (${src})`) as (state: unknown) => boolean
+  } catch {
+    fn = () => true
+  }
+  routeGateCache.set(src, fn)
+  return fn
+}
+
 function synthesizePayload(variant: string, fields: Record<string, MsgSchemaField>): object {
   const out: Record<string, unknown> = { type: variant }
   for (const [name, descriptor] of Object.entries(fields)) {

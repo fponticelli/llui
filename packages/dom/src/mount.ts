@@ -622,6 +622,10 @@ function buildAppHandle<S, M, E>(
       )(inst.state, msg)
       return { state, effects: effects as unknown[] }
     },
+    setOnBindingError(hook) {
+      if (disposed) return
+      inst._onBindingError = hook ?? undefined
+    },
   }
 }
 

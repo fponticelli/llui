@@ -88,6 +88,24 @@ export interface ComponentInstance<S = unknown, M = unknown, E = unknown> {
    */
   _onCommit?: (state: unknown) => void
   /**
+   * @internal — optional hook invoked when a binding's accessor throws
+   * during Phase 2. The runtime catches the throw, leaves the binding's
+   * `lastValue` unchanged (so the rendered DOM stays at its previous
+   * value rather than going blank), and notifies this hook. The agent
+   * factory wires it to drain.errors so the LLM sees that some bindings
+   * failed; non-agent hosts can leave it undefined for the default
+   * console-warn behavior.
+   *
+   * Why catch + continue instead of letting the throw propagate?
+   * One bad binding shouldn't abort the entire update loop — sibling
+   * bindings on the same commit are independent and have no business
+   * going stale because a different binding crashed. The user-visible
+   * effect: when one cell's accessor throws (e.g. scoring fails on a
+   * malformed criterion), every other cell still renders correctly;
+   * only the broken binding shows its previous value.
+   */
+  _onBindingError?: (info: { kind: string; key?: string; message: string; stack?: string }) => void
+  /**
    * @internal — live registry of currently-mounted Msg variants
    * dispatchable from rendered UI. Lazily allocated when the first
    * compiler-tagged event handler binds. Read by the agent layer (via
@@ -193,13 +211,66 @@ export function _forceState<S, M, E>(inst: ComponentInstance<S, M, E>, newState:
     const binding = bindings[i]!
     if (binding.dead) continue
     if (binding.kind === 'effect') {
-      binding.accessor(state)
+      try {
+        binding.accessor(state)
+      } catch (e) {
+        reportBindingError(inst, binding, e)
+      }
       continue
     }
-    const newValue = binding.accessor(state)
+    let newValue: unknown
+    try {
+      newValue = binding.accessor(state)
+    } catch (e) {
+      // Accessor threw — leave the binding's `lastValue` unchanged so
+      // the rendered DOM stays at its previous value rather than going
+      // blank. Sibling bindings on the same commit continue to
+      // evaluate. The error surfaces via the optional hook (or
+      // console.warn as a fallback) so it isn't silently swallowed.
+      reportBindingError(inst, binding, e)
+      continue
+    }
     if (Object.is(newValue, binding.lastValue)) continue
     binding.lastValue = newValue
-    applyBinding(binding, newValue)
+    try {
+      applyBinding(binding, newValue)
+    } catch (e) {
+      // applyBinding writes the value to the DOM (textContent,
+      // setAttribute, etc.). Throws here are usually environmental
+      // (a node was removed mid-flight by a sibling binding). Same
+      // contract: report and continue.
+      reportBindingError(inst, binding, e)
+    }
+  }
+}
+
+function reportBindingError<S, M, E>(
+  inst: ComponentInstance<S, M, E>,
+  binding: Binding,
+  e: unknown,
+): void {
+  const err = e instanceof Error ? e : new Error(String(e))
+  const stack = err.stack ? err.stack.split('\n').slice(0, 8).join('\n') : undefined
+  const info =
+    stack !== undefined
+      ? {
+          kind: String(binding.kind),
+          key: binding.key,
+          message: `${err.name}: ${err.message}`,
+          stack,
+        }
+      : { kind: String(binding.kind), key: binding.key, message: `${err.name}: ${err.message}` }
+  if (inst._onBindingError !== undefined) {
+    try {
+      inst._onBindingError(info)
+    } catch {
+      // The hook itself threw — nothing to do; we're in a recovery
+      // path already. Fall through to the console fallback.
+    }
+  } else if (typeof console !== 'undefined' && typeof console.warn === 'function') {
+    console.warn(
+      `[llui] binding accessor threw (kind=${info.kind}${info.key ? `, key=${info.key}` : ''}): ${info.message}`,
+    )
   }
 }
 
@@ -306,7 +377,14 @@ function genericUpdate<S, M, E>(
   }
 
   // Phase 2 — compact + update bindings
-  _runPhase2(state, combinedDirty, bindings, bindingsBeforePhase1, inst.def.name)
+  _runPhase2(
+    state,
+    combinedDirty,
+    bindings,
+    bindingsBeforePhase1,
+    inst.def.name,
+    inst._onBindingError,
+  )
 }
 
 /**
@@ -357,7 +435,7 @@ export function _handleMsg(
   }
 
   const b = inst.allBindings
-  _runPhase2(s, dirty, b, b.length)
+  _runPhase2(s, dirty, b, b.length, inst.def.name, inst._onBindingError)
   return [s, e]
 }
 
@@ -372,6 +450,12 @@ export function _runPhase2(
   bindings: Binding[],
   bindingsBeforePhase1: number,
   componentName?: string,
+  // Optional `_onBindingError` hook. Type is duplicated here rather
+  // than referenced as `ComponentInstance['_onBindingError']` because
+  // the underlying field is `@internal` — stripped from the generated
+  // `.d.ts` — and a public-export signature can't depend on a stripped
+  // type without breaking dependent packages' typecheck.
+  onBindingError?: (info: { kind: string; key?: string; message: string; stack?: string }) => void,
 ): void {
   let phase2Len = bindingsBeforePhase1
   if (bindings.length > bindingsBeforePhase1 || (phase2Len > 0 && bindings[0]!.dead)) {
@@ -384,47 +468,84 @@ export function _runPhase2(
   }
 
   if (dirty !== 0) {
-    if (import.meta.env?.DEV && componentName) {
-      for (let i = 0, len = phase2Len; i < len; i++) {
-        const binding = bindings[i]!
-        if (binding.dead || (binding.mask & dirty) === 0) continue
-        if (binding.kind === 'effect') {
-          // Side-effect-only: run accessor, discard return, skip the
-          // Object.is diff and `applyBinding` entirely. Used by child()'s
-          // prop-watch binding so fresh-object props accessors don't
-          // stringify onto a detached anchor every update.
-          try {
-            binding.accessor(state)
-          } catch (e) {
-            throw enhanceBindingError(e, binding, componentName)
-          }
-          continue
-        }
-        let newValue: unknown
+    // Always catch+continue: a single accessor throw shouldn't abort
+    // the rest of the bindings on the same commit. The user-visible
+    // effect: a broken cell shows its previous value; sibling cells
+    // stay current. In dev mode, the wrapped error (with component
+    // name, kind, node descriptor, accessor source) is forwarded via
+    // the `_onBindingError` hook (agent integration) or to
+    // `console.error` (dev harness without an agent). The prior
+    // behavior of rethrowing from `flush()` made one bad binding
+    // visually break the entire view — the worst-case UX.
+    const isDev = import.meta.env?.DEV && componentName
+    for (let i = 0, len = phase2Len; i < len; i++) {
+      const binding = bindings[i]!
+      if (binding.dead || (binding.mask & dirty) === 0) continue
+      if (binding.kind === 'effect') {
         try {
-          newValue = binding.accessor(state)
-        } catch (e) {
-          throw enhanceBindingError(e, binding, componentName)
-        }
-        const last = binding.lastValue
-        if (newValue === last || (newValue !== newValue && last !== last)) continue
-        binding.lastValue = newValue
-        applyBinding(binding, newValue)
-      }
-    } else {
-      for (let i = 0, len = phase2Len; i < len; i++) {
-        const binding = bindings[i]!
-        if (binding.dead || (binding.mask & dirty) === 0) continue
-        if (binding.kind === 'effect') {
           binding.accessor(state)
-          continue
+        } catch (e) {
+          handleBindingThrow(onBindingError, binding, e, isDev ? componentName : null)
         }
-        const newValue = binding.accessor(state)
-        const last = binding.lastValue
-        if (newValue === last || (newValue !== newValue && last !== last)) continue
-        binding.lastValue = newValue
-        applyBinding(binding, newValue)
+        continue
       }
+      let newValue: unknown
+      try {
+        newValue = binding.accessor(state)
+      } catch (e) {
+        handleBindingThrow(onBindingError, binding, e, isDev ? componentName : null)
+        continue
+      }
+      const last = binding.lastValue
+      if (newValue === last || (newValue !== newValue && last !== last)) continue
+      binding.lastValue = newValue
+      try {
+        applyBinding(binding, newValue)
+      } catch (e) {
+        handleBindingThrow(onBindingError, binding, e, isDev ? componentName : null)
+      }
+    }
+  }
+}
+
+function handleBindingThrow(
+  onBindingError: ComponentInstance['_onBindingError'] | undefined,
+  binding: Binding,
+  e: unknown,
+  componentName: string | null,
+): void {
+  // Dev mode: build the rich wrapped error (with accessor source,
+  // node descriptor, undefined-hint detection). Prod skips the
+  // bookkeeping. Either way the report flows through `_onBindingError`
+  // when wired (agent setups), else falls back to console.error so
+  // operators see the cause.
+  const wrapped =
+    componentName !== null && e instanceof Error
+      ? enhanceBindingError(e, binding, componentName)
+      : null
+  const err = wrapped ?? (e instanceof Error ? e : new Error(String(e)))
+  const stack = err.stack ? err.stack.split('\n').slice(0, 8).join('\n') : undefined
+  const info =
+    stack !== undefined
+      ? { kind: String(binding.kind), key: binding.key, message: err.message, stack }
+      : { kind: String(binding.kind), key: binding.key, message: err.message }
+
+  if (onBindingError !== undefined) {
+    try {
+      onBindingError(info)
+    } catch {
+      // hook itself threw; fall through to console
+    }
+  } else if (typeof console !== 'undefined') {
+    // Dev mode shows the wrapped (richer) message. Prod shows a brief
+    // line — operators still see something but without the full source
+    // hint that's only useful at development time.
+    if (componentName !== null) {
+      console.error(err)
+    } else if (typeof console.warn === 'function') {
+      console.warn(
+        `[llui] binding accessor threw (kind=${info.kind}${info.key ? `, key=${info.key}` : ''}): ${info.message}`,
+      )
     }
   }
 }
