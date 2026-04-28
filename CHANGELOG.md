@@ -11,6 +11,17 @@ All notable changes to LLui packages are documented here. LLui is a pre-1.0 proj
 
 Packages version in lockstep at release time: `@llui/dom`, `@llui/vite-plugin`, `@llui/test`, `@llui/router`, `@llui/transitions`, `@llui/components`, `@llui/vike` share a version line. `@llui/effects`, `@llui/mcp`, `@llui/eslint-plugin`, `@llui/agent`, and `llui-agent` have their own cadence.
 
+## 2026-04-27 — @llui/eslint-plugin@0.0.20
+
+**Released:** `@llui/eslint-plugin@0.0.20`
+
+Two more silent-staleness lints in the same family as the previous batch — both ship in `recommended` at error severity.
+
+### `@llui/eslint-plugin@0.0.20`
+
+- **Added** `static-items` — symmetric with `static-on`, applied to `each({items})`. Flags factories that don't read state (`items: () => [literal]`, `items: (s) => CONST`). When items doesn't read state the list builds once at mount and the `each` never reconciles — adds/removes/updates never appear in the DOM.
+- **Added** `no-sample-in-reactive-position` — generalizes `no-list-render-in-sample`. Flags `text(sample(…))` and `unsafeHtml(sample(…))` — passing sample's string return value to a reactive primitive typechecks (string is a valid static accessor) but the cell never updates. `sample` is an opt-out of reactivity; the rule explains that and points at the right form (`text((s) => …)` or `text(item.field)`).
+
 ## 2026-04-27 — 0.0.33 + @llui/agent@0.0.38, @llui/vike@0.0.35, @llui/mcp@0.0.28, @llui/eslint-plugin@0.0.19
 
 **Released:** `@llui/{dom,router,transitions,components}@0.0.33`; `@llui/test@0.0.34`; `@llui/vike@0.0.35`; `@llui/mcp@0.0.28`; `@llui/agent@0.0.38`; `@llui/eslint-plugin@0.0.19`
