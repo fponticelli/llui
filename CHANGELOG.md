@@ -11,6 +11,25 @@ All notable changes to LLui packages are documented here. LLui is a pre-1.0 proj
 
 Packages version in lockstep at release time: `@llui/dom`, `@llui/vite-plugin`, `@llui/test`, `@llui/router`, `@llui/transitions`, `@llui/components`, `@llui/vike` share a version line. `@llui/effects`, `@llui/mcp`, `@llui/eslint-plugin`, `@llui/agent`, and `llui-agent` have their own cadence.
 
+## 2026-04-28 — @llui/vite-plugin@0.0.38, @llui/agent@0.0.43, llui-agent@0.0.7
+
+**Released:** `@llui/vite-plugin@0.0.38`; `@llui/agent@0.0.43`; `llui-agent@0.0.7`
+
+Eliminate two compounding sources of bogus `'unknown'` schema fields and stop the synthesizer from emitting `null` for the rest. A fresh-LLM dogfood failed when `Matrix/AddCriteria`'s payloadHint contained `clamp: null, bound: null, ease: null` — the agent copied them verbatim, the validator passed (it exempts unknowns), and the renderer crashed reading `.kind` off null.
+
+### `@llui/vite-plugin@0.0.38`
+
+- **Improved** Schema-extractor depth budget now decrements only on **named-type lookups**, not on inline structural moves (array element, inline object literal, inline discriminated-union variants). Cyclic types still terminate via the named-lookup decrement; deeply-nested but finite type trees fully resolve. Concrete: `Matrix/AddCriteria.criteria[].type(quantity).clamp` resolves to its full discriminated-union shape instead of collapsing one hop short. Deepens what the agent sees without growing the budget constant or the bundle size.
+- **Added** Detect `T | undefined` (and `undefined | T`, `T1 | T2 | undefined`) as optional T at every property-resolver site (top-level Msg variants, inline object literals, interface bodies, DU variant fields). Decisive-style `field: T | undefined` no longer extracts as required+`unknown`; the agent can omit the field instead of having to spell out `field: undefined` literally.
+
+### `@llui/agent@0.0.43`
+
+- **Fixed** `list_actions` synthesizer omits `unknown`-typed fields from `payloadHint` instead of emitting `null`. Emitting `null` misled agents into copying it verbatim — the validator let it through (it exempts unknowns), the value landed in state, and consumer code crashed on `null.kind` / `null.length`. The agent should now consult `description.messages` for the field's actual shape when the example doesn't mention it. Empty array `[]` replaces `[null]` for arrays whose element schema is `unknown`.
+
+### `llui-agent@0.0.7`
+
+- Cascade release for `@llui/agent@0.0.43`. No bridge-level changes.
+
 ## 2026-04-28 — @llui/router@0.0.35, @llui/agent@0.0.42, llui-agent@0.0.6
 
 **Released:** `@llui/router@0.0.35`; `@llui/agent@0.0.42`; `llui-agent@0.0.6`
