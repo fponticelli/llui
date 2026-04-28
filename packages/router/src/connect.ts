@@ -5,7 +5,7 @@ import { a, onMount } from '@llui/dom'
 
 export interface RouterEffect {
   type: '__router'
-  action: 'push' | 'replace' | 'back' | 'forward' | 'scroll'
+  action: 'push' | 'replace' | 'navigate' | 'back' | 'forward' | 'scroll'
   path?: string
   x?: number
   y?: number
@@ -28,10 +28,44 @@ export interface ConnectOptions<R> {
 }
 
 export interface ConnectedRouter<R> {
-  /** Effect: push a new route onto history */
+  /**
+   * Effect: push a new history entry — URL only.
+   *
+   * Use when the reducer that emitted the effect has already updated
+   * `state.route` itself (e.g. a `Router/Navigate` handler that bundles
+   * state changes inline before delegating URL work). For
+   * navigate-and-let-the-app-react flows from anywhere else, prefer
+   * `navigate()` — it dispatches the listener-captured navigate
+   * message after pushState so `state.route` and route-side-effects
+   * stay in sync without each reducer re-implementing the delegation.
+   */
   push(route: R): RouterEffect
-  /** Effect: replace current history entry */
+  /**
+   * Effect: replace the current history entry — URL only. Same
+   * URL-only contract as `push()`. For replace-and-react flows, see
+   * `navigate()` (push semantics) — there's no `replaceAndDispatch`
+   * variant yet because the use case hasn't surfaced; if it does,
+   * model it the same way.
+   */
   replace(route: R): RouterEffect
+  /**
+   * Effect: push history AND dispatch the listener-captured navigate
+   * message so the reducer can update `state.route` and run any
+   * route-side-effects (data fetches, page-meta resets, analytics).
+   *
+   * Resolves the asymmetry where `link()` did pushState + send while
+   * `push()` did pushState only — apps that wanted programmatic
+   * navigation from arbitrary reducers had to either re-implement the
+   * delegation or live with desynced `state.route`.
+   *
+   * Requires that the app has mounted `listener()` (typically inside
+   * the shell view) — the navigate effect uses the send/factory
+   * captured there. If `navigate()` runs before `listener()` mounts,
+   * the URL still updates but no message is dispatched and a
+   * `console.warn` surfaces the gap. After listener unmount the same
+   * fallback applies.
+   */
+  navigate(route: R): RouterEffect
   /** Effect: go back */
   back(): RouterEffect
   /** Effect: go forward */
@@ -81,6 +115,14 @@ export function connectRouter<R>(
   options?: ConnectOptions<R>,
 ): ConnectedRouter<R> {
   let currentRoute: R | null = null
+  // Captured by listener() at mount, cleared at unmount. The
+  // navigate() effect reads these to dispatch the navigate message
+  // after pushState — they are the bridge between the reducer-side
+  // (which produces effects) and the dispatcher-side (which receives
+  // messages). Module-scope inside the closure: at most one listener
+  // is active per ConnectedRouter (the shell view).
+  let listenerSend: ((msg: unknown) => void) | null = null
+  let listenerFactory: ((route: R) => unknown) | null = null
   /**
    * Run guards for a navigation to `newRoute`. Returns the final route
    * to navigate to, or `null` if navigation should be blocked.
@@ -127,6 +169,33 @@ export function connectRouter<R>(
         currentRoute = finalRoute
         break
       }
+      case 'navigate': {
+        // pushState semantics + dispatch the navigate message so the
+        // app reducer sees the route change. This is the asymmetry
+        // fix: link() always did push+send (because click handlers run
+        // synchronously in view code with send/factory in scope), but
+        // push() as an effect could only do push (no access to send).
+        // navigate() resolves it by reading the closure variables that
+        // listener() sets at mount time.
+        const target = router.match(effect.path!)
+        const finalRoute = runGuards(target)
+        if (finalRoute === null) return
+        const finalPath = router.href(finalRoute)
+        if (router.mode === 'hash') {
+          location.hash = finalPath
+        } else {
+          history.pushState(null, '', finalPath)
+        }
+        currentRoute = finalRoute
+        if (listenerSend !== null && listenerFactory !== null) {
+          listenerSend(listenerFactory(finalRoute))
+        } else {
+          console.warn(
+            '@llui/router: navigate() effect dispatched but listener() is not mounted — URL updated, but no navigate message was sent. Mount connectedRouter.listener() in your shell view, or use push() and dispatch the route-changed message yourself.',
+          )
+        }
+        break
+      }
       case 'back':
         history.back()
         break
@@ -145,6 +214,9 @@ export function connectRouter<R>(
     },
     replace(route) {
       return { type: '__router', action: 'replace', path: router.href(route) }
+    },
+    navigate(route) {
+      return { type: '__router', action: 'navigate', path: router.href(route) }
     },
     back() {
       return { type: '__router', action: 'back' }
@@ -165,6 +237,15 @@ export function connectRouter<R>(
     listener<M>(send: (msg: M) => void, msgFactory?: (route: R) => M): Node[] {
       const factory = msgFactory ?? ((r: R) => ({ type: 'navigate', route: r }) as M)
       onMount(() => {
+        // Capture send/factory so the navigate() effect can dispatch
+        // route-changed messages from any reducer, not just from
+        // popstate or click handlers. Stored as the generic `unknown`
+        // shape so applyEffect doesn't need to know R or M; the only
+        // consumer is the navigate case above, which round-trips R
+        // through factory back to the user's M.
+        listenerSend = send as (msg: unknown) => void
+        listenerFactory = factory as (route: R) => unknown
+
         const event = router.mode === 'hash' ? 'hashchange' : 'popstate'
         const handler = () => {
           const input = router.mode === 'hash' ? location.hash : location.pathname + location.search
@@ -182,7 +263,11 @@ export function connectRouter<R>(
           send(factory(finalRoute))
         }
         window.addEventListener(event, handler)
-        return () => window.removeEventListener(event, handler)
+        return () => {
+          window.removeEventListener(event, handler)
+          listenerSend = null
+          listenerFactory = null
+        }
       })
       return [document.createComment('router')]
     },

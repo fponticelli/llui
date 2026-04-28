@@ -152,7 +152,17 @@ function validateObjectShape(
     const fieldValue = present ? value[name] : undefined
 
     if (!present || fieldValue === undefined) {
-      if (!optional) {
+      // Treat `unknown`-typed fields as implicitly optional. The
+      // schema extractor emits `field: string | undefined` as a
+      // required field of type 'unknown' (the union isn't a branded
+      // primitive), but semantically the field accepts undefined —
+      // and the validator's stated philosophy is "treat 'unknown' as
+      // any goes; don't report errors against fields whose schema we
+      // don't know." Without this, agents are forced to spell out
+      // `details: undefined`, `url: undefined`, … on every Criterion
+      // they author, which is exactly the kind of fumble we built the
+      // payload hints to prevent.
+      if (!optional && fieldType(descriptor) !== 'unknown') {
         errors.push({
           path: fieldPath,
           code: 'missing',
@@ -369,7 +379,6 @@ function compilePredicate(src: string): (v: unknown) => boolean {
   let fn = predicateCache.get(src)
   if (fn) return fn
   try {
-    // eslint-disable-next-line @typescript-eslint/no-implied-eval
     fn = new Function('v', `return (${src})`) as (v: unknown) => boolean
   } catch {
     fn = () => true

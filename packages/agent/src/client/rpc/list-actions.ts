@@ -281,7 +281,6 @@ function compileRouteGate(src: string): (state: unknown) => boolean {
   let fn = routeGateCache.get(src)
   if (fn) return fn
   try {
-    // eslint-disable-next-line @typescript-eslint/no-implied-eval
     fn = new Function('state', `return (${src})`) as (state: unknown) => boolean
   } catch {
     fn = () => true
