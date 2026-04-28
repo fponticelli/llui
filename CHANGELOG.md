@@ -11,6 +11,28 @@ All notable changes to LLui packages are documented here. LLui is a pre-1.0 proj
 
 Packages version in lockstep at release time: `@llui/dom`, `@llui/vite-plugin`, `@llui/test`, `@llui/router`, `@llui/transitions`, `@llui/components`, `@llui/vike` share a version line. `@llui/effects`, `@llui/mcp`, `@llui/eslint-plugin`, `@llui/agent`, and `llui-agent` have their own cadence.
 
+## 2026-04-28 — @llui/agent@0.0.40, @llui/eslint-plugin@0.0.21
+
+**Released:** `@llui/agent@0.0.40`; `@llui/eslint-plugin@0.0.21`
+
+Six follow-up improvements pulled from a real dogfood session against decisive.space-2. The previous batch closed the schema-fidelity gap; this batch closes the agent-experience gaps that surface once an LLM is actually driving an app.
+
+### Breaking
+
+- **`@llui/agent@0.0.40`** — `would_dispatch` adds a new result status `'reducer-threw'` (with `message` and optional `stack`) for the case where the candidate Msg's reducer throws during prediction. `LapDrainMeta` adds an optional `warnings?: Array<{path, code, message}>` field. Both shapes are strictly additive; existing handlers that exhaustively switch over `status` need to add cases or fall through.
+
+### `@llui/agent@0.0.40`
+
+- **Added** `list_actions` filters bindings by Msg-schema membership. Library-internal Msgs leaking through `tagSend` (the sortable component's `move`/`drop`/`cancel`/`start`/`toggleGrab`/`moveBy` etc.) no longer show up in the agent's affordance list. Schema absence (older builds) keeps the previous permissive behavior so this is safe to ship.
+- **Added** `would_dispatch` catches reducer throws as `{status: 'reducer-threw', message, stack?}` — same Phase-5 contract `send_message` got last release. The agent's safety net no longer crashes alongside the candidate dispatch.
+- **Added** `@validates(...)` predicate text surfaces as a `fieldHint` (`"validates: v >= 0 && v <= 100"`) at affordance time. The agent reads the constraint when shaping its first attempt, not as an after-the-fact rejection.
+- **Added** Validator warnings propagate from the strict-mode validator to the dispatch envelope as `drain.warnings`. New optional `getDispatchPolicy()` host accessor lets a server opt into strict; default stays lenient and omits the field entirely.
+- **Added** Framework-tracked `LastDispatchOutcome`. The WS layer captures every `send_message` outcome (`dispatched` / `rejected` / `reducer-threw`); `describe_context` prepends a synthetic `LAST DISPATCH …` hint when the most recent outcome had errors or warnings. Apps no longer need to maintain their own `lastDispatchError` state field — the framework owns it.
+
+### `@llui/eslint-plugin@0.0.21`
+
+- **Added** `agent-tagsend-translator-missing` rule. Flags `*.connect(get, send, ...)` calls where the second argument is the raw component `send` rather than a translator (`(libMsg) => send({type: 'X', msg: libMsg})`). The bare-`send` pattern is exactly what leaks library Msgs into the binding registry, polluting the agent's affordance list. The rule's message includes the wrap suggestion inline. Ships in `recommended` and `agent` configs at error severity.
+
 ## 2026-04-28 — @llui/agent@0.0.39, @llui/vite-plugin@0.0.36
 
 **Released:** `@llui/agent@0.0.39`; `@llui/vite-plugin@0.0.36`
