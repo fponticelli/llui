@@ -11,6 +11,40 @@ All notable changes to LLui packages are documented here. LLui is a pre-1.0 proj
 
 Packages version in lockstep at release time: `@llui/dom`, `@llui/vite-plugin`, `@llui/test`, `@llui/router`, `@llui/transitions`, `@llui/components`, `@llui/vike` share a version line. `@llui/effects`, `@llui/mcp`, `@llui/eslint-plugin`, `@llui/agent`, and `llui-agent` have their own cadence.
 
+## 2026-04-27 — @llui/agent@0.0.37, @llui/vite-plugin@0.0.35
+
+**Released:** `@llui/agent@0.0.37`; `@llui/vite-plugin@0.0.35`
+
+The schema the compiler emits for Msg payloads now describes discriminated unions and number / boolean literal unions, and `would_dispatch` / `send_message` validate every payload against it before the reducer runs. Together this collapses the agent's "guess a shape, dispatch, read prose error, guess again" loop into one round trip — the LLM sees the legal shapes upfront and gets path-keyed structured errors when it gets one wrong.
+
+### Breaking
+
+- **`@llui/vite-plugin@0.0.35`** — `MsgFieldType` (compiler) and `MsgSchemaBareType` (agent) gain a `discriminated-union` shape and `enum` widens from `string[]` to `ReadonlyArray<string | number | boolean>`. Code that read `__msgSchema` directly and assumed `enum: string[]` will need to widen its type. Apps that didn't poke at the schema directly are unaffected.
+- **`@llui/agent@0.0.37`** — `would_dispatch` adds a third rejection variant: `{status: 'rejected', reason: 'schema-mismatch', errors: ValidationError[]}`. Existing handlers that matched on `reason: 'invalid' | 'unsupported'` need to also handle the new variant or fall through. `send_message` continues to use `reason: 'invalid'` for the same failures, but the `detail` string is now a compact `path: message; path: message` list rather than free-form English.
+
+### Migration
+
+- Code reading `__msgSchema.variants[*].field`: widen the type to accept the new `discriminated-union` shape and the broadened `enum` value type. The runtime check is one `if (t.kind === 'discriminated-union')` arm.
+- Agents that called `would_dispatch` and only handled `reason: 'invalid' | 'unsupported'`: add a case for `reason: 'schema-mismatch'`. The `errors` array is structured (`{path, code, message}`) and is the recommended source — `detail` is no longer set on this rejection variant.
+
+### `@llui/vite-plugin@0.0.35`
+
+- **Added** discriminated-union extraction. A field typed `A | B | C` whose members are object literals sharing one literal-string discriminant property emits as `{kind: 'discriminated-union', discriminant, variants}`. Symmetric with how the top-level Msg union itself is encoded — same shape, recursed.
+- **Added** number-literal and boolean-literal unions emit as enum types. `1 | 2 | 3` → `{enum: [1, 2, 3]}`; `true | false` → `{enum: [true, false]}`. Mixed-type literal unions (`'a' | 1`) stay `'unknown'` rather than emit a misleading enum.
+- **Added** standalone literal types emit as single-element enums. `flag: true` → `{enum: [true]}`; `value: 5` → `{enum: [5]}`.
+- **Improved** `MAX_FIELD_DEPTH` 3 → 5. Realistic payloads (e.g. `Matrix/AddCriteria.criteria[].format.kind` at depth 4) now resolve fully instead of collapsing to `'unknown'` at depth 3.
+
+### `@llui/agent@0.0.37`
+
+- **Added** `validate-payload.ts` — schema-driven structured validator. Walks the compiled schema against a candidate Msg and returns path-keyed `ValidationError[]` on mismatch. Error codes: `unknown-variant`, `missing`, `wrong-type`, `not-in-enum`, `not-array`, `not-object`, `missing-discriminant`, `unknown-discriminant-value`. Discriminated-union branches carry a disambiguating `(discriminant=value)` segment in the path so the LLM can see which branch the error applies to.
+- **Added** `would_dispatch` runs the validator before the reducer; mismatches return `{status: 'rejected', reason: 'schema-mismatch', errors}` without firing reducer side-effects. `WouldDispatchHost` gains an optional `getMsgSchema()` accessor.
+- **Improved** `send_message` delegates to the shared validator. The bespoke top-level-only validator (~80 LOC inside `send-message.ts`) is gone.
+- **Improved** `list_actions` synthesizer emits the first branch of a discriminated-union field as the canonical `payloadHint` example, and `fieldHints` carry a synthetic `Discriminated union — set \`<discriminant>\` to one of: ...` summary at the union path so agents don't have to walk the schema for the simple case.
+
+### Docs
+
+- Design doc 11 §2.3 adds a field-type coverage table mapping TypeScript shapes to schema emit. New §2.3a explains schema-driven validation with example errors.
+
 ## 2026-04-27 — @llui/agent@0.0.36
 
 **Released:** `@llui/agent@0.0.36`
