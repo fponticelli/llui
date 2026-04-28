@@ -11,6 +11,24 @@ All notable changes to LLui packages are documented here. LLui is a pre-1.0 proj
 
 Packages version in lockstep at release time: `@llui/dom`, `@llui/vite-plugin`, `@llui/test`, `@llui/router`, `@llui/transitions`, `@llui/components`, `@llui/vike` share a version line. `@llui/effects`, `@llui/mcp`, `@llui/eslint-plugin`, `@llui/agent`, and `llui-agent` have their own cadence.
 
+## 2026-04-28 — @llui/router@0.0.35, @llui/agent@0.0.42, llui-agent@0.0.6
+
+**Released:** `@llui/router@0.0.35`; `@llui/agent@0.0.42`; `llui-agent@0.0.6`
+
+Two dogfood gaps closed against decisive: route-changing effects from arbitrary reducers now keep `state.route` in sync with the URL, and the agent payload validator stops rejecting required-but-`unknown`-typed fields when missing.
+
+### `@llui/router@0.0.35`
+
+- **Added** `connectedRouter.navigate(route)` effect — pushState plus dispatch the listener-captured navigate message in one operation. Resolves the asymmetry where `link()` did push+send (it has send/factory in scope at click time) while `push()` did pushState only, leaving apps with desynced `state.route` whenever a non-`Router/Navigate` reducer programmatically navigated. Existing `push()` / `replace()` keep their URL-only semantics for the inline-RouteChanged pattern; switch to `navigate()` when you want the framework to handle the round-trip. If `navigate()` runs before `connectedRouter.listener()` mounts, the URL still updates and a `console.warn` surfaces the gap.
+
+### `@llui/agent@0.0.42`
+
+- **Fixed** Payload validator no longer rejects required fields whose schema is `unknown` when they're missing from the payload. The schema extractor emits `field: string | undefined` as required+`unknown` (the union isn't a branded primitive), but the validator's stated philosophy is "treat 'unknown' as any goes" — agents were forced to spell out `details: undefined`, `url: undefined`, … on every authored object, defeating the payload hints. Strict-mode unknown-field warnings are unaffected; this only relaxes the missing-field branch.
+
+### `llui-agent@0.0.6`
+
+- Cascade release for `@llui/agent@0.0.42`. No bridge-level changes.
+
 ## 2026-04-28 — 0.0.34 + @llui/agent@0.0.41, @llui/vite-plugin@0.0.37, @llui/test@0.0.35, @llui/vike@0.0.36, @llui/mcp@0.0.29
 
 **Released:** `@llui/{dom,components,router,transitions}@0.0.34`; `@llui/test@0.0.35`; `@llui/vike@0.0.36`; `@llui/mcp@0.0.29`; `@llui/agent@0.0.41`; `@llui/vite-plugin@0.0.37`
