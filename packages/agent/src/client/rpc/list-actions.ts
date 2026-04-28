@@ -289,6 +289,19 @@ function compileRouteGate(src: string): (state: unknown) => boolean {
   return fn
 }
 
+/**
+ * Sentinel returned by `synthesizeBare` for fields whose schema is
+ * `'unknown'` — the synthesizer can't make up a value, so it tells
+ * callers to omit the field from the synthesized example. Emitting
+ * `null` (the previous behavior) bit us in production: agents
+ * copied the literal `null`, the validator let it through (it
+ * exempts unknowns), and the consumer code crashed on `null.kind` /
+ * `null.length` etc. Symbol values are dropped silently by
+ * `JSON.stringify`, so even a missed filter site can't leak this
+ * to the wire.
+ */
+const OMIT = Symbol('synthesize.omit')
+
 function synthesizePayload(variant: string, fields: Record<string, MsgSchemaField>): object {
   const out: Record<string, unknown> = { type: variant }
   for (const [name, descriptor] of Object.entries(fields)) {
@@ -297,7 +310,9 @@ function synthesizePayload(variant: string, fields: Record<string, MsgSchemaFiel
     // Skip optional fields unless they're @should-flagged. Required
     // fields always appear.
     if (optional && priority !== 'should') continue
-    out[name] = exampleValue(descriptor)
+    const value = exampleValue(descriptor)
+    if (value === OMIT) continue
+    out[name] = value
   }
   return out
 }
@@ -410,15 +425,15 @@ function synthesizeBare(t: unknown): unknown {
     if (t === 'string') return ''
     if (t === 'number') return 0
     if (t === 'boolean') return false
-    return null // 'unknown' or unrecognized keyword → placeholder
+    return OMIT // 'unknown' or unrecognized — caller drops the field
   }
-  if (t === null || typeof t !== 'object') return null
+  if (t === null || typeof t !== 'object') return OMIT
   const obj = t as Record<string, unknown>
   if ('enum' in obj && Array.isArray(obj.enum)) {
     // First option doubles as the canonical example. Native value type
     // round-trips (string/number/boolean) since the compiler preserved
     // the literal kind on emit.
-    return obj.enum[0] ?? null
+    return obj.enum[0] ?? OMIT
   }
   if (obj.kind === 'object' && obj.shape !== null && typeof obj.shape === 'object') {
     // Recurse into the nested shape. Same optional-skip rule as the
@@ -429,14 +444,21 @@ function synthesizeBare(t: unknown): unknown {
       const isOpt = isOptional(descriptor)
       const pri = isShould(descriptor)
       if (isOpt && pri !== 'should') continue
-      out[name] = exampleValue(descriptor)
+      const value = exampleValue(descriptor)
+      if (value === OMIT) continue
+      out[name] = value
     }
     return out
   }
   if (obj.kind === 'array') {
     // Wrap the synthesized element in a one-item array. Lets the LLM
     // see the per-entry shape without us guessing at array length.
-    return [synthesizeBare(obj.element)]
+    // If the element schema is 'unknown', return an empty array
+    // rather than `[null]` — the empty array signals "this is an
+    // array, shape unknown" without putting a misleading literal in
+    // the example.
+    const elementValue = synthesizeBare(obj.element)
+    return elementValue === OMIT ? [] : [elementValue]
   }
   if (obj.kind === 'discriminated-union') {
     // Synthesize the FIRST branch as the concrete example. The full
@@ -449,16 +471,18 @@ function synthesizeBare(t: unknown): unknown {
     const variants = obj.variants as Record<string, Record<string, MsgSchemaField>>
     const discriminant = String(obj.discriminant)
     const firstEntry = Object.entries(variants).at(0)
-    if (!firstEntry) return null
+    if (!firstEntry) return OMIT
     const [firstValue, firstFields] = firstEntry
     const branch: Record<string, unknown> = { [discriminant]: firstValue }
     for (const [name, descriptor] of Object.entries(firstFields)) {
       const isOpt = isOptional(descriptor)
       const pri = isShould(descriptor)
       if (isOpt && pri !== 'should') continue
-      branch[name] = exampleValue(descriptor)
+      const value = exampleValue(descriptor)
+      if (value === OMIT) continue
+      branch[name] = value
     }
     return branch
   }
-  return null
+  return OMIT
 }

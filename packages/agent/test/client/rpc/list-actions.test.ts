@@ -162,9 +162,16 @@ describe('handleListActions', () => {
       dispatchMode: 'agent-only',
       source: 'schema',
     })
+    // `unknown`-typed fields are OMITTED from the synthesized
+    // example. Emitting `null` (the previous behavior) misled agents
+    // into copying the literal `null` and pushing through validation
+    // (validators exempt `unknown`), only to crash the renderer
+    // downstream when the consumer code tried to read `.kind` off
+    // the null. Now the LLM has to look at `description.messages`
+    // for the field's actual shape, which is the right behaviour
+    // when the schema legitimately doesn't know.
     expect(a?.payloadHint).toEqual({
       type: 'Matrix/AddCriteria',
-      criteria: null, // 'unknown' → null placeholder
     })
   })
 
@@ -303,7 +310,7 @@ describe('handleListActions', () => {
     })
     expect(a?.payloadHint).toEqual({
       type: 'Matrix/AddAlternatives',
-      alternatives: null, // 'unknown' → null placeholder
+      // `alternatives` is `unknown` → omitted from the example.
     })
   })
 
@@ -949,5 +956,130 @@ describe('handleListActions', () => {
       { path: 'cells', hint: 'Each entry: {criterionId, alternativeId, value, meta?}.' },
       { path: 'cells[].meta', hint: 'Cite where the value came from.' },
     ])
+  })
+
+  // ── Synthesizer never emits null for unknown ───────────────────
+  // Regression guard: when a field's schema is `'unknown'`, the
+  // synthesizer must omit the field from the example, not emit
+  // `null`. Emitting `null` misleads agents into copying it
+  // verbatim — the validator passes (it exempts unknowns), the
+  // value lands in state, and the consumer crashes on `null.kind`
+  // or similar. The agent should look at `description.messages`
+  // for the field's actual shape when the example doesn't mention
+  // it.
+
+  it('omits unknown-typed fields nested inside an object', () => {
+    const result = handleListActions(
+      makeHost({
+        descriptors: [],
+        annotations: {
+          Save: {
+            intent: null,
+            dispatchMode: 'agent-only',
+            requiresConfirm: false,
+            alwaysAffordable: false,
+            examples: [],
+            warning: null,
+            emits: [],
+          },
+        },
+        schema: {
+          discriminant: 'type',
+          variants: {
+            Save: {
+              criterion: {
+                kind: 'object',
+                shape: {
+                  id: 'string',
+                  weight: 'number',
+                  format: 'unknown', // ← should be omitted
+                },
+              },
+            },
+          },
+        },
+      }),
+    )
+    const a = result.actions.at(0)
+    expect(a?.payloadHint).toEqual({
+      type: 'Save',
+      criterion: { id: '', weight: 0 }, // no `format` key
+    })
+  })
+
+  it('omits unknown-typed fields inside a discriminated-union variant', () => {
+    const result = handleListActions(
+      makeHost({
+        descriptors: [],
+        annotations: {
+          AddCriterion: {
+            intent: null,
+            dispatchMode: 'agent-only',
+            requiresConfirm: false,
+            alwaysAffordable: false,
+            examples: [],
+            warning: null,
+            emits: [],
+          },
+        },
+        schema: {
+          discriminant: 'type',
+          variants: {
+            AddCriterion: {
+              criterion: {
+                kind: 'discriminated-union',
+                discriminant: 'kind',
+                variants: {
+                  quantity: {
+                    range: 'unknown', // ← should be omitted
+                    highIsBetter: 'boolean',
+                  },
+                  rating: {
+                    stars: 'number',
+                  },
+                },
+              },
+            },
+          },
+        },
+      }),
+    )
+    const a = result.actions.at(0)
+    expect(a?.payloadHint).toEqual({
+      type: 'AddCriterion',
+      criterion: { kind: 'quantity', highIsBetter: false }, // no `range` key
+    })
+  })
+
+  it('emits an empty array when the array element is unknown', () => {
+    // No way to synthesize a meaningful element shape — give the
+    // agent an empty array so they at least see "this is an
+    // array, but I don't know the element type." Better than `[null]`,
+    // which suggests every element should be the literal null.
+    const result = handleListActions(
+      makeHost({
+        descriptors: [],
+        annotations: {
+          BulkSet: {
+            intent: null,
+            dispatchMode: 'agent-only',
+            requiresConfirm: false,
+            alwaysAffordable: false,
+            examples: [],
+            warning: null,
+            emits: [],
+          },
+        },
+        schema: {
+          discriminant: 'type',
+          variants: {
+            BulkSet: {
+              items: { kind: 'array', element: 'unknown' },
+            },
+          },
+        },
+      }),
+    )
+    expect(result.actions.at(0)?.payloadHint).toEqual({ type: 'BulkSet', items: [] })
   })
 })

@@ -203,10 +203,12 @@ export function buildFieldDescriptor(
   source: string,
   typeIndex: TypeIndex = new Map(),
 ): MsgField {
-  const baseType: MsgFieldType = member.type
-    ? resolveFieldType(member.type, typeIndex, MAX_FIELD_DEPTH)
+  const peeled = member.type ? peelOptionalUnion(member.type) : null
+  const innerType = peeled?.type ?? member.type
+  const baseType: MsgFieldType = innerType
+    ? resolveFieldType(innerType, typeIndex, MAX_FIELD_DEPTH)
     : 'unknown'
-  const optional = member.questionToken !== undefined
+  const optional = member.questionToken !== undefined || peeled?.isImplicitOptional === true
   const jsdoc = readMemberJSDoc(source, member)
   const hint = readShouldHint(jsdoc)
   const validates = readValidatesTag(jsdoc)
@@ -227,17 +229,64 @@ export function buildFieldDescriptor(
 }
 
 /**
+ * Detect `T | undefined` (or `undefined | T`, or `T1 | T2 | undefined`)
+ * and return the union without the `undefined` branch plus a flag
+ * marking the field as implicitly optional. Mirrors the runtime
+ * semantics: `field: T | undefined` is exactly equivalent to
+ * `field?: T` — the agent should be able to omit the field entirely.
+ *
+ * Pre-strict-null codebases (decisive among them) declare optional
+ * fields as `field: T | undefined` rather than `field?: T`. Without
+ * this peel, the union doesn't match `tryExtractLiteralUnion` (one
+ * branch isn't a literal) or `tryExtractDiscriminatedUnion` (the
+ * `undefined` branch isn't an object literal), so the whole thing
+ * collapses to `'unknown'` and the agent has to spell out
+ * `field: undefined` literally on every payload.
+ *
+ * Returns the original node and `isImplicitOptional: false` when the
+ * union has no `undefined` branch — caller then resolves it via the
+ * normal pipeline. Returns the original node and `false` when ALL
+ * branches are `undefined` (pathological — let it fall through to
+ * unknown rather than fabricating a shape).
+ */
+function peelOptionalUnion(type: ts.TypeNode): {
+  type: ts.TypeNode
+  isImplicitOptional: boolean
+} {
+  if (!ts.isUnionTypeNode(type)) return { type, isImplicitOptional: false }
+  const isUndefined = (t: ts.TypeNode): boolean => t.kind === ts.SyntaxKind.UndefinedKeyword
+  const nonUndefined = type.types.filter((t) => !isUndefined(t))
+  if (nonUndefined.length === type.types.length) return { type, isImplicitOptional: false }
+  if (nonUndefined.length === 0) return { type, isImplicitOptional: false }
+  if (nonUndefined.length === 1 && nonUndefined[0]) {
+    return { type: nonUndefined[0], isImplicitOptional: true }
+  }
+  // 'a' | 'b' | undefined → rebuild as 'a' | 'b' so it can run through
+  // tryExtractLiteralUnion / tryExtractDiscriminatedUnion as if the
+  // undefined branch had never been there.
+  return {
+    type: ts.factory.createUnionTypeNode(nonUndefined),
+    isImplicitOptional: true,
+  }
+}
+
+/**
  * Recursion bound for nested type resolution. Stops the extractor
  * before it spirals on self-referential or mutually-recursive types
- * (`type Tree = { children: Tree[] }`). At depth 0 every reference
- * collapses to `'unknown'`; the synthesizer emits `null` and the
- * agent falls back to free-form filling.
+ * (`type Tree = { children: Tree[] }`).
  *
- * 5 covers the realistic ceiling for production Msg payloads —
- * `Matrix/AddCriteria.criteria[].format.kind` lives at depth 4, and
- * adding one buffer level catches common app shapes. Higher depths
- * grow the bundle linearly; recursive cycles still terminate via the
- * decrement-and-bail rule on every recurse.
+ * Only NAMED-TYPE LOOKUPS decrement this budget — chasing
+ * `type Foo = …` through the typeIndex, or expanding an
+ * `interface X` reference. Inline structural traversal (array
+ * elements, inline object literals, inline discriminated unions) is
+ * free, since cycles can only re-enter resolution via a named
+ * reference. This means a deeply-nested but finite type tree like
+ * `Matrix/AddCriteria.criteria[].type(quantity).clamp` (5+ inline
+ * hops, 3 named-type hops: Criterion → CriterionType → Clamp) fully
+ * resolves rather than collapsing to `'unknown'` half-way through.
+ *
+ * 5 named-type hops is plenty for production Msg payloads. Cyclic
+ * named types still terminate via the decrement-and-bail rule.
  */
 const MAX_FIELD_DEPTH = 5
 
@@ -379,10 +428,12 @@ function tryExtractDiscriminatedUnion(
       if (!ts.isPropertySignature(member) || !member.name || !ts.isIdentifier(member.name)) continue
       const name = member.name.text
       if (name === discriminant) continue
-      const baseType: MsgFieldType = member.type
-        ? resolveFieldType(member.type, typeIndex, depth)
+      const peeled = member.type ? peelOptionalUnion(member.type) : null
+      const innerType = peeled?.type ?? member.type
+      const baseType: MsgFieldType = innerType
+        ? resolveFieldType(innerType, typeIndex, depth)
         : 'unknown'
-      const optional = member.questionToken !== undefined
+      const optional = member.questionToken !== undefined || peeled?.isImplicitOptional === true
       fields[name] = optional ? { type: baseType, optional: true } : baseType
     }
     variants[value] = fields
@@ -554,12 +605,10 @@ export function resolveFieldType(
     const enumResult = tryExtractLiteralUnion(type)
     if (enumResult !== null) return enumResult
 
-    // Discriminated union of object literals — depth-budgeted because
-    // each branch may contain its own nested shapes.
-    if (depth > 0) {
-      const discResult = tryExtractDiscriminatedUnion(type, typeIndex, depth - 1)
-      if (discResult !== null) return discResult
-    }
+    // Discriminated union of object literals. Inline structural move
+    // — depth budget unchanged. Only named-type lookups decrement.
+    const discResult = tryExtractDiscriminatedUnion(type, typeIndex, depth)
+    if (discResult !== null) return discResult
   }
 
   // Branded primitive intersection — `string & {__brand: B}`,
@@ -581,17 +630,15 @@ export function resolveFieldType(
     if (brandResult !== null) return brandResult
   }
 
-  // Below this point, all branches need depth budget. Bail out cheaply.
-  if (depth <= 0) return 'unknown'
-
   // Inline object literal — `{a: number; b: string}` directly.
+  // Inline structural move; depth unchanged.
   if (ts.isTypeLiteralNode(type)) {
-    return { kind: 'object', shape: collectInlineShape(type, typeIndex, depth - 1) }
+    return { kind: 'object', shape: collectInlineShape(type, typeIndex, depth) }
   }
 
-  // Array type — `T[]` and `readonly T[]`.
+  // Array type — `T[]` and `readonly T[]`. Inline structural move.
   if (ts.isArrayTypeNode(type)) {
-    return { kind: 'array', element: resolveFieldType(type.elementType, typeIndex, depth - 1) }
+    return { kind: 'array', element: resolveFieldType(type.elementType, typeIndex, depth) }
   }
   // Generic Array<T> (less common in app code but compiler may produce it).
   if (
@@ -603,7 +650,7 @@ export function resolveFieldType(
   ) {
     return {
       kind: 'array',
-      element: resolveFieldType(type.typeArguments[0], typeIndex, depth - 1),
+      element: resolveFieldType(type.typeArguments[0], typeIndex, depth),
     }
   }
   // ReadonlyArray<T> → same shape; the readonly modifier is purely a
@@ -617,7 +664,7 @@ export function resolveFieldType(
   ) {
     return {
       kind: 'array',
-      element: resolveFieldType(type.typeArguments[0], typeIndex, depth - 1),
+      element: resolveFieldType(type.typeArguments[0], typeIndex, depth),
     }
   }
   // `readonly T[]` parses as TypeOperator(readonly) wrapping ArrayType.
@@ -625,8 +672,14 @@ export function resolveFieldType(
     return resolveFieldType(type.type, typeIndex, depth)
   }
 
-  // Named type reference — chase it through the local index.
+  // Named type reference — chase it through the local index. This is
+  // the ONLY recursive step that consumes depth budget. Inline moves
+  // (array element, inline object/DU/union) traverse for free; the
+  // budget exists to break cycles in mutually-recursive named types
+  // (`Tree.children: Tree[]`), which can only re-enter resolution via
+  // a named lookup.
   if (ts.isTypeReferenceNode(type) && ts.isIdentifier(type.typeName)) {
+    if (depth <= 0) return 'unknown'
     const target = typeIndex.get(type.typeName.text)
     if (target) {
       if (ts.isInterfaceDeclaration(target)) {
@@ -659,10 +712,12 @@ function collectInlineShape(
   for (const member of lit.members) {
     if (!ts.isPropertySignature(member) || !member.name || !ts.isIdentifier(member.name)) continue
     const name = member.name.text
-    const baseType: MsgFieldType = member.type
-      ? resolveFieldType(member.type, typeIndex, depth)
+    const peeled = member.type ? peelOptionalUnion(member.type) : null
+    const innerType = peeled?.type ?? member.type
+    const baseType: MsgFieldType = innerType
+      ? resolveFieldType(innerType, typeIndex, depth)
       : 'unknown'
-    const optional = member.questionToken !== undefined
+    const optional = member.questionToken !== undefined || peeled?.isImplicitOptional === true
     if (!optional) {
       shape[name] = baseType
     } else {
@@ -681,10 +736,12 @@ function collectInterfaceShape(
   for (const member of iface.members) {
     if (!ts.isPropertySignature(member) || !member.name || !ts.isIdentifier(member.name)) continue
     const name = member.name.text
-    const baseType: MsgFieldType = member.type
-      ? resolveFieldType(member.type, typeIndex, depth)
+    const peeled = member.type ? peelOptionalUnion(member.type) : null
+    const innerType = peeled?.type ?? member.type
+    const baseType: MsgFieldType = innerType
+      ? resolveFieldType(innerType, typeIndex, depth)
       : 'unknown'
-    const optional = member.questionToken !== undefined
+    const optional = member.questionToken !== undefined || peeled?.isImplicitOptional === true
     if (!optional) {
       shape[name] = baseType
     } else {

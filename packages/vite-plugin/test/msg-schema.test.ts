@@ -539,4 +539,140 @@ describe('extractMsgSchema', () => {
       hint: 'Defaults to private. Public is indexable; unlisted is link-only.',
     })
   })
+
+  // ── T | undefined → optional T ─────────────────────────────────
+  // Decisive (and many older codebases) declares fields as
+  // `field: T | undefined` rather than `field?: T`. Semantically the
+  // two are identical at runtime; structurally the schema extractor
+  // used to emit the former as required+unknown (the union doesn't
+  // match literal-enum or discriminated-union patterns), forcing
+  // agents to spell out `field: undefined` literally on every
+  // payload. We strip the `undefined` branch and treat the field as
+  // optional with the remaining branch's type.
+
+  it('treats `T | undefined` as optional T', () => {
+    const src = `
+      type Msg =
+        | { type: 'X'; details: string | undefined }
+    `
+    const schema = extractMsgSchema(src)
+    expect(schema?.variants.X?.details).toEqual({ type: 'string', optional: true })
+  })
+
+  it('treats `undefined | T` (reversed order) the same way', () => {
+    const src = `
+      type Msg =
+        | { type: 'X'; details: undefined | string }
+    `
+    const schema = extractMsgSchema(src)
+    expect(schema?.variants.X?.details).toEqual({ type: 'string', optional: true })
+  })
+
+  it('treats `number | undefined` as optional number', () => {
+    const src = `
+      type Msg =
+        | { type: 'X'; count: number | undefined }
+    `
+    expect(extractMsgSchema(src)?.variants.X?.count).toEqual({ type: 'number', optional: true })
+  })
+
+  it('treats `boolean | undefined` as optional boolean', () => {
+    const src = `
+      type Msg =
+        | { type: 'X'; flag: boolean | undefined }
+    `
+    expect(extractMsgSchema(src)?.variants.X?.flag).toEqual({ type: 'boolean', optional: true })
+  })
+
+  it('preserves the literal-enum width when stripping `| undefined`', () => {
+    // A field declared as 'a' | 'b' | undefined should resolve to an
+    // optional enum, not collapse to an optional 'a' or to unknown.
+    const src = `
+      type Msg =
+        | { type: 'X'; mode: 'a' | 'b' | undefined }
+    `
+    expect(extractMsgSchema(src)?.variants.X?.mode).toEqual({
+      type: { enum: ['a', 'b'] },
+      optional: true,
+    })
+  })
+
+  it('preserves an explicit `?:` modifier when the type is also `T | undefined`', () => {
+    // `field?: T | undefined` is what TypeScript actually generates
+    // from `field?: T` under strict-null. Both should produce the same
+    // shape: optional with type T, no doubled annotation.
+    const src = `
+      type Msg =
+        | { type: 'X'; details?: string | undefined }
+    `
+    expect(extractMsgSchema(src)?.variants.X?.details).toEqual({ type: 'string', optional: true })
+  })
+
+  it('does NOT treat `T | null` as optional (null is a real value)', () => {
+    // `null` is a legal payload value that the agent might send to
+    // explicitly clear the field. We only strip `undefined` because
+    // it isn't JSON-serializable and stripping it preserves
+    // round-trip behavior.
+    const src = `
+      type Msg =
+        | { type: 'X'; details: string | null }
+    `
+    // Falls through to unknown — the union is neither a pure literal
+    // enum nor a discriminable object union. (We don't need to make
+    // T | null resolve to T; the explicit null is meaningful.)
+    expect(extractMsgSchema(src)?.variants.X?.details).toBe('unknown')
+  })
+
+  // ── Depth model — inline structural traversal doesn't cost depth ─
+
+  it('resolves a discriminated-union field nested under array+object+DU+object+named (5+ inline hops)', () => {
+    // Mirrors Matrix/AddCriteria.criteria[].type(quantity).clamp in
+    // decisive: every structural wrapper used to consume a unit of
+    // depth budget, so the inner Clamp DU (one named-type hop past
+    // the budget ceiling) collapsed to 'unknown'. With the new model
+    // only NAMED-TYPE lookups decrement depth, so the inline path
+    // through array→object→DU→variant→object→named-Clamp→DU resolves.
+    const src = `
+      type Clamp = { kind: 'unclamped' } | { kind: 'clamped' }
+      interface Criterion {
+        id: string
+        type: { kind: 'quantity'; clamp: Clamp } | { kind: 'rating'; stars: number }
+      }
+      type Msg =
+        | { type: 'AddCriteria'; criteria: Criterion[] }
+    `
+    const schema = extractMsgSchema(src)
+    const criteria = schema?.variants.AddCriteria?.criteria
+    expect(criteria).toMatchObject({ kind: 'array' })
+    const element = (criteria as { kind: 'array'; element: unknown }).element
+    expect(element).toMatchObject({ kind: 'object' })
+    // Walk to the clamp field inside the quantity variant.
+    const elementShape = (element as { shape: Record<string, unknown> }).shape
+    const typeField = elementShape.type as {
+      kind: 'discriminated-union'
+      variants: Record<string, Record<string, unknown>>
+    }
+    expect(typeField.kind).toBe('discriminated-union')
+    const quantityVariant = typeField.variants.quantity
+    expect(quantityVariant?.clamp).toEqual({
+      kind: 'discriminated-union',
+      discriminant: 'kind',
+      variants: { unclamped: {}, clamped: {} },
+    })
+  })
+
+  it('still terminates on self-referential types (Node tree)', () => {
+    // Cycle detection still works: each named-type lookup decrements
+    // the budget, so deeply-recursive `Node.children: Node[]` chains
+    // bottom out at 'unknown' without stack-overflowing.
+    const src = `
+      interface Node { id: string; children: Node[] }
+      type Msg = | { type: 'Add'; root: Node }
+    `
+    const schema = extractMsgSchema(src)
+    const outer = schema?.variants.Add?.root
+    expect(outer).toMatchObject({ kind: 'object' })
+    // Extraction completes — no stack overflow, some shape produced.
+    expect(JSON.stringify(outer)).toContain('"id":"string"')
+  })
 })
