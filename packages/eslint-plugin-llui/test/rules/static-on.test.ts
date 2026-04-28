@@ -14,6 +14,13 @@ ruleTester.run('static-on', staticOnRule, {
     { code: `branch({ on: (s) => s.route.page, cases: {} })` },
     // Block body that returns a state-derived value.
     { code: `scope({ on: (s) => { return s.mode }, cases: {} })` },
+    // Zero-arg with an item-accessor call — legitimate inside an
+    // `each.render` callback. The CallExpression in the body signals
+    // "reading something potentially state-derived."
+    { code: `branch({ on: () => item.kind(), cases: {} })` },
+    // Zero-arg with a member expression read — also legitimate
+    // (memo accessor, closure-captured selector, etc.).
+    { code: `scope({ on: () => state.section, cases: {} })` },
     // No `on` prop — out of scope (other rules handle missing required fields).
     { code: `scope({ cases: {} })` },
     // Non-scope/branch call — ignored.
@@ -21,7 +28,8 @@ ruleTester.run('static-on', staticOnRule, {
   ],
   invalid: [
     {
-      // Zero-param arrow — definitionally reads nothing.
+      // Zero-param arrow with a bare-literal body — definitionally
+      // reads nothing and the key never changes.
       code: `scope({ on: () => 'tab', cases: {} })`,
       errors: [{ messageId: 'static', data: { name: 'scope' } }],
     },

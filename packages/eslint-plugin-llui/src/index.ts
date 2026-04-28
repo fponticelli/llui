@@ -32,6 +32,8 @@ import { childStaticPropsRule } from './rules/child-static-props.js'
 import { staticOnRule } from './rules/static-on.js'
 import { exhaustiveUpdateRule } from './rules/exhaustive-update.js'
 import { bitmaskOverflowRule } from './rules/bitmask-overflow.js'
+import { noEagerItemAccessorRule } from './rules/no-eager-item-accessor.js'
+import { noListRenderInSampleRule } from './rules/no-list-render-in-sample.js'
 
 export const rules = {
   'accessor-side-effect': accessorSideEffectRule,
@@ -68,6 +70,8 @@ export const rules = {
   'static-on': staticOnRule,
   'exhaustive-update': exhaustiveUpdateRule,
   'bitmask-overflow': bitmaskOverflowRule,
+  'no-eager-item-accessor': noEagerItemAccessorRule,
+  'no-list-render-in-sample': noListRenderInSampleRule,
 }
 
 // Severity rationale:
@@ -128,6 +132,8 @@ export const configs = {
       'llui/static-on': 'error',
       'llui/exhaustive-update': 'error',
       'llui/bitmask-overflow': 'error',
+      'llui/no-eager-item-accessor': 'error',
+      'llui/no-list-render-in-sample': 'error',
     },
   },
   // Standalone overlay that errors on the `agent-*` rules. Useful for

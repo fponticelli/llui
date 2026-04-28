@@ -377,10 +377,19 @@ interface BranchOptionsBase extends TransitionOptions {
 }
 
 /**
+ * Discriminant accessor — reads a string-keyed value either from the
+ * current state (`(s) => …`) or from a closed-over item accessor /
+ * memo (`() => item.kind()`). Both forms re-evaluate on every commit.
+ * The zero-arg form is the canonical shape for branching on per-row
+ * fields inside an `each.render` callback.
+ */
+type Discriminant<S, K extends string> = ((s: S) => K) | (() => K)
+
+/**
  * All cases covered by `cases` — no default allowed (would be dead code).
  */
 type BranchOptionsExhaustive<S, M, K extends string> = BranchOptionsBase & {
-  on: (s: S) => K
+  on: Discriminant<S, K>
   cases: { [P in K]: (h: View<S, M>) => Node[] }
   default?: never
 }
@@ -389,7 +398,7 @@ type BranchOptionsExhaustive<S, M, K extends string> = BranchOptionsBase & {
  * `cases` may cover some but not all keys; `default` handles the rest.
  */
 type BranchOptionsNonExhaustive<S, M, K extends string> = BranchOptionsBase & {
-  on: (s: S) => K
+  on: Discriminant<S, K>
   cases?: { [P in K]?: (h: View<S, M>) => Node[] }
   default: (h: View<S, M>) => Node[]
 }
@@ -402,7 +411,7 @@ type BranchOptionsNonExhaustive<S, M, K extends string> = BranchOptionsBase & {
  * `on`'s return type to a literal union.
  */
 type BranchOptionsWide<S, M> = BranchOptionsBase & {
-  on: (s: S) => string
+  on: Discriminant<S, string>
   cases?: Record<string, (h: View<S, M>) => Node[]>
   default?: (h: View<S, M>) => Node[]
 }
@@ -426,7 +435,15 @@ export type BranchOptions<S, M = unknown, K extends string = string> = string ex
   : BranchOptionsExhaustive<S, M, K> | BranchOptionsNonExhaustive<S, M, K>
 
 export interface ShowOptions<S, M = unknown> extends TransitionOptions {
-  when: (s: S) => boolean
+  /**
+   * Predicate evaluated on every commit. `(s) => …` reads from
+   * component state; `() => …` (zero-arg) reads from a closed-over
+   * source — typically `item.field()` inside an `each.render`
+   * callback. Both forms are reactive: the predicate runs against
+   * each new state and the rendered subtree mounts/unmounts on the
+   * boolean transition.
+   */
+  when: ((s: S) => boolean) | (() => boolean)
   render: (h: View<S, M>) => Node[]
   fallback?: (h: View<S, M>) => Node[]
 }
@@ -441,7 +458,13 @@ export interface ShowOptions<S, M = unknown> extends TransitionOptions {
  * one-shot current-state read.
  */
 export interface ScopeOptions<S, M = unknown> extends TransitionOptions {
-  on: (s: S) => string
+  /**
+   * Key accessor evaluated on every commit. `(s) => …` reads from
+   * component state; `() => …` (zero-arg) reads from a closed-over
+   * source. The render callback rebuilds whenever the returned key
+   * changes — fresh lifetime, fresh bindings.
+   */
+  on: ((s: S) => string) | (() => string)
   render: (h: View<S, M>) => Node[]
   /** @internal Compiler-injected mask of paths read by `on`. */
   __mask?: number

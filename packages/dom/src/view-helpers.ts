@@ -42,13 +42,29 @@ export interface View<S, M> {
   branch<K extends string = string>(opts: BranchOptions<S, M, K>): Node[]
   scope(opts: ScopeOptions<S, M>): Node[]
   each<T>(opts: EachOptions<S, T, M>): Node[]
-  text(accessor: ((s: S) => string) | string, mask?: number): Text
+  /**
+   * Reactive text node. Three accepted forms, all reactive at the
+   * binding layer:
+   *   - **Static**  — `text('hello')` for a fixed string.
+   *   - **State accessor** — `text((s) => s.title)` reads from the
+   *     component's state on every commit.
+   *   - **Item accessor (zero-arg)** — `text(item.title)` inside an
+   *     `each.render` callback reads the current item's value. The
+   *     runtime detects the zero-arg form and registers it as a
+   *     per-item updater — same reactivity, no full state-mask scan.
+   *
+   * Eager invocation (`text(item.title())`) is **static** — it reads
+   * once at view-construction and the resulting Text node never
+   * updates. The `agent-no-eager-item-accessor` lint rule flags this.
+   */
+  text(accessor: ((s: S) => string) | (() => string) | string, mask?: number): Text
   /**
    * Insert raw HTML into the tree. Caller is responsible for sanitizing.
    * The parsed subtree is opaque to LLui — no nested bindings, events,
-   * or primitives inside it will be tracked. See `unsafeHtml` for details.
+   * or primitives inside it will be tracked. Same accessor forms as
+   * `text` — state-keyed, item-keyed (zero-arg), or static string.
    */
-  unsafeHtml(accessor: ((s: S) => string) | string, mask?: number): Node[]
+  unsafeHtml(accessor: ((s: S) => string) | (() => string) | string, mask?: number): Node[]
   memo<T>(accessor: (s: S) => T): (s: S) => T
   selector<V>(field: (s: S) => V): SelectorInstance<V>
   ctx<T>(c: Context<T>): (s: S) => T

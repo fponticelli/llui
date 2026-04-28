@@ -10,6 +10,38 @@ import { createRule } from '../createRule.js'
  * Migrated from the Vite plugin's `static-on` diagnostic.
  */
 
+/**
+ * Heuristic for "this body might read mutable state from somewhere."
+ * Returns true if the body contains a CallExpression or
+ * MemberExpression — both of which can route to mutable sources
+ * (item accessors, memo readers, closure-captured selectors). Returns
+ * false only for bodies whose deepest content is a literal or bare
+ * identifier, which definitionally can't change after mount.
+ */
+function bodyMayRead(body: TSESTree.Node): boolean {
+  let found = false
+  const visit = (n: TSESTree.Node | null | undefined) => {
+    if (!n || found) return
+    if (n.type === AST_NODE_TYPES.CallExpression || n.type === AST_NODE_TYPES.MemberExpression) {
+      found = true
+      return
+    }
+    for (const key of Object.keys(n) as (keyof typeof n)[]) {
+      if (key === 'parent' || key === 'loc' || key === 'range') continue
+      const child = n[key] as unknown
+      if (Array.isArray(child)) {
+        for (const c of child) {
+          if (c && typeof c === 'object' && 'type' in c) visit(c as TSESTree.Node)
+        }
+      } else if (child && typeof child === 'object' && 'type' in (child as object)) {
+        visit(child as TSESTree.Node)
+      }
+    }
+  }
+  visit(body)
+  return found
+}
+
 function readsParam(node: TSESTree.Node, paramName: string): boolean {
   let found = false
   const visit = (n: TSESTree.Node | null | undefined) => {
@@ -94,8 +126,17 @@ export const staticOnRule = createRule({
         ) {
           return
         }
-        // Zero-param arrow definitionally reads no state — fire.
+        // Zero-param arrow is legitimate when invoked inside an
+        // `each.render` callback — `on: () => item.kind()` reads from
+        // the closed-over ItemAccessor, which itself tracks state via
+        // the each binding. We can't always tell from AST whether
+        // we're inside an each or not, so the heuristic: skip the
+        // warning if the body contains a CallExpression or
+        // MemberExpression — both signal "reading something
+        // potentially state-derived." Bare-literal bodies
+        // (`() => 'x'`) still fire below.
         if (value.params.length === 0) {
+          if (bodyMayRead(value.body)) return
           context.report({ node, messageId: 'static', data: { name } })
           return
         }

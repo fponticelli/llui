@@ -650,6 +650,64 @@ view: ({ send }) =>
 `Props<T, S>` maps `{ tools: Tool[] }` to `{ tools: (s: S) => Tool[] }` -- making the
 reactive-accessor contract explicit and type-enforced.
 
+### List of editable rows -- reactive cells over `each`
+
+When per-row fields change in place (a row's title gets edited, a flag flips, a status updates), every cell that reads from the row must use a **reactive accessor**, not a snapshot. Otherwise the row's DOM stays stuck on the value it had when the list was first built. The shape is `each` + `ItemAccessor` + reactive bindings inside the cells:
+
+```typescript
+import { each, tr, td, text, show } from '@llui/dom'
+import type { ItemAccessor, View } from '@llui/dom'
+
+interface Row {
+  id: string
+  title: string
+  banned: boolean
+  lastEditAt: number
+}
+
+view: (h) => [
+  table([
+    tbody(
+      h.each({
+        items: (s) => s.list.items,
+        key: (r) => r.id, // ← plain id; do NOT include mutable fields
+        render: ({ item }) => [tableRow(h, item)],
+      }),
+    ),
+  ]),
+]
+
+const tableRow = (h: View<State, Msg>, item: ItemAccessor<Row>) =>
+  tr({}, [
+    // Reactive: text(item.title) — zero-arg accessor, re-reads on every commit
+    td([text(item.title)]),
+    // Reactive predicate: () => item.banned() — same pattern
+    td([
+      ...h.show({
+        when: () => item.banned(),
+        render: () => [span({ class: 'badge' }, [text('banned')])],
+      }),
+    ]),
+  ])
+```
+
+Key points:
+
+- **`text(item.title)` is reactive** — passes the accessor function. The runtime detects the zero-arg form and re-reads on every commit.
+- **`text(item.title())` is static** — the agent-no-eager-item-accessor lint rule flags this. Calling the accessor at construction time captures the value once; the cell never updates.
+- **`show.when: () => item.banned()` is reactive** — same zero-arg form. Avoid `when: (s) => …` here; the row's data lives on the item, not the parent state.
+- **Key is `(r) => r.id` only.** Including mutable fields (`${r.id}:${r.lastEditAt}`) forces a remove+insert of the entire row on every change — focus, scroll position, and transitions all reset.
+
+### Anti-pattern: don't wrap a list in `sample`
+
+```typescript
+// ❌ WRONG — looks idiomatic, silently breaks when rows mutate in place
+loaded: (h) =>
+  h.sample((s) => (s.list.items.length === 0 ? [emptyState] : [table(s.list.items.map(rowFn))]))
+```
+
+`sample` is a one-shot imperative read at view-construction time. The `.map(...)` runs once, captures each row in closure, and never re-runs when state updates. Cells inside read static row objects; the rendered DOM goes stale. Only a parent structural rebuild (e.g. a `branch` swapping arms) refreshes them — which makes the bug invisible to typecheck, tests, and casual smoke testing. Use `each` (above). `sample` is for passing a state snapshot to imperative renderers (foreign libraries, canvas), not for laying out variable-length lists.
+
 ### Minimal Intent Pattern
 
 Event handlers inside `each()` send minimal data -- `update()` resolves the rest from state:
