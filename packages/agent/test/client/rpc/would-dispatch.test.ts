@@ -3,16 +3,19 @@ import {
   handleWouldDispatch,
   type WouldDispatchHost,
 } from '../../../src/client/rpc/would-dispatch.js'
+import type { MsgSchemaShape } from '../../../src/client/factory.js'
 
 function mkHost(opts: {
   state: unknown
   reducer:
     | ((msg: { type: string; [k: string]: unknown }) => { state: unknown; effects: unknown[] })
     | null
+  schema?: MsgSchemaShape | null
 }): WouldDispatchHost {
   return {
     getState: () => opts.state,
     runReducer: opts.reducer ?? (() => null),
+    getMsgSchema: () => opts.schema ?? null,
   }
 }
 
@@ -92,6 +95,102 @@ describe('handleWouldDispatch', () => {
     if (result.status === 'rejected') {
       expect(result.reason).toBe('unsupported')
     }
+  })
+
+  // ── Schema-driven preflight ───────────────────────────────────
+
+  it('rejects schema-mismatched msg without running the reducer', () => {
+    // The motivating case: the agent ships an out-of-enum value. The
+    // validator catches it before the reducer fires, so the agent gets
+    // structured feedback without burning a real dispatch round trip.
+    const reducer = vi.fn(() => ({ state: {}, effects: [] }))
+    const result = handleWouldDispatch(
+      mkHost({
+        state: {},
+        reducer,
+        schema: {
+          discriminant: 'type',
+          variants: { 'Cell/SetRating': { value: { enum: [1, 2, 3, 4, 5] } } },
+        },
+      }),
+      { msg: { type: 'Cell/SetRating', value: 6 } },
+    )
+    expect(result.status).toBe('rejected')
+    if (result.status === 'rejected' && result.reason === 'schema-mismatch') {
+      expect(result.errors[0]).toMatchObject({ path: 'value', code: 'not-in-enum' })
+    } else {
+      throw new Error('expected schema-mismatch rejection')
+    }
+    expect(reducer).not.toHaveBeenCalled()
+  })
+
+  it('rejects discriminated-union msg with unknown discriminant', () => {
+    // Sends format with kind: 'logarithmic' when only 'exact', 'range',
+    // 'compound' are legal. The error path points at the discriminant
+    // field with the legal list inline.
+    const reducer = vi.fn(() => ({ state: {}, effects: [] }))
+    const result = handleWouldDispatch(
+      mkHost({
+        state: {},
+        reducer,
+        schema: {
+          discriminant: 'type',
+          variants: {
+            'Cell/SetFormat': {
+              format: {
+                kind: 'discriminated-union',
+                discriminant: 'kind',
+                variants: {
+                  exact: {},
+                  range: { min: 'number', max: 'number' },
+                },
+              },
+            },
+          },
+        },
+      }),
+      { msg: { type: 'Cell/SetFormat', format: { kind: 'logarithmic', base: 10 } } },
+    )
+    expect(result.status).toBe('rejected')
+    if (result.status === 'rejected' && result.reason === 'schema-mismatch') {
+      expect(result.errors[0]).toMatchObject({
+        path: 'format.kind',
+        code: 'unknown-discriminant-value',
+      })
+    } else {
+      throw new Error('expected schema-mismatch rejection')
+    }
+    expect(reducer).not.toHaveBeenCalled()
+  })
+
+  it('passes valid schema-conforming msg through to the reducer', () => {
+    const reducer = vi.fn(() => ({ state: { rated: 4 }, effects: [] }))
+    const result = handleWouldDispatch(
+      mkHost({
+        state: { rated: null },
+        reducer,
+        schema: {
+          discriminant: 'type',
+          variants: { 'Cell/SetRating': { value: { enum: [1, 2, 3, 4, 5] } } },
+        },
+      }),
+      { msg: { type: 'Cell/SetRating', value: 4 } },
+    )
+    expect(result.status).toBe('predicted')
+    expect(reducer).toHaveBeenCalledOnce()
+  })
+
+  it('skips schema validation when schema is null (reducer still runs)', () => {
+    // Backward-compat path: hosts that don't ship a schema (older
+    // builds, test harnesses) get the same semantics as before — only
+    // the reducer-level checks. The tool stays permissive when the
+    // agent's schema source is missing.
+    const reducer = vi.fn(() => ({ state: {}, effects: [] }))
+    const result = handleWouldDispatch(mkHost({ state: {}, reducer, schema: null }), {
+      msg: { type: 'AnyVariant', anything: 'goes' },
+    })
+    expect(result.status).toBe('predicted')
+    expect(reducer).toHaveBeenCalledOnce()
   })
 
   it('does not affect host state — predict is non-mutating', () => {

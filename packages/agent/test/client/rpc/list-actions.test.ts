@@ -493,6 +493,104 @@ describe('handleListActions', () => {
     expect(result.actions).toHaveLength(0)
   })
 
+  // ── Discriminated unions ───────────────────────────────────────
+
+  it('synthesizes the first branch of a discriminated-union field as the example', () => {
+    // The motivating case: `format` is `{kind:'exact'} | {kind:'range', min, max}`.
+    // The example shows ONE legal shape; the schema preserves the full
+    // set so the agent that needs another branch reads it directly.
+    const result = handleListActions(
+      makeHost({
+        descriptors: [],
+        annotations: {
+          'Cell/SetFormat': {
+            intent: 'Set the format of the criterion',
+            dispatchMode: 'agent-only',
+            requiresConfirm: false,
+            alwaysAffordable: false,
+            examples: [],
+            warning: null,
+            emits: [],
+          },
+        },
+        schema: {
+          discriminant: 'type',
+          variants: {
+            'Cell/SetFormat': {
+              format: {
+                kind: 'discriminated-union',
+                discriminant: 'kind',
+                variants: {
+                  exact: {},
+                  range: { min: 'number', max: 'number' },
+                  compound: { formula: 'string' },
+                },
+              },
+            },
+          },
+        },
+      }),
+    )
+    const a = result.actions.at(0)
+    expect(a?.payloadHint).toEqual({
+      type: 'Cell/SetFormat',
+      format: { kind: 'exact' }, // First branch, no payload fields
+    })
+  })
+
+  it('emits a fieldHints summary listing the legal discriminant values', () => {
+    // The agent sees the synthetic hint at the union's path
+    // enumerating every legal `<discriminant>` value, plus per-branch
+    // hints with the branch's discriminant in the path.
+    const result = handleListActions(
+      makeHost({
+        descriptors: [],
+        annotations: {
+          'Cell/SetFormat': {
+            intent: 'Set format',
+            dispatchMode: 'agent-only',
+            requiresConfirm: false,
+            alwaysAffordable: false,
+            examples: [],
+            warning: null,
+            emits: [],
+          },
+        },
+        schema: {
+          discriminant: 'type',
+          variants: {
+            'Cell/SetFormat': {
+              format: {
+                kind: 'discriminated-union',
+                discriminant: 'kind',
+                variants: {
+                  exact: {},
+                  range: {
+                    min: 'number',
+                    max: {
+                      type: 'number',
+                      priority: 'should',
+                      hint: 'Upper bound for normalisation.',
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+      }),
+    )
+    const hints = result.actions.at(0)?.fieldHints ?? []
+    expect(hints).toContainEqual({
+      path: 'format',
+      hint: "Discriminated union — set `kind` to one of: 'exact', 'range'.",
+    })
+    expect(hints).toContainEqual({
+      path: 'format(kind=range).max',
+      hint: 'Upper bound for normalisation.',
+    })
+  })
+
   it('lifts @should hints onto the action as fieldHints', () => {
     // Hints in the schema tree (priority: 'should' + hint string) get
     // surfaced flat on the action so callers don't have to dig into

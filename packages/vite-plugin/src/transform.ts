@@ -3388,14 +3388,17 @@ function buildFieldDescriptorExpr(descriptor: MsgField, f: ts.NodeFactory): ts.E
     return f.createObjectLiteralExpression(props)
   }
   // The remaining cases are bare type-shape variants emitted by
-  // `resolveFieldType`: enum, object, array. Discriminate by which
-  // key is present so we never confuse an inline object literal
-  // ({enum: [...]}) with a deeply-nested shape descriptor.
+  // `resolveFieldType`: enum, object, array, discriminated-union.
+  // Discriminate by which key is present so we never confuse an inline
+  // object literal ({enum: [...]}) with a deeply-nested shape descriptor.
   if ('enum' in descriptor) {
+    // Mixed-typed enum values (string/number/boolean). Each enum entry
+    // emits with its native literal kind so JSON round-trips preserve
+    // the type information — `1` stays a number, not stringified.
     return f.createObjectLiteralExpression([
       f.createPropertyAssignment(
         'enum',
-        f.createArrayLiteralExpression(descriptor.enum.map((v) => f.createStringLiteral(v))),
+        f.createArrayLiteralExpression(descriptor.enum.map((v) => emitEnumValue(v, f))),
       ),
     ])
   }
@@ -3414,11 +3417,47 @@ function buildFieldDescriptorExpr(descriptor: MsgField, f: ts.NodeFactory): ts.E
       f.createPropertyAssignment('shape', f.createObjectLiteralExpression(shapeProps)),
     ])
   }
+  if ('kind' in descriptor && descriptor.kind === 'discriminated-union') {
+    // Inner-union variants are themselves field maps (per branch),
+    // recursed through the same builder. Symmetric with how the
+    // top-level Msg union's variants are represented.
+    const variantProps: ts.PropertyAssignment[] = []
+    for (const [discValue, fields] of Object.entries(descriptor.variants)) {
+      const fieldProps: ts.PropertyAssignment[] = []
+      for (const [k, v] of Object.entries(fields)) {
+        fieldProps.push(
+          f.createPropertyAssignment(f.createStringLiteral(k), buildFieldDescriptorExpr(v, f)),
+        )
+      }
+      variantProps.push(
+        f.createPropertyAssignment(
+          f.createStringLiteral(discValue),
+          f.createObjectLiteralExpression(fieldProps, true),
+        ),
+      )
+    }
+    return f.createObjectLiteralExpression([
+      f.createPropertyAssignment('kind', f.createStringLiteral('discriminated-union')),
+      f.createPropertyAssignment('discriminant', f.createStringLiteral(descriptor.discriminant)),
+      f.createPropertyAssignment('variants', f.createObjectLiteralExpression(variantProps, true)),
+    ])
+  }
   // Array — `{kind: 'array', element: <bare type>}`.
   return f.createObjectLiteralExpression([
     f.createPropertyAssignment('kind', f.createStringLiteral('array')),
     f.createPropertyAssignment('element', buildFieldDescriptorExpr(descriptor.element, f)),
   ])
+}
+
+/**
+ * Emit a single enum value as the right TS literal kind. Numbers as
+ * numeric literals, booleans as keyword expressions, strings as string
+ * literals — preserves the type at the wire (JSON round-trips correctly).
+ */
+function emitEnumValue(v: string | number | boolean, f: ts.NodeFactory): ts.Expression {
+  if (typeof v === 'string') return f.createStringLiteral(v)
+  if (typeof v === 'number') return f.createNumericLiteral(v)
+  return v ? f.createTrue() : f.createFalse()
 }
 
 function hasNonDefaultAnnotation(a: Record<string, MessageAnnotations>): boolean {

@@ -1,13 +1,21 @@
 import ts from 'typescript'
 
 /**
- * The "bare type" of a field. Covers four cases:
+ * The "bare type" of a field. Covers five cases:
  *   - primitive keyword as a string: `'string'`, `'number'`, `'boolean'`, `'unknown'`
- *   - string-literal union: `{enum: ['a', 'b']}`
+ *   - literal union: `{enum: ['a', 'b']}` for strings, `{enum: [1, 2, 3]}`
+ *     for numbers, `{enum: [true]}` for booleans. Mixed-type literal
+ *     unions stay `'unknown'`.
  *   - nested object shape: `{kind: 'object', shape: {...}}` — emitted when
  *     a field's type is a local interface/type alias the extractor could
  *     follow (depth-limited; cross-file references stay `'unknown'`).
  *   - array of element type: `{kind: 'array', element: <bare type>}`.
+ *   - discriminated union of objects: `{kind: 'discriminated-union',
+ *     discriminant: 'kind', variants: {a: {...}, b: {...}}}`. Emitted
+ *     when every member of a union is an object literal sharing one
+ *     literal-string property name with distinct values. Symmetric with
+ *     how the top-level Msg union itself is encoded — same shape,
+ *     recursed.
  *
  * The synthesizer in `@llui/agent`'s `list_actions` walks these to build
  * copy-paste-ready payload examples; the validator in `send_message`
@@ -16,9 +24,14 @@ import ts from 'typescript'
  */
 export type MsgFieldType =
   | string
-  | { enum: string[] }
+  | { enum: ReadonlyArray<string | number | boolean> }
   | { kind: 'object'; shape: Record<string, MsgField> }
   | { kind: 'array'; element: MsgFieldType }
+  | {
+      kind: 'discriminated-union'
+      discriminant: string
+      variants: Record<string, Record<string, MsgField>>
+    }
 
 /**
  * Rich per-field descriptor. Emitted only when there's something
@@ -196,11 +209,222 @@ export function buildFieldDescriptor(
  * collapses to `'unknown'`; the synthesizer emits `null` and the
  * agent falls back to free-form filling.
  *
- * 3 covers the common cases (Msg payload → Criterion → ValueMeta),
- * keeps the bundle bounded, and is well under the Tarjan-style
- * depths needed for actual recursive types.
+ * 5 covers the realistic ceiling for production Msg payloads —
+ * `Matrix/AddCriteria.criteria[].format.kind` lives at depth 4, and
+ * adding one buffer level catches common app shapes. Higher depths
+ * grow the bundle linearly; recursive cycles still terminate via the
+ * decrement-and-bail rule on every recurse.
  */
-const MAX_FIELD_DEPTH = 3
+const MAX_FIELD_DEPTH = 5
+
+/**
+ * Detect literal-only unions whose members all share one primitive
+ * type — `'a' | 'b' | 'c'`, `1 | 2 | 3`, or `true | false`. Returns
+ * the enum descriptor on success; null if any member isn't a literal
+ * of the same type as the others.
+ *
+ * Mixed-type unions (`'a' | 1`) and unions that include non-literal
+ * members fall through. The agent gets `'unknown'` for those rather
+ * than an enum that loses the type information mid-list.
+ */
+function tryExtractLiteralUnion(
+  union: ts.UnionTypeNode,
+): { enum: Array<string | number | boolean> } | null {
+  const values: Array<string | number | boolean> = []
+  let kind: 'string' | 'number' | 'boolean' | null = null
+
+  for (const member of union.types) {
+    if (!ts.isLiteralTypeNode(member)) return null
+    const lit = member.literal
+    if (ts.isStringLiteral(lit)) {
+      if (kind === null) kind = 'string'
+      else if (kind !== 'string') return null
+      values.push(lit.text)
+    } else if (ts.isNumericLiteral(lit)) {
+      if (kind === null) kind = 'number'
+      else if (kind !== 'number') return null
+      const n = Number(lit.text)
+      if (!Number.isFinite(n)) return null
+      values.push(n)
+    } else if (lit.kind === ts.SyntaxKind.TrueKeyword) {
+      if (kind === null) kind = 'boolean'
+      else if (kind !== 'boolean') return null
+      values.push(true)
+    } else if (lit.kind === ts.SyntaxKind.FalseKeyword) {
+      if (kind === null) kind = 'boolean'
+      else if (kind !== 'boolean') return null
+      values.push(false)
+    } else {
+      return null
+    }
+  }
+
+  if (values.length === 0) return null
+  return { enum: values }
+}
+
+/**
+ * Detect a discriminated union of object types — every member is an
+ * object literal (or named type alias resolving to one) and every
+ * member declares the same property as a string-literal type with a
+ * value distinct from every other member's. Examples:
+ *
+ *   {kind:'a'} | {kind:'b', x:number}        → discriminant 'kind'
+ *   {tag:'x',v:1} | {tag:'y',v:'s'}          → discriminant 'tag'
+ *
+ * Returns the union descriptor on success; null on any failure
+ * (different shape per branch, no shared discriminant key, non-literal
+ * discriminant value, primitive member, etc.). Bailing to null lets
+ * the caller emit `'unknown'` rather than a partially-valid descriptor.
+ *
+ * `depth` is the budget for resolving each branch's payload. The
+ * caller subtracts one before calling, since detecting the union
+ * itself doesn't consume budget — recursing into branches does.
+ */
+function tryExtractDiscriminatedUnion(
+  union: ts.UnionTypeNode,
+  typeIndex: TypeIndex,
+  depth: number,
+): {
+  kind: 'discriminated-union'
+  discriminant: string
+  variants: Record<string, Record<string, MsgField>>
+} | null {
+  // Resolve each branch to its underlying object literal node, chasing
+  // through type-alias references in the local index. Returns null if
+  // any branch isn't an object-literal-shaped type.
+  const branches: ts.TypeLiteralNode[] = []
+  for (const member of union.types) {
+    const lit = resolveToTypeLiteral(member, typeIndex)
+    if (lit === null) return null
+    branches.push(lit)
+  }
+  if (branches.length === 0) return null
+
+  // Find a property name that EVERY branch declares with a string-
+  // literal value, and where the values are pairwise distinct.
+  // Iterate over the first branch's properties; for each candidate
+  // name, check the rest.
+  const first = branches[0]
+  if (!first) return null
+  let discriminant: string | null = null
+  let firstBranchValue: string | null = null
+  for (const member of first.members) {
+    if (!ts.isPropertySignature(member) || !member.name || !ts.isIdentifier(member.name)) continue
+    if (!member.type) continue
+    if (!ts.isLiteralTypeNode(member.type) || !ts.isStringLiteral(member.type.literal)) continue
+    const candidate = member.name.text
+
+    const valuesByBranch: string[] = [member.type.literal.text]
+    let ok = true
+    for (let i = 1; i < branches.length; i++) {
+      const branch = branches[i]
+      if (!branch) {
+        ok = false
+        break
+      }
+      const otherValue = literalDiscriminantValue(branch, candidate)
+      if (otherValue === null) {
+        ok = false
+        break
+      }
+      valuesByBranch.push(otherValue)
+    }
+    if (!ok) continue
+
+    // All distinct?
+    const uniq = new Set(valuesByBranch)
+    if (uniq.size !== valuesByBranch.length) continue
+
+    discriminant = candidate
+    firstBranchValue = member.type.literal.text
+    break
+  }
+
+  if (discriminant === null || firstBranchValue === null) return null
+
+  // Build the variant payload map. Each variant's payload is the
+  // branch's properties EXCEPT the discriminant itself (which the
+  // synthesizer re-adds at example time, like the top-level Msg `type`).
+  const variants: Record<string, Record<string, MsgField>> = {}
+  for (const branch of branches) {
+    const value = literalDiscriminantValue(branch, discriminant)
+    if (value === null) return null
+    const fields: Record<string, MsgField> = {}
+    for (const member of branch.members) {
+      if (!ts.isPropertySignature(member) || !member.name || !ts.isIdentifier(member.name)) continue
+      const name = member.name.text
+      if (name === discriminant) continue
+      const baseType: MsgFieldType = member.type
+        ? resolveFieldType(member.type, typeIndex, depth)
+        : 'unknown'
+      const optional = member.questionToken !== undefined
+      fields[name] = optional ? { type: baseType, optional: true } : baseType
+    }
+    variants[value] = fields
+  }
+
+  return { kind: 'discriminated-union', discriminant, variants }
+}
+
+/**
+ * Resolve a type node down to an inline object-literal type node,
+ * following one level of named-reference indirection through the local
+ * index. Returns null when the type isn't (or can't be reduced to) an
+ * object literal. We only chase one hop because every additional hop
+ * needs a depth budget to terminate, and discriminated-union detection
+ * is bounded by the outer caller's budget already.
+ */
+function resolveToTypeLiteral(t: ts.TypeNode, typeIndex: TypeIndex): ts.TypeLiteralNode | null {
+  if (ts.isTypeLiteralNode(t)) return t
+  if (ts.isTypeReferenceNode(t) && ts.isIdentifier(t.typeName)) {
+    const target = typeIndex.get(t.typeName.text)
+    if (!target) return null
+    if (ts.isInterfaceDeclaration(target)) {
+      // Synthesize a TypeLiteralNode-like shape from the interface
+      // members. Cheaper than reconstructing the AST: we only need
+      // the members to drive collectInlineShape semantics, but the
+      // discriminated-union detector reads property signatures, which
+      // interfaces have directly. We shim via a property-list view.
+      return interfaceToTypeLiteralLike(target)
+    }
+    if (ts.isTypeNode(target)) {
+      // Type alias: recurse one level.
+      return resolveToTypeLiteral(target, typeIndex)
+    }
+  }
+  return null
+}
+
+/**
+ * Adapter for interface declarations: discriminated-union detection
+ * and field iteration only need the members list, which both
+ * `TypeLiteralNode` and `InterfaceDeclaration` expose. We return the
+ * interface cast as a TypeLiteralNode-shaped object so the rest of
+ * this file's helpers (which check `ts.isPropertySignature(member)`)
+ * work uniformly across both node kinds.
+ */
+function interfaceToTypeLiteralLike(iface: ts.InterfaceDeclaration): ts.TypeLiteralNode {
+  return { members: iface.members } as unknown as ts.TypeLiteralNode
+}
+
+/**
+ * Read a string-literal property value from an object-literal-like
+ * member list, or null if the named property isn't present, isn't a
+ * property signature, or isn't typed as a string literal.
+ */
+function literalDiscriminantValue(lit: ts.TypeLiteralNode, name: string): string | null {
+  for (const member of lit.members) {
+    if (!ts.isPropertySignature(member) || !member.name || !ts.isIdentifier(member.name)) continue
+    if (member.name.text !== name) continue
+    if (!member.type) return null
+    if (ts.isLiteralTypeNode(member.type) && ts.isStringLiteral(member.type.literal)) {
+      return member.type.literal.text
+    }
+    return null
+  }
+  return null
+}
 
 export function resolveFieldType(
   type: ts.TypeNode,
@@ -212,20 +436,35 @@ export function resolveFieldType(
   if (type.kind === ts.SyntaxKind.NumberKeyword) return 'number'
   if (type.kind === ts.SyntaxKind.BooleanKeyword) return 'boolean'
 
-  // String literal union: 'a' | 'b' | 'c'
-  if (ts.isUnionTypeNode(type)) {
-    const literals: string[] = []
-    let allLiterals = true
-    for (const member of type.types) {
-      if (ts.isLiteralTypeNode(member) && ts.isStringLiteral(member.literal)) {
-        literals.push(member.literal.text)
-      } else {
-        allLiterals = false
-        break
-      }
+  // Standalone literal type — `flag: true` or `value: 5`. Single-value
+  // enum so the schema records the constant rather than collapsing it
+  // to 'unknown'. Useful for sentinel discriminants outside discriminated
+  // unions (e.g. `kind: 'always-this-one'` on a non-union type).
+  if (ts.isLiteralTypeNode(type)) {
+    const lit = type.literal
+    if (ts.isStringLiteral(lit)) return { enum: [lit.text] }
+    if (ts.isNumericLiteral(lit)) {
+      const n = Number(lit.text)
+      return Number.isFinite(n) ? { enum: [n] } : 'unknown'
     }
-    if (allLiterals && literals.length > 0) {
-      return { enum: literals }
+    if (lit.kind === ts.SyntaxKind.TrueKeyword) return { enum: [true] }
+    if (lit.kind === ts.SyntaxKind.FalseKeyword) return { enum: [false] }
+  }
+
+  // Union of literals — 'a' | 'b' (strings), 1 | 2 | 3 (numbers), or
+  // true / false (booleans). Mixed-type unions ('a' | 1) bail to
+  // 'unknown' — the LLM can't reason about that shape from the schema
+  // alone, so we'd rather not emit a misleading enum than enumerate
+  // the values without their types.
+  if (ts.isUnionTypeNode(type)) {
+    const enumResult = tryExtractLiteralUnion(type)
+    if (enumResult !== null) return enumResult
+
+    // Discriminated union of object literals — depth-budgeted because
+    // each branch may contain its own nested shapes.
+    if (depth > 0) {
+      const discResult = tryExtractDiscriminatedUnion(type, typeIndex, depth - 1)
+      if (discResult !== null) return discResult
     }
   }
 

@@ -195,10 +195,38 @@ Detects `*.connect(get, sendFn, …)` patterns inside function bodies and insert
 
 Walk the Msg union type alias and produce:
 
-- **`MsgSchema`** — per-variant field shape, used for synthesis (`payloadHint`) and validation (`send_message` schema check).
+- **`MsgSchema`** — per-variant field shape, used for synthesis (`payloadHint`) and validation (`send_message` / `would_dispatch` schema check).
 - **`Record<variant, MessageAnnotations>`** — the JSDoc tags surfaced above.
 
 Both are injected as `__msgSchema` and `__msgAnnotations` on the component definition. The cross-file resolver follows imports when the Msg type lives in a separate file from the `component()` call.
+
+**Field-type coverage:**
+
+| TypeScript shape                                | Schema emit                                                             |
+| ----------------------------------------------- | ----------------------------------------------------------------------- |
+| `string` / `number` / `boolean`                 | bare keyword                                                            |
+| `'a' \| 'b'` (string literals)                  | `{enum: ['a', 'b']}`                                                    |
+| `1 \| 2 \| 3` (number literals)                 | `{enum: [1, 2, 3]}`                                                     |
+| `true` / `false` / `true \| false`              | `{enum: [...]}` with native booleans                                    |
+| `T[]`, `readonly T[]`, `Array<T>`               | `{kind: 'array', element: T-resolved}`                                  |
+| inline `{a: number, b: string}`                 | `{kind: 'object', shape}`                                               |
+| named interface / type alias                    | followed via local TypeIndex; same shape as inline                      |
+| `{kind: 'a'} \| {kind: 'b', x: number}`         | `{kind: 'discriminated-union', discriminant: 'kind', variants: {a, b}}` |
+| anything unresolved (cross-file, generic, etc.) | `'unknown'` — validator accepts; synthesizer emits `null` placeholder   |
+
+Discriminated-union detection requires every member to share one literal-string property name with distinct values. Mixed-type unions (`'a' \| 1`) and unions of primitive + object stay `'unknown'` rather than emitting a partially-valid descriptor. Nested resolution is bounded by `MAX_FIELD_DEPTH = 5` — each recurse subtracts one, mutually-recursive types terminate at `'unknown'`.
+
+### 2.3a Schema-driven validation
+
+Both `would_dispatch` and `send_message` walk the same `MsgSchema` against incoming payloads before the reducer runs. Mismatches surface as structured errors with path-keyed details:
+
+```ts
+{ path: 'format(kind=range).max', code: 'missing', message: 'required field is missing' }
+{ path: 'value', code: 'not-in-enum', message: "'6' is not in the enum. Legal values: 1, 2, 3, 4, 5." }
+{ path: 'format.kind', code: 'unknown-discriminant-value', message: "'logarithmic' is not a legal 'kind'. Legal values: 'exact', 'range', 'compound'." }
+```
+
+The path uses dot-bracket notation rooted at the payload (excluding `type`). Discriminated-union branches carry a `(discriminant=value)` segment so the LLM can see which branch the error applies to. `'unknown'` schema fields are accepted permissively — the validator catches mistakes the schema can describe; deeper checks are the reducer's job.
 
 ### 2.4 `tagSend(send, libVariants, fn)` runtime helper
 

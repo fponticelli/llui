@@ -277,6 +277,29 @@ function walkHintBare(path: string, t: unknown, out: Array<{ path: string; hint:
   if (obj.kind === 'array') {
     walkHint(`${path}[]`, obj.element as MsgSchemaField, out)
   }
+  if (obj.kind === 'discriminated-union') {
+    // Synthetic hint at the union's path summarizing the legal
+    // discriminant values. Lets the agent see "format expects one of:
+    // exact, range, compound" without walking the full schema. Then
+    // walk each branch's per-field hints with a path-suffix that
+    // disambiguates which branch the hint applies to.
+    const variants = obj.variants as Record<string, Record<string, MsgSchemaField>>
+    const discriminant = String(obj.discriminant)
+    const legalValues = Object.keys(variants)
+    if (legalValues.length > 0) {
+      out.push({
+        path,
+        hint: `Discriminated union — set \`${discriminant}\` to one of: ${legalValues
+          .map((v) => `'${v}'`)
+          .join(', ')}.`,
+      })
+    }
+    for (const [discValue, fields] of Object.entries(variants)) {
+      for (const [fieldName, fieldDesc] of Object.entries(fields)) {
+        walkHint(`${path}(${discriminant}=${discValue}).${fieldName}`, fieldDesc, out)
+      }
+    }
+  }
 }
 
 function isOptional(d: MsgSchemaField): boolean {
@@ -308,7 +331,9 @@ function synthesizeBare(t: unknown): unknown {
   if (t === null || typeof t !== 'object') return null
   const obj = t as Record<string, unknown>
   if ('enum' in obj && Array.isArray(obj.enum)) {
-    // First option doubles as the canonical example.
+    // First option doubles as the canonical example. Native value type
+    // round-trips (string/number/boolean) since the compiler preserved
+    // the literal kind on emit.
     return obj.enum[0] ?? null
   }
   if (obj.kind === 'object' && obj.shape !== null && typeof obj.shape === 'object') {
@@ -328,6 +353,28 @@ function synthesizeBare(t: unknown): unknown {
     // Wrap the synthesized element in a one-item array. Lets the LLM
     // see the per-entry shape without us guessing at array length.
     return [synthesizeBare(obj.element)]
+  }
+  if (obj.kind === 'discriminated-union') {
+    // Synthesize the FIRST branch as the concrete example. The full
+    // shape (every legal branch + its payload) is preserved in
+    // `description.messages.variants[X]` from `describe_app`, so the
+    // agent that needs another branch reads the schema directly.
+    // `collectFieldHints` adds a synthetic enumeration of the legal
+    // `<discriminant>` values onto the hint surface so the agent
+    // doesn't have to dig into the schema for the simple case.
+    const variants = obj.variants as Record<string, Record<string, MsgSchemaField>>
+    const discriminant = String(obj.discriminant)
+    const firstEntry = Object.entries(variants).at(0)
+    if (!firstEntry) return null
+    const [firstValue, firstFields] = firstEntry
+    const branch: Record<string, unknown> = { [discriminant]: firstValue }
+    for (const [name, descriptor] of Object.entries(firstFields)) {
+      const isOpt = isOptional(descriptor)
+      const pri = isShould(descriptor)
+      if (isOpt && pri !== 'should') continue
+      branch[name] = exampleValue(descriptor)
+    }
+    return branch
   }
   return null
 }

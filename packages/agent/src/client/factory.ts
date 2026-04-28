@@ -17,20 +17,29 @@ import { makeDefaultCodecs, encodeForWire, decodeFromWire, type CodecRegistry } 
  * from `@llui/vite-plugin/src/msg-schema.ts`. Three coexisting forms:
  *
  *   1. Bare primitive: `'string' | 'number' | 'boolean' | 'unknown'`
- *      and bare enum: `{enum: [...]}`. Compact form for unannotated
- *      required fields.
+ *      and bare enum: `{enum: [...]}` (values may be string, number,
+ *      or boolean — the compiler preserves the literal kind so JSON
+ *      round-trips don't lose type info).
  *   2. Bare nested types: `{kind: 'object', shape}` for inline /
  *      followed-via-typeIndex shapes; `{kind: 'array', element}` for
- *      `T[]` / `readonly T[]` / `Array<T>`. The synthesizer recurses
- *      to build copy-paste-ready nested examples.
+ *      `T[]` / `readonly T[]` / `Array<T>`; `{kind: 'discriminated-
+ *      union', discriminant, variants}` for tagged unions of objects
+ *      (e.g. `Format = {kind:'exact'} | {kind:'range', min, max}`).
+ *      The synthesizer recurses to build copy-paste-ready nested
+ *      examples; the validator walks the same tree.
  *   3. Rich descriptor: wraps any of the above with `{optional?,
  *      priority?, hint?}` carrying TS optionality and `@should` hints.
  */
 export type MsgSchemaBareType =
   | string
-  | { enum: string[] }
+  | { enum: ReadonlyArray<string | number | boolean> }
   | { kind: 'object'; shape: Record<string, MsgSchemaField> }
   | { kind: 'array'; element: MsgSchemaBareType }
+  | {
+      kind: 'discriminated-union'
+      discriminant: string
+      variants: Record<string, Record<string, MsgSchemaField>>
+    }
 
 export type MsgSchemaField =
   | MsgSchemaBareType

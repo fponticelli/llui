@@ -291,6 +291,139 @@ describe('extractMsgSchema', () => {
     expect(extractMsgSchema(src)?.variants.X?.criterion).toBe('unknown')
   })
 
+  // ── Discriminated unions of objects ────────────────────────────
+
+  it('extracts a discriminated union of inline object literals', () => {
+    // The motivating case from decisive.space-2: a Criterion's `format`
+    // field is `{kind: 'exact'} | {kind: 'range', min: number, max: number}`.
+    // Without this, the field collapses to 'unknown' and the LLM has
+    // to guess at the shape. With it, the schema enumerates exactly
+    // which `kind` values are legal and what payload each branch needs.
+    const src = `
+      type Msg =
+        | {
+            type: 'SetFormat'
+            format:
+              | { kind: 'exact' }
+              | { kind: 'range'; min: number; max: number }
+              | { kind: 'compound'; formula: string }
+          }
+    `
+    const schema = extractMsgSchema(src)
+    expect(schema?.variants.SetFormat?.format).toEqual({
+      kind: 'discriminated-union',
+      discriminant: 'kind',
+      variants: {
+        exact: {},
+        range: { min: 'number', max: 'number' },
+        compound: { formula: 'string' },
+      },
+    })
+  })
+
+  it('extracts a discriminated union via type alias references', () => {
+    // Real apps often factor each branch into its own named type.
+    // The resolver must follow the named references through the index
+    // and reconstruct the union with each branch's resolved shape.
+    const src = `
+      type ExactFormat = { kind: 'exact' }
+      type RangeFormat = { kind: 'range'; min: number; max: number }
+      type Format = ExactFormat | RangeFormat
+      type Msg =
+        | { type: 'SetFormat'; format: Format }
+    `
+    const schema = extractMsgSchema(src)
+    expect(schema?.variants.SetFormat?.format).toEqual({
+      kind: 'discriminated-union',
+      discriminant: 'kind',
+      variants: {
+        exact: {},
+        range: { min: 'number', max: 'number' },
+      },
+    })
+  })
+
+  it('falls back to unknown when union members do not share a discriminant', () => {
+    // A | B where the literal-string keys differ — e.g. {kind:'a'} | {tag:'b'}.
+    // Not a discriminated union in the recognised sense; bail rather than
+    // fabricate a shape the LLM might trust.
+    const src = `
+      type Msg =
+        | {
+            type: 'X'
+            payload: { kind: 'a'; x: number } | { tag: 'b'; y: string }
+          }
+    `
+    const schema = extractMsgSchema(src)
+    expect(schema?.variants.X?.payload).toBe('unknown')
+  })
+
+  it('falls back to unknown when union mixes primitives and objects', () => {
+    // string | { ... } isn't a discriminated union of objects.
+    const src = `
+      type Msg =
+        | { type: 'X'; payload: string | { kind: 'b'; y: number } }
+    `
+    const schema = extractMsgSchema(src)
+    expect(schema?.variants.X?.payload).toBe('unknown')
+  })
+
+  // ── Number / boolean literal unions ────────────────────────────
+
+  it('handles number-literal unions as enum', () => {
+    // 1 | 2 | 3 | 4 | 5 (a rating scale). Currently collapses to
+    // 'unknown' because the union-handler only recognises string
+    // literals. The fix accepts numeric literals too.
+    const src = `
+      type Msg =
+        | { type: 'SetRating'; value: 1 | 2 | 3 | 4 | 5 }
+    `
+    const schema = extractMsgSchema(src)
+    expect(schema?.variants.SetRating?.value).toEqual({ enum: [1, 2, 3, 4, 5] })
+  })
+
+  it('handles boolean-literal unions as enum', () => {
+    // true | false is rare (just use boolean), but `false` alone or
+    // `true` alone as a literal type should still surface as enum.
+    const src = `
+      type Msg =
+        | { type: 'X'; flag: true }
+    `
+    const schema = extractMsgSchema(src)
+    expect(schema?.variants.X?.flag).toEqual({ enum: [true] })
+  })
+
+  // ── Depth ────────────────────────────────────────────────────────
+
+  it('resolves four-level nesting (depth 5)', () => {
+    // Real Msg payloads in non-toy apps reach 4–5 levels:
+    //   Matrix/AddCriteria.criteria[].format.kind
+    // The previous depth cap of 3 collapsed `format` to unknown. With
+    // depth 5, the inner shape is fully resolved.
+    const src = `
+      interface Format { kind: 'exact' | 'range' }
+      interface Criterion { id: string; format: Format }
+      type Msg =
+        | { type: 'AddCriteria'; criteria: Criterion[] }
+    `
+    const schema = extractMsgSchema(src)
+    expect(schema?.variants.AddCriteria?.criteria).toEqual({
+      kind: 'array',
+      element: {
+        kind: 'object',
+        shape: {
+          id: 'string',
+          format: {
+            kind: 'object',
+            shape: {
+              kind: { enum: ['exact', 'range'] },
+            },
+          },
+        },
+      },
+    })
+  })
+
   it('preserves enum types inside rich descriptors', () => {
     const src = `
       type Msg =

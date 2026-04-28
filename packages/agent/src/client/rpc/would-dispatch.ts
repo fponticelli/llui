@@ -1,5 +1,7 @@
 import { computeStateDiff } from '../../state-diff.js'
 import type { StateDiff } from '../../state-diff.js'
+import { validatePayload, type ValidationError } from './validate-payload.js'
+import type { MsgSchemaShape } from '../factory.js'
 
 /**
  * Predict the result of dispatching `msg` without actually applying
@@ -43,6 +45,16 @@ export type WouldDispatchHost = {
     type: string
     [k: string]: unknown
   }): { state: unknown; effects: unknown[] } | null
+  /**
+   * The compiler-emitted Msg schema, when available. Used to
+   * validate the candidate payload structurally before running the
+   * reducer — wrong enum values, missing discriminants, primitive
+   * type mismatches surface as structured errors the agent can fix
+   * in one round trip instead of probing field by field. Hosts
+   * without schema metadata return null and the validator skips,
+   * keeping the tool permissive (the reducer still runs).
+   */
+  getMsgSchema?(): MsgSchemaShape | null
 }
 
 export type WouldDispatchArgs = {
@@ -58,6 +70,18 @@ export type WouldDispatchResult =
       effects: unknown[]
     }
   | { status: 'rejected'; reason: 'invalid' | 'unsupported'; detail?: string }
+  | {
+      /**
+       * The candidate Msg failed schema validation BEFORE the reducer
+       * ran. `errors` lists every structural mismatch with a path-
+       * keyed description. The agent reads this as "fix these fields
+       * and retry" — no reducer side-effects to roll back, no state
+       * change to predict around.
+       */
+      status: 'rejected'
+      reason: 'schema-mismatch'
+      errors: ValidationError[]
+    }
 
 export function handleWouldDispatch(
   host: WouldDispatchHost,
@@ -66,6 +90,17 @@ export function handleWouldDispatch(
   if (!args.msg || typeof args.msg.type !== 'string') {
     return { status: 'rejected', reason: 'invalid', detail: 'msg.type must be a string' }
   }
+
+  // Schema-driven preflight. Permissive when no schema is available —
+  // the reducer still validates semantically. With a schema, surface
+  // structured errors so the agent doesn't iterate one field per
+  // round trip.
+  const schema = host.getMsgSchema?.() ?? null
+  const validation = validatePayload(args.msg, schema)
+  if (!validation.ok) {
+    return { status: 'rejected', reason: 'schema-mismatch', errors: validation.errors }
+  }
+
   const result = host.runReducer(args.msg)
   if (result === null) {
     return {

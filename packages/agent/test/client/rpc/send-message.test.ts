@@ -158,7 +158,8 @@ describe('handleSendMessage — validation and annotations', () => {
     expect(result.status).toBe('rejected')
     if (result.status === 'rejected') {
       expect(result.reason).toBe('invalid')
-      expect(result.detail).toContain("missing required field 'value'")
+      expect(result.detail).toContain('value')
+      expect(result.detail).toContain('required field is missing')
     }
   })
 
@@ -225,8 +226,8 @@ describe('handleSendMessage — validation and annotations', () => {
 
     expect(send).not.toHaveBeenCalled()
     if (result.status === 'rejected') {
-      expect(result.detail).toContain('expected one of')
-      expect(result.detail).toContain('"secret"')
+      expect(result.detail).toContain('not in the enum')
+      expect(result.detail).toContain("'secret'")
     }
   })
 

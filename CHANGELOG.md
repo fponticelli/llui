@@ -15,7 +15,7 @@ Packages version in lockstep at release time: `@llui/dom`, `@llui/vite-plugin`, 
 
 **Released:** `@llui/agent@0.0.36`
 
-`list_actions` now derives the agent's affordance surface from the live binding graph only — what the user can click *right now*. Apps that exposed the full `@intent`-tagged Msg union to the LLM no longer cause "UI mysteriously rearranges when the agent dispatches" because hidden Msgs simply aren't listed.
+`list_actions` now derives the agent's affordance surface from the live binding graph only — what the user can click _right now_. Apps that exposed the full `@intent`-tagged Msg union to the LLM no longer cause "UI mysteriously rearranges when the agent dispatches" because hidden Msgs simply aren't listed.
 
 ### Breaking
 
