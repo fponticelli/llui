@@ -11,6 +11,16 @@ All notable changes to LLui packages are documented here. LLui is a pre-1.0 proj
 
 Packages version in lockstep at release time: `@llui/dom`, `@llui/vite-plugin`, `@llui/test`, `@llui/router`, `@llui/transitions`, `@llui/components`, `@llui/vike` share a version line. `@llui/effects`, `@llui/mcp`, `@llui/eslint-plugin`, `@llui/agent`, and `llui-agent` have their own cadence.
 
+## 2026-04-29 — @llui/vite-plugin@0.0.39
+
+**Released:** `@llui/vite-plugin@0.0.39`
+
+`@should` / `@validates` JSDoc annotations are now read from every nested-field site, not just top-level Msg variant fields. Apps that put guidance on domain types (e.g. `interface Alternative.image`) finally see it surface in the agent's `payloadHint` and `fieldHints`.
+
+### `@llui/vite-plugin@0.0.39`
+
+- **Fixed** Schema extractor reads `@should` and `@validates` JSDoc on **every** nested-field call site: interface members, inline-object members, and discriminated-union variant fields. Previously only top-level Msg variant fields (the ones that flow through `buildFieldDescriptor`) honored these annotations; nested fields silently dropped the JSDoc, so domain types annotating `interface Alternative.image` or `Quantity.format` got nothing in the agent's surface. Now `Matrix/AddAlternatives`'s synthesized example shows `image: ""` with the hint pointing at Wikimedia, and an annotated `format` on `Quantity` surfaces alongside the discriminant-kind hint. JSDoc source is recovered from `member.getSourceFile().text` so cross-file domain types (annotations in `@decisive/domain` referenced from `apps/web`) carry their hints transparently. Centralized field resolution into a `resolveMember()` helper used by all three call sites — same `T | undefined` peel rules, same JSDoc rules.
+
 ## 2026-04-28 — @llui/agent@0.0.44, llui-agent@0.0.8
 
 **Released:** `@llui/agent@0.0.44`; `llui-agent@0.0.8`
