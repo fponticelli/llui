@@ -11,6 +11,20 @@ All notable changes to LLui packages are documented here. LLui is a pre-1.0 proj
 
 Packages version in lockstep at release time: `@llui/dom`, `@llui/vite-plugin`, `@llui/test`, `@llui/router`, `@llui/transitions`, `@llui/components`, `@llui/vike` share a version line. `@llui/effects`, `@llui/mcp`, `@llui/eslint-plugin`, `@llui/agent`, and `llui-agent` have their own cadence.
 
+## 2026-04-29 — @llui/agent@0.0.47, llui-agent@0.0.11
+
+**Released:** `@llui/agent@0.0.47`; `llui-agent@0.0.11`
+
+Fix: panel correctly transitions to "Connected" after WS re-pair (page refresh / brief drop).
+
+### `@llui/agent@0.0.47`
+
+- **Fixed** `acceptConnection` now sends the `'active'` frame to the new WS on the re-pair branch. The grace-window re-pair path calls `markActive` directly to skip the awaiting-claude → active transition, but the matching browser notification was missing — leaving the page stuck on `pending-claude` ("Waiting for AI to claim") indefinitely after a refresh, even though the session was fully alive. `ensureActive` couldn't help on subsequent LAP calls because the record was already `active` by then.
+
+### `llui-agent@0.0.11`
+
+- Cascade release for `@llui/agent@0.0.47`. No bridge-level changes.
+
 ## 2026-04-29 — @llui/agent@0.0.46, llui-agent@0.0.10
 
 **Released:** `@llui/agent@0.0.46`; `llui-agent@0.0.10`
