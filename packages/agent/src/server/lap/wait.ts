@@ -4,6 +4,7 @@ import type { AuditSink } from '../audit.js'
 import type { RateLimiter } from '../rate-limit.js'
 import { verifyAndReadTid } from './describe.js'
 import { buildPausedResponse } from './paused.js'
+import { ensureActive } from './active.js'
 import type { LapWaitRequest, LapWaitResponse } from '../../protocol.js'
 
 export type LapWaitDeps = {
@@ -33,6 +34,7 @@ export async function handleLapWait(req: Request, deps: LapWaitDeps): Promise<Re
   const out: LapWaitResponse = result
 
   const nowMs = (deps.now ?? (() => Date.now()))()
+  await ensureActive(deps.tokenStore, deps.registry, auth.tid, rec, nowMs)
   await deps.auditSink.write({
     at: nowMs,
     tid: auth.tid,

@@ -4,6 +4,7 @@ import type { AuditSink } from '../audit.js'
 import type { RateLimiter } from '../rate-limit.js'
 import { verifyAndReadTid } from './describe.js'
 import { buildPausedResponse } from './paused.js'
+import { ensureActive } from './active.js'
 
 export type ForwardDeps = {
   tokenStore: TokenStore
@@ -43,6 +44,7 @@ export function makeForwardHandler(
     try {
       const result = await deps.registry.rpc(auth.tid, tool, args)
       const nowMs = (deps.now ?? (() => Date.now()))()
+      await ensureActive(deps.tokenStore, deps.registry, auth.tid, rec, nowMs)
       await deps.tokenStore.touch(auth.tid, nowMs)
       await deps.auditSink.write({
         at: nowMs,
@@ -160,6 +162,7 @@ export async function handleLapRecentActions(req: Request, deps: ForwardDeps): P
   }
 
   const nowMs = (deps.now ?? (() => Date.now()))()
+  await ensureActive(deps.tokenStore, deps.registry, auth.tid, rec, nowMs)
   await deps.tokenStore.touch(auth.tid, nowMs)
   await deps.auditSink.write({
     at: nowMs,

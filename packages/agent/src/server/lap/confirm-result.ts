@@ -4,6 +4,7 @@ import type { AuditSink } from '../audit.js'
 import type { RateLimiter } from '../rate-limit.js'
 import { verifyAndReadTid } from './describe.js'
 import { buildPausedResponse } from './paused.js'
+import { ensureActive } from './active.js'
 import type { LapConfirmResultRequest, LapConfirmResultResponse } from '../../protocol.js'
 
 export type LapConfirmResultDeps = {
@@ -42,6 +43,7 @@ export async function handleLapConfirmResult(
   const result = await deps.registry.waitForConfirm(auth.tid, body.confirmId, timeoutMs)
 
   const nowMs = (deps.now ?? (() => Date.now()))()
+  await ensureActive(deps.tokenStore, deps.registry, auth.tid, rec, nowMs)
   if (result.outcome === 'confirmed') {
     await deps.auditSink.write({
       at: nowMs,

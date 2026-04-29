@@ -4,6 +4,7 @@ import type { AuditSink } from '../audit.js'
 import type { RateLimiter } from '../rate-limit.js'
 import { verifyAndReadTid } from './describe.js'
 import { buildPausedResponse } from './paused.js'
+import { ensureActive } from './active.js'
 import type { LapMessageRequest, LapMessageResponse } from '../../protocol.js'
 
 export type LapMessageDeps = {
@@ -64,6 +65,7 @@ export async function handleLapMessage(req: Request, deps: LapMessageDeps): Prom
   }
 
   const nowMs = (deps.now ?? (() => Date.now()))()
+  await ensureActive(deps.tokenStore, deps.registry, auth.tid, rec, nowMs)
   await deps.tokenStore.touch(auth.tid, nowMs)
 
   if (

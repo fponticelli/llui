@@ -4,6 +4,7 @@ import type { PairingRegistry } from '../ws/pairing-registry.js'
 import type { AuditSink } from '../audit.js'
 import type { RateLimiter } from '../rate-limit.js'
 import { buildPausedResponse } from './paused.js'
+import { ensureActive } from './active.js'
 import type { LapDescribeResponse, MessageSchemaEntry } from '../../protocol.js'
 
 export type LapDescribeDeps = {
@@ -49,15 +50,12 @@ export async function handleLapDescribe(req: Request, deps: LapDescribeDeps): Pr
   }
 
   const nowMs = (deps.now ?? (() => Date.now()))()
-  // Transition to active: Claude has made its first LAP call to /describe,
-  // confirming both the browser WS and Claude are live.
-  const wasAwaitingClaude = rec.status === 'awaiting-claude'
-  const label = rec.uid ?? 'Claude'
-  await deps.tokenStore.markActive(auth.tid, label, nowMs)
-  // Fire the active signal to the browser only on the first transition.
-  if (wasAwaitingClaude) {
-    deps.registry.send(auth.tid, { t: 'active' })
-  }
+  // First-LAP-call activation. Centralised in `ensureActive` so the
+  // same transition fires from every LAP endpoint, not just
+  // `/describe` — the bridge typically connects via `/observe` and
+  // the old describe-only path left the browser stuck on
+  // `awaiting-claude` indefinitely.
+  await ensureActive(deps.tokenStore, deps.registry, auth.tid, rec, nowMs)
   await deps.auditSink.write({
     at: nowMs,
     tid: auth.tid,

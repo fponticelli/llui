@@ -624,6 +624,20 @@ function routeToAgentDO(
 ): Promise<Response>
 ```
 
+### `defaultSessionStorage()`
+
+The default `AgentSessionStorage` — wraps `window.sessionStorage`
+under a single key and treats parse / type-mismatch failures as
+"no session". Returns `null` from the factory when `window` is
+undefined (SSR/tests), so calling code never has to feature-detect
+the browser environment itself.
+
+```typescript
+function defaultSessionStorage(
+  storageKey: string = 'llui-agent:session',
+): AgentSessionStorage | null
+```
+
 ### `createAgentClient()`
 
 ```typescript
@@ -684,6 +698,25 @@ export type CoreOptions = {
    * Durable Object that persists across isolates) pass it here.
    */
   registry?: PairingRegistry
+  /**
+   * How long, in milliseconds, a token's record stays in
+   * `pending-resume` after the WS pairing closes. During this window
+   * the same browser can reconnect with the same bearer token and
+   * the WS re-pairs without going through the rotate-on-resume path
+   * (`/resume/claim`). The agent's existing token stays valid the
+   * whole time, so brief network drops, page reloads, and quick
+   * server restarts don't invalidate the agent's session.
+   *
+   * After the window, LAP calls report `X-LLui-Reconnect: expired`
+   * and the record becomes resume-claimable (rotation required).
+   * Set to `0` to opt out — the WS close immediately drops the
+   * record and any reconnect must go through `/resume/claim`.
+   *
+   * Default: 60 seconds — long enough for laptop sleep, brief Wi-Fi
+   * flicker, and a server restart; short enough that a deliberately-
+   * closed tab doesn't keep the record alive forever.
+   */
+  pendingResumeGraceMs?: number
 }
 ```
 
@@ -983,6 +1016,59 @@ export type CreateAgentClientOpts<State, Msg> = {
    *     because cloudflare-vite shadows non-`/cdn-cgi/*` routes.
    */
   agentBasePath?: string
+  /**
+   * Storage adapter for the active session blob. When provided the
+   * framework owns the persist/restore loop end-to-end: writes on
+   * `MintSucceeded`, reads on `start()` (auto-dispatching
+   * `RestoreSession` when a non-expired blob is found), clears on
+   * `Disconnect` / `Revoke` / explicit clear effects.
+   *
+   * Default: `defaultSessionStorage()` — uses `window.sessionStorage`
+   * under the key `'llui-agent:session'`. Tab-scoped (survives
+   * refresh, dies on tab close), which matches how a single-tab
+   * agent connection should behave.
+   *
+   * Pass `null` to opt out entirely; the framework then emits the
+   * `AgentSessionPersist` / `AgentSessionClear` effects unchanged
+   * and the host owns storage. Useful for SSR builds where
+   * `sessionStorage` is undefined and the host wants to no-op the
+   * storage layer.
+   *
+   * Pass a custom adapter for tests, IndexedDB-backed apps, or
+   * environments where `sessionStorage` is unavailable but the
+   * persistence semantics are still wanted (e.g. Web Workers).
+   */
+  sessionStorage?: AgentSessionStorage | null
+}
+```
+
+### `AgentSessionStorage`
+
+Tab-lifetime persistence for the active agent session. Reads /
+writes a single blob; the framework synchronizes it with the
+connect lifecycle so refresh-survival is automatic. Implementations
+must be synchronous on the read path so `start()` can decide
+whether to dispatch `RestoreSession` before any UI mounts —
+otherwise the `idle`-only guard in the reducer might miss the
+restore when a `Mint` click races the async lookup.
+
+```typescript
+export type AgentSessionStorage = {
+  read(): PersistedAgentSession | null
+  write(session: PersistedAgentSession): void
+  clear(): void
+}
+```
+
+### `PersistedAgentSession`
+
+```typescript
+export type PersistedAgentSession = {
+  token: AgentToken
+  tid: string
+  lapUrl: string
+  wsUrl: string
+  expiresAt: number
 }
 ```
 
@@ -1041,6 +1127,20 @@ export type AgentEffect =
       expiresAt: number
     }
   | { type: 'AgentSessionClear' }
+  /**
+   * Schedule the next WS-reconnect attempt. The handler waits
+   * `delayMs` and dispatches `ReconnectAttempt { elapsedMs: delayMs }`
+   * back into the reducer, which decides whether to re-open the WS
+   * or transition to `failed` based on the cumulative wait. The
+   * delay schedule itself is computed reducer-side from
+   * `reconnectAttempt` — this effect is a thin setTimeout wrapper.
+   *
+   * The handler doesn't track cancellation: if the user dispatches
+   * `Disconnect` while the timer is pending, the reducer transitions
+   * to `idle` and the subsequent `ReconnectAttempt` becomes a no-op
+   * via the status guard. Simpler than coordinating cancel handles.
+   */
+  | { type: 'AgentReconnectSchedule'; delayMs: number }
 ```
 
 ### `AgentEffectHandler`
@@ -1052,7 +1152,14 @@ export type AgentEffectHandler = (effect: AgentEffect) => Promise<void>
 ### `AgentConnectStatus`
 
 ```typescript
-export type AgentConnectStatus = 'idle' | 'minting' | 'pending-claude' | 'active' | 'error'
+export type AgentConnectStatus =
+  | 'idle'
+  | 'minting'
+  | 'pending-claude'
+  | 'active'
+  | 'reconnecting'
+  | 'failed'
+  | 'error'
 ```
 
 ### `AgentConnectPendingToken`
@@ -1071,6 +1178,12 @@ export type AgentConnectPendingToken = {
    */
   connectSnippet: string
   expiresAt: number
+  /**
+   * Cached so the auto-reconnect path can re-open the WS without
+   * re-minting. The MintSucceeded → AgentOpenWS path stores it; the
+   * RestoreSession path also fills it in. Cleared by `Disconnect`.
+   */
+  wsUrl: string
 }
 ```
 
@@ -1083,6 +1196,21 @@ export type AgentConnectState = {
   sessions: AgentSession[]
   resumable: AgentSession[]
   error: { code: string; detail: string } | null
+  /**
+   * Reconnect attempt counter. Incremented on each WS-close that
+   * triggers an auto-reconnect; reset on `WsOpened` and on user
+   * actions (`Disconnect`, fresh `Mint`). Drives the backoff schedule
+   * (1s, 2s, 4s, 8s, 16s, 30s, 30s, …) and surfaces to UI as
+   * "reconnecting (attempt 3 / next in 4s)".
+   */
+  reconnectAttempt: number
+  /**
+   * Total cumulative ms spent in `reconnecting` for the current
+   * outage. Compared against `reconnectGiveUpMs` (effect-side option,
+   * default 5 min) to decide when to surface `failed` to the user.
+   * Reset whenever a WS opens successfully.
+   */
+  reconnectElapsedMs: number
 }
 ```
 
@@ -1149,6 +1277,30 @@ export type AgentConnectMsg =
       wsUrl: string
       expiresAt: number
     }
+  /**
+   * @intent("Disconnect the active agent session and clear all
+   * persisted credentials. Stops any in-flight reconnect attempt;
+   * subsequent WS closures stay in `idle` instead of triggering
+   * auto-reconnect. Use when the user explicitly clicks Disconnect
+   * in the panel — for transient drops, do nothing and let the
+   * reconnect loop run.")
+   */
+  | { type: 'Disconnect' }
+  /**
+   * @humanOnly — internal: scheduler effect dispatched this when the
+   * backoff timer fired. The reducer increments the attempt counter,
+   * adds the just-elapsed delay to `reconnectElapsedMs`, and emits
+   * `AgentOpenWS` with the cached pendingToken/wsUrl so the WS can
+   * reattach without minting.
+   */
+  | { type: 'ReconnectAttempt'; elapsedMs: number }
+  /**
+   * @humanOnly — internal: scheduler effect dispatched this when the
+   * give-up ceiling was reached without a successful WS open.
+   * Reducer flips status to `failed` so the UI can surface a clear
+   * error and offer a manual reconnect.
+   */
+  | { type: 'ReconnectGaveUp' }
 ```
 
 ### `AgentConnectInitOpts`
