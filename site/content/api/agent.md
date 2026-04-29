@@ -1020,6 +1020,27 @@ export type AgentEffect =
   // the static-bag `connect()` shape avoid leaking state-reads into
   // event handlers.
   | { type: 'AgentClipboardWrite'; text: string }
+  /**
+   * Persist active session credentials so a page refresh can restore
+   * the same WS without re-minting (and without invalidating the
+   * agent's token via the rotate-on-resume path). Hosts typically
+   * write to `sessionStorage` so the credentials are tab-scoped:
+   * survive refresh, die on tab close. The framework emits this on
+   * `MintSucceeded`; the matching `AgentSessionClear` is emitted on
+   * `Revoke` of the active tid. Hosts that don't implement the
+   * persist/restore loop can ignore both — the rest of the connect
+   * lifecycle still works (the page just falls back to "mint a new
+   * session" after refresh, same as before this effect existed).
+   */
+  | {
+      type: 'AgentSessionPersist'
+      token: AgentToken
+      tid: string
+      lapUrl: string
+      wsUrl: string
+      expiresAt: number
+    }
+  | { type: 'AgentSessionClear' }
 ```
 
 ### `AgentEffectHandler`
@@ -1112,6 +1133,22 @@ export type AgentConnectMsg =
    * what update() is for) and dispatches a clipboard-write effect.
    */
   | { type: 'CopyConnectSnippet' }
+  /**
+   * @humanOnly — internal: app boot dispatches this with credentials
+   * read from sessionStorage to skip the mint round-trip after page
+   * refresh. The agent's token (still alive on the server) keeps
+   * working since we don't go through the rotate-on-resume path. The
+   * reducer is idempotent against an in-flight Mint — only fires from
+   * `idle`.
+   */
+  | {
+      type: 'RestoreSession'
+      token: AgentToken
+      tid: string
+      lapUrl: string
+      wsUrl: string
+      expiresAt: number
+    }
 ```
 
 ### `AgentConnectInitOpts`

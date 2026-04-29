@@ -428,13 +428,7 @@ function tryExtractDiscriminatedUnion(
       if (!ts.isPropertySignature(member) || !member.name || !ts.isIdentifier(member.name)) continue
       const name = member.name.text
       if (name === discriminant) continue
-      const peeled = member.type ? peelOptionalUnion(member.type) : null
-      const innerType = peeled?.type ?? member.type
-      const baseType: MsgFieldType = innerType
-        ? resolveFieldType(innerType, typeIndex, depth)
-        : 'unknown'
-      const optional = member.questionToken !== undefined || peeled?.isImplicitOptional === true
-      fields[name] = optional ? { type: baseType, optional: true } : baseType
+      fields[name] = resolveMember(member, typeIndex, depth)
     }
     variants[value] = fields
   }
@@ -703,6 +697,46 @@ export function resolveFieldType(
   return 'unknown'
 }
 
+/**
+ * Resolve a single property signature to a MsgField. Centralised
+ * here so every nested call site (interface members, inline-object
+ * members, DU variant fields) picks up the same `T | undefined` peel
+ * rules AND reads `@should` / `@validates` JSDoc. Before this helper
+ * existed, JSDoc was only honored on top-level Msg variant fields
+ * via `buildFieldDescriptor` — annotations on `interface
+ * Alternative.image` etc. were silently dropped, so domain types
+ * couldn't carry guidance for the agent.
+ *
+ * Source for the JSDoc reader is recovered from the member's own
+ * SourceFile, which means cross-file types (interfaces imported from
+ * another package) carry their JSDoc through transparently.
+ */
+function resolveMember(
+  member: ts.PropertySignature,
+  typeIndex: TypeIndex,
+  depth: number,
+): MsgField {
+  const peeled = member.type ? peelOptionalUnion(member.type) : null
+  const innerType = peeled?.type ?? member.type
+  const baseType: MsgFieldType = innerType
+    ? resolveFieldType(innerType, typeIndex, depth)
+    : 'unknown'
+  const optional = member.questionToken !== undefined || peeled?.isImplicitOptional === true
+  const sourceText = member.getSourceFile().text
+  const jsdoc = readMemberJSDoc(sourceText, member)
+  const hint = readShouldHint(jsdoc)
+  const validates = readValidatesTag(jsdoc)
+  if (!optional && hint === null && validates === null) return baseType
+  const rich: MsgFieldRich = { type: baseType }
+  if (optional) rich.optional = true
+  if (hint !== null) {
+    rich.priority = 'should'
+    rich.hint = hint
+  }
+  if (validates !== null) rich.validates = validates
+  return rich
+}
+
 function collectInlineShape(
   lit: ts.TypeLiteralNode,
   typeIndex: TypeIndex,
@@ -711,18 +745,7 @@ function collectInlineShape(
   const shape: Record<string, MsgField> = {}
   for (const member of lit.members) {
     if (!ts.isPropertySignature(member) || !member.name || !ts.isIdentifier(member.name)) continue
-    const name = member.name.text
-    const peeled = member.type ? peelOptionalUnion(member.type) : null
-    const innerType = peeled?.type ?? member.type
-    const baseType: MsgFieldType = innerType
-      ? resolveFieldType(innerType, typeIndex, depth)
-      : 'unknown'
-    const optional = member.questionToken !== undefined || peeled?.isImplicitOptional === true
-    if (!optional) {
-      shape[name] = baseType
-    } else {
-      shape[name] = { type: baseType, optional: true }
-    }
+    shape[member.name.text] = resolveMember(member, typeIndex, depth)
   }
   return shape
 }
@@ -735,18 +758,7 @@ function collectInterfaceShape(
   const shape: Record<string, MsgField> = {}
   for (const member of iface.members) {
     if (!ts.isPropertySignature(member) || !member.name || !ts.isIdentifier(member.name)) continue
-    const name = member.name.text
-    const peeled = member.type ? peelOptionalUnion(member.type) : null
-    const innerType = peeled?.type ?? member.type
-    const baseType: MsgFieldType = innerType
-      ? resolveFieldType(innerType, typeIndex, depth)
-      : 'unknown'
-    const optional = member.questionToken !== undefined || peeled?.isImplicitOptional === true
-    if (!optional) {
-      shape[name] = baseType
-    } else {
-      shape[name] = { type: baseType, optional: true }
-    }
+    shape[member.name.text] = resolveMember(member, typeIndex, depth)
   }
   return shape
 }

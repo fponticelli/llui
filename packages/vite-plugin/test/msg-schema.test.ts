@@ -675,4 +675,140 @@ describe('extractMsgSchema', () => {
     // Extraction completes — no stack overflow, some shape produced.
     expect(JSON.stringify(outer)).toContain('"id":"string"')
   })
+
+  // ── @should / @validates on nested fields ──────────────────────
+  // Top-level Msg variant fields go through buildFieldDescriptor and
+  // pick up @should/@validates JSDoc. Interface members, inline-
+  // object members, and DU variant fields used to skip the JSDoc
+  // step — so authors who annotated `interface Alternative.image`
+  // got nothing in fieldHints. These tests pin the JSDoc-aware path
+  // for every nested-field call site so domain types become the
+  // canonical place to put guidance.
+
+  it('reads @should from interface members reached via a Msg field reference', () => {
+    const src = `
+      interface Alternative {
+        readonly id: string
+        readonly title: string
+        /** @should("Use a public URL — Wikimedia or manufacturer hero shot.") */
+        readonly image: string | undefined
+      }
+      type Msg = | { type: 'Add'; alt: Alternative }
+    `
+    const schema = extractMsgSchema(src)
+    const alt = schema?.variants.Add?.alt as { kind: 'object'; shape: Record<string, unknown> }
+    expect(alt.kind).toBe('object')
+    expect(alt.shape.image).toEqual({
+      type: 'string',
+      optional: true,
+      priority: 'should',
+      hint: 'Use a public URL — Wikimedia or manufacturer hero shot.',
+    })
+    // Required fields without JSDoc stay bare.
+    expect(alt.shape.id).toBe('string')
+    expect(alt.shape.title).toBe('string')
+  })
+
+  it('reads @should from interface members nested inside an array', () => {
+    // Mirrors Matrix/AddAlternatives — `alternatives: Alternative[]`,
+    // and the LLM reads the synthesized first-element shape to know
+    // what to pass.
+    const src = `
+      interface Alternative {
+        readonly id: string
+        readonly title: string
+        /** @should("Use a public URL.") */
+        readonly image: string | undefined
+      }
+      type Msg = | { type: 'AddMany'; alternatives: Alternative[] }
+    `
+    const schema = extractMsgSchema(src)
+    const arr = schema?.variants.AddMany?.alternatives as {
+      kind: 'array'
+      element: { kind: 'object'; shape: Record<string, unknown> }
+    }
+    expect(arr.kind).toBe('array')
+    expect(arr.element.shape.image).toEqual({
+      type: 'string',
+      optional: true,
+      priority: 'should',
+      hint: 'Use a public URL.',
+    })
+  })
+
+  it('reads @validates from interface members', () => {
+    const src = `
+      interface Alternative {
+        readonly id: string
+        /** @validates("typeof v === 'string' && /^https?:/.test(v)") */
+        readonly image: string | undefined
+      }
+      type Msg = | { type: 'Add'; alt: Alternative }
+    `
+    const schema = extractMsgSchema(src)
+    const alt = schema?.variants.Add?.alt as { shape: Record<string, unknown> }
+    expect(alt.shape.image).toMatchObject({
+      type: 'string',
+      optional: true,
+      validates: "typeof v === 'string' && /^https?:/.test(v)",
+    })
+  })
+
+  it('reads @should from inline object literal members', () => {
+    // Inline `{ field: T }` types within a Msg variant field — same
+    // resolver as collectInlineShape. The previous behavior
+    // discarded JSDoc here too.
+    const src = `
+      type Msg =
+        | {
+            type: 'Save'
+            payload: {
+              id: string
+              /** @should("Set when the value has a unit (USD, miles, kg).") */
+              format: string | undefined
+            }
+          }
+    `
+    const schema = extractMsgSchema(src)
+    const payload = schema?.variants.Save?.payload as { shape: Record<string, unknown> }
+    expect(payload.shape.format).toEqual({
+      type: 'string',
+      optional: true,
+      priority: 'should',
+      hint: 'Set when the value has a unit (USD, miles, kg).',
+    })
+  })
+
+  it('reads @should from discriminated-union variant fields', () => {
+    // Variant-of-DU fields — Quantity.format inside CriterionType is
+    // the motivating case. The DU walker collected variant payloads
+    // without going through the JSDoc-aware path.
+    const src = `
+      type CriterionType =
+        | {
+            kind: 'quantity'
+            range: { low: number; high: number }
+            /** @should("Set to add a unit label to the grid.") */
+            format: string | undefined
+          }
+        | { kind: 'rating'; stars: number }
+      type Msg = | { type: 'Set'; criterion: { type: CriterionType } }
+    `
+    const schema = extractMsgSchema(src)
+    const criterion = schema?.variants.Set?.criterion as unknown as {
+      shape: {
+        type: {
+          kind: 'discriminated-union'
+          variants: Record<string, Record<string, unknown>>
+        }
+      }
+    }
+    const quantity = criterion.shape.type.variants.quantity
+    expect(quantity?.format).toEqual({
+      type: 'string',
+      optional: true,
+      priority: 'should',
+      hint: 'Set to add a unit label to the grid.',
+    })
+  })
 })
