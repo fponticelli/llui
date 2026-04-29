@@ -67,6 +67,14 @@ export function createEffectHandler(host: EffectHandlerHost) {
         return handleForwardMsg(host, effect)
       case 'AgentClipboardWrite':
         return handleClipboardWrite(effect)
+      case 'AgentSessionPersist':
+      case 'AgentSessionClear':
+        // Host-handled (sessionStorage write/clear). The framework
+        // emits these alongside MintSucceeded / Revoke so the host
+        // can survive a page refresh without invalidating the agent's
+        // token; we no-op here so the host's effect router is the
+        // single source of truth for the storage policy.
+        return
     }
   }
 }

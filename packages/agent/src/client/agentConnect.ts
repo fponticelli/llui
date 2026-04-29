@@ -71,6 +71,22 @@ export type AgentConnectMsg =
    * what update() is for) and dispatches a clipboard-write effect.
    */
   | { type: 'CopyConnectSnippet' }
+  /**
+   * @humanOnly — internal: app boot dispatches this with credentials
+   * read from sessionStorage to skip the mint round-trip after page
+   * refresh. The agent's token (still alive on the server) keeps
+   * working since we don't go through the rotate-on-resume path. The
+   * reducer is idempotent against an in-flight Mint — only fires from
+   * `idle`.
+   */
+  | {
+      type: 'RestoreSession'
+      token: AgentToken
+      tid: string
+      lapUrl: string
+      wsUrl: string
+      expiresAt: number
+    }
 
 /**
  * Options threaded through `init()` and `update()`. `mintUrl` is
@@ -115,17 +131,20 @@ export function update(
       // The connect snippet has to work across every MCP surface.
       // Claude Desktop and similar clients expose MCP tools as bare
       // names (`connect_session`), but Claude Code (and other tool-list-
-      // namespacing clients) emit them as `mcp__<server>__connect_session`
+      // namespacing clients) emit them as `mcp__llui__connect_session`
       // and may defer-load them — so an LLM that searches its tool list
       // for a literal `connect_session` won't find it. Naming the LLui
-      // MCP server explicitly gives the model enough to resolve the
-      // right tool on either platform; the parenthetical names the
+      // MCP server explicitly (with its canonical `llui` install name,
+      // matching the install docs) gives the model enough to resolve
+      // the right tool on either platform; the parenthetical names the
       // edge case so a deferred-tool client doesn't bail out.
       //
       // Phrased generically (`AI assistant`, `Some MCP clients`) since
       // MCP support is rapidly expanding past Claude — the snippet
       // shouldn't telegraph "this is Claude-only" when it works against
-      // any compliant client.
+      // any compliant client. The literal `mcp__llui__` prefix matches
+      // the install command in `site/content/agents.md`; users who
+      // renamed the server in their config can substitute their name.
       const pending: AgentConnectPendingToken = {
         token: msg.token,
         tid: msg.tid,
@@ -135,11 +154,53 @@ export function update(
           `\`connect_session\` tool with url=${JSON.stringify(msg.lapUrl)} and ` +
           `token=${JSON.stringify(msg.token)}. ` +
           `(Some MCP clients namespace tools as ` +
-          `\`mcp__<server>__connect_session\` and load them lazily — search the tool list if \`connect_session\` isn't immediately available.)`,
+          `\`mcp__llui__connect_session\` and load them lazily — search the tool list if \`connect_session\` isn't immediately available.)`,
         expiresAt: msg.expiresAt,
       }
       return [
         { ...state, status: 'pending-claude', pendingToken: pending, error: null },
+        [
+          { type: 'AgentOpenWS', token: msg.token, wsUrl: msg.wsUrl },
+          // Persist alongside opening the WS so the host can store the
+          // credentials in sessionStorage; on page refresh, app boot
+          // dispatches `RestoreSession` with the same shape and we
+          // re-enter the same state without re-minting.
+          {
+            type: 'AgentSessionPersist',
+            token: msg.token,
+            tid: msg.tid,
+            lapUrl: msg.lapUrl,
+            wsUrl: msg.wsUrl,
+            expiresAt: msg.expiresAt,
+          },
+        ],
+      ]
+    }
+    case 'RestoreSession': {
+      // Idempotent guard: only fires from idle. A racing Mint click
+      // would already have moved us to `minting` — restoring on top
+      // would clobber the in-flight pending state with stale
+      // credentials read from sessionStorage. Easier to no-op here
+      // than to coordinate the race in the host.
+      if (state.status !== 'idle') return [state, []]
+      // Regenerate the connectSnippet so the user can re-paste if
+      // their AI lost the original tool call (same shape as
+      // MintSucceeded — the framework owns this string and updates
+      // to it ride along the agent package version).
+      const restored: AgentConnectPendingToken = {
+        token: msg.token,
+        tid: msg.tid,
+        lapUrl: msg.lapUrl,
+        connectSnippet:
+          `Connect this AI assistant to the LLui app. Call the LLui MCP server's ` +
+          `\`connect_session\` tool with url=${JSON.stringify(msg.lapUrl)} and ` +
+          `token=${JSON.stringify(msg.token)}. ` +
+          `(Some MCP clients namespace tools as ` +
+          `\`mcp__llui__connect_session\` and load them lazily — search the tool list if \`connect_session\` isn't immediately available.)`,
+        expiresAt: msg.expiresAt,
+      }
+      return [
+        { ...state, status: 'pending-claude', pendingToken: restored, error: null },
         [{ type: 'AgentOpenWS', token: msg.token, wsUrl: msg.wsUrl }],
       ]
     }
@@ -159,14 +220,21 @@ export function update(
     case 'Resume':
       return [state, [{ type: 'AgentResumeClaim', tid: msg.tid }]]
     case 'Revoke': {
-      // Optimistically remove from sessions + resumable.
+      // Optimistically remove from sessions + resumable. If the
+      // revoked tid matches the currently-pending session, also fire
+      // AgentSessionClear so the host wipes its persisted credentials
+      // — otherwise a refresh would try to RestoreSession with a
+      // server-side-revoked token and end up at an auth-failed WS.
+      const isActiveTid = state.pendingToken !== null && state.pendingToken.tid === msg.tid
+      const effects: AgentEffect[] = [{ type: 'AgentRevoke', tid: msg.tid }]
+      if (isActiveTid) effects.push({ type: 'AgentSessionClear' })
       return [
         {
           ...state,
           sessions: state.sessions.filter((s) => s.tid !== msg.tid),
           resumable: state.resumable.filter((s) => s.tid !== msg.tid),
         },
-        [{ type: 'AgentRevoke', tid: msg.tid }],
+        effects,
       ]
     }
     case 'ClearError':

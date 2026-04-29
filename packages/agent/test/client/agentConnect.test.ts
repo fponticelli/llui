@@ -84,11 +84,14 @@ describe('agentConnect', () => {
           `\`connect_session\` tool with url=${JSON.stringify(lapUrl)} and ` +
           `token=${JSON.stringify(token)}. ` +
           `(Some MCP clients namespace tools as ` +
-          `\`mcp__<server>__connect_session\` and load them lazily — search the tool list if \`connect_session\` isn't immediately available.)`,
+          `\`mcp__llui__connect_session\` and load them lazily — search the tool list if \`connect_session\` isn't immediately available.)`,
       )
       expect(state1.pendingToken!.expiresAt).toBe(expiresAt)
       expect(state1.error).toBeNull()
-      expect(effects).toEqual([{ type: 'AgentOpenWS', token, wsUrl }])
+      expect(effects).toEqual([
+        { type: 'AgentOpenWS', token, wsUrl },
+        { type: 'AgentSessionPersist', token, tid, lapUrl, wsUrl, expiresAt },
+      ])
     })
   })
 
@@ -336,7 +339,7 @@ describe('agentConnect.connect', () => {
           `\`connect_session\` tool with url=${JSON.stringify(lapUrl)} and ` +
           `token=${JSON.stringify(token)}. ` +
           `(Some MCP clients namespace tools as ` +
-          `\`mcp__<server>__connect_session\` and load them lazily — search the tool list if \`connect_session\` isn't immediately available.)`,
+          `\`mcp__llui__connect_session\` and load them lazily — search the tool list if \`connect_session\` isn't immediately available.)`,
       },
     ])
   })
@@ -345,5 +348,118 @@ describe('agentConnect.connect', () => {
     const [s0] = init(opts)
     const [, effects] = update(s0, { type: 'CopyConnectSnippet' }, opts)
     expect(effects).toEqual([])
+  })
+
+  // ── Session persistence (cross-refresh) ──────────────────────────
+  // MintSucceeded emits an AgentSessionPersist effect alongside
+  // AgentOpenWS so the host can store the credentials in
+  // sessionStorage. On boot, RestoreSession reads them back and goes
+  // straight to pending-claude with a fresh AgentOpenWS — bypassing
+  // mint entirely so the agent's existing token stays valid across
+  // page refresh. Revoke clears the persisted blob.
+
+  describe('MintSucceeded persistence', () => {
+    it('emits AgentSessionPersist alongside AgentOpenWS', () => {
+      const [state0] = init(opts)
+      const [minting] = send(state0, { type: 'Mint' })
+      const [, effects] = send(minting, {
+        type: 'MintSucceeded',
+        token,
+        tid,
+        lapUrl,
+        wsUrl,
+        expiresAt,
+      })
+      expect(effects).toContainEqual({ type: 'AgentOpenWS', token, wsUrl })
+      expect(effects).toContainEqual({
+        type: 'AgentSessionPersist',
+        token,
+        tid,
+        lapUrl,
+        wsUrl,
+        expiresAt,
+      })
+    })
+  })
+
+  describe('RestoreSession', () => {
+    it('populates pendingToken from idle and emits AgentOpenWS without minting', () => {
+      const [state0] = init(opts)
+      const [state1, effects] = send(state0, {
+        type: 'RestoreSession',
+        token,
+        tid,
+        lapUrl,
+        wsUrl,
+        expiresAt,
+      })
+      expect(state1.status).toBe('pending-claude')
+      expect(state1.pendingToken).not.toBeNull()
+      expect(state1.pendingToken!.token).toBe(token)
+      expect(state1.pendingToken!.tid).toBe(tid)
+      expect(state1.pendingToken!.lapUrl).toBe(lapUrl)
+      expect(state1.pendingToken!.expiresAt).toBe(expiresAt)
+      // The connect snippet is regenerated with the same lapUrl/token
+      // so a user who hits the panel post-refresh can still re-paste
+      // the snippet (e.g. if their AI lost its tool memory).
+      expect(state1.pendingToken!.connectSnippet).toContain(`url=${JSON.stringify(lapUrl)}`)
+      expect(state1.pendingToken!.connectSnippet).toContain(`token=${JSON.stringify(token)}`)
+      // Only the WS-open effect — no mint round-trip and no second
+      // persist (the host already has these credentials, that's where
+      // they came from).
+      expect(effects).toEqual([{ type: 'AgentOpenWS', token, wsUrl }])
+    })
+
+    it('does not clobber an in-flight mint (idempotent guard)', () => {
+      // If RestoreSession races with a manual Mint click, the mint
+      // path takes precedence — restoring on top would put stale
+      // credentials into pendingToken and confuse the WS opener.
+      // Treat as no-op when status is anything other than idle.
+      const [state0] = init(opts)
+      const [minting] = send(state0, { type: 'Mint' })
+      const [state1, effects] = send(minting, {
+        type: 'RestoreSession',
+        token,
+        tid,
+        lapUrl,
+        wsUrl,
+        expiresAt,
+      })
+      expect(state1).toBe(minting)
+      expect(effects).toEqual([])
+    })
+  })
+
+  describe('Revoke clears persisted session', () => {
+    it('emits AgentSessionClear alongside AgentRevoke when revoking the active tid', () => {
+      const [state0] = init(opts)
+      const [pending] = send(state0, {
+        type: 'MintSucceeded',
+        token,
+        tid,
+        lapUrl,
+        wsUrl,
+        expiresAt,
+      })
+      const [, effects] = send(pending, { type: 'Revoke', tid })
+      expect(effects).toContainEqual({ type: 'AgentRevoke', tid })
+      expect(effects).toContainEqual({ type: 'AgentSessionClear' })
+    })
+
+    it('does NOT clear when revoking a different tid (the pending session stays)', () => {
+      const [state0] = init(opts)
+      const [pending] = send(state0, {
+        type: 'MintSucceeded',
+        token,
+        tid,
+        lapUrl,
+        wsUrl,
+        expiresAt,
+      })
+      const otherTid = '99999999-9999-9999-9999-999999999999'
+      const [, effects] = send(pending, { type: 'Revoke', tid: otherTid })
+      expect(effects).toContainEqual({ type: 'AgentRevoke', tid: otherTid })
+      expect(effects).not.toContainEqual({ type: 'AgentSessionClear' })
+    })
   })
 })
