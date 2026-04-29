@@ -11,6 +11,20 @@ All notable changes to LLui packages are documented here. LLui is a pre-1.0 proj
 
 Packages version in lockstep at release time: `@llui/dom`, `@llui/vite-plugin`, `@llui/test`, `@llui/router`, `@llui/transitions`, `@llui/components`, `@llui/vike` share a version line. `@llui/effects`, `@llui/mcp`, `@llui/eslint-plugin`, `@llui/agent`, and `llui-agent` have their own cadence.
 
+## 2026-04-29 — @llui/agent@0.0.46, llui-agent@0.0.10
+
+**Released:** `@llui/agent@0.0.46`; `llui-agent@0.0.10`
+
+Fix: the panel's connect status now correctly flips from "Waiting for AI to claim" → "Connected" when the AI binds via `/observe`, not just `/describe`.
+
+### `@llui/agent@0.0.46`
+
+- **Fixed** `markActive` + `'active'` browser frame fire from any LAP call, not just `/describe`. The `llui-agent` MCP bridge connects via `/observe` (the unified bootstrap endpoint), so the previous describe-only path left the panel stuck on `pending-claude` indefinitely — even though LAP calls worked. Centralised the transition in `lap/active.ts:ensureActive`; every LAP handler runs it after auth+paired (observe, message, confirm-result, wait, describe, recent-actions, every forward handler). The transition is no-op when the record isn't `awaiting-claude`, so it's cheap and idempotent on every call.
+
+### `llui-agent@0.0.10`
+
+- Cascade release for `@llui/agent@0.0.46`. No bridge-level changes.
+
 ## 2026-04-29 — @llui/agent@0.0.45, llui-agent@0.0.9
 
 **Released:** `@llui/agent@0.0.45`; `llui-agent@0.0.9`
