@@ -112,23 +112,30 @@ export function update(
       return [{ ...state, status: 'minting' }, [mintEffect]]
     }
     case 'MintSucceeded': {
-      // The connect snippet has to work across every Claude surface.
-      // Claude Desktop exposes MCP tools as bare names (`connect_session`),
-      // but Claude Code namespaces them (`mcp__<server>__connect_session`)
-      // and may defer-load them — so an LLM that searches its tool list for
-      // a literal `connect_session` won't find it. Naming the LLui MCP
-      // server explicitly gives the model enough to resolve the right tool
-      // on either platform.
+      // The connect snippet has to work across every MCP surface.
+      // Claude Desktop and similar clients expose MCP tools as bare
+      // names (`connect_session`), but Claude Code (and other tool-list-
+      // namespacing clients) emit them as `mcp__<server>__connect_session`
+      // and may defer-load them — so an LLM that searches its tool list
+      // for a literal `connect_session` won't find it. Naming the LLui
+      // MCP server explicitly gives the model enough to resolve the
+      // right tool on either platform; the parenthetical names the
+      // edge case so a deferred-tool client doesn't bail out.
+      //
+      // Phrased generically (`AI assistant`, `Some MCP clients`) since
+      // MCP support is rapidly expanding past Claude — the snippet
+      // shouldn't telegraph "this is Claude-only" when it works against
+      // any compliant client.
       const pending: AgentConnectPendingToken = {
         token: msg.token,
         tid: msg.tid,
         lapUrl: msg.lapUrl,
         connectSnippet:
-          `Connect this Claude session to the LLui app. Call the LLui MCP server's ` +
+          `Connect this AI assistant to the LLui app. Call the LLui MCP server's ` +
           `\`connect_session\` tool with url=${JSON.stringify(msg.lapUrl)} and ` +
           `token=${JSON.stringify(msg.token)}. ` +
-          `(In Claude Code the tool may be namespaced as ` +
-          `\`mcp__<server>__connect_session\` and deferred — load it via tool search if needed.)`,
+          `(Some MCP clients namespace tools as ` +
+          `\`mcp__<server>__connect_session\` and load them lazily — search the tool list if \`connect_session\` isn't immediately available.)`,
         expiresAt: msg.expiresAt,
       }
       return [
