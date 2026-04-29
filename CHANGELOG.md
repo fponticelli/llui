@@ -11,6 +11,21 @@ All notable changes to LLui packages are documented here. LLui is a pre-1.0 proj
 
 Packages version in lockstep at release time: `@llui/dom`, `@llui/vite-plugin`, `@llui/test`, `@llui/router`, `@llui/transitions`, `@llui/components`, `@llui/vike` share a version line. `@llui/effects`, `@llui/mcp`, `@llui/eslint-plugin`, `@llui/agent`, and `llui-agent` have their own cadence.
 
+## 2026-04-28 — @llui/agent@0.0.44, llui-agent@0.0.8
+
+**Released:** `@llui/agent@0.0.44`; `llui-agent@0.0.8`
+
+Page-refresh now preserves an active agent session — the AI's existing token stays valid because the browser reattaches a new WS without going through the rotate-on-resume path. Connect-snippet prefix is now the concrete `mcp__llui__connect_session` instead of the placeholder `mcp__<server>__connect_session`.
+
+### `@llui/agent@0.0.44`
+
+- **Added** `RestoreSession` Msg + `AgentSessionPersist` / `AgentSessionClear` effects. `MintSucceeded` now also emits `AgentSessionPersist` alongside `AgentOpenWS` so the host can write the credentials to `sessionStorage`. On boot, the host reads them back and dispatches `RestoreSession` — the reducer re-enters `pending-claude` and re-opens the WS without minting. The agent's existing token stays valid because we don't go through `/resume/claim` (which rotates by design). `Revoke` of the active tid emits `AgentSessionClear` so the persisted blob doesn't outlive the server-side session. Hosts that don't implement the persist/restore loop can ignore both effects — the rest of the connect lifecycle still works (the page falls back to "mint a new session" after refresh, same as before this effect existed). The existing `/resume/claim` flow stays for the browser-closed-and-reopened case where `sessionStorage` is gone but `tids` in `localStorage` may still be alive on the server; that path *must* rotate the token because the previous bearer might be leaked.
+- **Improved** Connect-snippet now uses the concrete prefix `mcp__llui__connect_session` (matches the `claude mcp add --transport stdio llui ...` install command in the docs) instead of the placeholder `mcp__<server>__connect_session`. Some LLMs were copying the placeholder name literally; the concrete form removes the ambiguity for the common case. Users who renamed the server in their MCP config can substitute their name.
+
+### `llui-agent@0.0.8`
+
+- Cascade release for `@llui/agent@0.0.44`. No bridge-level changes.
+
 ## 2026-04-28 — @llui/vite-plugin@0.0.38, @llui/agent@0.0.43, llui-agent@0.0.7
 
 **Released:** `@llui/vite-plugin@0.0.38`; `@llui/agent@0.0.43`; `llui-agent@0.0.7`
