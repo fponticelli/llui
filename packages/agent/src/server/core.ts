@@ -180,6 +180,13 @@ export function createLluiAgentCore(opts: CoreOptions = {}): AgentCoreHandle {
       // pairing again. Restore the original label so audit context
       // doesn't show a "reconnected" placeholder bouncing in and out.
       await tokenStore.markActive(tid, rec.label ?? '(reconnected)', nowMs)
+      // Tell the browser the pairing is live again so its connect-
+      // panel flips from `pending-claude` (or `reconnecting`) to
+      // `active`. Without this, the page would stay on
+      // "Waiting for AI to claim" indefinitely after a refresh —
+      // ensureActive on the next LAP call wouldn't fire either,
+      // since the record is already `active`.
+      registry.send(tid, { t: 'active' })
     } else {
       await tokenStore.markAwaitingClaude(tid, nowMs)
     }
