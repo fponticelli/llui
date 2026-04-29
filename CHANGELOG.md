@@ -11,6 +11,35 @@ All notable changes to LLui packages are documented here. LLui is a pre-1.0 proj
 
 Packages version in lockstep at release time: `@llui/dom`, `@llui/vite-plugin`, `@llui/test`, `@llui/router`, `@llui/transitions`, `@llui/components`, `@llui/vike` share a version line. `@llui/effects`, `@llui/mcp`, `@llui/eslint-plugin`, `@llui/agent`, and `llui-agent` have their own cadence.
 
+## 2026-04-29 — @llui/agent@0.0.45, llui-agent@0.0.9
+
+**Released:** `@llui/agent@0.0.45`; `llui-agent@0.0.9`
+
+Robust session lifecycle. Brief network drops, server restarts, page reloads, and explicit user disconnects now all behave correctly without putting the LLM in a confusing state. Session = (token, tid) is the durable identity; the WS is just the realtime delivery channel and can churn freely.
+
+### Breaking
+
+- **`@llui/agent@0.0.45`** — `AgentConnectStatus` adds `'reconnecting'` and `'failed'` variants; `AgentConnectState` adds `reconnectAttempt` and `reconnectElapsedMs` fields; `AgentConnectPendingToken` adds `wsUrl`. UI code that switches over the status union or destructures the state shape needs updating to match. New Msgs `Disconnect`, `ReconnectAttempt`, and `ReconnectGaveUp` are also part of the union; exhaustive Msg matchers must add cases (or fall through). The default behaviour for `WsClosed` while a `pendingToken` is set is now "schedule auto-reconnect" instead of "zero state to idle" — apps that explicitly want the old behaviour should dispatch `Disconnect` from the same site.
+
+### Migration
+
+- Hosts that wired the legacy `AgentSessionPersist` / `AgentSessionClear` effects to `sessionStorage` themselves can keep doing so — the framework's auto-handler co-exists. To migrate cleanly, pass `sessionStorage: null` to `createAgentClient` if you want only your handler to run, or remove your handler and let the framework own it (default key: `'llui-agent:session'`).
+- Any app that surfaced the connect status in its UI should add a render path for `'reconnecting'` (compact "reconnecting…" pill is the canonical UX) and `'failed'` (the loop gave up; offer a manual retry).
+- An explicit "Disconnect" button in the agent panel should dispatch the new `Disconnect` Msg instead of `Revoke` — same revoke behaviour PLUS clears persisted credentials and short-circuits the reconnect loop.
+
+### `@llui/agent@0.0.45`
+
+- **Added** WS-close grace window. `createLluiAgentCore({ pendingResumeGraceMs })` (default 60s) controls how long a token's record stays in `pending-resume` after the WS closes. During the window, a reconnect with the same bearer re-pairs without rotating — `acceptConnection` detects the pending-resume record and calls `markActive` directly, so the agent's existing token stays valid the whole time. Wires up dead code that was sitting in the protocol/storage layer (`markPendingResume`, `pending-resume` status, `resume/list` filtering) — all become live for the first time. Set `0` to opt out (legacy behaviour: WS close immediately drops the record, reconnect must rotate via `/resume/claim`).
+- **Added** `Retry-After` and `X-LLui-Reconnect: pending|revoked|expired|unknown` headers on every 503 `paused` response (centralized in `buildPausedResponse`). The MCP bridge can distinguish "WS bouncing, will be back" from "session is dead, paste a new snippet" instead of guessing from a bare 503.
+- **Added** Browser auto-reconnect with exponential backoff (1s → 2s → 4s → 8s → 16s → 30s cap, 5-minute cumulative ceiling, then `'failed'`). Uses the cached `wsUrl`/`token` directly — no mint round-trip, no `/resume/claim` rotation. The reducer schedules `AgentReconnectSchedule` effects; the handler is a thin `setTimeout` wrapper. User `Disconnect` short-circuits the loop via the reducer's status guard (no cancel handles needed).
+- **Added** Framework-owned session persistence. `AgentSessionStorage` adapter passed to `createAgentClient` (default = `defaultSessionStorage()` reading `window.sessionStorage` under `'llui-agent:session'`). On `start()` the framework reads the blob and auto-dispatches `RestoreSession` if a non-expired session is present; `MintSucceeded` writes; `Revoke` / `Disconnect` clear. Hosts can pass `sessionStorage: null` to opt out (legacy host-handled `AgentSessionPersist` / `AgentSessionClear` effects still flow through).
+- **Added** `Disconnect` Msg — explicit user-initiated revoke. Clears credentials, blocks any in-flight reconnect timer, dispatches `AgentRevoke` + `AgentSessionClear` + `AgentCloseWS`. Distinct from `Revoke` (per-tid revoke from the sessions list — keeps reconnect-loop semantics for non-active tids).
+- **Fixed** `markPendingResume` no longer lifts `revoked` / `expired` records into a fresh grace window. The transition is guarded to `active` / `awaiting-claude` only, so a stale WS-close after a deliberate `Revoke` can't accidentally resurrect the session.
+
+### `llui-agent@0.0.9`
+
+- Cascade release for `@llui/agent@0.0.45`. No bridge-level changes.
+
 ## 2026-04-29 — @llui/vite-plugin@0.0.39
 
 **Released:** `@llui/vite-plugin@0.0.39`
