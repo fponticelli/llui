@@ -3,6 +3,7 @@ import type { PairingRegistry } from '../ws/pairing-registry.js'
 import type { AuditSink } from '../audit.js'
 import type { RateLimiter } from '../rate-limit.js'
 import { verifyAndReadTid } from './describe.js'
+import { buildPausedResponse } from './paused.js'
 
 export type ForwardDeps = {
   tokenStore: TokenStore
@@ -28,7 +29,7 @@ export function makeForwardHandler(
 
     const rec = await deps.tokenStore.findByTid(auth.tid)
     if (!rec || rec.status === 'revoked') return json({ error: { code: 'revoked' } }, 403)
-    if (!deps.registry.isPaired(auth.tid)) return json({ error: { code: 'paused' } }, 503)
+    if (!deps.registry.isPaired(auth.tid)) return buildPausedResponse(deps.tokenStore, auth.tid)
 
     const rlCheck = await deps.rateLimiter.check(auth.tid, 'token')
     if (!rlCheck.allowed) {
@@ -54,7 +55,11 @@ export function makeForwardHandler(
     } catch (e: unknown) {
       const err = e as { code?: string; detail?: string }
       const code = err.code ?? 'internal'
-      const status = code === 'paused' ? 503 : code === 'timeout' ? 504 : 500
+      // Paused mid-RPC means the WS dropped between the isPaired
+      // check and the response — same advisory headers help the
+      // agent decide whether to retry.
+      if (code === 'paused') return buildPausedResponse(deps.tokenStore, auth.tid)
+      const status = code === 'timeout' ? 504 : 500
       return json({ error: { code, detail: err.detail } }, status)
     }
   }
@@ -131,10 +136,7 @@ export async function handleLapRecentActions(req: Request, deps: ForwardDeps): P
     })
   }
   if (!deps.registry.isPaired(auth.tid)) {
-    return new Response(JSON.stringify({ error: { code: 'paused' } }), {
-      status: 503,
-      headers: { 'content-type': 'application/json' },
-    })
+    return buildPausedResponse(deps.tokenStore, auth.tid)
   }
 
   const rlCheck = await deps.rateLimiter.check(auth.tid, 'token')

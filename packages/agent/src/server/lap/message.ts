@@ -3,6 +3,7 @@ import type { PairingRegistry } from '../ws/pairing-registry.js'
 import type { AuditSink } from '../audit.js'
 import type { RateLimiter } from '../rate-limit.js'
 import { verifyAndReadTid } from './describe.js'
+import { buildPausedResponse } from './paused.js'
 import type { LapMessageRequest, LapMessageResponse } from '../../protocol.js'
 
 export type LapMessageDeps = {
@@ -19,7 +20,7 @@ export async function handleLapMessage(req: Request, deps: LapMessageDeps): Prom
 
   const rec = await deps.tokenStore.findByTid(auth.tid)
   if (!rec || rec.status === 'revoked') return json({ error: { code: 'revoked' } }, 403)
-  if (!deps.registry.isPaired(auth.tid)) return json({ error: { code: 'paused' } }, 503)
+  if (!deps.registry.isPaired(auth.tid)) return buildPausedResponse(deps.tokenStore, auth.tid)
 
   const rlCheck = await deps.rateLimiter.check(auth.tid, 'token')
   if (!rlCheck.allowed) {

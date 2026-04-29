@@ -3,6 +3,7 @@ import type { PairingRegistry } from '../ws/pairing-registry.js'
 import type { AuditSink } from '../audit.js'
 import type { RateLimiter } from '../rate-limit.js'
 import { verifyAndReadTid } from './describe.js'
+import { buildPausedResponse } from './paused.js'
 import type {
   AgentContext,
   LapActionsResponse,
@@ -38,7 +39,7 @@ export async function handleLapObserve(req: Request, deps: LapObserveDeps): Prom
 
   const rec = await deps.tokenStore.findByTid(auth.tid)
   if (!rec || rec.status === 'revoked') return json({ error: { code: 'revoked' } }, 403)
-  if (!deps.registry.isPaired(auth.tid)) return json({ error: { code: 'paused' } }, 503)
+  if (!deps.registry.isPaired(auth.tid)) return buildPausedResponse(deps.tokenStore, auth.tid)
 
   const rlCheck = await deps.rateLimiter.check(auth.tid, 'token')
   if (!rlCheck.allowed) {
@@ -46,7 +47,7 @@ export async function handleLapObserve(req: Request, deps: LapObserveDeps): Prom
   }
 
   const hello = deps.registry.getHello(auth.tid)
-  if (!hello) return json({ error: { code: 'paused' } }, 503)
+  if (!hello) return buildPausedResponse(deps.tokenStore, auth.tid)
 
   let dynamic: {
     state: unknown
@@ -58,7 +59,8 @@ export async function handleLapObserve(req: Request, deps: LapObserveDeps): Prom
   } catch (e: unknown) {
     const err = e as { code?: string; detail?: string }
     const code = err.code ?? 'internal'
-    const status = code === 'paused' ? 503 : code === 'timeout' ? 504 : 500
+    if (code === 'paused') return buildPausedResponse(deps.tokenStore, auth.tid)
+    const status = code === 'timeout' ? 504 : 500
     return json({ error: { code, detail: err.detail } }, status)
   }
 

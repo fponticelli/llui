@@ -157,8 +157,199 @@ describe('agentConnect', () => {
       })
       const [active] = send(pending, { type: 'ActivatedByClaude' })
       const [state1, effects] = send(active, { type: 'WsClosed' })
+      // New contract: WsClosed while we have a pendingToken triggers
+      // the auto-reconnect loop instead of zeroing state. See the
+      // "Reconnect loop" section below for the full lifecycle.
+      expect(state1.status).toBe('reconnecting')
+      expect(state1.pendingToken).not.toBeNull()
+      expect(effects).toEqual([{ type: 'AgentReconnectSchedule', delayMs: 1000 }])
+    })
+
+    it('stays in idle and emits no effects when WsClosed fires without a pendingToken', () => {
+      // Defensive case — WS adapter fires close after Disconnect or
+      // before Mint. No reconnect should be scheduled.
+      const [state0] = init(opts)
+      const [state1, effects] = send(state0, { type: 'WsClosed' })
       expect(state1.status).toBe('idle')
-      expect(state1.pendingToken).toBeNull()
+      expect(effects).toEqual([])
+    })
+  })
+
+  // ── Reconnect loop ────────────────────────────────────────────
+  describe('reconnect loop', () => {
+    it('WsClosed → ReconnectAttempt → AgentOpenWS with the cached credentials, no mint', () => {
+      const [state0] = init(opts)
+      const [minting] = send(state0, { type: 'Mint' })
+      const [pending] = send(minting, {
+        type: 'MintSucceeded',
+        token,
+        tid,
+        lapUrl,
+        wsUrl,
+        expiresAt,
+      })
+      const [active] = send(pending, { type: 'ActivatedByClaude' })
+      const [reconnecting, schedEffects] = send(active, { type: 'WsClosed' })
+      expect(reconnecting.status).toBe('reconnecting')
+      expect(schedEffects).toEqual([{ type: 'AgentReconnectSchedule', delayMs: 1000 }])
+      // Timer fires; reducer increments attempt and re-opens the WS.
+      const [retrying, retryEffects] = send(reconnecting, {
+        type: 'ReconnectAttempt',
+        elapsedMs: 1000,
+      })
+      expect(retrying.status).toBe('reconnecting')
+      expect(retrying.reconnectAttempt).toBe(1)
+      expect(retrying.reconnectElapsedMs).toBe(1000)
+      // Same token, no AgentMintRequest — that's the whole point.
+      expect(retryEffects).toEqual([{ type: 'AgentOpenWS', token, wsUrl }])
+    })
+
+    it('successful WsOpened during reconnect transitions back to pending-claude and zeros the counters', () => {
+      const [state0] = init(opts)
+      const [minting] = send(state0, { type: 'Mint' })
+      const [pending] = send(minting, {
+        type: 'MintSucceeded',
+        token,
+        tid,
+        lapUrl,
+        wsUrl,
+        expiresAt,
+      })
+      const [active] = send(pending, { type: 'ActivatedByClaude' })
+      const [reconnecting] = send(active, { type: 'WsClosed' })
+      const [retrying] = send(reconnecting, { type: 'ReconnectAttempt', elapsedMs: 1000 })
+      const [reattached, effects] = send(retrying, { type: 'WsOpened' })
+      expect(reattached.status).toBe('pending-claude')
+      expect(reattached.reconnectAttempt).toBe(0)
+      expect(reattached.reconnectElapsedMs).toBe(0)
+      expect(effects).toEqual([])
+    })
+
+    it('backoff schedule doubles to 30s and caps there', () => {
+      const [state0] = init(opts)
+      const [minting] = send(state0, { type: 'Mint' })
+      const [pending] = send(minting, {
+        type: 'MintSucceeded',
+        token,
+        tid,
+        lapUrl,
+        wsUrl,
+        expiresAt,
+      })
+      const [active] = send(pending, { type: 'ActivatedByClaude' })
+      // Walk through closes + retries, asserting the scheduled delay
+      // each time. Running the reducer in a loop is closer to what
+      // the live system does than asserting a single delay value.
+      let cur = active
+      const seen: number[] = []
+      for (let i = 0; i < 7; i++) {
+        const [s1, e1] = send(cur, { type: 'WsClosed' })
+        const sched = e1.find(
+          (e): e is Extract<AgentEffect, { type: 'AgentReconnectSchedule' }> =>
+            (e as { type: string }).type === 'AgentReconnectSchedule',
+        )
+        expect(sched).toBeDefined()
+        if (sched) seen.push(sched.delayMs)
+        cur = send(s1, { type: 'ReconnectAttempt', elapsedMs: sched!.delayMs })[0]
+      }
+      // attempt 0..4 → 1s, 2s, 4s, 8s, 16s; attempt 5..6 → 30s cap.
+      expect(seen).toEqual([1000, 2000, 4000, 8000, 16000, 30000, 30000])
+    })
+
+    it('gives up after the cumulative reconnect window exceeds 5 minutes', () => {
+      const [state0] = init(opts)
+      const [minting] = send(state0, { type: 'Mint' })
+      const [pending] = send(minting, {
+        type: 'MintSucceeded',
+        token,
+        tid,
+        lapUrl,
+        wsUrl,
+        expiresAt,
+      })
+      const [active] = send(pending, { type: 'ActivatedByClaude' })
+      const [reconnecting] = send(active, { type: 'WsClosed' })
+      // Fast-forward by reporting a single huge elapsedMs that exceeds
+      // the give-up ceiling.
+      const [gaveUp, effects] = send(reconnecting, {
+        type: 'ReconnectAttempt',
+        elapsedMs: 6 * 60 * 1000, // 6 min
+      })
+      expect(gaveUp.status).toBe('failed')
+      expect(effects).toEqual([])
+    })
+
+    it('ReconnectAttempt is a no-op once the user disconnected (status guard)', () => {
+      const [state0] = init(opts)
+      const [minting] = send(state0, { type: 'Mint' })
+      const [pending] = send(minting, {
+        type: 'MintSucceeded',
+        token,
+        tid,
+        lapUrl,
+        wsUrl,
+        expiresAt,
+      })
+      const [active] = send(pending, { type: 'ActivatedByClaude' })
+      const [reconnecting] = send(active, { type: 'WsClosed' })
+      const [disconnected] = send(reconnecting, { type: 'Disconnect' })
+      // Pending timer fires after the user disconnected — the reducer
+      // sees status `idle` and ignores it. No new WS open.
+      const [stillIdle, effects] = send(disconnected, {
+        type: 'ReconnectAttempt',
+        elapsedMs: 1000,
+      })
+      expect(stillIdle.status).toBe('idle')
+      expect(effects).toEqual([])
+    })
+  })
+
+  // ── Disconnect ────────────────────────────────────────────────
+  describe('Disconnect', () => {
+    it('revokes the active tid, clears credentials, and stops the reconnect loop', () => {
+      const [state0] = init(opts)
+      const [minting] = send(state0, { type: 'Mint' })
+      const [pending] = send(minting, {
+        type: 'MintSucceeded',
+        token,
+        tid,
+        lapUrl,
+        wsUrl,
+        expiresAt,
+      })
+      const [active] = send(pending, { type: 'ActivatedByClaude' })
+      const [disconnected, effects] = send(active, { type: 'Disconnect' })
+      expect(disconnected.status).toBe('idle')
+      expect(disconnected.pendingToken).toBeNull()
+      expect(disconnected.reconnectAttempt).toBe(0)
+      expect(disconnected.reconnectElapsedMs).toBe(0)
+      expect(effects).toContainEqual({ type: 'AgentRevoke', tid })
+      expect(effects).toContainEqual({ type: 'AgentSessionClear' })
+      expect(effects).toContainEqual({ type: 'AgentCloseWS' })
+    })
+
+    it('Disconnect during reconnecting cancels the loop on next ReconnectAttempt', () => {
+      const [state0] = init(opts)
+      const [minting] = send(state0, { type: 'Mint' })
+      const [pending] = send(minting, {
+        type: 'MintSucceeded',
+        token,
+        tid,
+        lapUrl,
+        wsUrl,
+        expiresAt,
+      })
+      const [active] = send(pending, { type: 'ActivatedByClaude' })
+      const [reconnecting] = send(active, { type: 'WsClosed' })
+      const [disconnected] = send(reconnecting, { type: 'Disconnect' })
+      expect(disconnected.status).toBe('idle')
+      // The scheduled timer eventually fires; the message hits an
+      // idle reducer and is a no-op (no new AgentOpenWS effect).
+      const [stillIdle, effects] = send(disconnected, {
+        type: 'ReconnectAttempt',
+        elapsedMs: 1000,
+      })
+      expect(stillIdle.status).toBe('idle')
       expect(effects).toEqual([])
     })
   })

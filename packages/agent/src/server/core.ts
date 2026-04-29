@@ -42,6 +42,25 @@ export type CoreOptions = {
    * Durable Object that persists across isolates) pass it here.
    */
   registry?: PairingRegistry
+  /**
+   * How long, in milliseconds, a token's record stays in
+   * `pending-resume` after the WS pairing closes. During this window
+   * the same browser can reconnect with the same bearer token and
+   * the WS re-pairs without going through the rotate-on-resume path
+   * (`/resume/claim`). The agent's existing token stays valid the
+   * whole time, so brief network drops, page reloads, and quick
+   * server restarts don't invalidate the agent's session.
+   *
+   * After the window, LAP calls report `X-LLui-Reconnect: expired`
+   * and the record becomes resume-claimable (rotation required).
+   * Set to `0` to opt out — the WS close immediately drops the
+   * record and any reconnect must go through `/resume/claim`.
+   *
+   * Default: 60 seconds — long enough for laptop sleep, brief Wi-Fi
+   * flicker, and a server restart; short enough that a deliberately-
+   * closed tab doesn't keep the record alive forever.
+   */
+  pendingResumeGraceMs?: number
 }
 
 export type AcceptResult =
@@ -86,6 +105,7 @@ export function createLluiAgentCore(opts: CoreOptions = {}): AgentCoreHandle {
   const auditSink = opts.auditSink ?? consoleAuditSink
   const rateLimiter = opts.rateLimiter ?? defaultRateLimiter({ perBucket: '30/minute' })
   const lapBasePath = opts.lapBasePath ?? '/agent/lap/v1'
+  const pendingResumeGraceMs = opts.pendingResumeGraceMs ?? 60_000
 
   const registry: PairingRegistry =
     opts.registry ??
@@ -138,16 +158,49 @@ export function createLluiAgentCore(opts: CoreOptions = {}): AgentCoreHandle {
     if (!rec) return { ok: false, status: 401, code: 'auth-failed' }
     if (rec.expiresAt <= Date.now()) return { ok: false, status: 401, code: 'auth-failed' }
     if (rec.status === 'revoked') return { ok: false, status: 403, code: 'revoked' }
+    // Reject `pending-resume` records past their grace window — the
+    // agent has to go through `/resume/claim` (which rotates the
+    // bearer) for those, since the long-gap path can't assume the
+    // previous bearer wasn't leaked.
+    if (
+      rec.status === 'pending-resume' &&
+      rec.pendingResumeUntil !== null &&
+      rec.pendingResumeUntil <= Date.now()
+    ) {
+      return { ok: false, status: 401, code: 'auth-failed' }
+    }
     const tid = rec.tid
+    const isRepair = rec.status === 'pending-resume'
     registry.register(tid, conn)
     const nowMs = Date.now()
-    await tokenStore.markAwaitingClaude(tid, nowMs)
+    if (isRepair) {
+      // Same browser came back within the grace window — re-pair
+      // without a token rotation. Claude was already bound; its
+      // existing token stays valid and the next LAP call sees a live
+      // pairing again. Restore the original label so audit context
+      // doesn't show a "reconnected" placeholder bouncing in and out.
+      await tokenStore.markActive(tid, rec.label ?? '(reconnected)', nowMs)
+    } else {
+      await tokenStore.markAwaitingClaude(tid, nowMs)
+    }
+    // Hook the close: when the WS drops, transition the record to
+    // `pending-resume` with a TTL so the next reconnect within the
+    // grace window can re-pair without rotating the token. After
+    // grace, LAP calls return `X-LLui-Reconnect: expired` and the
+    // agent must call `/resume/claim` to start fresh. The token-
+    // store guards the transition so `revoke`/`expired` don't get
+    // lifted back into a grace window.
+    if (pendingResumeGraceMs > 0) {
+      registry.onClose(tid, () => {
+        void tokenStore.markPendingResume(tid, Date.now() + pendingResumeGraceMs)
+      })
+    }
     await auditSink.write({
       at: nowMs,
       tid,
       uid: null,
       event: 'claim',
-      detail: { transport: 'ws' },
+      detail: { transport: 'ws', repair: isRepair },
     })
     return { ok: true, tid }
   }

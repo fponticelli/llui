@@ -4,6 +4,7 @@ import type { AgentConfirmState } from './agentConfirm.js'
 import type {
   AgentDocs,
   AgentContext,
+  AgentToken,
   LapDrainMeta,
   MessageAnnotations,
   MessageSchemaEntry,
@@ -114,6 +115,124 @@ export type CreateAgentClientOpts<State, Msg> = {
    *     because cloudflare-vite shadows non-`/cdn-cgi/*` routes.
    */
   agentBasePath?: string
+  /**
+   * Storage adapter for the active session blob. When provided the
+   * framework owns the persist/restore loop end-to-end: writes on
+   * `MintSucceeded`, reads on `start()` (auto-dispatching
+   * `RestoreSession` when a non-expired blob is found), clears on
+   * `Disconnect` / `Revoke` / explicit clear effects.
+   *
+   * Default: `defaultSessionStorage()` — uses `window.sessionStorage`
+   * under the key `'llui-agent:session'`. Tab-scoped (survives
+   * refresh, dies on tab close), which matches how a single-tab
+   * agent connection should behave.
+   *
+   * Pass `null` to opt out entirely; the framework then emits the
+   * `AgentSessionPersist` / `AgentSessionClear` effects unchanged
+   * and the host owns storage. Useful for SSR builds where
+   * `sessionStorage` is undefined and the host wants to no-op the
+   * storage layer.
+   *
+   * Pass a custom adapter for tests, IndexedDB-backed apps, or
+   * environments where `sessionStorage` is unavailable but the
+   * persistence semantics are still wanted (e.g. Web Workers).
+   */
+  sessionStorage?: AgentSessionStorage | null
+}
+
+/**
+ * Tab-lifetime persistence for the active agent session. Reads /
+ * writes a single blob; the framework synchronizes it with the
+ * connect lifecycle so refresh-survival is automatic. Implementations
+ * must be synchronous on the read path so `start()` can decide
+ * whether to dispatch `RestoreSession` before any UI mounts —
+ * otherwise the `idle`-only guard in the reducer might miss the
+ * restore when a `Mint` click races the async lookup.
+ */
+export type AgentSessionStorage = {
+  read(): PersistedAgentSession | null
+  write(session: PersistedAgentSession): void
+  clear(): void
+}
+
+export type PersistedAgentSession = {
+  token: AgentToken
+  tid: string
+  lapUrl: string
+  wsUrl: string
+  expiresAt: number
+}
+
+/**
+ * The default `AgentSessionStorage` — wraps `window.sessionStorage`
+ * under a single key and treats parse / type-mismatch failures as
+ * "no session". Returns `null` from the factory when `window` is
+ * undefined (SSR/tests), so calling code never has to feature-detect
+ * the browser environment itself.
+ */
+export function defaultSessionStorage(
+  storageKey: string = 'llui-agent:session',
+): AgentSessionStorage | null {
+  if (typeof window === 'undefined' || typeof window.sessionStorage === 'undefined') return null
+  const ss = window.sessionStorage
+  return {
+    read: () => {
+      let raw: string | null
+      try {
+        raw = ss.getItem(storageKey)
+      } catch {
+        return null
+      }
+      if (raw === null || raw === '') return null
+      let parsed: unknown
+      try {
+        parsed = JSON.parse(raw)
+      } catch {
+        try {
+          ss.removeItem(storageKey)
+        } catch {
+          /* ignore */
+        }
+        return null
+      }
+      if (!parsed || typeof parsed !== 'object') return null
+      const o = parsed as Record<string, unknown>
+      if (
+        typeof o.token !== 'string' ||
+        typeof o.tid !== 'string' ||
+        typeof o.lapUrl !== 'string' ||
+        typeof o.wsUrl !== 'string' ||
+        typeof o.expiresAt !== 'number'
+      ) {
+        return null
+      }
+      // `expiresAt` is unix-seconds (server's mint endpoint floors
+      // ms→s). Compare to `Date.now() / 1000` so the same-units
+      // footgun the host code hit doesn't bite the framework too.
+      if (o.expiresAt * 1000 <= Date.now()) return null
+      return {
+        token: o.token as AgentToken,
+        tid: o.tid,
+        lapUrl: o.lapUrl,
+        wsUrl: o.wsUrl,
+        expiresAt: o.expiresAt,
+      }
+    },
+    write: (session) => {
+      try {
+        ss.setItem(storageKey, JSON.stringify(session))
+      } catch {
+        /* private mode / quota — non-fatal */
+      }
+    },
+    clear: () => {
+      try {
+        ss.removeItem(storageKey)
+      } catch {
+        /* ignore */
+      }
+    },
+  }
 }
 
 export type AgentClient = {
@@ -237,11 +356,23 @@ export function createAgentClient<State, Msg>(
     schemaHash: opts.def.__schemaHash ?? '',
   })
 
+  // Storage adapter: opt-out with `null`, custom adapter, or default
+  // to `sessionStorage` under the canonical key. The framework
+  // synchronizes it with the connect lifecycle so refresh-survival
+  // is automatic for any host that doesn't explicitly disable it.
+  const sessionStorage =
+    opts.sessionStorage === null
+      ? null
+      : opts.sessionStorage !== undefined
+        ? opts.sessionStorage
+        : defaultSessionStorage()
+
   const effectHandler = createEffectHandler({
     send: (m) => opts.handle.send(m),
     wrapAgentConnect: (m) => opts.slices.wrapConnectMsg(m),
     forward: (payload) => opts.handle.send(payload),
     agentBasePath: opts.agentBasePath,
+    sessionStorage,
     openWs: (token, wsUrl) => {
       if (ws) ws.close()
       ws = new WebSocket(`${wsUrl}?token=${encodeURIComponent(token)}`)
@@ -300,6 +431,27 @@ export function createAgentClient<State, Msg>(
           // etc.) become tagged-wire form.
           wsClient?.emitStateUpdate('/', encodeForWire(state, codecs))
         })
+      }
+      // Auto-restore from storage. If a non-expired session blob is
+      // present, dispatch RestoreSession synchronously so the connect
+      // flow re-enters `pending-claude` before any UI mounts. The
+      // reducer's `idle`-only guard means a host that ALSO dispatches
+      // its own RestoreSession (legacy hosts that wired storage
+      // themselves) won't double-fire — the second call is a no-op.
+      if (sessionStorage) {
+        const persisted = sessionStorage.read()
+        if (persisted) {
+          opts.handle.send(
+            opts.slices.wrapConnectMsg({
+              type: 'RestoreSession',
+              token: persisted.token,
+              tid: persisted.tid,
+              lapUrl: persisted.lapUrl,
+              wsUrl: persisted.wsUrl,
+              expiresAt: persisted.expiresAt,
+            }),
+          )
+        }
       }
       installErrorListeners()
       // Catch per-binding throws into drain.errors so a single bad

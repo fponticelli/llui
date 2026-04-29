@@ -75,6 +75,12 @@ export class InMemoryTokenStore implements TokenStore {
   async markPendingResume(tid: string, until: number): Promise<void> {
     const r = this.byTid.get(tid)
     if (!r) return
+    // Only transition from a live state. Don't lift `revoked` back
+    // to `pending-resume` if a stale WS-close fires after a deliberate
+    // revoke — and don't bring an already-`expired`/`pending-resume`
+    // record back to a fresh grace window when the close handler
+    // re-fires for any reason.
+    if (r.status !== 'active' && r.status !== 'awaiting-claude') return
     this.byTid.set(tid, { ...r, status: 'pending-resume', pendingResumeUntil: until })
   }
 

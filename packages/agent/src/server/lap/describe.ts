@@ -3,6 +3,7 @@ import type { TokenStore } from '../token-store.js'
 import type { PairingRegistry } from '../ws/pairing-registry.js'
 import type { AuditSink } from '../audit.js'
 import type { RateLimiter } from '../rate-limit.js'
+import { buildPausedResponse } from './paused.js'
 import type { LapDescribeResponse, MessageSchemaEntry } from '../../protocol.js'
 
 export type LapDescribeDeps = {
@@ -19,7 +20,7 @@ export async function handleLapDescribe(req: Request, deps: LapDescribeDeps): Pr
 
   const rec = await deps.tokenStore.findByTid(auth.tid)
   if (!rec || rec.status === 'revoked') return json({ error: { code: 'revoked' } }, 403)
-  if (!deps.registry.isPaired(auth.tid)) return json({ error: { code: 'paused' } }, 503)
+  if (!deps.registry.isPaired(auth.tid)) return buildPausedResponse(deps.tokenStore, auth.tid)
 
   const rlCheck = await deps.rateLimiter.check(auth.tid, 'token')
   if (!rlCheck.allowed) {
@@ -27,7 +28,7 @@ export async function handleLapDescribe(req: Request, deps: LapDescribeDeps): Pr
   }
 
   const hello = deps.registry.getHello(auth.tid)
-  if (!hello) return json({ error: { code: 'paused' } }, 503)
+  if (!hello) return buildPausedResponse(deps.tokenStore, auth.tid)
 
   const messages: Record<string, MessageSchemaEntry> = hello.msgSchema as Record<
     string,

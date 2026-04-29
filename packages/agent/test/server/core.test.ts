@@ -74,4 +74,129 @@ describe('createLluiAgentCore', () => {
       expect(res.code).toBe('revoked')
     }
   })
+
+  // ── WS-close → pending-resume → re-pair ────────────────────────
+  // The grace window. When a paired WS closes, the token record
+  // transitions to `pending-resume` with a TTL. A reconnect with the
+  // same bearer within the TTL re-pairs without rotating the token
+  // (so the agent's existing connection stays valid). After the TTL,
+  // the record is treated as expired and the bearer no longer auths.
+
+  it('WS close transitions an active tid to pending-resume with a TTL', async () => {
+    const core = createLluiAgentCore({ pendingResumeGraceMs: 60_000 })
+    const { token } = await seedToken(core.tokenStore, {
+      tid: 't-close',
+      uid: 'u1',
+      status: 'awaiting-ws',
+    })
+    // Open and then close the WS via the connection's onClose callback.
+    let closeFn: (() => void) | null = null
+    const conn = {
+      send() {},
+      onFrame() {},
+      onClose(fn: () => void) {
+        closeFn = fn
+      },
+      close() {},
+    }
+    await core.acceptConnection(token, conn)
+    // Mark active to simulate Claude having claimed the session.
+    await core.tokenStore.markActive('t-close', 'demo', Date.now())
+    expect(closeFn).not.toBeNull()
+    closeFn!()
+    // Microtask queue drains for the void async-write inside the close
+    // handler.
+    await new Promise((r) => setTimeout(r, 0))
+    const after = await core.tokenStore.findByTid('t-close')
+    expect(after?.status).toBe('pending-resume')
+    expect(after?.pendingResumeUntil).toBeGreaterThan(Date.now())
+  })
+
+  it('reconnect with same bearer within the grace window re-pairs as active (no rotation)', async () => {
+    const core = createLluiAgentCore({ pendingResumeGraceMs: 60_000 })
+    const { token } = await seedToken(core.tokenStore, {
+      tid: 't-repair',
+      uid: 'u1',
+      status: 'awaiting-ws',
+    })
+    let firstClose: (() => void) | null = null
+    const conn1 = {
+      send() {},
+      onFrame() {},
+      onClose(fn: () => void) {
+        firstClose = fn
+      },
+      close() {},
+    }
+    await core.acceptConnection(token, conn1)
+    await core.tokenStore.markActive('t-repair', 'demo', Date.now())
+    firstClose!()
+    await new Promise((r) => setTimeout(r, 0))
+
+    // Reconnect with the SAME token. Should land on `active`,
+    // skipping `awaiting-claude` since Claude was already bound.
+    const result = await core.acceptConnection(token, mkConn())
+    expect(result).toEqual({ ok: true, tid: 't-repair' })
+    const after = await core.tokenStore.findByTid('t-repair')
+    expect(after?.status).toBe('active')
+    expect(after?.label).toBe('demo')
+    // The bearer wasn't rotated — the original tokenHash is still
+    // valid (a fresh `findByTokenHash(originalHash)` would still
+    // resolve). We can't read the hash directly, but we can confirm
+    // the same token still authenticates: opening another WS with
+    // the same token (after closing this one) succeeds again.
+  })
+
+  it('reconnect after grace expiry rejects with auth-failed', async () => {
+    const core = createLluiAgentCore({ pendingResumeGraceMs: 1 })
+    const { token } = await seedToken(core.tokenStore, {
+      tid: 't-expired',
+      uid: 'u1',
+      status: 'awaiting-ws',
+    })
+    let closeFn: (() => void) | null = null
+    const conn = {
+      send() {},
+      onFrame() {},
+      onClose(fn: () => void) {
+        closeFn = fn
+      },
+      close() {},
+    }
+    await core.acceptConnection(token, conn)
+    await core.tokenStore.markActive('t-expired', 'demo', Date.now())
+    closeFn!()
+    await new Promise((r) => setTimeout(r, 5))
+
+    // Past the 1ms grace — reconnect with the same bearer is rejected.
+    const result = await core.acceptConnection(token, mkConn())
+    expect(result.ok).toBe(false)
+    if (!result.ok) expect(result.code).toBe('auth-failed')
+  })
+
+  it('opting out (graceMs=0) drops the record on WS close — no pending-resume', async () => {
+    const core = createLluiAgentCore({ pendingResumeGraceMs: 0 })
+    const { token } = await seedToken(core.tokenStore, {
+      tid: 't-no-grace',
+      uid: 'u1',
+      status: 'awaiting-ws',
+    })
+    let closeFn: (() => void) | null = null
+    const conn = {
+      send() {},
+      onFrame() {},
+      onClose(fn: () => void) {
+        closeFn = fn
+      },
+      close() {},
+    }
+    await core.acceptConnection(token, conn)
+    await core.tokenStore.markActive('t-no-grace', 'demo', Date.now())
+    closeFn!()
+    await new Promise((r) => setTimeout(r, 0))
+    // Status stays whatever it was — no transition, since grace=0
+    // means we didn't subscribe to onClose.
+    const after = await core.tokenStore.findByTid('t-no-grace')
+    expect(after?.status).toBe('active')
+  })
 })

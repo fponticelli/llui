@@ -2,7 +2,14 @@ import { tagSend, type Send } from '@llui/dom'
 import type { AgentSession, AgentToken } from '../protocol.js'
 import type { AgentEffect } from './effects.js'
 
-export type AgentConnectStatus = 'idle' | 'minting' | 'pending-claude' | 'active' | 'error'
+export type AgentConnectStatus =
+  | 'idle'
+  | 'minting'
+  | 'pending-claude'
+  | 'active'
+  | 'reconnecting'
+  | 'failed'
+  | 'error'
 
 export type AgentConnectPendingToken = {
   token: AgentToken
@@ -17,6 +24,12 @@ export type AgentConnectPendingToken = {
    */
   connectSnippet: string
   expiresAt: number
+  /**
+   * Cached so the auto-reconnect path can re-open the WS without
+   * re-minting. The MintSucceeded → AgentOpenWS path stores it; the
+   * RestoreSession path also fills it in. Cleared by `Disconnect`.
+   */
+  wsUrl: string
 }
 
 export type AgentConnectState = {
@@ -25,6 +38,21 @@ export type AgentConnectState = {
   sessions: AgentSession[]
   resumable: AgentSession[]
   error: { code: string; detail: string } | null
+  /**
+   * Reconnect attempt counter. Incremented on each WS-close that
+   * triggers an auto-reconnect; reset on `WsOpened` and on user
+   * actions (`Disconnect`, fresh `Mint`). Drives the backoff schedule
+   * (1s, 2s, 4s, 8s, 16s, 30s, 30s, …) and surfaces to UI as
+   * "reconnecting (attempt 3 / next in 4s)".
+   */
+  reconnectAttempt: number
+  /**
+   * Total cumulative ms spent in `reconnecting` for the current
+   * outage. Compared against `reconnectGiveUpMs` (effect-side option,
+   * default 5 min) to decide when to surface `failed` to the user.
+   * Reset whenever a WS opens successfully.
+   */
+  reconnectElapsedMs: number
 }
 
 export type AgentConnectMsg =
@@ -87,6 +115,30 @@ export type AgentConnectMsg =
       wsUrl: string
       expiresAt: number
     }
+  /**
+   * @intent("Disconnect the active agent session and clear all
+   * persisted credentials. Stops any in-flight reconnect attempt;
+   * subsequent WS closures stay in `idle` instead of triggering
+   * auto-reconnect. Use when the user explicitly clicks Disconnect
+   * in the panel — for transient drops, do nothing and let the
+   * reconnect loop run.")
+   */
+  | { type: 'Disconnect' }
+  /**
+   * @humanOnly — internal: scheduler effect dispatched this when the
+   * backoff timer fired. The reducer increments the attempt counter,
+   * adds the just-elapsed delay to `reconnectElapsedMs`, and emits
+   * `AgentOpenWS` with the cached pendingToken/wsUrl so the WS can
+   * reattach without minting.
+   */
+  | { type: 'ReconnectAttempt'; elapsedMs: number }
+  /**
+   * @humanOnly — internal: scheduler effect dispatched this when the
+   * give-up ceiling was reached without a successful WS open.
+   * Reducer flips status to `failed` so the UI can surface a clear
+   * error and offer a manual reconnect.
+   */
+  | { type: 'ReconnectGaveUp' }
 
 /**
  * Options threaded through `init()` and `update()`. `mintUrl` is
@@ -97,6 +149,32 @@ export type AgentConnectMsg =
  */
 export type AgentConnectInitOpts = { mintUrl?: string }
 
+/**
+ * Backoff schedule for the auto-reconnect loop. Doubles starting at
+ * 1s, caps at 30s. Translates `state.reconnectAttempt` into the next
+ * delay; the effect handler schedules a `setTimeout` for that long
+ * and dispatches `ReconnectAttempt` when it fires.
+ *
+ * Lives in the reducer so tests can pin the timings without poking
+ * effect-handler internals; the constants are not exported because
+ * tweaking them changes UX more than tweaks to the give-up ceiling.
+ */
+const RECONNECT_BASE_MS = 1000
+const RECONNECT_CAP_MS = 30_000
+function reconnectDelayMs(attempt: number): number {
+  const factor = Math.min(Math.pow(2, attempt), RECONNECT_CAP_MS / RECONNECT_BASE_MS)
+  return Math.min(RECONNECT_BASE_MS * factor, RECONNECT_CAP_MS)
+}
+
+/**
+ * Total cumulative wait, across all reconnect attempts, before the
+ * loop gives up and transitions to `'failed'`. 5 minutes is long
+ * enough to weather a brief server outage but short enough that a
+ * permanently-down endpoint surfaces clearly to the user instead of
+ * silently spinning.
+ */
+const RECONNECT_GIVE_UP_MS = 5 * 60 * 1000
+
 /** Component shape is [State, Effect[]] — consistent with @llui/components. */
 export function init(_opts: AgentConnectInitOpts): [AgentConnectState, AgentEffect[]] {
   return [
@@ -106,6 +184,8 @@ export function init(_opts: AgentConnectInitOpts): [AgentConnectState, AgentEffe
       sessions: [],
       resumable: [],
       error: null,
+      reconnectAttempt: 0,
+      reconnectElapsedMs: 0,
     },
     [],
   ]
@@ -156,9 +236,17 @@ export function update(
           `(Some MCP clients namespace tools as ` +
           `\`mcp__llui__connect_session\` and load them lazily — search the tool list if \`connect_session\` isn't immediately available.)`,
         expiresAt: msg.expiresAt,
+        wsUrl: msg.wsUrl,
       }
       return [
-        { ...state, status: 'pending-claude', pendingToken: pending, error: null },
+        {
+          ...state,
+          status: 'pending-claude',
+          pendingToken: pending,
+          error: null,
+          reconnectAttempt: 0,
+          reconnectElapsedMs: 0,
+        },
         [
           { type: 'AgentOpenWS', token: msg.token, wsUrl: msg.wsUrl },
           // Persist alongside opening the WS so the host can store the
@@ -198,19 +286,107 @@ export function update(
           `(Some MCP clients namespace tools as ` +
           `\`mcp__llui__connect_session\` and load them lazily — search the tool list if \`connect_session\` isn't immediately available.)`,
         expiresAt: msg.expiresAt,
+        wsUrl: msg.wsUrl,
       }
       return [
-        { ...state, status: 'pending-claude', pendingToken: restored, error: null },
+        {
+          ...state,
+          status: 'pending-claude',
+          pendingToken: restored,
+          error: null,
+          reconnectAttempt: 0,
+          reconnectElapsedMs: 0,
+        },
         [{ type: 'AgentOpenWS', token: msg.token, wsUrl: msg.wsUrl }],
       ]
     }
     case 'MintFailed':
       return [{ ...state, status: 'error', error: msg.error }, []]
-    case 'WsOpened':
+    case 'WsOpened': {
       // WS is open but Claude hasn't bound yet; stay at pending-claude.
+      // If we were `reconnecting`, this is a successful reattach —
+      // back to pending-claude and reset the attempt counters.
+      if (state.status === 'reconnecting') {
+        return [
+          { ...state, status: 'pending-claude', reconnectAttempt: 0, reconnectElapsedMs: 0 },
+          [],
+        ]
+      }
       return [state, []]
-    case 'WsClosed':
-      return [{ ...state, status: 'idle', pendingToken: null }, []]
+    }
+    case 'WsClosed': {
+      // Three cases:
+      //   1. We had no pendingToken (already idle / pre-mint) → no-op.
+      //   2. Status is `idle` or `failed` (Disconnect already cleared,
+      //      or we previously gave up) → no-op so a delayed close
+      //      event after Disconnect doesn't accidentally restart the
+      //      loop.
+      //   3. We're connected/connecting and the close was unsolicited
+      //      → schedule a reconnect with backoff.
+      if (state.pendingToken === null) return [{ ...state, status: 'idle' }, []]
+      if (state.status === 'idle' || state.status === 'failed') return [state, []]
+      const delayMs = reconnectDelayMs(state.reconnectAttempt)
+      return [
+        { ...state, status: 'reconnecting', error: null },
+        [{ type: 'AgentReconnectSchedule', delayMs }],
+      ]
+    }
+    case 'ReconnectAttempt': {
+      // Backoff timer fired. If the user disconnected in the gap, we
+      // moved to idle and ignore. Otherwise, increment attempt + add
+      // the elapsed delay to the cumulative window. Past the give-up
+      // ceiling, transition to `failed` so the UI can offer a manual
+      // reconnect; otherwise re-open the WS with the cached
+      // credentials (no mint, same token — the server's grace window
+      // is what makes this transparent to the agent).
+      if (state.status !== 'reconnecting' || state.pendingToken === null) {
+        return [state, []]
+      }
+      const newElapsed = state.reconnectElapsedMs + msg.elapsedMs
+      if (newElapsed >= RECONNECT_GIVE_UP_MS) {
+        return [{ ...state, status: 'failed', reconnectElapsedMs: newElapsed }, []]
+      }
+      return [
+        {
+          ...state,
+          reconnectAttempt: state.reconnectAttempt + 1,
+          reconnectElapsedMs: newElapsed,
+        },
+        [
+          {
+            type: 'AgentOpenWS',
+            token: state.pendingToken.token,
+            wsUrl: state.pendingToken.wsUrl,
+          },
+        ],
+      ]
+    }
+    case 'ReconnectGaveUp':
+      return [{ ...state, status: 'failed' }, []]
+    case 'Disconnect': {
+      // User-initiated. Revoke the active tid (server kills the
+      // pairing), wipe the persisted credentials so a refresh can't
+      // restore them, and zero the reconnect counters so any in-
+      // flight backoff timer that fires post-disconnect becomes a
+      // no-op (the status guard in `ReconnectAttempt` keeps it from
+      // re-opening the WS).
+      const tid = state.pendingToken?.tid
+      const effects: AgentEffect[] = []
+      if (tid !== undefined) effects.push({ type: 'AgentRevoke', tid })
+      effects.push({ type: 'AgentSessionClear' })
+      effects.push({ type: 'AgentCloseWS' })
+      return [
+        {
+          ...state,
+          status: 'idle',
+          pendingToken: null,
+          error: null,
+          reconnectAttempt: 0,
+          reconnectElapsedMs: 0,
+        },
+        effects,
+      ]
+    }
     case 'ActivatedByClaude':
       return [{ ...state, status: 'active' }, []]
     case 'ResumeList':

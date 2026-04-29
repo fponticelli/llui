@@ -42,6 +42,20 @@ export type AgentEffect =
       expiresAt: number
     }
   | { type: 'AgentSessionClear' }
+  /**
+   * Schedule the next WS-reconnect attempt. The handler waits
+   * `delayMs` and dispatches `ReconnectAttempt { elapsedMs: delayMs }`
+   * back into the reducer, which decides whether to re-open the WS
+   * or transition to `failed` based on the cumulative wait. The
+   * delay schedule itself is computed reducer-side from
+   * `reconnectAttempt` — this effect is a thin setTimeout wrapper.
+   *
+   * The handler doesn't track cancellation: if the user dispatches
+   * `Disconnect` while the timer is pending, the reducer transitions
+   * to `idle` and the subsequent `ReconnectAttempt` becomes a no-op
+   * via the status guard. Simpler than coordinating cancel handles.
+   */
+  | { type: 'AgentReconnectSchedule'; delayMs: number }
 
 // Handler implementation lands in Plan 7 alongside the WS client.
 export type AgentEffectHandler = (effect: AgentEffect) => Promise<void>

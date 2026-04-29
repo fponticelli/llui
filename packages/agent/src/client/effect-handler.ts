@@ -5,6 +5,7 @@ import type {
   ResumeClaimResponse,
   SessionsResponse,
 } from '../protocol.js'
+import type { AgentSessionStorage } from './factory.js'
 
 export type EffectHandlerHost = {
   send(msg: unknown): void // root app send; wraps agent sub-msgs into the app Msg envelope
@@ -17,6 +18,16 @@ export type EffectHandlerHost = {
   /** Called before opening WS / on WS lifecycle events. */
   openWs(token: string, wsUrl: string): void
   closeWs(): void
+  /**
+   * Optional storage adapter. When set, `AgentSessionPersist` writes
+   * to it and `AgentSessionClear` clears it; the host doesn't need
+   * to handle these effects itself. When `null` or `undefined`, the
+   * effects no-op here and host code (if any) handles them in the
+   * outer effect router. The factory passes
+   * `defaultSessionStorage()` by default, so the framework is
+   * refresh-survival-ready out of the box.
+   */
+  sessionStorage?: AgentSessionStorage | null
   /**
    * Base path for agent HTTP endpoints. Default: `'/agent'` (matches
    * the canonical paths in `@llui/vite-plugin`'s dev middleware and
@@ -68,15 +79,39 @@ export function createEffectHandler(host: EffectHandlerHost) {
       case 'AgentClipboardWrite':
         return handleClipboardWrite(effect)
       case 'AgentSessionPersist':
-      case 'AgentSessionClear':
-        // Host-handled (sessionStorage write/clear). The framework
-        // emits these alongside MintSucceeded / Revoke so the host
-        // can survive a page refresh without invalidating the agent's
-        // token; we no-op here so the host's effect router is the
-        // single source of truth for the storage policy.
+        // Framework-owned when a storage adapter is configured;
+        // otherwise no-op and let the host's outer effect router
+        // handle it (the legacy contract). See factory.ts'
+        // `sessionStorage` option.
+        if (host.sessionStorage) {
+          host.sessionStorage.write({
+            token: effect.token,
+            tid: effect.tid,
+            lapUrl: effect.lapUrl,
+            wsUrl: effect.wsUrl,
+            expiresAt: effect.expiresAt,
+          })
+        }
         return
+      case 'AgentSessionClear':
+        if (host.sessionStorage) host.sessionStorage.clear()
+        return
+      case 'AgentReconnectSchedule':
+        return handleReconnectSchedule(host, effect)
     }
   }
+}
+
+async function handleReconnectSchedule(
+  host: EffectHandlerHost,
+  effect: Extract<AgentEffect, { type: 'AgentReconnectSchedule' }>,
+): Promise<void> {
+  // Single-shot timer. The reducer owns cancellation semantics via
+  // the status guard in `ReconnectAttempt` — if the user dispatches
+  // `Disconnect` while we're sleeping, the dispatched message hits
+  // an `idle` reducer and is a no-op. No cancel handle needed.
+  await new Promise<void>((resolve) => setTimeout(resolve, effect.delayMs))
+  host.send(host.wrapAgentConnect({ type: 'ReconnectAttempt', elapsedMs: effect.delayMs }))
 }
 
 // ── HTTP-bound handlers ─────────────────────────────────────────────
