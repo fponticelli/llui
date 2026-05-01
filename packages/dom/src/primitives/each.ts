@@ -94,6 +94,15 @@ export function each<S, T, M = unknown>(opts: EachOptions<S, T, M>): Node[] {
   const blocks = ctx.structuralBlocks
 
   const anchor = ctx.dom.createComment('each')
+  // End-of-territory sentinel. Bulk Range ops (reconcileClear, Fast path
+  // 1, Fast path 5) used to setEndAfter the last entry's last node, but
+  // when a nested structural primitive replaced its own entries between
+  // the outer render snapshot and the next outer reconcile, that captured
+  // node could be detached — Range#setEndAfter throws InvalidNodeTypeError
+  // on a parent-less node. Anchoring the range with two stable comments
+  // (owned by this each) makes the bulk-remove correct regardless of any
+  // inner-each / show / branch mutation that happened in between.
+  const endAnchor = ctx.dom.createComment('each-end')
   const entries: Entry<T>[] = []
   const clearCallbacks: Array<() => void> = []
   const removeCallbacks: Array<(key: string | number) => void> = []
@@ -167,6 +176,7 @@ export function each<S, T, M = unknown>(opts: EachOptions<S, T, M>): Node[] {
         parentLifetime,
         parent,
         anchor,
+        endAnchor,
         ctx,
         state,
         leaving,
@@ -206,12 +216,12 @@ export function each<S, T, M = unknown>(opts: EachOptions<S, T, M>): Node[] {
       // BEFORE scope disposal — avoids 1000 individual Set.delete calls
       for (let i = 0; i < clearCallbacks.length; i++) clearCallbacks[i]!()
 
-      // Bulk DOM removal
+      // Bulk DOM removal — anchored on this each's own start/end sentinels
+      // so a nested primitive that replaced its own captured nodes between
+      // the outer snapshot and now can't make this throw.
       const range = ctx.dom.createRange()
       range.setStartAfter(anchor)
-      const lastEntry = entries[entries.length - 1]!
-      const lastNode = lastEntry.nodes[lastEntry.nodes.length - 1]!
-      range.setEndAfter(lastNode)
+      range.setEndBefore(endAnchor)
       range.deleteContents()
 
       // Bulk scope disposal — disposers that were replaced by clearCallbacks
@@ -250,6 +260,7 @@ export function each<S, T, M = unknown>(opts: EachOptions<S, T, M>): Node[] {
           parentLifetime,
           parent,
           anchor,
+          endAnchor,
           ctx,
           state,
           leaving,
@@ -359,6 +370,7 @@ export function each<S, T, M = unknown>(opts: EachOptions<S, T, M>): Node[] {
     }
     entries.length = 0
     if (anchor.parentNode) anchor.parentNode.removeChild(anchor)
+    if (endAnchor.parentNode) endAnchor.parentNode.removeChild(endAnchor)
     // Force-remove any mid-leave entries immediately
     for (const entry of leaving) {
       for (const node of entry.nodes) {
@@ -374,6 +386,7 @@ export function each<S, T, M = unknown>(opts: EachOptions<S, T, M>): Node[] {
     const nodes = entry.nodes
     for (let i = 0; i < nodes.length; i++) result.push(nodes[i]!)
   }
+  result.push(endAnchor)
   return result
 }
 
@@ -538,6 +551,7 @@ function reconcileEntries<S, T>(
   parentLifetime: Lifetime,
   parent: Node,
   anchor: Node,
+  endAnchor: Node,
   ctx: ReturnType<typeof getRenderContext>,
   state: unknown,
   leaving: Entry<T>[],
@@ -560,13 +574,12 @@ function reconcileEntries<S, T>(
       for (const entry of toRemove) removeEntry(entry, opts, leaving)
       return
     }
-    // Remove all DOM nodes in one operation using Range
+    // Remove all DOM nodes in one operation using Range. Anchored on
+    // start + end sentinels — see endAnchor comment in each() for why.
     if (entries.length > 0) {
       const range = ctx.dom.createRange()
       range.setStartAfter(anchor)
-      const lastEntry = entries[entries.length - 1]!
-      const lastNode = lastEntry.nodes[lastEntry.nodes.length - 1]!
-      range.setEndAfter(lastNode)
+      range.setEndBefore(endAnchor)
       range.deleteContents()
     }
     // Bulk dispose all entry scopes — avoids per-scope function call overhead
@@ -673,11 +686,12 @@ function reconcileEntries<S, T>(
       if (report) {
         for (const entry of entries) collectNodes(report.leaving, entry.nodes)
       }
-      // Bulk DOM removal using Range
+      // Bulk DOM removal using Range — anchored on this each's stable
+      // sentinels so a stale lastEntry node from a nested-primitive
+      // mutation can't trip setEndAfter.
       const range = ctx.dom.createRange()
       range.setStartAfter(anchor)
-      const lastEntry = entries[entries.length - 1]!
-      range.setEndAfter(lastEntry.nodes[lastEntry.nodes.length - 1]!)
+      range.setEndBefore(endAnchor)
       range.deleteContents()
       // Bulk dispose all old scopes
       const oldLifetimes: Lifetime[] = []
@@ -743,7 +757,17 @@ function reconcileEntries<S, T>(
       if (hasLeave) {
         removeEntry(entry, opts, leaving)
       } else {
-        for (const node of entry.nodes) parent.removeChild(node)
+        // Defensive guard: a nested primitive (inner each / show / branch)
+        // may have replaced its own captured nodes between the outer
+        // render snapshot and now. Those replaced nodes are still in
+        // entry.nodes but no longer children of `parent`. Skip them —
+        // the inner-primitive's addDisposer cascade (run by the scope
+        // disposal below) cleans up the orphan replacement nodes that
+        // ARE attached. Without this guard, removeChild throws
+        // NotFoundError on the stale ones.
+        for (const node of entry.nodes) {
+          if (node.parentNode === parent) parent.removeChild(node)
+        }
         entry.scope.disposalCause = 'each-remove'
         disposeLifetime(entry.scope, true)
         didBulkDetach = true
