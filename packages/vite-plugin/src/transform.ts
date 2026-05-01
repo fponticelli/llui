@@ -1651,6 +1651,33 @@ function detectArrayOp(
   // tautology: every binding mask ANDed with zero is zero.
   if (modifiedFields.length === 0) return 'none'
 
+  // The specialized methods (`reconcileClear`, `reconcileItems`,
+  // `reconcileRemove`, `reconcileChanged`) only exist on `each` blocks.
+  // Non-each blocks (`show`, `branch`, `scope`) leave them undefined,
+  // so a method other than 0 (general reconcile) silently no-ops on
+  // those blocks at runtime. If the case modifies fields BEYOND the
+  // array op (e.g. `{ ...state, open: true, name: '', tags: [] }`),
+  // any show/branch block whose mask intersects the case's dirty bits
+  // would be selected for reconcile but then skipped by the no-op
+  // method invocation — its `when`/`on` accessor never re-evaluates,
+  // and the component appears structurally inert after mount.
+  //
+  // Conservative correctness: only emit a non-general method when the
+  // array op is the SOLE field modification. With one modified field,
+  // the only blocks selected by mask gating are ones that read that
+  // single field — and the optimization is well-defined for that
+  // narrow case (each blocks operating on the array). Multi-field
+  // cases fall through to `'general'` (method=0), so every selected
+  // block runs the standard `reconcile` path. We trade a niche
+  // optimization (small benefit even when applicable) for guaranteed
+  // structural reconciliation across the framework's primitive set.
+  //
+  // Sister of show-helper-reconcile.test.ts, which fixed the same
+  // class of bug on the method=-1 path. Same architectural principle:
+  // the compiler can't see every block in the view, so optimizations
+  // that route around `reconcile` must be ironclad. When in doubt,
+  // emit method=0 and let `_handleMsg`'s per-block mask gate filter.
+  //
   // Previously: if `(structuralMask & caseDirty) === 0`, return 'none'
   // on the theory that no structural block's mask could intersect this
   // case's dirty bits. That optimization was UNSAFE: `computeStructuralMask`
@@ -1670,13 +1697,8 @@ function detectArrayOp(
   // when `errors` changes — but the compiler was emitting `method = -1`
   // (skip blocks entirely) for cases that only touch `errors`, and the
   // error paragraphs would never mount.
-  //
-  // The fix is to remove this short-circuit. Phase 1 runs unconditionally
-  // when any field is modified; `_handleMsg`'s per-block check
-  // `if (!(block.mask & dirty)) continue` filters out uninterested
-  // blocks at near-zero cost. We lose a micro-optimization but gain
-  // correctness for every component that factors view helpers into
-  // functions — which is the idiomatic pattern.
+  if (modifiedFields.length !== 1) return 'general'
+  const onlyField = modifiedFields[0]!
 
   // Look at the return expression's array field values
   for (const stmt of clause.statements) {
@@ -1694,6 +1716,12 @@ function detectArrayOp(
             ? prop.name.text
             : null
       if (!name) continue
+      // The optimization only applies when the array op is on the
+      // single tracked field. A `field: []` on a different field
+      // (one not in modifiedFields, e.g. an untracked field) would
+      // still no-op safely on each blocks via the mask gate, but to
+      // keep the analysis tight we require an exact match.
+      if (name !== onlyField) continue
 
       // Check for empty array literal: `field: []`
       if (

@@ -465,22 +465,39 @@ export function _handleMsg(
       const block = bl[i]
       if (!block || !(block.mask & dirty)) continue
       try {
+        // Specialized methods (`reconcileItems`, `reconcileClear`,
+        // `reconcileRemove`, `reconcileChanged`) only exist on `each`
+        // blocks. Non-each blocks (`show`, `branch`, `scope`) leave
+        // them undefined. The compiler-side fix in `detectArrayOp`
+        // already restricts these methods to single-field cases, but
+        // a show()/branch() block whose mask intersects the cleared
+        // field would still be silently skipped without this fallback.
+        // When the specialized method is missing, run the general
+        // `reconcile` path so the block's `when`/`on` accessor still
+        // re-evaluates. each blocks always have the specialized
+        // methods, so they keep their fast path.
         switch (method) {
           case 0:
             block.reconcile(s, dirty)
             break
           case 1:
-            block.reconcileItems?.(s)
+            if (block.reconcileItems) block.reconcileItems(s)
+            else block.reconcile(s, dirty)
             break
           case 2:
-            block.reconcileClear?.()
+            if (block.reconcileClear) block.reconcileClear()
+            else block.reconcile(s, dirty)
             break
           case 3:
-            block.reconcileRemove?.(s)
+            if (block.reconcileRemove) block.reconcileRemove(s)
+            else block.reconcile(s, dirty)
             break
           default:
             // method >= 10: reconcileChanged with stride = method - 10
-            if (method >= 10) block.reconcileChanged?.(s, method - 10)
+            if (method >= 10) {
+              if (block.reconcileChanged) block.reconcileChanged(s, method - 10)
+              else block.reconcile(s, dirty)
+            }
             break
         }
       } catch (err) {
