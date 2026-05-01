@@ -143,6 +143,10 @@ describe('LluiMcpServer', () => {
 })
 
 describe('llui_lint tool', () => {
+  // ESLint cold-start: loading the flat config + the full @llui/eslint-plugin
+  // ruleset + the typescript-eslint parser typically lands ~3.5–4.5s locally,
+  // and the GitHub Actions runner pushes that past the 5s default. The test
+  // is a single-shot smoke test, so the cost is paid once. Bump generously.
   it('lints a file via the path argument', async () => {
     const { writeFileSync, mkdtempSync, rmSync } = await import('node:fs')
     const { join, resolve } = await import('node:path')
@@ -169,7 +173,7 @@ describe('llui_lint tool', () => {
     } finally {
       rmSync(dir, { recursive: true, force: true })
     }
-  })
+  }, 15_000)
 
   it('rejects non-.ts/.tsx paths', async () => {
     const server = new LluiMcpServer()
