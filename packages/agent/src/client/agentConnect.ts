@@ -175,6 +175,55 @@ function reconnectDelayMs(attempt: number): number {
  */
 const RECONNECT_GIVE_UP_MS = 5 * 60 * 1000
 
+/**
+ * Build the user-pasted connect snippet that lands in the LLM's chat
+ * window. The snippet has to do three things in one paragraph that an
+ * LLM will follow on first read:
+ *
+ * 1. Tell the LLM which tool to call to bind the session
+ *    (`connect_session`).
+ *
+ * 2. Tell the LLM that the user can also message it through the app's
+ *    in-app chat composer, and that it should call `wait_for_user_input`
+ *    when idle to receive those messages. Without this directive the
+ *    chat composer appears to "do nothing" — the user types, the
+ *    server buffers, but the LLM is sitting idle waiting for input
+ *    in its OWN window and never polls. The directive is phrased as
+ *    "when idle / between tasks" rather than "always poll" so the LLM
+ *    doesn't park as the first thing it does, which would block every
+ *    other tool call until timeout.
+ *
+ * 3. Survive tool-namespacing edge cases: Claude Desktop exposes MCP
+ *    tools as bare names (`connect_session`) but Claude Code and other
+ *    namespacing clients emit them as `mcp__llui__connect_session` and
+ *    may defer-load them — so an LLM that searches its tool list for a
+ *    literal name won't find it. Naming the LLui MCP server explicitly
+ *    (with its canonical install name `llui`) gives the model enough
+ *    to resolve the right tool on either platform; the parenthetical
+ *    surfaces the edge case for deferred-tool clients.
+ *
+ * Phrased generically (`AI assistant`, `Some MCP clients`) since MCP
+ * support is rapidly expanding past Claude — the snippet shouldn't
+ * telegraph "this is Claude-only" when it works against any compliant
+ * client. The framework owns this string; updates ride along the
+ * `@llui/agent` package version.
+ */
+function buildConnectSnippet(lapUrl: string, token: string): string {
+  return (
+    `Connect this AI assistant to the LLui app. Call the LLui MCP server's ` +
+    `\`connect_session\` tool with url=${JSON.stringify(lapUrl)} and ` +
+    `token=${JSON.stringify(token)}. ` +
+    `After connecting, the user may also message you through the app's ` +
+    `in-app chat composer — when you're idle or waiting for further ` +
+    `instructions, call the \`wait_for_user_input\` tool to receive those ` +
+    `messages. ` +
+    `(Some MCP clients namespace tools as ` +
+    `\`mcp__llui__connect_session\` / \`mcp__llui__wait_for_user_input\` ` +
+    `and load them lazily — search the tool list if the bare names aren't ` +
+    `immediately available.)`
+  )
+}
+
 /** Component shape is [State, Effect[]] — consistent with @llui/components. */
 export function init(_opts: AgentConnectInitOpts): [AgentConnectState, AgentEffect[]] {
   return [
@@ -208,33 +257,11 @@ export function update(
       return [{ ...state, status: 'minting' }, [mintEffect]]
     }
     case 'MintSucceeded': {
-      // The connect snippet has to work across every MCP surface.
-      // Claude Desktop and similar clients expose MCP tools as bare
-      // names (`connect_session`), but Claude Code (and other tool-list-
-      // namespacing clients) emit them as `mcp__llui__connect_session`
-      // and may defer-load them — so an LLM that searches its tool list
-      // for a literal `connect_session` won't find it. Naming the LLui
-      // MCP server explicitly (with its canonical `llui` install name,
-      // matching the install docs) gives the model enough to resolve
-      // the right tool on either platform; the parenthetical names the
-      // edge case so a deferred-tool client doesn't bail out.
-      //
-      // Phrased generically (`AI assistant`, `Some MCP clients`) since
-      // MCP support is rapidly expanding past Claude — the snippet
-      // shouldn't telegraph "this is Claude-only" when it works against
-      // any compliant client. The literal `mcp__llui__` prefix matches
-      // the install command in `site/content/agents.md`; users who
-      // renamed the server in their config can substitute their name.
       const pending: AgentConnectPendingToken = {
         token: msg.token,
         tid: msg.tid,
         lapUrl: msg.lapUrl,
-        connectSnippet:
-          `Connect this AI assistant to the LLui app. Call the LLui MCP server's ` +
-          `\`connect_session\` tool with url=${JSON.stringify(msg.lapUrl)} and ` +
-          `token=${JSON.stringify(msg.token)}. ` +
-          `(Some MCP clients namespace tools as ` +
-          `\`mcp__llui__connect_session\` and load them lazily — search the tool list if \`connect_session\` isn't immediately available.)`,
+        connectSnippet: buildConnectSnippet(msg.lapUrl, msg.token),
         expiresAt: msg.expiresAt,
         wsUrl: msg.wsUrl,
       }
@@ -271,20 +298,11 @@ export function update(
       // credentials read from sessionStorage. Easier to no-op here
       // than to coordinate the race in the host.
       if (state.status !== 'idle') return [state, []]
-      // Regenerate the connectSnippet so the user can re-paste if
-      // their AI lost the original tool call (same shape as
-      // MintSucceeded — the framework owns this string and updates
-      // to it ride along the agent package version).
       const restored: AgentConnectPendingToken = {
         token: msg.token,
         tid: msg.tid,
         lapUrl: msg.lapUrl,
-        connectSnippet:
-          `Connect this AI assistant to the LLui app. Call the LLui MCP server's ` +
-          `\`connect_session\` tool with url=${JSON.stringify(msg.lapUrl)} and ` +
-          `token=${JSON.stringify(msg.token)}. ` +
-          `(Some MCP clients namespace tools as ` +
-          `\`mcp__llui__connect_session\` and load them lazily — search the tool list if \`connect_session\` isn't immediately available.)`,
+        connectSnippet: buildConnectSnippet(msg.lapUrl, msg.token),
         expiresAt: msg.expiresAt,
         wsUrl: msg.wsUrl,
       }

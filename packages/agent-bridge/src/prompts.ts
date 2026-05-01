@@ -31,8 +31,14 @@ export function registerPrompts(server: McpServer): void {
               `Please connect this conversation to the LLui app at ${url}. ` +
               `Call the LLui MCP server's \`connect_session\` tool ` +
               `with url=${JSON.stringify(url)} and token=${JSON.stringify(token)}. ` +
-              `(In Claude Code the tool may be namespaced as ` +
-              `\`mcp__<server>__connect_session\` and deferred — load it via tool search if needed.)`,
+              `After connecting, I may message you through the app's in-app ` +
+              `chat composer — when you're idle or waiting for further ` +
+              `instructions, call the \`wait_for_user_input\` tool to receive ` +
+              `those messages. ` +
+              `(In Claude Code the tools may be namespaced as ` +
+              `\`mcp__<server>__connect_session\` / ` +
+              `\`mcp__<server>__wait_for_user_input\` and deferred — load them ` +
+              `via tool search if needed.)`,
           },
         },
       ],

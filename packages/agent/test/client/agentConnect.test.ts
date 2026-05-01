@@ -83,8 +83,14 @@ describe('agentConnect', () => {
         `Connect this AI assistant to the LLui app. Call the LLui MCP server's ` +
           `\`connect_session\` tool with url=${JSON.stringify(lapUrl)} and ` +
           `token=${JSON.stringify(token)}. ` +
+          `After connecting, the user may also message you through the app's ` +
+          `in-app chat composer — when you're idle or waiting for further ` +
+          `instructions, call the \`wait_for_user_input\` tool to receive those ` +
+          `messages. ` +
           `(Some MCP clients namespace tools as ` +
-          `\`mcp__llui__connect_session\` and load them lazily — search the tool list if \`connect_session\` isn't immediately available.)`,
+          `\`mcp__llui__connect_session\` / \`mcp__llui__wait_for_user_input\` ` +
+          `and load them lazily — search the tool list if the bare names aren't ` +
+          `immediately available.)`,
       )
       expect(state1.pendingToken!.expiresAt).toBe(expiresAt)
       expect(state1.error).toBeNull()
@@ -529,8 +535,14 @@ describe('agentConnect.connect', () => {
           `Connect this AI assistant to the LLui app. Call the LLui MCP server's ` +
           `\`connect_session\` tool with url=${JSON.stringify(lapUrl)} and ` +
           `token=${JSON.stringify(token)}. ` +
+          `After connecting, the user may also message you through the app's ` +
+          `in-app chat composer — when you're idle or waiting for further ` +
+          `instructions, call the \`wait_for_user_input\` tool to receive those ` +
+          `messages. ` +
           `(Some MCP clients namespace tools as ` +
-          `\`mcp__llui__connect_session\` and load them lazily — search the tool list if \`connect_session\` isn't immediately available.)`,
+          `\`mcp__llui__connect_session\` / \`mcp__llui__wait_for_user_input\` ` +
+          `and load them lazily — search the tool list if the bare names aren't ` +
+          `immediately available.)`,
       },
     ])
   })
