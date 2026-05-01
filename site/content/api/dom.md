@@ -359,7 +359,7 @@ One-shot imperative read of current state inside a render context. No binding is
 function sample<S, R>(selector: (s: S) => R): R
 ```
 
-Throws if called outside a render context. Also available as `h.sample(...)` on the View bag.
+`sample()` is a **construction-time** primitive. It throws if called outside a render context, and it also throws if called from inside an accessor — `each.key`, `each.items`, `branch.on`, `show.when`, `scope.on`, `child.props`, `foreign.props`, or a binding accessor like `text(s => …)`. Accessors run during the update phase (no render context) and must be pure functions of their parameter; `sample()` reads outside the parameter, which the compiler's mask analysis can't see. The lint rule `llui/no-sample-in-accessor` catches the same antipattern at edit time. To depend on outer state inside an accessor, lift the dep into the parameter (e.g. for `each.key`, bake it into the items map: `items: (s) => s.rows.map(it => ({ it, rev: s.rev }))`). Also available as `h.sample(...)` on the View bag.
 
 ### `each()`
 
