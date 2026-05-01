@@ -11,6 +11,24 @@ All notable changes to LLui packages are documented here. LLui is a pre-1.0 proj
 
 Packages version in lockstep at release time: `@llui/dom`, `@llui/vite-plugin`, `@llui/test`, `@llui/router`, `@llui/transitions`, `@llui/components`, `@llui/vike` share a version line. `@llui/effects`, `@llui/mcp`, `@llui/eslint-plugin`, `@llui/agent`, and `llui-agent` have their own cadence.
 
+## 2026-05-01 — @llui/dom@0.0.37
+
+**Released:** `@llui/{dom,components,transitions}@0.0.37`; `@llui/{router,test}@0.0.38`; `@llui/vike@0.0.39`; `@llui/agent@0.0.51`; `@llui/mcp@0.0.32`; `llui-agent@0.0.15`
+
+Two same-day fixes: nested-each DOM mutations no longer break parent reconcile, and the new chat composer's event handlers actually fire (the camelCase requirement bit me in the agentChat bag types).
+
+### `@llui/dom@0.0.37`
+
+- **Fixed** Nested-each reconcile no longer throws `InvalidNodeTypeError` from `Range#setEndAfter` when an inner structural primitive replaces its territory between an outer render snapshot and the next outer reconcile. The bulk-remove paths (`reconcileClear`, fast-path-1 clear, fast-path-5 full-replace) used to anchor `range.setEndAfter(lastEntry.lastNode)` against the most recent entry's tail node — but a nested `each` / `branch` / `show` could detach that node out from under the outer block, leaving `setEndAfter` to throw on a parent-less node. The fix adds a stable `each-end` comment-anchor owned by each `each()` block and threads it through `reconcileEntries` so bulk Range ops always span the two outer comments regardless of inner-each / show / branch mutations in between.
+
+### `@llui/agent@0.0.51`
+
+- **Fixed** `agentChat.connect()`'s prop bag declared `oninput` and `onkeydown` (lowercase). LLui's element runtime only attaches keys matching `/^on[A-Z]/` as DOM event listeners (`packages/dom/src/elements.ts:72`); lowercase silently degrades to a string attribute. The visible symptom: typing into the in-app chat composer never fired `SetInput`, `pendingInput` stayed empty, and the submit button stayed disabled forever. Renamed the bag's keys + types + handlers to `onInput` / `onKeyDown`, updated the doc comments with a sharp warning, and adjusted the 19 `agentChat` tests. No behaviour change for any other slice; `agentConnect` / `agentConfirm` / `agentLog` were already camelCase.
+
+### `@llui/components@0.0.37`, `@llui/transitions@0.0.37`, `@llui/router@0.0.38`, `@llui/test@0.0.38`, `@llui/vike@0.0.39`, `@llui/mcp@0.0.32`, `llui-agent@0.0.15`
+
+- Cascade release picking up the new `@llui/dom@0.0.37` peer range. No package-level source changes.
+
 ## 2026-05-01 — @llui/agent@0.0.50, llui-agent@0.0.14
 
 **Released:** `@llui/agent@0.0.50`; `llui-agent@0.0.14`

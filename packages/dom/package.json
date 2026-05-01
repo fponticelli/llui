@@ -1,6 +1,6 @@
 {
   "name": "@llui/dom",
-  "version": "0.0.36",
+  "version": "0.0.37",
   "type": "module",
   "sideEffects": false,
   "exports": {
