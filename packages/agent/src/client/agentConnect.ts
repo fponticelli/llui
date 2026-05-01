@@ -177,7 +177,7 @@ const RECONNECT_GIVE_UP_MS = 5 * 60 * 1000
 
 /**
  * Build the user-pasted connect snippet that lands in the LLM's chat
- * window. The snippet has to do three things in one paragraph that an
+ * window. The snippet has to do four things in one paragraph that an
  * LLM will follow on first read:
  *
  * 1. Tell the LLM which tool to call to bind the session
@@ -193,7 +193,15 @@ const RECONNECT_GIVE_UP_MS = 5 * 60 * 1000
  *    doesn't park as the first thing it does, which would block every
  *    other tool call until timeout.
  *
- * 3. Survive tool-namespacing edge cases: Claude Desktop exposes MCP
+ * 3. Tell the LLM the canonical Q&A pattern: when it needs clarification
+ *    before acting, call `narrate` to ask the question, then
+ *    `wait_for_user_input` for the answer. Without this hint the LLM
+ *    typically guesses and dispatches a Msg with assumed values; with
+ *    it, the agent asks first — the more human-feeling default. The
+ *    pattern is one sentence in the snippet rather than a long
+ *    explanation; LLMs pick up the structure from a single example.
+ *
+ * 4. Survive tool-namespacing edge cases: Claude Desktop exposes MCP
  *    tools as bare names (`connect_session`) but Claude Code and other
  *    namespacing clients emit them as `mcp__llui__connect_session` and
  *    may defer-load them — so an LLM that searches its tool list for a
@@ -217,10 +225,13 @@ function buildConnectSnippet(lapUrl: string, token: string): string {
     `in-app chat composer — when you're idle or waiting for further ` +
     `instructions, call the \`wait_for_user_input\` tool to receive those ` +
     `messages. ` +
+    `If you need clarification before acting, call \`narrate\` to ask the ` +
+    `question, then \`wait_for_user_input\` for the answer — that's how a ` +
+    `back-and-forth conversation flows through the app's chat panel. ` +
     `(Some MCP clients namespace tools as ` +
-    `\`mcp__llui__connect_session\` / \`mcp__llui__wait_for_user_input\` ` +
-    `and load them lazily — search the tool list if the bare names aren't ` +
-    `immediately available.)`
+    `\`mcp__llui__connect_session\` / \`mcp__llui__wait_for_user_input\` / ` +
+    `\`mcp__llui__narrate\` and load them lazily — search the tool list if ` +
+    `the bare names aren't immediately available.)`
   )
 }
 

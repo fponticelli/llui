@@ -35,10 +35,13 @@ export function registerPrompts(server: McpServer): void {
               `chat composer — when you're idle or waiting for further ` +
               `instructions, call the \`wait_for_user_input\` tool to receive ` +
               `those messages. ` +
+              `If you need clarification before acting, call \`narrate\` to ask ` +
+              `the question, then \`wait_for_user_input\` for the answer — that's ` +
+              `how a back-and-forth conversation flows through the app's chat panel. ` +
               `(In Claude Code the tools may be namespaced as ` +
               `\`mcp__<server>__connect_session\` / ` +
-              `\`mcp__<server>__wait_for_user_input\` and deferred — load them ` +
-              `via tool search if needed.)`,
+              `\`mcp__<server>__wait_for_user_input\` / \`mcp__<server>__narrate\` ` +
+              `and deferred — load them via tool search if needed.)`,
           },
         },
       ],

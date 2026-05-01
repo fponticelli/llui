@@ -87,10 +87,13 @@ describe('agentConnect', () => {
           `in-app chat composer — when you're idle or waiting for further ` +
           `instructions, call the \`wait_for_user_input\` tool to receive those ` +
           `messages. ` +
+          `If you need clarification before acting, call \`narrate\` to ask the ` +
+          `question, then \`wait_for_user_input\` for the answer — that's how a ` +
+          `back-and-forth conversation flows through the app's chat panel. ` +
           `(Some MCP clients namespace tools as ` +
-          `\`mcp__llui__connect_session\` / \`mcp__llui__wait_for_user_input\` ` +
-          `and load them lazily — search the tool list if the bare names aren't ` +
-          `immediately available.)`,
+          `\`mcp__llui__connect_session\` / \`mcp__llui__wait_for_user_input\` / ` +
+          `\`mcp__llui__narrate\` and load them lazily — search the tool list if ` +
+          `the bare names aren't immediately available.)`,
       )
       expect(state1.pendingToken!.expiresAt).toBe(expiresAt)
       expect(state1.error).toBeNull()
@@ -539,10 +542,13 @@ describe('agentConnect.connect', () => {
           `in-app chat composer — when you're idle or waiting for further ` +
           `instructions, call the \`wait_for_user_input\` tool to receive those ` +
           `messages. ` +
+          `If you need clarification before acting, call \`narrate\` to ask the ` +
+          `question, then \`wait_for_user_input\` for the answer — that's how a ` +
+          `back-and-forth conversation flows through the app's chat panel. ` +
           `(Some MCP clients namespace tools as ` +
-          `\`mcp__llui__connect_session\` / \`mcp__llui__wait_for_user_input\` ` +
-          `and load them lazily — search the tool list if the bare names aren't ` +
-          `immediately available.)`,
+          `\`mcp__llui__connect_session\` / \`mcp__llui__wait_for_user_input\` / ` +
+          `\`mcp__llui__narrate\` and load them lazily — search the tool list if ` +
+          `the bare names aren't immediately available.)`,
       },
     ])
   })
