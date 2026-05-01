@@ -3,6 +3,8 @@ import {
   getRenderContext,
   setRenderContext,
   clearRenderContext,
+  enterAccessor,
+  exitAccessor,
   type RenderContext,
 } from '../render-context.js'
 import { createLifetime, disposeLifetime, addDisposer } from '../lifetime.js'
@@ -106,8 +108,27 @@ export function virtualEach<S, T, M = unknown>(opts: VirtualEachOptions<S, T, M>
     return [start, end]
   }
 
+  // Wrap accessor invocations to make sample()/h.sample() inside throw a
+  // targeted error. Mirrors the wrappers in each.ts.
+  const callItems = (state: S): T[] => {
+    enterAccessor('virtualEach().items')
+    try {
+      return opts.items(state)
+    } finally {
+      exitAccessor()
+    }
+  }
+  const callKey = (item: T): string | number => {
+    enterAccessor('virtualEach().key')
+    try {
+      return opts.key(item)
+    } finally {
+      exitAccessor()
+    }
+  }
+
   const buildEntry = (item: T, index: number, state: S): VirtualEntry<T> => {
-    const key = opts.key(item)
+    const key = callKey(item)
     const scope = createLifetime(parentLifetime)
 
     const wrapper = ctx.dom.createElement('div') as HTMLDivElement
@@ -177,7 +198,7 @@ export function virtualEach<S, T, M = unknown>(opts: VirtualEachOptions<S, T, M>
   }
 
   const reconcile = (state: S): void => {
-    const items = opts.items(state)
+    const items = callItems(state)
     lastItems = items
 
     // Update spacer total height
@@ -200,7 +221,7 @@ export function virtualEach<S, T, M = unknown>(opts: VirtualEachOptions<S, T, M>
     const visibleKeys = new Map<string | number, { item: T; index: number }>()
     for (let i = start; i < end; i++) {
       const item = items[i]!
-      visibleKeys.set(opts.key(item), { item, index: i })
+      visibleKeys.set(callKey(item), { item, index: i })
     }
 
     // Dispose entries no longer visible
@@ -243,7 +264,7 @@ export function virtualEach<S, T, M = unknown>(opts: VirtualEachOptions<S, T, M>
   const block: StructuralBlock = {
     mask: FULL_MASK,
     reconcile(state: unknown) {
-      const newItems = opts.items(state as S)
+      const newItems = callItems(state as S)
       if (newItems === lastItems) return
       reconcile(state as S)
     },

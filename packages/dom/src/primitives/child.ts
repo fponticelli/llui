@@ -1,5 +1,11 @@
 import type { ChildOptions, ComponentDef } from '../types.js'
-import { getRenderContext, setRenderContext, clearRenderContext } from '../render-context.js'
+import {
+  getRenderContext,
+  setRenderContext,
+  clearRenderContext,
+  enterAccessor,
+  exitAccessor,
+} from '../render-context.js'
 import { createLifetime, disposeLifetime, addDisposer } from '../lifetime.js'
 import { createComponentInstance, flushInstance, type ComponentInstance } from '../update-loop.js'
 import { createBinding, setFlatBindings } from '../binding.js'
@@ -31,7 +37,18 @@ export function child<S, ChildM>(opts: ChildOptions<S, ChildM>): Node[] {
   const parentSend = parentCtx.send
 
   const childDef = opts.def as ComponentDef<unknown, ChildM, unknown, Record<string, unknown>>
-  const initialProps = opts.props(parentCtx.state as S)
+  // `props` accessor wrapped so sample()/h.sample() inside throws a targeted
+  // error. Both initial read and the per-update binding accessor route through
+  // callProps.
+  const callProps = (parentState: S): Record<string, unknown> => {
+    enterAccessor('child().props')
+    try {
+      return opts.props(parentState)
+    } finally {
+      exitAccessor()
+    }
+  }
+  const initialProps = callProps(parentCtx.state as S)
   // Child component inherits the parent's DOM env — render-context
   // threading means the same env flows from mountApp to child() to any
   // nested primitives inside the child's view.
@@ -63,7 +80,7 @@ export function child<S, ChildM>(opts: ChildOptions<S, ChildM>): Node[] {
   createBinding(childLifetime, {
     mask: FULL_MASK,
     accessor: ((parentState: S) => {
-      const newProps = opts.props(parentState)
+      const newProps = callProps(parentState)
 
       let changed = false
       for (const key of Object.keys(newProps)) {

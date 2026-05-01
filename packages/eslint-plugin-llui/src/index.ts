@@ -34,6 +34,7 @@ import { exhaustiveUpdateRule } from './rules/exhaustive-update.js'
 import { bitmaskOverflowRule } from './rules/bitmask-overflow.js'
 import { noEagerItemAccessorRule } from './rules/no-eager-item-accessor.js'
 import { noListRenderInSampleRule } from './rules/no-list-render-in-sample.js'
+import { noSampleInAccessorRule } from './rules/no-sample-in-accessor.js'
 import { noSampleInReactivePositionRule } from './rules/no-sample-in-reactive-position.js'
 import { staticItemsRule } from './rules/static-items.js'
 import { agentTagsendTranslatorMissingRule } from './rules/agent-tagsend-translator-missing.js'
@@ -75,6 +76,7 @@ export const rules = {
   'bitmask-overflow': bitmaskOverflowRule,
   'no-eager-item-accessor': noEagerItemAccessorRule,
   'no-list-render-in-sample': noListRenderInSampleRule,
+  'no-sample-in-accessor': noSampleInAccessorRule,
   'no-sample-in-reactive-position': noSampleInReactivePositionRule,
   'static-items': staticItemsRule,
   'agent-tagsend-translator-missing': agentTagsendTranslatorMissingRule,
@@ -140,6 +142,7 @@ export const configs = {
       'llui/bitmask-overflow': 'error',
       'llui/no-eager-item-accessor': 'error',
       'llui/no-list-render-in-sample': 'error',
+      'llui/no-sample-in-accessor': 'error',
       'llui/no-sample-in-reactive-position': 'error',
       'llui/static-items': 'error',
       'llui/agent-tagsend-translator-missing': 'error',

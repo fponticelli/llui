@@ -1,5 +1,5 @@
 import type { ForeignOptions, Send } from '../types.js'
-import { getRenderContext } from '../render-context.js'
+import { getRenderContext, enterAccessor, exitAccessor } from '../render-context.js'
 import { createBinding } from '../binding.js'
 import { createLifetime, addDisposer } from '../lifetime.js'
 
@@ -32,7 +32,18 @@ export function foreign<S, M, T extends Record<string, unknown>, Instance>(
   const mountResult = opts.mount({ container, send: ctx.send as Send<M> })
   let instance: Instance | undefined = undefined
   let disposed = false
-  let latestProps: T = opts.props(ctx.state as S)
+  // `props` accessor wrapped so sample()/h.sample() inside throws a targeted
+  // error. Initial read and the per-update binding accessor both route
+  // through callProps.
+  const callProps = (state: S): T => {
+    enterAccessor('foreign().props')
+    try {
+      return opts.props(state)
+    } finally {
+      exitAccessor()
+    }
+  }
+  let latestProps: T = callProps(ctx.state as S)
   let syncedProps: T | undefined = undefined
 
   const callSync = (props: T, prev: T | undefined) => {
@@ -87,7 +98,7 @@ export function foreign<S, M, T extends Record<string, unknown>, Instance>(
   createBinding(foreignScope, {
     mask: FULL_MASK,
     accessor: ((state: S) => {
-      const newProps = opts.props(state)
+      const newProps = callProps(state)
       // Shallow-diff against whichever we have: syncedProps is the
       // truth once the instance is live; while still pending, latestProps
       // is the most recent thing we've observed.

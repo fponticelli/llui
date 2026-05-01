@@ -21,6 +21,7 @@ import type {
 import { createLifetime } from './lifetime.js'
 import { applyBinding } from './binding.js'
 import { setCurrentDirtyMask } from './primitives/memo.js'
+import { enterAccessor, exitAccessor } from './render-context.js'
 
 export const FULL_MASK = 0xffffffff | 0
 
@@ -193,7 +194,11 @@ export function _forceState<S, M, E>(inst: ComponentInstance<S, M, E>, newState:
 
   const snapshot = inst.structuralBlocks.slice()
   for (const block of snapshot) {
-    block.reconcile(newState, FULL_MASK)
+    try {
+      block.reconcile(newState, FULL_MASK)
+    } catch (e) {
+      reportReconcileError(inst, e)
+    }
   }
 
   let phase2Len = bindingsBeforePhase1
@@ -207,40 +212,45 @@ export function _forceState<S, M, E>(inst: ComponentInstance<S, M, E>, newState:
   }
 
   const state = inst.state
-  for (let i = 0, len = phase2Len; i < len; i++) {
-    const binding = bindings[i]!
-    if (binding.dead) continue
-    if (binding.kind === 'effect') {
+  enterAccessor('a binding accessor')
+  try {
+    for (let i = 0, len = phase2Len; i < len; i++) {
+      const binding = bindings[i]!
+      if (binding.dead) continue
+      if (binding.kind === 'effect') {
+        try {
+          binding.accessor(state)
+        } catch (e) {
+          reportBindingError(inst, binding, e)
+        }
+        continue
+      }
+      let newValue: unknown
       try {
-        binding.accessor(state)
+        newValue = binding.accessor(state)
       } catch (e) {
+        // Accessor threw — leave the binding's `lastValue` unchanged so
+        // the rendered DOM stays at its previous value rather than going
+        // blank. Sibling bindings on the same commit continue to
+        // evaluate. The error surfaces via the optional hook (or
+        // console.warn as a fallback) so it isn't silently swallowed.
+        reportBindingError(inst, binding, e)
+        continue
+      }
+      if (Object.is(newValue, binding.lastValue)) continue
+      binding.lastValue = newValue
+      try {
+        applyBinding(binding, newValue)
+      } catch (e) {
+        // applyBinding writes the value to the DOM (textContent,
+        // setAttribute, etc.). Throws here are usually environmental
+        // (a node was removed mid-flight by a sibling binding). Same
+        // contract: report and continue.
         reportBindingError(inst, binding, e)
       }
-      continue
     }
-    let newValue: unknown
-    try {
-      newValue = binding.accessor(state)
-    } catch (e) {
-      // Accessor threw — leave the binding's `lastValue` unchanged so
-      // the rendered DOM stays at its previous value rather than going
-      // blank. Sibling bindings on the same commit continue to
-      // evaluate. The error surfaces via the optional hook (or
-      // console.warn as a fallback) so it isn't silently swallowed.
-      reportBindingError(inst, binding, e)
-      continue
-    }
-    if (Object.is(newValue, binding.lastValue)) continue
-    binding.lastValue = newValue
-    try {
-      applyBinding(binding, newValue)
-    } catch (e) {
-      // applyBinding writes the value to the DOM (textContent,
-      // setAttribute, etc.). Throws here are usually environmental
-      // (a node was removed mid-flight by a sibling binding). Same
-      // contract: report and continue.
-      reportBindingError(inst, binding, e)
-    }
+  } finally {
+    exitAccessor()
   }
 }
 
@@ -271,6 +281,43 @@ function reportBindingError<S, M, E>(
     console.warn(
       `[llui] binding accessor threw (kind=${info.kind}${info.key ? `, key=${info.key}` : ''}): ${info.message}`,
     )
+  }
+}
+
+/**
+ * Phase 1 (structural reconcile) parallel of `reportBindingError`. A
+ * `block.reconcile` throw — most often a misuse like `sample()` inside an
+ * `each().key` accessor — would otherwise escape the update loop, kill the
+ * remaining structural blocks AND the entire Phase 2 binding pass on this
+ * commit, and (in real apps) surface as an unhandled microtask rejection
+ * the developer never sees. Routing it through the same `_onBindingError`
+ * channel that Phase 2 uses gives parity: the error is named, surfaced
+ * once, and the rest of the update continues.
+ *
+ * Note: a partial DOM mutation on the failing block is NOT rolled back.
+ * The block's reconcile is responsible for keeping the DOM in a consistent
+ * state on its own happy path; if it throws mid-mutation, the visible
+ * result may be an inconsistent block, but sibling blocks and bindings
+ * still update correctly.
+ */
+function reportReconcileError<S, M, E>(inst: ComponentInstance<S, M, E>, e: unknown): void {
+  const err = e instanceof Error ? e : new Error(String(e))
+  const stack = err.stack ? err.stack.split('\n').slice(0, 8).join('\n') : undefined
+  const info =
+    stack !== undefined
+      ? { kind: 'reconcile', message: `${err.name}: ${err.message}`, stack }
+      : { kind: 'reconcile', message: `${err.name}: ${err.message}` }
+  if (inst._onBindingError !== undefined) {
+    try {
+      inst._onBindingError(info)
+    } catch {
+      // hook itself threw; fall through to console
+    }
+  } else if (typeof console !== 'undefined' && typeof console.error === 'function') {
+    // Reconcile errors are programmer errors (almost always: sample-in-
+    // accessor or a thrown structural primitive). Surface as `error` not
+    // `warn` so they're not lost in noisy dev consoles.
+    console.error(`[llui] structural reconcile threw: ${info.message}`)
   }
 }
 
@@ -373,7 +420,11 @@ function genericUpdate<S, M, E>(
   for (let bi = 0; bi < blocks.length; bi++) {
     const block = blocks[bi]
     if (!block || (block.mask & combinedDirty) === 0) continue
-    block.reconcile(state, combinedDirty)
+    try {
+      block.reconcile(state, combinedDirty)
+    } catch (e) {
+      reportReconcileError(inst, e)
+    }
   }
 
   // Phase 2 — compact + update bindings
@@ -413,23 +464,28 @@ export function _handleMsg(
     for (let i = 0; i < bl.length; i++) {
       const block = bl[i]
       if (!block || !(block.mask & dirty)) continue
-      switch (method) {
-        case 0:
-          block.reconcile(s, dirty)
-          break
-        case 1:
-          block.reconcileItems?.(s)
-          break
-        case 2:
-          block.reconcileClear?.()
-          break
-        case 3:
-          block.reconcileRemove?.(s)
-          break
-        default:
-          // method >= 10: reconcileChanged with stride = method - 10
-          if (method >= 10) block.reconcileChanged?.(s, method - 10)
-          break
+      try {
+        switch (method) {
+          case 0:
+            block.reconcile(s, dirty)
+            break
+          case 1:
+            block.reconcileItems?.(s)
+            break
+          case 2:
+            block.reconcileClear?.()
+            break
+          case 3:
+            block.reconcileRemove?.(s)
+            break
+          default:
+            // method >= 10: reconcileChanged with stride = method - 10
+            if (method >= 10) block.reconcileChanged?.(s, method - 10)
+            break
+        }
+      } catch (err) {
+        reportReconcileError(inst, err)
+        // continue to next block — see reportReconcileError docstring
       }
     }
   }
@@ -478,32 +534,43 @@ export function _runPhase2(
     // behavior of rethrowing from `flush()` made one bad binding
     // visually break the entire view — the worst-case UX.
     const isDev = import.meta.env?.DEV && componentName
-    for (let i = 0, len = phase2Len; i < len; i++) {
-      const binding = bindings[i]!
-      if (binding.dead || (binding.mask & dirty) === 0) continue
-      if (binding.kind === 'effect') {
+    // Single accessor label for the entire Phase 2 loop. The binding kind is
+    // already part of the error message that handleBindingThrow surfaces; the
+    // accessor label here serves the more specific purpose of catching
+    // sample() calls reaching for a render context that isn't set during
+    // the update phase. A `binding accessor` label is generic enough to apply
+    // to text/attr/class/effect bindings without per-kind branching.
+    enterAccessor('a binding accessor')
+    try {
+      for (let i = 0, len = phase2Len; i < len; i++) {
+        const binding = bindings[i]!
+        if (binding.dead || (binding.mask & dirty) === 0) continue
+        if (binding.kind === 'effect') {
+          try {
+            binding.accessor(state)
+          } catch (e) {
+            handleBindingThrow(onBindingError, binding, e, isDev ? componentName : null)
+          }
+          continue
+        }
+        let newValue: unknown
         try {
-          binding.accessor(state)
+          newValue = binding.accessor(state)
+        } catch (e) {
+          handleBindingThrow(onBindingError, binding, e, isDev ? componentName : null)
+          continue
+        }
+        const last = binding.lastValue
+        if (newValue === last || (newValue !== newValue && last !== last)) continue
+        binding.lastValue = newValue
+        try {
+          applyBinding(binding, newValue)
         } catch (e) {
           handleBindingThrow(onBindingError, binding, e, isDev ? componentName : null)
         }
-        continue
       }
-      let newValue: unknown
-      try {
-        newValue = binding.accessor(state)
-      } catch (e) {
-        handleBindingThrow(onBindingError, binding, e, isDev ? componentName : null)
-        continue
-      }
-      const last = binding.lastValue
-      if (newValue === last || (newValue !== newValue && last !== last)) continue
-      binding.lastValue = newValue
-      try {
-        applyBinding(binding, newValue)
-      } catch (e) {
-        handleBindingThrow(onBindingError, binding, e, isDev ? componentName : null)
-      }
+    } finally {
+      exitAccessor()
     }
   }
 }

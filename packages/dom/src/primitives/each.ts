@@ -3,6 +3,8 @@ import {
   getRenderContext,
   setRenderContext,
   clearRenderContext,
+  enterAccessor,
+  exitAccessor,
   type RenderContext,
 } from '../render-context.js'
 import {
@@ -30,6 +32,26 @@ export function registerOnClear(cb: () => void): void {
 /** Register a callback to run when a single row is removed by key. */
 export function registerOnRemove(cb: (key: string | number) => void): void {
   if (activeRemoveCallbacks) activeRemoveCallbacks.push(cb)
+}
+
+// Wrap accessor invocations so `sample()` calls inside them throw a targeted
+// error. The wrappers also localise the contract: every items/key call goes
+// through these, so a future change (e.g. instrumentation) has one site.
+function callItems<S, T>(opts: { items: (s: S) => T[] }, state: S): T[] {
+  enterAccessor('each().items')
+  try {
+    return opts.items(state)
+  } finally {
+    exitAccessor()
+  }
+}
+function callKey<T>(opts: { key: (t: T) => string | number }, item: T): string | number {
+  enterAccessor('each().key')
+  try {
+    return opts.key(item)
+  } finally {
+    exitAccessor()
+  }
 }
 
 // Reusable render context for buildEntry — avoids object allocation per entry.
@@ -79,7 +101,7 @@ export function each<S, T, M = unknown>(opts: EachOptions<S, T, M>): Node[] {
   // remain in the parent until the leave Promise resolves.
   const leaving: Entry<T>[] = []
 
-  const initialItems = opts.items(ctx.state as S)
+  const initialItems = callItems(opts, ctx.state as S)
   let lastItemsRef = initialItems
 
   // Dev-only diff tracking: if the owning component has an _eachDiffLog
@@ -130,7 +152,7 @@ export function each<S, T, M = unknown>(opts: EachOptions<S, T, M>): Node[] {
       const parent = anchor.parentNode
       if (!parent) return
 
-      const newItems = opts.items(state as S)
+      const newItems = callItems(opts, state as S)
 
       // Fast path: same array reference → skip entirely.
       if (newItems === lastItemsRef) return
@@ -159,7 +181,7 @@ export function each<S, T, M = unknown>(opts: EachOptions<S, T, M>): Node[] {
     /** Same keys, only item data changed — skip mismatch/swap detection.
      *  Compiler calls this when it knows the array structure is unchanged. */
     reconcileItems(state: unknown) {
-      const newItems = opts.items(state as S)
+      const newItems = callItems(opts, state as S)
       lastItemsRef = newItems
       const len = Math.min(entries.length, newItems.length)
       for (let i = 0; i < len; i++) {
@@ -211,7 +233,7 @@ export function each<S, T, M = unknown>(opts: EachOptions<S, T, M>): Node[] {
      *  patterns where items are removed but order is preserved. Walks old
      *  and new arrays in parallel — O(n) with no Map/Set allocation. */
     reconcileRemove(state: unknown) {
-      const newItems = opts.items(state as S)
+      const newItems = callItems(opts, state as S)
       lastItemsRef = newItems
       const parent = anchor.parentNode
       if (!parent) return
@@ -242,7 +264,7 @@ export function each<S, T, M = unknown>(opts: EachOptions<S, T, M>): Node[] {
       let didRemove = false
       for (let oi = 0; oi < oldLen; oi++) {
         const entry = entries[oi]!
-        if (ni < newLen && entry.key === opts.key(newItems[ni]!)) {
+        if (ni < newLen && entry.key === callKey(opts, newItems[ni]!)) {
           // Entry survives — update if item ref changed
           if (entry.item !== newItems[ni]) {
             updateEntry(entry, newItems[ni]!, ni)
@@ -280,7 +302,7 @@ export function each<S, T, M = unknown>(opts: EachOptions<S, T, M>): Node[] {
     /** Update only entries at stride intervals — O(k) where k = n/stride.
      *  The compiler passes the stride from the detected for-loop pattern. */
     reconcileChanged(state: unknown, stride: number) {
-      const newItems = opts.items(state as S)
+      const newItems = callItems(opts, state as S)
       lastItemsRef = newItems
       for (let i = 0; i < entries.length && i < newItems.length; i += stride) {
         const entry = entries[i]!
@@ -402,7 +424,7 @@ function buildEntry<S, T, M>(
   ctx: ReturnType<typeof getRenderContext>,
   state?: unknown,
 ): Entry<T> {
-  const key = opts.key(item)
+  const key = callKey(opts, item)
   // Use a lightweight scope — just needs itemUpdaters for per-item bindings.
   // Full scope features (disposers, bindings, children) are only needed when
   // the render callback uses structural primitives or selector.bind().
@@ -597,7 +619,7 @@ function reconcileEntries<S, T>(
       const entry = entries[i]!
       const newItem = newItems[i]!
       if (entry.item === newItem) continue
-      const newKey = opts.key(newItem)
+      const newKey = callKey(opts, newItem)
       if (entry.key === newKey) {
         updateEntry(entry, newItem, i)
         continue
@@ -616,7 +638,10 @@ function reconcileEntries<S, T>(
     if (mismatchCount === 2) {
       const e1 = entries[mismatch1]!
       const e2 = entries[mismatch2]!
-      if (e1.key === opts.key(newItems[mismatch2]!) && e2.key === opts.key(newItems[mismatch1]!)) {
+      if (
+        e1.key === callKey(opts, newItems[mismatch2]!) &&
+        e2.key === callKey(opts, newItems[mismatch1]!)
+      ) {
         // DOM swap
         const refI = e1.nodes[0]!
         const refAfterJ = e2.nodes[e2.nodes.length - 1]!.nextSibling
@@ -634,12 +659,12 @@ function reconcileEntries<S, T>(
 
   // Fast path 5: full replace — no shared keys between old and new.
   // Skipped when opts.leave is set so departing items can animate individually.
-  if (!hasLeave && oldLen > 0 && opts.key(newItems[0]!) !== entries[0]!.key) {
+  if (!hasLeave && oldLen > 0 && callKey(opts, newItems[0]!) !== entries[0]!.key) {
     const oldKeys = new Set<string | number>()
     for (const entry of entries) oldKeys.add(entry.key)
     let anyShared = false
     for (let i = 0; i < newLen; i++) {
-      if (oldKeys.has(opts.key(newItems[i]!))) {
+      if (oldKeys.has(callKey(opts, newItems[i]!))) {
         anyShared = true
         break
       }
@@ -694,7 +719,7 @@ function reconcileEntries<S, T>(
 
   for (let i = 0; i < newLen; i++) {
     const item = newItems[i]!
-    const key = opts.key(item)
+    const key = callKey(opts, item)
     usedKeys.add(key)
 
     const existing = oldByKey.get(key)
@@ -799,7 +824,7 @@ function updateEntry<T>(entry: Entry<T>, item: T, index: number): void {
 
 function isAppendOnly<S, T>(entries: Entry<T>[], newItems: T[], opts: EachOptions<S, T>): boolean {
   for (let i = 0; i < entries.length; i++) {
-    if (entries[i]!.key !== opts.key(newItems[i]!)) return false
+    if (entries[i]!.key !== callKey(opts, newItems[i]!)) return false
   }
   return true
 }

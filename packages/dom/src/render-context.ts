@@ -35,6 +35,30 @@ export function clearRenderContext(): void {
   currentContext = null
 }
 
+// Accessor stack — tracks which structural-primitive or binding accessor is
+// currently executing. `sample()` reads the top of this stack to detect calls
+// from inside an accessor (forbidden — accessors must be pure functions of
+// their parameter, since their reads drive mask gating).
+//
+// Implemented as an array (rather than a counter) so the targeted error can
+// name the innermost accessor: "inside each().key" rather than just "inside
+// an accessor". Nested primitives push/pop in LIFO order; the top is the
+// site that called sample().
+const accessorStack: string[] = []
+
+export function enterAccessor(label: string): void {
+  accessorStack.push(label)
+}
+
+export function exitAccessor(): void {
+  accessorStack.pop()
+}
+
+export function currentAccessor(): string | null {
+  const len = accessorStack.length
+  return len > 0 ? accessorStack[len - 1]! : null
+}
+
 export function getRenderContext(primitiveName?: string): RenderContext {
   if (!currentContext) {
     const name = primitiveName ? `${primitiveName}()` : 'primitives'
@@ -65,7 +89,13 @@ export function getRenderContext(primitiveName?: string): RenderContext {
         `from inside the component's view callback so their result can be spread ` +
         `into the returned node tree.\n` +
         `  3. Calling a primitive from a setTimeout / Promise / event handler — ` +
-        `the render context only persists during the synchronous view() call.` +
+        `the render context only persists during the synchronous view() call.\n` +
+        `  4. Calling a primitive from a structural accessor (each().key, ` +
+        `each().items, branch().on, show().when, child().props, …) or a ` +
+        `binding accessor (text(s => …), el({attr: s => …})) during reconcile — ` +
+        `accessors run during the update phase with no render context. They must ` +
+        `be pure functions of their parameter; reads outside the parameter break ` +
+        `mask gating.` +
         sampleGuidance,
     )
   }

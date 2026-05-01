@@ -1,5 +1,11 @@
 import type { BranchOptions, Lifetime } from '../types.js'
-import { getRenderContext, setRenderContext, clearRenderContext } from '../render-context.js'
+import {
+  getRenderContext,
+  setRenderContext,
+  clearRenderContext,
+  enterAccessor,
+  exitAccessor,
+} from '../render-context.js'
 import { createLifetime, disposeLifetime, addDisposer } from '../lifetime.js'
 import { setFlatBindings } from '../binding.js'
 import { createView } from '../view-helpers.js'
@@ -17,14 +23,29 @@ export function branch<S, M = unknown, K extends string = string>(
 
   const anchor = ctx.dom.createComment('branch')
 
-  let currentKey = opts.on(ctx.state as S)
+  // `on` accessor wrapped so sample()/h.sample() called from inside throws a
+  // targeted error. Both initial and reconcile paths route through callOn.
+  // `Discriminant<S, K>` is `((s: S) => K) | (() => K)` — passing `state`
+  // works for either arm at runtime (zero-arg ignores the extra), but a
+  // typed wrapper forces a union-call inference TypeScript can't unify.
+  // The runtime cast keeps the wrapper transparent.
+  const callOn = (state: S) => {
+    enterAccessor('branch().on')
+    try {
+      return (opts.on as (s: S) => K)(state)
+    } finally {
+      exitAccessor()
+    }
+  }
+
+  let currentKey = callOn(ctx.state as S)
   let currentLifetime: Lifetime | null = null
   let currentNodes: Node[] = []
 
   const block: StructuralBlock = {
     mask: (opts as { __mask?: number }).__mask ?? FULL_MASK,
     reconcile(state: unknown) {
-      const newKey = opts.on(state as S)
+      const newKey = callOn(state as S)
       if (Object.is(newKey, currentKey)) return
 
       const parent = anchor.parentNode
