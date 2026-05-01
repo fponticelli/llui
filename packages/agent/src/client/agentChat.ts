@@ -40,7 +40,7 @@ export type AgentChatInitOpts = {
 
 export type AgentChatMsg =
   | {
-      /** Bound to the input's `oninput` event. Round-trip stays in the slice. */
+      /** Bound to the input's `onInput` event. Round-trip stays in the slice. */
       type: 'SetInput'
       value: string
     }
@@ -108,11 +108,14 @@ import { tagSend, type Send } from '@llui/dom'
  * element helpers; matches the convention of the other agent
  * namespaces.
  *
- * The `input` bag carries both `oninput` and `onkeydown` because
+ * The `input` bag carries both `onInput` and `onKeyDown` because
  * the canonical chat-composer affordance is "type, press Enter"
  * (Shift+Enter for newline if the host wraps it themselves). Hosts
- * that want a multiline textarea can spread `input.oninput` and
- * skip `onkeydown`, wiring submit to the button only.
+ * that want a multiline textarea can spread `input.onInput` and
+ * skip `onKeyDown`, wiring submit to the button only. Handler keys
+ * are camelCase because LLui's element runtime only attaches keys
+ * matching `/^on[A-Z]/` as event listeners — lowercase `oninput`
+ * would silently degrade to a string attribute.
  */
 export type ConnectBag<S> = {
   root: { 'data-scope': 'agent-chat'; 'data-submitting': (s: S) => boolean }
@@ -120,8 +123,8 @@ export type ConnectBag<S> = {
     'data-part': 'input'
     value: (s: S) => string
     disabled: (s: S) => boolean
-    oninput: (e: Event) => void
-    onkeydown: (e: KeyboardEvent) => void
+    onInput: (e: Event) => void
+    onKeyDown: (e: KeyboardEvent) => void
   }
   submitButton: {
     'data-part': 'submit'
@@ -149,7 +152,13 @@ export function connect<S>(get: (s: S) => AgentChatState, send: Send<AgentChatMs
       'data-part': 'input',
       value: (s) => get(s).pendingInput,
       disabled: (s) => get(s).submitting,
-      oninput: (e) => {
+      // Event handler keys MUST be camelCase: LLui's elements pass only
+      // keys matching `/^on[A-Z]/` to `addEventListener` (see
+      // packages/dom/src/elements.ts). Lowercase `oninput` would silently
+      // be set as a string attribute and never fire — the input field
+      // would freeze with no SetInput dispatches and the submit button
+      // would stay disabled forever.
+      onInput: (e) => {
         // The cast is the standard "input event target is an
         // HTMLInputElement / HTMLTextAreaElement" assumption; we
         // coerce via `.value`. Hosts using non-DOM inputs (custom
@@ -158,7 +167,7 @@ export function connect<S>(get: (s: S) => AgentChatState, send: Send<AgentChatMs
         const target = e.target as { value?: string } | null
         if (target && typeof target.value === 'string') setInput(target.value)
       },
-      onkeydown: (e) => {
+      onKeyDown: (e) => {
         if (e.key === 'Enter' && !e.shiftKey) {
           e.preventDefault()
           submit()

@@ -143,19 +143,19 @@ describe('agentChat: connect()', () => {
     expect(bag.canSubmit(s2)).toBe(false) // submitting
   })
 
-  it('input.oninput dispatches SetInput with the target value', () => {
+  it('input.onInput dispatches SetInput with the target value', () => {
     const [s0] = init()
     const { bag, send } = buildBag(s0)
     const fakeEvent = { target: { value: 'typed' } } as unknown as Event
-    bag.input.oninput(fakeEvent)
+    bag.input.onInput(fakeEvent)
     expect(send).toHaveBeenCalledWith({ type: 'SetInput', value: 'typed' })
   })
 
-  it('input.onkeydown dispatches Submit on Enter (no shift) and prevents default', () => {
+  it('input.onKeyDown dispatches Submit on Enter (no shift) and prevents default', () => {
     const [s0] = init()
     const { bag, send } = buildBag(s0)
     const preventDefault = vi.fn()
-    bag.input.onkeydown({
+    bag.input.onKeyDown({
       key: 'Enter',
       shiftKey: false,
       preventDefault,
@@ -164,11 +164,11 @@ describe('agentChat: connect()', () => {
     expect(send).toHaveBeenCalledWith({ type: 'Submit' })
   })
 
-  it('input.onkeydown does NOT submit on Shift+Enter (newline path for multiline hosts)', () => {
+  it('input.onKeyDown does NOT submit on Shift+Enter (newline path for multiline hosts)', () => {
     const [s0] = init()
     const { bag, send } = buildBag(s0)
     const preventDefault = vi.fn()
-    bag.input.onkeydown({
+    bag.input.onKeyDown({
       key: 'Enter',
       shiftKey: true,
       preventDefault,
@@ -177,11 +177,11 @@ describe('agentChat: connect()', () => {
     expect(send).not.toHaveBeenCalled()
   })
 
-  it('input.onkeydown ignores other keys', () => {
+  it('input.onKeyDown ignores other keys', () => {
     const [s0] = init()
     const { bag, send } = buildBag(s0)
     const preventDefault = vi.fn()
-    bag.input.onkeydown({ key: 'a', shiftKey: false, preventDefault } as unknown as KeyboardEvent)
+    bag.input.onKeyDown({ key: 'a', shiftKey: false, preventDefault } as unknown as KeyboardEvent)
     expect(preventDefault).not.toHaveBeenCalled()
     expect(send).not.toHaveBeenCalled()
   })
