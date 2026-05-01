@@ -1,0 +1,153 @@
+/*
+ * @llui/agent default styles
+ *
+ * Opt-in stylesheet hosts can import as a starting point. Provides:
+ *
+ *   - the `.agent-flash` keyframe animation (the default class
+ *     `agentAttention.flashClass(path)` returns when a region is in
+ *     the spotlight)
+ *   - a small set of CSS custom properties for tuning colors/timing
+ *     without forking the keyframes
+ *   - prefers-reduced-motion fallback so users who opt out of motion
+ *     get an instant flash + quick fade instead of the pulse animation
+ *   - data-attribute hooks that the namespace prop bags emit
+ *     (`[data-scope=agent-attention]`, `[data-scope=agent-chat]`,
+ *      `[data-scope=agent-log]`) so hosts can target them directly
+ *     without writing extra class hooks
+ *
+ * Import:
+ *   import '@llui/agent/styles/agent-panel.css'
+ *
+ * Or copy + extend. The values here aim for "obvious enough that the
+ * panel works on first paint"; production apps will want to override
+ * the custom properties to match their design tokens.
+ */
+
+:root {
+  /*
+   * Spotlight color. Default: a translucent saturated blue that reads
+   * on both light + dark backgrounds without blocking content
+   * underneath. Apps with their own accent should set
+   *   --llui-agent-flash-color: var(--brand-accent-translucent);
+   * to integrate.
+   */
+  --llui-agent-flash-color: rgba(59, 130, 246, 0.35);
+  /*
+   * Spotlight outline color (the brief border that traces the region's
+   * shape on flash). Slightly more opaque than the fill so the edge
+   * pops without looking heavy.
+   */
+  --llui-agent-flash-outline: rgba(59, 130, 246, 0.6);
+  /*
+   * Animation duration. Pair with `agentAttention`'s `flashDurationMs`:
+   * the JS auto-clear should fire shortly AFTER the CSS animation ends
+   * so the user sees the full pulse before state cleanup. The default
+   * 600ms here matches `agentAttention`'s 600ms reducer default.
+   */
+  --llui-agent-flash-duration: 600ms;
+  --llui-agent-flash-easing: cubic-bezier(0.25, 0.1, 0.25, 1);
+}
+
+/*
+ * Spotlight pulse. Three-phase keyframe:
+ *   0%   — background instantly applied + outline visible
+ *   30%  — fully saturated (the "look here" peak)
+ *   100% — back to transparent (smoothly faded out)
+ *
+ * Border is pulled in via box-shadow rather than a real border so the
+ * highlight doesn't shift layout (a real border would push siblings).
+ * The `outline` property would also work but doesn't follow
+ * border-radius on every browser; box-shadow does.
+ */
+@keyframes llui-agent-flash {
+  0% {
+    background-color: var(--llui-agent-flash-color);
+    box-shadow: 0 0 0 2px var(--llui-agent-flash-outline);
+  }
+  30% {
+    background-color: var(--llui-agent-flash-color);
+    box-shadow: 0 0 0 2px var(--llui-agent-flash-outline);
+  }
+  100% {
+    background-color: transparent;
+    box-shadow: 0 0 0 0 transparent;
+  }
+}
+
+.agent-flash {
+  /* `forwards` keeps the end-state (transparent) so JS can re-trigger
+     the animation cleanly when the next dispatch lands on the same
+     region without an interim repaint flicker. */
+  animation: llui-agent-flash var(--llui-agent-flash-duration) var(--llui-agent-flash-easing)
+    forwards;
+  /* Round the spotlight to whatever the host's element already uses;
+     no shape coupling here. */
+  border-radius: inherit;
+}
+
+/*
+ * Reduced motion: skip the keyframe pulse, do a 1-frame highlight that
+ * fades over a shorter window. Same visual cue (here's where the
+ * action landed) without animating.
+ */
+@media (prefers-reduced-motion: reduce) {
+  @keyframes llui-agent-flash {
+    0% {
+      background-color: var(--llui-agent-flash-color);
+    }
+    100% {
+      background-color: transparent;
+    }
+  }
+  .agent-flash {
+    animation-duration: 200ms;
+  }
+}
+
+/*
+ * Activity log: per-entry kind colour hints. The bag's
+ * `entryItem(id)` returns `'data-kind'` as a reactive accessor —
+ * spread into the host's row element and these styles light up.
+ *
+ * These are mild; hosts are expected to override for design
+ * consistency. The defaults exist so a panel works at all without
+ * extra CSS.
+ */
+[data-scope='agent-log'] [data-part='entry'] {
+  /* Slim left border carrying the kind colour; doesn't shift layout. */
+  border-left: 3px solid transparent;
+  padding-left: 0.5rem;
+}
+[data-scope='agent-log'] [data-part='entry'][data-kind='dispatched'] {
+  border-left-color: rgba(34, 197, 94, 0.7); /* green: action landed */
+}
+[data-scope='agent-log'] [data-part='entry'][data-kind='proposed'] {
+  border-left-color: rgba(234, 179, 8, 0.8); /* amber: awaiting confirm */
+}
+[data-scope='agent-log'] [data-part='entry'][data-kind='blocked'],
+[data-scope='agent-log'] [data-part='entry'][data-kind='rejected'] {
+  border-left-color: rgba(239, 68, 68, 0.8); /* red: stop */
+}
+[data-scope='agent-log'] [data-part='entry'][data-kind='error'] {
+  border-left-color: rgba(239, 68, 68, 1); /* red: failure */
+}
+[data-scope='agent-log'] [data-part='entry'][data-kind='read'] {
+  border-left-color: rgba(148, 163, 184, 0.5); /* slate: passive */
+}
+[data-scope='agent-log'] [data-part='entry'][data-kind='user-input'] {
+  border-left-color: rgba(99, 102, 241, 0.7); /* indigo: user voice */
+}
+[data-scope='agent-log'] [data-part='entry'][data-kind='narrate'] {
+  border-left-color: rgba(168, 85, 247, 0.6); /* purple: agent voice */
+  font-style: italic;
+}
+
+/*
+ * Chat composer: subtle disabled state during in-flight submit so the
+ * user has a visible cue beyond the input element's own `disabled`
+ * styling (which varies by browser).
+ */
+[data-scope='agent-chat'][data-submitting='true'] {
+  opacity: 0.7;
+  pointer-events: none;
+}

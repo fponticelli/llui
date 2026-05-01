@@ -218,6 +218,22 @@ export const TOOL_DESCRIPTORS: ToolDescriptor[] = [
   },
   {
     kind: 'forward',
+    name: 'narrate',
+    description:
+      'Push a one-line prose update into the in-app activity feed without dispatching a Msg. Use BEFORE long-running actions ("Looking at your cart now…", "Calling the pricing API — should take ~2s"), to surface inferred reasoning ("I notice you have an unsaved draft in `notes` — assuming you want to keep it"), or to acknowledge user input before acting on it. Keep narration single-line and present-tense; the user reads it in the activity panel inline with your dispatched actions. The text shows up as a `narrate`-kind entry — distinct from `dispatched` and `read`. Returns { ok: true } once the host runtime has the entry. Pair with `wait_for_user_input` for an interactive loop.',
+    schema: z.object({
+      text: z.string().describe('The narration prose, ideally one sentence. Required.'),
+      intent: z
+        .string()
+        .optional()
+        .describe(
+          'Short label shown next to the narration (e.g. "Thinking", "Notice", "Plan"). Defaults to "Agent narrated".',
+        ),
+    }),
+    lapPath: '/narrate',
+  },
+  {
+    kind: 'forward',
     name: 'query_dom',
     description: 'Read elements tagged with data-agent="<name>" in the rendered UI.',
     schema: z.object({

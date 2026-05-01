@@ -3,7 +3,14 @@
  * Hydrates server-rendered HTML when present, otherwise mounts fresh.
  */
 import { mountApp, hydrateApp } from '@llui/dom'
-import { createAgentClient, agentConnect, agentConfirm, agentLog } from '@llui/agent/client'
+import {
+  createAgentClient,
+  agentConnect,
+  agentConfirm,
+  agentLog,
+  agentAttention,
+  agentChat,
+} from '@llui/agent/client'
 import type { State, Msg } from './types'
 import { appDef, initialState, setAgentClient } from './app'
 
@@ -42,6 +49,16 @@ if (typeof window !== 'undefined') {
         type: 'agent',
         sub: 'log',
         msg: m as agentLog.AgentLogMsg,
+      }),
+      wrapAttentionMsg: (m) => ({
+        type: 'agent',
+        sub: 'attention',
+        msg: m as agentAttention.AgentAttentionMsg,
+      }),
+      wrapChatMsg: (m) => ({
+        type: 'agent',
+        sub: 'chat',
+        msg: m as agentChat.AgentChatMsg,
       }),
     },
   })

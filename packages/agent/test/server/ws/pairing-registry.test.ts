@@ -267,3 +267,160 @@ describe('waitForUserInput', () => {
     expect(sub).not.toHaveBeenCalled()
   })
 })
+
+describe('waitForUserInput storage adapter (Cloudflare DO eviction survival)', () => {
+  type Entry = { text: string; at: number }
+
+  // In-memory fake storage — represents the DO's `state.storage`. Each
+  // method records its calls so tests can assert the wiring; data lives
+  // in a Map keyed by tid so the read side reflects past writes.
+  function makeStorage() {
+    const data = new Map<string, Entry[]>()
+    return {
+      data,
+      read: vi.fn(async (tid: string): Promise<Entry[]> => data.get(tid) ?? []),
+      write: vi.fn(async (tid: string, buffer: Entry[]): Promise<void> => {
+        data.set(tid, buffer.slice())
+      }),
+      clear: vi.fn(async (tid: string): Promise<void> => {
+        data.delete(tid)
+      }),
+    }
+  }
+
+  it('persists each buffered submission via storage.write (write-through)', async () => {
+    const storage = makeStorage()
+    const r = new WsPairingRegistry({ userInputStorage: storage })
+    const f = mkFake()
+    r.register('t1', getConn(f))
+
+    f.emit({ t: 'user-input-submitted', text: 'a', at: 1 })
+    f.emit({ t: 'user-input-submitted', text: 'b', at: 2 })
+
+    // Each emit triggers a write with the post-push buffer.
+    // Allow the fire-and-forget chain to settle.
+    await new Promise((res) => setImmediate(res))
+    expect(storage.write).toHaveBeenCalledTimes(2)
+    expect(storage.write.mock.calls[1]![1]).toEqual([
+      { text: 'a', at: 1 },
+      { text: 'b', at: 2 },
+    ])
+    expect(storage.data.get('t1')).toEqual([
+      { text: 'a', at: 1 },
+      { text: 'b', at: 2 },
+    ])
+  })
+
+  it('persists buffer shrinks too (drain via waitForUserInput)', async () => {
+    const storage = makeStorage()
+    const r = new WsPairingRegistry({ userInputStorage: storage })
+    const f = mkFake()
+    r.register('t1', getConn(f))
+    f.emit({ t: 'user-input-submitted', text: 'a', at: 1 })
+    f.emit({ t: 'user-input-submitted', text: 'b', at: 2 })
+    await new Promise((res) => setImmediate(res))
+    storage.write.mockClear()
+
+    const drained = await r.waitForUserInput('t1', 1_000)
+    expect(drained).toEqual({ status: 'submitted', text: 'a', at: 1 })
+    await new Promise((res) => setImmediate(res))
+
+    // Drain triggered another write reflecting the shrunken buffer.
+    expect(storage.write).toHaveBeenCalledTimes(1)
+    expect(storage.write.mock.calls[0]![1]).toEqual([{ text: 'b', at: 2 }])
+  })
+
+  it('register reads any persisted buffer and seeds the in-memory buffer', async () => {
+    const storage = makeStorage()
+    storage.data.set('t1', [{ text: 'survived', at: 100 }])
+    const r = new WsPairingRegistry({ userInputStorage: storage })
+    const f = mkFake()
+    r.register('t1', getConn(f))
+
+    // Storage read is async; let it settle before draining.
+    await new Promise((res) => setImmediate(res))
+    expect(storage.read).toHaveBeenCalledWith('t1')
+
+    const drained = await r.waitForUserInput('t1', 1_000)
+    expect(drained).toEqual({ status: 'submitted', text: 'survived', at: 100 })
+  })
+
+  it('storage failures degrade gracefully (writes ignored, reads treated as empty)', async () => {
+    const storage = {
+      read: vi.fn(async () => {
+        throw new Error('storage offline')
+      }),
+      write: vi.fn(async () => {
+        throw new Error('storage offline')
+      }),
+      clear: vi.fn(async () => {
+        throw new Error('storage offline')
+      }),
+    }
+    const r = new WsPairingRegistry({ userInputStorage: storage })
+    const f = mkFake()
+    r.register('t1', getConn(f))
+
+    // No restored buffer despite a failed read.
+    await new Promise((res) => setImmediate(res))
+    // Live submission still works (in-memory remains authoritative).
+    f.emit({ t: 'user-input-submitted', text: 'live', at: 1 })
+    const drained = await r.waitForUserInput('t1', 1_000)
+    expect(drained).toEqual({ status: 'submitted', text: 'live', at: 1 })
+  })
+
+  it('clears persisted buffer on pairing close', async () => {
+    const storage = makeStorage()
+    const r = new WsPairingRegistry({ userInputStorage: storage })
+    const f = mkFake()
+    r.register('t1', getConn(f))
+    f.emit({ t: 'user-input-submitted', text: 'temp', at: 1 })
+    await new Promise((res) => setImmediate(res))
+    expect(storage.data.get('t1')).toBeDefined()
+
+    f.emitClose()
+    await new Promise((res) => setImmediate(res))
+    expect(storage.clear).toHaveBeenCalledWith('t1')
+    expect(storage.data.get('t1')).toBeUndefined()
+  })
+
+  it('does not seed the buffer when the pairing closed before the read resolved', async () => {
+    let releaseRead: ((entries: Entry[]) => void) | null = null
+    const storage = {
+      read: vi.fn(
+        () =>
+          new Promise<Entry[]>((resolve) => {
+            releaseRead = resolve
+          }),
+      ),
+      write: vi.fn(async () => {}),
+      clear: vi.fn(async () => {}),
+    }
+    const r = new WsPairingRegistry({ userInputStorage: storage })
+    const f = mkFake()
+    r.register('t1', getConn(f))
+    f.emitClose() // close before read settles
+    // Now resolve with would-have-been-restored entries.
+    releaseRead!([{ text: 'stale', at: 1 }])
+    await new Promise((res) => setImmediate(res))
+
+    // Subsequent register on the same tid sees no leftover state from
+    // the earlier session.
+    const f2 = mkFake()
+    r.register('t1', getConn(f2))
+    const tail = await r.waitForUserInput('t1', 5)
+    expect(tail).toEqual({ status: 'timeout' })
+  })
+
+  it('omitting the adapter is the same in-memory contract as before', async () => {
+    // Regression guard: hosts that don't wire storage see no behavior
+    // change from the adapter being added. (Worth asserting because the
+    // dispatch path now branches on `this.userInputStorage`.)
+    const r = new WsPairingRegistry()
+    const f = mkFake()
+    r.register('t1', getConn(f))
+    f.emit({ t: 'user-input-submitted', text: 'hi', at: 1 })
+    const res = await r.waitForUserInput('t1', 1_000)
+    expect(res).toEqual({ status: 'submitted', text: 'hi', at: 1 })
+  })
+})

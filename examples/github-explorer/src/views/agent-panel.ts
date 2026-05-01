@@ -1,7 +1,7 @@
-import { div, button, span, p, text, branch, each } from '@llui/dom'
+import { div, button, input, span, p, text, branch, each } from '@llui/dom'
 import type { State, Msg } from '../types'
 import type { Send, ItemAccessor } from '@llui/dom'
-import { agentConfirm } from '@llui/agent/client'
+import { agentConfirm, agentChat, summarizeDiff } from '@llui/agent/client'
 import type { LogEntry } from '@llui/agent/protocol'
 
 type ConfirmEntry = agentConfirm.ConfirmEntry
@@ -143,6 +143,46 @@ const ACTIVITY_TIME =
 
 const ACTIVITY_TEXT =
   'color: #334155; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap'
+
+const ACTIVITY_DETAIL =
+  'display: block; padding: 2px 0 0 66px; color: #64748b; font-size: 11px; line-height: 1.4; font-family: ui-monospace, monospace; word-break: break-all'
+
+const ACTIVITY_DIFF =
+  'display: block; padding: 2px 0 0 66px; color: #2563eb; font-size: 10px; font-style: italic'
+
+const CHAT_BOX = [
+  'display: flex',
+  'gap: 6px',
+  'margin-top: 14px',
+  'padding-top: 12px',
+  'border-top: 1px solid #e2e8f0',
+].join('; ')
+
+const CHAT_INPUT = [
+  'flex: 1',
+  'min-width: 0',
+  'padding: 7px 10px',
+  'border: 1px solid #cbd5e1',
+  'border-radius: 8px',
+  'font-size: 13px',
+  'font-family: inherit',
+  'color: #1e293b',
+  'background: #fff',
+].join('; ')
+
+const CHAT_SUBMIT = [
+  'padding: 7px 14px',
+  'background: #4f46e5',
+  'color: #fff',
+  'border: none',
+  'border-radius: 8px',
+  'font-size: 13px',
+  'font-weight: 500',
+  'cursor: pointer',
+  'flex-shrink: 0',
+].join('; ')
+
+const CHAT_SUBMIT_DISABLED = CHAT_SUBMIT.replace('#4f46e5', '#a5b4fc') + '; cursor: not-allowed'
 
 function activityChipStyle(kind: LogEntry['kind']): string {
   const base = ACTIVITY_KIND_CHIP
@@ -371,17 +411,66 @@ export function agentPanel(send: Send<Msg>): HTMLElement {
           none: () => [],
         },
       }),
+
+      // ── Chat composer (visible only while connected) ───────────────────
+      ...branch<State, Msg>({
+        on: (s) => (s.agent.connect.status === 'active' ? 'show' : 'hide'),
+        cases: {
+          show: () => [chatComposer(send)],
+          hide: () => [],
+        },
+      }),
     ]),
+  ])
+}
+
+// ── Chat composer ──────────────────────────────────────────────────────────────
+//
+// Spreads the agentChat prop bag into a tiny input + submit pair. The bag
+// drives the input value, the disabled state during in-flight submit, the
+// keyboard-Enter handling, and the submit dispatch — the host only owns
+// the layout and styling.
+function chatComposer(send: Send<Msg>): HTMLElement {
+  // The agent factory wraps the slice's Msgs into the host envelope —
+  // we hand `connect()` a slice-flavored `send` that re-wraps for the
+  // local sub-update path used by the input bag's oninput / onkeydown
+  // handlers.
+  const sliceSend = (m: agentChat.AgentChatMsg) => send({ type: 'agent', sub: 'chat', msg: m })
+  const bag = agentChat.connect<State>((s) => s.agent.chat, sliceSend)
+  return div({ style: CHAT_BOX }, [
+    input({
+      ...bag.input,
+      style: CHAT_INPUT,
+      placeholder: 'Talk to Claude…',
+      type: 'text',
+    }),
+    button(
+      {
+        style: (s: State) => (bag.canSubmit(s) ? CHAT_SUBMIT : CHAT_SUBMIT_DISABLED),
+        onClick: bag.submitButton.onClick,
+        disabled: bag.submitButton.disabled,
+      },
+      [text('Send')],
+    ),
   ])
 }
 
 function activityRow(item: ItemAccessor<LogEntry>): HTMLElement {
   const kind = item((e) => e.kind)()
   const at = item((e) => e.at)()
-  return div({ style: ACTIVITY_ROW }, [
-    span({ style: activityChipStyle(kind) }, [text(kind)]),
-    span({ style: ACTIVITY_TEXT }, [text(item((e) => e.intent ?? e.variant ?? '—'))]),
-    span({ style: ACTIVITY_TIME }, [text(relativeTime(Date.now(), at))]),
+  const detail = item((e) => e.detail)()
+  const diffSummary = summarizeDiff(item((e) => e.stateDiff)())
+  // The diff line only shows for dispatched entries that actually mutated
+  // state — surfacing "no changes" for read entries would be noise.
+  const showDiff = kind === 'dispatched' && diffSummary !== 'no changes'
+  return div({ style: 'padding: 6px 0; border-top: 1px solid #f1f5f9' }, [
+    div({ style: 'display: flex; align-items: baseline; gap: 8px; font-size: 12px' }, [
+      span({ style: activityChipStyle(kind) }, [text(kind)]),
+      span({ style: ACTIVITY_TEXT }, [text(item((e) => e.intent ?? e.variant ?? '—'))]),
+      span({ style: ACTIVITY_TIME }, [text(relativeTime(Date.now(), at))]),
+    ]),
+    ...(detail ? [span({ style: ACTIVITY_DETAIL }, [text(detail)])] : []),
+    ...(showDiff ? [span({ style: ACTIVITY_DIFF }, [text(diffSummary)])] : []),
   ])
 }
 

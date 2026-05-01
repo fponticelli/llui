@@ -410,3 +410,32 @@ describe('submitUserInput', () => {
     expect(inputFrame.at).toBeLessThanOrEqual(after)
   })
 })
+
+describe('log-push handling (server-originated narration)', () => {
+  it('mirrors a log-push frame to onLogEntry AND echoes log-append upstream', async () => {
+    const ws = new FakeWs()
+    const onLogEntry = vi.fn()
+    attachWsClient(ws, makeRpcHosts(), makeHelloBuilder(), { onLogEntry })
+    ws.emit('open')
+    ws.sent.length = 0
+
+    const entry = {
+      id: 'narrate-1',
+      at: 100,
+      kind: 'narrate' as const,
+      detail: 'thinking…',
+      intent: 'Agent narrated',
+    }
+    ws.emit('message', JSON.stringify({ t: 'log-push', entry }))
+    await new Promise((r) => setTimeout(r, 0))
+
+    expect(onLogEntry).toHaveBeenCalledOnce()
+    expect(onLogEntry).toHaveBeenCalledWith(entry)
+
+    // A log-append echoes back so the server-side recent-log buffer +
+    // audit sink see the same entry through the existing channel.
+    const echo = ws.sent.map((s) => JSON.parse(s)).find((f) => f.t === 'log-append')
+    expect(echo).toBeDefined()
+    expect(echo!.entry).toEqual(entry)
+  })
+})

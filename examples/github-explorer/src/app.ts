@@ -4,7 +4,7 @@
 import { component } from '@llui/dom'
 import { handleEffects } from '@llui/effects'
 import type { State, Msg, Effect } from './types'
-import { agentConnect, agentConfirm, agentLog } from './types'
+import { agentConnect, agentConfirm, agentLog, agentAttention, agentChat } from './types'
 import type { AgentClient } from '@llui/agent/client'
 import { update } from './update'
 import { router, routing } from './router'
@@ -256,6 +256,8 @@ export function initialState(url?: string): State {
       connect: agentConnect.init({ mintUrl: '/agent/mint' })[0],
       confirm: agentConfirm.init()[0],
       log: agentLog.init()[0],
+      attention: agentAttention.init()[0],
+      chat: agentChat.init()[0],
       ui: { copied: false },
     },
   }

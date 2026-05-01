@@ -589,6 +589,37 @@ Deno.serve(async (req) => {
 function handleDenoUpgrade(req: Request, agent: AgentCoreHandle): Promise<Response>
 ```
 
+### `makeDurableObjectUserInputStorage()`
+
+Build a `UserInputStorage` adapter backed by the DO's `state.storage`.
+Pass the result to `AgentPairingDurableObject`'s constructor opts to
+make buffered chat-composer submissions survive DO eviction (process
+restarts, deploys, idle eviction). Without this adapter the in-memory
+buffer is lost on eviction; with it, the next request restores any
+buffered messages from before the eviction.
+Parked `waitForUserInput` waiters can't be persisted (they're JS
+Promise resolvers); the LAP client retries naturally on its own
+timeout, and the retry sees the restored buffer.
+Usage:
+
+```ts
+export class AgentDO {
+  private agent: AgentPairingDurableObject
+  constructor(state: DurableObjectState) {
+    this.agent = new AgentPairingDurableObject({
+      userInputStorage: makeDurableObjectUserInputStorage(state.storage),
+    })
+  }
+  fetch(req: Request) {
+    return this.agent.fetch(req)
+  }
+}
+```
+
+```typescript
+function makeDurableObjectUserInputStorage(storage: DurableObjectStorageLike): UserInputStorage
+```
+
 ### `routeToAgentDO()`
 
 Route an incoming Worker `fetch` request to the Durable Object
@@ -698,6 +729,16 @@ export type CoreOptions = {
    * Durable Object that persists across isolates) pass it here.
    */
   registry?: PairingRegistry
+  /**
+   * Optional persistence adapter for the chat-composer's
+   * `wait_for_user_input` buffer. Wired automatically into the
+   * default `InMemoryPairingRegistry`; ignored when `opts.registry`
+   * is overridden (custom registries supply their own persistence).
+   * See `UserInputStorage` for the contract. Cloudflare DO hosts get
+   * a ready-made adapter from
+   * `@llui/agent/server/cloudflare`'s `makeDurableObjectUserInputStorage`.
+   */
+  userInputStorage?: UserInputStorage
   /**
    * How long, in milliseconds, a token's record stays in
    * `pending-resume` after the WS pairing closes. During this window
@@ -877,6 +918,18 @@ export type RateLimitConfig = {
 }
 ```
 
+### `UserInputResolution`
+
+Resolution shape for `waitForUserInput`. Mirrors `LapWaitForUserInputResponse`
+one-for-one — declared here so the interface stays expressible without
+importing the LAP layer's protocol types upward.
+
+```typescript
+export type UserInputResolution =
+  | { status: 'submitted'; text: string; at: number }
+  | { status: 'timeout' }
+```
+
 ### `FrameSubscriber`
 
 A per-call frame subscriber. Return `true` to remove this
@@ -994,6 +1047,27 @@ export type CreateAgentClientOpts<State, Msg> = {
      * stays empty (the UI won't show activity).
      */
     wrapLogMsg?: (m: unknown) => Msg
+    /**
+     * Optional: wrap an agentAttention msg so the visual-attention
+     * slice can clear its spotlight on the auto-clear timer. Hosts
+     * that wire `agentAttention` should set this; hosts that don't
+     * leave it unset and the spotlight (which they aren't rendering)
+     * never matters. The factory uses it for the reverse direction
+     * too: `onLogEntry` re-dispatches the same `Append { entry }`
+     * payload into the attention slice when wired, so a single
+     * incoming `log-append` frame fans out to both slices without
+     * the host needing to write the routing.
+     */
+    wrapAttentionMsg?: (m: unknown) => Msg
+    /**
+     * Optional: wrap an agentChat msg so the chat-composer's send
+     * effect can dispatch `SubmitComplete` back to re-enable the
+     * input. Hosts that wire the chat composer set this; hosts that
+     * don't can leave it unset and the chat-send effect no-ops
+     * (the chat slice was never wired anyway, so no UI is waiting
+     * for the SubmitComplete signal).
+     */
+    wrapChatMsg?: (m: unknown) => Msg
   }
   /**
    * Codec registry for non-JSON-safe values (Date, Blob, Map, …)
@@ -1141,6 +1215,41 @@ export type AgentEffect =
    * via the status guard. Simpler than coordinating cancel handles.
    */
   | { type: 'AgentReconnectSchedule'; delayMs: number }
+  /**
+   * Auto-clear the `agentAttention` spotlight after `delayMs`. The
+   * handler waits and dispatches `Clear { entryId }` back into the
+   * attention slice via `wrapAgentAttention`. The clear is conditional
+   * (matches `entryId` against `latestDispatch.entryId` in the reducer),
+   * so a fast follow-up dispatch isn't wiped by the previous dispatch's
+   * pending timer — same race-avoidance pattern as
+   * `AgentReconnectSchedule`'s status guard.
+   *
+   * No cancel handle: the handler is a thin `setTimeout` wrapper. If
+   * the host doesn't wire `wrapAttentionMsg` in the factory, the
+   * handler no-ops and the spotlight stays set until the next dispatch
+   * overwrites it (graceful degradation — the activity log still
+   * works, just without auto-clearing visual highlights).
+   */
+  | { type: 'AgentAttentionFlashTimeout'; entryId: string; delayMs: number }
+  /**
+   * Send a user chat-composer submission upstream. Handler routes
+   * to `WsClient.submitUserInput(text, at)`, which:
+   *
+   *   1. emits a `user-input-submitted` WS frame so the server's
+   *      parked `wait_for_user_input` waiters resolve;
+   *   2. synthesizes a `LogEntry { kind: 'user-input', detail: text }`
+   *      and calls the factory's `onLogEntry` so `agentLog` (and
+   *      mirror channels) render the user's reply inline with agent
+   *      actions.
+   *
+   * After the frame sends, the handler dispatches
+   * `AgentChat.SubmitComplete` back into the chat slice via
+   * `wrapAgentChat` so the UI re-enables the input. The
+   * frame-send is best-effort: a closed/missing WS still resolves
+   * the SubmitComplete (so the input doesn't lock up); the user can
+   * retry once the connection is back.
+   */
+  | { type: 'AgentChatSendInput'; text: string; at: number }
 ```
 
 ### `AgentEffectHandler`
@@ -1773,6 +1882,59 @@ export type LapConfirmResultResponse =
   | { status: 'still-pending' }
 ```
 
+### `LapWaitForUserInputRequest`
+
+Long-poll for the user's next chat-composer submission. Returns
+`{ status: 'submitted', text, at }` on receipt of a
+`user-input-submitted` WS frame from the paired runtime, or
+`{ status: 'timeout' }` after `timeoutMs`. Each submission is
+delivered to exactly one waiter (FIFO); arrivals while no waiter
+is parked are buffered up to a small bound so a quick "type before
+Claude reaches the tool call" doesn't lose the message.
+
+```typescript
+export type LapWaitForUserInputRequest = { timeoutMs?: number }
+```
+
+### `LapWaitForUserInputResponse`
+
+```typescript
+export type LapWaitForUserInputResponse =
+  | { status: 'submitted'; text: string; at: number }
+  | { status: 'timeout' }
+```
+
+### `LapNarrateRequest`
+
+Push narration prose into the activity feed without dispatching a
+Msg. The agent uses this for "I'm thinking…" / "About to do X
+because…" / "I noticed Y, going to investigate" — running commentary
+the user can read inline with agent actions.
+The server synthesizes a `LogEntry { kind: 'narrate', detail: text }`,
+appends it to the per-tid recent-log buffer (visible to subsequent
+`describe_recent_actions` calls), AND pushes a `log-push` frame to
+the paired browser so the in-app activity feed renders it in real
+time. No client roundtrip — the agent gets `{ ok: true }` synchronously
+once the server has accepted the narration.
+
+```typescript
+export type LapNarrateRequest = {
+  text: string
+  /**
+   * Optional one-line label for the entry's `intent` field, e.g.
+   * "Thinking" / "Notice" / "Plan". Defaults to "Agent narrated"
+   * when omitted.
+   */
+  intent?: string
+}
+```
+
+### `LapNarrateResponse`
+
+```typescript
+export type LapNarrateResponse = { ok: true }
+```
+
 ### `LapWaitRequest`
 
 ```typescript
@@ -1892,6 +2054,11 @@ export type LapEndpointMap = {
   '/lap/v1/message': { req: LapMessageRequest; res: LapMessageResponse }
   '/lap/v1/confirm-result': { req: LapConfirmResultRequest; res: LapConfirmResultResponse }
   '/lap/v1/wait': { req: LapWaitRequest; res: LapWaitResponse }
+  '/lap/v1/wait-for-user-input': {
+    req: LapWaitForUserInputRequest
+    res: LapWaitForUserInputResponse
+  }
+  '/lap/v1/narrate': { req: LapNarrateRequest; res: LapNarrateResponse }
   '/lap/v1/query-dom': { req: LapQueryDomRequest; res: LapQueryDomResponse }
   '/lap/v1/describe-visible': { req: null; res: LapDescribeVisibleResponse }
   '/lap/v1/context': { req: null; res: LapContextResponse }
@@ -1928,6 +2095,23 @@ export type LogKind =
   | 'blocked'
   | 'read'
   | 'error'
+  /**
+   * The user typed a message into the in-app chat composer (the agentChat
+   * namespace) and submitted it. The agent's `wait_for_user_input` tool
+   * picks up the same submission. Surfacing it in the activity log is
+   * what makes the agent panel a real conversational surface — agent
+   * actions and user replies share one chronological timeline.
+   */
+  | 'user-input'
+  /**
+   * The agent emitted prose into the activity feed via `/lap/v1/narrate`
+   * — narration like "thinking about your request…", "I'm about to add
+   * an alternative because…", or any out-of-band commentary that
+   * doesn't fit a `dispatched` / `read` lifecycle. Lets the agent talk
+   * to the user inside the app without inventing a fake `@agentOnly`
+   * Msg type.
+   */
+  | 'narrate'
 ```
 
 ### `LogEntry`
@@ -2002,6 +2186,27 @@ export type StateUpdateFrame = { t: 'state-update'; path: string; stateAfter: un
 export type LogAppendFrame = { t: 'log-append'; entry: LogEntry }
 ```
 
+### `UserInputSubmittedFrame`
+
+Inverted input channel. The user submits a message through the in-app
+chat composer (`agentChat`); the runtime forwards the text on this
+frame to the pairing server, which routes it to the parked
+`wait_for_user_input` LAP call (if any).
+The runtime ALSO appends a synthetic `LogEntry { kind: 'user-input' }`
+to the local activity log so the panel renders it inline with agent
+actions — the conversation reads as a single timeline. The frame and
+the log entry are independent: the frame travels server-side and
+delivers Claude's reply trigger; the log entry stays browser-side
+for visibility.
+
+```typescript
+export type UserInputSubmittedFrame = {
+  t: 'user-input-submitted'
+  text: string
+  at: number
+}
+```
+
 ### `ClientFrame`
 
 ```typescript
@@ -2012,6 +2217,7 @@ export type ClientFrame =
   | ConfirmResolvedFrame
   | StateUpdateFrame
   | LogAppendFrame
+  | UserInputSubmittedFrame
 ```
 
 ### `RpcFrame`
@@ -2032,10 +2238,24 @@ export type RevokedFrame = { t: 'revoked' }
 export type ActiveFrame = { t: 'active' }
 ```
 
+### `LogPushFrame`
+
+Server-pushed log entry. Used today by the `narrate` LAP method:
+the agent calls `/lap/v1/narrate { text }`, the server synthesizes
+a `LogEntry { kind: 'narrate' }` and pushes it down to the paired
+runtime so the in-app activity feed renders the narration in real
+time. Distinct from the browser-emitted `log-append` frame:
+`log-append` is browser → server (rpc-derived audit), `log-push`
+is server → browser (server-originated entries, no echo).
+
+```typescript
+export type LogPushFrame = { t: 'log-push'; entry: LogEntry }
+```
+
 ### `ServerFrame`
 
 ```typescript
-export type ServerFrame = RpcFrame | RevokedFrame | ActiveFrame
+export type ServerFrame = RpcFrame | RevokedFrame | ActiveFrame | LogPushFrame
 ```
 
 ### `AgentToken`
@@ -2235,6 +2455,57 @@ export interface RateLimiter {
 }
 ```
 
+### `UserInputStorage`
+
+Optional persistence adapter for the per-tid user-input buffer.
+Most runtimes (Node, Bun, Deno, Deno Deploy) don't need this — the
+in-memory registry survives for the lifetime of the process, which
+is also the lifetime of the WS pairing. Buffered submissions either
+get drained by an agent's `wait_for_user_input` call or are
+irrelevant when the pairing eventually closes.
+Cloudflare Durable Objects are the motivating case. A DO process
+can be evicted (deploys, idle eviction, runtime restarts) while a
+WS pairing is paused mid-conversation; the next request rebuilds
+a fresh DO with a fresh `InMemoryPairingRegistry`. Wiring this
+adapter to the DO's `state.storage` makes buffered submissions
+survive eviction.
+Parked waiters (Promise resolvers from `waitForUserInput`) CAN'T be
+persisted — they live in JS memory only. After eviction + wake the
+agent's LAP client times out on its parked HTTP request and retries
+via the same long-poll loop; the retry sees the restored buffer.
+Calls are best-effort: the registry doesn't await them on the hot
+path. A storage outage causes lost messages on eviction but never
+wedges a live conversation.
+
+```typescript
+export interface UserInputStorage {
+  /**
+   * Read any persisted buffer for this tid. Called from `register()`
+   * when the registry sees a fresh pairing — the returned entries
+   * seed the in-memory buffer so subsequent `waitForUserInput` calls
+   * find them.
+   *
+   * Returning an empty array (or rejecting) for an unknown tid is
+   * normal — a fresh DO has nothing to restore.
+   */
+  read(tid: string): Promise<Array<{ text: string; at: number }>>
+  /**
+   * Persist the current buffer for this tid. Called whenever the
+   * buffer mutates (push on `user-input-submitted`, shift on
+   * `waitForUserInput` drain). Receives the FULL buffer, not just
+   * the delta — simpler contract, idempotent writes, and the buffer
+   * is small (capped at USER_INPUT_BUFFER_CAP).
+   */
+  write(tid: string, buffer: Array<{ text: string; at: number }>): Promise<void>
+  /**
+   * Drop persisted buffer for this tid. Called from `handleClose()`
+   * so an evicted-then-restarted DO doesn't see stale messages from
+   * a session that ended.
+   */
+  clear(tid: string): Promise<void>
+}
+```
+
 ### `PairingConnection`
 
 Thin abstraction over a single paired WebSocket. Consumed by the
@@ -2297,6 +2568,22 @@ export interface PairingRegistry {
    */
   getRecentLog(tid: string, n: number): LogEntry[]
 
+  /**
+   * Long-poll for the next user-input submission from the paired
+   * runtime. The registry buffers a small number of submissions
+   * received with no waiter parked (so a user typing before Claude
+   * reaches the tool call doesn't lose the message); when a waiter
+   * parks with a non-empty buffer it resolves immediately with the
+   * oldest buffered submission. When the buffer is empty, the waiter
+   * sleeps until a `user-input-submitted` frame arrives, the WS
+   * pairing closes, or `timeoutMs` elapses.
+   *
+   * FIFO delivery: each submission is consumed by exactly one waiter.
+   * Multiple parked waiters form a queue; submissions are dispatched
+   * in arrival order to the head of the waiter queue.
+   */
+  waitForUserInput(tid: string, timeoutMs: number): Promise<UserInputResolution>
+
   // ── Request/response helpers ───────────────────────────────────
   // These are part of the contract (LAP handlers call them directly)
   // but implementations almost always delegate to the free helpers in
@@ -2323,6 +2610,21 @@ export interface PairingRegistry {
     path: string | undefined,
     timeoutMs: number,
   ): Promise<{ status: 'changed' | 'timeout'; stateAfter: unknown }>
+}
+```
+
+### `DurableObjectStorageLike`
+
+Minimal subset of the Cloudflare Durable Object `state.storage`
+surface needed to back the registry's `UserInputStorage` adapter.
+Declared structurally so we don't pull in `@cloudflare/workers-types`
+— that's a peer dependency of the host's Worker project, not ours.
+
+```typescript
+export interface DurableObjectStorageLike {
+  get<T>(key: string): Promise<T | undefined>
+  put<T>(key: string, value: T): Promise<void>
+  delete(key: string): Promise<boolean>
 }
 ```
 
@@ -2384,10 +2686,18 @@ class InMemoryTokenStore implements TokenStore {
 class InMemoryPairingRegistry implements PairingRegistry {
   pairings
   onLogAppend: ((tid: string, entry: LogEntry) => void) | null
+  userInputStorage: UserInputStorage | null
   recentLog
   constructor(
     opts: {
       onLogAppend?: (tid: string, entry: LogEntry) => void
+      /**
+       * Optional adapter for persisting the user-input buffer across
+       * runtime restarts (Cloudflare DO eviction, mainly). See
+       * `UserInputStorage` for the contract. Omit on Node/Bun/Deno —
+       * those runtimes don't need it.
+       */
+      userInputStorage?: UserInputStorage
     } = {},
   )
   getRecentLog(tid: string, n: number): LogEntry[]
@@ -2410,7 +2720,9 @@ class InMemoryPairingRegistry implements PairingRegistry {
     path: string | undefined,
     timeoutMs: number,
   ): Promise<{ status: 'changed' | 'timeout'; stateAfter: unknown }>
+  waitForUserInput(tid: string, timeoutMs: number): Promise<UserInputResolution>
   notify(tid: string, frame: ServerFrame): void
+  persistUserInputBuffer(tid: string, buffer: Array<{ text: string; at: number }>): void
   handleClose(tid: string): void
 }
 ```

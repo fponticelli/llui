@@ -31,10 +31,12 @@
     "./codecs": {
       "types": "./dist/codecs.d.ts",
       "import": "./dist/codecs.js"
-    }
+    },
+    "./styles/agent-panel.css": "./styles/agent-panel.css"
   },
   "files": [
-    "dist"
+    "dist",
+    "styles"
   ],
   "scripts": {
     "build": "tsc -p tsconfig.build.json",

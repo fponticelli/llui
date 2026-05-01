@@ -414,4 +414,161 @@ describe('createAgentClient', () => {
 
     client.stop()
   })
+
+  // ── Slice fan-out: log-append routes to both wrapLogMsg and wrapAttentionMsg ──
+  // Regression guard for the factory's onLogEntry plumbing. The wiring is
+  // small but easy to break: a single log entry must reach BOTH slices when
+  // both are wired (so the activity log and the attention spotlight stay
+  // in sync), exactly one when only one is wired, and never disagree about
+  // the entry payload they receive.
+  it('onLogEntry fans out a single log-append to wrapLogMsg AND wrapAttentionMsg when both are wired', async () => {
+    const handle = makeHandle({ connect: {}, confirm: { pending: [] } })
+    const wrapLogMsg = vi.fn((m: unknown) => ({ type: 'LogMsg', inner: m }))
+    const wrapAttentionMsg = vi.fn((m: unknown) => ({ type: 'AttentionMsg', inner: m }))
+    const opts: CreateAgentClientOpts<FakeState, unknown> = {
+      ...makeOpts(handle, () => ({ pending: [] })),
+      slices: {
+        getConnect: (s) => s.connect,
+        getConfirm: (_s) => ({ pending: [] }),
+        wrapConnectMsg: (m) => ({ type: 'AgentMsg', inner: m }),
+        wrapConfirmMsg: (m) => ({ type: 'ConfirmMsg', inner: m }),
+        wrapLogMsg,
+        wrapAttentionMsg,
+      },
+    }
+    const client = createAgentClient(opts)
+    await client.effectHandler({
+      type: 'AgentOpenWS',
+      token: 'tok' as AgentToken,
+      wsUrl: 'ws://localhost:9000/agent/ws',
+    })
+    lastFakeWs!.emit('open')
+
+    handle.send.mockClear()
+    // Trigger an rpc so the ws-client emits a LogEntry locally (via onLogEntry).
+    lastFakeWs!.emit(
+      'message',
+      JSON.stringify({ t: 'rpc', id: 'rpc-1', tool: 'get_state', args: {} }),
+    )
+    await Promise.resolve()
+    await Promise.resolve()
+
+    // Both wrappers fired, with the same Append payload (same entry by ref).
+    expect(wrapLogMsg).toHaveBeenCalledOnce()
+    expect(wrapAttentionMsg).toHaveBeenCalledOnce()
+    const logCall = wrapLogMsg.mock.calls[0]![0] as { type: string; entry: { id: string } }
+    const attCall = wrapAttentionMsg.mock.calls[0]![0] as {
+      type: string
+      entry: { id: string }
+    }
+    expect(logCall.type).toBe('Append')
+    expect(attCall.type).toBe('Append')
+    expect(logCall.entry).toBe(attCall.entry) // same reference, not a clone
+
+    // Each wrapper's output reaches handle.send.
+    expect(handle.send).toHaveBeenCalledWith({ type: 'LogMsg', inner: logCall })
+    expect(handle.send).toHaveBeenCalledWith({ type: 'AttentionMsg', inner: attCall })
+
+    client.stop()
+  })
+
+  it('onLogEntry skips fan-out entirely when neither wrapLogMsg nor wrapAttentionMsg is wired', async () => {
+    const handle = makeHandle({ connect: {}, confirm: { pending: [] } })
+    const client = createAgentClient(makeOpts(handle, () => ({ pending: [] })))
+    await client.effectHandler({
+      type: 'AgentOpenWS',
+      token: 'tok' as AgentToken,
+      wsUrl: 'ws://localhost:9000/agent/ws',
+    })
+    lastFakeWs!.emit('open')
+
+    handle.send.mockClear()
+    lastFakeWs!.emit(
+      'message',
+      JSON.stringify({ t: 'rpc', id: 'rpc-quiet', tool: 'get_state', args: {} }),
+    )
+    await Promise.resolve()
+    await Promise.resolve()
+
+    // No Append-style msg should have been dispatched. The rpc still
+    // ran (rpc-reply + outbound log-append frames are on the WS), but
+    // neither the host nor any slice received an inbound dispatch.
+    const appendCalls = handle.send.mock.calls.filter((c) => {
+      const msg = c[0] as { type?: string; inner?: { type?: string } } | null
+      return msg?.inner?.type === 'Append'
+    })
+    expect(appendCalls).toHaveLength(0)
+
+    client.stop()
+  })
+
+  it('AgentChatSendInput effect chains submitUserInput → SubmitComplete via wrapChatMsg', async () => {
+    const handle = makeHandle({ connect: {}, confirm: { pending: [] } })
+    const wrapChatMsg = vi.fn((m: unknown) => ({ type: 'ChatMsg', inner: m }))
+    const opts: CreateAgentClientOpts<FakeState, unknown> = {
+      ...makeOpts(handle, () => ({ pending: [] })),
+      slices: {
+        getConnect: (s) => s.connect,
+        getConfirm: (_s) => ({ pending: [] }),
+        wrapConnectMsg: (m) => ({ type: 'AgentMsg', inner: m }),
+        wrapConfirmMsg: (m) => ({ type: 'ConfirmMsg', inner: m }),
+        wrapChatMsg,
+      },
+    }
+    const client = createAgentClient(opts)
+    await client.effectHandler({
+      type: 'AgentOpenWS',
+      token: 'tok' as AgentToken,
+      wsUrl: 'ws://localhost:9000/agent/ws',
+    })
+    lastFakeWs!.emit('open')
+    lastFakeWs!.sent.length = 0
+    handle.send.mockClear()
+
+    await client.effectHandler({ type: 'AgentChatSendInput', text: 'hi', at: 1700 })
+
+    // ws-client sent the user-input frame, then mirrored a log-append entry.
+    const inputFrames = lastFakeWs!.sent
+      .map((s) => JSON.parse(s))
+      .filter((f) => f.t === 'user-input-submitted')
+    expect(inputFrames).toHaveLength(1)
+    expect(inputFrames[0]).toEqual({ t: 'user-input-submitted', text: 'hi', at: 1700 })
+
+    // SubmitComplete fired on the chat slice through wrapChatMsg.
+    expect(wrapChatMsg).toHaveBeenCalledWith({ type: 'SubmitComplete' })
+    expect(handle.send).toHaveBeenCalledWith({
+      type: 'ChatMsg',
+      inner: { type: 'SubmitComplete' },
+    })
+
+    client.stop()
+  })
+
+  it('AgentChatSendInput still dispatches SubmitComplete when the WS is not yet open', async () => {
+    // Reproduces the "user types before WS connects" race. The factory's
+    // getWsClient returns null pre-openWs; the effect handler must still
+    // bounce SubmitComplete back so the input field re-enables, otherwise
+    // the user is locked out of retrying.
+    const handle = makeHandle({ connect: {}, confirm: { pending: [] } })
+    const wrapChatMsg = vi.fn((m: unknown) => ({ type: 'ChatMsg', inner: m }))
+    const opts: CreateAgentClientOpts<FakeState, unknown> = {
+      ...makeOpts(handle, () => ({ pending: [] })),
+      slices: {
+        getConnect: (s) => s.connect,
+        getConfirm: (_s) => ({ pending: [] }),
+        wrapConnectMsg: (m) => ({ type: 'AgentMsg', inner: m }),
+        wrapConfirmMsg: (m) => ({ type: 'ConfirmMsg', inner: m }),
+        wrapChatMsg,
+      },
+    }
+    const client = createAgentClient(opts)
+    // No AgentOpenWS effect → wsClient is null.
+    await client.effectHandler({ type: 'AgentChatSendInput', text: 'hi', at: 1700 })
+
+    expect(wrapChatMsg).toHaveBeenCalledWith({ type: 'SubmitComplete' })
+    expect(handle.send).toHaveBeenCalledWith({
+      type: 'ChatMsg',
+      inner: { type: 'SubmitComplete' },
+    })
+  })
 })

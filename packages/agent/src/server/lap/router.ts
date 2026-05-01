@@ -13,6 +13,7 @@ import {
 import { handleLapMessage } from './message.js'
 import { handleLapWait } from './wait.js'
 import { handleLapWaitForUserInput } from './wait-for-user-input.js'
+import { handleLapNarrate } from './narrate.js'
 import { handleLapConfirmResult } from './confirm-result.js'
 import { handleLapObserve } from './observe.js'
 
@@ -44,6 +45,8 @@ export function createLapRouter(
         return handleLapWait(req, deps)
       case '/wait-for-user-input':
         return handleLapWaitForUserInput(req, deps)
+      case '/narrate':
+        return handleLapNarrate(req, deps)
       case '/query-dom':
         return handleLapQueryDom(req, deps)
       case '/describe-visible':

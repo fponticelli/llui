@@ -19,6 +19,58 @@ export type UserInputResolution =
   | { status: 'timeout' }
 
 /**
+ * Optional persistence adapter for the per-tid user-input buffer.
+ *
+ * Most runtimes (Node, Bun, Deno, Deno Deploy) don't need this — the
+ * in-memory registry survives for the lifetime of the process, which
+ * is also the lifetime of the WS pairing. Buffered submissions either
+ * get drained by an agent's `wait_for_user_input` call or are
+ * irrelevant when the pairing eventually closes.
+ *
+ * Cloudflare Durable Objects are the motivating case. A DO process
+ * can be evicted (deploys, idle eviction, runtime restarts) while a
+ * WS pairing is paused mid-conversation; the next request rebuilds
+ * a fresh DO with a fresh `InMemoryPairingRegistry`. Wiring this
+ * adapter to the DO's `state.storage` makes buffered submissions
+ * survive eviction.
+ *
+ * Parked waiters (Promise resolvers from `waitForUserInput`) CAN'T be
+ * persisted — they live in JS memory only. After eviction + wake the
+ * agent's LAP client times out on its parked HTTP request and retries
+ * via the same long-poll loop; the retry sees the restored buffer.
+ *
+ * Calls are best-effort: the registry doesn't await them on the hot
+ * path. A storage outage causes lost messages on eviction but never
+ * wedges a live conversation.
+ */
+export interface UserInputStorage {
+  /**
+   * Read any persisted buffer for this tid. Called from `register()`
+   * when the registry sees a fresh pairing — the returned entries
+   * seed the in-memory buffer so subsequent `waitForUserInput` calls
+   * find them.
+   *
+   * Returning an empty array (or rejecting) for an unknown tid is
+   * normal — a fresh DO has nothing to restore.
+   */
+  read(tid: string): Promise<Array<{ text: string; at: number }>>
+  /**
+   * Persist the current buffer for this tid. Called whenever the
+   * buffer mutates (push on `user-input-submitted`, shift on
+   * `waitForUserInput` drain). Receives the FULL buffer, not just
+   * the delta — simpler contract, idempotent writes, and the buffer
+   * is small (capped at USER_INPUT_BUFFER_CAP).
+   */
+  write(tid: string, buffer: Array<{ text: string; at: number }>): Promise<void>
+  /**
+   * Drop persisted buffer for this tid. Called from `handleClose()`
+   * so an evicted-then-restarted DO doesn't see stale messages from
+   * a session that ended.
+   */
+  clear(tid: string): Promise<void>
+}
+
+/**
  * Thin abstraction over a single paired WebSocket. Consumed by the
  * registry implementations; runtime-specific adapters (`ws`-lib,
  * `WebSocketPair`, `Deno.upgradeWebSocket`, `Bun.serve` upgrade) build
@@ -185,6 +237,7 @@ const USER_INPUT_BUFFER_CAP = 8
 export class InMemoryPairingRegistry implements PairingRegistry {
   private pairings = new Map<string, Pairing>()
   private onLogAppend: ((tid: string, entry: LogEntry) => void) | null
+  private userInputStorage: UserInputStorage | null
   /**
    * Per-tid ring buffer of recent log entries. Populated as the
    * registry sees `log-append` frames; trimmed to RECENT_LOG_CAP.
@@ -196,9 +249,17 @@ export class InMemoryPairingRegistry implements PairingRegistry {
   constructor(
     opts: {
       onLogAppend?: (tid: string, entry: LogEntry) => void
+      /**
+       * Optional adapter for persisting the user-input buffer across
+       * runtime restarts (Cloudflare DO eviction, mainly). See
+       * `UserInputStorage` for the contract. Omit on Node/Bun/Deno —
+       * those runtimes don't need it.
+       */
+      userInputStorage?: UserInputStorage
     } = {},
   ) {
     this.onLogAppend = opts.onLogAppend ?? null
+    this.userInputStorage = opts.userInputStorage ?? null
   }
 
   /**
@@ -229,6 +290,33 @@ export class InMemoryPairingRegistry implements PairingRegistry {
     this.pairings.set(tid, p)
     conn.onFrame((frame) => this.dispatch(tid, frame))
     conn.onClose(() => this.handleClose(tid))
+    // Best-effort restore of any persisted buffer. The promise is NOT
+    // awaited so the synchronous register() contract is preserved;
+    // submissions arriving in-flight queue up in the in-memory buffer
+    // and the restored entries simply prepend (oldest-first) when the
+    // read resolves. If the read rejects, we treat it as an empty
+    // restore — the conversation continues, just without any messages
+    // from before the eviction.
+    if (this.userInputStorage) {
+      const storage = this.userInputStorage
+      storage.read(tid).then(
+        (entries) => {
+          if (!entries || entries.length === 0) return
+          const live = this.pairings.get(tid)
+          if (!live || live !== p || live.closed) return // pairing already closed/replaced
+          // Restored entries are older than anything that arrived in
+          // the meantime. Prepend, then re-cap to USER_INPUT_BUFFER_CAP.
+          live.userInputBuffer.unshift(...entries)
+          if (live.userInputBuffer.length > USER_INPUT_BUFFER_CAP) {
+            live.userInputBuffer.splice(0, live.userInputBuffer.length - USER_INPUT_BUFFER_CAP)
+          }
+        },
+        () => {
+          // Storage failure — log and continue. The conversation works
+          // without persistence; we just lost any pre-eviction messages.
+        },
+      )
+    }
   }
 
   unregister(tid: string): void {
@@ -319,6 +407,7 @@ export class InMemoryPairingRegistry implements PairingRegistry {
         // for an agent picking up a stale conversation.
         p.userInputBuffer.splice(0, p.userInputBuffer.length - USER_INPUT_BUFFER_CAP)
       }
+      this.persistUserInputBuffer(tid, p.userInputBuffer)
       return
     }
     // Iterate over a snapshot because subscribers may self-remove
@@ -378,6 +467,7 @@ export class InMemoryPairingRegistry implements PairingRegistry {
     // Buffered submission already waiting → resolve synchronously.
     const buffered = p.userInputBuffer.shift()
     if (buffered) {
+      this.persistUserInputBuffer(tid, p.userInputBuffer)
       return Promise.resolve({ status: 'submitted', text: buffered.text, at: buffered.at })
     }
 
@@ -429,6 +519,24 @@ export class InMemoryPairingRegistry implements PairingRegistry {
     this.send(tid, frame)
   }
 
+  /**
+   * Fire-and-forget write-through to the optional storage adapter.
+   * Snapshots the buffer (defensive copy — the in-memory array can
+   * mutate again before the adapter's write resolves) and ignores
+   * rejections. Called on every buffer mutation; cheap when the
+   * adapter is unset (no-ops) and best-effort when wired.
+   */
+  private persistUserInputBuffer(tid: string, buffer: Array<{ text: string; at: number }>): void {
+    if (!this.userInputStorage) return
+    // Defensive copy so the persisted snapshot is the buffer at the
+    // moment of mutation, not whatever the buffer holds when the
+    // storage adapter actually serializes the write.
+    const snapshot = buffer.slice()
+    void this.userInputStorage.write(tid, snapshot).catch(() => {
+      /* best-effort; storage failures don't wedge the conversation */
+    })
+  }
+
   private handleClose(tid: string): void {
     const p = this.pairings.get(tid)
     if (!p || p.closed) return
@@ -453,6 +561,11 @@ export class InMemoryPairingRegistry implements PairingRegistry {
     // resuming on a fresh tid shouldn't see stale messages from the
     // previous session. Same retention contract as recentLog.
     p.userInputBuffer.length = 0
+    if (this.userInputStorage) {
+      void this.userInputStorage.clear(tid).catch(() => {
+        /* best-effort; storage failures don't block the close path */
+      })
+    }
     for (const h of Array.from(p.closeHandlers)) {
       try {
         h()

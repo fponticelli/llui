@@ -120,6 +120,17 @@ export function attachWsClient(
       }
       return
     }
+    if (frame.t === 'log-push') {
+      // Server-originated log entry (today: agent narration). Mirror
+      // it via the same `onLogEntry` channel as locally-emitted entries
+      // so agentLog/agentAttention pick it up. Then echo a `log-append`
+      // back to the server so the recent-log buffer + audit sink see
+      // it through the existing browser → server path — no special
+      // server-side persistence for narration.
+      opts.onLogEntry?.(frame.entry)
+      ws.send(JSON.stringify({ t: 'log-append', entry: frame.entry } satisfies ClientFrame))
+      return
+    }
     if (frame.t !== 'rpc') return
     let result: unknown
     let rpcErr: { code?: string; detail?: string } | null = null

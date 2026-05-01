@@ -298,6 +298,30 @@ export type LapWaitForUserInputResponse =
   | { status: 'submitted'; text: string; at: number }
   | { status: 'timeout' }
 
+/**
+ * Push narration prose into the activity feed without dispatching a
+ * Msg. The agent uses this for "I'm thinking…" / "About to do X
+ * because…" / "I noticed Y, going to investigate" — running commentary
+ * the user can read inline with agent actions.
+ *
+ * The server synthesizes a `LogEntry { kind: 'narrate', detail: text }`,
+ * appends it to the per-tid recent-log buffer (visible to subsequent
+ * `describe_recent_actions` calls), AND pushes a `log-push` frame to
+ * the paired browser so the in-app activity feed renders it in real
+ * time. No client roundtrip — the agent gets `{ ok: true }` synchronously
+ * once the server has accepted the narration.
+ */
+export type LapNarrateRequest = {
+  text: string
+  /**
+   * Optional one-line label for the entry's `intent` field, e.g.
+   * "Thinking" / "Notice" / "Plan". Defaults to "Agent narrated"
+   * when omitted.
+   */
+  intent?: string
+}
+export type LapNarrateResponse = { ok: true }
+
 export type LapWaitRequest = { path?: string; timeoutMs?: number }
 export type LapWaitResponse =
   | { status: 'changed'; stateAfter: unknown }
@@ -392,6 +416,7 @@ export type LapEndpointMap = {
     req: LapWaitForUserInputRequest
     res: LapWaitForUserInputResponse
   }
+  '/lap/v1/narrate': { req: LapNarrateRequest; res: LapNarrateResponse }
   '/lap/v1/query-dom': { req: LapQueryDomRequest; res: LapQueryDomResponse }
   '/lap/v1/describe-visible': { req: null; res: LapDescribeVisibleResponse }
   '/lap/v1/context': { req: null; res: LapContextResponse }
@@ -422,6 +447,15 @@ export type LogKind =
    * actions and user replies share one chronological timeline.
    */
   | 'user-input'
+  /**
+   * The agent emitted prose into the activity feed via `/lap/v1/narrate`
+   * — narration like "thinking about your request…", "I'm about to add
+   * an alternative because…", or any out-of-band commentary that
+   * doesn't fit a `dispatched` / `read` lifecycle. Lets the agent talk
+   * to the user inside the app without inventing a fake `@agentOnly`
+   * Msg type.
+   */
+  | 'narrate'
 
 export type LogEntry = {
   id: string
@@ -493,8 +527,18 @@ export type ClientFrame =
 export type RpcFrame = { t: 'rpc'; id: string; tool: string; args: unknown }
 export type RevokedFrame = { t: 'revoked' }
 export type ActiveFrame = { t: 'active' }
+/**
+ * Server-pushed log entry. Used today by the `narrate` LAP method:
+ * the agent calls `/lap/v1/narrate { text }`, the server synthesizes
+ * a `LogEntry { kind: 'narrate' }` and pushes it down to the paired
+ * runtime so the in-app activity feed renders the narration in real
+ * time. Distinct from the browser-emitted `log-append` frame:
+ * `log-append` is browser → server (rpc-derived audit), `log-push`
+ * is server → browser (server-originated entries, no echo).
+ */
+export type LogPushFrame = { t: 'log-push'; entry: LogEntry }
 
-export type ServerFrame = RpcFrame | RevokedFrame | ActiveFrame
+export type ServerFrame = RpcFrame | RevokedFrame | ActiveFrame | LogPushFrame
 
 // ── Tokens + pairing ─────────────────────────────────────────────
 

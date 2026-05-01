@@ -13,7 +13,7 @@ import type { TokenStore } from './token-store.js'
 import type { IdentityResolver } from './identity.js'
 import type { AuditSink } from './audit.js'
 import type { RateLimiter } from './rate-limit.js'
-import type { PairingConnection, PairingRegistry } from './ws/pairing-registry.js'
+import type { PairingConnection, PairingRegistry, UserInputStorage } from './ws/pairing-registry.js'
 import { InMemoryTokenStore } from './token-store.js'
 import { consoleAuditSink } from './audit.js'
 import { defaultRateLimiter } from './rate-limit.js'
@@ -42,6 +42,16 @@ export type CoreOptions = {
    * Durable Object that persists across isolates) pass it here.
    */
   registry?: PairingRegistry
+  /**
+   * Optional persistence adapter for the chat-composer's
+   * `wait_for_user_input` buffer. Wired automatically into the
+   * default `InMemoryPairingRegistry`; ignored when `opts.registry`
+   * is overridden (custom registries supply their own persistence).
+   * See `UserInputStorage` for the contract. Cloudflare DO hosts get
+   * a ready-made adapter from
+   * `@llui/agent/server/cloudflare`'s `makeDurableObjectUserInputStorage`.
+   */
+  userInputStorage?: UserInputStorage
   /**
    * How long, in milliseconds, a token's record stays in
    * `pending-resume` after the WS pairing closes. During this window
@@ -124,6 +134,7 @@ export function createLluiAgentCore(opts: CoreOptions = {}): AgentCoreHandle {
           },
         })
       },
+      userInputStorage: opts.userInputStorage,
     })
 
   const httpRouter = createHttpRouter({
