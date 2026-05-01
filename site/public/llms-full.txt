@@ -2217,7 +2217,7 @@ function sample<S, R>(selector: (s: S) => R): R
 
 Use when a builder needs the current state snapshot — e.g. to pass a record to an imperative renderer inside a `scope()` rebuild — and a reactive binding would be wrong semantically. The top-level import works in every render context (including `each.render`, whose bag does not carry View methods); `h.sample(…)` is the View-bag form for destructure-from-`h` callers.
 
-Throws `[LLui] sample called outside render` if invoked outside a render context.
+`sample()` is a **construction-time** primitive. It throws if called outside a render context, and it also throws if called from inside an accessor — `each.key`, `each.items`, `branch.on`, `show.when`, `scope.on`, `child.props`, `foreign.props`, or a binding accessor like `text(s => …)`. Accessors run during the update phase (no render context) and must be pure functions of their parameter; `sample()` reads outside the parameter, which the compiler's mask analysis can't see. The lint rule `llui/no-sample-in-accessor` catches the same antipattern at edit time. To depend on outer state inside an accessor, lift the dep into the parameter (e.g. for `each.key`, bake it into the items map: `items: (s) => s.rows.map(it => ({ it, rev: s.rev }))`).
 
 See: `docs/superpowers/specs/2026-04-18-scope-primitive-design.md`
 

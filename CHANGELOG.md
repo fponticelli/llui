@@ -11,6 +11,49 @@ All notable changes to LLui packages are documented here. LLui is a pre-1.0 proj
 
 Packages version in lockstep at release time: `@llui/dom`, `@llui/vite-plugin`, `@llui/test`, `@llui/router`, `@llui/transitions`, `@llui/components`, `@llui/vike` share a version line. `@llui/effects`, `@llui/mcp`, `@llui/eslint-plugin`, `@llui/agent`, and `llui-agent` have their own cadence.
 
+## 2026-04-30 — @llui/dom@0.0.35
+
+**Released:** `@llui/{dom,components,transitions}@0.0.35`; `@llui/{router,test}@0.0.36`; `@llui/vike@0.0.37`; `@llui/agent@0.0.48`; `@llui/mcp@0.0.30`; `@llui/eslint-plugin@0.0.22`; `llui-agent@0.0.12`
+
+Enforce the accessor-purity contract end-to-end. `sample()` (and `h.sample()`) called from inside any structural-primitive accessor (`each.{items,key}`, `branch.on`, `show.when`, `scope.on`, `child.props`, `foreign.props`) or a binding accessor (`text(s => …)`, `unsafeHtml(s => …)`) now throws a targeted runtime error at the first invocation — typically initial mount, before the bug can ship. A new ESLint rule catches the same antipattern at edit time. Phase 1 reconcile gains the same try/catch defense Phase 2 already had: a thrown accessor surfaces via `_onBindingError` instead of dying silently in a microtask.
+
+### Breaking
+
+- **`@llui/dom@0.0.35`** — `sample()` / `h.sample()` calls from inside an accessor now throw at the first invocation with a targeted error. The previous behaviour was undefined: the accessor's mask analysis silently dropped the hidden dep (so the block was mask-gated out when the sampled state changed), and on the reconcile paths where the accessor did run, `sample()` threw a generic "outside render context" error mid-flush that escaped to an unhandled microtask. Apps that depended on the prior accidental behaviour need to lift the dep into the accessor's parameter — bake outer state into `items`, return a wider object from `props`, etc. The lint rule `llui/no-sample-in-accessor` flags every site at edit time.
+
+### Migration
+
+- For `each().key` reading sibling state via `sample()`, replace with the items-map pattern. Before:
+  ```ts
+  each({ items: (s) => s.rows, key: (it) => `${it.id}|${sample(s => s.rev)}` })
+  ```
+  After:
+  ```ts
+  each({
+    items: (s) => s.rows.map((it) => ({ it, rev: s.rev })),
+    key: (r) => `${r.it.id}|${r.rev}`,
+  })
+  ```
+  The same shape applies to the other accessors: lift the dep into the parameter so the compiler's mask analysis can see it. The lint rule's error message points at the corresponding workaround.
+
+### `@llui/dom@0.0.35`
+
+- **Fixed** `sample()` inside an accessor used to fail silently. The compiler's mask analysis only walks `param.X` reads on the accessor's parameter, so a read via `sample(s2 => s2.X)` was invisible — the dep silently dropped from the structural block's mask. When the hidden dep changed, the block was gated out and reconcile never fired; when reconcile did fire (e.g. on a sibling change), the accessor threw at `sample()` because there's no render context during the update phase, and the throw escaped the update loop into a swallowed microtask. The new runtime accessor stack (in `render-context.ts`) lets `sample()` detect every accessor call site by name (`each().key`, `each().items`, `branch().on`, `show().when`, `child().props`, `foreign().props`, `a binding accessor`) and throw a targeted error pointing at the lift-into-parameter workaround. The fail-fast happens at initial mount, so the bug can't ship.
+- **Improved** Phase 1 structural reconcile errors now flow through `_onBindingError` (parallel to Phase 2 binding errors) instead of escaping the update loop. A throwing accessor no longer kills the rest of the update or vanishes into an unhandled microtask rejection — the dev/agent integration surfaces the error in the same channel as binding accessor throws, with `kind: 'reconcile'` to distinguish it.
+
+### `@llui/eslint-plugin@0.0.22`
+
+- **Added** `llui/no-sample-in-accessor` rule (recommended at `error`). Flags `sample()` / `h.sample()` calls inside `each.{items,key}`, `branch.on`, `show.when`, `scope.on`, `child.props`, `foreign.props`, and the binding helpers `text` / `unsafeHtml`. Catches the runtime-throw antipattern at edit time with zero runtime cost. The walker intentionally does not descend into nested function bodies, so a `sample()` inside an event handler attached during render (a non-accessor closure) is not flagged. Sister rule of `no-sample-in-reactive-position`, which catches the adjacent "sample's *result* in a reactive position" antipattern.
+
+### `@llui/components@0.0.35`, `@llui/transitions@0.0.35`, `@llui/router@0.0.36`, `@llui/test@0.0.36`, `@llui/vike@0.0.37`, `@llui/agent@0.0.48`, `@llui/mcp@0.0.30`, `llui-agent@0.0.12`
+
+- Cascade release picking up the new `@llui/dom@0.0.35` peer range. No package-level source changes.
+
+### Docs
+
+- `docs/designs/03 Runtime DOM.md` — added an "accessor purity contract" paragraph in the `each()` section spelling out the construction-vs-update phase split, the mask-gating implication, and the runtime + lint enforcement.
+- `docs/designs/09 API Reference.md` — `sample()` description updated with the accessor restriction and pointer to the lint rule.
+
 ## 2026-04-29 — @llui/agent@0.0.47, llui-agent@0.0.11
 
 **Released:** `@llui/agent@0.0.47`; `llui-agent@0.0.11`
