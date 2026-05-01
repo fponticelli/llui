@@ -176,3 +176,83 @@ describe('agentLog: filtering via visibleEntries (connect)', () => {
     expect(send).toHaveBeenCalledWith({ type: 'SetFilter', filter: { kinds: ['error'] } })
   })
 })
+
+describe('agentLog: entryDiff (connect)', () => {
+  const buildBag = (send = vi.fn()) => {
+    const bag = connect<AgentLogState>((s) => s, send)
+    return { bag, send }
+  }
+
+  it('returns the stateDiff when the entry has one', () => {
+    let state = init()[0]
+    const diff = [{ op: 'replace' as const, path: '/items/0/name', value: 'X' }]
+    ;[state] = update(state, {
+      type: 'Append',
+      entry: makeEntry({ id: 'e1', kind: 'dispatched', stateDiff: diff }),
+    })
+    const { bag } = buildBag()
+    expect(bag.entryDiff('e1')(state)).toBe(diff)
+  })
+
+  it('returns null when the entry has no stateDiff (e.g. read entries)', () => {
+    let state = init()[0]
+    ;[state] = update(state, {
+      type: 'Append',
+      entry: makeEntry({ id: 'r1', kind: 'read' }), // no stateDiff
+    })
+    const { bag } = buildBag()
+    expect(bag.entryDiff('r1')(state)).toBeNull()
+  })
+
+  it('returns null when the id is unknown', () => {
+    const [s0] = init()
+    const { bag } = buildBag()
+    expect(bag.entryDiff('does-not-exist')(s0)).toBeNull()
+  })
+
+  it('looks up entries through the raw list, ignoring filter', () => {
+    // A diff sidecar that opens for an entry hidden by the filter still
+    // reads its diff — visibility and diff-availability are independent.
+    let state = init()[0]
+    const diff = [{ op: 'add' as const, path: '/cart/items/-', value: { id: 'a' } }]
+    ;[state] = update(state, {
+      type: 'Append',
+      entry: makeEntry({ id: 'd1', kind: 'dispatched', stateDiff: diff }),
+    })
+    ;[state] = update(state, { type: 'SetFilter', filter: { kinds: ['proposed'] } })
+    const { bag } = buildBag()
+    // Filter excludes d1 from visibleEntries…
+    expect(bag.visibleEntries(state).map((e) => e.id)).toEqual([])
+    // …but entryDiff still finds it.
+    expect(bag.entryDiff('d1')(state)).toBe(diff)
+  })
+
+  it('caches the accessor by id (reference equality across calls)', () => {
+    const { bag } = buildBag()
+    const a1 = bag.entryDiff('e1')
+    const a2 = bag.entryDiff('e1')
+    expect(a1).toBe(a2)
+  })
+
+  it('different ids return distinct accessors', () => {
+    const { bag } = buildBag()
+    const a1 = bag.entryDiff('e1')
+    const a2 = bag.entryDiff('e2')
+    expect(a1).not.toBe(a2)
+  })
+
+  it('the cached accessor reflects later state appends (not snapshot)', () => {
+    let state = init()[0]
+    const { bag } = buildBag()
+    const accessor = bag.entryDiff('late')
+    // No entry yet → null
+    expect(accessor(state)).toBeNull()
+    // Append the entry; same accessor now resolves.
+    const diff = [{ op: 'replace' as const, path: '/x', value: 1 }]
+    ;[state] = update(state, {
+      type: 'Append',
+      entry: makeEntry({ id: 'late', kind: 'dispatched', stateDiff: diff }),
+    })
+    expect(accessor(state)).toBe(diff)
+  })
+})

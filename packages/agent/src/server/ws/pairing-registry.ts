@@ -10,6 +10,15 @@ import {
 export type { RpcOptions, RpcError }
 
 /**
+ * Resolution shape for `waitForUserInput`. Mirrors `LapWaitForUserInputResponse`
+ * one-for-one — declared here so the interface stays expressible without
+ * importing the LAP layer's protocol types upward.
+ */
+export type UserInputResolution =
+  | { status: 'submitted'; text: string; at: number }
+  | { status: 'timeout' }
+
+/**
  * Thin abstraction over a single paired WebSocket. Consumed by the
  * registry implementations; runtime-specific adapters (`ws`-lib,
  * `WebSocketPair`, `Deno.upgradeWebSocket`, `Bun.serve` upgrade) build
@@ -77,6 +86,22 @@ export interface PairingRegistry {
    */
   getRecentLog(tid: string, n: number): LogEntry[]
 
+  /**
+   * Long-poll for the next user-input submission from the paired
+   * runtime. The registry buffers a small number of submissions
+   * received with no waiter parked (so a user typing before Claude
+   * reaches the tool call doesn't lose the message); when a waiter
+   * parks with a non-empty buffer it resolves immediately with the
+   * oldest buffered submission. When the buffer is empty, the waiter
+   * sleeps until a `user-input-submitted` frame arrives, the WS
+   * pairing closes, or `timeoutMs` elapses.
+   *
+   * FIFO delivery: each submission is consumed by exactly one waiter.
+   * Multiple parked waiters form a queue; submissions are dispatched
+   * in arrival order to the head of the waiter queue.
+   */
+  waitForUserInput(tid: string, timeoutMs: number): Promise<UserInputResolution>
+
   // ── Request/response helpers ───────────────────────────────────
   // These are part of the contract (LAP handlers call them directly)
   // but implementations almost always delegate to the free helpers in
@@ -111,6 +136,26 @@ type Pairing = {
   subscribers: Set<FrameSubscriber>
   closeHandlers: Set<() => void>
   closed: boolean
+  /**
+   * Buffered user-input submissions awaiting a parked waiter.
+   * Bounded to USER_INPUT_BUFFER_CAP to prevent unbounded memory
+   * growth if Claude never calls `wait_for_user_input` while the
+   * user keeps typing. Buffer overflow drops the OLDEST entry —
+   * fresher messages are more likely to be relevant.
+   */
+  userInputBuffer: Array<{ text: string; at: number }>
+  /**
+   * Waiters parked on `waitForUserInput`. The shape carries both the
+   * outer promise's resolver (typed for the union, so `handleClose`
+   * can resolve as `timeout` if the pairing dies) and a `cancel`
+   * that tears down the waiter's per-call timer + close subscription.
+   */
+  userInputWaiters: Array<UserInputWaiter>
+}
+
+type UserInputWaiter = {
+  resolve: (value: UserInputResolution) => void
+  cancel: () => void
 }
 
 /**
@@ -127,6 +172,15 @@ type Pairing = {
  * the buffer currently holds.
  */
 const RECENT_LOG_CAP = 100
+
+/**
+ * Per-tid cap on the user-input buffer (submissions received with no
+ * waiter parked). Eight messages covers a typical "user types a few
+ * follow-ups while Claude is mid-tool-call" gap without leaking memory
+ * if no agent ever drains them. Overflow drops oldest (newer messages
+ * are more contextually relevant).
+ */
+const USER_INPUT_BUFFER_CAP = 8
 
 export class InMemoryPairingRegistry implements PairingRegistry {
   private pairings = new Map<string, Pairing>()
@@ -169,6 +223,8 @@ export class InMemoryPairingRegistry implements PairingRegistry {
       subscribers: new Set(),
       closeHandlers: new Set(),
       closed: false,
+      userInputBuffer: [],
+      userInputWaiters: [],
     }
     this.pairings.set(tid, p)
     conn.onFrame((frame) => this.dispatch(tid, frame))
@@ -247,6 +303,24 @@ export class InMemoryPairingRegistry implements PairingRegistry {
       this.onLogAppend?.(tid, frame.entry)
       return
     }
+    if (frame.t === 'user-input-submitted') {
+      // FIFO delivery to a parked waiter, else buffer.
+      // Shifting the head keeps "first parked" semantics; the parked
+      // promise's cancel tears down its own timer before resolving.
+      const waiter = p.userInputWaiters.shift()
+      if (waiter) {
+        waiter.cancel()
+        waiter.resolve({ status: 'submitted', text: frame.text, at: frame.at })
+        return
+      }
+      p.userInputBuffer.push({ text: frame.text, at: frame.at })
+      if (p.userInputBuffer.length > USER_INPUT_BUFFER_CAP) {
+        // Drop oldest. Newer messages are more contextually relevant
+        // for an agent picking up a stale conversation.
+        p.userInputBuffer.splice(0, p.userInputBuffer.length - USER_INPUT_BUFFER_CAP)
+      }
+      return
+    }
     // Iterate over a snapshot because subscribers may self-remove
     // mid-iteration by returning true.
     const snapshot = Array.from(p.subscribers)
@@ -289,6 +363,67 @@ export class InMemoryPairingRegistry implements PairingRegistry {
     return waitForChangeHelper(this, tid, path, timeoutMs)
   }
 
+  waitForUserInput(tid: string, timeoutMs: number): Promise<UserInputResolution> {
+    const p = this.pairings.get(tid)
+    // Unknown / closed pairing → resolve as timeout immediately. The
+    // LAP layer above us has already gated on `isPaired`, so this is
+    // the rare race where the pairing closed between the gate and the
+    // wait call. Returning timeout (instead of rejecting) keeps the
+    // public response shape simple — agents only need to handle two
+    // outcomes.
+    if (!p || p.closed) {
+      return Promise.resolve({ status: 'timeout' })
+    }
+
+    // Buffered submission already waiting → resolve synchronously.
+    const buffered = p.userInputBuffer.shift()
+    if (buffered) {
+      return Promise.resolve({ status: 'submitted', text: buffered.text, at: buffered.at })
+    }
+
+    return new Promise<UserInputResolution>((resolve) => {
+      let settled = false
+      const settle = (value: UserInputResolution): void => {
+        if (settled) return
+        settled = true
+        resolve(value)
+      }
+
+      const timer = setTimeout(() => {
+        const idx = p.userInputWaiters.findIndex((w) => w === waiter)
+        if (idx !== -1) p.userInputWaiters.splice(idx, 1)
+        settle({ status: 'timeout' })
+      }, timeoutMs)
+
+      const waiter: UserInputWaiter = {
+        resolve: (value) => {
+          // dispatch() / handleClose() both call this. The `settled`
+          // guard makes it idempotent — exactly one resolution survives,
+          // regardless of arrival order.
+          settle(value)
+        },
+        cancel: () => {
+          clearTimeout(timer)
+          unsubClose()
+        },
+      }
+      p.userInputWaiters.push(waiter)
+
+      // Pairing close before resolution: clean up and resolve as
+      // timeout. handleClose sweeps the waiter queue and calls
+      // `waiter.resolve({ status: 'timeout' })` directly, so this
+      // close subscription is belt-and-braces — covers any path where
+      // the registry's close cascade doesn't run (e.g. a custom
+      // PairingConnection signalling close in an unusual order).
+      const unsubClose = this.onClose(tid, () => {
+        const idx = p.userInputWaiters.findIndex((w) => w === waiter)
+        if (idx !== -1) p.userInputWaiters.splice(idx, 1)
+        clearTimeout(timer)
+        settle({ status: 'timeout' })
+      })
+    })
+  }
+
   /** @deprecated Use `send(tid, frame)` directly; semantics are identical. */
   notify(tid: string, frame: ServerFrame): void {
     this.send(tid, frame)
@@ -298,6 +433,26 @@ export class InMemoryPairingRegistry implements PairingRegistry {
     const p = this.pairings.get(tid)
     if (!p || p.closed) return
     p.closed = true
+    // Tear down user-input waiters BEFORE running closeHandlers.
+    // Each waiter's `cancel` clears its timer + close-subscription;
+    // resolving as `timeout` afterward is idempotent (the waiter's
+    // `settled` guard short-circuits if its own close handler already
+    // resolved it). Order matters: cancel first so the resolution
+    // path can't re-enter handleClose via the close-subscription.
+    const waiters = p.userInputWaiters.slice()
+    p.userInputWaiters.length = 0
+    for (const w of waiters) {
+      try {
+        w.cancel()
+      } catch {
+        // best-effort; resolution still proceeds
+      }
+      w.resolve({ status: 'timeout' })
+    }
+    // Drop buffered inputs — once the pairing is closed, an agent
+    // resuming on a fresh tid shouldn't see stale messages from the
+    // previous session. Same retention contract as recentLog.
+    p.userInputBuffer.length = 0
     for (const h of Array.from(p.closeHandlers)) {
       try {
         h()

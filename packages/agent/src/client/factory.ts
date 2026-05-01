@@ -93,6 +93,27 @@ export type CreateAgentClientOpts<State, Msg> = {
      * stays empty (the UI won't show activity).
      */
     wrapLogMsg?: (m: unknown) => Msg
+    /**
+     * Optional: wrap an agentAttention msg so the visual-attention
+     * slice can clear its spotlight on the auto-clear timer. Hosts
+     * that wire `agentAttention` should set this; hosts that don't
+     * leave it unset and the spotlight (which they aren't rendering)
+     * never matters. The factory uses it for the reverse direction
+     * too: `onLogEntry` re-dispatches the same `Append { entry }`
+     * payload into the attention slice when wired, so a single
+     * incoming `log-append` frame fans out to both slices without
+     * the host needing to write the routing.
+     */
+    wrapAttentionMsg?: (m: unknown) => Msg
+    /**
+     * Optional: wrap an agentChat msg so the chat-composer's send
+     * effect can dispatch `SubmitComplete` back to re-enable the
+     * input. Hosts that wire the chat composer set this; hosts that
+     * don't can leave it unset and the chat-send effect no-ops
+     * (the chat slice was never wired anyway, so no UI is waiting
+     * for the SubmitComplete signal).
+     */
+    wrapChatMsg?: (m: unknown) => Msg
   }
   /**
    * Codec registry for non-JSON-safe values (Date, Blob, Map, …)
@@ -370,6 +391,11 @@ export function createAgentClient<State, Msg>(
   const effectHandler = createEffectHandler({
     send: (m) => opts.handle.send(m),
     wrapAgentConnect: (m) => opts.slices.wrapConnectMsg(m),
+    wrapAgentAttention: opts.slices.wrapAttentionMsg
+      ? (m) => opts.slices.wrapAttentionMsg!(m)
+      : undefined,
+    wrapAgentChat: opts.slices.wrapChatMsg ? (m) => opts.slices.wrapChatMsg!(m) : undefined,
+    getWsClient: () => wsClient,
     forward: (payload) => opts.handle.send(payload),
     agentBasePath: opts.agentBasePath,
     sessionStorage,
@@ -380,11 +406,20 @@ export function createAgentClient<State, Msg>(
         onActivated: () => {
           opts.handle.send(opts.slices.wrapConnectMsg({ type: 'ActivatedByClaude' }))
         },
-        onLogEntry: opts.slices.wrapLogMsg
-          ? (entry) => {
-              opts.handle.send(opts.slices.wrapLogMsg!({ type: 'Append', entry }))
-            }
-          : undefined,
+        onLogEntry:
+          opts.slices.wrapLogMsg || opts.slices.wrapAttentionMsg
+            ? (entry) => {
+                if (opts.slices.wrapLogMsg) {
+                  opts.handle.send(opts.slices.wrapLogMsg({ type: 'Append', entry }))
+                }
+                if (opts.slices.wrapAttentionMsg) {
+                  // Same `Append { entry }` shape — both slices accept
+                  // it and decide independently whether to act
+                  // (agentAttention only acts on `kind: 'dispatched'`).
+                  opts.handle.send(opts.slices.wrapAttentionMsg({ type: 'Append', entry }))
+                }
+              }
+            : undefined,
         onDispatchOutcome: recordDispatchOutcome,
       })
       ws.addEventListener('open', () => {

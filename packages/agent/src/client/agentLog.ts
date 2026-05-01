@@ -1,5 +1,6 @@
 import type { AgentEffect } from './effects.js'
 import type { LogEntry, LogKind } from '../protocol.js'
+import type { StateDiff } from '../state-diff.js'
 
 export type AgentLogFilter = { kinds?: LogKind[]; since?: number }
 
@@ -77,6 +78,22 @@ export type ConnectBag<S> = {
   }
   /** Filtered view of entries — respects state.filter. */
   visibleEntries: (s: S) => LogEntry[]
+  /**
+   * Reactive accessor for an entry's structural diff (JSON-Patch).
+   * Returns the entry's `stateDiff` when present, `null` otherwise —
+   * `null` covers three distinct cases: the entry exists but its kind
+   * (read / proposed / etc.) doesn't carry a diff; the entry was filtered
+   * out; the entry was evicted by the ring-buffer or never appended.
+   * Hosts that render a per-entry "what changed" sidecar wire this to
+   * a structural primitive (`branch`, `each`) so the sidecar disposes
+   * cleanly when the entry leaves.
+   *
+   * Lookup is over `state.entries` directly (NOT through the filter)
+   * — a hidden-by-filter entry still has its diff available, which is
+   * what consumers expect when reading from a sidecar that may outlive
+   * the visibility filter.
+   */
+  entryDiff: (id: string) => (s: S) => StateDiff | null
 }
 
 export function connect<S>(get: (s: S) => AgentLogState, send: Send<AgentLogMsg>): ConnectBag<S> {
@@ -103,6 +120,18 @@ export function connect<S>(get: (s: S) => AgentLogState, send: Send<AgentLogMsg>
   const findVisible = (state: S, id: string): LogEntry | undefined =>
     visible(state).find((x) => x.id === id)
 
+  // Per-id diff accessor cache. The `each(bag.visibleEntries)` pattern
+  // calls `bag.entryDiff(entry.id)` once per row at view-construction —
+  // memoizing keeps each row's accessor stable across re-renders, so
+  // the underlying binding's `lastValue` short-circuits repeat reads
+  // when state hasn't changed (parent state ref equality is sufficient
+  // because TEA state is immutable). Without this, every view pass
+  // would allocate a fresh closure and the binding would re-fire even
+  // though the entry's diff is invariant for an entry's lifetime.
+  const diffAccessorCache = new Map<string, (s: S) => StateDiff | null>()
+  const findById = (state: S, id: string): LogEntry | undefined =>
+    get(state).entries.find((x) => x.id === id)
+
   return {
     root: { 'data-scope': 'agent-log' },
     list: {
@@ -122,5 +151,12 @@ export function connect<S>(get: (s: S) => AgentLogState, send: Send<AgentLogMsg>
       setFilter: (filter) => send({ type: 'SetFilter', filter }),
     },
     visibleEntries: visible,
+    entryDiff: (id) => {
+      const cached = diffAccessorCache.get(id)
+      if (cached) return cached
+      const accessor = (s: S): StateDiff | null => findById(s, id)?.stateDiff ?? null
+      diffAccessorCache.set(id, accessor)
+      return accessor
+    },
   }
 }

@@ -284,6 +284,20 @@ export type LapConfirmResultResponse =
   | { status: 'rejected'; reason: 'user-cancelled' | 'timeout' }
   | { status: 'still-pending' }
 
+/**
+ * Long-poll for the user's next chat-composer submission. Returns
+ * `{ status: 'submitted', text, at }` on receipt of a
+ * `user-input-submitted` WS frame from the paired runtime, or
+ * `{ status: 'timeout' }` after `timeoutMs`. Each submission is
+ * delivered to exactly one waiter (FIFO); arrivals while no waiter
+ * is parked are buffered up to a small bound so a quick "type before
+ * Claude reaches the tool call" doesn't lose the message.
+ */
+export type LapWaitForUserInputRequest = { timeoutMs?: number }
+export type LapWaitForUserInputResponse =
+  | { status: 'submitted'; text: string; at: number }
+  | { status: 'timeout' }
+
 export type LapWaitRequest = { path?: string; timeoutMs?: number }
 export type LapWaitResponse =
   | { status: 'changed'; stateAfter: unknown }
@@ -374,6 +388,10 @@ export type LapEndpointMap = {
   '/lap/v1/message': { req: LapMessageRequest; res: LapMessageResponse }
   '/lap/v1/confirm-result': { req: LapConfirmResultRequest; res: LapConfirmResultResponse }
   '/lap/v1/wait': { req: LapWaitRequest; res: LapWaitResponse }
+  '/lap/v1/wait-for-user-input': {
+    req: LapWaitForUserInputRequest
+    res: LapWaitForUserInputResponse
+  }
   '/lap/v1/query-dom': { req: LapQueryDomRequest; res: LapQueryDomResponse }
   '/lap/v1/describe-visible': { req: null; res: LapDescribeVisibleResponse }
   '/lap/v1/context': { req: null; res: LapContextResponse }
@@ -396,6 +414,14 @@ export type LogKind =
   | 'blocked'
   | 'read'
   | 'error'
+  /**
+   * The user typed a message into the in-app chat composer (the agentChat
+   * namespace) and submitted it. The agent's `wait_for_user_input` tool
+   * picks up the same submission. Surfacing it in the activity log is
+   * what makes the agent panel a real conversational surface — agent
+   * actions and user replies share one chronological timeline.
+   */
+  | 'user-input'
 
 export type LogEntry = {
   id: string
@@ -436,6 +462,24 @@ export type ConfirmResolvedFrame = {
 }
 export type StateUpdateFrame = { t: 'state-update'; path: string; stateAfter: unknown }
 export type LogAppendFrame = { t: 'log-append'; entry: LogEntry }
+/**
+ * Inverted input channel. The user submits a message through the in-app
+ * chat composer (`agentChat`); the runtime forwards the text on this
+ * frame to the pairing server, which routes it to the parked
+ * `wait_for_user_input` LAP call (if any).
+ *
+ * The runtime ALSO appends a synthetic `LogEntry { kind: 'user-input' }`
+ * to the local activity log so the panel renders it inline with agent
+ * actions — the conversation reads as a single timeline. The frame and
+ * the log entry are independent: the frame travels server-side and
+ * delivers Claude's reply trigger; the log entry stays browser-side
+ * for visibility.
+ */
+export type UserInputSubmittedFrame = {
+  t: 'user-input-submitted'
+  text: string
+  at: number
+}
 
 export type ClientFrame =
   | HelloFrame
@@ -444,6 +488,7 @@ export type ClientFrame =
   | ConfirmResolvedFrame
   | StateUpdateFrame
   | LogAppendFrame
+  | UserInputSubmittedFrame
 
 export type RpcFrame = { t: 'rpc'; id: string; tool: string; args: unknown }
 export type RevokedFrame = { t: 'revoked' }

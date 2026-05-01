@@ -39,6 +39,14 @@ function makeHost(overrides: Partial<EffectHandlerHost> = {}): EffectHandlerHost
     fetch: overrides.fetch,
     openWs: overrides.openWs ?? vi.fn(),
     closeWs: overrides.closeWs ?? vi.fn(),
+    // Optional fields — pass through verbatim. (Default-by-?? loses the
+    // host's "didn't set this" intent for fields whose absence is
+    // semantically meaningful, e.g. wrapAgentAttention's graceful-no-op.)
+    wrapAgentAttention: overrides.wrapAgentAttention,
+    wrapAgentChat: overrides.wrapAgentChat,
+    getWsClient: overrides.getWsClient,
+    sessionStorage: overrides.sessionStorage,
+    agentBasePath: overrides.agentBasePath,
   }
 }
 
@@ -224,5 +232,126 @@ describe('createEffectHandler', () => {
     await handle({ type: 'AgentForwardMsg', payload })
 
     expect(forward).toHaveBeenCalledWith(payload)
+  })
+
+  it('AgentAttentionFlashTimeout → dispatches Clear { entryId } after delayMs via wrapAgentAttention', async () => {
+    vi.useFakeTimers()
+    try {
+      const send = vi.fn()
+      const wrapAgentAttention = vi.fn((m) => ({ wrapped: m }))
+      const host = makeHost({ send, wrapAgentAttention })
+      const handle = createEffectHandler(host)
+
+      // Fire-and-forget the effect; the handler awaits an internal timer.
+      const done = handle({
+        type: 'AgentAttentionFlashTimeout',
+        entryId: 'e1',
+        delayMs: 600,
+      } satisfies AgentEffect)
+
+      // Before the timer elapses: nothing dispatched.
+      await Promise.resolve()
+      expect(send).not.toHaveBeenCalled()
+
+      // Advance the clock past the delay; the awaited timer resolves.
+      await vi.advanceTimersByTimeAsync(600)
+      await done
+
+      expect(wrapAgentAttention).toHaveBeenCalledWith({ type: 'Clear', entryId: 'e1' })
+      expect(send).toHaveBeenCalledWith({ wrapped: { type: 'Clear', entryId: 'e1' } })
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('AgentAttentionFlashTimeout no-ops when wrapAgentAttention is not wired (graceful degradation)', async () => {
+    vi.useFakeTimers()
+    try {
+      const send = vi.fn()
+      // No wrapAgentAttention on the host — the host opted out of the
+      // attention slice. The handler should never dispatch.
+      const host = makeHost({ send })
+      const handle = createEffectHandler(host)
+
+      await handle({
+        type: 'AgentAttentionFlashTimeout',
+        entryId: 'e1',
+        delayMs: 600,
+      })
+      await vi.advanceTimersByTimeAsync(2_000)
+
+      expect(send).not.toHaveBeenCalled()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('AgentChatSendInput → calls WsClient.submitUserInput and dispatches SubmitComplete', async () => {
+    const send = vi.fn()
+    const wrapAgentChat = vi.fn((m) => ({ wrapped: m }))
+    const submitUserInput = vi.fn()
+    const host = makeHost({
+      send,
+      wrapAgentChat,
+      getWsClient: () => ({ submitUserInput }),
+    })
+    const handle = createEffectHandler(host)
+
+    await handle({ type: 'AgentChatSendInput', text: 'hi', at: 1234 })
+
+    expect(submitUserInput).toHaveBeenCalledWith('hi', 1234)
+    expect(wrapAgentChat).toHaveBeenCalledWith({ type: 'SubmitComplete' })
+    expect(send).toHaveBeenCalledWith({ wrapped: { type: 'SubmitComplete' } })
+  })
+
+  it('AgentChatSendInput still dispatches SubmitComplete even when WS client is null (graceful degradation)', async () => {
+    // The session might be paused / mid-reconnect; the input field
+    // would lock up forever without the SubmitComplete fallback.
+    const send = vi.fn()
+    const wrapAgentChat = vi.fn((m) => m)
+    const host = makeHost({
+      send,
+      wrapAgentChat,
+      getWsClient: () => null,
+    })
+    const handle = createEffectHandler(host)
+
+    await handle({ type: 'AgentChatSendInput', text: 'hi', at: 1234 })
+
+    expect(send).toHaveBeenCalledWith({ type: 'SubmitComplete' })
+  })
+
+  it('AgentChatSendInput swallows submitUserInput throws and still dispatches SubmitComplete', async () => {
+    const send = vi.fn()
+    const wrapAgentChat = vi.fn((m) => m)
+    const submitUserInput = vi.fn(() => {
+      throw new Error('socket closed')
+    })
+    const host = makeHost({
+      send,
+      wrapAgentChat,
+      getWsClient: () => ({ submitUserInput }),
+    })
+    const handle = createEffectHandler(host)
+
+    await expect(
+      handle({ type: 'AgentChatSendInput', text: 'hi', at: 1234 }),
+    ).resolves.toBeUndefined()
+    expect(send).toHaveBeenCalledWith({ type: 'SubmitComplete' })
+  })
+
+  it('AgentChatSendInput no-ops when wrapAgentChat is not wired (host opted out of chat)', async () => {
+    const send = vi.fn()
+    const submitUserInput = vi.fn()
+    // No wrapAgentChat: host doesn't render the composer.
+    const host = makeHost({ send, getWsClient: () => ({ submitUserInput }) })
+    const handle = createEffectHandler(host)
+
+    await handle({ type: 'AgentChatSendInput', text: 'hi', at: 1234 })
+
+    // Frame still sent (any agent listening upstream gets the message)
+    expect(submitUserInput).toHaveBeenCalledWith('hi', 1234)
+    // …but no SubmitComplete bounces back, since there's no slice to receive it.
+    expect(send).not.toHaveBeenCalled()
   })
 })

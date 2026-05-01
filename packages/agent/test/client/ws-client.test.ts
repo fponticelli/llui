@@ -255,3 +255,158 @@ describe('attachWsClient', () => {
     expect(logFrame.entry.variant).toBe('Increment')
   })
 })
+
+// ── auto-narrated detail line on log entries ───────────────────────
+// Helper that runs an rpc through the ws-client and returns the resulting
+// log entry. Keeps the per-test boilerplate down so the assertions stay
+// readable. send_message rpcs default `waitFor: 'idle'` so the test's
+// single-microtask wait is enough for the dispatch to settle (the
+// production default `'drained'` blocks on a 100ms quiescence window
+// that this fake-ws harness never feeds).
+async function runRpcAndGetEntry(rpc: RpcFrame): Promise<LogEntry> {
+  const ws = new FakeWs()
+  attachWsClient(ws, makeRpcHosts(), makeHelloBuilder())
+  ws.emit('open')
+  ws.sent.length = 0
+  // Tighten waitFor for send_message dispatches that don't already specify it.
+  let frame = rpc
+  if (rpc.tool === 'send_message') {
+    const args = (rpc.args as Record<string, unknown> | null) ?? {}
+    if (args.waitFor === undefined) {
+      frame = { ...rpc, args: { ...args, waitFor: 'idle' } } as RpcFrame
+    }
+  }
+  ws.emit('message', JSON.stringify(frame))
+  await new Promise((r) => setTimeout(r, 0))
+  const logFrames = ws.sent.map((s) => JSON.parse(s)).filter((f) => f.t === 'log-append')
+  if (logFrames.length !== 1) throw new Error(`expected 1 log-append, got ${logFrames.length}`)
+  return logFrames[0]!.entry as LogEntry
+}
+
+describe('LogEntry.detail auto-narration', () => {
+  it('renders payload fields as k=v pairs (excluding the discriminant)', async () => {
+    const entry = await runRpcAndGetEntry({
+      t: 'rpc',
+      id: 'r1',
+      tool: 'send_message',
+      args: { msg: { type: 'SelectAlternative', id: 'a3', score: 0.85 } },
+    })
+    expect(entry.detail).toBe('id="a3" score=0.85')
+  })
+
+  it('caps to 3 fields and appends … when more remain', async () => {
+    const entry = await runRpcAndGetEntry({
+      t: 'rpc',
+      id: 'r2',
+      tool: 'send_message',
+      args: { msg: { type: 'Wide', a: 1, b: 2, c: 3, d: 4, e: 5 } },
+    })
+    expect(entry.detail).toBe('a=1 b=2 c=3 …')
+  })
+
+  it('truncates long string values with an ellipsis', async () => {
+    const long = 'x'.repeat(60)
+    const entry = await runRpcAndGetEntry({
+      t: 'rpc',
+      id: 'r3',
+      tool: 'send_message',
+      args: { msg: { type: 'SetNote', text: long } },
+    })
+    // 30-char cap including the inserted ellipsis, plus the surrounding
+    // quotes from JSON.stringify.
+    expect(entry.detail).toMatch(/^text="x+…$/)
+    expect(entry.detail!.length).toBeLessThanOrEqual('text='.length + 30)
+  })
+
+  it('renders objects as keysets, arrays as length, null/undefined explicitly', async () => {
+    const entry = await runRpcAndGetEntry({
+      t: 'rpc',
+      id: 'r4',
+      tool: 'send_message',
+      args: {
+        msg: {
+          type: 'Compose',
+          where: { x: 1, y: 2 },
+          // (3 fields cap means tags or empty would be dropped)
+          tags: ['a', 'b', 'c', 'd'],
+          opt: null,
+        },
+      },
+    })
+    expect(entry.detail).toBe('where={x,y} tags=[4] opt=null')
+  })
+
+  it('emits no detail when the payload has only the discriminant', async () => {
+    const entry = await runRpcAndGetEntry({
+      t: 'rpc',
+      id: 'r5',
+      tool: 'send_message',
+      args: { msg: { type: 'Tick' } },
+    })
+    expect(entry.detail).toBeUndefined()
+  })
+
+  it('emits no detail for read tools (intent line already covers them)', async () => {
+    const entry = await runRpcAndGetEntry({
+      t: 'rpc',
+      id: 'r6',
+      tool: 'get_state',
+      args: {},
+    })
+    expect(entry.detail).toBeUndefined()
+  })
+
+  it('emits no detail when send_message is missing the msg arg (malformed)', async () => {
+    const entry = await runRpcAndGetEntry({
+      t: 'rpc',
+      id: 'r7',
+      tool: 'send_message',
+      args: {} as unknown as { msg: unknown },
+    })
+    expect(entry.detail).toBeUndefined()
+  })
+})
+
+describe('submitUserInput', () => {
+  it('emits a user-input-submitted frame and a paired log-append entry', () => {
+    const ws = new FakeWs()
+    const onLogEntry = vi.fn()
+    const client = attachWsClient(ws, makeRpcHosts(), makeHelloBuilder(), { onLogEntry })
+    ws.emit('open')
+    ws.sent.length = 0
+
+    client.submitUserInput('hi there', 1700)
+
+    // Two frames sent in order: the upstream input frame, then the
+    // mirrored log-append frame.
+    expect(ws.sent).toHaveLength(2)
+    const inputFrame = JSON.parse(ws.sent[0]!)
+    expect(inputFrame).toEqual({ t: 'user-input-submitted', text: 'hi there', at: 1700 })
+    const logFrame = JSON.parse(ws.sent[1]!)
+    expect(logFrame.t).toBe('log-append')
+    expect(logFrame.entry.kind).toBe('user-input')
+    expect(logFrame.entry.detail).toBe('hi there')
+    expect(logFrame.entry.at).toBe(1700)
+
+    // Local listener fires too — that's what `agentLog` slots into.
+    expect(onLogEntry).toHaveBeenCalledOnce()
+    const local = onLogEntry.mock.calls[0]![0]
+    expect(local.kind).toBe('user-input')
+    expect(local.detail).toBe('hi there')
+  })
+
+  it('uses Date.now() when no `at` is provided', () => {
+    const ws = new FakeWs()
+    const client = attachWsClient(ws, makeRpcHosts(), makeHelloBuilder())
+    ws.emit('open')
+    ws.sent.length = 0
+
+    const before = Date.now()
+    client.submitUserInput('go')
+    const after = Date.now()
+
+    const inputFrame = JSON.parse(ws.sent[0]!)
+    expect(inputFrame.at).toBeGreaterThanOrEqual(before)
+    expect(inputFrame.at).toBeLessThanOrEqual(after)
+  })
+})

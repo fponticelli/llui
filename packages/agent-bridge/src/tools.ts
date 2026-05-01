@@ -205,6 +205,19 @@ export const TOOL_DESCRIPTORS: ToolDescriptor[] = [
   },
   {
     kind: 'forward',
+    name: 'wait_for_user_input',
+    description:
+      'Long-poll for the user to type something into the in-app chat composer. Returns { status: "submitted", text, at } when the user submits, or { status: "timeout" } after timeoutMs (default 30s). Submissions buffer briefly when no waiter is parked, so a user typing before you reach this call still gets through. Use as the conversational rendezvous: park here when you need clarification, when the user signals "wait, I want to say something", or as part of a continuous "react → narrate → wait → react" loop. The user submits via the agentChat composer rendered inside the host app — they don\'t alt-tab to your chat window.',
+    schema: z.object({
+      timeoutMs: z
+        .number()
+        .optional()
+        .describe('How long to park before returning timeout. Default 30000 (30s).'),
+    }),
+    lapPath: '/wait-for-user-input',
+  },
+  {
+    kind: 'forward',
     name: 'query_dom',
     description: 'Read elements tagged with data-agent="<name>" in the rendered UI.',
     schema: z.object({

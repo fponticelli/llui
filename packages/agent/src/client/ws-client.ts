@@ -53,6 +53,15 @@ export type WsClient = {
   emitStateUpdate(path: string, stateAfter: unknown): void
   /** Emit a log-append frame so the server can mirror client-observed actions to the audit sink. */
   emitLogAppend(entry: LogEntry): void
+  /**
+   * Send a user chat-composer submission upstream and synthesize a
+   * matching `LogEntry { kind: 'user-input' }` for the local activity
+   * feed. The agent picks up `text` via `wait_for_user_input`. `at`
+   * defaults to `Date.now()` — pass an explicit timestamp when the
+   * caller already captured one (e.g. on the keystroke that fired
+   * Enter, vs. the microtask later that finally calls this).
+   */
+  submitUserInput(text: string, at?: number): void
   /** Close the socket cleanly. */
   close(): void
 }
@@ -140,12 +149,14 @@ export function attachWsClient(
       console.error(`[llui-agent] rpc handler threw for ${frame.tool}:`, e)
     }
     const kind = getLogKindForTool(frame.tool, result, rpcErr)
+    const detail = buildDetail(frame.tool, frame.args)
     const logEntry: LogEntry = {
       id: frame.id,
       at: Date.now(),
       kind,
       variant: extractVariant(frame.tool, frame.args),
       intent: buildIntent(frame.tool, frame.args, rpc.getMsgAnnotations()),
+      ...(detail !== undefined ? { detail } : {}),
     }
     // For successful send_message dispatches, the stateDiff is part
     // of the response. Lifting it into the log entry means the agent
@@ -183,6 +194,38 @@ export function attachWsClient(
     emitLogAppend(entry) {
       const frame: ClientFrame = { t: 'log-append', entry }
       ws.send(JSON.stringify(frame))
+    },
+    submitUserInput(text, at = Date.now()) {
+      // Two side effects, in order:
+      //
+      //  1. Send the WS frame so the server's `wait_for_user_input`
+      //     waiters resolve with the user's text. This is the
+      //     conversational delivery — the agent picks it up at the
+      //     next LAP poll.
+      //  2. Synthesize a `LogEntry { kind: 'user-input', detail: text }`
+      //     and call `onLogEntry` so the local agent panel renders the
+      //     user's reply inline with agent actions. The same entry is
+      //     ALSO mirrored to the server via `log-append` (the existing
+      //     emit path covers it) so `describe_recent_actions` shows
+      //     the user's words in conversational order — agents reading
+      //     past activity see the back-and-forth as one timeline.
+      //
+      // The frame's `t === 'user-input-submitted'` is what
+      // `wait_for_user_input` keys off; the LogEntry is purely for
+      // human-visible activity feeds.
+      const inputFrame: ClientFrame = { t: 'user-input-submitted', text, at }
+      ws.send(JSON.stringify(inputFrame))
+      const id = `user-input-${at}-${Math.random().toString(36).slice(2, 8)}`
+      const entry: LogEntry = {
+        id,
+        at,
+        kind: 'user-input',
+        detail: text,
+        intent: 'User input',
+      }
+      opts.onLogEntry?.(entry)
+      const logFrame: ClientFrame = { t: 'log-append', entry }
+      ws.send(JSON.stringify(logFrame))
     },
     close() {
       ws.close()
@@ -364,4 +407,73 @@ function buildIntent(
     return a?.name ? `Query DOM: ${a.name}` : 'Query DOM'
   }
   return tool
+}
+
+// Maximum number of payload fields rendered into a detail line. Three
+// is enough to see the discriminating values (id + a couple of meaningful
+// args) without overflowing the activity-feed row.
+const DETAIL_MAX_FIELDS = 3
+// Per-value truncation. Activity-feed rows are short; long strings, base64,
+// or large JSON blobs would dominate the line otherwise.
+const DETAIL_MAX_VALUE_LEN = 30
+
+/**
+ * One-line summary of the rpc's payload for the activity feed. Sits below
+ * `intent` (the human-authored "what action") and answers "with what
+ * arguments". Schema-free: enumerates the first few non-`type` fields
+ * of the Msg payload (or the rpc args, for read tools that take args)
+ * and renders them as `k=v` pairs with bounded value length.
+ *
+ * Returns `undefined` for tools whose payload is uninteresting (no args,
+ * or args that the intent line already covers — e.g. `query_dom`'s name
+ * is already in the intent). The activity feed only renders the detail
+ * row when this returns a string.
+ *
+ * Why schema-free: requires no schema lookup, no `MessageAnnotations`
+ * dependency, runs synchronously in the rpc dispatch path. A future
+ * iteration can use the per-field `@should` hints from `MessageSchemaEntry`
+ * to render labels (e.g. `the alternative id: a3` instead of `id=a3`),
+ * but that's additive — the schema-free baseline guarantees every
+ * dispatched message gets a detail line, even for variants the schema
+ * extractor missed.
+ */
+function buildDetail(tool: string, args: unknown): string | undefined {
+  if (tool !== 'send_message') return undefined
+  const a = args as { msg?: Record<string, unknown> } | null
+  const msg = a?.msg
+  if (!msg || typeof msg !== 'object') return undefined
+  const fields: string[] = []
+  let count = 0
+  for (const key of Object.keys(msg)) {
+    if (key === 'type') continue
+    if (count >= DETAIL_MAX_FIELDS) {
+      // Indicate truncation so callers know more fields exist.
+      fields.push('…')
+      break
+    }
+    fields.push(`${key}=${formatDetailValue(msg[key])}`)
+    count++
+  }
+  if (fields.length === 0) return undefined
+  return fields.join(' ')
+}
+
+function formatDetailValue(value: unknown): string {
+  let s: string
+  if (value === null) s = 'null'
+  else if (value === undefined) s = 'undefined'
+  else if (typeof value === 'string')
+    s = JSON.stringify(value) // quotes mark string-ness
+  else if (typeof value === 'number' || typeof value === 'boolean') s = String(value)
+  else if (Array.isArray(value)) s = `[${value.length}]`
+  else if (typeof value === 'object') {
+    // Show the keys, not a serialized blob — the agent panel is for
+    // glanceable identity, not for full payload inspection (the tool's
+    // own response carries that). `{a,b,c}` reads at a glance.
+    const keys = Object.keys(value as Record<string, unknown>)
+    s = keys.length === 0 ? '{}' : `{${keys.slice(0, 3).join(',')}${keys.length > 3 ? ',…' : ''}}`
+  } else {
+    s = String(value)
+  }
+  return s.length > DETAIL_MAX_VALUE_LEN ? s.slice(0, DETAIL_MAX_VALUE_LEN - 1) + '…' : s
 }

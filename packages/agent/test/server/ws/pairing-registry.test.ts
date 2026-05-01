@@ -169,3 +169,101 @@ describe('WsPairingRegistry', () => {
     expect(onLogAppend).toHaveBeenCalledWith('t2', entry)
   })
 })
+
+describe('waitForUserInput', () => {
+  beforeEach(() => {
+    reg = new WsPairingRegistry()
+  })
+
+  it('resolves immediately from buffered input when present', async () => {
+    const f = mkFake()
+    reg.register('t1', getConn(f))
+    f.emit({ t: 'user-input-submitted', text: 'hello', at: 1_000 })
+    const res = await reg.waitForUserInput('t1', 5_000)
+    expect(res).toEqual({ status: 'submitted', text: 'hello', at: 1_000 })
+  })
+
+  it('parks until a frame arrives, then resolves', async () => {
+    const f = mkFake()
+    reg.register('t1', getConn(f))
+    const pending = reg.waitForUserInput('t1', 5_000)
+    let resolved: unknown = null
+    pending.then((v) => {
+      resolved = v
+    })
+    await Promise.resolve()
+    expect(resolved).toBeNull()
+    f.emit({ t: 'user-input-submitted', text: 'late', at: 2_000 })
+    await expect(pending).resolves.toEqual({ status: 'submitted', text: 'late', at: 2_000 })
+  })
+
+  it('FIFO: each submission resolves the oldest parked waiter', async () => {
+    const f = mkFake()
+    reg.register('t1', getConn(f))
+    const w1 = reg.waitForUserInput('t1', 5_000)
+    const w2 = reg.waitForUserInput('t1', 5_000)
+    f.emit({ t: 'user-input-submitted', text: 'first', at: 1 })
+    f.emit({ t: 'user-input-submitted', text: 'second', at: 2 })
+    await expect(w1).resolves.toEqual({ status: 'submitted', text: 'first', at: 1 })
+    await expect(w2).resolves.toEqual({ status: 'submitted', text: 'second', at: 2 })
+  })
+
+  it('buffers up to the cap, dropping oldest on overflow', async () => {
+    const f = mkFake()
+    reg.register('t1', getConn(f))
+    // Cap is 8 — push 10 messages with no parked waiter.
+    for (let i = 0; i < 10; i++) {
+      f.emit({ t: 'user-input-submitted', text: `m${i}`, at: i })
+    }
+    // Drain: expect messages m2..m9 (oldest 2 dropped).
+    const ordered: string[] = []
+    for (let i = 0; i < 8; i++) {
+      const r = await reg.waitForUserInput('t1', 100)
+      if (r.status === 'submitted') ordered.push(r.text)
+    }
+    expect(ordered).toEqual(['m2', 'm3', 'm4', 'm5', 'm6', 'm7', 'm8', 'm9'])
+    // Buffer empty now; next call times out.
+    const tail = await reg.waitForUserInput('t1', 5)
+    expect(tail).toEqual({ status: 'timeout' })
+  })
+
+  it('returns timeout when no input arrives within timeoutMs', async () => {
+    const f = mkFake()
+    reg.register('t1', getConn(f))
+    const res = await reg.waitForUserInput('t1', 5)
+    expect(res).toEqual({ status: 'timeout' })
+  })
+
+  it('returns timeout for unknown tid (covers race after isPaired check)', async () => {
+    const res = await reg.waitForUserInput('unknown-tid', 100)
+    expect(res).toEqual({ status: 'timeout' })
+  })
+
+  it('parked waiter resolves as timeout when the pairing closes', async () => {
+    const f = mkFake()
+    reg.register('t1', getConn(f))
+    const pending = reg.waitForUserInput('t1', 60_000) // long enough that close, not timer, decides
+    f.emitClose()
+    await expect(pending).resolves.toEqual({ status: 'timeout' })
+  })
+
+  it('buffered messages are dropped on close (not visible to next register)', async () => {
+    const f = mkFake()
+    reg.register('t1', getConn(f))
+    f.emit({ t: 'user-input-submitted', text: 'before-close', at: 1 })
+    f.emitClose()
+    const f2 = mkFake()
+    reg.register('t1', getConn(f2))
+    const res = await reg.waitForUserInput('t1', 5)
+    expect(res).toEqual({ status: 'timeout' })
+  })
+
+  it('user-input-submitted frames are NOT routed to subscribers (registry-owned)', () => {
+    const f = mkFake()
+    reg.register('t1', getConn(f))
+    const sub = vi.fn(() => false)
+    reg.subscribe('t1', sub)
+    f.emit({ t: 'user-input-submitted', text: 'hi', at: 1 })
+    expect(sub).not.toHaveBeenCalled()
+  })
+})

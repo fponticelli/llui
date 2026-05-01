@@ -56,6 +56,41 @@ export type AgentEffect =
    * via the status guard. Simpler than coordinating cancel handles.
    */
   | { type: 'AgentReconnectSchedule'; delayMs: number }
+  /**
+   * Auto-clear the `agentAttention` spotlight after `delayMs`. The
+   * handler waits and dispatches `Clear { entryId }` back into the
+   * attention slice via `wrapAgentAttention`. The clear is conditional
+   * (matches `entryId` against `latestDispatch.entryId` in the reducer),
+   * so a fast follow-up dispatch isn't wiped by the previous dispatch's
+   * pending timer — same race-avoidance pattern as
+   * `AgentReconnectSchedule`'s status guard.
+   *
+   * No cancel handle: the handler is a thin `setTimeout` wrapper. If
+   * the host doesn't wire `wrapAttentionMsg` in the factory, the
+   * handler no-ops and the spotlight stays set until the next dispatch
+   * overwrites it (graceful degradation — the activity log still
+   * works, just without auto-clearing visual highlights).
+   */
+  | { type: 'AgentAttentionFlashTimeout'; entryId: string; delayMs: number }
+  /**
+   * Send a user chat-composer submission upstream. Handler routes
+   * to `WsClient.submitUserInput(text, at)`, which:
+   *
+   *   1. emits a `user-input-submitted` WS frame so the server's
+   *      parked `wait_for_user_input` waiters resolve;
+   *   2. synthesizes a `LogEntry { kind: 'user-input', detail: text }`
+   *      and calls the factory's `onLogEntry` so `agentLog` (and
+   *      mirror channels) render the user's reply inline with agent
+   *      actions.
+   *
+   * After the frame sends, the handler dispatches
+   * `AgentChat.SubmitComplete` back into the chat slice via
+   * `wrapAgentChat` so the UI re-enables the input. The
+   * frame-send is best-effort: a closed/missing WS still resolves
+   * the SubmitComplete (so the input doesn't lock up); the user can
+   * retry once the connection is back.
+   */
+  | { type: 'AgentChatSendInput'; text: string; at: number }
 
 // Handler implementation lands in Plan 7 alongside the WS client.
 export type AgentEffectHandler = (effect: AgentEffect) => Promise<void>
