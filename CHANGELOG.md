@@ -11,6 +11,24 @@ All notable changes to LLui packages are documented here. LLui is a pre-1.0 proj
 
 Packages version in lockstep at release time: `@llui/dom`, `@llui/vite-plugin`, `@llui/test`, `@llui/router`, `@llui/transitions`, `@llui/components`, `@llui/vike` share a version line. `@llui/effects`, `@llui/mcp`, `@llui/eslint-plugin`, `@llui/agent`, and `llui-agent` have their own cadence.
 
+## 2026-05-01 — @llui/dom@0.0.36
+
+**Released:** `@llui/{dom,components,transitions}@0.0.36`; `@llui/{router,test}@0.0.37`; `@llui/vite-plugin@0.0.40`; `@llui/vike@0.0.38`; `@llui/agent@0.0.49`; `@llui/mcp@0.0.31`; `llui-agent@0.0.13`
+
+Hotfix: a component whose update case modifies multiple state fields and incidentally resets one to `[]` (e.g. `{ ...state, open: true, name: '', tags: [] }`) used to go structurally inert after mount — `propsMsg` and `update` fired, the new state landed, but every `show` / `branch` / `scope` block in the view stopped reacting because their `when` / `on` accessors never re-evaluated. The compiler's per-message handler routed the case through an each-only reconcile method that no-ops on non-each blocks. Fixed at both the compiler and the runtime.
+
+### `@llui/dom@0.0.36`
+
+- **Fixed** Phase 1 reconcile in `_handleMsg` falls back to `block.reconcile(s, dirty)` when the specialized method (`reconcileItems` / `reconcileClear` / `reconcileRemove` / `reconcileChanged`) is undefined on a selected block. Previously, a compiler-emitted handler with `method=2` (clear) would invoke `block.reconcileClear?.()` on every block whose mask intersected the case's dirty bits — but those specialized methods only exist on `each` blocks. `show` / `branch` / `scope` blocks silently no-opped, leaving their `when` / `on` accessors stuck at the mount-time evaluation. The defense-in-depth fallback ensures non-each blocks still reconcile correctly even if a compile-time miss slips through.
+
+### `@llui/vite-plugin@0.0.40`
+
+- **Fixed** `detectArrayOp` only emits `'clear'` / `'mutate'` / `'remove'` / `'strided'` when the case modifies exactly one field AND that field is the one with the array op. A multi-field case like `{ ...state, open: true, name: '', tags: [] }` previously matched on the first `tags: []` it walked and routed the entire case to `method=2`, bypassing `block.reconcile` for show/branch blocks gated on `open` or `name`. Multi-field cases now fall through to `'general'` (method=0). Sister of the `method=-1` fix in `show-helper-reconcile.test.ts` — same architectural rule: optimizations that route around `block.reconcile` must hold for every primitive, because the compiler can't see helpers and library overlays (e.g. `dialog.overlay` from `@llui/components`, which uses show internally).
+
+### `@llui/components@0.0.36`, `@llui/transitions@0.0.36`, `@llui/router@0.0.37`, `@llui/test@0.0.37`, `@llui/vike@0.0.38`, `@llui/agent@0.0.49`, `@llui/mcp@0.0.31`, `llui-agent@0.0.13`
+
+- Cascade release picking up the new `@llui/dom@0.0.36` peer range. No package-level source changes.
+
 ## 2026-04-30 — @llui/dom@0.0.35
 
 **Released:** `@llui/{dom,components,transitions}@0.0.35`; `@llui/{router,test}@0.0.36`; `@llui/vike@0.0.37`; `@llui/agent@0.0.48`; `@llui/mcp@0.0.30`; `@llui/eslint-plugin@0.0.22`; `llui-agent@0.0.12`
@@ -25,7 +43,7 @@ Enforce the accessor-purity contract end-to-end. `sample()` (and `h.sample()`) c
 
 - For `each().key` reading sibling state via `sample()`, replace with the items-map pattern. Before:
   ```ts
-  each({ items: (s) => s.rows, key: (it) => `${it.id}|${sample(s => s.rev)}` })
+  each({ items: (s) => s.rows, key: (it) => `${it.id}|${sample((s) => s.rev)}` })
   ```
   After:
   ```ts
@@ -43,7 +61,7 @@ Enforce the accessor-purity contract end-to-end. `sample()` (and `h.sample()`) c
 
 ### `@llui/eslint-plugin@0.0.22`
 
-- **Added** `llui/no-sample-in-accessor` rule (recommended at `error`). Flags `sample()` / `h.sample()` calls inside `each.{items,key}`, `branch.on`, `show.when`, `scope.on`, `child.props`, `foreign.props`, and the binding helpers `text` / `unsafeHtml`. Catches the runtime-throw antipattern at edit time with zero runtime cost. The walker intentionally does not descend into nested function bodies, so a `sample()` inside an event handler attached during render (a non-accessor closure) is not flagged. Sister rule of `no-sample-in-reactive-position`, which catches the adjacent "sample's *result* in a reactive position" antipattern.
+- **Added** `llui/no-sample-in-accessor` rule (recommended at `error`). Flags `sample()` / `h.sample()` calls inside `each.{items,key}`, `branch.on`, `show.when`, `scope.on`, `child.props`, `foreign.props`, and the binding helpers `text` / `unsafeHtml`. Catches the runtime-throw antipattern at edit time with zero runtime cost. The walker intentionally does not descend into nested function bodies, so a `sample()` inside an event handler attached during render (a non-accessor closure) is not flagged. Sister rule of `no-sample-in-reactive-position`, which catches the adjacent "sample's _result_ in a reactive position" antipattern.
 
 ### `@llui/components@0.0.35`, `@llui/transitions@0.0.35`, `@llui/router@0.0.36`, `@llui/test@0.0.36`, `@llui/vike@0.0.37`, `@llui/agent@0.0.48`, `@llui/mcp@0.0.30`, `llui-agent@0.0.12`
 
