@@ -11,6 +11,44 @@ All notable changes to LLui packages are documented here. LLui is a pre-1.0 proj
 
 Packages version in lockstep at release time: `@llui/dom`, `@llui/vite-plugin`, `@llui/test`, `@llui/router`, `@llui/transitions`, `@llui/components`, `@llui/vike` share a version line. `@llui/effects`, `@llui/mcp`, `@llui/eslint-plugin`, `@llui/agent`, and `llui-agent` have their own cadence.
 
+## 2026-05-02 — @llui/agent@0.0.52, llui-agent@0.0.16
+
+**Released:** `@llui/agent@0.0.52`; `llui-agent@0.0.16`
+
+Removes the in-app chat composer surface introduced in 0.0.50 (`agentChat` slice + `wait_for_user_input` LAP method + bridge tool + `UserInputStorage` adapter). The visibility primitives — `agentLog` / `agentAttention` / `narrate` — stay intact and unchanged.
+
+### Breaking
+
+- **`@llui/agent@0.0.52`** — `agentChat` namespace, `agentChat.AgentChatState` / `AgentChatMsg` / `connect()`, `LapWaitForUserInputRequest` / `LapWaitForUserInputResponse`, `UserInputSubmittedFrame`, `LogKind: 'user-input'`, `WsClient.submitUserInput`, `AgentChatSendInput` effect, `EffectHandlerHost.wrapAgentChat` / `getWsClient`, `CreateAgentClientOpts.slices.wrapChatMsg`, `UserInputStorage` interface, `CoreOptions.userInputStorage` are all removed. The `/lap/v1/wait-for-user-input` endpoint is gone; its handler file is deleted. The pairing registry's per-tid user-input buffer + parked-waiter queue are gone.
+- **`llui-agent@0.0.16`** — the `wait_for_user_input` MCP tool is removed. The `llui-connect` MCP prompt no longer mentions it.
+- **`@llui/agent/server/cloudflare`** — `makeDurableObjectUserInputStorage` and `DurableObjectStorageLike` exports are removed (they were only useful for the deleted `UserInputStorage` adapter).
+
+### Migration
+
+- Hosts that wired the chat composer must drop the slice from state, the reducer case, the `wrapChatMsg` factory option, and any panel UI that rendered an input. One mechanical commit per host — see [`decisive.space-2@d084466`](https://github.com/fponticelli/decisive.space-2/commit/d084466) for a worked diff.
+- The connect snippet auto-regenerates on the next mint and no longer mentions `wait_for_user_input`. Existing pending snippets (sessions in `pending-claude` at upgrade time) keep their old text but the missing MCP tool is harmless — Claude just won't find it on tool lookup.
+- CF DO hosts that wired `makeDurableObjectUserInputStorage` should drop the import + the `userInputStorage` opt; the registry no longer accepts the constructor option.
+
+### Why
+
+The chat composer crossed from a "visibility surface" into a "half-conversation" without delivering true conversational continuity (which would require an embedded LLM, deliberately rejected for cost / cross-app-context reasons). The result was two competing input surfaces (LLM client window vs. in-app composer) and an "always listening" long-poll model that felt uncanny. Visibility (`agentLog` + `agentAttention` + `narrate`) is the part that earns its keep — the agent's actions become perceptible inside the app — without trying to make the app itself the conversation surface. See `docs/designs/10 Agent Protocol.md` §5b for the rewritten architectural rationale.
+
+### `@llui/agent@0.0.52`
+
+- **Removed** see Breaking. Net: ~600 lines of source + ~700 lines of tests deleted, 14 source files touched. The connect snippet shrinks to `connect_session` + `narrate` + namespacing edge case.
+- **Improved** `narrate` becomes the canonical "LLM surfaces intent in the app" primitive. The connect snippet now nudges the LLM to call it during multi-step tasks; the bridge prompt mirrors the same nudge.
+
+### `llui-agent@0.0.16`
+
+- **Removed** `wait_for_user_input` MCP tool descriptor (mirrors the LAP method removal in `@llui/agent`).
+- **Improved** `narrate` tool description loses the "pair with `wait_for_user_input`" sentence — `narrate` now stands alone as a one-way LLM → user signal.
+
+### Docs
+
+- `docs/designs/10 Agent Protocol.md` §5b retitled "In-app Visibility Surface" (was "Conversational Surface"). Strips the `agentChat` / `wait_for_user_input` subsections; rewrites the framing to "operate-and-narrate, conversation lives in the LLM client". Composition contract collapses from five slices to four. A historical note at the end explains why the chat surface was removed for any future reader.
+- `site/content/cookbook.md` "Agent Conversational Surface" recipe retitled "Agent Visibility Surface". Wiring example drops the chat slice; rendering example drops the composer; tool table drops `wait_for_user_input`.
+- `examples/github-explorer/src/views/agent-panel.ts` worked example loses its chat composer block.
+
 ## 2026-05-01 — @llui/dom@0.0.37
 
 **Released:** `@llui/{dom,components,transitions}@0.0.37`; `@llui/{router,test}@0.0.38`; `@llui/vike@0.0.39`; `@llui/agent@0.0.51`; `@llui/mcp@0.0.32`; `llui-agent@0.0.15`
