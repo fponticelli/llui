@@ -9,7 +9,6 @@ import {
   agentConfirm,
   agentLog,
   agentAttention,
-  agentChat,
 } from '@llui/agent/client'
 import type { State, Msg } from './types'
 import { appDef, initialState, setAgentClient } from './app'
@@ -54,11 +53,6 @@ if (typeof window !== 'undefined') {
         type: 'agent',
         sub: 'attention',
         msg: m as agentAttention.AgentAttentionMsg,
-      }),
-      wrapChatMsg: (m) => ({
-        type: 'agent',
-        sub: 'chat',
-        msg: m as agentChat.AgentChatMsg,
       }),
     },
   })

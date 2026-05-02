@@ -177,61 +177,47 @@ const RECONNECT_GIVE_UP_MS = 5 * 60 * 1000
 
 /**
  * Build the user-pasted connect snippet that lands in the LLM's chat
- * window. The snippet has to do four things in one paragraph that an
- * LLM will follow on first read:
+ * window. Three things in one paragraph that an LLM will follow on
+ * first read:
  *
  * 1. Tell the LLM which tool to call to bind the session
  *    (`connect_session`).
  *
- * 2. Tell the LLM that the user can also message it through the app's
- *    in-app chat composer, and that it should call `wait_for_user_input`
- *    when idle to receive those messages. Without this directive the
- *    chat composer appears to "do nothing" — the user types, the
- *    server buffers, but the LLM is sitting idle waiting for input
- *    in its OWN window and never polls. The directive is phrased as
- *    "when idle / between tasks" rather than "always poll" so the LLM
- *    doesn't park as the first thing it does, which would block every
- *    other tool call until timeout.
+ * 2. Encourage `narrate` for surfacing intent during multi-step
+ *    actions. Without the nudge the LLM tends to dispatch silently;
+ *    with it, the user sees a running commentary in the app's
+ *    activity log alongside the action entries. One-way channel
+ *    (LLM → user); the conversation itself stays in the LLM's own
+ *    chat window.
  *
- * 3. Tell the LLM the canonical Q&A pattern: when it needs clarification
- *    before acting, call `narrate` to ask the question, then
- *    `wait_for_user_input` for the answer. Without this hint the LLM
- *    typically guesses and dispatches a Msg with assumed values; with
- *    it, the agent asks first — the more human-feeling default. The
- *    pattern is one sentence in the snippet rather than a long
- *    explanation; LLMs pick up the structure from a single example.
+ * 3. Survive tool-namespacing edge cases: Claude Desktop exposes MCP
+ *    tools as bare names (`connect_session`) but Claude Code and
+ *    other namespacing clients emit them as
+ *    `mcp__llui__connect_session` and may defer-load them — so an
+ *    LLM that searches its tool list for a literal name won't find
+ *    it. Naming the LLui MCP server explicitly (with its canonical
+ *    install name `llui`) gives the model enough to resolve the
+ *    right tool on either platform; the parenthetical surfaces the
+ *    edge case for deferred-tool clients.
  *
- * 4. Survive tool-namespacing edge cases: Claude Desktop exposes MCP
- *    tools as bare names (`connect_session`) but Claude Code and other
- *    namespacing clients emit them as `mcp__llui__connect_session` and
- *    may defer-load them — so an LLM that searches its tool list for a
- *    literal name won't find it. Naming the LLui MCP server explicitly
- *    (with its canonical install name `llui`) gives the model enough
- *    to resolve the right tool on either platform; the parenthetical
- *    surfaces the edge case for deferred-tool clients.
- *
- * Phrased generically (`AI assistant`, `Some MCP clients`) since MCP
- * support is rapidly expanding past Claude — the snippet shouldn't
- * telegraph "this is Claude-only" when it works against any compliant
- * client. The framework owns this string; updates ride along the
- * `@llui/agent` package version.
+ * Phrased generically (`AI assistant`, `Some MCP clients`) since
+ * MCP support is rapidly expanding past Claude — the snippet
+ * shouldn't telegraph "this is Claude-only" when it works against
+ * any compliant client. The framework owns this string; updates
+ * ride along the `@llui/agent` package version.
  */
 function buildConnectSnippet(lapUrl: string, token: string): string {
   return (
     `Connect this AI assistant to the LLui app. Call the LLui MCP server's ` +
     `\`connect_session\` tool with url=${JSON.stringify(lapUrl)} and ` +
     `token=${JSON.stringify(token)}. ` +
-    `After connecting, the user may also message you through the app's ` +
-    `in-app chat composer — when you're idle or waiting for further ` +
-    `instructions, call the \`wait_for_user_input\` tool to receive those ` +
-    `messages. ` +
-    `If you need clarification before acting, call \`narrate\` to ask the ` +
-    `question, then \`wait_for_user_input\` for the answer — that's how a ` +
-    `back-and-forth conversation flows through the app's chat panel. ` +
+    `When you're working through a multi-step task, call \`narrate\` to ` +
+    `surface what you're doing — the user sees your prose in the app's ` +
+    `activity log alongside each action you dispatch. ` +
     `(Some MCP clients namespace tools as ` +
-    `\`mcp__llui__connect_session\` / \`mcp__llui__wait_for_user_input\` / ` +
-    `\`mcp__llui__narrate\` and load them lazily — search the tool list if ` +
-    `the bare names aren't immediately available.)`
+    `\`mcp__llui__connect_session\` / \`mcp__llui__narrate\` and load them ` +
+    `lazily — search the tool list if the bare names aren't immediately ` +
+    `available.)`
   )
 }
 

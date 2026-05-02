@@ -11,20 +11,13 @@
  * import {
  *   AgentPairingDurableObject,
  *   routeToAgentDO,
- *   makeDurableObjectUserInputStorage,
  * } from '@llui/agent/server/cloudflare'
  *
  * export class AgentDO {
  *   private agent: AgentPairingDurableObject
- *   constructor(state: DurableObjectState, _env: Env) {
+ *   constructor(_state: DurableObjectState, _env: Env) {
  *     // Tokens are opaque (see token.ts) — no signing key needed.
- *     // The storage adapter makes the chat-composer's user-input
- *     // buffer survive DO eviction (deploys, idle eviction, runtime
- *     // restarts) — buffered messages from before the eviction are
- *     // restored on the next request.
- *     this.agent = new AgentPairingDurableObject({
- *       userInputStorage: makeDurableObjectUserInputStorage(state.storage),
- *     })
+ *     this.agent = new AgentPairingDurableObject({})
  *   }
  *   fetch(req: Request) {
  *     return this.agent.fetch(req)
@@ -54,12 +47,7 @@
  * new_classes = ["AgentDO"]
  * ```
  */
-export {
-  AgentPairingDurableObject,
-  type DurableObjectOptions,
-  makeDurableObjectUserInputStorage,
-  type DurableObjectStorageLike,
-} from './durable-object.js'
+export { AgentPairingDurableObject, type DurableObjectOptions } from './durable-object.js'
 export {
   routeToAgentDO,
   type MinimalDurableObjectNamespace,

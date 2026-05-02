@@ -1,5 +1,5 @@
 import type { State, Msg, Effect, Route, Repo, TreeEntry, FileContent, Issue } from './types'
-import { agentConnect, agentConfirm, agentLog, agentAttention, agentChat } from './types'
+import { agentConnect, agentConfirm, agentLog, agentAttention } from './types'
 import { http, cancel, debounce, timeout, clipboardWrite } from '@llui/effects'
 import {
   searchUrl,
@@ -188,10 +188,6 @@ export function update(state: State, msg: Msg): [State, Effect[]] {
         case 'attention': {
           const [next, effects] = agentAttention.update(state.agent.attention, msg.msg)
           return [{ ...state, agent: { ...state.agent, attention: next } }, effects]
-        }
-        case 'chat': {
-          const [next, effects] = agentChat.update(state.agent.chat, msg.msg)
-          return [{ ...state, agent: { ...state.agent, chat: next } }, effects]
         }
         case 'ui': {
           switch (msg.msg.type) {

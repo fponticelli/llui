@@ -205,22 +205,9 @@ export const TOOL_DESCRIPTORS: ToolDescriptor[] = [
   },
   {
     kind: 'forward',
-    name: 'wait_for_user_input',
-    description:
-      'Long-poll for the user to type something into the in-app chat composer. Returns { status: "submitted", text, at } when the user submits, or { status: "timeout" } after timeoutMs (default 30s). Submissions buffer briefly when no waiter is parked, so a user typing before you reach this call still gets through. Use as the conversational rendezvous: park here when you need clarification, when the user signals "wait, I want to say something", or as part of a continuous "react → narrate → wait → react" loop. The user submits via the agentChat composer rendered inside the host app — they don\'t alt-tab to your chat window.',
-    schema: z.object({
-      timeoutMs: z
-        .number()
-        .optional()
-        .describe('How long to park before returning timeout. Default 30000 (30s).'),
-    }),
-    lapPath: '/wait-for-user-input',
-  },
-  {
-    kind: 'forward',
     name: 'narrate',
     description:
-      'Push a one-line prose update into the in-app activity feed without dispatching a Msg. Use BEFORE long-running actions ("Looking at your cart now…", "Calling the pricing API — should take ~2s"), to surface inferred reasoning ("I notice you have an unsaved draft in `notes` — assuming you want to keep it"), or to acknowledge user input before acting on it. Keep narration single-line and present-tense; the user reads it in the activity panel inline with your dispatched actions. The text shows up as a `narrate`-kind entry — distinct from `dispatched` and `read`. Returns { ok: true } once the host runtime has the entry. Pair with `wait_for_user_input` for an interactive loop.',
+      'Push a one-line prose update into the in-app activity feed without dispatching a Msg. Use BEFORE long-running actions ("Looking at your cart now…", "Calling the pricing API — should take ~2s"), to surface inferred reasoning ("I notice you have an unsaved draft in `notes` — assuming you want to keep it"), or to acknowledge user input before acting on it. Keep narration single-line and present-tense; the user reads it in the activity panel inline with your dispatched actions. The text shows up as a `narrate`-kind entry — distinct from `dispatched` and `read`. Returns { ok: true } once the host runtime has the entry.',
     schema: z.object({
       text: z.string().describe('The narration prose, ideally one sentence. Required.'),
       intent: z

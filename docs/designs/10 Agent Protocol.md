@@ -57,7 +57,6 @@ All endpoints live under a developer-chosen base path (default `/agent/lap/v1`).
 | `/lap/v1/query-dom`           | POST   | `LapQueryDomRequest`         | `LapQueryDomResponse`         |
 | `/lap/v1/describe-visible`    | POST   | `{}`                         | `LapDescribeVisibleResponse`  |
 | `/lap/v1/context`             | POST   | `{}`                         | `LapContextResponse`          |
-| `/lap/v1/wait-for-user-input` | POST   | `LapWaitForUserInputRequest` | `LapWaitForUserInputResponse` |
 | `/lap/v1/narrate`             | POST   | `LapNarrateRequest`          | `LapNarrateResponse`          |
 
 ### 2.3 Request / Response type shapes
@@ -435,17 +434,17 @@ type AgentSession = {
 
 ---
 
-## 5b. In-app Conversational Surface
+## 5b. In-app Visibility Surface
 
-LAP gives the agent a way to operate the host app from outside. That alone produces a remote-operator experience: the agent dispatches state changes silently, the user notices through DOM updates, the conversation lives in the agent's external chat window. The framework closes the gap with three browser-side primitives that turn a single-direction API into a co-presence loop.
+LAP gives the agent a way to operate the host app from outside. On its own, that's a remote-operator experience: the agent dispatches state changes silently and the user only notices through DOM updates. The framework adds three browser-side primitives that make the agent's work _perceptible_ inside the app — without trying to make the app itself the conversation surface (the conversation lives in the user's LLM client; the framework doesn't compete with it).
 
-The architectural reframe is that the protocol is right (BYOL — bring your own LLM, cross-app context, no per-app cost) but the missing piece was an in-app surface for the LLM's _presence_ and the user's _voice_. The surface is supplied by `@llui/agent/client` as Level 1 namespaces (`init` / `update` / `connect`); hosts compose them via `sliceHandler` and spread the prop bags into their own layout. No new component primitive — the framework provides behavior, the host owns rendering.
+The surface is supplied by `@llui/agent/client` as Level 1 namespaces (`init` / `update` / `connect`); hosts compose them via `sliceHandler` and spread the prop bags into their own layout. No new component primitive — the framework provides behavior, the host owns rendering.
 
 ### 5b.1 Activity log with kind, intent, detail, stateDiff
 
 `agentLog` ring-buffers every rpc the runtime processes. Each `LogEntry` carries:
 
-- `kind` — discriminant: `proposed` / `dispatched` / `confirmed` / `rejected` / `blocked` / `read` / `error` / `user-input` / `narrate`. Drives per-row styling so the user can scan the timeline by category.
+- `kind` — discriminant: `proposed` / `dispatched` / `confirmed` / `rejected` / `blocked` / `read` / `error` / `narrate`. Drives per-row styling so the user can scan the timeline by category.
 - `variant` — the Msg type when the entry was a `send_message` rpc.
 - `intent` — human-readable label, sourced from the variant's `@intent("…")` JSDoc annotation. Falls back to the variant name when unannotated; for read tools, a fixed label like "Read app state".
 - `detail` — auto-narrated payload summary. For `send_message`, renders the first 3 non-`type` fields as `k=v` pairs (objects → keysets, arrays → lengths, strings JSON-quoted, all values truncated at 30 chars). Schema-free so even unannotated variants get a glanceable detail line.
@@ -457,49 +456,35 @@ The activity feed plus per-entry diff sidecar is what makes the agent's actions 
 
 `agentLog` shows actions in a list; `agentAttention` directs the user's eye to the affected DOM region. It listens for the same `Append { entry }` payload the log accepts, so a single inbound `log-append` from the ws-client fans out to both slices through the factory's `wrapLogMsg` + `wrapAttentionMsg` wiring. The reducer:
 
-- ignores entries whose `kind !== 'dispatched'` (read / proposed / blocked / error / user-input / narrate don't represent state mutations),
+- ignores entries whose `kind !== 'dispatched'` (read / proposed / blocked / error / narrate don't represent state mutations),
 - ignores dispatched entries with no `stateDiff` or an empty diff (silent no-op dispatch),
 - otherwise records `latestDispatch: { entryId, paths, variant, intent, at }` where `paths` is the set of top-level JSON-Pointer fields the diff touched (`'/items/3/name'` → `'items'`, root `'/'` → wildcard `'*'`),
 - emits an `AgentAttentionFlashTimeout { entryId, delayMs }` effect for race-tolerant auto-clear (the `Clear { entryId }` Msg returned by the timer no-ops if a fresher dispatch already replaced the spotlight, same pattern `AgentReconnectSchedule` uses).
 
 The connect bag exposes `flashing(path)(s) → boolean`, `flashClass(path, className?)(s) → string | undefined`, and `regionAction(path)(s) → metadata | null`. The host spreads `flashClass` onto regions it wants highlightable; the framework's optional `@llui/agent/styles/agent-panel.css` ships a default `.agent-flash` keyframe with `prefers-reduced-motion` fallback. Hosts that opt out of the attention slice (no `wrapAttentionMsg`) get graceful degradation — the framework just skips the auto-clear effect and the spotlight stays set until the next dispatch overwrites it.
 
-### 5b.3 Inverted input channel (`agentChat` + `wait_for_user_input`)
+### 5b.3 Outbound narration channel (`/lap/v1/narrate`)
 
-`/lap/v1/wait-for-user-input` is the protocol primitive: a long-poll the agent calls when it wants to hear from the user. Resolves with `{ status: 'submitted', text, at }` on receipt of a `user-input-submitted` WS frame from the paired runtime, or `{ status: 'timeout' }` after `timeoutMs` (default 30s).
+The agent uses `narrate` to surface running commentary without dispatching a Msg — "thinking…", "about to call the API", "noticed an unsaved draft". One-way channel (LLM → user) layered on top of the activity log: the conversation itself stays in the LLM's own chat window; this is just how the agent makes its work visible while operating the app.
 
-The pairing registry maintains a small (8-message, drop-oldest) per-tid buffer so a user typing _before_ the agent reaches the wait call still gets through; submissions are FIFO-delivered to the parked-waiter queue. Multiple parked waiters are queued in order. WS close while a waiter is parked resolves the promise as `timeout` (the agent's LAP client retries naturally on the next call).
+The handler synthesizes a `LogEntry { kind: 'narrate', detail: text, intent: opts.intent ?? 'Agent narrated' }` and pushes a `log-push` server-frame to the paired runtime. The ws-client mirrors it via `onLogEntry` into local slices (so the activity feed renders it in real time) AND echoes a `log-append` upstream so the recent-log buffer + audit sink see it through the existing browser → server channel — single audit pathway, no double-record.
 
-Browser-side, `agentChat` owns the editor state (`pendingInput`, `submitting`) and the prop bag for an input + submit pair (Enter / Shift+Enter handling, double-submit guard, whitespace-only no-op). The composer is **not** an LLM — it's a relay surface. `Submit` reducer emits an `AgentChatSendInput { text, at }` effect; the framework's effect handler:
+### 5b.4 Composition contract
 
-1. calls `WsClient.submitUserInput(text, at)`, which sends the upstream `user-input-submitted` frame AND synthesizes a `LogEntry { kind: 'user-input', detail: text }` so the activity log renders the user's reply inline with agent actions;
-2. dispatches `SubmitComplete` back into the chat slice via `wrapChatMsg` so the input field re-enables.
-
-The conversation lives in the host app's window, even though the LLM lives in the user's external client. The user doesn't alt-tab; the agent doesn't have to render its own UI; the framework provides the rendezvous.
-
-### 5b.4 Outbound narration channel (`/lap/v1/narrate`)
-
-The agent uses `narrate` to surface running commentary without dispatching a Msg — "thinking…", "about to call the API", "noticed an unsaved draft". The handler synthesizes a `LogEntry { kind: 'narrate', detail: text, intent: opts.intent ?? 'Agent narrated' }` and pushes a `log-push` server-frame to the paired runtime. The ws-client mirrors it via `onLogEntry` into local slices (so the activity feed renders it in real time) AND echoes a `log-append` upstream so the recent-log buffer + audit sink see it through the existing browser → server channel — single audit pathway, no double-record.
-
-The surface is conversational pacing: the agent talks before acting, the user reads it inline with dispatches, the panel becomes a transcript.
-
-### 5b.5 Composition contract
-
-A host wiring the full conversational surface composes five slices:
+A host wiring the full visibility surface composes four slices:
 
 ```ts
 state.agent = {
-  connect: AgentConnectState, // existing — connection lifecycle
-  confirm: AgentConfirmState, // existing — confirm dialog
+  connect: AgentConnectState, // connection lifecycle
+  confirm: AgentConfirmState, // confirm dialog
   log: AgentLogState, // ring-buffered activity timeline
   attention: AgentAttentionState, // current dispatch's spotlight
-  chat: AgentChatState, // input composer state
 }
 ```
 
-The factory's `slices.wrap*Msg` callbacks route inbound frames + reducer-fired effects to the correct sub-update. `factory.ts` fans a single `log-append` onto both `wrapLogMsg` and `wrapAttentionMsg` (when both wired) so the host's update function sees the same entry twice through different sub channels. Hosts that want a subset (just `agentLog`, just `agentChat`) leave the unwanted `wrap*Msg` unset; the framework degrades gracefully — read-only panels work, write-only panels work, the full conversation works.
+The factory's `slices.wrap*Msg` callbacks route inbound frames + reducer-fired effects to the correct sub-update. `factory.ts` fans a single `log-append` onto both `wrapLogMsg` and `wrapAttentionMsg` (when both wired) so the host's update function sees the same entry twice through different sub channels. Hosts that want a subset (just `agentLog`, just `agentConnect`) leave the unwanted `wrap*Msg` unset; the framework degrades gracefully.
 
-The point of the architectural reframe: the protocol stays minimal and external-LLM-friendly; the in-app surface lives in the framework as composable slices; the host gets to decide what the panel looks like.
+> **Historical note.** Earlier versions of `@llui/agent` shipped an `agentChat` slice and a `/lap/v1/wait-for-user-input` LAP method that let the user type into the app and have the LLM pick it up via long-poll. That surface was removed: with no embedded LLM, the in-app composer was a half-conversation that competed with the user's external LLM window without delivering true conversational continuity. The agent now stays operate-and-narrate; the conversation lives in the LLM's own chat. See the deletion-release CHANGELOG entry for the reasoning.
 
 ## 6. Audit Log
 

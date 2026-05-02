@@ -78,7 +78,6 @@ import {
   agentConfirm,
   agentLog,
   agentAttention,
-  agentChat,
   type AgentEffect,
 } from '@llui/agent/client'
 
@@ -88,9 +87,8 @@ type AgentConnectMsg = agentConnect.AgentConnectMsg
 type AgentConfirmMsg = agentConfirm.AgentConfirmMsg
 type AgentLogMsg = agentLog.AgentLogMsg
 type AgentAttentionMsg = agentAttention.AgentAttentionMsg
-type AgentChatMsg = agentChat.AgentChatMsg
 
-export { agentConnect, agentConfirm, agentLog, agentAttention, agentChat }
+export { agentConnect, agentConfirm, agentLog, agentAttention }
 
 export type AgentUiState = {
   /** True for ~2s after the user clicks the Copy snippet button. */
@@ -107,7 +105,6 @@ export interface State {
     confirm: agentConfirm.AgentConfirmState
     log: agentLog.AgentLogState
     attention: agentAttention.AgentAttentionState
-    chat: agentChat.AgentChatState
     ui: AgentUiState
   }
 }
@@ -152,8 +149,6 @@ export type Msg =
   | { type: 'agent'; sub: 'log'; msg: AgentLogMsg }
   /** @humanOnly */
   | { type: 'agent'; sub: 'attention'; msg: AgentAttentionMsg }
-  /** @humanOnly */
-  | { type: 'agent'; sub: 'chat'; msg: AgentChatMsg }
   /** @humanOnly */
   | { type: 'agent'; sub: 'ui'; msg: AgentUiMsg }
 

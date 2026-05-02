@@ -105,15 +105,6 @@ export type CreateAgentClientOpts<State, Msg> = {
      * the host needing to write the routing.
      */
     wrapAttentionMsg?: (m: unknown) => Msg
-    /**
-     * Optional: wrap an agentChat msg so the chat-composer's send
-     * effect can dispatch `SubmitComplete` back to re-enable the
-     * input. Hosts that wire the chat composer set this; hosts that
-     * don't can leave it unset and the chat-send effect no-ops
-     * (the chat slice was never wired anyway, so no UI is waiting
-     * for the SubmitComplete signal).
-     */
-    wrapChatMsg?: (m: unknown) => Msg
   }
   /**
    * Codec registry for non-JSON-safe values (Date, Blob, Map, …)
@@ -394,8 +385,6 @@ export function createAgentClient<State, Msg>(
     wrapAgentAttention: opts.slices.wrapAttentionMsg
       ? (m) => opts.slices.wrapAttentionMsg!(m)
       : undefined,
-    wrapAgentChat: opts.slices.wrapChatMsg ? (m) => opts.slices.wrapChatMsg!(m) : undefined,
-    getWsClient: () => wsClient,
     forward: (payload) => opts.handle.send(payload),
     agentBasePath: opts.agentBasePath,
     sessionStorage,

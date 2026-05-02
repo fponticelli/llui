@@ -19,25 +19,6 @@ export type EffectHandlerHost = {
    * provide this; hosts that don't can leave it unset.
    */
   wrapAgentAttention?(m: unknown): unknown
-  /**
-   * Wraps an agentChat msg into an app-Msg. Required for hosts
-   * wiring the chat composer — the `AgentChatSendInput` handler
-   * dispatches `SubmitComplete` back into the slice via this wrapper
-   * after the frame send completes (success or failure), so the
-   * input field re-enables. Hosts that don't render chat leave it
-   * unset and the chat-send effect no-ops (the agentChat slice in
-   * that case has no live presence to begin with).
-   */
-  wrapAgentChat?(m: unknown): unknown
-  /**
-   * Active WS client (if any) — set lazily by the factory after
-   * `openWs` resolves a connection. The chat-send handler reads
-   * `submitUserInput` from here. Marked optional because the
-   * handler sits across the connection lifecycle: pre-WS / post-close
-   * `submitUserInput` is null and the handler degrades gracefully
-   * (still dispatches SubmitComplete so the UI re-enables).
-   */
-  getWsClient?: () => { submitUserInput(text: string, at?: number): void } | null
   /** Called for AgentForwardMsg — the payload is re-dispatched via send. */
   forward(payload: unknown): void
   /** fetch for HTTP effects; override in tests. */
@@ -127,8 +108,6 @@ export function createEffectHandler(host: EffectHandlerHost) {
         return handleReconnectSchedule(host, effect)
       case 'AgentAttentionFlashTimeout':
         return handleAttentionFlashTimeout(host, effect)
-      case 'AgentChatSendInput':
-        return handleChatSendInput(host, effect)
     }
   }
 }
@@ -157,33 +136,6 @@ async function handleAttentionFlashTimeout(
   if (!host.wrapAgentAttention) return // Host opted out — graceful degradation.
   await new Promise<void>((resolve) => setTimeout(resolve, effect.delayMs))
   host.send(host.wrapAgentAttention({ type: 'Clear', entryId: effect.entryId }))
-}
-
-async function handleChatSendInput(
-  host: EffectHandlerHost,
-  effect: Extract<AgentEffect, { type: 'AgentChatSendInput' }>,
-): Promise<void> {
-  const wrapper = host.wrapAgentChat
-  // Frame send: best-effort. `submitUserInput` swallows its own
-  // throws (it's just `ws.send(JSON.stringify(...))` × 2), but a
-  // missing client (pre-open or post-close) silently no-ops the send
-  // and we just hit the SubmitComplete fall-through. The user's
-  // text was already cleared from `pendingInput` by the reducer; if
-  // the send fails, the host can render a session-status indicator
-  // separately (the `agentConnect.status` field is the canonical
-  // source of "are we online").
-  const client = host.getWsClient?.() ?? null
-  if (client) {
-    try {
-      client.submitUserInput(effect.text, effect.at)
-    } catch {
-      // best-effort — same contract as the frame-send path inside
-      // submitUserInput itself
-    }
-  }
-  if (wrapper) {
-    host.send(wrapper({ type: 'SubmitComplete' }))
-  }
 }
 
 // ── HTTP-bound handlers ─────────────────────────────────────────────

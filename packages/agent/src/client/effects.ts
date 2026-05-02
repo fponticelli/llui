@@ -72,25 +72,6 @@ export type AgentEffect =
    * works, just without auto-clearing visual highlights).
    */
   | { type: 'AgentAttentionFlashTimeout'; entryId: string; delayMs: number }
-  /**
-   * Send a user chat-composer submission upstream. Handler routes
-   * to `WsClient.submitUserInput(text, at)`, which:
-   *
-   *   1. emits a `user-input-submitted` WS frame so the server's
-   *      parked `wait_for_user_input` waiters resolve;
-   *   2. synthesizes a `LogEntry { kind: 'user-input', detail: text }`
-   *      and calls the factory's `onLogEntry` so `agentLog` (and
-   *      mirror channels) render the user's reply inline with agent
-   *      actions.
-   *
-   * After the frame sends, the handler dispatches
-   * `AgentChat.SubmitComplete` back into the chat slice via
-   * `wrapAgentChat` so the UI re-enables the input. The
-   * frame-send is best-effort: a closed/missing WS still resolves
-   * the SubmitComplete (so the input doesn't lock up); the user can
-   * retry once the connection is back.
-   */
-  | { type: 'AgentChatSendInput'; text: string; at: number }
 
 // Handler implementation lands in Plan 7 alongside the WS client.
 export type AgentEffectHandler = (effect: AgentEffect) => Promise<void>

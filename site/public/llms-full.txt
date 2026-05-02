@@ -1566,21 +1566,20 @@ Once connected, the MCP server exposes these tools to any MCP client
 | `llui_search_history`     | Filter message history by type, state-path change, effect type, or index range.                                                                                          |
 | `llui_eval`               | Run arbitrary JS in the page context; returns the result plus an observability envelope.                                                                                 |
 
-## Agent Conversational Surface
+## Agent Visibility Surface
 
-`@llui/agent` ships a set of Level 1 slices that let a host app embed an in-app conversational surface for the user's external LLM (Claude Desktop / IDE / wherever the MCP bridge is mounted). The protocol itself is bring-your-own-LLM — one LLM per user, cross-app context, no per-app cost — but the framework provides the _surface_ so the user doesn't alt-tab to talk to their agent.
+`@llui/agent` ships a set of Level 1 slices that surface what the agent is doing inside your app. The conversation itself happens in the user's external LLM client (Claude Desktop / IDE / wherever the MCP bridge is mounted) — the framework doesn't try to be a chat surface. What it gives you is _visibility_: a connection panel, an activity log, attention flashes on changed DOM, and a one-way `narrate` channel for the LLM to surface its thinking inline with its actions.
 
-Five slices compose into one panel:
+Four slices compose into one panel:
 
-| Slice            | Owns                                                                                 |
-| ---------------- | ------------------------------------------------------------------------------------ |
-| `agentConnect`   | Connection lifecycle (mint / pending-claude / active / reconnecting / failed)        |
-| `agentConfirm`   | Confirm dialog state for `requiresConfirm` Msg dispatches                            |
-| `agentLog`       | Ring-buffered activity timeline (every rpc, with origin tag + payload detail + diff) |
-| `agentAttention` | Current dispatch's spotlight: which DOM regions to flash when state changes          |
-| `agentChat`      | Input composer state (pending text, submit-in-flight, Enter handling)                |
+| Slice            | Owns                                                                             |
+| ---------------- | -------------------------------------------------------------------------------- |
+| `agentConnect`   | Connection lifecycle (mint / pending-claude / active / reconnecting / failed)    |
+| `agentConfirm`   | Confirm dialog state for `requiresConfirm` Msg dispatches                        |
+| `agentLog`       | Ring-buffered activity timeline (every rpc, with intent + payload detail + diff) |
+| `agentAttention` | Current dispatch's spotlight: which DOM regions to flash when state changes      |
 
-Each is a `init` / `update` / `Msg` / `connect()` triple. The host slots them into its app state via `sliceHandler`, routes inbound `Append { entry }` Msgs from the WS log-append channel to BOTH `agentLog` and `agentAttention` (the framework fans out automatically through the factory), and spreads the prop bags into its own layout.
+Each is an `init` / `update` / `Msg` / `connect()` triple. The host slots them into its app state via `sliceHandler`, routes inbound `Append { entry }` Msgs from the WS log-append channel to BOTH `agentLog` and `agentAttention` (the framework fans out automatically through the factory), and spreads the prop bags into its own layout.
 
 ### Wiring the slices
 
@@ -1592,7 +1591,6 @@ type State = {
     confirm: agentConfirm.AgentConfirmState
     log: agentLog.AgentLogState
     attention: agentAttention.AgentAttentionState
-    chat: agentChat.AgentChatState
   }
 }
 
@@ -1602,7 +1600,6 @@ const initial: State = {
     confirm: agentConfirm.init()[0],
     log: agentLog.init()[0],
     attention: agentAttention.init()[0],
-    chat: agentChat.init()[0],
   },
 }
 
@@ -1610,7 +1607,6 @@ const initial: State = {
 //   { type: 'agent', sub: 'connect', msg: agentConnect.AgentConnectMsg }
 //   { type: 'agent', sub: 'log',     msg: agentLog.AgentLogMsg }
 //   { type: 'agent', sub: 'attention', msg: agentAttention.AgentAttentionMsg }
-//   { type: 'agent', sub: 'chat',    msg: agentChat.AgentChatMsg }
 
 // main.ts — wire the factory's wrapMsg callbacks
 createAgentClient<State, Msg>({
@@ -1624,7 +1620,6 @@ createAgentClient<State, Msg>({
     wrapConfirmMsg: (m) => ({ type: 'agent', sub: 'confirm', msg: m }),
     wrapLogMsg: (m) => ({ type: 'agent', sub: 'log', msg: m }),
     wrapAttentionMsg: (m) => ({ type: 'agent', sub: 'attention', msg: m }),
-    wrapChatMsg: (m) => ({ type: 'agent', sub: 'chat', msg: m }),
   },
 })
 ```
@@ -1633,14 +1628,10 @@ createAgentClient<State, Msg>({
 
 ```ts
 // agent-panel.ts — bare bones
-import { div, input, button, text, each } from '@llui/dom'
-import { agentChat, summarizeDiff } from '@llui/agent/client'
+import { div, text, each } from '@llui/dom'
+import { summarizeDiff } from '@llui/agent/client'
 
-function panel(send: Send<Msg>) {
-  const chatBag = agentChat.connect<State>(
-    (s) => s.agent.chat,
-    (m) => send({ type: 'agent', sub: 'chat', msg: m }),
-  )
+function panel() {
   return div([
     // Activity feed — the prop bag exposes visibleEntries as a reactive accessor
     ...each<State, LogEntry>({
@@ -1655,11 +1646,6 @@ function panel(send: Send<Msg>) {
         ]),
       ],
     }),
-    // Chat composer — the bag carries Enter handling, double-submit guard, etc.
-    div([
-      input({ ...chatBag.input, placeholder: 'Talk to Claude…' }),
-      button({ ...chatBag.submitButton }, [text('Send')]),
-    ]),
   ])
 }
 ```
@@ -1706,11 +1692,10 @@ All schema-free; the host renders however it likes.
 | ---------------------------------------- | -------------------------- |
 | Read state                               | `get_state`, `query_state` |
 | Dispatch a Msg                           | `send_message`             |
-| Long-poll for the user's typed reply     | `wait_for_user_input`      |
 | Push prose into the activity feed        | `narrate`                  |
 | Wait for a specific state path to change | `wait_for_change`          |
 
-The conversational loop typically reads as: `narrate("about to do X") → send_message(...) → narrate("here's the result") → wait_for_user_input()`. The user reads the narration inline with the dispatches; the user's reply lands as a `user-input` log entry next to the narrations; the agent picks up the reply and continues.
+A typical multi-step run reads as: `narrate("about to do X") → send_message(...) → narrate("here's the result")`. The user reads the narration inline with the dispatches; if they want to redirect, they reply in their LLM's own chat window — the framework doesn't try to compete with that.
 
 ### Browser console
 

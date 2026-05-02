@@ -134,20 +134,7 @@
 [data-scope='agent-log'] [data-part='entry'][data-kind='read'] {
   border-left-color: rgba(148, 163, 184, 0.5); /* slate: passive */
 }
-[data-scope='agent-log'] [data-part='entry'][data-kind='user-input'] {
-  border-left-color: rgba(99, 102, 241, 0.7); /* indigo: user voice */
-}
 [data-scope='agent-log'] [data-part='entry'][data-kind='narrate'] {
   border-left-color: rgba(168, 85, 247, 0.6); /* purple: agent voice */
   font-style: italic;
-}
-
-/*
- * Chat composer: subtle disabled state during in-flight submit so the
- * user has a visible cue beyond the input element's own `disabled`
- * styling (which varies by browser).
- */
-[data-scope='agent-chat'][data-submitting='true'] {
-  opacity: 0.7;
-  pointer-events: none;
 }

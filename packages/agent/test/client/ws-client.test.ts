@@ -367,50 +367,6 @@ describe('LogEntry.detail auto-narration', () => {
   })
 })
 
-describe('submitUserInput', () => {
-  it('emits a user-input-submitted frame and a paired log-append entry', () => {
-    const ws = new FakeWs()
-    const onLogEntry = vi.fn()
-    const client = attachWsClient(ws, makeRpcHosts(), makeHelloBuilder(), { onLogEntry })
-    ws.emit('open')
-    ws.sent.length = 0
-
-    client.submitUserInput('hi there', 1700)
-
-    // Two frames sent in order: the upstream input frame, then the
-    // mirrored log-append frame.
-    expect(ws.sent).toHaveLength(2)
-    const inputFrame = JSON.parse(ws.sent[0]!)
-    expect(inputFrame).toEqual({ t: 'user-input-submitted', text: 'hi there', at: 1700 })
-    const logFrame = JSON.parse(ws.sent[1]!)
-    expect(logFrame.t).toBe('log-append')
-    expect(logFrame.entry.kind).toBe('user-input')
-    expect(logFrame.entry.detail).toBe('hi there')
-    expect(logFrame.entry.at).toBe(1700)
-
-    // Local listener fires too — that's what `agentLog` slots into.
-    expect(onLogEntry).toHaveBeenCalledOnce()
-    const local = onLogEntry.mock.calls[0]![0]
-    expect(local.kind).toBe('user-input')
-    expect(local.detail).toBe('hi there')
-  })
-
-  it('uses Date.now() when no `at` is provided', () => {
-    const ws = new FakeWs()
-    const client = attachWsClient(ws, makeRpcHosts(), makeHelloBuilder())
-    ws.emit('open')
-    ws.sent.length = 0
-
-    const before = Date.now()
-    client.submitUserInput('go')
-    const after = Date.now()
-
-    const inputFrame = JSON.parse(ws.sent[0]!)
-    expect(inputFrame.at).toBeGreaterThanOrEqual(before)
-    expect(inputFrame.at).toBeLessThanOrEqual(after)
-  })
-})
-
 describe('log-push handling (server-originated narration)', () => {
   it('mirrors a log-push frame to onLogEntry AND echoes log-append upstream', async () => {
     const ws = new FakeWs()

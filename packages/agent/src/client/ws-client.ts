@@ -53,15 +53,6 @@ export type WsClient = {
   emitStateUpdate(path: string, stateAfter: unknown): void
   /** Emit a log-append frame so the server can mirror client-observed actions to the audit sink. */
   emitLogAppend(entry: LogEntry): void
-  /**
-   * Send a user chat-composer submission upstream and synthesize a
-   * matching `LogEntry { kind: 'user-input' }` for the local activity
-   * feed. The agent picks up `text` via `wait_for_user_input`. `at`
-   * defaults to `Date.now()` — pass an explicit timestamp when the
-   * caller already captured one (e.g. on the keystroke that fired
-   * Enter, vs. the microtask later that finally calls this).
-   */
-  submitUserInput(text: string, at?: number): void
   /** Close the socket cleanly. */
   close(): void
 }
@@ -205,38 +196,6 @@ export function attachWsClient(
     emitLogAppend(entry) {
       const frame: ClientFrame = { t: 'log-append', entry }
       ws.send(JSON.stringify(frame))
-    },
-    submitUserInput(text, at = Date.now()) {
-      // Two side effects, in order:
-      //
-      //  1. Send the WS frame so the server's `wait_for_user_input`
-      //     waiters resolve with the user's text. This is the
-      //     conversational delivery — the agent picks it up at the
-      //     next LAP poll.
-      //  2. Synthesize a `LogEntry { kind: 'user-input', detail: text }`
-      //     and call `onLogEntry` so the local agent panel renders the
-      //     user's reply inline with agent actions. The same entry is
-      //     ALSO mirrored to the server via `log-append` (the existing
-      //     emit path covers it) so `describe_recent_actions` shows
-      //     the user's words in conversational order — agents reading
-      //     past activity see the back-and-forth as one timeline.
-      //
-      // The frame's `t === 'user-input-submitted'` is what
-      // `wait_for_user_input` keys off; the LogEntry is purely for
-      // human-visible activity feeds.
-      const inputFrame: ClientFrame = { t: 'user-input-submitted', text, at }
-      ws.send(JSON.stringify(inputFrame))
-      const id = `user-input-${at}-${Math.random().toString(36).slice(2, 8)}`
-      const entry: LogEntry = {
-        id,
-        at,
-        kind: 'user-input',
-        detail: text,
-        intent: 'User input',
-      }
-      opts.onLogEntry?.(entry)
-      const logFrame: ClientFrame = { t: 'log-append', entry }
-      ws.send(JSON.stringify(logFrame))
     },
     close() {
       ws.close()

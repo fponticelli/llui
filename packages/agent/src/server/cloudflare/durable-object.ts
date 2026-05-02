@@ -48,70 +48,8 @@
 import type { CoreOptions, AgentCoreHandle } from '../core.js'
 import { createLluiAgentCore } from '../core.js'
 import { handleCloudflareUpgrade } from '../web/upgrade.js'
-import type { UserInputStorage } from '../ws/pairing-registry.js'
 
 export type DurableObjectOptions = Omit<CoreOptions, 'registry'>
-
-/**
- * Minimal subset of the Cloudflare Durable Object `state.storage`
- * surface needed to back the registry's `UserInputStorage` adapter.
- * Declared structurally so we don't pull in `@cloudflare/workers-types`
- * — that's a peer dependency of the host's Worker project, not ours.
- */
-export interface DurableObjectStorageLike {
-  get<T>(key: string): Promise<T | undefined>
-  put<T>(key: string, value: T): Promise<void>
-  delete(key: string): Promise<boolean>
-}
-
-/**
- * Build a `UserInputStorage` adapter backed by the DO's `state.storage`.
- * Pass the result to `AgentPairingDurableObject`'s constructor opts to
- * make buffered chat-composer submissions survive DO eviction (process
- * restarts, deploys, idle eviction). Without this adapter the in-memory
- * buffer is lost on eviction; with it, the next request restores any
- * buffered messages from before the eviction.
- *
- * Parked `waitForUserInput` waiters can't be persisted (they're JS
- * Promise resolvers); the LAP client retries naturally on its own
- * timeout, and the retry sees the restored buffer.
- *
- * Usage:
- *
- * ```ts
- * export class AgentDO {
- *   private agent: AgentPairingDurableObject
- *   constructor(state: DurableObjectState) {
- *     this.agent = new AgentPairingDurableObject({
- *       userInputStorage: makeDurableObjectUserInputStorage(state.storage),
- *     })
- *   }
- *   fetch(req: Request) {
- *     return this.agent.fetch(req)
- *   }
- * }
- * ```
- */
-export function makeDurableObjectUserInputStorage(
-  storage: DurableObjectStorageLike,
-): UserInputStorage {
-  // One key per tid keeps the operations O(1) and avoids cross-tid
-  // contention. Prefix is to namespace from any other agent storage
-  // a future feature might add.
-  const key = (tid: string) => `__llui_agent_user_input_buf__:${tid}`
-  return {
-    async read(tid) {
-      const stored = await storage.get<Array<{ text: string; at: number }>>(key(tid))
-      return stored ?? []
-    },
-    async write(tid, buffer) {
-      await storage.put(key(tid), buffer)
-    },
-    async clear(tid) {
-      await storage.delete(key(tid))
-    },
-  }
-}
 
 /**
  * Agent server instance scoped to a single Durable Object. All

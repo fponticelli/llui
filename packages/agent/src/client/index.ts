@@ -1,5 +1,4 @@
 export * as agentAttention from './agentAttention.js'
-export * as agentChat from './agentChat.js'
 export * as agentConnect from './agentConnect.js'
 export * as agentConfirm from './agentConfirm.js'
 export * as agentLog from './agentLog.js'
