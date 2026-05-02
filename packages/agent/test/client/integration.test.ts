@@ -233,5 +233,4 @@ describe('integration: mint → ws → describe → state', () => {
     ws.close()
     await new Promise<void>((resolve) => ws.once('close', resolve))
   })
-
 })

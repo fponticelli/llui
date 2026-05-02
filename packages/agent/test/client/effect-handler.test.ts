@@ -283,5 +283,4 @@ describe('createEffectHandler', () => {
       vi.useRealTimers()
     }
   })
-
 })

@@ -377,7 +377,6 @@ export function agentPanel(send: Send<Msg>): HTMLElement {
           none: () => [],
         },
       }),
-
     ]),
   ])
 }

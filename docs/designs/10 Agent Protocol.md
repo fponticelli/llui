@@ -46,18 +46,18 @@ All endpoints live under a developer-chosen base path (default `/agent/lap/v1`).
 
 ### 2.2 LAP endpoints (bridge-facing, bearer-token authenticated)
 
-| Path                          | Method | Request shape                | Response shape                |
-| ----------------------------- | ------ | ---------------------------- | ----------------------------- |
-| `/lap/v1/describe`            | POST   | `{}`                         | `LapDescribeResponse`         |
-| `/lap/v1/state`               | POST   | `LapStateRequest`            | `LapStateResponse`            |
-| `/lap/v1/actions`             | POST   | `{}`                         | `LapActionsResponse`          |
-| `/lap/v1/message`             | POST   | `LapMessageRequest`          | `LapMessageResponse`          |
-| `/lap/v1/confirm-result`      | POST   | `LapConfirmResultRequest`    | `LapConfirmResultResponse`    |
-| `/lap/v1/wait`                | POST   | `LapWaitRequest`             | `LapWaitResponse`             |
-| `/lap/v1/query-dom`           | POST   | `LapQueryDomRequest`         | `LapQueryDomResponse`         |
-| `/lap/v1/describe-visible`    | POST   | `{}`                         | `LapDescribeVisibleResponse`  |
-| `/lap/v1/context`             | POST   | `{}`                         | `LapContextResponse`          |
-| `/lap/v1/narrate`             | POST   | `LapNarrateRequest`          | `LapNarrateResponse`          |
+| Path                       | Method | Request shape             | Response shape               |
+| -------------------------- | ------ | ------------------------- | ---------------------------- |
+| `/lap/v1/describe`         | POST   | `{}`                      | `LapDescribeResponse`        |
+| `/lap/v1/state`            | POST   | `LapStateRequest`         | `LapStateResponse`           |
+| `/lap/v1/actions`          | POST   | `{}`                      | `LapActionsResponse`         |
+| `/lap/v1/message`          | POST   | `LapMessageRequest`       | `LapMessageResponse`         |
+| `/lap/v1/confirm-result`   | POST   | `LapConfirmResultRequest` | `LapConfirmResultResponse`   |
+| `/lap/v1/wait`             | POST   | `LapWaitRequest`          | `LapWaitResponse`            |
+| `/lap/v1/query-dom`        | POST   | `LapQueryDomRequest`      | `LapQueryDomResponse`        |
+| `/lap/v1/describe-visible` | POST   | `{}`                      | `LapDescribeVisibleResponse` |
+| `/lap/v1/context`          | POST   | `{}`                      | `LapContextResponse`         |
+| `/lap/v1/narrate`          | POST   | `LapNarrateRequest`       | `LapNarrateResponse`         |
 
 ### 2.3 Request / Response type shapes
 
