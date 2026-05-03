@@ -88,6 +88,332 @@ describe('Pass 1 — element helper → elSplit', () => {
   })
 })
 
+describe('reactive prop value resolution — non-arrow Identifier/CallExpression', () => {
+  // Bug repro for: "disabled attribute binding never re-evaluates when
+  // accessor is a named-function reference (or memo() result)".
+  //
+  // Universal contract for prop values at reactive positions:
+  //   The compiler MUST NOT silently downgrade a function-typed value
+  //   into a static prop assignment (`__e.disabled = identifier`) or,
+  //   worse, drop it via the static-template-clone path
+  //   (`__cloneStaticTemplate("<button></button>")`).
+  //
+  // Either of those produces a button whose `disabled` property is
+  // bound once at mount and never re-evaluates — even though the
+  // runtime helper handles function-typed values correctly when no
+  // compiler is involved (verified by the runtime-only test in
+  // packages/dom/test/runtime-disabled-binding.test.ts).
+  //
+  // The compiler can either:
+  //   (a) Emit it as a binding entry, OR
+  //   (b) Bail the element back to the runtime helper.
+  // Both preserve correctness; static assignment / template drop do not.
+
+  function asserts(out: string, identifier: string) {
+    // Forbid the buggy shapes regardless of which fix path is taken.
+    expect(out).not.toMatch(new RegExp(`__e\\.disabled\\s*=\\s*${identifier}`))
+    // Forbid the catastrophic "prop dropped via static template" shape:
+    // a button template with no disabled attribute (we used disabled,
+    // and the only other content is empty).
+    expect(out).not.toMatch(/__cloneStaticTemplate\("<button><\/button>"\)/)
+  }
+
+  it('module-scope const-bound arrow → emits a reactive binding (works today)', () => {
+    const src = `
+      import { component, button } from '@llui/dom'
+      type State = { gated: boolean }
+      const isGated = (s: State): boolean => s.gated
+      export const C = component({
+        name: 'C',
+        init: () => [{ gated: true }, []],
+        update: (s, _m) => [s, []],
+        view: () => [button({ disabled: isGated })],
+      })
+    `
+    const out = t(src)
+    expect(out).toContain('elSplit')
+    asserts(out, 'isGated')
+    expect(out).toMatch(/['"]prop['"]\s*,\s*['"]disabled['"]/)
+  })
+
+  it('view-scope const-bound arrow → emits a reactive binding (works today)', () => {
+    const src = `
+      import { component, button } from '@llui/dom'
+      type State = { gated: boolean }
+      export const C = component({
+        name: 'C',
+        init: () => [{ gated: true }, []],
+        update: (s, _m) => [s, []],
+        view: () => {
+          const isGated = (s: State): boolean => s.gated
+          return [button({ disabled: isGated })]
+        },
+      })
+    `
+    const out = t(src)
+    expect(out).toContain('elSplit')
+    asserts(out, 'isGated')
+    expect(out).toMatch(/['"]prop['"]\s*,\s*['"]disabled['"]/)
+  })
+
+  it('memo()-wrapped accessor (alone on element) → must not be silently dropped', () => {
+    // BUG: today the compiler emits `__cloneStaticTemplate("<button></button>")`,
+    // dropping the prop entirely.
+    const src = `
+      import { component, button } from '@llui/dom'
+      type State = { gated: boolean }
+      export const C = component({
+        name: 'C',
+        init: () => [{ gated: true }, []],
+        update: (s, _m) => [s, []],
+        view: ({ memo }) => {
+          const isGatedMemo = memo((s: State) => s.gated)
+          return [button({ disabled: isGatedMemo })]
+        },
+      })
+    `
+    const out = t(src)
+    asserts(out, 'isGatedMemo')
+  })
+
+  it('memo()-wrapped accessor + sibling reactive arrow → must not become a static assignment', () => {
+    // BUG: today the compiler emits
+    //   elSplit("button", __e => { __e.disabled = isGatedMemo; }, ...)
+    // which writes the function object onto the boolean property at mount,
+    // and never re-evaluates.
+    const src = `
+      import { component, button } from '@llui/dom'
+      type State = { gated: boolean }
+      export const C = component({
+        name: 'C',
+        init: () => [{ gated: true }, []],
+        update: (s, _m) => [s, []],
+        view: ({ memo }) => {
+          const isGatedMemo = memo((s: State) => s.gated)
+          return [
+            button({
+              disabled: isGatedMemo,
+              title: (s: State) => (s.gated ? 'gated' : 'open'),
+            }),
+          ]
+        },
+      })
+    `
+    const out = t(src)
+    expect(out).toContain('elSplit')
+    expect(out).toMatch(/['"]attr['"]\s*,\s*['"]title['"]/)
+    asserts(out, 'isGatedMemo')
+  })
+
+  it('module-scope function declaration (alone on element) → must not be silently dropped', () => {
+    // BUG: today the compiler emits __cloneStaticTemplate("<button></button>"),
+    // dropping the prop entirely. resolveLocalConstInitializer only
+    // handles `const` declarations, not `function` declarations.
+    const src = `
+      import { component, button } from '@llui/dom'
+      type State = { gated: boolean }
+      function isGated(s: State): boolean { return s.gated }
+      export const C = component({
+        name: 'C',
+        init: () => [{ gated: true }, []],
+        update: (s, _m) => [s, []],
+        view: () => [button({ disabled: isGated })],
+      })
+    `
+    const out = t(src)
+    asserts(out, 'isGated')
+  })
+
+  it('imported named function (alone on element) → must not be silently dropped', () => {
+    // BUG: today the compiler emits __cloneStaticTemplate("<button></button>"),
+    // dropping the prop entirely. Imported identifiers cannot be
+    // resolved by the file-local resolver and so fall through to the
+    // static path.
+    const src = `
+      import { component, button } from '@llui/dom'
+      import { isGated } from './guards'
+      type State = { gated: boolean }
+      export const C = component({
+        name: 'C',
+        init: () => [{ gated: true }, []],
+        update: (s, _m) => [s, []],
+        view: () => [button({ disabled: isGated })],
+      })
+    `
+    const out = t(src)
+    asserts(out, 'isGated')
+  })
+
+  // ── Pass 2 mask injection: same value-shape contract for the driver
+  // accessor of text() / show() / branch() / each(). Without identifier
+  // resolution, the perf optimization (precise mask) is silently lost
+  // when an author refactors a literal arrow into a named function.
+  // Runtime stays correct (FULL_MASK fallback) — these tests guard the
+  // optimization, not correctness.
+
+  it('Pass 2 injects mask for text() with const-bound arrow ref', () => {
+    // Sibling inline arrow in the file seeds fieldBits with `count`.
+    const src = `
+      import { component, div, text } from '@llui/dom'
+      type State = { count: number; label: string }
+      const getLabel = (s: State) => s.label
+      export const C = component({
+        name: 'C',
+        init: () => [{ count: 0, label: '' }, []],
+        update: (s, _m) => [s, []],
+        view: () => [div([
+          text((s: State) => String(s.count)),
+          text(getLabel),
+        ])],
+      })
+    `
+    const out = t(src)
+    // text(getLabel) must end up with a numeric second arg — even if it's
+    // FULL_MASK (collectDeps doesn't visit module-scope const arrows, so
+    // `label` may not be in the bit table; the runtime falls back safely).
+    expect(out).toMatch(/text\(getLabel,\s*[\d|\s|0xff]+\)/)
+  })
+
+  it('Pass 2 injects __mask for show() driver when fieldBits already contains the path', () => {
+    // Sibling inline arrow ALSO reads `gated`, so `gated` is in fieldBits.
+    // The fn-decl-referenced `whenGated` then gets its precise mask injected.
+    const src = `
+      import { component, div, text } from '@llui/dom'
+      type State = { gated: boolean; label: string }
+      function whenGated(s: State): boolean { return s.gated }
+      export const C = component({
+        name: 'C',
+        init: () => [{ gated: true, label: '' }, []],
+        update: (s, _m) => [s, []],
+        view: ({ show }) => [div([
+          text((s: State) => s.label + (s.gated ? '!' : '')),
+          show({ when: whenGated, render: () => [text('x')] }),
+        ])],
+      })
+    `
+    const out = t(src)
+    // show() must end up with __mask injected — the driver's fn-decl body
+    // reads `gated`, which is already in fieldBits (the inline arrow reads
+    // it too).
+    expect(out).toMatch(/show\(\{[\s\S]*?__mask:\s*\d/)
+  })
+
+  // ── collect-deps follow: named-function bodies seed fieldBits.
+  // Without this, files where every accessor is a named ref produce
+  // empty fieldBits → mask injection resolves to FULL_MASK → runtime is
+  // correct but bitmask gating is a no-op. These tests guard the
+  // identifier-following extension to `collectStatePathsFromSource`.
+
+  it('collectDeps sees paths from a function declaration referenced as text() arg', () => {
+    const src = `
+      import { component, div, text } from '@llui/dom'
+      type State = { label: string }
+      function getLabel(s: State): string { return s.label }
+      export const C = component({
+        name: 'C',
+        init: () => [{ label: '' }, []],
+        update: (s, _m) => [s, []],
+        view: () => [div([text(getLabel)])],
+      })
+    `
+    const out = t(src)
+    // Precise mask: `label` got bit 1 because the fn-decl body was
+    // followed and its `s.label` read counted.
+    expect(out).toMatch(/text\(getLabel,\s*1\)/)
+    expect(out).toContain('__maskLegend')
+    expect(out).toMatch(/"label":\s*1/)
+  })
+
+  it('collectDeps sees paths from a function declaration referenced as element prop', () => {
+    const src = `
+      import { component, button } from '@llui/dom'
+      type State = { gated: boolean }
+      function isGated(s: State): boolean { return s.gated }
+      export const C = component({
+        name: 'C',
+        init: () => [{ gated: true }, []],
+        update: (s, _m) => [s, []],
+        view: () => [button({ disabled: isGated })],
+      })
+    `
+    const out = t(src)
+    // Precise mask in the binding tuple: `[1, "prop", "disabled", isGated]`
+    expect(out).toMatch(/\[1,\s*['"]prop['"],\s*['"]disabled['"],\s*isGated\]/)
+    expect(out).toMatch(/"gated":\s*1/)
+  })
+
+  it('collectDeps sees paths from a const-bound arrow referenced at a reactive position', () => {
+    // The const-bound arrow's parent is VariableDeclaration — the arrow
+    // walker alone wouldn't extract its paths, even though the identifier
+    // is used reactively.
+    const src = `
+      import { component, button } from '@llui/dom'
+      type State = { gated: boolean }
+      const isGated = (s: State): boolean => s.gated
+      export const C = component({
+        name: 'C',
+        init: () => [{ gated: true }, []],
+        update: (s, _m) => [s, []],
+        view: () => [button({ disabled: isGated })],
+      })
+    `
+    const out = t(src)
+    // Precise mask: `gated` got bit 1.
+    // Note: the existing inliner replaces the Identifier with the arrow,
+    // so the binding tuple value is the arrow itself, not the identifier.
+    expect(out).toMatch(/\[1,\s*['"]prop['"],\s*['"]disabled['"]/)
+    expect(out).toMatch(/"gated":\s*1/)
+  })
+
+  it('collectDeps sees paths from `const x = memo(arrow)` at a reactive position when used by identifier', () => {
+    const src = `
+      import { component, button } from '@llui/dom'
+      type State = { count: number; gated: boolean }
+      export const C = component({
+        name: 'C',
+        init: () => [{ count: 0, gated: true }, []],
+        update: (s, _m) => [s, []],
+        view: ({ memo }) => {
+          const isGatedMemo = memo((s: State) => s.gated)
+          return [button({ disabled: isGatedMemo })]
+        },
+      })
+    `
+    const out = t(src)
+    // The inner arrow inside memo() is already walked by the arrow visitor
+    // (its parent is the memo() call) — but THIS test confirms the
+    // identifier-at-reactive-position path also doesn't pollute the
+    // fieldBits with stray bits (e.g. it doesn't add `count`, only `gated`).
+    expect(out).toMatch(/\[1,\s*['"]prop['"],\s*['"]disabled['"],\s*isGatedMemo\]/)
+    expect(out).toMatch(/"gated":\s*1/)
+    expect(out).not.toMatch(/"count"/)
+  })
+
+  it('does not pollute fieldBits when an identifier resolves to a non-callable (sample/imported/etc.)', () => {
+    // Defensive: identifiers at reactive positions whose resolution
+    // doesn't produce a callable (or doesn't resolve at all) must not
+    // contribute paths.
+    const src = `
+      import { component, button, sample } from '@llui/dom'
+      import { externalGuard } from './guards'
+      type State = { count: number }
+      const sampled = sample((s: State) => s.count)
+      export const C = component({
+        name: 'C',
+        init: () => [{ count: 0 }, []],
+        update: (s, _m) => [s, []],
+        view: () => [
+          button({ disabled: externalGuard }, [text((s: State) => String(s.count))]),
+        ],
+      })
+    `
+    const out = t(src)
+    // Even though we can't resolve `externalGuard`, the inline `text`
+    // arrow's `count` path must still be extracted and bit-numbered.
+    expect(out).toMatch(/"count":\s*1/)
+  })
+})
+
 describe('Pass 2 — mask injection + __dirty', () => {
   it('injects mask into text() calls', () => {
     const src = `

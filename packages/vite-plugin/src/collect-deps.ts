@@ -1,36 +1,64 @@
 import ts from 'typescript'
+import { resolveAccessorBody } from './accessor-resolver.js'
+
+/**
+ * Extract paths from a callable accessor (arrow / fn-expr / fn-decl)
+ * into the given set. Returns true if anything was extracted.
+ *
+ * Shared by `collectStatePathsFromSource` and `collectAccessorPathSets` —
+ * both need identical extraction semantics for the inline-arrow path AND
+ * for the resolved-from-identifier path.
+ */
+function extractAccessorPaths(
+  accessor: ts.ArrowFunction | ts.FunctionExpression | ts.FunctionDeclaration,
+  paths: Set<string>,
+): boolean {
+  const params = accessor.parameters
+  if (params.length !== 1) return false
+  const paramName = params[0]!.name
+  if (!ts.isIdentifier(paramName)) return false
+  if (!accessor.body) return false
+  const before = paths.size
+  extractPaths(accessor.body, paramName.text, '', paths)
+  return paths.size > before
+}
 
 /**
  * Walk the AST and collect every unique state access path referenced by
- * a reactive accessor. A reactive accessor is an arrow/function whose
- * placement passes `isReactiveAccessor` — text()/memo() first args,
- * element-helper prop values, and allowlisted framework-API prop values.
- * Paths are rooted at the accessor's single parameter name.
+ * a reactive accessor. A reactive accessor is one of:
+ *
+ *   - An inline arrow / function expression at a reactive position
+ *     (`text(s => s.count)`, `div({ title: s => s.title })`,
+ *     `show({ when: s => s.gated })`, etc.).
+ *   - An Identifier at a reactive position that resolves to a callable
+ *     in this file — a const-bound arrow / function expression,
+ *     a hoisted function declaration, or `const x = memo(arrow)`.
+ *
+ * The second case lets authors refactor a literal arrow into a named
+ * helper without losing the reactive-mask optimization (a precise mask
+ * for `__dirty` and structural-primitive `__mask`). Without it, the
+ * runtime falls back to FULL_MASK — correct, but every binding fires
+ * on every state change.
  *
  * Shared by the bit-assignment path (`collectDeps`, below) and the
- * `diagnostics.ts` bitmask-overflow warning. Extracted so both consumers
- * see the same truth — previously the diagnostics side had its own naïve
- * walker that produced false positives for `each({ key })`, `item(...)`,
- * array-method callbacks, and user-land helpers.
+ * `diagnostics.ts` bitmask-overflow warning.
  */
 export function collectStatePathsFromSource(sourceFile: ts.SourceFile): Set<string> {
   const paths = new Set<string>()
 
   function visit(node: ts.Node): void {
-    // Look for arrow functions that are reactive accessors:
-    // - First arg to text(): text(s => s.count)
-    // - Prop values in element helper calls: div({ title: s => s.title })
+    // Inline arrow / function expression at a reactive position.
     if (ts.isArrowFunction(node) || ts.isFunctionExpression(node)) {
-      const params = node.parameters
-      if (params.length === 1) {
-        const paramName = params[0]!.name
-        if (ts.isIdentifier(paramName)) {
-          // Check if this looks like a reactive accessor (not an event handler)
-          if (isReactiveAccessor(node)) {
-            extractPaths(node.body, paramName.text, '', paths)
-          }
-        }
-      }
+      if (isReactiveAccessor(node)) extractAccessorPaths(node, paths)
+    }
+
+    // Identifier at a reactive position — resolve to its declaration
+    // and extract paths from the resolved body. Skip identifiers
+    // imported from elsewhere (resolver returns null) — there's no
+    // body to scan, runtime falls back to FULL_MASK.
+    if (ts.isIdentifier(node) && isReactiveAccessor(node)) {
+      const resolved = resolveAccessorBody(node)
+      if (resolved) extractAccessorPaths(resolved, paths)
     }
 
     ts.forEachChild(node, visit)
@@ -50,16 +78,20 @@ export function collectAccessorPathSets(sourceFile: ts.SourceFile): Set<string>[
 
   function visit(node: ts.Node): void {
     if (ts.isArrowFunction(node) || ts.isFunctionExpression(node)) {
-      const params = node.parameters
-      if (params.length === 1) {
-        const paramName = params[0]!.name
-        if (ts.isIdentifier(paramName) && isReactiveAccessor(node)) {
-          const set = new Set<string>()
-          extractPaths(node.body, paramName.text, '', set)
-          if (set.size > 0) sets.push(set)
-        }
+      if (isReactiveAccessor(node)) {
+        const set = new Set<string>()
+        if (extractAccessorPaths(node, set)) sets.push(set)
       }
     }
+
+    if (ts.isIdentifier(node) && isReactiveAccessor(node)) {
+      const resolved = resolveAccessorBody(node)
+      if (resolved) {
+        const set = new Set<string>()
+        if (extractAccessorPaths(resolved, set)) sets.push(set)
+      }
+    }
+
     ts.forEachChild(node, visit)
   }
 
@@ -116,10 +148,12 @@ function hasLluiImport(sourceFile: ts.SourceFile): boolean {
 }
 
 /**
- * Determines if an arrow/function expression is a reactive accessor
- * (not an event handler, not a callback like onClick).
+ * Determines if a node is at a reactive-accessor position — either an
+ * inline arrow / function expression OR an identifier that's about to
+ * be resolved to one. The check is identity-based on `parent.arguments[0]`
+ * etc., so the same logic works for both shapes.
  */
-function isReactiveAccessor(node: ts.ArrowFunction | ts.FunctionExpression): boolean {
+function isReactiveAccessor(node: ts.Node): boolean {
   const parent = node.parent
 
   // text(s => s.count) — first arg to a call

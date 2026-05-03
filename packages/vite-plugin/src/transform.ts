@@ -1,6 +1,11 @@
 import ts from 'typescript'
 import { collectDeps } from './collect-deps.js'
 import {
+  resolveLocalConstInitializer,
+  resolveAccessorBody,
+  isMemoCallWithArrowArg,
+} from './accessor-resolver.js'
+import {
   extractMsgSchema,
   extractEffectSchema,
   isRichField,
@@ -110,59 +115,111 @@ const PROP_KEYS = new Set([
 type BindingKind = 'text' | 'prop' | 'attr' | 'class' | 'style'
 
 /**
- * Walk from `use` outward toward the source file root, looking for a
- * `const <name> = <initializer>` (or `let`/`var`) declaration that binds
- * this identifier in an enclosing scope. Returns the initializer if found.
+ * A `value` at a reactive-prop position — classified for the compiler.
  *
- * This enables reactive-binding detection for hoisted accessors:
+ * Element-helper props (`{ disabled: X, class: X, title: X, ... }`) and the
+ * driver accessor of structural primitives (`each.items`, `branch.on`,
+ * `show.when`) accept any callable that takes the state and returns a
+ * value. The compiler must distinguish recognized shapes from values it
+ * can't safely classify (imports, parameters, opaque expressions) — the
+ * latter must bail to the runtime helper, never to a static assignment.
  *
- *   const cls = (s: State) => isActive(item, s.path) ? 'on' : 'off'
- *   return a({ class: cls }, ...)
- *
- * Without resolution, `class: cls` would fall through the static path
- * and emit `__e.className = cls`, coercing the function to its source
- * string. With resolution, we see that `cls` is an arrow and emit a
- * binding exactly as if the arrow had been inlined.
- *
- * Lifetime rules:
- *   - Only single-binding `const`/`let`/`var` declarations with an
- *     initializer are considered. No destructuring, no multi-declarator
- *     statements (too easy to get wrong without a type checker).
- *   - Later reassignments are NOT tracked — if the identifier is `let`
- *     and gets reassigned, the resolution is unreliable. We conservatively
- *     refuse to resolve `let` bindings for now (arrow-valued accessors
- *     are ~always `const` in practice).
- *   - The declaration must dominate the use (same block or an enclosing
- *     one). TypeScript's block semantics mean walking up parent blocks
- *     is sufficient.
+ * Bailing is load-bearing: emitting `__e.disabled = identifier` statically
+ * when the runtime value happens to be a function silently binds the
+ * function ref to the boolean DOM property and never re-runs.
  */
-function resolveLocalConstInitializer(use: ts.Identifier): ts.Expression | null {
-  const name = use.text
-  let node: ts.Node = use
-  while (node.parent) {
-    const parent = node.parent
-    // Scan statements of an enclosing block/source-file for a matching declaration
-    let statements: readonly ts.Statement[] | null = null
-    if (ts.isBlock(parent) || ts.isSourceFile(parent) || ts.isModuleBlock(parent)) {
-      statements = parent.statements
-    } else if (ts.isCaseClause(parent) || ts.isDefaultClause(parent)) {
-      statements = parent.statements
+type ResolvedReactiveBinding =
+  | {
+      kind: 'arrow'
+      accessor: ts.ArrowFunction | ts.FunctionExpression
+      valueForBinding: ts.Expression
     }
-    if (statements) {
-      for (const stmt of statements) {
-        if (!ts.isVariableStatement(stmt)) continue
-        // Skip `let` — reassignment would invalidate our resolution
-        const flags = stmt.declarationList.flags
-        if (!(flags & ts.NodeFlags.Const)) continue
-        if (stmt.declarationList.declarations.length !== 1) continue
-        const decl = stmt.declarationList.declarations[0]!
-        if (!ts.isIdentifier(decl.name) || decl.name.text !== name) continue
-        if (!decl.initializer) continue
-        return decl.initializer
+  | {
+      kind: 'fn-decl'
+      accessor: ts.FunctionDeclaration
+      valueForBinding: ts.Expression
+    }
+  | {
+      kind: 'memo-call'
+      accessor: ts.ArrowFunction | ts.FunctionExpression
+      valueForBinding: ts.Expression
+    }
+
+type ResolvedReactiveValue =
+  | ResolvedReactiveBinding
+  | { kind: 'static-literal' }
+  | { kind: 'bail' }
+  | null
+
+function isStaticPrimitiveLiteral(expr: ts.Expression): boolean {
+  return (
+    ts.isStringLiteral(expr) ||
+    ts.isNumericLiteral(expr) ||
+    ts.isNoSubstitutionTemplateLiteral(expr) ||
+    expr.kind === ts.SyntaxKind.TrueKeyword ||
+    expr.kind === ts.SyntaxKind.FalseKeyword ||
+    expr.kind === ts.SyntaxKind.NullKeyword
+  )
+}
+
+/**
+ * Classify a reactive-prop value. See `ResolvedReactiveValue` for the
+ * contract. Returns `null` only when the value is none of the recognized
+ * shapes (caller can fall back to its own branches — currently only
+ * `tryTransformElementCall` does this for `isPerItemFieldAccess` /
+ * `isHoistedPerItem`).
+ */
+function classifyReactiveValue(value: ts.Expression): ResolvedReactiveValue {
+  // Inline arrow / function expression at the call site
+  if (ts.isArrowFunction(value) || ts.isFunctionExpression(value)) {
+    return { kind: 'arrow', accessor: value, valueForBinding: value }
+  }
+
+  // Inline `memo(arrow)` at the call site
+  if (isMemoCallWithArrowArg(value)) {
+    return {
+      kind: 'memo-call',
+      accessor: value.arguments[0] as ts.ArrowFunction | ts.FunctionExpression,
+      valueForBinding: value,
+    }
+  }
+
+  // Identifier — resolve and classify the resolved declaration
+  if (ts.isIdentifier(value)) {
+    const resolved = resolveLocalConstInitializer(value)
+    if (!resolved) {
+      // Imported / parameter / unbound — can't prove it's a primitive,
+      // can't prove it's a function. Caller must bail to runtime.
+      return { kind: 'bail' }
+    }
+    if (ts.isArrowFunction(resolved) || ts.isFunctionExpression(resolved)) {
+      return { kind: 'arrow', accessor: resolved, valueForBinding: value }
+    }
+    if (ts.isFunctionDeclaration(resolved)) {
+      return { kind: 'fn-decl', accessor: resolved, valueForBinding: value }
+    }
+    if (isMemoCallWithArrowArg(resolved)) {
+      return {
+        kind: 'memo-call',
+        accessor: resolved.arguments[0] as ts.ArrowFunction | ts.FunctionExpression,
+        valueForBinding: value,
       }
     }
-    node = parent
+    if (isStaticPrimitiveLiteral(resolved)) {
+      return { kind: 'static-literal' }
+    }
+    // Resolved to something else (object/array/expression) — conservative
+    // bail. We don't know if the runtime value is a function; the runtime
+    // element helper handles both cases correctly.
+    return { kind: 'bail' }
   }
+
+  // Static literals at the call site
+  if (isStaticPrimitiveLiteral(value)) {
+    return { kind: 'static-literal' }
+  }
+
+  // CallExpression — caller decides (per-item, etc.)
   return null
 }
 
@@ -1061,70 +1118,10 @@ function tryTransformElementCall(
         continue
       }
 
-      // If the value is an Identifier that refers to a local const-bound
-      // arrow/function, resolve it and treat it as if the arrow had been
-      // inlined. Without this, `class: cls` where `const cls = (s) => ...`
-      // falls through to the static path and emits `.className = cls`,
-      // coercing the function to its source string in the DOM.
-      if (ts.isIdentifier(value)) {
-        const resolved = resolveLocalConstInitializer(value)
-        if (resolved && (ts.isArrowFunction(resolved) || ts.isFunctionExpression(resolved))) {
-          value = resolved
-        }
-      }
-
-      // Reactive binding — value is an arrow function or function expression
-      if (ts.isArrowFunction(value) || ts.isFunctionExpression(value)) {
-        const kind = classifyKind(key)
-        const resolvedKey = resolveKey(key, kind)
-        const { mask, readsState } = computeAccessorMask(value, fieldBits)
-
-        // Zero-mask constant folding: accessor doesn't read state → treat as static
-        if (mask === 0 && !readsState) {
-          emitStaticProp(
-            staticProps,
-            f,
-            kind,
-            resolvedKey,
-            f.createCallExpression(value, undefined, []),
-          )
-          continue
-        }
-
-        bindings.push(
-          f.createArrayLiteralExpression([
-            createMaskLiteral(f, mask),
-            f.createStringLiteral(kind),
-            f.createStringLiteral(resolvedKey),
-            value,
-          ]),
-        )
-        continue
-      }
-
-      // Call expression — check if it's a per-item accessor: item(t => t.field)
-      if (ts.isCallExpression(value)) {
-        if (isPerItemCall(value)) {
-          // Emit as a binding with FULL_MASK — the accessor is the item() call itself
-          const kind = classifyKind(key)
-          const resolvedKey = resolveKey(key, kind)
-          bindings.push(
-            f.createArrayLiteralExpression([
-              createMaskLiteral(f, 0xffffffff | 0),
-              f.createStringLiteral(kind),
-              f.createStringLiteral(resolvedKey),
-              value,
-            ]),
-          )
-          continue
-        }
-        // Unknown call expression — bail out
-        bailed.add(localName)
-        return null
-      }
-
-      // Per-item property access: item.field — equivalent to item(t => t.field)
-      // Also matches hoisted __a0/__a1/… identifiers produced by dedup pass.
+      // Per-item shapes — handled before the general classifier because
+      // they appear inside `each().render` callbacks where `item` is a
+      // closed-over per-row accessor (zero-arg). The resolver above can't
+      // see them; they're shape-matched syntactically.
       if (isPerItemFieldAccess(value) || isHoistedPerItem(value)) {
         const kind = classifyKind(key)
         const resolvedKey = resolveKey(key, kind)
@@ -1138,11 +1135,92 @@ function tryTransformElementCall(
         )
         continue
       }
+      if (ts.isCallExpression(value) && isPerItemCall(value)) {
+        const kind = classifyKind(key)
+        const resolvedKey = resolveKey(key, kind)
+        bindings.push(
+          f.createArrayLiteralExpression([
+            createMaskLiteral(f, 0xffffffff | 0),
+            f.createStringLiteral(kind),
+            f.createStringLiteral(resolvedKey),
+            value,
+          ]),
+        )
+        continue
+      }
 
-      // Static prop
-      const kind = classifyKind(key)
-      const resolvedKey = resolveKey(key, kind)
-      emitStaticProp(staticProps, f, kind, resolvedKey, value)
+      // Classify the value at a reactive-prop position:
+      //   - inline arrow / fn-expr at the call site
+      //   - inline `memo(arrow)` at the call site
+      //   - Identifier referencing a const-bound arrow/fn-expr in scope
+      //   - Identifier referencing a hoisted function declaration in scope
+      //   - Identifier referencing `const x = memo(arrow)` in scope
+      //   - Identifier referencing a static primitive literal
+      //   - Anything else (imports, parameters, opaque expressions) — bail
+      //     to runtime; the runtime helper handles `typeof v === 'function'`
+      //     correctly for both function and primitive values.
+      const classified = classifyReactiveValue(value)
+      if (classified === null) {
+        // Unknown shape (a CallExpression that isn't memo/per-item, etc.)
+        // — historically bailed to runtime. Preserve that.
+        bailed.add(localName)
+        return null
+      }
+      if (classified.kind === 'bail') {
+        bailed.add(localName)
+        return null
+      }
+      if (classified.kind === 'static-literal') {
+        // Fall through to emitStaticProp (`__e.disabled = X`). Safe because
+        // we proved X is a primitive.
+        const kind = classifyKind(key)
+        const resolvedKey = resolveKey(key, kind)
+        emitStaticProp(staticProps, f, kind, resolvedKey, value)
+        continue
+      }
+      // 'arrow' | 'fn-decl' | 'memo-call' — emit as a binding tuple. Mask is
+      // analyzed from the resolved accessor body (or the inner arrow inside
+      // a memo() call); the value emitted into the binding tuple is what the
+      // runtime calls as `accessor(state)` — for inline arrows we keep the
+      // arrow itself (preserves the historical inlining behavior), for
+      // identifier-bound forms we keep the identifier so consumers see
+      // a single canonical reference (and `memo()` proxies aren't rebuilt
+      // per render).
+      {
+        const kind = classifyKind(key)
+        const resolvedKey = resolveKey(key, kind)
+        const { mask, readsState } = computeAccessorMask(classified.accessor, fieldBits)
+
+        // Zero-mask constant folding only applies to inline arrows whose body
+        // we can safely call at compile time. For identifier-bound forms
+        // (`accessor !== value`) we skip the fold — calling the identifier's
+        // declaration at compile time would be unsafe (different scope) and
+        // calling the identifier in the emitted output would defeat the point.
+        if (
+          classified.kind === 'arrow' &&
+          classified.accessor === value &&
+          mask === 0 &&
+          !readsState
+        ) {
+          emitStaticProp(
+            staticProps,
+            f,
+            kind,
+            resolvedKey,
+            f.createCallExpression(classified.accessor, undefined, []),
+          )
+          continue
+        }
+
+        bindings.push(
+          f.createArrayLiteralExpression([
+            createMaskLiteral(f, mask === 0 && readsState ? 0xffffffff | 0 : mask),
+            f.createStringLiteral(kind),
+            f.createStringLiteral(resolvedKey),
+            classified.valueForBinding,
+          ]),
+        )
+      }
     }
   }
 
@@ -1262,12 +1340,17 @@ function tryInjectTextMask(
 
   const firstArg = node.arguments[0]
   if (!firstArg) return null
-  // Only inject mask for accessor functions, not static strings
-  if (!ts.isArrowFunction(firstArg) && !ts.isFunctionExpression(firstArg)) return null
   // Don't inject if mask already provided
   if (node.arguments.length >= 2) return null
+  // Resolve the accessor body — accepts inline arrows, `memo(arrow)`, or
+  // identifier references to a const-bound arrow / `memo(...)` / function
+  // declaration in scope. Anything else (static strings, opaque imports,
+  // parameters) leaves the call as-is — the runtime falls back to
+  // FULL_MASK, which is correct but slower.
+  const accessor = resolveAccessorBody(firstArg)
+  if (!accessor) return null
 
-  const { mask } = computeAccessorMask(firstArg, fieldBits)
+  const { mask } = computeAccessorMask(accessor, fieldBits)
 
   return f.createCallExpression(node.expression, node.typeArguments, [
     firstArg,
@@ -1316,16 +1399,19 @@ function tryInjectStructuralMask(
   // Find the driving accessor property: items / on / when
   //   each → 'items', branch/scope → 'on', show → 'when'
   const driverProp = isEach ? 'items' : isBranch || isScope ? 'on' : 'when'
-  let driverAccessor: ts.ArrowFunction | ts.FunctionExpression | null = null
+  let driverAccessor: ts.ArrowFunction | ts.FunctionExpression | ts.FunctionDeclaration | null =
+    null
   for (const prop of optsArg.properties) {
     if (
       ts.isPropertyAssignment(prop) &&
       ts.isIdentifier(prop.name) &&
       prop.name.text === driverProp
     ) {
-      if (ts.isArrowFunction(prop.initializer) || ts.isFunctionExpression(prop.initializer)) {
-        driverAccessor = prop.initializer
-      }
+      // Same shape contract as `text()`'s first arg: inline arrow, inline
+      // `memo(arrow)`, or identifier referencing a const-bound arrow /
+      // memo / function declaration. Anything else leaves the call
+      // unchanged — runtime falls back to FULL_MASK.
+      driverAccessor = resolveAccessorBody(prop.initializer)
       break
     }
   }
@@ -4893,13 +4979,18 @@ function isHoistedPerItem(node: ts.Node): node is ts.Identifier {
 // mask = 0 + readsState = true → unresolvable state access (FULL_MASK)
 // mask > 0 → precise mask
 function computeAccessorMask(
-  accessor: ts.ArrowFunction | ts.FunctionExpression,
+  accessor: ts.ArrowFunction | ts.FunctionExpression | ts.FunctionDeclaration,
   fieldBits: Map<string, number>,
 ): { mask: number; readsState: boolean } {
   if (accessor.parameters.length === 0) return { mask: 0xffffffff | 0, readsState: false }
 
   const paramName = accessor.parameters[0]!.name
   if (!ts.isIdentifier(paramName)) return { mask: 0xffffffff | 0, readsState: false }
+
+  // FunctionDeclaration always has a body (we never resolve overloads here);
+  // ArrowFunction's body may be a single expression. Both shapes are walked
+  // identically by ts.forEachChild, so no special-casing is needed below.
+  if (!accessor.body) return { mask: 0xffffffff | 0, readsState: false }
 
   const stateParam = paramName.text
   let mask = 0
