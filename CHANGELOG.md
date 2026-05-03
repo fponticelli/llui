@@ -11,6 +11,17 @@ All notable changes to LLui packages are documented here. LLui is a pre-1.0 proj
 
 Packages version in lockstep at release time: `@llui/dom`, `@llui/vite-plugin`, `@llui/test`, `@llui/router`, `@llui/transitions`, `@llui/components`, `@llui/vike` share a version line. `@llui/effects`, `@llui/mcp`, `@llui/eslint-plugin`, `@llui/agent`, and `llui-agent` have their own cadence.
 
+## 2026-05-03 — @llui/vite-plugin@0.0.42
+
+**Released:** `@llui/vite-plugin@0.0.42`
+
+Follow-up to 0.0.41 — the deeper `collect-deps` walk that follows named identifier references at reactive positions stopped at the first call to another local helper, so accessors of the shape `(s) => helper(s)` extracted only the outer body's reads and missed everything `helper` read transitively. The result was a precise mask that *under-counted*: a sibling reactive accessor reading only the helper-internal fields could drive a non-zero `dirty` that AND'd with the narrow `each.__mask` was zero, silently skipping the reconcile. This release recurses through helper delegations.
+
+### `@llui/vite-plugin@0.0.42`
+
+- **Fixed** `collect-deps.ts` `extractAccessorPaths` and `transform.ts` `computeAccessorMask` now recurse through `helper(s)` delegation calls — when an accessor body calls another local function and passes the state param verbatim (`helper(s)` where `s` matches our state param name), the helper is resolved via `accessor-resolver.ts` and its body is walked too. A visited-set breaks cycles on mutually-recursive helpers. Both walkers gate the recursion behind: top-level only (don't descend into nested function bodies whose params shadow ours), skip framework helpers (`memo` / `text` / `unsafeHtml` / `sample` / `item`), and only follow when arg0 is the state param verbatim — never `helper(s.foo)` or `helper(otherVar)`.
+- **Fixed** `computeAccessorMask`'s chain-prefix matcher now handles "we read deeper than fieldBits tracks" symmetrically. A chain like `'items.filter'` from `s.items.filter(...)` now masks in the `'items'` bit when fieldBits has `'items'` (depth 1), so calling builtin array methods on a tracked path correctly contributes to the per-element mask.
+
 ## 2026-05-03 — @llui/vite-plugin@0.0.41, @llui/eslint-plugin@0.0.23, @llui/mcp@0.0.33
 
 **Released:** `@llui/vite-plugin@0.0.41`; `@llui/eslint-plugin@0.0.23`; `@llui/mcp@0.0.33`
