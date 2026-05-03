@@ -2,24 +2,104 @@ import ts from 'typescript'
 import { resolveAccessorBody } from './accessor-resolver.js'
 
 /**
- * Extract paths from a callable accessor (arrow / fn-expr / fn-decl)
- * into the given set. Returns true if anything was extracted.
+ * Names whose first arg is itself a reactive accessor (the existing
+ * arrow walker handles them) or which are explicitly excluded
+ * (sample/item read state imperatively / per-row, not as state
+ * accessors). When a delegating accessor's body contains a call to one
+ * of these, we don't follow it — recursion is reserved for "this is
+ * just a thin wrapper that hands the state to another local helper."
+ */
+const NON_DELEGATION_HELPERS = new Set(['sample', 'item', 'memo', 'text', 'unsafeHtml'])
+
+/**
+ * Walk a delegating accessor's body looking for calls to OTHER local
+ * functions that take the state param verbatim — `helper(s)` where
+ * `s` matches the outer accessor's param name. For each, hand the
+ * resolved declaration back so the caller can recurse into its body.
  *
- * Shared by `collectStatePathsFromSource` and `collectAccessorPathSets` —
- * both need identical extraction semantics for the inline-arrow path AND
- * for the resolved-from-identifier path.
+ * Skips:
+ *   - Framework helpers (`memo`, `text`, etc.) — their arrow args are
+ *     visited by the top-level arrow walker; we'd double-count.
+ *   - Method calls (`s.items.filter(...)`) — the callee is a builtin,
+ *     not a local function we can resolve.
+ *   - Nested function bodies — params inside a `(item) => …` shadow
+ *     ours, so a `helper(s)` deep in there isn't (necessarily)
+ *     handing OUR state in. Conservative: don't recurse through
+ *     lambda boundaries.
+ */
+function visitTopLevelDelegations(
+  body: ts.Node,
+  stateParamName: string,
+  follow: (resolved: ts.ArrowFunction | ts.FunctionExpression | ts.FunctionDeclaration) => void,
+): void {
+  function visit(node: ts.Node): void {
+    if (ts.isCallExpression(node) && ts.isIdentifier(node.expression)) {
+      const name = node.expression.text
+      if (!NON_DELEGATION_HELPERS.has(name)) {
+        const arg0 = node.arguments[0]
+        if (arg0 && ts.isIdentifier(arg0) && arg0.text === stateParamName) {
+          const resolved = resolveAccessorBody(node.expression)
+          if (resolved) follow(resolved)
+        }
+      }
+    }
+    // Don't descend into nested function bodies — their params shadow
+    // ours, and any call inside them isn't unambiguously delegating
+    // our state.
+    if (
+      ts.isArrowFunction(node) ||
+      ts.isFunctionExpression(node) ||
+      ts.isFunctionDeclaration(node)
+    ) {
+      return
+    }
+    ts.forEachChild(node, visit)
+  }
+  // If the body itself is a function, there's nothing at the top
+  // level to inspect — its own body is a separate scope.
+  if (ts.isArrowFunction(body) || ts.isFunctionExpression(body) || ts.isFunctionDeclaration(body)) {
+    return
+  }
+  visit(body)
+}
+
+/**
+ * Extract paths from a callable accessor (arrow / fn-expr / fn-decl)
+ * into the given set. Recurses through call-delegations to other local
+ * helpers so that `(s) => filtered(s)` / `(s) => { void s.x; return
+ * inner(s) }` correctly contribute the helper's state-path reads.
+ * Without recursion the precise mask under-counts — fields read only
+ * via the helper drop off the bitmask, and any sibling reactive
+ * accessor that reads them produces a non-zero `dirty` that AND'd with
+ * the narrow each.__mask is zero, silently skipping the reconcile.
+ *
+ * `visited` breaks cycles on mutually-recursive helpers — terminates
+ * the walk; doesn't try to be precise about what such helpers read.
  */
 function extractAccessorPaths(
   accessor: ts.ArrowFunction | ts.FunctionExpression | ts.FunctionDeclaration,
   paths: Set<string>,
+  visited: Set<ts.Node> = new Set(),
 ): boolean {
+  if (visited.has(accessor)) return false
+  visited.add(accessor)
+
   const params = accessor.parameters
   if (params.length !== 1) return false
   const paramName = params[0]!.name
   if (!ts.isIdentifier(paramName)) return false
   if (!accessor.body) return false
   const before = paths.size
+
   extractPaths(accessor.body, paramName.text, '', paths)
+
+  // Follow delegations: `(s) => helper(s)` — extract `helper`'s body's
+  // state paths too. Reuses the `visited` set across the recursion
+  // chain so cycles terminate.
+  visitTopLevelDelegations(accessor.body, paramName.text, (resolved) => {
+    extractAccessorPaths(resolved, paths, visited)
+  })
+
   return paths.size > before
 }
 

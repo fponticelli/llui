@@ -147,3 +147,80 @@ describe('runtime — structural primitives accept function-shaped values', () =
     expect(container.querySelectorAll('.item').length).toBe(2)
   })
 })
+
+// ---------------------------------------------------------------------------
+// Delegating-accessor regression: at the runtime level, the framework's
+// FULL_MASK fallback rescues bindings that the compiler couldn't analyze.
+// This test mounts an app whose accessor delegates to a helper and confirms
+// the each block reconciles regardless of which transitively-read field
+// changes. The compile-time mask precision is tested in the vite-plugin
+// transform suite; this test is the safety net.
+
+import { ul as ulEl, li as liEl } from '../src/index'
+
+describe('runtime — delegating accessor reconciles correctly', () => {
+  type State = { items: string[]; filter: string }
+  type Msg = { type: 'set-filter'; value: string }
+
+  function makeApp() {
+    const innerFilter = (s: State): string[] => s.items.filter((i) => i.startsWith(s.filter))
+    const visibleItems = (s: State): string[] => innerFilter(s)
+    return component<State, Msg, never>({
+      name: 'App',
+      init: () => [{ items: ['alpha', 'beta', 'apple'], filter: '' }, []],
+      update: (s, m) => {
+        if (m.type === 'set-filter') return [{ ...s, filter: m.value }, []]
+        return [s, []]
+      },
+      view: () => [
+        ulEl([
+          each<State, string, Msg>({
+            items: visibleItems,
+            key: (item) => item,
+            render: () => [liEl({ class: 'row' })],
+          }),
+        ]),
+      ],
+    })
+  }
+
+  it('each block reconciles when only `filter` flips (a field read only inside the delegated helper)', () => {
+    const container = document.createElement('div')
+    const handle = mountApp(container, makeApp())
+    expect(container.querySelectorAll('.row').length).toBe(3) // alpha, beta, apple
+
+    handle.send({ type: 'set-filter', value: 'a' })
+    handle.flush()
+    // alpha + apple start with 'a'; beta does not.
+    expect(container.querySelectorAll('.row').length).toBe(2)
+  })
+
+  // Control: same shape but with an INLINE items arrow and no per-row text.
+  // If THIS passes and the delegated test fails, the bug is in delegation
+  // handling. If both fail, it's a test-wiring issue.
+  it('control: each block reconciles with inline items arrow', () => {
+    const inlineApp = component<State, Msg, never>({
+      name: 'App',
+      init: () => [{ items: ['alpha', 'beta', 'apple'], filter: '' }, []],
+      update: (s, m) => {
+        if (m.type === 'set-filter') return [{ ...s, filter: m.value }, []]
+        return [s, []]
+      },
+      view: () => [
+        ulEl([
+          each<State, string, Msg>({
+            items: (s) => s.items.filter((i) => i.startsWith(s.filter)),
+            key: (item) => item,
+            render: () => [liEl({ class: 'row' })],
+          }),
+        ]),
+      ],
+    })
+    const container = document.createElement('div')
+    const handle = mountApp(container, inlineApp)
+    expect(container.querySelectorAll('.row').length).toBe(3)
+    handle.send({ type: 'set-filter', value: 'a' })
+    handle.flush()
+    expect(container.querySelectorAll('.row').length).toBe(2)
+  })
+})

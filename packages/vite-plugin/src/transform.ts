@@ -4978,10 +4978,18 @@ function isHoistedPerItem(node: ts.Node): node is ts.Identifier {
 // mask = 0 + readsState = false → constant (can fold to static)
 // mask = 0 + readsState = true → unresolvable state access (FULL_MASK)
 // mask > 0 → precise mask
+// See `NON_DELEGATION_HELPERS` in collect-deps.ts — same set of names
+// that aren't followed when scanning for `helper(s)` delegation calls.
+const NON_DELEGATION_HELPERS = new Set(['sample', 'item', 'memo', 'text', 'unsafeHtml'])
+
 function computeAccessorMask(
   accessor: ts.ArrowFunction | ts.FunctionExpression | ts.FunctionDeclaration,
   fieldBits: Map<string, number>,
+  visited: Set<ts.Node> = new Set(),
 ): { mask: number; readsState: boolean } {
+  if (visited.has(accessor)) return { mask: 0, readsState: false }
+  visited.add(accessor)
+
   if (accessor.parameters.length === 0) return { mask: 0xffffffff | 0, readsState: false }
 
   const paramName = accessor.parameters[0]!.name
@@ -4996,7 +5004,11 @@ function computeAccessorMask(
   let mask = 0
   let readsState = false
 
-  function walk(node: ts.Node): void {
+  // `inNestedFn` gates only the delegation-recursion. Property-access
+  // path extraction happens everywhere — inner-arrow callbacks like
+  // `s.items.filter((i) => i.includes(s.filter))` close over our
+  // state, and their `s.filter` reads contribute to the mask.
+  function walk(node: ts.Node, inNestedFn: boolean): void {
     // `node.parent` can be undefined for synthetic nodes produced by
     // earlier AST-transform passes (the row-factory rewrite and the
     // per-item heuristic both build new sub-trees whose inner nodes
@@ -5023,8 +5035,17 @@ function computeAccessorMask(
           if (bit !== undefined) {
             mask |= bit
           } else {
+            // Match paths that overlap our chain in either direction:
+            //   - `path` extends `chain` — fieldBits has finer-grained paths
+            //     than we're reading (e.g. chain='user', fieldBits has
+            //     'user.email').
+            //   - `chain` extends `path` — we're reading deeper than what
+            //     fieldBits tracks (e.g. chain='items.filter' from
+            //     `s.items.filter(...)`, fieldBits has 'items'). Both ends
+            //     must mask in: a change to `items` invalidates anything
+            //     downstream of it.
             for (const [path, b] of fieldBits) {
-              if (path.startsWith(chain + '.') || path === chain) {
+              if (path === chain || path.startsWith(chain + '.') || chain.startsWith(path + '.')) {
                 mask |= b
               }
             }
@@ -5032,10 +5053,31 @@ function computeAccessorMask(
         }
       }
     }
-    ts.forEachChild(node, walk)
+    // Delegation: `helper(s)` where `s` matches our state param.
+    // Recurse into the helper's body so its state-path reads
+    // contribute to our mask. Only at top level — inside a nested
+    // function body, `s` may be shadowed and the call isn't
+    // unambiguously handing our state in.
+    if (!inNestedFn && ts.isCallExpression(node) && ts.isIdentifier(node.expression)) {
+      const calleeName = node.expression.text
+      if (!NON_DELEGATION_HELPERS.has(calleeName)) {
+        const arg0 = node.arguments[0]
+        if (arg0 && ts.isIdentifier(arg0) && arg0.text === stateParam) {
+          const resolved = resolveAccessorBody(node.expression)
+          if (resolved) {
+            const inner = computeAccessorMask(resolved, fieldBits, visited)
+            mask |= inner.mask
+            if (inner.readsState) readsState = true
+          }
+        }
+      }
+    }
+    const enteringNested =
+      ts.isArrowFunction(node) || ts.isFunctionExpression(node) || ts.isFunctionDeclaration(node)
+    ts.forEachChild(node, (child) => walk(child, inNestedFn || enteringNested))
   }
 
-  walk(accessor.body)
+  walk(accessor.body, false)
 
   if (mask === 0 && readsState) {
     return { mask: 0xffffffff | 0, readsState: true }

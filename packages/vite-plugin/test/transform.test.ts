@@ -412,6 +412,172 @@ describe('reactive prop value resolution — non-arrow Identifier/CallExpression
     // arrow's `count` path must still be extracted and bit-numbered.
     expect(out).toMatch(/"count":\s*1/)
   })
+
+  // ── Delegating accessor regression: a resolved accessor whose body
+  // delegates to ANOTHER local helper must contribute the helper's
+  // state-path reads to fieldBits — otherwise the precise mask
+  // under-counts and a sibling reactive accessor that reads only the
+  // missing fields drives a non-zero `dirty` that AND'd with the
+  // narrow each.__mask is zero, silently skipping the reconcile.
+
+  it('follows local-helper CallExpression to extract the helper body’s state paths', () => {
+    // The dicerun2 pattern. `visibleItems` reads `rev` directly and
+    // delegates to `innerFilter` for `items` and `filter`. Sibling
+    // text() accessors read `filter` (and `rev`) directly, so a state
+    // change to `filter` produces dirty=bit-for-filter. Without the
+    // recursive walk, each.__mask only contains bit-for-rev and the
+    // each block silently skips reconciliation.
+    const src = `
+      import { component, div, text, ul, li } from '@llui/dom'
+      type State = { items: string[]; filter: string; rev: number }
+      const innerFilter = (s: State): string[] =>
+        s.items.filter((i) => i.includes(s.filter))
+      const visibleItems = (s: State): string[] => {
+        void s.rev
+        return innerFilter(s)
+      }
+      export const C = component({
+        name: 'C',
+        init: () => [{ items: [], filter: '', rev: 0 }, []],
+        update: (s, _m) => [s, []],
+        view: ({ each }) => [
+          div([
+            ul([
+              each<string>({
+                items: visibleItems,
+                key: (item) => item,
+                render: ({ item }) => [li([text(item)])],
+              }),
+            ]),
+            text((s: State) => 'rev=' + s.rev),
+            text((s: State) => 'filter=' + s.filter),
+          ]),
+        ],
+      })
+    `
+    const out = t(src)
+    // All three transitively-read fields must be in the legend.
+    expect(out).toMatch(/"rev":\s*1/)
+    expect(out).toMatch(/"items":\s*2/)
+    expect(out).toMatch(/"filter":\s*4/)
+    // each() must have __mask = 1|2|4 = 7 — the OR of every bit
+    // visibleItems can transitively trigger on. A weaker mask (just 1
+    // for rev) would silently skip reconcile when only `filter` flips.
+    expect(out).toMatch(/each<string>\(\{[\s\S]*?__mask:\s*7/)
+  })
+
+  it('follows pure-delegation accessor (outer body is just `inner(s)`) to extract paths', () => {
+    // Even when the outer body has no direct MemberExpression, the
+    // delegated helper's reads must still seed fieldBits.
+    const src = `
+      import { component, div, text, ul, li } from '@llui/dom'
+      type State = { items: string[]; filter: string }
+      const innerFilter = (s: State): string[] =>
+        s.items.filter((i) => i.includes(s.filter))
+      const visibleItems = (s: State): string[] => innerFilter(s)
+      export const C = component({
+        name: 'C',
+        init: () => [{ items: [], filter: '' }, []],
+        update: (s, _m) => [s, []],
+        view: ({ each }) => [
+          div([
+            ul([
+              each<string>({
+                items: visibleItems,
+                key: (item) => item,
+                render: ({ item }) => [li([text(item)])],
+              }),
+            ]),
+            text((s: State) => 'filter=' + s.filter),
+          ]),
+        ],
+      })
+    `
+    const out = t(src)
+    // `items` and `filter` (read inside innerFilter, not in
+    // visibleItems' outer body) must still be tracked.
+    expect(out).toMatch(/"items":\s*\d/)
+    expect(out).toMatch(/"filter":\s*\d/)
+  })
+
+  it('handles indirection through a function declaration helper', () => {
+    // Same delegation pattern but the helper is a hoisted fn-decl.
+    const src = `
+      import { component, div, text, ul, li } from '@llui/dom'
+      type State = { items: string[]; filter: string }
+      function innerFilter(s: State): string[] {
+        return s.items.filter((i) => i.includes(s.filter))
+      }
+      const visibleItems = (s: State): string[] => innerFilter(s)
+      export const C = component({
+        name: 'C',
+        init: () => [{ items: [], filter: '' }, []],
+        update: (s, _m) => [s, []],
+        view: ({ each }) => [
+          div([
+            ul([
+              each<string>({
+                items: visibleItems,
+                key: (item) => item,
+                render: ({ item }) => [li([text(item)])],
+              }),
+            ]),
+            text((s: State) => 'filter=' + s.filter),
+          ]),
+        ],
+      })
+    `
+    const out = t(src)
+    expect(out).toMatch(/"items":\s*\d/)
+    expect(out).toMatch(/"filter":\s*\d/)
+  })
+
+  it('does not loop on a cycle between two local helpers', () => {
+    // Pathological but legal: two helpers that mutually recurse.
+    // The walk must terminate; we don't care what paths are extracted
+    // (any subset is fine — the runtime fallback handles missing bits).
+    const src = `
+      import { component, div, text } from '@llui/dom'
+      type State = { a: string; b: string }
+      const evenStep = (s: State): string => oddStep(s) + s.a
+      const oddStep = (s: State): string => evenStep(s) + s.b
+      export const C = component({
+        name: 'C',
+        init: () => [{ a: '', b: '' }, []],
+        update: (s, _m) => [s, []],
+        view: () => [div([text(evenStep)])],
+      })
+    `
+    // Should not hang or throw.
+    expect(() => t(src)).not.toThrow()
+  })
+
+  it('does not follow non-state CallExpressions (s.items.filter, externalHelper(s.x))', () => {
+    // When the call target isn't a local function (or isn't called
+    // with the state param verbatim), don't recurse — the called
+    // function's body isn't reading our state.
+    const src = `
+      import { component, div, text } from '@llui/dom'
+      import { external } from './lib'
+      type State = { items: string[] }
+      const visibleItems = (s: State): string[] => external(s.items)
+      export const C = component({
+        name: 'C',
+        init: () => [{ items: [] }, []],
+        update: (s, _m) => [s, []],
+        view: ({ each }) => [
+          div([
+            text((s: State) => 'count=' + String(s.items.length)),
+          ]),
+        ],
+      })
+    `
+    // `items` IS in fieldBits because the outer text() arrow reads it.
+    // The fact that we don't recurse into `external` is fine — it's
+    // imported and unresolvable.
+    const out = t(src)
+    expect(out).toMatch(/"items":\s*\d/)
+  })
 })
 
 describe('Pass 2 — mask injection + __dirty', () => {
