@@ -11,6 +11,26 @@ All notable changes to LLui packages are documented here. LLui is a pre-1.0 proj
 
 Packages version in lockstep at release time: `@llui/dom`, `@llui/vite-plugin`, `@llui/test`, `@llui/router`, `@llui/transitions`, `@llui/components`, `@llui/vike` share a version line. `@llui/effects`, `@llui/mcp`, `@llui/eslint-plugin`, `@llui/agent`, and `llui-agent` have their own cadence.
 
+## 2026-05-03 — @llui/vite-plugin@0.0.41, @llui/eslint-plugin@0.0.23, @llui/mcp@0.0.33
+
+**Released:** `@llui/vite-plugin@0.0.41`; `@llui/eslint-plugin@0.0.23`; `@llui/mcp@0.0.33`
+
+Compiler fix for reactive prop values that aren't an inline arrow — named-function references, `memo()` results, hoisted function declarations, imported helpers — which were silently miscompiled at element-helper call sites. Plus a new lint rule covering the remaining `let`-as-accessor footgun.
+
+### `@llui/vite-plugin@0.0.41`
+
+- **Fixed** Reactive prop values that resolved to anything other than an inline arrow or a const-bound arrow no longer silently degrade. The buggy paths — `__cloneStaticTemplate("<button></button>")` (prop dropped entirely when the element had no other reactive binding) and `__e.disabled = isGated` (function reference written to a boolean DOM property when it had a sibling) — are gone. Function declarations, `memo()` results, and other recognised callable shapes now emit binding tuples; unresolvable identifiers (imports, parameters) bail the element to the runtime helper, which classifies `typeof v === 'function'` correctly. A new `classifyReactiveValue` helper is the single source of truth, and Pass 2 mask injection for `text()` / `show()` / `branch()` / `each()` now uses the same shape contract.
+- **Improved** `collect-deps.ts` follows identifier references at reactive positions to their local declarations and extracts state-path reads from the resolved bodies. Refactoring an inline arrow to a named helper (`function isGated(s) { return s.gated }` or `const isGated = (s) => s.gated`) now keeps the precise-mask optimization — previously, files whose every accessor was a named reference produced empty `fieldBits` and the bitmask gating was a no-op.
+- **Improved** Resolver helpers (`resolveLocalConstInitializer`, `resolveAccessorBody`, `isMemoCallWithArrowArg`) are extracted into a shared `accessor-resolver.ts` module so `transform.ts` and `collect-deps.ts` use one definition of "what counts as a callable accessor in this file."
+
+### `@llui/eslint-plugin@0.0.23`
+
+- **Added** `llui/no-let-reactive-accessor` — flags `let` / `var` bindings used at reactive-accessor positions. The compiler's resolver only follows `const` (reassignment would invalidate the analysis), so `let isGated = (s) => s.gated; button({ disabled: isGated })` silently falls back to FULL_MASK — runtime correct but every binding fires on every state change. Autofixes `let` → `const` when the binding is never reassigned; reports without a fix when there's at least one write. Ships in `recommended` at `error`.
+
+### `@llui/mcp@0.0.33`
+
+- Cascade only — picks up the new `@llui/eslint-plugin@0.0.23`. No behavior change.
+
 ## 2026-05-02 — @llui/agent@0.0.52, llui-agent@0.0.16
 
 **Released:** `@llui/agent@0.0.52`; `llui-agent@0.0.16`
