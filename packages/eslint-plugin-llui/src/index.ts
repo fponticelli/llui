@@ -34,6 +34,7 @@ import { exhaustiveUpdateRule } from './rules/exhaustive-update.js'
 import { bitmaskOverflowRule } from './rules/bitmask-overflow.js'
 import { noEagerItemAccessorRule } from './rules/no-eager-item-accessor.js'
 import { noListRenderInSampleRule } from './rules/no-list-render-in-sample.js'
+import { noBarrelImportWhenSubpathExistsRule } from './rules/no-barrel-import-when-subpath-exists.js'
 import { noLetReactiveAccessorRule } from './rules/no-let-reactive-accessor.js'
 import { noSampleInAccessorRule } from './rules/no-sample-in-accessor.js'
 import { noSampleInReactivePositionRule } from './rules/no-sample-in-reactive-position.js'
@@ -75,6 +76,7 @@ export const rules = {
   'static-on': staticOnRule,
   'exhaustive-update': exhaustiveUpdateRule,
   'bitmask-overflow': bitmaskOverflowRule,
+  'no-barrel-import-when-subpath-exists': noBarrelImportWhenSubpathExistsRule,
   'no-eager-item-accessor': noEagerItemAccessorRule,
   'no-let-reactive-accessor': noLetReactiveAccessorRule,
   'no-list-render-in-sample': noListRenderInSampleRule,
@@ -142,6 +144,7 @@ export const configs = {
       'llui/static-on': 'error',
       'llui/exhaustive-update': 'error',
       'llui/bitmask-overflow': 'error',
+      'llui/no-barrel-import-when-subpath-exists': 'error',
       'llui/no-eager-item-accessor': 'error',
       'llui/no-let-reactive-accessor': 'error',
       'llui/no-list-render-in-sample': 'error',

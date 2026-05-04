@@ -186,9 +186,30 @@ const button = createVariants({
 button({ size: 'sm', intent: 'ghost' }) // → class string
 ```
 
-## Sub-path imports
+## Imports
 
-Every component has its own entry point for tree-shaking:
+Three forms, in order of preference:
+
+```typescript
+// ✓ best — sub-path import. Bypasses the barrel entirely; smallest
+//          bundle, fastest cold builds (no parse cost for unused
+//          components).
+import { dialog } from '@llui/components/dialog'
+
+// ✓ ok — named import from the barrel. Tree-shakeable, but the
+//          bundler still has to parse every transitively-exported
+//          module before it can prove the unused ones are dead.
+import { dialog } from '@llui/components'
+
+// ✗ bad — namespace import. Defeats tree-shaking: drags every
+//          component's state machine into the bundle. The
+//          @llui/eslint-plugin `llui/namespace-import` rule
+//          flags this at error level (autofixable).
+import * as C from '@llui/components'
+```
+
+Every component ships its own entry point — sub-path is the right default
+for a new file:
 
 ```typescript
 import { tabs } from '@llui/components/tabs'

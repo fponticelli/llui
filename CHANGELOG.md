@@ -15,7 +15,7 @@ Packages version in lockstep at release time: `@llui/dom`, `@llui/vite-plugin`, 
 
 **Released:** `@llui/vite-plugin@0.0.42`
 
-Follow-up to 0.0.41 — the deeper `collect-deps` walk that follows named identifier references at reactive positions stopped at the first call to another local helper, so accessors of the shape `(s) => helper(s)` extracted only the outer body's reads and missed everything `helper` read transitively. The result was a precise mask that *under-counted*: a sibling reactive accessor reading only the helper-internal fields could drive a non-zero `dirty` that AND'd with the narrow `each.__mask` was zero, silently skipping the reconcile. This release recurses through helper delegations.
+Follow-up to 0.0.41 — the deeper `collect-deps` walk that follows named identifier references at reactive positions stopped at the first call to another local helper, so accessors of the shape `(s) => helper(s)` extracted only the outer body's reads and missed everything `helper` read transitively. The result was a precise mask that _under-counted_: a sibling reactive accessor reading only the helper-internal fields could drive a non-zero `dirty` that AND'd with the narrow `each.__mask` was zero, silently skipping the reconcile. This release recurses through helper delegations.
 
 ### `@llui/vite-plugin@0.0.42`
 
