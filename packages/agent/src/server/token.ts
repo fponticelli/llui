@@ -1,6 +1,6 @@
 import type { AgentToken } from '../protocol.js'
 
-const PREFIX = 'llui-agent_'
+const PREFIX = 'agt_'
 const TOKEN_BYTES = 32
 
 /**
@@ -16,8 +16,9 @@ export type VerifyResult =
 /**
  * Mint an opaque random bearer token + the SHA-256 hash the server
  * stores as a lookup key. Tokens are 32 bytes of CSPRNG entropy (256
- * bits) base64url-encoded with the `llui-agent_` prefix — total
- * 54–55 chars, vs the previous JWT format's ~250.
+ * bits) base64url-encoded with the `agt_` prefix — total ~48 chars.
+ * The prefix is intentionally generic so LLM clients don't mistake the
+ * token format for a hint about which MCP tool namespace to use.
  *
  * The token itself never persists; only the hash does. A leaked store
  * therefore does not compromise live tokens, since the bearer secret

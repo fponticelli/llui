@@ -380,7 +380,7 @@ import type {
 
 describe('Token + pairing types', () => {
   it('token brand', () => {
-    const t: AgentToken = 'llui-agent_opaque-bearer' as AgentToken
+    const t: AgentToken = 'agt_opaque-bearer' as AgentToken
     expect(typeof t).toBe('string')
   })
 
@@ -421,7 +421,7 @@ describe('Token + pairing types', () => {
 
   it('mint + resume response shapes', () => {
     const mint: MintResponse = {
-      token: 'llui-agent_opaque' as AgentToken,
+      token: 'agt_opaque' as AgentToken,
       tid: 't1',
       wsUrl: 'wss://app/agent/ws',
       lapUrl: 'https://app/agent/lap/v1',
@@ -431,7 +431,7 @@ describe('Token + pairing types', () => {
       sessions: [{ tid: 't1', label: 'x', status: 'pending-resume', createdAt: 0, lastSeenAt: 0 }],
     }
     const resumeClaim: ResumeClaimResponse = {
-      token: 'llui-agent_resumed' as AgentToken,
+      token: 'agt_resumed' as AgentToken,
       wsUrl: 'wss://app/agent/ws',
     }
     const sessions: SessionsResponse = {

@@ -104,7 +104,7 @@ function createBridgeServer(deps: BridgeDeps): McpServer
 ### `ToolDescriptor`
 
 ```typescript
-export type ToolDescriptor = ForwardedToolDescriptor | MetaToolDescriptor
+export type ToolDescriptor = McpForwardedToolDescriptor | McpMetaToolDescriptor
 ```
 
 ### `BridgeDeps`
@@ -119,37 +119,6 @@ export type BridgeDeps = {
   bindings: BindingMap
   /** Package version — set from package.json at boot. */
   version: string
-}
-```
-
-## Interfaces
-
-### `ForwardedToolDescriptor`
-
-Descriptor for a tool that forwards directly to the bound LAP server.
-
-```typescript
-export interface ForwardedToolDescriptor {
-  kind: 'forward'
-  name: string
-  description: string
-  /** Zod schema defining the tool's input shape. */
-  schema: z.ZodObject<z.ZodRawShape>
-  /** LAP endpoint path (relative to the binding's base URL). */
-  lapPath: string
-}
-```
-
-### `MetaToolDescriptor`
-
-Descriptor for a tool whose handler is implemented in the bridge itself.
-
-```typescript
-export interface MetaToolDescriptor {
-  kind: 'meta'
-  name: string
-  description: string
-  schema: z.ZodObject<z.ZodRawShape>
 }
 ```
 

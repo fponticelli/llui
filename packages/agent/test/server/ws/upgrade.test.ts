@@ -54,7 +54,7 @@ describe('createWsUpgradeHandler', () => {
 
   it('rejects a connection with an unknown opaque token (401)', async () => {
     // Well-formed prefix, but no record in the store maps to this hash.
-    const ws = new WebSocket(`ws://127.0.0.1:${port}/agent/ws?token=llui-agent_unknown`)
+    const ws = new WebSocket(`ws://127.0.0.1:${port}/agent/ws?token=agt_unknown`)
     await new Promise<void>((resolve) => {
       ws.on('unexpected-response', (_req, res) => {
         expect(res.statusCode).toBe(401)

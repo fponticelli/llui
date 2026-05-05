@@ -38,7 +38,7 @@ describe('createLluiAgentCore', () => {
   it('acceptConnection rejects unknown opaque tokens (no record)', async () => {
     const core = createLluiAgentCore()
     // Well-formed prefix but no record exists for this hash.
-    const result = await core.acceptConnection('llui-agent_unseededOpaque', mkConn())
+    const result = await core.acceptConnection('agt_unseededOpaque', mkConn())
     expect(result.ok).toBe(false)
     if (!result.ok) {
       expect(result.status).toBe(401)

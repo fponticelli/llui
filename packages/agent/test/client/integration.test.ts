@@ -142,7 +142,7 @@ describe('integration: mint → ws → describe → state', () => {
     expect(res.status).toBe(200)
     const body = (await res.json()) as MintResponse
     expect(typeof body.token).toBe('string')
-    expect(body.token.startsWith('llui-agent_')).toBe(true)
+    expect(body.token.startsWith('agt_')).toBe(true)
     expect(typeof body.wsUrl).toBe('string')
     expect(typeof body.lapUrl).toBe('string')
   })

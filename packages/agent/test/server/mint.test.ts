@@ -37,7 +37,7 @@ describe('handleMint', () => {
     expect(body.lapUrl).toBe('https://app.example/agent/lap/v1')
     expect(body.wsUrl).toMatch(/^wss?:\/\/app\.example\/agent\/ws$/)
     expect(body.expiresAt).toBeGreaterThan(clock)
-    expect(body.token.startsWith('llui-agent_')).toBe(true)
+    expect(body.token.startsWith('agt_')).toBe(true)
 
     const stored = await store.findByTid(body.tid)
     expect(stored?.uid).toBe('u1')

@@ -422,8 +422,9 @@ function createLluiAgentServer(opts: ServerOptions = {}): AgentServerHandle
 
 Mint an opaque random bearer token + the SHA-256 hash the server
 stores as a lookup key. Tokens are 32 bytes of CSPRNG entropy (256
-bits) base64url-encoded with the `llui-agent_` prefix — total
-54–55 chars, vs the previous JWT format's ~250.
+bits) base64url-encoded with the `agt_` prefix — total ~48 chars.
+The prefix is intentionally generic so LLM clients don't mistake the
+token format for a hint about which MCP tool namespace to use.
 The token itself never persists; only the hash does. A leaked store
 therefore does not compromise live tokens, since the bearer secret
 isn't recoverable from the hash. This matches the standard "session
@@ -790,6 +791,18 @@ export type ServerOptions = {
 
   /** Allowed origins for the HTTP surface (CORS). Empty = any. */
   corsOrigins?: readonly string[]
+
+  /**
+   * Enable the server-side MCP endpoint at `/agent/mcp` (or a custom
+   * path). When set, Claude Desktop can connect directly to the app
+   * backend without installing the `llui-agent` bridge — the user pastes
+   * the token via `connect_session` in chat, same flow as the bridge but
+   * no separate process required.
+   *
+   * Pass `true` to use all defaults, or an `McpRouterOptions` object to
+   * customise the path, server name, and connect_session description.
+   */
+  mcp?: boolean | McpRouterOptions
 }
 ```
 
@@ -908,7 +921,15 @@ export type RpcOptions = { timeoutMs?: number }
 ### `DurableObjectOptions`
 
 ```typescript
-export type DurableObjectOptions = Omit<CoreOptions, 'registry'>
+export type DurableObjectOptions = Omit<CoreOptions, 'registry'> & {
+  /**
+   * Enable the server-side MCP endpoint at `/agent/mcp` (or a custom
+   * path). Pass `true` for all defaults, or an `McpRouterOptions`
+   * object to customise path, server name, and connect_session
+   * description.
+   */
+  mcp?: boolean | McpRouterOptions
+}
 ```
 
 ### `MsgSchemaBareType`
@@ -2505,12 +2526,14 @@ pairing state lives in the DO's in-process memory — which is safe
 here because the DO is a persistent addressable entity, not a
 one-shot Worker isolate.
 Users instantiate one of these inside their DO class's constructor
-and delegate `fetch` to `agent.fetch(req)`. LAP HTTP routes and
-WebSocket upgrades both flow through this single entry.
+and delegate `fetch` to `agent.fetch(req)`. LAP HTTP routes,
+WebSocket upgrades, and the optional MCP endpoint all flow through
+this single entry.
 
 ```typescript
 class AgentPairingDurableObject {
   agent: AgentCoreHandle
+  mcpRouter: ((req: Request) => Promise<Response | null>) | null
   constructor(opts: DurableObjectOptions)
   fetch(req: Request): Promise<Response>
 }

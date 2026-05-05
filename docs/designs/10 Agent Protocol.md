@@ -292,7 +292,7 @@ type ServerFrame = RpcFrame | RevokedFrame
 ### 4.1 Token wire format
 
 ```
-llui-agent_<base64url(payload)>.<base64url(hmac-sha256(payload, signingKey))>
+agt_<base64url(payload)>.<base64url(hmac-sha256(payload, signingKey))>
 ```
 
 `payload` is a compact JSON object:
@@ -377,7 +377,7 @@ awaiting-ws ──(WS open)──▶ awaiting-claude ──(describe called)─�
 4. Browser stores `tid` in `localStorage['llui-agent.tids']`, opens WS to `wsUrl` with `Authorization: Bearer <token>`.
 5. Server flips status to `awaiting-claude`. `agentConnect.pendingToken` populates with the connect snippet:
    ```
-   /llui-connect https://myapp.com/agent/lap/v1 llui-agent_…
+   /llui-connect https://myapp.com/agent/lap/v1 agt_…
    ```
 6. User pastes into Claude Desktop. Bridge calls `connect_session({ url, token })`, pings `/lap/v1/describe`, caches schema, marks pairing `active`.
 

@@ -272,7 +272,7 @@ Protocol](https://github.com/fponticelli/llui/blob/main/docs/designs/10%20Agent%
 
 ## Tokens
 
-LLui agent tokens are opaque random bearer tokens — `llui-agent_` plus
+LLui agent tokens are opaque random bearer tokens — `agt_` plus
 43 base64url characters. They carry 32 bytes of CSPRNG entropy and are
 stored server-side as SHA-256 hashes only, so the wire form never
 matches what's in the token store. Tokens are scoped to a single

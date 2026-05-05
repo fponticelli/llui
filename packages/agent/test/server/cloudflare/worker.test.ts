@@ -56,7 +56,7 @@ describe('routeToAgentDO', () => {
     const ns = mockNamespace()
     const req = new Request('https://app/agent/lap/v1/describe', {
       method: 'POST',
-      headers: { authorization: `Bearer llui-agent_does-not-resolve` },
+      headers: { authorization: `Bearer agt_does-not-resolve` },
     })
     const res = await routeToAgentDO(req, ns, resolveNever)
     expect(res.status).toBe(401)
@@ -67,7 +67,7 @@ describe('routeToAgentDO', () => {
     const ns = mockNamespace()
     const req = new Request('https://app/agent/lap/v1/state', {
       method: 'POST',
-      headers: { authorization: `Bearer llui-agent_some-token` },
+      headers: { authorization: `Bearer agt_some-token` },
     })
     const res = await routeToAgentDO(req, ns, resolveAlways('user-42'))
     expect(res.status).toBe(200)
@@ -77,7 +77,7 @@ describe('routeToAgentDO', () => {
 
   it('accepts token from ?token= query string (WS upgrade pattern)', async () => {
     const ns = mockNamespace()
-    const req = new Request(`https://app/agent/ws?token=llui-agent_ws-token`)
+    const req = new Request(`https://app/agent/ws?token=agt_ws-token`)
     const res = await routeToAgentDO(req, ns, resolveAlways('user-99'))
     expect(res.status).toBe(200)
     expect(ns.idFromName).toHaveBeenCalledWith('user-99')

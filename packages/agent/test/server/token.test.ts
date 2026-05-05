@@ -4,9 +4,9 @@ import { mintToken, tokenHashOf } from '../../src/server/token.js'
 describe('mintToken / tokenHashOf', () => {
   it('mints a prefixed token + a SHA-256 hex hash', async () => {
     const { token, tokenHash } = await mintToken()
-    expect(token).toMatch(/^llui-agent_/)
-    // base64url-encoded 32 bytes = 43 chars + 11-char prefix = 54 chars
-    expect(token.length).toBe(54)
+    expect(token).toMatch(/^agt_/)
+    // base64url-encoded 32 bytes = 43 chars + 4-char prefix = 47 chars
+    expect(token.length).toBe(47)
     // SHA-256 in hex = 64 chars
     expect(tokenHash).toMatch(/^[0-9a-f]{64}$/)
     // hashOf(token) reproduces the same hash; this is what the server
@@ -24,7 +24,7 @@ describe('mintToken / tokenHashOf', () => {
     // Crucially, the verify path does NOT inspect the token after the
     // prefix. So even a tampered or made-up suffix produces a hash;
     // the lookup against the store is what fails the auth.
-    const hash = await tokenHashOf('llui-agent_made-up-bytes-that-arent-in-the-store')
+    const hash = await tokenHashOf('agt_made-up-bytes-that-arent-in-the-store')
     expect(hash).toMatch(/^[0-9a-f]{64}$/)
   })
 

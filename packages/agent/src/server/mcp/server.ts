@@ -75,7 +75,7 @@ export function createAgentMcpServer(deps: McpServerDeps): McpServer {
         deps.sessionMap.delete(sessionId)
         return errorResult(`connect_session: observe failed — ${result.error}`)
       }
-      return okResult({ status: 'connected', ...result.body as object })
+      return okResult({ status: 'connected', ...(result.body as object) })
     },
   )
 
@@ -154,7 +154,7 @@ async function lapCall(
   try {
     const res = await coreRouter(req)
     if (!res) return { ok: false, error: `no handler for ${lapPath}` }
-    const payload = await res.json() as { error?: { code: string; detail?: string } }
+    const payload = (await res.json()) as { error?: { code: string; detail?: string } }
     if (!res.ok || payload.error) {
       const code = payload.error?.code ?? res.status
       const detail = payload.error?.detail ? ` — ${payload.error.detail}` : ''

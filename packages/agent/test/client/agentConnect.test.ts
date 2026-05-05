@@ -9,7 +9,7 @@ import type { AgentEffect } from '../../src/client/effects.js'
 
 // ── Fixtures ─────────────────────────────────────────────────────────────────
 
-const token = 'llui-agent_abc.def' as import('../../src/protocol.js').AgentToken
+const token = 'agt_abc.def' as import('../../src/protocol.js').AgentToken
 const tid = '11111111-1111-1111-1111-111111111111'
 const lapUrl = 'https://app.example/agent/lap/v1'
 const wsUrl = 'wss://app.example/agent/ws'
