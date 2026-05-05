@@ -11,6 +11,20 @@ All notable changes to LLui packages are documented here. LLui is a pre-1.0 proj
 
 Packages version in lockstep at release time: `@llui/dom`, `@llui/vite-plugin`, `@llui/test`, `@llui/router`, `@llui/transitions`, `@llui/components`, `@llui/vike` share a version line. `@llui/effects`, `@llui/mcp`, `@llui/eslint-plugin`, `@llui/agent`, and `llui-agent` have their own cadence.
 
+## 2026-05-04 — @llui/agent@0.0.55, llui-agent@0.0.19
+
+**Released:** `@llui/agent@0.0.55`; `llui-agent@0.0.19`
+
+Fix `routeToAgentDO` so Claude Code can reach the MCP endpoint without a bearer token.
+
+### `@llui/agent@0.0.55`
+
+- **Fixed** `routeToAgentDO` now routes `/agent/mcp` (and any custom `mcpPath`) to the root DO without requiring a `Bearer` token. Previously the function only exempted the hardcoded management endpoints (`/agent/mint`, `/agent/revoke`, `/agent/resume/*`, `/agent/sessions`) from the token gate, so every MCP initialization request from Claude Code received `401 Unauthorized` and `mcp__<server>__connect_session` never appeared in the tool list. MCP auth happens inside the protocol via `connect_session({token})`, not at the HTTP layer. Added `mcpPath?: string` option to `routeToAgentDO` (default `'/agent/mcp'`) for deployments that customize the path.
+
+### `llui-agent@0.0.19`
+
+- **Fixed** Cascade bump for `@llui/agent@0.0.55`. No behaviour change in the bridge itself.
+
 ## 2026-05-04 — @llui/agent@0.0.54, llui-agent@0.0.18
 
 **Released:** `@llui/agent@0.0.54`; `llui-agent@0.0.18`
