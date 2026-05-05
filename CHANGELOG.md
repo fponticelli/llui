@@ -11,6 +11,32 @@ All notable changes to LLui packages are documented here. LLui is a pre-1.0 proj
 
 Packages version in lockstep at release time: `@llui/dom`, `@llui/vite-plugin`, `@llui/test`, `@llui/router`, `@llui/transitions`, `@llui/components`, `@llui/vike` share a version line. `@llui/effects`, `@llui/mcp`, `@llui/eslint-plugin`, `@llui/agent`, and `llui-agent` have their own cadence.
 
+## 2026-05-04 — @llui/agent@0.0.53, llui-agent@0.0.17, @llui/eslint-plugin@0.0.24
+
+**Released:** `@llui/agent@0.0.53`; `llui-agent@0.0.17`; `@llui/eslint-plugin@0.0.24`; `@llui/mcp@0.0.34`
+
+Server-side MCP endpoint for `@llui/agent` (no bridge required), plus tree-shake-friendly import linting across the wider `@llui/*` namespace.
+
+### `@llui/agent@0.0.53`
+
+- **Added** Server-side MCP endpoint at `/agent/mcp` (opt-in via `mcp?: boolean | McpRouterOptions` in `ServerOptions` / `DurableObjectOptions`). Enables Claude Desktop and Claude Code to connect directly to an app backend without installing the `llui-agent` bridge — the user pastes a per-session token in-chat, `connect_session({token})` binds the session, and all 14 forwarded tools work exactly as they do through the bridge.
+- **Added** `@llui/agent/mcp/tools` sub-path export — single source of truth for the shared tool catalogue (14 forwarded tools + `disconnect_session`). `connect_session` is intentionally absent: the bridge needs `{url, token}`, the server surface needs only `{token}`.
+- **Added** `createMcpRouter` — WHATWG-compatible MCP router using `WebStandardStreamableHTTPServerTransport`. Integrates into `createLluiAgentServer` via the new `mcp` option; also available standalone.
+- **Added** `mcp?: boolean | McpRouterOptions` to `AgentPairingDurableObject` (`@llui/agent/server/cloudflare`) — enabling MCP inside a Cloudflare Workers Durable Object is now `new AgentPairingDurableObject({ mcp: true })`.
+
+### `llui-agent@0.0.17`
+
+- **Improved** `tools.ts` now imports shared descriptors from `@llui/agent/mcp/tools` (new single source of truth) rather than duplicating them. The bridge's own `connect_session({url, token})` is retained — its surface differs from the server-side `connect_session({token})`. Type aliases `ForwardedToolDescriptor`, `MetaToolDescriptor`, `ToolDescriptor` are re-exported for back-compat.
+
+### `@llui/eslint-plugin@0.0.24`
+
+- **Improved** `llui/namespace-import` now covers `@llui/dom`, `@llui/components`, `@llui/router`, `@llui/transitions`, `@llui/effects`, and `@llui/agent` (was just `dom` + `components`). Autofix uses scope analysis to enumerate every namespace member access, builds a sorted-deduped named-import list, and rewrites both the import statement and every call site. Bails without a fix when any reference is non-static.
+- **Added** `llui/no-barrel-import-when-subpath-exists` — reads the target package's `exports` field at lint init (cached) and for each named specifier matching an existing `./<name>` sub-path export, splits the barrel import. Targets `@llui/components` today. Ships in `recommended` at `error`.
+
+### `@llui/mcp@0.0.34`
+
+- Cascade only — picks up `@llui/eslint-plugin@0.0.24`. No behavior change.
+
 ## 2026-05-03 — @llui/vite-plugin@0.0.42
 
 **Released:** `@llui/vite-plugin@0.0.42`
