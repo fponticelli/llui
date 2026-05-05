@@ -82,4 +82,28 @@ describe('routeToAgentDO', () => {
     expect(res.status).toBe(200)
     expect(ns.idFromName).toHaveBeenCalledWith('user-99')
   })
+
+  it('routes /agent/mcp to the root DO without requiring a bearer token', async () => {
+    const ns = mockNamespace()
+    const req = new Request('https://app/agent/mcp', { method: 'POST' })
+    await routeToAgentDO(req, ns, resolveNever)
+    expect(ns.idFromName).toHaveBeenCalledWith('__root')
+  })
+
+  it('routes /agent/mcp sub-paths to the root DO (session continuation)', async () => {
+    const ns = mockNamespace()
+    const req = new Request('https://app/agent/mcp/sse', {
+      method: 'GET',
+      headers: { 'mcp-session-id': 'test-session' },
+    })
+    await routeToAgentDO(req, ns, resolveNever)
+    expect(ns.idFromName).toHaveBeenCalledWith('__root')
+  })
+
+  it('respects a custom mcpPath option', async () => {
+    const ns = mockNamespace()
+    const req = new Request('https://app/mcp', { method: 'POST' })
+    await routeToAgentDO(req, ns, resolveNever, { mcpPath: '/mcp' })
+    expect(ns.idFromName).toHaveBeenCalledWith('__root')
+  })
 })

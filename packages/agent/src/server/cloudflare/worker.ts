@@ -48,21 +48,26 @@ export async function routeToAgentDO(
   req: Request,
   namespace: MinimalDurableObjectNamespace,
   resolveTid: (token: string) => Promise<string | null>,
-  opts: { rootName?: string } = {},
+  opts: { rootName?: string; mcpPath?: string } = {},
 ): Promise<Response> {
   const rootName = opts.rootName ?? '__root'
+  const mcpPath = opts.mcpPath ?? '/agent/mcp'
   const url = new URL(req.url)
   const path = url.pathname
 
   // Non-LAP / non-WS management endpoints (mint, resume, sessions,
-  // revoke) — there's no per-tid routing; use the root DO which owns
-  // the shared token store + identity resolver.
+  // revoke, mcp) — there's no per-tid routing and no bearer token
+  // required; use the root DO which owns the shared token store +
+  // identity resolver. MCP auth happens within the protocol via
+  // connect_session({token}), so the endpoint itself must be reachable
+  // without a pre-existing bearer.
   if (
     path === '/agent/mint' ||
     path === '/agent/revoke' ||
     path === '/agent/resume/list' ||
     path === '/agent/resume/claim' ||
-    path === '/agent/sessions'
+    path === '/agent/sessions' ||
+    path.startsWith(mcpPath)
   ) {
     const stub = namespace.get(namespace.idFromName(rootName))
     return stub.fetch(req)
