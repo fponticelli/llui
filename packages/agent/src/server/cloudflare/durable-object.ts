@@ -48,8 +48,18 @@
 import type { CoreOptions, AgentCoreHandle } from '../core.js'
 import { createLluiAgentCore } from '../core.js'
 import { handleCloudflareUpgrade } from '../web/upgrade.js'
+import type { McpRouterOptions } from '../mcp/router.js'
+import { createMcpRouter } from '../mcp/router.js'
 
-export type DurableObjectOptions = Omit<CoreOptions, 'registry'>
+export type DurableObjectOptions = Omit<CoreOptions, 'registry'> & {
+  /**
+   * Enable the server-side MCP endpoint at `/agent/mcp` (or a custom
+   * path). Pass `true` for all defaults, or an `McpRouterOptions`
+   * object to customise path, server name, and connect_session
+   * description.
+   */
+  mcp?: boolean | McpRouterOptions
+}
 
 /**
  * Agent server instance scoped to a single Durable Object. All
@@ -58,18 +68,37 @@ export type DurableObjectOptions = Omit<CoreOptions, 'registry'>
  * one-shot Worker isolate.
  *
  * Users instantiate one of these inside their DO class's constructor
- * and delegate `fetch` to `agent.fetch(req)`. LAP HTTP routes and
- * WebSocket upgrades both flow through this single entry.
+ * and delegate `fetch` to `agent.fetch(req)`. LAP HTTP routes,
+ * WebSocket upgrades, and the optional MCP endpoint all flow through
+ * this single entry.
  */
 export class AgentPairingDurableObject {
   readonly agent: AgentCoreHandle
+  private readonly mcpRouter: ((req: Request) => Promise<Response | null>) | null
 
   constructor(opts: DurableObjectOptions) {
-    this.agent = createLluiAgentCore(opts)
+    const { mcp, ...coreOpts } = opts
+    this.agent = createLluiAgentCore(coreOpts)
+    if (mcp) {
+      const mcpOpts = mcp === true ? {} : mcp
+      const lapBasePath = coreOpts.lapBasePath ?? '/agent/lap/v1'
+      this.mcpRouter = createMcpRouter(
+        { coreRouter: this.agent.router, tokenStore: this.agent.tokenStore, lapBasePath },
+        mcpOpts,
+      )
+    } else {
+      this.mcpRouter = null
+    }
   }
 
   async fetch(req: Request): Promise<Response> {
     const url = new URL(req.url)
+
+    // MCP endpoint takes priority when enabled.
+    if (this.mcpRouter) {
+      const mcpRes = await this.mcpRouter(req)
+      if (mcpRes) return mcpRes
+    }
 
     // LAP routes (/agent/lap/v1/*, /agent/*). `router` returns null
     // for non-matching paths so we can fall through to the upgrade.
