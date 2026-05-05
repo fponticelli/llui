@@ -1,6 +1,7 @@
 import type { ServerOptions, AgentServerHandle } from './options.js'
 import { createLluiAgentCore } from './core.js'
 import { createWsUpgradeHandler } from './ws/upgrade.js'
+import { createMcpRouter } from './mcp/router.js'
 
 /**
  * Node adapter. Wraps the runtime-neutral core with a Node-specific
@@ -20,8 +21,24 @@ export function createLluiAgentServer(opts: ServerOptions = {}): AgentServerHand
     auditSink: core.auditSink,
   })
 
+  const lapBasePath = opts.lapBasePath ?? '/agent/lap/v1'
+
+  let router = core.router
+  if (opts.mcp) {
+    const mcpOpts = opts.mcp === true ? {} : opts.mcp
+    const mcpRouter = createMcpRouter(
+      { coreRouter: core.router, tokenStore: core.tokenStore, lapBasePath },
+      mcpOpts,
+    )
+    router = async (req) => {
+      const mcpRes = await mcpRouter(req)
+      if (mcpRes) return mcpRes
+      return core.router(req)
+    }
+  }
+
   return {
-    router: core.router,
+    router,
     wsUpgrade,
     registry: core.registry,
     tokenStore: core.tokenStore,

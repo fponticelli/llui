@@ -7,6 +7,9 @@ import type { RateLimiter } from './rate-limit.js'
 import type { PairingRegistry } from './ws/pairing-registry.js'
 import type { AcceptResult } from './core.js'
 import type { PairingConnection } from './ws/pairing-registry.js'
+import type { McpRouterOptions } from './mcp/router.js'
+
+export type { McpRouterOptions }
 
 /**
  * Options accepted by `createLluiAgentServer`. All values are
@@ -41,6 +44,18 @@ export type ServerOptions = {
 
   /** Allowed origins for the HTTP surface (CORS). Empty = any. */
   corsOrigins?: readonly string[]
+
+  /**
+   * Enable the server-side MCP endpoint at `/agent/mcp` (or a custom
+   * path). When set, Claude Desktop can connect directly to the app
+   * backend without installing the `llui-agent` bridge — the user pastes
+   * the token via `connect_session` in chat, same flow as the bridge but
+   * no separate process required.
+   *
+   * Pass `true` to use all defaults, or an `McpRouterOptions` object to
+   * customise the path, server name, and connect_session description.
+   */
+  mcp?: boolean | McpRouterOptions
 }
 
 /**

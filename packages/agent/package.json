@@ -32,6 +32,10 @@
       "types": "./dist/codecs.d.ts",
       "import": "./dist/codecs.js"
     },
+    "./mcp/tools": {
+      "types": "./dist/mcp/tools.d.ts",
+      "import": "./dist/mcp/tools.js"
+    },
     "./styles/agent-panel.css": "./styles/agent-panel.css"
   },
   "files": [
@@ -45,7 +49,9 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "ws": "^8.18.0"
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "ws": "^8.18.0",
+    "zod": "^4.0.0"
   },
   "peerDependencies": {
     "@llui/dom": "^0.0.37"
