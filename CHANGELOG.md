@@ -11,6 +11,29 @@ All notable changes to LLui packages are documented here. LLui is a pre-1.0 proj
 
 Packages version in lockstep at release time: `@llui/dom`, `@llui/vite-plugin`, `@llui/test`, `@llui/router`, `@llui/transitions`, `@llui/components`, `@llui/vike` share a version line. `@llui/effects`, `@llui/mcp`, `@llui/eslint-plugin`, `@llui/agent`, and `llui-agent` have their own cadence.
 
+## 2026-05-04 — @llui/agent@0.0.54, llui-agent@0.0.18
+
+**Released:** `@llui/agent@0.0.54`; `llui-agent@0.0.18`
+
+Token prefix changed from `llui-agent_` to `agt_` — LLM clients no longer pattern-match the bearer token to the bridge MCP tool.
+
+### Breaking
+
+- **`@llui/agent@0.0.54`** — The `agt_` prefix replaces `llui-agent_`. All previously-minted tokens are invalid; users must generate a new token after upgrading. The token is user-visible (pasted into the LLM chat) so existing sessions end naturally on the next reconnect.
+
+### Migration
+
+- If you store or validate the token format (e.g. regex, length checks), update to expect `agt_` prefix and length 47 (was 54).
+- Re-generate any in-flight tokens after deploying the update — old `llui-agent_…` tokens will fail authentication with `unknown`.
+
+### `@llui/agent@0.0.54`
+
+- **Fixed** Token prefix changed from `llui-agent_` to `agt_`. Claude Code and Claude Desktop were pattern-matching the old prefix to `mcp__llui__connect_session` (the bridge tool, schema `{url, token}`) and asking for a URL even when connected to the server-side MCP endpoint whose `connect_session` only needs `{token}`. The neutral `agt_` prefix carries no MCP namespace hint — the auth model is opaque: only the server-side hash lookup determines validity.
+
+### `llui-agent@0.0.18`
+
+- **Fixed** Cascade bump for the `agt_` token prefix change in `@llui/agent@0.0.54`. No behaviour change in the bridge itself — the bridge's own `connect_session({url, token})` is unchanged.
+
 ## 2026-05-04 — @llui/agent@0.0.53, llui-agent@0.0.17, @llui/eslint-plugin@0.0.24
 
 **Released:** `@llui/agent@0.0.53`; `llui-agent@0.0.17`; `@llui/eslint-plugin@0.0.24`; `@llui/mcp@0.0.34`
