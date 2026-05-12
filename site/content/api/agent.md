@@ -621,7 +621,7 @@ function routeToAgentDO(
   req: Request,
   namespace: MinimalDurableObjectNamespace,
   resolveTid: (token: string) => Promise<string | null>,
-  opts: { rootName?: string } = {},
+  opts: { rootName?: string; mcpPath?: string } = {},
 ): Promise<Response>
 ```
 
