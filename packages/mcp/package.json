@@ -1,6 +1,6 @@
 {
   "name": "@llui/mcp",
-  "version": "0.0.34",
+  "version": "0.0.35",
   "type": "module",
   "sideEffects": false,
   "bin": {
@@ -28,7 +28,7 @@
     "zod": "^4.0.0"
   },
   "peerDependencies": {
-    "@llui/dom": "^0.0.37",
+    "@llui/dom": "^0.0.38",
     "playwright": ">=1.0.0"
   },
   "peerDependenciesMeta": {

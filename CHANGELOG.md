@@ -11,6 +11,28 @@ All notable changes to LLui packages are documented here. LLui is a pre-1.0 proj
 
 Packages version in lockstep at release time: `@llui/dom`, `@llui/vite-plugin`, `@llui/test`, `@llui/router`, `@llui/transitions`, `@llui/components`, `@llui/vike` share a version line. `@llui/effects`, `@llui/mcp`, `@llui/eslint-plugin`, `@llui/agent`, and `llui-agent` have their own cadence.
 
+## 2026-05-12 — 0.0.38
+
+**Released:** `@llui/{dom,components,transitions}@0.0.38`; `@llui/{test,router}@0.0.39`; `@llui/vike@0.0.40`; `@llui/mcp@0.0.35`; `@llui/agent@0.0.56`; `llui-agent@0.0.20`
+
+Fix silent freezing of memo'd structural accessors on the single-message fast path.
+
+### `@llui/dom@0.0.38`
+
+- **Fixed** The per-msg fast path (`__handlers` → `_handleMsg`) reconciled structural blocks without updating `currentDirtyMask`, so the compiler-emitted `memo(fn, mask)` wrappers that the Vite plugin auto-applies to multi-field structural accessors (`each.items`, `branch.on`, `show.when`) short-circuited on the stale mask left over from the previous cycle and returned cached output. The structural block was correctly invoked but reconciled against frozen input — lists didn't filter, branches didn't switch, conditional content didn't update. Bug surfaced only when an accessor read 2+ state fields (single-field accessors don't get auto-memo'd) and was masked by the fact that per-attribute bindings (`text(...)`, `el({class: ...})`) gate on a `dirty` parameter, so attribute-level reactivity continued working on the same update — making the asymmetry hard to spot. Reported with a fully-worked repro against a multi-field `each.items` in a downstream consumer.
+
+### `@llui/{components,transitions}@0.0.38`, `@llui/{test,router}@0.0.39`, `@llui/vike@0.0.40`, `@llui/mcp@0.0.35`, `@llui/agent@0.0.56`
+
+- **Fixed** Cascade bump for `@llui/dom@0.0.38`. Peer range updated from `^0.0.37` to `^0.0.38`. No behaviour change in these packages themselves.
+
+### `llui-agent@0.0.20`
+
+- **Fixed** Cascade bump for `@llui/agent@0.0.56`. No behaviour change in the bridge itself.
+
+### Docs
+
+- `routeToAgentDO`'s API reference now documents the `mcpPath?: string` option (shipped in `@llui/agent@0.0.55`).
+
 ## 2026-05-04 — @llui/agent@0.0.55, llui-agent@0.0.19
 
 **Released:** `@llui/agent@0.0.55`; `llui-agent@0.0.19`
