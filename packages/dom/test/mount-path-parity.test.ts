@@ -77,10 +77,15 @@ function setup(): {
     unregisterForHmr: ((name: string) => {
       hmrUnregisterCalls.push({ name })
     }) as never,
-    // mountApp calls replaceComponent before mounting to handle the
-    // HMR swap-in-place case. Return null/undefined to signal "no
-    // existing instance to swap" so the normal mount path runs.
+    // mountApp calls replaceComponentForContainer before mounting to
+    // handle the HMR swap-in-place case. Return null/undefined to
+    // signal "no existing instance to swap" so the normal mount path
+    // runs. replaceComponent is the broadcast variant invoked by the
+    // vite plugin's `import.meta.hot.accept` callback — not on the
+    // mountApp fast path.
     replaceComponent: (() => null) as never,
+    replaceComponentForContainer: (() => null) as never,
+    replaceComponentForAnchor: (() => null) as never,
   } as never)
 
   return { devToolsCalls, hmrRegisterContainerCalls, hmrRegisterAnchorCalls, hmrUnregisterCalls }

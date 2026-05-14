@@ -20,6 +20,8 @@ export function enableHmr(): void {
     registerForAnchor,
     unregisterForHmr,
     replaceComponent,
+    replaceComponentForContainer,
+    replaceComponentForAnchor,
   })
 }
 
@@ -83,99 +85,167 @@ export function replaceComponent<S, M, E, D = void>(
   if (!entries || entries.length === 0) return null
 
   let handle: AppHandle | null = null
-
   for (const entry of entries) {
-    const typedInst = entry.inst as ComponentInstance<S, M, E>
-
-    typedInst.def = {
-      ...typedInst.def,
-      update: newDef.update,
-      view: newDef.view,
-      onEffect: newDef.onEffect,
-      __dirty: newDef.__dirty,
-      __update: newDef.__update,
-      __handlers: newDef.__handlers,
-    }
-
-    // Snapshot focus + selection + scroll BEFORE disposal — once the
-    // root lifetime tears down its DOM, the activeElement and any
-    // scrollable subtree are detached and can't be queried. We
-    // restore best-effort after the new view renders. The cost of
-    // skipping this step is the every-edit experience: the user
-    // types in an input, saves, the input rebuilds and loses focus
-    // and cursor position. That kills incremental editing flow.
-    const ownerRoot: ParentNode | null =
-      entry.kind === 'container' ? entry.container : (entry.anchor.parentElement ?? null)
-    const focusSnapshot = ownerRoot ? captureFocus(ownerRoot) : null
-    const scrollSnapshot = ownerRoot ? captureScroll(ownerRoot) : null
-
-    disposeLifetime(typedInst.rootLifetime)
-
-    // Clear the owned region per-kind.
-    if (entry.kind === 'container') {
-      entry.container.textContent = ''
-    } else {
-      // anchor kind — wipe siblings between anchor and endSentinel, keep the
-      // anchor AND the end sentinel (they bracket the fresh render).
-      let sib = entry.anchor.nextSibling
-      while (sib !== null && sib !== entry.endSentinel) {
-        const next = sib.nextSibling
-        sib.parentNode!.removeChild(sib)
-        sib = next
-      }
-    }
-
-    typedInst.rootLifetime = createLifetime(null)
-    typedInst.rootLifetime._kind = 'root'
-    typedInst.allBindings = []
-    typedInst.structuralBlocks = []
-
-    setFlatBindings(typedInst.allBindings)
-    setRenderContext({
-      rootLifetime: typedInst.rootLifetime,
-      state: typedInst.state,
-      allBindings: typedInst.allBindings,
-      structuralBlocks: typedInst.structuralBlocks,
-      dom: typedInst.dom,
-      container:
-        entry.kind === 'container' ? entry.container : (entry.anchor.parentElement ?? undefined),
-      send: typedInst.send as (msg: unknown) => void,
-      instance: typedInst as ComponentInstance,
-    })
-    const nodes = typedInst.def.view(createView<S, M>(typedInst.send))
-    clearRenderContext()
-    setFlatBindings(null)
-
-    if (entry.kind === 'container') {
-      for (const node of nodes) {
-        entry.container.appendChild(node)
-      }
-    } else {
-      for (const node of nodes) {
-        entry.anchor.parentNode!.insertBefore(node, entry.endSentinel)
-      }
-    }
-
-    // Restore focus, selection, and scroll positions in the freshly
-    // rendered DOM. Best-effort: when the new view's DOM has diverged
-    // structurally (different IDs, different element ordering, the
-    // input that was focused no longer exists), the restorers no-op
-    // silently. This is the right tradeoff — failing loudly on
-    // structural divergence would just mean every meaningful view
-    // edit prints an error.
-    if (ownerRoot) {
-      if (focusSnapshot) restoreFocus(ownerRoot, focusSnapshot)
-      if (scrollSnapshot) restoreScroll(ownerRoot, scrollSnapshot)
-    }
-
-    if (!handle) {
-      handle = makeReplacementHandle(name, entry, typedInst)
-    }
+    const h = swapEntry<S, M, E, D>(entry, name, newDef)
+    if (!handle) handle = h
   }
 
   console.log(`[LLui HMR] ${name} updated — state preserved`)
-
   return handle
+}
+
+/**
+ * Container-scoped hot-swap. Used by `mountApp` / `hydrateApp`'s HMR
+ * fast path: when the same `def.name` is mounted into multiple distinct
+ * containers (e.g. a page's onMount iterating placeholders and mounting
+ * an inline widget into each), a re-entry of the mount/hydrate path for
+ * a fresh container must NOT swap any of the existing entries — those
+ * are independent mounts, not module re-execution targeting the same
+ * root. Only swap when the existing entry's container is the very same
+ * node we're being asked to mount into.
+ *
+ * Returns the swapped handle when a matching container entry exists,
+ * `null` otherwise so the caller can fall through to a fresh mount.
+ */
+export function replaceComponentForContainer<S, M, E, D = void>(
+  name: string,
+  newDef: ComponentDef<S, M, E, D>,
+  container: HTMLElement,
+): AppHandle | null {
+  const entries = hmrRegistry.get(name)
+  if (!entries || entries.length === 0) return null
+  const matching = entries.find(
+    (e): e is Extract<HmrEntry, { kind: 'container' }> =>
+      e.kind === 'container' && e.container === container,
+  )
+  if (!matching) return null
+  const handle = swapEntry<S, M, E, D>(matching, name, newDef)
+  console.log(`[LLui HMR] ${name} updated — state preserved`)
+  return handle
+}
+
+/**
+ * Anchor-scoped hot-swap. The anchor-rooted analog of
+ * `replaceComponentForContainer` — used by `mountAtAnchor` /
+ * `hydrateAtAnchor`'s HMR fast path. A second call to the anchor-rooted
+ * mount entry on the same anchor (typical of HMR module re-execution
+ * for a vike persistent layout layer) hot-swaps in place rather than
+ * leaving the prior instance orphaned with a stale end sentinel.
+ *
+ * Matches on anchor identity (not name alone): independent mounts of
+ * the same-named component at different anchors must not collide with
+ * each other.
+ *
+ * Returns the swapped handle when a matching anchor entry exists,
+ * `null` otherwise so the caller can fall through to fresh mount /
+ * hydrate.
+ */
+export function replaceComponentForAnchor<S, M, E, D = void>(
+  name: string,
+  newDef: ComponentDef<S, M, E, D>,
+  anchor: Comment,
+): AppHandle | null {
+  const entries = hmrRegistry.get(name)
+  if (!entries || entries.length === 0) return null
+  const matching = entries.find(
+    (e): e is Extract<HmrEntry, { kind: 'anchor' }> =>
+      e.kind === 'anchor' && e.anchor === anchor,
+  )
+  if (!matching) return null
+  const handle = swapEntry<S, M, E, D>(matching, name, newDef)
+  console.log(`[LLui HMR] ${name} updated — state preserved`)
+  return handle
+}
+
+function swapEntry<S, M, E, D = void>(
+  entry: HmrEntry,
+  name: string,
+  newDef: ComponentDef<S, M, E, D>,
+): AppHandle {
+  const typedInst = entry.inst as ComponentInstance<S, M, E>
+
+  typedInst.def = {
+    ...typedInst.def,
+    update: newDef.update,
+    view: newDef.view,
+    onEffect: newDef.onEffect,
+    __dirty: newDef.__dirty,
+    __update: newDef.__update,
+    __handlers: newDef.__handlers,
+  }
+
+  // Snapshot focus + selection + scroll BEFORE disposal — once the
+  // root lifetime tears down its DOM, the activeElement and any
+  // scrollable subtree are detached and can't be queried. We
+  // restore best-effort after the new view renders. The cost of
+  // skipping this step is the every-edit experience: the user
+  // types in an input, saves, the input rebuilds and loses focus
+  // and cursor position. That kills incremental editing flow.
+  const ownerRoot: ParentNode | null =
+    entry.kind === 'container' ? entry.container : (entry.anchor.parentElement ?? null)
+  const focusSnapshot = ownerRoot ? captureFocus(ownerRoot) : null
+  const scrollSnapshot = ownerRoot ? captureScroll(ownerRoot) : null
+
+  disposeLifetime(typedInst.rootLifetime)
+
+  // Clear the owned region per-kind.
+  if (entry.kind === 'container') {
+    entry.container.textContent = ''
+  } else {
+    // anchor kind — wipe siblings between anchor and endSentinel, keep the
+    // anchor AND the end sentinel (they bracket the fresh render).
+    let sib = entry.anchor.nextSibling
+    while (sib !== null && sib !== entry.endSentinel) {
+      const next = sib.nextSibling
+      sib.parentNode!.removeChild(sib)
+      sib = next
+    }
+  }
+
+  typedInst.rootLifetime = createLifetime(null)
+  typedInst.rootLifetime._kind = 'root'
+  typedInst.allBindings = []
+  typedInst.structuralBlocks = []
+
+  setFlatBindings(typedInst.allBindings)
+  setRenderContext({
+    rootLifetime: typedInst.rootLifetime,
+    state: typedInst.state,
+    allBindings: typedInst.allBindings,
+    structuralBlocks: typedInst.structuralBlocks,
+    dom: typedInst.dom,
+    container:
+      entry.kind === 'container' ? entry.container : (entry.anchor.parentElement ?? undefined),
+    send: typedInst.send as (msg: unknown) => void,
+    instance: typedInst as ComponentInstance,
+  })
+  const nodes = typedInst.def.view(createView<S, M>(typedInst.send))
+  clearRenderContext()
+  setFlatBindings(null)
+
+  if (entry.kind === 'container') {
+    for (const node of nodes) {
+      entry.container.appendChild(node)
+    }
+  } else {
+    for (const node of nodes) {
+      entry.anchor.parentNode!.insertBefore(node, entry.endSentinel)
+    }
+  }
+
+  // Restore focus, selection, and scroll positions in the freshly
+  // rendered DOM. Best-effort: when the new view's DOM has diverged
+  // structurally (different IDs, different element ordering, the
+  // input that was focused no longer exists), the restorers no-op
+  // silently. This is the right tradeoff — failing loudly on
+  // structural divergence would just mean every meaningful view
+  // edit prints an error.
+  if (ownerRoot) {
+    if (focusSnapshot) restoreFocus(ownerRoot, focusSnapshot)
+    if (scrollSnapshot) restoreScroll(ownerRoot, scrollSnapshot)
+  }
+
+  return makeReplacementHandle(name, entry, typedInst)
 }
 
 function makeReplacementHandle<S, M, E>(

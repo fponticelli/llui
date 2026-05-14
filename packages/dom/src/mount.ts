@@ -147,13 +147,21 @@ export function mountApp<S, M, E, D>(
   data?: D,
   options?: MountOptions,
 ): AppHandle {
-  // HMR: if this component is already mounted (module re-execution
-  // during hot update), swap the definition instead of creating a new instance.
-  // HMR swap bypasses parentLifetime — HMR re-mounts the outermost app handle,
-  // which in a layout setup means the layout re-mounts at the root and the
-  // rest of the chain is re-established via the normal mount path.
+  // HMR: if this exact container already hosts a mount of this
+  // component (module re-execution during hot update re-runs the same
+  // mountApp call), swap the definition in place instead of creating a
+  // second instance. Match on container: when the same component name
+  // is mounted into N distinct containers (e.g. a page's onMount
+  // iterating placeholders), each call must produce its own fresh
+  // mount — swapping the existing entry would re-render into the
+  // wrong container and leave the new one empty.
+  //
+  // HMR swap bypasses parentLifetime — HMR re-mounts the outermost app
+  // handle, which in a layout setup means the layout re-mounts at the
+  // root and the rest of the chain is re-established via the normal
+  // mount path.
   if (hmrModule && def.name && !options?.parentLifetime) {
-    const swapped = hmrModule.replaceComponent(def.name, def)
+    const swapped = hmrModule.replaceComponentForContainer(def.name, def, container)
     if (swapped) return swapped
   }
 
@@ -309,6 +317,19 @@ export function mountAtAnchor<S, M, E, D>(
     )
   }
 
+  // HMR fast path: a second call into the same anchor (typical of
+  // module re-execution that re-runs the user's mountAtAnchor call —
+  // e.g. a vike persistent layout layer) hot-swaps in place. Matches
+  // on anchor identity so independent mounts at different anchors of
+  // the same-named component still each produce their own instance.
+  // Without this, the existing end sentinel below would be reused but
+  // the prior instance would be fully orphaned (lifetime not disposed,
+  // HMR entry not unregistered, activeInstances entry not removed).
+  if (hmrModule && def.name && !options?.parentLifetime) {
+    const swapped = hmrModule.replaceComponentForAnchor(def.name, def, anchor)
+    if (swapped) return swapped
+  }
+
   // Locate or synthesize the end sentinel.
   const existingEnd = _findEndSentinel(anchor)
   let endSentinel: Comment
@@ -406,6 +427,15 @@ export function hydrateAtAnchor<S, M, E, D = void>(
     throw new Error(
       `[LLui] hydrateAtAnchor: anchor comment must be attached to a live DOM tree before hydrate`,
     )
+  }
+
+  // HMR fast path: a second hydrateAtAnchor on the same anchor
+  // (typical of HMR module re-execution) hot-swaps in place. Matches
+  // mountAtAnchor's behavior. Without this, the second call leaks the
+  // first instance and stacks a second HMR entry under the same name.
+  if (hmrModule && def.name && !options?.parentLifetime) {
+    const swapped = hmrModule.replaceComponentForAnchor(def.name, def, anchor)
+    if (swapped) return swapped
   }
 
   const existingEnd = _findEndSentinel(anchor)
@@ -635,6 +665,19 @@ export function hydrateApp<S, M, E, D = void>(
   serverState: S,
   options?: MountOptions,
 ): AppHandle {
+  // HMR fast path: a second hydrateApp into the same container
+  // (typical of HMR module re-execution) hot-swaps in place. Without
+  // this, the second call leaks the first instance — its lifetime is
+  // never disposed, its HMR entry stays in the registry, its bindings
+  // keep running on detached DOM. State preservation follows the same
+  // semantics as mountApp's fast path: the live instance keeps its
+  // current state and the new def's `serverState` argument is
+  // intentionally ignored on the swap (HMR preserves user state).
+  if (hmrModule && def.name && !options?.parentLifetime) {
+    const swapped = hmrModule.replaceComponentForContainer(def.name, def, container)
+    if (swapped) return swapped
+  }
+
   // Run the original init once to capture its effects. The state it
   // returns is discarded — we use `serverState` (what the server
   // rendered with) instead. The effects are preserved and dispatched
