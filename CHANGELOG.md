@@ -11,6 +11,26 @@ All notable changes to LLui packages are documented here. LLui is a pre-1.0 proj
 
 Packages version in lockstep at release time: `@llui/dom`, `@llui/vite-plugin`, `@llui/test`, `@llui/router`, `@llui/transitions`, `@llui/components`, `@llui/vike` share a version line. `@llui/effects`, `@llui/mcp`, `@llui/eslint-plugin`, `@llui/agent`, and `llui-agent` have their own cadence.
 
+## 2026-05-14 — 0.0.39
+
+**Released:** `@llui/{dom,components,transitions}@0.0.39`; `@llui/{test,router}@0.0.40`; `@llui/vike@0.0.41`; `@llui/mcp@0.0.36`; `@llui/agent@0.0.57`; `llui-agent@0.0.21`
+
+Fix nested `mountApp` failing past the first instance, plus the same class of bug latent across `mountAtAnchor` / `hydrateApp` / `hydrateAtAnchor`.
+
+### `@llui/dom@0.0.39`
+
+- **Fixed** The HMR fast path in `mountApp` matched on `def.name` alone, so a second call into a _different_ container fired `replaceComponent` on the existing entry instead of mounting a new instance. The docs-page idiom of iterating placeholder spans and calling `mountApp(span, InlineRollChip, …)` for each only rendered the first chip — every subsequent call silently re-rendered chip #1 with new state and left the new span empty. Fix scopes the fast path by container identity (new `replaceComponentForContainer`); independent mounts of the same-named component into distinct containers now each produce their own instance.
+- **Fixed** The same class of bug was latent (as a leak, not as wrong output) in the other three mount paths. `mountAtAnchor`, `hydrateApp`, and `hydrateAtAnchor` had no fast path at all, so a repeated call into the same root created a new instance while leaving the prior one orphaned — its `rootLifetime` was never disposed, its HMR entry stayed in the registry, its `activeInstances` entry stuck, and its bindings kept running on detached DOM. All three now check an identity-keyed fast path (`replaceComponentForContainer` / new `replaceComponentForAnchor`) before doing any work, matching `mountApp`'s shape. Re-execution of the user's mount/hydrate call (typical of HMR module re-run, page navigation in vike persistent layouts) hot-swaps cleanly instead of leaking.
+- **Improved** Broadcast `replaceComponent(name, def)` — the variant the vite plugin's `import.meta.hot.accept` callback fires — is factored through a shared `swapEntry` helper with the new identity-scoped variants. Behaviour for the HMR-accept path is unchanged.
+
+### `@llui/{components,transitions}@0.0.39`, `@llui/{test,router}@0.0.40`, `@llui/vike@0.0.41`, `@llui/mcp@0.0.36`, `@llui/agent@0.0.57`
+
+- **Fixed** Cascade bump for `@llui/dom@0.0.39`. Peer range updated from `^0.0.38` to `^0.0.39`. No behaviour change in these packages themselves.
+
+### `llui-agent@0.0.21`
+
+- **Fixed** Cascade bump for `@llui/agent@0.0.57`. No behaviour change in the bridge itself.
+
 ## 2026-05-12 — 0.0.38
 
 **Released:** `@llui/{dom,components,transitions}@0.0.38`; `@llui/{test,router}@0.0.39`; `@llui/vike@0.0.40`; `@llui/mcp@0.0.35`; `@llui/agent@0.0.56`; `llui-agent@0.0.20`

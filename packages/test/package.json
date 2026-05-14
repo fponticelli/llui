@@ -1,6 +1,6 @@
 {
   "name": "@llui/test",
-  "version": "0.0.39",
+  "version": "0.0.40",
   "type": "module",
   "sideEffects": false,
   "exports": {
@@ -19,7 +19,7 @@
     "test": "vitest run"
   },
   "peerDependencies": {
-    "@llui/dom": "^0.0.38"
+    "@llui/dom": "^0.0.39"
   },
   "devDependencies": {
     "@llui/dom": "workspace:*"
