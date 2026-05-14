@@ -89,8 +89,7 @@ describe('__handlers fast path keeps memo() dirty mask in sync', () => {
       __dirty: (o, n) =>
         (Object.is(o.open, n.open) ? 0 : 0b01) | (Object.is(o.theme, n.theme) ? 0 : 0b10),
       __handlers: {
-        toggle: ((inst: unknown, msg: unknown) =>
-          _handleMsg(inst as never, msg, 0b01, 0)) as never,
+        toggle: ((inst: unknown, msg: unknown) => _handleMsg(inst as never, msg, 0b01, 0)) as never,
       },
     }
 

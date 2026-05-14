@@ -148,8 +148,7 @@ export function replaceComponentForAnchor<S, M, E, D = void>(
   const entries = hmrRegistry.get(name)
   if (!entries || entries.length === 0) return null
   const matching = entries.find(
-    (e): e is Extract<HmrEntry, { kind: 'anchor' }> =>
-      e.kind === 'anchor' && e.anchor === anchor,
+    (e): e is Extract<HmrEntry, { kind: 'anchor' }> => e.kind === 'anchor' && e.anchor === anchor,
   )
   if (!matching) return null
   const handle = swapEntry<S, M, E, D>(matching, name, newDef)
