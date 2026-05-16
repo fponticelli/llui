@@ -157,6 +157,7 @@ export function each<S, T, M = unknown>(opts: EachOptions<S, T, M>): Node[] {
 
   const block: StructuralBlock = {
     mask: (opts as { __mask?: number }).__mask ?? FULL_MASK,
+    maskHi: (opts as { __maskHi?: number }).__maskHi ?? 0,
     reconcile(state: unknown) {
       const parent = anchor.parentNode
       if (!parent) return

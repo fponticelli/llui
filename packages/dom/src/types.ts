@@ -377,7 +377,20 @@ export interface LifetimeNode {
 export type BindingKind = 'text' | 'prop' | 'attr' | 'class' | 'style' | 'effect'
 
 export interface Binding {
+  /**
+   * Bits 0..30 of the binding's dirty mask. For components with ≤31
+   * reactive prefixes this is the entire mask; for components with
+   * 32..61 prefixes, the bits beyond 30 live in {@link maskHi}.
+   */
   mask: number
+  /**
+   * Bits 31..61 of the binding's dirty mask, encoded with `1 <<
+   * (pos - 31)`. Zero for ≤31-path components — the runtime gates
+   * still AND against it, but `0 & dirtyHi` is always 0 so the gate
+   * collapses to the single-word check. Compiler-emitted only when
+   * the component actually reads paths past bit 30.
+   */
+  maskHi: number
   accessor: (state: unknown) => unknown
   lastValue: unknown
   kind: BindingKind

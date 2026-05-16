@@ -2,11 +2,18 @@ import { describe, it, expect } from 'vitest'
 import { collectDeps } from '../src/collect-deps'
 
 function paths(source: string): string[] {
-  return Array.from(collectDeps(source).keys()).sort()
+  const { lo, hi } = collectDeps(source)
+  return [...Array.from(lo.keys()), ...Array.from(hi.keys())].sort()
 }
 
 function bits(source: string): Map<string, number> {
-  return collectDeps(source)
+  // Test helper: legacy callers only inspected low-word bits. Merge the
+  // hi map (which is empty for ≤31-path components anyway) into the
+  // low map so existing assertions stay meaningful for the common case.
+  const { lo, hi } = collectDeps(source)
+  const merged = new Map(lo)
+  for (const [k, v] of hi) merged.set(k, v)
+  return merged
 }
 
 describe('collectDeps', () => {

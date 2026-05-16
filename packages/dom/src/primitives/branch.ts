@@ -44,6 +44,7 @@ export function branch<S, M = unknown, K extends string = string>(
 
   const block: StructuralBlock = {
     mask: (opts as { __mask?: number }).__mask ?? FULL_MASK,
+    maskHi: (opts as { __maskHi?: number }).__maskHi ?? 0,
     reconcile(state: unknown) {
       const newKey = callOn(state as S)
       if (Object.is(newKey, currentKey)) return

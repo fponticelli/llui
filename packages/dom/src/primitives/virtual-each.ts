@@ -270,6 +270,7 @@ export function virtualEach<S, T, M = unknown>(opts: VirtualEachOptions<S, T, M>
   // full rationale (Phase 1 iteration safety).
   const block: StructuralBlock = {
     mask: FULL_MASK,
+    maskHi: 0,
     reconcile(state: unknown) {
       const newItems = callItems(state as S)
       if (newItems === lastItems) return

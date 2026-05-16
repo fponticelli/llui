@@ -57,8 +57,12 @@ describe('Pass 2 — __prefixes emission for path-keyed reactivity', () => {
     expect(out).toMatch(/s\s*=>\s*s\?\.user\?\.email/)
   })
 
-  it('skips __prefixes emission when >31 paths (overflow)', () => {
-    // Force overflow: 32+ top-level fields each read by a distinct accessor.
+  it('emits a multi-word __prefixes array when >31 paths (overflow)', () => {
+    // Force overflow: 35 top-level fields each read by a distinct accessor.
+    // With multi-word `__prefixes`, the compiler emits all 35 prefix
+    // arrows; the runtime fans bit positions 0..30 into the low dirty
+    // word and 31..34 into the high word via `computeDirtyFromPrefixes`'
+    // overflow tuple.
     const fields = Array.from({ length: 35 }, (_, i) => `f${i}: 0`).join(', ')
     const reads = Array.from({ length: 35 }, (_, i) => `text(s => String(s.f${i}))`).join(',\n')
     const src = `
@@ -73,10 +77,13 @@ describe('Pass 2 — __prefixes emission for path-keyed reactivity', () => {
       })
     `
     const out = t(src)
-    // __dirty still emitted (current overflow path); __prefixes deliberately
-    // skipped until multi-word emission lands.
-    expect(out).toContain('__dirty')
-    expect(out).not.toContain('__prefixes')
+    expect(out).toContain('__prefixes')
+    // All 35 distinct paths must appear as prefix arrows. Spot-check
+    // the first and last so we don't miss a regression where overflow
+    // paths were truncated. Top-level paths emit as `s.fN` (no
+    // optional chaining — only nested paths use `s?.foo?.bar`).
+    expect(out).toMatch(/s\s*=>\s*s\.f0\b/)
+    expect(out).toMatch(/s\s*=>\s*s\.f34\b/)
   })
 
   it('emits __prefixes with arrow ordering matching bit positions', () => {

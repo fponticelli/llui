@@ -343,7 +343,9 @@ export function transformLlui(
   // function is generated per-component, so bit assignments in other files
   // won't match. Files without component() get FULL_MASK on all bindings.
   const fileHasComponent = hasComponentDef(sourceFile, lluiImport)
-  const fieldBits = fileHasComponent ? collectDeps(source) : new Map<string, number>()
+  const { lo: fieldBits, hi: fieldBitsHi } = fileHasComponent
+    ? collectDeps(source)
+    : { lo: new Map<string, number>(), hi: new Map<string, number>() }
 
   if (verbose && fileHasComponent) {
     const pairs = [...fieldBits.entries()]
@@ -483,7 +485,7 @@ export function transformLlui(
 
     // Pass 2: Inject __dirty, __update, and __msgSchema into component() calls
     if (ts.isCallExpression(node) && isComponentCall(node, lluiImport)) {
-      let result = tryInjectDirty(node, fieldBits, f)
+      let result = tryInjectDirty(node, fieldBits, f, fieldBitsHi)
       if (result) usesApplyBinding = true
 
       // Extract schema data once — used both for devMode injections and the
@@ -1435,8 +1437,9 @@ function tryInjectDirty(
   node: ts.CallExpression,
   fieldBits: Map<string, number>,
   f: ts.NodeFactory,
+  fieldBitsHi: Map<string, number> = new Map(),
 ): ts.CallExpression | null {
-  if (fieldBits.size === 0) return null
+  if (fieldBits.size === 0 && fieldBitsHi.size === 0) return null
   const configArg = node.arguments[0]
   if (!configArg || !ts.isObjectLiteralExpression(configArg)) return null
 
@@ -1582,13 +1585,17 @@ function tryInjectDirty(
   // top-level-conflated __dirty (which always co-fires bindings sharing
   // a top-level field even when only one sub-path actually mutated).
   //
-  // We only emit when total paths ≤31 so a single-word mask is always
-  // sufficient. Overflow cases stay on the existing __dirty bitmask
-  // path (FULL_MASK fallback) until the multi-word emit lands.
-  if (fieldBits.size <= 31) {
-    const prefixesProp = buildPrefixesProp(fieldBits, f)
-    if (prefixesProp) extraProps.push(prefixesProp)
-  }
+  // Emit `__prefixes` whenever any reactive paths are present. For
+  // components with ≤31 paths, the runtime's
+  // `computeDirtyFromPrefixes` returns a single `number`; for
+  // 32..61-path components it returns a `[lo, hi]` tuple that the
+  // runtime fans out into `combinedDirty` + `combinedDirtyHi`. The
+  // binding-level mask gating is still single-word at the compiler
+  // emit layer today, so high-position bindings still re-evaluate
+  // every cycle — but the dirty computation itself is now precise,
+  // which lets memo()'d aggregates short-circuit correctly.
+  const prefixesProp = buildPrefixesProp(fieldBits, fieldBitsHi, f)
+  if (prefixesProp) extraProps.push(prefixesProp)
 
   const newConfig = f.createObjectLiteralExpression([...configArg.properties, ...extraProps], true)
 
@@ -3206,32 +3213,32 @@ function buildUpdateBody(f: ts.NodeFactory, structuralMask: number, _phase2Mask:
 }
 
 /**
- * Build the `__prefixes` property assignment from a path → bit map.
+ * Build the `__prefixes` property assignment from path → bit maps.
  *
- * Emits one arrow `(s) => s.<path>` per distinct path, ordered so the
- * array index equals the path's bit position (`Math.log2(bit)`). The
- * runtime walks this array and compares `prefix(prev) !== prefix(next)`
- * per entry, ORing the corresponding bit into the dirty mask. Bindings
- * already carry path-level bits, so the result is path-precise dirty
- * tracking without changing the binding shape.
+ * Emits one arrow `(s) => s.<path>` per distinct path. Array index =
+ * the path's bit position: positions 0..30 come from `fieldBits` (low
+ * word), positions 31..61 from `fieldBitsHi` (high word). The runtime
+ * walks this array and reference-compares `prefix(prev)` vs
+ * `prefix(next)` per entry, fanning bits into a `(lo, hi)` pair when
+ * the array length exceeds 31.
  *
- * Returns null if no paths are present (caller skips emission). Only
- * called when `fieldBits.size <= 31`; the multi-word emit isn't
- * implemented yet — overflow falls back to the existing __dirty.
+ * Returns null if no paths are present.
  */
 function buildPrefixesProp(
   fieldBits: Map<string, number>,
+  fieldBitsHi: Map<string, number>,
   f: ts.NodeFactory,
 ): ts.PropertyAssignment | null {
-  if (fieldBits.size === 0) return null
-  // Sort paths by bit position so the array index matches the bit. Bits
-  // are powers of two: bit 1 → position 0, bit 2 → position 1, bit 4 →
-  // position 2, etc. FULL_MASK (-1) entries shouldn't reach this code
-  // (the size ≤31 gate prevents overflow), but defensively skip them.
-  const ordered = [...fieldBits.entries()]
+  if (fieldBits.size === 0 && fieldBitsHi.size === 0) return null
+  // Sort paths by bit value within each word. Bits are powers of two
+  // inside their word (1, 2, 4, …, 1<<30), so sorting numerically gives
+  // ascending bit position. FULL_MASK (-1) entries from past-61
+  // overflow shouldn't drive a prefix entry — defensively skip them.
+  const orderedLo = [...fieldBits.entries()]
     .filter(([, bit]) => bit > 0)
     .sort(([, a], [, b]) => a - b)
-  const arrows = ordered.map(([path]) => {
+  const orderedHi = [...fieldBitsHi.entries()].sort(([, a], [, b]) => a - b)
+  const buildArrow = (path: string): ts.ArrowFunction => {
     const parts = path.split('.')
     const body = buildAccess(f, 's', parts)
     return f.createArrowFunction(
@@ -3242,11 +3249,12 @@ function buildPrefixesProp(
       f.createToken(ts.SyntaxKind.EqualsGreaterThanToken),
       body,
     )
-  })
-  return f.createPropertyAssignment(
-    '__prefixes',
-    f.createArrayLiteralExpression(arrows, false),
-  )
+  }
+  const arrows = [
+    ...orderedLo.map(([path]) => buildArrow(path)),
+    ...orderedHi.map(([path]) => buildArrow(path)),
+  ]
+  return f.createPropertyAssignment('__prefixes', f.createArrayLiteralExpression(arrows, false))
 }
 
 function buildAccess(f: ts.NodeFactory, root: string, parts: string[]): ts.Expression {
@@ -5048,22 +5056,25 @@ function computeAccessorMask(
   accessor: ts.ArrowFunction | ts.FunctionExpression | ts.FunctionDeclaration,
   fieldBits: Map<string, number>,
   visited: Set<ts.Node> = new Set(),
-): { mask: number; readsState: boolean } {
-  if (visited.has(accessor)) return { mask: 0, readsState: false }
+  fieldBitsHi?: Map<string, number>,
+): { mask: number; maskHi: number; readsState: boolean } {
+  if (visited.has(accessor)) return { mask: 0, maskHi: 0, readsState: false }
   visited.add(accessor)
 
-  if (accessor.parameters.length === 0) return { mask: 0xffffffff | 0, readsState: false }
+  if (accessor.parameters.length === 0)
+    return { mask: 0xffffffff | 0, maskHi: 0, readsState: false }
 
   const paramName = accessor.parameters[0]!.name
-  if (!ts.isIdentifier(paramName)) return { mask: 0xffffffff | 0, readsState: false }
+  if (!ts.isIdentifier(paramName)) return { mask: 0xffffffff | 0, maskHi: 0, readsState: false }
 
   // FunctionDeclaration always has a body (we never resolve overloads here);
   // ArrowFunction's body may be a single expression. Both shapes are walked
   // identically by ts.forEachChild, so no special-casing is needed below.
-  if (!accessor.body) return { mask: 0xffffffff | 0, readsState: false }
+  if (!accessor.body) return { mask: 0xffffffff | 0, maskHi: 0, readsState: false }
 
   const stateParam = paramName.text
   let mask = 0
+  let maskHi = 0
   let readsState = false
 
   // `inNestedFn` gates only the delegation-recursion. Property-access
@@ -5094,8 +5105,11 @@ function computeAccessorMask(
         const chain = resolveChain(node, stateParam)
         if (chain) {
           const bit = fieldBits.get(chain)
+          const bitHi = fieldBitsHi?.get(chain)
           if (bit !== undefined) {
             mask |= bit
+          } else if (bitHi !== undefined) {
+            maskHi |= bitHi
           } else {
             // Match paths that overlap our chain in either direction:
             //   - `path` extends `chain` — fieldBits has finer-grained paths
@@ -5109,6 +5123,17 @@ function computeAccessorMask(
             for (const [path, b] of fieldBits) {
               if (path === chain || path.startsWith(chain + '.') || chain.startsWith(path + '.')) {
                 mask |= b
+              }
+            }
+            if (fieldBitsHi) {
+              for (const [path, b] of fieldBitsHi) {
+                if (
+                  path === chain ||
+                  path.startsWith(chain + '.') ||
+                  chain.startsWith(path + '.')
+                ) {
+                  maskHi |= b
+                }
               }
             }
           }
@@ -5127,8 +5152,9 @@ function computeAccessorMask(
         if (arg0 && ts.isIdentifier(arg0) && arg0.text === stateParam) {
           const resolved = resolveAccessorBody(node.expression)
           if (resolved) {
-            const inner = computeAccessorMask(resolved, fieldBits, visited)
+            const inner = computeAccessorMask(resolved, fieldBits, visited, fieldBitsHi)
             mask |= inner.mask
+            maskHi |= inner.maskHi
             if (inner.readsState) readsState = true
           }
         }
@@ -5141,10 +5167,10 @@ function computeAccessorMask(
 
   walk(accessor.body, false)
 
-  if (mask === 0 && readsState) {
-    return { mask: 0xffffffff | 0, readsState: true }
+  if (mask === 0 && maskHi === 0 && readsState) {
+    return { mask: 0xffffffff | 0, maskHi: 0, readsState: true }
   }
-  return { mask, readsState }
+  return { mask, maskHi, readsState }
 }
 
 function resolveChain(node: ts.PropertyAccessExpression, paramName: string): string | null {

@@ -16,14 +16,14 @@ function manyPaths(n: number): string {
 
 ruleTester.run('bitmask-overflow', bitmaskOverflowRule, {
   valid: [
-    // 31 paths — exactly at the limit, no warning.
+    // 62 paths — exactly at the two-word limit, no warning.
     {
       code: `
         const App = component({
           name: 'X',
           init: () => [{}, []],
           update: (s) => [s, []],
-          view: () => [div([${manyPaths(31)}])],
+          view: () => [div([${manyPaths(62)}])],
         })
       `,
     },
@@ -37,26 +37,26 @@ ruleTester.run('bitmask-overflow', bitmaskOverflowRule, {
     },
   ],
   invalid: [
-    // 32 paths — over by 1.
+    // 63 paths — over by 1 (past the high-word bit 30).
     {
       code: `
         const App = component({
           name: 'X',
           init: () => [{}, []],
           update: (s) => [s, []],
-          view: () => [div([${manyPaths(32)}])],
+          view: () => [div([${manyPaths(63)}])],
         })
       `,
       errors: [{ messageId: 'overflow' }],
     },
-    // 50 paths.
+    // 80 paths.
     {
       code: `
         const App = component({
           name: 'X',
           init: () => [{}, []],
           update: (s) => [s, []],
-          view: () => [div([${manyPaths(50)}])],
+          view: () => [div([${manyPaths(80)}])],
         })
       `,
       errors: [{ messageId: 'overflow' }],

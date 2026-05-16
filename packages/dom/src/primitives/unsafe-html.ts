@@ -46,6 +46,7 @@ export function unsafeHtml<S>(
 
   const block: StructuralBlock = {
     mask: blockMask,
+    maskHi: 0,
     reconcile(state: unknown) {
       const newHtml = accessor(state as S)
       // Identity short-circuit — don't rebuild the subtree when the

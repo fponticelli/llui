@@ -182,36 +182,50 @@ export function collectAccessorPathSets(sourceFile: ts.SourceFile): Set<string>[
 /**
  * Pre-scan a source file to collect all unique state access paths
  * referenced by reactive accessors (arrow functions in props and text() calls).
- * Returns a Map<path, bitPosition> where each path gets a unique power-of-two bit.
+ *
+ * Returns a pair of maps:
+ *   - `lo`: paths at bit positions 0..30, with value `1 << position`
+ *   - `hi`: paths at bit positions 31..61, with value `1 << (position - 31)`
+ *
+ * Bit positions past 61 collapse to `-1` (FULL_MASK) in the `lo` map and
+ * cause every binding reading them to re-evaluate on every cycle. The
+ * `bitmask-overflow` lint rule warns the user to restructure state.
+ *
+ * Components with ≤31 paths see an empty `hi` map; the compiler skips
+ * all high-word emit so the generated code is byte-identical to the
+ * pre-multi-word baseline.
  */
-export function collectDeps(source: string): Map<string, number> {
+export function collectDeps(source: string): {
+  lo: Map<string, number>
+  hi: Map<string, number>
+} {
   const sourceFile = ts.createSourceFile('input.ts', source, ts.ScriptTarget.Latest, true)
 
   // Check if file imports from @llui/dom
   if (!hasLluiImport(sourceFile)) {
-    return new Map()
+    return { lo: new Map(), hi: new Map() }
   }
 
   const paths = collectStatePathsFromSource(sourceFile)
 
-  // Assign bit positions. The bitmask holds 31 unique paths (positions
-  // 0..30). When the count exceeds 31, overflow paths use FULL_MASK (-1)
-  // — they always trigger re-evaluation, degrading gracefully. The
-  // diagnostic warns the user to decompose.
-  const fieldBits = new Map<string, number>()
-  let bit = 1
+  const lo = new Map<string, number>()
+  const hi = new Map<string, number>()
   let index = 0
   for (const path of paths) {
-    if (index >= 31) {
-      fieldBits.set(path, -1)
+    if (index < 31) {
+      lo.set(path, 1 << index)
+    } else if (index < 62) {
+      hi.set(path, 1 << (index - 31))
     } else {
-      fieldBits.set(path, bit)
-      bit <<= 1
+      // Past 61 paths — graceful FULL_MASK fallback in the low word.
+      // Realistic LLui components shouldn't hit this; the lint rule
+      // fires well before.
+      lo.set(path, -1)
     }
     index++
   }
 
-  return fieldBits
+  return { lo, hi }
 }
 
 function hasLluiImport(sourceFile: ts.SourceFile): boolean {

@@ -3,6 +3,11 @@ import { addBinding } from './lifetime.js'
 
 export interface CreateBindingOpts {
   mask: number
+  /**
+   * High-word bits 31..61. Optional; defaults to 0. Compiler-emitted
+   * only when the accessor reads a prefix past bit 30.
+   */
+  maskHi?: number
   accessor: (state: never) => unknown
   kind: BindingKind
   node: Node
@@ -23,6 +28,7 @@ export function setFlatBindings(arr: Binding[] | null): void {
 export function createBinding(scope: Lifetime, opts: CreateBindingOpts): Binding {
   const binding: Binding = {
     mask: opts.mask,
+    maskHi: opts.maskHi ?? 0,
     accessor: opts.accessor as (state: unknown) => unknown,
     lastValue: undefined,
     kind: opts.kind,

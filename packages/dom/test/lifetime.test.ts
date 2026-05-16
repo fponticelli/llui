@@ -65,6 +65,7 @@ describe('disposeLifetime', () => {
     const scope = createLifetime(null)
     const binding: Binding = {
       mask: 1,
+      maskHi: 0,
       accessor: () => 'x',
       lastValue: 'x',
       kind: 'text',

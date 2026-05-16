@@ -31,7 +31,7 @@ describe('__update fast path', () => {
       __update(state, dirty, bindings, blocks, bindingsBeforePhase1) {
         updateSpy({ state, dirty, bindings, blocks, bindingsBeforePhase1 })
         // Must still run Phase 2 for correctness
-        _runPhase2(state, dirty, bindings, bindingsBeforePhase1)
+        _runPhase2(state, dirty, 0, bindings, bindingsBeforePhase1)
       },
     }
 
@@ -272,6 +272,7 @@ describe('disposeLifetimesBulk', () => {
     // Create a mock binding on the child scope
     const binding: Binding = {
       mask: 1,
+      maskHi: 0,
       accessor: () => 'test',
       lastValue: 'test',
       kind: 'text',
@@ -476,7 +477,7 @@ describe('__handlers per-message dispatch', () => {
           handlerSpy('inc')
           const newState = { ...typedInst.state, count: typedInst.state.count + 1 }
           typedInst.state = newState
-          _runPhase2(newState, 1, typedInst.allBindings, typedInst.allBindings.length)
+          _runPhase2(newState, 1, 0, typedInst.allBindings, typedInst.allBindings.length)
           return [newState, []]
         },
       },
@@ -645,6 +646,7 @@ describe('scope pooling', () => {
     addDisposer(scope, () => {})
     const binding: Binding = {
       mask: 1,
+      maskHi: 0,
       accessor: () => 'old',
       lastValue: 'old',
       kind: 'text',

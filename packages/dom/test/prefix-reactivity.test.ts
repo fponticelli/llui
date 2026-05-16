@@ -8,7 +8,11 @@
 // comparing prev/next at each prefix, not via the top-level-field bitmask.
 
 import { describe, it, expect } from 'vitest'
-import { createComponentInstance, flushInstance, computeDirtyFromPrefixes } from '../src/update-loop'
+import {
+  createComponentInstance,
+  flushInstance,
+  computeDirtyFromPrefixes,
+} from '../src/update-loop'
 import { createBinding } from '../src/binding'
 import { applyBinding } from '../src/binding'
 import type { ComponentDef, Binding } from '../src/types'
@@ -170,10 +174,12 @@ describe('component with __prefixes opts into path-keyed reactivity', () => {
   it('fires only the bindings whose prefix actually changed (precision)', () => {
     const inst = createComponentInstance(makeDef())
     const log: string[] = []
-    const fired = (label: string) => (s: unknown): unknown => {
-      log.push(label)
-      return (s as S).query
-    }
+    const fired =
+      (label: string) =>
+      (s: unknown): unknown => {
+        log.push(label)
+        return (s as S).query
+      }
     // Three bindings: each watches a different prefix.
     createBinding(inst.rootLifetime, {
       mask: MASK_USER,
@@ -207,6 +213,84 @@ describe('component with __prefixes opts into path-keyed reactivity', () => {
     flushInstance(inst)
     // Only the 'query'-watching binding should have re-run its accessor.
     expect(log).toEqual(['query'])
+  })
+
+  it('gates a high-word binding (maskHi) against a high-word prefix change (>31 paths)', () => {
+    // Build a component with 35 prefixes — positions 0..30 in the low
+    // word, positions 31..34 in the high word. Position 33 (high-word
+    // bit 2) is the one we mutate, gating a single binding that only
+    // reads `f33`.
+    type Big = Record<string, number>
+    const prefixes: Array<(s: unknown) => unknown> = []
+    for (let i = 0; i < 35; i++) {
+      const key = `f${i}`
+      prefixes.push((s) => (s as Big)[key])
+    }
+    const initial: Big = {}
+    for (let i = 0; i < 35; i++) initial[`f${i}`] = 0
+
+    type M = { type: 'bumpF33' } | { type: 'bumpF0' }
+    const def: ComponentDef<Big, M, never> = {
+      name: 'BigComponent',
+      init: () => [initial, []],
+      update: (s, m) => {
+        switch (m.type) {
+          case 'bumpF33':
+            return [{ ...s, f33: s.f33! + 1 }, []]
+          case 'bumpF0':
+            return [{ ...s, f0: s.f0! + 1 }, []]
+        }
+      },
+      view: () => [],
+      __prefixes: prefixes,
+    }
+    const inst = createComponentInstance(def)
+
+    let f33FireCount = 0
+    let f0FireCount = 0
+
+    // Binding gating on f33 — high-word bit 2 (position 33 - 31 = 2).
+    createBinding(inst.rootLifetime, {
+      mask: 0,
+      maskHi: 1 << 2,
+      accessor: (s) => {
+        f33FireCount++
+        return String((s as Big).f33)
+      },
+      kind: 'text',
+      node: document.createTextNode(''),
+      perItem: false,
+    })
+    // Binding gating on f0 — low-word bit 0.
+    createBinding(inst.rootLifetime, {
+      mask: 1 << 0,
+      maskHi: 0,
+      accessor: (s) => {
+        f0FireCount++
+        return String((s as Big).f0)
+      },
+      kind: 'text',
+      node: document.createTextNode(''),
+      perItem: false,
+    })
+    for (const b of inst.rootLifetime.bindings) {
+      inst.allBindings.push(b as Binding)
+      ;(b as Binding).lastValue = (b as Binding).accessor(inst.state)
+    }
+    f33FireCount = 0
+    f0FireCount = 0
+
+    // Mutate f33 — should fire ONLY the high-word binding.
+    inst.send({ type: 'bumpF33' })
+    flushInstance(inst)
+    expect(f33FireCount).toBe(1)
+    expect(f0FireCount).toBe(0)
+
+    // Mutate f0 — should fire ONLY the low-word binding.
+    inst.send({ type: 'bumpF0' })
+    flushInstance(inst)
+    expect(f33FireCount).toBe(1)
+    expect(f0FireCount).toBe(1)
   })
 
   it('falls back to __dirty when __prefixes is absent (unchanged behavior)', () => {

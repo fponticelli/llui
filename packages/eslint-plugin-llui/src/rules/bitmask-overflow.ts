@@ -3,12 +3,13 @@ import { createRule } from '../createRule.js'
 import { collectAccessorPathSets, collectStatePaths } from '../util/state-paths.js'
 
 /**
- * Warns when a component reads more than 31 unique state paths.
+ * Warns when a component reads more than 62 unique state paths.
  *
- * The runtime bitmask is a single 31-bit `number`. Paths 0..30 each get
- * a unique bit; everything past 31 collapses to `FULL_MASK` (-1) — those
- * paths re-evaluate every binding in the component, negating the
- * bitmask optimization for the affected updates.
+ * The runtime bitmask is two 31-bit words (`mask` for positions 0..30,
+ * `maskHi` for positions 31..61). Paths 0..61 each get a unique bit;
+ * anything past 61 collapses to `FULL_MASK` (-1) — those paths
+ * re-evaluate every binding in the component, negating the bitmask
+ * optimization for the affected updates.
  *
  * The diagnostic includes:
  *   - the per-top-level-field breakdown so authors know where to slice,
@@ -22,10 +23,10 @@ import { collectAccessorPathSets, collectStatePaths } from '../util/state-paths.
  *
  * Migrated from the Vite plugin's `bitmask-overflow` diagnostic.
  *
- * Pending: multi-word `__prefixes` emit (bigint or two-word maskHi
- * support) will eliminate the 31-path ceiling for components that
- * read >31 distinct reference-stable prefixes. Until that ships, this
- * rule remains the user-facing surface for the limit.
+ * The runtime supports two-word masks today, so the practical
+ * ceiling is 62 paths (positions 0..61). Components reading more than
+ * that should be restructured rather than waiting for a 3-word fallback
+ * that does not exist.
  */
 
 function setsEqual<T>(a: Set<T>, b: Set<T>): boolean {
@@ -77,12 +78,12 @@ export const bitmaskOverflowRule = createRule({
     type: 'problem',
     docs: {
       description:
-        'Warn when a component reads more than 31 unique state paths — paths past the limit fall back to FULL_MASK and lose bitmask gating.',
+        'Warn when a component reads more than 62 unique state paths — paths past the limit fall back to FULL_MASK and lose bitmask gating.',
     },
     schema: [],
     messages: {
       overflow:
-        "Component has {{count}} unique state access paths ({{overflow}} past the 31-path limit). Paths 32..{{count}} fall back to FULL_MASK — their changes re-evaluate every binding in the component, negating the bitmask optimization for those updates.\n\nTop-level fields by path count: {{breakdown}}.{{cooccurrenceNote}}\n\nRecommended fix: restructure state so {{candidateList}} are grouped under one or two reference-stable parents, or factor that subtree into a separate module that consumes the parent's state via the standard view-function `(props, send)` convention. Alternative: use `combine()` to split the reducer into slices when the parent's `update()` is mostly mechanical routing. The 31-path cap will be lifted once multi-word `__prefixes` emit lands.",
+        "Component has {{count}} unique state access paths ({{overflow}} past the 62-path limit). Paths 63..{{count}} fall back to FULL_MASK — their changes re-evaluate every binding in the component, negating the bitmask optimization for those updates.\n\nTop-level fields by path count: {{breakdown}}.{{cooccurrenceNote}}\n\nRecommended fix: restructure state so {{candidateList}} are grouped under one or two reference-stable parents, or factor that subtree into a separate module that consumes the parent's state via the standard view-function `(props, send)` convention. Alternative: use `combine()` to split the reducer into slices when the parent's `update()` is mostly mechanical routing.",
     },
   },
   defaultOptions: [],
@@ -122,9 +123,9 @@ export const bitmaskOverflowRule = createRule({
 
         const paths = collectStatePaths(program)
         const pathCount = paths.size
-        if (pathCount <= 31) return
+        if (pathCount <= 62) return
 
-        const overflow = pathCount - 31
+        const overflow = pathCount - 62
         const byTopLevel = new Map<string, number>()
         for (const p of paths) {
           const top = p.split('.', 1)[0]!

@@ -228,7 +228,7 @@ export function _forceState<S, M, E>(inst: ComponentInstance<S, M, E>, newState:
   const snapshot = inst.structuralBlocks.slice()
   for (const block of snapshot) {
     try {
-      block.reconcile(newState, FULL_MASK)
+      block.reconcile(newState, FULL_MASK, FULL_MASK)
     } catch (e) {
       reportReconcileError(inst, e)
     }
@@ -380,9 +380,11 @@ function processMessages<S, M, E>(inst: ComponentInstance<S, M, E>): void {
     }
   }
 
-  // Generic pipeline — drain queue, accumulate dirty bits
+  // Generic pipeline — drain queue, accumulate dirty bits (two words:
+  // bits 0..30 in `combinedDirty`, bits 31..61 in `combinedDirtyHi`).
   let state = inst.state
   let combinedDirty = 0
+  let combinedDirtyHi = 0
   const allEffects: E[] = []
 
   const defUpdate = inst.def.update
@@ -408,7 +410,8 @@ function processMessages<S, M, E>(inst: ComponentInstance<S, M, E>): void {
     if (typeof dirty === 'number') {
       combinedDirty |= dirty
     } else {
-      combinedDirty |= dirty[0] | dirty[1]
+      combinedDirty |= dirty[0]
+      combinedDirtyHi |= dirty[1]
     }
     state = newState
     // Avoid spread — allocates an iterator per call. For typical effect
@@ -433,14 +436,20 @@ function processMessages<S, M, E>(inst: ComponentInstance<S, M, E>): void {
 
   // Set current dirty mask BEFORE Phase 1 so memo() accessors used in
   // structural primitives (e.g. each.items) can use the bitmask fast path.
-  setCurrentDirtyMask(combinedDirty)
+  setCurrentDirtyMask(combinedDirty, combinedDirtyHi)
 
   if (inst.def.__update) {
-    // Compiler-generated fast path — replaces generic Phase 1 + Phase 2
+    // Compiler-generated fast path — replaces generic Phase 1 + Phase 2.
+    // Backward-compat: compiled bundles older than the multi-word emit
+    // pass __update a single dirty word; the runtime widens the call site
+    // and the compiled body ignores the extra arg. Stale compiled bundles
+    // simply won't gate against the high word — for ≤31-prefix components
+    // that's correct (combinedDirtyHi is always 0); for >31-prefix
+    // components a fresh compile is required.
     inst.def.__update(state, combinedDirty, bindings, inst.structuralBlocks, bindingsBeforePhase1)
   } else {
     // Generic Phase 1 + Phase 2 fallback (uncompiled components)
-    genericUpdate(inst, state, combinedDirty, bindings, bindingsBeforePhase1)
+    genericUpdate(inst, state, combinedDirty, combinedDirtyHi, bindings, bindingsBeforePhase1)
   }
 
   // Dispatch effects after DOM updates
@@ -453,6 +462,7 @@ function genericUpdate<S, M, E>(
   inst: ComponentInstance<S, M, E>,
   state: S,
   combinedDirty: number,
+  combinedDirtyHi: number,
   bindings: Binding[],
   bindingsBeforePhase1: number,
 ): void {
@@ -466,9 +476,13 @@ function genericUpdate<S, M, E>(
   const blocks = inst.structuralBlocks
   for (let bi = 0; bi < blocks.length; bi++) {
     const block = blocks[bi]
-    if (!block || (block.mask & combinedDirty) === 0) continue
+    if (!block) continue
+    // Two-word gate: skip when neither low nor high masks intersect.
+    // `block.maskHi` is 0 for ≤31-prefix blocks, so `0 & dirtyHi === 0`
+    // collapses the gate to the single-word check at runtime.
+    if (!((block.mask & combinedDirty) | (block.maskHi & combinedDirtyHi))) continue
     try {
-      block.reconcile(state, combinedDirty)
+      block.reconcile(state, combinedDirty, combinedDirtyHi)
     } catch (e) {
       reportReconcileError(inst, e)
     }
@@ -478,6 +492,7 @@ function genericUpdate<S, M, E>(
   _runPhase2(
     state,
     combinedDirty,
+    combinedDirtyHi,
     bindings,
     bindingsBeforePhase1,
     inst.def.name,
@@ -492,12 +507,19 @@ function genericUpdate<S, M, E>(
  *
  * @param method 0=reconcile, 1=reconcileItems, 2=reconcileClear, 3=reconcileRemove, -1=skip blocks
  * @public — used by compiler-generated `__handlers`
+ *
+ * Backward-compat: pre-multi-word compiled bundles call this with 4
+ * args (no `dirtyHi`). The default `dirtyHi = 0` keeps those calls
+ * correct for ≤31-prefix components — the high gate always evaluates
+ * to 0 so the runtime falls back to the single-word check. Components
+ * with >31 prefixes need a fresh compile to start passing `dirtyHi`.
  */
 export function _handleMsg(
   inst: ComponentInstance,
   msg: unknown,
   dirty: number,
   method: number,
+  dirtyHi: number = 0,
 ): [unknown, unknown[]] {
   const [s, e] = (inst.def.update as (s: unknown, m: unknown) => [unknown, unknown[]])(
     inst.state,
@@ -513,13 +535,14 @@ export function _handleMsg(
   // memo short-circuits with the stale value left over from the
   // previous cycle and structural blocks reconcile against a frozen
   // input.
-  setCurrentDirtyMask(dirty)
+  setCurrentDirtyMask(dirty, dirtyHi)
 
   if (method >= 0) {
     const bl = inst.structuralBlocks
     for (let i = 0; i < bl.length; i++) {
       const block = bl[i]
-      if (!block || !(block.mask & dirty)) continue
+      if (!block) continue
+      if (!((block.mask & dirty) | (block.maskHi & dirtyHi))) continue
       try {
         // Specialized methods (`reconcileItems`, `reconcileClear`,
         // `reconcileRemove`, `reconcileChanged`) only exist on `each`
@@ -534,25 +557,25 @@ export function _handleMsg(
         // methods, so they keep their fast path.
         switch (method) {
           case 0:
-            block.reconcile(s, dirty)
+            block.reconcile(s, dirty, dirtyHi)
             break
           case 1:
             if (block.reconcileItems) block.reconcileItems(s)
-            else block.reconcile(s, dirty)
+            else block.reconcile(s, dirty, dirtyHi)
             break
           case 2:
             if (block.reconcileClear) block.reconcileClear()
-            else block.reconcile(s, dirty)
+            else block.reconcile(s, dirty, dirtyHi)
             break
           case 3:
             if (block.reconcileRemove) block.reconcileRemove(s)
-            else block.reconcile(s, dirty)
+            else block.reconcile(s, dirty, dirtyHi)
             break
           default:
             // method >= 10: reconcileChanged with stride = method - 10
             if (method >= 10) {
               if (block.reconcileChanged) block.reconcileChanged(s, method - 10)
-              else block.reconcile(s, dirty)
+              else block.reconcile(s, dirty, dirtyHi)
             }
             break
         }
@@ -564,7 +587,7 @@ export function _handleMsg(
   }
 
   const b = inst.allBindings
-  _runPhase2(s, dirty, b, b.length, inst.def.name, inst._onBindingError)
+  _runPhase2(s, dirty, dirtyHi, b, b.length, inst.def.name, inst._onBindingError)
   return [s, e]
 }
 
@@ -572,10 +595,17 @@ export function _handleMsg(
  * Phase 2: compact dead bindings + update live bindings.
  * Shared between genericUpdate and compiler-generated __update.
  * @public — used by compiler-generated `__update` functions
+ *
+ * `dirtyHi` defaults to 0 for backward-compat with pre-multi-word
+ * compiled bundles that pass only the single-word `dirty`. Bindings
+ * read paths 0..30 in `binding.mask` and paths 31..61 in
+ * `binding.maskHi`; the gate ORs both AND results so the high word is
+ * a no-op for ≤31-prefix components.
  */
 export function _runPhase2(
   state: unknown,
   dirty: number,
+  dirtyHi: number,
   bindings: Binding[],
   bindingsBeforePhase1: number,
   componentName?: string,
@@ -596,7 +626,7 @@ export function _runPhase2(
     phase2Len = Math.min(w, bindingsBeforePhase1)
   }
 
-  if (dirty !== 0) {
+  if (dirty !== 0 || dirtyHi !== 0) {
     // Always catch+continue: a single accessor throw shouldn't abort
     // the rest of the bindings on the same commit. The user-visible
     // effect: a broken cell shows its previous value; sibling cells
@@ -617,7 +647,11 @@ export function _runPhase2(
     try {
       for (let i = 0, len = phase2Len; i < len; i++) {
         const binding = bindings[i]!
-        if (binding.dead || (binding.mask & dirty) === 0) continue
+        if (binding.dead) continue
+        // Two-word gate. `maskHi` is 0 for ≤31-prefix bindings; the
+        // `0 & dirtyHi === 0` branch collapses to a no-op under V8's
+        // inline cache.
+        if (!((binding.mask & dirty) | (binding.maskHi & dirtyHi))) continue
         if (binding.kind === 'effect') {
           try {
             binding.accessor(state)
