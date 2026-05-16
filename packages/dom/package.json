@@ -32,6 +32,10 @@
       "types": "./dist/hmr.d.ts",
       "import": "./dist/hmr.js"
     },
+    "./escape-hatch": {
+      "types": "./dist/escape-hatch.d.ts",
+      "import": "./dist/escape-hatch.js"
+    },
     "./internal": {
       "types": "./dist/internal.d.ts",
       "import": "./dist/internal.js"
