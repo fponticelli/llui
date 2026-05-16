@@ -1,16 +1,27 @@
 /**
  * Root component for the LLui components demo.
  *
- * Hosts each section as a `child()` boundary so every section keeps its
- * own bitmask. Merging all sections into a single flat component would
- * push well past the 31-path tier and trigger the FULL_MASK fallback;
- * as children, each section gets isolated reactivity.
+ * Hosts each section as a `subApp()` boundary — these are textbook
+ * top-level section partitioning cases for the unified composition
+ * model: each section has its own independent state + reducer + effect
+ * pipeline + lifecycle, and the host doesn't share state with or route
+ * messages between sections. That's exactly what `subApp` is for.
+ *
+ * Previously these were `child()` calls used as a bitmask escape valve
+ * (merging all sections flat would have triggered the FULL_MASK
+ * fallback). With path-keyed reactivity now in place, the bitmask
+ * argument is no longer the reason — sections stay isolated because
+ * their state and lifecycles are genuinely independent, which `subApp`
+ * names explicitly via its required `reason` field.
  *
  * Overlays renders first so its view() registers the bus handlers
  * (registerToastHandler / registerConfirmHandler) before any other
  * section's view() runs and potentially calls showToast / askConfirm.
+ *
+ * See docs/proposals/unified-composition-model.md.
  */
-import { component, div, main, child, type ComponentDef } from '@llui/dom'
+import { component, div, main } from '@llui/dom'
+import { subApp } from '@llui/dom/escape-hatch'
 import { App as OverlaysApp } from './sections/overlays'
 import { App as InputsApp } from './sections/inputs'
 import { App as DataApp } from './sections/data'
@@ -23,13 +34,7 @@ import { App as CanvasApp } from './sections/canvas'
 type State = Record<string, never>
 type Msg = never
 
-// `ChildOptions.def` declares `ComponentDef<unknown, M, unknown>` but
-// `ComponentDef` is invariant in S (state appears in both contra- and
-// covariant positions), so a concrete section def can't flow in directly.
-// The parent never reads the child's state, so erasing S at the boundary
-// is safe — the runtime also casts internally.
-const erase = <S, M, E>(def: ComponentDef<S, M, E>): ComponentDef<unknown, M, unknown> =>
-  def as unknown as ComponentDef<unknown, M, unknown>
+const REASON = 'Top-level demo section — own state, reducer, lifecycle; host shares nothing.'
 
 export const App = component<State, Msg, never>({
   name: 'ComponentsDemo',
@@ -37,14 +42,14 @@ export const App = component<State, Msg, never>({
   update: (state) => [state, []],
   view: () => [
     main([
-      div(child({ def: erase(OverlaysApp), key: 'overlays', props: () => ({}) })),
-      div(child({ def: erase(InputsApp), key: 'inputs', props: () => ({}) })),
-      div(child({ def: erase(DataApp), key: 'data', props: () => ({}) })),
-      div(child({ def: erase(PickersEditingApp), key: 'pickers-editing', props: () => ({}) })),
-      div(child({ def: erase(TimeInputsApp), key: 'time-inputs', props: () => ({}) })),
-      div(child({ def: erase(ContentApp), key: 'content', props: () => ({}) })),
-      div(child({ def: erase(SurfacesApp), key: 'surfaces', props: () => ({}) })),
-      div(child({ def: erase(CanvasApp), key: 'canvas', props: () => ({}) })),
+      div(subApp({ reason: REASON, def: OverlaysApp })),
+      div(subApp({ reason: REASON, def: InputsApp })),
+      div(subApp({ reason: REASON, def: DataApp })),
+      div(subApp({ reason: REASON, def: PickersEditingApp })),
+      div(subApp({ reason: REASON, def: TimeInputsApp })),
+      div(subApp({ reason: REASON, def: ContentApp })),
+      div(subApp({ reason: REASON, def: SurfacesApp })),
+      div(subApp({ reason: REASON, def: CanvasApp })),
     ]),
   ],
 })
