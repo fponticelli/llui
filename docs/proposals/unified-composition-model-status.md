@@ -21,6 +21,7 @@ This document records exactly what landed on the branch, what was deliberately l
 | `34a3fd9` | ESLint rule `llui/subapp-requires-reason` |
 | `2c9dce6` | Worked-example test for view-function + slice + `combine()` |
 | `59a0339` | Removed `child()` + addressed registry (1,567 LOC deleted) |
+| `b3e285a` | Rewrote `01 Architecture.md` + `07 LLM Friendliness.md` for unified model |
 
 **Validation:** 36/36 monorepo tasks green; 509 dom tests; 297 vite-plugin tests; 15 ESLint rule cases; `components-demo` builds with `__prefixes` and `data-llui-sub-app-reason` in the production bundle.
 
@@ -65,16 +66,21 @@ This document records exactly what landed on the branch, what was deliberately l
 
 **Why not done in this branch:** Genuine architectural decision pending. The imperative-`send` option is probably right (simpler, fewer concepts) but warrants its own review.
 
-### 3. Documentation rewrites
+### 3. Documentation rewrites ✓ landed in `b3e285a`
 
-**Why it's still pending:** `docs/designs/01 Architecture.md` (~82KB) and `docs/designs/07 LLM Friendliness.md` (~84KB) describe the two-tier `component()`/`child()` composition model that no longer exists. Reading either today would lead users astray.
+Both `docs/designs/01 Architecture.md` and `docs/designs/07 LLM Friendliness.md` were rewritten in `b3e285a` to describe the unified composition model:
 
-**Implementation scope:**
-- `01 Architecture.md`: rewrite around the unified model. View functions are the only decomposition primitive. `combine()` is the reducer-composition mechanism. `subApp` is a clearly-labelled escape hatch. State lives in one tree; the path-keyed dirty walker keeps reactivity precise across nesting depth. Update the "expressibility catalogue" sections to drop child()-specific patterns.
-- `07 LLM Friendliness.md`: rewrite the decomposition guidance section. Replace "Level 1 (view functions) vs Level 2 (child)" with the single-model framing. Update example prompts to use view functions and `accordion.ts`-style controlled widgets. Drop the propsMsg/onMsg cookbook.
-- Probably need a new `13 Migration from v0.0.x.md` doc covering the cleanup deltas for downstream apps (most relevant: dicerun2, which has 62 `child()` call sites).
+- View functions framed as the only decomposition primitive
+- `combine()` documented as the reducer-composition mechanism
+- `subApp` documented as the lint-enforced escape hatch (with the `data-llui-sub-app-reason` attribute surfacing the rationale)
+- Path-keyed reactivity replaces the "Level 1 vs Level 2" mental model — the docs now explain why nesting depth is no longer a composition decision
+- Task templates (Task 10, Task 10b) reframed: `10b` now tests `combine()` slice-routing instead of `child()` plumbing
+- System prompt rules updated: `combine()` + `subApp` replace `child()` + `propsMsg` + addressed effects
+- LLM error-pattern detection updated: "Unnecessary `child()`" replaced with "Unnecessary `subApp`"
+- Concrete LLM error patterns updated: addressed effects no longer suggested as the cross-component coordination mechanism
 
-**Estimated calendar:** 1 day each. Mechanical but voluminous. Best done after #1 and #2 settle so the docs describe the final state, not a moving target.
+What's NOT yet written:
+- A dedicated migration doc (`13 Migration from v0.0.x.md`) for downstream apps still on `child()`. dicerun2 has 62 call sites; decisive.space-2 has none (its 120-field root will benefit from #1 above more than from migration prose). Defer until either app actually picks up the new release.
 
 ### 4. Minor: compiler emit consistency for `__update` / `__handlers`
 
@@ -93,4 +99,4 @@ The compiler still emits `__update` and `__handlers` with the original bitmask-g
 
 The original framing was "fully resolve the unified composition model." That's three more days of careful, focused work — multi-word emit + vike rewrite + doc updates — done with the kind of test discipline this branch's existing commits demonstrate. None of those three are appropriately scoped for a single session: each has its own design decision (overflow representation; vike's data-flow shape; docs voice and depth) plus implementation, integration testing, and the cross-package coordination that the cleanup commit (`59a0339`) showed even for a smaller change.
 
-The branch as it stands IS reviewable and mergeable: every commit passes the full monorepo, the unified model is functioning end-to-end through a real-app build (`components-demo`), and the migration story is demonstrated by a worked example test. The remaining items are clearly scoped and prioritized above. Pick #1, #2, or #3 next based on which user benefit is most pressing — decisive's perf (do #1), full ComponentDef cleanup (do #2), or onboarding signal (do #3).
+The branch as it stands IS reviewable and mergeable: every commit passes the full monorepo, the unified model is functioning end-to-end through a real-app build (`components-demo`), and the migration story is demonstrated by a worked example test. The remaining items are clearly scoped and prioritized above. Item #3 (doc rewrites) is now done; pick #1 (multi-word `__prefixes` emit) or #2 (`propsMsg` / `receives` removal) next based on which user benefit is most pressing — decisive's perf (do #1), full ComponentDef cleanup (do #2).
