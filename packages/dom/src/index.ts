@@ -22,6 +22,7 @@ export type {
 
 export { component } from './component.js'
 export { createView, type View } from './view-helpers.js'
+export { combine, type SliceReducer, type SliceMap, type TopReducer } from './combine.js'
 
 // ── Mount ─────────────────────────────────────────────────────────
 
