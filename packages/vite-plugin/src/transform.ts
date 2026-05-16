@@ -443,6 +443,7 @@ export function transformLlui(
         compiledHelpers,
         bailedHelpers,
         f,
+        fieldBitsHi,
       )
       if (transformed) {
         if (ts.isIdentifier(transformed.expression)) {
@@ -1060,6 +1061,7 @@ function tryTransformElementCall(
   compiled: Set<string>,
   bailed: Set<string>,
   f: ts.NodeFactory,
+  fieldBitsHi: Map<string, number> = new Map(),
 ): ts.CallExpression | null {
   if (!ts.isIdentifier(node.expression)) return null
   const localName = node.expression.text
@@ -1191,7 +1193,12 @@ function tryTransformElementCall(
       {
         const kind = classifyKind(key)
         const resolvedKey = resolveKey(key, kind)
-        const { mask, readsState } = computeAccessorMask(classified.accessor, fieldBits)
+        const { mask, maskHi, readsState } = computeAccessorMask(
+          classified.accessor,
+          fieldBits,
+          undefined,
+          fieldBitsHi,
+        )
 
         // Zero-mask constant folding only applies to inline arrows whose body
         // we can safely call at compile time. For identifier-bound forms
@@ -1202,6 +1209,7 @@ function tryTransformElementCall(
           classified.kind === 'arrow' &&
           classified.accessor === value &&
           mask === 0 &&
+          maskHi === 0 &&
           !readsState
         ) {
           emitStaticProp(
@@ -1214,14 +1222,19 @@ function tryTransformElementCall(
           continue
         }
 
-        bindings.push(
-          f.createArrayLiteralExpression([
-            createMaskLiteral(f, mask === 0 && readsState ? 0xffffffff | 0 : mask),
-            f.createStringLiteral(kind),
-            f.createStringLiteral(resolvedKey),
-            classified.valueForBinding,
-          ]),
-        )
+        const effectiveMask = mask === 0 && maskHi === 0 && readsState ? 0xffffffff | 0 : mask
+        // Emit a 5-tuple only when the accessor reads a high-word
+        // prefix (positions 31..61). For the common ≤31-prefix case
+        // the emit stays byte-identical to the pre-multi-word baseline,
+        // and stale runtime bundles ignore the 5th slot.
+        const tupleEls = [
+          createMaskLiteral(f, effectiveMask),
+          f.createStringLiteral(kind),
+          f.createStringLiteral(resolvedKey),
+          classified.valueForBinding,
+        ]
+        if (maskHi !== 0) tupleEls.push(createMaskLiteral(f, maskHi))
+        bindings.push(f.createArrayLiteralExpression(tupleEls))
       }
     }
   }
@@ -1252,7 +1265,7 @@ function tryTransformElementCall(
 
   // Subtree collapse: if children contain nested element helpers,
   // collapse the entire tree into a single elTemplate() call
-  const analyzed = analyzeSubtree(node, helpers, fieldBits, [])
+  const analyzed = analyzeSubtree(node, helpers, fieldBits, [], fieldBitsHi)
   if (analyzed && hasNestedElements(analyzed)) {
     // Mark all descendant helpers as compiled for import cleanup
     collectUsedHelpers(analyzed, compiled)
@@ -1570,10 +1583,24 @@ function tryInjectDirty(
   // that bypass the generic Phase 1/2 pipeline for single-message updates.
   const handlersProp = tryBuildHandlers(configArg, topLevelBits, structuralMask, f)
 
+  // Skip both compiler fast paths when the component reads >31 reactive
+  // prefixes. The hand-emitted `__update` and `__handlers` bodies inline
+  // the binding-gate predicate as `(mask & d) === 0` — single-word only.
+  // For ≤31-prefix components that's strictly correct (the high word is
+  // always 0 anyway). For 32..61-prefix components the inlined gate
+  // would miss high-word changes; falling through to the runtime's
+  // two-word-aware `genericUpdate` keeps reactivity correct. (Per-
+  // binding maskHi literals ARE emitted on the binding tuples — those
+  // are read by the runtime regardless of which Phase 1 path runs.)
+  const useCompilerFastPath = fieldBitsHi.size === 0
+
   // Keep __update even when __handlers is present — it provides Phase 1
   // mask gating for multi-message batches that bypass __handlers.
-  const extraProps = [dirtyProp, legendProp, updateProp]
-  if (handlersProp) extraProps.push(handlersProp)
+  const extraProps = [dirtyProp, legendProp]
+  if (useCompilerFastPath) {
+    extraProps.push(updateProp)
+    if (handlersProp) extraProps.push(handlersProp)
+  }
 
   // __prefixes: opt-in path-keyed reactivity (see
   // docs/proposals/unified-composition-model.md). One closure per
@@ -4248,8 +4275,12 @@ interface AnalyzedNode {
   staticAttrs: Array<[string, string]>
   /** Event handlers: [eventName, handlerExpression] */
   events: Array<[string, ts.Expression]>
-  /** Reactive bindings: [mask, kind, key, accessor] */
-  bindings: Array<[number, string, string, ts.Expression]>
+  /** Reactive bindings: [mask, maskHi, kind, key, accessor]. `maskHi` is
+   *  0 for low-word-only bindings (the common case) and a non-zero
+   *  high-word mask when the accessor reads a prefix at bit position
+   *  31..61. Emit serializes maskHi as a 5th tuple slot only when
+   *  non-zero — see `__bind` / elSplit's tuple-length detection. */
+  bindings: Array<[number, number, string, string, ts.Expression]>
   /** Children: analyzed elements, static text, or reactive text */
   children: AnalyzedChild[]
   /** Path from template root as childNodes indices */
@@ -4259,7 +4290,13 @@ interface AnalyzedNode {
 type AnalyzedChild =
   | { type: 'element'; node: AnalyzedNode }
   | { type: 'staticText'; value: string }
-  | { type: 'reactiveText'; accessor: ts.Expression; mask: number; childIdx: number }
+  | {
+      type: 'reactiveText'
+      accessor: ts.Expression
+      mask: number
+      maskHi: number
+      childIdx: number
+    }
 
 /**
  * Try to analyze an element call and all its descendants as a collapsible subtree.
@@ -4270,6 +4307,7 @@ function analyzeSubtree(
   helpers: Map<string, string>,
   fieldBits: Map<string, number>,
   path: number[],
+  fieldBitsHi: Map<string, number> = new Map(),
 ): AnalyzedNode | null {
   if (!ts.isIdentifier(node.expression)) return null
   const localName = node.expression.text
@@ -4287,7 +4325,7 @@ function analyzeSubtree(
 
   const staticAttrs: Array<[string, string]> = []
   const events: Array<[string, ts.Expression]> = []
-  const bindings: Array<[number, string, string, ts.Expression]> = []
+  const bindings: Array<[number, number, string, string, ts.Expression]> = []
 
   if (propsArg && ts.isObjectLiteralExpression(propsArg)) {
     for (const prop of propsArg.properties) {
@@ -4325,8 +4363,13 @@ function analyzeSubtree(
       if (ts.isArrowFunction(value) || ts.isFunctionExpression(value)) {
         const kind = classifyKind(key)
         const resolvedKey = resolveKey(key, kind)
-        const { mask, readsState } = computeAccessorMask(value, fieldBits)
-        if (mask === 0 && !readsState) {
+        const { mask, maskHi, readsState } = computeAccessorMask(
+          value,
+          fieldBits,
+          undefined,
+          fieldBitsHi,
+        )
+        if (mask === 0 && maskHi === 0 && !readsState) {
           // Constant fold — treat as static if we can extract a string
           const staticVal = tryExtractStaticString(value)
           if (staticVal !== null) {
@@ -4335,7 +4378,8 @@ function analyzeSubtree(
             continue
           }
         }
-        bindings.push([mask === 0 && readsState ? 0xffffffff | 0 : mask, kind, resolvedKey, value])
+        const finalMask = mask === 0 && maskHi === 0 && readsState ? 0xffffffff | 0 : mask
+        bindings.push([finalMask, maskHi, kind, resolvedKey, value])
         continue
       }
 
@@ -4343,7 +4387,7 @@ function analyzeSubtree(
       if (ts.isCallExpression(value) && isPerItemCall(value)) {
         const kind = classifyKind(key)
         const resolvedKey = resolveKey(key, kind)
-        bindings.push([0xffffffff | 0, kind, resolvedKey, value])
+        bindings.push([0xffffffff | 0, 0, kind, resolvedKey, value])
         continue
       }
 
@@ -4351,7 +4395,7 @@ function analyzeSubtree(
       if (isPerItemFieldAccess(value) || isHoistedPerItem(value)) {
         const kind = classifyKind(key)
         const resolvedKey = resolveKey(key, kind)
-        bindings.push([0xffffffff | 0, kind, resolvedKey, value])
+        bindings.push([0xffffffff | 0, 0, kind, resolvedKey, value])
         continue
       }
 
@@ -4407,11 +4451,17 @@ function analyzeSubtree(
         // Reactive text — accessor is first arg
         const accessor = child.arguments[0]!
         if (ts.isArrowFunction(accessor) || ts.isFunctionExpression(accessor)) {
-          const { mask, readsState } = computeAccessorMask(accessor, fieldBits)
+          const { mask, maskHi, readsState } = computeAccessorMask(
+            accessor,
+            fieldBits,
+            undefined,
+            fieldBitsHi,
+          )
           children.push({
             type: 'reactiveText',
             accessor,
-            mask: mask === 0 && readsState ? 0xffffffff | 0 : mask,
+            mask: mask === 0 && maskHi === 0 && readsState ? 0xffffffff | 0 : mask,
+            maskHi,
             childIdx,
           })
           childIdx++ // placeholder text node in template
@@ -4423,6 +4473,7 @@ function analyzeSubtree(
             type: 'reactiveText',
             accessor,
             mask: 0xffffffff | 0,
+            maskHi: 0,
             childIdx,
           })
           childIdx++ // placeholder text node in template
@@ -4435,6 +4486,7 @@ function analyzeSubtree(
             type: 'reactiveText',
             accessor,
             mask: 0xffffffff | 0,
+            maskHi: 0,
             childIdx,
           })
           childIdx++
@@ -4449,7 +4501,13 @@ function analyzeSubtree(
         ts.isIdentifier(child.expression) &&
         helpers.has(child.expression.text)
       ) {
-        const childNode = analyzeSubtree(child, helpers, fieldBits, [...path, childIdx])
+        const childNode = analyzeSubtree(
+          child,
+          helpers,
+          fieldBits,
+          [...path, childIdx],
+          fieldBitsHi,
+        )
         if (!childNode) return null
         children.push({ type: 'element', node: childNode })
         childIdx++
@@ -4550,10 +4608,15 @@ interface PatchOp {
   walkExpr: ts.Expression
   /** Event listeners to attach */
   events: Array<[string, ts.Expression]>
-  /** Bindings to register via __bind */
-  bindings: Array<[number, string, string, ts.Expression]>
+  /** Bindings to register via __bind: [mask, maskHi, kind, key, accessor] */
+  bindings: Array<[number, number, string, string, ts.Expression]>
   /** Reactive text children — reference existing placeholder text nodes */
-  reactiveTexts: Array<{ accessor: ts.Expression; mask: number; childIdx: number }>
+  reactiveTexts: Array<{
+    accessor: ts.Expression
+    mask: number
+    maskHi: number
+    childIdx: number
+  }>
 }
 
 /**
@@ -4766,31 +4829,38 @@ function emitSubtreeTemplate(
           ),
         )
       }
-      // __bind(__t0, mask, 'text', undefined, accessor)
+      // __bind(__t0, mask, 'text', undefined, accessor, [maskHi])
+      const rtArgs: ts.Expression[] = [
+        f.createIdentifier(tVar),
+        createMaskLiteral(f, rt.mask),
+        f.createStringLiteral('text'),
+        f.createIdentifier('undefined'),
+        rt.accessor,
+      ]
+      // Only pass the 6th positional arg when the accessor reads a
+      // high-word prefix. Keeps the emit byte-identical to the
+      // pre-multi-word baseline for the common case.
+      if (rt.maskHi !== 0) rtArgs.push(createMaskLiteral(f, rt.maskHi))
       stmts.push(
         f.createExpressionStatement(
-          f.createCallExpression(f.createIdentifier('__bind'), undefined, [
-            f.createIdentifier(tVar),
-            createMaskLiteral(f, rt.mask),
-            f.createStringLiteral('text'),
-            f.createIdentifier('undefined'),
-            rt.accessor,
-          ]),
+          f.createCallExpression(f.createIdentifier('__bind'), undefined, rtArgs),
         ),
       )
     }
 
-    // Reactive bindings — __bind(node, mask, kind, key, accessor)
-    for (const [mask, kind, key, accessor] of op.bindings) {
+    // Reactive bindings — __bind(node, mask, kind, key, accessor, [maskHi])
+    for (const [mask, maskHi, kind, key, accessor] of op.bindings) {
+      const args: ts.Expression[] = [
+        nodeRef,
+        createMaskLiteral(f, mask),
+        f.createStringLiteral(kind),
+        key ? f.createStringLiteral(key) : f.createIdentifier('undefined'),
+        accessor,
+      ]
+      if (maskHi !== 0) args.push(createMaskLiteral(f, maskHi))
       stmts.push(
         f.createExpressionStatement(
-          f.createCallExpression(f.createIdentifier('__bind'), undefined, [
-            nodeRef,
-            createMaskLiteral(f, mask),
-            f.createStringLiteral(kind),
-            key ? f.createStringLiteral(key) : f.createIdentifier('undefined'),
-            accessor,
-          ]),
+          f.createCallExpression(f.createIdentifier('__bind'), undefined, args),
         ),
       )
     }

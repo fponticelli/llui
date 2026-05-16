@@ -84,6 +84,14 @@ describe('Pass 2 — __prefixes emission for path-keyed reactivity', () => {
     // optional chaining — only nested paths use `s?.foo?.bar`).
     expect(out).toMatch(/s\s*=>\s*s\.f0\b/)
     expect(out).toMatch(/s\s*=>\s*s\.f34\b/)
+    // The runtime's compiler fast path (`__update` / `__handlers`) inlines
+    // a single-word gate predicate, so for components reading >31 prefixes
+    // the compiler MUST NOT emit them — otherwise high-word-only bindings
+    // would be silently skipped. The generic `Phase 1 + Phase 2` runtime
+    // pipeline handles two-word gating correctly; this assertion guards
+    // against accidentally re-enabling the fast path for overflow cases.
+    expect(out).not.toContain('__update')
+    expect(out).not.toContain('__handlers')
   })
 
   it('emits __prefixes with arrow ordering matching bit positions', () => {

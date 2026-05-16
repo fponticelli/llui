@@ -8,7 +8,16 @@ export function elSplit(
   tag: string,
   staticFn: ((el: HTMLElement) => void) | null,
   events: Array<[string, EventListener]> | null,
-  bindings: Array<[number, BindingKind, string, (state: never) => unknown]> | null,
+  // Bindings are 4-tuples for low-word-only access (the common case)
+  // or 5-tuples when the binding's accessor reads a prefix at bit
+  // position 31..61, in which case the 5th slot carries the high-word
+  // mask. Stale compiled bundles emit only 4-tuples; new bundles emit
+  // the 5th slot when (and only when) needed, so the on-the-wire
+  // representation stays byte-identical for ≤31-prefix components.
+  bindings: Array<
+    | [number, BindingKind, string, (state: never) => unknown]
+    | [number, BindingKind, string, (state: never) => unknown, number]
+  > | null,
   // Accepts raw strings too (wrapped in Text nodes at append time so
   // user code like `button([], ['Sign in'])` works without an explicit
   // text() wrapper) and nested arrays (flattened one level to match the
@@ -41,7 +50,17 @@ export function elSplit(
   }
 
   if (bindings) {
-    for (const [mask, kind, key, accessor] of bindings) {
+    for (const b of bindings) {
+      const mask = b[0]
+      const kind = b[1]
+      const key = b[2]
+      const accessor = b[3]
+      // Tuple length 5 carries a high-word mask in slot 4 (when the
+      // accessor reads a path at bit position 31..61). Length 4 stays
+      // pure low-word — covers both ≤31-prefix components and
+      // 32..61-prefix components whose individual bindings only touch
+      // low-word paths.
+      const maskHi = b.length === 5 ? (b[4] as number) : 0
       const perItem = accessor.length === 0
       if (perItem) {
         const get = accessor as unknown as () => unknown
@@ -51,6 +70,7 @@ export function elSplit(
       } else {
         const binding = createBinding(ctx.rootLifetime, {
           mask,
+          maskHi,
           accessor,
           kind,
           node: el,

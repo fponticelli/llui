@@ -18,13 +18,20 @@ function getTemplateCache(env: DomEnv): Map<string, HTMLTemplateElement> {
   return cache
 }
 
-/** Callback passed to patch functions — registers a reactive binding on a node. */
+/** Callback passed to patch functions — registers a reactive binding on a node.
+ *
+ *  `maskHi` (optional, defaults to 0) carries the high-word mask for
+ *  accessors that read prefixes at bit positions 31..61. Stale
+ *  compiled bundles emitted before multi-word support omit the
+ *  parameter entirely; the defaulting keeps them correct under
+ *  ≤31-prefix components. */
 export type TemplateBind = (
   node: Node,
   mask: number,
   kind: BindingKind,
   key: string | undefined,
   accessor: (s: never) => unknown,
+  maskHi?: number,
 ) => void
 
 /**
@@ -54,7 +61,7 @@ export function elTemplate(
 
   const root = tmpl.content.firstElementChild!.cloneNode(true) as Element
 
-  const bind: TemplateBind = (node, mask, kind, key, accessor) => {
+  const bind: TemplateBind = (node, mask, kind, key, accessor, maskHi = 0) => {
     const perItem = accessor.length === 0
     if (perItem) {
       const get = accessor as unknown as () => unknown
@@ -65,6 +72,7 @@ export function elTemplate(
       // State-level: use the binding system for Phase 2
       const binding = createBinding(ctx.rootLifetime, {
         mask,
+        maskHi,
         accessor,
         kind,
         node,
