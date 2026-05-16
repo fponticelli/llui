@@ -44,9 +44,9 @@ The scope tree is the ownership graph. Every binding, every event listener, ever
 
 `onMount` fires via `queueMicrotask` after DOM insertion. The scope registers a disposer that sets a `cancelled` flag. If the owning scope is disposed before the microtask fires — possible when a branch swaps back within the same message-flush cycle — the callback is silently dropped. This is the correct behavior: a branch arm that existed for zero frames has nothing to focus or measure.
 
-**Composition: two levels.** Most composition in LLui uses **view functions** — plain modules that export an `update` function and a `view` function. The parent owns the state; the child module operates on a slice of it. This is pure Elm-style composition: no component instances, no `PropsWatcher`, no lifecycle hooks for prop changes. View functions follow the `(props, send)` convention: a typed props object (generic over the parent state `<S>`) containing named accessor fields, and a `send` callback as the second argument. The parent's `update()` delegates to the child module's `update()` for the relevant slice and wraps the result. The bitmask covers everything — the compiler traces paths like `s.toolbar.menuOpen` as depth-2 paths.
+**Composition: one model, one tree.** All composition in LLui uses **view functions** — plain modules that export an `update` function (or a reducer slice composed via `combine()`) and a `view` function. The parent owns the state; child modules operate on slices of it. This is pure Elm-style composition: no component instances, no `PropsWatcher`, no lifecycle hooks for prop changes. View functions follow the `(props, send)` convention: a typed props object (generic over the parent state `<S>`) containing named accessor fields, and a `send` callback as the second argument. The parent's `update()` delegates to child reducers via `combine()`, or hand-routes by destructuring the message type. Reactivity is **path-keyed**: the compiler walks each accessor body and assigns one bit per minimal reference-stable prefix it reads. Depth doesn't matter — `s.dashboard.toolbar.menuOpen` gets its own bit, just as `s.count` does. There is no second composition tier.
 
-For cases that require isolation — the child has 32+ state paths (bitmask overflow), is a library component with encapsulated internals, or manages its own effect lifecycle — `child()` creates a true component boundary with its own bitmask, own update cycle, and own scope tree. Data crosses this boundary through two typed channels: reactive **props** (parent → child, converted to a message via the component's `propsMsg` function when they change) and **`onMsg`** (child → parent, a typed callback invoked after the child's `update()` that maps child messages selectively to parent messages). For imperative cross-component commands between unrelated components, **typed addressed effects** allow one component to send a fully type-checked effect to another by importing the target's exported `address` builder — no string keys, no `any` types.
+For the rare case where genuine state isolation is required — embedding an independent app whose lifetime is distinct from the host's, or a library bundle that ships its own complete TEA loop — `subApp({ reason, def, data, onHandle })` is the documented escape hatch. The `reason` field is required and surfaces in the rendered DOM as `data-llui-sub-app-reason`; the `llui/subapp-requires-reason` ESLint rule enforces that it's non-empty and references a documented escape-hatch case. Use sparingly: every `subApp` is a boundary the unified composition model can't see across, and the inability to share state with the host is the cost.
 
 Effects are plain data objects. `update()` returns them; the runtime dispatches them after DOM updates have been applied. The core runtime handles two built-in effect types directly: `delay` (setTimeout + message delivery) and `log` (structured console output). All other effects — including HTTP, cancellation, debounce, sequencing, and racing — are consumed by the component's `onEffect` handler. The `@llui/effects` package provides `handleEffects<Effect>()`, a composable chain that interprets `http`, `cancel`, `debounce`, `sequence`, and `race` effects, tracks cancellation tokens and debounce timers in a per-component closure, and passes unrecognized effects through to a `.else()` callback where the developer handles custom effect types. The chain provides exhaustiveness: TypeScript narrows the `.else()` callback to only the effect variants that `handleEffects` doesn't consume, and `noImplicitReturns` catches missing cases. The runtime passes an `AbortSignal` tied to the component's lifetime — when the component unmounts, the signal aborts, and `handleEffects` cleans up all in-flight HTTP requests, pending timers, and debounce entries automatically.
 
@@ -145,7 +145,7 @@ After the Vite plugin runs, the `div` and `button` calls are rewritten to `elSpl
 
 LLui is designed for **LLM-first authoring**: an LLM generates the code, a human reviews and makes small changes. This means optimizing for pattern predictability (the LLM always uses the same shape), exhaustiveness checking (TypeScript catches missing cases), and scanability (the human reviewer can verify correctness by local inspection). The composition model follows from this: it should be the simplest thing that works, with no hidden mechanisms.
 
-### Level 1 — View Functions (Default)
+### View Functions — the only decomposition primitive
 
 A "child component" is not a component. It is a module that exports typed `update` and `view` functions. The parent owns the state.
 
@@ -239,88 +239,52 @@ export const Dashboard = component<State, Msg>({
 })
 ```
 
-No `child()` call, no `PropsWatcher`, no `propsMsg`, no `onMsg`. The parent's `Msg` union namespaces child messages: `{ type: 'toolbar'; msg: ToolbarMsg }`. The compiler traces depth-2 paths through the slices (`s.toolbar.menuOpen`). A human reviewer sees every possible state transition in one flat `update()` switch. An LLM generates this mechanically from the types. View functions use the `(props, send)` convention: a typed props object as the first argument (generic over the parent's state `<S>`), and `send` as the second. This mirrors the `view(send)` signature on components and makes every call site self-documenting — named fields eliminate positional ambiguity.
+No `child()` call, no `PropsWatcher`, no `propsMsg`, no `onMsg`. The parent's `Msg` union namespaces child messages: `{ type: 'toolbar'; msg: ToolbarMsg }`. The compiler traces every accessor's reference-stable prefixes — `s.toolbar.menuOpen` gets its own bit, just as `s.tools` does — and a binding only re-evaluates when one of the prefixes it actually reads changes. A human reviewer sees every possible state transition in one flat `update()` switch. An LLM generates this mechanically from the types. View functions use the `(props, send)` convention: a typed props object as the first argument (generic over the parent's state `<S>`), and `send` as the second. This mirrors the `view(send)` signature on components and makes every call site self-documenting — named fields eliminate positional ambiguity.
 
-**When to use Level 1:** Always, unless one of the Level 2 criteria applies. Most LLui applications should never use `child()`.
+### Reducer composition with `combine()`
 
-### Level 2 — Isolated Components (Opt-in)
-
-Use `child()` when:
-
-- The child has 32+ state paths of its own (parent bitmask would overflow)
-- The child is a library component with encapsulated internals (DataTable, RichTextEditor)
-- The child manages its own effect lifecycle (WebSocket connection, timer management)
+When the parent's `update()` switch becomes a mechanical "route by `msg.type` prefix to a slice reducer" pass, `combine()` collapses it. Each slice reducer is `(state: Slice, msg: Msg) => [Slice, Effect[]]`; the slice map keys are message-type prefixes:
 
 ```typescript
-// data-table.ts — a library component
-type Props = { rows: Row[]; columns: Column[] }
-type State = { rows: Row[]; columns: Column[]; sortBy: string | null; page: number }
-type Msg =
-  | { type: 'propsChanged'; props: Props }
-  | { type: 'sort'; column: string }
-  | { type: 'nextPage' }
-  | { type: 'prevPage' }
+import { combine } from '@llui/dom'
 
-export const DataTable = component<State, Msg, never, Props>({
-  init: (props) => [
-    {
-      rows: props.rows,
-      columns: props.columns,
-      sortBy: null,
-      page: 0,
-    },
-    [],
-  ],
-
-  propsMsg: (props: Props): Msg => ({ type: 'propsChanged', props }),
-
-  receives: {
-    scrollToRow: (params: { id: string }) => ({ type: 'scrollTo' as const, id: params.id }),
-  },
-
-  update: (state, msg) => {
-    switch (msg.type) {
-      case 'propsChanged':
-        return [{ ...state, rows: msg.props.rows, columns: msg.props.columns, page: 0 }, []]
-      case 'sort':
-        return [{ ...state, sortBy: msg.column, page: 0 }, []]
-      case 'nextPage':
-        return [{ ...state, page: state.page + 1 }, []]
-      case 'prevPage':
-        return [{ ...state, page: Math.max(0, state.page - 1) }, []]
-    }
-  },
-
-  view: ({ send }) => {
-    /* ... */
-  },
+const update = combine<State, Msg, Effect>({
+  toolbar: (slice, msg) => toolbarUpdate(slice, msg),
+  sidebar: (slice, msg) => sidebarUpdate(slice, msg),
 })
 
-// Typed effect builder — derived from the component definition.
-export const toDataTable = DataTable.address
-// toDataTable.scrollToRow({ id: '123' }) → typed AddressedEffect
+// Messages dispatched as `{ type: 'toolbar/toggleMenu' }` route to the
+// toolbar slice with `msg.type` rewritten to `'toggleMenu'` before the
+// slice reducer runs. The returned slice is structurally merged into
+// the top-level state at `state.toolbar`. Returning the same reference
+// for the slice preserves reference equality at the top level — the
+// dirty walker sees no change to `s.toolbar.*` prefixes and skips
+// every binding that reads from that slice.
 ```
 
-The parent mounts it:
+`combine()` is a tactical convenience — for small parent reducers the explicit switch is just as clear. The escape hatch from `combine()` is also `combine()`: pass a `_top` reducer as the second argument to handle top-level messages that aren't slice-prefixed.
+
+### `subApp` — the escape hatch
+
+A component definition can be embedded as an independent, isolated app via `subApp`:
 
 ```typescript
-// In the parent's view():
-child({
-  def: DataTable,
-  key: 'table',
-  props: s => ({ rows: s.filteredRows, columns: s.columns }),
-  onMsg: msg => msg.type === 'rowSelected' ? { type: 'selectRow', id: msg.id } : null,
-})
+import { subApp } from '@llui/dom/escape-hatch'
 
-// In the parent's update(), for imperative commands:
-import { toDataTable } from './data-table'
-case 'jumpToRow':
-  return [state, [toDataTable.scrollToRow({ id: msg.id })]]
+// In a view function:
+subApp({
+  reason: 'third-party widget owns its own TEA loop and state lifetime',
+  def: SomeBundledApp,
+  data: { theme: 'dark' }, // optional init data
+  onHandle: (handle) => {
+    /* hold the AppHandle to imperatively send/getState */
+  },
+})
 ```
 
-**`propsMsg` mechanism:** The props accessor has a bitmask derived from its state dependencies. The runtime uses a three-step process to decide whether to fire `propsMsg`: (1) it checks the bitmask first — if no relevant parent state paths changed, the props accessor is not called at all; (2) when the bitmask matches, the runtime calls the accessor, then compares each field of the returned object via `Object.is` with the previous props; (3) only if at least one field changed does `propsMsg(newProps)` fire, enqueuing the result into the child's message queue. The child's `update()` handles it like any other message — full control over how to merge new props into state (reset pagination, preserve sort, etc.). No separate props type in view, no separate dirty mask, no `onPropsChanged` hook. It's just a message.
+Every `subApp` carries a non-empty `reason` string — surfaced as `data-llui-sub-app-reason` on the wrapper element and enforced at lint time by `llui/subapp-requires-reason`. The host cannot read the subApp's state, the subApp cannot read the host's; messages do not cross the boundary except through the `onHandle` callback's imperative API. Use only for: third-party bundled apps, demo embeds, or components whose effect lifetime must outlive the host's render cycle.
 
-**Typed addressed effects:** The `receives` map on the component definition declares what commands the component accepts, with typed parameters. The framework derives a typed `address` builder (`DataTable.address`), exported as `toDataTable`. The sender imports it and gets full autocomplete and compile-time type checking. Invalid handler names or mismatched parameters are caught at compile time.
+If you reach for `subApp` to "isolate a complex component" — you don't need it. The path-keyed dirty walker is precise enough that the per-prefix mask of a 50-field root is no more wasteful than the per-prefix mask of a 5-field subtree. Reach for view functions and `combine()` first.
 
 ### LLM-First Boilerplate
 
@@ -367,7 +331,7 @@ assertEffects(t.effects, [{ type: 'http', url: '/api/data' }])
 
 **`portal` as a first-class primitive.** Portal nodes are rendered out-of-tree (to `document.body` or any other target) but bindings inside the portal participate in the same update cycle as the rest of the component. Portals are disposed when their owning scope is disposed. There is no separate subscription, no cross-component event bus, and no manual cleanup.
 
-**Typed addressed effects for inter-component messaging.** When isolated components (Level 2) need to communicate without a shared parent, the sender imports the target's typed `address` builder. The target component declares its `receives` handlers with typed parameter signatures; the framework derives a type-safe effect builder from them. Calling `toDetailView.selectItem({ id: '123' })` produces a fully typed `AddressedEffect` — the compiler verifies the target exists, the handler name is valid, and the parameters match. The sender has an import dependency on the target, which makes the coupling explicit and discoverable. The effect router resolves the target key against the global component registry at dispatch time. This is the correct abstraction for cross-cutting concerns like a toast manager, a global loading indicator, or a shared modal controller.
+**Path-keyed reactivity over depth.** The compiler walks each accessor's body and assigns one bit per minimal reference-stable prefix it reads. `s.dashboard.toolbar.menuOpen` gets its own bit; `s.user.profile.address.city` gets its own bit. Reactivity has no depth ceiling and no nesting tax — a binding that reads three levels down pays the same as one that reads a top-level field. Under a structural-sharing reducer (immutable splice), unchanged subtrees stay reference-equal across `prev`/`next`, so every prefix accessor reading into them skips. This is what makes the unified composition model work: there is no second tier because the reactivity model doesn't need one.
 
 ---
 
@@ -383,15 +347,13 @@ assertEffects(t.effects, [{ type: 'http', url: '/api/data' }])
 
 **Reading DOM immediately after `send()` without `flush()`.** Because `send()` enqueues a message and defers the update cycle to a microtask, the DOM is not yet updated when `send()` returns. Code that calls `send({ type: 'show' })` and then immediately reads `element.offsetHeight` will see the pre-update value. Use `flush()` after `send()` when imperative DOM reads depend on the updated state. This is the only case where `flush()` is needed in application code — in normal reactive flows, the microtask batching handles everything automatically.
 
-**Circular addressed effects.** Because addressed effects dispatch into the target's `send()`, which queues a microtask, cycles are not infinite loops — but they can produce difficult-to-trace message chains. Two components sending addressed effects at each other in response to the same user action will process in two microtask turns, which is often acceptable, but the causal chain is non-obvious. Prefer Level 1 composition (view functions with a shared parent state) for tight coordination. Level 2 addressed effects are for loosely-coupled cross-cutting concerns.
+**Using `subApp` to "isolate complex components."** `subApp` is for embedding a foreign TEA loop whose state lifetime is genuinely independent of the host's — a bundled third-party widget, a demo embed inside a larger page, or a separately-versioned library that ships its own complete app. It is NOT a substitute for view functions. If you reach for it because a component "got too big," you don't need it: the path-keyed walker scales precisely with the number of reactive paths read, not with the depth of the state tree. Split the view into smaller modules with their own `(props, send)` functions and let `combine()` route their slice reducers. The `llui/subapp-requires-reason` lint rule enforces that every `subApp` call carries a non-empty `reason` string, which surfaces in the DOM as `data-llui-sub-app-reason` and shows up in code review.
 
 **Using `.map()` on state arrays in `view()`.** Because `view()` runs once at mount time, `state.items.map(item => div(...))` creates DOM nodes from the initial array and never updates them. If the array changes, the nodes are stale. Always use `each({ items, key, render })` for arrays that come from state. `.map()` is only valid for truly static arrays (constants, hardcoded lists) that never change for the component's lifetime.
 
-**Using `child()` when a view function suffices.** `child()` creates a full component boundary with its own bitmask, scope tree, and update cycle. For most composition, a view function (Level 1) is simpler, has no overhead, and lets the parent own the state directly. Use `child()` only when you need bitmask isolation (32+ child state paths), encapsulated internals (library components), or independent effect lifecycle.
+**Reaching for `subApp` instead of decomposing the view.** Repeating the point from above because it's the most common LLM-authored mistake: a 50-field state tree is fine. A 200-binding view is fine. Path-keyed reactivity gates each binding by the specific prefixes its accessor reads; a binding that touches one field pays for one comparison regardless of how many other fields exist. If you want to organize a large view for readability, extract view functions; if you want to organize a large reducer, use `combine()`. `subApp` exists for genuine state-lifetime isolation, not for code organization.
 
-**Registering `onMsg` handlers that produce messages unconditionally.** The `onMsg` callback on a `child()` call is invoked after every `update()` in the child, whether or not the parent cares. If `onMsg` returns a non-null message for messages the parent doesn't need, the parent processes unnecessary updates. Return `null` for messages the parent should ignore.
-
-**Large component trees as a single component.** LLui's update cost is proportional to the number of bindings in a component times the cost of the bitmask check. A monolithic component with thousands of bindings will pay a linear scan on every update even with aggressive masking. When the compiler warns about 63+ access paths, split independent subsections into `child()` components (Level 2). The overhead of `child()` is a single `propsMsg` check per parent update, which is cheaper than the binding scan for most real cases.
+**Letting accessors read derived properties.** Path-keyed reactivity tracks reference-stable prefixes. `(s) => s.items.length` reads `s.items` (a reference-stable prefix) and then computes `.length` from it — that works. But `(s) => s.items.filter(x => x.active).length` allocates a new array every call; even if the filtered length is the same, the dirty walker can't see "this prefix didn't change" because the accessor doesn't return one. Wrap derived computations in `memo()` so the per-update-cycle stability check kicks in, or restructure state to make the derived value a reference-stable field.
 
 **Using `innerHTML` bindings for user-supplied content.** The `PROP_KEYS` set in the transform includes `innerHTML`, making it a valid reactive prop. This is correct for template-authored content but is an XSS vector for user-supplied strings. It exists for completeness; use `text()` for user content and reserve `innerHTML` for pre-sanitized or developer-authored markup.
 
@@ -415,13 +377,13 @@ assertEffects(t.effects, [{ type: 'http', url: '/api/data' }])
 
 ## Design Decisions (Resolved)
 
-**Bitmask width: resolved via single-word mask with graceful overflow and path-level tracking (depth 2 for v1).** The compiler assigns each unique path a bit position. Paths 0–30 get individual bits; paths 32+ overflow to `FULL_MASK` (-1), meaning their bindings always re-evaluate — a graceful degradation with a warning identifying the largest top-level fields to extract. Path-level tracking (assigning bits to `s.user.name` and `s.user.email` separately rather than a single bit for `s.user`) means the bit budget tracks independent change dimensions, not just top-level field count. A component with a state shape `{ user: { name, email, avatar }, settings: { theme, lang }, todos: Todo[], filter: string }` uses 7 bits (3 for user sub-fields, 2 for settings sub-fields, 1 for todos, 1 for filter), well within the single-word capacity, even though it has nested objects. Arrays remain single-bit because per-index tracking is not statically resolvable; `eachItemStable` provides the per-item granularity. Depth-2 path tracking is the v1 ceiling. Accessors that read deeper than depth 2 (e.g., `s.user.address.city`) trigger a compiler warning identifying the exact accessor and recommending either flattening the state shape or wrapping the accessor in `memo()`. The compiler assigns the conservative `0xFFFFFFFF` mask for that accessor. Configurable depth is deferred — depth 2 covers the vast majority of real-world state shapes, and the bail-out path is safe (overly broad mask, not silent stale values).
+**Reactivity model: resolved — path-keyed dirty walker with unbounded prefix depth.** The compiler walks each accessor body and assigns one bit per minimal reference-stable prefix it reads. `s.user.name` and `s.user.profile.address.city` each get their own bit; nesting depth is not capped. The runtime emits a `__prefixes` array on the component definition — one closure per bit, hoisted at module scope — and computes dirty by reference-comparing `prefix(prev) !== prefix(next)` for each entry. Under structural-sharing reducers (immutable splice), unchanged subtrees stay reference-equal and every prefix reading into them skips. The single-word mask budget is 31 bits today; components with 32+ distinct reactive prefixes currently fall back to `FULL_MASK` (-1) with a compiler warning. Multi-word emit (bigint or two-word) is the next planned compiler change for very large state trees. Arrays remain single-bit because per-index tracking is not statically resolvable; `eachItemStable` provides the per-item granularity. The old top-level-field `__dirty` bitmask still exists as a runtime-fallback path for user-supplied `__dirty` functions, but the compiler now emits `__prefixes` by default.
 
 **Animated transitions: resolved — `TransitionOptions` with coordinated enter/leave via `onTransition`.** The `TransitionOptions` API provides two levels. The simple level: `enter(nodes)` fires immediately after DOM insertion, `leave(nodes)` fires before removal and defers removal until the returned Promise resolves. This handles CSS class-based transitions and is the common case. The coordinated level: `onTransition({ entering, leaving, parent })` receives both entering and leaving node sets simultaneously in the same cycle. This enables FLIP animations — the handler reads leaving nodes' layout positions (`getBoundingClientRect`), inserts entering nodes, reads their new positions, and animates the delta. `onTransition` composes with `enter`/`leave` when both are specified: `onTransition` fires first (for FLIP position capture and layout animation), then `enter` and `leave` fire for their respective elements (for per-element CSS transitions like fades or slides). The `leaving` nodes remain in the DOM until the returned Promise resolves, at which point `disposeLifetime` removes them. The `entering` nodes are already inserted but may be styled with `opacity: 0` or `transform` offsets that the animation resolves. Both `branch` and `each` support `TransitionOptions`; `show` inherits it through `branch`. The FLIP calculation runs synchronously before the browser paints (it fires inside the update cycle, before yielding to the microtask boundary), ensuring no visible flash of unstyled content.
 
 **Server-side rendering: resolved — compiler-driven static HTML emission for v1.** `view()` calls `document.createElement` directly and cannot run on the server. Instead of abstracting the DOM (which would add runtime cost to client-side rendering), the Vite plugin emits a parallel `__renderToString(state)` function at compile time for each component. The compiler already knows the full view tree structure, which props are static, and which are reactive. For static subtrees, it emits literal HTML strings. For reactive bindings, it evaluates the accessor against the provided state and interpolates the result. Structural primitives (`branch`, `each`, `show`) are evaluated eagerly: the compiler emits the branch arm or list items that match the initial state. The output is a plain HTML string with `data-llui-hydrate` markers on nodes that have reactive bindings or structural primitives. On the client, `hydrateApp()` walks the existing DOM, attaches bindings to the marked nodes, and registers structural blocks — without recreating any DOM nodes. The hydration path reuses the same bitmask infrastructure; the `__dirty` function is the same. Mismatches between server HTML and client hydration (different state at hydration time) are handled by falling back to full client render for the affected subtree, with a development-mode console warning identifying the mismatch. `__renderToString` is tree-shakeable from client bundles (it is only imported by the server entry point).
 
-**Typed addressed effects: resolved.** Components declare `receives` handlers with fully typed parameter signatures. The framework derives a typed `address` builder from the component definition. The sender imports the builder (`import { toDetailView } from './detail-view'`) and gets full autocomplete and compile-time type checking: `toDetailView.selectItem({ id: '123' })`. Invalid handler names or mismatched parameter types are caught at compile time. The import dependency makes the coupling explicit and discoverable by both LLMs and human reviewers.
+**Composition: resolved — single-model decomposition via view functions, slice reducers, and `combine()`.** The unified composition model replaces the earlier two-tier `component()` + `child()` design. View functions are the sole decomposition primitive; the parent owns all state; slice reducers compose via `combine()` (which routes by `${slice}/${action}` namespace and preserves top-level reference equality when slices return unchanged). The previous primitives — `child()`, `propsMsg`, `onMsg`, `addressOf`, `setAddressedDispatcher`, typed addressed effects — were removed in 2026-05. `subApp({ reason, def, data, onHandle })` is the documented escape hatch for cases where genuine state-lifetime isolation is required (third-party bundled apps, demo embeds). The `llui/subapp-requires-reason` ESLint rule enforces that each `subApp` carries a non-empty `reason` string. See `docs/proposals/unified-composition-model.md` for the original rationale and `docs/proposals/unified-composition-model-spike-result.md` for the validation measurements.
 
 **Recursive `each` for tree views: resolved — nested `each` with transparent scope optimization.** Nested `each` calls work today: a `renderItem` callback may itself call `each({ items: ..., key: ..., render: ... })` inside a `show` for expanded/collapsed state. Previously, each nesting level registered its structural blocks in the parent component's flat `structuralBlocks` list, making Phase 1 iteration `O(total visible nodes)` even when only a leaf changed. The v1 optimization: the runtime detects when an `each` is created inside another `each`'s render callback and registers its structural blocks with the parent `each`'s scope rather than the component's flat list. This creates a tree of scopes mirroring the data tree. When a node's children change, only that subtree's structural blocks are reconciled — sibling subtrees are untouched. The reconciliation algorithm at each level uses the same keyed-diff fast paths as flat `each` (append-only, single swap, full rebuild). No new primitive (`eachTree`) is needed — the optimization is transparent to the developer. The API surface stays the same: developers write nested `each` + `show` as they do today, and the runtime handles hierarchical scoping automatically.
 
@@ -743,9 +705,9 @@ foreign<
 
 The two examples demonstrate both sync forms. Record sync is cleaner when fields are independent (ProseMirror). Function sync gives full control when fields interact or use different API patterns (Monaco). The type system enforces correctness in both: record sync handlers receive the exact field type from `T`, function sync receives the full `T` and `T | undefined`.
 
-**Parent-child coordination (Level 1 — view functions).** The default composition model. The parent owns a state slice for the child; the child module exports `update` and `view` functions that operate on that slice. The parent's `update()` delegates: `case 'toolbar': return [{ ...state, toolbar: toolbarUpdate(state.toolbar, msg.msg) }, []]`. The parent's `view()` calls: `toolbarView({ tools: s => s.tools, toolbar: s => s.toolbar }, msg => send({ type: 'toolbar', msg }))`. No `child()` call, no `PropsWatcher`, no `onMsg`. The parent directly controls the child's state — including closing the toolbar's menu on a background click: `return [{ ...state, toolbar: { ...state.toolbar, menuOpen: false } }, []]`. The compiler traces `s.toolbar.menuOpen` as a depth-2 path with its own bit. This model is preferred for most composition because it is simpler, has no overhead, and keeps all state transitions visible in the parent's `update()`.
+**Parent-child coordination — view functions.** The only composition model. The parent owns a state slice for the child; the child module exports `update` and `view` functions that operate on that slice. The parent's `update()` delegates: `case 'toolbar': return [{ ...state, toolbar: toolbarUpdate(state.toolbar, msg.msg) }, []]`. The parent's `view()` calls: `toolbarView({ tools: s => s.tools, toolbar: s => s.toolbar }, msg => send({ type: 'toolbar', msg }))`. No `child()` call, no `PropsWatcher`, no `onMsg`. The parent directly controls the child's state — including closing the toolbar's menu on a background click: `return [{ ...state, toolbar: { ...state.toolbar, menuOpen: false } }, []]`. The compiler traces `s.toolbar.menuOpen` as a reference-stable prefix with its own bit, regardless of nesting depth. When the parent's switch becomes purely mechanical "route by slice prefix," `combine({ toolbar: toolbarUpdate, sidebar: sidebarUpdate })` replaces it.
 
-**Parent-child coordination (Level 2 — isolated components).** For components that need their own bitmask (32+ paths), encapsulated internals (library widgets), or independent effect lifecycle: `child({ def: DataTable, key: 'table', props: s => ({ rows: s.filteredRows, columns: s.columns }), onMsg: msg => msg.type === 'rowSelected' ? { type: 'selectRow', id: msg.id } : null })`. The props accessor has a bitmask derived from its parent state dependencies. The runtime checks the bitmask first (skipping the accessor entirely if no relevant paths changed), then calls the accessor and compares each field via `Object.is` with the previous props — only if at least one field changed does it convert them to a message via the component's `propsMsg` function and enqueue it into the child's message queue. The child's `update()` handles it like any other message — deciding how to merge new props into its own state (e.g., resetting pagination when rows change). `onMsg` maps child messages selectively — returning `null` for messages the parent should ignore. For imperative cross-component commands: `import { toDataTable } from './data-table'; return [state, [toDataTable.scrollToRow({ id: msg.id })]]`.
+**Embedding an isolated app — `subApp`.** Reserved for cases where the embedded code must own its own TEA loop with a state lifetime independent of the host: a third-party bundled app, a demo embed, a separately-versioned library shipping its own complete app. `subApp({ reason, def, data, onHandle })`. The `reason` field is required and non-empty; it surfaces on the wrapper element as `data-llui-sub-app-reason` and is enforced at lint time by `llui/subapp-requires-reason`. The host cannot read the subApp's state and the subApp cannot read the host's; messages cross only through `onHandle`'s imperative `AppHandle`. This is NOT a tool for decomposing complex views — for that, extract view functions and use `combine()`. The previous `child()` primitive (and `propsMsg` / `onMsg` / addressed effects) were removed in 2026-05.
 
 **Tree view.** Recursive `each` works today: `renderItem` may itself call `each({ items: n => n.children, ... })` inside a `show`. Each nesting level registers its structural blocks with the parent component's flat `structuralBlocks` list. The runtime optimizes nested `each` calls by detecting when an `each` is created inside another `each`'s render callback and registering its structural blocks with the parent `each`'s scope rather than the component's flat list. This keeps reconciliation scoped to the changed subtree — a leaf node expansion touches only that node's sibling list, not the entire tree. A practical mitigation for very deep trees (100+ levels) is to make subtrees child components at a reasonable depth, amortizing the scope tree overhead.
 

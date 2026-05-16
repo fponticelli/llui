@@ -199,23 +199,23 @@ const filteredTodos = memo((s: State) => s.todos.filter((t) => !t.done))
 
 The difference is invisible to the LLM: both forms compile, both produce correct output, the performance difference only manifests at scale. An LLM has no way to know it should use `memo()` without being told explicitly. The rule to communicate: "wrap any accessor used in multiple places, or any accessor that performs significant computation, in `memo()`."
 
-### 3.4 Level 1 vs Level 2 Composition Choice
+### 3.4 Composition: View Functions are the Only Primitive
 
-The LLM must choose between Level 1 (view functions — the default) and Level 2 (`child()` — for isolation). LLMs trained on React will default to component instances for everything. In LLui, most composition should use Level 1: the child is a module with `update` and `view` functions, the parent owns the state.
+LLMs trained on React will default to component instances for every piece of reusable UI. In LLui there is no such thing: the unified composition model has one decomposition primitive — view functions — and the parent owns all state. A "child component" is just a module exporting `update` and `view` functions.
 
 ```typescript
-// LLM default (wrong — uses child() for simple composition):
+// LLM default (wrong — there is no `child()` primitive):
 child({ def: Toolbar, key: 'toolbar', props: (s) => ({ tools: s.tools }) })
 
-// Correct LLui default — Level 1 view function with (props, send) convention:
+// Correct LLui pattern — view function with (props, send) convention:
 toolbarView({ tools: (s) => s.tools, toolbar: (s) => s.toolbar }, (msg) =>
   send({ type: 'toolbar', msg }),
 )
 ```
 
-The system prompt must state: "Use view functions (Level 1) for composition. Only use `child()` for library components with encapsulated internals or 30+ state paths."
+The system prompt must state: "Use view functions for all composition. State lives in one tree, owned by the root component. Slice reducers compose via `combine()`. There is no `component()` boundary for sub-components." If the embedded code is a genuinely independent app whose state lifetime is distinct from the host's — a third-party bundled app, a demo embed — use `subApp({ reason, def, ... })` with a non-empty rationale string. The `llui/subapp-requires-reason` lint rule enforces the reason; if the LLM cannot articulate why isolation is required, it should not be using `subApp`.
 
-When the LLM does use `child()` (Level 2), it must get four things right: `def`, `key`, reactive `props` (accessor, not static object), and `onMsg`. The most common failure: using `props` as a static object, which is captured at mount time and never updates. TypeScript won't catch this.
+When reducer composition becomes "route by slice prefix to a sub-reducer," prefer `combine({ slice: reducer, ... })` over a hand-written switch. The `combine()` helper routes messages of shape `{ type: '${slice}/${action}', ... }` to the corresponding slice reducer and preserves top-level reference equality when slices return unchanged — which keeps the path-keyed dirty walker precise.
 
 ### 3.5 `.map()` vs `each()` for Lists
 
@@ -235,18 +235,11 @@ each({
 
 The compiler emits a diagnostic warning for `.map()` on state-derived arrays, but the system prompt should also include an explicit rule: "Never use `.map()` on state arrays in `view()`. Always use `each()`."
 
-### 3.6 Typed Addressed Effects
+### 3.6 Inter-component Coordination
 
-Inter-component messaging uses typed addressed effects. The sender imports the target's `address` builder and gets full autocomplete:
+All coordination between view-function "components" happens through the shared parent state. The parent's `Msg` union namespaces child messages: `{ type: 'toolbar'; msg: ToolbarMsg }`. Cross-cutting concerns (toasts, modals, global indicators) become slices on the root state — `state.toasts: Toast[]` — and any view function can dispatch `{ type: 'toasts/add', payload: '...' }` to enqueue one. There is no addressed-effect registry, no global dispatcher, no string-keyed sends.
 
-```typescript
-import { toToastManager } from './toast-manager'
-
-// Correct — typed, compiler-verified:
-return [state, [toToastManager.show({ message: 'Saved!' })]]
-```
-
-The LLM must know to import the target's address builder. The import is the key — it makes the coupling explicit and discoverable. The system prompt should include: "For cross-component commands, import the target's address builder."
+For adapter layers that hold an `AppHandle` externally (e.g., a router that needs to push navigation events into a mounted app), use `handle.send(msg)` imperatively. The handle is returned from `mountApp` / `mountAtAnchor` / `hydrateApp` / `hydrateAtAnchor` and from `subApp`'s `onHandle` callback.
 
 ### 3.7 `branch()` vs `show()`
 
@@ -385,9 +378,11 @@ Idiomatic score requires human review of each passing output. The reviewer check
 - `each()` used for state-derived arrays in `view()`, never `.map()`
 - `update()` returns a new state object, not a mutation
 - `show` used for boolean conditions, `branch` for named states
-- Composition uses Level 1 (view functions) unless isolation is clearly needed; no unnecessary `child()` usage
+- Composition uses view functions with the `(props, send)` convention; no `child()`, no `propsMsg`, no `onMsg` (those primitives no longer exist)
+- Reducer composition uses `combine()` when the parent's switch is purely "route by slice prefix"; otherwise a hand-written switch is fine
+- `subApp` is used only when a `reason` field can articulate why state-lifetime isolation is required (lint-enforced)
 - Forms use `setField` pattern when there are 3+ text fields, not one message type per field
-- Cross-component effects use typed address builders, not string-keyed `AddressedEffect`
+- Cross-component coordination happens through shared parent state and view-function callbacks — no addressed effects, no global registries
 - No hardcoded DOM manipulation that bypasses the reactive binding system
 
 ### Aggregation
@@ -458,13 +453,13 @@ Assertions: 20 items visible initially; clicking Load more → 40 items visible,
 
 **Tier 5 — Multi-component**
 
-**TASK 10 — Parent-child communication (Level 1)**
+**TASK 10 — Parent-child communication (view functions)**
 A parent component owns an array of counter slices. Each counter is rendered by a `counterView()` view function. Each counter has its own increment button. The parent shows the total count across all counters. An "Add counter" button appends a new counter slice.
 Assertions: total shows 0 initially; clicking Increment on counter 1 → total shows 1; clicking Add counter → total unchanged; clicking Increment on the new counter → total shows 2.
 
-**TASK 10b — Parent-child communication (Level 2)**
-Same requirements as Task 10, but each counter is a `child()` component with its own state machine. The parent receives `{ type: 'incremented' }` via `onMsg` and maintains the total. Tests the `propsMsg` and `onMsg` plumbing.
-Assertions: same as Task 10, plus: parent state and child state are independent objects (child cannot directly access parent state).
+**TASK 10b — Slice reducer composition with `combine()`**
+Same requirements as Task 10, but the parent's `update()` is constructed via `combine({ counters: countersReducer, ui: uiReducer })`. Messages are dispatched as `{ type: 'counters/increment', index: number }` and route to the `countersReducer` with `msg.type` rewritten to `'increment'`. Tests reducer composition correctness and reference-equality preservation (top-level state object reference must be preserved when only one slice changes).
+Assertions: same as Task 10, plus: dispatching a slice message updates only that slice; bindings reading from non-affected slices do not re-evaluate (observable through a coverage tracker or DOM-mutation observer).
 
 **TASK 15 — Real-time updates (WebSocket)**
 A list that receives items from a WebSocket connection. New items are prepended. At most 50 items are shown; the oldest is removed when item 51 arrives. A Pause button halts visible updates (new messages are buffered); Resume applies buffered messages.
@@ -512,8 +507,8 @@ Group failures by symptom:
 - **Compile passes, render fails**: LLM is generating incorrect reactive vs static prop syntax (missing or misplaced arrow functions).
 - **Render passes, assertions fail**: LLM is not handling edge cases correctly (debounce, floor at 0, key identity).
 - **List never updates**: LLM used `.map()` instead of `each()` on a state-derived array. Check for `.map()` in `view()` body.
-- **Idiomatic fails on passing tasks**: LLM is using `branch` where `show` belongs, omitting `memo()`, using `child()` where a view function suffices, or defining N message types for N form fields instead of `setField`.
-- **Level 2 props stale**: LLM passed a static object to `child({ props: { ... } })` instead of a reactive accessor `s => ({ ... })`.
+- **Idiomatic fails on passing tasks**: LLM is using `branch` where `show` belongs, omitting `memo()`, reaching for `subApp` to "isolate" a component instead of extracting a view function, or defining N message types for N form fields instead of `setField`.
+- **`subApp` overuse**: LLM used `subApp({ reason: '...', ... })` for a component that should be a view function with `(props, send)`. Reason: "isolating complex component" or "encapsulating state" is not a legitimate reason; lint rule rejects it. The unified composition model gives precise path-keyed reactivity at any depth — there is no performance reason to isolate.
 - **Console errors on passing tasks**: LLM is generating uncaught promise rejections or calling `text()` outside `view()`.
 - **Test harness misuse**: LLM writes raw `assert.deepEqual` on `update()` instead of using `testComponent()` and `assertEffects()` from `@llui/test`. This still passes but misses effect accumulation and state tracking. The system prompt should include a correct `testComponent` example for tasks that require test output.
 
@@ -529,7 +524,7 @@ When a framework change is made (new API, removed alias, changed signature), run
 
 The system prompt must:
 
-- Provide the type signatures for `ComponentDef`, `each`, `branch`, `show`, `memo`, `child`, and `onMount` — not prose descriptions, actual TypeScript.
+- Provide the type signatures for `ComponentDef`, `each`, `branch`, `show`, `memo`, `combine`, `subApp`, and `onMount` — not prose descriptions, actual TypeScript.
 - Show one complete minimal example (under 50 lines) with `init`, `update`, `view`, and `onEffect`.
 - State the rules that are frequently violated: no mutation, reactive vs static, scoped accessor (`item(t => t.field)`) usage.
 - Stay under 300 words for the core system prompt. Task-specific type definitions may bring the total under 450 words. Longer prompts dilute the LLM's attention on the task. The system prompt is not documentation — it is context injection.
@@ -553,16 +548,21 @@ State is immutable. Effects are plain data objects returned from `update()`.
 ## Key Types
 
 ```typescript
-interface ComponentDef<S, M, E> {
+interface ComponentDef<S, M, E, D = void> {
   name: string;
-  init: (props?: Record<string, unknown>) => [S, E[]];
+  init: (data: D) => [S, E[]];
   update: (state: S, msg: M) => [S, E[]];
   view: (h: View<S, M>) => Node[];
-  onEffect?: (effect: E, send: (msg: M) => void, signal: AbortSignal) => void;
-  // Level 2 only (optional):
-  propsMsg?: (props: Record<string, unknown>) => M;
-  receives?: Record<string, (params: any) => M>;
+  onEffect?: (ctx: { effect: E; send: (msg: M) => void; signal: AbortSignal }) => void;
 }
+
+// Reducer composition for slice routing:
+function combine<S, M extends { type: string }, E>(
+  slices: { [SliceKey: string]: (state: any, msg: any) => [any, E[]] },
+  top?: (state: S, msg: M) => [S, E[]],
+): (state: S, msg: M) => [S, E[]];
+// Messages dispatched as `{ type: '${slice}/${action}', ... }` route to the
+// matching slice reducer; top handles unprefixed messages.
 
 // `h: View<S, M>` is a bundle of state-bound helpers. Destructure it in
 // `view` to drop per-call generics — every accessor infers `s: S`:
@@ -653,13 +653,19 @@ export const Counter = component<State, Msg, Effect>({
 - Wrap derived values used in multiple places in `memo()`:
   `const filtered = memo((s: State) => s.items.filter(i => i.active))`.
 - Use `show` for boolean conditions. Use `branch` for named states (3+ cases or non-boolean).
-- For composition, use view functions (Level 1) with `(props, send)` convention:
+- For composition, use view functions with the `(props, send)` convention:
   `function toolbarView<S>(props: ToolbarProps<S>, send: (msg: ToolbarMsg) => void)`.
-  Only use `child()` (Level 2) for library components with encapsulated internals or 30+ state paths.
+  State lives in one tree, owned by the root component. There is no `child()` primitive.
+- For reducer composition, use `combine()` when routing by message-type prefix:
+  `update: combine<State, Msg, Effect>({ toolbar: toolbarReducer, sidebar: sidebarReducer })`.
+  Hand-written switch is fine when the parent has its own non-slice cases.
 - For forms with many fields, use a single `setField` message:
   `{ type: 'setField'; field: keyof Fields; value: string }` instead of one message per field.
-- For cross-component commands, import the target's typed address builder:
-  `import { toToastManager } from './toast-manager'` then `toToastManager.show({ message: '...' })`.
+- For cross-component coordination, route through the shared parent's state and `update()`.
+  Adapter layers that mount an instance imperatively can call `handle.send(msg)` on the returned `AppHandle`.
+- The escape hatch for genuine state-lifetime isolation is `subApp({ reason, def, data, onHandle })`.
+  `reason` is required (non-empty string); the `llui/subapp-requires-reason` lint rule rejects empty or placeholder reasons.
+  Do not use `subApp` to "isolate a complex component" — the path-keyed dirty walker handles depth without overhead.
 - For third-party imperative components (editors, maps, charts), use `foreign()`:
   `foreign({ mount: (el, send) => lib.create(el), props: s => s.config, sync: ..., destroy: inst => inst.dispose() })`
   `sync` is a function `(inst, props, prev) => void` for manual diffing, or a record `{ field: (inst, val, prev) => void }` for per-field handlers.
@@ -681,7 +687,7 @@ export const Counter = component<State, Msg, Effect>({
 
 ### System Prompt Variants for Complex Tasks
 
-For tasks involving async effects, prepend the effect type definitions relevant to that task. For tasks involving `child()`, add the `child()` signature. Do not pad the system prompt with information irrelevant to the task. A system prompt for the Async Fetch task should include:
+For tasks involving async effects, prepend the effect type definitions relevant to that task. For tasks involving `combine()` or `subApp`, add the relevant signature. Do not pad the system prompt with information irrelevant to the task. A system prompt for the Async Fetch task should include:
 
 ```typescript
 // In the system prompt for async tasks:
@@ -699,32 +705,34 @@ type Effect =
 // onEffect: handleEffects<Effect>().else((eff, send, signal) => { switch (eff.type) { ... } })
 ````
 
-For the Parent-Child Communication task (Level 2 `child()`), add:
+For the reducer-composition task, add the `combine()` signature and an example:
 
 ```typescript
-// Level 2 composition — isolated child with own state machine:
-const MyChild = component<ChildState, ChildMsg, ChildEffect>({
-  init: (props) => [{ ... }, []],
-  propsMsg: (props): ChildMsg => ({ type: 'propsChanged', props }),
-  receives: {
-    scrollTo: (params: { id: string }) => ({ type: 'scrollTo' as const, id: params.id }),
+import { combine } from '@llui/dom'
+
+const update = combine<State, Msg, Effect>({
+  counters: (slice: CountersSlice, msg: Msg) => {
+    // msg.type has been rewritten — original was 'counters/increment',
+    // here it arrives as 'increment'.
+    switch (msg.type) {
+      case 'increment':
+        return [{ ...slice, count: slice.count + 1 }, []]
+    }
+    return [slice, []]
   },
-  update: (state, msg) => { ... },
-  view: ({ send }) => { ... },
+  ui: (slice: UiSlice, msg: Msg) => {
+    /* ... */
+  },
 })
 
-// Parent mounts it:
-child({ def: MyChild, key: 'table-1', props: s => ({ rows: s.data }), onMsg: handleChildMsg })
-
-// Parent sends typed commands:
-import { toMyChild } from './my-child'
-return [state, [toMyChild.scrollTo({ id: '42' })]]
+// Dispatch:
+send({ type: 'counters/increment' })
 ```
 
-For composition tasks that need only Level 1 (view functions), add:
+For composition tasks that introduce view functions, add:
 
 ```typescript
-// Level 1 — parent owns state, child is a view function with (props, send) convention:
+// View functions — the only decomposition primitive. Parent owns state.
 // toolbar.ts
 export type ToolbarProps<S> = {
   tools: (s: S) => Tool[]
@@ -780,13 +788,13 @@ function each<S, T, M>(opts: {
 }): Node[]
 ```
 
-### Step 3 — Guide the Level 1 vs Level 2 composition choice
+### Step 3 — Frame composition as a single primitive
 
-Most composition should use Level 1 (view functions) with the `(props, send)` convention: the view function takes a typed props object (generic over `<S>`) and a `send` callback. The LLM exports a function, defines a `Props<S>` type, and the parent calls it with named accessors. This pattern is identical to how React composition works (props down, callbacks up) and will be generated correctly from existing training data.
+All composition uses view functions with the `(props, send)` convention: the view function takes a typed props object (generic over `<S>`) and a `send` callback. The LLM exports a function, defines a `Props<S>` type, and the parent calls it with named accessors. This pattern is identical to how React composition works (props down, callbacks up) and will be generated correctly from existing training data.
 
-Level 2 (`child()`) is needed only for library components with encapsulated state (data tables, rich text editors) or when the component has 30+ state paths where isolating the state machine reduces complexity. The call site requires: `def`, `key`, reactive `props` (accessor, not static object), and optionally `onMsg`. The most common LLM error is passing `props` as a static object — the system prompt must emphasize: "props must be an accessor function `s => ({ ... })`, not a literal object."
+There is no `child()` primitive, no `propsMsg`, no `onMsg`. State lives in one tree, owned by the root component. The system prompt must state this explicitly because the most common LLM failure mode — driven by React training data — is to instantiate "child components" for every reusable piece of UI. Direct that instinct toward view functions.
 
-The `propsMsg` mechanism converts prop changes into messages the child handles in `update()` like any other message — no special lifecycle. The `receives` declaration provides typed addressed effects that senders import as `toComponentName.action({ ... })`. Both patterns are predictable and type-checked.
+When the parent's `update()` is purely "route by message-type prefix to a sub-reducer," `combine({ slice: reducer, ... })` collapses it. The unified model relies on slice-prefix message naming (`{ type: 'counters/increment' }`) for `combine()` to route correctly. The escape hatch for state-lifetime isolation is `subApp({ reason, def, ... })` with a non-empty `reason` field; the lint rule rejects unjustified or empty reasons. The LLM should not invoke `subApp` unless it can articulate why the embedded code must own its own TEA loop.
 
 ### Step 4 — Include a correct `each()` example in the system prompt for list tasks
 
@@ -825,7 +833,7 @@ Add a lint rule (or runtime warning in development mode) that detects when the s
 For tier 3+ tasks (async, multi-step), the single counter example in the base system prompt is insufficient. Add one additional example relevant to the task's domain:
 
 - Async task: show a fetch effect example with loading/success/error states using `@llui/effects` (`http`, `cancel`).
-- Multi-component task: show Level 1 (view function) example for simple cases, Level 2 (`child()` with `propsMsg`) for isolated components.
+- Multi-component task: show a view function with `(props, send)` for shared-state composition; for reducer composition show `combine({ slice: reducer, ... })`. For genuine state-lifetime isolation (rare), show `subApp({ reason: '...', def, ... })`.
 - Each/list task: show a correct `each()` with scoped accessor `item(t => t.field)` usage.
 
 Each additional example adds approximately 20–30 lines to the system prompt. Keep the total system prompt under 450 words by removing examples unrelated to the task when adding task-specific ones.
@@ -1149,7 +1157,7 @@ expect(result.effects).toContainEqual({ type: 'http', url: '/api/items', method:
 2. **Missing `memo()`:** Same accessor arrow function (structurally identical AST) passed to two or more binding call sites without `memo()` wrapping. Detection: hash the AST of each accessor, group by hash, flag groups with count ≥ 2.
 3. **`each()` closure violation:** In an `each()` render callback, an identifier is used that was assigned from the parent scope rather than obtained via the scoped accessor (`item(t => t.field)`). Detection: scope analysis — resolve each identifier in the render body, flag those whose declaration is outside the render callback and is not a function parameter.
 4. **`.map()` on state arrays:** `.map()` call on a state-derived value inside `view()` body. Detection: call expression with `.map()` callee where the receiver is a call expression whose callee's parameters include the state type.
-5. **Unnecessary `child()`:** `child()` used where the component has fewer than 10 state paths and does not declare `receives`. Detection: count unique state access paths in the child component definition; if < 10 and no `receives` field, flag.
+5. **Unnecessary `subApp`:** `subApp({ reason, ... })` used where the reason string is empty, a placeholder ("TODO", "isolation"), or describes a problem that view functions would solve (e.g., "complex component", "encapsulation"). Detection: the `llui/subapp-requires-reason` ESLint rule already enforces non-empty reason; extend it with a deny-list of placeholder phrases.
 6. **Form boilerplate:** Multiple message types in the `Msg` union that differ only by a field name string (e.g., `SetName`, `SetEmail`, `SetPhone` instead of `SetField`). Detection: structural comparison of union members after normalizing string literal types.
 
 The AST visitor runs as part of the evaluation pipeline (§5) after the compile check passes. Human review is required only when the visitor reports ambiguous cases (e.g., pattern 5 where the component has exactly 10 paths).
