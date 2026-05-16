@@ -25,6 +25,49 @@ import { enterAccessor, exitAccessor } from './render-context.js'
 
 export const FULL_MASK = 0xffffffff | 0
 
+/**
+ * Path-keyed dirty mask computation. Walks the prefix table; each entry
+ * whose `prefix(prev) !== prefix(next)` contributes its bit to the dirty
+ * mask. Bit position = table position (single-word, ≤31 entries) — for
+ * overflow (>31 entries), bits 31..61 land in the high half of a
+ * `[number, number]` pair, matching `__dirty`'s overflow shape.
+ *
+ * The runtime is correct under structural-sharing reducers (immutable
+ * splice): a sub-tree that wasn't touched stays reference-equal across
+ * `prev`/`next`, so every accessor reading into that sub-tree skips.
+ *
+ * @internal
+ */
+export function computeDirtyFromPrefixes(
+  prefixes: ReadonlyArray<(state: unknown) => unknown>,
+  prev: unknown,
+  next: unknown,
+): number | [number, number] {
+  if (prefixes.length <= 31) {
+    let dirty = 0
+    for (let i = 0; i < prefixes.length; i++) {
+      if (prefixes[i]!(prev) !== prefixes[i]!(next)) dirty |= 1 << i
+    }
+    return dirty
+  }
+  // Overflow: two words, 31 bits each (avoid sign bit for ergonomic
+  // bitwise ops). Bit i % 31 of word ⌊i / 31⌋.
+  let lo = 0
+  let hi = 0
+  const len = prefixes.length
+  for (let i = 0; i < len && i < 31; i++) {
+    if (prefixes[i]!(prev) !== prefixes[i]!(next)) lo |= 1 << i
+  }
+  for (let i = 31; i < len && i < 62; i++) {
+    if (prefixes[i]!(prev) !== prefixes[i]!(next)) hi |= 1 << (i - 31)
+  }
+  // Anything past 62 forces FULL_MASK in the high word — the unified
+  // model's compiler-emitted prefix counts shouldn't hit this in
+  // realistic apps, but degrade gracefully if they do.
+  if (len > 62) hi = FULL_MASK
+  return [lo, hi]
+}
+
 // Addressed effect dispatcher — set by addressed.ts when imported
 let addressedDispatcher: ((eff: { __targetKey: string | number; __msg: unknown }) => void) | null =
   null
@@ -353,11 +396,25 @@ function processMessages<S, M, E>(inst: ComponentInstance<S, M, E>): void {
   const allEffects: E[] = []
 
   const defUpdate = inst.def.update
+  // Path-keyed reactivity (the unified-composition-model path): when the
+  // compiler emits `__prefixes`, dirty bits correspond to entries in the
+  // prefix table (one bit per minimal reference-stable prefix read across
+  // the component's accessors). The runtime computes the dirty mask by
+  // reference-comparing `prefix(prev) !== prefix(next)` for each table
+  // entry — strictly more precise than `__dirty`'s top-level-field bitmask,
+  // and not subject to the 31-top-level-field ceiling. Falls back to
+  // `__dirty` when `__prefixes` is absent (existing components, unchanged).
+  const prefixes = inst.def.__prefixes as ReadonlyArray<(s: unknown) => unknown> | undefined
   const dirtyFn = inst.def.__dirty
   for (let qi = 0; qi < queue.length; qi++) {
     const msg = queue[qi]!
     const [newState, effects] = defUpdate(state, msg)
-    const dirty = dirtyFn ? dirtyFn(state, newState) : FULL_MASK
+    let dirty: number | [number, number]
+    if (prefixes !== undefined) {
+      dirty = computeDirtyFromPrefixes(prefixes, state, newState)
+    } else {
+      dirty = dirtyFn ? dirtyFn(state, newState) : FULL_MASK
+    }
     if (typeof dirty === 'number') {
       combinedDirty |= dirty
     } else {

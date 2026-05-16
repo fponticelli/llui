@@ -18,6 +18,24 @@ export interface ComponentDef<S, M, E = never, D = void> {
 
   /** @internal Compiler-injected */
   __dirty?: (oldState: S, newState: S) => number | [number, number]
+  /**
+   * @internal Compiler-injected — opt-in **path-keyed reactivity** path.
+   *
+   * Replaces `__dirty`'s top-level-field bitmask with per-prefix accessors.
+   * Each entry is a stable closure of form `(s: S) => unknown` that the
+   * compiler hoists at module scope, one per distinct *minimal
+   * reference-stable prefix* read across this component's accessors.
+   * The position of each entry in this array IS its bit position in the
+   * binding-side `mask`. When set, the runtime computes `combinedDirty`
+   * by reference-comparing `prefix(prev)` vs `prefix(next)` for each
+   * entry, instead of calling `__dirty(prev, next)`.
+   *
+   * When both `__prefixes` and `__dirty` are present, `__prefixes` wins.
+   * This is the opt-in path for the unified composition model (see
+   * `docs/proposals/unified-composition-model.md`); existing components
+   * stay on the `__dirty` bitmask path unchanged.
+   */
+  __prefixes?: ReadonlyArray<(state: S) => unknown>
   /** @internal Compiler-injected */
   __renderToString?: (state: S) => string
   /** @internal Compiler-injected */
@@ -100,6 +118,7 @@ export interface AnyComponentDef {
   propsMsg?: unknown
   receives?: unknown
   __dirty?: unknown
+  __prefixes?: unknown
   __renderToString?: unknown
   __msgSchema?: unknown
   __msgAnnotations?: unknown
@@ -138,6 +157,7 @@ export interface LazyDef<D = void> {
   propsMsg?: unknown
   receives?: unknown
   __dirty?: unknown
+  __prefixes?: unknown
   __renderToString?: unknown
   __msgSchema?: unknown
   __msgAnnotations?: unknown
