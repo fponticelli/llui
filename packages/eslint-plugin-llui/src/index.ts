@@ -40,6 +40,7 @@ import { noSampleInAccessorRule } from './rules/no-sample-in-accessor.js'
 import { noSampleInReactivePositionRule } from './rules/no-sample-in-reactive-position.js'
 import { staticItemsRule } from './rules/static-items.js'
 import { agentTagsendTranslatorMissingRule } from './rules/agent-tagsend-translator-missing.js'
+import { subappRequiresReasonRule } from './rules/subapp-requires-reason.js'
 
 export const rules = {
   'accessor-side-effect': accessorSideEffectRule,
@@ -84,6 +85,7 @@ export const rules = {
   'no-sample-in-reactive-position': noSampleInReactivePositionRule,
   'static-items': staticItemsRule,
   'agent-tagsend-translator-missing': agentTagsendTranslatorMissingRule,
+  'subapp-requires-reason': subappRequiresReasonRule,
 }
 
 // Severity rationale:
@@ -152,6 +154,7 @@ export const configs = {
       'llui/no-sample-in-reactive-position': 'error',
       'llui/static-items': 'error',
       'llui/agent-tagsend-translator-missing': 'error',
+      'llui/subapp-requires-reason': 'error',
     },
   },
   // Standalone overlay that errors on the `agent-*` rules. Useful for
