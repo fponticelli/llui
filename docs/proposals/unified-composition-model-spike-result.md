@@ -134,3 +134,39 @@ Next concrete step: extend `@llui/vite-plugin`'s pass 2 to emit prefix descripto
 Run: `cd spike/prefix-reactivity && pnpm exec tsx bench.ts`.
 
 Keep these in-tree as the reference implementation for the real compiler/runtime pass to follow.
+
+---
+
+## Update — initial integration shipped on this branch
+
+After the spike cleared the gate, the runtime + compiler change went in directly on `explore/controlled-components`:
+
+**Runtime (`@llui/dom`):**
+- New optional `ComponentDef.__prefixes: ReadonlyArray<(state: S) => unknown>` field.
+- New `computeDirtyFromPrefixes(prefixes, prev, next)` helper in `update-loop`.
+- `processMessages` prefers `__prefixes` over `__dirty` when both are present.
+- 8 unit tests covering single-word, multi-word overflow (>31 prefixes via `[lo, hi]`), the precision contract, and the fallback path when `__prefixes` is absent.
+
+**Compiler (`@llui/vite-plugin`):**
+- Pass 2 now emits `__prefixes` alongside `__dirty` for any component with ≤31 reactive paths. Each entry is a stable hoisted arrow `(s) => s.<path>` whose position in the array matches the bit assigned to bindings on that path.
+- 4 unit tests covering simple, nested-depth-2, overflow-skipping, and ordering cases.
+- >31 paths still go through `__dirty` (existing FULL_MASK overflow path). Multi-word compiler emission for ≤62 paths is the next chunk.
+
+**Validation:**
+- 524 dom tests pass (+9 new).
+- 297 vite-plugin tests pass (+4 new).
+- Full monorepo `pnpm turbo test check`: 36/36 tasks green.
+- `examples/components-demo` builds end-to-end — `__prefixes` ships in the production bundle.
+
+**What this means in practice:**
+- Every component compiled by the new vite-plugin (≤31 paths) now runs on path-keyed reactivity automatically. No source-code change in user apps needed.
+- Bindings reading distinct nested paths (`s.user.name` vs `s.user.email`) no longer co-fire on every parent mutation — the precision win the spike demonstrated is now live.
+- `__dirty` stays as the >31-path fallback and the bug-recovery path.
+- Decisive (one root component, 120 fields) is still on `__dirty` until multi-word emit lands; dicerun2's many small components are all on the new path.
+
+**Branch commits:**
+- `6b9d582` — spike (this doc and the design note)
+- `da83992` — runtime opt-in path in `@llui/dom`
+- `08bc0f5` — compiler emit in `@llui/vite-plugin`
+
+Next steps (not yet on branch): multi-word emit (≤62 paths), then deletion of the bitmask path once decisive's state is restructured into nested slices, and `child()` removal per the design note.
