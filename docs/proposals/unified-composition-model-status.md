@@ -35,31 +35,32 @@ This document records exactly what landed on the branch, what was deliberately l
 
 ## What's left, scoped honestly
 
-### 1. Multi-word `__prefixes` emit (>31 paths) — partial, see below for what's wired
+### 1. Multi-word `__prefixes` emit (>31 paths) ✓ landed
 
-⚠️ **Partial progress:** the runtime and `__prefixes` emission for 32..61-path components landed in this branch. What's still missing is per-binding `maskHi` propagation through the elTemplate emit (binding tuple shape).
+The two-word reactivity ceiling raised from 31 to 62 prefixes. Components reading more than 62 paths still fall back to `FULL_MASK` and trigger the `bitmask-overflow` lint warning.
 
-**What's wired (this branch):**
+**Runtime (`@llui/dom`):**
 
 - `Binding.maskHi` + `StructuralBlock.maskHi` added; gates use `(mask & dirtyLo) | (maskHi & dirtyHi)`.
-- `processMessages` tracks two-word dirty separately; `_runPhase2` / `_handleMsg` / `setCurrentDirtyMask` widened (with backward-compat defaults).
-- `computeDirtyFromPrefixes` already returned `[lo, hi]`; the runtime now actually uses both halves.
-- `buildPrefixesProp` emits prefix arrows for paths at positions 0..61 (was: ≤30 only).
-- `computeAccessorMask` returns `{ mask, maskHi, readsState }`; `collectDeps` returns `{ lo, hi }` maps.
+- `processMessages` tracks two-word dirty separately; `_runPhase2` / `_handleMsg` / `setCurrentDirtyMask` widened (with backward-compat defaults so stale compiled bundles continue to gate correctly).
+- `computeDirtyFromPrefixes` returns `[lo, hi]` for >31-prefix components; the runtime fans both halves into `combinedDirty` + `combinedDirtyHi`.
 
-**What's still missing for full precision:**
+**Compiler (`@llui/vite-plugin`):**
 
-- Per-binding `maskHi` literal emission. The `bindings` tuple in `transform.ts` is `[mask, kind, key, value]` (4 elements); needs to become `[mask, maskHi, kind, key, value]` (5 elements). Six emit sites in `transform.ts` plus the consumer in `emitSubtreeTemplate` need to thread the second number.
-- Without this last step, high-word-only bindings (those reading paths 31..61 but not 0..30) gate at `mask=0, maskHi=0` and fall through to FULL_MASK — they re-evaluate every cycle. The dirty COMPUTATION is precise, so `memo()`'d aggregates short-circuit correctly, but per-binding gating doesn't yet exploit the maskHi pathway.
+- `collectDeps` returns `{ lo, hi }` maps. Positions 0..30 → `lo`, positions 31..61 → `hi`.
+- `buildPrefixesProp` emits prefix arrows for all paths up to position 61 (was: ≤30 only).
+- `computeAccessorMask` returns `{ mask, maskHi, readsState }`.
+- Binding-emit sites push a 5-element tuple `[mask, kind, key, accessor, maskHi]` when the accessor reads a high-word prefix; for the common ≤31-prefix case the emit stays byte-identical (4-tuple). `elSplit` and `elTemplate`'s `__bind` callback both auto-detect the optional `maskHi` slot.
+- `tryInjectDirty` skips `__update` and `__handlers` emission for >31-prefix components — those inlined gate predicates are single-word and would silently skip high-word bindings. Falling through to the runtime's two-word-aware `genericUpdate` keeps reactivity correct.
 
-**Approach taken:** the original plan was bigint masks. After hitting the `number | bigint` cast cascade in an earlier attempt, the actual shipped design uses a two-word number layout (`mask` for bits 0..30, `maskHi` for bits 31..61) — no bigint mixing, no truthy-vs-`=== 0` re-normalization. The `0 & 0 === 0` path collapses on V8's inline caches for ≤31-prefix components.
+**Tests added:**
 
-**Estimated remaining calendar:** ~half a day. Concrete steps:
+- `prefix-reactivity.test.ts` — hand-built 35-prefix component verifies that a `maskHi`-gated binding fires only on its high-word prefix change.
+- `prefixes-emit.test.ts` — asserts `__prefixes` is emitted for >31-prefix components and the compiler fast path (`__update` / `__handlers`) is deliberately suppressed.
 
-- In `transform.ts`, change the `bindings` tuple shape from `[number, string, string, ts.Expression]` (4-tuple) to `[number, number, string, string, ts.Expression]` (5-tuple, with `maskHi` second). Six emit sites push tuples; the `emitSubtreeTemplate` consumer reads them.
-- Emit binding object `__bind(node, mask, maskHi, kind, key, accessor)` calls — runtime `createBinding` already accepts `maskHi: number | undefined`, so the emit needs to surface it.
-- For `__update` and `__handlers` gate predicates emitted into the compiled component body: change from `(mask & d)` to `((mask & d) | (maskHi & dHi))` and thread `dHi` through. Pass it from `processMessages` to `__update(state, dirtyLo, dirtyHi, bindings, blocks, beforePhase1)` — the runtime entry call site is already widened on the runtime side; the compiler emit needs to match.
-- Add a test that asserts the compiler-emitted `__bind` calls carry `maskHi` for >31-prefix accessors.
+**ESLint rule update:** `bitmask-overflow` threshold raised 31 → 62. Test fixtures updated.
+
+**Approach taken:** the original plan was bigint masks. After hitting a `number | bigint` cast cascade in an earlier attempt, the shipped design uses a two-word number layout (`mask` for bits 0..30, `maskHi` for bits 31..61) — no bigint mixing, no truthy-vs-`=== 0` re-normalization. For ≤31-prefix components the `0 & dirtyHi` branch collapses on V8's inline caches.
 
 ### 2. Removal of `propsMsg` / `receives` from `ComponentDef` ✓ landed
 
@@ -77,20 +78,6 @@ createOnRenderClient({
 ```
 
 The user discriminates on `def` and dispatches imperatively via `handle.send`. No framework-special knowledge of message shapes. Dead lint rules (`unnecessary-child`, `child-static-props`) were also removed since they targeted the absent `child()` primitive.
-
-Original scope (now done):
-
-**Why it's still pending:** `@llui/vike` uses `propsMsg(props)` to thread route-data changes through layers of its persistent-layout chain (`packages/vike/src/on-render-client.ts`, `packages/vike/src/page-slot.ts`). This is structurally different from the subcomponent communication pattern `child()` provided — it's cross-layer data propagation, where each layer is an independent `mountAtAnchor`'d app and the vike adapter shallow-diffs `chainData[i]` between navigations and fires `propsMsg` on changes.
-
-**Implementation scope:**
-
-- Design pass: what's the unified-model replacement for "data flowed to a persistent-layout layer"? Candidates:
-  - **Slice prop** — vike writes `chainData[i]` into the layer's host state as a normal slice; the layer's view reads from it via the standard path-keyed reactivity walker. Requires layer apps to expose a "set chain-data" action in their reducer.
-  - **Imperative `AppHandle.send`** — vike's adapter has the handle; it dispatches a `{type: 'chain-data/set', payload}` message on each navigation. The receiving reducer slots the data into state. Simpler than propsMsg machinery; no special framework support needed.
-  - **Effect-emit** — vike dispatches an effect that the layer's `onEffect` handles. Probably overkill.
-- Pick one, design, implement in `@llui/vike`, migrate the 4 call sites.
-- Remove `propsMsg` / `receives` from `ComponentDef` types.
-- Delete `packages/dom/src/compose.ts` (the slice-handler helpers that exist primarily for propsMsg).
 
 ### 3. Documentation rewrites ✓ landed in `b3e285a`
 
@@ -115,16 +102,17 @@ Audited: the existing comments correctly describe the legacy `__dirty` path (whi
 
 ## Risks and considerations for follow-up
 
-- **`__dirty` legacy path.** Currently kept for backwards compat with the rare component that had `__dirty` hand-written (the compiler skips synthesizing if user already provides one). Once binding-side `maskHi` emission lands, decide whether `__dirty` is fully replaced by `__prefixes` — probably yes; document that user-supplied `__dirty` is deprecated.
+- **`__dirty` legacy path.** Currently kept for backwards compat with the rare component that had `__dirty` hand-written (the compiler skips synthesizing if user already provides one). Now that `__prefixes` emission covers 62 paths and runtime fans out to two-word dirty, `__dirty` is purely a runtime fallback for user-supplied custom dirty functions. Could be documented as deprecated.
+- **Compiler fast path for >31-prefix components.** Today, `__update` and `__handlers` are deliberately suppressed for components reading >31 prefixes — their inlined gate predicates are single-word. To bring back the fast path for large components, the gate predicates need to thread `dHi` through and emit `((mask & d) | (maskHi & dHi))`. Tractable but not blocking; the runtime's `genericUpdate` is correct.
 - **`@llui/test`.** None of the dom tests rely on `child()` in user-facing API, but the test-harness might have helpers wired through component instances that need adjustment. Re-scan when continuing.
 
 ## What "fully resolved" actually means
 
-The branch as it stands IS reviewable and mergeable: every commit passes the full monorepo (62/62 turbo tasks), the unified model is functioning end-to-end through a real-app build (`components-demo`), and the migration story is demonstrated by a worked example test. Of the four items originally scoped:
+The branch is reviewable and mergeable: every commit passes the full monorepo (62/62 turbo tasks), the unified model is functioning end-to-end through a real-app build (`components-demo`), and the migration story is demonstrated by a worked example test. All four items originally scoped:
 
-- **#2 propsMsg/receives removal** — ✓ done
-- **#3 doc rewrites** — ✓ done
-- **#4 compiler-emit polish** — ✓ no-op (audit found the existing comments correctly describe the legacy `__dirty` path)
-- **#1 multi-word `__prefixes` emit** — partial: runtime fully wired, `__prefixes` emission extended to 62 paths, but per-binding `maskHi` literal emission in `elTemplate` is the remaining step (well-scoped: widen the `bindings` tuple from 4 → 5 elements at six emit sites in `transform.ts`).
+- **#1 multi-word `__prefixes` emit** — ✓ done. Runtime two-word maskHi support, compiler emission for all 62 paths, per-binding maskHi literals in elTemplate emit, compiler fast path suppressed for overflow components (falls through to two-word-aware `genericUpdate`).
+- **#2 propsMsg/receives removal** — ✓ done. Vike migrated to `onLayerDataChange` opt-in callback.
+- **#3 doc rewrites** — ✓ done in `b3e285a`.
+- **#4 compiler-emit polish** — ✓ no-op after audit.
 
-The one remaining work item is the binding-tuple widening. It unblocks per-binding gating for high-word paths and brings decisive.space-2's 120-field root to full path-keyed precision. Estimated half a day of focused work — the design is established, the runtime is ready, the tests exist.
+The remaining optional improvement is restoring the compiler fast path (`__update` / `__handlers`) for >31-prefix components, which is a perf optimization, not a correctness fix.
