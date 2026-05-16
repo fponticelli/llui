@@ -11,6 +11,24 @@ All notable changes to LLui packages are documented here. LLui is a pre-1.0 proj
 
 Packages version in lockstep at release time: `@llui/dom`, `@llui/vite-plugin`, `@llui/test`, `@llui/router`, `@llui/transitions`, `@llui/components`, `@llui/vike` share a version line. `@llui/effects`, `@llui/mcp`, `@llui/eslint-plugin`, `@llui/agent`, and `llui-agent` have their own cadence.
 
+## 2026-05-16 — 0.0.40
+
+**Released:** `@llui/{dom,components,transitions}@0.0.40`; `@llui/{test,router}@0.0.41`; `@llui/vike@0.0.42`; `@llui/mcp@0.0.37`; `@llui/agent@0.0.58`; `llui-agent@0.0.22`
+
+Fix `child({ onMsg })` silently no-opping when mounted inside an `each()` (or `virtualEach()`) row.
+
+### `@llui/dom@0.0.40`
+
+- **Fixed** `each()` and `virtualEach()` reuse a module-scoped `buildCtx` per row to avoid allocation, and `buildEntry` mutated only a fixed set of fields per row — dropping `send` and `container`. `child({ def, onMsg })` reads `parentCtx.send` to forward `onMsg` output to the parent reducer; with `send === undefined`, the bubble silently no-opped. Controlled inputs paired with each() lost every user interaction: the child fired its message, the parent never saw it, and the parent's reactive `value:` accessor re-evaluated against unchanged state on the next render — racing the user's drag and resetting the DOM. Surface symptom looked like an input race; root cause was three layers deep (each row → child mount → onMsg microtask → undefined parentSend). Both primitives now copy every non-`rootLifetime`/non-`state` field from the surrounding context, matching the comment's stated intent. The missing `container` field separately affected `onMount` calls from inside each rows (fell back to `document.body` instead of the parent component's container).
+
+### `@llui/{components,transitions}@0.0.40`, `@llui/{test,router}@0.0.41`, `@llui/vike@0.0.42`, `@llui/mcp@0.0.37`, `@llui/agent@0.0.58`
+
+- **Fixed** Cascade bump for `@llui/dom@0.0.40`. Peer range updated from `^0.0.39` to `^0.0.40`. No behaviour change in these packages themselves.
+
+### `llui-agent@0.0.22`
+
+- **Fixed** Cascade bump for `@llui/agent@0.0.58`. No behaviour change in the bridge itself.
+
 ## 2026-05-14 — 0.0.39
 
 **Released:** `@llui/{dom,components,transitions}@0.0.39`; `@llui/{test,router}@0.0.40`; `@llui/vike@0.0.41`; `@llui/mcp@0.0.36`; `@llui/agent@0.0.57`; `llui-agent@0.0.21`
