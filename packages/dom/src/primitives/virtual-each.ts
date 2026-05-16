@@ -172,12 +172,19 @@ export function virtualEach<S, T, M = unknown>(opts: VirtualEachOptions<S, T, M>
 
     const indexAccessor = (): number => entry.index
 
+    // Every non-rootLifetime/non-state field is copied from the
+    // surrounding context — including `send` and `container`. See the
+    // matching note in `each.ts`: missing `send` broke
+    // `child({ onMsg })` bubble-up from inside virtual-each rows;
+    // missing `container` would point `onMount` at `document.body`.
     buildCtx.rootLifetime = scope
     buildCtx.state = state
     buildCtx.allBindings = ctx.allBindings
     buildCtx.structuralBlocks = ctx.structuralBlocks
     buildCtx.dom = ctx.dom
     buildCtx.instance = ctx.instance
+    buildCtx.send = ctx.send
+    buildCtx.container = ctx.container
     const prevFlat = getFlatBindings()
     setFlatBindings(ctx.allBindings)
     setRenderContext(buildCtx)

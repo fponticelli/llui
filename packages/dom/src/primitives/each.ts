@@ -55,9 +55,9 @@ function callKey<T>(opts: { key: (t: T) => string | number }, item: T): string |
 }
 
 // Reusable render context for buildEntry — avoids object allocation per entry.
-// All fields except `rootLifetime`, `state`, `allBindings`, `structuralBlocks`, `dom`
-// are copied from the surrounding render context per reconcile call, so the
-// initial shape's null/empty values are never observed in practice.
+// Every field is overwritten from the surrounding context per reconcile call
+// (see buildEntry), so the initial shape's null/empty values are never observed
+// in practice.
 const buildCtx: RenderContext = {
   rootLifetime: null as unknown as Lifetime,
   state: null,
@@ -493,13 +493,22 @@ function buildEntry<S, T, M>(
 
   const indexAccessor = (): number => entry.index
 
-  // Reuse a single context object to avoid allocation per entry
+  // Reuse a single context object to avoid allocation per entry. Every
+  // non-rootLifetime/non-state field is copied from the surrounding
+  // context — including `send` and `container`, which were dropped by
+  // earlier versions. Missing `send` silently broke `child({ onMsg })`
+  // bubble-up from inside an each() row (child.ts reads `parentCtx.send`,
+  // got `undefined`, and skipped the bubble). Missing `container` made
+  // `onMount(cb)` fall back to `document.body` instead of the parent
+  // component's container.
   buildCtx.rootLifetime = scope
   buildCtx.state = currentState
   buildCtx.allBindings = ctx.allBindings
   buildCtx.structuralBlocks = ctx.structuralBlocks
   buildCtx.dom = ctx.dom
   buildCtx.instance = ctx.instance
+  buildCtx.send = ctx.send
+  buildCtx.container = ctx.container
   const prevFlatBindings = getFlatBindings()
   setFlatBindings(ctx.allBindings)
   setRenderContext(buildCtx)
