@@ -13,7 +13,6 @@ import { stateMutationRule } from './rules/state-mutation.js'
 import { missingMemoRule } from './rules/missing-memo.js'
 import { eachClosureViolationRule } from './rules/each-closure-violation.js'
 import { mapOnStateArrayRule } from './rules/map-on-state-array.js'
-import { unnecessaryChildRule } from './rules/unnecessary-child.js'
 import { formBoilerplateRule } from './rules/form-boilerplate.js'
 import { agentMissingIntentRule } from './rules/agent-missing-intent.js'
 import { agentExclusiveAnnotationsRule } from './rules/agent-exclusive-annotations.js'
@@ -28,7 +27,6 @@ import { emptyPropsRule } from './rules/empty-props.js'
 import { namespaceImportRule } from './rules/namespace-import.js'
 import { accessibilityRule } from './rules/accessibility.js'
 import { controlledInputRule } from './rules/controlled-input.js'
-import { childStaticPropsRule } from './rules/child-static-props.js'
 import { staticOnRule } from './rules/static-on.js'
 import { exhaustiveUpdateRule } from './rules/exhaustive-update.js'
 import { bitmaskOverflowRule } from './rules/bitmask-overflow.js'
@@ -58,7 +56,6 @@ export const rules = {
   'missing-memo': missingMemoRule,
   'each-closure-violation': eachClosureViolationRule,
   'map-on-state-array': mapOnStateArrayRule,
-  'unnecessary-child': unnecessaryChildRule,
   'form-boilerplate': formBoilerplateRule,
   'agent-missing-intent': agentMissingIntentRule,
   'agent-exclusive-annotations': agentExclusiveAnnotationsRule,
@@ -73,7 +70,6 @@ export const rules = {
   'namespace-import': namespaceImportRule,
   accessibility: accessibilityRule,
   'controlled-input': controlledInputRule,
-  'child-static-props': childStaticPropsRule,
   'static-on': staticOnRule,
   'exhaustive-update': exhaustiveUpdateRule,
   'bitmask-overflow': bitmaskOverflowRule,
@@ -123,7 +119,6 @@ export const configs = {
       'llui/missing-memo': 'error',
       'llui/each-closure-violation': 'error',
       'llui/map-on-state-array': 'error',
-      'llui/unnecessary-child': 'error',
       'llui/form-boilerplate': 'error',
       'llui/agent-missing-intent': 'error',
       'llui/agent-exclusive-annotations': 'error',
@@ -142,7 +137,6 @@ export const configs = {
       'llui/namespace-import': 'error',
       'llui/accessibility': 'error',
       'llui/controlled-input': 'error',
-      'llui/child-static-props': 'error',
       'llui/static-on': 'error',
       'llui/exhaustive-update': 'error',
       'llui/bitmask-overflow': 'error',

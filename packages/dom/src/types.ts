@@ -12,10 +12,6 @@ export interface ComponentDef<S, M, E = never, D = void> {
   view: (h: View<S, M>) => Node[]
   onEffect?: (ctx: { effect: E; send: Send<M>; signal: AbortSignal }) => void
 
-  // Level 2 composition
-  propsMsg?: (props: Record<string, unknown>) => M
-  receives?: Record<string, (params: unknown) => M>
-
   /** @internal Compiler-injected */
   __dirty?: (oldState: S, newState: S) => number | [number, number]
   /**
@@ -115,8 +111,6 @@ export interface AnyComponentDef {
   update(state: unknown, msg: unknown): [unknown, unknown[]]
   view(h: unknown): Node[]
   onEffect?: unknown
-  propsMsg?: unknown
-  receives?: unknown
   __dirty?: unknown
   __prefixes?: unknown
   __renderToString?: unknown
@@ -154,8 +148,6 @@ export interface LazyDef<D = void> {
   update(state: unknown, msg: unknown): [unknown, unknown[]]
   view(h: unknown): Node[]
   onEffect?: unknown
-  propsMsg?: unknown
-  receives?: unknown
   __dirty?: unknown
   __prefixes?: unknown
   __renderToString?: unknown
@@ -200,8 +192,9 @@ export interface AppHandle {
    * normal view-bound `send` channel. Useful for adapter layers that
    * need to push updates into a long-lived instance — e.g.
    * `@llui/vike`'s persistent-layout chain pushes layout-data updates
-   * into surviving layer instances on client navigation when their
-   * `propsMsg` translates the new data into a state-update message.
+   * into surviving layer instances on client navigation through the
+   * user-supplied `onLayerDataChange` callback, which then calls
+   * `handle.send(msg)` with the layout's chosen state-update message.
    *
    * Messages are queued through the same path as `view`-side `send`
    * calls — they batch into the next microtask and process via the
@@ -377,10 +370,9 @@ export interface LifetimeNode {
  * `'text' | 'prop' | 'attr' | 'class' | 'style'` write their accessor's
  * return value to the DOM. `'effect'` is a side-effect-only watcher:
  * the accessor is invoked every Phase 2 tick its mask is hit, but its
- * return value is discarded and `applyBinding` is a no-op. Used by
- * `child()` to fire the prop-diff/propsMsg cascade on parent updates
- * without the cost of stringifying the returned props bag onto a
- * detached anchor node every render.
+ * return value is discarded and `applyBinding` is a no-op. Reserved
+ * for primitives that need to fire a side-effect on each binding
+ * evaluation without writing to the DOM.
  */
 export type BindingKind = 'text' | 'prop' | 'attr' | 'class' | 'style' | 'effect'
 

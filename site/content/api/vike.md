@@ -505,6 +505,46 @@ export interface RenderClientOptions {
   onMount?: (chain: readonly AppHandle[]) => void
 
   /**
+   * Called for each surviving layout layer whose `lluiLayoutData[i]`
+   * slice changed across a client navigation. Surviving layers are
+   * layers shared between the previous and current chain — they stay
+   * mounted, but their state needs a fresh injection of nav-driven
+   * data (pathname, breadcrumbs, session, …).
+   *
+   * The framework gives you the layer's `AppHandle` and the changed
+   * data; you decide how to translate it into a state-update message
+   * and dispatch it through `handle.send(msg)`. Typically:
+   *
+   * ```ts
+   * createOnRenderClient({
+   *   Layout: NavAwareLayout,
+   *   onLayerDataChange: ({ def, handle, newData }) => {
+   *     if (def === NavAwareLayout) {
+   *       handle.send({ type: 'navChanged', data: newData as NavData })
+   *     }
+   *   },
+   * })
+   * ```
+   *
+   * Not called for layers whose data slice is unchanged (shallow-key
+   * `Object.is` diff on records, whole-value `Object.is` for
+   * primitives). Not called on the initial hydration render — `init`
+   * handles the initial data injection there. Not called for the
+   * page layer (the innermost entry); the page always disposes and
+   * remounts, so its `init(data)` receives the fresh data directly.
+   *
+   * If omitted, surviving layers retain their existing state across
+   * navigations. Opt in only when the layout needs to react to
+   * nav-scoped data changes.
+   */
+  onLayerDataChange?: (ctx: {
+    def: AnyComponentDef
+    handle: AppHandle
+    newData: unknown
+    prevData: unknown
+  }) => void
+
+  /**
    * Forwarded to `@llui/dom`'s `hydrateApp` / `hydrateAtAnchor` for
    * every layer in the layout chain on initial hydration. When `true`,
    * effects returned by each component's `init()` are dispatched

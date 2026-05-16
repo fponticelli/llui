@@ -123,7 +123,6 @@ export default tseslint.config(
       'llui/namespace-import': 'error',
       'llui/accessibility': 'error',
       'llui/controlled-input': 'error',
-      'llui/child-static-props': 'error',
       'llui/static-on': 'error',
       'llui/exhaustive-update': 'error',
       'llui/bitmask-overflow': 'error',

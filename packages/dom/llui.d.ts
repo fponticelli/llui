@@ -16,8 +16,6 @@ export interface ComponentDef<S, M, E = never, D = void> {
   update: (state: S, msg: M) => [S, E[]]
   view: (send: Send<M>) => Node[]
   onEffect?: (ctx: { effect: E; send: Send<M>; signal: AbortSignal }) => void
-  propsMsg?: (props: Record<string, unknown>) => M
-  receives?: Record<string, (params: unknown) => M>
 }
 
 export type Send<M> = (msg: M) => void

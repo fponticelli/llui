@@ -50,5 +50,5 @@ rules so they surface as editor squiggles instead of build-time console
 output. Install the plugin and enable its `recommended` config to get the
 full set — `empty-props`, `namespace-import`, `spread-in-children`,
 `map-on-state-array`, `exhaustive-update`, `accessibility`,
-`controlled-input`, `child-static-props`, `bitmask-overflow`,
-`static-on`, and the `agent-*` annotation rules.
+`controlled-input`, `bitmask-overflow`, `static-on`,
+`subapp-requires-reason`, and the `agent-*` annotation rules.

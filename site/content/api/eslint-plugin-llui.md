@@ -49,8 +49,8 @@ export default [
 | `pure-update-function`         | error    | `update()` function has side effects — must be pure                            |
 | `missing-memo`                 | warn     | Expensive derived computation in `view()` without `memo()`                     |
 | `map-on-state-array`           | warn     | Calling `.map()` on a state array in `view()` (use `each()` instead)           |
-| `unnecessary-child`            | warn     | Using `child()` boundary when a view function would suffice                    |
 | `form-boilerplate`             | warn     | Repetitive form field pattern that could use a view function                   |
+| `subapp-requires-reason`       | error    | `subApp` call missing a non-empty `reason` field                               |
 | `agent-missing-intent`         | warn     | Agent handler is missing an `@intent` annotation                               |
 | `agent-nonextractable-handler` | warn     | Agent handler cannot be statically extracted                                   |
 

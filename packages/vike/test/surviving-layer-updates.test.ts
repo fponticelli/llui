@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest'
-import { component, div, text } from '@llui/dom'
+import { component, div } from '@llui/dom'
 import type { ComponentDef } from '@llui/dom'
 import { createOnRenderClient, _resetChainForTest } from '../src/on-render-client'
 import { pageSlot } from '../src/page-slot'
@@ -7,9 +7,10 @@ import { pageSlot } from '../src/page-slot'
 // Regression for issue #9: when a persistent layout layer survives a
 // client navigation (the chain diff finds it identical-by-def), the
 // adapter must push fresh `lluiLayoutData[i]` into the surviving
-// instance via its `propsMsg` handler. Before the fix, surviving
-// layers were frozen at whatever they initialized with on first mount
-// — pathname, breadcrumbs, session, nav-highlight state all stale.
+// instance via the user-supplied `onLayerDataChange` callback. Before
+// the fix, surviving layers were frozen at whatever they initialized
+// with on first mount — pathname, breadcrumbs, session, nav-highlight
+// state all stale.
 
 interface NavData {
   pathname: string
@@ -24,9 +25,8 @@ type LayoutState = {
 
 type LayoutMsg = { type: 'navChanged'; data: NavData }
 
-// Layout def with `propsMsg` opted in. The signature is a bit loose
-// because TS sees `propsMsg` as `(props: Record<string, unknown>) => M`
-// at the type level — we cast through unknown at the call site.
+// Layout def. State updates flow in via the adapter's
+// `onLayerDataChange` callback, which the test wires below.
 const NavAwareLayout: ComponentDef<LayoutState, LayoutMsg, never, NavData> = {
   name: 'NavAwareLayout',
   init: (data) => [{ pathname: data.pathname, user: data.user, navUpdates: 0 }, []],
@@ -51,14 +51,11 @@ const NavAwareLayout: ComponentDef<LayoutState, LayoutMsg, never, NavData> = {
       div({ class: 'page-slot' }, [...pageSlot()]),
     ]),
   ],
-  propsMsg: (props) => ({
-    type: 'navChanged' as const,
-    data: props as unknown as NavData,
-  }),
 }
 
-// Layout WITHOUT propsMsg — proves the surviving-layer update path
-// silently skips when the def opts out.
+// Layout for the "no callback registered" case — proves the
+// surviving-layer update path silently skips when the adapter has no
+// onLayerDataChange option configured.
 const StaticLayout: ComponentDef<{ value: string }, never, never, { value: string }> = {
   name: 'StaticLayout',
   init: (data) => [{ value: data.value }, []],
@@ -66,7 +63,20 @@ const StaticLayout: ComponentDef<{ value: string }, never, never, { value: strin
   view: ({ text }) => [
     div({ class: 'static-layout' }, [text((s) => s.value), div([...pageSlot()])]),
   ],
-  // No propsMsg — surviving-layer updates should skip this layer.
+}
+
+const navAwareDispatch = ({
+  def,
+  handle,
+  newData,
+}: {
+  def: { name: string }
+  handle: { send: (msg: unknown) => void }
+  newData: unknown
+}) => {
+  if (def.name === 'NavAwareLayout') {
+    handle.send({ type: 'navChanged', data: newData as NavData })
+  }
 }
 
 const PageA = component<{ tag: string }, never, never>({
@@ -93,7 +103,10 @@ describe('persistent layouts — surviving-layer prop updates', () => {
   })
 
   it('dispatches propsMsg on a surviving layer when its data slice changes', async () => {
-    const render = createOnRenderClient({ Layout: NavAwareLayout })
+    const render = createOnRenderClient({
+      Layout: NavAwareLayout,
+      onLayerDataChange: navAwareDispatch,
+    })
 
     // First mount — pathname = /home, user = null. propsMsg does NOT
     // fire on the initial mount because there's no "previous" data
@@ -129,7 +142,10 @@ describe('persistent layouts — surviving-layer prop updates', () => {
   })
 
   it('skips propsMsg when the data slice is unchanged (Object.is shallow keys)', async () => {
-    const render = createOnRenderClient({ Layout: NavAwareLayout })
+    const render = createOnRenderClient({
+      Layout: NavAwareLayout,
+      onLayerDataChange: navAwareDispatch,
+    })
 
     await render({
       Page: PageA,
@@ -155,7 +171,10 @@ describe('persistent layouts — surviving-layer prop updates', () => {
   })
 
   it('updates the layer entry data so the next nav diffs against the latest', async () => {
-    const render = createOnRenderClient({ Layout: NavAwareLayout })
+    const render = createOnRenderClient({
+      Layout: NavAwareLayout,
+      onLayerDataChange: navAwareDispatch,
+    })
 
     await render({
       Page: PageA,
@@ -189,7 +208,9 @@ describe('persistent layouts — surviving-layer prop updates', () => {
     expect(document.querySelector('.layout-update-count')!.textContent).toBe('2')
   })
 
-  it('silently skips layers whose def has no propsMsg', async () => {
+  it('silently skips layers when no onLayerDataChange option is provided', async () => {
+    // No callback registered — surviving layers retain initial state
+    // across navigations regardless of data changes.
     const render = createOnRenderClient({ Layout: StaticLayout })
 
     await render({
@@ -199,9 +220,9 @@ describe('persistent layouts — surviving-layer prop updates', () => {
     })
     expect(document.querySelector('.static-layout')!.textContent).toContain('first')
 
-    // Nav with new data. The static layout has no propsMsg, so the
-    // adapter should not throw, not warn, and the layout's state stays
-    // at its initial value.
+    // Nav with new data. No callback is wired, so the adapter should
+    // not throw, not warn, and the layout's state stays at its
+    // initial value.
     await expect(
       render({
         Page: PageB,
@@ -210,8 +231,8 @@ describe('persistent layouts — surviving-layer prop updates', () => {
       }),
     ).resolves.not.toThrow()
 
-    // Static layout still shows 'first' because there's no propsMsg
-    // path to update its state. Page swapped.
+    // Static layout still shows 'first' because no onLayerDataChange
+    // hook is wired to update its state. Page swapped.
     expect(document.querySelector('.static-layout')!.textContent).toContain('first')
     expect(document.querySelector('.page-b')).not.toBeNull()
   })
@@ -221,7 +242,10 @@ describe('persistent layouts — surviving-layer prop updates', () => {
     // is always treated as divergent, so the page itself disposes and
     // remounts; the surviving layout in front of it still needs its
     // `propsMsg` dispatch. Verify both sides of that contract.
-    const render = createOnRenderClient({ Layout: NavAwareLayout })
+    const render = createOnRenderClient({
+      Layout: NavAwareLayout,
+      onLayerDataChange: navAwareDispatch,
+    })
 
     await render({
       Page: PageA,

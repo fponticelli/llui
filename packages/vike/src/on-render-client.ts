@@ -169,6 +169,46 @@ export interface RenderClientOptions {
   onMount?: (chain: readonly AppHandle[]) => void
 
   /**
+   * Called for each surviving layout layer whose `lluiLayoutData[i]`
+   * slice changed across a client navigation. Surviving layers are
+   * layers shared between the previous and current chain — they stay
+   * mounted, but their state needs a fresh injection of nav-driven
+   * data (pathname, breadcrumbs, session, …).
+   *
+   * The framework gives you the layer's `AppHandle` and the changed
+   * data; you decide how to translate it into a state-update message
+   * and dispatch it through `handle.send(msg)`. Typically:
+   *
+   * ```ts
+   * createOnRenderClient({
+   *   Layout: NavAwareLayout,
+   *   onLayerDataChange: ({ def, handle, newData }) => {
+   *     if (def === NavAwareLayout) {
+   *       handle.send({ type: 'navChanged', data: newData as NavData })
+   *     }
+   *   },
+   * })
+   * ```
+   *
+   * Not called for layers whose data slice is unchanged (shallow-key
+   * `Object.is` diff on records, whole-value `Object.is` for
+   * primitives). Not called on the initial hydration render — `init`
+   * handles the initial data injection there. Not called for the
+   * page layer (the innermost entry); the page always disposes and
+   * remounts, so its `init(data)` receives the fresh data directly.
+   *
+   * If omitted, surviving layers retain their existing state across
+   * navigations. Opt in only when the layout needs to react to
+   * nav-scoped data changes.
+   */
+  onLayerDataChange?: (ctx: {
+    def: AnyComponentDef
+    handle: AppHandle
+    newData: unknown
+    prevData: unknown
+  }) => void
+
+  /**
    * Forwarded to `@llui/dom`'s `hydrateApp` / `hydrateAtAnchor` for
    * every layer in the layout chain on initial hydration. When `true`,
    * effects returned by each component's `init()` are dispatched
@@ -247,8 +287,9 @@ interface ChainEntry {
   /**
    * The data slice this layer was most recently mounted or updated
    * with. Compared shallow-key against the next nav's `lluiLayoutData[i]`
-   * to decide whether a surviving layer needs a `propsMsg` dispatch.
-   * Layers that didn't receive any layout data carry `undefined` here.
+   * to decide whether a surviving layer needs the `onLayerDataChange`
+   * hook to fire. Layers that didn't receive any layout data carry
+   * `undefined` here.
    */
   data: unknown
 }
@@ -391,10 +432,11 @@ async function renderClient(
   // those sites visually while the URL advances — a regression that
   // shipped in 0.0.26 and was reported against the llui.dev site.
   //
-  // `propsMsg` is still honored for *layouts* that want to react to
-  // nav-scoped data (pathname, session, breadcrumbs) without
-  // remounting — see the loop below. The page is deliberately excluded
-  // from that path because `init(data)` always re-runs for it.
+  // The user-supplied `onLayerDataChange` callback fires for *layouts*
+  // that want to react to nav-scoped data (pathname, session,
+  // breadcrumbs) without remounting — see the loop below. The page is
+  // deliberately excluded from that path because `init(data)` always
+  // re-runs for it.
   let firstMismatch = 0
   // `chainHandles` stores `[...layouts, page]`, so the layout prefix
   // length is `chainHandles.length - 1` (or 0 on first fresh mount, when
@@ -409,29 +451,32 @@ async function renderClient(
   // Push fresh data into surviving layers (layers in the shared prefix).
   // Without this, persistent layouts can't react to nav-driven data
   // changes — pathname, breadcrumbs, session, nav-highlight state all
-  // belong to the layout but change on every client navigation. Each
-  // surviving layer's def can opt in via `propsMsg(data) => Msg`; we
-  // dispatch the resulting message through the handle's `send` so the
-  // layout's update loop processes it like any other state change.
+  // belong to the layout but change on every client navigation.
   //
-  // Diff is shallow-key Object.is on record-shaped data, falling back
-  // to whole-value Object.is for primitives / non-records. This matches
-  // child()'s prop-diff behavior, which is what the report asked us to
-  // mirror. Layers without `propsMsg` are skipped silently — opt-in.
+  // The user-supplied `onLayerDataChange` callback receives the layer
+  // def, its AppHandle, the new data slice, and the previously-seen
+  // data slice. The user typically dispatches a state-update message
+  // through `handle.send`. Layers whose data slice is unchanged
+  // (shallow-key Object.is on records, whole-value Object.is for
+  // primitives) are skipped without calling the hook.
   //
   // This loop is layouts-only by construction: `firstMismatch` is
   // bounded by `layoutChain.length` above, so indices [0, firstMismatch)
-  // never reach the page slot.
+  // never reach the page slot. If `onLayerDataChange` is undefined,
+  // surviving layers retain their existing state — opt-in.
   for (let i = 0; i < firstMismatch; i++) {
     const entry = chainHandles[i]!
     const newData = newChainData[i]
     if (!hasDataChanged(entry.data, newData)) continue
+    const prevData = entry.data
     entry.data = newData
-    const propsMsg = (entry.def as { propsMsg?: (data: unknown) => unknown }).propsMsg
-    if (typeof propsMsg !== 'function') continue
-    const msg = propsMsg(newData)
-    if (msg !== null && msg !== undefined) {
-      entry.handle.send(msg)
+    if (options.onLayerDataChange) {
+      options.onLayerDataChange({
+        def: entry.def,
+        handle: entry.handle,
+        newData,
+        prevData,
+      })
     }
   }
 
@@ -671,7 +716,7 @@ const mountChainSuffix = _mountChainSuffix
 /**
  * Shallow-key data diff for the persistent-layer prop-update path.
  * Returns true when `next` differs from `prev` enough to warrant
- * dispatching a `propsMsg`. Mirrors `child()`'s prop-diff semantics:
+ * dispatching the user's `onLayerDataChange` hook:
  *
  * - `Object.is(prev, next)` short-circuits identical references.
  * - For two plain-object records, walks the union of keys and returns

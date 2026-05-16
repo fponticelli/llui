@@ -245,7 +245,7 @@ Without masks, a component with 100 bindings re-evaluates all 100 on every state
 
 ### Static analysis lives in `@llui/eslint-plugin`
 
-The Vite plugin used to emit a stack of usage-pattern diagnostics during transform — `empty-props`, `namespace-import`, `spread-in-children`, `map-on-state`, `exhaustive-update`, `accessibility`, `controlled-input`, `child-static-props`, `bitmask-overflow`, `static-on`. Those have all moved to ESLint rules in `@llui/eslint-plugin`. The compiler proper now does only the work that requires it: prop classification, dependency analysis, mask injection, import cleanup. Anything that is purely "this AST shape is suspect" runs in the lint pipeline.
+The Vite plugin used to emit a stack of usage-pattern diagnostics during transform — `empty-props`, `namespace-import`, `spread-in-children`, `map-on-state`, `exhaustive-update`, `accessibility`, `controlled-input`, `bitmask-overflow`, `static-on`. Those have all moved to ESLint rules in `@llui/eslint-plugin`. The compiler proper now does only the work that requires it: prop classification, dependency analysis, mask injection, import cleanup. Anything that is purely "this AST shape is suspect" runs in the lint pipeline.
 
 The motivation for the move: editor squiggles, autofix capability where applicable, per-rule severity per project, and a single source of truth for static analysis. The previous "build-only" surfacing meant warnings only showed up on `vite build` console output; many were missed in the dev loop until a teammate's CI failed.
 
@@ -258,9 +258,9 @@ What's now in the lint plugin:
 - `exhaustive-update` — verifies `update()`'s switch handles every variant of the local `Msg` union; `default:` clauses suppress.
 - `accessibility` — `<img>` without `alt`, `onClick` on non-interactive element without `role`.
 - `controlled-input` — reactive `value` binding without `onInput`/`onChange`. Mirrors the binding-model correctness issue: the DOM property would be overwritten on every Phase 2 pass that matches the mask, erasing keystrokes.
-- `child-static-props` — `child()` with a static-literal `props` (never updates) or with an accessor returning fresh nested literals (propsMsg fires every render via `Object.is` reference inequality).
-- `bitmask-overflow` — >31 unique state paths fall back to `FULL_MASK`. Includes co-occurrence detection: when every sub-path under a top-level field always fires together, the rule recommends bundling into a single `s.field` read for cheaper budget relief than `child()` extraction.
+- `bitmask-overflow` — >31 unique state paths fall back to `FULL_MASK`. Includes co-occurrence detection: when every sub-path under a top-level field always fires together, the rule recommends bundling into a single `s.field` read for cheaper budget relief. The cap is a temporary limitation pending multi-word `__prefixes` emit.
 - `static-on` — `scope`/`branch`'s `on` accessor reads no state, so the key never changes and the subtree mounts once and stagnates.
+- `subapp-requires-reason` — `subApp({ ... })` without a non-empty `reason` field. Surfaces the rationale in code review and on the rendered DOM as `data-llui-sub-app-reason`.
 
 The Vite plugin still emits the `[llui]`-prefixed `console.info` logs from `verbose: true` (per-file bit assignments, helper compile/bail counts) — those are pure tracing and not subject to lint policy. Nothing else gets surfaced from the transform anymore.
 

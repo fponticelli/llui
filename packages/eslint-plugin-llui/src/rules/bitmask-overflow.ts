@@ -15,9 +15,17 @@ import { collectAccessorPathSets, collectStatePaths } from '../util/state-paths.
  *   - a co-occurrence note for fields whose every sub-path always fires
  *     in the same accessor sets (those collapse to one bit if the
  *     parent object is read as a unit),
- *   - a recommendation to extract via `child()`.
+ *   - a recommendation to restructure state so the most-read paths
+ *     collapse to fewer top-level prefixes, or to embed the offending
+ *     subtree as a `subApp` when the embedded code is a genuinely
+ *     independent app whose state lifetime is distinct from the host's.
  *
  * Migrated from the Vite plugin's `bitmask-overflow` diagnostic.
+ *
+ * Pending: multi-word `__prefixes` emit (bigint or two-word maskHi
+ * support) will eliminate the 31-path ceiling for components that
+ * read >31 distinct reference-stable prefixes. Until that ships, this
+ * rule remains the user-facing surface for the limit.
  */
 
 function setsEqual<T>(a: Set<T>, b: Set<T>): boolean {
@@ -74,7 +82,7 @@ export const bitmaskOverflowRule = createRule({
     schema: [],
     messages: {
       overflow:
-        "Component has {{count}} unique state access paths ({{overflow}} past the 31-path limit). Paths 32..{{count}} fall back to FULL_MASK — their changes re-evaluate every binding in the component, negating the bitmask optimization for those updates.\n\nTop-level fields by path count: {{breakdown}}.{{cooccurrenceNote}}\n\nRecommended fix: extract {{candidateList}} into {{aOrEmpty}} child component{{plural}} via `child()` (see /api/dom#child). Each child gets its own 31-path bitmask, so the extracted paths no longer count against the parent's limit. Alternative: use `sliceHandler` to embed a state machine that owns the field's reducer.",
+        "Component has {{count}} unique state access paths ({{overflow}} past the 31-path limit). Paths 32..{{count}} fall back to FULL_MASK — their changes re-evaluate every binding in the component, negating the bitmask optimization for those updates.\n\nTop-level fields by path count: {{breakdown}}.{{cooccurrenceNote}}\n\nRecommended fix: restructure state so {{candidateList}} are grouped under one or two reference-stable parents, or factor that subtree into a separate module that consumes the parent's state via the standard view-function `(props, send)` convention. Alternative: use `combine()` to split the reducer into slices when the parent's `update()` is mostly mechanical routing. The 31-path cap will be lifted once multi-word `__prefixes` emit lands.",
     },
   },
   defaultOptions: [],
