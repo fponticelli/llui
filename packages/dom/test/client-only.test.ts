@@ -9,7 +9,6 @@ import {
   text,
   clientOnly,
   __clientOnlyStub,
-  child,
   mountApp,
   hydrateApp,
 } from '../src/index'
@@ -290,18 +289,16 @@ describe('clientOnly — bag.clientOnly (destructured form)', () => {
 
 describe('__clientOnlyStub — emitted by the use-client directive', () => {
   it('produces a ComponentDef that emits clientOnly anchors during SSR', async () => {
+    // Test the stub by rendering it as a standalone root component under
+    // SSR. (Previously this nested it via child() inside a host
+    // component to mirror real usage; under the unified composition
+    // model child() is gone, and subApp() defers its mount until the
+    // live-DOM onMount cycle — which doesn't run under renderToString.
+    // Rendering the stub at the SSR root is the cleanest way to
+    // exercise its anchor-emission contract.)
     const StubbedWidget = __clientOnlyStub('MapWidget')
-    type HostState = { x: number }
-    const Host = component<HostState, never, never>({
-      name: 'Host',
-      init: () => [{ x: 0 }, []],
-      update: (s) => [s, []],
-      view: () => [
-        div({ class: 'host' }, [...child({ def: StubbedWidget, key: 'map', props: () => ({}) })]),
-      ],
-    })
     const env = await jsdomEnv()
-    const html = renderToString(Host, undefined, env)
+    const html = renderToString(StubbedWidget, undefined, env)
     expect(html).toContain('<!--llui-client-only-start-->')
     expect(html).toContain('<!--llui-client-only-end-->')
   })

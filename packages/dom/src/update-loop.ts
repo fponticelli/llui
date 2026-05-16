@@ -68,16 +68,6 @@ export function computeDirtyFromPrefixes(
   return [lo, hi]
 }
 
-// Addressed effect dispatcher — set by addressed.ts when imported
-let addressedDispatcher: ((eff: { __targetKey: string | number; __msg: unknown }) => void) | null =
-  null
-
-export function setAddressedDispatcher(
-  fn: (eff: { __targetKey: string | number; __msg: unknown }) => void,
-): void {
-  addressedDispatcher = fn
-}
-
 export interface ComponentInstance<S = unknown, M = unknown, E = unknown> {
   def: ComponentDef<S, M, E>
   state: S
@@ -747,12 +737,6 @@ function enhanceBindingError(err: unknown, binding: Binding, componentName: stri
 
 function dispatchEffect<S, M, E>(inst: ComponentInstance<S, M, E>, effect: E): void {
   const eff = effect as Record<string, unknown>
-
-  // Addressed effects — dispatch to target component
-  if (eff.__addressed === true && typeof eff.__targetKey !== 'undefined') {
-    addressedDispatcher?.(eff as { __targetKey: string | number; __msg: unknown })
-    return
-  }
 
   // Built-in: delay
   if (eff.type === 'delay') {

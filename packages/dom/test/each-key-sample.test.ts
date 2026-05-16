@@ -19,7 +19,6 @@ import { mountApp } from '../src/mount'
 import { each } from '../src/primitives/each'
 import { branch } from '../src/primitives/branch'
 import { show } from '../src/primitives/show'
-import { child } from '../src/primitives/child'
 import { sample } from '../src/primitives/sample'
 import { text } from '../src/primitives/text'
 import { div } from '../src/elements'
@@ -94,31 +93,6 @@ describe('sample() inside an accessor throws a targeted error', () => {
     }
     const container = document.createElement('div')
     expect(() => mountApp(container, def)).toThrow(/inside show\(\)\.when/)
-  })
-
-  it('child().props — sample() inside props accessor throws at mount', () => {
-    type ChildState = { msg: string }
-    type ChildMsg = { type: 'set'; v: string }
-    const childDef: ComponentDef<ChildState, ChildMsg, never, { msg: string }> = {
-      name: 'Child',
-      init: (props) => [{ msg: props?.msg ?? '' }, []],
-      update: (s, m) => [m.type === 'set' ? { msg: m.v } : s, []],
-      view: ({ text: t }) => [div([t((s: ChildState) => s.msg)])],
-    }
-    type State = { msg: string; flag: boolean }
-    const def: ComponentDef<State, never, never> = {
-      name: 'Parent',
-      init: () => [{ msg: 'hello', flag: false }, []],
-      update: (s) => [s, []],
-      view: () =>
-        child<State, ChildMsg>({
-          def: childDef,
-          key: 'c',
-          props: (_s) => ({ msg: sample<State, string>((s) => s.msg) }),
-        }),
-    }
-    const container = document.createElement('div')
-    expect(() => mountApp(container, def)).toThrow(/inside child\(\)\.props/)
   })
 
   it('binding accessor — sample() inside text(s => …) at update time goes through _onBindingError', async () => {

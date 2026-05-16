@@ -14,7 +14,6 @@ import { mountApp, _setDevToolsInstall } from '../src/mount'
 import { installDevTools } from '../src/devtools'
 import { each } from '../src/primitives/each'
 import { branch } from '../src/primitives/branch'
-import { child } from '../src/primitives/child'
 import { text } from '../src/primitives/text'
 import { div } from '../src/elements'
 import { component } from '../src/component'
@@ -502,70 +501,11 @@ describe('disposer log → structural causes', () => {
     expect(appUnmounts.length).toBeGreaterThanOrEqual(1)
   })
 
-  it("records 'child-unmount' when a mounted child() is torn down with the parent", () => {
-    type CState = { value: number }
-    type CMsg = { type: 'propsChanged'; props: { initial: number } }
-
-    const ChildComp = component<CState, CMsg, never>({
-      name: 'ChildComp',
-      init: (data) => [{ value: (data as unknown as { initial: number }).initial }, []],
-      update: (state, msg) => {
-        switch (msg.type) {
-          case 'propsChanged':
-            return [{ ...state, value: msg.props.initial }, []]
-        }
-      },
-      propsMsg: (props) => ({
-        type: 'propsChanged' as const,
-        props: props as { initial: number },
-      }),
-      view: () => [div({ class: 'child' }, [text((s: CState) => String(s.value))])],
-      __dirty: (o, n) => (Object.is(o.value, n.value) ? 0 : 1),
-    })
-
-    type PState = { base: number }
-    type PMsg = { type: 'noop' }
-
-    const captured: ComponentInstance<PState, PMsg, never>[] = []
-    _setDevToolsInstall((inst) => {
-      installDevTools(inst)
-      captured.push(inst as ComponentInstance<PState, PMsg, never>)
-    })
-
-    const def: ComponentDef<PState, PMsg, never> = {
-      name: 'ParentWithChild',
-      init: () => [{ base: 10 }, []],
-      update: (state, _msg) => [state, []],
-      view: () => [
-        div({ class: 'parent' }, [
-          ...child<PState, CMsg>({
-            def: ChildComp as unknown as ComponentDef<unknown, CMsg, unknown>,
-            key: 'childUnmountCounter',
-            props: (s) => ({ initial: s.base }),
-          }),
-        ]),
-      ],
-      __dirty: (o, n) => (Object.is(o.base, n.base) ? 0 : 1),
-    }
-
-    const container = document.createElement('div')
-    const handle = mountApp(container, def)
-
-    const inst = captured[0]!
-    expect(inst._disposerLog).toBeDefined()
-    const log = inst._disposerLog!
-
-    // Sanity: child rendered
-    expect(container.querySelector('.child')).not.toBeNull()
-
-    handle.dispose()
-
-    const entries = log.toArray()
-    const childUnmounts = entries.filter((e) => e.cause === 'child-unmount')
-    expect(childUnmounts.length).toBeGreaterThanOrEqual(1)
-    expect(childUnmounts[0]!.scopeId).toMatch(/^\d+$/)
-    expect(typeof childUnmounts[0]!.timestamp).toBe('number')
-  })
+  // (Removed: 'child-unmount' test for the legacy child() primitive.
+  //  child() + propsMsg machinery were removed with the unified
+  //  composition model — see docs/proposals/unified-composition-model.md.
+  //  subApp() has its own 'app-unmount' lifecycle event, already covered
+  //  by the 'app-unmount' test above.)
 })
 
 // ── Coverage tracker ────────────────────────────────────────────────
