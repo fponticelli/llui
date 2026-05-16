@@ -21,7 +21,7 @@ describe('combine()', () => {
   const matrixUpdate = (
     s: MatrixState,
     m: MatrixMsg,
-  ): readonly [MatrixState, ReadonlyArray<Effect>] => {
+  ): [MatrixState, Effect[]] => {
     switch (m.type) {
       case 'matrix/setName':
         return [{ ...s, name: m.v }, [{ type: 'log', msg: 'name set' }]]
@@ -30,7 +30,7 @@ describe('combine()', () => {
     }
   }
 
-  const uiUpdate = (s: UiState, m: UiMsg): readonly [UiState, ReadonlyArray<Effect>] => {
+  const uiUpdate = (s: UiState, m: UiMsg): [UiState, Effect[]] => {
     switch (m.type) {
       case 'ui/toggleSidebar':
         return [{ ...s, sidebarOpen: !s.sidebarOpen }, []]
@@ -54,7 +54,7 @@ describe('combine()', () => {
   })
 
   it('preserves the top-level state reference when the slice reducer returns the same slice', () => {
-    const noop = (s: MatrixState): readonly [MatrixState, ReadonlyArray<Effect>] => [s, []]
+    const noop = (s: MatrixState): [MatrixState, Effect[]] => [s, []]
     const update = combine<AppState, AppMsg, Effect>({
       matrix: noop,
     })
@@ -66,7 +66,7 @@ describe('combine()', () => {
   })
 
   it('routes unprefixed messages to the optional _top reducer', () => {
-    const top = (_s: AppState, m: AppMsg): readonly [AppState, ReadonlyArray<Effect>] => {
+    const top = (_s: AppState, m: AppMsg): [AppState, Effect[]] => {
       if (m.type === 'reset') return [initialState, [{ type: 'log', msg: 'reset' }]]
       return [_s, []]
     }
@@ -119,7 +119,7 @@ describe('combine()', () => {
     const spy = (
       s: MatrixState,
       m: MatrixMsg,
-    ): readonly [MatrixState, ReadonlyArray<Effect>] => {
+    ): [MatrixState, Effect[]] => {
       observedType = m.type
       return [s, []]
     }

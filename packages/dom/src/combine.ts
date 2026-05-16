@@ -24,7 +24,7 @@
 export type SliceReducer<Slice, Msg, Effect> = (
   state: Slice,
   msg: Msg,
-) => readonly [Slice, ReadonlyArray<Effect>]
+) => [Slice, Effect[]]
 
 /**
  * Map of slice name → its reducer. The slice name is BOTH:
@@ -51,7 +51,7 @@ export type SliceMap<S, _M, E> = {
  * prefix. Use for cross-cutting messages (e.g. `{type: 'reset'}`) or
  * messages that operate on multiple slices at once.
  */
-export type TopReducer<S, M, E> = (state: S, msg: M) => readonly [S, ReadonlyArray<E>]
+export type TopReducer<S, M, E> = (state: S, msg: M) => [S, E[]]
 
 /**
  * Compose slice reducers into a single top-level reducer.
@@ -91,8 +91,8 @@ export type TopReducer<S, M, E> = (state: S, msg: M) => readonly [S, ReadonlyArr
 export function combine<S, M extends { type: string }, E>(
   slices: SliceMap<S, M, E>,
   _top?: TopReducer<S, M, E>,
-): (state: S, msg: M) => readonly [S, ReadonlyArray<E>] {
-  return (state: S, msg: M): readonly [S, ReadonlyArray<E>] => {
+): (state: S, msg: M) => [S, E[]] {
+  return (state: S, msg: M): [S, E[]] => {
     // Find the slice this message routes to. Convention: msg.type is
     // `${slice}/${action}`. Anything else falls through to _top.
     const slashIdx = msg.type.indexOf('/')
