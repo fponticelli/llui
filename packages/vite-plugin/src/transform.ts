@@ -1572,6 +1572,24 @@ function tryInjectDirty(
   const extraProps = [dirtyProp, legendProp, updateProp]
   if (handlersProp) extraProps.push(handlersProp)
 
+  // __prefixes: opt-in path-keyed reactivity (see
+  // docs/proposals/unified-composition-model.md). One closure per
+  // distinct path that an accessor reads, hoisted into a stable array;
+  // the array position IS the bit position used by the path's bindings.
+  // The runtime prefers __prefixes when present and computes the
+  // combinedDirty mask by reference-comparing `prefix(prev)` vs
+  // `prefix(next)` for each entry — strictly more precise than the
+  // top-level-conflated __dirty (which always co-fires bindings sharing
+  // a top-level field even when only one sub-path actually mutated).
+  //
+  // We only emit when total paths ≤31 so a single-word mask is always
+  // sufficient. Overflow cases stay on the existing __dirty bitmask
+  // path (FULL_MASK fallback) until the multi-word emit lands.
+  if (fieldBits.size <= 31) {
+    const prefixesProp = buildPrefixesProp(fieldBits, f)
+    if (prefixesProp) extraProps.push(prefixesProp)
+  }
+
   const newConfig = f.createObjectLiteralExpression([...configArg.properties, ...extraProps], true)
 
   return f.createCallExpression(node.expression, node.typeArguments, [
@@ -3185,6 +3203,50 @@ function buildUpdateBody(f: ts.NodeFactory, structuralMask: number, _phase2Mask:
   )
 
   return f.createBlock(stmts, true)
+}
+
+/**
+ * Build the `__prefixes` property assignment from a path → bit map.
+ *
+ * Emits one arrow `(s) => s.<path>` per distinct path, ordered so the
+ * array index equals the path's bit position (`Math.log2(bit)`). The
+ * runtime walks this array and compares `prefix(prev) !== prefix(next)`
+ * per entry, ORing the corresponding bit into the dirty mask. Bindings
+ * already carry path-level bits, so the result is path-precise dirty
+ * tracking without changing the binding shape.
+ *
+ * Returns null if no paths are present (caller skips emission). Only
+ * called when `fieldBits.size <= 31`; the multi-word emit isn't
+ * implemented yet — overflow falls back to the existing __dirty.
+ */
+function buildPrefixesProp(
+  fieldBits: Map<string, number>,
+  f: ts.NodeFactory,
+): ts.PropertyAssignment | null {
+  if (fieldBits.size === 0) return null
+  // Sort paths by bit position so the array index matches the bit. Bits
+  // are powers of two: bit 1 → position 0, bit 2 → position 1, bit 4 →
+  // position 2, etc. FULL_MASK (-1) entries shouldn't reach this code
+  // (the size ≤31 gate prevents overflow), but defensively skip them.
+  const ordered = [...fieldBits.entries()]
+    .filter(([, bit]) => bit > 0)
+    .sort(([, a], [, b]) => a - b)
+  const arrows = ordered.map(([path]) => {
+    const parts = path.split('.')
+    const body = buildAccess(f, 's', parts)
+    return f.createArrowFunction(
+      undefined,
+      undefined,
+      [f.createParameterDeclaration(undefined, undefined, 's')],
+      undefined,
+      f.createToken(ts.SyntaxKind.EqualsGreaterThanToken),
+      body,
+    )
+  })
+  return f.createPropertyAssignment(
+    '__prefixes',
+    f.createArrayLiteralExpression(arrows, false),
+  )
 }
 
 function buildAccess(f: ts.NodeFactory, root: string, parts: string[]): ts.Expression {
