@@ -1,27 +1,33 @@
 /**
- * Type-level utilities + runtime helper for composing multiple child
- * component modules into a parent's State and Msg types.
+ * Type-level utilities + runtime helper for composing multiple sub-module
+ * reducers into a parent's State and Msg types.
  *
  * Eliminates the manual State/Msg union declarations for each embedded
- * sub-component. The developer declares the children map once, and
- * `ChildState` / `ChildMsg` derive the wrapper types.
+ * module. The developer declares the modules map once, and
+ * `ModulesState` / `ModulesMsg` derive the wrapper types.
  *
  * ```ts
- * import type { ChildState, ChildMsg } from '@llui/dom'
- * import { childHandlers } from '@llui/dom'
+ * import type { ModulesState, ModulesMsg } from '@llui/dom'
+ * import { composeModules } from '@llui/dom'
  * import { dialog } from '@llui/components/dialog'
  * import { sortable } from '@llui/components/sortable'
  *
- * const children = { dialog, sort: sortable } as const
+ * const modules = { dialog, sort: sortable } as const
  *
- * type State = ChildState<typeof children> & { items: string[] }
- * type Msg = ChildMsg<typeof children> | { type: 'addItem'; text: string }
+ * type State = ModulesState<typeof modules> & { items: string[] }
+ * type Msg = ModulesMsg<typeof modules> | { type: 'addItem'; text: string }
  *
  * const update = mergeHandlers<State, Msg, never>(
- *   childHandlers(children),
+ *   composeModules(modules),
  *   appUpdate,
  * )
  * ```
+ *
+ * Pairs with `mergeHandlers` (this stack) when embedded modules emit
+ * bare messages — typically components from `@llui/components` or
+ * third-party packages whose `update` shape you don't control. When you
+ * own the slice's message shape, prefer `combine()` with slash-routing
+ * (`{type: 'slice/action'}`) instead.
  */
 
 /**
@@ -44,41 +50,41 @@ export type ModuleMsg<T> = T extends {
   : never
 
 /**
- * Given a record of component modules, derive the combined child state.
+ * Given a record of component modules, derive the combined sub-state.
  * Each key maps to its module's state type.
  *
  * ```ts
- * const children = { dialog, sort: sortable } as const
- * type CS = ChildState<typeof children>
+ * const modules = { dialog, sort: sortable } as const
+ * type S = ModulesState<typeof modules>
  * // → { dialog: DialogState; sort: SortableState }
  * ```
  */
-export type ChildState<T extends Record<string, unknown>> = {
+export type ModulesState<T extends Record<string, unknown>> = {
   [K in keyof T]: ModuleState<T[K]>
 }
 
 /**
- * Given a record of component modules, derive the combined child message
+ * Given a record of component modules, derive the combined message
  * union. Each module's messages are wrapped in `{ type: key; msg: SubMsg }`.
  *
  * ```ts
- * const children = { dialog, sort: sortable } as const
- * type CM = ChildMsg<typeof children>
+ * const modules = { dialog, sort: sortable } as const
+ * type M = ModulesMsg<typeof modules>
  * // → { type: 'dialog'; msg: DialogMsg } | { type: 'sort'; msg: SortableMsg }
  * ```
  */
-export type ChildMsg<T extends Record<string, unknown>> = {
+export type ModulesMsg<T extends Record<string, unknown>> = {
   [K in keyof T]: { type: K; msg: ModuleMsg<T[K]> }
 }[keyof T]
 
 /**
  * Create a merged handler from a map of component modules. Each module's
- * update is wired via `sliceHandler(key, module.update)` convention:
- * state[key] holds the sub-state, messages match `{ type: key; msg: SubMsg }`.
+ * update is wired via the convention: state[key] holds the sub-state,
+ * messages match `{ type: key; msg: SubMsg }`.
  *
  * Returns a handler compatible with `mergeHandlers`.
  */
-export function childHandlers<S, M, E>(
+export function composeModules<S, M, E>(
   modules: Record<string, { update: (state: never, msg: never) => [unknown, unknown[]] }>,
 ): (state: S, msg: M) => [S, E[]] | null {
   const keys = Object.keys(modules)

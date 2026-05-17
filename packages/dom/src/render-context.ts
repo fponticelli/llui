@@ -91,7 +91,7 @@ export function getRenderContext(primitiveName?: string): RenderContext {
         `  3. Calling a primitive from a setTimeout / Promise / event handler — ` +
         `the render context only persists during the synchronous view() call.\n` +
         `  4. Calling a primitive from a structural accessor (each().key, ` +
-        `each().items, branch().on, show().when, child().props, …) or a ` +
+        `each().items, branch().on, show().when, scope().on, …) or a ` +
         `binding accessor (text(s => …), el({attr: s => …})) during reconcile — ` +
         `accessors run during the update phase with no render context. They must ` +
         `be pure functions of their parameter; reads outside the parameter break ` +

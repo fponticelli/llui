@@ -102,15 +102,16 @@ export type Send<M> = (msg: M) => void
  * Used by every API that accepts an opaque component definition at a
  * module boundary:
  *
- * - `child({ def })`
+ * - `subApp({ def })`
  * - `lazy({ loader })` — returns `LazyDef<D>` so the loader's `D` survives
  * - `createOnRenderClient({ Layout })` (from `@llui/vike`)
  * - `createOnRenderHtml({ Layout })` (from `@llui/vike`)
  *
- * The `D` parameter is `unknown` here — `child()` doesn't pass init
- * data through, and `Layout` callers pass route-supplied data whose
- * shape is unknown at the type-erased boundary. Use `LazyDef<D>` when
- * you need to preserve the init data shape (the lazy loader case).
+ * The `D` parameter is `unknown` here — the boundary doesn't carry init
+ * data through (`subApp` passes its own `data` separately, and `Layout`
+ * callers pass route-supplied data whose shape is unknown at the
+ * type-erased boundary). Use `LazyDef<D>` when you need to preserve the
+ * init data shape (the lazy loader case).
  */
 export interface AnyComponentDef {
   name: string
@@ -607,16 +608,4 @@ export interface ForeignOptions<S, M, T extends Record<string, unknown>, Instanc
       }
   destroy: (instance: Instance) => void
   container?: { tag?: string; attrs?: Record<string, string> }
-}
-
-export interface ChildOptions<S, ChildM> {
-  // Type-erased via AnyComponentDef so callers can pass any concrete
-  // ComponentDef<S, M, E, D> without a widening helper. The runtime
-  // narrows the message shape via the user-supplied `onMsg` callback,
-  // which keeps `ChildM` typed at this boundary even though the def
-  // itself is opaque.
-  def: AnyComponentDef
-  key: string | number
-  props: (s: S) => Record<string, unknown>
-  onMsg?: (msg: ChildM) => unknown | null
 }

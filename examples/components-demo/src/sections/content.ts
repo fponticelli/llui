@@ -1,7 +1,7 @@
 import {
   component,
   mergeHandlers,
-  childHandlers,
+  composeModules,
   div,
   button,
   span,
@@ -12,7 +12,7 @@ import {
   img,
   input,
 } from '@llui/dom'
-import type { ChildState, ChildMsg } from '@llui/dom'
+import type { ModulesState, ModulesMsg } from '@llui/dom'
 import { toc } from '@llui/components/toc'
 import { cascadeSelect } from '@llui/components/cascade-select'
 import { asyncList } from '@llui/components/async-list'
@@ -25,9 +25,9 @@ type Item = { id: number; label: string }
 
 const children = { toc, cascade: cascadeSelect, list: asyncList, presence, qr: qrCode } as const
 
-type State = ChildState<typeof children>
+type State = ModulesState<typeof children>
 type Msg =
-  | ChildMsg<typeof children>
+  | ModulesMsg<typeof children>
   /**
    * @intent("Update the input value for the QR code")
    * @example({"type":"qrInput","value":"https://llui.dev"})
@@ -86,7 +86,7 @@ const init = (): [State, never[]] => [
 ]
 
 const update = mergeHandlers<State, Msg, never>(
-  childHandlers<State, Msg, never>(children),
+  composeModules<State, Msg, never>(children),
   // Typing in the input box: re-encode on every keystroke and update
   // both value + matrix in one step.
   (state, msg) => {

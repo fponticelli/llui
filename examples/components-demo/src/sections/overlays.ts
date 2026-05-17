@@ -1,5 +1,15 @@
-import { component, mergeHandlers, childHandlers, div, button, span, h3, p, input } from '@llui/dom'
-import type { ChildState, ChildMsg } from '@llui/dom'
+import {
+  component,
+  mergeHandlers,
+  composeModules,
+  div,
+  button,
+  span,
+  h3,
+  p,
+  input,
+} from '@llui/dom'
+import type { ModulesState, ModulesMsg } from '@llui/dom'
 import { popover } from '@llui/components/popover'
 import { tooltip } from '@llui/components/tooltip'
 import { hoverCard } from '@llui/components/hover-card'
@@ -64,12 +74,12 @@ const children = {
   toast,
 } as const
 
-type State = ChildState<typeof children> & {
+type State = ModulesState<typeof children> & {
   confirm: ConfirmDialogState
   message: string
 }
 type Msg =
-  | ChildMsg<typeof children>
+  | ModulesMsg<typeof children>
   /**
    * @intent("Handle confirm dialog actions")
    * @example({"type":"confirm","msg":{"type":"confirm"}})
@@ -110,7 +120,7 @@ const init = (): [State, never[]] => [
 ]
 
 const update = mergeHandlers<State, Msg, never>(
-  childHandlers<State, Msg, never>(children),
+  composeModules<State, Msg, never>(children),
   (state, msg) => {
     if (msg.type !== 'confirm') return null
     const [confirm] = confirmDialog.update(state.confirm, msg.msg)

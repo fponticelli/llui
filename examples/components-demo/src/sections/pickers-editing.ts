@@ -1,7 +1,7 @@
 import {
   component,
   mergeHandlers,
-  childHandlers,
+  composeModules,
   div,
   button,
   span,
@@ -9,7 +9,7 @@ import {
   input,
   onMount,
 } from '@llui/dom'
-import type { ChildState, ChildMsg } from '@llui/dom'
+import type { ModulesState, ModulesMsg } from '@llui/dom'
 import { datePicker, type DayCell, monthGrid, weekRows } from '@llui/components/date-picker'
 import { timePicker, formatTime } from '@llui/components/time-picker'
 import { colorPicker } from '@llui/components/color-picker'
@@ -29,9 +29,9 @@ const children = {
   splitter,
 } as const
 
-type State = ChildState<typeof children>
+type State = ModulesState<typeof children>
 type Msg =
-  | ChildMsg<typeof children>
+  | ModulesMsg<typeof children>
   /**
    * @intent("Copy the given text to the clipboard")
    * @example({"type":"copyText","value":"https://llui.dev"})
@@ -56,7 +56,7 @@ const init = (): [State, never[]] => [
 ]
 
 const update = mergeHandlers<State, Msg, never>(
-  childHandlers<State, Msg, never>(children),
+  composeModules<State, Msg, never>(children),
   (state, msg) => {
     if (msg.type !== 'copyText') return null
     void copyToClipboard(msg.value).catch(() => {})

@@ -1,7 +1,7 @@
 import {
   component,
   mergeHandlers,
-  childHandlers,
+  composeModules,
   div,
   button,
   span,
@@ -10,15 +10,15 @@ import {
   img,
   onMount,
 } from '@llui/dom'
-import type { ChildState, ChildMsg } from '@llui/dom'
+import type { ModulesState, ModulesMsg } from '@llui/dom'
 import { signaturePad } from '@llui/components/signature-pad'
 import { imageCropper } from '@llui/components/image-cropper'
 import { sectionGroup, card } from '../shared/ui'
 
 const children = { sig: signaturePad, crop: imageCropper } as const
 
-type State = ChildState<typeof children>
-type Msg = ChildMsg<typeof children>
+type State = ModulesState<typeof children>
+type Msg = ModulesMsg<typeof children>
 
 const init = (): [State, never[]] => [
   {
@@ -29,7 +29,7 @@ const init = (): [State, never[]] => [
   [],
 ]
 
-const update = mergeHandlers<State, Msg, never>(childHandlers<State, Msg, never>(children))
+const update = mergeHandlers<State, Msg, never>(composeModules<State, Msg, never>(children))
 
 // Inline SVG placeholder used by the image-cropper demo — avoids loading
 // from an external host. 400×300 gradient with a grid.

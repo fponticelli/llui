@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
-import { childHandlers, mergeHandlers } from '../src'
-import type { ChildState, ChildMsg, ModuleState, ModuleMsg } from '../src'
+import { composeModules, mergeHandlers } from '../src'
+import type { ModulesState, ModulesMsg, ModuleState, ModuleMsg } from '../src'
 
 // ── Mock component modules ─────────────────────────────────────
 
@@ -48,12 +48,12 @@ type _CheckDialogMsg = ModuleMsg<typeof dialog> extends DialogMsg ? true : never
 type _CheckSortState = ModuleState<typeof sortable> extends SortState ? true : never
 type _CheckSortMsg = ModuleMsg<typeof sortable> extends SortMsg ? true : never
 
-// Verify ChildState produces the correct shape
-type CS = ChildState<typeof children>
+// Verify ModulesState produces the correct shape
+type CS = ModulesState<typeof children>
 type _CheckCS = CS extends { dialog: DialogState; sort: SortState } ? true : never
 
-// Verify ChildMsg produces the correct union
-type CM = ChildMsg<typeof children>
+// Verify ModulesMsg produces the correct union
+type CM = ModulesMsg<typeof children>
 type _CheckCM = CM extends { type: 'dialog'; msg: DialogMsg } | { type: 'sort'; msg: SortMsg }
   ? true
   : never
@@ -73,12 +73,12 @@ void _typeAssertions
 
 // ── Full composition test ───────────────────────────────────────
 
-type State = ChildState<typeof children> & { items: string[] }
-type Msg = ChildMsg<typeof children> | { type: 'addItem'; text: string }
+type State = ModulesState<typeof children> & { items: string[] }
+type Msg = ModulesMsg<typeof children> | { type: 'addItem'; text: string }
 
-describe('childHandlers', () => {
+describe('composeModules', () => {
   const update = mergeHandlers<State, Msg, never>(
-    childHandlers<State, Msg, never>(children),
+    composeModules<State, Msg, never>(children),
     (state, msg) => {
       if (msg.type === 'addItem') {
         return [{ ...state, items: [...state.items, msg.text] }, []]
@@ -106,7 +106,7 @@ describe('childHandlers', () => {
     expect(s.dialog).toEqual(initial.dialog)
   })
 
-  it('passes non-child messages to the next handler', () => {
+  it('passes non-module messages to the next handler', () => {
     const [s] = update(initial, { type: 'addItem', text: 'hello' })
     expect(s.items).toEqual(['hello'])
     expect(s.dialog).toEqual(initial.dialog)
@@ -118,7 +118,7 @@ describe('childHandlers', () => {
     expect(s.items).toEqual([''])
   })
 
-  it('preserves all sibling state across child updates', () => {
+  it('preserves all sibling state across module updates', () => {
     let s = initial
     ;[s] = update(s, { type: 'dialog', msg: { type: 'open' } })
     ;[s] = update(s, { type: 'sort', msg: { type: 'start', id: 'a' } })

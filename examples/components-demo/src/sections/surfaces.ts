@@ -1,7 +1,7 @@
 import {
   component,
   mergeHandlers,
-  childHandlers,
+  composeModules,
   div,
   button,
   span,
@@ -9,7 +9,7 @@ import {
   p,
   onMount,
 } from '@llui/dom'
-import type { ChildState, ChildMsg } from '@llui/dom'
+import type { ModulesState, ModulesMsg } from '@llui/dom'
 import { tour, type TourStep } from '@llui/components/tour'
 import { floatingPanel } from '@llui/components/floating-panel'
 import { navigationMenu } from '@llui/components/navigation-menu'
@@ -39,8 +39,8 @@ const tourSteps: TourStep[] = [
 
 const children = { tour, panel: floatingPanel, nav: navigationMenu, scroll: scrollArea } as const
 
-type State = ChildState<typeof children>
-type Msg = ChildMsg<typeof children>
+type State = ModulesState<typeof children>
+type Msg = ModulesMsg<typeof children>
 
 const init = (): [State, never[]] => [
   {
@@ -56,7 +56,7 @@ const init = (): [State, never[]] => [
   [],
 ]
 
-const update = mergeHandlers<State, Msg, never>(childHandlers<State, Msg, never>(children))
+const update = mergeHandlers<State, Msg, never>(composeModules<State, Msg, never>(children))
 
 export const App = component<State, Msg, never>({
   name: 'SurfacesSection',

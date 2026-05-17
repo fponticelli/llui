@@ -1467,89 +1467,20 @@ function tryInjectDirty(
     }
   }
 
-  // Build __dirty: (o, n) => (Object.is(o.field, n.field) ? 0 : bit) | ...
-  // Compare at top-level field (depth 1) — nested path changes within a
-  // field must trigger the bit even if the specific sub-path isn't tracked.
-  // e.g., route.page tracked but route.data changes → must fire.
+  // Top-level field → aggregated bit mask. Sub-paths under one field
+  // (`route.page`, `route.data`) collapse into a single entry so
+  // `tryBuildHandlers` and `__maskLegend` can reason per-field. Positions
+  // 0..30 live here; 31..61 in the parallel high-word map below.
   const topLevelBits = new Map<string, number>()
   for (const [path, bit] of fieldBits) {
     const topField = path.split('.')[0]!
     topLevelBits.set(topField, (topLevelBits.get(topField) ?? 0) | bit)
   }
-  // Parallel high-word map: top-level fields whose paths fall at bit
-  // positions 31..61 contribute here instead of (or in addition to)
-  // `topLevelBits`. A field with sub-paths split across both words —
-  // e.g., `user.name` at position 30 and `user.email` at position 31 —
-  // ends up in both maps under the same top-level key.
   const topLevelBitsHi = new Map<string, number>()
   for (const [path, bit] of fieldBitsHi) {
     const topField = path.split('.')[0]!
     topLevelBitsHi.set(topField, (topLevelBitsHi.get(topField) ?? 0) | bit)
   }
-
-  const comparisons: ts.Expression[] = []
-  for (const [field, bit] of topLevelBits) {
-    const oAccess = buildAccess(f, 'o', [field])
-    const nAccess = buildAccess(f, 'n', [field])
-
-    comparisons.push(
-      f.createParenthesizedExpression(
-        f.createConditionalExpression(
-          f.createCallExpression(
-            f.createPropertyAccessExpression(f.createIdentifier('Object'), 'is'),
-            undefined,
-            [oAccess, nAccess],
-          ),
-          f.createToken(ts.SyntaxKind.QuestionToken),
-          f.createNumericLiteral(0),
-          f.createToken(ts.SyntaxKind.ColonToken),
-          createMaskLiteral(f, bit),
-        ),
-      ),
-    )
-  }
-
-  let dirtyBody: ts.Expression = comparisons[0]!
-  for (let i = 1; i < comparisons.length; i++) {
-    dirtyBody = f.createBinaryExpression(dirtyBody, ts.SyntaxKind.BarToken, comparisons[i]!)
-  }
-
-  // Fallback: if no tracked bit fired but the state reference changed, some
-  // untracked field must have changed — return FULL_MASK so bindings whose
-  // accessors came from external modules (spread parts) still fire.
-  //   tracked || (Object.is(o, n) ? 0 : FULL_MASK)
-  const fallback = f.createParenthesizedExpression(
-    f.createConditionalExpression(
-      f.createCallExpression(
-        f.createPropertyAccessExpression(f.createIdentifier('Object'), 'is'),
-        undefined,
-        [f.createIdentifier('o'), f.createIdentifier('n')],
-      ),
-      f.createToken(ts.SyntaxKind.QuestionToken),
-      f.createNumericLiteral(0),
-      f.createToken(ts.SyntaxKind.ColonToken),
-      createMaskLiteral(f, -1),
-    ),
-  )
-  dirtyBody = f.createBinaryExpression(
-    f.createParenthesizedExpression(dirtyBody),
-    ts.SyntaxKind.BarBarToken,
-    fallback,
-  )
-
-  const dirtyFn = f.createArrowFunction(
-    undefined,
-    undefined,
-    [
-      f.createParameterDeclaration(undefined, undefined, 'o'),
-      f.createParameterDeclaration(undefined, undefined, 'n'),
-    ],
-    undefined,
-    f.createToken(ts.SyntaxKind.EqualsGreaterThanToken),
-    dirtyBody,
-  )
-
-  const dirtyProp = f.createPropertyAssignment('__dirty', dirtyFn)
 
   // __maskLegend: maps each top-level state field to the bit(s) that fire when
   // it changes. Lets introspection tools decode runtime dirty masks to field names.
@@ -1569,9 +1500,8 @@ function tryInjectDirty(
 
   // Structural mask — used by both __update and __handlers
   const structuralMask = computeStructuralMask(configArg, fieldBits)
-  const phase2Mask = computePhase2Mask(configArg, fieldBits)
 
-  const updateBody = buildUpdateBody(f, structuralMask, phase2Mask)
+  const updateBody = buildUpdateBody(f, structuralMask)
   // `dHi` is the high-word dirty mask, appended as the trailing
   // positional arg so stale 5-param compiled bundles continue to gate
   // correctly: the runtime calls `__update(s, d, b, bl, p, dHi)`,
@@ -1607,21 +1537,14 @@ function tryInjectDirty(
   // that bypass the generic Phase 1/2 pipeline for single-message updates.
   const handlersProp = tryBuildHandlers(configArg, topLevelBits, topLevelBitsHi, structuralMask, f)
 
-  // Both `__update` and `__handlers` carry two-word gates now —
-  // `__update`'s Phase 1 block loop uses `(mask & d) | (maskHi & dHi)`
-  // with `dHi` as the trailing parameter (defaults to 0 for backward
-  // compat with old 5-arg call sites), and `__handlers` passes
-  // `caseDirtyHi` to `_handleMsg` which gates blocks against both
-  // words. Safe to emit for any prefix count.
-  // `__dirty` emission was removed in 2026-05: `__prefixes` is strictly
-  // more precise (per-prefix rather than per-top-level-field), supports
-  // 62 paths via two-word masks, and the runtime throws if it sees a
-  // hand-authored `__dirty`. `legendProp` (`__maskLegend`) is still
-  // emitted for the agent layer's introspection — it surfaces the
-  // top-level-field-to-bit mapping for `whyDidUpdate` / dispatch
-  // tracing without depending on `__dirty` at runtime.
-  void dirtyFn
-  void dirtyProp
+  // Both `__update` and `__handlers` carry two-word gates: `__update`'s
+  // Phase 1 block loop uses `(mask & d) | (maskHi & dHi)`, and
+  // `__handlers` passes `caseDirtyHi` to `_handleMsg` which gates blocks
+  // against both words. `dHi` defaults to 0 so any stale 5-arg call site
+  // still works. `__dirty` is no longer emitted — `__prefixes` (below)
+  // is strictly more precise, and the runtime throws on hand-authored
+  // `__dirty`. `__maskLegend` survives because the agent layer uses it
+  // to decode runtime dirty masks back to top-level field names.
   const extraProps: ts.ObjectLiteralElementLike[] = [legendProp, updateProp]
   if (handlersProp) extraProps.push(handlersProp)
 
@@ -3019,21 +2942,6 @@ function computeStructuralMask(
 }
 
 /**
- * Compute the OR of all component-level binding masks from text() calls
- * and element bindings in the view. Returns 0 if no component-level bindings.
- */
-function computePhase2Mask(
-  _configArg: ts.ObjectLiteralExpression,
-  _fieldBits: Map<string, number>,
-): number {
-  // For now, return FULL_MASK — a future pass can analyze all binding sites
-  // in the view to compute the precise aggregate. The key optimization is
-  // already in Phase 1 gating: when structuralMask doesn't intersect dirty,
-  // the entire reconciliation is skipped.
-  return 0xffffffff | 0
-}
-
-/**
  * Build the __update function body:
  * {
  *   // Phase 1 — structural reconciliation (gated by structuralMask)
@@ -3065,7 +2973,7 @@ function computePhase2Mask(
  *   }
  * }
  */
-function buildUpdateBody(f: ts.NodeFactory, structuralMask: number, _phase2Mask: number): ts.Block {
+function buildUpdateBody(f: ts.NodeFactory, structuralMask: number): ts.Block {
   const stmts: ts.Statement[] = []
 
   // Phase 1: structural block reconciliation, gated by aggregate mask

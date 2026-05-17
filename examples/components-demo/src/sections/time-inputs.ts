@@ -1,7 +1,7 @@
 import {
   component,
   mergeHandlers,
-  childHandlers,
+  composeModules,
   div,
   button,
   span,
@@ -9,7 +9,7 @@ import {
   p,
   onMount,
 } from '@llui/dom'
-import type { ChildState, ChildMsg } from '@llui/dom'
+import type { ModulesState, ModulesMsg } from '@llui/dom'
 import { timer } from '@llui/components/timer'
 import { angleSlider } from '@llui/components/angle-slider'
 import { dateInput } from '@llui/components/date-input'
@@ -18,8 +18,8 @@ import { sectionGroup, card } from '../shared/ui'
 
 const children = { timer, angle: angleSlider, date: dateInput, marquee } as const
 
-type State = ChildState<typeof children>
-type Msg = ChildMsg<typeof children>
+type State = ModulesState<typeof children>
+type Msg = ModulesMsg<typeof children>
 
 const init = (): [State, never[]] => [
   {
@@ -35,7 +35,7 @@ const init = (): [State, never[]] => [
   [],
 ]
 
-const update = mergeHandlers<State, Msg, never>(childHandlers<State, Msg, never>(children))
+const update = mergeHandlers<State, Msg, never>(composeModules<State, Msg, never>(children))
 
 export const App = component<State, Msg, never>({
   name: 'TimeInputsSection',

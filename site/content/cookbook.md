@@ -367,28 +367,28 @@ explicit.
 the state directly and passes accessors down via `Props<T, S>`. `sliceHandler`
 is for genuine sub-modules with their own update logic.
 
-### Type-level composition with `ChildState` / `ChildMsg`
+### Type-level composition with `ModulesState` / `ModulesMsg`
 
-When composing many child components, the State and Msg union declarations
-become repetitive. `ChildState` and `ChildMsg` derive the child portions
-from a map of component modules, and `childHandlers` creates the merged
-handler at runtime:
+When composing many embedded modules, the State and Msg union declarations
+become repetitive. `ModulesState` and `ModulesMsg` derive the sub-state /
+sub-msg portions from a map of component modules, and `composeModules`
+creates the merged handler at runtime:
 
 ```typescript
-import { mergeHandlers, childHandlers } from '@llui/dom'
-import type { ChildState, ChildMsg } from '@llui/dom'
+import { mergeHandlers, composeModules } from '@llui/dom'
+import type { ModulesState, ModulesMsg } from '@llui/dom'
 import { dialog } from '@llui/components/dialog'
 import { tabs } from '@llui/components/tabs'
 import { sortable } from '@llui/components/sortable'
 
-const children = { dialog, tabs, sort: sortable } as const
+const modules = { dialog, tabs, sort: sortable } as const
 
-// ChildState derives { dialog: DialogState; tabs: TabsState; sort: SortableState }
-// ChildMsg  derives { type: 'dialog'; msg: DialogMsg } | { type: 'tabs'; msg: TabsMsg } | ...
-type State = ChildState<typeof children> & { items: string[] }
-type Msg = ChildMsg<typeof children> | { type: 'addItem'; text: string }
+// ModulesState derives { dialog: DialogState; tabs: TabsState; sort: SortableState }
+// ModulesMsg   derives { type: 'dialog'; msg: DialogMsg } | { type: 'tabs'; msg: TabsMsg } | ...
+type State = ModulesState<typeof modules> & { items: string[] }
+type Msg = ModulesMsg<typeof modules> | { type: 'addItem'; text: string }
 
-const update = mergeHandlers<State, Msg, never>(childHandlers(children), (state, msg) => {
+const update = mergeHandlers<State, Msg, never>(composeModules(modules), (state, msg) => {
   if (msg.type === 'addItem') {
     return [{ ...state, items: [...state.items, msg.text] }, []]
   }
@@ -396,9 +396,14 @@ const update = mergeHandlers<State, Msg, never>(childHandlers(children), (state,
 })
 ```
 
-Each child module's `update` is wired via the key convention automatically.
-The parent only writes its own State fields and Msg variants — child wiring
+Each module's `update` is wired via the key convention automatically.
+The parent only writes its own State fields and Msg variants — module wiring
 is zero boilerplate.
+
+Use this stack when embedded modules emit bare messages (`{ type: 'open' }`)
+— typically components from `@llui/components` or third-party packages. When
+you own the slice's message shape, prefer `combine()` with slash-routing
+(`{ type: 'slice/action' }`) instead.
 
 ### Context: avoiding prop drilling
 

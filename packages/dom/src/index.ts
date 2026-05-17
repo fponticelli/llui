@@ -15,7 +15,6 @@ export type {
   ItemAccessor,
   PortalOptions,
   ForeignOptions,
-  ChildOptions,
 } from './types.js'
 
 // ── Component ─────────────────────────────────────────────────────
@@ -63,9 +62,9 @@ export {
 } from './primitives/context.js'
 export { sliceHandler } from './slice-handler.js'
 export {
-  childHandlers,
-  type ChildState,
-  type ChildMsg,
+  composeModules,
+  type ModulesState,
+  type ModulesMsg,
   type ModuleState,
   type ModuleMsg,
 } from './compose.js'

@@ -299,7 +299,7 @@ function sliceHandler<S, M, E, SubS, SubM>(
 ): (state: S, msg: M) => [S, E[]] | null
 ```
 
-### `childHandlers()`
+### `composeModules()`
 
 Create a merged handler from a map of component modules. Each module's
 update is wired via `sliceHandler(key, module.update)` convention:
@@ -307,7 +307,7 @@ state[key] holds the sub-state, messages match `{ type: key; msg: SubMsg }`.
 Returns a handler compatible with `mergeHandlers`.
 
 ```typescript
-function childHandlers<S, M, E>(
+function composeModules<S, M, E>(
   modules: Record<string, { update: (state: never, msg: never) => [unknown, unknown[]] }>,
 ): (state: S, msg: M) => [S, E[]] | null
 ```
@@ -666,36 +666,36 @@ export type ModuleMsg<T> = T extends {
   : never
 ```
 
-### `ChildState`
+### `ModulesState`
 
 Given a record of component modules, derive the combined child state.
 Each key maps to its module's state type.
 
 ```ts
 const children = { dialog, sort: sortable } as const
-type CS = ChildState<typeof children>
+type CS = ModulesState<typeof children>
 // → { dialog: DialogState; sort: SortableState }
 ```
 
 ```typescript
-export type ChildState<T extends Record<string, unknown>> = {
+export type ModulesState<T extends Record<string, unknown>> = {
   [K in keyof T]: ModuleState<T[K]>
 }
 ```
 
-### `ChildMsg`
+### `ModulesMsg`
 
 Given a record of component modules, derive the combined child message
 union. Each module's messages are wrapped in `{ type: key; msg: SubMsg }`.
 
 ```ts
 const children = { dialog, sort: sortable } as const
-type CM = ChildMsg<typeof children>
+type CM = ModulesMsg<typeof children>
 // → { type: 'dialog'; msg: DialogMsg } | { type: 'sort'; msg: SortableMsg }
 ```
 
 ```typescript
-export type ChildMsg<T extends Record<string, unknown>> = {
+export type ModulesMsg<T extends Record<string, unknown>> = {
   [K in keyof T]: { type: K; msg: ModuleMsg<T[K]> }
 }[keyof T]
 ```
@@ -911,17 +911,6 @@ export interface ForeignOptions<S, M, T extends Record<string, unknown>, Instanc
       }
   destroy: (instance: Instance) => void
   container?: { tag?: string; attrs?: Record<string, string> }
-}
-```
-
-### `ChildOptions`
-
-```typescript
-export interface ChildOptions<S, ChildM> {
-  def: ComponentDef<unknown, ChildM, unknown>
-  key: string | number
-  props: (s: S) => Record<string, unknown>
-  onMsg?: (msg: ChildM) => unknown | null
 }
 ```
 

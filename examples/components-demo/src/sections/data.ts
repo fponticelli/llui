@@ -1,5 +1,5 @@
-import { component, mergeHandlers, childHandlers, div, button, span, h3, img } from '@llui/dom'
-import type { ChildState, ChildMsg } from '@llui/dom'
+import { component, mergeHandlers, composeModules, div, button, span, h3, img } from '@llui/dom'
+import type { ModulesState, ModulesMsg } from '@llui/dom'
 import { tabs } from '@llui/components/tabs'
 import { accordion } from '@llui/components/accordion'
 import { collapsible } from '@llui/components/collapsible'
@@ -23,8 +23,8 @@ const children = {
   listbox,
 } as const
 
-type State = ChildState<typeof children>
-type Msg = ChildMsg<typeof children>
+type State = ModulesState<typeof children>
+type Msg = ModulesMsg<typeof children>
 
 const init = (): [State, never[]] => [
   {
@@ -53,7 +53,7 @@ const init = (): [State, never[]] => [
   [],
 ]
 
-const update = mergeHandlers<State, Msg, never>(childHandlers<State, Msg, never>(children))
+const update = mergeHandlers<State, Msg, never>(composeModules<State, Msg, never>(children))
 
 export const App = component<State, Msg, never>({
   name: 'DataSection',

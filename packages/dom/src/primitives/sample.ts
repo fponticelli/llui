@@ -15,8 +15,8 @@ import { getRenderContext, currentAccessor } from '../render-context.js'
  * rows" recipe in the cookbook.
  *
  * **Don't use inside an accessor** (`each().key`, `each().items`,
- * `branch().on`, `show().when`, `scope().on`, `child().props`,
- * `foreign().props`, or a binding accessor like `text(s => …)`).
+ * `branch().on`, `show().when`, `scope().on`, `foreign().props`, or a
+ * binding accessor like `text(s => …)`).
  * Accessors must be pure functions of their parameter — the compiler's
  * mask analysis only sees reads of the parameter, so a `sample()` read
  * is invisible. The result is a hidden dependency that breaks

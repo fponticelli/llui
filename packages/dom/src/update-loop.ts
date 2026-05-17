@@ -101,11 +101,11 @@ export interface ComponentInstance<S = unknown, M = unknown, E = unknown> {
   /** @internal dev-only — populated when `installDevTools` ran. Ring-buffered
    *  effect dispatch phase log (dispatched → resolved/cancelled) for USER
    *  effects emitted from `update()`. Consumed by the `llui_effect_timeline`
-   *  MCP tool. Built-in plumbing effects (`delay`, `log`, addressed) are NOT
-   *  recorded here by design — they short-circuit in `dispatchEffect` before
+   *  MCP tool. Built-in plumbing effects (`delay`, `log`) are NOT recorded
+   *  here by design — they short-circuit in `dispatchEffect` before
    *  `dispatchEffectDev` runs. They're runtime plumbing, not user intent,
    *  and surface via other channels (message queue for `delay`, browser
-   *  console for `log`, addressed-target routing for addressed effects). */
+   *  console for `log`). */
   _effectTimeline?: RingBuffer<EffectTimelineEntry>
   /** @internal dev-only — populated when `installDevTools` ran. List of
    *  currently-pending effects addressable by id, consumed by the
