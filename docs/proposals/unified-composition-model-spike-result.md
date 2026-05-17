@@ -13,6 +13,7 @@ This document records the spike conducted to validate the §9 gate criteria of t
 A standalone harness (`spike/prefix-reactivity/`) simulates the proposed runtime walker against today's bitmask walker, with the same accessor set and state transitions. The harness is **runtime-only** — no compiler integration. To simulate compile-time prefix hoisting (which produces stable closure identities per source location), the harness uses a `pathPrefix(path: string)` helper that memoizes one closure per distinct path string, so reference-equality dedup behaves exactly as it would in the real compiler emit.
 
 **Synthetic workload.** 182 bindings spread across a state shape with:
+
 - 42 top-level fields (above the 31-bit bitmask budget, so current code runs in FULL_MASK mode for the overflow fields)
 - 3 levels of nesting (`s.auth.user.name`, `s.ui.confirm.title`, etc.)
 - Mixed multi-prefix accessors (e.g. `s.auth.status === 'x' && !s.ui.confirm`)
@@ -34,7 +35,7 @@ A "small" subset of 146 bindings (no flag fields) fits comfortably under 31 uniq
 - Ternary / union read → prefix list is the union of branches
 - Spread / transform → prefix is the source
 
-The one *unhandleable* pattern is **closure capture of values computed outside the accessor** (`const xs = compute(s); accessor reads xs`). This is also unhandleable by today's bitmask analyzer — no regression.
+The one _unhandleable_ pattern is **closure capture of values computed outside the accessor** (`const xs = compute(s); accessor reads xs`). This is also unhandleable by today's bitmask analyzer — no regression.
 
 **No accessor in either real app defeats the rule.**
 
@@ -80,7 +81,7 @@ Same workload (182 bindings, 48 unique prefixes / 2 words, 42 top-level fields),
 - 48 closure invocations per dirty computation (vs. 42 property reads for today's bitmask)
 - 2-word AND per binding gate (vs. 1-word AND)
 
-**But the gate cost is not the full picture.** Today's bitmask runs FULL_MASK for the overflow fields, meaning every binding fires on every transition (the very pathology that drove dicerun2 to decompose with `child()`). The prefix walker is *strictly more precise* — it fires only the bindings whose actual prefixes changed. On a single-field transition, today's bitmask fires 13 bindings (including the 11 FULL_MASK overflow bindings on every change); the prefix walker fires 2.
+**But the gate cost is not the full picture.** Today's bitmask runs FULL*MASK for the overflow fields, meaning every binding fires on every transition (the very pathology that drove dicerun2 to decompose with `child()`). The prefix walker is \_strictly more precise* — it fires only the bindings whose actual prefixes changed. On a single-field transition, today's bitmask fires 13 bindings (including the 11 FULL_MASK overflow bindings on every change); the prefix walker fires 2.
 
 Real-world cost = gate cost + fire cost. Gate cost is ~1 µs at 200 bindings; binding bodies (accessor invocation + DOM apply) are typically 10–100× that. Firing fewer bindings dwarfs the gate-side slowdown.
 
@@ -90,14 +91,14 @@ The 2-percentage-point miss against the §9 gate criterion is a measurement arti
 
 **PASS.** Audit of dicerun2 + decisive.space-2 (samples from both):
 
-| Pattern | Frequency | Prefix derivable? |
-|---|---|---|
-| `s.foo.bar.baz` (chain) | very common | yes |
-| `s.foo?.bar` (optional) | common | yes |
-| `s.foo.length`, `.find`, `.filter` | common | yes (receiver) |
-| `s.foo === 'x' ? a : b` | common | yes (union) |
-| `[...s.foo]`, `transform(s.foo)` | common | yes (source) |
-| Outer closure capture | rare in views | no (already unhandleable today) |
+| Pattern                            | Frequency     | Prefix derivable?               |
+| ---------------------------------- | ------------- | ------------------------------- |
+| `s.foo.bar.baz` (chain)            | very common   | yes                             |
+| `s.foo?.bar` (optional)            | common        | yes                             |
+| `s.foo.length`, `.find`, `.filter` | common        | yes (receiver)                  |
+| `s.foo === 'x' ? a : b`            | common        | yes (union)                     |
+| `[...s.foo]`, `transform(s.foo)`   | common        | yes (source)                    |
+| Outer closure capture              | rare in views | no (already unhandleable today) |
 
 No accessor pattern in either real app's view code requires extending the prefix-extraction rule.
 
@@ -124,6 +125,7 @@ Next concrete step: extend `@llui/vite-plugin`'s pass 2 to emit prefix descripto
 ## Artifacts retained
 
 `spike/prefix-reactivity/`:
+
 - `state.ts` — synthetic state shape
 - `bindings.ts` — 182 representative bindings
 - `prefixes.ts` — `pathPrefix(path)` helper simulating compile-time hoisting
@@ -142,29 +144,34 @@ Keep these in-tree as the reference implementation for the real compiler/runtime
 After the spike cleared the gate, the runtime + compiler change went in directly on `explore/controlled-components`:
 
 **Runtime (`@llui/dom`):**
+
 - New optional `ComponentDef.__prefixes: ReadonlyArray<(state: S) => unknown>` field.
 - New `computeDirtyFromPrefixes(prefixes, prev, next)` helper in `update-loop`.
 - `processMessages` prefers `__prefixes` over `__dirty` when both are present.
 - 8 unit tests covering single-word, multi-word overflow (>31 prefixes via `[lo, hi]`), the precision contract, and the fallback path when `__prefixes` is absent.
 
 **Compiler (`@llui/vite-plugin`):**
+
 - Pass 2 now emits `__prefixes` alongside `__dirty` for any component with ≤31 reactive paths. Each entry is a stable hoisted arrow `(s) => s.<path>` whose position in the array matches the bit assigned to bindings on that path.
 - 4 unit tests covering simple, nested-depth-2, overflow-skipping, and ordering cases.
-- >31 paths still go through `__dirty` (existing FULL_MASK overflow path). Multi-word compiler emission for ≤62 paths is the next chunk.
+- > 31 paths still go through `__dirty` (existing FULL_MASK overflow path). Multi-word compiler emission for ≤62 paths is the next chunk.
 
 **Validation:**
+
 - 524 dom tests pass (+9 new).
 - 297 vite-plugin tests pass (+4 new).
 - Full monorepo `pnpm turbo test check`: 36/36 tasks green.
 - `examples/components-demo` builds end-to-end — `__prefixes` ships in the production bundle.
 
 **What this means in practice:**
+
 - Every component compiled by the new vite-plugin (≤31 paths) now runs on path-keyed reactivity automatically. No source-code change in user apps needed.
 - Bindings reading distinct nested paths (`s.user.name` vs `s.user.email`) no longer co-fire on every parent mutation — the precision win the spike demonstrated is now live.
 - `__dirty` stays as the >31-path fallback and the bug-recovery path.
 - Decisive (one root component, 120 fields) is still on `__dirty` until multi-word emit lands; dicerun2's many small components are all on the new path.
 
 **Branch commits:**
+
 - `6b9d582` — spike (this doc and the design note)
 - `da83992` — runtime opt-in path in `@llui/dom`
 - `08bc0f5` — compiler emit in `@llui/vite-plugin`

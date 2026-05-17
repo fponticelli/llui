@@ -62,10 +62,7 @@ type AppEffect = never
 
 // ── Slice reducers — pure, standalone-testable ──────────────────────
 
-function todosUpdate(
-  state: TodosSlice,
-  msg: TodosMsg,
-): [TodosSlice, AppEffect[]] {
+function todosUpdate(state: TodosSlice, msg: TodosMsg): [TodosSlice, AppEffect[]] {
   switch (msg.type) {
     case 'todos/add':
       return [
@@ -96,10 +93,7 @@ function todosUpdate(
   }
 }
 
-function filterUpdate(
-  _state: FilterSlice,
-  msg: FilterMsg,
-): [FilterSlice, AppEffect[]] {
+function filterUpdate(_state: FilterSlice, msg: FilterMsg): [FilterSlice, AppEffect[]] {
   switch (msg.type) {
     case 'filter/set':
       return [{ value: msg.v }, []]
@@ -239,9 +233,7 @@ describe('unified composition model — end-to-end', () => {
     // mount — but the slice-filtering logic IS just data, and we test
     // that piece independently here.
     const filter = (todos: TodosSlice, value: FilterValue) =>
-      todos.items.filter((t) =>
-        value === 'all' ? true : value === 'active' ? !t.done : t.done,
-      )
+      todos.items.filter((t) => (value === 'all' ? true : value === 'active' ? !t.done : t.done))
     const sliced = filter(
       {
         items: [

@@ -45,7 +45,11 @@ function makeDeltas(): Array<(s: AppState) => AppState> {
   ]
 }
 
-function applyDeltas(start: AppState, deltas: Array<(s: AppState) => AppState>, n: number): AppState[] {
+function applyDeltas(
+  start: AppState,
+  deltas: Array<(s: AppState) => AppState>,
+  n: number,
+): AppState[] {
   const out: AppState[] = []
   let s = start
   for (let i = 0; i < n; i++) {
@@ -80,7 +84,9 @@ console.log(`Workload:`)
 console.log(`  total bindings: ${bindings.length}`)
 console.log(`  small-binding subset: ${smallBindings.length}`)
 console.log(`  top-level fields (bitmask): ${TOP_LEVEL_COUNT}`)
-console.log(`  unique prefixes (full): ${prefixScope.table.length} (${prefixScope.wordCount} words)`)
+console.log(
+  `  unique prefixes (full): ${prefixScope.table.length} (${prefixScope.wordCount} words)`,
+)
 console.log(`  unique prefixes (small): ${prefixScope1.table.length}`)
 console.log()
 
@@ -119,7 +125,7 @@ function benchPrefixMulti(): void {
     const next = pool[k + 1] ?? pool[0]!
     computePrefixDirty(prefixScope, prev, next)
     for (let j = 0; j < bindings.length; j++) {
-      const b = bindings[j]! as typeof bindings[number] & { prefixMask: number[] }
+      const b = bindings[j]! as (typeof bindings)[number] & { prefixMask: number[] }
       if (isDirtyPrefix(b, prefixScope)) __sink |= 1
     }
   }
@@ -145,7 +151,7 @@ function benchPrefixSingle(): void {
     const next = pool[k + 1] ?? pool[0]!
     const dirty = computePrefixDirty1(prefixScope1, prev, next)
     for (let j = 0; j < smallBindings.length; j++) {
-      const b = smallBindings[j]! as typeof smallBindings[number] & { prefixMask1: number }
+      const b = smallBindings[j]! as (typeof smallBindings)[number] & { prefixMask1: number }
       if ((b.prefixMask1 & dirty) !== 0) __sink |= 1
     }
   }
@@ -175,7 +181,9 @@ function sanity(): void {
     if (bmFired.size === pxFired.size && i === 1) {
       console.log(`  (sanity: walkers agree on transition #${i})`)
     } else if (i === 1) {
-      console.log(`  (transition #${i}: bitmask fired ${bmFired.size}, prefix fired ${pxFired.size} — prefix more precise)`)
+      console.log(
+        `  (transition #${i}: bitmask fired ${bmFired.size}, prefix fired ${pxFired.size} — prefix more precise)`,
+      )
     }
   }
 }
@@ -190,12 +198,24 @@ const r3 = bench('Bitmask (small: 146 bindings, 6 fields, no FULL_MASK)', benchB
 const r4 = bench('Prefix single-word (small: 146 bindings, 12 prefixes)', benchPrefixSingle)
 
 console.log(`${ITERATIONS.toLocaleString()} update cycles each:`)
-console.log(`  ${r1.name.padEnd(58)} ${r1.ms.toFixed(0).padStart(6)} ms   ${r1.perUpdate.toFixed(3)} µs/update`)
-console.log(`  ${r2.name.padEnd(58)} ${r2.ms.toFixed(0).padStart(6)} ms   ${r2.perUpdate.toFixed(3)} µs/update`)
-console.log(`  ${r3.name.padEnd(58)} ${r3.ms.toFixed(0).padStart(6)} ms   ${r3.perUpdate.toFixed(3)} µs/update`)
-console.log(`  ${r4.name.padEnd(58)} ${r4.ms.toFixed(0).padStart(6)} ms   ${r4.perUpdate.toFixed(3)} µs/update`)
+console.log(
+  `  ${r1.name.padEnd(58)} ${r1.ms.toFixed(0).padStart(6)} ms   ${r1.perUpdate.toFixed(3)} µs/update`,
+)
+console.log(
+  `  ${r2.name.padEnd(58)} ${r2.ms.toFixed(0).padStart(6)} ms   ${r2.perUpdate.toFixed(3)} µs/update`,
+)
+console.log(
+  `  ${r3.name.padEnd(58)} ${r3.ms.toFixed(0).padStart(6)} ms   ${r3.perUpdate.toFixed(3)} µs/update`,
+)
+console.log(
+  `  ${r4.name.padEnd(58)} ${r4.ms.toFixed(0).padStart(6)} ms   ${r4.perUpdate.toFixed(3)} µs/update`,
+)
 console.log()
 console.log(`Apples-to-apples comparisons:`)
-console.log(`  Full workload (>31 paths):   prefix is ${(r2.perUpdate / r1.perUpdate).toFixed(2)}x of bitmask`)
-console.log(`  Small workload (≤31 paths):  prefix is ${(r4.perUpdate / r3.perUpdate).toFixed(2)}x of bitmask`)
+console.log(
+  `  Full workload (>31 paths):   prefix is ${(r2.perUpdate / r1.perUpdate).toFixed(2)}x of bitmask`,
+)
+console.log(
+  `  Small workload (≤31 paths):  prefix is ${(r4.perUpdate / r3.perUpdate).toFixed(2)}x of bitmask`,
+)
 if (__sink === -999) console.log('(sink')

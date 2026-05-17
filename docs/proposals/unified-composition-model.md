@@ -41,10 +41,11 @@ Encoding:
 
 ```ts
 // Source accessor:
-(s: S) => s.matrix.criteria[i].weight
-
-// Compiler-emitted prefix list (single prefix, structural-share stable):
-[(s) => s.matrix.criteria]
+;(s: S) =>
+  s.matrix.criteria[i].weight[
+    // Compiler-emitted prefix list (single prefix, structural-share stable):
+    (s) => s.matrix.criteria
+  ]
 //                       ^ if any criterion mutates, this array reference changes
 //                         under immutable update; criterion[i].weight included
 ```
@@ -121,17 +122,18 @@ This is `combineReducers` from Redux in slightly different clothes. Mechanical; 
 
 For each pattern in the two real apps:
 
-| Today | Tomorrow |
-|---|---|
+| Today                                                                         | Tomorrow                                                                                                                                                              |
+| ----------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `child({ def, key, props: (s) => ({…slice…}), onMsg: m => null })` (no onMsg) | Move child's state under the parent's state at the slice position; call `subviewModule.view(h)` directly. Compose `subviewModule.update` into parent via `combine()`. |
-| `child({ … props … onMsg: m => parentMsg })` | Same as above. The `onMsg` mapping becomes a normal action-message routing in the slice reducer or a transform in `combine()`. |
-| `child({ def })` for bitmask budget reasons | Disappears entirely. Path-keyed reactivity makes the budget irrelevant. Code becomes a view function. |
-| `component()` declarations for sub-features | Become exported `update`/`view` function pairs. |
-| `propsMsg(props)` handlers in child reducers | Disappear. Sub-view reads parent state directly; no synthetic prop diff. |
-| `mountAtAnchor` for vike persistent layouts | Unchanged. Sub-app boundaries between layout/page are legitimate `subApp` cases. |
-| `foreign()`, `clientOnly()` | Unchanged. |
+| `child({ … props … onMsg: m => parentMsg })`                                  | Same as above. The `onMsg` mapping becomes a normal action-message routing in the slice reducer or a transform in `combine()`.                                        |
+| `child({ def })` for bitmask budget reasons                                   | Disappears entirely. Path-keyed reactivity makes the budget irrelevant. Code becomes a view function.                                                                 |
+| `component()` declarations for sub-features                                   | Become exported `update`/`view` function pairs.                                                                                                                       |
+| `propsMsg(props)` handlers in child reducers                                  | Disappear. Sub-view reads parent state directly; no synthetic prop diff.                                                                                              |
+| `mountAtAnchor` for vike persistent layouts                                   | Unchanged. Sub-app boundaries between layout/page are legitimate `subApp` cases.                                                                                      |
+| `foreign()`, `clientOnly()`                                                   | Unchanged.                                                                                                                                                            |
 
 **Estimated migration cost:**
+
 - decisive.space-2: ~1-2 weeks. Nest 120 fields into ~15 feature slices; split `update.ts` (3,241 LOC, 197 cases) into slice reducers; one `combine()` call at root.
 - dicerun2: ~2-3 weeks. 62 `child()` call sites + 49 component declarations rewritten as view functions + slice reducers. Bulk of work is the cosmetic conversion; semantically each `child()` already maps to a known slice via `props`.
 

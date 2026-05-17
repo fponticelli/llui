@@ -9,19 +9,14 @@ describe('combine()', () => {
   type UiState = { sidebarOpen: boolean }
   type AppState = { matrix: MatrixState; ui: UiState }
 
-  type MatrixMsg =
-    | { type: 'matrix/setName'; v: string }
-    | { type: 'matrix/addCell' }
+  type MatrixMsg = { type: 'matrix/setName'; v: string } | { type: 'matrix/addCell' }
   type UiMsg = { type: 'ui/toggleSidebar' }
   type TopMsg = { type: 'reset' }
   type AppMsg = MatrixMsg | UiMsg | TopMsg
 
   type Effect = { type: 'log'; msg: string }
 
-  const matrixUpdate = (
-    s: MatrixState,
-    m: MatrixMsg,
-  ): [MatrixState, Effect[]] => {
+  const matrixUpdate = (s: MatrixState, m: MatrixMsg): [MatrixState, Effect[]] => {
     switch (m.type) {
       case 'matrix/setName':
         return [{ ...s, name: m.v }, [{ type: 'log', msg: 'name set' }]]
@@ -70,10 +65,7 @@ describe('combine()', () => {
       if (m.type === 'reset') return [initialState, [{ type: 'log', msg: 'reset' }]]
       return [_s, []]
     }
-    const update = combine<AppState, AppMsg, Effect>(
-      { matrix: matrixUpdate, ui: uiUpdate },
-      top,
-    )
+    const update = combine<AppState, AppMsg, Effect>({ matrix: matrixUpdate, ui: uiUpdate }, top)
     const mutated: AppState = { matrix: { name: 'x', cells: 5 }, ui: { sidebarOpen: true } }
     const [next, effects] = update(mutated, { type: 'reset' })
     expect(next).toBe(initialState)
@@ -116,10 +108,7 @@ describe('combine()', () => {
     // (without combine()) by their own tests. They match on `.type` with
     // the full namespace.
     let observedType: string | null = null
-    const spy = (
-      s: MatrixState,
-      m: MatrixMsg,
-    ): [MatrixState, Effect[]] => {
+    const spy = (s: MatrixState, m: MatrixMsg): [MatrixState, Effect[]] => {
       observedType = m.type
       return [s, []]
     }

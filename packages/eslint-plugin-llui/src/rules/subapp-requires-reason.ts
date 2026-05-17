@@ -40,7 +40,7 @@ export const subappRequiresReasonRule = createRule({
     schema: [],
     messages: {
       missing:
-        "subApp() requires a 'reason' property. Add a string literal naming WHY a state-isolation boundary is needed here rather than a view function (e.g. \"Monaco owns its own DOM lifecycle\").",
+        'subApp() requires a \'reason\' property. Add a string literal naming WHY a state-isolation boundary is needed here rather than a view function (e.g. "Monaco owns its own DOM lifecycle").',
       empty:
         "subApp()'s 'reason' must be a non-empty string. Decomposing for code organization is not a valid reason — write a view function instead.",
       notLiteral:

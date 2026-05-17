@@ -21,10 +21,7 @@
  * Effects from slice reducers bubble up to the top-level effect handler
  * unchanged.
  */
-export type SliceReducer<Slice, Msg, Effect> = (
-  state: Slice,
-  msg: Msg,
-) => [Slice, Effect[]]
+export type SliceReducer<Slice, Msg, Effect> = (state: Slice, msg: Msg) => [Slice, Effect[]]
 
 /**
  * Map of slice name → its reducer. The slice name is BOTH:
