@@ -11,6 +11,51 @@ All notable changes to LLui packages are documented here. LLui is a pre-1.0 proj
 
 Packages version in lockstep at release time: `@llui/dom`, `@llui/vite-plugin`, `@llui/test`, `@llui/router`, `@llui/transitions`, `@llui/components`, `@llui/vike` share a version line. `@llui/effects`, `@llui/mcp`, `@llui/eslint-plugin`, `@llui/agent`, and `llui-agent` have their own cadence.
 
+## 2026-05-17 — 0.2.0
+
+**Released:** `@llui/{dom,vite-plugin,components,vike,transitions,router,test,mcp,agent,eslint-plugin}@0.2.0`; `llui-agent@0.2.0`
+
+Cleanup pass over what 0.1.0's unified composition model rendered redundant: the public composition surface drops the `child*` naming (the primitive it referenced no longer exists), the compiler drops two layers of dead code, and three ESLint rules stop false-positiving on generic slice/view helpers.
+
+### Breaking
+
+- **`@llui/dom@0.2.0`** — `childHandlers` renamed to `composeModules`; `ChildState<T>` renamed to `ModulesState<T>`; `ChildMsg<T>` renamed to `ModulesMsg<T>`. The runtime behavior is identical — these names alluded to the removed-in-0.1.0 `child()` primitive and were misleading. The `ChildOptions<S, ChildM>` interface (also a 0.1.0 leftover that was exported but never referenced) is removed.
+
+### Migration
+
+- Replace `import { childHandlers }` with `import { composeModules }`. Same signature, same runtime behavior — pure rename.
+- Replace `import type { ChildState, ChildMsg }` with `import type { ModulesState, ModulesMsg }`.
+- Delete any import of `ChildOptions` — the type was unused as of 0.1.0.
+- If you applied `/* eslint-disable llui/static-items, llui/static-on, llui/each-closure-violation */` to suppress false positives on generic slice/view helpers, the underlying rules are fixed in 0.2.0 — those disables can come off.
+
+### `@llui/dom@0.2.0`
+
+- **Breaking** `child*` → `module*` rename on the composition surface. See top of release block.
+- **Fixed** five stale `child()` references in error messages and docstrings (`render-context.ts`, `sample.ts`, `types.ts` ×2, `update-loop.ts`).
+
+### `@llui/vite-plugin@0.2.0`
+
+- **Improved** dropped ~85 lines of voided `__dirty` emission machinery from `tryInjectDirty`. 0.1.0 stopped attaching `__dirty` to the emitted `ComponentDef` but left the function-building code in place behind two `void`-statements. The `topLevelBits` aggregation that `tryBuildHandlers` and `__maskLegend` need stays.
+- **Improved** removed the `computePhase2Mask` stub that always returned `FULL_MASK`. The per-binding gate in Phase 2 already does this work bit-by-bit; the function was a placeholder for a not-shipped aggregate analysis. `buildUpdateBody` signature trimmed.
+
+### `@llui/eslint-plugin@0.2.0`
+
+- **Fixed** `static-items` and `static-on` no longer fire false positives when the accessor reads state through a call argument. `(s) => opts.getProps(s).items` and `(s) => derive(s, ctx)` are now recognized as reactive reads; previously the rule only matched direct member access (`s.field`).
+- **Fixed** `each-closure-violation` no longer flags captures inside event handler properties. Properties matching `/^on[A-Z]/` (except the three structural names `onMsg`/`onSuccess`/`onError`) are treated as event handler contexts where captures of `send`, dispatch helpers, and parent-helper plumbing (`opts`, `wrapMsg`, …) are standard. Reactive-binding captures (`text(() => ...)`, `class: () => ...`) still fire the rule.
+
+### `@llui/{components,router,transitions,vike,test,mcp,agent}@0.2.0`
+
+- **Cascade** peer dependency on `@llui/dom` bumped from `^0.1.0` to `^0.2.0`. No source changes.
+
+### `llui-agent@0.2.0`
+
+- **Cascade** dependency on `@llui/agent` bumped to track. No source changes.
+
+### Tests / dev infra
+
+- Added regression test (`packages/dom/test/nested-mountapp.test.ts`) covering child-app reactivity when `mountApp(ChildDef)` is invoked from inside another app's view tick (the classic `foreign({ mount })` + deferred `onMount` pattern). Locks in the compiled fast paths' contract: `__update`, `__handlers`, and `__prefixes` work correctly under nested mounts; the fields take instance state as parameters and do not capture binding lists at definition time.
+- Added pre-commit hook (`simple-git-hooks` + `lint-staged`) that runs `prettier --write` on staged files. Auto-installs via the `prepare` script after `pnpm install`. No release impact; collaborator-facing only.
+
 ## 2026-05-16 — 0.1.0 (unified composition model)
 
 **Released:** `@llui/{dom,vite-plugin,components,vike,transitions,router,test,mcp,agent,eslint-plugin}@0.1.0`; `llui-agent@0.1.0`
