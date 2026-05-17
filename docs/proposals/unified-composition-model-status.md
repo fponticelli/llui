@@ -92,27 +92,44 @@ Both `docs/designs/01 Architecture.md` and `docs/designs/07 LLM Friendliness.md`
 - LLM error-pattern detection updated: "Unnecessary `child()`" replaced with "Unnecessary `subApp`"
 - Concrete LLM error patterns updated: addressed effects no longer suggested as the cross-component coordination mechanism
 
-What's NOT yet written:
-
-- A dedicated migration doc (`13 Migration from v0.0.x.md`) for downstream apps still on `child()`. dicerun2 has 62 call sites; decisive.space-2 has none (its 120-field root will benefit from #1 above more than from migration prose). Defer until either app actually picks up the new release.
-
 ### 4. Compiler emit consistency for `__update` / `__handlers` ✓ no-op
 
-Audited: the existing comments correctly describe the legacy `__dirty` path (which is still top-level-field-based by design). The new `__prefixes` emission already uses "prefix" terminology. No rename needed.
+Audited: the new `__prefixes` emission already uses "prefix" terminology. The legacy `__dirty` emission was removed entirely (see #6 below).
 
-## Risks and considerations for follow-up
+### 5. Migration doc ✓ landed
 
-- **`__dirty` legacy path.** Currently kept for backwards compat with the rare component that had `__dirty` hand-written (the compiler skips synthesizing if user already provides one). Now that `__prefixes` emission covers 62 paths and runtime fans out to two-word dirty, `__dirty` is purely a runtime fallback for user-supplied custom dirty functions. Could be documented as deprecated.
-- **Compiler fast path for >31-prefix components.** Today, `__update` and `__handlers` are deliberately suppressed for components reading >31 prefixes — their inlined gate predicates are single-word. To bring back the fast path for large components, the gate predicates need to thread `dHi` through and emit `((mask & d) | (maskHi & dHi))`. Tractable but not blocking; the runtime's `genericUpdate` is correct.
-- **`@llui/test`.** None of the dom tests rely on `child()` in user-facing API, but the test-harness might have helpers wired through component instances that need adjustment. Re-scan when continuing.
+`docs/designs/13 Migration from v0.0.x.md` shipped — covers the seven concrete migrations downstream apps need:
+
+- `child()` → view function (the big one)
+- `propsMsg` → `onLayerDataChange` (vike) or direct slice ownership
+- `receives` / addressed effects → shared parent state
+- `mergeHandlers` / `sliceHandler` → `combine()`
+- User-authored `__dirty` → delete (compiler emits `__prefixes`)
+- `subApp` for genuine isolation
+- A mechanical sweep checklist for large migrations (dicerun2 has 62 sites)
+
+### 6. Compiler fast path for >31-prefix components ✓ restored
+
+The compiler now emits `__update` and `__handlers` for ALL prefix counts (not just ≤31). Both carry two-word gate predicates:
+
+- `__update`'s Phase 1 block gate emits as `!((bk.mask & d) | (bk.maskHi & dHi))`. The arrow gains a trailing `dHi = 0` parameter — old runtimes that pass 5 args still work, new runtimes pass `combinedDirtyHi` as the 6th arg.
+- `__handlers` passes `caseDirtyHi` as the 5th positional arg of `_handleMsg` only when the case touches a high-word field (emit is byte-identical for the common ≤31-prefix case).
+- `block.reconcile` and `__runPhase2` calls thread `dHi` through.
+
+### 7. User-authored `__dirty` ✓ rejected at mount
+
+Removed from `ComponentDef`. The compiler no longer emits it (replaced entirely by `__prefixes`); the runtime throws at `createComponentInstance` if any user code sets `def.__dirty`. The throw message points migrators at `__prefixes` and the migration doc.
+
+75 test fixtures across the dom package were swept from `__dirty` to `__prefixes` via a one-shot AST migration.
 
 ## What "fully resolved" actually means
 
-The branch is reviewable and mergeable: every commit passes the full monorepo (62/62 turbo tasks), the unified model is functioning end-to-end through a real-app build (`components-demo`), and the migration story is demonstrated by a worked example test. All four items originally scoped:
+The branch is reviewable and mergeable. Every commit passes the full monorepo (62/62 turbo tasks). The unified model is functioning end-to-end. All seven items considered on this branch:
 
-- **#1 multi-word `__prefixes` emit** — ✓ done. Runtime two-word maskHi support, compiler emission for all 62 paths, per-binding maskHi literals in elTemplate emit, compiler fast path suppressed for overflow components (falls through to two-word-aware `genericUpdate`).
-- **#2 propsMsg/receives removal** — ✓ done. Vike migrated to `onLayerDataChange` opt-in callback.
-- **#3 doc rewrites** — ✓ done in `b3e285a`.
-- **#4 compiler-emit polish** — ✓ no-op after audit.
-
-The remaining optional improvement is restoring the compiler fast path (`__update` / `__handlers`) for >31-prefix components, which is a perf optimization, not a correctness fix.
+- **#1 multi-word `__prefixes` emit** — ✓ done with full two-word precision
+- **#2 propsMsg/receives removal** — ✓ done
+- **#3 doc rewrites of Architecture + LLM Friendliness** — ✓ done
+- **#4 compiler-emit polish** — ✓ no-op after audit
+- **#5 migration doc (`13 Migration from v0.0.x.md`)** — ✓ done
+- **#6 compiler fast path for >31-prefix components** — ✓ restored
+- **#7 user-authored `__dirty` rejection** — ✓ done, with test sweep
