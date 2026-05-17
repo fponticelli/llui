@@ -37,7 +37,7 @@ describe('branch cleanup with template-cloned nodes', () => {
           },
         })
       },
-      __dirty: (o, n) => (Object.is(o.page, n.page) ? 0 : 1),
+      __prefixes: [(s) => s.page],
     }
 
     const container = document.createElement('div')
@@ -97,7 +97,7 @@ describe('branch cleanup with template-cloned nodes', () => {
           },
         })
       },
-      __dirty: (o, n) => (Object.is(o.page, n.page) ? 0 : 1),
+      __prefixes: [(s) => s.page],
     }
 
     const container = document.createElement('div')

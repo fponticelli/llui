@@ -86,7 +86,7 @@ describe('portal()', () => {
             }),
         })
       },
-      __dirty: (o, n) => (Object.is(o.open, n.open) ? 0 : 1),
+      __prefixes: [(s) => s.open],
     }
 
     const container = document.createElement('div')
@@ -126,7 +126,7 @@ describe('portal()', () => {
           render: () => [text((s: State) => String(s.count))],
         })
       },
-      __dirty: (o, n) => (Object.is(o.count, n.count) ? 0 : 1),
+      __prefixes: [(s) => s.count],
     }
 
     const container = document.createElement('div')

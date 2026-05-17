@@ -11,7 +11,7 @@ function t(source: string): string {
 }
 
 describe('Pass 2 — __prefixes emission for path-keyed reactivity', () => {
-  it('emits __prefixes alongside __dirty when ≤31 paths', () => {
+  it('emits __prefixes for ≤31 paths and does NOT emit __dirty', () => {
     const src = `
       import { component, text } from '@llui/dom'
       export const C = component({
@@ -25,9 +25,10 @@ describe('Pass 2 — __prefixes emission for path-keyed reactivity', () => {
       })
     `
     const out = t(src)
-    // Both __dirty (bitmask path) and __prefixes (path-keyed path) are
-    // emitted; runtime prefers __prefixes when present.
-    expect(out).toContain('__dirty')
+    // `__dirty` emission was removed in 2026-05 — the runtime computes
+    // dirty exclusively from `__prefixes`. Hand-authored `__dirty`
+    // throws at mount.
+    expect(out).not.toContain('__dirty')
     expect(out).toContain('__prefixes')
     // The prefix table contains one arrow per distinct path.
     expect(out).toMatch(/__prefixes:\s*\[/)
@@ -84,14 +85,83 @@ describe('Pass 2 — __prefixes emission for path-keyed reactivity', () => {
     // optional chaining — only nested paths use `s?.foo?.bar`).
     expect(out).toMatch(/s\s*=>\s*s\.f0\b/)
     expect(out).toMatch(/s\s*=>\s*s\.f34\b/)
-    // The runtime's compiler fast path (`__update` / `__handlers`) inlines
-    // a single-word gate predicate, so for components reading >31 prefixes
-    // the compiler MUST NOT emit them — otherwise high-word-only bindings
-    // would be silently skipped. The generic `Phase 1 + Phase 2` runtime
-    // pipeline handles two-word gating correctly; this assertion guards
-    // against accidentally re-enabling the fast path for overflow cases.
-    expect(out).not.toContain('__update')
-    expect(out).not.toContain('__handlers')
+    // `__update` IS emitted with the trailing `dHi` parameter — the
+    // runtime passes `combinedDirtyHi` as the 6th arg. This component
+    // has no structural primitives, so the Phase 1 block loop isn't
+    // emitted; the assertions focus on the parameter list and the
+    // Phase 2 delegation that threads `dHi` into `__runPhase2`. A
+    // separate test exercises the Phase 1 two-word block gate.
+    expect(out).toContain('__update')
+    expect(out).toMatch(/dHi\s*=\s*0/) // 6th param with default
+    expect(out).toMatch(/__runPhase2\(s,\s*d,\s*dHi,/) // Phase 2 sees dHi
+  })
+
+  it('emits __handlers for >31-prefix components with caseDirtyHi when a case touches a high-word field', () => {
+    // 33 distinct fields so positions 31, 32 fall in the high word.
+    // The mutating case touches `f31` (high word, bit 0) — the emitted
+    // handler must pass `caseDirtyHi` as the 5th arg of __handleMsg.
+    const init = Array.from({ length: 33 }, (_, i) => `f${i}: 0`).join(', ')
+    const reads = Array.from({ length: 33 }, (_, i) => `text(s => String(s.f${i}))`).join(',\n')
+    const src = `
+      import { component, text } from '@llui/dom'
+      type State = { ${Array.from({ length: 33 }, (_, i) => `f${i}: number`).join('; ')} }
+      type Msg = { type: 'bumpHi' }
+      export const C = component<State, Msg, never>({
+        name: 'C',
+        init: () => [{ ${init} }, []],
+        update: (s, m) => {
+          switch (m.type) {
+            case 'bumpHi':
+              return [{ ...s, f31: s.f31 + 1 }, []]
+          }
+        },
+        view: ({ text }) => [
+          ${reads}
+        ],
+      })
+    `
+    const out = t(src)
+    expect(out).toContain('__handlers')
+    expect(out).toMatch(/bumpHi/) // handler key emitted
+    // The __handleMsg call for the bumpHi case must carry a 5th
+    // positional arg representing caseDirtyHi. The high-word bit for
+    // position 31 is `1 << (31 - 31) === 1`, so we expect a literal
+    // `1` as the 5th argument.
+    expect(out).toMatch(/__handleMsg\(inst,\s*msg,\s*\d+,\s*\d+,\s*1\)/)
+  })
+
+  it('emits a two-word Phase 1 block gate when the component uses structural primitives', () => {
+    // A component with a structural primitive (`branch` / `each` / `show`)
+    // triggers the Phase 1 block loop in `__update`. Its gate must be
+    // two-word so high-word path changes drive block reconciliation
+    // for 32..61-prefix components.
+    const src = `
+      import { component, div, text, branch } from '@llui/dom'
+      export const C = component({
+        name: 'C',
+        init: () => [{ phase: 'a' as const }, []],
+        update: (s, m) => [s, []],
+        view: ({ branch }) => [
+          div({}, [
+            branch({
+              on: s => s.phase,
+              cases: {
+                a: () => [text('A')],
+                b: () => [text('B')],
+              },
+            }),
+          ]),
+        ],
+      })
+    `
+    const out = t(src)
+    expect(out).toContain('__update')
+    // The block-gate predicate ORs the two AND results. Look for the
+    // shape `(bk.mask & d) | (bk.maskHi & dHi)` (whitespace flexible).
+    expect(out).toMatch(/bk\.mask\s*&\s*d/)
+    expect(out).toMatch(/bk\.maskHi\s*&\s*dHi/)
+    // block.reconcile is called with three args (state, dirty, dirtyHi).
+    expect(out).toMatch(/bk\.reconcile\(s,\s*d,\s*dHi\)/)
   })
 
   it('emits __prefixes with arrow ordering matching bit positions', () => {

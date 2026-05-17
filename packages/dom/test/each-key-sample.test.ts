@@ -111,8 +111,7 @@ describe('sample() inside an accessor throws a targeted error', () => {
         // accessor-stack flag set — the targeted error fires.
         div([t((s: State) => `${s.count}-${sample<State, number>((s2) => s2.other)}`)]),
       ],
-      __dirty: (o, n) =>
-        (Object.is(o.count, n.count) ? 0 : 1) | (Object.is(o.other, n.other) ? 0 : 2),
+      __prefixes: [(s) => s.count, (s) => s.other],
     }
     let sendFn!: (msg: Msg) => void
     const origView = def.view

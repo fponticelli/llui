@@ -92,13 +92,7 @@ describe('nested each() with parent re-key + sibling-state inner items', () => {
             ]
           },
         }),
-      __dirty: (o, n) => {
-        let m = 0
-        if (!Object.is(o.rows, n.rows)) m |= 1
-        if (!Object.is(o.panelOpenForId, n.panelOpenForId)) m |= 2
-        if (!Object.is(o.panelData, n.panelData)) m |= 4
-        return m
-      },
+      __prefixes: [(s) => s.rows, (s) => s.panelOpenForId, (s) => s.panelData],
     }
   }
 
@@ -168,13 +162,7 @@ describe('nested each() with parent re-key + sibling-state inner items', () => {
             ]
           },
         }),
-      __dirty: (o, n) => {
-        let m = 0
-        if (!Object.is(o.rows, n.rows)) m |= 1
-        if (!Object.is(o.panelOpenForId, n.panelOpenForId)) m |= 2
-        if (!Object.is(o.panelData, n.panelData)) m |= 4
-        return m
-      },
+      __prefixes: [(s) => s.rows, (s) => s.panelOpenForId, (s) => s.panelData],
     }
     let sendFn!: (msg: Msg4) => void
     const origView = def.view
@@ -264,13 +252,7 @@ describe('nested each() with parent re-key + sibling-state inner items', () => {
             ]
           },
         }),
-      __dirty: (o, n) => {
-        let m = 0
-        if (!Object.is(o.rows, n.rows)) m |= 1
-        if (!Object.is(o.panelOpenForId, n.panelOpenForId)) m |= 2
-        if (!Object.is(o.panelData, n.panelData)) m |= 4
-        return m
-      },
+      __prefixes: [(s) => s.rows, (s) => s.panelOpenForId, (s) => s.panelData],
     }
     let sendFn!: (msg: Msg3) => void
     const origView = def.view
@@ -398,13 +380,7 @@ describe('nested each() with parent re-key + sibling-state inner items', () => {
             ]
           },
         }),
-      __dirty: (o, n) => {
-        let m = 0
-        if (!Object.is(o.rows, n.rows)) m |= 1
-        if (!Object.is(o.panelOpenForId, n.panelOpenForId)) m |= 2
-        if (!Object.is(o.panelData, n.panelData)) m |= 4
-        return m
-      },
+      __prefixes: [(s) => s.rows, (s) => s.panelOpenForId, (s) => s.panelData],
     }
     let sendFn!: (msg: Msg2) => void
     const origView = def.view

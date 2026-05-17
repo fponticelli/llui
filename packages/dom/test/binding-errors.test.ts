@@ -33,12 +33,7 @@ function makeDef(
         ]),
       ]
     },
-    __dirty: (o, n) => {
-      let m = 0
-      if (!Object.is(o.value, n.value)) m |= 1
-      if (!Object.is(o.other, n.other)) m |= 2
-      return m
-    },
+    __prefixes: [(s) => s.value, (s) => s.other],
   }
 }
 

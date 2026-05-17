@@ -20,7 +20,7 @@ describe('cross-file mask safety', () => {
     `
     const out = t(src)
     // All bindings should use FULL_MASK (4294967295 | 0)
-    // because there's no component() to generate a matching __dirty
+    // because there's no component() to generate a matching __prefixes
     expect(out).toContain('4294967295 | 0')
     // Should NOT have any precise small masks like [1, or [2,
     expect(out).not.toMatch(/\[\s*[1-9]\d?\s*,\s*"/)
@@ -41,13 +41,14 @@ describe('cross-file mask safety', () => {
       })
     `
     const out = t(src)
-    // Should have precise masks (1 for label, 2 for active or vice versa)
-    expect(out).toContain('__dirty')
+    // Should have __prefixes (path-keyed reactivity) — `__dirty`
+    // emission was removed; the runtime computes dirty from prefixes.
+    expect(out).toContain('__prefixes')
     // Should NOT use FULL_MASK for these bindings
     expect(out).not.toMatch(/4294967295.*"class"/)
   })
 
-  it('__dirty compares at top-level field, not nested path', () => {
+  it('__prefixes captures top-level fields, not nested paths', () => {
     const src = `
       import { component, text } from '@llui/dom'
       export const App = component({
@@ -61,14 +62,16 @@ describe('cross-file mask safety', () => {
       })
     `
     const out = t(src)
-    // __dirty should compare o.route vs n.route (top-level),
-    // NOT o.route.page vs n.route.page (nested)
-    // This ensures route.data changes trigger the dirty bit
-    expect(out).toContain('Object.is(o.route, n.route)')
-    expect(out).not.toContain('o.route.page')
+    // __prefixes should reference reference-stable parents, so the
+    // `s.route.page` access maps to the `s.route` prefix — change
+    // anything under route and the bit fires. Should NOT split into
+    // `route.page` and `route.data` prefixes.
+    expect(out).toContain('__prefixes')
+    expect(out).toMatch(/s\s*=>\s*s\.route\b/)
+    expect(out).toMatch(/s\s*=>\s*s\.query\b/)
   })
 
-  it('injects __dirty only in component files', () => {
+  it('injects __prefixes only in component files', () => {
     const viewSrc = `
       import { div, text } from '@llui/dom'
       export const view = (s) => [text(s => s.name)]
@@ -82,7 +85,7 @@ describe('cross-file mask safety', () => {
         view: () => [text(s => s.name)],
       })
     `
-    expect(t(viewSrc)).not.toContain('__dirty')
-    expect(t(componentSrc)).toContain('__dirty')
+    expect(t(viewSrc)).not.toContain('__prefixes')
+    expect(t(componentSrc)).toContain('__prefixes')
   })
 })

@@ -31,8 +31,7 @@ function elSplitDef(): ComponentDef<State, Msg, never> {
         [text((s: State) => s.title)],
       ),
     ],
-    __dirty: (o, n) =>
-      (Object.is(o.title, n.title) ? 0 : 0b01) | (Object.is(o.active, n.active) ? 0 : 0b10),
+    __prefixes: [(s) => s.title, (s) => s.active],
   }
 }
 

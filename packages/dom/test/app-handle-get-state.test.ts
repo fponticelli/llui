@@ -16,8 +16,7 @@ const Counter = component<S, M, never>({
     }
   },
   view: () => [div({ class: 'c' }, [text((s: S) => String(s.count))])],
-  __dirty: (o, n) =>
-    (Object.is(o.count, n.count) ? 0 : 0b01) | (Object.is(o.label, n.label) ? 0 : 0b10),
+  __prefixes: [(s) => s.count, (s) => s.label],
 })
 
 describe('AppHandle.getState — sanctioned escape hatch for reading state outside view', () => {

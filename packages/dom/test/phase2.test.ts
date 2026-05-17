@@ -20,8 +20,7 @@ function twoPropDef(): ComponentDef<State, Msg, never> {
       }
     },
     view: () => [],
-    __dirty: (o, n) =>
-      (Object.is(o.name, n.name) ? 0 : 0b01) | (Object.is(o.age, n.age) ? 0 : 0b10),
+    __prefixes: [(s) => s.name, (s) => s.age],
   }
 }
 

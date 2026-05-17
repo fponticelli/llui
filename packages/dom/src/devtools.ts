@@ -1,4 +1,9 @@
-import { flushInstance, _forceState, type ComponentInstance } from './update-loop.js'
+import {
+  flushInstance,
+  _forceState,
+  computeDirtyFromPrefixes,
+  type ComponentInstance,
+} from './update-loop.js'
 import { _setDevToolsInstall } from './mount.js'
 import { _markDisposerLogInstalled } from './lifetime.js'
 import type { Binding, Lifetime, LifetimeNode } from './types.js'
@@ -1176,11 +1181,21 @@ export function installDevTools(inst: object): void {
     const [newState, effects] = (
       originalUpdate as (s: unknown, m: unknown) => [unknown, unknown[]]
     )(state, msg)
-    const dirty = ci.def.__dirty
-      ? (ci.def.__dirty as (o: unknown, n: unknown) => number)(state, newState)
-      : -1
+    // Compute the dirty mask from `__prefixes` (the supported reactivity
+    // path). Devtools recording only surfaces the LOW word here for the
+    // existing MessageRecord shape; high-word changes contribute to the
+    // mask via the runtime's full two-word computation but are folded
+    // into the `dirtyMask` field's display via FULL_MASK fallback when
+    // they alone fire. A future devtools schema upgrade can surface both
+    // words separately if needed.
+    const prefixes = (ci.def as { __prefixes?: ReadonlyArray<(s: unknown) => unknown> }).__prefixes
+    let dirty: number = -1
+    if (prefixes) {
+      const computed = computeDirtyFromPrefixes(prefixes, state, newState)
+      dirty = typeof computed === 'number' ? computed : computed[0] | computed[1]
+    }
 
-    lastDirtyMask = typeof dirty === 'number' ? dirty : -1
+    lastDirtyMask = dirty
 
     const record: MessageRecord = {
       index: idx,

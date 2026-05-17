@@ -71,10 +71,7 @@ describe('Props<T, S> type helper + view function composition', () => {
           },
           send,
         ),
-      __dirty: (o, n) =>
-        (Object.is(o.tools, n.tools) ? 0 : 0b001) |
-        (Object.is(o.theme, n.theme) ? 0 : 0b010) |
-        (Object.is(o.selectedId, n.selectedId) ? 0 : 0b100),
+      __prefixes: [(s) => s.tools, (s) => s.theme, (s) => s.selectedId],
     }
   }
 

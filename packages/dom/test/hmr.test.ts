@@ -20,7 +20,7 @@ describe('HMR state preservation', () => {
         return [s, []]
       },
       view: () => [div({ class: 'v1' }, [text((s: State) => `v1:${s.count}`)])],
-      __dirty: (o, n) => (Object.is(o.count, n.count) ? 0 : 1),
+      __prefixes: [(s) => s.count],
     })
 
     const container = document.createElement('div')
@@ -63,7 +63,7 @@ describe('HMR state preservation', () => {
         return [s, []]
       },
       view: () => [div({ class: 'v2' }, [text((s: State) => `v2:${s.count}`)])],
-      __dirty: (o, n) => (Object.is(o.count, n.count) ? 0 : 1),
+      __prefixes: [(s) => s.count],
     })
 
     replaceComponent('HmrComp', v2Def)
@@ -111,7 +111,7 @@ describe('HMR state preservation', () => {
             })(),
           ]),
         ],
-        __dirty: (o, n) => (Object.is(o.value, n.value) ? 0 : 1),
+        __prefixes: [(s) => s.value],
       })
     }
 
@@ -191,7 +191,6 @@ describe('HMR state preservation', () => {
         init: () => [{ value: 'hello' }, []],
         update: (s) => [s, []],
         view: () => [div({ class: 'v2' }, [text(() => 'no input here')])],
-        __dirty: () => 0,
       })
 
       // Should not throw.
@@ -223,7 +222,6 @@ describe('HMR state preservation', () => {
             outer.appendChild(inner)
             return [outer]
           },
-          __dirty: () => 0,
         })
 
       const container = document.createElement('div')

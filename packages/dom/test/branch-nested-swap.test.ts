@@ -47,8 +47,7 @@ function def() {
         }),
       ]),
     ],
-    __dirty: (o, n) =>
-      (Object.is(o.route, n.route) ? 0 : 0b01) | (Object.is(o.mode, n.mode) ? 0 : 0b10),
+    __prefixes: [(s) => s.route, (s) => s.mode],
   })
 }
 
@@ -200,8 +199,7 @@ describe('branch — nested primitives spread into outer arm (no wrapper)', () =
           }),
         ]),
       ],
-      __dirty: (o, n) =>
-        (Object.is(o.route, n.route) ? 0 : 0b01) | (Object.is(o.items, n.items) ? 0 : 0b10),
+      __prefixes: [(s) => s.route, (s) => s.items],
     })
 
   it('each rows spread into the list arm are fully removed when outer arm swaps to detail', () => {

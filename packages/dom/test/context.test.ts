@@ -227,7 +227,7 @@ describe('createContext + provide + useContext', () => {
           ],
         )
       },
-      __dirty: (o, n) => (Object.is(o.visible, n.visible) ? 0 : 1),
+      __prefixes: [(s) => s.visible],
     })
 
     const container = document.createElement('div')

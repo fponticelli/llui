@@ -12,24 +12,22 @@ export interface ComponentDef<S, M, E = never, D = void> {
   view: (h: View<S, M>) => Node[]
   onEffect?: (ctx: { effect: E; send: Send<M>; signal: AbortSignal }) => void
 
-  /** @internal Compiler-injected */
-  __dirty?: (oldState: S, newState: S) => number | [number, number]
   /**
-   * @internal Compiler-injected — opt-in **path-keyed reactivity** path.
+   * @internal Compiler-injected — **path-keyed reactivity** prefix table.
    *
-   * Replaces `__dirty`'s top-level-field bitmask with per-prefix accessors.
-   * Each entry is a stable closure of form `(s: S) => unknown` that the
-   * compiler hoists at module scope, one per distinct *minimal
-   * reference-stable prefix* read across this component's accessors.
-   * The position of each entry in this array IS its bit position in the
-   * binding-side `mask`. When set, the runtime computes `combinedDirty`
-   * by reference-comparing `prefix(prev)` vs `prefix(next)` for each
-   * entry, instead of calling `__dirty(prev, next)`.
+   * Each entry is a stable closure `(s: S) => unknown` that the compiler
+   * hoists at module scope, one per distinct *minimal reference-stable
+   * prefix* read across this component's accessors. The position of
+   * each entry in this array IS its bit position: positions 0..30 map
+   * to the low-word `mask`, positions 31..61 map to the high-word
+   * `maskHi`. The runtime computes `combinedDirty` (and
+   * `combinedDirtyHi` for >31-prefix components) by reference-comparing
+   * `prefix(prev)` vs `prefix(next)` for each entry.
    *
-   * When both `__prefixes` and `__dirty` are present, `__prefixes` wins.
-   * This is the opt-in path for the unified composition model (see
-   * `docs/proposals/unified-composition-model.md`); existing components
-   * stay on the `__dirty` bitmask path unchanged.
+   * Hand-authoring this is supported but unusual — `@llui/vite-plugin`
+   * emits it automatically from accessor analysis. The previous
+   * `__dirty` bitmask emission was removed; user-supplied `__dirty`
+   * functions throw at mount.
    */
   __prefixes?: ReadonlyArray<(state: S) => unknown>
   /** @internal Compiler-injected */
@@ -58,13 +56,22 @@ export interface ComponentDef<S, M, E = never, D = void> {
   __stateSchema?: object
   /** @internal Compiler-injected — Effect union schema (for introspection) */
   __effectSchema?: object
-  /** @internal Compiler-injected — replaces generic Phase 1 + Phase 2 loop */
+  /**
+   * @internal Compiler-injected — replaces generic Phase 1 + Phase 2 loop.
+   *
+   * The trailing `dirtyHi` is the high-word dirty mask used by
+   * 32..61-prefix components. Appended (not inserted) so old compiled
+   * bundles emitted with a 5-param signature remain callable — the
+   * runtime always passes 6 args; old bundles ignore the extra one
+   * and ≤31-prefix components have `dirtyHi === 0` anyway.
+   */
   __update?: (
     state: S,
     dirty: number,
     bindings: Binding[],
     blocks: StructuralBlock[],
     bindingsBeforePhase1: number,
+    dirtyHi?: number,
   ) => void
   /** @internal Compiler-injected — per-message-type specialized handlers.
    *  Bypass the entire processMessages pipeline for single-message updates. */

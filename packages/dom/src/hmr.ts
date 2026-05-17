@@ -70,7 +70,8 @@ export function unregisterForHmr(name: string, inst: object): void {
 /**
  * Hot-swap a component definition on all live instances.
  *
- * Preserves the current state. Replaces update, view, onEffect, and __dirty.
+ * Preserves the current state. Replaces update, view, onEffect, __update,
+ * __handlers, and __prefixes (compiler-emitted reactivity table).
  * Disposes the old scope tree (removing old DOM and bindings),
  * re-runs view(currentState, send) to rebuild fresh DOM.
  *
@@ -168,9 +169,9 @@ function swapEntry<S, M, E, D = void>(
     update: newDef.update,
     view: newDef.view,
     onEffect: newDef.onEffect,
-    __dirty: newDef.__dirty,
     __update: newDef.__update,
     __handlers: newDef.__handlers,
+    __prefixes: newDef.__prefixes,
   }
 
   // Snapshot focus + selection + scroll BEFORE disposal — once the

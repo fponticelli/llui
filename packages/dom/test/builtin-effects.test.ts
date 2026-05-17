@@ -27,7 +27,7 @@ describe('built-in delay effect', () => {
         sendFn = send
         return [text((s: State) => s.value)]
       },
-      __dirty: (o, n) => (Object.is(o.value, n.value) ? 0 : 1),
+      __prefixes: [(s) => s.value],
     }
 
     const container = document.createElement('div')

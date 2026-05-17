@@ -25,7 +25,7 @@ function counterDef(): ComponentDef<State, Msg, never> {
         ]),
       ]
     },
-    __dirty: (o, n) => (Object.is(o.count, n.count) ? 0 : 1),
+    __prefixes: [(s) => s.count],
   }
 }
 

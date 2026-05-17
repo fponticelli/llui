@@ -580,7 +580,7 @@ describe('reactive prop value resolution — non-arrow Identifier/CallExpression
   })
 })
 
-describe('Pass 2 — mask injection + __dirty', () => {
+describe('Pass 2 — mask injection + __prefixes', () => {
   it('injects mask into text() calls', () => {
     const src = `
       import { component, text } from '@llui/dom'
@@ -713,7 +713,7 @@ describe('Pass 2 — mask injection + __dirty', () => {
     expect(out).toMatch(/text\(s\s*=>\s*String\(s\.count\)\s*,\s*1\)/)
   })
 
-  it('synthesizes __dirty function', () => {
+  it('synthesizes __prefixes table', () => {
     const src = `
       import { component, text } from '@llui/dom'
       export const C = component({
@@ -727,27 +727,12 @@ describe('Pass 2 — mask injection + __dirty', () => {
       })
     `
     const out = t(src)
-    expect(out).toContain('__dirty')
-    expect(out).toContain('Object.is')
-    // Should compare count and label
-    expect(out).toMatch(/o\.count.*n\.count/)
-    expect(out).toMatch(/o\.label.*n\.label/)
-  })
-
-  it('does not overwrite existing __dirty', () => {
-    const src = `
-      import { component, text } from '@llui/dom'
-      export const C = component({
-        name: 'C',
-        init: () => [{ count: 0 }, []],
-        update: (s, m) => [s, []],
-        view: (send) => [text(s => String(s.count))],
-        __dirty: (o, n) => o.count !== n.count ? 1 : 0,
-      })
-    `
-    const out = t(src)
-    // Should preserve the hand-written __dirty
-    expect(out).toContain('o.count !== n.count')
+    expect(out).toContain('__prefixes')
+    // Should emit prefix arrows for count and label
+    expect(out).toMatch(/s\s*=>\s*s\.count\b/)
+    expect(out).toMatch(/s\s*=>\s*s\.label\b/)
+    // `__dirty` emission was removed in 2026-05 — verify it's gone.
+    expect(out).not.toContain('__dirty')
   })
 })
 
@@ -1394,30 +1379,29 @@ describe('__handlers per-message optimization', () => {
   })
 
   it('does not emit a narrow per-case handler when the return spreads a non-state value', () => {
-    // Regression: `return [{ ...state, ...msg.props, extra: x }, []]` was
-    // analyzed as modifying ONLY `extra` — the `...msg.props` spread was
+    // Regression: `return [{ ...state, ...someObj, extra: x }, []]` was
+    // analyzed as modifying ONLY `extra` — the `...someObj` spread was
     // silently ignored as if it were `...state`. That produced a narrow
-    // `caseDirty` that excluded every field coming in through the props
-    // spread, so text()/attr() bindings reading those fields in Phase 2
-    // were skipped and the DOM retained stale values after a props/set.
+    // `caseDirty` that excluded every field coming in through the spread,
+    // so text()/attr() bindings reading those fields in Phase 2 were
+    // skipped and the DOM retained stale values.
     //
     // Correct behaviour: when a spread's source is anything other than
     // the state parameter, bail out of the per-case optimization so the
-    // generic Phase 2 path runs and `__dirty` computes an honest mask.
+    // generic Phase 2 path runs against __prefixes and produces an
+    // honest mask.
     const src = `
       import { component, div, span, text } from '@llui/dom'
-      type Props = { name: string | null; other: number }
-      type State = Props & { tgState: number }
-      type Msg = { type: 'props/set'; props: Props }
-      export const C = component<State, Msg, never, Props>({
+      type State = { name: string | null; tgState: number }
+      type Msg = { type: 'sync'; payload: { name: string | null } }
+      export const C = component<State, Msg, never>({
         name: 'C',
-        init: (p) => [{ ...(p ?? { name: null, other: 0 }), tgState: 0 }, []],
-        propsMsg: (p) => ({ type: 'props/set', props: p }),
+        init: () => [{ name: null, tgState: 0 }, []],
         update: (state, msg) => {
           switch (msg.type) {
-            case 'props/set': {
+            case 'sync': {
               const tgNext = state.tgState + 1
-              return [{ ...state, ...msg.props, tgState: tgNext }, []]
+              return [{ ...state, ...msg.payload, tgState: tgNext }, []]
             }
           }
         },
@@ -1430,15 +1414,16 @@ describe('__handlers per-message optimization', () => {
       })
     `
     const out = t(src)
-    // Two acceptable outcomes: (a) no per-case handler for 'props/set'
-    // (bail-out, preferred — generic __dirty path runs), or (b) the handler
-    // emits with caseDirty === FULL_MASK (-1 as a 32-bit signed int).
-    const handlerMatch = out.match(/"props\/set"[\s\S]*?__handleMsg\([^,]+,\s*[^,]+,\s*(-?\d+)/)
+    // Two acceptable outcomes: (a) no per-case handler for 'sync' (the
+    // bail-out, preferred — generic Phase 2 against __prefixes runs),
+    // or (b) the handler emits with caseDirty === FULL_MASK (-1 as a
+    // 32-bit signed int).
+    const handlerMatch = out.match(/"sync"[\s\S]*?__handleMsg\([^,]+,\s*[^,]+,\s*(-?\d+)/)
     if (handlerMatch) {
       const mask = Number(handlerMatch[1]) | 0
       expect(mask).toBe(-1)
     } else {
-      expect(out).not.toMatch(/"props\/set"/)
+      expect(out).not.toMatch(/"sync"/)
     }
   })
 })

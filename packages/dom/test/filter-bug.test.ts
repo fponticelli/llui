@@ -33,7 +33,7 @@ describe('filter highlight', () => {
           ],
         })
       },
-      __dirty: (o, n) => (Object.is(o.filter, n.filter) ? 0 : 1),
+      __prefixes: [(s) => s.filter],
     }
 
     const container = document.createElement('div')

@@ -27,7 +27,7 @@ describe('__update fast path', () => {
       init: () => [{ count: 0 }, []],
       update: (s, _m) => [{ ...s, count: s.count + 1 }, []],
       view: ({ text: t }) => [div([t((s: S) => String(s.count))])],
-      __dirty: (o, n) => (Object.is(o.count, n.count) ? 0 : 1),
+      __prefixes: [(s) => s.count],
       __update(state, dirty, bindings, blocks, bindingsBeforePhase1) {
         updateSpy({ state, dirty, bindings, blocks, bindingsBeforePhase1 })
         // Must still run Phase 2 for correctness
@@ -71,7 +71,7 @@ describe('__update fast path', () => {
       init: () => [{ count: 0 }, []],
       update: (s, _m) => [{ ...s, count: s.count + 1 }, []],
       view: ({ text: t }) => [div([t((s: S) => String(s.count))])],
-      __dirty: (o, n) => (Object.is(o.count, n.count) ? 0 : 1),
+      __prefixes: [(s) => s.count],
       // No __update — generic path
     }
 
@@ -126,12 +126,7 @@ describe('Phase 1 mask gating', () => {
           __mask: 1, // items depends on bit 1
         } as never),
       ],
-      __dirty: (o, n) => {
-        let m = 0
-        if (!Object.is(o.items, n.items)) m |= 1
-        if (!Object.is(o.label, n.label)) m |= 2
-        return m
-      },
+      __prefixes: [(s) => s.items, (s) => s.label],
     }
 
     const container = document.createElement('div')
@@ -205,7 +200,7 @@ describe('swap optimization', () => {
           },
         }),
       ],
-      __dirty: (o, n) => (Object.is(o.rows, n.rows) ? 0 : 1),
+      __prefixes: [(s) => s.rows],
     }
 
     const container = document.createElement('div')
@@ -402,12 +397,7 @@ describe('selector optimization', () => {
           }),
         ]
       },
-      __dirty: (o, n) => {
-        let m = 0
-        if (!Object.is(o.rows, n.rows)) m |= 1
-        if (!Object.is(o.selected, n.selected)) m |= 2
-        return m
-      },
+      __prefixes: [(s) => s.rows, (s) => s.selected],
     })
 
     const container = document.createElement('div')
@@ -465,12 +455,7 @@ describe('__handlers per-message dispatch', () => {
         }
       },
       view: ({ text: t }) => [div([t((s: S) => String(s.count))]), div([t((s: S) => s.label)])],
-      __dirty: (o, n) => {
-        let m = 0
-        if (!Object.is(o.count, n.count)) m |= 1
-        if (!Object.is(o.label, n.label)) m |= 2
-        return m
-      },
+      __prefixes: [(s) => s.count, (s) => s.label],
       __handlers: {
         inc: (inst: object, _msg: unknown): [S, never[]] => {
           const typedInst = inst as { state: S; allBindings: Binding[] }
@@ -514,7 +499,7 @@ describe('__handlers per-message dispatch', () => {
       init: () => [{ count: 0 }, []],
       update: (s) => [{ ...s, count: s.count + 1 }, []],
       view: ({ text: t }) => [div([t((s: S) => String(s.count))])],
-      __dirty: (o, n) => (Object.is(o.count, n.count) ? 0 : 1),
+      __prefixes: [(s) => s.count],
       __handlers: {
         inc: (inst: object): [S, never[]] => {
           handlerSpy('inc-handler')
@@ -581,12 +566,7 @@ describe('selector __directUpdate', () => {
           }),
         ]
       },
-      __dirty: (o, n) => {
-        let m = 0
-        if (!Object.is(o.rows, n.rows)) m |= 1
-        if (!Object.is(o.selected, n.selected)) m |= 2
-        return m
-      },
+      __prefixes: [(s) => s.rows, (s) => s.selected],
     })
 
     const container = document.createElement('div')
@@ -763,7 +743,6 @@ describe('each reconcileRemove', () => {
           render: ({ item }) => [div([text(item.label)])],
         }),
       ],
-      __dirty: () => 1,
     })
 
     const container = document.createElement('div')
@@ -825,7 +804,6 @@ describe('each reconcileRemove', () => {
           render: ({ item }) => [div([text(item.label)])],
         }),
       ],
-      __dirty: () => 1,
     })
 
     const container = document.createElement('div')
@@ -865,7 +843,6 @@ describe('each reconcileRemove', () => {
           render: ({ item }) => [div([text(item((n: number) => String(n)))])],
         }),
       ],
-      __dirty: () => 1,
     })
 
     const container = document.createElement('div')
@@ -926,7 +903,6 @@ describe('each reconcileChanged', () => {
           render: ({ item }) => [div([text(item.label)])],
         }),
       ],
-      __dirty: () => 1,
     })
 
     const container = document.createElement('div')
@@ -999,7 +975,6 @@ describe('row factory (__rowUpdate)', () => {
           },
         }),
       ],
-      __dirty: () => 1,
     })
 
     const container = document.createElement('div')
@@ -1048,7 +1023,6 @@ describe('row factory (__rowUpdate)', () => {
           render: ({ item }) => [div([text(item.label)])],
         }),
       ],
-      __dirty: () => 1,
     })
 
     const container = document.createElement('div')
@@ -1102,7 +1076,6 @@ describe('row factory (__rowUpdate)', () => {
           },
         }),
       ],
-      __dirty: () => 1,
     })
 
     const container = document.createElement('div')
@@ -1138,7 +1111,6 @@ describe('row factory (__rowUpdate)', () => {
           },
         }),
       ],
-      __dirty: () => 1,
     })
 
     const container = document.createElement('div')
@@ -1212,12 +1184,7 @@ describe('row factory (__rowUpdate)', () => {
           }),
         ]
       },
-      __dirty: (o, n) => {
-        let m = 0
-        if (!Object.is(o.rows, n.rows)) m |= 1
-        if (!Object.is(o.selected, n.selected)) m |= 2
-        return m
-      },
+      __prefixes: [(s) => s.rows, (s) => s.selected],
     })
 
     const container = document.createElement('div')
@@ -1303,12 +1270,7 @@ describe('selector without per-row disposers', () => {
           }),
         ]
       },
-      __dirty: (o, n) => {
-        let m = 0
-        if (!Object.is(o.rows, n.rows)) m |= 1
-        if (!Object.is(o.selected, n.selected)) m |= 2
-        return m
-      },
+      __prefixes: [(s) => s.rows, (s) => s.selected],
     })
 
     const container = document.createElement('div')
@@ -1403,12 +1365,7 @@ describe('selector without per-row disposers', () => {
           }),
         ]
       },
-      __dirty: (o, n) => {
-        let m = 0
-        if (!Object.is(o.rows, n.rows)) m |= 1
-        if (!Object.is(o.selected, n.selected)) m |= 2
-        return m
-      },
+      __prefixes: [(s) => s.rows, (s) => s.selected],
     })
 
     const container = document.createElement('div')
@@ -1484,12 +1441,7 @@ describe('selector without per-row disposers', () => {
           }),
         ]
       },
-      __dirty: (o, n) => {
-        let m = 0
-        if (!Object.is(o.rows, n.rows)) m |= 1
-        if (!Object.is(o.selected, n.selected)) m |= 2
-        return m
-      },
+      __prefixes: [(s) => s.rows, (s) => s.selected],
     })
 
     const container = document.createElement('div')

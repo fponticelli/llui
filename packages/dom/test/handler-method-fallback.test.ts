@@ -53,12 +53,7 @@ describe('_handleMsg specialized-method fallback for non-each blocks', () => {
       // Hand-baked compiler output: handler emits method=2 (clear) for
       // open-with-clear. Before the fallback, this no-ops the show
       // block's reconcile and the dialog stays hidden.
-      __dirty: (o, n) => {
-        let m = 0
-        if (!Object.is(o.open, n.open)) m |= 1
-        if (!Object.is(o.todos, n.todos)) m |= 2
-        return m
-      },
+      __prefixes: [(s) => s.open, (s) => s.todos],
       __handlers: {
         // (inst, msg) => _handleMsg(inst, msg, dirty=bit(open)|bit(todos), method=2)
         'open-with-clear': ((inst: unknown, msg: unknown) =>
@@ -105,7 +100,7 @@ describe('_handleMsg specialized-method fallback for non-each blocks', () => {
           key: (it) => it.id,
           render: ({ item }) => [div([text(item((t) => t.label))])],
         }),
-      __dirty: (o, n) => (Object.is(o.items, n.items) ? 0 : 1),
+      __prefixes: [(s) => s.items],
       __handlers: {
         clearAll: ((inst: unknown, msg: unknown) => _handleMsg(inst as never, msg, 1, 2)) as never,
       },

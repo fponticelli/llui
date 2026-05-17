@@ -122,7 +122,7 @@ function eachListDef(): ComponentDef<EachState, EachMsg, never> {
         key: (item) => item.id,
         render: ({ item }) => [div({ 'data-id': item((t) => t.id) }, [text(item((t) => t.label))])],
       }),
-    __dirty: (o, n) => (Object.is(o.items, n.items) ? 0 : 1),
+    __prefixes: [(s) => s.items],
   }
 }
 
@@ -278,7 +278,7 @@ describe('each() → EachDiff emission', () => {
           ],
         }),
       // Top-level change always forces full reconcile for this test.
-      __dirty: (o, n) => (Object.is(o.groups, n.groups) ? 0 : 1),
+      __prefixes: [(s) => s.groups],
     }
 
     let sendFn!: (msg: Msg) => void
@@ -373,7 +373,7 @@ function branchDef(): ComponentDef<BranchState, BranchMsg, never> {
           b: () => [div({}, [text(() => 'B')])],
         },
       }),
-    __dirty: (o, n) => (Object.is(o.which, n.which) ? 0 : 1),
+    __prefixes: [(s) => s.which],
   }
 }
 
@@ -454,7 +454,7 @@ describe('disposer log → structural causes', () => {
           key: (item) => item.id,
           render: ({ item }) => [div({ 'data-id': item((t) => t.id) }, [])],
         }),
-      __dirty: (o, n) => (Object.is(o.items, n.items) ? 0 : 1),
+      __prefixes: [(s) => s.items],
     }
 
     let sendFn!: (msg: Msg) => void
@@ -558,7 +558,7 @@ function covCounterDef(): ComponentDef<CovState, CovMsg, never> {
       }
     },
     view: () => [div({}, [text((s: CovState) => String(s.count))])],
-    __dirty: (o, n) => (Object.is(o.count, n.count) ? 0 : 1),
+    __prefixes: [(s) => s.count],
   }
 }
 

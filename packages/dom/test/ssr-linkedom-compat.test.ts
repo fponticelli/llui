@@ -17,7 +17,7 @@ describe('linkedomEnv — HTMLSelectElement.value setter patch', () => {
           option({ value: 'c' }, [text('C')]),
         ]),
       ],
-      __dirty: (o, n) => (Object.is(o.selected, n.selected) ? 0 : 1),
+      __prefixes: [(s) => s.selected],
     })
 
     const env = await linkedomEnv()
@@ -88,7 +88,7 @@ describe('portal() — SSR safety under linkedom', () => {
           }),
         ]),
       ],
-      __dirty: (o, n) => (Object.is(o.visible, n.visible) ? 0 : 1),
+      __prefixes: [(s) => s.visible],
     })
 
     const env = await linkedomEnv()

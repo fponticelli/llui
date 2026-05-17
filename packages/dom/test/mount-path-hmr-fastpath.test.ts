@@ -39,7 +39,7 @@ function mkDef(label: string): ComponentDef<S, never, never> {
     init: () => [{ n: 0 }, []],
     update: (s) => [s, []],
     view: () => [div({ class: label }, [text((s: S) => `${label}:${s.n}`)])],
-    __dirty: (o, n) => (Object.is(o.n, n.n) ? 0 : 1),
+    __prefixes: [(s) => s.n],
   })
 }
 

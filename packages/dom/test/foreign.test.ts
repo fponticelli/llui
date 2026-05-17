@@ -51,8 +51,7 @@ function foreignDef() {
         sync: syncFn,
         destroy: destroyFn,
       }),
-    __dirty: (o, n) =>
-      (Object.is(o.theme, n.theme) ? 0 : 0b01) | (Object.is(o.readonly, n.readonly) ? 0 : 0b10),
+    __prefixes: [(s) => s.theme, (s) => s.readonly],
   }
 
   return { def, mountFn, destroyFn, syncFn }
@@ -161,8 +160,7 @@ describe('foreign()', () => {
           },
           destroy: () => {},
         }),
-      __dirty: (o, n) =>
-        (Object.is(o.theme, n.theme) ? 0 : 0b01) | (Object.is(o.readonly, n.readonly) ? 0 : 0b10),
+      __prefixes: [(s) => s.theme, (s) => s.readonly],
     }
 
     const container = document.createElement('div')
@@ -214,8 +212,7 @@ describe('foreign()', () => {
           destroy: () => {},
         })
       },
-      __dirty: (o, n) =>
-        (Object.is(o.theme, n.theme) ? 0 : 0b01) | (Object.is(o.readonly, n.readonly) ? 0 : 0b10),
+      __prefixes: [(s) => s.theme, (s) => s.readonly],
     }
 
     const container = document.createElement('div')

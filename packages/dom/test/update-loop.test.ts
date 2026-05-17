@@ -15,7 +15,7 @@ function counterDef(): ComponentDef<{ count: number }, { type: 'inc' } | { type:
       }
     },
     view: () => [],
-    __dirty: (o, n) => (Object.is(o.count, n.count) ? 0 : 1),
+    __prefixes: [(s) => s.count],
   }
 }
 
@@ -82,7 +82,7 @@ describe('send and flush', () => {
         }
       },
       view: () => [],
-      __dirty: (o, n) => (Object.is(o.a, n.a) ? 0 : 0b01) | (Object.is(o.b, n.b) ? 0 : 0b10),
+      __prefixes: [(s) => s.a, (s) => s.b],
     }
 
     const inst = createComponentInstance(def)
@@ -127,9 +127,13 @@ describe('send and flush', () => {
     expect(inst.state).toEqual({ count: 0 })
   })
 
-  it('uses 0xFFFFFFFF dirty mask when __dirty is absent', () => {
+  it('uses 0xFFFFFFFF dirty mask when __prefixes is absent', () => {
+    // When the compiler emits neither `__prefixes` nor any reactive
+    // accessor metadata, the runtime falls back to FULL_MASK so every
+    // binding re-evaluates. (Hand-authored `__dirty` is no longer
+    // accepted — a separate test verifies the throw.)
     const def = counterDef()
-    delete def.__dirty
+    delete (def as { __prefixes?: unknown }).__prefixes
     const inst = createComponentInstance(def)
     inst.send({ type: 'inc' })
     flushInstance(inst)
@@ -143,7 +147,7 @@ describe('send and flush', () => {
       init: () => [{ count: 0 }, []],
       update: (state) => [state, []],
       view: () => [],
-      __dirty: (o, n) => (Object.is(o.count, n.count) ? 0 : 1),
+      __prefixes: [(s) => s.count],
     }
     const inst = createComponentInstance(def)
     inst.send({ type: 'noop' })

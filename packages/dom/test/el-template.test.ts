@@ -38,7 +38,7 @@ describe('elTemplate', () => {
             ),
           ],
         }),
-      __dirty: (o, n) => (Object.is(o.items, n.items) ? 0 : 1),
+      __prefixes: [(s) => s.items],
     })
 
     const container = document.createElement('div')
@@ -72,7 +72,6 @@ describe('elTemplate', () => {
             }),
           ],
         }),
-      __dirty: () => 1,
     })
 
     const container = document.createElement('div')
@@ -136,8 +135,7 @@ describe('elTemplate', () => {
             ]
           },
         }),
-      __dirty: (o, n) =>
-        (Object.is(o.items, n.items) ? 0 : 0b01) | (Object.is(o.selected, n.selected) ? 0 : 0b10),
+      __prefixes: [(s) => s.items, (s) => s.selected],
     })
 
     const container = document.createElement('div')

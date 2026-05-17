@@ -37,7 +37,7 @@ describe('text()', () => {
         }
       },
       view: () => [text((s: State) => s.label)],
-      __dirty: (o, n) => (Object.is(o.label, n.label) ? 0 : 1),
+      __prefixes: [(s) => s.label],
     }
 
     const container = document.createElement('div')
@@ -72,7 +72,7 @@ describe('text()', () => {
         sendFn = send
         return [text((s: State) => String(s.count))]
       },
-      __dirty: (o, n) => (Object.is(o.count, n.count) ? 0 : 1),
+      __prefixes: [(s) => s.count],
     }
 
     const container = document.createElement('div')

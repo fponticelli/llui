@@ -12,6 +12,7 @@ import {
   createComponentInstance,
   flushInstance,
   computeDirtyFromPrefixes,
+  _handleMsg,
 } from '../src/update-loop'
 import { createBinding } from '../src/binding'
 import { applyBinding } from '../src/binding'
@@ -293,38 +294,80 @@ describe('component with __prefixes opts into path-keyed reactivity', () => {
     expect(f0FireCount).toBe(1)
   })
 
-  it('falls back to __dirty when __prefixes is absent (unchanged behavior)', () => {
-    // Without __prefixes, the bitmask path runs as before.
-    const def: ComponentDef<S, M, never> = {
-      ...makeDef(),
-      __prefixes: undefined,
-      __dirty: (o, n) =>
-        (Object.is(o.user, n.user) ? 0 : MASK_USER) |
-        (Object.is(o.count, n.count) ? 0 : MASK_COUNT) |
-        (Object.is(o.query, n.query) ? 0 : MASK_QUERY),
+  it("dispatches a high-word case through __handlers' single-message fast path", () => {
+    // Same 35-prefix shape, but this time wire `__handlers` so the
+    // single-message fast path in `processMessages` engages. The
+    // compiler emits `__handleMsg(inst, msg, caseDirty, method,
+    // caseDirtyHi)` for cases that touch high-word fields; this test
+    // hand-builds that shape and verifies the high-word binding fires.
+    type Big = Record<string, number>
+    const prefixes: Array<(s: unknown) => unknown> = []
+    for (let i = 0; i < 35; i++) {
+      const key = `f${i}`
+      prefixes.push((s) => (s as Big)[key])
+    }
+    const initial: Big = {}
+    for (let i = 0; i < 35; i++) initial[`f${i}`] = 0
+
+    type M = { type: 'bumpF33' }
+    const def: ComponentDef<Big, M, never> = {
+      name: 'BigHandlerComponent',
+      init: () => [initial, []],
+      update: (s, m) => {
+        switch (m.type) {
+          case 'bumpF33':
+            return [{ ...s, f33: s.f33! + 1 }, []]
+        }
+      },
+      view: () => [],
+      __prefixes: prefixes,
+      __handlers: {
+        bumpF33: (inst, msg) =>
+          _handleMsg(
+            inst as Parameters<typeof _handleMsg>[0],
+            msg,
+            0, // caseDirty: nothing low-word
+            -1, // skip Phase 1 blocks (none)
+            1 << 2, // caseDirtyHi: f33 is high-word bit 2
+          ) as [Big, never[]],
+      },
     }
     const inst = createComponentInstance(def)
-    let fireCount = 0
+
+    let f33FireCount = 0
     createBinding(inst.rootLifetime, {
-      mask: MASK_USER,
+      mask: 0,
+      maskHi: 1 << 2,
       accessor: (s) => {
-        fireCount++
-        return (s as S).user?.name ?? ''
+        f33FireCount++
+        return String((s as Big).f33)
       },
       kind: 'text',
       node: document.createTextNode(''),
       perItem: false,
     })
-    inst.allBindings.push(inst.rootLifetime.bindings[0]!)
-    const b = inst.allBindings[0]!
-    b.lastValue = b.accessor(inst.state)
-    fireCount = 0
+    for (const b of inst.rootLifetime.bindings) {
+      inst.allBindings.push(b as Binding)
+      ;(b as Binding).lastValue = (b as Binding).accessor(inst.state)
+    }
+    f33FireCount = 0
 
-    inst.send({ type: 'inc' })
+    inst.send({ type: 'bumpF33' })
     flushInstance(inst)
-    // bitmask path: count changed → MASK_COUNT bit. user binding gate
-    // is MASK_USER. (MASK_USER & MASK_COUNT) === 0 → no fire. Same as
-    // __prefixes path — the result is identical.
-    expect(fireCount).toBe(0)
+    // _handleMsg ran via the __handlers fast path AND threaded the
+    // high-word mask into _runPhase2's gate.
+    expect((inst.state as Big).f33).toBe(1)
+    expect(f33FireCount).toBe(1)
+  })
+
+  it('throws at mount if a user-authored __dirty slips through', () => {
+    // `__dirty` is no longer accepted on ComponentDef — it's a runtime
+    // throw rather than a silent degradation, so components that still
+    // hand-author the old bitmask helper fail loud.
+    const def = {
+      ...makeDef(),
+      __dirty: (o: S, n: S) => (Object.is(o.user, n.user) ? 0 : 1),
+    } as unknown as ComponentDef<S, M, never>
+    expect(() => createComponentInstance(def)).toThrow(/defines `__dirty` directly/)
   })
 })

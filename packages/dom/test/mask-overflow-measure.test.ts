@@ -57,14 +57,6 @@ function buildDef(pathCount: number, useFullMask: boolean): ComponentDef<State, 
     // from old/new state. The only thing that differs between IDEAL and
     // FULL_MASK is the per-binding mask, which controls how many accessors
     // re-evaluate in Phase 2 for a given dirty mask.
-    __dirty: (o, n) => {
-      let m = 0
-      for (let i = 0; i < keys.length; i++) {
-        const k = keys[i]!
-        m |= Object.is(o[k], n[k]) ? 0 : bitFor[k]!
-      }
-      return m
-    },
   }
 }
 

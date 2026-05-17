@@ -25,8 +25,7 @@ function elementsDef(): ComponentDef<State, Msg, never> {
         button({ onClick: () => send({ type: 'toggle' }) }, [text('Toggle')]),
       ]),
     ],
-    __dirty: (o, n) =>
-      (Object.is(o.label, n.label) ? 0 : 0b01) | (Object.is(o.active, n.active) ? 0 : 0b10),
+    __prefixes: [(s) => s.label, (s) => s.active],
   }
 }
 

@@ -156,6 +156,24 @@ export function createComponentInstance<S, M, E, D = void>(
   parentLifetime: Lifetime | null = null,
   dom?: DomEnv,
 ): ComponentInstance<S, M, E> {
+  // Hand-authored `__dirty` is no longer supported — the path-keyed
+  // `__prefixes` emission supersedes it (62-prefix capacity, precise
+  // per-prefix gating). Compiler-emitted `__dirty` was removed in
+  // 2026-05 alongside this throw; any `__dirty` field at runtime must
+  // be user code, and silently ignoring it would hide a stale pattern.
+  // Migrate by deleting the `__dirty` field — the compiler emits
+  // `__prefixes` automatically from accessor analysis, and uncompiled
+  // components correctly fall back to FULL_MASK.
+  if ((def as { __dirty?: unknown }).__dirty !== undefined) {
+    throw new Error(
+      `[llui] Component "${def.name}" defines \`__dirty\` directly. ` +
+        `This field is no longer accepted — the compiler emits \`__prefixes\` ` +
+        `(path-keyed reactivity) automatically. Remove \`__dirty\` from the ` +
+        `ComponentDef; either the compiler will regenerate the correct ` +
+        `prefix table, or uncompiled components will fall back to FULL_MASK. ` +
+        `See docs/proposals/unified-composition-model.md.`,
+    )
+  }
   const [initialState, initialEffects] = def.init(data as D)
 
   const controller = new AbortController()
@@ -388,16 +406,17 @@ function processMessages<S, M, E>(inst: ComponentInstance<S, M, E>): void {
   const allEffects: E[] = []
 
   const defUpdate = inst.def.update
-  // Path-keyed reactivity (the unified-composition-model path): when the
-  // compiler emits `__prefixes`, dirty bits correspond to entries in the
-  // prefix table (one bit per minimal reference-stable prefix read across
-  // the component's accessors). The runtime computes the dirty mask by
-  // reference-comparing `prefix(prev) !== prefix(next)` for each table
-  // entry — strictly more precise than `__dirty`'s top-level-field bitmask,
-  // and not subject to the 31-top-level-field ceiling. Falls back to
-  // `__dirty` when `__prefixes` is absent (existing components, unchanged).
+  // Path-keyed reactivity: when the compiler emits `__prefixes`, dirty
+  // bits correspond to entries in the prefix table (one bit per minimal
+  // reference-stable prefix read across the component's accessors). The
+  // runtime computes the dirty mask by reference-comparing `prefix(prev)
+  // !== prefix(next)` for each table entry — precise per-prefix and
+  // supports two-word emission for up to 62 prefixes. Components compiled
+  // without `__llui/vite-plugin` (or with no reactive accessors) have no
+  // `__prefixes` table; they fall back to `FULL_MASK` and pay the cost
+  // of re-evaluating every binding every cycle. User-authored `__dirty`
+  // is no longer accepted — see types.ts for the rationale.
   const prefixes = inst.def.__prefixes as ReadonlyArray<(s: unknown) => unknown> | undefined
-  const dirtyFn = inst.def.__dirty
   for (let qi = 0; qi < queue.length; qi++) {
     const msg = queue[qi]!
     const [newState, effects] = defUpdate(state, msg)
@@ -405,7 +424,7 @@ function processMessages<S, M, E>(inst: ComponentInstance<S, M, E>): void {
     if (prefixes !== undefined) {
       dirty = computeDirtyFromPrefixes(prefixes, state, newState)
     } else {
-      dirty = dirtyFn ? dirtyFn(state, newState) : FULL_MASK
+      dirty = FULL_MASK
     }
     if (typeof dirty === 'number') {
       combinedDirty |= dirty
@@ -440,13 +459,19 @@ function processMessages<S, M, E>(inst: ComponentInstance<S, M, E>): void {
 
   if (inst.def.__update) {
     // Compiler-generated fast path — replaces generic Phase 1 + Phase 2.
-    // Backward-compat: compiled bundles older than the multi-word emit
-    // pass __update a single dirty word; the runtime widens the call site
-    // and the compiled body ignores the extra arg. Stale compiled bundles
-    // simply won't gate against the high word — for ≤31-prefix components
-    // that's correct (combinedDirtyHi is always 0); for >31-prefix
-    // components a fresh compile is required.
-    inst.def.__update(state, combinedDirty, bindings, inst.structuralBlocks, bindingsBeforePhase1)
+    // `combinedDirtyHi` is passed as the trailing positional arg so
+    // stale 5-param compiled bundles continue to gate correctly: they
+    // ignore the extra arg, and for ≤31-prefix components `dirtyHi`
+    // is always 0 anyway. Fresh compiled bundles use the 6th param
+    // for precise two-word Phase 1 gating on 32..61-prefix components.
+    inst.def.__update(
+      state,
+      combinedDirty,
+      bindings,
+      inst.structuralBlocks,
+      bindingsBeforePhase1,
+      combinedDirtyHi,
+    )
   } else {
     // Generic Phase 1 + Phase 2 fallback (uncompiled components)
     genericUpdate(inst, state, combinedDirty, combinedDirtyHi, bindings, bindingsBeforePhase1)

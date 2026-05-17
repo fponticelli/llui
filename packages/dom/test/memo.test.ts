@@ -57,8 +57,7 @@ describe('memo()', () => {
         return [div({}, [text((s: State) => memoized(s)), text((s: State) => s.label)])]
       },
       // count = bit 0, label = bit 1
-      __dirty: (o, n) =>
-        (Object.is(o.count, n.count) ? 0 : 0b01) | (Object.is(o.label, n.label) ? 0 : 0b10),
+      __prefixes: [(s) => s.count, (s) => s.label],
     }
 
     const container = document.createElement('div')
@@ -115,8 +114,7 @@ describe('memo()', () => {
           render: ({ item }) => [div({}, [text((_s: S) => String(item.id()))])],
         })
       },
-      __dirty: (o, n) =>
-        (Object.is(o.todos, n.todos) ? 0 : 0b01) | (Object.is(o.filter, n.filter) ? 0 : 0b10),
+      __prefixes: [(s) => s.todos, (s) => s.filter],
     }
 
     const container = document.createElement('div')

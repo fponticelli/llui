@@ -84,7 +84,7 @@ describe('hydration reconciliation', () => {
               b: () => [div({ class: 'page-b' }, [text('Page B')])],
             },
           }),
-        __dirty: (o, n) => (Object.is(o.mode, n.mode) ? 0 : 1),
+        __prefixes: [(s) => s.mode],
       })
 
       const { container } = serverRenderAndHydrate(def, { mode: 'a' as const })
@@ -173,7 +173,7 @@ describe('hydration reconciliation', () => {
             }),
           ]),
         ],
-        __dirty: (o, n) => (Object.is(o.items, n.items) ? 0 : 1),
+        __prefixes: [(s) => s.items],
       })
 
       const { container } = serverRenderAndHydrate(def, {
@@ -220,7 +220,6 @@ describe('hydration reconciliation', () => {
             ],
           }),
         ],
-        __dirty: () => 1,
       })
 
       const state: S = { count: 5, items: ['a', 'b', 'c'], show: true }
@@ -263,7 +262,7 @@ describe('hydration reconciliation', () => {
           sendFn = send
           return [div({}, [text((s: S) => s.label)])]
         },
-        __dirty: (o, n) => (Object.is(o.label, n.label) ? 0 : 1),
+        __prefixes: [(s) => s.label],
       })
 
       const { container, handle } = serverRenderAndHydrate(def, { label: 'initial' })
@@ -289,7 +288,7 @@ describe('hydration reconciliation', () => {
             button({ class: 'btn', onClick: () => send({ type: 'inc' }) }, [text('+')]),
           ]),
         ],
-        __dirty: (o, n) => (Object.is(o.count, n.count) ? 0 : 1),
+        __prefixes: [(s) => s.count],
       })
 
       const { container, handle } = serverRenderAndHydrate(def, { count: 0 })

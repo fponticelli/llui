@@ -97,7 +97,7 @@ describe('unsafeHtml()', () => {
           ),
         ]
       },
-      __dirty: (o, n) => (Object.is(o.html, n.html) ? 0 : 1),
+      __prefixes: [(s) => s.html],
     }
     const container = document.createElement('div')
     const handle = mountApp(container, def)
@@ -134,7 +134,7 @@ describe('unsafeHtml()', () => {
           ),
         ]
       },
-      __dirty: (o, n) => (Object.is(o.html, n.html) ? 0 : 1),
+      __prefixes: [(s) => s.html],
     }
     const container = document.createElement('div')
     const handle = mountApp(container, def)
@@ -169,7 +169,7 @@ describe('unsafeHtml()', () => {
           ),
         ]
       },
-      __dirty: (o, n) => (Object.is(o.html, n.html) ? 0 : 1),
+      __prefixes: [(s) => s.html],
     }
     const container = document.createElement('div')
     const handle = mountApp(container, def)
@@ -207,7 +207,6 @@ describe('unsafeHtml()', () => {
           ),
         ]
       },
-      __dirty: () => 1,
     }
     const container = document.createElement('div')
     const handle = mountApp(container, def)
@@ -252,8 +251,7 @@ describe('unsafeHtml()', () => {
         ]
       },
       // bit 1 = html, bit 2 = tick
-      __dirty: (o, n) =>
-        (Object.is(o.html, n.html) ? 0 : 0b01) | (Object.is(o.tick, n.tick) ? 0 : 0b10),
+      __prefixes: [(s) => s.html, (s) => s.tick],
     }
     const container = document.createElement('div')
     const handle = mountApp(container, def)

@@ -65,7 +65,7 @@ describe('hydration + elTemplate comment placeholders', () => {
           __bind(__t0, 0xffffffff | 0, 'text', undefined, (s) => (s as State).name)
         }),
       ],
-      __dirty: (o, n) => (Object.is(o.name, n.name) ? 0 : 1),
+      __prefixes: [(s) => s.name],
     })
 
     const html = renderToString(def, { name: 'Alice' }, env)
@@ -92,7 +92,7 @@ describe('hydration + elTemplate comment placeholders', () => {
           span({}, [text('v='), text((s: State) => String(s.value))]),
         ]),
       ],
-      __dirty: (o, n) => (Object.is(o.value, n.value) ? 0 : 1),
+      __prefixes: [(s) => s.value],
     })
 
     const html = renderToString(def, { value: 7 }, env)

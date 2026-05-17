@@ -30,8 +30,7 @@ const Counter = component<State, Msg, never>({
       render: (_send) => [span({ class: 'badge' }, [text('active')])],
     }),
   ],
-  __dirty: (o, n) =>
-    (Object.is(o.count, n.count) ? 0 : 0b01) | (Object.is(o.label, n.label) ? 0 : 0b10),
+  __prefixes: [(s) => s.count, (s) => s.label],
 })
 
 describe('hydrateApp', () => {

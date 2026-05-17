@@ -76,7 +76,7 @@ describe('text binding updates inside stable branch case', () => {
           },
         })
       },
-      __dirty: (o, n) => (Object.is(o.route, n.route) ? 0 : 1),
+      __prefixes: [(s) => s.route],
     })
 
     const container = document.createElement('div')

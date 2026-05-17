@@ -30,7 +30,7 @@ function phaseDef(): ComponentDef<State, Msg, never> {
         },
       }),
     ],
-    __dirty: (o, n) => (Object.is(o.phase, n.phase) ? 0 : 1),
+    __prefixes: [(s) => s.phase],
   }
 }
 
@@ -104,7 +104,6 @@ describe('branch()', () => {
           default: () => [],
         }),
       ],
-      __dirty: () => 0,
     }
 
     const container = document.createElement('div')
@@ -139,7 +138,7 @@ describe('branch()', () => {
           default: () => [],
         }),
       ],
-      __dirty: (o, n) => (Object.is(o.phase, n.phase) ? 0 : 1),
+      __prefixes: [(s) => s.phase],
     }
 
     const container = document.createElement('div')
@@ -186,12 +185,7 @@ describe('branch()', () => {
           },
         }),
       ],
-      __dirty: (o, n) => {
-        let mask = 0
-        if (!Object.is(o.page, n.page)) mask |= 1
-        if (!Object.is(o.flag, n.flag)) mask |= 2
-        return mask
-      },
+      __prefixes: [(s) => s.page, (s) => s.flag],
     }
 
     const container = document.createElement('div')
@@ -259,12 +253,7 @@ describe('branch()', () => {
           },
         }),
       ],
-      __dirty: (o, n) => {
-        let mask = 0
-        if (!Object.is(o.page, n.page)) mask |= 1
-        if (!Object.is(o.counter, n.counter)) mask |= 2
-        return mask
-      },
+      __prefixes: [(s) => s.page, (s) => s.counter],
     }
 
     const container = document.createElement('div')
@@ -312,7 +301,7 @@ describe('show()', () => {
           when: (st) => st.visible,
           render: () => [div({ class: 'panel' }, [t('content')])],
         }),
-      __dirty: (o, n) => (Object.is(o.visible, n.visible) ? 0 : 1),
+      __prefixes: [(s) => s.visible],
     }
   }
 
@@ -367,7 +356,6 @@ describe('show()', () => {
             return [h.text('via h')]
           },
         }),
-      __dirty: () => 0,
     }
 
     const container = document.createElement('div')
@@ -394,7 +382,6 @@ describe('show()', () => {
             return [h.text('fallback via h')]
           },
         }),
-      __dirty: () => 0,
     }
 
     const container = document.createElement('div')
@@ -419,7 +406,7 @@ describe('show() with fallback', () => {
           render: () => [div({ class: 'content' }, [t('ready')])],
           fallback: () => [div({ class: 'spinner' }, [t('loading...')])],
         }),
-      __dirty: (o, n) => (Object.is(o.loaded, n.loaded) ? 0 : 1),
+      __prefixes: [(s) => s.loaded],
     }
   }
 

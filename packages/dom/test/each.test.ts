@@ -57,7 +57,7 @@ function listDef(): ComponentDef<State, Msg, never> {
         key: (item) => item.id,
         render: ({ item }) => [div({ 'data-id': item((t) => t.id) }, [text(item((t) => t.label))])],
       }),
-    __dirty: (o, n) => (Object.is(o.items, n.items) ? 0 : 1),
+    __prefixes: [(s) => s.items],
   }
 }
 

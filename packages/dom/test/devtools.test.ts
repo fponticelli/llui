@@ -23,7 +23,7 @@ const Counter = component<State, Msg, never>({
     }
   },
   view: () => [div({}, [text((s: State) => String(s.count))])],
-  __dirty: (o, n) => (Object.is(o.count, n.count) ? 0 : 1),
+  __prefixes: [(s) => s.count],
 })
 
 function mountWithDevTools() {

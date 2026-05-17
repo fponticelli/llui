@@ -1476,6 +1476,16 @@ function tryInjectDirty(
     const topField = path.split('.')[0]!
     topLevelBits.set(topField, (topLevelBits.get(topField) ?? 0) | bit)
   }
+  // Parallel high-word map: top-level fields whose paths fall at bit
+  // positions 31..61 contribute here instead of (or in addition to)
+  // `topLevelBits`. A field with sub-paths split across both words —
+  // e.g., `user.name` at position 30 and `user.email` at position 31 —
+  // ends up in both maps under the same top-level key.
+  const topLevelBitsHi = new Map<string, number>()
+  for (const [path, bit] of fieldBitsHi) {
+    const topField = path.split('.')[0]!
+    topLevelBitsHi.set(topField, (topLevelBitsHi.get(topField) ?? 0) | bit)
+  }
 
   const comparisons: ts.Expression[] = []
   for (const [field, bit] of topLevelBits) {
@@ -1562,6 +1572,12 @@ function tryInjectDirty(
   const phase2Mask = computePhase2Mask(configArg, fieldBits)
 
   const updateBody = buildUpdateBody(f, structuralMask, phase2Mask)
+  // `dHi` is the high-word dirty mask, appended as the trailing
+  // positional arg so stale 5-param compiled bundles continue to gate
+  // correctly: the runtime calls `__update(s, d, b, bl, p, dHi)`,
+  // old bundles' 5-param arrow ignores the extra arg (for ≤31-prefix
+  // components dHi is always 0 anyway). New bundles use it for
+  // precise two-word Phase 1 gating.
   const updateFn = f.createArrowFunction(
     undefined,
     undefined,
@@ -1571,6 +1587,14 @@ function tryInjectDirty(
       f.createParameterDeclaration(undefined, undefined, 'b'),
       f.createParameterDeclaration(undefined, undefined, 'bl'),
       f.createParameterDeclaration(undefined, undefined, 'p'),
+      f.createParameterDeclaration(
+        undefined,
+        undefined,
+        'dHi',
+        undefined,
+        undefined,
+        f.createNumericLiteral(0),
+      ),
     ],
     undefined,
     f.createToken(ts.SyntaxKind.EqualsGreaterThanToken),
@@ -1581,26 +1605,25 @@ function tryInjectDirty(
   // __handlers: per-message-type specialized update functions.
   // Analyzes the update() switch/case and generates direct handlers
   // that bypass the generic Phase 1/2 pipeline for single-message updates.
-  const handlersProp = tryBuildHandlers(configArg, topLevelBits, structuralMask, f)
+  const handlersProp = tryBuildHandlers(configArg, topLevelBits, topLevelBitsHi, structuralMask, f)
 
-  // Skip both compiler fast paths when the component reads >31 reactive
-  // prefixes. The hand-emitted `__update` and `__handlers` bodies inline
-  // the binding-gate predicate as `(mask & d) === 0` — single-word only.
-  // For ≤31-prefix components that's strictly correct (the high word is
-  // always 0 anyway). For 32..61-prefix components the inlined gate
-  // would miss high-word changes; falling through to the runtime's
-  // two-word-aware `genericUpdate` keeps reactivity correct. (Per-
-  // binding maskHi literals ARE emitted on the binding tuples — those
-  // are read by the runtime regardless of which Phase 1 path runs.)
-  const useCompilerFastPath = fieldBitsHi.size === 0
-
-  // Keep __update even when __handlers is present — it provides Phase 1
-  // mask gating for multi-message batches that bypass __handlers.
-  const extraProps = [dirtyProp, legendProp]
-  if (useCompilerFastPath) {
-    extraProps.push(updateProp)
-    if (handlersProp) extraProps.push(handlersProp)
-  }
+  // Both `__update` and `__handlers` carry two-word gates now —
+  // `__update`'s Phase 1 block loop uses `(mask & d) | (maskHi & dHi)`
+  // with `dHi` as the trailing parameter (defaults to 0 for backward
+  // compat with old 5-arg call sites), and `__handlers` passes
+  // `caseDirtyHi` to `_handleMsg` which gates blocks against both
+  // words. Safe to emit for any prefix count.
+  // `__dirty` emission was removed in 2026-05: `__prefixes` is strictly
+  // more precise (per-prefix rather than per-top-level-field), supports
+  // 62 paths via two-word masks, and the runtime throws if it sees a
+  // hand-authored `__dirty`. `legendProp` (`__maskLegend`) is still
+  // emitted for the agent layer's introspection — it surfaces the
+  // top-level-field-to-bit mapping for `whyDidUpdate` / dispatch
+  // tracing without depending on `__dirty` at runtime.
+  void dirtyFn
+  void dirtyProp
+  const extraProps: ts.ObjectLiteralElementLike[] = [legendProp, updateProp]
+  if (handlersProp) extraProps.push(handlersProp)
 
   // __prefixes: opt-in path-keyed reactivity (see
   // docs/proposals/unified-composition-model.md). One closure per
@@ -1646,10 +1669,11 @@ function tryInjectDirty(
 function tryBuildHandlers(
   configArg: ts.ObjectLiteralExpression,
   topLevelBits: Map<string, number>,
+  topLevelBitsHi: Map<string, number>,
   structuralMask: number,
   f: ts.NodeFactory,
 ): ts.PropertyAssignment | null {
-  if (topLevelBits.size === 0) return null
+  if (topLevelBits.size === 0 && topLevelBitsHi.size === 0) return null
 
   // Find the update function in the component config
   let updateFn: ts.ArrowFunction | ts.FunctionExpression | null = null
@@ -1733,7 +1757,7 @@ function tryBuildHandlers(
     let bailOut = false
     for (const returnExpr of returnExprs) {
       const stateExpr = returnExpr.elements[0]!
-      const fields = analyzeModifiedFields(stateExpr, stateName, topLevelBits)
+      const fields = analyzeModifiedFields(stateExpr, stateName, topLevelBits, topLevelBitsHi)
       if (!fields) {
         bailOut = true
         break
@@ -1744,16 +1768,28 @@ function tryBuildHandlers(
 
     const modifiedFields = Array.from(allModified)
 
-    // Compute the dirty mask for this case
+    // Compute the dirty mask for this case across both words. Fields
+    // tracked in `topLevelBitsHi` contribute to `caseDirtyHi`; fields
+    // tracked nowhere (`undefined` lookup in both) fall back to
+    // FULL_MASK in the low word — same conservative behavior as
+    // before, just preserved per-word now.
     let caseDirty = 0
+    let caseDirtyHi = 0
     for (const field of modifiedFields) {
-      caseDirty |= topLevelBits.get(field) ?? 0xffffffff | 0
+      const lo = topLevelBits.get(field)
+      const hi = topLevelBitsHi.get(field)
+      if (lo === undefined && hi === undefined) {
+        caseDirty |= 0xffffffff | 0
+      } else {
+        if (lo !== undefined) caseDirty |= lo
+        if (hi !== undefined) caseDirtyHi |= hi
+      }
     }
 
     // Detect array operation pattern for structural block optimization
     const arrayOp = detectArrayOp(clause, stateName, modifiedFields, structuralMask, caseDirty)
 
-    const handler = buildCaseHandler(f, caseDirty, arrayOp)
+    const handler = buildCaseHandler(f, caseDirty, caseDirtyHi, arrayOp)
     handlers.push(f.createPropertyAssignment(f.createStringLiteral(msgType), handler))
   }
 
@@ -1971,7 +2007,13 @@ function analyzeModifiedFields(
   stateExpr: ts.Expression,
   stateName: string,
   topLevelBits: Map<string, number>,
+  topLevelBitsHi: Map<string, number> = new Map(),
 ): string[] | null {
+  // Recognize fields tracked in EITHER the low-word or high-word map.
+  // 32..61-prefix components have their overflow paths in
+  // `topLevelBitsHi`; the case handler's `caseDirty` / `caseDirtyHi`
+  // logic depends on us recognizing those fields here.
+  const isTracked = (name: string): boolean => topLevelBits.has(name) || topLevelBitsHi.has(name)
   // Pattern: { ...state, field1: ..., field2: ... } or { field1: ..., field2: ... }
   if (ts.isObjectLiteralExpression(stateExpr)) {
     const modified: string[] = []
@@ -1990,14 +2032,14 @@ function analyzeModifiedFields(
       }
       if (ts.isPropertyAssignment(prop) && ts.isIdentifier(prop.name)) {
         const fieldName = prop.name.text
-        if (topLevelBits.has(fieldName)) {
+        if (isTracked(fieldName)) {
           modified.push(fieldName)
         }
       }
       // Handle shorthand: { ...state, rows } where rows is a local variable
       if (ts.isShorthandPropertyAssignment(prop)) {
         const fieldName = prop.name.text
-        if (topLevelBits.has(fieldName)) {
+        if (isTracked(fieldName)) {
           modified.push(fieldName)
         }
       }
@@ -2036,6 +2078,7 @@ function analyzeModifiedFields(
 function buildCaseHandler(
   f: ts.NodeFactory,
   caseDirty: number,
+  caseDirtyHi: number,
   arrayOp: ArrayOp,
 ): ts.ArrowFunction {
   const method =
@@ -2051,7 +2094,19 @@ function buildCaseHandler(
               ? 3
               : 0 // general
 
-  // (inst, msg) => __handleMsg(inst, msg, dirty, method)
+  // (inst, msg) => __handleMsg(inst, msg, dirty, method, [dirtyHi])
+  const args: ts.Expression[] = [
+    f.createIdentifier('inst'),
+    f.createIdentifier('msg'),
+    createMaskLiteral(f, caseDirty),
+    method >= 0
+      ? f.createNumericLiteral(method)
+      : f.createPrefixUnaryExpression(ts.SyntaxKind.MinusToken, f.createNumericLiteral(1)),
+  ]
+  // Emit the 5th positional arg only when the case touches a high-word
+  // field. Stale runtime bundles' _handleMsg signatures ignored that
+  // slot anyway; new ones (defaulted to 0) make it explicit when needed.
+  if (caseDirtyHi !== 0) args.push(createMaskLiteral(f, caseDirtyHi))
   return f.createArrowFunction(
     undefined,
     undefined,
@@ -2061,14 +2116,7 @@ function buildCaseHandler(
     ],
     undefined,
     f.createToken(ts.SyntaxKind.EqualsGreaterThanToken),
-    f.createCallExpression(f.createIdentifier('__handleMsg'), undefined, [
-      f.createIdentifier('inst'),
-      f.createIdentifier('msg'),
-      createMaskLiteral(f, caseDirty),
-      method >= 0
-        ? f.createNumericLiteral(method)
-        : f.createPrefixUnaryExpression(ts.SyntaxKind.MinusToken, f.createNumericLiteral(1)),
-    ]),
+    f.createCallExpression(f.createIdentifier('__handleMsg'), undefined, args),
   )
 }
 
@@ -3026,9 +3074,15 @@ function buildUpdateBody(f: ts.NodeFactory, structuralMask: number, _phase2Mask:
 
     // for (let i = 0; i < bl.length; i++) {
     //   const bk = bl[i];
-    //   if (!bk || (bk.mask & d) === 0) continue;
-    //   bk.reconcile(s, d)
+    //   if (!bk || !((bk.mask & d) | (bk.maskHi & dHi))) continue;
+    //   bk.reconcile(s, d, dHi)
     // }
+    // Two-word gate matches the runtime's `genericUpdate`: bits 0..30
+    // in `d`, bits 31..61 in `dHi`. For ≤31-prefix components both
+    // `bk.maskHi` and `dHi` are 0, so V8's inline cache collapses the
+    // OR back to the single-word check. >31-prefix components use the
+    // high word for precise gating.
+    //
     // Re-read bl.length each iteration and null-check bk — a branch's
     // reconcile may dispose the old scope, whose disposers splice child
     // structural blocks out of this shared array mid-iteration.
@@ -3069,16 +3123,27 @@ function buildUpdateBody(f: ts.NodeFactory, structuralMask: number, _phase2Mask:
                 f.createIdentifier('bk'),
               ),
               ts.SyntaxKind.BarBarToken,
-              f.createBinaryExpression(
+              f.createPrefixUnaryExpression(
+                ts.SyntaxKind.ExclamationToken,
                 f.createParenthesizedExpression(
                   f.createBinaryExpression(
-                    f.createPropertyAccessExpression(f.createIdentifier('bk'), 'mask'),
-                    ts.SyntaxKind.AmpersandToken,
-                    f.createIdentifier('d'),
+                    f.createParenthesizedExpression(
+                      f.createBinaryExpression(
+                        f.createPropertyAccessExpression(f.createIdentifier('bk'), 'mask'),
+                        ts.SyntaxKind.AmpersandToken,
+                        f.createIdentifier('d'),
+                      ),
+                    ),
+                    ts.SyntaxKind.BarToken,
+                    f.createParenthesizedExpression(
+                      f.createBinaryExpression(
+                        f.createPropertyAccessExpression(f.createIdentifier('bk'), 'maskHi'),
+                        ts.SyntaxKind.AmpersandToken,
+                        f.createIdentifier('dHi'),
+                      ),
+                    ),
                   ),
                 ),
-                ts.SyntaxKind.EqualsEqualsEqualsToken,
-                f.createNumericLiteral(0),
               ),
             ),
             f.createContinueStatement(),
@@ -3087,7 +3152,7 @@ function buildUpdateBody(f: ts.NodeFactory, structuralMask: number, _phase2Mask:
             f.createCallExpression(
               f.createPropertyAccessExpression(f.createIdentifier('bk'), 'reconcile'),
               undefined,
-              [f.createIdentifier('s'), f.createIdentifier('d')],
+              [f.createIdentifier('s'), f.createIdentifier('d'), f.createIdentifier('dHi')],
             ),
           ),
         ],
@@ -3224,12 +3289,13 @@ function buildUpdateBody(f: ts.NodeFactory, structuralMask: number, _phase2Mask:
     }
   }
 
-  // Phase 2: delegate to shared runtime — __runPhase2(s, d, b, p)
+  // Phase 2: delegate to shared runtime — __runPhase2(s, d, dHi, b, p)
   stmts.push(
     f.createExpressionStatement(
       f.createCallExpression(f.createIdentifier('__runPhase2'), undefined, [
         f.createIdentifier('s'),
         f.createIdentifier('d'),
+        f.createIdentifier('dHi'),
         f.createIdentifier('b'),
         f.createIdentifier('p'),
       ]),

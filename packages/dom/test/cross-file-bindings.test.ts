@@ -45,8 +45,7 @@ describe('cross-file bindings', () => {
           },
         })
       },
-      __dirty: (o, n) =>
-        (Object.is(o.page, n.page) ? 0 : 0b01) | (Object.is(o.label, n.label) ? 0 : 0b10),
+      __prefixes: [(s) => s.page, (s) => s.label],
     })
 
     const container = document.createElement('div')
