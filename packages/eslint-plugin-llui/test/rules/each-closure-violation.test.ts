@@ -16,7 +16,7 @@ ruleTester.run('each-closure-violation', eachClosureViolationRule, {
       code: `
       import { someHelper } from './utils'
       const GLOBAL_CONST = 1
-      
+
       const app = component({
         view: ({ each, send }) => {
           return [
@@ -36,6 +36,28 @@ ruleTester.run('each-closure-violation', eachClosureViolationRule, {
           ]
         }
       })
+      `,
+    },
+    // Generic slice helper captures `opts` (a function param of the
+    // enclosing helper) inside an event handler. Event handlers run at
+    // user-interaction time, not during reconciliation — captures here
+    // don't have the staleness pitfall a reactive binding would.
+    {
+      code: `
+      function tagSelectorView(h, opts) {
+        return [
+          each({
+            items: (s) => opts.getProps(s).selected,
+            key: (t) => t,
+            render: ({ item }) => [
+              button({
+                onClick: () => opts.send(opts.wrapMsg({ type: 'remove', tag: item() })),
+                onKeyDown: (e) => opts.handleKey(e, item()),
+              }, [])
+            ]
+          })
+        ]
+      }
       `,
     },
   ],

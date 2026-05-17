@@ -43,35 +43,16 @@ function bodyMayRead(body: TSESTree.Node): boolean {
 }
 
 function readsParam(node: TSESTree.Node, paramName: string): boolean {
+  // Any identifier reference to the param counts as a state read — direct
+  // member access (`s.tab`), call argument (`getKey(s)`), spread, etc.
+  // The body never re-binds the param, so any `Identifier` node with
+  // the param name is a usage.
   let found = false
   const visit = (n: TSESTree.Node | null | undefined) => {
     if (!n || found) return
-    if (
-      n.type === AST_NODE_TYPES.MemberExpression &&
-      n.object.type === AST_NODE_TYPES.Identifier &&
-      n.object.name === paramName
-    ) {
+    if (n.type === AST_NODE_TYPES.Identifier && n.name === paramName) {
       found = true
       return
-    }
-    if (
-      n.type === AST_NODE_TYPES.Identifier &&
-      n.name === paramName &&
-      // The bare identifier read counts only when used as something
-      // other than the object root we already detected. A `s` token
-      // alone is rare in `on` accessors but treat it as a state read.
-      true
-    ) {
-      // Skip when it's the `object` of a MemberExpression handled above.
-      const parent = (n as { parent?: TSESTree.Node }).parent
-      if (parent && parent.type === AST_NODE_TYPES.MemberExpression && parent.object === n) {
-        // Already counted via MemberExpression case.
-        return
-      }
-      // Bare identifier reference — author may have destructured the
-      // accessor's body (uncommon). Treat as a read.
-      // Do nothing; we don't want bare-name to count, since `on: (s) => 'x'`
-      // doesn't actually read state.
     }
     for (const key of Object.keys(n) as (keyof typeof n)[]) {
       if (key === 'parent' || key === 'loc' || key === 'range') continue

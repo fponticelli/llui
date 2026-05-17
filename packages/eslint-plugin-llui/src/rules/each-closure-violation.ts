@@ -145,7 +145,19 @@ export const eachClosureViolationRule = createRule({
                           'fallback',
                           'props',
                         ]
-                        if (propName && !structural.includes(String(propName))) {
+                        // Event handlers (`onClick`, `onInput`, `onMouseDown`,
+                        // `onKeyDown`, …) fire at user-interaction time, not
+                        // during reconciliation. Captures inside them are
+                        // standard (they're how the handler reaches `send`,
+                        // dispatch helpers, etc.) and don't have the
+                        // staleness pitfall reactive bindings do. Match
+                        // `/^on[A-Z]/` minus the three structural names
+                        // that share the prefix (`onMsg`/`onSuccess`/
+                        // `onError`, already in the list above).
+                        const propStr = propName == null ? '' : String(propName)
+                        const isEventHandler =
+                          /^on[A-Z]/.test(propStr) && !structural.includes(propStr)
+                        if (propStr && !structural.includes(propStr) && !isEventHandler) {
                           inBinding = true
                           break
                         }

@@ -21,6 +21,11 @@ ruleTester.run('static-on', staticOnRule, {
     // Zero-arg with a member expression read — also legitimate
     // (memo accessor, closure-captured selector, etc.).
     { code: `scope({ on: () => state.section, cases: {} })` },
+    // Generic slice helper: state passed to a call. The `s` reaches
+    // state via `opts.getKey(s)`, not via direct member access — still
+    // a reactive read.
+    { code: `scope({ on: (s) => opts.getKey(s), cases: {} })` },
+    { code: `branch({ on: (s) => derive(s, ctx), cases: {} })` },
     // No `on` prop — out of scope (other rules handle missing required fields).
     { code: `scope({ cases: {} })` },
     // Non-scope/branch call — ignored.

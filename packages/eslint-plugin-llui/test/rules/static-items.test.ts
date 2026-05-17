@@ -34,6 +34,16 @@ ruleTester.run('static-items', staticItemsRule, {
     {
       code: `each({ items: props.items, key: (i) => i.id, render: () => [] })`,
     },
+    // Generic slice helper: state read goes through an `opts.getProps(s)`
+    // call. `s` is passed as a call argument, not directly dereferenced —
+    // the rule must still recognize this as a state read.
+    {
+      code: `each({ items: (s) => opts.getProps(s).selected.slice(), key: (t) => t, render: () => [] })`,
+    },
+    // Same shape via a bag-form call.
+    {
+      code: `h.each({ items: (s) => getRows(s, ctx), key: (r) => r.id, render: () => [] })`,
+    },
     // No items prop — out of scope (other rules handle missing required fields).
     { code: `each({ key: (i) => i.id, render: () => [] })` },
     // Non-each call — ignored.

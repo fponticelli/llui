@@ -48,14 +48,16 @@ function bodyMayRead(body: TSESTree.Node): boolean {
 }
 
 function readsParam(node: TSESTree.Node, paramName: string): boolean {
+  // Any identifier reference to the param counts as a state read — direct
+  // member access (`s.field`), call argument (`opts.getProps(s)`), spread
+  // (`{ ...s }`), or even bare passthrough (`(s) => transform(s)`). The
+  // body is the function body only — the param declaration itself lives
+  // in `params`, not here, so any `Identifier` node with the param name
+  // is a usage.
   let found = false
   const visit = (n: TSESTree.Node | null | undefined) => {
     if (!n || found) return
-    if (
-      n.type === AST_NODE_TYPES.MemberExpression &&
-      n.object.type === AST_NODE_TYPES.Identifier &&
-      n.object.name === paramName
-    ) {
+    if (n.type === AST_NODE_TYPES.Identifier && n.name === paramName) {
       found = true
       return
     }
