@@ -11,6 +11,98 @@ All notable changes to LLui packages are documented here. LLui is a pre-1.0 proj
 
 Packages version in lockstep at release time: `@llui/dom`, `@llui/vite-plugin`, `@llui/test`, `@llui/router`, `@llui/transitions`, `@llui/components`, `@llui/vike` share a version line. `@llui/effects`, `@llui/mcp`, `@llui/eslint-plugin`, `@llui/agent`, and `llui-agent` have their own cadence.
 
+## 2026-05-16 — 0.1.0 (unified composition model)
+
+**Released:** `@llui/{dom,vite-plugin,components,vike,transitions,router,test,mcp,agent,eslint-plugin}@0.1.0`; `llui-agent@0.1.0`
+
+First minor bump of the 0.0.x line. Removes the two-tier `component()`/`child()` composition model in favor of a single primitive: view functions, with `combine()` for reducer composition and `subApp` as a lint-enforced escape hatch. Path-keyed reactivity (`__prefixes`) replaces the per-top-level-field `__dirty` bitmask and now supports up to 62 reactive paths per component (was 31). Every package re-lockstepped to `0.1.0` so the boundary between the old and new model is unambiguous.
+
+See [Migration from v0.0.x](/api/dom#migration) (`docs/designs/13 Migration from v0.0.x.md`) for the full migration recipe.
+
+### Breaking
+
+- **`@llui/dom@0.1.0`** — removed: `child()`, `addressOf`, `setAddressedDispatcher`, `propsMsg` / `receives` on `ComponentDef`, and the `AddressedEffect` runtime registry. Migrate every `child({ def, props, onMsg })` call to a view function that the parent invokes directly with the parent owning the child's state slice. Migrate addressed-effect cross-component coordination to shared parent state with `combine()`-routed slices; for adapter-layer push (vike persistent layouts), use the new `onLayerDataChange` callback.
+- **`@llui/dom@0.1.0`** — user-authored `__dirty` on `ComponentDef` is now rejected at `createComponentInstance` with a hard throw. The compiler emits `__prefixes` (path-keyed reactivity) automatically; hand-written `__dirty` is no longer accepted at the type level or at runtime.
+- **`@llui/vike@0.1.0`** — `def.propsMsg` is no longer honored as a persistent-layout-chain prop pusher. Use the new `onLayerDataChange` option on `RenderClientOptions` to dispatch state-update messages through the framework-supplied `AppHandle` when a layer's `lluiLayoutData[i]` slice changes across navigations.
+- **`@llui/eslint-plugin@0.1.0`** — `unnecessary-child` and `child-static-props` rules removed (their target primitive no longer exists). New `subapp-requires-reason` rule enforces a non-empty `reason` field on every `subApp({ reason, ... })` call. `bitmask-overflow` threshold raised 31 → 62 paths.
+
+### Migration
+
+- Replace every `child({ def, props, onMsg })` call with a view function: the child module exports `update(slice, msg)` and `view(props, send)` instead of a `ComponentDef`; the parent owns the slice and namespaces messages as `{ type: 'child-name', msg: ChildMsg }`. See `docs/designs/13 Migration from v0.0.x.md` for the worked example.
+- Replace mechanical "route by message-type prefix to a sub-reducer" parent reducers with `combine({ slice: reducer, ... })`. Messages must use `{ type: '${slice}/${action}', ... }` shape.
+- Replace addressed effects (`toToastManager.show(...)`) with shared parent state slices (`{ type: 'toasts/add', ... }`).
+- In `@llui/vike` apps, replace each `Layout` def's `propsMsg` with an `onLayerDataChange` callback on `createOnRenderClient({ onLayerDataChange: ... })`.
+- Delete any hand-written `__dirty` from `ComponentDef` literals. The compiler emits `__prefixes` automatically — for components built without `@llui/vite-plugin`, the runtime falls back to `FULL_MASK` (re-evaluate every binding every cycle).
+- Embed genuinely isolated TEA loops via `subApp({ reason, def, ... })` with a non-empty `reason` string explaining why state-lifetime isolation is required. Don't use `subApp` to "isolate a complex component" — extract a view function instead.
+
+### `@llui/dom@0.1.0`
+
+- **Added** `combine<S, M, E>({ slice: reducer, ... }, top?)` — reducer composition by `${slice}/${action}` message-prefix routing. Preserves top-level state reference equality when slices return unchanged.
+- **Added** `subApp({ reason, def, data?, onHandle? })` at `@llui/dom/escape-hatch` — embed an independent TEA loop with its own state lifetime. The `reason` field is required and surfaces in the rendered DOM as `data-llui-sub-app-reason`.
+- **Added** path-keyed reactivity runtime: `__prefixes` is the supported compiler-emitted dirty-detection mechanism. Each entry is a hoisted closure `(s: S) => unknown`; the runtime reference-compares `prefix(prev) !== prefix(next)` per entry.
+- **Added** two-word mask architecture: `Binding.maskHi`, `StructuralBlock.maskHi`, two-word `computeDirtyFromPrefixes` return type `[lo, hi]`. Supports up to 62 reactive paths per component before falling back to FULL_MASK. Gates emit as `(mask & d) | (maskHi & dHi)`; for ≤31-prefix components the high-word branch collapses on V8's inline cache.
+- **Breaking** — `child()`, `addressOf`, `setAddressedDispatcher`, addressed-effect registry removed. See top of release block.
+- **Breaking** — `propsMsg` / `receives` removed from `ComponentDef`, `AnyComponentDef`, `LazyDef`. `AppHandle.send` is the imperative external-dispatch surface.
+- **Breaking** — user-authored `__dirty` rejected at `createComponentInstance`. See top of release block.
+- **Improved** `_runPhase2` and `_handleMsg` widened with optional `dirtyHi` parameter (defaults to 0 — backward compat for stale compiled bundles). `__update` arrow gains trailing `dHi = 0` parameter; runtime passes `combinedDirtyHi` as the 6th positional arg.
+
+### `@llui/vite-plugin@0.1.0`
+
+- **Added** `__prefixes` emission for every component with reactive accessors. Replaces `__dirty` (which is no longer emitted at all). Path positions 0..30 land in the low-word mask, 31..61 in the high word.
+- **Added** per-binding `maskHi` literal emission via a 5th tuple slot on `elSplit` binding tuples and an optional 6th positional arg on `elTemplate`'s `__bind` callback. Emitted only when the binding reads a high-word prefix — the common ≤31-prefix case stays byte-identical to the pre-multi-word baseline.
+- **Added** two-word Phase 1 block gate emission in compiler-emitted `__update`: `!((bk.mask & d) | (bk.maskHi & dHi))`. `block.reconcile` and `__runPhase2` calls thread `dHi` through.
+- **Added** two-word `__handlers` case-handler emission: `_handleMsg(inst, msg, caseDirty, method, caseDirtyHi)` when (and only when) the case touches a high-word top-level field.
+- **Improved** `collectDeps` returns `{ lo, hi }` maps; `computeAccessorMask` returns `{ mask, maskHi, readsState }`.
+- **Breaking** — `__dirty` PropertyAssignment emission removed. Any tooling that grep'd compiled output for `__dirty:` should look for `__prefixes:` instead.
+
+### `@llui/components@0.1.0`
+
+- **Fixed** dialog-child-form-submit test cleanup after the `child()` primitive was removed.
+- **Improved** peer @llui/dom pinned to `^0.1.0`.
+
+### `@llui/vike@0.1.0`
+
+- **Added** `onLayerDataChange?: (ctx: { def, handle, newData, prevData }) => void` option on `RenderClientOptions`. Fires for each surviving layout layer whose `lluiLayoutData[i]` slice changed across a navigation; the user dispatches a state-update message through the supplied `AppHandle`.
+- **Breaking** — `def.propsMsg` is no longer consulted for persistent-layout chain prop pushes. See top of release block.
+
+### `@llui/test@0.1.0`
+
+- **Improved** peer @llui/dom pinned to `^0.1.0`. No user-visible API surface changes — internal helpers re-checked against the new ComponentDef shape.
+
+### `@llui/router@0.1.0`
+
+- **Improved** peer @llui/dom pinned to `^0.1.0`. No user-visible API surface changes.
+
+### `@llui/transitions@0.1.0`
+
+- **Improved** peer @llui/dom pinned to `^0.1.0`. No user-visible API surface changes.
+
+### `@llui/eslint-plugin@0.1.0`
+
+- **Added** `subapp-requires-reason` rule — enforces a non-empty `reason` string on every `subApp({ reason, ... })` call. The reason surfaces in the rendered DOM as `data-llui-sub-app-reason` for code-review visibility.
+- **Improved** `bitmask-overflow` threshold raised 31 → 62 paths to match the new two-word mask capacity. Message text rewritten to recommend state restructuring or view-function extraction rather than `child()` extraction.
+- **Breaking** — `unnecessary-child` rule removed. Its target call shape (`child(...)`) no longer exists.
+- **Breaking** — `child-static-props` rule removed. Its target call shape no longer exists.
+
+### `@llui/mcp@0.1.0`
+
+- **Improved** peer @llui/dom pinned to `^0.1.0`. No user-visible API surface changes; internal recompile against the new ComponentDef shape.
+
+### `@llui/agent@0.1.0`
+
+- **Improved** peer @llui/dom pinned to `^0.1.0`. No user-visible API surface changes.
+
+### `llui-agent@0.1.0`
+
+- **Improved** transitive bump on `@llui/agent` peer change.
+
+### Docs
+
+- Added `docs/designs/13 Migration from v0.0.x.md` — step-by-step migration guide covering all seven concrete migrations downstream apps need (child → view function, propsMsg → onLayerDataChange / slice ownership, addressed effects → shared state, mergeHandlers/sliceHandler → combine, user `__dirty` removal, subApp for genuine isolation, plus a mechanical sweep checklist).
+- Rewrote `docs/designs/01 Architecture.md` and `docs/designs/07 LLM Friendliness.md` around the unified composition model.
+- Site content (`getting-started.md`, `cookbook.md`, `architecture.md`, `api/dom.md`) swept for stale references to removed primitives.
+- See also `docs/proposals/unified-composition-model.md` (original design), `unified-composition-model-spike-result.md` (benchmark validation), `unified-composition-model-status.md` (branch status).
+
 ## 2026-05-16 — 0.0.40
 
 **Released:** `@llui/{dom,components,transitions}@0.0.40`; `@llui/{test,router}@0.0.41`; `@llui/vike@0.0.42`; `@llui/mcp@0.0.37`; `@llui/agent@0.0.58`; `llui-agent@0.0.22`
