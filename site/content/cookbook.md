@@ -170,9 +170,9 @@ case 'loadUser':
 
 ## Composition
 
-### Level 1: View Functions (default)
+### View Functions
 
-Split views into separate modules. Parent owns state, child operates on a slice.
+The only composition primitive. Split views into separate modules; the parent owns state, the child module operates on a slice of it.
 
 ```typescript
 // views/header.ts
@@ -363,9 +363,9 @@ type-safe: each sub-component gets a branded message variant (`{ type: 'confirm'
 msg: dialog.Msg }`) so the parent's `Msg` union is exhaustive and routing is
 explicit.
 
-**When NOT to use it:** for view-function composition (Level 1), where the
-parent owns the state directly and passes accessors down via `Props<T, S>`.
-`sliceHandler` is for genuine sub-components with their own update logic.
+**When NOT to use it:** for view-function composition where the parent owns
+the state directly and passes accessors down via `Props<T, S>`. `sliceHandler`
+is for genuine sub-modules with their own update logic.
 
 ### Type-level composition with `ChildState` / `ChildMsg`
 

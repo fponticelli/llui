@@ -205,14 +205,10 @@ const App = component<State, Msg, Effect>({
 
 ### Composition
 
-LLui supports two levels of composition:
-
-**Level 1 — View functions** (default): A module exports `update()` and `view()` functions. The parent owns state; the child operates on a slice.
-
-**Level 2 — `child()`** (opt-in): Full component boundary with own bitmask, update cycle, and scope tree. Use for library components or 30+ state paths.
+LLui has a single composition model: **view functions**. A module exports `update()` and `view()` functions; the parent owns all state and the child module operates on a slice of it.
 
 ```typescript
-// Level 1: view function
+// View function — the only composition primitive
 function todoItem(item: Accessor<Todo>, send: (msg: Msg) => void): Node[] {
   return [
     div({ class: 'todo' }, [
@@ -222,6 +218,20 @@ function todoItem(item: Accessor<Todo>, send: (msg: Msg) => void): Node[] {
   ]
 }
 ```
+
+When the parent reducer is mostly mechanical "route by message-type prefix to a sub-reducer," use `combine()`:
+
+```typescript
+import { combine } from '@llui/dom'
+
+const update = combine<State, Msg, Effect>({
+  todos: todosReducer,
+  filter: filterReducer,
+})
+// Dispatch: send({ type: 'todos/toggle', id })
+```
+
+For embedding a genuinely independent app (third-party bundled widget, demo embed), the escape hatch is `subApp({ reason, def, ... })` with a lint-enforced rationale string. Don't reach for it to "isolate a complex component" — path-keyed reactivity gates each binding precisely regardless of nesting depth.
 
 ### SSR
 

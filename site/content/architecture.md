@@ -107,20 +107,23 @@ todos       -> bit 4  (0x0010)
 
 ### The 31-bit limit
 
-The compiler uses a **single-word mask** with graceful overflow:
+The compiler uses **two-word masks** with graceful overflow:
 
-- **<=31 paths**: each path gets its own bit (positions 0-30). The Phase 2 check is a single bitwise AND -- the fastest path and the common case.
-- **32+ paths (overflow)**: the first 31 paths still get individual bits; paths 32+ use `FULL_MASK` (-1), meaning their bindings always re-evaluate when anything dirties.
+- **<=31 paths**: each path gets its own bit in the low word (positions 0-30). The Phase 2 check is a single bitwise AND -- the fastest path and the common case.
+- **32-61 paths**: paths 31-61 occupy a parallel high-word `maskHi`. The Phase 2 check becomes `(mask & d) | (maskHi & dHi)` -- one extra AND plus an OR, folded by V8's inline cache for the common case where `maskHi` is 0.
+- **62+ paths (overflow)**: paths past 61 use `FULL_MASK` (-1) in the low word, meaning their bindings always re-evaluate when anything dirties. The `bitmask-overflow` lint rule warns long before this fires.
 
-The compiler emits a warning naming the top-level state fields by path count, so the developer knows exactly where to extract a child component or slice handler:
+The compiler emits a warning naming the top-level state fields by path count, so the developer knows where to restructure or extract a view function:
 
 ```
-Component at line 120 has 45 unique state access paths (14 past the 31-path limit).
-Top-level fields by path count: form (18), user (12), ui (8), filter (7).
-Extract the largest fields into child components or slice handlers.
+Component at line 120 has 80 unique state access paths (18 past the 62-path limit).
+Top-level fields by path count: form (28), user (22), ui (18), filter (12).
+Restructure the largest fields under reference-stable parents, or factor that
+subtree into a separate module that consumes the parent's state via the
+standard `(props, send)` convention.
 ```
 
-The overflow path is cheap (~1 microsecond per update at 40-80 paths), but components at that scale usually benefit from decomposition on architectural grounds -- clearer effect lifecycle, easier testing, independent state.
+The overflow path is cheap (~1 microsecond per update at 60-80 paths), but components at that scale usually benefit from decomposition on architectural grounds -- clearer effect lifecycle, easier testing, independent state.
 
 ### Per-array handling
 

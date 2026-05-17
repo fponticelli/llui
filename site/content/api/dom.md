@@ -74,29 +74,30 @@ Element helpers (`div`, `button`, `span`, etc.) stay as imports -- they're state
 
 ### View Primitives
 
-| Primitive                         | Purpose                                       |
-| --------------------------------- | --------------------------------------------- |
-| `text(accessor)`                  | Reactive text node                            |
-| `show({ when, render })`          | Conditional rendering                         |
-| `branch({ on, cases, default? })` | Multi-case switching with optional default    |
-| `scope({ on, render })`           | Keyed subtree rebuild on key change           |
-| `each({ items, key, render })`    | Keyed list rendering                          |
-| `portal({ target, render })`      | Render into a different DOM location          |
-| `child({ def, key, props })`      | Full component boundary (Level 2 composition) |
-| `memo(accessor)`                  | Memoized derived value                        |
-| `sample(selector)`                | One-shot imperative state read (no binding)   |
-| `selector(field)`                 | O(1) one-of-N selection binding               |
-| `onMount(callback)`               | Lifecycle hook (runs once after mount)        |
-| `errorBoundary(opts)`             | Catch render errors                           |
-| `foreign({ create, update })`     | Integrate non-LLui libraries                  |
-| `slice(h, selector)`              | View over a sub-slice of state                |
+| Primitive                         | Purpose                                     |
+| --------------------------------- | ------------------------------------------- |
+| `text(accessor)`                  | Reactive text node                          |
+| `show({ when, render })`          | Conditional rendering                       |
+| `branch({ on, cases, default? })` | Multi-case switching with optional default  |
+| `scope({ on, render })`           | Keyed subtree rebuild on key change         |
+| `each({ items, key, render })`    | Keyed list rendering                        |
+| `portal({ target, render })`      | Render into a different DOM location        |
+| `memo(accessor)`                  | Memoized derived value                      |
+| `sample(selector)`                | One-shot imperative state read (no binding) |
+| `selector(field)`                 | O(1) one-of-N selection binding             |
+| `onMount(callback)`               | Lifecycle hook (runs once after mount)      |
+| `errorBoundary(opts)`             | Catch render errors                         |
+| `foreign({ create, update })`     | Integrate non-LLui libraries                |
+| `slice(h, selector)`              | View over a sub-slice of state              |
 
 ### Composition
 
-| Export                                    | Purpose                          |
-| ----------------------------------------- | -------------------------------- |
-| `mergeHandlers(...handlers)`              | Combine multiple update handlers |
-| `sliceHandler({ get, set, narrow, sub })` | Route messages to a state slice  |
+| Export                                      | Purpose                                                                        |
+| ------------------------------------------- | ------------------------------------------------------------------------------ |
+| `combine({ slice: reducer, ... }, top?)`    | Route messages of shape `${slice}/${action}` to slice reducers                 |
+| `mergeHandlers(...handlers)`                | Combine multiple update handlers                                               |
+| `sliceHandler({ get, set, narrow, sub })`   | Route messages to a state slice                                                |
+| `subApp({ reason, def, data?, onHandle? })` | Embed an isolated TEA loop (escape hatch — requires non-empty `reason` string) |
 
 ### Context
 
@@ -175,17 +176,6 @@ function hydrateApp<S, M, E>(
 
 ```typescript
 function flush(): void
-```
-
-### `addressOf()`
-
-Build a typed address builder from a component definition's `receives` map.
-
-```typescript
-function addressOf<S, M, E>(
-  def: ComponentDef<S, M, E>,
-  key: string | number,
-): Record<string, (params?: unknown) => AddressedEffect>
 ```
 
 ### `renderToString()`
@@ -437,10 +427,28 @@ function foreign<S, M, T extends Record<string, unknown>, Instance>(
 ): Node[]
 ```
 
-### `child()`
+### `combine()`
+
+Compose slice reducers by routing messages of shape `${slice}/${action}` to the matching slice. The slice reducer receives the message with `msg.type` rewritten to the un-prefixed form. Preserves top-level state reference equality when slices return unchanged, which keeps the path-keyed dirty walker precise.
 
 ```typescript
-function child<S, ChildM>(opts: ChildOptions<S, ChildM>): Node[]
+function combine<S, M extends { type: string }, E>(
+  slices: { [SliceKey: string]: (state: any, msg: any) => [any, E[]] },
+  top?: (state: S, msg: M) => [S, E[]],
+): (state: S, msg: M) => [S, E[]]
+```
+
+### `subApp()`
+
+Embed an independent TEA loop with its own state lifetime. The framework gives you the embedded app's `AppHandle` through `onHandle` for imperative `send` / `getState`. The `reason` field is required and non-empty; it surfaces in the rendered DOM as `data-llui-sub-app-reason` and is enforced at lint time by `llui/subapp-requires-reason`. Reserved for cases where the embedded code's state lifetime must be distinct from the host's — third-party bundled apps, demo embeds, separately-versioned libraries. Not a tool for decomposing complex views; use view functions for that.
+
+```typescript
+function subApp<S, M, E, D = void>(opts: {
+  reason: string
+  def: ComponentDef<S, M, E, D>
+  data?: D
+  onHandle?: (handle: AppHandle) => void
+}): Node[]
 ```
 
 ### `lazy()`
@@ -723,12 +731,11 @@ export interface ComponentDef<S, M, E = never, D = void> {
   view: (h: View<S, M>) => Node[]
   onEffect?: (ctx: { effect: E; send: Send<M>; signal: AbortSignal }) => void
 
-  // Level 2 composition
-  propsMsg?: (props: Record<string, unknown>) => M
-  receives?: Record<string, (params: unknown) => M>
-
-  /** @internal Compiler-injected */
-  __dirty?: (oldState: S, newState: S) => number | [number, number]
+  /** @internal Compiler-injected — path-keyed reactivity prefix table.
+   *  Replaces the legacy `__dirty` bitmask. Each entry is a stable
+   *  closure `(s: S) => unknown` hoisted at module scope; the array
+   *  position IS the bit position (0..30 → low word, 31..61 → high). */
+  __prefixes?: ReadonlyArray<(state: S) => unknown>
   /** @internal Compiler-injected */
   __renderToString?: (state: S) => string
   /** @internal Compiler-injected */
@@ -741,19 +748,24 @@ export interface ComponentDef<S, M, E = never, D = void> {
   __stateSchema?: object
   /** @internal Compiler-injected — Effect union schema (for introspection) */
   __effectSchema?: object
-  /** @internal Compiler-injected — replaces generic Phase 1 + Phase 2 loop */
+  /** @internal Compiler-injected — replaces generic Phase 1 + Phase 2 loop.
+   *  Trailing `dirtyHi` carries the high-word mask for 32..61-prefix
+   *  components; defaults to 0 for backward compat with stale 5-param bundles. */
   __update?: (
     state: S,
     dirty: number,
     bindings: Binding[],
     blocks: StructuralBlock[],
     bindingsBeforePhase1: number,
+    dirtyHi?: number,
   ) => void
   /** @internal Compiler-injected — per-message-type specialized handlers.
    *  Bypass the entire processMessages pipeline for single-message updates. */
   __handlers?: Record<string, (inst: object, msg: unknown) => [S, E[]]>
 }
 ```
+
+User-authored `__dirty` is no longer accepted — the compiler emits `__prefixes` automatically from accessor analysis, and the runtime throws at `createComponentInstance` if any user code sets `def.__dirty`. See [Migration from v0.0.x](/docs/designs/13%20Migration%20from%20v0.0.x.md) for the migration recipe.
 
 ### `LazyDef`
 
@@ -776,9 +788,7 @@ export interface LazyDef<D = void> {
   update(state: unknown, msg: unknown): [unknown, unknown[]]
   view(h: unknown): Node[]
   onEffect?: unknown
-  propsMsg?: unknown
-  receives?: unknown
-  __dirty?: unknown
+  __prefixes?: unknown
   __renderToString?: unknown
   __msgSchema?: unknown
   __maskLegend?: unknown
