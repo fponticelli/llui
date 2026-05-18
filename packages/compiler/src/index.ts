@@ -47,6 +47,7 @@ export {
   type ElementRewriteModuleOptions,
   type ElementRewriteSlot,
 } from './modules/element-rewrite.js'
+export { rowFactoryModule, type RowFactoryModuleOptions } from './modules/row-factory.js'
 export * from './msg-annotations.js'
 export * from './msg-schema.js'
 export * from './schema-hash.js'

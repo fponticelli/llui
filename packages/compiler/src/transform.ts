@@ -35,6 +35,7 @@ import {
   ELEMENT_REWRITE_SLOT,
   type ElementRewriteSlot,
 } from './modules/element-rewrite.js'
+import { rowFactoryModule } from './modules/row-factory.js'
 
 export function createMaskLiteral(f: ts.NodeFactory, mask: number): ts.Expression {
   if (mask >= 0) return f.createNumericLiteral(mask)
@@ -552,6 +553,19 @@ export function transformLlui(
       fieldBitsHi,
     }),
   )
+  // rowFactoryModule fires bottom-up (`transformCall` not
+  // `transformCallEnter`) so it observes the each() call AFTER the
+  // render body's element children have been rewritten by
+  // `elementRewriteModule` into `elTemplate(...)` calls. Without that
+  // ordering it would always bail (`if (!templateCall) return null`).
+  activeModules.push(
+    rowFactoryModule({
+      viewHelperNames,
+      viewHelperAliases,
+      filename: _filename,
+      source,
+    }),
+  )
   // structuralMaskModule injects `__mask` into each()/branch()/scope()/show()
   // options. Activated when the file has any low-word reactive paths
   // (matches the inline `fieldBits.size === 0` early-return). Module
@@ -745,33 +759,14 @@ export function transformLlui(
       return f.createEmptyStatement()
     }
 
-    // Pass 0: each() optimizations — all sub-passes migrated to
-    // modules (eachMemoModule v2c/decomp-13, itemDedupModule
-    // v2c/decomp-16, structuralMaskModule v2c/decomp-14). The
-    // remaining inline concern is the bottom-up row-factory emission,
-    // which depends on element rewrites having happened to children
-    // (`elTemplate` calls). When `tryTransformElementCall` migrates
-    // too, row-factory will move to a `transformCall` (bottom-up)
-    // module and this block disappears entirely.
-    if (
-      ts.isCallExpression(node) &&
-      isHelperCall(node.expression, 'each', viewHelperNames, viewHelperAliases)
-    ) {
-      const result = ts.visitEachChild(node, visitor, undefined!)
-      if (hasPos) edits.push({ start: origStart, end: origEnd, replacement: '' })
-      if (ts.isCallExpression(result)) {
-        try {
-          const rf = tryEmitRowFactory(result, f, source)
-          if (rf) return rf
-        } catch (err) {
-          const line = ts.getLineAndCharacterOfPosition(sourceFile, result.getStart())
-          console.warn(
-            `[llui] Row factory failed in ${_filename}:${line.line + 1} — ${(err as Error).message}`,
-          )
-        }
-      }
-      return result
-    }
+    // each() optimizations + row-factory all migrated to modules:
+    //   - memo-wrap        → eachMemoModule (v2c/decomp-13)
+    //   - item-dedup       → itemDedupModule (v2c/decomp-16)
+    //   - structural-mask  → structuralMaskModule (v2c/decomp-14)
+    //   - row-factory      → rowFactoryModule (v2c/decomp-18)
+    // Phase 2b chains the top-down hooks (memo, dedup, mask, element)
+    // then recurses, then fires the bottom-up exit hook (row-factory).
+    // The visitor's inline each() block is gone.
 
     if (ts.isCallExpression(node)) {
       // Pass 1: element rewrite (`div` → `elSplit`/`elTemplate`/
@@ -2417,7 +2412,7 @@ function _deadCode_legacyCaseHandler(
  * Runs AFTER the element transform pass has converted tr/td/text() calls
  * into elTemplate() calls, so we can analyze the template structure.
  */
-function tryEmitRowFactory(
+export function tryEmitRowFactory(
   eachCall: ts.CallExpression,
   f: ts.NodeFactory,
   _originalSource: string,
