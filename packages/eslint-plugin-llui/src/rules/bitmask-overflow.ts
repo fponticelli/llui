@@ -1,6 +1,7 @@
 import { AST_NODE_TYPES } from '@typescript-eslint/utils'
+import ts from 'typescript'
+import { collectAccessorPathSets, collectStatePathsFromSource } from '@llui/compiler'
 import { createRule } from '../createRule.js'
-import { collectAccessorPathSets, collectStatePaths } from '../util/state-paths.js'
 
 /**
  * Warns when a component reads more than 62 unique state paths.
@@ -121,7 +122,16 @@ export const bitmaskOverflowRule = createRule({
         findComponent(program)
         if (!componentCall) return
 
-        const paths = collectStatePaths(program)
+        // Re-parse via the TS Compiler API so we share the engine's path
+        // collector — same depth-2 normalisation, same accessor-delegation
+        // recursion, same FULL_MASK fallback. The ESTree mirror is gone.
+        const sf = ts.createSourceFile(
+          context.filename ?? 'input.ts',
+          context.sourceCode.text,
+          ts.ScriptTarget.Latest,
+          true,
+        )
+        const paths = collectStatePathsFromSource(sf)
         const pathCount = paths.size
         if (pathCount <= 62) return
 
@@ -142,7 +152,7 @@ export const bitmaskOverflowRule = createRule({
         const breakdown = sorted.map(([field, n]) => `${field} (${n})`).join(', ')
         const candidateList = candidates.map((f) => `\`${f}\``).join(', ')
 
-        const accessorSets = collectAccessorPathSets(program)
+        const accessorSets = collectAccessorPathSets(sf)
         const cooccurring = findCooccurringFields(paths, accessorSets)
         const cooccurrenceNote =
           cooccurring.length > 0

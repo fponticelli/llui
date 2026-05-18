@@ -310,7 +310,7 @@ The `key` prop is a framework-level identity hint for `each()`. It is explicitly
 
 ### Shared cross-file analysis
 
-Element props do not cross file boundaries. A component in `counter.ts` declares its own state type and its own bindings. No information from `counter.ts` is needed to compile `todo-list.ts`. The path-bit map is computed per file, not per application. There is no cross-file optimization opportunity that the current model misses. Introducing a cross-file analysis pass would require a persistent program object (`ts.Program` rather than `ts.createSourceFile`), which has significant overhead and complicates the Vite plugin lifecycle.
+> **Superseded.** This section is retracted as of v2a (see `docs/proposals/v2-compiler/`). The v2 architecture treats the compiler as a standalone engine consumed by adapters (Vite, ESLint, MCP), and v2b introduces a cross-file walker that descends into view-helper calls across file boundaries. The original framing — that there is "no cross-file optimization opportunity" — was true for the v0.x per-file walker but contradicts the v2b dicerun2 sentinel-`show()` win (`v2-compiler/shared.md` Appendix A). The section is kept here so historical readers see the framing it superseded; do not treat it as current.
 
 ### AST caching at the plugin level
 
@@ -343,13 +343,7 @@ The compiler emits plain JavaScript-style TypeScript (no type annotations in gen
 
 ### Type-level analysis via `ts.TypeChecker`
 
-The compiler's dependency analysis is syntactic: it recognises direct property access, destructuring, single-assignment aliases, and nested chains up to depth 2. These patterns cover the vast majority of real accessor code. However, `ts.TypeChecker` integration would enable two capabilities that syntactic analysis cannot provide:
-
-1. **Exhaustive path enumeration.** Given a state type `{ user: { name: string; email: string } }`, the type checker can enumerate all leaf paths without requiring the compiler to see them in accessor bodies. This would allow the compiler to assign bits proactively for all paths, not just those it observes — useful for `__dirty` generation where the full set of comparable paths is needed.
-
-2. **Computed access resolution.** For `const field: 'count' | 'title' = condition ? 'count' : 'title'; s[field]`, the type checker can determine that `field` is a union of string literals, allowing the compiler to assign the union of their bits rather than bailing out.
-
-The cost is constructing a `ts.Program` (which requires a `CompilerHost` and full resolution) rather than a bare `ts.SourceFile`. This is a meaningful increase in complexity but not a fundamental architectural change — the plugin would need to cache the `ts.Program` and invalidate it on file changes. This is a v2 enhancement; the syntactic analysis with bail-out warnings is sufficient for v1.
+> **Superseded.** This section is retracted as of v2a (see `docs/proposals/v2-compiler/`). The v2b cross-file walker depends on `ts.TypeChecker` directly (`v2-compiler/v2b.md` §6.3), so framing it as a deferred "v2 enhancement" is now historical. The TypeChecker dependency lands inside the engine (`@llui/compiler`) in v2b, scoped to the Vite adapter — ESLint stays AST-only per `v2-compiler/v2a.md` §2.2. The two capabilities the section names (exhaustive path enumeration, computed access resolution) remain valuable directions; their design home is now `v2-compiler/v2b.md` and `v2-compiler/v2c.md`.
 
 ### Automatic memo injection for repeated accessors
 

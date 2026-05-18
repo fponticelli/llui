@@ -342,6 +342,16 @@ importers:
         specifier: ^8.5.13
         version: 8.18.1
 
+  packages/compiler:
+    dependencies:
+      typescript:
+        specifier: ^6.0.2
+        version: 6.0.2
+    devDependencies:
+      '@types/node':
+        specifier: ^22.0.0
+        version: 22.19.15
+
   packages/components:
     dependencies:
       '@floating-ui/dom':
@@ -374,9 +384,15 @@ importers:
 
   packages/eslint-plugin-llui:
     dependencies:
+      '@llui/compiler':
+        specifier: workspace:*
+        version: link:../compiler
       '@typescript-eslint/utils':
         specifier: ^8.59.0
         version: 8.59.0(eslint@9.39.4(jiti@2.6.1))(typescript@6.0.2)
+      typescript:
+        specifier: ^6.0.2
+        version: 6.0.2
     devDependencies:
       '@types/node':
         specifier: ^22.0.0
@@ -461,6 +477,9 @@ importers:
 
   packages/vite-plugin:
     dependencies:
+      '@llui/compiler':
+        specifier: workspace:*
+        version: link:../compiler
       magic-string:
         specifier: ^0.30.21
         version: 0.30.21

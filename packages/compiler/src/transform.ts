@@ -583,6 +583,11 @@ export function transformLlui(
       })
       result = injectSchemaHash(result ?? node, schemaHash, f)
 
+      // __lluiCompilerEmitted: always emitted (not dev-gated). The Vite
+      // adapter's closeBundle integrity check scans the bundle for this
+      // marker; missing-in-build mode is a hard error.
+      result = injectCompilerEmittedMarker(result ?? node, f)
+
       if (result) {
         if (hasPos) edits.push({ start: origStart, end: origEnd, replacement: '' })
         return ts.visitEachChild(result, visitor, undefined!)
@@ -3745,6 +3750,41 @@ function injectMsgAnnotations(
     true,
   )
 
+  return f.createCallExpression(node.expression, node.typeArguments, [
+    newConfig,
+    ...node.arguments.slice(1),
+  ])
+}
+
+/**
+ * Build-time integrity marker. Every compiled `component()` call gets a
+ * `__lluiCompilerEmitted: 1` property; the Vite adapter's `closeBundle`
+ * hook scans the final bundle for the literal string `__lluiCompilerEmitted`
+ * and fails CI if the count is zero in `build` mode. See
+ * `docs/proposals/v2-compiler/v2a.md` §2.4 and `shared.md` §20.12.
+ *
+ * The marker is a regular object property — survives bundling and
+ * minification because `ComponentDef` objects are referenced by
+ * `mountApp()`. v2b's `__compilerVersion` (on the same object) will
+ * carry version info; for v2a the presence-check is sufficient.
+ */
+function injectCompilerEmittedMarker(
+  node: ts.CallExpression,
+  f: ts.NodeFactory,
+): ts.CallExpression {
+  const configArg = node.arguments[0]
+  if (!configArg || !ts.isObjectLiteralExpression(configArg)) return node
+  for (const prop of configArg.properties) {
+    if (
+      ts.isPropertyAssignment(prop) &&
+      ts.isIdentifier(prop.name) &&
+      prop.name.text === '__lluiCompilerEmitted'
+    ) {
+      return node
+    }
+  }
+  const markerProp = f.createPropertyAssignment('__lluiCompilerEmitted', f.createNumericLiteral(1))
+  const newConfig = f.createObjectLiteralExpression([...configArg.properties, markerProp], true)
   return f.createCallExpression(node.expression, node.typeArguments, [
     newConfig,
     ...node.arguments.slice(1),

@@ -19,14 +19,14 @@ import {
   hasUseClientDirective,
   type ExternalTypeSources,
   type PreExtractedSchemas,
-} from './transform.js'
+} from '@llui/compiler'
 import {
   findTypeSource,
   readComponentTypeArgNames,
   extractMsgAnnotationsCrossFile,
   extractDiscriminatedUnionSchemaCrossFile,
   type ResolveContext,
-} from './cross-file-resolver.js'
+} from '@llui/compiler'
 import ts from 'typescript'
 
 /**
@@ -834,6 +834,50 @@ export default function llui(options: LluiPluginOptions = {}): Plugin {
       return {
         code: s.toString(),
         map: s.generateMap({ source: id, includeContent: true, hires: true }),
+      }
+    },
+
+    // Build-time integrity check (v2a §2.4; shared.md §20.12). Every
+    // compiled component carries `__lluiCompilerEmitted: 1`; we scan the
+    // final bundle for that literal text. Zero occurrences in a production
+    // build means the project routed its TS through some other pipeline
+    // and the runtime would silently degrade to FULL_MASK — fail closed.
+    //
+    // Dev mode skips the check: dev users have HMR + warnings to find
+    // misconfiguration interactively. SSR builds also skip — the SSR
+    // pass may emit a stub module bundle that legitimately contains no
+    // components.
+    generateBundle(opts, bundle) {
+      if (devMode) return
+      if (opts.dir === undefined && opts.file === undefined) return
+      // The `ssr` flag on the output options is the cleanest signal for
+      // SSR builds; rollup adds it when Vite's build.ssr is set.
+      if ((opts as { ssr?: boolean }).ssr) return
+      let markerCount = 0
+      for (const chunk of Object.values(bundle)) {
+        if (chunk.type !== 'chunk') continue
+        // Count literal occurrences of the marker. `__lluiCompilerEmitted`
+        // is unique enough that false positives from user source are
+        // implausible.
+        let from = 0
+        const code = chunk.code
+        while (true) {
+          const i = code.indexOf('__lluiCompilerEmitted', from)
+          if (i < 0) break
+          markerCount++
+          from = i + '__lluiCompilerEmitted'.length
+        }
+      }
+      if (markerCount === 0) {
+        this.error(
+          '[llui] integrity check failed: no compiled `component()` calls found in ' +
+            'this bundle. Either the project has no LLui components (remove ' +
+            '`@llui/vite-plugin` from vite.config.ts), or the plugin order is wrong ' +
+            'and another transform is consuming TS before `@llui/vite-plugin` runs ' +
+            "(check `enforce: 'pre'`). The check looks for the `__lluiCompilerEmitted` " +
+            'property the compiler injects into every component. See ' +
+            'docs/proposals/v2-compiler/v2a.md §2.4.',
+        )
       }
     },
   }

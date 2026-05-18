@@ -1,0 +1,12 @@
+// @llui/compiler — engine. Adapters consume through these re-exports.
+// Migration in progress (see docs/proposals/v2-compiler/v2a.md §4.4).
+export * from './accessor-resolver.js'
+export * from './binding-descriptors.js'
+export * from './collect-deps.js'
+export * from './compiler-cache.js'
+export * from './cross-file-resolver.js'
+export * from './msg-annotations.js'
+export * from './msg-schema.js'
+export * from './schema-hash.js'
+export * from './state-schema.js'
+export * from './transform.js'

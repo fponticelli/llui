@@ -1,8 +1,5 @@
 import ts from 'typescript'
-import {
-  type MessageAnnotations,
-  type DispatchMode as MessageDispatchMode,
-} from './msg-annotations.js'
+import { type MessageAnnotations, type DispatchMode as MessageDispatchMode } from '@llui/compiler'
 import {
   type MsgSchema,
   type MsgField,

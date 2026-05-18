@@ -16,7 +16,9 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@typescript-eslint/utils": "^8.59.0"
+    "@llui/compiler": "workspace:*",
+    "@typescript-eslint/utils": "^8.59.0",
+    "typescript": "^6.0.2"
   },
   "peerDependencies": {
     "eslint": ">=8.0.0"

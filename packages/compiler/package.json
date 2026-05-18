@@ -1,14 +1,17 @@
 {
-  "name": "@llui/vite-plugin",
-  "version": "0.2.0",
+  "name": "@llui/compiler",
+  "version": "0.3.0-alpha.0",
   "type": "module",
   "sideEffects": false,
+  "private": true,
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
     }
   },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
   "files": [
     "dist"
   ],
@@ -18,33 +21,28 @@
     "lint": "eslint src",
     "test": "vitest run"
   },
-  "peerDependencies": {
-    "vite": "^8.0.0"
-  },
   "dependencies": {
-    "@llui/compiler": "workspace:*",
-    "magic-string": "^0.30.21",
     "typescript": "^6.0.2"
   },
-  "description": "LLui compiler — Vite plugin for compile-time bitmask optimization, template cloning, and source maps",
+  "devDependencies": {
+    "@types/node": "^22.0.0"
+  },
+  "description": "LLui compiler engine — static analysis + emission. Build-tool-agnostic library consumed by @llui/vite-plugin and @llui/eslint-plugin.",
   "keywords": [
     "llui",
-    "vite",
-    "plugin",
     "compiler",
     "typescript",
-    "optimization",
-    "bitmask"
+    "static-analysis"
   ],
   "author": "Franco Ponticelli <franco.ponticelli@gmail.com>",
   "license": "MIT",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/fponticelli/llui.git",
-    "directory": "packages/vite-plugin"
+    "directory": "packages/compiler"
   },
   "bugs": {
     "url": "https://github.com/fponticelli/llui/issues"
   },
-  "homepage": "https://github.com/fponticelli/llui/tree/main/packages/vite-plugin#readme"
+  "homepage": "https://github.com/fponticelli/llui/tree/main/packages/compiler#readme"
 }
