@@ -384,16 +384,17 @@ Update [`shared.md`](./shared.md) §20.9 to record that the public ABI decision 
 
 **Modules now LIVE in `transformLlui`'s production pipeline:**
 
-| Module                                                              | Activation                                              | Replaces                                                              |
-| ------------------------------------------------------------------- | ------------------------------------------------------- | --------------------------------------------------------------------- |
-| `componentMetaModule`                                               | `devMode` only                                          | inline `injectComponentMeta`                                          |
-| `stateSchemaModule({ stateSchema })`                                | `shouldEmitAgentMetadata` + has stateSchema             | inline `injectStateSchema`                                            |
-| `msgAnnotationsModule({ msgAnnotations })`                          | `shouldEmitAgentMetadata` + non-null map                | inline `injectMsgAnnotations`                                         |
-| `msgSchemaModule({ msgSchema, effectSchema })`                      | `shouldEmitAgentMetadata` + at least one schema         | inline `injectMsgSchema` + `injectEffectSchema`                       |
-| `schemaHashModule`                                                  | always (even non-agent — deterministic null-input hash) | inline `injectSchemaHash`                                             |
-| `maskLegendModule({ fieldBits, fieldBitsHi })`                      | `fieldBits.size > 0 \|\| fieldBitsHi.size > 0`          | inline `legendProp` build inside `tryInjectDirty`                     |
-| `compilerStampModule`                                               | always (umbrella mandatory)                             | inline `injectCompilerEmittedMarker`                                  |
-| `eachMemoModule({ fieldBits, viewHelperNames, viewHelperAliases })` | `fieldBits.size > 0 \|\| fieldBitsHi.size > 0`          | inline `tryWrapEachItemsWithMemo` (top-down via `transformCallEnter`) |
+| Module                                                                    | Activation                                              | Replaces                                                                                        |
+| ------------------------------------------------------------------------- | ------------------------------------------------------- | ----------------------------------------------------------------------------------------------- |
+| `componentMetaModule`                                                     | `devMode` only                                          | inline `injectComponentMeta`                                                                    |
+| `stateSchemaModule({ stateSchema })`                                      | `shouldEmitAgentMetadata` + has stateSchema             | inline `injectStateSchema`                                                                      |
+| `msgAnnotationsModule({ msgAnnotations })`                                | `shouldEmitAgentMetadata` + non-null map                | inline `injectMsgAnnotations`                                                                   |
+| `msgSchemaModule({ msgSchema, effectSchema })`                            | `shouldEmitAgentMetadata` + at least one schema         | inline `injectMsgSchema` + `injectEffectSchema`                                                 |
+| `schemaHashModule`                                                        | always (even non-agent — deterministic null-input hash) | inline `injectSchemaHash`                                                                       |
+| `maskLegendModule({ fieldBits, fieldBitsHi })`                            | `fieldBits.size > 0 \|\| fieldBitsHi.size > 0`          | inline `legendProp` build inside `tryInjectDirty`                                               |
+| `compilerStampModule`                                                     | always (umbrella mandatory)                             | inline `injectCompilerEmittedMarker`                                                            |
+| `eachMemoModule({ fieldBits, viewHelperNames, viewHelperAliases })`       | `fieldBits.size > 0 \|\| fieldBitsHi.size > 0`          | inline `tryWrapEachItemsWithMemo` (top-down via `transformCallEnter`)                           |
+| `structuralMaskModule({ fieldBits, viewHelperNames, viewHelperAliases })` | `fieldBits.size > 0`                                    | inline `tryInjectStructuralMask` for each/branch/scope/show (top-down via `transformCallEnter`) |
 
 ~~The `injectCompilerEmittedMarker` (emits `__lluiCompilerEmitted` + `__compilerVersion`) remains inline as the only umbrella-level always-on emission. A `compiler-shared` mandatory-module pattern could absorb it; not load-bearing for this push.~~ **Done in v2c/decomp-10.** `compilerStampModule` now owns both `__lluiCompilerEmitted` and `__compilerVersion`; emission is per-target through the registry bridge. The umbrella's visitor branch contains zero inline injectors — every per-component metadata field flows through `applyRegistryEmissions`. The `tryInjectDirty` core-emission path is untouched (it still owns `__update`, `__handlers`, `__prefixes` together) and remains the only non-registry emitter.
 

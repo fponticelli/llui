@@ -35,6 +35,10 @@ export {
   type EachMemoModuleOptions,
   type EachMemoSlot,
 } from './modules/each-memo.js'
+export {
+  structuralMaskModule,
+  type StructuralMaskModuleOptions,
+} from './modules/structural-mask.js'
 export * from './msg-annotations.js'
 export * from './msg-schema.js'
 export * from './schema-hash.js'
