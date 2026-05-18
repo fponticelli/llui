@@ -28,6 +28,7 @@ import { maskLegendModule } from './modules/mask-legend.js'
 import { compilerStampModule } from './modules/compiler-stamp.js'
 import { eachMemoModule, EACH_MEMO_SLOT, type EachMemoSlot } from './modules/each-memo.js'
 import { structuralMaskModule } from './modules/structural-mask.js'
+import { textMaskModule } from './modules/text-mask.js'
 
 export function createMaskLiteral(f: ts.NodeFactory, mask: number): ts.Expression {
   if (mask >= 0) return f.createNumericLiteral(mask)
@@ -532,6 +533,19 @@ export function transformLlui(
       }),
     )
   }
+  // textMaskModule injects a `__mask` (precise or FULL_MASK) as
+  // text()'s second argument on every eligible text() call. Activated
+  // unconditionally — the inline `tryInjectTextMask` had no early
+  // return on empty fieldBits and always emitted FULL_MASK in the
+  // zero-path case so the runtime sees a uniform 2-arg shape.
+  activeModules.push(
+    textMaskModule({
+      fieldBits,
+      viewHelperNames,
+      viewHelperAliases,
+      lluiImport,
+    }),
+  )
   const registry = new ModuleRegistry(activeModules)
   const registryResult = registry.run(sourceFile)
   // The registry phases (preTransform v2c/decomp-7, transformCall
@@ -729,24 +743,10 @@ export function transformLlui(
         return ts.visitEachChild(transformed, visitor, undefined!)
       }
 
-      // Pass 2: Inject mask into text() calls
-      const textTransformed = tryInjectTextMask(
-        node,
-        lluiImport,
-        viewHelperNames,
-        viewHelperAliases,
-        fieldBits,
-        f,
-      )
-      if (textTransformed) {
-        if (hasPos) edits.push({ start: origStart, end: origEnd, replacement: '' })
-        return textTransformed
-      }
-
-      // `__mask` injection on each()/branch()/scope()/show() moved to
-      // `structuralMaskModule` (v2c/decomp-14). Phase 2b ran before
-      // this visitor; the call's options literal already carries
-      // `__mask` if it was eligible.
+      // text() mask injection moved to `textMaskModule` (v2c/decomp-15).
+      // Structural-mask injection (each/branch/scope/show) moved to
+      // `structuralMaskModule` (v2c/decomp-14). Both ran in Phase 2b
+      // before this visitor; nothing to do here.
     }
 
     // Pass 2: Inject __dirty, __update, and __msgSchema into component() calls
@@ -1586,49 +1586,9 @@ export function isHelperCall(
   return false
 }
 
-function tryInjectTextMask(
-  node: ts.CallExpression,
-  lluiImport: ts.ImportDeclaration,
-  viewHelperNames: Set<string>,
-  viewHelperAliases: Map<string, string>,
-  fieldBits: Map<string, number>,
-  f: ts.NodeFactory,
-): ts.CallExpression | null {
-  if (!isHelperCall(node.expression, 'text', viewHelperNames, viewHelperAliases)) {
-    return null
-  }
-
-  // For a bare identifier `text`, verify it actually resolves to the @llui/dom
-  // import (otherwise a user-defined `text` in scope would be rewritten).
-  // Destructured-alias and member-expression forms are already provenance-safe.
-  if (ts.isIdentifier(node.expression) && !viewHelperAliases.has(node.expression.text)) {
-    const clause = lluiImport.importClause
-    if (!clause?.namedBindings || !ts.isNamedImports(clause.namedBindings)) return null
-    const hasText = clause.namedBindings.elements.some(
-      (s) => s.name.text === 'text' || s.propertyName?.text === 'text',
-    )
-    if (!hasText) return null
-  }
-
-  const firstArg = node.arguments[0]
-  if (!firstArg) return null
-  // Don't inject if mask already provided
-  if (node.arguments.length >= 2) return null
-  // Resolve the accessor body — accepts inline arrows, `memo(arrow)`, or
-  // identifier references to a const-bound arrow / `memo(...)` / function
-  // declaration in scope. Anything else (static strings, opaque imports,
-  // parameters) leaves the call as-is — the runtime falls back to
-  // FULL_MASK, which is correct but slower.
-  const accessor = resolveAccessorBody(firstArg)
-  if (!accessor) return null
-
-  const { mask } = computeAccessorMask(accessor, fieldBits)
-
-  return f.createCallExpression(node.expression, node.typeArguments, [
-    firstArg,
-    createMaskLiteral(f, mask === 0 ? 0xffffffff | 0 : mask),
-  ])
-}
+// text() `__mask` injection — migrated to `textMaskModule`
+// (v2c/decomp-15). Module fires top-down (transformCallEnter); the
+// visitor sees the masked form.
 
 // `__mask` injection on each()/branch()/scope()/show() — migrated to
 // `structuralMaskModule` (v2c/decomp-14). Module fires top-down

@@ -28,6 +28,7 @@ import ts from 'typescript'
 import { computeSchemaHash } from '../schema-hash.js'
 import type { MessageAnnotations } from '../msg-annotations.js'
 import type { CompilerModule, EmissionContribution } from '../module.js'
+import { findComponentCalls } from './_shared.js'
 
 /**
  * Slot shape modules write to populate this module's inputs. Sibling
@@ -76,19 +77,7 @@ export const schemaHashModule: CompilerModule = {
     // hash), but per-target matches the per-call splice the monolith
     // performed via injectSchemaHash and avoids changing the bridge's
     // existing field-distribution semantics for this migration.
-    const componentCalls: ts.CallExpression[] = []
-    const visit = (n: ts.Node): void => {
-      if (
-        ts.isCallExpression(n) &&
-        ts.isIdentifier(n.expression) &&
-        n.expression.text === 'component'
-      ) {
-        componentCalls.push(n)
-      }
-      ts.forEachChild(n, visit)
-    }
-    visit(ctx.sourceFile)
-    return componentCalls.map((call) => ({
+    return findComponentCalls(ctx.sourceFile).map((call) => ({
       module: 'schema-hash',
       field: '__schemaHash',
       value: ts.factory.createStringLiteral(hash),

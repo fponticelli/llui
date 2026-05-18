@@ -15,16 +15,10 @@
 // `injectSchemaHash` in transform.ts also deletes — see
 // v2c/decomp-5's migration.
 
-import ts from 'typescript'
 import type { CompilerModule, EmissionContribution } from '../module.js'
 import { msgSchemaToLiteral, type MsgSchema } from '../msg-schema.js'
 import { SCHEMA_HASH_INPUTS_SLOT, type SchemaHashInputs } from './schema-hash.js'
-
-interface MsgSchemaSlot {
-  calls: ts.CallExpression[]
-}
-
-const SLOT_NAME = 'msg-schema:calls'
+import { findComponentCalls } from './_shared.js'
 
 export interface MsgSchemaModuleOptions {
   /** Pre-computed Msg schema; null when extraction failed. */
@@ -38,15 +32,8 @@ export function msgSchemaModule(opts: MsgSchemaModuleOptions): CompilerModule {
     name: 'msg-schema',
     compilerVersion: '^0.3.0',
     diagnostics: [],
-
-    visitors: {
-      [ts.SyntaxKind.CallExpression]: (ctx, node) => {
-        const call = node as ts.CallExpression
-        if (!ts.isIdentifier(call.expression) || call.expression.text !== 'component') return
-        const slot = ctx.getSlot<MsgSchemaSlot>(SLOT_NAME, () => ({ calls: [] }))
-        slot.calls.push(call)
-      },
-    },
+    // Targets captured in `emit` — see `_shared.ts`.
+    visitors: {},
 
     emit(ctx, analysis): EmissionContribution[] {
       // Populate schema-hash inputs slot with our msgSchema input — the
@@ -66,10 +53,10 @@ export function msgSchemaModule(opts: MsgSchemaModuleOptions): CompilerModule {
           } as SchemaHashInputs)
         }
       }
-      const slot = analysis.perModule.get(SLOT_NAME) as MsgSchemaSlot | undefined
-      if (!slot || slot.calls.length === 0) return []
+      const calls = findComponentCalls(analysis.sourceFile)
+      if (calls.length === 0) return []
       const out: EmissionContribution[] = []
-      for (const call of slot.calls) {
+      for (const call of calls) {
         if (opts.msgSchema !== null) {
           out.push({
             module: 'msg-schema',

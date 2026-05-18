@@ -14,43 +14,32 @@
 // file gets its own pair. Always-on regardless of agent/dev mode —
 // no activation gate. This is the umbrella's mandatory module.
 
-import ts from 'typescript'
 import { COMPILER_VERSION } from '../version.js'
 import type { CompilerModule, EmissionContribution } from '../module.js'
+import { findComponentCalls } from './_shared.js'
 
 export const compilerStampModule: CompilerModule = {
   name: 'compiler-stamp',
   compilerVersion: '^0.3.0',
   diagnostics: [],
-
-  visitors: {
-    [ts.SyntaxKind.CallExpression]: (ctx, node) => {
-      const call = node as ts.CallExpression
-      if (!ts.isIdentifier(call.expression) || call.expression.text !== 'component') return
-      const slot = ctx.getSlot('compiler-stamp', () => ({ targets: [] as ts.CallExpression[] }))
-      slot.targets.push(call)
-    },
-  },
+  // Targets captured in `emit` — see `_shared.ts`.
+  visitors: {},
 
   emit(ctx, analysis) {
-    const slot = analysis.perModule.get('compiler-stamp') as
-      | { targets: ts.CallExpression[] }
-      | undefined
-    if (!slot || slot.targets.length === 0) return []
     const f = ctx.factory
     const contributions: EmissionContribution[] = []
-    for (const target of slot.targets) {
+    for (const n of findComponentCalls(analysis.sourceFile)) {
       contributions.push({
         module: 'compiler-stamp',
         field: '__lluiCompilerEmitted',
         value: f.createNumericLiteral(1),
-        target,
+        target: n,
       })
       contributions.push({
         module: 'compiler-stamp',
         field: '__compilerVersion',
         value: f.createStringLiteral(COMPILER_VERSION),
-        target,
+        target: n,
       })
     }
     return contributions

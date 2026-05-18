@@ -12,17 +12,10 @@
 // data + type-source overrides are already wired) and frees the module
 // from re-implementing input resolution.
 
-import ts from 'typescript'
 import type { CompilerModule, EmissionContribution } from '../module.js'
 import { stateTypeToLiteral, type StateSchema } from '../state-schema.js'
 import { SCHEMA_HASH_INPUTS_SLOT, type SchemaHashInputs } from './schema-hash.js'
-
-interface StateSchemaSlot {
-  /** Component() calls discovered in the file, in source order. */
-  calls: ts.CallExpression[]
-}
-
-const SLOT_NAME = 'state-schema:calls'
+import { findComponentCalls } from './_shared.js'
 
 export interface StateSchemaModuleOptions {
   /** Pre-computed schema (cross-file aware) — null when extraction failed. */
@@ -34,20 +27,13 @@ export function stateSchemaModule(opts: StateSchemaModuleOptions): CompilerModul
     name: 'state-schema',
     compilerVersion: '^0.3.0',
     diagnostics: [],
-
-    visitors: {
-      [ts.SyntaxKind.CallExpression]: (ctx, node) => {
-        const call = node as ts.CallExpression
-        if (!ts.isIdentifier(call.expression) || call.expression.text !== 'component') return
-        const slot = ctx.getSlot<StateSchemaSlot>(SLOT_NAME, () => ({ calls: [] }))
-        slot.calls.push(call)
-      },
-    },
+    // Targets captured in `emit` — see `_shared.ts`.
+    visitors: {},
 
     emit(ctx, analysis): EmissionContribution[] {
       if (!opts.stateSchema) return []
-      const slot = analysis.perModule.get(SLOT_NAME) as StateSchemaSlot | undefined
-      if (!slot || slot.calls.length === 0) return []
+      const calls = findComponentCalls(analysis.sourceFile)
+      if (calls.length === 0) return []
 
       // Populate the schema-hash inputs slot. The schema-hash module
       // reads this on its own emit pass and computes the hash. Module
@@ -67,10 +53,7 @@ export function stateSchemaModule(opts: StateSchemaModuleOptions): CompilerModul
         } as SchemaHashInputs)
       }
 
-      // Emit per-component-call __stateSchema. The literal shape
-      // mirrors the monolith's `injectStateSchema` exactly:
-      // `{ kind: 'object', fields: { ...stateTypeToLiteral entries... } }`.
-      return slot.calls.map((call) => ({
+      return calls.map((call) => ({
         module: 'state-schema',
         field: '__stateSchema',
         value: stateTypeToLiteral(

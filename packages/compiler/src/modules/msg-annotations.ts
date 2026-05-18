@@ -10,7 +10,6 @@
 // emission is suppressed (runtime treats absence as defaults). This is
 // a real win for un-annotated Msg unions, which dominate.
 
-import ts from 'typescript'
 import type { CompilerModule, EmissionContribution } from '../module.js'
 import {
   annotationsToObjectLiteral,
@@ -18,12 +17,7 @@ import {
   type MessageAnnotations,
 } from '../msg-annotations.js'
 import { SCHEMA_HASH_INPUTS_SLOT, type SchemaHashInputs } from './schema-hash.js'
-
-interface MsgAnnotationsSlot {
-  calls: ts.CallExpression[]
-}
-
-const SLOT_NAME = 'msg-annotations:calls'
+import { findComponentCalls } from './_shared.js'
 
 export interface MsgAnnotationsModuleOptions {
   /** Pre-computed annotation map. Null when extraction failed; empty
@@ -36,15 +30,8 @@ export function msgAnnotationsModule(opts: MsgAnnotationsModuleOptions): Compile
     name: 'msg-annotations',
     compilerVersion: '^0.3.0',
     diagnostics: [],
-
-    visitors: {
-      [ts.SyntaxKind.CallExpression]: (ctx, node) => {
-        const call = node as ts.CallExpression
-        if (!ts.isIdentifier(call.expression) || call.expression.text !== 'component') return
-        const slot = ctx.getSlot<MsgAnnotationsSlot>(SLOT_NAME, () => ({ calls: [] }))
-        slot.calls.push(call)
-      },
-    },
+    // Targets captured in `emit` — see `_shared.ts`.
+    visitors: {},
 
     emit(_ctx, analysis): EmissionContribution[] {
       const annotations = opts.msgAnnotations
@@ -66,9 +53,9 @@ export function msgAnnotationsModule(opts: MsgAnnotationsModuleOptions): Compile
         }
       }
       if (!annotations || !hasNonDefaultAnnotation(annotations)) return []
-      const slot = analysis.perModule.get(SLOT_NAME) as MsgAnnotationsSlot | undefined
-      if (!slot || slot.calls.length === 0) return []
-      return slot.calls.map((call) => ({
+      const calls = findComponentCalls(analysis.sourceFile)
+      if (calls.length === 0) return []
+      return calls.map((call) => ({
         module: 'msg-annotations',
         field: '__msgAnnotations',
         value: annotationsToObjectLiteral(annotations),

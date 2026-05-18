@@ -10,48 +10,25 @@
 // its own line number, and the conflict-detector lets each emission
 // through because the `(field, target)` tuples are distinct.
 
-import ts from 'typescript'
 import type { CompilerModule, EmissionContribution } from '../module.js'
-
-interface ComponentMetaSlot {
-  /** All component() calls discovered in the file, in source order. */
-  calls: ts.CallExpression[]
-}
-
-const SLOT_NAME = 'component-meta:calls'
+import { findComponentCalls } from './_shared.js'
 
 export const componentMetaModule: CompilerModule = {
   name: 'component-meta',
   compilerVersion: '^0.3.0',
   diagnostics: [],
-
-  visitors: {
-    [ts.SyntaxKind.CallExpression]: (ctx, node) => {
-      const call = node as ts.CallExpression
-      // Match `component(...)` — identifier callee, name 'component'.
-      // The umbrella's import-resolution step disambiguates against
-      // `@llui/dom`'s component vs. a user-local function of the same
-      // name; for this POC we accept all `component(...)` calls and
-      // rely on the import-resolution pass to filter at emission time.
-      // (The monolith's injectComponentMeta does the same — it sees
-      // every component() call site after the visitor walk.)
-      if (!ts.isIdentifier(call.expression) || call.expression.text !== 'component') {
-        return
-      }
-      const slot = ctx.getSlot<ComponentMetaSlot>(SLOT_NAME, () => ({ calls: [] }))
-      slot.calls.push(call)
-    },
-  },
+  // Targets captured in `emit` (not `visit`) — see `_shared.ts`
+  // `findComponentCalls` for the rationale (Phase 2b rebuilds
+  // ancestor nodes, invalidating visit-captured refs).
+  visitors: {},
 
   emit(ctx, analysis): EmissionContribution[] {
-    const slot = analysis.perModule.get(SLOT_NAME) as ComponentMetaSlot | undefined
-    if (!slot || slot.calls.length === 0) return []
-    const sf = ctx.sourceFile
+    const sf = analysis.sourceFile
+    const calls = findComponentCalls(sf)
+    if (calls.length === 0) return []
     const out: EmissionContribution[] = []
-    for (const call of slot.calls) {
-      // Position computation: getStart against the source file. For
-      // synthetic nodes (pos < 0) we fall back to line 0.
-      const pos = call.pos >= 0 ? call.getStart(sf) : 0
+    for (const n of calls) {
+      const pos = n.pos >= 0 ? n.getStart(sf) : 0
       const { line } = sf.getLineAndCharacterOfPosition(pos)
       const meta = ctx.factory.createObjectLiteralExpression(
         [
@@ -67,7 +44,7 @@ export const componentMetaModule: CompilerModule = {
         module: 'component-meta',
         field: '__componentMeta',
         value: meta,
-        target: call,
+        target: n,
       })
     }
     return out

@@ -39,6 +39,7 @@ export {
   structuralMaskModule,
   type StructuralMaskModuleOptions,
 } from './modules/structural-mask.js'
+export { textMaskModule, type TextMaskModuleOptions } from './modules/text-mask.js'
 export * from './msg-annotations.js'
 export * from './msg-schema.js'
 export * from './schema-hash.js'
