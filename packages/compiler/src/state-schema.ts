@@ -1,5 +1,59 @@
 import ts from 'typescript'
 
+/**
+ * Build a TypeScript expression representing the given StateType as a
+ * runtime-readable literal. The emission shape mirrors the StateType
+ * tagged union — `string`/`number`/`boolean`/`unknown` become string
+ * literals; the structural kinds become object literals with a `kind`
+ * field plus the appropriate payload (`of`/`fields`/`values`).
+ *
+ * Used by `stateSchemaModule` for `__stateSchema` emission. The shape
+ * is the runtime/agent contract; downstream tools (MCP introspection,
+ * agent's "what type is this field?") consume it.
+ */
+export function stateTypeToLiteral(t: StateType, f: ts.NodeFactory): ts.Expression {
+  if (typeof t === 'string') return f.createStringLiteral(t)
+  if (t.kind === 'enum') {
+    return f.createObjectLiteralExpression([
+      f.createPropertyAssignment('kind', f.createStringLiteral('enum')),
+      f.createPropertyAssignment(
+        'values',
+        f.createArrayLiteralExpression(t.values.map((v) => f.createStringLiteral(v))),
+      ),
+    ])
+  }
+  if (t.kind === 'array') {
+    return f.createObjectLiteralExpression([
+      f.createPropertyAssignment('kind', f.createStringLiteral('array')),
+      f.createPropertyAssignment('of', stateTypeToLiteral(t.of, f)),
+    ])
+  }
+  if (t.kind === 'optional') {
+    return f.createObjectLiteralExpression([
+      f.createPropertyAssignment('kind', f.createStringLiteral('optional')),
+      f.createPropertyAssignment('of', stateTypeToLiteral(t.of, f)),
+    ])
+  }
+  if (t.kind === 'union') {
+    return f.createObjectLiteralExpression([
+      f.createPropertyAssignment('kind', f.createStringLiteral('union')),
+      f.createPropertyAssignment(
+        'of',
+        f.createArrayLiteralExpression(t.of.map((m) => stateTypeToLiteral(m, f))),
+      ),
+    ])
+  }
+  // object
+  const fieldProps: ts.PropertyAssignment[] = []
+  for (const [k, v] of Object.entries(t.fields)) {
+    fieldProps.push(f.createPropertyAssignment(f.createStringLiteral(k), stateTypeToLiteral(v, f)))
+  }
+  return f.createObjectLiteralExpression([
+    f.createPropertyAssignment('kind', f.createStringLiteral('object')),
+    f.createPropertyAssignment('fields', f.createObjectLiteralExpression(fieldProps, true)),
+  ])
+}
+
 export type StateType =
   | 'string'
   | 'number'

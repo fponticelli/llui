@@ -372,15 +372,29 @@ Update [`shared.md`](./shared.md) §20.9 to record that the public ABI decision 
 4. **`llui.config.ts` shape + factory-call enforcement** (v2c §2.3 / Phase 4 of the original roadmap). `defineConfig({ modules: [core(), agent(), ...] })`. Missing-config → `[core(), devtools()]` defaults. `modules: []` → hard error. Test fixtures cover every path.
 5. **Bundle-size goldens.** A fixture project with `modules: [core()]` (no agent / no ssr / no devtools) produces a bundle that contains _zero_ references to `__msgSchema`, `__renderToString`, or `_eachDiffLog`. Asserted by reading `dist/` and grepping. This is the §2.2 "stripping the module removes the whole pipeline" guarantee.
 
-**Pick order — status as of the v2c-bridge-landing commit.**
+**Pick order — status as of the v2c-agent-modules commit.**
 
-1. ~~**Schema hash** — 37 lines, fully covered by existing tests, agent-only. Smallest possible move.~~ **Done in v2c/decomp-1.**
-2. **`reactive-paths` (the POC)** — already structured as a module. Optional-chain emission fixed in v2c/bridge-1; the module now produces byte-equivalent `s?.user?.name` accessors. Promotion to production still pending — the monolith's `__prefixes` emission (via `buildPrefixesProp` + structural-mask code in `rewriteRoot`) is more entangled than `injectComponentMeta` and migrates as part of step 7.
-3. **`msg-annotations` + `msg-schema`** — the agent's core load. Still pending. These are the sibling producers that populate `SCHEMA_HASH_INPUTS_SLOT`; until they land, `schemaHashModule` is dormant.
+1. ~~**Schema hash** — 37 lines, fully covered by existing tests, agent-only.~~ **Done in v2c/decomp-1.** Module now LIVE in production via v2c/decomp-5.
+2. **`reactive-paths` (the POC)** — optional-chain emission fixed in v2c/bridge-1; the module now produces byte-equivalent `s?.user?.name` accessors. Promotion to production still pending — the monolith's `__prefixes` emission (via `buildPrefixesProp` + structural-mask code in `rewriteRoot`) is more entangled than the agent inline injectors and migrates as part of step 7.
+3. ~~**`msg-annotations` + `msg-schema`** — the agent's core load.~~ **Done in v2c/decomp-4 + v2c/decomp-5.** `msgAnnotationsModule` + `msgSchemaModule` (handling both Msg and Effect schemas) ship as factory modules consuming pre-extracted inputs. `schemaHashModule` is now LIVE — five inline injectors (`injectMsgSchema`, `injectMsgAnnotations`, `injectStateSchema`, `injectEffectSchema`, `injectSchemaHash`) deleted from `transform.ts`. Agent pipeline runs entirely through the registry bridge.
 4. **`binding-descriptors`** — agent's largest pre-pass concern; still pending. Resolves the §2.1 "preTransform vs visitor" open question from MODULE-MAPPING.md.
-5. ~~**The first registry-into-`transformLlui` wire-up.**~~ **Done in v2c/bridge-2.** The bridge runs the active `ModuleRegistry` inside `transformLlui` and splices emissions into each `component()` call's config-arg. `applyRegistryEmissions(transformedCall, originalCall)` matches emissions by either `target?: ts.CallExpression` identity or file-global, with the same idempotence semantics the inline `inject*` helpers had (skip-if-field-already-present). Module activation is gated at the umbrella level — `componentMetaModule` registers only when `devMode === true`, mirroring the prior `if (devMode) injectComponentMeta(...)` guard. 4 golden tests in `test/registry-bridge.test.ts`.
-6. ~~**`component-meta`** — promote to production by deleting `injectComponentMeta` from `transform.ts` once the registry-bridge exists.~~ **Done in v2c/bridge-2.** The inline `injectComponentMeta` deleted; the bridge owns `__componentMeta` end-to-end. First inline-injector successfully migrated through the bridge — proves the pattern for steps 2, 3, 4.
-7. **Everything else in `transform.ts`** — still pending. Each remaining inline injector (`injectMsgSchema`, `injectMsgAnnotations`, `injectStateSchema`, `injectEffectSchema`, `injectSchemaHash`, `injectCompilerEmittedMarker`, the inline `__prefixes` / `__update` / `__handlers` synthesis) now has a clear migration path: build a module that owns its field, register it conditionally in the umbrella, replace the inline call with the bridge. The bridge's idempotence rule (skip-if-already-present) means parallel inline + module emission is safe during the migration overlap window.
+5. ~~**The first registry-into-`transformLlui` wire-up.**~~ **Done in v2c/bridge-2.**
+6. ~~**`component-meta`** — promote to production.~~ **Done in v2c/bridge-2.**
+7. **Everything else in `transform.ts`** — agent pipeline complete; reactive-paths, `__update`/`__handlers` synthesis, element-helper rewrites, template-clone, row-factory, and dev-only instrumentation hooks remain.
+
+**Modules now LIVE in `transformLlui`'s production pipeline:**
+
+| Module                                         | Activation                                              | Replaces                                        |
+| ---------------------------------------------- | ------------------------------------------------------- | ----------------------------------------------- |
+| `componentMetaModule`                          | `devMode` only                                          | inline `injectComponentMeta`                    |
+| `stateSchemaModule({ stateSchema })`           | `shouldEmitAgentMetadata` + has stateSchema             | inline `injectStateSchema`                      |
+| `msgAnnotationsModule({ msgAnnotations })`     | `shouldEmitAgentMetadata` + non-null map                | inline `injectMsgAnnotations`                   |
+| `msgSchemaModule({ msgSchema, effectSchema })` | `shouldEmitAgentMetadata` + at least one schema         | inline `injectMsgSchema` + `injectEffectSchema` |
+| `schemaHashModule`                             | always (even non-agent — deterministic null-input hash) | inline `injectSchemaHash`                       |
+
+The `injectCompilerEmittedMarker` (emits `__lluiCompilerEmitted` + `__compilerVersion`) remains inline as the only umbrella-level always-on emission. A `compiler-shared` mandatory-module pattern could absorb it; not load-bearing for this push.
+
+**Lines of `transform.ts` removed by the agent-pipeline migration:** ~300 (5 inline injectors + 2 literal-builder helpers + duplicate computeSchemaHash call site). The monolith now contains zero agent-schema emission logic; that work lives in `modules/{state,msg-annotations,msg-schema,schema-hash}.ts`.
 
 **Bridge's reusable shape (for whoever picks up step 2/3/4/7).**
 

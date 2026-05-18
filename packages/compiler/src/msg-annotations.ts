@@ -2,6 +2,86 @@ import ts from 'typescript'
 
 export type DispatchMode = 'shared' | 'human-only' | 'agent-only'
 
+/**
+ * Whether the annotation map carries any non-default values. Used to
+ * gate `__msgAnnotations` emission — annotations whose every field is
+ * default are emission-redundant (the runtime treats absence as the
+ * same defaults). Saves ~50 bytes per component for un-annotated Msg
+ * unions, which dominates the corpus.
+ */
+export function hasNonDefaultAnnotation(a: Record<string, MessageAnnotations>): boolean {
+  for (const v of Object.values(a)) {
+    if (v.intent !== null) return true
+    if (v.alwaysAffordable) return true
+    if (v.requiresConfirm) return true
+    if (v.dispatchMode !== 'shared') return true
+    if (v.routeGate != null) return true
+  }
+  return false
+}
+
+/**
+ * Build a TS object-literal expression for the annotation map. Used by
+ * `msgAnnotationsModule` for `__msgAnnotations` emission. Variant
+ * names are emitted as string literals (not identifiers) so
+ * discriminants containing `/`, `-`, reserved words, etc. produce
+ * valid JS.
+ */
+export function annotationsToObjectLiteral(
+  a: Record<string, MessageAnnotations>,
+): ts.ObjectLiteralExpression {
+  const props: ts.PropertyAssignment[] = []
+  for (const [variant, ann] of Object.entries(a)) {
+    props.push(
+      ts.factory.createPropertyAssignment(
+        // Wrap with createStringLiteral — the printer treats bare strings
+        // as identifiers, which produces invalid JS for discriminants
+        // containing characters like '/' (e.g. 'Router/RouteChanged'),
+        // reserved words ('delete'), or hyphens.
+        ts.factory.createStringLiteral(variant),
+        ts.factory.createObjectLiteralExpression(
+          [
+            ts.factory.createPropertyAssignment(
+              'intent',
+              ann.intent === null
+                ? ts.factory.createNull()
+                : ts.factory.createStringLiteral(ann.intent),
+            ),
+            ts.factory.createPropertyAssignment(
+              'alwaysAffordable',
+              ann.alwaysAffordable ? ts.factory.createTrue() : ts.factory.createFalse(),
+            ),
+            ts.factory.createPropertyAssignment(
+              'requiresConfirm',
+              ann.requiresConfirm ? ts.factory.createTrue() : ts.factory.createFalse(),
+            ),
+            ts.factory.createPropertyAssignment(
+              'dispatchMode',
+              ts.factory.createStringLiteral(ann.dispatchMode),
+            ),
+            // Only emit `routeGate` when non-null. The runtime treats
+            // missing as the no-gate default ("variant follows its
+            // dispatchMode-driven affordance behavior") — keeping the
+            // wire shape minimal for the common case of un-gated Msgs.
+            // Use loose `!= null` so test fixtures that omit the
+            // field entirely also fall through to the no-emit path.
+            ...(ann.routeGate != null
+              ? [
+                  ts.factory.createPropertyAssignment(
+                    'routeGate',
+                    ts.factory.createStringLiteral(ann.routeGate),
+                  ),
+                ]
+              : []),
+          ],
+          true,
+        ),
+      ),
+    )
+  }
+  return ts.factory.createObjectLiteralExpression(props, true)
+}
+
 export type MessageAnnotations = {
   intent: string | null
   alwaysAffordable: boolean

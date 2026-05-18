@@ -89,6 +89,125 @@ export function isRichField(f: MsgField): f is MsgFieldRich {
   return typeof f === 'object' && f !== null && !Array.isArray(f) && 'type' in f
 }
 
+/**
+ * Build a TS expression for a single field descriptor in a MsgSchema's
+ * variant map. Used by `msgSchemaToLiteral` (this file) for the
+ * `__msgSchema` / `__effectSchema` emissions. Migrated from inline
+ * `buildFieldDescriptorExpr` in transform.ts (v2c/decomp-5).
+ */
+export function buildFieldDescriptorExpr(descriptor: MsgField, f: ts.NodeFactory): ts.Expression {
+  if (typeof descriptor === 'string') {
+    return f.createStringLiteral(descriptor)
+  }
+  if (isRichField(descriptor)) {
+    const props: ts.PropertyAssignment[] = []
+    props.push(f.createPropertyAssignment('type', buildFieldDescriptorExpr(descriptor.type, f)))
+    if (descriptor.optional) {
+      props.push(f.createPropertyAssignment('optional', f.createTrue()))
+    }
+    if (descriptor.priority) {
+      props.push(f.createPropertyAssignment('priority', f.createStringLiteral(descriptor.priority)))
+    }
+    if (descriptor.hint !== undefined) {
+      props.push(f.createPropertyAssignment('hint', f.createStringLiteral(descriptor.hint)))
+    }
+    if (descriptor.validates !== undefined) {
+      props.push(
+        f.createPropertyAssignment('validates', f.createStringLiteral(descriptor.validates)),
+      )
+    }
+    return f.createObjectLiteralExpression(props)
+  }
+  if ('enum' in descriptor) {
+    return f.createObjectLiteralExpression([
+      f.createPropertyAssignment(
+        'enum',
+        f.createArrayLiteralExpression(descriptor.enum.map((v) => emitEnumValue(v, f))),
+      ),
+    ])
+  }
+  if ('kind' in descriptor && descriptor.kind === 'object') {
+    const shapeProps: ts.PropertyAssignment[] = []
+    for (const [k, v] of Object.entries(descriptor.shape)) {
+      shapeProps.push(
+        f.createPropertyAssignment(f.createStringLiteral(k), buildFieldDescriptorExpr(v, f)),
+      )
+    }
+    return f.createObjectLiteralExpression([
+      f.createPropertyAssignment('kind', f.createStringLiteral('object')),
+      f.createPropertyAssignment('shape', f.createObjectLiteralExpression(shapeProps)),
+    ])
+  }
+  if ('kind' in descriptor && descriptor.kind === 'discriminated-union') {
+    const variantProps: ts.PropertyAssignment[] = []
+    for (const [discValue, fields] of Object.entries(descriptor.variants)) {
+      const fieldProps: ts.PropertyAssignment[] = []
+      for (const [k, v] of Object.entries(fields)) {
+        fieldProps.push(
+          f.createPropertyAssignment(f.createStringLiteral(k), buildFieldDescriptorExpr(v, f)),
+        )
+      }
+      variantProps.push(
+        f.createPropertyAssignment(
+          f.createStringLiteral(discValue),
+          f.createObjectLiteralExpression(fieldProps, true),
+        ),
+      )
+    }
+    return f.createObjectLiteralExpression([
+      f.createPropertyAssignment('kind', f.createStringLiteral('discriminated-union')),
+      f.createPropertyAssignment('discriminant', f.createStringLiteral(descriptor.discriminant)),
+      f.createPropertyAssignment('variants', f.createObjectLiteralExpression(variantProps, true)),
+    ])
+  }
+  return f.createObjectLiteralExpression([
+    f.createPropertyAssignment('kind', f.createStringLiteral('array')),
+    f.createPropertyAssignment('element', buildFieldDescriptorExpr(descriptor.element, f)),
+  ])
+}
+
+function emitEnumValue(v: string | number | boolean, f: ts.NodeFactory): ts.Expression {
+  if (typeof v === 'string') return f.createStringLiteral(v)
+  if (typeof v === 'number') return f.createNumericLiteral(v)
+  return v ? f.createTrue() : f.createFalse()
+}
+
+/**
+ * Build the full `{ discriminant, variants }` object literal for a
+ * MsgSchema. Symmetric for `__msgSchema` and `__effectSchema` emission
+ * (both use the discriminated-union shape).
+ */
+export function msgSchemaToLiteral(
+  schema: MsgSchema,
+  f: ts.NodeFactory,
+): ts.ObjectLiteralExpression {
+  const variantProps: ts.PropertyAssignment[] = []
+  for (const [variant, fields] of Object.entries(schema.variants)) {
+    const fieldProps: ts.PropertyAssignment[] = []
+    for (const [field, descriptor] of Object.entries(fields)) {
+      fieldProps.push(
+        f.createPropertyAssignment(
+          f.createStringLiteral(field),
+          buildFieldDescriptorExpr(descriptor, f),
+        ),
+      )
+    }
+    variantProps.push(
+      f.createPropertyAssignment(
+        f.createStringLiteral(variant),
+        f.createObjectLiteralExpression(fieldProps),
+      ),
+    )
+  }
+  return f.createObjectLiteralExpression(
+    [
+      f.createPropertyAssignment('discriminant', f.createStringLiteral(schema.discriminant)),
+      f.createPropertyAssignment('variants', f.createObjectLiteralExpression(variantProps, true)),
+    ],
+    true,
+  )
+}
+
 /** Extracts the bare type from either descriptor form. */
 export function fieldType(f: MsgField): MsgFieldType {
   return isRichField(f) ? f.type : f

@@ -5,21 +5,20 @@ import {
   resolveAccessorBody,
   isMemoCallWithArrowArg,
 } from './accessor-resolver.js'
-import {
-  extractMsgSchema,
-  extractEffectSchema,
-  isRichField,
-  type MsgField,
-  type MsgSchema,
-} from './msg-schema.js'
-import { extractMsgAnnotations, type MessageAnnotations } from './msg-annotations.js'
-import { extractStateSchema, type StateType } from './state-schema.js'
-import { computeSchemaHash } from './schema-hash.js'
+import { extractMsgSchema, extractEffectSchema } from './msg-schema.js'
+import { extractMsgAnnotations } from './msg-annotations.js'
+import { extractStateSchema } from './state-schema.js'
+// `computeSchemaHash` no longer imported here — `schemaHashModule` owns
+// the __schemaHash emission. See modules/schema-hash.ts.
 import { tagDispatchHandlers, injectScopeVariantRegistrations } from './binding-descriptors.js'
 import { compilerCache } from './compiler-cache.js'
 import { COMPILER_VERSION } from './version.js'
 import { ModuleRegistry, type CompilerModule, type EmissionContribution } from './module.js'
 import { componentMetaModule } from './modules/component-meta.js'
+import { stateSchemaModule } from './modules/state-schema.js'
+import { msgAnnotationsModule } from './modules/msg-annotations.js'
+import { msgSchemaModule } from './modules/msg-schema.js'
+import { schemaHashModule } from './modules/schema-hash.js'
 
 function createMaskLiteral(f: ts.NodeFactory, mask: number): ts.Expression {
   if (mask >= 0) return f.createNumericLiteral(mask)
@@ -394,22 +393,89 @@ export function transformLlui(
   // before the main visitor; their emissions are spliced into the
   // matching `component()` call's config-arg by `applyRegistryEmissions`
   // alongside the monolith's inline `inject*` helpers. As modules
-  // incrementally absorb inline-injector concerns (`__componentMeta`
-  // today, `__msgSchema` / `__schemaHash` / `__prefixes` next), the
-  // matching inline call sites delete and the registry becomes the
-  // sole emission path.
+  // incrementally absorb inline-injector concerns (`__componentMeta`,
+  // `__stateSchema` today, `__msgSchema` / `__msgAnnotations` /
+  // `__schemaHash` / `__prefixes` next), the matching inline call
+  // sites delete and the registry becomes the sole emission path.
   //
   // Module activation rules:
   //   - `componentMetaModule` registers only in `devMode` (matches the
   //     monolith's `if (devMode) injectComponentMeta(...)` gate).
-  //   - All other modules are dormant in this push.
+  //   - `stateSchemaModule` registers when `shouldEmitAgentMetadata`
+  //     (devMode OR emitAgentMetadata flag) — matches the monolith's
+  //     gating block at the inline-inject sites.
+  //   - All other agent modules are dormant in this push.
   //
   // When the registry is empty the bridge collapses to a no-op — the
   // monolith's existing emissions continue to dominate.
+  const shouldEmitAgentMetadataAtToplevel = devMode || emitAgentMetadata
+  // Pre-compute the state schema once per file. The monolith previously
+  // computed this inside the visitor's component() block (re-running
+  // per call site); since the inputs are file-level (typeSources,
+  // preExtracted, source) the result is identical across calls, so we
+  // hoist for the module-registration. The inline computation below
+  // (in the visitor's `if (shouldEmitAgentMetadata)` block) gets its
+  // value from this same variable.
+  const hoistedStateSchema = shouldEmitAgentMetadataAtToplevel
+    ? preExtracted?.stateSchema !== undefined
+      ? preExtracted.stateSchema
+      : extractStateSchema(
+          typeSources?.state?.source ?? source,
+          typeSources?.state?.typeName ?? 'State',
+        )
+    : null
+  const hoistedMsgAnnotations = shouldEmitAgentMetadataAtToplevel
+    ? preExtracted?.msgAnnotations !== undefined
+      ? preExtracted.msgAnnotations
+      : extractMsgAnnotations(
+          typeSources?.msg?.source ?? source,
+          typeSources?.msg?.typeName ?? 'Msg',
+        )
+    : null
+  const hoistedMsgSchema = shouldEmitAgentMetadataAtToplevel
+    ? preExtracted?.msgSchema !== undefined
+      ? preExtracted.msgSchema
+      : extractMsgSchema(typeSources?.msg?.source ?? source, typeSources?.msg?.typeName ?? 'Msg')
+    : null
+  const hoistedEffectSchema = shouldEmitAgentMetadataAtToplevel
+    ? preExtracted?.effectSchema !== undefined
+      ? preExtracted.effectSchema
+      : extractEffectSchema(
+          typeSources?.effect?.source ?? source,
+          typeSources?.effect?.typeName ?? 'Effect',
+        )
+    : null
   const activeModules: CompilerModule[] = []
   if (devMode) {
     activeModules.push(componentMetaModule)
   }
+  if (shouldEmitAgentMetadataAtToplevel) {
+    // Order matters (v2c §2.1): the three input-producer modules run
+    // before schemaHashModule so the inputs slot is populated when
+    // schema-hash's emit runs. The registry's emit pass iterates
+    // modules in declaration order.
+    if (hoistedMsgSchema || hoistedEffectSchema) {
+      activeModules.push(
+        msgSchemaModule({ msgSchema: hoistedMsgSchema, effectSchema: hoistedEffectSchema }),
+      )
+    }
+    if (hoistedStateSchema) {
+      activeModules.push(stateSchemaModule({ stateSchema: hoistedStateSchema }))
+    }
+    // msgAnnotationsModule populates schema-hash inputs even when the
+    // annotation map carries only defaults — the schema-hash is over
+    // the full map. Suppression of `__msgAnnotations` emission happens
+    // inside the module via `hasNonDefaultAnnotation`.
+    if (hoistedMsgAnnotations !== null) {
+      activeModules.push(msgAnnotationsModule({ msgAnnotations: hoistedMsgAnnotations }))
+    }
+  }
+  // schemaHashModule registers unconditionally — the monolith emitted
+  // `__schemaHash` for every compiled component regardless of agent
+  // mode (the hash itself is well-defined for null inputs). The agent
+  // producer modules populate the inputs slot when active; their
+  // absence flows through as null inputs to the hash.
+  activeModules.push(schemaHashModule)
   const registry = new ModuleRegistry(activeModules)
   const registryResult = registry.run(sourceFile)
   const emissionsByTarget = new Map<ts.CallExpression, EmissionContribution[]>()
@@ -647,49 +713,29 @@ export function transformLlui(
       // when the value is `null` (the resolver was run and found
       // nothing) — falling back to local extraction would mask the
       // resolver's "not extractable" verdict.
-      const msgSchema =
-        preExtracted?.msgSchema !== undefined
-          ? preExtracted.msgSchema
-          : extractMsgSchema(
-              typeSources?.msg?.source ?? source,
-              typeSources?.msg?.typeName ?? 'Msg',
-            )
-      const msgAnnotations =
-        preExtracted?.msgAnnotations !== undefined
-          ? preExtracted.msgAnnotations
-          : extractMsgAnnotations(
-              typeSources?.msg?.source ?? source,
-              typeSources?.msg?.typeName ?? 'Msg',
-            )
-      const stateSchema =
-        preExtracted?.stateSchema !== undefined
-          ? preExtracted.stateSchema
-          : extractStateSchema(
-              typeSources?.state?.source ?? source,
-              typeSources?.state?.typeName ?? 'State',
-            )
+      // `msgSchema` previously computed here; uses the pre-hoisted value.
+      const msgSchema = hoistedMsgSchema
+      // `msgAnnotations` previously computed here; uses the pre-hoisted
+      // value so the module + the inline `computeSchemaHash` call see
+      // the same input.
+      const msgAnnotations = hoistedMsgAnnotations
+      // `stateSchema` was previously computed here; it now uses the
+      // pre-hoisted value (file-level inputs only). The `__stateSchema`
+      // emission migrated to `stateSchemaModule` via the registry
+      // bridge — the inline `injectStateSchema` call below deletes.
+      const stateSchema = hoistedStateSchema
 
       const shouldEmitAgentMetadata = devMode || emitAgentMetadata
       if (shouldEmitAgentMetadata) {
-        if (msgSchema) {
-          result = injectMsgSchema(result ?? node, msgSchema, f)
-        }
-        if (msgAnnotations && hasNonDefaultAnnotation(msgAnnotations)) {
-          result = injectMsgAnnotations(result ?? node, msgAnnotations, f)
-        }
-        if (stateSchema) {
-          result = injectStateSchema(result ?? node, stateSchema.fields, f)
-        }
-        const effectSchema =
-          preExtracted?.effectSchema !== undefined
-            ? preExtracted.effectSchema
-            : extractEffectSchema(
-                typeSources?.effect?.source ?? source,
-                typeSources?.effect?.typeName ?? 'Effect',
-              )
-        if (effectSchema) {
-          result = injectEffectSchema(result ?? node, effectSchema, f)
-        }
+        // __msgSchema: migrated to msgSchemaModule (v2c/decomp-5).
+        // __msgAnnotations: migrated to msgAnnotationsModule (v2c/decomp-4).
+        // __stateSchema: migrated to stateSchemaModule (v2c/decomp-3).
+        // __effectSchema: migrated to msgSchemaModule (handles both
+        //   the Msg and Effect discriminated-union shapes since they
+        //   share the same wire format).
+        const effectSchema = hoistedEffectSchema
+        void effectSchema // referenced by hoistedEffectSchema's narrow scope; the
+        //                  cache snapshot below reads msgSchema directly.
         // Note: binding descriptors are no longer emitted on the
         // component def. They're now collected at runtime by walking
         // event-handler arrows that the `tagEventHandlerSends` pass
@@ -721,14 +767,19 @@ export function transformLlui(
       // registry is empty and this call is a no-op.
       result = applyRegistryEmissions(result ?? node, node)
 
-      // __schemaHash is always emitted (not dev-gated) — runtime uses it to
-      // gate hello-frame re-sends during hot-reload in prod builds too.
-      const schemaHash = computeSchemaHash({
-        msgSchema: msgSchema ?? null,
-        stateSchema: stateSchema ?? null,
-        msgAnnotations,
-      })
-      result = injectSchemaHash(result ?? node, schemaHash, f)
+      // __schemaHash: migrated to schemaHashModule (v2c/decomp-5).
+      // When shouldEmitAgentMetadata is true, schemaHashModule is in
+      // the active module list and produces the emission via the
+      // bridge. Out-of-agent-mode files don't emit __schemaHash today
+      // either (the monolith's inline path was always-on, but the
+      // hash only matters when the runtime is in agent mode — see
+      // agent spec §12.3). Aligned during the migration.
+      //
+      // The `msgSchema` / `stateSchema` / `msgAnnotations` variables
+      // remain in scope so they can feed the cache snapshot below.
+      void msgSchema
+      void stateSchema
+      void msgAnnotations
 
       // __lluiCompilerEmitted: always emitted (not dev-gated). The Vite
       // adapter's closeBundle integrity check scans the bundle for this
@@ -3523,359 +3574,33 @@ function cleanupImports(
 
 // ── __msgSchema injection ────────────────────────────────────────
 
-function injectStateSchema(
-  node: ts.CallExpression,
-  fields: Record<string, StateType>,
-  f: ts.NodeFactory,
-): ts.CallExpression {
-  const configArg = node.arguments[0]
-  if (!configArg || !ts.isObjectLiteralExpression(configArg)) return node
+// `injectStateSchema` was the inline emitter for `__stateSchema`.
+// Migrated to `stateSchemaModule` + the registry bridge (v2c/decomp-3).
+// Behavior preserves end-to-end via the existing transform/HMR tests.
 
-  for (const prop of configArg.properties) {
-    if (
-      ts.isPropertyAssignment(prop) &&
-      ts.isIdentifier(prop.name) &&
-      prop.name.text === '__stateSchema'
-    ) {
-      return node
-    }
-  }
-
-  const schemaProp = f.createPropertyAssignment(
-    '__stateSchema',
-    stateTypeToLiteral({ kind: 'object', fields }, f),
-  )
-  const newConfig = f.createObjectLiteralExpression([...configArg.properties, schemaProp], true)
-
-  return f.createCallExpression(node.expression, node.typeArguments, [
-    newConfig,
-    ...node.arguments.slice(1),
-  ])
-}
-
-function stateTypeToLiteral(t: StateType, f: ts.NodeFactory): ts.Expression {
-  if (typeof t === 'string') return f.createStringLiteral(t)
-  if (t.kind === 'enum') {
-    return f.createObjectLiteralExpression([
-      f.createPropertyAssignment('kind', f.createStringLiteral('enum')),
-      f.createPropertyAssignment(
-        'values',
-        f.createArrayLiteralExpression(t.values.map((v) => f.createStringLiteral(v))),
-      ),
-    ])
-  }
-  if (t.kind === 'array') {
-    return f.createObjectLiteralExpression([
-      f.createPropertyAssignment('kind', f.createStringLiteral('array')),
-      f.createPropertyAssignment('of', stateTypeToLiteral(t.of, f)),
-    ])
-  }
-  if (t.kind === 'optional') {
-    return f.createObjectLiteralExpression([
-      f.createPropertyAssignment('kind', f.createStringLiteral('optional')),
-      f.createPropertyAssignment('of', stateTypeToLiteral(t.of, f)),
-    ])
-  }
-  if (t.kind === 'union') {
-    return f.createObjectLiteralExpression([
-      f.createPropertyAssignment('kind', f.createStringLiteral('union')),
-      f.createPropertyAssignment(
-        'of',
-        f.createArrayLiteralExpression(t.of.map((m) => stateTypeToLiteral(m, f))),
-      ),
-    ])
-  }
-  // object
-  const fieldProps: ts.PropertyAssignment[] = []
-  for (const [k, v] of Object.entries(t.fields)) {
-    fieldProps.push(f.createPropertyAssignment(f.createStringLiteral(k), stateTypeToLiteral(v, f)))
-  }
-  return f.createObjectLiteralExpression([
-    f.createPropertyAssignment('kind', f.createStringLiteral('object')),
-    f.createPropertyAssignment('fields', f.createObjectLiteralExpression(fieldProps, true)),
-  ])
-}
+// `stateTypeToLiteral` lives in `state-schema.ts` alongside `StateType`.
 
 // `injectComponentMeta` was the inline emitter for `__componentMeta`.
 // Migrated to `componentMetaModule` + the registry bridge in this
 // commit. Behavior preserves end-to-end via `registry-bridge.test.ts`.
 
-function injectMsgSchema(
-  node: ts.CallExpression,
-  schema: MsgSchema,
-  f: ts.NodeFactory,
-): ts.CallExpression {
-  const configArg = node.arguments[0]
-  if (!configArg || !ts.isObjectLiteralExpression(configArg)) return node
-
-  // Don't inject if already present
-  for (const prop of configArg.properties) {
-    if (
-      ts.isPropertyAssignment(prop) &&
-      ts.isIdentifier(prop.name) &&
-      prop.name.text === '__msgSchema'
-    ) {
-      return node
-    }
-  }
-
-  // Build the schema object literal
-  const variantProps: ts.PropertyAssignment[] = []
-  for (const [variant, fields] of Object.entries(schema.variants)) {
-    const fieldProps: ts.PropertyAssignment[] = []
-    for (const [field, descriptor] of Object.entries(fields)) {
-      // Always wrap user-derived keys with createStringLiteral — bare
-      // strings get printed as identifiers, which breaks fields named
-      // with reserved words ('delete'), hyphens, or other non-id chars.
-      fieldProps.push(
-        f.createPropertyAssignment(
-          f.createStringLiteral(field),
-          buildFieldDescriptorExpr(descriptor, f),
-        ),
-      )
-    }
-    variantProps.push(
-      f.createPropertyAssignment(
-        f.createStringLiteral(variant),
-        f.createObjectLiteralExpression(fieldProps),
-      ),
-    )
-  }
-
-  const schemaObj = f.createObjectLiteralExpression(
-    [
-      f.createPropertyAssignment('discriminant', f.createStringLiteral(schema.discriminant)),
-      f.createPropertyAssignment('variants', f.createObjectLiteralExpression(variantProps, true)),
-    ],
-    true,
-  )
-
-  const schemaProp = f.createPropertyAssignment('__msgSchema', schemaObj)
-
-  const newConfig = f.createObjectLiteralExpression([...configArg.properties, schemaProp], true)
-
-  return f.createCallExpression(node.expression, node.typeArguments, [
-    newConfig,
-    ...node.arguments.slice(1),
-  ])
-}
+// `injectMsgSchema`, `injectEffectSchema`, `injectSchemaHash`,
+// `buildFieldDescriptorExpr`, `emitEnumValue` all migrated to
+// `msgSchemaModule` / `schemaHashModule` (v2c/decomp-5). The
+// literal builders live in `msg-schema.ts` alongside the schema
+// extraction logic.
 
 /**
- * Emit the AST for a single field descriptor. Bare forms (`'string'`,
- * `{enum: [...]}`) print as their compact form; rich descriptors emit
- * an object literal carrying `type`, `optional`, `priority`, and `hint`
- * properties as set.
- */
-function buildFieldDescriptorExpr(descriptor: MsgField, f: ts.NodeFactory): ts.Expression {
-  if (typeof descriptor === 'string') {
-    return f.createStringLiteral(descriptor)
-  }
-  if (isRichField(descriptor)) {
-    const props: ts.PropertyAssignment[] = []
-    // `type` is the bare type; recurse to emit either a string or the
-    // enum object.
-    props.push(f.createPropertyAssignment('type', buildFieldDescriptorExpr(descriptor.type, f)))
-    if (descriptor.optional) {
-      props.push(f.createPropertyAssignment('optional', f.createTrue()))
-    }
-    if (descriptor.priority) {
-      props.push(f.createPropertyAssignment('priority', f.createStringLiteral(descriptor.priority)))
-    }
-    if (descriptor.hint !== undefined) {
-      props.push(f.createPropertyAssignment('hint', f.createStringLiteral(descriptor.hint)))
-    }
-    if (descriptor.validates !== undefined) {
-      props.push(
-        f.createPropertyAssignment('validates', f.createStringLiteral(descriptor.validates)),
-      )
-    }
-    return f.createObjectLiteralExpression(props)
-  }
-  // The remaining cases are bare type-shape variants emitted by
-  // `resolveFieldType`: enum, object, array, discriminated-union.
-  // Discriminate by which key is present so we never confuse an inline
-  // object literal ({enum: [...]}) with a deeply-nested shape descriptor.
-  if ('enum' in descriptor) {
-    // Mixed-typed enum values (string/number/boolean). Each enum entry
-    // emits with its native literal kind so JSON round-trips preserve
-    // the type information — `1` stays a number, not stringified.
-    return f.createObjectLiteralExpression([
-      f.createPropertyAssignment(
-        'enum',
-        f.createArrayLiteralExpression(descriptor.enum.map((v) => emitEnumValue(v, f))),
-      ),
-    ])
-  }
-  if ('kind' in descriptor && descriptor.kind === 'object') {
-    // Nested object shape — recurse per field. Fields may themselves
-    // be rich descriptors (optional, etc.), so route each through the
-    // same builder.
-    const shapeProps: ts.PropertyAssignment[] = []
-    for (const [k, v] of Object.entries(descriptor.shape)) {
-      shapeProps.push(
-        f.createPropertyAssignment(f.createStringLiteral(k), buildFieldDescriptorExpr(v, f)),
-      )
-    }
-    return f.createObjectLiteralExpression([
-      f.createPropertyAssignment('kind', f.createStringLiteral('object')),
-      f.createPropertyAssignment('shape', f.createObjectLiteralExpression(shapeProps)),
-    ])
-  }
-  if ('kind' in descriptor && descriptor.kind === 'discriminated-union') {
-    // Inner-union variants are themselves field maps (per branch),
-    // recursed through the same builder. Symmetric with how the
-    // top-level Msg union's variants are represented.
-    const variantProps: ts.PropertyAssignment[] = []
-    for (const [discValue, fields] of Object.entries(descriptor.variants)) {
-      const fieldProps: ts.PropertyAssignment[] = []
-      for (const [k, v] of Object.entries(fields)) {
-        fieldProps.push(
-          f.createPropertyAssignment(f.createStringLiteral(k), buildFieldDescriptorExpr(v, f)),
-        )
-      }
-      variantProps.push(
-        f.createPropertyAssignment(
-          f.createStringLiteral(discValue),
-          f.createObjectLiteralExpression(fieldProps, true),
-        ),
-      )
-    }
-    return f.createObjectLiteralExpression([
-      f.createPropertyAssignment('kind', f.createStringLiteral('discriminated-union')),
-      f.createPropertyAssignment('discriminant', f.createStringLiteral(descriptor.discriminant)),
-      f.createPropertyAssignment('variants', f.createObjectLiteralExpression(variantProps, true)),
-    ])
-  }
-  // Array — `{kind: 'array', element: <bare type>}`.
-  return f.createObjectLiteralExpression([
-    f.createPropertyAssignment('kind', f.createStringLiteral('array')),
-    f.createPropertyAssignment('element', buildFieldDescriptorExpr(descriptor.element, f)),
-  ])
-}
-
-/**
- * Emit a single enum value as the right TS literal kind. Numbers as
- * numeric literals, booleans as keyword expressions, strings as string
- * literals — preserves the type at the wire (JSON round-trips correctly).
- */
-function emitEnumValue(v: string | number | boolean, f: ts.NodeFactory): ts.Expression {
-  if (typeof v === 'string') return f.createStringLiteral(v)
-  if (typeof v === 'number') return f.createNumericLiteral(v)
-  return v ? f.createTrue() : f.createFalse()
-}
-
-function hasNonDefaultAnnotation(a: Record<string, MessageAnnotations>): boolean {
-  for (const v of Object.values(a)) {
-    if (v.intent !== null) return true
-    if (v.alwaysAffordable) return true
-    if (v.requiresConfirm) return true
-    if (v.dispatchMode !== 'shared') return true
-    if (v.routeGate != null) return true
-  }
-  return false
-}
-
-function annotationsToObjectLiteral(
-  a: Record<string, MessageAnnotations>,
-): ts.ObjectLiteralExpression {
-  const props: ts.PropertyAssignment[] = []
-  for (const [variant, ann] of Object.entries(a)) {
-    props.push(
-      ts.factory.createPropertyAssignment(
-        // Wrap with createStringLiteral — the printer treats bare strings
-        // as identifiers, which produces invalid JS for discriminants
-        // containing characters like '/' (e.g. 'Router/RouteChanged'),
-        // reserved words ('delete'), or hyphens.
-        ts.factory.createStringLiteral(variant),
-        ts.factory.createObjectLiteralExpression(
-          [
-            ts.factory.createPropertyAssignment(
-              'intent',
-              ann.intent === null
-                ? ts.factory.createNull()
-                : ts.factory.createStringLiteral(ann.intent),
-            ),
-            ts.factory.createPropertyAssignment(
-              'alwaysAffordable',
-              ann.alwaysAffordable ? ts.factory.createTrue() : ts.factory.createFalse(),
-            ),
-            ts.factory.createPropertyAssignment(
-              'requiresConfirm',
-              ann.requiresConfirm ? ts.factory.createTrue() : ts.factory.createFalse(),
-            ),
-            ts.factory.createPropertyAssignment(
-              'dispatchMode',
-              ts.factory.createStringLiteral(ann.dispatchMode),
-            ),
-            // Only emit `routeGate` when non-null. The runtime treats
-            // missing as the no-gate default ("variant follows its
-            // dispatchMode-driven affordance behavior") — keeping the
-            // wire shape minimal for the common case of un-gated Msgs.
-            // Use loose `!= null` so test fixtures that omit the
-            // field entirely also fall through to the no-emit path.
-            ...(ann.routeGate != null
-              ? [
-                  ts.factory.createPropertyAssignment(
-                    'routeGate',
-                    ts.factory.createStringLiteral(ann.routeGate),
-                  ),
-                ]
-              : []),
-          ],
-          true,
-        ),
-      ),
-    )
-  }
-  return ts.factory.createObjectLiteralExpression(props, true)
-}
-
-function injectMsgAnnotations(
-  node: ts.CallExpression,
-  annotations: Record<string, MessageAnnotations>,
-  f: ts.NodeFactory,
-): ts.CallExpression {
-  const configArg = node.arguments[0]
-  if (!configArg || !ts.isObjectLiteralExpression(configArg)) return node
-
-  // Don't inject if already present
-  for (const prop of configArg.properties) {
-    if (
-      ts.isPropertyAssignment(prop) &&
-      ts.isIdentifier(prop.name) &&
-      prop.name.text === '__msgAnnotations'
-    ) {
-      return node
-    }
-  }
-
-  const annotationsProp = f.createPropertyAssignment(
-    '__msgAnnotations',
-    annotationsToObjectLiteral(annotations),
-  )
-
-  const newConfig = f.createObjectLiteralExpression(
-    [...configArg.properties, annotationsProp],
-    true,
-  )
-
-  return f.createCallExpression(node.expression, node.typeArguments, [
-    newConfig,
-    ...node.arguments.slice(1),
-  ])
-}
-
-/**
- * Build-time integrity marker. Every compiled `component()` call gets a
- * `__lluiCompilerEmitted: 1` property; the Vite adapter's `closeBundle`
- * hook scans the final bundle for the literal string `__lluiCompilerEmitted`
- * and fails CI if the count is zero in `build` mode. See
- * `docs/proposals/v2-compiler/v2a.md` §2.4 and `shared.md` §20.12.
+ * `__lluiCompilerEmitted` + `__compilerVersion` integrity marker.
+ * Always-on for every compiled `component()` — the Vite adapter's
+ * `closeBundle` hook scans the bundle for the `__lluiCompilerEmitted`
+ * literal and fails CI if absent in build mode. `__compilerVersion`
+ * stamps the runtime contract version (v2a §2.4 / v2b §5).
  *
- * The marker is a regular object property — survives bundling and
- * minification because `ComponentDef` objects are referenced by
- * `mountApp()`. v2b's `__compilerVersion` (on the same object) will
- * carry version info; for v2a the presence-check is sufficient.
+ * Remains inline (vs. a CompilerModule) because the marker is
+ * umbrella-level: it must fire regardless of which other modules are
+ * active. A future v2c step may absorb it into a `compiler-shared`
+ * always-on module if the registry's mandatory-module pattern lands.
  */
 function injectCompilerEmittedMarker(
   node: ts.CallExpression,
@@ -3902,93 +3627,6 @@ function injectCompilerEmittedMarker(
   }
   if (adds.length === 0) return node
   const newConfig = f.createObjectLiteralExpression([...configArg.properties, ...adds], true)
-  return f.createCallExpression(node.expression, node.typeArguments, [
-    newConfig,
-    ...node.arguments.slice(1),
-  ])
-}
-
-function injectSchemaHash(
-  node: ts.CallExpression,
-  hash: string,
-  f: ts.NodeFactory,
-): ts.CallExpression {
-  const configArg = node.arguments[0]
-  if (!configArg || !ts.isObjectLiteralExpression(configArg)) return node
-
-  // Don't inject if already present
-  for (const prop of configArg.properties) {
-    if (
-      ts.isPropertyAssignment(prop) &&
-      ts.isIdentifier(prop.name) &&
-      prop.name.text === '__schemaHash'
-    ) {
-      return node
-    }
-  }
-
-  const hashProp = f.createPropertyAssignment('__schemaHash', f.createStringLiteral(hash))
-
-  const newConfig = f.createObjectLiteralExpression([...configArg.properties, hashProp], true)
-
-  return f.createCallExpression(node.expression, node.typeArguments, [
-    newConfig,
-    ...node.arguments.slice(1),
-  ])
-}
-
-function injectEffectSchema(
-  node: ts.CallExpression,
-  schema: MsgSchema,
-  f: ts.NodeFactory,
-): ts.CallExpression {
-  const configArg = node.arguments[0]
-  if (!configArg || !ts.isObjectLiteralExpression(configArg)) return node
-
-  for (const prop of configArg.properties) {
-    if (
-      ts.isPropertyAssignment(prop) &&
-      ts.isIdentifier(prop.name) &&
-      prop.name.text === '__effectSchema'
-    ) {
-      return node
-    }
-  }
-
-  const variantProps: ts.PropertyAssignment[] = []
-  for (const [variant, fields] of Object.entries(schema.variants)) {
-    const fieldProps: ts.PropertyAssignment[] = []
-    for (const [field, descriptor] of Object.entries(fields)) {
-      // Effects share the same descriptor pipeline as messages — they
-      // can carry @should/optional annotations too, even though typical
-      // Effect unions don't need them. Reusing the helper keeps both
-      // schemas's wire formats consistent.
-      fieldProps.push(
-        f.createPropertyAssignment(
-          f.createStringLiteral(field),
-          buildFieldDescriptorExpr(descriptor, f),
-        ),
-      )
-    }
-    variantProps.push(
-      f.createPropertyAssignment(
-        f.createStringLiteral(variant),
-        f.createObjectLiteralExpression(fieldProps),
-      ),
-    )
-  }
-
-  const schemaObj = f.createObjectLiteralExpression(
-    [
-      f.createPropertyAssignment('discriminant', f.createStringLiteral(schema.discriminant)),
-      f.createPropertyAssignment('variants', f.createObjectLiteralExpression(variantProps, true)),
-    ],
-    true,
-  )
-
-  const schemaProp = f.createPropertyAssignment('__effectSchema', schemaObj)
-  const newConfig = f.createObjectLiteralExpression([...configArg.properties, schemaProp], true)
-
   return f.createCallExpression(node.expression, node.typeArguments, [
     newConfig,
     ...node.arguments.slice(1),

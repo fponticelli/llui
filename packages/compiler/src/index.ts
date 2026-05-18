@@ -17,6 +17,12 @@ export {
   type SchemaHashInputs,
 } from './modules/schema-hash.js'
 export { componentMetaModule } from './modules/component-meta.js'
+export { stateSchemaModule, type StateSchemaModuleOptions } from './modules/state-schema.js'
+export {
+  msgAnnotationsModule,
+  type MsgAnnotationsModuleOptions,
+} from './modules/msg-annotations.js'
+export { msgSchemaModule, type MsgSchemaModuleOptions } from './modules/msg-schema.js'
 export * from './msg-annotations.js'
 export * from './msg-schema.js'
 export * from './schema-hash.js'

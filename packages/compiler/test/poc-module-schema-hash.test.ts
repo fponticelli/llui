@@ -63,7 +63,7 @@ describe('v2c/decomp-1 — schemaHashModule', () => {
       msgAnnotations: inputs.msgAnnotations,
     })
     const registry = new ModuleRegistry([makeInputsProducer(inputs), schemaHashModule])
-    const result = registry.run(parse(``))
+    const result = registry.run(parse(`const X = component({})`))
     const emission = result.emissions.find((e) => e.field === '__schemaHash')
     expect(emission).toBeDefined()
     expect(emission!.module).toBe('schema-hash')
@@ -85,25 +85,30 @@ describe('v2c/decomp-1 — schemaHashModule', () => {
       msgSchema: { variants: ['a', 'b', 'c'] },
     }
     const hashA = (
-      new ModuleRegistry([makeInputsProducer(inputsA), schemaHashModule]).run(parse(``))
-        .emissions[0]!.value as ts.StringLiteral
+      new ModuleRegistry([makeInputsProducer(inputsA), schemaHashModule]).run(
+        parse(`const X = component({})`),
+      ).emissions[0]!.value as ts.StringLiteral
     ).text
     const hashB = (
-      new ModuleRegistry([makeInputsProducer(inputsB), schemaHashModule]).run(parse(``))
-        .emissions[0]!.value as ts.StringLiteral
+      new ModuleRegistry([makeInputsProducer(inputsB), schemaHashModule]).run(
+        parse(`const X = component({})`),
+      ).emissions[0]!.value as ts.StringLiteral
     ).text
     expect(hashA).toBe(hashB)
   })
 
-  it('emits nothing when all inputs are null', () => {
+  it('emits __schemaHash over null inputs when all inputs are null (deterministic)', () => {
+    // v2c/decomp-5 — schemaHashModule emits unconditionally per
+    // component(); the all-null hash is the deterministic baseline.
     const inputs: SchemaHashInputs = {
       msgSchema: null,
       stateSchema: null,
       msgAnnotations: null,
     }
     const registry = new ModuleRegistry([makeInputsProducer(inputs), schemaHashModule])
-    const result = registry.run(parse(``))
-    expect(result.emissions.find((e) => e.field === '__schemaHash')).toBeUndefined()
+    const result = registry.run(parse(`const X = component({})`))
+    const emission = result.emissions.find((e) => e.field === '__schemaHash')
+    expect(emission).toBeDefined()
   })
 
   it('emits __schemaHash even when only one of the three inputs is non-null', () => {
@@ -113,7 +118,7 @@ describe('v2c/decomp-1 — schemaHashModule', () => {
       msgAnnotations: null,
     }
     const registry = new ModuleRegistry([makeInputsProducer(inputs), schemaHashModule])
-    const result = registry.run(parse(``))
+    const result = registry.run(parse(`const X = component({})`))
     const emission = result.emissions.find((e) => e.field === '__schemaHash')
     expect(emission).toBeDefined()
     const expected = computeSchemaHash({
@@ -124,8 +129,16 @@ describe('v2c/decomp-1 — schemaHashModule', () => {
     expect((emission!.value as ts.StringLiteral).text).toBe(expected)
   })
 
-  it('emits nothing when the inputs slot is absent (no sibling producer)', () => {
-    // Run schemaHashModule alone — no inputs producer.
+  it('emits __schemaHash with the null-inputs hash when no sibling producer', () => {
+    // Run schemaHashModule alone — no inputs producer; emits per
+    // component() with the deterministic null-inputs hash.
+    const registry = new ModuleRegistry([schemaHashModule])
+    const result = registry.run(parse(`const X = component({})`))
+    const emission = result.emissions.find((e) => e.field === '__schemaHash')
+    expect(emission).toBeDefined()
+  })
+
+  it('emits nothing when no component() call is in the source', () => {
     const registry = new ModuleRegistry([schemaHashModule])
     const result = registry.run(parse(``))
     expect(result.emissions).toEqual([])

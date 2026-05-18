@@ -52,27 +52,47 @@ export const schemaHashModule: CompilerModule = {
   // modules populate the inputs slot during their own visitor pass.
   visitors: {},
 
-  emit(_ctx, analysis): EmissionContribution[] {
+  emit(ctx, analysis): EmissionContribution[] {
     const slot = analysis.perModule.get(SCHEMA_HASH_INPUTS_SLOT) as SchemaHashInputs | undefined
-    if (!slot) return []
-    // Skip when there's nothing to hash. The monolith's behaviour:
-    // `__schemaHash` is emitted whenever ANY of the three inputs is
-    // non-null, because the hash itself is well-defined for null
-    // members (sortDeep normalises null to null in the JSON).
-    if (slot.msgSchema === null && slot.stateSchema === null && slot.msgAnnotations === null) {
-      return []
+    // The monolith emits `__schemaHash` unconditionally for every
+    // compiled `component()` — `computeSchemaHash({null, null, null})`
+    // is a well-defined deterministic digest. Match that behavior: an
+    // absent slot means "no agent-side producers ran", which produces
+    // a hash over null inputs. Producer modules populating the slot
+    // change the hash; their absence is itself a stable input.
+    const inputs: SchemaHashInputs = slot ?? {
+      msgSchema: null,
+      stateSchema: null,
+      msgAnnotations: null,
     }
     const hash = computeSchemaHash({
-      msgSchema: slot.msgSchema,
-      stateSchema: slot.stateSchema,
-      msgAnnotations: slot.msgAnnotations,
+      msgSchema: inputs.msgSchema,
+      stateSchema: inputs.stateSchema,
+      msgAnnotations: inputs.msgAnnotations,
     })
-    return [
-      {
-        module: 'schema-hash',
-        field: '__schemaHash',
-        value: ts.factory.createStringLiteral(hash),
-      },
-    ]
+    // Emit per-component-call so the bridge can splice the same hash
+    // into every `component()` call's config-arg. File-global emission
+    // would also work (every component in a file shares the same
+    // hash), but per-target matches the per-call splice the monolith
+    // performed via injectSchemaHash and avoids changing the bridge's
+    // existing field-distribution semantics for this migration.
+    const componentCalls: ts.CallExpression[] = []
+    const visit = (n: ts.Node): void => {
+      if (
+        ts.isCallExpression(n) &&
+        ts.isIdentifier(n.expression) &&
+        n.expression.text === 'component'
+      ) {
+        componentCalls.push(n)
+      }
+      ts.forEachChild(n, visit)
+    }
+    visit(ctx.sourceFile)
+    return componentCalls.map((call) => ({
+      module: 'schema-hash',
+      field: '__schemaHash',
+      value: ts.factory.createStringLiteral(hash),
+      target: call,
+    }))
   },
 }
