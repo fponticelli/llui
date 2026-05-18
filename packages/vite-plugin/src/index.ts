@@ -15,12 +15,11 @@ import { createRequire } from 'node:module'
 import { spawn, type ChildProcess } from 'node:child_process'
 import {
   transformLlui,
-  transformUseClientSsr,
-  hasUseClientDirective,
   crossFileAccessorPaths,
   type ExternalTypeSources,
   type PreExtractedSchemas,
 } from '@llui/compiler'
+import { transformUseClientSsr, hasUseClientDirective } from '@llui/compiler-ssr'
 import {
   findTypeSource,
   readComponentTypeArgNames,

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { transformUseClientSsr, hasUseClientDirective } from '../src/transform'
+import { transformUseClientSsr, hasUseClientDirective } from '../src/index.js'
 
 describe("'use client' directive detection", () => {
   it('detects the directive as the first statement', () => {

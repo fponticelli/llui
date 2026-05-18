@@ -368,19 +368,6 @@ importers:
         specifier: ^22.0.0
         version: 22.19.15
 
-  packages/compiler-dom:
-    dependencies:
-      '@llui/compiler':
-        specifier: workspace:*
-        version: link:../compiler
-      typescript:
-        specifier: ^6.0.2
-        version: 6.0.2
-    devDependencies:
-      '@types/node':
-        specifier: ^22.0.0
-        version: 22.19.15
-
   packages/compiler-introspection:
     dependencies:
       '@llui/compiler':
@@ -538,6 +525,9 @@ importers:
       '@llui/compiler':
         specifier: workspace:*
         version: link:../compiler
+      '@llui/compiler-ssr':
+        specifier: workspace:*
+        version: link:../compiler-ssr
       magic-string:
         specifier: ^0.30.21
         version: 0.30.21
