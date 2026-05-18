@@ -29,6 +29,12 @@ export {
 } from './modules/binding-descriptors.js'
 export { maskLegendModule, type MaskLegendModuleOptions } from './modules/mask-legend.js'
 export { compilerStampModule } from './modules/compiler-stamp.js'
+export {
+  eachMemoModule,
+  EACH_MEMO_SLOT,
+  type EachMemoModuleOptions,
+  type EachMemoSlot,
+} from './modules/each-memo.js'
 export * from './msg-annotations.js'
 export * from './msg-schema.js'
 export * from './schema-hash.js'

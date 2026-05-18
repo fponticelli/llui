@@ -26,8 +26,9 @@ import {
 } from './modules/binding-descriptors.js'
 import { maskLegendModule } from './modules/mask-legend.js'
 import { compilerStampModule } from './modules/compiler-stamp.js'
+import { eachMemoModule, EACH_MEMO_SLOT, type EachMemoSlot } from './modules/each-memo.js'
 
-function createMaskLiteral(f: ts.NodeFactory, mask: number): ts.Expression {
+export function createMaskLiteral(f: ts.NodeFactory, mask: number): ts.Expression {
   if (mask >= 0) return f.createNumericLiteral(mask)
   // -1 (0xFFFFFFFF | 0) — emit as bitwise OR: 0xFFFFFFFF | 0
   return f.createBinaryExpression(
@@ -500,13 +501,28 @@ export function transformLlui(
   // the umbrella's last remaining inline injector
   // (`injectCompilerEmittedMarker`, deleted below).
   activeModules.push(compilerStampModule)
+  // eachMemoModule wraps allocating each() items accessors in
+  // `memo(...)` via `transformCallEnter`. Activated when the file
+  // has any reactive paths (mirrors the inline call's gating).
+  // The module sets a per-file slot when at least one wrap fired;
+  // the umbrella reads it to decide whether `memo` needs to enter
+  // the @llui/dom imports via `cleanupImports`.
+  if (fieldBits.size > 0 || fieldBitsHi.size > 0) {
+    activeModules.push(
+      eachMemoModule({
+        fieldBits,
+        viewHelperNames,
+        viewHelperAliases,
+      }),
+    )
+  }
   const registry = new ModuleRegistry(activeModules)
   const registryResult = registry.run(sourceFile)
-  // The registry's preTransform phase (v2c/decomp-7) may have
-  // mutated the source file — replace our local reference so all
-  // subsequent code (fieldBits, visitor, cleanupImports) sees the
-  // post-binding-descriptors AST. When no preTransform module is
-  // active this is a no-op assignment.
+  // The registry phases (preTransform v2c/decomp-7, transformCall
+  // v2c/decomp-11/12) may have mutated the source file — replace our
+  // local reference so all subsequent code (fieldBits, visitor,
+  // cleanupImports) sees the post-registry AST. When no rewriting
+  // module is active this is a no-op assignment.
   sourceFile = registryResult.analysis.sourceFile
   // Read the binding-descriptors module's slot for the
   // cleanupImports decision about the `__registerScopeVariants`
@@ -517,6 +533,12 @@ export function transformLlui(
     | { scopeRegistrationsInjected: boolean }
     | undefined
   if (bdState) scopeRegistrationsInjected = bdState.scopeRegistrationsInjected
+  // each-memo module signals memo-usage via its slot — surfaces here
+  // so `cleanupImports` adds the `memo` runtime import. Mirrors the
+  // monolith's `usesMemo` flag that the inline `tryWrapEachItemsWithMemo`
+  // used to set.
+  const emState = registryResult.analysis.perModule.get(EACH_MEMO_SLOT) as EachMemoSlot | undefined
+  if (emState?.usesMemo) usesMemo = true
   const emissionsByTarget = new Map<ts.CallExpression, EmissionContribution[]>()
   const globalEmissions: EmissionContribution[] = []
   for (const emission of registryResult.emissions) {
@@ -634,19 +656,14 @@ export function transformLlui(
       return f.createEmptyStatement()
     }
 
-    // Pass 0: each() optimizations — dedup item() selectors + auto-wrap items in memo
+    // Pass 0: each() optimizations — dedup item() selectors.
+    // (Auto-memo-wrap migrated to `eachMemoModule` v2c/decomp-13.)
     if (
       ts.isCallExpression(node) &&
       isHelperCall(node.expression, 'each', viewHelperNames, viewHelperAliases)
     ) {
       let current: ts.CallExpression = node
       let changed = false
-      const memoWrapped = tryWrapEachItemsWithMemo(current, fieldBits, f)
-      if (memoWrapped) {
-        current = memoWrapped
-        changed = true
-        usesMemo = true
-      }
       const deduped = tryDeduplicateItemSelectors(current, f, printer, sourceFile)
       if (deduped) {
         current = deduped
@@ -1547,7 +1564,7 @@ function tryTransformElementCall(
  * The compiler treats all three identically for mask injection / each()
  * optimization purposes.
  */
-function isHelperCall(
+export function isHelperCall(
   expr: ts.Expression,
   name: string,
   helperNames: Set<string>,
@@ -3894,116 +3911,9 @@ function tryDeduplicateItemSelectors(
   ])
 }
 
-// ── Auto-memoize each() items accessor ──────────────────────────
-
-const ALLOCATING_METHODS = new Set([
-  'filter',
-  'map',
-  'slice',
-  'sort',
-  'reverse',
-  'concat',
-  'flat',
-  'flatMap',
-  'reduce',
-])
-
-/**
- * Detect whether an expression body contains array-allocating operations
- * that would produce a new array on every call.
- */
-function accessorAllocatesArray(body: ts.ConciseBody | ts.Expression): boolean {
-  let found = false
-  function walk(n: ts.Node): void {
-    if (found) return
-    // .method() on something — check the method name
-    if (
-      ts.isCallExpression(n) &&
-      ts.isPropertyAccessExpression(n.expression) &&
-      ts.isIdentifier(n.expression.name) &&
-      ALLOCATING_METHODS.has(n.expression.name.text)
-    ) {
-      found = true
-      return
-    }
-    // Spread in array literal: [...x, y]
-    if (ts.isArrayLiteralExpression(n) && n.elements.some((el) => ts.isSpreadElement(el))) {
-      found = true
-      return
-    }
-    // Array.from(...)
-    if (
-      ts.isCallExpression(n) &&
-      ts.isPropertyAccessExpression(n.expression) &&
-      ts.isIdentifier(n.expression.expression) &&
-      n.expression.expression.text === 'Array' &&
-      ts.isIdentifier(n.expression.name) &&
-      n.expression.name.text === 'from'
-    ) {
-      found = true
-      return
-    }
-    ts.forEachChild(n, walk)
-  }
-  walk(body)
-  return found
-}
-
-/**
- * Wrap `each({ items: (s) => s.x.filter(...) })` in `memo()` with a bitmask,
- * so the filter is only re-run when its dependencies change. For items accessors
- * that don't allocate (e.g. `(s) => s.items`), each's built-in same-ref fast
- * path already suffices — no wrap needed.
- *
- * Returns null if no wrapping was applied.
- */
-function tryWrapEachItemsWithMemo(
-  eachCall: ts.CallExpression,
-  fieldBits: Map<string, number>,
-  f: ts.NodeFactory,
-): ts.CallExpression | null {
-  const arg = eachCall.arguments[0]
-  if (!arg || !ts.isObjectLiteralExpression(arg)) return null
-
-  let itemsProp: ts.PropertyAssignment | null = null
-  for (const prop of arg.properties) {
-    if (ts.isPropertyAssignment(prop) && ts.isIdentifier(prop.name) && prop.name.text === 'items') {
-      itemsProp = prop
-      break
-    }
-  }
-  if (!itemsProp) return null
-
-  const accessor = itemsProp.initializer
-  if (!ts.isArrowFunction(accessor) && !ts.isFunctionExpression(accessor)) return null
-
-  // Don't wrap if it's already wrapped (call expression like memo(...) or similar)
-  // We only wrap raw arrow functions.
-
-  // Skip if the body doesn't allocate — each's own ref check handles those.
-  const body = ts.isArrowFunction(accessor) ? accessor.body : accessor.body
-  if (!accessorAllocatesArray(body)) return null
-
-  const { mask, readsState } = computeAccessorMask(accessor, fieldBits)
-  if (mask === 0 && !readsState) return null // constant, nothing to memoize
-  const finalMask = mask === 0 && readsState ? 0xffffffff | 0 : mask
-
-  // Wrap: memo(accessor, mask)
-  const wrapped = f.createCallExpression(f.createIdentifier('memo'), undefined, [
-    accessor,
-    createMaskLiteral(f, finalMask),
-  ])
-
-  const newProps = arg.properties.map((p) =>
-    p === itemsProp ? f.createPropertyAssignment('items', wrapped) : p,
-  )
-  const newArg = f.createObjectLiteralExpression(newProps, true)
-
-  return f.createCallExpression(eachCall.expression, eachCall.typeArguments, [
-    newArg,
-    ...eachCall.arguments.slice(1),
-  ])
-}
+// Auto-memoize each() items accessor — migrated to `eachMemoModule`
+// (v2c/decomp-13). `tryWrapEachItemsWithMemo`, `accessorAllocatesArray`
+// + `ALLOCATING_METHODS` now live in `modules/each-memo.ts`.
 
 // ── Subtree collapse: nested elements → elTemplate ──────────────
 
@@ -4878,7 +4788,7 @@ function isHoistedPerItem(node: ts.Node): node is ts.Identifier {
 // that aren't followed when scanning for `helper(s)` delegation calls.
 const NON_DELEGATION_HELPERS = new Set(['sample', 'item', 'memo', 'text', 'unsafeHtml'])
 
-function computeAccessorMask(
+export function computeAccessorMask(
   accessor: ts.ArrowFunction | ts.FunctionExpression | ts.FunctionDeclaration,
   fieldBits: Map<string, number>,
   visited: Set<ts.Node> = new Set(),
