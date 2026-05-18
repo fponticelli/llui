@@ -29,6 +29,7 @@ import { compilerStampModule } from './modules/compiler-stamp.js'
 import { eachMemoModule, EACH_MEMO_SLOT, type EachMemoSlot } from './modules/each-memo.js'
 import { structuralMaskModule } from './modules/structural-mask.js'
 import { textMaskModule } from './modules/text-mask.js'
+import { itemDedupModule } from './modules/item-dedup.js'
 
 export function createMaskLiteral(f: ts.NodeFactory, mask: number): ts.Expression {
   if (mask >= 0) return f.createNumericLiteral(mask)
@@ -518,6 +519,19 @@ export function transformLlui(
       }),
     )
   }
+  // itemDedupModule lifts repeated `item(selector)` / `item.field`
+  // accesses into hoisted `__sN` selectors + `__aN` accessors.
+  // Registered unconditionally — the original inline call ran on every
+  // each() regardless of reactive paths, since the optimization is a
+  // pure rewrite of the render body. Module fires top-down
+  // (`transformCallEnter`) so subsequent structural-mask + element
+  // rewrites see the hoisted form.
+  activeModules.push(
+    itemDedupModule({
+      viewHelperNames,
+      viewHelperAliases,
+    }),
+  )
   // structuralMaskModule injects `__mask` into each()/branch()/scope()/show()
   // options. Activated when the file has any low-word reactive paths
   // (matches the inline `fieldBits.size === 0` early-return). Module
@@ -686,39 +700,32 @@ export function transformLlui(
       return f.createEmptyStatement()
     }
 
-    // Pass 0: each() optimizations — dedup item() selectors.
-    // (Auto-memo-wrap migrated to `eachMemoModule` v2c/decomp-13.)
+    // Pass 0: each() optimizations — all sub-passes migrated to
+    // modules (eachMemoModule v2c/decomp-13, itemDedupModule
+    // v2c/decomp-16, structuralMaskModule v2c/decomp-14). The
+    // remaining inline concern is the bottom-up row-factory emission,
+    // which depends on element rewrites having happened to children
+    // (`elTemplate` calls). When `tryTransformElementCall` migrates
+    // too, row-factory will move to a `transformCall` (bottom-up)
+    // module and this block disappears entirely.
     if (
       ts.isCallExpression(node) &&
       isHelperCall(node.expression, 'each', viewHelperNames, viewHelperAliases)
     ) {
-      let current: ts.CallExpression = node
-      let changed = false
-      const deduped = tryDeduplicateItemSelectors(current, f, printer, sourceFile)
-      if (deduped) {
-        current = deduped
-        changed = true
-      }
-      // `__mask` injection moved to `structuralMaskModule` (v2c/decomp-14);
-      // the module ran in Phase 2b before this visitor, so any masking
-      // is already on `node` by the time we get here.
-      if (changed) {
-        const result = ts.visitEachChild(current, visitor, undefined!)
-        if (hasPos) edits.push({ start: origStart, end: origEnd, replacement: '' })
-        // Row factory: try after children are transformed
-        if (ts.isCallExpression(result)) {
-          try {
-            const rf = tryEmitRowFactory(result, f, source)
-            if (rf) return rf
-          } catch (err) {
-            const line = ts.getLineAndCharacterOfPosition(sourceFile, result.getStart())
-            console.warn(
-              `[llui] Row factory failed in ${_filename}:${line.line + 1} — ${(err as Error).message}`,
-            )
-          }
+      const result = ts.visitEachChild(node, visitor, undefined!)
+      if (hasPos) edits.push({ start: origStart, end: origEnd, replacement: '' })
+      if (ts.isCallExpression(result)) {
+        try {
+          const rf = tryEmitRowFactory(result, f, source)
+          if (rf) return rf
+        } catch (err) {
+          const line = ts.getLineAndCharacterOfPosition(sourceFile, result.getStart())
+          console.warn(
+            `[llui] Row factory failed in ${_filename}:${line.line + 1} — ${(err as Error).message}`,
+          )
         }
-        return result
       }
+      return result
     }
 
     // Pass 1: Transform element helper calls to elSplit or elTemplate
@@ -3529,277 +3536,9 @@ function cleanupImports(
 
 // ── Per-item accessor detection ──────────────────────────────────
 
-// ── Item selector deduplication ──────────────────────────────────
-
-/**
- * In each() render callbacks, deduplicate repeated item(selector) calls.
- *
- * Before: item((r) => r.id) appears 4 times → 4 selector closures + 4 accessor closures
- * After:  const __s0 = (r) => r.id; const __a0 = item(__s0); → 1 selector + 1 accessor
- */
-function tryDeduplicateItemSelectors(
-  eachCall: ts.CallExpression,
-  f: ts.NodeFactory,
-  printer: ts.Printer,
-  sourceFile: ts.SourceFile,
-): ts.CallExpression | null {
-  // each() takes a single object literal argument
-  const arg = eachCall.arguments[0]
-  if (!arg || !ts.isObjectLiteralExpression(arg)) return null
-
-  // Find the render property
-  let renderProp: ts.PropertyAssignment | null = null
-  for (const prop of arg.properties) {
-    if (
-      ts.isPropertyAssignment(prop) &&
-      ts.isIdentifier(prop.name) &&
-      prop.name.text === 'render'
-    ) {
-      renderProp = prop
-      break
-    }
-  }
-  if (!renderProp) return null
-
-  const renderFn = renderProp.initializer
-  if (!ts.isArrowFunction(renderFn) && !ts.isFunctionExpression(renderFn)) return null
-
-  // Get the item parameter name from the options bag: ({ item, ... }) => ...
-  const renderParam = renderFn.parameters[0]
-  if (!renderParam) return null
-
-  let itemName: string | null = null
-  if (ts.isIdentifier(renderParam.name)) {
-    // Old style: (item) => ... or (item, index) => ...
-    itemName = renderParam.name.text
-  } else if (ts.isObjectBindingPattern(renderParam.name)) {
-    // New style: ({ item, send, ... }) => ...
-    for (const el of renderParam.name.elements) {
-      if (ts.isBindingElement(el) && ts.isIdentifier(el.name) && el.name.text === 'item') {
-        itemName = 'item'
-        break
-      }
-    }
-  }
-  if (!itemName) return null
-
-  // Collect all item(selector) calls AND item.FIELD property-access expressions.
-  // Both forms produce the same accessor; they dedup together via the field-name key.
-  type Occurrence =
-    | { kind: 'call'; node: ts.CallExpression; selector: ts.Expression; key: string }
-    | { kind: 'access'; node: ts.PropertyAccessExpression; field: string; key: string }
-
-  const occurrences: Occurrence[] = []
-
-  // Try to extract a simple field name from an arrow selector: (t) => t.FIELD → "FIELD"
-  function extractSimpleField(sel: ts.ArrowFunction | ts.FunctionExpression): string | null {
-    if (sel.parameters.length !== 1) return null
-    const paramName = sel.parameters[0]!.name
-    if (!ts.isIdentifier(paramName)) return null
-    const body = ts.isArrowFunction(sel) ? sel.body : null
-    if (!body) return null
-    const expr = ts.isBlock(body) ? null : body
-    if (!expr || !ts.isPropertyAccessExpression(expr)) return null
-    if (!ts.isIdentifier(expr.expression) || expr.expression.text !== paramName.text) return null
-    if (!ts.isIdentifier(expr.name)) return null
-    return expr.name.text
-  }
-
-  function collectItemCalls(node: ts.Node): void {
-    // item(selector) calls
-    if (
-      ts.isCallExpression(node) &&
-      ts.isIdentifier(node.expression) &&
-      node.expression.text === itemName &&
-      node.arguments.length === 1
-    ) {
-      const sel = node.arguments[0]!
-      if (ts.isArrowFunction(sel) || ts.isFunctionExpression(sel)) {
-        const field = extractSimpleField(sel)
-        const key =
-          field !== null
-            ? `field:${field}`
-            : `expr:${printer.printNode(ts.EmitHint.Expression, sel, sourceFile)}`
-        occurrences.push({ kind: 'call', node, selector: sel, key })
-      }
-    }
-    // item.FIELD property access — but NOT when it's the callee of a call expression
-    // where we want the original to stay (e.g. item.id() we still replace, because the
-    // accessor itself becomes __a0 and we keep the trailing ()).
-    else if (
-      ts.isPropertyAccessExpression(node) &&
-      ts.isIdentifier(node.expression) &&
-      node.expression.text === itemName &&
-      ts.isIdentifier(node.name)
-    ) {
-      const field = node.name.text
-      occurrences.push({ kind: 'access', node, field, key: `field:${field}` })
-    }
-    ts.forEachChild(node, collectItemCalls)
-  }
-  collectItemCalls(renderFn.body)
-
-  if (occurrences.length < 2) return null // nothing to deduplicate
-
-  // Group by normalized key (field:name or expr:text)
-  const groups = new Map<string, Occurrence[]>()
-  for (const occ of occurrences) {
-    const existing = groups.get(occ.key)
-    if (existing) existing.push(occ)
-    else groups.set(occ.key, [occ])
-  }
-
-  // Hoist ALL occurrences (even unique ones) so compiled code uses `acc()` (plain
-  // function) instead of `item(fn)` (Proxy-wrapped) or `item.FIELD` (Proxy.get trap).
-  // Unique accesses get their own __a* var; duplicates share one.
-  const allGroups = [...groups.entries()]
-  if (allGroups.length === 0) return null
-
-  // Build hoisted declarations and replacement map
-  const hoistedStmts: ts.Statement[] = []
-  const replacements = new Map<ts.Node, ts.Identifier>()
-  let sIdx = 0
-
-  for (const [key, occs] of allGroups) {
-    const selVar = `__s${sIdx}`
-    const accVar = `__a${sIdx}`
-    sIdx++
-
-    // Build the selector expression.
-    // For field:FIELD, synthesize (t) => t.FIELD (or reuse an existing call's selector).
-    // For expr:..., reuse the existing selector expression.
-    let selector: ts.Expression
-    const callOccurrence = occs.find((o) => o.kind === 'call')
-    if (callOccurrence && callOccurrence.kind === 'call') {
-      selector = callOccurrence.selector
-    } else {
-      // All occurrences are property-access form — synthesize (t) => t.FIELD
-      const firstAccess = occs[0]!
-      if (firstAccess.kind !== 'access') throw new Error('unreachable')
-      selector = f.createArrowFunction(
-        undefined,
-        undefined,
-        [f.createParameterDeclaration(undefined, undefined, 't')],
-        undefined,
-        f.createToken(ts.SyntaxKind.EqualsGreaterThanToken),
-        f.createPropertyAccessExpression(f.createIdentifier('t'), firstAccess.field),
-      )
-    }
-
-    // const __s0 = (r) => r.id
-    hoistedStmts.push(
-      f.createVariableStatement(
-        undefined,
-        f.createVariableDeclarationList(
-          [f.createVariableDeclaration(selVar, undefined, undefined, selector)],
-          ts.NodeFlags.Const,
-        ),
-      ),
-    )
-    // const __a0 = acc(__s0) — use the plain-function `acc` instead of `item` (which
-    // is a Proxy). Adds `acc` to the destructure binding below if not already present.
-    hoistedStmts.push(
-      f.createVariableStatement(
-        undefined,
-        f.createVariableDeclarationList(
-          [
-            f.createVariableDeclaration(
-              accVar,
-              undefined,
-              undefined,
-              f.createCallExpression(f.createIdentifier('acc'), undefined, [
-                f.createIdentifier(selVar),
-              ]),
-            ),
-          ],
-          ts.NodeFlags.Const,
-        ),
-      ),
-    )
-
-    // Map all occurrences to the cached accessor identifier
-    void key // silence unused
-    for (const occ of occs) {
-      replacements.set(occ.node, f.createIdentifier(accVar))
-    }
-  }
-
-  // Rewrite the render function body to replace item(sel)/item.field with cached refs
-  function replaceVisitor(node: ts.Node): ts.Node {
-    if (replacements.has(node)) {
-      return replacements.get(node)!
-    }
-    return ts.visitEachChild(node, replaceVisitor, undefined!)
-  }
-
-  const newBody = ts.visitNode(renderFn.body, replaceVisitor)!
-
-  // Prepend hoisted declarations to the body
-  let finalBody: ts.ConciseBody
-  if (ts.isBlock(newBody)) {
-    finalBody = f.createBlock([...hoistedStmts, ...(newBody as ts.Block).statements], true)
-  } else {
-    // Arrow with expression body → convert to block with return
-    finalBody = f.createBlock(
-      [...hoistedStmts, f.createReturnStatement(newBody as ts.Expression)],
-      true,
-    )
-  }
-
-  // Ensure `acc` is in the destructure binding pattern of the render param.
-  // Hoisted code references it; if user didn't destructure it, add it.
-  const newParameters = renderFn.parameters.map((p, idx) => {
-    if (idx !== 0) return p
-    if (!ts.isObjectBindingPattern(p.name)) return p
-    const hasAcc = p.name.elements.some(
-      (el) => ts.isBindingElement(el) && ts.isIdentifier(el.name) && el.name.text === 'acc',
-    )
-    if (hasAcc) return p
-    const newBinding = f.createObjectBindingPattern([
-      ...p.name.elements,
-      f.createBindingElement(undefined, undefined, f.createIdentifier('acc')),
-    ])
-    return f.createParameterDeclaration(
-      p.modifiers,
-      p.dotDotDotToken,
-      newBinding,
-      p.questionToken,
-      p.type,
-      p.initializer,
-    )
-  })
-
-  // Build new render function
-  const newRenderFn = ts.isArrowFunction(renderFn)
-    ? f.createArrowFunction(
-        renderFn.modifiers,
-        renderFn.typeParameters,
-        newParameters,
-        renderFn.type,
-        f.createToken(ts.SyntaxKind.EqualsGreaterThanToken),
-        finalBody,
-      )
-    : f.createFunctionExpression(
-        renderFn.modifiers,
-        renderFn.asteriskToken,
-        renderFn.name,
-        renderFn.typeParameters,
-        newParameters,
-        renderFn.type,
-        finalBody as ts.Block,
-      )
-
-  // Rebuild the each() call with the new render property
-  const newProps = arg.properties.map((prop) =>
-    prop === renderProp ? f.createPropertyAssignment('render', newRenderFn) : prop,
-  )
-  const newArg = f.createObjectLiteralExpression(newProps, true)
-
-  return f.createCallExpression(eachCall.expression, eachCall.typeArguments, [
-    newArg,
-    ...eachCall.arguments.slice(1),
-  ])
-}
+// Item selector deduplication — migrated to `itemDedupModule`
+// (v2c/decomp-16). Module fires top-down (transformCallEnter); the
+// visitor sees the post-dedup form.
 
 // Auto-memoize each() items accessor — migrated to `eachMemoModule`
 // (v2c/decomp-13). `tryWrapEachItemsWithMemo`, `accessorAllocatesArray`
