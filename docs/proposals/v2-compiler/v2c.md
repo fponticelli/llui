@@ -354,7 +354,15 @@ Update [`shared.md`](./shared.md) §20.9 to record that the public ABI decision 
 **What the POC surfaced (carry forward):**
 
 - The monolith emits optional-chained accessors (`s?.user?.name`) for non-leaf segments — defends against undefined intermediates during prefix computation. The POC currently emits plain access (`s.user.name`). **The production reactive-paths module must mirror the optional-chain form** for byte-equivalent output. `buildPrefixAccessor` in `modules/reactive-paths.ts` is the change site.
-- The current `EmissionContribution` shape is global (one value per `field` per file). For per-component emission (the common case when a file has multiple `component()` calls), the shape needs to carry a target — either an explicit `ts.CallExpression` reference or an indexable list. Decide during the next push _before_ moving more concerns; today's POC dodged this because `__prefixes` is one-per-file in practice.
+- ~~The current `EmissionContribution` shape is global (one value per `field` per file). For per-component emission (the common case when a file has multiple `component()` calls), the shape needs to carry a target — either an explicit `ts.CallExpression` reference or an indexable list.~~ **Resolved in v2c/decomp-2 (component-meta module landing).** `EmissionContribution` now carries an optional `target?: ts.CallExpression` field. When absent, the contribution is file-global (the common case — `__prefixes`, `__msgSchema`, `__schemaHash`). When present, the umbrella's merger writes the field into that specific `component()` call's config-arg object literal. Conflict detection is keyed on `(field, target)` tuples — same field across different targets is permitted (e.g. `__componentMeta` for two `component()` calls in one file); same field on the same target is the hard error.
+
+**Modules now living in `packages/compiler/src/modules/`:**
+
+| Module                          | Concern                                         | Inputs source                                                                                                     | Field emitted     | Target                                                   | Status                                                                 |
+| ------------------------------- | ----------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- | ----------------- | -------------------------------------------------------- | ---------------------------------------------------------------------- |
+| `reactive-paths` (POC)          | `__prefixes` array of stable closures           | `collectStatePathsFromSource` on the source file                                                                  | `__prefixes`      | file-global                                              | POC; not wired into production transform                               |
+| `schema-hash` (v2c/decomp-1)    | SHA-256 hash over msg+state+annotations for HMR | Sibling-module slot (`SCHEMA_HASH_INPUTS_SLOT`); empty until msg-schema/state-schema/msg-annotations modules ship | `__schemaHash`    | file-global                                              | Validated against `computeSchemaHash`; awaits sibling producer modules |
+| `component-meta` (v2c/decomp-2) | `{ file, line }` per `component()` call         | `CallExpression` visitor finds calls; emit reads `getLineAndCharacterOfPosition`                                  | `__componentMeta` | **per-call** (target = the `component()` CallExpression) | First per-component-targeted emission; validates the `target?` shape   |
 
 **What remains for the full decomposition push:**
 
@@ -366,11 +374,13 @@ Update [`shared.md`](./shared.md) §20.9 to record that the public ABI decision 
 
 **Pick order for the next push.** The decomposition is highest-value when it unblocks something new (e.g. plugin authors). It's lowest-risk when test coverage of the moved code is highest. The pick order that satisfies both:
 
-1. **Schema hash** — 37 lines, fully covered by existing tests, agent-only. Smallest possible move.
-2. **`reactive-paths` (the POC)** — already structured as a module; promote it from PoC to production by deleting the monolith's `__prefixes` emission and routing through the registry.
-3. **`msg-annotations` + `msg-schema`** — the agent's core load. Touches the most tests; isolates the "does an opt-in module successfully strip when disabled" question.
+1. ~~**Schema hash** — 37 lines, fully covered by existing tests, agent-only. Smallest possible move.~~ **Done in v2c/decomp-1.**
+2. **`reactive-paths` (the POC)** — already structured as a module; promote it from PoC to production by deleting the monolith's `__prefixes` emission and routing through the registry. Needs the optional-chain fix in `buildPrefixAccessor` first (see "carry forward" above).
+3. **`msg-annotations` + `msg-schema`** — the agent's core load. Touches the most tests; isolates the "does an opt-in module successfully strip when disabled" question. These are the sibling producers that populate `SCHEMA_HASH_INPUTS_SLOT`; until they land, `schemaHashModule` is dormant.
 4. **`binding-descriptors`** — agent's largest pre-pass concern; resolves the §2.1 "preTransform vs visitor" open question from MODULE-MAPPING.md.
-5. **Everything in `transform.ts`** — the monolith decomposes after the agent pipeline is shown to work end-to-end. Going core-first risks blocking work on agent during the longest move.
+5. **The first registry-into-`transformLlui` wire-up.** Even with just the four modules above ready (reactive-paths + schema-hash + msg-annotations + msg-schema), the umbrella can stop calling `injectSchemaHash` and `injectMsgSchema` inline. The bridge is: run the registry, take its emissions, splice them into each `component()` call's config-arg object literal (per `target` or file-global per the new contribution shape). One golden test asserts byte-equivalent output against the pre-bridge monolith.
+6. **`component-meta`** — already a module (v2c/decomp-2); promote to production by deleting `injectComponentMeta` from `transform.ts` once the registry-bridge exists.
+7. **Everything else in `transform.ts`** — the monolith decomposes after the agent pipeline is shown to work end-to-end. Going core-first risks blocking work on agent during the longest move.
 
 The MODULE-MAPPING.md table is the contract — when a file leaves the monolith it goes to the destination named there. Disagreements are reflected in MAPPING amendments before code lands, not in code that drifts.
 

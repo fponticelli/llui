@@ -78,6 +78,24 @@ export interface EmissionContribution {
   field: string
   /** AST expression to assign. The umbrella merges into the component()'s config arg. */
   value: ts.Expression
+  /**
+   * Optional per-call target. When set, this contribution applies only
+   * to the named `component()` call expression; the umbrella's
+   * emission-merger writes the field into that call's config-arg
+   * object literal. When omitted, the contribution is *file-global*:
+   * the merger writes the field into every `component()` call in the
+   * file (the common case — `__msgSchema`, `__prefixes`, `__schemaHash`
+   * are file-shape-derived).
+   *
+   * Per-call target is needed for `__componentMeta` (file + line vary
+   * per call site) and any other field whose value depends on the
+   * specific `component()` call location.
+   *
+   * Conflict-detection runs per-(field, target) tuple — two modules
+   * may both contribute `__custom` if they target *different* call
+   * expressions; same target on the same field is still an error.
+   */
+  target?: ts.CallExpression
 }
 
 export interface EmissionContext {
@@ -213,21 +231,32 @@ export class ModuleRegistry {
       factory: ts.factory,
     }
     const emissions: EmissionContribution[] = []
-    const fieldOwners = new Map<string, string>() // field → module name
+    // Conflict detection keyed by `(field, target)` — two modules may
+    // contribute distinct per-target emissions to the same field name
+    // (e.g. component-meta for two different `component()` calls in
+    // one file), but two emissions with the same target on the same
+    // field is the hard error from §2.1.
+    const ownerByKey = new Map<string, string>()
+    const keyFor = (c: EmissionContribution): string => {
+      const targetId = c.target ? `@${c.target.pos}-${c.target.end}` : '*'
+      return `${c.field}${targetId}`
+    }
     for (const m of this.modules) {
       if (!m.emit) continue
       const contributions = m.emit(emissionCtx, analysis)
       for (const c of contributions) {
-        if (fieldOwners.has(c.field)) {
-          const other = fieldOwners.get(c.field)!
+        const k = keyFor(c)
+        if (ownerByKey.has(k)) {
+          const other = ownerByKey.get(k)!
           throw new Error(
             `[llui/module-emission-conflict] Modules "${other}" and "${c.module}" both ` +
-              `contribute to ComponentDef field "${c.field}". This is a hard error — fields ` +
-              `must be owned by exactly one module. Either deduplicate, or move one ` +
-              `emission to a distinct field. See docs/proposals/v2-compiler/v2c.md §2.1.`,
+              `contribute to ComponentDef field "${c.field}"${c.target ? ' for the same component() call site' : ''}. ` +
+              `This is a hard error — each (field, target) pair must be owned by exactly one ` +
+              `module. Either deduplicate, or move one emission to a distinct field. See ` +
+              `docs/proposals/v2-compiler/v2c.md §2.1.`,
           )
         }
-        fieldOwners.set(c.field, c.module)
+        ownerByKey.set(k, c.module)
         emissions.push(c)
       }
     }

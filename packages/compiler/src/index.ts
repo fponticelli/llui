@@ -11,6 +11,12 @@ export * from './manifest.js'
 export * from './module.js'
 export * from './version.js'
 export { reactivePathsModule } from './modules/reactive-paths.js'
+export {
+  schemaHashModule,
+  SCHEMA_HASH_INPUTS_SLOT,
+  type SchemaHashInputs,
+} from './modules/schema-hash.js'
+export { componentMetaModule } from './modules/component-meta.js'
 export * from './msg-annotations.js'
 export * from './msg-schema.js'
 export * from './schema-hash.js'
