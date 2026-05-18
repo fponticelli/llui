@@ -380,17 +380,18 @@ Update [`shared.md`](./shared.md) §20.9 to record that the public ABI decision 
 4. ~~**`binding-descriptors`** — agent's largest pre-pass concern.~~ **Done in v2c/decomp-7.** Resolved the §2.1 "preTransform vs visitor" open question via option (a) from MODULE-MAPPING.md: `CompilerModule` now carries an optional `preTransform?(ctx, sf) → sf` hook that fires before the visitor walk. The registry's `run()` threads each module's preTransform output through subsequent modules; the visitor then walks the final post-transform AST. `bindingDescriptorsModule` wraps `injectScopeVariantRegistrations` + `tagDispatchHandlers`. The umbrella reads the module's slot (`BINDING_DESCRIPTORS_SLOT`) to surface the `scopeRegistrationsInjected` flag for `cleanupImports`.
 5. ~~**The first registry-into-`transformLlui` wire-up.**~~ **Done in v2c/bridge-2.**
 6. ~~**`component-meta`** — promote to production.~~ **Done in v2c/bridge-2.**
-7. **Everything else in `transform.ts`** — agent pipeline complete; reactive-paths, `__update`/`__handlers` synthesis, element-helper rewrites, template-clone, row-factory, and dev-only instrumentation hooks remain.
+7. **Everything else in `transform.ts`** — agent pipeline complete; reactive-paths, `__update`/`__handlers` synthesis, element-helper rewrites, template-clone, row-factory, and dev-only instrumentation hooks remain. **`__maskLegend` migrated to `maskLegendModule` in v2c/decomp-9** — first non-agent factory module shipped; demonstrates the registry handles core-concern fields (the legend gates on the file-level reactive-path count rather than agent-mode). The inline `legendProps` builder + `legendProp` slot deleted from `tryInjectDirty`; the registry's `applyRegistryEmissions` splices `__maskLegend` into the same config-arg literal `tryInjectDirty` returns.
 
 **Modules now LIVE in `transformLlui`'s production pipeline:**
 
-| Module                                         | Activation                                              | Replaces                                        |
-| ---------------------------------------------- | ------------------------------------------------------- | ----------------------------------------------- |
-| `componentMetaModule`                          | `devMode` only                                          | inline `injectComponentMeta`                    |
-| `stateSchemaModule({ stateSchema })`           | `shouldEmitAgentMetadata` + has stateSchema             | inline `injectStateSchema`                      |
-| `msgAnnotationsModule({ msgAnnotations })`     | `shouldEmitAgentMetadata` + non-null map                | inline `injectMsgAnnotations`                   |
-| `msgSchemaModule({ msgSchema, effectSchema })` | `shouldEmitAgentMetadata` + at least one schema         | inline `injectMsgSchema` + `injectEffectSchema` |
-| `schemaHashModule`                             | always (even non-agent — deterministic null-input hash) | inline `injectSchemaHash`                       |
+| Module                                         | Activation                                              | Replaces                                          |
+| ---------------------------------------------- | ------------------------------------------------------- | ------------------------------------------------- |
+| `componentMetaModule`                          | `devMode` only                                          | inline `injectComponentMeta`                      |
+| `stateSchemaModule({ stateSchema })`           | `shouldEmitAgentMetadata` + has stateSchema             | inline `injectStateSchema`                        |
+| `msgAnnotationsModule({ msgAnnotations })`     | `shouldEmitAgentMetadata` + non-null map                | inline `injectMsgAnnotations`                     |
+| `msgSchemaModule({ msgSchema, effectSchema })` | `shouldEmitAgentMetadata` + at least one schema         | inline `injectMsgSchema` + `injectEffectSchema`   |
+| `schemaHashModule`                             | always (even non-agent — deterministic null-input hash) | inline `injectSchemaHash`                         |
+| `maskLegendModule({ fieldBits, fieldBitsHi })` | `fieldBits.size > 0 \|\| fieldBitsHi.size > 0`          | inline `legendProp` build inside `tryInjectDirty` |
 
 The `injectCompilerEmittedMarker` (emits `__lluiCompilerEmitted` + `__compilerVersion`) remains inline as the only umbrella-level always-on emission. A `compiler-shared` mandatory-module pattern could absorb it; not load-bearing for this push.
 

@@ -25,6 +25,7 @@ import {
   bindingDescriptorsModule,
   BINDING_DESCRIPTORS_SLOT,
 } from './modules/binding-descriptors.js'
+import { maskLegendModule } from './modules/mask-legend.js'
 
 function createMaskLiteral(f: ts.NodeFactory, mask: number): ts.Expression {
   if (mask >= 0) return f.createNumericLiteral(mask)
@@ -488,6 +489,12 @@ export function transformLlui(
   // producer modules populate the inputs slot when active; their
   // absence flows through as null inputs to the hash.
   activeModules.push(schemaHashModule)
+  // maskLegendModule registers whenever the file has any reactive paths.
+  // The module's own emit() gates on empty bit maps so registering
+  // here when fieldBits/fieldBitsHi are non-empty is sufficient.
+  if (fieldBits.size > 0 || fieldBitsHi.size > 0) {
+    activeModules.push(maskLegendModule({ fieldBits, fieldBitsHi }))
+  }
   const registry = new ModuleRegistry(activeModules)
   const registryResult = registry.run(sourceFile)
   // The registry's preTransform phase (v2c/decomp-7) may have
@@ -1699,8 +1706,9 @@ function tryInjectDirty(
 
   // Top-level field → aggregated bit mask. Sub-paths under one field
   // (`route.page`, `route.data`) collapse into a single entry so
-  // `tryBuildHandlers` and `__maskLegend` can reason per-field. Positions
-  // 0..30 live here; 31..61 in the parallel high-word map below.
+  // `tryBuildHandlers` can reason per-field. Positions 0..30 live here;
+  // 31..61 in the parallel high-word map below. `__maskLegend` itself
+  // is now owned by `maskLegendModule` (v2c/decomp-9).
   const topLevelBits = new Map<string, number>()
   for (const [path, bit] of fieldBits) {
     const topField = path.split('.')[0]!
@@ -1711,22 +1719,6 @@ function tryInjectDirty(
     const topField = path.split('.')[0]!
     topLevelBitsHi.set(topField, (topLevelBitsHi.get(topField) ?? 0) | bit)
   }
-
-  // __maskLegend: maps each top-level state field to the bit(s) that fire when
-  // it changes. Lets introspection tools decode runtime dirty masks to field names.
-  const legendProps: ts.PropertyAssignment[] = []
-  for (const [field, bit] of topLevelBits) {
-    // Use string literal — state field names declared via string keys
-    // (e.g. `{ "weird-key": ... }`) would otherwise emit as bare
-    // identifiers and break the printed output.
-    legendProps.push(
-      f.createPropertyAssignment(f.createStringLiteral(field), createMaskLiteral(f, bit)),
-    )
-  }
-  const legendProp = f.createPropertyAssignment(
-    '__maskLegend',
-    f.createObjectLiteralExpression(legendProps, false),
-  )
 
   // Structural mask — used by both __update and __handlers
   const structuralMask = computeStructuralMask(configArg, fieldBits)
@@ -1775,7 +1767,10 @@ function tryInjectDirty(
   // is strictly more precise, and the runtime throws on hand-authored
   // `__dirty`. `__maskLegend` survives because the agent layer uses it
   // to decode runtime dirty masks back to top-level field names.
-  const extraProps: ts.ObjectLiteralElementLike[] = [legendProp, updateProp]
+  // `__maskLegend` is emitted by `maskLegendModule` via the registry
+  // bridge (v2c/decomp-9); the umbrella's `applyRegistryEmissions` step
+  // splices it into the same config-arg literal we return here.
+  const extraProps: ts.ObjectLiteralElementLike[] = [updateProp]
   if (handlersProp) extraProps.push(handlersProp)
 
   // __prefixes: opt-in path-keyed reactivity (see

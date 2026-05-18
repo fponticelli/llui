@@ -27,6 +27,7 @@ export {
   bindingDescriptorsModule,
   BINDING_DESCRIPTORS_SLOT,
 } from './modules/binding-descriptors.js'
+export { maskLegendModule, type MaskLegendModuleOptions } from './modules/mask-legend.js'
 export * from './msg-annotations.js'
 export * from './msg-schema.js'
 export * from './schema-hash.js'
