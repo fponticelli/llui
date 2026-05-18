@@ -14,7 +14,6 @@ import { extractStateSchema } from './state-schema.js'
 // consumed by `bindingDescriptorsModule` via the registry's preTransform
 // hook — no longer imported here. See modules/binding-descriptors.ts.
 import { compilerCache } from './compiler-cache.js'
-import { COMPILER_VERSION } from './version.js'
 import { ModuleRegistry, type CompilerModule, type EmissionContribution } from './module.js'
 import { componentMetaModule } from './modules/component-meta.js'
 import { stateSchemaModule } from './modules/state-schema.js'
@@ -26,6 +25,7 @@ import {
   BINDING_DESCRIPTORS_SLOT,
 } from './modules/binding-descriptors.js'
 import { maskLegendModule } from './modules/mask-legend.js'
+import { compilerStampModule } from './modules/compiler-stamp.js'
 
 function createMaskLiteral(f: ts.NodeFactory, mask: number): ts.Expression {
   if (mask >= 0) return f.createNumericLiteral(mask)
@@ -495,6 +495,11 @@ export function transformLlui(
   if (fieldBits.size > 0 || fieldBitsHi.size > 0) {
     activeModules.push(maskLegendModule({ fieldBits, fieldBitsHi }))
   }
+  // compilerStampModule is unconditional — the integrity marker fires
+  // on every compiled `component()` call regardless of mode. Replaces
+  // the umbrella's last remaining inline injector
+  // (`injectCompilerEmittedMarker`, deleted below).
+  activeModules.push(compilerStampModule)
   const registry = new ModuleRegistry(activeModules)
   const registryResult = registry.run(sourceFile)
   // The registry's preTransform phase (v2c/decomp-7) may have
@@ -815,11 +820,10 @@ export function transformLlui(
       void stateSchema
       void msgAnnotations
 
-      // __lluiCompilerEmitted: always emitted (not dev-gated). The Vite
-      // adapter's closeBundle integrity check scans the bundle for this
-      // marker; missing-in-build mode is a hard error.
-      result = injectCompilerEmittedMarker(result ?? node, f)
-
+      // `__lluiCompilerEmitted` + `__compilerVersion` migrated to
+      // `compilerStampModule` (v2c/decomp-10). They flow through the
+      // same `applyRegistryEmissions` splice as every other registry
+      // contribution; the umbrella now contains zero inline injectors.
       if (result) {
         if (hasPos) edits.push({ start: origStart, end: origEnd, replacement: '' })
         return ts.visitEachChild(result, visitor, undefined!)
@@ -3612,48 +3616,9 @@ function cleanupImports(
 // literal builders live in `msg-schema.ts` alongside the schema
 // extraction logic.
 
-/**
- * `__lluiCompilerEmitted` + `__compilerVersion` integrity marker.
- * Always-on for every compiled `component()` — the Vite adapter's
- * `closeBundle` hook scans the bundle for the `__lluiCompilerEmitted`
- * literal and fails CI if absent in build mode. `__compilerVersion`
- * stamps the runtime contract version (v2a §2.4 / v2b §5).
- *
- * Remains inline (vs. a CompilerModule) because the marker is
- * umbrella-level: it must fire regardless of which other modules are
- * active. A future v2c step may absorb it into a `compiler-shared`
- * always-on module if the registry's mandatory-module pattern lands.
- */
-function injectCompilerEmittedMarker(
-  node: ts.CallExpression,
-  f: ts.NodeFactory,
-): ts.CallExpression {
-  const configArg = node.arguments[0]
-  if (!configArg || !ts.isObjectLiteralExpression(configArg)) return node
-  let hasMarker = false
-  let hasVersion = false
-  for (const prop of configArg.properties) {
-    if (ts.isPropertyAssignment(prop) && ts.isIdentifier(prop.name)) {
-      if (prop.name.text === '__lluiCompilerEmitted') hasMarker = true
-      if (prop.name.text === '__compilerVersion') hasVersion = true
-    }
-  }
-  const adds: ts.ObjectLiteralElementLike[] = []
-  if (!hasMarker) {
-    adds.push(f.createPropertyAssignment('__lluiCompilerEmitted', f.createNumericLiteral(1)))
-  }
-  if (!hasVersion) {
-    adds.push(
-      f.createPropertyAssignment('__compilerVersion', f.createStringLiteral(COMPILER_VERSION)),
-    )
-  }
-  if (adds.length === 0) return node
-  const newConfig = f.createObjectLiteralExpression([...configArg.properties, ...adds], true)
-  return f.createCallExpression(node.expression, node.typeArguments, [
-    newConfig,
-    ...node.arguments.slice(1),
-  ])
-}
+// `__lluiCompilerEmitted` + `__compilerVersion` integrity marker
+// migrated to `compilerStampModule` (v2c/decomp-10). Always-on through
+// the registry bridge — fires regardless of agent/dev mode.
 
 // ── Per-item accessor detection ──────────────────────────────────
 

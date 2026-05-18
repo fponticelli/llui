@@ -392,8 +392,9 @@ Update [`shared.md`](./shared.md) §20.9 to record that the public ABI decision 
 | `msgSchemaModule({ msgSchema, effectSchema })` | `shouldEmitAgentMetadata` + at least one schema         | inline `injectMsgSchema` + `injectEffectSchema`   |
 | `schemaHashModule`                             | always (even non-agent — deterministic null-input hash) | inline `injectSchemaHash`                         |
 | `maskLegendModule({ fieldBits, fieldBitsHi })` | `fieldBits.size > 0 \|\| fieldBitsHi.size > 0`          | inline `legendProp` build inside `tryInjectDirty` |
+| `compilerStampModule`                          | always (umbrella mandatory)                             | inline `injectCompilerEmittedMarker`              |
 
-The `injectCompilerEmittedMarker` (emits `__lluiCompilerEmitted` + `__compilerVersion`) remains inline as the only umbrella-level always-on emission. A `compiler-shared` mandatory-module pattern could absorb it; not load-bearing for this push.
+~~The `injectCompilerEmittedMarker` (emits `__lluiCompilerEmitted` + `__compilerVersion`) remains inline as the only umbrella-level always-on emission. A `compiler-shared` mandatory-module pattern could absorb it; not load-bearing for this push.~~ **Done in v2c/decomp-10.** `compilerStampModule` now owns both `__lluiCompilerEmitted` and `__compilerVersion`; emission is per-target through the registry bridge. The umbrella's visitor branch contains zero inline injectors — every per-component metadata field flows through `applyRegistryEmissions`. The `tryInjectDirty` core-emission path is untouched (it still owns `__update`, `__handlers`, `__prefixes` together) and remains the only non-registry emitter.
 
 **Lines of `transform.ts` removed by the agent-pipeline migration:** ~300 (5 inline injectors + 2 literal-builder helpers + duplicate computeSchemaHash call site). The monolith now contains zero agent-schema emission logic; that work lives in `modules/{state,msg-annotations,msg-schema,schema-hash}.ts`.
 
