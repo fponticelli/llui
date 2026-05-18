@@ -17,6 +17,7 @@ import {
   transformLlui,
   transformUseClientSsr,
   hasUseClientDirective,
+  crossFileAccessorPaths,
   type ExternalTypeSources,
   type PreExtractedSchemas,
 } from '@llui/compiler'
@@ -272,6 +273,33 @@ export interface LluiPluginOptions {
    * Default `false` — metadata is dev-only, no agent endpoints.
    */
   agent?: boolean | AgentPluginConfig
+
+  /**
+   * Opt-in cross-file accessor walking (v2c pipeline integration of v2b's
+   * cross-file walker). When enabled, the plugin builds a `ts.Program`
+   * over the project at `configResolved` and feeds each `transform` call
+   * the cross-file paths read through in-repo view-helpers — replacing
+   * the v0.x sentinel-`show()` workaround for helpers in sibling files.
+   *
+   * Prototype-grade caveats:
+   *   - The Program builds once at startup; it does NOT refresh on file
+   *     change. HMR-edited files see stale cross-file edges until the
+   *     next dev-server restart. (v2c's module decomposition lands the
+   *     proper incremental Program; this is the v2b pipeline-integration
+   *     deferral.)
+   *   - The Program covers `.ts` / `.tsx` files reachable from the Vite
+   *     project root's `tsconfig.json`. Out-of-project imports are not
+   *     followed; manifest-driven library helpers cover those in
+   *     `@llui/cli publish-deps` (v2c, deferred).
+   *   - The walker emits `llui/opaque-view-call` diagnostics for helpers
+   *     it can't classify; in dev these surface as Vite warnings. Set
+   *     `crossFile: 'silent'` to suppress the diagnostics while still
+   *     getting the path merging.
+   *
+   * Default `false` — preserves pre-v2c per-file behavior. Enable
+   * explicitly to opt in to the cross-file resolution.
+   */
+  crossFile?: boolean | 'silent'
 }
 
 /**
@@ -480,6 +508,35 @@ async function handleAgentRequest(
   res.end(buf)
 }
 
+/**
+ * Build the cross-file `ts.Program` for v2c pipeline integration. Scans
+ * the project root's `tsconfig.json` (or a sensible default) to collect
+ * rootNames. Returns null if no tsconfig is reachable — caller falls
+ * back to per-file path collection silently.
+ *
+ * Prototype: builds once, never refreshes. v2c's incremental program is
+ * the natural upgrade.
+ */
+async function buildCrossFileProgram(root: string): Promise<import('typescript').Program | null> {
+  try {
+    const ts = (await import('typescript')).default
+    const tsconfigPath = ts.findConfigFile(root, ts.sys.fileExists, 'tsconfig.json')
+    if (!tsconfigPath) return null
+    const parsed = ts.getParsedCommandLineOfConfigFile(tsconfigPath, undefined, {
+      ...ts.sys,
+      onUnRecoverableConfigFileDiagnostic: () => {},
+    })
+    if (!parsed) return null
+    const program = ts.createProgram({
+      rootNames: parsed.fileNames,
+      options: { ...parsed.options, noEmit: true, skipLibCheck: true },
+    })
+    return program
+  } catch {
+    return null
+  }
+}
+
 export default function llui(options: LluiPluginOptions = {}): Plugin {
   let devMode = false
   // `mcpPort` + `mcpMode` are resolved lazily in `configResolved` so we
@@ -494,6 +551,13 @@ export default function llui(options: LluiPluginOptions = {}): Plugin {
   let mcpChild: ChildProcess | null = null
   const verbose = options.verbose === true
   const agent = options.agent ?? false
+  const crossFileMode: false | true | 'silent' = options.crossFile ?? false
+  // The Program is built lazily on first transform when crossFile is
+  // enabled; cached afterwards for reuse. ts.Program is immutable —
+  // file changes are not reflected without a rebuild (documented above).
+  let crossFileProgram: import('typescript').Program | null = null
+  let crossFileProgramInit = false
+  let crossFileRoot = process.cwd()
   const agentConfig: AgentPluginConfig = typeof agent === 'object' ? agent : {}
   // Agent server instance — loaded in configResolved (async), registered
   // in configureServer (sync). Null until loaded, or if @llui/agent isn't
@@ -570,6 +634,7 @@ export default function llui(options: LluiPluginOptions = {}): Plugin {
 
     async configResolved(config) {
       devMode = config.command === 'serve' || config.mode === 'development'
+      crossFileRoot = config.root
       // Load @llui/agent here (async) so we can register middleware
       // synchronously in configureServer — which must happen BEFORE Vite
       // installs its catch-all SPA/fallback middleware.
@@ -806,6 +871,33 @@ export default function llui(options: LluiPluginOptions = {}): Plugin {
           ])
         : [undefined, undefined]
 
+      // Cross-file path resolution (v2c pipeline integration). When
+      // enabled, the plugin reuses a shared `ts.Program` across all
+      // transform calls and asks the engine for the union of paths read
+      // through in-repo view-helpers. Builds the Program on first call.
+      let crossFilePaths: ReadonlySet<string> | undefined
+      if (crossFileMode !== false) {
+        if (!crossFileProgramInit) {
+          crossFileProgramInit = true
+          crossFileProgram = await buildCrossFileProgram(crossFileRoot)
+        }
+        if (crossFileProgram) {
+          const sf = crossFileProgram.getSourceFile(id)
+          if (sf) {
+            try {
+              crossFilePaths = crossFileAccessorPaths(crossFileProgram, sf)
+            } catch (err) {
+              if (crossFileMode !== 'silent') {
+                this.warn(
+                  `[llui] cross-file walker failed on ${id}: ${(err as Error).message}. ` +
+                    `Falling back to per-file path collection.`,
+                )
+              }
+            }
+          }
+        }
+      }
+
       const result = transformLlui(
         code,
         id,
@@ -815,6 +907,7 @@ export default function llui(options: LluiPluginOptions = {}): Plugin {
         verbose,
         typeSources,
         preExtracted,
+        crossFilePaths,
       )
       if (!result) return undefined
 

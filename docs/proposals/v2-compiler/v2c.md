@@ -222,16 +222,19 @@ Loading a module that targets an incompatible compiler version: hard error at co
 
 ## 6. Exit criteria
 
-v2c is done when **all** of the following hold:
+Checkbox state captured at the v2c-partial landing (2026-05-18). This push delivered the diagnostic schema and the MCP static-mode adapter; the **module decomposition (§2)** is deferred as the largest residual.
 
-- [ ] `@llui/compiler` internals refactored into four packages: `@llui/compiler-core`, `@llui/compiler-agent`, `@llui/compiler-ssr`, `@llui/compiler-devtools`.
-- [ ] The §2.1 `CompilerModule` interface is in place. Visitor + emission ordering deterministic per §2.1.
-- [ ] `llui.config.ts` shape per §2.3 honored. `defineConfig` enforces the factory-call convention. `modules: []` is a hard error.
-- [ ] `core()` defaults work — a project without any `llui.config.ts` still compiles correctly with `[core(), devtools()]` enabled.
-- [ ] `@llui/compiler-agent` ships disabled-by-default; existing projects don't gain agent emissions unless they enable the module. Conversely, a project that _had_ `__msgSchema` emission today (via the legacy code in `packages/vite-plugin/src/msg-schema.ts`) keeps it after the codemod adds `agent()` to its config.
-- [ ] §3 diagnostic schema applied to all v2a + v2b + v2c diagnostics. Every diagnostic has stable ID, severity, category, location, optional fixes. ESLint, MCP, and CLI translators consume the same shape.
-- [ ] §4 MCP static-mode: every existing tool in `packages/mcp/src/tools/` that's answerable from source has a `llui_static_*` variant; the live/static dispatch is wired so tools available in both modes prefer live. No live-mode tool is removed.
-- [ ] §2.5 module-ABI public-API decision recorded: internal-only at v1, no `extending.md` shipped. The decision is documented in this file plus [`shared.md`](./shared.md) §20.9.
+- [ ] **Module decomposition: deferred.** `@llui/compiler` is _not_ split into `compiler-core` / `compiler-agent` / `compiler-ssr` / `compiler-devtools`. The visitor-registry refactor (§2.1), `llui.config.ts` shape (§2.3), and per-module activation (§2.4) are all paper-only at this commit. See §7.9 below for the handover note to whoever picks this up next.
+- [x] §3 diagnostic schema **defined** at `packages/compiler/src/diagnostic.ts`. Stable IDs (`llui/<slug>`), severity, category, project-relative file location with line/column range, optional `fixes`, optional `documentation` URL. `toCanonicalDiagnostic()` adapter converts walker-internal `WalkerDiagnostic` to the canonical shape. 10 unit tests in `packages/compiler/test/diagnostic-schema.test.ts`. **Partially applied**: v2c-era diagnostics (walker, manifest) carry stable IDs; v2a/v2b ad-hoc warns in `transform.ts` are NOT yet routed through the canonical shape — that's mechanical follow-up.
+- [x] §4 MCP static-mode: two new tools (`llui_static_show_compiled`, `llui_static_collect_paths`) shipped in `packages/mcp/src/tools/static-compiler.ts`. Both call `@llui/compiler` directly (no relay). No existing live-mode tool was removed; the live/static surface is now both-named (no auto-prefer-live dispatch yet — distinct tool names so callers can pick explicitly). 5 unit tests against on-disk temp files. **Coverage is two tools, not "every existing tool"**: a fuller enumeration of static-answerable questions (binding sources, msg schema introspection, prefix table walks) is the natural follow-up once module decomposition gives the engine a more structured analyzer surface.
+- [x] §2.5 module-ABI decision: **internal-only at v1**, no `extending.md` shipped. Already recorded in `v2c.md` §2.5 and `shared.md` §20.9.
+
+**Additional v2b carry-over** (not in the §6 original list, surfaced from v2b §10.1.3 handover):
+
+- [x] **Vite-adapter cross-file pipeline integration**. `LluiPluginOptions.crossFile?: boolean | 'silent'` added (off by default). When enabled, the plugin builds a `ts.Program` at `configResolved`, computes cross-file accessor paths per file via `crossFileAccessorPaths`, and threads them into `transformLlui`'s new `crossFilePaths` parameter. Three unit tests (`packages/compiler/test/cross-file-pipeline.test.ts`) cover the plumbing. **Prototype-grade caveats** documented on the option: Program does not refresh on HMR; out-of-project imports unfollowed; opt-in only.
+- [ ] **Vite-adapter Program HMR refresh**: still deferred (see crossFile option docstring). The cleanest landing alongside v2c's module decomposition is `ts.createIncrementalProgram` driven by the per-module-walker registry.
+- [ ] **`@llui/cli publish-deps` manifest generator + v2b codemod + `llui/prefer-static-deps` lint rule**: still deferred. All three need a `@llui/cli` package that doesn't exist; same blocker as v2b §7.
+- [ ] **Full `~84` test migration + `dom/test/fallback/` + bundle-size tree-shake fixture**: still deferred (cosmetic).
 
 ---
 
@@ -337,6 +340,31 @@ Steps:
 Estimated effort: 0.25 session.
 
 Update [`shared.md`](./shared.md) §20.9 to record that the public ABI decision stays "deferred." Update §19.6 to record the module activation API as resolved. Update §2.5 of this file with the final decision text.
+
+### 7.9 Handover note — module decomposition (deferred)
+
+**Status at this commit:** the module-decomposition phases (1–4 above) are unstarted. The diagnostic schema (Phase 5) and MCP static-mode (Phase 6) shipped without it. The decision to defer was a scope call — module decomposition is the largest single piece of v2c and is genuinely independent of the schema + MCP work that _does_ ship in this push.
+
+**What's actually there to refactor.** The engine today is `packages/compiler/src/` with one entry per concern: `collect-deps.ts`, `binding-descriptors.ts`, `msg-schema.ts`, `msg-annotations.ts`, `state-schema.ts`, `schema-hash.ts`, `accessor-resolver.ts`, `cross-file-resolver.ts`, `cross-file-walker.ts`, `manifest.ts`, `compiler-cache.ts`, `diagnostic.ts`, `version.ts`, plus the monolithic `transform.ts` (5.5 k lines). The decomposition pulls these into four module packages:
+
+- **`@llui/compiler-core`** absorbs everything that isn't agent / ssr / devtools: `collect-deps`, `binding-descriptors`, `accessor-resolver`, `cross-file-walker`, `cross-file-resolver`, `manifest`, `compiler-cache`, `diagnostic`, `state-schema`, `version`, plus the ~80% of `transform.ts` that handles mask injection / element rewrites / `__update`-synthesis / template clone / row factory / per-statement edits.
+- **`@llui/compiler-agent`** absorbs `msg-schema`, `msg-annotations`, `schema-hash`, plus the agent-specific emission paths in `transform.ts` (the `injectMsgSchema`, `injectMsgAnnotations`, `injectSchemaHash`, `__bindingDescriptors` work).
+- **`@llui/compiler-ssr`** absorbs the SSR-specific bits in `transform.ts` (the `'use client'` directive handling, the `__renderToString` emission path).
+- **`@llui/compiler-devtools`** absorbs the dev-only injection paths (the `_eachDiffLog` / `_disposerLog` / `_effectTimeline` / `_coverage` hooks).
+
+A `MODULE-MAPPING.md` produced during Phase 1 paper-only would walk one fixture through each module's visitor — that's the validation gate before any code moves.
+
+**Why it didn't ship in this push:** the refactor needs:
+
+1. New `CompilerModule` interface design + visitor-registry implementation in `@llui/compiler` (or whatever the umbrella package becomes after the split). Phase 1.
+2. Four new package skeletons + workspace + turbo wiring. Phase 2's setup.
+3. The actual code move out of `transform.ts` — that monolith is what justifies the visitor-registry; doing it in-place without the registry produces two passes over the same AST (the original monolithic visitor and the per-module visitors).
+4. `llui.config.ts` shape + factory-call enforcement + missing-config defaults + `modules: []` hard error. Phase 4.
+5. Bundle-size goldens proving a `modules: [core()]` config strips agent/ssr/devtools emissions.
+
+For a fresh agent: the visitor registry is the load-bearing primitive. Start by extracting one small visitor pattern (say, the `text()` mask injection) into a module shape, then validate the dispatcher routes correctly, _then_ decompose `transform.ts`. The reverse order (decompose first, register second) loses the test-net.
+
+**v2c.md §2 is the authoritative design for that work — it has not changed.** This handover note is a status snapshot, not a redesign.
 
 ---
 

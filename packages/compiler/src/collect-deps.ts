@@ -195,7 +195,10 @@ export function collectAccessorPathSets(sourceFile: ts.SourceFile): Set<string>[
  * all high-word emit so the generated code is byte-identical to the
  * pre-multi-word baseline.
  */
-export function collectDeps(source: string): {
+export function collectDeps(
+  source: string,
+  extraPaths?: ReadonlySet<string>,
+): {
   lo: Map<string, number>
   hi: Map<string, number>
 } {
@@ -207,6 +210,16 @@ export function collectDeps(source: string): {
   }
 
   const paths = collectStatePathsFromSource(sourceFile)
+  // Cross-file extension (v2c pipeline integration): the host adapter may
+  // pass paths discovered by `crossFileAccessorPaths()` — paths read
+  // through in-repo view-helpers in *other* files. Union them with the
+  // file-local set before bit assignment. Without this merge the
+  // sentinel-`show()` workaround from v2b §1 remains necessary; with
+  // it, helpers in other files contribute to the consumer's __prefixes
+  // table automatically.
+  if (extraPaths) {
+    for (const p of extraPaths) paths.add(p)
+  }
 
   const lo = new Map<string, number>()
   const hi = new Map<string, number>()

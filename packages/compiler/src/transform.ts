@@ -294,6 +294,7 @@ export function transformLlui(
   verbose = false,
   typeSources?: ExternalTypeSources,
   preExtracted?: PreExtractedSchemas,
+  crossFilePaths?: ReadonlySet<string>,
 ): { output: string; edits: TransformEdit[] } | null {
   let sourceFile = ts.createSourceFile('input.ts', source, ts.ScriptTarget.Latest, true)
 
@@ -345,7 +346,7 @@ export function transformLlui(
   // won't match. Files without component() get FULL_MASK on all bindings.
   const fileHasComponent = hasComponentDef(sourceFile, lluiImport)
   const { lo: fieldBits, hi: fieldBitsHi } = fileHasComponent
-    ? collectDeps(source)
+    ? collectDeps(source, crossFilePaths)
     : { lo: new Map<string, number>(), hi: new Map<string, number>() }
 
   if (verbose && fileHasComponent) {

@@ -24,6 +24,13 @@
 // expression); otherwise the call is uninteresting and not reported.
 
 import ts from 'typescript'
+import {
+  type Diagnostic,
+  type DiagnosticCategory,
+  type DiagnosticSeverity,
+  rangeFromOffsets,
+  relativizeFile,
+} from './diagnostic.js'
 
 export type ViewHelperKind = 'walked' | 'opaque' | 'async' | 'not-a-helper'
 
@@ -395,6 +402,67 @@ function getCalleeName(expr: ts.Expression): string | undefined {
   if (ts.isIdentifier(expr)) return expr.text
   if (ts.isPropertyAccessExpression(expr)) return expr.name.text
   return undefined
+}
+
+// ── Diagnostic schema integration (v2c §3) ──────────────────────────
+//
+// The walker emits a lightweight `WalkerDiagnostic` (with raw byte
+// offsets) for internal accumulation. Adapters and the host pipeline
+// want the canonical `Diagnostic` shape with project-relative paths
+// and line/column ranges. This converter resolves the position pair to
+// a Range and relativizes the file path; the caller supplies the
+// project root.
+
+const WALKER_DIAGNOSTIC_META: Record<
+  DiagnosticId,
+  {
+    severity: DiagnosticSeverity
+    category: DiagnosticCategory
+    documentation?: string
+  }
+> = {
+  'llui/opaque-view-call': {
+    severity: 'warning',
+    category: 'reactivity',
+    documentation:
+      'https://github.com/fponticelli/llui/blob/main/docs/proposals/v2-compiler/v2b.md#21-view-helper-resolution-rule',
+  },
+  'llui/async-view-helper': {
+    severity: 'error',
+    category: 'composition',
+    documentation:
+      'https://github.com/fponticelli/llui/blob/main/docs/proposals/v2-compiler/v2b.md#21-view-helper-resolution-rule',
+  },
+  'llui/helper-cycle': {
+    severity: 'warning',
+    category: 'composition',
+    documentation:
+      'https://github.com/fponticelli/llui/blob/main/docs/proposals/v2-compiler/v2b.md#23-recursion-and-cycles',
+  },
+}
+
+/**
+ * Convert a walker-internal diagnostic to the canonical `Diagnostic`
+ * shape. Reads the source text (for line/column resolution) and a
+ * project root (for path relativization).
+ */
+export function toCanonicalDiagnostic(
+  d: WalkerDiagnostic,
+  sourceText: string,
+  projectRoot: string,
+): Diagnostic {
+  const meta = WALKER_DIAGNOSTIC_META[d.id]
+  return {
+    id: d.id,
+    severity: meta.severity,
+    category: meta.category,
+    message: d.message,
+    location: {
+      file: relativizeFile(d.file, projectRoot),
+      range: rangeFromOffsets(sourceText, d.pos, d.end),
+    },
+    ...(meta.documentation ? { documentation: meta.documentation } : {}),
+  }
 }
 
 // ── Cross-file accessor path collection ─────────────────────────────

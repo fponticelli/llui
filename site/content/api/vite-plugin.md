@@ -126,6 +126,33 @@ export interface LluiPluginOptions {
    * Default `false` — metadata is dev-only, no agent endpoints.
    */
   agent?: boolean | AgentPluginConfig
+
+  /**
+   * Opt-in cross-file accessor walking (v2c pipeline integration of v2b's
+   * cross-file walker). When enabled, the plugin builds a `ts.Program`
+   * over the project at `configResolved` and feeds each `transform` call
+   * the cross-file paths read through in-repo view-helpers — replacing
+   * the v0.x sentinel-`show()` workaround for helpers in sibling files.
+   *
+   * Prototype-grade caveats:
+   *   - The Program builds once at startup; it does NOT refresh on file
+   *     change. HMR-edited files see stale cross-file edges until the
+   *     next dev-server restart. (v2c's module decomposition lands the
+   *     proper incremental Program; this is the v2b pipeline-integration
+   *     deferral.)
+   *   - The Program covers `.ts` / `.tsx` files reachable from the Vite
+   *     project root's `tsconfig.json`. Out-of-project imports are not
+   *     followed; manifest-driven library helpers cover those in
+   *     `@llui/cli publish-deps` (v2c, deferred).
+   *   - The walker emits `llui/opaque-view-call` diagnostics for helpers
+   *     it can't classify; in dev these surface as Vite warnings. Set
+   *     `crossFile: 'silent'` to suppress the diagnostics while still
+   *     getting the path merging.
+   *
+   * Default `false` — preserves pre-v2c per-file behavior. Enable
+   * explicitly to opt in to the cross-file resolution.
+   */
+  crossFile?: boolean | 'silent'
 }
 ```
 

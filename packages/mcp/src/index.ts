@@ -11,6 +11,7 @@ import {
   registerDebugApiTools,
   registerCdpTools,
   registerCompilerTools,
+  registerStaticCompilerTools,
   registerSourceTools,
   registerSsrTools,
 } from './tools/index.js'
@@ -155,6 +156,7 @@ export class LluiMcpServer {
     registerDebugApiTools(this.registry)
     registerCdpTools(this.registry)
     registerCompilerTools(this.registry)
+    registerStaticCompilerTools(this.registry)
     registerSourceTools(this.registry)
     registerSsrTools(this.registry)
 
@@ -329,6 +331,7 @@ export const mcpToolDefinitions: ToolDefinition[] = (() => {
   registerDebugApiTools(registry)
   registerCdpTools(registry)
   registerCompilerTools(registry)
+  registerStaticCompilerTools(registry)
   registerSourceTools(registry)
   registerSsrTools(registry)
   return registry.listDefinitions()

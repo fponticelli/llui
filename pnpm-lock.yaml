@@ -409,6 +409,9 @@ importers:
 
   packages/mcp:
     dependencies:
+      '@llui/compiler':
+        specifier: workspace:*
+        version: link:../compiler
       '@llui/eslint-plugin':
         specifier: workspace:*
         version: link:../eslint-plugin-llui
