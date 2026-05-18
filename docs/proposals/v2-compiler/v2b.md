@@ -474,14 +474,16 @@ A small set of tests explicitly _targets_ the `genericUpdate` fallback (the cont
 
 ---
 
-## 7. Migration (v2b pass)
+## 7. Migration (v2b pass) — DESCOPED
 
-`@llui/cli migrate-to-v2` v2b pass rewrites:
+**Status: will not ship.** The scope assumed an unknown population of consumer codebases needing an automated migration path. In reality LLui has a single internal consumer (Franco's projects), and the v0.0.x → 0.1.0 transition was completed manually. Investing in `@llui/cli migrate-to-v2` chases a non-existent population while costing real engineering hours.
 
-- Sentinel `show()` blocks marked for review (the codemod identifies them but doesn't auto-delete).
-- Optional helper return-type annotations added where §2.1 would otherwise emit `llui/opaque-view-call` and an explicit return type is the resolution. **This is the recovery-plan option-2 codemod, shipping unconditionally in v2b regardless of the §2.2 gate's measured threshold** — cheap insurance for consumer codebases with looser annotation discipline.
+The original codemod scope (preserved below for historical record only) was:
 
-**Sentinel blocks are marked, not auto-deleted.** This is the correct call on first principles. A sentinel `show()` and a "real" `show()` whose `when` happens to `void` paths are syntactically indistinguishable; the v0.2.0 walker treated them identically by design (that was the workaround). The v2b walker's claim that those paths are now redundant is only true after manifests are correct and the cross-file resolution actually fires for that callsite — which §2.2 explicitly admits is the unproven part of the system. Auto-deleting on v2b-day-one would weld the codemod's correctness to the walker's correctness, and any walker false negative becomes a silent reactivity regression in user code with no diff to inspect. Mark-for-review forces a human to confirm each deletion against the diagnostic output.
+- Sentinel `show()` blocks marked for review.
+- Optional helper return-type annotations added where §2.1 would otherwise emit `llui/opaque-view-call`.
+
+Both concerns landed as either runtime warnings or compiler diagnostics in v2a/v2b without needing a separate codemod tool. Any future migration tooling (e.g. for the v0.3 ABI when the `@llui/compiler-*` package split lands) will get its own dedicated proposal.
 
 ### What breaks (v2b)
 
@@ -628,19 +630,9 @@ Steps:
 
 **Exit:** all ~84 mount-using tests in `packages/dom/test/` migrated. `pnpm --filter @llui/dom test` green. Bundle-size fixture asserts tree-shaking.
 
-### 9.8 Phase 7 — Migration codemod (v2b pass)
+### 9.8 Phase 7 — Migration codemod — DESCOPED
 
-Estimated effort: 1 session.
-
-Steps:
-
-1. Extend `@llui/cli migrate-to-v2` with v2b-pass logic per §7:
-   - Sentinel-block identification: scan for `show({ when: ... void s. ... return false ... })` patterns; mark with a `// MIGRATION-V2B: REVIEW SENTINEL` comment.
-   - Optional return-type annotation: scan for helpers the §2.1 rule would mark opaque; add the annotation if it's a simple `Node[]` case.
-2. Run the codemod against the project's own examples and the in-repo `@llui/components`. Verify zero spurious changes.
-3. Run against `dicerun2` and `decisive.space-2`. Manually verify the marked sentinels match the §2.2 spike's findings.
-
-**Exit:** codemod ships; in-repo consumers stay green; the dicerun2 sentinel blocks are correctly marked.
+This phase will not ship. See §7 above for the rationale: LLui has a single internal consumer, the v0.0.x → 0.1.0 transition was completed manually, and `@llui/cli migrate-to-v2` chases a non-existent population.
 
 ### 9.9 Phase 8 — Load-bearing concrete win
 
