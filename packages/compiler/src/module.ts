@@ -404,18 +404,29 @@ export class ModuleRegistry {
     // (e.g. component-meta for two different `component()` calls in
     // one file), but two emissions with the same target on the same
     // field is the hard error from §2.1.
-    const ownerByKey = new Map<string, string>()
-    const keyFor = (c: EmissionContribution): string => {
-      const targetId = c.target ? `@${c.target.pos}-${c.target.end}` : '*'
-      return `${c.field}${targetId}`
-    }
+    //
+    // Targets are compared by object identity (not by `pos`/`end`) so
+    // synthetic nodes (factory-created with pos=-1) compare correctly.
+    // File-global emissions (target=undefined) share one bucket.
+    const globalOwnerByField = new Map<string, string>()
+    const targetOwnerByField = new Map<ts.CallExpression, Map<string, string>>()
     for (const m of this.modules) {
       if (!m.emit) continue
       const contributions = m.emit(emissionCtx, analysis)
       for (const c of contributions) {
-        const k = keyFor(c)
-        if (ownerByKey.has(k)) {
-          const other = ownerByKey.get(k)!
+        let owners: Map<string, string>
+        if (c.target) {
+          let existing = targetOwnerByField.get(c.target)
+          if (!existing) {
+            existing = new Map()
+            targetOwnerByField.set(c.target, existing)
+          }
+          owners = existing
+        } else {
+          owners = globalOwnerByField
+        }
+        const other = owners.get(c.field)
+        if (other !== undefined) {
           throw new Error(
             `[llui/module-emission-conflict] Modules "${other}" and "${c.module}" both ` +
               `contribute to ComponentDef field "${c.field}"${c.target ? ' for the same component() call site' : ''}. ` +
@@ -424,7 +435,7 @@ export class ModuleRegistry {
               `docs/proposals/v2-compiler/v2c.md §2.1.`,
           )
         }
-        ownerByKey.set(k, c.module)
+        owners.set(c.field, c.module)
         emissions.push(c)
       }
     }

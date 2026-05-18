@@ -36,6 +36,11 @@ import {
   type ElementRewriteSlot,
 } from './modules/element-rewrite.js'
 import { rowFactoryModule } from './modules/row-factory.js'
+import {
+  coreSynthesisModule,
+  CORE_SYNTHESIS_SLOT,
+  type CoreSynthesisSlot,
+} from './modules/core-synthesis.js'
 
 export function createMaskLiteral(f: ts.NodeFactory, mask: number): ts.Expression {
   if (mask >= 0) return f.createNumericLiteral(mask)
@@ -566,6 +571,21 @@ export function transformLlui(
       source,
     }),
   )
+  // coreSynthesisModule injects `__update` / `__handlers` / `__prefixes`
+  // onto every `component()` call's config-arg literal. These three
+  // share `topLevelBits` / `structuralMask` intermediates and are
+  // co-emitted by `tryInjectDirty` (still inline in transform.ts;
+  // the module is a thin wrapper per v2c §7.9.2 decision (b)). Fires
+  // top-down so subsequent per-target emissions (componentMeta,
+  // compilerStamp, schemaHash, stateSchema, msgSchema, msgAnnotations)
+  // observe the synthesized config-arg via `findComponentCalls`.
+  activeModules.push(
+    coreSynthesisModule({
+      fieldBits,
+      fieldBitsHi,
+      lluiImport,
+    }),
+  )
   // structuralMaskModule injects `__mask` into each()/branch()/scope()/show()
   // options. Activated when the file has any low-word reactive paths
   // (matches the inline `fieldBits.size === 0` early-return). Module
@@ -641,6 +661,17 @@ export function transformLlui(
     ) {
       edits.push({ start: 0, end: 0, replacement: '' })
     }
+  }
+  // core-synthesis module signals __update/__handlers/__prefixes
+  // emission. Drives `__runPhase2` + `__handleMsg` runtime imports
+  // via `cleanupImports`. Also pushes a sentinel edit so the
+  // per-statement diff catches the synthesized config-arg.
+  const csState = registryResult.analysis.perModule.get(CORE_SYNTHESIS_SLOT) as
+    | CoreSynthesisSlot
+    | undefined
+  if (csState?.usesApplyBinding) {
+    usesApplyBinding = true
+    edits.push({ start: 0, end: 0, replacement: '' })
   }
   const emissionsByTarget = new Map<ts.CallExpression, EmissionContribution[]>()
   const globalEmissions: EmissionContribution[] = []
@@ -779,10 +810,15 @@ export function transformLlui(
       // before this visitor; nothing to do here.
     }
 
-    // Pass 2: Inject __dirty, __update, and __msgSchema into component() calls
+    // Pass 2: component() metadata splicing. Core synthesis
+    // (__update/__handlers/__prefixes) moved to `coreSynthesisModule`
+    // (v2c/decomp-19) — fires top-down in Phase 2b before this
+    // visitor sees the call. The remaining work here is just the
+    // registry-emission splice (per-target __componentMeta,
+    // __compilerVersion, __lluiCompilerEmitted, __schemaHash,
+    // __stateSchema, __msgSchema, __effectSchema, __msgAnnotations).
     if (ts.isCallExpression(node) && isComponentCall(node, lluiImport)) {
-      let result = tryInjectDirty(node, fieldBits, f, fieldBitsHi)
-      if (result) usesApplyBinding = true
+      let result: ts.CallExpression | null = null
 
       // Extract schema data once — used both for devMode injections and the
       // unconditional __schemaHash (spec §7.4: hash ships in prod too).
@@ -1270,7 +1306,10 @@ function collectViewHelperAliases(
   return aliases
 }
 
-function isComponentCall(node: ts.CallExpression, lluiImport: ts.ImportDeclaration): boolean {
+export function isComponentCall(
+  node: ts.CallExpression,
+  lluiImport: ts.ImportDeclaration,
+): boolean {
   if (!ts.isIdentifier(node.expression)) return false
   const name = node.expression.text
   if (name !== 'component') return false
@@ -1624,7 +1663,7 @@ export function isHelperCall(
 // `structuralMaskModule` (v2c/decomp-14). Module fires top-down
 // (transformCallEnter) so the visitor sees the masked options literal.
 
-function tryInjectDirty(
+export function tryInjectDirty(
   node: ts.CallExpression,
   fieldBits: Map<string, number>,
   f: ts.NodeFactory,
@@ -1738,7 +1777,12 @@ function tryInjectDirty(
 
   const newConfig = f.createObjectLiteralExpression([...configArg.properties, ...extraProps], true)
 
-  return f.createCallExpression(node.expression, node.typeArguments, [
+  // `updateCallExpression` (not `createCallExpression`) so the new
+  // node inherits `node.pos` / `node.end` from the original. Phase 2b
+  // downstream consumers (componentMetaModule, etc.) read pos via
+  // `getStart(sf)` for line info; a synthetic node (pos=-1) would
+  // collapse every `component()` call's `__componentMeta.line` to 0.
+  return f.updateCallExpression(node, node.expression, node.typeArguments, [
     newConfig,
     ...node.arguments.slice(1),
   ])

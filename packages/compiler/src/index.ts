@@ -48,6 +48,12 @@ export {
   type ElementRewriteSlot,
 } from './modules/element-rewrite.js'
 export { rowFactoryModule, type RowFactoryModuleOptions } from './modules/row-factory.js'
+export {
+  coreSynthesisModule,
+  CORE_SYNTHESIS_SLOT,
+  type CoreSynthesisModuleOptions,
+  type CoreSynthesisSlot,
+} from './modules/core-synthesis.js'
 export * from './msg-annotations.js'
 export * from './msg-schema.js'
 export * from './schema-hash.js'
