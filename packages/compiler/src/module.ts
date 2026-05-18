@@ -147,29 +147,43 @@ export interface CompilerModule {
     [K in ts.SyntaxKind]?: (ctx: AnalysisContext, node: ts.Node) => void
   }
   /**
-   * Optional per-call AST rewrite. Called once per `CallExpression`
-   * during the post-visitor transform phase, AFTER analysis has
-   * accumulated findings in `analysis.perModule`. Returns either:
+   * Optional per-call AST rewrite, BOTTOM-UP (after children visited).
+   * Called once per `CallExpression` during the post-visitor transform
+   * phase, AFTER analysis has accumulated findings in
+   * `analysis.perModule` AND after `ts.visitEachChild` has recursively
+   * rewritten the node's children. Returns either:
    *   - `null` — node unchanged; chain continues with the next module's
    *     transformCall (if any).
    *   - a new `ts.CallExpression` — node replaced; subsequent modules'
    *     transformCall hooks see the new node (composes in declaration
    *     order, just like preTransform).
    *
-   * Use for per-call rewrites the visitor model can't express: element
-   * helper rewrites (`div(...)` → `elSplit(...)`), structural mask
-   * injection on `each`/`branch`/`show`, row-factory emission, template
-   * cloning, item-selector dedup, memo-wrapping. The registry's
-   * orchestrator threads the transformed node through subsequent
-   * modules so a rewrite chain like `memo-wrap → mask-inject` produces
-   * a single output node observed by both.
-   *
-   * Module authors should treat transformCall as a pure function of
-   * its inputs (the node + analysis findings). Side-effects (mutating
-   * `analysis.perModule` from inside transformCall) are not supported
-   * — use a visitor for analysis and transformCall for the rewrite.
+   * Use for rewrites that depend on the rewritten children — e.g.
+   * row-factory emission inspects the render body for an already-emitted
+   * `elTemplate(...)` call, so element rewrites that produce
+   * `elTemplate` MUST have fired first. Module authors should treat
+   * transformCall as a pure function of its inputs (the node + analysis
+   * findings).
    */
   transformCall?(ctx: TransformCallContext, node: ts.CallExpression): ts.CallExpression | null
+  /**
+   * Optional per-call AST rewrite, TOP-DOWN (before children visited).
+   * Mirrors `transformCall` but fires BEFORE `ts.visitEachChild`
+   * recurses into the call's children. Use when the rewrite must happen
+   * before the children are visited — most commonly when the rewrite
+   * changes the call's argument shape and the children's visitor would
+   * misinterpret the original shape. Memo-wrapping the `items:`
+   * accessor of an `each()` call is the canonical example: the wrapped
+   * accessor is what subsequent passes (item-selector dedup, mask
+   * injection) read.
+   *
+   * Both `transformCallEnter` and `transformCall` may be declared by
+   * the same module; enter fires top-down before recursion, transformCall
+   * fires bottom-up after. Ordering within each direction is declaration
+   * order across modules; the two directions never interleave for a
+   * given node.
+   */
+  transformCallEnter?(ctx: TransformCallContext, node: ts.CallExpression): ts.CallExpression | null
   /** Called once per file after the visitor pass completes. Returns this module's emission contributions. */
   emit?(ctx: EmissionContext, analysis: FileAnalysis): EmissionContribution[]
   /** Runtime symbol names this module's emissions reference (from `@llui/dom`). */
@@ -260,10 +274,12 @@ export class ModuleRegistry {
    *      module's matching SyntaxKind handler. Read-only — visitors
    *      accumulate findings in `analysis.perModule` but cannot rewrite.
    *   3. Transform: a `ts.transform`-style walk dispatches each
-   *      `CallExpression` to every module's `transformCall?` hook in
-   *      declaration order; each hook's return value (if non-null)
-   *      feeds the next. Composes call-site rewrites without each
-   *      module paying a whole-file walk cost.
+   *      `CallExpression` to every module's `transformCallEnter?`
+   *      (top-down, before children recursion) and `transformCall?`
+   *      (bottom-up, after children recursion) hooks in declaration
+   *      order; each hook's return value (if non-null) feeds the next.
+   *      Composes call-site rewrites without each module paying a
+   *      whole-file walk cost.
    *   4. Emission: each module's `emit?` fires; the registry merges
    *      contributions, detecting (field, target) conflicts.
    */
@@ -320,25 +336,54 @@ export class ModuleRegistry {
     walk(currentSf)
 
     // Phase 2b: per-CallExpression transform. Modules with a
-    // `transformCall` hook get one chance to rewrite each call site;
+    // `transformCallEnter` (top-down) or `transformCall` (bottom-up)
+    // hook get one chance to rewrite each call site per direction;
     // chained in declaration order. The phase is skipped entirely
-    // when no module declares the hook (zero overhead for the common
-    // case of metadata-only modules).
-    const callTransformers = this.modules.filter((m) => m.transformCall)
-    if (callTransformers.length > 0) {
+    // when no module declares either hook (zero overhead for the
+    // common case of metadata-only modules).
+    //
+    // Within a single CallExpression visit:
+    //   1. transformCallEnter fires (declaration order) — rewrites
+    //      the node BEFORE children are recursed; subsequent
+    //      transformCallEnter hooks see the rewritten node.
+    //   2. ts.visitEachChild recurses into the (possibly enter-rewritten)
+    //      node, visiting children.
+    //   3. transformCall fires (declaration order) — rewrites the
+    //      now-children-rewritten node; subsequent transformCall hooks
+    //      see the result.
+    //
+    // The two directions never interleave for a given node: all enters
+    // run, then all children visit, then all exits run.
+    const enterModules = this.modules.filter((m) => m.transformCallEnter)
+    const exitModules = this.modules.filter((m) => m.transformCall)
+    if (enterModules.length > 0 || exitModules.length > 0) {
       const transformCtx: TransformCallContext = {
         factory: ts.factory,
         analysis,
       }
       const visit: ts.Visitor = (node) => {
-        const visited = ts.visitEachChild(node, visit, undefined!)
-        if (ts.isCallExpression(visited)) {
-          let current = visited
-          for (const m of callTransformers) {
-            const replaced = m.transformCall!(transformCtx, current)
+        // Top-down (enter) — fires BEFORE children recursion. Chain
+        // composes in declaration order; each enter hook sees the
+        // output of the previous one.
+        let current = node
+        if (ts.isCallExpression(current)) {
+          for (const m of enterModules) {
+            const replaced = m.transformCallEnter!(transformCtx, current as ts.CallExpression)
             if (replaced) current = replaced
           }
-          return current
+        }
+        // Recurse children of the (possibly enter-rewritten) node.
+        const visited = ts.visitEachChild(current, visit, undefined!)
+        // Bottom-up (exit) — fires AFTER children recursion. Chain
+        // composes in declaration order; each exit hook sees the
+        // output of the previous one.
+        if (ts.isCallExpression(visited)) {
+          let result = visited as ts.CallExpression
+          for (const m of exitModules) {
+            const replaced = m.transformCall!(transformCtx, result)
+            if (replaced) result = replaced
+          }
+          return result
         }
         return visited
       }

@@ -427,6 +427,186 @@ describe('ModuleRegistry — transformCall hook (Phase 2b)', () => {
   })
 })
 
+describe('ModuleRegistry — transformCallEnter (top-down)', () => {
+  const printer = ts.createPrinter({ newLine: ts.NewLineKind.LineFeed })
+
+  it('fires top-down before children are recursed', () => {
+    // Module renames `outer(...)` → `OUTER(...)` via enter. Then a
+    // second exit-only module renames any `inner(...)` to `INNER(...)`.
+    // The exit module sees `inner()` as a child of the renamed `OUTER`
+    // — proving enter fired first AND recursion happened after.
+    const visitedCallees: string[] = []
+    const renameOuterEnter: CompilerModule = {
+      name: 'rename-outer-enter',
+      compilerVersion: '^0.3.0',
+      diagnostics: [],
+      visitors: {},
+      transformCallEnter: (ctx, node) => {
+        if (!ts.isIdentifier(node.expression) || node.expression.text !== 'outer') return null
+        return ctx.factory.createCallExpression(
+          ctx.factory.createIdentifier('OUTER'),
+          node.typeArguments,
+          node.arguments,
+        )
+      },
+    }
+    const renameInnerExit: CompilerModule = {
+      name: 'rename-inner-exit',
+      compilerVersion: '^0.3.0',
+      diagnostics: [],
+      visitors: {},
+      transformCall: (ctx, node) => {
+        if (!ts.isIdentifier(node.expression)) return null
+        visitedCallees.push(node.expression.text)
+        if (node.expression.text !== 'inner') return null
+        return ctx.factory.createCallExpression(
+          ctx.factory.createIdentifier('INNER'),
+          node.typeArguments,
+          node.arguments,
+        )
+      },
+    }
+    const registry = new ModuleRegistry([renameOuterEnter, renameInnerExit])
+    const result = registry.run(parse(`outer(inner())`))
+    const out = printer.printFile(result.analysis.sourceFile)
+    expect(out.trim()).toBe(`OUTER(INNER());`)
+    // Exit observation order is bottom-up: child (inner) fires before parent.
+    // After enter rename, the parent's callee is OUTER.
+    expect(visitedCallees).toEqual(['inner', 'OUTER'])
+  })
+
+  it('enter chain composes in declaration order before recursion', () => {
+    const order: string[] = []
+    const enterA: CompilerModule = {
+      name: 'enter-a',
+      compilerVersion: '^0.3.0',
+      diagnostics: [],
+      visitors: {},
+      transformCallEnter: (_ctx, node) => {
+        order.push('enter-a')
+        return node
+      },
+    }
+    const enterB: CompilerModule = {
+      name: 'enter-b',
+      compilerVersion: '^0.3.0',
+      diagnostics: [],
+      visitors: {},
+      transformCallEnter: (_ctx, node) => {
+        order.push('enter-b')
+        return node
+      },
+    }
+    const exitC: CompilerModule = {
+      name: 'exit-c',
+      compilerVersion: '^0.3.0',
+      diagnostics: [],
+      visitors: {},
+      transformCall: (_ctx, node) => {
+        order.push('exit-c')
+        return node
+      },
+    }
+    const registry = new ModuleRegistry([enterA, enterB, exitC])
+    registry.run(parse(`foo()`))
+    // Single call: enter-a, enter-b (declaration order, top-down),
+    // then exit-c (bottom-up). No interleaving.
+    expect(order).toEqual(['enter-a', 'enter-b', 'exit-c'])
+  })
+
+  it('children of an enter-rewritten node are recursed under the new shape', () => {
+    // Enter wraps each `foo(x)` → `foo(x, 1)`. The added literal `1`
+    // is a child of the new call — a separate visitor that counts
+    // NumericLiterals via a transformCall (exit, returning original)
+    // proves the recursion saw the synthesized child.
+    const numCounts: number[] = []
+    const wrapper: CompilerModule = {
+      name: 'wrapper',
+      compilerVersion: '^0.3.0',
+      diagnostics: [],
+      visitors: {},
+      transformCallEnter: (ctx, node) => {
+        if (!ts.isIdentifier(node.expression) || node.expression.text !== 'foo') return null
+        return ctx.factory.createCallExpression(node.expression, node.typeArguments, [
+          ...node.arguments,
+          ctx.factory.createNumericLiteral(1),
+        ])
+      },
+    }
+    const numericCounter: CompilerModule = {
+      name: 'numeric-counter',
+      compilerVersion: '^0.3.0',
+      diagnostics: [],
+      visitors: {
+        [ts.SyntaxKind.NumericLiteral]: (_ctx, _n) => {
+          /* visitor doesn't see post-enter nodes */
+        },
+      },
+      // The exit hook fires on each CallExpression after children
+      // are recursed. The wrapper added a numeric child; the visit
+      // function walked it before this exit fires.
+      transformCall: (_ctx, node) => {
+        let count = 0
+        const walk = (n: ts.Node): void => {
+          if (ts.isNumericLiteral(n)) count++
+          ts.forEachChild(n, walk)
+        }
+        ts.forEachChild(node, walk)
+        numCounts.push(count)
+        return null
+      },
+    }
+    const registry = new ModuleRegistry([wrapper, numericCounter])
+    registry.run(parse(`foo(); foo(42)`))
+    // For `foo()`: enter wraps it to `foo(1)`. Exit sees 1 numeric child.
+    // For `foo(42)`: enter wraps it to `foo(42, 1)`. Exit sees 2 numeric children.
+    expect(numCounts).toEqual([1, 2])
+  })
+
+  it('a module may declare both enter and transformCall on the same call', () => {
+    // Enter adds arg `1`; exit adds arg `2`. Result has both — and the
+    // enter-added child is recursed but doesn't fire enter again
+    // (enter only fires once per node).
+    const dualModule: CompilerModule = {
+      name: 'dual',
+      compilerVersion: '^0.3.0',
+      diagnostics: [],
+      visitors: {},
+      transformCallEnter: (ctx, node) => {
+        if (!ts.isIdentifier(node.expression) || node.expression.text !== 'foo') return null
+        return ctx.factory.createCallExpression(node.expression, node.typeArguments, [
+          ...node.arguments,
+          ctx.factory.createNumericLiteral(1),
+        ])
+      },
+      transformCall: (ctx, node) => {
+        if (!ts.isIdentifier(node.expression) || node.expression.text !== 'foo') return null
+        return ctx.factory.createCallExpression(node.expression, node.typeArguments, [
+          ...node.arguments,
+          ctx.factory.createNumericLiteral(2),
+        ])
+      },
+    }
+    const registry = new ModuleRegistry([dualModule])
+    const result = registry.run(parse(`foo()`))
+    const out = printer.printFile(result.analysis.sourceFile)
+    expect(out.trim()).toBe(`foo(1, 2);`)
+  })
+
+  it('phase still skipped when only visitors declared (no enter, no exit)', () => {
+    const visitorOnly: CompilerModule = {
+      name: 'visitor-only',
+      compilerVersion: '^0.3.0',
+      diagnostics: [],
+      visitors: { [ts.SyntaxKind.CallExpression]: () => {} },
+    }
+    const registry = new ModuleRegistry([visitorOnly])
+    const sf = parse(`foo()`)
+    const result = registry.run(sf)
+    expect(result.analysis.sourceFile).toBe(sf)
+  })
+})
+
 describe('ModuleRegistry — introspection', () => {
   it('listModules returns names in declaration order', () => {
     const registry = new ModuleRegistry([
