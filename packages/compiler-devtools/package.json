@@ -1,0 +1,50 @@
+{
+  "name": "@llui/compiler-devtools",
+  "version": "0.3.0-alpha.0",
+  "type": "module",
+  "sideEffects": false,
+  "private": true,
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "check": "tsc --noEmit",
+    "lint": "eslint src",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@llui/compiler": "workspace:*",
+    "@llui/compiler-introspection": "workspace:*",
+    "typescript": "^6.0.2"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0"
+  },
+  "description": "LLui compiler — dev-MCP / LLM tooling support (opt-in, dev-mode only). Emits `__componentMeta` (file/line for source navigation) and future trace instrumentation (`_eachDiffLog`, `_disposerLog`, `_effectTimeline`, `_coverage`). Depends on @llui/compiler-introspection.",
+  "keywords": [
+    "llui",
+    "compiler",
+    "devtools",
+    "mcp"
+  ],
+  "author": "Franco Ponticelli <franco.ponticelli@gmail.com>",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/fponticelli/llui.git",
+    "directory": "packages/compiler-devtools"
+  },
+  "bugs": {
+    "url": "https://github.com/fponticelli/llui/issues"
+  },
+  "homepage": "https://github.com/fponticelli/llui/tree/main/packages/compiler-devtools#readme"
+}

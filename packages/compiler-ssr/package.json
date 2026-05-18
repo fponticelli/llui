@@ -1,0 +1,48 @@
+{
+  "name": "@llui/compiler-ssr",
+  "version": "0.3.0-alpha.0",
+  "type": "module",
+  "sideEffects": false,
+  "private": true,
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "check": "tsc --noEmit",
+    "lint": "eslint src",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@llui/compiler": "workspace:*",
+    "typescript": "^6.0.2"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0"
+  },
+  "description": "LLui compiler — SSR support (opt-in). 'use client' directive handling and SSR-specific emission paths consumed by @llui/vike.",
+  "keywords": [
+    "llui",
+    "compiler",
+    "ssr"
+  ],
+  "author": "Franco Ponticelli <franco.ponticelli@gmail.com>",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/fponticelli/llui.git",
+    "directory": "packages/compiler-ssr"
+  },
+  "bugs": {
+    "url": "https://github.com/fponticelli/llui/issues"
+  },
+  "homepage": "https://github.com/fponticelli/llui/tree/main/packages/compiler-ssr#readme"
+}

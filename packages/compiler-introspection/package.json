@@ -1,0 +1,49 @@
+{
+  "name": "@llui/compiler-introspection",
+  "version": "0.3.0-alpha.0",
+  "type": "module",
+  "sideEffects": false,
+  "private": true,
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "check": "tsc --noEmit",
+    "lint": "eslint src",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@llui/compiler": "workspace:*",
+    "typescript": "^6.0.2"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0"
+  },
+  "description": "LLui compiler — runtime introspection metadata (opt-in). Schema/annotation/hash emission consumed by @llui/agent-bridge (end-user agent) and @llui/mcp (dev MCP).",
+  "keywords": [
+    "llui",
+    "compiler",
+    "introspection",
+    "schema"
+  ],
+  "author": "Franco Ponticelli <franco.ponticelli@gmail.com>",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/fponticelli/llui.git",
+    "directory": "packages/compiler-introspection"
+  },
+  "bugs": {
+    "url": "https://github.com/fponticelli/llui/issues"
+  },
+  "homepage": "https://github.com/fponticelli/llui/tree/main/packages/compiler-introspection#readme"
+}

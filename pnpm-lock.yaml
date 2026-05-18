@@ -352,6 +352,61 @@ importers:
         specifier: ^22.0.0
         version: 22.19.15
 
+  packages/compiler-devtools:
+    dependencies:
+      '@llui/compiler':
+        specifier: workspace:*
+        version: link:../compiler
+      '@llui/compiler-introspection':
+        specifier: workspace:*
+        version: link:../compiler-introspection
+      typescript:
+        specifier: ^6.0.2
+        version: 6.0.2
+    devDependencies:
+      '@types/node':
+        specifier: ^22.0.0
+        version: 22.19.15
+
+  packages/compiler-dom:
+    dependencies:
+      '@llui/compiler':
+        specifier: workspace:*
+        version: link:../compiler
+      typescript:
+        specifier: ^6.0.2
+        version: 6.0.2
+    devDependencies:
+      '@types/node':
+        specifier: ^22.0.0
+        version: 22.19.15
+
+  packages/compiler-introspection:
+    dependencies:
+      '@llui/compiler':
+        specifier: workspace:*
+        version: link:../compiler
+      typescript:
+        specifier: ^6.0.2
+        version: 6.0.2
+    devDependencies:
+      '@types/node':
+        specifier: ^22.0.0
+        version: 22.19.15
+
+  packages/compiler-ssr:
+    dependencies:
+      '@llui/compiler':
+        specifier: workspace:*
+        version: link:../compiler
+      typescript:
+        specifier: ^6.0.2
+        version: 6.0.2
+    devDependencies:
+      '@types/node':
+        specifier: ^22.0.0
+        version: 22.19.15
+
   packages/components:
     dependencies:
       '@floating-ui/dom':
