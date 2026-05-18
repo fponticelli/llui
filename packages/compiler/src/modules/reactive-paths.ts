@@ -64,14 +64,29 @@ export const reactivePathsModule: CompilerModule = {
 }
 
 /**
- * Build a `(s) => s.<path>` arrow expression for a dotted path.
+ * Build a `(s) => s?.<path>?.<leaf>` arrow expression for a dotted path.
  * `path` is depth-2 normalised by the collector (e.g. `user.name`).
+ *
+ * Multi-segment paths use optional chaining (`?.`) on every segment so
+ * the prefix function stays well-defined under structural-sharing
+ * reducers where an intermediate slice may be undefined transiently.
+ * Single-segment paths (`s.theme`) use plain `.` since there's no
+ * intermediate. The monolith's `buildAccess` in `transform.ts` uses the
+ * exact same shape — produces byte-equivalent emission when the path
+ * sets match.
  */
 function buildPrefixAccessor(f: ts.NodeFactory, path: string): ts.ArrowFunction {
   const parts = path.split('.')
+  const useChain = parts.length > 1
   let expr: ts.Expression = f.createIdentifier('s')
   for (const part of parts) {
-    expr = f.createPropertyAccessExpression(expr, f.createIdentifier(part))
+    expr = useChain
+      ? f.createPropertyAccessChain(
+          expr,
+          f.createToken(ts.SyntaxKind.QuestionDotToken),
+          f.createIdentifier(part),
+        )
+      : f.createPropertyAccessExpression(expr, f.createIdentifier(part))
   }
   return f.createArrowFunction(
     undefined,

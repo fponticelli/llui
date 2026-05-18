@@ -18,6 +18,8 @@ import { computeSchemaHash } from './schema-hash.js'
 import { tagDispatchHandlers, injectScopeVariantRegistrations } from './binding-descriptors.js'
 import { compilerCache } from './compiler-cache.js'
 import { COMPILER_VERSION } from './version.js'
+import { ModuleRegistry, type CompilerModule, type EmissionContribution } from './module.js'
+import { componentMetaModule } from './modules/component-meta.js'
 
 function createMaskLiteral(f: ts.NodeFactory, mask: number): ts.Expression {
   if (mask >= 0) return f.createNumericLiteral(mask)
@@ -296,7 +298,12 @@ export function transformLlui(
   preExtracted?: PreExtractedSchemas,
   crossFilePaths?: ReadonlySet<string>,
 ): { output: string; edits: TransformEdit[] } | null {
-  let sourceFile = ts.createSourceFile('input.ts', source, ts.ScriptTarget.Latest, true)
+  // Use the caller-provided filename so any module reading `sf.fileName`
+  // (e.g. `componentMetaModule` emitting `__componentMeta: { file }`)
+  // sees the real path instead of a placeholder. The monolith's inline
+  // `injectComponentMeta` used the `_filename` parameter directly; the
+  // bridge needs the same source via the AST node.
+  let sourceFile = ts.createSourceFile(_filename, source, ts.ScriptTarget.Latest, true)
 
   // Find the @llui/dom import
   const imp = findLluiImport(sourceFile)
@@ -380,6 +387,79 @@ export function transformLlui(
 
   // Collect source positions of transformed nodes for source mapping
   const edits: TransformEdit[] = []
+
+  // ── Module registry (v2c §2) ────────────────────────────────────
+  //
+  // Active CompilerModules run as a single AST pass over the source
+  // before the main visitor; their emissions are spliced into the
+  // matching `component()` call's config-arg by `applyRegistryEmissions`
+  // alongside the monolith's inline `inject*` helpers. As modules
+  // incrementally absorb inline-injector concerns (`__componentMeta`
+  // today, `__msgSchema` / `__schemaHash` / `__prefixes` next), the
+  // matching inline call sites delete and the registry becomes the
+  // sole emission path.
+  //
+  // Module activation rules:
+  //   - `componentMetaModule` registers only in `devMode` (matches the
+  //     monolith's `if (devMode) injectComponentMeta(...)` gate).
+  //   - All other modules are dormant in this push.
+  //
+  // When the registry is empty the bridge collapses to a no-op — the
+  // monolith's existing emissions continue to dominate.
+  const activeModules: CompilerModule[] = []
+  if (devMode) {
+    activeModules.push(componentMetaModule)
+  }
+  const registry = new ModuleRegistry(activeModules)
+  const registryResult = registry.run(sourceFile)
+  const emissionsByTarget = new Map<ts.CallExpression, EmissionContribution[]>()
+  const globalEmissions: EmissionContribution[] = []
+  for (const emission of registryResult.emissions) {
+    if (emission.target) {
+      const list = emissionsByTarget.get(emission.target)
+      if (list) list.push(emission)
+      else emissionsByTarget.set(emission.target, [emission])
+    } else {
+      globalEmissions.push(emission)
+    }
+  }
+
+  /**
+   * Splice registry-collected emissions into a `component()` call's
+   * config-arg object literal. Idempotent: emissions whose `field`
+   * already exists on the config arg are skipped (matches the
+   * monolith's inline `inject*` helpers' "if-already-present-return"
+   * behaviour). The caller passes both the *original* call (the one
+   * the registry walked) and the current *transformed* call (the
+   * accumulator that previous `inject*` helpers built up).
+   */
+  function applyRegistryEmissions(
+    transformedCall: ts.CallExpression,
+    originalCall: ts.CallExpression,
+  ): ts.CallExpression {
+    const targeted = emissionsByTarget.get(originalCall) ?? []
+    const all = [...globalEmissions, ...targeted]
+    if (all.length === 0) return transformedCall
+    const configArg = transformedCall.arguments[0]
+    if (!configArg || !ts.isObjectLiteralExpression(configArg)) return transformedCall
+    const existing = new Set<string>()
+    for (const prop of configArg.properties) {
+      if (ts.isPropertyAssignment(prop) && ts.isIdentifier(prop.name)) {
+        existing.add(prop.name.text)
+      }
+    }
+    const adds: ts.ObjectLiteralElementLike[] = []
+    for (const emission of all) {
+      if (existing.has(emission.field)) continue
+      adds.push(f.createPropertyAssignment(emission.field, emission.value))
+    }
+    if (adds.length === 0) return transformedCall
+    const newConfig = f.createObjectLiteralExpression([...configArg.properties, ...adds], true)
+    return f.createCallExpression(transformedCall.expression, transformedCall.typeArguments, [
+      newConfig,
+      ...transformedCall.arguments.slice(1),
+    ])
+  }
 
   // ── track() strip pass (v2b §3) ─────────────────────────────────
   // `track({ deps: (s) => [...] })` is a compile-time declaration only.
@@ -634,9 +714,12 @@ export function transformLlui(
           })
         }
       }
-      if (devMode) {
-        result = injectComponentMeta(result ?? node, node, sourceFile, _filename, f)
-      }
+      // v2c §2 bridge: registry-emission splicing replaces the inline
+      // `injectComponentMeta` here. `componentMetaModule` is registered
+      // when `devMode` is true, so the dev-mode gating semantics match
+      // the prior `if (devMode)` guard. When `devMode` is false the
+      // registry is empty and this call is a no-op.
+      result = applyRegistryEmissions(result ?? node, node)
 
       // __schemaHash is always emitted (not dev-gated) — runtime uses it to
       // gate hello-frame re-sends during hot-reload in prod builds too.
@@ -3513,47 +3596,9 @@ function stateTypeToLiteral(t: StateType, f: ts.NodeFactory): ts.Expression {
   ])
 }
 
-function injectComponentMeta(
-  nodeWithMaybeEdits: ts.CallExpression,
-  originalNode: ts.CallExpression,
-  sourceFile: ts.SourceFile,
-  filename: string,
-  f: ts.NodeFactory,
-): ts.CallExpression {
-  const configArg = nodeWithMaybeEdits.arguments[0]
-  if (!configArg || !ts.isObjectLiteralExpression(configArg)) return nodeWithMaybeEdits
-
-  // Don't inject if already present
-  for (const prop of configArg.properties) {
-    if (
-      ts.isPropertyAssignment(prop) &&
-      ts.isIdentifier(prop.name) &&
-      prop.name.text === '__componentMeta'
-    ) {
-      return nodeWithMaybeEdits
-    }
-  }
-
-  // Line number from the original (real-position) node
-  const pos = originalNode.pos >= 0 ? originalNode.getStart(sourceFile) : 0
-  const { line } = sourceFile.getLineAndCharacterOfPosition(pos)
-
-  const meta = f.createObjectLiteralExpression(
-    [
-      f.createPropertyAssignment('file', f.createStringLiteral(filename)),
-      f.createPropertyAssignment('line', f.createNumericLiteral(line + 1)),
-    ],
-    false,
-  )
-
-  const metaProp = f.createPropertyAssignment('__componentMeta', meta)
-  const newConfig = f.createObjectLiteralExpression([...configArg.properties, metaProp], true)
-
-  return f.createCallExpression(nodeWithMaybeEdits.expression, nodeWithMaybeEdits.typeArguments, [
-    newConfig,
-    ...nodeWithMaybeEdits.arguments.slice(1),
-  ])
-}
+// `injectComponentMeta` was the inline emitter for `__componentMeta`.
+// Migrated to `componentMetaModule` + the registry bridge in this
+// commit. Behavior preserves end-to-end via `registry-bridge.test.ts`.
 
 function injectMsgSchema(
   node: ts.CallExpression,

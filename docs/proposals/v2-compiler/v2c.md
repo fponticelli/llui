@@ -372,15 +372,32 @@ Update [`shared.md`](./shared.md) §20.9 to record that the public ABI decision 
 4. **`llui.config.ts` shape + factory-call enforcement** (v2c §2.3 / Phase 4 of the original roadmap). `defineConfig({ modules: [core(), agent(), ...] })`. Missing-config → `[core(), devtools()]` defaults. `modules: []` → hard error. Test fixtures cover every path.
 5. **Bundle-size goldens.** A fixture project with `modules: [core()]` (no agent / no ssr / no devtools) produces a bundle that contains _zero_ references to `__msgSchema`, `__renderToString`, or `_eachDiffLog`. Asserted by reading `dist/` and grepping. This is the §2.2 "stripping the module removes the whole pipeline" guarantee.
 
-**Pick order for the next push.** The decomposition is highest-value when it unblocks something new (e.g. plugin authors). It's lowest-risk when test coverage of the moved code is highest. The pick order that satisfies both:
+**Pick order — status as of the v2c-bridge-landing commit.**
 
 1. ~~**Schema hash** — 37 lines, fully covered by existing tests, agent-only. Smallest possible move.~~ **Done in v2c/decomp-1.**
-2. **`reactive-paths` (the POC)** — already structured as a module; promote it from PoC to production by deleting the monolith's `__prefixes` emission and routing through the registry. Needs the optional-chain fix in `buildPrefixAccessor` first (see "carry forward" above).
-3. **`msg-annotations` + `msg-schema`** — the agent's core load. Touches the most tests; isolates the "does an opt-in module successfully strip when disabled" question. These are the sibling producers that populate `SCHEMA_HASH_INPUTS_SLOT`; until they land, `schemaHashModule` is dormant.
-4. **`binding-descriptors`** — agent's largest pre-pass concern; resolves the §2.1 "preTransform vs visitor" open question from MODULE-MAPPING.md.
-5. **The first registry-into-`transformLlui` wire-up.** Even with just the four modules above ready (reactive-paths + schema-hash + msg-annotations + msg-schema), the umbrella can stop calling `injectSchemaHash` and `injectMsgSchema` inline. The bridge is: run the registry, take its emissions, splice them into each `component()` call's config-arg object literal (per `target` or file-global per the new contribution shape). One golden test asserts byte-equivalent output against the pre-bridge monolith.
-6. **`component-meta`** — already a module (v2c/decomp-2); promote to production by deleting `injectComponentMeta` from `transform.ts` once the registry-bridge exists.
-7. **Everything else in `transform.ts`** — the monolith decomposes after the agent pipeline is shown to work end-to-end. Going core-first risks blocking work on agent during the longest move.
+2. **`reactive-paths` (the POC)** — already structured as a module. Optional-chain emission fixed in v2c/bridge-1; the module now produces byte-equivalent `s?.user?.name` accessors. Promotion to production still pending — the monolith's `__prefixes` emission (via `buildPrefixesProp` + structural-mask code in `rewriteRoot`) is more entangled than `injectComponentMeta` and migrates as part of step 7.
+3. **`msg-annotations` + `msg-schema`** — the agent's core load. Still pending. These are the sibling producers that populate `SCHEMA_HASH_INPUTS_SLOT`; until they land, `schemaHashModule` is dormant.
+4. **`binding-descriptors`** — agent's largest pre-pass concern; still pending. Resolves the §2.1 "preTransform vs visitor" open question from MODULE-MAPPING.md.
+5. ~~**The first registry-into-`transformLlui` wire-up.**~~ **Done in v2c/bridge-2.** The bridge runs the active `ModuleRegistry` inside `transformLlui` and splices emissions into each `component()` call's config-arg. `applyRegistryEmissions(transformedCall, originalCall)` matches emissions by either `target?: ts.CallExpression` identity or file-global, with the same idempotence semantics the inline `inject*` helpers had (skip-if-field-already-present). Module activation is gated at the umbrella level — `componentMetaModule` registers only when `devMode === true`, mirroring the prior `if (devMode) injectComponentMeta(...)` guard. 4 golden tests in `test/registry-bridge.test.ts`.
+6. ~~**`component-meta`** — promote to production by deleting `injectComponentMeta` from `transform.ts` once the registry-bridge exists.~~ **Done in v2c/bridge-2.** The inline `injectComponentMeta` deleted; the bridge owns `__componentMeta` end-to-end. First inline-injector successfully migrated through the bridge — proves the pattern for steps 2, 3, 4.
+7. **Everything else in `transform.ts`** — still pending. Each remaining inline injector (`injectMsgSchema`, `injectMsgAnnotations`, `injectStateSchema`, `injectEffectSchema`, `injectSchemaHash`, `injectCompilerEmittedMarker`, the inline `__prefixes` / `__update` / `__handlers` synthesis) now has a clear migration path: build a module that owns its field, register it conditionally in the umbrella, replace the inline call with the bridge. The bridge's idempotence rule (skip-if-already-present) means parallel inline + module emission is safe during the migration overlap window.
+
+**Bridge's reusable shape (for whoever picks up step 2/3/4/7).**
+
+```ts
+// In transformLlui setup:
+const activeModules: CompilerModule[] = []
+if (devMode) activeModules.push(componentMetaModule)
+// future: if (emitAgentMetadata) activeModules.push(msgSchemaModule, ...)
+const registry = new ModuleRegistry(activeModules)
+const registryResult = registry.run(sourceFile)
+const { emissionsByTarget, globalEmissions } = indexEmissions(registryResult.emissions)
+
+// Inside the component() visitor branch, after the existing inject* chain:
+result = applyRegistryEmissions(result ?? node, node)
+```
+
+When a future migration deletes an inline injector (e.g. `injectMsgSchema`), it does so AFTER registering the module that owns its field. The `applyRegistryEmissions` call site need not change — it picks up the new emission automatically.
 
 The MODULE-MAPPING.md table is the contract — when a file leaves the monolith it goes to the destination named there. Disagreements are reflected in MAPPING amendments before code lands, not in code that drifts.
 
