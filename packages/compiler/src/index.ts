@@ -10,7 +10,6 @@ export * from './diagnostic.js'
 export * from './manifest.js'
 export * from './module.js'
 export * from './version.js'
-export { reactivePathsModule } from './modules/reactive-paths.js'
 export {
   schemaHashModule,
   SCHEMA_HASH_INPUTS_SLOT,

@@ -341,48 +341,21 @@ Estimated effort: 0.25 session.
 
 Update [`shared.md`](./shared.md) §20.9 to record that the public ABI decision stays "deferred." Update §19.6 to record the module activation API as resolved. Update §2.5 of this file with the final decision text.
 
-### 7.9 Handover note — module decomposition (in progress)
+### 7.9 Status snapshot — module decomposition (feature-complete)
 
-**Status as of the v2c-decomposition-primitive commit:** Phase 1 (paper mapping) + Phase 2 (registry primitive) + a Phase 3 proof-of-concept module have landed. The actual `transform.ts` decomposition + package skeletons remain deferred.
+**Status:** Every load-bearing concern in the compiler now flows through the `CompilerModule` registry. 15 modules LIVE, both Phase 2b directions exercised, all helpers physically relocated into their module files. `transform.ts` shrank from ~4860 lines to ~1740, with the remainder being orchestrator + cleanupImports + shared utilities consumed by modules.
 
-**What's now in place:**
+**Still pending (independent of registry primitive):**
 
-- **`packages/compiler/MODULE-MAPPING.md`** — paper mapping of every file in `packages/compiler/src/` and every section of `transform.ts` (5 588 lines) to its destination module (core / agent / ssr / devtools / shared). Cross-module dependency graph + 4 open issues this mapping surfaced (cross-file-resolver misnaming, schema-hash straddle, integrity-marker split, connect-pattern pre-pass).
-- **`packages/compiler/src/module.ts`** — `CompilerModule` interface, `AnalysisContext`, `EmissionContribution`, `EmissionContext`, `FileAnalysis`, `DiagnosticDefinition`. `ModuleRegistry` class with: single-pass AST dispatch (O(nodes), not O(modules × nodes)), per-module slot accumulators, emission-conflict detection (`llui/module-emission-conflict`), `dependsOn` verification at construction, `runtimeImports` union with dedup. 12 unit tests in `test/module-registry.test.ts`.
-- **`packages/compiler/src/modules/reactive-paths.ts`** — proof-of-concept module that owns `__prefixes` emission. Reuses the existing `collectStatePathsFromSource` collector and emits an `ArrayLiteralExpression` of `(s) => s.<path>` arrow functions. 4 validation tests in `test/poc-module-prefixes.test.ts` compare the POC module's output against the monolithic `transformLlui` for representative fixtures; path _sets_ match across both pipelines.
+- The four sibling-package split (`@llui/compiler-{dom,agent,ssr,devtools}` or similar — naming TBD) — separates modules into opt-in packages.
+- `llui.config.ts` shape and `defineConfig({ modules: [...] })` activation API.
+- Bundle-size goldens proving stripping unused modules removes their pipeline.
 
-**What the POC surfaced (carry forward):**
+All three depend on each other; they ship together when the consumer ROI is clear (see `project_consumer_scope.md`: LLui has a single internal consumer, so the bundle-strip benefit is bounded).
 
-- The monolith emits optional-chained accessors (`s?.user?.name`) for non-leaf segments — defends against undefined intermediates during prefix computation. The POC currently emits plain access (`s.user.name`). **The production reactive-paths module must mirror the optional-chain form** for byte-equivalent output. `buildPrefixAccessor` in `modules/reactive-paths.ts` is the change site.
-- ~~The current `EmissionContribution` shape is global (one value per `field` per file). For per-component emission (the common case when a file has multiple `component()` calls), the shape needs to carry a target — either an explicit `ts.CallExpression` reference or an indexable list.~~ **Resolved in v2c/decomp-2 (component-meta module landing).** `EmissionContribution` now carries an optional `target?: ts.CallExpression` field. When absent, the contribution is file-global (the common case — `__prefixes`, `__msgSchema`, `__schemaHash`). When present, the umbrella's merger writes the field into that specific `component()` call's config-arg object literal. Conflict detection is keyed on `(field, target)` tuples — same field across different targets is permitted (e.g. `__componentMeta` for two `component()` calls in one file); same field on the same target is the hard error.
+**Earlier handover notes from in-flight decomposition** (retained below in §7.9.1 for history):
 
-**Modules now living in `packages/compiler/src/modules/`:**
-
-| Module                          | Concern                                         | Inputs source                                                                                                     | Field emitted     | Target                                                   | Status                                                                 |
-| ------------------------------- | ----------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- | ----------------- | -------------------------------------------------------- | ---------------------------------------------------------------------- |
-| `reactive-paths` (POC)          | `__prefixes` array of stable closures           | `collectStatePathsFromSource` on the source file                                                                  | `__prefixes`      | file-global                                              | POC; not wired into production transform                               |
-| `schema-hash` (v2c/decomp-1)    | SHA-256 hash over msg+state+annotations for HMR | Sibling-module slot (`SCHEMA_HASH_INPUTS_SLOT`); empty until msg-schema/state-schema/msg-annotations modules ship | `__schemaHash`    | file-global                                              | Validated against `computeSchemaHash`; awaits sibling producer modules |
-| `component-meta` (v2c/decomp-2) | `{ file, line }` per `component()` call         | `CallExpression` visitor finds calls; emit reads `getLineAndCharacterOfPosition`                                  | `__componentMeta` | **per-call** (target = the `component()` CallExpression) | First per-component-targeted emission; validates the `target?` shape   |
-
-**What remains for the full decomposition push:**
-
-1. **Package skeletons.** Four sibling packages — `packages/compiler-core/`, `packages/compiler-agent/`, `packages/compiler-ssr/`, `packages/compiler-devtools/`. Each with its own `package.json`, `tsconfig.json`, `tsconfig.build.json`, `vitest.config.ts`. Wire into pnpm workspace + turbo. Reuse the v2a skeleton pattern from `packages/compiler/`.
-2. **Migrate the contents per MODULE-MAPPING.md.** Each file in the mapping table goes to its named destination. The monolith decomposes section by section, with the per-section line ranges in §7.9 above. Each move is a separate commit so regressions are bisectable.
-3. **Wire `transformLlui` to the registry.** Today it does the work inline; after decomposition it instantiates a `ModuleRegistry` from the config, calls `registry.run(sourceFile)`, and merges emissions into the `component()` call literal. The per-statement-diff edit emission machinery stays at the umbrella level.
-4. **`llui.config.ts` shape + factory-call enforcement** (v2c §2.3 / Phase 4 of the original roadmap). `defineConfig({ modules: [core(), agent(), ...] })`. Missing-config → `[core(), devtools()]` defaults. `modules: []` → hard error. Test fixtures cover every path.
-5. **Bundle-size goldens.** A fixture project with `modules: [core()]` (no agent / no ssr / no devtools) produces a bundle that contains _zero_ references to `__msgSchema`, `__renderToString`, or `_eachDiffLog`. Asserted by reading `dist/` and grepping. This is the §2.2 "stripping the module removes the whole pipeline" guarantee.
-
-**Pick order — status as of the v2c-agent-modules commit.**
-
-1. ~~**Schema hash** — 37 lines, fully covered by existing tests, agent-only.~~ **Done in v2c/decomp-1.** Module now LIVE in production via v2c/decomp-5.
-2. **`reactive-paths` (the POC)** — optional-chain emission fixed in v2c/bridge-1; the module now produces byte-equivalent `s?.user?.name` accessors. Promotion to production still pending — the monolith's `__prefixes` emission (via `buildPrefixesProp` + structural-mask code in `rewriteRoot`) is more entangled than the agent inline injectors and migrates as part of step 7.
-3. ~~**`msg-annotations` + `msg-schema`** — the agent's core load.~~ **Done in v2c/decomp-4 + v2c/decomp-5.** `msgAnnotationsModule` + `msgSchemaModule` (handling both Msg and Effect schemas) ship as factory modules consuming pre-extracted inputs. `schemaHashModule` is now LIVE — five inline injectors (`injectMsgSchema`, `injectMsgAnnotations`, `injectStateSchema`, `injectEffectSchema`, `injectSchemaHash`) deleted from `transform.ts`. Agent pipeline runs entirely through the registry bridge.
-4. ~~**`binding-descriptors`** — agent's largest pre-pass concern.~~ **Done in v2c/decomp-7.** Resolved the §2.1 "preTransform vs visitor" open question via option (a) from MODULE-MAPPING.md: `CompilerModule` now carries an optional `preTransform?(ctx, sf) → sf` hook that fires before the visitor walk. The registry's `run()` threads each module's preTransform output through subsequent modules; the visitor then walks the final post-transform AST. `bindingDescriptorsModule` wraps `injectScopeVariantRegistrations` + `tagDispatchHandlers`. The umbrella reads the module's slot (`BINDING_DESCRIPTORS_SLOT`) to surface the `scopeRegistrationsInjected` flag for `cleanupImports`.
-5. ~~**The first registry-into-`transformLlui` wire-up.**~~ **Done in v2c/bridge-2.**
-6. ~~**`component-meta`** — promote to production.~~ **Done in v2c/bridge-2.**
-7. **Everything else in `transform.ts`** — agent pipeline complete; reactive-paths, `__update`/`__handlers` synthesis, element-helper rewrites, template-clone, row-factory, and dev-only instrumentation hooks remain. **`__maskLegend` migrated to `maskLegendModule` in v2c/decomp-9** — first non-agent factory module shipped; demonstrates the registry handles core-concern fields (the legend gates on the file-level reactive-path count rather than agent-mode). The inline `legendProps` builder + `legendProp` slot deleted from `tryInjectDirty`; the registry's `applyRegistryEmissions` splices `__maskLegend` into the same config-arg literal `tryInjectDirty` returns.
-
-**Modules now LIVE in `transformLlui`'s production pipeline:**
+**15 modules now LIVE in `transformLlui`'s production pipeline:**
 
 | Module                                                                          | Activation                                              | Replaces                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
 | ------------------------------------------------------------------------------- | ------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -428,51 +401,37 @@ When a future migration deletes an inline injector (e.g. `injectMsgSchema`), it 
 
 The MODULE-MAPPING.md table is the contract — when a file leaves the monolith it goes to the destination named there. Disagreements are reflected in MAPPING amendments before code lands, not in code that drifts.
 
-### 7.9.2 Endgame and outstanding design decisions (v2c/decomp-Z2)
+### 7.9.2 Phase 2b chain ordering reference
 
-**Status after `decomp-10`.** The registry primitive has absorbed every per-component metadata emission that has the "compute a value, splice into the `component()` config-arg" shape. Eight modules now live (`componentMeta`, `stateSchema`, `msgAnnotations`, `msgSchema`, `schemaHash`, `bindingDescriptors`, `maskLegend`, `compilerStamp`); the umbrella's visitor branch for `component()` calls is structurally:
+For modules using `transformCallEnter` / `transformCall`, declaration order is observable. The production order is:
 
-```ts
-let result = tryInjectDirty(node, fieldBits, f, fieldBitsHi)
-result = applyRegistryEmissions(result ?? node, node)
+```
+each() call:
+  enter chain (top-down):
+    1. eachMemoModule         memo-wrap items accessor
+    2. itemDedupModule        hoist __sN/__aN in render body
+    3. structuralMaskModule   inject __mask on options
+  recurse into children:
+    elementRewriteModule fires on div() / button() / etc.
+    textMaskModule fires on text() calls
+  exit chain (bottom-up):
+    rowFactoryModule          emit row-factory shape (needs post-element-rewrite render body)
+
+component() call:
+  enter chain:
+    coreSynthesisModule       inject __update / __handlers / __prefixes
+  emit phase merges per-target contributions:
+    componentMeta, compilerStamp, stateSchema, msgSchema,
+    msgAnnotations, schemaHash (via findComponentCalls on post-Phase-2b SF)
 ```
 
-Two emitters remain. They will _not_ migrate to the registry as currently designed, and each represents a deliberate stopping point with a downstream design decision.
+**Invariants that bit (and were fixed):**
 
-**1. `tryInjectDirty` group — core synthesis (`__update`, `__handlers`, `__prefixes`).**
+1. **Per-target reference identity** (decomp-15): per-target modules must capture their `ts.CallExpression` targets in `emit` by walking `analysis.sourceFile` (the post-Phase-2b tree), not in the visitor phase. Phase 2b's `ts.visitEachChild` rebuilds ancestor nodes when any descendant rewrites, invalidating visit-captured refs. The shared helper is `_shared.ts`'s `findComponentCalls`.
 
-These three fields are computed together because they share intermediates that the registry's per-module isolation can't replicate cheaply:
+2. **Synthetic-node conflict identity** (decomp-19): the registry's emission-conflict map keys `(field, target)` by `ts.CallExpression` object identity, not by `${pos}-${end}`. Synthetic nodes produced by Phase 2b have pos=-1 and would otherwise hash-collide. Position info is preserved separately by using `f.updateCallExpression` (not `createCallExpression`) when rewriting calls — the new node inherits the original's `pos`/`end`.
 
-- `topLevelBits` / `topLevelBitsHi` are derived from `fieldBits` / `fieldBitsHi` inside the function.
-- `structuralMask` is computed from the `configArg` literal plus `fieldBits`.
-- `__update`'s body (`buildUpdateBody`) closes over `structuralMask`.
-- `__handlers` consumes `topLevelBits`, `topLevelBitsHi`, _and_ `structuralMask` together (`tryBuildHandlers`).
-- `__prefixes` ordering is keyed on the bit positions `fieldBits` assigns; the array index _is_ the bit.
-
-The reactive-paths POC module exists but emits paths in sorted order rather than bit-position order; promoting it would require either threading `fieldBits` into the module (breaking the "module computes from inputs" pattern) or wholesale moving the bit-assignment logic with it. The structural-mask + update-body emission has no equivalent module shape today.
-
-**Design decision (open).** Two options:
-
-- **(a) Promote `tryInjectDirty` as a single `coreComponentModule`** that owns all three fields. Accepts `(configArg, fieldBits, fieldBitsHi)` as factory inputs; emits a per-target trio. This works mechanically but is a large code move (~500 lines including helpers `buildUpdateBody`, `tryBuildHandlers`, `buildCaseHandler`, `buildPrefixesProp`). The reactive-paths POC becomes the seed; the helpers move alongside.
-- **(b) Declare `tryInjectDirty` "core synthesis" by design and keep it inline.** The `_Module`-able fields are the ones that compute from independent inputs; co-emitted core synthesis stays at the umbrella. v2c §2.1 then reads: "modules emit independent contributions; co-emitted core synthesis is the umbrella's job." The cost is one named exception to the "registry owns emission" rule.
-
-Option (a) is the cleaner end state. Option (b) is the cheaper end state. Either choice is justifiable; the registry primitive itself is unaffected by the decision.
-
-**2. Per-call AST mutations — element rewrites, structural-mask injection, row factory, template clone, item-selector dedup, memo-wrapping.**
-
-These don't fit `EmissionContribution`. They are not field additions to a `component()` config — they rewrite the call expressions themselves (`div(...)` → `elSplit(...)`, `each(...)` → row-factory form, etc.). The registry's contract today is "compute a value, emit it"; the existing `preTransform?(ctx, sf) → sf` hook handles whole-file rewrites but is too coarse for per-call mutations because every active preTransform pays the cost of walking the file (acceptable for one or two modules; not for a dozen call-rewrite passes).
-
-**Design decision (resolved).** The clean primitive is a pair of hooks on `CompilerModule` — `transformCallEnter?` (top-down, before children recursion) and `transformCall?` (bottom-up, after children recursion). The registry's run() now exposes a Phase 2b that dispatches matching modules per `CallExpression` in both directions, chaining results. Module ordering is load-bearing across rewrites that compose (e.g., memo-wrap before mask injection in top-down passes; element-rewrite before row-factory in the chain that crosses both directions); declaration order determines who fires first. **Landed across v2c/decomp-11 + v2c/decomp-12**: hooks on the interface + Phase 2b in `ModuleRegistry.run()` + 12 unit tests covering dispatch, chain composition, ordering reversal, analysis-then-rewrite split, dual hooks on the same module, and zero-cost-when-absent. The phase is skipped (and the analysis.sourceFile reference is unchanged) when no active module declares either hook — metadata-only module sets pay zero overhead.
-
-The two directions are needed because the inline rewrites in `transform.ts` form an ordered chain spanning both. The umbrella's current visitor for `each()` calls does: memo-wrap (top-down) → dedup (top-down) → mask-inject (top-down) → recurse children → element-rewrite (children) → row-factory (bottom-up on the each() itself). Mapping to module hooks: top-down rewrites use `transformCallEnter`; row-factory uses `transformCall`. Element-rewrite can be either direction since each element call is independent.
-
-The chosen suboption is (b.i): **migrate the inline call-rewrites to modules.** Bundle-size goldens (§7.9 step 5) become real once stripping `compiler-devtools` removes the dev instrumentation passes and stripping `compiler-ssr` removes hydration markers. Migration is incremental — each inline `try*` helper extracts to its own module, validated against existing tests, lands as a separate commit. The migrations must respect chain ordering: when row-factory migrates, element-rewrite must already be in the registry (otherwise Phase 2b's row-factory module won't see the `elTemplate(...)` calls element-rewrite produces).
-
-**3. Test-migration backlog.**
-
-~82 test files still construct `ComponentDef` literals directly and rely on the runtime's `__compilerVersion` fallback. The fallback emits one console.warn per definition (deduplicated by component name). The two test files that fail under the warn-count assertion (`hydrate-effects.test.ts`, `serializability-guard.test.ts`) were migrated in v2b/6. The rest can run as-is or migrate to `defineTestComponent` cosmetically; nothing depends on them migrating.
-
-**Net.** v2c §2 has shipped the registry primitive, eight modules, and the bridge — the load-bearing infrastructure. The remaining migrations gate on the two design decisions above. A fresh agent picking this up should choose between (a)/(b) and (b.i)/(b.ii) explicitly _before_ writing code; the choices propagate through `MODULE-MAPPING.md`, the four `@llui/compiler-*` package skeletons, and the bundle-size goldens.
+3. **Sentinel edit for Phase 2b rewrites**: when a module rewrites a call but the umbrella's visitor doesn't otherwise push to `edits`, the umbrella reads the module's slot post-`registry.run` and pushes a zero-width sentinel edit so the per-statement-diff downstream doesn't short-circuit on `edits.length === 0`.
 
 ### 7.9.1 Earlier handover (v2c-partial commit, retained for history)
 
