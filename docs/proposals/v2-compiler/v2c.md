@@ -341,7 +341,40 @@ Estimated effort: 0.25 session.
 
 Update [`shared.md`](./shared.md) §20.9 to record that the public ABI decision stays "deferred." Update §19.6 to record the module activation API as resolved. Update §2.5 of this file with the final decision text.
 
-### 7.9 Handover note — module decomposition (deferred)
+### 7.9 Handover note — module decomposition (in progress)
+
+**Status as of the v2c-decomposition-primitive commit:** Phase 1 (paper mapping) + Phase 2 (registry primitive) + a Phase 3 proof-of-concept module have landed. The actual `transform.ts` decomposition + package skeletons remain deferred.
+
+**What's now in place:**
+
+- **`packages/compiler/MODULE-MAPPING.md`** — paper mapping of every file in `packages/compiler/src/` and every section of `transform.ts` (5 588 lines) to its destination module (core / agent / ssr / devtools / shared). Cross-module dependency graph + 4 open issues this mapping surfaced (cross-file-resolver misnaming, schema-hash straddle, integrity-marker split, connect-pattern pre-pass).
+- **`packages/compiler/src/module.ts`** — `CompilerModule` interface, `AnalysisContext`, `EmissionContribution`, `EmissionContext`, `FileAnalysis`, `DiagnosticDefinition`. `ModuleRegistry` class with: single-pass AST dispatch (O(nodes), not O(modules × nodes)), per-module slot accumulators, emission-conflict detection (`llui/module-emission-conflict`), `dependsOn` verification at construction, `runtimeImports` union with dedup. 12 unit tests in `test/module-registry.test.ts`.
+- **`packages/compiler/src/modules/reactive-paths.ts`** — proof-of-concept module that owns `__prefixes` emission. Reuses the existing `collectStatePathsFromSource` collector and emits an `ArrayLiteralExpression` of `(s) => s.<path>` arrow functions. 4 validation tests in `test/poc-module-prefixes.test.ts` compare the POC module's output against the monolithic `transformLlui` for representative fixtures; path _sets_ match across both pipelines.
+
+**What the POC surfaced (carry forward):**
+
+- The monolith emits optional-chained accessors (`s?.user?.name`) for non-leaf segments — defends against undefined intermediates during prefix computation. The POC currently emits plain access (`s.user.name`). **The production reactive-paths module must mirror the optional-chain form** for byte-equivalent output. `buildPrefixAccessor` in `modules/reactive-paths.ts` is the change site.
+- The current `EmissionContribution` shape is global (one value per `field` per file). For per-component emission (the common case when a file has multiple `component()` calls), the shape needs to carry a target — either an explicit `ts.CallExpression` reference or an indexable list. Decide during the next push _before_ moving more concerns; today's POC dodged this because `__prefixes` is one-per-file in practice.
+
+**What remains for the full decomposition push:**
+
+1. **Package skeletons.** Four sibling packages — `packages/compiler-core/`, `packages/compiler-agent/`, `packages/compiler-ssr/`, `packages/compiler-devtools/`. Each with its own `package.json`, `tsconfig.json`, `tsconfig.build.json`, `vitest.config.ts`. Wire into pnpm workspace + turbo. Reuse the v2a skeleton pattern from `packages/compiler/`.
+2. **Migrate the contents per MODULE-MAPPING.md.** Each file in the mapping table goes to its named destination. The monolith decomposes section by section, with the per-section line ranges in §7.9 above. Each move is a separate commit so regressions are bisectable.
+3. **Wire `transformLlui` to the registry.** Today it does the work inline; after decomposition it instantiates a `ModuleRegistry` from the config, calls `registry.run(sourceFile)`, and merges emissions into the `component()` call literal. The per-statement-diff edit emission machinery stays at the umbrella level.
+4. **`llui.config.ts` shape + factory-call enforcement** (v2c §2.3 / Phase 4 of the original roadmap). `defineConfig({ modules: [core(), agent(), ...] })`. Missing-config → `[core(), devtools()]` defaults. `modules: []` → hard error. Test fixtures cover every path.
+5. **Bundle-size goldens.** A fixture project with `modules: [core()]` (no agent / no ssr / no devtools) produces a bundle that contains _zero_ references to `__msgSchema`, `__renderToString`, or `_eachDiffLog`. Asserted by reading `dist/` and grepping. This is the §2.2 "stripping the module removes the whole pipeline" guarantee.
+
+**Pick order for the next push.** The decomposition is highest-value when it unblocks something new (e.g. plugin authors). It's lowest-risk when test coverage of the moved code is highest. The pick order that satisfies both:
+
+1. **Schema hash** — 37 lines, fully covered by existing tests, agent-only. Smallest possible move.
+2. **`reactive-paths` (the POC)** — already structured as a module; promote it from PoC to production by deleting the monolith's `__prefixes` emission and routing through the registry.
+3. **`msg-annotations` + `msg-schema`** — the agent's core load. Touches the most tests; isolates the "does an opt-in module successfully strip when disabled" question.
+4. **`binding-descriptors`** — agent's largest pre-pass concern; resolves the §2.1 "preTransform vs visitor" open question from MODULE-MAPPING.md.
+5. **Everything in `transform.ts`** — the monolith decomposes after the agent pipeline is shown to work end-to-end. Going core-first risks blocking work on agent during the longest move.
+
+The MODULE-MAPPING.md table is the contract — when a file leaves the monolith it goes to the destination named there. Disagreements are reflected in MAPPING amendments before code lands, not in code that drifts.
+
+### 7.9.1 Earlier handover (v2c-partial commit, retained for history)
 
 **Status at this commit:** the module-decomposition phases (1–4 above) are unstarted. The diagnostic schema (Phase 5) and MCP static-mode (Phase 6) shipped without it. The decision to defer was a scope call — module decomposition is the largest single piece of v2c and is genuinely independent of the schema + MCP work that _does_ ship in this push.
 
