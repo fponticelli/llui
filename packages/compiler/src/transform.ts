@@ -30,6 +30,11 @@ import { eachMemoModule, EACH_MEMO_SLOT, type EachMemoSlot } from './modules/eac
 import { structuralMaskModule } from './modules/structural-mask.js'
 import { textMaskModule } from './modules/text-mask.js'
 import { itemDedupModule } from './modules/item-dedup.js'
+import {
+  elementRewriteModule,
+  ELEMENT_REWRITE_SLOT,
+  type ElementRewriteSlot,
+} from './modules/element-rewrite.js'
 
 export function createMaskLiteral(f: ts.NodeFactory, mask: number): ts.Expression {
   if (mask >= 0) return f.createNumericLiteral(mask)
@@ -532,6 +537,21 @@ export function transformLlui(
       viewHelperAliases,
     }),
   )
+  // elementRewriteModule transforms `div(...)` / `button(...)` /
+  // etc. into `elSplit(...)` / `elTemplate(...)` / `__cloneStaticTemplate(...)`.
+  // Activated unconditionally — the underlying `tryTransformElementCall`
+  // gates on the `importedHelpers` map (only rewrites helpers that
+  // were actually imported from @llui/dom). The module signals which
+  // helpers compiled / bailed and which runtime functions need
+  // imports via `ELEMENT_REWRITE_SLOT`; the umbrella reads the slot
+  // before `cleanupImports`.
+  activeModules.push(
+    elementRewriteModule({
+      importedHelpers,
+      fieldBits,
+      fieldBitsHi,
+    }),
+  )
   // structuralMaskModule injects `__mask` into each()/branch()/scope()/show()
   // options. Activated when the file has any low-word reactive paths
   // (matches the inline `fieldBits.size === 0` early-return). Module
@@ -583,6 +603,31 @@ export function transformLlui(
   // used to set.
   const emState = registryResult.analysis.perModule.get(EACH_MEMO_SLOT) as EachMemoSlot | undefined
   if (emState?.usesMemo) usesMemo = true
+  // element-rewrite module signals compiled/bailed helpers and which
+  // runtime imports it referenced. Surfaces here so the umbrella's
+  // `cleanupImports` decision matches the inline path's behavior.
+  // Also pushes a sentinel edit when the module rewrote — the
+  // `edits.length === 0` short-circuit downstream would otherwise
+  // skip the per-statement diff that surfaces Phase 2b rewrites to
+  // the output.
+  const erState = registryResult.analysis.perModule.get(ELEMENT_REWRITE_SLOT) as
+    | ElementRewriteSlot
+    | undefined
+  if (erState) {
+    for (const h of erState.compiled) compiledHelpers.add(h)
+    for (const h of erState.bailed) bailedHelpers.add(h)
+    if (erState.usesElSplit) usesElSplit = true
+    if (erState.usesElTemplate) usesElTemplate = true
+    if (erState.usesCloneStaticTemplate) usesCloneStaticTemplate = true
+    if (
+      erState.compiled.size > 0 ||
+      erState.usesElSplit ||
+      erState.usesElTemplate ||
+      erState.usesCloneStaticTemplate
+    ) {
+      edits.push({ start: 0, end: 0, replacement: '' })
+    }
+  }
   const emissionsByTarget = new Map<ts.CallExpression, EmissionContribution[]>()
   const globalEmissions: EmissionContribution[] = []
   for (const emission of registryResult.emissions) {
@@ -728,28 +773,11 @@ export function transformLlui(
       return result
     }
 
-    // Pass 1: Transform element helper calls to elSplit or elTemplate
     if (ts.isCallExpression(node)) {
-      const transformed = tryTransformElementCall(
-        node,
-        importedHelpers,
-        fieldBits,
-        compiledHelpers,
-        bailedHelpers,
-        f,
-        fieldBitsHi,
-      )
-      if (transformed) {
-        if (ts.isIdentifier(transformed.expression)) {
-          if (transformed.expression.text === 'elTemplate') usesElTemplate = true
-          else if (transformed.expression.text === 'elSplit') usesElSplit = true
-          else if (transformed.expression.text === '__cloneStaticTemplate')
-            usesCloneStaticTemplate = true
-        }
-        if (hasPos) edits.push({ start: origStart, end: origEnd, replacement: '' })
-        return ts.visitEachChild(transformed, visitor, undefined!)
-      }
-
+      // Pass 1: element rewrite (`div` → `elSplit`/`elTemplate`/
+      // `__cloneStaticTemplate`) moved to `elementRewriteModule`
+      // (v2c/decomp-17). Phase 2b ran before this visitor; the call
+      // is already rewritten on `node` when it was eligible.
       // text() mask injection moved to `textMaskModule` (v2c/decomp-15).
       // Structural-mask injection (each/branch/scope/show) moved to
       // `structuralMaskModule` (v2c/decomp-14). Both ran in Phase 2b
@@ -1318,7 +1346,7 @@ function emitStaticProp(
 
 // ── Pass 1: Element → elSplit ────────────────────────────────────
 
-function tryTransformElementCall(
+export function tryTransformElementCall(
   node: ts.CallExpression,
   helpers: Map<string, string>,
   fieldBits: Map<string, number>,

@@ -41,6 +41,12 @@ export {
 } from './modules/structural-mask.js'
 export { textMaskModule, type TextMaskModuleOptions } from './modules/text-mask.js'
 export { itemDedupModule, type ItemDedupModuleOptions } from './modules/item-dedup.js'
+export {
+  elementRewriteModule,
+  ELEMENT_REWRITE_SLOT,
+  type ElementRewriteModuleOptions,
+  type ElementRewriteSlot,
+} from './modules/element-rewrite.js'
 export * from './msg-annotations.js'
 export * from './msg-schema.js'
 export * from './schema-hash.js'
