@@ -17,6 +17,7 @@ import { extractStateSchema, type StateType } from './state-schema.js'
 import { computeSchemaHash } from './schema-hash.js'
 import { tagDispatchHandlers, injectScopeVariantRegistrations } from './binding-descriptors.js'
 import { compilerCache } from './compiler-cache.js'
+import { COMPILER_VERSION } from './version.js'
 
 function createMaskLiteral(f: ts.NodeFactory, mask: number): ts.Expression {
   if (mask >= 0) return f.createNumericLiteral(mask)
@@ -379,11 +380,73 @@ export function transformLlui(
   // Collect source positions of transformed nodes for source mapping
   const edits: TransformEdit[] = []
 
+  // ── track() strip pass (v2b §3) ─────────────────────────────────
+  // `track({ deps: (s) => [...] })` is a compile-time declaration only.
+  // collectDeps already merged its paths into `fieldBits` because 'track'
+  // is in REACTIVE_API_NAMES. Now emit an edit deleting the statement
+  // and mark 'track' as compiled so cleanupImports strips the import.
+  //
+  // A track() call is stripped only when it's the entire ExpressionStatement
+  // (the documented form). track() inside a larger expression is left as a
+  // call to the runtime stub — which throws — so the developer notices
+  // they wrote an unsupported form. The llui/prefer-static-deps lint
+  // rule catches the unusual usages.
+  // `track` is imported from @llui/dom but is not an element helper, so
+  // `importedHelpers.has('track')` is always false. Check the named
+  // imports directly to gate the strip pass.
+  const lluiImportNames = new Set<string>()
+  if (
+    lluiImport.importClause?.namedBindings &&
+    ts.isNamedImports(lluiImport.importClause.namedBindings)
+  ) {
+    for (const spec of lluiImport.importClause.namedBindings.elements) {
+      lluiImportNames.add(spec.name.text)
+    }
+  }
+  // Track-strip recognition. The main visitor returns an EmptyStatement
+  // for any `track({ deps: ... })` ExpressionStatement — the per-statement
+  // diff then surfaces the deletion. Paths are already in fieldBits
+  // because 'track' is in REACTIVE_API_NAMES.
+  if (lluiImportNames.has('track')) {
+    // Pre-scan to detect track() use so cleanupImports strips the import.
+    let foundTrackCall = false
+    const visitForTrackDetect = (node: ts.Node): void => {
+      if (foundTrackCall) return
+      if (
+        ts.isExpressionStatement(node) &&
+        ts.isCallExpression(node.expression) &&
+        ts.isIdentifier(node.expression.expression) &&
+        node.expression.expression.text === 'track'
+      ) {
+        foundTrackCall = true
+        return
+      }
+      ts.forEachChild(node, visitForTrackDetect)
+    }
+    visitForTrackDetect(sourceFile)
+    if (foundTrackCall) compiledHelpers.add('track')
+  }
+
   function visitor(node: ts.Node): ts.Node {
     // Synthetic nodes (created by ts.factory) don't have real positions
     const hasPos = node.pos >= 0 && node.end >= 0
     const origStart = hasPos ? node.getStart(sourceFile) : -1
     const origEnd = hasPos ? node.getEnd() : -1
+
+    // track({ deps: (s) => [...] }) is a compile-time declaration — paths
+    // already in fieldBits, call expression is dead weight. Return an
+    // EmptyStatement so the per-statement diff strips it from the output
+    // (cleanupImports separately removes the `track` import via the
+    // compiledHelpers set populated above).
+    if (
+      ts.isExpressionStatement(node) &&
+      ts.isCallExpression(node.expression) &&
+      ts.isIdentifier(node.expression.expression) &&
+      node.expression.expression.text === 'track' &&
+      lluiImportNames.has('track')
+    ) {
+      return f.createEmptyStatement()
+    }
 
     // Pass 0: each() optimizations — dedup item() selectors + auto-wrap items in memo
     if (
@@ -3774,17 +3837,25 @@ function injectCompilerEmittedMarker(
 ): ts.CallExpression {
   const configArg = node.arguments[0]
   if (!configArg || !ts.isObjectLiteralExpression(configArg)) return node
+  let hasMarker = false
+  let hasVersion = false
   for (const prop of configArg.properties) {
-    if (
-      ts.isPropertyAssignment(prop) &&
-      ts.isIdentifier(prop.name) &&
-      prop.name.text === '__lluiCompilerEmitted'
-    ) {
-      return node
+    if (ts.isPropertyAssignment(prop) && ts.isIdentifier(prop.name)) {
+      if (prop.name.text === '__lluiCompilerEmitted') hasMarker = true
+      if (prop.name.text === '__compilerVersion') hasVersion = true
     }
   }
-  const markerProp = f.createPropertyAssignment('__lluiCompilerEmitted', f.createNumericLiteral(1))
-  const newConfig = f.createObjectLiteralExpression([...configArg.properties, markerProp], true)
+  const adds: ts.ObjectLiteralElementLike[] = []
+  if (!hasMarker) {
+    adds.push(f.createPropertyAssignment('__lluiCompilerEmitted', f.createNumericLiteral(1)))
+  }
+  if (!hasVersion) {
+    adds.push(
+      f.createPropertyAssignment('__compilerVersion', f.createStringLiteral(COMPILER_VERSION)),
+    )
+  }
+  if (adds.length === 0) return node
+  const newConfig = f.createObjectLiteralExpression([...configArg.properties, ...adds], true)
   return f.createCallExpression(node.expression, node.typeArguments, [
     newConfig,
     ...node.arguments.slice(1),

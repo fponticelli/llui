@@ -380,6 +380,12 @@ const REACTIVE_API_NAMES = new Set([
   'foreign',
   'child',
   'errorBoundary',
+  // track({ deps: (s) => [...] }) — explicit reactivity declaration for
+  // paths static analysis can't infer. The compiler treats `deps` as a
+  // reactive accessor so its paths fold into the host component's
+  // __prefixes; the call expression is then stripped from emission
+  // (see transform.ts). v2b §3.
+  'track',
 ])
 
 /**

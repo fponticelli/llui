@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest'
 import { hydrateApp, div, text } from '../src'
-import type { ComponentDef } from '../src/types'
+import { defineTestComponent } from './helpers/defineTestComponent.js'
 
 describe('hydrateApp — init-time effects', () => {
   // Default behavior: hydration does NOT re-run init's effects. The
@@ -14,7 +14,7 @@ describe('hydrateApp — init-time effects', () => {
     type Effect = { type: 'loadSession' } | { type: 'subscribe' }
 
     const seen: Effect[] = []
-    const def: ComponentDef<State, Msg, Effect> = {
+    const def = defineTestComponent<State, Msg, Effect>({
       name: 'App',
       init: () => [{ value: 0 }, [{ type: 'loadSession' }, { type: 'subscribe' }]],
       update: (s, _m) => [s, []],
@@ -22,7 +22,7 @@ describe('hydrateApp — init-time effects', () => {
       onEffect: ({ effect }) => {
         seen.push(effect)
       },
-    }
+    })
 
     const container = document.createElement('div')
     const handle = hydrateApp(container, def, { value: 42 })
@@ -40,7 +40,7 @@ describe('hydrateApp — init-time effects', () => {
 
     const seen: Effect[] = []
 
-    const def: ComponentDef<State, Msg, Effect> = {
+    const def = defineTestComponent<State, Msg, Effect>({
       name: 'App',
       init: () => [{ value: 0 }, [{ type: 'loadSession' }, { type: 'subscribe' }]],
       update: (s, _m) => [s, []],
@@ -48,7 +48,7 @@ describe('hydrateApp — init-time effects', () => {
       onEffect: ({ effect }) => {
         seen.push(effect)
       },
-    }
+    })
 
     const container = document.createElement('div')
     const handle = hydrateApp(container, def, { value: 42 }, { runInitEffectsOnHydrate: true })
@@ -63,12 +63,12 @@ describe('hydrateApp — init-time effects', () => {
     type State = { value: number }
     type Msg = { type: 'noop' }
 
-    const def: ComponentDef<State, Msg, never> = {
+    const def = defineTestComponent<State, Msg, never>({
       name: 'App',
       init: () => [{ value: 0 }, []], // init says 0
       update: (s) => [s, []],
       view: ({ text: t }) => [div([t((s: State) => String(s.value))])],
-    }
+    })
 
     const container = document.createElement('div')
     const handle = hydrateApp(container, def, { value: 99 })
@@ -84,13 +84,13 @@ describe('hydrateApp — init-time effects', () => {
     type Msg = { type: 'noop' }
     type Effect = { type: 'loadSession' }
 
-    const def: ComponentDef<State, Msg, Effect> = {
+    const def = defineTestComponent<State, Msg, Effect>({
       name: 'WarnsOnDrop',
       init: () => [{ value: 0 }, [{ type: 'loadSession' }]],
       update: (s) => [s, []],
       view: ({ text: t }) => [div([t((s: State) => String(s.value))])],
       onEffect: () => {},
-    }
+    })
 
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
     try {
@@ -115,13 +115,13 @@ describe('hydrateApp — init-time effects', () => {
     type Msg = { type: 'noop' }
     type Effect = { type: 'loadSession' }
 
-    const def: ComponentDef<State, Msg, Effect> = {
+    const def = defineTestComponent<State, Msg, Effect>({
       name: 'NoWarnOnOptIn',
       init: () => [{ value: 0 }, [{ type: 'loadSession' }]],
       update: (s) => [s, []],
       view: ({ text: t }) => [div([t((s: State) => String(s.value))])],
       onEffect: () => {},
-    }
+    })
 
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
     try {
@@ -141,12 +141,12 @@ describe('hydrateApp — init-time effects', () => {
     type State = { value: number }
     type Msg = { type: 'noop' }
 
-    const def: ComponentDef<State, Msg, never> = {
+    const def = defineTestComponent<State, Msg, never>({
       name: 'NoEffectsNoWarn',
       init: () => [{ value: 0 }, []],
       update: (s) => [s, []],
       view: ({ text: t }) => [div([t((s: State) => String(s.value))])],
-    }
+    })
 
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
     try {
@@ -166,12 +166,12 @@ describe('hydrateApp — init-time effects', () => {
     type State = { n: number }
     type Msg = { type: 'noop' }
 
-    const def: ComponentDef<State, Msg, never> = {
+    const def = defineTestComponent<State, Msg, never>({
       name: 'Simple',
       init: () => [{ n: 1 }, []],
       update: (s) => [s, []],
       view: ({ text: t }) => [text((s: State) => String(s.n))],
-    }
+    })
 
     const container = document.createElement('div')
     expect(() => hydrateApp(container, def, { n: 7 }).dispose()).not.toThrow()

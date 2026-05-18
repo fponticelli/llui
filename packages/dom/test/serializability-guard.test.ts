@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { mountApp, text } from '../src/index'
-import type { ComponentDef } from '../src/types'
+import { defineTestComponent } from './helpers/defineTestComponent.js'
 
 describe('dev-mode state serializability guard', () => {
   let warnSpy: ReturnType<typeof vi.spyOn>
@@ -13,13 +13,13 @@ describe('dev-mode state serializability guard', () => {
     warnSpy.mockRestore()
   })
 
-  function mount<S>(initial: S): ComponentDef<S, never, never> {
-    return {
+  function mount<S>(initial: S): ReturnType<typeof defineTestComponent<S, never, never>> {
+    return defineTestComponent<S, never, never>({
       name: 'Guard',
       init: () => [initial, []],
       update: (s) => [s, []],
       view: () => [text('ok')],
-    }
+    })
   }
 
   function firstWarnMessage(): string {

@@ -76,6 +76,14 @@ export interface ComponentDef<S, M, E = never, D = void> {
   /** @internal Compiler-injected — per-message-type specialized handlers.
    *  Bypass the entire processMessages pipeline for single-message updates. */
   __handlers?: Record<string, (inst: object, msg: unknown) => [S, E[]]>
+  /**
+   * @internal Compiler-injected — semver of the @llui/compiler that
+   * emitted this def. Read by the runtime's `createInstance` to detect
+   * uncompiled (`undefined`) and version-mismatched (`< RUNTIME_MIN_COMPILER_VERSION`)
+   * defs. The sentinel `'__test__'` short-circuits the gate for fixtures
+   * built via `defineTestComponent()`. v2b §5.
+   */
+  __compilerVersion?: string
 }
 
 export type Send<M> = (msg: M) => void
@@ -132,6 +140,7 @@ export interface AnyComponentDef {
   __effectSchema?: unknown
   __update?: unknown
   __handlers?: unknown
+  __compilerVersion?: unknown
 }
 
 /**
@@ -169,6 +178,7 @@ export interface LazyDef<D = void> {
   __effectSchema?: unknown
   __update?: unknown
   __handlers?: unknown
+  __compilerVersion?: unknown
 }
 
 /**

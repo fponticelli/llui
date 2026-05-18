@@ -25,6 +25,72 @@ import { enterAccessor, exitAccessor } from './render-context.js'
 
 export const FULL_MASK = 0xffffffff | 0
 
+// ── Compiler/runtime version gate (v2b §5) ──────────────────────────
+//
+// `__compilerVersion` is the field every compiled `ComponentDef` carries
+// at v2b+ runtime. `createInstance` consults it to detect components
+// that bypassed the compiler (hand-rolled defs, builds that skipped the
+// plugin) and either falls back to `genericUpdate` (with a one-time
+// warn per def.name) or rejects an incompatible compiled bundle.
+//
+// The minimum compatible compiler version: at v2b ship this is 0.3.0.
+// A def's `__compilerVersion >= RUNTIME_MIN_COMPILER_VERSION` is accepted;
+// older versions throw in dev and warn in prod.
+//
+// The sentinel `'__test__'` is reserved for test fixtures built via
+// `defineTestComponent()` — see v2b §6.3.
+export const RUNTIME_MIN_COMPILER_VERSION = '0.3.0'
+
+const _uncompiledWarned = new Set<string>()
+
+function warnUncompiledOnce(defName: string): void {
+  if (_uncompiledWarned.has(defName)) return
+  _uncompiledWarned.add(defName)
+  if (import.meta.env?.DEV) {
+    console.warn(
+      `[llui] Component "${defName}" has no \`__compilerVersion\` — falling back to ` +
+        `\`genericUpdate\` (FULL_MASK on every update; no bitmask gating). Either the ` +
+        `file was authored as a raw \`ComponentDef\` literal (use \`defineTestComponent()\` ` +
+        `in tests, or compile via @llui/vite-plugin in app code), or the build pipeline ` +
+        `skipped the LLui transform. See docs/proposals/v2-compiler/v2b.md §5.`,
+    )
+  }
+}
+
+function compareVersions(a: string, b: string): number {
+  const pa = a.split('.').map((p) => parseInt(p, 10) || 0)
+  const pb = b.split('.').map((p) => parseInt(p, 10) || 0)
+  const n = Math.max(pa.length, pb.length)
+  for (let i = 0; i < n; i++) {
+    const av = pa[i] ?? 0
+    const bv = pb[i] ?? 0
+    if (av !== bv) return av - bv
+  }
+  return 0
+}
+
+function assertCompilerCompatibility(defName: string, version: string | undefined): void {
+  if (version === undefined) {
+    warnUncompiledOnce(defName)
+    return
+  }
+  if (version === '__test__') return // defineTestComponent sentinel
+  // Strip pre-release tags (e.g. '0.3.0-alpha.0' → '0.3.0') so alpha builds
+  // are accepted alongside the stable minimum. Conservative pre-release
+  // policy: an alpha satisfies any equal-or-lower stable minimum.
+  const stable = version.split('-', 1)[0]!
+  if (compareVersions(stable, RUNTIME_MIN_COMPILER_VERSION) < 0) {
+    const msg =
+      `[llui] Component "${defName}" was compiled by @llui/compiler v${version}, ` +
+      `but this runtime requires ≥ v${RUNTIME_MIN_COMPILER_VERSION}. Upgrade the compiler ` +
+      `(\`pnpm up @llui/vite-plugin\`) and rebuild. See v2-compiler/v2b.md §5.`
+    if (import.meta.env?.DEV) {
+      throw new Error(msg)
+    }
+    console.warn(msg)
+  }
+}
+
 /**
  * Path-keyed dirty mask computation. Walks the prefix table; each entry
  * whose `prefix(prev) !== prefix(next)` contributes its bit to the dirty
@@ -174,6 +240,11 @@ export function createComponentInstance<S, M, E, D = void>(
         `See docs/proposals/unified-composition-model.md.`,
     )
   }
+  // v2b §5 — assert the def was compiled by a compatible compiler. Defs
+  // without `__compilerVersion` warn once per name and fall through to
+  // genericUpdate via the existing fields-absent logic; defs from a
+  // too-old compiler throw in dev and warn in prod.
+  assertCompilerCompatibility(def.name, (def as { __compilerVersion?: string }).__compilerVersion)
   const [initialState, initialEffects] = def.init(data as D)
 
   const controller = new AbortController()

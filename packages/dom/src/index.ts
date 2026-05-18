@@ -88,6 +88,7 @@ export { memo } from './primitives/memo.js'
 export { sample } from './primitives/sample.js'
 export { selector } from './primitives/selector.js'
 export { onMount } from './primitives/on-mount.js'
+export { track, LluiCompilerSkippedError, type TrackOptions } from './primitives/track.js'
 export { clientOnly, __clientOnlyStub, type ClientOnlyOptions } from './primitives/client-only.js'
 export { errorBoundary } from './primitives/error-boundary.js'
 
