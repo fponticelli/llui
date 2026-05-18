@@ -121,6 +121,28 @@ export interface CompilerModule {
   /** Modules this one depends on. The registry verifies presence at activation. */
   dependsOn?: string[]
   diagnostics: DiagnosticDefinition[]
+  /**
+   * Optional AST pre-transform. Called once per file BEFORE the
+   * visitor walk and emission phase. Returns a (possibly rewritten)
+   * SourceFile; the result is threaded through subsequent modules'
+   * pre-transforms (in declaration order) and then becomes the file
+   * the visitor walks. Use for AST mutations the visitor model can't
+   * cleanly express — adjacent statement insertion, wrapping arrow
+   * expressions, etc. The agent's connect-pattern pass and the
+   * universal handler-tagger are the canonical examples (MODULE-MAPPING.md
+   * binding-descriptors entry).
+   *
+   * Most modules do NOT need this. Visitor + emit is the preferred
+   * shape because it composes deterministically across modules without
+   * threading a mutable SourceFile through each one. preTransform
+   * exists for the cases where AST mutation is unavoidable.
+   *
+   * The §2.1 "walker runs once per file" invariant is preserved: the
+   * VISITOR walk runs once. preTransform passes are additional, but
+   * they're typically cheap (targeted call-site rewrites, not deep
+   * recursive walks) and execute before the single visitor walk.
+   */
+  preTransform?(ctx: PreTransformContext, sf: ts.SourceFile): ts.SourceFile
   visitors: {
     [K in ts.SyntaxKind]?: (ctx: AnalysisContext, node: ts.Node) => void
   }
@@ -128,6 +150,17 @@ export interface CompilerModule {
   emit?(ctx: EmissionContext, analysis: FileAnalysis): EmissionContribution[]
   /** Runtime symbol names this module's emissions reference (from `@llui/dom`). */
   runtimeImports?: string[]
+}
+
+export interface PreTransformContext {
+  factory: ts.NodeFactory
+  /**
+   * Shared per-file findings accumulator. preTransform passes that
+   * need to communicate with their own emit step (e.g. "this file
+   * needed scope-variant registrations") use this slot map. The same
+   * `analysis.perModule` map is later passed to visitors and emit.
+   */
+  analysis: FileAnalysis
 }
 
 // ── Registry ────────────────────────────────────────────────────────
@@ -183,10 +216,14 @@ export class ModuleRegistry {
   }
 
   /**
-   * Run a full analysis + emission pass over `sourceFile`. Walks the
-   * AST once, dispatching each node to every registered handler; then
-   * calls each module's `emit` and merges contributions, detecting
-   * conflicts.
+   * Run a full analysis + emission pass over `sourceFile`. Phases:
+   *   1. Pre-transform: each module's `preTransform?` fires in
+   *      declaration order; the (possibly rewritten) SourceFile flows
+   *      through subsequent passes.
+   *   2. Visitor walk: a single AST walk dispatches each node to every
+   *      module's matching SyntaxKind handler.
+   *   3. Emission: each module's `emit?` fires; the registry merges
+   *      contributions, detecting (field, target) conflicts.
    */
   run(sourceFile: ts.SourceFile, checker?: ts.TypeChecker): RegistryRunResult {
     const analysis: FileAnalysis = {
@@ -194,8 +231,24 @@ export class ModuleRegistry {
       perModule: new Map(),
       diagnostics: [],
     }
+
+    // Phase 1: pre-transform passes. Threaded SourceFile flows through
+    // each module's preTransform in declaration order. Modules without
+    // a preTransform pass through.
+    let currentSf = sourceFile
+    for (const m of this.modules) {
+      if (!m.preTransform) continue
+      currentSf = m.preTransform(
+        {
+          factory: ts.factory,
+          analysis,
+        },
+        currentSf,
+      )
+    }
+    analysis.sourceFile = currentSf
     const ctx: AnalysisContext = {
-      sourceFile,
+      sourceFile: currentSf,
       checker,
       getSlot: <T>(name: string, init: () => T): T => {
         let slot = analysis.perModule.get(name) as T | undefined
@@ -210,8 +263,8 @@ export class ModuleRegistry {
       },
     }
 
-    // Single-pass walk. For each node, dispatch to every module
-    // registered for its SyntaxKind, in module declaration order.
+    // Phase 2: single-pass visitor walk over the (possibly
+    // pre-transformed) SourceFile.
     const walk = (node: ts.Node): void => {
       const handlers = this.visitorsByKind.get(node.kind)
       if (handlers) {
@@ -222,12 +275,13 @@ export class ModuleRegistry {
       }
       ts.forEachChild(node, walk)
     }
-    walk(sourceFile)
+    walk(currentSf)
 
-    // Emission pass — each module contributes after analysis completes.
-    // Conflicts on a `field` between modules are hard errors per §2.1.
+    // Phase 3: emission. Each module contributes after analysis
+    // completes. Conflicts on (field, target) tuples are hard errors
+    // per §2.1.
     const emissionCtx: EmissionContext = {
-      sourceFile,
+      sourceFile: currentSf,
       factory: ts.factory,
     }
     const emissions: EmissionContribution[] = []

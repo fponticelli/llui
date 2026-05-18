@@ -23,6 +23,10 @@ export {
   type MsgAnnotationsModuleOptions,
 } from './modules/msg-annotations.js'
 export { msgSchemaModule, type MsgSchemaModuleOptions } from './modules/msg-schema.js'
+export {
+  bindingDescriptorsModule,
+  BINDING_DESCRIPTORS_SLOT,
+} from './modules/binding-descriptors.js'
 export * from './msg-annotations.js'
 export * from './msg-schema.js'
 export * from './schema-hash.js'

@@ -10,7 +10,9 @@ import { extractMsgAnnotations } from './msg-annotations.js'
 import { extractStateSchema } from './state-schema.js'
 // `computeSchemaHash` no longer imported here — `schemaHashModule` owns
 // the __schemaHash emission. See modules/schema-hash.ts.
-import { tagDispatchHandlers, injectScopeVariantRegistrations } from './binding-descriptors.js'
+// `tagDispatchHandlers` + `injectScopeVariantRegistrations` are now
+// consumed by `bindingDescriptorsModule` via the registry's preTransform
+// hook — no longer imported here. See modules/binding-descriptors.ts.
 import { compilerCache } from './compiler-cache.js'
 import { COMPILER_VERSION } from './version.js'
 import { ModuleRegistry, type CompilerModule, type EmissionContribution } from './module.js'
@@ -19,6 +21,10 @@ import { stateSchemaModule } from './modules/state-schema.js'
 import { msgAnnotationsModule } from './modules/msg-annotations.js'
 import { msgSchemaModule } from './modules/msg-schema.js'
 import { schemaHashModule } from './modules/schema-hash.js'
+import {
+  bindingDescriptorsModule,
+  BINDING_DESCRIPTORS_SLOT,
+} from './modules/binding-descriptors.js'
 
 function createMaskLiteral(f: ts.NodeFactory, mask: number): ts.Expression {
   if (mask >= 0) return f.createNumericLiteral(mask)
@@ -338,13 +344,14 @@ export function transformLlui(
   // Both passes gated on dev/agent-metadata so production bundles
   // without agent integration don't pay the per-handler `Object.assign`
   // cost.
+  // Binding-descriptors pre-pass migrated to `bindingDescriptorsModule`
+  // via the registry's `preTransform` hook (v2c/decomp-7). The module
+  // wraps `injectScopeVariantRegistrations` + `tagDispatchHandlers` and
+  // runs inside `registry.run()` below — the resulting (post-transform)
+  // sourceFile is re-assigned from `registryResult.analysis.sourceFile`.
+  // `scopeRegistrationsInjected` reads from the module's slot after
+  // the registry run.
   let scopeRegistrationsInjected = false
-  if (devMode || emitAgentMetadata) {
-    const injection = injectScopeVariantRegistrations(sourceFile, ts.factory)
-    sourceFile = injection.sf
-    scopeRegistrationsInjected = injection.injected
-    sourceFile = tagDispatchHandlers(sourceFile, ts.factory)
-  }
 
   // Pass 2 pre-scan: collect all state access paths
   // Only use precise masks in files that define a component() — the __dirty
@@ -450,6 +457,11 @@ export function transformLlui(
     activeModules.push(componentMetaModule)
   }
   if (shouldEmitAgentMetadataAtToplevel) {
+    // binding-descriptors fires FIRST so the AST mutations (handler
+    // tagging + scope-variant registration) land before any later
+    // module's visitor or emit sees the file. The other agent modules
+    // then run against the post-binding-descriptors sourceFile.
+    activeModules.push(bindingDescriptorsModule)
     // Order matters (v2c §2.1): the three input-producer modules run
     // before schemaHashModule so the inputs slot is populated when
     // schema-hash's emit runs. The registry's emit pass iterates
@@ -478,6 +490,21 @@ export function transformLlui(
   activeModules.push(schemaHashModule)
   const registry = new ModuleRegistry(activeModules)
   const registryResult = registry.run(sourceFile)
+  // The registry's preTransform phase (v2c/decomp-7) may have
+  // mutated the source file — replace our local reference so all
+  // subsequent code (fieldBits, visitor, cleanupImports) sees the
+  // post-binding-descriptors AST. When no preTransform module is
+  // active this is a no-op assignment.
+  sourceFile = registryResult.analysis.sourceFile
+  // Read the binding-descriptors module's slot for the
+  // cleanupImports decision about the `__registerScopeVariants`
+  // runtime helper import. When the module didn't run (no agent
+  // metadata mode) the slot is absent and scopeRegistrationsInjected
+  // stays false.
+  const bdState = registryResult.analysis.perModule.get(BINDING_DESCRIPTORS_SLOT) as
+    | { scopeRegistrationsInjected: boolean }
+    | undefined
+  if (bdState) scopeRegistrationsInjected = bdState.scopeRegistrationsInjected
   const emissionsByTarget = new Map<ts.CallExpression, EmissionContribution[]>()
   const globalEmissions: EmissionContribution[] = []
   for (const emission of registryResult.emissions) {
