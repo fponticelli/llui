@@ -246,6 +246,187 @@ describe('ModuleRegistry — diagnostic reporting', () => {
   })
 })
 
+describe('ModuleRegistry — transformCall hook (Phase 2b)', () => {
+  const printer = ts.createPrinter({ newLine: ts.NewLineKind.LineFeed })
+
+  it('dispatches transformCall once per CallExpression', () => {
+    const seen: string[] = []
+    const moduleA: CompilerModule = {
+      name: 'a',
+      compilerVersion: '^0.3.0',
+      diagnostics: [],
+      visitors: {},
+      transformCall: (_ctx, node) => {
+        seen.push(ts.isIdentifier(node.expression) ? node.expression.text : '?')
+        return null
+      },
+    }
+    const registry = new ModuleRegistry([moduleA])
+    registry.run(parse(`foo(); bar(baz()); qux()`))
+    expect(seen.sort()).toEqual(['bar', 'baz', 'foo', 'qux'])
+  })
+
+  it('returning null leaves the node unchanged', () => {
+    const noop: CompilerModule = {
+      name: 'noop',
+      compilerVersion: '^0.3.0',
+      diagnostics: [],
+      visitors: {},
+      transformCall: () => null,
+    }
+    const registry = new ModuleRegistry([noop])
+    const sf = parse(`foo(42)`)
+    const result = registry.run(sf)
+    const out = printer.printFile(result.analysis.sourceFile)
+    expect(out.trim()).toBe(`foo(42);`)
+  })
+
+  it('returning a new node replaces the call', () => {
+    // Module that rewrites foo(...) → foo(...) with an injected trailing arg `1`.
+    const argInjector: CompilerModule = {
+      name: 'arg-injector',
+      compilerVersion: '^0.3.0',
+      diagnostics: [],
+      visitors: {},
+      transformCall: (ctx, node) => {
+        if (!ts.isIdentifier(node.expression) || node.expression.text !== 'foo') return null
+        return ctx.factory.createCallExpression(node.expression, node.typeArguments, [
+          ...node.arguments,
+          ctx.factory.createNumericLiteral(1),
+        ])
+      },
+    }
+    const registry = new ModuleRegistry([argInjector])
+    const result = registry.run(parse(`foo(42)`))
+    const out = printer.printFile(result.analysis.sourceFile)
+    expect(out.trim()).toBe(`foo(42, 1);`)
+  })
+
+  it('chains transformCall across modules in declaration order', () => {
+    // Module A: foo → bar. Module B: bar → baz. Composition order: A then B.
+    const renameFooBar: CompilerModule = {
+      name: 'rename-foo-bar',
+      compilerVersion: '^0.3.0',
+      diagnostics: [],
+      visitors: {},
+      transformCall: (ctx, node) => {
+        if (!ts.isIdentifier(node.expression) || node.expression.text !== 'foo') return null
+        return ctx.factory.createCallExpression(
+          ctx.factory.createIdentifier('bar'),
+          node.typeArguments,
+          node.arguments,
+        )
+      },
+    }
+    const renameBarBaz: CompilerModule = {
+      name: 'rename-bar-baz',
+      compilerVersion: '^0.3.0',
+      diagnostics: [],
+      visitors: {},
+      transformCall: (ctx, node) => {
+        if (!ts.isIdentifier(node.expression) || node.expression.text !== 'bar') return null
+        return ctx.factory.createCallExpression(
+          ctx.factory.createIdentifier('baz'),
+          node.typeArguments,
+          node.arguments,
+        )
+      },
+    }
+    const registry = new ModuleRegistry([renameFooBar, renameBarBaz])
+    const result = registry.run(parse(`foo()`))
+    const out = printer.printFile(result.analysis.sourceFile)
+    expect(out.trim()).toBe(`baz();`)
+  })
+
+  it('reverses chain composition when modules declared in reverse order', () => {
+    // With renameBarBaz first, then renameFooBar: bar→baz fires before foo→bar,
+    // so foo() stays bar() at the end of A's pass and B doesn't match.
+    const renameFooBar: CompilerModule = {
+      name: 'rename-foo-bar',
+      compilerVersion: '^0.3.0',
+      diagnostics: [],
+      visitors: {},
+      transformCall: (ctx, node) => {
+        if (!ts.isIdentifier(node.expression) || node.expression.text !== 'foo') return null
+        return ctx.factory.createCallExpression(
+          ctx.factory.createIdentifier('bar'),
+          node.typeArguments,
+          node.arguments,
+        )
+      },
+    }
+    const renameBarBaz: CompilerModule = {
+      name: 'rename-bar-baz',
+      compilerVersion: '^0.3.0',
+      diagnostics: [],
+      visitors: {},
+      transformCall: (ctx, node) => {
+        if (!ts.isIdentifier(node.expression) || node.expression.text !== 'bar') return null
+        return ctx.factory.createCallExpression(
+          ctx.factory.createIdentifier('baz'),
+          node.typeArguments,
+          node.arguments,
+        )
+      },
+    }
+    const registry = new ModuleRegistry([renameBarBaz, renameFooBar])
+    const result = registry.run(parse(`foo()`))
+    const out = printer.printFile(result.analysis.sourceFile)
+    expect(out.trim()).toBe(`bar();`)
+  })
+
+  it('reads visitor-phase findings via analysis.perModule', () => {
+    // Module records all foo() call sites in its slot during visit,
+    // then rewrites only those sites during transformCall. Demonstrates
+    // the analyze-then-rewrite split.
+    const annotator: CompilerModule = {
+      name: 'annotator',
+      compilerVersion: '^0.3.0',
+      diagnostics: [],
+      visitors: {
+        [ts.SyntaxKind.CallExpression]: (ctx, n) => {
+          const call = n as ts.CallExpression
+          if (ts.isIdentifier(call.expression) && call.expression.text === 'foo') {
+            const slot = ctx.getSlot('annotator', () => ({ count: 0 }))
+            slot.count++
+          }
+        },
+      },
+      transformCall: (ctx, node) => {
+        const slot = ctx.analysis.perModule.get('annotator') as { count: number } | undefined
+        if (!slot || slot.count === 0) return null
+        if (!ts.isIdentifier(node.expression) || node.expression.text !== 'foo') return null
+        // Append a numeric literal arg equal to slot.count for every foo() call.
+        return ctx.factory.createCallExpression(node.expression, node.typeArguments, [
+          ...node.arguments,
+          ctx.factory.createNumericLiteral(slot.count),
+        ])
+      },
+    }
+    const registry = new ModuleRegistry([annotator])
+    const result = registry.run(parse(`foo(); foo()`))
+    const out = printer.printFile(result.analysis.sourceFile).replace(/\s+/g, ' ').trim()
+    expect(out).toBe(`foo(2); foo(2);`)
+  })
+
+  it('phase is skipped (zero cost) when no module declares transformCall', () => {
+    const visitorOnly: CompilerModule = {
+      name: 'visitor-only',
+      compilerVersion: '^0.3.0',
+      diagnostics: [],
+      visitors: {
+        [ts.SyntaxKind.CallExpression]: () => {},
+      },
+    }
+    const registry = new ModuleRegistry([visitorOnly])
+    const sf = parse(`foo()`)
+    const result = registry.run(sf)
+    // Without any transformCall, the analysis.sourceFile reference is
+    // unchanged from input (no `ts.visitNode` walk).
+    expect(result.analysis.sourceFile).toBe(sf)
+  })
+})
+
 describe('ModuleRegistry — introspection', () => {
   it('listModules returns names in declaration order', () => {
     const registry = new ModuleRegistry([

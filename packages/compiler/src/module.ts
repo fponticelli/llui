@@ -146,6 +146,30 @@ export interface CompilerModule {
   visitors: {
     [K in ts.SyntaxKind]?: (ctx: AnalysisContext, node: ts.Node) => void
   }
+  /**
+   * Optional per-call AST rewrite. Called once per `CallExpression`
+   * during the post-visitor transform phase, AFTER analysis has
+   * accumulated findings in `analysis.perModule`. Returns either:
+   *   - `null` — node unchanged; chain continues with the next module's
+   *     transformCall (if any).
+   *   - a new `ts.CallExpression` — node replaced; subsequent modules'
+   *     transformCall hooks see the new node (composes in declaration
+   *     order, just like preTransform).
+   *
+   * Use for per-call rewrites the visitor model can't express: element
+   * helper rewrites (`div(...)` → `elSplit(...)`), structural mask
+   * injection on `each`/`branch`/`show`, row-factory emission, template
+   * cloning, item-selector dedup, memo-wrapping. The registry's
+   * orchestrator threads the transformed node through subsequent
+   * modules so a rewrite chain like `memo-wrap → mask-inject` produces
+   * a single output node observed by both.
+   *
+   * Module authors should treat transformCall as a pure function of
+   * its inputs (the node + analysis findings). Side-effects (mutating
+   * `analysis.perModule` from inside transformCall) are not supported
+   * — use a visitor for analysis and transformCall for the rewrite.
+   */
+  transformCall?(ctx: TransformCallContext, node: ts.CallExpression): ts.CallExpression | null
   /** Called once per file after the visitor pass completes. Returns this module's emission contributions. */
   emit?(ctx: EmissionContext, analysis: FileAnalysis): EmissionContribution[]
   /** Runtime symbol names this module's emissions reference (from `@llui/dom`). */
@@ -160,6 +184,18 @@ export interface PreTransformContext {
    * needed scope-variant registrations") use this slot map. The same
    * `analysis.perModule` map is later passed to visitors and emit.
    */
+  analysis: FileAnalysis
+}
+
+/**
+ * Context passed to every `transformCall` invocation. Carries the
+ * factory for building new AST nodes and a read-only view of analysis
+ * findings (visitors have already completed and populated
+ * `analysis.perModule` by the time transformCall fires).
+ */
+export interface TransformCallContext {
+  factory: ts.NodeFactory
+  /** Read-only access to visitor-phase findings. */
   analysis: FileAnalysis
 }
 
@@ -221,8 +257,14 @@ export class ModuleRegistry {
    *      declaration order; the (possibly rewritten) SourceFile flows
    *      through subsequent passes.
    *   2. Visitor walk: a single AST walk dispatches each node to every
-   *      module's matching SyntaxKind handler.
-   *   3. Emission: each module's `emit?` fires; the registry merges
+   *      module's matching SyntaxKind handler. Read-only — visitors
+   *      accumulate findings in `analysis.perModule` but cannot rewrite.
+   *   3. Transform: a `ts.transform`-style walk dispatches each
+   *      `CallExpression` to every module's `transformCall?` hook in
+   *      declaration order; each hook's return value (if non-null)
+   *      feeds the next. Composes call-site rewrites without each
+   *      module paying a whole-file walk cost.
+   *   4. Emission: each module's `emit?` fires; the registry merges
    *      contributions, detecting (field, target) conflicts.
    */
   run(sourceFile: ts.SourceFile, checker?: ts.TypeChecker): RegistryRunResult {
@@ -276,6 +318,33 @@ export class ModuleRegistry {
       ts.forEachChild(node, walk)
     }
     walk(currentSf)
+
+    // Phase 2b: per-CallExpression transform. Modules with a
+    // `transformCall` hook get one chance to rewrite each call site;
+    // chained in declaration order. The phase is skipped entirely
+    // when no module declares the hook (zero overhead for the common
+    // case of metadata-only modules).
+    const callTransformers = this.modules.filter((m) => m.transformCall)
+    if (callTransformers.length > 0) {
+      const transformCtx: TransformCallContext = {
+        factory: ts.factory,
+        analysis,
+      }
+      const visit: ts.Visitor = (node) => {
+        const visited = ts.visitEachChild(node, visit, undefined!)
+        if (ts.isCallExpression(visited)) {
+          let current = visited
+          for (const m of callTransformers) {
+            const replaced = m.transformCall!(transformCtx, current)
+            if (replaced) current = replaced
+          }
+          return current
+        }
+        return visited
+      }
+      currentSf = ts.visitNode(currentSf, visit) as ts.SourceFile
+      analysis.sourceFile = currentSf
+    }
 
     // Phase 3: emission. Each module contributes after analysis
     // completes. Conflicts on (field, target) tuples are hard errors
