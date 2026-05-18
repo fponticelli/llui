@@ -417,6 +417,51 @@ When a future migration deletes an inline injector (e.g. `injectMsgSchema`), it 
 
 The MODULE-MAPPING.md table is the contract — when a file leaves the monolith it goes to the destination named there. Disagreements are reflected in MAPPING amendments before code lands, not in code that drifts.
 
+### 7.9.2 Endgame and outstanding design decisions (v2c/decomp-Z2)
+
+**Status after `decomp-10`.** The registry primitive has absorbed every per-component metadata emission that has the "compute a value, splice into the `component()` config-arg" shape. Eight modules now live (`componentMeta`, `stateSchema`, `msgAnnotations`, `msgSchema`, `schemaHash`, `bindingDescriptors`, `maskLegend`, `compilerStamp`); the umbrella's visitor branch for `component()` calls is structurally:
+
+```ts
+let result = tryInjectDirty(node, fieldBits, f, fieldBitsHi)
+result = applyRegistryEmissions(result ?? node, node)
+```
+
+Two emitters remain. They will _not_ migrate to the registry as currently designed, and each represents a deliberate stopping point with a downstream design decision.
+
+**1. `tryInjectDirty` group — core synthesis (`__update`, `__handlers`, `__prefixes`).**
+
+These three fields are computed together because they share intermediates that the registry's per-module isolation can't replicate cheaply:
+
+- `topLevelBits` / `topLevelBitsHi` are derived from `fieldBits` / `fieldBitsHi` inside the function.
+- `structuralMask` is computed from the `configArg` literal plus `fieldBits`.
+- `__update`'s body (`buildUpdateBody`) closes over `structuralMask`.
+- `__handlers` consumes `topLevelBits`, `topLevelBitsHi`, _and_ `structuralMask` together (`tryBuildHandlers`).
+- `__prefixes` ordering is keyed on the bit positions `fieldBits` assigns; the array index _is_ the bit.
+
+The reactive-paths POC module exists but emits paths in sorted order rather than bit-position order; promoting it would require either threading `fieldBits` into the module (breaking the "module computes from inputs" pattern) or wholesale moving the bit-assignment logic with it. The structural-mask + update-body emission has no equivalent module shape today.
+
+**Design decision (open).** Two options:
+
+- **(a) Promote `tryInjectDirty` as a single `coreComponentModule`** that owns all three fields. Accepts `(configArg, fieldBits, fieldBitsHi)` as factory inputs; emits a per-target trio. This works mechanically but is a large code move (~500 lines including helpers `buildUpdateBody`, `tryBuildHandlers`, `buildCaseHandler`, `buildPrefixesProp`). The reactive-paths POC becomes the seed; the helpers move alongside.
+- **(b) Declare `tryInjectDirty` "core synthesis" by design and keep it inline.** The `_Module`-able fields are the ones that compute from independent inputs; co-emitted core synthesis stays at the umbrella. v2c §2.1 then reads: "modules emit independent contributions; co-emitted core synthesis is the umbrella's job." The cost is one named exception to the "registry owns emission" rule.
+
+Option (a) is the cleaner end state. Option (b) is the cheaper end state. Either choice is justifiable; the registry primitive itself is unaffected by the decision.
+
+**2. Per-call AST mutations — element rewrites, structural-mask injection, row factory, template clone, item-selector dedup, memo-wrapping.**
+
+These don't fit `EmissionContribution`. They are not field additions to a `component()` config — they rewrite the call expressions themselves (`div(...)` → `elSplit(...)`, `each(...)` → row-factory form, etc.). The registry's contract today is "compute a value, emit it"; the existing `preTransform?(ctx, sf) → sf` hook handles whole-file rewrites but is too coarse for per-call mutations because every active preTransform pays the cost of walking the file (acceptable for one or two modules; not for a dozen call-rewrite passes).
+
+**Design decision (open).** The clean primitive is a `transformCall?(ctx, node) → node | null` hook on `CompilerModule`. The registry's visitor walk would dispatch matching modules per `CallExpression` and chain their results. Module ordering then becomes load-bearing across rewrites that compose (e.g., memo-wrap before mask injection). Two suboptions:
+
+- **(b.i) Add `transformCall` and migrate.** All ~15 inline call-rewrites become modules. Bundle-size goldens (§7.9 step 5) become real: stripping `compiler-devtools` removes the `_eachDiffLog` hook insertion in the rewritten output; stripping `compiler-ssr` removes hydration markers.
+- **(b.ii) Keep them inline and declare the registry "metadata emission only".** The bundle-size goldens become harder — you can strip emitted fields but not the AST-rewriting transforms. The architecture stays simpler.
+
+**3. Test-migration backlog.**
+
+~82 test files still construct `ComponentDef` literals directly and rely on the runtime's `__compilerVersion` fallback. The fallback emits one console.warn per definition (deduplicated by component name). The two test files that fail under the warn-count assertion (`hydrate-effects.test.ts`, `serializability-guard.test.ts`) were migrated in v2b/6. The rest can run as-is or migrate to `defineTestComponent` cosmetically; nothing depends on them migrating.
+
+**Net.** v2c §2 has shipped the registry primitive, eight modules, and the bridge — the load-bearing infrastructure. The remaining migrations gate on the two design decisions above. A fresh agent picking this up should choose between (a)/(b) and (b.i)/(b.ii) explicitly _before_ writing code; the choices propagate through `MODULE-MAPPING.md`, the four `@llui/compiler-*` package skeletons, and the bundle-size goldens.
+
 ### 7.9.1 Earlier handover (v2c-partial commit, retained for history)
 
 **Status at this commit:** the module-decomposition phases (1–4 above) are unstarted. The diagnostic schema (Phase 5) and MCP static-mode (Phase 6) shipped without it. The decision to defer was a scope call — module decomposition is the largest single piece of v2c and is genuinely independent of the schema + MCP work that _does_ ship in this push.
