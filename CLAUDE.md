@@ -83,9 +83,9 @@ Build order is computed by Turbo via `"dependsOn": ["^build"]`. Roots: `@llui/do
 **Two composition levels:**
 
 - **Level 1 (default):** View functions — modules exporting `update()` and `view()` functions. Parent owns state; child operates on a slice. Use `(props, send)` convention.
-- **Level 2 (opt-in):** `child()` — full component boundary with own bitmask, update cycle, and scope tree. Only for 32+ state paths (past the single-mask limit), library components, or independent effect lifecycle.
+- **Level 2 (opt-in):** `child()` — full component boundary with own bitmask, update cycle, and scope tree. Only for 63+ state paths (past the two-word mask limit), library components, or independent effect lifecycle.
 
-**Bitmask:** single 31-bit `number` mask. Paths 0–30 get individual bits; 32+ paths overflow to `FULL_MASK` (-1) with a compiler warning naming the largest top-level fields to extract.
+**Bitmask:** two 31-bit `number` words — `mask` (lo, paths 0–30) plus optional `maskHi` (paths 31–61), for up to 62 paths total. The compiler decides per component at build time whether the high word is emitted: ≤31 paths stay on a single-word fast path; 32–62 paths get `maskHi` emitted. Paths past 62 collapse to `FULL_MASK` (-1) with a compiler diagnostic naming fields to extract.
 
 **Effects as data:** `update()` returns `[newState, effects]`. Core runtime handles `delay` and `log`. The `@llui/effects` package provides `handleEffects<E>().else(handler)` for http/cancel/debounce/sequence/race.
 
