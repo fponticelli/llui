@@ -101,9 +101,11 @@ export default tseslint.config(
   //
   // All rules run at `error`. LLMs and IDE agents only fix what they
   // see as an error — warnings accumulate and never get cleaned up.
-  // Even nudges like `empty-props` or `bitmask-overflow` are worth
-  // gating, because the cost of a quick fix is much smaller than the
-  // cost of letting them pile up.
+  // Even nudges like `empty-props` are worth gating, because the cost
+  // of a quick fix is much smaller than the cost of letting them pile up.
+  //
+  // Note: `bitmask-overflow` moved to `@llui/compiler` as a compile-time
+  // error (migration step 1 of the ESLint-plugin-deprecation plan).
   {
     files: [
       'examples/**/*.ts',
@@ -125,7 +127,6 @@ export default tseslint.config(
       'llui/controlled-input': 'error',
       'llui/static-on': 'error',
       'llui/exhaustive-update': 'error',
-      'llui/bitmask-overflow': 'error',
     },
   },
 )

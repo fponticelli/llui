@@ -920,6 +920,25 @@ export default function llui(options: LluiPluginOptions = {}): Plugin {
       )
       if (!result) return undefined
 
+      // Surface compiler diagnostics to Rollup. Severity 'error' fails
+      // the transform (and the build); 'warning' / 'info' report
+      // non-fatally. Locations are 1-based for Rollup.
+      for (const diag of result.diagnostics) {
+        const loc = {
+          file: diag.location.file,
+          line: diag.location.range.start.line + 1,
+          column: diag.location.range.start.column,
+        }
+        const formatted = `[${diag.id}] ${diag.message}`
+        if (diag.severity === 'error') {
+          this.error({ message: formatted, loc })
+        } else if (diag.severity === 'warning') {
+          this.warn({ message: formatted, loc })
+        } else if (verbose) {
+          console.info(`[llui] ${formatted}`)
+        }
+      }
+
       // Apply per-statement edits via MagicString for accurate source maps.
       // Untouched statements keep their original positions.
       const s = new MagicString(code)

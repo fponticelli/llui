@@ -10,6 +10,7 @@ import { extractStateSchema } from './state-schema.js'
 // consumed by `bindingDescriptorsModule` via the registry's preTransform
 // hook — no longer imported here. See modules/binding-descriptors.ts.
 import { compilerCache } from './compiler-cache.js'
+import type { Diagnostic } from './diagnostic.js'
 import { ModuleRegistry, type CompilerModule, type EmissionContribution } from './module.js'
 // Introspection modules (v2c/decomp-26) and devtools modules
 // (v2c/decomp-27) moved to their sibling packages. Hosts register
@@ -40,6 +41,7 @@ import {
   CORE_SYNTHESIS_SLOT,
   type CoreSynthesisSlot,
 } from './modules/core-synthesis.js'
+import { bitmaskOverflowModule } from './modules/bitmask-overflow.js'
 
 export function createMaskLiteral(f: ts.NodeFactory, mask: number): ts.Expression {
   if (mask >= 0) return f.createNumericLiteral(mask)
@@ -177,7 +179,7 @@ export function transformLlui(
   typeSources?: ExternalTypeSources,
   preExtracted?: PreExtractedSchemas,
   crossFilePaths?: ReadonlySet<string>,
-): { output: string; edits: TransformEdit[] } | null {
+): { output: string; edits: TransformEdit[]; diagnostics: Diagnostic[] } | null {
   // Use the caller-provided filename so any module reading `sf.fileName`
   // (e.g. `componentMetaModule` emitting `__componentMeta: { file }`)
   // sees the real path instead of a placeholder. The monolith's inline
@@ -368,6 +370,11 @@ export function transformLlui(
   // the umbrella's last remaining inline injector
   // (`injectCompilerEmittedMarker`, deleted below).
   activeModules.push(compilerStampModule)
+  // bitmaskOverflowModule is always-on. Emits `llui/bitmask-overflow`
+  // (severity: error) when a component reads more than 62 unique state
+  // paths. Migrated from @llui/eslint-plugin (v0.x); promoted from
+  // ESLint warning to compiler error because LLMs ignore warnings.
+  activeModules.push(bitmaskOverflowModule())
   // eachMemoModule wraps allocating each() items accessors in
   // `memo(...)` via `transformCallEnter`. Activated when the file
   // has any reactive paths (mirrors the inline call's gating).
@@ -818,7 +825,11 @@ export function transformLlui(
       if (devMode || emitAgentMetadata) {
         output = appendCompilerCacheProps(output, componentDecls)
       }
-      return { output, edits: [{ start: 0, end: source.length, replacement: output }] }
+      return {
+        output,
+        edits: [{ start: 0, end: source.length, replacement: output }],
+        diagnostics: registryResult.analysis.diagnostics,
+      }
     }
 
     // Compare ignoring trailing semicolons and whitespace (printer adds them)
@@ -843,7 +854,15 @@ export function transformLlui(
       finalEdits.push({ start: source.length, end: source.length, replacement: '\n' + bottom })
   }
 
-  if (finalEdits.length === 0) return null
+  if (finalEdits.length === 0) {
+    // No rewrites — but registry may still have collected diagnostics
+    // (e.g. bitmask-overflow on an otherwise-clean file). Surface them
+    // so the adapter can fail the build.
+    if (registryResult.analysis.diagnostics.length > 0) {
+      return { output: source, edits: [], diagnostics: registryResult.analysis.diagnostics }
+    }
+    return null
+  }
 
   // Build the full output by applying edits (for backward compat)
   const sorted = [...finalEdits].sort((a, b) => b.start - a.start)
@@ -860,7 +879,7 @@ export function transformLlui(
     }
   }
 
-  return { output, edits: finalEdits }
+  return { output, edits: finalEdits, diagnostics: registryResult.analysis.diagnostics }
 }
 
 // ── HMR ──────────────────────────────────────────────────────────

@@ -29,7 +29,6 @@ import { accessibilityRule } from './rules/accessibility.js'
 import { controlledInputRule } from './rules/controlled-input.js'
 import { staticOnRule } from './rules/static-on.js'
 import { exhaustiveUpdateRule } from './rules/exhaustive-update.js'
-import { bitmaskOverflowRule } from './rules/bitmask-overflow.js'
 import { noEagerItemAccessorRule } from './rules/no-eager-item-accessor.js'
 import { noListRenderInSampleRule } from './rules/no-list-render-in-sample.js'
 import { noBarrelImportWhenSubpathExistsRule } from './rules/no-barrel-import-when-subpath-exists.js'
@@ -72,7 +71,6 @@ export const rules = {
   'controlled-input': controlledInputRule,
   'static-on': staticOnRule,
   'exhaustive-update': exhaustiveUpdateRule,
-  'bitmask-overflow': bitmaskOverflowRule,
   'no-barrel-import-when-subpath-exists': noBarrelImportWhenSubpathExistsRule,
   'no-eager-item-accessor': noEagerItemAccessorRule,
   'no-let-reactive-accessor': noLetReactiveAccessorRule,
@@ -139,7 +137,6 @@ export const configs = {
       'llui/controlled-input': 'error',
       'llui/static-on': 'error',
       'llui/exhaustive-update': 'error',
-      'llui/bitmask-overflow': 'error',
       'llui/no-barrel-import-when-subpath-exists': 'error',
       'llui/no-eager-item-accessor': 'error',
       'llui/no-let-reactive-accessor': 'error',
