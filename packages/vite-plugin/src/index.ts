@@ -17,16 +17,19 @@ import {
   transformLlui,
   crossFileAccessorPaths,
   registerIntrospectionFactory,
+  registerDevtoolsFactory,
   type ExternalTypeSources,
   type PreExtractedSchemas,
 } from '@llui/compiler'
 import { transformUseClientSsr, hasUseClientDirective } from '@llui/compiler-ssr'
 import { introspectionFactory } from '@llui/compiler-introspection'
+import { devtoolsFactory } from '@llui/compiler-devtools'
 
-// Register the introspection module factory at plugin-import time.
-// @llui/compiler doesn't depend on @llui/compiler-introspection
-// (would create a workspace cycle), so the host wires them.
+// Register opt-in module factories at plugin-import time.
+// @llui/compiler doesn't depend on its sibling packages (would
+// create a workspace cycle), so the host wires them.
 registerIntrospectionFactory(introspectionFactory)
+registerDevtoolsFactory(devtoolsFactory)
 import {
   findTypeSource,
   readComponentTypeArgNames,

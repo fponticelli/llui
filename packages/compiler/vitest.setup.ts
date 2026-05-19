@@ -10,7 +10,12 @@
 // "introspection disabled" path) can call
 // `registerIntrospectionFactory(null)` to reset before their assert.
 
-import { registerIntrospectionFactory } from './src/introspection-factory.js'
+import {
+  registerIntrospectionFactory,
+  registerDevtoolsFactory,
+} from './src/introspection-factory.js'
 import { introspectionFactory } from '@llui/compiler-introspection'
+import { devtoolsFactory } from '@llui/compiler-devtools'
 
 registerIntrospectionFactory(introspectionFactory)
+registerDevtoolsFactory(devtoolsFactory)

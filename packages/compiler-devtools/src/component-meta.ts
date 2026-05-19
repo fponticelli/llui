@@ -10,8 +10,8 @@
 // its own line number, and the conflict-detector lets each emission
 // through because the `(field, target)` tuples are distinct.
 
-import type { CompilerModule, EmissionContribution } from '../module.js'
-import { findComponentCalls } from './_shared.js'
+import type { CompilerModule, EmissionContribution } from '@llui/compiler'
+import { findComponentCalls } from '@llui/compiler'
 
 export const componentMetaModule: CompilerModule = {
   name: 'component-meta',

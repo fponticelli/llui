@@ -11,16 +11,18 @@ import { extractStateSchema } from './state-schema.js'
 // hook — no longer imported here. See modules/binding-descriptors.ts.
 import { compilerCache } from './compiler-cache.js'
 import { ModuleRegistry, type CompilerModule, type EmissionContribution } from './module.js'
-import { componentMetaModule } from './modules/component-meta.js'
-// Introspection modules moved to @llui/compiler-introspection
-// (v2c/decomp-26). The host (vite-plugin, mcp, test setup) registers
-// the factory via `registerIntrospectionFactory`; transformLlui
-// invokes it via `getIntrospectionFactory()` when the flags request
-// introspection. The slot key for binding-descriptors is exported
-// from introspection-factory.ts as a string constant so the
-// orchestrator can read the slot without importing the sibling
-// package.
-import { getIntrospectionFactory, BINDING_DESCRIPTORS_SLOT } from './introspection-factory.js'
+// Introspection modules (v2c/decomp-26) and devtools modules
+// (v2c/decomp-27) moved to their sibling packages. Hosts register
+// factories via `registerIntrospectionFactory` / `registerDevtoolsFactory`;
+// transformLlui invokes them via the getters when their respective
+// modes are active. BINDING_DESCRIPTORS_SLOT is re-exported from
+// introspection-factory.ts as a string constant so the orchestrator
+// can read the slot without importing the sibling package.
+import {
+  getIntrospectionFactory,
+  getDevtoolsFactory,
+  BINDING_DESCRIPTORS_SLOT,
+} from './introspection-factory.js'
 import { maskLegendModule } from './modules/mask-legend.js'
 import { compilerStampModule } from './modules/compiler-stamp.js'
 import { eachMemoModule, EACH_MEMO_SLOT, type EachMemoSlot } from './modules/each-memo.js'
@@ -326,8 +328,13 @@ export function transformLlui(
         )
     : null
   const activeModules: CompilerModule[] = []
-  if (devMode) {
-    activeModules.push(componentMetaModule)
+  // Devtools modules (componentMeta + future trace instrumentation)
+  // live in @llui/compiler-devtools. The host registers the factory
+  // once via `registerDevtoolsFactory`; the factory gates on devMode
+  // and any future per-module flags.
+  const devtools = getDevtoolsFactory()
+  if (devtools) {
+    activeModules.push(...devtools({ sourceFile, devMode }))
   }
   // Introspection modules (binding-descriptors, msg-schema,
   // state-schema, msg-annotations, schema-hash) live in

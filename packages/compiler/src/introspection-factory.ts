@@ -71,3 +71,29 @@ export function registerIntrospectionFactory(factory: IntrospectionFactory | nul
 export function getIntrospectionFactory(): IntrospectionFactory | null {
   return registered
 }
+
+// ── Devtools factory ──────────────────────────────────────────────
+//
+// Same registry pattern as introspection: `@llui/compiler-devtools`
+// provides the implementation; hosts call `registerDevtoolsFactory`
+// at module-import time. When no factory is registered (production
+// build with devtools disabled), no devtools modules activate and
+// no `__componentMeta` / future trace instrumentation ships.
+
+export interface DevtoolsFactoryInput {
+  sourceFile: ts.SourceFile
+  /** Whether dev-mode emission is requested (controls componentMeta). */
+  devMode: boolean
+}
+
+export type DevtoolsFactory = (input: DevtoolsFactoryInput) => CompilerModule[]
+
+let registeredDevtools: DevtoolsFactory | null = null
+
+export function registerDevtoolsFactory(factory: DevtoolsFactory | null): void {
+  registeredDevtools = factory
+}
+
+export function getDevtoolsFactory(): DevtoolsFactory | null {
+  return registeredDevtools
+}

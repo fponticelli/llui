@@ -25,6 +25,7 @@
     "typescript": "^6.0.2"
   },
   "devDependencies": {
+    "@llui/compiler-devtools": "workspace:*",
     "@llui/compiler-introspection": "workspace:*",
     "@types/node": "^22.0.0"
   },

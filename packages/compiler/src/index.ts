@@ -19,7 +19,7 @@ export { findComponentCalls } from './modules/_shared.js'
 // BINDING_DESCRIPTORS_SLOT is re-exported from introspection-factory.js
 // (above) so the orchestrator can read the slot without depending on
 // the introspection package.
-export { componentMetaModule } from './modules/component-meta.js'
+// componentMetaModule moved to @llui/compiler-devtools (v2c/decomp-27).
 export { maskLegendModule, type MaskLegendModuleOptions } from './modules/mask-legend.js'
 export { compilerStampModule } from './modules/compiler-stamp.js'
 export {

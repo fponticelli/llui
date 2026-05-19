@@ -348,6 +348,9 @@ importers:
         specifier: ^6.0.2
         version: 6.0.2
     devDependencies:
+      '@llui/compiler-devtools':
+        specifier: workspace:*
+        version: link:../compiler-devtools
       '@llui/compiler-introspection':
         specifier: workspace:*
         version: link:../compiler-introspection
@@ -457,6 +460,9 @@ importers:
       '@llui/compiler':
         specifier: workspace:*
         version: link:../compiler
+      '@llui/compiler-devtools':
+        specifier: workspace:*
+        version: link:../compiler-devtools
       '@llui/compiler-introspection':
         specifier: workspace:*
         version: link:../compiler-introspection
@@ -531,6 +537,9 @@ importers:
       '@llui/compiler':
         specifier: workspace:*
         version: link:../compiler
+      '@llui/compiler-devtools':
+        specifier: workspace:*
+        version: link:../compiler-devtools
       '@llui/compiler-introspection':
         specifier: workspace:*
         version: link:../compiler-introspection

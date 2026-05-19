@@ -23,6 +23,7 @@
   },
   "dependencies": {
     "@llui/compiler": "workspace:*",
+    "@llui/compiler-devtools": "workspace:*",
     "@llui/compiler-introspection": "workspace:*",
     "@llui/compiler-ssr": "workspace:*",
     "magic-string": "^0.30.21",
