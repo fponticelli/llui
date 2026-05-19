@@ -59,86 +59,93 @@ This shape rules out the O(modules × nodes) trap: the walker runs once per file
 
 Ordering is asserted by golden-file tests that swap module declaration order and assert the emitted output differs in a known way.
 
-### 2.2 The four initial modules
+### 2.2 The package layout
 
-**`@llui/compiler-core`** (always on)
+**Final shape that shipped** (revised from the original four-package proposal during implementation — see §2.2.1 below):
 
-- Reactivity analysis (path collection, `__prefixes` emission)
-- Mask injection on structural primitives (`each`, `show`, `branch`, `scope`)
-- `__update` and `__handlers` synthesis on `component()` calls
-- `elSplit` and `elTemplate` rewrites on element helper calls
-- Core diagnostics: `bitmask-overflow`, `static-items`, `static-on`, `each-closure-violation`, `pure-update-function`, `subapp-requires-reason`, `state-mutation`, exhaustive-update, exhaustive-effect-handling, `no-let-reactive-accessor`, `no-sample-in-accessor`, plus v2b's `opaque-view-call`, `helper-cycle`, etc.
+**`@llui/compiler`** (orchestrator + always-on dom modules)
 
-**`@llui/compiler-agent`** (opt-in)
+The package every consumer depends on. Owns the pipeline, the `ModuleRegistry` primitive, the shared utilities (`createMaskLiteral`, `computeAccessorMask`, `isHelperCall`, `isComponentCall`, `findComponentCalls`), and the dom code-generation modules — the modules whose emission the `@llui/dom` runtime executes:
 
-- `__msgSchema` emission from `Msg` discriminated union types
-- `__msgAnnotations` emission from JSDoc / decorator metadata
-- Agent diagnostics: `agent-msg-resolvable`, `agent-emits-drift`, `agent-example-on-payload`, `agent-missing-intent`, `agent-warning-on-confirm`, `agent-nonextractable-handler`, `agent-optional-field-undocumented`, `agent-tagsend-translator-missing`, `agent-exclusive-annotations`
+- `each-memo` — wrap allocating each() items in memo()
+- `item-dedup` — hoist **sN/**aN in render bodies
+- `structural-mask` — inject \_\_mask on each/branch/scope/show
+- `text-mask` — inject \_\_mask as text()'s 2nd arg
+- `element-rewrite` — div() → elSplit / elTemplate / \_\_cloneStaticTemplate
+- `row-factory` — each() → row-factory shape
+- `core-synthesis` — **update / **handlers / \_\_prefixes
+- `mask-legend` — \_\_maskLegend (introspection helper)
+- `compiler-stamp` — **lluiCompilerEmitted + **compilerVersion (integrity / runtime contract)
+
+Plus the registry-hook entry points for opt-in modules: `registerIntrospectionFactory`, `registerDevtoolsFactory`, `getIntrospectionFactory`, `getDevtoolsFactory`.
+
+**`@llui/compiler-introspection`** (opt-in)
+
+Runtime introspection metadata consumed by BOTH the end-user agent runtime (`@llui/agent-bridge`) and the dev-MCP tooling (`@llui/mcp`). The compiler doesn't pick which consumer reads the metadata; both read the same emitted output.
+
+- `state-schema` — `__stateSchema` emission
+- `msg-annotations` — `__msgAnnotations` emission
+- `msg-schema` — `__msgSchema` + `__effectSchema` emission
+- `schema-hash` — `__schemaHash` (HMR re-send gating; **always-on** when the factory is registered)
+- `binding-descriptors` — preTransform pass tagging handler arrows with `__lluiVariants`
+
+Exports `introspectionFactory` (an `IntrospectionFactory`) — hosts pass this to `registerIntrospectionFactory` at module-import time.
+
+**`@llui/compiler-devtools`** (opt-in)
+
+Dev-MCP / LLM tooling support. Emits debug aids the dev MCP (`@llui/mcp`) consumes for source navigation and future trace instrumentation. Distinct from `compiler-introspection`: that package emits SHARED metadata both agent and dev tooling consume; this one emits dev-only aids that don't need to ship in end-user builds.
+
+- `component-meta` — `__componentMeta: { file, line }`
+- (future) trace instrumentation: `_eachDiffLog`, `_disposerLog`, `_effectTimeline`, `_coverage` when the runtime devtools spec lands
+
+Exports `devtoolsFactory` — hosts pass this to `registerDevtoolsFactory`.
 
 **`@llui/compiler-ssr`** (opt-in)
 
-- `__renderToString` emission (currently inline in the Vite plugin's transform)
-- Hydration-boundary validation (state serializability, lifecycle ordering)
-- SSR-specific diagnostics
+SSR transforms invoked directly by `@llui/vike` — not registered through a factory because they don't compose with the main `transformLlui` pipeline (they're an alternative entry point for `'use client'` modules).
 
-**`@llui/compiler-devtools`** (opt-in, defaults to on in dev mode)
+- `transformUseClientSsr` — rewrites client-only modules into SSR-safe stubs
+- `hasUseClientDirective` — cheap string scan for the directive
 
-- Trace instrumentation: `_eachDiffLog`, `_disposerLog`, `_effectTimeline`, `_coverage` hook insertion
-- Per-component metadata for the debugger
-- Stripped entirely in production builds
+#### 2.2.1 What changed from the original four-package design
+
+The original §2.2 proposed `compiler-core` / `compiler-agent` / `compiler-ssr` / `compiler-devtools`. Two changes during implementation:
+
+1. **`compiler-core` collapsed into `@llui/compiler`.** The "core" modules are always-on — every LLui app needs them. A separate package buys no stripping benefit (the modules can't be tree-shaken; if you don't compile dom code, you don't have an LLui app). The boilerplate (separate package.json, tsconfig, dep wiring) costs real engineering without payoff. Modules in `@llui/compiler/src/modules/` are owned by the orchestrator package.
+2. **`compiler-agent` renamed to `compiler-introspection`.** At runtime the distinction "agent vs devtools" is real (different runtime packages consume the metadata). At compile time the SAME metadata serves both. Naming the compiler-side package "agent" overstates the coupling. `compiler-introspection` accurately describes the compile-time concern; the runtime split happens in `@llui/agent-bridge` vs `@llui/mcp`.
 
 ### 2.3 Activation
 
-`llui.config.ts` declares which modules are active. **Every module is a zero-arg-default factory** — there is no "pass the bare module value" shorthand. One canonical spelling beats a bimodal API that splits an LLM author's probability mass:
+**Registry-hook pattern.** Each opt-in package exposes a factory function. Hosts (Vite plugin, MCP, test setup) register the factories at module-import time:
 
 ```ts
-import { defineConfig } from '@llui/compiler'
-import core from '@llui/compiler-core'
-import agent from '@llui/compiler-agent'
-import devtools from '@llui/compiler-devtools'
+// vite-plugin/src/index.ts
+import { registerIntrospectionFactory, registerDevtoolsFactory } from '@llui/compiler'
+import { introspectionFactory } from '@llui/compiler-introspection'
+import { devtoolsFactory } from '@llui/compiler-devtools'
 
-export default defineConfig({
-  modules: [
-    core(),
-    agent({ msgAnnotations: 'jsdoc' }),
-    devtools({ enabled: process.env.NODE_ENV !== 'production' }),
-  ],
-})
+registerIntrospectionFactory(introspectionFactory)
+registerDevtoolsFactory(devtoolsFactory)
 ```
 
-`core()` with no args is a complete declaration; the call is mandatory. The factory shape is enforced by the `defineConfig` parameter type — passing the bare module value is a TypeScript error with a remediation message ("call this module as a function, e.g. `core()`").
+When a factory isn't registered, the orchestrator skips that module set entirely — no schemas / hash / descriptors / componentMeta emit. That's the "production build with introspection off" path: the user's app builds without including those module factories at all.
 
-The compiler resolves the module list at init time and only loads enabled modules. Bundle output from a project without the `agent` module contains no `__msgSchema` fields, no `__msgAnnotations`, no agent-specific code paths.
+**Why factory hooks, not `defineConfig({ modules: [...] })`.** The original §2.3 proposed an `llui.config.ts` file with explicit module activation. The shipped design uses a registry hook instead because:
 
-**Full config shape and default behavior.**
+1. **No circular workspace dep.** `defineConfig` requires `@llui/compiler` to import the sibling packages (to validate factory shapes, generate types, etc.). The sibling packages import `@llui/compiler` for shared types. That's a workspace cycle turbo refuses to build. The registry hook flips ownership: `@llui/compiler` exposes the slot, siblings fill it.
+2. **One canonical wiring location.** With multiple consumers (Vite plugin, MCP, tests), a per-project `llui.config.ts` would require each consumer to read and apply it. The registry hook centralizes wiring in the consumer that already owns the compiler invocation. Tests register at `vitest.setup.ts`; the Vite plugin registers at plugin-import; MCP registers at tool-load.
+3. **Tree-shaking still works.** A project that doesn't import `@llui/compiler-introspection` doesn't bundle its modules. Static analysis correctly identifies the unused dependency.
+
+The factory signatures live in `@llui/compiler/src/introspection-factory.ts`:
 
 ```ts
-interface CompilerConfig {
-  // Module list. Order is observable (§2.1). If omitted entirely, defaults
-  // to [core(), devtools({ enabled: process.env.NODE_ENV !== 'production' })].
-  modules?: ResolvedModule[]
-
-  // Root used for project-relative source map sources[] ([`shared.md`](./shared.md) §6.4).
-  // If omitted, resolved by walking up from the config file's directory;
-  // if the config file itself is missing, the root is the nearest ancestor
-  // containing a package.json with a workspaces field, falling back to the
-  // bundler's resolved root (Vite's `config.root`).
-  projectRoot?: string
-
-  // Override the supported TS version range (rarely needed).
-  typescript?: { version?: string; configPath?: string }
-
-  // Cache cap; see [`shared.md`](./shared.md) §8.2.
-  cache?: { maxBytes?: number }
-
-  // Manifest version-skew policy override; see [`shared.md`](./shared.md) §14.4.
-  versionSkewPolicy?: 'error' | 'warn'
-}
+export type IntrospectionFactory = (input: IntrospectionFactoryInput) => CompilerModule[]
+export type DevtoolsFactory = (input: DevtoolsFactoryInput) => CompilerModule[]
 ```
 
-**Missing-config behavior.** `llui.config.ts` is optional. When absent, the compiler boots with the defaults above: `core` + `devtools` (dev-only) modules, project root auto-detected, default cache cap. This means an existing project that runs the codemod and ships _without_ writing a config file still gets correct behavior — the codemod creates a config file only when needed (when a module override is detected from the old plugin config).
+Each factory receives the file-level state (sourceFile, hoisted schemas, flags) the orchestrator already computed, and returns the set of modules to activate for that file. Per-module gating lives inside the factory (e.g., `componentMeta` gates on `devMode`; `schemaHash` is unconditional even out of agent mode for HMR re-send).
 
-A config file with `modules: []` (explicit empty array) is a hard error — the user has expressed an intent (no modules) that produces no transformations and therefore no `__compilerVersion`, which would silently degrade every component to `genericUpdate` per [`v2b.md`](./v2b.md) §5. The error tells the user to remove the `modules` key (to get defaults) or to include at least `core()`.
+**Where `defineConfig` could land later.** If a future scenario demands per-project module configuration (multiple consumers with different feature sets, third-party module authors), `defineConfig` can layer on top of the registry hook — wire it once, configure declaratively at the project root. The hook is the lower-level primitive; `defineConfig` is sugar over it. For the current single-internal-consumer scope, the sugar isn't worth the boilerplate.
 
 ### 2.4 Module dependencies
 
