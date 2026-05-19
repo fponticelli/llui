@@ -233,29 +233,26 @@ export function createComponentInstance<S, M, E, D = void>(
   parentLifetime: Lifetime | null = null,
   dom?: DomEnv,
 ): ComponentInstance<S, M, E> {
-  // Hand-authored `__dirty` is no longer supported — the path-keyed
-  // `__prefixes` emission supersedes it (62-prefix capacity, precise
-  // per-prefix gating). Compiler-emitted `__dirty` was removed in
-  // 2026-05 alongside this throw; any `__dirty` field at runtime must
-  // be user code, and silently ignoring it would hide a stale pattern.
-  // Migrate by deleting the `__dirty` field — the compiler emits
-  // `__prefixes` automatically from accessor analysis, and uncompiled
-  // components correctly fall back to FULL_MASK.
-  if ((def as { __dirty?: unknown }).__dirty !== undefined) {
-    throw new Error(
-      `[llui] Component "${def.name}" defines \`__dirty\` directly. ` +
-        `This field is no longer accepted — the compiler emits \`__prefixes\` ` +
-        `(path-keyed reactivity) automatically. Remove \`__dirty\` from the ` +
-        `ComponentDef; either the compiler will regenerate the correct ` +
-        `prefix table, or uncompiled components will fall back to FULL_MASK. ` +
-        `See docs/proposals/unified-composition-model.md.`,
-    )
+  // v0.4 size-cut (Tier 7): the `__dirty` rejection and the compiler-
+  // version compatibility check are dev-aids — they catch authoring
+  // mistakes that the build pipeline already prevents in well-configured
+  // projects. Gating them behind `import.meta.env?.DEV` lets Vite fold
+  // the calls away from production bundles. The functions themselves
+  // (`compareVersions`, `assertCompilerCompatibility`, `warnUncompiledOnce`)
+  // are reachable only through this site, so they tree-shake along with it.
+  if (import.meta.env?.DEV) {
+    if ((def as { __dirty?: unknown }).__dirty !== undefined) {
+      throw new Error(
+        `[llui] Component "${def.name}" defines \`__dirty\` directly. ` +
+          `This field is no longer accepted — the compiler emits \`__prefixes\` ` +
+          `(path-keyed reactivity) automatically. Remove \`__dirty\` from the ` +
+          `ComponentDef; either the compiler will regenerate the correct ` +
+          `prefix table, or uncompiled components will fall back to FULL_MASK. ` +
+          `See docs/proposals/unified-composition-model.md.`,
+      )
+    }
+    assertCompilerCompatibility(def.name, (def as { __compilerVersion?: string }).__compilerVersion)
   }
-  // v2b §5 — assert the def was compiled by a compatible compiler. Defs
-  // without `__compilerVersion` warn once per name and fall through to
-  // genericUpdate via the existing fields-absent logic; defs from a
-  // too-old compiler throw in dev and warn in prod.
-  assertCompilerCompatibility(def.name, (def as { __compilerVersion?: string }).__compilerVersion)
   const [initialState, initialEffects] = def.init(data as D)
 
   const controller = new AbortController()

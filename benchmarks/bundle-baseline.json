@@ -3,6 +3,23 @@
   "$description": "Bundle-size baseline for the jfb bench app. Measures dist/main.js after `pnpm build-prod` (Vite production + minify). Each phase row records uncompressed / gzip (level 9) / brotli (quality 11) bytes plus a short summary of what changed.",
   "$measureCommand": "pnpm tsx benchmarks/measure-bundle.ts",
   "phases": {
+    "7": {
+      "label": "Tier 7 gate dev-only version-check + __dirty rejection",
+      "summary": "Wrapped __dirty rejection and assertCompilerCompatibility in import.meta.env.DEV. Production builds drop the error strings + compareVersions + warnUncompiledOnce.",
+      "uncompressed": 36151,
+      "gzipped": 11300,
+      "brotli": 9991,
+      "deltaVsPrevious": {
+        "uncompressed": -1201,
+        "gzipped": -498,
+        "brotli": -444
+      },
+      "deltaVsBaseline": {
+        "uncompressed": -7266,
+        "gzipped": -2179,
+        "brotli": -1878
+      }
+    },
     "0-baseline": {
       "label": "Phase 0 — current main",
       "summary": "Initial measurement before any size reductions. Captured from main.js after `pnpm build-prod`.",
