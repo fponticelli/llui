@@ -350,17 +350,11 @@ Update [`shared.md`](./shared.md) §20.9 to record that the public ABI decision 
 
 ### 7.9 Status snapshot — module decomposition (feature-complete)
 
-**Status:** Every load-bearing concern in the compiler now flows through the `CompilerModule` registry. 15 modules LIVE, both Phase 2b directions exercised, all helpers physically relocated into their module files. `transform.ts` shrank from ~4860 lines to ~1740, with the remainder being orchestrator + cleanupImports + shared utilities consumed by modules.
+**Status:** v2c §2 module decomposition is **feature-complete**. Every load-bearing concern in the compiler flows through the `CompilerModule` registry. 15 modules LIVE across 4 packages (per §2.2). Both Phase 2b directions exercised. All helpers physically relocated into their module files. `transform.ts` shrank from ~4860 lines to ~1740 — the remainder is orchestrator + cleanupImports + shared utilities consumed by modules.
 
-**Still pending (independent of registry primitive):**
+**Architecture reference:** §2.2 describes the four packages and their module ownership; §2.3 describes the registry-hook activation pattern. §7.9.2 below documents the Phase 2b chain ordering + three load-bearing invariants that surfaced during implementation.
 
-- The four sibling-package split (`@llui/compiler-{dom,agent,ssr,devtools}` or similar — naming TBD) — separates modules into opt-in packages.
-- `llui.config.ts` shape and `defineConfig({ modules: [...] })` activation API.
-- Bundle-size goldens proving stripping unused modules removes their pipeline.
-
-All three depend on each other; they ship together when the consumer ROI is clear (see `project_consumer_scope.md`: LLui has a single internal consumer, so the bundle-strip benefit is bounded).
-
-**Earlier handover notes from in-flight decomposition** (retained below in §7.9.1 for history):
+**Contract test:** `packages/compiler/test/bundle-strip-goldens.test.ts` asserts that unregistered factories produce no emission, registered factories produce their expected emission, and always-on modules emit regardless.
 
 **15 modules now LIVE in `transformLlui`'s production pipeline:**
 
@@ -385,28 +379,11 @@ All three depend on each other; they ship together when the consumer ROI is clea
 
 **Phase 2b/per-target invariant** (surfaced during decomp-15): when transformCall hooks rewrite calls, `ts.visitEachChild` rebuilds ancestor nodes. Any per-target module that captures `ts.CallExpression` refs to `component()` during the visitor phase (Phase 2) gets stale refs once Phase 2b runs. **Fix**: per-target modules collect their targets in `emit` by walking `analysis.sourceFile` (which is the post-Phase-2b tree). The shared helper is `_shared.ts`'s `findComponentCalls`. Six modules (`component-meta`, `compiler-stamp`, `state-schema`, `msg-schema`, `msg-annotations`, `schema-hash`) refactored to this pattern in decomp-15.
 
-~~The `injectCompilerEmittedMarker` (emits `__lluiCompilerEmitted` + `__compilerVersion`) remains inline as the only umbrella-level always-on emission. A `compiler-shared` mandatory-module pattern could absorb it; not load-bearing for this push.~~ **Done in v2c/decomp-10.** `compilerStampModule` now owns both `__lluiCompilerEmitted` and `__compilerVersion`; emission is per-target through the registry bridge. The umbrella's visitor branch contains zero inline injectors — every per-component metadata field flows through `applyRegistryEmissions`. The `tryInjectDirty` core-emission path is untouched (it still owns `__update`, `__handlers`, `__prefixes` together) and remains the only non-registry emitter.
+**Notes on the table:**
 
-**Lines of `transform.ts` removed by the agent-pipeline migration:** ~300 (5 inline injectors + 2 literal-builder helpers + duplicate computeSchemaHash call site). The monolith now contains zero agent-schema emission logic; that work lives in `modules/{state,msg-annotations,msg-schema,schema-hash}.ts`.
-
-**Bridge's reusable shape (for whoever picks up step 2/3/4/7).**
-
-```ts
-// In transformLlui setup:
-const activeModules: CompilerModule[] = []
-if (devMode) activeModules.push(componentMetaModule)
-// future: if (emitAgentMetadata) activeModules.push(msgSchemaModule, ...)
-const registry = new ModuleRegistry(activeModules)
-const registryResult = registry.run(sourceFile)
-const { emissionsByTarget, globalEmissions } = indexEmissions(registryResult.emissions)
-
-// Inside the component() visitor branch, after the existing inject* chain:
-result = applyRegistryEmissions(result ?? node, node)
-```
-
-When a future migration deletes an inline injector (e.g. `injectMsgSchema`), it does so AFTER registering the module that owns its field. The `applyRegistryEmissions` call site need not change — it picks up the new emission automatically.
-
-The MODULE-MAPPING.md table is the contract — when a file leaves the monolith it goes to the destination named there. Disagreements are reflected in MAPPING amendments before code lands, not in code that drifts.
+- The `componentMeta`, `stateSchema`, `msgAnnotations`, `msgSchema`, `schemaHash`, `bindingDescriptors` rows now live in opt-in sibling packages (`@llui/compiler-introspection`, `@llui/compiler-devtools`) and activate via the registry-hook factories described in §2.3.
+- The `eachMemo`, `itemDedup`, `structuralMask`, `textMask`, `elementRewrite`, `rowFactory`, `coreSynthesis`, `maskLegend`, `compilerStamp` rows live in `@llui/compiler` (always-on dom modules).
+- The `Activation` column describes the registry-level gate; the `Replaces` column documents what inline code the module supplanted.
 
 ### 7.9.2 Phase 2b chain ordering reference
 
@@ -440,30 +417,17 @@ component() call:
 
 3. **Sentinel edit for Phase 2b rewrites**: when a module rewrites a call but the umbrella's visitor doesn't otherwise push to `edits`, the umbrella reads the module's slot post-`registry.run` and pushes a zero-width sentinel edit so the per-statement-diff downstream doesn't short-circuit on `edits.length === 0`.
 
-### 7.9.1 Earlier handover (v2c-partial commit, retained for history)
+### 7.9.1 Implementation history
 
-**Status at this commit:** the module-decomposition phases (1–4 above) are unstarted. The diagnostic schema (Phase 5) and MCP static-mode (Phase 6) shipped without it. The decision to defer was a scope call — module decomposition is the largest single piece of v2c and is genuinely independent of the schema + MCP work that _does_ ship in this push.
+Module decomposition shipped across 30 commits (v2c/decomp-1 through v2c/decomp-28 plus a few `decomp-Z` codification commits). The migration ran in three broad phases:
 
-**What's actually there to refactor.** The engine today is `packages/compiler/src/` with one entry per concern: `collect-deps.ts`, `binding-descriptors.ts`, `msg-schema.ts`, `msg-annotations.ts`, `state-schema.ts`, `schema-hash.ts`, `accessor-resolver.ts`, `cross-file-resolver.ts`, `cross-file-walker.ts`, `manifest.ts`, `compiler-cache.ts`, `diagnostic.ts`, `version.ts`, plus the monolithic `transform.ts` (5.5 k lines). The decomposition pulls these into four module packages:
+1. **Registry primitive + module shape** (decomp-1..12) — `CompilerModule` interface, `ModuleRegistry`, the three hook types (`preTransform`, `transformCallEnter`, `transformCall`), unit tests proving dispatch + ordering + chain composition.
+2. **Module migrations** (decomp-13..19) — pulled each inline concern out of `transform.ts` into a CompilerModule. Three patterns emerged: pure emission (msg-schema, state-schema, etc.), per-call rewrite (element-rewrite, row-factory), and co-emitted core synthesis (the `__update`/`__handlers`/`__prefixes` trio).
+3. **Pure-refactor code moves** (decomp-20..28) — relocated module implementations into their final package files. Element-rewrite (1500 lines) + core-synthesis (1200 lines) + row-factory (570 lines) physically moved; then the four sibling packages were scaffolded; then the introspection + devtools + ssr modules moved into their packages; then the registry-hook activation API.
 
-- **`@llui/compiler-core`** absorbs everything that isn't agent / ssr / devtools: `collect-deps`, `binding-descriptors`, `accessor-resolver`, `cross-file-walker`, `cross-file-resolver`, `manifest`, `compiler-cache`, `diagnostic`, `state-schema`, `version`, plus the ~80% of `transform.ts` that handles mask injection / element rewrites / `__update`-synthesis / template clone / row factory / per-statement edits.
-- **`@llui/compiler-agent`** absorbs `msg-schema`, `msg-annotations`, `schema-hash`, plus the agent-specific emission paths in `transform.ts` (the `injectMsgSchema`, `injectMsgAnnotations`, `injectSchemaHash`, `__bindingDescriptors` work).
-- **`@llui/compiler-ssr`** absorbs the SSR-specific bits in `transform.ts` (the `'use client'` directive handling, the `__renderToString` emission path).
-- **`@llui/compiler-devtools`** absorbs the dev-only injection paths (the `_eachDiffLog` / `_disposerLog` / `_effectTimeline` / `_coverage` hooks).
+The final architecture (§2.2 / §2.3) differs from the original design in two ways documented in §2.2.1: the `compiler-core` package collapsed into `@llui/compiler` (always-on modules don't benefit from package separation), and `compiler-agent` was renamed `compiler-introspection` (the compile-time concern is metadata for any introspector, not "agent-specific" code).
 
-A `MODULE-MAPPING.md` produced during Phase 1 paper-only would walk one fixture through each module's visitor — that's the validation gate before any code moves.
-
-**Why it didn't ship in this push:** the refactor needs:
-
-1. New `CompilerModule` interface design + visitor-registry implementation in `@llui/compiler` (or whatever the umbrella package becomes after the split). Phase 1.
-2. Four new package skeletons + workspace + turbo wiring. Phase 2's setup.
-3. The actual code move out of `transform.ts` — that monolith is what justifies the visitor-registry; doing it in-place without the registry produces two passes over the same AST (the original monolithic visitor and the per-module visitors).
-4. `llui.config.ts` shape + factory-call enforcement + missing-config defaults + `modules: []` hard error. Phase 4.
-5. Bundle-size goldens proving a `modules: [core()]` config strips agent/ssr/devtools emissions.
-
-For a fresh agent: the visitor registry is the load-bearing primitive. Start by extracting one small visitor pattern (say, the `text()` mask injection) into a module shape, then validate the dispatcher routes correctly, _then_ decompose `transform.ts`. The reverse order (decompose first, register second) loses the test-net.
-
-**v2c.md §2 is the authoritative design for that work — it has not changed.** This handover note is a status snapshot, not a redesign.
+Earlier in-flight handover notes are preserved in git history (`docs/proposals/v2-compiler/v2c.md` at decomp-9, decomp-12, decomp-19 for representative snapshots) but no longer needed as forward-looking guidance.
 
 ---
 
