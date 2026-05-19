@@ -3,23 +3,6 @@
   "$description": "Bundle-size baseline for the jfb bench app. Measures dist/main.js after `pnpm build-prod` (Vite production + minify). Each phase row records uncompressed / gzip (level 9) / brotli (quality 11) bytes plus a short summary of what changed.",
   "$measureCommand": "pnpm tsx benchmarks/measure-bundle.ts",
   "phases": {
-    "5": {
-      "label": "Tier 5 drop __handlers fast path",
-      "summary": "Compiler stops emitting __handlers; runtime drops the per-variant dispatch + _handleMsg. Every message flows through processMessages → genericUpdate. Costs whatever single-message dispatch speedup __handlers gave (small for most apps).",
-      "uncompressed": 36026,
-      "gzipped": 11541,
-      "brotli": 10192,
-      "deltaVsPrevious": {
-        "uncompressed": -1423,
-        "gzipped": -301,
-        "brotli": -278
-      },
-      "deltaVsBaseline": {
-        "uncompressed": -7391,
-        "gzipped": -1938,
-        "brotli": -1677
-      }
-    },
     "0-baseline": {
       "label": "Phase 0 — current main",
       "summary": "Initial measurement before any size reductions. Captured from main.js after `pnpm build-prod`.",
@@ -52,7 +35,11 @@
       "uncompressed": 37469,
       "gzipped": 11848,
       "brotli": 10475,
-      "deltaVsPrevious": null,
+      "deltaVsPrevious": {
+        "uncompressed": -450,
+        "gzipped": -121,
+        "brotli": -113
+      },
       "deltaVsBaseline": {
         "uncompressed": -5948,
         "gzipped": -1631,
@@ -60,8 +47,8 @@
       }
     },
     "3.4": {
-      "label": "Tier 3.4 gate genericUpdate FULL_MASK fallback",
-      "summary": "The FULL_MASK fallback for components missing __prefixes is gated by import.meta.env.MODE so Vite drops it from production builds. Tests keep the fallback under MODE=test.",
+      "label": "Tier 3.4 gate genericUpdate FULL_MASK fallback (FINAL)",
+      "summary": "The FULL_MASK fallback for components missing __prefixes is gated by import.meta.env.MODE so Vite drops it from production builds. Tests keep the fallback under MODE=test. This is the final shipped state — Tier 5 was attempted and reverted (see abandoned).",
       "uncompressed": 37449,
       "gzipped": 11842,
       "brotli": 10470,
@@ -88,6 +75,25 @@
         "uncompressed": -5368,
         "gzipped": -1442,
         "brotli": -1230
+      }
+    },
+    "5": {
+      "label": "Tier 5 drop __handlers fast path",
+      "summary": "Compiler stops emitting __handlers; runtime drops the per-variant dispatch + _handleMsg. Saved 1,423 bytes uncompressed (1.2 kB gz) BUT caused 23-89% perf regressions on keyed-each operations (swap +89%, select +87%, remove +37%, update-10th +23%) per `pnpm bench`. __handlers' `method` discriminator dispatched to specialized reconcile paths (reconcileItems/reconcileClear/reconcileRemove/reconcileChanged) that the generic reconcile() can't match. Reverted — bundle savings not worth the perf cost.",
+      "measuredUncompressed": 36026,
+      "measuredGzipped": 11541,
+      "measuredBrotli": 10192,
+      "deltaVsBaseline": {
+        "uncompressed": -7391,
+        "gzipped": -1938,
+        "brotli": -1677
+      },
+      "perfImpact": {
+        "swap1to998": "+89%",
+        "select1k": "+87%",
+        "remove": "+37%",
+        "update10th": "+23%",
+        "createReplaceAppend": "within noise"
       }
     }
   }

@@ -60,10 +60,15 @@ export interface ComponentDef<S, M, E = never, D = void> {
   // 200-binding sparse-update microbench) didn't justify the per-component
   // bytes cost (200-400 bytes plus the dispatch branch). Every component
   // goes through genericUpdate now.
-  // `__handlers` removed in v0.4 Tier 5 — bytes savings (duplicated update()
-  // switch bodies per variant + the dispatch branch + _handleMsg) outweigh
-  // the single-message fast-path perf win. Every message now flows
-  // through processMessages → genericUpdate.
+  /** @internal Compiler-injected — per-message-type specialized handlers.
+   *  Bypass the entire processMessages pipeline for single-message updates.
+   *
+   *  Tier 5 (drop __handlers) was attempted in the v0.4 size-cut work and
+   *  REVERTED — see benchmarks/bundle-baseline.json#/abandoned. The bytes
+   *  win (~1.4 kB) cost 23-89% perf on keyed-each operations (swap/remove/
+   *  update/select) that dispatched specialized reconcile methods here.
+   */
+  __handlers?: Record<string, (inst: object, msg: unknown) => [S, E[]]>
   /**
    * @internal Compiler-injected — minimal view-bag factory.
    *
@@ -140,6 +145,7 @@ export interface AnyComponentDef {
   __componentMeta?: unknown
   __stateSchema?: unknown
   __effectSchema?: unknown
+  __handlers?: unknown
   __compilerVersion?: unknown
 }
 
@@ -176,6 +182,7 @@ export interface LazyDef<D = void> {
   __componentMeta?: unknown
   __stateSchema?: unknown
   __effectSchema?: unknown
+  __handlers?: unknown
   __compilerVersion?: unknown
 }
 

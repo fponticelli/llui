@@ -363,13 +363,99 @@ describe('selector optimization', () => {
   })
 })
 
-// ── __handlers per-message dispatch (REMOVED v0.4 Tier 5) ─────────
-//
-// The `__handlers` fast-path was dropped — bytes savings (duplicated
-// switch bodies per variant + the dispatch branch + _handleMsg)
-// outweighed the single-message perf win. The two tests that lived
-// here (asserting per-variant dispatch / falling back on batches) are
-// obsolete.
+// ── __handlers per-message dispatch ──────────────────────────────
+
+describe('__handlers per-message dispatch', () => {
+  it('dispatches single message to __handlers instead of generic pipeline', () => {
+    type S = { count: number; label: string }
+    type M = { type: 'inc' } | { type: 'setLabel'; value: string }
+
+    const handlerSpy = vi.fn()
+
+    const def: ComponentDef<S, M, never> = {
+      name: 'Handlers',
+      init: () => [{ count: 0, label: 'hello' }, []],
+      update: (s, m) => {
+        switch (m.type) {
+          case 'inc':
+            return [{ ...s, count: s.count + 1 }, []]
+          case 'setLabel':
+            return [{ ...s, label: m.value }, []]
+        }
+      },
+      view: ({ text: t }) => [div([t((s: S) => String(s.count))]), div([t((s: S) => s.label)])],
+      __prefixes: [(s) => s.count, (s) => s.label],
+      __handlers: {
+        inc: (inst: object, _msg: unknown): [S, never[]] => {
+          const typedInst = inst as { state: S; allBindings: Binding[] }
+          handlerSpy('inc')
+          const newState = { ...typedInst.state, count: typedInst.state.count + 1 }
+          typedInst.state = newState
+          _runPhase2(newState, 1, 0, typedInst.allBindings, typedInst.allBindings.length)
+          return [newState, []]
+        },
+      },
+    }
+
+    const container = document.createElement('div')
+    let sendFn!: (msg: M) => void
+    const origView = def.view
+    def.view = (h) => {
+      sendFn = h.send
+      return origView(h)
+    }
+    mountApp(container, def)
+
+    sendFn({ type: 'inc' })
+    flush()
+    expect(handlerSpy).toHaveBeenCalledWith('inc')
+    expect(container.textContent).toBe('1hello')
+
+    // Message without handler → falls through to generic
+    sendFn({ type: 'setLabel', value: 'world' })
+    flush()
+    expect(container.textContent).toBe('1world')
+  })
+
+  it('falls back to generic pipeline for multi-message batches', () => {
+    type S = { count: number }
+    type M = { type: 'inc' }
+
+    const handlerSpy = vi.fn()
+
+    const def: ComponentDef<S, M, never> = {
+      name: 'MultiBatch',
+      init: () => [{ count: 0 }, []],
+      update: (s) => [{ ...s, count: s.count + 1 }, []],
+      view: ({ text: t }) => [div([t((s: S) => String(s.count))])],
+      __prefixes: [(s) => s.count],
+      __handlers: {
+        inc: (inst: object): [S, never[]] => {
+          handlerSpy('inc-handler')
+          const typedInst = inst as { state: S }
+          const newState = { ...typedInst.state, count: typedInst.state.count + 1 }
+          return [newState, []]
+        },
+      },
+    }
+
+    const container = document.createElement('div')
+    let sendFn!: (msg: M) => void
+    const origView = def.view
+    def.view = (h) => {
+      sendFn = h.send
+      return origView(h)
+    }
+    mountApp(container, def)
+
+    sendFn({ type: 'inc' })
+    sendFn({ type: 'inc' })
+    flush()
+
+    expect(handlerSpy).not.toHaveBeenCalled()
+    expect(container.textContent).toBe('2')
+  })
+})
 
 // ── selector __directUpdate ──────────────────────────────────────
 

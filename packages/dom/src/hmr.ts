@@ -175,6 +175,7 @@ function swapEntry<S, M, E, D = void>(
     update: newDef.update,
     view: newDef.view,
     onEffect: newDef.onEffect,
+    __handlers: newDef.__handlers,
     __prefixes: newDef.__prefixes,
   }
 

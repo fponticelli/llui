@@ -1474,8 +1474,9 @@ function cleanupImports(
     if (!clause.namedBindings.elements.some((s) => s.name.text === '__runPhase2')) {
       remaining.push(f.createImportSpecifier(false, undefined, f.createIdentifier('__runPhase2')))
     }
-    // `__handleMsg` import injection removed in v0.4 Tier 5 — see
-    // packages/dom/src/update-loop.ts for the deletion rationale.
+    if (!clause.namedBindings.elements.some((s) => s.name.text === '__handleMsg')) {
+      remaining.push(f.createImportSpecifier(false, undefined, f.createIdentifier('__handleMsg')))
+    }
   }
 
   // The connect-pattern injector (binding-descriptors.ts) emits

@@ -117,20 +117,19 @@ function tryInjectDirty(
   // bytes per compiled component plus the dispatch branch in
   // processMessages. The runtime always uses genericUpdate now.
 
-  // v0.4 size-cut (Tier 5): the `__handlers` fast-path emission was also
-  // dropped. Like __update, it duplicated the user's `update()` switch
-  // body per Msg variant and lived behind a dispatch branch in
-  // processMessages. The bytes savings (entire per-variant arrow bodies
-  // + the runtime branch + _handleMsg + structuralMask emission) outweigh
-  // the small perf win on single-message dispatches — every update now
-  // goes through the unified processMessages → genericUpdate path.
-  void structuralMask
-  void topLevelBitsHi
+  // __handlers: per-message-type specialized update functions.
+  // Analyzes the update() switch/case and generates direct handlers
+  // that bypass the generic Phase 1/2 pipeline for single-message updates.
+  // Tier 5 (drop __handlers) was attempted and REVERTED — see
+  // benchmarks/bundle-baseline.json#/abandoned. The 1.4 kB savings cost
+  // 23-89% perf on jfb's swap/remove/update/select.
+  const handlersProp = tryBuildHandlers(configArg, topLevelBits, topLevelBitsHi, structuralMask, f)
 
   // `__maskLegend` is emitted by `maskLegendModule` via the registry
   // bridge (v2c/decomp-9); the umbrella's `applyRegistryEmissions` step
   // splices it into the same config-arg literal we return here.
   const extraProps: ts.ObjectLiteralElementLike[] = []
+  if (handlersProp) extraProps.push(handlersProp)
 
   // __prefixes: opt-in path-keyed reactivity (see
   // docs/proposals/unified-composition-model.md). One closure per
