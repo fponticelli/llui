@@ -1,131 +1,23 @@
 #!/usr/bin/env -S node --experimental-strip-types --no-warnings
 // Generate `docs/designs/14 Compile-Time Rules.md` from the compiler's
-// always-on modules.
+// always-on lint modules.
 //
-// Reads the rule list by invoking `transformLlui` against a synthetic
-// fixture and collecting every module's `DiagnosticDefinition` via
-// the `ModuleRegistry.listDiagnostics()` introspection surface. Each
-// rule is grouped by category (reactivity / composition / agent /
-// style / perf / config / internal) and emitted with its id, severity,
-// and description.
+// Reads the rule list directly from `createLintModules()` — the single
+// source of truth `transform.ts` also uses. Adding or removing a rule
+// in `packages/compiler/src/lint-modules.ts` updates both the build
+// pipeline and this doc on the next regeneration.
 //
-// Re-run when rules are added/removed: `pnpm tsx scripts/generate-rule-docs.ts`.
+// Re-run when rules change: `pnpm tsx scripts/generate-rule-docs.ts`.
 
 import { writeFileSync } from 'node:fs'
 import { resolve } from 'node:path'
-import { ModuleRegistry, transformLlui } from '../packages/compiler/src/index.js'
-
-// `transformLlui` builds the active-module list inline; we tap into it
-// by passing a captured registry through a side channel. Simplest: run
-// `transformLlui` against a trivial fixture and have it construct the
-// registry, then access the listDiagnostics surface via a module hook.
-//
-// The compiler's transform.ts doesn't expose its registry directly,
-// so we duplicate the always-on module construction here. Keep this
-// list in sync with `packages/compiler/src/transform.ts`'s
-// `activeModules.push(...)` chain — drift surfaces as missing rules
-// in the doc.
-
+import { createLintModules } from '../packages/compiler/src/lint-modules.js'
 import { compilerStampModule } from '../packages/compiler/src/modules/compiler-stamp.js'
-import { bitmaskOverflowModule } from '../packages/compiler/src/modules/bitmask-overflow.js'
-import { asyncUpdateModule } from '../packages/compiler/src/modules/async-update.js'
-import { mapOnStateArrayModule } from '../packages/compiler/src/modules/map-on-state-array.js'
-import { nestedSendInUpdateModule } from '../packages/compiler/src/modules/nested-send-in-update.js'
-import { directStateInViewModule } from '../packages/compiler/src/modules/direct-state-in-view.js'
-import { imperativeDomInViewModule } from '../packages/compiler/src/modules/imperative-dom-in-view.js'
-import { accessorSideEffectModule } from '../packages/compiler/src/modules/accessor-side-effect.js'
-import { stateMutationModule } from '../packages/compiler/src/modules/state-mutation.js'
-import { effectWithoutHandlerModule } from '../packages/compiler/src/modules/effect-without-handler.js'
-import { exhaustiveEffectHandlingModule } from '../packages/compiler/src/modules/exhaustive-effect-handling.js'
-import { noEagerItemAccessorModule } from '../packages/compiler/src/modules/no-eager-item-accessor.js'
-import { pureUpdateFunctionModule } from '../packages/compiler/src/modules/pure-update-function.js'
-import { exhaustiveUpdateModule } from '../packages/compiler/src/modules/exhaustive-update.js'
-import { noLetReactiveAccessorModule } from '../packages/compiler/src/modules/no-let-reactive-accessor.js'
-import { eachClosureViolationModule } from '../packages/compiler/src/modules/each-closure-violation.js'
-import { stringEffectCallbackModule } from '../packages/compiler/src/modules/string-effect-callback.js'
-import { agentMissingIntentModule } from '../packages/compiler/src/modules/agent-missing-intent.js'
-import { agentWarningOnConfirmModule } from '../packages/compiler/src/modules/agent-warning-on-confirm.js'
-import { agentExampleOnPayloadModule } from '../packages/compiler/src/modules/agent-example-on-payload.js'
-import { agentExclusiveAnnotationsModule } from '../packages/compiler/src/modules/agent-exclusive-annotations.js'
-import { agentOptionalFieldUndocumentedModule } from '../packages/compiler/src/modules/agent-optional-field-undocumented.js'
-import { agentTagsendTranslatorMissingModule } from '../packages/compiler/src/modules/agent-tagsend-translator-missing.js'
-import { agentNonextractableHandlerModule } from '../packages/compiler/src/modules/agent-nonextractable-handler.js'
-import { subappRequiresReasonModule } from '../packages/compiler/src/modules/subapp-requires-reason.js'
-import { emptyPropsModule } from '../packages/compiler/src/modules/empty-props.js'
-import { forgottenSpreadModule } from '../packages/compiler/src/modules/forgotten-spread.js'
-import { accessibilityModule } from '../packages/compiler/src/modules/accessibility.js'
-import { viewBagImportModule } from '../packages/compiler/src/modules/view-bag-import.js'
-import { controlledInputModule } from '../packages/compiler/src/modules/controlled-input.js'
-import { missingMemoModule } from '../packages/compiler/src/modules/missing-memo.js'
-import { namespaceImportModule } from '../packages/compiler/src/modules/namespace-import.js'
-import { noBarrelImportWhenSubpathExistsModule } from '../packages/compiler/src/modules/no-barrel-import-when-subpath-exists.js'
-import { formBoilerplateModule } from '../packages/compiler/src/modules/form-boilerplate.js'
-import { spreadInChildrenModule } from '../packages/compiler/src/modules/spread-in-children.js'
-import { staticItemsModule } from '../packages/compiler/src/modules/static-items.js'
-import { staticOnModule } from '../packages/compiler/src/modules/static-on.js'
-import { noListRenderInSampleModule } from '../packages/compiler/src/modules/no-list-render-in-sample.js'
-import { noSampleInAccessorModule } from '../packages/compiler/src/modules/no-sample-in-accessor.js'
-import { noSampleInReactivePositionModule } from '../packages/compiler/src/modules/no-sample-in-reactive-position.js'
-import { agentEmitsDriftModule } from '../packages/compiler/src/modules/agent-emits-drift.js'
-import { agentMsgResolvableModule } from '../packages/compiler/src/modules/agent-msg-resolvable.js'
 
-const lintModules = [
-  compilerStampModule,
-  bitmaskOverflowModule(),
-  asyncUpdateModule(),
-  mapOnStateArrayModule(),
-  nestedSendInUpdateModule(),
-  directStateInViewModule(),
-  imperativeDomInViewModule(),
-  accessorSideEffectModule(),
-  stateMutationModule(),
-  effectWithoutHandlerModule(),
-  exhaustiveEffectHandlingModule(),
-  noEagerItemAccessorModule(),
-  pureUpdateFunctionModule(),
-  exhaustiveUpdateModule(),
-  noLetReactiveAccessorModule(),
-  eachClosureViolationModule(),
-  stringEffectCallbackModule(),
-  agentMissingIntentModule(),
-  agentWarningOnConfirmModule(),
-  agentExampleOnPayloadModule(),
-  agentExclusiveAnnotationsModule(),
-  agentOptionalFieldUndocumentedModule(),
-  agentTagsendTranslatorMissingModule(),
-  agentNonextractableHandlerModule(),
-  subappRequiresReasonModule(),
-  emptyPropsModule(),
-  forgottenSpreadModule(),
-  accessibilityModule(),
-  viewBagImportModule(),
-  controlledInputModule(),
-  missingMemoModule(),
-  namespaceImportModule(),
-  noBarrelImportWhenSubpathExistsModule(),
-  formBoilerplateModule(),
-  spreadInChildrenModule(),
-  staticItemsModule(),
-  staticOnModule(),
-  noListRenderInSampleModule(),
-  noSampleInAccessorModule(),
-  noSampleInReactivePositionModule(),
-  agentEmitsDriftModule(),
-  agentMsgResolvableModule(),
-]
-
-// Run a trivial fixture through transformLlui to confirm the active-
-// modules list stays in sync with this script — every diagnostic id
-// from the registry should also be in our local list.
-const _smokeTransform = transformLlui(
-  `import { component, div } from '@llui/dom'\n` +
-    `const A = component({ name: 'X', init: () => [{}, []], update: (s) => [s, []], view: () => [div([])] })\n`,
-  'smoke.ts',
-)
-void _smokeTransform
-
-const reg = new ModuleRegistry(lintModules)
-const defs = reg.listDiagnostics()
+// `compilerStampModule` is always-on too (the integrity marker) but
+// lives outside `createLintModules` because it's an instance rather
+// than a factory. Include it here so the doc is complete.
+const allModules = [compilerStampModule, ...createLintModules()]
 
 interface RuleRow {
   id: string
@@ -134,19 +26,16 @@ interface RuleRow {
 }
 
 const rows: RuleRow[] = []
-for (const m of lintModules) {
+for (const m of allModules) {
   for (const d of m.diagnostics ?? []) {
     rows.push({ id: d.id, description: d.description, category: 'unknown' })
   }
 }
-void defs
 
-// Categories are recorded by each module on the diagnostics it
-// reports — but the DiagnosticDefinition itself doesn't carry the
-// category. We pull category from the first ctx.reportDiagnostic call
-// site in each module file. Simpler: scrape the literal `category:`
-// from each module's source. Done via a static map below — keeps the
-// generator self-contained without dynamic emission probing.
+// Categories aren't carried by `DiagnosticDefinition` itself (only the
+// per-call `Diagnostic` instance carries `category`). Hand-mapped here
+// — a small, stable table. Mismatches surface as "uncategorized" in
+// the rendered output.
 const RULE_CATEGORIES: Record<string, string> = {
   'llui/compiler-version': 'config',
   'llui/bitmask-overflow': 'perf',
@@ -194,6 +83,14 @@ const RULE_CATEGORIES: Record<string, string> = {
 
 for (const r of rows) r.category = RULE_CATEGORIES[r.id] ?? 'unknown'
 
+const uncategorized = rows.filter((r) => r.category === 'unknown')
+if (uncategorized.length > 0) {
+  console.error(
+    `⚠ ${uncategorized.length} rule(s) missing from RULE_CATEGORIES — they'll render under "unknown":`,
+  )
+  for (const r of uncategorized) console.error(`  - ${r.id}`)
+}
+
 // Group + render.
 const byCategory = new Map<string, RuleRow[]>()
 for (const r of rows) {
@@ -221,7 +118,8 @@ const CATEGORY_BLURBS: Record<string, string> = {
 let md =
   `# 14. Compile-Time Rules\n\n` +
   `> **Auto-generated by \`scripts/generate-rule-docs.ts\`.** Re-run after rule changes:\n` +
-  `> \`pnpm tsx scripts/generate-rule-docs.ts\`\n\n` +
+  `> \`pnpm tsx scripts/generate-rule-docs.ts\`\n>\n` +
+  `> Single source of truth: \`packages/compiler/src/lint-modules.ts\`. Adding or removing a rule there propagates to both the transform pipeline and this doc.\n\n` +
   `Every rule listed here fires as a **compile-time error** from \`@llui/compiler\`, surfaced by \`@llui/vite-plugin\`'s build pipeline as \`this.error(…)\`. There is no warning tier; an LLM-first authoring loop treats anything else as ignorable noise.\n\n` +
   `Total: **${rows.length}** rules.\n\n` +
   `## Categories\n\n`

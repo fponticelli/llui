@@ -41,47 +41,7 @@ import {
   CORE_SYNTHESIS_SLOT,
   type CoreSynthesisSlot,
 } from './modules/core-synthesis.js'
-import { bitmaskOverflowModule } from './modules/bitmask-overflow.js'
-import { asyncUpdateModule } from './modules/async-update.js'
-import { mapOnStateArrayModule } from './modules/map-on-state-array.js'
-import { nestedSendInUpdateModule } from './modules/nested-send-in-update.js'
-import { directStateInViewModule } from './modules/direct-state-in-view.js'
-import { imperativeDomInViewModule } from './modules/imperative-dom-in-view.js'
-import { accessorSideEffectModule } from './modules/accessor-side-effect.js'
-import { stateMutationModule } from './modules/state-mutation.js'
-import { effectWithoutHandlerModule } from './modules/effect-without-handler.js'
-import { exhaustiveEffectHandlingModule } from './modules/exhaustive-effect-handling.js'
-import { noEagerItemAccessorModule } from './modules/no-eager-item-accessor.js'
-import { pureUpdateFunctionModule } from './modules/pure-update-function.js'
-import { exhaustiveUpdateModule } from './modules/exhaustive-update.js'
-import { noLetReactiveAccessorModule } from './modules/no-let-reactive-accessor.js'
-import { eachClosureViolationModule } from './modules/each-closure-violation.js'
-import { stringEffectCallbackModule } from './modules/string-effect-callback.js'
-import { agentMissingIntentModule } from './modules/agent-missing-intent.js'
-import { agentWarningOnConfirmModule } from './modules/agent-warning-on-confirm.js'
-import { agentExampleOnPayloadModule } from './modules/agent-example-on-payload.js'
-import { agentExclusiveAnnotationsModule } from './modules/agent-exclusive-annotations.js'
-import { agentOptionalFieldUndocumentedModule } from './modules/agent-optional-field-undocumented.js'
-import { agentTagsendTranslatorMissingModule } from './modules/agent-tagsend-translator-missing.js'
-import { agentNonextractableHandlerModule } from './modules/agent-nonextractable-handler.js'
-import { subappRequiresReasonModule } from './modules/subapp-requires-reason.js'
-import { emptyPropsModule } from './modules/empty-props.js'
-import { forgottenSpreadModule } from './modules/forgotten-spread.js'
-import { accessibilityModule } from './modules/accessibility.js'
-import { viewBagImportModule } from './modules/view-bag-import.js'
-import { controlledInputModule } from './modules/controlled-input.js'
-import { missingMemoModule } from './modules/missing-memo.js'
-import { namespaceImportModule } from './modules/namespace-import.js'
-import { noBarrelImportWhenSubpathExistsModule } from './modules/no-barrel-import-when-subpath-exists.js'
-import { formBoilerplateModule } from './modules/form-boilerplate.js'
-import { spreadInChildrenModule } from './modules/spread-in-children.js'
-import { staticItemsModule } from './modules/static-items.js'
-import { staticOnModule } from './modules/static-on.js'
-import { noListRenderInSampleModule } from './modules/no-list-render-in-sample.js'
-import { noSampleInAccessorModule } from './modules/no-sample-in-accessor.js'
-import { noSampleInReactivePositionModule } from './modules/no-sample-in-reactive-position.js'
-import { agentEmitsDriftModule } from './modules/agent-emits-drift.js'
-import { agentMsgResolvableModule } from './modules/agent-msg-resolvable.js'
+import { createLintModules } from './lint-modules.js'
 
 export function createMaskLiteral(f: ts.NodeFactory, mask: number): ts.Expression {
   if (mask >= 0) return f.createNumericLiteral(mask)
@@ -417,55 +377,13 @@ export function transformLlui(
   // the umbrella's last remaining inline injector
   // (`injectCompilerEmittedMarker`, deleted below).
   activeModules.push(compilerStampModule)
-  // bitmaskOverflowModule is always-on. Emits `llui/bitmask-overflow`
-  // (severity: error) when a component reads more than 62 unique state
-  // paths. Migrated from @llui/eslint-plugin (v0.x); promoted from
-  // ESLint warning to compiler error because LLMs ignore warnings.
-  activeModules.push(bitmaskOverflowModule())
-  // Correctness rules migrated from @llui/eslint-plugin as compile-time
-  // errors. LLM-first authoring requires non-bypassable correctness
-  // signals; ESLint warnings are silently ignored by LLM agents and
-  // may not even be installed in a downstream project.
-  activeModules.push(asyncUpdateModule())
-  activeModules.push(mapOnStateArrayModule())
-  activeModules.push(nestedSendInUpdateModule())
-  activeModules.push(directStateInViewModule())
-  activeModules.push(imperativeDomInViewModule())
-  activeModules.push(accessorSideEffectModule())
-  activeModules.push(stateMutationModule())
-  activeModules.push(effectWithoutHandlerModule())
-  activeModules.push(exhaustiveEffectHandlingModule())
-  activeModules.push(noEagerItemAccessorModule())
-  activeModules.push(pureUpdateFunctionModule())
-  activeModules.push(exhaustiveUpdateModule())
-  activeModules.push(noLetReactiveAccessorModule())
-  activeModules.push(eachClosureViolationModule())
-  activeModules.push(stringEffectCallbackModule())
-  activeModules.push(agentMissingIntentModule())
-  activeModules.push(agentWarningOnConfirmModule())
-  activeModules.push(agentExampleOnPayloadModule())
-  activeModules.push(agentExclusiveAnnotationsModule())
-  activeModules.push(agentOptionalFieldUndocumentedModule())
-  activeModules.push(agentTagsendTranslatorMissingModule())
-  activeModules.push(agentNonextractableHandlerModule())
-  activeModules.push(subappRequiresReasonModule())
-  activeModules.push(emptyPropsModule())
-  activeModules.push(forgottenSpreadModule())
-  activeModules.push(accessibilityModule())
-  activeModules.push(viewBagImportModule())
-  activeModules.push(controlledInputModule())
-  activeModules.push(missingMemoModule())
-  activeModules.push(namespaceImportModule())
-  activeModules.push(noBarrelImportWhenSubpathExistsModule())
-  activeModules.push(formBoilerplateModule())
-  activeModules.push(spreadInChildrenModule())
-  activeModules.push(staticItemsModule())
-  activeModules.push(staticOnModule())
-  activeModules.push(noListRenderInSampleModule())
-  activeModules.push(noSampleInAccessorModule())
-  activeModules.push(noSampleInReactivePositionModule())
-  activeModules.push(agentEmitsDriftModule())
-  activeModules.push(agentMsgResolvableModule())
+  // Always-on lint rules. Single source of truth lives in
+  // `./lint-modules.ts` so adding/removing a rule propagates to both
+  // the transform pipeline and the rule-docs generator
+  // (`scripts/generate-rule-docs.ts`). LLM-first authoring requires
+  // non-bypassable correctness signals: every rule emits at
+  // `severity: error`.
+  activeModules.push(...createLintModules())
   // eachMemoModule wraps allocating each() items accessors in
   // `memo(...)` via `transformCallEnter`. Activated when the file
   // has any reactive paths (mirrors the inline call's gating).
