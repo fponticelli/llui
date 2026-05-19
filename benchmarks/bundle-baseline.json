@@ -20,6 +20,23 @@
         "brotli": -1878
       }
     },
+    "9": {
+      "label": "Tier 9 __bindUncertain — keep createElement out of prod",
+      "summary": "Compiler emits __bindUncertain instead of bailing the whole element call when a prop value is an unresolvable identifier. Runtime typeof-checks at mount.",
+      "uncompressed": 34889,
+      "gzipped": 10958,
+      "brotli": 9695,
+      "deltaVsPrevious": {
+        "uncompressed": -2463,
+        "gzipped": -840,
+        "brotli": -740
+      },
+      "deltaVsBaseline": {
+        "uncompressed": -8528,
+        "gzipped": -2521,
+        "brotli": -2174
+      }
+    },
     "0-baseline": {
       "label": "Phase 0 — current main",
       "summary": "Initial measurement before any size reductions. Captured from main.js after `pnpm build-prod`.",

@@ -54,6 +54,12 @@ export interface ElementRewriteSlot {
   usesElTemplate: boolean
   /** Module emitted at least one `__cloneStaticTemplate(...)` call. */
   usesCloneStaticTemplate: boolean
+  /**
+   * v0.4 size-cut — module emitted at least one `__bindUncertain(...)`
+   * call for a prop value with unresolvable type (function parameter,
+   * etc.). Drives the runtime import addition.
+   */
+  usesBindUncertain: boolean
 }
 
 export const ELEMENT_REWRITE_SLOT = 'element-rewrite:state'
@@ -76,6 +82,7 @@ export function elementRewriteModule(options: ElementRewriteModuleOptions): Comp
         usesElSplit: false,
         usesElTemplate: false,
         usesCloneStaticTemplate: false,
+        usesBindUncertain: false,
       }
       if (!slot) ctx.analysis.perModule.set(ELEMENT_REWRITE_SLOT, state)
 
@@ -87,6 +94,7 @@ export function elementRewriteModule(options: ElementRewriteModuleOptions): Comp
         state.bailed,
         ctx.factory,
         fieldBitsHi,
+        state,
       )
       if (!transformed) return null
 
@@ -312,6 +320,7 @@ function tryTransformElementCall(
   bailed: Set<string>,
   f: ts.NodeFactory,
   fieldBitsHi: Map<string, number> = new Map(),
+  state?: ElementRewriteSlot,
 ): ts.CallExpression | null {
   if (!ts.isIdentifier(node.expression)) return null
   const localName = node.expression.text
@@ -421,8 +430,31 @@ function tryTransformElementCall(
         return null
       }
       if (classified.kind === 'bail') {
-        bailed.add(localName)
-        return null
+        // v0.4 size-cut: instead of bailing the whole element call to the
+        // runtime element-helper (which keeps `createElement` + ~1.8 kB of
+        // elements.ts alive), emit a `__bindUncertain` call in the static-
+        // fn that dispatches at mount time on `typeof value`. Function
+        // values become reactive bindings (FULL_MASK gating — the
+        // compiler couldn't analyze the accessor); non-function values
+        // apply directly via the regular applyBinding path. Net effect:
+        // we keep the elSplit compilation and lose the elements.ts
+        // fallback.
+        const kind = classifyKind(key)
+        const resolvedKey = resolveKey(key, kind)
+        staticProps.push(
+          f.createExpressionStatement(
+            f.createCallExpression(f.createIdentifier('__bindUncertain'), undefined, [
+              f.createIdentifier('__e'),
+              f.createStringLiteral(kind),
+              resolvedKey === undefined
+                ? f.createIdentifier('undefined')
+                : f.createStringLiteral(resolvedKey),
+              value,
+            ]),
+          ),
+        )
+        if (state) state.usesBindUncertain = true
+        continue
       }
       if (classified.kind === 'static-literal') {
         // Fall through to emitStaticProp (`__e.disabled = X`). Safe because
@@ -1257,7 +1289,11 @@ function buildStaticHTML(
   children: ts.Expression,
   _f: ts.NodeFactory,
 ): string | null {
-  // Extract static attributes from staticFn statements
+  // Extract static attributes from staticFn statements. Any statement that
+  // doesn't match the recognized "static prop assignment" shapes forces a
+  // bail to the runtime elSplit path — silently skipping would drop the
+  // statement's effect (e.g. `__bindUncertain(__e, ...)` calls that bind
+  // unresolvable values at mount).
   let attrs = ''
   for (const stmt of staticProps) {
     if (!ts.isExpressionStatement(stmt)) return null
@@ -1267,7 +1303,9 @@ function buildStaticHTML(
       const prop = expr.left.name.text
       if (prop === 'className' && ts.isStringLiteral(expr.right)) {
         attrs += ` class="${escapeAttr(expr.right.text)}"`
+        continue
       }
+      return null
     }
     // __e.setAttribute('key', 'value')
     if (ts.isCallExpression(expr) && ts.isPropertyAccessExpression(expr.expression)) {
@@ -1276,11 +1314,16 @@ function buildStaticHTML(
         const val = expr.arguments[1]
         if (key && val && ts.isStringLiteral(key) && ts.isStringLiteral(val)) {
           attrs += ` ${key.text}="${escapeAttr(val.text)}"`
-        } else {
-          return null // non-literal attribute
+          continue
         }
+        return null // non-literal attribute
       }
+      return null
     }
+    // Unrecognized statement shape — bail to elSplit. This catches
+    // `__bindUncertain(...)` and any future emission added to staticProps
+    // that the static-HTML extractor doesn't know how to serialise.
+    return null
   }
 
   // Extract text children

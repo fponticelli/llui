@@ -269,5 +269,6 @@ export { applyField, type FieldMsg } from './form.js'
 // ── Compiler Target ───────────────────────────────────────────────
 
 export { elSplit } from './el-split.js'
+export { __bindUncertain } from './binding.js'
 export { elTemplate, __cloneStaticTemplate } from './el-template.js'
 export { _runPhase2 as __runPhase2, _handleMsg as __handleMsg } from './update-loop.js'

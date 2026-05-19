@@ -270,6 +270,10 @@ export function transformLlui(
   let usesElSplit = false
   let usesMemo = false
   let usesApplyBinding = false
+  // v0.4 size-cut: element-rewrite emits `__bindUncertain` for prop values
+  // it can't statically classify (e.g. function-parameter identifiers).
+  // The flag drives the cleanupImports pass to add the runtime import.
+  let usesBindUncertain = false
   // v0.4 size-cut (Tier 1.2): per-file set of primitive imports needed by
   // the `__view` factories we synthesize alongside each `component()` call.
   // The runtime calls `def.__view(send)` instead of `createView(send)`, so
@@ -531,6 +535,7 @@ export function transformLlui(
     if (erState.usesElSplit) usesElSplit = true
     if (erState.usesElTemplate) usesElTemplate = true
     if (erState.usesCloneStaticTemplate) usesCloneStaticTemplate = true
+    if (erState.usesBindUncertain) usesBindUncertain = true
     if (
       erState.compiled.size > 0 ||
       erState.usesElSplit ||
@@ -818,6 +823,7 @@ export function transformLlui(
     usesCloneStaticTemplate,
     scopeRegistrationsInjected,
     viewBagPrimitivesNeeded,
+    usesBindUncertain,
     f,
   )
 
@@ -1427,6 +1433,7 @@ function cleanupImports(
   usesCloneStaticTemplate: boolean,
   usesRegisterScopeVariants: boolean,
   viewBagPrimitivesNeeded: Set<string>,
+  usesBindUncertain: boolean,
   f: ts.NodeFactory,
 ): ts.SourceFile {
   if (
@@ -1437,7 +1444,8 @@ function cleanupImports(
     !usesApplyBinding &&
     !usesCloneStaticTemplate &&
     !usesRegisterScopeVariants &&
-    viewBagPrimitivesNeeded.size === 0
+    viewBagPrimitivesNeeded.size === 0 &&
+    !usesBindUncertain
   )
     return sf
 
@@ -1449,6 +1457,13 @@ function cleanupImports(
   const hasElSplit = clause.namedBindings.elements.some((s) => s.name.text === 'elSplit')
   if (!hasElSplit && usesElSplit) {
     remaining.push(f.createImportSpecifier(false, undefined, f.createIdentifier('elSplit')))
+  }
+
+  const hasBindUncertain = clause.namedBindings.elements.some(
+    (s) => s.name.text === '__bindUncertain',
+  )
+  if (!hasBindUncertain && usesBindUncertain) {
+    remaining.push(f.createImportSpecifier(false, undefined, f.createIdentifier('__bindUncertain')))
   }
 
   const hasElTemplate = clause.namedBindings.elements.some((s) => s.name.text === 'elTemplate')

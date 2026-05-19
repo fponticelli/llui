@@ -1,5 +1,7 @@
 import type { Lifetime, Binding, BindingKind } from './types.js'
 import { addBinding } from './lifetime.js'
+import { getRenderContext } from './render-context.js'
+import { FULL_MASK } from './update-loop.js'
 
 export interface CreateBindingOpts {
   mask: number
@@ -43,6 +45,53 @@ export function createBinding(scope: Lifetime, opts: CreateBindingOpts): Binding
   if (flatBindings) flatBindings.push(binding)
 
   return binding
+}
+
+/**
+ * Bind a value of uncertain runtime type. Compiler-emitted call site
+ * when an element-helper prop value is an unresolvable identifier
+ * (function parameter, opaque import) — the compiler can't tell at
+ * build time whether the value will be a reactive accessor or a
+ * plain primitive, so it defers the dispatch here.
+ *
+ * If `value` is a function, register as a reactive binding with
+ * FULL_MASK gating (the compiler couldn't analyze accessor deps).
+ * Otherwise apply it directly as a one-shot prop/attr/class/style set.
+ *
+ * v0.4 size-cut: this exists to keep `createElement` (the heavyweight
+ * runtime fallback in `elements.ts`) from being pulled in by uncertain
+ * prop sites. ~1.8 kB minified saved per affected app.
+ *
+ * Compiler-emit target only — user code should not call this directly.
+ * (The runtime is re-exported through index.ts. We deliberately don't
+ * mark this as private/internal in the JSDoc because the corresponding
+ * stripping setting in tsconfig.build.json would then produce a
+ * dangling re-export pointing at a missing member.)
+ */
+export function __bindUncertain(
+  el: Node,
+  kind: BindingKind,
+  key: string | undefined,
+  value: unknown,
+): void {
+  if (typeof value === 'function') {
+    const ctx = getRenderContext()
+    const fn = value as (s: never) => unknown
+    const perItem = fn.length === 0
+    const binding = createBinding(ctx.rootLifetime, {
+      mask: FULL_MASK,
+      accessor: fn,
+      kind,
+      node: el,
+      key,
+      perItem,
+    })
+    const initial = perItem ? (fn as unknown as () => unknown)() : fn(ctx.state as never)
+    binding.lastValue = initial
+    applyBinding({ kind, node: el, key }, initial)
+  } else {
+    applyBinding({ kind, node: el, key }, value)
+  }
 }
 
 export function applyBinding(
