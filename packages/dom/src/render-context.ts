@@ -1,7 +1,14 @@
-import type { Lifetime, Binding } from './types.js'
+import type { Lifetime, Binding, Send } from './types.js'
 import type { StructuralBlock } from './structural.js'
 import type { ComponentInstance } from './update-loop.js'
 import type { DomEnv } from './dom-env.js'
+import { createView } from './view-helpers.js'
+
+declare global {
+  interface ImportMeta {
+    env?: { DEV?: boolean; MODE?: string }
+  }
+}
 
 export interface RenderContext {
   rootLifetime: Lifetime
@@ -57,6 +64,47 @@ export function exitAccessor(): void {
 export function currentAccessor(): string | null {
   const len = accessorStack.length
   return len > 0 ? accessorStack[len - 1]! : null
+}
+
+/**
+ * Return the view bag for `inst`, caching it on the instance so the
+ * per-row allocation that each.render / branch arms / lazy fallback /
+ * client-only render / hmr replay / ssr render used to incur on every
+ * call collapses to a single object literal per instance. Hot path on
+ * jfb's Select benchmark — `pnpm bench` measured +31% without this
+ * cache (each row's mount called `def.__view(send)` afresh).
+ *
+ * Cache key is the instance: `send` is identity-stable per instance,
+ * so the bag's bound `send` is correct for every call site that
+ * receives it. The cache invalidates implicitly on instance disposal.
+ * In test mode (no compiler-emitted `__view`) we fall through to
+ * `createView` per call — tests don't measure perf, and the
+ * createView reference is gone from production via the Vite-time MODE
+ * fold (see mount.ts buildViewBag for the same pattern).
+ */
+export function getInstanceViewBag<S, M>(
+  inst: ComponentInstance | undefined,
+  send: Send<M>,
+): unknown {
+  // No instance → only happens in test-mode fixtures that mount through
+  // a stub render context. The createView reference below is dead in
+  // production builds (Vite folds the MODE check to a constant).
+  if (!inst) {
+    if (import.meta.env?.MODE !== 'production') return createView<S, M>(send)
+    return { send }
+  }
+  if (inst._viewBag !== undefined) return inst._viewBag
+  const factory = (inst.def as unknown as { __view?: (s: Send<M>) => unknown }).__view
+  let bag: unknown
+  if (factory) {
+    bag = factory(send)
+  } else if (import.meta.env?.MODE !== 'production') {
+    bag = createView<S, M>(send)
+  } else {
+    bag = { send }
+  }
+  inst._viewBag = bag
+  return bag
 }
 
 export function getRenderContext(primitiveName?: string): RenderContext {

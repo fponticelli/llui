@@ -7,37 +7,7 @@ import { setFlatBindings } from './binding.js'
 import { getBindingDescriptors } from './binding-descriptors.js'
 import { registerInstance, unregisterInstance } from './runtime.js'
 import type { View } from './view-helpers.js'
-import { createView } from './view-helpers.js'
-
-/**
- * Build the view-bag for a component. v0.4 size-cut (Tier 1.2): compiled
- * components carry a `__view` factory that references only the primitives
- * their view destructures — Rollup tree-shakes the rest. In production
- * (`import.meta.env.MODE === 'production'`) the `createView` fallback below
- * is dead and the entire `view-helpers` chain drops out of the bundle. In
- * test mode, vitest configurations bypass the compiler and construct
- * `ComponentDef` literals by hand; the fallback keeps those working
- * without forcing every test file to attach `__view` manually.
- */
-function buildViewBag<S, M>(
-  def: { name: string; __view?: (send: import('./types.js').Send<M>) => unknown },
-  send: import('./types.js').Send<M>,
-): View<S, M> {
-  if (def.__view) return def.__view(send) as View<S, M>
-  // Vite-time `define` substitutes `import.meta.env.MODE` with a constant
-  // string; the `=== 'production'` comparison folds to true/false at build
-  // time and the unreached branch is dead-code-eliminated alongside the
-  // `createView` reference it would have triggered. Bundlers that don't
-  // honor `import.meta.env` (rare for Vite consumers) will keep the
-  // fallback live, which is correct but slightly larger.
-  if (import.meta.env?.MODE !== 'production') {
-    return createView<S, M>(send)
-  }
-  throw new Error(
-    `[llui] Component "${def.name}" has no __view factory — was the @llui/vite-plugin ` +
-      `pipeline applied? In production builds every component must be compiler-emitted.`,
-  )
-}
+import { getInstanceViewBag } from './render-context.js'
 import { pushMountQueue, popMountQueue, flushMountQueue } from './primitives/on-mount.js'
 
 // ── Sentinel-region helpers (used by anchor-based mount primitives) ─────
@@ -228,7 +198,9 @@ export function mountApp<S, M, E, D>(
     send: inst.send as (msg: unknown) => void,
     instance: inst as ComponentInstance,
   })
-  const nodes = def.view(buildViewBag<S, M>(def, inst.send))
+  const nodes = def.view(
+    getInstanceViewBag<S, M>(inst as ComponentInstance, inst.send) as View<S, M>,
+  )
   clearRenderContext()
   setFlatBindings(null)
   popMountQueue(prevMountQueue)
@@ -407,7 +379,9 @@ export function mountAtAnchor<S, M, E, D>(
     send: inst.send as (msg: unknown) => void,
     instance: inst as ComponentInstance,
   })
-  const nodes = def.view(buildViewBag<S, M>(def, inst.send))
+  const nodes = def.view(
+    getInstanceViewBag<S, M>(inst as ComponentInstance, inst.send) as View<S, M>,
+  )
   clearRenderContext()
   setFlatBindings(null)
   popMountQueue(prevMountQueue)
@@ -503,7 +477,9 @@ export function hydrateAtAnchor<S, M, E, D = void>(
     send: inst.send as (msg: unknown) => void,
     instance: inst as ComponentInstance,
   })
-  const nodes = hydrateDef.view(buildViewBag<S, M>(hydrateDef, inst.send))
+  const nodes = hydrateDef.view(
+    getInstanceViewBag<S, M>(inst as ComponentInstance, inst.send) as View<S, M>,
+  )
   clearRenderContext()
   setFlatBindings(null)
   popMountQueue(prevMountQueue)
@@ -757,7 +733,9 @@ export function hydrateApp<S, M, E, D = void>(
     send: inst.send as (msg: unknown) => void,
     instance: inst as ComponentInstance,
   })
-  const nodes = hydrateDef.view(buildViewBag<S, M>(hydrateDef, inst.send))
+  const nodes = hydrateDef.view(
+    getInstanceViewBag<S, M>(inst as ComponentInstance, inst.send) as View<S, M>,
+  )
   clearRenderContext()
   setFlatBindings(null)
   popMountQueue(prevMountQueue)

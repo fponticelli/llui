@@ -1,14 +1,8 @@
 import type { ComponentDef, Lifetime, Binding } from './types.js'
 import { createComponentInstance, type ComponentInstance } from './update-loop.js'
-import { setRenderContext, clearRenderContext } from './render-context.js'
+import { setRenderContext, clearRenderContext, getInstanceViewBag } from './render-context.js'
 import { setFlatBindings } from './binding.js'
-import { createView, type View } from './view-helpers.js'
-
-declare global {
-  interface ImportMeta {
-    env?: { DEV?: boolean; MODE?: string }
-  }
-}
+import type { View } from './view-helpers.js'
 import type { DomEnv } from './dom-env.js'
 
 /**
@@ -44,16 +38,9 @@ export function renderNodes<S, M, E, D = void>(
     send: inst.send as (msg: unknown) => void,
     instance: inst as ComponentInstance,
   })
-  // v0.4 Tier 1.2: compiled components carry __view; createView fallback
-  // is gated for tests and dead in production builds.
-  const __view = (def as { __view?: (s: unknown) => unknown }).__view
-  const bag = (
-    __view
-      ? __view(inst.send as unknown)
-      : import.meta.env?.MODE !== 'production'
-        ? createView<S, M>(inst.send)
-        : { send: inst.send }
-  ) as View<S, M>
+  // v0.4 Tier 1.2 + cache: bag memoised on the SSR instance for the
+  // single render pass.
+  const bag = getInstanceViewBag<S, M>(inst as ComponentInstance, inst.send) as View<S, M>
   const nodes = def.view(bag)
   clearRenderContext()
   setFlatBindings(null)

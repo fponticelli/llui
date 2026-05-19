@@ -2,18 +2,12 @@ import type { ComponentDef, AppHandle } from './types.js'
 import type { ComponentInstance } from './update-loop.js'
 import { flushInstance } from './update-loop.js'
 import { createLifetime, disposeLifetime } from './lifetime.js'
-import { setRenderContext, clearRenderContext } from './render-context.js'
+import { setRenderContext, clearRenderContext, getInstanceViewBag } from './render-context.js'
 import { setFlatBindings } from './binding.js'
 import { getBindingDescriptors } from './binding-descriptors.js'
 import { unregisterInstance } from './runtime.js'
 import { _setHmrModule } from './mount.js'
-import { createView, type View } from './view-helpers.js'
-
-declare global {
-  interface ImportMeta {
-    env?: { DEV?: boolean; MODE?: string }
-  }
-}
+import type { View } from './view-helpers.js'
 
 /**
  * Enable HMR state preservation. Called by compiler-generated dev code.
@@ -224,16 +218,10 @@ function swapEntry<S, M, E, D = void>(
     send: typedInst.send as (msg: unknown) => void,
     instance: typedInst as ComponentInstance,
   })
-  // v0.4 Tier 1.2: HMR replays the compiled def's __view factory.
-  // createView fallback is gated for tests and dead in production builds.
-  const __view = (typedInst.def as { __view?: (s: unknown) => unknown }).__view
-  const bag = (
-    __view
-      ? __view(typedInst.send as unknown)
-      : import.meta.env?.MODE !== 'production'
-        ? createView<S, M>(typedInst.send)
-        : { send: typedInst.send }
-  ) as View<S, M>
+  // v0.4 Tier 1.2 + cache: HMR clears _viewBag below before re-render so
+  // the next call rebuilds from the new def.__view factory.
+  typedInst._viewBag = undefined
+  const bag = getInstanceViewBag<S, M>(typedInst as ComponentInstance, typedInst.send) as View<S, M>
   const nodes = typedInst.def.view(bag)
   clearRenderContext()
   setFlatBindings(null)

@@ -1,27 +1,21 @@
 import type { ComponentDef, LazyDef } from '../types.js'
-import { getRenderContext, setRenderContext, clearRenderContext } from '../render-context.js'
+import {
+  getRenderContext,
+  setRenderContext,
+  clearRenderContext,
+  getInstanceViewBag,
+} from '../render-context.js'
 import { createLifetime, disposeLifetime, addDisposer } from '../lifetime.js'
 import { createComponentInstance, type ComponentInstance } from '../update-loop.js'
 import { setFlatBindings } from '../binding.js'
 import type { View } from '../view-helpers.js'
-import { createView } from '../view-helpers.js'
 
-// v0.4 Tier 1.2: bag from the owning compiled component's __view factory.
-// createView fallback is dead-code-eliminated in production builds.
-declare global {
-  interface ImportMeta {
-    env?: { DEV?: boolean; MODE?: string }
-  }
-}
+// v0.4 Tier 1.2 + cache: pulls a cached bag from the owning instance.
 function ownerBag<S, M>(
-  ctx: { instance?: unknown },
+  ctx: { instance?: ComponentInstance | undefined },
   send: import('../types.js').Send<M>,
 ): View<S, M> {
-  const inst = ctx.instance as { def?: { __view?: (s: unknown) => unknown } } | undefined
-  const view = inst?.def?.__view
-  if (view) return view(send as unknown) as View<S, M>
-  if (import.meta.env?.MODE !== 'production') return createView<S, M>(send)
-  return { send } as unknown as View<S, M>
+  return getInstanceViewBag<S, M>(ctx.instance, send) as View<S, M>
 }
 
 export interface LazyOptions<S, M, D> {
@@ -125,20 +119,15 @@ export function lazy<S, M, D = undefined>(opts: LazyOptions<S, M, D>): Node[] {
           send: childInst.send as (msg: unknown) => void,
           instance: childInst as ComponentInstance,
         })
-        // v0.4 Tier 1.2: compiled defs carry __view. Uncompiled lazy targets
-        // get an empty bag — destructuring `({ text, … }) => …` will fail
-        // at runtime with `text is undefined`, which is the expected
-        // breakage for a test fixture that bypasses the compiler.
+        // v0.4 Tier 1.2 + cache: the loaded child gets its own cached bag.
         const lazyDef = def as {
           name?: string
           view: (h: unknown) => Node[]
-          __view?: (send: unknown) => unknown
         }
-        const lazyBag = lazyDef.__view
-          ? lazyDef.__view(childInst.send as unknown)
-          : import.meta.env?.MODE !== 'production'
-            ? createView(childInst.send)
-            : { send: childInst.send }
+        const lazyBag = getInstanceViewBag(
+          childInst as ComponentInstance,
+          childInst.send as (m: unknown) => void,
+        )
         const nodes = lazyDef.view(lazyBag)
         clearRenderContext()
         setFlatBindings(ctx.allBindings)

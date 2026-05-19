@@ -149,6 +149,17 @@ export interface ComponentInstance<S = unknown, M = unknown, E = unknown> {
   send: (msg: M) => void
   signal: AbortSignal
   abortController: AbortController
+  /**
+   * @internal v0.4 Tier 1.2 follow-up — memoised view bag. Constructed
+   * lazily by `getInstanceViewBag` (render-context.ts) on first access
+   * via `def.__view(send)`, then reused across every primitive that
+   * passes the bag to a user callback (each.render, branch arms, lazy
+   * fallback, client-only render, hmr replay, ssr render). Caching here
+   * avoids the per-row allocation that `pnpm bench` flagged as a +31%
+   * cost on jfb's Select benchmark — `send` is identity-stable per
+   * instance, so a single cached bag is correct for all sites.
+   */
+  _viewBag?: unknown
   /** @internal dev-only — populated when `installDevTools` ran. Ring-buffered
    *  per-each-site reconciliation diffs for MCP introspection tools. */
   _eachDiffLog?: RingBuffer<EachDiff>

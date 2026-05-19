@@ -9,27 +9,19 @@ import {
 import { createLifetime, disposeLifetime, addDisposer } from '../lifetime.js'
 import { setFlatBindings } from '../binding.js'
 import type { View } from '../view-helpers.js'
-import { createView } from '../view-helpers.js'
+import { getInstanceViewBag } from '../render-context.js'
+import type { ComponentInstance } from '../update-loop.js'
 
-// v0.4 Tier 1.2: pulls the View bag from the owning component's compiler-
-// emitted __view factory instead of constructing one via createView (which
-// referenced every primitive and defeated tree-shaking). The `createView`
-// call below is dead-code-eliminated in production builds — Vite folds
-// `import.meta.env.MODE` to a constant and the branch never runs there.
-declare global {
-  interface ImportMeta {
-    env?: { DEV?: boolean; MODE?: string }
-  }
-}
+// v0.4 Tier 1.2 + cache follow-up: pulls a cached View bag from the
+// owning instance (constructed once via `def.__view(send)`). The
+// createView fallback below is dead-code-eliminated in production
+// builds — Vite folds `import.meta.env.MODE` to a constant inside
+// getInstanceViewBag.
 function getOwnerBag<S, M>(
-  ctx: { instance?: unknown },
+  ctx: { instance?: ComponentInstance | undefined },
   send: import('../types.js').Send<M>,
 ): View<S, M> {
-  const inst = ctx.instance as { def?: { __view?: (s: unknown) => unknown } } | undefined
-  const view = inst?.def?.__view
-  if (view) return view(send as unknown) as View<S, M>
-  if (import.meta.env?.MODE !== 'production') return createView<S, M>(send)
-  return { send } as unknown as View<S, M>
+  return getInstanceViewBag<S, M>(ctx.instance, send) as View<S, M>
 }
 import { FULL_MASK } from '../update-loop.js'
 import { pushMountQueue, popMountQueue, flushMountQueue } from './on-mount.js'

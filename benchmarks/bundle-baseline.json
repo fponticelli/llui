@@ -47,36 +47,20 @@
       }
     },
     "3.4": {
-      "label": "Tier 3.4 gate genericUpdate FULL_MASK fallback (FINAL)",
-      "summary": "The FULL_MASK fallback for components missing __prefixes is gated by import.meta.env.MODE so Vite drops it from production builds. Tests keep the fallback under MODE=test. This is the final shipped state — Tier 5 was attempted and reverted (see abandoned).",
-      "uncompressed": 37449,
-      "gzipped": 11842,
-      "brotli": 10470,
-      "deltaVsPrevious": {
-        "uncompressed": -20,
-        "gzipped": -6,
-        "brotli": -5
-      },
+      "label": "Tier 3.4 + view-bag cache (FINAL)",
+      "summary": "View bag memoised on ComponentInstance via getInstanceViewBag (render-context.ts). createView fallback referenced ONLY inside the helper (not via call-site callbacks) so MODE-fold tree-shaking works.",
+      "uncompressed": 37352,
+      "gzipped": 11798,
+      "brotli": 10435,
+      "deltaVsPrevious": null,
       "deltaVsBaseline": {
-        "uncompressed": -5968,
-        "gzipped": -1637,
-        "brotli": -1399
+        "uncompressed": -6065,
+        "gzipped": -1681,
+        "brotli": -1434
       }
     }
   },
   "abandoned": {
-    "2.1": {
-      "label": "Tier 2.1 variable-length binding tuples",
-      "summary": "Compiler emits 2/3/4/5-tuple binding shapes for elSplit and a 3-arg short form for __bind; runtime dispatches on tuple.length / typeof. CORRECT but unprofitable for jfb because the bench routes nearly all bindings through elTemplate (row factory) and only has a handful of elSplit/__bind sites — the dispatch-overhead bytes exceed the per-call savings here. Reverted; would help apps with many flat elSplit bindings outside the elTemplate row path.",
-      "measuredUncompressed": 38049,
-      "measuredGzipped": 12037,
-      "measuredBrotli": 10639,
-      "deltaVsBaseline": {
-        "uncompressed": -5368,
-        "gzipped": -1442,
-        "brotli": -1230
-      }
-    },
     "5": {
       "label": "Tier 5 drop __handlers fast path",
       "summary": "Compiler stops emitting __handlers; runtime drops the per-variant dispatch + _handleMsg. Saved 1,423 bytes uncompressed (1.2 kB gz) BUT caused 23-89% perf regressions on keyed-each operations (swap +89%, select +87%, remove +37%, update-10th +23%) per `pnpm bench`. __handlers' `method` discriminator dispatched to specialized reconcile paths (reconcileItems/reconcileClear/reconcileRemove/reconcileChanged) that the generic reconcile() can't match. Reverted — bundle savings not worth the perf cost.",
@@ -94,6 +78,18 @@
         "remove": "+37%",
         "update10th": "+23%",
         "createReplaceAppend": "within noise"
+      }
+    },
+    "2.1": {
+      "label": "Tier 2.1 variable-length binding tuples",
+      "summary": "Compiler emits 2/3/4/5-tuple binding shapes for elSplit and a 3-arg short form for __bind; runtime dispatches on tuple.length / typeof. CORRECT but unprofitable for jfb because the bench routes nearly all bindings through elTemplate (row factory) and only has a handful of elSplit/__bind sites — the dispatch-overhead bytes exceed the per-call savings here. Reverted; would help apps with many flat elSplit bindings outside the elTemplate row path.",
+      "measuredUncompressed": 38049,
+      "measuredGzipped": 12037,
+      "measuredBrotli": 10639,
+      "deltaVsBaseline": {
+        "uncompressed": -5368,
+        "gzipped": -1442,
+        "brotli": -1230
       }
     }
   }
