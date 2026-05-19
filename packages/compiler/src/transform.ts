@@ -42,6 +42,9 @@ import {
   type CoreSynthesisSlot,
 } from './modules/core-synthesis.js'
 import { bitmaskOverflowModule } from './modules/bitmask-overflow.js'
+import { asyncUpdateModule } from './modules/async-update.js'
+import { mapOnStateArrayModule } from './modules/map-on-state-array.js'
+import { nestedSendInUpdateModule } from './modules/nested-send-in-update.js'
 
 export function createMaskLiteral(f: ts.NodeFactory, mask: number): ts.Expression {
   if (mask >= 0) return f.createNumericLiteral(mask)
@@ -375,6 +378,13 @@ export function transformLlui(
   // paths. Migrated from @llui/eslint-plugin (v0.x); promoted from
   // ESLint warning to compiler error because LLMs ignore warnings.
   activeModules.push(bitmaskOverflowModule())
+  // Correctness rules migrated from @llui/eslint-plugin as compile-time
+  // errors. LLM-first authoring requires non-bypassable correctness
+  // signals; ESLint warnings are silently ignored by LLM agents and
+  // may not even be installed in a downstream project.
+  activeModules.push(asyncUpdateModule())
+  activeModules.push(mapOnStateArrayModule())
+  activeModules.push(nestedSendInUpdateModule())
   // eachMemoModule wraps allocating each() items accessors in
   // `memo(...)` via `transformCallEnter`. Activated when the file
   // has any reactive paths (mirrors the inline call's gating).
