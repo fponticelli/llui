@@ -1,6 +1,5 @@
 import { execSync } from 'node:child_process'
 import { existsSync } from 'node:fs'
-import { resolve } from 'node:path'
 import { z } from 'zod'
 import type { ToolRegistry } from '../tool-registry.js'
 import { findWorkspaceRoot } from '../index.js'
@@ -82,41 +81,11 @@ export function registerSourceTools(registry: ToolRegistry): void {
     },
   )
 
-  registry.register(
-    {
-      name: 'llui_lint_project',
-      description:
-        'Run @llui/eslint-plugin rules across all TypeScript files in a directory. Returns a 0–20 idiomatic score, violation count, and per-file violations.',
-      schema: z.object({
-        rootDir: z.string().optional().describe('Directory to lint (defaults to workspace root)'),
-      }),
-    },
-    'source',
-    async (args, _ctx) => {
-      const rootDir = args.rootDir ?? findWorkspaceRoot()
-      const workspaceRoot = findWorkspaceRoot()
-      const target = resolve(rootDir, '**/*.{ts,tsx}')
-      const cmd = `pnpm exec eslint --format json "${target}"`
-      try {
-        const output = execSync(cmd, {
-          cwd: workspaceRoot,
-          encoding: 'utf8',
-          timeout: 60_000,
-        })
-        return parseEslintOutput(output)
-      } catch (err: unknown) {
-        const e = err as { stdout?: string }
-        if (e.stdout) {
-          try {
-            return parseEslintOutput(e.stdout)
-          } catch {
-            // fall through
-          }
-        }
-        return { score: 0, violations: [], fileCount: 0, error: 'ESLint failed' }
-      }
-    },
-  )
+  // The `llui_lint_project` tool was removed in the lint→compiler
+  // migration (commit lint-migration-final). All LLui-specific lint
+  // rules now emit as compiler errors via `@llui/compiler`; the build
+  // pipeline surfaces them through `@llui/vite-plugin`. A future MCP
+  // tool can expose those compiler diagnostics directly if needed.
 }
 
 interface GrepHit {
@@ -148,16 +117,4 @@ function grepHits(pattern: string, rootDir: string, globs: string[]): GrepHit[] 
   } catch {
     return []
   }
-}
-
-function parseEslintOutput(output: string): {
-  score: number
-  violations: unknown[]
-  fileCount: number
-} {
-  const results = JSON.parse(output) as Array<{ filePath: string; messages: unknown[] }>
-  const violations = results.flatMap((r) => r.messages)
-  const fileCount = results.length
-  const score = Math.max(0, 20 - violations.length)
-  return { score, violations, fileCount }
 }

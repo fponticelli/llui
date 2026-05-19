@@ -47,25 +47,15 @@ describe('llui_run_test', () => {
   }, 60_000)
 })
 
-describe('llui_lint_project', () => {
-  it('runs eslint and returns a score and violations array', async () => {
-    const server = new LluiMcpServer()
-    const result = (await server.handleToolCall('llui_lint_project', {
-      rootDir: resolve(ROOT, 'examples/counter/src'),
-    })) as { score: number; violations: unknown[]; fileCount: number }
-    expect(typeof result.score).toBe('number')
-    expect(Array.isArray(result.violations)).toBe(true)
-    expect(typeof result.fileCount).toBe('number')
-  }, 60_000)
-})
-
 describe('source tool list', () => {
-  it('exposes all 4 source tools', () => {
+  it('exposes the source tools', () => {
     const server = new LluiMcpServer()
     const names = server.getTools().map((t) => t.name)
     expect(names).toContain('llui_find_msg_producers')
     expect(names).toContain('llui_find_msg_handlers')
     expect(names).toContain('llui_run_test')
-    expect(names).toContain('llui_lint_project')
+    // `llui_lint_project` was removed in the lint→compiler migration —
+    // lint rules now emit as compiler errors.
+    expect(names).not.toContain('llui_lint_project')
   })
 })

@@ -10,7 +10,6 @@
     "@llui/dom": "workspace:*"
   },
   "devDependencies": {
-    "@llui/eslint-plugin": "workspace:*",
     "@llui/vite-plugin": "workspace:*",
     "vite": "^8.0.0"
   }

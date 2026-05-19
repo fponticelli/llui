@@ -12,7 +12,6 @@
     "zod": "^4.3.6"
   },
   "devDependencies": {
-    "@llui/eslint-plugin": "workspace:*",
     "@llui/vite-plugin": "workspace:*",
     "vite": "^8.0.0"
   }

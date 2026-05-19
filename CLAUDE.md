@@ -51,23 +51,28 @@ pnpm bench:build              # Build jfb app only (no benchmark run)
 
 ## Monorepo Structure
 
-Thirteen packages under `packages/`, managed by pnpm workspaces + Turborepo:
+Sixteen packages under `packages/`, managed by pnpm workspaces + Turborepo:
 
-| Package               | Purpose                                                                                 | Dependencies |
-| --------------------- | --------------------------------------------------------------------------------------- | ------------ |
-| `@llui/dom`           | Runtime: component, mount, scope tree, bindings, element helpers, structural primitives | —            |
-| `@llui/vite-plugin`   | Compiler: 3-pass TypeScript transform (prop split → mask injection → import cleanup)    | peer: vite   |
-| `@llui/eslint-plugin` | 41 lint rules, ~15 type-aware (mirror analyzers from `@llui/vite-plugin`)               | peer: eslint |
-| `@llui/components`    | Headless components: accordion, dialog, tabs, select, tree-view, timer, tour, etc.      | @llui/dom    |
-| `@llui/test`          | Test harness: testComponent, assertEffects, testView, propertyTest, replayTrace         | @llui/dom    |
-| `@llui/effects`       | Effect builders: http, cancel, debounce, sequence, race + handleEffects chain           | —            |
-| `@llui/router`        | Client router with route-matching helpers and link components                           | @llui/dom    |
-| `@llui/transitions`   | Animation/transition wrapper helpers                                                    | @llui/dom    |
-| `@llui/mcp`           | MCP server exposing LLui debug API + lint to LLMs                                       | @llui/dom    |
-| `@llui/vike`          | Vike SSR adapter: onRenderHtml, onRenderClient                                          | @llui/dom    |
-| `llui-agent`          | Agent runtime / SDK for programmatic control                                            | @llui/dom    |
-| `@llui/agent-bridge`  | Browser bridge that connects a running app to the agent host                            | @llui/dom    |
-| `@llui/agent-e2e`     | End-to-end fixtures and tests for the agent surface                                     | @llui/dom    |
+| Package                        | Purpose                                                                                 | Dependencies   |
+| ------------------------------ | --------------------------------------------------------------------------------------- | -------------- |
+| `@llui/dom`                    | Runtime: component, mount, scope tree, bindings, element helpers, structural primitives | —              |
+| `@llui/compiler`               | Engine: 3-pass TypeScript transform + 41 compile-time lint rules (all severity: error)  | typescript     |
+| `@llui/compiler-introspection` | Opt-in introspection: agent schemas, msg annotations, schema hash                       | @llui/compiler |
+| `@llui/compiler-devtools`      | Opt-in devtools: `__componentMeta` emission                                             | @llui/compiler |
+| `@llui/compiler-ssr`           | Opt-in: 'use client' directive transforms                                               | @llui/compiler |
+| `@llui/vite-plugin`            | Vite adapter: wires compiler into Vite, surfaces diagnostics via this.error()           | peer: vite     |
+| `@llui/components`             | Headless components: accordion, dialog, tabs, select, tree-view, timer, tour, etc.      | @llui/dom      |
+| `@llui/test`                   | Test harness: testComponent, assertEffects, testView, propertyTest, replayTrace         | @llui/dom      |
+| `@llui/effects`                | Effect builders: http, cancel, debounce, sequence, race + handleEffects chain           | —              |
+| `@llui/router`                 | Client router with route-matching helpers and link components                           | @llui/dom      |
+| `@llui/transitions`            | Animation/transition wrapper helpers                                                    | @llui/dom      |
+| `@llui/mcp`                    | MCP server exposing LLui debug API to LLMs                                              | @llui/dom      |
+| `@llui/vike`                   | Vike SSR adapter: onRenderHtml, onRenderClient                                          | @llui/dom      |
+| `llui-agent`                   | Agent runtime / SDK for programmatic control                                            | @llui/dom      |
+| `@llui/agent-bridge`           | Browser bridge that connects a running app to the agent host                            | @llui/dom      |
+| `@llui/agent-e2e`              | End-to-end fixtures and tests for the agent surface                                     | @llui/dom      |
+
+**Note for future LLMs:** all framework lint rules (correctness, agent-protocol, conventions — 41 total) are compile-time errors in `@llui/compiler`. Do NOT reintroduce `@llui/eslint-plugin` or recreate the rules as ESLint rules. The migration was deliberate: LLMs ignore lint warnings, so non-bypassable compiler errors are the only effective channel. The plugin was deleted in the lint→compiler migration.
 
 Build order is computed by Turbo via `"dependsOn": ["^build"]`. Roots: `@llui/dom` and `@llui/effects` (no deps); everything else layers on top.
 

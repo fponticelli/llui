@@ -27,7 +27,7 @@
   "devDependencies": {
     "@types/node": "^22.0.0"
   },
-  "description": "LLui compiler engine — static analysis + emission. Build-tool-agnostic library consumed by @llui/vite-plugin and @llui/eslint-plugin.",
+  "description": "LLui compiler engine — static analysis + emission. Build-tool-agnostic library consumed by @llui/vite-plugin.",
   "keywords": [
     "llui",
     "compiler",

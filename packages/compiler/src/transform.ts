@@ -65,6 +65,23 @@ import { agentOptionalFieldUndocumentedModule } from './modules/agent-optional-f
 import { agentTagsendTranslatorMissingModule } from './modules/agent-tagsend-translator-missing.js'
 import { agentNonextractableHandlerModule } from './modules/agent-nonextractable-handler.js'
 import { subappRequiresReasonModule } from './modules/subapp-requires-reason.js'
+import { emptyPropsModule } from './modules/empty-props.js'
+import { forgottenSpreadModule } from './modules/forgotten-spread.js'
+import { accessibilityModule } from './modules/accessibility.js'
+import { viewBagImportModule } from './modules/view-bag-import.js'
+import { controlledInputModule } from './modules/controlled-input.js'
+import { missingMemoModule } from './modules/missing-memo.js'
+import { namespaceImportModule } from './modules/namespace-import.js'
+import { noBarrelImportWhenSubpathExistsModule } from './modules/no-barrel-import-when-subpath-exists.js'
+import { formBoilerplateModule } from './modules/form-boilerplate.js'
+import { spreadInChildrenModule } from './modules/spread-in-children.js'
+import { staticItemsModule } from './modules/static-items.js'
+import { staticOnModule } from './modules/static-on.js'
+import { noListRenderInSampleModule } from './modules/no-list-render-in-sample.js'
+import { noSampleInAccessorModule } from './modules/no-sample-in-accessor.js'
+import { noSampleInReactivePositionModule } from './modules/no-sample-in-reactive-position.js'
+import { agentEmitsDriftModule } from './modules/agent-emits-drift.js'
+import { agentMsgResolvableModule } from './modules/agent-msg-resolvable.js'
 
 export function createMaskLiteral(f: ts.NodeFactory, mask: number): ts.Expression {
   if (mask >= 0) return f.createNumericLiteral(mask)
@@ -217,7 +234,14 @@ export function transformLlui(
 
   // Collect imported element helper names (local → original)
   const importedHelpers = getImportedHelpers(lluiImport)
-  if (importedHelpers.size === 0 && !hasReactiveAccessors(sourceFile)) return null
+  // Previously: `if (importedHelpers.size === 0 && !hasReactiveAccessors(sourceFile)) return null`.
+  // Removed in lint-migration-8: lint-rule modules (namespace-import,
+  // form-boilerplate, etc.) need to fire on files whose only @llui/dom
+  // usage is a namespace import, a type-only import, or a Msg-union
+  // declaration — none of which produce element-helper or text/component
+  // call sites. The registry's per-file cost is small enough that running
+  // it on these files is fine; the late return-null still bails when
+  // there's no work to emit (no edits AND no diagnostics).
 
   // Connect-pattern pass: detects `*.connect(get, sendFn, …)` call
   // sites and inserts a runtime `__registerScopeVariants([...])`
@@ -425,6 +449,23 @@ export function transformLlui(
   activeModules.push(agentTagsendTranslatorMissingModule())
   activeModules.push(agentNonextractableHandlerModule())
   activeModules.push(subappRequiresReasonModule())
+  activeModules.push(emptyPropsModule())
+  activeModules.push(forgottenSpreadModule())
+  activeModules.push(accessibilityModule())
+  activeModules.push(viewBagImportModule())
+  activeModules.push(controlledInputModule())
+  activeModules.push(missingMemoModule())
+  activeModules.push(namespaceImportModule())
+  activeModules.push(noBarrelImportWhenSubpathExistsModule())
+  activeModules.push(formBoilerplateModule())
+  activeModules.push(spreadInChildrenModule())
+  activeModules.push(staticItemsModule())
+  activeModules.push(staticOnModule())
+  activeModules.push(noListRenderInSampleModule())
+  activeModules.push(noSampleInAccessorModule())
+  activeModules.push(noSampleInReactivePositionModule())
+  activeModules.push(agentEmitsDriftModule())
+  activeModules.push(agentMsgResolvableModule())
   // eachMemoModule wraps allocating each() items accessors in
   // `memo(...)` via `transformCallEnter`. Activated when the file
   // has any reactive paths (mirrors the inline call's gating).
@@ -1060,21 +1101,6 @@ function getImportedHelpers(imp: ts.ImportDeclaration): Map<string, string> {
     }
   }
   return map
-}
-
-function hasReactiveAccessors(sf: ts.SourceFile): boolean {
-  let found = false
-  function visit(node: ts.Node): void {
-    if (found) return
-    if (ts.isCallExpression(node) && ts.isIdentifier(node.expression)) {
-      if (node.expression.text === 'text' || node.expression.text === 'component') {
-        found = true
-      }
-    }
-    ts.forEachChild(node, visit)
-  }
-  visit(sf)
-  return found
 }
 
 function hasComponentDef(sf: ts.SourceFile, lluiImport: ts.ImportDeclaration): boolean {
