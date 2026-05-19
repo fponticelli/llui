@@ -188,8 +188,9 @@ describe('bundle-strip goldens — always-on contract', () => {
       // elSplit is element-rewrite's output — proves the dom modules
       // ran even with all opt-in packages stripped.
       expect(result!.output).toMatch(/elSplit/)
-      // __update is core-synthesis's output.
-      expect(result!.output).toMatch(/__update:/)
+      // __prefixes is core-synthesis's output. (__update was removed
+      // in v0.4 — the runtime always uses genericUpdate.)
+      expect(result!.output).toMatch(/__prefixes:/)
     } finally {
       registerIntrospectionFactory(baselineIntrospection)
       registerDevtoolsFactory(baselineDevtools)

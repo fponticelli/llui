@@ -221,7 +221,6 @@ function tryBuildHandlers(
   if (!stateParam || !msgParam || !ts.isIdentifier(stateParam) || !ts.isIdentifier(msgParam))
     return null
   const stateName = stateParam.text
-  const _msgName = msgParam.text
 
   // Analyze each case clause
   const handlers: ts.PropertyAssignment[] = []
@@ -298,7 +297,7 @@ function tryBuildHandlers(
     }
 
     // Detect array operation pattern for structural block optimization
-    const arrayOp = detectArrayOp(clause, stateName, modifiedFields, structuralMask, caseDirty)
+    const arrayOp = detectArrayOp(clause, modifiedFields, structuralMask, caseDirty)
 
     const handler = buildCaseHandler(f, caseDirty, caseDirtyHi, arrayOp)
     handlers.push(f.createPropertyAssignment(f.createStringLiteral(msgType), handler))
@@ -326,7 +325,6 @@ type ArrayOp =
  */
 function detectArrayOp(
   clause: ts.CaseClause,
-  stateName: string,
   modifiedFields: string[],
   _structuralMask?: number,
   _caseDirty?: number,
@@ -421,7 +419,7 @@ function detectArrayOp(
       // This catches: `const rows = state.rows.slice(); rows[i] = ...; return { ...state, rows }`
       if (ts.isShorthandPropertyAssignment(prop)) {
         const varName = prop.name.text
-        if (hasSliceAssignment(clause, stateName, varName)) {
+        if (hasSliceAssignment(clause, varName)) {
           // Check for strided for-loop: for (let i = 0; i < arr.length; i += STRIDE)
           const stride = detectStrideLoop(clause, varName)
           if (stride > 1) return { type: 'strided', stride }
@@ -484,7 +482,7 @@ function detectStrideLoop(clause: ts.CaseClause, _arrName: string): number {
   return 0
 }
 
-function hasSliceAssignment(clause: ts.CaseClause, stateName: string, varName: string): boolean {
+function hasSliceAssignment(clause: ts.CaseClause, varName: string): boolean {
   function walk(node: ts.Node): boolean {
     // Look for: const varName = stateName.field.slice()
     if (

@@ -85,15 +85,14 @@ describe('Pass 2 — __prefixes emission for path-keyed reactivity', () => {
     // optional chaining — only nested paths use `s?.foo?.bar`).
     expect(out).toMatch(/s\s*=>\s*s\.f0\b/)
     expect(out).toMatch(/s\s*=>\s*s\.f34\b/)
-    // `__update` IS emitted with the trailing `dHi` parameter — the
-    // runtime passes `combinedDirtyHi` as the 6th arg. This component
-    // has no structural primitives, so the Phase 1 block loop isn't
-    // emitted; the assertions focus on the parameter list and the
-    // Phase 2 delegation that threads `dHi` into `__runPhase2`. A
-    // separate test exercises the Phase 1 two-word block gate.
-    expect(out).toContain('__update')
-    expect(out).toMatch(/dHi\s*=\s*0/) // 6th param with default
-    expect(out).toMatch(/__runPhase2\(s,\s*d,\s*dHi,/) // Phase 2 sees dHi
+    // `__update` was removed in v0.4 (Tier 2.4 of the bundle-size cut)
+    // — the runtime always uses `genericUpdate` now. The high-word
+    // dirty mask still threads through processMessages →
+    // setCurrentDirtyMask → genericUpdate → _runPhase2. The remaining
+    // assertions cover the prefix emission shape; the Phase 2
+    // threading is exercised by the runtime tests in
+    // packages/dom/test/prefix-reactivity.test.ts.
+    expect(out).not.toContain('__update')
   })
 
   it('emits __handlers for >31-prefix components with caseDirtyHi when a case touches a high-word field', () => {
@@ -130,11 +129,13 @@ describe('Pass 2 — __prefixes emission for path-keyed reactivity', () => {
     expect(out).toMatch(/__handleMsg\(inst,\s*msg,\s*\d+,\s*\d+,\s*1\)/)
   })
 
-  it('emits a two-word Phase 1 block gate when the component uses structural primitives', () => {
-    // A component with a structural primitive (`branch` / `each` / `show`)
-    // triggers the Phase 1 block loop in `__update`. Its gate must be
-    // two-word so high-word path changes drive block reconciliation
-    // for 32..61-prefix components.
+  it('emits __prefixes with overflow shape for components using structural primitives + high-word paths', () => {
+    // v0.4: the per-component `__update` emission was dropped, so this
+    // test no longer asserts the Phase 1 block-gate shape (that lived
+    // inside __update). The same two-word Phase 1 gate is exercised
+    // inline in `genericUpdate` (packages/dom/src/update-loop.ts:573)
+    // and covered by the runtime tests. Here we just assert that a
+    // component with branch() compiles cleanly and emits __prefixes.
     const src = `
       import { component, div, text, branch } from '@llui/dom'
       export const C = component({
@@ -155,13 +156,8 @@ describe('Pass 2 — __prefixes emission for path-keyed reactivity', () => {
       })
     `
     const out = t(src)
-    expect(out).toContain('__update')
-    // The block-gate predicate ORs the two AND results. Look for the
-    // shape `(bk.mask & d) | (bk.maskHi & dHi)` (whitespace flexible).
-    expect(out).toMatch(/bk\.mask\s*&\s*d/)
-    expect(out).toMatch(/bk\.maskHi\s*&\s*dHi/)
-    // block.reconcile is called with three args (state, dirty, dirtyHi).
-    expect(out).toMatch(/bk\.reconcile\(s,\s*d,\s*dHi\)/)
+    expect(out).not.toContain('__update')
+    expect(out).toContain('__prefixes')
   })
 
   it('emits __prefixes with arrow ordering matching bit positions', () => {
