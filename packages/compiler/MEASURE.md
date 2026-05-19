@@ -1,8 +1,8 @@
 # Compiler measurement procedure
 
-Procedure for v2a Phase 1 baseline measurement and Phase 5 re-measurement (see `docs/proposals/v2-compiler/v2a.md` §4.2, §4.6, §5).
+Reusable measurement methodology for the compiler engine. Originally produced for v2a Phase 1 baseline + Phase 5 re-measurement gate (see `docs/proposals/v2-compiler/v2a.md` §4.2, §4.6, §5).
 
-This file is the contract: re-measurement after the engine extraction must follow the same procedure against the same targets so the deltas are comparable.
+**Status (2026-05):** The v2a baseline was recorded at commit `13d97dc`. v2a shipped without a formal Phase 5 re-measurement — per the project's single-consumer scope (`project_consumer_scope.md`), the formal gate would chase synthetic benchmarks while the actual consumer's wall-clock would surface any real regression. The procedure below remains valid for future measurements; treat the "re-measurement must record its own row" instruction as a recommendation, not a blocking gate.
 
 ## Targets
 

@@ -1,21 +1,23 @@
-// Test-time registration of the introspection module factory.
+// Test-time registration of the introspection + devtools module factories.
 //
-// `@llui/compiler` no longer imports `@llui/compiler-introspection`
-// to avoid a workspace circular dependency (v2c/decomp-26). Tests
-// that exercise agent metadata emission need the factory registered
-// before `transformLlui` runs. This setup file runs once per test
-// process via the vitest.config.ts `setupFiles` option.
+// `@llui/compiler` doesn't depend on its opt-in siblings as PACKAGES
+// (would create a workspace cycle). For test-time wiring, this setup
+// file imports the factory source files via relative paths instead of
+// through the package names — vitest + TS resolve relative paths
+// without requiring a declared workspace dep, so the cycle warning
+// from pnpm goes away while the test setup still gets the factories
+// registered before `transformLlui` runs.
 //
-// Tests that *don't* want introspection (e.g. tests asserting the
-// "introspection disabled" path) can call
-// `registerIntrospectionFactory(null)` to reset before their assert.
+// Tests that *don't* want introspection / devtools (e.g. bundle-strip
+// goldens) call `registerIntrospectionFactory(null)` /
+// `registerDevtoolsFactory(null)` to reset before their assert.
 
 import {
   registerIntrospectionFactory,
   registerDevtoolsFactory,
 } from './src/introspection-factory.js'
-import { introspectionFactory } from '@llui/compiler-introspection'
-import { devtoolsFactory } from '@llui/compiler-devtools'
+import { introspectionFactory } from '../compiler-introspection/src/index.js'
+import { devtoolsFactory } from '../compiler-devtools/src/index.js'
 
 registerIntrospectionFactory(introspectionFactory)
 registerDevtoolsFactory(devtoolsFactory)

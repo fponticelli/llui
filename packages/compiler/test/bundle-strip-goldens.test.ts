@@ -31,8 +31,12 @@ import {
   getIntrospectionFactory,
   getDevtoolsFactory,
 } from '../src/introspection-factory.js'
-import { introspectionFactory } from '@llui/compiler-introspection'
-import { devtoolsFactory } from '@llui/compiler-devtools'
+// Relative-path imports (not package imports) so the compiler package
+// doesn't need to declare its opt-in siblings as devDeps — keeps the
+// production dep graph one-way and avoids pnpm's cyclic-workspace
+// warning. See vitest.setup.ts for the same pattern + rationale.
+import { introspectionFactory } from '../../compiler-introspection/src/index.js'
+import { devtoolsFactory } from '../../compiler-devtools/src/index.js'
 
 const FIXTURE = `
 import { component, div, text } from '@llui/dom'
