@@ -301,6 +301,8 @@ function makeReplacementHandle<S, M, E>(
       return () => listeners.delete(listener)
     },
     getBindingDescriptors() {
+      // Agent-only — see mount.ts's matching guard for rationale.
+      if (typeof __LLUI_AGENT__ === 'undefined' || !__LLUI_AGENT__) return []
       if (disposed) return []
       return getBindingDescriptors(typedInst as ComponentInstance)
     },

@@ -618,6 +618,11 @@ function buildAppHandle<S, M, E>(
       return () => listeners.delete(listener)
     },
     getBindingDescriptors() {
+      // Agent-only — returns an empty array when the build-time flag is
+      // off so callers get a consistent shape. The body's `getBindingDescriptors`
+      // import becomes dead-code-eliminable along with the rest of
+      // `binding-descriptors.ts`.
+      if (typeof __LLUI_AGENT__ === 'undefined' || !__LLUI_AGENT__) return []
       if (disposed) return []
       return getBindingDescriptors(inst as ComponentInstance)
     },

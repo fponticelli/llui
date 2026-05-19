@@ -79,10 +79,18 @@ function createElement<K extends keyof HTMLElementTagNameMap>(
         // through `list_actions`. The lifetime hook removes the
         // entries on scope dispose (item unmount, branch swap, etc.)
         // so the LLM sees only what's currently affordable.
-        const tagged = (value as { __lluiVariants?: readonly string[] } | null | undefined)
-          ?.__lluiVariants
-        if (tagged && tagged.length > 0 && ctx.instance) {
-          registerBindingVariants(ctx.instance, ctx.rootLifetime, tagged)
+        // Agent-only — gated by the build-time `__LLUI_AGENT__` flag.
+        // Vite-plugin sets the flag to `false` by default; consumers
+        // pass `llui({ agent: true })` to flip it. When false, the
+        // bundler dead-codes this branch and `registerBindingVariants`
+        // becomes unreachable, allowing the whole binding-descriptors
+        // module to tree-shake out of the bundle.
+        if (typeof __LLUI_AGENT__ !== 'undefined' && __LLUI_AGENT__) {
+          const tagged = (value as { __lluiVariants?: readonly string[] } | null | undefined)
+            ?.__lluiVariants
+          if (tagged && tagged.length > 0 && ctx.instance) {
+            registerBindingVariants(ctx.instance, ctx.rootLifetime, tagged)
+          }
         }
         el.addEventListener(eventName, value as EventListener)
         continue

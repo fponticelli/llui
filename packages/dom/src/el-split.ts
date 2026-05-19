@@ -40,10 +40,14 @@ export function elSplit(
       // `send({type:'X'})` calls with `Object.assign(arrow,
       // {__lluiVariants: ['X', …]})`. Register those so the agent
       // layer's `list_actions` reflects the live UI affordances.
-      const variants = (handler as { __lluiVariants?: readonly string[] } | null | undefined)
-        ?.__lluiVariants
-      if (variants && variants.length > 0 && ctx.instance) {
-        registerBindingVariants(ctx.instance, ctx.rootLifetime, variants)
+      // Agent-only — gated by `__LLUI_AGENT__`. See elements.ts for
+      // the same pattern + rationale.
+      if (typeof __LLUI_AGENT__ !== 'undefined' && __LLUI_AGENT__) {
+        const variants = (handler as { __lluiVariants?: readonly string[] } | null | undefined)
+          ?.__lluiVariants
+        if (variants && variants.length > 0 && ctx.instance) {
+          registerBindingVariants(ctx.instance, ctx.rootLifetime, variants)
+        }
       }
       el.addEventListener(eventName, handler)
     }

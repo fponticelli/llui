@@ -641,6 +641,26 @@ export default function llui(options: LluiPluginOptions = {}): Plugin {
     name: 'llui',
     enforce: 'pre',
 
+    /**
+     * Build-time feature flags substituted into the runtime bundle.
+     * `__LLUI_AGENT__` gates the binding-descriptors registry in
+     * `@llui/dom`; when `false`, the dead-code eliminator drops the
+     * agent-only paths and the entire `binding-descriptors` module
+     * tree-shakes out (~10 kB savings on a typical bench bundle).
+     *
+     * Resolves to `true` when the consumer passes `agent: true | { … }`
+     * to the plugin; otherwise `false`. Tests that don't go through
+     * the vite-plugin see `typeof __LLUI_AGENT__ === 'undefined'`,
+     * which the runtime guard treats as off.
+     */
+    config() {
+      return {
+        define: {
+          __LLUI_AGENT__: JSON.stringify(Boolean(agent)),
+        },
+      }
+    },
+
     async configResolved(config) {
       devMode = config.command === 'serve' || config.mode === 'development'
       crossFileRoot = config.root
