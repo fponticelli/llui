@@ -92,6 +92,21 @@ export function agentMsgResolvableModule(): CompilerModule {
             const msgText = msgArg.getText(sf)
             const effectText = effectArg ? effectArg.getText(sf) : 'never'
 
+            // Keyword Msg types — `never`, `void`, `undefined`, `unknown`,
+            // `any` — are the canonical "no messages" shape for
+            // utility/side-effect components like a Vike Page that only
+            // renders. Skip the resolvability check; no annotations
+            // are expected for those.
+            if (
+              msgArg.kind === ts.SyntaxKind.NeverKeyword ||
+              msgArg.kind === ts.SyntaxKind.VoidKeyword ||
+              msgArg.kind === ts.SyntaxKind.UndefinedKeyword ||
+              msgArg.kind === ts.SyntaxKind.UnknownKeyword ||
+              msgArg.kind === ts.SyntaxKind.AnyKeyword
+            ) {
+              ts.forEachChild(n, walk)
+              return
+            }
             // Identifier-typed arg is the only resolvable shape.
             if (!ts.isTypeReferenceNode(msgArg) || !ts.isIdentifier(msgArg.typeName)) {
               ctx.reportDiagnostic({

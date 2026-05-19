@@ -57,16 +57,28 @@ function isBoundedInitializer(sf: ts.SourceFile, init: ts.Expression): boolean {
 }
 
 function isBoundedSpreadSource(sf: ts.SourceFile, expr: ts.Expression): boolean {
-  if (ts.isIdentifier(expr)) {
-    const init = resolveTopLevelConstInit(sf, expr.text)
+  // Strip parens + `as` casts before classifying — `...(cond ? a : b)`
+  // wraps the conditional in a ParenthesizedExpression; `...x as never`
+  // wraps in an AsExpression.
+  let e: ts.Expression = expr
+  while (ts.isParenthesizedExpression(e) || ts.isAsExpression(e)) e = e.expression
+  if (ts.isIdentifier(e)) {
+    const init = resolveTopLevelConstInit(sf, e.text)
     if (!init) return false
     return isBoundedInitializer(sf, init)
   }
-  if (ts.isCallExpression(expr)) {
-    if (ts.isPropertyAccessExpression(expr.expression) && ts.isIdentifier(expr.expression.name)) {
-      const method = expr.expression.name.text
+  // Inline array literal — `[...[a, b]]` is degenerate but bounded.
+  if (ts.isArrayLiteralExpression(e)) return true
+  // Ternary `cond ? [literal] : []` is a conditional-render pattern;
+  // both branches must be bounded for the whole spread to be bounded.
+  if (ts.isConditionalExpression(e)) {
+    return isBoundedSpreadSource(sf, e.whenTrue) && isBoundedSpreadSource(sf, e.whenFalse)
+  }
+  if (ts.isCallExpression(e)) {
+    if (ts.isPropertyAccessExpression(e.expression) && ts.isIdentifier(e.expression.name)) {
+      const method = e.expression.name.text
       if (!ARRAY_ITERATION_METHODS.has(method)) return true
-      return isBoundedArrayReceiver(sf, expr.expression.expression)
+      return isBoundedArrayReceiver(sf, e.expression.expression)
     }
     return true
   }

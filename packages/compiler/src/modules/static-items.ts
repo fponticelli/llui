@@ -83,7 +83,19 @@ export function staticItemsModule(): CompilerModule {
                   if (ts.isArrowFunction(v) || ts.isFunctionExpression(v)) {
                     let isStatic = false
                     if (v.parameters.length === 0) {
-                      isStatic = v.body ? !bodyMayRead(v.body) : true
+                      // Zero-param zero-arg `() => Foo` where Foo is a
+                      // bare identifier is an explicit opt-in to a
+                      // known-static list (the author named a const
+                      // and pointed `items` at it). The footgun pattern
+                      // is `() => [1,2,3]` / `() => {…}` (anonymous
+                      // literal); the named-const case is a legitimate
+                      // pattern and shouldn't fire.
+                      const body = v.body
+                      if (body && ts.isIdentifier(body)) {
+                        isStatic = false
+                      } else {
+                        isStatic = body ? !bodyMayRead(body) : true
+                      }
                     } else if (v.parameters.length === 1) {
                       const param = v.parameters[0]!
                       if (ts.isIdentifier(param.name)) {

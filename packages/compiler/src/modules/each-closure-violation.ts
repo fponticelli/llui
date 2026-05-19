@@ -196,7 +196,21 @@ export function eachClosureViolationModule(): CompilerModule {
                   // Walk every identifier reference inside renderFn
                   // body and detect captures. Skip identifiers used
                   // as object/property names (those aren't references).
+                  // Also skip identifiers inside TypeNode positions —
+                  // type names like `(s: State) => …` are erased at
+                  // runtime, so flagging them as captures is a false
+                  // positive.
                   const checkIds = (m: ts.Node): void => {
+                    if (
+                      ts.isTypeNode(m) ||
+                      ts.isTypeAliasDeclaration(m) ||
+                      ts.isInterfaceDeclaration(m)
+                    ) {
+                      // Don't descend into type annotations / type
+                      // declarations — those identifiers are types, not
+                      // values.
+                      return
+                    }
                     if (ts.isIdentifier(m)) {
                       // Skip if this identifier is being declared, not referenced.
                       const parent = m.parent

@@ -75,7 +75,26 @@ export function agentNonextractableHandlerModule(): CompilerModule {
             ) {
               const first = n.arguments[0]
               let nonextractable = false
-              if (!first || !ts.isObjectLiteralExpression(first)) {
+              // Translator-passthrough exemption: `(m) => send(m)` or
+              // `(m) => send(m as never)` is a library-Msg forwarder.
+              // The actual dispatched type comes from the library's
+              // own variants, surfaced via the universal handler-tagger
+              // (binding-descriptors), not from this call site. The
+              // ESLint rule didn't have this exemption explicitly, but
+              // form-validation's `form.connect((s) => s.form, (m) => send(m as never))`
+              // pattern is the canonical case — flagging it is noise.
+              const isPassthroughId = (e: ts.Node): boolean => {
+                let cur: ts.Node = e
+                while (ts.isAsExpression(cur) || ts.isParenthesizedExpression(cur)) {
+                  cur = cur.expression
+                }
+                return ts.isIdentifier(cur)
+              }
+              if (!first) {
+                nonextractable = true
+              } else if (isPassthroughId(first)) {
+                // Bare identifier (possibly `as`-cast) — passthrough.
+              } else if (!ts.isObjectLiteralExpression(first)) {
                 nonextractable = true
               } else if (readTypeLiteral(first) === null) {
                 nonextractable = true
