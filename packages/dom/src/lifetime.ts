@@ -93,7 +93,13 @@ export function disposeLifetime(scope: Lifetime, skipParentRemoval = false): voi
     // is meant to capture every scope the app destroys, not only ones
     // that had attached work. Outer flag check keeps production (no
     // devtools ever installed) at true zero cost — no parent-chain walk.
-    if (anyDisposerLogInstalled) {
+    // Dev-only — wrapped in `import.meta.env?.DEV` so the bundler dead-
+    // codes the whole block (including `findInstance` and the parent-
+    // chain walk) in production. `anyDisposerLogInstalled` is a static
+    // module-level flag never set to true in non-dev runs, so the
+    // dropped branch was already unreachable; this guard makes the
+    // unreachability bundler-visible.
+    if (import.meta.env?.DEV && anyDisposerLogInstalled) {
       const inst = findInstance(scope)
       if (inst?._disposerLog !== undefined) {
         inst._disposerLog.push({
@@ -125,7 +131,8 @@ export function disposeLifetime(scope: Lifetime, skipParentRemoval = false): voi
   // Dev-only: emit disposer events into the owning instance's log.
   // Outer flag check keeps production (no devtools ever installed) at
   // true zero cost — skips the O(depth) parent-chain walk entirely.
-  if (anyDisposerLogInstalled) {
+  // Dev-only — see disposeLifetime for rationale.
+  if (import.meta.env?.DEV && anyDisposerLogInstalled) {
     const inst = findInstance(scope)
     if (inst?._disposerLog !== undefined) {
       inst._disposerLog.push({
@@ -189,7 +196,13 @@ export function disposeLifetimesBulk(scopes: Lifetime[]): void {
     const disposers = scope.disposers
     for (let d = 0; d < disposers.length; d++) disposers[d]!()
     // Dev-only: emit disposer events — same guard as disposeLifetime.
-    if (anyDisposerLogInstalled) {
+    // Dev-only — wrapped in `import.meta.env?.DEV` so the bundler dead-
+    // codes the whole block (including `findInstance` and the parent-
+    // chain walk) in production. `anyDisposerLogInstalled` is a static
+    // module-level flag never set to true in non-dev runs, so the
+    // dropped branch was already unreachable; this guard makes the
+    // unreachability bundler-visible.
+    if (import.meta.env?.DEV && anyDisposerLogInstalled) {
       const inst = findInstance(scope)
       if (inst?._disposerLog !== undefined) {
         inst._disposerLog.push({

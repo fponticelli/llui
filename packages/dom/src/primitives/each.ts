@@ -115,44 +115,50 @@ export function each<S, T, M = unknown>(opts: EachOptions<S, T, M>): Node[] {
 
   // Dev-only diff tracking: if the owning component has an _eachDiffLog
   // (installed by devtools), we capture key sets before/after each
-  // key-mutating reconcile call and emit an EachDiff entry. The siteId
-  // is derived from this each() block's position in the flat block
-  // array at registration time — stable for the lifetime of the block.
+  // key-mutating reconcile call and emit an EachDiff entry. Wrapped in
+  // `import.meta.env?.DEV` so production builds dead-code the entire
+  // block — saves ~1-2 kB in the prod bundle. The reconcile-side call
+  // sites are also gated below; the stubs (`null`/no-op) keep types
+  // and call sites consistent across modes.
   const inst = ctx.instance
-  const eachSiteId = inst?._eachDiffLog !== undefined ? `each#${blocks.length}` : ''
-  const snapshotKeys = (): string[] | null => {
-    if (inst?._eachDiffLog === undefined) return null
-    const keys: string[] = []
-    for (let i = 0; i < entries.length; i++) keys.push(String(entries[i]!.key))
-    return keys
-  }
-  const emitDiff = (oldKeys: string[] | null): void => {
-    if (oldKeys === null || inst?._eachDiffLog === undefined) return
-    const newKeys: string[] = []
-    for (let i = 0; i < entries.length; i++) newKeys.push(String(entries[i]!.key))
-    const oldKeySet = new Set(oldKeys)
-    const newKeySet = new Set(newKeys)
-    const added: string[] = []
-    const removed: string[] = []
-    const moved: Array<{ key: string; from: number; to: number }> = []
-    const reused: string[] = []
-    for (const k of newKeys) if (!oldKeySet.has(k)) added.push(k)
-    for (const k of oldKeys) if (!newKeySet.has(k)) removed.push(k)
-    for (let i = 0; i < newKeys.length; i++) {
-      const k = newKeys[i]!
-      if (!oldKeySet.has(k)) continue
-      const from = oldKeys.indexOf(k)
-      if (from !== i) moved.push({ key: k, from, to: i })
-      else reused.push(k)
+  let snapshotKeys: () => string[] | null = () => null
+  let emitDiff: (oldKeys: string[] | null) => void = () => {}
+  if (import.meta.env?.DEV) {
+    const eachSiteId = inst?._eachDiffLog !== undefined ? `each#${blocks.length}` : ''
+    snapshotKeys = (): string[] | null => {
+      if (inst?._eachDiffLog === undefined) return null
+      const keys: string[] = []
+      for (let i = 0; i < entries.length; i++) keys.push(String(entries[i]!.key))
+      return keys
     }
-    inst._eachDiffLog.push({
-      updateIndex: inst._updateCounter ?? 0,
-      eachSiteId,
-      added,
-      removed,
-      moved,
-      reused,
-    })
+    emitDiff = (oldKeys: string[] | null): void => {
+      if (oldKeys === null || inst?._eachDiffLog === undefined) return
+      const newKeys: string[] = []
+      for (let i = 0; i < entries.length; i++) newKeys.push(String(entries[i]!.key))
+      const oldKeySet = new Set(oldKeys)
+      const newKeySet = new Set(newKeys)
+      const added: string[] = []
+      const removed: string[] = []
+      const moved: Array<{ key: string; from: number; to: number }> = []
+      const reused: string[] = []
+      for (const k of newKeys) if (!oldKeySet.has(k)) added.push(k)
+      for (const k of oldKeys) if (!newKeySet.has(k)) removed.push(k)
+      for (let i = 0; i < newKeys.length; i++) {
+        const k = newKeys[i]!
+        if (!oldKeySet.has(k)) continue
+        const from = oldKeys.indexOf(k)
+        if (from !== i) moved.push({ key: k, from, to: i })
+        else reused.push(k)
+      }
+      inst._eachDiffLog.push({
+        updateIndex: inst._updateCounter ?? 0,
+        eachSiteId,
+        added,
+        removed,
+        moved,
+        reused,
+      })
+    }
   }
 
   const block: StructuralBlock = {
