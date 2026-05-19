@@ -17,7 +17,7 @@
 import ts from 'typescript'
 import { rangeFromOffsets } from '../diagnostic.js'
 import type { CompilerModule } from '../module.js'
-import { forEachMsgVariant } from './_msg-variants.js'
+import { forEachMsgVariant, forEachMsgVariantInExternalSource } from './_msg-variants.js'
 
 interface CaseInfo {
   literalKinds: Set<string>
@@ -117,10 +117,27 @@ export function agentEmitsDriftModule(): CompilerModule {
         const caseInfoByVariant = new Map<string, CaseInfo>()
         indexSwitchCases(sf, caseInfoByVariant)
         if (caseInfoByVariant.size === 0) return
-        forEachMsgVariant(sf, ({ variant, node: typeLit, leadingCommentText }) => {
+
+        // Driver that runs the drift-check on a single Msg variant.
+        // Hoisted so we can call it for both file-local variants and
+        // cross-file (imported) Msg variants without duplicating the
+        // diff logic.
+        const check = (
+          variant: string,
+          typeLit: ts.TypeLiteralNode,
+          leadingCommentText: string,
+          variantSf: ts.SourceFile,
+        ): void => {
           const declared = readEmits(leadingCommentText)
           const caseInfo = caseInfoByVariant.get(variant)
           if (!caseInfo) return
+          // Anchor diagnostics on the local file when the Msg variant
+          // lives in the same file; on the external Msg file when it's
+          // imported. Adapters that surface diagnostics by file
+          // (vite-plugin's this.error) will route the error to the
+          // right place.
+          const anchorFile = variantSf.fileName
+          const anchorText = variantSf.text
           // Drift 1: literal emissions not in @emits — always warn.
           for (const kind of caseInfo.literalKinds) {
             if (!declared.includes(kind)) {
@@ -133,8 +150,12 @@ export function agentEmitsDriftModule(): CompilerModule {
                   `declare it in @emits. Either add "${kind}" to the @emits list ` +
                   `(\`@emits("${kind}")\`), or remove the literal effect emission.`,
                 location: {
-                  file: sf.fileName,
-                  range: rangeFromOffsets(sf.text, typeLit.getStart(sf), typeLit.getEnd()),
+                  file: anchorFile,
+                  range: rangeFromOffsets(
+                    anchorText,
+                    typeLit.getStart(variantSf),
+                    typeLit.getEnd(),
+                  ),
                 },
               })
             }
@@ -153,14 +174,43 @@ export function agentEmitsDriftModule(): CompilerModule {
                     `emits it as a literal effect. Either remove "${kind}" from @emits, or add ` +
                     `the emission (\`return [state, [{ kind: '${kind}', … }]]\`).`,
                   location: {
-                    file: sf.fileName,
-                    range: rangeFromOffsets(sf.text, typeLit.getStart(sf), typeLit.getEnd()),
+                    file: anchorFile,
+                    range: rangeFromOffsets(
+                      anchorText,
+                      typeLit.getStart(variantSf),
+                      typeLit.getEnd(),
+                    ),
                   },
                 })
               }
             }
           }
+        }
+
+        // File-local Msg variants — the common case.
+        forEachMsgVariant(sf, ({ variant, node: typeLit, leadingCommentText }) => {
+          check(variant, typeLit, leadingCommentText, sf)
         })
+
+        // Cross-file Msg: when `component<S, ImportedMsg, E>()` resolved
+        // the M type arg to another file, the host adapter passes the
+        // declaring source here. Iterate its variants too so @emits
+        // drift surfaces against imported Msg unions.
+        const externalMsg = ctx.externalTypes?.msg
+        if (externalMsg) {
+          forEachMsgVariantInExternalSource(
+            externalMsg.source,
+            // Synthetic filename — adapters that report by file get a
+            // recognisable marker. The vite-plugin doesn't currently
+            // map this back to the real on-disk path; future work.
+            `<external:${externalMsg.typeName}>`,
+            externalMsg.typeName,
+            ({ variant, node: typeLit, leadingCommentText }) => {
+              const externalSf = typeLit.getSourceFile()
+              check(variant, typeLit, leadingCommentText, externalSf)
+            },
+          )
+        }
       },
     },
   }

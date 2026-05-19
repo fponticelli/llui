@@ -566,7 +566,10 @@ export function transformLlui(
     }),
   )
   const registry = new ModuleRegistry(activeModules)
-  const registryResult = registry.run(sourceFile)
+  // `typeSources` flows through to lint modules that need cross-file
+  // visibility (e.g. agent-emits-drift's imported-Msg case). Same
+  // shape as `ModuleExternalTypes`.
+  const registryResult = registry.run(sourceFile, undefined, typeSources)
   // The registry phases (preTransform v2c/decomp-7, transformCall
   // v2c/decomp-11/12) may have mutated the source file — replace our
   // local reference so all subsequent code (fieldBits, visitor,
@@ -1399,7 +1402,10 @@ function cleanupImports(
   }
 
   const newBindings = f.createNamedImports(remaining)
-  const newClause = f.createImportClause(false, undefined, newBindings)
+  // New TS 6 signature: first arg is `phaseModifier` (undefined =
+  // regular import; `ts.SyntaxKind.TypeKeyword` = `import type`).
+  // The legacy boolean overload is deprecated.
+  const newClause = f.createImportClause(undefined, undefined, newBindings)
   const newImportDecl = f.createImportDeclaration(undefined, newClause, lluiImport.moduleSpecifier)
 
   let replaced = false
@@ -1409,7 +1415,10 @@ function cleanupImports(
       ts.isImportDeclaration(stmt) &&
       ts.isStringLiteral(stmt.moduleSpecifier) &&
       stmt.moduleSpecifier.text === '@llui/dom' &&
-      !stmt.importClause?.isTypeOnly
+      // `phaseModifier === ts.SyntaxKind.TypeKeyword` is `import type
+      // …`; we only want to rewrite value imports. Replaces deprecated
+      // `isTypeOnly` from the TS<6 API.
+      stmt.importClause?.phaseModifier !== ts.SyntaxKind.TypeKeyword
     ) {
       replaced = true
       return newImportDecl

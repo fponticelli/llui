@@ -56,6 +56,24 @@ export interface FileAnalysis {
  * Compiler-API checker, the project root, sibling-module findings if
  * dependencies allow).
  */
+/**
+ * Resolved external type sources for the file under analysis. Same
+ * shape as `transform.ts`'s `ExternalTypeSources`; declared here as a
+ * structural minimum so the module registry doesn't import from the
+ * umbrella. The host adapter (vite-plugin) supplies the values via
+ * its async cross-file resolver (`findTypeSource`).
+ *
+ * Always undefined for test-only `transformLlui(source, fileName)`
+ * invocations and for lint adapters without import resolution. Modules
+ * that consume this should fall back to file-local behaviour when
+ * absent.
+ */
+export interface ModuleExternalTypes {
+  state?: { source: string; typeName: string }
+  msg?: { source: string; typeName: string }
+  effect?: { source: string; typeName: string }
+}
+
 export interface AnalysisContext {
   sourceFile: ts.SourceFile
   /** TS TypeChecker, when the host adapter has built a Program. May be undefined for AST-only paths. */
@@ -69,6 +87,12 @@ export interface AnalysisContext {
   getSlot<T>(moduleName: string, init: () => T): T
   /** Record a diagnostic. The diagnostic's `id` should match one declared in `DiagnosticDefinition[]`. */
   reportDiagnostic(d: Diagnostic): void
+  /**
+   * External type sources from the host adapter's cross-file resolver.
+   * Undefined when the host doesn't supply them (test path, lint-only
+   * adapters without import resolution).
+   */
+  externalTypes?: ModuleExternalTypes
 }
 
 export interface EmissionContribution {
@@ -283,7 +307,11 @@ export class ModuleRegistry {
    *   4. Emission: each module's `emit?` fires; the registry merges
    *      contributions, detecting (field, target) conflicts.
    */
-  run(sourceFile: ts.SourceFile, checker?: ts.TypeChecker): RegistryRunResult {
+  run(
+    sourceFile: ts.SourceFile,
+    checker?: ts.TypeChecker,
+    externalTypes?: ModuleExternalTypes,
+  ): RegistryRunResult {
     const analysis: FileAnalysis = {
       sourceFile,
       perModule: new Map(),
@@ -319,6 +347,7 @@ export class ModuleRegistry {
       reportDiagnostic: (d) => {
         analysis.diagnostics.push(d)
       },
+      externalTypes,
     }
 
     // Phase 2: single-pass visitor walk over the (possibly

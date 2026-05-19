@@ -63,10 +63,38 @@ function collectComponentMsgArgNames(sf: ts.SourceFile): Set<string> {
 
 export function forEachMsgVariant(sf: ts.SourceFile, callback: (v: MsgVariant) => void): void {
   const componentMsgNames = collectComponentMsgArgNames(sf)
+  forEachMsgVariantIn(sf, componentMsgNames, callback)
+}
+
+/**
+ * Iterate variants of a SPECIFIC named Msg alias in an arbitrary
+ * source file. Used by lint modules that have a cross-file Msg source
+ * (typically the file declaring an imported `type Msg`) and need to
+ * iterate its variants in addition to whatever the file-local pass
+ * found. The alias name is required because the importing file may
+ * rename the alias; pass the alias name as it appears in the
+ * declaring file.
+ */
+export function forEachMsgVariantInExternalSource(
+  externalSource: string,
+  externalFileName: string,
+  aliasName: string,
+  callback: (v: MsgVariant) => void,
+): void {
+  const sf = ts.createSourceFile(externalFileName, externalSource, ts.ScriptTarget.Latest, true)
+  // Tight match: ONLY iterate the alias whose name was passed in.
+  forEachMsgVariantIn(sf, new Set([aliasName]), callback)
+}
+
+function forEachMsgVariantIn(
+  sf: ts.SourceFile,
+  matchAliasNames: Set<string>,
+  callback: (v: MsgVariant) => void,
+): void {
   for (const stmt of sf.statements) {
     if (!ts.isTypeAliasDeclaration(stmt)) continue
     const aliasName = stmt.name.text
-    if (aliasName !== 'Msg' && !componentMsgNames.has(aliasName)) continue
+    if (aliasName !== 'Msg' && !matchAliasNames.has(aliasName)) continue
     const ann = stmt.type
     if (!ts.isUnionTypeNode(ann)) continue
     let prevEnd = stmt.getStart(sf)

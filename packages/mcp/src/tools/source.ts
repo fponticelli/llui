@@ -1,6 +1,8 @@
 import { execSync } from 'node:child_process'
-import { existsSync } from 'node:fs'
+import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs'
+import { join, relative } from 'node:path'
 import { z } from 'zod'
+import { transformLlui } from '@llui/compiler'
 import type { ToolRegistry } from '../tool-registry.js'
 import { findWorkspaceRoot } from '../index.js'
 
@@ -81,11 +83,112 @@ export function registerSourceTools(registry: ToolRegistry): void {
     },
   )
 
-  // The `llui_lint_project` tool was removed in the lint→compiler
-  // migration (commit lint-migration-final). All LLui-specific lint
-  // rules now emit as compiler errors via `@llui/compiler`; the build
-  // pipeline surfaces them through `@llui/vite-plugin`. A future MCP
-  // tool can expose those compiler diagnostics directly if needed.
+  registry.register(
+    {
+      name: 'llui_compiler_diagnostics',
+      description:
+        'Run @llui/compiler against every .ts/.tsx file in a directory and return the union of structured diagnostics. Each diagnostic has { id, severity, category, message, location: { file, range } } — same shape the vite-plugin surfaces as build errors. Use this to inspect a project for LLui rule violations without spinning up a full Vite build.',
+      schema: z.object({
+        rootDir: z.string().optional().describe('Directory to scan (defaults to workspace root)'),
+        idFilter: z
+          .string()
+          .optional()
+          .describe(
+            'Optional substring filter on diagnostic id — e.g. "agent-emits" matches both agent-emits-drift entries.',
+          ),
+      }),
+    },
+    'source',
+    async (args, _ctx) => {
+      const rootDir = args.rootDir ?? findWorkspaceRoot()
+      const idFilter = args.idFilter
+      const files = collectTsFiles(rootDir)
+      const diagnostics: Array<{
+        id: string
+        severity: string
+        category: string
+        message: string
+        file: string
+        line: number
+        column: number
+      }> = []
+      let scanned = 0
+      let failed = 0
+      for (const file of files) {
+        scanned++
+        let source: string
+        try {
+          source = readFileSync(file, 'utf8')
+        } catch {
+          failed++
+          continue
+        }
+        let result: ReturnType<typeof transformLlui>
+        try {
+          result = transformLlui(source, file)
+        } catch (err) {
+          failed++
+          diagnostics.push({
+            id: 'llui/internal-error',
+            severity: 'error',
+            category: 'internal',
+            message: `transformLlui threw: ${(err as Error).message ?? String(err)}`,
+            file: relative(rootDir, file),
+            line: 1,
+            column: 1,
+          })
+          continue
+        }
+        if (!result) continue
+        for (const d of result.diagnostics) {
+          if (idFilter && !d.id.includes(idFilter)) continue
+          diagnostics.push({
+            id: d.id,
+            severity: d.severity,
+            category: d.category,
+            message: d.message,
+            file: relative(rootDir, d.location.file),
+            line: d.location.range.start.line + 1,
+            column: d.location.range.start.column + 1,
+          })
+        }
+      }
+      return { scanned, failed, diagnostics }
+    },
+  )
+}
+
+const SKIP_DIRS = new Set(['node_modules', 'dist', 'build', '.git', '.turbo', '__fixtures__'])
+
+function collectTsFiles(rootDir: string): string[] {
+  const out: string[] = []
+  const walk = (dir: string): void => {
+    let entries: string[]
+    try {
+      entries = readdirSync(dir)
+    } catch {
+      return
+    }
+    for (const entry of entries) {
+      if (SKIP_DIRS.has(entry)) continue
+      if (entry.startsWith('.') && entry !== '.eslintrc.ts') continue
+      const full = join(dir, entry)
+      let st
+      try {
+        st = statSync(full)
+      } catch {
+        continue
+      }
+      if (st.isDirectory()) {
+        walk(full)
+      } else if (st.isFile() && (entry.endsWith('.ts') || entry.endsWith('.tsx'))) {
+        if (entry.endsWith('.d.ts')) continue
+        out.push(full)
+      }
+    }
+  }
+  walk(rootDir)
+  return out
 }
 
 interface GrepHit {
