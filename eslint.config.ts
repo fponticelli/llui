@@ -126,7 +126,6 @@ export default tseslint.config(
       'llui/accessibility': 'error',
       'llui/controlled-input': 'error',
       'llui/static-on': 'error',
-      'llui/exhaustive-update': 'error',
     },
   },
 )

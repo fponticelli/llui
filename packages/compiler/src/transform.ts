@@ -51,6 +51,11 @@ import { accessorSideEffectModule } from './modules/accessor-side-effect.js'
 import { stateMutationModule } from './modules/state-mutation.js'
 import { effectWithoutHandlerModule } from './modules/effect-without-handler.js'
 import { exhaustiveEffectHandlingModule } from './modules/exhaustive-effect-handling.js'
+import { noEagerItemAccessorModule } from './modules/no-eager-item-accessor.js'
+import { pureUpdateFunctionModule } from './modules/pure-update-function.js'
+import { exhaustiveUpdateModule } from './modules/exhaustive-update.js'
+import { noLetReactiveAccessorModule } from './modules/no-let-reactive-accessor.js'
+import { eachClosureViolationModule } from './modules/each-closure-violation.js'
 
 export function createMaskLiteral(f: ts.NodeFactory, mask: number): ts.Expression {
   if (mask >= 0) return f.createNumericLiteral(mask)
@@ -397,6 +402,11 @@ export function transformLlui(
   activeModules.push(stateMutationModule())
   activeModules.push(effectWithoutHandlerModule())
   activeModules.push(exhaustiveEffectHandlingModule())
+  activeModules.push(noEagerItemAccessorModule())
+  activeModules.push(pureUpdateFunctionModule())
+  activeModules.push(exhaustiveUpdateModule())
+  activeModules.push(noLetReactiveAccessorModule())
+  activeModules.push(eachClosureViolationModule())
   // eachMemoModule wraps allocating each() items accessors in
   // `memo(...)` via `transformCallEnter`. Activated when the file
   // has any reactive paths (mirrors the inline call's gating).
