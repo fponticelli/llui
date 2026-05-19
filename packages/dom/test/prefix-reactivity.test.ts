@@ -12,7 +12,6 @@ import {
   createComponentInstance,
   flushInstance,
   computeDirtyFromPrefixes,
-  _handleMsg,
 } from '../src/update-loop'
 import { createBinding } from '../src/binding'
 import { applyBinding } from '../src/binding'
@@ -294,71 +293,9 @@ describe('component with __prefixes opts into path-keyed reactivity', () => {
     expect(f0FireCount).toBe(1)
   })
 
-  it("dispatches a high-word case through __handlers' single-message fast path", () => {
-    // Same 35-prefix shape, but this time wire `__handlers` so the
-    // single-message fast path in `processMessages` engages. The
-    // compiler emits `__handleMsg(inst, msg, caseDirty, method,
-    // caseDirtyHi)` for cases that touch high-word fields; this test
-    // hand-builds that shape and verifies the high-word binding fires.
-    type Big = Record<string, number>
-    const prefixes: Array<(s: unknown) => unknown> = []
-    for (let i = 0; i < 35; i++) {
-      const key = `f${i}`
-      prefixes.push((s) => (s as Big)[key])
-    }
-    const initial: Big = {}
-    for (let i = 0; i < 35; i++) initial[`f${i}`] = 0
-
-    type M = { type: 'bumpF33' }
-    const def: ComponentDef<Big, M, never> = {
-      name: 'BigHandlerComponent',
-      init: () => [initial, []],
-      update: (s, m) => {
-        switch (m.type) {
-          case 'bumpF33':
-            return [{ ...s, f33: s.f33! + 1 }, []]
-        }
-      },
-      view: () => [],
-      __prefixes: prefixes,
-      __handlers: {
-        bumpF33: (inst, msg) =>
-          _handleMsg(
-            inst as Parameters<typeof _handleMsg>[0],
-            msg,
-            0, // caseDirty: nothing low-word
-            -1, // skip Phase 1 blocks (none)
-            1 << 2, // caseDirtyHi: f33 is high-word bit 2
-          ) as [Big, never[]],
-      },
-    }
-    const inst = createComponentInstance(def)
-
-    let f33FireCount = 0
-    createBinding(inst.rootLifetime, {
-      mask: 0,
-      maskHi: 1 << 2,
-      accessor: (s) => {
-        f33FireCount++
-        return String((s as Big).f33)
-      },
-      kind: 'text',
-      node: document.createTextNode(''),
-      perItem: false,
-    })
-    for (const b of inst.rootLifetime.bindings) {
-      inst.allBindings.push(b as Binding)
-      ;(b as Binding).lastValue = (b as Binding).accessor(inst.state)
-    }
-    f33FireCount = 0
-
-    inst.send({ type: 'bumpF33' })
-    flushInstance(inst)
-    // _handleMsg ran via the __handlers fast path AND threaded the
-    // high-word mask into _runPhase2's gate.
-    expect((inst.state as Big).f33).toBe(1)
-    expect(f33FireCount).toBe(1)
-  })
+  // `__handlers` fast-path test removed in v0.4 Tier 5 — that emission
+  // was dropped. The same high-word reactivity is covered by the
+  // sibling test above (it dispatches through the generic pipeline now).
 
   it('throws at mount if a user-authored __dirty slips through', () => {
     // `__dirty` is no longer accepted on ComponentDef — it's a runtime

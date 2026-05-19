@@ -107,58 +107,30 @@ function tryInjectDirty(
     topLevelBitsHi.set(topField, (topLevelBitsHi.get(topField) ?? 0) | bit)
   }
 
-  // Structural mask — used by both __update and __handlers
+  // Structural mask — used by __handlers.
   const structuralMask = computeStructuralMask(configArg, fieldBits)
 
-  const updateBody = buildUpdateBody(f, structuralMask)
-  // `dHi` is the high-word dirty mask, appended as the trailing
-  // positional arg so stale 5-param compiled bundles continue to gate
-  // correctly: the runtime calls `__update(s, d, b, bl, p, dHi)`,
-  // old bundles' 5-param arrow ignores the extra arg (for ≤31-prefix
-  // components dHi is always 0 anyway). New bundles use it for
-  // precise two-word Phase 1 gating.
-  const updateFn = f.createArrowFunction(
-    undefined,
-    undefined,
-    [
-      f.createParameterDeclaration(undefined, undefined, 's'),
-      f.createParameterDeclaration(undefined, undefined, 'd'),
-      f.createParameterDeclaration(undefined, undefined, 'b'),
-      f.createParameterDeclaration(undefined, undefined, 'bl'),
-      f.createParameterDeclaration(undefined, undefined, 'p'),
-      f.createParameterDeclaration(
-        undefined,
-        undefined,
-        'dHi',
-        undefined,
-        undefined,
-        f.createNumericLiteral(0),
-      ),
-    ],
-    undefined,
-    f.createToken(ts.SyntaxKind.EqualsGreaterThanToken),
-    updateBody,
-  )
-  const updateProp = f.createPropertyAssignment('__update', updateFn)
+  // v0.4 size-cut (Tier 2.4): the `__update` fast-path emission was
+  // removed. Empirically (see benchmarks/bundle-baseline.json + the
+  // strategy comparison in earlier work) it provided only ~3% wall-time
+  // improvement on a 200-binding sparse-update workload, but cost 200-400
+  // bytes per compiled component plus the dispatch branch in
+  // processMessages. The runtime always uses genericUpdate now.
 
-  // __handlers: per-message-type specialized update functions.
-  // Analyzes the update() switch/case and generates direct handlers
-  // that bypass the generic Phase 1/2 pipeline for single-message updates.
-  const handlersProp = tryBuildHandlers(configArg, topLevelBits, topLevelBitsHi, structuralMask, f)
+  // v0.4 size-cut (Tier 5): the `__handlers` fast-path emission was also
+  // dropped. Like __update, it duplicated the user's `update()` switch
+  // body per Msg variant and lived behind a dispatch branch in
+  // processMessages. The bytes savings (entire per-variant arrow bodies
+  // + the runtime branch + _handleMsg + structuralMask emission) outweigh
+  // the small perf win on single-message dispatches — every update now
+  // goes through the unified processMessages → genericUpdate path.
+  void structuralMask
+  void topLevelBitsHi
 
-  // Both `__update` and `__handlers` carry two-word gates: `__update`'s
-  // Phase 1 block loop uses `(mask & d) | (maskHi & dHi)`, and
-  // `__handlers` passes `caseDirtyHi` to `_handleMsg` which gates blocks
-  // against both words. `dHi` defaults to 0 so any stale 5-arg call site
-  // still works. `__dirty` is no longer emitted — `__prefixes` (below)
-  // is strictly more precise, and the runtime throws on hand-authored
-  // `__dirty`. `__maskLegend` survives because the agent layer uses it
-  // to decode runtime dirty masks back to top-level field names.
   // `__maskLegend` is emitted by `maskLegendModule` via the registry
   // bridge (v2c/decomp-9); the umbrella's `applyRegistryEmissions` step
   // splices it into the same config-arg literal we return here.
-  const extraProps: ts.ObjectLiteralElementLike[] = [updateProp]
-  if (handlersProp) extraProps.push(handlersProp)
+  const extraProps: ts.ObjectLiteralElementLike[] = []
 
   // __prefixes: opt-in path-keyed reactivity (see
   // docs/proposals/unified-composition-model.md). One closure per
@@ -727,278 +699,6 @@ function computeStructuralMask(
 
   walk(viewProp.initializer)
   return foundStructural ? mask || 0xffffffff | 0 : 0
-}
-
-/**
- * Build the __update function body:
- * {
- *   // Phase 1 — structural reconciliation (gated by structuralMask)
- *   if (d & structuralMask) {
- *     for (let i = 0; i < bl.length; i++) {
- *       const bk = bl[i]
- *       if (!bk || (bk.mask & d) === 0) continue
- *       bk.reconcile(s, d)
- *     }
- *     // Compact dead bindings
- *     if (b.length > p || (p > 0 && b[0].dead)) {
- *       let w = 0
- *       for (let r = 0; r < b.length; r++) { if (!b[r].dead) b[w++] = b[r] }
- *       b.length = w
- *       p = Math.min(w, p)
- *     }
- *   }
- *   // Phase 2 — binding updates
- *   if (d !== 0) {
- *     for (let i = 0; i < p; i++) {
- *       const bn = b[i]
- *       if (bn.dead || (bn.mask & d) === 0) continue
- *       const v = bn.accessor(s)
- *       const l = bn.lastValue
- *       if (v === l || (v !== v && l !== l)) continue
- *       bn.lastValue = v
- *       __runPhase2(s, d, b, p)
- *     }
- *   }
- * }
- */
-function buildUpdateBody(f: ts.NodeFactory, structuralMask: number): ts.Block {
-  const stmts: ts.Statement[] = []
-
-  // Phase 1: structural block reconciliation, gated by aggregate mask
-  if (structuralMask !== 0) {
-    const phase1Stmts: ts.Statement[] = []
-
-    // for (let i = 0; i < bl.length; i++) {
-    //   const bk = bl[i];
-    //   if (!bk || !((bk.mask & d) | (bk.maskHi & dHi))) continue;
-    //   bk.reconcile(s, d, dHi)
-    // }
-    // Two-word gate matches the runtime's `genericUpdate`: bits 0..30
-    // in `d`, bits 31..61 in `dHi`. For ≤31-prefix components both
-    // `bk.maskHi` and `dHi` are 0, so V8's inline cache collapses the
-    // OR back to the single-word check. >31-prefix components use the
-    // high word for precise gating.
-    //
-    // Re-read bl.length each iteration and null-check bk — a branch's
-    // reconcile may dispose the old scope, whose disposers splice child
-    // structural blocks out of this shared array mid-iteration.
-    const blockLoop = f.createForStatement(
-      f.createVariableDeclarationList(
-        [f.createVariableDeclaration('i', undefined, undefined, f.createNumericLiteral(0))],
-        ts.NodeFlags.Let,
-      ),
-      f.createBinaryExpression(
-        f.createIdentifier('i'),
-        ts.SyntaxKind.LessThanToken,
-        f.createPropertyAccessExpression(f.createIdentifier('bl'), 'length'),
-      ),
-      f.createPostfixUnaryExpression(f.createIdentifier('i'), ts.SyntaxKind.PlusPlusToken),
-      f.createBlock(
-        [
-          f.createVariableStatement(
-            undefined,
-            f.createVariableDeclarationList(
-              [
-                f.createVariableDeclaration(
-                  'bk',
-                  undefined,
-                  undefined,
-                  f.createElementAccessExpression(
-                    f.createIdentifier('bl'),
-                    f.createIdentifier('i'),
-                  ),
-                ),
-              ],
-              ts.NodeFlags.Const,
-            ),
-          ),
-          f.createIfStatement(
-            f.createBinaryExpression(
-              f.createPrefixUnaryExpression(
-                ts.SyntaxKind.ExclamationToken,
-                f.createIdentifier('bk'),
-              ),
-              ts.SyntaxKind.BarBarToken,
-              f.createPrefixUnaryExpression(
-                ts.SyntaxKind.ExclamationToken,
-                f.createParenthesizedExpression(
-                  f.createBinaryExpression(
-                    f.createParenthesizedExpression(
-                      f.createBinaryExpression(
-                        f.createPropertyAccessExpression(f.createIdentifier('bk'), 'mask'),
-                        ts.SyntaxKind.AmpersandToken,
-                        f.createIdentifier('d'),
-                      ),
-                    ),
-                    ts.SyntaxKind.BarToken,
-                    f.createParenthesizedExpression(
-                      f.createBinaryExpression(
-                        f.createPropertyAccessExpression(f.createIdentifier('bk'), 'maskHi'),
-                        ts.SyntaxKind.AmpersandToken,
-                        f.createIdentifier('dHi'),
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-            ),
-            f.createContinueStatement(),
-          ),
-          f.createExpressionStatement(
-            f.createCallExpression(
-              f.createPropertyAccessExpression(f.createIdentifier('bk'), 'reconcile'),
-              undefined,
-              [f.createIdentifier('s'), f.createIdentifier('d'), f.createIdentifier('dHi')],
-            ),
-          ),
-        ],
-        true,
-      ),
-    )
-    phase1Stmts.push(blockLoop)
-
-    // Compaction: if (b.length > p || (p > 0 && b[0].dead)) { ... }
-    const compactBody = f.createBlock(
-      [
-        // let w = 0
-        f.createVariableStatement(
-          undefined,
-          f.createVariableDeclarationList(
-            [f.createVariableDeclaration('w', undefined, undefined, f.createNumericLiteral(0))],
-            ts.NodeFlags.Let,
-          ),
-        ),
-        // for (let r = 0; r < b.length; r++) { if (!b[r].dead) b[w++] = b[r] }
-        f.createForStatement(
-          f.createVariableDeclarationList(
-            [f.createVariableDeclaration('r', undefined, undefined, f.createNumericLiteral(0))],
-            ts.NodeFlags.Let,
-          ),
-          f.createBinaryExpression(
-            f.createIdentifier('r'),
-            ts.SyntaxKind.LessThanToken,
-            f.createPropertyAccessExpression(f.createIdentifier('b'), 'length'),
-          ),
-          f.createPostfixUnaryExpression(f.createIdentifier('r'), ts.SyntaxKind.PlusPlusToken),
-          f.createBlock(
-            [
-              f.createIfStatement(
-                f.createPrefixUnaryExpression(
-                  ts.SyntaxKind.ExclamationToken,
-                  f.createPropertyAccessExpression(
-                    f.createElementAccessExpression(
-                      f.createIdentifier('b'),
-                      f.createIdentifier('r'),
-                    ),
-                    'dead',
-                  ),
-                ),
-                f.createExpressionStatement(
-                  f.createBinaryExpression(
-                    f.createElementAccessExpression(
-                      f.createIdentifier('b'),
-                      f.createPostfixUnaryExpression(
-                        f.createIdentifier('w'),
-                        ts.SyntaxKind.PlusPlusToken,
-                      ),
-                    ),
-                    ts.SyntaxKind.EqualsToken,
-                    f.createElementAccessExpression(
-                      f.createIdentifier('b'),
-                      f.createIdentifier('r'),
-                    ),
-                  ),
-                ),
-              ),
-            ],
-            true,
-          ),
-        ),
-        // b.length = w
-        f.createExpressionStatement(
-          f.createBinaryExpression(
-            f.createPropertyAccessExpression(f.createIdentifier('b'), 'length'),
-            ts.SyntaxKind.EqualsToken,
-            f.createIdentifier('w'),
-          ),
-        ),
-        // p = Math.min(w, p)
-        f.createExpressionStatement(
-          f.createBinaryExpression(
-            f.createIdentifier('p'),
-            ts.SyntaxKind.EqualsToken,
-            f.createCallExpression(
-              f.createPropertyAccessExpression(f.createIdentifier('Math'), 'min'),
-              undefined,
-              [f.createIdentifier('w'), f.createIdentifier('p')],
-            ),
-          ),
-        ),
-      ],
-      true,
-    )
-
-    const compactCondition = f.createBinaryExpression(
-      f.createBinaryExpression(
-        f.createPropertyAccessExpression(f.createIdentifier('b'), 'length'),
-        ts.SyntaxKind.GreaterThanToken,
-        f.createIdentifier('p'),
-      ),
-      ts.SyntaxKind.BarBarToken,
-      f.createParenthesizedExpression(
-        f.createBinaryExpression(
-          f.createBinaryExpression(
-            f.createIdentifier('p'),
-            ts.SyntaxKind.GreaterThanToken,
-            f.createNumericLiteral(0),
-          ),
-          ts.SyntaxKind.AmpersandAmpersandToken,
-          f.createPropertyAccessExpression(
-            f.createElementAccessExpression(f.createIdentifier('b'), f.createNumericLiteral(0)),
-            'dead',
-          ),
-        ),
-      ),
-    )
-    phase1Stmts.push(f.createIfStatement(compactCondition, compactBody))
-
-    // Wrap Phase 1 in mask gate
-    if (structuralMask !== (0xffffffff | 0)) {
-      stmts.push(
-        f.createIfStatement(
-          f.createBinaryExpression(
-            f.createParenthesizedExpression(
-              f.createBinaryExpression(
-                f.createIdentifier('d'),
-                ts.SyntaxKind.AmpersandToken,
-                createMaskLiteral(f, structuralMask),
-              ),
-            ),
-            ts.SyntaxKind.ExclamationEqualsEqualsToken,
-            f.createNumericLiteral(0),
-          ),
-          f.createBlock(phase1Stmts, true),
-        ),
-      )
-    } else {
-      stmts.push(...phase1Stmts)
-    }
-  }
-
-  // Phase 2: delegate to shared runtime — __runPhase2(s, d, dHi, b, p)
-  stmts.push(
-    f.createExpressionStatement(
-      f.createCallExpression(f.createIdentifier('__runPhase2'), undefined, [
-        f.createIdentifier('s'),
-        f.createIdentifier('d'),
-        f.createIdentifier('dHi'),
-        f.createIdentifier('b'),
-        f.createIdentifier('p'),
-      ]),
-    ),
-  )
-
-  return f.createBlock(stmts, true)
 }
 
 /**

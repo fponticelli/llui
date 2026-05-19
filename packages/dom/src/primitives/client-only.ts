@@ -47,6 +47,12 @@ import type { ComponentDef } from '../types.js'
 import { getRenderContext } from '../render-context.js'
 import { createView, type View } from '../view-helpers.js'
 
+declare global {
+  interface ImportMeta {
+    env?: { DEV?: boolean; MODE?: string }
+  }
+}
+
 export interface ClientOnlyOptions<S, M> {
   /**
    * Browser-only render callback. Invoked on client mount and hydrate.
@@ -90,7 +96,17 @@ export interface ClientOnlyOptions<S, M> {
 export function clientOnly<S, M = unknown>(opts: ClientOnlyOptions<S, M>): Node[] {
   const ctx = getRenderContext('clientOnly')
   const send = ctx.send as (msg: M) => void
-  const bag = createView<S, M>(send)
+  // v0.4 Tier 1.2: bag from the owning compiled component's __view factory.
+  // createView fallback is gated for tests and dead in production.
+  const inst = ctx.instance as { def?: { __view?: (s: unknown) => unknown } } | undefined
+  const ownerView = inst?.def?.__view
+  const bag = (
+    ownerView
+      ? ownerView(send as unknown)
+      : import.meta.env?.MODE !== 'production'
+        ? createView<S, M>(send)
+        : { send }
+  ) as View<S, M>
 
   // `ctx.dom.isBrowser` is the discriminator — it's true only when the
   // env wraps the live browser globals (see `browserEnv()`). SSR envs

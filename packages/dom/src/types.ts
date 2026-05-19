@@ -56,26 +56,28 @@ export interface ComponentDef<S, M, E = never, D = void> {
   __stateSchema?: object
   /** @internal Compiler-injected — Effect union schema (for introspection) */
   __effectSchema?: object
+  // `__update` removed in v0.4 Tier 2.4 — empirical perf benefit (~3% on a
+  // 200-binding sparse-update microbench) didn't justify the per-component
+  // bytes cost (200-400 bytes plus the dispatch branch). Every component
+  // goes through genericUpdate now.
+  // `__handlers` removed in v0.4 Tier 5 — bytes savings (duplicated update()
+  // switch bodies per variant + the dispatch branch + _handleMsg) outweigh
+  // the single-message fast-path perf win. Every message now flows
+  // through processMessages → genericUpdate.
   /**
-   * @internal Compiler-injected — replaces generic Phase 1 + Phase 2 loop.
+   * @internal Compiler-injected — minimal view-bag factory.
    *
-   * The trailing `dirtyHi` is the high-word dirty mask used by
-   * 32..61-prefix components. Appended (not inserted) so old compiled
-   * bundles emitted with a 5-param signature remain callable — the
-   * runtime always passes 6 args; old bundles ignore the extra one
-   * and ≤31-prefix components have `dirtyHi === 0` anyway.
+   * Returns an object containing ONLY the primitives this component's
+   * view callback destructures (e.g. `{ send, text, each }`). The
+   * runtime prefers `def.__view(send)` over `createView(send)` for
+   * compiled components, so the file-level `createView` import chain
+   * (which references all primitives) is dead in the produced bundle.
+   *
+   * For uncompiled defs (tests, hand-authored fixtures) the runtime
+   * falls back to `createView`, which is the full bag and stays
+   * available in the bundle only when something references it.
    */
-  __update?: (
-    state: S,
-    dirty: number,
-    bindings: Binding[],
-    blocks: StructuralBlock[],
-    bindingsBeforePhase1: number,
-    dirtyHi?: number,
-  ) => void
-  /** @internal Compiler-injected — per-message-type specialized handlers.
-   *  Bypass the entire processMessages pipeline for single-message updates. */
-  __handlers?: Record<string, (inst: object, msg: unknown) => [S, E[]]>
+  __view?: (send: Send<M>) => unknown
   /**
    * @internal Compiler-injected — semver of the @llui/compiler that
    * emitted this def. Read by the runtime's `createInstance` to detect
@@ -138,8 +140,6 @@ export interface AnyComponentDef {
   __componentMeta?: unknown
   __stateSchema?: unknown
   __effectSchema?: unknown
-  __update?: unknown
-  __handlers?: unknown
   __compilerVersion?: unknown
 }
 
@@ -176,8 +176,6 @@ export interface LazyDef<D = void> {
   __componentMeta?: unknown
   __stateSchema?: unknown
   __effectSchema?: unknown
-  __update?: unknown
-  __handlers?: unknown
   __compilerVersion?: unknown
 }
 

@@ -270,4 +270,4 @@ export { applyField, type FieldMsg } from './form.js'
 
 export { elSplit } from './el-split.js'
 export { elTemplate, __cloneStaticTemplate } from './el-template.js'
-export { _runPhase2 as __runPhase2, _handleMsg as __handleMsg } from './update-loop.js'
+export { _runPhase2 as __runPhase2 } from './update-loop.js'

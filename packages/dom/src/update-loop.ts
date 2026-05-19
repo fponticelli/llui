@@ -446,28 +446,10 @@ function reportReconcileError<S, M, E>(inst: ComponentInstance<S, M, E>, e: unkn
 function processMessages<S, M, E>(inst: ComponentInstance<S, M, E>): void {
   const queue = inst.queue
 
-  // Single-message fast path: dispatch directly to per-message-type handler
-  // if available. Skips dirty computation, Phase 1/2 entirely.
-  if (queue.length === 1 && inst.def.__handlers) {
-    const msg = queue[0]!
-    const handler = inst.def.__handlers[(msg as Record<string, unknown>).type as string] as
-      | ((inst: ComponentInstance, msg: unknown) => [S, E[]])
-      | undefined
-    if (handler) {
-      queue.length = 0
-      const [newState, effects] = handler(inst as ComponentInstance, msg)
-      inst.state = newState
-      inst._onCommit?.(newState as unknown)
-      if (import.meta.env?.DEV) {
-        inst.lastDirtyMask = FULL_MASK
-        inst.lastEffects = effects
-      }
-      for (let i = 0; i < effects.length; i++) {
-        dispatchEffect(inst, effects[i]!)
-      }
-      return
-    }
-  }
+  // v0.4 size-cut (Tier 5): the `__handlers` fast-path was removed. Every
+  // message now goes through the unified processMessages → genericUpdate
+  // path, eliminating the dispatch branch + the duplicated per-variant
+  // handler arrow bodies the compiler used to emit.
 
   // Generic pipeline — drain queue, accumulate dirty bits (two words:
   // bits 0..30 in `combinedDirty`, bits 31..61 in `combinedDirtyHi`).
@@ -477,25 +459,22 @@ function processMessages<S, M, E>(inst: ComponentInstance<S, M, E>): void {
   const allEffects: E[] = []
 
   const defUpdate = inst.def.update
-  // Path-keyed reactivity: when the compiler emits `__prefixes`, dirty
-  // bits correspond to entries in the prefix table (one bit per minimal
-  // reference-stable prefix read across the component's accessors). The
-  // runtime computes the dirty mask by reference-comparing `prefix(prev)
-  // !== prefix(next)` for each table entry — precise per-prefix and
-  // supports two-word emission for up to 62 prefixes. Components compiled
-  // without `__llui/vite-plugin` (or with no reactive accessors) have no
-  // `__prefixes` table; they fall back to `FULL_MASK` and pay the cost
-  // of re-evaluating every binding every cycle. User-authored `__dirty`
-  // is no longer accepted — see types.ts for the rationale.
+  // v0.4 size-cut (Tier 3.4): every compiled component carries `__prefixes`,
+  // so the production path skips the FULL_MASK fallback for components
+  // missing the table. The fallback is gated by `import.meta.env.MODE`
+  // — Vite dead-code-eliminates it from production builds. Tests
+  // (vitest, MODE='test') construct ComponentDef literals by hand without
+  // a prefix table and rely on the FULL_MASK behaviour to fire all
+  // bindings on every update.
   const prefixes = inst.def.__prefixes as ReadonlyArray<(s: unknown) => unknown> | undefined
   for (let qi = 0; qi < queue.length; qi++) {
     const msg = queue[qi]!
     const [newState, effects] = defUpdate(state, msg)
     let dirty: number | [number, number]
-    if (prefixes !== undefined) {
-      dirty = computeDirtyFromPrefixes(prefixes, state, newState)
-    } else {
+    if (import.meta.env?.MODE !== 'production' && prefixes === undefined) {
       dirty = FULL_MASK
+    } else {
+      dirty = computeDirtyFromPrefixes(prefixes!, state, newState)
     }
     if (typeof dirty === 'number') {
       combinedDirty |= dirty
@@ -528,25 +507,11 @@ function processMessages<S, M, E>(inst: ComponentInstance<S, M, E>): void {
   // structural primitives (e.g. each.items) can use the bitmask fast path.
   setCurrentDirtyMask(combinedDirty, combinedDirtyHi)
 
-  if (inst.def.__update) {
-    // Compiler-generated fast path — replaces generic Phase 1 + Phase 2.
-    // `combinedDirtyHi` is passed as the trailing positional arg so
-    // stale 5-param compiled bundles continue to gate correctly: they
-    // ignore the extra arg, and for ≤31-prefix components `dirtyHi`
-    // is always 0 anyway. Fresh compiled bundles use the 6th param
-    // for precise two-word Phase 1 gating on 32..61-prefix components.
-    inst.def.__update(
-      state,
-      combinedDirty,
-      bindings,
-      inst.structuralBlocks,
-      bindingsBeforePhase1,
-      combinedDirtyHi,
-    )
-  } else {
-    // Generic Phase 1 + Phase 2 fallback (uncompiled components)
-    genericUpdate(inst, state, combinedDirty, combinedDirtyHi, bindings, bindingsBeforePhase1)
-  }
+  // v0.4 size-cut (Tier 2.4): the compiler-emitted __update fast path was
+  // removed. Empirical perf was ~3% on the 200-binding sparse-update
+  // microbench — the bytes win outweighs the throughput loss. Every
+  // component now goes through genericUpdate.
+  genericUpdate(inst, state, combinedDirty, combinedDirtyHi, bindings, bindingsBeforePhase1)
 
   // Dispatch effects after DOM updates
   for (let i = 0; i < allEffects.length; i++) {
@@ -596,96 +561,9 @@ function genericUpdate<S, M, E>(
   )
 }
 
-/**
- * Run a handler for a single message: call update(), reconcile blocks
- * with the given method, run Phase 2. Used by compiler-generated __handlers
- * to avoid duplicating boilerplate per message type.
- *
- * @param method 0=reconcile, 1=reconcileItems, 2=reconcileClear, 3=reconcileRemove, -1=skip blocks
- * @public — used by compiler-generated `__handlers`
- *
- * Backward-compat: pre-multi-word compiled bundles call this with 4
- * args (no `dirtyHi`). The default `dirtyHi = 0` keeps those calls
- * correct for ≤31-prefix components — the high gate always evaluates
- * to 0 so the runtime falls back to the single-word check. Components
- * with >31 prefixes need a fresh compile to start passing `dirtyHi`.
- */
-export function _handleMsg(
-  inst: ComponentInstance,
-  msg: unknown,
-  dirty: number,
-  method: number,
-  dirtyHi: number = 0,
-): [unknown, unknown[]] {
-  const [s, e] = (inst.def.update as (s: unknown, m: unknown) => [unknown, unknown[]])(
-    inst.state,
-    msg,
-  )
-  inst.state = s
-  inst._onCommit?.(s)
-
-  // memo()-wrapped accessors (auto-generated by the compiler for
-  // multi-field structural accessors like each.items / branch.on /
-  // show.when) gate on `currentDirtyMask`. The generic pipeline sets
-  // it before Phase 1; the single-message fast path must as well, or
-  // memo short-circuits with the stale value left over from the
-  // previous cycle and structural blocks reconcile against a frozen
-  // input.
-  setCurrentDirtyMask(dirty, dirtyHi)
-
-  if (method >= 0) {
-    const bl = inst.structuralBlocks
-    for (let i = 0; i < bl.length; i++) {
-      const block = bl[i]
-      if (!block) continue
-      if (!((block.mask & dirty) | (block.maskHi & dirtyHi))) continue
-      try {
-        // Specialized methods (`reconcileItems`, `reconcileClear`,
-        // `reconcileRemove`, `reconcileChanged`) only exist on `each`
-        // blocks. Non-each blocks (`show`, `branch`, `scope`) leave
-        // them undefined. The compiler-side fix in `detectArrayOp`
-        // already restricts these methods to single-field cases, but
-        // a show()/branch() block whose mask intersects the cleared
-        // field would still be silently skipped without this fallback.
-        // When the specialized method is missing, run the general
-        // `reconcile` path so the block's `when`/`on` accessor still
-        // re-evaluates. each blocks always have the specialized
-        // methods, so they keep their fast path.
-        switch (method) {
-          case 0:
-            block.reconcile(s, dirty, dirtyHi)
-            break
-          case 1:
-            if (block.reconcileItems) block.reconcileItems(s)
-            else block.reconcile(s, dirty, dirtyHi)
-            break
-          case 2:
-            if (block.reconcileClear) block.reconcileClear()
-            else block.reconcile(s, dirty, dirtyHi)
-            break
-          case 3:
-            if (block.reconcileRemove) block.reconcileRemove(s)
-            else block.reconcile(s, dirty, dirtyHi)
-            break
-          default:
-            // method >= 10: reconcileChanged with stride = method - 10
-            if (method >= 10) {
-              if (block.reconcileChanged) block.reconcileChanged(s, method - 10)
-              else block.reconcile(s, dirty, dirtyHi)
-            }
-            break
-        }
-      } catch (err) {
-        reportReconcileError(inst, err)
-        // continue to next block — see reportReconcileError docstring
-      }
-    }
-  }
-
-  const b = inst.allBindings
-  _runPhase2(s, dirty, dirtyHi, b, b.length, inst.def.name, inst._onBindingError)
-  return [s, e]
-}
+// `_handleMsg` removed in v0.4 Tier 5 alongside the `__handlers` fast-path
+// emission. Single-message dispatch now flows through processMessages →
+// genericUpdate like every other update.
 
 /**
  * Phase 2: compact dead bindings + update live bindings.

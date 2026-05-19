@@ -8,7 +8,29 @@ import {
 } from '../render-context.js'
 import { createLifetime, disposeLifetime, addDisposer } from '../lifetime.js'
 import { setFlatBindings } from '../binding.js'
+import type { View } from '../view-helpers.js'
 import { createView } from '../view-helpers.js'
+
+// v0.4 Tier 1.2: pulls the View bag from the owning component's compiler-
+// emitted __view factory instead of constructing one via createView (which
+// referenced every primitive and defeated tree-shaking). The `createView`
+// call below is dead-code-eliminated in production builds — Vite folds
+// `import.meta.env.MODE` to a constant and the branch never runs there.
+declare global {
+  interface ImportMeta {
+    env?: { DEV?: boolean; MODE?: string }
+  }
+}
+function getOwnerBag<S, M>(
+  ctx: { instance?: unknown },
+  send: import('../types.js').Send<M>,
+): View<S, M> {
+  const inst = ctx.instance as { def?: { __view?: (s: unknown) => unknown } } | undefined
+  const view = inst?.def?.__view
+  if (view) return view(send as unknown) as View<S, M>
+  if (import.meta.env?.MODE !== 'production') return createView<S, M>(send)
+  return { send } as unknown as View<S, M>
+}
 import { FULL_MASK } from '../update-loop.js'
 import { pushMountQueue, popMountQueue, flushMountQueue } from './on-mount.js'
 import type { StructuralBlock } from '../structural.js'
@@ -80,7 +102,7 @@ export function branch<S, M = unknown, K extends string = string>(
               : 'branch'
         setFlatBindings(ctx.allBindings)
         setRenderContext({ ...ctx, rootLifetime: currentLifetime, state })
-        currentNodes = newBuilder(createView<S, M>(send))
+        currentNodes = newBuilder(getOwnerBag<S, M>(ctx, send))
         clearRenderContext()
         setFlatBindings(null)
         popMountQueue(mq.prev)
@@ -149,7 +171,7 @@ export function branch<S, M = unknown, K extends string = string>(
           ? 'scope'
           : 'branch'
     setRenderContext({ ...ctx, rootLifetime: currentLifetime })
-    currentNodes = builder(createView<S, M>(send))
+    currentNodes = builder(getOwnerBag<S, M>(ctx, send))
     clearRenderContext()
     setRenderContext(ctx)
 

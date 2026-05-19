@@ -270,6 +270,12 @@ export function transformLlui(
   let usesElSplit = false
   let usesMemo = false
   let usesApplyBinding = false
+  // v0.4 size-cut (Tier 1.2): per-file set of primitive imports needed by
+  // the `__view` factories we synthesize alongside each `component()` call.
+  // The runtime calls `def.__view(send)` instead of `createView(send)`, so
+  // each component only pulls in the primitives it actually destructures —
+  // killing the view-bag tree-shaking leak that pulled all primitives.
+  const viewBagPrimitivesNeeded = new Set<string>()
   let usesCloneStaticTemplate = false
 
   const f = ts.factory
@@ -760,6 +766,14 @@ export function transformLlui(
       // registry is empty and this call is a no-op.
       result = applyRegistryEmissions(result ?? node, node)
 
+      // v0.4 size-cut (Tier 1.2): synthesize __view = (send) => ({ send, ... })
+      // containing ONLY the primitives this component's view callback
+      // destructures. The runtime prefers __view over createView for compiled
+      // components, eliminating the all-primitives reference chain through
+      // view-helpers.ts. Each primitive becomes its own top-level import,
+      // tree-shaken by Rollup when no component destructures it.
+      result = injectViewBag(result ?? node, viewBagPrimitivesNeeded, f)
+
       // __schemaHash: migrated to schemaHashModule (v2c/decomp-5).
       // When shouldEmitAgentMetadata is true, schemaHashModule is in
       // the active module list and produces the emission via the
@@ -803,6 +817,7 @@ export function transformLlui(
     usesApplyBinding,
     usesCloneStaticTemplate,
     scopeRegistrationsInjected,
+    viewBagPrimitivesNeeded,
     f,
   )
 
@@ -1112,6 +1127,161 @@ const VIEW_HELPER_PRIMITIVES = new Set([
   'send',
 ])
 
+// v0.4 size-cut (Tier 1.2): bag-field → runtime-primitive map. `ctx` is
+// the only rename — every other destructured name maps 1:1 to its
+// primitive's exported identifier from `@llui/dom`. Fields not in this
+// map (e.g. `send`) are handled separately or omitted.
+const VIEW_BAG_FIELD_TO_PRIMITIVE: Record<string, string> = {
+  show: 'show',
+  branch: 'branch',
+  scope: 'scope',
+  each: 'each',
+  text: 'text',
+  unsafeHtml: 'unsafeHtml',
+  memo: 'memo',
+  selector: 'selector',
+  sample: 'sample',
+  clientOnly: 'clientOnly',
+  ctx: 'useContext',
+}
+
+/**
+ * Splice a `__view: (send) => ({ send, name1, name2, ... })` property into
+ * a `component({...})` call's config-arg literal. The synthesized factory
+ * lets the runtime build a minimal view bag that references only the
+ * primitives this component's view destructures — replacing the static
+ * `createView` call in mount.ts and eliminating its all-primitives import
+ * chain. Bag-field names other than `send` are added to `needed` so
+ * `cleanupImports` injects matching `@llui/dom` imports at the file level.
+ *
+ * Idempotent — returns `call` unchanged when:
+ *   • the config arg is not an object literal
+ *   • no `view:` property exists, or its value is not an arrow/function
+ *   • the view's first parameter is not an ObjectBindingPattern
+ *   • the config arg already has a `__view` property (re-run safety)
+ *
+ * Bag fields that aren't in `VIEW_BAG_FIELD_TO_PRIMITIVE` (e.g. unknown
+ * names from a user-typed View extension) are skipped so the runtime falls
+ * back to `createView` for any access to them.
+ */
+function injectViewBag(
+  call: ts.CallExpression,
+  needed: Set<string>,
+  f: ts.NodeFactory,
+): ts.CallExpression {
+  const configArg = call.arguments[0]
+  if (!configArg || !ts.isObjectLiteralExpression(configArg)) return call
+
+  // Skip if a `__view` is already present (idempotency for re-runs).
+  for (const prop of configArg.properties) {
+    if (
+      ts.isPropertyAssignment(prop) &&
+      ts.isIdentifier(prop.name) &&
+      prop.name.text === '__view'
+    ) {
+      return call
+    }
+  }
+
+  // Find view: arrow/function.
+  let viewFn: ts.ArrowFunction | ts.FunctionExpression | null = null
+  for (const prop of configArg.properties) {
+    if (
+      ts.isPropertyAssignment(prop) &&
+      ts.isIdentifier(prop.name) &&
+      prop.name.text === 'view' &&
+      (ts.isArrowFunction(prop.initializer) || ts.isFunctionExpression(prop.initializer))
+    ) {
+      viewFn = prop.initializer
+      break
+    }
+  }
+  if (!viewFn) return call
+
+  // Inspect the first parameter — must be an ObjectBindingPattern.
+  const firstParam = viewFn.parameters[0]
+  if (!firstParam || !ts.isObjectBindingPattern(firstParam.name)) return call
+
+  // Collect { localName, sourceName } per destructured element. We emit
+  // an object literal whose KEYS are localNames (so the view body's
+  // identifier references resolve) and whose VALUES are the
+  // corresponding primitive identifiers (so the runtime gets the right
+  // function).
+  interface Entry {
+    localName: string
+    primitive: string | null // null for `send` — handled separately
+  }
+  const entries: Entry[] = []
+  for (const elem of firstParam.name.elements) {
+    const localName = ts.isIdentifier(elem.name) ? elem.name.text : null
+    const sourceName =
+      elem.propertyName && ts.isIdentifier(elem.propertyName) ? elem.propertyName.text : localName
+    if (!localName || !sourceName) continue
+    if (sourceName === 'send') {
+      entries.push({ localName, primitive: null })
+      continue
+    }
+    const primitive = VIEW_BAG_FIELD_TO_PRIMITIVE[sourceName]
+    if (!primitive) continue // unknown name — let the runtime fail at runtime if accessed
+    entries.push({ localName, primitive })
+  }
+  if (entries.length === 0) return call
+
+  // Synthesize: __view: ($send) => ({ localA: $send, localB: text, localC: each, ... })
+  // We use a fixed parameter name `$send` to avoid shadowing — the bag
+  // entries that map to send use this identifier.
+  const sendParamName = f.createIdentifier('$send')
+  const bagProps: ts.ObjectLiteralElementLike[] = []
+  for (const e of entries) {
+    if (e.primitive === null) {
+      // local name → send parameter
+      bagProps.push(
+        e.localName === '$send'
+          ? f.createShorthandPropertyAssignment(sendParamName)
+          : f.createPropertyAssignment(f.createIdentifier(e.localName), sendParamName),
+      )
+    } else if (e.localName === e.primitive) {
+      bagProps.push(f.createShorthandPropertyAssignment(f.createIdentifier(e.localName)))
+      needed.add(e.primitive)
+    } else {
+      bagProps.push(
+        f.createPropertyAssignment(
+          f.createIdentifier(e.localName),
+          f.createIdentifier(e.primitive),
+        ),
+      )
+      needed.add(e.primitive)
+    }
+  }
+
+  const viewBagFactory = f.createArrowFunction(
+    undefined,
+    undefined,
+    [
+      f.createParameterDeclaration(
+        undefined,
+        undefined,
+        sendParamName,
+        undefined,
+        undefined,
+        undefined,
+      ),
+    ],
+    undefined,
+    f.createToken(ts.SyntaxKind.EqualsGreaterThanToken),
+    f.createParenthesizedExpression(f.createObjectLiteralExpression(bagProps, false)),
+  )
+
+  const newConfig = f.createObjectLiteralExpression(
+    [...configArg.properties, f.createPropertyAssignment('__view', viewBagFactory)],
+    true,
+  )
+  return f.createCallExpression(call.expression, call.typeArguments, [
+    newConfig,
+    ...call.arguments.slice(1),
+  ])
+}
+
 function collectViewHelperAliases(
   sf: ts.SourceFile,
   lluiImport: ts.ImportDeclaration,
@@ -1256,6 +1426,7 @@ function cleanupImports(
   usesApplyBinding: boolean,
   usesCloneStaticTemplate: boolean,
   usesRegisterScopeVariants: boolean,
+  viewBagPrimitivesNeeded: Set<string>,
   f: ts.NodeFactory,
 ): ts.SourceFile {
   if (
@@ -1265,7 +1436,8 @@ function cleanupImports(
     !usesMemo &&
     !usesApplyBinding &&
     !usesCloneStaticTemplate &&
-    !usesRegisterScopeVariants
+    !usesRegisterScopeVariants &&
+    viewBagPrimitivesNeeded.size === 0
   )
     return sf
 
@@ -1302,9 +1474,8 @@ function cleanupImports(
     if (!clause.namedBindings.elements.some((s) => s.name.text === '__runPhase2')) {
       remaining.push(f.createImportSpecifier(false, undefined, f.createIdentifier('__runPhase2')))
     }
-    if (!clause.namedBindings.elements.some((s) => s.name.text === '__handleMsg')) {
-      remaining.push(f.createImportSpecifier(false, undefined, f.createIdentifier('__handleMsg')))
-    }
+    // `__handleMsg` import injection removed in v0.4 Tier 5 — see
+    // packages/dom/src/update-loop.ts for the deletion rationale.
   }
 
   // The connect-pattern injector (binding-descriptors.ts) emits
@@ -1317,6 +1488,15 @@ function cleanupImports(
     remaining.push(
       f.createImportSpecifier(false, undefined, f.createIdentifier('__registerScopeVariants')),
     )
+  }
+
+  // v0.4 size-cut (Tier 1.2): add @llui/dom imports for each primitive
+  // referenced by synthesized __view factories. `ctx` is the destructured
+  // bag name; its primitive is `useContext` (the only rename pair).
+  for (const prim of viewBagPrimitivesNeeded) {
+    if (!clause.namedBindings.elements.some((s) => s.name.text === prim)) {
+      remaining.push(f.createImportSpecifier(false, undefined, f.createIdentifier(prim)))
+    }
   }
 
   const newBindings = f.createNamedImports(remaining)

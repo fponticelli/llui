@@ -1,4 +1,11 @@
 import type { EachOptions, ItemAccessor, Lifetime } from '../types.js'
+import { createView, type View } from '../view-helpers.js'
+
+declare global {
+  interface ImportMeta {
+    env?: { DEV?: boolean; MODE?: string }
+  }
+}
 import {
   getRenderContext,
   setRenderContext,
@@ -17,7 +24,9 @@ import {
 import { getFlatBindings, setFlatBindings } from '../binding.js'
 import { FULL_MASK } from '../update-loop.js'
 import type { StructuralBlock } from '../structural.js'
-import { createView } from '../view-helpers.js'
+// v0.4 size-cut (Tier 1.2): no more createView fallback — every compiled
+// component carries a __view factory; each() pulls the bag from the owning
+// instance via the render context.
 
 // Clear callbacks — registered by selector.bind() during render, called by reconcileClear().
 // Eliminates per-row disposers (1000 Set.delete calls → 1 registry.clear() call).
@@ -530,7 +539,16 @@ function buildEntry<S, T, M>(
   // The View bag — lets each.render use `h.text`, `h.scope`, `h.sample`,
   // etc. without reaching for the top-level imports. Each entry gets a
   // fresh View so its `send` is bound to this row's dispatch path.
-  buildBag.h = createView<S, M>(send)
+  // v0.4 Tier 1.2: bag comes from the owning component's compiler-emitted
+  // __view factory. ctx.instance.def.__view is present on every compiled
+  // component; createView fallback is gated for tests and dead in production.
+  const ownerView = (ctx.instance?.def as { __view?: (s: typeof send) => unknown } | undefined)
+    ?.__view
+  buildBag.h = ownerView
+    ? (ownerView(send) as View<S, M>)
+    : import.meta.env?.MODE !== 'production'
+      ? createView<S, M>(send)
+      : ({ send } as unknown as View<S, M>)
   // Row factory: pass compiler-injected template + update function through to render
   const rfOpts = opts as unknown as Record<string, unknown>
   if (rfOpts.__tpl) buildBag.__tpl = rfOpts.__tpl

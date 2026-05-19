@@ -3,7 +3,26 @@ import { getRenderContext, setRenderContext, clearRenderContext } from '../rende
 import { createLifetime, disposeLifetime, addDisposer } from '../lifetime.js'
 import { createComponentInstance, type ComponentInstance } from '../update-loop.js'
 import { setFlatBindings } from '../binding.js'
-import { createView, type View } from '../view-helpers.js'
+import type { View } from '../view-helpers.js'
+import { createView } from '../view-helpers.js'
+
+// v0.4 Tier 1.2: bag from the owning compiled component's __view factory.
+// createView fallback is dead-code-eliminated in production builds.
+declare global {
+  interface ImportMeta {
+    env?: { DEV?: boolean; MODE?: string }
+  }
+}
+function ownerBag<S, M>(
+  ctx: { instance?: unknown },
+  send: import('../types.js').Send<M>,
+): View<S, M> {
+  const inst = ctx.instance as { def?: { __view?: (s: unknown) => unknown } } | undefined
+  const view = inst?.def?.__view
+  if (view) return view(send as unknown) as View<S, M>
+  if (import.meta.env?.MODE !== 'production') return createView<S, M>(send)
+  return { send } as unknown as View<S, M>
+}
 
 export interface LazyOptions<S, M, D> {
   /** Async loader — typically `() => import('./MyComponent').then(m => m.default)`. */
@@ -51,7 +70,7 @@ export function lazy<S, M, D = undefined>(opts: LazyOptions<S, M, D>): Node[] {
   // Build fallback inside its own sub-scope (disposed when we swap in loaded component)
   let currentLifetime = createLifetime(parentLifetime)
   setRenderContext({ ...ctx, rootLifetime: currentLifetime })
-  let currentNodes = opts.fallback(createView<S, M>(send))
+  let currentNodes = opts.fallback(ownerBag<S, M>(ctx, send))
   clearRenderContext()
   setRenderContext(ctx)
 
@@ -106,7 +125,21 @@ export function lazy<S, M, D = undefined>(opts: LazyOptions<S, M, D>): Node[] {
           send: childInst.send as (msg: unknown) => void,
           instance: childInst as ComponentInstance,
         })
-        const nodes = (def as { view: (h: unknown) => Node[] }).view(createView(childInst.send))
+        // v0.4 Tier 1.2: compiled defs carry __view. Uncompiled lazy targets
+        // get an empty bag — destructuring `({ text, … }) => …` will fail
+        // at runtime with `text is undefined`, which is the expected
+        // breakage for a test fixture that bypasses the compiler.
+        const lazyDef = def as {
+          name?: string
+          view: (h: unknown) => Node[]
+          __view?: (send: unknown) => unknown
+        }
+        const lazyBag = lazyDef.__view
+          ? lazyDef.__view(childInst.send as unknown)
+          : import.meta.env?.MODE !== 'production'
+            ? createView(childInst.send)
+            : { send: childInst.send }
+        const nodes = lazyDef.view(lazyBag)
         clearRenderContext()
         setFlatBindings(ctx.allBindings)
         setRenderContext(ctx)
@@ -123,7 +156,7 @@ export function lazy<S, M, D = undefined>(opts: LazyOptions<S, M, D>): Node[] {
       if (cancelled) return
       if (!opts.error) return
       const e = err instanceof Error ? err : new Error(String(err))
-      swap(() => opts.error!(e, createView<S, M>(send)))
+      swap(() => opts.error!(e, ownerBag<S, M>(ctx, send)))
     })
 
   return [startAnchor, ...currentNodes, endAnchor]

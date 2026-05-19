@@ -7,7 +7,13 @@ import { setFlatBindings } from './binding.js'
 import { getBindingDescriptors } from './binding-descriptors.js'
 import { unregisterInstance } from './runtime.js'
 import { _setHmrModule } from './mount.js'
-import { createView } from './view-helpers.js'
+import { createView, type View } from './view-helpers.js'
+
+declare global {
+  interface ImportMeta {
+    env?: { DEV?: boolean; MODE?: string }
+  }
+}
 
 /**
  * Enable HMR state preservation. Called by compiler-generated dev code.
@@ -169,8 +175,6 @@ function swapEntry<S, M, E, D = void>(
     update: newDef.update,
     view: newDef.view,
     onEffect: newDef.onEffect,
-    __update: newDef.__update,
-    __handlers: newDef.__handlers,
     __prefixes: newDef.__prefixes,
   }
 
@@ -219,7 +223,17 @@ function swapEntry<S, M, E, D = void>(
     send: typedInst.send as (msg: unknown) => void,
     instance: typedInst as ComponentInstance,
   })
-  const nodes = typedInst.def.view(createView<S, M>(typedInst.send))
+  // v0.4 Tier 1.2: HMR replays the compiled def's __view factory.
+  // createView fallback is gated for tests and dead in production builds.
+  const __view = (typedInst.def as { __view?: (s: unknown) => unknown }).__view
+  const bag = (
+    __view
+      ? __view(typedInst.send as unknown)
+      : import.meta.env?.MODE !== 'production'
+        ? createView<S, M>(typedInst.send)
+        : { send: typedInst.send }
+  ) as View<S, M>
+  const nodes = typedInst.def.view(bag)
   clearRenderContext()
   setFlatBindings(null)
 

@@ -1,0 +1,94 @@
+{
+  "$schema": "https://raw.githubusercontent.com/fponticelli/llui/main/benchmarks/bundle-baseline.schema.json",
+  "$description": "Bundle-size baseline for the jfb bench app. Measures dist/main.js after `pnpm build-prod` (Vite production + minify). Each phase row records uncompressed / gzip (level 9) / brotli (quality 11) bytes plus a short summary of what changed.",
+  "$measureCommand": "pnpm tsx benchmarks/measure-bundle.ts",
+  "phases": {
+    "5": {
+      "label": "Tier 5 drop __handlers fast path",
+      "summary": "Compiler stops emitting __handlers; runtime drops the per-variant dispatch + _handleMsg. Every message flows through processMessages → genericUpdate. Costs whatever single-message dispatch speedup __handlers gave (small for most apps).",
+      "uncompressed": 36026,
+      "gzipped": 11541,
+      "brotli": 10192,
+      "deltaVsPrevious": {
+        "uncompressed": -1423,
+        "gzipped": -301,
+        "brotli": -278
+      },
+      "deltaVsBaseline": {
+        "uncompressed": -7391,
+        "gzipped": -1938,
+        "brotli": -1677
+      }
+    },
+    "0-baseline": {
+      "label": "Phase 0 — current main",
+      "summary": "Initial measurement before any size reductions. Captured from main.js after `pnpm build-prod`.",
+      "uncompressed": 43417,
+      "gzipped": 13479,
+      "brotli": 11869,
+      "deltaVsPrevious": null,
+      "deltaVsBaseline": null
+    },
+    "1.2": {
+      "label": "Tier 1.2 view-bag leak closed",
+      "summary": "Compiler emits per-component __view factory referencing only destructured primitives. Runtime mount/each/branch/lazy/clientOnly/ssr/hmr source the bag from def.__view; createView fallback is test-mode-gated via import.meta.env.MODE so Vite dead-code-eliminates it from production builds. Closes the all-primitives import chain through view-helpers.js.",
+      "uncompressed": 37919,
+      "gzipped": 11969,
+      "brotli": 10588,
+      "deltaVsPrevious": {
+        "uncompressed": -5498,
+        "gzipped": -1510,
+        "brotli": -1281
+      },
+      "deltaVsBaseline": {
+        "uncompressed": -5498,
+        "gzipped": -1510,
+        "brotli": -1281
+      }
+    },
+    "2.4": {
+      "label": "Tier 2.4 drop __update fast-path emission",
+      "summary": "Compiler no longer emits __update; runtime always uses genericUpdate. ComponentDef.__update + the runtime dispatch + the compiler emitter (buildUpdateBody, ~270 lines) all deleted. Costs ~3% wall-time on a 200-binding sparse-update microbench.",
+      "uncompressed": 37469,
+      "gzipped": 11848,
+      "brotli": 10475,
+      "deltaVsPrevious": null,
+      "deltaVsBaseline": {
+        "uncompressed": -5948,
+        "gzipped": -1631,
+        "brotli": -1394
+      }
+    },
+    "3.4": {
+      "label": "Tier 3.4 gate genericUpdate FULL_MASK fallback",
+      "summary": "The FULL_MASK fallback for components missing __prefixes is gated by import.meta.env.MODE so Vite drops it from production builds. Tests keep the fallback under MODE=test.",
+      "uncompressed": 37449,
+      "gzipped": 11842,
+      "brotli": 10470,
+      "deltaVsPrevious": {
+        "uncompressed": -20,
+        "gzipped": -6,
+        "brotli": -5
+      },
+      "deltaVsBaseline": {
+        "uncompressed": -5968,
+        "gzipped": -1637,
+        "brotli": -1399
+      }
+    }
+  },
+  "abandoned": {
+    "2.1": {
+      "label": "Tier 2.1 variable-length binding tuples",
+      "summary": "Compiler emits 2/3/4/5-tuple binding shapes for elSplit and a 3-arg short form for __bind; runtime dispatches on tuple.length / typeof. CORRECT but unprofitable for jfb because the bench routes nearly all bindings through elTemplate (row factory) and only has a handful of elSplit/__bind sites — the dispatch-overhead bytes exceed the per-call savings here. Reverted; would help apps with many flat elSplit bindings outside the elTemplate row path.",
+      "measuredUncompressed": 38049,
+      "measuredGzipped": 12037,
+      "measuredBrotli": 10639,
+      "deltaVsBaseline": {
+        "uncompressed": -5368,
+        "gzipped": -1442,
+        "brotli": -1230
+      }
+    }
+  }
+}
