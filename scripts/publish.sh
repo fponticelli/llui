@@ -17,14 +17,20 @@ set -e
 #   ./scripts/publish.sh dom effects  # publish specific packages
 
 # Tier 1: no in-repo runtime deps — publish first.
-# Tier 2: depend on tier 1 (peer or runtime). Order within the tier doesn't
-#   matter for safety, but listed roughly by who-depends-on-whom for log
-#   readability. `mcp` depends on `eslint-plugin` (via @llui/eslint-plugin),
-#   so eslint-plugin lives in tier 1 even though it ships a published package.
+# Tier 2: depend on tier 1. Within-tier order is best-effort by
+#   who-depends-on-whom for log readability; npm has no strict
+#   visibility ordering once a package is published.
 # Tier 3: depend on tier 2. `agent-bridge` consumes `@llui/agent` and
 #   publishes as `llui-agent`.
-TIER1=(dom effects eslint-plugin-llui)
-TIER2=(vite-plugin test router transitions components vike mcp agent)
+#
+# `eslint-plugin-llui` was deleted in the lint→compiler migration
+# (v0.3.0); all framework lint rules now emit as compile-time errors
+# from `@llui/compiler`.
+TIER1=(dom effects compiler)
+TIER2=(
+  compiler-introspection compiler-devtools compiler-ssr
+  vite-plugin test router transitions components vike mcp agent
+)
 TIER3=(agent-bridge)
 ALL_PKGS=("${TIER1[@]}" "${TIER2[@]}" "${TIER3[@]}")
 

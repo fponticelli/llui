@@ -7,4 +7,4 @@
  * `scripts/publish.sh`) reads from package.json so a drift is caught at
  * release time.
  */
-export const COMPILER_VERSION = '0.3.0-alpha.0'
+export const COMPILER_VERSION = '0.3.0'

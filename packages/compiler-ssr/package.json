@@ -1,9 +1,8 @@
 {
   "name": "@llui/compiler-ssr",
-  "version": "0.3.0-alpha.0",
+  "version": "0.3.0",
   "type": "module",
   "sideEffects": false,
-  "private": true,
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
