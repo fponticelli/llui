@@ -1,13 +1,9 @@
-import accessorSideEffectRule from './rules/accessor-side-effect.js'
-import directStateInViewRule from './rules/direct-state-in-view.js'
 import effectWithoutHandlerRule from './rules/effect-without-handler.js'
 import exhaustiveEffectHandlingRule from './rules/exhaustive-effect-handling.js'
 import forgottenSpreadRule from './rules/forgotten-spread.js'
-import imperativeDomInViewRule from './rules/imperative-dom-in-view.js'
 import spreadInChildrenRule from './rules/spread-in-children.js'
 import stringEffectCallbackRule from './rules/string-effect-callback.js'
 import viewBagImportRule from './rules/view-bag-import.js'
-import { stateMutationRule } from './rules/state-mutation.js'
 import { missingMemoRule } from './rules/missing-memo.js'
 import { eachClosureViolationRule } from './rules/each-closure-violation.js'
 import { formBoilerplateRule } from './rules/form-boilerplate.js'
@@ -37,16 +33,12 @@ import { agentTagsendTranslatorMissingRule } from './rules/agent-tagsend-transla
 import { subappRequiresReasonRule } from './rules/subapp-requires-reason.js'
 
 export const rules = {
-  'accessor-side-effect': accessorSideEffectRule,
-  'direct-state-in-view': directStateInViewRule,
   'effect-without-handler': effectWithoutHandlerRule,
   'exhaustive-effect-handling': exhaustiveEffectHandlingRule,
   'forgotten-spread': forgottenSpreadRule,
-  'imperative-dom-in-view': imperativeDomInViewRule,
   'spread-in-children': spreadInChildrenRule,
   'string-effect-callback': stringEffectCallbackRule,
   'view-bag-import': viewBagImportRule,
-  'state-mutation': stateMutationRule,
   'missing-memo': missingMemoRule,
   'each-closure-violation': eachClosureViolationRule,
   'form-boilerplate': formBoilerplateRule,
@@ -100,12 +92,8 @@ export const configs = {
       'llui/view-bag-import': 'error',
       'llui/forgotten-spread': 'error',
       'llui/string-effect-callback': 'error',
-      'llui/imperative-dom-in-view': 'error',
-      'llui/accessor-side-effect': 'error',
       'llui/effect-without-handler': 'error',
       'llui/exhaustive-effect-handling': 'error',
-      'llui/direct-state-in-view': 'error',
-      'llui/state-mutation': 'error',
       'llui/missing-memo': 'error',
       'llui/each-closure-violation': 'error',
       'llui/form-boilerplate': 'error',

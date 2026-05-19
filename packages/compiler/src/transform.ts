@@ -45,6 +45,10 @@ import { bitmaskOverflowModule } from './modules/bitmask-overflow.js'
 import { asyncUpdateModule } from './modules/async-update.js'
 import { mapOnStateArrayModule } from './modules/map-on-state-array.js'
 import { nestedSendInUpdateModule } from './modules/nested-send-in-update.js'
+import { directStateInViewModule } from './modules/direct-state-in-view.js'
+import { imperativeDomInViewModule } from './modules/imperative-dom-in-view.js'
+import { accessorSideEffectModule } from './modules/accessor-side-effect.js'
+import { stateMutationModule } from './modules/state-mutation.js'
 
 export function createMaskLiteral(f: ts.NodeFactory, mask: number): ts.Expression {
   if (mask >= 0) return f.createNumericLiteral(mask)
@@ -385,6 +389,10 @@ export function transformLlui(
   activeModules.push(asyncUpdateModule())
   activeModules.push(mapOnStateArrayModule())
   activeModules.push(nestedSendInUpdateModule())
+  activeModules.push(directStateInViewModule())
+  activeModules.push(imperativeDomInViewModule())
+  activeModules.push(accessorSideEffectModule())
+  activeModules.push(stateMutationModule())
   // eachMemoModule wraps allocating each() items accessors in
   // `memo(...)` via `transformCallEnter`. Activated when the file
   // has any reactive paths (mirrors the inline call's gating).
