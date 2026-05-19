@@ -49,6 +49,8 @@ import { directStateInViewModule } from './modules/direct-state-in-view.js'
 import { imperativeDomInViewModule } from './modules/imperative-dom-in-view.js'
 import { accessorSideEffectModule } from './modules/accessor-side-effect.js'
 import { stateMutationModule } from './modules/state-mutation.js'
+import { effectWithoutHandlerModule } from './modules/effect-without-handler.js'
+import { exhaustiveEffectHandlingModule } from './modules/exhaustive-effect-handling.js'
 
 export function createMaskLiteral(f: ts.NodeFactory, mask: number): ts.Expression {
   if (mask >= 0) return f.createNumericLiteral(mask)
@@ -393,6 +395,8 @@ export function transformLlui(
   activeModules.push(imperativeDomInViewModule())
   activeModules.push(accessorSideEffectModule())
   activeModules.push(stateMutationModule())
+  activeModules.push(effectWithoutHandlerModule())
+  activeModules.push(exhaustiveEffectHandlingModule())
   // eachMemoModule wraps allocating each() items accessors in
   // `memo(...)` via `transformCallEnter`. Activated when the file
   // has any reactive paths (mirrors the inline call's gating).

@@ -1,5 +1,3 @@
-import effectWithoutHandlerRule from './rules/effect-without-handler.js'
-import exhaustiveEffectHandlingRule from './rules/exhaustive-effect-handling.js'
 import forgottenSpreadRule from './rules/forgotten-spread.js'
 import spreadInChildrenRule from './rules/spread-in-children.js'
 import stringEffectCallbackRule from './rules/string-effect-callback.js'
@@ -33,8 +31,6 @@ import { agentTagsendTranslatorMissingRule } from './rules/agent-tagsend-transla
 import { subappRequiresReasonRule } from './rules/subapp-requires-reason.js'
 
 export const rules = {
-  'effect-without-handler': effectWithoutHandlerRule,
-  'exhaustive-effect-handling': exhaustiveEffectHandlingRule,
   'forgotten-spread': forgottenSpreadRule,
   'spread-in-children': spreadInChildrenRule,
   'string-effect-callback': stringEffectCallbackRule,
@@ -92,8 +88,6 @@ export const configs = {
       'llui/view-bag-import': 'error',
       'llui/forgotten-spread': 'error',
       'llui/string-effect-callback': 'error',
-      'llui/effect-without-handler': 'error',
-      'llui/exhaustive-effect-handling': 'error',
       'llui/missing-memo': 'error',
       'llui/each-closure-violation': 'error',
       'llui/form-boilerplate': 'error',
