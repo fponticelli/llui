@@ -27,7 +27,19 @@ interface ComponentDef<S, M, E = never, D = void> {
   receives?: Record<string, (params: any) => M>
 
   // @internal — compiler-injected, not part of the public API:
-  // __dirty, __renderToString, __msgSchema
+  // __prefixes (path-keyed reactivity table — replaces the older __dirty
+  //   field which was removed when path-keyed reactivity landed),
+  // __view ((send) => view-bag containing only the destructured primitives —
+  //   added in v0.4 to close the view-helpers tree-shaking leak),
+  // __handlers (per-message-type specialized handlers — dispatches single-
+  //   message updates to specialized reconcile paths via _handleMsg),
+  // __renderToString, __msgSchema, __maskLegend, __componentMeta,
+  // __compilerVersion, __schemaHash, __stateSchema, __effectSchema,
+  // __lluiCompilerEmitted (umbrella integrity marker), __bindingDescriptors.
+  //
+  // Notably absent: __update — the per-component Phase 1/2 fast path was
+  // removed in v0.4 (only ~3% perf benefit, 200-400 bytes per component).
+  // The runtime always uses genericUpdate now.
 }
 ```
 

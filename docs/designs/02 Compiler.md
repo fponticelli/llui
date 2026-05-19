@@ -517,11 +517,17 @@ Reactive text uses **placeholder text nodes** embedded in the template HTML (a s
 
 The compiler injects a `__mask` property into the options object of every `each()`, `branch()`, and `show()` call. The mask is computed by `computeStructuralMask`: it ORs together all path bits read by the block's discriminant/accessor (the `on` function for `branch`/`show`, the `items` function for `each`). At runtime, Phase 1 uses this mask to skip entire structural blocks when none of their dependency paths are dirty (`(block.__mask & dirtyMask) === 0`).
 
-### `__update` Function Generation (`tryInjectUpdate` / `buildUpdateBody`)
+### `__update` Function Generation — REMOVED in v0.4
 
-For each `component()` call site, the compiler generates a `__update` function that replaces the generic Phase 1 / Phase 2 loop. `tryInjectUpdate` detects component definitions and delegates to `buildUpdateBody`, which emits direct calls to each structural block's reconciler and each binding's apply function with inlined mask checks. This eliminates loop iteration overhead and enables V8 to inline the individual calls.
+The compiler used to emit a `__update` function per component that inlined Phase 1 + Phase 2 with the dirty mask threaded in. **Removed in v0.4 (Tier 2.4 of the bundle-size cut)** — empirical perf showed only ~3% wall-time improvement on a 200-binding sparse-update microbench while costing 200–400 bytes per compiled component. The runtime now always uses `genericUpdate` from `update-loop.ts`, which does the same Phase 1 + Phase 2 work without per-component code generation. `buildUpdateBody` (~270 lines) was deleted from `core-synthesis.ts` alongside the runtime dispatch branch in `processMessages`. See `benchmarks/bundle-baseline.json#/phases/2.4` for the measurement.
 
-The generated `__update` function also triggers injection of the `__applyBinding` import (added to the `@llui/dom` import declaration alongside `elSplit`), so the compiled component can call the binding applicator directly rather than going through the generic dispatch.
+### `__view` View-Bag Factory Generation
+
+For each `component()` call where the `view` callback destructures the View bag (`view: ({ send, text, each, ... }) => ...`), the compiler synthesises a `__view: ($send) => ({ send: $send, text, each, ... })` property containing **only the primitives the view actually destructures**. The runtime calls `def.__view(send)` instead of `createView(send)` so the all-primitives import chain that `view-helpers.ts` used to pull through (every primitive referenced by `createView`'s body) becomes unreachable in production bundles.
+
+**Pipeline:** `injectViewBag` runs after `applyRegistryEmissions` in the umbrella visitor. It inspects the `view:` arrow's first parameter — if it's an `ObjectBindingPattern`, the destructured names (with aliases) become bag-field keys, and the corresponding primitive identifiers from `VIEW_BAG_FIELD_TO_PRIMITIVE` become the values. `ctx` maps to `useContext` (the one rename). Necessary `@llui/dom` imports for each referenced primitive are added through the existing `cleanupImports` pass.
+
+**Bag caching:** at runtime, `getInstanceViewBag(inst, send)` (in `render-context.ts`) memoises the constructed bag on the `ComponentInstance` so primitives that loop (each.render at 1000 rows) call the factory once per instance, not once per row. The per-row allocation introduced a +31% Select regression in `pnpm bench`; the cache restored parity. See `benchmarks/bundle-baseline.json#/phases/1.2` and `/3.4`.
 
 ### Per-Message-Type Handler Generation (`tryBuildHandlers` / `buildCaseHandler`)
 
@@ -537,7 +543,9 @@ The compiler analyzes each `case` in the component's `update()` switch via `anal
 
 **`buildCaseHandler`** emits a handler function per case that calls the detected reconciler directly with the pre-computed dirty mask. All handlers delegate to the shared `__handleMsg` runtime function, which handles the update-reconcile-Phase 2 boilerplate. This reduced per-handler generated code from 2039 to 292 bytes.
 
-The generated `__handlers` map is injected as a property on the component definition alongside `__dirty` and `__update`. The runtime checks for `__handlers` and dispatches single-message updates directly; multi-message batches fall back to the generic path.
+The generated `__handlers` map is injected as a property on the component definition. The runtime checks for `__handlers` and dispatches single-message updates directly; multi-message batches fall back to the generic path. (Note: `__update` was removed in v0.4 — the runtime now always uses `genericUpdate` for the fallback path. `__dirty` was removed even earlier in favour of the path-keyed `__prefixes` table.)
+
+**Tier 5 attempt (reverted):** dropping `__handlers` was tested in v0.4 and saved 1.4 kB, but `pnpm bench` measured 23–89 % perf regressions on jfb's keyed-each operations (swap, remove, update-10th, select) because the `method` discriminator dispatched directly to specialised `reconcileItems` / `reconcileClear` / `reconcileRemove` / `reconcileChanged` paths that the generic `reconcile()` can't match. `__handlers` stays — see `benchmarks/bundle-baseline.json#/abandoned/5` for the measured regressions.
 
 ### Row Factory Generation
 

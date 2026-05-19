@@ -42,15 +42,15 @@ function runUpdate(component, dirtyMask) {
 
 The flat array is the critical structure. A tree walk of the scope hierarchy on every update would be O(scope count) regardless of how many bindings are dirty. The flat array, combined with the mask pre-filter, makes the inner loop proportional to the number of bindings whose state access paths could possibly have changed — which is usually a small fraction of the total.
 
-### Compiler `__update` Fast Path
+### Compiler `__update` Fast Path — REMOVED in v0.4
 
-When the compiler plugin runs, it generates a per-component `__update` function that replaces the generic `runUpdate` loop above. The generated function contains direct calls to each structural block and each binding updater with inlined mask checks, eliminating loop overhead. Two key improvements over the generic loop:
+The compiler used to emit a per-component `__update` function that inlined Phase 1 + Phase 2 with the dirty masks threaded in. Removed in v0.4 (Tier 2.4 of the bundle-size cut) — the strategy bench measured only ~3 % wall-time benefit over the generic path, at a cost of 200–400 bytes per compiled component plus the runtime dispatch branch. Two optimisations the old `__update` carried survive in the generic path:
 
-1. **Phase 1 mask gating.** Each structural block (`each`, `branch`, `show`) carries a compiler-injected `__mask` -- the OR of all state paths its discriminant/accessor reads. The generated `__update` skips the block when `(block.__mask & dirtyMask) === 0`. This means an `each()` whose items accessor depends on path A is entirely skipped when only path B is dirty.
+1. **Phase 1 mask gating.** Each structural block (`each`, `branch`, `show`) carries a compiler-injected `__mask` -- the OR of all state paths its discriminant/accessor reads. `genericUpdate` skips the block when `(block.__mask & dirtyMask) === 0`. This means an `each()` whose items accessor depends on path A is entirely skipped when only path B is dirty.
 
 2. **Per-item equality-checked updaters.** `addCheckedItemUpdater` registers item updaters that include an `Object.is` check before the DOM write. When `each()` detects an item reference change and invokes updaters, each updater independently skips if the derived value has not changed. This avoids redundant DOM writes for items where the reference changed but the displayed field remained the same.
 
-The `__update` function also imports `__applyBinding` directly, bypassing the generic binding dispatch. Uncompiled components fall back to the generic `runUpdate` loop with identical semantics.
+Both Phase 1 and Phase 2 of `genericUpdate` use the same mask gates the old `__update` used inline — the runtime cost is dominated by the gate checks and binding work, not the per-component code-generation that was deleted.
 
 ### Per-Message-Type Handlers (`__handlers`)
 

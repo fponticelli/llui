@@ -671,15 +671,9 @@ await page.evaluate(() => {
 })
 ```
 
-### 12. Compiler-Generated `__update` Function
+### 12. Compiler-Generated `__update` Function — REMOVED in v0.4
 
-**Impact: High for all operations.**
-
-The compiler generates a per-component `__update` function that replaces the generic Phase 1 / Phase 2 loop. Instead of iterating arrays of structural blocks and bindings, the generated function contains direct inline calls to each reconciler and each binding updater with mask checks baked in. This eliminates loop iteration overhead and enables V8 to inline individual calls.
-
-Phase 1 mask gating is built into the generated function: each structural block (`each`, `branch`, `show`) carries a compiler-injected `__mask` (the OR of all state paths its accessor reads). The generated code skips the block when `(block.__mask & dirtyMask) === 0`, so an `each()` depending on path A is entirely skipped when only path B is dirty.
-
-The generated function imports `__applyBinding` directly, bypassing the generic binding dispatch. Uncompiled components fall back to the generic `runUpdate` loop with identical semantics.
+The compiler used to emit a per-component `__update` function that inlined Phase 1 + Phase 2 with dirty masks threaded in. **Removed in v0.4 (Tier 2.4 of the bundle-size cut)** — the strategy bench measured only ~3 % wall-time benefit at a cost of 200–400 bytes per compiled component. The runtime now always uses `genericUpdate` from `update-loop.ts`. Both Phase 1 mask gating (each block carries `__mask`) and per-binding mask gates survive in the generic path — only the per-component code emission was deleted. See `benchmarks/bundle-baseline.json#/phases/2.4`.
 
 ### 13. Skip String Conversion for Number Text Nodes
 
