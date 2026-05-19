@@ -3,18 +3,17 @@ import {
   mountApp,
   div,
   h1,
-  button,
   table,
   tbody,
   tr,
   td,
   a,
   span,
-  text,
-  each,
-  flush,
-  selector,
+  // `text`, `each`, and `selector` are accessed via the view bag below
+  // (`view: ({ text, each, selector }) => …`) to satisfy
+  // `llui/view-bag-import` — the bag versions are typed to State.
 } from '@llui/dom'
+import { actionButton } from './action-button.js'
 
 // ── Data generation (matches krausest spec exactly) ──
 
@@ -153,7 +152,7 @@ const App = component<State, Msg, never>({
         return [{ ...state, rows: state.rows.filter((r) => r.id !== msg.id) }, []]
     }
   },
-  view: ({ send }) => [
+  view: ({ send, text, each, selector }) => [
     div({ class: 'container' }, [
       div({ class: 'jumbotron' }, [
         div({ class: 'row' }, [
@@ -221,23 +220,5 @@ const App = component<State, Msg, never>({
     ]),
   ],
 })
-
-function actionButton(id: string, label: string, send: (msg: Msg) => void): HTMLElement {
-  const msg: Msg = id === 'swaprows' ? { type: 'swaprows' } : { type: id as Msg['type'] }
-  return div({ class: 'col-sm-6 smallpad' }, [
-    button(
-      {
-        type: 'button',
-        class: 'btn btn-primary btn-block',
-        id,
-        onClick: () => {
-          send(msg)
-          flush()
-        },
-      },
-      [text(label)],
-    ),
-  ])
-}
 
 mountApp(document.getElementById('main')!, App)

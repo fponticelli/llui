@@ -140,6 +140,7 @@ type Msg =
   /**
    * @intent("Set the locale for the application")
    * @example({"type":"setLocale","key":"fr"})
+   * @emits("syncHtmlLocale")
    */
   | { type: 'setLocale'; key: LocaleKey }
   /** @intent("Load statistics asynchronously") */
@@ -150,25 +151,30 @@ type Msg =
    */
   | { type: 'dialog'; msg: DialogMsg }
 
+// Mirrors `dir` + `lang` onto the document's <html> so RTL scripts
+// flip the whole document layout. Imperative DOM is a side effect;
+// updates return it as an Effect instead of mutating directly.
+type Effect = { kind: 'syncHtmlLocale'; key: LocaleKey }
+
 // ── Component ───────────────────────────────────────────────────
 
-const App = component<State, Msg, never>({
+const App = component<State, Msg, Effect>({
   name: 'I18nLazyDemo',
   init: () => [{ localeKey: 'en' as LocaleKey, showStats: false, dialog: dialog.init() }, []],
   update: (state, msg) => {
     switch (msg.type) {
       case 'setLocale':
-        // Mirror `dir` onto <html> so the whole document flips for RTL
-        // scripts (scrollbar side, text alignment, form controls).
-        if (typeof document !== 'undefined') {
-          document.documentElement.dir = getDir(msg.key)
-          document.documentElement.lang = getBcp47(msg.key)
-        }
-        return [{ ...state, localeKey: msg.key }, []]
+        return [{ ...state, localeKey: msg.key }, [{ kind: 'syncHtmlLocale', key: msg.key }]]
       case 'loadStats':
         return [{ ...state, showStats: true }, []]
       case 'dialog':
         return [{ ...state, dialog: dialog.update(state.dialog, msg.msg)[0] }, []]
+    }
+  },
+  onEffect: ({ effect }) => {
+    if (effect.kind === 'syncHtmlLocale' && typeof document !== 'undefined') {
+      document.documentElement.dir = getDir(effect.key)
+      document.documentElement.lang = getBcp47(effect.key)
     }
   },
   view: (h) => {

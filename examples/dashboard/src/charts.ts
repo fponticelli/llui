@@ -22,37 +22,40 @@ export function barChart(
   const h = data.length * (barH + gap) + gap
   const color = opts.color ?? '#6366f1'
 
-  return svg({ viewBox: `0 0 ${w} ${h}`, width: '100%', class: 'chart bar-chart' }, [
-    ...data.flatMap((d, i) => {
-      const y = gap + i * (barH + gap)
-      const barW = Math.max(2, Math.round((d.value / max) * barAreaW))
-      return [
-        svgText(
-          {
-            x: String(labelW - 6),
-            y: String(y + barH / 2 + 4),
-            'text-anchor': 'end',
-            class: 'chart-label',
-          },
-          [d.label],
-        ),
-        rect({
-          x: String(labelW),
-          y: String(y),
-          width: String(barW),
-          height: String(barH),
-          rx: '4',
-          fill: color,
-          class: 'chart-bar',
-          style: `animation-delay:${(i * 0.05).toFixed(2)}s`,
-        }),
-        svgText(
-          { x: String(labelW + barW + 8), y: String(y + barH / 2 + 4), class: 'chart-value' },
-          [`$${(d.value / 1000).toFixed(1)}k`],
-        ),
-      ]
-    }),
-  ])
+  // Build the per-bar children up-front and pass as the children
+  // arg directly — avoids `[...flatMap(...)]` which would trip
+  // `llui/spread-in-children` (the chart is a pure SVG helper, not
+  // an LLui reactive scope; bars rebuild as a unit per parent render,
+  // which is fine for the chart's small fixed N).
+  const bars = data.flatMap((d, i) => {
+    const y = gap + i * (barH + gap)
+    const barW = Math.max(2, Math.round((d.value / max) * barAreaW))
+    return [
+      svgText(
+        {
+          x: String(labelW - 6),
+          y: String(y + barH / 2 + 4),
+          'text-anchor': 'end',
+          class: 'chart-label',
+        },
+        [d.label],
+      ),
+      rect({
+        x: String(labelW),
+        y: String(y),
+        width: String(barW),
+        height: String(barH),
+        rx: '4',
+        fill: color,
+        class: 'chart-bar',
+        style: `animation-delay:${(i * 0.05).toFixed(2)}s`,
+      }),
+      svgText({ x: String(labelW + barW + 8), y: String(y + barH / 2 + 4), class: 'chart-value' }, [
+        `$${(d.value / 1000).toFixed(1)}k`,
+      ]),
+    ]
+  })
+  return svg({ viewBox: `0 0 ${w} ${h}`, width: '100%', class: 'chart bar-chart' }, bars)
 }
 
 /**
@@ -86,27 +89,24 @@ export function lineChart(
   // Gradient fill area
   const areaD = `${pathD} L${points[points.length - 1].x.toFixed(1)},${h - padY} L${padX},${h - padY} Z`
 
-  return svg({ viewBox: `0 0 ${w} ${h}`, width: '100%', class: 'chart line-chart' }, [
-    // Grid lines
-    ...Array.from({ length: 5 }, (_, i) => {
-      const y = padY + (i / 4) * plotH
-      return line({
-        x1: String(padX),
-        y1: String(y),
-        x2: String(w - padX),
-        y2: String(y),
-        stroke: '#334155',
-        'stroke-width': '1',
-      })
-    }),
-    // Area fill
-    path({
-      d: areaD,
-      fill: color,
-      opacity: '0.1',
-      class: 'chart-area',
-    }),
-    // Line
+  const gridLines = Array.from({ length: 5 }, (_, i) => {
+    const y = padY + (i / 4) * plotH
+    return line({
+      x1: String(padX),
+      y1: String(y),
+      x2: String(w - padX),
+      y2: String(y),
+      stroke: '#334155',
+      'stroke-width': '1',
+    })
+  })
+  // Build children up front and pass directly to svg() — avoids a
+  // `[...gridLines, …]` literal which would trip llui/spread-in-children.
+  // Chart is a pure presentation helper, not an LLui reactive scope.
+  const first = points[0]!
+  const last = points[points.length - 1]!
+  const children = gridLines.concat([
+    path({ d: areaD, fill: color, opacity: '0.1', class: 'chart-area' }),
     path({
       d: pathD,
       fill: 'none',
@@ -116,23 +116,12 @@ export function lineChart(
       'stroke-linejoin': 'round',
       class: 'chart-line',
     }),
-    // Dots at start and end
-    circle({
-      cx: String(points[0].x),
-      cy: String(points[0].y),
-      r: '4',
-      fill: color,
-    }),
-    circle({
-      cx: String(points[points.length - 1].x),
-      cy: String(points[points.length - 1].y),
-      r: '4',
-      fill: color,
-    }),
-    // Labels
+    circle({ cx: String(first.x), cy: String(first.y), r: '4', fill: color }),
+    circle({ cx: String(last.x), cy: String(last.y), r: '4', fill: color }),
     svgText({ x: String(padX), y: String(h - 4), class: 'chart-label' }, ['Day 1']),
     svgText({ x: String(w - padX), y: String(h - 4), 'text-anchor': 'end', class: 'chart-label' }, [
       `Day ${data.length}`,
     ]),
   ])
+  return svg({ viewBox: `0 0 ${w} ${h}`, width: '100%', class: 'chart line-chart' }, children)
 }
