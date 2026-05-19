@@ -3,7 +3,6 @@ import spreadInChildrenRule from './rules/spread-in-children.js'
 import viewBagImportRule from './rules/view-bag-import.js'
 import { missingMemoRule } from './rules/missing-memo.js'
 import { formBoilerplateRule } from './rules/form-boilerplate.js'
-import { agentNonextractableHandlerRule } from './rules/agent-nonextractable-handler.js'
 import { agentMsgResolvableRule } from './rules/agent-msg-resolvable.js'
 import { agentEmitsDriftRule } from './rules/agent-emits-drift.js'
 import { emptyPropsRule } from './rules/empty-props.js'
@@ -16,8 +15,6 @@ import { noBarrelImportWhenSubpathExistsRule } from './rules/no-barrel-import-wh
 import { noSampleInAccessorRule } from './rules/no-sample-in-accessor.js'
 import { noSampleInReactivePositionRule } from './rules/no-sample-in-reactive-position.js'
 import { staticItemsRule } from './rules/static-items.js'
-import { agentTagsendTranslatorMissingRule } from './rules/agent-tagsend-translator-missing.js'
-import { subappRequiresReasonRule } from './rules/subapp-requires-reason.js'
 
 export const rules = {
   'forgotten-spread': forgottenSpreadRule,
@@ -25,7 +22,6 @@ export const rules = {
   'view-bag-import': viewBagImportRule,
   'missing-memo': missingMemoRule,
   'form-boilerplate': formBoilerplateRule,
-  'agent-nonextractable-handler': agentNonextractableHandlerRule,
   'agent-msg-resolvable': agentMsgResolvableRule,
   'agent-emits-drift': agentEmitsDriftRule,
   'empty-props': emptyPropsRule,
@@ -38,8 +34,6 @@ export const rules = {
   'no-sample-in-accessor': noSampleInAccessorRule,
   'no-sample-in-reactive-position': noSampleInReactivePositionRule,
   'static-items': staticItemsRule,
-  'agent-tagsend-translator-missing': agentTagsendTranslatorMissingRule,
-  'subapp-requires-reason': subappRequiresReasonRule,
 }
 
 // Severity rationale:
@@ -67,7 +61,6 @@ export const configs = {
       'llui/forgotten-spread': 'error',
       'llui/missing-memo': 'error',
       'llui/form-boilerplate': 'error',
-      'llui/agent-nonextractable-handler': 'error',
       'llui/agent-msg-resolvable': 'error',
       'llui/agent-emits-drift': 'error',
       // Rules ported from the Vite plugin's compile-time diagnostics.
@@ -84,8 +77,6 @@ export const configs = {
       'llui/no-sample-in-accessor': 'error',
       'llui/no-sample-in-reactive-position': 'error',
       'llui/static-items': 'error',
-      'llui/agent-tagsend-translator-missing': 'error',
-      'llui/subapp-requires-reason': 'error',
     },
   },
   // Standalone overlay that errors on the `agent-*` rules. Useful for
@@ -94,10 +85,8 @@ export const configs = {
   agent: {
     plugins: ['llui'],
     rules: {
-      'llui/agent-nonextractable-handler': 'error',
       'llui/agent-msg-resolvable': 'error',
       'llui/agent-emits-drift': 'error',
-      'llui/agent-tagsend-translator-missing': 'error',
     },
   },
 }

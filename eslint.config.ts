@@ -81,14 +81,8 @@ export default tseslint.config(
      * the only severity that drives self-healing behaviour.
      */
     rules: {
-      'llui/agent-missing-intent': 'error',
-      'llui/agent-exclusive-annotations': 'error',
-      'llui/agent-nonextractable-handler': 'error',
       'llui/agent-msg-resolvable': 'error',
-      'llui/agent-warning-on-confirm': 'error',
-      'llui/agent-example-on-payload': 'error',
       'llui/agent-emits-drift': 'error',
-      'llui/agent-optional-field-undocumented': 'error',
     },
   },
   // ── Compiler-pattern overlay ─────────────────────────────────────

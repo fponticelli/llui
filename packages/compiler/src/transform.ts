@@ -62,6 +62,9 @@ import { agentWarningOnConfirmModule } from './modules/agent-warning-on-confirm.
 import { agentExampleOnPayloadModule } from './modules/agent-example-on-payload.js'
 import { agentExclusiveAnnotationsModule } from './modules/agent-exclusive-annotations.js'
 import { agentOptionalFieldUndocumentedModule } from './modules/agent-optional-field-undocumented.js'
+import { agentTagsendTranslatorMissingModule } from './modules/agent-tagsend-translator-missing.js'
+import { agentNonextractableHandlerModule } from './modules/agent-nonextractable-handler.js'
+import { subappRequiresReasonModule } from './modules/subapp-requires-reason.js'
 
 export function createMaskLiteral(f: ts.NodeFactory, mask: number): ts.Expression {
   if (mask >= 0) return f.createNumericLiteral(mask)
@@ -419,6 +422,9 @@ export function transformLlui(
   activeModules.push(agentExampleOnPayloadModule())
   activeModules.push(agentExclusiveAnnotationsModule())
   activeModules.push(agentOptionalFieldUndocumentedModule())
+  activeModules.push(agentTagsendTranslatorMissingModule())
+  activeModules.push(agentNonextractableHandlerModule())
+  activeModules.push(subappRequiresReasonModule())
   // eachMemoModule wraps allocating each() items accessors in
   // `memo(...)` via `transformCallEnter`. Activated when the file
   // has any reactive paths (mirrors the inline call's gating).
