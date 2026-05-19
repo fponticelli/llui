@@ -23,6 +23,7 @@
   },
   "dependencies": {
     "@llui/compiler": "workspace:*",
+    "@llui/compiler-introspection": "workspace:*",
     "@llui/compiler-ssr": "workspace:*",
     "magic-string": "^0.30.21",
     "typescript": "^6.0.2"

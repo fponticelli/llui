@@ -12,14 +12,15 @@ import { extractStateSchema } from './state-schema.js'
 import { compilerCache } from './compiler-cache.js'
 import { ModuleRegistry, type CompilerModule, type EmissionContribution } from './module.js'
 import { componentMetaModule } from './modules/component-meta.js'
-import { stateSchemaModule } from './modules/state-schema.js'
-import { msgAnnotationsModule } from './modules/msg-annotations.js'
-import { msgSchemaModule } from './modules/msg-schema.js'
-import { schemaHashModule } from './modules/schema-hash.js'
-import {
-  bindingDescriptorsModule,
-  BINDING_DESCRIPTORS_SLOT,
-} from './modules/binding-descriptors.js'
+// Introspection modules moved to @llui/compiler-introspection
+// (v2c/decomp-26). The host (vite-plugin, mcp, test setup) registers
+// the factory via `registerIntrospectionFactory`; transformLlui
+// invokes it via `getIntrospectionFactory()` when the flags request
+// introspection. The slot key for binding-descriptors is exported
+// from introspection-factory.ts as a string constant so the
+// orchestrator can read the slot without importing the sibling
+// package.
+import { getIntrospectionFactory, BINDING_DESCRIPTORS_SLOT } from './introspection-factory.js'
 import { maskLegendModule } from './modules/mask-legend.js'
 import { compilerStampModule } from './modules/compiler-stamp.js'
 import { eachMemoModule, EACH_MEMO_SLOT, type EachMemoSlot } from './modules/each-memo.js'
@@ -328,38 +329,27 @@ export function transformLlui(
   if (devMode) {
     activeModules.push(componentMetaModule)
   }
-  if (shouldEmitAgentMetadataAtToplevel) {
-    // binding-descriptors fires FIRST so the AST mutations (handler
-    // tagging + scope-variant registration) land before any later
-    // module's visitor or emit sees the file. The other agent modules
-    // then run against the post-binding-descriptors sourceFile.
-    activeModules.push(bindingDescriptorsModule)
-    // Order matters (v2c §2.1): the three input-producer modules run
-    // before schemaHashModule so the inputs slot is populated when
-    // schema-hash's emit runs. The registry's emit pass iterates
-    // modules in declaration order.
-    if (hoistedMsgSchema || hoistedEffectSchema) {
-      activeModules.push(
-        msgSchemaModule({ msgSchema: hoistedMsgSchema, effectSchema: hoistedEffectSchema }),
-      )
-    }
-    if (hoistedStateSchema) {
-      activeModules.push(stateSchemaModule({ stateSchema: hoistedStateSchema }))
-    }
-    // msgAnnotationsModule populates schema-hash inputs even when the
-    // annotation map carries only defaults — the schema-hash is over
-    // the full map. Suppression of `__msgAnnotations` emission happens
-    // inside the module via `hasNonDefaultAnnotation`.
-    if (hoistedMsgAnnotations !== null) {
-      activeModules.push(msgAnnotationsModule({ msgAnnotations: hoistedMsgAnnotations }))
-    }
+  // Introspection modules (binding-descriptors, msg-schema,
+  // state-schema, msg-annotations, schema-hash) live in
+  // @llui/compiler-introspection. The host registers the factory
+  // once via `registerIntrospectionFactory`. The factory itself
+  // decides which modules to activate based on
+  // `shouldEmitAgentMetadata`: producer modules + binding-descriptors
+  // run only in agent mode, but schemaHashModule runs always (HMR
+  // re-send gating uses it even in prod builds — spec §7.4).
+  const introspection = getIntrospectionFactory()
+  if (introspection) {
+    activeModules.push(
+      ...introspection({
+        sourceFile,
+        msgSchema: hoistedMsgSchema,
+        effectSchema: hoistedEffectSchema,
+        stateSchema: hoistedStateSchema,
+        msgAnnotations: hoistedMsgAnnotations,
+        shouldEmitAgentMetadata: shouldEmitAgentMetadataAtToplevel,
+      }),
+    )
   }
-  // schemaHashModule registers unconditionally — the monolith emitted
-  // `__schemaHash` for every compiled component regardless of agent
-  // mode (the hash itself is well-defined for null inputs). The agent
-  // producer modules populate the inputs slot when active; their
-  // absence flows through as null inputs to the hash.
-  activeModules.push(schemaHashModule)
   // maskLegendModule registers whenever the file has any reactive paths.
   // The module's own emit() gates on empty bit maps so registering
   // here when fieldBits/fieldBitsHi are non-empty is sufficient.

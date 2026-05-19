@@ -10,14 +10,14 @@
 // emission is suppressed (runtime treats absence as defaults). This is
 // a real win for un-annotated Msg unions, which dominate.
 
-import type { CompilerModule, EmissionContribution } from '../module.js'
+import type { CompilerModule, EmissionContribution } from '@llui/compiler'
 import {
   annotationsToObjectLiteral,
   hasNonDefaultAnnotation,
   type MessageAnnotations,
-} from '../msg-annotations.js'
+} from '@llui/compiler'
 import { SCHEMA_HASH_INPUTS_SLOT, type SchemaHashInputs } from './schema-hash.js'
-import { findComponentCalls } from './_shared.js'
+import { findComponentCalls } from '@llui/compiler'
 
 export interface MsgAnnotationsModuleOptions {
   /** Pre-computed annotation map. Null when extraction failed; empty

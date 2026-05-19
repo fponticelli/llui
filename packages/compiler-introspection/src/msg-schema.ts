@@ -15,10 +15,10 @@
 // `injectSchemaHash` in transform.ts also deletes — see
 // v2c/decomp-5's migration.
 
-import type { CompilerModule, EmissionContribution } from '../module.js'
-import { msgSchemaToLiteral, type MsgSchema } from '../msg-schema.js'
+import type { CompilerModule, EmissionContribution } from '@llui/compiler'
+import { msgSchemaToLiteral, type MsgSchema } from '@llui/compiler'
 import { SCHEMA_HASH_INPUTS_SLOT, type SchemaHashInputs } from './schema-hash.js'
-import { findComponentCalls } from './_shared.js'
+import { findComponentCalls } from '@llui/compiler'
 
 export interface MsgSchemaModuleOptions {
   /** Pre-computed Msg schema; null when extraction failed. */

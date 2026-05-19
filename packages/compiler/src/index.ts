@@ -10,22 +10,16 @@ export * from './diagnostic.js'
 export * from './manifest.js'
 export * from './module.js'
 export * from './version.js'
-export {
-  schemaHashModule,
-  SCHEMA_HASH_INPUTS_SLOT,
-  type SchemaHashInputs,
-} from './modules/schema-hash.js'
+export * from './introspection-factory.js'
+export { findComponentCalls } from './modules/_shared.js'
+// Introspection modules (schemaHashModule, msg-schema, msg-annotations,
+// state-schema, binding-descriptors) moved to @llui/compiler-introspection
+// in v2c/decomp-26. Adapters that previously imported these names from
+// @llui/compiler must now import from @llui/compiler-introspection.
+// BINDING_DESCRIPTORS_SLOT is re-exported from introspection-factory.js
+// (above) so the orchestrator can read the slot without depending on
+// the introspection package.
 export { componentMetaModule } from './modules/component-meta.js'
-export { stateSchemaModule, type StateSchemaModuleOptions } from './modules/state-schema.js'
-export {
-  msgAnnotationsModule,
-  type MsgAnnotationsModuleOptions,
-} from './modules/msg-annotations.js'
-export { msgSchemaModule, type MsgSchemaModuleOptions } from './modules/msg-schema.js'
-export {
-  bindingDescriptorsModule,
-  BINDING_DESCRIPTORS_SLOT,
-} from './modules/binding-descriptors.js'
 export { maskLegendModule, type MaskLegendModuleOptions } from './modules/mask-legend.js'
 export { compilerStampModule } from './modules/compiler-stamp.js'
 export {

@@ -25,10 +25,13 @@
 // requiring the full sibling-module pipeline.
 
 import ts from 'typescript'
-import { computeSchemaHash } from '../schema-hash.js'
-import type { MessageAnnotations } from '../msg-annotations.js'
-import type { CompilerModule, EmissionContribution } from '../module.js'
-import { findComponentCalls } from './_shared.js'
+import {
+  computeSchemaHash,
+  type MessageAnnotations,
+  type CompilerModule,
+  type EmissionContribution,
+  findComponentCalls,
+} from '@llui/compiler'
 
 /**
  * Slot shape modules write to populate this module's inputs. Sibling

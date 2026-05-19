@@ -348,6 +348,9 @@ importers:
         specifier: ^6.0.2
         version: 6.0.2
     devDependencies:
+      '@llui/compiler-introspection':
+        specifier: workspace:*
+        version: link:../compiler-introspection
       '@types/node':
         specifier: ^22.0.0
         version: 22.19.15
@@ -454,6 +457,9 @@ importers:
       '@llui/compiler':
         specifier: workspace:*
         version: link:../compiler
+      '@llui/compiler-introspection':
+        specifier: workspace:*
+        version: link:../compiler-introspection
       '@llui/eslint-plugin':
         specifier: workspace:*
         version: link:../eslint-plugin-llui
@@ -525,6 +531,9 @@ importers:
       '@llui/compiler':
         specifier: workspace:*
         version: link:../compiler
+      '@llui/compiler-introspection':
+        specifier: workspace:*
+        version: link:../compiler-introspection
       '@llui/compiler-ssr':
         specifier: workspace:*
         version: link:../compiler-ssr

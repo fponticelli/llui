@@ -16,10 +16,17 @@ import { spawn, type ChildProcess } from 'node:child_process'
 import {
   transformLlui,
   crossFileAccessorPaths,
+  registerIntrospectionFactory,
   type ExternalTypeSources,
   type PreExtractedSchemas,
 } from '@llui/compiler'
 import { transformUseClientSsr, hasUseClientDirective } from '@llui/compiler-ssr'
+import { introspectionFactory } from '@llui/compiler-introspection'
+
+// Register the introspection module factory at plugin-import time.
+// @llui/compiler doesn't depend on @llui/compiler-introspection
+// (would create a workspace cycle), so the host wires them.
+registerIntrospectionFactory(introspectionFactory)
 import {
   findTypeSource,
   readComponentTypeArgNames,

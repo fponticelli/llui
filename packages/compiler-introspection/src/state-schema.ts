@@ -12,10 +12,10 @@
 // data + type-source overrides are already wired) and frees the module
 // from re-implementing input resolution.
 
-import type { CompilerModule, EmissionContribution } from '../module.js'
-import { stateTypeToLiteral, type StateSchema } from '../state-schema.js'
+import type { CompilerModule, EmissionContribution } from '@llui/compiler'
+import { stateTypeToLiteral, type StateSchema } from '@llui/compiler'
 import { SCHEMA_HASH_INPUTS_SLOT, type SchemaHashInputs } from './schema-hash.js'
-import { findComponentCalls } from './_shared.js'
+import { findComponentCalls } from '@llui/compiler'
 
 export interface StateSchemaModuleOptions {
   /** Pre-computed schema (cross-file aware) — null when extraction failed. */

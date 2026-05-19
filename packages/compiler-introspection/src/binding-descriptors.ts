@@ -23,17 +23,15 @@
 // `cleanupImports` reads it to know whether to add the
 // `__registerScopeVariants` runtime helper to the @llui/dom imports.
 
-import { tagDispatchHandlers, injectScopeVariantRegistrations } from '../binding-descriptors.js'
-import type { CompilerModule } from '../module.js'
+import {
+  tagDispatchHandlers,
+  injectScopeVariantRegistrations,
+  BINDING_DESCRIPTORS_SLOT,
+  type BindingDescriptorsSlot,
+} from '@llui/compiler'
+import type { CompilerModule } from '@llui/compiler'
 
-interface BindingDescriptorsSlot {
-  /** Whether `injectScopeVariantRegistrations` actually inserted any
-   *  call sites — drives import-cleanup's decision about the
-   *  `__registerScopeVariants` runtime helper. */
-  scopeRegistrationsInjected: boolean
-}
-
-export const BINDING_DESCRIPTORS_SLOT = 'binding-descriptors:state'
+export { BINDING_DESCRIPTORS_SLOT }
 
 export const bindingDescriptorsModule: CompilerModule = {
   name: 'binding-descriptors',
