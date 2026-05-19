@@ -51,19 +51,25 @@ pnpm bench:build              # Build jfb app only (no benchmark run)
 
 ## Monorepo Structure
 
-Six packages under `packages/`, managed by pnpm workspaces + Turborepo:
+Thirteen packages under `packages/`, managed by pnpm workspaces + Turborepo:
 
-| Package             | Purpose                                                                                 | Dependencies |
-| ------------------- | --------------------------------------------------------------------------------------- | ------------ |
-| `@llui/dom`         | Runtime: component, mount, scope tree, bindings, element helpers, structural primitives | —            |
-| `@llui/vite-plugin` | Compiler: 3-pass TypeScript transform (prop split → mask injection → import cleanup)    | peer: vite   |
-| `@llui/components`  | 58 headless components: accordion, dialog, tabs, select, tree-view, timer, tour, etc.   | @llui/dom    |
-| `@llui/test`        | Test harness: testComponent, assertEffects, testView, propertyTest, replayTrace         | @llui/dom    |
-| `@llui/effects`     | Effect builders: http, cancel, debounce, sequence, race + handleEffects chain           | —            |
-| `@llui/mcp`         | MCP server: 44 tools exposing LLui debug API + lint to LLMs                             | @llui/dom    |
-| `@llui/vike`        | Vike SSR adapter: onRenderHtml, onRenderClient                                          | @llui/dom    |
+| Package               | Purpose                                                                                 | Dependencies |
+| --------------------- | --------------------------------------------------------------------------------------- | ------------ |
+| `@llui/dom`           | Runtime: component, mount, scope tree, bindings, element helpers, structural primitives | —            |
+| `@llui/vite-plugin`   | Compiler: 3-pass TypeScript transform (prop split → mask injection → import cleanup)    | peer: vite   |
+| `@llui/eslint-plugin` | 41 lint rules, ~15 type-aware (mirror analyzers from `@llui/vite-plugin`)               | peer: eslint |
+| `@llui/components`    | Headless components: accordion, dialog, tabs, select, tree-view, timer, tour, etc.      | @llui/dom    |
+| `@llui/test`          | Test harness: testComponent, assertEffects, testView, propertyTest, replayTrace         | @llui/dom    |
+| `@llui/effects`       | Effect builders: http, cancel, debounce, sequence, race + handleEffects chain           | —            |
+| `@llui/router`        | Client router with route-matching helpers and link components                           | @llui/dom    |
+| `@llui/transitions`   | Animation/transition wrapper helpers                                                    | @llui/dom    |
+| `@llui/mcp`           | MCP server exposing LLui debug API + lint to LLMs                                       | @llui/dom    |
+| `@llui/vike`          | Vike SSR adapter: onRenderHtml, onRenderClient                                          | @llui/dom    |
+| `llui-agent`          | Agent runtime / SDK for programmatic control                                            | @llui/dom    |
+| `@llui/agent-bridge`  | Browser bridge that connects a running app to the agent host                            | @llui/dom    |
+| `@llui/agent-e2e`     | End-to-end fixtures and tests for the agent surface                                     | @llui/dom    |
 
-Build order: `@llui/dom` and `@llui/effects` first (no deps), then `@llui/test`, `@llui/vike` (depend on core). Turbo handles this via `"dependsOn": ["^build"]`.
+Build order is computed by Turbo via `"dependsOn": ["^build"]`. Roots: `@llui/dom` and `@llui/effects` (no deps); everything else layers on top.
 
 ## Architecture Concepts
 
@@ -93,3 +99,12 @@ Comprehensive specs live in `docs/designs/`. These are the authoritative referen
 - `07 LLM Friendliness.md` — system prompt design, evaluation tasks, LLM debug protocol
 - `08 Ecosystem Integration.md` — Vike SSR, foreign() for imperative libs
 - `09 API Reference.md` — authoritative type signatures for all public exports
+- `10 Agent Protocol.md` — agent transport, message shapes, lifecycle
+- `11 Agent Annotations and Tools.md` — JSDoc annotations for agent-resolvable msgs and tool surfaces
+- `13 Migration from v0.0.x.md` — migration guide for projects on the pre-0.1.0 API
+
+## Active proposals
+
+Major architectural changes in flight. Read before touching the relevant packages:
+
+- **v2 Compiler Architecture** (`docs/proposals/v2-compiler/`) — splits `@llui/compiler` out of `@llui/vite-plugin`; introduces cross-file analysis, library manifests (`__llui_deps.json`), the `track()` primitive, and a `__compilerVersion` runtime gate. Phased as v2a (extraction), v2b (cross-file + runtime contract), v2c (module system). Each phase has its own sequenced implementation roadmap with measurement gates and failure paths. **Anyone working in `packages/vite-plugin/`, `packages/eslint-plugin-llui/`, `packages/dom/src/update-loop.ts`, `packages/dom/src/types.ts`, or `packages/dom/test/` should read `docs/proposals/v2-compiler/README.md` first** — the proposal commits to specific test-migration, runtime-contract, and adapter-shape changes that ad-hoc refactoring will conflict with.

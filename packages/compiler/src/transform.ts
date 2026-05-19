@@ -56,6 +56,12 @@ import { pureUpdateFunctionModule } from './modules/pure-update-function.js'
 import { exhaustiveUpdateModule } from './modules/exhaustive-update.js'
 import { noLetReactiveAccessorModule } from './modules/no-let-reactive-accessor.js'
 import { eachClosureViolationModule } from './modules/each-closure-violation.js'
+import { stringEffectCallbackModule } from './modules/string-effect-callback.js'
+import { agentMissingIntentModule } from './modules/agent-missing-intent.js'
+import { agentWarningOnConfirmModule } from './modules/agent-warning-on-confirm.js'
+import { agentExampleOnPayloadModule } from './modules/agent-example-on-payload.js'
+import { agentExclusiveAnnotationsModule } from './modules/agent-exclusive-annotations.js'
+import { agentOptionalFieldUndocumentedModule } from './modules/agent-optional-field-undocumented.js'
 
 export function createMaskLiteral(f: ts.NodeFactory, mask: number): ts.Expression {
   if (mask >= 0) return f.createNumericLiteral(mask)
@@ -407,6 +413,12 @@ export function transformLlui(
   activeModules.push(exhaustiveUpdateModule())
   activeModules.push(noLetReactiveAccessorModule())
   activeModules.push(eachClosureViolationModule())
+  activeModules.push(stringEffectCallbackModule())
+  activeModules.push(agentMissingIntentModule())
+  activeModules.push(agentWarningOnConfirmModule())
+  activeModules.push(agentExampleOnPayloadModule())
+  activeModules.push(agentExclusiveAnnotationsModule())
+  activeModules.push(agentOptionalFieldUndocumentedModule())
   // eachMemoModule wraps allocating each() items accessors in
   // `memo(...)` via `transformCallEnter`. Activated when the file
   // has any reactive paths (mirrors the inline call's gating).
@@ -826,7 +838,16 @@ export function transformLlui(
     f,
   )
 
-  if (edits.length === 0) return null
+  if (edits.length === 0) {
+    // No element-helper rewrites — but registry may still have
+    // collected diagnostics (e.g. agent-rule errors on Msg variants
+    // in a Msg-declaration-only file). Surface them so the adapter
+    // can fail the build.
+    if (registryResult.analysis.diagnostics.length > 0) {
+      return { output: source, edits: [], diagnostics: registryResult.analysis.diagnostics }
+    }
+    return null
+  }
 
   // Find component declarations for HMR and agent metadata
   const componentDecls =

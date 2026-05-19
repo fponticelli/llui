@@ -1,17 +1,11 @@
 import forgottenSpreadRule from './rules/forgotten-spread.js'
 import spreadInChildrenRule from './rules/spread-in-children.js'
-import stringEffectCallbackRule from './rules/string-effect-callback.js'
 import viewBagImportRule from './rules/view-bag-import.js'
 import { missingMemoRule } from './rules/missing-memo.js'
 import { formBoilerplateRule } from './rules/form-boilerplate.js'
-import { agentMissingIntentRule } from './rules/agent-missing-intent.js'
-import { agentExclusiveAnnotationsRule } from './rules/agent-exclusive-annotations.js'
 import { agentNonextractableHandlerRule } from './rules/agent-nonextractable-handler.js'
 import { agentMsgResolvableRule } from './rules/agent-msg-resolvable.js'
-import { agentWarningOnConfirmRule } from './rules/agent-warning-on-confirm.js'
-import { agentExampleOnPayloadRule } from './rules/agent-example-on-payload.js'
 import { agentEmitsDriftRule } from './rules/agent-emits-drift.js'
-import { agentOptionalFieldUndocumentedRule } from './rules/agent-optional-field-undocumented.js'
 import { emptyPropsRule } from './rules/empty-props.js'
 import { namespaceImportRule } from './rules/namespace-import.js'
 import { accessibilityRule } from './rules/accessibility.js'
@@ -28,18 +22,12 @@ import { subappRequiresReasonRule } from './rules/subapp-requires-reason.js'
 export const rules = {
   'forgotten-spread': forgottenSpreadRule,
   'spread-in-children': spreadInChildrenRule,
-  'string-effect-callback': stringEffectCallbackRule,
   'view-bag-import': viewBagImportRule,
   'missing-memo': missingMemoRule,
   'form-boilerplate': formBoilerplateRule,
-  'agent-missing-intent': agentMissingIntentRule,
-  'agent-exclusive-annotations': agentExclusiveAnnotationsRule,
   'agent-nonextractable-handler': agentNonextractableHandlerRule,
   'agent-msg-resolvable': agentMsgResolvableRule,
-  'agent-warning-on-confirm': agentWarningOnConfirmRule,
-  'agent-example-on-payload': agentExampleOnPayloadRule,
   'agent-emits-drift': agentEmitsDriftRule,
-  'agent-optional-field-undocumented': agentOptionalFieldUndocumentedRule,
   'empty-props': emptyPropsRule,
   'namespace-import': namespaceImportRule,
   accessibility: accessibilityRule,
@@ -77,17 +65,11 @@ export const configs = {
       'llui/spread-in-children': 'error',
       'llui/view-bag-import': 'error',
       'llui/forgotten-spread': 'error',
-      'llui/string-effect-callback': 'error',
       'llui/missing-memo': 'error',
       'llui/form-boilerplate': 'error',
-      'llui/agent-missing-intent': 'error',
-      'llui/agent-exclusive-annotations': 'error',
       'llui/agent-nonextractable-handler': 'error',
       'llui/agent-msg-resolvable': 'error',
-      'llui/agent-warning-on-confirm': 'error',
-      'llui/agent-example-on-payload': 'error',
       'llui/agent-emits-drift': 'error',
-      'llui/agent-optional-field-undocumented': 'error',
       // Rules ported from the Vite plugin's compile-time diagnostics.
       // The Vite plugin no longer emits these; the lint pipeline is
       // the single source of truth, surfacing them as editor squiggles
@@ -112,14 +94,9 @@ export const configs = {
   agent: {
     plugins: ['llui'],
     rules: {
-      'llui/agent-missing-intent': 'error',
-      'llui/agent-exclusive-annotations': 'error',
       'llui/agent-nonextractable-handler': 'error',
       'llui/agent-msg-resolvable': 'error',
-      'llui/agent-warning-on-confirm': 'error',
-      'llui/agent-example-on-payload': 'error',
       'llui/agent-emits-drift': 'error',
-      'llui/agent-optional-field-undocumented': 'error',
       'llui/agent-tagsend-translator-missing': 'error',
     },
   },
