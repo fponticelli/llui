@@ -216,7 +216,7 @@ export function virtualEach<S, T, M = unknown>(opts: VirtualEachOptions<S, T, M>
     if (items.length === 0) {
       // Dispose all entries
       for (const entry of entries.values()) {
-        entry.scope.disposalCause = 'each-remove'
+        if (import.meta.env?.DEV) entry.scope.disposalCause = 'each-remove'
         disposeLifetime(entry.scope)
         if (entry.wrapper.parentNode) entry.wrapper.parentNode.removeChild(entry.wrapper)
       }
@@ -236,7 +236,7 @@ export function virtualEach<S, T, M = unknown>(opts: VirtualEachOptions<S, T, M>
     // Dispose entries no longer visible
     for (const [key, entry] of entries) {
       if (!visibleKeys.has(key)) {
-        entry.scope.disposalCause = 'each-remove'
+        if (import.meta.env?.DEV) entry.scope.disposalCause = 'each-remove'
         disposeLifetime(entry.scope)
         if (entry.wrapper.parentNode) entry.wrapper.parentNode.removeChild(entry.wrapper)
         entries.delete(key)

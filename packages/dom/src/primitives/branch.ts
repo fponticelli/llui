@@ -122,7 +122,8 @@ export function branch<S, M = unknown, K extends string = string>(
           // defaults to `'branch-swap'`. Tag wins over any pre-existing
           // value set by an inner primitive so the outermost cause is
           // reported (matches how humans describe the event).
-          leavingLifetime.disposalCause = opts.__disposalCause ?? 'branch-swap'
+          if (import.meta.env?.DEV)
+            leavingLifetime.disposalCause = opts.__disposalCause ?? 'branch-swap'
           disposeLifetime(leavingLifetime)
         }
       }

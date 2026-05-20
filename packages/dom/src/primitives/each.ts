@@ -251,7 +251,7 @@ export function each<S, T, M = unknown>(opts: EachOptions<S, T, M>): Node[] {
       const scopes: Lifetime[] = []
       for (let i = 0; i < entries.length; i++) {
         const s = entries[i]!.scope
-        s.disposalCause = 'each-remove'
+        if (import.meta.env?.DEV) s.disposalCause = 'each-remove'
         scopes.push(s)
       }
       disposeLifetimesBulk(scopes)
@@ -307,7 +307,7 @@ export function each<S, T, M = unknown>(opts: EachOptions<S, T, M>): Node[] {
           // Entry removed — notify selectors before scope disposal
           for (let ci = 0; ci < removeCallbacks.length; ci++) removeCallbacks[ci]!(entry.key)
           for (const node of entry.nodes) parent.removeChild(node)
-          entry.scope.disposalCause = 'each-remove'
+          if (import.meta.env?.DEV) entry.scope.disposalCause = 'each-remove'
           disposeLifetime(entry.scope, true)
           entries[oi] = null!
           didRemove = true
@@ -428,7 +428,7 @@ function removeEntry<T>(
     for (const node of entry.nodes) {
       if (node.parentNode) node.parentNode.removeChild(node)
     }
-    entry.scope.disposalCause = 'each-remove'
+    if (import.meta.env?.DEV) entry.scope.disposalCause = 'each-remove'
     disposeLifetime(entry.scope)
     const idx = leaving.indexOf(entry)
     if (idx !== -1) leaving.splice(idx, 1)
@@ -644,7 +644,7 @@ function reconcileEntries<S, T>(
     const scopes: Lifetime[] = []
     for (let i = 0; i < entries.length; i++) {
       const s = entries[i]!.scope
-      s.disposalCause = 'each-remove'
+      if (import.meta.env?.DEV) s.disposalCause = 'each-remove'
       scopes.push(s)
     }
     disposeLifetimesBulk(scopes)
@@ -755,7 +755,7 @@ function reconcileEntries<S, T>(
       const oldLifetimes: Lifetime[] = []
       for (let i = 0; i < entries.length; i++) {
         const s = entries[i]!.scope
-        s.disposalCause = 'each-remove'
+        if (import.meta.env?.DEV) s.disposalCause = 'each-remove'
         oldLifetimes.push(s)
       }
       disposeLifetimesBulk(oldLifetimes)
@@ -827,7 +827,7 @@ function reconcileEntries<S, T>(
         for (const node of entry.nodes) {
           if (node.parentNode === parent) parent.removeChild(node)
         }
-        entry.scope.disposalCause = 'each-remove'
+        if (import.meta.env?.DEV) entry.scope.disposalCause = 'each-remove'
         disposeLifetime(entry.scope, true)
         didBulkDetach = true
       }

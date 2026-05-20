@@ -883,10 +883,14 @@ function dispatchEffect<S, M, E>(inst: ComponentInstance<S, M, E>, effect: E): v
   }
 
   // Dev-only: record on the timeline / consult the mock registry.
-  // Short-circuits real dispatch when a mock matches. Zero cost in
-  // production — the guard on `_effectTimeline` is undefined unless
-  // `installDevTools` populated the trackers.
-  if (inst._effectTimeline !== undefined && dispatchEffectDev(inst, effect)) return
+  // Short-circuits real dispatch when a mock matches. Gated by
+  // `import.meta.env?.DEV` so the bundler tree-shakes
+  // `dispatchEffectDev` (and its mock-matching, timeline-push, and
+  // `newEffectId` dependencies) out of production builds. The
+  // historical `inst._effectTimeline !== undefined` runtime guard was
+  // correct but not bundler-visible.
+  if (import.meta.env?.DEV && inst._effectTimeline !== undefined && dispatchEffectDev(inst, effect))
+    return
 
   // User onEffect handler
   if (inst.def.onEffect) {

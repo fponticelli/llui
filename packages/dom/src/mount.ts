@@ -597,7 +597,7 @@ function buildAppHandle<S, M, E>(
       unregisterInstance(inst)
       // Tag the root scope so the disposer log reports app-level
       // teardown distinct from in-tree component-unmount events.
-      inst.rootLifetime.disposalCause = 'app-unmount'
+      if (import.meta.env?.DEV) inst.rootLifetime.disposalCause = 'app-unmount'
       disposeLifetime(inst.rootLifetime)
       domCleanup()
     },

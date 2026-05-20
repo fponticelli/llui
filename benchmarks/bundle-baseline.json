@@ -88,6 +88,23 @@
         "brotli": -2862
       }
     },
+    "15": {
+      "label": "Tier 15: DCE-gate dispatchEffectDev + disposalCause writes",
+      "summary": "(no summary)",
+      "uncompressed": 31204,
+      "gzipped": 9799,
+      "brotli": 8653,
+      "deltaVsPrevious": {
+        "uncompressed": -3661,
+        "gzipped": -1154,
+        "brotli": -1028
+      },
+      "deltaVsBaseline": {
+        "uncompressed": -12213,
+        "gzipped": -3680,
+        "brotli": -3216
+      }
+    },
     "0-baseline": {
       "label": "Phase 0 — current main",
       "summary": "Initial measurement before any size reductions. Captured from main.js after `pnpm build-prod`.",
