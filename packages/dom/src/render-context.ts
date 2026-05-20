@@ -42,17 +42,6 @@ export function clearRenderContext(): void {
   currentContext = null
 }
 
-/**
- * Non-throwing variant of `getRenderContext`. Returns the current render
- * context if one is active, or `null` otherwise. Used by call sites
- * (e.g., `createBinding`) that opportunistically consult the context
- * but must remain safe to invoke outside any view callback — typically
- * tests that construct `Binding` literals directly without mounting.
- */
-export function peekRenderContext(): RenderContext | null {
-  return currentContext
-}
-
 // Accessor stack — tracks which structural-primitive or binding accessor is
 // currently executing. `sample()` reads the top of this stack to detect calls
 // from inside an accessor (forbidden — accessors must be pure functions of

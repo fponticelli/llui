@@ -1,8 +1,7 @@
 import type { Lifetime, Binding, BindingKind } from './types.js'
 import { addBinding } from './lifetime.js'
-import { getRenderContext, peekRenderContext } from './render-context.js'
+import { getRenderContext } from './render-context.js'
 import { FULL_MASK } from './update-loop.js'
-import { registerBinding, prefixIdsFromMask } from './binding-registry.js'
 
 export interface CreateBindingOpts {
   mask: number
@@ -44,19 +43,6 @@ export function createBinding(scope: Lifetime, opts: CreateBindingOpts): Binding
 
   addBinding(scope, binding)
   if (flatBindings) flatBindings.push(binding)
-
-  // Option B Phase 2: when the active instance is in registry mode,
-  // mirror the registration into the per-prefix subscriber map and
-  // stamp the scope so `disposeLifetime` knows to unregister. Peek
-  // (rather than `getRenderContext`) so test fixtures that build
-  // bindings outside any view callback still work — they simply skip
-  // the registry path.
-  const ctx = peekRenderContext()
-  const reg = ctx?.instance?.bindingsByPrefix
-  if (reg) {
-    registerBinding(reg, binding, prefixIdsFromMask(binding.mask, binding.maskHi))
-    scope.bindingsRegistry = reg
-  }
 
   return binding
 }

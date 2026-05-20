@@ -1,6 +1,5 @@
 import type { Lifetime, Binding } from './types.js'
 import type { ComponentInstance } from './update-loop.js'
-import { unregisterBinding } from './binding-registry.js'
 
 let nextId = 1
 
@@ -144,21 +143,13 @@ export function disposeLifetime(scope: Lifetime, skipParentRemoval = false): voi
     }
   }
 
-  // Mark bindings as dead and break closure/DOM retention. Option B
-  // Phase 2: when the scope is registry-mode (`bindingsRegistry` was
-  // stamped at `createBinding` time), unregister each binding from the
-  // owning instance's per-prefix subscriber map before nulling refs.
-  // Flat-mode scopes leave `bindingsRegistry` undefined and skip the
-  // call with zero cost.
-  const reg = scope.bindingsRegistry
+  // Mark bindings as dead and break closure/DOM retention
   for (const binding of scope.bindings) {
-    if (reg) unregisterBinding(reg, binding)
     binding.dead = true
     binding.accessor = null!
     binding.node = null!
     binding.lastValue = undefined
   }
-  scope.bindingsRegistry = undefined
 
   // Reset to shared empties — don't just truncate, so pooled scopes
   // don't hold allocated-but-empty arrays

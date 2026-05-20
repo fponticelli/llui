@@ -90,34 +90,6 @@ function removeFromPrefixSets(
   }
 }
 
-/**
- * Convert two-word dirty bitmasks into a list of prefix-IDs to dispatch
- * against the registry. Bits 0..30 of `mask` map to prefix-IDs 0..30;
- * bits 0..30 of `maskHi` map to prefix-IDs 31..61. Matches the encoding
- * in `binding.mask` / `binding.maskHi` and in the runtime's two-word
- * dirty computation. The returned array is freshly allocated per call —
- * callers should not retain references across dispatch boundaries.
- *
- * `FULL_MASK` (`-1`, all 31 bits set) expands to the full single-word
- * range of changed prefix-IDs; this is the FULL_MASK fallback path used
- * by uncompiled defs in dev mode.
- */
-export function prefixIdsFromMask(mask: number, maskHi: number): number[] {
-  if (mask === 0 && maskHi === 0) return []
-  const ids: number[] = []
-  // Low word — bits 0..30. (Bit 31 is the sign bit; the runtime never
-  // sets it because prefix-IDs are bounded at 30 before the high word
-  // takes over.)
-  for (let i = 0; i < 31; i++) {
-    if ((mask & (1 << i)) !== 0) ids.push(i)
-  }
-  // High word — bits 0..30 of `maskHi` map to prefix-IDs 31..61.
-  for (let i = 0; i < 31; i++) {
-    if ((maskHi & (1 << i)) !== 0) ids.push(31 + i)
-  }
-  return ids
-}
-
 export function dispatchChanged(
   reg: BindingRegistry,
   changed: readonly number[],
