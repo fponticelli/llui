@@ -207,6 +207,23 @@
         "brotli": -4051
       }
     },
+    "22": {
+      "label": "Tier 22: 569Xghlprefix variant of property rename",
+      "summary": "(no summary)",
+      "uncompressed": 28940,
+      "gzipped": 8795,
+      "brotli": 7825,
+      "deltaVsPrevious": {
+        "uncompressed": -5925,
+        "gzipped": -2158,
+        "brotli": -1856
+      },
+      "deltaVsBaseline": {
+        "uncompressed": -14477,
+        "gzipped": -4684,
+        "brotli": -4044
+      }
+    },
     "0-baseline": {
       "label": "Phase 0 — current main",
       "summary": "Initial measurement before any size reductions. Captured from main.js after `pnpm build-prod`.",

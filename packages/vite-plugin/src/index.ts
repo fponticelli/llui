@@ -1074,12 +1074,15 @@ export default function llui(options: LluiPluginOptions = {}): Plugin {
       // Compiler-emit property rename pass. The compiler injects
       // descriptive names like `__view` / `__prefixes` / `__handlers`
       // for the runtime's reactive bookkeeping; production bundles
-      // don't need the self-documenting names. Rename to `__a` /
-      // `__b` / `__c` etc. — keeping the `__` prefix so the names
-      // stay unique in the JS heap (avoids the megamorphic-cache
-      // collision that an esbuild/terser-style single-char mangle
-      // caused on jfb's keyed-each ops; see ANTI-RECIPE comment
-      // above the integrity check).
+      // don't need the self-documenting names. Rename to `$a` /
+      // `$b` / `$c` etc. — `$` is a valid identifier-start char,
+      // uncommon as a property prefix in the surrounding heap
+      // (jQuery's `$` is a global, RxJS uses `$` as a suffix), so
+      // it preserves the heap-uniqueness that an esbuild/terser-
+      // style single-char mangle lacked (which regressed jfb's
+      // keyed-each ops; see ANTI-RECIPE comment above the
+      // integrity check). `$X` saves 1 char per occurrence vs the
+      // `__X` form this pass shipped at Tier 21.
       //
       // Reserved names cover engine intrinsics, build-flag substitution
       // tokens, the test-sentinel STRING VALUE (renaming the
@@ -1124,7 +1127,11 @@ export default function llui(options: LluiPluginOptions = {}): Plugin {
             s = ALPHABET[i % 52] + s
             i = Math.floor(i / 52) - 1
           } while (i >= 0)
-          return '__' + s
+          // `$` prefix instead of `__` — saves 1 char per occurrence and
+          // is uncommon enough as a property prefix in the surrounding
+          // JS heap (jQuery's `$` is a global identifier, RxJS uses `$`
+          // as a SUFFIX) to keep cache-collision risk low.
+          return '$' + s
         }
         const renames = new Map<string, string>()
         for (let i = 0; i < ranked.length; i++) {
