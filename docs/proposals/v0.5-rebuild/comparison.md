@@ -7,6 +7,17 @@ directory. Read after `README.md`; it assumes you've absorbed the goals
 If you want one option to pick up and execute, read this doc plus the
 matching `option-*.md` and you're done.
 
+> **Read the `README.md` § "State of `docs/proposals/v2-compiler/`"
+> before applying this matrix.** v2a is landed; v2b is largely landed
+> (`track()`, `__compilerVersion`, cross-file walker all shipped); v2c
+> is partially landed (module decomposition feature-complete,
+> diagnostic schema shipped). This changes how each option below is
+> read — in particular, Option B's effort/scope estimates and Option
+> C's cross-package manifest story are smaller than the per-option
+> docs describe. The numbers in the matrix below have **not** been
+> updated for the post-v2 landing baseline; treat them as upper
+> bounds.
+
 ---
 
 ## The matrix
