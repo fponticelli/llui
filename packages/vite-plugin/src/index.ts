@@ -1027,6 +1027,7 @@ export default function llui(options: LluiPluginOptions = {}): Plugin {
         }
       }
       if (markerCount === 0) {
+        // `this.error` throws — no statements below this line execute.
         this.error(
           '[llui] integrity check failed: no compiled `component()` calls found in ' +
             'this bundle. Either the project has no LLui components (remove ' +
@@ -1036,6 +1037,25 @@ export default function llui(options: LluiPluginOptions = {}): Plugin {
             'property the compiler injects into every component. See ' +
             'docs/proposals/v2-compiler/v2a.md §2.4.',
         )
+      }
+      // Integrity check passed. The marker is a build-time signal only —
+      // no runtime path reads it — so strip it from the final chunks to
+      // reclaim ~25 bytes per compiled `component()`. Handles both the
+      // `, __lluiCompilerEmitted: 1` (preceded-by-comma) and
+      // `__lluiCompilerEmitted: 1,` (followed-by-comma) shapes; a bare
+      // marker on its own (no surrounding comma) falls through to the
+      // standalone replacement. The regex is anchored on the literal
+      // property name + colon + 1 so it can't accidentally match other
+      // identifiers that contain the substring.
+      const STRIP_WITH_PRECEDING_COMMA = /,\s*__lluiCompilerEmitted:\s*1/g
+      const STRIP_WITH_TRAILING_COMMA = /__lluiCompilerEmitted:\s*1\s*,/g
+      const STRIP_STANDALONE = /__lluiCompilerEmitted:\s*1/g
+      for (const chunk of Object.values(bundle)) {
+        if (chunk.type !== 'chunk') continue
+        chunk.code = chunk.code
+          .replace(STRIP_WITH_PRECEDING_COMMA, '')
+          .replace(STRIP_WITH_TRAILING_COMMA, '')
+          .replace(STRIP_STANDALONE, '')
       }
     },
   }

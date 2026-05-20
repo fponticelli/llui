@@ -156,6 +156,23 @@
         "brotli": -3981
       }
     },
+    "19": {
+      "label": "Tier 19: strip _lluiCompilerEmitted markers post-check",
+      "summary": "(no summary)",
+      "uncompressed": 29099,
+      "gzipped": 8853,
+      "brotli": 7873,
+      "deltaVsPrevious": {
+        "uncompressed": -5766,
+        "gzipped": -2100,
+        "brotli": -1808
+      },
+      "deltaVsBaseline": {
+        "uncompressed": -14318,
+        "gzipped": -4626,
+        "brotli": -3996
+      }
+    },
     "0-baseline": {
       "label": "Phase 0 — current main",
       "summary": "Initial measurement before any size reductions. Captured from main.js after `pnpm build-prod`.",
