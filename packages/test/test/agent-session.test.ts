@@ -1,12 +1,13 @@
 import { describe, it, expect } from 'vitest'
-import { component, mountApp } from '@llui/dom'
+import { mountApp } from '@llui/dom'
+import { defineTestComponent } from '../src/defineTestComponent.js'
 import { recordAgentSession, replayAgentSession } from '../src/agent-session.js'
 
 type State = { count: number; lastDelete: string | null }
 type Msg = { type: 'inc' } | { type: 'dec' } | { type: 'delete'; id: string }
 
 function makeApp() {
-  return component<State, Msg, never>({
+  return defineTestComponent<State, Msg, never>({
     name: 'AgentSessionFixture',
     init: () => [{ count: 0, lastDelete: null }, []],
     update: (s, m) => {
@@ -87,7 +88,7 @@ describe('recordAgentSession + replayAgentSession', () => {
 
     // Drifted reducer: increments by 10 instead of 1. Final state
     // diverges at /count.
-    const driftedApp = component<State, Msg, never>({
+    const driftedApp = defineTestComponent<State, Msg, never>({
       name: 'AgentSessionFixture',
       init: () => [{ count: 0, lastDelete: null }, []],
       update: (s, m) => {
@@ -140,7 +141,7 @@ describe('recordAgentSession + replayAgentSession', () => {
     handle.dispose()
     root.remove()
 
-    const driftedInit = component<State, Msg, never>({
+    const driftedInit = defineTestComponent<State, Msg, never>({
       name: 'AgentSessionFixture',
       init: () => [{ count: 100, lastDelete: null }, []], // drifted!
       update: (s) => [s, []],

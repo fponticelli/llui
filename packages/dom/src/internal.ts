@@ -20,3 +20,8 @@
 export { getRenderContext, setRenderContext, clearRenderContext } from './render-context.js'
 export type { RenderContext } from './render-context.js'
 export { createLifetime, disposeLifetime, addDisposer } from './lifetime.js'
+export {
+  defineTestComponentInternal as defineTestComponent,
+  stampTestVersion,
+  type DefineTestComponentInput,
+} from './internal/test-component-builder.js'

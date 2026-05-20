@@ -57,3 +57,22 @@ export function defineTestComponentInternal<S, M, E = never, D = void>(
   if (input.onEffect) out.onEffect = input.onEffect
   return out
 }
+
+/**
+ * Idempotently stamp a `ComponentDef` with the `'__test__'`
+ * `__compilerVersion` sentinel. Used by test-harness adapters
+ * (`@llui/test`'s `testView`) that accept a `ComponentDef` from caller
+ * code: if the caller already used `defineTestComponent` (or supplied
+ * a real compiled def), the existing version is preserved; otherwise
+ * the sentinel silences `warnUncompiledOnce`.
+ *
+ * Lives inside @llui/dom because `__compilerVersion` is `@internal`
+ * and stripped from the dist `.d.ts`; external code can't address the
+ * field by name. v2b §6.
+ */
+export function stampTestVersion<S, M, E, D>(
+  def: ComponentDef<S, M, E, D>,
+): ComponentDef<S, M, E, D> {
+  if (def.__compilerVersion) return def
+  return { ...def, __compilerVersion: '__test__' }
+}

@@ -1,5 +1,6 @@
 import type { ComponentDef, AppHandle } from '@llui/dom'
 import { mountApp } from '@llui/dom'
+import { stampTestVersion } from '@llui/dom/internal'
 
 export interface ViewHarness<M> {
   /** Mounted container — useful for advanced cases. */
@@ -38,11 +39,13 @@ export function testView<S, M, E, D = void>(
 
   // The inner mount uses a D=void init override — testView runs the
   // component against the provided `state`, not init data — so the
-  // local testDef re-declares D as void.
-  const testDef: ComponentDef<S, M, E> = {
+  // local testDef re-declares D as void. `stampTestVersion` stamps
+  // `__compilerVersion: '__test__'` idempotently so raw `ComponentDef`
+  // literals passed by callers don't trigger `warnUncompiledOnce`.
+  const testDef: ComponentDef<S, M, E> = stampTestVersion({
     ...def,
     init: () => [state, []],
-  }
+  })
 
   // Capture the component's send via a view interceptor.
   let sendFn: ((msg: M) => void) | null = null
