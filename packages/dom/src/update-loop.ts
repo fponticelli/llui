@@ -20,6 +20,12 @@ import type {
 } from './tracking/effect-timeline.js'
 import { createLifetime } from './lifetime.js'
 import { applyBinding } from './binding.js'
+import {
+  createBindingRegistry,
+  dispatchChanged,
+  prefixIdsFromMask,
+  type BindingRegistry,
+} from './binding-registry.js'
 import { setCurrentDirtyMask } from './primitives/memo.js'
 import { enterAccessor, exitAccessor } from './render-context.js'
 
@@ -141,6 +147,15 @@ export interface ComponentInstance<S = unknown, M = unknown, E = unknown> {
   rootLifetime: Lifetime
   dom: DomEnv
   allBindings: Binding[]
+  /**
+   * @internal Per-prefix subscriber registry. Allocated by
+   * `createInstance` when `def.__bindingModel === 'registry'`. Used by
+   * `_runPhase2` to dispatch directly to bindings subscribed to the
+   * prefix-IDs that changed this commit instead of scanning `allBindings`.
+   * Undefined in flat mode; the scan path uses `allBindings` exclusively.
+   * v0.5 Option B Phase 2.
+   */
+  bindingsByPrefix?: BindingRegistry
   structuralBlocks: StructuralBlock[]
   queue: M[]
   microtaskScheduled: boolean
@@ -277,6 +292,11 @@ export function createComponentInstance<S, M, E, D = void>(
     // don't pass parentLifetime get the classic detached root.
     rootLifetime: createLifetime(parentLifetime),
     allBindings: [],
+    // Option B Phase 2: components opt into the per-prefix registry by
+    // stamping `__bindingModel: 'registry'` on the def. Otherwise the
+    // field stays undefined and the runtime takes the historical
+    // flat-array scan path.
+    bindingsByPrefix: def.__bindingModel === 'registry' ? createBindingRegistry() : undefined,
     structuralBlocks: [],
     queue: [],
     microtaskScheduled: false,
@@ -580,7 +600,8 @@ function genericUpdate<S, M, E>(
     }
   }
 
-  // Phase 2 — compact + update bindings
+  // Phase 2 — compact + update bindings (flat mode) or dispatch via
+  // the per-prefix subscriber map (registry mode, Option B Phase 2).
   _runPhase2(
     state,
     combinedDirty,
@@ -589,6 +610,7 @@ function genericUpdate<S, M, E>(
     bindingsBeforePhase1,
     inst.def.name,
     inst._onBindingError,
+    inst.bindingsByPrefix,
   )
 }
 
@@ -679,7 +701,16 @@ export function _handleMsg(
   }
 
   const b = inst.allBindings
-  _runPhase2(s, dirty, dirtyHi, b, b.length, inst.def.name, inst._onBindingError)
+  _runPhase2(
+    s,
+    dirty,
+    dirtyHi,
+    b,
+    b.length,
+    inst.def.name,
+    inst._onBindingError,
+    inst.bindingsByPrefix,
+  )
   return [s, e]
 }
 
@@ -707,7 +738,29 @@ export function _runPhase2(
   // `.d.ts` — and a public-export signature can't depend on a stripped
   // type without breaking dependent packages' typecheck.
   onBindingError?: (info: { kind: string; key?: string; message: string; stack?: string }) => void,
+  // Option B Phase 2: when present, the runtime dispatches via the
+  // per-prefix subscriber map instead of scanning `bindings`. Bindings
+  // registered to a changed prefix-ID fire once each per commit; dead
+  // bindings have already been unregistered on disposal so no
+  // compaction sweep is needed in this path.
+  registry?: BindingRegistry,
 ): void {
+  if (registry) {
+    if (dirty === 0 && dirtyHi === 0) return
+    const changed = prefixIdsFromMask(dirty, dirtyHi)
+    if (changed.length === 0) return
+    const isDev = import.meta.env?.DEV && componentName
+    enterAccessor('a binding accessor')
+    try {
+      dispatchChanged(registry, changed, (binding) => {
+        fireBinding(binding, state, onBindingError, isDev ? componentName : null)
+      })
+    } finally {
+      exitAccessor()
+    }
+    return
+  }
+
   let phase2Len = bindingsBeforePhase1
   if (bindings.length > bindingsBeforePhase1 || (phase2Len > 0 && bindings[0]!.dead)) {
     let w = 0
@@ -744,33 +797,52 @@ export function _runPhase2(
         // `0 & dirtyHi === 0` branch collapses to a no-op under V8's
         // inline cache.
         if (!((binding.mask & dirty) | (binding.maskHi & dirtyHi))) continue
-        if (binding.kind === 'effect') {
-          try {
-            binding.accessor(state)
-          } catch (e) {
-            handleBindingThrow(onBindingError, binding, e, isDev ? componentName : null)
-          }
-          continue
-        }
-        let newValue: unknown
-        try {
-          newValue = binding.accessor(state)
-        } catch (e) {
-          handleBindingThrow(onBindingError, binding, e, isDev ? componentName : null)
-          continue
-        }
-        const last = binding.lastValue
-        if (newValue === last || (newValue !== newValue && last !== last)) continue
-        binding.lastValue = newValue
-        try {
-          applyBinding(binding, newValue)
-        } catch (e) {
-          handleBindingThrow(onBindingError, binding, e, isDev ? componentName : null)
-        }
+        fireBinding(binding, state, onBindingError, isDev ? componentName : null)
       }
     } finally {
       exitAccessor()
     }
+  }
+}
+
+/**
+ * Fire a single binding — read its accessor, compare against
+ * `lastValue`, and apply the new value when changed. Shared between
+ * the flat-scan and registry-dispatch paths in `_runPhase2`. Effect-
+ * kind bindings are write-free; the accessor's side effect IS the
+ * "value." Errors at any step are routed through `handleBindingThrow`
+ * so a single failing binding doesn't abort sibling work on the same
+ * commit.
+ */
+function fireBinding(
+  binding: Binding,
+  state: unknown,
+  onBindingError: ComponentInstance['_onBindingError'] | undefined,
+  componentName: string | null,
+): void {
+  if (binding.dead) return
+  if (binding.kind === 'effect') {
+    try {
+      binding.accessor(state)
+    } catch (e) {
+      handleBindingThrow(onBindingError, binding, e, componentName)
+    }
+    return
+  }
+  let newValue: unknown
+  try {
+    newValue = binding.accessor(state)
+  } catch (e) {
+    handleBindingThrow(onBindingError, binding, e, componentName)
+    return
+  }
+  const last = binding.lastValue
+  if (newValue === last || (newValue !== newValue && last !== last)) return
+  binding.lastValue = newValue
+  try {
+    applyBinding(binding, newValue)
+  } catch (e) {
+    handleBindingThrow(onBindingError, binding, e, componentName)
   }
 }
 

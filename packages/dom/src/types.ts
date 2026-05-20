@@ -4,6 +4,7 @@ import type { View } from './view-helpers.js'
 import type { StructuralBlock } from './structural.js'
 import type { ComponentInstance } from './update-loop.js'
 import type { DisposerEvent } from './tracking/disposer-log.js'
+import type { BindingRegistry } from './binding-registry.js'
 
 export interface ComponentDef<S, M, E = never, D = void> {
   name: string
@@ -91,6 +92,22 @@ export interface ComponentDef<S, M, E = never, D = void> {
    * built via `defineTestComponent()`. v2b §5.
    */
   __compilerVersion?: string
+  /**
+   * @internal Compiler-injected — selects the runtime's binding dispatch
+   * model. `'flat'` (default when absent) uses the historical per-update
+   * scan of `inst.allBindings` with mask gating. `'registry'` uses the
+   * per-prefix subscriber map (`inst.bindingsByPrefix`), trading a per-
+   * binding registration cost at mount for O(matching) dispatch on
+   * single-path updates.
+   *
+   * v0.5 Option B Phase 2 introduces the field and the runtime branch;
+   * the compiler does not yet emit `'registry'`, so production runs
+   * stay on `'flat'` until Phase 3 flips the default. Test fixtures
+   * opt in by stamping the field directly on the def.
+   *
+   * See `docs/proposals/v0.5-rebuild/option-b-hybrid-signals.md`.
+   */
+  __bindingModel?: 'flat' | 'registry'
 }
 
 export type Send<M> = (msg: M) => void
@@ -376,6 +393,16 @@ export interface Lifetime {
   disposalCause?: DisposerEvent['cause']
   /** @internal dev-only — populated by structural primitives for scope-tree classification */
   _kind?: 'root' | 'show' | 'each' | 'branch' | 'scope' | 'child' | 'portal' | 'foreign'
+  /**
+   * @internal Set when the owning `ComponentInstance` is in registry
+   * mode (`def.__bindingModel === 'registry'`). Stamped once by
+   * `createBinding` the first time a binding is registered on this
+   * scope; `disposeLifetime` reads it to unregister the scope's
+   * bindings from the per-instance subscriber map. Undefined for
+   * flat-mode scopes — the disposal loop skips the unregister step
+   * with zero cost. v0.5 Option B Phase 2.
+   */
+  bindingsRegistry?: BindingRegistry
 }
 
 export interface LifetimeNode {
