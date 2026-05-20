@@ -1,6 +1,10 @@
 const PACKAGES = [
   'dom',
+  'compiler',
   'vite-plugin',
+  'compiler-introspection',
+  'compiler-devtools',
+  'compiler-ssr',
   'effects',
   'test',
   'components',
@@ -10,7 +14,6 @@ const PACKAGES = [
   'mcp',
   'agent',
   'agent-bridge',
-  'eslint-plugin-llui',
 ]
 
 export function onBeforePrerenderStart() {
