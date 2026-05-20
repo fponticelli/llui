@@ -35,7 +35,12 @@ function runGenerateBundle(plugin: Plugin, bundle: Record<string, BundleChunk>):
 }
 
 async function bootPluginForBuild(): Promise<Plugin> {
-  const plugin = llui()
+  // Disable cross-file walking — these tests focus on the
+  // `transform` / `generateBundle` integrity contract, not path
+  // resolution. With the default `'silent'`, the first transform call
+  // would build a TS Program over the whole repo's tsconfig, which on
+  // a CI runner takes well over the default 5s test timeout.
+  const plugin = llui({ crossFile: false })
   // Simulate a `vite build` resolved-config: command === 'build', mode === 'production'.
   const configResolved = plugin.configResolved as ((c: unknown) => Promise<void>) | undefined
   await configResolved?.call(plugin, {
