@@ -623,7 +623,7 @@ function reconcileEntries<S, T>(
   // When opts.leave is set, each item needs its own leave animation, so
   // fall through to per-item removal instead of Range.deleteContents().
   if (newLen === 0) {
-    if (report) {
+    if (typeof __LLUI_TRANSITIONS__ !== 'undefined' && __LLUI_TRANSITIONS__ && report) {
       for (const entry of entries) collectNodes(report.leaving, entry.nodes)
     }
     if (hasLeave) {
@@ -672,7 +672,7 @@ function reconcileEntries<S, T>(
       for (const node of entry.nodes) frag.appendChild(node)
     }
     parent.insertBefore(frag, ref)
-    if (report) {
+    if (typeof __LLUI_TRANSITIONS__ !== 'undefined' && __LLUI_TRANSITIONS__ && report) {
       for (const entry of newlyAdded) collectNodes(report.entering, entry.nodes)
     }
     for (const entry of newlyAdded) fireEnter(entry, opts)
@@ -741,7 +741,7 @@ function reconcileEntries<S, T>(
       }
     }
     if (!anyShared) {
-      if (report) {
+      if (typeof __LLUI_TRANSITIONS__ !== 'undefined' && __LLUI_TRANSITIONS__ && report) {
         for (const entry of entries) collectNodes(report.leaving, entry.nodes)
       }
       // Bulk DOM removal using Range — anchored on this each's stable
@@ -771,7 +771,7 @@ function reconcileEntries<S, T>(
         for (const node of entry.nodes) frag.appendChild(node)
       }
       parent.insertBefore(frag, anchor.nextSibling)
-      if (report) {
+      if (typeof __LLUI_TRANSITIONS__ !== 'undefined' && __LLUI_TRANSITIONS__ && report) {
         for (const entry of newlyAdded) collectNodes(report.entering, entry.nodes)
       }
       for (const entry of newlyAdded) fireEnter(entry, opts)
@@ -811,7 +811,8 @@ function reconcileEntries<S, T>(
   let didBulkDetach = false
   for (const entry of entries) {
     if (!usedKeys.has(entry.key)) {
-      if (report) collectNodes(report.leaving, entry.nodes)
+      if (typeof __LLUI_TRANSITIONS__ !== 'undefined' && __LLUI_TRANSITIONS__ && report)
+        collectNodes(report.leaving, entry.nodes)
       if (hasLeave) {
         removeEntry(entry, opts, leaving)
       } else {
@@ -870,7 +871,7 @@ function reconcileEntries<S, T>(
   entries.length = newEntries.length
   for (let i = 0; i < newEntries.length; i++) entries[i] = newEntries[i]!
 
-  if (report) {
+  if (typeof __LLUI_TRANSITIONS__ !== 'undefined' && __LLUI_TRANSITIONS__ && report) {
     for (const entry of newlyAdded) collectNodes(report.entering, entry.nodes)
   }
 

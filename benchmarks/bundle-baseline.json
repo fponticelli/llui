@@ -71,6 +71,23 @@
         "brotli": -2419
       }
     },
+    "14": {
+      "label": "Tier 14: DCE-gate enhanceBindingError + reconcileEntries report branches",
+      "summary": "(no summary)",
+      "uncompressed": 32373,
+      "gzipped": 10173,
+      "brotli": 9007,
+      "deltaVsPrevious": {
+        "uncompressed": -2492,
+        "gzipped": -780,
+        "brotli": -674
+      },
+      "deltaVsBaseline": {
+        "uncompressed": -11044,
+        "gzipped": -3306,
+        "brotli": -2862
+      }
+    },
     "0-baseline": {
       "label": "Phase 0 — current main",
       "summary": "Initial measurement before any size reductions. Captured from main.js after `pnpm build-prod`.",

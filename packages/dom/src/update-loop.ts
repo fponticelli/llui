@@ -782,11 +782,15 @@ function handleBindingThrow(
 ): void {
   // Dev mode: build the rich wrapped error (with accessor source,
   // node descriptor, undefined-hint detection). Prod skips the
-  // bookkeeping. Either way the report flows through `_onBindingError`
-  // when wired (agent setups), else falls back to console.error so
-  // operators see the cause.
+  // bookkeeping — the `import.meta.env?.DEV` gate is also what lets
+  // the bundler tree-shake `enhanceBindingError` out of production
+  // bundles (otherwise its accessor-source / node-descriptor / hint
+  // helpers stay reachable through this one call site). Either way
+  // the report flows through `_onBindingError` when wired (agent
+  // setups), else falls back to console.error so operators see the
+  // cause.
   const wrapped =
-    componentName !== null && e instanceof Error
+    import.meta.env?.DEV && componentName !== null && e instanceof Error
       ? enhanceBindingError(e, binding, componentName)
       : null
   const err = wrapped ?? (e instanceof Error ? e : new Error(String(e)))
