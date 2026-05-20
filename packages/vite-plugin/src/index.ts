@@ -320,8 +320,13 @@ export interface LluiPluginOptions {
    *     `crossFile: 'silent'` to suppress the diagnostics while still
    *     getting the path merging.
    *
-   * Default `false` — preserves pre-v2c per-file behavior. Enable
-   * explicitly to opt in to the cross-file resolution.
+   * Default `'silent'` — paths read through in-file-graph helpers
+   * (`(s) => s.route.kind` from a predicate helper, etc.) are folded
+   * into the host component's `__prefixes` automatically, without
+   * polluting dev logs with opaque-call diagnostics. Set `crossFile:
+   * true` to surface the diagnostics in dev, or `false` to disable
+   * cross-file resolution entirely (saves the startup Program build
+   * cost on very large repos; falls back to per-file analysis).
    */
   crossFile?: boolean | 'silent'
 }
@@ -576,7 +581,7 @@ export default function llui(options: LluiPluginOptions = {}): Plugin {
   const verbose = options.verbose === true
   const agent = options.agent ?? false
   const transitions = options.transitions ?? false
-  const crossFileMode: false | true | 'silent' = options.crossFile ?? false
+  const crossFileMode: false | true | 'silent' = options.crossFile ?? 'silent'
   // The Program is built lazily on first transform when crossFile is
   // enabled; cached afterwards for reuse. ts.Program is immutable —
   // file changes are not reflected without a rebuild (documented above).

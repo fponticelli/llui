@@ -13,10 +13,9 @@ import { getInstanceViewBag } from '../render-context.js'
 import type { ComponentInstance } from '../update-loop.js'
 
 // v0.4 Tier 1.2 + cache follow-up: pulls a cached View bag from the
-// owning instance (constructed once via `def.__view(send)`). The
-// createView fallback below is dead-code-eliminated in production
-// builds — Vite folds `import.meta.env.MODE` to a constant inside
-// getInstanceViewBag.
+// owning instance (constructed once via `def.__view(send)`). Falls
+// back to `createView(send)` when no `__view` was emitted — see
+// getInstanceViewBag for the mode-agnostic fallback (issue #5).
 function getOwnerBag<S, M>(
   ctx: { instance?: ComponentInstance | undefined },
   send: import('../types.js').Send<M>,

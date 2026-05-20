@@ -1,13 +1,18 @@
 /**
- * Smoke test: load every built SPA example in headless Chromium, fail
+ * Smoke test: load every built example in headless Chromium, fail
  * on any console.error or pageerror.
  *
  * Catches the issue-#5-class of bug: code that compiles cleanly +
  * builds without warnings + crashes on first paint in production.
  *
- * Run after `pnpm turbo build`. Vike-style examples (server-rendered)
- * are skipped — their dev/preview servers aren't trivial to spin up
- * inside this loop.
+ * Run after `pnpm turbo build`. Handles two layouts:
+ *   - SPA (vite default): `dist/index.html`
+ *   - Vike pre-rendered: `dist/client/index.html` — same harness,
+ *     served from the prerender output. Catches SSR-shape bugs that
+ *     only show up after Vike has emitted the static HTML+hydration
+ *     bundle. The Vike server runtime itself isn't exercised here;
+ *     prerender output is enough to hit `__view`/`__prefixes`
+ *     regressions on the client side.
  *
  * Usage: npx tsx scripts/smoke-examples.ts
  */
@@ -38,19 +43,29 @@ interface Example {
   distDir: string
 }
 
-function findSpaExamples(): Example[] {
+function findExamples(): Example[] {
   const out: Example[] = []
   for (const entry of readdirSync(EXAMPLES_DIR)) {
     const dir = resolve(EXAMPLES_DIR, entry)
     if (!statSync(dir).isDirectory()) continue
-    // SPA convention: index.html at the example root, output into dist/.
+
+    // Vike-style: `pages/` source layout, prerender output at
+    // `dist/client/index.html`. Check this first because Vike examples
+    // may *also* have a project-root index.html for the dev shell.
+    const vikeDist = resolve(dir, 'dist', 'client')
+    if (existsSync(resolve(dir, 'pages')) && existsSync(resolve(vikeDist, 'index.html'))) {
+      out.push({ name: entry, distDir: vikeDist })
+      continue
+    }
+
+    // SPA: project-root index.html + dist/index.html after build.
     if (!existsSync(resolve(dir, 'index.html'))) continue
-    const distDir = resolve(dir, 'dist')
-    if (!existsSync(resolve(distDir, 'index.html'))) {
+    const spaDist = resolve(dir, 'dist')
+    if (!existsSync(resolve(spaDist, 'index.html'))) {
       console.warn(`[skip] ${entry}: no dist/index.html — was \`vite build\` run?`)
       continue
     }
-    out.push({ name: entry, distDir })
+    out.push({ name: entry, distDir: spaDist })
   }
   return out
 }
@@ -123,7 +138,7 @@ async function smokeOne(ex: Example): Promise<{ name: string; errors: string[] }
 }
 
 async function main() {
-  const examples = findSpaExamples()
+  const examples = findExamples()
   if (examples.length === 0) {
     console.error('No built examples found — run `pnpm turbo build` first.')
     process.exit(1)
