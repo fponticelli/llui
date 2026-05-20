@@ -884,7 +884,7 @@ function collectUsedHelpers(node: AnalyzedNode, out: Set<string>): void {
 function buildTemplateHTML(node: AnalyzedNode): string {
   let html = `<${node.tag}`
   for (const [key, value] of node.staticAttrs) {
-    html += ` ${key}="${escapeAttr(value)}"`
+    html += formatStaticAttr(key, value)
   }
   html += '>'
 
@@ -1302,7 +1302,7 @@ function buildStaticHTML(
     if (ts.isBinaryExpression(expr) && ts.isPropertyAccessExpression(expr.left)) {
       const prop = expr.left.name.text
       if (prop === 'className' && ts.isStringLiteral(expr.right)) {
-        attrs += ` class="${escapeAttr(expr.right.text)}"`
+        attrs += formatStaticAttr('class', expr.right.text)
         continue
       }
       return null
@@ -1313,7 +1313,7 @@ function buildStaticHTML(
         const key = expr.arguments[0]
         const val = expr.arguments[1]
         if (key && val && ts.isStringLiteral(key) && ts.isStringLiteral(val)) {
-          attrs += ` ${key.text}="${escapeAttr(val.text)}"`
+          attrs += formatStaticAttr(key.text, val.text)
           continue
         }
         return null // non-literal attribute
@@ -1355,6 +1355,18 @@ function escapeHTML(s: string): string {
 
 function escapeAttr(s: string): string {
   return s.replace(/&/g, '&amp;').replace(/"/g, '&quot;')
+}
+
+// Per HTML5, attribute values may appear unquoted when they contain none of
+// the unsafe characters listed below. Eliminating the surrounding quotes
+// saves 2 bundle bytes per static attribute — multiplied across each row
+// template the compiler emits via `__cloneStaticTemplate`. Tier 9.
+const UNQUOTED_ATTR_VALUE = /^[^\s"'`=<>&]+$/
+
+function formatStaticAttr(key: string, value: string): string {
+  if (value === '') return ` ${key}=""`
+  if (UNQUOTED_ATTR_VALUE.test(value)) return ` ${key}=${value}`
+  return ` ${key}="${escapeAttr(value)}"`
 }
 
 function emitTemplateClone(html: string, f: ts.NodeFactory): ts.Expression {

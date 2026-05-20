@@ -18,7 +18,9 @@ describe('template clone output', () => {
     // Static subtree emits __cloneStaticTemplate(html) — the helper
     // threads through ctx.dom so SSR works without globalThis mutation.
     expect(out).toContain('__cloneStaticTemplate')
-    expect(out).toContain('class=\\"static\\"')
+    // Tier 9: simple attr values are unquoted (`class=static` rather than
+    // `class="static"`) — saves bytes per emission.
+    expect(out).toContain('class=static')
   })
 
   it('inlines string literal children into the template', () => {
