@@ -190,6 +190,23 @@
         "brotli": -5186
       }
     },
+    "21": {
+      "label": "Tier 21: __-prefix property rename pass",
+      "summary": "(no summary)",
+      "uncompressed": 28963,
+      "gzipped": 8803,
+      "brotli": 7818,
+      "deltaVsPrevious": {
+        "uncompressed": -5902,
+        "gzipped": -2150,
+        "brotli": -1863
+      },
+      "deltaVsBaseline": {
+        "uncompressed": -14454,
+        "gzipped": -4676,
+        "brotli": -4051
+      }
+    },
     "0-baseline": {
       "label": "Phase 0 — current main",
       "summary": "Initial measurement before any size reductions. Captured from main.js after `pnpm build-prod`.",
