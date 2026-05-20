@@ -11,6 +11,43 @@ All notable changes to LLui packages are documented here. LLui is a pre-1.0 proj
 
 Packages version in lockstep at release time: `@llui/dom`, `@llui/vite-plugin`, `@llui/test`, `@llui/router`, `@llui/transitions`, `@llui/components`, `@llui/vike` share a version line. `@llui/effects`, `@llui/mcp`, `@llui/eslint-plugin`, `@llui/agent`, and `llui-agent` have their own cadence.
 
+## 2026-05-20 — 0.2.2 / 0.3.2
+
+**Released:** `@llui/{dom,test,router,transitions,components,vike,agent}@0.2.2`; `llui-agent@0.2.2`; `@llui/{compiler,compiler-introspection,compiler-devtools,compiler-ssr,mcp,vite-plugin}@0.3.2`
+
+Fixes [#5](https://github.com/fponticelli/llui/issues/5) — a prod-only crash for components with identifier-style `view: (h) => …`, plus a silent-stale-render bug from cross-file walker accuracy. All three root causes addressed; no public API changes. The Vite plugin now opts into cross-file path resolution by default (silent mode).
+
+### `@llui/compiler@0.3.2`
+
+- **Fixed** `__view` is now synthesized for identifier-style and zero-arg view params (`view: (h) => …`, `view: () => …`, `view: (send) => …`), not just destructured (`view: ({...}) => …`). Pre-fix, the compiler silently skipped these and the prod runtime fell back to a `{ send }`-only bag that crashed on the first `h.show(...)` / `h.each(...)` / `h.branch(...)` call. The emitted factory is `__view: ($send) => createView($send)`; destructured-style views continue to get the tree-shaken bag.
+- **Fixed** cross-file accessor walker no longer descends into every 1-param arrow in the focal file. Callbacks like `onEffect: (bag) => bag.send(...)` and `handleEffects((eff) => eff.path)` were polluting `__prefixes` with phantom paths (`send`, `effect`, `signal`, `path`, `message`). Walker now gates entry on `isReactiveAccessor`, plus arg-0 of a §2.1 view-helper call.
+- **Fixed** cross-file walker now descends into non-Node-returning helpers (`(s: State) => s.route.kind === 'a'` etc.) when the focal accessor's state param is passed through. Pre-fix the walker only followed §2.1 view-helpers, so predicate-style helpers silently dropped their reads from `__prefixes` and dependent bindings stopped firing on update — no error to point at it, just stale renders.
+
+### `@llui/dom@0.2.2`
+
+- **Fixed** the `__prefixes`-undefined fallback to `FULL_MASK` is no longer gated on `MODE !== 'production'`. Components without compiler-emitted `__prefixes` (legitimate when `fieldBits` is empty; or hand-rolled defs) crashed in prod with `Cannot read properties of undefined (reading 'length')`. Fallback now fires in every mode. ~30 bytes gz added; previous behavior was a guaranteed crash for any matching component.
+- **Fixed** the `getInstanceViewBag` fallback now always returns `createView(send)` when no `__view` is present — the prod path previously returned a `{ send }`-only bag, banking on the (no longer true) invariant that the compiler emits `__view` for every component.
+
+### `@llui/vite-plugin@0.3.2`
+
+- **Improved** `crossFile` default flipped from `false` to `'silent'`. With the walker false-positive bug fixed in `@llui/compiler@0.3.2`, the historical reason to keep it opt-in is gone. `'silent'` folds cross-file paths into `__prefixes` automatically without polluting dev logs with `llui/opaque-view-call` diagnostics. Set `crossFile: true` to surface them, or `crossFile: false` to skip the Program build entirely (saves startup cost on very large repos).
+- **Fixed** the cross-file `ts.Program` build is now deferred until `configResolved` sets the project root. Direct-`transform` callers (unit tests, alt-host adapters) fall back to per-file path collection silently instead of scanning `process.cwd()`'s tsconfig.
+
+### `@llui/{components,router,test,transitions,vike,agent}@0.2.2`, `llui-agent@0.2.2`, `@llui/{mcp,compiler-introspection,compiler-devtools,compiler-ssr}@0.3.2`
+
+- **Improved** cascade republish — runtime peer range bumped to `@llui/dom@^0.2.2` (or transitive `@llui/compiler` / `@llui/agent` pickup via `workspace:*`). No other changes.
+
+### CI
+
+- **Added** `scripts/smoke-examples.ts` — Playwright-driven harness that boots every built example in headless Chromium and fails on `console.error` / `pageerror` / `requestfailed`. Covers all 9 examples (8 SPA + 1 Vike-prerendered). Wired into the `verify` workflow after `turbo test`. Closes the CI gap that let issue #5 ship: `pnpm turbo build` ran but nobody loaded the result.
+- **Fixed** `deploy-docs.yml` no longer tries to build the deleted `@llui/eslint-plugin` package.
+
+### Docs
+
+- **Removed** stale references to `@llui/eslint-plugin` (the package was deprecated on npm; rules now live in `@llui/compiler`) from README, site index, debugging guide, cookbook, and `site/content/api/eslint-plugin-llui.md`.
+- **Added** site pages for `@llui/compiler`, `@llui/compiler-introspection`, `@llui/compiler-devtools`, `@llui/compiler-ssr` — the four packages that split out of `@llui/vite-plugin` in 0.3.1 but weren't yet documented. Wired into `generate-api.ts` and the site nav.
+- **Deprecated** `@llui/lint-idiomatic` on npm (already gone from the repo since the lint→compiler migration; sibling `@llui/eslint-plugin` was deprecated previously). Both now carry the same "Lint rules moved to @llui/compiler as compile-time errors" deprecation message.
+
 ## 2026-05-20 — 0.2.1 / 0.3.1
 
 **Released:** `@llui/{dom,test,router,transitions,components,vike,agent}@0.2.1`; `llui-agent@0.2.1`; `@llui/{compiler,compiler-introspection,compiler-devtools,compiler-ssr,mcp,vite-plugin}@0.3.1`
