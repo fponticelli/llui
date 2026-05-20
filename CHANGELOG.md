@@ -11,6 +11,55 @@ All notable changes to LLui packages are documented here. LLui is a pre-1.0 proj
 
 Packages version in lockstep at release time: `@llui/dom`, `@llui/vite-plugin`, `@llui/test`, `@llui/router`, `@llui/transitions`, `@llui/components`, `@llui/vike` share a version line. `@llui/effects`, `@llui/mcp`, `@llui/eslint-plugin`, `@llui/agent`, and `llui-agent` have their own cadence.
 
+## 2026-05-20 — 0.2.1 / 0.3.1
+
+**Released:** `@llui/{dom,test,router,transitions,components,vike,agent}@0.2.1`; `llui-agent@0.2.1`; `@llui/{compiler,compiler-introspection,compiler-devtools,compiler-ssr,mcp,vite-plugin}@0.3.1`
+
+Bundle-size release. The js-framework-benchmark LLui bundle dropped from 8.9 kB gz to 7.0 kB gz (-21 %) through a series of dev-only DCE gates, build-flag gates, a property-rename pass in the vite-plugin, and one bench-config fix. No public API changes; no perf regressions in median-of-3 measurements (Select / Update 10th / Swap all faster or unchanged).
+
+### `@llui/dom@0.2.1`
+
+- **Improved** dev-only error enrichment (`enhanceBindingError`, `dispatchEffectDev`), dev-only field writes (`disposalCause`, `Lifetime._kind`), and long-form dev error messages (`getRenderContext`, `applyBinding`, `sample()`, `useContext`, `AppHandle.getState()`-after-dispose) now gated behind `import.meta.env?.DEV` so production builds DCE them out. Combined contributions ~1.5 kB gz on the bench.
+- **Added** `__LLUI_TRANSITIONS__` build flag gates `each()`'s `enter` / `leave` / `onTransition` callback handling. Apps that don't animate drop ~0.22 kB gz; apps using `@llui/transitions` or custom transition callbacks must opt in via the vite plugin.
+- **Improved** per-env `WeakMap<DomEnv, Map<...>>` template cache replaced with a singleton `Map<string, HTMLTemplateElement>`. SSR adapters needing a fresh cache between renders call the exported `_resetTemplateCache()`.
+- **Improved** mount-time HMR and devtools-install checks (`hmrModule`, `devToolsInstall` consultations across `mount.ts`'s 13 entry points) gated behind `import.meta.env?.DEV`.
+
+### `@llui/vite-plugin@0.3.1`
+
+- **Added** `transitions?: boolean` plugin option (default false). Sets the `__LLUI_TRANSITIONS__` build flag the runtime checks.
+- **Improved** `generateBundle` hook strips `_lluiCompilerEmitted: 1` integrity-check markers from production chunks after verification, and renames LLui-internal `__view` / `__prefixes` / `__handlers` / `__compilerVersion` / etc. compiler-emit properties to short `$a` / `$b` / `$c` forms. Allow-list approach — only LLui-emitted names are renamed; Vite's `__vite__mapDeps`, Vike's `__VIKE__NOT_SERIALIZABLE__`, user-defined `__LLUI_STATE__` containers and other framework-internal `__`-prefixed identifiers pass through unmolested.
+
+### `@llui/compiler@0.3.1`
+
+- **Improved** static-template HTML emission drops unneeded attribute quotes for safe values (`class=col-md-6` instead of `class="col-md-6"`). Reduces emitted HTML size on `elTemplate` / `__cloneStaticTemplate` call sites by 2 bytes per simple-value attribute.
+
+### `@llui/test@0.2.1`
+
+- **Added** `defineTestComponent` and `stampTestVersion` re-exported from `@llui/dom/internal` and `@llui/test`'s public surface. Test fixtures opt into the optimized runtime path via a single canonical helper.
+- **Improved** `testView` now stamps `__compilerVersion: '__test__'` on raw `ComponentDef` literals it receives, silencing `warnUncompiledOnce` without forcing callers to use `defineTestComponent`.
+
+### `@llui/{compiler-devtools,compiler-introspection,compiler-ssr}@0.3.1`
+
+- Cascade bump — picks up the new `@llui/compiler@0.3.1` baseline.
+
+### `@llui/mcp@0.3.1` and `@llui/{agent,components,router,transitions,vike}@0.2.1`, `llui-agent@0.2.1`
+
+- Cascade bumps — `peerDependencies["@llui/dom"]` rolled to `^0.2.1` for the dom-peer packages; `llui-agent` rolls to track `@llui/agent`.
+
+### Bench
+
+- **Improved** the `js-framework-benchmark` LLui app dropped Vite's `build.lib` mode for a standard app build. Lib mode preserves whitespace + `//#region` source-map markers for downstream re-bundling, but the bench bundle is served directly to Chrome — ~1.3 kB gz of formatting overhead was dead weight.
+
+### Cumulative
+
+|                               | Pre-release | Post-release |
+| ----------------------------- | ----------- | ------------ |
+| jfb bundle (gzipped)          | ~8.9 kB     | **7.0 kB**   |
+| jfb Select (median-of-3)      | 4.3 ms      | **3.9 ms**   |
+| jfb Update 10th               | 15.9 ms     | **14.4 ms**  |
+| jfb Swap 1↔998                | 11.5 ms     | **10.9 ms**  |
+| vs Solid (bundle gz multiple) | ~2.0×       | **~1.55×**   |
+
 ## 2026-05-17 — 0.2.0
 
 **Released:** `@llui/{dom,vite-plugin,components,vike,transitions,router,test,mcp,agent,eslint-plugin}@0.2.0`; `llui-agent@0.2.0`
