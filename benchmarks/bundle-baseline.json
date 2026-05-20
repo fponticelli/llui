@@ -122,6 +122,23 @@
         "brotli": -3827
       }
     },
+    "17": {
+      "label": "Tier 17: DCE-gate hmrModule + devToolsInstall checks",
+      "summary": "(no summary)",
+      "uncompressed": 29181,
+      "gzipped": 8884,
+      "brotli": 7895,
+      "deltaVsPrevious": {
+        "uncompressed": -5684,
+        "gzipped": -2069,
+        "brotli": -1786
+      },
+      "deltaVsBaseline": {
+        "uncompressed": -14236,
+        "gzipped": -4595,
+        "brotli": -3974
+      }
+    },
     "0-baseline": {
       "label": "Phase 0 — current main",
       "summary": "Initial measurement before any size reductions. Captured from main.js after `pnpm build-prod`.",

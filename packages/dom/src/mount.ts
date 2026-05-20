@@ -161,7 +161,7 @@ export function mountApp<S, M, E, D>(
   // handle, which in a layout setup means the layout re-mounts at the
   // root and the rest of the chain is re-established via the normal
   // mount path.
-  if (hmrModule && def.name && !options?.parentLifetime) {
+  if (import.meta.env?.DEV && hmrModule && def.name && !options?.parentLifetime) {
     const swapped = hmrModule.replaceComponentForContainer(def.name, def, container)
     if (swapped) return swapped
   }
@@ -169,7 +169,7 @@ export function mountApp<S, M, E, D>(
   const inst = createComponentInstance(def, data, options?.parentLifetime ?? null, options?.env)
 
   // Dev-only: auto-install devtools if enabled via '@llui/dom/devtools' import
-  if (devToolsInstall) devToolsInstall(inst)
+  if (import.meta.env?.DEV && devToolsInstall) devToolsInstall(inst)
 
   // Dev-only: warn if initial state contains non-serializable values.
   // Silent bug-bomb: Date/Map/Set/class instances break SSR, hydration, replay tools.
@@ -222,7 +222,7 @@ export function mountApp<S, M, E, D>(
   flushMountQueue(onMountQueue)
 
   registerInstance(inst)
-  if (hmrModule && def.name) {
+  if (import.meta.env?.DEV && hmrModule && def.name) {
     hmrModule.registerForHmr(def.name, inst, container)
   }
   dispatchInitialEffects(inst)
@@ -328,7 +328,7 @@ export function mountAtAnchor<S, M, E, D>(
   // Without this, the existing end sentinel below would be reused but
   // the prior instance would be fully orphaned (lifetime not disposed,
   // HMR entry not unregistered, activeInstances entry not removed).
-  if (hmrModule && def.name && !options?.parentLifetime) {
+  if (import.meta.env?.DEV && hmrModule && def.name && !options?.parentLifetime) {
     const swapped = hmrModule.replaceComponentForAnchor(def.name, def, anchor)
     if (swapped) return swapped
   }
@@ -356,7 +356,7 @@ export function mountAtAnchor<S, M, E, D>(
 
   const inst = createComponentInstance(def, data, options?.parentLifetime ?? null, options?.env)
 
-  if (devToolsInstall) devToolsInstall(inst)
+  if (import.meta.env?.DEV && devToolsInstall) devToolsInstall(inst)
 
   if (import.meta.env?.DEV) {
     const offender = findNonSerializable(inst.state)
@@ -398,7 +398,7 @@ export function mountAtAnchor<S, M, E, D>(
   flushMountQueue(onMountQueue)
 
   registerInstance(inst)
-  if (hmrModule && def.name) {
+  if (import.meta.env?.DEV && hmrModule && def.name) {
     hmrModule.registerForAnchor(def.name, inst, anchor, endSentinel)
   }
   dispatchInitialEffects(inst)
@@ -438,7 +438,7 @@ export function hydrateAtAnchor<S, M, E, D = void>(
   // (typical of HMR module re-execution) hot-swaps in place. Matches
   // mountAtAnchor's behavior. Without this, the second call leaks the
   // first instance and stacks a second HMR entry under the same name.
-  if (hmrModule && def.name && !options?.parentLifetime) {
+  if (import.meta.env?.DEV && hmrModule && def.name && !options?.parentLifetime) {
     const swapped = hmrModule.replaceComponentForAnchor(def.name, def, anchor)
     if (swapped) return swapped
   }
@@ -467,7 +467,7 @@ export function hydrateAtAnchor<S, M, E, D = void>(
     options?.env,
   )
 
-  if (devToolsInstall) devToolsInstall(inst)
+  if (import.meta.env?.DEV && devToolsInstall) devToolsInstall(inst)
 
   const { queue: onMountQueue, prev: prevMountQueue } = pushMountQueue()
   setFlatBindings(inst.allBindings)
@@ -495,7 +495,7 @@ export function hydrateAtAnchor<S, M, E, D = void>(
   flushMountQueue(onMountQueue)
 
   registerInstance(inst)
-  if (hmrModule && def.name) {
+  if (import.meta.env?.DEV && hmrModule && def.name) {
     hmrModule.registerForAnchor(def.name, inst, anchor, endSentinel)
   }
   // Hydration: skip init's effects by default. The SSR pass already ran
@@ -592,7 +592,7 @@ function buildAppHandle<S, M, E>(
       disposed = true
       listeners.clear()
       inst._onCommit = undefined
-      if (hmrModule && hmrName) hmrModule.unregisterForHmr(hmrName, inst)
+      if (import.meta.env?.DEV && hmrModule && hmrName) hmrModule.unregisterForHmr(hmrName, inst)
       inst.abortController.abort()
       unregisterInstance(inst)
       // Tag the root scope so the disposer log reports app-level
@@ -611,11 +611,14 @@ function buildAppHandle<S, M, E>(
     },
     getState() {
       if (disposed) {
-        throw new Error(
-          '[LLui] AppHandle.getState() called after dispose — handle is dead. ' +
-            'Detach your event listener / cancel your timer when the handle ' +
-            'is disposed to avoid stale reads.',
-        )
+        if (import.meta.env?.DEV) {
+          throw new Error(
+            '[LLui] AppHandle.getState() called after dispose — handle is dead. ' +
+              'Detach your event listener / cancel your timer when the handle ' +
+              'is disposed to avoid stale reads.',
+          )
+        }
+        throw new Error('[LLui] AppHandle.getState() after dispose')
       }
       return inst.state
     },
@@ -685,7 +688,7 @@ export function hydrateApp<S, M, E, D = void>(
   // semantics as mountApp's fast path: the live instance keeps its
   // current state and the new def's `serverState` argument is
   // intentionally ignored on the swap (HMR preserves user state).
-  if (hmrModule && def.name && !options?.parentLifetime) {
+  if (import.meta.env?.DEV && hmrModule && def.name && !options?.parentLifetime) {
     const swapped = hmrModule.replaceComponentForContainer(def.name, def, container)
     if (swapped) return swapped
   }
@@ -719,7 +722,7 @@ export function hydrateApp<S, M, E, D = void>(
   // `window.__lluiDebug`, and is invisible to MCP / agent client /
   // devtools console — so a vike SSR app's outermost layout silently
   // drops out of every observability surface.
-  if (devToolsInstall) devToolsInstall(inst)
+  if (import.meta.env?.DEV && devToolsInstall) devToolsInstall(inst)
 
   // Build the component DOM and swap atomically with server HTML.
   // Server HTML remains visible until JS finishes — no flash.
@@ -763,7 +766,7 @@ export function hydrateApp<S, M, E, D = void>(
   // hydrateAtAnchor. Without it, replaceComponent(name, newDef)
   // silently no-ops on the hydrated layout layer because the HMR
   // registry has no entry for it.
-  if (hmrModule && hydrateDef.name) {
+  if (import.meta.env?.DEV && hmrModule && hydrateDef.name) {
     hmrModule.registerForHmr(hydrateDef.name, inst, container)
   }
   return buildAppHandle(inst, hydrateDef.name ?? null, () => {
