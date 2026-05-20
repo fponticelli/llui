@@ -1,5 +1,33 @@
 # Option B — Hybrid: TEA preserved, signals as the binding mechanism
 
+> **Empirical update (2026-05-19).** Phase 1 + Phase 2 of this option
+> landed (commits `32175e8`, `5d68931`) behind a per-component
+> `__bindingModel: 'registry'` opt-in. Two findings invalidate the
+> doc's perf pitch below:
+>
+> 1. **Flat and registry dispatch are tied within ±5 %** on a
+>    synthetic 16–1024-binding microbench
+>    (`packages/dom/test/binding-registry-perf.test.ts`). The doc's
+>    "7 µs floor at 1000 bindings" claim is correct for the AND-gate
+>    scan in isolation, but V8 inline-caches the gate so the floor is
+>    invisible against the rest of Phase 2's per-binding work.
+> 2. **jfb's Select bypasses Phase 2 entirely.** Verified: `__handlers`
+>    is emitted in the bench bundle, Select routes through `_handleMsg`
+>    → `each.reconcileChanged`, never touching `_runPhase2`'s scan.
+>    Replacing the scan therefore cannot fix Select.
+>
+> See `select-perf-investigation.test.ts` for the jfb-shape breakdown:
+> at N=1000 in jsdom, steady-state Select is 0.057 ms (framework total).
+> jfb measures 3.8 ms in Chrome; the 67× gap is browser
+> style/layout/paint, not framework dispatch.
+>
+> Phase 2's runtime is correct and tested but isn't a perf win. The
+> bundle pitch below (5–7 kB gz) is also unverified — Phase 2 alone
+> adds +417 gz vs the flat-only state; the doc's projected net savings
+> assume Phase 4 (drop flat path) actually pays off. Before continuing
+> to Phase 3, revisit whether Option B is the right v0.5 direction at
+> all given these findings.
+
 ## Summary
 
 Keep the public TEA contract intact — `state` is a JSON-serializable

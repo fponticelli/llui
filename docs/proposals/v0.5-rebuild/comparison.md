@@ -18,6 +18,30 @@ matching `option-*.md` and you're done.
 > updated for the post-v2 landing baseline; treat them as upper
 > bounds.
 
+> **Empirical update (2026-05-19): the "fixes Select" pitch for
+> Option B is falsified.** The Select regression cited as Option B's
+> headline win is not in Phase 2 binding dispatch. jfb's Select msg
+> routes through `inst.def.__handlers.select` → `_handleMsg` →
+> `each.reconcileChanged` (verified: `__handlers` is emitted in the
+> bench bundle, Tier 5 ablation showed 23–89% perf loss when removed),
+> bypassing `_runPhase2` entirely. Phase 2's flat-array scan — which
+> Option B replaces — is not on Select's hot path at all.
+>
+> A synthetic perf comparison (`packages/dom/test/binding-registry-perf.test.ts`)
+> confirms flat and registry dispatch are tied within ±5% noise across
+> 16–1024 bindings. A jfb-shape Select investigation
+> (`packages/dom/test/select-perf-investigation.test.ts`) shows steady-
+> state Select at N=1000 takes 0.057 ms total in jsdom; jfb measures
+> 3.8 ms in Chrome. The 67× gap is browser style/layout/paint, not
+> framework dispatch.
+>
+> **Treat Option B's perf pitch as unsupported by data.** The bundle
+> pitch (5–7 kB gz target) is also unverified — Phase 2 in isolation
+> adds +417 gz; net savings depend on Phase 4 actually dropping the
+> flat path. The "fixes Select" recommendation across A/B and the
+> Select-blocker branch of the decision tree should be revisited
+> before any further commitment.
+
 ---
 
 ## The matrix
