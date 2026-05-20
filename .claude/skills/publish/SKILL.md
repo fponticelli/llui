@@ -380,24 +380,40 @@ git push
 
 ### 10. Print the final publish command
 
-Print the final command for the user to run — **do NOT run it yourself.** `scripts/publish.sh` takes a list of package names and publishes them in dependency order:
+Print **exactly one** concrete `./scripts/publish.sh` line — never a placeholder, never an "example (full release)" alternative, never a menu of options. The line must contain exactly the directory names of the packages bumped in step 5, in tier 1 → tier 2 dependency order so the log reads cleanly.
+
+Derive the command from the bumps map written in step 5 — don't hand-type the list, that's how stale package names like `eslint-plugin` survive past their deprecation. Pseudocode:
+
+```
+DIRS=$(node -e '
+  const bumps = { /* paste from step 5 */ };
+  const dirs = Object.keys(bumps).map(p => p.match(/packages\/([^/]+)\//)[1]);
+  // Order: tier 1 (no in-repo deps) first, then tier 2.
+  const tier1 = ["dom", "effects", "compiler"];
+  dirs.sort((a, b) => {
+    const ai = tier1.indexOf(a), bi = tier1.indexOf(b);
+    if (ai !== -1 && bi !== -1) return ai - bi;
+    if (ai !== -1) return -1;
+    if (bi !== -1) return 1;
+    return a.localeCompare(b);
+  });
+  console.log(dirs.join(" "));
+')
+```
+
+Then output exactly:
 
 ```
 Ready to publish. Run:
 
-  ./scripts/publish.sh <space-separated list of bumped packages>
-
-Example (full release):
-  ./scripts/publish.sh dom effects eslint-plugin vite-plugin test router transitions components vike mcp agent
-
-(Only list the packages that were actually bumped in step 5. The script
-enforces tier 1 → tier 2 order internally, so argument order doesn't
-strictly matter, but passing them in tier order makes the log easier to read.)
+  ./scripts/publish.sh <DIRS>
 
 The script uses `pnpm publish`, which rewrites workspace:* to concrete versions
 at pack time. If a package fails with an auth error, check your npm token in
 ~/.npmrc or run `pnpm login`.
 ```
+
+with `<DIRS>` replaced by the derived list. No commentary about "drop X if the script complains," no "example" block, no parenthetical guidance about tier ordering — the list is already correctly ordered. The user asked for the publish line; they get a publish line.
 
 Then stop. The user runs the command when they're ready.
 
