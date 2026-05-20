@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { describe, it, expect, beforeEach } from 'vitest'
-import { component, mountAtAnchor, div, text } from '../src/index.js'
+import { defineTestComponent } from './helpers/defineTestComponent.js'
+import { mountAtAnchor, div, text } from '../src/index.js'
 import { enableHmr, replaceComponent } from '../src/hmr.js'
 
 function makeAnchor(): { anchor: Comment; parent: HTMLElement } {
@@ -24,7 +25,7 @@ describe('HMR for anchor-mounted instances', () => {
     parent.insertBefore(outerBefore, anchor)
 
     type S = { n: number }
-    const v1 = component<S, never, never>({
+    const v1 = defineTestComponent<S, never, never>({
       name: 'Swappable',
       init: () => [{ n: 0 }, []],
       update: (s) => [s, []],
@@ -33,7 +34,7 @@ describe('HMR for anchor-mounted instances', () => {
     const handle = mountAtAnchor(anchor, v1)
 
     // v2 replaces the view — same state type
-    const v2 = component<S, never, never>({
+    const v2 = defineTestComponent<S, never, never>({
       name: 'Swappable',
       init: () => [{ n: 0 }, []],
       update: (s) => [s, []],
@@ -57,13 +58,13 @@ describe('HMR for anchor-mounted instances', () => {
   it('hot-swap targets only the instance whose name matches', () => {
     const a = makeAnchor()
     const b = makeAnchor()
-    const defA = component<{}, never, never>({
+    const defA = defineTestComponent<{}, never, never>({
       name: 'A',
       init: () => [{}, []],
       update: (s) => [s, []],
       view: () => [div({ id: 'A-v1' }, [])],
     })
-    const defB = component<{}, never, never>({
+    const defB = defineTestComponent<{}, never, never>({
       name: 'B',
       init: () => [{}, []],
       update: (s) => [s, []],
@@ -72,7 +73,7 @@ describe('HMR for anchor-mounted instances', () => {
     const hA = mountAtAnchor(a.anchor, defA)
     const hB = mountAtAnchor(b.anchor, defB)
 
-    const defAv2 = component<{}, never, never>({
+    const defAv2 = defineTestComponent<{}, never, never>({
       name: 'A',
       init: () => [{}, []],
       update: (s) => [s, []],
@@ -89,7 +90,7 @@ describe('HMR for anchor-mounted instances', () => {
 
   it('dispose unregisters from HMR — subsequent swap is a no-op for the disposed instance', () => {
     const { anchor } = makeAnchor()
-    const def = component<{}, never, never>({
+    const def = defineTestComponent<{}, never, never>({
       name: 'Gone',
       init: () => [{}, []],
       update: (s) => [s, []],
@@ -98,7 +99,7 @@ describe('HMR for anchor-mounted instances', () => {
     const handle = mountAtAnchor(anchor, def)
     handle.dispose()
 
-    const defV2 = component<{}, never, never>({
+    const defV2 = defineTestComponent<{}, never, never>({
       name: 'Gone',
       init: () => [{}, []],
       update: (s) => [s, []],

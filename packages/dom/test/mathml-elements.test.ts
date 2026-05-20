@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
-import { mountApp, component } from '../src/index'
+import { defineTestComponent } from './helpers/defineTestComponent.js'
+import { mountApp } from '../src/index'
 import {
   math,
   mi,
@@ -47,7 +48,7 @@ describe('MathML elements', () => {
     type S = {}
     app = mountApp(
       root,
-      component<S, never, never>({
+      defineTestComponent<S, never, never>({
         name: 'MathTest',
         init: () => [{}, []],
         update: (s) => [s, []],
@@ -67,7 +68,7 @@ describe('MathML elements', () => {
     type S = {}
     app = mountApp(
       root,
-      component<S, never, never>({
+      defineTestComponent<S, never, never>({
         name: 'MathFrac',
         init: () => [{}, []],
         update: (s) => [s, []],
@@ -82,7 +83,7 @@ describe('MathML elements', () => {
     type S = {}
     app = mountApp(
       root,
-      component<S, never, never>({
+      defineTestComponent<S, never, never>({
         name: 'MathScript',
         init: () => [{}, []],
         update: (s) => [s, []],
@@ -101,7 +102,7 @@ describe('MathML elements', () => {
     type S = {}
     app = mountApp(
       root,
-      component<S, never, never>({
+      defineTestComponent<S, never, never>({
         name: 'MathRoot',
         init: () => [{}, []],
         update: (s) => [s, []],
@@ -117,7 +118,7 @@ describe('MathML elements', () => {
     type S = {}
     app = mountApp(
       root,
-      component<S, never, never>({
+      defineTestComponent<S, never, never>({
         name: 'MathTable',
         init: () => [{}, []],
         update: (s) => [s, []],
@@ -138,7 +139,7 @@ describe('MathML elements', () => {
     type S = {}
     app = mountApp(
       root,
-      component<S, never, never>({
+      defineTestComponent<S, never, never>({
         name: 'MathUnderOver',
         init: () => [{}, []],
         update: (s) => [s, []],
@@ -161,7 +162,7 @@ describe('MathML elements', () => {
     type S = {}
     app = mountApp(
       root,
-      component<S, never, never>({
+      defineTestComponent<S, never, never>({
         name: 'MathMisc',
         init: () => [{}, []],
         update: (s) => [s, []],
@@ -192,7 +193,7 @@ describe('MathML elements', () => {
     type S = { color: string }
     app = mountApp(
       root,
-      component<S, never, never>({
+      defineTestComponent<S, never, never>({
         name: 'MathReactive',
         init: () => [{ color: 'red' }, []],
         update: (s) => [s, []],

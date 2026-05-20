@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { describe, it, expect } from 'vitest'
-import { component, hydrateAtAnchor, div } from '../src/index.js'
+import { defineTestComponent } from './helpers/defineTestComponent.js'
+import { hydrateAtAnchor, div } from '../src/index.js'
 
 function makeAnchor(): { anchor: Comment; parent: HTMLElement } {
   const parent = document.createElement('div')
@@ -26,7 +27,7 @@ function makeAnchorWithServerContent(serverHTML: string): {
 describe('hydrateAtAnchor', () => {
   it('throws when the anchor is detached', () => {
     const detached = document.createComment('detached')
-    const def = component<{ n: number }, never, never>({
+    const def = defineTestComponent<{ n: number }, never, never>({
       name: 'Counter',
       init: () => [{ n: 0 }, []],
       update: (s) => [s, []],
@@ -37,7 +38,7 @@ describe('hydrateAtAnchor', () => {
 
   it('synthesizes an end sentinel when none is present (chain-hydrate path)', () => {
     const { anchor } = makeAnchor()
-    const def = component<{ n: number }, never, never>({
+    const def = defineTestComponent<{ n: number }, never, never>({
       name: 'Counter',
       init: () => [{ n: 0 }, []],
       update: (s) => [s, []],
@@ -57,7 +58,7 @@ describe('hydrateAtAnchor', () => {
     )
     expect(parent.querySelectorAll('div').length).toBe(2)
 
-    const def = component<{ n: number }, never, never>({
+    const def = defineTestComponent<{ n: number }, never, never>({
       name: 'Client',
       init: () => [{ n: 0 }, []],
       update: (s) => [s, []],
@@ -80,7 +81,7 @@ describe('hydrateAtAnchor', () => {
     type S = { n: number; loaded: boolean }
     type E = { type: 'log'; message: string }
     const dispatched: E[] = []
-    const def = component<S, never, E>({
+    const def = defineTestComponent<S, never, E>({
       name: 'WithEffect',
       init: () => [{ n: 0, loaded: false }, [{ type: 'log', message: 'init-fired' }]],
       update: (s) => [s, []],
@@ -99,7 +100,7 @@ describe('hydrateAtAnchor', () => {
     type S = { n: number; loaded: boolean }
     type E = { type: 'log'; message: string }
     const dispatched: E[] = []
-    const def = component<S, never, E>({
+    const def = defineTestComponent<S, never, E>({
       name: 'WithEffect',
       init: () => [{ n: 0, loaded: false }, [{ type: 'log', message: 'init-fired' }]],
       update: (s) => [s, []],
@@ -114,7 +115,7 @@ describe('hydrateAtAnchor', () => {
 
   it('dispose() removes content between the pair and the end sentinel', () => {
     const { anchor, parent } = makeAnchor()
-    const def = component<{ n: number }, never, never>({
+    const def = defineTestComponent<{ n: number }, never, never>({
       name: 'Probe',
       init: () => [{ n: 0 }, []],
       update: (s) => [s, []],
@@ -130,7 +131,7 @@ describe('hydrateAtAnchor', () => {
     const { anchor } = makeAnchor()
     type S = { n: number }
     type M = { type: 'inc' }
-    const def = component<S, M, never>({
+    const def = defineTestComponent<S, M, never>({
       name: 'Counter',
       init: () => [{ n: 0 }, []],
       update: (s, m) => (m.type === 'inc' ? [{ n: s.n + 1 }, []] : [s, []]),

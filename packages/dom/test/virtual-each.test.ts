@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
-import { mountApp, component, div, virtualEach } from '../src/index'
+import { defineTestComponent } from './helpers/defineTestComponent.js'
+import { mountApp, div, virtualEach } from '../src/index'
 import type { AppHandle, ComponentDef } from '../src/types'
 
 function flushAsync(): Promise<void> {
@@ -42,7 +43,7 @@ describe('virtualEach', () => {
         ]),
       ],
     }
-    app = mountApp(root, component(def))
+    app = mountApp(root, defineTestComponent(def))
 
     await flushAsync()
 
@@ -55,7 +56,7 @@ describe('virtualEach', () => {
     type S = { items: number[] }
     app = mountApp(
       root,
-      component<S, never, never>({
+      defineTestComponent<S, never, never>({
         name: 'VList',
         init: () => [{ items: Array.from({ length: 500 }, (_, i) => i) }, []],
         update: (s) => [s, []],
@@ -83,7 +84,7 @@ describe('virtualEach', () => {
     type S = { items: number[] }
     app = mountApp(
       root,
-      component<S, never, never>({
+      defineTestComponent<S, never, never>({
         name: 'VList',
         init: () => [{ items: Array.from({ length: 100 }, (_, i) => i) }, []],
         update: (s) => [s, []],
@@ -115,7 +116,7 @@ describe('virtualEach', () => {
 
     app = mountApp(
       root,
-      component<S, M, never>({
+      defineTestComponent<S, M, never>({
         name: 'VList',
         init: () => [{ items: ['a', 'b', 'c'] }, []],
         update: (s, m) => {
@@ -151,7 +152,7 @@ describe('virtualEach', () => {
     type S = { items: string[] }
     app = mountApp(
       root,
-      component<S, never, never>({
+      defineTestComponent<S, never, never>({
         name: 'VList',
         init: () => [{ items: ['one', 'two'] }, []],
         update: (s) => [s, []],
@@ -175,7 +176,7 @@ describe('virtualEach', () => {
     type S = { items: string[] }
     app = mountApp(
       root,
-      component<S, never, never>({
+      defineTestComponent<S, never, never>({
         name: 'VList',
         init: () => [{ items: [] as string[] }, []],
         update: (s) => [s, []],
@@ -204,7 +205,7 @@ describe('virtualEach', () => {
 
     app = mountApp(
       root,
-      component<S, M, never>({
+      defineTestComponent<S, M, never>({
         name: 'VList',
         init: () => [{ items: ['a', 'b', 'c'] }, []],
         update: (s, m) => {

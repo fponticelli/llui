@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest'
 import { mountApp } from '../src/mount'
 import { scope } from '../src/primitives/scope'
 import { sample } from '../src/primitives/sample'
-import { component } from '../src/component'
+import { defineTestComponent } from './helpers/defineTestComponent.js'
 import { div } from '../src/elements'
 import { onMount } from '../src/primitives/on-mount'
 import { flush } from '../src/runtime'
@@ -11,7 +11,7 @@ describe('scope() — keyed subtree rebuild', () => {
   it('runs render once when key never changes', () => {
     type S = { epoch: number }
     let buildCount = 0
-    const Def = component<S, never, never>({
+    const Def = defineTestComponent<S, never, never>({
       name: 'S',
       init: () => [{ epoch: 0 }, []],
       update: (s) => [s, []],
@@ -38,7 +38,7 @@ describe('scope() — keyed subtree rebuild', () => {
     type Msg = { type: 'bump' }
     let buildCount = 0
 
-    const Def = component<S, Msg, never>({
+    const Def = defineTestComponent<S, Msg, never>({
       name: 'S',
       init: () => [{ epoch: 0 }, []],
       update: (s, m) => (m.type === 'bump' ? [{ epoch: s.epoch + 1 }, []] : [s, []]),
@@ -70,7 +70,7 @@ describe('scope() — keyed subtree rebuild', () => {
   it('disposes the arm when the component unmounts', () => {
     type S = { epoch: number }
     let disposed = false
-    const Def = component<S, never, never>({
+    const Def = defineTestComponent<S, never, never>({
       name: 'S',
       init: () => [{ epoch: 0 }, []],
       update: (s) => [s, []],
@@ -101,7 +101,7 @@ describe('scope() — keyed subtree rebuild', () => {
     type Msg = { type: 'bump' }
     const disposeCalls: number[] = []
 
-    const Def = component<S, Msg, never>({
+    const Def = defineTestComponent<S, Msg, never>({
       name: 'S',
       init: () => [{ epoch: 0 }, []],
       update: (s, m) => (m.type === 'bump' ? [{ epoch: s.epoch + 1 }, []] : [s, []]),
@@ -137,7 +137,7 @@ describe('scope() — keyed subtree rebuild', () => {
     type Msg = { type: 'rebuild' } | { type: 'updateStats'; stats: Stats }
     const snapshotsAtRebuild: Stats[] = []
 
-    const Def = component<S, Msg, never>({
+    const Def = defineTestComponent<S, Msg, never>({
       name: 'Dash',
       init: () => [{ stats: { samples: 0, mean: 0 }, epoch: 0 }, []],
       update: (s, m) => {

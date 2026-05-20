@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
-import { mountApp, component } from '../src/index'
+import { defineTestComponent } from './helpers/defineTestComponent.js'
+import { mountApp } from '../src/index'
 import {
   svg,
   circle,
@@ -57,7 +58,7 @@ describe('SVG elements', () => {
     type M = never
     app = mountApp(
       root,
-      component<S, M, never>({
+      defineTestComponent<S, M, never>({
         name: 'SvgTest',
         init: () => [{ r: 50 }, []],
         update: (s) => [s, []],
@@ -83,7 +84,7 @@ describe('SVG elements', () => {
   it('supports reactive attributes', () => {
     type S = { radius: number }
     type M = { type: 'set'; r: number }
-    const def = component<S, M, never>({
+    const def = defineTestComponent<S, M, never>({
       name: 'SvgReactive',
       init: () => [{ radius: 10 }, []],
       update: (s, m) => [{ ...s, radius: m.r }, []],
@@ -105,7 +106,7 @@ describe('SVG elements', () => {
     type S = {}
     app = mountApp(
       root,
-      component<S, never, never>({
+      defineTestComponent<S, never, never>({
         name: 'SvgStructural',
         init: () => [{}, []],
         update: (s) => [s, []],
@@ -129,7 +130,7 @@ describe('SVG elements', () => {
     type S = {}
     app = mountApp(
       root,
-      component<S, never, never>({
+      defineTestComponent<S, never, never>({
         name: 'SvgGradient',
         init: () => [{}, []],
         update: (s) => [s, []],
@@ -156,7 +157,7 @@ describe('SVG elements', () => {
     type S = {}
     app = mountApp(
       root,
-      component<S, never, never>({
+      defineTestComponent<S, never, never>({
         name: 'SvgShapes',
         init: () => [{}, []],
         update: (s) => [s, []],
@@ -183,7 +184,7 @@ describe('SVG elements', () => {
     type S = {}
     app = mountApp(
       root,
-      component<S, never, never>({
+      defineTestComponent<S, never, never>({
         name: 'SvgText',
         init: () => [{}, []],
         update: (s) => [s, []],
@@ -201,7 +202,7 @@ describe('SVG elements', () => {
     type S = {}
     app = mountApp(
       root,
-      component<S, never, never>({
+      defineTestComponent<S, never, never>({
         name: 'SvgFilter',
         init: () => [{}, []],
         update: (s) => [s, []],
@@ -232,7 +233,7 @@ describe('SVG elements', () => {
     type S = {}
     app = mountApp(
       root,
-      component<S, never, never>({
+      defineTestComponent<S, never, never>({
         name: 'SvgMisc',
         init: () => [{}, []],
         update: (s) => [s, []],
@@ -265,7 +266,7 @@ describe('SVG elements', () => {
     type S = {}
     app = mountApp(
       root,
-      component<S, never, never>({
+      defineTestComponent<S, never, never>({
         name: 'SvgAnimate',
         init: () => [{}, []],
         update: (s) => [s, []],
@@ -295,7 +296,7 @@ describe('SVG elements', () => {
     type M = { type: 'click' }
     app = mountApp(
       root,
-      component<S, M, never>({
+      defineTestComponent<S, M, never>({
         name: 'SvgEvents',
         init: () => [{}, []],
         update: (s) => [s, []],

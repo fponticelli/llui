@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest'
 import { mountApp } from '../src/mount'
 import { scope } from '../src/primitives/scope'
 import { sample } from '../src/primitives/sample'
-import { component } from '../src/component'
+import { defineTestComponent } from './helpers/defineTestComponent.js'
 import { div } from '../src/elements'
 import { text } from '../src/primitives/text'
 import { flush } from '../src/runtime'
@@ -25,7 +25,7 @@ describe('scope() + sample() — dicerun2 epoch-rebuild integration', () => {
     let chartBuildCount = 0
     let capturedStats: Stats | null = null
 
-    const Def = component<S, Msg, never>({
+    const Def = defineTestComponent<S, Msg, never>({
       name: 'Dashboard',
       init: () => [{ stats: { samples: 0, mean: 0 }, epoch: 0, live: 0 }, []],
       update: (s, m) => {

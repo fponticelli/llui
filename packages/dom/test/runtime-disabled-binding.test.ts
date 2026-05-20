@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest'
-import { mountApp, component, div, button, text } from '../src/index'
+import { defineTestComponent } from './helpers/defineTestComponent.js'
+import { mountApp, div, button, text } from '../src/index'
 
 // Runtime sanity probe for the bug reported in the issue tracker:
 // "disabled attribute binding never re-evaluates when accessor is a
@@ -15,7 +16,7 @@ describe('runtime disabled binding — function-shaped values', () => {
   type Msg = { type: 'toggle' }
 
   function makeApp(disabledAccessor: (s: State) => boolean) {
-    return component<State, Msg, never>({
+    return defineTestComponent<State, Msg, never>({
       name: 'App',
       init: () => [{ gated: true }, []],
       update: (state, msg) => {
@@ -83,7 +84,7 @@ describe('runtime — structural primitives accept function-shaped values', () =
     branchOn: (s: State) => 'a' | 'b'
     eachItems: (s: State) => number[]
   }) {
-    return component<State, Msg, never>({
+    return defineTestComponent<State, Msg, never>({
       name: 'App',
       init: () => [{ count: 0, xs: [10], mode: 'a' }, []],
       update: (s, m) => {
@@ -165,7 +166,7 @@ describe('runtime — delegating accessor reconciles correctly', () => {
   function makeApp() {
     const innerFilter = (s: State): string[] => s.items.filter((i) => i.startsWith(s.filter))
     const visibleItems = (s: State): string[] => innerFilter(s)
-    return component<State, Msg, never>({
+    return defineTestComponent<State, Msg, never>({
       name: 'App',
       init: () => [{ items: ['alpha', 'beta', 'apple'], filter: '' }, []],
       update: (s, m) => {
@@ -199,7 +200,7 @@ describe('runtime — delegating accessor reconciles correctly', () => {
   // If THIS passes and the delegated test fails, the bug is in delegation
   // handling. If both fail, it's a test-wiring issue.
   it('control: each block reconciles with inline items arrow', () => {
-    const inlineApp = component<State, Msg, never>({
+    const inlineApp = defineTestComponent<State, Msg, never>({
       name: 'App',
       init: () => [{ items: ['alpha', 'beta', 'apple'], filter: '' }, []],
       update: (s, m) => {

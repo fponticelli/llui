@@ -8,17 +8,18 @@
  * a child message. Assert the child's text node reflects the new state.
  */
 import { describe, it, expect } from 'vitest'
+import { defineTestComponent } from './helpers/defineTestComponent.js'
 import { mountApp, flush, type AppHandle } from '../src'
 import { foreign } from '../src/primitives/foreign'
 import { onMount } from '../src/primitives/on-mount'
-import { component, div, button } from '../src'
+import { div, button } from '../src'
 
 interface ChildState {
   open: boolean
 }
 type ChildMsg = { type: 'toggle' }
 
-const ChildDef = component<ChildState, ChildMsg, never>({
+const ChildDef = defineTestComponent<ChildState, ChildMsg, never>({
   name: 'Child',
   init: () => [{ open: false }, []],
   update: (state, msg) => {
@@ -51,7 +52,7 @@ describe('nested mountApp via foreign + onMount', () => {
     const container = document.createElement('div')
     document.body.appendChild(container)
 
-    const ParentDef = component<ParentState, ParentMsg, never>({
+    const ParentDef = defineTestComponent<ParentState, ParentMsg, never>({
       name: 'Parent',
       init: () => [{ x: 0 }, []],
       update: (s, _msg) => [s, []],
@@ -101,7 +102,7 @@ describe('nested mountApp via foreign + onMount', () => {
     }
     type ChildShimMsg = { type: 'toggle' } | { type: 'props/set'; label: string }
 
-    const ChildShimDef = component<ChildShimState, ChildShimMsg, never>({
+    const ChildShimDef = defineTestComponent<ChildShimState, ChildShimMsg, never>({
       name: 'ChildShim',
       init: () => [{ open: false, label: 'initial' }, []],
       update: (state, msg) => {
@@ -132,7 +133,7 @@ describe('nested mountApp via foreign + onMount', () => {
     const container = document.createElement('div')
     document.body.appendChild(container)
 
-    const ParentShimDef = component<ParentShimState, ParentShimMsg, never>({
+    const ParentShimDef = defineTestComponent<ParentShimState, ParentShimMsg, never>({
       name: 'ParentShim',
       init: () => [{ tick: 0 }, []],
       update: (s, msg) => {

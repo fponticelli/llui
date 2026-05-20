@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi } from 'vitest'
-import { component, mountAtAnchor, div, onMount } from '../src/index.js'
+import { defineTestComponent } from './helpers/defineTestComponent.js'
+import { mountAtAnchor, div, onMount } from '../src/index.js'
 
 function makeAnchor(): { anchor: Comment; parent: HTMLElement } {
   const parent = document.createElement('div')
@@ -13,7 +14,7 @@ function makeAnchor(): { anchor: Comment; parent: HTMLElement } {
 describe('mountAtAnchor', () => {
   it('throws when the anchor is detached', () => {
     const detached = document.createComment('detached')
-    const def = component<{}, never, never>({
+    const def = defineTestComponent<{}, never, never>({
       name: 'Empty',
       init: () => [{}, []],
       update: (s) => [s, []],
@@ -24,7 +25,7 @@ describe('mountAtAnchor', () => {
 
   it('inserts an end sentinel as the anchor next sibling', () => {
     const { anchor, parent } = makeAnchor()
-    const def = component<{}, never, never>({
+    const def = defineTestComponent<{}, never, never>({
       name: 'Empty',
       init: () => [{}, []],
       update: (s) => [s, []],
@@ -40,7 +41,7 @@ describe('mountAtAnchor', () => {
 
   it('places component nodes in order between the sentinel pair', () => {
     const { anchor } = makeAnchor()
-    const def = component<{}, never, never>({
+    const def = defineTestComponent<{}, never, never>({
       name: 'Three',
       init: () => [{}, []],
       update: (s) => [s, []],
@@ -59,7 +60,7 @@ describe('mountAtAnchor', () => {
 
   it('dispose() removes every node between the pair and the end sentinel, leaving the anchor', () => {
     const { anchor, parent } = makeAnchor()
-    const def = component<{}, never, never>({
+    const def = defineTestComponent<{}, never, never>({
       name: 'Two',
       init: () => [{}, []],
       update: (s) => [s, []],
@@ -76,7 +77,7 @@ describe('mountAtAnchor', () => {
     const { anchor } = makeAnchor()
     const mountSpy = vi.fn()
     const cleanupSpy = vi.fn()
-    const def = component<{}, never, never>({
+    const def = defineTestComponent<{}, never, never>({
       name: 'Observed',
       init: () => [{}, []],
       update: (s) => [s, []],
@@ -98,7 +99,7 @@ describe('mountAtAnchor', () => {
     const { anchor } = makeAnchor()
     type S = { n: number }
     type M = { type: 'inc' }
-    const def = component<S, M, never>({
+    const def = defineTestComponent<S, M, never>({
       name: 'Counter',
       init: () => [{ n: 0 }, []],
       update: (s, m) => (m.type === 'inc' ? [{ n: s.n + 1 }, []] : [s, []]),
@@ -113,7 +114,7 @@ describe('mountAtAnchor', () => {
   it('accepts options.parentLifetime without breaking mount/dispose', () => {
     const { anchor: outerAnchor } = makeAnchor()
     // Build a parent instance first so we can grab a real Lifetime to pass in
-    const parentDef = component<{}, never, never>({
+    const parentDef = defineTestComponent<{}, never, never>({
       name: 'Outer',
       init: () => [{}, []],
       update: (s) => [s, []],
@@ -130,7 +131,7 @@ describe('mountAtAnchor', () => {
   it('onMount receives anchor.parentElement as the container', () => {
     const { anchor, parent } = makeAnchor()
     let received: Element | null = null
-    const def = component<{}, never, never>({
+    const def = defineTestComponent<{}, never, never>({
       name: 'OnMountProbe',
       init: () => [{}, []],
       update: (s) => [s, []],
@@ -149,7 +150,7 @@ describe('mountAtAnchor', () => {
     const { anchor, parent } = makeAnchor()
     type S = { items: Array<{ id: string }> }
     type M = { type: 'add'; id: string }
-    const def = component<S, M, never>({
+    const def = defineTestComponent<S, M, never>({
       name: 'EachProbe',
       init: () => [{ items: [] }, []],
       update: (s, m) => (m.type === 'add' ? [{ items: [...s.items, { id: m.id }] }, []] : [s, []]),

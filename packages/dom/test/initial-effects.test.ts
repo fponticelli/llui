@@ -1,5 +1,6 @@
 import { describe, it, expect, vi } from 'vitest'
-import { mountApp, component, text, div } from '../src/index'
+import { defineTestComponent } from './helpers/defineTestComponent.js'
+import { mountApp, text, div } from '../src/index'
 
 describe('initial effects from init()', () => {
   it('dispatches effects returned from init()', async () => {
@@ -9,7 +10,7 @@ describe('initial effects from init()', () => {
     type Msg = { type: 'loaded'; payload: string }
     type Effect = { type: 'load' }
 
-    const App = component<State, Msg, Effect>({
+    const App = defineTestComponent<State, Msg, Effect>({
       name: 'InitEffect',
       init: () => [{ label: 'loading' }, [{ type: 'load' }]],
       update: (s, msg) => {
@@ -41,7 +42,7 @@ describe('initial effects from init()', () => {
 
     type Effect = { type: 'a' } | { type: 'b' } | { type: 'c' }
 
-    const App = component<null, never, Effect>({
+    const App = defineTestComponent<null, never, Effect>({
       name: 'MultiEffect',
       init: () => [null, [{ type: 'a' }, { type: 'b' }, { type: 'c' }]],
       update: (s) => [s, []],
@@ -60,7 +61,7 @@ describe('initial effects from init()', () => {
     type Msg = { type: 'dataLoaded'; payload: { items: string[] } }
     type Effect = { type: 'http'; url: string; onSuccess: string; onError: string }
 
-    const App = component<State, Msg, Effect>({
+    const App = defineTestComponent<State, Msg, Effect>({
       name: 'DataLoad',
       init: () => [
         { items: [] },

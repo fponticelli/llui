@@ -1,13 +1,13 @@
 import { describe, it, expect } from 'vitest'
 import { mountApp } from '../src/mount'
 import { branch } from '../src/primitives/branch'
-import { component } from '../src/component'
+import { defineTestComponent } from './helpers/defineTestComponent.js'
 import { div } from '../src/elements'
 
 describe('branch() default case', () => {
   it('fires default when no case matches', () => {
     type S = { kind: string }
-    const Def = component<S, never, never>({
+    const Def = defineTestComponent<S, never, never>({
       name: 'Br',
       init: () => [{ kind: 'unknown' }, []],
       update: (s) => [s, []],
@@ -32,7 +32,7 @@ describe('branch() default case', () => {
 
   it('does not fire default when a case matches', () => {
     type S = { kind: string }
-    const Def = component<S, never, never>({
+    const Def = defineTestComponent<S, never, never>({
       name: 'Br',
       init: () => [{ kind: 'a' }, []],
       update: (s) => [s, []],
@@ -57,7 +57,7 @@ describe('branch() default case', () => {
   it('accepts optional cases — default only', () => {
     type S = { epoch: number }
     let buildCount = 0
-    const Def = component<S, never, never>({
+    const Def = defineTestComponent<S, never, never>({
       name: 'Br',
       init: () => [{ epoch: 0 }, []],
       update: (s) => [s, []],

@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
-import { mountApp, component, div, text, lazy } from '../src/index'
+import { defineTestComponent } from './helpers/defineTestComponent.js'
+import { mountApp, div, text, lazy } from '../src/index'
 import type { AppHandle, ComponentDef } from '../src/types'
 
 // Helper: wait for microtasks + one macrotask so promise chains settle
@@ -27,7 +28,7 @@ describe('lazy', () => {
 
     app = mountApp(
       root,
-      component<S, never, never>({
+      defineTestComponent<S, never, never>({
         name: 'Host',
         init: () => [{}, []],
         update: (s) => [s, []],
@@ -49,7 +50,7 @@ describe('lazy', () => {
   it('replaces fallback with loaded component', async () => {
     type S = Record<string, never>
 
-    const Loaded = component<Record<string, never>, never, never>({
+    const Loaded = defineTestComponent<Record<string, never>, never, never>({
       name: 'Loaded',
       init: () => [{}, []],
       update: (s) => [s, []],
@@ -58,7 +59,7 @@ describe('lazy', () => {
 
     app = mountApp(
       root,
-      component<S, never, never>({
+      defineTestComponent<S, never, never>({
         name: 'Host',
         init: () => [{}, []],
         update: (s) => [s, []],
@@ -90,7 +91,7 @@ describe('lazy', () => {
 
     app = mountApp(
       root,
-      component<S, never, never>({
+      defineTestComponent<S, never, never>({
         name: 'Host',
         init: () => [{}, []],
         update: (s) => [s, []],
@@ -129,7 +130,7 @@ describe('lazy', () => {
 
     app = mountApp(
       root,
-      component<S, never, never>({
+      defineTestComponent<S, never, never>({
         name: 'Host',
         init: () => [{ name: 'World' }, []],
         update: (s) => [s, []],
@@ -158,7 +159,7 @@ describe('lazy', () => {
     let resolveLoader: ((def: ComponentDef<unknown, never, never>) => void) | undefined
     let mountCount = 0
 
-    const Loaded = component<Record<string, never>, never, never>({
+    const Loaded = defineTestComponent<Record<string, never>, never, never>({
       name: 'Loaded',
       init: () => {
         mountCount++
@@ -170,7 +171,7 @@ describe('lazy', () => {
 
     app = mountApp(
       root,
-      component<S, never, never>({
+      defineTestComponent<S, never, never>({
         name: 'Host',
         init: () => [{}, []],
         update: (s) => [s, []],
@@ -205,7 +206,7 @@ describe('lazy', () => {
     type S = Record<string, never>
     let loadCount = 0
 
-    const Loaded = component<Record<string, never>, never, never>({
+    const Loaded = defineTestComponent<Record<string, never>, never, never>({
       name: 'Loaded',
       init: () => [{}, []],
       update: (s) => [s, []],
@@ -219,7 +220,7 @@ describe('lazy', () => {
 
     app = mountApp(
       root,
-      component<S, never, never>({
+      defineTestComponent<S, never, never>({
         name: 'Host',
         init: () => [{}, []],
         update: (s) => [s, []],

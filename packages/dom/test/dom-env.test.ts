@@ -1,11 +1,12 @@
 import { describe, it, expect } from 'vitest'
+import { defineTestComponent } from './helpers/defineTestComponent.js'
 import { renderToString } from '../src/ssr'
 import { browserEnv } from '../src/dom-env'
-import { component, div, span, text } from '../src/index'
+import { div, span, text } from '../src/index'
 
 type State = { label: string; count: number }
 
-const Sample = component<State, never, never>({
+const Sample = defineTestComponent<State, never, never>({
   name: 'Sample',
   init: () => [{ label: 'x', count: 0 }, []],
   update: (s) => [s, []],

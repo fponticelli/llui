@@ -2,7 +2,8 @@
 // See `docs/proposals/unified-composition-model.md` for rationale.
 
 import { describe, it, expect } from 'vitest'
-import { component, mountApp, div } from '../src/index'
+import { defineTestComponent } from './helpers/defineTestComponent.js'
+import { mountApp, div } from '../src/index'
 import { text } from '../src/primitives/text'
 import { subApp } from '../src/escape-hatch'
 import type { AppHandle, ComponentDef } from '../src/types'
@@ -11,7 +12,7 @@ describe('subApp()', () => {
   // A trivial nested app with its own state + reducer + view.
   type NestedState = { count: number }
   type NestedMsg = { type: 'inc' }
-  const NestedApp: ComponentDef<NestedState, NestedMsg, never> = component<
+  const NestedApp: ComponentDef<NestedState, NestedMsg, never> = defineTestComponent<
     NestedState,
     NestedMsg,
     never

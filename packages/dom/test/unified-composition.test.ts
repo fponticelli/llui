@@ -28,8 +28,9 @@
 // combine() routes messages mechanically.
 
 import { describe, it, expect } from 'vitest'
+import { defineTestComponent } from './helpers/defineTestComponent.js'
 import { combine } from '../src/combine'
-import { mountApp, component, div, text } from '../src/index'
+import { mountApp, div, text } from '../src/index'
 import type { ComponentDef } from '../src/types'
 
 // ── State shape ─────────────────────────────────────────────────────
@@ -155,7 +156,11 @@ const initialState: AppState = {
 
 // ── Host component — one mount, all state in one store ──────────────
 
-const TodosApp: ComponentDef<AppState, AppMsg, AppEffect> = component<AppState, AppMsg, AppEffect>({
+const TodosApp: ComponentDef<AppState, AppMsg, AppEffect> = defineTestComponent<
+  AppState,
+  AppMsg,
+  AppEffect
+>({
   name: 'TodosApp',
   init: () => [initialState, []],
   update,

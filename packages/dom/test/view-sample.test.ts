@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { mountApp } from '../src/mount'
-import { component } from '../src/component'
+import { defineTestComponent } from './helpers/defineTestComponent.js'
 import { div } from '../src/elements'
 import { text } from '../src/primitives/text'
 import { each } from '../src/primitives/each'
@@ -12,7 +12,7 @@ describe('sample() — top-level import', () => {
     type S = { count: number; label: string }
     let observed: number | null = null
 
-    const Def = component<S, never, never>({
+    const Def = defineTestComponent<S, never, never>({
       name: 'Observer',
       init: () => [{ count: 42, label: 'x' }, []],
       update: (s) => [s, []],
@@ -31,7 +31,7 @@ describe('sample() — top-level import', () => {
     type S = { items: number[]; bonus: number }
     const reads: Array<{ item: number; bonus: number }> = []
 
-    const Def = component<S, never, never>({
+    const Def = defineTestComponent<S, never, never>({
       name: 'EachSampler',
       init: () => [{ items: [1, 2, 3], bonus: 10 }, []],
       update: (s) => [s, []],
@@ -70,7 +70,7 @@ describe('h.sample — View bag method', () => {
     type S = { mode: 'a' | 'b'; payload: string }
     let captured: string | null = null
 
-    const Def = component<S, never, never>({
+    const Def = defineTestComponent<S, never, never>({
       name: 'Br',
       init: () => [{ mode: 'a', payload: 'hi' }, []],
       update: (s) => [s, []],
