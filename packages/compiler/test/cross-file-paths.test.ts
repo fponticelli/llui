@@ -55,13 +55,19 @@ function makeProgram(files: Record<string, string>): {
 }
 
 describe('crossFileAccessorPaths — Phase 3 cross-file resolution', () => {
-  it('resolves a focal file that reads state directly', () => {
+  it('resolves an accessor at a reactive position in the focal file', () => {
+    // The walker only enters arrows at reactive positions (issue #5
+    // bug 3 fix). Reactive positions for a focal file are: first arg
+    // to a framework primitive (text/show/branch/...), property value
+    // on an element-helper call, OR first arg to a §2.1 view-helper
+    // call defined elsewhere. Sitting in an unused local binding is
+    // not reactive.
     const { program, sf } = makeProgram({
       '/main.ts': `
-        export const focal = (s: { count: number; label: string }): Node[] => {
-          const accessor: (state: typeof s) => string = (st) => st.label
-          return [accessor as unknown as Node]
+        function text(_a: (s: { count: number; label: string }) => string): Node {
+          return {} as Node
         }
+        export const focal = (): Node[] => [text((s) => s.label)]
       `,
     })
     const paths = crossFileAccessorPaths(program, sf('/main.ts'))
@@ -90,6 +96,64 @@ describe('crossFileAccessorPaths — Phase 3 cross-file resolution', () => {
     // sees as the helper's local reads. We assert the lift path is in
     // the set; the manifest substitution test covers the composition.
     expect([...paths]).toContain('user')
+  })
+
+  it('does NOT add paths from non-reactive 1-param arrows (issue #5 bug 3 false positive)', () => {
+    // Pre-fix, the walker visited every 1-param arrow in the file —
+    // including `onEffect: (bag) => bag.send(...)` — and added every
+    // depth-1 property as a phantom state path. In the issue report
+    // that surfaced as `send`, `effect`, `signal`, `path`, `message`
+    // in the components `__prefixes` table.
+    const { program, sf } = makeProgram({
+      '/main.ts': `
+        function div(_props: unknown): Node { return {} as Node }
+        function text(_a: (s: { count: number }) => string): Node { return {} as Node }
+        export const c = {
+          // Only this accessor is reactive — \`count\` should land in paths.
+          view: () => [div({}), text((s) => String(s.count))],
+          // None of these arrows are at reactive positions; their property
+          // accesses must stay out of the path set.
+          onEffect: (bag: { send: (m: unknown) => void; effect: unknown; signal: unknown }) => {
+            bag.send(bag.effect)
+            const _x = bag.signal
+          },
+          handle: (eff: { path: string; message: string }) => {
+            console.log(eff.path, eff.message)
+          },
+        }
+      `,
+    })
+    const paths = crossFileAccessorPaths(program, sf('/main.ts'))
+    expect([...paths]).toContain('count')
+    for (const phantom of ['send', 'effect', 'signal', 'path', 'message']) {
+      expect([...paths]).not.toContain(phantom)
+    }
+  })
+
+  it('descends into a non-Node-returning helper called with state (issue #5 bug 3 false negative)', () => {
+    // The §2.1 view-helper classification gates the case-2 descent on
+    // a Node-shaped return type. But a helper that takes state and
+    // returns a string/boolean/etc. still contributes paths to the
+    // calling accessor when invoked as `helper(s)`. Pre-fix the walker
+    // skipped these, so reads like `s.route.kind` inside a route
+    // predicate fell out of `__prefixes` — bindings keyed on the
+    // missing path stopped firing, with no runtime error to point at it.
+    const { program, sf } = makeProgram({
+      '/helpers.ts': `
+        type State = { route: { kind: string }; visible: boolean }
+        export function isRouteA(s: State): boolean {
+          return s.route.kind === 'a'
+        }
+      `,
+      '/main.ts': `
+        import { isRouteA } from './helpers.js'
+        type State = { route: { kind: string }; visible: boolean }
+        function show(_o: { when: (s: State) => boolean }): Node[] { return [] }
+        export const view = (): Node[] => show({ when: (s) => isRouteA(s) })
+      `,
+    })
+    const paths = crossFileAccessorPaths(program, sf('/main.ts'))
+    expect([...paths]).toContain('route.kind')
   })
 
   it('does not descend into helpers whose return type is opaque', () => {

@@ -31,6 +31,7 @@ import {
   rangeFromOffsets,
   relativizeFile,
 } from './diagnostic.js'
+import { isReactiveAccessor } from './collect-deps.js'
 
 export type ViewHelperKind = 'walked' | 'opaque' | 'async' | 'not-a-helper'
 
@@ -487,30 +488,56 @@ export function toCanonicalDiagnostic(
  * Collect the cross-file union of accessor paths read from a focal file.
  * Returns the union over every reactive accessor in `focalFile`, with
  * cross-file view-helper descents merged in.
+ *
+ * Reactive-accessor entry is gated by `isReactiveAccessor` (the same
+ * predicate the file-local `collect-deps` walker uses) *plus* a
+ * cross-file extension: an arrow at the first-arg position of a call
+ * to a §2.1 view-helper also counts as reactive, because that's the
+ * lift the helper applies to our state.
+ *
+ * Without the gate, every 1-param arrow in the file gets walked —
+ * including `onEffect: (bag) => bag.send(...)`, where `bag.send` ends
+ * up in the path set as a phantom "send" prefix. Issue #5, bug 3.
  */
 export function crossFileAccessorPaths(program: ts.Program, focalFile: ts.SourceFile): Set<string> {
   const checker = program.getTypeChecker()
   const paths = new Set<string>()
   const visitedHelpers = new Set<ts.Declaration>()
 
-  const visit = (node: ts.Node, paramName: string | undefined): void => {
-    // Reactive accessor entry: a 1-param arrow or function expression.
+  const isViewHelperCallArg0 = (arrow: ts.ArrowFunction | ts.FunctionExpression): boolean => {
+    const parent = arrow.parent
+    if (!parent || !ts.isCallExpression(parent)) return false
+    if (parent.arguments[0] !== arrow) return false
+    const sym = resolveAliasedSymbol(parent.expression, checker)
+    if (!sym) return false
+    return classifyViewHelper(sym, checker).kind === 'walked'
+  }
+
+  const visit = (node: ts.Node): void => {
     if (
       (ts.isArrowFunction(node) || ts.isFunctionExpression(node)) &&
       node.parameters.length === 1
     ) {
       const p0 = node.parameters[0]!
       if (ts.isIdentifier(p0.name) && node.body) {
-        // Inner walk over the body — collect property chains rooted at
-        // this accessor's param, AND chase view-helper call sites.
-        walkAccessorBody(node.body, p0.name.text, paths, checker, visitedHelpers)
+        if (isReactiveAccessor(node) || isViewHelperCallArg0(node)) {
+          walkAccessorBody(node.body, p0.name.text, paths, checker, visitedHelpers)
+        }
       }
     }
-    ts.forEachChild(node, (child) => visit(child, paramName))
+    ts.forEachChild(node, visit)
   }
-  visit(focalFile, undefined)
+  visit(focalFile)
   return paths
 }
+
+// Helpers whose arrow args are NOT state accessors — same exclusion list
+// the file-local walker uses (collect-deps.ts § NON_DELEGATION_HELPERS).
+// `item` / `sample` read state imperatively or per-row; descending into
+// their bodies would attribute reads to the wrong scope. `memo` / `text` /
+// `unsafeHtml` already have their inline arrow walked by the top-level
+// visitor — we'd double-count if we recursed through the call again.
+const NON_DELEGATION_CALLEES = new Set(['sample', 'item', 'memo', 'text', 'unsafeHtml'])
 
 function walkAccessorBody(
   body: ts.Node,
@@ -526,19 +553,54 @@ function walkAccessorBody(
       if (chain) paths.add(chain)
     }
 
-    // View-helper call chase. The call may pass the state through to the
-    // helper, in which case the helper's own reads contribute to our
-    // accessor's read set.
     if (ts.isCallExpression(node)) {
       const callee = node.expression
       const sym = resolveAliasedSymbol(callee, checker)
       if (sym) {
         const cls = classifyViewHelper(sym, checker)
-        if (cls.kind === 'walked') {
-          const decl = sym.getDeclarations()?.find(isFunctionLikeDecl)
-          if (decl && !visitedHelpers.has(decl)) {
+        const decl = sym.getDeclarations()?.find(isFunctionLikeDecl)
+
+        if (cls.kind === 'walked' && decl && !visitedHelpers.has(decl)) {
+          // §2.1 view-helper: full descent (arrow-arg accessors lift
+          // into our state, identifier args pass our state through).
+          visitedHelpers.add(decl)
+          descendIntoHelper(
+            decl,
+            node,
+            paramName,
+            paths,
+            checker,
+            visitedHelpers,
+            /*viewHelper*/ true,
+          )
+        } else if (decl && !visitedHelpers.has(decl)) {
+          // Non-view-helper: only follow if our state param is passed
+          // through unchanged. A helper returning string / boolean /
+          // anything-non-Node that reads `s.foo.bar` still contributes
+          // those paths to our accessor's read set when called as
+          // `helper(s)`. Without this, helpers like
+          // `(s) => s.route.kind === 'a'` would have their reads
+          // silently dropped, producing a stale-render bug rather than
+          // a crash (issue #5, bug 3 false-negative).
+          //
+          // Skip framework primitives whose arrow args are visited
+          // separately (see NON_DELEGATION_CALLEES) — descending would
+          // double-count.
+          if (
+            ts.isIdentifier(callee) &&
+            !NON_DELEGATION_CALLEES.has(callee.text) &&
+            callPassesParamIdent(node, paramName)
+          ) {
             visitedHelpers.add(decl)
-            descendIntoHelper(decl, node, paramName, paths, checker, visitedHelpers)
+            descendIntoHelper(
+              decl,
+              node,
+              paramName,
+              paths,
+              checker,
+              visitedHelpers,
+              /*viewHelper*/ false,
+            )
           }
         }
       }
@@ -549,6 +611,13 @@ function walkAccessorBody(
   visit(body)
 }
 
+function callPassesParamIdent(call: ts.CallExpression, paramName: string): boolean {
+  for (const arg of call.arguments) {
+    if (ts.isIdentifier(arg) && arg.text === paramName) return true
+  }
+  return false
+}
+
 function descendIntoHelper(
   decl: ts.Declaration,
   callSite: ts.CallExpression,
@@ -556,11 +625,19 @@ function descendIntoHelper(
   paths: Set<string>,
   checker: ts.TypeChecker,
   visitedHelpers: Set<ts.Declaration>,
+  viewHelper: boolean,
 ): void {
-  // Match each parameter to its argument at the call site. For accessor
-  // arguments `(t) => t.foo`, the helper's body reads `t` which is our
-  // outer state slice. Track this so reads inside the helper get
-  // attributed to our state shape.
+  // Match each parameter to its argument at the call site.
+  //
+  // For §2.1 view-helpers: arrow-arg accessors like `(t) => t.foo` are
+  // lifts that bind the helper's parameter to a slice of our state;
+  // walk their bodies so the slice's reads chain into our path set.
+  //
+  // For non-view-helpers: we don't know what the helper does with its
+  // arrow args — could be a filter callback over a per-item type, or a
+  // mapper that doesn't touch state at all. Only the identifier-arg
+  // branch (`helper(s)`) is unambiguous, so the non-view-helper case
+  // is conservative and only takes that path.
   const fnDecl = decl as ts.FunctionLikeDeclaration
   if (!fnDecl.body) return
   const params = fnDecl.parameters
@@ -569,16 +646,12 @@ function descendIntoHelper(
     const arg = callSite.arguments[i]
     if (!arg) continue
     if (!ts.isIdentifier(param.name)) continue
-    if (ts.isArrowFunction(arg) || ts.isFunctionExpression(arg)) {
+    if (viewHelper && (ts.isArrowFunction(arg) || ts.isFunctionExpression(arg))) {
       const a0 = arg.parameters[0]
       if (a0 && ts.isIdentifier(a0.name) && arg.body) {
-        // The arg accessor binds the helper's lift; walk it under the
-        // outer paramName so paths chain into our state.
         walkAccessorBody(arg.body, a0.name.text, paths, checker, visitedHelpers)
       }
     } else if (ts.isIdentifier(arg) && arg.text === outerParamName) {
-      // The helper is called with our state directly — recurse into its
-      // body under the helper's parameter name.
       walkAccessorBody(fnDecl.body, param.name.text, paths, checker, visitedHelpers)
     }
   }

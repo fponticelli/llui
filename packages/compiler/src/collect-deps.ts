@@ -259,8 +259,13 @@ function hasLluiImport(sourceFile: ts.SourceFile): boolean {
  * inline arrow / function expression OR an identifier that's about to
  * be resolved to one. The check is identity-based on `parent.arguments[0]`
  * etc., so the same logic works for both shapes.
+ *
+ * Exported so the cross-file walker can use the same gate. Without this
+ * gate the walker descends into every 1-param arrow in the file —
+ * including `onEffect: (bag) => bag.send(...)` — and pollutes
+ * `__prefixes` with non-state property names (issue #5, bug 3).
  */
-function isReactiveAccessor(node: ts.Node): boolean {
+export function isReactiveAccessor(node: ts.Node): boolean {
   const parent = node.parent
 
   // text(s => s.count) — first arg to a call
