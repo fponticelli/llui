@@ -92,6 +92,23 @@
         "gzipped": -1681,
         "brotli": -1434
       }
+    },
+    "9.1": {
+      "label": "Tier 9.1: unquoted static attrs",
+      "summary": "(no summary)",
+      "uncompressed": 34865,
+      "gzipped": 10953,
+      "brotli": 9681,
+      "deltaVsPrevious": {
+        "uncompressed": -2487,
+        "gzipped": -845,
+        "brotli": -754
+      },
+      "deltaVsBaseline": {
+        "uncompressed": -8552,
+        "gzipped": -2526,
+        "brotli": -2188
+      }
     }
   },
   "abandoned": {
