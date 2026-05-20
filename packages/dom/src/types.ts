@@ -1,7 +1,6 @@
 // ── Component Definition ──────────────────────────────────────────
 
 import type { View } from './view-helpers.js'
-import type { StructuralBlock } from './structural.js'
 import type { ComponentInstance } from './update-loop.js'
 import type { DisposerEvent } from './tracking/disposer-log.js'
 

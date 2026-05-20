@@ -1,19 +1,19 @@
 {
   "llui": {
-    "01_run1k": 23.9,
-    "02_replace1k": 25.9,
-    "03_update10th1k_x16": 14.6,
-    "04_select1k": 3.2,
-    "05_swap1k": 11.4,
-    "06_remove-one-1k": 11.5,
-    "07_create10k": 235.8,
-    "08_create1k-after1k_x2": 28.3,
-    "09_clear1k_x8": 12.3,
-    "21_ready-memory": 0.5935392379760742,
-    "22_run-memory": 3.177170753479004,
-    "25_run-clear-memory": 1.0199813842773438,
-    "41_size-uncompressed": 26.8,
-    "42_size-compressed": 7.5
+    "01_run1k": 21.9,
+    "02_replace1k": 24.3,
+    "03_update10th1k_x16": 15.9,
+    "04_select1k": 4.3,
+    "05_swap1k": 11.5,
+    "06_remove-one-1k": 12,
+    "07_create10k": 231.4,
+    "08_create1k-after1k_x2": 26,
+    "09_clear1k_x8": 12.6,
+    "21_ready-memory": 0.5753927230834961,
+    "22_run-memory": 3.187150001525879,
+    "25_run-clear-memory": 1.0473051071166992,
+    "41_size-uncompressed": 28.8,
+    "42_size-compressed": 8
   },
   "vanillajs": {
     "01_run1k": 22.9,

@@ -128,6 +128,21 @@ export interface LluiPluginOptions {
   agent?: boolean | AgentPluginConfig
 
   /**
+   * Whether any component in the app uses `each()`'s `enter` / `leave`
+   * / `onTransition` options. When `false` (the default), the
+   * vite-plugin substitutes `__LLUI_TRANSITIONS__ = false` into the
+   * runtime bundle; Vite's dead-code eliminator then drops the
+   * per-entry enter/leave helpers, the `leaving` queue plumbing, and
+   * the `report` allocation in `each()`'s reconcile path. Saves
+   * ~0.3 kB gz on jfb-shape bundles that don't animate.
+   *
+   * Apps using `@llui/transitions` or any custom `each({ enter, leave,
+   * onTransition })` MUST pass `transitions: true` — otherwise the
+   * options will be silently ignored at runtime.
+   */
+  transitions?: boolean
+
+  /**
    * Opt-in cross-file accessor walking (v2c pipeline integration of v2b's
    * cross-file walker). When enabled, the plugin builds a `ts.Program`
    * over the project at `configResolved` and feeds each `transform` call
