@@ -11,6 +11,49 @@ All notable changes to LLui packages are documented here. LLui is a pre-1.0 proj
 
 Packages version in lockstep at release time: `@llui/dom`, `@llui/vite-plugin`, `@llui/test`, `@llui/router`, `@llui/transitions`, `@llui/components`, `@llui/vike` share a version line. `@llui/effects`, `@llui/mcp`, `@llui/eslint-plugin`, `@llui/agent`, and `llui-agent` have their own cadence.
 
+## 2026-05-20 — 0.3.0 / 0.4.0
+
+**Released:** `@llui/{dom,test,router,transitions,components,vike,agent}@0.3.0`; `llui-agent@0.3.0`; `@llui/{compiler,compiler-ssr,compiler-introspection,compiler-devtools,mcp,vite-plugin}@0.4.0`
+
+Engineering-excellent fix for the dicerun2 Vike SSR `MISSING_EXPORT` regression. Six compiler-emitted runtime helpers move from `@llui/dom`'s root barrel to the `@llui/dom/internal` subpath; the vite-plugin's post-bundle rename pass is wired to a single source of truth in `@llui/compiler` with a type-level disjointness assertion that prevents the same class of bug from re-occurring at compile time. New Vike SSR smoke fixture + static-import check in `scripts/smoke-examples.ts` ensure the externalized-server build path stays exercised in CI.
+
+### Breaking
+
+- **`@llui/dom@0.3.0`** — six `__`-prefixed runtime helpers are no longer re-exported from the root `@llui/dom` barrel. They live on `@llui/dom/internal` now: `__bindUncertain`, `__cloneStaticTemplate`, `__runPhase2`, `__handleMsg`, `__registerScopeVariants`, `__clientOnlyStub`. The compiler emits the new import path automatically; only hand-written imports of these names from `@llui/dom` (uncommon — the underscore prefix is the framework's "private API" signal) need updating.
+
+### Migration
+
+- If your code imports any of the six helpers above, change `import { __X } from '@llui/dom'` to `import { __X } from '@llui/dom/internal'`. The subpath's stability contract is explicit: not semver, may change without a major bump. Anyone reaching into it should pin a concrete patch and re-verify on each upgrade.
+- No other changes are required. View-bag primitives (`text`, `show`, `each`, `branch`, …), element helpers (`div`, `button`, …), `component`/`mountApp`/`createView`, etc. stay on the root barrel exactly as before.
+
+### `@llui/dom@0.3.0`
+
+- **Breaking** six compiler-emitted runtime helpers moved off the root barrel. See top of release block.
+- **Improved** `@llui/dom/internal`'s docstring expanded to cover both framework-adapter primitives (the existing tenant — `getRenderContext`, `createLifetime`, etc.) and the newly-relocated compiler-emitted helpers. The subpath now has a single coherent purpose: "not semver-stable; the compiler emits imports here, framework adapters reach in here."
+
+### `@llui/compiler@0.4.0`
+
+- **Added** `COMPILER_RENAMEABLE_KEYS` and `COMPILER_DOM_INTERNAL_IMPORTS` constants in `@llui/compiler` — the single source of truth for "which names does the compiler synthesize, and where do they live." A type-level `Extract<...>` assertion at the declaration site forces the two sets to remain disjoint; `tsc --noEmit` fails if a future contributor accidentally adds a name to both. Adapters (vite-plugin, ssr) consume the constants instead of maintaining parallel lists.
+- **Improved** `cleanupImports` now emits two separate import declarations: public-surface names continue on `from '@llui/dom'`, and the six compiler-internal helpers (`__bindUncertain`, `__cloneStaticTemplate`, `__runPhase2`, `__handleMsg`, `__registerScopeVariants`) ride on `from '@llui/dom/internal'`. The internal import is inserted as a text-level edit (not a new AST statement) so the per-statement origin↔transformed index pairing the diff loop relies on stays 1:1 — the previous attempt that inserted an AST statement dropped every trailing original statement from the edit list.
+
+### `@llui/compiler-ssr@0.4.0`
+
+- **Improved** the `'use client'` SSR transform now emits `import { __clientOnlyStub } from '@llui/dom/internal'` instead of `from '@llui/dom'`. Same module-boundary safety as the cleanupImports change above — rename-pass-immune.
+
+### `@llui/vite-plugin@0.4.0`
+
+- **Improved** the post-bundle property-rename pass's `RENAME_TARGETS` set is now `new Set(COMPILER_RENAMEABLE_KEYS)` imported from `@llui/compiler`. The hand-coded list with its four problematic dom-export names (`__bindUncertain`, `__cloneStaticTemplate`, `__runPhase2`, `__handleMsg`) is gone — the type-level disjointness assertion in `@llui/compiler` makes it impossible to accidentally re-add them.
+- **Fixed** closes the `MISSING_EXPORT` rolldown error observed in dicerun2's Vike SSR production build. The rename pass operates on raw chunk text via regex and would rewrite the four runtime helpers even when they appeared inside an externalized `import { … } from "@llui/dom"` specifier; the renamed `$a`/`$b`/… didn't exist on the package's public export surface, and rolldown failed the build. With the helpers now on a subpath whose name the rename regex doesn't touch (it only matches `__`-prefixed identifiers; subpath specifier text contains `dom/internal` which doesn't), the cross-module rename path is structurally closed.
+
+### `@llui/{components,router,test,transitions,vike,agent}@0.3.0`, `llui-agent@0.3.0`, `@llui/{mcp,compiler-devtools,compiler-introspection}@0.4.0`
+
+- **Improved** cascade republish — runtime peer range bumped to `@llui/dom@^0.3.0` (or transitive `@llui/compiler` / `@llui/agent` pickup via `workspace:*`). No other changes.
+
+### CI
+
+- **Added** `examples/vike-ssr-smoke/` — minimal Vike + LLui app with `prerender: false` and `ssr.external: ['@llui/dom', '@llui/dom/internal']`. Forces the externalized-server build path that surfaces the `MISSING_EXPORT` class of bug; without it, vike's defaults inline workspace dependencies and hide the regression behind a single-chunk bundle where the rename pass shortens both ends in lockstep.
+- **Added** `scripts/smoke-examples.ts` static-import check. Walks every example's `dist/server/**/*.{m,c,}js` and asserts every `import { ... } from '@llui/dom'` / `from '@llui/dom/internal'` specifier name resolves against the real package exports. Catches the rename-into-import-specifier bug deterministically before rolldown's later `MISSING_EXPORT` pass would surface it — the smoke harness now reports both browser-boot failures (the issue-#5 class) and externalized-import mismatches (this release's class).
+
 ## 2026-05-20 — 0.2.2 / 0.3.2
 
 **Released:** `@llui/{dom,test,router,transitions,components,vike,agent}@0.2.2`; `llui-agent@0.2.2`; `@llui/{compiler,compiler-introspection,compiler-devtools,compiler-ssr,mcp,vite-plugin}@0.3.2`
