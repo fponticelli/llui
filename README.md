@@ -117,4 +117,4 @@ Top-tier performance on [js-framework-benchmark](https://github.com/krausest/js-
 | Create 10k    |    232.3ms | 232.1ms | 233.9ms | 218.4ms |
 | Append 1k     |     27.7ms |  26.8ms |  27.0ms |  25.9ms |
 | Clear         |     12.0ms |  11.6ms |  11.2ms |   9.3ms |
-| Bundle (gzip) | **7.4 KB** |  4.5 KB | 12.2 KB |  2.5 KB |
+| Bundle (gzip) | **7.0 KB** |  4.5 KB | 12.2 KB |  2.5 KB |
