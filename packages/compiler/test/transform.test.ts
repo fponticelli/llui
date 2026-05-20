@@ -736,6 +736,94 @@ describe('Pass 2 — mask injection + __prefixes', () => {
   })
 })
 
+describe('__view synthesis (issue #5 regression)', () => {
+  it('emits a destructure-narrowed __view for `view: ({ send, text }) => …`', () => {
+    const src = `
+      import { component } from '@llui/dom'
+      export const C = component({
+        name: 'C',
+        init: () => [{ count: 0 }, []],
+        update: (s, m) => [s, []],
+        view: ({ send, text }) => [text(s => String(s.count))],
+      })
+    `
+    const out = t(src)
+    expect(out).toContain('__view')
+    // Tree-shaken bag: only the destructured fields are wired up.
+    expect(clean(out)).toContain('__view: $send => ({ send: $send, text })')
+    // createView must NOT be pulled in for destructured-style views —
+    // that would defeat the Tier 1.2 size cut.
+    expect(out).not.toContain('createView')
+  })
+
+  it('emits `__view: $send => createView($send)` for identifier param', () => {
+    // Before the issue #5 fix the compiler bailed on `view: (h) => …`,
+    // leaving the prod runtime with a `{ send }`-only bag that crashed
+    // the first `h.show(...)` call.
+    const src = `
+      import { component } from '@llui/dom'
+      export const C = component({
+        name: 'C',
+        init: () => [{ count: 0 }, []],
+        update: (s, m) => [s, []],
+        view: (h) => [h.text(s => String(s.count))],
+      })
+    `
+    const out = t(src)
+    expect(out).toContain('__view')
+    expect(clean(out)).toContain('__view: $send => createView($send)')
+    expect(out).toMatch(/import\s*\{[^}]*\bcreateView\b/)
+  })
+
+  it('emits full-bag __view when `h` is forwarded to a helper', () => {
+    // `view: (h) => row(h)` — the compiler can't see inside `row`, so it
+    // must ship every primitive. Pre-fix this case got NO __view at all.
+    const src = `
+      import { component } from '@llui/dom'
+      import type { View } from '@llui/dom'
+      type S = { count: number }
+      function row(h: View<S, never>) { return [h.text(s => String(s.count))] }
+      export const C = component({
+        name: 'C',
+        init: () => [{ count: 0 }, []],
+        update: (s, m) => [s, []],
+        view: (h) => row(h),
+      })
+    `
+    const out = t(src)
+    expect(clean(out)).toContain('__view: $send => createView($send)')
+  })
+
+  it('emits full-bag __view for zero-arg `view: () => …`', () => {
+    // Pre-fix this also bailed (no first parameter at all).
+    const src = `
+      import { component, div } from '@llui/dom'
+      export const C = component({
+        name: 'C',
+        init: () => [{ count: 0 }, []],
+        update: (s, m) => [s, []],
+        view: () => [div({}, [])],
+      })
+    `
+    const out = t(src)
+    expect(clean(out)).toContain('__view: $send => createView($send)')
+  })
+
+  it('emits __view for `view: (send) => …` (legacy identifier name)', () => {
+    const src = `
+      import { component, text } from '@llui/dom'
+      export const C = component({
+        name: 'C',
+        init: () => [{ count: 0 }, []],
+        update: (s, m) => [s, []],
+        view: (send) => [text(s => String(s.count))],
+      })
+    `
+    const out = t(src)
+    expect(clean(out)).toContain('__view: $send => createView($send)')
+  })
+})
+
 describe('Pass 3 — import cleanup', () => {
   it('removes compiled element helpers from imports', () => {
     const src = `

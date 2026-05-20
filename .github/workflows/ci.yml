@@ -57,3 +57,11 @@ jobs:
 
       - name: Test
         run: pnpm turbo test
+
+      # Boot every built example in headless Chromium and fail on any
+      # console.error / page error. Catches issue-#5-class bugs where
+      # the bundle compiles cleanly but crashes on first paint
+      # (missing __view, broken __prefixes, etc.) — the kind of fault
+      # type-checks and unit tests can't surface.
+      - name: Smoke-test example bundles
+        run: pnpm smoke:examples

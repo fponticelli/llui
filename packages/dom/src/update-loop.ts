@@ -490,22 +490,24 @@ function processMessages<S, M, E>(inst: ComponentInstance<S, M, E>): void {
   const allEffects: E[] = []
 
   const defUpdate = inst.def.update
-  // v0.4 size-cut (Tier 3.4): every compiled component carries `__prefixes`,
-  // so the production path skips the FULL_MASK fallback for components
-  // missing the table. The fallback is gated by `import.meta.env.MODE`
-  // — Vite dead-code-eliminates it from production builds. Tests
-  // (vitest, MODE='test') construct ComponentDef literals by hand without
-  // a prefix table and rely on the FULL_MASK behaviour to fire all
-  // bindings on every update.
+  // Most compiled components carry `__prefixes` — the compiler emits it
+  // whenever `fieldBits` is non-empty. Cases that legitimately don't get
+  // one: hand-rolled `ComponentDef` literals in tests, a `view: () => …`
+  // with zero reactive accessors, or a component whose `update` is a
+  // no-op. Fall back to FULL_MASK so every binding re-evaluates — correct
+  // but unoptimized. The fallback used to be DEV-only (Tier 3.4 size cut),
+  // but that produced a hard runtime crash for any prod component that
+  // happened to skip the emit, so the gate is gone. The branch costs
+  // ~30 bytes gz vs. an unbounded blast radius.
   const prefixes = inst.def.__prefixes as ReadonlyArray<(s: unknown) => unknown> | undefined
   for (let qi = 0; qi < queue.length; qi++) {
     const msg = queue[qi]!
     const [newState, effects] = defUpdate(state, msg)
     let dirty: number | [number, number]
-    if (import.meta.env?.MODE !== 'production' && prefixes === undefined) {
+    if (prefixes === undefined) {
       dirty = FULL_MASK
     } else {
-      dirty = computeDirtyFromPrefixes(prefixes!, state, newState)
+      dirty = computeDirtyFromPrefixes(prefixes, state, newState)
     }
     if (typeof dirty === 'number') {
       combinedDirty |= dirty

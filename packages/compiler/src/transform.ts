@@ -1163,12 +1163,19 @@ const VIEW_BAG_FIELD_TO_PRIMITIVE: Record<string, string> = {
  * Idempotent — returns `call` unchanged when:
  *   • the config arg is not an object literal
  *   • no `view:` property exists, or its value is not an arrow/function
- *   • the view's first parameter is not an ObjectBindingPattern
  *   • the config arg already has a `__view` property (re-run safety)
  *
  * Bag fields that aren't in `VIEW_BAG_FIELD_TO_PRIMITIVE` (e.g. unknown
- * names from a user-typed View extension) are skipped so the runtime falls
- * back to `createView` for any access to them.
+ * names from a user-typed View extension) are skipped — the runtime
+ * cannot fabricate them, so accessing them at runtime is the user's
+ * problem (matches dev-mode behavior).
+ *
+ * Identifier-style view params (`view: (h) => ...` or `view: (send) => ...`)
+ * can't be statically narrowed to a known subset of primitives — `h` may
+ * be passed to helpers, destructured later, or read dynamically. For
+ * those we emit `__view: ($send) => createView($send)` so the runtime
+ * gets the full bag. The instance-level `_viewBag` cache on
+ * `getInstanceViewBag` means this is still one allocation per mount.
  */
 function injectViewBag(
   call: ts.CallExpression,
@@ -1204,60 +1211,74 @@ function injectViewBag(
   }
   if (!viewFn) return call
 
-  // Inspect the first parameter — must be an ObjectBindingPattern.
-  const firstParam = viewFn.parameters[0]
-  if (!firstParam || !ts.isObjectBindingPattern(firstParam.name)) return call
-
-  // Collect { localName, sourceName } per destructured element. We emit
-  // an object literal whose KEYS are localNames (so the view body's
-  // identifier references resolve) and whose VALUES are the
-  // corresponding primitive identifiers (so the runtime gets the right
-  // function).
-  interface Entry {
-    localName: string
-    primitive: string | null // null for `send` — handled separately
-  }
-  const entries: Entry[] = []
-  for (const elem of firstParam.name.elements) {
-    const localName = ts.isIdentifier(elem.name) ? elem.name.text : null
-    const sourceName =
-      elem.propertyName && ts.isIdentifier(elem.propertyName) ? elem.propertyName.text : localName
-    if (!localName || !sourceName) continue
-    if (sourceName === 'send') {
-      entries.push({ localName, primitive: null })
-      continue
-    }
-    const primitive = VIEW_BAG_FIELD_TO_PRIMITIVE[sourceName]
-    if (!primitive) continue // unknown name — let the runtime fail at runtime if accessed
-    entries.push({ localName, primitive })
-  }
-  if (entries.length === 0) return call
-
-  // Synthesize: __view: ($send) => ({ localA: $send, localB: text, localC: each, ... })
-  // We use a fixed parameter name `$send` to avoid shadowing — the bag
-  // entries that map to send use this identifier.
   const sendParamName = f.createIdentifier('$send')
-  const bagProps: ts.ObjectLiteralElementLike[] = []
-  for (const e of entries) {
-    if (e.primitive === null) {
-      // local name → send parameter
-      bagProps.push(
-        e.localName === '$send'
-          ? f.createShorthandPropertyAssignment(sendParamName)
-          : f.createPropertyAssignment(f.createIdentifier(e.localName), sendParamName),
-      )
-    } else if (e.localName === e.primitive) {
-      bagProps.push(f.createShorthandPropertyAssignment(f.createIdentifier(e.localName)))
-      needed.add(e.primitive)
-    } else {
-      bagProps.push(
-        f.createPropertyAssignment(
-          f.createIdentifier(e.localName),
-          f.createIdentifier(e.primitive),
-        ),
-      )
-      needed.add(e.primitive)
+
+  // Build the __view factory body. Two shapes:
+  //
+  //   Destructured param — `view: ({ send, text, each }) => ...`
+  //     emit `__view: ($send) => ({ send: $send, text, each })`
+  //     (tree-shakes unused primitives — the Tier 1.2 size cut).
+  //
+  //   Identifier / no param — `view: (h) => ...`, `view: () => ...`,
+  //   `view: (send) => ...`, etc.
+  //     emit `__view: ($send) => createView($send)`
+  //     The compiler can't see which fields `h` is accessed on (it
+  //     may be passed to a helper, destructured later, read by
+  //     name dynamically). Full bag, instance-cached.
+  const firstParam = viewFn.parameters[0]
+  const isDestructured = !!firstParam && ts.isObjectBindingPattern(firstParam.name)
+
+  let factoryBody: ts.Expression
+  if (isDestructured) {
+    // Collect { localName, sourceName } per destructured element.
+    interface Entry {
+      localName: string
+      primitive: string | null // null for `send` — handled separately
     }
+    const entries: Entry[] = []
+    for (const elem of (firstParam.name as ts.ObjectBindingPattern).elements) {
+      const localName = ts.isIdentifier(elem.name) ? elem.name.text : null
+      const sourceName =
+        elem.propertyName && ts.isIdentifier(elem.propertyName) ? elem.propertyName.text : localName
+      if (!localName || !sourceName) continue
+      if (sourceName === 'send') {
+        entries.push({ localName, primitive: null })
+        continue
+      }
+      const primitive = VIEW_BAG_FIELD_TO_PRIMITIVE[sourceName]
+      if (!primitive) continue // unknown name — accessing it at runtime is the user's problem
+      entries.push({ localName, primitive })
+    }
+
+    const bagProps: ts.ObjectLiteralElementLike[] = []
+    for (const e of entries) {
+      if (e.primitive === null) {
+        bagProps.push(
+          e.localName === '$send'
+            ? f.createShorthandPropertyAssignment(sendParamName)
+            : f.createPropertyAssignment(f.createIdentifier(e.localName), sendParamName),
+        )
+      } else if (e.localName === e.primitive) {
+        bagProps.push(f.createShorthandPropertyAssignment(f.createIdentifier(e.localName)))
+        needed.add(e.primitive)
+      } else {
+        bagProps.push(
+          f.createPropertyAssignment(
+            f.createIdentifier(e.localName),
+            f.createIdentifier(e.primitive),
+          ),
+        )
+        needed.add(e.primitive)
+      }
+    }
+    factoryBody = f.createParenthesizedExpression(f.createObjectLiteralExpression(bagProps, false))
+  } else {
+    // Identifier-style or zero-arg view: emit `createView($send)` and
+    // pull `createView` into the file imports via cleanupImports.
+    needed.add('createView')
+    factoryBody = f.createCallExpression(f.createIdentifier('createView'), undefined, [
+      sendParamName,
+    ])
   }
 
   const viewBagFactory = f.createArrowFunction(
@@ -1275,7 +1296,7 @@ function injectViewBag(
     ],
     undefined,
     f.createToken(ts.SyntaxKind.EqualsGreaterThanToken),
-    f.createParenthesizedExpression(f.createObjectLiteralExpression(bagProps, false)),
+    factoryBody,
   )
 
   const newConfig = f.createObjectLiteralExpression(

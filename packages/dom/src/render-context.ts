@@ -77,32 +77,24 @@ export function currentAccessor(): string | null {
  * Cache key is the instance: `send` is identity-stable per instance,
  * so the bag's bound `send` is correct for every call site that
  * receives it. The cache invalidates implicitly on instance disposal.
- * In test mode (no compiler-emitted `__view`) we fall through to
- * `createView` per call — tests don't measure perf, and the
- * createView reference is gone from production via the Vite-time MODE
- * fold (see mount.ts buildViewBag for the same pattern).
+ * When no `__view` factory is present (hand-rolled ComponentDef in
+ * tests, or some other unusual path), fall through to `createView` so
+ * the bag is complete. The compiler emits `__view` for every
+ * `component({...})` call — including identifier-param view functions
+ * (`view: (h) => ...`) where it emits a factory that itself calls
+ * `createView`. So this fallback is genuinely "shouldn't happen" in
+ * compiled code, but staying safe is cheap and the alternative
+ * (a `{ send }`-only bag in prod) is a guaranteed crash for any
+ * helper that reads `h.show`, `h.each`, etc.
  */
 export function getInstanceViewBag<S, M>(
   inst: ComponentInstance | undefined,
   send: Send<M>,
 ): unknown {
-  // No instance → only happens in test-mode fixtures that mount through
-  // a stub render context. The createView reference below is dead in
-  // production builds (Vite folds the MODE check to a constant).
-  if (!inst) {
-    if (import.meta.env?.MODE !== 'production') return createView<S, M>(send)
-    return { send }
-  }
+  if (!inst) return createView<S, M>(send)
   if (inst._viewBag !== undefined) return inst._viewBag
   const factory = (inst.def as unknown as { __view?: (s: Send<M>) => unknown }).__view
-  let bag: unknown
-  if (factory) {
-    bag = factory(send)
-  } else if (import.meta.env?.MODE !== 'production') {
-    bag = createView<S, M>(send)
-  } else {
-    bag = { send }
-  }
+  const bag = factory ? factory(send) : createView<S, M>(send)
   inst._viewBag = bag
   return bag
 }
