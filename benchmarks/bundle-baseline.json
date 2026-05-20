@@ -224,6 +224,23 @@
         "brotli": -4044
       }
     },
+    "23": {
+      "label": "Tier 23: drop Vite lib-mode for bench (full minify)",
+      "summary": "(no summary)",
+      "uncompressed": 20700,
+      "gzipped": 7524,
+      "brotli": 6796,
+      "deltaVsPrevious": {
+        "uncompressed": -14165,
+        "gzipped": -3429,
+        "brotli": -2885
+      },
+      "deltaVsBaseline": {
+        "uncompressed": -22717,
+        "gzipped": -5955,
+        "brotli": -5073
+      }
+    },
     "0-baseline": {
       "label": "Phase 0 — current main",
       "summary": "Initial measurement before any size reductions. Captured from main.js after `pnpm build-prod`.",
