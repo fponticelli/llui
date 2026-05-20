@@ -1005,6 +1005,19 @@ export default function llui(options: LluiPluginOptions = {}): Plugin {
     // misconfiguration interactively. SSR builds also skip — the SSR
     // pass may emit a stub module bundle that legitimately contains no
     // components.
+    //
+    // ANTI-RECIPE — property-mangling the `__`-prefixed compiler-emit
+    // fields (`__view`, `__prefixes`, `__handlers`, …) saves 570–1,406
+    // bytes gz on the jfb bench bundle but empirically regresses
+    // keyed-each ops (Update 10th, Select, Swap) by 35–58 %. Verified
+    // 2026-05-20 across three measurements with both terser and
+    // esbuild-post-process implementations; perf cost holds even with
+    // `compress: false`. Property renames should be V8-transparent in
+    // theory; in practice V8's optimizer on the jfb shape produces
+    // measurably slower code on the mangled bundle. Do NOT mangle
+    // these names unless someone first identifies why and produces a
+    // mangle-safe implementation. See commit d2855d7 (landed) +
+    // b63a6ef (reverted) for the full attempt.
     generateBundle(opts, bundle) {
       if (devMode) return
       if (opts.dir === undefined && opts.file === undefined) return
