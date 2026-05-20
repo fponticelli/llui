@@ -1070,6 +1070,78 @@ export default function llui(options: LluiPluginOptions = {}): Plugin {
           .replace(STRIP_WITH_TRAILING_COMMA, '')
           .replace(STRIP_STANDALONE, '')
       }
+
+      // Compiler-emit property rename pass. The compiler injects
+      // descriptive names like `__view` / `__prefixes` / `__handlers`
+      // for the runtime's reactive bookkeeping; production bundles
+      // don't need the self-documenting names. Rename to `__a` /
+      // `__b` / `__c` etc. — keeping the `__` prefix so the names
+      // stay unique in the JS heap (avoids the megamorphic-cache
+      // collision that an esbuild/terser-style single-char mangle
+      // caused on jfb's keyed-each ops; see ANTI-RECIPE comment
+      // above the integrity check).
+      //
+      // Reserved names cover engine intrinsics, build-flag substitution
+      // tokens, the test-sentinel STRING VALUE (renaming the
+      // `__test__` string would break defineTestComponent), and any
+      // double-underscored identifier that's part of the consumer-
+      // visible / agent-protocol-visible API.
+      const RENAME_RESERVED = new Set([
+        '__proto__',
+        '__test__',
+        '__llui_deps',
+        '__llui_mcp_status',
+        '__lluiComponents',
+        '__LLUI_AGENT__',
+        '__LLUI_TRANSITIONS__',
+        '__PURE__',
+      ])
+      const RENAME_PATTERN = /\b__[A-Za-z_][A-Za-z0-9_]*\b/g
+      const counts = new Map<string, number>()
+      for (const chunk of Object.values(bundle)) {
+        if (chunk.type !== 'chunk') continue
+        for (const m of chunk.code.matchAll(RENAME_PATTERN)) {
+          const name = m[0]
+          if (RENAME_RESERVED.has(name)) continue
+          counts.set(name, (counts.get(name) ?? 0) + 1)
+        }
+      }
+      // Skip the pass entirely if nothing to rename — avoids the regex
+      // compile + chunk rewrite for apps that don't emit any
+      // compiler-internal fields (none in practice; ComponentDef
+      // always carries at least `__prefixes` / `__view`).
+      if (counts.size > 0) {
+        // Order by total bytes saved per name (length × occurrence)
+        // descending, so the most-used names get the shortest
+        // replacements.
+        const ranked = [...counts.entries()].sort(
+          (a, b) => (b[0].length - 3) * b[1] - (a[0].length - 3) * a[1],
+        )
+        const ALPHABET = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ'
+        const shortNameAt = (i: number): string => {
+          let s = ''
+          do {
+            s = ALPHABET[i % 52] + s
+            i = Math.floor(i / 52) - 1
+          } while (i >= 0)
+          return '__' + s
+        }
+        const renames = new Map<string, string>()
+        for (let i = 0; i < ranked.length; i++) {
+          renames.set(ranked[i]![0], shortNameAt(i))
+        }
+        // Build one alternation regex so each chunk is rewritten in a
+        // single pass — eliminates the collision risk where a newly
+        // assigned short name (`__b`) could match an as-yet-unrenamed
+        // original (`__b` from a prior pass).
+        const escapeRe = (s: string): string => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+        const alternation = [...renames.keys()].map(escapeRe).join('|')
+        const replacer = new RegExp(`\\b(${alternation})\\b`, 'g')
+        for (const chunk of Object.values(bundle)) {
+          if (chunk.type !== 'chunk') continue
+          chunk.code = chunk.code.replace(replacer, (match) => renames.get(match) ?? match)
+        }
+      }
     },
   }
 }
