@@ -173,23 +173,6 @@
         "brotli": -3996
       }
     },
-    "20": {
-      "label": "Tier 20: terser mangleProps on __ properties",
-      "summary": "(no summary)",
-      "uncompressed": 20602,
-      "gzipped": 7447,
-      "brotli": 6683,
-      "deltaVsPrevious": {
-        "uncompressed": -14263,
-        "gzipped": -3506,
-        "brotli": -2998
-      },
-      "deltaVsBaseline": {
-        "uncompressed": -22815,
-        "gzipped": -6032,
-        "brotli": -5186
-      }
-    },
     "0-baseline": {
       "label": "Phase 0 — current main",
       "summary": "Initial measurement before any size reductions. Captured from main.js after `pnpm build-prod`.",
