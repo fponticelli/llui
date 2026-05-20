@@ -19,28 +19,45 @@ matching `option-*.md` and you're done.
 > bounds.
 
 > **Empirical update (2026-05-19): the "fixes Select" pitch for
-> Option B is falsified.** The Select regression cited as Option B's
-> headline win is not in Phase 2 binding dispatch. jfb's Select msg
-> routes through `inst.def.__handlers.select` → `_handleMsg` →
-> `each.reconcileChanged` (verified: `__handlers` is emitted in the
-> bench bundle, Tier 5 ablation showed 23–89% perf loss when removed),
-> bypassing `_runPhase2` entirely. Phase 2's flat-array scan — which
-> Option B replaces — is not on Select's hot path at all.
+> Option B is falsified.** Two complementary measurements:
 >
-> A synthetic perf comparison (`packages/dom/test/binding-registry-perf.test.ts`)
-> confirms flat and registry dispatch are tied within ±5% noise across
-> 16–1024 bindings. A jfb-shape Select investigation
-> (`packages/dom/test/select-perf-investigation.test.ts`) shows steady-
-> state Select at N=1000 takes 0.057 ms total in jsdom; jfb measures
-> 3.8 ms in Chrome. The 67× gap is browser style/layout/paint, not
-> framework dispatch.
+> 1. Synthetic perf comparison (jsdom, 16–1024 bindings, one binding
+>    per prefix — Option B's best case): flat and registry dispatch
+>    tied within ±5 %. V8 inline-caches the per-binding AND-gate so
+>    the linear scan disappears against per-binding work.
+> 2. Real Chrome bench instrumentation via `_handleMsg` + the
+>    puppeteer harness's console-pipe (probe added temporarily, then
+>    reverted). For jfb's actual Select op:
+>    - `update()`: 0.005–0.350 ms (median ~0.01 ms)
+>    - structural reconcile: 0–0.005 ms (each-block mask doesn't
+>      intersect — `selected` changed, `items` didn't)
+>    - **Phase 2: 0.020–0.660 ms (median ~0.06 ms)** — scans the 1000
+>      row class bindings, AND-gates each, applies the 2 that changed
+>    - **total framework time: ~0.07 ms median**
+>    - jfb's reported Select: **3.8 ms** — i.e. ~3.7 ms is browser
+>      style/layout/paint, not framework dispatch
+>
+> The +9–34% Select regression vs LLui's April baseline (3.2 → 3.8 ms,
+> a 0.6 ms shift) cannot mostly be in framework code because framework
+> total is only ~0.07 ms median. ~5–10 % of the regression could be
+> framework-side; ~90–95 % is browser-side.
+>
+> **Option B's registry can't help jfb specifically** because all 1000
+> row-class bindings subscribe to the SAME prefix (`s.selected`). The
+> registry's keyed-by-prefix lookup is O(1) but the iteration over the
+> matching set is still O(1000) — same work as the flat scan. Option B
+> wins only when bindings are SPREAD across many prefixes (a config
+> the bench doesn't exhibit).
 >
 > **Treat Option B's perf pitch as unsupported by data.** The bundle
 > pitch (5–7 kB gz target) is also unverified — Phase 2 in isolation
 > adds +417 gz; net savings depend on Phase 4 actually dropping the
 > flat path. The "fixes Select" recommendation across A/B and the
 > Select-blocker branch of the decision tree should be revisited
-> before any further commitment.
+> before any further commitment. See
+> `packages/dom/test/binding-registry-perf.test.ts` and
+> `packages/dom/test/select-perf-investigation.test.ts` for the
+> in-repo benches.
 
 ---
 

@@ -2,28 +2,35 @@
 
 > **Empirical update (2026-05-19).** Phase 1 + Phase 2 of this option
 > landed (commits `32175e8`, `5d68931`) behind a per-component
-> `__bindingModel: 'registry'` opt-in. Two findings invalidate the
+> `__bindingModel: 'registry'` opt-in. Three findings invalidate the
 > doc's perf pitch below:
 >
 > 1. **Flat and registry dispatch are tied within ±5 %** on a
 >    synthetic 16–1024-binding microbench
->    (`packages/dom/test/binding-registry-perf.test.ts`). The doc's
->    "7 µs floor at 1000 bindings" claim is correct for the AND-gate
->    scan in isolation, but V8 inline-caches the gate so the floor is
->    invisible against the rest of Phase 2's per-binding work.
-> 2. **jfb's Select bypasses Phase 2 entirely.** Verified: `__handlers`
->    is emitted in the bench bundle, Select routes through `_handleMsg`
->    → `each.reconcileChanged`, never touching `_runPhase2`'s scan.
->    Replacing the scan therefore cannot fix Select.
->
-> See `select-perf-investigation.test.ts` for the jfb-shape breakdown:
-> at N=1000 in jsdom, steady-state Select is 0.057 ms (framework total).
-> jfb measures 3.8 ms in Chrome; the 67× gap is browser
-> style/layout/paint, not framework dispatch.
+>    (`packages/dom/test/binding-registry-perf.test.ts`, one binding
+>    per prefix — Option B's best case). V8 inline-caches the per-
+>    binding AND-gate so the linear scan disappears.
+> 2. **jfb's Select DOES route through `_handleMsg` → `_runPhase2`** —
+>    earlier reading was wrong. Real-Chrome instrumentation (via
+>    temporary `_handleMsg` probe + puppeteer console pipe, since
+>    reverted) measures:
+>    - `update()`: 0.005–0.350 ms (median ~0.01 ms)
+>    - structural reconcile: 0–0.005 ms (`each` block's mask doesn't
+>      intersect — only `s.selected` changed, `s.items` didn't)
+>    - **Phase 2: 0.020–0.660 ms (median ~0.06 ms)** — scans the 1000
+>      row class bindings, fires the 2 that changed
+>    - **total framework: ~0.07 ms median**
+>    - jfb reports Select at 3.8 ms — so ~3.7 ms is browser
+>      style/layout/paint, not framework code
+> 3. **Registry can't help jfb's Select** because all 1000 row class
+>    bindings subscribe to the SAME prefix (`s.selected`). Lookup is
+>    O(1) but iteration over the matching set is still O(1000) — same
+>    work as the flat scan. The registry's win condition (bindings
+>    SPREAD across many prefixes) doesn't hold for keyed-list shapes.
 >
 > Phase 2's runtime is correct and tested but isn't a perf win. The
-> bundle pitch below (5–7 kB gz) is also unverified — Phase 2 alone
-> adds +417 gz vs the flat-only state; the doc's projected net savings
+> bundle pitch below (5–7 kB gz) is unverified — Phase 2 alone adds
+> +417 gz vs the flat-only state; the doc's projected net savings
 > assume Phase 4 (drop flat path) actually pays off. Before continuing
 > to Phase 3, revisit whether Option B is the right v0.5 direction at
 > all given these findings.
