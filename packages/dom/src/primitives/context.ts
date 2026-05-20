@@ -102,11 +102,14 @@ export function useContext<S, T>(ctx: Context<T>): (s: S) => T {
     return () => d
   }
   const label = ctx._name ?? ctx._id.description ?? 'unknown'
-  throw new Error(
-    `[LLui] useContext(${label}): no provider found and no default value. ` +
-      `Wrap a parent element with provide(${label}, accessor, () => [...]) ` +
-      `or pass a default to createContext().`,
-  )
+  if (import.meta.env?.DEV) {
+    throw new Error(
+      `[LLui] useContext(${label}): no provider found and no default value. ` +
+        `Wrap a parent element with provide(${label}, accessor, () => [...]) ` +
+        `or pass a default to createContext().`,
+    )
+  }
+  throw new Error(`[LLui] useContext(${label}): no provider`)
 }
 
 /**

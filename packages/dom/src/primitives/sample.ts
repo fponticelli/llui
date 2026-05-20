@@ -62,24 +62,30 @@ import { getRenderContext, currentAccessor } from '../render-context.js'
 export function sample<S, R>(selector: (s: S) => R): R {
   const accessor = currentAccessor()
   if (accessor !== null) {
-    throw new Error(
-      `[LLui] sample() must not be called from inside ${accessor}. ` +
-        `Accessors must be pure functions of their parameter — sample() reads ` +
-        `state outside the parameter, which is invisible to the compiler's mask ` +
-        `analysis and breaks reconciliation.\n\n` +
-        `To depend on outer state, lift it into the accessor's parameter. For ` +
-        `each().key reading a sibling field, bake it into the items map:\n` +
-        `  // ❌ wrong\n` +
-        `  each({\n` +
-        `    items: (s) => s.rows,\n` +
-        `    key: (it) => \`\${it.id}|\${sample(s => s.rev)}\`,\n` +
-        `  })\n` +
-        `  // ✅ right\n` +
-        `  each({\n` +
-        `    items: (s) => s.rows.map((it) => ({ it, rev: s.rev })),\n` +
-        `    key: (r) => \`\${r.it.id}|\${r.rev}\`,\n` +
-        `  })`,
-    )
+    // Long-form guidance ships only in dev — production apps still
+    // throw to abort the broken update, but the diff-cleanup example
+    // (~400 source bytes) is dev-only DX help.
+    if (import.meta.env?.DEV) {
+      throw new Error(
+        `[LLui] sample() must not be called from inside ${accessor}. ` +
+          `Accessors must be pure functions of their parameter — sample() reads ` +
+          `state outside the parameter, which is invisible to the compiler's mask ` +
+          `analysis and breaks reconciliation.\n\n` +
+          `To depend on outer state, lift it into the accessor's parameter. For ` +
+          `each().key reading a sibling field, bake it into the items map:\n` +
+          `  // ❌ wrong\n` +
+          `  each({\n` +
+          `    items: (s) => s.rows,\n` +
+          `    key: (it) => \`\${it.id}|\${sample(s => s.rev)}\`,\n` +
+          `  })\n` +
+          `  // ✅ right\n` +
+          `  each({\n` +
+          `    items: (s) => s.rows.map((it) => ({ it, rev: s.rev })),\n` +
+          `    key: (r) => \`\${r.it.id}|\${r.rev}\`,\n` +
+          `  })`,
+      )
+    }
+    throw new Error(`[LLui] sample() called from inside ${accessor}`)
   }
   const ctx = getRenderContext('sample')
   return selector(ctx.state as S)

@@ -105,6 +105,23 @@
         "brotli": -3216
       }
     },
+    "16": {
+      "label": "Tier 16: DCE-gate long dev error messages",
+      "summary": "(no summary)",
+      "uncompressed": 29555,
+      "gzipped": 9045,
+      "brotli": 8042,
+      "deltaVsPrevious": {
+        "uncompressed": -5310,
+        "gzipped": -1908,
+        "brotli": -1639
+      },
+      "deltaVsBaseline": {
+        "uncompressed": -13862,
+        "gzipped": -4434,
+        "brotli": -3827
+      }
+    },
     "0-baseline": {
       "label": "Phase 0 — current main",
       "summary": "Initial measurement before any size reductions. Captured from main.js after `pnpm build-prod`.",

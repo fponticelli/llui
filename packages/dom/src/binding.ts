@@ -106,13 +106,20 @@ export function applyBinding(
   // are registered via addEventListener in the element helpers, not
   // via applyBinding.
   if (typeof value === 'function') {
-    throw new TypeError(
-      `[LLui] applyBinding(${target.kind}${target.key ? `, '${target.key}'` : ''}) received ` +
-        `a function as its value. This means an accessor wasn't invoked before ` +
-        `reaching the binding layer — usually a bug in a compiled binding tuple or ` +
-        `in a helper that forwards props without calling them. The arrow's source ` +
-        `would have been serialized into the DOM otherwise. Offender: ${value.toString().slice(0, 120)}`,
-    )
+    // Dev-only: surface the offending accessor source + key + kind so
+    // the bug is obvious. Production builds throw a brief variant —
+    // this guard is a defensive check against compiler bugs / corrupt
+    // tuples; app code that hits it has already crashed.
+    if (import.meta.env?.DEV) {
+      throw new TypeError(
+        `[LLui] applyBinding(${target.kind}${target.key ? `, '${target.key}'` : ''}) received ` +
+          `a function as its value. This means an accessor wasn't invoked before ` +
+          `reaching the binding layer — usually a bug in a compiled binding tuple or ` +
+          `in a helper that forwards props without calling them. The arrow's source ` +
+          `would have been serialized into the DOM otherwise. Offender: ${value.toString().slice(0, 120)}`,
+      )
+    }
+    throw new TypeError(`[LLui] applyBinding(${target.kind}) received a function value`)
   }
 
   switch (target.kind) {
