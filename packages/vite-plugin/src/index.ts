@@ -670,10 +670,43 @@ export default function llui(options: LluiPluginOptions = {}): Plugin {
      * which the runtime guard treats as off.
      */
     config() {
+      // Switch from Vite's default esbuild minifier to terser so we can
+      // mangle the compiler-emit property names (`__view`, `__prefixes`,
+      // `__handlers`, etc.) — esbuild doesn't expose `mangleProps` via
+      // Vite's build options. Source code keeps the long, self-
+      // documenting names; production bundles ship the short mangled
+      // versions. Regex matches property names starting with `__`
+      // followed by a letter (excludes `__proto__` and similar engine
+      // intrinsics). Reserved names cover the build-time integrity
+      // marker that `generateBundle` strips by exact-text match, plus
+      // any name a consumer or test fixture is allowed to depend on
+      // by string identity.
+      const terserOptions = {
+        mangle: {
+          properties: {
+            regex: /^__[a-zA-Z]/,
+            reserved: [
+              '__proto__',
+              '__lluiCompilerEmitted',
+              '__test__',
+              '__llui_deps',
+              '__llui_mcp_status',
+              '__lluiComponents',
+              '__LLUI_AGENT__',
+              '__LLUI_TRANSITIONS__',
+              '__PURE__',
+            ],
+          },
+        },
+      } as Record<string, unknown>
       return {
         define: {
           __LLUI_AGENT__: JSON.stringify(Boolean(agent)),
           __LLUI_TRANSITIONS__: JSON.stringify(Boolean(transitions)),
+        },
+        build: {
+          minify: 'terser' as const,
+          terserOptions,
         },
       }
     },

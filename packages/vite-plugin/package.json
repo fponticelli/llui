@@ -49,5 +49,8 @@
   "bugs": {
     "url": "https://github.com/fponticelli/llui/issues"
   },
-  "homepage": "https://github.com/fponticelli/llui/tree/main/packages/vite-plugin#readme"
+  "homepage": "https://github.com/fponticelli/llui/tree/main/packages/vite-plugin#readme",
+  "devDependencies": {
+    "terser": "^5.47.1"
+  }
 }
