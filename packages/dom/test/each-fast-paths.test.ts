@@ -25,6 +25,7 @@ function listDef(initial: Item[]): ComponentDef<State, Msg, never> {
         key: (item) => item.id,
         render: ({ item }) => [div({ 'data-id': item((t) => t.id) }, [text(item((t) => t.label))])],
       }),
+    __compilerVersion: '__test__',
     __prefixes: [(s) => s.items],
   }
 }

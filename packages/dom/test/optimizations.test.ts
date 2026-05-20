@@ -55,6 +55,7 @@ describe('Phase 1 mask gating', () => {
           __mask: 1, // items depends on bit 1
         } as never),
       ],
+      __compilerVersion: '__test__',
       __prefixes: [(s) => s.items, (s) => s.label],
     }
 
@@ -129,6 +130,7 @@ describe('swap optimization', () => {
           },
         }),
       ],
+      __compilerVersion: '__test__',
       __prefixes: [(s) => s.rows],
     }
 
@@ -326,6 +328,7 @@ describe('selector optimization', () => {
           }),
         ]
       },
+      __compilerVersion: '__test__',
       __prefixes: [(s) => s.rows, (s) => s.selected],
     })
 
@@ -384,6 +387,7 @@ describe('__handlers per-message dispatch', () => {
         }
       },
       view: ({ text: t }) => [div([t((s: S) => String(s.count))]), div([t((s: S) => s.label)])],
+      __compilerVersion: '__test__',
       __prefixes: [(s) => s.count, (s) => s.label],
       __handlers: {
         inc: (inst: object, _msg: unknown): [S, never[]] => {
@@ -428,6 +432,7 @@ describe('__handlers per-message dispatch', () => {
       init: () => [{ count: 0 }, []],
       update: (s) => [{ ...s, count: s.count + 1 }, []],
       view: ({ text: t }) => [div([t((s: S) => String(s.count))])],
+      __compilerVersion: '__test__',
       __prefixes: [(s) => s.count],
       __handlers: {
         inc: (inst: object): [S, never[]] => {
@@ -495,6 +500,7 @@ describe('selector __directUpdate', () => {
           }),
         ]
       },
+      __compilerVersion: '__test__',
       __prefixes: [(s) => s.rows, (s) => s.selected],
     })
 
@@ -1113,6 +1119,7 @@ describe('row factory (__rowUpdate)', () => {
           }),
         ]
       },
+      __compilerVersion: '__test__',
       __prefixes: [(s) => s.rows, (s) => s.selected],
     })
 
@@ -1199,6 +1206,7 @@ describe('selector without per-row disposers', () => {
           }),
         ]
       },
+      __compilerVersion: '__test__',
       __prefixes: [(s) => s.rows, (s) => s.selected],
     })
 
@@ -1294,6 +1302,7 @@ describe('selector without per-row disposers', () => {
           }),
         ]
       },
+      __compilerVersion: '__test__',
       __prefixes: [(s) => s.rows, (s) => s.selected],
     })
 
@@ -1370,6 +1379,7 @@ describe('selector without per-row disposers', () => {
           }),
         ]
       },
+      __compilerVersion: '__test__',
       __prefixes: [(s) => s.rows, (s) => s.selected],
     })
 

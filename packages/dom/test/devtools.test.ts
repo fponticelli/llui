@@ -23,6 +23,7 @@ const Counter = component<State, Msg, never>({
     }
   },
   view: () => [div({}, [text((s: State) => String(s.count))])],
+  __compilerVersion: '__test__',
   __prefixes: [(s) => s.count],
 })
 

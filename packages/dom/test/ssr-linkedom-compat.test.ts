@@ -17,6 +17,7 @@ describe('linkedomEnv — HTMLSelectElement.value setter patch', () => {
           option({ value: 'c' }, [text('C')]),
         ]),
       ],
+      __compilerVersion: '__test__',
       __prefixes: [(s) => s.selected],
     })
 
@@ -88,6 +89,7 @@ describe('portal() — SSR safety under linkedom', () => {
           }),
         ]),
       ],
+      __compilerVersion: '__test__',
       __prefixes: [(s) => s.visible],
     })
 

@@ -33,6 +33,7 @@ describe('filter highlight', () => {
           ],
         })
       },
+      __compilerVersion: '__test__',
       __prefixes: [(s) => s.filter],
     }
 

@@ -84,6 +84,7 @@ describe('hydration reconciliation', () => {
               b: () => [div({ class: 'page-b' }, [text('Page B')])],
             },
           }),
+        __compilerVersion: '__test__',
         __prefixes: [(s) => s.mode],
       })
 
@@ -173,6 +174,7 @@ describe('hydration reconciliation', () => {
             }),
           ]),
         ],
+        __compilerVersion: '__test__',
         __prefixes: [(s) => s.items],
       })
 
@@ -262,6 +264,7 @@ describe('hydration reconciliation', () => {
           sendFn = send
           return [div({}, [text((s: S) => s.label)])]
         },
+        __compilerVersion: '__test__',
         __prefixes: [(s) => s.label],
       })
 
@@ -288,6 +291,7 @@ describe('hydration reconciliation', () => {
             button({ class: 'btn', onClick: () => send({ type: 'inc' }) }, [text('+')]),
           ]),
         ],
+        __compilerVersion: '__test__',
         __prefixes: [(s) => s.count],
       })
 

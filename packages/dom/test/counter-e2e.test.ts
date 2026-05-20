@@ -31,6 +31,7 @@ describe('Counter app (end-to-end)', () => {
         ],
       }),
     ],
+    __compilerVersion: '__test__',
     __prefixes: [(s) => s.count],
   })
 

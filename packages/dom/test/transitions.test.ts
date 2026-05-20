@@ -31,6 +31,7 @@ describe('branch transitions', () => {
           leave: opts.leave,
         })
       },
+      __compilerVersion: '__test__',
       __prefixes: [(s) => s.phase],
     }
   }
@@ -142,6 +143,7 @@ describe('show transitions', () => {
           },
         })
       },
+      __compilerVersion: '__test__',
       __prefixes: [(s) => s.visible],
     }
 

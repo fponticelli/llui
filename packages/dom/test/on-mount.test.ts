@@ -73,6 +73,7 @@ describe('onMount()', () => {
           },
         })
       },
+      __compilerVersion: '__test__',
       __prefixes: [(s) => s.visible],
     }
 

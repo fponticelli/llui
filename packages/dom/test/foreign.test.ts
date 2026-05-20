@@ -51,6 +51,7 @@ function foreignDef() {
         sync: syncFn,
         destroy: destroyFn,
       }),
+    __compilerVersion: '__test__',
     __prefixes: [(s) => s.theme, (s) => s.readonly],
   }
 
@@ -160,6 +161,7 @@ describe('foreign()', () => {
           },
           destroy: () => {},
         }),
+      __compilerVersion: '__test__',
       __prefixes: [(s) => s.theme, (s) => s.readonly],
     }
 
@@ -212,6 +214,7 @@ describe('foreign()', () => {
           destroy: () => {},
         })
       },
+      __compilerVersion: '__test__',
       __prefixes: [(s) => s.theme, (s) => s.readonly],
     }
 

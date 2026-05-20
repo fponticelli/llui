@@ -227,6 +227,7 @@ describe('createContext + provide + useContext', () => {
           ],
         )
       },
+      __compilerVersion: '__test__',
       __prefixes: [(s) => s.visible],
     })
 

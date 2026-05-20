@@ -50,6 +50,7 @@ describe('selector()', () => {
           },
         })
       },
+      __compilerVersion: '__test__',
       __prefixes: [(s) => s.items, (s) => s.selected],
     })
 

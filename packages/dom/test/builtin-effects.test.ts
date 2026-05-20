@@ -27,6 +27,7 @@ describe('built-in delay effect', () => {
         sendFn = send
         return [text((s: State) => s.value)]
       },
+      __compilerVersion: '__test__',
       __prefixes: [(s) => s.value],
     }
 

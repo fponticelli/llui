@@ -37,6 +37,7 @@ describe('text()', () => {
         }
       },
       view: () => [text((s: State) => s.label)],
+      __compilerVersion: '__test__',
       __prefixes: [(s) => s.label],
     }
 
@@ -72,6 +73,7 @@ describe('text()', () => {
         sendFn = send
         return [text((s: State) => String(s.count))]
       },
+      __compilerVersion: '__test__',
       __prefixes: [(s) => s.count],
     }
 

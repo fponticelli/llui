@@ -37,6 +37,7 @@ describe('branch cleanup with template-cloned nodes', () => {
           },
         })
       },
+      __compilerVersion: '__test__',
       __prefixes: [(s) => s.page],
     }
 
@@ -97,6 +98,7 @@ describe('branch cleanup with template-cloned nodes', () => {
           },
         })
       },
+      __compilerVersion: '__test__',
       __prefixes: [(s) => s.page],
     }
 

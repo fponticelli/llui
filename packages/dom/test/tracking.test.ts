@@ -122,6 +122,7 @@ function eachListDef(): ComponentDef<EachState, EachMsg, never> {
         key: (item) => item.id,
         render: ({ item }) => [div({ 'data-id': item((t) => t.id) }, [text(item((t) => t.label))])],
       }),
+    __compilerVersion: '__test__',
     __prefixes: [(s) => s.items],
   }
 }
@@ -278,6 +279,7 @@ describe('each() → EachDiff emission', () => {
           ],
         }),
       // Top-level change always forces full reconcile for this test.
+      __compilerVersion: '__test__',
       __prefixes: [(s) => s.groups],
     }
 
@@ -373,6 +375,7 @@ function branchDef(): ComponentDef<BranchState, BranchMsg, never> {
           b: () => [div({}, [text(() => 'B')])],
         },
       }),
+    __compilerVersion: '__test__',
     __prefixes: [(s) => s.which],
   }
 }
@@ -454,6 +457,7 @@ describe('disposer log → structural causes', () => {
           key: (item) => item.id,
           render: ({ item }) => [div({ 'data-id': item((t) => t.id) }, [])],
         }),
+      __compilerVersion: '__test__',
       __prefixes: [(s) => s.items],
     }
 
@@ -558,6 +562,7 @@ function covCounterDef(): ComponentDef<CovState, CovMsg, never> {
       }
     },
     view: () => [div({}, [text((s: CovState) => String(s.count))])],
+    __compilerVersion: '__test__',
     __prefixes: [(s) => s.count],
   }
 }

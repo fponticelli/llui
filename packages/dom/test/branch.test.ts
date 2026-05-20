@@ -30,6 +30,7 @@ function phaseDef(): ComponentDef<State, Msg, never> {
         },
       }),
     ],
+    __compilerVersion: '__test__',
     __prefixes: [(s) => s.phase],
   }
 }
@@ -138,6 +139,7 @@ describe('branch()', () => {
           default: () => [],
         }),
       ],
+      __compilerVersion: '__test__',
       __prefixes: [(s) => s.phase],
     }
 
@@ -185,6 +187,7 @@ describe('branch()', () => {
           },
         }),
       ],
+      __compilerVersion: '__test__',
       __prefixes: [(s) => s.page, (s) => s.flag],
     }
 
@@ -253,6 +256,7 @@ describe('branch()', () => {
           },
         }),
       ],
+      __compilerVersion: '__test__',
       __prefixes: [(s) => s.page, (s) => s.counter],
     }
 
@@ -301,6 +305,7 @@ describe('show()', () => {
           when: (st) => st.visible,
           render: () => [div({ class: 'panel' }, [t('content')])],
         }),
+      __compilerVersion: '__test__',
       __prefixes: [(s) => s.visible],
     }
   }
@@ -406,6 +411,7 @@ describe('show() with fallback', () => {
           render: () => [div({ class: 'content' }, [t('ready')])],
           fallback: () => [div({ class: 'spinner' }, [t('loading...')])],
         }),
+      __compilerVersion: '__test__',
       __prefixes: [(s) => s.loaded],
     }
   }

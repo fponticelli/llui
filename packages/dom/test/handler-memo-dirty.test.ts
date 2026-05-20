@@ -41,6 +41,7 @@ describe('__handlers fast path keeps memo() dirty mask in sync', () => {
         })
       },
       // items = bit 0, filter = bit 1
+      __compilerVersion: '__test__',
       __prefixes: [(s) => s.items, (s) => s.filter],
       __handlers: {
         // set-filter dirties the `filter` bit (0b10), method=0 (general reconcile)
@@ -85,6 +86,7 @@ describe('__handlers fast path keeps memo() dirty mask in sync', () => {
           render: () => [div({}, [text((_s: S) => 'visible')])],
         })
       },
+      __compilerVersion: '__test__',
       __prefixes: [(s) => s.open, (s) => s.theme],
       __handlers: {
         toggle: ((inst: unknown, msg: unknown) => _handleMsg(inst as never, msg, 0b01, 0)) as never,

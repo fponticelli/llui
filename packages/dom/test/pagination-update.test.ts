@@ -76,6 +76,7 @@ describe('text binding updates inside stable branch case', () => {
           },
         })
       },
+      __compilerVersion: '__test__',
       __prefixes: [(s) => s.route],
     })
 

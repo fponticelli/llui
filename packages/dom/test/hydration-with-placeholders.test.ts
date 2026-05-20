@@ -65,6 +65,7 @@ describe('hydration + elTemplate comment placeholders', () => {
           __bind(__t0, 0xffffffff | 0, 'text', undefined, (s) => (s as State).name)
         }),
       ],
+      __compilerVersion: '__test__',
       __prefixes: [(s) => s.name],
     })
 
@@ -92,6 +93,7 @@ describe('hydration + elTemplate comment placeholders', () => {
           span({}, [text('v='), text((s: State) => String(s.value))]),
         ]),
       ],
+      __compilerVersion: '__test__',
       __prefixes: [(s) => s.value],
     })
 

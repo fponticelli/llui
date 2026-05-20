@@ -25,6 +25,7 @@ function counterDef(): ComponentDef<State, Msg, never> {
         ]),
       ]
     },
+    __compilerVersion: '__test__',
     __prefixes: [(s) => s.count],
   }
 }

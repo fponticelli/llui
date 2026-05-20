@@ -45,6 +45,7 @@ describe('cross-file bindings', () => {
           },
         })
       },
+      __compilerVersion: '__test__',
       __prefixes: [(s) => s.page, (s) => s.label],
     })
 

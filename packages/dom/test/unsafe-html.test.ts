@@ -97,6 +97,7 @@ describe('unsafeHtml()', () => {
           ),
         ]
       },
+      __compilerVersion: '__test__',
       __prefixes: [(s) => s.html],
     }
     const container = document.createElement('div')
@@ -134,6 +135,7 @@ describe('unsafeHtml()', () => {
           ),
         ]
       },
+      __compilerVersion: '__test__',
       __prefixes: [(s) => s.html],
     }
     const container = document.createElement('div')
@@ -169,6 +171,7 @@ describe('unsafeHtml()', () => {
           ),
         ]
       },
+      __compilerVersion: '__test__',
       __prefixes: [(s) => s.html],
     }
     const container = document.createElement('div')
@@ -251,6 +254,7 @@ describe('unsafeHtml()', () => {
         ]
       },
       // bit 1 = html, bit 2 = tick
+      __compilerVersion: '__test__',
       __prefixes: [(s) => s.html, (s) => s.tick],
     }
     const container = document.createElement('div')

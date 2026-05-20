@@ -86,6 +86,7 @@ describe('portal()', () => {
             }),
         })
       },
+      __compilerVersion: '__test__',
       __prefixes: [(s) => s.open],
     }
 
@@ -126,6 +127,7 @@ describe('portal()', () => {
           render: () => [text((s: State) => String(s.count))],
         })
       },
+      __compilerVersion: '__test__',
       __prefixes: [(s) => s.count],
     }
 

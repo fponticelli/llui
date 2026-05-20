@@ -47,6 +47,7 @@ function def() {
         }),
       ]),
     ],
+    __compilerVersion: '__test__',
     __prefixes: [(s) => s.route, (s) => s.mode],
   })
 }
@@ -199,6 +200,7 @@ describe('branch — nested primitives spread into outer arm (no wrapper)', () =
           }),
         ]),
       ],
+      __compilerVersion: '__test__',
       __prefixes: [(s) => s.route, (s) => s.items],
     })
 

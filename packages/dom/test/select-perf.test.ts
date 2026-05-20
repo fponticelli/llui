@@ -38,6 +38,7 @@ describe('select performance — only 2 rows should update', () => {
           ],
         })
       },
+      __compilerVersion: '__test__',
       __prefixes: [(s) => s.items, (s) => s.selected],
     })
 

@@ -57,6 +57,7 @@ describe('memo()', () => {
         return [div({}, [text((s: State) => memoized(s)), text((s: State) => s.label)])]
       },
       // count = bit 0, label = bit 1
+      __compilerVersion: '__test__',
       __prefixes: [(s) => s.count, (s) => s.label],
     }
 
@@ -114,6 +115,7 @@ describe('memo()', () => {
           render: ({ item }) => [div({}, [text((_s: S) => String(item.id()))])],
         })
       },
+      __compilerVersion: '__test__',
       __prefixes: [(s) => s.todos, (s) => s.filter],
     }
 

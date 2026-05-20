@@ -92,6 +92,7 @@ describe('nested each() with parent re-key + sibling-state inner items', () => {
             ]
           },
         }),
+      __compilerVersion: '__test__',
       __prefixes: [(s) => s.rows, (s) => s.panelOpenForId, (s) => s.panelData],
     }
   }
@@ -162,6 +163,7 @@ describe('nested each() with parent re-key + sibling-state inner items', () => {
             ]
           },
         }),
+      __compilerVersion: '__test__',
       __prefixes: [(s) => s.rows, (s) => s.panelOpenForId, (s) => s.panelData],
     }
     let sendFn!: (msg: Msg4) => void
@@ -252,6 +254,7 @@ describe('nested each() with parent re-key + sibling-state inner items', () => {
             ]
           },
         }),
+      __compilerVersion: '__test__',
       __prefixes: [(s) => s.rows, (s) => s.panelOpenForId, (s) => s.panelData],
     }
     let sendFn!: (msg: Msg3) => void
@@ -380,6 +383,7 @@ describe('nested each() with parent re-key + sibling-state inner items', () => {
             ]
           },
         }),
+      __compilerVersion: '__test__',
       __prefixes: [(s) => s.rows, (s) => s.panelOpenForId, (s) => s.panelData],
     }
     let sendFn!: (msg: Msg2) => void

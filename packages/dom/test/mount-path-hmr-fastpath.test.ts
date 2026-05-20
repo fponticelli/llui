@@ -39,6 +39,7 @@ function mkDef(label: string): ComponentDef<S, never, never> {
     init: () => [{ n: 0 }, []],
     update: (s) => [s, []],
     view: () => [div({ class: label }, [text((s: S) => `${label}:${s.n}`)])],
+    __compilerVersion: '__test__',
     __prefixes: [(s) => s.n],
   })
 }

@@ -109,6 +109,7 @@ describe('component with __prefixes opts into path-keyed reactivity', () => {
         }
       },
       view: () => [],
+      __compilerVersion: '__test__',
       __prefixes: [prefixUser, prefixCount, prefixQuery],
     }
   }
@@ -243,6 +244,7 @@ describe('component with __prefixes opts into path-keyed reactivity', () => {
         }
       },
       view: () => [],
+      __compilerVersion: '__test__',
       __prefixes: prefixes,
     }
     const inst = createComponentInstance(def)
@@ -320,6 +322,7 @@ describe('component with __prefixes opts into path-keyed reactivity', () => {
         }
       },
       view: () => [],
+      __compilerVersion: '__test__',
       __prefixes: prefixes,
       __handlers: {
         bumpF33: (inst, msg) =>

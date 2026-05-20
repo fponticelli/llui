@@ -20,6 +20,7 @@ function twoPropDef(): ComponentDef<State, Msg, never> {
       }
     },
     view: () => [],
+    __compilerVersion: '__test__',
     __prefixes: [(s) => s.name, (s) => s.age],
   }
 }

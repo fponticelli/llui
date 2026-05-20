@@ -38,6 +38,7 @@ describe('elTemplate', () => {
             ),
           ],
         }),
+      __compilerVersion: '__test__',
       __prefixes: [(s) => s.items],
     })
 
@@ -135,6 +136,7 @@ describe('elTemplate', () => {
             ]
           },
         }),
+      __compilerVersion: '__test__',
       __prefixes: [(s) => s.items, (s) => s.selected],
     })
 

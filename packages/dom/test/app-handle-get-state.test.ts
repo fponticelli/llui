@@ -16,6 +16,7 @@ const Counter = component<S, M, never>({
     }
   },
   view: () => [div({ class: 'c' }, [text((s: S) => String(s.count))])],
+  __compilerVersion: '__test__',
   __prefixes: [(s) => s.count, (s) => s.label],
 })
 

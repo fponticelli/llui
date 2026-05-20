@@ -28,6 +28,7 @@ const Counter = component<State, Msg, never>({
       render: () => [span({ class: 'badge' }, [text('active')])],
     }),
   ],
+  __compilerVersion: '__test__',
   __prefixes: [(s) => s.count, (s) => s.label],
 })
 

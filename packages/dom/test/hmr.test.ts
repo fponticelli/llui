@@ -20,6 +20,7 @@ describe('HMR state preservation', () => {
         return [s, []]
       },
       view: () => [div({ class: 'v1' }, [text((s: State) => `v1:${s.count}`)])],
+      __compilerVersion: '__test__',
       __prefixes: [(s) => s.count],
     })
 
@@ -63,6 +64,7 @@ describe('HMR state preservation', () => {
         return [s, []]
       },
       view: () => [div({ class: 'v2' }, [text((s: State) => `v2:${s.count}`)])],
+      __compilerVersion: '__test__',
       __prefixes: [(s) => s.count],
     })
 
@@ -111,6 +113,7 @@ describe('HMR state preservation', () => {
             })(),
           ]),
         ],
+        __compilerVersion: '__test__',
         __prefixes: [(s) => s.value],
       })
     }

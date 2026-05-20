@@ -38,6 +38,7 @@ function makeDef(
         leave,
         render: ({ item }) => [div({ 'data-id': item((t) => t.id) }, [text(item((t) => t.id))])],
       }),
+    __compilerVersion: '__test__',
     __prefixes: [(s) => s.items],
   }
 }

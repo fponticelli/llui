@@ -22,6 +22,7 @@ function counterDef(): ComponentDef<State, Msg, never> {
       btn.textContent = '+'
       return [btn]
     },
+    __compilerVersion: '__test__',
     __prefixes: [(s) => s.count],
   }
 }

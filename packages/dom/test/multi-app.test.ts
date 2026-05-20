@@ -22,6 +22,7 @@ describe('multiple mountApp instances', () => {
           render: (_send) => [text(label)],
         }),
       ],
+      __compilerVersion: '__test__',
       __prefixes: [(s) => s.visible],
     }
   }
@@ -96,6 +97,7 @@ describe('multiple mountApp instances', () => {
         init: (label) => [{ label }, []],
         update: (s) => [s, []],
         view: () => [div({ class: 'chip' }, [text((s: S) => s.label)])],
+        __compilerVersion: '__test__',
         __prefixes: [(s) => s.label],
       })
 
@@ -129,6 +131,7 @@ describe('multiple mountApp instances', () => {
         init: () => [{ n: 7 }, []],
         update: (s) => [s, []],
         view: () => [div({ class: 'v1' }, [text((s: S) => `v1:${s.n}`)])],
+        __compilerVersion: '__test__',
         __prefixes: [(s) => s.n],
       })
       const v2: ComponentDef<S, never, never> = component<S, never, never>({
@@ -136,6 +139,7 @@ describe('multiple mountApp instances', () => {
         init: () => [{ n: 0 }, []],
         update: (s) => [s, []],
         view: () => [div({ class: 'v2' }, [text((s: S) => `v2:${s.n}`)])],
+        __compilerVersion: '__test__',
         __prefixes: [(s) => s.n],
       })
 

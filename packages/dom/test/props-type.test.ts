@@ -71,6 +71,7 @@ describe('Props<T, S> type helper + view function composition', () => {
           },
           send,
         ),
+      __compilerVersion: '__test__',
       __prefixes: [(s) => s.tools, (s) => s.theme, (s) => s.selectedId],
     }
   }

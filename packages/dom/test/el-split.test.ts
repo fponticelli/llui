@@ -31,6 +31,7 @@ function elSplitDef(): ComponentDef<State, Msg, never> {
         [text((s: State) => s.title)],
       ),
     ],
+    __compilerVersion: '__test__',
     __prefixes: [(s) => s.title, (s) => s.active],
   }
 }

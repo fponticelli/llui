@@ -25,6 +25,7 @@ function elementsDef(): ComponentDef<State, Msg, never> {
         button({ onClick: () => send({ type: 'toggle' }) }, [text('Toggle')]),
       ]),
     ],
+    __compilerVersion: '__test__',
     __prefixes: [(s) => s.label, (s) => s.active],
   }
 }

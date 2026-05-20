@@ -15,6 +15,7 @@ function counterDef(): ComponentDef<{ count: number }, { type: 'inc' } | { type:
       }
     },
     view: () => [],
+    __compilerVersion: '__test__',
     __prefixes: [(s) => s.count],
   }
 }
@@ -82,6 +83,7 @@ describe('send and flush', () => {
         }
       },
       view: () => [],
+      __compilerVersion: '__test__',
       __prefixes: [(s) => s.a, (s) => s.b],
     }
 
@@ -147,6 +149,7 @@ describe('send and flush', () => {
       init: () => [{ count: 0 }, []],
       update: (state) => [state, []],
       view: () => [],
+      __compilerVersion: '__test__',
       __prefixes: [(s) => s.count],
     }
     const inst = createComponentInstance(def)
