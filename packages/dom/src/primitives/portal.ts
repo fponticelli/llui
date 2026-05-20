@@ -18,7 +18,7 @@ export function portal(opts: PortalOptions): Node[] {
   }
 
   const portalScope = createLifetime(parentLifetime)
-  portalScope._kind = 'portal'
+  if (import.meta.env?.DEV) portalScope._kind = 'portal'
   const buildCtx = { ...ctx, rootLifetime: portalScope, container: target as Element }
   setRenderContext(buildCtx)
   const nodes = opts.render()

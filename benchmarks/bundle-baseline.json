@@ -139,6 +139,23 @@
         "brotli": -3974
       }
     },
+    "18": {
+      "label": "Tier 18: DCE-gate _kind dev-only field writes",
+      "summary": "(no summary)",
+      "uncompressed": 29126,
+      "gzipped": 8865,
+      "brotli": 7888,
+      "deltaVsPrevious": {
+        "uncompressed": -5739,
+        "gzipped": -2088,
+        "brotli": -1793
+      },
+      "deltaVsBaseline": {
+        "uncompressed": -14291,
+        "gzipped": -4614,
+        "brotli": -3981
+      }
+    },
     "0-baseline": {
       "label": "Phase 0 — current main",
       "summary": "Initial measurement before any size reductions. Captured from main.js after `pnpm build-prod`.",

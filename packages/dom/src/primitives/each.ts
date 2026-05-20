@@ -482,7 +482,7 @@ function buildEntry<S, T, M>(
   // Full scope features (disposers, bindings, children) are only needed when
   // the render callback uses structural primitives or selector.bind().
   const scope = createLifetime(parentLifetime)
-  scope._kind = 'each'
+  if (import.meta.env?.DEV) scope._kind = 'each'
   const currentState = (state ?? ctx.state) as S
   const send = ctx.send as (msg: M) => void
 

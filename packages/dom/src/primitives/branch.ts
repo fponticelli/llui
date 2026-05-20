@@ -86,12 +86,14 @@ export function branch<S, M = unknown, K extends string = string>(
         const mq = pushMountQueue()
         onMountQueue = mq.queue
         currentLifetime = createLifetime(parentLifetime)
-        currentLifetime._kind =
-          opts.__disposalCause === 'show-hide'
-            ? 'show'
-            : opts.__disposalCause === 'scope-rebuild'
-              ? 'scope'
-              : 'branch'
+        if (import.meta.env?.DEV) {
+          currentLifetime._kind =
+            opts.__disposalCause === 'show-hide'
+              ? 'show'
+              : opts.__disposalCause === 'scope-rebuild'
+                ? 'scope'
+                : 'branch'
+        }
         setFlatBindings(ctx.allBindings)
         setRenderContext({ ...ctx, rootLifetime: currentLifetime, state })
         currentNodes = newBuilder(getOwnerBag<S, M>(ctx, send))
@@ -157,12 +159,14 @@ export function branch<S, M = unknown, K extends string = string>(
   // are returned to the parent), so we don't need to flush here.
   if (builder) {
     currentLifetime = createLifetime(parentLifetime)
-    currentLifetime._kind =
-      opts.__disposalCause === 'show-hide'
-        ? 'show'
-        : opts.__disposalCause === 'scope-rebuild'
-          ? 'scope'
-          : 'branch'
+    if (import.meta.env?.DEV) {
+      currentLifetime._kind =
+        opts.__disposalCause === 'show-hide'
+          ? 'show'
+          : opts.__disposalCause === 'scope-rebuild'
+            ? 'scope'
+            : 'branch'
+    }
     setRenderContext({ ...ctx, rootLifetime: currentLifetime })
     currentNodes = builder(getOwnerBag<S, M>(ctx, send))
     clearRenderContext()

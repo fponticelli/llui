@@ -11,7 +11,7 @@ export function foreign<S, M, T extends Record<string, unknown>, Instance>(
   const ctx = getRenderContext('foreign')
   const parentLifetime = ctx.rootLifetime
   const foreignScope = createLifetime(parentLifetime)
-  foreignScope._kind = 'foreign'
+  if (import.meta.env?.DEV) foreignScope._kind = 'foreign'
 
   // Create container element — cast to HTMLElement since foreign() is
   // HTML-only (no SVG/MathML foreign containers) and HTMLElement is the

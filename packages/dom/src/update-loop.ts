@@ -297,7 +297,7 @@ export function createComponentInstance<S, M, E, D = void>(
     },
   }
 
-  inst.rootLifetime._kind = 'root'
+  if (import.meta.env?.DEV) inst.rootLifetime._kind = 'root'
 
   return inst
 }
