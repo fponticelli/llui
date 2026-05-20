@@ -54,6 +54,23 @@
         "brotli": -2174
       }
     },
+    "13": {
+      "label": "Tier 13: drop per-env template cache layer",
+      "summary": "(no summary)",
+      "uncompressed": 33820,
+      "gzipped": 10689,
+      "brotli": 9450,
+      "deltaVsPrevious": {
+        "uncompressed": -1045,
+        "gzipped": -264,
+        "brotli": -231
+      },
+      "deltaVsBaseline": {
+        "uncompressed": -9597,
+        "gzipped": -2790,
+        "brotli": -2419
+      }
+    },
     "0-baseline": {
       "label": "Phase 0 — current main",
       "summary": "Initial measurement before any size reductions. Captured from main.js after `pnpm build-prod`.",

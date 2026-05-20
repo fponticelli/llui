@@ -4,18 +4,18 @@ import { getRenderContext } from './render-context.js'
 import { createBinding, applyBinding } from './binding.js'
 import { addCheckedItemUpdater } from './lifetime.js'
 
-// Per-env cache: each DomEnv owns its own HTMLTemplateElement cache so
-// concurrent SSR with different envs (jsdom + linkedom in one process)
-// never cross-polluates node instances. Keyed by env identity via
-// WeakMap so envs get GC'd with their caches.
-const templateCacheByEnv = new WeakMap<DomEnv, Map<string, HTMLTemplateElement>>()
-function getTemplateCache(env: DomEnv): Map<string, HTMLTemplateElement> {
-  let cache = templateCacheByEnv.get(env)
-  if (!cache) {
-    cache = new Map()
-    templateCacheByEnv.set(env, cache)
-  }
-  return cache
+// Template cache. Each HTML string maps to its parsed
+// `HTMLTemplateElement`. Single shared `Map` keyed only on the HTML —
+// the WeakMap-by-env layer that wrapped this used to support
+// concurrent SSR with mixed envs (jsdom + linkedom in one process)
+// but in practice each runtime uses one env and the layer was
+// zero-benefit overhead. SSR processes that need a fresh cache call
+// `_resetTemplateCache()` at boundary points.
+const templateCache = new Map<string, HTMLTemplateElement>()
+
+/** @internal SSR-only — clear the cache between independent renders. */
+export function _resetTemplateCache(): void {
+  templateCache.clear()
 }
 
 /** Callback passed to patch functions — registers a reactive binding on a node.
@@ -51,12 +51,11 @@ export function elTemplate(
   patch: (root: Element, bind: TemplateBind, dom: DomEnv) => void,
 ): Element {
   const ctx = getRenderContext()
-  const cache = getTemplateCache(ctx.dom)
-  let tmpl = cache.get(html)
+  let tmpl = templateCache.get(html)
   if (!tmpl) {
     tmpl = ctx.dom.createElement('template') as HTMLTemplateElement
     tmpl.innerHTML = html
-    cache.set(html, tmpl)
+    templateCache.set(html, tmpl)
   }
 
   const root = tmpl.content.firstElementChild!.cloneNode(true) as Element
@@ -102,12 +101,11 @@ export function elTemplate(
  */
 export function __cloneStaticTemplate(html: string): Node {
   const ctx = getRenderContext('cloneStaticTemplate')
-  const cache = getTemplateCache(ctx.dom)
-  let tmpl = cache.get(html)
+  let tmpl = templateCache.get(html)
   if (!tmpl) {
     tmpl = ctx.dom.createElement('template') as HTMLTemplateElement
     tmpl.innerHTML = html
-    cache.set(html, tmpl)
+    templateCache.set(html, tmpl)
   }
   return tmpl.content.cloneNode(true).firstChild!
 }
