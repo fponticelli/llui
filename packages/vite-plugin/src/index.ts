@@ -1084,20 +1084,43 @@ export default function llui(options: LluiPluginOptions = {}): Plugin {
       // integrity check). `$X` saves 1 char per occurrence vs the
       // `__X` form this pass shipped at Tier 21.
       //
-      // Reserved names cover engine intrinsics, build-flag substitution
-      // tokens, the test-sentinel STRING VALUE (renaming the
-      // `__test__` string would break defineTestComponent), and any
-      // double-underscored identifier that's part of the consumer-
-      // visible / agent-protocol-visible API.
-      const RENAME_RESERVED = new Set([
-        '__proto__',
-        '__test__',
-        '__llui_deps',
-        '__llui_mcp_status',
-        '__lluiComponents',
-        '__LLUI_AGENT__',
-        '__LLUI_TRANSITIONS__',
-        '__PURE__',
+      // Allow-list approach: rename ONLY the specific `__`-prefixed
+      // identifiers the LLui compiler is known to emit. Other tools
+      // sharing the `__` convention — Vite's `__vite__mapDeps`, Vike's
+      // `__VIKE__NOT_SERIALIZABLE__` marker, user-defined `__LLUI_STATE__`
+      // hydration containers, the test-fixture `__test__` sentinel string
+      // value — must pass through unmolested. A deny-list approach
+      // (rename everything, exempt some) shipped at Tier 21 broke vike
+      // SSR builds because the deny-list missed Vite/Vike internals
+      // that didn't appear in the smaller bench bundle.
+      const RENAME_TARGETS = new Set([
+        '__view',
+        '__prefixes',
+        '__handlers',
+        '__compilerVersion',
+        '__directUpdate',
+        '__mask',
+        '__maskHi',
+        '__maskLegend',
+        '__perItem',
+        '__rowUpd',
+        '__rowUpdate',
+        '__schemaHash',
+        '__tpl',
+        '__bindUncertain',
+        '__cloneStaticTemplate',
+        '__runPhase2',
+        '__handleMsg',
+        '__msgSchema',
+        '__msgAnnotations',
+        '__bindingDescriptors',
+        '__stateSchema',
+        '__effectSchema',
+        '__componentMeta',
+        '__renderToString',
+        '__update',
+        '__dirty',
+        '__view$',
       ])
       const RENAME_PATTERN = /\b__[A-Za-z_][A-Za-z0-9_]*\b/g
       const counts = new Map<string, number>()
@@ -1105,7 +1128,7 @@ export default function llui(options: LluiPluginOptions = {}): Plugin {
         if (chunk.type !== 'chunk') continue
         for (const m of chunk.code.matchAll(RENAME_PATTERN)) {
           const name = m[0]
-          if (RENAME_RESERVED.has(name)) continue
+          if (!RENAME_TARGETS.has(name)) continue
           counts.set(name, (counts.get(name) ?? 0) + 1)
         }
       }
