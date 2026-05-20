@@ -587,7 +587,13 @@ export default function llui(options: LluiPluginOptions = {}): Plugin {
   // file changes are not reflected without a rebuild (documented above).
   let crossFileProgram: import('typescript').Program | null = null
   let crossFileProgramInit = false
-  let crossFileRoot = process.cwd()
+  // Set in `configResolved` to the Vite project root. Stays null when
+  // `transform` is invoked outside the normal plugin lifecycle (e.g.
+  // unit tests that call the hook directly) — those callers don't get
+  // cross-file resolution, which is the right fallback: the Program
+  // build scans the whole project's tsconfig and can take multiple
+  // seconds on large repos, so it must wait for an explicit handshake.
+  let crossFileRoot: string | null = null
   const agentConfig: AgentPluginConfig = typeof agent === 'object' ? agent : {}
   // Agent server instance — loaded in configResolved (async), registered
   // in configureServer (sync). Null until loaded, or if @llui/agent isn't
@@ -923,11 +929,12 @@ export default function llui(options: LluiPluginOptions = {}): Plugin {
         : [undefined, undefined]
 
       // Cross-file path resolution (v2c pipeline integration). When
-      // enabled, the plugin reuses a shared `ts.Program` across all
+      // enabled and `configResolved` has run (so we know the project
+      // root), the plugin reuses a shared `ts.Program` across all
       // transform calls and asks the engine for the union of paths read
       // through in-repo view-helpers. Builds the Program on first call.
       let crossFilePaths: ReadonlySet<string> | undefined
-      if (crossFileMode !== false) {
+      if (crossFileMode !== false && crossFileRoot !== null) {
         if (!crossFileProgramInit) {
           crossFileProgramInit = true
           crossFileProgram = await buildCrossFileProgram(crossFileRoot)
