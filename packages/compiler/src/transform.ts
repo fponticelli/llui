@@ -864,6 +864,26 @@ export function transformLlui(
         : { top: '', bottom: '' }
       let output =
         (_top ? _top + '\n' : '') + printer.printFile(transformed) + (_bottom ? '\n' + _bottom : '')
+      // Inject the `@llui/dom/internal` import on the fallback path too.
+      // The per-statement edit loop (where the normal injection lives)
+      // never ran to completion in this branch, so do it inline.
+      const internalEditFb = buildInternalImportEdit(
+        lluiImport,
+        usesBindUncertain,
+        usesCloneStaticTemplate,
+        usesApplyBinding,
+        scopeRegistrationsInjected,
+      )
+      if (internalEditFb) {
+        // Place right after the public `@llui/dom` import in the
+        // printed output. The printer normalizes the import to a
+        // single line; locate it by string match.
+        const m = output.match(/import\s*\{[^}]*\}\s*from\s*['"]@llui\/dom['"];?\n/)
+        if (m && m.index !== undefined) {
+          const insertAt = m.index + m[0].length
+          output = output.slice(0, insertAt) + internalEditFb.replacement + output.slice(insertAt)
+        }
+      }
       if (devMode || emitAgentMetadata) {
         output = appendCompilerCacheProps(output, componentDecls)
       }
@@ -885,6 +905,20 @@ export function transformLlui(
       finalEdits.push({ start: origStart, end: origEnd, replacement })
     }
   }
+
+  // Compiler-emitted internal helpers ride on `@llui/dom/internal`,
+  // not on the public `@llui/dom` barrel. Insert the import as a
+  // text-level edit (not an AST statement) so it doesn't disturb the
+  // origin↔transformed index pairing the per-statement diff relies on.
+  // See cleanupImports' NOTE and buildInternalImportEdit's docstring.
+  const internalEdit = buildInternalImportEdit(
+    lluiImport,
+    usesBindUncertain,
+    usesCloneStaticTemplate,
+    usesApplyBinding,
+    scopeRegistrationsInjected,
+  )
+  if (internalEdit) finalEdits.push(internalEdit)
 
   // Dev setup: enable* must run BEFORE user's mountApp (top of file),
   // but import.meta.hot.accept needs to reference user's component vars
@@ -1473,68 +1507,36 @@ function cleanupImports(
   const clause = lluiImport.importClause
   if (!clause?.namedBindings || !ts.isNamedImports(clause.namedBindings)) return sf
 
-  const remaining = clause.namedBindings.elements.filter((spec) => !compiled.has(spec.name.text))
-
-  const hasElSplit = clause.namedBindings.elements.some((s) => s.name.text === 'elSplit')
-  if (!hasElSplit && usesElSplit) {
-    remaining.push(f.createImportSpecifier(false, undefined, f.createIdentifier('elSplit')))
-  }
-
-  const hasBindUncertain = clause.namedBindings.elements.some(
-    (s) => s.name.text === '__bindUncertain',
-  )
-  if (!hasBindUncertain && usesBindUncertain) {
-    remaining.push(f.createImportSpecifier(false, undefined, f.createIdentifier('__bindUncertain')))
-  }
-
-  const hasElTemplate = clause.namedBindings.elements.some((s) => s.name.text === 'elTemplate')
-  if (!hasElTemplate && usesElTemplate) {
-    remaining.push(f.createImportSpecifier(false, undefined, f.createIdentifier('elTemplate')))
-  }
-
-  const hasCloneStaticTemplate = clause.namedBindings.elements.some(
-    (s) => s.name.text === '__cloneStaticTemplate',
-  )
-  if (!hasCloneStaticTemplate && usesCloneStaticTemplate) {
-    remaining.push(
-      f.createImportSpecifier(false, undefined, f.createIdentifier('__cloneStaticTemplate')),
-    )
-  }
-
-  const hasMemo = clause.namedBindings.elements.some((s) => s.name.text === 'memo')
-  if (!hasMemo && usesMemo) {
-    remaining.push(f.createImportSpecifier(false, undefined, f.createIdentifier('memo')))
-  }
-
-  if (usesApplyBinding) {
-    if (!clause.namedBindings.elements.some((s) => s.name.text === '__runPhase2')) {
-      remaining.push(f.createImportSpecifier(false, undefined, f.createIdentifier('__runPhase2')))
-    }
-    if (!clause.namedBindings.elements.some((s) => s.name.text === '__handleMsg')) {
-      remaining.push(f.createImportSpecifier(false, undefined, f.createIdentifier('__handleMsg')))
+  // Public-surface imports stay on `from '@llui/dom'`. Compiler-emitted
+  // runtime helpers go on a separate `from '@llui/dom/internal'`
+  // declaration so the vite-plugin's post-bundle property-rename pass
+  // never rewrites an import specifier against a public export name.
+  // See emit-names.ts § COMPILER_DOM_INTERNAL_IMPORTS for the contract.
+  const namedBindings = clause.namedBindings
+  const remaining = namedBindings.elements.filter((spec) => !compiled.has(spec.name.text))
+  const publicHas = (name: string): boolean =>
+    remaining.some((s) => s.name.text === name) ||
+    namedBindings.elements.some((s) => s.name.text === name)
+  const addPublic = (name: string): void => {
+    if (!publicHas(name)) {
+      remaining.push(f.createImportSpecifier(false, undefined, f.createIdentifier(name)))
     }
   }
 
-  // The connect-pattern injector (binding-descriptors.ts) emits
-  // `__registerScopeVariants([...])` calls; ensure the runtime
-  // helper is imported when at least one was inserted.
-  const hasRegisterScopeVariants = clause.namedBindings.elements.some(
-    (s) => s.name.text === '__registerScopeVariants',
-  )
-  if (!hasRegisterScopeVariants && usesRegisterScopeVariants) {
-    remaining.push(
-      f.createImportSpecifier(false, undefined, f.createIdentifier('__registerScopeVariants')),
-    )
-  }
+  if (usesElSplit) addPublic('elSplit')
+  if (usesElTemplate) addPublic('elTemplate')
+  if (usesMemo) addPublic('memo')
+  for (const prim of viewBagPrimitivesNeeded) addPublic(prim)
 
-  // v0.4 size-cut (Tier 1.2): add @llui/dom imports for each primitive
-  // referenced by synthesized __view factories. `ctx` is the destructured
-  // bag name; its primitive is `useContext` (the only rename pair).
-  for (const prim of viewBagPrimitivesNeeded) {
-    if (!clause.namedBindings.elements.some((s) => s.name.text === prim)) {
-      remaining.push(f.createImportSpecifier(false, undefined, f.createIdentifier(prim)))
-    }
-  }
+  // NOTE: the compiler-emitted internal helpers (`__bindUncertain`,
+  // `__cloneStaticTemplate`, `__runPhase2`, `__handleMsg`,
+  // `__registerScopeVariants`) are NOT added here. They live on
+  // `@llui/dom/internal`, and the outer transform pipeline inserts a
+  // separate `from '@llui/dom/internal'` import via a text-level edit
+  // (see `buildInternalImportEdit`). Inserting a new ImportDeclaration
+  // here would break the caller's per-statement origin↔transformed
+  // index pairing — the statement count would change and trailing
+  // statements would silently drop out of the edit list.
 
   const newBindings = f.createNamedImports(remaining)
   // New TS 6 signature: first arg is `phaseModifier` (undefined =
@@ -1551,8 +1553,7 @@ function cleanupImports(
       ts.isStringLiteral(stmt.moduleSpecifier) &&
       stmt.moduleSpecifier.text === '@llui/dom' &&
       // `phaseModifier === ts.SyntaxKind.TypeKeyword` is `import type
-      // …`; we only want to rewrite value imports. Replaces deprecated
-      // `isTypeOnly` from the TS<6 API.
+      // …`; we only want to rewrite value imports.
       stmt.importClause?.phaseModifier !== ts.SyntaxKind.TypeKeyword
     ) {
       replaced = true
@@ -1562,6 +1563,45 @@ function cleanupImports(
   })
 
   return f.updateSourceFile(sf, statements as unknown as ts.Statement[])
+}
+
+/**
+ * Build a single text-insert edit that places
+ * `import { ... } from '@llui/dom/internal'` immediately after the
+ * existing `import { ... } from '@llui/dom'` statement (or appends it
+ * at the start of the file if no @llui/dom import is found, though
+ * the caller has already short-circuited in that case).
+ *
+ * Returns null when no internal helpers are needed. The edit is text-
+ * level (not AST) so it does NOT alter `transformed.statements.length`,
+ * keeping the per-statement origin↔transformed pairing intact.
+ */
+function buildInternalImportEdit(
+  lluiImport: ts.ImportDeclaration,
+  usesBindUncertain: boolean,
+  usesCloneStaticTemplate: boolean,
+  usesApplyBinding: boolean,
+  usesRegisterScopeVariants: boolean,
+): TransformEdit | null {
+  const names = new Set<string>()
+  if (usesBindUncertain) names.add('__bindUncertain')
+  if (usesCloneStaticTemplate) names.add('__cloneStaticTemplate')
+  if (usesApplyBinding) {
+    names.add('__runPhase2')
+    names.add('__handleMsg')
+  }
+  if (usesRegisterScopeVariants) names.add('__registerScopeVariants')
+  if (names.size === 0) return null
+
+  const sortedNames = [...names].sort()
+  const importLine = `import { ${sortedNames.join(', ')} } from '@llui/dom/internal'\n`
+
+  const insertAt = lluiImport.getEnd()
+  // The lluiImport's getEnd() points to the position right after the
+  // statement's trailing `;` or `'\n'`. Emit the new import on a fresh
+  // line — `\n` prefix guarantees that even if the original import had
+  // no trailing newline.
+  return { start: insertAt, end: insertAt, replacement: '\n' + importLine }
 }
 
 // ── __msgSchema injection ────────────────────────────────────────

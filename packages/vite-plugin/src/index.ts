@@ -18,6 +18,7 @@ import {
   crossFileAccessorPaths,
   registerIntrospectionFactory,
   registerDevtoolsFactory,
+  COMPILER_RENAMEABLE_KEYS,
   type ExternalTypeSources,
   type PreExtractedSchemas,
 } from '@llui/compiler'
@@ -1105,35 +1106,22 @@ export default function llui(options: LluiPluginOptions = {}): Plugin {
       // (rename everything, exempt some) shipped at Tier 21 broke vike
       // SSR builds because the deny-list missed Vite/Vike internals
       // that didn't appear in the smaller bench bundle.
-      const RENAME_TARGETS = new Set([
-        '__view',
-        '__prefixes',
-        '__handlers',
-        '__compilerVersion',
-        '__directUpdate',
-        '__mask',
-        '__maskHi',
-        '__maskLegend',
-        '__perItem',
-        '__rowUpd',
-        '__rowUpdate',
-        '__schemaHash',
-        '__tpl',
-        '__bindUncertain',
-        '__cloneStaticTemplate',
-        '__runPhase2',
-        '__handleMsg',
-        '__msgSchema',
-        '__msgAnnotations',
-        '__bindingDescriptors',
-        '__stateSchema',
-        '__effectSchema',
-        '__componentMeta',
-        '__renderToString',
-        '__update',
-        '__dirty',
-        '__view$',
-      ])
+      //
+      // The list is sourced from `@llui/compiler`'s
+      // `COMPILER_RENAMEABLE_KEYS` constant — the single declaration of
+      // "names that are safe to property-rename." Compiler-emitted
+      // runtime helpers (`__bindUncertain`, `__cloneStaticTemplate`,
+      // `__runPhase2`, `__handleMsg`, `__registerScopeVariants`,
+      // `__clientOnlyStub`) are intentionally NOT in this list: they
+      // travel through module imports, and rewriting the import
+      // specifier (`from '@llui/dom/internal'`) against the original
+      // export name produces a `MISSING_EXPORT` rolldown error on any
+      // build that externalizes `@llui/dom/internal` (Vike SSR being
+      // the common case). The compiler/dom contract puts them on the
+      // `/internal` subpath; the rename invariant keeps them off the
+      // rename list. A type-level disjointness assertion in
+      // emit-names.ts enforces "renameable" ∩ "internal-import" = ∅.
+      const RENAME_TARGETS = new Set<string>(COMPILER_RENAMEABLE_KEYS)
       const RENAME_PATTERN = /\b__[A-Za-z_][A-Za-z0-9_]*\b/g
       const counts = new Map<string, number>()
       for (const chunk of Object.values(bundle)) {

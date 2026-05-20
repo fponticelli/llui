@@ -39,7 +39,7 @@ export const AnotherOne = component({ name: 'AnotherOne', init: () => [{}, []], 
 `
     const result = transformUseClientSsr(src, 'widgets.ts')
     expect(result).not.toBeNull()
-    expect(result!.output).toContain("import { __clientOnlyStub } from '@llui/dom'")
+    expect(result!.output).toContain("import { __clientOnlyStub } from '@llui/dom/internal'")
     expect(result!.output).toContain(`export const MapWidget = __clientOnlyStub("MapWidget")`)
     expect(result!.output).toContain(`export const AnotherOne = __clientOnlyStub("AnotherOne")`)
     // The leaflet import must NOT appear in the stub output — that's

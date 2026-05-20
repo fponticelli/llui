@@ -31,7 +31,9 @@ export type { BindingDescriptor } from './binding-descriptors.js'
 // pattern. User code never imports this directly — the vite-plugin's
 // connect-pattern matcher inserts the import + call sites
 // automatically alongside the existing event-handler tagger.
-export { __registerScopeVariants } from './binding-descriptors.js'
+// `__registerScopeVariants` itself moved to `@llui/dom/internal` so the
+// vite-plugin's post-bundle rename pass can't rewrite it inside a
+// module-external import specifier — see internal.ts header.
 // Library helper for `*.connect` implementations — tags returned
 // event handlers with the variants they dispatch, so the runtime
 // binding-descriptor registry surfaces them to the agent layer's
@@ -89,7 +91,7 @@ export { sample } from './primitives/sample.js'
 export { selector } from './primitives/selector.js'
 export { onMount } from './primitives/on-mount.js'
 export { track, LluiCompilerSkippedError, type TrackOptions } from './primitives/track.js'
-export { clientOnly, __clientOnlyStub, type ClientOnlyOptions } from './primitives/client-only.js'
+export { clientOnly, type ClientOnlyOptions } from './primitives/client-only.js'
 export { errorBoundary } from './primitives/error-boundary.js'
 
 // ── Element Helpers ───────────────────────────────────────────────
@@ -269,6 +271,13 @@ export { applyField, type FieldMsg } from './form.js'
 // ── Compiler Target ───────────────────────────────────────────────
 
 export { elSplit } from './el-split.js'
-export { __bindUncertain } from './binding.js'
-export { elTemplate, __cloneStaticTemplate } from './el-template.js'
-export { _runPhase2 as __runPhase2, _handleMsg as __handleMsg } from './update-loop.js'
+export { elTemplate } from './el-template.js'
+
+// Compiler-emitted runtime helpers (`__bindUncertain`,
+// `__cloneStaticTemplate`, `__runPhase2`, `__handleMsg`,
+// `__registerScopeVariants`, `__clientOnlyStub`) moved to
+// `@llui/dom/internal`. The compiler now emits
+// `import { … } from '@llui/dom/internal'` for those, so the
+// vite-plugin's post-bundle property-rename pass never rewrites a
+// name inside a module-external `@llui/dom` import specifier. See
+// internal.ts for the rationale and issue-#5-follow-up notes.

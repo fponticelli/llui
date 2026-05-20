@@ -2,16 +2,8 @@ import { describe, it, expect } from 'vitest'
 import { renderToString } from '../src/ssr'
 import { browserEnv } from '../src/dom-env'
 import { jsdomEnv } from '../src/ssr/jsdom'
-import {
-  component,
-  div,
-  span,
-  text,
-  clientOnly,
-  __clientOnlyStub,
-  mountApp,
-  hydrateApp,
-} from '../src/index'
+import { component, div, span, text, clientOnly, mountApp, hydrateApp } from '../src/index'
+import { __clientOnlyStub } from '../src/internal'
 
 type State = { label: string }
 

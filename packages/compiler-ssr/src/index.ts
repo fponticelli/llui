@@ -135,8 +135,12 @@ export function transformUseClientSsr(
     // variable statements — dropped from the stub output.
   }
 
-  // Build the generated module source.
-  const lines: string[] = ["import { __clientOnlyStub } from '@llui/dom'", '']
+  // Build the generated module source. `__clientOnlyStub` lives on
+  // `@llui/dom/internal` (not the root barrel) so the vite-plugin's
+  // post-bundle rename pass can't rewrite the identifier across a
+  // module-external import boundary. See @llui/compiler/emit-names.ts
+  // § COMPILER_DOM_INTERNAL_IMPORTS for the contract.
+  const lines: string[] = ["import { __clientOnlyStub } from '@llui/dom/internal'", '']
   for (const name of namedExports) {
     lines.push(`export const ${name} = __clientOnlyStub(${JSON.stringify(name)})`)
   }
