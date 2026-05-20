@@ -1,10 +1,13 @@
 # Option B — Hybrid: TEA preserved, signals as the binding mechanism
 
 > **Empirical update (2026-05-19).** Phase 1 + Phase 2 of this option
-> landed (commits `32175e8`, `5d68931`) behind a per-component
-> `__bindingModel: 'registry'` opt-in. Three findings invalidate the
-> doc's perf pitch below:
+> landed (commits `32175e8`, `5d68931`); **Phase 2 was reverted**
+> (commit `155248b`) after the perf pitch was falsified. Four
+> findings invalidate the doc's perf pitch below:
 >
+> 0. **There is no Select regression to fix.** Median-of-3 reveals
+>    Select at 3.4 ms — faster than Solid (4.2), vanillajs (4.5).
+>    The "+9–34 % Select outlier" framing came from single-run noise.
 > 1. **Flat and registry dispatch are tied within ±5 %** on a
 >    synthetic 16–1024-binding microbench
 >    (`packages/dom/test/binding-registry-perf.test.ts`, one binding

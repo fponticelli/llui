@@ -18,8 +18,18 @@ matching `option-*.md` and you're done.
 > updated for the post-v2 landing baseline; treat them as upper
 > bounds.
 
-> **Empirical update (2026-05-19): the "fixes Select" pitch for
-> Option B is falsified.** Two complementary measurements:
+> **Empirical update (2026-05-19): there is no Select regression to
+> fix.** Median-of-3 measurement (`pnpm bench --runs 3`) puts LLui's
+> Select at **3.4 ms** — faster than Solid (4.2), vanillajs (4.5),
+> Svelte (5.7), and the previous single-run baseline (3.8 ms). The
+> "+9–34 % Select outlier" framing across the v0.5 docs came from
+> comparing noisy single-run measurements; median-of-3 reveals it as
+> measurement artifact, not real regression. **Anywhere in this doc
+> set that says "fix Select" or treats Select as a v0.5 motivator
+> should be ignored.**
+>
+> Two complementary measurements falsified Option B's "fix Select"
+> pitch on the way to this conclusion:
 >
 > 1. Synthetic perf comparison (jsdom, 16–1024 bindings, one binding
 >    per prefix — Option B's best case): flat and registry dispatch
@@ -49,15 +59,19 @@ matching `option-*.md` and you're done.
 > wins only when bindings are SPREAD across many prefixes (a config
 > the bench doesn't exhibit).
 >
+> A separate experiment tested whether `el.className = value` would
+> reduce browser style-invalidation cost vs `setAttribute('class',
+value)`. Result: `className =` made Select **+39 %** slower (and
+> Update 10th +32 %, Swap +30 %) — `setAttribute` was the right
+> choice all along. Reverted; finding stands as anti-recipe.
+>
 > **Treat Option B's perf pitch as unsupported by data.** The bundle
 > pitch (5–7 kB gz target) is also unverified — Phase 2 in isolation
 > adds +417 gz; net savings depend on Phase 4 actually dropping the
-> flat path. The "fixes Select" recommendation across A/B and the
-> Select-blocker branch of the decision tree should be revisited
-> before any further commitment. See
-> `packages/dom/test/binding-registry-perf.test.ts` and
+> flat path. With Select itself proven non-problematic, the Select-
+> blocker branch of the decision tree below is moot. See
 > `packages/dom/test/select-perf-investigation.test.ts` for the
-> in-repo benches.
+> in-repo bench used in this investigation.
 
 ---
 
