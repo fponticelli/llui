@@ -20,6 +20,23 @@
         "brotli": -1878
       }
     },
+    "8": {
+      "label": "Tier 8: __LLUI_TRANSITIONS__ build flag",
+      "summary": "(no summary)",
+      "uncompressed": 33939,
+      "gzipped": 10729,
+      "brotli": 9481,
+      "deltaVsPrevious": {
+        "uncompressed": -926,
+        "gzipped": -224,
+        "brotli": -200
+      },
+      "deltaVsBaseline": {
+        "uncompressed": -9478,
+        "gzipped": -2750,
+        "brotli": -2388
+      }
+    },
     "9": {
       "label": "Tier 9 __bindUncertain — keep createElement out of prod",
       "summary": "Compiler emits __bindUncertain instead of bailing the whole element call when a prop value is an unresolvable identifier. Runtime typeof-checks at mount.",

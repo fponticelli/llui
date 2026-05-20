@@ -9,6 +9,7 @@ export default defineConfig({
   // the flag based on the consumer's `agent: …` option.
   define: {
     __LLUI_AGENT__: 'true',
+    __LLUI_TRANSITIONS__: 'true',
   },
   test: {
     include: ['test/**/*.test.ts'],

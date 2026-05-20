@@ -179,7 +179,14 @@ export function each<S, T, M = unknown>(opts: EachOptions<S, T, M>): Node[] {
       lastItemsRef = newItems
 
       const oldKeys = snapshotKeys()
-      const report = opts.onTransition ? { entering: [] as Node[], leaving: [] as Node[] } : null
+      // Transition support gated by `__LLUI_TRANSITIONS__` build flag.
+      // When false, the `report` allocation, the `onTransition` invocation,
+      // and (via type narrowing inside `reconcileEntries`) the per-entry
+      // leave/enter helpers all dead-code-eliminate.
+      const report =
+        typeof __LLUI_TRANSITIONS__ !== 'undefined' && __LLUI_TRANSITIONS__ && opts.onTransition
+          ? ({ entering: [] as Node[], leaving: [] as Node[] } as const)
+          : null
       reconcileEntries(
         entries,
         newItems,
@@ -193,8 +200,12 @@ export function each<S, T, M = unknown>(opts: EachOptions<S, T, M>): Node[] {
         leaving,
         report,
       )
-      if (opts.onTransition && report) {
-        opts.onTransition({ entering: report.entering, leaving: report.leaving, parent })
+      if (
+        typeof __LLUI_TRANSITIONS__ !== 'undefined' &&
+        __LLUI_TRANSITIONS__ &&
+        opts.onTransition
+      ) {
+        opts.onTransition({ entering: report!.entering, leaving: report!.leaving, parent })
       }
       emitDiff(oldKeys)
     },
@@ -352,8 +363,10 @@ export function each<S, T, M = unknown>(opts: EachOptions<S, T, M>): Node[] {
   activeClearCallbacks = null
   activeRemoveCallbacks = null
 
-  // Fire initial enter for mount-time items
-  if (opts.enter) {
+  // Fire initial enter for mount-time items. Build-flag-gated:
+  // `__LLUI_TRANSITIONS__` lets the DCE drop this loop when the app
+  // doesn't use animation callbacks.
+  if (typeof __LLUI_TRANSITIONS__ !== 'undefined' && __LLUI_TRANSITIONS__ && opts.enter) {
     for (const entry of entries) {
       if (entry.nodes.length > 0) opts.enter(entry.nodes)
     }
@@ -420,7 +433,15 @@ function removeEntry<T>(
     const idx = leaving.indexOf(entry)
     if (idx !== -1) leaving.splice(idx, 1)
   }
-  if (opts.leave && entry.nodes.length > 0) {
+  // Build-flag-gated leave animation. When `__LLUI_TRANSITIONS__` is
+  // false the whole block dead-code-eliminates and `removeEntry`
+  // collapses to its `removeNow()` call.
+  if (
+    typeof __LLUI_TRANSITIONS__ !== 'undefined' &&
+    __LLUI_TRANSITIONS__ &&
+    opts.leave &&
+    entry.nodes.length > 0
+  ) {
     const result = opts.leave(entry.nodes)
     if (result && typeof (result as Promise<void>).then === 'function') {
       leaving.push(entry)
@@ -435,7 +456,15 @@ function fireEnter<T>(
   entry: Entry<T>,
   opts: { enter?: (nodes: Node[]) => void | Promise<void> },
 ): void {
-  if (opts.enter && entry.nodes.length > 0) {
+  // Build-flag-gated enter animation. `fireEnter` collapses to a no-op
+  // function when `__LLUI_TRANSITIONS__` is false; terser then inlines
+  // and drops the callers' calls.
+  if (
+    typeof __LLUI_TRANSITIONS__ !== 'undefined' &&
+    __LLUI_TRANSITIONS__ &&
+    opts.enter &&
+    entry.nodes.length > 0
+  ) {
     void opts.enter(entry.nodes)
   }
 }
@@ -583,7 +612,12 @@ function reconcileEntries<S, T>(
 ): void {
   const oldLen = entries.length
   const newLen = newItems.length
-  const hasLeave = !!opts.leave
+  // Build-flag-gated: when `__LLUI_TRANSITIONS__` is false, `hasLeave`
+  // folds to `false`, the report branch folds away, and `removeEntry`
+  // collapses to synchronous removal. Per-item removal fast path
+  // (lines below this) becomes unreachable.
+  const hasLeave =
+    typeof __LLUI_TRANSITIONS__ !== 'undefined' && __LLUI_TRANSITIONS__ && !!opts.leave
 
   // Fast path 1: clear all — bulk DOM removal.
   // When opts.leave is set, each item needs its own leave animation, so
@@ -840,8 +874,10 @@ function reconcileEntries<S, T>(
     for (const entry of newlyAdded) collectNodes(report.entering, entry.nodes)
   }
 
-  // Fire enter for newly-added entries (after DOM insertion)
-  if (opts.enter) {
+  // Fire enter for newly-added entries (after DOM insertion). Gated
+  // by `__LLUI_TRANSITIONS__` build flag — bench-shape apps skip
+  // the whole branch.
+  if (typeof __LLUI_TRANSITIONS__ !== 'undefined' && __LLUI_TRANSITIONS__ && opts.enter) {
     for (const entry of newlyAdded) fireEnter(entry, opts)
   }
 }

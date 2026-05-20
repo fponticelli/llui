@@ -22,6 +22,17 @@ declare global {
    *   that becomes unreachable when this flag is false.
    */
   const __LLUI_AGENT__: boolean
+  /**
+   * True when any component in the host app uses `each()`'s `enter` /
+   * `leave` / `onTransition` options. Gates the per-entry enter/leave
+   * helpers in `each.ts` (`removeEntry`, `fireEnter`) and the per-cycle
+   * `report` / `leaving` queue. Apps without animations drop ~0.3 kB
+   * gz; apps that need them pass `transitions: true` to the vite plugin.
+   *
+   * @see packages/vite-plugin/src/index.ts — sets this via Vite `define`.
+   * @see packages/dom/src/primitives/each.ts — gated branches.
+   */
+  const __LLUI_TRANSITIONS__: boolean
 }
 
 // `globalThis` fallback for environments that don't process the
