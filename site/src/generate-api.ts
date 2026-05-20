@@ -559,8 +559,11 @@ const PACKAGES: { name: string; sourceFiles?: string[] }[] = [
     ],
   },
   { name: 'agent-bridge', sourceFiles: ['index.ts', 'tools.ts', 'bridge.ts'] },
-  { name: 'eslint-plugin-llui', sourceFiles: ['index.ts'] },
   { name: 'vite-plugin', sourceFiles: ['index.ts'] },
+  { name: 'compiler', sourceFiles: ['index.ts'] },
+  { name: 'compiler-introspection', sourceFiles: ['index.ts'] },
+  { name: 'compiler-devtools', sourceFiles: ['index.ts'] },
+  { name: 'compiler-ssr', sourceFiles: ['index.ts'] },
 ]
 
 // Components are special — use the component extractor

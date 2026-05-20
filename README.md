@@ -42,20 +42,23 @@ mountApp(document.getElementById('app')!, Counter)
 
 ## Packages
 
-| Package                                              | Description                                                                                         |
-| ---------------------------------------------------- | --------------------------------------------------------------------------------------------------- |
-| [`@llui/dom`](packages/dom)                          | Runtime — component, mount, scope tree, bindings, structural primitives, HTML/SVG/MathML helpers    |
-| [`@llui/vite-plugin`](packages/vite-plugin)          | Compiler — 3-pass TypeScript transform, template cloning, source maps                               |
-| [`@llui/effects`](packages/effects)                  | Effect system — http, cancel, debounce, sequence, race + `Async<T,E>`, `ApiError`                   |
-| [`@llui/router`](packages/router)                    | Routing — structured path matching, history/hash mode, link helper                                  |
-| [`@llui/transitions`](packages/transitions)          | Animation helpers for `branch`/`show`/`each` — `transition()`, `fade`, `slide`, `scale`, `collapse` |
-| [`@llui/components`](packages/components)            | 58 headless components + locale i18n + format utilities + Standard Schema forms + opt-in theme      |
-| [`@llui/test`](packages/test)                        | Test harness — testComponent, testView, propertyTest, replayTrace                                   |
-| [`@llui/vike`](packages/vike)                        | Vike SSR adapter — onRenderHtml, onRenderClient                                                     |
-| [`@llui/mcp`](packages/mcp)                          | MCP server — LLM debug tools via Model Context Protocol                                             |
-| [`@llui/eslint-plugin`](packages/eslint-plugin-llui) | ESLint plugin — 30 anti-pattern rules that catch common LLM mistakes                                |
-| [`@llui/agent`](packages/agent)                      | LAP server + browser client runtime for driving LLui apps from LLM clients                          |
-| [`llui-agent`](packages/agent-bridge)                | MCP CLI bridging Claude / other LLM clients to a running `@llui/agent` server                       |
+| Package                                                           | Description                                                                                         |
+| ----------------------------------------------------------------- | --------------------------------------------------------------------------------------------------- |
+| [`@llui/dom`](packages/dom)                                       | Runtime — component, mount, scope tree, bindings, structural primitives, HTML/SVG/MathML helpers    |
+| [`@llui/compiler`](packages/compiler)                             | Engine — 3-pass TypeScript transform + 41 compile-time lint rules (all error severity)              |
+| [`@llui/vite-plugin`](packages/vite-plugin)                       | Vite adapter — wires the compiler into Vite, surfaces diagnostics via `this.error()`                |
+| [`@llui/compiler-introspection`](packages/compiler-introspection) | Opt-in compiler module — agent schemas, msg annotations, schema hash emission                       |
+| [`@llui/compiler-devtools`](packages/compiler-devtools)           | Opt-in compiler module — `__componentMeta` emission for source navigation                           |
+| [`@llui/compiler-ssr`](packages/compiler-ssr)                     | Opt-in compiler module — `'use client'` directive handling and SSR emission                         |
+| [`@llui/effects`](packages/effects)                               | Effect system — http, cancel, debounce, sequence, race + `Async<T,E>`, `ApiError`                   |
+| [`@llui/router`](packages/router)                                 | Routing — structured path matching, history/hash mode, link helper                                  |
+| [`@llui/transitions`](packages/transitions)                       | Animation helpers for `branch`/`show`/`each` — `transition()`, `fade`, `slide`, `scale`, `collapse` |
+| [`@llui/components`](packages/components)                         | 58 headless components + locale i18n + format utilities + Standard Schema forms + opt-in theme      |
+| [`@llui/test`](packages/test)                                     | Test harness — testComponent, testView, propertyTest, replayTrace                                   |
+| [`@llui/vike`](packages/vike)                                     | Vike SSR adapter — onRenderHtml, onRenderClient                                                     |
+| [`@llui/mcp`](packages/mcp)                                       | MCP server — LLM debug tools via Model Context Protocol                                             |
+| [`@llui/agent`](packages/agent)                                   | LAP server + browser client runtime for driving LLui apps from LLM clients                          |
+| [`llui-agent`](packages/agent-bridge)                             | MCP CLI bridging Claude / other LLM clients to a running `@llui/agent` server                       |
 
 ## Quick Start
 

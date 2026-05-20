@@ -1558,7 +1558,7 @@ Once connected, the MCP server exposes these tools to any MCP client
 | `llui_restore_state`      | Restore a previously-captured snapshot                                                                                                                                   |
 | `llui_list_components`    | List all mounted components                                                                                                                                              |
 | `llui_select_component`   | Switch the active debug target                                                                                                                                           |
-| `llui_lint`               | Lint TypeScript source against `@llui/eslint-plugin`'s 21 rules — pass a `path` to a file. Returns violations + score. Lets an LLM self-correct without running a build. |
+| `llui_lint`               | Lint TypeScript source against `@llui/compiler`'s 41 idiomatic-LLui rules — pass a `path` to a file. Returns violations + score. Lets an LLM self-correct without running a build. |
 | `llui_inspect_element`    | Rich report: tag, attrs, classes, data-\*, text, computed box model, and binding indices for a selector.                                                                 |
 | `llui_get_rendered_html`  | Return outerHTML of a selector (defaults to mount root); accepts a max-length limit.                                                                                     |
 | `llui_dom_diff`           | Compare expected HTML against the currently rendered HTML and return a structured diff.                                                                                  |

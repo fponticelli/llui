@@ -13,7 +13,7 @@ app from three places:
   Context Protocol tools, so Claude Code or Claude Desktop can drive the
   debugger interactively.
 - **Idiomatic-code feedback** — `llui_lint` checks generated source
-  against ~20 rules without needing a build.
+  against the compiler's 41 idiomatic-LLui rules without needing a build.
 
 This page is for developers writing LLui code. If you're an end user who
 wants to drive an LLui app via Claude, see the [Agents
@@ -137,7 +137,7 @@ reference](/api/mcp).
 ## `llui_lint`: idiomatic-code checks without a build
 
 When you ask an LLM to write or edit LLui code, call `llui_lint` to
-check the result against ~20 rules:
+check the result against the compiler's 41 idiomatic-LLui rules:
 
 ```jsonc
 // LLM tool call
@@ -176,28 +176,22 @@ It checks, in order:
 Each check prints `✓` or `✗` with a one-line detail. Exit code is `0`
 when everything passes, `1` when any check fails.
 
-## Compile-time checks: `@llui/eslint-plugin`
+## Compile-time checks: `@llui/compiler`
 
-`@llui/eslint-plugin` ships ~20 anti-pattern rules that fire as ESLint
-errors. They cover the same idiomatic-code surface as `llui_lint`, plus
-agent-annotation hygiene (`@intent` coverage, `@should` on optional
-fields). Configure once in `eslint.config.ts`:
+The compiler itself enforces 41 idiomatic-LLui rules as **build errors**,
+not lint warnings. They cover the same idiomatic-code surface as
+`llui_lint`, plus agent-annotation hygiene (`@intent` coverage,
+`@should` on optional fields), state-mutation, async `update()`,
+`each()` closures, missing `memo()`, and more.
 
-```ts
-import lluiPlugin from '@llui/eslint-plugin'
+There is nothing to configure: the rules fire automatically through
+[`@llui/vite-plugin`](/api/vite-plugin), which surfaces them via
+`this.error()` so the build fails until they're fixed. LLM-generated
+code routinely ignores lint warnings, so the rules are deliberately
+non-bypassable.
 
-export default [
-  {
-    plugins: { '@llui': lluiPlugin },
-    rules: {
-      ...lluiPlugin.configs.recommended.rules,
-    },
-  },
-]
-```
-
-See the [`@llui/eslint-plugin` API reference](/api/eslint-plugin-llui)
-for the full rule list.
+See the [`@llui/compiler` API reference](/api/compiler) for the full
+rule list.
 
 ## Trace export and replay
 
@@ -224,11 +218,11 @@ test case.
 
 ## When to use which
 
-| Situation                                    | Tool                                |
-| -------------------------------------------- | ----------------------------------- |
-| Quick poke at a running app                  | `__lluiDebug.*` in DevTools         |
-| LLM-assisted debugging session               | `@llui/mcp` over MCP                |
-| Verify generated code is idiomatic           | `llui_lint` (MCP) or `eslint --fix` |
-| Reproduce a session bug as a regression test | `exportTrace` + `replayTrace`       |
-| Catch anti-patterns in CI                    | `@llui/eslint-plugin`               |
-| Integration with the bridge isn't working    | `npx llui-mcp doctor`               |
+| Situation                                    | Tool                              |
+| -------------------------------------------- | --------------------------------- |
+| Quick poke at a running app                  | `__lluiDebug.*` in DevTools       |
+| LLM-assisted debugging session               | `@llui/mcp` over MCP              |
+| Verify generated code is idiomatic           | `llui_lint` (MCP) or `vite build` |
+| Reproduce a session bug as a regression test | `exportTrace` + `replayTrace`     |
+| Catch anti-patterns in CI                    | `@llui/compiler` (build errors)   |
+| Integration with the bridge isn't working    | `npx llui-mcp doctor`             |

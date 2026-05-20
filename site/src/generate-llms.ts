@@ -33,17 +33,20 @@ const llmsTxt = `# LLui
 ## Packages
 
 - @llui/dom — Runtime: component, mount, scope tree, bindings, HTML/SVG/MathML element helpers
-- @llui/vite-plugin — Compiler: 3-pass TypeScript transform, bitmask injection
+- @llui/compiler — Engine: 3-pass TypeScript transform + 41 compile-time lint rules (all error severity)
+- @llui/vite-plugin — Vite adapter: wires the compiler into Vite, surfaces diagnostics via this.error()
+- @llui/compiler-introspection — Opt-in: agent schemas, msg annotations, schema hash emission
+- @llui/compiler-devtools — Opt-in: __componentMeta emission for source navigation
+- @llui/compiler-ssr — Opt-in: 'use client' directive handling and SSR emission
 - @llui/effects — Effect builders: http, cancel, debounce, websocket, retry, upload
 - @llui/router — Routing: structured path matching, guards, history/hash mode
 - @llui/transitions — Animation: transition(), fade, slide, scale, collapse, flip, spring
-- @llui/components — 55 headless components + locale i18n + format utilities (Intl wrappers) + opt-in theme
+- @llui/components — 58 headless components + locale i18n + format utilities (Intl wrappers) + opt-in theme
 - @llui/test — Test harness: testComponent, testView, propertyTest, replayTrace
 - @llui/vike — Vike SSR/SSG adapter
 - @llui/mcp — MCP server for LLM debug tools
 - @llui/agent — LLM control surface: LAP server + browser client (observe/send_message with drain semantics)
 - @llui/agent-bridge — MCP bridge CLI (llui-agent) translating Claude Desktop tool calls to LAP
-- @llui/eslint-plugin — 20 anti-pattern rules
 
 ## Documentation
 
