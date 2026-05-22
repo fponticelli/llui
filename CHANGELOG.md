@@ -11,6 +11,65 @@ All notable changes to LLui packages are documented here. LLui is a pre-1.0 proj
 
 Packages version in lockstep at release time: `@llui/dom`, `@llui/vite-plugin`, `@llui/test`, `@llui/router`, `@llui/transitions`, `@llui/components`, `@llui/vike` share a version line. `@llui/effects`, `@llui/mcp`, `@llui/eslint-plugin`, `@llui/agent`, and `llui-agent` have their own cadence.
 
+## 2026-05-21 — 0.4.0 / 0.5.0
+
+**Released:** `@llui/{dom,test,router,transitions,components,vike,agent}@0.4.0`; `llui-agent@0.4.0`; `@llui/{compiler,compiler-ssr,compiler-introspection,compiler-devtools,mcp,vite-plugin}@0.5.0`
+
+Resolution release for the dungeonlogs 2026-05-20 issue report. Four layers of fixes for the same underlying class of bug: an accessor (or disposer, onEffect handler, onMount callback) threw mid-commit, the framework silently swallowed the throw, the UI froze with text bindings still updating but `branch`/`show` swaps stopped committing, and the developer spent an hour bisecting through silent symptoms. After this release: errors are loud + named in dev with a hard panic on the next commit; the disposer-throw root cause that retained stale bindings is contained; two compile-time rules catch the highest-leverage traps at build time; element helpers carry per-tag prop autocomplete.
+
+### Breaking
+
+- **`@llui/compiler@0.5.0`** — new `llui/no-sample-in-event-handler` rule fires at **error** severity. Any existing code with `sample()` / `h.sample()` inside an `on*` handler (`onClick`, `onInput`, etc.) will fail to build. The runtime error has always thrown on this; the rule moves the diagnosis from "click button → console error" to "build fails with line + suggested fix." Affected codepaths are uncommon — most TEA users hit this once during onboarding and migrate away.
+
+### Migration
+
+- For each `sample()` / `h.sample()` call inside an event handler: lift it out of the handler. Capture at render time and close over the captured value:
+  ```ts
+  // before — now errors at build
+  button({ onClick: () => send({ type: 'pick', id: h.sample((s) => s.id) }) })
+  // after
+  const id = h.sample((s) => s.id)
+  button({ onClick: () => send({ type: 'pick', id }) })
+  ```
+  Or use the mount handle for the "I need current state right now" case:
+  ```ts
+  const handle = mountApp(container, App)
+  button({ onClick: () => send({ type: 'pick', id: handle.getState().id }) })
+  ```
+
+### `@llui/dom@0.4.0`
+
+- **Added** dev-mode panic on the next commit when a reconcile or binding accessor throws AND no `_onBindingError` hook is installed. The console error includes the source-mapped stack + active accessor label (e.g. `branch().on`, `each().key`); the next user interaction surfaces a hard panic with full context instead of the silent-degraded UI that previously masked the cause. Production behavior unchanged. Install `_onBindingError` to route errors elsewhere and disable the panic.
+- **Fixed** disposers in `disposeLifetime` / `disposeLifetimesBulk` are wrapped — a throw in one disposer no longer aborts the cleanup loop OR the binding-dead-marking pass. This is almost certainly the actual mechanism behind the dungeonlogs Issue 1 ("fact-row bindings stayed alive after navigate, threw during reconcile"). The remaining disposers and the dead-marking always run.
+- **Fixed** `dispatchEffect`'s `onEffect` invocation + `mount.ts`'s initial-effects dispatch + `flushMountQueue`'s `onMount` callbacks are all wrapped. One throwing handler can no longer derail the rest of the commit / init / mount sequence.
+- **Added** per-element prop types. `input({` now autocompletes `value`, `checked`, `type`, `placeholder`, etc.; event handlers infer the correct `Event` subtype. 25+ element-specific interfaces (a, button, input, form, label, select, option, textarea, img, video, audio, iframe, script, details, dialog, meter, progress, output, time, td, th, col, fieldset, blockquote, source, optgroup). Other tags fall through to `CommonHTMLProps`. Template-literal index sigs for `data-*` / `aria-*` / `style.<prop>` keep custom attrs accessible without unsafe casts.
+- **Added** public exports: `ElementPropsFor`, `CommonHTMLProps`, `Reactive`, `EventHandler`. Existing code is unchanged — the types are strict enough to surface typos in new code but permissive enough that no example, no test, no in-repo consumer required edits.
+- **Improved** reconcile/binding error reporting in dev now uses `console.error` (not `warn`), includes the full stack, and names the active accessor. Was previously a single-line warn that hid behind dev-console noise.
+
+### `@llui/compiler@0.5.0`
+
+- **Breaking** new `llui/no-sample-in-event-handler` rule at error severity. See top of release block.
+- **Added** `llui/no-repeated-item-current` rule at warning severity. Flags 2+ chained `item.current().X` reads in the same `each.render` accessor. The pattern hides the read from the static analyzer (FULL_MASK fallback) and can throw under reconcile races. Suggests destructure-once or project-to-row-type. Single calls pass through (sometimes necessary for guards).
+
+### `@llui/test@0.4.0`
+
+- **Added** `propertyTest(def, { mount: { assertDom } })` mount mode. Constructs a real DOM container, mounts the component, dispatches the random message sequence through `handle.send` + `handle.flush`, captures `console.error`, and runs the user's `assertDom(state, container)` callback after each commit. Catches reconcile races, disposer throws, and binding-accessor errors that the previous reducer-only `propertyTest` missed. Failures formatted with the failing sequence prefix.
+
+### `@llui/{components,router,transitions,vike,agent}@0.4.0`, `llui-agent@0.4.0`, `@llui/{compiler-introspection,compiler-devtools,compiler-ssr,vite-plugin,mcp}@0.5.0`
+
+- **Improved** cascade republish — runtime peer range bumped to `@llui/dom@^0.4.0` and transitive `@llui/compiler` / `@llui/agent` ranges updated via `workspace:*`. No other source changes.
+
+### Tests
+
+- `packages/dom/test/dev-reconcile-panic.test.ts` — asserts the new console.error + next-commit panic + hook-absorbs path.
+- `packages/dom/test/each-mutation-fuzz.test.ts` — outer `show` gates an inner `each` over a per-row array; 80 random mutations × 12 reproducible seeds (add, remove, swap, touch, replace-same-key, clear, show/hide) assert DOM ↔ state per commit. Defensive coverage for the issue-3 reconcile-race class.
+- `packages/compiler/test/dungeonlogs-rules.test.ts` — 7 tests covering both new compiler rules including the negative cases (destructured-once, single `.current()`, non-handler props starting with "on").
+
+### Docs
+
+- `packages/dom/README.md` "Common patterns" section: reading state in event handlers, iterating a normalized record with nested per-item fields, forcing a remount on identity change (`h.scope` keyed pattern), global keyboard shortcuts via `onEffect` + `signal`, error-boundary install via `_onBindingError`.
+- `site/content/cookbook.md` "Normalized entity store + route-keyed scope" — longer worked example of the dungeonlogs shape.
+
 ## 2026-05-20 — 0.3.0 / 0.4.0
 
 **Released:** `@llui/{dom,test,router,transitions,components,vike,agent}@0.3.0`; `llui-agent@0.3.0`; `@llui/{compiler,compiler-ssr,compiler-introspection,compiler-devtools,mcp,vite-plugin}@0.4.0`
