@@ -117,6 +117,183 @@ Element helpers (`div`, `button`, `span`, etc.) stay as imports — they're stat
 | `browserEnv()`                    | Wrap the browser globals as a `DomEnv` (default for `mountApp`)        |
 | `jsdomEnv()` / `linkedomEnv()`    | Construct per-call SSR envs (from `@llui/dom/ssr/jsdom` / `/linkedom`) |
 
+## Common patterns
+
+Three shapes that the Counter quick-start doesn't show but that every real app reaches for. Build the wrong shape and the symptom is "the UI froze, my `update()` doesn't seem to take effect" — actually an accessor threw during reconcile and the dev console has the real error. Build the right shape and you skip an hour of debugging.
+
+### Reading state in an event handler
+
+Event handlers run AFTER mount, with no active render context. `h.sample(...)` and the other view primitives throw if you call them from inside `onClick` / `onInput` / etc. The runtime error names the trap explicitly, but the right pattern is to capture the value AT RENDER TIME — `sample` is legal there, because the render IS the construction phase.
+
+```typescript
+// @doc-skip — before/after pairs; the first form intentionally throws.
+// ❌ throws: [LLui] sample() can only be called inside a component's view() function
+button({ onClick: () => send({ type: 'select', id: h.sample((s) => s.id) }) })
+
+// ✅ capture at render time; the captured value is the value at the moment
+//    this view ran. Subsequent state changes don't update `id` — but you're
+//    in an event handler, so "at click time" is what you want anyway.
+const id = h.sample((s) => s.id)
+button({ onClick: () => send({ type: 'select', id }) })
+
+// ✅ for the rare case where the handler genuinely needs *current* state
+//    that wasn't knowable at render time, use the mount handle:
+const handle = mountApp(container, App)
+button({
+  onClick: () => {
+    const current = handle.getState()
+    send({ type: 'select', id: current.id })
+  },
+})
+```
+
+### Iterating a normalized record + reading nested per-item fields
+
+A `Record<id, Entity>` store iterated via `each` is idiomatic TEA. The trap: writing `item.current().field.nested` repeatedly inside the render falls back to a wide bitmask (the compiler can't trace through the `.current()` call to know which state path you read) and fires on every update. Plus, the chained access throws on any commit where the row hasn't been reconciled yet but a parent binding re-fired.
+
+```typescript
+// @doc-skip — before/after pairs with illustrative types.
+interface Entity {
+  id: string
+  facts: Record<string, Fact>
+}
+interface State {
+  entities: Record<string, Entity>
+}
+
+// ❌ FULL_MASK + repeated .current() calls, hard to read, throws if
+//    item.current() is transiently undefined during a reconcile race
+h.each<Entity>({
+  items: (s) => Object.values(s.entities),
+  key: (e) => e.id,
+  render: ({ item }) => [
+    li([
+      h.text(() => item.current().facts.name?.value ?? ''),
+      h.text(() => item.current().facts.population?.value ?? ''),
+    ]),
+  ],
+})
+
+// ✅ destructure `item.current()` once at the top of the accessor, so
+//    one read covers the whole render and the bitmask stays narrow
+h.each<Entity>({
+  items: (s) => Object.values(s.entities),
+  key: (e) => e.id,
+  render: ({ item }) => [
+    li([
+      h.text(() => {
+        const e = item.current()
+        return e.facts.name?.value ?? ''
+      }),
+      h.text(() => {
+        const e = item.current()
+        return e.facts.population?.value ?? ''
+      }),
+    ]),
+  ],
+})
+
+// ✅✅ for entities with a stable shape, project to a row type in
+//     `items` so per-cell accessors are simple field reads on the row.
+//     The compiler can pin a precise mask on each cell.
+h.each<{ id: string; name: string; population: number | null }>({
+  items: (s) =>
+    Object.values(s.entities).map((e) => ({
+      id: e.id,
+      name: e.facts.name?.value ?? '',
+      population: e.facts.population?.value ?? null,
+    })),
+  key: (r) => r.id,
+  render: ({ item }) => [
+    li([
+      h.text(item.name), // shorthand: reactive, narrow mask
+      h.text(() => String(item.current().population ?? '—')),
+    ]),
+  ],
+})
+```
+
+### Forcing a remount on identity change
+
+`branch` reconciles by case key. `branch({ on: s => s.route.name, cases: { entity: ..., list: ... } })` stays mounted across navigations between different entities (`entity:A` → `entity:B`) because the case key (`'entity'`) doesn't change. Bindings inside the case that captured the OLD entity id at render-time keep firing against the old id.
+
+Wrap with `scope` keyed on the identity that should force a remount:
+
+```typescript
+// @doc-skip — before/after pairs; the spread is shown bare for
+//   illustration but only valid inside a view's `[...]` children list.
+// ❌ stale bindings across entity:A → entity:B
+...h.branch({
+  on: (s) => s.route.name,
+  cases: { entity: () => [viewEntity(h)], list: () => [viewList(h)] },
+})
+
+// ✅ scope's key includes the entity id, so navigating between entities
+//    triggers a full remount of the entity view — every binding inside is
+//    fresh and captures the current entity id
+...h.scope({
+  on: (s) => s.route.name === 'entity' ? `entity:${s.route.entityId}` : 'list',
+  render: (sub) => [
+    ...sub.branch({
+      on: (s) => s.route.name,
+      cases: { entity: () => [viewEntity(sub)], list: () => [viewList(sub)] },
+    }),
+  ],
+})
+```
+
+### Global keyboard shortcuts (and other document-level listeners)
+
+`document.addEventListener` belongs in an effect. The effect's `signal: AbortSignal` is wired to the component's lifetime — adding a listener with the signal as `{ signal }` automatically removes it when the component unmounts.
+
+```typescript
+interface Effect {
+  kind: 'bind-keyboard'
+}
+
+function onEffect({
+  effect,
+  send,
+  signal,
+}: {
+  effect: Effect
+  send: (m: Msg) => void
+  signal: AbortSignal
+}): void {
+  if (effect.kind === 'bind-keyboard') {
+    if (typeof document === 'undefined') return
+    document.addEventListener(
+      'keydown',
+      (event) => {
+        if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k') {
+          event.preventDefault()
+          send({ type: 'open-palette' })
+        }
+      },
+      { signal },
+    )
+  }
+}
+```
+
+Fire the effect at init: `init: () => [{ ... }, [{ kind: 'bind-keyboard' }]]`.
+
+### When an accessor throws
+
+LLui's structural reconcile + binding pipeline can't repair a thrown accessor — a partial DOM mutation is left in place. In **dev mode**, the runtime queues a panic that re-throws on the NEXT commit so you see a hard error with the original throw's stack and the active accessor's label. In **production**, the runtime logs the throw via `console.error` and continues so one bad accessor doesn't brick the whole app.
+
+If you want full control — surface errors via Sentry, render an error boundary, etc. — install a hook via the mount handle:
+
+```typescript
+const handle = mountApp(container, App)
+handle.setOnBindingError((info) => {
+  // info: { kind, key?, message, stack? }
+  Sentry.captureException(new Error(info.message), { extra: { stack: info.stack } })
+})
+```
+
+Installing the hook disables the dev panic — the hook takes responsibility for the error.
+
 ## Sub-path Exports
 
 ```typescript

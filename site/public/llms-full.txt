@@ -708,6 +708,84 @@ Key points:
 - **`show.when: () => item.banned()` is reactive** — same zero-arg form. Avoid `when: (s) => …` here; the row's data lives on the item, not the parent state.
 - **Key is `(r) => r.id` only.** Including mutable fields (`${r.id}:${r.lastEditAt}`) forces a remove+insert of the entire row on every change — focus, scroll position, and transitions all reset.
 
+### Normalized entity store + route-keyed scope
+
+A `Record<id, Entity>` store with a detail page reached via `route: { name: 'entity'; entityId: string }` is idiomatic TEA. There are two traps in this shape that aren't obvious from the quick-start:
+
+**1. Per-row reads with `item.current().field.nested[K]`** fall back to a wide bitmask. The compiler can't trace through the `.current()` call to know which state path you read, so the binding fires on every state change. Worse, the chained access throws on any commit where the row hasn't been reconciled yet but a parent binding re-fired. Destructure once at the top of each accessor, or project to a row type in `items`:
+
+```typescript
+interface Entity {
+  id: string
+  facts: Record<string, Fact>
+}
+interface State {
+  entities: Record<string, Entity>
+  route: Route
+}
+
+// ❌ FULL_MASK + repeated .current() — fragile under reconcile races
+h.each<Entity>({
+  items: (s) => Object.values(s.entities),
+  key: (e) => e.id,
+  render: ({ item }) => [
+    li([
+      h.text(() => item.current().facts.name?.value ?? ''),
+      h.text(() => item.current().facts.population?.value ?? ''),
+    ]),
+  ],
+})
+
+// ✅ destructure once per accessor
+render: ({ item }) => [
+  li([
+    h.text(() => {
+      const e = item.current()
+      return e.facts.name?.value ?? ''
+    }),
+  ]),
+]
+
+// ✅✅ project to a row type in `items` — bindings become simple field
+//     reads with precise per-field masks
+h.each<{ id: string; name: string; population: number | null }>({
+  items: (s) =>
+    Object.values(s.entities).map((e) => ({
+      id: e.id,
+      name: String(e.facts.name?.value ?? ''),
+      population: Number(e.facts.population?.value ?? null),
+    })),
+  key: (r) => r.id,
+  render: ({ item }) => [li([h.text(item.name)])],
+})
+```
+
+**2. `branch` doesn't reconcile when navigating between siblings of the same case key.** `branch({ on: s => s.route.name, cases: { entity, list } })` stays mounted across `entity:A → entity:B` — the case key (`'entity'`) doesn't change. Any binding inside the `entity` case that captured the OLD `entityId` at render-time via `h.sample` keeps firing against the old id. Wrap the branch with `scope` keyed on the identity that should force remount:
+
+```typescript
+// ❌ stale bindings persist when navigating entity:A → entity:B
+...h.branch({
+  on: (s) => s.route.name,
+  cases: { entity: () => [viewEntity(h)], list: () => [viewList(h)] },
+})
+
+// ✅ scope's key includes the entity id; entity:A → entity:B forces a
+//    full remount of the entity view, so every binding inside is fresh
+//    and captures the current id at render-time
+...h.scope({
+  on: (s) =>
+    s.route.name === 'entity' ? `entity:${s.route.entityId}` : 'list',
+  render: (sub) => [
+    ...sub.branch({
+      on: (s) => s.route.name,
+      cases: { entity: () => [viewEntity(sub)], list: () => [viewList(sub)] },
+    }),
+  ],
+})
+```
+
+The cost is one extra render per navigation between different entities — negligible for most apps, and the safety win is large.
+
 ### Anti-pattern: don't wrap a list in `sample`
 
 ```typescript

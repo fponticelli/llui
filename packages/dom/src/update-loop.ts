@@ -4,6 +4,7 @@ import type { RingBuffer, EachDiff } from './tracking/each-diff.js'
 import type { DisposerEvent } from './tracking/disposer-log.js'
 import type { CoverageTracker } from './tracking/coverage.js'
 import { type DomEnv, browserEnv } from './dom-env.js'
+import { currentAccessor } from './render-context.js'
 
 // Single lazily-constructed browser env shared by every client-side
 // component instance. Falls through to globalThis at call time — safe
@@ -217,6 +218,18 @@ export interface ComponentInstance<S = unknown, M = unknown, E = unknown> {
    */
   _onBindingError?: (info: { kind: string; key?: string; message: string; stack?: string }) => void
   /**
+   * @internal — DEV-only. Populated by `reportReconcileError` /
+   * `reportBindingError` when an accessor throws AND no `_onBindingError`
+   * hook is installed. The next `processMessages` call sees this and
+   * re-throws so the dev sees a hard panic with the original error,
+   * source-mapped stack, and active accessor label — instead of the
+   * silent-degrade behavior that turns "an accessor in viewFactRow
+   * threw" into "the whole UI froze and bindings stopped firing." See
+   * issue #5 follow-up (dungeonlogs report, 2026-05-21). Tree-shaken in
+   * production via `import.meta.env?.DEV` guards on every read/write.
+   */
+  _devPendingPanic?: { message: string; stack?: string; accessor: string | null }
+  /**
    * @internal — live registry of currently-mounted Msg variants
    * dispatchable from rendered UI. Lazily allocated when the first
    * compiler-tagged event handler binds. Read by the agent layer (via
@@ -407,6 +420,22 @@ function reportBindingError<S, M, E>(
       // The hook itself threw — nothing to do; we're in a recovery
       // path already. Fall through to the console fallback.
     }
+    return
+  }
+  // No hook installed. Dev → loud (full stack, accessor label, error
+  // level, queue a panic for the next commit so the dev sees a hard
+  // throw with full context). Prod → quiet (single-line warn so the
+  // host stays resilient to one bad binding).
+  if (import.meta.env?.DEV) {
+    queueDevPanic(inst, err, info.stack)
+    if (typeof console !== 'undefined' && typeof console.error === 'function') {
+      const acc = currentAccessor()
+      console.error(
+        `[llui] binding accessor threw (kind=${info.kind}${
+          info.key ? `, key=${info.key}` : ''
+        }${acc ? `, in ${acc}` : ''}): ${info.message}` + (info.stack ? `\n${info.stack}` : ''),
+      )
+    }
   } else if (typeof console !== 'undefined' && typeof console.warn === 'function') {
     console.warn(
       `[llui] binding accessor threw (kind=${info.kind}${info.key ? `, key=${info.key}` : ''}): ${info.message}`,
@@ -443,16 +472,73 @@ function reportReconcileError<S, M, E>(inst: ComponentInstance<S, M, E>, e: unkn
     } catch {
       // hook itself threw; fall through to console
     }
-  } else if (typeof console !== 'undefined' && typeof console.error === 'function') {
-    // Reconcile errors are programmer errors (almost always: sample-in-
-    // accessor or a thrown structural primitive). Surface as `error` not
-    // `warn` so they're not lost in noisy dev consoles.
-    console.error(`[llui] structural reconcile threw: ${info.message}`)
+    return
+  }
+  // No hook installed. Dev → queue a panic for the next commit so the
+  // dev gets a hard throw with full context instead of the silent-
+  // degrade behavior where text bindings keep updating but show/branch
+  // swaps stop committing (issue #5 follow-up). Prod → console.error
+  // and continue, since one bad accessor shouldn't brick the whole app.
+  if (import.meta.env?.DEV) {
+    queueDevPanic(inst, err, info.stack)
+  }
+  if (typeof console !== 'undefined' && typeof console.error === 'function') {
+    const acc = currentAccessor()
+    console.error(
+      `[llui] structural reconcile threw${acc ? ` in ${acc}` : ''}: ${info.message}` +
+        (import.meta.env?.DEV && info.stack ? `\n${info.stack}` : ''),
+    )
+  }
+}
+
+/**
+ * Stash a pending dev panic on the instance. The next `processMessages`
+ * call re-throws so the dev sees a real Error with stack + accessor
+ * label, not the silent-degraded UI that previously surfaced as
+ * "bindings stopped firing." Multiple errors in one commit collapse to
+ * the first — subsequent throws don't overwrite the panic info.
+ */
+function queueDevPanic<S, M, E>(
+  inst: ComponentInstance<S, M, E>,
+  err: Error,
+  stack: string | undefined,
+): void {
+  if (inst._devPendingPanic !== undefined) return
+  inst._devPendingPanic = {
+    message: `${err.name}: ${err.message}`,
+    stack,
+    accessor: currentAccessor(),
   }
 }
 
 function processMessages<S, M, E>(inst: ComponentInstance<S, M, E>): void {
   const queue = inst.queue
+
+  // DEV: if the previous commit's reconcile/binding accessor threw and
+  // no `_onBindingError` hook was installed, throw NOW instead of
+  // silently processing the queue against a half-applied view tree.
+  // Gated on `queue.length > 0` so the auto-scheduled microtask from
+  // the PREVIOUS commit's send() doesn't consume the panic before the
+  // user's next interaction reaches it (empty queue → nothing to
+  // process → no panic). The next real user action queues a message,
+  // the microtask runs, this branch fires, the dev sees the throw.
+  // Production builds DCE the entire branch (the field is never
+  // written when DEV is false).
+  if (import.meta.env?.DEV && inst._devPendingPanic !== undefined && queue.length > 0) {
+    const p = inst._devPendingPanic
+    inst._devPendingPanic = undefined
+    const err = new Error(
+      `[llui] view is in a degraded state — an earlier accessor threw and ` +
+        `subsequent commits would silently miss updates. The original error was:\n` +
+        `  ${p.message}` +
+        (p.accessor ? `\n  inside ${p.accessor}` : '') +
+        (p.stack ? `\n${p.stack}` : '') +
+        `\nThis panic is dev-only; production logs the same condition via console.error ` +
+        `and continues. Install a custom \`_onBindingError\` hook on the component ` +
+        `instance to take control of error handling.`,
+    )
+    throw err
+  }
 
   // Single-message fast path: dispatch directly to per-message-type handler
   // if available. Skips dirty computation, Phase 1/2 entirely.
