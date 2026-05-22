@@ -1,9 +1,17 @@
 import type { BindingKind } from './types.js'
+import type { ElementPropsFor } from './element-props.js'
 import { getRenderContext } from './render-context.js'
 import { createBinding, applyBinding } from './binding.js'
 import { FULL_MASK } from './update-loop.js'
 import { registerBindingVariants } from './binding-descriptors.js'
 
+/**
+ * Runtime-internal shape — accepts ANY string-keyed prop bag because
+ * `createElement` does its own per-key dispatch (binding kind,
+ * reactive vs. static, etc.). Per-element TYPED prop shapes live on
+ * the exported helpers (`a`, `input`, `button`, …) via
+ * `ElementPropsFor<K>` — see element-props.ts.
+ */
 type ElementProps = Record<string, unknown>
 type Child = Node | string | Node[]
 type Children = Child[]
@@ -152,17 +160,22 @@ function createElement<K extends keyof HTMLElementTagNameMap>(
   return el
 }
 
-// Element helper signature — accepts (props, children?), (children,), or no args
+// Element helper signature — accepts (props, children?), (children,), or no args.
+// Props are typed per-tag via ElementPropsFor<K> for autocomplete on
+// `class`, `id`, `style`, event handlers, plus tag-specific attributes
+// like `href` on <a> or `value`/`checked` on <input>. Type fall-through:
+// tags not enumerated in `PerTagAttributes` (element-props.ts) still
+// accept the common attribute set + event handlers.
 type ElFn<K extends keyof HTMLElementTagNameMap> = {
   (): HTMLElementTagNameMap[K]
-  (props: ElementProps, children?: Children): HTMLElementTagNameMap[K]
+  (props: ElementPropsFor<K>, children?: Children): HTMLElementTagNameMap[K]
   (children: Children): HTMLElementTagNameMap[K]
 }
 
 // Void-element helper signature — no children allowed
 type VoidElFn<K extends keyof HTMLElementTagNameMap> = {
   (): HTMLElementTagNameMap[K]
-  (props: ElementProps): HTMLElementTagNameMap[K]
+  (props: ElementPropsFor<K>): HTMLElementTagNameMap[K]
 }
 
 /* v8 ignore start — mechanical tag wrappers */

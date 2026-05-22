@@ -52,14 +52,21 @@ export function popMountQueue(prev: Array<() => void> | null): void {
 export function flushMountQueue(queue: Array<() => void>): void {
   // Wrapped — a throw in one onMount callback (e.g. a third-party
   // library's init that fails on an SSR boundary) MUST NOT prevent
-  // the sibling callbacks from running. Each entry already handles
-  // its own cancelled-flag check internally; this guard is the
-  // outer net against unexpected throws.
+  // the sibling callbacks from running. Dev surfaces the throw via
+  // console.error with the stack; prod is silent so the framework
+  // stays resilient (third-party init failures are out-of-band — a
+  // host that wants visibility installs `_onBindingError` on its
+  // component instances, or routes errors via the third-party lib's
+  // own error reporting).
   for (const fn of queue) {
     try {
       fn()
     } catch (e) {
-      if (typeof console !== 'undefined' && typeof console.error === 'function') {
+      if (
+        import.meta.env?.DEV &&
+        typeof console !== 'undefined' &&
+        typeof console.error === 'function'
+      ) {
         const err = e instanceof Error ? e : new Error(String(e))
         console.error(
           `[llui] onMount callback threw: ${err.name}: ${err.message}` +

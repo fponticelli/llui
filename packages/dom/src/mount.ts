@@ -524,7 +524,14 @@ function dispatchInitialEffects<S, M, E>(
     try {
       inst.def.onEffect({ effect, send: inst.send, signal: inst.signal })
     } catch (e) {
-      if (typeof console !== 'undefined' && typeof console.error === 'function') {
+      // Dev-only — same contract as `flushMountQueue` and the runtime
+      // `dispatchEffect` wrapper. Prod is silent so the framework
+      // stays resilient to one bad init effect.
+      if (
+        import.meta.env?.DEV &&
+        typeof console !== 'undefined' &&
+        typeof console.error === 'function'
+      ) {
         const err = e instanceof Error ? e : new Error(String(e))
         console.error(
           `[llui] onEffect threw during initial dispatch: ${err.name}: ${err.message}` +

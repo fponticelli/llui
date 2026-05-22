@@ -165,6 +165,8 @@ export {
   video,
 } from './elements.js'
 
+export type { ElementPropsFor, CommonHTMLProps, Reactive, EventHandler } from './element-props.js'
+
 // ── SVG Elements ─────────────────────────────────────────────────
 
 export {

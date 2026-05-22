@@ -53,6 +53,11 @@ function runDisposerSafely(disposer: () => void, scope: Lifetime): void {
       }
       return
     }
+    // Dev: queue panic + console.error with full context. Prod: silent
+    // — install `_onBindingError` (covered above) to get structured
+    // reporting in production. A disposer throw is a programmer error,
+    // not a recoverable runtime condition; the framework still
+    // completes the rest of the cleanup loop (caller code).
     if (import.meta.env?.DEV) {
       if (inst !== null && inst._devPendingPanic === undefined) {
         inst._devPendingPanic = {
@@ -67,8 +72,6 @@ function runDisposerSafely(disposer: () => void, scope: Lifetime): void {
             (stack ? `\n${stack}` : ''),
         )
       }
-    } else if (typeof console !== 'undefined' && typeof console.warn === 'function') {
-      console.warn(`[llui] disposer threw: ${err.name}: ${err.message}`)
     }
   }
 }

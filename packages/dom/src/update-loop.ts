@@ -1008,6 +1008,9 @@ function reportEffectError<S, M, E>(inst: ComponentInstance<S, M, E>, e: unknown
     }
     return
   }
+  // Dev: queue panic + console.error with full context. Prod: silent
+  // — install `_onBindingError` to receive structured reports. The
+  // framework still completes the rest of the effect dispatch loop.
   if (import.meta.env?.DEV) {
     queueDevPanic(inst, err, stack)
     if (typeof console !== 'undefined' && typeof console.error === 'function') {
@@ -1015,8 +1018,6 @@ function reportEffectError<S, M, E>(inst: ComponentInstance<S, M, E>, e: unknown
         `[llui] onEffect handler threw: ${err.name}: ${err.message}` + (stack ? `\n${stack}` : ''),
       )
     }
-  } else if (typeof console !== 'undefined' && typeof console.warn === 'function') {
-    console.warn(`[llui] onEffect handler threw: ${err.name}: ${err.message}`)
   }
 }
 
