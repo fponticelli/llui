@@ -308,8 +308,20 @@ export function isReactiveAccessor(node: ts.Node): boolean {
       }
       if (!ancestor) return false
       const callExpr = ancestor as ts.CallExpression
-      if (!ts.isIdentifier(callExpr.expression)) return false
-      return REACTIVE_API_NAMES.has(callExpr.expression.text)
+      // Bare identifier: `scope({on: …})`, `div({title: …})`, etc.
+      if (ts.isIdentifier(callExpr.expression)) {
+        return REACTIVE_API_NAMES.has(callExpr.expression.text)
+      }
+      // Method-call form: `h.scope({on: …})`, `h.show({when: …})`, etc.
+      // The docs and View bag promote this shape; without recognizing it
+      // here, paths read ONLY through a structural primitive's
+      // `on`/`when`/`items` accessor never enter `__prefixes`, so the
+      // runtime dirty mask can't see changes to those fields and the
+      // structural block silently fails to reconcile.
+      if (ts.isPropertyAccessExpression(callExpr.expression)) {
+        return REACTIVE_API_NAMES.has(callExpr.expression.name.text)
+      }
+      return false
     }
   }
 

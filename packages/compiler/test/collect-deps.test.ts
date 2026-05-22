@@ -151,4 +151,130 @@ describe('collectDeps', () => {
     `
     expect(paths(src)).toEqual(['count'])
   })
+
+  // Structural primitives — `scope({on})`, `show({when})`, `branch({on})`,
+  // `each({items})` — accept reactive accessors as object-literal property
+  // values. Both call shapes must be recognized:
+  //   - bare identifier:  `scope({on: s => s.x})`
+  //   - method on `h`:     `h.scope({on: s => s.x})`
+  // The `h.<name>` form mirrors how the docs and CLAUDE.md instruct authors
+  // to use the View bag. When the recognizer skips this form, paths read
+  // ONLY through a structural primitive's `on`/`when`/`items`/`render`
+  // accessor never enter `__prefixes`. The dirty mask then stays 0 on
+  // updates that only touch those fields, and no structural block reconciles
+  // — silent freeze with no error. Regression test for issue surfaced
+  // 2026-05 in the dungeonlogs app's route-keyed scope.
+
+  it('collects paths inside h.scope({on}) — method-call form', () => {
+    const src = `
+      import { component, div } from '@llui/dom'
+      export const C = component({
+        name: 'C',
+        init: () => [{ route: { kind: 'list' as const } }, []],
+        update: (s, m) => [s, []],
+        view: (h) => [
+          div([
+            ...h.scope({
+              on: (s) => s.route.kind,
+              render: () => [div([])],
+            }),
+          ]),
+        ],
+      })
+    `
+    expect(paths(src)).toContain('route.kind')
+  })
+
+  it('collects paths inside h.show({when}) — method-call form', () => {
+    const src = `
+      import { component, div } from '@llui/dom'
+      export const C = component({
+        name: 'C',
+        init: () => [{ paletteOpen: false }, []],
+        update: (s, m) => [s, []],
+        view: (h) => [
+          div([
+            ...h.show({
+              when: (s) => s.paletteOpen,
+              render: () => [div([])],
+            }),
+          ]),
+        ],
+      })
+    `
+    expect(paths(src)).toContain('paletteOpen')
+  })
+
+  it('collects paths inside h.branch({on}) — method-call form', () => {
+    const src = `
+      import { component, div, text } from '@llui/dom'
+      export const C = component({
+        name: 'C',
+        init: () => [{ phase: 'a' as const }, []],
+        update: (s, m) => [s, []],
+        view: (h) => [
+          div([
+            ...h.branch({
+              on: (s) => s.phase,
+              cases: { a: () => [text('a')], b: () => [text('b')] },
+            }),
+          ]),
+        ],
+      })
+    `
+    expect(paths(src)).toContain('phase')
+  })
+
+  it('collects paths inside h.each({items}) — method-call form', () => {
+    const src = `
+      import { component, div, li, text } from '@llui/dom'
+      export const C = component({
+        name: 'C',
+        init: () => [{ rows: [] as string[] }, []],
+        update: (s, m) => [s, []],
+        view: (h) => [
+          div([
+            ...h.each<string>({
+              items: (s) => s.rows,
+              key: (it) => it,
+              render: ({ item }) => [li([text(item)])],
+            }),
+          ]),
+        ],
+      })
+    `
+    expect(paths(src)).toContain('rows')
+  })
+
+  it('collects paths from both forms in the same file (parity check)', () => {
+    // Destructured `scope(...)` already worked; the test asserts the
+    // method-call form picks up the SAME path, not a different one.
+    const destructured = `
+      import { component, div, scope } from '@llui/dom'
+      export const C = component({
+        name: 'C',
+        init: () => [{ route: { kind: 'list' as const } }, []],
+        update: (s, m) => [s, []],
+        view: (_h) => [
+          div([
+            ...scope({ on: (s) => s.route.kind, render: () => [div([])] }),
+          ]),
+        ],
+      })
+    `
+    const method = `
+      import { component, div } from '@llui/dom'
+      export const C = component({
+        name: 'C',
+        init: () => [{ route: { kind: 'list' as const } }, []],
+        update: (s, m) => [s, []],
+        view: (h) => [
+          div([
+            ...h.scope({ on: (s) => s.route.kind, render: () => [div([])] }),
+          ]),
+        ],
+      })
+    `
+    expect(paths(method)).toEqual(paths(destructured))
+  })
 })
