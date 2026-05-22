@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { propertyTest } from '../src/property-test'
-import { component } from '@llui/dom'
+import { defineTestComponent } from '../src/defineTestComponent'
+import { component, each, li, ol, text } from '@llui/dom'
 
 describe('propertyTest', () => {
   it('passes when all invariants hold', () => {
@@ -48,6 +49,85 @@ describe('propertyTest', () => {
         maxSequenceLength: 5,
       }),
     ).toThrow(/invariant/)
+  })
+
+  describe('mount mode', () => {
+    interface Row {
+      id: string
+      label: string
+    }
+    type ListMsg = { type: 'add' } | { type: 'remove'; id: string } | { type: 'clear' }
+    interface ListState {
+      rows: Row[]
+      seq: number
+    }
+    const List = defineTestComponent<ListState, ListMsg, never>({
+      name: 'List',
+      init: () => [{ rows: [], seq: 0 }, []],
+      update: (state, msg) => {
+        switch (msg.type) {
+          case 'add': {
+            const seq = state.seq + 1
+            return [
+              { ...state, seq, rows: [...state.rows, { id: String(seq), label: `r${seq}` }] },
+              [],
+            ]
+          }
+          case 'remove':
+            return [{ ...state, rows: state.rows.filter((r) => r.id !== msg.id) }, []]
+          case 'clear':
+            return [{ ...state, rows: [] }, []]
+        }
+      },
+      view: () => [
+        ol(
+          {},
+          each<ListState, Row, ListMsg>({
+            items: (s) => s.rows,
+            key: (r) => r.id,
+            render: ({ item }) => [li([text(() => item.current().label)])],
+          }),
+        ),
+      ],
+    })
+
+    it('exercises mount + send + flush across a random sequence', () => {
+      propertyTest(List, {
+        invariants: [(state) => state.rows.length >= 0],
+        messageGenerators: {
+          add: () => ({ type: 'add' as const }),
+          remove: (s) =>
+            s.rows.length > 0
+              ? { type: 'remove' as const, id: s.rows[s.rows.length - 1]!.id }
+              : { type: 'add' as const },
+          clear: () => ({ type: 'clear' as const }),
+        },
+        runs: 10,
+        maxSequenceLength: 15,
+        mount: {
+          assertDom: (state, container) => {
+            const liCount = container.querySelectorAll('ol > li').length
+            return liCount === state.rows.length
+          },
+        },
+      })
+    })
+
+    it('fails loudly when assertDom returns false (DOM/state mismatch)', () => {
+      expect(() =>
+        propertyTest(List, {
+          invariants: [(s) => s.rows.length >= 0],
+          messageGenerators: {
+            add: () => ({ type: 'add' as const }),
+          },
+          runs: 1,
+          maxSequenceLength: 3,
+          mount: {
+            assertDom: () => false, // always fail
+          },
+        }),
+      ).toThrow(/assertDom returned false/)
+    })
   })
 
   it('reports the failing message sequence', () => {

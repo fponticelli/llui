@@ -1,13 +1,39 @@
 import type { ComponentDef } from '@llui/dom'
+import { mountApp } from '@llui/dom'
+
+export interface PropertyTestConfig<S, M, E> {
+  invariants: Array<(state: S, effects: E[]) => boolean>
+  messageGenerators: Record<string, ((state: S) => M) | (() => M)>
+  runs?: number
+  maxSequenceLength?: number
+  /**
+   * When set, propertyTest mounts the component into a real DOM
+   * container (requires jsdom/happy-dom in the test environment) and
+   * dispatches the random message sequence through `handle.send` +
+   * `handle.flush`. Catches reconcile races, disposer throws, and
+   * binding-accessor errors that pure reducer-level invariants miss
+   * — the dungeonlogs issue #3 class.
+   *
+   * The fixture asserts:
+   *   - every dispatched commit completes without throwing the
+   *     dev-mode panic (an earlier accessor threw),
+   *   - no `console.error` calls fire (binding accessor + reconcile
+   *     errors all surface there in dev mode),
+   *   - the user-supplied `assertDom(state, container)` returns true
+   *     after each commit.
+   *
+   * `assertDom` runs in a try/catch — a throw inside it is rethrown
+   * with the failing sequence appended, same as invariant failures.
+   */
+  mount?: {
+    container?: () => HTMLElement
+    assertDom?: (state: S, container: HTMLElement) => boolean | void
+  }
+}
 
 export function propertyTest<S, M, E>(
   def: ComponentDef<S, M, E>,
-  config: {
-    invariants: Array<(state: S, effects: E[]) => boolean>
-    messageGenerators: Record<string, ((state: S) => M) | (() => M)>
-    runs?: number
-    maxSequenceLength?: number
-  },
+  config: PropertyTestConfig<S, M, E>,
 ): void {
   const runs = config.runs ?? 1000
   const maxLen = config.maxSequenceLength ?? 50
@@ -27,6 +53,81 @@ export function propertyTest<S, M, E>(
 
     const seqLen = 1 + Math.floor(Math.random() * maxLen)
 
+    if (config.mount) {
+      // Mount mode — exercise the actual render/reconcile pipeline.
+      // Captures console.error so accessor throws bubble up as
+      // test failures instead of hiding in the test runner's noise.
+      const errs: string[] = []
+      const origError = console.error
+      console.error = (...args: unknown[]) => {
+        errs.push(args.join(' '))
+      }
+      const container = (config.mount.container ?? (() => document.createElement('div')))()
+      const handle = mountApp(container, def)
+      try {
+        for (let step = 0; step < seqLen; step++) {
+          const genName = genNames[Math.floor(Math.random() * genNames.length)]!
+          const gen = config.messageGenerators[genName]!
+          const msg = gen.length === 0 ? (gen as () => M)() : (gen as (s: S) => M)(state)
+          sequence.push({ name: genName, msg })
+
+          handle.send(msg)
+          try {
+            handle.flush()
+          } catch (e) {
+            const err = e instanceof Error ? e : new Error(String(e))
+            const seqStr = sequence.map((s) => s.name).join(' → ')
+            throw new Error(
+              `propertyTest(mount): commit threw after sequence: [${seqStr}]\n` +
+                `Last msg: ${JSON.stringify(msg)}\n` +
+                `Original error: ${err.message}` +
+                (err.stack ? `\n${err.stack}` : ''),
+              { cause: e },
+            )
+          }
+
+          const [newState, effects] = def.update(state, msg)
+          state = newState
+          checkInvariants(config.invariants, state, effects, sequence)
+
+          if (config.mount.assertDom) {
+            let ok: boolean | void
+            try {
+              ok = config.mount.assertDom(state, container)
+            } catch (e) {
+              const err = e instanceof Error ? e : new Error(String(e))
+              const seqStr = sequence.map((s) => s.name).join(' → ')
+              throw new Error(
+                `propertyTest(mount): assertDom threw after sequence: [${seqStr}]\n` +
+                  `${err.message}`,
+                { cause: e },
+              )
+            }
+            if (ok === false) {
+              const seqStr = sequence.map((s) => s.name).join(' → ')
+              throw new Error(
+                `propertyTest(mount): assertDom returned false after sequence: [${seqStr}]\n` +
+                  `State: ${JSON.stringify(state)}`,
+              )
+            }
+          }
+
+          if (errs.length > 0) {
+            const seqStr = sequence.map((s) => s.name).join(' → ')
+            throw new Error(
+              `propertyTest(mount): console.error during commit after sequence: [${seqStr}]\n` +
+                `Captured: ${errs.join('\n')}`,
+            )
+          }
+        }
+      } finally {
+        handle.dispose()
+        console.error = origError
+      }
+      continue
+    }
+
+    // Reducer-only mode (original behavior).
     for (let step = 0; step < seqLen; step++) {
       const genName = genNames[Math.floor(Math.random() * genNames.length)]!
       const gen = config.messageGenerators[genName]!
