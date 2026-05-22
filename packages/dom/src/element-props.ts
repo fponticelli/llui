@@ -23,7 +23,14 @@
  * interface, add it there — don't reach for an unsafe cast.
  */
 
-/** Any prop value can be a static T or a reactive accessor of T. */
+/**
+ * Any prop value can be a static T or a reactive accessor of T.
+ *
+ * The state parameter is typed `any` (not `unknown`) on purpose —
+ * see the file header for the variance rationale. Disabling the
+ * `no-explicit-any` rule here is load-bearing.
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 export type Reactive<T> = T | ((s: any) => T) | (() => T)
 
 /** Apply `Reactive<>` to every value type in an interface. */
