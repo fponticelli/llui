@@ -50,7 +50,24 @@ export function popMountQueue(prev: Array<() => void> | null): void {
  * flag.
  */
 export function flushMountQueue(queue: Array<() => void>): void {
-  for (const fn of queue) fn()
+  // Wrapped — a throw in one onMount callback (e.g. a third-party
+  // library's init that fails on an SSR boundary) MUST NOT prevent
+  // the sibling callbacks from running. Each entry already handles
+  // its own cancelled-flag check internally; this guard is the
+  // outer net against unexpected throws.
+  for (const fn of queue) {
+    try {
+      fn()
+    } catch (e) {
+      if (typeof console !== 'undefined' && typeof console.error === 'function') {
+        const err = e instanceof Error ? e : new Error(String(e))
+        console.error(
+          `[llui] onMount callback threw: ${err.name}: ${err.message}` +
+            (err.stack ? `\n${err.stack.split('\n').slice(0, 8).join('\n')}` : ''),
+        )
+      }
+    }
+  }
 }
 
 export function onMount(callback: (el: Element) => (() => void) | void): void {

@@ -980,9 +980,43 @@ function dispatchEffect<S, M, E>(inst: ComponentInstance<S, M, E>, effect: E): v
   if (import.meta.env?.DEV && inst._effectTimeline !== undefined && dispatchEffectDev(inst, effect))
     return
 
-  // User onEffect handler
+  // User onEffect handler. Wrapped so a throw doesn't derail the rest
+  // of the commit (sibling effects, subscribers, etc.). Dev: queue
+  // panic via the same path as reconcile/binding errors. Prod:
+  // console.warn + continue.
   if (inst.def.onEffect) {
-    inst.def.onEffect({ effect, send: inst.send, signal: inst.signal })
+    try {
+      inst.def.onEffect({ effect, send: inst.send, signal: inst.signal })
+    } catch (e) {
+      reportEffectError(inst, e)
+    }
+  }
+}
+
+function reportEffectError<S, M, E>(inst: ComponentInstance<S, M, E>, e: unknown): void {
+  const err = e instanceof Error ? e : new Error(String(e))
+  const stack = err.stack ? err.stack.split('\n').slice(0, 8).join('\n') : undefined
+  if (inst._onBindingError !== undefined) {
+    try {
+      inst._onBindingError({
+        kind: 'effect',
+        message: `${err.name}: ${err.message}`,
+        stack,
+      })
+    } catch {
+      // hook itself threw — already in recovery
+    }
+    return
+  }
+  if (import.meta.env?.DEV) {
+    queueDevPanic(inst, err, stack)
+    if (typeof console !== 'undefined' && typeof console.error === 'function') {
+      console.error(
+        `[llui] onEffect handler threw: ${err.name}: ${err.message}` + (stack ? `\n${stack}` : ''),
+      )
+    }
+  } else if (typeof console !== 'undefined' && typeof console.warn === 'function') {
+    console.warn(`[llui] onEffect handler threw: ${err.name}: ${err.message}`)
   }
 }
 

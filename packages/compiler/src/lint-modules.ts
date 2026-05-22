@@ -53,6 +53,8 @@ import { staticOnModule } from './modules/static-on.js'
 import { noListRenderInSampleModule } from './modules/no-list-render-in-sample.js'
 import { noSampleInAccessorModule } from './modules/no-sample-in-accessor.js'
 import { noSampleInReactivePositionModule } from './modules/no-sample-in-reactive-position.js'
+import { noSampleInEventHandlerModule } from './modules/no-sample-in-event-handler.js'
+import { noRepeatedItemCurrentModule } from './modules/no-repeated-item-current.js'
 import { agentEmitsDriftModule } from './modules/agent-emits-drift.js'
 import { agentMsgResolvableModule } from './modules/agent-msg-resolvable.js'
 
@@ -104,6 +106,8 @@ export function createLintModules(): CompilerModule[] {
     noListRenderInSampleModule(),
     noSampleInAccessorModule(),
     noSampleInReactivePositionModule(),
+    noSampleInEventHandlerModule(),
+    noRepeatedItemCurrentModule(),
     agentEmitsDriftModule(),
     agentMsgResolvableModule(),
   ]

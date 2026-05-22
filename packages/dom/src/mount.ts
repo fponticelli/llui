@@ -518,7 +518,20 @@ function dispatchInitialEffects<S, M, E>(
 ): void {
   if (inst.initialEffects.length === 0 || !inst.def.onEffect) return
   for (const effect of inst.initialEffects) {
-    inst.def.onEffect({ effect, send: inst.send, signal: inst.signal })
+    // Wrapped — same rationale as the dispatchEffect path in
+    // update-loop.ts. A throw inside one init effect shouldn't block
+    // the remaining init effects from firing or abort mount entirely.
+    try {
+      inst.def.onEffect({ effect, send: inst.send, signal: inst.signal })
+    } catch (e) {
+      if (typeof console !== 'undefined' && typeof console.error === 'function') {
+        const err = e instanceof Error ? e : new Error(String(e))
+        console.error(
+          `[llui] onEffect threw during initial dispatch: ${err.name}: ${err.message}` +
+            (err.stack ? `\n${err.stack.split('\n').slice(0, 8).join('\n')}` : ''),
+        )
+      }
+    }
   }
   inst.initialEffects = []
 }

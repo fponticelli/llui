@@ -1,5 +1,6 @@
 import type { Lifetime, Binding } from './types.js'
 import type { ComponentInstance } from './update-loop.js'
+import { currentAccessor } from './render-context.js'
 
 let nextId = 1
 
@@ -16,6 +17,60 @@ function findInstance(scope: Lifetime): ComponentInstance | null {
     s = s.parent
   }
   return null
+}
+
+/**
+ * Run a disposer with full error containment. A throw in one disposer
+ * MUST NOT abort the loop — the remaining disposers and the
+ * subsequent binding-dead-marking pass are load-bearing for memory
+ * safety and reconciliation correctness (the original Issue 1
+ * symptom: "stale fact-row bindings alive after navigate, which
+ * threw during reconcile" turned out to be downstream of a disposer
+ * throw that left bindings unflagged in the parent's flatBindings
+ * array).
+ *
+ * Dev: console.error with stack + accessor label, plus a panic
+ * queued on the owning instance so the next commit throws (matches
+ * the reconcile/binding-error contract). Prod: console.warn and
+ * continue — host stays resilient to one bad disposer.
+ */
+function runDisposerSafely(disposer: () => void, scope: Lifetime): void {
+  try {
+    disposer()
+  } catch (e) {
+    const err = e instanceof Error ? e : new Error(String(e))
+    const stack = err.stack ? err.stack.split('\n').slice(0, 8).join('\n') : undefined
+    const inst = findInstance(scope)
+    if (inst !== null && inst._onBindingError !== undefined) {
+      try {
+        inst._onBindingError({
+          kind: 'disposer',
+          message: `${err.name}: ${err.message}`,
+          stack,
+        })
+      } catch {
+        // hook itself threw — already in recovery; nothing else to do
+      }
+      return
+    }
+    if (import.meta.env?.DEV) {
+      if (inst !== null && inst._devPendingPanic === undefined) {
+        inst._devPendingPanic = {
+          message: `${err.name}: ${err.message}`,
+          stack,
+          accessor: currentAccessor(),
+        }
+      }
+      if (typeof console !== 'undefined' && typeof console.error === 'function') {
+        console.error(
+          `[llui] disposer threw during lifetime cleanup: ${err.name}: ${err.message}` +
+            (stack ? `\n${stack}` : ''),
+        )
+      }
+    } else if (typeof console !== 'undefined' && typeof console.warn === 'function') {
+      console.warn(`[llui] disposer threw: ${err.name}: ${err.message}`)
+    }
+  }
 }
 
 // Shared empty arrays — avoid allocating per scope when unused
@@ -125,7 +180,7 @@ export function disposeLifetime(scope: Lifetime, skipParentRemoval = false): voi
   }
 
   for (const disposer of scope.disposers) {
-    disposer()
+    runDisposerSafely(disposer, scope)
   }
 
   // Dev-only: emit disposer events into the owning instance's log.
@@ -194,7 +249,7 @@ export function disposeLifetimesBulk(scopes: Lifetime[]): void {
     }
     // Run disposers
     const disposers = scope.disposers
-    for (let d = 0; d < disposers.length; d++) disposers[d]!()
+    for (let d = 0; d < disposers.length; d++) runDisposerSafely(disposers[d]!, scope)
     // Dev-only: emit disposer events — same guard as disposeLifetime.
     // Dev-only — wrapped in `import.meta.env?.DEV` so the bundler dead-
     // codes the whole block (including `findInstance` and the parent-
