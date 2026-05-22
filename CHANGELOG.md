@@ -11,6 +11,20 @@ All notable changes to LLui packages are documented here. LLui is a pre-1.0 proj
 
 Packages version in lockstep at release time: `@llui/dom`, `@llui/vite-plugin`, `@llui/test`, `@llui/router`, `@llui/transitions`, `@llui/components`, `@llui/vike` share a version line. `@llui/effects`, `@llui/mcp`, `@llui/eslint-plugin`, `@llui/agent`, and `llui-agent` have their own cadence.
 
+## 2026-05-22 — 0.5.1
+
+**Released:** `@llui/{compiler,vite-plugin,compiler-devtools,compiler-introspection,compiler-ssr,mcp}@0.5.1`
+
+Fix for a silent path-collection bug in the compiler's reactive-accessor recognizer. Paths read only through `h.scope({on})` / `h.show({when})` / `h.branch({on})` / `h.each({items})` were dropped from `__prefixes`, so when an update touched only those fields the runtime dirty mask stayed `0` and no structural block reconciled. Symptom: scope subtrees silently stuck on the old key after a state-only navigation, while sibling `h.text` bindings still updated. Surfaced by dungeonlogs' route-keyed scope.
+
+### `@llui/compiler@0.5.1`
+
+- **Fixed** `isReactiveAccessor` now recognizes `h.<name>({...})` method calls for `scope` / `show` / `branch` / `each` / other structural primitives, symmetric to the existing `h.text` / `h.memo` handling. Paths read inside `on:` / `when:` / `items:` accessors of `h.<structural>` calls now enter `__prefixes`; the destructured form (`scope({on})`) always worked. Five regression tests in `collect-deps.test.ts` cover the four primitives + a parity assertion that both call shapes collect identical paths.
+
+### `@llui/{vite-plugin,compiler-devtools,compiler-introspection,compiler-ssr,mcp}@0.5.1`
+
+- **Improved** cascade republish — `workspace:*` dependency on `@llui/compiler` pinned to the new version. No other source changes.
+
 ## 2026-05-21 — 0.4.0 / 0.5.0
 
 **Released:** `@llui/{dom,test,router,transitions,components,vike,agent}@0.4.0`; `llui-agent@0.4.0`; `@llui/{compiler,compiler-ssr,compiler-introspection,compiler-devtools,mcp,vite-plugin}@0.5.0`
