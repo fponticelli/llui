@@ -18,7 +18,14 @@
 //   - `helper(s)` with an Identifier callee that can't be resolved to
 //     a local declaration (function parameter, import, destructured
 //     binding) — the callee may read any field of `s`.
-//   - `obj.helper(s)` / `lib.fn(s)` — PropertyAccessExpression callee.
+//
+// NOT flagged (intentional): `obj.helper(s)` / `lib.fn(s)` —
+// PropertyAccessExpression callees. This is the documented headless-
+// components idiom (`pr.valueText(s)` where `pr` comes from
+// `progress.connect()`), and refactoring it defeats the API surface.
+// The runtime sentinel keeps such bindings correct — the cost is a
+// per-update re-evaluation, which is a property of the composition
+// pattern rather than an author mistake worth blocking.
 //   - `new Wrapper(s)` — NewExpression with state as an argument.
 //   - `` tag`${s}` `` — TaggedTemplate with state in a span.
 //   - `{ ...s }` / `[...s]` — spread of state.
@@ -103,9 +110,17 @@ function findFirstLeakInAccessor(
               'inline the read against `s` directly, refactor the callee into a same-module `const`/`function` declaration, or declare the dependencies via `track({ deps: (s) => [...] })`.'
           }
         } else if (!ts.isIdentifier(parent.expression)) {
-          shape = `method/computed-callee call \`(${describe(parent.expression)})(s)\``
-          hint =
-            'extract the read into a same-module helper called via a bare identifier so the compiler can recurse into its body.'
+          // Method-call / computed callee with state arg —
+          // `obj.helper(s)`, `lib.fn(s)`. This is the documented
+          // headless-components idiom (`pr.valueText(s)` where `pr`
+          // comes from `progress.connect()`); refactoring it would
+          // defeat the API surface. The runtime sentinel keeps the
+          // binding correct — just at the cost of re-evaluating on
+          // every update. Treat as tracked from the lint's POV so
+          // legitimate composition doesn't error the build; the
+          // perf cost is a property of the composition pattern, not
+          // an author mistake worth blocking.
+          tracked = true
         }
       } else if (ts.isNewExpression(parent)) {
         shape = 'state passed as a constructor argument (`new X(s)`)'
