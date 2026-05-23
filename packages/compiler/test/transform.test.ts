@@ -578,6 +578,365 @@ describe('reactive prop value resolution — non-arrow Identifier/CallExpression
     const out = t(src)
     expect(out).toMatch(/"items":\s*\d/)
   })
+
+  // Reactive bindings whose accessor reads state through an opaque
+  // function-arg invocation must NOT emit a narrow precise mask. The
+  // walker can't see what fields the opaque callee reads, so any
+  // non-empty mask it returns is "clean but wrong" — the binding's
+  // (mask & dirty) gate silently skips updates to fields read only via
+  // the opaque call. Conservative fix: fall back to FULL_MASK whenever
+  // the accessor body invokes a function it can't statically resolve
+  // (function parameter, imported identifier, dynamic property access).
+  //
+  // Repro reduced from the report on @llui/vite-plugin 0.5.1: a generic
+  // helper `paramRow` takes a `getParamState: (s) => ParamState`
+  // function parameter and uses it inside `input({ value: (s) => ... getParamState(s) ... })`.
+  // The accessor body ALSO reads `s.zoom` directly, so the safety net
+  // at transform.ts:1758 (mask === 0 && readsState → FULL_MASK) does
+  // not fire — mask is the bit for `zoom` alone, missing every field
+  // the closure passed for `getParamState` actually reads (e.g.
+  // `paramOverridesById`). When the host's reducer narrowly changes
+  // `paramOverridesById`, dirty has only that bit; mask & dirty === 0
+  // and the input is never re-evaluated.
+  it('accessor with opaque function-arg call must fall back to FULL_MASK, not narrow precise mask', () => {
+    const src = `
+      import { component, input, text } from '@llui/dom'
+      type ParamState = { overrides: Record<string, number> }
+      type HostState = {
+        paramOverridesById: Record<string, Record<string, number>>
+        zoom: number
+      }
+      type Msg = { type: 'noop' }
+      function paramRow(
+        getParamState: (s: HostState) => ParamState,
+        paramName: string,
+        dflt: number,
+      ) {
+        return input({
+          type: 'range',
+          // Reads s.zoom directly AND reads state opaquely via getParamState(s).
+          // The opaque branch hides paramOverridesById from the walker.
+          value: (s: HostState) =>
+            String((getParamState(s).overrides[paramName] ?? dflt) * s.zoom),
+        })
+      }
+      export const C = component<HostState, Msg, never>({
+        name: 'C',
+        init: () => [{ paramOverridesById: {}, zoom: 1 }, []],
+        update: (s, _m) => [s, []],
+        view: () => [
+          text((s: HostState) => String(s.zoom)),
+          paramRow(
+            (s: HostState) => ({
+              overrides: s.paramOverridesById['entry1'] ?? {},
+            }),
+            'mod',
+            3,
+          ),
+        ],
+      })
+    `
+    const out = t(src)
+    // The closure passed to paramRow puts `paramOverridesById` into
+    // __prefixes, so the legend includes it. The bug is on the
+    // binding's mask, not on path discovery.
+    expect(out).toMatch(/"paramOverridesById":/)
+    // Bug: the input's value binding receives a precise mask (the
+    // `zoom` bit alone). Conservative correctness requires FULL_MASK
+    // (-1 in 32-bit two's complement, written as `4294967295 | 0`)
+    // whenever the body invokes an unresolvable callee.
+    expect(out).toMatch(
+      /\[4294967295\s*\|\s*0,\s*['"]prop['"],\s*['"]value['"],\s*\(s:\s*HostState\)\s*=>/,
+    )
+  })
+
+  // Companion cases sharing the same root cause: any time `s` flows
+  // into something the walker can't statically trace — imported
+  // callable, destructured binding, method-call callee, dynamic
+  // element access — the binding must conservatively bail to
+  // FULL_MASK. Without this the same "precise but wrong" narrow
+  // mask hides the opaquely-read fields and silently skips updates.
+
+  it('opaque imported callee (`ext(s)` with a sibling direct read) → FULL_MASK', () => {
+    const src = `
+      import { component, input, text } from '@llui/dom'
+      import { ext } from './ext'
+      type State = { zoom: number; hidden: { a: number } }
+      type Msg = { type: 'noop' }
+      export const C = component<State, Msg, never>({
+        name: 'C',
+        init: () => [{ zoom: 1, hidden: { a: 0 } }, []],
+        update: (s, _m) => [s, []],
+        view: () => [
+          text((s: State) => String(s.hidden.a)),
+          input({ value: (s: State) => String(ext(s).x * s.zoom) }),
+        ],
+      })
+    `
+    const out = t(src)
+    expect(out).toMatch(/\[4294967295\s*\|\s*0,\s*['"]prop['"],\s*['"]value['"]/)
+  })
+
+  it('opaque method-call callee (`obj.helper(s)` with a sibling direct read) → FULL_MASK', () => {
+    const src = `
+      import { component, input, text } from '@llui/dom'
+      const obj = { helper: (_s: { hidden: { a: number } }) => ({ x: 0 }) }
+      type State = { zoom: number; hidden: { a: number } }
+      type Msg = { type: 'noop' }
+      export const C = component<State, Msg, never>({
+        name: 'C',
+        init: () => [{ zoom: 1, hidden: { a: 0 } }, []],
+        update: (s, _m) => [s, []],
+        view: () => [
+          text((s: State) => String(s.hidden.a)),
+          input({ value: (s: State) => String(obj.helper(s).x * s.zoom) }),
+        ],
+      })
+    `
+    const out = t(src)
+    expect(out).toMatch(/\[4294967295\s*\|\s*0,\s*['"]prop['"],\s*['"]value['"]/)
+  })
+
+  it('dynamic element access on state (`s[key]` with a sibling direct read) → FULL_MASK', () => {
+    const src = `
+      import { component, input, text } from '@llui/dom'
+      const key: 'hidden' = 'hidden'
+      type State = { zoom: number; hidden: { a: number } }
+      type Msg = { type: 'noop' }
+      export const C = component<State, Msg, never>({
+        name: 'C',
+        init: () => [{ zoom: 1, hidden: { a: 0 } }, []],
+        update: (s, _m) => [s, []],
+        view: () => [
+          text((s: State) => String(s.hidden.a)),
+          input({ value: (s: State) => String(s[key].a * s.zoom) }),
+        ],
+      })
+    `
+    const out = t(src)
+    expect(out).toMatch(/\[4294967295\s*\|\s*0,\s*['"]prop['"],\s*['"]value['"]/)
+  })
+
+  it('resolvable helper(s) still gets a precise mask (no regression on the local-helper path)', () => {
+    // Make sure the new opaque-callee bail did NOT also fire for
+    // genuinely resolvable same-module helpers — the existing
+    // delegation recursion must continue to produce a narrow mask
+    // covering exactly the helper's reads.
+    const src = `
+      import { component, input, text } from '@llui/dom'
+      type State = { zoom: number; hidden: { a: number } }
+      type Msg = { type: 'noop' }
+      const slice = (s: State) => s.hidden.a
+      export const C = component<State, Msg, never>({
+        name: 'C',
+        init: () => [{ zoom: 1, hidden: { a: 0 } }, []],
+        update: (s, _m) => [s, []],
+        view: () => [
+          text((s: State) => String(s.hidden.a)),
+          input({ value: (s: State) => String(slice(s) * s.zoom) }),
+        ],
+      })
+    `
+    const out = t(src)
+    // Legend assigns bits: hidden=1, zoom=2. The binding reads both,
+    // so the precise mask is 3 — NOT FULL_MASK.
+    expect(out).toMatch(/\[3,\s*['"]prop['"],\s*['"]value['"]/)
+  })
+
+  // Additional leak shapes — same root cause as the function-arg case
+  // (the state identifier flows into something the walker can't trace),
+  // each surfaced by a deeper sweep. All four below produced a narrow
+  // precise mask before the fix and now correctly bail to FULL_MASK.
+
+  it('NewExpression with state arg (`new Wrapper(s).value`) → FULL_MASK', () => {
+    const src = `
+      import { component, input, text } from '@llui/dom'
+      class Wrapper { constructor(_s: { hidden: { a: number } }) {} value = 0 }
+      type State = { zoom: number; hidden: { a: number } }
+      type Msg = { type: 'noop' }
+      export const C = component<State, Msg, never>({
+        name: 'C',
+        init: () => [{ zoom: 1, hidden: { a: 0 } }, []],
+        update: (s, _m) => [s, []],
+        view: () => [
+          text((s: State) => String(s.hidden.a)),
+          input({ value: (s: State) => String(new Wrapper(s).value * s.zoom) }),
+        ],
+      })
+    `
+    expect(t(src)).toMatch(/\[4294967295\s*\|\s*0,\s*['"]prop['"],\s*['"]value['"]/)
+  })
+
+  it('TaggedTemplateExpression with state in a template span (`` tag`${s}` ``) → FULL_MASK', () => {
+    const src = `
+      import { component, input, text } from '@llui/dom'
+      function tag(_strs: TemplateStringsArray, ..._vals: unknown[]) { return '' }
+      type State = { zoom: number; hidden: { a: number } }
+      type Msg = { type: 'noop' }
+      export const C = component<State, Msg, never>({
+        name: 'C',
+        init: () => [{ zoom: 1, hidden: { a: 0 } }, []],
+        update: (s, _m) => [s, []],
+        view: () => [
+          text((s: State) => String(s.hidden.a)),
+          input({ value: (s: State) => tag\`x=\${s}-\${s.zoom}\` }),
+        ],
+      })
+    `
+    expect(t(src)).toMatch(/\[4294967295\s*\|\s*0,\s*['"]prop['"],\s*['"]value['"]/)
+  })
+
+  it('object spread of state (`{ ...s }`) → FULL_MASK', () => {
+    const src = `
+      import { component, input, text } from '@llui/dom'
+      function helper(_o: { zoom: number; hidden: { a: number } }) { return { x: 0 } }
+      type State = { zoom: number; hidden: { a: number } }
+      type Msg = { type: 'noop' }
+      export const C = component<State, Msg, never>({
+        name: 'C',
+        init: () => [{ zoom: 1, hidden: { a: 0 } }, []],
+        update: (s, _m) => [s, []],
+        view: () => [
+          text((s: State) => String(s.hidden.a)),
+          input({ value: (s: State) => String(helper({ ...s }).x * s.zoom) }),
+        ],
+      })
+    `
+    expect(t(src)).toMatch(/\[4294967295\s*\|\s*0,\s*['"]prop['"],\s*['"]value['"]/)
+  })
+
+  it('const alias of state (`const x = s; ext(x).y`) → FULL_MASK', () => {
+    // `ext(x)` doesn't trip the existing delegation check (arg0 isn't
+    // the literal `s`), but `const x = s` itself leaks state into a
+    // VariableDeclaration the walker can't follow.
+    const src = `
+      import { component, input, text } from '@llui/dom'
+      import { ext } from './ext'
+      type State = { zoom: number; hidden: { a: number } }
+      type Msg = { type: 'noop' }
+      export const C = component<State, Msg, never>({
+        name: 'C',
+        init: () => [{ zoom: 1, hidden: { a: 0 } }, []],
+        update: (s, _m) => [s, []],
+        view: () => [
+          text((s: State) => String(s.hidden.a)),
+          input({
+            value: (s: State) => {
+              const x = s
+              return String(ext(x).y * s.zoom)
+            },
+          }),
+        ],
+      })
+    `
+    expect(t(src)).toMatch(/\[4294967295\s*\|\s*0,\s*['"]prop['"],\s*['"]value['"]/)
+  })
+
+  it('state in a conditional branch (`(cond ? s : s).x`) → FULL_MASK', () => {
+    const src = `
+      import { component, input, text } from '@llui/dom'
+      type State = { zoom: number; hidden: { a: number }; flag: boolean }
+      type Msg = { type: 'noop' }
+      export const C = component<State, Msg, never>({
+        name: 'C',
+        init: () => [{ zoom: 1, hidden: { a: 0 }, flag: false }, []],
+        update: (s, _m) => [s, []],
+        view: () => [
+          text((s: State) => String(s.hidden.a)),
+          input({ value: (s: State) => String(((s.flag ? s : s) as State).hidden.a * s.zoom) }),
+        ],
+      })
+    `
+    expect(t(src)).toMatch(/\[4294967295\s*\|\s*0,\s*['"]prop['"],\s*['"]value['"]/)
+  })
+
+  it('plain (untagged) template literal stays precise — no leak, no over-fire', () => {
+    // `${s.zoom}` is just a PAE in a template span — no opaque flow.
+    // Mask must remain the precise zoom bit, not FULL_MASK.
+    const src = `
+      import { component, input } from '@llui/dom'
+      type State = { zoom: number }
+      type Msg = { type: 'noop' }
+      export const C = component<State, Msg, never>({
+        name: 'C',
+        init: () => [{ zoom: 1 }, []],
+        update: (s, _m) => [s, []],
+        view: () => [input({ value: (s: State) => \`x=\${s.zoom}\` })],
+      })
+    `
+    expect(t(src)).toMatch(/\[1,\s*['"]prop['"],\s*['"]value['"]/)
+  })
+
+  // The deeper layer of the opaque-flow bug: when a field is read
+  // ONLY through an opaque expression (no other accessor in the file
+  // surfaces it through a traceable PAE/element-access), the path
+  // never enters `fieldBits`, so `__prefixes` doesn't carry an entry
+  // for it. The runtime's `computeDirtyFromPrefixes` then computes
+  // `dirty = 0` for any change to that field — and even a FULL_MASK
+  // binding produces `-1 & 0 = 0` and is silently skipped.
+  //
+  // Fix: when ANY accessor in the file has opaque state flow, append
+  // a whole-state sentinel `(s) => s` to `__prefixes`. That arrow
+  // returns a fresh reference on every update (immutable reducers
+  // always produce a new state object), so the sentinel's prefix bit
+  // is dirty on every cycle — driving the FULL_MASK bindings to
+  // re-evaluate even when the changed field has no other prefix
+  // entry. Precise narrow bindings don't include the sentinel bit
+  // (their mask is built from concrete fieldBits paths), so they're
+  // unaffected.
+  it('opaque flow in a file appends a whole-state sentinel to __prefixes', () => {
+    const src = `
+      import { component, input } from '@llui/dom'
+      import { ext } from './ext'
+      type State = { zoom: number; hidden: { a: number } }
+      type Msg = { type: 'noop' }
+      export const C = component<State, Msg, never>({
+        name: 'C',
+        init: () => [{ zoom: 1, hidden: { a: 0 } }, []],
+        update: (s, _m) => [s, []],
+        view: () => [
+          // \`hidden\` is read only through ext(s); no other accessor in
+          // the file references it, so without a sentinel the runtime
+          // can't dirty it on change.
+          input({ value: (s: State) => String(ext(s).x * s.zoom) }),
+        ],
+      })
+    `
+    const out = t(src)
+    // __prefixes carries (s) => s as a sentinel (whole-state identity
+    // check). The exact emission is `s => s` after compilation; the
+    // RHS of the arrow must be a bare reference to the param.
+    // The sentinel arrow body is BARE `s` (no property access) — distinct
+    // from `s => s.zoom` and friends. Match `s => s` followed by `,` or `]`.
+    expect(out).toMatch(/s\s*=>\s*s\s*[,\]]/)
+    // The opaque binding must include enough bits to intersect the
+    // sentinel regardless of which word it lands in — both `mask` and
+    // `maskHi` must be FULL_MASK. Tuple shape:
+    //   [mask, kind, key, accessor, maskHi]
+    // maskHi is the 5th slot (omitted when 0).
+    expect(out).toMatch(
+      /\[4294967295\s*\|\s*0,\s*['"]prop['"],\s*['"]value['"],[\s\S]+?,\s*4294967295\s*\|\s*0\]/,
+    )
+  })
+
+  it('no opaque flow → no sentinel (avoids whole-state recompare overhead)', () => {
+    // Plain precise accessor — the only prefix should be `s => s.count`.
+    // We must NOT emit `(s) => s` just because the file compiled.
+    const src = `
+      import { component, text } from '@llui/dom'
+      type State = { count: number }
+      type Msg = { type: 'noop' }
+      export const C = component<State, Msg, never>({
+        name: 'C',
+        init: () => [{ count: 0 }, []],
+        update: (s, _m) => [s, []],
+        view: () => [text((s: State) => String(s.count))],
+      })
+    `
+    const out = t(src)
+    // Exactly one prefix — `s => s.count`. No bare `s => s` sentinel.
+    expect(out).toMatch(/__prefixes:\s*\[s\s*=>\s*s\.count\]/)
+  })
 })
 
 describe('Pass 2 — mask injection + __prefixes', () => {

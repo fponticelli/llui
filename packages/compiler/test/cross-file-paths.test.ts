@@ -70,7 +70,7 @@ describe('crossFileAccessorPaths — Phase 3 cross-file resolution', () => {
         export const focal = (): Node[] => [text((s) => s.label)]
       `,
     })
-    const paths = crossFileAccessorPaths(program, sf('/main.ts'))
+    const paths = crossFileAccessorPaths(program, sf('/main.ts')).paths
     expect([...paths]).toContain('label')
   })
 
@@ -90,7 +90,7 @@ describe('crossFileAccessorPaths — Phase 3 cross-file resolution', () => {
         }
       `,
     })
-    const paths = crossFileAccessorPaths(program, sf('/main.ts'))
+    const paths = crossFileAccessorPaths(program, sf('/main.ts')).paths
     // The focal's accessor `(st) => st.user` is the lift; the helper's
     // body reads `get(s).name`/`.active` — which the prototype walker
     // sees as the helper's local reads. We assert the lift path is in
@@ -123,7 +123,7 @@ describe('crossFileAccessorPaths — Phase 3 cross-file resolution', () => {
         }
       `,
     })
-    const paths = crossFileAccessorPaths(program, sf('/main.ts'))
+    const paths = crossFileAccessorPaths(program, sf('/main.ts')).paths
     expect([...paths]).toContain('count')
     for (const phantom of ['send', 'effect', 'signal', 'path', 'message']) {
       expect([...paths]).not.toContain(phantom)
@@ -152,8 +152,89 @@ describe('crossFileAccessorPaths — Phase 3 cross-file resolution', () => {
         export const view = (): Node[] => show({ when: (s) => isRouteA(s) })
       `,
     })
-    const paths = crossFileAccessorPaths(program, sf('/main.ts'))
+    const paths = crossFileAccessorPaths(program, sf('/main.ts')).paths
     expect([...paths]).toContain('route.kind')
+  })
+
+  // Cross-file opaque-flow signal. When a host file imports a
+  // view-helper whose own body flows state opaquely (function-arg
+  // invocation, dynamic key, spread, etc.), the host's `__prefixes`
+  // needs the whole-state sentinel `(s) => s` — otherwise a field the
+  // imported helper reads only through the opaque expression has no
+  // prefix entry and the host's FULL_MASK binding silently misses
+  // changes to it.
+  //
+  // `crossFileAccessorPaths` returns paths; the opaque flag travels
+  // alongside. The file-local pipeline already covers same-file
+  // opacity (collect-deps.ts:detectOpaqueStateFlow); this test asserts
+  // the cross-file pipeline propagates the same signal.
+
+  // Opaque flow inside the LIFT arrow at a cross-file helper call.
+  // The walker already enters the lift arrow's body — the classifier
+  // running alongside the path extraction must flag a leak there too.
+  it('reports opaque=true when the lift arrow at a cross-file helper call has opaque flow', () => {
+    const { program, sf } = makeProgram({
+      '/helper.ts': `
+        export function brandedRow<S>(get: (s: S) => { name: string; active: boolean }): Node[] {
+          const a: (s: S) => string = (s) => get(s).name
+          return [a as unknown as Node]
+        }
+      `,
+      '/main.ts': `
+        import { brandedRow } from './helper.js'
+        type State = { user: { name: string; active: boolean } }
+        declare function ext<S>(s: S): { name: string; active: boolean }
+        export const focal = (): Node[] =>
+          // The lift arrow flows \`st\` opaquely through \`ext\` — an
+          // unresolvable callee from the walker's POV.
+          brandedRow<State>((st) => ext(st))
+      `,
+    })
+    const result = crossFileAccessorPaths(program, sf('/main.ts'))
+    expect(result.opaque).toBe(true)
+  })
+
+  // Opaque flow inside a helper body the walker descends into via the
+  // state-passes-through pattern (`helper(s)` with identifier arg).
+  it('reports opaque=true when a state-passes-through helper body has opaque flow', () => {
+    const { program, sf } = makeProgram({
+      '/helpers.ts': `
+        type State = { route: { kind: string }; meta: string }
+        declare function ext(s: State): string
+        export function describeRoute(s: State): string {
+          // Body flows \`s\` into an unresolvable callee.
+          return ext(s)
+        }
+      `,
+      '/main.ts': `
+        import { describeRoute } from './helpers.js'
+        type State = { route: { kind: string }; meta: string }
+        function show(_o: { when: (s: State) => boolean }): Node[] { return [] }
+        export const view = (): Node[] =>
+          show({ when: (s) => describeRoute(s).length > 0 })
+      `,
+    })
+    const result = crossFileAccessorPaths(program, sf('/main.ts'))
+    expect(result.opaque).toBe(true)
+  })
+
+  it('reports opaque=false for a fully-traceable cross-file accessor chain', () => {
+    const { program, sf } = makeProgram({
+      '/helpers.ts': `
+        type State = { route: { kind: string } }
+        export function isRouteA(s: State): boolean {
+          return s.route.kind === 'a'
+        }
+      `,
+      '/main.ts': `
+        import { isRouteA } from './helpers.js'
+        type State = { route: { kind: string } }
+        function show(_o: { when: (s: State) => boolean }): Node[] { return [] }
+        export const view = (): Node[] => show({ when: (s) => isRouteA(s) })
+      `,
+    })
+    const result = crossFileAccessorPaths(program, sf('/main.ts'))
+    expect(result.opaque).toBe(false)
   })
 
   it('does not descend into helpers whose return type is opaque', () => {
@@ -176,7 +257,7 @@ describe('crossFileAccessorPaths — Phase 3 cross-file resolution', () => {
         }
       `,
     })
-    const paths = crossFileAccessorPaths(program, sf('/main.ts'))
+    const paths = crossFileAccessorPaths(program, sf('/main.ts')).paths
     // The focal's accessor `(st) => st.secret` is still extracted (its
     // body reads `st.secret`). What the walker should NOT do is descend
     // into `opaqueHelper`'s internals and surface reads the focal file

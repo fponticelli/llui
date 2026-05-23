@@ -179,6 +179,7 @@ export function transformLlui(
   typeSources?: ExternalTypeSources,
   preExtracted?: PreExtractedSchemas,
   crossFilePaths?: ReadonlySet<string>,
+  crossFileOpaque = false,
 ): { output: string; edits: TransformEdit[]; diagnostics: Diagnostic[] } | null {
   // Use the caller-provided filename so any module reading `sf.fileName`
   // (e.g. `componentMetaModule` emitting `__componentMeta: { file }`)
@@ -242,9 +243,17 @@ export function transformLlui(
   // function is generated per-component, so bit assignments in other files
   // won't match. Files without component() get FULL_MASK on all bindings.
   const fileHasComponent = hasComponentDef(sourceFile, lluiImport)
-  const { lo: fieldBits, hi: fieldBitsHi } = fileHasComponent
+  const {
+    lo: fieldBits,
+    hi: fieldBitsHi,
+    opaque: fileLocalOpaque,
+  } = fileHasComponent
     ? collectDeps(source, crossFilePaths)
-    : { lo: new Map<string, number>(), hi: new Map<string, number>() }
+    : { lo: new Map<string, number>(), hi: new Map<string, number>(), opaque: false }
+  // Union the file-local opaque flag with the cross-file flag from the
+  // vite-plugin's walker — either can independently mandate a
+  // whole-state sentinel in `__prefixes`.
+  const hasOpaqueAccessor = fileLocalOpaque || crossFileOpaque
 
   if (verbose && fileHasComponent) {
     const pairs = [...fieldBits.entries()]
@@ -463,6 +472,7 @@ export function transformLlui(
       fieldBits,
       fieldBitsHi,
       lluiImport,
+      hasOpaqueAccessor,
     }),
   )
   // structuralMaskModule injects `__mask` into each()/branch()/scope()/show()
@@ -1664,6 +1674,15 @@ export function computeAccessorMask(
   let mask = 0
   let maskHi = 0
   let readsState = false
+  // The state value flows into an expression we can't statically trace
+  // (function-arg / imported / destructured / method callee, or a
+  // dynamic `s[expr]` lookup). The callee may read any field; the
+  // dynamic key may index any field. Any non-empty precise mask we'd
+  // compute from the visible direct reads alone is "clean but wrong":
+  // a reducer that narrowly touches only the opaquely-read field
+  // produces a dirty bit that `mask & dirty` zeroes, silently skipping
+  // the binding. Conservative correctness: bail to FULL_MASK.
+  let opaqueStateFlow = false
 
   // `inNestedFn` gates only the delegation-recursion. Property-access
   // path extraction happens everywhere — inner-arrow callbacks like
@@ -1678,8 +1697,47 @@ export function computeAccessorMask(
     // like `text((_s) => \`$${item.x.toLocaleString()}\`)` was how
     // this bug first surfaced in the persistent-layout example work.
     const parent = node.parent
-    if (ts.isIdentifier(node) && node.text === stateParam && (!parent || !ts.isParameter(parent))) {
-      readsState = true
+    // Every appearance of the state identifier `s` is one of:
+    //   - the parameter binding itself                       — ignore
+    //   - the root of `s.x.y…`  (PropertyAccessExpression)  — tracked by the PAE walker
+    //   - the root of `s['literal']`/`s[0]`                 — tracked by element-access (literal key only)
+    //   - arg0 of `helper(s)` with an Identifier callee     — handled by the delegation branch below
+    //   - anything else (spread, return, ternary branch, template span,
+    //     NewExpression arg, TaggedTemplate value, const alias, arg1+ of any call,
+    //     method-call arg `obj.f(s)`, dynamic key `s[expr]`, type assertion,
+    //     parenthesized, …)                                 — opaque: state has leaked
+    //
+    // The leak cases can't be reasoned about statically — the receiver
+    // may read any field of `s`. A "precise" mask built from sibling
+    // direct reads alone hides every field reachable only through the
+    // leak, and (mask & dirty) silently skips updates. Conservative
+    // correctness: any opaque flow forces FULL_MASK.
+    if (ts.isIdentifier(node) && node.text === stateParam) {
+      const isBinding = !!parent && ts.isParameter(parent)
+      if (!isBinding) {
+        readsState = true
+        let isTracked = false
+        if (parent) {
+          if (ts.isPropertyAccessExpression(parent) && parent.expression === node) {
+            isTracked = true
+          } else if (ts.isElementAccessExpression(parent) && parent.expression === node) {
+            isTracked =
+              ts.isStringLiteralLike(parent.argumentExpression) ||
+              ts.isNumericLiteral(parent.argumentExpression)
+          } else if (
+            ts.isCallExpression(parent) &&
+            ts.isIdentifier(parent.expression) &&
+            parent.arguments[0] === node &&
+            !NON_DELEGATION_HELPERS.has(parent.expression.text)
+          ) {
+            // The delegation branch below either recurses into the
+            // resolved body or sets opaqueStateFlow explicitly when
+            // unresolvable — don't pre-empt that decision here.
+            isTracked = true
+          }
+        }
+        if (!isTracked) opaqueStateFlow = true
+      }
     }
     if (ts.isPropertyAccessExpression(node)) {
       // When there's no parent we can't tell if this is the top of a
@@ -1744,6 +1802,13 @@ export function computeAccessorMask(
             mask |= inner.mask
             maskHi |= inner.maskHi
             if (inner.readsState) readsState = true
+          } else {
+            // Callee is a function parameter, imported binding, or
+            // destructured local — `resolveAccessorBody` couldn't pin
+            // it to a local declaration. The body could read any
+            // field of `s`, so a precise mask from sibling direct
+            // reads alone is unsafe.
+            opaqueStateFlow = true
           }
         }
       }
@@ -1755,6 +1820,14 @@ export function computeAccessorMask(
 
   walk(accessor.body, false)
 
+  if (opaqueStateFlow) {
+    // Both words FULL_MASK: the whole-state sentinel emitted by
+    // `core-synthesis.ts:buildPrefixesProp` may land in either the
+    // low or high word depending on the file's prefix count. The
+    // runtime gate `(mask & dirty) | (maskHi & dirtyHi)` only catches
+    // the sentinel bit when the binding's mask covers BOTH words.
+    return { mask: 0xffffffff | 0, maskHi: 0xffffffff | 0, readsState: true }
+  }
   if (mask === 0 && maskHi === 0 && readsState) {
     return { mask: 0xffffffff | 0, maskHi: 0, readsState: true }
   }

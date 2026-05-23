@@ -499,9 +499,13 @@ export function toCanonicalDiagnostic(
  * including `onEffect: (bag) => bag.send(...)`, where `bag.send` ends
  * up in the path set as a phantom "send" prefix. Issue #5, bug 3.
  */
-export function crossFileAccessorPaths(program: ts.Program, focalFile: ts.SourceFile): Set<string> {
+export function crossFileAccessorPaths(
+  program: ts.Program,
+  focalFile: ts.SourceFile,
+): { paths: Set<string>; opaque: boolean } {
   const checker = program.getTypeChecker()
   const paths = new Set<string>()
+  const opaqueOut = { value: false }
   const visitedHelpers = new Set<ts.Declaration>()
 
   const isViewHelperCallArg0 = (arrow: ts.ArrowFunction | ts.FunctionExpression): boolean => {
@@ -521,14 +525,14 @@ export function crossFileAccessorPaths(program: ts.Program, focalFile: ts.Source
       const p0 = node.parameters[0]!
       if (ts.isIdentifier(p0.name) && node.body) {
         if (isReactiveAccessor(node) || isViewHelperCallArg0(node)) {
-          walkAccessorBody(node.body, p0.name.text, paths, checker, visitedHelpers)
+          walkAccessorBody(node.body, p0.name.text, paths, checker, visitedHelpers, opaqueOut)
         }
       }
     }
     ts.forEachChild(node, visit)
   }
   visit(focalFile)
-  return paths
+  return { paths, opaque: opaqueOut.value }
 }
 
 // Helpers whose arrow args are NOT state accessors — same exclusion list
@@ -545,12 +549,50 @@ function walkAccessorBody(
   paths: Set<string>,
   checker: ts.TypeChecker,
   visitedHelpers: Set<ts.Declaration>,
+  opaqueOut: { value: boolean },
 ): void {
   const visit = (node: ts.Node): void => {
     // Property-chain extraction (mirrors collect-deps' depth-2 normaliser).
     if (ts.isPropertyAccessExpression(node)) {
       const chain = resolveDepth2(node, paramName)
       if (chain) paths.add(chain)
+    }
+
+    // Opaque-state-flow classifier (mirrors the per-binding mask
+    // classifier in transform.ts:computeAccessorMask). Any standalone
+    // appearance of the param identifier in a non-tracked container
+    // means the helper reads through an expression we can't trace, so
+    // a precise prefix table is insufficient — the host needs a
+    // whole-state sentinel in `__prefixes`.
+    if (ts.isIdentifier(node) && node.text === paramName) {
+      const parent = node.parent
+      const isBinding = !!parent && ts.isParameter(parent)
+      if (!isBinding) {
+        let isTracked = false
+        if (parent) {
+          if (ts.isPropertyAccessExpression(parent) && parent.expression === node) {
+            isTracked = true
+          } else if (ts.isElementAccessExpression(parent) && parent.expression === node) {
+            isTracked =
+              ts.isStringLiteralLike(parent.argumentExpression) ||
+              ts.isNumericLiteral(parent.argumentExpression)
+          } else if (
+            ts.isCallExpression(parent) &&
+            ts.isIdentifier(parent.expression) &&
+            parent.arguments[0] === node &&
+            !NON_DELEGATION_CALLEES.has(parent.expression.text)
+          ) {
+            // Identifier-callee delegations are handled by the
+            // descend-into-helper branch below — if the callee
+            // resolves, recursion finds opaque inside; if not, the
+            // call's `sym` is undefined and the host sees no descent.
+            // Treat as tracked here so this branch alone doesn't flip
+            // opaque on every well-formed `helper(s)`.
+            isTracked = true
+          }
+        }
+        if (!isTracked) opaqueOut.value = true
+      }
     }
 
     if (ts.isCallExpression(node)) {
@@ -572,6 +614,7 @@ function walkAccessorBody(
             checker,
             visitedHelpers,
             /*viewHelper*/ true,
+            opaqueOut,
           )
         } else if (decl && !visitedHelpers.has(decl)) {
           // Non-view-helper: only follow if our state param is passed
@@ -592,17 +635,39 @@ function walkAccessorBody(
             callPassesParamIdent(node, paramName)
           ) {
             visitedHelpers.add(decl)
-            descendIntoHelper(
-              decl,
-              node,
-              paramName,
-              paths,
-              checker,
-              visitedHelpers,
-              /*viewHelper*/ false,
-            )
+            const fnDecl = decl as ts.FunctionLikeDeclaration
+            if (fnDecl.body) {
+              descendIntoHelper(
+                decl,
+                node,
+                paramName,
+                paths,
+                checker,
+                visitedHelpers,
+                /*viewHelper*/ false,
+                opaqueOut,
+              )
+            } else {
+              // Declaration without a body — ambient `declare function`,
+              // overload signature, or compiled .d.ts. State flows in
+              // but we can't see what it reads. Conservative: opaque.
+              opaqueOut.value = true
+            }
           }
+        } else if (!decl && ts.isIdentifier(callee) && !NON_DELEGATION_CALLEES.has(callee.text)) {
+          // Callee resolved to a symbol but no function-like
+          // declaration (e.g., ambient declaration, type-only import,
+          // or a binding whose initializer the checker can't pin
+          // down). If state flows in, treat as opaque — same
+          // conservative read as the file-local classifier.
+          if (callPassesParamIdent(node, paramName)) opaqueOut.value = true
         }
+      } else if (ts.isIdentifier(callee) && !NON_DELEGATION_CALLEES.has(callee.text)) {
+        // Callee identifier didn't resolve to ANY symbol (declared
+        // outside the program, lost through transient binding, etc.).
+        // The standalone `s` classifier above already flagged the arg
+        // as opaque, so no additional bookkeeping is needed here; the
+        // branch is kept to mirror the file-local handling shape.
       }
     }
 
@@ -626,6 +691,7 @@ function descendIntoHelper(
   checker: ts.TypeChecker,
   visitedHelpers: Set<ts.Declaration>,
   viewHelper: boolean,
+  opaqueOut: { value: boolean },
 ): void {
   // Match each parameter to its argument at the call site.
   //
@@ -649,10 +715,10 @@ function descendIntoHelper(
     if (viewHelper && (ts.isArrowFunction(arg) || ts.isFunctionExpression(arg))) {
       const a0 = arg.parameters[0]
       if (a0 && ts.isIdentifier(a0.name) && arg.body) {
-        walkAccessorBody(arg.body, a0.name.text, paths, checker, visitedHelpers)
+        walkAccessorBody(arg.body, a0.name.text, paths, checker, visitedHelpers, opaqueOut)
       }
     } else if (ts.isIdentifier(arg) && arg.text === outerParamName) {
-      walkAccessorBody(fnDecl.body, param.name.text, paths, checker, visitedHelpers)
+      walkAccessorBody(fnDecl.body, param.name.text, paths, checker, visitedHelpers, opaqueOut)
     }
   }
 }

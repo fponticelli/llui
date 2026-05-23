@@ -99,7 +99,7 @@ export function bitmaskOverflowModule(): CompilerModule {
         if (componentCalls.length === 0) return
         const componentCall = componentCalls[0]!
 
-        const paths = collectStatePathsFromSource(sf)
+        const { paths } = collectStatePathsFromSource(sf)
         const pathCount = paths.size
         if (pathCount <= PATH_LIMIT) return
 

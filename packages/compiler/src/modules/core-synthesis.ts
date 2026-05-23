@@ -34,6 +34,13 @@ export interface CoreSynthesisModuleOptions {
   /** Component() call detection requires the @llui/dom import binding
    *  to disambiguate from user-local `component` identifiers. */
   lluiImport: ts.ImportDeclaration
+  /** At least one reactive accessor in the file flows the state
+   *  identifier into an expression the walker can't trace (opaque
+   *  callee, spread, ternary branch, dynamic key, …). Forces emission
+   *  of a `(s) => s` whole-state sentinel at the tail of `__prefixes`
+   *  so FULL_MASK bindings catch a dirty bit on every update,
+   *  regardless of which fields the opaque expression actually reads. */
+  hasOpaqueAccessor?: boolean
 }
 
 export interface CoreSynthesisSlot {
@@ -46,7 +53,7 @@ export interface CoreSynthesisSlot {
 export const CORE_SYNTHESIS_SLOT = 'core-synthesis:state'
 
 export function coreSynthesisModule(opts: CoreSynthesisModuleOptions): CompilerModule {
-  const { fieldBits, fieldBitsHi, lluiImport } = opts
+  const { fieldBits, fieldBitsHi, lluiImport, hasOpaqueAccessor = false } = opts
   return {
     name: 'core-synthesis',
     compilerVersion: '^0.3.0',
@@ -55,7 +62,7 @@ export function coreSynthesisModule(opts: CoreSynthesisModuleOptions): CompilerM
 
     transformCallEnter(ctx, node) {
       if (!isComponentCall(node, lluiImport)) return null
-      const rewritten = tryInjectDirty(node, fieldBits, ctx.factory, fieldBitsHi)
+      const rewritten = tryInjectDirty(node, fieldBits, ctx.factory, fieldBitsHi, hasOpaqueAccessor)
       if (!rewritten) return null
       const slot = ctx.analysis.perModule.get(CORE_SYNTHESIS_SLOT) as CoreSynthesisSlot | undefined
       if (slot) slot.usesApplyBinding = true
@@ -75,8 +82,9 @@ function tryInjectDirty(
   fieldBits: Map<string, number>,
   f: ts.NodeFactory,
   fieldBitsHi: Map<string, number> = new Map(),
+  hasOpaqueAccessor: boolean = false,
 ): ts.CallExpression | null {
-  if (fieldBits.size === 0 && fieldBitsHi.size === 0) return null
+  if (fieldBits.size === 0 && fieldBitsHi.size === 0 && !hasOpaqueAccessor) return null
   const configArg = node.arguments[0]
   if (!configArg || !ts.isObjectLiteralExpression(configArg)) return null
 
@@ -150,7 +158,7 @@ function tryInjectDirty(
   // emit layer today, so high-position bindings still re-evaluate
   // every cycle — but the dirty computation itself is now precise,
   // which lets memo()'d aggregates short-circuit correctly.
-  const prefixesProp = buildPrefixesProp(fieldBits, fieldBitsHi, f)
+  const prefixesProp = buildPrefixesProp(fieldBits, fieldBitsHi, f, hasOpaqueAccessor)
   if (prefixesProp) extraProps.push(prefixesProp)
 
   const newConfig = f.createObjectLiteralExpression([...configArg.properties, ...extraProps], true)
@@ -714,8 +722,9 @@ function buildPrefixesProp(
   fieldBits: Map<string, number>,
   fieldBitsHi: Map<string, number>,
   f: ts.NodeFactory,
+  hasOpaqueAccessor: boolean = false,
 ): ts.PropertyAssignment | null {
-  if (fieldBits.size === 0 && fieldBitsHi.size === 0) return null
+  if (fieldBits.size === 0 && fieldBitsHi.size === 0 && !hasOpaqueAccessor) return null
   // Sort paths by bit value within each word. Bits are powers of two
   // inside their word (1, 2, 4, …, 1<<30), so sorting numerically gives
   // ascending bit position. FULL_MASK (-1) entries from past-61
@@ -724,9 +733,10 @@ function buildPrefixesProp(
     .filter(([, bit]) => bit > 0)
     .sort(([, a], [, b]) => a - b)
   const orderedHi = [...fieldBitsHi.entries()].sort(([, a], [, b]) => a - b)
-  const buildArrow = (path: string): ts.ArrowFunction => {
-    const parts = path.split('.')
-    const body = buildAccess(f, 's', parts)
+  const buildArrow = (parts: string[]): ts.ArrowFunction => {
+    // Empty parts → `(s) => s` (whole-state sentinel). Any other path
+    // builds the optional-chain access expression.
+    const body = parts.length === 0 ? f.createIdentifier('s') : buildAccess(f, 's', parts)
     return f.createArrowFunction(
       undefined,
       undefined,
@@ -736,10 +746,20 @@ function buildPrefixesProp(
       body,
     )
   }
-  const arrows = [
-    ...orderedLo.map(([path]) => buildArrow(path)),
-    ...orderedHi.map(([path]) => buildArrow(path)),
+  const arrows: ts.ArrowFunction[] = [
+    ...orderedLo.map(([path]) => buildArrow(path.split('.'))),
+    ...orderedHi.map(([path]) => buildArrow(path.split('.'))),
   ]
+  // Append the whole-state sentinel `(s) => s` when any accessor in
+  // the file flows state opaquely. Its prefix bit dirties on every
+  // update (immutable reducers always return a new object identity),
+  // so FULL_MASK bindings — whose mask covers every bit — fire even
+  // when the changed field has no traceable prefix entry. Without
+  // this, a field read ONLY through an opaque expression would
+  // disappear from `__prefixes`; computeDirtyFromPrefixes would
+  // return 0 for changes to it; (-1) & 0 = 0; the binding would
+  // silently never re-evaluate.
+  if (hasOpaqueAccessor) arrows.push(buildArrow([]))
   return f.createPropertyAssignment('__prefixes', f.createArrayLiteralExpression(arrows, false))
 }
 

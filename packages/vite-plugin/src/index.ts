@@ -935,6 +935,7 @@ export default function llui(options: LluiPluginOptions = {}): Plugin {
       // transform calls and asks the engine for the union of paths read
       // through in-repo view-helpers. Builds the Program on first call.
       let crossFilePaths: ReadonlySet<string> | undefined
+      let crossFileOpaque = false
       if (crossFileMode !== false && crossFileRoot !== null) {
         if (!crossFileProgramInit) {
           crossFileProgramInit = true
@@ -944,7 +945,9 @@ export default function llui(options: LluiPluginOptions = {}): Plugin {
           const sf = crossFileProgram.getSourceFile(id)
           if (sf) {
             try {
-              crossFilePaths = crossFileAccessorPaths(crossFileProgram, sf)
+              const result = crossFileAccessorPaths(crossFileProgram, sf)
+              crossFilePaths = result.paths
+              crossFileOpaque = result.opaque
             } catch (err) {
               if (crossFileMode !== 'silent') {
                 this.warn(
@@ -967,6 +970,7 @@ export default function llui(options: LluiPluginOptions = {}): Plugin {
         typeSources,
         preExtracted,
         crossFilePaths,
+        crossFileOpaque,
       )
       if (!result) return undefined
 

@@ -9,7 +9,7 @@ import { collectStatePathsFromSource } from '../src/collect-deps'
 
 function pathsOf(source: string): string[] {
   const sf = ts.createSourceFile('input.ts', source, ts.ScriptTarget.Latest, true)
-  return [...collectStatePathsFromSource(sf)].sort()
+  return [...collectStatePathsFromSource(sf).paths].sort()
 }
 
 describe('path scanner — baseline', () => {

@@ -31,6 +31,7 @@ function visitTopLevelDelegations(
   body: ts.Node,
   stateParamName: string,
   follow: (resolved: ts.ArrowFunction | ts.FunctionExpression | ts.FunctionDeclaration) => void,
+  onUnresolved?: () => void,
 ): void {
   function visit(node: ts.Node): void {
     if (ts.isCallExpression(node) && ts.isIdentifier(node.expression)) {
@@ -40,6 +41,7 @@ function visitTopLevelDelegations(
         if (arg0 && ts.isIdentifier(arg0) && arg0.text === stateParamName) {
           const resolved = resolveAccessorBody(node.expression)
           if (resolved) follow(resolved)
+          else if (onUnresolved) onUnresolved()
         }
       }
     }
@@ -80,6 +82,7 @@ function extractAccessorPaths(
   accessor: ts.ArrowFunction | ts.FunctionExpression | ts.FunctionDeclaration,
   paths: Set<string>,
   visited: Set<ts.Node> = new Set(),
+  opaqueOut?: { value: boolean },
 ): boolean {
   if (visited.has(accessor)) return false
   visited.add(accessor)
@@ -87,20 +90,98 @@ function extractAccessorPaths(
   const params = accessor.parameters
   if (params.length !== 1) return false
   const paramName = params[0]!.name
-  if (!ts.isIdentifier(paramName)) return false
+  if (!ts.isIdentifier(paramName)) {
+    // Destructured/anonymous param — the path walker can't follow
+    // reads through it. Conservative: mark the accessor as opaque so
+    // the synthesis pipeline emits a whole-state sentinel.
+    if (opaqueOut) opaqueOut.value = true
+    return false
+  }
   if (!accessor.body) return false
   const before = paths.size
 
   extractPaths(accessor.body, paramName.text, '', paths)
 
+  // Detect opaque state flow alongside path extraction. Mirrors the
+  // classifier in `transform.ts`'s `computeAccessorMask` (Identifier
+  // `s` used in a non-tracked position) — any leak means a precise
+  // `__prefixes` table is insufficient because a field read only
+  // through the leak never enters fieldBits and the runtime can't
+  // dirty it on change.
+  if (opaqueOut) detectOpaqueStateFlow(accessor.body, paramName.text, opaqueOut)
+
   // Follow delegations: `(s) => helper(s)` — extract `helper`'s body's
   // state paths too. Reuses the `visited` set across the recursion
-  // chain so cycles terminate.
-  visitTopLevelDelegations(accessor.body, paramName.text, (resolved) => {
-    extractAccessorPaths(resolved, paths, visited)
-  })
+  // chain so cycles terminate. When the callee is unresolvable
+  // (function parameter, import, destructured), the same logic that
+  // forces FULL_MASK in `computeAccessorMask` flags the file as
+  // opaque here, so the sentinel gets emitted.
+  visitTopLevelDelegations(
+    accessor.body,
+    paramName.text,
+    (resolved) => {
+      extractAccessorPaths(resolved, paths, visited, opaqueOut)
+    },
+    () => {
+      if (opaqueOut) opaqueOut.value = true
+    },
+  )
 
   return paths.size > before
+}
+
+/**
+ * Mirror of the classifier in `computeAccessorMask` (transform.ts). An
+ * accessor "leaks state" — and so demands the conservative
+ * FULL_MASK / whole-state sentinel — when the state identifier `s`
+ * appears in any position OTHER than:
+ *   - the param binding itself
+ *   - the root of `s.x.y…` (PropertyAccessExpression)
+ *   - the root of `s['literal']` / `s[0]` (ElementAccess with literal key)
+ *   - arg0 of `helper(s)` with an Identifier callee (handled by the
+ *     delegation visitor — resolvable → recursion, unresolvable →
+ *     marks opaque via the callback)
+ *
+ * Every other context (NewExpression arg, TaggedTemplate span, spread,
+ * const-alias, conditional branch, method-call arg, dynamic key
+ * `s[expr]`, return-the-whole-state, …) is treated as a leak.
+ */
+function detectOpaqueStateFlow(body: ts.Node, stateParam: string, out: { value: boolean }): void {
+  function visit(node: ts.Node): void {
+    if (out.value) return
+    if (ts.isIdentifier(node) && node.text === stateParam) {
+      const parent = node.parent
+      const isBinding = !!parent && ts.isParameter(parent)
+      if (!isBinding) {
+        let isTracked = false
+        if (parent) {
+          if (ts.isPropertyAccessExpression(parent) && parent.expression === node) {
+            isTracked = true
+          } else if (ts.isElementAccessExpression(parent) && parent.expression === node) {
+            isTracked =
+              ts.isStringLiteralLike(parent.argumentExpression) ||
+              ts.isNumericLiteral(parent.argumentExpression)
+          } else if (
+            ts.isCallExpression(parent) &&
+            ts.isIdentifier(parent.expression) &&
+            parent.arguments[0] === node &&
+            !NON_DELEGATION_HELPERS.has(parent.expression.text)
+          ) {
+            // The delegation visitor either recurses into the resolved
+            // body (transitively detecting opaque inside) or flags
+            // opaque via its second callback for unresolvable callees.
+            isTracked = true
+          }
+        }
+        if (!isTracked) {
+          out.value = true
+          return
+        }
+      }
+    }
+    ts.forEachChild(node, visit)
+  }
+  visit(body)
 }
 
 /**
@@ -123,29 +204,34 @@ function extractAccessorPaths(
  * Shared by the bit-assignment path (`collectDeps`, below) and the
  * `diagnostics.ts` bitmask-overflow warning.
  */
-export function collectStatePathsFromSource(sourceFile: ts.SourceFile): Set<string> {
+export function collectStatePathsFromSource(sourceFile: ts.SourceFile): {
+  paths: Set<string>
+  opaque: boolean
+} {
   const paths = new Set<string>()
+  const opaqueOut = { value: false }
 
   function visit(node: ts.Node): void {
     // Inline arrow / function expression at a reactive position.
     if (ts.isArrowFunction(node) || ts.isFunctionExpression(node)) {
-      if (isReactiveAccessor(node)) extractAccessorPaths(node, paths)
+      if (isReactiveAccessor(node)) extractAccessorPaths(node, paths, undefined, opaqueOut)
     }
 
     // Identifier at a reactive position — resolve to its declaration
-    // and extract paths from the resolved body. Skip identifiers
-    // imported from elsewhere (resolver returns null) — there's no
-    // body to scan, runtime falls back to FULL_MASK.
+    // and extract paths from the resolved body. Identifiers that
+    // resolve elsewhere (imports, etc.) leave a binding the walker
+    // can't see — treat the host file as opaque so the sentinel fires.
     if (ts.isIdentifier(node) && isReactiveAccessor(node)) {
       const resolved = resolveAccessorBody(node)
-      if (resolved) extractAccessorPaths(resolved, paths)
+      if (resolved) extractAccessorPaths(resolved, paths, undefined, opaqueOut)
+      else opaqueOut.value = true
     }
 
     ts.forEachChild(node, visit)
   }
 
   visit(sourceFile)
-  return paths
+  return { paths, opaque: opaqueOut.value }
 }
 
 /**
@@ -201,15 +287,16 @@ export function collectDeps(
 ): {
   lo: Map<string, number>
   hi: Map<string, number>
+  opaque: boolean
 } {
   const sourceFile = ts.createSourceFile('input.ts', source, ts.ScriptTarget.Latest, true)
 
   // Check if file imports from @llui/dom
   if (!hasLluiImport(sourceFile)) {
-    return { lo: new Map(), hi: new Map() }
+    return { lo: new Map(), hi: new Map(), opaque: false }
   }
 
-  const paths = collectStatePathsFromSource(sourceFile)
+  const { paths, opaque } = collectStatePathsFromSource(sourceFile)
   // Cross-file extension (v2c pipeline integration): the host adapter may
   // pass paths discovered by `crossFileAccessorPaths()` — paths read
   // through in-repo view-helpers in *other* files. Union them with the
@@ -238,7 +325,7 @@ export function collectDeps(
     index++
   }
 
-  return { lo, hi }
+  return { lo, hi, opaque }
 }
 
 function hasLluiImport(sourceFile: ts.SourceFile): boolean {
