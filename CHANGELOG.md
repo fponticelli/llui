@@ -11,6 +11,32 @@ All notable changes to LLui packages are documented here. LLui is a pre-1.0 proj
 
 Packages version in lockstep at release time: `@llui/dom`, `@llui/vite-plugin`, `@llui/test`, `@llui/router`, `@llui/transitions`, `@llui/components`, `@llui/vike` share a version line. `@llui/effects`, `@llui/mcp`, `@llui/eslint-plugin`, `@llui/agent`, and `llui-agent` have their own cadence.
 
+## 2026-05-23 — 0.4.3 / 0.5.6
+
+**Released:** `@llui/{dom,components,router,transitions,vike,test,agent}@0.4.3`; `llui-agent@0.4.3`; `@llui/{compiler,vite-plugin,compiler-devtools,compiler-introspection,compiler-ssr,mcp}@0.5.6`
+
+Tiny follow-up to 0.5.5: `llui/opaque-state-flow`'s diagnostic hint and `track()`'s JSDoc now reference the composition-patterns guide via an absolute GitHub URL so the link is clickable from an IDE error overlay. The relative path shipped in 0.5.5 only worked when the reader had the LLui repo checked out — a real consumer-side UX gap. No behavior change.
+
+### `@llui/compiler@0.5.6`
+
+- **Improved** `llui/opaque-state-flow`'s function-parameter-callee hint links to `https://github.com/fponticelli/llui/blob/main/docs/composition-patterns.md` instead of the relative `docs/composition-patterns.md`. Consumers reading the diagnostic in their IDE can now click through to the four-pattern catalogue without needing the LLui repo on disk.
+
+### `@llui/dom@0.4.3`
+
+- **Improved** `track()` JSDoc carries the absolute GitHub URL for the composition-patterns guide, matching the diagnostic hint. The JSDoc ships in the published `.d.ts`, so editor tooltips show the same clickable link.
+
+### `@llui/{vite-plugin,compiler-devtools,compiler-introspection,compiler-ssr,mcp}@0.5.6`
+
+- **Improved** Cascade republish — `workspace:*` dependency on `@llui/compiler` pinned to the new version. `@llui/mcp` also picks up the new `@llui/dom` peer range. No source changes.
+
+### `@llui/{components,router,transitions,vike,test,agent}@0.4.3` / `llui-agent@0.4.3`
+
+- **Improved** Cascade republish — `peerDependencies["@llui/dom"]` pinned to the new version. No source changes.
+
+### Docs
+
+- **Added** The composition-patterns guide is now exposed on the documentation site at `/composition-patterns`. New nav entry between Cookbook and Architecture. The `site/content/composition-patterns.md` is symlinked to the canonical `docs/composition-patterns.md` so there's a single source of truth (mirrors the CHANGELOG.md ↔ site/content/changelog.md pattern).
+
 ## 2026-05-22 — 0.4.2 / 0.5.5
 
 **Released:** `@llui/{dom,components,router,transitions,vike,test,agent}@0.4.2`; `llui-agent@0.4.2`; `@llui/{compiler,vite-plugin,compiler-devtools,compiler-introspection,compiler-ssr,mcp}@0.5.5`
