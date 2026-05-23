@@ -11,6 +11,39 @@ All notable changes to LLui packages are documented here. LLui is a pre-1.0 proj
 
 Packages version in lockstep at release time: `@llui/dom`, `@llui/vite-plugin`, `@llui/test`, `@llui/router`, `@llui/transitions`, `@llui/components`, `@llui/vike` share a version line. `@llui/effects`, `@llui/mcp`, `@llui/eslint-plugin`, `@llui/agent`, and `llui-agent` have their own cadence.
 
+## 2026-05-22 — 0.4.1 / 0.5.4
+
+**Released:** `@llui/{dom,components,router,transitions,vike,test,agent}@0.4.1`; `llui-agent@0.4.1`; `@llui/{compiler,vite-plugin,compiler-devtools,compiler-introspection,compiler-ssr,mcp}@0.5.4`
+
+Follow-up to 0.5.3 + 0.4.0 unblocking a real consumer's migration. Six distinct false-positive shapes in `llui/opaque-state-flow` and `llui/map-on-state-array`, plus a type-level bug in `ItemAccessor<T>` for primitive `T` and a docstring honesty pass on `track()`.
+
+### `@llui/dom@0.4.1`
+
+- **Fixed** `ItemAccessor<T>` exposes `current()` and the call signature `<R>(selector) => () => R` cleanly when `T` is a primitive (`string`, `number`, …). Previously the field-map branch `[K in keyof T]-?: () => T[K]` expanded `keyof string` over every intrinsic string method (`toString`, `charAt`, `slice`, …), structurally colliding with `current()` so it was unreachable on `ItemAccessor<string>`. Gated the field-map on `T extends object`. Consumers using the documented `provider.current()` escape hatch no longer need an `as unknown as { current(): T }` cast.
+- **Improved** `track()` docstring is honest about opaque deps: `track({deps: (s) => [getError(s)]})` where `getError` is itself opaque collapses to FULL_MASK + sentinel — same behavior as not using `track`. The primitive is a localized escape for statically-pinnable reads, not a universal fix for callback-parameter composition patterns. The underlying pattern (helpers taking `(s) => …` callbacks) is the real lift.
+
+### `@llui/compiler@0.5.4`
+
+- **Fixed** `isReactiveAccessor` no longer defaults to `true` for bare-Identifier callees at arg[0]. Previously every user mutator with an arrow argument (`change((c) => …)`, `dispatch((s) => …)`, `setTimeout(fn, ms)`, subscribe callbacks, …) was misclassified as a reactive accessor, with two downstream consequences: the path collector polluted `__prefixes` with the closure's parameter shape, and `llui/opaque-state-flow` walked the body and flagged perfectly legitimate updater patterns. Narrowed to an explicit allow-list of `@llui/dom` primitives that take a reactive arrow at arg[0]: `text`, `memo`, `unsafeHtml`, `selector`.
+- **Fixed** Destructure-rename alias resolution. `view: ({text: t}) => [t(s => …)]` correctly resolves `t` → `text` via the parameter's binding pattern, so the narrowed predicate still recognizes the View-bag destructure idiom. Symmetric in the PropertyAccessExpression branch (`h.text(arrow)` / `h.memo(arrow)` / `h.unsafeHtml(arrow)` / `h.selector(arrow)`).
+- **Fixed** Const-rebinding alias resolution. `const t = text; t((s) => …)` follows the const-initializer identifier chain (visited-set guarded against cycles), so the rebinding is recognized as the primitive. Local shadowing is detected: a `function text(x) {…}` declaration OR a non-Identifier-initializer `const text = …` in scope correctly STOPS the resolver — the local binding wins over a primitive of the same name.
+- **Fixed** `llui/map-on-state-array` no longer fires inside an enclosing `each({items: (s) => s.foo.map(…)})` accessor. The diagnostic told the author to use `each` — which they were already inside. Suppress in both the bare form (`each(…)`) and the View-bag form (`h.each(…)`).
+- **Fixed** `llui/opaque-state-flow` is suppressed inside `track({deps})`. The primitive is the user's explicit declaration of "trust my declaration"; firing a perf lint inside it moved the diagnostic from the call site to inside `track`, leaving authors with no recovery path. The mask/path classifier still extracts what it can; only the lint is silenced.
+- **Improved** `llui/opaque-state-flow` hint variant for function-parameter callees (existing 0.5.3 behavior preserved): when the unresolvable callee is itself a function parameter (the helper-takes-`(s) => …`-callback composition pattern), the diagnostic redirects authors at the `each` items-bag rewrite rather than the generic "inline or refactor" advice — interprocedural narrowing isn't going to save closure-callback composition.
+- **Added** 10+ regression tests covering: the 4 new opaque-flow shapes (state-updater, dispatch, ItemAccessor identity-projection, shorthand callback param), const-alias resolution, local-shadowing detection, selector primitive, View-bag destructure, track.deps suppression, and 2 `map-on-state-array` cases.
+
+### `@llui/vite-plugin@0.5.4`
+
+- **Improved** Cascade republish — `workspace:*` dependency on `@llui/compiler` pinned to the new version. No source changes beyond the version bump.
+
+### `@llui/{compiler-devtools,compiler-introspection,compiler-ssr,mcp}@0.5.4`
+
+- **Improved** Cascade republish — `workspace:*` dependency on `@llui/compiler` pinned to the new version. `@llui/mcp` also picks up the new `@llui/dom` peer range.
+
+### `@llui/{components,router,transitions,vike,test,agent}@0.4.1` / `llui-agent@0.4.1`
+
+- **Improved** Cascade republish — `peerDependencies["@llui/dom"]` pinned to the new version. No source changes.
+
 ## 2026-05-22 — 0.5.3
 
 **Released:** `@llui/{compiler,vite-plugin,compiler-devtools,compiler-introspection,compiler-ssr,mcp}@0.5.3`
