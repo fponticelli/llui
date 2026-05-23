@@ -11,6 +11,32 @@ All notable changes to LLui packages are documented here. LLui is a pre-1.0 proj
 
 Packages version in lockstep at release time: `@llui/dom`, `@llui/vite-plugin`, `@llui/test`, `@llui/router`, `@llui/transitions`, `@llui/components`, `@llui/vike` share a version line. `@llui/effects`, `@llui/mcp`, `@llui/eslint-plugin`, `@llui/agent`, and `llui-agent` have their own cadence.
 
+## 2026-05-22 — 0.4.2 / 0.5.5
+
+**Released:** `@llui/{dom,components,router,transitions,vike,test,agent}@0.4.2`; `llui-agent@0.4.2`; `@llui/{compiler,vite-plugin,compiler-devtools,compiler-introspection,compiler-ssr,mcp}@0.5.5`
+
+Documentation + diagnostic-hint follow-up to 0.5.4. The new `docs/composition-patterns.md` is the spec for the four migration shapes the `llui/opaque-state-flow` rule's recommended remediations refer to; the rule's hint string and `track()`'s docstring both now link to it. No runtime behavior change in 0.5.5 — pure docs / diagnostic-text update so consumers on 0.5.4 see the improved hint without checking the GitHub docs.
+
+### `@llui/compiler@0.5.5`
+
+- **Improved** `llui/opaque-state-flow`'s function-parameter-callee hint now points at `docs/composition-patterns.md` and explicitly names the non-iterating patterns (accessor passthrough, pre-built Nodes, Node[] slots). Previously the hint only named the items-bag answer, leaving non-iterating cases without a pointer — a real consumer feedback point after the 0.5.4 convergence test.
+
+### `@llui/dom@0.4.2`
+
+- **Improved** `track()` JSDoc explicitly calls out that the primitive is NOT a workaround for function-parameter callback diagnostics. The opaque-flow suppression inside `track.deps` (0.5.4) makes the escape hatch usable, but the perf trade-off is unchanged: opaque deps collapse to FULL_MASK + sentinel. Links to `docs/composition-patterns.md` for the canonical migration shapes.
+
+### `@llui/{vite-plugin,compiler-devtools,compiler-introspection,compiler-ssr,mcp}@0.5.5`
+
+- **Improved** Cascade republish — `workspace:*` dependency on `@llui/compiler` pinned to the new version. `@llui/mcp` also picks up the new `@llui/dom` peer range. No source changes.
+
+### `@llui/{components,router,transitions,vike,test,agent}@0.4.2` / `llui-agent@0.4.2`
+
+- **Improved** Cascade republish — `peerDependencies["@llui/dom"]` pinned to the new version. No source changes.
+
+### Docs
+
+- **Added** `docs/composition-patterns.md` — the four-pattern catalogue for generic UI helpers, with worked before/after examples for each shape. Pattern 4 (items-bag lift) primary; Patterns 1–3 (accessor passthrough, pre-built Nodes, Node[] slots) for non-iterating cases. Anti-pattern callout for function-parameter callbacks. Bitmask-budget mitigations under items-bag lift. The `paramControlsView` reference-case section is a placeholder pending a real consumer's worked diffs.
+
 ## 2026-05-22 — 0.4.1 / 0.5.4
 
 **Released:** `@llui/{dom,components,router,transitions,vike,test,agent}@0.4.1`; `llui-agent@0.4.1`; `@llui/{compiler,vite-plugin,compiler-devtools,compiler-introspection,compiler-ssr,mcp}@0.5.4`
