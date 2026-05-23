@@ -971,6 +971,7 @@ export default function llui(options: LluiPluginOptions = {}): Plugin {
         preExtracted,
         crossFilePaths,
         crossFileOpaque,
+        crossFileProgram ?? undefined,
       )
       if (!result) return undefined
 

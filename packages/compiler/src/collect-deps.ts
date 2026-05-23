@@ -388,6 +388,32 @@ export function isReactiveAccessor(node: ts.Node): boolean {
       if (/^on[A-Z]/.test(key.text)) return false
       // Skip each() key function and other non-reactive props
       if (key.text === 'key' || key.text === 'name') return false
+      // Skip view-builder slots: `default` / `render` / `fallback` on the
+      // structural primitives. Their callbacks receive a View<S, M> bag,
+      // not state — e.g. `branch({ default: (h) => h.text(...) })`. The
+      // single param is `h`, not `s`; treating it as a reactive accessor
+      // makes the opaque-flow walker chase `h` references as if they
+      // were state. The runtime knows these slots are view builders;
+      // the compiler did not, until now.
+      if (key.text === 'default' || key.text === 'render' || key.text === 'fallback') {
+        return false
+      }
+      // Skip `cases.<k>` — the nested-object form of branch() cases.
+      // Each value is `(h: View<S, M>) => Node[]`, same as `default`.
+      // Identified by the enclosing object literal sitting in a
+      // `cases:` property assignment.
+      const enclosingObjLit = parent.parent
+      if (enclosingObjLit && ts.isObjectLiteralExpression(enclosingObjLit)) {
+        const outerPA = enclosingObjLit.parent
+        if (
+          outerPA &&
+          ts.isPropertyAssignment(outerPA) &&
+          ts.isIdentifier(outerPA.name) &&
+          outerPA.name.text === 'cases'
+        ) {
+          return false
+        }
+      }
       // Walk up to find the enclosing call expression
       let ancestor: ts.Node | undefined = parent.parent // ObjectLiteralExpression
       while (ancestor && !ts.isCallExpression(ancestor)) {

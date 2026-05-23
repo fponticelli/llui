@@ -55,6 +55,7 @@ interface LeakSite {
 
 function findFirstLeakInAccessor(
   accessor: ts.ArrowFunction | ts.FunctionExpression | ts.FunctionDeclaration,
+  checker: ts.TypeChecker | undefined,
 ): LeakSite | null {
   if (accessor.parameters.length !== 1) return null
   const param = accessor.parameters[0]!
@@ -88,39 +89,61 @@ function findFirstLeakInAccessor(
           hint =
             'replace the dynamic key with a literal property (e.g. `s.foo`), or declare the read via `track({ deps: (s) => [s[key]] })`.'
         }
-      } else if (ts.isCallExpression(parent) && parent.arguments[0] === node) {
-        if (
-          ts.isIdentifier(parent.expression) &&
-          !NON_DELEGATION_HELPERS.has(parent.expression.text)
-        ) {
-          // Identifier-callee delegation. Recurse into the callee's
-          // body via the same resolver the mask walker uses. If it
-          // resolves to a local accessor, the helper's reads are
-          // walked transitively and the call is tracked. If the
-          // callee is a function parameter, import, destructured
-          // binding, or otherwise unresolvable, this IS the leak
-          // shape — flag it here so the diagnostic points at the
-          // call site rather than at some deeper unresolvable read.
-          const resolved = resolveAccessorBody(parent.expression)
-          if (resolved) {
-            tracked = true
-          } else {
-            shape = `call to an unresolvable callee \`${parent.expression.text}(s)\` (function parameter, import, or destructured binding)`
-            hint =
-              'inline the read against `s` directly, refactor the callee into a same-module `const`/`function` declaration, or declare the dependencies via `track({ deps: (s) => [...] })`.'
-          }
-        } else if (!ts.isIdentifier(parent.expression)) {
-          // Method-call / computed callee with state arg —
-          // `obj.helper(s)`, `lib.fn(s)`. This is the documented
-          // headless-components idiom (`pr.valueText(s)` where `pr`
-          // comes from `progress.connect()`); refactoring it would
-          // defeat the API surface. The runtime sentinel keeps the
-          // binding correct — just at the cost of re-evaluating on
-          // every update. Treat as tracked from the lint's POV so
-          // legitimate composition doesn't error the build; the
-          // perf cost is a property of the composition pattern, not
-          // an author mistake worth blocking.
+      } else if (ts.isCallExpression(parent)) {
+        const argIndex = parent.arguments.indexOf(node as ts.Expression)
+        if (argIndex > 0) {
+          // State passed as arg1+ to a call. The header documents this
+          // as NOT flagged (intentional): the existing delegation
+          // branch only attempts to trace arg0, and the mask classifier
+          // emits a whole-state sentinel into `__prefixes` so the
+          // binding stays correct. The cost is per-update re-evaluation
+          // — a property of the composition pattern, not an author
+          // mistake worth blocking. Without this branch we'd fall
+          // through to the default "outside a tracked container" leak.
           tracked = true
+        } else if (argIndex === 0) {
+          if (
+            ts.isIdentifier(parent.expression) &&
+            !NON_DELEGATION_HELPERS.has(parent.expression.text)
+          ) {
+            // Identifier-callee delegation. Recurse into the callee's
+            // body via the same resolver the mask walker uses. If it
+            // resolves to a local accessor, the helper's reads are
+            // walked transitively and the call is tracked. If the
+            // callee is a function parameter, import, destructured
+            // binding, or otherwise unresolvable, this IS the leak
+            // shape — flag it here so the diagnostic points at the
+            // call site rather than at some deeper unresolvable read.
+            const resolved = resolveAccessorBody(parent.expression, checker)
+            if (resolved) {
+              tracked = true
+            } else {
+              const calleeSymbol = checker?.getSymbolAtLocation(parent.expression)
+              const isFunctionParam = !!calleeSymbol?.declarations?.some((d: ts.Declaration) =>
+                ts.isParameter(d),
+              )
+              shape = `call to an unresolvable callee \`${parent.expression.text}(s)\` (function parameter, import, or destructured binding)`
+              if (isFunctionParam) {
+                hint =
+                  'this callee is a function parameter — the closure passed at the call site is opaque to per-binding analysis. The framework expects per-row dynamic state to flow through `each` items (slot data on `item.*`) rather than through `(s) => ...` callback parameters; restructure the helper so its bindings read `item.*` and the call site builds the slot data once in `items: (s) => …`.'
+              } else {
+                hint =
+                  'inline the read against `s` directly, refactor the callee into a same-module `const`/`function` declaration, or declare the dependencies via `track({ deps: (s) => [...] })`.'
+              }
+            }
+          } else if (!ts.isIdentifier(parent.expression)) {
+            // Method-call / computed callee with state arg —
+            // `obj.helper(s)`, `lib.fn(s)`. This is the documented
+            // headless-components idiom (`pr.valueText(s)` where `pr`
+            // comes from `progress.connect()`); refactoring it would
+            // defeat the API surface. The runtime sentinel keeps the
+            // binding correct — just at the cost of re-evaluating on
+            // every update. Treat as tracked from the lint's POV so
+            // legitimate composition doesn't error the build; the
+            // perf cost is a property of the composition pattern, not
+            // an author mistake worth blocking.
+            tracked = true
+          }
         }
       } else if (ts.isNewExpression(parent)) {
         shape = 'state passed as a constructor argument (`new X(s)`)'
@@ -180,12 +203,23 @@ export function opaqueStateFlowModule(): CompilerModule {
     ],
     visitors: {
       [ts.SyntaxKind.SourceFile]: (ctx, node) => {
+        // When the host adapter has built a Program, walk the checker's
+        // own SourceFile so symbol resolution (Alias → Symbol via
+        // `getSymbolAtLocation`) actually works. The reparsed file used
+        // in the AST-only fallback is not part of any Program, so the
+        // checker can't resolve identifiers in it. Fall back to a
+        // reparse for paths without a Program (test harness, lint
+        // adapters without cross-file resolution).
         const visited = node as ts.SourceFile
-        const sf = ts.createSourceFile(visited.fileName, visited.text, ts.ScriptTarget.Latest, true)
+        const fromProgram = ctx.program?.getSourceFile(visited.fileName)
+        const checker = fromProgram ? ctx.checker : undefined
+        const sf =
+          fromProgram ??
+          ts.createSourceFile(visited.fileName, visited.text, ts.ScriptTarget.Latest, true)
 
         const walk = (n: ts.Node): void => {
           if ((ts.isArrowFunction(n) || ts.isFunctionExpression(n)) && isReactiveAccessor(n)) {
-            const leak = findFirstLeakInAccessor(n)
+            const leak = findFirstLeakInAccessor(n, checker)
             if (leak) {
               ctx.reportDiagnostic({
                 id: 'llui/opaque-state-flow',

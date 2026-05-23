@@ -97,26 +97,85 @@ export function isMemoCallWithArrowArg(expr: ts.Expression): expr is ts.CallExpr
  *   - `memo((s) => …)` — returns the inner arrow
  *   - `someIdentifier` resolving to any of the above (or to a hoisted
  *     `function X(s) { … }` declaration)
+ *
+ * When `checker` is supplied, identifier resolution follows alias chains
+ * across files: `import { matrixOrEmpty } from '../state'` becomes
+ * resolvable. Without a checker the resolver falls back to file-local
+ * `const`/`function` lookup. The cross-file path requires the
+ * identifier's AST node to be bound to the checker's Program — pass
+ * nodes obtained via `program.getSourceFile(...)`, not from a freshly
+ * `ts.createSourceFile`'d copy. (See AnalysisContext.program.)
  */
 export function resolveAccessorBody(
   value: ts.Expression,
+  checker?: ts.TypeChecker,
 ): ts.ArrowFunction | ts.FunctionExpression | ts.FunctionDeclaration | null {
   if (ts.isArrowFunction(value) || ts.isFunctionExpression(value)) return value
   if (isMemoCallWithArrowArg(value)) {
     return value.arguments[0] as ts.ArrowFunction | ts.FunctionExpression
   }
   if (ts.isIdentifier(value)) {
-    const resolved = resolveLocalConstInitializer(value)
-    if (!resolved) return null
-    if (
-      ts.isArrowFunction(resolved) ||
-      ts.isFunctionExpression(resolved) ||
-      ts.isFunctionDeclaration(resolved)
-    ) {
-      return resolved
+    const local = resolveLocalConstInitializer(value)
+    if (local) {
+      if (
+        ts.isArrowFunction(local) ||
+        ts.isFunctionExpression(local) ||
+        ts.isFunctionDeclaration(local)
+      ) {
+        return local
+      }
+      if (isMemoCallWithArrowArg(local)) {
+        return local.arguments[0] as ts.ArrowFunction | ts.FunctionExpression
+      }
+      return null
     }
-    if (isMemoCallWithArrowArg(resolved)) {
-      return resolved.arguments[0] as ts.ArrowFunction | ts.FunctionExpression
+    if (checker) {
+      const resolved = resolveCrossFileAccessor(value, checker)
+      if (resolved) return resolved
+    }
+  }
+  return null
+}
+
+/**
+ * Follow the alias chain for an identifier reference through the type
+ * checker, then inspect the resolved symbol's declarations for an arrow
+ * accessor we can mask-analyze. This is the same descent the cross-file
+ * walker does for view-helper classification (`cross-file-walker.ts`),
+ * applied here so a same-package import like
+ *   `import { matrixOrEmpty } from '../state'`
+ *   `value: (s) => matrixOrEmpty(s).field`
+ * doesn't trip the opaque-flow leak diagnostic — the walker descends
+ * into `matrixOrEmpty`'s body and the call is tracked.
+ *
+ * Returns null for ambient declarations, type-only imports, parameters,
+ * destructured bindings, and re-exports the checker can't pin to a
+ * function-like declaration — every shape the opaque-flow rule is
+ * documented to flag as a leak.
+ */
+function resolveCrossFileAccessor(
+  use: ts.Identifier,
+  checker: ts.TypeChecker,
+): ts.ArrowFunction | ts.FunctionExpression | ts.FunctionDeclaration | null {
+  let sym = checker.getSymbolAtLocation(use)
+  if (!sym) return null
+  if (sym.flags & ts.SymbolFlags.Alias) {
+    try {
+      sym = checker.getAliasedSymbol(sym)
+    } catch {
+      return null
+    }
+  }
+  const decls = sym.getDeclarations()
+  if (!decls || decls.length === 0) return null
+  for (const decl of decls) {
+    if (ts.isFunctionDeclaration(decl) && decl.body) return decl
+    if (ts.isVariableDeclaration(decl) && decl.initializer) {
+      const init = decl.initializer
+      if (ts.isArrowFunction(init) || ts.isFunctionExpression(init)) return init
+      if (isMemoCallWithArrowArg(init)) {
+        return init.arguments[0] as ts.ArrowFunction | ts.FunctionExpression
+      }
     }
   }
   return null

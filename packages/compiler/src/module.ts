@@ -79,6 +79,17 @@ export interface AnalysisContext {
   /** TS TypeChecker, when the host adapter has built a Program. May be undefined for AST-only paths. */
   checker: ts.TypeChecker | undefined
   /**
+   * The cross-file Program the checker is bound to, when available.
+   * Modules that need to resolve identifiers across files (e.g. the
+   * opaque-state-flow lint walking through imported helpers) must walk
+   * Program-bound nodes — the file the registry hands them is a
+   * locally-reparsed copy and its identifiers won't resolve through the
+   * checker. Use `program.getSourceFile(sourceFile.fileName)` to fetch
+   * the Program-bound counterpart. Undefined when the host doesn't
+   * supply a Program (test path, lint adapters without cross-file).
+   */
+  program: ts.Program | undefined
+  /**
    * Get the named module's accumulator slot (creating it lazily). The
    * slot is whatever shape the module wrote; type-safe access is the
    * module author's responsibility — typically via a typed `get<T>()`
@@ -311,6 +322,7 @@ export class ModuleRegistry {
     sourceFile: ts.SourceFile,
     checker?: ts.TypeChecker,
     externalTypes?: ModuleExternalTypes,
+    program?: ts.Program,
   ): RegistryRunResult {
     const analysis: FileAnalysis = {
       sourceFile,
@@ -336,6 +348,7 @@ export class ModuleRegistry {
     const ctx: AnalysisContext = {
       sourceFile: currentSf,
       checker,
+      program,
       getSlot: <T>(name: string, init: () => T): T => {
         let slot = analysis.perModule.get(name) as T | undefined
         if (slot === undefined) {

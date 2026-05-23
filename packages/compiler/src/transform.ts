@@ -180,6 +180,7 @@ export function transformLlui(
   preExtracted?: PreExtractedSchemas,
   crossFilePaths?: ReadonlySet<string>,
   crossFileOpaque = false,
+  crossFileProgram?: ts.Program,
 ): { output: string; edits: TransformEdit[]; diagnostics: Diagnostic[] } | null {
   // Use the caller-provided filename so any module reading `sf.fileName`
   // (e.g. `componentMetaModule` emitting `__componentMeta: { file }`)
@@ -507,7 +508,15 @@ export function transformLlui(
   // `typeSources` flows through to lint modules that need cross-file
   // visibility (e.g. agent-emits-drift's imported-Msg case). Same
   // shape as `ModuleExternalTypes`.
-  const registryResult = registry.run(sourceFile, undefined, typeSources)
+  // Cross-file Program (when the host adapter supplied one) flows through
+  // to lint modules that need to resolve identifiers across files — e.g.
+  // opaque-state-flow walking through an imported helper to decide
+  // whether `helper(s)` is a tracked delegation or an opaque leak. The
+  // checker derived here is the one bound to that Program; identifiers
+  // in `crossFileProgram.getSourceFile(_filename)` resolve through it,
+  // identifiers in the locally-reparsed `sourceFile` do not.
+  const crossFileChecker = crossFileProgram?.getTypeChecker()
+  const registryResult = registry.run(sourceFile, crossFileChecker, typeSources, crossFileProgram)
   // The registry phases (preTransform v2c/decomp-7, transformCall
   // v2c/decomp-11/12) may have mutated the source file — replace our
   // local reference so all subsequent code (fieldBits, visitor,
