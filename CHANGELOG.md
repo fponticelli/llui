@@ -11,6 +11,36 @@ All notable changes to LLui packages are documented here. LLui is a pre-1.0 proj
 
 Packages version in lockstep at release time: `@llui/dom`, `@llui/vite-plugin`, `@llui/test`, `@llui/router`, `@llui/transitions`, `@llui/components`, `@llui/vike` share a version line. `@llui/effects`, `@llui/mcp`, `@llui/eslint-plugin`, `@llui/agent`, and `llui-agent` have their own cadence.
 
+## 2026-05-22 — 0.5.2
+
+**Released:** `@llui/{compiler,vite-plugin,compiler-devtools,compiler-introspection,compiler-ssr,mcp}@0.5.2`
+
+Fix for a silent-skip class in the compiler's per-binding mask. Reactive accessors that flowed the state identifier into an expression the walker couldn't trace — `helper(s)` where `helper` is a function parameter / import / destructured binding, `obj.helper(s)`, `new Wrapper(s)`, spread `{...s}`, conditional branch `cond ? s : other`, dynamic key `s[key]`, etc. — emitted a narrow precise mask covering only the direct reads it could see. A reducer that narrowly touched only the field reached through the opaque expression produced `dirty` bits the binding's mask didn't intersect, so the binding silently never re-evaluated. Symptom: an `<input type="range">` stayed at its initial value while sibling text bindings updated; bisects through reducers landed on "narrow update" vs "wide update" with no clear cause. Surfaced by a user bug report against `@llui/vite-plugin@0.5.1`.
+
+Two-layer fix: (1) the per-binding mask now bails to FULL_MASK in both words when the classifier detects opaque state flow, and (2) the synthesis pipeline appends a `(s) => s` whole-state sentinel to `__prefixes` whenever any accessor in the file (or any imported view-helper, via the cross-file walker) flows state opaquely. FULL_MASK bindings intersect the sentinel bit on every update; precise narrow bindings don't include it. The cross-file walker now also reports opaque flow from imported view-helpers and ambient `declare function` callees.
+
+A new `llui/opaque-state-flow` lint rule surfaces the leak at compile time so authors can rewrite the read as a direct property access or declare deps via `track({ deps: (s) => [...] })`. The rule does NOT flag the `obj.helper(s)` shape — that's the documented headless-components composition idiom (e.g. `pr.valueText(s)` from `progress.connect()`); refactoring it would defeat the API surface. The runtime sentinel keeps such bindings correct at the cost of per-update re-evaluation.
+
+### `@llui/compiler@0.5.2`
+
+- **Fixed** `computeAccessorMask` now runs a classifier over every appearance of the state identifier `s`. The use is tracked only when it's the parameter binding, the root of a PAE chain, the root of an element-access with a literal key, or arg0 of an Identifier-callee call that resolves to a local declaration. Any other context (NewExpression arg, TaggedTemplate span, spread, const alias, ternary branch, method-call arg, dynamic key, arg1+ of a call, …) forces FULL_MASK in BOTH the low and high words so the binding catches the sentinel bit regardless of which prefix word it lands in. Without the dual-word bail, components past 31 paths would miss the sentinel when it lands in the hi word.
+- **Fixed** `collect-deps` mirrors the same classifier per accessor and surfaces an `opaque: boolean` flag through `collectStatePathsFromSource` and `collectDeps`. When set, `core-synthesis.buildPrefixesProp` appends `(s) => s` to the prefixes array. Immutable reducers always return a fresh state identity, so the sentinel's prefix bit dirties on every update — FULL_MASK bindings re-evaluate even when the changed field has no other prefix entry. Precise narrow bindings don't include the sentinel bit, so their gating stays precise.
+- **Added** `llui/opaque-state-flow` lint rule (`severity: error`, `category: perf`). Detected shapes: unresolvable identifier-callee call (function parameter / import / destructured), NewExpression with state arg, TaggedTemplate spans, spread, const alias, ternary branch, dynamic element access, type assertion wrapping state. Each diagnostic names the leak shape and gives a concrete fix hint — inline as a PAE chain, refactor into a same-module helper, or declare reads via `track({ deps: (s) => [...] })`. Method-call callees (`obj.helper(s)`) are NOT flagged — that's the documented headless-components composition idiom; the runtime sentinel keeps them correct.
+- **Added** comprehensive regression coverage: 10 new cases in `transform.test.ts` (one per leak shape + no-regression for resolvable `helper(s)` still producing precise masks), 3 new cases in `cross-file-paths.test.ts` (lift-arrow opaque, state-passes-through helper opaque, negative), 8 new cases in `opaque-state-flow-rule.test.ts` covering positive shapes plus no-false-positive checks for precise PAE accessors, resolvable helpers, and event handlers.
+
+### `@llui/vite-plugin@0.5.2`
+
+- **Improved** `transformLlui` accepts a new `crossFileOpaque` parameter. The plugin's call to `crossFileAccessorPaths` now destructures `{ paths, opaque }` and forwards both fields, so a host file picks up the sentinel when any imported view-helper has opaque flow that the cross-file walker can see.
+
+### `@llui/{compiler-devtools,compiler-introspection,compiler-ssr,mcp}@0.5.2`
+
+- **Improved** cascade republish — `workspace:*` dependency on `@llui/compiler` pinned to the new version. No other source changes.
+
+### Docs
+
+- `docs/designs/02 Compiler.md` gains two new subsections under Pass 2 — "Opaque-flow classifier" and "Whole-state sentinel in `__prefixes`" — documenting the tracked-container rules, the leak shapes, the dual-FULL_MASK requirement, the cross-file integration, and the runtime contract for the sentinel arrow.
+- `docs/designs/14 Compile-Time Rules.md` regenerated; rule count rises from 41 → 44 (the prior 41 in CLAUDE.md was already stale; corrected in this release).
+
 ## 2026-05-22 — 0.5.1
 
 **Released:** `@llui/{compiler,vite-plugin,compiler-devtools,compiler-introspection,compiler-ssr,mcp}@0.5.1`
