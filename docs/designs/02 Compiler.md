@@ -145,6 +145,19 @@ The 31-path cap is a hard constraint of JavaScript's 32-bit signed integer bitwi
 
 **Per-accessor mask computation.** For each reactive accessor, the compiler re-traverses its body to collect the specific paths it accesses, then ORs together their assigned bits. An accessor reading `s.user.name` and `s.filter` gets mask `0x0001 | 0x0008 = 0x0009`. An accessor reading `s.user` (the whole object) gets the union `0x0007`. An accessor that accesses no tracked paths (e.g., it reads a captured local variable `() => String(x)`) gets the conservative full mask `0xFFFFFFFF`, meaning it will be re-evaluated on every update regardless of which paths changed. A compiler diagnostic warning is emitted for every accessor that receives the conservative mask, identifying the specific expression that could not be resolved.
 
+**Opaque-flow classifier.** A "precise" mask built from only the direct reads the walker can see is incorrect when the accessor flows the state identifier into an expression whose state-reading semantics aren't traceable — the binding's `(mask & dirty)` gate then silently skips updates to any field reachable only through the opaque expression. The classifier visits every appearance of the state identifier `s` and treats the use as a leak unless its parent is a known-tracked container:
+
+- The parameter binding itself (the `s` in `(s: State) => …`).
+- The root of a `PropertyAccessExpression` chain (`s.x.y…`).
+- The root of an `ElementAccessExpression` with a literal key (`s['x']`, `s[0]`).
+- `arg0` of a call whose callee is an `Identifier` and not a framework primitive (`text` / `sample` / `item` / `memo` / `unsafeHtml`) — these defer to the delegation branch, which either recurses into a resolvable local helper or marks the call opaque when the callee is a function parameter, import, destructured binding, or otherwise unresolvable.
+
+Every other context is treated as a leak: `NewExpression` arguments (`new Wrapper(s)`), `TaggedTemplateExpression` spans (``tag`${s}` ``), spread (`{ ...s }`), const aliasing (`const x = s`), ternary branches (`cond ? s : other`), method-call arguments (`obj.helper(s)`), dynamic element access (`s[key]` where the key is non-literal), and any argument position past `arg0` of an identifier-callee call. When the classifier sets the opaque flag, the accessor's mask is forced to `FULL_MASK` in **both** the low and high words — the binding then catches a dirty bit regardless of which prefix word the whole-state sentinel below lands in.
+
+**Whole-state sentinel in `__prefixes`.** A `FULL_MASK` binding only fires when `dirty` is non-zero, and `dirty` is computed from `__prefixes` — so a field read _only_ through an opaque expression never enters the prefix table and silently produces `dirty = 0` on any change. When `collect-deps` detects any opaque-flow accessor in the file (or `cross-file-walker` reports opaque flow from an imported view-helper), the synthesis pipeline appends a `(s) => s` sentinel arrow to the tail of `__prefixes`. The sentinel returns the bare state object; because immutable reducers always return a fresh state identity, its prefix bit dirties on every update. `FULL_MASK` bindings — whose mask covers all bits in both words — intersect the sentinel bit and re-evaluate. Precise narrow bindings don't include the sentinel bit (their mask is built from concrete `fieldBits` paths), so they're unaffected by its presence.
+
+This two-layer design — per-binding FULL_MASK + sentinel prefix — ensures correctness even in the worst case (the field is read **only** through the opaque expression and nowhere else in the file) while preserving precision for unrelated bindings in the same component.
+
 **Mask injection into binding tuples.** The mask is placed as the first element of the `[mask, kind, key, accessor]` tuple. The runtime update loop uses it as:
 
 ```typescript

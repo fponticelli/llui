@@ -79,6 +79,7 @@ const RULE_CATEGORIES: Record<string, string> = {
   'llui/no-list-render-in-sample': 'reactivity',
   'llui/no-sample-in-accessor': 'reactivity',
   'llui/no-sample-in-reactive-position': 'reactivity',
+  'llui/opaque-state-flow': 'perf',
 }
 
 for (const r of rows) r.category = RULE_CATEGORIES[r.id] ?? 'unknown'

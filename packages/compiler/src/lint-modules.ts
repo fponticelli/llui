@@ -57,6 +57,7 @@ import { noSampleInEventHandlerModule } from './modules/no-sample-in-event-handl
 import { noRepeatedItemCurrentModule } from './modules/no-repeated-item-current.js'
 import { agentEmitsDriftModule } from './modules/agent-emits-drift.js'
 import { agentMsgResolvableModule } from './modules/agent-msg-resolvable.js'
+import { opaqueStateFlowModule } from './modules/opaque-state-flow.js'
 
 /**
  * Construct fresh instances of every always-on lint module.
@@ -110,5 +111,6 @@ export function createLintModules(): CompilerModule[] {
     noRepeatedItemCurrentModule(),
     agentEmitsDriftModule(),
     agentMsgResolvableModule(),
+    opaqueStateFlowModule(),
   ]
 }

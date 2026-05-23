@@ -7,7 +7,7 @@
 
 Every rule listed here fires as a **compile-time error** from `@llui/compiler`, surfaced by `@llui/vite-plugin`'s build pipeline as `this.error(…)`. There is no warning tier; an LLM-first authoring loop treats anything else as ignorable noise.
 
-Total: **41** rules.
+Total: **44** rules.
 
 ## Categories
 
@@ -64,16 +64,17 @@ Enforce the agent-protocol annotation discipline so `list_actions` surfaces a co
 | `llui/agent-warning-on-confirm`          | @requiresConfirm without @warning — LLM should see why the action is gated.                                            |
 | `llui/string-effect-callback`            | String-based effect callback is deprecated — use a typed message constructor.                                          |
 
-### `perf` (4)
+### `perf` (5)
 
 Catch patterns that disable compile-time optimizations or scale poorly at runtime.
 
-| Rule                                        | Description                                                                                    |
-| ------------------------------------------- | ---------------------------------------------------------------------------------------------- |
-| `llui/bitmask-overflow`                     | Component reads more than 62 unique state paths — paths past the limit fall back to FULL_MASK. |
-| `llui/missing-memo`                         | Duplicate accessor arrow used at multiple reactive binding sites without memo().               |
-| `llui/no-barrel-import-when-subpath-exists` | Barrel import has a sub-path export — use the sub-path for smaller bundles.                    |
-| `llui/spread-in-children`                   | Spread of a dynamic array into element children — disables template-clone optimization.        |
+| Rule                                        | Description                                                                                                                                                                                                                        |
+| ------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `llui/bitmask-overflow`                     | Component reads more than 62 unique state paths — paths past the limit fall back to FULL_MASK.                                                                                                                                     |
+| `llui/missing-memo`                         | Duplicate accessor arrow used at multiple reactive binding sites without memo().                                                                                                                                                   |
+| `llui/no-barrel-import-when-subpath-exists` | Barrel import has a sub-path export — use the sub-path for smaller bundles.                                                                                                                                                        |
+| `llui/opaque-state-flow`                    | Reactive accessor flows state into an opaque expression the walker can't trace. The runtime stays correct via a FULL_MASK binding + whole-state sentinel in `__prefixes`, but the binding then re-evaluates on every state change. |
+| `llui/spread-in-children`                   | Spread of a dynamic array into element children — disables template-clone optimization.                                                                                                                                            |
 
 ### `style` (5)
 
@@ -86,6 +87,15 @@ Style nudges that don't change behavior but make code easier to read, review, an
 | `llui/form-boilerplate` | Msg union has 3+ set*/update*/change\* variants with identical shape — use a generic field-update message. |
 | `llui/namespace-import` | Namespace import from @llui/\* disables compiler opts and defeats tree-shaking.                            |
 | `llui/view-bag-import`  | View bag primitive imported from @llui/dom in a file that defines a component — use the view bag instead.  |
+
+### `unknown` (2)
+
+Uncategorized rules (this section should be empty in steady state).
+
+| Rule                              | Description                                                                                                                                                                                  |
+| --------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `llui/no-repeated-item-current`   | Repeated `item.current().X` calls inside the same accessor — bitmask falls back to FULL_MASK and chained access can throw during reconcile races. Destructure once or project to a row type. |
+| `llui/no-sample-in-event-handler` | `sample()` inside an event handler — handlers run with no render context; throws at runtime. Capture at render time instead.                                                                 |
 
 ## Rule severity
 
