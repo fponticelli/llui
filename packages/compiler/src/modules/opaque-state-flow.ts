@@ -125,7 +125,7 @@ function findFirstLeakInAccessor(
               shape = `call to an unresolvable callee \`${parent.expression.text}(s)\` (function parameter, import, or destructured binding)`
               if (isFunctionParam) {
                 hint =
-                  'this callee is a function parameter — the closure passed at the call site is opaque to per-binding analysis. The framework expects per-row dynamic state to flow through `each` items (slot data on `item.*`) rather than through `(s) => ...` callback parameters; restructure the helper so its bindings read `item.*` and the call site builds the slot data once in `items: (s) => …`. For non-iterating helpers (single-value renderers, form rows, layout chrome) see the other patterns in `docs/composition-patterns.md` — accessor passthrough, pre-built Nodes, Node[] slots.'
+                  'this callee is a function parameter — the closure passed at the call site is opaque to per-binding analysis. The framework expects per-row dynamic state to flow through `each` items (slot data on `item.*`) rather than through `(s) => ...` callback parameters; restructure the helper so its bindings read `item.*` and the call site builds the slot data once in `items: (s) => …`. For non-iterating helpers (single-value renderers, form rows, layout chrome) see the other patterns in `https://github.com/fponticelli/llui/blob/main/docs/composition-patterns.md` — accessor passthrough, pre-built Nodes, Node[] slots.'
               } else {
                 hint =
                   'inline the read against `s` directly, refactor the callee into a same-module `const`/`function` declaration, or declare the dependencies via `track({ deps: (s) => [...] })`.'

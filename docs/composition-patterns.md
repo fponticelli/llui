@@ -1,3 +1,8 @@
+---
+title: Composition Patterns
+description: "How generic UI helpers compose with the framework's reactivity model. The canonical migration target for the `llui/opaque-state-flow` diagnostic."
+---
+
 # Composition Patterns for Generic Helpers
 
 How to write generic UI helpers (`paramRow`, `tagSelector`, `dieNode`, …) that compose cleanly with the framework's reactivity model. This is the canonical answer to the question that comes up the moment you try to factor reactive UI into reusable functions: **how does the helper know what state to read?**

@@ -65,6 +65,7 @@ export function siteLayout<S extends LayoutState, M extends LayoutMsg>({
           navLink<S>('/', 'index', 'Home', text),
           navLink<S>('/getting-started', 'getting-started', 'Getting Started', text),
           navLink<S>('/cookbook', 'cookbook', 'Cookbook', text),
+          navLink<S>('/composition-patterns', 'composition-patterns', 'Composition Patterns', text),
           navLink<S>('/architecture', 'architecture', 'Architecture', text),
           navLink<S>('/benchmarks', 'benchmarks', 'Benchmarks', text),
           navLink<S>('/changelog', 'changelog', 'Changelog', text),

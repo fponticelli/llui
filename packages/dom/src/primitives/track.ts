@@ -50,7 +50,7 @@
  * If you're considering `track()` to silence `llui/opaque-state-flow`
  * on a function-parameter callback (`getX: (s: S) => X`), don't — that
  * shape is the documented anti-pattern, not a use case for `track`. See
- * `docs/composition-patterns.md` for the four migration shapes.
+ * `https://github.com/fponticelli/llui/blob/main/docs/composition-patterns.md` for the four migration shapes.
  *
  * See `docs/proposals/v2-compiler/v2b.md` §3.
  */
