@@ -11,6 +11,29 @@ All notable changes to LLui packages are documented here. LLui is a pre-1.0 proj
 
 Packages version in lockstep at release time: `@llui/dom`, `@llui/vite-plugin`, `@llui/test`, `@llui/router`, `@llui/transitions`, `@llui/components`, `@llui/vike` share a version line. `@llui/effects`, `@llui/mcp`, `@llui/eslint-plugin`, `@llui/agent`, and `llui-agent` have their own cadence.
 
+## 2026-05-22 — 0.5.3
+
+**Released:** `@llui/{compiler,vite-plugin,compiler-devtools,compiler-introspection,compiler-ssr,mcp}@0.5.3`
+
+Follow-up to 0.5.2 unblocking three classes of false-positive in the new `llui/opaque-state-flow` lint that were blocking real consumers from upgrading. The rule was over-strict in shapes the runtime already handled correctly: imported helpers called at arg0, state passed at arg1+ to any call, and View-bag callbacks (`branch.default`, `branch.cases.<k>`, `show.render`, `show.fallback`, `scope.render`) whose single parameter is a `View<S, M>` bag, not state. Each case got a targeted fix without weakening the diagnostic for actual leaks.
+
+### `@llui/compiler@0.5.3`
+
+- **Fixed** cross-file resolution in `resolveAccessorBody`. The resolver now accepts an optional `ts.TypeChecker` and follows alias chains across files via `getAliasedSymbol`, mirroring the cross-file walker. `import { matrixOrEmpty } from '../state'` followed by `(s) => matrixOrEmpty(s).field` no longer trips `llui/opaque-state-flow` — the walker descends into the imported helper and the call is tracked. Without a Program (test-only `transformLlui`), behavior falls back to file-local lookup as before.
+- **Fixed** `opaque-state-flow` no longer flags state passed at arg1+ of a call (`helper(opts, s)`). The header comment documented arg1+ as intentionally not flagged — the runtime sentinel keeps the binding correct — but the implementation only matched `arguments[0]`, so any other position fell through to the default "outside a tracked container" leak.
+- **Improved** when the unresolvable callee is a function parameter (the helper-takes-`(s) => ...`-callback composition pattern), the diagnostic's hint now redirects the author at the `each` items-bag rewrite — the framework's intended answer to per-row dynamic state — instead of the generic "inline or refactor" advice. The closure passed at the call site is opaque to per-binding analysis no matter how it's wrapped, so suggesting same-module hoisting is misleading.
+- **Fixed** `isReactiveAccessor` no longer treats View-bag callbacks as reactive accessors. Property keys `default`, `render`, `fallback` on structural primitives (`branch`, `show`, `scope`, `each`) and case-arm values inside a nested `cases:` object receive a `View<S, M>` bag, not state. The walker used to enter these as `(stateParam) => ...` and chase the bag's identifier through the body as if every reference were a state leak — including legitimate `subView(item, kind, h)` calls inside `sample` callbacks where the bag was forwarded to a sub-view.
+- **Added** `AnalysisContext.program` exposes the cross-file `ts.Program` (when supplied by the host adapter) so modules can resolve identifiers in Program-bound nodes. The locally-reparsed source file the registry hands modules is not part of any Program; modules that need symbol resolution must walk `program.getSourceFile(sourceFile.fileName)` to get nodes the checker can bind. Documented inline on the field.
+- **Added** 5 regression tests in `opaque-state-flow-rule.test.ts` covering: cross-file imported helper (with Program), cross-file fallback (without Program, still correctly flagged), function-parameter hint variant pointing at items-bag, arg1+ accepted as tracked, and View-bag `default` callback accepted as non-reactive.
+
+### `@llui/vite-plugin@0.5.3`
+
+- **Improved** `transformLlui` accepts a new `crossFileProgram` parameter; the plugin's existing `crossFileProgram` (built once per project under `crossFile: 'silent'` / `true`) now flows through to the compiler, where the lint pipeline derives a `TypeChecker` and threads both into `AnalysisContext` for cross-file symbol resolution.
+
+### `@llui/{compiler-devtools,compiler-introspection,compiler-ssr,mcp}@0.5.3`
+
+- **Improved** cascade republish — `workspace:*` dependency on `@llui/compiler` pinned to the new version. No other source changes.
+
 ## 2026-05-22 — 0.5.2
 
 **Released:** `@llui/{compiler,vite-plugin,compiler-devtools,compiler-introspection,compiler-ssr,mcp}@0.5.2`
