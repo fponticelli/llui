@@ -357,24 +357,38 @@ export function isReactiveAccessor(node: ts.Node): boolean {
 
   // text(s => s.count) — first arg to a call
   if (ts.isCallExpression(parent) && parent.arguments[0] === node) {
-    // Skip item(t => t.id) — per-item selectors inside each() render.
-    // Skip sample(s => s.x) — imperative one-shot read, no binding created
-    // (both the top-level import and the destructured-from-h form).
+    // Bare-identifier callee — only the small set of @llui/dom primitives
+    // that take a reactive accessor as arg[0] qualifies. Defaulting to
+    // `true` here used to misclassify every user mutator (change(updater),
+    // dispatch(s), setTimeout(fn, ms), array helpers like
+    // `tryGet(s).then(arrow)`, etc.) as a reactive accessor, with two
+    // downstream symptoms: (a) the path collector treated the arrow's
+    // param as state and polluted `__prefixes` with phantom paths;
+    // (b) the opaque-state-flow lint walked the body and flagged
+    // perfectly legitimate updater patterns like
+    // `change((c) => cond ? newC : c)` as "state in conditional branch".
+    // The PropertyAssignment branch below already uses the equivalent
+    // allow-list pattern (`REACTIVE_API_NAMES.has(...)`); this branch
+    // is now symmetric.
+    //
+    // Destructured-renamed View-bag aliases (`view: ({text: t}) =>
+    // [t(s => ...)]`) resolve via the primitive's property name, so the
+    // membership check uses the original primitive name rather than the
+    // local alias. Without this, `t(s => s.count)` would silently skip
+    // path collection and mask injection.
     if (ts.isIdentifier(parent.expression)) {
-      if (parent.expression.text === 'item' || parent.expression.text === 'sample') {
-        return false
-      }
+      const originalName = resolveBareIdentToPrimitive(parent.expression)
+      return REACTIVE_BARE_IDENT_ARG0.has(originalName)
     }
     // Skip array method callbacks: .filter(t => ...), .map(t => ...), .some(t => ...), etc.
-    // Allow view-helper primitive calls: h.text(s => ...), h.memo(s => ...)
+    // Allow view-helper primitive calls — same set as the bare-identifier
+    // allow-list above, kept in sync so `h.text(s => …)` and `text(s => …)`
+    // are treated symmetrically.
     if (ts.isPropertyAccessExpression(parent.expression)) {
-      const methodName = parent.expression.name.text
-      if (methodName === 'text' || methodName === 'memo') {
-        return true
-      }
+      if (REACTIVE_BARE_IDENT_ARG0.has(parent.expression.name.text)) return true
       return false
     }
-    return true
+    return false
   }
 
   // div({ title: s => s.title }) — value in a property assignment inside an object literal.
@@ -439,6 +453,169 @@ export function isReactiveAccessor(node: ts.Node): boolean {
   }
 
   return false
+}
+
+// Framework primitives whose first positional argument IS a reactive
+// accessor (an arrow taking state). The set is intentionally tiny —
+// every other bare-identifier callee with an arrow arg0 (user mutators,
+// async helpers, timers, array constructors, …) must NOT be visited as
+// a reactive accessor, or its closure parameter gets misclassified as
+// state and its body gets walked by the opaque-flow lint.
+//
+// Excluded by design:
+//   - `sample(s => s.x)` — imperative one-shot read, no binding.
+//   - `item(t => t.x)` — per-item selector inside an `each.render`
+//     callback; the param is per-row, not the component's state.
+//   - `track({ deps })` — takes an object literal, not an arrow.
+//   - `provide(key, accessor)` — accessor is arg1, not arg0.
+const REACTIVE_BARE_IDENT_ARG0 = new Set(['text', 'memo', 'unsafeHtml', 'selector'])
+
+/**
+ * Resolve a bare-identifier callee back to the original primitive name,
+ * unwrapping the alias forms an author can produce locally:
+ *
+ *   - Destructure rename in a function parameter — the canonical View-bag
+ *     pattern: `view: ({text: t}) => [t(s => …)]` aliases `t` to `text`.
+ *   - Destructure rename in a `const { ... } = …` declaration.
+ *   - Const rebinding: `const t = text; t(s => …)` aliases `t` to `text`.
+ *
+ * The walker climbs the lexical scope finding the innermost binding for
+ * `ident.text`; for const rebinding it recursively follows the
+ * initializer when it's another bare Identifier (with a visited-set
+ * guard against cycles like `const a = b; const b = a`). Stops at the
+ * first non-Identifier initializer — `const t = someCall()` returns
+ * `'t'` unchanged, because the value isn't a primitive name we can
+ * statically pin.
+ *
+ * Restricted to local lexical resolution. Cross-file alias chains
+ * (`import { t } from './aliases'`) are the cross-file resolver's job;
+ * this AST-only predicate stops at the module boundary.
+ */
+function resolveBareIdentToPrimitive(ident: ts.Identifier): string {
+  const result = resolveBareIdentFrom(ident, ident.text, new Set())
+  return result ?? ident.text
+}
+
+// Returns:
+//   - string: the resolved primitive-candidate name (caller checks
+//     REACTIVE_BARE_IDENT_ARG0 membership).
+//   - null: a local declaration was found that shadows the name with
+//     a value the resolver can't follow (e.g. `const t = someCall()`,
+//     `const t = (x) => …`). The caller should treat as a non-primitive
+//     local binding. Distinguishing `null` from "name unchanged" matters
+//     when the name happens to match a primitive — e.g.
+//     `const text = (x) => x.toUpperCase()` followed by `text((s) => …)`
+//     must NOT be classified as reactive.
+function resolveBareIdentFrom(
+  fromNode: ts.Node,
+  name: string,
+  visited: Set<string>,
+): string | null {
+  if (visited.has(name)) return null
+  visited.add(name)
+  let node: ts.Node = fromNode
+  while (node.parent) {
+    const parent = node.parent
+    let params: readonly ts.ParameterDeclaration[] | null = null
+    let statements: readonly ts.Statement[] | null = null
+    if (
+      ts.isArrowFunction(parent) ||
+      ts.isFunctionExpression(parent) ||
+      ts.isFunctionDeclaration(parent) ||
+      ts.isMethodDeclaration(parent)
+    ) {
+      params = parent.parameters
+    } else if (ts.isBlock(parent) || ts.isSourceFile(parent) || ts.isModuleBlock(parent)) {
+      statements = parent.statements
+    }
+    if (params) {
+      for (const param of params) {
+        if (!ts.isObjectBindingPattern(param.name)) continue
+        const hit = findInBindingPattern(param.name, name)
+        if (hit !== null) return hit
+      }
+      // Identifier-binding parameter shadowing (`(text: …) => text(…)`):
+      // the parameter itself binds `name` to whatever the caller passed,
+      // which we can't see locally. Treat as shadowed.
+      for (const param of params) {
+        if (ts.isIdentifier(param.name) && param.name.text === name) return null
+      }
+    }
+    if (statements) {
+      for (const stmt of statements) {
+        if (ts.isFunctionDeclaration(stmt) && stmt.name?.text === name) {
+          // `function text(...) { … }` — local function shadows the name.
+          return null
+        }
+        if (ts.isImportDeclaration(stmt)) {
+          if (importShadowsName(stmt, name)) {
+            // Imported binding with this name. We can't statically
+            // confirm whether it actually resolves to the @llui/dom
+            // primitive (could be `import { text } from './my-utils'`),
+            // so the caller mustn't assume primitive-hood blindly.
+            // Defer to the existing transform.ts viewHelperNames pass,
+            // which IS import-aware, and treat as a primitive-named
+            // binding here. Returning `name` preserves the existing
+            // predicate behavior for direct `import { text } from
+            // '@llui/dom'`; the residual user-shadows-via-rename-import
+            // case is a pre-existing predicate gap (transform.ts has
+            // the same gap), not regressed by this change.
+            return name
+          }
+        }
+        if (!ts.isVariableStatement(stmt)) continue
+        const isConst = !!(stmt.declarationList.flags & ts.NodeFlags.Const)
+        for (const decl of stmt.declarationList.declarations) {
+          // `const { text: t } = h` — destructure rename.
+          if (ts.isObjectBindingPattern(decl.name)) {
+            const hit = findInBindingPattern(decl.name, name)
+            if (hit !== null) return hit
+            continue
+          }
+          if (!ts.isIdentifier(decl.name) || decl.name.text !== name) continue
+          // Bound to `name` at this scope — stop here regardless of how
+          // it's bound. Either we can follow (const rebinding to another
+          // identifier) or this is a shadowing definition we can't see
+          // through.
+          if (isConst && decl.initializer && ts.isIdentifier(decl.initializer)) {
+            return resolveBareIdentFrom(decl.initializer, decl.initializer.text, visited)
+          }
+          return null
+        }
+      }
+    }
+    node = parent
+  }
+  return name
+}
+
+function importShadowsName(imp: ts.ImportDeclaration, name: string): boolean {
+  const clause = imp.importClause
+  if (!clause) return false
+  if (clause.name && clause.name.text === name) return true // default import
+  const bindings = clause.namedBindings
+  if (!bindings) return false
+  if (ts.isNamespaceImport(bindings)) return bindings.name.text === name
+  if (ts.isNamedImports(bindings)) {
+    for (const spec of bindings.elements) {
+      if (spec.name.text === name) return true
+    }
+  }
+  return false
+}
+
+function findInBindingPattern(pat: ts.ObjectBindingPattern, localName: string): string | null {
+  for (const element of pat.elements) {
+    if (!ts.isIdentifier(element.name)) continue
+    if (element.name.text !== localName) continue
+    // `{ text: t }` — propertyName='text', name='t' → original is 'text'.
+    // `{ text }` — no propertyName, name='text' → original is 'text'.
+    if (element.propertyName && ts.isIdentifier(element.propertyName)) {
+      return element.propertyName.text
+    }
+    return localName
+  }
+  return null
 }
 
 // Framework APIs whose object-literal arguments contain reactive accessors.

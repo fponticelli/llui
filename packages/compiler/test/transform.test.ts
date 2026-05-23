@@ -637,14 +637,20 @@ describe('reactive prop value resolution — non-arrow Identifier/CallExpression
       })
     `
     const out = t(src)
-    // The closure passed to paramRow puts `paramOverridesById` into
-    // __prefixes, so the legend includes it. The bug is on the
-    // binding's mask, not on path discovery.
-    expect(out).toMatch(/"paramOverridesById":/)
-    // Bug: the input's value binding receives a precise mask (the
-    // `zoom` bit alone). Conservative correctness requires FULL_MASK
-    // (-1 in 32-bit two's complement, written as `4294967295 | 0`)
-    // whenever the body invokes an unresolvable callee.
+    // The closure passed at arg[0] of `paramRow(...)` is no longer
+    // walked as a reactive accessor (0.5.4: bare-Identifier non-primitive
+    // callees don't enter the reactive predicate). Its reads no longer
+    // surface as named paths in `__prefixes`. Correctness is instead
+    // guaranteed by the whole-state sentinel `(s) => s` that the
+    // opaque-flow classifier appends to `__prefixes` whenever the
+    // file contains an opaque accessor — which the value binding here
+    // is (`getParamState(s)` is an unresolvable callee). FULL_MASK
+    // bindings intersect the sentinel's bit on every state change.
+    expect(out).toMatch(/\(?s\)?\s*=>\s*s\b/)
+    // The input's value binding must carry FULL_MASK (-1 in 32-bit
+    // two's complement, written as `4294967295 | 0`) whenever the body
+    // invokes an unresolvable callee — without it, a precise narrow
+    // mask would silently hide updates the closure depends on.
     expect(out).toMatch(
       /\[4294967295\s*\|\s*0,\s*['"]prop['"],\s*['"]value['"],\s*\(s:\s*HostState\)\s*=>/,
     )

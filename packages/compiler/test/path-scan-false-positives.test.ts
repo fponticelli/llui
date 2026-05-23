@@ -78,6 +78,12 @@ describe('path scanner — false-positive regressions', () => {
   })
 
   it('Case C: does not count .some/.filter/.map callbacks inside an accessor', () => {
+    // Uses the real `show({ when, render })` API rather than a
+    // positional `show(arrow, render)` invocation. Pre-0.5.4 the
+    // positional form picked up `msgs` only because every bare-Identifier
+    // arg[0] arrow was walked — that over-permissiveness has been
+    // narrowed to `text` / `memo` / `unsafeHtml`. The real API tracks
+    // `when` as a reactive accessor through `REACTIVE_API_NAMES`.
     const src = `
       import { component, div, text, show } from "@llui/dom"
       component({
@@ -86,10 +92,10 @@ describe('path scanner — false-positive regressions', () => {
         update: (s) => [s, []],
         view: ({ text, show }) => [
           div([text((s) => String(s.count))]),
-          ...show(
-            (s) => s.msgs.some((m) => m.type === "warn"),
-            () => [],
-          ),
+          ...show({
+            when: (s) => s.msgs.some((m) => m.type === "warn"),
+            render: () => [],
+          }),
         ],
       })
     `

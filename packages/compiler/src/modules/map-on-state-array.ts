@@ -21,6 +21,57 @@ function findViewProperty(call: ts.CallExpression): ts.PropertyAssignment | unde
 }
 
 /**
+ * True when the `.map()` call sits at any depth inside the `items:`
+ * accessor of an enclosing `each({ items, ... })` call. In that
+ * position the `.map()`'s array is what `items` is supposed to return —
+ * the caller already adopted the `each` pattern. Firing the rule here
+ * was a self-referential false positive: the diagnostic told the
+ * author to use the very `each` they were inside.
+ *
+ * The walker stops at function boundaries to avoid attributing nested
+ * helper definitions to their enclosing scope, but follows property
+ * assignments transparently — the canonical shape is `each({ items:
+ * (s) => s.foo.map(...) })`, and the `.map()` lives several AST levels
+ * down from the `items:` PropertyAssignment.
+ */
+function isInsideEachItemsAccessor(n: ts.Node): boolean {
+  let cur: ts.Node | undefined = n.parent
+  // The enclosing function whose body contains the `.map()`. If it
+  // turns out to be the `items:` arrow of an `each(...)`, suppress.
+  let enclosingFn: ts.ArrowFunction | ts.FunctionExpression | undefined
+  while (cur) {
+    if (ts.isArrowFunction(cur) || ts.isFunctionExpression(cur)) {
+      enclosingFn = cur
+      break
+    }
+    cur = cur.parent
+  }
+  if (!enclosingFn) return false
+  // The function must be the value of a `items:` PropertyAssignment...
+  const pa = enclosingFn.parent
+  if (
+    !pa ||
+    !ts.isPropertyAssignment(pa) ||
+    !ts.isIdentifier(pa.name) ||
+    pa.name.text !== 'items'
+  ) {
+    return false
+  }
+  // ...inside an object literal passed as the first arg to a call
+  // whose callee resolves (by name) to `each`. Handles both the
+  // bare import (`each({...})`) and the View-bag form (`h.each({...})`).
+  const obj = pa.parent
+  if (!obj || !ts.isObjectLiteralExpression(obj)) return false
+  const call = obj.parent
+  if (!call || !ts.isCallExpression(call) || call.arguments[0] !== obj) return false
+  if (ts.isIdentifier(call.expression)) return call.expression.text === 'each'
+  if (ts.isPropertyAccessExpression(call.expression)) {
+    return call.expression.name.text === 'each'
+  }
+  return false
+}
+
+/**
  * True when `expr` resolves to a state-like reference. We recognize
  * the conventional names — `state`, `s`, `_state` — and chained
  * property accesses rooted at one of them (e.g. `s.items.filtered`).
@@ -65,7 +116,8 @@ export function mapOnStateArrayModule(): CompilerModule {
               ts.isPropertyAccessExpression(n.expression) &&
               ts.isIdentifier(n.expression.name) &&
               n.expression.name.text === 'map' &&
-              isStateReference(n.expression.expression)
+              isStateReference(n.expression.expression) &&
+              !isInsideEachItemsAccessor(n)
             ) {
               ctx.reportDiagnostic({
                 id: 'llui/map-on-state-array',

@@ -3,7 +3,39 @@ import { mountApp } from '../src/mount'
 import { each } from '../src/primitives/each'
 import { text } from '../src/primitives/text'
 import { div, ul, li, span } from '../src/elements'
-import type { ComponentDef } from '../src/types'
+import type { ComponentDef, ItemAccessor } from '../src/types'
+
+// Type-level regression for ItemAccessor<T> with primitive T.
+//
+// dicerun2 reported (0.5.3) that `provider.current()` did NOT
+// type-check on `ItemAccessor<string>` because the field-map branch
+// (`[K in keyof T]-?: () => T[K]`) expanded `keyof string` over every
+// intrinsic string method, structurally colliding with the explicit
+// `current(): T` field and the callable signature. The documented
+// escape hatch was unreachable.
+//
+// 0.5.4 fix: gate the field-map branch on `T extends object`. For
+// primitive Ts the branch is `Record<string, never>` and `current()`
+// stays accessible. The assertions below would fail to compile if
+// the regression returned.
+
+describe('ItemAccessor<T> type-level — primitive T must expose current() and call signature', () => {
+  it('compiles current() access and identity-projection on ItemAccessor<string>', () => {
+    const checkPrimitive = (provider: ItemAccessor<string>): [string, () => string] => [
+      provider.current(),
+      provider((v) => v),
+    ]
+    const checkObject = (
+      item: ItemAccessor<{ id: string; label: string }>,
+    ): [() => string, { id: string; label: string }] => [item.id, item.current()]
+    // The functions are defined; their TYPE-CHECKING success is the
+    // regression assertion (a compile error here = the bug came back).
+    // The runtime guarantee already lives in the integration tests
+    // below — this block is type-only.
+    expect(typeof checkPrimitive).toBe('function')
+    expect(typeof checkObject).toBe('function')
+  })
+})
 
 // Regression test for ItemAccessor<T>.current() — reading a primitive or
 // whole-item value from the render bag without routing through the

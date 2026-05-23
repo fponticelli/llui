@@ -112,6 +112,56 @@ describe('map-on-state-array', () => {
     expect(diags).toHaveLength(0)
   })
 
+  it('does NOT error on .map() inside an enclosing each.items accessor', () => {
+    // Self-referential false-positive fix (dicerun2 issue #1, 0.5.4):
+    // `.map()` inside `each({ items: (s) => s.foo.map(...) })` is
+    // building the very array `each` consumes. The diagnostic used
+    // to tell the author to use `each` — which they already were.
+    const diags = diagnosticsFor(
+      `
+        import { component, each, text } from '@llui/dom'
+        type Row = { id: string; label: string }
+        const App = component({
+          name: 'X',
+          init: () => [{ items: [] as Row[] }, []],
+          update: (s) => [s, []],
+          view: () => [
+            ...each<Row>({
+              items: (s: { items: Row[] }) => s.items.map((r) => ({ id: r.id, label: r.label })),
+              key: (r) => r.id,
+              render: ({ item }) => [text(item.label)],
+            }),
+          ],
+        })
+      `,
+      'llui/map-on-state-array',
+    )
+    expect(diags).toHaveLength(0)
+  })
+
+  it('also suppresses inside h.each({items}) — View-bag form', () => {
+    const diags = diagnosticsFor(
+      `
+        import { component, text } from '@llui/dom'
+        type Row = { id: string; label: string }
+        const App = component({
+          name: 'X',
+          init: () => [{ items: [] as Row[] }, []],
+          update: (s) => [s, []],
+          view: ({ each }) => [
+            ...each<Row>({
+              items: (s: { items: Row[] }) => s.items.map((r) => ({ id: r.id, label: r.label })),
+              key: (r) => r.id,
+              render: ({ item }) => [text(item.label)],
+            }),
+          ],
+        })
+      `,
+      'llui/map-on-state-array',
+    )
+    expect(diags).toHaveLength(0)
+  })
+
   it('does NOT error on .map() in update (only view triggers the rule)', () => {
     const diags = diagnosticsFor(
       `

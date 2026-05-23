@@ -554,19 +554,28 @@ export interface ScopeOptions<S, M = unknown> extends TransitionOptions {
  */
 export type ItemAccessor<T> = {
   <R>(selector: (t: T) => R): () => R
-} & {
-  [K in keyof T]-?: () => T[K]
-} & {
   /**
    * Read the whole current item. Needed when T is a primitive (where the
-   * field-map branch collapses to method names like `toString`) or when
-   * you want to sample the entire record rather than a single field.
+   * field-map branch would otherwise expose only method names like
+   * `toString`) or when you want to sample the entire record rather
+   * than a single field.
    *
    * Shadows any literal `current` field on T — if T has such a field,
    * use `item(r => r.current)` to disambiguate.
    */
   current(): T
-}
+} & ItemAccessorFieldMap<T>
+
+// Field-map branch is gated on T being an object type. Without the
+// gate, primitive Ts (e.g. T=string) expand `keyof T` over the
+// primitive's intrinsic methods (`toString`, `charAt`, …), which
+// structurally collides with the callable signature + `current()` of
+// the parent intersection. The documented escape hatch
+// (`item.current()`) was unreachable for `ItemAccessor<string>` —
+// reported by dicerun2 (0.5.4).
+type ItemAccessorFieldMap<T> = T extends object
+  ? { [K in keyof T]-?: () => T[K] }
+  : Record<string, never>
 
 export interface EachOptions<S, T, M = unknown> extends TransitionOptions {
   items: (s: S) => T[]

@@ -184,6 +184,32 @@ function findFirstLeakInAccessor(
   return leak
 }
 
+/**
+ * True when `arrow` is the value of a `deps:` PropertyAssignment in
+ * a `track({ ... })` call. The diagnostic is suppressed in that
+ * position because `track` is the documented escape hatch for cases
+ * the walker can't statically infer; firing the lint inside it moves
+ * the diagnostic without giving the author a path forward.
+ *
+ * Handles both forms: bare `track({...})` (import from `@llui/dom`)
+ * and the View-bag form `h.track({...})` if it ever exists.
+ */
+function isInsideTrackDeps(arrow: ts.ArrowFunction | ts.FunctionExpression): boolean {
+  const pa = arrow.parent
+  if (!pa || !ts.isPropertyAssignment(pa) || !ts.isIdentifier(pa.name) || pa.name.text !== 'deps') {
+    return false
+  }
+  const obj = pa.parent
+  if (!obj || !ts.isObjectLiteralExpression(obj)) return false
+  const call = obj.parent
+  if (!call || !ts.isCallExpression(call) || call.arguments[0] !== obj) return false
+  if (ts.isIdentifier(call.expression)) return call.expression.text === 'track'
+  if (ts.isPropertyAccessExpression(call.expression)) {
+    return call.expression.name.text === 'track'
+  }
+  return false
+}
+
 function describe(node: ts.Node): string {
   if (ts.isIdentifier(node)) return node.text
   if (ts.isPropertyAccessExpression(node)) return `${describe(node.expression)}.${node.name.text}`
@@ -219,6 +245,19 @@ export function opaqueStateFlowModule(): CompilerModule {
 
         const walk = (n: ts.Node): void => {
           if ((ts.isArrowFunction(n) || ts.isFunctionExpression(n)) && isReactiveAccessor(n)) {
+            // `track({ deps: (s) => [...] })` is the user's explicit
+            // opt-in for "this binding's reads can't be inferred — trust
+            // my declaration." Firing a perf lint inside the user's
+            // declaration defeats the primitive's purpose; the
+            // diagnostic moves from the original call site to inside
+            // track.deps without going away, leaving authors with no
+            // recovery path. Suppress here. The mask/path classifier
+            // still walks the body for what it can extract; this only
+            // silences the lint.
+            if (isInsideTrackDeps(n)) {
+              ts.forEachChild(n, walk)
+              return
+            }
             const leak = findFirstLeakInAccessor(n, checker)
             if (leak) {
               ctx.reportDiagnostic({

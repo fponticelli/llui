@@ -26,6 +26,22 @@
  *     two-plus files away.
  *   - Helpers stored in arrays and dispatched by index.
  *
+ * `track()` only helps when the `deps` body itself reads paths the
+ * walker CAN extract — `(s) => [s.pluginRegistry, s.activePluginName]`,
+ * concrete property-access chains. If the deps body is itself opaque
+ * (e.g. `(s) => [getError(s)]` where `getError` is a callback
+ * parameter), the walker can't pull paths out of it and `track()`
+ * collapses to the same FULL_MASK + sentinel behavior that would
+ * happen without it — the call is still erased from emission, but it
+ * does no useful narrowing. In that case the underlying composition
+ * pattern is the real problem: helpers that take `(s) => …` callbacks
+ * should be restructured to receive their reactive values via primitives
+ * (`text((s) => …)`) at the call site or via the `each` items-bag, not
+ * through closure parameters. The `llui/opaque-state-flow` rule
+ * suppresses its diagnostic inside `track.deps` to make the escape
+ * hatch usable, but the suppression does NOT mean the perf trade-off
+ * went away.
+ *
  * For statically-typed view helpers in other files, the cross-file
  * walker (v2b) resolves their reads directly — `track()` is unnecessary
  * and the `llui/prefer-static-deps` lint rule will flag it. A clean

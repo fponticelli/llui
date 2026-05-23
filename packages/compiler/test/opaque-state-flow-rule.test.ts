@@ -332,6 +332,255 @@ describe('opaque-state-flow lint rule', () => {
     expect(diags).toEqual([])
   })
 
+  // ── Regression tests for v0.5.3 bare-Identifier over-permissiveness ─
+  //
+  // `isReactiveAccessor` defaulted to `true` for any bare-Identifier
+  // callee at arg[0]. That caught every user mutator with an arrow
+  // argument and ran the opaque-state-flow visitor over its body.
+  // 0.5.4 narrows the bare-Identifier branch to the framework primitives
+  // that actually take a reactive accessor at arg[0]: `text`, `memo`,
+  // `unsafeHtml` (plus destructure-renamed aliases of those).
+
+  it('does NOT error on state-updater callbacks like change((c) => cond ? newC : c)', () => {
+    // The reduced reproduction from decisive.space: `change` is a
+    // `(updater: (c: T) => T) => void` mutator, not a reactive primitive.
+    // Its arrow argument is opaque user code that the framework neither
+    // schedules nor reads from. Walking it produced a "state in
+    // conditional branch" false-positive on `: c`.
+    const diags = diagsFor(`
+      import { component, button } from '@llui/dom'
+      type NumberFormat = { code: string }
+      type State = { format: NumberFormat }
+      type Msg = { type: 'noop' }
+      const isCurrency = (_fmt: NumberFormat) => true
+      declare const change: (updater: (c: NumberFormat) => NumberFormat) => void
+      export const C = component<State, Msg, never>({
+        name: 'C',
+        init: () => [{ format: { code: 'USD' } }, []],
+        update: (s) => [s, []],
+        view: ({ send }) => [
+          button({
+            onClick: () => {
+              change((c) => isCurrency(c) ? { ...c, code: 'EUR' } : c)
+              send({ type: 'noop' })
+            },
+          }),
+        ],
+      })
+    `)
+    expect(diags).toEqual([])
+  })
+
+  it('does NOT error on user helper at arg0 (dispatch, setTimeout-style)', () => {
+    const diags = diagsFor(`
+      import { component, button } from '@llui/dom'
+      type State = { count: number }
+      type Msg = { type: 'noop' }
+      declare const dispatch: (fn: (s: State) => State) => void
+      export const C = component<State, Msg, never>({
+        name: 'C',
+        init: () => [{ count: 0 }, []],
+        update: (s) => [s, []],
+        view: ({ send }) => [
+          button({
+            onClick: () => {
+              dispatch((s) => s.count > 5 ? { count: 0 } : s)
+              send({ type: 'noop' })
+            },
+          }),
+        ],
+      })
+    `)
+    expect(diags).toEqual([])
+  })
+
+  it('still walks the `text((s) => …)` bare-identifier primitive', () => {
+    // The narrowed predicate must keep recognizing the genuine
+    // reactive primitives. Verified here by feeding the walker an
+    // opaque shape — `helper({ ...s })` spread — inside a `text(...)`
+    // accessor and asserting the diagnostic still fires.
+    const diags = diagsFor(`
+      import { component, text } from '@llui/dom'
+      function helper(_o: { count: number }) { return 0 }
+      type State = { count: number }
+      export const C = component<State, never, never>({
+        name: 'C',
+        init: () => [{ count: 0 }, []],
+        update: (s) => [s, []],
+        view: () => [text((s: State) => String(helper({ ...s })))],
+      })
+    `)
+    expect(diags.length).toBeGreaterThanOrEqual(1)
+    expect(diags[0]!.message).toMatch(/spread/i)
+  })
+
+  it('still walks `selector((s) => …)` — covers the View-bag selector primitive', () => {
+    // `selector` is in REACTIVE_BARE_IDENT_ARG0 alongside text/memo/
+    // unsafeHtml. Lightly-used but a real public API; including it keeps
+    // the predicate from silently skipping selector accessors.
+    const diags = diagsFor(`
+      import { component, div } from '@llui/dom'
+      declare const selector: <S, V>(field: (s: S) => V) => unknown
+      function helper(_o: { count: number }) { return 0 }
+      type State = { count: number }
+      export const C = component<State, never, never>({
+        name: 'C',
+        init: () => [{ count: 0 }, []],
+        update: (s) => [s, []],
+        view: () => [div([selector((s: State) => helper({ ...s }))] as never)],
+      })
+    `)
+    expect(diags.length).toBeGreaterThanOrEqual(1)
+    expect(diags[0]!.message).toMatch(/spread/i)
+  })
+
+  it('still walks `t((s) => …)` when t is a const-rebound alias of text', () => {
+    // `const t = text; t((s) => …)` — const rebinding to a primitive.
+    // The resolver follows the const-initializer identifier chain.
+    const diags = diagsFor(`
+      import { component, text } from '@llui/dom'
+      function helper(_o: { count: number }) { return 0 }
+      type State = { count: number }
+      const t = text
+      export const C = component<State, never, never>({
+        name: 'C',
+        init: () => [{ count: 0 }, []],
+        update: (s) => [s, []],
+        view: () => [t((s: State) => String(helper({ ...s })))],
+      })
+    `)
+    expect(diags.length).toBeGreaterThanOrEqual(1)
+    expect(diags[0]!.message).toMatch(/spread/i)
+  })
+
+  it('does NOT walk `text((s) => …)` when `text` is locally shadowed by a function', () => {
+    // Local `function text(x) { … }` shadows the primitive. The
+    // resolver detects the shadowing FunctionDeclaration and refuses
+    // to classify the call as reactive.
+    const diags = diagsFor(`
+      import { component, button } from '@llui/dom'
+      function text(_accessor: (s: { count: number }) => string): string { return '' }
+      type State = { count: number }
+      type Msg = { type: 'noop' }
+      export const C = component<State, Msg, never>({
+        name: 'C',
+        init: () => [{ count: 0 }, []],
+        update: (s) => [s, []],
+        view: ({ send }) => [
+          button({
+            onClick: () => {
+              text((s) => s.count > 5 ? 'a' : 'b')
+              send({ type: 'noop' })
+            },
+          }),
+        ],
+      })
+    `)
+    expect(diags).toEqual([])
+  })
+
+  it('still walks `t((s) => …)` when t is a destructure-renamed text alias', () => {
+    // `view: ({text: t}) => ...` aliases `t` to `text`; the predicate
+    // resolves the alias via the destructure pattern and still treats
+    // the call as reactive. Otherwise the walker would silently skip
+    // the binding entirely.
+    const diags = diagsFor(`
+      import { component } from '@llui/dom'
+      function helper(_o: { count: number }) { return 0 }
+      type State = { count: number }
+      export const C = component<State, never, never>({
+        name: 'C',
+        init: () => [{ count: 0 }, []],
+        update: (s) => [s, []],
+        view: ({ text: t }) => [t((s: State) => String(helper({ ...s })))],
+      })
+    `)
+    expect(diags.length).toBeGreaterThanOrEqual(1)
+    expect(diags[0]!.message).toMatch(/spread/i)
+  })
+
+  it('does NOT error on ItemAccessor identity-projection `provider((v) => v)` (dicerun2 #4)', () => {
+    // ItemAccessor<T> is callable: `<R>(selector: (t: T) => R) => () => R`.
+    // The selector arrow's param is the ITEM, not state — the rule
+    // must not enter `(v) => v` as a reactive accessor.
+    // Verified fix path: the bare-Identifier narrowing from 0.5.4
+    // (provider is a function parameter → resolver returns null →
+    // not in REACTIVE_BARE_IDENT_ARG0 → not visited).
+    const diags = diagsFor(`
+      import { component, div } from '@llui/dom'
+      import type { ItemAccessor } from '@llui/dom'
+      function providerBadge(provider: ItemAccessor<string>) {
+        const _key = provider((v) => v)
+        return div({})
+      }
+      type State = { items: string[] }
+      export const C = component<State, never, never>({
+        name: 'C',
+        init: () => [{ items: [] }, []],
+        update: (s) => [s, []],
+        view: () => [providerBadge({} as ItemAccessor<string>)],
+      })
+    `)
+    expect(diags).toEqual([])
+  })
+
+  it('does NOT error on subscribe callbacks with shorthand body (dicerun2 #5)', () => {
+    // `subscribeRolls((entry) => send({ type: 'push', entry }))` —
+    // the shorthand `entry` inside the object would have been
+    // flagged as "state used outside a tracked container" because
+    // the walker over-entered the outer `(entry) => …` arrow as
+    // a reactive accessor. 0.5.4's bare-Identifier narrowing
+    // confines reactive entry to text/memo/unsafeHtml/selector.
+    const diags = diagsFor(`
+      import { component, button } from '@llui/dom'
+      type Entry = { id: string; label: string }
+      type State = { entries: Entry[] }
+      type Msg = { type: 'push'; entry: Entry } | { type: 'noop' }
+      declare const subscribeRolls: (cb: (entry: Entry) => void) => () => void
+      export const C = component<State, Msg, never>({
+        name: 'C',
+        init: () => [{ entries: [] }, []],
+        update: (s) => [s, []],
+        view: ({ send }) => [
+          button({
+            onClick: () => {
+              subscribeRolls((entry) => send({ type: 'push', entry }))
+              send({ type: 'noop' })
+            },
+          }),
+        ],
+      })
+    `)
+    expect(diags).toEqual([])
+  })
+
+  it('does NOT error inside track({ deps }) — opt-in suppression', () => {
+    // `track({deps})` is the user's explicit declaration that the
+    // walker can't infer the reads. Firing a perf lint inside it
+    // defeats the purpose — the diagnostic would move from the
+    // outer accessor to inside track, leaving no recovery path.
+    // The mask/path classifier still does what it can; the rule
+    // just doesn't shout at code the author explicitly opted into.
+    const diags = diagsFor(`
+      import { component, button, track } from '@llui/dom'
+      type State = { error?: string }
+      type Msg = { type: 'noop' }
+      function formErrorRow<S>(error: (s: S) => string | undefined) {
+        track({ deps: (s: S) => [error(s)] })
+        return button({})
+      }
+      export const C = component<State, Msg, never>({
+        name: 'C',
+        init: () => [{ error: undefined }, []],
+        update: (s) => [s, []],
+        view: () => [formErrorRow<State>((s) => s.error)],
+      })
+    `)
+    // The track.deps body's `error(s)` call WOULD be an opaque-flow
+    // leak under the rule's normal logic; the suppression silences it.
+    expect(diags.filter((d) => /unresolvable callee `error\(s\)`/.test(d.message))).toEqual([])
+  })
+
   it('does NOT error on non-reactive arrows (event handlers, onEffect)', () => {
     const diags = diagsFor(`
       import { component, button } from '@llui/dom'

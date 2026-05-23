@@ -258,10 +258,21 @@ describe('crossFileAccessorPaths — Phase 3 cross-file resolution', () => {
       `,
     })
     const paths = crossFileAccessorPaths(program, sf('/main.ts')).paths
-    // The focal's accessor `(st) => st.secret` is still extracted (its
-    // body reads `st.secret`). What the walker should NOT do is descend
-    // into `opaqueHelper`'s internals and surface reads the focal file
-    // never actually triggers. The lift path is correctly included.
-    expect([...paths]).toContain('secret')
+    // `opaqueHelper` is not a §2.1 view-helper (it returns
+    // `{ data: unknown }`, not `Node[]`), so the closure passed at
+    // arg[0] is NOT a lift — it's just opaque user code the helper
+    // happens to invoke. Its reads must not bleed into the focal's
+    // path set, and the walker must not descend into the helper's
+    // body either. `secret` therefore should not appear here.
+    //
+    // Pre-0.5.4 this test passed for the wrong reason: the
+    // file-local `isReactiveAccessor` predicate over-permissively
+    // treated every bare-Identifier callee's arg[0] arrow as a
+    // reactive accessor, so the focal-file walker visited the
+    // closure body and surfaced `secret`. With the predicate fixed
+    // (only `text` / `memo` / `unsafeHtml` qualify), the lift only
+    // happens for actual view-helpers — which is what the test was
+    // documenting in the first place.
+    expect([...paths]).not.toContain('secret')
   })
 })
