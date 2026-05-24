@@ -186,6 +186,16 @@ export interface LluiMcpServerOptions {
    * Defaults to false (headless).
    */
   headed?: boolean
+  /**
+   * Filesystem root for the devmode-annotate notebook
+   * (https://github.com/fponticelli/llui — docs/proposals/devmode-annotate/).
+   * MCP notes tools (`llui_list_notes`, `llui_read_note`, …) read from
+   * this directory.
+   *
+   * Resolution order: this option → `LLUI_NOTES_DIR` env var → workspace
+   * root + `.llui/notes`.
+   */
+  notesRoot?: string
 }
 ```
 
@@ -200,6 +210,7 @@ class LluiMcpServer {
   bridgePort: number
   mcp: McpServer
   cdp: CdpSessionManager
+  notesRoot: string
   devUrl: string | null
   constructor(optsOrPort: LluiMcpServerOptions | number = 5200)
   buildMcpServer(): McpServer

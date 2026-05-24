@@ -1,0 +1,49 @@
+{
+  "name": "@llui/devmode-annotate",
+  "version": "0.0.1",
+  "type": "module",
+  "sideEffects": false,
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "check": "tsc --noEmit",
+    "lint": "eslint src",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@llui/vite-plugin": "workspace:*",
+    "html-to-image": "^1.11.13"
+  },
+  "devDependencies": {
+    "jsdom": "^29.0.1",
+    "typescript": "^6.0.2",
+    "vitest": "^4.1.2"
+  },
+  "description": "LLui dev-mode HUD — drop annotated notes from the running app into the shared notebook for the LLM to consume",
+  "keywords": [
+    "llui",
+    "devtools",
+    "annotation",
+    "llm",
+    "screenshot"
+  ],
+  "author": "Franco Ponticelli <franco.ponticelli@gmail.com>",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/fponticelli/llui.git",
+    "directory": "packages/devmode-annotate"
+  },
+  "bugs": {
+    "url": "https://github.com/fponticelli/llui/issues"
+  },
+  "homepage": "https://github.com/fponticelli/llui/tree/main/packages/devmode-annotate#readme"
+}

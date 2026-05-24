@@ -166,8 +166,13 @@ describe('mcpPort mismatch warning', () => {
 // middleware was registered — the tell for mcpPort !== null.
 
 interface FakeServer {
+  /** True iff the MCP status middleware was registered. Tracks the
+   *  intent of the auto-detect tests (mcpPort !== null). Other
+   *  middlewares — notes (devmode-annotate), agent endpoints — are
+   *  registered unconditionally on every configureServer, so they would
+   *  always flip a generic flag and break the auto-detect assertion. */
   middlewareRegistered: boolean
-  middlewares: { use: (path: string, handler: unknown) => void }
+  middlewares: { use: (...args: unknown[]) => void }
   ws: { send: (m: unknown) => void; on: (event: string, cb: () => void) => void }
   httpServer: {
     on: (event: string, cb: () => void) => void
@@ -180,8 +185,14 @@ function makeFakeViteServer(_root: string): FakeServer {
   const server: FakeServer = {
     middlewareRegistered: false,
     middlewares: {
-      use(_path: string, _handler: unknown) {
-        server.middlewareRegistered = true
+      use(...args: unknown[]) {
+        // Connect's `use(path, handler)` shape — first arg is the path.
+        // Only the MCP status handler registers at /__llui_mcp_status
+        // (and its /cdn-cgi/ alias); ignore other middlewares.
+        const path = typeof args[0] === 'string' ? args[0] : ''
+        if (path === '/__llui_mcp_status' || path === '/cdn-cgi/llui_mcp_status') {
+          server.middlewareRegistered = true
+        }
       },
     },
     ws: { send() {}, on() {} },

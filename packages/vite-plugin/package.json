@@ -7,6 +7,10 @@
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
+    },
+    "./notes": {
+      "types": "./dist/notes/index.d.ts",
+      "import": "./dist/notes/index.js"
     }
   },
   "files": [
@@ -27,7 +31,8 @@
     "@llui/compiler-introspection": "workspace:*",
     "@llui/compiler-ssr": "workspace:*",
     "magic-string": "^0.30.21",
-    "typescript": "^6.0.2"
+    "typescript": "^6.0.2",
+    "yaml": "^2.9.0"
   },
   "description": "LLui compiler — Vite plugin for compile-time bitmask optimization, template cloning, and source maps",
   "keywords": [

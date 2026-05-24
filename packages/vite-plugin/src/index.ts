@@ -31,6 +31,9 @@ import { devtoolsFactory } from '@llui/compiler-devtools'
 // create a workspace cycle), so the host wires them.
 registerIntrospectionFactory(introspectionFactory)
 registerDevtoolsFactory(devtoolsFactory)
+import { createCaptureRegistry } from './notes/capture-registry.js'
+import { createEventBus } from './notes/event-bus.js'
+import { createNotesMiddleware } from './notes/middleware.js'
 import {
   findTypeSource,
   readComponentTypeArgNames,
@@ -330,6 +333,41 @@ export interface LluiPluginOptions {
    * cost on very large repos; falls back to per-file analysis).
    */
   crossFile?: boolean | 'silent'
+
+  /**
+   * Enable the devmode-annotate notebook surface — mounts a single
+   * Connect middleware at `/_llui/*` that lets the HUD
+   * (`@llui/devmode-annotate`) and the MCP server (`@llui/mcp`) read
+   * and write a shared on-disk notebook under `.llui/notes/`. The HUD
+   * developer drops notes from the running app; the LLM consumes them
+   * via MCP subscriptions; both can initiate captures.
+   *
+   * Pass `true` for defaults (notes dir = `<project root>/.llui/notes`,
+   * 30s default capture-request timeout). Pass an object to customize.
+   * Pass `false` or omit to disable the endpoint entirely — no routes
+   * are registered and the middleware tree-shakes out of the dev-server
+   * setup.
+   *
+   * Default `false` — opt-in. The proposal
+   * (`docs/proposals/devmode-annotate/`) details what lands on disk and
+   * what the LLM gets.
+   *
+   * Environment overrides (only honored when this option is truthy):
+   *   - `LLUI_NOTES_DIR` — override the notes root path
+   *   - `LLUI_CAPTURE_TIMEOUT_MS` — override the default capture-request timeout
+   */
+  devmodeAnnotate?: boolean | DevmodeAnnotateConfig
+}
+
+export interface DevmodeAnnotateConfig {
+  /** Override the on-disk notes root. Relative paths resolve against
+   *  the Vite project root. Default: `.llui/notes`. The
+   *  `LLUI_NOTES_DIR` env var takes precedence if set. */
+  notesDir?: string
+  /** Override the default capture-request long-poll timeout in
+   *  milliseconds. The `LLUI_CAPTURE_TIMEOUT_MS` env var takes
+   *  precedence if set. Default: 30000. */
+  captureTimeoutMs?: number
 }
 
 /**
@@ -340,6 +378,44 @@ export interface LluiPluginOptions {
  * public type.
  */
 export type AgentPluginConfig = Record<string, never>
+
+// Re-export the shared notebook types (devmode-annotate proposal, on-disk
+// format in docs/proposals/devmode-annotate/01-on-disk-format.md). Both
+// the HUD package (@llui/devmode-annotate) and the MCP server import
+// these from here — one source of truth for the contract.
+export type {
+  Annotation,
+  AgentSchemaSummary,
+  Author,
+  CaptureLevel,
+  CaptureRequestPayload,
+  CaptureRequestResponse,
+  ComponentMetaRef,
+  ConsoleLogEntry,
+  CreateNoteRequest,
+  CreateNoteResponse,
+  CurrentSessionResponse,
+  DirtyTraceEntry,
+  ListNotesQuery,
+  ListNotesResponse,
+  LogLevel,
+  MessageLogEntry,
+  NoteBody,
+  NoteFrontmatter,
+  NoteKind,
+  NotePoint,
+  NoteRect,
+  NoteSummary,
+  PendingEffectEntry,
+  PendingMessage,
+  RecentEffectEntry,
+  RuntimeErrorEntry,
+  ServerEvent,
+  SourceMapEntry,
+  SseRole,
+  StructuralSnapshot,
+  VerboseNoteBody,
+} from './notes/types.js'
 
 /**
  * Does `@llui/mcp` resolve from `root`'s node_modules? Uses
@@ -721,6 +797,41 @@ export default function llui(options: LluiPluginOptions = {}): Plugin {
     },
 
     configureServer(server) {
+      // ── Notes middleware (devmode-annotate proposal P1) ────────────
+      // Opt-in via `devmodeAnnotate: true` (or a config object). When
+      // disabled, no routes are registered and the middleware tree-
+      // shakes out of the dev-server setup.
+      //
+      // When enabled, mounts a single Connect handler that prefix-checks
+      // /_llui/ and dispatches internally to notes, events,
+      // capture-request, and session endpoints — so the HUD and the
+      // MCP server share one on-disk notebook per dev-server lifetime.
+      if (options.devmodeAnnotate) {
+        const notesConfig =
+          typeof options.devmodeAnnotate === 'object' ? options.devmodeAnnotate : {}
+        const projectRoot = crossFileRoot ?? process.cwd()
+        const notesRoot = process.env['LLUI_NOTES_DIR']
+          ? resolve(process.cwd(), process.env['LLUI_NOTES_DIR'])
+          : notesConfig.notesDir
+            ? resolve(projectRoot, notesConfig.notesDir)
+            : resolve(projectRoot, '.llui/notes')
+        const envTimeout = process.env['LLUI_CAPTURE_TIMEOUT_MS']
+          ? parseInt(process.env['LLUI_CAPTURE_TIMEOUT_MS'], 10)
+          : undefined
+        const captureTimeoutMs = Number.isFinite(envTimeout)
+          ? (envTimeout as number)
+          : notesConfig.captureTimeoutMs
+        const notesBus = createEventBus()
+        const notesRegistry = createCaptureRegistry()
+        const notesHandler = createNotesMiddleware({
+          notesRoot,
+          bus: notesBus,
+          registry: notesRegistry,
+          defaultCaptureTimeoutMs: captureTimeoutMs,
+        })
+        server.middlewares.use(notesHandler)
+      }
+
       // Agent dev endpoints — runs regardless of mcp state. Must be before
       // any early-returns below. Registration is synchronous because
       // agentServer was preloaded in configResolved.

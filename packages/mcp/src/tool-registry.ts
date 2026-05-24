@@ -17,11 +17,15 @@ export interface ToolDefinition {
   }
 }
 
-export type ToolLayer = 'debug-api' | 'cdp' | 'source' | 'compiler'
+export type ToolLayer = 'debug-api' | 'cdp' | 'source' | 'compiler' | 'notes'
 
 export interface ToolContext {
   relay: RelayTransport | null
   cdp: CdpTransport | null
+  /** Filesystem root for the devmode-annotate notebook. Set by the MCP
+   *  server from env (`LLUI_NOTES_DIR`) or workspace root + `.llui/notes`.
+   *  Notes tools read from this directory. */
+  notesRoot: string
 }
 
 export interface RelayTransport {

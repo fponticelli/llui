@@ -14,6 +14,7 @@ import {
   registerStaticCompilerTools,
   registerSourceTools,
   registerSsrTools,
+  registerNotesTools,
 } from './tools/index.js'
 import {
   WebSocketRelayTransport,
@@ -115,6 +116,16 @@ export interface LluiMcpServerOptions {
    * Defaults to false (headless).
    */
   headed?: boolean
+  /**
+   * Filesystem root for the devmode-annotate notebook
+   * (https://github.com/fponticelli/llui — docs/proposals/devmode-annotate/).
+   * MCP notes tools (`llui_list_notes`, `llui_read_note`, …) read from
+   * this directory.
+   *
+   * Resolution order: this option → `LLUI_NOTES_DIR` env var → workspace
+   * root + `.llui/notes`.
+   */
+  notesRoot?: string
 }
 
 export class LluiMcpServer {
@@ -123,6 +134,7 @@ export class LluiMcpServer {
   private readonly bridgePort: number
   private readonly mcp: McpServer
   private readonly cdp: CdpSessionManager
+  private readonly notesRoot: string
   private devUrl: string | null = null
 
   /**
@@ -153,12 +165,14 @@ export class LluiMcpServer {
       devUrl: opts.devUrl ?? null,
       headed: opts.headed ?? false,
     })
+    this.notesRoot = resolveNotesRoot(opts.notesRoot)
     registerDebugApiTools(this.registry)
     registerCdpTools(this.registry)
     registerCompilerTools(this.registry)
     registerStaticCompilerTools(this.registry)
     registerSourceTools(this.registry)
     registerSsrTools(this.registry)
+    registerNotesTools(this.registry)
 
     // SDK-managed MCP server — owns the JSON-RPC protocol, handshake,
     // session lifecycle. Transport is plugged in later via `connect()`.
@@ -187,7 +201,7 @@ export class LluiMcpServer {
         spec.name,
         { description: spec.description, inputSchema: spec.schema.shape },
         async (args) => {
-          const ctx: ToolContext = { relay: this.relay, cdp: this.cdp }
+          const ctx: ToolContext = { relay: this.relay, cdp: this.cdp, notesRoot: this.notesRoot }
           try {
             const result = await handler(args as Record<string, unknown>, ctx)
             // structuredContent is what current Claude clients
@@ -316,7 +330,7 @@ export class LluiMcpServer {
 
   /** Handle an MCP tool call */
   async handleToolCall(name: string, args: Record<string, unknown>): Promise<unknown> {
-    const ctx: ToolContext = { relay: this.relay, cdp: this.cdp }
+    const ctx: ToolContext = { relay: this.relay, cdp: this.cdp, notesRoot: this.notesRoot }
     return this.registry.dispatch(name, args, ctx)
   }
 }
@@ -334,5 +348,19 @@ export const mcpToolDefinitions: ToolDefinition[] = (() => {
   registerStaticCompilerTools(registry)
   registerSourceTools(registry)
   registerSsrTools(registry)
+  registerNotesTools(registry)
   return registry.listDefinitions()
 })()
+
+/**
+ * Resolve the notes root: explicit option → env var → workspace root.
+ *
+ * Falls back to `<workspace>/.llui/notes` so the MCP server and Vite
+ * plugin land on the same default without explicit coordination.
+ */
+function resolveNotesRoot(explicit: string | undefined): string {
+  if (explicit) return resolve(explicit)
+  const env = process.env['LLUI_NOTES_DIR']
+  if (env) return resolve(env)
+  return resolve(findWorkspaceRoot(), '.llui/notes')
+}

@@ -25,6 +25,7 @@
     "@llui/compiler": "workspace:*",
     "@llui/compiler-devtools": "workspace:*",
     "@llui/compiler-introspection": "workspace:*",
+    "@llui/vite-plugin": "workspace:*",
     "@modelcontextprotocol/sdk": "^1.29.0",
     "ws": "^8.18.0",
     "zod": "^4.0.0"
