@@ -99,6 +99,60 @@ declare global {
 
 const HUD_ELEMENT_ID = 'llui-devmode-annotate-root'
 
+// Persisted floating-button position. We store as { x, y } in viewport
+// pixels; on read, we clamp to the current viewport so a previously-
+// saved off-screen position never strands the button.
+const POSITION_STORAGE_KEY = 'llui-devmode-annotate.position'
+const DRAG_THRESHOLD_PX = 4
+const BUTTON_SIZE_PX = 44
+const BUTTON_MARGIN_PX = 16
+
+interface SavedPosition {
+  x: number
+  y: number
+}
+
+function readSavedPosition(): SavedPosition | null {
+  try {
+    const raw = localStorage.getItem(POSITION_STORAGE_KEY)
+    if (!raw) return null
+    const parsed = JSON.parse(raw) as { x?: unknown; y?: unknown }
+    if (typeof parsed.x !== 'number' || typeof parsed.y !== 'number') return null
+    return { x: parsed.x, y: parsed.y }
+  } catch {
+    return null
+  }
+}
+
+function writeSavedPosition(pos: SavedPosition): void {
+  try {
+    localStorage.setItem(POSITION_STORAGE_KEY, JSON.stringify(pos))
+  } catch {
+    // localStorage can be unavailable (private mode, quota); fail
+    // silently — the button still works for this session.
+  }
+}
+
+function clampToViewport(pos: SavedPosition): SavedPosition {
+  const maxX = Math.max(0, window.innerWidth - BUTTON_SIZE_PX - BUTTON_MARGIN_PX)
+  const maxY = Math.max(0, window.innerHeight - BUTTON_SIZE_PX - BUTTON_MARGIN_PX)
+  return {
+    x: Math.min(Math.max(BUTTON_MARGIN_PX, pos.x), maxX),
+    y: Math.min(Math.max(BUTTON_MARGIN_PX, pos.y), maxY),
+  }
+}
+
+// Distinctive icon for the floating button: a chat-bubble outline with
+// a small spark. Recognizable as "annotate / leave a note"; not a
+// generic emoji that gets lost among page content.
+const BUTTON_ICON_SVG = `
+<svg width="22" height="22" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+  <path d="M4 5.5C4 4.67 4.67 4 5.5 4h13C19.33 4 20 4.67 20 5.5v9c0 .83-.67 1.5-1.5 1.5H10l-3.5 3v-3H5.5C4.67 16 4 15.33 4 14.5v-9z" stroke="white" stroke-width="1.8" stroke-linejoin="round"/>
+  <circle cx="9" cy="10" r="1.1" fill="white"/>
+  <circle cx="12" cy="10" r="1.1" fill="white"/>
+  <circle cx="15" cy="10" r="1.1" fill="white"/>
+</svg>`
+
 /**
  * Extract a viewport bbox from any annotation that carries one (rect,
  * element). Returns null for annotations without spatial extent
@@ -154,10 +208,21 @@ export function mountAnnotateHud(opts: MountAnnotateOptions = {}): AnnotateHudHa
 
   const floatingBtn = document.createElement('button')
   floatingBtn.type = 'button'
-  floatingBtn.textContent = '📝'
-  floatingBtn.title = 'LLui annotate (Cmd+Shift+A)'
+  floatingBtn.innerHTML = BUTTON_ICON_SVG
+  floatingBtn.title = 'LLui annotate (Cmd+Shift+A) — drag to move'
   floatingBtn.setAttribute('aria-label', 'Open LLui annotation HUD')
   floatingBtn.style.cssText = STYLES.button
+
+  // Restore saved position if present. Default position from CSS
+  // (bottom-right) is used otherwise.
+  const saved = typeof localStorage !== 'undefined' ? readSavedPosition() : null
+  if (saved && typeof window !== 'undefined') {
+    const pos = clampToViewport(saved)
+    root.style.left = `${pos.x}px`
+    root.style.top = `${pos.y}px`
+    root.style.right = 'auto'
+    root.style.bottom = 'auto'
+  }
 
   const modal = document.createElement('div')
   modal.style.cssText = STYLES.modal
@@ -243,10 +308,30 @@ export function mountAnnotateHud(opts: MountAnnotateOptions = {}): AnnotateHudHa
   const destroy = (): void => {
     document.removeEventListener('keydown', onKey)
     eventSource?.close()
+    if (activeOverlayDismiss) {
+      activeOverlayDismiss()
+      activeOverlayDismiss = null
+    }
     root.remove()
   }
 
+  // Tracks the dismiss callback of the currently-visible drawing
+  // overlay. The overlay stays alive after mouseup so the user can see
+  // the highlighted region while the modal asks for confirmation —
+  // we dismiss it when they Send/Cancel/redraw.
+  let activeOverlayDismiss: (() => void) | null = null
+
+  const dismissActiveOverlay = (): void => {
+    if (activeOverlayDismiss) {
+      activeOverlayDismiss()
+      activeOverlayDismiss = null
+    }
+  }
+
   const startRectFlow = async (): Promise<NoteRect | null> => {
+    // If a previous overlay is still on-screen, tear it down before
+    // starting a new draw.
+    dismissActiveOverlay()
     // Hide modal during drawing so it doesn't block the overlay.
     const wasOpen = modal.style.display === 'block'
     close()
@@ -254,10 +339,12 @@ export function mountAnnotateHud(opts: MountAnnotateOptions = {}): AnnotateHudHa
     if (wasOpen) open()
     if (result.reason === 'submit' && result.rect) {
       pendingRect = result.rect
+      activeOverlayDismiss = result.dismiss
       setMode('rect')
       return result.rect
     }
-    // Cancel — keep current mode, clear preview
+    // Cancel — keep current mode, clear preview. The overlay is
+    // already dismissed when reason='cancel'.
     if (mode === 'rect') {
       pendingRect = null
       setMode('rect')
@@ -359,12 +446,94 @@ export function mountAnnotateHud(opts: MountAnnotateOptions = {}): AnnotateHudHa
 
   // ── Wiring ─────────────────────────────────────────────────────────
 
+  // Draggable floating button. Tracks mousedown→move; if the pointer
+  // travels more than DRAG_THRESHOLD_PX, we treat it as a drag and
+  // persist the final position. Otherwise the mouseup is a normal
+  // click that opens/closes the modal.
+  let dragState: {
+    startX: number
+    startY: number
+    pointerStartX: number
+    pointerStartY: number
+    moved: boolean
+  } | null = null
+
+  const onBtnPointerDown = (e: PointerEvent): void => {
+    const rect = root.getBoundingClientRect()
+    dragState = {
+      startX: rect.left,
+      startY: rect.top,
+      pointerStartX: e.clientX,
+      pointerStartY: e.clientY,
+      moved: false,
+    }
+    try {
+      floatingBtn.setPointerCapture(e.pointerId)
+    } catch {
+      // jsdom and some test environments don't implement pointer
+      // capture; safe to ignore.
+    }
+  }
+  const onBtnPointerMove = (e: PointerEvent): void => {
+    if (!dragState) return
+    const dx = e.clientX - dragState.pointerStartX
+    const dy = e.clientY - dragState.pointerStartY
+    if (!dragState.moved && Math.hypot(dx, dy) < DRAG_THRESHOLD_PX) return
+    if (!dragState.moved) {
+      dragState.moved = true
+      floatingBtn.style.cssText = STYLES.button + ';' + STYLES.buttonDragging
+      // Switch root to absolute-position mode for the drag.
+      root.style.right = 'auto'
+      root.style.bottom = 'auto'
+    }
+    const nx = dragState.startX + dx
+    const ny = dragState.startY + dy
+    const clamped = clampToViewport({ x: nx, y: ny })
+    root.style.left = `${clamped.x}px`
+    root.style.top = `${clamped.y}px`
+  }
+  const onBtnPointerUp = (e: PointerEvent): void => {
+    if (!dragState) return
+    const wasDrag = dragState.moved
+    try {
+      floatingBtn.releasePointerCapture(e.pointerId)
+    } catch {
+      /* see above */
+    }
+    dragState = null
+    floatingBtn.style.cssText = STYLES.button
+    if (wasDrag) {
+      const rect = root.getBoundingClientRect()
+      writeSavedPosition({ x: rect.left, y: rect.top })
+      // Eat the subsequent click event so it doesn't toggle the modal.
+      const eat = (ev: Event): void => {
+        ev.stopPropagation()
+        ev.preventDefault()
+        floatingBtn.removeEventListener('click', eat, true)
+      }
+      floatingBtn.addEventListener('click', eat, true)
+    }
+  }
+  floatingBtn.addEventListener('pointerdown', onBtnPointerDown)
+  floatingBtn.addEventListener('pointermove', onBtnPointerMove)
+  floatingBtn.addEventListener('pointerup', onBtnPointerUp)
+  floatingBtn.addEventListener('pointercancel', () => {
+    dragState = null
+    floatingBtn.style.cssText = STYLES.button
+  })
+
+  // Click event opens/closes the modal. Fires naturally after a tap
+  // when no drag occurred; a real drag swallows it via the capturing
+  // listener installed in onBtnPointerUp above.
   floatingBtn.addEventListener('click', () => {
     if (modal.style.display === 'block') close()
     else open()
   })
 
-  modeText.addEventListener('click', () => setMode('text'))
+  modeText.addEventListener('click', () => {
+    dismissActiveOverlay()
+    setMode('text')
+  })
   modeRect.addEventListener('click', () => {
     setMode('rect')
     if (!pendingRect) {
@@ -375,7 +544,11 @@ export function mountAnnotateHud(opts: MountAnnotateOptions = {}): AnnotateHudHa
     if (mode === 'rect') void startRectFlow()
   })
 
-  cancelBtn.addEventListener('click', close)
+  cancelBtn.addEventListener('click', () => {
+    dismissActiveOverlay()
+    pendingRect = null
+    close()
+  })
   submitBtn.addEventListener('click', () => {
     const prose = textarea.value.trim()
     if (prose === '' && buildAnnotations().length === 0) {
@@ -389,6 +562,7 @@ export function mountAnnotateHud(opts: MountAnnotateOptions = {}): AnnotateHudHa
         statusLine.textContent = `saved as ${result.filename}`
         textarea.value = ''
         pendingRect = null
+        dismissActiveOverlay()
         setMode('text')
         submitBtn.disabled = false
       },

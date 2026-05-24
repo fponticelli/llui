@@ -109,6 +109,9 @@ importers:
         specifier: workspace:*
         version: link:../../packages/dom
     devDependencies:
+      '@llui/devmode-annotate':
+        specifier: workspace:*
+        version: link:../../packages/devmode-annotate
       '@llui/vite-plugin':
         specifier: workspace:*
         version: link:../../packages/vite-plugin

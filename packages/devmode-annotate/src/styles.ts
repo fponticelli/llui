@@ -13,25 +13,45 @@ export const STYLES = {
     'z-index: 2147483646',
     `font: 13px/1.4 ${FONT}`,
     'color-scheme: light dark',
+    // touch-action prevents Safari from interpreting drag gestures as
+    // scroll while the user is repositioning the button.
+    'touch-action: none',
   ].join('; '),
 
   button: [
-    'width: 40px',
-    'height: 40px',
+    'width: 44px',
+    'height: 44px',
     'border-radius: 50%',
     'border: 1px solid rgba(0,0,0,0.12)',
-    'background: white',
-    'color: #111',
-    'box-shadow: 0 4px 12px rgba(0,0,0,0.18)',
-    'cursor: pointer',
-    'font-size: 18px',
+    // Distinctive gradient + soft glow makes the button visually
+    // memorable — not just another floating emoji.
+    'background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 50%, #ec4899 100%)',
+    'color: white',
+    'box-shadow: 0 4px 16px rgba(99, 102, 241, 0.35), 0 1px 3px rgba(0,0,0,0.12)',
+    'cursor: grab',
     'padding: 0',
+    'display: flex',
+    'align-items: center',
+    'justify-content: center',
+    'user-select: none',
+    '-webkit-user-select: none',
+    'transition: transform 120ms ease, box-shadow 120ms ease',
   ].join('; '),
 
+  buttonActive: [
+    'transform: scale(1.05)',
+    'box-shadow: 0 6px 20px rgba(99, 102, 241, 0.5), 0 2px 4px rgba(0,0,0,0.16)',
+  ].join('; '),
+
+  buttonDragging: ['cursor: grabbing', 'transform: scale(1.1)'].join('; '),
+
   modal: [
-    'position: fixed',
-    'right: 16px',
-    'bottom: 64px',
+    // Anchored to the floating button via the root container; bottom
+    // 100% + small margin places it directly above. Switches to right-
+    // anchor when the button is in the left half of the screen.
+    'position: absolute',
+    'right: 0',
+    'bottom: 56px',
     'width: 360px',
     'background: white',
     'border: 1px solid rgba(0,0,0,0.12)',
@@ -39,6 +59,9 @@ export const STYLES = {
     'box-shadow: 0 12px 32px rgba(0,0,0,0.18)',
     'padding: 12px',
     'display: none',
+    // The modal must be HIGHER z-index than the drawing overlay so
+    // the user can interact with it while the rect is highlighted.
+    'z-index: 2147483647',
   ].join('; '),
 
   heading: 'font-weight: 600; margin-bottom: 8px; color: #111;',
