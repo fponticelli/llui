@@ -8,7 +8,35 @@
 
 export type Author = 'human' | 'llm'
 
-export type NoteKind = 'rect' | 'lasso' | 'pin' | 'element' | 'arrow' | 'text' | 'capture'
+export type NoteKind = 'rect' | 'lasso' | 'pin' | 'element' | 'arrow' | 'text' | 'capture' | 'reply'
+
+export type NoteIntent = 'task' | 'note'
+
+export type NoteStatus =
+  | 'open'
+  | 'claimed'
+  | 'in-progress'
+  | 'proposed'
+  | 'accepted'
+  | 'applied'
+  | 'rejected'
+  | 'wontfix'
+  | 'failed'
+
+export interface StatusTransition {
+  ts: string
+  noteId: string
+  from: NoteStatus | null
+  to: NoteStatus
+  by: Author | 'system'
+  reason?: string
+}
+
+export interface ProposedDiff {
+  files: Array<{ path: string; patch: string }>
+  summary: string
+  confidence: 'high' | 'medium' | 'low'
+}
 
 export type CaptureLevel = 'standard' | 'verbose'
 
@@ -75,6 +103,13 @@ export interface NoteFrontmatter {
 
   // Cross-references (optional)
   fulfillsRequestId?: string
+
+  // Task-mode (P6) — optional, present when the note participates in
+  // the task workflow. `intent: 'task'` puts the note in the status
+  // machine; `kind: 'reply'` with `replyTo` set is the LLM's response.
+  intent?: NoteIntent
+  replyTo?: string
+  proposedDiff?: ProposedDiff
 }
 
 export type LogLevel = 'log' | 'warn' | 'error' | 'info' | 'debug'
@@ -255,3 +290,4 @@ export type ServerEvent =
   | { type: 'capture-request'; requestId: string; payload: CaptureRequestPayload }
   | { type: 'capture-request-cancelled'; requestId: string }
   | { type: 'session-rotated'; sessionId: string }
+  | { type: 'status-changed'; noteId: string; from: NoteStatus | null; to: NoteStatus }

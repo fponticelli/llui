@@ -7,7 +7,10 @@
 // handler. The Vite plugin wires it via `server.middlewares.use('/_llui',
 // handler)`; tests mount it on a plain node http.Server.
 
+import { execFileSync } from 'node:child_process'
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import type { IncomingMessage, ServerResponse } from 'node:http'
+import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 import type { CaptureRegistry } from './capture-registry.js'
@@ -15,14 +18,18 @@ import type { EventBus } from './event-bus.js'
 import { createNote, listNotes, listSessions, readNote, readScreenshot } from './store.js'
 import { rotateSession, resolveCurrentSession } from './session.js'
 import { serializeNote } from './frontmatter.js'
+import { appendStatus, currentStatus, listQueue, readStatusHistory } from './status.js'
 import type {
   Author,
   CaptureRequestPayload,
   CreateNoteRequest,
   ListNotesQuery,
   NoteKind,
+  NoteStatus,
+  ProposedDiff,
   ServerEvent,
   SseRole,
+  StatusTransition,
 } from './types.js'
 
 export interface NotesMiddlewareConfig {
@@ -182,6 +189,81 @@ export function createNotesMiddleware(config: NotesMiddlewareConfig): Middleware
       return sendJson(res, 200, listNotes(notesRoot, query))
     }
 
+    // /_llui/notes/:id/status — task-mode (P6)
+    const statusMatch = /^\/_llui\/notes\/([^/]+)\/status$/.exec(path)
+    if (statusMatch) {
+      const id = statusMatch[1]!
+      const qs = parseQuery(url)
+      const sessionId = qs.get('sessionId') ?? resolveCurrentSession(notesRoot).sessionId
+      const sessionDir = join(notesRoot, sessionId)
+
+      if (method === 'GET') {
+        const history = readStatusHistory(sessionDir, id)
+        const current = currentStatus(sessionDir, id)
+        return sendJson(res, 200, { noteId: id, sessionId, current, history })
+      }
+      if (method === 'POST') {
+        const body = await readBody(req)
+        let payload: { to: NoteStatus; by?: Author | 'system'; reason?: string }
+        try {
+          payload = body.json() as typeof payload
+        } catch {
+          return sendError(res, 400, 'invalid JSON body')
+        }
+        if (!payload?.to) return sendError(res, 400, '"to" status is required')
+        const before = currentStatus(sessionDir, id)
+        const transition: StatusTransition = {
+          ts: new Date().toISOString(),
+          noteId: id,
+          from: before,
+          to: payload.to,
+          by: payload.by ?? 'system',
+          ...(payload.reason ? { reason: payload.reason } : {}),
+        }
+        appendStatus(sessionDir, transition)
+        bus.broadcast({
+          type: 'status-changed',
+          noteId: id,
+          from: before,
+          to: payload.to,
+        })
+
+        // 'accepted' triggers an automatic git apply of the most recent
+        // reply note's proposedDiff. On success → 'applied'; on patch
+        // failure → 'failed' with the apply error in `reason`.
+        if (payload.to === 'accepted') {
+          const apply = applyProposedDiffForTask(notesRoot, sessionId, id)
+          const followUp: StatusTransition = {
+            ts: new Date().toISOString(),
+            noteId: id,
+            from: 'accepted',
+            to: apply.ok ? 'applied' : 'failed',
+            by: 'system',
+            ...(apply.reason ? { reason: apply.reason } : {}),
+          }
+          appendStatus(sessionDir, followUp)
+          bus.broadcast({
+            type: 'status-changed',
+            noteId: id,
+            from: 'accepted',
+            to: followUp.to,
+          })
+          return sendJson(res, 200, { transition, apply })
+        }
+        return sendJson(res, 200, { transition })
+      }
+      return sendError(res, 405, 'method not allowed')
+    }
+
+    if (path === `${ROUTE_PREFIX}/queue` && method === 'GET') {
+      const qs = parseQuery(url)
+      const sessionId = qs.get('sessionId') ?? resolveCurrentSession(notesRoot).sessionId
+      const sessionDir = join(notesRoot, sessionId)
+      const statusFilter = qs.getAll('status') as NoteStatus[]
+      const queue = listQueue(sessionDir, statusFilter.length > 0 ? { status: statusFilter } : {})
+      return sendJson(res, 200, { sessionId, queue })
+    }
+
     // /_llui/notes/:id and /_llui/notes/:id/screenshot
     const noteIdMatch = /^\/_llui\/notes\/([^/]+)(\/screenshot)?$/.exec(path)
     if (noteIdMatch) {
@@ -302,6 +384,67 @@ export function createNotesMiddleware(config: NotesMiddlewareConfig): Middleware
  *  for callers that want to compose paths from outside.  */
 export function sessionDir(notesRoot: string, sessionId: string): string {
   return join(notesRoot, sessionId)
+}
+
+interface ApplyResult {
+  ok: boolean
+  reason?: string
+  appliedFiles?: string[]
+}
+
+/**
+ * Find the most recent reply note for a task and `git apply` its
+ * proposedDiff against the project working tree. The proposal
+ * (`docs/proposals/devmode-annotate/05-task-mode.md`) calls for
+ * git-apply against the working tree; commits stay the developer's
+ * responsibility.
+ */
+function applyProposedDiffForTask(
+  notesRoot: string,
+  sessionId: string,
+  taskNoteId: string,
+): ApplyResult {
+  // Find replies to this task. Iterate the session's notes; pick the
+  // newest one with kind='reply', replyTo===taskNoteId, proposedDiff
+  // populated.
+  const list = listNotes(notesRoot, { sessionId, kind: 'reply' })
+  let chosen: ProposedDiff | null = null
+  for (const summary of list.notes.slice().reverse()) {
+    try {
+      const note = readNote(notesRoot, sessionId, summary.id)
+      const fm = note.frontmatter as typeof note.frontmatter & { proposedDiff?: ProposedDiff }
+      if (fm.replyTo !== taskNoteId) continue
+      if (!fm.proposedDiff) continue
+      chosen = fm.proposedDiff
+      break
+    } catch {
+      continue
+    }
+  }
+  if (!chosen) {
+    return { ok: false, reason: 'no reply with proposedDiff found for this task' }
+  }
+
+  // Write a temp .patch file with the concatenated patches and feed
+  // it to `git apply`. The project root is the parent of `notesRoot`'s
+  // `.llui/notes` ancestor — pragmatically, we use process.cwd() since
+  // the middleware is mounted by Vite which runs at the project root.
+  const tmp = mkdtempSync(join(tmpdir(), 'llui-apply-'))
+  const patchFile = join(tmp, 'change.patch')
+  const combined = chosen.files.map((f) => f.patch).join('\n')
+  writeFileSync(patchFile, combined, 'utf8')
+  try {
+    execFileSync('git', ['apply', '--whitespace=nowarn', patchFile], {
+      cwd: process.cwd(),
+      stdio: ['ignore', 'pipe', 'pipe'],
+    })
+    rmSync(tmp, { recursive: true, force: true })
+    return { ok: true, appliedFiles: chosen.files.map((f) => f.path) }
+  } catch (err) {
+    rmSync(tmp, { recursive: true, force: true })
+    const message = err instanceof Error ? err.message : String(err)
+    return { ok: false, reason: `git apply failed: ${message}` }
+  }
 }
 
 /** Coerce a string to Author or null. */

@@ -30,6 +30,15 @@ export { parseNote, serializeNote, type SerializedNote } from './frontmatter.js'
 
 export { deriveFilename, deriveSlug, padId } from './slug.js'
 
+export {
+  appendStatus,
+  currentStatus,
+  listQueue,
+  readAllTransitions,
+  readStatusHistory,
+  type QueueEntry,
+} from './status.js'
+
 // Server-side middleware components. Exposed so test harnesses and
 // alternative hosts (e.g. a standalone notebook server) can instantiate
 // the middleware without going through the Vite plugin. Production
@@ -66,17 +75,21 @@ export type {
   MessageLogEntry,
   NoteBody,
   NoteFrontmatter,
+  NoteIntent,
   NoteKind,
   NotePoint,
   NoteRect,
+  NoteStatus,
   NoteSummary,
   PendingEffectEntry,
   PendingMessage,
+  ProposedDiff,
   RecentEffectEntry,
   RuntimeErrorEntry,
   ServerEvent,
   SourceMapEntry,
   SseRole,
+  StatusTransition,
   StructuralSnapshot,
   VerboseNoteBody,
 } from './types.js'

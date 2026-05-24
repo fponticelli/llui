@@ -16,6 +16,7 @@ import {
   registerSsrTools,
   registerNotesTools,
 } from './tools/index.js'
+import { registerNotesResources } from './resources/notes.js'
 import {
   WebSocketRelayTransport,
   RelayUnavailableError,
@@ -199,8 +200,9 @@ export class LluiMcpServer {
   private buildMcpServer(): McpServer {
     const mcp = new McpServer(
       { name: '@llui/mcp', version: PACKAGE_VERSION },
-      { capabilities: { tools: {} } },
+      { capabilities: { tools: {}, resources: {} } },
     )
+    registerNotesResources(mcp, { notesRoot: () => this.notesRoot })
     for (const { spec, handler } of this.registry.listEntries()) {
       mcp.registerTool(
         spec.name,

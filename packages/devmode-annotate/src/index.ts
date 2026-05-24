@@ -13,12 +13,13 @@ import type {
   CreateNoteRequest,
   CreateNoteResponse,
   NoteFrontmatter,
+  NoteIntent,
   NoteKind,
   NoteRect,
 } from '@llui/vite-plugin'
 
 import { bakeAnnotations } from './bake.js'
-import { collectComponentInfo, collectDebugSnapshot } from './debug-collector.js'
+import { collectComponentInfo, collectDebugSnapshot, collectSourceMap } from './debug-collector.js'
 import { drawRect } from './overlay.js'
 import { captureScreenshot, type CaptureFn } from './screenshot.js'
 import { btnStyle, modeButtonStyle, STYLES } from './styles.js'
@@ -59,7 +60,13 @@ export interface AnnotateHudHandle {
    *  or rejects on HTTP failure. */
   submit(
     prose: string,
-    opts?: { captureLevel?: CaptureLevel; annotations?: Annotation[]; screenshot?: string },
+    opts?: {
+      captureLevel?: CaptureLevel
+      annotations?: Annotation[]
+      screenshot?: string
+      /** Defaults to 'task' for human submissions; pass 'note' for FYI. */
+      intent?: NoteIntent
+    },
   ): Promise<CreateNoteResponse>
   /** Programmatically trigger the rect-drawing overlay. Resolves when
    *  the user completes or cancels. */
@@ -71,6 +78,9 @@ export interface AnnotateHudHandle {
     requestId: string,
     payload: CaptureRequestPayload,
   ): Promise<CreateNoteResponse>
+  /** Set the default intent for floating-button submits. Default 'task'.
+   *  Per-call submit() options override this. */
+  setIntent(intent: NoteIntent): void
 }
 
 interface LluiDevSurfaceLike {
@@ -88,6 +98,35 @@ declare global {
 }
 
 const HUD_ELEMENT_ID = 'llui-devmode-annotate-root'
+
+/**
+ * Extract a viewport bbox from any annotation that carries one (rect,
+ * element). Returns null for annotations without spatial extent
+ * (pin → point, lasso → polygon, arrow → segment, highlight → semantic).
+ */
+function bboxOf(ann: Annotation): { x: number; y: number; w: number; h: number } | null {
+  if (ann.type === 'rect') return { x: ann.x, y: ann.y, w: ann.w, h: ann.h }
+  if (ann.type === 'element') return ann.bbox
+  return null
+}
+
+/**
+ * Assemble a NoteBody: rich telemetry from collectDebugSnapshot() plus,
+ * when annotations have bboxes, a sourceMap from collectSourceMap().
+ */
+function buildNoteBody(annotations: Annotation[]): import('@llui/vite-plugin').NoteBody {
+  const body = collectDebugSnapshot()
+  const sourceMap: Array<import('@llui/vite-plugin').SourceMapEntry> = []
+  for (const ann of annotations) {
+    const bb = bboxOf(ann)
+    if (!bb) continue
+    sourceMap.push(...collectSourceMap(bb))
+  }
+  if (sourceMap.length > 0) {
+    body.sourceMap = sourceMap
+  }
+  return body
+}
 
 export function mountAnnotateHud(opts: MountAnnotateOptions = {}): AnnotateHudHandle {
   if (!import.meta.env?.DEV) return noopHandle()
@@ -238,12 +277,17 @@ export function mountAnnotateHud(opts: MountAnnotateOptions = {}): AnnotateHudHa
     return 'text'
   }
 
+  // Default intent — tracked separately from per-call overrides. The
+  // floating button respects this; per-call `submitOpts.intent` wins.
+  let defaultIntent: NoteIntent = 'task'
+
   const submit = async (
     prose: string,
     submitOpts: {
       captureLevel?: CaptureLevel
       annotations?: Annotation[]
       screenshot?: string
+      intent?: NoteIntent
     } = {},
   ): Promise<CreateNoteResponse> => {
     const annotations = submitOpts.annotations ?? buildAnnotations()
@@ -274,6 +318,7 @@ export function mountAnnotateHud(opts: MountAnnotateOptions = {}): AnnotateHudHa
     }
 
     const compInfo = collectComponentInfo()
+    const intent: NoteIntent = submitOpts.intent ?? defaultIntent
     const frontmatter: Omit<NoteFrontmatter, 'id' | 'ts'> = {
       author: 'human',
       kind,
@@ -289,6 +334,7 @@ export function mountAnnotateHud(opts: MountAnnotateOptions = {}): AnnotateHudHa
       componentPath: compInfo?.componentPath ?? null,
       componentMeta: compInfo?.componentMeta ?? null,
       annotations,
+      intent,
       screenshot: screenshotBase64 ? 'placeholder.png' : null,
       agentSchemas: [],
       llui,
@@ -296,7 +342,7 @@ export function mountAnnotateHud(opts: MountAnnotateOptions = {}): AnnotateHudHa
     const body: CreateNoteRequest = {
       body: prose,
       frontmatter,
-      noteBody: collectDebugSnapshot(),
+      noteBody: buildNoteBody(annotations),
       ...(screenshotBase64 ? { screenshot: screenshotBase64 } : {}),
     }
     const url = `${origin}/_llui/notes`
@@ -403,7 +449,7 @@ export function mountAnnotateHud(opts: MountAnnotateOptions = {}): AnnotateHudHa
           llui,
           fulfillsRequestId: requestId,
         },
-        noteBody: collectDebugSnapshot(),
+        noteBody: buildNoteBody(annotations),
       }
       const failRes = await fetch(`${origin}/_llui/notes`, {
         method: 'POST',
@@ -440,7 +486,7 @@ export function mountAnnotateHud(opts: MountAnnotateOptions = {}): AnnotateHudHa
     const body: CreateNoteRequest = {
       body: prose,
       frontmatter,
-      noteBody: collectDebugSnapshot(),
+      noteBody: buildNoteBody(annotations),
       ...(screenshotBase64 ? { screenshot: screenshotBase64 } : {}),
     }
     const url = `${origin}/_llui/notes`
@@ -497,6 +543,9 @@ export function mountAnnotateHud(opts: MountAnnotateOptions = {}): AnnotateHudHa
     submit,
     drawRect: startRectFlow,
     handleCaptureRequest,
+    setIntent: (i) => {
+      defaultIntent = i
+    },
   }
   ;(root as HTMLElement & { _lluiHandle?: AnnotateHudHandle })._lluiHandle = handle
   return handle
@@ -513,5 +562,6 @@ function noopHandle(): AnnotateHudHandle {
     submit: rejectNotMounted,
     drawRect: () => Promise.resolve(null),
     handleCaptureRequest: rejectNotMounted,
+    setIntent: noop,
   }
 }

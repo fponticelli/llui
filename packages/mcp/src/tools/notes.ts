@@ -11,15 +11,28 @@
 
 import { z } from 'zod'
 import {
+  appendStatus,
   createNote,
+  currentStatus,
   listNotes,
+  listQueue,
   listSessions,
   readNote,
+  readStatusHistory,
   resolveCurrentSession,
   rotateSession,
   serializeNote,
 } from '@llui/vite-plugin/notes'
-import type { CaptureLevel, NoteBody, NoteFrontmatter } from '@llui/vite-plugin'
+import type {
+  CaptureLevel,
+  NoteBody,
+  NoteFrontmatter,
+  NoteStatus,
+  ProposedDiff,
+  StatusTransition,
+} from '@llui/vite-plugin'
+import { join } from 'node:path'
+import { randomUUID } from 'node:crypto'
 import type { CdpTransport, ToolRegistry } from '../tool-registry.js'
 
 // Expression evaluated in the page context. Mirrors the HUD's
@@ -418,6 +431,179 @@ export function registerNotesTools(registry: ToolRegistry): void {
         sessionId: rotated.sessionId,
         previousSessionId: rotated.previousSessionId,
         notesDir: rotated.notesDir,
+      }
+    },
+  )
+
+  // ── Task-mode tools (P6) ──────────────────────────────────────────
+
+  registry.register(
+    {
+      name: 'llui_queue',
+      description:
+        "List notes that are participating in the task workflow, with their current status. Defaults to 'open', 'claimed', 'in-progress' — the work that's still active. Pass `status` to filter, or `status: ['accepted', 'applied']` to see what's already done.",
+      schema: z.object({
+        sessionId: z.string().optional(),
+        status: z
+          .union([
+            z.enum([
+              'open',
+              'claimed',
+              'in-progress',
+              'proposed',
+              'accepted',
+              'applied',
+              'rejected',
+              'wontfix',
+              'failed',
+            ]),
+            z.array(
+              z.enum([
+                'open',
+                'claimed',
+                'in-progress',
+                'proposed',
+                'accepted',
+                'applied',
+                'rejected',
+                'wontfix',
+                'failed',
+              ]),
+            ),
+          ])
+          .optional(),
+      }),
+    },
+    'notes',
+    async (args, ctx) => {
+      const sessionId = args.sessionId ?? resolveCurrentSession(ctx.notesRoot).sessionId
+      const sessionDir = join(ctx.notesRoot, sessionId)
+      const statusFilter = args.status
+      const queue = listQueue(
+        sessionDir,
+        statusFilter !== undefined ? { status: statusFilter as NoteStatus | NoteStatus[] } : {},
+      )
+      return { sessionId, queue }
+    },
+  )
+
+  registry.register(
+    {
+      name: 'llui_claim_note',
+      description:
+        "Atomically claim a task note for processing. Reads the current status — if no one else has claimed it (status is null or 'open'), appends a 'claimed' transition and returns the note contents. If already claimed by another worker, returns the current claimant. Use a unique workerId per LLM session so concurrent workers don't double-process.",
+      schema: z.object({
+        noteId: z.string(),
+        workerId: z.string().describe('Stable identifier for the claimer (e.g. session id).'),
+        sessionId: z.string().optional(),
+      }),
+    },
+    'notes',
+    async (args, ctx) => {
+      const sessionId = args.sessionId ?? resolveCurrentSession(ctx.notesRoot).sessionId
+      const sessionDir = join(ctx.notesRoot, sessionId)
+      const before = currentStatus(sessionDir, args.noteId)
+      if (before !== null && before !== 'open') {
+        const history = readStatusHistory(sessionDir, args.noteId)
+        const last = history.length > 0 ? history[history.length - 1] : null
+        return {
+          status: 'already-claimed-by' as const,
+          by: last?.reason ?? null,
+          currentStatus: before,
+        }
+      }
+      const transition: StatusTransition = {
+        ts: new Date().toISOString(),
+        noteId: args.noteId,
+        from: before,
+        to: 'claimed',
+        by: 'llm',
+        reason: args.workerId,
+      }
+      appendStatus(sessionDir, transition)
+      const note = readNote(ctx.notesRoot, sessionId, args.noteId)
+      return {
+        status: 'claimed' as const,
+        sessionId,
+        noteId: args.noteId,
+        frontmatter: note.frontmatter,
+        prose: note.prose,
+        body: note.body,
+        markdown: serializeNote(note),
+      }
+    },
+  )
+
+  registry.register(
+    {
+      name: 'llui_reply_to_note',
+      description:
+        "Write a reply note (kind: 'reply') that answers a task. When `proposedDiff` is included, the reply is also a candidate for `accepted` status to drive auto-apply via `git apply`. Status transitions: if the original task is currently 'claimed' or 'in-progress', this call also appends a 'proposed' transition for it.",
+      schema: z.object({
+        replyTo: z.string().describe('Note id being replied to.'),
+        prose: z.string().describe('Markdown prose body for the reply.'),
+        proposedDiff: z
+          .object({
+            files: z.array(z.object({ path: z.string(), patch: z.string() })),
+            summary: z.string(),
+            confidence: z.enum(['high', 'medium', 'low']),
+          })
+          .optional(),
+        sessionId: z.string().optional(),
+      }),
+    },
+    'notes',
+    async (args, ctx) => {
+      const sessionId = args.sessionId ?? resolveCurrentSession(ctx.notesRoot).sessionId
+      const sessionDir = join(ctx.notesRoot, sessionId)
+      const replyId = `reply-${randomUUID().slice(0, 8)}`
+      const frontmatter: Omit<NoteFrontmatter, 'id' | 'ts'> = {
+        author: 'llm',
+        kind: 'reply',
+        captureLevel: 'standard',
+        url: '',
+        route: null,
+        routeParams: {},
+        viewport: { w: 0, h: 0, dpr: 1 },
+        componentPath: null,
+        componentMeta: null,
+        annotations: [],
+        screenshot: null,
+        agentSchemas: [],
+        llui: { runtime: 'unknown', compiler: 'unknown' },
+        intent: 'note',
+        replyTo: args.replyTo,
+        ...(args.proposedDiff ? { proposedDiff: args.proposedDiff as ProposedDiff } : {}),
+      }
+      const created = createNote(ctx.notesRoot, {
+        body: args.prose,
+        frontmatter,
+        noteBody: {},
+      })
+
+      // Bump the original task's status to 'proposed' when the reply
+      // carries a diff.
+      let statusTransition: StatusTransition | null = null
+      if (args.proposedDiff) {
+        const before = currentStatus(sessionDir, args.replyTo)
+        const t: StatusTransition = {
+          ts: new Date().toISOString(),
+          noteId: args.replyTo,
+          from: before,
+          to: 'proposed',
+          by: 'llm',
+          reason: `reply ${created.id}: ${args.proposedDiff.summary}`,
+        }
+        appendStatus(sessionDir, t)
+        statusTransition = t
+      }
+
+      return {
+        replyNoteId: created.id,
+        filename: created.filename,
+        sessionId: created.sessionId,
+        replyId,
+        ...(statusTransition ? { statusTransition } : {}),
       }
     },
   )

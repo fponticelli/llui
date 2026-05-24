@@ -15,8 +15,10 @@ import type {
   ComponentMetaRef,
   MessageLogEntry,
   NoteBody,
+  NoteRect,
   PendingEffectEntry,
   RecentEffectEntry,
+  SourceMapEntry,
 } from '@llui/vite-plugin'
 
 // Minimal subset of @llui/dom's LluiDebugAPI we depend on. Typed as a
@@ -51,12 +53,24 @@ interface ComponentInfoLike {
   line: number | null
 }
 
+interface ElementReportLike {
+  bindings: Array<{ bindingIndex: number; kind?: string }>
+}
+
+interface BindingSourceLike {
+  file: string
+  line: number
+  column: number
+}
+
 interface DebugApiLike {
   getState(): unknown
   getMessageHistory?(opts?: { since?: number; limit?: number }): MessageRecordLike[]
   getPendingEffects?(): PendingEffectLike[]
   getEffectTimeline?(limit?: number): EffectTimelineEntryLike[]
   getComponentInfo?(): ComponentInfoLike
+  inspectElement?(selector: string): ElementReportLike | null
+  getBindingSource?(bindingIndex: number): BindingSourceLike | null
 }
 
 interface ComponentsGlobal {
@@ -187,6 +201,122 @@ export interface ComponentInfoSnapshot {
    *  precise scope. Per-element resolution requires DOM↔scope mapping
    *  which is a future iteration. */
   componentMeta: ComponentMetaRef | null
+}
+
+export interface CollectSourceMapOptions extends CollectOptions {
+  /** Grid sample size — N x N points across the bbox are inspected.
+   *  Default 3 (9 samples). Higher = more thorough, slower. */
+  samples?: number
+}
+
+/**
+ * Build a SourceMapEntry[] for elements inside a viewport bbox. Uses
+ * the runtime's existing `inspectElement` + `getBindingSource` to map
+ * each element back to the view-fn line that created it. Requires
+ * `__bindingSources` emission (active in dev mode via the Vite plugin).
+ *
+ * Returns an empty array when no debug API is present, when the bbox
+ * doesn't intersect any LLui-managed element, or when bindings have
+ * no source records (production builds without devtools mode).
+ */
+export function collectSourceMap(
+  bbox: NoteRect,
+  opts: CollectSourceMapOptions = {},
+): SourceMapEntry[] {
+  if (typeof document === 'undefined') return []
+  const components = opts.components ?? (globalThis as unknown as ComponentsGlobal).__lluiComponents
+  if (!components) return []
+  const entries = Object.entries(components)
+  if (entries.length === 0) return []
+
+  const samples = Math.max(1, opts.samples ?? 3)
+  const seen = new Set<string>()
+  const sourceMap: SourceMapEntry[] = []
+
+  // jsdom (and a few embedded contexts) ship without
+  // document.elementFromPoint; bail cleanly there rather than crash.
+  if (typeof document.elementFromPoint !== 'function') return []
+
+  // Sample a grid of points across the bbox; the union of elements
+  // beneath each point is our candidate set.
+  for (let i = 0; i < samples; i++) {
+    for (let j = 0; j < samples; j++) {
+      const x = bbox.x + (bbox.w * (i + 0.5)) / samples
+      const y = bbox.y + (bbox.h * (j + 0.5)) / samples
+      const el = document.elementFromPoint(x, y)
+      if (!el) continue
+      const selector = uniqueSelectorFor(el)
+      if (!selector || seen.has(selector)) continue
+      seen.add(selector)
+
+      for (const [name, api] of entries) {
+        if (typeof api.inspectElement !== 'function') continue
+        let report: ElementReportLike | null
+        try {
+          report = api.inspectElement(selector)
+        } catch {
+          continue
+        }
+        if (!report || !report.bindings) continue
+        for (const binding of report.bindings) {
+          if (typeof api.getBindingSource !== 'function') continue
+          let src: BindingSourceLike | null
+          try {
+            src = api.getBindingSource(binding.bindingIndex)
+          } catch {
+            continue
+          }
+          if (!src) continue
+          sourceMap.push({
+            selector,
+            file: src.file,
+            line: src.line,
+            componentPath: [name],
+          })
+        }
+      }
+    }
+  }
+  return sourceMap
+}
+
+/**
+ * Synthesize a unique CSS selector for an element. Prefers id; falls
+ * back to a chain of `tag:nth-child()` up to a parent with an id (or
+ * the root). The result is querySelector-compatible.
+ */
+export function uniqueSelectorFor(el: Element): string | null {
+  if (el.id) return `#${cssEscape(el.id)}`
+  const parts: string[] = []
+  let cur: Element | null = el
+  while (cur && cur.tagName !== 'HTML' && cur.tagName !== 'BODY') {
+    if (cur.id) {
+      parts.unshift(`#${cssEscape(cur.id)}`)
+      break
+    }
+    const parent: ParentNode | null = cur.parentNode
+    if (!parent) break
+    const children = parent.children
+    let index = -1
+    for (let k = 0; k < children.length; k++) {
+      if (children[k] === cur) {
+        index = k + 1
+        break
+      }
+    }
+    if (index <= 0) break
+    parts.unshift(`${cur.tagName.toLowerCase()}:nth-child(${index})`)
+    cur = parent instanceof Element ? parent : null
+  }
+  return parts.length > 0 ? parts.join(' > ') : null
+}
+
+function cssEscape(value: string): string {
+  // Browsers expose CSS.escape; node tests (jsdom) generally do too.
+  // Fall back to a manual escape for safety.
+  const css = (globalThis as { CSS?: { escape?: (s: string) => string } }).CSS
+  if (css?.escape) return css.escape(value)
+  return value.replace(/[^a-zA-Z0-9_-]/g, (ch) => `\\${ch}`)
 }
 
 /**
