@@ -5,6 +5,7 @@ import type { DisposerEvent } from './tracking/disposer-log.js'
 import type { CoverageTracker } from './tracking/coverage.js'
 import { type DomEnv, browserEnv } from './dom-env.js'
 import { currentAccessor } from './render-context.js'
+import { pushTrace } from './dev-trace.js'
 
 // Single lazily-constructed browser env shared by every client-side
 // component instance. Falls through to globalThis at call time — safe
@@ -554,6 +555,21 @@ function processMessages<S, M, E>(inst: ComponentInstance<S, M, E>): void {
       | undefined
     if (handler) {
       queue.length = 0
+      if (import.meta.env?.DEV) {
+        // Capture dispatch shape BEFORE the handler runs — handler
+        // mutates inst.lastDirtyMask synchronously so reading post-
+        // handler is fine, but capturing the path / msgType lookup
+        // here keeps the trace ordering matching real-world causality.
+        pushTrace({
+          kind: 'dispatch',
+          t: Date.now(),
+          msgType: ((msg as Record<string, unknown>).type as string) ?? null,
+          dirty: -1, // __handlers fast path computes its own dirty internally
+          dirtyHi: 0,
+          queueLen: 1,
+          path: 'fast',
+        })
+      }
       const [newState, effects] = handler(inst as ComponentInstance, msg)
       inst.state = newState
       inst._onCommit?.(newState as unknown)
@@ -606,6 +622,7 @@ function processMessages<S, M, E>(inst: ComponentInstance<S, M, E>): void {
     // arrays (0-2 elements) this is a minor saving; for bursts it matters.
     for (let ei = 0; ei < effects.length; ei++) allEffects.push(effects[ei]!)
   }
+  const queueLenForTrace = queue.length
   queue.length = 0
 
   inst.state = state
@@ -615,6 +632,18 @@ function processMessages<S, M, E>(inst: ComponentInstance<S, M, E>): void {
   if (import.meta.env?.DEV) {
     inst.lastDirtyMask = combinedDirty
     inst.lastEffects = allEffects
+    // One dispatch trace per generic flush; logs the COMBINED dirty
+    // mask across the drained queue so investigations can correlate
+    // queued message bursts with reconcile coverage.
+    pushTrace({
+      kind: 'dispatch',
+      t: Date.now(),
+      msgType: null,
+      dirty: combinedDirty,
+      dirtyHi: combinedDirtyHi,
+      queueLen: queueLenForTrace,
+      path: 'generic',
+    })
   }
 
   // Snapshot binding count before Phase 1 — bindings added during

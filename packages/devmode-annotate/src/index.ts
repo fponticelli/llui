@@ -659,7 +659,7 @@ export function mountAnnotateHud(opts: MountAnnotateOptions = {}): AnnotateHudHa
     solveBtn.disabled = true
     statusLine.textContent = mode === 'rect' ? 'capturing screenshot…' : 'sending…'
     submit(prose, { intent }).then(
-      (result) => {
+      async (result) => {
         textarea.value = ''
         pendingRect = null
         dismissActiveOverlay()
@@ -670,6 +670,38 @@ export function mountAnnotateHud(opts: MountAnnotateOptions = {}): AnnotateHudHa
           // a terminal state arrives (or the dev closes the modal).
           trackedTaskNoteId = result.id
           statusLine.textContent = '⏳ queued for the router…'
+          // Catch up: the router may have already claimed (and the LLM
+          // may have already moved status forward) before this POST
+          // returned with the noteId. Query the status endpoint to
+          // pick up any transitions we missed.
+          try {
+            const res = await fetch(
+              `${origin}/_llui/notes/${result.id}/status?sessionId=${encodeURIComponent(result.sessionId)}`,
+            )
+            if (res.ok) {
+              const payload = (await res.json()) as {
+                current: string | null
+                history: Array<{ to: string; reason?: string }>
+              }
+              if (payload.current) {
+                const last = payload.history[payload.history.length - 1]
+                statusLine.textContent = statusLabel(payload.current, last?.reason)
+                if (
+                  payload.current === 'applied' ||
+                  payload.current === 'rejected' ||
+                  payload.current === 'wontfix' ||
+                  payload.current === 'failed'
+                ) {
+                  saveBtn.disabled = false
+                  solveBtn.disabled = false
+                  trackedTaskNoteId = null
+                }
+              }
+            }
+          } catch {
+            // Best-effort catch-up. If it fails, the SSE listener will
+            // pick up future transitions normally.
+          }
         } else {
           statusLine.textContent = `✓ note saved (${result.filename})`
           saveBtn.disabled = false
@@ -687,55 +719,92 @@ export function mountAnnotateHud(opts: MountAnnotateOptions = {}): AnnotateHudHa
   solveBtn.addEventListener('click', () => submitWithIntent('task'))
 
   // ── Markdown toolbar wiring ────────────────────────────────────────
-  const wrapSelection = (before: string, after: string = before): void => {
+  //
+  // Smart wrap+toggle. Hitting Bold once wraps the selection in `**`;
+  // hitting it again removes the wrap. Three cases detected:
+  //   (1) selection itself is `**text**`           → strip wrap
+  //   (2) selection is `text` with `**` on either side in surrounding
+  //                                                   → strip flanking
+  //   (3) neither                                  → wrap
+  const toggleWrap = (marker: string): void => {
     const start = textarea.selectionStart
     const end = textarea.selectionEnd
-    const selected = textarea.value.slice(start, end)
+    const value = textarea.value
+    const selected = value.slice(start, end)
+    const ml = marker.length
+
+    // Case 1: selection itself is wrapped — strip.
+    if (selected.length >= ml * 2 && selected.startsWith(marker) && selected.endsWith(marker)) {
+      const inner = selected.slice(ml, selected.length - ml)
+      textarea.value = value.slice(0, start) + inner + value.slice(end)
+      textarea.focus()
+      textarea.setSelectionRange(start, start + inner.length)
+      return
+    }
+
+    // Case 2: surrounding text wraps the selection — strip flanking.
+    if (
+      start >= ml &&
+      end + ml <= value.length &&
+      value.slice(start - ml, start) === marker &&
+      value.slice(end, end + ml) === marker
+    ) {
+      textarea.value = value.slice(0, start - ml) + selected + value.slice(end + ml)
+      textarea.focus()
+      const newStart = start - ml
+      textarea.setSelectionRange(newStart, newStart + selected.length)
+      return
+    }
+
+    // Case 3: wrap. Placeholder only when no selection.
     const placeholder = selected || 'text'
-    const replacement = `${before}${placeholder}${after}`
-    textarea.value = textarea.value.slice(0, start) + replacement + textarea.value.slice(end)
+    const replacement = `${marker}${placeholder}${marker}`
+    textarea.value = value.slice(0, start) + replacement + value.slice(end)
     textarea.focus()
-    // Position the selection over the inserted text (so it can be
-    // typed-over) — or after `before` if there was no original
-    // selection.
-    const cursorStart = start + before.length
+    const cursorStart = start + ml
     const cursorEnd = cursorStart + placeholder.length
     textarea.setSelectionRange(cursorStart, cursorEnd)
   }
-  const prefixSelectedLines = (prefix: string | ((i: number) => string)): void => {
+
+  // Line-prefix toggle. If every selected line already starts with
+  // the prefix, strip it; otherwise add it.
+  const toggleLinePrefix = (addPrefix: (i: number) => string, matchPrefix: RegExp): void => {
     const start = textarea.selectionStart
     const end = textarea.selectionEnd
-    const before = textarea.value.slice(0, start)
-    // Expand selection to whole lines so the prefix applies at the
-    // line head, not mid-word.
-    const lineStart = before.lastIndexOf('\n') + 1
-    const fullSelected = textarea.value.slice(lineStart, end) || 'item'
-    const lines = fullSelected.split('\n')
-    const prefixed = lines
-      .map((line, i) => `${typeof prefix === 'function' ? prefix(i) : prefix}${line}`)
+    const value = textarea.value
+    const lineStart = value.lastIndexOf('\n', start - 1) + 1
+    // Find end of last line in selection (the \n AT or AFTER `end`).
+    let lineEnd = value.indexOf('\n', end)
+    if (lineEnd === -1) lineEnd = value.length
+    const block = value.slice(lineStart, lineEnd) || 'item'
+    const lines = block.split('\n')
+    const allMatch = lines.every((l) => matchPrefix.test(l))
+    const next = lines
+      .map((line, i) => (allMatch ? line.replace(matchPrefix, '') : `${addPrefix(i)}${line}`))
       .join('\n')
-    textarea.value = textarea.value.slice(0, lineStart) + prefixed + textarea.value.slice(end)
+    textarea.value = value.slice(0, lineStart) + next + value.slice(lineEnd)
     textarea.focus()
-    textarea.setSelectionRange(lineStart, lineStart + prefixed.length)
+    textarea.setSelectionRange(lineStart, lineStart + next.length)
   }
-  boldBtn.addEventListener('click', () => wrapSelection('**'))
-  italicBtn.addEventListener('click', () => wrapSelection('*'))
-  codeBtn.addEventListener('click', () => wrapSelection('`'))
-  bulletBtn.addEventListener('click', () => prefixSelectedLines('- '))
-  numBtn.addEventListener('click', () => prefixSelectedLines((i) => `${i + 1}. `))
+
+  boldBtn.addEventListener('click', () => toggleWrap('**'))
+  italicBtn.addEventListener('click', () => toggleWrap('*'))
+  codeBtn.addEventListener('click', () => toggleWrap('`'))
+  bulletBtn.addEventListener('click', () => toggleLinePrefix(() => '- ', /^- /))
+  numBtn.addEventListener('click', () => toggleLinePrefix((i) => `${i + 1}. `, /^\d+\. /))
 
   textarea.addEventListener('keydown', (e) => {
     const cmd = e.metaKey || e.ctrlKey
     if (!cmd) return
     if (e.key === 'b' || e.key === 'B') {
       e.preventDefault()
-      wrapSelection('**')
+      toggleWrap('**')
     } else if (e.key === 'i' || e.key === 'I') {
       e.preventDefault()
-      wrapSelection('*')
+      toggleWrap('*')
     } else if (e.key === 'e' || e.key === 'E') {
       e.preventDefault()
-      wrapSelection('`')
+      toggleWrap('`')
     }
   })
 

@@ -32,10 +32,11 @@ body {
   font-variant-numeric: tabular-nums;
 }
 
-.counter button {
-  width: 2.5rem;
+#app button {
   height: 2.5rem;
-  font-size: 1.25rem;
+  padding: 0 0.85rem;
+  font-size: 1rem;
+  font-family: inherit;
   border: 1px solid #d0d3d8;
   border-radius: 0.5rem;
   background: #fff;
@@ -46,11 +47,17 @@ body {
     border-color 0.15s;
 }
 
-.counter button:hover {
+.counter button {
+  width: 2.5rem;
+  padding: 0;
+  font-size: 1.25rem;
+}
+
+#app button:hover {
   background: #eef0f3;
   border-color: #b6bac1;
 }
 
-.counter button:active {
+#app button:active {
   background: #e2e5ea;
 }

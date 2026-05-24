@@ -19,6 +19,7 @@ import {
 import { getFlatBindings, setFlatBindings } from '../binding.js'
 import { FULL_MASK } from '../update-loop.js'
 import type { StructuralBlock } from '../structural.js'
+import { pushTrace } from '../dev-trace.js'
 // v0.4 size-cut (Tier 1.2): no more createView fallback — every compiled
 // component carries a __view factory; each() pulls the bag from the owning
 // instance via the render context.
@@ -127,8 +128,11 @@ export function each<S, T, M = unknown>(opts: EachOptions<S, T, M>): Node[] {
   const inst = ctx.instance
   let snapshotKeys: () => string[] | null = () => null
   let emitDiff: (oldKeys: string[] | null) => void = () => {}
+  // Stable id for this each() across reconciles. Used by both the
+  // pre-existing `_eachDiffLog` tracker AND the dev-trace ring buffer
+  // (window.__lluiTrace) so cross-referencing the two outputs works.
+  const eachSiteId = import.meta.env?.DEV ? `each#${blocks.length}` : ''
   if (import.meta.env?.DEV) {
-    const eachSiteId = inst?._eachDiffLog !== undefined ? `each#${blocks.length}` : ''
     snapshotKeys = (): string[] | null => {
       if (inst?._eachDiffLog === undefined) return null
       const keys: string[] = []
@@ -165,17 +169,65 @@ export function each<S, T, M = unknown>(opts: EachOptions<S, T, M>): Node[] {
     }
   }
 
+  const blockMask = (opts as { __mask?: number }).__mask ?? FULL_MASK
+  const blockMaskHi = (opts as { __maskHi?: number }).__maskHi ?? 0
   const block: StructuralBlock = {
-    mask: (opts as { __mask?: number }).__mask ?? FULL_MASK,
-    maskHi: (opts as { __maskHi?: number }).__maskHi ?? 0,
-    reconcile(state: unknown) {
+    mask: blockMask,
+    maskHi: blockMaskHi,
+    reconcile(state: unknown, dirty: number, dirtyHi: number) {
       const parent = anchor.parentNode
-      if (!parent) return
+      // Trace the reconcile entry — captured BEFORE the parent-null
+      // early-return so we can see "block exists but its DOM was
+      // detached" cases too.
+      const traceItemsLenBefore = entries.length
+      const traceKeysBefore: Array<string | number> = import.meta.env?.DEV
+        ? entries.map((e) => e.key)
+        : []
+      if (!parent) {
+        if (import.meta.env?.DEV) {
+          pushTrace({
+            kind: 'reconcile',
+            t: Date.now(),
+            blockId: eachSiteId,
+            mask: blockMask,
+            maskHi: blockMaskHi,
+            dirty,
+            dirtyHi,
+            gateOpen: false,
+            itemsLenBefore: traceItemsLenBefore,
+            itemsLenAfter: traceItemsLenBefore,
+            itemsRefChanged: false,
+            keysBefore: traceKeysBefore,
+            keysAfter: traceKeysBefore,
+          })
+        }
+        return
+      }
 
       const newItems = callItems(opts, state as S)
+      const itemsRefChanged = newItems !== lastItemsRef
 
       // Fast path: same array reference → skip entirely.
-      if (newItems === lastItemsRef) return
+      if (!itemsRefChanged) {
+        if (import.meta.env?.DEV) {
+          pushTrace({
+            kind: 'reconcile',
+            t: Date.now(),
+            blockId: eachSiteId,
+            mask: blockMask,
+            maskHi: blockMaskHi,
+            dirty,
+            dirtyHi,
+            gateOpen: true,
+            itemsLenBefore: traceItemsLenBefore,
+            itemsLenAfter: newItems.length,
+            itemsRefChanged: false,
+            keysBefore: traceKeysBefore,
+            keysAfter: traceKeysBefore,
+          })
+        }
+        return
+      }
       lastItemsRef = newItems
 
       const oldKeys = snapshotKeys()
@@ -208,6 +260,23 @@ export function each<S, T, M = unknown>(opts: EachOptions<S, T, M>): Node[] {
         opts.onTransition({ entering: report!.entering, leaving: report!.leaving, parent })
       }
       emitDiff(oldKeys)
+      if (import.meta.env?.DEV) {
+        pushTrace({
+          kind: 'reconcile',
+          t: Date.now(),
+          blockId: eachSiteId,
+          mask: blockMask,
+          maskHi: blockMaskHi,
+          dirty,
+          dirtyHi,
+          gateOpen: true,
+          itemsLenBefore: traceItemsLenBefore,
+          itemsLenAfter: newItems.length,
+          itemsRefChanged: true,
+          keysBefore: traceKeysBefore,
+          keysAfter: entries.map((e) => e.key),
+        })
+      }
     },
 
     /** Same keys, only item data changed — skip mismatch/swap detection.

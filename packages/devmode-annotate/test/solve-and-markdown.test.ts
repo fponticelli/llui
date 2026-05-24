@@ -175,4 +175,68 @@ describe('Markdown toolbar', () => {
     clickToolBtn('B')
     expect(ta.value).toBe('**text**')
   })
+
+  it('Bold twice toggles (strips the wrap) when selection includes the markers', () => {
+    mountAnnotateHud({ subscribeEvents: false })
+    const ta = getTextarea()
+    ta.value = '**word**'
+    ta.setSelectionRange(0, 8)
+    clickToolBtn('B')
+    expect(ta.value).toBe('word')
+  })
+
+  it('Bold toggle works when selection is the inner text with markers flanking', () => {
+    mountAnnotateHud({ subscribeEvents: false })
+    const ta = getTextarea()
+    ta.value = '**word**'
+    ta.setSelectionRange(2, 6) // just "word"
+    clickToolBtn('B')
+    expect(ta.value).toBe('word')
+  })
+
+  it('Italic toggle round-trips: wrap, then unwrap from the inner selection', () => {
+    mountAnnotateHud({ subscribeEvents: false })
+    const ta = getTextarea()
+    ta.value = 'word'
+    ta.setSelectionRange(0, 4)
+    clickToolBtn('I')
+    expect(ta.value).toBe('*word*')
+    expect(ta.selectionStart).toBe(1)
+    expect(ta.selectionEnd).toBe(5)
+    clickToolBtn('I')
+    expect(ta.value).toBe('word')
+  })
+
+  it('Code toggle strips backticks on second press', () => {
+    mountAnnotateHud({ subscribeEvents: false })
+    const ta = getTextarea()
+    ta.value = '`foo()`'
+    ta.setSelectionRange(0, 7)
+    clickToolBtn('</>')
+    expect(ta.value).toBe('foo()')
+  })
+
+  it('Bullet toggle: prefix once, strip on second press', () => {
+    mountAnnotateHud({ subscribeEvents: false })
+    const ta = getTextarea()
+    ta.value = 'one\ntwo'
+    ta.setSelectionRange(0, 7)
+    clickToolBtn('•')
+    expect(ta.value).toBe('- one\n- two')
+    ta.setSelectionRange(0, ta.value.length)
+    clickToolBtn('•')
+    expect(ta.value).toBe('one\ntwo')
+  })
+
+  it('Numbered toggle: strip on second press', () => {
+    mountAnnotateHud({ subscribeEvents: false })
+    const ta = getTextarea()
+    ta.value = 'one\ntwo'
+    ta.setSelectionRange(0, 7)
+    clickToolBtn('1.')
+    expect(ta.value).toBe('1. one\n2. two')
+    ta.setSelectionRange(0, ta.value.length)
+    clickToolBtn('1.')
+    expect(ta.value).toBe('one\ntwo')
+  })
 })

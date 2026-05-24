@@ -18,7 +18,7 @@ import { join } from 'node:path'
 
 import type { EventBus, SseEventListener } from './event-bus.js'
 import { listNotes, readNote } from './store.js'
-import { appendStatus, currentStatus } from './status.js'
+import { appendStatus, currentStatus, readStatusHistory } from './status.js'
 import { serializeNote } from './frontmatter.js'
 import type { ServerEvent, StatusTransition } from './types.js'
 
@@ -296,6 +296,12 @@ export function startRouter(config: RouterConfig): RouterHandle {
     log(`solving ${noteId} (${prompt.length} chars of context)`)
 
     try {
+      // Snapshot history before the spawn so we can detect transitions
+      // the LLM made while it was running (those land in status.jsonl
+      // via the MCP process — a different process from us — so they
+      // never hit our bus). After the spawn we replay the diff.
+      const beforeLen = readStatusHistory(sessionDir, noteId).length
+
       const result = await spawner.spawn({
         prompt,
         cwd: config.projectRoot,
@@ -305,6 +311,16 @@ export function startRouter(config: RouterConfig): RouterHandle {
       // After the spawn, the LLM may have already updated status via
       // llui_reply_to_note (→ 'proposed'). Re-read; if it's still
       // 'claimed', treat that as a failure to follow through.
+      const fullHistory = readStatusHistory(sessionDir, noteId)
+      // Broadcast every transition the LLM wrote while it was running.
+      for (const t of fullHistory.slice(beforeLen)) {
+        config.bus.broadcast({
+          type: 'status-changed',
+          noteId,
+          from: t.from,
+          to: t.to,
+        })
+      }
       const after = currentStatus(sessionDir, noteId)
       if (after === 'claimed') {
         const reason = result.timedOut
