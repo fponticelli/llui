@@ -62,15 +62,15 @@ afterEach(() => {
 })
 
 describe('devmodeAnnotate plugin option', () => {
-  it('does NOT register the notes middleware when option is undefined (default off)', () => {
+  it('registers the notes middleware by default (option is undefined)', () => {
     const plugin = llui()
     invokeConfigResolved(plugin, tmpRoot)
     const server = makeFakeServer()
     ;(plugin.configureServer as (s: unknown) => void)(server)
-    expect(server.globalUses).toBe(0)
+    expect(server.globalUses).toBe(1)
   })
 
-  it('does NOT register the notes middleware when option is false', () => {
+  it('does NOT register the notes middleware when option is explicitly false', () => {
     const plugin = llui({ devmodeAnnotate: false })
     invokeConfigResolved(plugin, tmpRoot)
     const server = makeFakeServer()

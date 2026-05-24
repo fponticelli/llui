@@ -20,7 +20,20 @@ pnpm add -D @llui/devmode-annotate
 
 ## Use
 
-**1. Enable the notebook endpoint in your Vite plugin config.** This mounts `/_llui/*` on the dev server — opt-in:
+Mount the HUD in your app entry:
+
+```ts
+// src/main.ts
+import { mountAnnotateHud } from '@llui/devmode-annotate'
+
+mountAnnotateHud()
+```
+
+That's it. The notebook endpoint (`/_llui/*` middleware) is enabled by default in `@llui/vite-plugin`'s dev server; the HUD is gated by `import.meta.env.DEV` and tree-shakes in production.
+
+### Opting out / customizing
+
+Pass `devmodeAnnotate: false` to disable the endpoint entirely, or an object to customize:
 
 ```ts
 // vite.config.ts
@@ -30,23 +43,12 @@ import llui from '@llui/vite-plugin'
 export default defineConfig({
   plugins: [
     llui({
-      devmodeAnnotate: true,
+      devmodeAnnotate: false, // opt out entirely
       // or: devmodeAnnotate: { notesDir: 'tmp/notes', captureTimeoutMs: 60_000 }
     }),
   ],
 })
 ```
-
-**2. Mount the HUD in your app entry:**
-
-```ts
-// src/main.ts
-import { mountAnnotateHud } from '@llui/devmode-annotate'
-
-mountAnnotateHud()
-```
-
-That's it. The HUD is gated by `import.meta.env.DEV`; in production builds the call tree-shakes out to a no-op. If the Vite plugin option is omitted (or `false`), the HUD will see 404s when posting — turn it on in `vite.config.ts` to enable the round-trip.
 
 ## API
 

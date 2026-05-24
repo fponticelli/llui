@@ -161,6 +161,7 @@ interface BaseAttributes {
   inert?: boolean
   enterkeyhint?: 'enter' | 'done' | 'go' | 'next' | 'previous' | 'search' | 'send'
   inputmode?: 'none' | 'text' | 'decimal' | 'numeric' | 'tel' | 'search' | 'email' | 'url'
+  autocapitalize?: 'off' | 'none' | 'on' | 'sentences' | 'words' | 'characters'
   is?: string
   itemid?: string
   itemprop?: string
@@ -252,6 +253,7 @@ interface InputAttributes {
   minlength?: number
   minLength?: number
   autocomplete?: string
+  autocorrect?: 'on' | 'off'
   list?: string
   accept?: string
   multiple?: boolean
@@ -326,6 +328,7 @@ interface TextareaAttributes {
   minlength?: number
   minLength?: number
   autocomplete?: string
+  autocorrect?: 'on' | 'off'
   wrap?: 'hard' | 'soft' | 'off'
   form?: string
 }

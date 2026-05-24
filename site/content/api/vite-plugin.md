@@ -175,26 +175,31 @@ export interface LluiPluginOptions {
   crossFile?: boolean | 'silent'
 
   /**
-   * Enable the devmode-annotate notebook surface — mounts a single
-   * Connect middleware at `/_llui/*` that lets the HUD
+   * Controls the devmode-annotate notebook surface — a single Connect
+   * middleware mounted at `/_llui/*` that lets the HUD
    * (`@llui/devmode-annotate`) and the MCP server (`@llui/mcp`) read
    * and write a shared on-disk notebook under `.llui/notes/`. The HUD
    * developer drops notes from the running app; the LLM consumes them
    * via MCP subscriptions; both can initiate captures.
    *
-   * Pass `true` for defaults (notes dir = `<project root>/.llui/notes`,
-   * 30s default capture-request timeout). Pass an object to customize.
-   * Pass `false` or omit to disable the endpoint entirely — no routes
-   * are registered and the middleware tree-shakes out of the dev-server
-   * setup.
+   * **Default: on in dev mode.** Omitting the option (or passing `true`)
+   * registers the middleware automatically — there's nothing to do.
+   * Pass `false` to opt out (no routes registered, middleware tree-
+   * shakes). Pass an object to keep it on while customizing the notes
+   * directory or default timeout.
    *
-   * Default `false` — opt-in. The proposal
-   * (`docs/proposals/devmode-annotate/`) details what lands on disk and
-   * what the LLM gets.
+   * The HUD itself stays separately opt-in: the developer mounts it
+   * via `mountAnnotateHud()` in their app entry. The middleware
+   * registration is harmless when no HUD is connected (and `@llui/mcp`
+   * also works with it standalone). Production builds never run
+   * `configureServer`, so this is dev-only by construction.
    *
-   * Environment overrides (only honored when this option is truthy):
+   * Environment overrides (honored when not opted out):
    *   - `LLUI_NOTES_DIR` — override the notes root path
    *   - `LLUI_CAPTURE_TIMEOUT_MS` — override the default capture-request timeout
+   *
+   * The proposal (`docs/proposals/devmode-annotate/`) details what
+   * lands on disk and what the LLM gets.
    */
   devmodeAnnotate?: boolean | DevmodeAnnotateConfig
 }
