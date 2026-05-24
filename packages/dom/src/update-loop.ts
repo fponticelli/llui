@@ -622,6 +622,23 @@ function processMessages<S, M, E>(inst: ComponentInstance<S, M, E>): void {
     // One dispatch trace per generic flush; logs the COMBINED dirty
     // mask across the drained queue so investigations can correlate
     // queued message bursts with reconcile coverage.
+    const blGen = inst.structuralBlocks
+    const blockMasksGen: Array<{
+      id: string
+      mask: number
+      maskHi: number
+      gateOpen: boolean
+    }> = []
+    for (let i = 0; i < blGen.length; i++) {
+      const b = blGen[i]
+      if (!b) continue
+      blockMasksGen.push({
+        id: b.__siteId ?? `block#${i}`,
+        mask: b.mask,
+        maskHi: b.maskHi,
+        gateOpen: !!((b.mask & combinedDirty) | (b.maskHi & combinedDirtyHi)),
+      })
+    }
     pushTrace({
       kind: 'dispatch',
       t: Date.now(),
@@ -630,6 +647,8 @@ function processMessages<S, M, E>(inst: ComponentInstance<S, M, E>): void {
       dirtyHi: combinedDirtyHi,
       queueLen: queueLenForTrace,
       path: 'generic',
+      blocksCount: blGen.length,
+      blockMasks: blockMasksGen,
     })
   }
 
@@ -721,6 +740,27 @@ export function _handleMsg(
     // Trace the per-msg fast-path call. This captures the compiler-
     // baked dirty mask for the message — useful for confirming the
     // mask actually matches the field set the user expected.
+    //
+    // ALSO snapshot every structural block's mask + whether the gate
+    // would open against this dirty. That's how we tell whether a
+    // block we *expected* to reconcile (e.g. a nested each with mask
+    // covering the dirty bit) is even present in this instance's
+    // structuralBlocks array. A block we expected but don't see is
+    // either (a) never registered or (b) registered + later unregistered
+    // via parentLifetime disposal — the `block` trace entries from
+    // each.ts disambiguate.
+    const bl = inst.structuralBlocks
+    const blockMasks: Array<{ id: string; mask: number; maskHi: number; gateOpen: boolean }> = []
+    for (let i = 0; i < bl.length; i++) {
+      const b = bl[i]
+      if (!b) continue
+      blockMasks.push({
+        id: b.__siteId ?? `block#${i}`,
+        mask: b.mask,
+        maskHi: b.maskHi,
+        gateOpen: !!((b.mask & dirty) | (b.maskHi & dirtyHi)),
+      })
+    }
     pushTrace({
       kind: 'dispatch',
       t: Date.now(),
@@ -729,6 +769,8 @@ export function _handleMsg(
       dirtyHi,
       queueLen: 1,
       path: 'fast',
+      blocksCount: bl.length,
+      blockMasks,
     })
   }
   const [s, e] = (inst.def.update as (s: unknown, m: unknown) => [unknown, unknown[]])(

@@ -29,6 +29,11 @@ import { pushTrace } from '../dev-trace.js'
 let activeClearCallbacks: Array<() => void> | null = null
 let activeRemoveCallbacks: Array<(key: string | number) => void> | null = null
 
+// Dev-only monotonic id for each() blocks — used by the runtime trace
+// ring buffer (window.__lluiTrace) so each block has a stable identifier
+// independent of its current index in inst.structuralBlocks.
+let nextEachSiteId = 0
+
 /** Register a callback to run when the current each() block clears. */
 export function registerOnClear(cb: () => void): void {
   if (activeClearCallbacks) activeClearCallbacks.push(cb)
@@ -128,10 +133,13 @@ export function each<S, T, M = unknown>(opts: EachOptions<S, T, M>): Node[] {
   const inst = ctx.instance
   let snapshotKeys: () => string[] | null = () => null
   let emitDiff: (oldKeys: string[] | null) => void = () => {}
-  // Stable id for this each() across reconciles. Used by both the
-  // pre-existing `_eachDiffLog` tracker AND the dev-trace ring buffer
-  // (window.__lluiTrace) so cross-referencing the two outputs works.
-  const eachSiteId = import.meta.env?.DEV ? `each#${blocks.length}` : ''
+  // Stable id for this each() across reconciles AND across splices /
+  // moves of `blocks`. Uses a module-level monotonic counter so the
+  // trace ring buffer's `each#N` IDs remain unique through register /
+  // unregister cycles. Without this, two blocks could share an ID if
+  // one was unregistered and another took its slot in the array,
+  // breaking trace-to-block correspondence.
+  const eachSiteId = import.meta.env?.DEV ? `each#${nextEachSiteId++}` : ''
   if (import.meta.env?.DEV) {
     snapshotKeys = (): string[] | null => {
       if (inst?._eachDiffLog === undefined) return null
@@ -174,6 +182,7 @@ export function each<S, T, M = unknown>(opts: EachOptions<S, T, M>): Node[] {
   const block: StructuralBlock = {
     mask: blockMask,
     maskHi: blockMaskHi,
+    __siteId: import.meta.env?.DEV ? eachSiteId : undefined,
     reconcile(state: unknown, dirty: number, dirtyHi: number) {
       const parent = anchor.parentNode
       // Trace the reconcile entry — captured BEFORE the parent-null
@@ -421,6 +430,17 @@ export function each<S, T, M = unknown>(opts: EachOptions<S, T, M>): Node[] {
   // Parents must come first in the flat blocks array — see branch.ts for
   // the full rationale (Phase 1 iteration safety when disposing nested).
   blocks.push(block)
+  if (import.meta.env?.DEV) {
+    pushTrace({
+      kind: 'block',
+      t: Date.now(),
+      blockId: eachSiteId,
+      op: 'register',
+      mask: blockMask,
+      maskHi: blockMaskHi,
+      parentLifetimeId: (parentLifetime as { id?: string | number }).id ?? '?',
+    })
+  }
 
   // Save / restore prior values rather than null-clearing — when this
   // each() is itself nested inside an outer each's render callback,
@@ -453,6 +473,17 @@ export function each<S, T, M = unknown>(opts: EachOptions<S, T, M>): Node[] {
   addDisposer(parentLifetime, () => {
     const idx = blocks.indexOf(block)
     if (idx !== -1) blocks.splice(idx, 1)
+    if (import.meta.env?.DEV) {
+      pushTrace({
+        kind: 'block',
+        t: Date.now(),
+        blockId: eachSiteId,
+        op: 'unregister',
+        mask: blockMask,
+        maskHi: blockMaskHi,
+        parentLifetimeId: (parentLifetime as { id?: string | number }).id ?? '?',
+      })
+    }
     // parentLifetime is being disposed — its children array is about to be
     // cleared by the recursive dispose pass, so skip per-entry parent
     // removal (avoids O(N²) indexOf+splice).

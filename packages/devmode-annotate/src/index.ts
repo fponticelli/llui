@@ -669,11 +669,20 @@ export function mountAnnotateHud(opts: MountAnnotateOptions = {}): AnnotateHudHa
           // status line live. Keep the action buttons disabled until
           // a terminal state arrives (or the dev closes the modal).
           trackedTaskNoteId = result.id
-          statusLine.textContent = '⏳ queued for the router…'
-          // Catch up: the router may have already claimed (and the LLM
-          // may have already moved status forward) before this POST
-          // returned with the noteId. Query the status endpoint to
-          // pick up any transitions we missed.
+          // Optimistically show 'claimed' — by the time we receive
+          // this 201, the router has already subscribed-and-claimed
+          // synchronously on the bus. Showing 'queued' here is
+          // misleading: that state only lasts microseconds on the
+          // server, and a fast claude can land 'proposed' before our
+          // catch-up GET returns, hiding the 'working' label entirely.
+          statusLine.textContent = statusLabel('claimed')
+          // Catch up: in the rare case where claude is so fast it
+          // already finished before the 201 reached us (cached result,
+          // no-op fix), the GET upgrades the label to the actual
+          // current state. We only overwrite if the catch-up reports
+          // a LATER state than 'claimed' — otherwise we'd roll back to
+          // a stale value if a status-changed SSE event arrived during
+          // the await.
           try {
             const res = await fetch(
               `${origin}/_llui/notes/${result.id}/status?sessionId=${encodeURIComponent(result.sessionId)}`,
@@ -683,7 +692,7 @@ export function mountAnnotateHud(opts: MountAnnotateOptions = {}): AnnotateHudHa
                 current: string | null
                 history: Array<{ to: string; reason?: string }>
               }
-              if (payload.current) {
+              if (payload.current && payload.current !== 'open' && payload.current !== 'claimed') {
                 const last = payload.history[payload.history.length - 1]
                 statusLine.textContent = statusLabel(payload.current, last?.reason)
                 if (

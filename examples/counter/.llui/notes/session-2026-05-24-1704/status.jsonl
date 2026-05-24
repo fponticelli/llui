@@ -4,3 +4,9 @@
 {"ts":"2026-05-24T21:22:29.971Z","noteId":"004","from":null,"to":"open","by":"human"}
 {"ts":"2026-05-24T21:30:31.273Z","noteId":"005","from":null,"to":"claimed","by":"llm","reason":"llui-router"}
 {"ts":"2026-05-24T21:30:31.277Z","noteId":"005","from":null,"to":"open","by":"human"}
+{"ts":"2026-05-24T21:40:06.739Z","noteId":"006","from":null,"to":"claimed","by":"llm","reason":"llui-router"}
+{"ts":"2026-05-24T21:40:06.742Z","noteId":"006","from":null,"to":"open","by":"human"}
+{"ts":"2026-05-24T21:40:57.251Z","noteId":"006","from":"claimed","to":"proposed","by":"llm","reason":"reply 007: Reserve a fixed row for the reset button in #app's layout (CSS grid with auto + 2.5rem rows) so the counter row doesn't shift when reset toggles."}
+{"ts":"2026-05-24T21:51:34.311Z","noteId":"008","from":null,"to":"claimed","by":"llm","reason":"llui-router"}
+{"ts":"2026-05-24T21:51:34.314Z","noteId":"008","from":null,"to":"open","by":"human"}
+{"ts":"2026-05-24T21:52:20.524Z","noteId":"008","from":"claimed","to":"proposed","by":"llm","reason":"reply 009: Reserve vertical space in #app so the counter row doesn't shift when the Reset button mounts/unmounts"}

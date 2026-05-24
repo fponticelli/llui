@@ -85,10 +85,14 @@ describe('live status feedback during Solve', () => {
     await new Promise((r) => setTimeout(r, 5))
 
     expect(solveBtn.disabled).toBe(true)
-    expect(getStatusLine().textContent).toContain('queued')
+    // Optimistic: by the time the POST returns, the router has already
+    // claimed synchronously on the bus, so the HUD shows 'claimed'
+    // immediately — never the fleeting 'queued' state.
+    expect(getStatusLine().textContent).toContain('claude is working')
 
-    // Router fires status-changed: claimed
     const sse = StubEventSource.instances[0]!
+    // A late 'claimed' SSE event (e.g. arriving after the optimistic
+    // render) is a no-op — the label already says 'working'.
     sse.fire({ type: 'status-changed', noteId: '042', to: 'claimed' })
     expect(getStatusLine().textContent).toContain('claude is working')
     expect(solveBtn.disabled).toBe(true) // still in flight

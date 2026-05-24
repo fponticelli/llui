@@ -7,6 +7,9 @@ export interface StructuralBlock {
   /** High-word bits 31..61, encoded with `1 << (pos - 31)`. Zero for
    *  blocks that only read paths 0..30. */
   maskHi: number
+  /** Dev-only stable id assigned at construction (each/branch/show/scope).
+   *  Used by the runtime trace ring buffer; production builds omit. */
+  __siteId?: string
   reconcile(state: unknown, dirtyMask: number, dirtyMaskHi: number): void
   /** Same keys, only item data changed — skip mismatch/swap detection */
   reconcileItems?(state: unknown): void

@@ -53,6 +53,8 @@ export type TraceEntry =
       dirtyHi: number
       queueLen: number
       path: 'fast' | 'generic'
+      blocksCount: number
+      blockMasks: Array<{ id: string; mask: number; maskHi: number; gateOpen: boolean }>
     }
   | {
       kind: 'reconcile'
@@ -76,6 +78,15 @@ export type TraceEntry =
       op: 'build' | 'dispose'
       key: string | number
       scopeId: string | number
+    }
+  | {
+      kind: 'block'
+      t: number
+      blockId: string
+      op: 'register' | 'unregister'
+      mask: number
+      maskHi: number
+      parentLifetimeId: string | number
     }
 
 const MAX = 2000
