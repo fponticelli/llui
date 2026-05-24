@@ -119,6 +119,72 @@ export function registerNotesTools(registry: ToolRegistry): void {
 
   registry.register(
     {
+      name: 'llui_capture',
+      description:
+        "LLM-initiated capture. Asks the connected HUD to screenshot the current page (optionally with pre-baked rect/lasso/pin/arrow annotations) and write a note to the notebook. The tool long-polls until the HUD posts back a fulfillment, the request times out, or no HUD is connected. Returns the resulting note inline (markdown + frontmatter) so a follow-up llui_read_note call isn't required. Annotation coordinates are viewport pixels — leave `annotate` empty if you only want a clean snapshot. Use this when you want a current visual of the page; use llui_list_notes / llui_read_note to read what the human has already written.",
+      schema: z.object({
+        prose: z.string().optional().describe('Prose body for the captured note (markdown).'),
+        annotate: z
+          .array(z.unknown())
+          .optional()
+          .describe(
+            'Pre-baked annotations in viewport pixel coordinates. Schema matches Annotation from @llui/vite-plugin (rect, lasso, pin, arrow, element, highlight). Highlights require P4 runtime element resolution and are skipped silently in v1.',
+          ),
+        captureLevel: z.enum(['standard', 'verbose']).optional(),
+        timeoutMs: z.number().optional().describe('Long-poll timeout. Default 30000.'),
+      }),
+    },
+    'notes',
+    async (args, ctx) => {
+      if (!ctx.devServerUrl) {
+        throw new Error(
+          'llui_capture: no dev-server URL configured. Set LLUI_DEV_SERVER, pass devUrl to the MCP server, or start the Vite plugin which stamps the active marker.',
+        )
+      }
+      const url = `${ctx.devServerUrl}/_llui/capture-request`
+      const payload: Record<string, unknown> = {}
+      if (args.prose !== undefined) payload['prose'] = args.prose
+      if (args.annotate !== undefined) payload['annotate'] = args.annotate
+      if (args.captureLevel !== undefined) payload['captureLevel'] = args.captureLevel
+      if (args.timeoutMs !== undefined) payload['timeoutMs'] = args.timeoutMs
+
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(payload),
+      })
+      if (!res.ok) {
+        throw new Error(`llui_capture: POST ${url} → ${res.status}`)
+      }
+      const result = (await res.json()) as {
+        requestId: string
+        status: 'fulfilled' | 'timeout' | 'no-client'
+        note?: { id: string; filename: string; sessionId: string }
+      }
+
+      // On fulfillment, return the note inline so the LLM doesn't need
+      // a second tool call to see what just landed.
+      if (result.status === 'fulfilled' && result.note) {
+        const sessionId = result.note.sessionId
+        const note = readNote(ctx.notesRoot, sessionId, result.note.id)
+        return {
+          status: 'fulfilled' as const,
+          requestId: result.requestId,
+          sessionId,
+          noteId: result.note.id,
+          filename: result.note.filename,
+          frontmatter: note.frontmatter,
+          prose: note.prose,
+          body: note.body,
+          markdown: serializeNote(note),
+        }
+      }
+      return result
+    },
+  )
+
+  registry.register(
+    {
       name: 'llui_rotate_session',
       description:
         'Start a fresh notebook session. The previous session is left on disk untouched; only the active-session marker moves. Useful when starting a new debugging thread.',

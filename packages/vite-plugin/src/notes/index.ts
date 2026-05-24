@@ -30,6 +30,23 @@ export { parseNote, serializeNote, type SerializedNote } from './frontmatter.js'
 
 export { deriveFilename, deriveSlug, padId } from './slug.js'
 
+// Server-side middleware components. Exposed so test harnesses and
+// alternative hosts (e.g. a standalone notebook server) can instantiate
+// the middleware without going through the Vite plugin. Production
+// consumers normally let the Vite plugin own these.
+export { createEventBus, type EventBus, type SseEventListener } from './event-bus.js'
+export {
+  createCaptureRegistry,
+  type CaptureRegistry,
+  type SubmitOptions as CaptureSubmitOptions,
+  type SubmitResult as CaptureSubmitResult,
+} from './capture-registry.js'
+export {
+  createNotesMiddleware,
+  type MiddlewareHandler,
+  type NotesMiddlewareConfig,
+} from './middleware.js'
+
 export type {
   AgentSchemaSummary,
   Annotation,

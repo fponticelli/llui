@@ -165,6 +165,11 @@ export class LluiMcpServer {
       devUrl: opts.devUrl ?? null,
       headed: opts.headed ?? false,
     })
+    // Persist the constructed devUrl so `llui_capture` and other tools
+    // that need to reach the Vite dev server can resolve a URL without
+    // an explicit setDevUrl() call. setDevUrl() still works at runtime
+    // for late-arriving values (e.g. plugin stamping after init).
+    this.devUrl = opts.devUrl ?? null
     this.notesRoot = resolveNotesRoot(opts.notesRoot)
     registerDebugApiTools(this.registry)
     registerCdpTools(this.registry)
@@ -201,7 +206,12 @@ export class LluiMcpServer {
         spec.name,
         { description: spec.description, inputSchema: spec.schema.shape },
         async (args) => {
-          const ctx: ToolContext = { relay: this.relay, cdp: this.cdp, notesRoot: this.notesRoot }
+          const ctx: ToolContext = {
+            relay: this.relay,
+            cdp: this.cdp,
+            notesRoot: this.notesRoot,
+            devServerUrl: this.devUrl,
+          }
           try {
             const result = await handler(args as Record<string, unknown>, ctx)
             // structuredContent is what current Claude clients
@@ -330,7 +340,12 @@ export class LluiMcpServer {
 
   /** Handle an MCP tool call */
   async handleToolCall(name: string, args: Record<string, unknown>): Promise<unknown> {
-    const ctx: ToolContext = { relay: this.relay, cdp: this.cdp, notesRoot: this.notesRoot }
+    const ctx: ToolContext = {
+      relay: this.relay,
+      cdp: this.cdp,
+      notesRoot: this.notesRoot,
+      devServerUrl: this.devUrl,
+    }
     return this.registry.dispatch(name, args, ctx)
   }
 }

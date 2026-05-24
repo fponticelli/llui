@@ -9,6 +9,7 @@
 import type {
   Annotation,
   CaptureLevel,
+  CaptureRequestPayload,
   CreateNoteRequest,
   CreateNoteResponse,
   NoteFrontmatter,
@@ -41,6 +42,10 @@ export interface MountAnnotateOptions {
    *  screenshot as `data:image/png;base64,…` (or any string the
    *  middleware can store as base64). */
   bake?: BakeFn
+  /** Disable the SSE subscription to /_llui/events. Tests that don't
+   *  want a real EventSource pass `false`; production callers should
+   *  leave it `true` (default) so LLM-initiated captures land. */
+  subscribeEvents?: boolean
 }
 
 export type HudMode = 'text' | 'rect'
@@ -58,6 +63,13 @@ export interface AnnotateHudHandle {
   /** Programmatically trigger the rect-drawing overlay. Resolves when
    *  the user completes or cancels. */
   drawRect(): Promise<NoteRect | null>
+  /** Handle a single LLM-initiated capture-request — same code path
+   *  as the SSE handler. Exposed for tests and for callers driving the
+   *  bridge manually. */
+  handleCaptureRequest(
+    requestId: string,
+    payload: CaptureRequestPayload,
+  ): Promise<CreateNoteResponse>
 }
 
 interface LluiDevSurfaceLike {
@@ -190,6 +202,7 @@ export function mountAnnotateHud(opts: MountAnnotateOptions = {}): AnnotateHudHa
   }
   const destroy = (): void => {
     document.removeEventListener('keydown', onKey)
+    eventSource?.close()
     root.remove()
   }
 
@@ -338,6 +351,133 @@ export function mountAnnotateHud(opts: MountAnnotateOptions = {}): AnnotateHudHa
     )
   })
 
+  const handleCaptureRequest = async (
+    requestId: string,
+    payload: CaptureRequestPayload,
+  ): Promise<CreateNoteResponse> => {
+    const prose = payload.prose ?? ''
+    // Semantic 'highlight' annotations would need element-resolution
+    // (P4 runtime hooks); pass them through unchanged for v1 — the
+    // bake step skips them silently. Concrete shapes (rect, lasso, …)
+    // bake fine.
+    const annotations: Annotation[] = payload.annotate ?? []
+
+    let screenshotBase64: string | undefined
+    try {
+      const raw = await captureScreenshot({
+        ...(opts.capture ? { capture: opts.capture } : {}),
+      })
+      if (annotations.length > 0) {
+        const bake = opts.bake ?? bakeAnnotations
+        const baked = await bake(raw, annotations)
+        screenshotBase64 = baked.startsWith('data:') ? baked.slice(baked.indexOf(',') + 1) : baked
+      } else {
+        screenshotBase64 = raw.startsWith('data:') ? raw.slice(raw.indexOf(',') + 1) : raw
+      }
+    } catch (err) {
+      // Capture failure: we still POST a note (carrying the requestId)
+      // so the long-poll on the MCP side resolves — better to surface
+      // the failure as a note than to time out silently.
+      const message = err instanceof Error ? err.message : String(err)
+      const failBody: CreateNoteRequest = {
+        body: `[capture failed: ${message}]${prose ? `\n\n${prose}` : ''}`,
+        frontmatter: {
+          author: 'llm',
+          kind: 'capture',
+          captureLevel: payload.captureLevel ?? 'standard',
+          url: typeof location !== 'undefined' ? location.href : '',
+          route: null,
+          routeParams: {},
+          viewport: {
+            w: typeof window !== 'undefined' ? window.innerWidth : 0,
+            h: typeof window !== 'undefined' ? window.innerHeight : 0,
+            dpr: typeof window !== 'undefined' ? window.devicePixelRatio || 1 : 1,
+          },
+          componentPath: null,
+          componentMeta: null,
+          annotations,
+          screenshot: null,
+          agentSchemas: [],
+          llui,
+          fulfillsRequestId: requestId,
+        },
+        noteBody: {},
+      }
+      const failRes = await fetch(`${origin}/_llui/notes`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(failBody),
+      })
+      if (!failRes.ok) {
+        throw new Error(`devmode-annotate: POST /_llui/notes → ${failRes.status}`, { cause: err })
+      }
+      return (await failRes.json()) as CreateNoteResponse
+    }
+
+    const frontmatter: Omit<NoteFrontmatter, 'id' | 'ts'> = {
+      author: 'llm',
+      kind: 'capture',
+      captureLevel: payload.captureLevel ?? 'standard',
+      url: typeof location !== 'undefined' ? location.href : '',
+      route: null,
+      routeParams: {},
+      viewport: {
+        w: typeof window !== 'undefined' ? window.innerWidth : 0,
+        h: typeof window !== 'undefined' ? window.innerHeight : 0,
+        dpr: typeof window !== 'undefined' ? window.devicePixelRatio || 1 : 1,
+      },
+      componentPath: null,
+      componentMeta: null,
+      annotations,
+      screenshot: screenshotBase64 ? 'placeholder.png' : null,
+      agentSchemas: [],
+      llui,
+      fulfillsRequestId: requestId,
+    }
+    const body: CreateNoteRequest = {
+      body: prose,
+      frontmatter,
+      noteBody: {},
+      ...(screenshotBase64 ? { screenshot: screenshotBase64 } : {}),
+    }
+    const url = `${origin}/_llui/notes`
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(body),
+    })
+    if (!res.ok) {
+      throw new Error(`devmode-annotate: POST ${url} → ${res.status}`)
+    }
+    return (await res.json()) as CreateNoteResponse
+  }
+
+  // ── SSE subscription ───────────────────────────────────────────────
+  // Open an EventSource so the HUD receives LLM-initiated capture
+  // requests. The browser's native EventSource has built-in reconnect;
+  // we don't need a custom retry loop.
+  let eventSource: EventSource | null = null
+  if (opts.subscribeEvents !== false && typeof EventSource !== 'undefined') {
+    try {
+      eventSource = new EventSource(`${origin}/_llui/events?role=hud`)
+      eventSource.addEventListener('message', (e: MessageEvent) => {
+        let parsed: { type?: string; requestId?: string; payload?: CaptureRequestPayload }
+        try {
+          parsed = JSON.parse(e.data as string)
+        } catch {
+          return
+        }
+        if (parsed.type === 'capture-request' && parsed.requestId) {
+          void handleCaptureRequest(parsed.requestId, parsed.payload ?? {}).catch((err) => {
+            console.warn('[llui:devmode-annotate] capture-request handler failed:', err)
+          })
+        }
+      })
+    } catch (err) {
+      console.warn('[llui:devmode-annotate] EventSource subscription failed:', err)
+    }
+  }
+
   const onKey = (e: KeyboardEvent): void => {
     if (e.key === 'Escape') close()
     if ((e.metaKey || e.ctrlKey) && e.shiftKey && (e.key === 'a' || e.key === 'A')) {
@@ -353,6 +493,7 @@ export function mountAnnotateHud(opts: MountAnnotateOptions = {}): AnnotateHudHa
     destroy,
     submit,
     drawRect: startRectFlow,
+    handleCaptureRequest,
   }
   ;(root as HTMLElement & { _lluiHandle?: AnnotateHudHandle })._lluiHandle = handle
   return handle
@@ -360,11 +501,14 @@ export function mountAnnotateHud(opts: MountAnnotateOptions = {}): AnnotateHudHa
 
 function noopHandle(): AnnotateHudHandle {
   const noop = (): void => {}
+  const rejectNotMounted = (): Promise<never> =>
+    Promise.reject(new Error('devmode-annotate: HUD not mounted (not dev mode)'))
   return {
     open: noop,
     close: noop,
     destroy: noop,
-    submit: () => Promise.reject(new Error('devmode-annotate: HUD not mounted (not dev mode)')),
+    submit: rejectNotMounted,
     drawRect: () => Promise.resolve(null),
+    handleCaptureRequest: rejectNotMounted,
   }
 }

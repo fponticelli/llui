@@ -26,6 +26,11 @@ export interface ToolContext {
    *  server from env (`LLUI_NOTES_DIR`) or workspace root + `.llui/notes`.
    *  Notes tools read from this directory. */
   notesRoot: string
+  /** Origin of the Vite dev server that hosts the /_llui/* middleware.
+   *  Set by the MCP server from `LLUI_DEV_SERVER` env, the active marker
+   *  file's `devUrl`, or constructor option. May be null when no dev
+   *  server is reachable — `llui_capture` returns an error in that case. */
+  devServerUrl: string | null
 }
 
 export interface RelayTransport {
