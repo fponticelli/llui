@@ -122,3 +122,10 @@ export function installTraceGlobals(): void {
     w.__lluiTraceEnabled = on
   }
 }
+
+// Install on module load so trace fires from the very first each() call,
+// not just from mountApp callers. The hydrateApp / hydrateAtAnchor paths
+// (vike SSR) and any other entry would otherwise need to remember to
+// call installTraceGlobals — easy to miss, and any miss silently drops
+// every event preceding the first explicit mountApp.
+installTraceGlobals()

@@ -72,7 +72,7 @@ function clickSolve(): void {
 }
 
 describe('live status feedback during Solve', () => {
-  it('keeps the action buttons disabled until a terminal status arrives', async () => {
+  it('action buttons stay ENABLED after Solve so the user can capture more tasks', async () => {
     mockFetch('042')
     mountAnnotateHud({ origin: 'http://localhost' })
     const root = document.getElementById('llui-devmode-annotate-root')!
@@ -84,28 +84,16 @@ describe('live status feedback during Solve', () => {
     clickSolve()
     await new Promise((r) => setTimeout(r, 5))
 
-    expect(solveBtn.disabled).toBe(true)
-    // Optimistic: by the time the POST returns, the router has already
-    // claimed synchronously on the bus, so the HUD shows 'claimed'
-    // immediately — never the fleeting 'queued' state.
+    expect(solveBtn.disabled).toBe(false)
     expect(getStatusLine().textContent).toContain('claude is working')
 
     const sse = StubEventSource.instances[0]!
-    // A late 'claimed' SSE event (e.g. arriving after the optimistic
-    // render) is a no-op — the label already says 'working'.
-    sse.fire({ type: 'status-changed', noteId: '042', to: 'claimed' })
-    expect(getStatusLine().textContent).toContain('claude is working')
-    expect(solveBtn.disabled).toBe(true) // still in flight
-
-    // Router fires proposed
     sse.fire({ type: 'status-changed', noteId: '042', to: 'proposed' })
     expect(getStatusLine().textContent).toContain('proposed')
-    expect(solveBtn.disabled).toBe(true) // still not terminal (user needs to accept)
+    expect(solveBtn.disabled).toBe(false)
 
-    // User accepts; middleware appends 'applied'
     sse.fire({ type: 'status-changed', noteId: '042', to: 'applied' })
-    expect(getStatusLine().textContent).toContain('applied')
-    expect(solveBtn.disabled).toBe(false) // terminal — buttons re-enabled
+    expect(solveBtn.disabled).toBe(false)
   })
 
   it('shows the failure reason when status-changed: failed', async () => {
@@ -140,6 +128,115 @@ describe('live status feedback during Solve', () => {
     const baseline = getStatusLine().textContent
     sse.fire({ type: 'status-changed', noteId: '999', to: 'applied' })
     expect(getStatusLine().textContent).toBe(baseline) // unchanged
+  })
+
+  it('shows a queue counter when multiple tasks are in flight', async () => {
+    let n = 1
+    globalThis.fetch = (async (url: string, init?: RequestInit) => {
+      // Catch-up GETs hit /status — return empty so they don't bump n.
+      if (typeof url === 'string' && url.includes('/status')) {
+        return new Response(JSON.stringify({ current: null, history: [] }), {
+          status: 200,
+        })
+      }
+      void init
+      const id = String(n++).padStart(3, '0')
+      return new Response(
+        JSON.stringify({ id, filename: `${id}-x.md`, path: '/x', sessionId: 's' }),
+        { status: 201 },
+      )
+    }) as unknown as typeof fetch
+
+    mountAnnotateHud({ origin: 'http://localhost' })
+    const root = document.getElementById('llui-devmode-annotate-root')!
+    const ta = root.querySelector('textarea')!
+
+    ta.value = 'task 1'
+    clickSolve()
+    await new Promise((r) => setTimeout(r, 5))
+    ta.value = 'task 2'
+    clickSolve()
+    await new Promise((r) => setTimeout(r, 5))
+    ta.value = 'task 3'
+    clickSolve()
+    await new Promise((r) => setTimeout(r, 5))
+
+    const badge = Array.from(root.querySelectorAll('span')).find((s) =>
+      (s.textContent ?? '').includes('in queue'),
+    )!
+    expect(badge.textContent).toBe('3 in queue')
+
+    const sse = StubEventSource.instances[0]!
+    sse.fire({ type: 'status-changed', noteId: '001', to: 'applied' })
+    sse.fire({ type: 'status-changed', noteId: '002', to: 'applied' })
+    expect(badge.textContent).toBe('1 in queue')
+    sse.fire({ type: 'status-changed', noteId: '003', to: 'applied' })
+    expect(badge.style.display).toBe('none')
+  })
+
+  it('fires a toast notification when a task hits a terminal state', async () => {
+    mockFetch('010')
+    mountAnnotateHud({ origin: 'http://localhost' })
+    const ta = document.querySelector(
+      '#llui-devmode-annotate-root textarea',
+    )! as HTMLTextAreaElement
+    ta.value = 'fix this'
+    clickSolve()
+    await new Promise((r) => setTimeout(r, 5))
+
+    // Sanity: no toast yet
+    const toastsBefore = document.body.querySelectorAll('[data-llui-toast]')
+    expect(toastsBefore.length).toBe(0)
+
+    const sse = StubEventSource.instances[0]!
+    sse.fire({ type: 'status-changed', noteId: '010', to: 'applied' })
+
+    const toastsAfter = document.body.querySelectorAll('[data-llui-toast]')
+    expect(toastsAfter.length).toBe(1)
+    expect(toastsAfter[0]!.textContent).toMatch(/Note 010.*applied/)
+  })
+
+  it('status line follows the LATEST task; earlier tasks complete via toast', async () => {
+    let n = 1
+    globalThis.fetch = (async (url: string) => {
+      if (typeof url === 'string' && url.includes('/status')) {
+        return new Response(JSON.stringify({ current: null, history: [] }), {
+          status: 200,
+        })
+      }
+      const id = String(n++).padStart(3, '0')
+      return new Response(
+        JSON.stringify({ id, filename: `${id}.md`, path: '/x', sessionId: 's' }),
+        { status: 201 },
+      )
+    }) as unknown as typeof fetch
+    mountAnnotateHud({ origin: 'http://localhost' })
+    const ta = document.querySelector(
+      '#llui-devmode-annotate-root textarea',
+    )! as HTMLTextAreaElement
+
+    ta.value = 'task A'
+    clickSolve()
+    await new Promise((r) => setTimeout(r, 5))
+    ta.value = 'task B'
+    clickSolve()
+    await new Promise((r) => setTimeout(r, 5))
+
+    // Status line should show the LATEST (task B = id 002) at 'claimed'.
+    expect(getStatusLine().textContent).toContain('claude is working')
+
+    const sse = StubEventSource.instances[0]!
+    // Older task A finishes — should fire a toast but NOT touch the
+    // status line (which is tracking task B).
+    sse.fire({ type: 'status-changed', noteId: '001', to: 'proposed', reason: 'fix A' })
+    expect(getStatusLine().textContent).toContain('claude is working') // unchanged
+    sse.fire({ type: 'status-changed', noteId: '001', to: 'applied' })
+    const toasts = document.body.querySelectorAll('[data-llui-toast]')
+    expect(toasts.length).toBeGreaterThan(0)
+
+    // Now task B finishes — status line updates.
+    sse.fire({ type: 'status-changed', noteId: '002', to: 'proposed', reason: 'fix B' })
+    expect(getStatusLine().textContent).toContain('fix B')
   })
 
   it("'Save note' does NOT track status (intent=note isn't in the queue)", async () => {

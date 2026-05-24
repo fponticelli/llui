@@ -213,6 +213,21 @@ export function mountAnnotateHud(opts: MountAnnotateOptions = {}): AnnotateHudHa
   let mode: HudMode = 'text'
   let pendingRect: NoteRect | null = null
 
+  // Per-task tracking. The router serializes solves, but the user can
+  // submit multiple from the HUD — older tasks finish in the background
+  // and surface via toast notifications. The status line in the modal
+  // shows the LATEST in-flight task's progress.
+  interface TrackedTask {
+    noteId: string
+    sessionId: string
+    status: 'claimed' | 'in-progress' | 'proposed' | string
+  }
+  const trackedTasks = new Map<string, TrackedTask>()
+  let latestTaskId: string | null = null
+
+  const TERMINAL_STATES = new Set(['applied', 'rejected', 'wontfix', 'failed'])
+  const isTerminal = (s: string): boolean => TERMINAL_STATES.has(s)
+
   // ── DOM ────────────────────────────────────────────────────────────
   const root = document.createElement('div')
   root.id = HUD_ELEMENT_ID
@@ -240,8 +255,26 @@ export function mountAnnotateHud(opts: MountAnnotateOptions = {}): AnnotateHudHa
   modal.style.cssText = STYLES.modal
 
   const heading = document.createElement('div')
-  heading.textContent = 'New note'
-  heading.style.cssText = STYLES.heading
+  heading.style.cssText =
+    STYLES.heading + '; display: flex; justify-content: space-between; align-items: center;'
+
+  const headingText = document.createElement('span')
+  headingText.textContent = 'New note'
+  const queueBadge = document.createElement('span')
+  queueBadge.style.cssText = STYLES.queueBadge
+  queueBadge.style.display = 'none'
+  heading.append(headingText, queueBadge)
+
+  const updateQueueBadge = (): void => {
+    const inFlight = [...trackedTasks.values()].filter((t) => !isTerminal(t.status))
+    if (inFlight.length === 0) {
+      queueBadge.style.display = 'none'
+      queueBadge.textContent = ''
+    } else {
+      queueBadge.style.display = 'inline-block'
+      queueBadge.textContent = `${inFlight.length} in queue`
+    }
+  }
 
   const modeRow = document.createElement('div')
   modeRow.style.cssText = STYLES.modeRow
@@ -326,10 +359,59 @@ export function mountAnnotateHud(opts: MountAnnotateOptions = {}): AnnotateHudHa
 
   actions.append(cancelBtn, saveBtn, solveBtn)
   modal.append(heading, modeRow, rectPreview, toolbar, textarea, statusLine, actions)
+
+  // Toast container — fixed top-right, holds transient terminal-state
+  // notifications for tasks that finish while the modal is closed or
+  // while the user has moved on to a different task. Sits outside the
+  // floating root container so it isn't affected by drag/position.
+  const toastContainer = document.createElement('div')
+  toastContainer.style.cssText = STYLES.toastContainer
+
   root.append(floatingBtn, modal)
   document.body.appendChild(root)
+  document.body.appendChild(toastContainer)
 
   if (opts.hidden) root.style.display = 'none'
+
+  const spawnToast = (kind: 'ok' | 'fail' | 'info', body: string): void => {
+    const toast = document.createElement('div')
+    toast.setAttribute('data-llui-toast', kind)
+    const border =
+      kind === 'ok'
+        ? STYLES.toastBorderOk
+        : kind === 'fail'
+          ? STYLES.toastBorderFail
+          : STYLES.toastBorderInfo
+    toast.style.cssText = STYLES.toast + ';' + border
+    toast.style.opacity = '0'
+    toast.style.transform = 'translateY(-8px)'
+
+    const text = document.createElement('div')
+    text.style.cssText = 'flex: 1; min-width: 0; word-break: break-word;'
+    text.textContent = body
+    const close = document.createElement('span')
+    close.textContent = '×'
+    close.style.cssText =
+      'color: #888; font-size: 16px; line-height: 1; padding: 0 2px; cursor: pointer; user-select: none;'
+    toast.append(text, close)
+    toastContainer.appendChild(toast)
+
+    // Slide-in + auto-dismiss after 8s; click to dismiss early.
+    requestAnimationFrame(() => {
+      toast.style.opacity = '1'
+      toast.style.transform = 'translateY(0)'
+    })
+    const dismiss = (): void => {
+      toast.style.opacity = '0'
+      toast.style.transform = 'translateY(-8px)'
+      setTimeout(() => toast.remove(), 250)
+    }
+    const timer = setTimeout(dismiss, 8000)
+    toast.addEventListener('click', () => {
+      clearTimeout(timer)
+      dismiss()
+    })
+  }
 
   // ── Behavior ───────────────────────────────────────────────────────
 
@@ -649,14 +731,39 @@ export function mountAnnotateHud(opts: MountAnnotateOptions = {}): AnnotateHudHa
     close()
   })
 
+  // Centralized status-update handler. Used by both the catch-up GET
+  // and the SSE listener so they share the same toast/queue logic.
+  const handleStatusUpdate = (noteId: string, to: string, reason: string | undefined): void => {
+    const task = trackedTasks.get(noteId)
+    if (!task) return
+    task.status = to
+    if (noteId === latestTaskId) {
+      statusLine.textContent = statusLabel(to, reason)
+    }
+    if (isTerminal(to)) {
+      const kind: 'ok' | 'fail' | 'info' =
+        to === 'applied' ? 'ok' : to === 'failed' ? 'fail' : 'info'
+      spawnToast(kind, `Note ${noteId}: ${statusLabel(to, reason)}`)
+      trackedTasks.delete(noteId)
+      if (noteId === latestTaskId) {
+        // Promote the newest still-in-flight task as the new "latest".
+        const remaining = [...trackedTasks.entries()]
+        latestTaskId = remaining.length > 0 ? remaining[remaining.length - 1]![0] : null
+        if (latestTaskId) {
+          const promoted = trackedTasks.get(latestTaskId)!
+          statusLine.textContent = statusLabel(promoted.status)
+        }
+      }
+      updateQueueBadge()
+    }
+  }
+
   const submitWithIntent = (intent: NoteIntent): void => {
     const prose = textarea.value.trim()
     if (prose === '' && buildAnnotations().length === 0) {
       statusLine.textContent = 'add text or draw a rect first'
       return
     }
-    saveBtn.disabled = true
-    solveBtn.disabled = true
     statusLine.textContent = mode === 'rect' ? 'capturing screenshot…' : 'sending…'
     submit(prose, { intent }).then(
       async (result) => {
@@ -665,24 +772,20 @@ export function mountAnnotateHud(opts: MountAnnotateOptions = {}): AnnotateHudHa
         dismissActiveOverlay()
         setMode('text')
         if (intent === 'task') {
-          // Track this submission so status-changed events update the
-          // status line live. Keep the action buttons disabled until
-          // a terminal state arrives (or the dev closes the modal).
-          trackedTaskNoteId = result.id
-          // Optimistically show 'claimed' — by the time we receive
-          // this 201, the router has already subscribed-and-claimed
-          // synchronously on the bus. Showing 'queued' here is
-          // misleading: that state only lasts microseconds on the
-          // server, and a fast claude can land 'proposed' before our
-          // catch-up GET returns, hiding the 'working' label entirely.
+          // Add to per-task tracking. Buttons stay enabled so the
+          // user can capture another issue right away; older tasks
+          // finish in the background and surface via toast.
+          trackedTasks.set(result.id, {
+            noteId: result.id,
+            sessionId: result.sessionId,
+            status: 'claimed', // optimistic — router has already claimed by now
+          })
+          latestTaskId = result.id
+          updateQueueBadge()
           statusLine.textContent = statusLabel('claimed')
-          // Catch up: in the rare case where claude is so fast it
-          // already finished before the 201 reached us (cached result,
-          // no-op fix), the GET upgrades the label to the actual
-          // current state. We only overwrite if the catch-up reports
-          // a LATER state than 'claimed' — otherwise we'd roll back to
-          // a stale value if a status-changed SSE event arrived during
-          // the await.
+          // Catch up: rare-but-possible case where the task already
+          // finished before the 201 reached us. Only override if the
+          // reported state is LATER than 'claimed'.
           try {
             const res = await fetch(
               `${origin}/_llui/notes/${result.id}/status?sessionId=${encodeURIComponent(result.sessionId)}`,
@@ -694,33 +797,18 @@ export function mountAnnotateHud(opts: MountAnnotateOptions = {}): AnnotateHudHa
               }
               if (payload.current && payload.current !== 'open' && payload.current !== 'claimed') {
                 const last = payload.history[payload.history.length - 1]
-                statusLine.textContent = statusLabel(payload.current, last?.reason)
-                if (
-                  payload.current === 'applied' ||
-                  payload.current === 'rejected' ||
-                  payload.current === 'wontfix' ||
-                  payload.current === 'failed'
-                ) {
-                  saveBtn.disabled = false
-                  solveBtn.disabled = false
-                  trackedTaskNoteId = null
-                }
+                handleStatusUpdate(result.id, payload.current, last?.reason)
               }
             }
           } catch {
-            // Best-effort catch-up. If it fails, the SSE listener will
-            // pick up future transitions normally.
+            // Best-effort. SSE will pick up future transitions.
           }
         } else {
           statusLine.textContent = `✓ note saved (${result.filename})`
-          saveBtn.disabled = false
-          solveBtn.disabled = false
         }
       },
       (err: Error) => {
         statusLine.textContent = err.message
-        saveBtn.disabled = false
-        solveBtn.disabled = false
       },
     )
   }
@@ -921,15 +1009,14 @@ export function mountAnnotateHud(opts: MountAnnotateOptions = {}): AnnotateHudHa
 
   // ── SSE subscription ───────────────────────────────────────────────
   // Open an EventSource so the HUD receives LLM-initiated capture
-  // requests AND live status updates on the last task we submitted.
-  // The browser's native EventSource has built-in reconnect; we don't
-  // need a custom retry loop.
+  // requests AND live status updates on tracked tasks. The browser's
+  // native EventSource has built-in reconnect; we don't need a custom
+  // retry loop.
   //
-  // `trackedTaskNoteId` is the most recent task the user submitted.
-  // We update the modal's status line as transitions arrive
-  // (claimed → proposed → applied / failed) so the developer sees
-  // claude working in real time instead of a silent disappearance.
-  let trackedTaskNoteId: string | null = null
+  // Status updates route through `handleStatusUpdate` so the catch-up
+  // GET and the SSE stream share toast/queue-counter logic. The
+  // status line reflects the most recent in-flight task; older tasks
+  // surface their terminal outcome via toast.
 
   const statusLabel = (to: string, reason?: string): string => {
     switch (to) {
@@ -980,25 +1067,8 @@ export function mountAnnotateHud(opts: MountAnnotateOptions = {}): AnnotateHudHa
           })
           return
         }
-        if (
-          parsed.type === 'status-changed' &&
-          parsed.noteId &&
-          parsed.noteId === trackedTaskNoteId &&
-          parsed.to
-        ) {
-          statusLine.textContent = statusLabel(parsed.to, parsed.reason)
-          // Terminal states — re-enable the action buttons and stop
-          // tracking. The dev can submit another task.
-          if (
-            parsed.to === 'applied' ||
-            parsed.to === 'rejected' ||
-            parsed.to === 'wontfix' ||
-            parsed.to === 'failed'
-          ) {
-            saveBtn.disabled = false
-            solveBtn.disabled = false
-            trackedTaskNoteId = null
-          }
+        if (parsed.type === 'status-changed' && parsed.noteId && parsed.to) {
+          handleStatusUpdate(parsed.noteId, parsed.to, parsed.reason)
         }
       })
     } catch (err) {

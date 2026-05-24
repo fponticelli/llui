@@ -112,6 +112,48 @@ export const STYLES = {
     'align-items: center',
     'justify-content: center',
   ].join('; '),
+
+  queueBadge: [
+    'display: inline-block',
+    'padding: 1px 8px',
+    'border-radius: 999px',
+    'background: rgba(99, 102, 241, 0.12)',
+    'color: #4338ca',
+    'font-weight: 500',
+    'font-size: 11px',
+  ].join('; '),
+
+  toastContainer: [
+    'position: fixed',
+    'top: 16px',
+    'right: 16px',
+    'z-index: 2147483647',
+    'display: flex',
+    'flex-direction: column',
+    'gap: 8px',
+    'pointer-events: none',
+  ].join('; '),
+
+  toast: [
+    'min-width: 240px',
+    'max-width: 360px',
+    'padding: 10px 12px',
+    'border-radius: 8px',
+    'background: white',
+    'box-shadow: 0 8px 24px rgba(0,0,0,0.18), 0 0 0 1px rgba(0,0,0,0.06)',
+    'pointer-events: auto',
+    'font: 13px -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif',
+    'color: #111',
+    'transition: opacity 200ms ease, transform 200ms ease',
+    'cursor: pointer',
+    'display: flex',
+    'gap: 8px',
+    'align-items: flex-start',
+  ].join('; '),
+
+  toastBorderOk: 'border-left: 3px solid #16a34a;',
+  toastBorderFail: 'border-left: 3px solid #ef4444;',
+  toastBorderInfo: 'border-left: 3px solid #6366f1;',
 }
 
 export type BtnVariant = 'primary' | 'secondary' | 'ghost' | boolean
