@@ -123,6 +123,16 @@ export const STYLES = {
     'font-size: 11px',
   ].join('; '),
 
+  queueBadgeReady: [
+    'display: inline-block',
+    'padding: 1px 8px',
+    'border-radius: 999px',
+    'background: rgba(22, 163, 74, 0.12)',
+    'color: #15803d',
+    'font-weight: 500',
+    'font-size: 11px',
+  ].join('; '),
+
   toastContainer: [
     'position: fixed',
     'top: 16px',

@@ -130,7 +130,7 @@ describe('live status feedback during Solve', () => {
     expect(getStatusLine().textContent).toBe(baseline) // unchanged
   })
 
-  it('shows a queue counter when multiple tasks are in flight', async () => {
+  it('shows distinct "working" and "ready" counters as tasks progress', async () => {
     let n = 1
     globalThis.fetch = (async (url: string, init?: RequestInit) => {
       // Catch-up GETs hit /status — return empty so they don't bump n.
@@ -161,17 +161,80 @@ describe('live status feedback during Solve', () => {
     clickSolve()
     await new Promise((r) => setTimeout(r, 5))
 
-    const badge = Array.from(root.querySelectorAll('span')).find((s) =>
-      (s.textContent ?? '').includes('in queue'),
-    )!
-    expect(badge.textContent).toBe('3 in queue')
+    const findBadge = (kind: 'working' | 'ready'): HTMLElement =>
+      root.querySelector(`[data-llui-badge="${kind}"]`) as HTMLElement
+    expect(findBadge('working').textContent).toBe('🤖 3 working')
 
     const sse = StubEventSource.instances[0]!
+    // Two tasks land in 'proposed' — they move from working → ready
+    sse.fire({ type: 'status-changed', noteId: '001', to: 'proposed', reason: 'fix 1' })
+    sse.fire({ type: 'status-changed', noteId: '002', to: 'proposed', reason: 'fix 2' })
+    expect(findBadge('working').textContent).toBe('🤖 1 working')
+    expect(findBadge('ready').textContent).toBe('✓ 2 ready')
+
+    // Accept one — it moves through accepted → applied → removed
     sse.fire({ type: 'status-changed', noteId: '001', to: 'applied' })
-    sse.fire({ type: 'status-changed', noteId: '002', to: 'applied' })
-    expect(badge.textContent).toBe('1 in queue')
-    sse.fire({ type: 'status-changed', noteId: '003', to: 'applied' })
-    expect(badge.style.display).toBe('none')
+    expect(findBadge('ready').textContent).toBe('✓ 1 ready')
+
+    // Last working task also lands as proposed then applied
+    sse.fire({ type: 'status-changed', noteId: '003', to: 'proposed', reason: 'fix 3' })
+    expect(findBadge('working').style.display).toBe('none')
+    expect(findBadge('ready').textContent).toBe('✓ 2 ready')
+  })
+
+  it('proposed-state toast carries an Accept button that POSTs to /:id/status', async () => {
+    const calls: Array<[string, RequestInit | undefined]> = []
+    globalThis.fetch = (async (url: string, init?: RequestInit) => {
+      calls.push([url, init])
+      if (typeof url === 'string' && url.includes('/status')) {
+        return new Response(JSON.stringify({ current: null, history: [] }), { status: 200 })
+      }
+      return new Response(
+        JSON.stringify({ id: '050', filename: '050.md', path: '/x', sessionId: 's' }),
+        { status: 201 },
+      )
+    }) as unknown as typeof fetch
+
+    mountAnnotateHud({ origin: 'http://localhost' })
+    const ta = document.querySelector(
+      '#llui-devmode-annotate-root textarea',
+    )! as HTMLTextAreaElement
+    ta.value = 'fix this'
+    clickSolve()
+    await new Promise((r) => setTimeout(r, 5))
+
+    const sse = StubEventSource.instances[0]!
+    sse.fire({
+      type: 'status-changed',
+      noteId: '050',
+      to: 'proposed',
+      reason: 'rename foo to bar',
+    })
+
+    // Toast appears with an Accept button.
+    const toast = document.querySelector('[data-llui-toast="info"]') as HTMLElement
+    expect(toast).not.toBeNull()
+    const acceptBtn = Array.from(toast.querySelectorAll('button')).find(
+      (b) => b.textContent === 'Accept',
+    )!
+    expect(acceptBtn).not.toBeUndefined()
+
+    // Clicking Accept POSTs to /_llui/notes/050/status with to:accepted
+    const callsBefore = calls.length
+    acceptBtn.click()
+    await new Promise((r) => setTimeout(r, 5))
+    const newCalls = calls.slice(callsBefore)
+    const acceptCall = newCalls.find(
+      ([url, init]) =>
+        typeof url === 'string' &&
+        url.includes('/_llui/notes/050/status') &&
+        init?.method === 'POST',
+    )
+    expect(acceptCall).not.toBeUndefined()
+    const body = JSON.parse((acceptCall![1] as RequestInit).body as string) as {
+      to: string
+    }
+    expect(body.to).toBe('accepted')
   })
 
   it('fires a toast notification when a task hits a terminal state', async () => {

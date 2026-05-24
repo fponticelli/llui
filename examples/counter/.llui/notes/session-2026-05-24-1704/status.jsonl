@@ -10,3 +10,9 @@
 {"ts":"2026-05-24T21:51:34.311Z","noteId":"008","from":null,"to":"claimed","by":"llm","reason":"llui-router"}
 {"ts":"2026-05-24T21:51:34.314Z","noteId":"008","from":null,"to":"open","by":"human"}
 {"ts":"2026-05-24T21:52:20.524Z","noteId":"008","from":"claimed","to":"proposed","by":"llm","reason":"reply 009: Reserve vertical space in #app so the counter row doesn't shift when the Reset button mounts/unmounts"}
+{"ts":"2026-05-24T22:08:40.990Z","noteId":"010","from":null,"to":"claimed","by":"llm","reason":"llui-router"}
+{"ts":"2026-05-24T22:08:40.993Z","noteId":"010","from":null,"to":"open","by":"human"}
+{"ts":"2026-05-24T22:08:55.555Z","noteId":"010","from":"claimed","to":"proposed","by":"llm","reason":"reply 011: Increase the counter number's font-size from 2rem to 4rem (buttons already override, so they're unaffected)"}
+{"ts":"2026-05-24T22:09:03.714Z","noteId":"012","from":null,"to":"claimed","by":"llm","reason":"llui-router"}
+{"ts":"2026-05-24T22:09:03.716Z","noteId":"012","from":null,"to":"open","by":"human"}
+{"ts":"2026-05-24T22:10:03.434Z","noteId":"012","from":"claimed","to":"proposed","by":"llm","reason":"reply 013: Differentiate +/- buttons: green for increment, red for decrement (class + CSS)."}

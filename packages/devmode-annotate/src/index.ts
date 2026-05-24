@@ -225,8 +225,14 @@ export function mountAnnotateHud(opts: MountAnnotateOptions = {}): AnnotateHudHa
   const trackedTasks = new Map<string, TrackedTask>()
   let latestTaskId: string | null = null
 
+  // State buckets:
+  //  - working: router-owned, claude is still busy ('claimed', 'in-progress')
+  //  - ready:  claude proposed a fix; user needs to Accept / Reject ('proposed')
+  //  - terminal: workflow done, nothing more to do ('applied', 'rejected', 'wontfix', 'failed')
   const TERMINAL_STATES = new Set(['applied', 'rejected', 'wontfix', 'failed'])
   const isTerminal = (s: string): boolean => TERMINAL_STATES.has(s)
+  const isWorking = (s: string): boolean => s === 'claimed' || s === 'in-progress' || s === 'open'
+  const isReady = (s: string): boolean => s === 'proposed'
 
   // ── DOM ────────────────────────────────────────────────────────────
   const root = document.createElement('div')
@@ -260,19 +266,36 @@ export function mountAnnotateHud(opts: MountAnnotateOptions = {}): AnnotateHudHa
 
   const headingText = document.createElement('span')
   headingText.textContent = 'New note'
-  const queueBadge = document.createElement('span')
-  queueBadge.style.cssText = STYLES.queueBadge
-  queueBadge.style.display = 'none'
-  heading.append(headingText, queueBadge)
+  const badges = document.createElement('span')
+  badges.style.cssText = 'display: flex; gap: 4px; align-items: center;'
+  const workingBadge = document.createElement('span')
+  workingBadge.setAttribute('data-llui-badge', 'working')
+  workingBadge.style.cssText = STYLES.queueBadge
+  workingBadge.style.display = 'none'
+  const readyBadge = document.createElement('span')
+  readyBadge.setAttribute('data-llui-badge', 'ready')
+  readyBadge.style.cssText = STYLES.queueBadgeReady
+  readyBadge.style.display = 'none'
+  badges.append(workingBadge, readyBadge)
+  heading.append(headingText, badges)
 
   const updateQueueBadge = (): void => {
-    const inFlight = [...trackedTasks.values()].filter((t) => !isTerminal(t.status))
-    if (inFlight.length === 0) {
-      queueBadge.style.display = 'none'
-      queueBadge.textContent = ''
+    const tasks = [...trackedTasks.values()]
+    const working = tasks.filter((t) => isWorking(t.status)).length
+    const ready = tasks.filter((t) => isReady(t.status)).length
+    if (working === 0) {
+      workingBadge.style.display = 'none'
+      workingBadge.textContent = ''
     } else {
-      queueBadge.style.display = 'inline-block'
-      queueBadge.textContent = `${inFlight.length} in queue`
+      workingBadge.style.display = 'inline-block'
+      workingBadge.textContent = `🤖 ${working} working`
+    }
+    if (ready === 0) {
+      readyBadge.style.display = 'none'
+      readyBadge.textContent = ''
+    } else {
+      readyBadge.style.display = 'inline-block'
+      readyBadge.textContent = `✓ ${ready} ready`
     }
   }
 
@@ -373,7 +396,15 @@ export function mountAnnotateHud(opts: MountAnnotateOptions = {}): AnnotateHudHa
 
   if (opts.hidden) root.style.display = 'none'
 
-  const spawnToast = (kind: 'ok' | 'fail' | 'info', body: string): void => {
+  interface ToastAction {
+    label: string
+    onClick: () => void
+  }
+  const spawnToast = (
+    kind: 'ok' | 'fail' | 'info',
+    body: string,
+    opts: { action?: ToastAction; autoDismissMs?: number } = {},
+  ): void => {
     const toast = document.createElement('div')
     toast.setAttribute('data-llui-toast', kind)
     const border =
@@ -389,14 +420,29 @@ export function mountAnnotateHud(opts: MountAnnotateOptions = {}): AnnotateHudHa
     const text = document.createElement('div')
     text.style.cssText = 'flex: 1; min-width: 0; word-break: break-word;'
     text.textContent = body
+    toast.appendChild(text)
+
+    if (opts.action) {
+      const actionBtn = document.createElement('button')
+      actionBtn.type = 'button'
+      actionBtn.textContent = opts.action.label
+      actionBtn.style.cssText = btnStyle('primary') + '; padding: 4px 10px; font-size: 12px;'
+      actionBtn.addEventListener('click', (e) => {
+        e.stopPropagation()
+        opts.action!.onClick()
+        dismiss()
+      })
+      toast.appendChild(actionBtn)
+    }
+
     const close = document.createElement('span')
     close.textContent = '×'
     close.style.cssText =
       'color: #888; font-size: 16px; line-height: 1; padding: 0 2px; cursor: pointer; user-select: none;'
-    toast.append(text, close)
+    toast.appendChild(close)
     toastContainer.appendChild(toast)
 
-    // Slide-in + auto-dismiss after 8s; click to dismiss early.
+    // Slide-in + (optional) auto-dismiss; click anywhere to dismiss.
     requestAnimationFrame(() => {
       toast.style.opacity = '1'
       toast.style.transform = 'translateY(0)'
@@ -406,10 +452,23 @@ export function mountAnnotateHud(opts: MountAnnotateOptions = {}): AnnotateHudHa
       toast.style.transform = 'translateY(-8px)'
       setTimeout(() => toast.remove(), 250)
     }
-    const timer = setTimeout(dismiss, 8000)
-    toast.addEventListener('click', () => {
-      clearTimeout(timer)
-      dismiss()
+    const dismissMs = opts.autoDismissMs ?? (opts.action ? 0 : 8000)
+    if (dismissMs > 0) setTimeout(dismiss, dismissMs)
+    toast.addEventListener('click', dismiss)
+  }
+
+  // Helper that POSTs an Accept transition. Used by the "Accept fix"
+  // button in a proposed-state toast. The middleware runs git apply
+  // and emits subsequent status-changed events that drive the next
+  // toast (applied / failed).
+  const acceptTask = (noteId: string, sessionId: string): void => {
+    const url = `${origin}/_llui/notes/${noteId}/status?sessionId=${encodeURIComponent(sessionId)}`
+    void fetch(url, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ to: 'accepted', by: 'human' }),
+    }).catch((err: Error) => {
+      spawnToast('fail', `Accept failed for ${noteId}: ${err.message}`)
     })
   }
 
@@ -736,10 +795,27 @@ export function mountAnnotateHud(opts: MountAnnotateOptions = {}): AnnotateHudHa
   const handleStatusUpdate = (noteId: string, to: string, reason: string | undefined): void => {
     const task = trackedTasks.get(noteId)
     if (!task) return
+    const prev = task.status
     task.status = to
     if (noteId === latestTaskId) {
       statusLine.textContent = statusLabel(to, reason)
     }
+
+    // 'proposed' is NOT terminal but IS actionable — fire a toast
+    // with an "Accept" button so the user can apply directly. Only
+    // toast on the FIRST proposal (don't re-fire if duplicate events
+    // arrive).
+    if (isReady(to) && !isReady(prev)) {
+      spawnToast('info', `Note ${noteId}: ${reason ?? 'proposed fix ready'}`, {
+        action: {
+          label: 'Accept',
+          onClick: () => acceptTask(noteId, task.sessionId),
+        },
+      })
+      updateQueueBadge()
+      return
+    }
+
     if (isTerminal(to)) {
       const kind: 'ok' | 'fail' | 'info' =
         to === 'applied' ? 'ok' : to === 'failed' ? 'fail' : 'info'
@@ -755,7 +831,12 @@ export function mountAnnotateHud(opts: MountAnnotateOptions = {}): AnnotateHudHa
         }
       }
       updateQueueBadge()
+      return
     }
+
+    // Non-terminal, non-ready transitions (e.g. 'claimed' → 'in-progress'):
+    // just refresh the badge so 'working' counts stay accurate.
+    updateQueueBadge()
   }
 
   const submitWithIntent = (intent: NoteIntent): void => {

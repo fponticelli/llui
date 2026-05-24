@@ -99,9 +99,42 @@ interface Entry<T> {
 }
 
 export function each<S, T, M = unknown>(opts: EachOptions<S, T, M>): Node[] {
-  const ctx = getRenderContext('each')
-  const parentLifetime = ctx.rootLifetime
-  const blocks = ctx.structuralBlocks
+  const liveCtx = getRenderContext('each')
+  const parentLifetime = liveCtx.rootLifetime
+  const blocks = liveCtx.structuralBlocks
+
+  // Snapshot the live render context into a stable, each()-private
+  // RenderContext. The reconcile path threads `ctx` through to
+  // `reconcileEntries → buildEntry`, and `buildEntry` reads
+  // `ctx.structuralBlocks` / `ctx.allBindings` to register newly built
+  // inner-each blocks and bindings. If we passed the live render
+  // context (which IS the shared module-level `buildCtx` singleton when
+  // this each is nested inside another each's render), any other
+  // instance's `buildEntry` that ran since this each was constructed
+  // would have reassigned `buildCtx.structuralBlocks` /
+  // `buildCtx.allBindings` to a DIFFERENT component instance's arrays.
+  // Inner eaches constructed during this each's later reconciles would
+  // then register against the wrong instance — the parent component's
+  // own reducer dispatch never iterates them, and they appear silently
+  // unreactive. Symptom in apps with sub-apps (subApp / mountApp at
+  // anchor): bindings inside nested eaches stop firing after any
+  // intervening sub-app event.
+  //
+  // Cost: one RenderContext allocation per each() call (NOT per row).
+  // For a typical app this is < 1 % of an each()'s allocation budget,
+  // and the alternative (save / restore the singleton fields around
+  // every buildEntry) doesn't fix the reconcile-path read because the
+  // singleton is sampled live each reconcile, not at construction.
+  const ctx: RenderContext = {
+    rootLifetime: liveCtx.rootLifetime,
+    state: liveCtx.state,
+    allBindings: liveCtx.allBindings,
+    structuralBlocks: liveCtx.structuralBlocks,
+    dom: liveCtx.dom,
+    instance: liveCtx.instance,
+    send: liveCtx.send,
+    container: liveCtx.container,
+  }
 
   const anchor = ctx.dom.createComment('each')
   // End-of-territory sentinel. Bulk Range ops (reconcileClear, Fast path

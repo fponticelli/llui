@@ -71,7 +71,22 @@ const buildCtx: RenderContext = {
  * ```
  */
 export function virtualEach<S, T, M = unknown>(opts: VirtualEachOptions<S, T, M>): Node[] {
-  const ctx = getRenderContext('virtualEach')
+  const liveCtx = getRenderContext('virtualEach')
+  // Stable snapshot — same singleton-leak class as `each()`. See the
+  // long-form comment in each.ts. The reconcile path threads `ctx`
+  // through to `buildEntry`; if `ctx` were the live module-level
+  // singleton, an intervening sub-app's buildEntry would have reassigned
+  // its `structuralBlocks` / `allBindings` to that sub-app's arrays.
+  const ctx: RenderContext = {
+    rootLifetime: liveCtx.rootLifetime,
+    state: liveCtx.state,
+    allBindings: liveCtx.allBindings,
+    structuralBlocks: liveCtx.structuralBlocks,
+    dom: liveCtx.dom,
+    instance: liveCtx.instance,
+    send: liveCtx.send,
+    container: liveCtx.container,
+  }
   const parentLifetime = ctx.rootLifetime
   const blocks = ctx.structuralBlocks
   const send = ctx.send as (msg: M) => void
