@@ -541,6 +541,30 @@ function buildEntry<S, T, M>(
   // got `undefined`, and skipped the bubble). Missing `container` made
   // `onMount(cb)` fall back to `document.body` instead of the parent
   // component's container.
+  //
+  // Snapshot `rootLifetime` and `state` before writing — restore at
+  // the end. When an outer each's buildEntry calls render and render
+  // constructs an inner each() whose own buildEntry recurses through
+  // this same path, `ctx === buildCtx` (the shared module-level
+  // singleton). Without the snapshot, the inner's mutations to
+  // `rootLifetime` leak into the outer's render context; any element
+  // helper called AFTER the inner each() returns in outer render
+  // attaches its disposer/binding to the INNER entry's scope. On the
+  // inner each's next reconcile (key change → dispose old entry),
+  // those outer-scoped bindings die. Manifest: `text((s) => …)`
+  // produced past an inner each() goes silent on the first
+  // inner-each reconcile (covered by
+  // test/nested-each-trailing-binding.test.ts).
+  //
+  // Only `rootLifetime` and `state` need restoration: every other
+  // field copied below is either inst-level (allBindings,
+  // structuralBlocks, dom, instance, send, container) or unread
+  // outside the render frame. `rootLifetime` drives binding /
+  // disposer ownership and IS read by element helpers throughout
+  // outer render; `state` would similarly leak if any accessor
+  // captured `ctx.state` rather than the state passed in.
+  const prevRootLifetime = buildCtx.rootLifetime
+  const prevState = buildCtx.state
   buildCtx.rootLifetime = scope
   buildCtx.state = currentState
   buildCtx.allBindings = ctx.allBindings
@@ -581,6 +605,13 @@ function buildEntry<S, T, M>(
     scope.itemUpdaters = []
   }
 
+  // Restore `rootLifetime` and `state`. When `ctx === buildCtx`
+  // (nested each), `setRenderContext(ctx)` alone is a no-op against
+  // the shared singleton and the inner's `rootLifetime` mutation
+  // would leak into outer's remaining render. See the snapshot
+  // comment above.
+  buildCtx.rootLifetime = prevRootLifetime
+  buildCtx.state = prevState
   clearRenderContext()
   setFlatBindings(prevFlatBindings)
   setRenderContext(ctx)

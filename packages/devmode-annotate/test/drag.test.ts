@@ -179,4 +179,52 @@ describe('modal repositioning when clipped', () => {
     expect(modal.style.top).toBe('56px')
     expect(modal.style.bottom).toBe('auto')
   })
+
+  it('reanchors live during drag when the modal is open', async () => {
+    const handle = mountAnnotateHud({ subscribeEvents: false })
+    handle.open()
+    await new Promise((r) => setTimeout(r, 0))
+    const modal = getModal()
+    const root = document.getElementById('llui-devmode-annotate-root')!
+    const btn = root.querySelector('button')!
+
+    // Drag the button toward the left edge. The root's stub rect
+    // updates as we set inline style — but jsdom's
+    // getBoundingClientRect doesn't reflect that, so we restub on the
+    // fly to model "button moved to x=20".
+    let leftStub = 900
+    root.getBoundingClientRect = () =>
+      ({
+        left: leftStub,
+        top: 600,
+        right: leftStub + 44,
+        bottom: 644,
+        width: 44,
+        height: 44,
+        x: leftStub,
+        y: 600,
+        toJSON: () => ({}),
+      }) as DOMRect
+
+    // Start drag at (900, 600); move past threshold to (20, 600).
+    const fire = (type: string, x: number, y: number): void => {
+      const ev = new MouseEvent(type, {
+        clientX: x,
+        clientY: y,
+        bubbles: true,
+        cancelable: true,
+      })
+      ;(ev as unknown as { pointerId: number }).pointerId = 1
+      btn.dispatchEvent(ev)
+    }
+    fire('pointerdown', 900, 600)
+    // Update stub to track the drag — the move handler reads
+    // getBoundingClientRect when calling reanchorModal.
+    leftStub = 20
+    fire('pointermove', 20, 600)
+    // Modal should have flipped to left-anchor mid-drag.
+    expect(modal.style.left).toBe('0px')
+    expect(modal.style.right).toBe('auto')
+    fire('pointerup', 20, 600)
+  })
 })

@@ -146,18 +146,22 @@ function clampToViewport(pos: SavedPosition): SavedPosition {
 // letterform. Combines the annotation-tool semantic (lasso = select +
 // annotate) with the LLui brand mark. Drawn as inline SVG so the
 // gradient button background shows through the stroke gaps.
+//
+// Sized to fill ~85% of the 44px button (38px content, ~3px margin
+// each side). The loop hugs the viewBox edges; the "Lui" text scales
+// up correspondingly.
 const BUTTON_ICON_SVG = `
-<svg width="26" height="26" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
-  <!-- Lasso loop: irregular open ellipse, slightly tilted -->
-  <path d="M 7 11 C 5 14, 5.5 19, 9 22 C 13 25, 21 25, 25 21.5 C 28 18.5, 27.5 13, 24 10 C 20 7, 12 7, 8.5 10"
-        stroke="white" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
-  <!-- Lasso tail curling down-right -->
-  <path d="M 8.5 10 Q 6 7, 4 9 Q 3 11, 5 12"
-        stroke="white" stroke-width="1.5" stroke-linecap="round" fill="none"/>
+<svg width="38" height="38" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+  <!-- Lasso loop: irregular open ellipse hugging the viewBox edges -->
+  <path d="M 3 11 C 1 14.5, 1.5 21, 6 25 C 11 29, 22 29, 27 25 C 31 21.5, 30.5 13, 26 9 C 21 5, 9 5, 5 8.5"
+        stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+  <!-- Lasso tail curling down-left -->
+  <path d="M 5 8.5 Q 2 5, 0.5 8 Q -0.5 11, 2 12.5"
+        stroke="white" stroke-width="1.8" stroke-linecap="round" fill="none"/>
   <!-- "Lui" letterform inside the loop -->
-  <text x="16" y="19.5" text-anchor="middle"
+  <text x="16" y="21" text-anchor="middle"
         font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif"
-        font-size="9" font-weight="800" letter-spacing="-0.3"
+        font-size="13" font-weight="800" letter-spacing="-0.4"
         fill="white">Lui</text>
 </svg>`
 
@@ -580,6 +584,9 @@ export function mountAnnotateHud(opts: MountAnnotateOptions = {}): AnnotateHudHa
     const clamped = clampToViewport({ x: nx, y: ny })
     root.style.left = `${clamped.x}px`
     root.style.top = `${clamped.y}px`
+    // If the modal is currently open, re-anchor it live so it tracks
+    // the button position and doesn't go off-screen mid-drag.
+    if (modal.style.display === 'block') reanchorModal()
   }
   const onBtnPointerUp = (e: PointerEvent): void => {
     if (!dragState) return
