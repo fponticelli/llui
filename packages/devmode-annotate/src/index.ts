@@ -931,7 +931,7 @@ export function mountAnnotateHud(opts: MountAnnotateOptions = {}): AnnotateHudHa
       case 'in-progress':
         return '🤖 claude is editing files…'
       case 'proposed':
-        return '✓ proposed fix ready — review the reply note'
+        return reason ? `✓ proposed: ${reason}` : '✓ proposed fix ready'
       case 'accepted':
         return '✓ accepted; applying…'
       case 'applied':

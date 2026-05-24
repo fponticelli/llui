@@ -172,46 +172,29 @@ describe('startRouter', () => {
     handle.stop()
   })
 
-  it('respects the LLM updating status to "proposed" mid-spawn (no failed transition appended)', async () => {
+  it('parses an llui-reply block from stdout and creates a reply note + proposed status', async () => {
     const bus = createEventBus()
-    // Simulate the LLM calling llui_reply_to_note during the spawn,
-    // which bumps the task to 'proposed' before claude exits.
+    const replyJson = JSON.stringify({
+      summary: 'replace Update with Save changes',
+      confidence: 'high',
+      files: [
+        {
+          path: 'src/EditButton.ts',
+          patch:
+            '--- a/src/EditButton.ts\n+++ b/src/EditButton.ts\n@@\n-text("Update")\n+text("Save changes")\n',
+        },
+      ],
+    })
+    const stdout = `Read the file. Here's my proposed change.\n\n\`\`\`llui-reply\n${replyJson}\n\`\`\`\n`
     const handle = startRouter({
       notesRoot,
       projectRoot: notesRoot,
       bus,
-      spawner: mockSpawner(async () => ({ exitCode: 0 })),
+      spawner: mockSpawner(async () => ({ exitCode: 0, stdout })),
       log: () => {},
     })
 
-    const note = createNote(notesRoot, { body: 'fix', frontmatter: fmTask, noteBody: {} })
-
-    // Pre-emptively flip the status to proposed AFTER the router
-    // claims but BEFORE its post-spawn check. We do this by hooking
-    // into a custom spawner that mutates state itself.
-    handle.stop() // stop the simple router
-    const sneakySpawner = mockSpawner(async () => ({
-      exitCode: 0,
-      sideEffect: () => {
-        const sessionDir = join(notesRoot, note.sessionId)
-        appendStatus(sessionDir, {
-          ts: new Date().toISOString(),
-          noteId: note.id,
-          from: 'claimed',
-          to: 'proposed',
-          by: 'llm',
-          reason: 'reply 002: simulated',
-        })
-      },
-    }))
-    const h2 = startRouter({
-      notesRoot,
-      projectRoot: notesRoot,
-      bus,
-      spawner: sneakySpawner,
-      log: () => {},
-    })
-
+    const note = createNote(notesRoot, { body: 'fix copy', frontmatter: fmTask, noteBody: {} })
     bus.broadcast({
       type: 'note-created',
       id: note.id,
@@ -221,9 +204,58 @@ describe('startRouter', () => {
     await new Promise((r) => setTimeout(r, 10))
 
     const sessionDir = join(notesRoot, note.sessionId)
-    // Status should be 'proposed', NOT 'failed'.
     expect(currentStatus(sessionDir, note.id)).toBe('proposed')
-    h2.stop()
+    handle.stop()
+  })
+
+  it('marks failed when stdout has no llui-reply block', async () => {
+    const bus = createEventBus()
+    const handle = startRouter({
+      notesRoot,
+      projectRoot: notesRoot,
+      bus,
+      spawner: mockSpawner(async () => ({
+        exitCode: 0,
+        stdout: 'I solved it. Look at the file.', // no block!
+      })),
+      log: () => {},
+    })
+    const note = createNote(notesRoot, { body: 'a', frontmatter: fmTask, noteBody: {} })
+    bus.broadcast({
+      type: 'note-created',
+      id: note.id,
+      filename: note.filename,
+      author: 'human',
+    })
+    await new Promise((r) => setTimeout(r, 10))
+    const sessionDir = join(notesRoot, note.sessionId)
+    expect(currentStatus(sessionDir, note.id)).toBe('failed')
+    handle.stop()
+  })
+
+  it('marks failed when the llui-reply JSON is malformed', async () => {
+    const bus = createEventBus()
+    const handle = startRouter({
+      notesRoot,
+      projectRoot: notesRoot,
+      bus,
+      spawner: mockSpawner(async () => ({
+        exitCode: 0,
+        stdout: '```llui-reply\n{ not json here\n```',
+      })),
+      log: () => {},
+    })
+    const note = createNote(notesRoot, { body: 'a', frontmatter: fmTask, noteBody: {} })
+    bus.broadcast({
+      type: 'note-created',
+      id: note.id,
+      filename: note.filename,
+      author: 'human',
+    })
+    await new Promise((r) => setTimeout(r, 10))
+    const sessionDir = join(notesRoot, note.sessionId)
+    expect(currentStatus(sessionDir, note.id)).toBe('failed')
+    handle.stop()
   })
 
   it('processes tasks serially (one at a time)', async () => {

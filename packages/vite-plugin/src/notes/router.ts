@@ -17,10 +17,10 @@ import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 
 import type { EventBus, SseEventListener } from './event-bus.js'
-import { listNotes, readNote } from './store.js'
-import { appendStatus, currentStatus, readStatusHistory } from './status.js'
+import { createNote, listNotes, readNote } from './store.js'
+import { appendStatus, currentStatus } from './status.js'
 import { serializeNote } from './frontmatter.js'
-import type { ServerEvent, StatusTransition } from './types.js'
+import type { NoteFrontmatter, ProposedDiff, ServerEvent, StatusTransition } from './types.js'
 
 export interface ClaudeSpawnResult {
   exitCode: number
@@ -194,25 +194,108 @@ function buildPrompt(sessionId: string, noteId: string, notesRoot: string): stri
   lines.push('### Your job')
   lines.push('')
   lines.push(
-    `1. Read the task carefully. Use \`Read\`, \`Grep\`, \`Glob\` to understand the relevant code.`,
-  )
-  lines.push(`2. Make the fix. Edit files directly via \`Edit\` / \`Write\`.`)
-  lines.push(
-    `3. When the fix is complete, call the \`llui_reply_to_note\` MCP tool with \`replyTo: "${noteId}"\`, a short prose summary, and \`proposedDiff\` containing the unified diff of your changes (use \`git diff\` to obtain it, then pass each modified file's patch in the \`files[]\` array).`,
+    '1. Read the task carefully. Use `Read`, `Grep`, `Glob` to understand the relevant code.',
   )
   lines.push(
-    `4. If the task is ambiguous or unsafe, do NOT attempt the fix — instead call \`llui_reply_to_note\` with prose explaining what's unclear or what would be required.`,
+    '2. **Do NOT edit any files.** Plan the fix mentally and construct the unified diff yourself. The developer will Accept or Reject before any change lands.',
+  )
+  lines.push(
+    '3. End your response with EXACTLY one fenced `llui-reply` block (described below). The router parses this block out of your stdout — nothing else is read.',
+  )
+  lines.push('')
+  lines.push('### Reply format — required')
+  lines.push('')
+  lines.push(
+    'Output a single fenced ```` ```llui-reply ```` block containing JSON with this shape:',
+  )
+  lines.push('')
+  lines.push('````')
+  lines.push('```llui-reply')
+  lines.push('{')
+  lines.push('  "summary": "one-line description of the proposed change",')
+  lines.push('  "confidence": "high" | "medium" | "low",')
+  lines.push('  "files": [')
+  lines.push('    { "path": "relative/from/repo/root.ts", "patch": "unified diff text" }')
+  lines.push('  ]')
+  lines.push('}')
+  lines.push('```')
+  lines.push('````')
+  lines.push('')
+  lines.push(
+    `Each \`patch\` MUST be a valid unified diff (the kind \`git apply\` accepts) for a single file, with \`--- a/<path>\` and \`+++ b/<path>\` headers. Empty \`files\` means "no fix proposed" — use it with a \`summary\` explaining why (ambiguous, unsafe, needs more info, etc.) and \`confidence: "low"\`.`,
   )
   lines.push('')
   lines.push(
-    `The status of this note is currently \`claimed\`. After your reply with \`proposedDiff\`, it becomes \`proposed\` and the developer will Accept or Reject.`,
-  )
-  lines.push('')
-  lines.push(
-    `If \`llui_reply_to_note\` is unavailable (MCP not configured), as a fallback create a file at \`.llui/notes/${sessionId}/_router-fallback-${noteId}.md\` with your reply markdown plus an embedded unified diff in a fenced \`\`\`diff block — the router will pick it up.`,
+    `Status is currently \`claimed\`. After the router parses your reply, it appends \`proposed\` and the developer Accepts/Rejects. Apply happens via \`git apply\` on Accept.`,
   )
 
   return lines.join('\n')
+}
+
+/**
+ * Parse the `llui-reply` JSON block claude emits at the end of its
+ * stdout. Forgiving: takes the LAST occurrence (in case claude
+ * narrates partial drafts mid-response), validates the shape, returns
+ * a typed payload or a parse error.
+ */
+export interface ParsedReply {
+  summary: string
+  confidence: 'high' | 'medium' | 'low'
+  files: Array<{ path: string; patch: string }>
+}
+
+export type ParseReplyResult = { ok: true; reply: ParsedReply } | { ok: false; error: string }
+
+const REPLY_BLOCK_RE = /```llui-reply\s*\n([\s\S]*?)\n```/g
+
+export function parseLluiReply(stdout: string): ParseReplyResult {
+  const matches = [...stdout.matchAll(REPLY_BLOCK_RE)]
+  if (matches.length === 0) {
+    return { ok: false, error: 'no `llui-reply` block found in output' }
+  }
+  const last = matches[matches.length - 1]!
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(last[1]!)
+  } catch (err) {
+    return {
+      ok: false,
+      error: `llui-reply JSON parse failed: ${err instanceof Error ? err.message : String(err)}`,
+    }
+  }
+  if (typeof parsed !== 'object' || parsed === null) {
+    return { ok: false, error: 'llui-reply payload is not an object' }
+  }
+  const p = parsed as Record<string, unknown>
+  if (typeof p['summary'] !== 'string' || p['summary'].length === 0) {
+    return { ok: false, error: 'missing/empty `summary` in llui-reply' }
+  }
+  const conf = p['confidence']
+  if (conf !== 'high' && conf !== 'medium' && conf !== 'low') {
+    return { ok: false, error: '`confidence` must be high|medium|low' }
+  }
+  if (!Array.isArray(p['files'])) {
+    return { ok: false, error: '`files` must be an array' }
+  }
+  const files: Array<{ path: string; patch: string }> = []
+  for (const f of p['files'] as unknown[]) {
+    if (typeof f !== 'object' || f === null) {
+      return { ok: false, error: 'each `files[]` entry must be an object' }
+    }
+    const fp = f as Record<string, unknown>
+    if (typeof fp['path'] !== 'string' || typeof fp['patch'] !== 'string') {
+      return { ok: false, error: '`files[].path` and `.patch` must be strings' }
+    }
+    files.push({ path: fp['path'], patch: fp['patch'] })
+  }
+  return {
+    ok: true,
+    reply: {
+      summary: p['summary'],
+      confidence: conf,
+      files,
+    },
+  }
 }
 
 /**
@@ -296,38 +379,86 @@ export function startRouter(config: RouterConfig): RouterHandle {
     log(`solving ${noteId} (${prompt.length} chars of context)`)
 
     try {
-      // Snapshot history before the spawn so we can detect transitions
-      // the LLM made while it was running (those land in status.jsonl
-      // via the MCP process — a different process from us — so they
-      // never hit our bus). After the spawn we replay the diff.
-      const beforeLen = readStatusHistory(sessionDir, noteId).length
-
       const result = await spawner.spawn({
         prompt,
         cwd: config.projectRoot,
         timeoutMs,
       })
 
-      // After the spawn, the LLM may have already updated status via
-      // llui_reply_to_note (→ 'proposed'). Re-read; if it's still
-      // 'claimed', treat that as a failure to follow through.
-      const fullHistory = readStatusHistory(sessionDir, noteId)
-      // Broadcast every transition the LLM wrote while it was running.
-      for (const t of fullHistory.slice(beforeLen)) {
-        config.bus.broadcast({
-          type: 'status-changed',
-          noteId,
-          from: t.from,
-          to: t.to,
-        })
+      // Quick fails before parsing — these don't get a reply note.
+      if (result.timedOut) {
+        return fail(`claude timed out after ${timeoutMs}ms`)
       }
-      const after = currentStatus(sessionDir, noteId)
-      if (after === 'claimed') {
-        const reason = result.timedOut
-          ? `claude timed out after ${timeoutMs}ms`
-          : result.exitCode !== 0
-            ? `claude exited ${result.exitCode}${result.stderr ? ': ' + result.stderr.slice(0, 200) : ''}`
-            : 'claude finished without filing a reply'
+      if (result.exitCode !== 0) {
+        const tail = result.stderr ? `: ${result.stderr.slice(0, 200)}` : ''
+        return fail(`claude exited ${result.exitCode}${tail}`)
+      }
+
+      // Parse the structured llui-reply block from stdout. This is the
+      // canonical exchange — no MCP needed.
+      const parsed = parseLluiReply(result.stdout)
+      if (!parsed.ok) {
+        return fail(parsed.error)
+      }
+
+      // Write the reply note + proposedDiff ourselves. The LLM's
+      // stdout reasoning above the reply block is preserved as the
+      // reply note's prose so the dev can read what claude thought.
+      const proseOnly = result.stdout.replace(REPLY_BLOCK_RE, '').trim()
+      const proposedDiff: ProposedDiff = {
+        files: parsed.reply.files,
+        summary: parsed.reply.summary,
+        confidence: parsed.reply.confidence,
+      }
+      const replyFm: Omit<NoteFrontmatter, 'id' | 'ts'> = {
+        author: 'llm',
+        kind: 'reply',
+        captureLevel: 'standard',
+        url: '',
+        route: null,
+        routeParams: {},
+        viewport: { w: 0, h: 0, dpr: 1 },
+        componentPath: null,
+        componentMeta: null,
+        annotations: [],
+        screenshot: null,
+        agentSchemas: [],
+        llui: { runtime: 'unknown', compiler: 'unknown' },
+        intent: 'note',
+        replyTo: noteId,
+        proposedDiff,
+      }
+      const replyResult = createNote(config.notesRoot, {
+        body: proseOnly || `_(no narrative — see proposedDiff)_`,
+        frontmatter: replyFm,
+        noteBody: {},
+      })
+      // Append 'proposed' and broadcast — the router owns this
+      // transition since the MCP path isn't involved.
+      const proposedT: StatusTransition = {
+        ts: new Date().toISOString(),
+        noteId,
+        from: 'claimed',
+        to: 'proposed',
+        by: 'llm',
+        reason: `reply ${replyResult.id}: ${parsed.reply.summary}`,
+      }
+      appendStatus(sessionDir, proposedT)
+      config.bus.broadcast({
+        type: 'status-changed',
+        noteId,
+        from: 'claimed',
+        to: 'proposed',
+        reason: parsed.reply.summary,
+      })
+      log(
+        `proposed ${noteId} → ${replyResult.id} (${parsed.reply.files.length} file${
+          parsed.reply.files.length === 1 ? '' : 's'
+        }, ${parsed.reply.confidence})`,
+      )
+      return
+
+      function fail(reason: string): void {
         const failT: StatusTransition = {
           ts: new Date().toISOString(),
           noteId,
@@ -342,10 +473,9 @@ export function startRouter(config: RouterConfig): RouterHandle {
           noteId,
           from: 'claimed',
           to: 'failed',
+          reason,
         })
         log(`failed ${noteId}: ${reason}`)
-      } else {
-        log(`done ${noteId}: status ${after ?? 'unknown'}`)
       }
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err)

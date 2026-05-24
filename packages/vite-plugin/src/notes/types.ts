@@ -290,4 +290,13 @@ export type ServerEvent =
   | { type: 'capture-request'; requestId: string; payload: CaptureRequestPayload }
   | { type: 'capture-request-cancelled'; requestId: string }
   | { type: 'session-rotated'; sessionId: string }
-  | { type: 'status-changed'; noteId: string; from: NoteStatus | null; to: NoteStatus }
+  | {
+      type: 'status-changed'
+      noteId: string
+      from: NoteStatus | null
+      to: NoteStatus
+      /** Optional human-readable context — e.g. the LLM's proposed-fix
+       *  summary, a failure message, or a git-apply conflict. The HUD
+       *  surfaces this verbatim in its status line. */
+      reason?: string
+    }

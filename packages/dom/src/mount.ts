@@ -4,6 +4,7 @@ import { createComponentInstance, flushInstance, type ComponentInstance } from '
 import { disposeLifetime } from './lifetime.js'
 import { setRenderContext, clearRenderContext } from './render-context.js'
 import { setFlatBindings } from './binding.js'
+import { installTraceGlobals } from './dev-trace.js'
 import { getBindingDescriptors } from './binding-descriptors.js'
 import { registerInstance, unregisterInstance } from './runtime.js'
 import type { View } from './view-helpers.js'
@@ -170,6 +171,12 @@ export function mountApp<S, M, E, D>(
 
   // Dev-only: auto-install devtools if enabled via '@llui/dom/devtools' import
   if (import.meta.env?.DEV && devToolsInstall) devToolsInstall(inst)
+
+  // Dev-only: install the runtime trace globals (window.__lluiTrace +
+  // window.__lluiTraceDump). Idempotent — safe to call across every
+  // mounted component. Production builds dead-code the call via the
+  // import.meta.env?.DEV gate.
+  if (import.meta.env?.DEV) installTraceGlobals()
 
   // Dev-only: warn if initial state contains non-serializable values.
   // Silent bug-bomb: Date/Map/Set/class instances break SSR, hydration, replay tools.

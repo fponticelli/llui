@@ -555,21 +555,8 @@ function processMessages<S, M, E>(inst: ComponentInstance<S, M, E>): void {
       | undefined
     if (handler) {
       queue.length = 0
-      if (import.meta.env?.DEV) {
-        // Capture dispatch shape BEFORE the handler runs — handler
-        // mutates inst.lastDirtyMask synchronously so reading post-
-        // handler is fine, but capturing the path / msgType lookup
-        // here keeps the trace ordering matching real-world causality.
-        pushTrace({
-          kind: 'dispatch',
-          t: Date.now(),
-          msgType: ((msg as Record<string, unknown>).type as string) ?? null,
-          dirty: -1, // __handlers fast path computes its own dirty internally
-          dirtyHi: 0,
-          queueLen: 1,
-          path: 'fast',
-        })
-      }
+      // Dispatch trace for the fast path lives inside `_handleMsg`
+      // — that's where the compiler-baked dirty mask is visible.
       const [newState, effects] = handler(inst as ComponentInstance, msg)
       inst.state = newState
       inst._onCommit?.(newState as unknown)
@@ -730,6 +717,20 @@ export function _handleMsg(
   method: number,
   dirtyHi: number = 0,
 ): [unknown, unknown[]] {
+  if (import.meta.env?.DEV) {
+    // Trace the per-msg fast-path call. This captures the compiler-
+    // baked dirty mask for the message — useful for confirming the
+    // mask actually matches the field set the user expected.
+    pushTrace({
+      kind: 'dispatch',
+      t: Date.now(),
+      msgType: ((msg as Record<string, unknown> | null)?.type as string) ?? null,
+      dirty,
+      dirtyHi,
+      queueLen: 1,
+      path: 'fast',
+    })
+  }
   const [s, e] = (inst.def.update as (s: unknown, m: unknown) => [unknown, unknown[]])(
     inst.state,
     msg,
