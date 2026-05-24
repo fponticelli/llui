@@ -353,6 +353,15 @@ export function each<S, T, M = unknown>(opts: EachOptions<S, T, M>): Node[] {
   // the full rationale (Phase 1 iteration safety when disposing nested).
   blocks.push(block)
 
+  // Save / restore prior values rather than null-clearing — when this
+  // each() is itself nested inside an outer each's render callback,
+  // the outer set these singletons to its own clear/remove arrays so
+  // any selector.bind() called from inside outer's render (including
+  // after this nested each() returns) registers against the OUTER's
+  // each, not this nested one. Hard-clearing to null on the way out
+  // silently strips the outer's clear-callback registration window.
+  const prevActiveClear = activeClearCallbacks
+  const prevActiveRemove = activeRemoveCallbacks
   activeClearCallbacks = clearCallbacks
   activeRemoveCallbacks = removeCallbacks
   for (let i = 0; i < initialItems.length; i++) {
@@ -360,8 +369,8 @@ export function each<S, T, M = unknown>(opts: EachOptions<S, T, M>): Node[] {
     const entry = buildEntry(item, i, opts, parentLifetime, ctx)
     entries.push(entry)
   }
-  activeClearCallbacks = null
-  activeRemoveCallbacks = null
+  activeClearCallbacks = prevActiveClear
+  activeRemoveCallbacks = prevActiveRemove
 
   // Fire initial enter for mount-time items. Build-flag-gated:
   // `__LLUI_TRANSITIONS__` lets the DCE drop this loop when the app
@@ -542,29 +551,47 @@ function buildEntry<S, T, M>(
   // `onMount(cb)` fall back to `document.body` instead of the parent
   // component's container.
   //
-  // Snapshot `rootLifetime` and `state` before writing — restore at
-  // the end. When an outer each's buildEntry calls render and render
-  // constructs an inner each() whose own buildEntry recurses through
-  // this same path, `ctx === buildCtx` (the shared module-level
-  // singleton). Without the snapshot, the inner's mutations to
-  // `rootLifetime` leak into the outer's render context; any element
-  // helper called AFTER the inner each() returns in outer render
-  // attaches its disposer/binding to the INNER entry's scope. On the
-  // inner each's next reconcile (key change → dispose old entry),
-  // those outer-scoped bindings die. Manifest: `text((s) => …)`
-  // produced past an inner each() goes silent on the first
-  // inner-each reconcile (covered by
-  // test/nested-each-trailing-binding.test.ts).
+  // Snapshot every mutable singleton field before writing — restore
+  // at the end. When an outer each's buildEntry calls render and
+  // render constructs an inner each() whose own buildEntry recurses
+  // through this same path, `ctx === buildCtx` (the shared
+  // module-level singleton); `buildBag` is the same kind of shared
+  // singleton. Without the save/restore, the inner's mutations leak
+  // back into outer's render frame:
   //
-  // Only `rootLifetime` and `state` need restoration: every other
-  // field copied below is either inst-level (allBindings,
-  // structuralBlocks, dom, instance, send, container) or unread
-  // outside the render frame. `rootLifetime` drives binding /
-  // disposer ownership and IS read by element helpers throughout
-  // outer render; `state` would similarly leak if any accessor
-  // captured `ctx.state` rather than the state passed in.
+  //   - `buildCtx.rootLifetime` drives binding / disposer ownership
+  //     for every element helper called from outer render. Leaked,
+  //     it attaches outer's later bindings to the inner entry's
+  //     scope; the inner each's next reconcile (key change →
+  //     dispose old entry) silently kills them.
+  //
+  //   - `buildCtx.state` is the fallback state when a buildEntry is
+  //     called without an explicit `state` arg. Leaked, it leaves
+  //     reconcile-time buildEntries seeing the wrong snapshot.
+  //
+  //   - `buildBag._getItemProxy` is what the `get item()` getter
+  //     invokes on every `bag.item` read. Render that destructures
+  //     `{ item }` at the top captures outer's proxy correctly, but
+  //     render that accesses `bag.item` lazily AFTER a nested each
+  //     would see the inner's proxy. Other `buildBag` fields (send,
+  //     acc, index, entry, h) are similarly read on every access.
+  //
+  // The inst-level fields copied into buildCtx below (allBindings,
+  // structuralBlocks, dom, instance, send, container) are invariants
+  // across the component's lifetime — they're set the same in every
+  // buildEntry call, so leaking them is a no-op.
+  //
+  // Regression coverage: test/nested-each-trailing-binding.test.ts.
   const prevRootLifetime = buildCtx.rootLifetime
   const prevState = buildCtx.state
+  const prevBagSend = buildBag.send
+  const prevBagAcc = buildBag.acc
+  const prevBagIndex = buildBag.index
+  const prevBagGetItemProxy = buildBag._getItemProxy
+  const prevBagEntry = (buildBag as Record<string, unknown>).entry
+  const prevBagH = (buildBag as Record<string, unknown>).h
+  const prevBagTpl = (buildBag as Record<string, unknown>).__tpl
+  const prevBagRowUpd = (buildBag as Record<string, unknown>).__rowUpd
   buildCtx.rootLifetime = scope
   buildCtx.state = currentState
   buildCtx.allBindings = ctx.allBindings
@@ -605,13 +632,21 @@ function buildEntry<S, T, M>(
     scope.itemUpdaters = []
   }
 
-  // Restore `rootLifetime` and `state`. When `ctx === buildCtx`
+  // Restore every snapshotted singleton field. When `ctx === buildCtx`
   // (nested each), `setRenderContext(ctx)` alone is a no-op against
-  // the shared singleton and the inner's `rootLifetime` mutation
-  // would leak into outer's remaining render. See the snapshot
-  // comment above.
+  // the shared singleton and the inner's mutations would leak into
+  // outer's remaining render. See the snapshot comment above for
+  // which fields actually matter and why.
   buildCtx.rootLifetime = prevRootLifetime
   buildCtx.state = prevState
+  buildBag.send = prevBagSend
+  buildBag.acc = prevBagAcc
+  buildBag.index = prevBagIndex
+  buildBag._getItemProxy = prevBagGetItemProxy
+  ;(buildBag as Record<string, unknown>).entry = prevBagEntry
+  ;(buildBag as Record<string, unknown>).h = prevBagH
+  ;(buildBag as Record<string, unknown>).__tpl = prevBagTpl
+  ;(buildBag as Record<string, unknown>).__rowUpd = prevBagRowUpd
   clearRenderContext()
   setFlatBindings(prevFlatBindings)
   setRenderContext(ctx)

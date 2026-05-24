@@ -34,6 +34,7 @@ registerDevtoolsFactory(devtoolsFactory)
 import { createCaptureRegistry } from './notes/capture-registry.js'
 import { createEventBus } from './notes/event-bus.js'
 import { createNotesMiddleware } from './notes/middleware.js'
+import { isClaudeAvailable, startRouter } from './notes/router.js'
 import {
   findTypeSource,
   readComponentTypeArgNames,
@@ -373,6 +374,19 @@ export interface DevmodeAnnotateConfig {
    *  milliseconds. The `LLUI_CAPTURE_TIMEOUT_MS` env var takes
    *  precedence if set. Default: 30000. */
   captureTimeoutMs?: number
+  /**
+   * The attention router auto-picks up task-mode notes (the developer
+   * clicks "Solve" in the HUD) and spawns `claude` headlessly to
+   * propose a fix. Default: enabled when `claude` is available on
+   * PATH; otherwise a no-op with a one-time install hint logged.
+   *
+   * Set `router: false` to fully disable. The notes themselves still
+   * land on disk; only the auto-dispatch is skipped.
+   */
+  router?: boolean
+  /** Override the per-task timeout for the router's spawn. Default
+   *  5 minutes. */
+  routerTimeoutMs?: number
 }
 
 /**
@@ -838,6 +852,31 @@ export default function llui(options: LluiPluginOptions = {}): Plugin {
           defaultCaptureTimeoutMs: captureTimeoutMs,
         })
         server.middlewares.use(notesHandler)
+
+        // ── Attention router (P6/C) ────────────────────────────────
+        // Auto-picks up task-mode notes ("Solve" in the HUD) and
+        // spawns claude headlessly to propose a fix. Off when the
+        // user passed router:false; off (with a hint) when claude
+        // isn't installed.
+        if (notesConfig.router !== false) {
+          if (isClaudeAvailable()) {
+            const routerHandle = startRouter({
+              notesRoot,
+              projectRoot,
+              bus: notesBus,
+              ...(notesConfig.routerTimeoutMs ? { timeoutMs: notesConfig.routerTimeoutMs } : {}),
+            })
+            server.httpServer?.on('close', () => routerHandle.stop())
+            process.stderr.write(
+              '[llui:router] attention router started — task notes will be solved by claude\n',
+            )
+          } else {
+            process.stderr.write(
+              '[llui:router] claude not found on PATH — task notes will be saved but not auto-solved.\n' +
+                '             Install Claude Code (https://claude.com/claude-code) to enable.\n',
+            )
+          }
+        }
       }
 
       // Agent dev endpoints — runs regardless of mcp state. Must be before

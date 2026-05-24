@@ -176,6 +176,26 @@ export function createNotesMiddleware(config: NotesMiddlewareConfig): Middleware
         filename: result.filename,
         author: payload.frontmatter.author,
       })
+      // Task-mode (P6): notes that arrive tagged `intent: 'task'`
+      // enter the status machine with an 'open' transition so the
+      // attention router (and llui_queue) can pick them up. Without
+      // this, the note exists on disk but never appears as work.
+      if (payload.frontmatter.intent === 'task') {
+        const sd = join(notesRoot, result.sessionId)
+        appendStatus(sd, {
+          ts: new Date().toISOString(),
+          noteId: result.id,
+          from: null,
+          to: 'open',
+          by: payload.frontmatter.author,
+        })
+        bus.broadcast({
+          type: 'status-changed',
+          noteId: result.id,
+          from: null,
+          to: 'open',
+        })
+      }
       // If the note answers a pending capture-request, resolve it.
       if (payload.frontmatter.fulfillsRequestId) {
         registry.fulfill(payload.frontmatter.fulfillsRequestId, result)

@@ -217,6 +217,19 @@ export interface DevmodeAnnotateConfig {
    *  milliseconds. The `LLUI_CAPTURE_TIMEOUT_MS` env var takes
    *  precedence if set. Default: 30000. */
   captureTimeoutMs?: number
+  /**
+   * The attention router auto-picks up task-mode notes (the developer
+   * clicks "Solve" in the HUD) and spawns `claude` headlessly to
+   * propose a fix. Default: enabled when `claude` is available on
+   * PATH; otherwise a no-op with a one-time install hint logged.
+   *
+   * Set `router: false` to fully disable. The notes themselves still
+   * land on disk; only the auto-dispatch is skipped.
+   */
+  router?: boolean
+  /** Override the per-task timeout for the router's spawn. Default
+   *  5 minutes. */
+  routerTimeoutMs?: number
 }
 ```
 

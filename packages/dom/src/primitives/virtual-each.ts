@@ -179,6 +179,16 @@ export function virtualEach<S, T, M = unknown>(opts: VirtualEachOptions<S, T, M>
     // primitive; equivalent today is a row-internal event handler
     // calling the parent's `send`); missing `container` would point
     // `onMount` at `document.body`.
+    //
+    // Snapshot `rootLifetime` / `state` before writing — restore at
+    // the end. Same singleton-leak class as each() (see each.ts's
+    // buildEntry for the full rationale): when virtualEach is nested
+    // inside an outer each's render, `ctx === buildCtx` and a bare
+    // `setRenderContext(ctx)` at the end is a no-op against the shared
+    // singleton, leaking `rootLifetime` into the outer's render frame.
+    // Regression coverage: dom/test/nested-each-trailing-binding.test.ts.
+    const prevRootLifetime = buildCtx.rootLifetime
+    const prevState = buildCtx.state
     buildCtx.rootLifetime = scope
     buildCtx.state = state
     buildCtx.allBindings = ctx.allBindings
@@ -198,6 +208,8 @@ export function virtualEach<S, T, M = unknown>(opts: VirtualEachOptions<S, T, M>
       index: indexAccessor,
     })
 
+    buildCtx.rootLifetime = prevRootLifetime
+    buildCtx.state = prevState
     clearRenderContext()
     setFlatBindings(prevFlat)
     setRenderContext(ctx)

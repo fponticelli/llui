@@ -1,16 +1,24 @@
 /**
- * Hypothesis: `buildCtx` and `buildBag` in each.ts are module-level
- * singletons. When an inner each() runs inside the parent each's
- * render, the inner each's buildEntry mutates `buildCtx.rootLifetime`
- * to the inner entry's scope. After the inner each() returns, outer
- * render continues — and any element helper called AFTER the inner
- * each() in outer's render reads `currentContext.rootLifetime` and
- * attaches its disposer/binding to the INNER scope instead of the
- * OUTER scope. When the inner each later reconciles and disposes
- * the old inner scope, the OUTER-scoped bindings get killed too.
+ * Regression: bindings created AFTER an inner each() in the outer
+ * render must remain alive across inner-each reconciles.
  *
- * Symptom would be: bindings created AFTER inner each() in outer
- * render go dead on the FIRST inner-each reconcile.
+ * `buildCtx` in each.ts is a module-level singleton reused across
+ * every buildEntry call to avoid per-row context allocation. When an
+ * outer each's buildEntry calls render, and render constructs an
+ * inner each() whose own buildEntry recurses through the same path,
+ * `ctx === buildCtx`. The inner mutates `buildCtx.rootLifetime` to
+ * the inner entry's scope. Without an explicit save/restore around
+ * the inner call, that mutation leaks back into outer's render
+ * frame: any element helper called AFTER the inner each() in outer
+ * reads `currentContext.rootLifetime` and attaches its disposer /
+ * binding to the INNER scope. On the inner each's next reconcile
+ * (key change → dispose old entry), those outer-scoped bindings get
+ * silently killed.
+ *
+ * Surface symptom in apps: a `text((s) => s.banner)` (or any other
+ * reactive cell) declared past an inner each() goes dead on the
+ * first state change that re-keys the inner each. The fix lives in
+ * `buildEntry` — see the rootLifetime/state snapshot/restore pair.
  */
 import { describe, it, expect } from 'vitest'
 import { mountApp } from '../src/mount'
@@ -137,6 +145,61 @@ describe('outer-render bindings after inner each() reconcile', () => {
       'trailing-banner binding should still be live after inner-each reconcile',
     ).toBe('after')
 
+    handle.dispose?.()
+  })
+
+  // Lazy bag.item access AFTER a nested each() must read the OUTER's
+  // per-item proxy, not the inner's. The `get item()` getter calls
+  // `buildBag._getItemProxy`, which is a module-level singleton mutated
+  // by every buildEntry. Pre-fix, an inner each() left `_getItemProxy`
+  // pointing at the inner's last entry; outer render code that read
+  // `bag.item` AFTER the inner each() returned would project the inner
+  // entry's data even though the structural position was outer.
+  it("outer bag.item read AFTER inner each() returns the outer's item", () => {
+    type OuterItem = { id: string; label: string }
+    type InnerItem = { name: string; value: number }
+    type S = { rows: OuterItem[]; tick: number }
+    type M = { type: 'noop' }
+
+    let lazyValueAtRender: string | undefined
+
+    const def: ComponentDef<S, M, never> = {
+      name: 'BagItemLazy',
+      init: () => [{ rows: [{ id: 'a', label: 'OUTER-A' }], tick: 0 }, []],
+      update: (s) => [s, []],
+      view: () =>
+        each<S, OuterItem>({
+          items: (s) => s.rows,
+          key: (r) => r.id,
+          render: (bag) => {
+            // Nested each — populated, so its buildEntry runs and
+            // mutates buildBag._getItemProxy to the inner entry's.
+            const innerNodes = each<S, InnerItem>({
+              items: () => [{ name: 'x', value: 1 }],
+              key: (i) => i.name,
+              render: ({ item: innerItem }) => [
+                div({ 'data-inner': innerItem((i) => i.name) }, []),
+              ],
+            })
+            // LAZY access via `bag.item` AFTER the nested each() returned.
+            // If the singleton leaked, `bag.item` invokes the inner's
+            // _getItemProxy and reads from the inner entry instead of
+            // the outer entry. Capture the projected label here so the
+            // test asserts on a deterministic snapshot.
+            lazyValueAtRender = (bag.item as unknown as { label: () => string }).label()
+            return [div({ 'data-row': 'wrap' }, [...innerNodes]) as Node]
+          },
+        }),
+      __compilerVersion: '__test__',
+      __prefixes: [(s) => s.rows, (s) => s.tick],
+    }
+
+    const container = document.createElement('div')
+    const handle = mountApp(container, def)
+    expect(
+      lazyValueAtRender,
+      "outer bag.item.label() after a nested each() should project the OUTER row's label",
+    ).toBe('OUTER-A')
     handle.dispose?.()
   })
 })

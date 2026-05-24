@@ -39,6 +39,16 @@ export {
   type QueueEntry,
 } from './status.js'
 
+export {
+  startRouter,
+  defaultClaudeSpawner,
+  isClaudeAvailable,
+  type ClaudeSpawner,
+  type ClaudeSpawnResult,
+  type RouterConfig,
+  type RouterHandle,
+} from './router.js'
+
 // Server-side middleware components. Exposed so test harnesses and
 // alternative hosts (e.g. a standalone notebook server) can instantiate
 // the middleware without going through the Vite plugin. Production
