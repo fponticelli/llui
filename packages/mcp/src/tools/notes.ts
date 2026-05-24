@@ -83,16 +83,40 @@ const PAGE_TELEMETRY_EXPR = `(() => {
 interface PageMeta {
   url: string
   viewport: { w: number; h: number; dpr: number }
+  componentPath: string[] | null
+  componentMeta: { file: string; line: number; name: string } | null
 }
 
-const PAGE_META_EXPR = `(() => ({
-  url: location.href,
-  viewport: { w: innerWidth, h: innerHeight, dpr: devicePixelRatio || 1 },
-  llui: globalThis.__llui ? {
-    runtime: globalThis.__llui.runtime || 'unknown',
-    compiler: globalThis.__llui.compiler || 'unknown',
-  } : { runtime: 'unknown', compiler: 'unknown' },
-}))()`
+const PAGE_META_EXPR = `(() => {
+  const comps = globalThis.__lluiComponents
+  let componentPath = null
+  let componentMeta = null
+  if (comps) {
+    const entries = Object.entries(comps)
+    if (entries.length > 0) {
+      componentPath = entries.map(([n]) => n)
+      const [firstName, firstApi] = entries[0]
+      if (typeof firstApi.getComponentInfo === 'function') {
+        try {
+          const info = firstApi.getComponentInfo()
+          if (info && info.file != null && info.line != null) {
+            componentMeta = { file: info.file, line: info.line, name: info.name || firstName }
+          }
+        } catch {}
+      }
+    }
+  }
+  return {
+    url: location.href,
+    viewport: { w: innerWidth, h: innerHeight, dpr: devicePixelRatio || 1 },
+    llui: globalThis.__llui ? {
+      runtime: globalThis.__llui.runtime || 'unknown',
+      compiler: globalThis.__llui.compiler || 'unknown',
+    } : { runtime: 'unknown', compiler: 'unknown' },
+    componentPath,
+    componentMeta,
+  }
+})()`
 
 interface FallbackOpts {
   prose?: string
@@ -132,6 +156,8 @@ async function playwrightFallback(
       url: '',
       viewport: { w: 0, h: 0, dpr: 1 },
       llui: { runtime: 'unknown', compiler: 'unknown' },
+      componentPath: null,
+      componentMeta: null,
     }
   }
 
@@ -150,8 +176,8 @@ async function playwrightFallback(
     route: null,
     routeParams: {},
     viewport: meta.viewport,
-    componentPath: null,
-    componentMeta: null,
+    componentPath: meta.componentPath,
+    componentMeta: meta.componentMeta,
     annotations: [],
     screenshot: 'placeholder.png',
     agentSchemas: [],

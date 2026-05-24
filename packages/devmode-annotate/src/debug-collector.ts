@@ -12,6 +12,7 @@
 // e.g. production builds, or in dev when devtools-mode is off.
 
 import type {
+  ComponentMetaRef,
   MessageLogEntry,
   NoteBody,
   PendingEffectEntry,
@@ -44,11 +45,18 @@ interface EffectTimelineEntryLike {
   durationMs?: number
 }
 
+interface ComponentInfoLike {
+  name: string
+  file: string | null
+  line: number | null
+}
+
 interface DebugApiLike {
   getState(): unknown
   getMessageHistory?(opts?: { since?: number; limit?: number }): MessageRecordLike[]
   getPendingEffects?(): PendingEffectLike[]
   getEffectTimeline?(limit?: number): EffectTimelineEntryLike[]
+  getComponentInfo?(): ComponentInfoLike
 }
 
 interface ComponentsGlobal {
@@ -169,4 +177,44 @@ function phaseToOutcome(phase: string): RecentEffectEntry['outcome'] | null {
   if (phase === 'cancelled') return 'cancelled'
   if (phase === 'errored' || phase === 'error') return 'error'
   return null
+}
+
+export interface ComponentInfoSnapshot {
+  /** Names of all currently mounted components (keys of __lluiComponents). */
+  componentPath: string[]
+  /** Metadata for the first mounted component — the most likely candidate
+   *  for the "owning" component when an annotation doesn't carry a
+   *  precise scope. Per-element resolution requires DOM↔scope mapping
+   *  which is a future iteration. */
+  componentMeta: ComponentMetaRef | null
+}
+
+/**
+ * Collect identity information for every mounted component. Returns
+ * `null` when no debug API is present so callers can keep their
+ * existing fallback values.
+ */
+export function collectComponentInfo(opts: CollectOptions = {}): ComponentInfoSnapshot | null {
+  const components = opts.components ?? (globalThis as unknown as ComponentsGlobal).__lluiComponents
+  if (!components) return null
+  const entries = Object.entries(components)
+  if (entries.length === 0) return null
+
+  const names = entries.map(([name]) => name)
+  // First component's metadata is the primary anchor. Components stack
+  // in insertion order in __lluiComponents — typically the root mounts
+  // first, so this is the outermost / "App-equivalent".
+  const [firstName, firstApi] = entries[0]!
+  let meta: ComponentMetaRef | null = null
+  if (typeof firstApi.getComponentInfo === 'function') {
+    try {
+      const info = firstApi.getComponentInfo()
+      if (info.file != null && info.line != null) {
+        meta = { file: info.file, line: info.line, name: info.name || firstName }
+      }
+    } catch {
+      // Best-effort — collector should never throw at the callsite.
+    }
+  }
+  return { componentPath: names, componentMeta: meta }
 }

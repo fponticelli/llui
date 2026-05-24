@@ -18,7 +18,7 @@ import type {
 } from '@llui/vite-plugin'
 
 import { bakeAnnotations } from './bake.js'
-import { collectDebugSnapshot } from './debug-collector.js'
+import { collectComponentInfo, collectDebugSnapshot } from './debug-collector.js'
 import { drawRect } from './overlay.js'
 import { captureScreenshot, type CaptureFn } from './screenshot.js'
 import { btnStyle, modeButtonStyle, STYLES } from './styles.js'
@@ -273,6 +273,7 @@ export function mountAnnotateHud(opts: MountAnnotateOptions = {}): AnnotateHudHa
       }
     }
 
+    const compInfo = collectComponentInfo()
     const frontmatter: Omit<NoteFrontmatter, 'id' | 'ts'> = {
       author: 'human',
       kind,
@@ -285,8 +286,8 @@ export function mountAnnotateHud(opts: MountAnnotateOptions = {}): AnnotateHudHa
         h: typeof window !== 'undefined' ? window.innerHeight : 0,
         dpr: typeof window !== 'undefined' ? window.devicePixelRatio || 1 : 1,
       },
-      componentPath: null,
-      componentMeta: null,
+      componentPath: compInfo?.componentPath ?? null,
+      componentMeta: compInfo?.componentMeta ?? null,
       annotations,
       screenshot: screenshotBase64 ? 'placeholder.png' : null,
       agentSchemas: [],
@@ -394,8 +395,8 @@ export function mountAnnotateHud(opts: MountAnnotateOptions = {}): AnnotateHudHa
             h: typeof window !== 'undefined' ? window.innerHeight : 0,
             dpr: typeof window !== 'undefined' ? window.devicePixelRatio || 1 : 1,
           },
-          componentPath: null,
-          componentMeta: null,
+          componentPath: collectComponentInfo()?.componentPath ?? null,
+          componentMeta: collectComponentInfo()?.componentMeta ?? null,
           annotations,
           screenshot: null,
           agentSchemas: [],
@@ -415,6 +416,7 @@ export function mountAnnotateHud(opts: MountAnnotateOptions = {}): AnnotateHudHa
       return (await failRes.json()) as CreateNoteResponse
     }
 
+    const llmCompInfo = collectComponentInfo()
     const frontmatter: Omit<NoteFrontmatter, 'id' | 'ts'> = {
       author: 'llm',
       kind: 'capture',
@@ -427,8 +429,8 @@ export function mountAnnotateHud(opts: MountAnnotateOptions = {}): AnnotateHudHa
         h: typeof window !== 'undefined' ? window.innerHeight : 0,
         dpr: typeof window !== 'undefined' ? window.devicePixelRatio || 1 : 1,
       },
-      componentPath: null,
-      componentMeta: null,
+      componentPath: llmCompInfo?.componentPath ?? null,
+      componentMeta: llmCompInfo?.componentMeta ?? null,
       annotations,
       screenshot: screenshotBase64 ? 'placeholder.png' : null,
       agentSchemas: [],
