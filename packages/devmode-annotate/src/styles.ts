@@ -87,15 +87,50 @@ export const STYLES = {
 
   rectPreviewWrap:
     'margin-bottom: 8px; padding: 8px; background: rgba(0,0,0,0.04); border-radius: 6px; font-size: 12px; color: #444;',
+
+  toolbar: [
+    'display: flex',
+    'gap: 4px',
+    'margin-bottom: 4px',
+    'padding: 4px',
+    'background: rgba(0,0,0,0.04)',
+    'border-radius: 6px',
+  ].join('; '),
+
+  toolbarBtn: [
+    'min-width: 28px',
+    'height: 24px',
+    'padding: 0 6px',
+    'border-radius: 4px',
+    'border: 1px solid transparent',
+    'background: transparent',
+    'color: #111',
+    'cursor: pointer',
+    'font: inherit',
+    'font-size: 12px',
+    'display: inline-flex',
+    'align-items: center',
+    'justify-content: center',
+  ].join('; '),
 }
 
-export function btnStyle(primary: boolean): string {
+export type BtnVariant = 'primary' | 'secondary' | 'ghost' | boolean
+
+export function btnStyle(variant: BtnVariant): string {
+  // Boolean overload for back-compat: true = primary, false = ghost.
+  const v: 'primary' | 'secondary' | 'ghost' =
+    variant === true ? 'primary' : variant === false ? 'ghost' : variant
+  const palette = {
+    primary: { border: '#0070f3', bg: '#0070f3', fg: 'white' },
+    secondary: { border: 'rgba(0,0,0,0.16)', bg: '#f5f5f7', fg: '#111' },
+    ghost: { border: 'rgba(0,0,0,0.16)', bg: 'white', fg: '#111' },
+  }[v]
   return [
     'padding: 6px 12px',
     'border-radius: 6px',
-    'border: 1px solid ' + (primary ? '#0070f3' : 'rgba(0,0,0,0.16)'),
-    'background: ' + (primary ? '#0070f3' : 'white'),
-    'color: ' + (primary ? 'white' : '#111'),
+    `border: 1px solid ${palette.border}`,
+    `background: ${palette.bg}`,
+    `color: ${palette.fg}`,
     'cursor: pointer',
     'font: inherit',
   ].join('; ')

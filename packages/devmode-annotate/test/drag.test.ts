@@ -111,3 +111,72 @@ describe('floating button — drag + persist', () => {
     expect(root.style.left).toBe('')
   })
 })
+
+describe('modal repositioning when clipped', () => {
+  // jsdom doesn't compute layout, so we stub getBoundingClientRect on
+  // the root container to drive the reanchor logic from controlled
+  // values. modal.offsetWidth/offsetHeight default to 0 in jsdom; the
+  // implementation falls back to 360 / 320 in that case, so a button
+  // at x<360 should trigger a horizontal flip.
+
+  function stubRootRect(rect: {
+    left: number
+    top: number
+    width?: number
+    height?: number
+  }): void {
+    const root = document.getElementById('llui-devmode-annotate-root')!
+    const w = rect.width ?? 44
+    const h = rect.height ?? 44
+    root.getBoundingClientRect = () =>
+      ({
+        left: rect.left,
+        top: rect.top,
+        right: rect.left + w,
+        bottom: rect.top + h,
+        width: w,
+        height: h,
+        x: rect.left,
+        y: rect.top,
+        toJSON: () => ({}),
+      }) as DOMRect
+  }
+
+  function getModal(): HTMLElement {
+    const ta = document.querySelector('#llui-devmode-annotate-root textarea') as HTMLTextAreaElement
+    return ta.parentElement!
+  }
+
+  it('keeps right-anchor when the button sits in the right half of a wide viewport', async () => {
+    const handle = mountAnnotateHud({ subscribeEvents: false })
+    stubRootRect({ left: 900, top: 600 })
+    handle.open()
+    await new Promise((r) => setTimeout(r, 0))
+    const modal = getModal()
+    // rightAnchoredLeft = 944 - 360 = 584 > 8 → keep right-anchor
+    expect(modal.style.right).toBe('0px')
+    expect(modal.style.left).toBe('auto')
+  })
+
+  it('flips horizontal anchor when the button sits near the left edge', async () => {
+    const handle = mountAnnotateHud({ subscribeEvents: false })
+    stubRootRect({ left: 16, top: 600 })
+    handle.open()
+    await new Promise((r) => setTimeout(r, 0))
+    const modal = getModal()
+    // rightAnchoredLeft = 60 - 360 = -300 < 8 → flip to left-anchor
+    expect(modal.style.left).toBe('0px')
+    expect(modal.style.right).toBe('auto')
+  })
+
+  it('flips vertical anchor when the button sits near the top', async () => {
+    const handle = mountAnnotateHud({ subscribeEvents: false })
+    stubRootRect({ left: 900, top: 16 })
+    handle.open()
+    await new Promise((r) => setTimeout(r, 0))
+    const modal = getModal()
+    // aboveTop = 16 - 320 - 8 = -312 < 8 → place modal below the button
+    expect(modal.style.top).toBe('56px')
+    expect(modal.style.bottom).toBe('auto')
+  })
+})

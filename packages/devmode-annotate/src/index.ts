@@ -142,15 +142,23 @@ function clampToViewport(pos: SavedPosition): SavedPosition {
   }
 }
 
-// Distinctive icon for the floating button: a chat-bubble outline with
-// a small spark. Recognizable as "annotate / leave a note"; not a
-// generic emoji that gets lost among page content.
+// Floating-button icon: a lasso/rope loop enclosing the "Lui"
+// letterform. Combines the annotation-tool semantic (lasso = select +
+// annotate) with the LLui brand mark. Drawn as inline SVG so the
+// gradient button background shows through the stroke gaps.
 const BUTTON_ICON_SVG = `
-<svg width="22" height="22" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
-  <path d="M4 5.5C4 4.67 4.67 4 5.5 4h13C19.33 4 20 4.67 20 5.5v9c0 .83-.67 1.5-1.5 1.5H10l-3.5 3v-3H5.5C4.67 16 4 15.33 4 14.5v-9z" stroke="white" stroke-width="1.8" stroke-linejoin="round"/>
-  <circle cx="9" cy="10" r="1.1" fill="white"/>
-  <circle cx="12" cy="10" r="1.1" fill="white"/>
-  <circle cx="15" cy="10" r="1.1" fill="white"/>
+<svg width="26" height="26" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+  <!-- Lasso loop: irregular open ellipse, slightly tilted -->
+  <path d="M 7 11 C 5 14, 5.5 19, 9 22 C 13 25, 21 25, 25 21.5 C 28 18.5, 27.5 13, 24 10 C 20 7, 12 7, 8.5 10"
+        stroke="white" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+  <!-- Lasso tail curling down-right -->
+  <path d="M 8.5 10 Q 6 7, 4 9 Q 3 11, 5 12"
+        stroke="white" stroke-width="1.5" stroke-linecap="round" fill="none"/>
+  <!-- "Lui" letterform inside the loop -->
+  <text x="16" y="19.5" text-anchor="middle"
+        font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif"
+        font-size="9" font-weight="800" letter-spacing="-0.3"
+        fill="white">Lui</text>
 </svg>`
 
 /**
@@ -250,8 +258,36 @@ export function mountAnnotateHud(opts: MountAnnotateOptions = {}): AnnotateHudHa
   rectPreview.style.cssText = STYLES.rectPreviewWrap
   rectPreview.style.display = 'none'
 
+  // Markdown toolbar above the textarea. Minimal — bold, italic,
+  // code, bullets, numbered list. Wraps selection or inserts at the
+  // caret. Cmd/Ctrl+B / +I / +E mirror the buttons for keyboard users.
+  const toolbar = document.createElement('div')
+  toolbar.style.cssText = STYLES.toolbar
+
+  const mkToolBtn = (label: string, title: string): HTMLButtonElement => {
+    const b = document.createElement('button')
+    b.type = 'button'
+    b.textContent = label
+    b.title = title
+    b.style.cssText = STYLES.toolbarBtn
+    return b
+  }
+  const boldBtn = mkToolBtn('B', 'Bold (Cmd/Ctrl+B)')
+  boldBtn.style.fontWeight = '700'
+  const italicBtn = mkToolBtn('I', 'Italic (Cmd/Ctrl+I)')
+  italicBtn.style.fontStyle = 'italic'
+  const codeBtn = mkToolBtn('</>', 'Inline code (Cmd/Ctrl+E)')
+  codeBtn.style.fontFamily = 'ui-monospace, SFMono-Regular, monospace'
+  codeBtn.style.fontSize = '11px'
+  const bulletBtn = mkToolBtn('•', 'Bullet list')
+  const numBtn = mkToolBtn('1.', 'Numbered list')
+  numBtn.style.fontFamily = 'ui-monospace, SFMono-Regular, monospace'
+  numBtn.style.fontSize = '11px'
+
+  toolbar.append(boldBtn, italicBtn, codeBtn, bulletBtn, numBtn)
+
   const textarea = document.createElement('textarea')
-  textarea.placeholder = "What's wrong, or what should change?"
+  textarea.placeholder = "What's wrong, or what should change? (markdown OK)"
   textarea.rows = 5
   textarea.style.cssText = STYLES.textarea
 
@@ -264,15 +300,28 @@ export function mountAnnotateHud(opts: MountAnnotateOptions = {}): AnnotateHudHa
   const cancelBtn = document.createElement('button')
   cancelBtn.type = 'button'
   cancelBtn.textContent = 'Cancel'
-  cancelBtn.style.cssText = btnStyle(false)
+  cancelBtn.style.cssText = btnStyle('ghost')
 
-  const submitBtn = document.createElement('button')
-  submitBtn.type = 'button'
-  submitBtn.textContent = 'Send'
-  submitBtn.style.cssText = btnStyle(true)
+  // "Save" is for FYI notes that don't ask the LLM to act —
+  // intent='note'. The LLM will see them on llui_list_notes but
+  // won't try to act unless asked.
+  const saveBtn = document.createElement('button')
+  saveBtn.type = 'button'
+  saveBtn.textContent = 'Save note'
+  saveBtn.title = 'Just save the note for reference (intent: note)'
+  saveBtn.style.cssText = btnStyle('secondary')
 
-  actions.append(cancelBtn, submitBtn)
-  modal.append(heading, modeRow, rectPreview, textarea, statusLine, actions)
+  // "Solve" is the primary action: intent='task'. Hands the note to
+  // the LLM as work to do. Combined with task-mode (P6), this is what
+  // a connected worker picks up.
+  const solveBtn = document.createElement('button')
+  solveBtn.type = 'button'
+  solveBtn.textContent = 'Solve'
+  solveBtn.title = 'Have the LLM solve this immediately (intent: task)'
+  solveBtn.style.cssText = btnStyle('primary')
+
+  actions.append(cancelBtn, saveBtn, solveBtn)
+  modal.append(heading, modeRow, rectPreview, toolbar, textarea, statusLine, actions)
   root.append(floatingBtn, modal)
   document.body.appendChild(root)
 
@@ -297,8 +346,48 @@ export function mountAnnotateHud(opts: MountAnnotateOptions = {}): AnnotateHudHa
   }
   setMode('text')
 
+  // The modal is positioned relative to the floating button (root).
+  // When the button is dragged near a viewport edge, the modal's
+  // default anchor can leave it clipped. Re-anchor here so the modal
+  // always lies fully inside the viewport when feasible.
+  const reanchorModal = (): void => {
+    const rootRect = root.getBoundingClientRect()
+    const modalW = modal.offsetWidth || 360
+    const modalH = modal.offsetHeight || 320
+    const gap = 8
+
+    // Horizontal: align modal's right edge to the button's right edge
+    // by default (right: 0). If that pushes the left side off-screen,
+    // flip to left-anchor instead.
+    const rightAnchoredLeftPx = rootRect.right - modalW
+    if (rightAnchoredLeftPx < gap) {
+      // Button is too close to the left edge; anchor modal to the
+      // button's left side.
+      modal.style.left = '0'
+      modal.style.right = 'auto'
+    } else {
+      modal.style.right = '0'
+      modal.style.left = 'auto'
+    }
+
+    // Vertical: prefer above the button (bottom: 56px). If that
+    // pushes the modal off the TOP of the viewport, place it below
+    // the button instead.
+    const aboveTopPx = rootRect.top - modalH - gap
+    if (aboveTopPx < gap) {
+      modal.style.top = '56px'
+      modal.style.bottom = 'auto'
+    } else {
+      modal.style.bottom = '56px'
+      modal.style.top = 'auto'
+    }
+  }
+
   const open = (): void => {
     modal.style.display = 'block'
+    // Measurement requires the modal to be rendered, so re-anchor on
+    // a microtask after the display flips.
+    queueMicrotask(reanchorModal)
     textarea.focus()
     statusLine.textContent = ''
   }
@@ -505,6 +594,9 @@ export function mountAnnotateHud(opts: MountAnnotateOptions = {}): AnnotateHudHa
     if (wasDrag) {
       const rect = root.getBoundingClientRect()
       writeSavedPosition({ x: rect.left, y: rect.top })
+      // The modal anchor depends on where the button sits. Re-compute
+      // whether to flip horizontal/vertical so it stays on-screen.
+      reanchorModal()
       // Eat the subsequent click event so it doesn't toggle the modal.
       const eat = (ev: Event): void => {
         ev.stopPropagation()
@@ -549,28 +641,88 @@ export function mountAnnotateHud(opts: MountAnnotateOptions = {}): AnnotateHudHa
     pendingRect = null
     close()
   })
-  submitBtn.addEventListener('click', () => {
+
+  const submitWithIntent = (intent: NoteIntent): void => {
     const prose = textarea.value.trim()
     if (prose === '' && buildAnnotations().length === 0) {
       statusLine.textContent = 'add text or draw a rect first'
       return
     }
-    submitBtn.disabled = true
+    saveBtn.disabled = true
+    solveBtn.disabled = true
     statusLine.textContent = mode === 'rect' ? 'capturing screenshot…' : 'sending…'
-    submit(prose).then(
+    submit(prose, { intent }).then(
       (result) => {
-        statusLine.textContent = `saved as ${result.filename}`
+        const label = intent === 'task' ? 'solve queued' : 'note saved'
+        statusLine.textContent = `${label}: ${result.filename}`
         textarea.value = ''
         pendingRect = null
         dismissActiveOverlay()
         setMode('text')
-        submitBtn.disabled = false
+        saveBtn.disabled = false
+        solveBtn.disabled = false
       },
       (err: Error) => {
         statusLine.textContent = err.message
-        submitBtn.disabled = false
+        saveBtn.disabled = false
+        solveBtn.disabled = false
       },
     )
+  }
+  saveBtn.addEventListener('click', () => submitWithIntent('note'))
+  solveBtn.addEventListener('click', () => submitWithIntent('task'))
+
+  // ── Markdown toolbar wiring ────────────────────────────────────────
+  const wrapSelection = (before: string, after: string = before): void => {
+    const start = textarea.selectionStart
+    const end = textarea.selectionEnd
+    const selected = textarea.value.slice(start, end)
+    const placeholder = selected || 'text'
+    const replacement = `${before}${placeholder}${after}`
+    textarea.value = textarea.value.slice(0, start) + replacement + textarea.value.slice(end)
+    textarea.focus()
+    // Position the selection over the inserted text (so it can be
+    // typed-over) — or after `before` if there was no original
+    // selection.
+    const cursorStart = start + before.length
+    const cursorEnd = cursorStart + placeholder.length
+    textarea.setSelectionRange(cursorStart, cursorEnd)
+  }
+  const prefixSelectedLines = (prefix: string | ((i: number) => string)): void => {
+    const start = textarea.selectionStart
+    const end = textarea.selectionEnd
+    const before = textarea.value.slice(0, start)
+    // Expand selection to whole lines so the prefix applies at the
+    // line head, not mid-word.
+    const lineStart = before.lastIndexOf('\n') + 1
+    const fullSelected = textarea.value.slice(lineStart, end) || 'item'
+    const lines = fullSelected.split('\n')
+    const prefixed = lines
+      .map((line, i) => `${typeof prefix === 'function' ? prefix(i) : prefix}${line}`)
+      .join('\n')
+    textarea.value = textarea.value.slice(0, lineStart) + prefixed + textarea.value.slice(end)
+    textarea.focus()
+    textarea.setSelectionRange(lineStart, lineStart + prefixed.length)
+  }
+  boldBtn.addEventListener('click', () => wrapSelection('**'))
+  italicBtn.addEventListener('click', () => wrapSelection('*'))
+  codeBtn.addEventListener('click', () => wrapSelection('`'))
+  bulletBtn.addEventListener('click', () => prefixSelectedLines('- '))
+  numBtn.addEventListener('click', () => prefixSelectedLines((i) => `${i + 1}. `))
+
+  textarea.addEventListener('keydown', (e) => {
+    const cmd = e.metaKey || e.ctrlKey
+    if (!cmd) return
+    if (e.key === 'b' || e.key === 'B') {
+      e.preventDefault()
+      wrapSelection('**')
+    } else if (e.key === 'i' || e.key === 'I') {
+      e.preventDefault()
+      wrapSelection('*')
+    } else if (e.key === 'e' || e.key === 'E') {
+      e.preventDefault()
+      wrapSelection('`')
+    }
   })
 
   const handleCaptureRequest = async (
