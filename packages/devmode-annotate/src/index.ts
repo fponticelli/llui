@@ -18,6 +18,7 @@ import type {
 } from '@llui/vite-plugin'
 
 import { bakeAnnotations } from './bake.js'
+import { collectDebugSnapshot } from './debug-collector.js'
 import { drawRect } from './overlay.js'
 import { captureScreenshot, type CaptureFn } from './screenshot.js'
 import { btnStyle, modeButtonStyle, STYLES } from './styles.js'
@@ -294,7 +295,7 @@ export function mountAnnotateHud(opts: MountAnnotateOptions = {}): AnnotateHudHa
     const body: CreateNoteRequest = {
       body: prose,
       frontmatter,
-      noteBody: {},
+      noteBody: collectDebugSnapshot(),
       ...(screenshotBase64 ? { screenshot: screenshotBase64 } : {}),
     }
     const url = `${origin}/_llui/notes`
@@ -401,7 +402,7 @@ export function mountAnnotateHud(opts: MountAnnotateOptions = {}): AnnotateHudHa
           llui,
           fulfillsRequestId: requestId,
         },
-        noteBody: {},
+        noteBody: collectDebugSnapshot(),
       }
       const failRes = await fetch(`${origin}/_llui/notes`, {
         method: 'POST',
@@ -437,7 +438,7 @@ export function mountAnnotateHud(opts: MountAnnotateOptions = {}): AnnotateHudHa
     const body: CreateNoteRequest = {
       body: prose,
       frontmatter,
-      noteBody: {},
+      noteBody: collectDebugSnapshot(),
       ...(screenshotBase64 ? { screenshot: screenshotBase64 } : {}),
     }
     const url = `${origin}/_llui/notes`
