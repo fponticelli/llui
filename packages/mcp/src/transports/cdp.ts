@@ -93,6 +93,18 @@ export class CdpSessionManager implements CdpTransport {
     return s.page.ariaSnapshot()
   }
 
+  /**
+   * Evaluate an expression inside the attached page. Wraps Playwright's
+   * `page.evaluate(string)` — expression is evaluated in the page's
+   * own JS context, so referencing globals like `window.__lluiComponents`
+   * works directly. Used by `llui_capture`'s Playwright fallback to
+   * gather runtime telemetry from a headless browser.
+   */
+  async evaluatePage<T = unknown>(expression: string): Promise<T> {
+    const s = await this.ensureSession()
+    return (await s.page.evaluate(expression)) as T
+  }
+
   getConsoleBuffer(limit?: number, level?: string): ConsoleEntry[] {
     if (!this.session) return []
     let items = this.session.consoleBuffer

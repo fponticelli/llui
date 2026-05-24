@@ -75,6 +75,13 @@ export interface CdpTransport {
     format?: 'png' | 'jpeg'
   }): Promise<{ data: string; format: string; mimeType: string }>
   accessibilitySnapshot(opts: { selector?: string; interestingOnly?: boolean }): Promise<unknown>
+  /**
+   * Evaluate an expression (or function-stringified expression) inside
+   * the attached page. Used by the devmode-annotate fallback to collect
+   * `window.__lluiComponents` telemetry without a browser tab open.
+   * Throws if no session can be established (Playwright missing, etc).
+   */
+  evaluatePage<T = unknown>(expression: string): Promise<T>
   getConsoleBuffer(limit?: number, level?: string): ConsoleEntry[]
   getNetworkBuffer(
     limit?: number,

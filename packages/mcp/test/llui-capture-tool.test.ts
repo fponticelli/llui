@@ -87,9 +87,10 @@ afterEach(async () => {
 })
 
 describe('llui_capture (MCP tool, end-to-end with middleware)', () => {
-  it('returns status:no-client when no HUD is subscribed', async () => {
+  it('returns status:no-client when no HUD is subscribed (forceMode:hud disables fallback)', async () => {
     const result = (await f.mcp.handleToolCall('llui_capture', {
       prose: 'try anyway',
+      forceMode: 'hud',
     })) as { status: string }
     expect(result.status).toBe('no-client')
   })
@@ -153,6 +154,7 @@ describe('llui_capture (MCP tool, end-to-end with middleware)', () => {
       annotate: [{ type: 'rect', x: 1, y: 2, w: 3, h: 4 }],
       captureLevel: 'verbose',
       timeoutMs: 100,
+      forceMode: 'hud',
     })
     await new Promise((r) => setTimeout(r, 30))
     const evt = events.find(

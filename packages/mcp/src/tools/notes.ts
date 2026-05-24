@@ -11,6 +11,7 @@
 
 import { z } from 'zod'
 import {
+  createNote,
   listNotes,
   listSessions,
   readNote,
@@ -18,7 +19,166 @@ import {
   rotateSession,
   serializeNote,
 } from '@llui/vite-plugin/notes'
-import type { ToolRegistry } from '../tool-registry.js'
+import type { CaptureLevel, NoteBody, NoteFrontmatter } from '@llui/vite-plugin'
+import type { CdpTransport, ToolRegistry } from '../tool-registry.js'
+
+// Expression evaluated in the page context. Mirrors the HUD's
+// debug-collector logic — iterates window.__lluiComponents and pulls
+// state, message history, pending+recent effects. Returns a NoteBody
+// (or {} when no debug API). String form so it serializes across the
+// CDP boundary.
+const PAGE_TELEMETRY_EXPR = `(() => {
+  const components = (globalThis).__lluiComponents
+  if (!components) return {}
+  const entries = Object.entries(components)
+  if (entries.length === 0) return {}
+  const stateSnapshot = {}
+  const messageLog = []
+  const pending = []
+  const recent = []
+  const now = Date.now()
+  for (const [name, api] of entries) {
+    try { stateSnapshot[name] = api.getState() } catch { stateSnapshot[name] = { __error: 'getState() threw' } }
+    if (typeof api.getMessageHistory === 'function') {
+      let history = []
+      try { history = api.getMessageHistory({ limit: 50 }) || [] } catch {}
+      for (const r of history) {
+        messageLog.push({ ts: new Date(r.timestamp).toISOString(), component: name, msg: r.msg })
+      }
+    }
+    if (typeof api.getPendingEffects === 'function') {
+      let p = []
+      try { p = api.getPendingEffects() || [] } catch {}
+      for (const e of p) {
+        pending.push({
+          id: e.id, component: name,
+          effect: e.payload != null ? e.payload : (e.type != null ? e.type : null),
+          sinceMs: e.dispatchedAt ? Math.max(0, now - e.dispatchedAt) : 0,
+        })
+      }
+    }
+    if (typeof api.getEffectTimeline === 'function') {
+      let t = []
+      try { t = api.getEffectTimeline(50) || [] } catch {}
+      for (const e of t) {
+        let outcome = null
+        if (e.phase === 'resolved' || e.phase === 'resolved-mocked') outcome = 'ok'
+        else if (e.phase === 'cancelled') outcome = 'cancelled'
+        else if (e.phase === 'errored' || e.phase === 'error') outcome = 'error'
+        if (outcome) recent.push({
+          ts: new Date(e.timestamp).toISOString(), component: name,
+          effect: { type: e.type != null ? e.type : null, id: e.effectId },
+          outcome,
+        })
+      }
+    }
+  }
+  messageLog.sort((a, b) => a.ts < b.ts ? -1 : a.ts > b.ts ? 1 : 0)
+  const trimmed = messageLog.length > 50 ? messageLog.slice(-50) : messageLog
+  const body = { stateSnapshot, messageLog: trimmed }
+  if (pending.length > 0 || recent.length > 0) body.effects = { pending, recent }
+  return body
+})()`
+
+interface PageMeta {
+  url: string
+  viewport: { w: number; h: number; dpr: number }
+}
+
+const PAGE_META_EXPR = `(() => ({
+  url: location.href,
+  viewport: { w: innerWidth, h: innerHeight, dpr: devicePixelRatio || 1 },
+  llui: globalThis.__llui ? {
+    runtime: globalThis.__llui.runtime || 'unknown',
+    compiler: globalThis.__llui.compiler || 'unknown',
+  } : { runtime: 'unknown', compiler: 'unknown' },
+}))()`
+
+interface FallbackOpts {
+  prose?: string
+  captureLevel?: CaptureLevel
+}
+
+async function playwrightFallback(
+  cdp: CdpTransport | null,
+  notesRoot: string,
+  opts: FallbackOpts,
+): Promise<unknown | null> {
+  if (!cdp) return null
+
+  // Take screenshot first — also serves as a probe that the page is
+  // reachable. Errors propagate up so the tool surfaces the cdp diagnostic.
+  let screenshot: { data: string }
+  try {
+    screenshot = await cdp.screenshot({ format: 'png' })
+  } catch (err) {
+    // Playwright not installed, or page not reachable — surface as a
+    // soft fallback failure and let the caller see the upstream error.
+    const message = err instanceof Error ? err.message : String(err)
+    return {
+      status: 'fallback-failed' as const,
+      mode: 'playwright' as const,
+      error: message,
+    }
+  }
+
+  let meta: PageMeta & { llui: { runtime: string; compiler: string } }
+  try {
+    meta = await cdp.evaluatePage<PageMeta & { llui: { runtime: string; compiler: string } }>(
+      PAGE_META_EXPR,
+    )
+  } catch {
+    meta = {
+      url: '',
+      viewport: { w: 0, h: 0, dpr: 1 },
+      llui: { runtime: 'unknown', compiler: 'unknown' },
+    }
+  }
+
+  let noteBody: NoteBody
+  try {
+    noteBody = await cdp.evaluatePage<NoteBody>(PAGE_TELEMETRY_EXPR)
+  } catch {
+    noteBody = {}
+  }
+
+  const frontmatter: Omit<NoteFrontmatter, 'id' | 'ts'> = {
+    author: 'llm',
+    kind: 'capture',
+    captureLevel: opts.captureLevel ?? 'standard',
+    url: meta.url,
+    route: null,
+    routeParams: {},
+    viewport: meta.viewport,
+    componentPath: null,
+    componentMeta: null,
+    annotations: [],
+    screenshot: 'placeholder.png',
+    agentSchemas: [],
+    llui: meta.llui,
+  }
+
+  const created = createNote(notesRoot, {
+    body: opts.prose ?? '',
+    frontmatter,
+    noteBody,
+    screenshot: screenshot.data,
+  })
+
+  const note = readNote(notesRoot, created.sessionId, created.id)
+
+  return {
+    status: 'fulfilled' as const,
+    mode: 'playwright' as const,
+    sessionId: created.sessionId,
+    noteId: created.id,
+    filename: created.filename,
+    frontmatter: note.frontmatter,
+    prose: note.prose,
+    body: note.body,
+    markdown: serializeNote(note),
+  }
+}
 
 export function registerNotesTools(registry: ToolRegistry): void {
   registry.register(
@@ -121,17 +281,23 @@ export function registerNotesTools(registry: ToolRegistry): void {
     {
       name: 'llui_capture',
       description:
-        "LLM-initiated capture. Asks the connected HUD to screenshot the current page (optionally with pre-baked rect/lasso/pin/arrow annotations) and write a note to the notebook. The tool long-polls until the HUD posts back a fulfillment, the request times out, or no HUD is connected. Returns the resulting note inline (markdown + frontmatter) so a follow-up llui_read_note call isn't required. Annotation coordinates are viewport pixels — leave `annotate` empty if you only want a clean snapshot. Use this when you want a current visual of the page; use llui_list_notes / llui_read_note to read what the human has already written.",
+        "LLM-initiated capture. Asks the connected HUD to screenshot the current page and write a note to the notebook; falls back to a headless Playwright browser when no HUD is connected (requires `playwright` installed). The tool long-polls until fulfillment, timeout, or both paths exhaust. Returns the resulting note inline (markdown + frontmatter + base64 screenshot) so a follow-up llui_read_note call isn't required. Annotation coordinates are viewport pixels — leave `annotate` empty if you only want a clean snapshot. Use this when you want a current visual of the page; use llui_list_notes / llui_read_note to read what the human has already written.",
       schema: z.object({
         prose: z.string().optional().describe('Prose body for the captured note (markdown).'),
         annotate: z
           .array(z.unknown())
           .optional()
           .describe(
-            'Pre-baked annotations in viewport pixel coordinates. Schema matches Annotation from @llui/vite-plugin (rect, lasso, pin, arrow, element, highlight). Highlights require P4 runtime element resolution and are skipped silently in v1.',
+            'Pre-baked annotations in viewport pixel coordinates. Schema matches Annotation from @llui/vite-plugin (rect, lasso, pin, arrow, element, highlight). The Playwright fallback does not bake annotations onto the screenshot (skipped silently in v1); the HUD path bakes them.',
           ),
         captureLevel: z.enum(['standard', 'verbose']).optional(),
         timeoutMs: z.number().optional().describe('Long-poll timeout. Default 30000.'),
+        forceMode: z
+          .enum(['hud', 'playwright'])
+          .optional()
+          .describe(
+            "Override auto-select: 'hud' skips the Playwright fallback; 'playwright' goes straight to headless capture without contacting the HUD.",
+          ),
       }),
     },
     'notes',
@@ -141,45 +307,74 @@ export function registerNotesTools(registry: ToolRegistry): void {
           'llui_capture: no dev-server URL configured. Set LLUI_DEV_SERVER, pass devUrl to the MCP server, or start the Vite plugin which stamps the active marker.',
         )
       }
-      const url = `${ctx.devServerUrl}/_llui/capture-request`
-      const payload: Record<string, unknown> = {}
-      if (args.prose !== undefined) payload['prose'] = args.prose
-      if (args.annotate !== undefined) payload['annotate'] = args.annotate
-      if (args.captureLevel !== undefined) payload['captureLevel'] = args.captureLevel
-      if (args.timeoutMs !== undefined) payload['timeoutMs'] = args.timeoutMs
 
-      const res = await fetch(url, {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify(payload),
-      })
-      if (!res.ok) {
-        throw new Error(`llui_capture: POST ${url} → ${res.status}`)
-      }
-      const result = (await res.json()) as {
+      // Try the HUD path first unless forceMode says otherwise.
+      interface HudResult {
         requestId: string
         status: 'fulfilled' | 'timeout' | 'no-client'
         note?: { id: string; filename: string; sessionId: string }
       }
+      let hudResult: HudResult | null = null
+
+      if (args.forceMode !== 'playwright') {
+        const url = `${ctx.devServerUrl}/_llui/capture-request`
+        const payload: Record<string, unknown> = {}
+        if (args.prose !== undefined) payload['prose'] = args.prose
+        if (args.annotate !== undefined) payload['annotate'] = args.annotate
+        if (args.captureLevel !== undefined) payload['captureLevel'] = args.captureLevel
+        if (args.timeoutMs !== undefined) payload['timeoutMs'] = args.timeoutMs
+
+        const res = await fetch(url, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify(payload),
+        })
+        if (!res.ok) {
+          throw new Error(`llui_capture: POST ${url} → ${res.status}`)
+        }
+        hudResult = (await res.json()) as HudResult
+      }
 
       // On fulfillment, return the note inline so the LLM doesn't need
       // a second tool call to see what just landed.
-      if (result.status === 'fulfilled' && result.note) {
-        const sessionId = result.note.sessionId
-        const note = readNote(ctx.notesRoot, sessionId, result.note.id)
+      if (hudResult?.status === 'fulfilled' && hudResult.note) {
+        const sessionId = hudResult.note.sessionId
+        const note = readNote(ctx.notesRoot, sessionId, hudResult.note.id)
         return {
           status: 'fulfilled' as const,
-          requestId: result.requestId,
+          mode: 'hud' as const,
+          requestId: hudResult.requestId,
           sessionId,
-          noteId: result.note.id,
-          filename: result.note.filename,
+          noteId: hudResult.note.id,
+          filename: hudResult.note.filename,
           frontmatter: note.frontmatter,
           prose: note.prose,
           body: note.body,
           markdown: serializeNote(note),
         }
       }
-      return result
+
+      // HUD unavailable or skipped. Try Playwright fallback unless
+      // forceMode is 'hud'.
+      const shouldFallback =
+        args.forceMode === 'playwright' ||
+        (args.forceMode !== 'hud' && hudResult?.status === 'no-client')
+
+      if (shouldFallback) {
+        const fallback = await playwrightFallback(ctx.cdp, ctx.notesRoot, {
+          prose: args.prose,
+          captureLevel: args.captureLevel,
+        })
+        if (fallback) return fallback
+      }
+
+      // Either fallback failed, or we're not falling back. Return the
+      // HUD-side result (or synthesize a no-client when we never tried).
+      return {
+        status: hudResult?.status ?? 'no-client',
+        mode: 'hud' as const,
+        ...(hudResult?.requestId ? { requestId: hudResult.requestId } : {}),
+      }
     },
   )
 
