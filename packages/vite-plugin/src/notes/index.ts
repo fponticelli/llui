@@ -7,6 +7,7 @@
 // these helpers; everything routes through one source of truth.
 
 export {
+  cleanupResolvedTask,
   createNote,
   ensureNotesRoot,
   listNotes,

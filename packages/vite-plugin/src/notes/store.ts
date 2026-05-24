@@ -5,7 +5,15 @@
 //
 // This module is the only writer to disk. The middleware delegates here.
 
-import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs'
+import {
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  readdirSync,
+  statSync,
+  unlinkSync,
+  writeFileSync,
+} from 'node:fs'
 import { join } from 'node:path'
 
 import { parseNote, serializeNote, type SerializedNote } from './frontmatter.js'
@@ -242,4 +250,69 @@ export function listSessions(notesRoot: string): string[] {
  *  (e.g. middleware startup). */
 export function ensureNotesRoot(notesRoot: string): void {
   mkdirSync(notesRoot, { recursive: true })
+}
+
+/**
+ * Delete a resolved task note's files: the task .md + .png plus every
+ * reply note (`replyTo === taskNoteId`) and their screenshots. The
+ * status.jsonl audit log is preserved — those transitions stay as a
+ * trail of what happened.
+ *
+ * Used by the middleware when a task transitions to `applied` (the
+ * success path). Idempotent: missing files are skipped silently.
+ *
+ * Returns the list of deleted filenames (sans the session dir prefix)
+ * so the caller can log/broadcast.
+ */
+export function cleanupResolvedTask(
+  notesRoot: string,
+  sessionId: string,
+  taskNoteId: string,
+): string[] {
+  const sessionDir = join(notesRoot, sessionId)
+  if (!existsSync(sessionDir)) return []
+  const deleted: string[] = []
+  const filenames = listNoteFilenames(sessionDir)
+
+  // First find the task note's own filename + delete it.
+  const taskFile = findNoteFile(sessionDir, taskNoteId)
+  if (taskFile) {
+    deleteNoteFiles(sessionDir, taskFile, deleted)
+  }
+
+  // Then walk every other note in the session looking for replies.
+  for (const f of filenames) {
+    if (f === taskFile) continue
+    let frontmatter: { replyTo?: string }
+    try {
+      const md = readFileSync(join(sessionDir, f), 'utf8')
+      frontmatter = parseNote(md).frontmatter as { replyTo?: string }
+    } catch {
+      continue
+    }
+    if (frontmatter.replyTo === taskNoteId) {
+      deleteNoteFiles(sessionDir, f, deleted)
+    }
+  }
+
+  return deleted
+}
+
+function deleteNoteFiles(sessionDir: string, mdFilename: string, deleted: string[]): void {
+  const mdPath = join(sessionDir, mdFilename)
+  const pngPath = join(sessionDir, mdFilename.replace(/\.md$/, '.png'))
+  try {
+    unlinkSync(mdPath)
+    deleted.push(mdFilename)
+  } catch {
+    /* ignore missing */
+  }
+  try {
+    if (existsSync(pngPath)) {
+      unlinkSync(pngPath)
+      deleted.push(mdFilename.replace(/\.md$/, '.png'))
+    }
+  } catch {
+    /* ignore */
+  }
 }

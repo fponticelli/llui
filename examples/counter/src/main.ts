@@ -1,5 +1,6 @@
 import { component, mountApp, div, button } from '@llui/dom'
 import { mountAnnotateHud } from '@llui/devmode-annotate'
+import './styles.css'
 
 type State = { count: number }
 type Msg =

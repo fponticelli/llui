@@ -660,14 +660,21 @@ export function mountAnnotateHud(opts: MountAnnotateOptions = {}): AnnotateHudHa
     statusLine.textContent = mode === 'rect' ? 'capturing screenshot…' : 'sending…'
     submit(prose, { intent }).then(
       (result) => {
-        const label = intent === 'task' ? 'solve queued' : 'note saved'
-        statusLine.textContent = `${label}: ${result.filename}`
         textarea.value = ''
         pendingRect = null
         dismissActiveOverlay()
         setMode('text')
-        saveBtn.disabled = false
-        solveBtn.disabled = false
+        if (intent === 'task') {
+          // Track this submission so status-changed events update the
+          // status line live. Keep the action buttons disabled until
+          // a terminal state arrives (or the dev closes the modal).
+          trackedTaskNoteId = result.id
+          statusLine.textContent = '⏳ queued for the router…'
+        } else {
+          statusLine.textContent = `✓ note saved (${result.filename})`
+          saveBtn.disabled = false
+          solveBtn.disabled = false
+        }
       },
       (err: Error) => {
         statusLine.textContent = err.message
@@ -836,14 +843,54 @@ export function mountAnnotateHud(opts: MountAnnotateOptions = {}): AnnotateHudHa
 
   // ── SSE subscription ───────────────────────────────────────────────
   // Open an EventSource so the HUD receives LLM-initiated capture
-  // requests. The browser's native EventSource has built-in reconnect;
-  // we don't need a custom retry loop.
+  // requests AND live status updates on the last task we submitted.
+  // The browser's native EventSource has built-in reconnect; we don't
+  // need a custom retry loop.
+  //
+  // `trackedTaskNoteId` is the most recent task the user submitted.
+  // We update the modal's status line as transitions arrive
+  // (claimed → proposed → applied / failed) so the developer sees
+  // claude working in real time instead of a silent disappearance.
+  let trackedTaskNoteId: string | null = null
+
+  const statusLabel = (to: string, reason?: string): string => {
+    switch (to) {
+      case 'open':
+        return '⏳ queued for the router…'
+      case 'claimed':
+        return '🤖 claude is working on it…'
+      case 'in-progress':
+        return '🤖 claude is editing files…'
+      case 'proposed':
+        return '✓ proposed fix ready — review the reply note'
+      case 'accepted':
+        return '✓ accepted; applying…'
+      case 'applied':
+        return '✅ applied — change is in your working tree'
+      case 'rejected':
+        return '✗ rejected'
+      case 'wontfix':
+        return '✗ closed without changes'
+      case 'failed':
+        return `❌ failed${reason ? `: ${reason.slice(0, 80)}` : ''}`
+      default:
+        return `→ ${to}`
+    }
+  }
+
   let eventSource: EventSource | null = null
   if (opts.subscribeEvents !== false && typeof EventSource !== 'undefined') {
     try {
       eventSource = new EventSource(`${origin}/_llui/events?role=hud`)
       eventSource.addEventListener('message', (e: MessageEvent) => {
-        let parsed: { type?: string; requestId?: string; payload?: CaptureRequestPayload }
+        let parsed: {
+          type?: string
+          requestId?: string
+          payload?: CaptureRequestPayload
+          noteId?: string
+          to?: string
+          reason?: string
+        }
         try {
           parsed = JSON.parse(e.data as string)
         } catch {
@@ -853,6 +900,27 @@ export function mountAnnotateHud(opts: MountAnnotateOptions = {}): AnnotateHudHa
           void handleCaptureRequest(parsed.requestId, parsed.payload ?? {}).catch((err) => {
             console.warn('[llui:devmode-annotate] capture-request handler failed:', err)
           })
+          return
+        }
+        if (
+          parsed.type === 'status-changed' &&
+          parsed.noteId &&
+          parsed.noteId === trackedTaskNoteId &&
+          parsed.to
+        ) {
+          statusLine.textContent = statusLabel(parsed.to, parsed.reason)
+          // Terminal states — re-enable the action buttons and stop
+          // tracking. The dev can submit another task.
+          if (
+            parsed.to === 'applied' ||
+            parsed.to === 'rejected' ||
+            parsed.to === 'wontfix' ||
+            parsed.to === 'failed'
+          ) {
+            saveBtn.disabled = false
+            solveBtn.disabled = false
+            trackedTaskNoteId = null
+          }
         }
       })
     } catch (err) {

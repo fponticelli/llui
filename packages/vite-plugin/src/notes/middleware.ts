@@ -15,7 +15,14 @@ import { join } from 'node:path'
 
 import type { CaptureRegistry } from './capture-registry.js'
 import type { EventBus } from './event-bus.js'
-import { createNote, listNotes, listSessions, readNote, readScreenshot } from './store.js'
+import {
+  cleanupResolvedTask,
+  createNote,
+  listNotes,
+  listSessions,
+  readNote,
+  readScreenshot,
+} from './store.js'
 import { rotateSession, resolveCurrentSession } from './session.js'
 import { serializeNote } from './frontmatter.js'
 import { appendStatus, currentStatus, listQueue, readStatusHistory } from './status.js'
@@ -268,7 +275,14 @@ export function createNotesMiddleware(config: NotesMiddlewareConfig): Middleware
             from: 'accepted',
             to: followUp.to,
           })
-          return sendJson(res, 200, { transition, apply })
+          // Successful applies clean up the task's transient files —
+          // the task note, its reply notes, and screenshots. The
+          // status.jsonl audit trail is preserved.
+          let cleanedUp: string[] = []
+          if (apply.ok) {
+            cleanedUp = cleanupResolvedTask(notesRoot, sessionId, id)
+          }
+          return sendJson(res, 200, { transition, apply, cleanedUp })
         }
         return sendJson(res, 200, { transition })
       }
