@@ -20,58 +20,81 @@ function findInstance(scope: Lifetime): ComponentInstance | null {
 }
 
 /**
- * Run a disposer with full error containment. A throw in one disposer
- * MUST NOT abort the loop — the remaining disposers and the
- * subsequent binding-dead-marking pass are load-bearing for memory
- * safety and reconciliation correctness (the original Issue 1
- * symptom: "stale fact-row bindings alive after navigate, which
- * threw during reconcile" turned out to be downstream of a disposer
- * throw that left bindings unflagged in the parent's flatBindings
- * array).
+ * Report a disposer throw. Same contract as `runDisposers` below; split
+ * out as a non-inlinable slow path so the happy-path loop body stays
+ * free of error-handling code.
  *
- * Dev: console.error with stack + accessor label, plus a panic
- * queued on the owning instance so the next commit throws (matches
- * the reconcile/binding-error contract). Prod: console.warn and
- * continue — host stays resilient to one bad disposer.
+ * Dev: console.error + queue panic. Prod: silent (install
+ * `_onBindingError` for structured reporting).
  */
-function runDisposerSafely(disposer: () => void, scope: Lifetime): void {
-  try {
-    disposer()
-  } catch (e) {
-    const err = e instanceof Error ? e : new Error(String(e))
-    const stack = err.stack ? err.stack.split('\n').slice(0, 8).join('\n') : undefined
-    const inst = findInstance(scope)
-    if (inst !== null && inst._onBindingError !== undefined) {
-      try {
-        inst._onBindingError({
-          kind: 'disposer',
-          message: `${err.name}: ${err.message}`,
-          stack,
-        })
-      } catch {
-        // hook itself threw — already in recovery; nothing else to do
-      }
-      return
+function reportDisposerError(e: unknown, scope: Lifetime): void {
+  const err = e instanceof Error ? e : new Error(String(e))
+  const stack = err.stack ? err.stack.split('\n').slice(0, 8).join('\n') : undefined
+  const inst = findInstance(scope)
+  if (inst !== null && inst._onBindingError !== undefined) {
+    try {
+      inst._onBindingError({
+        kind: 'disposer',
+        message: `${err.name}: ${err.message}`,
+        stack,
+      })
+    } catch {
+      // hook itself threw — already in recovery; nothing else to do
     }
-    // Dev: queue panic + console.error with full context. Prod: silent
-    // — install `_onBindingError` (covered above) to get structured
-    // reporting in production. A disposer throw is a programmer error,
-    // not a recoverable runtime condition; the framework still
-    // completes the rest of the cleanup loop (caller code).
-    if (import.meta.env?.DEV) {
-      if (inst !== null && inst._devPendingPanic === undefined) {
-        inst._devPendingPanic = {
-          message: `${err.name}: ${err.message}`,
-          stack,
-          accessor: currentAccessor(),
-        }
+    return
+  }
+  if (import.meta.env?.DEV) {
+    if (inst !== null && inst._devPendingPanic === undefined) {
+      inst._devPendingPanic = {
+        message: `${err.name}: ${err.message}`,
+        stack,
+        accessor: currentAccessor(),
       }
-      if (typeof console !== 'undefined' && typeof console.error === 'function') {
-        console.error(
-          `[llui] disposer threw during lifetime cleanup: ${err.name}: ${err.message}` +
-            (stack ? `\n${stack}` : ''),
-        )
-      }
+    }
+    if (typeof console !== 'undefined' && typeof console.error === 'function') {
+      console.error(
+        `[llui] disposer threw during lifetime cleanup: ${err.name}: ${err.message}` +
+          (stack ? `\n${stack}` : ''),
+      )
+    }
+  }
+}
+
+/**
+ * Run every disposer in `disposers`, with full error containment. A
+ * throw in one disposer MUST NOT abort the loop — the remaining
+ * disposers and the subsequent binding-dead-marking pass are
+ * load-bearing for memory safety and reconciliation correctness (the
+ * original Issue 1 symptom: "stale fact-row bindings alive after
+ * navigate, which threw during reconcile" turned out to be downstream
+ * of a disposer throw that left bindings unflagged in the parent's
+ * flatBindings array).
+ *
+ * Shape: outer `while` + inner `for` + single `try/catch`. The happy
+ * path executes the inner `for` to completion with one try frame for
+ * the whole loop — no per-iteration try/catch overhead. On throw, the
+ * catch reports the error, skips the failing disposer, and the outer
+ * `while` restarts the inner loop at the next index. Worst case
+ * (every disposer throws) costs N try/catch entries, same as the old
+ * per-call wrapper; common case (no disposer throws) costs ONE.
+ *
+ * Hot path: `each.reconcileClear` / row-removal disposes 1000+ row
+ * scopes at a time in jfb's clear1k_x8 / remove benchmarks. The
+ * happy-path optimization here is what makes that cheap.
+ */
+function runDisposers(disposers: Array<() => void>, scope: Lifetime): void {
+  let i = 0
+  const len = disposers.length
+  while (i < len) {
+    const startedAt = i
+    try {
+      for (; i < len; i++) disposers[i]!()
+    } catch (e) {
+      reportDisposerError(e, scope)
+      // Skip the disposer that threw. If V8 didn't bump `i` past the
+      // failing one yet (caught mid-call), advance manually.
+      if (i === startedAt) i = startedAt + 1
+      else i++
     }
   }
 }
@@ -182,9 +205,7 @@ export function disposeLifetime(scope: Lifetime, skipParentRemoval = false): voi
     disposeLifetime(child, skipParentRemoval)
   }
 
-  for (const disposer of scope.disposers) {
-    runDisposerSafely(disposer, scope)
-  }
+  runDisposers(scope.disposers, scope)
 
   // Dev-only: emit disposer events into the owning instance's log.
   // Outer flag check keeps production (no devtools ever installed) at
@@ -251,8 +272,7 @@ export function disposeLifetimesBulk(scopes: Lifetime[]): void {
       disposeLifetimesBulk(children)
     }
     // Run disposers
-    const disposers = scope.disposers
-    for (let d = 0; d < disposers.length; d++) runDisposerSafely(disposers[d]!, scope)
+    runDisposers(scope.disposers, scope)
     // Dev-only: emit disposer events — same guard as disposeLifetime.
     // Dev-only — wrapped in `import.meta.env?.DEV` so the bundler dead-
     // codes the whole block (including `findInstance` and the parent-

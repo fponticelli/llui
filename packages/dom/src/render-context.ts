@@ -82,49 +82,104 @@ export function currentAccessor(): string | null {
  * the bag is complete. The compiler emits `__view` for every
  * `component({...})` call — including identifier-param view functions
  * (`view: (h) => ...`) where it emits a factory that itself calls
- * `createView`. So this fallback is genuinely "shouldn't happen" in
- * compiled code, but staying safe is cheap and the alternative
- * (a `{ send }`-only bag in prod) is a guaranteed crash for any
- * helper that reads `h.show`, `h.each`, etc.
+ * `createView`. So these fallbacks are genuinely "shouldn't happen"
+ * in compiled code — they exist for hand-rolled tests / dev mode.
+ *
+ * Bundle: gating the fallback behind `import.meta.env?.DEV` lets terser
+ * drop `createView` from prod bundles. With createView gone, the
+ * structural primitives only present in the full bag (`show`, `branch`,
+ * `scope`, `memo`, `unsafeHtml`, `useContext`, `clientOnly`) drop too
+ * unless the app's compiler-emitted `__view` factory pulls them in
+ * explicitly. Apps that don't use those primitives (e.g. jfb, which
+ * only references `text`, `each`, `selector`) shrink ~400-800 bytes.
+ *
+ * Prod fallback when `__view` is missing: throw a focused error rather
+ * than silently returning a `{send}`-only bag (which would crash on the
+ * next `bag.text(...)` etc. with a confusing "not a function" error).
  */
 export function getInstanceViewBag<S, M>(
   inst: ComponentInstance | undefined,
   send: Send<M>,
 ): unknown {
-  if (!inst) return createView<S, M>(send)
+  if (!inst) {
+    if (import.meta.env?.DEV) return createView<S, M>(send)
+    throw new Error('[LLui] getInstanceViewBag: missing instance')
+  }
   if (inst._viewBag !== undefined) return inst._viewBag
   const factory = (inst.def as unknown as { __view?: (s: Send<M>) => unknown }).__view
-  const bag = factory ? factory(send) : createView<S, M>(send)
+  let bag: unknown
+  if (factory) {
+    bag = factory(send)
+  } else if (import.meta.env?.DEV) {
+    bag = createView<S, M>(send)
+  } else {
+    throw new Error(
+      `[LLui] component "${inst.def.name}" missing __view — recompile with @llui/vite-plugin`,
+    )
+  }
   inst._viewBag = bag
   return bag
 }
 
 /**
- * Capture the current render context as a STABLE snapshot. Use this
- * (not `getRenderContext`) anywhere a primitive will retain `ctx` for
- * deferred reads — `block.reconcile`, async callbacks, mount-time
- * deferred builders, etc.
+ * BuildEntry recursion depth. Incremented by `enterBuildEntry()` at the
+ * start of each `buildEntry` call (each.ts / virtual-each.ts) and
+ * decremented by `exitBuildEntry()`. Used by `captureRenderContext` to
+ * decide whether the live `currentContext` is the each-runtime's
+ * shared `buildCtx` singleton (depth > 0 → must snapshot) or a
+ * per-mount / per-component context (depth === 0 → safe to live-read).
  *
- * Why a snapshot: when this primitive is constructed inside another
- * each's render, the live `currentContext` IS the each-runtime's
- * shared mutable `buildCtx` singleton. Any subsequent buildEntry call
- * (including ones triggered by an unrelated sub-app's dispatch)
- * reassigns fields on that singleton. Reading `ctx.structuralBlocks`
- * / `ctx.allBindings` at reconcile time then returns whatever the
- * singleton has been mutated to — not the values that were live when
- * this primitive was constructed. Symptom: nested structural blocks
- * register against the wrong instance and silently freeze.
+ * Module-level so a single counter spans every each/virtualEach in the
+ * app. Reset to 0 across mounts is implicit: depth always returns to
+ * its prior value via the matched enter/exit pair.
+ */
+let buildEntryDepth = 0
+
+/** @internal — called by each/virtualEach at the start of buildEntry */
+export function enterBuildEntry(): void {
+  buildEntryDepth++
+}
+
+/** @internal — called by each/virtualEach at the end of buildEntry */
+export function exitBuildEntry(): void {
+  buildEntryDepth--
+}
+
+/** @internal — true when we're inside one or more buildEntry calls */
+export function isInsideBuildEntry(): boolean {
+  return buildEntryDepth > 0
+}
+
+/**
+ * Capture the current render context as a stable reference. Returns the
+ * live `currentContext` directly when we're at top level
+ * (`buildEntryDepth === 0`); allocates a snapshot only when inside one
+ * or more `buildEntry` calls, where the live context IS the each's
+ * shared `buildCtx` singleton.
  *
- * The snapshot pins every field at construction time. `getRenderContext`
- * stays a live-read for callers that only use ctx synchronously during
- * the call (most element helpers + `text` / `sample` / `onMount`).
+ * Why a snapshot is needed inside buildEntry: when this primitive is
+ * constructed inside another each's render, the live `currentContext`
+ * IS the each-runtime's shared mutable `buildCtx` singleton. Any
+ * subsequent buildEntry call (including ones triggered by an unrelated
+ * sub-app's dispatch) reassigns fields on that singleton. Reading
+ * `ctx.structuralBlocks` / `ctx.allBindings` at reconcile time then
+ * returns whatever the singleton has been mutated to — not the values
+ * that were live when this primitive was constructed. Symptom: nested
+ * structural blocks register against the wrong instance and silently
+ * freeze.
  *
- * Cost: one ~8-field object allocation per call. For the relatively few
- * lazy-capture primitives (each, virtualEach, branch, lazy, unsafeHtml)
- * this is negligible compared to the structural work each one does.
+ * Why live-read at top level is safe: mount.ts / hydrate.ts / each's
+ * own block.reconcile create their RenderContext as a per-call object
+ * (or per-mount object held only by the closure that constructed it)
+ * — never the each module's shared singleton. So no aliasing risk.
+ *
+ * `getRenderContext` stays a live-read unconditionally for callers
+ * that only use ctx synchronously during the call (most element
+ * helpers + `text` / `sample` / `onMount`).
  */
 export function captureRenderContext(primitiveName?: string): RenderContext {
   const live = getRenderContext(primitiveName)
+  if (buildEntryDepth === 0) return live
   return {
     rootLifetime: live.rootLifetime,
     state: live.state,

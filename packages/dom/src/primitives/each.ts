@@ -7,6 +7,9 @@ import {
   enterAccessor,
   exitAccessor,
   getInstanceViewBag,
+  enterBuildEntry,
+  exitBuildEntry,
+  isInsideBuildEntry,
   type RenderContext,
 } from '../render-context.js'
 import {
@@ -196,11 +199,12 @@ export function each<S, T, M = unknown>(opts: EachOptions<S, T, M>): Node[] {
       const parent = anchor.parentNode
       // Trace the reconcile entry — captured BEFORE the parent-null
       // early-return so we can see "block exists but its DOM was
-      // detached" cases too.
-      const traceItemsLenBefore = entries.length
+      // detached" cases too. DEV-only so the bundler drops the snapshot
+      // work (entries.length read, key.map allocation) from prod.
+      const traceItemsLenBefore = import.meta.env?.DEV ? entries.length : 0
       const traceKeysBefore: Array<string | number> = import.meta.env?.DEV
         ? entries.map((e) => e.key)
-        : []
+        : (null as unknown as Array<string | number>)
       if (!parent) {
         if (import.meta.env?.DEV) {
           pushTrace({
@@ -660,13 +664,14 @@ function buildEntry<S, T, M>(
   // `onMount(cb)` fall back to `document.body` instead of the parent
   // component's container.
   //
-  // Snapshot every mutable singleton field before writing — restore
-  // at the end. When an outer each's buildEntry calls render and
-  // render constructs an inner each() whose own buildEntry recurses
-  // through this same path, `ctx === buildCtx` (the shared
-  // module-level singleton); `buildBag` is the same kind of shared
-  // singleton. Without the save/restore, the inner's mutations leak
-  // back into outer's render frame:
+  // Save/restore the 10 mutable singleton fields ONLY when nested
+  // inside another buildEntry call. When an outer each's buildEntry
+  // is running and calls render, render may construct an inner each()
+  // whose own buildEntry recurses through this same path —
+  // `ctx === buildCtx` (the shared module-level singleton); `buildBag`
+  // is the same kind of shared singleton. Without the save/restore in
+  // that case, the inner's mutations leak back into outer's render
+  // frame:
   //
   //   - `buildCtx.rootLifetime` drives binding / disposer ownership
   //     for every element helper called from outer render. Leaked,
@@ -688,19 +693,43 @@ function buildEntry<S, T, M>(
   // The inst-level fields copied into buildCtx below (allBindings,
   // structuralBlocks, dom, instance, send, container) are invariants
   // across the component's lifetime — they're set the same in every
-  // buildEntry call, so leaking them is a no-op.
+  // buildEntry call, so leaking them is a no-op even in the nested
+  // case.
+  //
+  // At top level (depth === 0), no one reads buildCtx/buildBag after
+  // this returns: each's for-loop / reconcileEntries writes every
+  // field fresh on the next iteration, and `setRenderContext(ctx)` at
+  // the end points currentContext back at the captured (per-mount)
+  // ctx — not at buildCtx — so subsequent element helpers in the
+  // surrounding render see the right context without needing the
+  // singleton fields restored. Skipping the save/restore saves 20
+  // property accesses per row built (measurable on create10k).
   //
   // Regression coverage: test/nested-each-trailing-binding.test.ts.
-  const prevRootLifetime = buildCtx.rootLifetime
-  const prevState = buildCtx.state
-  const prevBagSend = buildBag.send
-  const prevBagAcc = buildBag.acc
-  const prevBagIndex = buildBag.index
-  const prevBagGetItemProxy = buildBag._getItemProxy
-  const prevBagEntry = (buildBag as Record<string, unknown>).entry
-  const prevBagH = (buildBag as Record<string, unknown>).h
-  const prevBagTpl = (buildBag as Record<string, unknown>).__tpl
-  const prevBagRowUpd = (buildBag as Record<string, unknown>).__rowUpd
+  const nested = isInsideBuildEntry()
+  enterBuildEntry()
+  let prevRootLifetime: Lifetime | undefined
+  let prevState: unknown
+  let prevBagSend: unknown
+  let prevBagAcc: unknown
+  let prevBagIndex: unknown
+  let prevBagGetItemProxy: unknown
+  let prevBagEntry: unknown
+  let prevBagH: unknown
+  let prevBagTpl: unknown
+  let prevBagRowUpd: unknown
+  if (nested) {
+    prevRootLifetime = buildCtx.rootLifetime
+    prevState = buildCtx.state
+    prevBagSend = buildBag.send
+    prevBagAcc = buildBag.acc
+    prevBagIndex = buildBag.index
+    prevBagGetItemProxy = buildBag._getItemProxy
+    prevBagEntry = (buildBag as Record<string, unknown>).entry
+    prevBagH = (buildBag as Record<string, unknown>).h
+    prevBagTpl = (buildBag as Record<string, unknown>).__tpl
+    prevBagRowUpd = (buildBag as Record<string, unknown>).__rowUpd
+  }
   buildCtx.rootLifetime = scope
   buildCtx.state = currentState
   buildCtx.allBindings = ctx.allBindings
@@ -741,24 +770,24 @@ function buildEntry<S, T, M>(
     scope.itemUpdaters = []
   }
 
-  // Restore every snapshotted singleton field. When `ctx === buildCtx`
-  // (nested each), `setRenderContext(ctx)` alone is a no-op against
-  // the shared singleton and the inner's mutations would leak into
-  // outer's remaining render. See the snapshot comment above for
-  // which fields actually matter and why.
-  buildCtx.rootLifetime = prevRootLifetime
-  buildCtx.state = prevState
-  buildBag.send = prevBagSend
-  buildBag.acc = prevBagAcc
-  buildBag.index = prevBagIndex
-  buildBag._getItemProxy = prevBagGetItemProxy
-  ;(buildBag as Record<string, unknown>).entry = prevBagEntry
-  ;(buildBag as Record<string, unknown>).h = prevBagH
-  ;(buildBag as Record<string, unknown>).__tpl = prevBagTpl
-  ;(buildBag as Record<string, unknown>).__rowUpd = prevBagRowUpd
+  // Restore singleton fields only in the nested case — see the snapshot
+  // comment above for why this is safe at depth === 0.
+  if (nested) {
+    buildCtx.rootLifetime = prevRootLifetime!
+    buildCtx.state = prevState
+    buildBag.send = prevBagSend
+    buildBag.acc = prevBagAcc
+    buildBag.index = prevBagIndex
+    buildBag._getItemProxy = prevBagGetItemProxy
+    ;(buildBag as Record<string, unknown>).entry = prevBagEntry
+    ;(buildBag as Record<string, unknown>).h = prevBagH
+    ;(buildBag as Record<string, unknown>).__tpl = prevBagTpl
+    ;(buildBag as Record<string, unknown>).__rowUpd = prevBagRowUpd
+  }
   clearRenderContext()
   setFlatBindings(prevFlatBindings)
   setRenderContext(ctx)
+  exitBuildEntry()
 
   return entry
 }
