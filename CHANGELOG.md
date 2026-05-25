@@ -11,6 +11,25 @@ All notable changes to LLui packages are documented here. LLui is a pre-1.0 proj
 
 Packages version in lockstep at release time: `@llui/dom`, `@llui/vite-plugin`, `@llui/test`, `@llui/router`, `@llui/transitions`, `@llui/components`, `@llui/vike` share a version line. `@llui/effects`, `@llui/mcp`, `@llui/eslint-plugin`, `@llui/agent`, and `llui-agent` have their own cadence.
 
+## 2026-05-25 — 0.4.5 / 0.5.8
+
+**Released:** `@llui/{dom,components,router,transitions,vike,test,agent}@0.4.5`; `llui-agent@0.4.5`; `@llui/mcp@0.5.8`
+
+`@llui/dom` ships a correctness fix for "Pattern-4 stale Node[] capture" — a class of bug where an `each()` / `branch()` constructed at an outer view site and threaded through a helper view (per the documented composition pattern) silently lost track of its current entries when an ancestor `show()` / `branch()` rebuilt its wrapper element. Reported on dicerun2's `/studio` Roller tab: clicking Roll a second time left the result-hero containing only the boundary comments. The remaining tier-1 packages republish to pick up the new `@llui/dom` peer range. `@llui/agent` ships a small Cloudflare Workers compatibility fix.
+
+### `@llui/dom@0.4.5`
+
+- **Fixed** `each()` / `branch()` now self-heal when an ancestor structural primitive (`show()` / outer `branch()`) rebuilds its wrapper element from a stale user-passed Node[]. Pre-fix: when a parent view constructed `each()` at its view site and threaded the returned Node[] through a helper that placed the array inside a `show()`'s arm builder (the documented Pattern 4), only the boundary comments (`<!--each-->` / `<!--each-end-->`) moved into the new wrapper after a show false→true swap — the entries built by reconciles between outer-view time and now stayed orphaned in the old detached wrapper. Surfaced as dicerun2's "second Roll click shows an empty result hero" symptom. The fix: every `each()` / `branch()` tracks its `anchor.parentNode` across reconciles; when an arm-swap fires the runtime drains a one-shot post-Phase-1 fixup pass that calls a new `rebindParent(state)` hook on each structural block. Drifted entries are re-attached as a contiguous `Range.extractContents()` move (which carries along nested-primitive content too). Regression coverage: `each-rekey-inside-show-loses-dom.test.ts`, `branch-pattern4-stale-capture.test.ts`.
+- **Improved** Removed an unused `eslint-disable-next-line no-console` directive in `dev-trace.ts` — no `no-console` rule was ever configured in `eslint.config.ts`, so the suppression was lint noise.
+
+### `@llui/agent@0.4.5`
+
+- **Fixed** `server/lap/narrate.ts` no longer imports `randomUUID` from the legacy unprefixed `'crypto'` module. That import is Node-only and would break the `@llui/agent/server/cloudflare` entry on Workers. Now uses the global `crypto.randomUUID()`, matching the three other server files (`mcp/router.ts`, `http/mint.ts`, `ws/rpc.ts`).
+
+### `@llui/{components,router,transitions,vike,test}@0.4.5` / `llui-agent@0.4.5` / `@llui/mcp@0.5.8`
+
+- **Improved** Cascade republish — peer `@llui/dom` pinned to `^0.4.5`. No source changes.
+
 ## 2026-05-24 — 0.4.4 / 0.5.7
 
 **Released:** `@llui/{dom,components,router,transitions,vike,test,agent}@0.4.4`; `llui-agent@0.4.4`; `@llui/{vite-plugin,mcp}@0.5.7`; `@llui/devmode-annotate@0.0.2`
