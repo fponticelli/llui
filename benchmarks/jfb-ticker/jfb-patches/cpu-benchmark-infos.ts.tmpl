@@ -1,0 +1,89 @@
+// === ticker-bench:begin ===
+// Injected into webdriver-ts/src/benchmarksCommon.ts inside the
+// `cpuBenchmarkInfosArray` literal, just before its closing `]`.
+// Maintained by benchmarks/jfb-ticker/jfb-patches/cpu-benchmark-infos.ts —
+// to edit, change that file and re-run `pnpm bench:ticker:setup`.
+//
+// Higher warmup counts on the burst ops smooth the variance from larger
+// per-cycle work; the cheap single-cycle ops use 5 like upstream's _01.
+  {
+    id: "50_ticker_mount",
+    label: "ticker:mount-200",
+    warmupCount: 3,
+    description: "mounting the initial board (200 symbols + dashboard).",
+    type: BenchmarkType.CPU,
+    allowBatching: false,
+    layoutEventRequired: true,
+    additionalNumberOfRuns: 0,
+  },
+  {
+    id: "51_ticker_tick-1",
+    label: "ticker:tick×1",
+    warmupCount: 5,
+    description: "one wide tick: 2 dashboard paths + 5 symbol rows.",
+    type: BenchmarkType.CPU,
+    allowBatching: true,
+    layoutEventRequired: true,
+    additionalNumberOfRuns: 0,
+  },
+  {
+    id: "52_ticker_tick-100",
+    label: "ticker:tick×100",
+    warmupCount: 3,
+    description: "100 wide ticks, each flushed individually.",
+    type: BenchmarkType.CPU,
+    allowBatching: true,
+    layoutEventRequired: true,
+    additionalNumberOfRuns: 0,
+  },
+  {
+    id: "53_ticker_burst-1k",
+    label: "ticker:burst-1k",
+    warmupCount: 2,
+    description: "1000 wide ticks, each flushed individually.",
+    type: BenchmarkType.CPU,
+    allowBatching: true,
+    layoutEventRequired: true,
+    additionalNumberOfRuns: 0,
+  },
+  {
+    id: "54_ticker_narrow-100",
+    label: "ticker:narrow×100",
+    warmupCount: 3,
+    description: "100 narrow ticks: 1 dashboard path each, no symbol rows. Measures mask-gating cost.",
+    type: BenchmarkType.CPU,
+    allowBatching: true,
+    layoutEventRequired: true,
+    additionalNumberOfRuns: 0,
+  },
+  {
+    id: "55_ticker_wide-toggle",
+    label: "ticker:wide-toggle",
+    warmupCount: 5,
+    description: "flip displayMode — fan-out to all 200 rows.",
+    type: BenchmarkType.CPU,
+    allowBatching: false,
+    layoutEventRequired: true,
+    additionalNumberOfRuns: 0,
+  },
+  {
+    id: "56_ticker_churn-50",
+    label: "ticker:churn-50",
+    warmupCount: 3,
+    description: "drop first 50 rows, append 50 fresh — keyed-list reconciliation.",
+    type: BenchmarkType.CPU,
+    allowBatching: false,
+    layoutEventRequired: true,
+    additionalNumberOfRuns: 0,
+  },
+  {
+    id: "57_ticker_clear",
+    label: "ticker:clear",
+    warmupCount: 5,
+    description: "clear all rows and reset dashboard.",
+    type: BenchmarkType.CPU,
+    allowBatching: false,
+    layoutEventRequired: true,
+    additionalNumberOfRuns: 0,
+  },
+// === ticker-bench:end ===
