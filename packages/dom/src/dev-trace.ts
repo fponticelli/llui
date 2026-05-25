@@ -109,7 +109,6 @@ export function installTraceGlobals(): void {
   w.__lluiTrace = []
   w.__lluiTraceEnabled = true
   w.__lluiTraceDump = (): void => {
-    // eslint-disable-next-line no-console
     console.log(
       `[lluiTrace] ${w.__lluiTrace?.length ?? 0} entries:\n` +
         JSON.stringify(w.__lluiTrace, null, 2),

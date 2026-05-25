@@ -134,6 +134,17 @@ export function each<S, T, M = unknown>(opts: EachOptions<S, T, M>): Node[] {
 
   const initialItems = callItems(opts, ctx.state as S)
   let lastItemsRef = initialItems
+  // Tracks the anchor's parent across reconciles. Used by `rebindParent`
+  // (and the top-of-reconcile self-heal) to detect that an ancestor
+  // structural primitive (e.g. `branch` / `show`) swapped arms and
+  // re-parented our boundary comments into a freshly-built wrapper.
+  // When that happens, the wrapper was constructed from the user-passed
+  // Node[] returned by `each()` at outer-view time — which captured
+  // ONLY the initial entries between `anchor` and `endAnchor`. The
+  // entries built by subsequent reconciles drift into the old detached
+  // wrapper; we re-attach them here. See the bug report at
+  // `docs/llui-issues/each-add-after-remove-loses-dom.md` (dicerun2).
+  let lastParent: Node | null = null
 
   // Dev-only diff tracking: if the owning component has an _eachDiffLog
   // (installed by devtools), we capture key sets before/after each
@@ -226,11 +237,28 @@ export function each<S, T, M = unknown>(opts: EachOptions<S, T, M>): Node[] {
         return
       }
 
+      const parentChanged = parent !== lastParent
+      // Self-heal drifted entries when our wrapper was re-built by an
+      // ancestor primitive (Pattern-4 stale-Node[] capture). See the
+      // `lastParent` declaration above for the full explanation. Cheap
+      // when nothing drifted — one parentNode comparison per entry-with-
+      // nodes.
+      if (parentChanged && entries.length > 0) {
+        reattachDriftedEntries(entries, parent, endAnchor, ctx)
+      }
+      lastParent = parent
+
       const newItems = callItems(opts, state as S)
       const itemsRefChanged = newItems !== lastItemsRef
 
-      // Fast path: same array reference → skip entirely.
-      if (!itemsRefChanged) {
+      // Fast path: same array reference → skip entirely. UNLESS the
+      // parent just changed — when an ancestor arm-swap re-parented
+      // our anchors after a previous Phase 1 pass early-returned on
+      // `parent === null`, we still owe the items reconcile a run so
+      // the initial entries appear in the live wrapper. `parentChanged`
+      // catches that case (lastParent was null or the old detached
+      // parent; either way, !== current).
+      if (!itemsRefChanged && !parentChanged) {
         if (import.meta.env?.DEV) {
           pushTrace({
             kind: 'reconcile',
@@ -436,6 +464,35 @@ export function each<S, T, M = unknown>(opts: EachOptions<S, T, M>): Node[] {
         }
       }
     },
+
+    /**
+     * Self-heal hook invoked by the runtime after a Phase 1 pass when a
+     * sibling `branch`/`show` swapped arms during the cycle. By the time
+     * this fires, an ancestor wrapper may have been re-built from the
+     * stale user-passed Node[] (Pattern 4) — moving `anchor` and
+     * `endAnchor` into the new wrapper but leaving the previously-built
+     * entries orphaned in the old detached wrapper. We reproduce the
+     * top-of-reconcile self-heal here: re-attach drifted entries, and
+     * if `parent` is finally non-null after being null during the first
+     * pass, run a delayed initial reconcile so the empty wrapper gets
+     * populated within the same commit.
+     */
+    rebindParent(state: unknown) {
+      const parent = anchor.parentNode
+      if (!parent) return
+      const parentChanged = parent !== lastParent
+      if (!parentChanged) return
+      if (entries.length > 0) {
+        reattachDriftedEntries(entries, parent, endAnchor, ctx)
+      }
+      lastParent = parent
+      // Initial reconcile we owed from the earlier pass — items may have
+      // changed while `parent` was null. Force a re-run by invalidating
+      // the items ref cache and going through the main reconcile.
+      // Safe to call from inside Phase 1 fixup: idempotent.
+      lastItemsRef = null as unknown as T[]
+      block.reconcile(state, FULL_MASK, FULL_MASK)
+    },
   }
 
   // Register the block BEFORE building initial row entries so that this
@@ -589,6 +646,60 @@ function fireEnter<T>(
   ) {
     void opts.enter(entry.nodes)
   }
+}
+
+/**
+ * Pattern-4 self-heal: when an ancestor structural primitive (`branch` /
+ * `show`) re-built its wrapper from the stale user-passed Node[] that
+ * `each()` returned at outer-view time, only `anchor` and `endAnchor`
+ * actually move into the new wrapper — the entries built by reconciles
+ * after outer-view time were never in the captured array. Detect drift
+ * and move them as a contiguous block via `Range.extractContents()`,
+ * which also captures any nested-primitive content (inner each entries,
+ * branch arms) that lived between the first/last entry nodes in the old
+ * detached parent. No-op when entries are still in `parent` (the common
+ * case).
+ */
+function reattachDriftedEntries<T>(
+  entries: Entry<T>[],
+  parent: Node,
+  endAnchor: Node,
+  ctx: RenderContext,
+): void {
+  // Find the first / last entry that actually owns DOM nodes. Empty-
+  // render entries are legal and we skip them on both ends.
+  let firstNode: Node | null = null
+  let lastNode: Node | null = null
+  for (let i = 0; i < entries.length; i++) {
+    const ns = entries[i]!.nodes
+    if (ns.length > 0) {
+      firstNode = ns[0]!
+      break
+    }
+  }
+  if (!firstNode) return
+  for (let i = entries.length - 1; i >= 0; i--) {
+    const ns = entries[i]!.nodes
+    if (ns.length > 0) {
+      lastNode = ns[ns.length - 1]!
+      break
+    }
+  }
+  if (!lastNode) return
+  // Drift check: if the first live entry node is already in `parent`,
+  // the entries are where we expect — no migration needed.
+  const oldParent = firstNode.parentNode
+  if (oldParent === parent || oldParent === null) return
+  // Range across the contiguous entry territory in the old detached
+  // parent. `extractContents()` detaches the range and returns a
+  // fragment we can reinsert; siblings between firstNode and lastNode
+  // include any reconciled nested-primitive content, so the migration
+  // is recursively complete.
+  const range = ctx.dom.createRange()
+  range.setStartBefore(firstNode)
+  range.setEndAfter(lastNode)
+  const frag = range.extractContents()
+  parent.insertBefore(frag, endAnchor)
 }
 
 function buildEntry<S, T, M>(

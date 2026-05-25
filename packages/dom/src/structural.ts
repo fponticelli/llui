@@ -21,4 +21,17 @@ export interface StructuralBlock {
   /** Update only the entries at the given indices — O(k) instead of O(n).
    *  Used when the compiler detects which indices the update loop modifies. */
   reconcileChanged?(state: unknown, stride: number): void
+  /**
+   * Optional self-heal callback invoked by the runtime after a Phase 1
+   * pass when an ancestor structural primitive (`branch` / `show`) swapped
+   * arms during the cycle. Arm swaps can move a block's anchor comments
+   * into a freshly-built wrapper element without bringing along the
+   * block's currently-rendered entries — see "Pattern 4 stale-Node[]
+   * capture" in `primitives/each.ts`. Implementers should: (1) re-bind
+   * `parent = anchor.parentNode`, (2) re-attach drifted entries between
+   * the boundary comments, (3) run any items reconcile that the earlier
+   * Phase 1 pass skipped because `anchor.parentNode` was null at the
+   * time. Cheap when nothing changed: one parentNode comparison.
+   */
+  rebindParent?(state: unknown): void
 }

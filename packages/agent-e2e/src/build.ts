@@ -31,7 +31,17 @@ export async function bundleHost(): Promise<string> {
     // Node-only packages (node:http etc.) are not imported by host.ts.
     define: {
       // esbuild replaces process.env.NODE_ENV for any deps that check it
-      'process.env.NODE_ENV': '"production"',
+      'process.env.NODE_ENV': '"development"',
+      // The host's App component is authored as a raw `ComponentDef`
+      // literal — the LLui compiler transform isn't part of esbuild's
+      // pipeline, so `__view` is never emitted. @llui/dom's
+      // `getInstanceViewBag` gates the `createView` fallback for
+      // hand-rolled components behind `import.meta.env?.DEV`; without
+      // the define below the fallback dead-codes and `mountApp` throws
+      // a "missing __view — recompile with @llui/vite-plugin" error at
+      // page load. Setting `import.meta.env.DEV = true` opts this
+      // bundle into the dev path so hand-rolled defs mount correctly.
+      'import.meta.env.DEV': 'true',
     },
   })
 

@@ -219,6 +219,15 @@ export interface ComponentInstance<S = unknown, M = unknown, E = unknown> {
    */
   _onBindingError?: (info: { kind: string; key?: string; message: string; stack?: string }) => void
   /**
+   * @internal — set by `branch.reconcile` when an arm swap fires. The
+   * runtime drains it after Phase 1 by calling `block.rebindParent?(state)`
+   * on every structural block so they can re-attach drifted entries
+   * (Pattern-4 stale-Node[] capture; see `primitives/each.ts`). One-shot:
+   * cleared by the consumer after the rescan. The flag covers `show` too,
+   * since `show` is a thin wrapper over `branch`.
+   */
+  _postPhase1Rescan?: boolean
+  /**
    * @internal — DEV-only. Populated by `reportReconcileError` /
    * `reportBindingError` when an accessor throws AND no `_onBindingError`
    * hook is installed. The next `processMessages` call sees this and
@@ -703,6 +712,8 @@ function genericUpdate<S, M, E>(
     }
   }
 
+  rebindAfterArmSwap(inst as ComponentInstance, state)
+
   // Phase 2 — compact + update bindings
   _runPhase2(
     state,
@@ -838,9 +849,37 @@ export function _handleMsg(
     }
   }
 
+  rebindAfterArmSwap(inst, s)
+
   const b = inst.allBindings
   _runPhase2(s, dirty, dirtyHi, b, b.length, inst.def.name, inst._onBindingError)
   return [s, e]
+}
+
+/**
+ * If Phase 1 swapped any branch/show arm, run a single follow-up pass
+ * over `inst.structuralBlocks` to give each block a chance to re-bind
+ * its parent and self-heal drifted entries. Specifically targets the
+ * "Pattern 4 stale-Node[] capture" failure mode — see
+ * `primitives/each.ts::reattachDriftedEntries`. Runs at most once per
+ * commit: the consumer clears the flag before iterating, and the
+ * `rebindParent` implementations are no-ops when the anchor's parent
+ * is unchanged. Errors flow through `reportReconcileError` so one bad
+ * rebind doesn't abort sibling blocks or Phase 2.
+ */
+function rebindAfterArmSwap(inst: ComponentInstance, state: unknown): void {
+  if (!inst._postPhase1Rescan) return
+  inst._postPhase1Rescan = false
+  const blocks = inst.structuralBlocks
+  for (let bi = 0; bi < blocks.length; bi++) {
+    const block = blocks[bi]
+    if (!block || !block.rebindParent) continue
+    try {
+      block.rebindParent(state)
+    } catch (e) {
+      reportReconcileError(inst, e)
+    }
+  }
 }
 
 /**
