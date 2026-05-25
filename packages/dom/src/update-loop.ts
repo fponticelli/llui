@@ -106,6 +106,20 @@ function assertCompilerCompatibility(defName: string, version: string | undefine
  *
  * @internal
  */
+/**
+ * Population count (set-bits) for a 32-bit number. Used by the
+ * fast-path dispatcher in `_handleMsg` to decide whether the prefix
+ * walk is worth its cost. Standard SWAR popcount, ~4 ALU ops, JIT-
+ * friendly: V8 lowers this to a single `POPCNT` instruction on x86.
+ *
+ * @internal
+ */
+function popcount32(n: number): number {
+  n = n - ((n >>> 1) & 0x55555555)
+  n = (n & 0x33333333) + ((n >>> 2) & 0x33333333)
+  return (((n + (n >>> 4)) & 0x0f0f0f0f) * 0x01010101) >>> 24
+}
+
 export function computeDirtyFromPrefixes(
   prefixes: ReadonlyArray<(state: unknown) => unknown>,
   prev: unknown,
@@ -791,8 +805,17 @@ export function _handleMsg(
   inst.state = s
   inst._onCommit?.(s)
 
+  // Threshold-gated prefix walk. The walk recovers leaf-path precision
+  // but costs O(prefixes.length) closure calls per commit (~30ns each).
+  // When the conservative mask is already narrow (case writes few
+  // top-level fields, e.g. jfb's `select` / `update` which dirty 1 bit
+  // each), the prefix walk cannot meaningfully tighten the mask, so the
+  // walk is pure overhead. Heuristic: walk only when the conservative
+  // mask exceeds POPCOUNT_THRESHOLD bits. The break-even point is
+  // roughly (saved_bits × bindings-per-bit × ~50ns) > (prefixes.length
+  // × ~30ns); for typical components that's ~4 dirty bits.
   const prefixes = inst.def.__prefixes as ReadonlyArray<(s: unknown) => unknown> | undefined
-  if (prefixes !== undefined) {
+  if (prefixes !== undefined && popcount32(dirty) + popcount32(dirtyHi) > 4) {
     const precise = computeDirtyFromPrefixes(prefixes, oldState, s)
     if (typeof precise === 'number') {
       dirty = precise
