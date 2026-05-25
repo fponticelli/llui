@@ -11,6 +11,37 @@ All notable changes to LLui packages are documented here. LLui is a pre-1.0 proj
 
 Packages version in lockstep at release time: `@llui/dom`, `@llui/vite-plugin`, `@llui/test`, `@llui/router`, `@llui/transitions`, `@llui/components`, `@llui/vike` share a version line. `@llui/effects`, `@llui/mcp`, `@llui/eslint-plugin`, `@llui/agent`, and `llui-agent` have their own cadence.
 
+## 2026-05-24 — 0.4.4 / 0.5.7
+
+**Released:** `@llui/{dom,components,router,transitions,vike,test,agent}@0.4.4`; `llui-agent@0.4.4`; `@llui/{vite-plugin,mcp}@0.5.7`; `@llui/devmode-annotate@0.0.2`
+
+`@llui/dom` ships a real correctness fix for a cross-instance render-context leak that silently froze nested-each bindings in apps using `subApp`. The remaining tier-1 packages republish to pick up the new `@llui/dom` peer range. `@llui/devmode-annotate` lands the full proposal: notes-on-disk, lasso/HUD overlay, MCP capture surface, and the auto-Solve attention router — wired through `@llui/vite-plugin`'s new notes middleware and `@llui/mcp`'s notes resources/tools.
+
+### `@llui/dom@0.4.4`
+
+- **Fixed** Nested structural primitives (`each`, `virtualEach`, `branch`, `lazy`, `unsafeHtml`) now snapshot the live render context at construction via the new `captureRenderContext()`. Pre-fix, primitives nested inside an outer `each.render` captured the shared `buildCtx` singleton; an intervening sub-app's `buildEntry` would reassign its `structuralBlocks` / `allBindings` to the sub-app's arrays, and the nested primitive's later reconciles would register their new blocks/bindings into the wrong component instance — silently freezing the owning component's view until a re-key happened in a window where the singleton coincidentally pointed at the right instance. Surfaced as a slider/number-input pair where state updated correctly but the bound DOM stayed stale; same class would have hit any `subApp` consumer with nested control flow. Regression coverage: `nested-each-cross-instance-blocks.test.ts`, `nested-branch-cross-instance.test.ts`, `nested-each-trailing-binding.test.ts`.
+- **Added** `autocapitalize` on `BaseAttributes` and `autocorrect` on `InputAttributes` / `TextareaAttributes`. Both are real HTML attributes regularly needed on free-form text inputs whose content shouldn't be munged by the mobile keyboard (dice expressions, code-shaped identifiers). Workarounds in consumers that called `setAttribute` from an `onMount` can revert.
+- **Added** Dev-only `window.__lluiTrace` ring buffer with `__lluiTraceDump()` / `__lluiTraceClear()` / `__lluiTraceEnable()` globals. Captures every dispatch (msgType, dirty mask, block list) and every structural-block reconcile (block id, mask, items length before/after, key set diff). Production builds dead-code the entire module via `import.meta.env?.DEV`. The instrumentation is what found the singleton-leak bug above — keeping it in tree so the next investigation has the same lever.
+
+### `@llui/{components,router,transitions,vike,test,agent}@0.4.4` / `llui-agent@0.4.4`
+
+- **Improved** Cascade republish — peer `@llui/dom` pinned to `^0.4.4`. No source changes.
+
+### `@llui/vite-plugin@0.5.7`
+
+- **Added** Notes middleware: dev-server routes for reading/writing/listing on-disk notes under `<example>/.llui/notes/`, plus a session-aware capture registry and event bus. Wires `@llui/devmode-annotate`'s on-disk format into the running dev server.
+- **Improved** Cascade republish — `workspace:*` dependency on `@llui/dom` pinned to the new version via `@llui/devmode-annotate`'s consumption.
+
+### `@llui/mcp@0.5.7`
+
+- **Added** Notes MCP surface: `notes/*` resources (list/read/by-status) plus tools (`llui_note_propose`, `llui_note_resolve`, `llui_note_skip`, `llui_capture`). `llui_capture` has a Playwright fallback when the dev-server can't reach the page directly. Pairs with `@llui/devmode-annotate`'s solver loop.
+- **Improved** Cascade republish — peer `@llui/dom` pinned to `^0.4.4`.
+
+### `@llui/devmode-annotate@0.0.2`
+
+- **Added** Full implementation of the proposal (P1–P6): lasso/rect overlay HUD, draggable/anchored modal, screenshot bake, frontmatter-tagged on-disk notes per session under `<repo>/examples/<x>/.llui/notes/session-<id>/`, debug-collector that pulls live component telemetry into note bodies, attention router that auto-routes "Solve" actions to a headless Claude Code process and streams status back into the HUD, queue counter and per-task toasts, parseable stdout reply block for the orchestrator to consume.
+- **Improved** Defaults to ON in dev mode (opt out with `devmodeAnnotate({ enabled: false })`) so example apps light up the HUD without per-example config.
+
 ## 2026-05-23 — 0.4.3 / 0.5.6
 
 **Released:** `@llui/{dom,components,router,transitions,vike,test,agent}@0.4.3`; `llui-agent@0.4.3`; `@llui/{compiler,vite-plugin,compiler-devtools,compiler-introspection,compiler-ssr,mcp}@0.5.6`
