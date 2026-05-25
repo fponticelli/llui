@@ -14,6 +14,7 @@ const PACKAGES = [
   'mcp',
   'agent',
   'agent-bridge',
+  'devmode-annotate',
 ]
 
 export function onBeforePrerenderStart() {

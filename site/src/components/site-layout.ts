@@ -91,6 +91,7 @@ export function siteLayout<S extends LayoutState, M extends LayoutMsg>({
           navLink<S>('/api/test', 'api/test', 'test', text),
           navLink<S>('/api/vike', 'api/vike', 'vike', text),
           navLink<S>('/api/mcp', 'api/mcp', 'mcp', text),
+          navLink<S>('/api/devmode-annotate', 'api/devmode-annotate', 'devmode-annotate', text),
         ],
       ),
 

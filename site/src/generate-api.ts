@@ -564,6 +564,7 @@ const PACKAGES: { name: string; sourceFiles?: string[] }[] = [
   { name: 'compiler-introspection', sourceFiles: ['index.ts'] },
   { name: 'compiler-devtools', sourceFiles: ['index.ts'] },
   { name: 'compiler-ssr', sourceFiles: ['index.ts'] },
+  { name: 'devmode-annotate', sourceFiles: ['index.ts'] },
 ]
 
 // Components are special — use the component extractor

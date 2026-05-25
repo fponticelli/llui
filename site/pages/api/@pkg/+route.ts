@@ -14,6 +14,7 @@ const PACKAGES = [
   'mcp',
   'agent',
   'agent-bridge',
+  'devmode-annotate',
 ]
 
 export default (pageContext: { urlPathname: string }) => {
