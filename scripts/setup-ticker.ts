@@ -37,7 +37,7 @@ const TICKER_DIR = resolve(BENCH_DIR, 'jfb-ticker')
 const PATCHES_DIR = resolve(TICKER_DIR, 'jfb-patches')
 const WORKSPACE_REPO = resolve(BENCH_DIR, 'js-framework-benchmark-repo')
 
-const FRAMEWORKS = ['llui', 'llui-experimental', 'vanillajs', 'solid', 'react', 'svelte'] as const
+const FRAMEWORKS = ['llui', 'vanillajs', 'solid', 'react', 'svelte'] as const
 const args = process.argv.slice(2)
 const skipBuild = args.includes('--skip-build')
 
@@ -84,7 +84,6 @@ const keyedDir = resolve(JFB_REPO, 'frameworks', 'keyed')
 // matches what `buildFrameworkVersionString` expects.
 const LOCK_PACKAGES: Record<string, string | null> = {
   llui: '@llui/dom',
-  'llui-experimental': '@llui/dom',
   vanillajs: null,
   solid: 'solid-js',
   react: 'react',

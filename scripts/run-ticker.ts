@@ -48,7 +48,7 @@ const TICKER_BENCHMARKS = [
   { id: '57_ticker_clear', label: 'clear' },
 ]
 
-const FRAMEWORKS = ['llui', 'llui-experimental', 'vanillajs', 'solid', 'react', 'svelte']
+const FRAMEWORKS = ['llui', 'vanillajs', 'solid', 'react', 'svelte']
 
 const args = process.argv.slice(2)
 const saveBaseline = args.includes('--save')
