@@ -7,6 +7,9 @@ import {
   enterAccessor,
   exitAccessor,
   getInstanceViewBag,
+  enterBuildEntry,
+  exitBuildEntry,
+  isInsideBuildEntry,
   type RenderContext,
 } from '../render-context.js'
 import {
@@ -131,6 +134,17 @@ export function each<S, T, M = unknown>(opts: EachOptions<S, T, M>): Node[] {
 
   const initialItems = callItems(opts, ctx.state as S)
   let lastItemsRef = initialItems
+  // Tracks the anchor's parent across reconciles. Used by `rebindParent`
+  // (and the top-of-reconcile self-heal) to detect that an ancestor
+  // structural primitive (e.g. `branch` / `show`) swapped arms and
+  // re-parented our boundary comments into a freshly-built wrapper.
+  // When that happens, the wrapper was constructed from the user-passed
+  // Node[] returned by `each()` at outer-view time — which captured
+  // ONLY the initial entries between `anchor` and `endAnchor`. The
+  // entries built by subsequent reconciles drift into the old detached
+  // wrapper; we re-attach them here. See the bug report at
+  // `docs/llui-issues/each-add-after-remove-loses-dom.md` (dicerun2).
+  let lastParent: Node | null = null
 
   // Dev-only diff tracking: if the owning component has an _eachDiffLog
   // (installed by devtools), we capture key sets before/after each
@@ -196,11 +210,12 @@ export function each<S, T, M = unknown>(opts: EachOptions<S, T, M>): Node[] {
       const parent = anchor.parentNode
       // Trace the reconcile entry — captured BEFORE the parent-null
       // early-return so we can see "block exists but its DOM was
-      // detached" cases too.
-      const traceItemsLenBefore = entries.length
+      // detached" cases too. DEV-only so the bundler drops the snapshot
+      // work (entries.length read, key.map allocation) from prod.
+      const traceItemsLenBefore = import.meta.env?.DEV ? entries.length : 0
       const traceKeysBefore: Array<string | number> = import.meta.env?.DEV
         ? entries.map((e) => e.key)
-        : []
+        : (null as unknown as Array<string | number>)
       if (!parent) {
         if (import.meta.env?.DEV) {
           pushTrace({
@@ -222,11 +237,28 @@ export function each<S, T, M = unknown>(opts: EachOptions<S, T, M>): Node[] {
         return
       }
 
+      const parentChanged = parent !== lastParent
+      // Self-heal drifted entries when our wrapper was re-built by an
+      // ancestor primitive (Pattern-4 stale-Node[] capture). See the
+      // `lastParent` declaration above for the full explanation. Cheap
+      // when nothing drifted — one parentNode comparison per entry-with-
+      // nodes.
+      if (parentChanged && entries.length > 0) {
+        reattachDriftedEntries(entries, parent, endAnchor, ctx)
+      }
+      lastParent = parent
+
       const newItems = callItems(opts, state as S)
       const itemsRefChanged = newItems !== lastItemsRef
 
-      // Fast path: same array reference → skip entirely.
-      if (!itemsRefChanged) {
+      // Fast path: same array reference → skip entirely. UNLESS the
+      // parent just changed — when an ancestor arm-swap re-parented
+      // our anchors after a previous Phase 1 pass early-returned on
+      // `parent === null`, we still owe the items reconcile a run so
+      // the initial entries appear in the live wrapper. `parentChanged`
+      // catches that case (lastParent was null or the old detached
+      // parent; either way, !== current).
+      if (!itemsRefChanged && !parentChanged) {
         if (import.meta.env?.DEV) {
           pushTrace({
             kind: 'reconcile',
@@ -432,6 +464,35 @@ export function each<S, T, M = unknown>(opts: EachOptions<S, T, M>): Node[] {
         }
       }
     },
+
+    /**
+     * Self-heal hook invoked by the runtime after a Phase 1 pass when a
+     * sibling `branch`/`show` swapped arms during the cycle. By the time
+     * this fires, an ancestor wrapper may have been re-built from the
+     * stale user-passed Node[] (Pattern 4) — moving `anchor` and
+     * `endAnchor` into the new wrapper but leaving the previously-built
+     * entries orphaned in the old detached wrapper. We reproduce the
+     * top-of-reconcile self-heal here: re-attach drifted entries, and
+     * if `parent` is finally non-null after being null during the first
+     * pass, run a delayed initial reconcile so the empty wrapper gets
+     * populated within the same commit.
+     */
+    rebindParent(state: unknown) {
+      const parent = anchor.parentNode
+      if (!parent) return
+      const parentChanged = parent !== lastParent
+      if (!parentChanged) return
+      if (entries.length > 0) {
+        reattachDriftedEntries(entries, parent, endAnchor, ctx)
+      }
+      lastParent = parent
+      // Initial reconcile we owed from the earlier pass — items may have
+      // changed while `parent` was null. Force a re-run by invalidating
+      // the items ref cache and going through the main reconcile.
+      // Safe to call from inside Phase 1 fixup: idempotent.
+      lastItemsRef = null as unknown as T[]
+      block.reconcile(state, FULL_MASK, FULL_MASK)
+    },
   }
 
   // Register the block BEFORE building initial row entries so that this
@@ -587,6 +648,60 @@ function fireEnter<T>(
   }
 }
 
+/**
+ * Pattern-4 self-heal: when an ancestor structural primitive (`branch` /
+ * `show`) re-built its wrapper from the stale user-passed Node[] that
+ * `each()` returned at outer-view time, only `anchor` and `endAnchor`
+ * actually move into the new wrapper — the entries built by reconciles
+ * after outer-view time were never in the captured array. Detect drift
+ * and move them as a contiguous block via `Range.extractContents()`,
+ * which also captures any nested-primitive content (inner each entries,
+ * branch arms) that lived between the first/last entry nodes in the old
+ * detached parent. No-op when entries are still in `parent` (the common
+ * case).
+ */
+function reattachDriftedEntries<T>(
+  entries: Entry<T>[],
+  parent: Node,
+  endAnchor: Node,
+  ctx: RenderContext,
+): void {
+  // Find the first / last entry that actually owns DOM nodes. Empty-
+  // render entries are legal and we skip them on both ends.
+  let firstNode: Node | null = null
+  let lastNode: Node | null = null
+  for (let i = 0; i < entries.length; i++) {
+    const ns = entries[i]!.nodes
+    if (ns.length > 0) {
+      firstNode = ns[0]!
+      break
+    }
+  }
+  if (!firstNode) return
+  for (let i = entries.length - 1; i >= 0; i--) {
+    const ns = entries[i]!.nodes
+    if (ns.length > 0) {
+      lastNode = ns[ns.length - 1]!
+      break
+    }
+  }
+  if (!lastNode) return
+  // Drift check: if the first live entry node is already in `parent`,
+  // the entries are where we expect — no migration needed.
+  const oldParent = firstNode.parentNode
+  if (oldParent === parent || oldParent === null) return
+  // Range across the contiguous entry territory in the old detached
+  // parent. `extractContents()` detaches the range and returns a
+  // fragment we can reinsert; siblings between firstNode and lastNode
+  // include any reconciled nested-primitive content, so the migration
+  // is recursively complete.
+  const range = ctx.dom.createRange()
+  range.setStartBefore(firstNode)
+  range.setEndAfter(lastNode)
+  const frag = range.extractContents()
+  parent.insertBefore(frag, endAnchor)
+}
+
 function buildEntry<S, T, M>(
   item: T,
   index: number,
@@ -660,13 +775,14 @@ function buildEntry<S, T, M>(
   // `onMount(cb)` fall back to `document.body` instead of the parent
   // component's container.
   //
-  // Snapshot every mutable singleton field before writing — restore
-  // at the end. When an outer each's buildEntry calls render and
-  // render constructs an inner each() whose own buildEntry recurses
-  // through this same path, `ctx === buildCtx` (the shared
-  // module-level singleton); `buildBag` is the same kind of shared
-  // singleton. Without the save/restore, the inner's mutations leak
-  // back into outer's render frame:
+  // Save/restore the 10 mutable singleton fields ONLY when nested
+  // inside another buildEntry call. When an outer each's buildEntry
+  // is running and calls render, render may construct an inner each()
+  // whose own buildEntry recurses through this same path —
+  // `ctx === buildCtx` (the shared module-level singleton); `buildBag`
+  // is the same kind of shared singleton. Without the save/restore in
+  // that case, the inner's mutations leak back into outer's render
+  // frame:
   //
   //   - `buildCtx.rootLifetime` drives binding / disposer ownership
   //     for every element helper called from outer render. Leaked,
@@ -688,19 +804,43 @@ function buildEntry<S, T, M>(
   // The inst-level fields copied into buildCtx below (allBindings,
   // structuralBlocks, dom, instance, send, container) are invariants
   // across the component's lifetime — they're set the same in every
-  // buildEntry call, so leaking them is a no-op.
+  // buildEntry call, so leaking them is a no-op even in the nested
+  // case.
+  //
+  // At top level (depth === 0), no one reads buildCtx/buildBag after
+  // this returns: each's for-loop / reconcileEntries writes every
+  // field fresh on the next iteration, and `setRenderContext(ctx)` at
+  // the end points currentContext back at the captured (per-mount)
+  // ctx — not at buildCtx — so subsequent element helpers in the
+  // surrounding render see the right context without needing the
+  // singleton fields restored. Skipping the save/restore saves 20
+  // property accesses per row built (measurable on create10k).
   //
   // Regression coverage: test/nested-each-trailing-binding.test.ts.
-  const prevRootLifetime = buildCtx.rootLifetime
-  const prevState = buildCtx.state
-  const prevBagSend = buildBag.send
-  const prevBagAcc = buildBag.acc
-  const prevBagIndex = buildBag.index
-  const prevBagGetItemProxy = buildBag._getItemProxy
-  const prevBagEntry = (buildBag as Record<string, unknown>).entry
-  const prevBagH = (buildBag as Record<string, unknown>).h
-  const prevBagTpl = (buildBag as Record<string, unknown>).__tpl
-  const prevBagRowUpd = (buildBag as Record<string, unknown>).__rowUpd
+  const nested = isInsideBuildEntry()
+  enterBuildEntry()
+  let prevRootLifetime: Lifetime | undefined
+  let prevState: unknown
+  let prevBagSend: unknown
+  let prevBagAcc: unknown
+  let prevBagIndex: unknown
+  let prevBagGetItemProxy: unknown
+  let prevBagEntry: unknown
+  let prevBagH: unknown
+  let prevBagTpl: unknown
+  let prevBagRowUpd: unknown
+  if (nested) {
+    prevRootLifetime = buildCtx.rootLifetime
+    prevState = buildCtx.state
+    prevBagSend = buildBag.send
+    prevBagAcc = buildBag.acc
+    prevBagIndex = buildBag.index
+    prevBagGetItemProxy = buildBag._getItemProxy
+    prevBagEntry = (buildBag as Record<string, unknown>).entry
+    prevBagH = (buildBag as Record<string, unknown>).h
+    prevBagTpl = (buildBag as Record<string, unknown>).__tpl
+    prevBagRowUpd = (buildBag as Record<string, unknown>).__rowUpd
+  }
   buildCtx.rootLifetime = scope
   buildCtx.state = currentState
   buildCtx.allBindings = ctx.allBindings
@@ -741,24 +881,24 @@ function buildEntry<S, T, M>(
     scope.itemUpdaters = []
   }
 
-  // Restore every snapshotted singleton field. When `ctx === buildCtx`
-  // (nested each), `setRenderContext(ctx)` alone is a no-op against
-  // the shared singleton and the inner's mutations would leak into
-  // outer's remaining render. See the snapshot comment above for
-  // which fields actually matter and why.
-  buildCtx.rootLifetime = prevRootLifetime
-  buildCtx.state = prevState
-  buildBag.send = prevBagSend
-  buildBag.acc = prevBagAcc
-  buildBag.index = prevBagIndex
-  buildBag._getItemProxy = prevBagGetItemProxy
-  ;(buildBag as Record<string, unknown>).entry = prevBagEntry
-  ;(buildBag as Record<string, unknown>).h = prevBagH
-  ;(buildBag as Record<string, unknown>).__tpl = prevBagTpl
-  ;(buildBag as Record<string, unknown>).__rowUpd = prevBagRowUpd
+  // Restore singleton fields only in the nested case — see the snapshot
+  // comment above for why this is safe at depth === 0.
+  if (nested) {
+    buildCtx.rootLifetime = prevRootLifetime!
+    buildCtx.state = prevState
+    buildBag.send = prevBagSend
+    buildBag.acc = prevBagAcc
+    buildBag.index = prevBagIndex
+    buildBag._getItemProxy = prevBagGetItemProxy
+    ;(buildBag as Record<string, unknown>).entry = prevBagEntry
+    ;(buildBag as Record<string, unknown>).h = prevBagH
+    ;(buildBag as Record<string, unknown>).__tpl = prevBagTpl
+    ;(buildBag as Record<string, unknown>).__rowUpd = prevBagRowUpd
+  }
   clearRenderContext()
   setFlatBindings(prevFlatBindings)
   setRenderContext(ctx)
+  exitBuildEntry()
 
   return entry
 }

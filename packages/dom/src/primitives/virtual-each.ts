@@ -5,6 +5,9 @@ import {
   clearRenderContext,
   enterAccessor,
   exitAccessor,
+  enterBuildEntry,
+  exitBuildEntry,
+  isInsideBuildEntry,
   type RenderContext,
 } from '../render-context.js'
 import { createLifetime, disposeLifetime, addDisposer } from '../lifetime.js'
@@ -182,15 +185,23 @@ export function virtualEach<S, T, M = unknown>(opts: VirtualEachOptions<S, T, M>
     // calling the parent's `send`); missing `container` would point
     // `onMount` at `document.body`.
     //
-    // Snapshot `rootLifetime` / `state` before writing — restore at
-    // the end. Same singleton-leak class as each() (see each.ts's
-    // buildEntry for the full rationale): when virtualEach is nested
-    // inside an outer each's render, `ctx === buildCtx` and a bare
-    // `setRenderContext(ctx)` at the end is a no-op against the shared
-    // singleton, leaking `rootLifetime` into the outer's render frame.
+    // Save/restore `rootLifetime` / `state` ONLY when nested. Same
+    // singleton-leak class as each() (see each.ts's buildEntry for the
+    // full rationale): when virtualEach is nested inside another
+    // buildEntry, `ctx === buildCtx` and a bare `setRenderContext(ctx)`
+    // at the end is a no-op against the shared singleton, leaking
+    // `rootLifetime` into the outer's render frame. At top level
+    // (depth === 0) no one reads buildCtx after this returns — the next
+    // buildEntry-like call writes every field fresh.
     // Regression coverage: dom/test/nested-each-trailing-binding.test.ts.
-    const prevRootLifetime = buildCtx.rootLifetime
-    const prevState = buildCtx.state
+    const nested = isInsideBuildEntry()
+    enterBuildEntry()
+    let prevRootLifetime: Lifetime | undefined
+    let prevState: unknown
+    if (nested) {
+      prevRootLifetime = buildCtx.rootLifetime
+      prevState = buildCtx.state
+    }
     buildCtx.rootLifetime = scope
     buildCtx.state = state
     buildCtx.allBindings = ctx.allBindings
@@ -210,11 +221,14 @@ export function virtualEach<S, T, M = unknown>(opts: VirtualEachOptions<S, T, M>
       index: indexAccessor,
     })
 
-    buildCtx.rootLifetime = prevRootLifetime
-    buildCtx.state = prevState
+    if (nested) {
+      buildCtx.rootLifetime = prevRootLifetime!
+      buildCtx.state = prevState
+    }
     clearRenderContext()
     setFlatBindings(prevFlat)
     setRenderContext(ctx)
+    exitBuildEntry()
 
     for (const node of nodes) wrapper.appendChild(node)
     return entry

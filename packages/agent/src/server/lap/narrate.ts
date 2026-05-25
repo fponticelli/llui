@@ -6,7 +6,6 @@ import { verifyAndReadTid } from './describe.js'
 import { buildPausedResponse } from './paused.js'
 import { ensureActive } from './active.js'
 import type { LapNarrateRequest, LapNarrateResponse, LogEntry } from '../../protocol.js'
-import { randomUUID } from 'crypto'
 
 export type LapNarrateDeps = {
   tokenStore: TokenStore
@@ -54,7 +53,7 @@ export async function handleLapNarrate(req: Request, deps: LapNarrateDeps): Prom
 
   const nowMs = (deps.now ?? (() => Date.now()))()
   const entry: LogEntry = {
-    id: `narrate-${nowMs}-${randomUUID().slice(0, 8)}`,
+    id: `narrate-${nowMs}-${crypto.randomUUID().slice(0, 8)}`,
     at: nowMs,
     kind: 'narrate',
     intent: body.intent ?? 'Agent narrated',

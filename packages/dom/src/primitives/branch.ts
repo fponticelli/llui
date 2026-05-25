@@ -61,6 +61,13 @@ export function branch<S, M = unknown, K extends string = string>(
   let currentLifetime: Lifetime | null = null
   let currentNodes: Node[] = []
 
+  // Tracks the anchor's parent across reconciles, mirroring each.ts.
+  // Lets `rebindParent` detect when an ancestor structural primitive
+  // re-built its wrapper from a stale user-passed Node[] (Pattern 4)
+  // — in that case only `anchor` moves to the new wrapper; the current
+  // arm's nodes stay orphaned in the old detached wrapper.
+  let lastParent: Node | null = null
+
   const block: StructuralBlock = {
     mask: (opts as { __mask?: number }).__mask ?? FULL_MASK,
     maskHi: (opts as { __maskHi?: number }).__maskHi ?? 0,
@@ -70,6 +77,16 @@ export function branch<S, M = unknown, K extends string = string>(
 
       const parent = anchor.parentNode
       if (!parent) return
+
+      // Arm swap is about to re-parent any nested structural primitives
+      // whose Node[] was captured by user code at outer-view time (the
+      // documented Pattern 4). After we insert the new arm, the runtime
+      // runs a `rebindParent` pass over `inst.structuralBlocks` so each /
+      // nested-branch blocks can re-attach drifted entries within the
+      // same commit. See `each.ts::reattachDriftedEntries` for the
+      // full bug write-up. Set the flag BEFORE building the new arm so
+      // any throw inside the builder still triggers the rescan.
+      if (ctx.instance) ctx.instance._postPhase1Rescan = true
 
       const leavingNodes = currentNodes
       const leavingLifetime = currentLifetime
@@ -145,6 +162,37 @@ export function branch<S, M = unknown, K extends string = string>(
       } else {
         removeOld()
       }
+      lastParent = parent
+    },
+
+    /**
+     * Self-heal hook — see `each.ts::rebindParent` for the full bug
+     * write-up. When an ancestor primitive re-built its wrapper from a
+     * stale Node[] (Pattern 4), only `anchor` moves into the new
+     * wrapper; the current arm's nodes stay orphaned in the old
+     * detached wrapper. Re-attach them between `anchor` and whatever
+     * follows it (which becomes the insertion point for arm content).
+     */
+    rebindParent() {
+      const parent = anchor.parentNode
+      if (!parent) return
+      if (parent === lastParent) return
+      lastParent = parent
+      if (currentNodes.length === 0) return
+      // Drift check: first arm node already in `parent` → nothing to do.
+      const firstNode = currentNodes[0]!
+      const oldParent = firstNode.parentNode
+      if (oldParent === parent || oldParent === null) return
+      // Move the contiguous arm-content range (which may include nested
+      // structural primitives' reconciled territory living between
+      // currentNodes[0] and currentNodes[last]) into `parent` after the
+      // anchor.
+      const lastNode = currentNodes[currentNodes.length - 1]!
+      const range = ctx.dom.createRange()
+      range.setStartBefore(firstNode)
+      range.setEndAfter(lastNode)
+      const frag = range.extractContents()
+      parent.insertBefore(frag, anchor.nextSibling)
     },
   }
 
