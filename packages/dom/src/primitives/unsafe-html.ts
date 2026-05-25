@@ -1,5 +1,5 @@
 import type { StructuralBlock } from '../structural.js'
-import { getRenderContext } from '../render-context.js'
+import { captureRenderContext } from '../render-context.js'
 import { FULL_MASK } from '../update-loop.js'
 
 /**
@@ -32,7 +32,12 @@ export function unsafeHtml<S>(
   accessor: ((s: S) => string) | (() => string) | string,
   mask?: number,
 ): Node[] {
-  const ctx = getRenderContext('unsafeHtml')
+  // Stable snapshot — `block.reconcile` reads `ctx.dom` via
+  // `parseHtmlToNodes(ctx, ...)` on every reconcile. Live-reading
+  // through the singleton would resolve to whichever buildCtx an
+  // intervening sub-app's buildEntry last wrote. See
+  // `captureRenderContext` for the rationale.
+  const ctx = captureRenderContext('unsafeHtml')
   if (typeof accessor === 'string') {
     return parseHtmlToNodes(ctx, accessor)
   }

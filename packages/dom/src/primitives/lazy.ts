@@ -1,6 +1,6 @@
 import type { ComponentDef, LazyDef } from '../types.js'
 import {
-  getRenderContext,
+  captureRenderContext,
   setRenderContext,
   clearRenderContext,
   getInstanceViewBag,
@@ -53,7 +53,12 @@ export interface LazyOptions<S, M, D> {
  * cancelled — the loaded component is never mounted.
  */
 export function lazy<S, M, D = undefined>(opts: LazyOptions<S, M, D>): Node[] {
-  const ctx = getRenderContext('lazy')
+  // Stable snapshot — lazy keeps `ctx` alive for the deferred mount
+  // path (after the loader Promise resolves), which can fire arbitrary
+  // time later. Without the snapshot the deferred mount reads the live
+  // singleton's CURRENT fields, which any intervening sub-app's
+  // buildEntry may have rewritten. See `captureRenderContext`.
+  const ctx = captureRenderContext('lazy')
   const parentLifetime = ctx.rootLifetime
   const send = ctx.send as (msg: M) => void
 

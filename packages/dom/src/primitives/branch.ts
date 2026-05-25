@@ -1,6 +1,6 @@
 import type { BranchOptions, Lifetime } from '../types.js'
 import {
-  getRenderContext,
+  captureRenderContext,
   setRenderContext,
   clearRenderContext,
   enterAccessor,
@@ -29,7 +29,13 @@ import type { StructuralBlock } from '../structural.js'
 export function branch<S, M = unknown, K extends string = string>(
   opts: BranchOptions<S, M, K>,
 ): Node[] {
-  const ctx = getRenderContext('branch')
+  // Stable snapshot — branch's `block.reconcile` reads ctx.allBindings,
+  // ctx.instance, ctx.send, ctx.dom at reconcile time and spreads
+  // `{...ctx, rootLifetime, state}` into the new arm's render context.
+  // Pre-snapshot, those reads sampled the shared `buildCtx` singleton
+  // live; an intervening sub-app buildEntry would have repointed its
+  // fields. See `captureRenderContext` for the rationale.
+  const ctx = captureRenderContext('branch')
   const parentLifetime = ctx.rootLifetime
   const blocks = ctx.structuralBlocks
   const send = ctx.send as (msg: M) => void

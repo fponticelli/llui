@@ -99,6 +99,44 @@ export function getInstanceViewBag<S, M>(
   return bag
 }
 
+/**
+ * Capture the current render context as a STABLE snapshot. Use this
+ * (not `getRenderContext`) anywhere a primitive will retain `ctx` for
+ * deferred reads — `block.reconcile`, async callbacks, mount-time
+ * deferred builders, etc.
+ *
+ * Why a snapshot: when this primitive is constructed inside another
+ * each's render, the live `currentContext` IS the each-runtime's
+ * shared mutable `buildCtx` singleton. Any subsequent buildEntry call
+ * (including ones triggered by an unrelated sub-app's dispatch)
+ * reassigns fields on that singleton. Reading `ctx.structuralBlocks`
+ * / `ctx.allBindings` at reconcile time then returns whatever the
+ * singleton has been mutated to — not the values that were live when
+ * this primitive was constructed. Symptom: nested structural blocks
+ * register against the wrong instance and silently freeze.
+ *
+ * The snapshot pins every field at construction time. `getRenderContext`
+ * stays a live-read for callers that only use ctx synchronously during
+ * the call (most element helpers + `text` / `sample` / `onMount`).
+ *
+ * Cost: one ~8-field object allocation per call. For the relatively few
+ * lazy-capture primitives (each, virtualEach, branch, lazy, unsafeHtml)
+ * this is negligible compared to the structural work each one does.
+ */
+export function captureRenderContext(primitiveName?: string): RenderContext {
+  const live = getRenderContext(primitiveName)
+  return {
+    rootLifetime: live.rootLifetime,
+    state: live.state,
+    allBindings: live.allBindings,
+    structuralBlocks: live.structuralBlocks,
+    dom: live.dom,
+    instance: live.instance,
+    send: live.send,
+    container: live.container,
+  }
+}
+
 export function getRenderContext(primitiveName?: string): RenderContext {
   if (!currentContext) {
     const name = primitiveName ? `${primitiveName}()` : 'primitives'

@@ -1,7 +1,7 @@
 import type { EachOptions, ItemAccessor, Lifetime } from '../types.js'
 import type { View } from '../view-helpers.js'
 import {
-  getRenderContext,
+  captureRenderContext,
   setRenderContext,
   clearRenderContext,
   enterAccessor,
@@ -99,42 +99,18 @@ interface Entry<T> {
 }
 
 export function each<S, T, M = unknown>(opts: EachOptions<S, T, M>): Node[] {
-  const liveCtx = getRenderContext('each')
-  const parentLifetime = liveCtx.rootLifetime
-  const blocks = liveCtx.structuralBlocks
-
-  // Snapshot the live render context into a stable, each()-private
-  // RenderContext. The reconcile path threads `ctx` through to
-  // `reconcileEntries → buildEntry`, and `buildEntry` reads
-  // `ctx.structuralBlocks` / `ctx.allBindings` to register newly built
-  // inner-each blocks and bindings. If we passed the live render
-  // context (which IS the shared module-level `buildCtx` singleton when
-  // this each is nested inside another each's render), any other
-  // instance's `buildEntry` that ran since this each was constructed
-  // would have reassigned `buildCtx.structuralBlocks` /
-  // `buildCtx.allBindings` to a DIFFERENT component instance's arrays.
-  // Inner eaches constructed during this each's later reconciles would
-  // then register against the wrong instance — the parent component's
-  // own reducer dispatch never iterates them, and they appear silently
-  // unreactive. Symptom in apps with sub-apps (subApp / mountApp at
-  // anchor): bindings inside nested eaches stop firing after any
-  // intervening sub-app event.
-  //
-  // Cost: one RenderContext allocation per each() call (NOT per row).
-  // For a typical app this is < 1 % of an each()'s allocation budget,
-  // and the alternative (save / restore the singleton fields around
-  // every buildEntry) doesn't fix the reconcile-path read because the
-  // singleton is sampled live each reconcile, not at construction.
-  const ctx: RenderContext = {
-    rootLifetime: liveCtx.rootLifetime,
-    state: liveCtx.state,
-    allBindings: liveCtx.allBindings,
-    structuralBlocks: liveCtx.structuralBlocks,
-    dom: liveCtx.dom,
-    instance: liveCtx.instance,
-    send: liveCtx.send,
-    container: liveCtx.container,
-  }
+  // Stable snapshot of the live render context. The reconcile path
+  // threads `ctx` through to `reconcileEntries → buildEntry`, and
+  // `buildEntry` reads `ctx.structuralBlocks` / `ctx.allBindings` to
+  // register newly built inner-each blocks and bindings. Without the
+  // snapshot those lazy reads return the shared `buildCtx` singleton's
+  // CURRENT fields — which an intervening sub-app's buildEntry may
+  // have repointed at the sub-app's own arrays. See
+  // `captureRenderContext` for the full rationale; regression in
+  // `test/nested-each-cross-instance-blocks.test.ts`.
+  const ctx = captureRenderContext('each')
+  const parentLifetime = ctx.rootLifetime
+  const blocks = ctx.structuralBlocks
 
   const anchor = ctx.dom.createComment('each')
   // End-of-territory sentinel. Bulk Range ops (reconcileClear, Fast path
@@ -616,7 +592,7 @@ function buildEntry<S, T, M>(
   index: number,
   opts: EachOptions<S, T, M>,
   parentLifetime: Lifetime,
-  ctx: ReturnType<typeof getRenderContext>,
+  ctx: RenderContext,
   state?: unknown,
 ): Entry<T> {
   const key = callKey(opts, item)
@@ -804,7 +780,7 @@ function reconcileEntries<S, T>(
   parent: Node,
   anchor: Node,
   endAnchor: Node,
-  ctx: ReturnType<typeof getRenderContext>,
+  ctx: RenderContext,
   state: unknown,
   leaving: Entry<T>[],
   report: TransitionReport | null,
