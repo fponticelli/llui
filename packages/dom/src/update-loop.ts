@@ -150,6 +150,70 @@ export function computeDirtyFromPrefixes(
   return [lo, hi]
 }
 
+/**
+ * Cross-commit memoized variant of `computeDirtyFromPrefixes`. Same
+ * semantics, but reads `prev` values from `inst._prefixCache` when
+ * available — avoiding 50% of the prefix-walk closure calls under
+ * steady-state commit flow. Writes the fresh `next` values back to the
+ * cache for the following commit. On accessor throw, invalidates the
+ * cache so the next commit recomputes from scratch (preserves
+ * correctness even when a prefix accessor is non-pure or transiently
+ * crashes).
+ *
+ * Cache invalidation contract:
+ *   - Helper sets `inst._prefixCache = fresh` on success.
+ *   - Helper sets `inst._prefixCache = undefined` on accessor throw.
+ *   - `_forceState` (the only non-commit-path state mutation) must
+ *     reset `_prefixCache` to undefined as well.
+ *
+ * @internal
+ */
+function computeDirtyFromPrefixesMemo(
+  prefixes: ReadonlyArray<(state: unknown) => unknown>,
+  prev: unknown,
+  next: unknown,
+  inst: ComponentInstance,
+): number | [number, number] {
+  const cached = inst._prefixCache
+  const len = prefixes.length
+  const fresh: unknown[] = new Array(len)
+  let success = false
+  try {
+    if (len <= 31) {
+      let dirty = 0
+      for (let i = 0; i < len; i++) {
+        const prevVal = cached !== undefined ? cached[i] : prefixes[i]!(prev)
+        const nextVal = prefixes[i]!(next)
+        fresh[i] = nextVal
+        if (prevVal !== nextVal) dirty |= 1 << i
+      }
+      success = true
+      inst._prefixCache = fresh
+      return dirty
+    }
+    let lo = 0
+    let hi = 0
+    for (let i = 0; i < len && i < 31; i++) {
+      const prevVal = cached !== undefined ? cached[i] : prefixes[i]!(prev)
+      const nextVal = prefixes[i]!(next)
+      fresh[i] = nextVal
+      if (prevVal !== nextVal) lo |= 1 << i
+    }
+    for (let i = 31; i < len && i < 62; i++) {
+      const prevVal = cached !== undefined ? cached[i] : prefixes[i]!(prev)
+      const nextVal = prefixes[i]!(next)
+      fresh[i] = nextVal
+      if (prevVal !== nextVal) hi |= 1 << (i - 31)
+    }
+    if (len > 62) hi = FULL_MASK
+    success = true
+    inst._prefixCache = fresh
+    return [lo, hi]
+  } finally {
+    if (!success) inst._prefixCache = undefined
+  }
+}
+
 export interface ComponentInstance<S = unknown, M = unknown, E = unknown> {
   def: ComponentDef<S, M, E>
   state: S
@@ -176,6 +240,15 @@ export interface ComponentInstance<S = unknown, M = unknown, E = unknown> {
    * instance, so a single cached bag is correct for all sites.
    */
   _viewBag?: unknown
+  /**
+   * @internal Cached `prefixes[i](state)` values from the most recent
+   * successful commit. Reused as the `prev` values when computing the
+   * dirty mask on the next commit, halving prefix-walk closure calls.
+   * `undefined` before the first commit, or after `_forceState`
+   * bypasses the commit pipeline, or after a prefix accessor throws
+   * mid-walk (the cache is invalidated to force a fresh read).
+   */
+  _prefixCache?: unknown[]
   /** @internal dev-only — populated when `installDevTools` ran. Ring-buffered
    *  per-each-site reconciliation diffs for MCP introspection tools. */
   _eachDiffLog?: RingBuffer<EachDiff>
@@ -344,6 +417,10 @@ export function flushInstance<S, M, E>(inst: ComponentInstance<S, M, E>): void {
 export function _forceState<S, M, E>(inst: ComponentInstance<S, M, E>, newState: S): void {
   inst.state = newState
   inst.lastDirtyMask = FULL_MASK
+  // Invalidate the prefix-walk memo: cached values correspond to the
+  // pre-replace state, which no longer matches `inst.state`. The next
+  // commit will recompute fresh.
+  inst._prefixCache = undefined
 
   const bindings = inst.allBindings
   const bindingsBeforePhase1 = bindings.length
@@ -610,7 +687,7 @@ function processMessages<S, M, E>(inst: ComponentInstance<S, M, E>): void {
     if (prefixes === undefined) {
       dirty = FULL_MASK
     } else {
-      dirty = computeDirtyFromPrefixes(prefixes, state, newState)
+      dirty = computeDirtyFromPrefixesMemo(prefixes, state, newState, inst as ComponentInstance)
     }
     if (typeof dirty === 'number') {
       combinedDirty |= dirty
@@ -816,7 +893,7 @@ export function _handleMsg(
   // × ~30ns); for typical components that's ~4 dirty bits.
   const prefixes = inst.def.__prefixes as ReadonlyArray<(s: unknown) => unknown> | undefined
   if (prefixes !== undefined && popcount32(dirty) + popcount32(dirtyHi) > 4) {
-    const precise = computeDirtyFromPrefixes(prefixes, oldState, s)
+    const precise = computeDirtyFromPrefixesMemo(prefixes, oldState, s, inst)
     if (typeof precise === 'number') {
       dirty = precise
       dirtyHi = 0
