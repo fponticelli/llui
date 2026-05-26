@@ -610,7 +610,7 @@ function analyzeNestedField(
   for (const prop of literal.properties) {
     if (ts.isSpreadAssignment(prop)) continue // safe spread, already validated
 
-    let keyName: string | null = null
+    let keyName: string
     let valueExpr: ts.Expression | null = null
     if (ts.isPropertyAssignment(prop) && ts.isIdentifier(prop.name)) {
       keyName = prop.name.text
