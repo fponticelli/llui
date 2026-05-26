@@ -188,11 +188,15 @@ export interface LluiPluginOptions {
    * shakes). Pass an object to keep it on while customizing the notes
    * directory or default timeout.
    *
-   * The HUD itself stays separately opt-in: the developer mounts it
-   * via `mountAnnotateHud()` in their app entry. The middleware
-   * registration is harmless when no HUD is connected (and `@llui/mcp`
-   * also works with it standalone). Production builds never run
-   * `configureServer`, so this is dev-only by construction.
+   * The HUD is **auto-injected** in dev mode: the plugin emits a
+   * `<script type="module">` into the served HTML that imports
+   * `@llui/devmode-annotate` and mounts the floating button. Production
+   * builds never run `configureServer` or `transformIndexHtml(dev)`, so
+   * this is dev-only by construction. Disable just the HUD (keeping the
+   * notes API on) with `devmodeAnnotate: { hud: false }`; disable
+   * everything with `devmodeAnnotate: false`. The HUD package must be
+   * resolvable from the project root — install
+   * `@llui/devmode-annotate` alongside `@llui/vite-plugin`.
    *
    * Environment overrides (honored when not opted out):
    *   - `LLUI_NOTES_DIR` — override the notes root path
@@ -207,29 +211,100 @@ export interface LluiPluginOptions {
 
 ### `DevmodeAnnotateConfig`
 
-```typescript
+````typescript
 export interface DevmodeAnnotateConfig {
   /** Override the on-disk notes root. Relative paths resolve against
    *  the Vite project root. Default: `.llui/notes`. The
    *  `LLUI_NOTES_DIR` env var takes precedence if set. */
   notesDir?: string
+  /**
+   * Override session-folder naming and/or slug derivation. The
+   * id+author+kind prefix of each filename stays fixed so id ordering
+   * and filename parsing keep working — only the trailing slug and
+   * the session folder name are customizable.
+   *
+   * ```ts
+   * format: {
+   *   formatSessionFolder: (d) => `session-${d.toISOString().slice(0, 10)}`,
+   *   deriveSlug: (prose) =>
+   *     prose.toLowerCase().replace(/[^a-z0-9]+/g, '-').slice(0, 20).replace(/^-|-$/g, '') || 'capture',
+   * }
+   * ```
+   *
+   * Note: when the MCP server writes notes directly (out-of-process),
+   * it uses defaults — only writes that go through the dev-server
+   * middleware (the HUD path) honor these overrides.
+   */
+  format?: NoteFormatConfig
   /** Override the default capture-request long-poll timeout in
    *  milliseconds. The `LLUI_CAPTURE_TIMEOUT_MS` env var takes
    *  precedence if set. Default: 30000. */
   captureTimeoutMs?: number
   /**
    * The attention router auto-picks up task-mode notes (the developer
-   * clicks "Solve" in the HUD) and spawns `claude` headlessly to
-   * propose a fix. Default: enabled when `claude` is available on
-   * PATH; otherwise a no-op with a one-time install hint logged.
+   * clicks "Solve" in the HUD) and spawns the configured LLM CLI to
+   * propose a fix. Accepts:
    *
-   * Set `router: false` to fully disable. The notes themselves still
-   * land on disk; only the auto-dispatch is skipped.
+   *  - `false` — disable. The HUD hides its "Solve" button; notes
+   *              still save to disk so MCP-side consumers can act on
+   *              them.
+   *  - `'claude' | 'codex' | 'gemini'` — preset; everything defaults.
+   *  - `LlmRouterConfig` — preset + overrides (model, timeoutMs,
+   *              concurrency, env, extraArgs), or a fully custom
+   *              invocation `{ command, args, promptVia }` (omit
+   *              `preset` to opt out of preset defaults entirely).
+   *
+   * When the chosen CLI isn't on PATH the router degrades silently
+   * to save-only and the HUD hides the Solve button — the user gets
+   * a one-line install hint in the console.
+   *
+   * Default: `'claude'`.
    */
-  router?: boolean
+  router?: false | LlmPreset | LlmRouterConfig
   /** Override the per-task timeout for the router's spawn. Default
-   *  5 minutes. */
+   *  5 minutes. Deprecated alias for `router.timeoutMs`. */
   routerTimeoutMs?: number
+  /**
+   * Controls the in-app HUD (`@llui/devmode-annotate`) auto-injection.
+   *
+   *  - `true` / omitted — inject in dev mode (default).
+   *  - `false`          — skip injection. The notes API stays live so
+   *                       MCP can still consume the notebook; only the
+   *                       floating button + modal are skipped.
+   *  - `HudInjectionConfig` — inject with forwarded options. Currently
+   *                       supports `{ hidden: true }` to mount the HUD
+   *                       programmatically (no floating button).
+   *
+   * Injection silently no-ops when `@llui/devmode-annotate` isn't
+   * resolvable from the project root.
+   */
+  hud?: boolean | HudInjectionConfig
+}
+````
+
+### `HudInjectionConfig`
+
+```typescript
+export interface HudInjectionConfig {
+  /** Mount the HUD without rendering the floating button. The
+   *  keyboard shortcut + programmatic API still work. */
+  hidden?: boolean
+  /** When `true` (default), the HUD installs `window.onerror` +
+   *  `unhandledrejection` listeners. On an uncaught error it opens
+   *  the modal pre-populated with the stack + a screenshot — turns
+   *  "I saw something weird but can't reproduce it" into a
+   *  one-click solve. Set `false` to opt out of the listeners
+   *  entirely. */
+  autoCaptureOnError?: boolean
+  /** When `true` (default), the HUD shows a "● Record" toggle that
+   *  captures clicks/inputs/route-changes/messages between toggle-on
+   *  and submit, attaching them to the note for the LLM to replay.
+   *  Set `false` to hide the toggle and skip the listener setup. */
+  repro?: boolean
+  /** When `true` (default), the HUD exposes the "⌖ Pick element"
+   *  annotation mode alongside "⌖ Add region". Set `false` to hide
+   *  the picker affordance. */
+  elementPick?: boolean
 }
 ```
 

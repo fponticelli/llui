@@ -101,12 +101,6 @@ function mountAnnotateHud(opts: MountAnnotateOptions = {}): AnnotateHudHandle
 export type BakeFn = (screenshotBase64: string, annotations: Annotation[]) => Promise<string>
 ```
 
-### `HudMode`
-
-```typescript
-export type HudMode = 'text' | 'rect'
-```
-
 ## Interfaces
 
 ### `MountAnnotateOptions`
@@ -134,6 +128,31 @@ export interface MountAnnotateOptions {
    *  want a real EventSource pass `false`; production callers should
    *  leave it `true` (default) so LLM-initiated captures land. */
   subscribeEvents?: boolean
+  /** Enable the server-side rehydrate fetch on mount. The HUD calls
+   *  /_llui/session/current + /_llui/notes + /_llui/queue right after
+   *  mount to restore tracked tasks, chain histories, and pending
+   *  Accept toasts after a page reload. Off by default — the vite
+   *  plugin sets it to `true` in the injected bootstrap so production
+   *  gets reload-survives-solve, while tests that stub `fetch` aren't
+   *  surprised by extra calls. */
+  rehydrate?: boolean
+  /** Whether the attention router is wired up + available. When
+   *  `false` (or missing CLI / `router: false` upstream), the HUD
+   *  hides its "Solve" button so the user doesn't try to dispatch a
+   *  task with no worker behind it. Notes can still be saved.
+   *  Default `true`. */
+  solveEnabled?: boolean
+  /** Install `window.onerror` + `unhandledrejection` listeners. On
+   *  an unhandled exception, the HUD opens pre-populated with the
+   *  stack + auto-captured screenshot so the user can submit a one-
+   *  click solve request. Default `true`. */
+  autoCaptureOnError?: boolean
+  /** Show the "● Record" toggle in the compose view (repro recorder).
+   *  Default `true`. */
+  repro?: boolean
+  /** Show the "⌖ Pick element" annotation pill alongside Add region.
+   *  Default `true`. */
+  elementPick?: boolean
 }
 ```
 
