@@ -203,10 +203,17 @@ try {
 // ── Determine which frameworks to run ──
 
 const frameworksToRun = ['keyed/llui']
+const seen = new Set(frameworksToRun)
+const pushUnique = (name: string) => {
+  if (!seen.has(name)) {
+    seen.add(name)
+    frameworksToRun.push(name)
+  }
+}
 if (runAll) {
-  for (const fw of COMPETITORS) frameworksToRun.push(`keyed/${fw}`)
+  for (const fw of COMPETITORS) pushUnique(`keyed/${fw}`)
 } else {
-  for (const fw of extraFrameworks) frameworksToRun.push(`keyed/${fw}`)
+  for (const fw of extraFrameworks) pushUnique(`keyed/${fw}`)
 }
 
 // ── Run benchmarks ──

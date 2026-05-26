@@ -240,10 +240,19 @@ export function each<S, T, M = unknown>(opts: EachOptions<S, T, M>): Node[] {
       const parentChanged = parent !== lastParent
       // Self-heal drifted entries when our wrapper was re-built by an
       // ancestor primitive (Pattern-4 stale-Node[] capture). See the
-      // `lastParent` declaration above for the full explanation. Cheap
-      // when nothing drifted — one parentNode comparison per entry-with-
-      // nodes.
-      if (parentChanged && entries.length > 0) {
+      // `lastParent` declaration above for the full explanation. The
+      // `lastParent !== null` guard skips the first-reconcile case
+      // where `lastParent` starts at null: drift requires a previous
+      // reconcile to have placed entries somewhere — on the very first
+      // reconcile, `entries` were just built between `anchor` and
+      // `endAnchor`, so by construction they are in `parent`. Saves
+      // two entry-array scans (find firstNode, find lastNode) per
+      // initial reconcile, which matters on bench workloads that
+      // mount/clear many lists. The "owed reconcile" semantics — main
+      // reconcile body still runs because `parentChanged` is true and
+      // the fast-path skip at line ~261 gates on `!parentChanged` —
+      // are preserved.
+      if (parentChanged && entries.length > 0 && lastParent !== null) {
         reattachDriftedEntries(entries, parent, endAnchor, ctx)
       }
       lastParent = parent
@@ -482,7 +491,10 @@ export function each<S, T, M = unknown>(opts: EachOptions<S, T, M>): Node[] {
       if (!parent) return
       const parentChanged = parent !== lastParent
       if (!parentChanged) return
-      if (entries.length > 0) {
+      // Skip reattach on the first-ever non-null parent — nothing could
+      // have drifted because no prior reconcile placed entries. See the
+      // matching comment in `reconcile()` above for the full rationale.
+      if (entries.length > 0 && lastParent !== null) {
         reattachDriftedEntries(entries, parent, endAnchor, ctx)
       }
       lastParent = parent
