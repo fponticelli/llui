@@ -86,4 +86,54 @@ describe('dev-mode state serializability guard', () => {
     )
     expect(warnSpy).not.toHaveBeenCalled()
   })
+
+  // Reducer-output check — regression: the mount-time check used to be
+  // the only signal, so a reducer that introduced a Map AFTER init slid
+  // through silently and broke HMR / devtools snapshots later. The
+  // update-loop now also walks the post-reducer state (once per
+  // instance, dev-only) and emits a warning that identifies the
+  // reducer-output phase explicitly.
+
+  it('warns when a reducer returns a Map (not present in initial state)', () => {
+    type S = { lookup: Record<string, number> | Map<string, number> }
+    type M = { type: 'flip' }
+    const def = defineTestComponent<S, M, never>({
+      name: 'ReducerMap',
+      init: () => [{ lookup: {} }, []],
+      update: (s, m) => {
+        if (m.type === 'flip') return [{ lookup: new Map([['a', 1]]) }, []]
+        return [s, []]
+      },
+      view: () => [text('ok')],
+    })
+    const handle = mountApp(document.createElement('div'), def)
+    expect(warnSpy).not.toHaveBeenCalled()
+    handle.send({ type: 'flip' })
+    handle.flush()
+    expect(warnSpy).toHaveBeenCalled()
+    const msg = String(warnSpy.mock.calls[0]![0])
+    expect(msg).toContain('reducer returned')
+    expect(msg).toContain('Map')
+  })
+
+  it('warns at most once per instance even when reducer returns multiple bad states', () => {
+    type S = { v: Date | string }
+    type M = { type: 'bad1' } | { type: 'bad2' }
+    const def = defineTestComponent<S, M, never>({
+      name: 'OnceOnly',
+      init: () => [{ v: 'ok' }, []],
+      update: (s, m) => {
+        if (m.type === 'bad1') return [{ v: new Date() }, []]
+        if (m.type === 'bad2') return [{ v: new Date(0) }, []]
+        return [s, []]
+      },
+      view: () => [text('ok')],
+    })
+    const handle = mountApp(document.createElement('div'), def)
+    handle.send({ type: 'bad1' })
+    handle.flush()
+    handle.send({ type: 'bad2' })
+    handle.flush()
+    expect(warnSpy).toHaveBeenCalledTimes(1)
+  })
 })

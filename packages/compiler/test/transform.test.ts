@@ -1396,6 +1396,39 @@ describe('per-item accessor calls', () => {
     expect(out).not.toMatch(/items:\s*memo\(/)
   })
 
+  it('does NOT rewrite item.current — leaves the runtime Proxy to handle the whole-row shorthand', () => {
+    // Regression: item-dedup used to lower `item.current` to
+    // `acc(r => r.current)`, which evaluates as `entry.current.current`
+    // at runtime and returns undefined for any row type that doesn't
+    // literally have a `current` field — i.e. almost every consumer.
+    // The runtime Proxy in each.ts has a special-case for `current`
+    // that returns the whole row; preserving the property access
+    // keeps that path reachable.
+    const src = `
+      import { component, div, each, text } from '@llui/dom'
+      export const C = component({
+        name: 'C',
+        init: () => [{ items: [] }, []],
+        update: (s, m) => [s, []],
+        view: () => each({
+          items: s => s.items,
+          key: t => t.id,
+          render: ({ item }) => [
+            div({ 'data-id': item.id }, [text(() => item.current().label)]),
+          ],
+        }),
+      })
+    `
+    const out = t(src)
+    // `item.current` must survive the rewrite as a raw PropertyAccess —
+    // the runtime Proxy's get-trap interprets the access.
+    expect(out).toContain('item.current')
+    // And no hoisted accessor was generated for it (acc(r => r.current)
+    // would be the buggy lowering).
+    expect(out).not.toMatch(/acc\([^)]*=>\s*[a-zA-Z_$][\w$]*\.current\)/)
+    expect(out).not.toMatch(/=>\s*t\.current\b/)
+  })
+
   it('dedups repeated item.field across call and property access forms', () => {
     const src = `
       import { component, div, each, text } from '@llui/dom'

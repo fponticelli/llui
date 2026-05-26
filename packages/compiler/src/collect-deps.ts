@@ -2,6 +2,33 @@ import ts from 'typescript'
 import { resolveAccessorBody } from './accessor-resolver.js'
 
 /**
+ * Mutable collector for "the file's __prefixes must degrade to the
+ * whole-state sentinel" — written by every accessor walker that sees
+ * an opaque shape (unresolvable delegation, dynamic `s[expr]`, state
+ * in a spread, etc.). The first triggering site is captured so a
+ * downstream diagnostic can point the author at the line that
+ * silently degraded mask precision for every binding in the file.
+ *
+ * Subsequent leaks DON'T overwrite — the surface diagnostic is "fix
+ * this one and rerun"; flooding the user with every leak found is
+ * lower value than a precise first cause.
+ */
+export interface OpaqueOut {
+  value: boolean
+  /** First opaque shape encountered. Stable across calls — only set when value flips false→true. */
+  node?: ts.Node
+  /** Short human label for the shape (e.g. "dynamic element access `s[expr]`"). */
+  shape?: string
+}
+
+function markOpaque(out: OpaqueOut, node: ts.Node, shape: string): void {
+  if (out.value) return
+  out.value = true
+  out.node = node
+  out.shape = shape
+}
+
+/**
  * Names whose first arg is itself a reactive accessor (the existing
  * arrow walker handles them) or which are explicitly excluded
  * (sample/item read state imperatively / per-row, not as state
@@ -31,7 +58,7 @@ function visitTopLevelDelegations(
   body: ts.Node,
   stateParamName: string,
   follow: (resolved: ts.ArrowFunction | ts.FunctionExpression | ts.FunctionDeclaration) => void,
-  onUnresolved?: () => void,
+  onUnresolved?: (node: ts.Node) => void,
 ): void {
   function visit(node: ts.Node): void {
     if (ts.isCallExpression(node) && ts.isIdentifier(node.expression)) {
@@ -41,7 +68,7 @@ function visitTopLevelDelegations(
         if (arg0 && ts.isIdentifier(arg0) && arg0.text === stateParamName) {
           const resolved = resolveAccessorBody(node.expression)
           if (resolved) follow(resolved)
-          else if (onUnresolved) onUnresolved()
+          else if (onUnresolved) onUnresolved(node)
         }
       }
     }
@@ -82,7 +109,7 @@ function extractAccessorPaths(
   accessor: ts.ArrowFunction | ts.FunctionExpression | ts.FunctionDeclaration,
   paths: Set<string>,
   visited: Set<ts.Node> = new Set(),
-  opaqueOut?: { value: boolean },
+  opaqueOut?: OpaqueOut,
 ): boolean {
   if (visited.has(accessor)) return false
   visited.add(accessor)
@@ -94,7 +121,7 @@ function extractAccessorPaths(
     // Destructured/anonymous param — the path walker can't follow
     // reads through it. Conservative: mark the accessor as opaque so
     // the synthesis pipeline emits a whole-state sentinel.
-    if (opaqueOut) opaqueOut.value = true
+    if (opaqueOut) markOpaque(opaqueOut, paramName, 'destructured accessor parameter')
     return false
   }
   if (!accessor.body) return false
@@ -122,8 +149,8 @@ function extractAccessorPaths(
     (resolved) => {
       extractAccessorPaths(resolved, paths, visited, opaqueOut)
     },
-    () => {
-      if (opaqueOut) opaqueOut.value = true
+    (callNode) => {
+      if (opaqueOut) markOpaque(opaqueOut, callNode, 'unresolvable delegating call `helper(s)`')
     },
   )
 
@@ -146,7 +173,7 @@ function extractAccessorPaths(
  * const-alias, conditional branch, method-call arg, dynamic key
  * `s[expr]`, return-the-whole-state, …) is treated as a leak.
  */
-function detectOpaqueStateFlow(body: ts.Node, stateParam: string, out: { value: boolean }): void {
+function detectOpaqueStateFlow(body: ts.Node, stateParam: string, out: OpaqueOut): void {
   function visit(node: ts.Node): void {
     if (out.value) return
     if (ts.isIdentifier(node) && node.text === stateParam) {
@@ -154,13 +181,19 @@ function detectOpaqueStateFlow(body: ts.Node, stateParam: string, out: { value: 
       const isBinding = !!parent && ts.isParameter(parent)
       if (!isBinding) {
         let isTracked = false
+        let shape = 'state used outside a tracked container'
         if (parent) {
           if (ts.isPropertyAccessExpression(parent) && parent.expression === node) {
             isTracked = true
           } else if (ts.isElementAccessExpression(parent) && parent.expression === node) {
-            isTracked =
+            if (
               ts.isStringLiteralLike(parent.argumentExpression) ||
               ts.isNumericLiteral(parent.argumentExpression)
+            ) {
+              isTracked = true
+            } else {
+              shape = 'dynamic element access `s[<expr>]`'
+            }
           } else if (
             ts.isCallExpression(parent) &&
             ts.isIdentifier(parent.expression) &&
@@ -171,10 +204,26 @@ function detectOpaqueStateFlow(body: ts.Node, stateParam: string, out: { value: 
             // body (transitively detecting opaque inside) or flags
             // opaque via its second callback for unresolvable callees.
             isTracked = true
+          } else if (ts.isCallExpression(parent) && parent.arguments[0] === node) {
+            // Method-call with state as arg0 (e.g. `host.dirtyAt(s, e, p)`).
+            // The callee is a PropertyAccessExpression, not an
+            // Identifier — the mask classifier can't trace through
+            // method dispatch, so this leaks state. The runtime stays
+            // correct via the file-wide sentinel, but every binding
+            // in the file re-evaluates on every state change.
+            shape = `method call \`${describeCallee(parent.expression)}(s, …)\``
+          } else if (ts.isNewExpression(parent)) {
+            shape = 'state passed to a constructor (`new X(s)`)'
+          } else if (ts.isSpreadElement(parent) || ts.isSpreadAssignment(parent)) {
+            shape = 'state spread (`{...s}` / `[...s]`)'
+          } else if (ts.isConditionalExpression(parent)) {
+            shape = 'state in a conditional branch (`cond ? s : other`)'
+          } else if (ts.isAsExpression(parent) || ts.isTypeAssertionExpression(parent)) {
+            shape = 'type assertion wrapping state (`(s as T).foo`)'
           }
         }
         if (!isTracked) {
-          out.value = true
+          markOpaque(out, node, shape)
           return
         }
       }
@@ -182,6 +231,14 @@ function detectOpaqueStateFlow(body: ts.Node, stateParam: string, out: { value: 
     ts.forEachChild(node, visit)
   }
   visit(body)
+}
+
+function describeCallee(node: ts.Expression): string {
+  if (ts.isIdentifier(node)) return node.text
+  if (ts.isPropertyAccessExpression(node)) {
+    return `${describeCallee(node.expression)}.${node.name.text}`
+  }
+  return '<expr>'
 }
 
 /**
@@ -207,9 +264,11 @@ function detectOpaqueStateFlow(body: ts.Node, stateParam: string, out: { value: 
 export function collectStatePathsFromSource(sourceFile: ts.SourceFile): {
   paths: Set<string>
   opaque: boolean
+  opaqueNode?: ts.Node
+  opaqueShape?: string
 } {
   const paths = new Set<string>()
-  const opaqueOut = { value: false }
+  const opaqueOut: OpaqueOut = { value: false }
 
   function visit(node: ts.Node): void {
     // Inline arrow / function expression at a reactive position.
@@ -224,14 +283,19 @@ export function collectStatePathsFromSource(sourceFile: ts.SourceFile): {
     if (ts.isIdentifier(node) && isReactiveAccessor(node)) {
       const resolved = resolveAccessorBody(node)
       if (resolved) extractAccessorPaths(resolved, paths, undefined, opaqueOut)
-      else opaqueOut.value = true
+      else markOpaque(opaqueOut, node, `unresolvable accessor reference \`${node.text}\``)
     }
 
     ts.forEachChild(node, visit)
   }
 
   visit(sourceFile)
-  return { paths, opaque: opaqueOut.value }
+  return {
+    paths,
+    opaque: opaqueOut.value,
+    opaqueNode: opaqueOut.node,
+    opaqueShape: opaqueOut.shape,
+  }
 }
 
 /**
@@ -288,6 +352,10 @@ export function collectDeps(
   lo: Map<string, number>
   hi: Map<string, number>
   opaque: boolean
+  /** AST node that first triggered the opaque-flow flag (if any). */
+  opaqueNode?: ts.Node
+  /** Short human label for the opaque shape. */
+  opaqueShape?: string
 } {
   const sourceFile = ts.createSourceFile('input.ts', source, ts.ScriptTarget.Latest, true)
 
@@ -296,7 +364,7 @@ export function collectDeps(
     return { lo: new Map(), hi: new Map(), opaque: false }
   }
 
-  const { paths, opaque } = collectStatePathsFromSource(sourceFile)
+  const { paths, opaque, opaqueNode, opaqueShape } = collectStatePathsFromSource(sourceFile)
   // Cross-file extension (v2c pipeline integration): the host adapter may
   // pass paths discovered by `crossFileAccessorPaths()` — paths read
   // through in-repo view-helpers in *other* files. Union them with the
@@ -325,7 +393,7 @@ export function collectDeps(
     index++
   }
 
-  return { lo, hi, opaque }
+  return { lo, hi, opaque, opaqueNode, opaqueShape }
 }
 
 function hasLluiImport(sourceFile: ts.SourceFile): boolean {
@@ -396,6 +464,17 @@ export function isReactiveAccessor(node: ts.Node): boolean {
   // properties are reactive accessors. Otherwise user-land helpers like
   // sliceHandler({ narrow: (m) => m.type === ... }) would pollute the path set.
   if (ts.isPropertyAssignment(parent)) {
+    // The `node` here might be the property KEY rather than the VALUE
+    // — ts.forEachChild iterates both. Only the value is a reactive
+    // position; without this guard, the `title` Identifier in
+    // `div({ title: arrow })` would route into the value-classification
+    // branch and (since it has no resolvable accessor body) flip the
+    // file's `opaque` flag, silently degrading mask precision for
+    // every component in the file. The bug was latent for a long time
+    // because no diagnostic surfaced the resulting whole-state
+    // sentinel; the file-wide opaque-accessor diagnostic added in
+    // 2026-05 made it visible.
+    if (parent.initializer !== node) return false
     const key = parent.name
     if (ts.isIdentifier(key)) {
       // Skip event handlers (onClick, onInput, etc.)

@@ -10,6 +10,7 @@ import { registerInstance, unregisterInstance } from './runtime.js'
 import type { View } from './view-helpers.js'
 import { getInstanceViewBag } from './render-context.js'
 import { pushMountQueue, popMountQueue, flushMountQueue } from './primitives/on-mount.js'
+import { findNonSerializable, warnNonSerializable } from './serializability-check.js'
 
 // ── Sentinel-region helpers (used by anchor-based mount primitives) ─────
 
@@ -179,18 +180,10 @@ export function mountApp<S, M, E, D>(
   if (import.meta.env?.DEV) installTraceGlobals()
 
   // Dev-only: warn if initial state contains non-serializable values.
-  // Silent bug-bomb: Date/Map/Set/class instances break SSR, hydration, replay tools.
+  // See `serializability-check.ts` for what counts and why it matters.
   if (import.meta.env?.DEV) {
     const offender = findNonSerializable(inst.state)
-    if (offender) {
-      console.warn(
-        `[LLui] <${def.name}> initial state contains a non-serializable value at "${offender.path}":`,
-        offender.value,
-        '\nState must be plain JSON (no Date/Map/Set/class instances/functions).' +
-          '\nThis will break SSR hydration, state replay, and devtools snapshots.' +
-          '\nhint: Convert to a serializable representation (e.g., Date → ISO string, Map → Record).',
-      )
-    }
+    if (offender) warnNonSerializable(def.name, offender, 'mount')
   }
 
   // Run view() within a render context so primitives can register bindings.
@@ -236,55 +229,6 @@ export function mountApp<S, M, E, D>(
   return buildAppHandle(inst, def.name ?? null, () => {
     container.textContent = ''
   })
-}
-
-// Walks an object graph looking for non-JSON-serializable values. Returns the
-// first offender found (depth-first), or null if everything is fine. Stops at
-// depth 6 to bound runtime cost for large states.
-function findNonSerializable(
-  v: unknown,
-  path = 'state',
-  depth = 0,
-  seen = new WeakSet<object>(),
-): { path: string; value: unknown } | null {
-  if (depth > 6) return null
-  if (v === null || v === undefined) return null
-  const t = typeof v
-  if (t === 'string' || t === 'number' || t === 'boolean') return null
-  if (t === 'function') return { path, value: v }
-  if (t === 'symbol' || t === 'bigint') return { path, value: v }
-  if (t !== 'object') return null
-  const obj = v as object
-  if (seen.has(obj)) return null
-  seen.add(obj)
-  if (obj instanceof Date) return { path: `${path} (Date)`, value: v }
-  if (obj instanceof Map) return { path: `${path} (Map)`, value: v }
-  if (obj instanceof Set) return { path: `${path} (Set)`, value: v }
-  if (obj instanceof RegExp) return { path: `${path} (RegExp)`, value: v }
-  if (obj instanceof Promise) return { path: `${path} (Promise)`, value: v }
-  // Plain objects/arrays have Object.prototype / Array.prototype. Class instances
-  // have a different prototype.
-  const proto = Object.getPrototypeOf(obj)
-  if (proto !== null && proto !== Object.prototype && proto !== Array.prototype) {
-    return { path: `${path} (${proto?.constructor?.name ?? 'class instance'})`, value: v }
-  }
-  if (Array.isArray(v)) {
-    for (let i = 0; i < v.length; i++) {
-      const r = findNonSerializable(v[i], `${path}[${i}]`, depth + 1, seen)
-      if (r) return r
-    }
-    return null
-  }
-  for (const k of Object.keys(obj)) {
-    const r = findNonSerializable(
-      (obj as Record<string, unknown>)[k],
-      `${path}.${k}`,
-      depth + 1,
-      seen,
-    )
-    if (r) return r
-  }
-  return null
 }
 
 /**
@@ -367,15 +311,7 @@ export function mountAtAnchor<S, M, E, D>(
 
   if (import.meta.env?.DEV) {
     const offender = findNonSerializable(inst.state)
-    if (offender) {
-      console.warn(
-        `[LLui] <${def.name}> initial state contains a non-serializable value at "${offender.path}":`,
-        offender.value,
-        '\nState must be plain JSON (no Date/Map/Set/class instances/functions).' +
-          '\nThis will break SSR hydration, state replay, and devtools snapshots.' +
-          '\nhint: Convert to a serializable representation (e.g., Date → ISO string, Map → Record).',
-      )
-    }
+    if (offender) warnNonSerializable(def.name, offender, 'mount')
   }
 
   const { queue: onMountQueue, prev: prevMountQueue } = pushMountQueue()

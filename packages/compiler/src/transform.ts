@@ -10,7 +10,7 @@ import { extractStateSchema } from './state-schema.js'
 // consumed by `bindingDescriptorsModule` via the registry's preTransform
 // hook — no longer imported here. See modules/binding-descriptors.ts.
 import { compilerCache } from './compiler-cache.js'
-import type { Diagnostic } from './diagnostic.js'
+import { rangeFromOffsets, type Diagnostic } from './diagnostic.js'
 import { ModuleRegistry, type CompilerModule, type EmissionContribution } from './module.js'
 // Introspection modules (v2c/decomp-26) and devtools modules
 // (v2c/decomp-27) moved to their sibling packages. Hosts register
@@ -244,13 +244,20 @@ export function transformLlui(
   // function is generated per-component, so bit assignments in other files
   // won't match. Files without component() get FULL_MASK on all bindings.
   const fileHasComponent = hasComponentDef(sourceFile, lluiImport)
-  const {
-    lo: fieldBits,
-    hi: fieldBitsHi,
-    opaque: fileLocalOpaque,
-  } = fileHasComponent
+  const collected = fileHasComponent
     ? collectDeps(source, crossFilePaths)
-    : { lo: new Map<string, number>(), hi: new Map<string, number>(), opaque: false }
+    : {
+        lo: new Map<string, number>(),
+        hi: new Map<string, number>(),
+        opaque: false,
+        opaqueNode: undefined as ts.Node | undefined,
+        opaqueShape: undefined as string | undefined,
+      }
+  const fieldBits = collected.lo
+  const fieldBitsHi = collected.hi
+  const fileLocalOpaque = collected.opaque
+  const fileLocalOpaqueNode = collected.opaqueNode
+  const fileLocalOpaqueShape = collected.opaqueShape
   // Union the file-local opaque flag with the cross-file flag from the
   // vite-plugin's walker — either can independently mandate a
   // whole-state sentinel in `__prefixes`.
@@ -523,6 +530,39 @@ export function transformLlui(
   // cleanupImports) sees the post-registry AST. When no rewriting
   // module is active this is a no-op assignment.
   sourceFile = registryResult.analysis.sourceFile
+  // File-wide opaque-accessor diagnostic. When any one accessor leaks
+  // state into a shape the mask classifier can't trace (unresolvable
+  // delegating call, method-call-with-state, dynamic `s[expr]`, etc.),
+  // the synthesis pipeline flips `hasOpaqueAccessor=true` for the
+  // whole component, emitting a whole-state sentinel into `__prefixes`
+  // and forcing every binding to re-evaluate on every state change.
+  // The pre-existing `llui/opaque-state-flow` rule fires for a subset
+  // of leak shapes (the ones the rule considers user-error); this
+  // diagnostic is the catch-all that points the author at the precise
+  // accessor that degraded mask precision file-wide, including the
+  // shapes the lint rule deliberately doesn't flag (method calls on
+  // headless-component selectors, etc.). Surfaces the location so the
+  // author can locate the trigger without grepping for `(s` patterns.
+  if (fileLocalOpaque && fileLocalOpaqueNode) {
+    const start = fileLocalOpaqueNode.getStart(sourceFile)
+    const end = fileLocalOpaqueNode.getEnd()
+    registryResult.analysis.diagnostics.push({
+      id: 'llui/opaque-accessor-file-wide-mask',
+      severity: 'warning',
+      category: 'perf',
+      message:
+        `Reactive accessor flows state opaquely (${fileLocalOpaqueShape ?? 'state used outside a tracked container'}). ` +
+        `The runtime stays correct via a FULL_MASK + whole-state sentinel in \`__prefixes\`, but file-wide this forces ` +
+        `EVERY binding in the component to re-evaluate on every state change — not just this accessor. ` +
+        `Restructure the read to land at a property/element-access chain (\`s.foo\`, \`s.foo[0]\`), refactor a delegating ` +
+        `helper into a same-module \`const\`/\`function\` declaration so the walker can resolve it, or declare the ` +
+        `dependencies via \`track({ deps: (s) => [...] })\`.`,
+      location: {
+        file: _filename,
+        range: rangeFromOffsets(source, start, end),
+      },
+    })
+  }
   // Read the binding-descriptors module's slot for the
   // cleanupImports decision about the `__registerScopeVariants`
   // runtime helper import. When the module didn't run (no agent

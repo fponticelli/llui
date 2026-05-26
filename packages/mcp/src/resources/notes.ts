@@ -92,8 +92,8 @@ export function registerNotesResources(mcp: McpServer, opts: RegisterOpts): void
         const sessions = listSessions(opts.notesRoot())
         return {
           resources: sessions.map((s) => ({
-            uri: `llui://session/${s}`,
-            name: s,
+            uri: `llui://session/${s.id}`,
+            name: s.id,
             mimeType: 'application/json',
           })),
         }

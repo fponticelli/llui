@@ -55,7 +55,12 @@ export function createBinding(scope: Lifetime, opts: CreateBindingOpts): Binding
  * plain primitive, so it defers the dispatch here.
  *
  * If `value` is a function, register as a reactive binding with
- * FULL_MASK gating (the compiler couldn't analyze accessor deps).
+ * FULL_MASK gating across BOTH mask words (the compiler couldn't
+ * analyze accessor deps). `maskHi` must be FULL_MASK too — the Phase 2
+ * gate is `(mask & dirty) | (maskHi & dirtyHi)`, so leaving `maskHi`
+ * at 0 silently drops the binding whenever the dirty prefix lives in
+ * the high word (paths 31..61). Components with ≥32 reactive prefixes
+ * trip this regularly.
  * Otherwise apply it directly as a one-shot prop/attr/class/style set.
  *
  * v0.4 size-cut: this exists to keep `createElement` (the heavyweight
@@ -80,6 +85,7 @@ export function __bindUncertain(
     const perItem = fn.length === 0
     const binding = createBinding(ctx.rootLifetime, {
       mask: FULL_MASK,
+      maskHi: FULL_MASK,
       accessor: fn,
       kind,
       node: el,

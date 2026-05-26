@@ -1,6 +1,9 @@
 import { describe, it, expect } from 'vitest'
-import { createBinding, applyBinding } from '../src/binding'
+import { __bindUncertain, createBinding, applyBinding } from '../src/binding'
 import { createLifetime } from '../src/lifetime'
+import { setRenderContext, clearRenderContext } from '../src/render-context'
+import { browserEnv } from '../src/dom-env'
+import { FULL_MASK } from '../src/update-loop'
 
 describe('createBinding', () => {
   it('creates a binding with the given properties', () => {
@@ -98,6 +101,54 @@ describe('applyBinding', () => {
   // meaningful value to write into the DOM. Declaring them kind='effect'
   // makes applyBinding a no-op, avoiding object stringification and
   // lastValue churn on every parent update.
+
+  it('__bindUncertain registers FULL_MASK on BOTH words for function values', () => {
+    // Regression: __bindUncertain used to set only `mask: FULL_MASK`,
+    // leaving `maskHi: 0` by default. The Phase 2 gate is
+    // `(mask & dirty) | (maskHi & dirtyHi)`, so a dirty bit in the
+    // high word (paths 31..61) silently skipped these bindings —
+    // breaking the JSDoc-advertised "fire on any state change"
+    // fallback for any component with ≥32 reactive prefixes.
+    const rootLifetime = createLifetime(null)
+    setRenderContext({
+      rootLifetime,
+      state: { whatever: 1 },
+      allBindings: [],
+      structuralBlocks: [],
+      dom: browserEnv(),
+    })
+    try {
+      const el = document.createElement('div')
+      const accessor = (_s: never) => 'computed'
+      __bindUncertain(el, 'attr', 'title', accessor)
+      const binding = rootLifetime.bindings[0]!
+      expect(binding.mask).toBe(FULL_MASK)
+      expect(binding.maskHi).toBe(FULL_MASK)
+      // Initial application ran — title is set.
+      expect(el.getAttribute('title')).toBe('computed')
+    } finally {
+      clearRenderContext()
+    }
+  })
+
+  it('__bindUncertain does NOT register a binding for non-function values', () => {
+    const rootLifetime = createLifetime(null)
+    setRenderContext({
+      rootLifetime,
+      state: {},
+      allBindings: [],
+      structuralBlocks: [],
+      dom: browserEnv(),
+    })
+    try {
+      const el = document.createElement('div')
+      __bindUncertain(el, 'attr', 'title', 'static value')
+      expect(rootLifetime.bindings.length).toBe(0)
+      expect(el.getAttribute('title')).toBe('static value')
+    } finally {
+      clearRenderContext()
+    }
+  })
 
   it('is a no-op for kind=effect (does not mutate the node)', () => {
     const comment = document.createComment('watcher')

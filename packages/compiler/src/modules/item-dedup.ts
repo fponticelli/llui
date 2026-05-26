@@ -128,6 +128,14 @@ export function itemDedupModule(options: ItemDedupModuleOptions): CompilerModule
           ts.isIdentifier(n.name)
         ) {
           const field = n.name.text
+          // `item.current` is the Proxy-only shorthand for "the whole
+          // row" (each.ts:768). The rewrite path would lower it to
+          // `acc(r => r.current)`, which evaluates as
+          // `entry.current.current` at runtime and returns undefined
+          // for any row that doesn't literally have a `current` field
+          // — i.e. essentially every consumer. Skip the rewrite and
+          // let the runtime Proxy handle the call.
+          if (field === 'current') return
           occurrences.push({ kind: 'access', node: n, field, key: `field:${field}` })
         }
         ts.forEachChild(n, collectItemCalls)

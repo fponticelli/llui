@@ -1,29 +1,31 @@
 // `no-repeated-item-current` — warns when an `each.render` callback's
-// accessor body calls `item.current()` more than once with a property
-// chain after each call (e.g. `item.current().facts[K]` repeated
-// inside the same text/show.when accessor).
+// accessor body calls `item.current()` and chains a property/index
+// access onto the result (e.g. `item.current().facts[K]`), regardless
+// of how many times.
 //
-// Two reasons the pattern is dangerous:
+// Two reasons the chained pattern is dangerous:
 //
-//   1. **Bitmask trap.** `item.current().X` hides the read from the
-//      compiler's static analyzer — the accessor falls back to
-//      FULL_MASK and fires on every state change instead of only when
-//      `X` changes.
-//   2. **Reconcile-race undefined.** Repeated `.current()` calls
-//      across a single accessor body can observe intermediate state
-//      during a structural transition. The chained property access
-//      then throws `Cannot read properties of undefined (reading
-//      'X')`. The dungeonlogs 2026-05-20 report named exactly this
-//      class of bug.
+//   1. **Bitmask trap (fires on a single call).** `item.current().X`
+//      hides the read from the compiler's static analyzer — the
+//      accessor falls back to FULL_MASK and fires on every state
+//      change instead of only when `X` changes. This applies the
+//      first time as much as the tenth.
+//   2. **Reconcile-race undefined (fires on 2+ calls).** Repeated
+//      `.current()` calls across a single accessor body can observe
+//      intermediate state during a structural transition. The chained
+//      property access then throws `Cannot read properties of
+//      undefined (reading 'X')`. The dungeonlogs 2026-05-20 report
+//      named exactly this class of bug.
 //
 // The fix is one of:
 //   - destructure once: `const e = item.current(); use e.X, e.Y`
 //   - project to a row type in `items` so each cell becomes a simple
 //     field read (`item.X` shorthand)
 //
-// Severity: warn. A single `item.current()` call is fine (sometimes
-// necessary, e.g. guarding for primitive T's `current` accessor); the
-// warning fires only when the same accessor body calls it 2+ times.
+// Severity: warn. A bare `item.current()` call (no chained access,
+// e.g. `text(() => item.current())` for primitive T or a value
+// returned directly to a helper) does NOT trigger the warning — the
+// chain is what opaques the analyzer.
 
 import ts from 'typescript'
 import { rangeFromOffsets } from '../diagnostic.js'
@@ -85,10 +87,12 @@ function checkRenderBody(
   const visit = (n: ts.Node): void => {
     if (ts.isArrowFunction(n) || ts.isFunctionExpression(n)) {
       const calls = findChainedItemCurrents(n.body)
-      if (calls.length >= 2) {
-        // Report the SECOND call — the first one is fine on its own;
-        // the warning is "you're doing this repeatedly."
-        report(calls[1]!)
+      // Any chained `item.current().X` opaques the bitmask analyzer;
+      // 2+ also opens the reconcile-race undefined window. Report the
+      // first chained call either way — the fix is the same and the
+      // user wants the earliest location flagged.
+      if (calls.length >= 1) {
+        report(calls[0]!)
       }
     }
     ts.forEachChild(n, visit)
@@ -135,7 +139,7 @@ export function noRepeatedItemCurrentModule(): CompilerModule {
       {
         id: 'llui/no-repeated-item-current',
         description:
-          'Repeated `item.current().X` calls inside the same accessor — bitmask falls back to FULL_MASK and chained access can throw during reconcile races. Destructure once or project to a row type.',
+          'Chained `item.current().X` in an each.render accessor — opaques the bitmask analyzer (FULL_MASK fallback fires on every state change), and 2+ calls also expose a reconcile-race undefined window. Destructure once or project to a row type.',
       },
     ],
     visitors: {
@@ -152,9 +156,10 @@ export function noRepeatedItemCurrentModule(): CompilerModule {
                   severity: 'warning',
                   category: 'reactivity',
                   message:
-                    `Repeated \`item.current()\` calls inside an each.render accessor. The compiler can't trace through ` +
-                    `\`item.current().X\` so the binding falls back to FULL_MASK (fires on every state change), and ` +
-                    `chained access can throw \`Cannot read properties of undefined\` during structural reconciles. ` +
+                    `Chained \`item.current().X\` inside an each.render accessor. The compiler can't trace through ` +
+                    `\`.current()\` so the binding falls back to FULL_MASK (fires on every state change instead of only ` +
+                    `when X changes). Two or more chained calls in the same accessor additionally expose a reconcile-race ` +
+                    `window where the property access throws \`Cannot read properties of undefined\`. ` +
                     `Either destructure once at the top — \`const e = item.current(); /* use e.X, e.Y */\` — or project ` +
                     `to a row type in \`items\` so each cell becomes a simple field read (\`item.X\` shorthand).`,
                   location: {

@@ -24,6 +24,7 @@ import { createLifetime } from './lifetime.js'
 import { applyBinding } from './binding.js'
 import { setCurrentDirtyMask } from './primitives/memo.js'
 import { enterAccessor, exitAccessor } from './render-context.js'
+import { checkReducerOutput } from './serializability-check.js'
 
 export const FULL_MASK = 0xffffffff | 0
 
@@ -663,6 +664,7 @@ function processMessages<S, M, E>(inst: ComponentInstance<S, M, E>): void {
       if (import.meta.env?.DEV) {
         inst.lastDirtyMask = FULL_MASK
         inst.lastEffects = effects
+        checkReducerOutput(inst as object, inst.def.name, newState)
       }
       for (let i = 0; i < effects.length; i++) {
         dispatchEffect(inst, effects[i]!)
@@ -719,6 +721,7 @@ function processMessages<S, M, E>(inst: ComponentInstance<S, M, E>): void {
   if (import.meta.env?.DEV) {
     inst.lastDirtyMask = combinedDirty
     inst.lastEffects = allEffects
+    checkReducerOutput(inst as object, inst.def.name, state)
     // One dispatch trace per generic flush; logs the COMBINED dirty
     // mask across the drained queue so investigations can correlate
     // queued message bursts with reconcile coverage.
