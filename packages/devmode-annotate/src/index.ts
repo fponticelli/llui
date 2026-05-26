@@ -270,6 +270,21 @@ export function mountAnnotateHud(opts: MountAnnotateOptions = {}): AnnotateHudHa
   }
   const trackedTasks = new Map<string, TrackedTask>()
   let latestTaskId: string | null = null
+  // Last task this HUD lifetime that the router successfully solved
+  // (reached 'proposed' or beyond). When resume mode is on AND this
+  // is non-null, the next Solve will chain off whatever conversation
+  // led to that note. Drives the lineage row.
+  let lastCompletedTaskId: string | null = null
+
+  const refreshLineageRow = (): void => {
+    if (resumeMode && lastCompletedTaskId) {
+      lineageRow.textContent = `↻ chained from #${lastCompletedTaskId}`
+      lineageRow.style.display = 'block'
+    } else {
+      lineageRow.style.display = 'none'
+      lineageRow.textContent = ''
+    }
+  }
 
   // State buckets:
   //  - working: router-owned, claude is still busy ('claimed', 'in-progress')
@@ -505,12 +520,14 @@ export function mountAnnotateHud(opts: MountAnnotateOptions = {}): AnnotateHudHa
     e.stopPropagation()
     resumeMode = true
     renderSolveState()
+    refreshLineageRow()
     closeSolveMenu()
   })
   menuFresh.addEventListener('click', (e) => {
     e.stopPropagation()
     resumeMode = false
     renderSolveState()
+    refreshLineageRow()
     closeSolveMenu()
   })
   // Click anywhere outside the split closes the menu.
@@ -534,6 +551,16 @@ export function mountAnnotateHud(opts: MountAnnotateOptions = {}): AnnotateHudHa
   // up the new context.
   const contextSubhead = document.createElement('div')
   contextSubhead.style.cssText = STYLES.contextSubhead
+
+  // Lineage subhead — visible only when resume mode is on AND we've
+  // already completed at least one task this session. Tells the user
+  // "this solve will continue the conversation from #042" so the
+  // chained behaviour isn't invisible.
+  const lineageRow = document.createElement('div')
+  lineageRow.setAttribute('data-llui-lineage', '')
+  lineageRow.style.cssText =
+    STYLES.contextSubhead + '; color: var(--hud-accent-fg); margin-top: -6px;'
+  lineageRow.style.display = 'none'
 
   // "More options" expander. Collapsed by default — verbose capture
   // is a power-user knob; the default flow should stay simple.
@@ -568,6 +595,7 @@ export function mountAnnotateHud(opts: MountAnnotateOptions = {}): AnnotateHudHa
   composeView.style.cssText = 'display: flex; flex-direction: column; gap: 0;'
   composeView.append(
     contextSubhead,
+    lineageRow,
     attachmentRow,
     toolbar,
     textarea,
@@ -786,9 +814,12 @@ export function mountAnnotateHud(opts: MountAnnotateOptions = {}): AnnotateHudHa
 
   const open = (): void => {
     modal.style.display = 'block'
-    // Refresh the context subhead from current state — a navigation
-    // while the modal was closed should be reflected on next open.
+    // Refresh the context subhead + lineage from current state — a
+    // navigation while the modal was closed should be reflected on
+    // next open, and a previously-completed task means the next
+    // solve will chain.
     refreshContextSubhead()
+    refreshLineageRow()
     // Measurement requires the modal to be rendered, so re-anchor on
     // a microtask after the display flips.
     queueMicrotask(reanchorModal)
@@ -1095,6 +1126,32 @@ export function mountAnnotateHud(opts: MountAnnotateOptions = {}): AnnotateHudHa
     close()
   })
 
+  // Live progress for an in-flight task. The router emits these
+  // every ~250ms (stream-json presets) or every 5s (heartbeat-only
+  // presets) so the user knows the solve is still working.
+  const handleTaskProgress = (
+    noteId: string,
+    p: { elapsedMs?: number; tokens?: { in: number; out: number }; toolSummary?: string },
+  ): void => {
+    const task = trackedTasks.get(noteId)
+    if (!task) return
+    // Only the LATEST in-flight task's progress shows in the status
+    // line — others continue in the background and surface their
+    // terminal result via toast.
+    if (noteId !== latestTaskId) return
+    const parts: string[] = ['🤖 working']
+    if (p.tokens) parts.push(`${fmtTokens(p.tokens.in)} in / ${fmtTokens(p.tokens.out)} out`)
+    if (p.elapsedMs !== undefined) parts.push(`${Math.round(p.elapsedMs / 1000)}s`)
+    if (p.toolSummary) parts.push(p.toolSummary)
+    statusLine.textContent = parts.join(' · ')
+  }
+
+  // Compact thousands-separator for token counts ("1,247", "14k").
+  const fmtTokens = (n: number): string => {
+    if (n >= 10_000) return `${Math.round(n / 1000)}k`
+    return n.toLocaleString()
+  }
+
   // Centralized status-update handler. Used by both the catch-up GET
   // and the SSE listener so they share the same toast/queue logic.
   const handleStatusUpdate = (noteId: string, to: string, reason: string | undefined): void => {
@@ -1104,6 +1161,15 @@ export function mountAnnotateHud(opts: MountAnnotateOptions = {}): AnnotateHudHa
     task.status = to
     if (noteId === latestTaskId) {
       statusLine.textContent = statusLabel(to, reason)
+    }
+
+    // 'proposed' means the router successfully produced a result —
+    // it captured a session id we can chain off. Mark this note as
+    // the head of the resume chain so the next Solve shows the
+    // lineage row.
+    if (isReady(to) && !isReady(prev)) {
+      lastCompletedTaskId = noteId
+      refreshLineageRow()
     }
 
     // 'proposed' is NOT terminal but IS actionable — fire a toast
@@ -1448,6 +1514,9 @@ export function mountAnnotateHud(opts: MountAnnotateOptions = {}): AnnotateHudHa
           noteId?: string
           to?: string
           reason?: string
+          elapsedMs?: number
+          tokens?: { in: number; out: number }
+          toolSummary?: string
         }
         try {
           parsed = JSON.parse(e.data as string)
@@ -1463,6 +1532,14 @@ export function mountAnnotateHud(opts: MountAnnotateOptions = {}): AnnotateHudHa
         if (parsed.type === 'status-changed' && parsed.noteId && parsed.to) {
           handleStatusUpdate(parsed.noteId, parsed.to, parsed.reason)
           browse.refresh()
+          return
+        }
+        if (parsed.type === 'task-progress' && parsed.noteId) {
+          handleTaskProgress(parsed.noteId, {
+            ...(parsed.elapsedMs !== undefined ? { elapsedMs: parsed.elapsedMs } : {}),
+            ...(parsed.tokens ? { tokens: parsed.tokens } : {}),
+            ...(parsed.toolSummary ? { toolSummary: parsed.toolSummary } : {}),
+          })
           return
         }
         if (

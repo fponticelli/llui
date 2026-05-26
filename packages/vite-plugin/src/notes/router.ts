@@ -37,6 +37,11 @@ export interface LlmSpawner {
      *  Used by the router to inject `--resume <sessionId>` and similar
      *  task-scoped flags. */
     extraArgs?: string[]
+    /** Per-line callback fired as stdout streams in. Each call gets
+     *  one fully-terminated line (no trailing newline). The router
+     *  uses this to drive live progress events when the preset emits
+     *  newline-delimited JSON (e.g. claude `--output-format stream-json`). */
+    onStdoutLine?: (line: string) => void
   }): Promise<LlmSpawnResult>
 }
 
@@ -66,10 +71,13 @@ interface PresetDefinition {
    *  from a previous spawn. Set only on presets that report session
    *  ids back (currently just `claude` with --output-format json). */
   resumeFlag?: string
-  /** Shape of the CLI's stdout. `'text'` means raw assistant prose;
-   *  `'json'` means a JSON envelope wrapping `result` + `session_id`.
-   *  Drives both reply-parsing and session-id capture. */
-  outputEnvelope: 'text' | 'json'
+  /** Shape of the CLI's stdout.
+   *   - `'text'`: raw assistant prose; no session id available.
+   *   - `'json'`: single JSON envelope at end with `result` + `session_id`.
+   *   - `'stream-json'`: newline-delimited JSON messages (one per
+   *     event: system init, assistant turns, tool calls/results, final
+   *     result). Enables live progress events. */
+  outputEnvelope: 'text' | 'json' | 'stream-json'
 }
 
 /**
@@ -81,11 +89,20 @@ interface PresetDefinition {
 const PRESETS: Record<LlmPreset, PresetDefinition> = {
   claude: {
     command: 'claude',
-    // `--output-format json` makes claude emit a single JSON envelope
-    // including `session_id` + `result`. The router captures the id
-    // from one spawn and feeds it to the next via `--resume`, so a
-    // chain of solves shares conversation context deterministically.
-    args: ['--print', '--dangerously-skip-permissions', '--output-format', 'json'],
+    // `--output-format stream-json` (+ `--verbose`, required by
+    // claude in print-mode for stream-json) emits one JSON object per
+    // line as claude works: system init, assistant turns, tool
+    // calls, tool results, and a final `result` message carrying
+    // `session_id` + total `usage`. The router parses these live and
+    // pushes `task-progress` SSE events to the HUD so the user sees
+    // tokens / last tool / elapsed time instead of an opaque spinner.
+    args: [
+      '--print',
+      '--dangerously-skip-permissions',
+      '--verbose',
+      '--output-format',
+      'stream-json',
+    ],
     modelFlag: '--model',
     promptVia: 'arg',
     // Sonnet is the intermediate tier — fast, capable enough for the
@@ -93,7 +110,7 @@ const PRESETS: Record<LlmPreset, PresetDefinition> = {
     // `router: { model: 'opus' }`.
     defaultModel: 'sonnet',
     resumeFlag: '--resume',
-    outputEnvelope: 'json',
+    outputEnvelope: 'stream-json',
   },
   codex: {
     command: 'codex',
@@ -109,6 +126,32 @@ const PRESETS: Record<LlmPreset, PresetDefinition> = {
     promptVia: 'stdin',
     outputEnvelope: 'text',
   },
+}
+
+/**
+ * Returns the preset definition only if it emits stream-json (i.e. is
+ * a candidate for the streaming → json downgrade). Used by startRouter
+ * to decide whether `streaming: false` actually needs to rewrite args.
+ */
+function presetDefForDowngrade(config: RouterConfig): PresetDefinition | null {
+  if (config.spawner) return null
+  const def = PRESETS[config.preset ?? 'claude']
+  return def?.outputEnvelope === 'stream-json' ? def : null
+}
+
+/**
+ * Rewrite a router config so the CLI emits a single JSON envelope
+ * instead of stream-json: replace the format token + strip --verbose.
+ * Other config fields pass through. Caller has already checked that
+ * the active preset is a stream-json one.
+ */
+function downgradeStreamingToJson(config: RouterConfig): RouterConfig {
+  const def = PRESETS[config.preset ?? 'claude']
+  const baseArgs = config.args ?? def?.args ?? []
+  const args = baseArgs
+    .filter((a) => a !== '--verbose')
+    .map((a) => (a === 'stream-json' ? 'json' : a))
+  return { ...config, args }
 }
 
 /**
@@ -128,6 +171,8 @@ export type LlmRouterConfig = Pick<
   | 'timeoutMs'
   | 'concurrency'
   | 'contextFiles'
+  | 'beforePrompt'
+  | 'streaming'
 >
 
 /**
@@ -184,8 +229,46 @@ export interface RouterConfig {
    * exist are skipped with a one-line warning.
    */
   contextFiles?: string[]
+  /**
+   * Live progress events during solve. When `true` (default), the
+   * router parses claude's `--output-format stream-json` output as
+   * lines arrive and broadcasts `task-progress` SSE events with
+   * elapsed time, running token counts, and the last tool used. The
+   * HUD surfaces this as a live status line so the user knows the
+   * solve is working instead of stuck.
+   *
+   * Set `false` to fall back to the single-envelope `json` format —
+   * less chatty on the wire but no in-flight feedback. Other presets
+   * (codex, gemini) fall back to an elapsed-time-only heartbeat
+   * regardless of this setting.
+   */
+  streaming?: boolean
+  /**
+   * Transform the prompt right before it's sent to the LLM. Runs
+   * after `buildPrompt()` (which assembles the note + contextFiles)
+   * and after any preset-specific layering. Use this to:
+   *   - prepend a project-specific persona / policy block,
+   *   - sanitize PII / secrets out of the prompt,
+   *   - inject computed context (recent commits, open PRs, …) that
+   *     contextFiles can't express because it's dynamic.
+   * Receives the assembled prompt + the note being solved; returns
+   * the prompt to actually send. May return a Promise.
+   */
+  beforePrompt?: (input: { prompt: string; note: NoteContext }) => string | Promise<string>
   /** Logger; defaults to stderr. */
   log?: (msg: string) => void
+}
+
+/**
+ * Read-only view of the note exposed to `beforePrompt`. We pass the
+ * frontmatter + prose explicitly so the hook doesn't need to touch
+ * the filesystem or import store internals.
+ */
+export interface NoteContext {
+  sessionId: string
+  noteId: string
+  frontmatter: NoteFrontmatter
+  prose: string
 }
 
 export interface RouterHandle {
@@ -249,7 +332,7 @@ export function resolveCliInvocation(config: RouterConfig): ResolvedCliInvocatio
 export function createCliSpawner(config: RouterConfig): LlmSpawner {
   const invocation = resolveCliInvocation(config)
   return {
-    async spawn({ prompt, cwd, timeoutMs, extraArgs }) {
+    async spawn({ prompt, cwd, timeoutMs, extraArgs, onStdoutLine }) {
       return new Promise((resolve) => {
         let stdout = ''
         let stderr = ''
@@ -265,8 +348,22 @@ export function createCliSpawner(config: RouterConfig): LlmSpawner {
           stdio: ['pipe', 'pipe', 'pipe'],
           env: invocation.env,
         })
+        // Line buffer for onStdoutLine. We still accumulate full
+        // `stdout` so the existing single-shot JSON-envelope path
+        // keeps working unchanged when no callback is supplied.
+        let lineBuffer = ''
         child.stdout?.on('data', (chunk: Buffer) => {
-          stdout += chunk.toString('utf8')
+          const text = chunk.toString('utf8')
+          stdout += text
+          if (!onStdoutLine) return
+          lineBuffer += text
+          let nlIdx = lineBuffer.indexOf('\n')
+          while (nlIdx !== -1) {
+            const line = lineBuffer.slice(0, nlIdx)
+            lineBuffer = lineBuffer.slice(nlIdx + 1)
+            if (line.length > 0) onStdoutLine(line)
+            nlIdx = lineBuffer.indexOf('\n')
+          }
         })
         child.stderr?.on('data', (chunk: Buffer) => {
           stderr += chunk.toString('utf8')
@@ -496,6 +593,113 @@ export interface CliJsonEnvelope {
 }
 
 /**
+ * One incremental update derived from a single stream-json line.
+ * The router accumulates these into a progress state and broadcasts
+ * coalesced events.
+ */
+export interface StreamJsonUpdate {
+  /** Captured on the first system-init message (and re-asserted by
+   *  the final result). Used to drive the resume chain. */
+  sessionId?: string
+  /** Short human-readable summary of the most recent tool call —
+   *  e.g. "reading App.tsx", "editing payment.ts", "running bash".
+   *  Surfaced in the HUD's live status line. */
+  toolSummary?: string
+  /** Running token counts. Stream-json includes per-message usage
+   *  deltas; the final `result` message has the totals. We just
+   *  forward whatever the line carried. */
+  tokens?: { in: number; out: number }
+  /** The full assistant text from the final `result` message. Only
+   *  set on the terminal line. */
+  finalText?: string
+}
+
+/**
+ * Parse a single line of claude's `--output-format stream-json` output
+ * and extract just the parts the router cares about. Returns null for
+ * lines we don't recognize (heartbeats, malformed JSON, etc).
+ */
+export function parseStreamJsonLine(line: string): StreamJsonUpdate | null {
+  const trimmed = line.trim()
+  if (!trimmed.startsWith('{')) return null
+  let parsed: Record<string, unknown>
+  try {
+    parsed = JSON.parse(trimmed) as Record<string, unknown>
+  } catch {
+    return null
+  }
+  const out: StreamJsonUpdate = {}
+  const type = parsed['type']
+  if (typeof parsed['session_id'] === 'string') {
+    out.sessionId = parsed['session_id'] as string
+  }
+  // Per-message usage: claude attaches `usage` to assistant turns
+  // and a cumulative `usage` to the final result.
+  const usage = (parsed['usage'] as Record<string, unknown> | undefined) ?? null
+  const msgUsage = ((parsed['message'] as Record<string, unknown> | undefined)?.['usage'] ??
+    null) as Record<string, unknown> | null
+  const u = usage ?? msgUsage
+  if (u && typeof u['input_tokens'] === 'number' && typeof u['output_tokens'] === 'number') {
+    out.tokens = { in: u['input_tokens'] as number, out: u['output_tokens'] as number }
+  }
+  // Tool calls: assistant messages may include tool_use content
+  // blocks. We surface the most recent.
+  if (type === 'assistant') {
+    const msg = parsed['message'] as { content?: unknown } | undefined
+    const content = Array.isArray(msg?.content) ? (msg!.content as unknown[]) : []
+    for (let i = content.length - 1; i >= 0; i--) {
+      const block = content[i] as Record<string, unknown>
+      if (block?.['type'] === 'tool_use') {
+        out.toolSummary = summarizeToolUse(block)
+        break
+      }
+    }
+  }
+  if (type === 'result') {
+    if (typeof parsed['result'] === 'string') {
+      out.finalText = parsed['result'] as string
+    }
+  }
+  return Object.keys(out).length > 0 ? out : null
+}
+
+/**
+ * Turn a `tool_use` content block from stream-json into a short
+ * present-tense phrase for the HUD's live status line. Truncates
+ * long arg values so the line stays compact.
+ */
+function summarizeToolUse(block: Record<string, unknown>): string {
+  const name = typeof block['name'] === 'string' ? (block['name'] as string) : 'tool'
+  const input = (block['input'] as Record<string, unknown> | undefined) ?? {}
+  const verbByName: Record<string, string> = {
+    Read: 'reading',
+    Edit: 'editing',
+    Write: 'writing',
+    Bash: 'running',
+    Grep: 'searching',
+    Glob: 'globbing',
+    Task: 'spawning agent',
+  }
+  const verb = verbByName[name] ?? name.toLowerCase()
+  // Best-effort arg extraction. Path-like fields win; otherwise fall
+  // back to a short stringification.
+  const fileArg =
+    (input['file_path'] as string | undefined) ??
+    (input['path'] as string | undefined) ??
+    (input['pattern'] as string | undefined)
+  if (fileArg) {
+    const short = fileArg.length > 32 ? `…${fileArg.slice(-32)}` : fileArg
+    return `${verb} ${short}`
+  }
+  const cmd = input['command'] as string | undefined
+  if (cmd) {
+    const head = cmd.split(/\s+/)[0] ?? ''
+    return `${verb} ${head}`
+  }
+  return verb
+}
+
+/**
  * Best-effort envelope parse. Claude in `--output-format json` mode
  * emits one JSON object to stdout. If we can't parse it, we fall back
  * to treating the whole stdout as the assistant text so existing
@@ -574,7 +778,14 @@ export function parseLluiReply(stdout: string): ParseReplyResult {
  * can stop the router and probe state for tests.
  */
 export function startRouter(config: RouterConfig): RouterHandle {
-  const spawner = config.spawner ?? createCliSpawner(config)
+  // When the user opted out of streaming, downgrade the claude
+  // preset to the single-envelope `json` format before building the
+  // spawner — strip `--verbose` and swap `stream-json` → `json`.
+  const effectiveConfig: RouterConfig =
+    config.streaming === false && presetDefForDowngrade(config)
+      ? downgradeStreamingToJson(config)
+      : config
+  const spawner = config.spawner ?? createCliSpawner(effectiveConfig)
   const timeoutMs = config.timeoutMs ?? DEFAULT_TIMEOUT_MS
   const concurrency = Math.max(1, config.concurrency ?? 1)
   const log = config.log ?? ((msg) => process.stderr.write(`[llui:router] ${msg}\n`))
@@ -591,7 +802,13 @@ export function startRouter(config: RouterConfig): RouterHandle {
   // conversation. Null until the first successful spawn.
   let lastSessionId: string | null = null
   const presetDef = config.spawner ? null : PRESETS[config.preset ?? 'claude']
-  const outputEnvelope: 'text' | 'json' = presetDef?.outputEnvelope ?? 'text'
+  // Honour `streaming: false` by downgrading stream-json → json. We
+  // also strip --verbose + swap the format flag in the args so the
+  // CLI doesn't reject the combination.
+  let outputEnvelope: 'text' | 'json' | 'stream-json' = presetDef?.outputEnvelope ?? 'text'
+  if (config.streaming === false && outputEnvelope === 'stream-json') {
+    outputEnvelope = 'json'
+  }
 
   // Resolve context-file paths against projectRoot upfront so the
   // prompt builder doesn't need to know about the root layout. Paths
@@ -666,10 +883,36 @@ export function startRouter(config: RouterConfig): RouterHandle {
       to: 'claimed',
     })
 
-    const prompt = buildPrompt(sessionId, noteId, config.notesRoot, {
+    let prompt = buildPrompt(sessionId, noteId, config.notesRoot, {
       ...(resolvedContextFiles.length > 0 ? { contextFiles: resolvedContextFiles } : {}),
       log,
     })
+
+    // Optional consumer-supplied prompt transform — runs AFTER the
+    // built-in assembly so the hook sees everything the LLM would
+    // otherwise receive. Errors here are non-fatal: we log and use
+    // the unmodified prompt rather than failing the solve.
+    if (config.beforePrompt) {
+      const noteRead = readNote(config.notesRoot, sessionId, noteId)
+      try {
+        const transformed = await config.beforePrompt({
+          prompt,
+          note: {
+            sessionId,
+            noteId,
+            frontmatter: noteRead.frontmatter,
+            prose: noteRead.prose,
+          },
+        })
+        if (typeof transformed === 'string') prompt = transformed
+        else log(`beforePrompt returned non-string; using original prompt`)
+      } catch (err) {
+        log(
+          `beforePrompt threw: ${err instanceof Error ? err.message : String(err)}; using original prompt`,
+        )
+      }
+    }
+
     log(`solving ${noteId} (${prompt.length} chars of context)`)
 
     // Build per-task extra args. Resume only kicks in when:
@@ -693,13 +936,77 @@ export function startRouter(config: RouterConfig): RouterHandle {
       }
     }
 
+    // ── Progress state for live feedback during solve ──
+    // We accumulate updates from each stream-json line (or every 5s
+    // for non-streaming presets) and broadcast a coalesced
+    // `task-progress` SSE event so the HUD's status line updates
+    // continuously instead of staying frozen until claude exits.
+    const taskStartMs = Date.now()
+    const progress: {
+      tokens?: { in: number; out: number }
+      toolSummary?: string
+      streamedSessionId?: string
+      finalText?: string
+    } = {}
+    let progressBroadcastTimer: ReturnType<typeof setTimeout> | null = null
+    const broadcastProgress = (): void => {
+      // 250ms coalesce: when many stream-json lines arrive in a burst
+      // (e.g. claude finishing a tool result + starting the next
+      // assistant turn) we don't flood the SSE wire.
+      if (progressBroadcastTimer) return
+      progressBroadcastTimer = setTimeout(() => {
+        progressBroadcastTimer = null
+        config.bus.broadcast({
+          type: 'task-progress',
+          noteId,
+          elapsedMs: Date.now() - taskStartMs,
+          ...(progress.tokens ? { tokens: progress.tokens } : {}),
+          ...(progress.toolSummary ? { toolSummary: progress.toolSummary } : {}),
+        })
+      }, 250)
+    }
+
+    // Non-streaming presets get an elapsed-time-only heartbeat every
+    // 5s so the HUD still shows liveness. Streaming presets get
+    // per-line updates instead.
+    let heartbeat: ReturnType<typeof setInterval> | null = null
+    if (outputEnvelope !== 'stream-json') {
+      heartbeat = setInterval(() => {
+        config.bus.broadcast({
+          type: 'task-progress',
+          noteId,
+          elapsedMs: Date.now() - taskStartMs,
+        })
+      }, 5000)
+    }
+
+    const onStdoutLine =
+      outputEnvelope === 'stream-json'
+        ? (line: string): void => {
+            const u = parseStreamJsonLine(line)
+            if (!u) return
+            if (u.sessionId) progress.streamedSessionId = u.sessionId
+            if (u.tokens) progress.tokens = u.tokens
+            if (u.toolSummary) progress.toolSummary = u.toolSummary
+            if (u.finalText !== undefined) progress.finalText = u.finalText
+            broadcastProgress()
+          }
+        : undefined
+
     try {
       const result = await spawner.spawn({
         prompt,
         cwd: config.projectRoot,
         timeoutMs,
         ...(extraArgs.length > 0 ? { extraArgs } : {}),
+        ...(onStdoutLine ? { onStdoutLine } : {}),
       })
+
+      if (heartbeat) clearInterval(heartbeat)
+      if (progressBroadcastTimer) {
+        clearTimeout(progressBroadcastTimer)
+        progressBroadcastTimer = null
+      }
 
       // Quick fails before parsing — these don't get a reply note.
       if (result.timedOut) {
@@ -710,13 +1017,22 @@ export function startRouter(config: RouterConfig): RouterHandle {
         return fail(`${cliName} exited ${result.exitCode}${tail}`)
       }
 
-      // Unwrap the JSON envelope when the preset uses one. We capture
-      // session_id for future resumes AND extract the assistant text
-      // to feed into the existing reply parser. For text-mode presets
-      // the stdout IS the assistant text and there's no session id to
-      // capture.
+      // Unwrap the envelope to get the assistant text + session_id.
+      //   - stream-json: progress state already has both
+      //   - json: parse the single envelope object
+      //   - text: stdout IS the assistant text; no session id to capture
       let assistantText = result.stdout
-      if (outputEnvelope === 'json') {
+      if (outputEnvelope === 'stream-json') {
+        if (progress.finalText !== undefined) {
+          assistantText = progress.finalText
+        }
+        if (progress.streamedSessionId) {
+          lastSessionId = progress.streamedSessionId
+        }
+        if (progress.finalText === undefined) {
+          log(`warning: ${cliName} stream-json missing a final result message; resume chain reset`)
+        }
+      } else if (outputEnvelope === 'json') {
         const envelope = parseCliJsonEnvelope(result.stdout)
         if (envelope) {
           assistantText = envelope.result
@@ -724,9 +1040,6 @@ export function startRouter(config: RouterConfig): RouterHandle {
             lastSessionId = envelope.session_id
           }
         } else {
-          // Couldn't parse — fall back to raw stdout so the reply
-          // extractor still has a chance. The session-id chain breaks
-          // for this hop; next task starts fresh.
           log(`warning: ${cliName} did not emit a parseable JSON envelope; resume chain reset`)
         }
       }
@@ -815,6 +1128,8 @@ export function startRouter(config: RouterConfig): RouterHandle {
         log(`failed ${noteId}: ${reason}`)
       }
     } catch (err) {
+      if (heartbeat) clearInterval(heartbeat)
+      if (progressBroadcastTimer) clearTimeout(progressBroadcastTimer)
       const message = err instanceof Error ? err.message : String(err)
       const failT: StatusTransition = {
         ts: new Date().toISOString(),

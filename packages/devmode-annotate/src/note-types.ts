@@ -294,6 +294,13 @@ export type ServerEvent =
   | { type: 'note-created'; id: string; filename: string; author: Author }
   | { type: 'note-updated'; id: string; sessionId: string }
   | { type: 'note-deleted'; id: string; sessionId: string }
+  | {
+      type: 'task-progress'
+      noteId: string
+      elapsedMs: number
+      tokens?: { in: number; out: number }
+      toolSummary?: string
+    }
   | { type: 'capture-request'; requestId: string; payload: CaptureRequestPayload }
   | { type: 'capture-request-cancelled'; requestId: string }
   | { type: 'session-rotated'; sessionId: string }
