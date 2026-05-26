@@ -11,6 +11,20 @@ All notable changes to LLui packages are documented here. LLui is a pre-1.0 proj
 
 Packages version in lockstep at release time: `@llui/dom`, `@llui/vite-plugin`, `@llui/test`, `@llui/router`, `@llui/transitions`, `@llui/components`, `@llui/vike` share a version line. `@llui/effects`, `@llui/mcp`, `@llui/eslint-plugin`, `@llui/agent`, and `llui-agent` have their own cadence.
 
+## 2026-05-25 — 0.4.6 / 0.5.9
+
+**Released:** `@llui/{dom,components,router,transitions,vike,test,agent}@0.4.6`; `llui-agent@0.4.6`; `@llui/mcp@0.5.9`
+
+Same-day follow-up to 0.4.5: the `__view` fallback DEV-gate from the 2026-05-24 perf size-cut (commit 7ecd83e) broke downstream consumers running vitest. Vitest doesn't transform `node_modules` by default, so the published `@llui/dom` dist evaluated `import.meta.env?.DEV` as `undefined` at runtime and threw on every `mountApp` call with a hand-rolled `ComponentDef`. Surfaced when dicerun2 bumped to 0.4.5 and saw 66 unit-test failures (every `testView(Component, …)` call). The fix re-gates the fallback on `__compilerVersion` semantics instead of DEV mode. All packages republish to pick up the new `@llui/dom` peer range.
+
+### `@llui/dom@0.4.6`
+
+- **Fixed** `getInstanceViewBag` no longer throws "missing `__view` — recompile with @llui/vite-plugin" for hand-rolled `ComponentDef` literals running outside Vite's transform pipeline (vitest fixtures, esbuild-bundled e2e harnesses, ad-hoc node scripts). The DEV-gate from 0.4.5 was the wrong signal — vitest doesn't transform `node_modules`, so `import.meta.env?.DEV` evaluated as `undefined` and the throw fired even when the def was clearly hand-rolled. The new gate uses `__compilerVersion`: if a real version is present and `__view` is missing, the build pipeline is genuinely broken and a focused error fires; if `__compilerVersion` is undefined or `__test__`, fall back to `createView`. Bundle impact: regains ~400–800 bytes of `createView` and the structural primitives it imports (`show`, `branch`, `scope`, `memo`, `unsafeHtml`, `useContext`, `clientOnly`); apps that don't reference those primitives via their compiled `__view` still tree-shake the unused ones. Verified by re-running dicerun2's `pnpm test` against the rebuilt dist — 900/900 web tests pass.
+
+### `@llui/{components,router,transitions,vike,test,agent}@0.4.6` / `llui-agent@0.4.6` / `@llui/mcp@0.5.9`
+
+- **Improved** Cascade republish — peer `@llui/dom` pinned to `^0.4.6`. No source changes.
+
 ## 2026-05-25 — 0.4.5 / 0.5.8
 
 **Released:** `@llui/{dom,components,router,transitions,vike,test,agent}@0.4.5`; `llui-agent@0.4.5`; `@llui/mcp@0.5.8`
