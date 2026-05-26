@@ -294,7 +294,12 @@ export function registerNotesTools(registry: ToolRegistry): void {
     },
     'notes',
     async (_args, ctx) => {
-      return { sessions: listSessions(ctx.notesRoot) }
+      // `listSessions` returns the richer `SessionListEntry[]` shape
+      // (id + noteCount + startedAt) for the HUD browse-view's session
+      // selector. MCP clients only need the id stream, so we project
+      // here — the tool's documented surface has always been
+      // `{ sessions: string[] }`.
+      return { sessions: listSessions(ctx.notesRoot).map((s) => s.id) }
     },
   )
 

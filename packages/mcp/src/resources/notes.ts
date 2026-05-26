@@ -39,7 +39,12 @@ export function registerNotesResources(mcp: McpServer, opts: RegisterOpts): void
       mimeType: 'application/json',
     },
     async (): Promise<ReadResourceResult> => {
-      const sessions = listSessions(opts.notesRoot())
+      // The `llui://sessions` resource has always exposed a flat
+      // string list — clients use it as an index to discover session
+      // ids and then dereference `llui://session/{id}` for full
+      // metadata. The richer `SessionListEntry` shape stays on the
+      // HUD-facing HTTP endpoint where the browse-view needs it.
+      const sessions = listSessions(opts.notesRoot()).map((s) => s.id)
       return {
         contents: [
           {

@@ -290,7 +290,14 @@ describe('startRouter', () => {
         author: 'human',
       })
     }
-    await new Promise((r) => setTimeout(r, 80))
+    // Poll for all three spawner calls instead of a fixed sleep — under
+    // monorepo-wide concurrent test load, the event loop is slow enough
+    // that 3 × 5ms serial tasks + overhead occasionally exceeds an 80ms
+    // wall-clock budget. Cap at 2s so a genuine hang still fails fast.
+    const deadline = Date.now() + 2000
+    while (spawner.calls.length < 3 && Date.now() < deadline) {
+      await new Promise((r) => setTimeout(r, 5))
+    }
     expect(spawner.calls.length).toBeGreaterThanOrEqual(3)
     expect(maxInFlight).toBe(1)
     handle.stop()

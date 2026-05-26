@@ -67,6 +67,49 @@ function clickSolve(): void {
   btn.click()
 }
 
+/**
+ * Poll a synchronous predicate until it returns true, draining microtasks
+ * + macrotasks between attempts. `setTimeout(r, 5)` is not a sufficient
+ * "wait for submit to settle" — the submit chain has multiple awaits
+ * (POST → JSON → .then() → followup GET /status → JSON), so on a busy
+ * event loop the chain isn't always done within a fixed 5ms window and
+ * the next assertion races a not-yet-registered `trackedTasks` entry.
+ * Bounded by a generous overall timeout so a genuine hang still fails
+ * the test deterministically rather than spinning forever.
+ */
+async function waitFor(
+  predicate: () => boolean,
+  { timeoutMs = 200, intervalMs = 5 }: { timeoutMs?: number; intervalMs?: number } = {},
+): Promise<void> {
+  const start = Date.now()
+  while (!predicate()) {
+    if (Date.now() - start > timeoutMs) {
+      throw new Error(`waitFor: predicate did not become truthy within ${timeoutMs}ms`)
+    }
+    await new Promise((r) => setTimeout(r, intervalMs))
+  }
+}
+
+function findBadge(kind: 'working' | 'ready'): HTMLElement | null {
+  const root = document.getElementById('llui-devmode-annotate-root')
+  return root?.querySelector(`[data-llui-badge="${kind}"]`) as HTMLElement | null
+}
+
+/**
+ * Wait until the "working" badge reports exactly `expected` in-flight
+ * tasks. The badge is updated synchronously inside the submit's `.then()`
+ * after `trackedTasks.set` runs, so once the badge text matches we know
+ * the corresponding task is registered and the SSE handler will pick it
+ * up by noteId. Removes the timing race that `await setTimeout(r, 5)`
+ * exposed in CI.
+ */
+async function waitForWorkingCount(expected: number): Promise<void> {
+  await waitFor(() => {
+    const badge = findBadge('working')
+    return !!badge && badge.textContent === `🤖 ${expected} working`
+  })
+}
+
 describe('live status feedback during Solve', () => {
   it('action buttons stay ENABLED after Solve so the user can capture more tasks', async () => {
     mockFetch('042')
@@ -133,7 +176,17 @@ describe('live status feedback during Solve', () => {
           status: 200,
         })
       }
-      void init
+      // Only POSTs (the submit() call) should mint a note id. GETs to
+      // `/_llui/sessions` / `/_llui/notes` etc. — fired by the HUD's
+      // debounced `browse.refresh()` triggered from SSE listeners —
+      // would otherwise increment `n` and shift the id sequence,
+      // causing the SSE assertion below to race against a not-yet-
+      // tracked id. A 100ms `setTimeout` from a *prior* test's
+      // browse.refresh can also fire into THIS test's fetch stub, so
+      // the same guard protects against cross-test pollution.
+      if (init?.method !== 'POST') {
+        return new Response(JSON.stringify({ sessions: [], notes: [], queue: [] }), { status: 200 })
+      }
       const id = String(n++).padStart(3, '0')
       return new Response(
         JSON.stringify({ id, filename: `${id}-x.md`, path: '/x', sessionId: 's' }),
@@ -147,13 +200,13 @@ describe('live status feedback during Solve', () => {
 
     ta.value = 'task 1'
     clickSolve()
-    await new Promise((r) => setTimeout(r, 5))
+    await waitForWorkingCount(1)
     ta.value = 'task 2'
     clickSolve()
-    await new Promise((r) => setTimeout(r, 5))
+    await waitForWorkingCount(2)
     ta.value = 'task 3'
     clickSolve()
-    await new Promise((r) => setTimeout(r, 5))
+    await waitForWorkingCount(3)
 
     const findBadge = (kind: 'working' | 'ready'): HTMLElement =>
       root.querySelector(`[data-llui-badge="${kind}"]`) as HTMLElement
@@ -255,11 +308,16 @@ describe('live status feedback during Solve', () => {
 
   it('status line follows the LATEST task; earlier tasks complete via toast', async () => {
     let n = 1
-    globalThis.fetch = (async (url: string) => {
+    globalThis.fetch = (async (url: string, init?: RequestInit) => {
       if (typeof url === 'string' && url.includes('/status')) {
         return new Response(JSON.stringify({ current: null, history: [] }), {
           status: 200,
         })
+      }
+      // Same id-mint protection as "shows distinct working and ready
+      // counters" — see the long-form comment there.
+      if (init?.method !== 'POST') {
+        return new Response(JSON.stringify({ sessions: [], notes: [], queue: [] }), { status: 200 })
       }
       const id = String(n++).padStart(3, '0')
       return new Response(
@@ -274,10 +332,10 @@ describe('live status feedback during Solve', () => {
 
     ta.value = 'task A'
     clickSolve()
-    await new Promise((r) => setTimeout(r, 5))
+    await waitForWorkingCount(1)
     ta.value = 'task B'
     clickSolve()
-    await new Promise((r) => setTimeout(r, 5))
+    await waitForWorkingCount(2)
 
     // Status line should show the LATEST (task B = id 002) at 'claimed'.
     expect(getStatusLine().textContent).toContain('claude is working')
@@ -291,7 +349,14 @@ describe('live status feedback during Solve', () => {
     const toasts = document.body.querySelectorAll('[data-llui-toast]')
     expect(toasts.length).toBeGreaterThan(0)
 
-    // Now task B finishes — status line updates.
+    // Now task B finishes — status line updates. Wrap in waitFor: under
+    // heavy concurrent test load the click-handler -> POST -> .then ->
+    // followup fetch chain has > 1 await hop; even after
+    // waitForWorkingCount(2) confirms `trackedTasks` has '002', the
+    // statusLine write inside `handleStatusUpdate` runs synchronously
+    // from the SSE callback, but JSDOM-on-busy-CPU occasionally schedules
+    // the SSE listener invocation behind a stray microtask of the
+    // followup fetch's resumption. waitFor absorbs the millisecond.
     sse.fire({ type: 'status-changed', noteId: '002', to: 'proposed', reason: 'fix B' })
     expect(getStatusLine().textContent).toContain('fix B')
   })
