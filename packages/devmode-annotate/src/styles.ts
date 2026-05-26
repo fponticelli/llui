@@ -17,7 +17,8 @@ const FONT = '-apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-ser
  * styles in or out.
  */
 export const THEME_STYLESHEET = `
-#llui-devmode-annotate-root {
+#llui-devmode-annotate-root,
+#llui-devmode-annotate-toasts {
   --hud-bg: #ffffff;
   --hud-fg: #111111;
   --hud-fg-muted: #555555;
@@ -44,7 +45,8 @@ export const THEME_STYLESHEET = `
 }
 
 @media (prefers-color-scheme: dark) {
-  #llui-devmode-annotate-root {
+  #llui-devmode-annotate-root,
+  #llui-devmode-annotate-toasts {
     --hud-bg: #1f2025;
     --hud-fg: #e7e7ea;
     --hud-fg-muted: #a8a8b0;

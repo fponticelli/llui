@@ -267,6 +267,7 @@ export function createNotesMiddleware(config: NotesMiddlewareConfig): Middleware
           noteId: id,
           from: before,
           to: payload.to,
+          ...(payload.reason ? { reason: payload.reason } : {}),
         })
 
         // 'accepted' triggers an automatic git apply of the most recent
@@ -288,6 +289,7 @@ export function createNotesMiddleware(config: NotesMiddlewareConfig): Middleware
             noteId: id,
             from: 'accepted',
             to: followUp.to,
+            ...(apply.reason ? { reason: apply.reason } : {}),
           })
           // Successful applies clean up the task's transient files —
           // the task note, its reply notes, and screenshots. The
@@ -520,17 +522,63 @@ function applyProposedDiffForTask(
   const patchFile = join(tmp, 'change.patch')
   const combined = chosen.files.map((f) => f.patch).join('\n')
   writeFileSync(patchFile, combined, 'utf8')
-  try {
-    execFileSync('git', ['apply', '--whitespace=nowarn', patchFile], {
+  /** Run git apply with a given arg list; rethrow on failure so the
+   *  caller can fall back / report the error. */
+  const tryApply = (extraFlags: string[]): void => {
+    execFileSync('git', ['apply', '--whitespace=nowarn', ...extraFlags, patchFile], {
       cwd: process.cwd(),
       stdio: ['ignore', 'pipe', 'pipe'],
     })
+  }
+  /** Extract a useful, single-line reason from an execFileSync error.
+   *  `err.stderr` (Buffer) holds the actual git diagnostic; `err.message`
+   *  is the generic "Command failed: ..." wrapper. */
+  const reasonFromErr = (err: unknown): { firstLine: string; full: string } => {
+    const e = err as { stderr?: Buffer | string; stdout?: Buffer | string; message?: string }
+    const stderrText =
+      e.stderr instanceof Buffer
+        ? e.stderr.toString('utf8')
+        : typeof e.stderr === 'string'
+          ? e.stderr
+          : ''
+    const stdoutText =
+      e.stdout instanceof Buffer
+        ? e.stdout.toString('utf8')
+        : typeof e.stdout === 'string'
+          ? e.stdout
+          : ''
+    const full = (stderrText || stdoutText || e.message || String(err)).trim()
+    const firstLine = full.split('\n').find((l) => l.trim().length > 0) ?? full
+    return { firstLine, full }
+  }
+
+  // First pass: straight apply. Handles the common case where the
+  // source matches what the LLM was looking at.
+  try {
+    tryApply([])
     rmSync(tmp, { recursive: true, force: true })
     return { ok: true, appliedFiles: chosen.files.map((f) => f.path) }
-  } catch (err) {
-    rmSync(tmp, { recursive: true, force: true })
-    const message = err instanceof Error ? err.message : String(err)
-    return { ok: false, reason: `git apply failed: ${message}` }
+  } catch (err1) {
+    // Second pass: --3way fallback. Lets git use the index to perform
+    // a 3-way merge when the source has drifted slightly since the
+    // LLM produced the patch. Conflicts left as <<<<<<< markers in
+    // the working tree — better than a flat rejection.
+    try {
+      tryApply(['--3way'])
+      rmSync(tmp, { recursive: true, force: true })
+      return { ok: true, appliedFiles: chosen.files.map((f) => f.path) }
+    } catch (err2) {
+      // Both passes failed. Keep the patch around for inspection and
+      // surface the 3-way error (it's typically more informative
+      // about which hunks couldn't merge).
+      const r1 = reasonFromErr(err1)
+      const r2 = reasonFromErr(err2)
+      console.warn('[llui:apply] straight git apply failed:\n' + r1.full)
+      console.warn('[llui:apply] --3way fallback failed:\n' + r2.full)
+      console.warn('[llui:apply] patch preserved at:', patchFile)
+      // Prefer the 3-way line; fall back to the straight-apply line.
+      return { ok: false, reason: `git apply failed: ${r2.firstLine || r1.firstLine}` }
+    }
   }
 }
 

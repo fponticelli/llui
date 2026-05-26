@@ -782,6 +782,7 @@ export function mountAnnotateHud(opts: MountAnnotateOptions = {}): AnnotateHudHa
   // while the user has moved on to a different task. Sits outside the
   // floating root container so it isn't affected by drag/position.
   const toastContainer = document.createElement('div')
+  toastContainer.id = 'llui-devmode-annotate-toasts'
   toastContainer.style.cssText = STYLES.toastContainer
 
   root.append(floatingBtn, modal)
