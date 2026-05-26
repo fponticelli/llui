@@ -281,20 +281,20 @@ export function mountAnnotateHud(opts: MountAnnotateOptions = {}): AnnotateHudHa
   interface TrackedTask {
     noteId: string
     sessionId: string
+    chainName: string
     status: 'claimed' | 'in-progress' | 'proposed' | string
   }
   const trackedTasks = new Map<string, TrackedTask>()
   let latestTaskId: string | null = null
-  // Last task this HUD lifetime that the router successfully solved
-  // (reached 'proposed' or beyond). When resume mode is on AND this
-  // is non-null, the next Solve will chain off whatever conversation
-  // led to that note. Drives the lineage row.
-  let lastCompletedTaskId: string | null = null
 
   const refreshLineageRow = (): void => {
-    if (resumeMode && lastCompletedTaskId) {
-      const chainSuffix = currentChainName === 'default' ? '' : ` · chain "${currentChainName}"`
-      lineageRow.textContent = `↻ chained from #${lastCompletedTaskId}${chainSuffix}`
+    // Shows the prior solve we're chaining from, IF the user picked
+    // a chain to resume. "Start fresh" + first-ever solve both leave
+    // this empty.
+    const entry = selectedResumeChain ? chainHistories.get(selectedResumeChain) : null
+    if (entry) {
+      const trimmed = entry.summary.length > 60 ? entry.summary.slice(0, 60) + '…' : entry.summary
+      lineageRow.textContent = `↻ chained from #${entry.lastTaskId} — ${trimmed}`
       lineageRow.style.display = 'block'
     } else {
       lineageRow.style.display = 'none'
@@ -491,13 +491,29 @@ export function mountAnnotateHud(opts: MountAnnotateOptions = {}): AnnotateHudHa
   // between "Resume previous" and "Start fresh". Hidden entirely
   // when the upstream router is disabled or the CLI isn't on PATH.
   const solveEnabled = opts.solveEnabled !== false
-  let resumeMode = true
-  // Named-chain state. The router tracks one session id PER chain
-  // name; sending different chain names lets the user keep parallel
-  // conversation threads. The HUD remembers which chains have been
-  // used this lifetime so it can offer them as quick-pick options.
-  let currentChainName = 'default'
-  const knownChainNames = new Set<string>(['default'])
+  // Named-chain state, take 2. Each completed solve goes into
+  // `chainHistories` keyed by the chainName the router used; the
+  // LATEST `summary` from that chain is what the user sees in the
+  // resume menu. `selectedResumeChain` is what the next Solve will
+  // attach to: `null` means "start fresh" (mint a new chain name on
+  // submit), a string means "resume this prior chain". Until at
+  // least one chain has completed, the caret is hidden — there's
+  // nothing to resume from.
+  interface ChainEntry {
+    name: string
+    lastTaskId: string
+    summary: string
+    ts: number
+  }
+  const chainHistories = new Map<string, ChainEntry>()
+  let selectedResumeChain: string | null = null
+  let chainNameSeq = 0
+  const mintChainName = (): string => {
+    chainNameSeq += 1
+    // Avoid colliding with any chain we've already seen.
+    while (chainHistories.has(`chain-${chainNameSeq}`)) chainNameSeq += 1
+    return `chain-${chainNameSeq}`
+  }
 
   const solveSplit = document.createElement('div')
   solveSplit.setAttribute('data-llui-solve-split', '')
@@ -526,74 +542,79 @@ export function mountAnnotateHud(opts: MountAnnotateOptions = {}): AnnotateHudHa
   solveMenu.setAttribute('role', 'menu')
   solveMenu.style.cssText = SPLIT_BTN_STYLES.menu
 
-  // Menu items are rebuilt from `knownChainNames` on every render so
-  // newly-created chains appear immediately. A static "Start fresh"
-  // and a "+ New chain..." prompt round it out.
+  // Render the Solve split button + dropdown menu. The caret is
+  // hidden entirely until at least one chain has completed (nothing
+  // to resume from on a first solve). When chains exist, each menu
+  // item shows the LLM's own summary of that chain's most recent
+  // solve — the user picks "the chain that did X" rather than
+  // remembering chain names.
   const renderSolveState = (): void => {
-    solveGlyph.style.display = resumeMode ? 'inline-flex' : 'none'
-    solveBtn.title = resumeMode
-      ? `Solve, resuming chain "${currentChainName}" (⌘↩)`
+    const hasResumable = chainHistories.size > 0
+    // No resumable chains → no caret, no menu. The button is a plain
+    // primary "Solve" that submits a fresh chain. The container
+    // border-radius still wraps it cleanly since the caret was the
+    // only thing on the right side.
+    solveCaret.style.display = hasResumable ? 'inline-flex' : 'none'
+    if (!hasResumable) {
+      // Force selection back to null so the next submit mints fresh.
+      selectedResumeChain = null
+    }
+    const activeChain = selectedResumeChain ? chainHistories.get(selectedResumeChain) : null
+    solveGlyph.style.display = activeChain ? 'inline-flex' : 'none'
+    solveBtn.title = activeChain
+      ? `Solve, resuming "${activeChain.summary}" (⌘↩)`
       : 'Solve, starting a fresh conversation (⌘↩)'
+    if (!hasResumable) {
+      solveMenu.style.display = 'none'
+      return
+    }
+
     solveMenu.innerHTML = ''
     const headerEl = document.createElement('div')
     headerEl.textContent = 'Resume chain'
     headerEl.style.cssText =
       'padding: 4px 8px 2px; font-size: 10px; color: var(--hud-fg-subtle); text-transform: uppercase; letter-spacing: 0.5px;'
     solveMenu.appendChild(headerEl)
-    for (const name of knownChainNames) {
+    // List chains by most-recently-completed first.
+    const ordered = [...chainHistories.values()].sort((a, b) => b.ts - a.ts)
+    for (const entry of ordered) {
       const item = document.createElement('button')
       item.type = 'button'
       item.setAttribute('role', 'menuitemradio')
       item.style.cssText = SPLIT_BTN_STYLES.menuItem
-      const isActive = resumeMode && name === currentChainName
-      item.textContent = (isActive ? '● ' : '○ ') + (name === 'default' ? 'default' : `"${name}"`)
+      const isActive = selectedResumeChain === entry.name
+      const dot = isActive ? '● ' : '○ '
+      const summary = entry.summary || `(no summary — task ${entry.lastTaskId})`
+      item.textContent = `${dot}${summary}`
+      item.title = `Chain ${entry.name} · task #${entry.lastTaskId}`
       item.setAttribute('aria-checked', isActive ? 'true' : 'false')
       item.addEventListener('click', (e) => {
         e.stopPropagation()
-        resumeMode = true
-        currentChainName = name
+        selectedResumeChain = entry.name
         renderSolveState()
         refreshLineageRow()
         closeSolveMenu()
       })
       solveMenu.appendChild(item)
     }
-    // Divider
+    // Divider + "Start fresh".
     const divider = document.createElement('div')
     divider.style.cssText = 'height: 1px; background: var(--hud-border); margin: 4px 6px;'
     solveMenu.appendChild(divider)
-    // "Start fresh"
     const freshItem = document.createElement('button')
     freshItem.type = 'button'
     freshItem.setAttribute('role', 'menuitemradio')
     freshItem.style.cssText = SPLIT_BTN_STYLES.menuItem
-    freshItem.textContent = (!resumeMode ? '● ' : '○ ') + 'Start fresh'
-    freshItem.setAttribute('aria-checked', !resumeMode ? 'true' : 'false')
+    freshItem.textContent = (selectedResumeChain === null ? '● ' : '○ ') + 'Start fresh'
+    freshItem.setAttribute('aria-checked', selectedResumeChain === null ? 'true' : 'false')
     freshItem.addEventListener('click', (e) => {
       e.stopPropagation()
-      resumeMode = false
+      selectedResumeChain = null
       renderSolveState()
       refreshLineageRow()
       closeSolveMenu()
     })
     solveMenu.appendChild(freshItem)
-    // "+ New chain..."
-    const newChainItem = document.createElement('button')
-    newChainItem.type = 'button'
-    newChainItem.style.cssText = SPLIT_BTN_STYLES.menuItem + '; color: var(--hud-accent-fg)'
-    newChainItem.textContent = '＋ New chain…'
-    newChainItem.addEventListener('click', (e) => {
-      e.stopPropagation()
-      const name = prompt('Chain name:')?.trim()
-      if (!name) return
-      knownChainNames.add(name)
-      currentChainName = name
-      resumeMode = true
-      renderSolveState()
-      refreshLineageRow()
-      closeSolveMenu()
-    })
-    solveMenu.appendChild(newChainItem)
   }
   renderSolveState()
 
@@ -1447,11 +1468,21 @@ export function mountAnnotateHud(opts: MountAnnotateOptions = {}): AnnotateHudHa
     }
 
     // 'proposed' means the router successfully produced a result —
-    // it captured a session id we can chain off. Mark this note as
-    // the head of the resume chain so the next Solve shows the
-    // lineage row.
+    // record the chain entry (overwriting any prior entry for the
+    // same chain) so the next Solve's menu shows this summary. The
+    // router broadcasts the LLM's own one-line summary as `reason`.
     if (isReady(to) && !isReady(prev)) {
-      lastCompletedTaskId = noteId
+      chainHistories.set(task.chainName, {
+        name: task.chainName,
+        lastTaskId: noteId,
+        summary: reason ?? '',
+        ts: Date.now(),
+      })
+      // Auto-select the chain we just completed — common case is
+      // "I want to continue this" so the next Solve resumes by
+      // default. User can pick "Start fresh" or another chain.
+      selectedResumeChain = task.chainName
+      renderSolveState()
       refreshLineageRow()
     }
 
@@ -1501,11 +1532,17 @@ export function mountAnnotateHud(opts: MountAnnotateOptions = {}): AnnotateHudHa
     }
     const captureLevel: CaptureLevel = verboseCheckbox.checked ? 'verbose' : 'standard'
     statusLine.textContent = pendingRect ? 'capturing screenshot…' : 'sending…'
+    // Pick the chain name to attach to this task:
+    //   - if the user selected a prior chain to resume → that name
+    //   - otherwise → mint a fresh chain id. The router has no
+    //     session for the fresh id, so resume: true is vacuously a
+    //     no-op (new conversation).
+    const chainName = intent === 'task' ? (selectedResumeChain ?? mintChainName()) : undefined
     submit(prose, {
       intent,
       captureLevel,
-      resume: resumeMode,
-      ...(intent === 'task' ? { chainName: currentChainName } : {}),
+      resume: true,
+      ...(chainName ? { chainName } : {}),
     }).then(
       async (result) => {
         textarea.value = ''
@@ -1525,6 +1562,7 @@ export function mountAnnotateHud(opts: MountAnnotateOptions = {}): AnnotateHudHa
           trackedTasks.set(result.id, {
             noteId: result.id,
             sessionId: result.sessionId,
+            chainName: chainName ?? 'default',
             status: 'claimed', // optimistic — router has already claimed by now
           })
           latestTaskId = result.id
