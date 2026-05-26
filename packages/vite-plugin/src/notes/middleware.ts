@@ -488,6 +488,43 @@ interface ApplyResult {
  * git-apply against the working tree; commits stay the developer's
  * responsibility.
  */
+/**
+ * Normalize a single-file unified diff produced by the LLM:
+ *  - CRLF → LF (the model occasionally emits CRLF in templated output)
+ *  - Strip a stray UTF-8 BOM from the front
+ *  - Guarantee a trailing newline (concatenating patches together
+ *    without trailing newlines produces "corrupt patch at line N"
+ *    when the last line of patch[i] runs into the diff header of
+ *    patch[i+1]).
+ */
+function normalizePatchText(patch: string): string {
+  let s = patch
+  if (s.charCodeAt(0) === 0xfeff) s = s.slice(1)
+  s = s.replace(/\r\n/g, '\n').replace(/\r/g, '\n')
+  if (!s.endsWith('\n')) s += '\n'
+  return s
+}
+
+/**
+ * Pretty-print a patch with line numbers for the console log. When
+ * git reports "corrupt patch at line N" we underline the offending
+ * line so the developer can spot it at a glance.
+ */
+function annotatePatchForLog(patch: string, errorMessage: string): string {
+  const m = /corrupt patch at line (\d+)/.exec(errorMessage)
+  const bad = m ? parseInt(m[1]!, 10) : -1
+  const lines = patch.split('\n')
+  const width = String(lines.length).length
+  return lines
+    .map((line, i) => {
+      const lineNum = i + 1
+      const pad = String(lineNum).padStart(width, ' ')
+      const marker = lineNum === bad ? '>>' : '  '
+      return `${marker} ${pad} │ ${line}`
+    })
+    .join('\n')
+}
+
 function applyProposedDiffForTask(
   notesRoot: string,
   sessionId: string,
@@ -518,9 +555,13 @@ function applyProposedDiffForTask(
   // it to `git apply`. The project root is the parent of `notesRoot`'s
   // `.llui/notes` ancestor — pragmatically, we use process.cwd() since
   // the middleware is mounted by Vite which runs at the project root.
+  //
+  // Each file's patch is normalized first: CRLF → LF (the LLM may
+  // emit CRLF in templated output) + a guaranteed trailing newline.
+  // Without these, git refuses with "corrupt patch at line N".
   const tmp = mkdtempSync(join(tmpdir(), 'llui-apply-'))
   const patchFile = join(tmp, 'change.patch')
-  const combined = chosen.files.map((f) => f.patch).join('\n')
+  const combined = chosen.files.map((f) => normalizePatchText(f.patch)).join('')
   writeFileSync(patchFile, combined, 'utf8')
   /** Run git apply with a given arg list; rethrow on failure so the
    *  caller can fall back / report the error. */
@@ -573,11 +614,31 @@ function applyProposedDiffForTask(
       // about which hunks couldn't merge).
       const r1 = reasonFromErr(err1)
       const r2 = reasonFromErr(err2)
+      // Save the failing patch next to the task note so the
+      // developer can inspect it without hunting through /tmp. The
+      // file lives alongside the session's notes and stays after
+      // restart.
+      const savedPath = join(notesRoot, sessionId, `${taskNoteId}.patch.failed`)
+      try {
+        writeFileSync(savedPath, combined, 'utf8')
+      } catch {
+        // Best-effort; the toast reason still carries enough info.
+      }
+      const errLineMessage = r1.full || r2.full
       console.warn('[llui:apply] straight git apply failed:\n' + r1.full)
       console.warn('[llui:apply] --3way fallback failed:\n' + r2.full)
-      console.warn('[llui:apply] patch preserved at:', patchFile)
+      console.warn('[llui:apply] patch saved to:', savedPath)
+      console.warn(
+        '[llui:apply] patch contents (>> marks the offending line):\n' +
+          annotatePatchForLog(combined, errLineMessage),
+      )
+      rmSync(tmp, { recursive: true, force: true })
       // Prefer the 3-way line; fall back to the straight-apply line.
-      return { ok: false, reason: `git apply failed: ${r2.firstLine || r1.firstLine}` }
+      const firstLine = r2.firstLine || r1.firstLine
+      return {
+        ok: false,
+        reason: `git apply failed: ${firstLine} (patch saved to ${savedPath})`,
+      }
     }
   }
 }
