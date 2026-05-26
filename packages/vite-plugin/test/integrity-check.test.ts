@@ -71,7 +71,7 @@ describe('build-time integrity check (v2a §2.4)', () => {
     const bundle: Record<string, BundleChunk> = {
       'main.js': {
         type: 'chunk',
-        code: 'export const C = component({name:"C", __lluiCompilerEmitted: 1})',
+        code: 'export const C = component({name:"C", __lluiCompilerEmitted: 1, __view: $s => createView($s)})',
       },
     }
     const msg = runGenerateBundle(plugin, bundle)
@@ -82,7 +82,10 @@ describe('build-time integrity check (v2a §2.4)', () => {
     const plugin = await bootPluginForBuild()
     const bundle: Record<string, BundleChunk> = {
       'a.js': { type: 'chunk', code: 'export const x = 1' },
-      'b.js': { type: 'chunk', code: 'export const C = ({__lluiCompilerEmitted:1})' },
+      'b.js': {
+        type: 'chunk',
+        code: 'export const C = ({__lluiCompilerEmitted:1, __view: $s => createView($s)})',
+      },
     }
     expect(runGenerateBundle(plugin, bundle)).toBeNull()
   })
@@ -110,6 +113,40 @@ describe('build-time integrity check (v2a §2.4)', () => {
     })
     const bundle: Record<string, BundleChunk> = {
       'main.js': { type: 'chunk', code: 'export const x = 1' },
+    }
+    expect(runGenerateBundle(plugin, bundle)).toBeNull()
+  })
+
+  it('fires when a stamped component is missing its `__view` companion marker', async () => {
+    // Symmetric integrity check: every `__lluiCompilerEmitted` must be
+    // paired with a `__view:` synthesis marker. Pre-fix, shorthand
+    // `view,` and identifier-ref `view: fn` got stamped without a
+    // `__view` factory and crashed at mount. The build-time check fails
+    // closed so any future regression of the same shape is caught here
+    // instead of at runtime.
+    const plugin = await bootPluginForBuild()
+    const bundle: Record<string, BundleChunk> = {
+      'main.js': {
+        type: 'chunk',
+        code: 'export const C = component({name:"C", __lluiCompilerEmitted: 1, __compilerVersion:"0.3.0"})',
+      },
+    }
+    const msg = runGenerateBundle(plugin, bundle)
+    expect(msg).not.toBeNull()
+    expect(msg).toMatch(/integrity check failed/)
+    expect(msg).toMatch(/__view/)
+    expect(msg).toMatch(/stamped without/)
+  })
+
+  it('passes when each stamped component has a paired `__view`', async () => {
+    const plugin = await bootPluginForBuild()
+    const bundle: Record<string, BundleChunk> = {
+      'main.js': {
+        type: 'chunk',
+        code:
+          'export const A = component({name:"A", __lluiCompilerEmitted:1, __view: $s => createView($s)});' +
+          'export const B = component({name:"B", __lluiCompilerEmitted:1, __view: $s => ({send:$s})});',
+      },
     }
     expect(runGenerateBundle(plugin, bundle)).toBeNull()
   })

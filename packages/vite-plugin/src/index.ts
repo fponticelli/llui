@@ -1454,18 +1454,34 @@ export default function llui(options: LluiPluginOptions = {}): Plugin {
       // SSR builds; rollup adds it when Vite's build.ssr is set.
       if ((opts as { ssr?: boolean }).ssr) return
       let markerCount = 0
+      let viewCount = 0
       for (const chunk of Object.values(bundle)) {
         if (chunk.type !== 'chunk') continue
         // Count literal occurrences of the marker. `__lluiCompilerEmitted`
         // is unique enough that false positives from user source are
         // implausible.
-        let from = 0
         const code = chunk.code
+        let from = 0
         while (true) {
           const i = code.indexOf('__lluiCompilerEmitted', from)
           if (i < 0) break
           markerCount++
           from = i + '__lluiCompilerEmitted'.length
+        }
+        // Count `__view` companion-marker occurrences in the same pass.
+        // The compiler injects exactly one `__view: ...` per stamped
+        // component. A stamped call missing `__view` would otherwise
+        // crash at mount with the "missing __view despite being compiled"
+        // throw from `getInstanceViewBag` — catching it here surfaces the
+        // problem at build, with the file context that produced it still
+        // in scope. Anchored on `__view:` to exclude prose mentions and
+        // the `__view$` rename-allow-list entry.
+        from = 0
+        while (true) {
+          const i = code.indexOf('__view:', from)
+          if (i < 0) break
+          viewCount++
+          from = i + '__view:'.length
         }
       }
       if (markerCount === 0) {
@@ -1478,6 +1494,24 @@ export default function llui(options: LluiPluginOptions = {}): Plugin {
             "(check `enforce: 'pre'`). The check looks for the `__lluiCompilerEmitted` " +
             'property the compiler injects into every component. See ' +
             'docs/proposals/v2-compiler/v2a.md §2.4.',
+        )
+      }
+      if (viewCount < markerCount) {
+        // Stamped-but-incomplete: a component() call carries the
+        // `__lluiCompilerEmitted` / `__compilerVersion` markers but is
+        // missing its `__view` synthesis. Pre-fix this happened when
+        // `view:` was shorthand or an identifier reference that
+        // `injectViewBag` couldn't introspect; the bug surfaced as a
+        // runtime throw at mount. The symmetric check fails the build
+        // instead so any future regression of the same shape is caught
+        // before it reaches users.
+        this.error(
+          `[llui] integrity check failed: ${markerCount} compiled \`component()\` ` +
+            `call(s) but only ${viewCount} \`__view\` synthesis marker(s) — ` +
+            `${markerCount - viewCount} component(s) were stamped without a ` +
+            `\`__view\` factory. This usually means a \`component()\` call was ` +
+            'missing a `view` property, or the compiler bailed on an unexpected ' +
+            'view-property shape. File a bug at @llui/compiler.',
         )
       }
       // Integrity check passed. The marker is a build-time signal only —

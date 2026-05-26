@@ -1209,6 +1209,27 @@ describe('__view synthesis (issue #5 regression)', () => {
     expect(out).toMatch(/import\s*\{[^}]*\bcreateView\b/)
   })
 
+  it('emits __view for `view: undefined` / `view: null` so stamp+marker stay in sync', () => {
+    // TypeScript catches these as type errors, but the compiler must still
+    // emit a consistent shape — otherwise the runtime would throw
+    // "missing __view despite being compiled" *instead of* the more useful
+    // "view is not a function" the user expects from their nullish init.
+    for (const initializer of ['undefined', 'null']) {
+      const src = `
+        import { component } from '@llui/dom'
+        export const C = component({
+          name: 'C',
+          init: () => [{ count: 0 }, []],
+          update: (s, m) => [s, []],
+          view: ${initializer},
+        })
+      `
+      const out = t(src)
+      expect(out).toContain('__view')
+      expect(clean(out)).toContain('__view: $send => createView($send)')
+    }
+  })
+
   it('emits __view for `view: viewFn` identifier-reference', () => {
     // Companion to the shorthand regression: a PropertyAssignment whose
     // initializer is an Identifier (not an ArrowFunction/FunctionExpression)
