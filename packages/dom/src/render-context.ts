@@ -77,45 +77,50 @@ export function currentAccessor(): string | null {
  * Cache key is the instance: `send` is identity-stable per instance,
  * so the bag's bound `send` is correct for every call site that
  * receives it. The cache invalidates implicitly on instance disposal.
- * When no `__view` factory is present (hand-rolled ComponentDef in
- * tests, or some other unusual path), fall through to `createView` so
- * the bag is complete. The compiler emits `__view` for every
- * `component({...})` call — including identifier-param view functions
- * (`view: (h) => ...`) where it emits a factory that itself calls
- * `createView`. So these fallbacks are genuinely "shouldn't happen"
- * in compiled code — they exist for hand-rolled tests / dev mode.
  *
- * Bundle: gating the fallback behind `import.meta.env?.DEV` lets terser
- * drop `createView` from prod bundles. With createView gone, the
- * structural primitives only present in the full bag (`show`, `branch`,
- * `scope`, `memo`, `unsafeHtml`, `useContext`, `clientOnly`) drop too
- * unless the app's compiler-emitted `__view` factory pulls them in
- * explicitly. Apps that don't use those primitives (e.g. jfb, which
- * only references `text`, `each`, `selector`) shrink ~400-800 bytes.
+ * When `__view` is missing, the decision tree:
+ *   - real `__compilerVersion` set (i.e. not `__test__` and not absent)
+ *     → the compile pipeline ran for this def but failed to emit a
+ *     `__view` factory. That's a genuine misconfiguration; throw a
+ *     focused error so the dev sees the cause rather than a confusing
+ *     "bag.text is not a function" later.
+ *   - `__compilerVersion` absent or `__test__` → hand-rolled def
+ *     (e.g. a vitest fixture not transformed by @llui/vite-plugin).
+ *     Fall back to `createView`.
  *
- * Prod fallback when `__view` is missing: throw a focused error rather
- * than silently returning a `{send}`-only bag (which would crash on the
- * next `bag.text(...)` etc. with a confusing "not a function" error).
+ * Bundle note: we cannot statically DCE `createView` because the
+ * fallback path is reachable for any consumer that mounts a
+ * hand-rolled def. A previous iteration gated this on
+ * `import.meta.env?.DEV` to let terser drop `createView` in prod
+ * bundles, but that produced a hard runtime crash for downstream
+ * consumers running vitest without the LLui transform — vitest doesn't
+ * transform `node_modules`, so `import.meta.env?.DEV` evaluated as
+ * `undefined` and the throw fired even when the def was clearly
+ * hand-rolled. The compiler-version gate is the right signal: only
+ * compiled defs are required to carry `__view`.
  */
 export function getInstanceViewBag<S, M>(
   inst: ComponentInstance | undefined,
   send: Send<M>,
 ): unknown {
-  if (!inst) {
-    if (import.meta.env?.DEV) return createView<S, M>(send)
-    throw new Error('[LLui] getInstanceViewBag: missing instance')
-  }
+  if (!inst) return createView<S, M>(send)
   if (inst._viewBag !== undefined) return inst._viewBag
   const factory = (inst.def as unknown as { __view?: (s: Send<M>) => unknown }).__view
   let bag: unknown
   if (factory) {
     bag = factory(send)
-  } else if (import.meta.env?.DEV) {
-    bag = createView<S, M>(send)
   } else {
-    throw new Error(
-      `[LLui] component "${inst.def.name}" missing __view — recompile with @llui/vite-plugin`,
-    )
+    const ver = (inst.def as unknown as { __compilerVersion?: string }).__compilerVersion
+    if (ver !== undefined && ver !== '__test__') {
+      throw new Error(
+        `[LLui] component "${inst.def.name}" missing \`__view\` despite being compiled ` +
+          `(compiler v${ver}) — your @llui/vite-plugin install may be out of date or the ` +
+          `transform did not run on this file. Rebuild with the matching compiler version, ` +
+          `or remove \`__compilerVersion\` from a hand-rolled def to opt into the runtime ` +
+          `fallback.`,
+      )
+    }
+    bag = createView<S, M>(send)
   }
   inst._viewBag = bag
   return bag
