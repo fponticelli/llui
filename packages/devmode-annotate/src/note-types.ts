@@ -283,6 +283,17 @@ export interface NoteSummary {
   componentPath: string[] | null
   preview: string
   hasScreenshot: boolean
+  /** Frontmatter shortcuts surfaced in the list so the HUD can
+   *  rehydrate trackedTasks + chainHistories on reload without
+   *  fetching each note individually. Optional for back-compat with
+   *  servers that don't populate them. */
+  intent?: NoteIntent
+  chainName?: string
+  /** For reply notes only — the original task this reply addresses. */
+  replyTo?: string
+  /** For reply notes only — the LLM's one-line summary of the
+   *  proposed change (extracted from proposedDiff). */
+  proposedSummary?: string
 }
 
 export interface ListNotesQuery {

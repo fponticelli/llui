@@ -227,9 +227,18 @@ describe('listNotes', () => {
 })
 
 describe('listSessions', () => {
-  it('lists every session subdir', () => {
+  it('returns one summary per session subdir with id + noteCount + startedAt', () => {
     createNote(notesRoot, { body: 'a', frontmatter: fmBase, noteBody: emptyBody })
-    expect(listSessions(notesRoot).length).toBeGreaterThanOrEqual(1)
+    createNote(notesRoot, { body: 'b', frontmatter: fmBase, noteBody: emptyBody })
+    const sessions = listSessions(notesRoot)
+    expect(sessions.length).toBeGreaterThanOrEqual(1)
+    const s = sessions[0]!
+    expect(typeof s.id).toBe('string')
+    expect(s.id.startsWith('session-')).toBe(true)
+    expect(s.noteCount).toBeGreaterThanOrEqual(2)
+    expect(typeof s.startedAt).toBe('string')
+    // startedAt is an ISO string
+    expect(() => new Date(s.startedAt).toISOString()).not.toThrow()
   })
 
   it('returns empty array when notesRoot does not exist', () => {

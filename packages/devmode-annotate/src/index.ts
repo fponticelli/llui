@@ -59,6 +59,14 @@ export interface MountAnnotateOptions {
    *  want a real EventSource pass `false`; production callers should
    *  leave it `true` (default) so LLM-initiated captures land. */
   subscribeEvents?: boolean
+  /** Enable the server-side rehydrate fetch on mount. The HUD calls
+   *  /_llui/session/current + /_llui/notes + /_llui/queue right after
+   *  mount to restore tracked tasks, chain histories, and pending
+   *  Accept toasts after a page reload. Off by default — the vite
+   *  plugin sets it to `true` in the injected bootstrap so production
+   *  gets reload-survives-solve, while tests that stub `fetch` aren't
+   *  surprised by extra calls. */
+  rehydrate?: boolean
   /** Whether the attention router is wired up + available. When
    *  `false` (or missing CLI / `router: false` upstream), the HUD
    *  hides its "Solve" button so the user doesn't try to dispatch a
@@ -594,6 +602,7 @@ export function mountAnnotateHud(opts: MountAnnotateOptions = {}): AnnotateHudHa
         renderSolveState()
         refreshLineageRow()
         closeSolveMenu()
+        persistHudState()
       })
       solveMenu.appendChild(item)
     }
@@ -613,6 +622,7 @@ export function mountAnnotateHud(opts: MountAnnotateOptions = {}): AnnotateHudHa
       renderSolveState()
       refreshLineageRow()
       closeSolveMenu()
+      persistHudState()
     })
     solveMenu.appendChild(freshItem)
   }
@@ -790,6 +800,7 @@ export function mountAnnotateHud(opts: MountAnnotateOptions = {}): AnnotateHudHa
   viewToggle.addEventListener('click', () => {
     currentView = currentView === 'compose' ? 'browse' : 'compose'
     applyView()
+    persistHudState()
   })
   // Insert the toggle as the first child of the heading row so it
   // sits left of the badges (margin-right: auto pushes badges right).
@@ -1014,9 +1025,11 @@ export function mountAnnotateHud(opts: MountAnnotateOptions = {}): AnnotateHudHa
     queueMicrotask(reanchorModal)
     textarea.focus()
     statusLine.textContent = ''
+    persistHudState()
   }
   const close = (): void => {
     modal.style.display = 'none'
+    persistHudState()
   }
   const destroy = (): void => {
     document.removeEventListener('keydown', onKey)
@@ -1460,6 +1473,25 @@ export function mountAnnotateHud(opts: MountAnnotateOptions = {}): AnnotateHudHa
       statusLine.textContent = statusLabel(to, reason)
     }
 
+    // Defense-in-depth liveness: start the local 1s elapsed ticker
+    // the moment a task enters a working state. If the upstream
+    // task-progress events (stream-json) take a while to arrive — or
+    // never arrive (e.g. heartbeat-only preset) — at least the user
+    // sees the clock advancing instead of a frozen
+    // "claude is working on it…". When a real task-progress event
+    // lands later, it overwrites with token + tool detail.
+    if (isWorking(to) && noteId === latestTaskId && activeProgress?.noteId !== noteId) {
+      activeProgress = {
+        noteId,
+        reportedElapsedMs: 0,
+        reportedAt: Date.now(),
+      }
+      renderActiveProgress()
+      if (!progressTickInterval) {
+        progressTickInterval = setInterval(renderActiveProgress, 1000)
+      }
+    }
+
     // Stop the progress ticker once the task leaves the working
     // states. The static statusLabel for 'proposed'/'applied'/etc
     // takes over from here.
@@ -1555,6 +1587,7 @@ export function mountAnnotateHud(opts: MountAnnotateOptions = {}): AnnotateHudHa
         dismissActiveOverlay()
         refreshRegionChip()
         verboseCheckbox.checked = false
+        persistHudState()
         if (intent === 'task') {
           // Add to per-task tracking. Buttons stay enabled so the
           // user can capture another issue right away; older tasks
@@ -1831,6 +1864,180 @@ export function mountAnnotateHud(opts: MountAnnotateOptions = {}): AnnotateHudHa
       default:
         return `→ ${to}`
     }
+  }
+
+  // ── Rehydrate from server on mount ─────────────────────────────
+  // Page reloads previously erased in-flight task tracking, chain
+  // histories, and any Accept toast for an already-proposed solve.
+  // We now read the same on-disk notebook the router writes and
+  // reconstruct the HUD's tracking state so a refresh is harmless.
+  const rehydrateFromServer = async (): Promise<void> => {
+    try {
+      const sessionRes = await fetch(`${origin}/_llui/session/current`)
+      if (!sessionRes.ok) return
+      const { sessionId } = (await sessionRes.json()) as { sessionId: string }
+      if (!sessionId) return
+
+      const [notesRes, queueRes] = await Promise.all([
+        fetch(`${origin}/_llui/notes?sessionId=${encodeURIComponent(sessionId)}`),
+        fetch(`${origin}/_llui/queue?sessionId=${encodeURIComponent(sessionId)}`),
+      ])
+      if (!notesRes.ok || !queueRes.ok) return
+      const notesData = (await notesRes.json()) as {
+        notes: Array<{
+          id: string
+          ts: string
+          kind: string
+          intent?: 'task' | 'note'
+          chainName?: string
+          replyTo?: string
+          proposedSummary?: string
+        }>
+      }
+      const queueData = (await queueRes.json()) as {
+        queue: Array<{ noteId: string; status: string }>
+      }
+
+      const byId = new Map<string, (typeof notesData.notes)[number]>()
+      for (const n of notesData.notes) byId.set(n.id, n)
+
+      // Pair each task with its newest reply (so we can show the
+      // LLM's summary in toasts + chain menu).
+      const newestReplyByTaskId = new Map<string, (typeof notesData.notes)[number]>()
+      for (const n of notesData.notes) {
+        if (n.kind !== 'reply' || !n.replyTo) continue
+        const prev = newestReplyByTaskId.get(n.replyTo)
+        if (!prev || n.ts > prev.ts) newestReplyByTaskId.set(n.replyTo, n)
+      }
+
+      for (const entry of queueData.queue) {
+        const task = byId.get(entry.noteId)
+        if (!task || task.intent !== 'task') continue
+        const chainName = task.chainName ?? 'default'
+        const reply = newestReplyByTaskId.get(task.id)
+
+        // In-flight: just track. Don't latch latestTaskId — the user
+        // shouldn't be jumped to an older task's progress when they
+        // reload while many were running.
+        if (
+          entry.status === 'open' ||
+          entry.status === 'claimed' ||
+          entry.status === 'in-progress'
+        ) {
+          trackedTasks.set(task.id, {
+            noteId: task.id,
+            sessionId,
+            chainName,
+            status: entry.status,
+          })
+        } else if (entry.status === 'proposed') {
+          // Proposed but not accepted: surface the Accept toast (the
+          // user may have reloaded right between propose + accept).
+          trackedTasks.set(task.id, {
+            noteId: task.id,
+            sessionId,
+            chainName,
+            status: 'proposed',
+          })
+          const summary = reply?.proposedSummary ?? 'proposed fix ready'
+          chainHistories.set(chainName, {
+            name: chainName,
+            lastTaskId: task.id,
+            summary,
+            ts: new Date(reply?.ts ?? task.ts).getTime(),
+          })
+          spawnToast('info', `Note ${task.id}: ${summary}`, {
+            action: {
+              label: 'Accept',
+              onClick: () => acceptTask(task.id, sessionId),
+            },
+          })
+        } else if (reply?.proposedSummary) {
+          // Terminal but had a proposed reply at some point — keep
+          // the chain history visible in the resume menu.
+          chainHistories.set(chainName, {
+            name: chainName,
+            lastTaskId: task.id,
+            summary: reply.proposedSummary,
+            ts: new Date(reply.ts).getTime(),
+          })
+        }
+      }
+      updateQueueBadge()
+      renderSolveState()
+    } catch (err) {
+      console.warn('[llui:devmode-annotate] rehydrate failed:', err)
+    }
+  }
+
+  // ── Persisted HUD state ────────────────────────────────────────
+  // Modal open/closed, current view, textarea draft, and the
+  // selected resume chain all survive a reload via localStorage.
+  const HUD_STATE_KEY = 'llui-devmode-annotate.hud-state'
+  interface PersistedHudState {
+    modalOpen?: boolean
+    view?: 'compose' | 'browse'
+    draftProse?: string
+    selectedResumeChain?: string | null
+  }
+  const readPersistedHudState = (): PersistedHudState => {
+    try {
+      const raw = localStorage.getItem(HUD_STATE_KEY)
+      if (!raw) return {}
+      const parsed = JSON.parse(raw) as PersistedHudState
+      return parsed && typeof parsed === 'object' ? parsed : {}
+    } catch {
+      return {}
+    }
+  }
+  let persistTimer: ReturnType<typeof setTimeout> | null = null
+  const persistHudState = (): void => {
+    if (persistTimer) clearTimeout(persistTimer)
+    persistTimer = setTimeout(() => {
+      persistTimer = null
+      try {
+        const state: PersistedHudState = {
+          modalOpen: modal.style.display === 'block',
+          view: currentView,
+          draftProse: textarea.value,
+          selectedResumeChain,
+        }
+        localStorage.setItem(HUD_STATE_KEY, JSON.stringify(state))
+      } catch {
+        // localStorage unavailable (private mode, quota); silently
+        // skip — next session will start fresh.
+      }
+    }, 200)
+  }
+
+  // Wire persistence on the events that actually change the state.
+  textarea.addEventListener('input', persistHudState)
+
+  // Apply persisted state.
+  const persisted = readPersistedHudState()
+  if (persisted.draftProse) textarea.value = persisted.draftProse
+  if (persisted.selectedResumeChain !== undefined) {
+    selectedResumeChain = persisted.selectedResumeChain
+  }
+  if (persisted.view === 'browse') {
+    currentView = 'browse'
+    applyView()
+  }
+  if (persisted.modalOpen) {
+    // Defer the open() call until after this microtask so layout has
+    // settled and we don't re-anchor against a 0×0 modal.
+    queueMicrotask(() => {
+      open()
+    })
+  }
+
+  // Kick off server rehydrate (fire-and-forget; renders happen
+  // inside). Opt-in via the bootstrap — the plugin sets
+  // `rehydrate: true` so production gets the reload-survives-solve
+  // behaviour, while tests (which stub fetch with single-shape
+  // responses) default to off and don't see surprise extra calls.
+  if (opts.rehydrate === true) {
+    void rehydrateFromServer()
   }
 
   let eventSource: EventSource | null = null

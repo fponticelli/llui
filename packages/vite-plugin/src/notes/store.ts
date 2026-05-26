@@ -250,18 +250,32 @@ function noteFileToSummary(
     return null
   }
   const pngPath = join(notesRoot, sessionId, filename.replace(/\.md$/, '.png'))
-  return {
-    id: note.frontmatter.id,
+  const fm = note.frontmatter as typeof note.frontmatter & {
+    intent?: NoteSummary['intent']
+    chainName?: string
+    replyTo?: string
+    proposedDiff?: { summary?: string }
+  }
+  const summary: NoteSummary = {
+    id: fm.id,
     sessionId,
     filename,
-    ts: note.frontmatter.ts,
-    author: note.frontmatter.author,
-    kind: note.frontmatter.kind,
-    url: note.frontmatter.url,
-    componentPath: note.frontmatter.componentPath,
+    ts: fm.ts,
+    author: fm.author,
+    kind: fm.kind,
+    url: fm.url,
+    componentPath: fm.componentPath,
     preview: preview(note.prose),
     hasScreenshot: existsSync(pngPath),
   }
+  // Optional fields surfaced for HUD rehydration on reload. Only set
+  // when actually present so older clients ignoring them aren't
+  // surprised by unexpected keys.
+  if (fm.intent !== undefined) summary.intent = fm.intent
+  if (fm.chainName !== undefined) summary.chainName = fm.chainName
+  if (fm.replyTo !== undefined) summary.replyTo = fm.replyTo
+  if (fm.proposedDiff?.summary) summary.proposedSummary = fm.proposedDiff.summary
+  return summary
 }
 
 export function listNotes(notesRoot: string, query: ListNotesQuery): ListNotesResponse {
@@ -297,16 +311,39 @@ export function listNotes(notesRoot: string, query: ListNotesQuery): ListNotesRe
   return { sessionId, notes: filtered, total }
 }
 
-export function listSessions(notesRoot: string): string[] {
+export interface SessionListEntry {
+  id: string
+  /** Count of .md notes in the session dir. */
+  noteCount: number
+  /** ISO timestamp of the session dir's creation (birthtime when
+   *  available, else mtime). Used to sort + display in the HUD. */
+  startedAt: string
+}
+
+export function listSessions(notesRoot: string): SessionListEntry[] {
   if (!existsSync(notesRoot)) return []
-  const out: string[] = []
+  const out: SessionListEntry[] = []
   for (const entry of readdirSync(notesRoot)) {
     const full = join(notesRoot, entry)
-    if (!statSync(full).isDirectory()) continue
+    let st: ReturnType<typeof statSync>
+    try {
+      st = statSync(full)
+    } catch {
+      continue
+    }
+    if (!st.isDirectory()) continue
     if (!entry.startsWith('session-')) continue
-    out.push(entry)
+    let noteCount = 0
+    try {
+      noteCount = readdirSync(full).filter((f) => f.endsWith('.md')).length
+    } catch {
+      // unreadable session dir; surface as 0 rather than skipping.
+    }
+    // birthtime can be 0 on some filesystems; fall back to mtime.
+    const tsMs = st.birthtimeMs && st.birthtimeMs > 0 ? st.birthtimeMs : st.mtimeMs
+    out.push({ id: entry, noteCount, startedAt: new Date(tsMs).toISOString() })
   }
-  out.sort()
+  out.sort((a, b) => a.id.localeCompare(b.id))
   return out
 }
 

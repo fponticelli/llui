@@ -108,7 +108,12 @@ export function createBrowseView(opts: BrowseViewOptions): BrowseViewHandle {
   const refreshBtn = document.createElement('button')
   refreshBtn.type = 'button'
   refreshBtn.textContent = '↻'
-  refreshBtn.title = 'Refresh'
+  // Notes auto-refresh whenever the server broadcasts a
+  // note-created / note-updated / note-deleted / status-changed
+  // event. This button is the escape hatch for out-of-band edits
+  // (e.g. someone wrote files directly with an MCP tool, or SSE
+  // dropped briefly during a long solve).
+  refreshBtn.title = 'Reload from disk (notes auto-refresh on activity)'
   refreshBtn.style.cssText = STYLES.toolbarBtn + '; padding: 4px 8px;'
 
   headerRow.append(sessionSelect, refreshBtn)

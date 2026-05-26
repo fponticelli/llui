@@ -1014,6 +1014,11 @@ export default function llui(options: LluiPluginOptions = {}): Plugin {
             hudOptionsJson = JSON.stringify({
               ...(forwarded.hidden ? { hidden: true } : {}),
               solveEnabled,
+              // Production bootstrap turns on server-side rehydrate so
+              // a page reload restores in-flight tasks + chain history
+              // + Accept toasts. Tests (mountAnnotateHud directly)
+              // default to off so they don't see surprise fetches.
+              rehydrate: true,
               // Opt-in features default ON; only forward an explicit
               // `false` so the bootstrap stays compact.
               ...(forwarded.autoCaptureOnError === false ? { autoCaptureOnError: false } : {}),

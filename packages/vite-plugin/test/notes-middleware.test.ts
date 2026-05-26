@@ -215,17 +215,20 @@ describe('POST /_llui/session/rotate', () => {
 })
 
 describe('GET /_llui/sessions', () => {
-  it('lists known sessions', async () => {
+  it('lists known sessions with id + noteCount + startedAt', async () => {
     await fetch(`${f.base}/_llui/notes`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ body: 'x', frontmatter: fmBase, noteBody: {} }),
     })
     const out = (await fetch(`${f.base}/_llui/sessions`).then((r) => r.json())) as {
-      sessions: string[]
+      sessions: Array<{ id: string; noteCount: number; startedAt: string }>
     }
     expect(out.sessions.length).toBeGreaterThanOrEqual(1)
-    expect(out.sessions[0]!.startsWith('session-')).toBe(true)
+    const s = out.sessions[0]!
+    expect(s.id.startsWith('session-')).toBe(true)
+    expect(s.noteCount).toBeGreaterThanOrEqual(1)
+    expect(typeof s.startedAt).toBe('string')
   })
 })
 

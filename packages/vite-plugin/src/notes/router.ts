@@ -1314,6 +1314,18 @@ export function startRouter(config: RouterConfig): RouterHandle {
         frontmatter: replyFm,
         noteBody: {},
       })
+      // The router writes reply notes directly via the store API,
+      // bypassing the POST /_llui/notes middleware that normally
+      // broadcasts `note-created`. Without this explicit broadcast
+      // the browse view's SSE listener never learns about reply
+      // notes and the user has to hit the refresh button to see
+      // them.
+      config.bus.broadcast({
+        type: 'note-created',
+        id: replyResult.id,
+        filename: replyResult.filename,
+        author: 'llm',
+      })
       // Append 'proposed' and broadcast — the router owns this
       // transition since the MCP path isn't involved.
       const proposedT: StatusTransition = {
