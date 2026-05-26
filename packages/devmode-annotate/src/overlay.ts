@@ -10,7 +10,7 @@
 // transparent so the user still sees the page underneath while drawing.
 // After mouseup, pointer-events disable so the modal can take focus.
 
-import type { NoteRect } from '@llui/vite-plugin'
+import type { NoteRect } from './note-types.js'
 
 export interface DrawRectOptions {
   /** Stroke color for the in-progress rect. Default '#ff5252'. */

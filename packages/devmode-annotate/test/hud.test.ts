@@ -30,7 +30,7 @@ describe('mountAnnotateHud', () => {
     const textarea = root.querySelector('textarea')!
     expect(textarea).not.toBeNull()
     // jsdom doesn't compute display; we check the inline style on the modal container instead
-    const modal = textarea.parentElement!
+    const modal = root.querySelector('[data-llui-modal]') as HTMLElement
     expect(modal.style.display).toBe('block')
   })
 
@@ -38,8 +38,10 @@ describe('mountAnnotateHud', () => {
     const handle = mountAnnotateHud()
     handle.open()
     handle.close()
-    const textarea = document.querySelector('#llui-devmode-annotate-root textarea')!
-    expect((textarea.parentElement! as HTMLElement).style.display).toBe('none')
+    const modal = document.querySelector(
+      '#llui-devmode-annotate-root [data-llui-modal]',
+    ) as HTMLElement
+    expect(modal.style.display).toBe('none')
   })
 
   it('idempotent: a second mount returns the same handle', () => {

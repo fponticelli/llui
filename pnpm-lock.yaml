@@ -179,9 +179,6 @@ importers:
         specifier: workspace:*
         version: link:../../packages/dom
     devDependencies:
-      '@llui/devmode-annotate':
-        specifier: workspace:*
-        version: link:../../packages/devmode-annotate
       '@llui/vite-plugin':
         specifier: workspace:*
         version: link:../../packages/vite-plugin
@@ -480,9 +477,6 @@ importers:
 
   packages/devmode-annotate:
     dependencies:
-      '@llui/vite-plugin':
-        specifier: workspace:*
-        version: link:../vite-plugin
       html-to-image:
         specifier: ^1.11.13
         version: 1.11.13
@@ -599,6 +593,9 @@ importers:
       '@llui/compiler-ssr':
         specifier: workspace:*
         version: link:../compiler-ssr
+      '@llui/devmode-annotate':
+        specifier: workspace:*
+        version: link:../devmode-annotate
       magic-string:
         specifier: ^0.30.21
         version: 0.30.21

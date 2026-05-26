@@ -9,11 +9,13 @@
 export {
   cleanupResolvedTask,
   createNote,
+  deleteNote,
   ensureNotesRoot,
   listNotes,
   listSessions,
   readNote,
   readScreenshot,
+  updateNoteProse,
 } from './store.js'
 
 export {

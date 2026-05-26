@@ -6,7 +6,7 @@
 // (`createCanvas`) to inspect the draw calls without needing a raster
 // pipeline.
 
-import type { Annotation } from '@llui/vite-plugin'
+import type { Annotation } from './note-types.js'
 
 export interface BakeOptions {
   /** Canvas factory. Defaults to document.createElement('canvas'). Tests

@@ -17,11 +17,49 @@ export function dataUrlToBase64(dataUrl: string): string {
   return dataUrl.slice(commaIdx + 1)
 }
 
+// 1x1 fully transparent PNG. html-to-image substitutes this when any
+// embedded image fails to fetch (CORS, 404, decode error). Without it,
+// the entire capture rejects with a bare `Event` and the user sees
+// "[object Event]". The visual cost is invisible — failed images
+// render as blank rectangles instead of tanking the whole screenshot.
+const TRANSPARENT_PIXEL_PNG =
+  'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII='
+
 /** Default capture: drives `html-to-image` over the document root.
- *  `skipFonts: true` avoids the costly font-embed pass which adds ~1s
- *  on text-heavy pages. */
+ *  - `skipFonts: true` avoids the costly font-embed pass (~1s on text-heavy pages).
+ *  - `imagePlaceholder` keeps the capture from rejecting when CORS-blocked or
+ *    broken `<img>` tags exist in the tree — failed images render blank.
+ *  - `onImageErrorHandler` surfaces the offending src to the console so the
+ *    developer can spot a misconfigured asset. */
 export const defaultCapture: CaptureFn = async (target) => {
-  return toPng(target, { skipFonts: true, cacheBust: true })
+  return toPng(target, {
+    skipFonts: true,
+    cacheBust: true,
+    imagePlaceholder: TRANSPARENT_PIXEL_PNG,
+    onImageErrorHandler: (ev) => {
+      const img = (ev as Event & { target?: { src?: string } })?.target
+      const src = img?.src ?? '<unknown>'
+      console.warn(`[llui:devmode-annotate] image load failed during capture: ${src}`)
+    },
+  })
+}
+
+/**
+ * Best-effort human-readable message from any thrown value. `html-to-image`
+ * historically rejects with a raw `Event` (image onerror) which stringifies
+ * to "[object Event]" — extract the failing src/tagName when present so the
+ * developer sees something actionable.
+ */
+export function describeCaptureError(err: unknown): string {
+  if (err instanceof Error) return err.message
+  if (typeof err === 'string') return err
+  if (err && typeof err === 'object') {
+    const ev = err as { target?: { src?: string; tagName?: string }; type?: string }
+    if (ev.target?.src) return `image load failed: ${ev.target.src}`
+    if (ev.target?.tagName) return `<${ev.target.tagName.toLowerCase()}> load failed`
+    if (ev.type) return `capture aborted on '${ev.type}' event`
+  }
+  return String(err)
 }
 
 export interface CaptureScreenshotOptions {

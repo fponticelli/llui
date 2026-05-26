@@ -267,3 +267,94 @@ describe('session dir contents', () => {
     expect(entries.some((f) => f.endsWith('.md'))).toBe(true)
   })
 })
+
+describe('updateNoteProse + deleteNote', () => {
+  it('updateNoteProse replaces only the body, keeping frontmatter intact', async () => {
+    const res = createNote(notesRoot, {
+      body: 'original text',
+      frontmatter: fmBase,
+      noteBody: emptyBody,
+    })
+    const { updateNoteProse, readNote: read } = await import('../src/notes/store.js')
+    const updated = updateNoteProse(notesRoot, res.sessionId, res.id, 'rewritten text')
+    expect(updated.prose).toBe('rewritten text')
+    expect(updated.frontmatter.id).toBe(res.id)
+    expect(updated.frontmatter.author).toBe('human')
+    // Round-trip through disk to confirm the change persisted.
+    const fromDisk = read(notesRoot, res.sessionId, res.id)
+    expect(fromDisk.prose).toBe('rewritten text')
+    expect(fromDisk.frontmatter.id).toBe(res.id)
+  })
+
+  it('updateNoteProse throws when the note is missing', async () => {
+    const { updateNoteProse } = await import('../src/notes/store.js')
+    const probeSession = createNote(notesRoot, {
+      body: 'seed',
+      frontmatter: fmBase,
+      noteBody: emptyBody,
+    }).sessionId
+    expect(() => updateNoteProse(notesRoot, probeSession, '999', 'nope')).toThrow(/not found/)
+  })
+
+  it('deleteNote removes the .md (and .png if present) and returns the paths', async () => {
+    const res = createNote(notesRoot, {
+      body: 'doomed',
+      frontmatter: fmBase,
+      noteBody: emptyBody,
+      screenshot:
+        'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=',
+    })
+    const { deleteNote } = await import('../src/notes/store.js')
+    const sessionDir = join(notesRoot, res.sessionId)
+    const before = readdirSync(sessionDir)
+    expect(before.some((f) => f.endsWith('.md'))).toBe(true)
+    expect(before.some((f) => f.endsWith('.png'))).toBe(true)
+
+    const removed = deleteNote(notesRoot, res.sessionId, res.id)
+    expect(removed.length).toBe(2) // .md + .png
+
+    const after = readdirSync(sessionDir)
+    expect(after.some((f) => f.startsWith(res.id))).toBe(false)
+  })
+
+  it('deleteNote is idempotent on a missing id', async () => {
+    const { deleteNote } = await import('../src/notes/store.js')
+    const probeSession = createNote(notesRoot, {
+      body: 'seed',
+      frontmatter: fmBase,
+      noteBody: emptyBody,
+    }).sessionId
+    expect(deleteNote(notesRoot, probeSession, '999')).toEqual([])
+  })
+})
+
+describe('format overrides', () => {
+  it('formatSessionFolder controls the session directory name', () => {
+    const res = createNote(
+      notesRoot,
+      { body: 'a', frontmatter: fmBase, noteBody: emptyBody },
+      { formatSessionFolder: (d) => `custom-${d.getUTCFullYear()}` },
+    )
+    expect(res.sessionId.startsWith('custom-')).toBe(true)
+    expect(existsSync(join(notesRoot, res.sessionId))).toBe(true)
+  })
+
+  it('deriveSlug controls the slug portion of the filename', () => {
+    const res = createNote(
+      notesRoot,
+      { body: 'hello world', frontmatter: fmBase, noteBody: emptyBody },
+      { deriveSlug: () => 'forced-slug' },
+    )
+    expect(res.filename).toMatch(/^\d{3,}-human-text-forced-slug\.md$/)
+  })
+
+  it('default behavior unchanged when no format is passed', () => {
+    const res = createNote(notesRoot, {
+      body: 'edit button copy',
+      frontmatter: fmBase,
+      noteBody: emptyBody,
+    })
+    expect(res.sessionId).toMatch(/^session-\d{4}-\d{2}-\d{2}-\d{4}$/)
+    expect(res.filename).toMatch(/^\d{3,}-human-text-edit-button-copy\.md$/)
+  })
+})

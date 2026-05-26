@@ -11,6 +11,10 @@ export interface ResolveSessionOptions {
   now?: () => Date
   /** Override for env-based session names (LLUI_SESSION_NAME). */
   sessionName?: string
+  /** Format the session folder name from the start date. Overrides
+   *  the default UTC `session-YYYY-MM-DD-HHMM` scheme. Ignored when
+   *  `sessionName` is explicitly set. */
+  formatSessionFolder?: (date: Date) => string
 }
 
 export interface SessionInfo {
@@ -86,7 +90,9 @@ export function resolveCurrentSession(
     return { sessionId: existing, startedAt: new Date().toISOString(), notesDir: dir }
   }
   const now = opts.now ? opts.now() : new Date()
-  const sessionId = opts.sessionName ?? defaultSessionName(now)
+  const sessionId =
+    opts.sessionName ??
+    (opts.formatSessionFolder ? opts.formatSessionFolder(now) : defaultSessionName(now))
   const dir = ensureSession(notesRoot, sessionId)
   writeCurrentSessionFile(notesRoot, sessionId)
   return { sessionId, startedAt: now.toISOString(), notesDir: dir }
@@ -99,7 +105,9 @@ export function resolveCurrentSession(
 export function rotateSession(notesRoot: string, opts: ResolveSessionOptions = {}): RotatedSession {
   const previousSessionId = readCurrentSessionFile(notesRoot) ?? ''
   const now = opts.now ? opts.now() : new Date()
-  const sessionId = opts.sessionName ?? defaultSessionName(now)
+  const sessionId =
+    opts.sessionName ??
+    (opts.formatSessionFolder ? opts.formatSessionFolder(now) : defaultSessionName(now))
   const dir = ensureSession(notesRoot, sessionId)
   writeCurrentSessionFile(notesRoot, sessionId)
   return {

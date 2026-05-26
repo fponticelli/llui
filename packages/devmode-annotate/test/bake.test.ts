@@ -1,7 +1,7 @@
 /// <reference lib="dom" />
 import { describe, expect, it } from 'vitest'
 import { bakeAnnotations } from '../src/bake.js'
-import type { Annotation } from '@llui/vite-plugin'
+import type { Annotation } from '../src/note-types.js'
 
 interface RecordedCall {
   op: string

@@ -12,17 +12,26 @@ import type {
   CaptureRequestPayload,
   CreateNoteRequest,
   CreateNoteResponse,
+  NoteBody,
   NoteFrontmatter,
   NoteIntent,
   NoteKind,
   NoteRect,
-} from '@llui/vite-plugin'
+  SourceMapEntry,
+} from './note-types.js'
 
 import { bakeAnnotations } from './bake.js'
+import { createBrowseView } from './browse-view.js'
 import { collectComponentInfo, collectDebugSnapshot, collectSourceMap } from './debug-collector.js'
 import { drawRect } from './overlay.js'
-import { captureScreenshot, type CaptureFn } from './screenshot.js'
-import { btnStyle, modeButtonStyle, STYLES } from './styles.js'
+import { captureScreenshot, describeCaptureError, type CaptureFn } from './screenshot.js'
+import {
+  btnStyle,
+  RESUME_GLYPH_STYLE,
+  SPLIT_BTN_STYLES,
+  STYLES,
+  THEME_STYLESHEET,
+} from './styles.js'
 
 export type BakeFn = (screenshotBase64: string, annotations: Annotation[]) => Promise<string>
 
@@ -48,9 +57,13 @@ export interface MountAnnotateOptions {
    *  want a real EventSource pass `false`; production callers should
    *  leave it `true` (default) so LLM-initiated captures land. */
   subscribeEvents?: boolean
+  /** Whether the attention router is wired up + available. When
+   *  `false` (or missing CLI / `router: false` upstream), the HUD
+   *  hides its "Solve" button so the user doesn't try to dispatch a
+   *  task with no worker behind it. Notes can still be saved.
+   *  Default `true`. */
+  solveEnabled?: boolean
 }
-
-export type HudMode = 'text' | 'rect'
 
 export interface AnnotateHudHandle {
   open(): void
@@ -99,26 +112,43 @@ declare global {
 
 const HUD_ELEMENT_ID = 'llui-devmode-annotate-root'
 
-// Persisted floating-button position. We store as { x, y } in viewport
-// pixels; on read, we clamp to the current viewport so a previously-
-// saved off-screen position never strands the button.
+// Persisted floating-button position. Stored edge-anchored — anchor
+// derived from which half of the viewport the button sits in at
+// drag-end. A right/bottom-anchored button keeps a fixed offset from
+// the right/bottom edge so window resize moves it with the edge instead
+// of stranding it off-screen. Left/top-anchored positions are clamped
+// on apply so a shrunk viewport still keeps the button visible.
 const POSITION_STORAGE_KEY = 'llui-devmode-annotate.position'
 const DRAG_THRESHOLD_PX = 4
 const BUTTON_SIZE_PX = 44
 const BUTTON_MARGIN_PX = 16
 
 interface SavedPosition {
-  x: number
-  y: number
+  anchorX: 'left' | 'right'
+  offsetX: number
+  anchorY: 'top' | 'bottom'
+  offsetY: number
 }
 
 function readSavedPosition(): SavedPosition | null {
   try {
     const raw = localStorage.getItem(POSITION_STORAGE_KEY)
     if (!raw) return null
-    const parsed = JSON.parse(raw) as { x?: unknown; y?: unknown }
-    if (typeof parsed.x !== 'number' || typeof parsed.y !== 'number') return null
-    return { x: parsed.x, y: parsed.y }
+    const parsed = JSON.parse(raw) as Partial<SavedPosition>
+    if (
+      (parsed.anchorX !== 'left' && parsed.anchorX !== 'right') ||
+      (parsed.anchorY !== 'top' && parsed.anchorY !== 'bottom') ||
+      typeof parsed.offsetX !== 'number' ||
+      typeof parsed.offsetY !== 'number'
+    ) {
+      return null
+    }
+    return {
+      anchorX: parsed.anchorX,
+      offsetX: parsed.offsetX,
+      anchorY: parsed.anchorY,
+      offsetY: parsed.offsetY,
+    }
   } catch {
     return null
   }
@@ -133,37 +163,54 @@ function writeSavedPosition(pos: SavedPosition): void {
   }
 }
 
-function clampToViewport(pos: SavedPosition): SavedPosition {
-  const maxX = Math.max(0, window.innerWidth - BUTTON_SIZE_PX - BUTTON_MARGIN_PX)
-  const maxY = Math.max(0, window.innerHeight - BUTTON_SIZE_PX - BUTTON_MARGIN_PX)
-  return {
-    x: Math.min(Math.max(BUTTON_MARGIN_PX, pos.x), maxX),
-    y: Math.min(Math.max(BUTTON_MARGIN_PX, pos.y), maxY),
+function clampOffset(offset: number, viewportSize: number): number {
+  const max = Math.max(BUTTON_MARGIN_PX, viewportSize - BUTTON_SIZE_PX - BUTTON_MARGIN_PX)
+  return Math.min(Math.max(BUTTON_MARGIN_PX, offset), max)
+}
+
+function applySavedPosition(root: HTMLElement, pos: SavedPosition): void {
+  const offsetX = clampOffset(pos.offsetX, window.innerWidth)
+  const offsetY = clampOffset(pos.offsetY, window.innerHeight)
+  if (pos.anchorX === 'left') {
+    root.style.left = `${offsetX}px`
+    root.style.right = 'auto'
+  } else {
+    root.style.right = `${offsetX}px`
+    root.style.left = 'auto'
+  }
+  if (pos.anchorY === 'top') {
+    root.style.top = `${offsetY}px`
+    root.style.bottom = 'auto'
+  } else {
+    root.style.bottom = `${offsetY}px`
+    root.style.top = 'auto'
   }
 }
 
-// Floating-button icon: a lasso/rope loop enclosing the "Lui"
-// letterform. Combines the annotation-tool semantic (lasso = select +
-// annotate) with the LLui brand mark. Drawn as inline SVG so the
-// gradient button background shows through the stroke gaps.
-//
-// Sized to fill ~85% of the 44px button (38px content, ~3px margin
-// each side). The loop hugs the viewBox edges; the "Lui" text scales
-// up correspondingly.
-const BUTTON_ICON_SVG = `
-<svg width="38" height="38" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
-  <!-- Lasso loop: irregular open ellipse hugging the viewBox edges -->
-  <path d="M 3 11 C 1 14.5, 1.5 21, 6 25 C 11 29, 22 29, 27 25 C 31 21.5, 30.5 13, 26 9 C 21 5, 9 5, 5 8.5"
-        stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
-  <!-- Lasso tail curling down-left -->
-  <path d="M 5 8.5 Q 2 5, 0.5 8 Q -0.5 11, 2 12.5"
-        stroke="white" stroke-width="1.8" stroke-linecap="round" fill="none"/>
-  <!-- "Lui" letterform inside the loop -->
-  <text x="16" y="21" text-anchor="middle"
-        font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif"
-        font-size="13" font-weight="800" letter-spacing="-0.4"
-        fill="white">Lui</text>
-</svg>`
+// Derive the anchor + offset from the button's current viewport rect.
+// Anchor follows the center: right half → right-anchored, etc. Offset
+// is the distance from the chosen edge to the corresponding button edge.
+function deriveSavedPosition(rect: DOMRect): SavedPosition {
+  const centerX = rect.left + rect.width / 2
+  const centerY = rect.top + rect.height / 2
+  const anchorX: 'left' | 'right' = centerX < window.innerWidth / 2 ? 'left' : 'right'
+  const anchorY: 'top' | 'bottom' = centerY < window.innerHeight / 2 ? 'top' : 'bottom'
+  const offsetX = anchorX === 'left' ? rect.left : window.innerWidth - rect.right
+  const offsetY = anchorY === 'top' ? rect.top : window.innerHeight - rect.bottom
+  return { anchorX, offsetX, anchorY, offsetY }
+}
+
+function clampViewportXY(x: number, y: number): { x: number; y: number } {
+  return {
+    x: clampOffset(x, window.innerWidth),
+    y: clampOffset(y, window.innerHeight),
+  }
+}
+
+// Floating-button label: two-line wordmark "LLui" / "HUD". Plain text
+// (not SVG) so it inherits the button's font + color. Lines stack via
+// flex-direction column on the button itself.
+const BUTTON_LABEL_LINES = ['LLui', 'HUD'] as const
 
 /**
  * Extract a viewport bbox from any annotation that carries one (rect,
@@ -180,9 +227,9 @@ function bboxOf(ann: Annotation): { x: number; y: number; w: number; h: number }
  * Assemble a NoteBody: rich telemetry from collectDebugSnapshot() plus,
  * when annotations have bboxes, a sourceMap from collectSourceMap().
  */
-function buildNoteBody(annotations: Annotation[]): import('@llui/vite-plugin').NoteBody {
+function buildNoteBody(annotations: Annotation[]): NoteBody {
   const body = collectDebugSnapshot()
-  const sourceMap: Array<import('@llui/vite-plugin').SourceMapEntry> = []
+  const sourceMap: Array<SourceMapEntry> = []
   for (const ann of annotations) {
     const bb = bboxOf(ann)
     if (!bb) continue
@@ -210,7 +257,6 @@ export function mountAnnotateHud(opts: MountAnnotateOptions = {}): AnnotateHudHa
   }
 
   // ── State ──────────────────────────────────────────────────────────
-  let mode: HudMode = 'text'
   let pendingRect: NoteRect | null = null
 
   // Per-task tracking. The router serializes solves, but the user can
@@ -241,7 +287,11 @@ export function mountAnnotateHud(opts: MountAnnotateOptions = {}): AnnotateHudHa
 
   const floatingBtn = document.createElement('button')
   floatingBtn.type = 'button'
-  floatingBtn.innerHTML = BUTTON_ICON_SVG
+  for (const line of BUTTON_LABEL_LINES) {
+    const div = document.createElement('div')
+    div.textContent = line
+    floatingBtn.appendChild(div)
+  }
   floatingBtn.title = 'LLui annotate (Cmd+Shift+A) — drag to move'
   floatingBtn.setAttribute('aria-label', 'Open LLui annotation HUD')
   floatingBtn.style.cssText = STYLES.button
@@ -250,22 +300,20 @@ export function mountAnnotateHud(opts: MountAnnotateOptions = {}): AnnotateHudHa
   // (bottom-right) is used otherwise.
   const saved = typeof localStorage !== 'undefined' ? readSavedPosition() : null
   if (saved && typeof window !== 'undefined') {
-    const pos = clampToViewport(saved)
-    root.style.left = `${pos.x}px`
-    root.style.top = `${pos.y}px`
-    root.style.right = 'auto'
-    root.style.bottom = 'auto'
+    applySavedPosition(root, saved)
   }
 
   const modal = document.createElement('div')
+  modal.setAttribute('data-llui-modal', '')
   modal.style.cssText = STYLES.modal
 
+  // Status-badge row (no title — the context subhead + placeholder
+  // carry the framing). Only badges render here; the row stays empty
+  // until at least one task is in flight or ready.
   const heading = document.createElement('div')
   heading.style.cssText =
-    STYLES.heading + '; display: flex; justify-content: space-between; align-items: center;'
+    'display: flex; justify-content: flex-end; align-items: center; min-height: 18px; margin-bottom: 4px;'
 
-  const headingText = document.createElement('span')
-  headingText.textContent = 'New note'
   const badges = document.createElement('span')
   badges.style.cssText = 'display: flex; gap: 4px; align-items: center;'
   const workingBadge = document.createElement('span')
@@ -277,7 +325,7 @@ export function mountAnnotateHud(opts: MountAnnotateOptions = {}): AnnotateHudHa
   readyBadge.style.cssText = STYLES.queueBadgeReady
   readyBadge.style.display = 'none'
   badges.append(workingBadge, readyBadge)
-  heading.append(headingText, badges)
+  heading.append(badges)
 
   const updateQueueBadge = (): void => {
     const tasks = [...trackedTasks.values()]
@@ -299,24 +347,31 @@ export function mountAnnotateHud(opts: MountAnnotateOptions = {}): AnnotateHudHa
     }
   }
 
-  const modeRow = document.createElement('div')
-  modeRow.style.cssText = STYLES.modeRow
+  // Attachment row — inline "Add region" button + region chip preview
+  // when a rect is attached. Replaces the old segmented Text/Draw-rect
+  // tab control: drawing a region is now an action ON the note, not a
+  // separate mode.
+  const attachmentRow = document.createElement('div')
+  attachmentRow.style.cssText = STYLES.attachmentRow
 
-  const modeText = document.createElement('button')
-  modeText.type = 'button'
-  modeText.textContent = 'Text'
-  modeText.dataset['mode'] = 'text'
+  const addRegionBtn = document.createElement('button')
+  addRegionBtn.type = 'button'
+  addRegionBtn.textContent = '⌖ Add region'
+  addRegionBtn.title = 'Draw a rectangle on the page to attach to this note'
+  addRegionBtn.style.cssText = STYLES.inlineActionBtn
 
-  const modeRect = document.createElement('button')
-  modeRect.type = 'button'
-  modeRect.textContent = 'Draw rect'
-  modeRect.dataset['mode'] = 'rect'
+  const regionChip = document.createElement('span')
+  regionChip.style.cssText = STYLES.regionChip
+  regionChip.style.display = 'none'
+  const regionChipLabel = document.createElement('span')
+  const regionChipClear = document.createElement('button')
+  regionChipClear.type = 'button'
+  regionChipClear.textContent = '×'
+  regionChipClear.title = 'Remove region'
+  regionChipClear.style.cssText = STYLES.regionChipClose
+  regionChip.append(regionChipLabel, regionChipClear)
 
-  modeRow.append(modeText, modeRect)
-
-  const rectPreview = document.createElement('div')
-  rectPreview.style.cssText = STYLES.rectPreviewWrap
-  rectPreview.style.display = 'none'
+  attachmentRow.append(addRegionBtn, regionChip)
 
   // Markdown toolbar above the textarea. Minimal — bold, italic,
   // code, bullets, numbered list. Wraps selection or inserts at the
@@ -347,11 +402,17 @@ export function mountAnnotateHud(opts: MountAnnotateOptions = {}): AnnotateHudHa
   toolbar.append(boldBtn, italicBtn, codeBtn, bulletBtn, numBtn)
 
   const textarea = document.createElement('textarea')
-  textarea.placeholder = "What's wrong, or what should change? (markdown OK)"
+  textarea.placeholder = 'Describe the issue…'
   textarea.rows = 5
   textarea.style.cssText = STYLES.textarea
 
+  const markdownHint = document.createElement('div')
+  markdownHint.style.cssText = STYLES.markdownHint
+  markdownHint.innerHTML =
+    'Markdown supported · <span style="font-family:ui-monospace,SFMono-Regular,monospace">⌘B</span> bold · <span style="font-family:ui-monospace,SFMono-Regular,monospace">⌘I</span> italic · <span style="font-family:ui-monospace,SFMono-Regular,monospace">⌘E</span> code'
+
   const statusLine = document.createElement('div')
+  statusLine.setAttribute('data-llui-status', '')
   statusLine.style.cssText = STYLES.status
 
   const actions = document.createElement('div')
@@ -371,17 +432,192 @@ export function mountAnnotateHud(opts: MountAnnotateOptions = {}): AnnotateHudHa
   saveBtn.title = 'Just save the note for reference (intent: note)'
   saveBtn.style.cssText = btnStyle('secondary')
 
-  // "Solve" is the primary action: intent='task'. Hands the note to
-  // the LLM as work to do. Combined with task-mode (P6), this is what
-  // a connected worker picks up.
+  // "Solve" is a split button: the main half submits with the
+  // current resume mode, the caret half opens a small menu to switch
+  // between "Resume previous" and "Start fresh". Hidden entirely
+  // when the upstream router is disabled or the CLI isn't on PATH.
+  const solveEnabled = opts.solveEnabled !== false
+  let resumeMode = true
+
+  const solveSplit = document.createElement('div')
+  solveSplit.setAttribute('data-llui-solve-split', '')
+  solveSplit.style.cssText = SPLIT_BTN_STYLES.container
+
   const solveBtn = document.createElement('button')
   solveBtn.type = 'button'
-  solveBtn.textContent = 'Solve'
-  solveBtn.title = 'Have the LLM solve this immediately (intent: task)'
-  solveBtn.style.cssText = btnStyle('primary')
+  solveBtn.setAttribute('data-llui-solve', '')
+  solveBtn.style.cssText = SPLIT_BTN_STYLES.main
+  const solveGlyph = document.createElement('span')
+  solveGlyph.style.cssText = RESUME_GLYPH_STYLE
+  solveGlyph.textContent = '↻'
+  const solveLabel = document.createElement('span')
+  solveLabel.textContent = 'Solve'
+  solveBtn.append(solveGlyph, solveLabel)
 
-  actions.append(cancelBtn, saveBtn, solveBtn)
-  modal.append(heading, modeRow, rectPreview, toolbar, textarea, statusLine, actions)
+  const solveCaret = document.createElement('button')
+  solveCaret.type = 'button'
+  solveCaret.setAttribute('aria-haspopup', 'menu')
+  solveCaret.setAttribute('aria-expanded', 'false')
+  solveCaret.style.cssText = SPLIT_BTN_STYLES.caret
+  solveCaret.textContent = '▾'
+  solveCaret.title = 'Resume options'
+
+  const solveMenu = document.createElement('div')
+  solveMenu.setAttribute('role', 'menu')
+  solveMenu.style.cssText = SPLIT_BTN_STYLES.menu
+
+  const menuResume = document.createElement('button')
+  menuResume.type = 'button'
+  menuResume.setAttribute('role', 'menuitemradio')
+  menuResume.style.cssText = SPLIT_BTN_STYLES.menuItem
+  const menuFresh = document.createElement('button')
+  menuFresh.type = 'button'
+  menuFresh.setAttribute('role', 'menuitemradio')
+  menuFresh.style.cssText = SPLIT_BTN_STYLES.menuItem
+  solveMenu.append(menuResume, menuFresh)
+
+  const renderSolveState = (): void => {
+    solveGlyph.style.display = resumeMode ? 'inline-flex' : 'none'
+    solveBtn.title = resumeMode
+      ? 'Solve, resuming the previous conversation (⌘↩)'
+      : 'Solve, starting a fresh conversation (⌘↩)'
+    menuResume.textContent = (resumeMode ? '● ' : '○ ') + 'Resume previous'
+    menuFresh.textContent = (!resumeMode ? '● ' : '○ ') + 'Start fresh'
+    menuResume.setAttribute('aria-checked', resumeMode ? 'true' : 'false')
+    menuFresh.setAttribute('aria-checked', !resumeMode ? 'true' : 'false')
+  }
+  renderSolveState()
+
+  const closeSolveMenu = (): void => {
+    solveMenu.style.display = 'none'
+    solveCaret.setAttribute('aria-expanded', 'false')
+  }
+  const openSolveMenu = (): void => {
+    solveMenu.style.display = 'flex'
+    solveCaret.setAttribute('aria-expanded', 'true')
+  }
+  solveCaret.addEventListener('click', (e) => {
+    e.stopPropagation()
+    if (solveMenu.style.display === 'flex') closeSolveMenu()
+    else openSolveMenu()
+  })
+  menuResume.addEventListener('click', (e) => {
+    e.stopPropagation()
+    resumeMode = true
+    renderSolveState()
+    closeSolveMenu()
+  })
+  menuFresh.addEventListener('click', (e) => {
+    e.stopPropagation()
+    resumeMode = false
+    renderSolveState()
+    closeSolveMenu()
+  })
+  // Click anywhere outside the split closes the menu.
+  document.addEventListener('click', (e) => {
+    if (!solveSplit.contains(e.target as Node)) closeSolveMenu()
+  })
+
+  solveSplit.append(solveBtn, solveCaret, solveMenu)
+
+  if (solveEnabled) {
+    actions.append(cancelBtn, saveBtn, solveSplit)
+  } else {
+    // No worker available — promote "Save" to the primary slot so the
+    // single available action gets the visual weight.
+    saveBtn.style.cssText = btnStyle('primary')
+    actions.append(cancelBtn, saveBtn)
+  }
+
+  // Context subhead — route · primary component · viewport. Refreshed
+  // on each modal open so a navigation while the HUD was closed picks
+  // up the new context.
+  const contextSubhead = document.createElement('div')
+  contextSubhead.style.cssText = STYLES.contextSubhead
+
+  // "More options" expander. Collapsed by default — verbose capture
+  // is a power-user knob; the default flow should stay simple.
+  const moreOptionsToggle = document.createElement('button')
+  moreOptionsToggle.type = 'button'
+  moreOptionsToggle.style.cssText = STYLES.moreOptionsToggle
+  moreOptionsToggle.textContent = '▸ More options'
+  const moreOptionsBody = document.createElement('div')
+  moreOptionsBody.style.cssText = STYLES.moreOptionsBody
+  const verboseLabel = document.createElement('label')
+  verboseLabel.style.cssText = STYLES.moreOptionsRow + '; cursor: pointer'
+  const verboseCheckbox = document.createElement('input')
+  verboseCheckbox.type = 'checkbox'
+  verboseCheckbox.style.cssText = 'margin: 0'
+  const verboseText = document.createElement('span')
+  verboseText.textContent = 'Include verbose telemetry (state, message log, DOM snapshot)'
+  verboseLabel.append(verboseCheckbox, verboseText)
+  moreOptionsBody.append(verboseLabel)
+
+  // Footer keyboard hint. Solve shortcut hidden when solve is
+  // unavailable so we don't advertise a key that won't dispatch.
+  const kbdHint = document.createElement('div')
+  kbdHint.style.cssText = STYLES.kbdHint
+  const kbd = (s: string): string => `<span style="${STYLES.kbd}">${s}</span>`
+  kbdHint.innerHTML =
+    (solveEnabled ? `${kbd('⌘↩')} solve · ` : '') + `${kbd('⇧⌘↩')} save · ${kbd('esc')} cancel`
+
+  // Compose view contains all the new-note inputs. Wrapped so we can
+  // swap visibility with the browse view in one DOM toggle.
+  const composeView = document.createElement('div')
+  composeView.setAttribute('data-llui-view', 'compose')
+  composeView.style.cssText = 'display: flex; flex-direction: column; gap: 0;'
+  composeView.append(
+    contextSubhead,
+    attachmentRow,
+    toolbar,
+    textarea,
+    markdownHint,
+    moreOptionsToggle,
+    moreOptionsBody,
+    statusLine,
+    actions,
+  )
+
+  // Browse view — sessions + notes list + edit/delete.
+  const browse = createBrowseView({
+    origin,
+    onError: (msg) => {
+      statusLine.textContent = msg
+    },
+  })
+
+  // View toggle, placed in the heading row alongside the badges.
+  const viewToggle = document.createElement('button')
+  viewToggle.type = 'button'
+  viewToggle.style.cssText = [
+    'background: transparent',
+    'border: 0',
+    'padding: 0',
+    'cursor: pointer',
+    'color: var(--hud-fg-muted)',
+    'font: inherit',
+    'font-size: 12px',
+    'text-decoration: underline',
+    'margin-right: auto', // pushes badges to the right
+  ].join('; ')
+  let currentView: 'compose' | 'browse' = 'compose'
+  const applyView = (): void => {
+    composeView.style.display = currentView === 'compose' ? 'flex' : 'none'
+    browse.el.style.display = currentView === 'browse' ? 'flex' : 'none'
+    viewToggle.textContent = currentView === 'compose' ? 'Browse notes' : '← New note'
+    kbdHint.style.display = currentView === 'compose' ? 'flex' : 'none'
+    if (currentView === 'browse') browse.onShow()
+  }
+  viewToggle.addEventListener('click', () => {
+    currentView = currentView === 'compose' ? 'browse' : 'compose'
+    applyView()
+  })
+  // Insert the toggle as the first child of the heading row so it
+  // sits left of the badges (margin-right: auto pushes badges right).
+  heading.insertBefore(viewToggle, heading.firstChild)
+
+  modal.append(heading, composeView, browse.el, kbdHint)
+  applyView()
 
   // Toast container — fixed top-right, holds transient terminal-state
   // notifications for tasks that finish while the modal is closed or
@@ -393,6 +629,16 @@ export function mountAnnotateHud(opts: MountAnnotateOptions = {}): AnnotateHudHa
   root.append(floatingBtn, modal)
   document.body.appendChild(root)
   document.body.appendChild(toastContainer)
+
+  // Inject the theme stylesheet once. Idempotent — guarded by element
+  // id so a second mountAnnotateHud() call (which the public handle
+  // dedupes anyway) wouldn't double-insert.
+  if (!document.getElementById('llui-devmode-annotate-styles')) {
+    const styleEl = document.createElement('style')
+    styleEl.id = 'llui-devmode-annotate-styles'
+    styleEl.textContent = THEME_STYLESHEET
+    document.head.appendChild(styleEl)
+  }
 
   if (opts.hidden) root.style.display = 'none'
 
@@ -474,22 +720,32 @@ export function mountAnnotateHud(opts: MountAnnotateOptions = {}): AnnotateHudHa
 
   // ── Behavior ───────────────────────────────────────────────────────
 
-  const setMode = (next: HudMode): void => {
-    mode = next
-    modeText.style.cssText = modeButtonStyle(mode === 'text')
-    modeRect.style.cssText = modeButtonStyle(mode === 'rect')
-    if (mode === 'text') {
-      pendingRect = null
-      rectPreview.style.display = 'none'
-    } else if (pendingRect) {
-      rectPreview.textContent = `Rect: ${pendingRect.w}×${pendingRect.h} at (${pendingRect.x}, ${pendingRect.y})`
-      rectPreview.style.display = 'block'
+  // Reflect the current `pendingRect` state in the attachment row.
+  // Replaces the old setMode() — there's no longer a distinct "text"
+  // vs "rect" mode; drawing is just an attachment ON the note.
+  const refreshRegionChip = (): void => {
+    if (pendingRect) {
+      regionChipLabel.textContent = `⌖ ${pendingRect.w}×${pendingRect.h}`
+      regionChip.style.display = 'inline-flex'
+      addRegionBtn.style.display = 'none'
     } else {
-      rectPreview.textContent = 'Click "Draw" to mark a region.'
-      rectPreview.style.display = 'block'
+      regionChip.style.display = 'none'
+      addRegionBtn.style.display = 'inline-flex'
     }
   }
-  setMode('text')
+  refreshRegionChip()
+
+  // Compute + render the context subhead from the current page state.
+  // Called on every modal open so navigations are reflected.
+  const refreshContextSubhead = (): void => {
+    const parts: string[] = []
+    if (typeof location !== 'undefined') parts.push(location.pathname || '/')
+    const compInfo = collectComponentInfo()
+    if (compInfo?.componentMeta) parts.push(`<${compInfo.componentMeta.name}>`)
+    else if (compInfo?.componentPath?.length) parts.push(`<${compInfo.componentPath[0]}>`)
+    if (typeof window !== 'undefined') parts.push(`${window.innerWidth}×${window.innerHeight}`)
+    contextSubhead.textContent = parts.length > 0 ? parts.join(' · ') : ''
+  }
 
   // The modal is positioned relative to the floating button (root).
   // When the button is dragged near a viewport edge, the modal's
@@ -530,6 +786,9 @@ export function mountAnnotateHud(opts: MountAnnotateOptions = {}): AnnotateHudHa
 
   const open = (): void => {
     modal.style.display = 'block'
+    // Refresh the context subhead from current state — a navigation
+    // while the modal was closed should be reflected on next open.
+    refreshContextSubhead()
     // Measurement requires the modal to be rendered, so re-anchor on
     // a microtask after the display flips.
     queueMicrotask(reanchorModal)
@@ -541,12 +800,34 @@ export function mountAnnotateHud(opts: MountAnnotateOptions = {}): AnnotateHudHa
   }
   const destroy = (): void => {
     document.removeEventListener('keydown', onKey)
+    if (typeof window !== 'undefined') {
+      window.removeEventListener('resize', onResize)
+    }
     eventSource?.close()
     if (activeOverlayDismiss) {
       activeOverlayDismiss()
       activeOverlayDismiss = null
     }
     root.remove()
+  }
+
+  // Re-apply the saved position whenever the viewport size changes.
+  // Right/bottom-anchored buttons follow their edge naturally; left/top
+  // -anchored buttons get clamp-capped so a shrunk viewport can't strand
+  // them off-screen. If nothing is saved, the default CSS bottom/right
+  // anchoring already tracks resize — no work needed.
+  const onResize = (): void => {
+    // Keep the context subhead's viewport reading in sync while the
+    // modal is open. Cheap — DOM-text write only.
+    if (modal.style.display === 'block') {
+      refreshContextSubhead()
+      reanchorModal()
+    }
+    const current = readSavedPosition()
+    if (current) applySavedPosition(root, current)
+  }
+  if (typeof window !== 'undefined') {
+    window.addEventListener('resize', onResize)
   }
 
   // Tracks the dismiss callback of the currently-visible drawing
@@ -574,33 +855,33 @@ export function mountAnnotateHud(opts: MountAnnotateOptions = {}): AnnotateHudHa
     if (result.reason === 'submit' && result.rect) {
       pendingRect = result.rect
       activeOverlayDismiss = result.dismiss
-      setMode('rect')
+      refreshRegionChip()
       return result.rect
     }
-    // Cancel — keep current mode, clear preview. The overlay is
-    // already dismissed when reason='cancel'.
-    if (mode === 'rect') {
-      pendingRect = null
-      setMode('rect')
-    }
+    // Cancel — the overlay is already dismissed when reason='cancel'.
+    // pendingRect is unchanged in this branch (the user kept whatever
+    // was attached before, or nothing).
+    refreshRegionChip()
     return null
   }
 
   const buildAnnotations = (): Annotation[] => {
-    if (mode === 'rect' && pendingRect) {
+    if (pendingRect) {
       return [{ type: 'rect', ...pendingRect }]
     }
     return []
   }
 
   const buildKind = (): NoteKind => {
-    if (mode === 'rect' && pendingRect) return 'rect'
+    if (pendingRect) return 'rect'
     return 'text'
   }
 
   // Default intent — tracked separately from per-call overrides. The
   // floating button respects this; per-call `submitOpts.intent` wins.
-  let defaultIntent: NoteIntent = 'task'
+  // When solve is disabled there's no worker to act on tasks, so we
+  // fall back to a plain note.
+  let defaultIntent: NoteIntent = solveEnabled ? 'task' : 'note'
 
   const submit = async (
     prose: string,
@@ -609,6 +890,12 @@ export function mountAnnotateHud(opts: MountAnnotateOptions = {}): AnnotateHudHa
       annotations?: Annotation[]
       screenshot?: string
       intent?: NoteIntent
+      /** Forwarded into the note's frontmatter. The router reads this
+       *  on task-intent notes to decide whether to pass the
+       *  resume-previous-conversation flag to the LLM (e.g. `claude
+       *  --continue`). Defaults to `true` for HUD-driven submits when
+       *  the intent is 'task'. */
+      resume?: boolean
     } = {},
   ): Promise<CreateNoteResponse> => {
     const annotations = submitOpts.annotations ?? buildAnnotations()
@@ -633,13 +920,18 @@ export function mountAnnotateHud(opts: MountAnnotateOptions = {}): AnnotateHudHa
           ? bakedDataUrl.slice(bakedDataUrl.indexOf(',') + 1)
           : bakedDataUrl
       } catch (err) {
-        const message = err instanceof Error ? err.message : String(err)
-        throw new Error(`devmode-annotate: screenshot failed — ${message}`, { cause: err })
+        throw new Error(`devmode-annotate: screenshot failed — ${describeCaptureError(err)}`, {
+          cause: err,
+        })
       }
     }
 
     const compInfo = collectComponentInfo()
     const intent: NoteIntent = submitOpts.intent ?? defaultIntent
+    // Resume defaults: task notes inherit the caller's choice (or true
+    // when omitted); 'note'-intent submissions never carry a resume
+    // flag since they don't dispatch.
+    const resume: boolean | undefined = intent === 'task' ? (submitOpts.resume ?? true) : undefined
     const frontmatter: Omit<NoteFrontmatter, 'id' | 'ts'> = {
       author: 'human',
       kind,
@@ -656,6 +948,7 @@ export function mountAnnotateHud(opts: MountAnnotateOptions = {}): AnnotateHudHa
       componentMeta: compInfo?.componentMeta ?? null,
       annotations,
       intent,
+      ...(resume !== undefined ? { resume } : {}),
       screenshot: screenshotBase64 ? 'placeholder.png' : null,
       agentSchemas: [],
       llui,
@@ -722,7 +1015,7 @@ export function mountAnnotateHud(opts: MountAnnotateOptions = {}): AnnotateHudHa
     }
     const nx = dragState.startX + dx
     const ny = dragState.startY + dy
-    const clamped = clampToViewport({ x: nx, y: ny })
+    const clamped = clampViewportXY(nx, ny)
     root.style.left = `${clamped.x}px`
     root.style.top = `${clamped.y}px`
     // If the modal is currently open, re-anchor it live so it tracks
@@ -741,7 +1034,9 @@ export function mountAnnotateHud(opts: MountAnnotateOptions = {}): AnnotateHudHa
     floatingBtn.style.cssText = STYLES.button
     if (wasDrag) {
       const rect = root.getBoundingClientRect()
-      writeSavedPosition({ x: rect.left, y: rect.top })
+      const pos = deriveSavedPosition(rect)
+      writeSavedPosition(pos)
+      applySavedPosition(root, pos)
       // The modal anchor depends on where the button sits. Re-compute
       // whether to flip horizontal/vertical so it stays on-screen.
       reanchorModal()
@@ -770,23 +1065,33 @@ export function mountAnnotateHud(opts: MountAnnotateOptions = {}): AnnotateHudHa
     else open()
   })
 
-  modeText.addEventListener('click', () => {
+  addRegionBtn.addEventListener('click', () => {
+    void startRectFlow()
+  })
+  regionChipClear.addEventListener('click', (e) => {
+    e.stopPropagation()
     dismissActiveOverlay()
-    setMode('text')
+    pendingRect = null
+    refreshRegionChip()
   })
-  modeRect.addEventListener('click', () => {
-    setMode('rect')
-    if (!pendingRect) {
-      void startRectFlow()
-    }
+  regionChip.addEventListener('click', () => {
+    // Click on the chip body (not the × close) re-opens the drawing
+    // overlay so the user can adjust the region.
+    void startRectFlow()
   })
-  rectPreview.addEventListener('click', () => {
-    if (mode === 'rect') void startRectFlow()
+
+  // More-options expand/collapse.
+  let moreOptionsOpen = false
+  moreOptionsToggle.addEventListener('click', () => {
+    moreOptionsOpen = !moreOptionsOpen
+    moreOptionsBody.style.display = moreOptionsOpen ? 'block' : 'none'
+    moreOptionsToggle.textContent = moreOptionsOpen ? '▾ More options' : '▸ More options'
   })
 
   cancelBtn.addEventListener('click', () => {
     dismissActiveOverlay()
     pendingRect = null
+    refreshRegionChip()
     close()
   })
 
@@ -842,16 +1147,18 @@ export function mountAnnotateHud(opts: MountAnnotateOptions = {}): AnnotateHudHa
   const submitWithIntent = (intent: NoteIntent): void => {
     const prose = textarea.value.trim()
     if (prose === '' && buildAnnotations().length === 0) {
-      statusLine.textContent = 'add text or draw a rect first'
+      statusLine.textContent = 'add text or draw a region first'
       return
     }
-    statusLine.textContent = mode === 'rect' ? 'capturing screenshot…' : 'sending…'
-    submit(prose, { intent }).then(
+    const captureLevel: CaptureLevel = verboseCheckbox.checked ? 'verbose' : 'standard'
+    statusLine.textContent = pendingRect ? 'capturing screenshot…' : 'sending…'
+    submit(prose, { intent, captureLevel, resume: resumeMode }).then(
       async (result) => {
         textarea.value = ''
         pendingRect = null
         dismissActiveOverlay()
-        setMode('text')
+        refreshRegionChip()
+        verboseCheckbox.checked = false
         if (intent === 'task') {
           // Add to per-task tracking. Buttons stay enabled so the
           // user can capture another issue right away; older tasks
@@ -983,6 +1290,11 @@ export function mountAnnotateHud(opts: MountAnnotateOptions = {}): AnnotateHudHa
     } else if (e.key === 'e' || e.key === 'E') {
       e.preventDefault()
       toggleWrap('`')
+    } else if (e.key === 'Enter') {
+      // ⌘↩ → solve (when available, default action); ⇧⌘↩ → save.
+      e.preventDefault()
+      if (e.shiftKey || !solveEnabled) submitWithIntent('note')
+      else submitWithIntent('task')
     }
   })
 
@@ -1150,6 +1462,15 @@ export function mountAnnotateHud(opts: MountAnnotateOptions = {}): AnnotateHudHa
         }
         if (parsed.type === 'status-changed' && parsed.noteId && parsed.to) {
           handleStatusUpdate(parsed.noteId, parsed.to, parsed.reason)
+          browse.refresh()
+          return
+        }
+        if (
+          parsed.type === 'note-created' ||
+          parsed.type === 'note-updated' ||
+          parsed.type === 'note-deleted'
+        ) {
+          browse.refresh()
         }
       })
     } catch (err) {

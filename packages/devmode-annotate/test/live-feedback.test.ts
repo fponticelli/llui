@@ -58,16 +58,12 @@ function mockFetch(noteId = '001'): Array<RequestInit> {
 
 function getStatusLine(): HTMLElement {
   const root = document.getElementById('llui-devmode-annotate-root')!
-  // The status line is the sibling div after the textarea.
-  const ta = root.querySelector('textarea')!
-  let cur: Element | null = ta.nextElementSibling
-  while (cur && cur.tagName !== 'DIV') cur = cur.nextElementSibling
-  return cur as HTMLElement
+  return root.querySelector('[data-llui-status]') as HTMLElement
 }
 
 function clickSolve(): void {
   const root = document.getElementById('llui-devmode-annotate-root')!
-  const btn = Array.from(root.querySelectorAll('button')).find((b) => b.textContent === 'Solve')!
+  const btn = root.querySelector('[data-llui-solve]') as HTMLButtonElement
   btn.click()
 }
 
@@ -77,9 +73,7 @@ describe('live status feedback during Solve', () => {
     mountAnnotateHud({ origin: 'http://localhost' })
     const root = document.getElementById('llui-devmode-annotate-root')!
     const ta = root.querySelector('textarea')!
-    const solveBtn = Array.from(root.querySelectorAll('button')).find(
-      (b) => b.textContent === 'Solve',
-    )!
+    const solveBtn = root.querySelector('[data-llui-solve]') as HTMLButtonElement
     ta.value = 'fix the button'
     clickSolve()
     await new Promise((r) => setTimeout(r, 5))

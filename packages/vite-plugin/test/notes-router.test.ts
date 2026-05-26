@@ -6,7 +6,7 @@ import { join } from 'node:path'
 import { createEventBus } from '../src/notes/event-bus.js'
 import { createNote } from '../src/notes/store.js'
 import { appendStatus, currentStatus, readStatusHistory } from '../src/notes/status.js'
-import { startRouter, type ClaudeSpawner } from '../src/notes/router.js'
+import { resolveCliInvocation, startRouter, type ClaudeSpawner } from '../src/notes/router.js'
 import type { NoteFrontmatter } from '../src/notes/types.js'
 
 const fmTask: Omit<NoteFrontmatter, 'id' | 'ts'> = {
@@ -351,5 +351,74 @@ describe('startRouter', () => {
     })
     await new Promise((r) => setTimeout(r, 10))
     expect(spawner.calls).toHaveLength(0)
+  })
+})
+
+describe('resolveCliInvocation', () => {
+  const stub = {
+    notesRoot: '',
+    projectRoot: '',
+    bus: {} as unknown as ReturnType<typeof createEventBus>,
+  }
+
+  it('claude preset defaults to sonnet', () => {
+    const r = resolveCliInvocation({ ...stub, preset: 'claude' })
+    expect(r.command).toBe('claude')
+    expect(r.args).toContain('--model')
+    expect(r.args).toContain('sonnet')
+    expect(r.promptVia).toBe('arg')
+  })
+
+  it('explicit model overrides the preset default', () => {
+    const r = resolveCliInvocation({ ...stub, preset: 'claude', model: 'opus' })
+    const modelIdx = r.args.indexOf('--model')
+    expect(modelIdx).toBeGreaterThanOrEqual(0)
+    expect(r.args[modelIdx + 1]).toBe('opus')
+    expect(r.args).not.toContain('sonnet')
+  })
+
+  it('codex preset omits --model when no explicit model is given', () => {
+    const r = resolveCliInvocation({ ...stub, preset: 'codex' })
+    expect(r.command).toBe('codex')
+    expect(r.args).not.toContain('--model')
+  })
+
+  it('gemini preset routes the prompt via stdin', () => {
+    const r = resolveCliInvocation({ ...stub, preset: 'gemini' })
+    expect(r.command).toBe('gemini')
+    expect(r.promptVia).toBe('stdin')
+  })
+
+  it('extraArgs are appended after model + before the prompt', () => {
+    const r = resolveCliInvocation({
+      ...stub,
+      preset: 'claude',
+      extraArgs: ['--verbose', '--rate-limit', '5'],
+    })
+    expect(r.args.slice(-3)).toEqual(['--verbose', '--rate-limit', '5'])
+  })
+
+  it('custom command + args path bypasses preset defaults', () => {
+    const r = resolveCliInvocation({
+      ...stub,
+      command: 'my-llm',
+      args: ['--quiet'],
+      promptVia: 'stdin',
+    })
+    expect(r.command).toBe('my-llm')
+    // No preset means no defaultModel, so --model isn't appended.
+    expect(r.args).toEqual(['--quiet'])
+    expect(r.promptVia).toBe('stdin')
+  })
+
+  it('env vars merge with process.env', () => {
+    const r = resolveCliInvocation({
+      ...stub,
+      preset: 'claude',
+      env: { OPENAI_API_KEY: 'sk-test' },
+    })
+    expect(r.env['OPENAI_API_KEY']).toBe('sk-test')
+    // PATH from process.env should still be present (sanity check on merge).
+    expect(r.env['PATH']).toBeDefined()
   })
 })

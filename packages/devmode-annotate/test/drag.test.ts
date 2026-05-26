@@ -56,11 +56,15 @@ describe('floating button — drag + persist', () => {
     expect(root.style.left).not.toBe('')
     expect(root.style.top).not.toBe('')
     const saved = JSON.parse(localStorage.getItem(POSITION_KEY)!) as {
-      x: number
-      y: number
+      anchorX: 'left' | 'right'
+      offsetX: number
+      anchorY: 'top' | 'bottom'
+      offsetY: number
     }
-    expect(typeof saved.x).toBe('number')
-    expect(typeof saved.y).toBe('number')
+    expect(['left', 'right']).toContain(saved.anchorX)
+    expect(['top', 'bottom']).toContain(saved.anchorY)
+    expect(typeof saved.offsetX).toBe('number')
+    expect(typeof saved.offsetY).toBe('number')
   })
 
   it('a real drag suppresses the trailing click — modal stays closed', () => {
@@ -81,8 +85,11 @@ describe('floating button — drag + persist', () => {
     expect(modal.style.display === 'block').toBe(false)
   })
 
-  it('restores saved position on next mount', () => {
-    localStorage.setItem(POSITION_KEY, JSON.stringify({ x: 100, y: 200 }))
+  it('restores a left/top-anchored saved position on next mount', () => {
+    localStorage.setItem(
+      POSITION_KEY,
+      JSON.stringify({ anchorX: 'left', offsetX: 100, anchorY: 'top', offsetY: 200 }),
+    )
     mountAnnotateHud({ subscribeEvents: false })
     const root = document.getElementById('llui-devmode-annotate-root')!
     expect(root.style.left).toBe('100px')
@@ -91,15 +98,77 @@ describe('floating button — drag + persist', () => {
     expect(root.style.bottom).toBe('auto')
   })
 
+  it('restores a right/bottom-anchored saved position on next mount', () => {
+    localStorage.setItem(
+      POSITION_KEY,
+      JSON.stringify({ anchorX: 'right', offsetX: 50, anchorY: 'bottom', offsetY: 80 }),
+    )
+    mountAnnotateHud({ subscribeEvents: false })
+    const root = document.getElementById('llui-devmode-annotate-root')!
+    expect(root.style.right).toBe('50px')
+    expect(root.style.bottom).toBe('80px')
+    expect(root.style.left).toBe('auto')
+    expect(root.style.top).toBe('auto')
+  })
+
   it('clamps a previously-saved off-screen position to the viewport', () => {
     // window.innerWidth/Height in jsdom default to 1024x768
-    localStorage.setItem(POSITION_KEY, JSON.stringify({ x: 100_000, y: -50 }))
+    localStorage.setItem(
+      POSITION_KEY,
+      JSON.stringify({ anchorX: 'left', offsetX: 100_000, anchorY: 'top', offsetY: -50 }),
+    )
     mountAnnotateHud({ subscribeEvents: false })
     const root = document.getElementById('llui-devmode-annotate-root')!
     const x = parseInt(root.style.left, 10)
     const y = parseInt(root.style.top, 10)
     expect(x).toBeLessThan(window.innerWidth)
     expect(y).toBeGreaterThanOrEqual(0)
+  })
+
+  it('right-anchored button tracks the right edge across window resize', () => {
+    localStorage.setItem(
+      POSITION_KEY,
+      JSON.stringify({ anchorX: 'right', offsetX: 50, anchorY: 'bottom', offsetY: 50 }),
+    )
+    mountAnnotateHud({ subscribeEvents: false })
+    const root = document.getElementById('llui-devmode-annotate-root')!
+    expect(root.style.right).toBe('50px')
+    expect(root.style.bottom).toBe('50px')
+
+    // Shrink the viewport; right/bottom-anchored values are preserved
+    // so the button visually follows the new edge.
+    Object.defineProperty(window, 'innerWidth', { configurable: true, value: 600 })
+    Object.defineProperty(window, 'innerHeight', { configurable: true, value: 400 })
+    window.dispatchEvent(new Event('resize'))
+
+    expect(root.style.right).toBe('50px')
+    expect(root.style.bottom).toBe('50px')
+    expect(root.style.left).toBe('auto')
+    expect(root.style.top).toBe('auto')
+  })
+
+  it('left-anchored button clamps inward on viewport shrink so it stays visible', () => {
+    localStorage.setItem(
+      POSITION_KEY,
+      JSON.stringify({ anchorX: 'left', offsetX: 900, anchorY: 'top', offsetY: 700 }),
+    )
+    // Start with a viewport large enough to honor the offsets verbatim.
+    Object.defineProperty(window, 'innerWidth', { configurable: true, value: 1200 })
+    Object.defineProperty(window, 'innerHeight', { configurable: true, value: 900 })
+    mountAnnotateHud({ subscribeEvents: false })
+    const root = document.getElementById('llui-devmode-annotate-root')!
+    expect(root.style.left).toBe('900px')
+    expect(root.style.top).toBe('700px')
+
+    // Shrink so the saved offset would put the button off-screen.
+    Object.defineProperty(window, 'innerWidth', { configurable: true, value: 400 })
+    Object.defineProperty(window, 'innerHeight', { configurable: true, value: 300 })
+    window.dispatchEvent(new Event('resize'))
+
+    const x = parseInt(root.style.left, 10)
+    const y = parseInt(root.style.top, 10)
+    expect(x + 44).toBeLessThanOrEqual(400)
+    expect(y + 44).toBeLessThanOrEqual(300)
   })
 
   it('ignores corrupted localStorage payload', () => {
@@ -143,8 +212,7 @@ describe('modal repositioning when clipped', () => {
   }
 
   function getModal(): HTMLElement {
-    const ta = document.querySelector('#llui-devmode-annotate-root textarea') as HTMLTextAreaElement
-    return ta.parentElement!
+    return document.querySelector('#llui-devmode-annotate-root [data-llui-modal]') as HTMLElement
   }
 
   it('keeps right-anchor when the button sits in the right half of a wide viewport', async () => {

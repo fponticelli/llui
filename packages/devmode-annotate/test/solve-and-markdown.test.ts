@@ -46,7 +46,11 @@ describe('Save / Solve action buttons', () => {
     mountAnnotateHud({ subscribeEvents: false })
     const root = document.getElementById('llui-devmode-annotate-root')!
     const labels = Array.from(root.querySelectorAll('button')).map((b) => b.textContent ?? '')
-    expect(labels).toEqual(expect.arrayContaining(['Cancel', 'Save note', 'Solve']))
+    expect(labels).toEqual(expect.arrayContaining(['Cancel', 'Save note']))
+    // Solve lives inside a split button — match by data attribute,
+    // not exact textContent (the main button includes a ↻ glyph when
+    // resume mode is on).
+    expect(root.querySelector('[data-llui-solve]')).not.toBeNull()
   })
 
   it("Solve submits with intent='task'", async () => {
@@ -55,9 +59,7 @@ describe('Save / Solve action buttons', () => {
     const root = document.getElementById('llui-devmode-annotate-root')!
     const textarea = root.querySelector('textarea')!
     textarea.value = 'fix it'
-    const solveBtn = Array.from(root.querySelectorAll('button')).find(
-      (b) => b.textContent === 'Solve',
-    )!
+    const solveBtn = root.querySelector('[data-llui-solve]') as HTMLButtonElement
     solveBtn.click()
     await new Promise((r) => setTimeout(r, 5))
     const body = JSON.parse(calls[0]![1].body as string) as {

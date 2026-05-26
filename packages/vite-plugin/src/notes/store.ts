@@ -19,6 +19,22 @@ import { join } from 'node:path'
 import { parseNote, serializeNote, type SerializedNote } from './frontmatter.js'
 import { resolveCurrentSession } from './session.js'
 import { deriveFilename, deriveSlug, padId } from './slug.js'
+
+/**
+ * Customizable parts of the on-disk format. None of these affect read
+ * paths — listing and parsing still use the canonical filename regex,
+ * so the slug callback is constrained to producing a `[a-z0-9-]+`
+ * string (deriveSlug's contract). Session folder names are free-form.
+ */
+export interface NoteFormatConfig {
+  /** Override the session folder name. Default: UTC
+   *  `session-YYYY-MM-DD-HHMM`. */
+  formatSessionFolder?: (date: Date) => string
+  /** Override the slug derivation from prose. The slug becomes the
+   *  tail of each filename (`{id}-{author}-{kind}-{slug}.md`). MUST
+   *  return a `[a-z0-9-]+` string or filename-parsing breaks. */
+  deriveSlug?: (prose: string) => string
+}
 import type {
   Author,
   CreateNoteRequest,
@@ -91,11 +107,17 @@ function nextIdAndFilename(
   return { id, filename }
 }
 
-export function createNote(notesRoot: string, req: CreateNoteRequest): CreateNoteResponse {
-  const session = resolveCurrentSession(notesRoot)
+export function createNote(
+  notesRoot: string,
+  req: CreateNoteRequest,
+  format: NoteFormatConfig = {},
+): CreateNoteResponse {
+  const session = resolveCurrentSession(notesRoot, {
+    ...(format.formatSessionFolder ? { formatSessionFolder: format.formatSessionFolder } : {}),
+  })
   const sessionDir = session.notesDir
 
-  const slug = deriveSlug(req.body)
+  const slug = (format.deriveSlug ?? deriveSlug)(req.body)
   const { id, filename } = nextIdAndFilename(
     sessionDir,
     req.frontmatter.author,
@@ -153,6 +175,49 @@ export function readNote(notesRoot: string, sessionId: string, id: string): Seri
   }
   const md = readFileSync(join(sessionDir, filename), 'utf8')
   return parseNote(md)
+}
+
+/**
+ * Replace a note's prose, keeping its frontmatter intact. Returns the
+ * updated SerializedNote. Throws when the note doesn't exist. The
+ * status-history JSONL sidecar is untouched — edits don't reset task
+ * state.
+ */
+export function updateNoteProse(
+  notesRoot: string,
+  sessionId: string,
+  id: string,
+  newProse: string,
+): SerializedNote {
+  const sessionDir = join(notesRoot, sessionId)
+  const filename = findNoteFile(sessionDir, id)
+  if (!filename) throw new Error(`note not found: ${sessionId}/${id}`)
+  const existing = parseNote(readFileSync(join(sessionDir, filename), 'utf8'))
+  const updated: SerializedNote = { ...existing, prose: newProse }
+  writeFileSync(join(sessionDir, filename), serializeNote(updated), 'utf8')
+  return updated
+}
+
+/**
+ * Delete a note: the .md file + its sibling .png screenshot (if any).
+ * Returns the list of paths actually removed. Idempotent — missing
+ * files are skipped. The session-wide `status.jsonl` is intentionally
+ * left alone; orphan transitions for the deleted note are harmless
+ * since downstream readers filter by id.
+ */
+export function deleteNote(notesRoot: string, sessionId: string, id: string): string[] {
+  const sessionDir = join(notesRoot, sessionId)
+  const filename = findNoteFile(sessionDir, id)
+  if (!filename) return []
+  const removed: string[] = []
+  const targets = [join(sessionDir, filename), join(sessionDir, filename.replace(/\.md$/, '.png'))]
+  for (const t of targets) {
+    if (existsSync(t)) {
+      unlinkSync(t)
+      removed.push(t)
+    }
+  }
+  return removed
 }
 
 export function readScreenshot(notesRoot: string, sessionId: string, id: string): Buffer | null {

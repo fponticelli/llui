@@ -18,10 +18,13 @@ import type { EventBus } from './event-bus.js'
 import {
   cleanupResolvedTask,
   createNote,
+  deleteNote,
   listNotes,
   listSessions,
   readNote,
   readScreenshot,
+  updateNoteProse,
+  type NoteFormatConfig,
 } from './store.js'
 import { rotateSession, resolveCurrentSession } from './session.js'
 import { serializeNote } from './frontmatter.js'
@@ -46,6 +49,8 @@ export interface NotesMiddlewareConfig {
   defaultCaptureTimeoutMs?: number
   /** Heartbeat interval for SSE keepalive in ms. Default 15000. */
   sseHeartbeatMs?: number
+  /** Override session-folder naming and/or slug derivation. */
+  format?: NoteFormatConfig
 }
 
 export type MiddlewareHandler = (
@@ -129,6 +134,14 @@ export function createNotesMiddleware(config: NotesMiddlewareConfig): Middleware
   const { notesRoot, bus, registry } = config
   const captureTimeoutMs = config.defaultCaptureTimeoutMs ?? DEFAULT_CAPTURE_TIMEOUT_MS
   const heartbeatMs = config.sseHeartbeatMs ?? 15_000
+  const format = config.format ?? {}
+  // Session-resolution opts derived from format. Pre-built so we don't
+  // construct the same object on every request. resolveCurrentSession
+  // is idempotent after the marker file exists, but the FIRST call
+  // (mint) needs the custom formatter — so all callers pass it.
+  const sessionOpts = format.formatSessionFolder
+    ? { formatSessionFolder: format.formatSessionFolder }
+    : {}
 
   return (req, res, next) => {
     const url = req.url ?? ''
@@ -176,7 +189,7 @@ export function createNotesMiddleware(config: NotesMiddlewareConfig): Middleware
       if (!payload.frontmatter || typeof payload.frontmatter !== 'object') {
         return sendError(res, 400, 'frontmatter is required')
       }
-      const result = createNote(notesRoot, payload)
+      const result = createNote(notesRoot, payload, format)
       bus.broadcast({
         type: 'note-created',
         id: result.id,
@@ -221,7 +234,8 @@ export function createNotesMiddleware(config: NotesMiddlewareConfig): Middleware
     if (statusMatch) {
       const id = statusMatch[1]!
       const qs = parseQuery(url)
-      const sessionId = qs.get('sessionId') ?? resolveCurrentSession(notesRoot).sessionId
+      const sessionId =
+        qs.get('sessionId') ?? resolveCurrentSession(notesRoot, sessionOpts).sessionId
       const sessionDir = join(notesRoot, sessionId)
 
       if (method === 'GET') {
@@ -291,7 +305,8 @@ export function createNotesMiddleware(config: NotesMiddlewareConfig): Middleware
 
     if (path === `${ROUTE_PREFIX}/queue` && method === 'GET') {
       const qs = parseQuery(url)
-      const sessionId = qs.get('sessionId') ?? resolveCurrentSession(notesRoot).sessionId
+      const sessionId =
+        qs.get('sessionId') ?? resolveCurrentSession(notesRoot, sessionOpts).sessionId
       const sessionDir = join(notesRoot, sessionId)
       const statusFilter = qs.getAll('status') as NoteStatus[]
       const queue = listQueue(sessionDir, statusFilter.length > 0 ? { status: statusFilter } : {})
@@ -304,11 +319,11 @@ export function createNotesMiddleware(config: NotesMiddlewareConfig): Middleware
       const id = noteIdMatch[1]!
       const isScreenshot = noteIdMatch[2] === '/screenshot'
       const qs = parseQuery(url)
-      const sessionId = qs.get('sessionId') ?? resolveCurrentSession(notesRoot).sessionId
-
-      if (method !== 'GET') return sendError(res, 405, 'method not allowed')
+      const sessionId =
+        qs.get('sessionId') ?? resolveCurrentSession(notesRoot, sessionOpts).sessionId
 
       if (isScreenshot) {
+        if (method !== 'GET') return sendError(res, 405, 'method not allowed')
         const bytes = readScreenshot(notesRoot, sessionId, id)
         if (!bytes) return sendError(res, 404, 'screenshot not found')
         res.statusCode = 200
@@ -317,14 +332,46 @@ export function createNotesMiddleware(config: NotesMiddlewareConfig): Middleware
         return
       }
 
-      try {
-        const note = readNote(notesRoot, sessionId, id)
-        const md = serializeNote(note)
-        return sendText(res, 200, 'text/markdown; charset=utf-8', md)
-      } catch (err) {
-        const msg = err instanceof Error ? err.message : 'unknown'
-        return sendError(res, 404, msg)
+      if (method === 'GET') {
+        try {
+          const note = readNote(notesRoot, sessionId, id)
+          const md = serializeNote(note)
+          return sendText(res, 200, 'text/markdown; charset=utf-8', md)
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : 'unknown'
+          return sendError(res, 404, msg)
+        }
       }
+
+      if (method === 'PATCH') {
+        const body = await readBody(req)
+        let payload: { prose?: unknown }
+        try {
+          payload = body.json() as { prose?: unknown }
+        } catch {
+          return sendError(res, 400, 'invalid JSON body')
+        }
+        if (typeof payload?.prose !== 'string') {
+          return sendError(res, 400, 'body must include { prose: string }')
+        }
+        try {
+          const updated = updateNoteProse(notesRoot, sessionId, id, payload.prose)
+          bus.broadcast({ type: 'note-updated', id, sessionId })
+          return sendJson(res, 200, { id, sessionId, prose: updated.prose })
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : 'unknown'
+          return sendError(res, 404, msg)
+        }
+      }
+
+      if (method === 'DELETE') {
+        const removed = deleteNote(notesRoot, sessionId, id)
+        if (removed.length === 0) return sendError(res, 404, 'note not found')
+        bus.broadcast({ type: 'note-deleted', id, sessionId })
+        return sendJson(res, 200, { id, sessionId, removed })
+      }
+
+      return sendError(res, 405, 'method not allowed')
     }
 
     if (path === `${ROUTE_PREFIX}/sessions` && method === 'GET') {
@@ -332,7 +379,7 @@ export function createNotesMiddleware(config: NotesMiddlewareConfig): Middleware
     }
 
     if (path === `${ROUTE_PREFIX}/session/current` && method === 'GET') {
-      const session = resolveCurrentSession(notesRoot)
+      const session = resolveCurrentSession(notesRoot, sessionOpts)
       return sendJson(res, 200, {
         sessionId: session.sessionId,
         startedAt: session.startedAt,
@@ -341,7 +388,7 @@ export function createNotesMiddleware(config: NotesMiddlewareConfig): Middleware
     }
 
     if (path === `${ROUTE_PREFIX}/session/rotate` && method === 'POST') {
-      const rotated = rotateSession(notesRoot)
+      const rotated = rotateSession(notesRoot, sessionOpts)
       bus.broadcast({ type: 'session-rotated', sessionId: rotated.sessionId })
       return sendJson(res, 200, {
         sessionId: rotated.sessionId,

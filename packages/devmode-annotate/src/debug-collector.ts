@@ -19,7 +19,7 @@ import type {
   PendingEffectEntry,
   RecentEffectEntry,
   SourceMapEntry,
-} from '@llui/vite-plugin'
+} from './note-types.js'
 
 // Minimal subset of @llui/dom's LluiDebugAPI we depend on. Typed as a
 // structural interface so we don't have to take a runtime dep on

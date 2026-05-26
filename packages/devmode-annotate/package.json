@@ -7,6 +7,10 @@
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
+    },
+    "./note-types": {
+      "types": "./dist/note-types.d.ts",
+      "import": "./dist/note-types.js"
     }
   },
   "files": [
@@ -19,7 +23,6 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@llui/vite-plugin": "workspace:*",
     "html-to-image": "^1.11.13"
   },
   "devDependencies": {

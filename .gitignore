@@ -16,4 +16,4 @@ benchmarks/bundle-composition.json
 
 # devmode-annotate notebook — developer-local notes/screenshots, not
 # shared across the team unless explicitly copied elsewhere.
-.llui/notes/
+**/.llui/notes/

@@ -12,6 +12,7 @@ import { existsSync, readFileSync, writeFileSync, watch as fsWatch, type FSWatch
 import { readFile } from 'node:fs/promises'
 import { dirname, relative, resolve } from 'node:path'
 import { createRequire } from 'node:module'
+import { fileURLToPath } from 'node:url'
 import { spawn, type ChildProcess } from 'node:child_process'
 import {
   transformLlui,
@@ -34,7 +35,13 @@ registerDevtoolsFactory(devtoolsFactory)
 import { createCaptureRegistry } from './notes/capture-registry.js'
 import { createEventBus } from './notes/event-bus.js'
 import { createNotesMiddleware } from './notes/middleware.js'
-import { isClaudeAvailable, startRouter } from './notes/router.js'
+import type { NoteFormatConfig } from './notes/store.js'
+import {
+  isCliAvailable,
+  startRouter,
+  type LlmPreset,
+  type LlmRouterConfig,
+} from './notes/router.js'
 import {
   findTypeSource,
   readComponentTypeArgNames,
@@ -349,11 +356,15 @@ export interface LluiPluginOptions {
    * shakes). Pass an object to keep it on while customizing the notes
    * directory or default timeout.
    *
-   * The HUD itself stays separately opt-in: the developer mounts it
-   * via `mountAnnotateHud()` in their app entry. The middleware
-   * registration is harmless when no HUD is connected (and `@llui/mcp`
-   * also works with it standalone). Production builds never run
-   * `configureServer`, so this is dev-only by construction.
+   * The HUD is **auto-injected** in dev mode: the plugin emits a
+   * `<script type="module">` into the served HTML that imports
+   * `@llui/devmode-annotate` and mounts the floating button. Production
+   * builds never run `configureServer` or `transformIndexHtml(dev)`, so
+   * this is dev-only by construction. Disable just the HUD (keeping the
+   * notes API on) with `devmodeAnnotate: { hud: false }`; disable
+   * everything with `devmodeAnnotate: false`. The HUD package must be
+   * resolvable from the project root — install
+   * `@llui/devmode-annotate` alongside `@llui/vite-plugin`.
    *
    * Environment overrides (honored when not opted out):
    *   - `LLUI_NOTES_DIR` — override the notes root path
@@ -370,23 +381,74 @@ export interface DevmodeAnnotateConfig {
    *  the Vite project root. Default: `.llui/notes`. The
    *  `LLUI_NOTES_DIR` env var takes precedence if set. */
   notesDir?: string
+  /**
+   * Override session-folder naming and/or slug derivation. The
+   * id+author+kind prefix of each filename stays fixed so id ordering
+   * and filename parsing keep working — only the trailing slug and
+   * the session folder name are customizable.
+   *
+   * ```ts
+   * format: {
+   *   formatSessionFolder: (d) => `session-${d.toISOString().slice(0, 10)}`,
+   *   deriveSlug: (prose) =>
+   *     prose.toLowerCase().replace(/[^a-z0-9]+/g, '-').slice(0, 20).replace(/^-|-$/g, '') || 'capture',
+   * }
+   * ```
+   *
+   * Note: when the MCP server writes notes directly (out-of-process),
+   * it uses defaults — only writes that go through the dev-server
+   * middleware (the HUD path) honor these overrides.
+   */
+  format?: NoteFormatConfig
   /** Override the default capture-request long-poll timeout in
    *  milliseconds. The `LLUI_CAPTURE_TIMEOUT_MS` env var takes
    *  precedence if set. Default: 30000. */
   captureTimeoutMs?: number
   /**
    * The attention router auto-picks up task-mode notes (the developer
-   * clicks "Solve" in the HUD) and spawns `claude` headlessly to
-   * propose a fix. Default: enabled when `claude` is available on
-   * PATH; otherwise a no-op with a one-time install hint logged.
+   * clicks "Solve" in the HUD) and spawns the configured LLM CLI to
+   * propose a fix. Accepts:
    *
-   * Set `router: false` to fully disable. The notes themselves still
-   * land on disk; only the auto-dispatch is skipped.
+   *  - `false` — disable. The HUD hides its "Solve" button; notes
+   *              still save to disk so MCP-side consumers can act on
+   *              them.
+   *  - `'claude' | 'codex' | 'gemini'` — preset; everything defaults.
+   *  - `LlmRouterConfig` — preset + overrides (model, timeoutMs,
+   *              concurrency, env, extraArgs), or a fully custom
+   *              invocation `{ command, args, promptVia }` (omit
+   *              `preset` to opt out of preset defaults entirely).
+   *
+   * When the chosen CLI isn't on PATH the router degrades silently
+   * to save-only and the HUD hides the Solve button — the user gets
+   * a one-line install hint in the console.
+   *
+   * Default: `'claude'`.
    */
-  router?: boolean
+  router?: false | LlmPreset | LlmRouterConfig
   /** Override the per-task timeout for the router's spawn. Default
-   *  5 minutes. */
+   *  5 minutes. Deprecated alias for `router.timeoutMs`. */
   routerTimeoutMs?: number
+  /**
+   * Controls the in-app HUD (`@llui/devmode-annotate`) auto-injection.
+   *
+   *  - `true` / omitted — inject in dev mode (default).
+   *  - `false`          — skip injection. The notes API stays live so
+   *                       MCP can still consume the notebook; only the
+   *                       floating button + modal are skipped.
+   *  - `HudInjectionConfig` — inject with forwarded options. Currently
+   *                       supports `{ hidden: true }` to mount the HUD
+   *                       programmatically (no floating button).
+   *
+   * Injection silently no-ops when `@llui/devmode-annotate` isn't
+   * resolvable from the project root.
+   */
+  hud?: boolean | HudInjectionConfig
+}
+
+export interface HudInjectionConfig {
+  /** Mount the HUD without rendering the floating button. The
+   *  keyboard shortcut + programmatic API still work. */
+  hidden?: boolean
 }
 
 /**
@@ -451,6 +513,78 @@ function hasMcpPackage(root: string): boolean {
     const req = createRequire(resolve(root, 'package.json'))
     req.resolve('@llui/mcp/package.json')
     return true
+  } catch {
+    return false
+  }
+}
+
+/**
+ * Resolve `@llui/devmode-annotate`'s ESM entry point against the plugin's
+ * own location, so it works without the consumer adding it to their
+ * package.json — it ships as a direct dep of `@llui/vite-plugin` and we
+ * inject an absolute file path into the dev HTML. Uses ESM's
+ * `import.meta.resolve` (sync, Node 20+) so the package's `exports`
+ * map only needs an `import` condition. Returns null only when the
+ * install is broken (the dep is declared but the file isn't there).
+ */
+function resolveDevmodeAnnotateEntry(): string | null {
+  try {
+    const url = import.meta.resolve('@llui/devmode-annotate')
+    return fileURLToPath(url)
+  } catch {
+    return null
+  }
+}
+
+/**
+ * Normalize the user's `router` setting into the public `LlmRouterConfig`
+ * shape (or null when disabled). Accepts `false`, a preset string, or
+ * a full config object. Used in `configResolved` so the rest of the
+ * plugin (router startup + HUD bootstrap) sees one canonical shape.
+ */
+function resolveRouterInput(
+  router: false | LlmPreset | LlmRouterConfig | undefined,
+  legacyTimeoutMs: number | undefined,
+): LlmRouterConfig | null {
+  if (router === false) return null
+  if (router === undefined) {
+    return legacyTimeoutMs ? { preset: 'claude', timeoutMs: legacyTimeoutMs } : { preset: 'claude' }
+  }
+  if (typeof router === 'string') {
+    const base: LlmRouterConfig = { preset: router }
+    return legacyTimeoutMs ? { ...base, timeoutMs: legacyTimeoutMs } : base
+  }
+  // Object form — honor legacy `routerTimeoutMs` only if the user
+  // didn't set router.timeoutMs themselves.
+  if (legacyTimeoutMs && router.timeoutMs === undefined) {
+    return { ...router, timeoutMs: legacyTimeoutMs }
+  }
+  return router
+}
+
+/**
+ * Detects when the consumer has `@llui/devmode-annotate` listed in their
+ * own package.json. The HUD now ships with `@llui/vite-plugin`, so a
+ * direct declaration is redundant — and worse, it pins a possibly-
+ * older version that diverges from what the plugin loads. Logged once
+ * during `configResolved` as a removal hint.
+ */
+function declaresDevmodeAnnotateDirectly(root: string): boolean {
+  try {
+    const pkgPath = resolve(root, 'package.json')
+    if (!existsSync(pkgPath)) return false
+    const pkg = JSON.parse(readFileSync(pkgPath, 'utf8')) as {
+      dependencies?: Record<string, string>
+      devDependencies?: Record<string, string>
+      peerDependencies?: Record<string, string>
+      optionalDependencies?: Record<string, string>
+    }
+    return (
+      Boolean(pkg.dependencies?.['@llui/devmode-annotate']) ||
+      Boolean(pkg.devDependencies?.['@llui/devmode-annotate']) ||
+      Boolean(pkg.peerDependencies?.['@llui/devmode-annotate']) ||
+      Boolean(pkg.optionalDependencies?.['@llui/devmode-annotate'])
+    )
   } catch {
     return false
   }
@@ -666,6 +800,12 @@ async function buildCrossFileProgram(root: string): Promise<import('typescript')
   }
 }
 
+// Virtual-module ID for the dev HUD bootstrap script. Vite serves
+// `\0`-prefixed ids only when referenced via `/@id/__x00__<id>` from
+// HTML, which is the exact pattern used in transformIndexHtml below.
+const HUD_VMOD_ID = 'virtual:llui-devmode-annotate-init'
+const HUD_VMOD_RESOLVED_ID = '\0' + HUD_VMOD_ID
+
 export default function llui(options: LluiPluginOptions = {}): Plugin {
   let devMode = false
   // `mcpPort` + `mcpMode` are resolved lazily in `configResolved` so we
@@ -706,6 +846,24 @@ export default function llui(options: LluiPluginOptions = {}): Plugin {
       head: Buffer,
     ) => void
   } | null = null
+
+  // HUD auto-injection state, computed in configResolved. The plugin
+  // emits a <script type="module"> referencing a virtual module that
+  // imports and mounts `@llui/devmode-annotate` from this package's own
+  // node_modules — the consumer doesn't add it to their package.json.
+  // `hudEntryPath` is the absolute file path to the HUD's ESM entry;
+  // Vite serves it via /@fs/.
+  let hudInjectEnabled = false
+  let hudEntryPath: string | null = null
+  let hudOptionsJson = '{}'
+
+  // Resolved router state. `resolvedRouter` is non-null when the
+  // attention router should run; `solveEnabled` is the boolean signal
+  // sent to the HUD so it conditionally renders the "Solve" button.
+  // Computed once in configResolved; consumed by configureServer
+  // (which calls startRouter) and the HUD bootstrap JSON.
+  let resolvedRouter: LlmRouterConfig | null = null
+  let solveEnabled = false
 
   // File-based handshake with @llui/mcp. The MCP server writes a marker
   // file when its bridge starts; we watch it and send a Vite HMR custom
@@ -798,6 +956,68 @@ export default function llui(options: LluiPluginOptions = {}): Plugin {
       if (agent && devMode) {
         agentServer = await loadAgentServer(config.root, agentConfig)
       }
+
+      // ── HUD auto-injection (devmode-annotate) ─────────────────────
+      // The floating-button HUD ships as a direct dep of this plugin.
+      // In dev mode we resolve its entry against the plugin's own
+      // location and inject a <script type="module"> that mounts it
+      // against the running app — the consumer doesn't add anything
+      // to their package.json. Disable via `devmodeAnnotate: false`
+      // (turn the whole subsystem off) or `devmodeAnnotate: { hud:
+      // false }` (keep the notes API; skip just the HUD).
+      if (devMode && options.devmodeAnnotate !== false) {
+        const annotateCfg =
+          typeof options.devmodeAnnotate === 'object' ? options.devmodeAnnotate : {}
+
+        // ── Resolve router + binary availability ────────────────────
+        // `solveEnabled` reflects whether the HUD should render the
+        // "Solve" button: true iff the user didn't disable the router
+        // AND the chosen CLI is actually on PATH.
+        resolvedRouter = resolveRouterInput(annotateCfg.router, annotateCfg.routerTimeoutMs)
+        if (resolvedRouter) {
+          const preset = resolvedRouter.preset ?? 'claude'
+          const cliName =
+            resolvedRouter.command ??
+            (preset === 'claude' ? 'claude' : preset === 'codex' ? 'codex' : 'gemini')
+          solveEnabled = isCliAvailable(cliName)
+          if (!solveEnabled) {
+            process.stderr.write(
+              `[llui:router] '${cliName}' not found on PATH — task notes will be saved but not auto-solved.\n` +
+                `              The HUD will hide its "Solve" button. Install the CLI or set\n` +
+                `              \`devmodeAnnotate: { router: false }\` to silence.\n`,
+            )
+          }
+        }
+
+        const hudCfg = annotateCfg.hud
+        if (hudCfg !== false) {
+          hudEntryPath = resolveDevmodeAnnotateEntry()
+          if (hudEntryPath) {
+            hudInjectEnabled = true
+            const forwarded: HudInjectionConfig = typeof hudCfg === 'object' ? hudCfg : {}
+            hudOptionsJson = JSON.stringify({
+              ...(forwarded.hidden ? { hidden: true } : {}),
+              solveEnabled,
+            })
+          } else {
+            process.stderr.write(
+              '[llui:devmode-annotate] HUD not injected — `@llui/devmode-annotate` could not be resolved\n' +
+                '                        from the plugin location. Reinstall or set `devmodeAnnotate: { hud: false }`.\n',
+            )
+          }
+        }
+        // Warn when the consumer redundantly lists `@llui/devmode-annotate`
+        // in their own package.json. The HUD ships with this plugin now;
+        // a direct entry pins a (possibly older) duplicate version and
+        // adds nothing.
+        if (declaresDevmodeAnnotateDirectly(config.root)) {
+          process.stderr.write(
+            '[llui:devmode-annotate] `@llui/devmode-annotate` is listed in your package.json — remove it.\n' +
+              '                        It ships with `@llui/vite-plugin`; a direct entry is redundant and\n' +
+              '                        risks pinning a stale version. Drop the dep and run install again.\n',
+          )
+        }
+      }
       if (options.mcpPort === false) {
         mcpMode = 'disabled'
         mcpPort = null
@@ -850,32 +1070,28 @@ export default function llui(options: LluiPluginOptions = {}): Plugin {
           bus: notesBus,
           registry: notesRegistry,
           defaultCaptureTimeoutMs: captureTimeoutMs,
+          ...(notesConfig.format ? { format: notesConfig.format } : {}),
         })
         server.middlewares.use(notesHandler)
 
         // ── Attention router (P6/C) ────────────────────────────────
-        // Auto-picks up task-mode notes ("Solve" in the HUD) and
-        // spawns claude headlessly to propose a fix. Off when the
-        // user passed router:false; off (with a hint) when claude
-        // isn't installed.
-        if (notesConfig.router !== false) {
-          if (isClaudeAvailable()) {
-            const routerHandle = startRouter({
-              notesRoot,
-              projectRoot,
-              bus: notesBus,
-              ...(notesConfig.routerTimeoutMs ? { timeoutMs: notesConfig.routerTimeoutMs } : {}),
-            })
-            server.httpServer?.on('close', () => routerHandle.stop())
-            process.stderr.write(
-              '[llui:router] attention router started — task notes will be solved by claude\n',
-            )
-          } else {
-            process.stderr.write(
-              '[llui:router] claude not found on PATH — task notes will be saved but not auto-solved.\n' +
-                '             Install Claude Code (https://claude.com/claude-code) to enable.\n',
-            )
-          }
+        // Resolved in configResolved into `resolvedRouter` (null when
+        // disabled) and `solveEnabled` (false when the CLI binary is
+        // missing). Only spawn the router when both are set — the HUD
+        // already received `solveEnabled: false` so the Solve button
+        // is hidden in either degraded case.
+        if (resolvedRouter && solveEnabled) {
+          const cliName = resolvedRouter.command ?? resolvedRouter.preset ?? 'claude'
+          const routerHandle = startRouter({
+            notesRoot,
+            projectRoot,
+            bus: notesBus,
+            ...resolvedRouter,
+          })
+          server.httpServer?.on('close', () => routerHandle.stop())
+          process.stderr.write(
+            `[llui:router] attention router started — task notes will be solved by ${cliName}\n`,
+          )
         }
       }
 
@@ -1040,6 +1256,43 @@ export default function llui(options: LluiPluginOptions = {}): Plugin {
       // Users with a custom server.ts (SSR apps) mount createLluiAgentServer
       // themselves — configureServer also fires in middleware mode, but
       // there server.httpServer is null so the upgrade hook is a no-op.
+    },
+
+    // ── HUD auto-injection (dev only) ────────────────────────────────
+    // A virtual module emits the `mountAnnotateHud(...)` call; the
+    // index.html injection point references it by URL so Vite's normal
+    // module graph + resolver handle `@llui/devmode-annotate`. Build
+    // mode never calls `transformIndexHtml(serve)`, so the HUD is fully
+    // tree-shaken from production output by construction.
+    resolveId(id) {
+      if (id === HUD_VMOD_ID) return HUD_VMOD_RESOLVED_ID
+      return undefined
+    },
+
+    load(id) {
+      if (id !== HUD_VMOD_RESOLVED_ID) return undefined
+      if (!hudInjectEnabled || !hudEntryPath) return 'export {}'
+      // Use the resolved absolute path so Vite's /@fs/ pipeline serves
+      // the HUD from this plugin's own node_modules — the user's app
+      // doesn't need to declare `@llui/devmode-annotate` itself.
+      return [
+        `import { mountAnnotateHud } from ${JSON.stringify(hudEntryPath)}`,
+        `mountAnnotateHud(${hudOptionsJson})`,
+      ].join('\n')
+    },
+
+    transformIndexHtml: {
+      order: 'pre',
+      handler() {
+        if (!devMode || !hudInjectEnabled) return
+        return [
+          {
+            tag: 'script',
+            attrs: { type: 'module', src: `/@id/__x00__${HUD_VMOD_ID}` },
+            injectTo: 'body',
+          },
+        ]
+      },
     },
 
     async transform(code, id, options) {

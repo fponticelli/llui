@@ -30,6 +30,7 @@
     "@llui/compiler-devtools": "workspace:*",
     "@llui/compiler-introspection": "workspace:*",
     "@llui/compiler-ssr": "workspace:*",
+    "@llui/devmode-annotate": "workspace:*",
     "magic-string": "^0.30.21",
     "typescript": "^6.0.2",
     "yaml": "^2.9.0"

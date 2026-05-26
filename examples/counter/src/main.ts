@@ -1,5 +1,4 @@
 import { component, mountApp, div, button } from '@llui/dom'
-import { mountAnnotateHud } from '@llui/devmode-annotate'
 import './styles.css'
 
 type State = { count: number }
@@ -40,7 +39,3 @@ const Counter = component<State, Msg, never>({
 })
 
 mountApp(document.getElementById('app')!, Counter)
-
-// Dev-mode annotation HUD — tree-shaken in prod builds.
-// Click the 📝 button (or Cmd+Shift+A) to drop a note.
-mountAnnotateHud()

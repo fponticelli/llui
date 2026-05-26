@@ -96,15 +96,15 @@ describe('mountAnnotateHud — rect mode', () => {
     expect(body.screenshot).toBeUndefined()
   })
 
-  it('the mode buttons toggle the active mode and rect preview block', () => {
+  it('clicking "Add region" launches the drawing overlay', () => {
     mountAnnotateHud()
     const root = document.getElementById('llui-devmode-annotate-root')!
-    const modeButtons = root.querySelectorAll('[data-mode]')
-    expect(modeButtons).toHaveLength(2)
-    const rectBtn = root.querySelector('[data-mode="rect"]') as HTMLButtonElement
-    rectBtn.click()
-    // Switching to rect mode kicks off the overlay; just check the
-    // overlay appeared.
+    // Find the "Add region" pill button by its label text.
+    const buttons = [...root.querySelectorAll('button')] as HTMLButtonElement[]
+    const addRegionBtn = buttons.find((b) => b.textContent?.includes('Add region'))
+    expect(addRegionBtn).toBeDefined()
+    addRegionBtn!.click()
+    // Drawing kicks off — the overlay should mount.
     const overlay = document.querySelector('[data-llui-overlay="rect"]')
     expect(overlay).not.toBeNull()
     // Cancel the overlay to clean up
