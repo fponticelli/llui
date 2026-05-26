@@ -1,0 +1,187 @@
+// === ticker-bench:classes:begin ===
+// Appended to the bottom of webdriver-ts/src/benchmarksWebdriverCDP.ts.
+// Defines the 8 CPU benchmark classes that click ticker buttons and
+// wait on a deterministic post-condition. The sync signal for tick/
+// narrow/toggle/churn/clear ops is the `#ticker-counter` element — each
+// of those ops bumps `state.dashboard.tickCount` by exactly +1 per
+// flush, so the harness can read the pre-click value and assert the
+// post-click value.
+//
+// `mount` waits on tbody/tr[200], `clear` on tbody being empty.
+
+const TICKER_TIMEOUT = 30 * 1000;
+
+// jfb's xpath parser only handles `/tag[idx]/tag[idx]` paths — `//*[@id=...]`
+// predicates throw. Go through driver.executeScript() to read the counter
+// cell's text. Same for the post-click wait: poll the same script until
+// the value advances by `delta`.
+const READ_COUNTER_JS =
+  "var el = document.getElementById('ticker-counter'); return el ? el.textContent : ''";
+
+async function readTickerCounter(driver: WebDriver): Promise<number> {
+  const text = (await driver.executeScript(READ_COUNTER_JS)) as string;
+  const n = parseInt(text, 10);
+  return Number.isNaN(n) ? 0 : n;
+}
+
+async function clickAndWaitForCounter(
+  driver: WebDriver,
+  buttonId: string,
+  delta: number,
+): Promise<void> {
+  const pre = await readTickerCounter(driver);
+  await clickElementById(driver, buttonId, true);
+  const expected = pre + delta;
+  const deadline = Date.now() + TICKER_TIMEOUT;
+  while (Date.now() < deadline) {
+    const current = await readTickerCounter(driver);
+    if (current === expected) return;
+    await new Promise((r) => setTimeout(r, 10));
+  }
+  throw new Error(
+    `Timeout: ticker-counter did not reach ${expected} (last seen pre=${pre}, +${delta})`,
+  );
+}
+
+export const benchTickerMount = new (class extends CPUBenchmarkWebdriverCDP {
+  constructor() {
+    super(cpuBenchmarkInfos["50_ticker_mount"]);
+  }
+  async init(driver: WebDriver) {
+    await testElementLocatedById(driver, "mount", SHORT_TIMEOUT, true);
+    for (let i = 0; i < this.benchmarkInfo.warmupCount; i++) {
+      await clickElementById(driver, "mount", true);
+      await testElementLocatedByXpath(driver, "//tbody/tr[200]", config.TIMEOUT, false);
+      await clickElementById(driver, "clear", true);
+      await testElementNotLocatedByXPath(driver, "//tbody/tr[1]", config.TIMEOUT, false);
+    }
+  }
+  async run(driver: WebDriver) {
+    await clickElementById(driver, "mount", true);
+    await testElementLocatedByXpath(driver, "//tbody/tr[200]", config.TIMEOUT, false);
+  }
+})();
+
+export const benchTickerTick1 = new (class extends CPUBenchmarkWebdriverCDP {
+  constructor() {
+    super(cpuBenchmarkInfos["51_ticker_tick-1"]);
+  }
+  async init(driver: WebDriver) {
+    await testElementLocatedById(driver, "tick-1", SHORT_TIMEOUT, true);
+    await clickElementById(driver, "mount", true);
+    await testElementLocatedByXpath(driver, "//tbody/tr[200]", config.TIMEOUT, false);
+    for (let i = 0; i < this.benchmarkInfo.warmupCount; i++) {
+      await clickAndWaitForCounter(driver, "tick-1", 1);
+    }
+  }
+  async run(driver: WebDriver) {
+    await clickAndWaitForCounter(driver, "tick-1", 1);
+  }
+})();
+
+export const benchTickerTick100 = new (class extends CPUBenchmarkWebdriverCDP {
+  constructor() {
+    super(cpuBenchmarkInfos["52_ticker_tick-100"]);
+  }
+  async init(driver: WebDriver) {
+    await testElementLocatedById(driver, "tick-100", SHORT_TIMEOUT, true);
+    await clickElementById(driver, "mount", true);
+    await testElementLocatedByXpath(driver, "//tbody/tr[200]", config.TIMEOUT, false);
+    for (let i = 0; i < this.benchmarkInfo.warmupCount; i++) {
+      await clickAndWaitForCounter(driver, "tick-100", 100);
+    }
+  }
+  async run(driver: WebDriver) {
+    await clickAndWaitForCounter(driver, "tick-100", 100);
+  }
+})();
+
+export const benchTickerBurst1k = new (class extends CPUBenchmarkWebdriverCDP {
+  constructor() {
+    super(cpuBenchmarkInfos["53_ticker_burst-1k"]);
+  }
+  async init(driver: WebDriver) {
+    await testElementLocatedById(driver, "burst-1k", SHORT_TIMEOUT, true);
+    await clickElementById(driver, "mount", true);
+    await testElementLocatedByXpath(driver, "//tbody/tr[200]", config.TIMEOUT, false);
+    for (let i = 0; i < this.benchmarkInfo.warmupCount; i++) {
+      await clickAndWaitForCounter(driver, "burst-1k", 1000);
+    }
+  }
+  async run(driver: WebDriver) {
+    await clickAndWaitForCounter(driver, "burst-1k", 1000);
+  }
+})();
+
+export const benchTickerNarrow100 = new (class extends CPUBenchmarkWebdriverCDP {
+  constructor() {
+    super(cpuBenchmarkInfos["54_ticker_narrow-100"]);
+  }
+  async init(driver: WebDriver) {
+    await testElementLocatedById(driver, "narrow-100", SHORT_TIMEOUT, true);
+    await clickElementById(driver, "mount", true);
+    await testElementLocatedByXpath(driver, "//tbody/tr[200]", config.TIMEOUT, false);
+    for (let i = 0; i < this.benchmarkInfo.warmupCount; i++) {
+      await clickAndWaitForCounter(driver, "narrow-100", 100);
+    }
+  }
+  async run(driver: WebDriver) {
+    await clickAndWaitForCounter(driver, "narrow-100", 100);
+  }
+})();
+
+export const benchTickerWideToggle = new (class extends CPUBenchmarkWebdriverCDP {
+  constructor() {
+    super(cpuBenchmarkInfos["55_ticker_wide-toggle"]);
+  }
+  async init(driver: WebDriver) {
+    await testElementLocatedById(driver, "wide-toggle", SHORT_TIMEOUT, true);
+    await clickElementById(driver, "mount", true);
+    await testElementLocatedByXpath(driver, "//tbody/tr[200]", config.TIMEOUT, false);
+    for (let i = 0; i < this.benchmarkInfo.warmupCount; i++) {
+      await clickAndWaitForCounter(driver, "wide-toggle", 1);
+    }
+  }
+  async run(driver: WebDriver) {
+    await clickAndWaitForCounter(driver, "wide-toggle", 1);
+  }
+})();
+
+export const benchTickerChurn50 = new (class extends CPUBenchmarkWebdriverCDP {
+  constructor() {
+    super(cpuBenchmarkInfos["56_ticker_churn-50"]);
+  }
+  async init(driver: WebDriver) {
+    await testElementLocatedById(driver, "churn-50", SHORT_TIMEOUT, true);
+    await clickElementById(driver, "mount", true);
+    await testElementLocatedByXpath(driver, "//tbody/tr[200]", config.TIMEOUT, false);
+    for (let i = 0; i < this.benchmarkInfo.warmupCount; i++) {
+      await clickAndWaitForCounter(driver, "churn-50", 1);
+    }
+  }
+  async run(driver: WebDriver) {
+    await clickAndWaitForCounter(driver, "churn-50", 1);
+  }
+})();
+
+export const benchTickerClear = new (class extends CPUBenchmarkWebdriverCDP {
+  constructor() {
+    super(cpuBenchmarkInfos["57_ticker_clear"]);
+  }
+  async init(driver: WebDriver) {
+    await testElementLocatedById(driver, "clear", SHORT_TIMEOUT, true);
+    for (let i = 0; i < this.benchmarkInfo.warmupCount; i++) {
+      await clickElementById(driver, "mount", true);
+      await testElementLocatedByXpath(driver, "//tbody/tr[200]", config.TIMEOUT, false);
+      await clickElementById(driver, "clear", true);
+      await testElementNotLocatedByXPath(driver, "//tbody/tr[1]", config.TIMEOUT, false);
+    }
+    await clickElementById(driver, "mount", true);
+    await testElementLocatedByXpath(driver, "//tbody/tr[200]", config.TIMEOUT, false);
+  }
+  async run(driver: WebDriver) {
+    await clickElementById(driver, "clear", true);
+    await testElementNotLocatedByXPath(driver, "//tbody/tr[1]", config.TIMEOUT, false);
+  }
+})();
+// === ticker-bench:classes:end ===

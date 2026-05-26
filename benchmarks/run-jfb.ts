@@ -203,10 +203,17 @@ try {
 // ── Determine which frameworks to run ──
 
 const frameworksToRun = ['keyed/llui']
+const seen = new Set(frameworksToRun)
+const pushUnique = (name: string) => {
+  if (!seen.has(name)) {
+    seen.add(name)
+    frameworksToRun.push(name)
+  }
+}
 if (runAll) {
-  for (const fw of COMPETITORS) frameworksToRun.push(`keyed/${fw}`)
+  for (const fw of COMPETITORS) pushUnique(`keyed/${fw}`)
 } else {
-  for (const fw of extraFrameworks) frameworksToRun.push(`keyed/${fw}`)
+  for (const fw of extraFrameworks) pushUnique(`keyed/${fw}`)
 }
 
 // ── Run benchmarks ──
@@ -245,12 +252,21 @@ function medianOf(nums: number[]): number | null {
   return sorted.length % 2 === 0 ? (sorted[mid - 1]! + sorted[mid]!) / 2 : sorted[mid]!
 }
 
+// Explicit benchmark filter: the ticker bench (`bench:ticker:setup`)
+// registers ticker IDs in jfb's global benchmarks array. Without a
+// filter the runner attempts them against the standard `keyed/llui`
+// app, which lacks ticker buttons → 8 fast failures per framework.
+const benchmarkFilter = ALL_BENCHMARKS.map((b) => b.id).join(' ')
+
 for (let pass = 1; pass <= runs; pass++) {
   if (runs > 1) console.log(`\n=== Pass ${pass}/${runs} ===`)
   for (const fw of frameworksToRun) {
     console.log(`\n🏃 Running benchmark: ${fw}...`)
     try {
-      run(`node dist/benchmarkRunner.js --framework ${fw}${chromeMode}`, webdriverDir)
+      run(
+        `node dist/benchmarkRunner.js --framework ${fw} --benchmark ${benchmarkFilter}${chromeMode}`,
+        webdriverDir,
+      )
     } catch {
       console.error(`Failed to run ${fw}, skipping`)
       continue

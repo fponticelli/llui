@@ -1,0 +1,19 @@
+{
+  "name": "jfb-ticker-vanillajs",
+  "version": "1.0.0",
+  "type": "module",
+  "private": true,
+  "js-framework-benchmark": {
+    "frameworkVersion": "",
+    "frameworkHomeURL": "https://developer.mozilla.org/en-US/docs/Web/API/Document_Object_Model",
+    "language": "TypeScript",
+    "customBenchmarks": true
+  },
+  "scripts": {
+    "dev": "vite",
+    "build-prod": "vite build"
+  },
+  "devDependencies": {
+    "vite": "^8.0.0"
+  }
+}

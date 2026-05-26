@@ -2,4 +2,5 @@ packages:
   - 'packages/*'
   - 'examples/*'
   - 'benchmarks/js-framework-benchmark'
+  - 'benchmarks/jfb-ticker/frameworks/*'
   - 'site'

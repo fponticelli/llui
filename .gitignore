@@ -4,6 +4,9 @@ dist
 .turbo
 coverage
 benchmarks/js-framework-benchmark-repo/
+# Generated on demand by `pnpm bench:ticker:setup` so jfb's framework
+# discovery accepts the symlinked apps. Not real lock files.
+benchmarks/jfb-ticker/frameworks/*/package-lock.json
 # Transient — overwritten on every `pnpm tsx benchmarks/bundle-analyzer.ts` run.
 # bundle-baseline.json is the persisted phase history; this is just the latest snapshot.
 benchmarks/bundle-composition.json

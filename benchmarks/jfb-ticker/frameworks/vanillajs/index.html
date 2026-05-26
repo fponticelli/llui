@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Vanilla-ticker</title>
+    <link href="/css/currentStyle.css" rel="stylesheet" />
+    <style>
+      .ticker-grid {
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        gap: 4px;
+        padding: 8px;
+      }
+      .ticker-cell {
+        font-family: monospace;
+        font-size: 12px;
+        padding: 2px 6px;
+      }
+      .ticker-cell .k {
+        color: #888;
+      }
+      .ticker-cell .v {
+        font-weight: bold;
+      }
+      table.ticker {
+        width: 100%;
+        font-family: monospace;
+        font-size: 12px;
+      }
+      table.ticker td {
+        padding: 2px 6px;
+      }
+      .mode-price .col-price,
+      .mode-change .col-change,
+      .mode-volume .col-volume {
+        background: #ffe;
+        font-weight: bold;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="main"></div>
+    <script type="module" src="dist/main.js"></script>
+  </body>
+</html>

@@ -131,7 +131,15 @@ function tryInjectDirty(
   // Tier 5 (drop __handlers) was attempted and REVERTED — see
   // benchmarks/bundle-baseline.json#/abandoned. The 1.4 kB savings cost
   // 23-89% perf on jfb's swap/remove/update/select.
-  const handlersProp = tryBuildHandlers(configArg, topLevelBits, topLevelBitsHi, structuralMask, f)
+  const handlersProp = tryBuildHandlers(
+    configArg,
+    fieldBits,
+    fieldBitsHi,
+    topLevelBits,
+    topLevelBitsHi,
+    structuralMask,
+    f,
+  )
 
   // `__maskLegend` is emitted by `maskLegendModule` via the registry
   // bridge (v2c/decomp-9); the umbrella's `applyRegistryEmissions` step
@@ -187,6 +195,8 @@ function tryInjectDirty(
  */
 function tryBuildHandlers(
   configArg: ts.ObjectLiteralExpression,
+  fieldBits: Map<string, number>,
+  fieldBitsHi: Map<string, number>,
   topLevelBits: Map<string, number>,
   topLevelBitsHi: Map<string, number>,
   structuralMask: number,
@@ -275,7 +285,7 @@ function tryBuildHandlers(
     let bailOut = false
     for (const returnExpr of returnExprs) {
       const stateExpr = returnExpr.elements[0]!
-      const fields = analyzeModifiedFields(stateExpr, stateName, topLevelBits, topLevelBitsHi)
+      const fields = analyzeModifiedFields(stateExpr, stateName, fieldBits, fieldBitsHi)
       if (!fields) {
         bailOut = true
         break
@@ -284,28 +294,53 @@ function tryBuildHandlers(
     }
     if (bailOut) continue // at least one return path was too complex
 
-    const modifiedFields = Array.from(allModified)
+    const modifiedPaths = Array.from(allModified)
 
-    // Compute the dirty mask for this case across both words. Fields
-    // tracked in `topLevelBitsHi` contribute to `caseDirtyHi`; fields
-    // tracked nowhere (`undefined` lookup in both) fall back to
-    // FULL_MASK in the low word — same conservative behavior as
-    // before, just preserved per-word now.
+    // Compute the dirty mask for this case at leaf-path granularity.
+    // `modifiedPaths` may contain top-level names (`"rows"`) for fields
+    // that are wholesale-replaced, AND dotted leaf paths (`"agent.ui.copied"`)
+    // for fields that are precisely-patched via `{ ...state.agent, ... }`.
+    //
+    // A binding's prefix at registered path P is dirty when the case
+    // writes some path W such that the read overlaps the write:
+    //   - W === P      (exact: case writes the path the binding reads)
+    //   - W startsWith P + '.'    (case writes a child of P → P-ref changes)
+    //   - P startsWith W + '.'    (case writes a parent of P → P's value
+    //     may have moved with the parent's restructure)
+    // The third rule matters because the compiler's prefix table tracks
+    // depth-2 paths for nested accesses (e.g. `s.a.b.c` registers only
+    // `a.b`); a write to `a.b.c` must still dirty the `a.b` prefix.
     let caseDirty = 0
     let caseDirtyHi = 0
-    for (const field of modifiedFields) {
-      const lo = topLevelBits.get(field)
-      const hi = topLevelBitsHi.get(field)
-      if (lo === undefined && hi === undefined) {
+    for (const path of modifiedPaths) {
+      let pathLo = 0
+      let pathHi = 0
+      for (const [p, bit] of fieldBits) {
+        if (p === path || p.startsWith(path + '.') || path.startsWith(p + '.')) pathLo |= bit
+      }
+      for (const [p, bit] of fieldBitsHi) {
+        if (p === path || p.startsWith(path + '.') || path.startsWith(p + '.')) pathHi |= bit
+      }
+      if (pathLo === 0 && pathHi === 0) {
+        // Path is in the modified set but no binding observes it or
+        // anything under or above it. Conservative: FULL_MASK (same as
+        // pre-change behavior for unrecognized fields).
         caseDirty |= 0xffffffff | 0
       } else {
-        if (lo !== undefined) caseDirty |= lo
-        if (hi !== undefined) caseDirtyHi |= hi
+        caseDirty |= pathLo
+        caseDirtyHi |= pathHi
       }
     }
 
+    // `detectArrayOp` works on top-level field names (it looks at the
+    // RETURN object's properties, which are always single-level keys).
+    // Fold leaf paths back to their top-level prefix for that check.
+    const topLevelOnly = new Set<string>()
+    for (const p of modifiedPaths) topLevelOnly.add(p.split('.', 1)[0]!)
+    const topLevelFields = Array.from(topLevelOnly)
+
     // Detect array operation pattern for structural block optimization
-    const arrayOp = detectArrayOp(clause, modifiedFields, structuralMask, caseDirty)
+    const arrayOp = detectArrayOp(clause, topLevelFields, structuralMask, caseDirty)
 
     const handler = buildCaseHandler(f, caseDirty, caseDirtyHi, arrayOp)
     handlers.push(f.createPropertyAssignment(f.createStringLiteral(msgType), handler))
@@ -520,46 +555,149 @@ function hasSliceAssignment(clause: ts.CaseClause, varName: string): boolean {
  * Analyze which top-level state fields are modified in a return expression.
  * Returns the set of field names, or null if too complex to determine.
  */
+/**
+ * Match `state.a.b.c` → "a.b.c"; `state` → ""; anything else → null.
+ * Used to validate that a `...spread` expression preserves the
+ * remaining fields of a known sub-tree of state (which lets the
+ * analyzer descend into the nested literal precisely).
+ */
+function extractStateChain(expr: ts.Expression, stateName: string): string | null {
+  const parts: string[] = []
+  let cursor: ts.Expression = expr
+  while (ts.isPropertyAccessExpression(cursor)) {
+    if (!ts.isIdentifier(cursor.name)) return null
+    parts.unshift(cursor.name.text)
+    cursor = cursor.expression
+  }
+  if (ts.isIdentifier(cursor) && cursor.text === stateName) {
+    return parts.join('.')
+  }
+  return null
+}
+
+/**
+ * Recursive descent into a nested object-literal patch under a known
+ * state sub-tree. Requires an exact `...state.<pathPrefix>` spread to
+ * preserve unwritten siblings; any other spread (or no spread) means
+ * the literal is a wholesale replacement of `pathPrefix` and we
+ * conservatively bail to "whole sub-tree dirty".
+ *
+ * Returns the list of fully-qualified dotted leaf paths the literal
+ * writes (e.g. `["agent.ui.copied", "agent.ui.expanded"]`), or `null`
+ * if the descent cannot be done safely.
+ */
+function analyzeNestedField(
+  literal: ts.ObjectLiteralExpression,
+  stateName: string,
+  pathPrefix: string,
+): string[] | null {
+  let hasMatchingSpread = false
+  for (const prop of literal.properties) {
+    if (ts.isSpreadAssignment(prop)) {
+      const chain = extractStateChain(prop.expression, stateName)
+      if (chain === pathPrefix) {
+        hasMatchingSpread = true
+      } else {
+        // Opaque spread (`...somethingElse` or `...state.<wrongPath>`)
+        // → can't reason about preserved siblings.
+        return null
+      }
+    }
+  }
+  if (!hasMatchingSpread) return null // no spread → wholesale replacement of pathPrefix
+
+  const result: string[] = []
+  for (const prop of literal.properties) {
+    if (ts.isSpreadAssignment(prop)) continue // safe spread, already validated
+
+    let keyName: string | null = null
+    let valueExpr: ts.Expression | null = null
+    if (ts.isPropertyAssignment(prop) && ts.isIdentifier(prop.name)) {
+      keyName = prop.name.text
+      valueExpr = prop.initializer
+    } else if (ts.isPropertyAssignment(prop) && ts.isStringLiteral(prop.name)) {
+      keyName = prop.name.text
+      valueExpr = prop.initializer
+    } else if (ts.isShorthandPropertyAssignment(prop)) {
+      keyName = prop.name.text
+    } else {
+      // Computed key, accessor, etc. → can't be precise here.
+      return null
+    }
+
+    const fullPath = `${pathPrefix}.${keyName}`
+
+    // If the value is itself a nested literal, recurse for deeper precision.
+    if (valueExpr !== null && ts.isObjectLiteralExpression(valueExpr)) {
+      const deeper = analyzeNestedField(valueExpr, stateName, fullPath)
+      if (deeper !== null) {
+        for (const p of deeper) result.push(p)
+        continue
+      }
+    }
+    // Non-literal value (numeric, string, msg.field, fn call, …) → this
+    // sub-tree is wholesale-replaced at `fullPath`.
+    result.push(fullPath)
+  }
+  return result
+}
+
 function analyzeModifiedFields(
   stateExpr: ts.Expression,
   stateName: string,
-  topLevelBits: Map<string, number>,
-  topLevelBitsHi: Map<string, number> = new Map(),
+  fieldBits: Map<string, number>,
+  fieldBitsHi: Map<string, number> = new Map(),
 ): string[] | null {
-  // Recognize fields tracked in EITHER the low-word or high-word map.
-  // 32..61-prefix components have their overflow paths in
-  // `topLevelBitsHi`; the case handler's `caseDirty` / `caseDirtyHi`
-  // logic depends on us recognizing those fields here.
-  const isTracked = (name: string): boolean => topLevelBits.has(name) || topLevelBitsHi.has(name)
-  // Pattern: { ...state, field1: ..., field2: ... } or { field1: ..., field2: ... }
+  // A field/path is "tracked" if some binding's prefix observes it OR
+  // any binding observes a sub-path of it. Lets `{ ...state, agent: ... }`
+  // count even when bindings read `state.agent.connect.id` (no exact
+  // `agent` prefix exists, only deeper paths).
+  const isTracked = (name: string): boolean => {
+    if (fieldBits.has(name) || fieldBitsHi.has(name)) return true
+    for (const p of fieldBits.keys()) if (p.startsWith(name + '.')) return true
+    for (const p of fieldBitsHi.keys()) if (p.startsWith(name + '.')) return true
+    return false
+  }
+
   if (ts.isObjectLiteralExpression(stateExpr)) {
     const modified: string[] = []
     for (const prop of stateExpr.properties) {
       if (ts.isSpreadAssignment(prop)) {
-        // Only `...state` is safe to ignore — re-spreading state back into
-        // state doesn't change any field's identity. ANY other spread
+        // Only `...state` is safe to ignore at top-level. ANY other spread
         // (e.g. `...msg.props`, `...someObj`) can overwrite arbitrary
         // top-level fields with new references, and we cannot know which
-        // ones statically. Bail out so the generic Phase 2 path runs
-        // `__dirty` at runtime and produces a correct mask.
-        if (ts.isIdentifier(prop.expression) && prop.expression.text === stateName) {
-          continue
-        }
+        // ones statically. Bail so the generic Phase 2 path runs `__dirty`
+        // at runtime and produces a correct mask.
+        if (ts.isIdentifier(prop.expression) && prop.expression.text === stateName) continue
         return null
       }
+      let fieldName: string | null = null
+      let valueExpr: ts.Expression | null = null
       if (ts.isPropertyAssignment(prop) && ts.isIdentifier(prop.name)) {
-        const fieldName = prop.name.text
-        if (isTracked(fieldName)) {
-          modified.push(fieldName)
+        fieldName = prop.name.text
+        valueExpr = prop.initializer
+      } else if (ts.isPropertyAssignment(prop) && ts.isStringLiteral(prop.name)) {
+        fieldName = prop.name.text
+        valueExpr = prop.initializer
+      } else if (ts.isShorthandPropertyAssignment(prop)) {
+        // { ...state, rows } where rows is a local variable
+        fieldName = prop.name.text
+      }
+      if (fieldName === null) continue // computed key, accessor, …
+
+      if (!isTracked(fieldName)) continue
+
+      // Try to descend into a nested literal `field: { ...state.field, ... }`
+      // to get leaf-path precision. Falls back to top-level on any bail.
+      if (valueExpr !== null && ts.isObjectLiteralExpression(valueExpr)) {
+        const nested = analyzeNestedField(valueExpr, stateName, fieldName)
+        if (nested !== null) {
+          for (const p of nested) modified.push(p)
+          continue
         }
       }
-      // Handle shorthand: { ...state, rows } where rows is a local variable
-      if (ts.isShorthandPropertyAssignment(prop)) {
-        const fieldName = prop.name.text
-        if (isTracked(fieldName)) {
-          modified.push(fieldName)
-        }
-      }
+      // Non-literal value or analyzer bailed → wholesale of this top-level field.
+      modified.push(fieldName)
     }
     return modified.length > 0 ? modified : null
   }
