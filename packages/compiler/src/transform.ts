@@ -1249,20 +1249,36 @@ function injectViewBag(
     }
   }
 
-  // Find view: arrow/function.
+  // Find the `view` property. Three shapes we accept:
+  //   1. `view: (h) => …` / `view: ({ send, text }) => …` / `view: function (h) {…}`
+  //        → inspect the parameter to decide destructure vs identifier emit.
+  //   2. `view: viewFn` (identifier reference) / `view: someExpr()` (any
+  //      non-callable AST node we can't introspect)
+  //        → can't see the param list; emit the full-bag fallback so the
+  //          runtime gets a complete view bag instead of throwing.
+  //   3. `view,` shorthand — same as (2): we can't introspect the referenced
+  //      function from here without symbol resolution; emit the fallback.
+  //
+  // Pre-fix the function only matched (1) and silently returned the call
+  // unchanged for (2) and (3). Because `compilerStampModule` still stamped
+  // `__compilerVersion` on the call, the runtime then threw
+  // `missing __view despite being compiled` at mount.
   let viewFn: ts.ArrowFunction | ts.FunctionExpression | null = null
+  let hasViewProperty = false
   for (const prop of configArg.properties) {
-    if (
-      ts.isPropertyAssignment(prop) &&
-      ts.isIdentifier(prop.name) &&
-      prop.name.text === 'view' &&
-      (ts.isArrowFunction(prop.initializer) || ts.isFunctionExpression(prop.initializer))
-    ) {
-      viewFn = prop.initializer
+    if (ts.isPropertyAssignment(prop) && ts.isIdentifier(prop.name) && prop.name.text === 'view') {
+      hasViewProperty = true
+      if (ts.isArrowFunction(prop.initializer) || ts.isFunctionExpression(prop.initializer)) {
+        viewFn = prop.initializer
+      }
+      break
+    }
+    if (ts.isShorthandPropertyAssignment(prop) && prop.name.text === 'view') {
+      hasViewProperty = true
       break
     }
   }
-  if (!viewFn) return call
+  if (!hasViewProperty) return call
 
   const sendParamName = f.createIdentifier('$send')
 
@@ -1278,7 +1294,11 @@ function injectViewBag(
   //     The compiler can't see which fields `h` is accessed on (it
   //     may be passed to a helper, destructured later, read by
   //     name dynamically). Full bag, instance-cached.
-  const firstParam = viewFn.parameters[0]
+  // When `viewFn` is null (shorthand `view,` or `view: someIdentifier`)
+  // there is no inspectable parameter, so fall through to the
+  // identifier-style branch — the runtime gets the full bag via
+  // `createView($send)`, exactly like `view: (h) => …`.
+  const firstParam = viewFn ? viewFn.parameters[0] : undefined
   const isDestructured = !!firstParam && ts.isObjectBindingPattern(firstParam.name)
 
   let factoryBody: ts.Expression

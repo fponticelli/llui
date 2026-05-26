@@ -1187,6 +1187,47 @@ describe('__view synthesis (issue #5 regression)', () => {
     const out = t(src)
     expect(clean(out)).toContain('__view: $send => createView($send)')
   })
+
+  it('emits __view for shorthand `view,` referencing a top-level function', () => {
+    // Regression: pre-fix the shorthand form is a ShorthandPropertyAssignment,
+    // not a PropertyAssignment with an ArrowFunction. injectViewBag silently
+    // bailed, leaving the call with `__compilerVersion` stamped but no
+    // `__view`. The runtime then threw "missing __view despite being compiled".
+    const src = `
+      import { component, text } from '@llui/dom'
+      function view(h: any) { return [h.text((s: { count: number }) => String(s.count))] }
+      export const C = component({
+        name: 'C',
+        init: () => [{ count: 0 }, []],
+        update: (s, m) => [s, []],
+        view,
+      })
+    `
+    const out = t(src)
+    expect(out).toContain('__view')
+    expect(clean(out)).toContain('__view: $send => createView($send)')
+    expect(out).toMatch(/import\s*\{[^}]*\bcreateView\b/)
+  })
+
+  it('emits __view for `view: viewFn` identifier-reference', () => {
+    // Companion to the shorthand regression: a PropertyAssignment whose
+    // initializer is an Identifier (not an ArrowFunction/FunctionExpression)
+    // also bailed pre-fix, with the same stamped-but-no-__view crash.
+    const src = `
+      import { component, text } from '@llui/dom'
+      function viewFn(h: any) { return [h.text((s: { count: number }) => String(s.count))] }
+      export const C = component({
+        name: 'C',
+        init: () => [{ count: 0 }, []],
+        update: (s, m) => [s, []],
+        view: viewFn,
+      })
+    `
+    const out = t(src)
+    expect(out).toContain('__view')
+    expect(clean(out)).toContain('__view: $send => createView($send)')
+    expect(out).toMatch(/import\s*\{[^}]*\bcreateView\b/)
+  })
 })
 
 describe('Pass 3 — import cleanup', () => {
