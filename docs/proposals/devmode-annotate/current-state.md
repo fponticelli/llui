@@ -36,6 +36,9 @@ interface DevmodeAnnotateConfig {
 ```ts
 interface HudInjectionConfig {
   hidden?: boolean // mount HUD but skip the floating button (programmatic-only)
+  autoCaptureOnError?: boolean // default true; install window.onerror/unhandledrejection listeners
+  repro?: boolean // default true; show the "● Record" toggle
+  elementPick?: boolean // default true; show the "⌖ Pick element" pill
 }
 ```
 
@@ -57,6 +60,8 @@ interface LlmRouterConfig {
   timeoutMs?: number // default 5*60_000
   concurrency?: number // default 1 (serialized)
   contextFiles?: string[] // project-relative paths inlined into every prompt
+  beforePrompt?: (input: { prompt; note }) => string | Promise<string>
+  streaming?: boolean // default true; switches claude to --output-format stream-json
 }
 ```
 
@@ -172,12 +177,12 @@ Capture failures are reported with `describeCaptureError(err)` which extracts `t
 
 ## Known limitations / debt
 
-- Only `rect` annotations implemented; the `NoteKind` union also includes `lasso | pin | element | arrow` (placeholders).
+- Annotation tools shipping today: `rect` + `element` (pick). `NoteKind` also includes `lasso | pin | arrow` (placeholders, not built).
 - MCP-side note writes don't honour `format` overrides (out-of-process).
 - The router serializes by default; `concurrency > 1` with resume produces non-deterministic chains.
-- No streaming feedback during solve — claude `--print` only emits its final JSON envelope. Tracked: see proposal for switching to `--output-format stream-json`.
-- No notes export/import.
-- No element-pick / pin / arrow / redact annotation tools (proposed, not built).
-- No auto-capture on uncaught error; no repro recorder.
+- No notes export/import (zip in/out).
+- No redact tool that bakes a black rect into the screenshot (PII concern).
+- The repro recorder captures clicks/inputs/keys/route changes but cannot replay them yet — `@llui/test`'s replayTrace would need integration.
+- The HUD remembers chain names only for the current lifetime; chains created in prior sessions aren't auto-discovered (user must type the name).
   </content>
   </invoke>

@@ -115,6 +115,13 @@ export interface NoteFrontmatter {
    *  `claude --continue`) so the LLM keeps prior context. Presets
    *  without a resume flag treat this as a no-op. */
   resume?: boolean
+  /** Name of the resume chain this task participates in. The router
+   *  keeps a map of chain name → last session id and passes the
+   *  corresponding id via `--resume` when `resume: true`. Lets the
+   *  user maintain independent conversation threads (e.g. "refactor",
+   *  "ui-polish") without them stomping on each other. Default
+   *  `'default'`. */
+  chainName?: string
 }
 
 export type LogLevel = 'log' | 'warn' | 'error' | 'info' | 'debug'
@@ -217,8 +224,20 @@ export interface NoteBody {
   sourceMap?: SourceMapEntry[]
   errors?: RuntimeErrorEntry[]
 
+  /** Captured user interactions from the HUD's repro recorder. The
+   *  LLM uses this to understand what the developer did before the
+   *  bug appeared. Times are milliseconds from the start of the
+   *  recording, not absolute. */
+  repro?: ReproEvent[]
+
   verbose?: VerboseNoteBody
 }
+
+export type ReproEvent =
+  | { type: 'click'; t: number; selector: string }
+  | { type: 'input'; t: number; selector: string; value: string }
+  | { type: 'keydown'; t: number; key: string; mods?: string }
+  | { type: 'route'; t: number; pathname: string }
 
 // -- HTTP transport shapes -------------------------------------------------
 

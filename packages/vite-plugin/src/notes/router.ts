@@ -796,11 +796,12 @@ export function startRouter(config: RouterConfig): RouterHandle {
   const queue: Array<{ sessionId: string; noteId: string }> = []
   let activeCount = 0
   let stopped = false
-  // Session id captured from the most recent CLI spawn. When the next
-  // task's frontmatter has `resume: true`, the router passes
-  // `[preset.resumeFlag, lastSessionId]` so the LLM continues that
-  // conversation. Null until the first successful spawn.
-  let lastSessionId: string | null = null
+  // Per-chain session ids. Each successful spawn maps its chain name
+  // (default `'default'`) to the captured session id; the next task
+  // on the same chain resumes from there. Different chains stay
+  // independent so a "refactor" thread doesn't bleed into a "ui" one.
+  const sessionByChain = new Map<string, string>()
+  const DEFAULT_CHAIN = 'default'
   const presetDef = config.spawner ? null : PRESETS[config.preset ?? 'claude']
   // Honour `streaming: false` by downgrading stream-json → json. We
   // also strip --verbose + swap the format flag in the args so the
@@ -925,13 +926,15 @@ export function startRouter(config: RouterConfig): RouterHandle {
     // baseline can chain unpredictably.
     const note = readNote(config.notesRoot, sessionId, noteId)
     const wantsResume = note.frontmatter.resume === true
+    const chainName = note.frontmatter.chainName ?? DEFAULT_CHAIN
+    const chainSessionId = sessionByChain.get(chainName)
     const extraArgs: string[] = []
-    if (wantsResume && presetDef?.resumeFlag && lastSessionId) {
-      extraArgs.push(presetDef.resumeFlag, lastSessionId)
+    if (wantsResume && presetDef?.resumeFlag && chainSessionId) {
+      extraArgs.push(presetDef.resumeFlag, chainSessionId)
       if (activeCount > 1) {
         log(
-          `warning: resume requested for ${noteId} while ${activeCount - 1} other task(s) are in flight; ` +
-            `chains may interleave (set concurrency: 1 for deterministic resume)`,
+          `warning: resume requested for ${noteId} (chain "${chainName}") while ${activeCount - 1} ` +
+            `other task(s) are in flight; chains may interleave (set concurrency: 1 for deterministic resume)`,
         )
       }
     }
@@ -1027,7 +1030,7 @@ export function startRouter(config: RouterConfig): RouterHandle {
           assistantText = progress.finalText
         }
         if (progress.streamedSessionId) {
-          lastSessionId = progress.streamedSessionId
+          sessionByChain.set(chainName, progress.streamedSessionId)
         }
         if (progress.finalText === undefined) {
           log(`warning: ${cliName} stream-json missing a final result message; resume chain reset`)
@@ -1037,7 +1040,7 @@ export function startRouter(config: RouterConfig): RouterHandle {
         if (envelope) {
           assistantText = envelope.result
           if (envelope.session_id) {
-            lastSessionId = envelope.session_id
+            sessionByChain.set(chainName, envelope.session_id)
           }
         } else {
           log(`warning: ${cliName} did not emit a parseable JSON envelope; resume chain reset`)

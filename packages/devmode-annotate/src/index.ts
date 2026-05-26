@@ -23,7 +23,9 @@ import type {
 import { bakeAnnotations } from './bake.js'
 import { createBrowseView } from './browse-view.js'
 import { collectComponentInfo, collectDebugSnapshot, collectSourceMap } from './debug-collector.js'
+import { pickElement } from './element-picker.js'
 import { drawRect } from './overlay.js'
+import { createReproRecorder } from './repro-recorder.js'
 import { captureScreenshot, describeCaptureError, type CaptureFn } from './screenshot.js'
 import {
   btnStyle,
@@ -269,6 +271,8 @@ export function mountAnnotateHud(opts: MountAnnotateOptions = {}): AnnotateHudHa
 
   // ── State ──────────────────────────────────────────────────────────
   let pendingRect: NoteRect | null = null
+  let pendingElement: { selector: string; bbox: NoteRect } | null = null
+  let activeElementPickDismiss: (() => void) | null = null
 
   // Per-task tracking. The router serializes solves, but the user can
   // submit multiple from the HUD — older tasks finish in the background
@@ -289,7 +293,8 @@ export function mountAnnotateHud(opts: MountAnnotateOptions = {}): AnnotateHudHa
 
   const refreshLineageRow = (): void => {
     if (resumeMode && lastCompletedTaskId) {
-      lineageRow.textContent = `↻ chained from #${lastCompletedTaskId}`
+      const chainSuffix = currentChainName === 'default' ? '' : ` · chain "${currentChainName}"`
+      lineageRow.textContent = `↻ chained from #${lastCompletedTaskId}${chainSuffix}`
       lineageRow.style.display = 'block'
     } else {
       lineageRow.style.display = 'none'
@@ -397,7 +402,30 @@ export function mountAnnotateHud(opts: MountAnnotateOptions = {}): AnnotateHudHa
   regionChipClear.style.cssText = STYLES.regionChipClose
   regionChip.append(regionChipLabel, regionChipClear)
 
-  attachmentRow.append(addRegionBtn, regionChip)
+  // Element-pick pill — hidden when the plugin disabled the feature.
+  const elementPickEnabled = opts.elementPick !== false
+  const pickElementBtn = document.createElement('button')
+  pickElementBtn.type = 'button'
+  pickElementBtn.textContent = '⌖ Pick element'
+  pickElementBtn.title = 'Click an element on the page to attach it to this note'
+  pickElementBtn.style.cssText = STYLES.inlineActionBtn
+
+  const elementChip = document.createElement('span')
+  elementChip.style.cssText = STYLES.regionChip
+  elementChip.style.display = 'none'
+  const elementChipLabel = document.createElement('span')
+  const elementChipClear = document.createElement('button')
+  elementChipClear.type = 'button'
+  elementChipClear.textContent = '×'
+  elementChipClear.title = 'Remove element pick'
+  elementChipClear.style.cssText = STYLES.regionChipClose
+  elementChip.append(elementChipLabel, elementChipClear)
+
+  if (elementPickEnabled) {
+    attachmentRow.append(addRegionBtn, regionChip, pickElementBtn, elementChip)
+  } else {
+    attachmentRow.append(addRegionBtn, regionChip)
+  }
 
   // Markdown toolbar above the textarea. Minimal — bold, italic,
   // code, bullets, numbered list. Wraps selection or inserts at the
@@ -464,6 +492,12 @@ export function mountAnnotateHud(opts: MountAnnotateOptions = {}): AnnotateHudHa
   // when the upstream router is disabled or the CLI isn't on PATH.
   const solveEnabled = opts.solveEnabled !== false
   let resumeMode = true
+  // Named-chain state. The router tracks one session id PER chain
+  // name; sending different chain names lets the user keep parallel
+  // conversation threads. The HUD remembers which chains have been
+  // used this lifetime so it can offer them as quick-pick options.
+  let currentChainName = 'default'
+  const knownChainNames = new Set<string>(['default'])
 
   const solveSplit = document.createElement('div')
   solveSplit.setAttribute('data-llui-solve-split', '')
@@ -492,25 +526,74 @@ export function mountAnnotateHud(opts: MountAnnotateOptions = {}): AnnotateHudHa
   solveMenu.setAttribute('role', 'menu')
   solveMenu.style.cssText = SPLIT_BTN_STYLES.menu
 
-  const menuResume = document.createElement('button')
-  menuResume.type = 'button'
-  menuResume.setAttribute('role', 'menuitemradio')
-  menuResume.style.cssText = SPLIT_BTN_STYLES.menuItem
-  const menuFresh = document.createElement('button')
-  menuFresh.type = 'button'
-  menuFresh.setAttribute('role', 'menuitemradio')
-  menuFresh.style.cssText = SPLIT_BTN_STYLES.menuItem
-  solveMenu.append(menuResume, menuFresh)
-
+  // Menu items are rebuilt from `knownChainNames` on every render so
+  // newly-created chains appear immediately. A static "Start fresh"
+  // and a "+ New chain..." prompt round it out.
   const renderSolveState = (): void => {
     solveGlyph.style.display = resumeMode ? 'inline-flex' : 'none'
     solveBtn.title = resumeMode
-      ? 'Solve, resuming the previous conversation (⌘↩)'
+      ? `Solve, resuming chain "${currentChainName}" (⌘↩)`
       : 'Solve, starting a fresh conversation (⌘↩)'
-    menuResume.textContent = (resumeMode ? '● ' : '○ ') + 'Resume previous'
-    menuFresh.textContent = (!resumeMode ? '● ' : '○ ') + 'Start fresh'
-    menuResume.setAttribute('aria-checked', resumeMode ? 'true' : 'false')
-    menuFresh.setAttribute('aria-checked', !resumeMode ? 'true' : 'false')
+    solveMenu.innerHTML = ''
+    const headerEl = document.createElement('div')
+    headerEl.textContent = 'Resume chain'
+    headerEl.style.cssText =
+      'padding: 4px 8px 2px; font-size: 10px; color: var(--hud-fg-subtle); text-transform: uppercase; letter-spacing: 0.5px;'
+    solveMenu.appendChild(headerEl)
+    for (const name of knownChainNames) {
+      const item = document.createElement('button')
+      item.type = 'button'
+      item.setAttribute('role', 'menuitemradio')
+      item.style.cssText = SPLIT_BTN_STYLES.menuItem
+      const isActive = resumeMode && name === currentChainName
+      item.textContent = (isActive ? '● ' : '○ ') + (name === 'default' ? 'default' : `"${name}"`)
+      item.setAttribute('aria-checked', isActive ? 'true' : 'false')
+      item.addEventListener('click', (e) => {
+        e.stopPropagation()
+        resumeMode = true
+        currentChainName = name
+        renderSolveState()
+        refreshLineageRow()
+        closeSolveMenu()
+      })
+      solveMenu.appendChild(item)
+    }
+    // Divider
+    const divider = document.createElement('div')
+    divider.style.cssText = 'height: 1px; background: var(--hud-border); margin: 4px 6px;'
+    solveMenu.appendChild(divider)
+    // "Start fresh"
+    const freshItem = document.createElement('button')
+    freshItem.type = 'button'
+    freshItem.setAttribute('role', 'menuitemradio')
+    freshItem.style.cssText = SPLIT_BTN_STYLES.menuItem
+    freshItem.textContent = (!resumeMode ? '● ' : '○ ') + 'Start fresh'
+    freshItem.setAttribute('aria-checked', !resumeMode ? 'true' : 'false')
+    freshItem.addEventListener('click', (e) => {
+      e.stopPropagation()
+      resumeMode = false
+      renderSolveState()
+      refreshLineageRow()
+      closeSolveMenu()
+    })
+    solveMenu.appendChild(freshItem)
+    // "+ New chain..."
+    const newChainItem = document.createElement('button')
+    newChainItem.type = 'button'
+    newChainItem.style.cssText = SPLIT_BTN_STYLES.menuItem + '; color: var(--hud-accent-fg)'
+    newChainItem.textContent = '＋ New chain…'
+    newChainItem.addEventListener('click', (e) => {
+      e.stopPropagation()
+      const name = prompt('Chain name:')?.trim()
+      if (!name) return
+      knownChainNames.add(name)
+      currentChainName = name
+      resumeMode = true
+      renderSolveState()
+      refreshLineageRow()
+      closeSolveMenu()
+    })
+    solveMenu.appendChild(newChainItem)
   }
   renderSolveState()
 
@@ -526,20 +609,6 @@ export function mountAnnotateHud(opts: MountAnnotateOptions = {}): AnnotateHudHa
     e.stopPropagation()
     if (solveMenu.style.display === 'flex') closeSolveMenu()
     else openSolveMenu()
-  })
-  menuResume.addEventListener('click', (e) => {
-    e.stopPropagation()
-    resumeMode = true
-    renderSolveState()
-    refreshLineageRow()
-    closeSolveMenu()
-  })
-  menuFresh.addEventListener('click', (e) => {
-    e.stopPropagation()
-    resumeMode = false
-    renderSolveState()
-    refreshLineageRow()
-    closeSolveMenu()
   })
   // Click anywhere outside the split closes the menu.
   document.addEventListener('click', (e) => {
@@ -590,6 +659,56 @@ export function mountAnnotateHud(opts: MountAnnotateOptions = {}): AnnotateHudHa
   verboseText.textContent = 'Include verbose telemetry (state, message log, DOM snapshot)'
   verboseLabel.append(verboseCheckbox, verboseText)
   moreOptionsBody.append(verboseLabel)
+
+  // Repro recorder toggle. Captures clicks / inputs / keydowns /
+  // route changes between toggle-on and submit and attaches them to
+  // noteBody.repro. Hidden when the plugin opted out.
+  const reproEnabled = opts.repro !== false
+  const reproRecorder = createReproRecorder()
+  const reproRow = document.createElement('div')
+  reproRow.style.cssText = STYLES.moreOptionsRow + '; margin-top: 6px'
+  const reproBtn = document.createElement('button')
+  reproBtn.type = 'button'
+  reproBtn.style.cssText = [
+    'display: inline-flex',
+    'align-items: center',
+    'gap: 4px',
+    'padding: 3px 8px',
+    'border-radius: 4px',
+    'border: 1px solid var(--hud-border-strong)',
+    'background: transparent',
+    'color: var(--hud-fg-muted)',
+    'cursor: pointer',
+    'font: inherit',
+    'font-size: 11px',
+  ].join('; ')
+  const reproStatusLabel = document.createElement('span')
+  reproStatusLabel.style.cssText = 'color: var(--hud-fg-subtle); font-size: 11px;'
+
+  const renderReproRow = (): void => {
+    const recording = reproRecorder.isRecording()
+    reproBtn.textContent = recording ? '■ Stop recording' : '● Start recording'
+    if (recording) {
+      reproBtn.style.borderColor = 'var(--hud-toast-border-fail)'
+      reproBtn.style.color = 'var(--hud-toast-border-fail)'
+      reproStatusLabel.textContent = 'capturing clicks, inputs, route changes…'
+    } else {
+      reproBtn.style.borderColor = 'var(--hud-border-strong)'
+      reproBtn.style.color = 'var(--hud-fg-muted)'
+      reproStatusLabel.textContent = 'attaches a click+input trail for the LLM to replay'
+    }
+  }
+  reproBtn.addEventListener('click', (e) => {
+    e.preventDefault()
+    if (reproRecorder.isRecording()) reproRecorder.stop()
+    else reproRecorder.start()
+    renderReproRow()
+  })
+  reproRow.append(reproBtn, reproStatusLabel)
+  if (reproEnabled) {
+    moreOptionsBody.append(reproRow)
+    renderReproRow()
+  }
 
   // Footer keyboard hint. Solve shortcut hidden when solve is
   // unavailable so we don't advertise a key that won't dispatch.
@@ -771,8 +890,40 @@ export function mountAnnotateHud(opts: MountAnnotateOptions = {}): AnnotateHudHa
       regionChip.style.display = 'none'
       addRegionBtn.style.display = 'inline-flex'
     }
+    // Same pattern for the element-pick chip.
+    const pe: { selector: string; bbox: NoteRect } | null = pendingElement
+    if (pe) {
+      // Show only the last selector segment so the chip stays compact.
+      const tail = pe.selector.split('>').pop()?.trim() ?? pe.selector
+      elementChipLabel.textContent = `⌖ ${tail}`
+      elementChip.title = pe.selector
+      elementChip.style.display = 'inline-flex'
+      pickElementBtn.style.display = 'none'
+    } else {
+      elementChip.style.display = 'none'
+      pickElementBtn.style.display = elementPickEnabled ? 'inline-flex' : 'none'
+    }
   }
   refreshRegionChip()
+
+  // Element-pick handler — symmetric to startRectFlow(). Hides the
+  // modal while the picker is active so the user can hover the page;
+  // restores it on submit/cancel.
+  const startElementPickFlow = async (): Promise<void> => {
+    if (activeElementPickDismiss) {
+      activeElementPickDismiss()
+      activeElementPickDismiss = null
+    }
+    const wasOpen = modal.style.display === 'block'
+    close()
+    const result = await pickElement()
+    if (wasOpen) open()
+    if (result.reason === 'submit' && result.element) {
+      pendingElement = result.element
+      activeElementPickDismiss = result.dismiss ?? null
+    }
+    refreshRegionChip()
+  }
 
   // Compute + render the context subhead from the current page state.
   // Called on every modal open so navigations are reflected.
@@ -910,13 +1061,20 @@ export function mountAnnotateHud(opts: MountAnnotateOptions = {}): AnnotateHudHa
   }
 
   const buildAnnotations = (): Annotation[] => {
-    if (pendingRect) {
-      return [{ type: 'rect', ...pendingRect }]
+    const out: Annotation[] = []
+    if (pendingRect) out.push({ type: 'rect', ...pendingRect })
+    // Widen pendingElement before the null-check — `let` narrows to
+    // `null` here lexically since the picker handler that assigns
+    // appears later in the file.
+    const pe: { selector: string; bbox: NoteRect } | null = pendingElement
+    if (pe) {
+      out.push({ type: 'element', selector: pe.selector, bbox: pe.bbox })
     }
-    return []
+    return out
   }
 
   const buildKind = (): NoteKind => {
+    if (pendingElement) return 'element'
     if (pendingRect) return 'rect'
     return 'text'
   }
@@ -940,6 +1098,10 @@ export function mountAnnotateHud(opts: MountAnnotateOptions = {}): AnnotateHudHa
        *  --continue`). Defaults to `true` for HUD-driven submits when
        *  the intent is 'task'. */
       resume?: boolean
+      /** Forwarded into frontmatter. Routes the task into a named
+       *  resume chain so parallel conversation threads stay
+       *  independent. Default 'default'. */
+      chainName?: string
     } = {},
   ): Promise<CreateNoteResponse> => {
     const annotations = submitOpts.annotations ?? buildAnnotations()
@@ -993,14 +1155,27 @@ export function mountAnnotateHud(opts: MountAnnotateOptions = {}): AnnotateHudHa
       annotations,
       intent,
       ...(resume !== undefined ? { resume } : {}),
+      ...(submitOpts.chainName ? { chainName: submitOpts.chainName } : {}),
       screenshot: screenshotBase64 ? 'placeholder.png' : null,
       agentSchemas: [],
       llui,
     }
+    // Drain the repro recorder. Captured events attach to the note
+    // body so the LLM can replay the interaction trail that led to
+    // this submission. Recorder stops after flush.
+    const noteBody = buildNoteBody(annotations)
+    const reproEvents = reproRecorder.flush()
+    if (reproEvents.length > 0) {
+      noteBody.repro = reproEvents
+    }
+    if (reproRecorder.isRecording()) {
+      reproRecorder.stop()
+      if (reproEnabled) renderReproRow()
+    }
     const body: CreateNoteRequest = {
       body: prose,
       frontmatter,
-      noteBody: buildNoteBody(annotations),
+      noteBody,
       ...(screenshotBase64 ? { screenshot: screenshotBase64 } : {}),
     }
     const url = `${origin}/_llui/notes`
@@ -1124,6 +1299,24 @@ export function mountAnnotateHud(opts: MountAnnotateOptions = {}): AnnotateHudHa
     void startRectFlow()
   })
 
+  if (elementPickEnabled) {
+    pickElementBtn.addEventListener('click', () => {
+      void startElementPickFlow()
+    })
+    elementChipClear.addEventListener('click', (e) => {
+      e.stopPropagation()
+      if (activeElementPickDismiss) {
+        activeElementPickDismiss()
+        activeElementPickDismiss = null
+      }
+      pendingElement = null
+      refreshRegionChip()
+    })
+    elementChip.addEventListener('click', () => {
+      void startElementPickFlow()
+    })
+  }
+
   // More-options expand/collapse.
   let moreOptionsOpen = false
   moreOptionsToggle.addEventListener('click', () => {
@@ -1135,6 +1328,11 @@ export function mountAnnotateHud(opts: MountAnnotateOptions = {}): AnnotateHudHa
   cancelBtn.addEventListener('click', () => {
     dismissActiveOverlay()
     pendingRect = null
+    if (activeElementPickDismiss) {
+      activeElementPickDismiss()
+      activeElementPickDismiss = null
+    }
+    pendingElement = null
     refreshRegionChip()
     close()
   })
@@ -1231,10 +1429,20 @@ export function mountAnnotateHud(opts: MountAnnotateOptions = {}): AnnotateHudHa
     }
     const captureLevel: CaptureLevel = verboseCheckbox.checked ? 'verbose' : 'standard'
     statusLine.textContent = pendingRect ? 'capturing screenshot…' : 'sending…'
-    submit(prose, { intent, captureLevel, resume: resumeMode }).then(
+    submit(prose, {
+      intent,
+      captureLevel,
+      resume: resumeMode,
+      ...(intent === 'task' ? { chainName: currentChainName } : {}),
+    }).then(
       async (result) => {
         textarea.value = ''
         pendingRect = null
+        if (activeElementPickDismiss) {
+          activeElementPickDismiss()
+          activeElementPickDismiss = null
+        }
+        pendingElement = null
         dismissActiveOverlay()
         refreshRegionChip()
         verboseCheckbox.checked = false
