@@ -1,4 +1,15 @@
-import { component, mergeHandlers, composeModules, div, button, span, h3, img } from '@llui/dom'
+import {
+  component,
+  mergeHandlers,
+  composeModules,
+  div,
+  button,
+  span,
+  h3,
+  img,
+  svg,
+  path,
+} from '@llui/dom'
 import type { ModulesState, ModulesMsg } from '@llui/dom'
 import { tabs } from '@llui/components/tabs'
 import { accordion } from '@llui/components/accordion'
@@ -118,7 +129,23 @@ export const App = component<State, Msg, never>({
                 style: (s: State) =>
                   s.accordion.value.includes(v) ? 'transform:rotate(180deg);' : '',
               },
-              [text('▾')],
+              [
+                svg(
+                  {
+                    xmlns: 'http://www.w3.org/2000/svg',
+                    width: '16',
+                    height: '16',
+                    viewBox: '0 0 24 24',
+                    fill: 'none',
+                    stroke: 'currentColor',
+                    'stroke-width': '2',
+                    'stroke-linecap': 'round',
+                    'stroke-linejoin': 'round',
+                    'aria-hidden': 'true',
+                  },
+                  [path({ d: 'M6 9l6 6 6-6' })],
+                ),
+              ],
             ),
           ]),
         ]),
@@ -149,7 +176,26 @@ export const App = component<State, Msg, never>({
     const treeBranch = (id: string, label: string, depth: number, children: Node[]): Node => {
       const p = tv.item(id, depth, true)
       return div([
-        div({ ...p.item }, [button({ ...p.branchTrigger }, [text('▸')]), span([text(label)])]),
+        div({ ...p.item }, [
+          button({ ...p.branchTrigger, class: 'flex items-center gap-1' }, [
+            svg(
+              {
+                xmlns: 'http://www.w3.org/2000/svg',
+                width: '16',
+                height: '16',
+                viewBox: '0 0 24 24',
+                fill: 'none',
+                stroke: 'currentColor',
+                'stroke-width': '2',
+                'stroke-linecap': 'round',
+                'stroke-linejoin': 'round',
+                'aria-hidden': 'true',
+              },
+              [path({ d: 'M9 6l6 6-6 6' })],
+            ),
+          ]),
+          span([text(label)]),
+        ]),
         div({ class: 'pl-4', hidden: (s: State) => !s.treeView.expanded.includes(id) }, children),
       ])
     }

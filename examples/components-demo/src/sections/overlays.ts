@@ -8,6 +8,8 @@ import {
   h3,
   p,
   input,
+  svg,
+  path,
 } from '@llui/dom'
 import type { ModulesState, ModulesMsg } from '@llui/dom'
 import { popover } from '@llui/components/popover'
@@ -403,7 +405,24 @@ export const App = component<State, Msg, never>({
           }),
         ]),
         card('Menu', [
-          button({ ...me.trigger, class: 'btn btn-secondary' }, [text('Actions ▾')]),
+          button({ ...me.trigger, class: 'btn btn-secondary flex items-center gap-1.5' }, [
+            text('Actions'),
+            svg(
+              {
+                xmlns: 'http://www.w3.org/2000/svg',
+                width: '16',
+                height: '16',
+                viewBox: '0 0 24 24',
+                fill: 'none',
+                stroke: 'currentColor',
+                'stroke-width': '2',
+                'stroke-linecap': 'round',
+                'stroke-linejoin': 'round',
+                'aria-hidden': 'true',
+              },
+              [path({ d: 'M6 9l6 6 6-6' })],
+            ),
+          ]),
           ...menu.overlay<State>({
             get: (s) => s.menu,
             send: (m) => send({ type: 'menu', msg: m }),
@@ -428,10 +447,27 @@ export const App = component<State, Msg, never>({
           }),
         ]),
         card('Select', [
-          button({ ...se.trigger, 'aria-label': 'Select color' }, [
-            span([text((s: State) => se.valueText(s))]),
-            span({ class: 'ml-2 text-text-muted' }, [text('▾')]),
-          ]),
+          button(
+            { ...se.trigger, 'aria-label': 'Select color', class: 'flex items-center gap-1.5' },
+            [
+              span([text((s: State) => se.valueText(s))]),
+              svg(
+                {
+                  xmlns: 'http://www.w3.org/2000/svg',
+                  width: '16',
+                  height: '16',
+                  viewBox: '0 0 24 24',
+                  fill: 'none',
+                  stroke: 'currentColor',
+                  'stroke-width': '2',
+                  'stroke-linecap': 'round',
+                  'stroke-linejoin': 'round',
+                  'aria-hidden': 'true',
+                },
+                [path({ d: 'M6 9l6 6 6-6' })],
+              ),
+            ],
+          ),
           ...select.overlay<State>({
             get: (s) => s.select,
             send: (m) => send({ type: 'select', msg: m }),
