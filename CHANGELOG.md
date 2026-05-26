@@ -11,6 +11,37 @@ All notable changes to LLui packages are documented here. LLui is a pre-1.0 proj
 
 Packages version in lockstep at release time: `@llui/dom`, `@llui/vite-plugin`, `@llui/test`, `@llui/router`, `@llui/transitions`, `@llui/components`, `@llui/vike` share a version line. `@llui/effects`, `@llui/mcp`, `@llui/eslint-plugin`, `@llui/agent`, and `llui-agent` have their own cadence.
 
+## 2026-05-26 — 0.4.7 / 0.5.7
+
+**Released:** `@llui/{dom,components,router,transitions,vike,test,agent}@0.4.7`; `llui-agent@0.4.7`; `@llui/{compiler,compiler-devtools,compiler-introspection,compiler-ssr}@0.5.7`; `@llui/vite-plugin@0.5.8`; `@llui/mcp@0.5.10`
+
+Layered dirty-mask precision: the compiler now emits leaf-path-precise dirty masks for nested object literals, and the runtime recovers leaf-path precision at commit time for opaque patterns the compiler can't analyze statically. Headline impact on high-frequency partial updates (ticker bench, median-of-medians across 3 headless Chrome runs):
+
+| Op            | Before | After  | Δ     |
+| ------------- | ------ | ------ | ----- |
+| `narrow-100`  | 2.1ms  | 1.6ms  | -24%  |
+| `burst-1k`    | 18.4ms | 15.0ms | -19%  |
+| `tick-100`    | 5.5ms  | 5.1ms  | -7%   |
+| `wide-toggle` | 3.3ms  | 3.4ms  | noise |
+
+LLui now beats Solid on `burst-1k` by 32% and on `narrow-100` by 6%; React by 3.3× on `narrow-100` and 3.6× on `burst-1k`. The compiler change is opt-in only in that it activates whenever the case body is a nested `{ ...state, foo: { ...state.foo, bar: 1 } }` literal — older patterns continue to use the conservative top-level mask plus the runtime walk. Both layers are sound — no behavior change for code that already worked.
+
+### `@llui/dom@0.4.7`
+
+- **Improved** `_handleMsg` now walks the compiler-emitted `__prefixes` array post-`update()` to recover leaf-path-precise dirty bits when the case mask covers more than 4 paths (popcount-gated, since narrow cases gain nothing from the walk). Recovers ~95% of wasted Phase 2 binding fires on patterns where the compiler had to fall back to top-level mask precision — `{ ...state, dashboard: { ...state.dashboard, ...patch } }` with an opaque inner spread is the prototypical case. Implemented as a pure runtime change: no compiler edits, no API surface. Bounded overhead: ≤62 closure invocations + identity compares per commit when the gate fires; zero when it doesn't.
+- **Improved** Per-instance prefix-value memoization halves accessor invocations under steady-state commit flow. Each prefix is normally called twice per commit (once on `prev`, once on `next`); caching the `next` values on `ComponentInstance._prefixCache` means the following commit reuses them as its `prev` baseline. On accessor throw the cache is invalidated via try-finally so correctness is preserved if a prefix is non-pure. `_forceState` also invalidates. Drove a further -11% on `narrow-100` past the walk alone.
+- **Improved** `each()` and `branch()` no longer call `reattachDriftedEntries` on their first reconcile — `lastParent === null` at that point, so no drift can possibly have occurred. The Pattern-4 self-heal from 0.4.5 (commit `5a1b8fd`) still fires correctly on subsequent reconciles after an ancestor arm-swap. Saves two forward+backward entry scans on every `each()` block's mount; bounded gain (~20ns per first-reconcile × each-block count) but eliminates a verifiably wasted call on a known hot path.
+- **Improved** Bench harness `benchmarks/run-jfb.ts` now deduplicates `--framework` args so `pnpm bench --framework llui` doesn't queue `keyed/llui` twice. Harness-only; not part of the published runtime.
+
+### `@llui/compiler@0.5.7`
+
+- **Improved** `analyzeModifiedFields` now descends into nested object literals when a matching `...state.<path>` spread preserves unwritten siblings. A case body `{ ...state, foo: { ...state.foo, bar: 1 } }` now emits a dirty mask containing only `foo.bar`, instead of collapsing to `foo.*`. `tryBuildHandlers` looks up bits at leaf granularity via bidirectional prefix-overlap (`W === P || P startsWith W. || W startsWith P.`), so a binding reading the parent observes the leaf write through prefix-reactivity. Concrete impact on the ticker bench: `wide-toggle` case mask 2147483647 → 402653184 (only `displayMode` + `tickCount` bits set), `churn` 2147483647 → 268435456. Patterns that still bail to top-level (correct, by design): opaque inner spreads (`{ ...state.foo, ...patch }`), computed keys (`{ ...state.values, [msg.field]: msg.value }`). 8 new compiler tests cover the new behavior.
+- **Fixed** Tightened `analyzeNestedField`'s `keyName` binding from `string | null` to `string` — every branch that doesn't `return null` assigns it before use; the nullable annotation was a leftover. No runtime change.
+
+### `@llui/{components,router,transitions,vike,test,agent}@0.4.7` / `llui-agent@0.4.7` / `@llui/mcp@0.5.10` / `@llui/{compiler-devtools,compiler-introspection,compiler-ssr}@0.5.7` / `@llui/vite-plugin@0.5.8`
+
+- **Improved** Cascade republish — peer `@llui/dom` pinned to `^0.4.7`; `workspace:*` deps on `@llui/compiler` and `@llui/agent` resolve to the new versions at pack time. No source changes.
+
 ## 2026-05-25 — 0.4.6 / 0.5.9
 
 **Released:** `@llui/{dom,components,router,transitions,vike,test,agent}@0.4.6`; `llui-agent@0.4.6`; `@llui/mcp@0.5.9`
