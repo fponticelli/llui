@@ -64,7 +64,29 @@ function buildSelector(el: Element): string {
 export async function pickElement(): Promise<PickResult> {
   if (typeof document === 'undefined') return { reason: 'cancel' }
 
-  // Outline ring + label, positioned absolute over the document.
+  // Three pieces:
+  //   - dim: full-viewport scrim active ONLY during picking. Removed
+  //     once the user clicks / cancels so the modal doesn't show
+  //     against a dimmed background.
+  //   - outline: the highlighted bbox. Stays after pick (lingers as a
+  //     preview), at a z-index BELOW the modal so the modal overlays
+  //     it cleanly.
+  //   - label: the selector + size readout. Same z-index as the
+  //     outline so it can't fight the modal either.
+  //
+  // The HUD modal lives at z-index 2147483647; we use 2147483645 for
+  // the lingering outline so anything in the modal (incl. the toast
+  // container) renders above it.
+  const dim = document.createElement('div')
+  dim.setAttribute(PICKER_OVERLAY_ATTR, 'dim')
+  dim.style.cssText = [
+    'position: fixed',
+    'inset: 0',
+    'pointer-events: none',
+    'background: rgba(0, 0, 0, 0.20)',
+    'z-index: 2147483645',
+  ].join('; ')
+
   const outline = document.createElement('div')
   outline.setAttribute(PICKER_OVERLAY_ATTR, 'outline')
   outline.style.cssText = [
@@ -73,8 +95,7 @@ export async function pickElement(): Promise<PickResult> {
     'border: 2px solid #6366f1',
     'background: rgba(99, 102, 241, 0.10)',
     'border-radius: 3px',
-    'box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.20)',
-    'z-index: 2147483646',
+    'z-index: 2147483645',
     'transition: top 30ms linear, left 30ms linear, width 30ms linear, height 30ms linear',
     'display: none',
   ].join('; ')
@@ -89,7 +110,7 @@ export async function pickElement(): Promise<PickResult> {
     'padding: 2px 6px',
     'border-radius: 3px',
     'font: 11px/1.4 ui-monospace, SFMono-Regular, monospace',
-    'z-index: 2147483647',
+    'z-index: 2147483645',
     'display: none',
     'max-width: 320px',
     'overflow: hidden',
@@ -97,13 +118,20 @@ export async function pickElement(): Promise<PickResult> {
     'white-space: nowrap',
   ].join('; ')
 
+  document.body.appendChild(dim)
   document.body.appendChild(outline)
   document.body.appendChild(label)
 
   let currentTarget: Element | null = null
+  // `dismiss` (returned to the caller) tears down the lingering
+  // outline + label only. The viewport dim ALWAYS goes away as soon
+  // as picking ends, so the modal can render against the real page.
   const dismiss = (): void => {
     outline.remove()
     label.remove()
+  }
+  const removeDim = (): void => {
+    dim.remove()
   }
 
   return new Promise<PickResult>((resolve) => {
@@ -114,6 +142,7 @@ export async function pickElement(): Promise<PickResult> {
     }
     const finish = (reason: 'submit' | 'cancel'): void => {
       cleanupTransient()
+      removeDim()
       if (reason === 'cancel' || !currentTarget) {
         dismiss()
         resolve({ reason: 'cancel' })
