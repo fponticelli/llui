@@ -131,7 +131,9 @@ describe('POST /_llui/notes/:id/status', () => {
     expect(res.status).toBe(400)
   })
 
-  it("'accepted' with no matching reply ends in 'failed' (no diff to apply)", async () => {
+  it("'accepted' always transitions to 'applied' (direct-edit architecture)", async () => {
+    // With direct-edit semantics, Accept is a no-op — the LLM already
+    // wrote the files during the spawn. No git-apply step to fail.
     const note = createNote(f.notesRoot, {
       body: 'orphan task',
       frontmatter: { ...fmBase, intent: 'task' },
@@ -142,14 +144,12 @@ describe('POST /_llui/notes/:id/status', () => {
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ to: 'accepted', by: 'human' }),
     })
-    const json = (await res.json()) as { apply: { ok: boolean; reason: string } }
-    expect(json.apply.ok).toBe(false)
-    expect(json.apply.reason).toMatch(/no reply/i)
-    // verify the follow-up 'failed' transition landed
+    const json = (await res.json()) as { apply: { ok: boolean } }
+    expect(json.apply.ok).toBe(true)
     const status = await fetch(`${f.base}/_llui/notes/${note.id}/status`).then(
       (r) => r.json() as Promise<{ current: string }>,
     )
-    expect(status.current).toBe('failed')
+    expect(status.current).toBe('applied')
   })
 })
 

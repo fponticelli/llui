@@ -857,7 +857,12 @@ export function mountAnnotateHud(opts: MountAnnotateOptions = {}): AnnotateHudHa
       toast.style.transform = 'translateY(-8px)'
       setTimeout(() => toast.remove(), 250)
     }
-    const dismissMs = opts.autoDismissMs ?? (opts.action ? 0 : 8000)
+    // 'fail' toasts NEVER auto-dismiss — the user needs to read the
+    // error. Action toasts also don't auto-dismiss (the user might
+    // miss the Accept button). Plain ok/info toasts auto-dismiss
+    // after 8s. `autoDismissMs` overrides the default explicitly.
+    const defaultDismissMs = kind === 'fail' ? 0 : opts.action ? 0 : 8000
+    const dismissMs = opts.autoDismissMs ?? defaultDismissMs
     if (dismissMs > 0) setTimeout(dismiss, dismissMs)
     toast.addEventListener('click', dismiss)
   }

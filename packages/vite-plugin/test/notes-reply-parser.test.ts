@@ -4,20 +4,38 @@ import { parseLluiReply } from '../src/notes/router.js'
 const wrap = (json: string): string => `\`\`\`llui-reply\n${json}\n\`\`\``
 
 describe('parseLluiReply', () => {
-  it('parses a valid block', () => {
+  it('parses a valid block (new shape: files is a path list)', () => {
     const result = parseLluiReply(
       `some narrative\n\n${wrap(
         JSON.stringify({
           summary: 'fix the copy',
           confidence: 'high',
-          files: [{ path: 'src/a.ts', patch: '--- a/src/a.ts\n+++ b/src/a.ts\n' }],
+          files: [{ path: 'src/a.ts' }, 'src/b.ts'],
         }),
       )}\n`,
     )
     expect(result.ok).toBe(true)
     if (!result.ok) return
     expect(result.reply.summary).toBe('fix the copy')
-    expect(result.reply.files).toHaveLength(1)
+    expect(result.reply.files).toEqual(['src/a.ts', 'src/b.ts'])
+  })
+
+  it('accepts the legacy shape ({ path, patch }) but drops the patch', () => {
+    const result = parseLluiReply(
+      wrap(
+        JSON.stringify({
+          summary: 'compat',
+          confidence: 'high',
+          files: [
+            { path: 'src/a.ts', patch: '--- a/src/a.ts\n+++ b/src/a.ts\n' },
+            { path: 'src/b.ts' },
+          ],
+        }),
+      ),
+    )
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.reply.files).toEqual(['src/a.ts', 'src/b.ts'])
   })
 
   it('takes the LAST block when there are multiple', () => {
@@ -64,17 +82,26 @@ describe('parseLluiReply', () => {
     expect(r.ok).toBe(false)
   })
 
-  it('errors when a file entry is missing path or patch', () => {
+  it('treats `files` as an optional hint — omitting it parses fine', () => {
+    const r = parseLluiReply(wrap(JSON.stringify({ summary: 's', confidence: 'low' })))
+    expect(r.ok).toBe(true)
+    if (!r.ok) return
+    expect(r.reply.files).toEqual([])
+  })
+
+  it('skips file entries without a usable `path`', () => {
     const r = parseLluiReply(
       wrap(
         JSON.stringify({
           summary: 's',
           confidence: 'low',
-          files: [{ path: 'a.ts' }],
+          files: [{ path: 'a.ts' }, { nope: true }, 'b.ts', 42],
         }),
       ),
     )
-    expect(r.ok).toBe(false)
+    expect(r.ok).toBe(true)
+    if (!r.ok) return
+    expect(r.reply.files).toEqual(['a.ts', 'b.ts'])
   })
 
   it('accepts empty files array (no-fix reply)', () => {

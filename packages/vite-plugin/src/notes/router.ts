@@ -8,7 +8,7 @@
 // a fully custom command. Spawners are still injectable so tests don't
 // actually shell out — they pass their own `LlmSpawner` to `startRouter`.
 
-import { spawn, type ChildProcess } from 'node:child_process'
+import { execFileSync, spawn, type ChildProcess } from 'node:child_process'
 import { existsSync, readFileSync } from 'node:fs'
 import { join, resolve as resolvePath } from 'node:path'
 
@@ -529,7 +529,8 @@ function buildPrompt(
     '1. Read the task carefully. Use `Read`, `Grep`, `Glob` to understand the relevant code.',
   )
   lines.push(
-    '2. **Do NOT edit any files.** Plan the fix mentally and construct the unified diff yourself. The developer will Accept or Reject before any change lands.',
+    '2. **Apply the fix directly** — use `Edit`, `Write`, `MultiEdit`, and any other tools you need. ' +
+      'The router will diff your changes against the pre-spawn state and present them to the developer for Accept/Reject.',
   )
   lines.push(
     '3. End your response with EXACTLY one fenced `llui-reply` block (described below). The router parses this block out of your stdout — nothing else is read.',
@@ -544,21 +545,21 @@ function buildPrompt(
   lines.push('````')
   lines.push('```llui-reply')
   lines.push('{')
-  lines.push('  "summary": "one-line description of the proposed change",')
+  lines.push('  "summary": "one-line description of the change you made",')
   lines.push('  "confidence": "high" | "medium" | "low",')
   lines.push('  "files": [')
-  lines.push('    { "path": "relative/from/repo/root.ts", "patch": "unified diff text" }')
+  lines.push('    { "path": "relative/from/repo/root.ts" }')
   lines.push('  ]')
   lines.push('}')
   lines.push('```')
   lines.push('````')
   lines.push('')
   lines.push(
-    `Each \`patch\` MUST be a valid unified diff (the kind \`git apply\` accepts) for a single file, with \`--- a/<path>\` and \`+++ b/<path>\` headers. Empty \`files\` means "no fix proposed" — use it with a \`summary\` explaining why (ambiguous, unsafe, needs more info, etc.) and \`confidence: "low"\`.`,
+    `\`files[]\` lists the paths you touched (router uses this as a hint; the actual diff is captured from git). Empty \`files\` means "no fix applied" — use it with a \`summary\` explaining why (ambiguous, unsafe, needs more info, etc.) and \`confidence: "low"\`. **Do not include a \`patch\` field; the router constructs the diff itself.**`,
   )
   lines.push('')
   lines.push(
-    `Status is currently \`claimed\`. After the router parses your reply, it appends \`proposed\` and the developer Accepts/Rejects. Apply happens via \`git apply\` on Accept.`,
+    `Status is currently \`claimed\`. After you finish editing, the router captures \`git diff\` against the pre-spawn snapshot, attaches it to a reply note, and transitions to \`proposed\`. The developer Accepts (no-op; changes stay in the working tree) or Rejects (router reverts via \`git checkout HEAD -- <file>\` for tracked changes + \`rm\` for newly-created files).`,
   )
 
   return lines.join('\n')
@@ -573,7 +574,10 @@ function buildPrompt(
 export interface ParsedReply {
   summary: string
   confidence: 'high' | 'medium' | 'low'
-  files: Array<{ path: string; patch: string }>
+  /** Paths the LLM claims to have touched. Used as a HINT — the
+   *  router computes the actual diff from git. Patches the LLM
+   *  includes (legacy schema) are ignored. */
+  files: string[]
 }
 
 export type ParseReplyResult = { ok: true; reply: ParsedReply } | { ok: false; error: string }
@@ -722,6 +726,136 @@ function summarizeToolUse(block: Record<string, unknown>): string {
   return verb
 }
 
+// ── Git baseline + diff capture ───────────────────────────────────
+// The router used to ask the LLM to produce a unified diff and feed
+// it to `git apply`. That was fragile (LLM-constructed diffs often
+// fail to apply cleanly) so we flipped the model: the LLM edits files
+// directly, and the router computes the proposed diff from git.
+
+/**
+ * Snapshot of the working tree state before the LLM runs. Used to
+ * distinguish "claude touched this file" from "the user had a
+ * pre-existing modification we should leave alone". We track both
+ * tracked-but-modified files and untracked files so creations are
+ * detected too.
+ */
+export interface GitBaseline {
+  /** Working-tree-modified tracked files at baseline (porcelain "M ",
+   *  " M", "MM", "AM", etc.). The pre-existing dirt. */
+  preDirty: Set<string>
+  /** Untracked-but-present files at baseline (porcelain "??"). */
+  preUntracked: Set<string>
+}
+
+const EMPTY_BASELINE: GitBaseline = {
+  preDirty: new Set(),
+  preUntracked: new Set(),
+}
+
+export function captureGitBaseline(projectRoot: string): GitBaseline {
+  try {
+    const out = execFileSync('git', ['status', '--porcelain', '-z'], {
+      cwd: projectRoot,
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'ignore'],
+    })
+    const baseline: GitBaseline = { preDirty: new Set(), preUntracked: new Set() }
+    for (const entry of out.split('\0')) {
+      if (entry.length < 3) continue
+      const code = entry.slice(0, 2)
+      const path = entry.slice(3)
+      if (code === '??') baseline.preUntracked.add(path)
+      else baseline.preDirty.add(path)
+    }
+    return baseline
+  } catch {
+    // No git, or run outside a repo — treat everything as untracked-
+    // before so a Reject won't try to revert anything.
+    return EMPTY_BASELINE
+  }
+}
+
+/**
+ * Compute the per-file unified diffs claude produced. Compares the
+ * current working tree to HEAD for files that became dirty during
+ * the spawn, and synthesizes add-file patches for files that became
+ * untracked during the spawn. Files already dirty before the spawn
+ * are skipped (we can't separate the user's prior edits from
+ * claude's). Returns the shape proposedDiff expects.
+ */
+export function computeGitDiffSinceBaseline(
+  projectRoot: string,
+  baseline: GitBaseline,
+  log: (msg: string) => void,
+): Array<{ path: string; patch: string }> {
+  let post: GitBaseline
+  try {
+    post = captureGitBaseline(projectRoot)
+  } catch {
+    return []
+  }
+  const newlyDirty: string[] = []
+  const newlyUntracked: string[] = []
+  for (const path of post.preDirty) {
+    if (!baseline.preDirty.has(path)) newlyDirty.push(path)
+  }
+  for (const path of post.preUntracked) {
+    if (!baseline.preUntracked.has(path)) newlyUntracked.push(path)
+  }
+  if (baseline.preDirty.size > 0 && newlyDirty.some((p) => baseline.preDirty.has(p))) {
+    log(
+      'warning: some files claude edited had pre-existing modifications — Reject will skip those (manual revert required)',
+    )
+  }
+
+  const files: Array<{ path: string; patch: string }> = []
+  for (const path of newlyDirty) {
+    try {
+      const patch = execFileSync('git', ['diff', 'HEAD', '--no-color', '--', path], {
+        cwd: projectRoot,
+        encoding: 'utf8',
+        stdio: ['ignore', 'pipe', 'ignore'],
+        maxBuffer: 32 * 1024 * 1024,
+      })
+      if (patch.trim().length > 0) files.push({ path, patch })
+    } catch (err) {
+      log(`git diff failed for ${path}: ${err instanceof Error ? err.message : String(err)}`)
+    }
+  }
+  for (const path of newlyUntracked) {
+    try {
+      const content = readFileSync(join(projectRoot, path), 'utf8')
+      files.push({ path, patch: synthesizeAddFilePatch(path, content) })
+    } catch {
+      // Binary, unreadable, or removed before we got here — skip.
+    }
+  }
+  return files
+}
+
+/**
+ * Build a unified-diff representation of an entirely new file. Mirrors
+ * the format `git diff` would produce for a newly-tracked file so the
+ * HUD's diff viewer renders it identically.
+ */
+function synthesizeAddFilePatch(path: string, content: string): string {
+  const lines = content.split('\n')
+  // Drop the trailing empty entry from a file ending in '\n' (split
+  // returns ['line1', 'line2', ''] for "line1\nline2\n").
+  const trailingNewline = content.endsWith('\n')
+  if (trailingNewline) lines.pop()
+  const header = [
+    `diff --git a/${path} b/${path}`,
+    `new file mode 100644`,
+    `--- /dev/null`,
+    `+++ b/${path}`,
+    `@@ -0,0 +1,${lines.length} @@`,
+  ]
+  const body = lines.map((l) => '+' + l)
+  if (!trailingNewline) body.push('\\ No newline at end of file')
+  return header.concat(body).join('\n') + '\n'
+}
+
 /**
  * Best-effort envelope parse. Claude in `--output-format json` mode
  * emits one JSON object to stdout. If we can't parse it, we fall back
@@ -771,19 +905,26 @@ export function parseLluiReply(stdout: string): ParseReplyResult {
   if (conf !== 'high' && conf !== 'medium' && conf !== 'low') {
     return { ok: false, error: '`confidence` must be high|medium|low' }
   }
-  if (!Array.isArray(p['files'])) {
-    return { ok: false, error: '`files` must be an array' }
-  }
-  const files: Array<{ path: string; patch: string }> = []
-  for (const f of p['files'] as unknown[]) {
-    if (typeof f !== 'object' || f === null) {
-      return { ok: false, error: 'each `files[]` entry must be an object' }
+  // `files` is now a HINT list of touched paths. Accept either the
+  // new shape (`string` or `{ path }`) or the legacy shape with a
+  // `patch` field (which we ignore — git tells us the real diff).
+  // Missing/non-array `files` is permitted (treated as []).
+  const files: string[] = []
+  const rawFiles = p['files']
+  if (rawFiles !== undefined && rawFiles !== null) {
+    if (!Array.isArray(rawFiles)) {
+      return { ok: false, error: '`files` must be an array if provided' }
     }
-    const fp = f as Record<string, unknown>
-    if (typeof fp['path'] !== 'string' || typeof fp['patch'] !== 'string') {
-      return { ok: false, error: '`files[].path` and `.patch` must be strings' }
+    for (const f of rawFiles as unknown[]) {
+      if (typeof f === 'string') {
+        files.push(f)
+      } else if (typeof f === 'object' && f !== null) {
+        const fp = f as Record<string, unknown>
+        if (typeof fp['path'] === 'string') {
+          files.push(fp['path'])
+        }
+      }
     }
-    files.push({ path: fp['path'], patch: fp['patch'] })
   }
   return {
     ok: true,
@@ -879,6 +1020,23 @@ export function startRouter(config: RouterConfig): RouterHandle {
     }
   }
 
+  // Best-effort wrapper around `appendStatus`. The session dir may
+  // have been cleaned out (e.g. test tmpdir teardown, manual rm)
+  // while a task was still in-flight; tolerate that and log instead
+  // of propagating the rejection. Status loss in that case is benign
+  // — the dir is gone anyway.
+  const safeAppendStatus = (sessionDir: string, transition: StatusTransition): void => {
+    try {
+      appendStatus(sessionDir, transition)
+    } catch (err) {
+      log(
+        `appendStatus failed for ${transition.noteId} → ${transition.to}: ${
+          err instanceof Error ? err.message : String(err)
+        }`,
+      )
+    }
+  }
+
   const processTask = async (sessionId: string, noteId: string): Promise<void> => {
     const sessionDir = join(config.notesRoot, sessionId)
     // Skip if already claimed by someone else.
@@ -899,7 +1057,7 @@ export function startRouter(config: RouterConfig): RouterHandle {
       by: 'llm',
       reason: ROUTER_WORKER_ID,
     }
-    appendStatus(sessionDir, claimT)
+    safeAppendStatus(sessionDir, claimT)
     config.bus.broadcast({
       type: 'status-changed',
       noteId,
@@ -1053,6 +1211,12 @@ export function startRouter(config: RouterConfig): RouterHandle {
           }
         : undefined
 
+    // Snapshot the working tree state BEFORE the LLM runs. We use
+    // this to compute claude's actual changes via `git diff` and to
+    // distinguish claude's edits from pre-existing modifications.
+    // The snapshot doesn't move/touch any files — purely read.
+    const gitBaseline = captureGitBaseline(config.projectRoot)
+
     try {
       const result = await spawner.spawn({
         prompt,
@@ -1115,8 +1279,15 @@ export function startRouter(config: RouterConfig): RouterHandle {
       // stdout reasoning above the reply block is preserved as the
       // reply note's prose so the dev can read what claude thought.
       const proseOnly = assistantText.replace(REPLY_BLOCK_RE, '').trim()
+
+      // Compute the actual diff from git rather than trusting the
+      // LLM to construct a valid unified diff. Compares the post-
+      // spawn working tree against the baseline captured above; any
+      // file claude modified shows up in `files[].patch`, and any
+      // file claude CREATED gets a synthesized add-file patch.
+      const diffFiles = computeGitDiffSinceBaseline(config.projectRoot, gitBaseline, log)
       const proposedDiff: ProposedDiff = {
-        files: parsed.reply.files,
+        files: diffFiles,
         summary: parsed.reply.summary,
         confidence: parsed.reply.confidence,
       }
@@ -1153,7 +1324,7 @@ export function startRouter(config: RouterConfig): RouterHandle {
         by: 'llm',
         reason: `reply ${replyResult.id}: ${parsed.reply.summary}`,
       }
-      appendStatus(sessionDir, proposedT)
+      safeAppendStatus(sessionDir, proposedT)
       config.bus.broadcast({
         type: 'status-changed',
         noteId,
@@ -1177,7 +1348,7 @@ export function startRouter(config: RouterConfig): RouterHandle {
           by: 'system',
           reason,
         }
-        appendStatus(sessionDir, failT)
+        safeAppendStatus(sessionDir, failT)
         config.bus.broadcast({
           type: 'status-changed',
           noteId,
@@ -1199,7 +1370,7 @@ export function startRouter(config: RouterConfig): RouterHandle {
         by: 'system',
         reason: `spawn error: ${message}`,
       }
-      appendStatus(sessionDir, failT)
+      safeAppendStatus(sessionDir, failT)
       config.bus.broadcast({
         type: 'status-changed',
         noteId,

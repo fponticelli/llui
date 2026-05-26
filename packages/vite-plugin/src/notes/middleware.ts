@@ -8,9 +8,8 @@
 // handler)`; tests mount it on a plain node http.Server.
 
 import { execFileSync } from 'node:child_process'
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, unlinkSync } from 'node:fs'
 import type { IncomingMessage, ServerResponse } from 'node:http'
-import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 import type { CaptureRegistry } from './capture-registry.js'
@@ -270,35 +269,56 @@ export function createNotesMiddleware(config: NotesMiddlewareConfig): Middleware
           ...(payload.reason ? { reason: payload.reason } : {}),
         })
 
-        // 'accepted' triggers an automatic git apply of the most recent
-        // reply note's proposedDiff. On success → 'applied'; on patch
-        // failure → 'failed' with the apply error in `reason`.
+        // 'accepted' is a no-op apply now: the LLM already wrote the
+        // files during the spawn (direct-edit architecture). We just
+        // move to 'applied' and clean up transient note files. The
+        // reply note's proposedDiff stays on disk in case the user
+        // wants to re-inspect later.
         if (payload.to === 'accepted') {
-          const apply = applyProposedDiffForTask(notesRoot, sessionId, id)
           const followUp: StatusTransition = {
             ts: new Date().toISOString(),
             noteId: id,
             from: 'accepted',
-            to: apply.ok ? 'applied' : 'failed',
+            to: 'applied',
             by: 'system',
-            ...(apply.reason ? { reason: apply.reason } : {}),
           }
           appendStatus(sessionDir, followUp)
           bus.broadcast({
             type: 'status-changed',
             noteId: id,
             from: 'accepted',
-            to: followUp.to,
-            ...(apply.reason ? { reason: apply.reason } : {}),
+            to: 'applied',
           })
-          // Successful applies clean up the task's transient files —
-          // the task note, its reply notes, and screenshots. The
-          // status.jsonl audit trail is preserved.
-          let cleanedUp: string[] = []
-          if (apply.ok) {
-            cleanedUp = cleanupResolvedTask(notesRoot, sessionId, id)
+          const cleanedUp = cleanupResolvedTask(notesRoot, sessionId, id)
+          return sendJson(res, 200, { transition, apply: { ok: true }, cleanedUp })
+        }
+        // 'rejected' reverts the LLM's working-tree changes: git
+        // checkout HEAD -- for tracked edits, rm for newly-created
+        // files. The proposedDiff on the reply note tells us which
+        // files to act on.
+        if (payload.to === 'rejected') {
+          const revert = revertProposedChanges(notesRoot, sessionId, id)
+          if (revert.reason) {
+            // Attach revert outcome to the rejection event so the HUD
+            // can show what actually happened.
+            const followUp: StatusTransition = {
+              ts: new Date().toISOString(),
+              noteId: id,
+              from: 'rejected',
+              to: revert.ok ? 'rejected' : 'failed',
+              by: 'system',
+              reason: revert.reason,
+            }
+            appendStatus(sessionDir, followUp)
+            bus.broadcast({
+              type: 'status-changed',
+              noteId: id,
+              from: 'rejected',
+              to: followUp.to,
+              reason: revert.reason,
+            })
           }
-          return sendJson(res, 200, { transition, apply, cleanedUp })
+          return sendJson(res, 200, { transition, revert })
         }
         return sendJson(res, 200, { transition })
       }
@@ -475,12 +495,6 @@ export function sessionDir(notesRoot: string, sessionId: string): string {
   return join(notesRoot, sessionId)
 }
 
-interface ApplyResult {
-  ok: boolean
-  reason?: string
-  appliedFiles?: string[]
-}
-
 /**
  * Find the most recent reply note for a task and `git apply` its
  * proposedDiff against the project working tree. The proposal
@@ -489,50 +503,20 @@ interface ApplyResult {
  * responsibility.
  */
 /**
- * Normalize a single-file unified diff produced by the LLM:
- *  - CRLF → LF (the model occasionally emits CRLF in templated output)
- *  - Strip a stray UTF-8 BOM from the front
- *  - Guarantee a trailing newline (concatenating patches together
- *    without trailing newlines produces "corrupt patch at line N"
- *    when the last line of patch[i] runs into the diff header of
- *    patch[i+1]).
+ * Revert the LLM's working-tree changes for a rejected task. For
+ * each file in the reply's proposedDiff:
+ *  - If tracked at HEAD: `git checkout HEAD -- <file>`
+ *  - Otherwise (newly created): rm
+ *
+ * Reports per-file failures in `reason` without aborting the whole
+ * revert. The project root is `process.cwd()` (same as where the
+ * router spawned claude).
  */
-function normalizePatchText(patch: string): string {
-  let s = patch
-  if (s.charCodeAt(0) === 0xfeff) s = s.slice(1)
-  s = s.replace(/\r\n/g, '\n').replace(/\r/g, '\n')
-  if (!s.endsWith('\n')) s += '\n'
-  return s
-}
-
-/**
- * Pretty-print a patch with line numbers for the console log. When
- * git reports "corrupt patch at line N" we underline the offending
- * line so the developer can spot it at a glance.
- */
-function annotatePatchForLog(patch: string, errorMessage: string): string {
-  const m = /corrupt patch at line (\d+)/.exec(errorMessage)
-  const bad = m ? parseInt(m[1]!, 10) : -1
-  const lines = patch.split('\n')
-  const width = String(lines.length).length
-  return lines
-    .map((line, i) => {
-      const lineNum = i + 1
-      const pad = String(lineNum).padStart(width, ' ')
-      const marker = lineNum === bad ? '>>' : '  '
-      return `${marker} ${pad} │ ${line}`
-    })
-    .join('\n')
-}
-
-function applyProposedDiffForTask(
+function revertProposedChanges(
   notesRoot: string,
   sessionId: string,
   taskNoteId: string,
-): ApplyResult {
-  // Find replies to this task. Iterate the session's notes; pick the
-  // newest one with kind='reply', replyTo===taskNoteId, proposedDiff
-  // populated.
+): { ok: boolean; reason?: string; reverted?: string[] } {
   const list = listNotes(notesRoot, { sessionId, kind: 'reply' })
   let chosen: ProposedDiff | null = null
   for (const summary of list.notes.slice().reverse()) {
@@ -547,101 +531,55 @@ function applyProposedDiffForTask(
       continue
     }
   }
-  if (!chosen) {
-    return { ok: false, reason: 'no reply with proposedDiff found for this task' }
+  if (!chosen || chosen.files.length === 0) {
+    return { ok: true, reverted: [] }
   }
 
-  // Write a temp .patch file with the concatenated patches and feed
-  // it to `git apply`. The project root is the parent of `notesRoot`'s
-  // `.llui/notes` ancestor — pragmatically, we use process.cwd() since
-  // the middleware is mounted by Vite which runs at the project root.
-  //
-  // Each file's patch is normalized first: CRLF → LF (the LLM may
-  // emit CRLF in templated output) + a guaranteed trailing newline.
-  // Without these, git refuses with "corrupt patch at line N".
-  const tmp = mkdtempSync(join(tmpdir(), 'llui-apply-'))
-  const patchFile = join(tmp, 'change.patch')
-  const combined = chosen.files.map((f) => normalizePatchText(f.patch)).join('')
-  writeFileSync(patchFile, combined, 'utf8')
-  /** Run git apply with a given arg list; rethrow on failure so the
-   *  caller can fall back / report the error. */
-  const tryApply = (extraFlags: string[]): void => {
-    execFileSync('git', ['apply', '--whitespace=nowarn', ...extraFlags, patchFile], {
-      cwd: process.cwd(),
-      stdio: ['ignore', 'pipe', 'pipe'],
-    })
-  }
-  /** Extract a useful, single-line reason from an execFileSync error.
-   *  `err.stderr` (Buffer) holds the actual git diagnostic; `err.message`
-   *  is the generic "Command failed: ..." wrapper. */
-  const reasonFromErr = (err: unknown): { firstLine: string; full: string } => {
-    const e = err as { stderr?: Buffer | string; stdout?: Buffer | string; message?: string }
-    const stderrText =
-      e.stderr instanceof Buffer
-        ? e.stderr.toString('utf8')
-        : typeof e.stderr === 'string'
-          ? e.stderr
-          : ''
-    const stdoutText =
-      e.stdout instanceof Buffer
-        ? e.stdout.toString('utf8')
-        : typeof e.stdout === 'string'
-          ? e.stdout
-          : ''
-    const full = (stderrText || stdoutText || e.message || String(err)).trim()
-    const firstLine = full.split('\n').find((l) => l.trim().length > 0) ?? full
-    return { firstLine, full }
-  }
-
-  // First pass: straight apply. Handles the common case where the
-  // source matches what the LLM was looking at.
-  try {
-    tryApply([])
-    rmSync(tmp, { recursive: true, force: true })
-    return { ok: true, appliedFiles: chosen.files.map((f) => f.path) }
-  } catch (err1) {
-    // Second pass: --3way fallback. Lets git use the index to perform
-    // a 3-way merge when the source has drifted slightly since the
-    // LLM produced the patch. Conflicts left as <<<<<<< markers in
-    // the working tree — better than a flat rejection.
+  const projectRoot = process.cwd()
+  const isTracked = (path: string): boolean => {
     try {
-      tryApply(['--3way'])
-      rmSync(tmp, { recursive: true, force: true })
-      return { ok: true, appliedFiles: chosen.files.map((f) => f.path) }
-    } catch (err2) {
-      // Both passes failed. Keep the patch around for inspection and
-      // surface the 3-way error (it's typically more informative
-      // about which hunks couldn't merge).
-      const r1 = reasonFromErr(err1)
-      const r2 = reasonFromErr(err2)
-      // Save the failing patch next to the task note so the
-      // developer can inspect it without hunting through /tmp. The
-      // file lives alongside the session's notes and stays after
-      // restart.
-      const savedPath = join(notesRoot, sessionId, `${taskNoteId}.patch.failed`)
-      try {
-        writeFileSync(savedPath, combined, 'utf8')
-      } catch {
-        // Best-effort; the toast reason still carries enough info.
-      }
-      const errLineMessage = r1.full || r2.full
-      console.warn('[llui:apply] straight git apply failed:\n' + r1.full)
-      console.warn('[llui:apply] --3way fallback failed:\n' + r2.full)
-      console.warn('[llui:apply] patch saved to:', savedPath)
-      console.warn(
-        '[llui:apply] patch contents (>> marks the offending line):\n' +
-          annotatePatchForLog(combined, errLineMessage),
-      )
-      rmSync(tmp, { recursive: true, force: true })
-      // Prefer the 3-way line; fall back to the straight-apply line.
-      const firstLine = r2.firstLine || r1.firstLine
-      return {
-        ok: false,
-        reason: `git apply failed: ${firstLine} (patch saved to ${savedPath})`,
-      }
+      execFileSync('git', ['ls-files', '--error-unmatch', '--', path], {
+        cwd: projectRoot,
+        stdio: ['ignore', 'ignore', 'ignore'],
+      })
+      return true
+    } catch {
+      return false
     }
   }
+  const reverted: string[] = []
+  const failures: string[] = []
+  for (const file of chosen.files) {
+    const fullPath = join(projectRoot, file.path)
+    try {
+      if (isTracked(file.path)) {
+        execFileSync('git', ['checkout', 'HEAD', '--', file.path], {
+          cwd: projectRoot,
+          stdio: ['ignore', 'ignore', 'pipe'],
+        })
+      } else if (existsSync(fullPath)) {
+        unlinkSync(fullPath)
+      }
+      reverted.push(file.path)
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err)
+      failures.push(`${file.path}: ${msg.split('\n')[0]}`)
+    }
+  }
+  if (failures.length > 0) {
+    return {
+      ok: false,
+      reverted,
+      reason: `revert: ${failures.length} of ${chosen.files.length} files failed (${failures.join('; ').slice(0, 200)})`,
+    }
+  }
+  return { ok: true, reverted, reason: `reverted ${reverted.length} file(s)` }
 }
+
+// The patch-based apply path was removed in favour of direct-edit
+// semantics: the router lets the LLM edit files in place, captures
+// the resulting `git diff` as the proposedDiff, and on Accept just
+// transitions to `applied` (no patch application needed).
 
 /** Coerce a string to Author or null. */
 export function asAuthor(v: unknown): Author | null {
