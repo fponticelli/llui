@@ -835,12 +835,13 @@ export function mountAnnotateHud(opts: MountAnnotateOptions = {}): AnnotateHudHa
 
   interface ToastAction {
     label: string
+    variant?: 'primary' | 'secondary' | 'ghost'
     onClick: () => void
   }
   const spawnToast = (
     kind: 'ok' | 'fail' | 'info',
     body: string,
-    opts: { action?: ToastAction; autoDismissMs?: number } = {},
+    opts: { actions?: ToastAction[]; autoDismissMs?: number } = {},
   ): void => {
     const toast = document.createElement('div')
     toast.setAttribute('data-llui-toast', kind)
@@ -859,14 +860,16 @@ export function mountAnnotateHud(opts: MountAnnotateOptions = {}): AnnotateHudHa
     text.textContent = body
     toast.appendChild(text)
 
-    if (opts.action) {
+    const actions = opts.actions ?? []
+    for (const action of actions) {
       const actionBtn = document.createElement('button')
       actionBtn.type = 'button'
-      actionBtn.textContent = opts.action.label
-      actionBtn.style.cssText = btnStyle('primary') + '; padding: 4px 10px; font-size: 12px;'
+      actionBtn.textContent = action.label
+      actionBtn.style.cssText =
+        btnStyle(action.variant ?? 'primary') + '; padding: 4px 10px; font-size: 12px;'
       actionBtn.addEventListener('click', (e) => {
         e.stopPropagation()
-        opts.action!.onClick()
+        action.onClick()
         dismiss()
       })
       toast.appendChild(actionBtn)
@@ -891,29 +894,40 @@ export function mountAnnotateHud(opts: MountAnnotateOptions = {}): AnnotateHudHa
     }
     // 'fail' toasts NEVER auto-dismiss — the user needs to read the
     // error. Action toasts also don't auto-dismiss (the user might
-    // miss the Accept button). Plain ok/info toasts auto-dismiss
-    // after 8s. `autoDismissMs` overrides the default explicitly.
-    const defaultDismissMs = kind === 'fail' ? 0 : opts.action ? 0 : 8000
+    // miss the buttons). Plain ok/info toasts auto-dismiss after 8s.
+    // `autoDismissMs` overrides the default explicitly.
+    const defaultDismissMs = kind === 'fail' ? 0 : actions.length > 0 ? 0 : 8000
     const dismissMs = opts.autoDismissMs ?? defaultDismissMs
     if (dismissMs > 0) setTimeout(dismiss, dismissMs)
     toast.addEventListener('click', dismiss)
   }
 
-  // Helper that POSTs an Accept transition. Used by the "Accept fix"
-  // button in a proposed-state toast. The middleware runs git apply
-  // and emits subsequent status-changed events that drive the next
-  // toast (applied / failed).
-  const acceptTask = (noteId: string, sessionId: string): void => {
+  // Helpers that POST a status transition for the Accept/Reject
+  // buttons in a proposed-state toast. The middleware acts on the
+  // working tree (no-op for accept; revert for reject) and emits
+  // subsequent status-changed events that drive the next toast
+  // (applied / rejected / failed).
+  const postStatusTransition = (
+    noteId: string,
+    sessionId: string,
+    to: 'accepted' | 'rejected',
+    failLabel: string,
+  ): void => {
     const url = `${origin}/_llui/notes/${noteId}/status?sessionId=${encodeURIComponent(sessionId)}`
     void fetch(url, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ to: 'accepted', by: 'human' }),
+      body: JSON.stringify({ to, by: 'human' }),
     }).catch((err: Error) => {
-      spawnToast('fail', `Accept failed for ${noteId}: ${err.message}`)
+      spawnToast('fail', `${failLabel} failed for ${noteId}: ${err.message}`)
     })
   }
-
+  const acceptTask = (noteId: string, sessionId: string): void => {
+    postStatusTransition(noteId, sessionId, 'accepted', 'Accept')
+  }
+  const rejectTask = (noteId: string, sessionId: string): void => {
+    postStatusTransition(noteId, sessionId, 'rejected', 'Reject')
+  }
   // ── Behavior ───────────────────────────────────────────────────────
 
   // Reflect the current `pendingRect` state in the attachment row.
@@ -1524,10 +1538,18 @@ export function mountAnnotateHud(opts: MountAnnotateOptions = {}): AnnotateHudHa
     // arrive).
     if (isReady(to) && !isReady(prev)) {
       spawnToast('info', `Note ${noteId}: ${reason ?? 'proposed fix ready'}`, {
-        action: {
-          label: 'Accept',
-          onClick: () => acceptTask(noteId, task.sessionId),
-        },
+        actions: [
+          {
+            label: 'Reject',
+            variant: 'ghost',
+            onClick: () => rejectTask(noteId, task.sessionId),
+          },
+          {
+            label: 'Accept',
+            variant: 'primary',
+            onClick: () => acceptTask(noteId, task.sessionId),
+          },
+        ],
       })
       updateQueueBadge()
       return
@@ -1947,10 +1969,18 @@ export function mountAnnotateHud(opts: MountAnnotateOptions = {}): AnnotateHudHa
             ts: new Date(reply?.ts ?? task.ts).getTime(),
           })
           spawnToast('info', `Note ${task.id}: ${summary}`, {
-            action: {
-              label: 'Accept',
-              onClick: () => acceptTask(task.id, sessionId),
-            },
+            actions: [
+              {
+                label: 'Reject',
+                variant: 'ghost',
+                onClick: () => rejectTask(task.id, sessionId),
+              },
+              {
+                label: 'Accept',
+                variant: 'primary',
+                onClick: () => acceptTask(task.id, sessionId),
+              },
+            ],
           })
         } else if (reply?.proposedSummary) {
           // Terminal but had a proposed reply at some point — keep
