@@ -9,7 +9,7 @@
 // actually shell out — they pass their own `LlmSpawner` to `startRouter`.
 
 import { execFileSync, spawn, type ChildProcess } from 'node:child_process'
-import { existsSync, readFileSync } from 'node:fs'
+import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { join, resolve as resolvePath } from 'node:path'
 
 import type { EventBus, SseEventListener } from './event-bus.js'
@@ -739,6 +739,28 @@ function summarizeToolUse(block: Record<string, unknown>): string {
  * tracked-but-modified files and untracked files so creations are
  * detected too.
  */
+/**
+ * Read the persisted chain → sessionId map written by an earlier
+ * router lifetime. Returns an empty Map if the file is missing or
+ * unparseable — chain history just starts fresh in that case.
+ */
+function loadChainState(path: string): Map<string, string> {
+  const out = new Map<string, string>()
+  try {
+    if (!existsSync(path)) return out
+    const raw = readFileSync(path, 'utf8')
+    const parsed = JSON.parse(raw) as Record<string, unknown>
+    if (parsed && typeof parsed === 'object') {
+      for (const [k, v] of Object.entries(parsed)) {
+        if (typeof v === 'string') out.set(k, v)
+      }
+    }
+  } catch {
+    // Corrupt file → ignore. Next persist will overwrite.
+  }
+  return out
+}
+
 export interface GitBaseline {
   /** Working-tree-modified tracked files at baseline (porcelain "M ",
    *  " M", "MM", "AM", etc.). The pre-existing dirt. */
@@ -957,15 +979,40 @@ export function startRouter(config: RouterConfig): RouterHandle {
   // the build if the user passes a custom spawner without a command.
   const cliName = config.command ?? PRESETS[config.preset ?? 'claude']?.command ?? 'llm'
 
-  const queue: Array<{ sessionId: string; noteId: string }> = []
+  const queue: Array<{ sessionId: string; noteId: string; chainName: string }> = []
   let activeCount = 0
   let stopped = false
+  // Per-chain serialization: a chain that's currently in flight is
+  // skipped by `drain` until it finishes, even when `activeCount` is
+  // below the configured concurrency. Resume semantics require
+  // sequential execution within a chain (each spawn needs its
+  // predecessor's session id to chain off), so this is enforced
+  // unconditionally — `concurrency` only controls parallelism ACROSS
+  // chains.
+  const activeChains = new Set<string>()
   // Per-chain session ids. Each successful spawn maps its chain name
   // (default `'default'`) to the captured session id; the next task
   // on the same chain resumes from there. Different chains stay
   // independent so a "refactor" thread doesn't bleed into a "ui" one.
-  const sessionByChain = new Map<string, string>()
+  //
+  // Persisted to `<notesRoot>/.chain-state.json` so the chain map
+  // survives a router restart — the user can keep resuming chains
+  // across dev-server cycles. Load on startup; save on each
+  // successful capture.
+  const CHAIN_STATE_FILE = join(config.notesRoot, '.chain-state.json')
+  const sessionByChain = loadChainState(CHAIN_STATE_FILE)
   const DEFAULT_CHAIN = 'default'
+  const persistChainState = (): void => {
+    try {
+      writeFileSync(CHAIN_STATE_FILE, JSON.stringify(Object.fromEntries(sessionByChain)) + '\n')
+    } catch (err) {
+      log(
+        `failed to persist chain state to ${CHAIN_STATE_FILE}: ${
+          err instanceof Error ? err.message : String(err)
+        }`,
+      )
+    }
+  }
   const presetDef = config.spawner ? null : PRESETS[config.preset ?? 'claude']
   // Honour `streaming: false` by downgrading stream-json → json. We
   // also strip --verbose + swap the format flag in the args so the
@@ -995,25 +1042,39 @@ export function startRouter(config: RouterConfig): RouterHandle {
       sessionId = summary.sessionId
       const note = readNote(config.notesRoot, sessionId, event.id)
       if (note.frontmatter.intent !== 'task') return
+      const chainName = note.frontmatter.chainName ?? DEFAULT_CHAIN
+      queue.push({ sessionId, noteId: event.id, chainName })
     } catch (err) {
       log(`failed to read note ${event.id}: ${err instanceof Error ? err.message : String(err)}`)
       return
     }
 
-    queue.push({ sessionId, noteId: event.id })
     void drain()
   }
 
   const drain = (): void => {
     if (stopped) return
-    while (activeCount < concurrency && queue.length > 0) {
-      const next = queue.shift()!
+    // Walk the queue, skipping any task whose chain is currently
+    // executing. The first task we accept for a given chain claims
+    // that chain's slot; subsequent tasks on the same chain stay in
+    // the queue and are picked up by the next drain after the
+    // current one finishes.
+    let i = 0
+    while (activeCount < concurrency && i < queue.length) {
+      const candidate = queue[i]!
+      if (activeChains.has(candidate.chainName)) {
+        i++
+        continue
+      }
+      queue.splice(i, 1)
+      activeChains.add(candidate.chainName)
       activeCount++
       void (async () => {
         try {
-          await processTask(next.sessionId, next.noteId)
+          await processTask(candidate.sessionId, candidate.noteId)
         } finally {
           activeCount--
+          activeChains.delete(candidate.chainName)
           if (!stopped) drain()
         }
       })()
@@ -1112,12 +1173,10 @@ export function startRouter(config: RouterConfig): RouterHandle {
     const extraArgs: string[] = []
     if (wantsResume && presetDef?.resumeFlag && chainSessionId) {
       extraArgs.push(presetDef.resumeFlag, chainSessionId)
-      if (activeCount > 1) {
-        log(
-          `warning: resume requested for ${noteId} (chain "${chainName}") while ${activeCount - 1} ` +
-            `other task(s) are in flight; chains may interleave (set concurrency: 1 for deterministic resume)`,
-        )
-      }
+      // No concurrency warning anymore — `drain` serializes
+      // per-chain, so two tasks in the same chain never run
+      // simultaneously. `concurrency > 1` parallelism applies only
+      // across distinct chains.
     }
 
     // ── Progress state for live feedback during solve ──
@@ -1252,6 +1311,7 @@ export function startRouter(config: RouterConfig): RouterHandle {
         }
         if (progress.streamedSessionId) {
           sessionByChain.set(chainName, progress.streamedSessionId)
+          persistChainState()
         }
         if (progress.finalText === undefined) {
           log(`warning: ${cliName} stream-json missing a final result message; resume chain reset`)
@@ -1262,6 +1322,7 @@ export function startRouter(config: RouterConfig): RouterHandle {
           assistantText = envelope.result
           if (envelope.session_id) {
             sessionByChain.set(chainName, envelope.session_id)
+            persistChainState()
           }
         } else {
           log(`warning: ${cliName} did not emit a parseable JSON envelope; resume chain reset`)

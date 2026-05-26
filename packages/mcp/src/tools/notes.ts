@@ -35,6 +35,50 @@ import { join } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import type { CdpTransport, ToolRegistry } from '../tool-registry.js'
 
+/**
+ * Create a note via the dev server's POST /_llui/notes endpoint when
+ * available, falling back to a direct `createNote` (which bypasses
+ * the project's `format` overrides). Routing through HTTP means
+ * MCP-written notes get the same session-folder + slug treatment as
+ * HUD-originated writes.
+ *
+ * The fallback path runs when no dev server is reachable (rare —
+ * MCP is normally paired with a running Vite instance via the
+ * marker handshake).
+ */
+async function createNoteViaServerOrDirect(
+  devServerUrl: string | null | undefined,
+  notesRoot: string,
+  request: {
+    body: string
+    frontmatter: Omit<NoteFrontmatter, 'id' | 'ts'>
+    noteBody: NoteBody
+    screenshot?: string
+  },
+): Promise<{ id: string; sessionId: string; filename: string; path: string }> {
+  if (devServerUrl) {
+    try {
+      const res = await fetch(`${devServerUrl}/_llui/notes`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(request),
+      })
+      if (res.ok) {
+        return (await res.json()) as {
+          id: string
+          sessionId: string
+          filename: string
+          path: string
+        }
+      }
+      // Non-2xx from dev server — fall through to direct write.
+    } catch {
+      // Network error → dev server unreachable; fall through.
+    }
+  }
+  return createNote(notesRoot, request)
+}
+
 // Expression evaluated in the page context. Mirrors the HUD's
 // debug-collector logic — iterates window.__lluiComponents and pulls
 // state, message history, pending+recent effects. Returns a NoteBody
@@ -140,6 +184,7 @@ async function playwrightFallback(
   cdp: CdpTransport | null,
   notesRoot: string,
   opts: FallbackOpts,
+  devServerUrl?: string | null,
 ): Promise<unknown | null> {
   if (!cdp) return null
 
@@ -197,7 +242,7 @@ async function playwrightFallback(
     llui: meta.llui,
   }
 
-  const created = createNote(notesRoot, {
+  const created = await createNoteViaServerOrDirect(devServerUrl, notesRoot, {
     body: opts.prose ?? '',
     frontmatter,
     noteBody,
@@ -405,10 +450,15 @@ export function registerNotesTools(registry: ToolRegistry): void {
         (args.forceMode !== 'hud' && hudResult?.status === 'no-client')
 
       if (shouldFallback) {
-        const fallback = await playwrightFallback(ctx.cdp, ctx.notesRoot, {
-          prose: args.prose,
-          captureLevel: args.captureLevel,
-        })
+        const fallback = await playwrightFallback(
+          ctx.cdp,
+          ctx.notesRoot,
+          {
+            prose: args.prose,
+            captureLevel: args.captureLevel,
+          },
+          ctx.devServerUrl,
+        )
         if (fallback) return fallback
       }
 
@@ -580,7 +630,7 @@ export function registerNotesTools(registry: ToolRegistry): void {
         replyTo: args.replyTo,
         ...(args.proposedDiff ? { proposedDiff: args.proposedDiff as ProposedDiff } : {}),
       }
-      const created = createNote(ctx.notesRoot, {
+      const created = await createNoteViaServerOrDirect(ctx.devServerUrl, ctx.notesRoot, {
         body: args.prose,
         frontmatter,
         noteBody: {},

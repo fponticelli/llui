@@ -90,7 +90,6 @@ export type {
   NoteFrontmatter,
   NoteIntent,
   NoteKind,
-  NotePoint,
   NoteRect,
   NoteStatus,
   NoteSummary,

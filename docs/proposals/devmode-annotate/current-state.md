@@ -112,9 +112,9 @@ The id+author+kind prefix of each filename stays fixed (`{id}-{author}-{kind}-{s
 
 - `componentPath: string[] | null` — names of all currently-mounted LLui components (root first).
 - `componentMeta: { name, file, line } | null` — for the primary anchor.
-- `annotations: Annotation[]` — discriminated union; today only `'rect'` is implemented.
+- `annotations: Annotation[]` — discriminated union: `rect` and `element` (no other variants).
 - `intent?: 'task' | 'note'` — task notes enter the status machine.
-- `resume?: boolean` — task notes only. When true, router appends `[preset.resumeFlag, lastSessionId]` to the spawn args.
+- `resume?: boolean` — task notes only. When true, router appends `[preset.resumeFlag, sessionByChain.get(chainName)]` to the spawn args.
 - `replyTo?: string` + `proposedDiff?: ProposedDiff` — reply notes from the router.
 - `fulfillsRequestId?: string` — when this note answers a `capture-request`.
 
@@ -153,7 +153,7 @@ Floating button (44×44, two-line "LLui / HUD" wordmark, draggable + edge-anchor
 
 The Solve action is a split button: main click submits with the current resume mode, the ▾ caret opens a small menu (`● Resume previous / ○ Start fresh`). The ↻ glyph inside the main button reflects current state. Save submits with intent `note`, Solve with intent `task`.
 
-Resume mechanics: the router tracks `lastSessionId` per dev-server lifetime. On the next task whose frontmatter has `resume: true`, it passes `--resume <lastSessionId>` to claude. The first task in a lifetime never resumes. With `concurrency > 1`, the router logs a warning since multiple resumes against the same baseline can chain unpredictably.
+Resume mechanics: the router maintains `sessionByChain: Map<chainName, sessionId>`, persisted to `<notesRoot>/.chain-state.json` so chains survive a dev-server restart. On a task whose frontmatter has `resume: true`, it passes `--resume <sessionByChain.get(chainName)>` to claude. The first task on a chain never resumes (no captured id yet). `drain()` serializes per-chain so `concurrency > 1` only parallelizes across distinct chains — there's no race within a chain.
 
 ## Dark mode
 
@@ -175,14 +175,18 @@ Capture failures are reported with `describeCaptureError(err)` which extracts `t
 - `packages/devmode-annotate/test/` — HUD UI, drag/persist, screenshot bake, debug-collector, live feedback, browse view (planned).
 - `packages/vite-plugin/test/notes-*` — notes store, middleware, router (mockable spawner), session, slug.
 
+## Resolved (was previously listed as a limitation)
+
+- ~~Annotation placeholders (lasso/pin/arrow/highlight)~~ — removed from the `NoteKind` and `Annotation` type unions. Decision: rect + element cover the LLM-consumption use cases; the other markers added LOC without measurable value.
+- ~~MCP-side writes ignore `format` overrides~~ — MCP's `createNote` calls now route through the dev server's `POST /_llui/notes` when `ctx.devServerUrl` is set, with direct-write fallback for offline use. Both paths now produce the same on-disk layout.
+- ~~`concurrency > 1` + resume is racy~~ — router's `drain()` serializes per-chain via an `activeChains` set. Multiple chains run in parallel up to `concurrency`; tasks on the same chain wait. Resume is always deterministic now.
+- ~~No notes export/import~~ — out of scope; not building.
+- ~~No redact tool~~ — out of scope; not building.
+- ~~Repro recorder captures but can't replay~~ — `replayReproEvents()` in `repro-recorder.ts` now dispatches captured events back to the live DOM. Exposed via `handle.replayRepro(events, options?)`. The browse view shows a `▶ Replay (N)` button on notes that carry `body.repro`.
+- ~~Prior-session chains aren't discoverable~~ — router persists `sessionByChain` to `<notesRoot>/.chain-state.json` after each successful spawn. Reloaded on startup, so chains survive dev-server restarts.
+
 ## Known limitations / debt
 
-- Annotation tools shipping today: `rect` + `element` (pick). `NoteKind` also includes `lasso | pin | arrow` (placeholders, not built).
-- MCP-side note writes don't honour `format` overrides (out-of-process).
-- The router serializes by default; `concurrency > 1` with resume produces non-deterministic chains.
-- No notes export/import (zip in/out).
-- No redact tool that bakes a black rect into the screenshot (PII concern).
-- The repro recorder captures clicks/inputs/keys/route changes but cannot replay them yet — `@llui/test`'s replayTrace would need integration.
-- The HUD remembers chain names only for the current lifetime; chains created in prior sessions aren't auto-discovered (user must type the name).
-  </content>
-  </invoke>
+- The HUD's `chainHistories` (which drives the resume menu's labels) is populated only from the CURRENT session's reply notes — chains from prior sessions live on the router side (via `.chain-state.json`) but aren't surfaced as menu items until a new task on that chain completes.
+- The repro replay synthesizes DOM events. Some apps that listen for native browser events (e.g. trusted-event-only paths, `event.isTrusted` checks) won't react to dispatched events. Most react/vue/llui apps handle this fine.
+- `noteBody.repro` is currently typed as `ReproEvent[]` from `note-types.ts` but the browse view's cached note treats it as `unknown[]` to avoid pulling note-types into the cached-note shape — a small typing wart.

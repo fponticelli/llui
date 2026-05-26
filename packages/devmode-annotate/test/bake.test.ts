@@ -87,54 +87,6 @@ describe('bakeAnnotations', () => {
     expect(texts[0]!.args[0]).toBe('edit')
   })
 
-  it('draws a polyline for a lasso annotation', async () => {
-    const canvas = makeMockCanvas()
-    const ann: Annotation[] = [
-      {
-        type: 'lasso',
-        points: [
-          { x: 0, y: 0 },
-          { x: 100, y: 0 },
-          { x: 100, y: 100 },
-        ],
-      },
-    ]
-    await bakeAnnotations('AAA', ann, {
-      createCanvas: () => canvas,
-      loadImage: async () => fakeImage(800, 600),
-    })
-    const moves = canvas.__calls.filter((c) => c.op === 'moveTo')
-    const lines = canvas.__calls.filter((c) => c.op === 'lineTo')
-    expect(moves[0]!.args).toEqual([0, 0])
-    expect(lines).toHaveLength(2)
-  })
-
-  it('draws an arc + index text for a pin annotation', async () => {
-    const canvas = makeMockCanvas()
-    const ann: Annotation[] = [{ type: 'pin', at: { x: 50, y: 50 }, index: 3, label: 'note' }]
-    await bakeAnnotations('AAA', ann, {
-      createCanvas: () => canvas,
-      loadImage: async () => fakeImage(200, 200),
-    })
-    const arcs = canvas.__calls.filter((c) => c.op === 'arc')
-    expect(arcs).toHaveLength(1)
-    expect(arcs[0]!.args[0]).toBe(50)
-    expect(arcs[0]!.args[1]).toBe(50)
-    const texts = canvas.__calls.filter((c) => c.op === 'fillText')
-    expect(texts.some((t) => t.args[0] === '3')).toBe(true)
-  })
-
-  it('skips highlight annotations (semantic; resolved before baking)', async () => {
-    const canvas = makeMockCanvas()
-    const ann: Annotation[] = [{ type: 'highlight', selector: '#x' }]
-    await bakeAnnotations('AAA', ann, {
-      createCanvas: () => canvas,
-      loadImage: async () => fakeImage(100, 100),
-    })
-    const strokes = canvas.__calls.filter((c) => c.op === 'strokeRect')
-    expect(strokes).toHaveLength(0)
-  })
-
   it('accepts a base64 string without the data: prefix', async () => {
     const canvas = makeMockCanvas()
     await bakeAnnotations('plainbase64', [], {

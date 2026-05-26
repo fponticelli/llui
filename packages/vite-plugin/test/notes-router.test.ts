@@ -303,6 +303,69 @@ describe('startRouter', () => {
     handle.stop()
   })
 
+  it('with concurrency>1, serializes tasks PER chain but parallelizes ACROSS chains', async () => {
+    const bus = createEventBus()
+    const inFlightByChain = new Map<string, number>()
+    const maxInFlightByChain = new Map<string, number>()
+    let maxTotalInFlight = 0
+    let totalInFlight = 0
+    const spawner = mockSpawner(async ({ prompt }) => {
+      // Pull the chainName out of the prompt prefix — the note id in
+      // the prompt header identifies which task we're spawning for.
+      const m = /## Task — note (\d+)/.exec(prompt)
+      const noteId = m?.[1] ?? '?'
+      // chain assignment: notes 001/002/003 on 'alpha', 004/005 on 'beta'
+      const chainName = ['001', '002', '003'].includes(noteId) ? 'alpha' : 'beta'
+      inFlightByChain.set(chainName, (inFlightByChain.get(chainName) ?? 0) + 1)
+      totalInFlight++
+      maxTotalInFlight = Math.max(maxTotalInFlight, totalInFlight)
+      maxInFlightByChain.set(
+        chainName,
+        Math.max(maxInFlightByChain.get(chainName) ?? 0, inFlightByChain.get(chainName)!),
+      )
+      await new Promise((r) => setTimeout(r, 10))
+      inFlightByChain.set(chainName, inFlightByChain.get(chainName)! - 1)
+      totalInFlight--
+      return { exitCode: 0 }
+    })
+    const handle = startRouter({
+      notesRoot,
+      projectRoot: notesRoot,
+      bus,
+      spawner,
+      concurrency: 4,
+      log: () => {},
+    })
+
+    // 5 task notes: three on chain 'alpha', two on chain 'beta'.
+    const chainAssignments = ['alpha', 'alpha', 'alpha', 'beta', 'beta']
+    for (const chain of chainAssignments) {
+      const note = createNote(notesRoot, {
+        body: `task on ${chain}`,
+        frontmatter: { ...fmTask, chainName: chain },
+        noteBody: {},
+      })
+      bus.broadcast({
+        type: 'note-created',
+        id: note.id,
+        filename: note.filename,
+        author: 'human',
+      })
+    }
+    const deadline = Date.now() + 2000
+    while (spawner.calls.length < 5 && Date.now() < deadline) {
+      await new Promise((r) => setTimeout(r, 5))
+    }
+    expect(spawner.calls.length).toBeGreaterThanOrEqual(5)
+    // PER chain: never more than 1 at a time.
+    expect(maxInFlightByChain.get('alpha')).toBe(1)
+    expect(maxInFlightByChain.get('beta')).toBe(1)
+    // ACROSS chains: alpha + beta should have overlapped — total
+    // in-flight peak should be >= 2.
+    expect(maxTotalInFlight).toBeGreaterThanOrEqual(2)
+    handle.stop()
+  })
+
   it('skips a task that is already claimed by someone else', async () => {
     const bus = createEventBus()
     const spawner = mockSpawner(async () => ({ exitCode: 0 }))

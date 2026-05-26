@@ -125,3 +125,117 @@ export function createReproRecorder(): ReproRecorderHandle {
     },
   }
 }
+
+export interface ReplayOptions {
+  /** Wall-clock factor — 1 = real time, 0 = instant, 0.5 = double speed.
+   *  The original timestamps in `ReproEvent.t` are relative to the
+   *  recording start. Default 1 (replay at original pace). */
+  speed?: number
+  /** Cap on the gap between events. The recorder may capture a long
+   *  pause where the user was thinking; on replay we usually don't
+   *  want to wait that long. Default 2000ms — anything longer is
+   *  clamped. */
+  maxStepMs?: number
+  /** Bail out if a click target's selector no longer resolves. When
+   *  false (default), the event is logged + skipped and replay
+   *  continues with later events. */
+  abortOnMissing?: boolean
+}
+
+export interface ReplayResult {
+  /** How many events were successfully dispatched. */
+  applied: number
+  /** Events whose target selector couldn't be resolved + reason. */
+  skipped: Array<{ event: ReproEvent; reason: string }>
+}
+
+/**
+ * Replay a captured `ReproEvent[]` against the live DOM. Resolves the
+ * selectors at dispatch time (so the page can have changed since the
+ * recording) and synthesizes the corresponding DOM event. Returns
+ * counts so the caller can surface success/skip rates.
+ *
+ * - `click` → `dispatchEvent(new MouseEvent('click', { bubbles, cancelable }))`
+ *    on the resolved element.
+ * - `input` → set `.value` then dispatch `Event('input')` + `Event('change')`
+ *    on input/textarea. Other elements ignored.
+ * - `keydown` → `dispatchEvent(new KeyboardEvent('keydown', { key, ... }))`
+ *    on the active element (or document if none).
+ * - `route` → `history.pushState(null, '', pathname)` then dispatch
+ *    `popstate` so apps that listen for it (most routers) react.
+ */
+export async function replayReproEvents(
+  events: ReproEvent[],
+  options: ReplayOptions = {},
+): Promise<ReplayResult> {
+  const speed = options.speed ?? 1
+  const maxStepMs = options.maxStepMs ?? 2000
+  const abortOnMissing = options.abortOnMissing === true
+
+  const result: ReplayResult = { applied: 0, skipped: [] }
+  let lastT = 0
+  for (const event of events) {
+    const gap = Math.min(Math.max(0, event.t - lastT), maxStepMs)
+    if (gap > 0 && speed > 0) {
+      await new Promise((r) => setTimeout(r, gap / speed))
+    }
+    lastT = event.t
+
+    try {
+      await dispatchOne(event)
+      result.applied++
+    } catch (err) {
+      const reason = err instanceof Error ? err.message : String(err)
+      result.skipped.push({ event, reason })
+      if (abortOnMissing) break
+    }
+  }
+  return result
+}
+
+async function dispatchOne(event: ReproEvent): Promise<void> {
+  switch (event.type) {
+    case 'click': {
+      const el = document.querySelector(event.selector)
+      if (!el) throw new Error(`selector did not match: ${event.selector}`)
+      el.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
+      return
+    }
+    case 'input': {
+      const el = document.querySelector(event.selector) as
+        | HTMLInputElement
+        | HTMLTextAreaElement
+        | HTMLSelectElement
+        | null
+      if (!el) throw new Error(`selector did not match: ${event.selector}`)
+      if ('value' in el) {
+        el.value = event.value
+        el.dispatchEvent(new Event('input', { bubbles: true }))
+        el.dispatchEvent(new Event('change', { bubbles: true }))
+        return
+      }
+      throw new Error(`target ${event.selector} is not a form field`)
+    }
+    case 'keydown': {
+      const target = (document.activeElement as Element | null) ?? document.body
+      target.dispatchEvent(
+        new KeyboardEvent('keydown', {
+          key: event.key,
+          bubbles: true,
+          cancelable: true,
+          ...(event.mods?.includes('⌘') ? { metaKey: true } : {}),
+          ...(event.mods?.includes('⌃') ? { ctrlKey: true } : {}),
+          ...(event.mods?.includes('⇧') ? { shiftKey: true } : {}),
+          ...(event.mods?.includes('⌥') ? { altKey: true } : {}),
+        }),
+      )
+      return
+    }
+    case 'route': {
+      if (typeof history === 'undefined') return
+      history.pushState(null, '', event.pathname)
+      window.dispatchEvent(new PopStateEvent('popstate'))
+      return
+    }
+  }
+}

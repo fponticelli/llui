@@ -75,6 +75,10 @@ export interface BrowseViewOptions {
   /** Reports user actions back to the host modal — used to surface
    *  errors via the existing status line / toast system. */
   onError?: (message: string) => void
+  /** Replay a captured repro trace against the live DOM. Wired up
+   *  by the parent HUD so the browse view can show a "▶ Replay"
+   *  button on notes carrying `body.repro`. */
+  onReplayRepro?: (events: unknown[]) => Promise<{ applied: number; skipped: unknown[] }>
 }
 
 /**
@@ -258,24 +262,23 @@ export function createBrowseView(opts: BrowseViewOptions): BrowseViewHandle {
   // Populated on expand so the diff viewer / re-solve / screenshot
   // preview can render without re-fetching the same note. Cleared on
   // refresh or session change.
-  const noteCache = new Map<
-    string,
-    {
-      frontmatter: {
-        kind: string
-        author: string
-        intent?: string
-        screenshot?: string | null
-        proposedDiff?: {
-          summary: string
-          confidence: string
-          files: Array<{ path: string; patch: string }>
-        }
-        replyTo?: string
+  interface CachedNote {
+    frontmatter: {
+      kind: string
+      author: string
+      intent?: string
+      screenshot?: string | null
+      proposedDiff?: {
+        summary: string
+        confidence: string
+        files: Array<{ path: string; patch: string }>
       }
-      prose: string
+      replyTo?: string
     }
-  >()
+    prose: string
+    body?: { repro?: unknown[] }
+  }
+  const noteCache = new Map<string, CachedNote>()
   let searchDebounceTimer: ReturnType<typeof setTimeout> | null = null
 
   function matchesFilters(n: NoteSummary): boolean {
@@ -339,21 +342,7 @@ export function createBrowseView(opts: BrowseViewOptions): BrowseViewHandle {
     }
   }
 
-  async function fetchNoteJson(noteId: string): Promise<{
-    frontmatter: {
-      kind: string
-      author: string
-      intent?: string
-      screenshot?: string | null
-      proposedDiff?: {
-        summary: string
-        confidence: string
-        files: Array<{ path: string; patch: string }>
-      }
-      replyTo?: string
-    }
-    prose: string
-  } | null> {
+  async function fetchNoteJson(noteId: string): Promise<CachedNote | null> {
     if (!currentSessionId) return null
     const cached = noteCache.get(noteId)
     if (cached) return cached
@@ -362,10 +351,7 @@ export function createBrowseView(opts: BrowseViewOptions): BrowseViewHandle {
         `${origin}/_llui/notes/${noteId}?sessionId=${encodeURIComponent(currentSessionId)}&format=json`,
       )
       if (!res.ok) return null
-      const payload = (await res.json()) as {
-        frontmatter: { kind: string; author: string }
-        prose: string
-      }
+      const payload = (await res.json()) as CachedNote
       noteCache.set(noteId, payload)
       return payload
     } catch {
@@ -665,7 +651,7 @@ export function createBrowseView(opts: BrowseViewOptions): BrowseViewHandle {
     }
     expansion.appendChild(timeline)
 
-    // Action row: Re-solve (task notes only) · Edit · Delete.
+    // Action row: Re-solve (task notes only) · Replay repro (when present) · Edit · Delete.
     const actions = document.createElement('div')
     actions.style.cssText = 'display: flex; gap: 6px; justify-content: flex-end;'
     if (frontmatter.intent === 'task') {
@@ -680,6 +666,32 @@ export function createBrowseView(opts: BrowseViewOptions): BrowseViewHandle {
         void reSolveFrom(note, prose)
       })
       actions.appendChild(resolveBtn)
+    }
+    // Show "▶ Replay" when the note captured a repro trace AND the
+    // host plumbed a replay function.
+    const reproEvents = full?.body?.repro
+    if (opts.onReplayRepro && Array.isArray(reproEvents) && reproEvents.length > 0) {
+      const replayBtn = document.createElement('button')
+      replayBtn.type = 'button'
+      replayBtn.textContent = `▶ Replay (${reproEvents.length})`
+      replayBtn.title = `Re-dispatch the ${reproEvents.length} captured interaction(s) against the live DOM`
+      replayBtn.style.cssText = btnStyle('secondary') + '; padding: 4px 10px; font-size: 11px;'
+      replayBtn.addEventListener('click', async (e) => {
+        e.stopPropagation()
+        try {
+          const result = await opts.onReplayRepro!(reproEvents)
+          const ok = result.applied
+          const skipped = result.skipped.length
+          reportError(
+            skipped > 0
+              ? `Replayed ${ok}, skipped ${skipped} (target selector(s) no longer match)`
+              : `Replayed ${ok} event(s)`,
+          )
+        } catch (err) {
+          reportError(`Replay failed: ${err instanceof Error ? err.message : String(err)}`)
+        }
+      })
+      actions.appendChild(replayBtn)
     }
     const editBtn = document.createElement('button')
     editBtn.type = 'button'

@@ -191,11 +191,11 @@ describe('listNotes', () => {
     })
     createNote(notesRoot, {
       body: 'c',
-      frontmatter: { ...fmBase, kind: 'lasso' },
+      frontmatter: { ...fmBase, kind: 'element' },
       noteBody: emptyBody,
     })
     expect(listNotes(notesRoot, { kind: 'rect' }).notes).toHaveLength(1)
-    expect(listNotes(notesRoot, { kind: ['rect', 'lasso'] }).notes).toHaveLength(2)
+    expect(listNotes(notesRoot, { kind: ['rect', 'element'] }).notes).toHaveLength(2)
   })
 
   it('respects limit', () => {

@@ -88,45 +88,9 @@ function drawAnnotation(ctx: CanvasRenderingContext2D, ann: Annotation, colors: 
       ctx.strokeRect(ann.x, ann.y, ann.w, ann.h)
       if (ann.label) drawLabel(ctx, ann.label, ann.x, ann.y, colors)
       break
-    case 'lasso': {
-      if (ann.points.length < 2) break
-      ctx.beginPath()
-      const first = ann.points[0]!
-      ctx.moveTo(first.x, first.y)
-      for (let i = 1; i < ann.points.length; i++) {
-        const p = ann.points[i]!
-        ctx.lineTo(p.x, p.y)
-      }
-      ctx.closePath()
-      ctx.stroke()
-      if (ann.label) drawLabel(ctx, ann.label, first.x, first.y, colors)
-      break
-    }
-    case 'pin': {
-      const r = 14
-      ctx.beginPath()
-      ctx.arc(ann.at.x, ann.at.y, r, 0, Math.PI * 2)
-      ctx.fillStyle = colors.strokeColor
-      ctx.fill()
-      ctx.fillStyle = colors.labelColor
-      ctx.font = `bold ${LABEL_FONT}`
-      ctx.textAlign = 'center'
-      ctx.textBaseline = 'middle'
-      ctx.fillText(String(ann.index), ann.at.x, ann.at.y)
-      ctx.textAlign = 'start'
-      ctx.textBaseline = 'alphabetic'
-      break
-    }
-    case 'arrow':
-      drawArrow(ctx, ann.from.x, ann.from.y, ann.to.x, ann.to.y)
-      if (ann.label) drawLabel(ctx, ann.label, ann.from.x, ann.from.y, colors)
-      break
     case 'element':
       ctx.strokeRect(ann.bbox.x, ann.bbox.y, ann.bbox.w, ann.bbox.h)
       if (ann.label) drawLabel(ctx, ann.label, ann.bbox.x, ann.bbox.y, colors)
-      break
-    case 'highlight':
-      // Semantic — should have been resolved before baking. Skip silently.
       break
   }
 }
@@ -149,34 +113,6 @@ function drawLabel(
   ctx.fillRect(labelX, labelY, w + LABEL_PAD_X * 2, h + LABEL_PAD_Y * 2)
   ctx.fillStyle = colors.labelColor
   ctx.fillText(text, labelX + LABEL_PAD_X, labelY + h)
-}
-
-function drawArrow(
-  ctx: CanvasRenderingContext2D,
-  x1: number,
-  y1: number,
-  x2: number,
-  y2: number,
-): void {
-  const headLen = 12
-  const angle = Math.atan2(y2 - y1, x2 - x1)
-  ctx.beginPath()
-  ctx.moveTo(x1, y1)
-  ctx.lineTo(x2, y2)
-  ctx.stroke()
-  ctx.beginPath()
-  ctx.moveTo(x2, y2)
-  ctx.lineTo(
-    x2 - headLen * Math.cos(angle - Math.PI / 6),
-    y2 - headLen * Math.sin(angle - Math.PI / 6),
-  )
-  ctx.lineTo(
-    x2 - headLen * Math.cos(angle + Math.PI / 6),
-    y2 - headLen * Math.sin(angle + Math.PI / 6),
-  )
-  ctx.closePath()
-  ctx.fillStyle = ctx.strokeStyle
-  ctx.fill()
 }
 
 function defaultCreateCanvas(): HTMLCanvasElement {

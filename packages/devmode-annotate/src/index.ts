@@ -25,7 +25,8 @@ import { createBrowseView } from './browse-view.js'
 import { collectComponentInfo, collectDebugSnapshot, collectSourceMap } from './debug-collector.js'
 import { pickElement } from './element-picker.js'
 import { drawRect } from './overlay.js'
-import { createReproRecorder } from './repro-recorder.js'
+import { createReproRecorder, replayReproEvents } from './repro-recorder.js'
+import type { ReproEvent } from './note-types.js'
 import { captureScreenshot, describeCaptureError, type CaptureFn } from './screenshot.js'
 import {
   btnStyle,
@@ -115,6 +116,13 @@ export interface AnnotateHudHandle {
   /** Set the default intent for floating-button submits. Default 'task'.
    *  Per-call submit() options override this. */
   setIntent(intent: NoteIntent): void
+  /** Replay a captured repro trace against the live DOM. Resolves
+   *  with `{ applied, skipped }` once the trace finishes. See
+   *  `replayReproEvents` in repro-recorder.ts for option semantics. */
+  replayRepro(
+    events: ReproEvent[],
+    options?: { speed?: number; maxStepMs?: number; abortOnMissing?: boolean },
+  ): Promise<{ applied: number; skipped: Array<{ event: ReproEvent; reason: string }> }>
 }
 
 interface LluiDevSurfaceLike {
@@ -773,6 +781,7 @@ export function mountAnnotateHud(opts: MountAnnotateOptions = {}): AnnotateHudHa
     onError: (msg) => {
       statusLine.textContent = msg
     },
+    onReplayRepro: (events) => replayReproEvents(events as ReproEvent[]),
   })
 
   // View toggle, placed in the heading row alongside the badges.
@@ -2191,6 +2200,7 @@ export function mountAnnotateHud(opts: MountAnnotateOptions = {}): AnnotateHudHa
     setIntent: (i) => {
       defaultIntent = i
     },
+    replayRepro: replayReproEvents,
   }
   ;(root as HTMLElement & { _lluiHandle?: AnnotateHudHandle })._lluiHandle = handle
   return handle
@@ -2208,5 +2218,6 @@ function noopHandle(): AnnotateHudHandle {
     drawRect: () => Promise.resolve(null),
     handleCaptureRequest: rejectNotMounted,
     setIntent: noop,
+    replayRepro: () => Promise.resolve({ applied: 0, skipped: [] }),
   }
 }

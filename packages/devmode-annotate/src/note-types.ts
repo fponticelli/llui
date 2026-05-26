@@ -8,7 +8,7 @@
 
 export type Author = 'human' | 'llm'
 
-export type NoteKind = 'rect' | 'lasso' | 'pin' | 'element' | 'arrow' | 'text' | 'capture' | 'reply'
+export type NoteKind = 'rect' | 'element' | 'text' | 'capture' | 'reply'
 
 export type NoteIntent = 'task' | 'note'
 
@@ -40,11 +40,6 @@ export interface ProposedDiff {
 
 export type CaptureLevel = 'standard' | 'verbose'
 
-export interface NotePoint {
-  x: number
-  y: number
-}
-
 export interface NoteRect {
   x: number
   y: number
@@ -54,11 +49,7 @@ export interface NoteRect {
 
 export type Annotation =
   | ({ type: 'rect' } & NoteRect & { label?: string })
-  | { type: 'lasso'; points: NotePoint[]; label?: string }
-  | { type: 'pin'; at: NotePoint; index: number; label: string }
   | { type: 'element'; selector: string; bbox: NoteRect; label?: string }
-  | { type: 'arrow'; from: NotePoint; to: NotePoint; label?: string }
-  | { type: 'highlight'; selector: string; style?: 'rect' | 'arrow'; label?: string }
 
 export interface AgentSchemaSummary {
   msg: string
