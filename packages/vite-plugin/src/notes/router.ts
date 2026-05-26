@@ -605,10 +605,21 @@ export interface StreamJsonUpdate {
    *  e.g. "reading App.tsx", "editing payment.ts", "running bash".
    *  Surfaced in the HUD's live status line. */
   toolSummary?: string
-  /** Running token counts. Stream-json includes per-message usage
-   *  deltas; the final `result` message has the totals. We just
-   *  forward whatever the line carried. */
-  tokens?: { in: number; out: number }
+  /** Raw usage shape from THIS specific line — semantics depend on
+   *  `messageType`. The router uses these + the type to maintain
+   *  monotonic running totals; consumers shouldn't display them
+   *  directly. */
+  usage?: {
+    inputTokens?: number
+    outputTokens?: number
+    cacheReadInputTokens?: number
+  }
+  /** Which stream-json message produced this update. Used by the
+   *  router's accumulator: assistant.output_tokens is per-turn (sum
+   *  it); result.output_tokens is the cumulative total (assign,
+   *  don't add). input_tokens grows monotonically across turns so
+   *  the latest value is the current context size. */
+  messageType?: 'system' | 'assistant' | 'user' | 'result'
   /** The full assistant text from the final `result` message. Only
    *  set on the terminal line. */
   finalText?: string
@@ -630,17 +641,29 @@ export function parseStreamJsonLine(line: string): StreamJsonUpdate | null {
   }
   const out: StreamJsonUpdate = {}
   const type = parsed['type']
+  if (type === 'system' || type === 'assistant' || type === 'user' || type === 'result') {
+    out.messageType = type
+  }
   if (typeof parsed['session_id'] === 'string') {
     out.sessionId = parsed['session_id'] as string
   }
   // Per-message usage: claude attaches `usage` to assistant turns
-  // and a cumulative `usage` to the final result.
+  // and a cumulative `usage` to the final result. We just forward
+  // the raw fields; the router decides how to aggregate based on
+  // `messageType`.
   const usage = (parsed['usage'] as Record<string, unknown> | undefined) ?? null
   const msgUsage = ((parsed['message'] as Record<string, unknown> | undefined)?.['usage'] ??
     null) as Record<string, unknown> | null
   const u = usage ?? msgUsage
-  if (u && typeof u['input_tokens'] === 'number' && typeof u['output_tokens'] === 'number') {
-    out.tokens = { in: u['input_tokens'] as number, out: u['output_tokens'] as number }
+  if (u) {
+    const collected: NonNullable<StreamJsonUpdate['usage']> = {}
+    if (typeof u['input_tokens'] === 'number') collected.inputTokens = u['input_tokens'] as number
+    if (typeof u['output_tokens'] === 'number')
+      collected.outputTokens = u['output_tokens'] as number
+    if (typeof u['cache_read_input_tokens'] === 'number') {
+      collected.cacheReadInputTokens = u['cache_read_input_tokens'] as number
+    }
+    if (Object.keys(collected).length > 0) out.usage = collected
   }
   // Tool calls: assistant messages may include tool_use content
   // blocks. We surface the most recent.
@@ -945,8 +968,17 @@ export function startRouter(config: RouterConfig): RouterHandle {
     // `task-progress` SSE event so the HUD's status line updates
     // continuously instead of staying frozen until claude exits.
     const taskStartMs = Date.now()
+    // Running totals derived from stream-json updates:
+    //   - ctxIn: latest input_tokens (grows monotonically — current
+    //     context size)
+    //   - outTotal: SUM of per-turn output_tokens from assistant
+    //     messages, or the cumulative total from the result message
+    //   - cacheRead: latest cache_read_input_tokens (shows how much
+    //     of the context was served from claude's prompt cache)
     const progress: {
-      tokens?: { in: number; out: number }
+      ctxIn?: number
+      outTotal?: number
+      cacheRead?: number
       toolSummary?: string
       streamedSessionId?: string
       finalText?: string
@@ -959,11 +991,19 @@ export function startRouter(config: RouterConfig): RouterHandle {
       if (progressBroadcastTimer) return
       progressBroadcastTimer = setTimeout(() => {
         progressBroadcastTimer = null
+        const tokens =
+          progress.ctxIn !== undefined || progress.outTotal !== undefined
+            ? {
+                in: progress.ctxIn ?? 0,
+                out: progress.outTotal ?? 0,
+                ...(progress.cacheRead !== undefined ? { cacheRead: progress.cacheRead } : {}),
+              }
+            : undefined
         config.bus.broadcast({
           type: 'task-progress',
           noteId,
           elapsedMs: Date.now() - taskStartMs,
-          ...(progress.tokens ? { tokens: progress.tokens } : {}),
+          ...(tokens ? { tokens } : {}),
           ...(progress.toolSummary ? { toolSummary: progress.toolSummary } : {}),
         })
       }, 250)
@@ -989,7 +1029,24 @@ export function startRouter(config: RouterConfig): RouterHandle {
             const u = parseStreamJsonLine(line)
             if (!u) return
             if (u.sessionId) progress.streamedSessionId = u.sessionId
-            if (u.tokens) progress.tokens = u.tokens
+            if (u.usage) {
+              // input_tokens grows monotonically with each turn; the
+              // latest value is the current context size.
+              if (u.usage.inputTokens !== undefined) progress.ctxIn = u.usage.inputTokens
+              // output_tokens: assistant messages carry per-turn
+              // counts (sum them); the final result carries the
+              // cumulative total (overwrite).
+              if (u.usage.outputTokens !== undefined) {
+                if (u.messageType === 'result') {
+                  progress.outTotal = u.usage.outputTokens
+                } else if (u.messageType === 'assistant') {
+                  progress.outTotal = (progress.outTotal ?? 0) + u.usage.outputTokens
+                }
+              }
+              if (u.usage.cacheReadInputTokens !== undefined) {
+                progress.cacheRead = u.usage.cacheReadInputTokens
+              }
+            }
             if (u.toolSummary) progress.toolSummary = u.toolSummary
             if (u.finalText !== undefined) progress.finalText = u.finalText
             broadcastProgress()

@@ -317,7 +317,14 @@ export type ServerEvent =
       type: 'task-progress'
       noteId: string
       elapsedMs: number
-      tokens?: { in: number; out: number }
+      /** Token counters from the LLM stream.
+       *   - `in`: latest cumulative input_tokens (context size). Grows
+       *           monotonically across the conversation.
+       *   - `out`: sum of all output_tokens generated so far.
+       *   - `cacheRead`: prompt-cache hits, if the model reports them
+       *           (claude's `cache_read_input_tokens`). Shows how much
+       *           of the context was served from cache vs. reprocessed. */
+      tokens?: { in: number; out: number; cacheRead?: number }
       toolSummary?: string
     }
   | { type: 'capture-request'; requestId: string; payload: CaptureRequestPayload }

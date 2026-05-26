@@ -998,6 +998,10 @@ export function mountAnnotateHud(opts: MountAnnotateOptions = {}): AnnotateHudHa
       window.removeEventListener('error', onWindowError)
       window.removeEventListener('unhandledrejection', onUnhandledRejection)
     }
+    if (progressTickInterval) {
+      clearInterval(progressTickInterval)
+      progressTickInterval = null
+    }
     eventSource?.close()
     if (activeOverlayDismiss) {
       activeOverlayDismiss()
@@ -1337,12 +1341,55 @@ export function mountAnnotateHud(opts: MountAnnotateOptions = {}): AnnotateHudHa
     close()
   })
 
-  // Live progress for an in-flight task. The router emits these
-  // every ~250ms (stream-json presets) or every 5s (heartbeat-only
-  // presets) so the user knows the solve is still working.
+  // Live progress for an in-flight task. The router emits one
+  // `task-progress` event per stream-json line (debounced 250ms);
+  // we cache the latest values and ALSO tick the elapsed display
+  // locally every 1s so the line never looks stale during long
+  // tool calls that produce no intermediate output.
+  interface ProgressSnapshot {
+    noteId: string
+    /** ms-since-task-start reported by the router. */
+    reportedElapsedMs: number
+    /** local wall-clock when that report arrived. The render fn
+     *  derives current elapsed = reportedElapsedMs + (now - reportedAt). */
+    reportedAt: number
+    tokens?: { in: number; out: number; cacheRead?: number }
+    toolSummary?: string
+  }
+  let activeProgress: ProgressSnapshot | null = null
+  let progressTickInterval: ReturnType<typeof setInterval> | null = null
+
+  const renderActiveProgress = (): void => {
+    if (!activeProgress || activeProgress.noteId !== latestTaskId) return
+    const elapsed = activeProgress.reportedElapsedMs + (Date.now() - activeProgress.reportedAt)
+    const parts: string[] = ['🤖 working']
+    if (activeProgress.tokens) {
+      const t = activeProgress.tokens
+      const cacheSuffix =
+        t.cacheRead !== undefined && t.cacheRead > 0 ? ` (${fmtTokens(t.cacheRead)} cached)` : ''
+      parts.push(`${fmtTokens(t.in)} ctx${cacheSuffix}`)
+      parts.push(`${fmtTokens(t.out)} out`)
+    }
+    parts.push(`${Math.round(elapsed / 1000)}s`)
+    if (activeProgress.toolSummary) parts.push(activeProgress.toolSummary)
+    statusLine.textContent = parts.join(' · ')
+  }
+
+  const stopProgressTicker = (): void => {
+    if (progressTickInterval) {
+      clearInterval(progressTickInterval)
+      progressTickInterval = null
+    }
+    activeProgress = null
+  }
+
   const handleTaskProgress = (
     noteId: string,
-    p: { elapsedMs?: number; tokens?: { in: number; out: number }; toolSummary?: string },
+    p: {
+      elapsedMs?: number
+      tokens?: { in: number; out: number; cacheRead?: number }
+      toolSummary?: string
+    },
   ): void => {
     const task = trackedTasks.get(noteId)
     if (!task) return
@@ -1350,11 +1397,23 @@ export function mountAnnotateHud(opts: MountAnnotateOptions = {}): AnnotateHudHa
     // line — others continue in the background and surface their
     // terminal result via toast.
     if (noteId !== latestTaskId) return
-    const parts: string[] = ['🤖 working']
-    if (p.tokens) parts.push(`${fmtTokens(p.tokens.in)} in / ${fmtTokens(p.tokens.out)} out`)
-    if (p.elapsedMs !== undefined) parts.push(`${Math.round(p.elapsedMs / 1000)}s`)
-    if (p.toolSummary) parts.push(p.toolSummary)
-    statusLine.textContent = parts.join(' · ')
+    activeProgress = {
+      noteId,
+      reportedElapsedMs: p.elapsedMs ?? 0,
+      reportedAt: Date.now(),
+      ...(p.tokens ? { tokens: p.tokens } : {}),
+      ...(p.toolSummary ? { toolSummary: p.toolSummary } : {}),
+    }
+    // Preserve previously-known tokens/toolSummary across heartbeats
+    // that omit them (the router sends a partial payload when nothing
+    // new has arrived).
+    if (!p.tokens && activeProgress.tokens === undefined) {
+      // nothing to do
+    }
+    renderActiveProgress()
+    if (!progressTickInterval) {
+      progressTickInterval = setInterval(renderActiveProgress, 1000)
+    }
   }
 
   // Compact thousands-separator for token counts ("1,247", "14k").
@@ -1372,6 +1431,13 @@ export function mountAnnotateHud(opts: MountAnnotateOptions = {}): AnnotateHudHa
     task.status = to
     if (noteId === latestTaskId) {
       statusLine.textContent = statusLabel(to, reason)
+    }
+
+    // Stop the progress ticker once the task leaves the working
+    // states. The static statusLabel for 'proposed'/'applied'/etc
+    // takes over from here.
+    if ((isReady(to) || isTerminal(to)) && activeProgress?.noteId === noteId) {
+      stopProgressTicker()
     }
 
     // 'proposed' means the router successfully produced a result —
