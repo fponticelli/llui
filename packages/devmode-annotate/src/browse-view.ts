@@ -42,6 +42,23 @@ interface StatusTransition {
   reason?: string
 }
 
+/** Filters applied client-side over the fetched notes list. */
+interface BrowseFilters {
+  kind: 'all' | 'text' | 'rect' | 'capture' | 'reply'
+  author: 'all' | 'human' | 'llm'
+  status: 'all' | 'open' | 'working' | 'proposed' | 'applied' | 'closed'
+  text: string
+}
+
+/** Buckets `status` into the high-level categories the filter UI uses. */
+function statusBucket(s: string | undefined): BrowseFilters['status'] {
+  if (!s || s === 'open') return 'open'
+  if (s === 'claimed' || s === 'in-progress' || s === 'accepted') return 'working'
+  if (s === 'proposed') return 'proposed'
+  if (s === 'applied') return 'applied'
+  return 'closed' // rejected | wontfix | failed
+}
+
 export interface BrowseViewHandle {
   /** The root DOM element to append to the modal. */
   el: HTMLElement
@@ -96,6 +113,74 @@ export function createBrowseView(opts: BrowseViewOptions): BrowseViewHandle {
 
   headerRow.append(sessionSelect, refreshBtn)
 
+  // Filter row: kind / author / status selects + free-text search.
+  const filterRow = document.createElement('div')
+  filterRow.style.cssText = [
+    'display: grid',
+    'grid-template-columns: 1fr 1fr 1fr',
+    'gap: 4px',
+    'align-items: center',
+    'font-size: 11px',
+  ].join('; ')
+
+  const selectStyle = [
+    'padding: 3px 4px',
+    'border-radius: 4px',
+    'border: 1px solid var(--hud-border-strong)',
+    'background: var(--hud-input-bg)',
+    'color: var(--hud-fg)',
+    'font: inherit',
+    'font-size: 11px',
+  ].join('; ')
+
+  const mkFilterSelect = (options: ReadonlyArray<readonly [string, string]>): HTMLSelectElement => {
+    const sel = document.createElement('select')
+    sel.style.cssText = selectStyle
+    for (const [value, label] of options) {
+      const opt = document.createElement('option')
+      opt.value = value
+      opt.textContent = label
+      sel.appendChild(opt)
+    }
+    return sel
+  }
+  const kindFilter = mkFilterSelect([
+    ['all', 'All kinds'],
+    ['text', '📝 text'],
+    ['rect', '⌖ rect'],
+    ['capture', '📸 capture'],
+    ['reply', '↩ reply'],
+  ])
+  const authorFilter = mkFilterSelect([
+    ['all', 'All authors'],
+    ['human', '👤 human'],
+    ['llm', '🤖 llm'],
+  ])
+  const statusFilter = mkFilterSelect([
+    ['all', 'All statuses'],
+    ['open', 'open'],
+    ['working', 'working'],
+    ['proposed', 'proposed'],
+    ['applied', 'applied'],
+    ['closed', 'closed'],
+  ])
+
+  const searchInput = document.createElement('input')
+  searchInput.type = 'search'
+  searchInput.placeholder = 'Search prose…'
+  searchInput.style.cssText = [
+    'grid-column: 1 / span 3',
+    'padding: 4px 6px',
+    'border-radius: 4px',
+    'border: 1px solid var(--hud-border-strong)',
+    'background: var(--hud-input-bg)',
+    'color: var(--hud-fg)',
+    'font: inherit',
+    'font-size: 11px',
+  ].join('; ')
+
+  filterRow.append(kindFilter, authorFilter, statusFilter, searchInput)
+
   // Notes list
   const listEl = document.createElement('div')
   listEl.style.cssText = [
@@ -116,7 +201,44 @@ export function createBrowseView(opts: BrowseViewOptions): BrowseViewHandle {
     'font-size: 12px',
   ].join('; ')
 
-  el.append(headerRow, listEl, emptyEl)
+  // Bulk action bar — visible only when >=1 row checkbox is active.
+  const bulkBar = document.createElement('div')
+  bulkBar.style.cssText = [
+    'display: none',
+    'align-items: center',
+    'gap: 8px',
+    'padding: 6px 8px',
+    'background: var(--hud-accent-bg)',
+    'color: var(--hud-accent-fg)',
+    'border-radius: 6px',
+    'font-size: 12px',
+  ].join('; ')
+  const bulkCount = document.createElement('span')
+  bulkCount.style.cssText = 'flex: 1;'
+  const bulkDeleteBtn = document.createElement('button')
+  bulkDeleteBtn.type = 'button'
+  bulkDeleteBtn.textContent = 'Delete'
+  bulkDeleteBtn.style.cssText = btnStyle('ghost') + '; padding: 4px 10px; font-size: 11px;'
+  const bulkWontfixBtn = document.createElement('button')
+  bulkWontfixBtn.type = 'button'
+  bulkWontfixBtn.textContent = 'Mark wontfix'
+  bulkWontfixBtn.style.cssText = btnStyle('ghost') + '; padding: 4px 10px; font-size: 11px;'
+  const bulkClearBtn = document.createElement('button')
+  bulkClearBtn.type = 'button'
+  bulkClearBtn.textContent = '✕'
+  bulkClearBtn.title = 'Clear selection'
+  bulkClearBtn.style.cssText = [
+    'background: transparent',
+    'border: 0',
+    'color: inherit',
+    'cursor: pointer',
+    'font-size: 14px',
+    'line-height: 1',
+    'padding: 0 4px',
+  ].join('; ')
+  bulkBar.append(bulkCount, bulkWontfixBtn, bulkDeleteBtn, bulkClearBtn)
+
+  el.append(headerRow, filterRow, bulkBar, listEl, emptyEl)
 
   // ── State ──────────────────────────────────────────────────────
   let sessions: SessionSummary[] = []
@@ -125,6 +247,39 @@ export function createBrowseView(opts: BrowseViewOptions): BrowseViewHandle {
   let expandedNoteId: string | null = null
   let loaded = false
   let refreshTimer: ReturnType<typeof setTimeout> | null = null
+  const filters: BrowseFilters = { kind: 'all', author: 'all', status: 'all', text: '' }
+  const selectedIds = new Set<string>()
+  // Cache of full note JSON (frontmatter + prose + body) keyed by id.
+  // Populated on expand so the diff viewer / re-solve / screenshot
+  // preview can render without re-fetching the same note. Cleared on
+  // refresh or session change.
+  const noteCache = new Map<
+    string,
+    {
+      frontmatter: {
+        kind: string
+        author: string
+        intent?: string
+        screenshot?: string | null
+        proposedDiff?: {
+          summary: string
+          confidence: string
+          files: Array<{ path: string; patch: string }>
+        }
+        replyTo?: string
+      }
+      prose: string
+    }
+  >()
+  let searchDebounceTimer: ReturnType<typeof setTimeout> | null = null
+
+  function matchesFilters(n: NoteSummary): boolean {
+    if (filters.kind !== 'all' && n.kind !== filters.kind) return false
+    if (filters.author !== 'all' && n.author !== filters.author) return false
+    if (filters.status !== 'all' && statusBucket(n.status) !== filters.status) return false
+    if (filters.text && !n.preview.toLowerCase().includes(filters.text.toLowerCase())) return false
+    return true
+  }
 
   // ── Fetch helpers ──────────────────────────────────────────────
   async function fetchSessions(): Promise<void> {
@@ -179,23 +334,37 @@ export function createBrowseView(opts: BrowseViewOptions): BrowseViewHandle {
     }
   }
 
-  async function fetchNoteProse(noteId: string): Promise<string> {
-    if (!currentSessionId) return ''
+  async function fetchNoteJson(noteId: string): Promise<{
+    frontmatter: {
+      kind: string
+      author: string
+      intent?: string
+      screenshot?: string | null
+      proposedDiff?: {
+        summary: string
+        confidence: string
+        files: Array<{ path: string; patch: string }>
+      }
+      replyTo?: string
+    }
+    prose: string
+  } | null> {
+    if (!currentSessionId) return null
+    const cached = noteCache.get(noteId)
+    if (cached) return cached
     try {
       const res = await fetch(
-        `${origin}/_llui/notes/${noteId}?sessionId=${encodeURIComponent(currentSessionId)}`,
+        `${origin}/_llui/notes/${noteId}?sessionId=${encodeURIComponent(currentSessionId)}&format=json`,
       )
-      if (!res.ok) return ''
-      const md = await res.text()
-      // Strip the frontmatter block to extract the prose body. The
-      // serialized format is `---\n<yaml>\n---\n<body>` with an
-      // optional `<!-- body-json: ... -->` comment we also strip.
-      const body = md
-        .replace(/^---[\s\S]*?\n---\n?/, '')
-        .replace(/<!-- body-json:[\s\S]*?-->\s*/g, '')
-      return body.trim()
+      if (!res.ok) return null
+      const payload = (await res.json()) as {
+        frontmatter: { kind: string; author: string }
+        prose: string
+      }
+      noteCache.set(noteId, payload)
+      return payload
     } catch {
-      return ''
+      return null
     }
   }
 
@@ -295,17 +464,33 @@ export function createBrowseView(opts: BrowseViewOptions): BrowseViewHandle {
 
   function renderNotes(): void {
     listEl.innerHTML = ''
-    if (notes.length === 0) {
-      emptyEl.textContent = currentSessionId
-        ? 'no notes in this session yet'
-        : 'no sessions yet — drop a note from the compose view'
+    const visible = notes.filter(matchesFilters)
+    if (visible.length === 0) {
+      if (notes.length === 0) {
+        emptyEl.textContent = currentSessionId
+          ? 'no notes in this session yet'
+          : 'no sessions yet — drop a note from the compose view'
+      } else {
+        emptyEl.textContent = `no notes match the current filters (${notes.length} hidden)`
+      }
       emptyEl.style.display = 'block'
+    } else {
+      emptyEl.style.display = 'none'
+      for (const note of visible) {
+        listEl.appendChild(renderNoteRow(note))
+      }
+    }
+    renderBulkBar()
+  }
+
+  function renderBulkBar(): void {
+    const n = selectedIds.size
+    if (n === 0) {
+      bulkBar.style.display = 'none'
       return
     }
-    emptyEl.style.display = 'none'
-    for (const note of notes) {
-      listEl.appendChild(renderNoteRow(note))
-    }
+    bulkBar.style.display = 'flex'
+    bulkCount.textContent = `${n} selected`
   }
 
   function renderNoteRow(note: NoteSummary): HTMLElement {
@@ -325,6 +510,19 @@ export function createBrowseView(opts: BrowseViewOptions): BrowseViewHandle {
     // ── Summary line ──
     const summary = document.createElement('div')
     summary.style.cssText = 'display: flex; align-items: center; gap: 6px;'
+
+    const checkbox = document.createElement('input')
+    checkbox.type = 'checkbox'
+    checkbox.checked = selectedIds.has(note.id)
+    checkbox.style.cssText = 'flex: 0 0 auto; margin: 0;'
+    checkbox.addEventListener('click', (e) => {
+      e.stopPropagation()
+    })
+    checkbox.addEventListener('change', () => {
+      if (checkbox.checked) selectedIds.add(note.id)
+      else selectedIds.delete(note.id)
+      renderBulkBar()
+    })
 
     const glyph = document.createElement('span')
     glyph.textContent = kindGlyph(note.kind)
@@ -354,7 +552,7 @@ export function createBrowseView(opts: BrowseViewOptions): BrowseViewHandle {
     statusEl.title = note.status ?? ''
     statusEl.style.cssText = 'flex: 0 0 auto;'
 
-    summary.append(glyph, idBadge, previewEl, statusEl)
+    summary.append(checkbox, glyph, idBadge, previewEl, statusEl)
     row.appendChild(summary)
 
     if (isExpanded) {
@@ -388,12 +586,36 @@ export function createBrowseView(opts: BrowseViewOptions): BrowseViewHandle {
   }
 
   async function hydrateExpansion(note: NoteSummary, expansion: HTMLElement): Promise<void> {
-    const [prose, history] = await Promise.all([
-      fetchNoteProse(note.id),
-      fetchStatusHistory(note.id),
-    ])
+    const [full, history] = await Promise.all([fetchNoteJson(note.id), fetchStatusHistory(note.id)])
+    const prose = full?.prose ?? ''
+    const frontmatter = full?.frontmatter ?? { kind: note.kind, author: note.author }
     expansion.innerHTML = ''
     expansion.setAttribute('data-llui-expansion', '')
+
+    // Screenshot preview (when the note carries one) — fetched lazily
+    // by the browser via the existing /_llui/notes/:id/screenshot
+    // endpoint. Click toggles a full-size lightbox.
+    if (frontmatter.screenshot && currentSessionId) {
+      const wrap = document.createElement('div')
+      wrap.style.cssText = 'display: flex; justify-content: center;'
+      const img = document.createElement('img')
+      img.src = `${origin}/_llui/notes/${note.id}/screenshot?sessionId=${encodeURIComponent(currentSessionId)}`
+      img.alt = 'screenshot'
+      img.style.cssText = [
+        'max-width: 100%',
+        'max-height: 200px',
+        'border: 1px solid var(--hud-border)',
+        'border-radius: 4px',
+        'cursor: zoom-in',
+        'background: var(--hud-surface)',
+      ].join('; ')
+      img.addEventListener('click', (e) => {
+        e.stopPropagation()
+        openLightbox(img.src)
+      })
+      wrap.appendChild(img)
+      expansion.appendChild(wrap)
+    }
 
     // Prose viewer (with inline edit toggle).
     const proseBox = document.createElement('div')
@@ -409,6 +631,15 @@ export function createBrowseView(opts: BrowseViewOptions): BrowseViewHandle {
       'overflow-y: auto',
     ].join('; ')
     proseBox.textContent = prose || '(no prose)'
+    expansion.appendChild(proseBox)
+
+    // Diff viewer — reply notes carry a `proposedDiff`. Render each
+    // file as a colored unified diff (red removed / green added).
+    // Inline Accept / Reject buttons drive the status transition for
+    // the ORIGINAL task note (replyTo).
+    if (frontmatter.proposedDiff && frontmatter.replyTo) {
+      expansion.appendChild(renderProposedDiff(frontmatter.replyTo, frontmatter.proposedDiff))
+    }
 
     // Status timeline.
     const timeline = document.createElement('div')
@@ -427,10 +658,24 @@ export function createBrowseView(opts: BrowseViewOptions): BrowseViewHandle {
     } else {
       timeline.textContent = 'no status transitions'
     }
+    expansion.appendChild(timeline)
 
-    // Action row: Edit / Delete.
+    // Action row: Re-solve (task notes only) · Edit · Delete.
     const actions = document.createElement('div')
     actions.style.cssText = 'display: flex; gap: 6px; justify-content: flex-end;'
+    if (frontmatter.intent === 'task') {
+      const resolveBtn = document.createElement('button')
+      resolveBtn.type = 'button'
+      resolveBtn.textContent = '↻ Re-solve'
+      resolveBtn.title =
+        'Submit a fresh task with this prose, chained off the previous conversation'
+      resolveBtn.style.cssText = btnStyle('secondary') + '; padding: 4px 10px; font-size: 11px;'
+      resolveBtn.addEventListener('click', (e) => {
+        e.stopPropagation()
+        void reSolveFrom(note, prose)
+      })
+      actions.appendChild(resolveBtn)
+    }
     const editBtn = document.createElement('button')
     editBtn.type = 'button'
     editBtn.textContent = 'Edit'
@@ -441,7 +686,7 @@ export function createBrowseView(opts: BrowseViewOptions): BrowseViewHandle {
     deleteBtn.style.cssText = btnStyle('ghost') + '; padding: 4px 10px; font-size: 11px;'
     actions.append(editBtn, deleteBtn)
 
-    expansion.append(proseBox, timeline, actions)
+    expansion.appendChild(actions)
 
     editBtn.addEventListener('click', (e) => {
       e.stopPropagation()
@@ -456,6 +701,207 @@ export function createBrowseView(opts: BrowseViewOptions): BrowseViewHandle {
         await fetchNotes()
       }
     })
+  }
+
+  /**
+   * Render a proposed-diff block: per-file colored unified diffs with
+   * inline Accept / Reject buttons that POST a status transition for
+   * the original task note (`taskId` == the reply's replyTo).
+   */
+  function renderProposedDiff(
+    taskId: string,
+    proposed: {
+      summary: string
+      confidence: string
+      files: Array<{ path: string; patch: string }>
+    },
+  ): HTMLElement {
+    const wrap = document.createElement('div')
+    wrap.style.cssText = [
+      'border: 1px solid var(--hud-border)',
+      'border-radius: 4px',
+      'overflow: hidden',
+    ].join('; ')
+
+    const head = document.createElement('div')
+    head.style.cssText = [
+      'padding: 6px 8px',
+      'font-size: 11px',
+      'background: var(--hud-surface)',
+      'color: var(--hud-fg-muted)',
+      'display: flex',
+      'align-items: center',
+      'gap: 6px',
+    ].join('; ')
+    const headTitle = document.createElement('span')
+    headTitle.textContent = `Proposed (${proposed.confidence}) — ${proposed.summary}`
+    headTitle.style.cssText = 'flex: 1; color: var(--hud-fg);'
+    const acceptBtn = document.createElement('button')
+    acceptBtn.type = 'button'
+    acceptBtn.textContent = 'Accept'
+    acceptBtn.style.cssText = btnStyle('primary') + '; padding: 3px 8px; font-size: 10px;'
+    const rejectBtn = document.createElement('button')
+    rejectBtn.type = 'button'
+    rejectBtn.textContent = 'Reject'
+    rejectBtn.style.cssText = btnStyle('ghost') + '; padding: 3px 8px; font-size: 10px;'
+    head.append(headTitle, acceptBtn, rejectBtn)
+    wrap.appendChild(head)
+
+    for (const file of proposed.files) {
+      const fileWrap = document.createElement('div')
+      fileWrap.style.cssText = 'border-top: 1px solid var(--hud-border);'
+      const filePath = document.createElement('div')
+      filePath.textContent = file.path
+      filePath.style.cssText = [
+        'padding: 4px 8px',
+        'font-family: ui-monospace, SFMono-Regular, monospace',
+        'font-size: 10px',
+        'background: var(--hud-surface)',
+        'color: var(--hud-fg-muted)',
+      ].join('; ')
+      fileWrap.appendChild(filePath)
+      const pre = document.createElement('pre')
+      pre.style.cssText = [
+        'margin: 0',
+        'padding: 6px 8px',
+        'font-family: ui-monospace, SFMono-Regular, monospace',
+        'font-size: 10px',
+        'line-height: 1.4',
+        'overflow-x: auto',
+        'max-height: 220px',
+        'overflow-y: auto',
+        'background: var(--hud-bg)',
+      ].join('; ')
+      for (const line of file.patch.split('\n')) {
+        const lineEl = document.createElement('div')
+        lineEl.textContent = line
+        if (line.startsWith('+') && !line.startsWith('+++')) {
+          lineEl.style.cssText = 'background: rgba(22, 163, 74, 0.10); color: #15803d;'
+        } else if (line.startsWith('-') && !line.startsWith('---')) {
+          lineEl.style.cssText = 'background: rgba(239, 68, 68, 0.10); color: #b91c1c;'
+        } else if (line.startsWith('@@')) {
+          lineEl.style.cssText = 'color: var(--hud-fg-subtle);'
+        }
+        pre.appendChild(lineEl)
+      }
+      fileWrap.appendChild(pre)
+      wrap.appendChild(fileWrap)
+    }
+
+    const post = async (to: 'accepted' | 'rejected'): Promise<void> => {
+      if (!currentSessionId) return
+      try {
+        const res = await fetch(
+          `${origin}/_llui/notes/${taskId}/status?sessionId=${encodeURIComponent(currentSessionId)}`,
+          {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ to, by: 'human' }),
+          },
+        )
+        if (!res.ok) reportError(`${to} failed (${res.status})`)
+      } catch (err) {
+        reportError(`${to} failed: ${err instanceof Error ? err.message : String(err)}`)
+      }
+    }
+    acceptBtn.addEventListener('click', (e) => {
+      e.stopPropagation()
+      void post('accepted')
+    })
+    rejectBtn.addEventListener('click', (e) => {
+      e.stopPropagation()
+      void post('rejected')
+    })
+
+    return wrap
+  }
+
+  /**
+   * Full-size screenshot overlay. Click anywhere or press Esc to dismiss.
+   */
+  function openLightbox(src: string): void {
+    const overlay = document.createElement('div')
+    overlay.style.cssText = [
+      'position: fixed',
+      'inset: 0',
+      'background: rgba(0, 0, 0, 0.8)',
+      'z-index: 2147483647',
+      'display: flex',
+      'align-items: center',
+      'justify-content: center',
+      'cursor: zoom-out',
+      'padding: 32px',
+    ].join('; ')
+    const big = document.createElement('img')
+    big.src = src
+    big.style.cssText =
+      'max-width: 100%; max-height: 100%; box-shadow: 0 20px 60px rgba(0,0,0,0.6);'
+    overlay.appendChild(big)
+    document.body.appendChild(overlay)
+    const dismiss = (): void => {
+      overlay.remove()
+      document.removeEventListener('keydown', onKey)
+    }
+    overlay.addEventListener('click', dismiss)
+    const onKey = (e: KeyboardEvent): void => {
+      if (e.key === 'Escape') dismiss()
+    }
+    document.addEventListener('keydown', onKey)
+  }
+
+  /**
+   * Submit a fresh task that re-uses the prose of an existing task
+   * note. Resume defaults to true so the new spawn picks up the
+   * conversation where the previous one left off.
+   */
+  async function reSolveFrom(_note: NoteSummary, prose: string): Promise<void> {
+    if (!prose.trim()) {
+      reportError('cannot re-solve a task with empty prose')
+      return
+    }
+    try {
+      // Minimal frontmatter — the server backfills id + ts and the
+      // router only reads intent/resume/url/route etc. We don't have
+      // the full original frontmatter here (the JSON endpoint returns
+      // it but we don't need ALL fields for a re-solve).
+      const body = {
+        body: prose,
+        frontmatter: {
+          author: 'human',
+          kind: 'text',
+          captureLevel: 'standard',
+          url: typeof location !== 'undefined' ? location.href : '',
+          route: null,
+          routeParams: {},
+          viewport: {
+            w: typeof window !== 'undefined' ? window.innerWidth : 0,
+            h: typeof window !== 'undefined' ? window.innerHeight : 0,
+            dpr: typeof window !== 'undefined' ? window.devicePixelRatio || 1 : 1,
+          },
+          componentPath: null,
+          componentMeta: null,
+          annotations: [],
+          screenshot: null,
+          agentSchemas: [],
+          llui: { runtime: 'unknown', compiler: 'unknown' },
+          intent: 'task',
+          resume: true,
+        },
+        noteBody: {},
+      }
+      const res = await fetch(`${origin}/_llui/notes`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(body),
+      })
+      if (!res.ok) {
+        reportError(`re-solve failed (${res.status})`)
+        return
+      }
+      void doRefresh()
+    } catch (err) {
+      reportError(`re-solve failed: ${err instanceof Error ? err.message : String(err)}`)
+    }
   }
 
   function enterEditMode(note: NoteSummary, expansion: HTMLElement, currentProse: string): void {
@@ -502,10 +948,67 @@ export function createBrowseView(opts: BrowseViewOptions): BrowseViewHandle {
   sessionSelect.addEventListener('change', () => {
     currentSessionId = sessionSelect.value
     expandedNoteId = null
+    selectedIds.clear()
+    noteCache.clear()
     void fetchNotes()
   })
   refreshBtn.addEventListener('click', () => {
     void doRefresh()
+  })
+
+  // Filter wiring — every change re-renders from the in-memory list,
+  // no server round-trip.
+  kindFilter.addEventListener('change', () => {
+    filters.kind = kindFilter.value as BrowseFilters['kind']
+    renderNotes()
+  })
+  authorFilter.addEventListener('change', () => {
+    filters.author = authorFilter.value as BrowseFilters['author']
+    renderNotes()
+  })
+  statusFilter.addEventListener('change', () => {
+    filters.status = statusFilter.value as BrowseFilters['status']
+    renderNotes()
+  })
+  searchInput.addEventListener('input', () => {
+    if (searchDebounceTimer) clearTimeout(searchDebounceTimer)
+    searchDebounceTimer = setTimeout(() => {
+      searchDebounceTimer = null
+      filters.text = searchInput.value
+      renderNotes()
+    }, 120)
+  })
+
+  // Bulk actions.
+  bulkClearBtn.addEventListener('click', () => {
+    selectedIds.clear()
+    renderNotes()
+  })
+  bulkDeleteBtn.addEventListener('click', async () => {
+    const ids = [...selectedIds]
+    if (ids.length === 0) return
+    if (!confirm(`Delete ${ids.length} note(s)? This cannot be undone.`)) return
+    const results = await Promise.all(ids.map((id) => deleteNote(id)))
+    selectedIds.clear()
+    if (results.some((ok) => !ok)) reportError('one or more deletes failed')
+    await fetchNotes()
+  })
+  bulkWontfixBtn.addEventListener('click', async () => {
+    const ids = [...selectedIds]
+    if (ids.length === 0 || !currentSessionId) return
+    if (!confirm(`Mark ${ids.length} task(s) as wontfix?`)) return
+    const sid = currentSessionId
+    await Promise.all(
+      ids.map((id) =>
+        fetch(`${origin}/_llui/notes/${id}/status?sessionId=${encodeURIComponent(sid)}`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ to: 'wontfix', by: 'human' }),
+        }).catch(() => null),
+      ),
+    )
+    selectedIds.clear()
+    await fetchNotes()
   })
 
   function doRefresh(): Promise<void> {

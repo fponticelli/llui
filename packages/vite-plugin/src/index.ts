@@ -449,6 +449,22 @@ export interface HudInjectionConfig {
   /** Mount the HUD without rendering the floating button. The
    *  keyboard shortcut + programmatic API still work. */
   hidden?: boolean
+  /** When `true` (default), the HUD installs `window.onerror` +
+   *  `unhandledrejection` listeners. On an uncaught error it opens
+   *  the modal pre-populated with the stack + a screenshot — turns
+   *  "I saw something weird but can't reproduce it" into a
+   *  one-click solve. Set `false` to opt out of the listeners
+   *  entirely. */
+  autoCaptureOnError?: boolean
+  /** When `true` (default), the HUD shows a "● Record" toggle that
+   *  captures clicks/inputs/route-changes/messages between toggle-on
+   *  and submit, attaching them to the note for the LLM to replay.
+   *  Set `false` to hide the toggle and skip the listener setup. */
+  repro?: boolean
+  /** When `true` (default), the HUD exposes the "⌖ Pick element"
+   *  annotation mode alongside "⌖ Add region". Set `false` to hide
+   *  the picker affordance. */
+  elementPick?: boolean
 }
 
 /**
@@ -998,6 +1014,11 @@ export default function llui(options: LluiPluginOptions = {}): Plugin {
             hudOptionsJson = JSON.stringify({
               ...(forwarded.hidden ? { hidden: true } : {}),
               solveEnabled,
+              // Opt-in features default ON; only forward an explicit
+              // `false` so the bootstrap stays compact.
+              ...(forwarded.autoCaptureOnError === false ? { autoCaptureOnError: false } : {}),
+              ...(forwarded.repro === false ? { repro: false } : {}),
+              ...(forwarded.elementPick === false ? { elementPick: false } : {}),
             })
           } else {
             process.stderr.write(

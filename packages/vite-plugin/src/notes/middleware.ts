@@ -335,6 +335,12 @@ export function createNotesMiddleware(config: NotesMiddlewareConfig): Middleware
       if (method === 'GET') {
         try {
           const note = readNote(notesRoot, sessionId, id)
+          // `?format=json` returns the parsed SerializedNote (with
+          // frontmatter + prose + body). Used by the in-app browse view
+          // so it doesn't have to re-parse YAML/markdown client-side.
+          if (parseQuery(url).get('format') === 'json') {
+            return sendJson(res, 200, note)
+          }
           const md = serializeNote(note)
           return sendText(res, 200, 'text/markdown; charset=utf-8', md)
         } catch (err) {

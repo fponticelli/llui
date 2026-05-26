@@ -63,6 +63,17 @@ export interface MountAnnotateOptions {
    *  task with no worker behind it. Notes can still be saved.
    *  Default `true`. */
   solveEnabled?: boolean
+  /** Install `window.onerror` + `unhandledrejection` listeners. On
+   *  an unhandled exception, the HUD opens pre-populated with the
+   *  stack + auto-captured screenshot so the user can submit a one-
+   *  click solve request. Default `true`. */
+  autoCaptureOnError?: boolean
+  /** Show the "● Record" toggle in the compose view (repro recorder).
+   *  Default `true`. */
+  repro?: boolean
+  /** Show the "⌖ Pick element" annotation pill alongside Add region.
+   *  Default `true`. */
+  elementPick?: boolean
 }
 
 export interface AnnotateHudHandle {
@@ -833,6 +844,8 @@ export function mountAnnotateHud(opts: MountAnnotateOptions = {}): AnnotateHudHa
     document.removeEventListener('keydown', onKey)
     if (typeof window !== 'undefined') {
       window.removeEventListener('resize', onResize)
+      window.removeEventListener('error', onWindowError)
+      window.removeEventListener('unhandledrejection', onUnhandledRejection)
     }
     eventSource?.close()
     if (activeOverlayDismiss) {
@@ -1563,6 +1576,55 @@ export function mountAnnotateHud(opts: MountAnnotateOptions = {}): AnnotateHudHa
     }
   }
   document.addEventListener('keydown', onKey)
+
+  // ── Auto-capture on uncaught error ─────────────────────────────
+  // window.onerror + unhandledrejection fire for synchronous and
+  // promise-rejection errors respectively. We open the HUD with a
+  // prefilled prose + skip re-opening on duplicate same-error events
+  // within a short window so a chatty React effect doesn't spam.
+  const autoCaptureEnabled = opts.autoCaptureOnError !== false
+  let lastAutoCaptureAt = 0
+  const fillFromError = (label: string, message: string, stack: string | undefined): void => {
+    // 5s debounce per HUD instance — multiple synchronous error
+    // events with the same source map to one auto-capture.
+    const now = Date.now()
+    if (now - lastAutoCaptureAt < 5000) return
+    lastAutoCaptureAt = now
+    const lines = [
+      `**Auto-captured ${label}**`,
+      '',
+      '```',
+      message,
+      ...(stack ? [stack.split('\n').slice(0, 8).join('\n')] : []),
+      '```',
+      '',
+      'What was happening when this fired?',
+    ]
+    textarea.value = lines.join('\n')
+    open()
+    // Place caret at the end so the user can continue typing.
+    textarea.setSelectionRange(textarea.value.length, textarea.value.length)
+  }
+  const onWindowError = (e: ErrorEvent): void => {
+    if (!autoCaptureEnabled) return
+    fillFromError('error', e.message || String(e.error), e.error?.stack)
+  }
+  const onUnhandledRejection = (e: PromiseRejectionEvent): void => {
+    if (!autoCaptureEnabled) return
+    const reason = e.reason
+    const message =
+      reason instanceof Error
+        ? reason.message
+        : typeof reason === 'string'
+          ? reason
+          : String(reason)
+    const stack = reason instanceof Error ? reason.stack : undefined
+    fillFromError('unhandled rejection', message, stack)
+  }
+  if (autoCaptureEnabled && typeof window !== 'undefined') {
+    window.addEventListener('error', onWindowError)
+    window.addEventListener('unhandledrejection', onUnhandledRejection)
+  }
 
   const handle: AnnotateHudHandle = {
     open,
