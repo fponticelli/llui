@@ -11,6 +11,20 @@ All notable changes to LLui packages are documented here. LLui is a pre-1.0 proj
 
 Packages version in lockstep at release time: `@llui/dom`, `@llui/vite-plugin`, `@llui/test`, `@llui/router`, `@llui/transitions`, `@llui/components`, `@llui/vike` share a version line. `@llui/effects`, `@llui/mcp`, `@llui/eslint-plugin`, `@llui/agent`, and `llui-agent` have their own cadence.
 
+## 2026-05-27 — @llui/compiler@0.5.12
+
+**Released:** `@llui/{compiler,compiler-devtools,compiler-introspection,compiler-ssr}@0.5.12`; `@llui/vite-plugin@0.5.13`; `@llui/mcp@0.5.15`
+
+dicerun 2026-05-27 follow-up: the `track({ deps: (s) => [...] })` suppression introduced in 0.5.11 worked when the outer accessor was `() => { ... }` but NOT when it was `(s: PS) => { ... }`. Root cause was a missing scope check in the file-local and cross-file walkers — both matched by IDENTIFIER NAME against the outer accessor's `stateParam` without respecting lexical shadowing. A nested `track({ deps: (s) => [opts.X(s)] })` whose inner parameter also named `s` had its inner reads mis-attributed to the outer state.
+
+### `@llui/compiler@0.5.12`
+
+- **Fixed** `detectOpaqueStateFlow`, `extractPaths` (both in `collect-deps.ts`), and `walkAccessorBody` (in `cross-file-walker.ts`) now skip descent into nested function expressions / arrows / function declarations whose parameter binding shadows the outer `stateParam`. The shadowing was previously invisible to all three walkers; an inner `opts.X(s)` flowed up to flag the outer state as if it were the outer's `s`. Net effect: the `track` recipe in cookbook.md no longer requires renaming the inner parameter for correctness — though renaming remains a sensible defensive style for readability. Helper `shadowsStateParam` (file-local walker) handles identifier params and simple destructured/array patterns; the cross-file walker has the equivalent check inlined.
+
+### `@llui/{compiler-devtools,compiler-introspection,compiler-ssr}@0.5.12` · `@llui/vite-plugin@0.5.13` · `@llui/mcp@0.5.15`
+
+- **Improved** Cascade republish for the bumped `@llui/compiler` workspace dep.
+
 ## 2026-05-27 — 0.4.10 / 0.5.11
 
 **Released:** `@llui/{dom,components,router,transitions,vike,test,agent}@0.4.10`; `llui-agent@0.4.10`; `@llui/{compiler,compiler-devtools,compiler-introspection,compiler-ssr}@0.5.11`; `@llui/vite-plugin@0.5.12`; `@llui/mcp@0.5.14`
