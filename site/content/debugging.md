@@ -193,6 +193,71 @@ non-bypassable.
 See the [`@llui/compiler` API reference](/api/compiler) for the full
 rule list.
 
+## Reading compiler diagnostics
+
+The `@llui/vite-plugin` surfaces compiler diagnostics through Rollup's
+warning channel (and `this.error()` for severity `error`). In
+`vite build` output each line is formatted as:
+
+```
+[plugin llui] [<rule-id>] <relfile>:<line>: <message body>
+```
+
+The `<relfile>:<line>:` prefix is embedded in the message body
+itself, so it survives reporters that drop the structured `loc`
+field (Rolldown's build reporter does, most do in non-dev mode).
+Click-through in iTerm, jump-to-line in IDE problem panels, and
+`grep` are all viable.
+
+### `llui/opaque-accessor-file-wide-mask` (warning, `category: perf`)
+
+The most common perf warning. Fires when an accessor flows state
+into an expression the compiler can't trace — typically:
+
+- `host.fn(s, …)` — method call with state as an argument
+- `s[expr]` — dynamic element access (non-literal key)
+- `{...s}` / `[...s]` — state spread
+- `helper(s)` where `helper` is imported and unresolvable
+
+When this fires, the runtime stays correct but the component falls
+back to a whole-state sentinel in `__prefixes`: every binding in
+the file re-evaluates on every state change, regardless of which
+field actually changed. Performance drops smoothly; nothing
+crashes.
+
+The message is tagged:
+
+- `[file-local]` — the offending accessor is in this file, at the
+  reported line. Inline same-module helpers, or wrap the call with
+  [`track({ deps })`](#) as shown in the
+  [cookbook's opaque-flow recipe](./cookbook.md#helpers-that-read-state-avoid-the-opaque-flow-trap).
+- `[cross-file]` — the file's opacity was detected by the
+  cross-file walker following an import. The reported line is the
+  focal-file accessor that triggered the cross-file walk into an
+  unanalyzable helper. Same fixes apply.
+
+Two warnings for the same file at different lines means two
+distinct opaque accessors; fix them one at a time. The
+`(code, file, line)` triple is what Rollup uses to dedupe — if
+you see N identical messages for the same file/line that's a
+framework bug, please report it.
+
+### `llui/opaque-state-flow` (error, `category: correctness`)
+
+Stricter variant. Fires for state-leak shapes the framework
+treats as user errors (dynamic key access in particular). Fails
+the build. Fix: replace the dynamic key with a literal property,
+or declare the read via `track({ deps })`.
+
+### Other rules
+
+41 idiomatic-code rules fire as build errors. The full list lives
+in [`@llui/compiler` API reference](/api/compiler). When one fires
+the message contains the rule id, the offending location, and a
+remediation hint — usually one of: rename a binding, hoist a
+declaration, switch to a documented composition primitive, or
+extract a same-module function.
+
 ## Trace export and replay
 
 Every dispatched message and resulting state is recorded. Export a trace

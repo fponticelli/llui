@@ -28,6 +28,163 @@ view: ({ send }) => [
 ]
 ```
 
+**The contract**: a reactive `value:` binding is **controlled** — the
+framework writes whatever the accessor returns to `el.value` on every
+commit where the result differs from what it last wrote. Keep state in
+sync via `onInput` (as above), and the accessor's return value always
+matches what the user has typed.
+
+This works cleanly when `state.name` is initialised synchronously and
+only changes in response to `setName`. If `state.name` can load
+asynchronously — e.g., after a network round-trip — see the next
+recipe.
+
+### Form editing when the persisted value loads asynchronously
+
+Mounting a form before its data has loaded sets up a race: the
+accessor returns `''` (or a default), the user starts typing, then
+the data Msg arrives and the framework writes the loaded value into
+`el.value` — destroying the typed text.
+
+This is the standard controlled-input contract (same as React, Vue,
+Solid). The fix is to **model the in-progress edit explicitly** and
+read it from the accessor whenever it's set, falling back to the
+persisted value only when the field is clean.
+
+```typescript
+type State = {
+  // Persisted slot — populated by load Msg, updated on save.
+  persisted: { name: string } | undefined
+  // Edit buffer — keyed so the form can edit multiple fields.
+  // `undefined` means "field is clean, show the persisted value."
+  edits: { [field: string]: string | undefined }
+}
+
+type Msg =
+  | { type: 'load'; data: { name: string } }
+  | { type: 'edit'; field: string; value: string }
+  | { type: 'save' }
+  | { type: 'discard' }
+
+const update = (s: State, msg: Msg): [State, Effect[]] => {
+  switch (msg.type) {
+    case 'load':
+      return [{ ...s, persisted: msg.data }, []]
+    case 'edit':
+      return [{ ...s, edits: { ...s.edits, [msg.field]: msg.value } }, []]
+    case 'save':
+      // Commit the edit buffer into the persisted slot, then clear it.
+      const merged = { ...s.persisted, ...s.edits } as { name: string }
+      return [{ persisted: merged, edits: {} }, []]
+    case 'discard':
+      return [{ ...s, edits: {} }, []]
+  }
+}
+
+view: ({ send }) => [
+  input({
+    type: 'text',
+    // Read the in-progress edit if present; otherwise the persisted
+    // value; otherwise empty.
+    value: (s: State) => s.edits.name ?? s.persisted?.name ?? '',
+    onInput: (e: Event) =>
+      send({ type: 'edit', field: 'name', value: (e.target as HTMLInputElement).value }),
+  }),
+]
+```
+
+Why this works:
+
+- **Load races resolved.** While `edits.name` is set, the accessor
+  returns the typed text regardless of what arrives in `persisted`.
+  A late ACK can't overwrite typed input.
+- **Form reset works.** `discard` clears the edit buffer; the
+  accessor falls back to `persisted` on the next commit; the input
+  shows the canonical server value.
+- **Validation correction works.** Server normalises input on save;
+  the `save` Msg replaces `persisted` and clears `edits`; the
+  binding reflects the canonical form on the next commit.
+- **Optimistic updates work.** Show the typed value while a save is
+  in flight (`edits.name`), revert on error by clearing the entry
+  in `edits`.
+- **Multi-field forms work.** Add fields to `edits` as needed; the
+  pattern is the same per field.
+
+**Anti-pattern**: binding `value:` directly to deep state that can
+load or change underfoot, without an edit buffer:
+
+```typescript
+// Fragile — typed text is destroyed when persisted state arrives or
+// changes (load race, peer edit in collaborative app, validation
+// correction).
+input({
+  value: (s) => s.entities[id]?.facts.name ?? '',
+  onInput: ...
+})
+```
+
+The fix is to route the edit through an explicit buffer in state, as
+above.
+
+#### Variation: optimistic save with server-side validation
+
+The same buffer handles optimistic saves where the server can
+reject or normalise the edit:
+
+```typescript
+type Msg =
+  | { type: 'edit'; field: string; value: string }
+  | { type: 'save'; field: string }
+  | { type: 'saveOk'; field: string; canonical: string }
+  | { type: 'saveErr'; field: string; reason: string }
+
+const update = (s: State, msg: Msg): [State, Effect[]] => {
+  switch (msg.type) {
+    case 'save': {
+      // Send to server. Keep the edit buffer set so the user still
+      // sees their typed value while the request is in flight.
+      const value = s.edits[msg.field]
+      if (value === undefined) return [s, []]
+      return [
+        s,
+        [
+          http.post(
+            `/save/${msg.field}`,
+            { value },
+            {
+              onOk: (canonical: string) => ({ type: 'saveOk', field: msg.field, canonical }),
+              onErr: (reason: string) => ({ type: 'saveErr', field: msg.field, reason }),
+            },
+          ),
+        ],
+      ]
+    }
+    case 'saveOk': {
+      // Server accepted (possibly normalised). Write the canonical
+      // value into persisted, clear the edit buffer so the binding
+      // falls back to persisted on the next commit.
+      return [
+        {
+          persisted: { ...s.persisted!, [msg.field]: msg.canonical },
+          edits: { ...s.edits, [msg.field]: undefined },
+        },
+        [],
+      ]
+    }
+    case 'saveErr': {
+      // Keep the edit buffer set so the user can fix and retry.
+      // Surface the error elsewhere in state.
+      return [{ ...s, errors: { ...s.errors, [msg.field]: msg.reason } }, []]
+    }
+    // ... 'edit' as before
+  }
+}
+```
+
+The accessor stays the same — `s.edits.name ?? s.persisted?.name ?? ''`.
+The Msg flow handles the variants. Each transition leaves the
+binding in a consistent state without overwriting user input.
+
 ### Form Submission
 
 ```typescript
@@ -238,6 +395,103 @@ view: ({ send }) =>
 
 `Props<T, S>` maps `{ tools: Tool[] }` to `{ tools: (s: S) => Tool[] }` -- making the
 reactive-accessor contract explicit and type-enforced.
+
+### Helpers that read state: avoid the opaque-flow trap
+
+When you write a helper that derives a value from state, **prefer
+same-module function/const declarations over method calls on imported
+objects**. The compiler's accessor walker can resolve calls to
+local declarations (and follow them to compute precise masks). It
+cannot resolve method dispatch through an imported host object —
+that path is opaque, flips the file to `hasOpaqueAccessor = true`,
+and degrades every binding in the component to FULL_MASK (fires on
+every state change, not just relevant ones).
+
+**Anti-pattern**:
+
+```typescript
+// host.ts
+export const host = {
+  activeCalendar: (s: State) => s.calendars[s.activeId],
+  dirtyAt: (s: State, eid: string, pred: string) => s.entities[eid]?.dirty[pred],
+}
+
+// view.ts
+import { host } from './host.js'
+
+view: () => [
+  div({
+    // ↓↓ Both accessors flip the file to FULL_MASK: state flows into
+    // a method call (`host.activeCalendar(s)`, `host.dirtyAt(s, …)`).
+    // The compiler can't trace what `host.X` reads, so it bails.
+    title: (s) => host.activeCalendar(s)?.name ?? '',
+    class: (s) => (host.dirtyAt(s, eid, pred) ? 'dirty' : 'clean'),
+  }),
+]
+```
+
+The compile-time diagnostic `llui/opaque-accessor-file-wide-mask`
+fires for this and names the offending accessor's file and line.
+See [debugging.md → Reading compiler diagnostics](./debugging.md#reading-compiler-diagnostics)
+for how it surfaces in `vite build` output.
+
+**Fix — inline the helpers as same-module functions**:
+
+```typescript
+// view.ts (helpers and view in one module)
+function activeCalendar(s: State): Calendar | undefined {
+  return s.calendars[s.activeId]
+}
+function dirtyAt(s: State, eid: string, pred: string): boolean {
+  return s.entities[eid]?.dirty[pred] ?? false
+}
+
+view: () => [
+  div({
+    // ↓↓ Now precise — the walker follows the function bodies and
+    // sees `s.calendars`, `s.activeId`, `s.entities` as the reactive
+    // paths. Each binding's mask reflects exactly what it reads.
+    title: (s) => activeCalendar(s)?.name ?? '',
+    class: (s) => (dirtyAt(s, eid, pred) ? 'dirty' : 'clean'),
+  }),
+]
+```
+
+**Alternative — declare deps explicitly with `track()`** when the
+helper genuinely needs to live in another module or do something
+opaque:
+
+```typescript
+import { track } from '@llui/dom'
+import { host } from './host.js'
+
+view: () => [
+  div({
+    // `track({ deps })` tells the compiler exactly which paths the
+    // accessor reads. The opaque body is fine; the deps are explicit.
+    title: track({
+      deps: (s) => [s.calendars, s.activeId],
+      get: (s) => host.activeCalendar(s)?.name ?? '',
+    }),
+  }),
+]
+```
+
+Why same-module wins:
+
+- **Compile-time analysis sees the body.** The walker reads
+  `s.calendars` and `s.activeId` literally, assigns precise bits,
+  and the binding's mask reflects them.
+- **Refactoring stays cheap.** A new helper added to the module
+  joins the analysis automatically.
+- **No `track()` ceremony.** Deps stay implicit when the analyser
+  can derive them.
+
+Cross-file walker bonus (LLui ≥ 0.5.10): when a helper is a
+view-helper (returns `Node[]` or has `@llui-helper` tag), the
+walker follows the call across files automatically. The
+opaque-flow trap fires for arbitrary helpers (returning string /
+boolean / etc.), not for view-helpers.
 
 ### List of editable rows -- reactive cells over `each`
 
