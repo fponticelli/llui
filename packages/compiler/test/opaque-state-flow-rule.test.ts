@@ -602,4 +602,33 @@ describe('opaque-state-flow lint rule', () => {
     `)
     expect(diags).toEqual([])
   })
+
+  it('does NOT fire when a nested arrow shadows the outer state param', () => {
+    // Pre-fix the strict rule (severity: error, fails the build) had
+    // the same shadow-blind walker as the file-wide-mask warning. An
+    // inner (s) => host.fn(s) whose s shadows the outer accessor's
+    // s got mis-attributed to outer state and flagged. Same fix
+    // (skip-on-shadow) applied to this rule's walker.
+    const diags = diagsFor(`
+      import { component, div } from '@llui/dom'
+      const host = { fn: (_s: { a: number }) => 0 }
+      const App = component({
+        name: 'X',
+        init: () => [{ a: 0 }, []],
+        update: (s) => [s, []],
+        view: () => [
+          div({
+            // Outer (s) reads s.a. Inner closure shadows s with its
+            // own s and does an opaque read against ITS s, not the
+            // outer's. The strict rule must NOT fire.
+            'data-x': (s: { a: number }) => {
+              const inner = (s: { a: number }) => host.fn(s)
+              return String(inner({ a: s.a }))
+            },
+          }),
+        ],
+      })
+    `)
+    expect(diags).toEqual([])
+  })
 })

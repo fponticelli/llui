@@ -39,7 +39,7 @@
 import ts from 'typescript'
 import { rangeFromOffsets } from '../diagnostic.js'
 import type { CompilerModule } from '../module.js'
-import { isReactiveAccessor } from '../collect-deps.js'
+import { isReactiveAccessor, shadowsStateParam } from '../collect-deps.js'
 import { resolveAccessorBody } from '../accessor-resolver.js'
 
 // Mirrors the file-local list in collect-deps.ts. Calls to these
@@ -66,6 +66,23 @@ function findFirstLeakInAccessor(
   let leak: LeakSite | null = null
   const visit = (node: ts.Node): void => {
     if (leak) return
+    // Stop descending into nested functions whose parameter shadows
+    // `stateParam`. Pre-fix this rule fired a HARD ERROR (severity:
+    // error, fails the build) when an outer `(s) =>` contained an
+    // inner arrow with a parameter also named `s` that did anything
+    // opaque inside. The shadow was invisible to the walker, so the
+    // inner reads got attributed to the outer state. With shadow-
+    // aware skipping, the inner binding is correctly treated as a
+    // separate scope. Same fix shape as `collect-deps.ts` /
+    // `transform.ts:computeAccessorMask`.
+    if (
+      (ts.isArrowFunction(node) ||
+        ts.isFunctionExpression(node) ||
+        ts.isFunctionDeclaration(node)) &&
+      shadowsStateParam(node.parameters, stateParam)
+    ) {
+      return
+    }
     if (ts.isIdentifier(node) && node.text === stateParam) {
       const parent = node.parent
       if (!parent || ts.isParameter(parent)) {

@@ -114,4 +114,70 @@ describe('computeAccessorMask — conservative fallback paths return FULL_MASK o
     expect(result.maskHi).toBe(1 << 4)
     expect(result.readsState).toBe(true)
   })
+
+  // ────────────────── Variable-shadowing in nested arrows ─────────────────
+  //
+  // The walker descends through the accessor body matching identifiers
+  // by name. When a nested arrow's parameter shadows the outer
+  // stateParam, inner references must NOT be counted as outer-state
+  // reads. Pre-fix the walker mis-attributed them, producing false
+  // FULL_MASK fallbacks (over-firing) for any binding that contained
+  // an inner arrow re-using `s`. Most common consumer surface: the
+  // `track({ deps: (s) => [...] })` callback in a `(s) => { ... }`
+  // outer accessor.
+
+  it('inner arrow with shadowed param does NOT contribute its reads to the outer mask', () => {
+    // Outer `(s)` reads `s.foo`. Inner `(s)` reads `s.bar`. Because
+    // the inner s shadows, `bar` is NOT a read of the OUTER state.
+    // Pre-fix the outer mask would include both `foo` AND `bar`.
+    const fieldBits = new Map<string, number>([
+      ['foo', 1 << 0],
+      ['bar', 1 << 1],
+    ])
+    const arrow = arrowFromSrc('((s: { foo: number }) => { [1].map((s) => s.bar); return s.foo })')
+    const result = computeAccessorMask(arrow, fieldBits, undefined, new Map())
+    // Only `foo` (bit 0). NOT `bar` (bit 1) — that read was inside a
+    // shadowing arrow and refers to a different `s`.
+    expect(result.mask).toBe(1 << 0)
+    expect(result.readsState).toBe(true)
+  })
+
+  it('inner arrow with shadowed param does NOT trigger opaque-flow against outer state', () => {
+    // The harder case: the inner arrow's body has a shape that LOOKS
+    // opaque against the outer `s` (method-call with `s` as arg). With
+    // shadow-blindness, the walker flagged the entire outer accessor
+    // as opaque; with shadow-awareness, the inner s is correctly
+    // recognised as a separate binding.
+    const arrow = arrowFromSrc(
+      `((s: { foo: number }) => {
+        const host = { fn: (_x: { foo: number }) => 0 }
+        const inner = (s: { foo: number }) => host.fn(s)
+        return inner({ foo: s.foo })
+      })`,
+    )
+    const fieldBits = new Map<string, number>([['foo', 1 << 0]])
+    const result = computeAccessorMask(arrow, fieldBits, undefined, new Map())
+    // Outer accessor itself reads `s.foo` directly — that's mask bit 0,
+    // NOT FULL_MASK. Pre-fix the inner host.fn(s) call mis-attributed
+    // to outer state and flipped opaqueStateFlow → FULL_MASK.
+    expect(result.mask).toBe(1 << 0)
+    expect(result.readsState).toBe(true)
+  })
+
+  it('inner CLOSURE (no shadowing) does still contribute reads — closure case still works', () => {
+    // Counter-test: when the inner arrow's parameter has a DIFFERENT
+    // name, references to the outer `s` inside the closure should still
+    // be counted as outer reads. The fix must not over-skip — closures
+    // are a legitimate path.
+    const fieldBits = new Map<string, number>([
+      ['foo', 1 << 0],
+      ['bar', 1 << 1],
+    ])
+    const arrow = arrowFromSrc('((s: { foo: number; bar: number }) => [1].map((i) => s.bar + i))')
+    const result = computeAccessorMask(arrow, fieldBits, undefined, new Map())
+    // The inner `(i)` doesn't shadow `s`. The closure reads `s.bar` from
+    // the outer scope — that's a real outer-state read. Mask must include bit 1.
+    expect(result.mask).toBe(1 << 1)
+    expect(result.readsState).toBe(true)
+  })
 })

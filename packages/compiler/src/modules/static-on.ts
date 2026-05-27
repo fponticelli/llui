@@ -5,6 +5,7 @@
 
 import ts from 'typescript'
 import { rangeFromOffsets } from '../diagnostic.js'
+import { shadowsStateParam } from '../collect-deps.js'
 import type { CompilerModule } from '../module.js'
 
 function bodyMayRead(body: ts.Node): boolean {
@@ -29,6 +30,16 @@ function readsParam(body: ts.Node, paramName: string): boolean {
   let found = false
   const walk = (n: ts.Node): void => {
     if (found) return
+    // Skip nested functions whose param shadows `paramName` — the
+    // inner identifiers refer to the inner binding, not the outer
+    // accessor's param. Without this, `(s) => (s) => s.x` is wrongly
+    // classified as reading s even when the outer s isn't touched.
+    if (
+      (ts.isArrowFunction(n) || ts.isFunctionExpression(n) || ts.isFunctionDeclaration(n)) &&
+      shadowsStateParam(n.parameters, paramName)
+    ) {
+      return
+    }
     if (ts.isIdentifier(n) && n.text === paramName) {
       const parent = n.parent
       if (parent && ts.isParameter(parent) && parent.name === n) return

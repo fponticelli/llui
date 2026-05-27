@@ -19,6 +19,7 @@
 
 import ts from 'typescript'
 import type { CompilerModule } from '../module.js'
+import { shadowsStateParam } from '../collect-deps.js'
 import { isHelperCall } from '../transform.js'
 
 export interface RowFactoryModuleOptions {
@@ -543,6 +544,22 @@ function tryEmitRowFactory(
   // replace template var → r, strip positions via deep clone.
   function rewriteStmt(stmt: ts.Statement): ts.Statement {
     function visit(node: ts.Node): ts.Node {
+      // Skip nested functions whose param shadows `templateVarName`.
+      // Without this, a user-named template (e.g. `const tpl = elTemplate(...)`)
+      // paired with a render-body callback that reuses `tpl` as a
+      // parameter name would have the inner reference incorrectly
+      // rewritten to `r`. Defensive fix — unlikely in practice
+      // (template names are typically `__tpl{N}`) but the bug shape
+      // mirrors the other shadow-blind walkers fixed in this round.
+      if (
+        templateVarName &&
+        (ts.isArrowFunction(node) ||
+          ts.isFunctionExpression(node) ||
+          ts.isFunctionDeclaration(node)) &&
+        shadowsStateParam(node.parameters, templateVarName)
+      ) {
+        return node
+      }
       // Rewrite __a{N}() → __s{N}(e.current)
       if (
         ts.isCallExpression(node) &&

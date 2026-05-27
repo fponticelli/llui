@@ -1,5 +1,5 @@
 import ts from 'typescript'
-import { collectDeps } from './collect-deps.js'
+import { collectDeps, shadowsStateParam } from './collect-deps.js'
 import { resolveAccessorBody } from './accessor-resolver.js'
 import { extractMsgSchema, extractEffectSchema } from './msg-schema.js'
 import { extractMsgAnnotations } from './msg-annotations.js'
@@ -1830,7 +1830,24 @@ export function computeAccessorMask(
   // path extraction happens everywhere — inner-arrow callbacks like
   // `s.items.filter((i) => i.includes(s.filter))` close over our
   // state, and their `s.filter` reads contribute to the mask.
+  //
+  // Shadowing: when a nested function's parameter binding shadows
+  // `stateParam` (e.g. outer `(s) =>` containing inner `(s) =>`),
+  // identifiers inside it refer to the INNER binding. Skip those
+  // subtrees so they don't get mis-attributed to the outer state.
+  // The natural trigger is `track({ deps: (s) => [...] })` inside
+  // a `(s) => { ... }` outer — pre-fix the inner s reads flagged
+  // the outer opaque, leaving the user's documented escape hatch
+  // broken.
   function walk(node: ts.Node, inNestedFn: boolean): void {
+    if (
+      (ts.isArrowFunction(node) ||
+        ts.isFunctionExpression(node) ||
+        ts.isFunctionDeclaration(node)) &&
+      shadowsStateParam(node.parameters, stateParam)
+    ) {
+      return
+    }
     // `node.parent` can be undefined for synthetic nodes produced by
     // earlier AST-transform passes (the row-factory rewrite and the
     // per-item heuristic both build new sub-trees whose inner nodes

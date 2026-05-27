@@ -198,7 +198,7 @@ function extractAccessorPaths(
  * `track({ deps: (s) => [...] })` escape hatch when the outer
  * accessor is also `(s) => …`.
  */
-function shadowsStateParam(
+export function shadowsStateParam(
   parameters: ts.NodeArray<ts.ParameterDeclaration>,
   stateParam: string,
 ): boolean {
