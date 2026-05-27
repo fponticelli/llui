@@ -38,6 +38,34 @@ import { useContext, type Context } from './primitives/context.js'
  */
 export interface View<S, M> {
   send: Send<M>
+  /**
+   * Read the current state snapshot from anywhere a `View<S, M>` is
+   * in scope — event handlers, async callbacks, timers, post-mount
+   * adapter code. Mirrors `AppHandle.getState()` but available inside
+   * the view function's closure, where the handle isn't.
+   *
+   * The render-time read is `sample()` (or just `(s) => …` accessors
+   * passed to primitives). `getState()` is the sanctioned escape
+   * hatch for "I need to know the current state to decide what to
+   * dispatch" — the typical shape:
+   *
+   * ```ts
+   * view: (h) => [
+   *   button({
+   *     onClick: () => {
+   *       const s = h.getState()
+   *       h.send({ type: 'save', payload: derive(s) })
+   *     },
+   *   }, [text('Save')]),
+   * ]
+   * ```
+   *
+   * Calling `getState()` inside a reactive accessor (`(s) => …`) is
+   * unnecessary — the accessor already receives the live state as
+   * its argument. Using `getState()` there bypasses the bitmask
+   * tracking and degrades the binding to FULL_MASK.
+   */
+  getState(): S
   show(opts: ShowOptions<S, M>): Node[]
   branch<K extends string = string>(opts: BranchOptions<S, M, K>): Node[]
   scope(opts: ScopeOptions<S, M>): Node[]
@@ -87,9 +115,21 @@ export interface View<S, M> {
  * Create a `View<S, M>` bundle for a component's `view` callback.
  * Delegates straight to the underlying primitives — zero per-call overhead.
  */
-export function createView<S, M>(send: Send<M>): View<S, M> {
+export function createView<S, M>(send: Send<M>, getState?: () => S): View<S, M> {
   return {
     send,
+    // When a `getState` thunk is supplied (the mounted-instance path
+    // via `getInstanceViewBag`), wire it directly. When omitted
+    // (rare: hand-rolled defs constructed without an instance), throw
+    // a focused error rather than silently returning `undefined`.
+    getState:
+      getState ??
+      (() => {
+        throw new Error(
+          '[LLui] h.getState() called from a View bag that has no associated component instance — ' +
+            'pass `getState` to `createView()`, or use `AppHandle.getState()` instead.',
+        )
+      }),
     show: (opts) => _show<S, M>(opts),
     branch: <K extends string>(opts: BranchOptions<S, M, K>) => _branch<S, M, K>(opts),
     scope: (opts) => _scope<S, M>(opts),

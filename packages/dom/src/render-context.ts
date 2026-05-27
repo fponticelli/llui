@@ -120,8 +120,15 @@ export function getInstanceViewBag<S, M>(
           `fallback.`,
       )
     }
-    bag = createView<S, M>(send)
+    bag = createView<S, M>(send, () => inst.state as S)
   }
+  // The compiler-emitted factory `($send) => createView($send)` doesn't
+  // know about getState (older shape). Bind it post-construction so
+  // every bag has a working `getState()` regardless of how it was
+  // built. Closure over `inst` means each call reads the latest
+  // `inst.state` — safe to use from event handlers and async
+  // callbacks that fire after construction.
+  ;(bag as { getState: () => S }).getState = () => inst.state as S
   inst._viewBag = bag
   return bag
 }

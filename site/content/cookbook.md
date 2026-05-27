@@ -325,6 +325,143 @@ case 'loadUser':
   ]]
 ```
 
+### Reading current state from event handlers with `h.getState()`
+
+Event handlers fire outside the render context — there's no `s`
+argument, and `sample()` throws because the active render scope
+is gone. When a handler needs the current state to decide what to
+dispatch (e.g. compute a submit payload at click time), use
+`h.getState()`:
+
+```typescript
+view: (h: View<State, Msg>) => [
+  button(
+    {
+      onClick: () => {
+        const s = h.getState()
+        h.send({ type: 'save', payload: { name: s.draft.name, body: s.draft.body } })
+      },
+    },
+    [text('Save')],
+  ),
+]
+```
+
+`h.getState()` mirrors `AppHandle.getState()` — same name, same
+contract, but typed by the view's `S` and available inside the
+view function's closure (where the `AppHandle` isn't). Safe to
+call from event handlers, async callbacks (`setTimeout`,
+`Promise.then`), and post-mount adapter code. Each call reads the
+_current_ state, not a snapshot captured at view construction.
+
+**Anti-pattern — sentinel-class binding writing state to a module ref**:
+
+```typescript
+// ❌ Side effects in a reactive accessor. The class accessor fires
+//    on every commit, scribbles state into a module-local ref purely
+//    so the onClick handler can read it. Triggers the file-wide
+//    opaque warning when the ref-update calls cross-module helpers.
+const latest: { name: string | null } = { name: null }
+
+view: (h) => [
+  div({
+    class: (s) => {
+      latest.name = opts.name(s) // side effect
+      return 'hidden'
+    },
+  }),
+  button({
+    onClick: () => {
+      if (latest.name) h.send({ type: 'save', name: latest.name })
+    },
+  }),
+]
+```
+
+Replace with `h.getState()`:
+
+```typescript
+// ✅ No side effects, no module-local ref. The handler reads the
+//    parent state at click-time and computes whatever it needs.
+view: (h) => [
+  button(
+    {
+      onClick: () => {
+        const s = h.getState()
+        h.send({ type: 'save', name: opts.name(s) })
+      },
+    },
+    [text('Save')],
+  ),
+]
+```
+
+**Don't use `getState()` inside a reactive accessor**:
+
+```typescript
+// ❌ Bypasses bitmask tracking — the binding degrades to FULL_MASK
+//    and fires on every state change.
+text(() => h.getState().count.toString())
+
+// ✅ Reactive — receives state via the closure argument, mask is
+//    derived from the read.
+text((s) => s.count.toString())
+```
+
+The accessor argument is already the live state during render.
+`getState()` is the _event-time_ escape hatch — render-time reads
+go through accessors.
+
+### `track({ deps: (s) => [...] })` — declaring opaque accessor dependencies
+
+When an accessor reads state through an unavoidable opaque shape
+(a method call on a host object, a function-parameter callback,
+a property access that can't be statically traced), the compiler
+flags the file with `llui/opaque-accessor-file-wide-mask` and the
+runtime degrades the file to FULL_MASK — every binding re-evaluates
+on every state change. `track({ deps })` is the sanctioned escape
+hatch: wrap the opaque read and declare what state it actually
+reads. The compiler trusts your declaration and emits a precise
+mask; the diagnostic is suppressed:
+
+```typescript
+import { track } from '@llui/dom'
+
+// `opts.host` is a function parameter; the compiler can't trace
+// through method dispatch on it.
+function dialog(h: View<State, Msg>, opts: { host: { name: (s: State) => string } }): Node[] {
+  return [
+    text(() => {
+      // Declare what `opts.host.name(...)` reads. The compiler emits
+      // a precise mask covering exactly those paths; the binding
+      // fires only when they change.
+      track<State>({ deps: (s) => [s.user.displayName, s.locale] })
+      return opts.host.name(h.getState())
+    }),
+  ]
+}
+```
+
+Both `llui/opaque-state-flow` (error) and
+`llui/opaque-accessor-file-wide-mask` (perf warning) honour the
+suppression. `track` is the documented escape hatch for body
+shapes the walker can't infer.
+
+**When to reach for `track`**:
+
+- The opaque read is structurally unavoidable: the helper lives in
+  another module you don't own; the callback is a function
+  parameter; the call is method-dispatch through an interface.
+- You can name the actual state reads with `(s) => [s.foo, s.bar]`.
+
+**When to skip `track` and refactor instead**:
+
+- The opaque helper lives in your file or a same-package module.
+  Inline it as a `const` / `function` declaration — see the
+  [opaque-flow recipe](#helpers-that-read-state-avoid-the-opaque-flow-trap).
+- The reads are direct (`s.foo`, `s.foo[i]`) — let the walker
+  derive the mask, no `track` needed.
+
 ### Recovering from view-construction errors with `errorBoundary`
 
 Wrap a subtree that might throw at render time (e.g. reaches into

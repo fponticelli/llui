@@ -1,5 +1,6 @@
 import ts from 'typescript'
 import { resolveAccessorBody } from './accessor-resolver.js'
+import { isInsideTrackDeps } from './track-utils.js'
 
 /**
  * Mutable collector for "the file's __prefixes must degrade to the
@@ -129,30 +130,44 @@ function extractAccessorPaths(
 
   extractPaths(accessor.body, paramName.text, '', paths)
 
+  // `track({ deps: (s) => [...] })` is the documented escape hatch for
+  // opacity the walker can't infer. When this accessor IS the deps
+  // callback of a track() call, the user has explicitly declared
+  // their dependencies; skip the opaque-flow detection and the
+  // delegation follow so we don't double-flag what the user has
+  // already taken responsibility for. Direct `s.X` reads inside
+  // track.deps are still extracted as paths above — those are the
+  // user's explicit dependencies. Parallels the suppression in
+  // `modules/opaque-state-flow.ts`.
+  const inTrackDeps = isInsideTrackDeps(accessor)
+
   // Detect opaque state flow alongside path extraction. Mirrors the
   // classifier in `transform.ts`'s `computeAccessorMask` (Identifier
   // `s` used in a non-tracked position) — any leak means a precise
   // `__prefixes` table is insufficient because a field read only
   // through the leak never enters fieldBits and the runtime can't
   // dirty it on change.
-  if (opaqueOut) detectOpaqueStateFlow(accessor.body, paramName.text, opaqueOut)
+  if (opaqueOut && !inTrackDeps) detectOpaqueStateFlow(accessor.body, paramName.text, opaqueOut)
 
   // Follow delegations: `(s) => helper(s)` — extract `helper`'s body's
   // state paths too. Reuses the `visited` set across the recursion
   // chain so cycles terminate. When the callee is unresolvable
   // (function parameter, import, destructured), the same logic that
   // forces FULL_MASK in `computeAccessorMask` flags the file as
-  // opaque here, so the sentinel gets emitted.
-  visitTopLevelDelegations(
-    accessor.body,
-    paramName.text,
-    (resolved) => {
-      extractAccessorPaths(resolved, paths, visited, opaqueOut)
-    },
-    (callNode) => {
-      if (opaqueOut) markOpaque(opaqueOut, callNode, 'unresolvable delegating call `helper(s)`')
-    },
-  )
+  // opaque here, so the sentinel gets emitted. Skipped inside
+  // `track.deps` for the same suppression reason.
+  if (!inTrackDeps) {
+    visitTopLevelDelegations(
+      accessor.body,
+      paramName.text,
+      (resolved) => {
+        extractAccessorPaths(resolved, paths, visited, opaqueOut)
+      },
+      (callNode) => {
+        if (opaqueOut) markOpaque(opaqueOut, callNode, 'unresolvable delegating call `helper(s)`')
+      },
+    )
+  }
 
   return paths.size > before
 }

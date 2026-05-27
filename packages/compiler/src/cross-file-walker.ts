@@ -32,6 +32,7 @@ import {
   relativizeFile,
 } from './diagnostic.js'
 import { isReactiveAccessor } from './collect-deps.js'
+import { isInsideTrackDeps } from './track-utils.js'
 
 export type ViewHelperKind = 'walked' | 'opaque' | 'async' | 'not-a-helper'
 
@@ -531,6 +532,16 @@ export function crossFileAccessorPaths(
       const p0 = node.parameters[0]!
       if (ts.isIdentifier(p0.name) && node.body) {
         if (isReactiveAccessor(node) || isViewHelperCallArg0(node)) {
+          // `track({ deps: (s) => [...] })` is the user's documented
+          // escape hatch for body shapes the walker can't statically
+          // infer. Walk the body for direct path reads (those are
+          // the user's declared dependencies), but route any opaque
+          // detections into a discard sink — the user has explicitly
+          // taken responsibility for opacity inside track.deps. The
+          // file-wide diagnostic uses the same suppression.
+          const sink: { value: boolean; node?: ts.Node } = isInsideTrackDeps(node)
+            ? { value: false }
+            : opaqueOut
           // Capture the focal-file accessor IF its walk triggers the
           // opacity flip. `walkAccessorBody` may set `opaqueOut.value`
           // anywhere in the body (or in a recursed-into helper body,
@@ -538,9 +549,9 @@ export function crossFileAccessorPaths(
           // a callsite IN THEIR FILE, so we record the focal-file
           // accessor at the visit-level — this gives users a real line
           // to jump to, not a foreign-file location.
-          const wasOpaque = opaqueOut.value
-          walkAccessorBody(node.body, p0.name.text, paths, checker, visitedHelpers, opaqueOut)
-          if (!wasOpaque && opaqueOut.value && !opaqueOut.node) {
+          const wasOpaque = sink.value
+          walkAccessorBody(node.body, p0.name.text, paths, checker, visitedHelpers, sink)
+          if (sink === opaqueOut && !wasOpaque && opaqueOut.value && !opaqueOut.node) {
             opaqueOut.node = node
           }
         }

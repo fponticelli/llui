@@ -53,8 +53,24 @@ export function slice<Root, Sub, M>(
     return out
   }
 
+  // The sliced bag's `getState()` returns the LIFTED slice — what a
+  // sub-view sees as "its" state. Falls back gracefully when the
+  // parent `h` is a bare `{ send }` shape (e.g. a hand-rolled View
+  // built without the full bag). In that case `getState` throws the
+  // same focused error `createView` would.
+  const parentGetState = (h as { getState?: () => Root }).getState
+  const getState =
+    parentGetState !== undefined
+      ? () => lift(parentGetState())
+      : () => {
+          throw new Error(
+            '[LLui] slice(...).getState() — parent View bag has no getState. Slice a `View<Root, M>` (the bag handed to your component view), not a bare `{ send }`.',
+          )
+        }
+
   return {
     send,
+    getState,
     show: (opts: ShowOptions<Sub, M>) =>
       _show<Root, M>({
         ...opts,
