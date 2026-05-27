@@ -566,19 +566,31 @@ const update = (s: State, msg: Msg): [State, Effect[]] => {
       // sees their typed value while the request is in flight.
       const value = s.edits[msg.field]
       if (value === undefined) return [s, []]
-      return [s, [http.post(`/save/${msg.field}`, { value }, {
-        onOk: (canonical: string) => ({ type: 'saveOk', field: msg.field, canonical }),
-        onErr: (reason: string) => ({ type: 'saveErr', field: msg.field, reason }),
-      })]]
+      return [
+        s,
+        [
+          http.post(
+            `/save/${msg.field}`,
+            { value },
+            {
+              onOk: (canonical: string) => ({ type: 'saveOk', field: msg.field, canonical }),
+              onErr: (reason: string) => ({ type: 'saveErr', field: msg.field, reason }),
+            },
+          ),
+        ],
+      ]
     }
     case 'saveOk': {
       // Server accepted (possibly normalised). Write the canonical
       // value into persisted, clear the edit buffer so the binding
       // falls back to persisted on the next commit.
-      return [{
-        persisted: { ...s.persisted!, [msg.field]: msg.canonical },
-        edits: { ...s.edits, [msg.field]: undefined },
-      }, []]
+      return [
+        {
+          persisted: { ...s.persisted!, [msg.field]: msg.canonical },
+          edits: { ...s.edits, [msg.field]: undefined },
+        },
+        [],
+      ]
     }
     case 'saveErr': {
       // Keep the edit buffer set so the user can fix and retry.
@@ -734,6 +746,68 @@ case 'loadUser':
   ]]
 ```
 
+### Recovering from view-construction errors with `errorBoundary`
+
+Wrap a subtree that might throw at render time (e.g. reaches into
+state that's incompletely loaded, or calls a helper that can fail)
+with `errorBoundary`. The boundary catches anything thrown during
+the wrapped subtree's view construction, disposes the partial scope,
+and renders the fallback instead.
+
+```typescript
+import { errorBoundary, div, button, text } from '@llui/dom'
+
+view: ({ send }) => [
+  div({ class: 'page' }, [
+    // Header / nav / chrome stay mounted even if the panel crashes.
+    div({ class: 'header' }, [text('My App')]),
+
+    // Risky subtree — wrap it.
+    ...errorBoundary({
+      render: () => [
+        // Anything thrown inside (helpers, accessors, child views)
+        // is caught and routed to `fallback`.
+        riskyPanel(send),
+      ],
+      fallback: (error) => [
+        div({ class: 'error-panel' }, [
+          text(() => `Couldn't render this panel: ${error.message}`),
+          button({ onClick: () => send({ type: 'retryPanel' }) }, [text('Retry')]),
+        ]),
+      ],
+      onError: (error) => {
+        // Optional — report to your error tracker.
+        console.error('[panel]', error)
+      },
+    }),
+  ]),
+]
+```
+
+**What's caught**:
+
+- Synchronous throws during view construction inside `render` — e.g.
+  helper functions that throw on bad inputs, accessors that destructure
+  unexpected state shapes during build, primitive construction errors.
+
+**What's NOT caught** (and shouldn't be):
+
+- **Binding-evaluation errors during Phase 2.** A reactive accessor
+  that throws on commit is reported via the binding-error hook
+  (`__lluiDebug.onBindingError` or console.warn fallback), not by
+  `errorBoundary`. The DOM keeps the last good value for the binding;
+  sibling bindings continue to fire. See [debugging.md](./debugging.md).
+- **Effects** (`http`, `delay`, etc.) — these have their own
+  `onError` callback that dispatches a Msg. Handle failures in
+  `update`, not in the view.
+- **Async errors** in user code (Promises, timers). Catch them
+  yourself and dispatch a Msg.
+
+**Where to place the boundary**: around the smallest subtree that
+makes sense to fail independently. Wrapping the entire app means a
+single crash unmounts everything; wrapping each risky panel keeps
+the rest of the UI live.
+
 ## Composition
 
 ### View Functions
@@ -834,7 +908,7 @@ view: () => [
     // a method call (`host.activeCalendar(s)`, `host.dirtyAt(s, …)`).
     // The compiler can't trace what `host.X` reads, so it bails.
     title: (s) => host.activeCalendar(s)?.name ?? '',
-    class: (s) => host.dirtyAt(s, eid, pred) ? 'dirty' : 'clean',
+    class: (s) => (host.dirtyAt(s, eid, pred) ? 'dirty' : 'clean'),
   }),
 ]
 ```
@@ -861,7 +935,7 @@ view: () => [
     // sees `s.calendars`, `s.activeId`, `s.entities` as the reactive
     // paths. Each binding's mask reflects exactly what it reads.
     title: (s) => activeCalendar(s)?.name ?? '',
-    class: (s) => dirtyAt(s, eid, pred) ? 'dirty' : 'clean',
+    class: (s) => (dirtyAt(s, eid, pred) ? 'dirty' : 'clean'),
   }),
 ]
 ```
@@ -1002,7 +1076,33 @@ h.each<{ id: string; name: string; population: number | null }>({
 })
 ```
 
-**2. `branch` doesn't reconcile when navigating between siblings of the same case key.** `branch({ on: s => s.route.name, cases: { entity, list } })` stays mounted across `entity:A → entity:B` — the case key (`'entity'`) doesn't change. Any binding inside the `entity` case that captured the OLD `entityId` at render-time via `h.sample` keeps firing against the old id. Wrap the branch with `scope` keyed on the identity that should force remount:
+**2. `branch` doesn't reconcile when navigating between siblings of the same case key.** `branch({ on: s => s.route.name, cases: { entity, list } })` stays mounted across `entity:A → entity:B` — the case key (`'entity'`) doesn't change. Any binding inside the `entity` case that captured the OLD `entityId` at render-time via `h.sample` keeps firing against the old id.
+
+**What breaks without the scope wrapper** (concrete failure pattern):
+
+```typescript
+// Inside the entity case:
+function viewEntity(h: View<State, Msg>): Node[] {
+  const id = h.sample((s: State) =>
+    s.route.name === 'entity' ? s.route.entityId : '',
+  )
+  return [
+    // ❌ `id` was captured at render-time. Navigating entity:A → entity:B
+    //    doesn't re-run viewEntity — same case key. The input keeps
+    //    reading from entities['A'] forever, even when the URL says B.
+    input({
+      value: (s) => s.entities[id]?.name ?? '',
+      onInput: (e) => h.send({
+        type: 'rename', id, value: (e.target as HTMLInputElement).value,
+      }),
+    }),
+  ]
+}
+```
+
+Result: silent data corruption. The user navigates to B, types into the input, and the `rename` Msg dispatches with `id: 'A'` — they edit entity A while looking at entity B.
+
+Wrap the branch with `scope` keyed on the identity that should force remount:
 
 ```typescript
 // ❌ stale bindings persist when navigating entity:A → entity:B
@@ -1201,6 +1301,95 @@ sliceHandler('confirm', dialog.update)
 
 Both forms are equivalent. Use the full form when the state key doesn't match
 the message type, or when the parent message shape differs from `{ type; msg }`.
+
+### Derived state: when to compute, memoize, or normalize
+
+LLui has three primitives for working with values derived from state:
+inline computation in an accessor, `memo()`, `selector()`, and
+`slice()`. They overlap in purpose; the choice depends on cost,
+sharing, and access shape.
+
+**Default — compute inline.** State is the source of truth; derived
+values are pure functions of it. The runtime already deduplicates
+binding writes via `Object.is(newValue, lastValue)`, so a cheap
+inline computation is free even when it re-evaluates on every
+commit:
+
+```typescript
+// Good — derived inline. No abstraction needed.
+text((s: State) => `${s.user.firstName} ${s.user.lastName}`)
+text((s: State) => `${s.items.length} items`)
+```
+
+**Anti-pattern — denormalized state.** Storing a derived value
+alongside its inputs invites them to drift. The reducer has to
+remember to update the derived field on every Msg that touches an
+input. Misses produce silent staleness.
+
+```typescript
+// ❌ `fullName` will drift if `update` forgets to recompute it.
+type State = {
+  user: { firstName: string; lastName: string; fullName: string }
+}
+```
+
+Compute `fullName` on read instead:
+
+```typescript
+// ✅ Always consistent. No reducer bookkeeping.
+type State = { user: { firstName: string; lastName: string } }
+text((s) => `${s.user.firstName} ${s.user.lastName}`)
+```
+
+**Reach for `memo()` when the computation is expensive AND the
+result is unchanged between commits.** The bitmask gate already
+skips bindings whose dependencies didn't change; `memo` adds an
+output-stability cache. Useful for:
+
+- Computations that allocate or sort/filter arrays where the inputs
+  haven't changed (e.g., `(s) => s.items.filter(predicate).sort()`
+  — see the each-memo recipe).
+- Multiple bindings reading the same derived value where the
+  underlying state mask is wide.
+
+```typescript
+import { memo } from '@llui/dom'
+const filtered = memo((s: State) => s.items.filter((i) => i.active))
+// Used by multiple bindings — each binding pays a cache lookup,
+// not a full recomputation.
+```
+
+**Reach for `selector()` when N bindings each ask "is the current
+value of X equal to *my* value Y?"** (the "one-of-N highlight"
+shape: only one tab/row/cell is active at a time). Switching
+between values is O(2) instead of O(N) — the leaving entry's
+binding fires, the new entry's binding fires, every other entry
+sleeps.
+
+```typescript
+// See `### Derived values with selector` below for the full example.
+const activeId = selector((s: State) => s.selectedId)
+// Each row asks `activeId.bind('row-42', kind, key, ...)` — the
+// `selector` routes updates O(1) on change.
+```
+
+**Reach for `slice()` when a view function operates on a sub-tree**
+and you don't want it coupled to the parent state's full type.
+`slice` is a type-narrowing tool, not a memoization one.
+
+Decision tree:
+
+| Situation | Use |
+| --- | --- |
+| Cheap pure derivation | inline accessor |
+| Expensive computation, multiple readers | `memo()` |
+| One-of-N comparison (active row, current tab) | `selector()` |
+| View function on a focused sub-shape | `slice()` |
+| Multiple of the above for the same value | combine — `memo` inside a `selector` field is fine |
+
+The runtime's existing equality check makes inline computation the
+right default. Reach for the abstractions only when you can name a
+specific cost they save (allocation, repeated O(N), type-coupling).
 
 ### Sub-state slicing with `slice()`
 
