@@ -833,55 +833,104 @@ The accessor argument is already the live state during render.
 `getState()` is the _event-time_ escape hatch — render-time reads
 go through accessors.
 
-### `track({ deps: (s) => [...] })` — declaring opaque accessor dependencies
+### `track({ deps: (s) => [...] })` — declaring paths the walker can't statically infer
 
-When an accessor reads state through an unavoidable opaque shape
-(a method call on a host object, a function-parameter callback,
-a property access that can't be statically traced), the compiler
-flags the file with `llui/opaque-accessor-file-wide-mask` and the
-runtime degrades the file to FULL_MASK — every binding re-evaluates
-on every state change. `track({ deps })` is the sanctioned escape
-hatch: wrap the opaque read and declare what state it actually
-reads. The compiler trusts your declaration and emits a precise
-mask; the diagnostic is suppressed:
+`track()` is a narrow escape hatch. It exists for cases where the
+compiler can't see specific property reads in the accessor body
+itself (dynamic indexing, helpers reached via cross-file context
+chains, dispatch tables indexed by state) — but the user CAN
+name the paths the accessor actually reads.
+
+The compiler reads the `deps` callback, folds its paths into the
+component's `__prefixes`, and strips the entire `track()` call
+from the emitted bundle. Zero runtime cost, precise mask.
 
 ```typescript
 import { track } from '@llui/dom'
 
-// `opts.host` is a function parameter; the compiler can't trace
-// through method dispatch on it.
-function dialog(h: View<State, Msg>, opts: { host: { name: (s: State) => string } }): Node[] {
+// Plugin registry: `pluginRegistry[name].render(...)`. The walker
+// can't trace through dynamic indexing — `name` is state — so it
+// flags the file. `track` declares the dependencies explicitly.
+view: (h) => [
+  scope({
+    on: (s) => s.activePluginName,
+    render: () => [
+      ...renderArea((s) => {
+        track<State>({
+          deps: (s) => [s.pluginRegistry, s.activePluginName, s.pluginState],
+        })
+        const plugin = s.pluginRegistry[s.activePluginName]
+        return plugin.render(h, s.pluginState)
+      }),
+    ],
+  }),
+]
+```
+
+**Both** `llui/opaque-state-flow` (error) and
+`llui/opaque-accessor-file-wide-mask` (perf warning) honour the
+suppression — **inside the `deps` callback only**. Opaque reads in
+the rest of the enclosing accessor's body are analysed
+independently. If your body has a separate `opts.X(s)` outside
+`deps`, that's its own opaque flow and will still fire the
+diagnostic. Read deeply-nested or dynamically-indexed values via
+the looked-up handle (e.g. assign to a local from `s.collection[s.key]`
+once at the top of the body, then read property-access chains off
+the local) so the outer body has only direct property reads.
+
+#### When `track` does NOT help — the function-parameter-callback anti-pattern
+
+`track()` only delivers a precise mask when the `deps` body itself
+reads paths the walker CAN extract — concrete property-access
+chains like `(s) => [s.foo, s.bar.baz]`. If the deps body is
+itself opaque (e.g. `(s) => [opts.getError(s)]` where `opts.getError`
+is a function-parameter callback), the walker can't pull any
+paths out of it and `track` collapses to FULL_MASK + sentinel
+**at runtime**, exactly as if you hadn't written `track` at all.
+The compile-time diagnostic may go quiet, but the runtime perf
+cost is identical.
+
+**Anti-pattern**:
+
+```typescript
+// ❌ `opts.host.name` is a function parameter. The walker can't see
+//    what it reads. `track` with an opaque deps body silences the
+//    diagnostic but does not produce a precise mask — every binding
+//    in the file still falls back to whole-state sentinel.
+function dialog<PS>(h: View<PS, Msg>, opts: { host: { name: (s: PS) => string } }) {
   return [
-    text(() => {
-      // Declare what `opts.host.name(...)` reads. The compiler emits
-      // a precise mask covering exactly those paths; the binding
-      // fires only when they change.
-      track<State>({ deps: (s) => [s.user.displayName, s.locale] })
-      return opts.host.name(h.getState())
+    text((s) => {
+      track<PS>({ deps: (s) => [opts.host.name(s)] }) // ← opaque deps body
+      return opts.host.name(s)
     }),
   ]
 }
 ```
 
-Both `llui/opaque-state-flow` (error) and
-`llui/opaque-accessor-file-wide-mask` (perf warning) honour the
-suppression. `track` is the documented escape hatch for body
-shapes the walker can't infer.
+The fix is composition restructuring — pass reactive primitives
+across the boundary instead of state-reading callbacks. See
+[composition-patterns.md](./composition-patterns.md) for the four
+documented migration shapes (`Props<T, S>`, slotted text/each,
+service injection via context, derived view bag).
 
-**When to reach for `track`**:
+**When `track` is right**:
 
-- The opaque read is structurally unavoidable: the helper lives in
-  another module you don't own; the callback is a function
-  parameter; the call is method-dispatch through an interface.
-- You can name the actual state reads with `(s) => [s.foo, s.bar]`.
+- **Dynamic indexing**: `s.collection[s.activeKey]` where
+  `activeKey` is state. The walker can't see what `[expr]` does.
+- **Cross-context chains**: a value reached through two-plus
+  `useContext` providers in different files.
+- **Dispatch tables**: helpers stored in arrays / records and
+  indexed by state.
 
-**When to skip `track` and refactor instead**:
+**When `track` is wrong**:
 
-- The opaque helper lives in your file or a same-package module.
-  Inline it as a `const` / `function` declaration — see the
-  [opaque-flow recipe](#helpers-that-read-state-avoid-the-opaque-flow-trap).
-- The reads are direct (`s.foo`, `s.foo[i]`) — let the walker
-  derive the mask, no `track` needed.
+- Function-parameter callbacks (`opts.X: (s) => …`) — restructure
+  the composition.
+- The reads are direct (`s.foo`, `s.foo[i]` with literal index) —
+  let the walker derive the mask.
+- The opaque helper lives in your file or a same-package module —
+  inline it as a `const` / `function` declaration so the walker
+  can resolve it.
 
 ### Recovering from view-construction errors with `errorBoundary`
 
