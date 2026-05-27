@@ -71,6 +71,106 @@ function makeProgram(files: Record<string, string>): {
   }
 }
 
+describe('track({ deps }) suppression with shadowed param names (dicerun follow-up)', () => {
+  // Consumer report: suppression worked inside `() => { track(...) }`
+  // but NOT inside `(s: PS) => { track(...) }`. The footgun was the
+  // outer accessor's parameter being walked through the inner
+  // `track({ deps: (s) => ... })` arrow whose `s` shadows the outer.
+  // The detect walker matched the inner `s` against the outer's
+  // stateParam name and flagged the file-wide opaque flow even though
+  // the suspect identifier was actually the inner arrow's parameter.
+
+  it('outer (s) accessor with INNER arrow shadowing s — opacity inside track.deps must not leak', () => {
+    const diags = diagsFor(
+      `
+        import { component, div, track } from '@llui/dom'
+        const opts = { getDialog: (_s: { a: number }) => ({ title: '' }) }
+        const App = component({
+          name: 'X',
+          init: () => [{ a: 0 }, []],
+          update: (s) => [s, []],
+          view: () => [
+            div({
+              // Outer (s) accessor — its param shadows nothing yet.
+              // Inner track.deps arrow uses 's' too; walker must
+              // recognise the shadow and not flag the inner read
+              // against the outer's stateParam.
+              title: (s: { a: number }) => {
+                track<{ a: number }>({ deps: (s) => [opts.getDialog(s).title] })
+                return 'ok'
+              },
+            }),
+          ],
+        })
+      `,
+      'llui/opaque-accessor-file-wide-mask',
+    )
+    expect(diags).toHaveLength(0)
+  })
+
+  it('outer (s) accessor with track.deps using a DIFFERENT param name — already worked, locked here', () => {
+    // Same test as above but with the inner arrow's param renamed.
+    // Pre-fix, this passed (no shadowing), so the user's diagnosis
+    // was "rename to avoid the bug" — locking it as a known-good shape.
+    const diags = diagsFor(
+      `
+        import { component, div, track } from '@llui/dom'
+        const opts = { getDialog: (_s: { a: number }) => ({ title: '' }) }
+        const App = component({
+          name: 'X',
+          init: () => [{ a: 0 }, []],
+          update: (s) => [s, []],
+          view: () => [
+            div({
+              title: (_outer: { a: number }) => {
+                track<{ a: number }>({ deps: (inner) => [opts.getDialog(inner).title] })
+                return 'ok'
+              },
+            }),
+          ],
+        })
+      `,
+      'llui/opaque-accessor-file-wide-mask',
+    )
+    expect(diags).toHaveLength(0)
+  })
+
+  it('outer (s) with a NON-track inner arrow shadowing s must still detect outer opacity', () => {
+    // Counter-test: shadowing-aware walker must NOT silently suppress
+    // outer-scope opaque flow. Here the inner arrow is a plain helper
+    // (not track), and the OUTER body has its own opaque read.
+    // The diagnostic must fire because of the outer's opaque flow,
+    // independent of the inner arrow.
+    const diags = diagsFor(
+      `
+        import { component, div } from '@llui/dom'
+        const opts = { getDialog: (_s: { a: number }) => ({ title: '' }) }
+        const helper = (_arr: number[]) => 0
+        const App = component({
+          name: 'X',
+          init: () => [{ a: 0 }, []],
+          update: (s) => [s, []],
+          view: () => [
+            div({
+              title: (s: { a: number }) => {
+                // Inner arrow's s shadows outer; reads opaquely.
+                // But this is NOT inside track.deps — the walker must
+                // continue to flag the OUTER opaque flow below.
+                helper([1, 2, 3].map((s) => opts.getDialog({ a: s }).title.length))
+                // Outer's own opaque read — this should fire the diagnostic.
+                return opts.getDialog(s).title
+              },
+            }),
+          ],
+        })
+      `,
+      'llui/opaque-accessor-file-wide-mask',
+    )
+    expect(diags).toHaveLength(1)
+    expect(diags[0]!.message).toMatch(/^\[file-local\]/)
+  })
+})
+
 describe('track({ deps }) suppression for opaque-accessor-file-wide-mask (file-local)', () => {
   it('suppresses the file-wide-mask diagnostic when the opaque shape is inside track.deps', () => {
     // The accessor body has a method-call-with-state shape
@@ -185,6 +285,29 @@ describe('track({ deps }) suppression for opaque-accessor-file-wide-mask (cross-
     // Post-fix: track.deps suppresses the flag for that body.
     expect(result.opaque).toBe(false)
     expect(result.opaqueNode).toBeUndefined()
+  })
+
+  it('cross-file walker also respects shadowing — inner s in track.deps ≠ outer s', () => {
+    // Same shadowing footgun, cross-file flavour. The outer accessor
+    // is `(s) => ...`; the track.deps inner arrow uses `s` too. The
+    // walker must NOT mis-attribute the inner s's opaque read to the
+    // outer accessor's stateParam.
+    const fx = makeProgram({
+      '/helper.d.ts': `export declare function mystery(s: { a: number }): { title: string }`,
+      '/view.ts': `
+        import { mystery } from './helper.js'
+        function text(_a: (s: { a: number }) => string): Node { return {} as Node }
+        function track<S>(_o: { deps: (s: S) => unknown[] }): void {}
+        export const focal = (): Node[] => [
+          text((s) => {
+            track<{ a: number }>({ deps: (s) => [mystery(s).title] })
+            return 'ok'
+          }),
+        ]
+      `,
+    })
+    const result = crossFileAccessorPaths(fx.program, fx.sf('/view.ts'))
+    expect(result.opaque).toBe(false)
   })
 
   it('still flags cross-file opacity when the leak is OUTSIDE track.deps', () => {

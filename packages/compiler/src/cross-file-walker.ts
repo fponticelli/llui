@@ -580,6 +580,22 @@ function walkAccessorBody(
   opaqueOut: { value: boolean },
 ): void {
   const visit = (node: ts.Node): void => {
+    // Stop descending into nested functions whose parameter shadows
+    // `paramName`. Mirrors the shadow-awareness in collect-deps.ts.
+    // Without this, the inner arrow's `s` reads are mis-attributed to
+    // the outer accessor — causing both over-collection of paths and
+    // false-positive opacity flagging for the `track({ deps: (s) => …
+    // })` escape hatch when the outer accessor also uses `s`.
+    if (
+      (ts.isArrowFunction(node) || ts.isFunctionExpression(node)) &&
+      node.parameters.length === 1
+    ) {
+      const p0 = node.parameters[0]!
+      if (ts.isIdentifier(p0.name) && p0.name.text === paramName) {
+        return
+      }
+    }
+
     // Property-chain extraction (mirrors collect-deps' depth-2 normaliser).
     if (ts.isPropertyAccessExpression(node)) {
       const chain = resolveDepth2(node, paramName)

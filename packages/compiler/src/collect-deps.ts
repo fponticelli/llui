@@ -188,9 +188,55 @@ function extractAccessorPaths(
  * const-alias, conditional branch, method-call arg, dynamic key
  * `s[expr]`, return-the-whole-state, …) is treated as a leak.
  */
+/**
+ * Returns true when one of the function's parameter bindings would
+ * shadow an outer identifier named `stateParam`. Covers identifier
+ * params (`(s) => …`), simple destructured patterns (`({s}) => …`),
+ * and array patterns (`([s]) => …`). Tracking shadowing avoids a
+ * common false positive where a nested arrow's `s` is mis-attributed
+ * to the outer accessor's state parameter — most notably bites the
+ * `track({ deps: (s) => [...] })` escape hatch when the outer
+ * accessor is also `(s) => …`.
+ */
+function shadowsStateParam(
+  parameters: ts.NodeArray<ts.ParameterDeclaration>,
+  stateParam: string,
+): boolean {
+  for (const param of parameters) {
+    const name = param.name
+    if (ts.isIdentifier(name)) {
+      if (name.text === stateParam) return true
+    } else if (ts.isObjectBindingPattern(name) || ts.isArrayBindingPattern(name)) {
+      for (const element of name.elements) {
+        if (ts.isBindingElement(element) && ts.isIdentifier(element.name)) {
+          if (element.name.text === stateParam) return true
+        }
+      }
+    }
+  }
+  return false
+}
+
 function detectOpaqueStateFlow(body: ts.Node, stateParam: string, out: OpaqueOut): void {
   function visit(node: ts.Node): void {
     if (out.value) return
+    // Nested function/arrow whose parameter shadows `stateParam` —
+    // any `s` identifier inside its body refers to the INNER binding,
+    // not the outer state. Skip the subtree so we don't incorrectly
+    // match the inner uses against the outer state-param name. The
+    // canonical trigger is the `track({ deps: (s) => [...] })`
+    // escape hatch — users naturally use `s` for both the outer
+    // accessor and the inner deps callback. Pre-fix the suppression
+    // recipe worked only when the outer accessor used a different
+    // name; the inner `s` got mis-attributed otherwise.
+    if (
+      (ts.isArrowFunction(node) ||
+        ts.isFunctionExpression(node) ||
+        ts.isFunctionDeclaration(node)) &&
+      shadowsStateParam(node.parameters, stateParam)
+    ) {
+      return
+    }
     if (ts.isIdentifier(node) && node.text === stateParam) {
       const parent = node.parent
       const isBinding = !!parent && ts.isParameter(parent)
@@ -823,6 +869,18 @@ const REACTIVE_API_NAMES = new Set([
  * - Bracket notation with string literal: param['field']
  */
 function extractPaths(node: ts.Node, paramName: string, _prefix: string, paths: Set<string>): void {
+  // Stop descending into nested functions whose parameter shadows
+  // `paramName`. Any `s.X` read inside refers to the INNER binding,
+  // not the outer state. Same reasoning as `detectOpaqueStateFlow`:
+  // without this, a `track({ deps: (s) => [s.foo] })` callback
+  // contributed `foo` to the OUTER accessor's mask, over-firing the
+  // outer binding when `s.foo` changes elsewhere.
+  if (
+    (ts.isArrowFunction(node) || ts.isFunctionExpression(node) || ts.isFunctionDeclaration(node)) &&
+    shadowsStateParam(node.parameters, paramName)
+  ) {
+    return
+  }
   if (ts.isPropertyAccessExpression(node)) {
     // Skip if this is an intermediate in a deeper chain
     if (ts.isPropertyAccessExpression(node.parent)) {
