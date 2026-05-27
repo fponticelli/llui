@@ -188,6 +188,13 @@ export interface AnnotateHudHandle {
   /** Set the default intent for floating-button submits. Default 'task'.
    *  Per-call submit() options override this. */
   setIntent(intent: NoteIntent): void
+  /** Replay a captured repro trace against the live DOM. Resolves
+   *  with `{ applied, skipped }` once the trace finishes. See
+   *  `replayReproEvents` in repro-recorder.ts for option semantics. */
+  replayRepro(
+    events: ReproEvent[],
+    options?: { speed?: number; maxStepMs?: number; abortOnMissing?: boolean },
+  ): Promise<{ applied: number; skipped: Array<{ event: ReproEvent; reason: string }> }>
 }
 ```
 

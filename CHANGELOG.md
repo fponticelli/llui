@@ -11,6 +11,70 @@ All notable changes to LLui packages are documented here. LLui is a pre-1.0 proj
 
 Packages version in lockstep at release time: `@llui/dom`, `@llui/vite-plugin`, `@llui/test`, `@llui/router`, `@llui/transitions`, `@llui/components`, `@llui/vike` share a version line. `@llui/effects`, `@llui/mcp`, `@llui/eslint-plugin`, `@llui/agent`, and `llui-agent` have their own cadence.
 
+## 2026-05-26 — 0.4.8 / 0.5.8
+
+**Released:** `@llui/{dom,components,router,transitions,vike,test,agent}@0.4.8`; `llui-agent@0.4.8`; `@llui/{compiler,compiler-devtools,compiler-introspection,compiler-ssr}@0.5.8`; `@llui/vite-plugin@0.5.9`; `@llui/mcp@0.5.11`; `@llui/devmode-annotate@0.0.3`
+
+Headline change is `@llui/devmode-annotate`: the in-app HUD now auto-mounts via `@llui/vite-plugin` in dev (no per-app wiring), routes "Solve" through a configurable LLM CLI with streaming progress + per-chain `--resume` continuity, ships a notes browser with screenshot/diff/timeline rows, and pivots to a **direct-edit architecture** — the LLM writes the file changes itself; the HUD just records the resulting git diff for the Accept/Reject toast. Six pre-listed limitations were closed in the same cycle: annotation-placeholder cleanup (rect+element only), MCP writes routed through middleware for format consistency, per-chain serialization for safe `concurrency > 1`, repro recorder with `▶ Replay` support, and `.chain-state.json` persistence so chains survive dev-server restarts.
+
+Compiler/runtime side: a latent `isReactiveAccessor` misclassification was forcing whole-file FULL_MASK fallback on virtually every file with object-shorthand property assignments; the fix restores precise per-case masks across the codebase. `injectViewBag` now correctly emits `__view` for shorthand and identifier-ref `view` forms (was silently producing components that crashed at mount with "missing `__view` despite being compiled"), with a build-time integrity check that fails closed on future regressions.
+
+### `@llui/devmode-annotate@0.0.3`
+
+- **Added** Auto-mount via `@llui/vite-plugin` in dev. Consumers do **not** add `@llui/devmode-annotate` to their own dependencies and do **not** call `mountAnnotateHud()`; the plugin injects a virtual module through `transformIndexHtml`. Production builds tree-shake the HUD entirely.
+- **Added** Configurable LLM router with `claude` / `codex` / `gemini` presets plus a fully custom invocation. `router: false` disables both the router and the HUD's Solve button. `claude` defaults to `--model sonnet` and streams progress via `--output-format stream-json`, surfacing live token counters (`14k ctx (13.8k cached) · 380 out`) with a defensive 1s local ticker so the status display never looks frozen.
+- **Added** Per-chain `--resume` continuity. The router maintains `sessionByChain: Map<chainName, sessionId>`, persisted to `<notesRoot>/.chain-state.json` so chains survive dev-server restart. `drain()` serializes per-chain via an `activeChains` set: `concurrency > 1` now parallelizes across distinct chains but never races within one chain.
+- **Added** **Direct-edit architecture.** Replaces the previous patch-apply flow. The router captures a git baseline before spawn, prompts the LLM to edit files directly with full write access, then computes `git diff HEAD -- <files>` as the `proposedDiff` shown in the reply note. Accept = no-op (already on disk); Reject = `git checkout HEAD -- <files>` (+ `rm` for new files). Eliminates the entire "corrupt patch at line N" failure class that bedeviled earlier iterations.
+- **Added** Notes browser view (toggled from the heading row): session dropdown, filter row (kind/author/status/search), bulk actions, expandable rows showing prose + screenshot lightbox + diff viewer + status timeline + Edit/Delete/Re-solve. Live-updates via the existing SSE feed — no refresh button.
+- **Added** Element-picker tool (`⌖ Add region` / `⌖ Pick element`): hover-highlight DOM picker with separate dim/outline/label elements layered below the modal so the modal stays clickable. Captures `{ selector, bbox }` into the note's `annotations[]`.
+- **Added** Repro recorder: `● Record` toggle in the compose view captures `click` / `input` / `keydown` / `popstate` events into `body.repro` (ring-buffered at 200 events; password fields and `[data-llui-private]` ancestors are skipped). `replayReproEvents()` dispatches the captured events back to the live DOM; browse rows show `▶ Replay (N)` on notes that carry a `repro` array.
+- **Added** Auto-capture on uncaught error: optional `autoCaptureOnError: true` (default) installs `window.onerror` + `unhandledrejection` listeners that open the HUD with a pre-filled error capture, so the user can ship the note without losing context.
+- **Added** HUD state persistence: open/closed state, in-flight tracked tasks, chain histories, and Accept-toast queue are all persisted to `localStorage` (200ms debounced) and rehydrated on mount. Reloading the page mid-solve no longer loses the dialog state or the proposed-state toasts.
+- **Added** Reply notes from the router include a `proposedDiff` plus a `▾ Resume previous / ○ Start fresh` split-button menu populated with LLM-summary labels per chain. First-task chains hide the caret entirely (nothing to resume yet).
+- **Added** Reject button on proposed-state toasts (was Accept-only). Toasts now ship a `ToastAction[]` array with `variant: 'primary' | 'secondary' | 'ghost'`; the proposed-state toast carries `[Reject, Accept]`.
+- **Added** Configurable notes location and format: `notesDir`, `format.formatSessionFolder`, `format.deriveSlug`. MCP-side writes (`@llui/mcp`'s `createNote` tool) now route through `POST /_llui/notes` so they honour the same format overrides as HUD writes.
+- **Improved** HUD UX overhaul: text wordmark replacing the lasso icon, dark mode via CSS custom properties scoped to both `#llui-devmode-annotate-root` and `#llui-devmode-annotate-toasts` (so document-body-mounted toasts inherit the theme), context subhead replacing the unhelpful "New note" title, inline `⌖ Add region` pill, markdown toolbar, More-options expander, footer keyboard hints.
+- **Improved** Screenshot capture is more robust: `html-to-image` runs with `imagePlaceholder` (1×1 transparent PNG) + `onImageErrorHandler` so a single broken `<img>` no longer rejects the whole capture; `describeCaptureError(err)` extracts `target.src` / `target.tagName` from Event-shaped errors instead of displaying `[object Event]`.
+- **Improved** Error toasts are sticky — failures don't auto-close. Failure reasons surface concretely (the spawn stderr, the git checkout error) rather than the previous generic "❌ failed".
+- **Improved** Floating button edge-anchored position now tracks window resize: a button in the right or bottom half follows its edge instead of clipping off-screen.
+- **Removed** Annotation placeholders (`lasso`, `pin`, `arrow`, `highlight`). `Annotation` is now `rect | element` only; `NoteKind` is `rect | element | text | capture | reply`. The placeholders added LOC without measurable value for LLM consumption.
+
+### `@llui/compiler@0.5.8`
+
+- **Fixed** `injectViewBag` only matched `view:` when its initializer was an arrow or function expression. Shorthand `view,` and identifier-ref `view: viewFn` silently fell through with no `__view` emitted, while `compilerStampModule` still stamped `__compilerVersion` on the same call. The runtime then threw `"missing __view despite being compiled"` at mount. Detect the view property in all three forms; for non-inspectable initializers, emit `__view: ($send) => createView($send)`.
+- **Fixed** `isReactiveAccessor` was misclassifying `PropertyAssignment` key Identifiers (e.g. the `title` in `div({ title: arrow })`) as reactive accessors, silently flipping `hasOpaqueAccessor = true` and forcing the whole-file FULL_MASK fallback for almost every file in the codebase. Skip property-assignment keys. Restores precise dirty masks repo-wide.
+- **Fixed** `item-dedup` now skips `current` field accesses; lowering `item.current` to `acc(r => r.current)` was producing `entry.current.current` → undefined for any row without a literal `current` field. The runtime `Proxy` already handles `.current` correctly.
+- **Fixed** `no-repeated-item-current` lint escalated to warn on **any** chained `item.current().X` access, not just two-or-more. A single chained access already opaques the bitmask analyzer (FULL_MASK fallback); the 2+ reconcile-race risk is additive.
+- **Added** `llui/opaque-accessor-file-wide-mask` warning. Names the accessor + line that flipped `hasOpaqueAccessor=true` and forced the whole-file FULL_MASK fallback. Catches the method-call-with-state shape (`host.fn(s, …)`) that the existing strict `llui/opaque-state-flow` rule deliberately tolerates.
+
+### `@llui/vite-plugin@0.5.9`
+
+- **Added** Auto-injects the devmode-annotate HUD in dev via a virtual ES module (`virtual:llui-devmode-annotate-init`) resolved through `import.meta.resolve()` against the plugin's own location, so consumers don't need to install `@llui/devmode-annotate` themselves.
+- **Added** `devmodeAnnotate` plugin option (`false | DevmodeAnnotateConfig`). Default = on in dev. Supports `notesDir`, `captureTimeoutMs`, `format`, `router`, `hud`. The plugin computes `solveEnabled` and threads it into the HUD bootstrap so the Solve button only renders when a router CLI is actually on `PATH`.
+- **Added** Notes router (`packages/vite-plugin/src/notes/`): CLI spawner with preset table, stream-json parser, git baseline capture / diff computation, per-chain serialization, `.chain-state.json` persistence, and a `safeAppendStatus` wrapper that tolerates ENOENT during test teardown.
+- **Added** Notes middleware HTTP endpoints (`/_llui/notes`, `/_llui/sessions`, `/_llui/events` SSE, `/_llui/capture-request`, etc.) with `revertProposedChanges` for the Reject path. `note-created` is broadcast from router-side replies too.
+- **Added** Build-time integrity check: every `__lluiCompilerEmitted` occurrence in the bundle must be paired with a `__view:` marker. Pre-fix, shorthand `view,` and identifier-ref `view: fn` got stamped without a `__view` factory and crashed at mount. The check fails closed so any future regression of the same shape is caught before reaching users.
+
+### `@llui/dom@0.4.8`
+
+- **Fixed** `__bindUncertain` now sets `maskHi: FULL_MASK` so its documented "fire on any state change" fallback actually fires for components with ≥32 reactive prefixes. The gate is `(mask & dirty) | (maskHi & dirtyHi)`; `maskHi` was defaulting to `0`, silently dropping every high-word change for opaque-bound primitives in wide-state components.
+- **Improved** Dev-only serializability check is now extracted into a shared `findNonSerializable` helper, runs once-per-instance after each reducer update, and the warning concretely names the impact (HMR / devtools / SSR / replay) with mount vs. update phase distinguished.
+
+### `@llui/mcp@0.5.11`
+
+- **Fixed** `llui_list_sessions` tool and `llui://sessions` resource now project `SessionListEntry[]` back to `string[]` at the MCP boundary. `listSessions` was changed to return the richer shape for the HUD browse view; the MCP surface still advertises the documented `{ sessions: string[] }` contract, so the projection happens at the wrapper.
+- **Added** `createNoteViaServerOrDirect` helper: when `ctx.devServerUrl` is set, MCP-side `createNote` requests route through `POST /_llui/notes` so they honour the dev server's `format` overrides. Falls back to direct on-disk write when offline. Both paths produce the same filename layout now.
+- **Fixed** Playwright e2e harness: probe each candidate bridge port with a synchronous `net.createServer` test before handing it to `LluiMcpServer` (avoids EADDRINUSE races from the previous random-port-in-range strategy). Switched `page.goto` to `waitUntil: 'load'` so the auto-injected HUD's long-lived `/_llui/events` SSE no longer prevents `networkidle` from resolving.
+
+### `@llui/{components,router,transitions,test,vike,agent}@0.4.8` · `@llui/{compiler-devtools,compiler-introspection,compiler-ssr}@0.5.8` · `llui-agent@0.4.8`
+
+- **Improved** Cascade-only bumps. Republished to pick up the bumped `@llui/dom` peer (`^0.4.7` → `^0.4.8`) or the bumped `@llui/compiler` / `@llui/agent` `workspace:*` dep, which `pnpm publish` rewrites to the concrete version at pack time. No source-level changes in these packages this release.
+
+### Docs
+
+- **Added** `docs/02 Compiler.md` cross-file resolution table — which identifier/export shapes the analyzer follows versus treats as opaque.
+- **Updated** `docs/proposals/devmode-annotate/current-state.md` is now the authoritative contract for the HUD surface. Old proposal docs (`01` … `05`) remain for design rationale; treat anything they say as superseded by what's in `current-state.md`.
+
 ## 2026-05-26 — 0.4.7 / 0.5.7
 
 **Released:** `@llui/{dom,components,router,transitions,vike,test,agent}@0.4.7`; `llui-agent@0.4.7`; `@llui/{compiler,compiler-devtools,compiler-introspection,compiler-ssr}@0.5.7`; `@llui/vite-plugin@0.5.8`; `@llui/mcp@0.5.10`
