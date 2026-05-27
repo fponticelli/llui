@@ -200,8 +200,14 @@ export function each<S, T, M = unknown>(opts: EachOptions<S, T, M>): Node[] {
     }
   }
 
-  const blockMask = (opts as { __mask?: number }).__mask ?? FULL_MASK
-  const blockMaskHi = (opts as { __maskHi?: number }).__maskHi ?? 0
+  // Symmetric two-word fallback — see branch.ts for the rationale.
+  // When `__mask` is absent the compiler bailed; default BOTH words to
+  // FULL_MASK. When `__mask` is present we trust the compiler's per-word
+  // statement and treat an absent `__maskHi` as "low-word only."
+  const rawMask = (opts as { __mask?: number }).__mask
+  const blockMask = rawMask ?? FULL_MASK
+  const blockMaskHi =
+    (opts as { __maskHi?: number }).__maskHi ?? (rawMask === undefined ? FULL_MASK : 0)
   const block: StructuralBlock = {
     mask: blockMask,
     maskHi: blockMaskHi,

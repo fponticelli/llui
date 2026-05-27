@@ -299,8 +299,11 @@ export function virtualEach<S, T, M = unknown>(opts: VirtualEachOptions<S, T, M>
   // precedes any nested blocks its rows register. See branch.ts for the
   // full rationale (Phase 1 iteration safety).
   const block: StructuralBlock = {
+    // virtual-each doesn't accept a compiler-emitted mask; reconcile
+    // on any state change. Both words FULL_MASK — see branch.ts for
+    // the gate-asymmetry reasoning behind the symmetric default.
     mask: FULL_MASK,
-    maskHi: 0,
+    maskHi: FULL_MASK,
     reconcile(state: unknown) {
       const newItems = callItems(state as S)
       if (newItems === lastItems) return

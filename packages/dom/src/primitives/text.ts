@@ -6,6 +6,7 @@ import { FULL_MASK } from '../update-loop.js'
 export function text<S>(
   accessor: ((s: S) => string) | (() => string) | string,
   mask?: number,
+  maskHi?: number,
 ): Text {
   const ctx = getRenderContext('text')
   if (typeof accessor === 'string') {
@@ -29,10 +30,14 @@ export function text<S>(
     return node
   }
 
-  // Component-level state accessor
+  // Component-level state accessor. `createBinding` derives `maskHi`
+  // from `mask` when omitted (FULL_MASK → FULL_MASK, otherwise 0), so a
+  // 2-arg call with `mask: FULL_MASK` still fires on high-word changes.
+  // A compiler emit that reads a high-word prefix passes both args.
   const bindingMask = mask ?? FULL_MASK
   const binding = createBinding(ctx.rootLifetime, {
     mask: bindingMask,
+    maskHi,
     accessor: accessor as (state: never) => unknown,
     kind: 'text',
     node,

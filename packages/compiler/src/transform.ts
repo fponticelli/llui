@@ -421,6 +421,7 @@ export function transformLlui(
     activeModules.push(
       eachMemoModule({
         fieldBits,
+        fieldBitsHi,
         viewHelperNames,
         viewHelperAliases,
       }),
@@ -489,10 +490,11 @@ export function transformLlui(
   // fires top-down (transformCallEnter) so subsequent passes — and
   // the visitor-level inline `tryInjectDirty`'s structuralMask read —
   // see the injected `__mask` prop on the options literal.
-  if (fieldBits.size > 0) {
+  if (fieldBits.size > 0 || fieldBitsHi.size > 0) {
     activeModules.push(
       structuralMaskModule({
         fieldBits,
+        fieldBitsHi,
         viewHelperNames,
         viewHelperAliases,
       }),
@@ -506,6 +508,7 @@ export function transformLlui(
   activeModules.push(
     textMaskModule({
       fieldBits,
+      fieldBitsHi,
       viewHelperNames,
       viewHelperAliases,
       lluiImport,
@@ -551,7 +554,7 @@ export function transformLlui(
       severity: 'warning',
       category: 'perf',
       message:
-        `Reactive accessor flows state opaquely (${fileLocalOpaqueShape ?? 'state used outside a tracked container'}). ` +
+        `[file-local] Reactive accessor flows state opaquely (${fileLocalOpaqueShape ?? 'state used outside a tracked container'}). ` +
         `The runtime stays correct via a FULL_MASK + whole-state sentinel in \`__prefixes\`, but file-wide this forces ` +
         `EVERY binding in the component to re-evaluate on every state change — not just this accessor. ` +
         `Restructure the read to land at a property/element-access chain (\`s.foo\`, \`s.foo[0]\`), refactor a delegating ` +
@@ -560,6 +563,33 @@ export function transformLlui(
       location: {
         file: _filename,
         range: rangeFromOffsets(source, start, end),
+      },
+    })
+  } else if (crossFileOpaque) {
+    // The cross-file walker found an opaque flow through an imported
+    // helper but doesn't carry the specific node from the focal file.
+    // Emit a file-level diagnostic so the user is at least aware that
+    // mask precision is degraded — same impact as the file-local case,
+    // they just have to identify the offending accessor by inspection
+    // (typically a `helper(s)` call where `helper` is imported and
+    // resolves to a delegating call the walker couldn't follow).
+    registryResult.analysis.diagnostics.push({
+      id: 'llui/opaque-accessor-file-wide-mask',
+      severity: 'warning',
+      category: 'perf',
+      message:
+        `[cross-file] Cross-file accessor walker flagged at least one reactive accessor in this file as opaque ` +
+        `(typically a \`helper(s)\` or \`host.fn(s, …)\` call where the callee resolves to an unanalyzable ` +
+        `body in another module). The runtime stays correct via a FULL_MASK + whole-state sentinel in ` +
+        `\`__prefixes\`, but every binding in the file re-evaluates on every state change. To locate the ` +
+        `specific accessor: inline the helper into a same-module \`const\`/\`function\` declaration, or ` +
+        `replace the call with \`track({ deps: (s) => [...] })\`.`,
+      location: {
+        file: _filename,
+        // No specific node — point at the top of the file. Rollup
+        // surfaces the warning without a code-frame in this case, which
+        // is fine for a "look at this file" message.
+        range: { start: { line: 0, column: 0 }, end: { line: 0, column: 0 } },
       },
     })
   }
@@ -1728,16 +1758,34 @@ export function computeAccessorMask(
   if (visited.has(accessor)) return { mask: 0, maskHi: 0, readsState: false }
   visited.add(accessor)
 
+  // The three early-return paths below all signal "can't statically
+  // analyze this accessor — assume conservative FULL_MASK." They MUST
+  // return FULL_MASK on BOTH words: downstream consumers (structural-
+  // mask, element-rewrite) gate emission on `(mask, maskHi)` and a
+  // low-only FULL_MASK leaks the gate-asymmetry bug — every binding /
+  // structural block built from one of these accessors would silently
+  // ignore high-word state changes. Same reasoning as the
+  // `opaqueStateFlow` and "reads state, no path" branches at the bottom
+  // of this function.
+
+  // Zero-arg accessors are per-item callbacks from `each.render`
+  // (e.g. `text(() => item.label)`); they don't read component state.
+  // The mask isn't consulted by the runtime for these, but emit
+  // FULL_MASK + FULL_MASK so downstream code that DOES inspect the
+  // shape (structural-mask, schema dumps) sees a coherent value.
   if (accessor.parameters.length === 0)
-    return { mask: 0xffffffff | 0, maskHi: 0, readsState: false }
+    return { mask: 0xffffffff | 0, maskHi: 0xffffffff | 0, readsState: false }
 
   const paramName = accessor.parameters[0]!.name
-  if (!ts.isIdentifier(paramName)) return { mask: 0xffffffff | 0, maskHi: 0, readsState: false }
+  // Destructured first param (`({foo, bar}) => ...`) — the walker can't
+  // map destructured names back to state paths, so it bails.
+  if (!ts.isIdentifier(paramName))
+    return { mask: 0xffffffff | 0, maskHi: 0xffffffff | 0, readsState: false }
 
   // FunctionDeclaration always has a body (we never resolve overloads here);
   // ArrowFunction's body may be a single expression. Both shapes are walked
   // identically by ts.forEachChild, so no special-casing is needed below.
-  if (!accessor.body) return { mask: 0xffffffff | 0, maskHi: 0, readsState: false }
+  if (!accessor.body) return { mask: 0xffffffff | 0, maskHi: 0xffffffff | 0, readsState: false }
 
   const stateParam = paramName.text
   let mask = 0
@@ -1898,7 +1946,13 @@ export function computeAccessorMask(
     return { mask: 0xffffffff | 0, maskHi: 0xffffffff | 0, readsState: true }
   }
   if (mask === 0 && maskHi === 0 && readsState) {
-    return { mask: 0xffffffff | 0, maskHi: 0, readsState: true }
+    // "Reads state but no resolvable path" catch-all. Same gate-asymmetry
+    // reasoning as the `opaqueStateFlow` branch above: when the runtime
+    // is going to use this as the structural block's `__mask`/`__maskHi`,
+    // returning low-only FULL_MASK silently drops high-word changes.
+    // Both words FULL_MASK is the correct conservative fallback — it
+    // matches the runtime default for an absent `__mask`/`__maskHi` pair.
+    return { mask: 0xffffffff | 0, maskHi: 0xffffffff | 0, readsState: true }
   }
   return { mask, maskHi, readsState }
 }

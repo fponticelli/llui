@@ -975,6 +975,138 @@ describe('Pass 2 — mask injection + __prefixes', () => {
     expect(out).toMatch(/h\.text\(s\s*=>\s*String\(s\.count\)\s*,\s*1\)/)
   })
 
+  // -------- High-word maskHi emission (gate-asymmetry regression) --------
+  //
+  // `fieldBits` only contains paths an accessor actually reads — pad
+  // fields that nobody reads stay out. To push a target field into
+  // high-word territory (prefix index ≥ 31) the test must also READ
+  // 31+ other fields somewhere in the view. We do that with sibling
+  // text() reads on attributes.
+
+  const highWordPreamble = (extra: string): { fields: string; init: string; reads: string } => {
+    // 32 low-word fields read via sibling text() bindings, plus one
+    // declared-later field (`hi*`) the test's primary accessor will read.
+    // Field declaration order is the natural read order here.
+    const fields = Array.from({ length: 32 }, (_, i) => `f${i}: number`).join('; ')
+    const init = `{ ${Array.from({ length: 32 }, (_, i) => `f${i}: 0`).join(', ')}, ${extra} }`
+    const reads = Array.from({ length: 32 }, (_, i) => `text((s: State) => String(s.f${i}))`).join(
+      ', ',
+    )
+    return { fields, init, reads }
+  }
+
+  it('emits 3-arg text() with maskHi when accessor reads a HIGH-word field', () => {
+    const { fields, init, reads } = highWordPreamble("hiField: ''")
+    const src = `
+      import { component, text } from '@llui/dom'
+      type State = { ${fields}; hiField: string }
+      export const C = component<State, { type: 'x' }, never>({
+        name: 'C',
+        init: () => [${init}, []],
+        update: (s, _m) => [s, []],
+        view: () => [${reads}, text((s: State) => s.hiField)],
+      })
+    `
+    const out = t(src)
+    // 32 padding fields (f0..f31) eat low-word bits 0..30 + high-word
+    // bit 0 (f31). hiField is the 33rd field → high-word bit 1 → mask 2.
+    // Compiler should emit `text(accessor, 0, 2)` — mask=0 (no low-word
+    // reads), maskHi=2.
+    expect(out).toMatch(/text\(\s*\(s[^)]*\)\s*=>\s*s\.hiField\s*,\s*0\s*,\s*2\s*\)/)
+  })
+
+  it('emits structural __mask AND __maskHi when show.when reads a HIGH-word field', () => {
+    const { fields, init, reads } = highWordPreamble('opened: false')
+    const src = `
+      import { component, div, text } from '@llui/dom'
+      type State = { ${fields}; opened: boolean }
+      export const C = component<State, { type: 'x' }, never>({
+        name: 'C',
+        init: () => [${init}, []],
+        update: (s, _m) => [s, []],
+        view: ({ show }) => [div([
+          ${reads},
+          ...show({ when: (s: State) => s.opened, render: () => [text('x')] }),
+        ])],
+      })
+    `
+    const out = t(src)
+    // opened at high-word bit 1 (f31 takes high-word bit 0). show() must
+    // carry BOTH `__mask: 0` and `__maskHi: 2`. Pre-fix only `__mask` was
+    // emitted, dropping the high-word change.
+    expect(out).toMatch(/show\(\{[\s\S]*?__mask:\s*0[\s\S]*?__maskHi:\s*2/)
+  })
+
+  it('walks string-literal-keyed accessors (data-*, aria-*) for path collection', () => {
+    // Pre-fix `(s) => s.uniqueField` inside `'data-x': ...` produced
+    // NO fieldBits entry for `uniqueField`, so the binding emitted at
+    // runtime saw FULL_MASK + the field never made it into __prefixes.
+    // After the fix, string-literal keys are walked identically to
+    // identifier keys.
+    const src = `
+      import { component, div } from '@llui/dom'
+      export const C = component({
+        name: 'C',
+        init: () => [{ uniqueField: 0 }, []],
+        update: (s, _m) => [s, []],
+        view: () => [div({ 'data-x': (s: { uniqueField: number }) => String(s.uniqueField) })],
+      })
+    `
+    const out = t(src)
+    // The accessor's read must contribute to __prefixes and the
+    // generated mask legend. Concretely: bit 1 (the first low-word
+    // assignment) goes to `uniqueField`.
+    expect(out).toMatch(/__prefixes:\s*\[s\s*=>\s*s\.uniqueField\]/)
+    expect(out).toContain('__maskLegend')
+    expect(out).toMatch(/"uniqueField":\s*1/)
+  })
+
+  it('numeric keys stay non-reactive (negative control)', () => {
+    // Numeric keys aren't valid HTML attributes anyway, but the
+    // walker should not blow up — just decline to walk the accessor.
+    // Confirms we didn't over-extend the gate to accept ALL key kinds.
+    const src = `
+      import { component, div } from '@llui/dom'
+      export const C = component({
+        name: 'C',
+        init: () => [{ a: 0 }, []],
+        update: (s, _m) => [s, []],
+        view: () => [div({ a: (s: { a: number }) => String(s.a) })],
+      })
+    `
+    // (use identifier 'a' as a non-attribute prop name to keep this
+    // a parseability + non-crash check rather than a behavior assertion)
+    const out = t(src)
+    expect(out).toContain('"a":')
+  })
+
+  it('emits 3-arg memo() for each.items reading a HIGH-word field', () => {
+    const { fields, init, reads } = highWordPreamble('rows: [] as number[]')
+    const src = `
+      import { component, div, text } from '@llui/dom'
+      type State = { ${fields}; rows: number[] }
+      export const C = component<State, { type: 'x' }, never>({
+        name: 'C',
+        init: () => [${init}, []],
+        update: (s, _m) => [s, []],
+        view: ({ each }) => [div([
+          ${reads},
+          ...each<number>({
+            // .filter allocates → each-memo wraps in memo()
+            items: (s) => s.rows.filter((r) => r > 0),
+            key: (r) => r,
+            render: () => [text('row')],
+          }),
+        ])],
+      })
+    `
+    const out = t(src)
+    // rows at high-word bit 1 (f31 takes high-word bit 0). memo() should
+    // get a 3rd arg of 2. Pre-fix only the 2-arg form was emitted,
+    // dropping high-word dirty bits at runtime.
+    expect(out).toMatch(/memo\(\s*\(s\)\s*=>\s*s\.rows\.filter[\s\S]*?,\s*0\s*,\s*2\s*\)/)
+  })
+
   it('injects mask into destructured text() calls from view helpers', () => {
     const src = `
       import { component } from '@llui/dom'

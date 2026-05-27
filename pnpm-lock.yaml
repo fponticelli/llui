@@ -12,7 +12,7 @@ importers:
         version: 10.0.1(eslint@10.1.0(jiti@2.6.1))
       '@vitest/coverage-v8':
         specifier: ^4.1.2
-        version: 4.1.2(vitest@4.1.2(@types/node@22.19.15)(jsdom@29.0.1)(vite@8.0.3(@emnapi/core@1.9.1)(@emnapi/runtime@1.9.1)(@types/node@22.19.15)(esbuild@0.27.5)(jiti@2.6.1)(tsx@4.21.0)(yaml@2.9.0)))
+        version: 4.1.2(vitest@4.1.2(@types/node@22.19.15)(happy-dom@20.9.0)(jsdom@29.0.1)(vite@8.0.3(@emnapi/core@1.9.1)(@emnapi/runtime@1.9.1)(@types/node@22.19.15)(esbuild@0.27.5)(jiti@2.6.1)(tsx@4.21.0)(yaml@2.9.0)))
       '@vitest/runner':
         specifier: ^4.1.2
         version: 4.1.2
@@ -25,6 +25,9 @@ importers:
       globals:
         specifier: ^17.4.0
         version: 17.4.0
+      happy-dom:
+        specifier: ^20.9.0
+        version: 20.9.0
       jiti:
         specifier: ^2.6.1
         version: 2.6.1
@@ -63,7 +66,7 @@ importers:
         version: 8.0.3(@emnapi/core@1.9.1)(@emnapi/runtime@1.9.1)(@types/node@22.19.15)(esbuild@0.27.5)(jiti@2.6.1)(tsx@4.21.0)(yaml@2.9.0)
       vitest:
         specifier: ^4.1.2
-        version: 4.1.2(@types/node@22.19.15)(jsdom@29.0.1)(vite@8.0.3(@emnapi/core@1.9.1)(@emnapi/runtime@1.9.1)(@types/node@22.19.15)(esbuild@0.27.5)(jiti@2.6.1)(tsx@4.21.0)(yaml@2.9.0))
+        version: 4.1.2(@types/node@22.19.15)(happy-dom@20.9.0)(jsdom@29.0.1)(vite@8.0.3(@emnapi/core@1.9.1)(@emnapi/runtime@1.9.1)(@types/node@22.19.15)(esbuild@0.27.5)(jiti@2.6.1)(tsx@4.21.0)(yaml@2.9.0))
 
   benchmarks/jfb-ticker/frameworks/llui:
     dependencies:
@@ -473,7 +476,7 @@ importers:
         version: 6.0.2
       vitest:
         specifier: ^4.1.2
-        version: 4.1.2(@types/node@22.19.15)(jsdom@29.0.1)(vite@8.0.3(@emnapi/core@1.9.1)(@emnapi/runtime@1.9.1)(@types/node@22.19.15)(esbuild@0.27.5)(jiti@2.6.1)(tsx@4.21.0)(yaml@2.9.0))
+        version: 4.1.2(@types/node@22.19.15)(happy-dom@20.9.0)(jsdom@29.0.1)(vite@8.0.3(@emnapi/core@1.9.1)(@emnapi/runtime@1.9.1)(@types/node@22.19.15)(esbuild@0.27.5)(jiti@2.6.1)(tsx@4.21.0)(yaml@2.9.0))
 
   packages/devmode-annotate:
     dependencies:
@@ -489,7 +492,7 @@ importers:
         version: 6.0.2
       vitest:
         specifier: ^4.1.2
-        version: 4.1.2(@types/node@22.19.15)(jsdom@29.0.1)(vite@8.0.3(@emnapi/core@1.9.1)(@emnapi/runtime@1.9.1)(@types/node@22.19.15)(esbuild@0.27.5)(jiti@2.6.1)(tsx@4.21.0)(yaml@2.9.0))
+        version: 4.1.2(@types/node@22.19.15)(happy-dom@20.9.0)(jsdom@29.0.1)(vite@8.0.3(@emnapi/core@1.9.1)(@emnapi/runtime@1.9.1)(@types/node@22.19.15)(esbuild@0.27.5)(jiti@2.6.1)(tsx@4.21.0)(yaml@2.9.0))
 
   packages/dom:
     dependencies:
@@ -549,7 +552,7 @@ importers:
         version: 6.0.2
       vitest:
         specifier: ^4.1.2
-        version: 4.1.2(@types/node@22.19.15)(jsdom@29.0.1)(vite@8.0.3(@emnapi/core@1.9.1)(@emnapi/runtime@1.9.1)(@types/node@22.19.15)(esbuild@0.27.5)(jiti@2.6.1)(tsx@4.21.0)(yaml@2.9.0))
+        version: 4.1.2(@types/node@22.19.15)(happy-dom@20.9.0)(jsdom@29.0.1)(vite@8.0.3(@emnapi/core@1.9.1)(@emnapi/runtime@1.9.1)(@types/node@22.19.15)(esbuild@0.27.5)(jiti@2.6.1)(tsx@4.21.0)(yaml@2.9.0))
 
   packages/test:
     devDependencies:
@@ -567,7 +570,7 @@ importers:
         version: 6.0.2
       vitest:
         specifier: ^4.1.2
-        version: 4.1.2(@types/node@22.19.15)(jsdom@29.0.1)(vite@8.0.3(@emnapi/core@1.9.1)(@emnapi/runtime@1.9.1)(@types/node@22.19.15)(esbuild@0.27.5)(jiti@2.6.1)(tsx@4.21.0)(yaml@2.9.0))
+        version: 4.1.2(@types/node@22.19.15)(happy-dom@20.9.0)(jsdom@29.0.1)(vite@8.0.3(@emnapi/core@1.9.1)(@emnapi/runtime@1.9.1)(@types/node@22.19.15)(esbuild@0.27.5)(jiti@2.6.1)(tsx@4.21.0)(yaml@2.9.0))
 
   packages/vike:
     dependencies:
@@ -2583,6 +2586,12 @@ packages:
         integrity: sha512-ko/gIFJRv177XgZsZcBwnqJN5x/Gien8qNOn0D5bQU/zAzVf9Zt3BlcUiLqhV9y4ARk0GbT3tnUiPNgnTXzc/Q==,
       }
 
+  '@types/whatwg-mimetype@3.0.2':
+    resolution:
+      {
+        integrity: sha512-c2AKvDT8ToxLIOUlN51gTiHXflsfIFisS4pO7pDPoKouJCESkhZnEy623gwP9laCy5lnLDAw1vAzu2vM2YLOrA==,
+      }
+
   '@types/ws@8.18.1':
     resolution:
       {
@@ -3726,6 +3735,13 @@ packages:
         integrity: sha512-5v6yZd4JK3eMI3FqqCouswVqwugaA9r4dNZB1wwcmrD02QkV5H0y7XBQW8QwQqEaZY1pM9aqORSORhJRdNK44Q==,
       }
     engines: { node: '>=6.0' }
+
+  happy-dom@20.9.0:
+    resolution:
+      {
+        integrity: sha512-GZZ9mKe8r646NUAf/zemnGbjYh4Bt8/MqASJY+pSm5ZDtc3YQox+4gsLI7yi1hba6o+eCsGxpHn5+iEVn31/FQ==,
+      }
+    engines: { node: '>=20.0.0' }
 
   has-flag@4.0.0:
     resolution:
@@ -5717,6 +5733,13 @@ packages:
       }
     engines: { node: '>=20' }
 
+  whatwg-mimetype@3.0.0:
+    resolution:
+      {
+        integrity: sha512-nt+N2dzIutVRxARx1nghPKGv1xHikU7HKdfafKkLNLindmPU/ch3U31NOCGGA/dmPcmb1VlofO0vnKAcsm0o/Q==,
+      }
+    engines: { node: '>=12' }
+
   whatwg-mimetype@5.0.0:
     resolution:
       {
@@ -6728,6 +6751,8 @@ snapshots:
 
   '@types/unist@3.0.3': {}
 
+  '@types/whatwg-mimetype@3.0.2': {}
+
   '@types/ws@8.18.1':
     dependencies:
       '@types/node': 22.19.15
@@ -6837,7 +6862,7 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
-  '@vitest/coverage-v8@4.1.2(vitest@4.1.2(@types/node@22.19.15)(jsdom@29.0.1)(vite@8.0.3(@emnapi/core@1.9.1)(@emnapi/runtime@1.9.1)(@types/node@22.19.15)(esbuild@0.27.5)(jiti@2.6.1)(tsx@4.21.0)(yaml@2.9.0)))':
+  '@vitest/coverage-v8@4.1.2(vitest@4.1.2(@types/node@22.19.15)(happy-dom@20.9.0)(jsdom@29.0.1)(vite@8.0.3(@emnapi/core@1.9.1)(@emnapi/runtime@1.9.1)(@types/node@22.19.15)(esbuild@0.27.5)(jiti@2.6.1)(tsx@4.21.0)(yaml@2.9.0)))':
     dependencies:
       '@bcoe/v8-coverage': 1.0.2
       '@vitest/utils': 4.1.2
@@ -6849,7 +6874,7 @@ snapshots:
       obug: 2.1.1
       std-env: 4.0.0
       tinyrainbow: 3.1.0
-      vitest: 4.1.2(@types/node@22.19.15)(jsdom@29.0.1)(vite@8.0.3(@emnapi/core@1.9.1)(@emnapi/runtime@1.9.1)(@types/node@22.19.15)(esbuild@0.27.5)(jiti@2.6.1)(tsx@4.21.0)(yaml@2.9.0))
+      vitest: 4.1.2(@types/node@22.19.15)(happy-dom@20.9.0)(jsdom@29.0.1)(vite@8.0.3(@emnapi/core@1.9.1)(@emnapi/runtime@1.9.1)(@types/node@22.19.15)(esbuild@0.27.5)(jiti@2.6.1)(tsx@4.21.0)(yaml@2.9.0))
 
   '@vitest/expect@4.1.2':
     dependencies:
@@ -7505,6 +7530,18 @@ snapshots:
       kind-of: 6.0.3
       section-matter: 1.0.0
       strip-bom-string: 1.0.0
+
+  happy-dom@20.9.0:
+    dependencies:
+      '@types/node': 22.19.15
+      '@types/whatwg-mimetype': 3.0.2
+      '@types/ws': 8.18.1
+      entities: 7.0.1
+      whatwg-mimetype: 3.0.0
+      ws: 8.20.0
+    transitivePeerDependencies:
+      - bufferutil
+      - utf-8-validate
 
   has-flag@4.0.0: {}
 
@@ -8853,7 +8890,7 @@ snapshots:
     optionalDependencies:
       vite: 8.0.3(@emnapi/core@1.9.1)(@emnapi/runtime@1.9.1)(@types/node@22.19.15)(esbuild@0.27.5)(jiti@2.6.1)(tsx@4.21.0)(yaml@2.9.0)
 
-  vitest@4.1.2(@types/node@22.19.15)(jsdom@29.0.1)(vite@8.0.3(@emnapi/core@1.9.1)(@emnapi/runtime@1.9.1)(@types/node@22.19.15)(esbuild@0.27.5)(jiti@2.6.1)(tsx@4.21.0)(yaml@2.9.0)):
+  vitest@4.1.2(@types/node@22.19.15)(happy-dom@20.9.0)(jsdom@29.0.1)(vite@8.0.3(@emnapi/core@1.9.1)(@emnapi/runtime@1.9.1)(@types/node@22.19.15)(esbuild@0.27.5)(jiti@2.6.1)(tsx@4.21.0)(yaml@2.9.0)):
     dependencies:
       '@vitest/expect': 4.1.2
       '@vitest/mocker': 4.1.2(vite@8.0.3(@emnapi/core@1.9.1)(@emnapi/runtime@1.9.1)(@types/node@22.19.15)(esbuild@0.27.5)(jiti@2.6.1)(tsx@4.21.0)(yaml@2.9.0))
@@ -8877,6 +8914,7 @@ snapshots:
       why-is-node-running: 2.3.0
     optionalDependencies:
       '@types/node': 22.19.15
+      happy-dom: 20.9.0
       jsdom: 29.0.1
     transitivePeerDependencies:
       - msw
@@ -8886,6 +8924,8 @@ snapshots:
       xml-name-validator: 5.0.0
 
   webidl-conversions@8.0.1: {}
+
+  whatwg-mimetype@3.0.0: {}
 
   whatwg-mimetype@5.0.0: {}
 

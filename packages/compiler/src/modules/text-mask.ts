@@ -26,6 +26,7 @@ import { computeAccessorMask, createMaskLiteral, isHelperCall } from '../transfo
 
 export interface TextMaskModuleOptions {
   fieldBits: Map<string, number>
+  fieldBitsHi: Map<string, number>
   viewHelperNames: Set<string>
   viewHelperAliases: Map<string, string>
   /** The `import { ... } from '@llui/dom'` declaration — used for
@@ -34,7 +35,7 @@ export interface TextMaskModuleOptions {
 }
 
 export function textMaskModule(options: TextMaskModuleOptions): CompilerModule {
-  const { fieldBits, viewHelperNames, viewHelperAliases, lluiImport } = options
+  const { fieldBits, fieldBitsHi, viewHelperNames, viewHelperAliases, lluiImport } = options
   return {
     name: 'text-mask',
     compilerVersion: '^0.3.0',
@@ -63,12 +64,14 @@ export function textMaskModule(options: TextMaskModuleOptions): CompilerModule {
       const accessor = resolveAccessorBody(firstArg)
       if (!accessor) return null
 
-      const { mask } = computeAccessorMask(accessor, fieldBits)
+      const { mask, maskHi } = computeAccessorMask(accessor, fieldBits, undefined, fieldBitsHi)
       const f = ctx.factory
-      return f.createCallExpression(node.expression, node.typeArguments, [
-        firstArg,
-        createMaskLiteral(f, mask === 0 ? 0xffffffff | 0 : mask),
-      ])
+      // Constant accessor → fall back to FULL_MASK so the runtime
+      // re-evaluates on every change rather than caching forever.
+      const effMask = mask === 0 && maskHi === 0 ? 0xffffffff | 0 : mask
+      const args: ts.Expression[] = [firstArg, createMaskLiteral(f, effMask)]
+      if (maskHi !== 0) args.push(createMaskLiteral(f, maskHi))
+      return f.createCallExpression(node.expression, node.typeArguments, args)
     },
   }
 }

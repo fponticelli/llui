@@ -60,7 +60,12 @@ export function elTemplate(
 
   const root = tmpl.content.firstElementChild!.cloneNode(true) as Element
 
-  const bind: TemplateBind = (node, mask, kind, key, accessor, maskHi = 0) => {
+  // No `maskHi = 0` default — leave it `undefined` when the compiler
+  // omits the 6th arg, so `createBinding`'s mask-mirroring default
+  // takes over (FULL_MASK → FULL_MASK, otherwise 0). Forcing 0 here
+  // previously left high-word changes silently un-fired for the
+  // destructured-param accessor catch-all.
+  const bind: TemplateBind = (node, mask, kind, key, accessor, maskHi) => {
     const perItem = accessor.length === 0
     if (perItem) {
       const get = accessor as unknown as () => unknown

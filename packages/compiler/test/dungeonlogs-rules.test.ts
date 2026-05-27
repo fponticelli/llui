@@ -123,6 +123,9 @@ describe('llui/opaque-accessor-file-wide-mask', () => {
     expect(diags[0]!.category).toBe('perf')
     expect(diags[0]!.message).toMatch(/method call/i)
     expect(diags[0]!.message).toMatch(/host\.dirtyAt/)
+    // The `[file-local]` / `[cross-file]` tag at the head of the message
+    // is the consumer's grep-friendly signal for "which walker bailed."
+    expect(diags[0]!.message).toMatch(/^\[file-local\]/)
     expect(diags[0]!.location.range.start.line).toBeGreaterThan(0)
   })
 
@@ -162,6 +165,125 @@ describe('llui/opaque-accessor-file-wide-mask', () => {
     )
     expect(diags.length).toBeGreaterThanOrEqual(1)
     expect(diags[0]!.message).toMatch(/dynamic element access|state used outside/)
+  })
+
+  it('fires at file level when only crossFileOpaque is set (cross-file walker bail)', () => {
+    // The cross-file walker can't surface the specific in-file node
+    // that caused the bail (the focal-file walker would have flagged
+    // it if it were locally analyzable). Verify the diagnostic still
+    // fires so the user knows mask precision is degraded — without
+    // this, an app whose only opacity comes from an imported helper
+    // gets a silent file-wide FULL_MASK and zero warning.
+    const result = transformLlui(
+      `
+        import { component, div } from '@llui/dom'
+        const App = component({
+          name: 'X',
+          init: () => [{ a: 0 }, []],
+          update: (s) => [s, []],
+          view: () => [
+            div({ 'data-a': (s) => String(s.a) }),
+          ],
+        })
+      `,
+      'fixture.ts',
+      false, // devMode
+      false, // emitAgentMetadata
+      5200, // mcpPort
+      false, // verbose
+      undefined, // typeSources
+      undefined, // preExtracted
+      undefined, // crossFilePaths
+      true, // crossFileOpaque
+    )
+    expect(result).not.toBeNull()
+    const diags = result!.diagnostics.filter((d) => d.id === 'llui/opaque-accessor-file-wide-mask')
+    expect(diags).toHaveLength(1)
+    expect(diags[0]!.severity).toBe('warning')
+    expect(diags[0]!.message).toMatch(/cross-file/i)
+    expect(diags[0]!.message).toMatch(/^\[cross-file\]/)
+    expect(diags[0]!.location.range.start.line).toBe(0)
+  })
+
+  it('fires on opaque accessor under a STRING-LITERAL key (data-*, aria-*)', () => {
+    // Pre-fix `isReactiveAccessor` only accepted Identifier keys, so an
+    // opaque flow inside `'data-x': (s) => host.fn(s)` was silent — the
+    // accessor body wasn't walked at all. String-literal and identifier
+    // keys are equally valid HTML attribute positions; the walker now
+    // treats them uniformly.
+    const diags = diagsFor(
+      `
+        import { component, div } from '@llui/dom'
+        const host = { dirtyAt: (_s: { a: number }, _e: number) => false }
+        const App = component({
+          name: 'X',
+          init: () => [{ a: 0 }, []],
+          update: (s) => [s, []],
+          view: () => [
+            div({ 'data-dirty': (s) => host.dirtyAt(s, 0) ? '1' : '0' }),
+          ],
+        })
+      `,
+      'llui/opaque-accessor-file-wide-mask',
+    )
+    expect(diags).toHaveLength(1)
+    expect(diags[0]!.message).toMatch(/host\.dirtyAt/)
+    expect(diags[0]!.message).toMatch(/^\[file-local\]/)
+  })
+
+  it('fires on opaque accessor under an aria-* string-literal key', () => {
+    const diags = diagsFor(
+      `
+        import { component, button } from '@llui/dom'
+        const host = { describe: (_s: { msg: string }) => '' }
+        const App = component({
+          name: 'X',
+          init: () => [{ msg: '' }, []],
+          update: (s) => [s, []],
+          view: () => [
+            button({ 'aria-label': (s) => host.describe(s) }, []),
+          ],
+        })
+      `,
+      'llui/opaque-accessor-file-wide-mask',
+    )
+    expect(diags).toHaveLength(1)
+    expect(diags[0]!.message).toMatch(/host\.describe/)
+  })
+
+  it('file-local and cross-file are mutually exclusive: file-local takes precedence', () => {
+    // When BOTH paths flip, the diagnostic should still point at the
+    // concrete in-file node (the file-local message). Otherwise users
+    // would see a vague [cross-file] message even when the precise
+    // location is known. Locks the `else if` ordering at transform.ts.
+    const result = transformLlui(
+      `
+        import { component, div } from '@llui/dom'
+        const host = { dirtyAt: (_s: { a: number }, _e: number) => false }
+        const App = component({
+          name: 'X',
+          init: () => [{ a: 0 }, []],
+          update: (s) => [s, []],
+          view: () => [
+            div({ title: (s) => host.dirtyAt(s, 0) ? '1' : '0' }),
+          ],
+        })
+      `,
+      'fixture.ts',
+      false,
+      false,
+      5200,
+      false,
+      undefined,
+      undefined,
+      undefined,
+      true, // crossFileOpaque ALSO true
+    )
+    expect(result).not.toBeNull()
+    const diags = result!.diagnostics.filter((d) => d.id === 'llui/opaque-accessor-file-wide-mask')
+    expect(diags).toHaveLength(1)
+    expect(diags[0]!.message).toMatch(/^\[file-local\]/)
+    expect(diags[0]!.message).not.toMatch(/^\[cross-file\]/)
   })
 })
 

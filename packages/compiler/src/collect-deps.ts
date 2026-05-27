@@ -476,59 +476,73 @@ export function isReactiveAccessor(node: ts.Node): boolean {
     // 2026-05 made it visible.
     if (parent.initializer !== node) return false
     const key = parent.name
-    if (ts.isIdentifier(key)) {
-      // Skip event handlers (onClick, onInput, etc.)
-      if (/^on[A-Z]/.test(key.text)) return false
-      // Skip each() key function and other non-reactive props
-      if (key.text === 'key' || key.text === 'name') return false
-      // Skip view-builder slots: `default` / `render` / `fallback` on the
-      // structural primitives. Their callbacks receive a View<S, M> bag,
-      // not state — e.g. `branch({ default: (h) => h.text(...) })`. The
-      // single param is `h`, not `s`; treating it as a reactive accessor
-      // makes the opaque-flow walker chase `h` references as if they
-      // were state. The runtime knows these slots are view builders;
-      // the compiler did not, until now.
-      if (key.text === 'default' || key.text === 'render' || key.text === 'fallback') {
-        return false
-      }
-      // Skip `cases.<k>` — the nested-object form of branch() cases.
-      // Each value is `(h: View<S, M>) => Node[]`, same as `default`.
-      // Identified by the enclosing object literal sitting in a
-      // `cases:` property assignment.
-      const enclosingObjLit = parent.parent
-      if (enclosingObjLit && ts.isObjectLiteralExpression(enclosingObjLit)) {
-        const outerPA = enclosingObjLit.parent
-        if (
-          outerPA &&
-          ts.isPropertyAssignment(outerPA) &&
-          ts.isIdentifier(outerPA.name) &&
-          outerPA.name.text === 'cases'
-        ) {
-          return false
-        }
-      }
-      // Walk up to find the enclosing call expression
-      let ancestor: ts.Node | undefined = parent.parent // ObjectLiteralExpression
-      while (ancestor && !ts.isCallExpression(ancestor)) {
-        ancestor = ancestor.parent
-      }
-      if (!ancestor) return false
-      const callExpr = ancestor as ts.CallExpression
-      // Bare identifier: `scope({on: …})`, `div({title: …})`, etc.
-      if (ts.isIdentifier(callExpr.expression)) {
-        return REACTIVE_API_NAMES.has(callExpr.expression.text)
-      }
-      // Method-call form: `h.scope({on: …})`, `h.show({when: …})`, etc.
-      // The docs and View bag promote this shape; without recognizing it
-      // here, paths read ONLY through a structural primitive's
-      // `on`/`when`/`items` accessor never enter `__prefixes`, so the
-      // runtime dirty mask can't see changes to those fields and the
-      // structural block silently fails to reconcile.
-      if (ts.isPropertyAccessExpression(callExpr.expression)) {
-        return REACTIVE_API_NAMES.has(callExpr.expression.name.text)
-      }
+    // Identifier keys (`title: …`) and string-literal keys
+    // (`'data-id': …`, `'aria-label': …`) are equally valid attribute
+    // positions in HTML; treat them uniformly. Numeric and computed
+    // keys stay non-reactive — they're not valid attribute shapes.
+    // Pre-fix only identifier keys were walked; bindings under
+    // string-literal keys would (correctly) get FULL_MASK at runtime
+    // but their accessor bodies were never walked for path collection
+    // OR for opaque-flow detection, so any opacity inside them was
+    // silent and any uniquely-read field never made it into __prefixes
+    // (forcing the sentinel fallback rather than precise mask gating).
+    let keyText: string
+    if (ts.isIdentifier(key) || ts.isStringLiteral(key)) {
+      keyText = key.text
+    } else {
       return false
     }
+    // Skip event handlers (onClick, onInput, etc.)
+    if (/^on[A-Z]/.test(keyText)) return false
+    // Skip each() key function and other non-reactive props
+    if (keyText === 'key' || keyText === 'name') return false
+    // Skip view-builder slots: `default` / `render` / `fallback` on the
+    // structural primitives. Their callbacks receive a View<S, M> bag,
+    // not state — e.g. `branch({ default: (h) => h.text(...) })`. The
+    // single param is `h`, not `s`; treating it as a reactive accessor
+    // makes the opaque-flow walker chase `h` references as if they
+    // were state. The runtime knows these slots are view builders;
+    // the compiler did not, until now.
+    if (keyText === 'default' || keyText === 'render' || keyText === 'fallback') {
+      return false
+    }
+    // Skip `cases.<k>` — the nested-object form of branch() cases.
+    // Each value is `(h: View<S, M>) => Node[]`, same as `default`.
+    // Identified by the enclosing object literal sitting in a
+    // `cases:` property assignment.
+    const enclosingObjLit = parent.parent
+    if (enclosingObjLit && ts.isObjectLiteralExpression(enclosingObjLit)) {
+      const outerPA = enclosingObjLit.parent
+      if (
+        outerPA &&
+        ts.isPropertyAssignment(outerPA) &&
+        (ts.isIdentifier(outerPA.name) || ts.isStringLiteral(outerPA.name)) &&
+        outerPA.name.text === 'cases'
+      ) {
+        return false
+      }
+    }
+    // Walk up to find the enclosing call expression
+    let ancestor: ts.Node | undefined = parent.parent // ObjectLiteralExpression
+    while (ancestor && !ts.isCallExpression(ancestor)) {
+      ancestor = ancestor.parent
+    }
+    if (!ancestor) return false
+    const callExpr = ancestor as ts.CallExpression
+    // Bare identifier: `scope({on: …})`, `div({title: …})`, etc.
+    if (ts.isIdentifier(callExpr.expression)) {
+      return REACTIVE_API_NAMES.has(callExpr.expression.text)
+    }
+    // Method-call form: `h.scope({on: …})`, `h.show({when: …})`, etc.
+    // The docs and View bag promote this shape; without recognizing it
+    // here, paths read ONLY through a structural primitive's
+    // `on`/`when`/`items` accessor never enter `__prefixes`, so the
+    // runtime dirty mask can't see changes to those fields and the
+    // structural block silently fails to reconcile.
+    if (ts.isPropertyAccessExpression(callExpr.expression)) {
+      return REACTIVE_API_NAMES.has(callExpr.expression.name.text)
+    }
+    return false
   }
 
   return false

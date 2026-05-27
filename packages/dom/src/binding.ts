@@ -6,8 +6,11 @@ import { FULL_MASK } from './update-loop.js'
 export interface CreateBindingOpts {
   mask: number
   /**
-   * High-word bits 31..61. Optional; defaults to 0. Compiler-emitted
-   * only when the accessor reads a prefix past bit 30.
+   * High-word bits 31..61. Optional. When omitted, the runtime derives
+   * `maskHi: FULL_MASK` if `mask === FULL_MASK` (so the binding fires
+   * on any state change — matching the low-word intent), otherwise
+   * `maskHi: 0` (the compiler said "low-word only"). Compiler-emitted
+   * with a precise value when the accessor reads a prefix past bit 30.
    */
   maskHi?: number
   accessor: (state: never) => unknown
@@ -28,9 +31,21 @@ export function setFlatBindings(arr: Binding[] | null): void {
 }
 
 export function createBinding(scope: Lifetime, opts: CreateBindingOpts): Binding {
+  // When `maskHi` is not provided, derive it from `mask` rather than
+  // defaulting to 0 — same gate-asymmetry reasoning as the structural
+  // primitives. A caller that wrote `mask: FULL_MASK` means "fire on any
+  // state change," and the Phase 2 gate `(mask & dirty) | (maskHi & dirtyHi)`
+  // only honors that intent when `maskHi` also covers the high word.
+  // Components with ≥32 reactive prefixes trip this regularly: a binding
+  // emitted with `mask: FULL_MASK` (uncompiled fallback in elements.ts /
+  // svg-elements.ts / etc.) would silently never re-evaluate when ONLY
+  // high-word fields changed. The explicit `__bindUncertain` site
+  // (line 88) used to be the only place this was set correctly —
+  // wrong-by-default left every other call site quietly broken.
+  const derivedMaskHi = opts.maskHi ?? (opts.mask === FULL_MASK ? FULL_MASK : 0)
   const binding: Binding = {
     mask: opts.mask,
-    maskHi: opts.maskHi ?? 0,
+    maskHi: derivedMaskHi,
     accessor: opts.accessor as (state: unknown) => unknown,
     lastValue: undefined,
     kind: opts.kind,

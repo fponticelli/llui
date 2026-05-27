@@ -439,8 +439,16 @@ interface BranchOptionsBase extends TransitionOptions {
    * leaving arm. User code should not set this directly.
    */
   __disposalCause?: DisposerEvent['cause']
-  /** @internal Compiler-injected mask of paths read by `on`. */
+  /** @internal Compiler-injected mask of low-word paths (bits 0–30) read by `on`. */
   __mask?: number
+  /**
+   * @internal Compiler-injected mask of high-word paths (bits 31–61) read
+   * by `on`. Only emitted when the driver reads a field at prefix index ≥ 31.
+   * When `__mask` is present but this is absent the runtime treats high-word
+   * changes as out-of-scope. When both are absent the runtime falls back to
+   * FULL_MASK on BOTH words.
+   */
+  __maskHi?: number
 }
 
 /**

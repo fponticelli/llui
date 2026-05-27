@@ -44,6 +44,11 @@ export function unsafeHtml<S>(
 
   const blocks = ctx.structuralBlocks
   const blockMask = mask ?? FULL_MASK
+  // Mirror `mask`'s "fire on any change" intent into the high word
+  // when the caller passed FULL_MASK (no compile-time precision).
+  // Without this, high-word state changes silently bypass the block
+  // — see branch.ts for the full gate-asymmetry rationale.
+  const blockMaskHi = blockMask === FULL_MASK ? FULL_MASK : 0
 
   const anchor = ctx.dom.createComment('unsafeHtml')
   let currentHtml = accessor(ctx.state as S)
@@ -51,7 +56,7 @@ export function unsafeHtml<S>(
 
   const block: StructuralBlock = {
     mask: blockMask,
-    maskHi: 0,
+    maskHi: blockMaskHi,
     reconcile(state: unknown) {
       const newHtml = accessor(state as S)
       // Identity short-circuit — don't rebuild the subtree when the

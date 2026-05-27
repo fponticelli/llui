@@ -13,16 +13,26 @@ export function setCurrentDirtyMask(mask: number, maskHi: number = 0): void {
 
 const UNSET = Symbol('unset')
 
-export function memo<S, T>(accessor: (s: S) => T, mask?: number, maskHi: number = 0): (s: S) => T {
+const FULL_MASK = 0xffffffff | 0
+
+export function memo<S, T>(accessor: (s: S) => T, mask?: number, maskHi?: number): (s: S) => T {
   let lastInput: S | typeof UNSET = UNSET
   let lastOutput: T
+  // Same gate-asymmetry footgun as createBinding / structural blocks.
+  // If `mask` is FULL_MASK (the compiler's "fire on any state change"
+  // signal) but `maskHi` is left unset, the Level 1 gate
+  // `(mask & dirty) | (maskHi & dirtyHi)` silently drops high-word
+  // changes — every memoization in a ≥32-prefix component would stay
+  // cached forever for high-word-only updates. Mirror the FULL_MASK
+  // intent into the high word when the caller didn't speak for it.
+  const effectiveMaskHi = maskHi ?? (mask === FULL_MASK ? FULL_MASK : 0)
 
   return (s: S) => {
     // Level 1: bitmask fast path — skip if neither low nor high masks overlap
     if (
       lastInput !== UNSET &&
       mask !== undefined &&
-      !((mask & currentDirtyMask) | (maskHi & currentDirtyMaskHi))
+      !((mask & currentDirtyMask) | (effectiveMaskHi & currentDirtyMaskHi))
     ) {
       return lastOutput
     }

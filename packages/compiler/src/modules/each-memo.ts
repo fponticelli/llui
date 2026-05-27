@@ -21,6 +21,7 @@ import { computeAccessorMask, createMaskLiteral, isHelperCall } from '../transfo
 
 export interface EachMemoModuleOptions {
   fieldBits: Map<string, number>
+  fieldBitsHi: Map<string, number>
   /** View-helper names — gates `isHelperCall` on each() under aliased shapes. */
   viewHelperNames: Set<string>
   /** Destructured view-helper aliases (e.g. `{ each: e }` → `e` → `each`). */
@@ -35,7 +36,7 @@ export interface EachMemoSlot {
 export const EACH_MEMO_SLOT = 'each-memo:state'
 
 export function eachMemoModule(options: EachMemoModuleOptions): CompilerModule {
-  const { fieldBits, viewHelperNames, viewHelperAliases } = options
+  const { fieldBits, fieldBitsHi, viewHelperNames, viewHelperAliases } = options
   return {
     name: 'each-memo',
     compilerVersion: '^0.3.0',
@@ -67,15 +68,23 @@ export function eachMemoModule(options: EachMemoModuleOptions): CompilerModule {
       // handles `(s) => s.items` correctly without memo.
       if (!accessorAllocatesArray(accessor.body)) return null
 
-      const { mask, readsState } = computeAccessorMask(accessor, fieldBits)
-      if (mask === 0 && !readsState) return null // constant, nothing to memoize
-      const finalMask = mask === 0 && readsState ? 0xffffffff | 0 : mask
+      const { mask, maskHi, readsState } = computeAccessorMask(
+        accessor,
+        fieldBits,
+        undefined,
+        fieldBitsHi,
+      )
+      if (mask === 0 && maskHi === 0 && !readsState) return null // constant, nothing to memoize
 
       const f = ctx.factory
-      const wrapped = f.createCallExpression(f.createIdentifier('memo'), undefined, [
-        accessor,
-        createMaskLiteral(f, finalMask),
-      ])
+      // Emit `memo(accessor, mask)` (2-arg) when the accessor reads only
+      // low-word fields, `memo(accessor, mask, maskHi)` (3-arg) otherwise.
+      // The runtime defaults the omitted slot per `memo()`'s FULL_MASK-
+      // mirroring rule, so a 2-arg call with `mask: FULL_MASK` still
+      // covers high-word changes correctly.
+      const memoArgs: ts.Expression[] = [accessor, createMaskLiteral(f, mask)]
+      if (maskHi !== 0) memoArgs.push(createMaskLiteral(f, maskHi))
+      const wrapped = f.createCallExpression(f.createIdentifier('memo'), undefined, memoArgs)
       const newProps = arg.properties.map((p) =>
         p === itemsProp ? f.createPropertyAssignment('items', wrapped) : p,
       )

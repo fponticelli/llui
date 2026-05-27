@@ -68,9 +68,19 @@ export function branch<S, M = unknown, K extends string = string>(
   // arm's nodes stay orphaned in the old detached wrapper.
   let lastParent: Node | null = null
 
+  // When the compiler emitted `__mask` we trust both words it provided —
+  // an absent `__maskHi` means "the driver reads only low-word fields,
+  // skip high-word changes." When NO `__mask` is present (compile-time
+  // analysis bailed, or the call was hand-rolled), both words must
+  // default to FULL_MASK so the gate `(mask & dirty) | (maskHi & dirtyHi)`
+  // doesn't silently drop changes in the word the compiler didn't speak
+  // for. Asymmetric defaults (mask=FULL_MASK, maskHi=0) caused a
+  // show/branch/each block to never reconcile when its driver field
+  // lived at prefix index ≥ 31 — see issue write-up in CHANGELOG.
+  const rawMask = (opts as { __mask?: number }).__mask
   const block: StructuralBlock = {
-    mask: (opts as { __mask?: number }).__mask ?? FULL_MASK,
-    maskHi: (opts as { __maskHi?: number }).__maskHi ?? 0,
+    mask: rawMask ?? FULL_MASK,
+    maskHi: (opts as { __maskHi?: number }).__maskHi ?? (rawMask === undefined ? FULL_MASK : 0),
     reconcile(state: unknown) {
       const newKey = callOn(state as S)
       if (Object.is(newKey, currentKey)) return

@@ -28,5 +28,12 @@ export function show<S, M = unknown>(opts: ShowOptions<S, M>): Node[] {
     leave: opts.leave,
     onTransition: opts.onTransition,
     __disposalCause: 'show-hide',
+    // Forward the compiler-injected per-word mask so branch's Phase 1
+    // gate matches the precision of `when`. Pre-fix show always dropped
+    // the mask on the floor and branch fell back to FULL_MASK + 0 —
+    // correct in the low word, but silently un-reactive to high-word
+    // changes when the driver field's prefix index was ≥ 31.
+    __mask: (opts as { __mask?: number }).__mask,
+    __maskHi: (opts as { __maskHi?: number }).__maskHi,
   })
 }

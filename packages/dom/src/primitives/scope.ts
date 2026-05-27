@@ -33,5 +33,7 @@ export function scope<S, M = unknown>(opts: ScopeOptions<S, M>): Node[] {
     onTransition: opts.onTransition,
     __disposalCause: 'scope-rebuild',
     __mask: opts.__mask,
+    // Forward the high-word companion — same rationale as show.ts.
+    __maskHi: (opts as { __maskHi?: number }).__maskHi,
   })
 }

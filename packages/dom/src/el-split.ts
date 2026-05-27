@@ -59,12 +59,15 @@ export function elSplit(
       const kind = b[1]
       const key = b[2]
       const accessor = b[3]
-      // Tuple length 5 carries a high-word mask in slot 4 (when the
-      // accessor reads a path at bit position 31..61). Length 4 stays
-      // pure low-word — covers both ≤31-prefix components and
-      // 32..61-prefix components whose individual bindings only touch
-      // low-word paths.
-      const maskHi = b.length === 5 ? (b[4] as number) : 0
+      // Tuple length 5 carries a high-word mask in slot 4. Length 4
+      // means the compiler did not emit a high-word mask — pass
+      // `undefined` to `createBinding` so its default kicks in:
+      //   - mask !== FULL_MASK → maskHi: 0 (compiler said "low-word only")
+      //   - mask === FULL_MASK → maskHi: FULL_MASK (compiler bailed)
+      // Forcing an explicit `0` here previously defeated that default
+      // for destructured-param accessors that fell into the FULL_MASK +
+      // readsState:false return path. See binding.ts.
+      const maskHi: number | undefined = b.length === 5 ? (b[4] as number) : undefined
       const perItem = accessor.length === 0
       if (perItem) {
         const get = accessor as unknown as () => unknown

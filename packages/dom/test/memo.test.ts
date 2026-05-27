@@ -134,4 +134,51 @@ describe('memo()', () => {
     handle.flush()
     expect(computeFilter).toHaveBeenCalledTimes(1)
   })
+
+  it('FULL_MASK with no maskHi: defaults maskHi to FULL_MASK so high-word changes invalidate', () => {
+    // Regression: pre-fix `memo(fn, FULL_MASK)` defaulted `maskHi: 0`,
+    // and the Level 1 gate `(mask & dirty) | (maskHi & dirtyHi)` evaluated
+    // to `(-1 & 0) | (0 & dirtyHi)` = 0 when ONLY a high-word field changed.
+    // The memo returned its cached value forever. After the fix, omitted
+    // `maskHi` mirrors `mask`'s "fire on any change" intent.
+    const FULL_MASK = 0xffffffff | 0
+    type WideS = { pad: number[]; highField: string }
+    const initWide: WideS = { pad: [], highField: 'old' }
+
+    // Place highField at prefix index 33 (high-word bit 2) by building a
+    // 38-entry prefix array. We exercise memo via a binding inside a
+    // mounted component so the dispatch loop populates dirtyHi.
+    const prefixes: Array<(s: WideS) => unknown> = []
+    for (let i = 0; i < 33; i++) prefixes.push((s) => (s.pad ?? [])[i])
+    prefixes.push((s) => s.highField)
+    for (let i = 33; i < 37; i++) prefixes.push((s) => (s.pad ?? [])[i])
+
+    const compute = vi.fn((s: WideS) => `value=${s.highField}`)
+    const memoized = memo(compute, FULL_MASK) // NO maskHi passed
+
+    let sendFn: (m: { type: 'rename' }) => void
+    const def: ComponentDef<WideS, { type: 'rename' }, never> = {
+      name: 'HighWordMemo',
+      init: () => [initWide, []],
+      update: (s) => [{ ...s, highField: 'new' }, []],
+      view: ({ send }) => {
+        sendFn = send
+        return [div({}, [text((s: WideS) => memoized(s))])]
+      },
+      __compilerVersion: '__test__',
+      __prefixes: prefixes,
+    }
+    const container = document.createElement('div')
+    const handle = mountApp(container, def)
+    expect(compute).toHaveBeenCalledTimes(1)
+    expect(container.querySelector('div')?.textContent).toBe('value=old')
+
+    sendFn!({ type: 'rename' })
+    handle.flush()
+    // Pre-fix this asserted 0 calls — the memo was silently caching.
+    expect(compute).toHaveBeenCalledTimes(2)
+    expect(container.querySelector('div')?.textContent).toBe('value=new')
+    handle.dispose()
+    container.remove()
+  })
 })
