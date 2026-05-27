@@ -502,10 +502,16 @@ export function toCanonicalDiagnostic(
 export function crossFileAccessorPaths(
   program: ts.Program,
   focalFile: ts.SourceFile,
-): { paths: Set<string>; opaque: boolean } {
+): { paths: Set<string>; opaque: boolean; opaqueNode?: ts.Node } {
   const checker = program.getTypeChecker()
   const paths = new Set<string>()
-  const opaqueOut = { value: false }
+  // `opaqueOut.node` is the first focal-file accessor whose body
+  // triggered the opacity flip. The diagnostic emitter uses it to
+  // report a meaningful line number instead of falling back to
+  // line 0 (which collapses dedup and gives users no actionable
+  // location). See `transform.ts:opaque-accessor-file-wide-mask`
+  // diagnostic.
+  const opaqueOut: { value: boolean; node?: ts.Node } = { value: false }
   const visitedHelpers = new Set<ts.Declaration>()
 
   const isViewHelperCallArg0 = (arrow: ts.ArrowFunction | ts.FunctionExpression): boolean => {
@@ -525,14 +531,25 @@ export function crossFileAccessorPaths(
       const p0 = node.parameters[0]!
       if (ts.isIdentifier(p0.name) && node.body) {
         if (isReactiveAccessor(node) || isViewHelperCallArg0(node)) {
+          // Capture the focal-file accessor IF its walk triggers the
+          // opacity flip. `walkAccessorBody` may set `opaqueOut.value`
+          // anywhere in the body (or in a recursed-into helper body,
+          // which lives in a different file). The user can only act on
+          // a callsite IN THEIR FILE, so we record the focal-file
+          // accessor at the visit-level — this gives users a real line
+          // to jump to, not a foreign-file location.
+          const wasOpaque = opaqueOut.value
           walkAccessorBody(node.body, p0.name.text, paths, checker, visitedHelpers, opaqueOut)
+          if (!wasOpaque && opaqueOut.value && !opaqueOut.node) {
+            opaqueOut.node = node
+          }
         }
       }
     }
     ts.forEachChild(node, visit)
   }
   visit(focalFile)
-  return { paths, opaque: opaqueOut.value }
+  return { paths, opaque: opaqueOut.value, opaqueNode: opaqueOut.node }
 }
 
 // Helpers whose arrow args are NOT state accessors — same exclusion list

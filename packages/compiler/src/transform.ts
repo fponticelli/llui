@@ -181,6 +181,14 @@ export function transformLlui(
   crossFilePaths?: ReadonlySet<string>,
   crossFileOpaque = false,
   crossFileProgram?: ts.Program,
+  // The focal-file accessor node captured by `crossFileAccessorPaths`
+  // when cross-file opacity fires. When provided, the
+  // `llui/opaque-accessor-file-wide-mask` cross-file diagnostic emits
+  // with a precise range derived from this node — IDEs can jump to
+  // it, Rollup dedupes correctly, and the warning is actionable.
+  // When omitted (back-compat), the diagnostic falls back to a
+  // file-level range with `line: 0, column: 0`.
+  crossFileOpaqueNode?: ts.Node,
 ): { output: string; edits: TransformEdit[]; diagnostics: Diagnostic[] } | null {
   // Use the caller-provided filename so any module reading `sf.fileName`
   // (e.g. `componentMetaModule` emitting `__componentMeta: { file }`)
@@ -567,12 +575,35 @@ export function transformLlui(
     })
   } else if (crossFileOpaque) {
     // The cross-file walker found an opaque flow through an imported
-    // helper but doesn't carry the specific node from the focal file.
-    // Emit a file-level diagnostic so the user is at least aware that
-    // mask precision is degraded — same impact as the file-local case,
-    // they just have to identify the offending accessor by inspection
-    // (typically a `helper(s)` call where `helper` is imported and
-    // resolves to a delegating call the walker couldn't follow).
+    // helper. When the walker handed back the offending focal-file
+    // accessor node, emit with that node's range — gives the user a
+    // precise line to jump to, lets Rollup dedupe correctly, and
+    // matches the file-local diagnostic's UX. When no node is
+    // available (older callers, hand-rolled adapters), fall back to
+    // a file-level diagnostic at line 0.
+    //
+    // The walker captures the focal-file ACCESSOR (not the offending
+    // `helper(s)` call inside it) because the call may not exist in
+    // the focal file at all — the opacity can be detected several
+    // helpers deep. The accessor is the boundary the user needs to
+    // refactor (inline the helper into the same module, or wrap with
+    // `track({ deps })`).
+    let range: { start: { line: number; column: number }; end: { line: number; column: number } }
+    if (crossFileOpaqueNode) {
+      const nodeSf = crossFileOpaqueNode.getSourceFile()
+      const startPos = crossFileOpaqueNode.getStart(nodeSf)
+      const endPos = crossFileOpaqueNode.getEnd()
+      const start = nodeSf.getLineAndCharacterOfPosition(startPos)
+      const end = nodeSf.getLineAndCharacterOfPosition(endPos)
+      // Diagnostic line/column are 0-based; the vite-plugin adapter
+      // converts to Rollup's 1-based convention at emit time.
+      range = {
+        start: { line: start.line, column: start.character },
+        end: { line: end.line, column: end.character },
+      }
+    } else {
+      range = { start: { line: 0, column: 0 }, end: { line: 0, column: 0 } }
+    }
     registryResult.analysis.diagnostics.push({
       id: 'llui/opaque-accessor-file-wide-mask',
       severity: 'warning',
@@ -584,13 +615,7 @@ export function transformLlui(
         `\`__prefixes\`, but every binding in the file re-evaluates on every state change. To locate the ` +
         `specific accessor: inline the helper into a same-module \`const\`/\`function\` declaration, or ` +
         `replace the call with \`track({ deps: (s) => [...] })\`.`,
-      location: {
-        file: _filename,
-        // No specific node — point at the top of the file. Rollup
-        // surfaces the warning without a code-frame in this case, which
-        // is fine for a "look at this file" message.
-        range: { start: { line: 0, column: 0 }, end: { line: 0, column: 0 } },
-      },
+      location: { file: _filename, range },
     })
   }
   // Read the binding-descriptors module's slot for the

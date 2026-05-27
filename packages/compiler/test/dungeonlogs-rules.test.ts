@@ -5,6 +5,7 @@
 //                                       an each.render accessor.
 
 import { describe, it, expect } from 'vitest'
+import ts from 'typescript'
 import { transformLlui } from '../src/transform.js'
 import type { Diagnostic } from '../src/diagnostic.js'
 
@@ -249,6 +250,86 @@ describe('llui/opaque-accessor-file-wide-mask', () => {
     )
     expect(diags).toHaveLength(1)
     expect(diags[0]!.message).toMatch(/host\.describe/)
+  })
+
+  it('cross-file diagnostic carries a non-zero line when opaqueNode is provided', () => {
+    // Pre-fix: cross-file diagnostics emitted with `range.start.line = 0`
+    // because the walker didn't carry the offending focal-file node back.
+    // After plumbing (cross-file-walker captures the focal accessor),
+    // transformLlui MUST honour the node and emit a meaningful line.
+    const source = `
+      import { component, div } from '@llui/dom'
+      const App = component({
+        name: 'X',
+        init: () => [{ a: 0 }, []],
+        update: (s) => [s, []],
+        view: () => [div({ 'data-a': (s) => String(s.a) })],
+      })
+    `
+    // Parse the source ourselves so we can hand a real node back to the
+    // transform. The node we hand in pretends to be the focal-file
+    // accessor that triggered cross-file opacity — anywhere in the file
+    // past line 1 works for the line>0 assertion.
+    const sf = ts.createSourceFile('fixture.ts', source, ts.ScriptTarget.Latest, true)
+    let pickedNode: ts.Node | undefined
+    function visit(n: ts.Node): void {
+      if (!pickedNode && ts.isArrowFunction(n) && n.parameters.length === 1) {
+        pickedNode = n
+      }
+      n.forEachChild(visit)
+    }
+    sf.forEachChild(visit)
+    expect(pickedNode).toBeDefined()
+
+    const result = transformLlui(
+      source,
+      'fixture.ts',
+      false, // devMode
+      false, // emitAgentMetadata
+      5200, // mcpPort
+      false, // verbose
+      undefined, // typeSources
+      undefined, // preExtracted
+      undefined, // crossFilePaths
+      true, // crossFileOpaque
+      undefined, // crossFileProgram
+      pickedNode, // crossFileOpaqueNode — NEW param
+    )
+    expect(result).not.toBeNull()
+    const diags = result!.diagnostics.filter((d) => d.id === 'llui/opaque-accessor-file-wide-mask')
+    expect(diags).toHaveLength(1)
+    expect(diags[0]!.message).toMatch(/^\[cross-file\]/)
+    expect(diags[0]!.location.range.start.line).toBeGreaterThan(0)
+  })
+
+  it('cross-file diagnostic falls back to line 0 when no opaqueNode is provided', () => {
+    // Back-compat: callers that don't supply opaqueNode (older plugin
+    // versions, hand-rolled adapters) still get a file-level warning.
+    // We only PROMOTE to a precise line when the node is available.
+    const result = transformLlui(
+      `
+        import { component, div } from '@llui/dom'
+        const App = component({
+          name: 'X',
+          init: () => [{ a: 0 }, []],
+          update: (s) => [s, []],
+          view: () => [div({ 'data-a': (s) => String(s.a) })],
+        })
+      `,
+      'fixture.ts',
+      false,
+      false,
+      5200,
+      false,
+      undefined,
+      undefined,
+      undefined,
+      true, // crossFileOpaque
+    )
+    const diags = result!.diagnostics.filter((d) => d.id === 'llui/opaque-accessor-file-wide-mask')
+    expect(diags).toHaveLength(1)
+    expect(diags[0]!.message).toMatch(/^\[cross-file\]/)
+    expect(diags[0]!.location.range.start.line).toBe(0)
   })
 
   it('file-local and cross-file are mutually exclusive: file-local takes precedence', () => {

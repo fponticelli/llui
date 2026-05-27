@@ -1372,6 +1372,7 @@ export default function llui(options: LluiPluginOptions = {}): Plugin {
       // through in-repo view-helpers. Builds the Program on first call.
       let crossFilePaths: ReadonlySet<string> | undefined
       let crossFileOpaque = false
+      let crossFileOpaqueNode: import('typescript').Node | undefined
       if (crossFileMode !== false && crossFileRoot !== null) {
         if (!crossFileProgramInit) {
           crossFileProgramInit = true
@@ -1384,6 +1385,13 @@ export default function llui(options: LluiPluginOptions = {}): Plugin {
               const result = crossFileAccessorPaths(crossFileProgram, sf)
               crossFilePaths = result.paths
               crossFileOpaque = result.opaque
+              // The walker returns the focal-file accessor that
+              // triggered cross-file opacity. Forward it so the
+              // compiler's diagnostic can emit a precise line —
+              // without it the diagnostic falls back to line 0 and
+              // Rollup can't distinguish multiple offenders in the
+              // same file.
+              crossFileOpaqueNode = result.opaqueNode
             } catch (err) {
               if (crossFileMode !== 'silent') {
                 this.warn(
@@ -1408,19 +1416,42 @@ export default function llui(options: LluiPluginOptions = {}): Plugin {
         crossFilePaths,
         crossFileOpaque,
         crossFileProgram ?? undefined,
+        crossFileOpaqueNode,
       )
       if (!result) return undefined
 
       // Surface compiler diagnostics to Rollup. Severity 'error' fails
       // the transform (and the build); 'warning' / 'info' report
       // non-fatally. Locations are 1-based for Rollup.
+      //
+      // We pass `loc` for structured consumers (IDEs, custom loggers)
+      // AND embed `<relfile>:<line>:` directly in the message body. The
+      // body-embedded form is Path A from the dungeonlogs 2026-05-27
+      // report: Vite/Rolldown's build reporter drops `loc` in many
+      // configurations, leaving users with a bare message and no clue
+      // which file produced it. Embedding the path in the body
+      // survives every reporter without consumer-side config.
+      const diagRoot = crossFileRoot ?? process.cwd()
       for (const diag of result.diagnostics) {
+        const oneBased = diag.location.range.start.line + 1
         const loc = {
           file: diag.location.file,
-          line: diag.location.range.start.line + 1,
+          line: oneBased,
           column: diag.location.range.start.column,
         }
-        const formatted = `[${diag.id}] ${diag.message}`
+        // Use a path relative to the project root when possible — full
+        // absolute paths in build logs are noisy. Fall back to the raw
+        // path if `relative` escapes the project (`../foo`) or if
+        // `crossFileRoot` is unset.
+        const rel = relative(diagRoot, diag.location.file)
+        const displayPath = rel.length > 0 && !rel.startsWith('..') ? rel : diag.location.file
+        // Include the line only when it's meaningful. Pre-plumbing,
+        // cross-file diagnostics emit at line 0 (file-level). With the
+        // node plumbed through, real lines surface; we render them as
+        // `<file>:<line>:` to match the standard editor-jump format.
+        const locPrefix =
+          diag.location.range.start.line > 0 ? `${displayPath}:${oneBased}:` : `${displayPath}:`
+        const formatted = `[${diag.id}] ${locPrefix} ${diag.message}`
         if (diag.severity === 'error') {
           this.error({ message: formatted, loc })
         } else if (diag.severity === 'warning') {
