@@ -11,6 +11,33 @@ All notable changes to LLui packages are documented here. LLui is a pre-1.0 proj
 
 Packages version in lockstep at release time: `@llui/dom`, `@llui/vite-plugin`, `@llui/test`, `@llui/router`, `@llui/transitions`, `@llui/components`, `@llui/vike` share a version line. `@llui/effects`, `@llui/mcp`, `@llui/eslint-plugin`, `@llui/agent`, and `llui-agent` have their own cadence.
 
+## 2026-05-27 — 0.4.10 / 0.5.11
+
+**Released:** `@llui/{dom,components,router,transitions,vike,test,agent}@0.4.10`; `llui-agent@0.4.10`; `@llui/{compiler,compiler-devtools,compiler-introspection,compiler-ssr}@0.5.11`; `@llui/vite-plugin@0.5.12`; `@llui/mcp@0.5.14`
+
+Two fixes addressing dicerun follow-up reports against 0.4.9 / 0.5.10:
+
+The `llui/opaque-accessor-file-wide-mask` diagnostic recommended `track({ deps: (s) => [...] })` as the escape hatch but the suppression only honoured the stricter `llui/opaque-state-flow` rule — adding `track()` didn't silence the warning, it just shifted it to the `track()` line. The documented escape hatch now actually works.
+
+New `h.getState(): S` on `View<S, M>` closes the gap that motivated the "latest-ref" workaround pattern (a sentinel class binding writing state into a module-local ref so event handlers can read it). `AppHandle.getState()` already existed at the handle layer; the view bag now exposes the same primitive, typed by the component's `S`. Event handlers and async callbacks read current state with a one-liner; the side-effect-in-accessor pattern goes away.
+
+### `@llui/compiler@0.5.11`
+
+- **Fixed** `track({ deps })` suppresses `llui/opaque-accessor-file-wide-mask` (both `[file-local]` and `[cross-file]` variants), matching `track`'s docstring and the diagnostic's own remediation hint. The suppression now extends to: the file-local opaque flag in `collect-deps.ts` (driving the perf warning), the cross-file walker's opaque detection in `cross-file-walker.ts`, AND the delegation-following pass that previously flagged unresolvable helpers inside `track.deps`. Direct `s.X` reads inside `track.deps` still get extracted as paths — the user's explicit declaration of dependencies.
+- **Added** `track-utils.ts` exporting `isInsideTrackDeps`. Extracted from `modules/opaque-state-flow.ts` so the three call sites (the strict rule, file-local walker, cross-file walker) share one canonical predicate.
+
+### `@llui/dom@0.4.10`
+
+- **Added** `h.getState(): S` on `View<S, M>`. Sanctioned escape hatch for "read current state from an event handler / async callback / post-mount adapter code." Mirrors `AppHandle.getState()`. Calling `getState()` inside a reactive accessor is unnecessary — the accessor argument is already the live state; use it via `(s) => …`. `slice()` lifts the parent bag's `getState` through the projection so sliced views see their sub-state.
+
+### `@llui/vite-plugin@0.5.12` · `@llui/mcp@0.5.14` · `@llui/{compiler-devtools,compiler-introspection,compiler-ssr}@0.5.11` · `@llui/{components,router,transitions,test,vike,agent}@0.4.10` · `llui-agent@0.4.10`
+
+- **Improved** Cascade republish for the bumped `@llui/compiler` workspace dep and `@llui/dom` peer (`^0.4.9` → `^0.4.10`).
+
+### Docs
+
+- **Cookbook** — "Reading current state from event handlers with `h.getState()`" recipe + anti-pattern callout for the latest-ref dance. "`track({ deps })` — declaring opaque accessor dependencies" recipe now that the suppression works as documented.
+
 ## 2026-05-27 — @llui/compiler@0.5.10, @llui/vite-plugin@0.5.11
 
 **Released:** `@llui/{compiler,compiler-devtools,compiler-introspection,compiler-ssr}@0.5.10`; `@llui/vite-plugin@0.5.11`; `@llui/mcp@0.5.13`

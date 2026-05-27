@@ -756,12 +756,15 @@ dispatch (e.g. compute a submit payload at click time), use
 
 ```typescript
 view: (h: View<State, Msg>) => [
-  button({
-    onClick: () => {
-      const s = h.getState()
-      h.send({ type: 'save', payload: { name: s.draft.name, body: s.draft.body } })
+  button(
+    {
+      onClick: () => {
+        const s = h.getState()
+        h.send({ type: 'save', payload: { name: s.draft.name, body: s.draft.body } })
+      },
     },
-  }, [text('Save')]),
+    [text('Save')],
+  ),
 ]
 ```
 
@@ -770,7 +773,7 @@ contract, but typed by the view's `S` and available inside the
 view function's closure (where the `AppHandle` isn't). Safe to
 call from event handlers, async callbacks (`setTimeout`,
 `Promise.then`), and post-mount adapter code. Each call reads the
-*current* state, not a snapshot captured at view construction.
+_current_ state, not a snapshot captured at view construction.
 
 **Anti-pattern — sentinel-class binding writing state to a module ref**:
 
@@ -784,7 +787,7 @@ const latest: { name: string | null } = { name: null }
 view: (h) => [
   div({
     class: (s) => {
-      latest.name = opts.name(s)  // side effect
+      latest.name = opts.name(s) // side effect
       return 'hidden'
     },
   }),
@@ -802,12 +805,15 @@ Replace with `h.getState()`:
 // ✅ No side effects, no module-local ref. The handler reads the
 //    parent state at click-time and computes whatever it needs.
 view: (h) => [
-  button({
-    onClick: () => {
-      const s = h.getState()
-      h.send({ type: 'save', name: opts.name(s) })
+  button(
+    {
+      onClick: () => {
+        const s = h.getState()
+        h.send({ type: 'save', name: opts.name(s) })
+      },
     },
-  }, [text('Save')]),
+    [text('Save')],
+  ),
 ]
 ```
 
@@ -824,7 +830,7 @@ text((s) => s.count.toString())
 ```
 
 The accessor argument is already the live state during render.
-`getState()` is the *event-time* escape hatch — render-time reads
+`getState()` is the _event-time_ escape hatch — render-time reads
 go through accessors.
 
 ### `track({ deps: (s) => [...] })` — declaring opaque accessor dependencies
