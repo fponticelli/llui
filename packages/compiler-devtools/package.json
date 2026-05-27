@@ -1,6 +1,6 @@
 {
   "name": "@llui/compiler-devtools",
-  "version": "0.5.12",
+  "version": "0.5.13",
   "type": "module",
   "sideEffects": false,
   "exports": {

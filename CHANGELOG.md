@@ -11,6 +11,25 @@ All notable changes to LLui packages are documented here. LLui is a pre-1.0 proj
 
 Packages version in lockstep at release time: `@llui/dom`, `@llui/vite-plugin`, `@llui/test`, `@llui/router`, `@llui/transitions`, `@llui/components`, `@llui/vike` share a version line. `@llui/effects`, `@llui/mcp`, `@llui/eslint-plugin`, `@llui/agent`, and `llui-agent` have their own cadence.
 
+## 2026-05-27 — @llui/compiler@0.5.13
+
+**Released:** `@llui/{compiler,compiler-devtools,compiler-introspection,compiler-ssr}@0.5.13`; `@llui/vite-plugin@0.5.14`; `@llui/mcp@0.5.16`
+
+After fixing the file-local and cross-file walkers' shadow-blindness in 0.5.12, audited the rest of the compiler for the same bug shape (walker matches identifiers by name against an outer `paramName` without respecting nested-function parameter bindings that shadow that name). Five more walkers had it; all fixed via the shared `shadowsStateParam` predicate.
+
+### `@llui/compiler@0.5.13`
+
+- **Fixed** `transform.ts:computeAccessorMask` — the central mask classifier consumed by element-rewrite, structural-mask, each-memo, and text-mask. Pre-fix, a binding accessor `(s) => { ... }` that contained any nested arrow re-using `s` as a parameter mis-attributed the inner reads to the outer state, producing over-conservative FULL_MASK fallbacks or spurious opaque-flow flags. Affects mask precision across every binding emit; perf cliff, not a correctness bug at the runtime layer (the runtime stays correct via the sentinel).
+- **Fixed** `modules/opaque-state-flow.ts:findFirstLeakInAccessor` — the **strict rule** (severity `error`, fails the build). Same shadow blind spot meant an inner arrow re-using `s` could cause a spurious build-failing diagnostic against the outer accessor. Pre-fix users hit this as a hard error; the fix removes that false-positive surface entirely.
+- **Fixed** `modules/static-on.ts:readsParam` — lint rule classifying static `on:` accessors. Pre-fix `(s) => (s) => s.x` was treated as reading the outer `s` even when only the inner is touched, missing the static-on opportunity (over-pessimistic).
+- **Fixed** `modules/static-items.ts:readsParam` — same shape as `static-on`; identical fix.
+- **Fixed** `modules/row-factory.ts:rewriteStmt` — code-gen rewriter that substitutes template-variable references with `r`. Pre-fix, a user-named template (e.g. `const tpl = elTemplate(...)`) paired with a render-body callback re-using `tpl` as a parameter name would have the inner reference incorrectly rewritten. Low likelihood in practice (templates are usually `__tpl{N}`-style auto-generated), but a real code-gen correctness bug under the right user code.
+- **Added** `shadowsStateParam` exported from `collect-deps.ts`. Single canonical predicate consumed by all eight shadow-aware walkers in the compiler now: the three already in collect-deps + cross-file-walker, plus the five fixed in this release.
+
+### `@llui/{compiler-devtools,compiler-introspection,compiler-ssr}@0.5.13` · `@llui/vite-plugin@0.5.14` · `@llui/mcp@0.5.16`
+
+- **Improved** Cascade republish for the bumped `@llui/compiler` workspace dep.
+
 ## 2026-05-27 — @llui/compiler@0.5.12
 
 **Released:** `@llui/{compiler,compiler-devtools,compiler-introspection,compiler-ssr}@0.5.12`; `@llui/vite-plugin@0.5.13`; `@llui/mcp@0.5.15`
