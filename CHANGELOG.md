@@ -11,6 +11,28 @@ All notable changes to LLui packages are documented here. LLui is a pre-1.0 proj
 
 Packages version in lockstep at release time: `@llui/dom`, `@llui/vite-plugin`, `@llui/test`, `@llui/router`, `@llui/transitions`, `@llui/components`, `@llui/vike` share a version line. `@llui/effects`, `@llui/mcp`, `@llui/eslint-plugin`, `@llui/agent`, and `llui-agent` have their own cadence.
 
+## 2026-05-27 — @llui/compiler@0.5.10, @llui/vite-plugin@0.5.11
+
+**Released:** `@llui/{compiler,compiler-devtools,compiler-introspection,compiler-ssr}@0.5.10`; `@llui/vite-plugin@0.5.11`; `@llui/mcp@0.5.13`
+
+Diagnostic UX fix in response to a consumer follow-up on 0.4.9: cross-file `llui/opaque-accessor-file-wide-mask` warnings emitted at line 0 with identical message bodies, so N offending files produced N indistinguishable lines in `vite build` stdout. And even when `loc` was set, Vite/Rolldown's build reporter drops it in most configurations — users were left with a bare message and no actionable location.
+
+Two-part fix. The cross-file walker now captures the FIRST focal-file accessor whose body triggers the opacity flip and returns it as `opaqueNode`. The vite-plugin forwards it to `transformLlui`, which emits the cross-file diagnostic with the node's precise range instead of falling back to line 0 — IDEs can jump to it, and Rollup's `(code, file, line)` dedup distinguishes multiple offenders correctly. On the formatter side, the vite-plugin now embeds `<relfile>:<line>:` directly in the message body so the location survives every reporter, regardless of how it treats `loc`.
+
+### `@llui/compiler@0.5.10`
+
+- **Fixed** `crossFileAccessorPaths` now returns `{ paths, opaque, opaqueNode? }`. The walker captures the focal-file accessor at the visit-level so the offending location lives in the file the user can act on (not in a recursed-into helper file).
+- **Added** `transformLlui` accepts an optional `crossFileOpaqueNode?: ts.Node` parameter. When provided, the cross-file `opaque-accessor-file-wide-mask` diagnostic emits with the node's range; when omitted (back-compat), it falls back to the file-level `line: 0` range.
+
+### `@llui/vite-plugin@0.5.11`
+
+- **Improved** Diagnostic formatter now embeds `<relfile>:<line>:` (or `<relfile>:` when no line is available) in the message body. The format survives Vite/Rolldown's build reporter dropping `loc`. Path computed relative to `config.root`; absolute path retained when the file lives outside the project root.
+- **Fixed** Forwards `opaqueNode` from `crossFileAccessorPaths` to `transformLlui`. Combined with the compiler change, cross-file warnings now carry actionable line numbers.
+
+### `@llui/{compiler-devtools,compiler-introspection,compiler-ssr}@0.5.10` · `@llui/mcp@0.5.13`
+
+- **Improved** Cascade republish for the bumped `@llui/compiler` workspace dep.
+
 ## 2026-05-26 — 0.4.9 / 0.5.9
 
 **Released:** `@llui/{dom,components,router,transitions,vike,test,agent}@0.4.9`; `llui-agent@0.4.9`; `@llui/{compiler,compiler-devtools,compiler-introspection,compiler-ssr}@0.5.9`; `@llui/vite-plugin@0.5.10`; `@llui/mcp@0.5.12`
