@@ -11,6 +11,43 @@ All notable changes to LLui packages are documented here. LLui is a pre-1.0 proj
 
 Packages version in lockstep at release time: `@llui/dom`, `@llui/vite-plugin`, `@llui/test`, `@llui/router`, `@llui/transitions`, `@llui/components`, `@llui/vike` share a version line. `@llui/effects`, `@llui/mcp`, `@llui/eslint-plugin`, `@llui/agent`, and `llui-agent` have their own cadence.
 
+## 2026-05-26 — 0.4.9 / 0.5.9
+
+**Released:** `@llui/{dom,components,router,transitions,vike,test,agent}@0.4.9`; `llui-agent@0.4.9`; `@llui/{compiler,compiler-devtools,compiler-introspection,compiler-ssr}@0.5.9`; `@llui/vite-plugin@0.5.10`; `@llui/mcp@0.5.12`
+
+Closes an entire bug class — **gate-asymmetry between low-word and high-word dirty bits** — where reactive accessors driving a structural primitive or binding could silently fail to re-evaluate when their driving state field lived at prefix index ≥ 31. The Phase 1 / Phase 2 gate `(mask & dirty) | (maskHi & dirtyHi)` evaluated to `0` when `mask: FULL_MASK` was paired with the default `maskHi: 0` and only the high word was dirty. Originally surfaced as a happy-dom-specific `h.show()` regression in a consumer app; the actual bug reproduces under jsdom and real browsers too — the env was a red herring.
+
+Same shape as the `__bindUncertain` fix in 0.4.7 (53512ad) but **carried in ten more places**: the four runtime structural primitives, the two runtime decoders that explicitly forced `maskHi: 0`, the `createBinding` and `memo` defaults, and two inline literal blocks. The compiler likewise emitted only the low-word mask from three modules (`structural-mask`, `each-memo`, `text-mask`) and the catch-all "can't analyze" branches of `computeAccessorMask` returned an asymmetric default. The fix unifies the contract everywhere: when no precise mask was emitted, BOTH words default to FULL_MASK; when one word is precise, the other defaults to 0.
+
+Two latent diagnostic gaps closed in the same audit. `llui/opaque-accessor-file-wide-mask` now fires for cross-file opacity (was file-local only), with messages tagged `[file-local]` / `[cross-file]` for triage. And the file-local walker now recognizes string-literal-keyed accessors (`'data-foo'`, `'aria-label'`) identically to identifier-keyed ones — previously their bodies were never analyzed, so any opaque flow inside them was silent and any field uniquely read through them stayed out of `__prefixes`.
+
+### `@llui/dom@0.4.9`
+
+- **Fixed** `branch()`, `each()`, `show()`, `scope()`, `unsafe-html()`, `virtual-each()` structural blocks now default `maskHi: FULL_MASK` when `mask: FULL_MASK` and no explicit `maskHi` was provided. Pre-fix the Phase 1 gate silently dropped high-word dirty bits for these blocks. `show()` and `scope()` now correctly forward `__maskHi` to their underlying `branch()` call.
+- **Fixed** `createBinding()` derives `maskHi` from `mask` when omitted — `FULL_MASK → FULL_MASK`, otherwise `0`. The asymmetric default was the root footgun for every uncompiled-fallback binding (in `elements.ts`, `svg-elements.ts`, `mathml-elements.ts`, `foreign.ts`, `selector.ts`, `text.ts`) that wrote `mask: FULL_MASK` without an explicit `maskHi`.
+- **Fixed** `memo()` applies the same mask-mirroring default. `memo(fn, FULL_MASK)` now correctly invalidates on high-word state changes; pre-fix the cache stayed warm forever for those updates.
+- **Fixed** `el-split` and `el-template` no longer inject an explicit `maskHi: 0` when the compiler emits a 4-tuple / 5-arg `__bind`. Both pass `undefined` so `createBinding`'s default takes over — closes the same bug for the destructured-param accessor catch-all.
+- **Added** `BranchOptionsBase.__maskHi`: type-level companion to `__mask`, documenting the high-word contract.
+
+### `@llui/compiler@0.5.9`
+
+- **Fixed** `computeAccessorMask` returns `{ mask: FULL_MASK, maskHi: FULL_MASK }` for every "can't statically analyze" path: zero-arg accessor, destructured first param, missing body, dynamic key access, opaque-state-flow, and the catch-all "reads state but no resolvable path." Pre-fix four of these returned `maskHi: 0` — the source of the gate-asymmetry that leaked downstream into bindings, structural blocks, and memo wrappers.
+- **Fixed** `structural-mask` module passes `fieldBitsHi` to the analyzer and emits `__maskHi` alongside `__mask` when the driver accessor reads a high-word field. `each-memo` and `text-mask` modules likewise emit a 3-arg form (`memo(fn, mask, maskHi)`, `text(accessor, mask, maskHi)`) when the analyzed accessor reads high-word fields.
+- **Fixed** `isReactiveAccessor` in `collect-deps.ts` now walks string-literal-keyed accessors (`'data-foo'`, `'aria-label'`) identically to identifier-keyed ones. Pre-fix the gate at line 479 required `ts.isIdentifier(key)`, so paths read uniquely through string-literal-keyed accessors never entered `__prefixes` (forced sentinel fallback at runtime) and opaque flow inside them was never diagnosed.
+- **Added** `llui/opaque-accessor-file-wide-mask` diagnostic now fires for `crossFileOpaque` too (was file-local only). Messages prefixed with `[file-local]` or `[cross-file]` so consumers can identify which walker bailed.
+
+### `@llui/vite-plugin@0.5.10`
+
+- **Improved** Cascade republish for the bumped `@llui/compiler` dep. The plugin's transform-hook routing of compiler diagnostics through `this.warn(...)` / `this.error(...)` is now end-to-end tested (`test/opaque-warning-surface.test.ts`) — the consumer-reported "warning doesn't surface in `vite build` stdout" path is now locked.
+
+### `@llui/mcp@0.5.12`
+
+- **Improved** Cascade republish for the bumped `@llui/dom` peer and `@llui/compiler` / `@llui/vite-plugin` workspace deps.
+
+### `@llui/{components,router,transitions,test,vike,agent}@0.4.9` · `@llui/{compiler-devtools,compiler-introspection,compiler-ssr}@0.5.9` · `llui-agent@0.4.9`
+
+- **Improved** Cascade-only bumps. Republished to pick up the bumped `@llui/dom` peer (`^0.4.8` → `^0.4.9`) or the bumped `@llui/compiler` / `@llui/agent` `workspace:*` dep.
+
 ## 2026-05-26 — 0.4.8 / 0.5.8
 
 **Released:** `@llui/{dom,components,router,transitions,vike,test,agent}@0.4.8`; `llui-agent@0.4.8`; `@llui/{compiler,compiler-devtools,compiler-introspection,compiler-ssr}@0.5.8`; `@llui/vite-plugin@0.5.9`; `@llui/mcp@0.5.11`; `@llui/devmode-annotate@0.0.3`
