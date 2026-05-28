@@ -1,5 +1,15 @@
 # Dirty-Mask Precision Follow-Ups
 
+> **Superseded in mechanism (2026-05).** The _goal_ (precise per-binding dirty
+> masks, less over-firing) is adopted by [`../signals/`](../signals/README.md), but
+> the concrete mechanisms here — the two-word `mask`+`maskHi` layout, runtime
+> prefix-walk threshold, `precise` flag, popcount tuning, prefix memoization — are
+> replaced by signals' **chunked masks + ref-equality lowering + output-equality
+> check**. `03-implicit-each-children.md` is **fully superseded** (signals gives
+> each row its own `Signal<T>` with per-row precision, no child-lifting). One
+> residual survives: the wide-state immutable-spread cost is intrinsic and not
+> framework-reducible. See the signals "Reconciliation" section.
+
 Three optimization proposals that build on the
 `feat(benchmarks): add jfb-ticker suite` +
 `perf(dom): recompute precise dirty via __prefixes in _handleMsg fast path`

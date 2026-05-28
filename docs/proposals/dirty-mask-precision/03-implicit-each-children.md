@@ -1,5 +1,11 @@
 # `each()` Rows as Implicit Level-2 Child Components
 
+> **Superseded (2026-05) by [`../signals/`](../signals/README.md).** Signals gives
+> each `each()` row its own `Signal<T>` with full per-row dependency precision via
+> render callbacks receiving signals — no need to lift rows into implicit child
+> components (which the eval here found regresses churn workloads ~+33%). This
+> approach is obsolete.
+
 **Status:** proposal (large; depends on unified-composition-model)
 **Effort:** months
 **Ceiling:** -30%+ on wide-row workloads; brings LLui's narrow-update
