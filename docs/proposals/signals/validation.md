@@ -103,10 +103,13 @@ shippable** — land the easy cases, let deep chains / tricky HMR coarsen, and
 postpone the rest if it proves a hurdle during implementation. Every gap is a perf
 gap, never a bug.
 
-**Rides on v2b** — this is the cross-file analysis / `__llui_deps.json` work; if
-that scaffolding ships, B is "add returnTaint to the summary + wire to mask
-emission," otherwise B pulls part of v2b forward. Verify current cross-file
-capability before estimating cost.
+**Cost (now verified, not estimated)** — the cross-file scaffolding has **already
+shipped** (see the verified-correction box above): cross-file walker + the
+`{paramReadPaths, returnTaint}` summary schema exist and are wired. So B is "route
+the `.map(s => f(s))` arrow-lift shape through the existing `descendIntoHelper` and
+wire returnTaint to mask emission" — extend-existing, not a v2b pull-forward. The
+cross-_package_ `__llui_deps.json` emit/consume layer remains unbuilt, but
+local-confined narrowing does not need it.
 
 ### Important caveat on the 77%
 
