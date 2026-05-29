@@ -17,6 +17,21 @@
 /** Dirty bits, one Uint32 per 32 tracked paths. */
 export type Chunks = Uint32Array
 
+/** One leaf under a root: its bit index plus the pre-split segments BELOW the
+ * root (empty for a path that IS its own root, e.g. `'item'` or `''`). */
+type RootEntry = readonly [bit: number, suffixSegs: readonly string[]]
+
+/** Paths grouped by their top-level segment. If the value at a root is
+ * reference-unchanged between two states, EVERY leaf under it is clean — so the
+ * dirty computation can dismiss the whole subtree with a single `Object.is`,
+ * and never touches its descendants. Sound under TEA's immutable updates +
+ * structural sharing (same ref ⇒ identical descendants). */
+interface RootGroup {
+  /** segments to resolve the root value (`[]` = whole state). */
+  readonly rootSegs: readonly string[]
+  readonly entries: readonly RootEntry[]
+}
+
 export interface PathTable {
   /** bit index -> path */
   paths: string[]
@@ -24,6 +39,8 @@ export interface PathTable {
   index: Map<string, number>
   /** number of 32-bit chunks needed */
   chunkCount: number
+  /** paths grouped by top-level root, for subtree short-circuiting */
+  roots: readonly RootGroup[]
 }
 
 /** Build a path→bit table from the union of a component's dependency paths. */
@@ -31,35 +48,88 @@ export function buildPathTable(paths: Iterable<string>): PathTable {
   const uniq = [...new Set(paths)]
   const index = new Map<string, number>()
   uniq.forEach((p, i) => index.set(p, i))
-  return { paths: uniq, index, chunkCount: Math.max(1, Math.ceil(uniq.length / 32)) }
+  // Group leaves by their first segment so an unchanged subtree short-circuits.
+  const byRoot = new Map<string, { rootSegs: string[]; entries: RootEntry[] }>()
+  uniq.forEach((p, i) => {
+    const segs = p === '' ? [] : p.split('.')
+    const root = segs.length === 0 ? '' : segs[0]!
+    let group = byRoot.get(root)
+    if (!group) {
+      group = { rootSegs: segs.length === 0 ? [] : [root], entries: [] }
+      byRoot.set(root, group)
+    }
+    group.entries.push([i, segs.slice(1)])
+  })
+  return {
+    paths: uniq,
+    index,
+    chunkCount: Math.max(1, Math.ceil(uniq.length / 32)),
+    roots: [...byRoot.values()],
+  }
 }
 
-/** Resolve a dotted path against a state value. Undefined-safe; `''` = whole. */
-export function resolvePath(state: unknown, path: string): unknown {
-  if (path === '') return state
-  let cur: unknown = state
-  for (const seg of path.split('.')) {
+/** Walk pre-split segments against a value. Undefined-safe; `[]` = whole. */
+function resolveSegs(value: unknown, segs: readonly string[]): unknown {
+  let cur: unknown = value
+  for (const seg of segs) {
     if (cur == null) return undefined
     cur = (cur as Record<string, unknown>)[seg]
   }
   return cur
 }
 
+/** Resolve a dotted path against a state value. Undefined-safe; `''` = whole. */
+export function resolvePath(state: unknown, path: string): unknown {
+  return resolveSegs(state, path === '' ? [] : path.split('.'))
+}
+
 /**
  * Compute the dirty chunk-set: bit `i` is set iff the value at `paths[i]`
  * differs between `oldS` and `newS` by `Object.is`. Short-circuits when the
- * whole state reference is unchanged.
+ * whole state reference is unchanged, AND — per root group — when a top-level
+ * subtree's reference is unchanged (so an unchanged subtree's leaves are never
+ * resolved; this is the per-row fast path that keeps `each` updates O(changed
+ * rows) rather than O(all rows × paths)).
  */
 export function computeDirty(table: PathTable, oldS: unknown, newS: unknown): Chunks {
   const chunks = new Uint32Array(table.chunkCount)
-  if (Object.is(oldS, newS)) return chunks
-  for (let i = 0; i < table.paths.length; i++) {
-    const p = table.paths[i]!
-    if (!Object.is(resolvePath(oldS, p), resolvePath(newS, p))) {
-      chunks[i >>> 5]! |= 1 << (i & 31)
+  computeDirtyInto(table, oldS, newS, chunks)
+  return chunks
+}
+
+/**
+ * Allocation-free variant: zero `out` (caller-owned, length `table.chunkCount`)
+ * and fill it with the dirty chunk-set, returning whether ANY bit was set. A
+ * scope owns one buffer and reuses it across updates, so a hot `each` reconcile
+ * doing N row updates per tick allocates zero dirty masks instead of N.
+ */
+export function computeDirtyInto(
+  table: PathTable,
+  oldS: unknown,
+  newS: unknown,
+  out: Chunks,
+): boolean {
+  out.fill(0)
+  if (Object.is(oldS, newS)) return false
+  let any = false
+  for (const group of table.roots) {
+    const oldRoot = resolveSegs(oldS, group.rootSegs)
+    const newRoot = resolveSegs(newS, group.rootSegs)
+    if (Object.is(oldRoot, newRoot)) continue // subtree unchanged: all leaves clean
+    for (const [bit, suffix] of group.entries) {
+      if (!Object.is(resolveSegs(oldRoot, suffix), resolveSegs(newRoot, suffix))) {
+        out[bit >>> 5]! |= 1 << (bit & 31)
+        any = true
+      }
     }
   }
-  return chunks
+  return any
+}
+
+/** Whether any dirty bit is set — lets a scope skip its binding loop entirely. */
+export function anyDirty(chunks: Chunks): boolean {
+  for (let i = 0; i < chunks.length; i++) if (chunks[i] !== 0) return true
+  return false
 }
 
 /** A binding's dependency mask: only the chunks it actually touches. Most

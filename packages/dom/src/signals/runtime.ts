@@ -15,7 +15,7 @@
 //
 // See docs/proposals/signals/README.md "Runtime — output equality check".
 
-import { type PathTable, type SparseMask, computeDirty, intersects } from './mask.js'
+import { type PathTable, type SparseMask, computeDirtyInto, intersects } from './mask.js'
 
 export interface SignalBinding<V = unknown> {
   /** the chunks/bits this binding depends on */
@@ -48,6 +48,9 @@ export function createSignalScope(
 ): SignalScope {
   const last = new Map<SignalBinding, unknown>()
   const children = new Set<SignalScope>()
+  // Reused across updates (update is synchronous and non-reentrant per scope),
+  // so a hot reconcile allocates no dirty masks.
+  const dirty = new Uint32Array(table.chunkCount)
 
   return {
     mount(state: unknown): void {
@@ -59,13 +62,16 @@ export function createSignalScope(
     },
 
     update(oldState: unknown, newState: unknown): void {
-      const dirty = computeDirty(table, oldState, newState)
-      for (const b of bindings) {
-        if (!intersects(b.mask, dirty)) continue // gate: irrelevant binding
-        const v = b.produce(newState)
-        if (!Object.is(v, last.get(b))) {
-          b.commit(v) // output-equality: only commit real changes
-          last.set(b, v)
+      // Skip the whole binding sweep when nothing this scope tracks changed —
+      // the common case for an unchanged `each` row whose item ref is identical.
+      if (computeDirtyInto(table, oldState, newState, dirty)) {
+        for (const b of bindings) {
+          if (!intersects(b.mask, dirty)) continue // gate: irrelevant binding
+          const v = b.produce(newState)
+          if (!Object.is(v, last.get(b))) {
+            b.commit(v) // output-equality: only commit real changes
+            last.set(b, v)
+          }
         }
       }
       // propagate to mounted child scopes (own bindings above may have

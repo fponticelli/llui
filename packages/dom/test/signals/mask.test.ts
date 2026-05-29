@@ -3,8 +3,10 @@ import {
   buildPathTable,
   resolvePath,
   computeDirty,
+  computeDirtyInto,
   bindingMask,
   intersects,
+  anyDirty,
 } from '../../src/signals/mask'
 
 describe('buildPathTable', () => {
@@ -69,6 +71,84 @@ describe('root path fires on any new state object (root-coarse)', () => {
     // matches TEA: a coarse root dep re-runs whenever update returns a new state
     expect(intersects(mask, computeDirty(table, { a: 1 }, { a: 1 }))).toBe(true)
     expect(intersects(mask, computeDirty(table, { a: 1 }, { a: 2 }))).toBe(true)
+  })
+})
+
+describe('root short-circuit — unchanged subtrees are not traversed', () => {
+  it('skips descendant reads when the root reference is unchanged', () => {
+    let priceReads = 0
+    const item = {
+      get price() {
+        priceReads++
+        return 1
+      },
+    }
+    const table = buildPathTable(['item.price', 'state.mode'])
+    const oldS = { item, state: { mode: 'a' } }
+    // same `item` reference, only `state` replaced (the per-tick each pattern)
+    const newS = { item, state: { mode: 'b' } }
+    const dirty = computeDirty(table, oldS, newS)
+    // item.price must never be read: its root ref (`item`) is unchanged
+    expect(priceReads).toBe(0)
+    expect(intersects(bindingMask(['item.price'], table), dirty)).toBe(false)
+    // state.mode genuinely changed and must fire
+    expect(intersects(bindingMask(['state.mode'], table), dirty)).toBe(true)
+  })
+
+  it('reads only the leaves under a changed root, reporting per-leaf dirtiness', () => {
+    const table = buildPathTable(['item.price', 'item.qty'])
+    const oldS = { item: { price: 1, qty: 2 } }
+    const newS = { item: { price: 9, qty: 2 } } // new item ref, only price differs
+    const dirty = computeDirty(table, oldS, newS)
+    expect(intersects(bindingMask(['item.price'], table), dirty)).toBe(true)
+    expect(intersects(bindingMask(['item.qty'], table), dirty)).toBe(false)
+  })
+
+  it('handles the whole-state root and deep multi-segment suffixes', () => {
+    const table = buildPathTable(['', 'a.b.c'])
+    const inner = { b: { c: 7 } }
+    const s = { a: inner, other: 1 }
+    // unchanged reference: nothing dirty (whole-state short-circuit)
+    expect(anyDirty(computeDirty(table, s, s))).toBe(false)
+    // new top-level object but `a` shared: whole-state ('') fires, a.b.c does not
+    const s2 = { a: inner, other: 2 }
+    const d = computeDirty(table, s, s2)
+    expect(intersects(bindingMask([''], table), d)).toBe(true)
+    expect(intersects(bindingMask(['a.b.c'], table), d)).toBe(false)
+  })
+})
+
+describe('computeDirtyInto — caller-owned buffer reuse (hot-loop allocation avoidance)', () => {
+  it('zeroes then fills the buffer, returning whether any bit was set', () => {
+    const table = buildPathTable(['a', 'b'])
+    const buf = new Uint32Array(table.chunkCount)
+    expect(computeDirtyInto(table, { a: 1, b: 2 }, { a: 1, b: 2 }, buf)).toBe(false)
+    expect(anyDirty(buf)).toBe(false)
+
+    expect(computeDirtyInto(table, { a: 1, b: 2 }, { a: 9, b: 2 }, buf)).toBe(true)
+    expect(intersects(bindingMask(['a'], table), buf)).toBe(true)
+    expect(intersects(bindingMask(['b'], table), buf)).toBe(false)
+
+    // reuse: a subsequent clean call must clear the previously-set bit
+    expect(computeDirtyInto(table, { a: 1, b: 2 }, { a: 1, b: 2 }, buf)).toBe(false)
+    expect(anyDirty(buf)).toBe(false)
+  })
+
+  it('produces the same bits as computeDirty (deep paths, multi-chunk)', () => {
+    const table = buildPathTable(['x.y', 'z', ...Array.from({ length: 40 }, (_, i) => 'p' + i)])
+    const o = { x: { y: 1 }, z: 2, p7: 0, p39: 0 }
+    const n = { x: { y: 5 }, z: 2, p7: 0, p39: 1 }
+    const buf = new Uint32Array(table.chunkCount)
+    computeDirtyInto(table, o, n, buf)
+    expect([...buf]).toEqual([...computeDirty(table, o, n)])
+  })
+})
+
+describe('anyDirty', () => {
+  it('reports whether any bit is set across chunks', () => {
+    const table = buildPathTable(Array.from({ length: 40 }, (_, i) => 'p' + i))
+    expect(anyDirty(computeDirty(table, { p0: 1 }, { p0: 1 }))).toBe(false)
+    expect(anyDirty(computeDirty(table, { p39: 1 }, { p39: 2 }))).toBe(true)
   })
 })
 

@@ -204,7 +204,8 @@ export function signalEach<T>(
   interface Row {
     scope: SignalScope
     nodes: readonly Node[]
-    ctx: RowCtx<T>
+    ctx: RowCtx<T> // current ctx (holds the last-applied item + state)
+    spare: RowCtx<T> // scratch ctx, swapped in on the next update (no per-tick alloc)
   }
   const rows = new Map<string, Row>()
 
@@ -222,20 +223,27 @@ export function signalEach<T>(
     for (const item of items) {
       const k = String(key(item))
       seen.add(k)
-      const ctx: RowCtx<T> = { item, state }
       let row = rows.get(k)
       if (!row) {
+        const ctx: RowCtx<T> = { item, state }
         const built = runBuild(doc, renderRow)
         const scope = buildAndPublishScope(built)
         scope.mount(ctx) // row scope's "state" is the combined ctx
-        row = { scope, nodes: built.nodes, ctx }
+        row = { scope, nodes: built.nodes, ctx, spare: { item, state } }
         rows.set(k, row)
         for (const n of row.nodes) parent.insertBefore(n, pos) // new row, in order before pos
         continue
       }
-      // existing row: re-run only the bindings whose part of the ctx changed
-      row.scope.update(row.ctx, ctx)
-      row.ctx = ctx
+      // existing row: re-run only the bindings whose part of the ctx changed.
+      // Reuse the spare ctx buffer (no allocation); swap it in as the new
+      // current. old (row.ctx) and new (next) stay distinct refs, so the diff
+      // sees item/state changes correctly.
+      const next = row.spare
+      next.item = item
+      next.state = state
+      row.scope.update(row.ctx, next)
+      row.spare = row.ctx
+      row.ctx = next
       const first = row.nodes[0]
       if (first === pos) {
         // already in place — no DOM move; advance the cursor past this row

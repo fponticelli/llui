@@ -112,6 +112,44 @@ describe('signalEach — keyed list reconciliation', () => {
     expect(ul.querySelectorAll('li')[1]).toBe(liB) // unchanged row untouched
   })
 
+  it('does not re-read an unchanged row when another row changes (per-row short-circuit)', () => {
+    let titleReads = 0
+    // a row item whose `title` getter counts reads; its reference is reused
+    // across sends, so the row is genuinely unchanged.
+    const stable = {
+      id: 1,
+      get title() {
+        titleReads++
+        return 'stable'
+      },
+      done: false,
+    } as unknown as Todo
+    const { h, titles } = setup([stable])
+    const afterMount = titleReads
+    expect(afterMount).toBeGreaterThan(0) // read once at mount
+
+    // append a second row: `stable`'s item reference is unchanged across the send
+    h.send({ type: 'set', todos: [stable, { id: 2, title: 'b', done: false }] })
+    expect(titles()).toEqual(['stable', 'b'])
+    // the unchanged row's accessor must NOT run again — its item root is identical
+    expect(titleReads).toBe(afterMount)
+  })
+
+  it('applies repeated in-place updates to the same row (ctx buffer reuse is correct)', () => {
+    const { h, ul, titles } = setup([{ id: 1, title: 'a', done: false }])
+    const li = ul.querySelector('li')!
+    const textNode = li.firstChild as Text
+    // multiple ticks against the same key: the row double-buffers its ctx, so
+    // old/new ctx must stay distinct references each tick or the diff would
+    // see "no change" and stop updating.
+    for (const t of ['b', 'c', 'd']) {
+      h.send({ type: 'set', todos: [{ id: 1, title: t, done: false }] })
+      expect(titles()).toEqual([t])
+    }
+    expect(ul.querySelector('li')).toBe(li) // same row node throughout
+    expect(textNode.data).toBe('d') // same text node, mutated in place
+  })
+
   it('handles a full replace + grow', () => {
     const { h, titles } = setup([{ id: 1, title: 'a', done: false }])
     h.send({
