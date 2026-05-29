@@ -1,6 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
-import { mountApp, button, div, text } from '@llui/dom'
-import type { ComponentDef } from '@llui/dom'
+import { component, mountApp, button, div, text } from '@llui/dom/signals'
 import { init, update, connect, overlay } from '../../src/components/select'
 import type { SelectState, SelectMsg } from '../../src/components/select'
 
@@ -24,31 +23,27 @@ describe('select.overlay integration', () => {
     let sendRef!: (m: SelectMsg) => void
     const initial = init({ items: ['a', 'b'] })
     if (initialOpen) initial.open = true
-    const parts = connect<Ctx>(
-      (s) => s.s,
-      (m) => sendRef(m),
-      { id: 'sel' },
-    )
-    const def: ComponentDef<Ctx, SelectMsg, never> = {
+    const def = component<Ctx, SelectMsg, never>({
       name: 'T',
       init: () => [{ s: initial }, []],
       update: (state, msg) => {
         const [next] = update(state.s, msg)
         return [{ s: next }, []]
       },
-      view: ({ send }) => {
+      view: ({ state, send }) => {
         sendRef = send
+        const parts = connect(state.at('s'), send, { id: 'sel' })
         return [
           button({ ...parts.trigger }, [text('Select')]),
-          ...overlay<Ctx>({
-            get: (s) => s.s,
+          overlay({
+            state: state.at('s'),
             send,
             parts,
             content: () => [div({ ...parts.content }, [])],
           }),
         ]
       },
-    }
+    })
     const container = document.createElement('div')
     document.body.appendChild(container)
     currentApp = mountApp(container, def)

@@ -1,6 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
-import { mountApp, div, button, text } from '@llui/dom'
-import type { ComponentDef } from '@llui/dom'
+import { component, mountApp, div, button, text } from '@llui/dom/signals'
 import { tour, type TourState, type TourMsg, type TourStep } from '../../src/components/tour'
 
 type S = { t: TourState }
@@ -24,29 +23,27 @@ describe('tour integration', () => {
 
   function mount() {
     let sendRef!: (m: TourMsg) => void
-    const parts = tour.connect<S>(
-      (s) => s.t,
-      (m) => sendRef(m),
-      { id: 'tour' },
-    )
-    const def: ComponentDef<S, TourMsg, never> = {
+    const def = component<S, TourMsg, never>({
       name: 'T',
       init: () => [{ t: tour.init({ steps }) }, []],
       update: (s, m) => {
         const [t] = tour.update(s.t, m)
         return [{ t }, []]
       },
-      view: ({ send }) => {
+      view: ({ state, send }) => {
         sendRef = send
+        const parts = tour.connect(state.at('t'), send, { id: 'tour' })
         return [
           div({ ...parts.root }, [
-            div({ ...parts.title }, [text((s: S) => tour.currentStep(s.t)?.title ?? '')]),
+            div({ ...parts.title }, [
+              text(state.at('t').map((t) => tour.currentStep(t)?.title ?? '')),
+            ]),
             button({ ...parts.nextTrigger }, [text('Next')]),
             button({ ...parts.prevTrigger }, [text('Prev')]),
           ]),
         ]
       },
-    }
+    })
     const container = document.createElement('div')
     document.body.appendChild(container)
     app = mountApp(container, def)

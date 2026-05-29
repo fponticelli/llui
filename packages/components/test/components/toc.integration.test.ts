@@ -1,6 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
-import { mountApp, div, a, text } from '@llui/dom'
-import type { ComponentDef } from '@llui/dom'
+import { component, mountApp, div, a, text } from '@llui/dom/signals'
 import { toc, type TocState, type TocMsg, type TocEntry } from '../../src/components/toc'
 
 type S = { t: TocState }
@@ -24,16 +23,16 @@ describe('toc integration', () => {
 
   function mount() {
     let sendRef!: (m: TocMsg) => void
-    const def: ComponentDef<S, TocMsg, never> = {
+    const def = component<S, TocMsg, never>({
       name: 'T',
       init: () => [{ t: toc.init({ items: entries, activeId: 'intro' }) }, []],
       update: (s, m) => {
         const [t] = toc.update(s.t, m)
         return [{ t }, []]
       },
-      view: ({ send }) => {
+      view: ({ state, send }) => {
         sendRef = send
-        const parts = toc.connect<S>((s) => s.t, send)
+        const parts = toc.connect(state.at('t'), send)
         return [
           div(
             { ...parts.root },
@@ -44,7 +43,7 @@ describe('toc integration', () => {
           ),
         ]
       },
-    }
+    })
     const container = document.createElement('div')
     document.body.appendChild(container)
     app = mountApp(container, def)

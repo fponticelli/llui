@@ -1,6 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
-import { mountApp, button, div, text } from '@llui/dom'
-import type { ComponentDef } from '@llui/dom'
+import { component, mountApp, button, div, text } from '@llui/dom/signals'
 import { init, update, connect, overlay } from '../../src/components/popover'
 import type { PopoverState, PopoverMsg } from '../../src/components/popover'
 
@@ -22,31 +21,27 @@ describe('popover.overlay integration', () => {
 
   function makeApp(initialOpen = false): { send: (m: PopoverMsg) => void } {
     let sendRef!: (m: PopoverMsg) => void
-    const parts = connect<Ctx>(
-      (s) => s.p,
-      (m) => sendRef(m),
-      { id: 'pop' },
-    )
-    const def: ComponentDef<Ctx, PopoverMsg, never> = {
+    const def = component<Ctx, PopoverMsg, never>({
       name: 'T',
       init: () => [{ p: init({ open: initialOpen }) }, []],
       update: (state, msg) => {
         const [next] = update(state.p, msg)
         return [{ p: next }, []]
       },
-      view: ({ send }) => {
+      view: ({ state, send }) => {
         sendRef = send
+        const parts = connect(state.at('p'), send, { id: 'pop' })
         return [
           button({ ...parts.trigger }, [text('Open')]),
-          ...overlay<Ctx>({
-            get: (s) => s.p,
+          ...overlay({
+            state: state.at('p'),
             send,
             parts,
             content: () => [div({ ...parts.content }, [text('hello')])],
           }),
         ]
       },
-    }
+    })
     const container = document.createElement('div')
     document.body.appendChild(container)
     currentApp = mountApp(container, def)

@@ -1,6 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
-import { mountApp, div, button, text } from '@llui/dom'
-import type { ComponentDef } from '@llui/dom'
+import { component, mountApp, div, button, text } from '@llui/dom/signals'
 import {
   navigationMenu,
   type NavMenuState,
@@ -23,16 +22,16 @@ describe('navigation-menu integration', () => {
 
   function mount() {
     let sendRef!: (m: NavMenuMsg) => void
-    const def: ComponentDef<S, NavMenuMsg, never> = {
+    const def = component<S, NavMenuMsg, never>({
       name: 'T',
       init: () => [{ n: navigationMenu.init() }, []],
       update: (s, m) => {
         const [n] = navigationMenu.update(s.n, m)
         return [{ n }, []]
       },
-      view: ({ send }) => {
+      view: ({ state, send }) => {
         sendRef = send
-        const parts = navigationMenu.connect<S>((s) => s.n, send, { id: 'nav' })
+        const parts = navigationMenu.connect(state.at('n'), send, { id: 'nav' })
         const file = parts.item('file', { isBranch: true })
         const help = parts.item('help', { isBranch: false })
         return [
@@ -43,7 +42,7 @@ describe('navigation-menu integration', () => {
           ]),
         ]
       },
-    }
+    })
     const container = document.createElement('div')
     document.body.appendChild(container)
     app = mountApp(container, def)

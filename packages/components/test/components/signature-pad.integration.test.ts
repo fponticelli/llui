@@ -1,6 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
-import { mountApp, div, button, text } from '@llui/dom'
-import type { ComponentDef } from '@llui/dom'
+import { component, mountApp, div, button, text } from '@llui/dom/signals'
 import {
   signaturePad,
   type SignaturePadState,
@@ -23,16 +22,16 @@ describe('signature-pad integration', () => {
 
   function mount() {
     let sendRef!: (m: SignaturePadMsg) => void
-    const def: ComponentDef<S, SignaturePadMsg, never> = {
+    const def = component<S, SignaturePadMsg, never>({
       name: 'T',
       init: () => [{ s: signaturePad.init() }, []],
       update: (s, m) => {
         const [next] = signaturePad.update(s.s, m)
         return [{ s: next }, []]
       },
-      view: ({ send }) => {
+      view: ({ state, send }) => {
         sendRef = send
-        const parts = signaturePad.connect<S>((s) => s.s, send)
+        const parts = signaturePad.connect(state.at('s'), send)
         return [
           div({ ...parts.root }, [
             button({ ...parts.clearTrigger }, [text('Clear')]),
@@ -40,7 +39,7 @@ describe('signature-pad integration', () => {
           ]),
         ]
       },
-    }
+    })
     const container = document.createElement('div')
     document.body.appendChild(container)
     app = mountApp(container, def)

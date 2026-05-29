@@ -1,6 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
-import { mountApp, div, button, text } from '@llui/dom'
-import type { ComponentDef } from '@llui/dom'
+import { component, mountApp, div, button, text } from '@llui/dom/signals'
 import {
   floatingPanel,
   type FloatingPanelState,
@@ -23,16 +22,16 @@ describe('floating-panel integration', () => {
 
   function mount(open = true) {
     let sendRef!: (m: FloatingPanelMsg) => void
-    const def: ComponentDef<S, FloatingPanelMsg, never> = {
+    const def = component<S, FloatingPanelMsg, never>({
       name: 'T',
       init: () => [{ p: floatingPanel.init({ open }) }, []],
       update: (s, m) => {
         const [p] = floatingPanel.update(s.p, m)
         return [{ p }, []]
       },
-      view: ({ send }) => {
+      view: ({ state, send }) => {
         sendRef = send
-        const parts = floatingPanel.connect<S>((s) => s.p, send)
+        const parts = floatingPanel.connect(state.at('p'), send)
         return [
           div({ ...parts.root }, [
             div({ ...parts.dragHandle }, [text('Title')]),
@@ -42,7 +41,7 @@ describe('floating-panel integration', () => {
           ]),
         ]
       },
-    }
+    })
     const container = document.createElement('div')
     document.body.appendChild(container)
     app = mountApp(container, def)

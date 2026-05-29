@@ -1,6 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
-import { mountApp, div } from '@llui/dom'
-import type { ComponentDef } from '@llui/dom'
+import { component, mountApp, div } from '@llui/dom/signals'
 import {
   angleSlider,
   type AngleSliderState,
@@ -23,19 +22,19 @@ describe('angle-slider integration', () => {
 
   function mount(value = 45) {
     let sendRef!: (m: AngleSliderMsg) => void
-    const def: ComponentDef<S, AngleSliderMsg, never> = {
+    const def = component<S, AngleSliderMsg, never>({
       name: 'T',
       init: () => [{ a: angleSlider.init({ value, step: 5 }) }, []],
       update: (s, m) => {
         const [a] = angleSlider.update(s.a, m)
         return [{ a }, []]
       },
-      view: ({ send }) => {
+      view: ({ state, send }) => {
         sendRef = send
-        const p = angleSlider.connect<S>((s) => s.a, send)
+        const p = angleSlider.connect(state.at('a'), send)
         return [div({ ...p.root }, [div({ ...p.control }, [div({ ...p.thumb }, [])])])]
       },
-    }
+    })
     const container = document.createElement('div')
     document.body.appendChild(container)
     app = mountApp(container, def)

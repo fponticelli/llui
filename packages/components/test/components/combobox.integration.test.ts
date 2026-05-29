@@ -1,6 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
-import { mountApp, div, input, text } from '@llui/dom'
-import type { ComponentDef } from '@llui/dom'
+import { component, mountApp, div, input, text } from '@llui/dom/signals'
 import { init, update, connect, overlay } from '../../src/components/combobox'
 import type { ComboboxState, ComboboxMsg } from '../../src/components/combobox'
 
@@ -25,31 +24,27 @@ describe('combobox.overlay integration', () => {
     let sendRef!: (m: ComboboxMsg) => void
     const initial = init({ items: ['apple', 'banana'] })
     if (initialOpen) initial.open = true
-    const parts = connect<Ctx>(
-      (s) => s.c,
-      (m) => sendRef(m),
-      { id: 'cb' },
-    )
-    const def: ComponentDef<Ctx, ComboboxMsg, never> = {
+    const def = component<Ctx, ComboboxMsg, never>({
       name: 'T',
       init: () => [{ c: initial }, []],
       update: (state, msg) => {
         const [next] = update(state.c, msg)
         return [{ c: next }, []]
       },
-      view: ({ send }) => {
+      view: ({ state, send }) => {
         sendRef = send
+        const parts = connect(state.at('c'), send, { id: 'cb' })
         return [
           input({ ...parts.input }),
-          ...overlay<Ctx>({
-            get: (s) => s.c,
+          overlay({
+            state: state.at('c'),
             send,
             parts,
             content: () => [div({ ...parts.content }, [])],
           }),
         ]
       },
-    }
+    })
     const container = document.createElement('div')
     document.body.appendChild(container)
     currentApp = mountApp(container, def)

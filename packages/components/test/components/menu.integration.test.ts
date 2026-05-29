@@ -1,6 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
-import { mountApp, button, div, text } from '@llui/dom'
-import type { ComponentDef } from '@llui/dom'
+import { component, mountApp, button, div, text } from '@llui/dom/signals'
 import { init, update, connect, overlay } from '../../src/components/menu'
 import type { MenuState, MenuMsg } from '../../src/components/menu'
 
@@ -22,31 +21,27 @@ describe('menu.overlay integration', () => {
 
   function makeApp(initialOpen = false): { send: (m: MenuMsg) => void } {
     let sendRef!: (m: MenuMsg) => void
-    const parts = connect<Ctx>(
-      (s) => s.m,
-      (m) => sendRef(m),
-      { id: 'mn' },
-    )
-    const def: ComponentDef<Ctx, MenuMsg, never> = {
+    const def = component<Ctx, MenuMsg, never>({
       name: 'T',
       init: () => [{ m: init({ items: ['a', 'b', 'c'], open: initialOpen }) }, []],
       update: (state, msg) => {
         const [next] = update(state.m, msg)
         return [{ m: next }, []]
       },
-      view: ({ send }) => {
+      view: ({ state, send }) => {
         sendRef = send
+        const parts = connect(state.at('m'), send, { id: 'mn' })
         return [
           button({ ...parts.trigger }, [text('Menu')]),
-          ...overlay<Ctx>({
-            get: (s) => s.m,
+          overlay({
+            state: state.at('m'),
             send,
             parts,
             content: () => [div({ ...parts.content }, [])],
           }),
         ]
       },
-    }
+    })
     const container = document.createElement('div')
     document.body.appendChild(container)
     currentApp = mountApp(container, def)

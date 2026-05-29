@@ -1,6 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
-import { mountApp, div, text } from '@llui/dom'
-import type { ComponentDef } from '@llui/dom'
+import { component, mountApp, div, text } from '@llui/dom/signals'
 import { init, update, connect, overlay } from '../../src/components/context-menu'
 import type { ContextMenuState, ContextMenuMsg } from '../../src/components/context-menu'
 
@@ -29,31 +28,27 @@ describe('context-menu.overlay integration', () => {
       initial.y = 50
       initial.highlighted = 'copy'
     }
-    const parts = connect<Ctx>(
-      (s) => s.m,
-      (m) => sendRef(m),
-      { id: 'cm' },
-    )
-    const def: ComponentDef<Ctx, ContextMenuMsg, never> = {
+    const def = component<Ctx, ContextMenuMsg, never>({
       name: 'T',
       init: () => [{ m: initial }, []],
       update: (state, msg) => {
         const [next] = update(state.m, msg)
         return [{ m: next }, []]
       },
-      view: ({ send }) => {
+      view: ({ state, send }) => {
         sendRef = send
+        const parts = connect(state.at('m'), send, { id: 'cm' })
         return [
           div({ ...parts.trigger }, [text('Right-click me')]),
-          ...overlay<Ctx>({
-            get: (s) => s.m,
+          overlay({
+            state: state.at('m'),
             send,
             parts,
             content: () => [div({ ...parts.content }, [])],
           }),
         ]
       },
-    }
+    })
     const container = document.createElement('div')
     document.body.appendChild(container)
     currentApp = mountApp(container, def)

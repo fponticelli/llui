@@ -1,6 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
-import { mountApp, div, text, button } from '@llui/dom'
-import type { ComponentDef } from '@llui/dom'
+import { component, mountApp, div, text, button } from '@llui/dom/signals'
 import { timer, type TimerState, type TimerMsg } from '../../src/components/timer'
 
 type S = { t: TimerState }
@@ -19,25 +18,27 @@ describe('timer integration', () => {
 
   function mount() {
     let sendRef!: (m: TimerMsg) => void
-    const def: ComponentDef<S, TimerMsg, never> = {
+    const def = component<S, TimerMsg, never>({
       name: 'T',
       init: () => [{ t: timer.init({ direction: 'up' }) }, []],
       update: (s, m) => {
         const [t] = timer.update(s.t, m)
         return [{ t }, []]
       },
-      view: ({ send }) => {
+      view: ({ state, send }) => {
         sendRef = send
-        const p = timer.connect<S>((s) => s.t, send)
+        const p = timer.connect(state.at('t'), send)
         return [
           div({ ...p.root }, [
-            div({ ...p.display }, [text((s: S) => timer.formatMs(timer.display(s.t), 'mm:ss'))]),
+            div({ ...p.display }, [
+              text(state.at('t').map((t) => timer.formatMs(timer.display(t), 'mm:ss'))),
+            ]),
             button({ ...p.startTrigger }, [text('Start')]),
             button({ ...p.pauseTrigger }, [text('Pause')]),
           ]),
         ]
       },
-    }
+    })
     const container = document.createElement('div')
     document.body.appendChild(container)
     app = mountApp(container, def)

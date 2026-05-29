@@ -71,6 +71,9 @@ export interface SignalComponentDef<S, M, E = never> {
 export interface SignalComponentHandle<S, M> {
   send(msg: M): void
   getState(): S
+  /** no-op: signal `send` applies updates synchronously (kept for harness/agent
+   * parity with the legacy handle). */
+  flush(): void
   /** run all pending effect cleanups (subscriptions etc.) */
   dispose(): void
 }
@@ -152,6 +155,7 @@ export function mountSignalComponent<S, M, E = never>(
   return {
     send,
     getState: () => state,
+    flush: () => {}, // send is synchronous — nothing to flush
     dispose: () => {
       mount?.dispose() // foreign unmounts, subscriptions
       for (const c of cleanups.splice(0)) c()

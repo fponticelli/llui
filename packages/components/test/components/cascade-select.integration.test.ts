@@ -1,6 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
-import { mountApp, div, text } from '@llui/dom'
-import type { ComponentDef } from '@llui/dom'
+import { component, mountApp, div, text } from '@llui/dom/signals'
 import {
   cascadeSelect,
   type CascadeSelectState,
@@ -29,25 +28,25 @@ describe('cascade-select integration', () => {
 
   function mount() {
     let sendRef!: (m: CascadeSelectMsg) => void
-    const def: ComponentDef<S, CascadeSelectMsg, never> = {
+    const def = component<S, CascadeSelectMsg, never>({
       name: 'T',
       init: () => [{ c: cascadeSelect.init({ levels }) }, []],
       update: (s, m) => {
         const [c] = cascadeSelect.update(s.c, m)
         return [{ c }, []]
       },
-      view: ({ send }) => {
+      view: ({ state, send }) => {
         sendRef = send
-        const parts = cascadeSelect.connect<S>((s) => s.c, send, { id: 'cs' })
+        const parts = cascadeSelect.connect(state.at('c'), send, { id: 'cs' })
         return [
           div({ ...parts.root }, [
             div({ ...parts.level(0).select }, []),
             div({ ...parts.level(1).select }, []),
-            text((s: S) => s.c.values.filter(Boolean).join(' → ') || '(none)'),
+            text(state.at('c').map((c) => c.values.filter(Boolean).join(' → ') || '(none)')),
           ]),
         ]
       },
-    }
+    })
     const container = document.createElement('div')
     document.body.appendChild(container)
     app = mountApp(container, def)

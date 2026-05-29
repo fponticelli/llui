@@ -1,6 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
-import { mountApp, div, input } from '@llui/dom'
-import type { ComponentDef } from '@llui/dom'
+import { component, mountApp, div, input } from '@llui/dom/signals'
 import { dateInput, type DateInputState, type DateInputMsg } from '../../src/components/date-input'
 
 type S = { d: DateInputState }
@@ -19,7 +18,7 @@ describe('date-input integration', () => {
 
   function mount() {
     let sendRef!: (m: DateInputMsg) => void
-    const def: ComponentDef<S, DateInputMsg, never> = {
+    const def = component<S, DateInputMsg, never>({
       name: 'T',
       init: () => [
         { d: dateInput.init({ min: new Date(2024, 0, 1), max: new Date(2024, 11, 31) }) },
@@ -29,12 +28,12 @@ describe('date-input integration', () => {
         const [d] = dateInput.update(s.d, m)
         return [{ d }, []]
       },
-      view: ({ send }) => {
+      view: ({ state, send }) => {
         sendRef = send
-        const p = dateInput.connect<S>((s) => s.d, send, { placeholder: 'YYYY-MM-DD' })
+        const p = dateInput.connect(state.at('d'), send, { placeholder: 'YYYY-MM-DD' })
         return [div({ ...p.root }, [input({ ...p.input }), div({ ...p.errorText }, [])])]
       },
-    }
+    })
     const container = document.createElement('div')
     document.body.appendChild(container)
     app = mountApp(container, def)

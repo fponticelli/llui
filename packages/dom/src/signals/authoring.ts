@@ -46,7 +46,12 @@ export function text(value: Reactive<string | number>): Node {
 
 // ── Elements ────────────────────────────────────────────────────────
 export type AttrValue = Reactive<string | number | boolean | null | undefined>
-export type ElProps = Record<string, AttrValue | ((ev: Event) => void)>
+// Event-handler props accept a handler for ANY specific Event subtype (component
+// `connect()` parts type them as `(e: KeyboardEvent)=>void` etc.). A single
+// non-`any` type can't both accept those AND keep good inline inference, so the
+// event param is intentionally `any` here (handlers are typed at their source).
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export type ElProps = Record<string, AttrValue | ((ev: any) => void)>
 
 /** An element helper accepts `tag(children)`, `tag(props, children)`, `tag(props)`,
  * or `tag()` — a leading array literal is children. */
