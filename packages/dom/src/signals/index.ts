@@ -21,6 +21,7 @@ export {
   signalShow,
   signalBranch,
   signalForeign,
+  onMount,
   mountSignal,
   type PropValue,
   type EventHandler,

@@ -30,6 +30,9 @@ interface BuildCtx {
   host: { scope: SignalScope | null }
   /** teardown callbacks (foreign unmount, subscription disposal) run on dispose. */
   teardowns: Array<() => void>
+  /** onMount callbacks — run (with the mounted parent element) after the built
+   * nodes are inserted; their returned cleanups join the teardown list. */
+  mounts: Array<(root: Element) => void | (() => void)>
 }
 let ctx: BuildCtx | null = null
 
@@ -123,19 +126,43 @@ function runBuild(
   specs: BindingSpec[]
   host: { scope: SignalScope | null }
   teardowns: Array<() => void>
+  mounts: Array<(root: Element) => void | (() => void)>
 } {
   const prev = ctx
   const specs: BindingSpec[] = []
   const host: { scope: SignalScope | null } = { scope: null }
   const teardowns: Array<() => void> = []
-  ctx = { specs, doc, host, teardowns }
+  const mounts: Array<(root: Element) => void | (() => void)> = []
+  ctx = { specs, doc, host, teardowns, mounts }
   let nodes: readonly Node[]
   try {
     nodes = build()
   } finally {
     ctx = prev
   }
-  return { nodes, specs, host, teardowns }
+  return { nodes, specs, host, teardowns, mounts }
+}
+
+/** Run the onMount callbacks collected during a build, passing the mounted
+ * parent element; push their returned cleanups onto `teardowns`. */
+function runMounts(
+  mounts: ReadonlyArray<(root: Element) => void | (() => void)>,
+  root: Element,
+  teardowns: Array<() => void>,
+): void {
+  for (const cb of mounts) {
+    const cleanup = cb(root)
+    if (typeof cleanup === 'function') teardowns.push(cleanup)
+  }
+}
+
+/** Register a callback to run after the surrounding view's nodes are mounted,
+ * receiving the mounted parent element. Returning a function registers a
+ * teardown (run on unmount / dispose). Returns a marker node for the view array. */
+export function onMount(cb: (root: Element) => void | (() => void)): Node {
+  const c = requireCtx()
+  c.mounts.push(cb)
+  return c.doc.createComment('onMount')
 }
 
 /** Build a scope from collected specs and publish it to its build host (so
@@ -206,6 +233,7 @@ export function signalEach<T>(
     nodes: readonly Node[]
     ctx: RowCtx<T> // current ctx (holds the last-applied item + state)
     spare: RowCtx<T> // scratch ctx, swapped in on the next update (no per-tick alloc)
+    teardowns: Array<() => void> // onMount cleanups + foreign unmount for this row
   }
   const rows = new Map<string, Row>()
 
@@ -229,9 +257,10 @@ export function signalEach<T>(
         const built = runBuild(doc, renderRow)
         const scope = buildAndPublishScope(built)
         scope.mount(ctx) // row scope's "state" is the combined ctx
-        row = { scope, nodes: built.nodes, ctx, spare: { item, state } }
+        row = { scope, nodes: built.nodes, ctx, spare: { item, state }, teardowns: built.teardowns }
         rows.set(k, row)
         for (const n of row.nodes) parent.insertBefore(n, pos) // new row, in order before pos
+        runMounts(built.mounts, parent as Element, built.teardowns)
         continue
       }
       // existing row: re-run only the bindings whose part of the ctx changed.
@@ -255,6 +284,7 @@ export function signalEach<T>(
     }
     for (const [k, row] of rows) {
       if (!seen.has(k)) {
+        for (const t of row.teardowns.splice(0)) t() // onMount cleanups + foreign unmount
         for (const n of row.nodes) if (n.parentNode === parent) parent.removeChild(n)
         rows.delete(k)
       }
@@ -300,7 +330,12 @@ export function signalShow(
   frag.appendChild(start)
   frag.appendChild(end)
 
-  let mounted: { on: boolean; scope: SignalScope; nodes: readonly Node[] } | null = null
+  let mounted: {
+    on: boolean
+    scope: SignalScope
+    nodes: readonly Node[]
+    teardowns: Array<() => void>
+  } | null = null
 
   const reconcile = (state: unknown): void => {
     const parent = end.parentNode
@@ -310,6 +345,7 @@ export function signalShow(
 
     if (mounted) {
       ownerHost.scope?.removeChild(mounted.scope)
+      for (const t of mounted.teardowns.splice(0)) t() // onMount cleanups + foreign unmount
       for (const n of mounted.nodes) if (n.parentNode === parent) parent.removeChild(n)
       mounted = null
     }
@@ -321,7 +357,8 @@ export function signalShow(
       scope.mount(state) // content reads the component state
       for (const n of built.nodes) parent.insertBefore(n, end)
       ownerHost.scope?.addChild(scope) // receive future state updates while mounted
-      mounted = { on, scope, nodes: built.nodes }
+      runMounts(built.mounts, parent as Element, built.teardowns)
+      mounted = { on, scope, nodes: built.nodes, teardowns: built.teardowns }
     }
   }
 
@@ -351,7 +388,12 @@ export function signalBranch(
   frag.appendChild(start)
   frag.appendChild(end)
 
-  let mounted: { key: string; scope: SignalScope; nodes: readonly Node[] } | null = null
+  let mounted: {
+    key: string
+    scope: SignalScope
+    nodes: readonly Node[]
+    teardowns: Array<() => void>
+  } | null = null
 
   const reconcile = (state: unknown): void => {
     const parent = end.parentNode
@@ -361,6 +403,7 @@ export function signalBranch(
 
     if (mounted) {
       ownerHost.scope?.removeChild(mounted.scope)
+      for (const t of mounted.teardowns.splice(0)) t() // onMount cleanups + foreign unmount
       for (const n of mounted.nodes) if (n.parentNode === parent) parent.removeChild(n)
       mounted = null
     }
@@ -372,7 +415,8 @@ export function signalBranch(
       scope.mount(state)
       for (const n of built.nodes) parent.insertBefore(n, end)
       ownerHost.scope?.addChild(scope)
-      mounted = { key, scope, nodes: built.nodes }
+      runMounts(built.mounts, parent as Element, built.teardowns)
+      mounted = { key, scope, nodes: built.nodes, teardowns: built.teardowns }
     }
   }
 
@@ -499,6 +543,7 @@ export function mountSignal(
   const scope = buildAndPublishScope(built)
   let cur = initial
   scope.mount(cur)
+  runMounts(built.mounts, container, built.teardowns) // onMount(root) after insert
   return {
     update(next: unknown): void {
       scope.update(cur, next)
