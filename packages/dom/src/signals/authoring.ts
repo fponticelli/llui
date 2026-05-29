@@ -19,7 +19,10 @@ import {
   signalEach,
   signalShow,
   signalBranch,
+  signalLazy,
+  signalVirtualEach,
   type PropValue,
+  type SignalLazyOptions,
 } from './dom.js'
 import {
   mountSignalComponent,
@@ -193,6 +196,46 @@ export function branch(value: Signal<unknown>, arg1: unknown, arms?: unknown): N
   const lowered: Record<string, () => readonly Node[]> = {}
   for (const k of Object.keys(armMap)) lowered[k] = () => armMap[k]!()
   return signalBranch({ produce: value.produce, deps: value.deps }, lowered)
+}
+
+// ── Lazy (async component loading) ─────────────────────────────────
+/** Load a signal component asynchronously: render `fallback()` immediately, then
+ * swap in the loaded component when `loader()` resolves (or `error(err)` on
+ * reject). Identity at runtime — a real runtime helper (not compiled away), so
+ * view-helper composition and uncompiled tests can call it directly. */
+export function lazy<T = undefined>(opts: SignalLazyOptions<T>): Node {
+  return signalLazy(opts)
+}
+
+// ── VirtualEach (windowed list) ─────────────────────────────────────
+/** Virtualized keyed list — only the rows in the scroll viewport (+overscan)
+ * exist in the DOM. `items` is a signal handle (like `each`); the render callback
+ * receives per-row `item` + `index` signal handles. Fixed `itemHeight` only. */
+export function virtualEach<T>(opts: {
+  items: Signal<readonly T[]>
+  key: (item: T) => string | number
+  itemHeight: number
+  containerHeight: number
+  overscan?: number
+  class?: string
+  render: (item: Signal<T>, index: Signal<number>) => readonly Node[]
+}): Node {
+  if (!isSignalHandle(opts.items)) return compiledAway('virtualEach')
+  const produce = opts.items.produce as (s: unknown) => readonly T[]
+  return signalVirtualEach<T>({
+    items: produce,
+    deps: opts.items.deps,
+    key: opts.key,
+    itemHeight: opts.itemHeight,
+    containerHeight: opts.containerHeight,
+    overscan: opts.overscan,
+    class: opts.class,
+    renderRow: (getCtx) => {
+      const itemH = pathHandle<T>(getCtx, 'item')
+      const indexH = pathHandle<number>(getCtx, 'index')
+      return opts.render(itemH, indexH)
+    },
+  })
 }
 
 // ── Foreign (imperative-library boundary) ──────────────────────────

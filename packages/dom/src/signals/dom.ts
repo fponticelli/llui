@@ -13,6 +13,13 @@
 import { createSignalScope, type SignalBinding, type SignalScope } from './runtime.js'
 import { buildPathTable, bindingMask } from './mask.js'
 import type { LiveSignal } from './types.js'
+// `component.ts` imports `mountSignal` from THIS module — a benign cycle: ESM
+// resolves it because `mountSignalComponent` is only ever CALLED (inside
+// signalLazy's deferred resolve), never referenced during module eval. The loaded
+// def's S/M/E are erased to `unknown` — the single documented type-erasure
+// boundary for lazy.
+import { mountSignalComponent } from './component.js'
+import type { SignalComponentDef, SignalComponentHandle } from './component.js'
 
 /** The minimal node-factory surface the signal build needs from its document.
  * Satisfied by a real `Document` (client) AND by a server `DomEnv` (SSR) — so a
@@ -890,4 +897,276 @@ export function renderSignalTree(
       return out
     },
   }
+}
+
+// ── lazy (async component loading) ──────────────────────────────────
+export interface SignalLazyOptions<T = undefined> {
+  /** async loader — typically `() => import('./Chart').then(m => m.default)` */
+  loader: () => Promise<SignalComponentDef<unknown, unknown, unknown>>
+  /** nodes rendered (reactively, in the current build) while loading */
+  fallback: () => readonly Node[]
+  /** nodes rendered if the loader rejects (nothing if omitted) */
+  error?: (err: Error) => readonly Node[]
+  /** seed state for the loaded component, overriding its `init()` result */
+  initialState?: T
+}
+
+/**
+ * Load a signal component asynchronously. Renders `fallback()` immediately as
+ * siblings of an anchor comment (built in the CURRENT build, so the fallback is
+ * reactive). When `loader()` resolves, the fallback region is removed and the
+ * loaded component is mounted via `mountSignalComponent({ anchor, mode:'append' })`
+ * — reusing the anchor-mount infra (nodes inserted after the anchor, bracketed by
+ * an `llui-mount-end` sentinel; its handle owns that region's update loop and
+ * dispose). If the loader rejects, `error(err)` is swapped in (or nothing).
+ *
+ * If the surrounding build is torn down before the loader settles, a cancelled
+ * flag skips the deferred mount; any already-mounted child handle is disposed.
+ */
+export function signalLazy<T = undefined>(opts: SignalLazyOptions<T>): Node {
+  const c = requireCtx()
+  const doc = c.doc
+  const anchor = doc.createComment('lazy')
+
+  // Build the fallback in the CURRENT build so its bindings join the surrounding
+  // scope and stay reactive. Bracket it with an end sentinel so the region can be
+  // removed wholesale on swap.
+  const fallbackEnd = doc.createComment('/lazy-fallback')
+  const fallbackNodes = opts.fallback()
+
+  let cancelled = false
+  let mounted: SignalComponentHandle<unknown, unknown> | null = null
+  // error-arm nodes (built in a nested build inheriting this ctx) + their scope,
+  // so an error swap is reactive and torn down on dispose.
+  let errorScope: SignalScope | null = null
+  let errorNodes: readonly Node[] = []
+  let errorTeardowns: Array<() => void> = []
+
+  const removeFallback = (): void => {
+    const parent = anchor.parentNode
+    if (!parent) return
+    for (const n of fallbackNodes) if (n.parentNode === parent) parent.removeChild(n)
+    if (fallbackEnd.parentNode === parent) parent.removeChild(fallbackEnd)
+  }
+
+  void opts
+    .loader()
+    .then((def) => {
+      if (cancelled) return
+      removeFallback()
+      mounted = mountSignalComponent<unknown, unknown, unknown>(
+        { anchor: anchor as Comment, mode: 'append' },
+        def,
+        opts.initialState !== undefined ? { initialState: opts.initialState } : undefined,
+      )
+    })
+    .catch((err: unknown) => {
+      if (cancelled) return
+      removeFallback()
+      if (!opts.error) return
+      const e = err instanceof Error ? err : new Error(String(err))
+      const parent = anchor.parentNode
+      if (!parent) return
+      const built = runBuild(doc, () => opts.error!(e), c)
+      errorScope = buildAndPublishScope(built)
+      errorNodes = built.nodes
+      errorTeardowns = built.teardowns
+      const insertPoint = anchor.nextSibling
+      for (const n of errorNodes) parent.insertBefore(n, insertPoint)
+      // mount against the host's current state is unknown here; the error arm
+      // typically reads only the captured `err` (deps []), so mount with null.
+      errorScope.mount(null)
+      runMounts(built.mounts, parent as Element, built.teardowns)
+    })
+
+  // On host dispose: cancel any in-flight load, dispose a mounted child, tear
+  // down an error arm.
+  c.teardowns.push(() => {
+    cancelled = true
+    mounted?.dispose()
+    mounted = null
+    if (errorScope) {
+      for (const t of errorTeardowns.splice(0)) t()
+      const parent = anchor.parentNode
+      if (parent) for (const n of errorNodes) if (n.parentNode === parent) parent.removeChild(n)
+      errorScope = null
+    }
+  })
+
+  const frag = doc.createDocumentFragment()
+  frag.appendChild(anchor)
+  for (const n of fallbackNodes) frag.appendChild(n)
+  frag.appendChild(fallbackEnd)
+  return frag
+}
+
+// ── virtualEach (windowed list) ─────────────────────────────────────
+export interface VirtualEachSpec<T> extends EachSource<T> {
+  key: (item: T) => string | number
+  /** fixed pixel height per row (dynamic heights unsupported) */
+  itemHeight: number
+  /** scroll-container height in pixels */
+  containerHeight: number
+  /** extra rows rendered above/below the viewport (default 3) */
+  overscan?: number
+  /** optional class on the scroll container */
+  class?: string
+  /** build a row; `getCtx` exposes the row's live `{ item, state, index }` ctx
+   * (same shape as `signalEach`) for runtime item/index handles. */
+  renderRow: (getCtx: () => RowCtx<T>) => readonly Node[]
+}
+
+/**
+ * Virtualized keyed list — only the rows in the scroll viewport (+overscan) exist
+ * in the DOM. A scroll container (fixed `containerHeight`, `data-virtual-container`)
+ * holds an inner spacer (`data-virtual-spacer`) sized to `items.length*itemHeight`;
+ * each visible row is absolutely positioned (`translateY`) at `index*itemHeight`.
+ *
+ * On scroll the visible window is recomputed and rows are reconciled BY KEY using
+ * the same per-row machinery as `signalEach` (per-row sub-build via `runBuild`
+ * with `inherit`, a row scope mounted on a `{ item, state, index }` ctx, teardowns
+ * on removal). Rows scrolled out are disposed; rows scrolled in are built. The
+ * window also recomputes when `items` changes (a spec gated on `items.deps`).
+ *
+ * Limitation: FIXED row height only — `itemHeight` must be uniform.
+ */
+export function signalVirtualEach<T>(spec: VirtualEachSpec<T>): Node {
+  const c = requireCtx()
+  const doc = c.doc
+  const overscan = spec.overscan ?? 3
+
+  const scroll = doc.createElement('div') as HTMLElement
+  scroll.setAttribute('data-virtual-container', '')
+  scroll.style.setProperty('overflow', 'auto')
+  scroll.style.setProperty('position', 'relative')
+  scroll.style.setProperty('height', `${spec.containerHeight}px`)
+  if (spec.class) scroll.setAttribute('class', spec.class)
+
+  const spacer = doc.createElement('div') as HTMLElement
+  spacer.setAttribute('data-virtual-spacer', '')
+  spacer.style.setProperty('position', 'relative')
+  spacer.style.setProperty('width', '100%')
+  scroll.appendChild(spacer)
+
+  interface Row {
+    scope: SignalScope
+    nodes: readonly Node[]
+    wrapper: HTMLElement
+    ctx: RowCtx<T>
+    spare: RowCtx<T>
+    index: number
+    teardowns: Array<() => void>
+    holder: { ctx: RowCtx<T> }
+  }
+  const rows = new Map<string, Row>()
+
+  let lastState: unknown = null
+  let scrollTop = 0
+
+  const computeRange = (length: number): [number, number] => {
+    if (length === 0) return [0, 0]
+    const start = Math.max(0, Math.floor(scrollTop / spec.itemHeight) - overscan)
+    const end = Math.min(
+      length,
+      Math.ceil((scrollTop + spec.containerHeight) / spec.itemHeight) + overscan,
+    )
+    return [start, end]
+  }
+
+  const positionWrapper = (wrapper: HTMLElement, index: number): void => {
+    wrapper.style.setProperty('position', 'absolute')
+    wrapper.style.setProperty('top', '0')
+    wrapper.style.setProperty('left', '0')
+    wrapper.style.setProperty('right', '0')
+    wrapper.style.setProperty('height', `${spec.itemHeight}px`)
+    wrapper.style.setProperty('transform', `translateY(${index * spec.itemHeight}px)`)
+  }
+
+  const disposeRow = (row: Row): void => {
+    for (const t of row.teardowns.splice(0)) t()
+    if (row.wrapper.parentNode === spacer) spacer.removeChild(row.wrapper)
+  }
+
+  const reconcile = (state: unknown): void => {
+    lastState = state
+    const items = spec.items(state)
+    spacer.style.setProperty('height', `${items.length * spec.itemHeight}px`)
+
+    const [start, end] = computeRange(items.length)
+    const seen = new Set<string>()
+
+    for (let index = start; index < end; index++) {
+      const item = items[index]!
+      const k = String(spec.key(item))
+      seen.add(k)
+      const row = rows.get(k)
+      if (!row) {
+        const wrapper = doc.createElement('div') as HTMLElement
+        wrapper.setAttribute('data-virtual-item', '')
+        wrapper.setAttribute('data-virtual-key', k)
+        positionWrapper(wrapper, index)
+        const rowCtx: RowCtx<T> = { item, state, index }
+        const holder = { ctx: rowCtx }
+        const built = runBuild(doc, () => spec.renderRow(() => holder.ctx), c)
+        const scope = buildAndPublishScope(built)
+        scope.mount(rowCtx)
+        for (const n of built.nodes) wrapper.appendChild(n)
+        spacer.appendChild(wrapper)
+        runMounts(built.mounts, wrapper, built.teardowns)
+        rows.set(k, {
+          scope,
+          nodes: built.nodes,
+          wrapper,
+          ctx: rowCtx,
+          spare: { item, state, index },
+          index,
+          teardowns: built.teardowns,
+          holder,
+        })
+        continue
+      }
+      // existing row: re-run only the bindings whose part of the ctx changed.
+      const next = row.spare
+      next.item = item
+      next.state = state
+      next.index = index
+      row.scope.update(row.ctx, next)
+      row.spare = row.ctx
+      row.ctx = next
+      row.holder.ctx = next
+      if (row.index !== index) {
+        row.index = index
+        positionWrapper(row.wrapper, index)
+      }
+    }
+
+    for (const [k, row] of rows) {
+      if (!seen.has(k)) {
+        disposeRow(row)
+        rows.delete(k)
+      }
+    }
+  }
+
+  // Recompute the window on scroll WITHOUT a component-state change.
+  const onScroll = (): void => {
+    scrollTop = scroll.scrollTop
+    reconcile(lastState)
+  }
+  scroll.addEventListener('scroll', onScroll, { passive: true } as AddEventListenerOptions)
+
+  // Structural binding gated on the list deps: re-window + resize when items
+  // change. produce returns the whole state so reconcile can build row ctxs.
+  c.specs.push({ deps: spec.deps, produce: (s) => s, commit: (s) => reconcile(s) })
+
+  // On host dispose: detach the scroll listener and tear down every live row.
+  c.teardowns.push(() => {
+    scroll.removeEventListener('scroll', onScroll)
+    for (const [k, row] of rows) {
+      disposeRow(row)
+      rows.delete(k)
+    }
+  })
+
+  return scroll
 }

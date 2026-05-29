@@ -30,6 +30,8 @@ export {
   signalShow,
   signalBranch,
   signalForeign,
+  signalLazy,
+  signalVirtualEach,
   onMount,
   portal,
   createContext,
@@ -48,6 +50,8 @@ export {
   type SignalSpec,
   type ForeignSpec,
   type SignalMount,
+  type SignalLazyOptions,
+  type VirtualEachSpec,
 } from './dom.js'
 export {
   mountSignalComponent,
@@ -143,6 +147,8 @@ export {
   show,
   branch,
   foreign,
+  lazy,
+  virtualEach,
   type Send,
   type Reactive,
   type AttrValue,
