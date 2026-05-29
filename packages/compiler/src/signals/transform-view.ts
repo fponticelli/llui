@@ -16,7 +16,22 @@
 
 import ts from 'typescript'
 import { signalToProduce } from './lower.js'
-import { isSignalExpr } from './extract-deps.js'
+import { isSignalExpr, STATE_ROOTS, type Roots } from './extract-deps.js'
+
+/** The produce-wrapper parameter name for a roots map: `s` for the component
+ * view, `ctx` inside an each row (where value prefixes are `ctx.item`/`ctx.state`). */
+function paramOf(roots: Roots): string {
+  for (const info of roots.values()) return info.value.split('.')[0] ?? 's'
+  return 's'
+}
+
+/** Roots for an each row: item param -> ctx.item, the component `state` -> ctx.state. */
+function eachRoots(itemParam: string): Roots {
+  return new Map([
+    [itemParam, { value: 'ctx.item', dep: 'item' }],
+    ['state', { value: 'ctx.state', dep: 'state' }],
+  ])
+}
 
 const ELEMENT_HELPERS = new Set([
   'div',
@@ -84,9 +99,9 @@ function unwrap(expr: ts.Expression): ts.Expression {
 }
 
 /** Source for a `{ produce, deps }` SignalSpec from a signal expression. */
-function specSrc(expr: ts.Expression, sf: ts.SourceFile, roots: ReadonlySet<string>): string {
+function specSrc(expr: ts.Expression, sf: ts.SourceFile, roots: Roots): string {
   const { produce, deps } = signalToProduce(expr, sf, roots)
-  return `{ produce: (s) => ${produce}, deps: ${depsArr(deps)} }`
+  return `{ produce: (${paramOf(roots)}) => ${produce}, deps: ${depsArr(deps)} }`
 }
 
 /** The returned node array of a concise arrow body (`() => [...]`), or null. */
@@ -100,18 +115,25 @@ function arrowReturnArray(fn: ts.Expression): ts.ArrayLiteralExpression | null {
   return null
 }
 
-/** Transform a render arrow's returned node array under the given roots. */
-function renderArraySrc(fn: ts.Expression, sf: ts.SourceFile, roots: ReadonlySet<string>): string {
+/** Transform a render arrow's returned node array under the given roots,
+ * collecting the bindings' deps into `collect` if provided. */
+function renderArraySrc(
+  fn: ts.Expression,
+  sf: ts.SourceFile,
+  roots: Roots,
+  collect?: Set<string>,
+): string {
   const arr = arrowReturnArray(fn)
   if (!arr) return fn.getText(sf) // non-array body — leave verbatim
-  return `[${arr.elements.map((e) => transformNodeExpr(e, sf, roots)).join(', ')}]`
+  return `[${arr.elements.map((e) => transformNodeExpr(e, sf, roots, collect)).join(', ')}]`
 }
 
 /** Rewrite a node-producing expression to its signal-runtime source. */
 export function transformNodeExpr(
   expr: ts.Expression,
   sf: ts.SourceFile,
-  roots: ReadonlySet<string> = new Set(['state']),
+  roots: Roots = STATE_ROOTS,
+  collect?: Set<string>,
 ): string {
   const node = unwrap(expr)
 
@@ -125,16 +147,18 @@ export function transformNodeExpr(
         return `staticText(${arg.getText(sf)})`
       }
       const { produce, deps } = signalToProduce(arg, sf, roots)
-      return `signalText((s) => ${produce}, ${depsArr(deps)})`
+      if (collect) for (const d of deps) collect.add(d)
+      return `signalText((${paramOf(roots)}) => ${produce}, ${depsArr(deps)})`
     }
 
     if (callee === 'each') {
-      // each(items, { key, render: (item) => [...] })
+      // each(items, { key, render: (item) => [...] }) -> combined-ctx rows.
       const items = node.arguments[0]
       const opts = node.arguments[1]
       if (items && opts && ts.isObjectLiteralExpression(opts)) {
         let keySrc = '(x) => x'
         let renderSrc = '() => []'
+        const renderDeps = new Set<string>()
         for (const p of opts.properties) {
           if (!ts.isPropertyAssignment(p)) continue
           const name = p.name.getText(sf)
@@ -147,10 +171,19 @@ export function transformNodeExpr(
               ts.isIdentifier(fn.parameters[0].name)
                 ? fn.parameters[0].name.text
                 : 'item'
-            renderSrc = `() => ${renderArraySrc(fn, sf, new Set([itemParam]))}`
+            // rows read ctx.item.* and ctx.state.*; collect their deps
+            renderSrc = `() => ${renderArraySrc(fn, sf, eachRoots(itemParam), renderDeps)}`
           }
         }
-        return `signalEach(${specSrc(items, sf, roots)}, ${keySrc}, ${renderSrc})`
+        // source: items accessor (component roots) + deps = items deps PLUS the
+        // component-state paths the rows read (render `state.*` deps, un-namespaced)
+        const itemsLowered = signalToProduce(items, sf, roots)
+        const rowStateDeps = [...renderDeps]
+          .filter((d) => d === 'state' || d.startsWith('state.'))
+          .map((d) => (d === 'state' ? '' : d.slice('state.'.length)))
+        const sourceDeps = [...new Set([...itemsLowered.deps, ...rowStateDeps])]
+        const source = `{ items: (${paramOf(roots)}) => ${itemsLowered.produce}, deps: ${depsArr(sourceDeps)} }`
+        return `signalEach(${source}, ${keySrc}, ${renderSrc})`
       }
     }
 
@@ -217,9 +250,9 @@ export function transformNodeExpr(
         propsExpr = a0
         if (a1 && ts.isArrayLiteralExpression(a1)) childrenExpr = a1
       }
-      const propsSrc = propsExpr ? transformProps(propsExpr, sf, roots) : '{}'
+      const propsSrc = propsExpr ? transformProps(propsExpr, sf, roots, collect) : '{}'
       const childrenSrc = childrenExpr
-        ? `[${childrenExpr.elements.map((c) => transformNodeExpr(c, sf, roots)).join(', ')}]`
+        ? `[${childrenExpr.elements.map((c) => transformNodeExpr(c, sf, roots, collect)).join(', ')}]`
         : '[]'
       return `el(${JSON.stringify(callee)}, ${propsSrc}, ${childrenSrc})`
     }
@@ -232,7 +265,8 @@ export function transformNodeExpr(
 function transformProps(
   obj: ts.ObjectLiteralExpression,
   sf: ts.SourceFile,
-  roots: ReadonlySet<string>,
+  roots: Roots,
+  collect?: Set<string>,
 ): string {
   if (obj.properties.length === 0) return '{}'
   const parts = obj.properties.map((p) => {
@@ -240,7 +274,8 @@ function transformProps(
       const name = p.name.getText(sf)
       if (isSignalExpr(p.initializer, roots)) {
         const { produce, deps } = signalToProduce(p.initializer, sf, roots)
-        return `${name}: react((s) => ${produce}, ${depsArr(deps)})`
+        if (collect) for (const d of deps) collect.add(d)
+        return `${name}: react((${paramOf(roots)}) => ${produce}, ${depsArr(deps)})`
       }
       return `${name}: ${p.initializer.getText(sf)}`
     }

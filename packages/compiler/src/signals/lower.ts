@@ -12,9 +12,7 @@
 // See docs/proposals/signals/README.md.
 
 import ts from 'typescript'
-import { analyzeSignalExpr } from './extract-deps.js'
-
-const STATE_PARAM = 's'
+import { analyzeSignalExpr, STATE_ROOTS, type Roots } from './extract-deps.js'
 
 /** Build a property-access source from a base expression and a dotted path,
  * using bracket access for numeric segments (`list.0.p` -> `base.list[0].p`). */
@@ -29,10 +27,10 @@ function pathAccess(base: string, dotted: string): string {
  * Navigation for `.at`, function application for `.map`/`derived`, identity for
  * `.peek`.
  */
-function valueSrc(expr: ts.Expression, sf: ts.SourceFile, roots: ReadonlySet<string>): string {
+function valueSrc(expr: ts.Expression, sf: ts.SourceFile, roots: Roots): string {
   if (ts.isParenthesizedExpression(expr)) return valueSrc(expr.expression, sf, roots)
 
-  if (ts.isIdentifier(expr)) return roots.has(expr.text) ? STATE_PARAM : expr.getText(sf)
+  if (ts.isIdentifier(expr)) return roots.get(expr.text)?.value ?? expr.getText(sf)
 
   if (ts.isCallExpression(expr) && ts.isPropertyAccessExpression(expr.expression)) {
     const method = expr.expression.name.text
@@ -79,7 +77,7 @@ export interface Lowered {
 export function signalToProduce(
   expr: ts.Expression,
   sf: ts.SourceFile,
-  roots: ReadonlySet<string> = new Set(['state']),
+  roots: Roots = STATE_ROOTS,
 ): Lowered {
   return {
     produce: valueSrc(expr, sf, roots),

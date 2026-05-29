@@ -87,8 +87,20 @@ describe('transformNodeExpr — structural primitives', () => {
       "each(state.at('todos'), { key: (t) => t.id, render: (item) => [text(item.at('title'))] })",
     )
     expect(out).toBe(
-      "signalEach({ produce: (s) => s.todos, deps: ['todos'] }, (t) => t.id, () => [signalText((s) => s.title, ['title'])])",
+      "signalEach({ items: (s) => s.todos, deps: ['todos'] }, (t) => t.id, () => [signalText((ctx) => ctx.item.title, ['item.title'])])",
     )
+  })
+
+  it('multi-root each: a row reading component state merges its dep into source.deps', () => {
+    // the jfb-ticker pattern: rows read item fields AND a shared dashboard.mode
+    const out = tx(
+      "each(state.at('rows'), { key: (r) => r.id, render: (r) => [tr({ class: state.at('mode') }, [td([text(r.at('name'))])])] })",
+    )
+    // source deps merge: items 'rows' + the row's component-state read 'mode'
+    expect(out).toContain("items: (s) => s.rows, deps: ['rows', 'mode']")
+    // item read -> ctx.item; component-state read -> ctx.state
+    expect(out).toContain("signalText((ctx) => ctx.item.name, ['item.name'])")
+    expect(out).toContain("react((ctx) => ctx.state.mode, ['state.mode'])")
   })
 
   it('lowers show to signalShow (cond spec, content under state root)', () => {

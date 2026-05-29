@@ -17,7 +17,7 @@
 // Each diagnostic has a message and a source position (start offset + length).
 
 import ts from 'typescript'
-import { isSignalExpr, signalPathOf } from './extract-deps.js'
+import { isSignalExpr, signalPathOf, STATE_ROOTS } from './extract-deps.js'
 
 export interface SignalDiagnostic {
   rule: string
@@ -67,7 +67,7 @@ const ELEMENT_HELPERS = new Set([
 ])
 const REACTIVE_METHODS = new Set(['peek', 'at', 'map'])
 
-const ROOTS = new Set(['state'])
+const ROOTS = STATE_ROOTS
 
 /**
  * Lint the signal usage in a source file. Returns all diagnostics found.

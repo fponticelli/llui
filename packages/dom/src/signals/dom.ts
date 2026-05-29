@@ -160,24 +160,36 @@ function buildScope(specs: readonly BindingSpec[]): SignalScope {
   return createSignalScope(table, bindings)
 }
 
-/** Items source for `signalEach`: an accessor for the array plus its dep paths. */
-export interface EachItems<T> {
-  produce: (state: unknown) => readonly T[]
+/** Items source for `signalEach`: an accessor reading the array out of the
+ * component state, plus the dep paths the list depends on — the items path AND
+ * any component-state paths the rows read (so the list reconciles on either). */
+export interface EachSource<T> {
+  items: (state: unknown) => readonly T[]
   deps: readonly string[]
 }
 
+/** The per-row context a row scope mounts on: its `item` plus the current
+ * component `state`. Row bindings read `ctx.item.*` (dep `item.*`) and
+ * `ctx.state.*` (dep `state.*`) — so a row can react to BOTH its own item and
+ * the component state (e.g. a shared display mode). */
+export interface RowCtx<T> {
+  item: T
+  state: unknown
+}
+
 /**
- * Keyed list primitive. The items source is a structural binding on the array's
- * path; on change it reconciles by key. Each row is its OWN signal scope mounted
- * on the item value — so a change to one item re-runs only that row's bindings
- * (and only the ones whose item-relative deps changed). Kept rows are mutated in
- * place, never recreated.
+ * Keyed list primitive. A structural binding gated on the list's deps (items
+ * path + row-state paths); on change it reconciles by key. Each row is its OWN
+ * signal scope mounted on a combined `{ item, state }` context — so a row reacts
+ * to its item AND to component state, with per-row, per-binding gating (a shared
+ * state change fans out only to the row bindings that read it; item changes hit
+ * only that row). Kept rows are mutated in place, never recreated.
  *
  * Index accessor and move-minimizing reorder are deferred (correct-but-simple
  * reorder: rows are re-inserted in order before the end anchor).
  */
 export function signalEach<T>(
-  items: EachItems<T>,
+  source: EachSource<T>,
   key: (item: T) => string | number,
   renderRow: () => readonly Node[],
 ): Node {
@@ -192,27 +204,29 @@ export function signalEach<T>(
   interface Row {
     scope: SignalScope
     nodes: readonly Node[]
-    item: T
+    ctx: RowCtx<T>
   }
   const rows = new Map<string, Row>()
 
-  const reconcile = (next: readonly T[]): void => {
+  const reconcile = (state: unknown): void => {
     const parent = end.parentNode
     if (!parent) return
+    const items = source.items(state)
     const seen = new Set<string>()
-    for (const item of next) {
+    for (const item of items) {
       const k = String(key(item))
       seen.add(k)
+      const ctx: RowCtx<T> = { item, state }
       let row = rows.get(k)
       if (!row) {
         const built = runBuild(doc, renderRow)
         const scope = buildAndPublishScope(built)
-        scope.mount(item) // row scope's "state" is the item value
-        row = { scope, nodes: built.nodes, item }
+        scope.mount(ctx) // row scope's "state" is the combined ctx
+        row = { scope, nodes: built.nodes, ctx }
         rows.set(k, row)
       } else {
-        row.scope.update(row.item, item) // per-row gating
-        row.item = item
+        row.scope.update(row.ctx, ctx) // per-row, per-binding gating (item + state)
+        row.ctx = ctx
       }
       for (const n of row.nodes) parent.insertBefore(n, end) // place/reorder
     }
@@ -224,10 +238,12 @@ export function signalEach<T>(
     }
   }
 
+  // structural binding: fires when the list deps change; produce returns the
+  // whole component state so reconcile can build each row's combined ctx.
   c.specs.push({
-    deps: items.deps,
-    produce: items.produce,
-    commit: (arr) => reconcile(arr as readonly T[]),
+    deps: source.deps,
+    produce: (s) => s,
+    commit: (s) => reconcile(s),
   })
 
   return frag

@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { mountSignalComponent } from '../../src/signals/component'
-import { signalText, el, signalEach } from '../../src/signals/dom'
+import { signalText, el, react, signalEach, type RowCtx } from '../../src/signals/dom'
 
 interface Todo {
   id: number
@@ -20,10 +20,14 @@ function setup(initial: Todo[]) {
     view: () => [
       el('ul', {}, [
         signalEach<Todo>(
-          { produce: (s) => (s as S).todos, deps: ['todos'] },
+          { items: (s) => (s as S).todos, deps: ['todos'] },
           (t) => t.id,
-          // row scope's state is the item; produce fns read the item
-          () => [el('li', {}, [signalText((it) => (it as Todo).title, ['title'])])],
+          // row scope's state is the combined ctx { item, state }; bindings read ctx.item.*
+          () => [
+            el('li', {}, [
+              signalText((ctx) => ((ctx as RowCtx<Todo>).item as Todo).title, ['item.title']),
+            ]),
+          ],
         ),
       ]),
     ],
@@ -119,5 +123,78 @@ describe('signalEach — keyed list reconciliation', () => {
       ],
     })
     expect(titles()).toEqual(['x', 'y', 'z'])
+  })
+})
+
+describe('signalEach — multi-root rows (item + component state)', () => {
+  interface MS {
+    rows: { id: number; name: string }[]
+    mode: 'a' | 'b'
+  }
+  type MM = { type: 'setRows'; rows: MS['rows'] } | { type: 'toggle' }
+
+  function msetup(initial: MS) {
+    const container = document.createElement('div')
+    const h = mountSignalComponent<MS, MM>(container, {
+      init: () => initial,
+      update: (s, m) =>
+        m.type === 'toggle' ? { ...s, mode: s.mode === 'a' ? 'b' : 'a' } : { ...s, rows: m.rows },
+      view: () => [
+        el('ul', {}, [
+          // deps include both the items path AND the component-state path rows read
+          signalEach<MS['rows'][number]>(
+            { items: (s) => (s as MS).rows, deps: ['rows', 'mode'] },
+            (r) => r.id,
+            () => [
+              el(
+                'li',
+                {
+                  class: react(
+                    (ctx) =>
+                      `mode-${(ctx as RowCtx<MS['rows'][number]>).state ? (ctx as { state: MS }).state.mode : ''}`,
+                    ['state.mode'],
+                  ),
+                },
+                [signalText((ctx) => (ctx as RowCtx<MS['rows'][number]>).item.name, ['item.name'])],
+              ),
+            ],
+          ),
+        ]),
+      ],
+    })
+    const ul = container.querySelector('ul')!
+    return { h, ul }
+  }
+
+  it('a component-state change fans out to every row; an item change hits one', () => {
+    const { h, ul } = msetup({
+      rows: [
+        { id: 1, name: 'x' },
+        { id: 2, name: 'y' },
+      ],
+      mode: 'a',
+    })
+    const lis = () => [...ul.querySelectorAll('li')]
+    expect(lis().map((li) => li.getAttribute('class'))).toEqual(['mode-a', 'mode-a'])
+    expect(lis().map((li) => li.textContent)).toEqual(['x', 'y'])
+
+    const [li1, li2] = lis()
+    // toggle mode -> fan-out to BOTH rows' class, names untouched, same nodes
+    h.send({ type: 'toggle' })
+    expect(lis().map((li) => li.getAttribute('class'))).toEqual(['mode-b', 'mode-b'])
+    expect(lis()[0]).toBe(li1)
+    expect(lis()[1]).toBe(li2)
+    expect(lis().map((li) => li.textContent)).toEqual(['x', 'y'])
+
+    // change one row's name -> only that row's text updates
+    h.send({
+      type: 'setRows',
+      rows: [
+        { id: 1, name: 'X!' },
+        { id: 2, name: 'y' },
+      ],
+    })
+    expect(lis().map((li) => li.textContent)).toEqual(['X!', 'y'])
+    expect(lis().map((li) => li.getAttribute('class'))).toEqual(['mode-b', 'mode-b'])
   })
 })

@@ -13,6 +13,7 @@
 
 import ts from 'typescript'
 import { transformNodeExpr } from './transform-view.js'
+import { singleRoot, type Roots } from './extract-deps.js'
 
 const RUNTIME_HELPERS = [
   'signalText',
@@ -33,21 +34,18 @@ interface Edit {
 
 /** The `state` (and any extra) root names a signal view destructures from its
  * bag parameter, or null if this isn't a signal view. */
-function signalRoots(viewFn: ts.ArrowFunction | ts.FunctionExpression): Set<string> | null {
+function signalRoots(viewFn: ts.ArrowFunction | ts.FunctionExpression): Roots | null {
   const param = viewFn.parameters[0]
   if (!param || !ts.isObjectBindingPattern(param.name)) return null
-  const roots = new Set<string>()
-  let hasState = false
   for (const el of param.name.elements) {
     if (!ts.isIdentifier(el.name)) continue
     const key =
       el.propertyName && ts.isIdentifier(el.propertyName) ? el.propertyName.text : el.name.text
     if (key === 'state') {
-      hasState = true
-      roots.add(el.name.text) // the local alias used in the body
+      return singleRoot(el.name.text) // the local alias used in the body
     }
   }
-  return hasState ? roots : null
+  return null
 }
 
 /** The returned node array of a view body (concise `=> [...]`), or null. */

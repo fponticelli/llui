@@ -23,6 +23,25 @@ import { analyzeAccessor } from './analyze-deps.js'
 
 const REL_ROOT = '' // the whole parameter / whole source
 
+/** How a signal root maps into lowered code: `value` is the produce-source
+ * prefix (e.g. `s` or `ctx.item`); `dep` is the dependency-path namespace
+ * (e.g. `` for the component view, `item`/`state` inside an each row). */
+export interface RootInfo {
+  value: string
+  dep: string
+}
+export type Roots = ReadonlyMap<string, RootInfo>
+
+/** Default: the component view's single `state` root (produce param `s`, deps
+ * relative to the component state). */
+export const STATE_ROOTS: Roots = new Map([['state', { value: 's', dep: '' }]])
+
+/** A single-root map under a chosen local name (e.g. a destructured `state`
+ * alias), produce param `s`, deps relative. */
+export function singleRoot(name: string): Roots {
+  return new Map([[name, { value: 's', dep: '' }]])
+}
+
 /** Rebase a relative dep path onto an absolute source prefix. */
 function rebaseOne(rel: string, base: string): string {
   if (base === REL_ROOT) return rel
@@ -43,15 +62,15 @@ function unionInto(target: Set<string>, src: Iterable<string>): void {
  * is not a simple path (e.g. a `.map`/`derived` result, or rooted at something
  * other than a known signal root).
  */
-export function signalPathOf(expr: ts.Expression, rootNames: ReadonlySet<string>): string | null {
-  if (ts.isIdentifier(expr)) return rootNames.has(expr.text) ? REL_ROOT : null
-  if (ts.isParenthesizedExpression(expr)) return signalPathOf(expr.expression, rootNames)
+export function signalPathOf(expr: ts.Expression, roots: Roots): string | null {
+  if (ts.isIdentifier(expr)) return roots.get(expr.text)?.dep ?? null
+  if (ts.isParenthesizedExpression(expr)) return signalPathOf(expr.expression, roots)
   if (
     ts.isCallExpression(expr) &&
     ts.isPropertyAccessExpression(expr.expression) &&
     expr.expression.name.text === 'at'
   ) {
-    const base = signalPathOf(expr.expression.expression, rootNames)
+    const base = signalPathOf(expr.expression.expression, roots)
     if (base === null) return null
     const arg = expr.arguments[0]
     if (arg && ts.isStringLiteral(arg)) return base === REL_ROOT ? arg.text : `${base}.${arg.text}`
@@ -67,16 +86,13 @@ export function signalPathOf(expr: ts.Expression, rootNames: ReadonlySet<string>
  * 'x').peek())` is NOT a signal expression). Used to distinguish reactive slots
  * from handlers/static values in the view transform.
  */
-export function isSignalExpr(
-  expr: ts.Expression,
-  rootNames: ReadonlySet<string> = new Set(['state']),
-): boolean {
-  if (ts.isParenthesizedExpression(expr)) return isSignalExpr(expr.expression, rootNames)
-  if (signalPathOf(expr, rootNames) !== null) return true
+export function isSignalExpr(expr: ts.Expression, roots: Roots = STATE_ROOTS): boolean {
+  if (ts.isParenthesizedExpression(expr)) return isSignalExpr(expr.expression, roots)
+  if (signalPathOf(expr, roots) !== null) return true
   if (ts.isCallExpression(expr) && ts.isPropertyAccessExpression(expr.expression)) {
     const m = expr.expression.name.text
     if (m === 'map' || m === 'at' || m === 'peek')
-      return isSignalExpr(expr.expression.expression, rootNames)
+      return isSignalExpr(expr.expression.expression, roots)
   }
   if (
     ts.isCallExpression(expr) &&
@@ -91,14 +107,11 @@ export function isSignalExpr(
 /**
  * The set of absolute dependency paths a signal-valued expression reads.
  */
-export function analyzeSignalExpr(
-  expr: ts.Expression,
-  rootNames: ReadonlySet<string> = new Set(['state']),
-): Set<string> {
-  if (ts.isParenthesizedExpression(expr)) return analyzeSignalExpr(expr.expression, rootNames)
+export function analyzeSignalExpr(expr: ts.Expression, roots: Roots = STATE_ROOTS): Set<string> {
+  if (ts.isParenthesizedExpression(expr)) return analyzeSignalExpr(expr.expression, roots)
 
   // A bare signal or `.at()` chain used directly in a reactive slot.
-  const direct = signalPathOf(expr, rootNames)
+  const direct = signalPathOf(expr, roots)
   if (direct !== null) return new Set([direct])
 
   if (ts.isCallExpression(expr) && ts.isPropertyAccessExpression(expr.expression)) {
@@ -109,22 +122,22 @@ export function analyzeSignalExpr(
 
     if (method === 'map') {
       const fn = expr.arguments[0]
-      const srcPath = signalPathOf(recv, rootNames)
+      const srcPath = signalPathOf(recv, roots)
       if (fn && (ts.isArrowFunction(fn) || ts.isFunctionExpression(fn))) {
         const rel = analyzeAccessor(fn).deps[0] ?? new Set<string>()
         if (srcPath !== null) return rebase(rel, srcPath)
         // receiver is itself derived (e.g. chained .map): the body reads the
         // receiver's output, already covered by the receiver's deps.
-        return analyzeSignalExpr(recv, rootNames)
+        return analyzeSignalExpr(recv, roots)
       }
       // non-literal callback (e.g. imported fn): inter-procedural narrowing is a
       // later step — coarsen to the whole source.
-      return srcPath !== null ? new Set([srcPath]) : analyzeSignalExpr(recv, rootNames)
+      return srcPath !== null ? new Set([srcPath]) : analyzeSignalExpr(recv, roots)
     }
 
     if (method === 'at') {
       // `.at` on a non-simple receiver (signalPathOf was null) — coarsen.
-      return analyzeSignalExpr(recv, rootNames)
+      return analyzeSignalExpr(recv, roots)
     }
   }
 
@@ -144,10 +157,10 @@ export function analyzeSignalExpr(
           ? analyzeAccessor(fn).deps
           : []
       inputs.forEach((input, i) => {
-        const srcPath = signalPathOf(input, rootNames)
+        const srcPath = signalPathOf(input, roots)
         const rel = rels[i]
         if (srcPath !== null && rel) unionInto(out, rebase(rel, srcPath))
-        else unionInto(out, analyzeSignalExpr(input, rootNames)) // coarsen this input
+        else unionInto(out, analyzeSignalExpr(input, roots)) // coarsen this input
       })
       return out
     }
@@ -157,7 +170,7 @@ export function analyzeSignalExpr(
   // this is rare). Defensive: union the deps of any signal sub-expression.
   const result = new Set<string>()
   expr.forEachChild((c) => {
-    if (isExpr(c)) unionInto(result, analyzeSignalExpr(c, rootNames))
+    if (isExpr(c)) unionInto(result, analyzeSignalExpr(c, roots))
   })
   return result
 }

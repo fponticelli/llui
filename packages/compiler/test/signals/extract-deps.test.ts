@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import ts from 'typescript'
-import { analyzeSignalExpr, signalPathOf } from '../../src/signals/extract-deps.js'
+import { analyzeSignalExpr, signalPathOf, STATE_ROOTS } from '../../src/signals/extract-deps.js'
 
 // Parse a single expression from source.
 function parseExpr(src: string): ts.Expression {
@@ -20,7 +20,7 @@ function parseExpr(src: string): ts.Expression {
 }
 
 const deps = (src: string): string[] => [...analyzeSignalExpr(parseExpr(src))].sort()
-const ROOTS = new Set(['state'])
+const ROOTS = STATE_ROOTS
 
 describe('signalPathOf', () => {
   it('resolves at-chains rooted at state', () => {
@@ -79,6 +79,14 @@ describe('analyzeSignalExpr', () => {
 
   it('supports custom signal roots (sub-view slice named state, plus extra)', () => {
     const e = parseExpr("theme.at('mode')")
-    expect([...analyzeSignalExpr(e, new Set(['state', 'theme']))]).toEqual(['mode'])
+    expect([
+      ...analyzeSignalExpr(
+        e,
+        new Map([
+          ['state', { value: 's', dep: '' }],
+          ['theme', { value: 'theme', dep: '' }],
+        ]),
+      ),
+    ]).toEqual(['mode'])
   })
 })
