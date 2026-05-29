@@ -1,9 +1,6 @@
 import { describe, it, expect, vi } from 'vitest'
 import { init, update, connect } from '../../src/components/menu'
-import type { MenuState } from '../../src/components/menu'
-
-type Ctx = { m: MenuState }
-const wrap = (m: MenuState): Ctx => ({ m })
+import { rootSignal, read } from '../_signal'
 
 describe('menu reducer', () => {
   it('initializes closed with no highlight', () => {
@@ -140,27 +137,27 @@ describe('menu reducer', () => {
 })
 
 describe('menu.connect', () => {
-  const parts = connect<Ctx>((s) => s.m, vi.fn(), { id: 'm1' })
+  const parts = connect(rootSignal(), vi.fn(), { id: 'm1' })
 
   it('trigger aria-haspopup=menu', () => {
     expect(parts.trigger['aria-haspopup']).toBe('menu')
   })
 
   it('trigger aria-expanded tracks open', () => {
-    expect(parts.trigger['aria-expanded'](wrap(init({ open: true })))).toBe(true)
-    expect(parts.trigger['aria-expanded'](wrap(init({ open: false })))).toBe(false)
+    expect(read(parts.trigger['aria-expanded'], init({ open: true }))).toBe(true)
+    expect(read(parts.trigger['aria-expanded'], init({ open: false }))).toBe(false)
   })
 
   it('trigger click toggles', () => {
     const send = vi.fn()
-    const p = connect<Ctx>((s) => s.m, send, { id: 'x' })
+    const p = connect(rootSignal(), send, { id: 'x' })
     p.trigger.onClick(new MouseEvent('click'))
     expect(send).toHaveBeenCalledWith({ type: 'toggle' })
   })
 
   it('trigger ArrowDown opens menu', () => {
     const send = vi.fn()
-    const p = connect<Ctx>((s) => s.m, send, { id: 'x' })
+    const p = connect(rootSignal(), send, { id: 'x' })
     const ev = new KeyboardEvent('keydown', { key: 'ArrowDown', cancelable: true })
     p.trigger.onKeyDown(ev)
     expect(ev.defaultPrevented).toBe(true)
@@ -169,7 +166,7 @@ describe('menu.connect', () => {
 
   it('trigger ArrowUp opens + highlights last', () => {
     const send = vi.fn()
-    const p = connect<Ctx>((s) => s.m, send, { id: 'x' })
+    const p = connect(rootSignal(), send, { id: 'x' })
     p.trigger.onKeyDown(new KeyboardEvent('keydown', { key: 'ArrowUp', cancelable: true }))
     expect(send).toHaveBeenNthCalledWith(1, { type: 'open' })
     expect(send).toHaveBeenNthCalledWith(2, { type: 'highlightLast' })
@@ -177,28 +174,28 @@ describe('menu.connect', () => {
 
   it('content ArrowDown highlights next', () => {
     const send = vi.fn()
-    const p = connect<Ctx>((s) => s.m, send, { id: 'x' })
+    const p = connect(rootSignal(), send, { id: 'x' })
     p.content.onKeyDown(new KeyboardEvent('keydown', { key: 'ArrowDown', cancelable: true }))
     expect(send).toHaveBeenCalledWith({ type: 'highlightNext' })
   })
 
   it('content Enter selects highlighted', () => {
     const send = vi.fn()
-    const p = connect<Ctx>((s) => s.m, send, { id: 'x' })
+    const p = connect(rootSignal(), send, { id: 'x' })
     p.content.onKeyDown(new KeyboardEvent('keydown', { key: 'Enter', cancelable: true }))
     expect(send).toHaveBeenCalledWith({ type: 'selectHighlighted' })
   })
 
   it('content Escape closes', () => {
     const send = vi.fn()
-    const p = connect<Ctx>((s) => s.m, send, { id: 'x' })
+    const p = connect(rootSignal(), send, { id: 'x' })
     p.content.onKeyDown(new KeyboardEvent('keydown', { key: 'Escape', cancelable: true }))
     expect(send).toHaveBeenCalledWith({ type: 'close' })
   })
 
   it('content single-char sends typeahead', () => {
     const send = vi.fn()
-    const p = connect<Ctx>((s) => s.m, send, { id: 'x' })
+    const p = connect(rootSignal(), send, { id: 'x' })
     p.content.onKeyDown(new KeyboardEvent('keydown', { key: 'a' }))
     expect(send).toHaveBeenCalledWith(expect.objectContaining({ type: 'typeahead', char: 'a' }))
   })
@@ -206,7 +203,7 @@ describe('menu.connect', () => {
   it('item click sends select + invokes onSelect callback', () => {
     const send = vi.fn()
     const onSelect = vi.fn()
-    const p = connect<Ctx>((s) => s.m, send, { id: 'x', onSelect })
+    const p = connect(rootSignal(), send, { id: 'x', onSelect })
     p.item('a').item.onClick(new MouseEvent('click'))
     expect(send).toHaveBeenCalledWith({ type: 'select', value: 'a' })
     expect(onSelect).toHaveBeenCalledWith('a')
@@ -214,17 +211,17 @@ describe('menu.connect', () => {
 
   it('item pointerMove highlights', () => {
     const send = vi.fn()
-    const p = connect<Ctx>((s) => s.m, send, { id: 'x' })
+    const p = connect(rootSignal(), send, { id: 'x' })
     p.item('b').item.onPointerMove(new PointerEvent('pointermove'))
     expect(send).toHaveBeenCalledWith({ type: 'highlight', value: 'b' })
   })
 
   it('item data-state highlighted reflects state', () => {
-    const p = connect<Ctx>((s) => s.m, vi.fn(), { id: 'x' })
+    const p = connect(rootSignal(), vi.fn(), { id: 'x' })
     const itemA = p.item('a').item
     const s1 = { ...init({ items: ['a', 'b'] }), highlighted: 'a' }
     const s2 = { ...init({ items: ['a', 'b'] }), highlighted: 'b' }
-    expect(itemA['data-state']({ m: s1 } as Ctx)).toBe('highlighted')
-    expect(itemA['data-state']({ m: s2 } as Ctx)).toBeUndefined()
+    expect(read(itemA['data-state'], s1)).toBe('highlighted')
+    expect(read(itemA['data-state'], s2)).toBeUndefined()
   })
 })

@@ -1,9 +1,7 @@
 import { describe, it, expect, vi } from 'vitest'
 import { init, update, connect } from '../../src/components/floating-panel'
 import type { FloatingPanelState } from '../../src/components/floating-panel'
-
-type Ctx = { p: FloatingPanelState }
-const wrap = (p: FloatingPanelState): Ctx => ({ p })
+import { rootSignal, read } from '../_signal'
 
 describe('floating-panel reducer', () => {
   it('initializes open at (100, 100) with 400×300', () => {
@@ -87,36 +85,36 @@ describe('floating-panel reducer', () => {
 
 describe('floating-panel.connect', () => {
   it('root style reflects position + size', () => {
-    const p = connect<Ctx>((s) => s.p, vi.fn())
-    const style = p.root.style(wrap(init()))
+    const p = connect(rootSignal(), vi.fn())
+    const style = read(p.root.style, init())
     expect(style).toContain('left:100px')
     expect(style).toContain('width:400px')
   })
 
   it('root style switches to inset:0 when maximized', () => {
-    const p = connect<Ctx>((s) => s.p, vi.fn())
+    const p = connect(rootSignal(), vi.fn())
     const maxed = { ...init(), maximized: true } as FloatingPanelState
-    const style = p.root.style(wrap(maxed))
+    const style = read(p.root.style, maxed)
     expect(style).toContain('inset:0')
   })
 
   it('content hidden when minimized', () => {
-    const p = connect<Ctx>((s) => s.p, vi.fn())
-    expect(p.content.hidden(wrap(init()))).toBe(false)
+    const p = connect(rootSignal(), vi.fn())
+    expect(read(p.content.hidden, init())).toBe(false)
     const min = { ...init(), minimized: true } as FloatingPanelState
-    expect(p.content.hidden(wrap(min))).toBe(true)
+    expect(read(p.content.hidden, min)).toBe(true)
   })
 
   it('dragHandle onPointerDown dispatches dragStart', () => {
     const send = vi.fn()
-    const p = connect<Ctx>((s) => s.p, send)
+    const p = connect(rootSignal(), send)
     p.dragHandle.onPointerDown({} as PointerEvent)
     expect(send).toHaveBeenCalledWith({ type: 'dragStart' })
   })
 
   it('resizeHandle dispatches resizeStart with handle', () => {
     const send = vi.fn()
-    const p = connect<Ctx>((s) => s.p, send)
+    const p = connect(rootSignal(), send)
     p.resizeHandle('se').onPointerDown({} as PointerEvent)
     expect(send).toHaveBeenCalledWith({ type: 'resizeStart', handle: 'se' })
   })

@@ -1,9 +1,6 @@
 import { describe, it, expect, vi } from 'vitest'
 import { init, update, connect } from '../../src/components/popover'
-import type { PopoverState } from '../../src/components/popover'
-
-type Ctx = { pop: PopoverState }
-const wrap = (p: PopoverState): Ctx => ({ pop: p })
+import { rootSignal, read } from '../_signal'
 
 describe('popover reducer', () => {
   it('initializes closed', () => {
@@ -20,11 +17,11 @@ describe('popover reducer', () => {
 })
 
 describe('popover.connect', () => {
-  const parts = connect<Ctx>((s) => s.pop, vi.fn(), { id: 'pop1' })
+  const parts = connect(rootSignal(), vi.fn(), { id: 'pop1' })
 
   it('trigger aria-expanded tracks open state', () => {
-    expect(parts.trigger['aria-expanded'](wrap({ open: true }))).toBe(true)
-    expect(parts.trigger['aria-expanded'](wrap({ open: false }))).toBe(false)
+    expect(read(parts.trigger['aria-expanded'], { open: true })).toBe(true)
+    expect(read(parts.trigger['aria-expanded'], { open: false })).toBe(false)
   })
 
   it('trigger aria-controls points at content id', () => {
@@ -33,14 +30,14 @@ describe('popover.connect', () => {
 
   it('trigger onClick toggles', () => {
     const send = vi.fn()
-    const p = connect<Ctx>((s) => s.pop, send, { id: 'x' })
+    const p = connect(rootSignal(), send, { id: 'x' })
     p.trigger.onClick(new MouseEvent('click'))
     expect(send).toHaveBeenCalledWith({ type: 'toggle' })
   })
 
   it('closeTrigger sends close', () => {
     const send = vi.fn()
-    const p = connect<Ctx>((s) => s.pop, send, { id: 'x' })
+    const p = connect(rootSignal(), send, { id: 'x' })
     p.closeTrigger.onClick(new MouseEvent('click'))
     expect(send).toHaveBeenCalledWith({ type: 'close' })
   })
@@ -50,12 +47,12 @@ describe('popover.connect', () => {
   })
 
   it('data-state reflects open state across parts', () => {
-    expect(parts.trigger['data-state'](wrap({ open: true }))).toBe('open')
-    expect(parts.content['data-state'](wrap({ open: false }))).toBe('closed')
+    expect(read(parts.trigger['data-state'], { open: true })).toBe('open')
+    expect(read(parts.content['data-state'], { open: false })).toBe('closed')
   })
 
   it('custom closeLabel', () => {
-    const p = connect<Ctx>((s) => s.pop, vi.fn(), { id: 'x', closeLabel: 'Dismiss' })
+    const p = connect(rootSignal(), vi.fn(), { id: 'x', closeLabel: 'Dismiss' })
     expect(p.closeTrigger['aria-label']).toBe('Dismiss')
   })
 })

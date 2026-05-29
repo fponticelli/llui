@@ -250,10 +250,12 @@ export function provide<T>(context: Context<T>, value: T, render: () => readonly
   return frag
 }
 
-/** Read the nearest provided value for `context`, or its default. */
+/** Read the nearest provided value for `context`, or its default. Outside a
+ * signal build (e.g. a unit test calling `connect()` directly) no provider can
+ * exist, so the default is returned rather than throwing. */
 export function useContext<T>(context: Context<T>): T {
-  const c = requireCtx()
-  return c.contexts.has(context.id) ? (c.contexts.get(context.id) as T) : context.default
+  if (!ctx) return context.default
+  return ctx.contexts.has(context.id) ? (ctx.contexts.get(context.id) as T) : context.default
 }
 
 /** Build a scope from collected specs and publish it to its build host (so

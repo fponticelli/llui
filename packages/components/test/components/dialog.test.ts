@@ -1,11 +1,10 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
-import { mountApp, div, button, h2, text } from '@llui/dom'
-import type { ComponentDef } from '@llui/dom'
+import { component, mountApp, div, button, h2, text } from '@llui/dom/signals'
 import { init, update, connect, overlay } from '../../src/components/dialog'
 import type { DialogState, DialogMsg } from '../../src/components/dialog'
+import { rootSignal, read } from '../_signal'
 
 type Ctx = { dlg: DialogState }
-const wrap = (d: DialogState): Ctx => ({ dlg: d })
 
 describe('dialog reducer', () => {
   it('initializes closed by default', () => {
@@ -26,11 +25,11 @@ describe('dialog reducer', () => {
 })
 
 describe('dialog.connect', () => {
-  const parts = connect<Ctx>((s) => s.dlg, vi.fn(), { id: 'd1' })
+  const parts = connect(rootSignal(), vi.fn(), { id: 'd1' })
 
   it('trigger.aria-expanded reflects open state', () => {
-    expect(parts.trigger['aria-expanded'](wrap({ open: true }))).toBe(true)
-    expect(parts.trigger['aria-expanded'](wrap({ open: false }))).toBe(false)
+    expect(read(parts.trigger['aria-expanded'], { open: true })).toBe(true)
+    expect(read(parts.trigger['aria-expanded'], { open: false })).toBe(false)
   })
 
   it('trigger.aria-controls → content id', () => {
@@ -46,12 +45,12 @@ describe('dialog.connect', () => {
   })
 
   it('role=alertdialog passes through', () => {
-    const p = connect<Ctx>((s) => s.dlg, vi.fn(), { id: 'd2', role: 'alertdialog' })
+    const p = connect(rootSignal(), vi.fn(), { id: 'd2', role: 'alertdialog' })
     expect(p.content.role).toBe('alertdialog')
   })
 
   it('non-modal omits aria-modal', () => {
-    const p = connect<Ctx>((s) => s.dlg, vi.fn(), { id: 'd3', modal: false })
+    const p = connect(rootSignal(), vi.fn(), { id: 'd3', modal: false })
     expect(p.content['aria-modal']).toBeUndefined()
   })
 
@@ -61,20 +60,20 @@ describe('dialog.connect', () => {
 
   it('trigger onClick sends open', () => {
     const send = vi.fn()
-    const p = connect<Ctx>((s) => s.dlg, send, { id: 'x' })
+    const p = connect(rootSignal(), send, { id: 'x' })
     p.trigger.onClick(new MouseEvent('click'))
     expect(send).toHaveBeenCalledWith({ type: 'open' })
   })
 
   it('closeTrigger onClick sends close', () => {
     const send = vi.fn()
-    const p = connect<Ctx>((s) => s.dlg, send, { id: 'x' })
+    const p = connect(rootSignal(), send, { id: 'x' })
     p.closeTrigger.onClick(new MouseEvent('click'))
     expect(send).toHaveBeenCalledWith({ type: 'close' })
   })
 
   it('closeLabel customizes aria-label', () => {
-    const p = connect<Ctx>((s) => s.dlg, vi.fn(), { id: 'x', closeLabel: 'Dismiss' })
+    const p = connect(rootSignal(), vi.fn(), { id: 'x', closeLabel: 'Dismiss' })
     expect(p.closeTrigger['aria-label']).toBe('Dismiss')
   })
 })
@@ -107,24 +106,20 @@ describe('dialog.overlay integration', () => {
     app: ReturnType<typeof mountApp>
   } {
     let sendRef!: (m: DialogMsg) => void
-    const parts = connect<Ctx>(
-      (s) => s.dlg,
-      (m) => sendRef(m),
-      { id: 'test' },
-    )
-    const def: ComponentDef<Ctx, DialogMsg, never> = {
+    const def = component<Ctx, DialogMsg, never>({
       name: 'Test',
       init: () => [{ dlg: init({ open: initialOpen }) }, []],
       update: (state, msg) => {
         const [next] = update(state.dlg, msg)
         return [{ dlg: next }, []]
       },
-      view: ({ send }) => {
+      view: ({ state, send }) => {
         sendRef = send
+        const parts = connect(state.at('dlg'), send, { id: 'test' })
         return [
           button({ ...parts.trigger }, [text('Open')]),
-          ...overlay<Ctx>({
-            get: (s) => s.dlg,
+          overlay({
+            state: state.at('dlg'),
             send,
             parts,
             content: () => [
@@ -136,7 +131,7 @@ describe('dialog.overlay integration', () => {
           }),
         ]
       },
-    }
+    })
     const container = document.createElement('div')
     document.body.appendChild(container)
     const app = mountApp(container, def)

@@ -1,9 +1,6 @@
 import { describe, it, expect, vi } from 'vitest'
 import { init, update, connect } from '../../src/components/combobox'
-import type { ComboboxState } from '../../src/components/combobox'
-
-type Ctx = { cb: ComboboxState }
-const wrap = (cb: ComboboxState): Ctx => ({ cb })
+import { rootSignal, read } from '../_signal'
 
 describe('combobox reducer', () => {
   it('initializes with all items as filtered', () => {
@@ -72,7 +69,7 @@ describe('combobox reducer', () => {
 })
 
 describe('combobox.connect', () => {
-  const p = connect<Ctx>((s) => s.cb, vi.fn(), { id: 'cb1' })
+  const p = connect(rootSignal(), vi.fn(), { id: 'cb1' })
 
   it('input has aria-autocomplete=list', () => {
     expect(p.input['aria-autocomplete']).toBe('list')
@@ -84,7 +81,7 @@ describe('combobox.connect', () => {
 
   it('onInput sends setInputValue', () => {
     const send = vi.fn()
-    const pc = connect<Ctx>((s) => s.cb, send, { id: 'x' })
+    const pc = connect(rootSignal(), send, { id: 'x' })
     const target = document.createElement('input')
     target.value = 'hello'
     const ev = new Event('input')
@@ -95,18 +92,18 @@ describe('combobox.connect', () => {
 
   it('Escape on input closes', () => {
     const send = vi.fn()
-    const pc = connect<Ctx>((s) => s.cb, send, { id: 'x' })
+    const pc = connect(rootSignal(), send, { id: 'x' })
     pc.input.onKeyDown(new KeyboardEvent('keydown', { key: 'Escape', cancelable: true }))
     expect(send).toHaveBeenCalledWith({ type: 'close' })
   })
 
   it('input value tracks inputValue', () => {
-    expect(p.input.value(wrap(init({ inputValue: 'xyz' })))).toBe('xyz')
+    expect(read(p.input.value, init({ inputValue: 'xyz' }))).toBe('xyz')
   })
 
   it('trigger click opens', () => {
     const send = vi.fn()
-    const pc = connect<Ctx>((s) => s.cb, send, { id: 'x' })
+    const pc = connect(rootSignal(), send, { id: 'x' })
     pc.trigger.onClick(new MouseEvent('click'))
     expect(send).toHaveBeenCalledWith({ type: 'open' })
   })

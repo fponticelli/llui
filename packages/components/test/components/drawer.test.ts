@@ -1,11 +1,10 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
-import { mountApp, div, button, text } from '@llui/dom'
-import type { ComponentDef } from '@llui/dom'
+import { component, mountApp, div, button, text } from '@llui/dom/signals'
 import { init, update, connect, overlay } from '../../src/components/drawer'
 import type { DrawerState, DrawerMsg } from '../../src/components/drawer'
+import { rootSignal, read } from '../_signal'
 
 type Ctx = { d: DrawerState }
-const wrap = (d: DrawerState): Ctx => ({ d })
 
 describe('drawer reducer', () => {
   it('initializes closed', () => {
@@ -20,7 +19,7 @@ describe('drawer reducer', () => {
 })
 
 describe('drawer.connect', () => {
-  const parts = connect<Ctx>((s) => s.d, vi.fn(), { id: 'dr1' })
+  const parts = connect(rootSignal(), vi.fn(), { id: 'dr1' })
 
   it('content role=dialog with aria-modal', () => {
     expect(parts.content.role).toBe('dialog')
@@ -28,8 +27,8 @@ describe('drawer.connect', () => {
   })
 
   it('data-side reflects side option', () => {
-    const right = connect<Ctx>((s) => s.d, vi.fn(), { id: 'x', side: 'right' })
-    const left = connect<Ctx>((s) => s.d, vi.fn(), { id: 'y', side: 'left' })
+    const right = connect(rootSignal(), vi.fn(), { id: 'x', side: 'right' })
+    const left = connect(rootSignal(), vi.fn(), { id: 'y', side: 'left' })
     expect(right.content['data-side']).toBe('right')
     expect(left.content['data-side']).toBe('left')
     expect(right.positioner['data-side']).toBe('right')
@@ -40,13 +39,13 @@ describe('drawer.connect', () => {
   })
 
   it('data-state tracks open', () => {
-    expect(parts.content['data-state'](wrap({ open: true }))).toBe('open')
-    expect(parts.trigger['data-state'](wrap({ open: false }))).toBe('closed')
+    expect(read(parts.content['data-state'], { open: true })).toBe('open')
+    expect(read(parts.trigger['data-state'], { open: false })).toBe('closed')
   })
 
   it('trigger opens drawer', () => {
     const send = vi.fn()
-    const p = connect<Ctx>((s) => s.d, send, { id: 'x' })
+    const p = connect(rootSignal(), send, { id: 'x' })
     p.trigger.onClick(new MouseEvent('click'))
     expect(send).toHaveBeenCalledWith({ type: 'open' })
   })
@@ -73,24 +72,20 @@ describe('drawer.overlay integration', () => {
 
   function makeApp(initialOpen = false): { send: (m: DrawerMsg) => void } {
     let sendRef!: (m: DrawerMsg) => void
-    const parts = connect<Ctx>(
-      (s) => s.d,
-      (m) => sendRef(m),
-      { id: 'test', side: 'right' },
-    )
-    const def: ComponentDef<Ctx, DrawerMsg, never> = {
+    const def = component<Ctx, DrawerMsg, never>({
       name: 'Test',
       init: () => [{ d: init({ open: initialOpen }) }, []],
       update: (state, msg) => {
         const [next] = update(state.d, msg)
         return [{ d: next }, []]
       },
-      view: ({ send }) => {
+      view: ({ state, send }) => {
         sendRef = send
+        const parts = connect(state.at('d'), send, { id: 'test', side: 'right' })
         return [
           button({ ...parts.trigger }, [text('Open')]),
-          ...overlay<Ctx>({
-            get: (s) => s.d,
+          overlay({
+            state: state.at('d'),
             send,
             parts,
             content: () => [
@@ -99,7 +94,7 @@ describe('drawer.overlay integration', () => {
           }),
         ]
       },
-    }
+    })
     const container = document.createElement('div')
     document.body.appendChild(container)
     currentApp = mountApp(container, def)

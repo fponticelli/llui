@@ -1,9 +1,6 @@
 import { describe, it, expect, vi } from 'vitest'
 import { init, update, connect } from '../../src/components/context-menu'
-import type { ContextMenuState } from '../../src/components/context-menu'
-
-type Ctx = { m: ContextMenuState }
-const wrap = (m: ContextMenuState): Ctx => ({ m })
+import { rootSignal, read } from '../_signal'
 
 describe('context-menu reducer', () => {
   it('initializes closed at 0,0', () => {
@@ -46,11 +43,11 @@ describe('context-menu reducer', () => {
 })
 
 describe('context-menu.connect', () => {
-  const p = connect<Ctx>((s) => s.m, vi.fn(), { id: 'cm1' })
+  const p = connect(rootSignal(), vi.fn(), { id: 'cm1' })
 
   it('trigger contextmenu sends openAt with coordinates', () => {
     const send = vi.fn()
-    const pc = connect<Ctx>((s) => s.m, send, { id: 'x' })
+    const pc = connect(rootSignal(), send, { id: 'x' })
     const ev = new MouseEvent('contextmenu', { clientX: 150, clientY: 75, cancelable: true })
     pc.trigger.onContextMenu(ev)
     expect(ev.defaultPrevented).toBe(true)
@@ -58,21 +55,21 @@ describe('context-menu.connect', () => {
   })
 
   it('positioner style uses x/y', () => {
-    const style = p.positioner.style(wrap({ ...init({ items: ['a'] }), open: true, x: 42, y: 99 }))
+    const style = read(p.positioner.style, { ...init({ items: ['a'] }), open: true, x: 42, y: 99 })
     expect(style).toContain('top:99px')
     expect(style).toContain('left:42px')
   })
 
   it('content ArrowDown sends highlightNext', () => {
     const send = vi.fn()
-    const pc = connect<Ctx>((s) => s.m, send, { id: 'x' })
+    const pc = connect(rootSignal(), send, { id: 'x' })
     pc.content.onKeyDown(new KeyboardEvent('keydown', { key: 'ArrowDown', cancelable: true }))
     expect(send).toHaveBeenCalledWith({ type: 'highlightNext' })
   })
 
   it('content Escape closes', () => {
     const send = vi.fn()
-    const pc = connect<Ctx>((s) => s.m, send, { id: 'x' })
+    const pc = connect(rootSignal(), send, { id: 'x' })
     pc.content.onKeyDown(new KeyboardEvent('keydown', { key: 'Escape', cancelable: true }))
     expect(send).toHaveBeenCalledWith({ type: 'close' })
   })
@@ -80,7 +77,7 @@ describe('context-menu.connect', () => {
   it('item click sends select + invokes onSelect', () => {
     const send = vi.fn()
     const onSelect = vi.fn()
-    const pc = connect<Ctx>((s) => s.m, send, { id: 'x', onSelect })
+    const pc = connect(rootSignal(), send, { id: 'x', onSelect })
     pc.item('a').item.onClick(new MouseEvent('click'))
     expect(send).toHaveBeenCalledWith({ type: 'select', value: 'a' })
     expect(onSelect).toHaveBeenCalledWith('a')

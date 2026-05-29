@@ -1,6 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
-import { mountApp, div, button, h2, text } from '@llui/dom'
-import type { ComponentDef } from '@llui/dom'
+import { component, mountApp, div, button, h2, text } from '@llui/dom/signals'
 import { init, update, connect, overlay } from '../../src/components/dialog'
 import type { DialogState, DialogMsg } from '../../src/components/dialog'
 import { _focusTrapStackSize } from '../../src/utils/focus-trap'
@@ -22,34 +21,32 @@ import { _scrollLockCount } from '../../src/utils/remove-scroll'
 
 type Ctx = { dlg: DialogState }
 
-function pageDef(initialOpen: boolean): ComponentDef<Ctx, DialogMsg, never> {
-  const parts = connect<Ctx>(
-    (s) => s.dlg,
-    () => {},
-    { id: 'page-dialog' },
-  )
-  return {
+function pageDef(initialOpen: boolean) {
+  return component<Ctx, DialogMsg, never>({
     name: 'Page',
     init: () => [{ dlg: init({ open: initialOpen }) }, []],
     update: (state, msg) => {
       const [next] = update(state.dlg, msg)
       return [{ dlg: next }, []]
     },
-    view: ({ send }) => [
-      button({ ...parts.trigger }, [text('Open')]),
-      ...overlay<Ctx>({
-        get: (s) => s.dlg,
-        send,
-        parts,
-        content: () => [
-          div({ ...parts.content }, [
-            h2({ ...parts.title }, [text('Dialog Title')]),
-            button({ ...parts.closeTrigger }, [text('Close')]),
-          ]),
-        ],
-      }),
-    ],
-  }
+    view: ({ state, send }) => {
+      const parts = connect(state.at('dlg'), send, { id: 'page-dialog' })
+      return [
+        button({ ...parts.trigger }, [text('Open')]),
+        overlay({
+          state: state.at('dlg'),
+          send,
+          parts,
+          content: () => [
+            div({ ...parts.content }, [
+              h2({ ...parts.title }, [text('Dialog Title')]),
+              button({ ...parts.closeTrigger }, [text('Close')]),
+            ]),
+          ],
+        }),
+      ]
+    },
+  })
 }
 
 describe('dialog.overlay — dispose while open', () => {
@@ -111,11 +108,12 @@ describe('dialog.overlay — dispose while open', () => {
 
   it('cleans document.body when app is disposed after opening dialog post-mount', async () => {
     let sendRef!: (m: DialogMsg) => void
-    const def: ComponentDef<Ctx, DialogMsg, never> = {
-      ...pageDef(false),
-      view: (h) => {
+    const base = pageDef(false)
+    const def = {
+      ...base,
+      view: (h: Parameters<typeof base.view>[0]) => {
         sendRef = h.send
-        return pageDef(false).view(h)
+        return base.view(h)
       },
     }
     const app = mountApp(container!, def)
