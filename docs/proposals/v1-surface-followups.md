@@ -3,16 +3,20 @@
 Topics discussed and explicitly deferred, or noticed and not yet dug into, while
 designing signals. All are part of the v1 picture.
 
-## BLOCKER before implementing signals composition
+## Composition — RESOLVED
 
-**Composition-model contradiction with `unified-composition-model.md`.** Verified
-on `main` (2026-05): `child()` does not exist (no export, no primitive);
-composition is view-functions + `combine()` slice reducers. The signals proposal's
-composition section is reframed to the model-neutral signal-carrying rule, but the
-**boundary primitive is undecided** — does a heavyweight Level-2 boundary survive
-post-unified-composition, and what's it called? This must be settled before the
-signals composition section is final. Decide: re-adopt the unified-composition
-outcome explicitly, or define a new signal-era boundary.
+Signals adopt the `unified-composition-model` wholesale (it's already on `main`):
+one root component; decompose via **view functions taking `Signal<T>` slice-bags**
+(bag mirrors the root view bag — primary slice named `state`, extra slices named,
+plus `send`) + **`combine()`** slice reducers; **`subApp`** as the only isolation
+valve (pure isolation by default; `LiveSignal` materialization if a reactive slice
+must cross in, reusing the `foreign` mechanism). No reactive sub-boundary —
+path-keyed reactivity + chunked masks remove the bitmask ceiling that `child()`
+existed to relieve. `.at()` subsumes `slice()`. One mask scope simplifies the
+runtime (no foreign-scope bits in the gate). Folded into the signals proposal's
+Composition section. **Only open sub-question:** whether `subApp` ever needs the
+reactive `LiveSignal` bridge in practice, or pure isolation always suffices —
+decide when a real case appears.
 
 ## Verified during reconciliation (no longer open questions)
 

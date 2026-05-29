@@ -209,50 +209,72 @@ Three rules for everything imperative:
 
 ## Composition & Escape Boundaries
 
-Three boundaries cross out of pure declarative LLui. The guiding principle:
+How signals behave across the framework's boundaries: in-language composition
+(view functions, `combine`, `subApp`), the imperative escape (`foreign`), and the
+DOM-relocation escape (`portal`). The guiding principle:
 
 > Signals are compile-time fictions (erased to masks) everywhere **declarative**.
 > They **materialize** into real runtime objects at exactly one place — the
-> declarative→imperative boundary, i.e. `foreign`.
+> declarative→imperative boundary (`foreign`, and `subApp` only when a reactive
+> slice must cross into it).
 
-### Sub-views and nested boundaries — signals as the carrier
+### Composition — view functions + `combine()` + `subApp` (no reactive sub-boundary)
 
-> **Composition-model caveat (verified against `main`, 2026-05):** `child()` does
-> **not** exist on `main` — there is no `child` export or primitive. The current
-> composition surface is **view-functions** (Level 1, `(props, send)`) plus
-> **`combine()`** slice reducers (`SliceReducer`/`SliceMap`/`TopReducer`). The
-> heavyweight component-boundary question (whether a Level-2 boundary exists
-> post-`unified-composition-model`, and what it's called) is an **unresolved
-> cross-proposal decision** — see [Reconciliation](#reconciliation-with-existing-proposals).
-> The signal-carrying rule below holds regardless of which boundary wins.
+Signals slot directly into the `unified-composition-model` already on `main`:
+`child()` does **not** exist, and it shouldn't — it existed almost entirely to
+relieve the 31-path bitmask ceiling (dicerun2 had 62 `child()` calls, nine with
+comments citing the ceiling). **Path-keyed reactivity makes that ceiling
+irrelevant, and signals + chunked masks _are_ that path-keyed reactivity.** So
+there is **one root component / one mask scope**, and decomposition uses plain
+functions and slices, not boundaries:
 
-The rule that survives any composition outcome: **a slice crosses a boundary as a
-`Signal<T>`, rooted in the parent** (model a). A prop/slice signal keeps its parent
-dependency identity; the sub-view's bindings gate on the parent's bits directly —
-no re-diff at the boundary, no re-mount on parent change.
+1. **Everyday decomposition = view functions taking `Signal<T>` slices via a bag.**
+   The bag mirrors the root view bag (`{ state, send }`) so every view function is
+   one shape; the primary slice is named `state`, extra slices are named fields.
+   The boundary is a function call; the signal carries reactivity across it.
 
-```ts
-// Level-1 view function: receives Signal<T> slices, stays declarative & erased
-const todoRow = (todo: Signal<Todo>, send: Send<Msg>) =>
-  div([
-    text(todo.at('title')),
-    button({ on: { click: () => send({ type: 'Toggle', id: todo.peek().id }) } }, ['×']),
-  ])
+   ```ts
+   // single-slice sub-view — reuses ViewBag<Slice, Msg>
+   const formView = ({ state, send }: ViewBag<FormState, Msg>) =>          // state: Signal<FormState>
+     [ text(state.at('name')), button({ on: { click: () => send({ type: 'form/save' }) } }, ['Save']) ]
+   formView({ state: state.at('form'), send })
 
-each(state.at('todos'), { key: (t) => t.id, render: (todo) => todoRow(todo, send) })
-```
+   // multi-slice sub-view — extend the bag
+   const headerView = ({ state, theme, send }: HeaderBag) => [ ... ]       // state: Signal<HeaderState>, theme: Signal<Theme>
+   headerView({ state: state.at('header'), theme: state.at('ui.theme'), send })
 
-Consequences (apply to whatever boundary form is settled):
+   // per-row, inside each
+   const todoRow = ({ state, send }: ViewBag<Todo, Msg>) =>
+     div([ text(state.at('title')),
+           button({ on: { click: () => send({ type: 'todos/toggle', id: state.peek().id }) } }, ['×']) ])
+   each(state.at('todos'), { key: (t) => t.id, render: (todo) => todoRow({ state: todo, send }) })
+   ```
 
-- A sub-view may have multiple signal roots — its incoming slice signals plus, if
-  it's a full boundary, its own `state: Signal<ChildState>`. The analyzer tracks
-  each independently; soundness is unaffected (each is a known-rooted signal).
-- If a heavyweight boundary with its own mask scope is retained, the chunked-mask
-  gate must accept bits from a **foreign scope** (the parent's prop-path bits)
-  alongside the boundary's own bits — a real but bounded runtime change.
-- `Msg` translation (`(m) => parentMsg`, or `combine()` slice reducers) is a pure
-  message map, **not** a reactive accessor — it stays outside dependency analysis
-  entirely.
+2. **`combine()` for reducer composition** — slice reducers keyed by `slice/action`
+   namespace, operating on plain state. Signal-agnostic (it lives in the `update`
+   half, which never sees signals). Unchanged by this proposal.
+
+3. **`subApp` for genuine isolation only** (third-party UI, 60fps drag layer,
+   deferred chunks with own lifecycle). Own state tree, own root, required `reason`,
+   rare. Pure isolation by default (snapshot in, messages/effects out); if a
+   reactive slice must cross in, it materializes to `LiveSignal` exactly as
+   `foreign` does — one materialization mechanism, not two.
+
+How this interacts with the analyzer and runtime:
+
+- **The bag destructure is a known-rooted binding.** `({ state, theme }) => …`
+  binds each field to the signal passed at the call site (`state.at('form')`,
+  `state.at('ui.theme')`); the analyzer follows the sub-view as a local helper and
+  substitutes those paths (the inter-procedural narrowing case — object-binding
+  param). Soundness unaffected; each field is a known-rooted signal.
+- **`.at()` subsumes the old `slice()` helper** — `slice(h, s => s.form)` is just
+  `state.at('form')`. Delete `slice()`.
+- **One mask scope simplifies the runtime.** There is no per-subtree scope, so the
+  chunked-mask gate does **not** need to accept bits from a foreign scope — that
+  complexity (which only existed under a `child()` model) is gone. The only per-row
+  scoping is `each`'s internal key→signal map, not a user-facing boundary.
+- **`Msg` translation** (`combine()` slice routing) is a pure message map, not a
+  reactive accessor — outside dependency analysis entirely.
 
 ### Foreign / imperative subtrees — `foreign()`
 
@@ -559,12 +581,13 @@ imports).
 ## What Stays Unchanged
 
 TEA shape (`init`/`update`/`view`/effects-as-data/`onEffect`); element helpers;
-the scope tree; `send()` microtask batching; Level-1 view-function composition and
-`combine()` slice reducers; effects-package combinators; the bitmask runtime gating
-(now fed from the analyzer + chunked). `foreign()` and `portal()` survive but are
-**reshaped** — see [Composition & Escape Boundaries](#composition--escape-boundaries).
-(Note: `child()` is **not** part of current LLui — see the composition-model
-caveat in that section.)
+the scope tree; `send()` microtask batching; the unified composition model
+(one root component; view functions + `combine()` slice reducers; `subApp` for
+isolation); effects-package combinators; the bitmask runtime gating (now fed from
+the analyzer + chunked). `foreign()` and `portal()` survive but are **reshaped** —
+see [Composition & Escape Boundaries](#composition--escape-boundaries). `child()`
+is **not** part of LLui (removed pre-signals) and is not reintroduced; `slice()`
+is subsumed by `.at()`.
 
 ## Reconciliation with Existing Proposals
 
@@ -582,15 +605,16 @@ Verified against `main` (2026-05) and the other `docs/proposals/` entries.
   updates and not framework-reducible_ still stands; signals' coarse-but-correct
   fallback + output-equality do not erase it.
 
-- **`unified-composition-model.md` — OPEN contradiction (the one unresolved item).**
-  That proposal **removed `child()`** and introduced `combine()`/`subApp`; `main`
-  confirms `child()` is gone and `combine()` ships. The signals composition section
-  has been reframed to the signal-carrying rule (which is composition-model-neutral),
-  but the **boundary primitive itself is undecided**: does a heavyweight Level-2
-  boundary exist post-unified-composition, and what is it called? This must be
-  settled before the composition section is final. The reactivity mechanisms of the
-  two proposals are **convergent** (both: ref-eq-per-path masks over structural
-  sharing) and should share terminology when implemented.
+- **`unified-composition-model.md` — CONVERGENT / aligned (resolved).** That
+  proposal removed `child()` and introduced `combine()`/`subApp`; `main` confirms
+  it. Signals are the **path-keyed reactivity that proposal assumed** — its whole
+  thesis ("path-keyed reactivity makes the bitmask budget irrelevant, so `child()`
+  disappears") is delivered by signals + chunked masks; the two are halves of one
+  design. Signals adopts its model wholesale: one root component, decompose via view
+  functions taking `Signal<T>` slice-bags + `combine()` slice reducers, `subApp` as
+  the only isolation valve. `.at()` subsumes the proposal's `slice()` helper. The
+  reactivity mechanisms share terminology (ref-eq-per-path masks over structural
+  sharing) and should share the implementation. **No open contradiction.**
 
 - **`v2-compiler/` — complementary; cross-file substrate ALREADY SHIPS.** Contrary
   to the earlier "rides on v2b (if it ships)" hedge: the cross-file walker
