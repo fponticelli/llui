@@ -1,5 +1,5 @@
 import { tagSend } from '@llui/dom/signals'
-import type { Send } from '@llui/dom/signals'
+import type { Send, Signal } from '@llui/dom/signals'
 
 /**
  * Avatar — image with automatic fallback. Tracks image load status so
@@ -44,17 +44,17 @@ export function update(state: AvatarState, msg: AvatarMsg): [AvatarState, never[
   }
 }
 
-export interface AvatarParts<S> {
+export interface AvatarParts {
   root: {
     'data-scope': 'avatar'
     'data-part': 'root'
-    'data-status': (s: S) => ImageStatus
+    'data-status': Signal<ImageStatus>
   }
   image: {
     'data-scope': 'avatar'
     'data-part': 'image'
-    'data-status': (s: S) => ImageStatus
-    hidden: (s: S) => boolean
+    'data-status': Signal<ImageStatus>
+    hidden: Signal<boolean>
     alt: string
     onLoad: (e: Event) => void
     onError: (e: Event) => void
@@ -63,9 +63,9 @@ export interface AvatarParts<S> {
   fallback: {
     'data-scope': 'avatar'
     'data-part': 'fallback'
-    'data-status': (s: S) => ImageStatus
-    hidden: (s: S) => boolean
-    'aria-hidden': (s: S) => 'true' | undefined
+    'data-status': Signal<ImageStatus>
+    hidden: Signal<boolean>
+    'aria-hidden': Signal<'true' | undefined>
   }
 }
 
@@ -73,23 +73,23 @@ export interface ConnectOptions {
   alt?: string
 }
 
-export function connect<S>(
-  get: (s: S) => AvatarState,
+export function connect(
+  state: Signal<AvatarState>,
   send: Send<AvatarMsg>,
   opts: ConnectOptions = {},
-): AvatarParts<S> {
+): AvatarParts {
   const alt = opts.alt ?? ''
   return {
     root: {
       'data-scope': 'avatar',
       'data-part': 'root',
-      'data-status': (s) => get(s).status,
+      'data-status': state.map((s) => s.status),
     },
     image: {
       'data-scope': 'avatar',
       'data-part': 'image',
-      'data-status': (s) => get(s).status,
-      hidden: (s) => get(s).status !== 'loaded',
+      'data-status': state.map((s) => s.status),
+      hidden: state.map((s) => s.status !== 'loaded'),
       alt,
       onLoad: tagSend(send, ['loaded'], () => send({ type: 'loaded' })),
       onError: tagSend(send, ['error'], () => send({ type: 'error' })),
@@ -98,9 +98,9 @@ export function connect<S>(
     fallback: {
       'data-scope': 'avatar',
       'data-part': 'fallback',
-      'data-status': (s) => get(s).status,
-      hidden: (s) => get(s).status === 'loaded',
-      'aria-hidden': (s) => (get(s).status === 'loaded' ? 'true' : undefined),
+      'data-status': state.map((s) => s.status),
+      hidden: state.map((s) => s.status === 'loaded'),
+      'aria-hidden': state.map((s) => (s.status === 'loaded' ? 'true' : undefined)),
     },
   }
 }

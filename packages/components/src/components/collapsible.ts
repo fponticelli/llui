@@ -1,5 +1,5 @@
 import { tagSend } from '@llui/dom/signals'
-import type { Send } from '@llui/dom/signals'
+import type { Send, Signal } from '@llui/dom/signals'
 
 /**
  * Collapsible — a single expandable/collapsible section. Simpler than
@@ -44,21 +44,21 @@ export function update(state: CollapsibleState, msg: CollapsibleMsg): [Collapsib
   }
 }
 
-export interface CollapsibleParts<S> {
+export interface CollapsibleParts {
   root: {
-    'data-state': (s: S) => 'open' | 'closed'
-    'data-disabled': (s: S) => '' | undefined
+    'data-state': Signal<'open' | 'closed'>
+    'data-disabled': Signal<'' | undefined>
     'data-scope': 'collapsible'
     'data-part': 'root'
   }
   trigger: {
     type: 'button'
-    'aria-expanded': (s: S) => boolean
+    'aria-expanded': Signal<boolean>
     'aria-controls': string
     id: string
-    disabled: (s: S) => boolean
-    'data-state': (s: S) => 'open' | 'closed'
-    'data-disabled': (s: S) => '' | undefined
+    disabled: Signal<boolean>
+    'data-state': Signal<'open' | 'closed'>
+    'data-disabled': Signal<'' | undefined>
     'data-scope': 'collapsible'
     'data-part': 'trigger'
     onClick: (e: MouseEvent) => void
@@ -67,8 +67,8 @@ export interface CollapsibleParts<S> {
     role: 'region'
     id: string
     'aria-labelledby': string
-    hidden: (s: S) => boolean
-    'data-state': (s: S) => 'open' | 'closed'
+    hidden: Signal<boolean>
+    'data-state': Signal<'open' | 'closed'>
     'data-scope': 'collapsible'
     'data-part': 'content'
   }
@@ -78,29 +78,29 @@ export interface ConnectOptions {
   id: string
 }
 
-export function connect<S>(
-  get: (s: S) => CollapsibleState,
+export function connect(
+  state: Signal<CollapsibleState>,
   send: Send<CollapsibleMsg>,
   opts: ConnectOptions,
-): CollapsibleParts<S> {
+): CollapsibleParts {
   const triggerId = `${opts.id}:trigger`
   const contentId = `${opts.id}:content`
 
   return {
     root: {
-      'data-state': (s) => (get(s).open ? 'open' : 'closed'),
-      'data-disabled': (s) => (get(s).disabled ? '' : undefined),
+      'data-state': state.map((s) => (s.open ? 'open' : 'closed')),
+      'data-disabled': state.map((s) => (s.disabled ? '' : undefined)),
       'data-scope': 'collapsible',
       'data-part': 'root',
     },
     trigger: {
       type: 'button',
-      'aria-expanded': (s) => get(s).open,
+      'aria-expanded': state.map((s) => s.open),
       'aria-controls': contentId,
       id: triggerId,
-      disabled: (s) => get(s).disabled,
-      'data-state': (s) => (get(s).open ? 'open' : 'closed'),
-      'data-disabled': (s) => (get(s).disabled ? '' : undefined),
+      disabled: state.map((s) => s.disabled),
+      'data-state': state.map((s) => (s.open ? 'open' : 'closed')),
+      'data-disabled': state.map((s) => (s.disabled ? '' : undefined)),
       'data-scope': 'collapsible',
       'data-part': 'trigger',
       onClick: tagSend(send, ['toggle'], () => send({ type: 'toggle' })),
@@ -109,8 +109,8 @@ export function connect<S>(
       role: 'region',
       id: contentId,
       'aria-labelledby': triggerId,
-      hidden: (s) => !get(s).open,
-      'data-state': (s) => (get(s).open ? 'open' : 'closed'),
+      hidden: state.map((s) => !s.open),
+      'data-state': state.map((s) => (s.open ? 'open' : 'closed')),
       'data-scope': 'collapsible',
       'data-part': 'content',
     },

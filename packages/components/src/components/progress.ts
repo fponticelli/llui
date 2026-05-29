@@ -1,4 +1,4 @@
-import type { Send } from '@llui/dom/signals'
+import type { Send, Signal } from '@llui/dom/signals'
 import { en } from '../locale.js'
 
 /**
@@ -59,36 +59,36 @@ export function valueState(state: ProgressState): 'indeterminate' | 'complete' |
   return 'loading'
 }
 
-export interface ProgressParts<S> {
+export interface ProgressParts {
   root: {
     role: 'progressbar'
-    'aria-valuemin': (s: S) => number
-    'aria-valuemax': (s: S) => number
-    'aria-valuenow': (s: S) => number | undefined
+    'aria-valuemin': Signal<number>
+    'aria-valuemax': Signal<number>
+    'aria-valuenow': Signal<number | undefined>
     'aria-label': string | undefined
-    'data-state': (s: S) => 'indeterminate' | 'complete' | 'loading'
-    'data-orientation': (s: S) => ProgressOrientation
+    'data-state': Signal<'indeterminate' | 'complete' | 'loading'>
+    'data-orientation': Signal<ProgressOrientation>
     'data-scope': 'progress'
     'data-part': 'root'
   }
   track: {
-    'data-state': (s: S) => 'indeterminate' | 'complete' | 'loading'
-    'data-orientation': (s: S) => ProgressOrientation
+    'data-state': Signal<'indeterminate' | 'complete' | 'loading'>
+    'data-orientation': Signal<ProgressOrientation>
     'data-scope': 'progress'
     'data-part': 'track'
   }
   range: {
-    'data-state': (s: S) => 'indeterminate' | 'complete' | 'loading'
-    'data-orientation': (s: S) => ProgressOrientation
+    'data-state': Signal<'indeterminate' | 'complete' | 'loading'>
+    'data-orientation': Signal<ProgressOrientation>
     'data-scope': 'progress'
     'data-part': 'range'
-    style: (s: S) => string
+    style: Signal<string>
   }
   label: {
     'data-scope': 'progress'
     'data-part': 'label'
   }
-  valueText: (s: S) => string
+  valueText: Signal<string>
 }
 
 export interface ConnectOptions {
@@ -97,44 +97,44 @@ export interface ConnectOptions {
   format?: (value: number | null, max: number) => string
 }
 
-export function connect<S>(
-  get: (s: S) => ProgressState,
+export function connect(
+  state: Signal<ProgressState>,
   _send: Send<ProgressMsg>,
   opts: ConnectOptions = {},
-): ProgressParts<S> {
+): ProgressParts {
   const label = opts.label
   const format = opts.format ?? defaultFormat
 
   return {
     root: {
       role: 'progressbar',
-      'aria-valuemin': (s) => get(s).min,
-      'aria-valuemax': (s) => get(s).max,
-      'aria-valuenow': (s) => get(s).value ?? undefined,
+      'aria-valuemin': state.map((s) => s.min),
+      'aria-valuemax': state.map((s) => s.max),
+      'aria-valuenow': state.map((s) => s.value ?? undefined),
       'aria-label': label,
-      'data-state': (s) => valueState(get(s)),
-      'data-orientation': (s) => get(s).orientation,
+      'data-state': state.map((s) => valueState(s)),
+      'data-orientation': state.map((s) => s.orientation),
       'data-scope': 'progress',
       'data-part': 'root',
     },
     track: {
-      'data-state': (s) => valueState(get(s)),
-      'data-orientation': (s) => get(s).orientation,
+      'data-state': state.map((s) => valueState(s)),
+      'data-orientation': state.map((s) => s.orientation),
       'data-scope': 'progress',
       'data-part': 'track',
     },
     range: {
-      'data-state': (s) => valueState(get(s)),
-      'data-orientation': (s) => get(s).orientation,
+      'data-state': state.map((s) => valueState(s)),
+      'data-orientation': state.map((s) => s.orientation),
       'data-scope': 'progress',
       'data-part': 'range',
-      style: (s) => rangeStyle(get(s)),
+      style: state.map((s) => rangeStyle(s)),
     },
     label: {
       'data-scope': 'progress',
       'data-part': 'label',
     },
-    valueText: (s) => format(get(s).value, get(s).max),
+    valueText: state.map((s) => format(s.value, s.max)),
   }
 }
 

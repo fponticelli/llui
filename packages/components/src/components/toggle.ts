@@ -1,5 +1,5 @@
 import { tagSend } from '@llui/dom/signals'
-import type { Send } from '@llui/dom/signals'
+import type { Send, Signal } from '@llui/dom/signals'
 
 /**
  * Toggle button — a button that can be pressed or not. Unlike a checkbox,
@@ -44,15 +44,15 @@ export function update(state: ToggleState, msg: ToggleMsg): [ToggleState, never[
   }
 }
 
-export interface ToggleParts<S> {
+export interface ToggleParts {
   root: {
     type: 'button'
     role: 'button'
-    'aria-pressed': (s: S) => boolean
-    'aria-disabled': (s: S) => 'true' | undefined
-    disabled: (s: S) => boolean
-    'data-state': (s: S) => 'on' | 'off'
-    'data-disabled': (s: S) => '' | undefined
+    'aria-pressed': Signal<boolean>
+    'aria-disabled': Signal<'true' | undefined>
+    disabled: Signal<boolean>
+    'data-state': Signal<'on' | 'off'>
+    'data-disabled': Signal<'' | undefined>
     'data-scope': 'toggle'
     'data-part': 'root'
     onClick: (e: MouseEvent) => void
@@ -60,16 +60,16 @@ export interface ToggleParts<S> {
   }
 }
 
-export function connect<S>(get: (s: S) => ToggleState, send: Send<ToggleMsg>): ToggleParts<S> {
+export function connect(state: Signal<ToggleState>, send: Send<ToggleMsg>): ToggleParts {
   return {
     root: {
       type: 'button',
       role: 'button',
-      'aria-pressed': (s) => get(s).pressed,
-      'aria-disabled': (s) => (get(s).disabled ? 'true' : undefined),
-      disabled: (s) => get(s).disabled,
-      'data-state': (s) => (get(s).pressed ? 'on' : 'off'),
-      'data-disabled': (s) => (get(s).disabled ? '' : undefined),
+      'aria-pressed': state.map((s) => s.pressed),
+      'aria-disabled': state.map((s) => (s.disabled ? 'true' : undefined)),
+      disabled: state.map((s) => s.disabled),
+      'data-state': state.map((s) => (s.pressed ? 'on' : 'off')),
+      'data-disabled': state.map((s) => (s.disabled ? '' : undefined)),
       'data-scope': 'toggle',
       'data-part': 'root',
       onClick: tagSend(send, ['toggle'], () => send({ type: 'toggle' })),

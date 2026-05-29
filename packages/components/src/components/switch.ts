@@ -1,5 +1,5 @@
 import { tagSend } from '@llui/dom/signals'
-import type { Send } from '@llui/dom/signals'
+import type { Send, Signal } from '@llui/dom/signals'
 
 /**
  * Switch — two-state on/off control. Semantically like a checkbox but
@@ -40,26 +40,26 @@ export function update(state: SwitchState, msg: SwitchMsg): [SwitchState, never[
   }
 }
 
-export interface SwitchParts<S> {
+export interface SwitchParts {
   root: {
     role: 'switch'
-    'aria-checked': (s: S) => boolean
-    'aria-disabled': (s: S) => 'true' | undefined
-    'data-state': (s: S) => 'checked' | 'unchecked'
-    'data-disabled': (s: S) => '' | undefined
+    'aria-checked': Signal<boolean>
+    'aria-disabled': Signal<'true' | undefined>
+    'data-state': Signal<'checked' | 'unchecked'>
+    'data-disabled': Signal<'' | undefined>
     'data-scope': 'switch'
     'data-part': 'root'
-    tabIndex: (s: S) => number
+    tabIndex: Signal<number>
     onClick: (e: MouseEvent) => void
     onKeyDown: (e: KeyboardEvent) => void
   }
   track: {
-    'data-state': (s: S) => 'checked' | 'unchecked'
+    'data-state': Signal<'checked' | 'unchecked'>
     'data-scope': 'switch'
     'data-part': 'track'
   }
   thumb: {
-    'data-state': (s: S) => 'checked' | 'unchecked'
+    'data-state': Signal<'checked' | 'unchecked'>
     'data-scope': 'switch'
     'data-part': 'thumb'
   }
@@ -69,8 +69,8 @@ export interface SwitchParts<S> {
     'aria-hidden': 'true'
     tabIndex: -1
     style: string
-    checked: (s: S) => boolean
-    disabled: (s: S) => boolean
+    checked: Signal<boolean>
+    disabled: Signal<boolean>
     'data-scope': 'switch'
     'data-part': 'hidden-input'
   }
@@ -79,17 +79,17 @@ export interface SwitchParts<S> {
 const HIDDEN_STYLE =
   'position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;border:0;'
 
-export function connect<S>(get: (s: S) => SwitchState, send: Send<SwitchMsg>): SwitchParts<S> {
+export function connect(state: Signal<SwitchState>, send: Send<SwitchMsg>): SwitchParts {
   return {
     root: {
       role: 'switch',
-      'aria-checked': (s) => get(s).checked,
-      'aria-disabled': (s) => (get(s).disabled ? 'true' : undefined),
-      'data-state': (s) => (get(s).checked ? 'checked' : 'unchecked'),
-      'data-disabled': (s) => (get(s).disabled ? '' : undefined),
+      'aria-checked': state.map((s) => s.checked),
+      'aria-disabled': state.map((s) => (s.disabled ? 'true' : undefined)),
+      'data-state': state.map((s) => (s.checked ? 'checked' : 'unchecked')),
+      'data-disabled': state.map((s) => (s.disabled ? '' : undefined)),
       'data-scope': 'switch',
       'data-part': 'root',
-      tabIndex: (s) => (get(s).disabled ? -1 : 0),
+      tabIndex: state.map((s) => (s.disabled ? -1 : 0)),
       onClick: tagSend(send, ['toggle'], () => send({ type: 'toggle' })),
       onKeyDown: tagSend(send, ['toggle'], (e) => {
         if (e.key === ' ' || e.key === 'Enter') {
@@ -99,12 +99,12 @@ export function connect<S>(get: (s: S) => SwitchState, send: Send<SwitchMsg>): S
       }),
     },
     track: {
-      'data-state': (s) => (get(s).checked ? 'checked' : 'unchecked'),
+      'data-state': state.map((s) => (s.checked ? 'checked' : 'unchecked')),
       'data-scope': 'switch',
       'data-part': 'track',
     },
     thumb: {
-      'data-state': (s) => (get(s).checked ? 'checked' : 'unchecked'),
+      'data-state': state.map((s) => (s.checked ? 'checked' : 'unchecked')),
       'data-scope': 'switch',
       'data-part': 'thumb',
     },
@@ -114,8 +114,8 @@ export function connect<S>(get: (s: S) => SwitchState, send: Send<SwitchMsg>): S
       'aria-hidden': 'true',
       tabIndex: -1,
       style: HIDDEN_STYLE,
-      checked: (s) => get(s).checked,
-      disabled: (s) => get(s).disabled,
+      checked: state.map((s) => s.checked),
+      disabled: state.map((s) => s.disabled),
       'data-scope': 'switch',
       'data-part': 'hidden-input',
     },
