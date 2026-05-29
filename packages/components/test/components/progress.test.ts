@@ -1,9 +1,6 @@
 import { describe, it, expect, vi } from 'vitest'
 import { init, update, connect, percent, valueState } from '../../src/components/progress'
-import type { ProgressState } from '../../src/components/progress'
-
-type Ctx = { p: ProgressState }
-const wrap = (p: ProgressState): Ctx => ({ p })
+import { rootSignal, read } from '../_signal'
 
 describe('progress reducer', () => {
   it('initializes with value=0', () => {
@@ -36,7 +33,7 @@ describe('progress helpers', () => {
 })
 
 describe('progress.connect', () => {
-  const parts = connect<Ctx>((s) => s.p, vi.fn(), { label: 'Upload' })
+  const parts = connect(rootSignal(), vi.fn(), { label: 'Upload' })
 
   it('root has role=progressbar with aria-label', () => {
     expect(parts.root.role).toBe('progressbar')
@@ -44,34 +41,34 @@ describe('progress.connect', () => {
   })
 
   it('aria-valuenow from state', () => {
-    expect(parts.root['aria-valuenow'](wrap(init({ value: 42 })))).toBe(42)
-    expect(parts.root['aria-valuenow'](wrap(init({ value: null })))).toBeUndefined()
+    expect(read(parts.root['aria-valuenow'], init({ value: 42 }))).toBe(42)
+    expect(read(parts.root['aria-valuenow'], init({ value: null }))).toBeUndefined()
   })
 
   it('data-state reflects state', () => {
-    expect(parts.root['data-state'](wrap(init({ value: null })))).toBe('indeterminate')
-    expect(parts.root['data-state'](wrap(init({ value: 50 })))).toBe('loading')
-    expect(parts.root['data-state'](wrap(init({ value: 100 })))).toBe('complete')
+    expect(read(parts.root['data-state'], init({ value: null }))).toBe('indeterminate')
+    expect(read(parts.root['data-state'], init({ value: 50 }))).toBe('loading')
+    expect(read(parts.root['data-state'], init({ value: 100 }))).toBe('complete')
   })
 
   it('range style reflects percent', () => {
-    expect(parts.range.style(wrap(init({ value: 30 })))).toContain('width:30%')
+    expect(read(parts.range.style, init({ value: 30 }))).toContain('width:30%')
   })
 
   it('vertical range uses height', () => {
     const s = init({ value: 40, orientation: 'vertical' })
-    expect(parts.range.style(wrap(s))).toContain('height:40%')
+    expect(read(parts.range.style, s)).toContain('height:40%')
   })
 
   it('valueText uses default format', () => {
-    expect(parts.valueText(wrap(init({ value: 75 })))).toBe('75%')
-    expect(parts.valueText(wrap(init({ value: null })))).toBe('Loading…')
+    expect(read(parts.valueText, init({ value: 75 }))).toBe('75%')
+    expect(read(parts.valueText, init({ value: null }))).toBe('Loading…')
   })
 
   it('custom formatter', () => {
-    const p = connect<Ctx>((s) => s.p, vi.fn(), {
+    const p = connect(rootSignal(), vi.fn(), {
       format: (v, max) => (v === null ? '?' : `${v}/${max}`),
     })
-    expect(p.valueText(wrap(init({ value: 30, max: 100 })))).toBe('30/100')
+    expect(read(p.valueText, init({ value: 30, max: 100 }))).toBe('30/100')
   })
 })

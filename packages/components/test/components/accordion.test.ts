@@ -1,8 +1,6 @@
 import { describe, it, expect, vi } from 'vitest'
 import { init, update, connect, focusTarget } from '../../src/components/accordion'
-
-type Ctx = { acc: ReturnType<typeof init> }
-const wrap = (acc: ReturnType<typeof init>): Ctx => ({ acc })
+import { rootSignal, read } from '../_signal'
 
 describe('accordion reducer', () => {
   it('initializes with defaults (single, collapsible)', () => {
@@ -97,7 +95,7 @@ describe('focusTarget', () => {
 })
 
 describe('accordion.connect', () => {
-  const parts = connect<Ctx>((s) => s.acc, vi.fn(), { id: 'acc1' })
+  const parts = connect(rootSignal(), vi.fn(), { id: 'acc1' })
 
   it('item.trigger aria-controls points to content id', () => {
     expect(parts.item('a').trigger['aria-controls']).toBe('acc1:content:a')
@@ -111,26 +109,26 @@ describe('accordion.connect', () => {
 
   it('item aria-expanded reflects open state', () => {
     const a = parts.item('a').trigger
-    expect(a['aria-expanded'](wrap(init({ value: ['a'] })))).toBe(true)
-    expect(a['aria-expanded'](wrap(init({ value: [] })))).toBe(false)
+    expect(read(a['aria-expanded'], init({ value: ['a'] }))).toBe(true)
+    expect(read(a['aria-expanded'], init({ value: [] }))).toBe(false)
   })
 
   it('item content.hidden reflects closed state', () => {
     const a = parts.item('a').content
-    expect(a.hidden(wrap(init({ value: ['a'] })))).toBe(false)
-    expect(a.hidden(wrap(init({ value: [] })))).toBe(true)
+    expect(read(a.hidden, init({ value: ['a'] }))).toBe(false)
+    expect(read(a.hidden, init({ value: [] }))).toBe(true)
   })
 
   it('click sends toggle', () => {
     const send = vi.fn()
-    const p = connect<Ctx>((s) => s.acc, send, { id: 'x' })
+    const p = connect(rootSignal(), send, { id: 'x' })
     p.item('a').trigger.onClick(new MouseEvent('click'))
     expect(send).toHaveBeenCalledWith({ type: 'toggle', value: 'a' })
   })
 
   it('ArrowDown/Up dispatch focus messages and preventDefault', () => {
     const send = vi.fn()
-    const p = connect<Ctx>((s) => s.acc, send, { id: 'x' })
+    const p = connect(rootSignal(), send, { id: 'x' })
     const down = new KeyboardEvent('keydown', { key: 'ArrowDown', cancelable: true })
     p.item('a').trigger.onKeyDown(down)
     expect(down.defaultPrevented).toBe(true)
@@ -142,7 +140,7 @@ describe('accordion.connect', () => {
 
   it('Home/End dispatch focusFirst/focusLast', () => {
     const send = vi.fn()
-    const p = connect<Ctx>((s) => s.acc, send, { id: 'x' })
+    const p = connect(rootSignal(), send, { id: 'x' })
     p.item('a').trigger.onKeyDown(new KeyboardEvent('keydown', { key: 'Home', cancelable: true }))
     p.item('a').trigger.onKeyDown(new KeyboardEvent('keydown', { key: 'End', cancelable: true }))
     expect(send).toHaveBeenNthCalledWith(1, { type: 'focusFirst' })

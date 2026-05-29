@@ -1,8 +1,6 @@
 import { describe, it, expect, vi } from 'vitest'
 import { init, update, connect } from '../../src/components/checkbox'
-
-type Ctx = { cb: ReturnType<typeof init> }
-const wrap = (cb: ReturnType<typeof init>): Ctx => ({ cb })
+import { rootSignal, read } from '../_signal'
 
 describe('checkbox reducer', () => {
   it('initializes unchecked by default', () => {
@@ -40,29 +38,29 @@ describe('checkbox reducer', () => {
 
 describe('checkbox.connect', () => {
   it('aria-checked maps checked state', () => {
-    const p = connect<Ctx>((s) => s.cb, vi.fn())
-    expect(p.root['aria-checked'](wrap(init({ checked: true })))).toBe('true')
-    expect(p.root['aria-checked'](wrap(init({ checked: false })))).toBe('false')
-    expect(p.root['aria-checked'](wrap(init({ checked: 'indeterminate' })))).toBe('mixed')
+    const p = connect(rootSignal(), vi.fn())
+    expect(read(p.root['aria-checked'], init({ checked: true }))).toBe('true')
+    expect(read(p.root['aria-checked'], init({ checked: false }))).toBe('false')
+    expect(read(p.root['aria-checked'], init({ checked: 'indeterminate' }))).toBe('mixed')
   })
 
   it('data-state maps checked state', () => {
-    const p = connect<Ctx>((s) => s.cb, vi.fn())
-    expect(p.root['data-state'](wrap(init({ checked: true })))).toBe('checked')
-    expect(p.root['data-state'](wrap(init({ checked: false })))).toBe('unchecked')
-    expect(p.root['data-state'](wrap(init({ checked: 'indeterminate' })))).toBe('indeterminate')
+    const p = connect(rootSignal(), vi.fn())
+    expect(read(p.root['data-state'], init({ checked: true }))).toBe('checked')
+    expect(read(p.root['data-state'], init({ checked: false }))).toBe('unchecked')
+    expect(read(p.root['data-state'], init({ checked: 'indeterminate' }))).toBe('indeterminate')
   })
 
   it('root onClick dispatches toggle', () => {
     const send = vi.fn()
-    const p = connect<Ctx>((s) => s.cb, send)
+    const p = connect(rootSignal(), send)
     p.root.onClick(new MouseEvent('click'))
     expect(send).toHaveBeenCalledWith({ type: 'toggle' })
   })
 
   it('space toggles, enter does not', () => {
     const send = vi.fn()
-    const p = connect<Ctx>((s) => s.cb, send)
+    const p = connect(rootSignal(), send)
     const space = new KeyboardEvent('keydown', { key: ' ', cancelable: true })
     p.root.onKeyDown(space)
     expect(space.defaultPrevented).toBe(true)
@@ -73,21 +71,21 @@ describe('checkbox.connect', () => {
   })
 
   it('tabIndex=-1 when disabled', () => {
-    const p = connect<Ctx>((s) => s.cb, vi.fn())
-    expect(p.root.tabIndex(wrap(init({ disabled: true })))).toBe(-1)
-    expect(p.root.tabIndex(wrap(init({ disabled: false })))).toBe(0)
+    const p = connect(rootSignal(), vi.fn())
+    expect(read(p.root.tabIndex, init({ disabled: true }))).toBe(-1)
+    expect(read(p.root.tabIndex, init({ disabled: false }))).toBe(0)
   })
 
   it('hiddenInput.checked is strictly true-only', () => {
-    const p = connect<Ctx>((s) => s.cb, vi.fn())
-    expect(p.hiddenInput.checked(wrap(init({ checked: true })))).toBe(true)
-    expect(p.hiddenInput.checked(wrap(init({ checked: 'indeterminate' })))).toBe(false)
-    expect(p.hiddenInput.checked(wrap(init({ checked: false })))).toBe(false)
+    const p = connect(rootSignal(), vi.fn())
+    expect(read(p.hiddenInput.checked, init({ checked: true }))).toBe(true)
+    expect(read(p.hiddenInput.checked, init({ checked: 'indeterminate' }))).toBe(false)
+    expect(read(p.hiddenInput.checked, init({ checked: false }))).toBe(false)
   })
 
   it('hiddenInput.indeterminate reflects indeterminate', () => {
-    const p = connect<Ctx>((s) => s.cb, vi.fn())
-    expect(p.hiddenInput.indeterminate(wrap(init({ checked: 'indeterminate' })))).toBe(true)
-    expect(p.hiddenInput.indeterminate(wrap(init({ checked: true })))).toBe(false)
+    const p = connect(rootSignal(), vi.fn())
+    expect(read(p.hiddenInput.indeterminate, init({ checked: 'indeterminate' }))).toBe(true)
+    expect(read(p.hiddenInput.indeterminate, init({ checked: true }))).toBe(false)
   })
 })

@@ -7,10 +7,7 @@ import {
   isVisible,
   isAnimating,
 } from '../../src/components/presence'
-import type { PresenceState } from '../../src/components/presence'
-
-type Ctx = { p: PresenceState }
-const wrap = (p: PresenceState): Ctx => ({ p })
+import { rootSignal, read } from '../_signal'
 
 describe('presence reducer', () => {
   it('initializes in closed state', () => {
@@ -89,22 +86,22 @@ describe('presence helpers', () => {
 
 describe('presence.connect', () => {
   it('root data-state reflects status', () => {
-    const p = connect<Ctx>((s) => s.p, vi.fn())
-    expect(p.root['data-state'](wrap(init()))).toBe('closed')
-    expect(p.root['data-state'](wrap({ status: 'opening', unmountOnExit: true }))).toBe('opening')
+    const p = connect(rootSignal(), vi.fn())
+    expect(read(p.root['data-state'], init())).toBe('closed')
+    expect(read(p.root['data-state'], { status: 'opening', unmountOnExit: true })).toBe('opening')
   })
 
   it('onAnimationEnd dispatches animationEnd', () => {
     const send = vi.fn()
-    const p = connect<Ctx>((s) => s.p, send)
+    const p = connect(rootSignal(), send)
     p.root.onAnimationEnd({} as AnimationEvent)
     expect(send).toHaveBeenCalledWith({ type: 'animationEnd' })
   })
 
   it('hidden attribute: true only when closed + kept mounted', () => {
-    const p = connect<Ctx>((s) => s.p, vi.fn())
-    expect(p.root.hidden(wrap({ status: 'closed', unmountOnExit: false }))).toBe(true)
-    expect(p.root.hidden(wrap({ status: 'closed', unmountOnExit: true }))).toBe(false)
-    expect(p.root.hidden(wrap({ status: 'open', unmountOnExit: false }))).toBe(false)
+    const p = connect(rootSignal(), vi.fn())
+    expect(read(p.root.hidden, { status: 'closed', unmountOnExit: false })).toBe(true)
+    expect(read(p.root.hidden, { status: 'closed', unmountOnExit: true })).toBe(false)
+    expect(read(p.root.hidden, { status: 'open', unmountOnExit: false })).toBe(false)
   })
 })

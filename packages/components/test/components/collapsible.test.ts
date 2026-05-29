@@ -1,9 +1,6 @@
 import { describe, it, expect, vi } from 'vitest'
 import { init, update, connect } from '../../src/components/collapsible'
-import type { CollapsibleState } from '../../src/components/collapsible'
-
-type Ctx = { c: CollapsibleState }
-const wrap = (c: CollapsibleState): Ctx => ({ c })
+import { rootSignal, read } from '../_signal'
 
 describe('collapsible reducer', () => {
   it('initializes closed', () => {
@@ -29,11 +26,11 @@ describe('collapsible reducer', () => {
 })
 
 describe('collapsible.connect', () => {
-  const p = connect<Ctx>((s) => s.c, vi.fn(), { id: 'c1' })
+  const p = connect(rootSignal(), vi.fn(), { id: 'c1' })
 
   it('trigger aria-expanded reflects open', () => {
-    expect(p.trigger['aria-expanded'](wrap(init({ open: true })))).toBe(true)
-    expect(p.trigger['aria-expanded'](wrap(init({ open: false })))).toBe(false)
+    expect(read(p.trigger['aria-expanded'], init({ open: true }))).toBe(true)
+    expect(read(p.trigger['aria-expanded'], init({ open: false }))).toBe(false)
   })
 
   it('trigger aria-controls → content id', () => {
@@ -45,13 +42,13 @@ describe('collapsible.connect', () => {
   })
 
   it('content.hidden reflects closed', () => {
-    expect(p.content.hidden(wrap(init({ open: true })))).toBe(false)
-    expect(p.content.hidden(wrap(init({ open: false })))).toBe(true)
+    expect(read(p.content.hidden, init({ open: true }))).toBe(false)
+    expect(read(p.content.hidden, init({ open: false }))).toBe(true)
   })
 
   it('trigger click sends toggle', () => {
     const send = vi.fn()
-    const pc = connect<Ctx>((s) => s.c, send, { id: 'x' })
+    const pc = connect(rootSignal(), send, { id: 'x' })
     pc.trigger.onClick(new MouseEvent('click'))
     expect(send).toHaveBeenCalledWith({ type: 'toggle' })
   })

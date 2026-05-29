@@ -1,9 +1,6 @@
 import { describe, it, expect, vi } from 'vitest'
 import { init, update, connect } from '../../src/components/editable'
-import type { EditableState } from '../../src/components/editable'
-
-type Ctx = { e: EditableState }
-const wrap = (e: EditableState): Ctx => ({ e })
+import { rootSignal, read } from '../_signal'
 
 describe('editable reducer', () => {
   it('initializes with value as draft', () => {
@@ -54,56 +51,56 @@ describe('editable reducer', () => {
 })
 
 describe('editable.connect', () => {
-  const p = connect<Ctx>((s) => s.e, vi.fn())
+  const p = connect(rootSignal(), vi.fn())
 
   it('preview hidden while editing', () => {
-    expect(p.preview.hidden(wrap({ ...init({ value: 'x' }), editing: true }))).toBe(true)
-    expect(p.preview.hidden(wrap({ ...init({ value: 'x' }), editing: false }))).toBe(false)
+    expect(read(p.preview.hidden, { ...init({ value: 'x' }), editing: true })).toBe(true)
+    expect(read(p.preview.hidden, { ...init({ value: 'x' }), editing: false })).toBe(false)
   })
 
   it('input hidden until editing', () => {
-    expect(p.input.hidden(wrap({ ...init({ value: 'x' }), editing: false }))).toBe(true)
-    expect(p.input.hidden(wrap({ ...init({ value: 'x' }), editing: true }))).toBe(false)
+    expect(read(p.input.hidden, { ...init({ value: 'x' }), editing: false })).toBe(true)
+    expect(read(p.input.hidden, { ...init({ value: 'x' }), editing: true })).toBe(false)
   })
 
   it('preview click sends edit', () => {
     const send = vi.fn()
-    const pc = connect<Ctx>((s) => s.e, send)
+    const pc = connect(rootSignal(), send)
     pc.preview.onClick(new MouseEvent('click'))
     expect(send).toHaveBeenCalledWith({ type: 'edit' })
   })
 
   it('Enter on input sends submit', () => {
     const send = vi.fn()
-    const pc = connect<Ctx>((s) => s.e, send)
+    const pc = connect(rootSignal(), send)
     pc.input.onKeyDown(new KeyboardEvent('keydown', { key: 'Enter', cancelable: true }))
     expect(send).toHaveBeenCalledWith({ type: 'submit' })
   })
 
   it('Escape on input sends cancel', () => {
     const send = vi.fn()
-    const pc = connect<Ctx>((s) => s.e, send)
+    const pc = connect(rootSignal(), send)
     pc.input.onKeyDown(new KeyboardEvent('keydown', { key: 'Escape', cancelable: true }))
     expect(send).toHaveBeenCalledWith({ type: 'cancel' })
   })
 
   it('blur submits by default', () => {
     const send = vi.fn()
-    const pc = connect<Ctx>((s) => s.e, send)
+    const pc = connect(rootSignal(), send)
     pc.input.onBlur(new FocusEvent('blur'))
     expect(send).toHaveBeenCalledWith({ type: 'submit' })
   })
 
   it('blur cancels when submitOnBlur=false', () => {
     const send = vi.fn()
-    const pc = connect<Ctx>((s) => s.e, send, { submitOnBlur: false })
+    const pc = connect(rootSignal(), send, { submitOnBlur: false })
     pc.input.onBlur(new FocusEvent('blur'))
     expect(send).toHaveBeenCalledWith({ type: 'cancel' })
   })
 
   it('validate blocks submit when returning errors', () => {
     const send = vi.fn()
-    const pc = connect<Ctx>((s) => s.e, send, {
+    const pc = connect(rootSignal(), send, {
       validate: (v) => (v.length < 3 ? ['too short'] : null),
     })
     // Simulate typing a short draft

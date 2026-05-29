@@ -1,9 +1,6 @@
 import { describe, it, expect, vi } from 'vitest'
 import { init, update, connect } from '../../src/components/switch'
-import type { SwitchState } from '../../src/components/switch'
-
-type Ctx = { sw: SwitchState }
-const wrap = (s: SwitchState): Ctx => ({ sw: s })
+import { rootSignal, read } from '../_signal'
 
 describe('switch reducer', () => {
   it('initializes unchecked', () => {
@@ -30,37 +27,37 @@ describe('switch reducer', () => {
 
 describe('switch.connect', () => {
   it('root has role=switch, aria-checked, data-state', () => {
-    const p = connect<Ctx>((s) => s.sw, vi.fn())
+    const p = connect(rootSignal(), vi.fn())
     expect(p.root.role).toBe('switch')
-    expect(p.root['aria-checked'](wrap({ checked: true, disabled: false }))).toBe(true)
-    expect(p.root['data-state'](wrap({ checked: false, disabled: false }))).toBe('unchecked')
-    expect(p.root['data-state'](wrap({ checked: true, disabled: false }))).toBe('checked')
+    expect(read(p.root['aria-checked'], { checked: true, disabled: false })).toBe(true)
+    expect(read(p.root['data-state'], { checked: false, disabled: false })).toBe('unchecked')
+    expect(read(p.root['data-state'], { checked: true, disabled: false })).toBe('checked')
   })
 
   it('root click toggles', () => {
     const send = vi.fn()
-    const p = connect<Ctx>((s) => s.sw, send)
+    const p = connect(rootSignal(), send)
     p.root.onClick(new MouseEvent('click'))
     expect(send).toHaveBeenCalledWith({ type: 'toggle' })
   })
 
   it('Space and Enter toggle', () => {
     const send = vi.fn()
-    const p = connect<Ctx>((s) => s.sw, send)
+    const p = connect(rootSignal(), send)
     p.root.onKeyDown(new KeyboardEvent('keydown', { key: ' ', cancelable: true }))
     p.root.onKeyDown(new KeyboardEvent('keydown', { key: 'Enter', cancelable: true }))
     expect(send).toHaveBeenCalledTimes(2)
   })
 
   it('tabIndex=-1 when disabled', () => {
-    const p = connect<Ctx>((s) => s.sw, vi.fn())
-    expect(p.root.tabIndex(wrap({ checked: false, disabled: true }))).toBe(-1)
-    expect(p.root.tabIndex(wrap({ checked: false, disabled: false }))).toBe(0)
+    const p = connect(rootSignal(), vi.fn())
+    expect(read(p.root.tabIndex, { checked: false, disabled: true })).toBe(-1)
+    expect(read(p.root.tabIndex, { checked: false, disabled: false })).toBe(0)
   })
 
   it('hidden input mirrors checked and disabled', () => {
-    const p = connect<Ctx>((s) => s.sw, vi.fn())
-    expect(p.hiddenInput.checked(wrap({ checked: true, disabled: false }))).toBe(true)
-    expect(p.hiddenInput.disabled(wrap({ checked: false, disabled: true }))).toBe(true)
+    const p = connect(rootSignal(), vi.fn())
+    expect(read(p.hiddenInput.checked, { checked: true, disabled: false })).toBe(true)
+    expect(read(p.hiddenInput.disabled, { checked: false, disabled: true })).toBe(true)
   })
 })

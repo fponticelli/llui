@@ -1,9 +1,6 @@
 import { describe, it, expect, vi } from 'vitest'
 import { init, update, connect } from '../../src/components/toggle-group'
-import type { ToggleGroupState } from '../../src/components/toggle-group'
-
-type Ctx = { tg: ToggleGroupState }
-const wrap = (tg: ToggleGroupState): Ctx => ({ tg })
+import { rootSignal, read } from '../_signal'
 
 describe('toggle-group reducer', () => {
   it('defaults to single mode', () => {
@@ -46,7 +43,7 @@ describe('toggle-group reducer', () => {
 })
 
 describe('toggle-group.connect', () => {
-  const p = connect<Ctx>((s) => s.tg, vi.fn())
+  const p = connect(rootSignal(), vi.fn())
 
   it('root has role=group', () => {
     expect(p.root.role).toBe('group')
@@ -54,20 +51,20 @@ describe('toggle-group.connect', () => {
 
   it('item aria-pressed reflects value', () => {
     const a = p.item('a').root
-    expect(a['aria-pressed'](wrap(init({ items: ['a', 'b'], value: ['a'] })))).toBe(true)
-    expect(a['aria-pressed'](wrap(init({ items: ['a', 'b'], value: ['b'] })))).toBe(false)
+    expect(read(a['aria-pressed'], init({ items: ['a', 'b'], value: ['a'] }))).toBe(true)
+    expect(read(a['aria-pressed'], init({ items: ['a', 'b'], value: ['b'] }))).toBe(false)
   })
 
   it('item click sends toggle', () => {
     const send = vi.fn()
-    const pc = connect<Ctx>((s) => s.tg, send)
+    const pc = connect(rootSignal(), send)
     pc.item('a').root.onClick(new MouseEvent('click'))
     expect(send).toHaveBeenCalledWith({ type: 'toggle', value: 'a' })
   })
 
   it('ArrowRight sends focusNext', () => {
     const send = vi.fn()
-    const pc = connect<Ctx>((s) => s.tg, send)
+    const pc = connect(rootSignal(), send)
     pc.item('a').root.onKeyDown(
       new KeyboardEvent('keydown', { key: 'ArrowRight', cancelable: true }),
     )

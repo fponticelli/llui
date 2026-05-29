@@ -1,9 +1,6 @@
 import { describe, it, expect, vi } from 'vitest'
 import { init, update, connect } from '../../src/components/radio-group'
-import type { RadioGroupState } from '../../src/components/radio-group'
-
-type Ctx = { rg: RadioGroupState }
-const wrap = (rg: RadioGroupState): Ctx => ({ rg })
+import { rootSignal, read } from '../_signal'
 
 describe('radio-group reducer', () => {
   it('initializes with no value', () => {
@@ -58,27 +55,27 @@ describe('radio-group reducer', () => {
 
 describe('radio-group.connect', () => {
   it('item aria-checked reflects value', () => {
-    const p = connect<Ctx>((s) => s.rg, vi.fn(), { id: 'rg1' })
+    const p = connect(rootSignal(), vi.fn(), { id: 'rg1' })
     const itemA = p.item('a').root
-    expect(itemA['aria-checked'](wrap(init({ items: ['a', 'b'], value: 'a' })))).toBe(true)
-    expect(itemA['aria-checked'](wrap(init({ items: ['a', 'b'], value: 'b' })))).toBe(false)
+    expect(read(itemA['aria-checked'], init({ items: ['a', 'b'], value: 'a' }))).toBe(true)
+    expect(read(itemA['aria-checked'], init({ items: ['a', 'b'], value: 'b' }))).toBe(false)
   })
 
   it('root has role=radiogroup', () => {
-    const p = connect<Ctx>((s) => s.rg, vi.fn(), { id: 'x' })
+    const p = connect(rootSignal(), vi.fn(), { id: 'x' })
     expect(p.root.role).toBe('radiogroup')
   })
 
   it('item click sends setValue', () => {
     const send = vi.fn()
-    const p = connect<Ctx>((s) => s.rg, send, { id: 'x' })
+    const p = connect(rootSignal(), send, { id: 'x' })
     p.item('b').root.onClick(new MouseEvent('click'))
     expect(send).toHaveBeenCalledWith({ type: 'setValue', value: 'b' })
   })
 
   it('ArrowRight/Left sends selectNext/Prev', () => {
     const send = vi.fn()
-    const p = connect<Ctx>((s) => s.rg, send, { id: 'x' })
+    const p = connect(rootSignal(), send, { id: 'x' })
     p.item('a').root.onKeyDown(
       new KeyboardEvent('keydown', { key: 'ArrowRight', cancelable: true }),
     )
@@ -88,12 +85,12 @@ describe('radio-group.connect', () => {
   })
 
   it('tabIndex=0 only on selected, first when none', () => {
-    const p = connect<Ctx>((s) => s.rg, vi.fn(), { id: 'x' })
+    const p = connect(rootSignal(), vi.fn(), { id: 'x' })
     const a = p.item('a').root
     const b = p.item('b').root
-    expect(a.tabIndex(wrap(init({ items: ['a', 'b'], value: null })))).toBe(0)
-    expect(b.tabIndex(wrap(init({ items: ['a', 'b'], value: null })))).toBe(-1)
-    expect(a.tabIndex(wrap(init({ items: ['a', 'b'], value: 'b' })))).toBe(-1)
-    expect(b.tabIndex(wrap(init({ items: ['a', 'b'], value: 'b' })))).toBe(0)
+    expect(read(a.tabIndex, init({ items: ['a', 'b'], value: null }))).toBe(0)
+    expect(read(b.tabIndex, init({ items: ['a', 'b'], value: null }))).toBe(-1)
+    expect(read(a.tabIndex, init({ items: ['a', 'b'], value: 'b' }))).toBe(-1)
+    expect(read(b.tabIndex, init({ items: ['a', 'b'], value: 'b' }))).toBe(0)
   })
 })

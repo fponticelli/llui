@@ -7,10 +7,7 @@ import {
   cssAnimationDirection,
   axis,
 } from '../../src/components/marquee'
-import type { MarqueeState } from '../../src/components/marquee'
-
-type Ctx = { m: MarqueeState }
-const wrap = (m: MarqueeState): Ctx => ({ m })
+import { rootSignal, read } from '../_signal'
 
 describe('marquee reducer', () => {
   it('initializes running + left-direction + 20s', () => {
@@ -84,22 +81,22 @@ describe('cssAnimationDirection / axis', () => {
 
 describe('marquee.connect', () => {
   it('root style exposes CSS custom properties', () => {
-    const p = connect<Ctx>((s) => s.m, vi.fn())
-    const style = p.root.style(wrap(init({ durationSec: 10 })))
+    const p = connect(rootSignal(), vi.fn())
+    const style = read(p.root.style, init({ durationSec: 10 }))
     expect(style).toContain('--marquee-duration:10s')
     expect(style).toContain('--marquee-playstate:running')
     expect(style).toContain('--marquee-direction:normal')
   })
 
   it('style reflects paused state when pauseOnHover + hovered', () => {
-    const p = connect<Ctx>((s) => s.m, vi.fn())
+    const p = connect(rootSignal(), vi.fn())
     const hoveredPaused = { ...init({ pauseOnHover: true }), hovered: true }
-    expect(p.root.style(wrap(hoveredPaused))).toContain('--marquee-playstate:paused')
+    expect(read(p.root.style, hoveredPaused)).toContain('--marquee-playstate:paused')
   })
 
   it('hover handlers dispatch hoverPause/hoverResume', () => {
     const send = vi.fn()
-    const p = connect<Ctx>((s) => s.m, send)
+    const p = connect(rootSignal(), send)
     p.root.onMouseEnter(new MouseEvent('mouseenter'))
     expect(send).toHaveBeenCalledWith({ type: 'hoverPause' })
     p.root.onMouseLeave(new MouseEvent('mouseleave'))

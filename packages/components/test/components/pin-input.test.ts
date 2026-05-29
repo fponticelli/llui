@@ -1,9 +1,6 @@
 import { describe, it, expect, vi } from 'vitest'
 import { init, update, connect, isComplete, getValue } from '../../src/components/pin-input'
-import type { PinInputState } from '../../src/components/pin-input'
-
-type Ctx = { p: PinInputState }
-const wrap = (p: PinInputState): Ctx => ({ p })
+import { rootSignal, read } from '../_signal'
 
 describe('pin-input reducer', () => {
   it('initializes empty values of given length', () => {
@@ -72,7 +69,7 @@ describe('pin-input helpers', () => {
 })
 
 describe('pin-input.connect', () => {
-  const p = connect<Ctx>((s) => s.p, vi.fn(), { id: 'pin' })
+  const p = connect(rootSignal(), vi.fn(), { id: 'pin' })
 
   it('root role=group with label', () => {
     expect(p.root.role).toBe('group')
@@ -80,18 +77,18 @@ describe('pin-input.connect', () => {
   })
 
   it('input type switches to password when masked', () => {
-    expect(p.input(0).type(wrap(init({ mask: true })))).toBe('password')
-    expect(p.input(0).type(wrap(init({ mask: false })))).toBe('text')
+    expect(read(p.input(0).type, init({ mask: true }))).toBe('password')
+    expect(read(p.input(0).type, init({ mask: false }))).toBe('text')
   })
 
   it('input inputMode tracks pin type', () => {
-    expect(p.input(0).inputMode(wrap(init({ type: 'numeric' })))).toBe('numeric')
-    expect(p.input(0).inputMode(wrap(init({ type: 'alphabetic' })))).toBe('text')
+    expect(read(p.input(0).inputMode, init({ type: 'numeric' }))).toBe('numeric')
+    expect(read(p.input(0).inputMode, init({ type: 'alphabetic' }))).toBe('text')
   })
 
   it('onInput sends setValue', () => {
     const send = vi.fn()
-    const pc = connect<Ctx>((s) => s.p, send, { id: 'x' })
+    const pc = connect(rootSignal(), send, { id: 'x' })
     const target = document.createElement('input')
     target.value = '5'
     const ev = new Event('input')
@@ -102,14 +99,14 @@ describe('pin-input.connect', () => {
 
   it('backspace sends backspace msg', () => {
     const send = vi.fn()
-    const pc = connect<Ctx>((s) => s.p, send, { id: 'x' })
+    const pc = connect(rootSignal(), send, { id: 'x' })
     pc.input(1).onKeyDown(new KeyboardEvent('keydown', { key: 'Backspace' }))
     expect(send).toHaveBeenCalledWith({ type: 'backspace', index: 1 })
   })
 
   it('validate blocks setValue when returning errors', () => {
     const send = vi.fn()
-    const pc = connect<Ctx>((s) => s.p, send, {
+    const pc = connect(rootSignal(), send, {
       id: 'x',
       validate: (v) => (v === '0' ? ['zero not allowed'] : null),
     })

@@ -8,9 +8,7 @@ import {
   thumbSize,
 } from '../../src/components/scroll-area'
 import type { ScrollAreaState } from '../../src/components/scroll-area'
-
-type Ctx = { s: ScrollAreaState }
-const wrap = (s: ScrollAreaState): Ctx => ({ s })
+import { rootSignal, read } from '../_signal'
 
 const dims = (opts: Partial<ScrollAreaState>): ScrollAreaState => ({
   ...init(),
@@ -104,7 +102,7 @@ describe('thumbPosition / thumbSize', () => {
 describe('scroll-area.connect', () => {
   it('root mouseenter/leave dispatch setHovered', () => {
     const send = vi.fn()
-    const p = connect<Ctx>((s) => s.s, send)
+    const p = connect(rootSignal(), send)
     p.root.onMouseEnter(new MouseEvent('mouseenter'))
     expect(send).toHaveBeenCalledWith({ type: 'setHovered', hovered: true })
     p.root.onMouseLeave(new MouseEvent('mouseleave'))
@@ -113,7 +111,7 @@ describe('scroll-area.connect', () => {
 
   it('viewport onScroll dispatches setScroll with dims', () => {
     const send = vi.fn()
-    const p = connect<Ctx>((s) => s.s, send)
+    const p = connect(rootSignal(), send)
     const el = document.createElement('div')
     Object.defineProperties(el, {
       scrollTop: { value: 10 },
@@ -136,18 +134,18 @@ describe('scroll-area.connect', () => {
   })
 
   it('thumbY style writes top + height', () => {
-    const p = connect<Ctx>((s) => s.s, vi.fn())
+    const p = connect(rootSignal(), vi.fn())
     const s = dims({ scrollTop: 350, scrollHeight: 1000, clientHeight: 300 })
-    const style = p.thumbY.style(wrap(s))
+    const style = read(p.thumbY.style, s)
     expect(style).toContain('top:')
     expect(style).toContain('height:')
   })
 
   it('scrollbarY data-visible reflects state', () => {
-    const p = connect<Ctx>((s) => s.s, vi.fn())
+    const p = connect(rootSignal(), vi.fn())
     const hidden = dims({ visibility: 'hover', overflowY: true })
-    expect(p.scrollbarY['data-visible'](wrap(hidden))).toBeUndefined()
+    expect(read(p.scrollbarY['data-visible'], hidden)).toBeUndefined()
     const shown = dims({ visibility: 'hover', overflowY: true, hovered: true })
-    expect(p.scrollbarY['data-visible'](wrap(shown))).toBe('')
+    expect(read(p.scrollbarY['data-visible'], shown)).toBe('')
   })
 })

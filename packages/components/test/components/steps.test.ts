@@ -1,9 +1,6 @@
 import { describe, it, expect, vi } from 'vitest'
 import { init, update, connect, stepStatus } from '../../src/components/steps'
-import type { StepsState } from '../../src/components/steps'
-
-type Ctx = { s: StepsState }
-const wrap = (s: StepsState): Ctx => ({ s })
+import { rootSignal, read } from '../_signal'
 
 describe('steps reducer', () => {
   it('initializes at step 0', () => {
@@ -78,35 +75,35 @@ describe('stepStatus', () => {
 })
 
 describe('steps.connect', () => {
-  const p = connect<Ctx>((s) => s.s, vi.fn())
+  const p = connect(rootSignal(), vi.fn())
 
   it('next disabled at last step', () => {
-    expect(p.nextTrigger.disabled(wrap(init({ steps: ['a', 'b'], current: 1 })))).toBe(true)
-    expect(p.nextTrigger.disabled(wrap(init({ steps: ['a', 'b'], current: 0 })))).toBe(false)
+    expect(read(p.nextTrigger.disabled, init({ steps: ['a', 'b'], current: 1 }))).toBe(true)
+    expect(read(p.nextTrigger.disabled, init({ steps: ['a', 'b'], current: 0 }))).toBe(false)
   })
 
   it('prev disabled at step 0', () => {
-    expect(p.prevTrigger.disabled(wrap(init({ steps: ['a', 'b'], current: 0 })))).toBe(true)
+    expect(read(p.prevTrigger.disabled, init({ steps: ['a', 'b'], current: 0 }))).toBe(true)
   })
 
   it('item aria-current="step" for active', () => {
-    expect(p.item(1).item['aria-current'](wrap(init({ steps: ['a', 'b'], current: 1 })))).toBe(
+    expect(read(p.item(1).item['aria-current'], init({ steps: ['a', 'b'], current: 1 }))).toBe(
       'step',
     )
     expect(
-      p.item(0).item['aria-current'](wrap(init({ steps: ['a', 'b'], current: 1 }))),
+      read(p.item(0).item['aria-current'], init({ steps: ['a', 'b'], current: 1 })),
     ).toBeUndefined()
   })
 
   it('item data-status reflects computed status', () => {
     expect(
-      p.item(0).item['data-status'](wrap(init({ steps: ['a', 'b'], current: 1, completed: [0] }))),
+      read(p.item(0).item['data-status'], init({ steps: ['a', 'b'], current: 1, completed: [0] })),
     ).toBe('completed')
   })
 
   it('nextTrigger click sends next', () => {
     const send = vi.fn()
-    const pc = connect<Ctx>((s) => s.s, send)
+    const pc = connect(rootSignal(), send)
     pc.nextTrigger.onClick(new MouseEvent('click'))
     expect(send).toHaveBeenCalledWith({ type: 'next' })
   })

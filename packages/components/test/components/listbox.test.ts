@@ -1,9 +1,6 @@
 import { describe, it, expect, vi } from 'vitest'
 import { init, update, connect } from '../../src/components/listbox'
-import type { ListboxState } from '../../src/components/listbox'
-
-type Ctx = { lb: ListboxState }
-const wrap = (lb: ListboxState): Ctx => ({ lb })
+import { rootSignal, read } from '../_signal'
 
 describe('listbox reducer', () => {
   it('initializes with empty value', () => {
@@ -64,42 +61,42 @@ describe('listbox reducer', () => {
 })
 
 describe('listbox.connect', () => {
-  const p = connect<Ctx>((s) => s.lb, vi.fn(), { id: 'lb1' })
+  const p = connect(rootSignal(), vi.fn(), { id: 'lb1' })
 
   it('root role=listbox', () => {
     expect(p.root.role).toBe('listbox')
   })
 
   it('aria-multiselectable=true for multiple mode', () => {
-    expect(p.root['aria-multiselectable'](wrap(init({ selectionMode: 'multiple' })))).toBe('true')
-    expect(p.root['aria-multiselectable'](wrap(init({ selectionMode: 'single' })))).toBeUndefined()
+    expect(read(p.root['aria-multiselectable'], init({ selectionMode: 'multiple' }))).toBe('true')
+    expect(read(p.root['aria-multiselectable'], init({ selectionMode: 'single' }))).toBeUndefined()
   })
 
   it('item aria-selected reflects value', () => {
     const item = p.item('a', 0).root
-    expect(item['aria-selected'](wrap(init({ items: ['a'], value: ['a'] })))).toBe(true)
-    expect(item['aria-selected'](wrap(init({ items: ['a'], value: [] })))).toBe(false)
+    expect(read(item['aria-selected'], init({ items: ['a'], value: ['a'] }))).toBe(true)
+    expect(read(item['aria-selected'], init({ items: ['a'], value: [] }))).toBe(false)
   })
 
   it('ArrowDown sends highlightNext', () => {
     const send = vi.fn()
-    const pc = connect<Ctx>((s) => s.lb, send, { id: 'x' })
+    const pc = connect(rootSignal(), send, { id: 'x' })
     pc.root.onKeyDown(new KeyboardEvent('keydown', { key: 'ArrowDown', cancelable: true }))
     expect(send).toHaveBeenCalledWith({ type: 'highlightNext' })
   })
 
   it('root aria-owns lists all item IDs', () => {
-    const pc = connect<Ctx>((s) => s.lb, vi.fn(), { id: 'lb' })
+    const pc = connect(rootSignal(), vi.fn(), { id: 'lb' })
     // Empty items → undefined
-    expect(pc.root['aria-owns'](wrap(init()))).toBeUndefined()
+    expect(read(pc.root['aria-owns'], init())).toBeUndefined()
     // With items → space-separated ids using index
     const s = init({ items: ['apple', 'banana', 'cherry'] })
-    expect(pc.root['aria-owns'](wrap(s))).toBe('lb:item:0 lb:item:1 lb:item:2')
+    expect(read(pc.root['aria-owns'], s)).toBe('lb:item:0 lb:item:1 lb:item:2')
   })
 
   it('typeahead fires for single char', () => {
     const send = vi.fn()
-    const pc = connect<Ctx>((s) => s.lb, send, { id: 'x' })
+    const pc = connect(rootSignal(), send, { id: 'x' })
     pc.root.onKeyDown(new KeyboardEvent('keydown', { key: 'a' }))
     expect(send).toHaveBeenCalledWith(expect.objectContaining({ type: 'typeahead', char: 'a' }))
   })

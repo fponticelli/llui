@@ -1,10 +1,9 @@
 import { describe, it, expect, vi } from 'vitest'
 import { init, update, connect, isLoading, isError, isEmpty } from '../../src/components/async-list'
 import type { AsyncListState } from '../../src/components/async-list'
+import { rootSignal, read } from '../_signal'
 
 type Item = { id: number; name: string }
-type Ctx = { l: AsyncListState<Item> }
-const wrap = (l: AsyncListState<Item>): Ctx => ({ l })
 
 describe('async-list reducer', () => {
   it('initializes idle with hasMore:true', () => {
@@ -117,32 +116,32 @@ describe('helpers', () => {
 
 describe('async-list.connect', () => {
   it('loadMoreTrigger disabled while loading', () => {
-    const p = connect<Ctx, Item>((s) => s.l, vi.fn())
+    const p = connect(rootSignal<AsyncListState<Item>>(), vi.fn())
     const loading: AsyncListState<Item> = { ...init<Item>(), status: 'loading' }
-    expect(p.loadMoreTrigger.disabled(wrap(loading))).toBe(true)
+    expect(read(p.loadMoreTrigger.disabled, loading)).toBe(true)
   })
 
   it('loadMoreTrigger disabled when hasMore:false', () => {
-    const p = connect<Ctx, Item>((s) => s.l, vi.fn())
+    const p = connect(rootSignal<AsyncListState<Item>>(), vi.fn())
     const done: AsyncListState<Item> = { ...init<Item>(), hasMore: false }
-    expect(p.loadMoreTrigger.disabled(wrap(done))).toBe(true)
+    expect(read(p.loadMoreTrigger.disabled, done)).toBe(true)
   })
 
   it('root data-status reflects state', () => {
-    const p = connect<Ctx, Item>((s) => s.l, vi.fn())
-    expect(p.root['data-status'](wrap(init<Item>()))).toBe('idle')
+    const p = connect(rootSignal<AsyncListState<Item>>(), vi.fn())
+    expect(read(p.root['data-status'], init<Item>())).toBe('idle')
   })
 
   it('retryTrigger hidden unless error', () => {
-    const p = connect<Ctx, Item>((s) => s.l, vi.fn())
-    expect(p.retryTrigger.hidden(wrap(init<Item>()))).toBe(true)
+    const p = connect(rootSignal<AsyncListState<Item>>(), vi.fn())
+    expect(read(p.retryTrigger.hidden, init<Item>())).toBe(true)
     const err: AsyncListState<Item> = { ...init<Item>(), status: 'error' }
-    expect(p.retryTrigger.hidden(wrap(err))).toBe(false)
+    expect(read(p.retryTrigger.hidden, err)).toBe(false)
   })
 
   it('triggers dispatch correct messages', () => {
     const send = vi.fn()
-    const p = connect<Ctx, Item>((s) => s.l, send)
+    const p = connect(rootSignal<AsyncListState<Item>>(), send)
     p.loadMoreTrigger.onClick(new MouseEvent('click'))
     expect(send).toHaveBeenCalledWith({ type: 'loadMore' })
     p.retryTrigger.onClick(new MouseEvent('click'))

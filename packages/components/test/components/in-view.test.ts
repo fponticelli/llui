@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { init, update, connect } from '../../src/components/in-view'
-import type { InViewState } from '../../src/components/in-view'
+import { rootSignal, read } from '../_signal'
 
 describe('in-view reducer', () => {
   it('initializes as not visible', () => {
@@ -32,18 +32,16 @@ describe('in-view reducer', () => {
 })
 
 describe('in-view connect', () => {
-  type Ctx = { iv: InViewState }
-
   it('returns root with data-scope and data-part', () => {
-    const parts = connect<Ctx>((s) => s.iv, vi.fn(), { id: 'iv1' })
+    const parts = connect(rootSignal(), vi.fn(), { id: 'iv1' })
     expect(parts.root['data-scope']).toBe('in-view')
     expect(parts.root['data-part']).toBe('root')
   })
 
   it('data-state reflects visibility', () => {
-    const parts = connect<Ctx>((s) => s.iv, vi.fn(), { id: 'iv1' })
-    expect(parts.root['data-state']({ iv: { visible: false } })).toBe('hidden')
-    expect(parts.root['data-state']({ iv: { visible: true } })).toBe('visible')
+    const parts = connect(rootSignal(), vi.fn(), { id: 'iv1' })
+    expect(read(parts.root['data-state'], { visible: false })).toBe('hidden')
+    expect(read(parts.root['data-state'], { visible: true })).toBe('visible')
   })
 })
 

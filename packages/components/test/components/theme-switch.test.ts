@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { init, update, connect, resolveTheme, applyTheme } from '../../src/components/theme-switch'
 import type { ThemeSwitchState, Theme } from '../../src/components/theme-switch'
+import { rootSignal, read } from '../_signal'
 
 describe('theme-switch reducer', () => {
   it('initializes with system by default', () => {
@@ -96,36 +97,34 @@ describe('applyTheme', () => {
 })
 
 describe('theme-switch.connect', () => {
-  type Ctx = { theme: ThemeSwitchState }
-
   it('root has data-scope and data-part', () => {
-    const parts = connect<Ctx>((s) => s.theme, vi.fn(), { id: 'ts' })
+    const parts = connect(rootSignal(), vi.fn(), { id: 'ts' })
     expect(parts.root['data-scope']).toBe('theme-switch')
     expect(parts.root['data-part']).toBe('root')
   })
 
   it('root aria-label defaults to Theme', () => {
-    const parts = connect<Ctx>((s) => s.theme, vi.fn(), { id: 'ts' })
+    const parts = connect(rootSignal(), vi.fn(), { id: 'ts' })
     expect(parts.root['aria-label']).toBe('Theme')
   })
 
   it('option returns pressed accessor reflecting current theme', () => {
-    const parts = connect<Ctx>((s) => s.theme, vi.fn(), { id: 'ts' })
+    const parts = connect(rootSignal(), vi.fn(), { id: 'ts' })
     const dark = parts.option('dark')
-    expect(dark['aria-pressed']({ theme: { theme: 'dark' } })).toBe(true)
-    expect(dark['aria-pressed']({ theme: { theme: 'light' } })).toBe(false)
+    expect(read(dark['aria-pressed'], { theme: 'dark' })).toBe(true)
+    expect(read(dark['aria-pressed'], { theme: 'light' })).toBe(false)
   })
 
   it('option onClick sends setTheme', () => {
     const send = vi.fn()
-    const parts = connect<Ctx>((s) => s.theme, send, { id: 'ts' })
+    const parts = connect(rootSignal(), send, { id: 'ts' })
     parts.option('dark').onClick({} as MouseEvent)
     expect(send).toHaveBeenCalledWith({ type: 'setTheme', theme: 'dark' })
   })
 
   it('toggle part onClick sends toggle', () => {
     const send = vi.fn()
-    const parts = connect<Ctx>((s) => s.theme, send, { id: 'ts' })
+    const parts = connect(rootSignal(), send, { id: 'ts' })
     parts.toggle.onClick({} as MouseEvent)
     expect(send).toHaveBeenCalledWith({ type: 'toggle' })
   })

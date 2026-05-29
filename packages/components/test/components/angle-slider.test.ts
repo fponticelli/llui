@@ -6,10 +6,7 @@ import {
   angleFromPoint,
   pointFromAngle,
 } from '../../src/components/angle-slider'
-import type { AngleSliderState } from '../../src/components/angle-slider'
-
-type Ctx = { a: AngleSliderState }
-const wrap = (a: AngleSliderState): Ctx => ({ a })
+import { rootSignal, read } from '../_signal'
 
 describe('angle-slider reducer', () => {
   it('initializes at 0 by default', () => {
@@ -93,17 +90,17 @@ describe('angleFromPoint / pointFromAngle', () => {
 
 describe('angle-slider.connect', () => {
   it('aria-value* reflect state', () => {
-    const p = connect<Ctx>((s) => s.a, vi.fn())
-    const s = wrap(init({ value: 90 }))
-    expect(p.root['aria-valuenow'](s)).toBe(90)
-    expect(p.root['aria-valuemin'](s)).toBe(0)
-    expect(p.root['aria-valuemax'](s)).toBe(360)
-    expect(p.root['aria-valuetext'](s)).toBe('90°')
+    const p = connect(rootSignal(), vi.fn())
+    const s = init({ value: 90 })
+    expect(read(p.root['aria-valuenow'], s)).toBe(90)
+    expect(read(p.root['aria-valuemin'], s)).toBe(0)
+    expect(read(p.root['aria-valuemax'], s)).toBe(360)
+    expect(read(p.root['aria-valuetext'], s)).toBe('90°')
   })
 
   it('keyboard ArrowRight/Up increments', () => {
     const send = vi.fn()
-    const p = connect<Ctx>((s) => s.a, send)
+    const p = connect(rootSignal(), send)
     const ev = new KeyboardEvent('keydown', { key: 'ArrowRight', cancelable: true })
     p.root.onKeyDown(ev)
     expect(send).toHaveBeenCalledWith({ type: 'increment' })
@@ -111,14 +108,14 @@ describe('angle-slider.connect', () => {
 
   it('PageUp increments by 10 steps', () => {
     const send = vi.fn()
-    const p = connect<Ctx>((s) => s.a, send)
+    const p = connect(rootSignal(), send)
     p.root.onKeyDown(new KeyboardEvent('keydown', { key: 'PageUp', cancelable: true }))
     expect(send).toHaveBeenCalledWith({ type: 'increment', steps: 10 })
   })
 
   it('Home/End jump to extremes', () => {
     const send = vi.fn()
-    const p = connect<Ctx>((s) => s.a, send)
+    const p = connect(rootSignal(), send)
     p.root.onKeyDown(new KeyboardEvent('keydown', { key: 'Home', cancelable: true }))
     expect(send).toHaveBeenCalledWith({ type: 'setValue', value: -Infinity })
     p.root.onKeyDown(new KeyboardEvent('keydown', { key: 'End', cancelable: true }))
@@ -126,13 +123,13 @@ describe('angle-slider.connect', () => {
   })
 
   it('custom format for aria-valuetext', () => {
-    const p = connect<Ctx>((s) => s.a, vi.fn(), { format: (v) => `${v} degrees` })
-    expect(p.root['aria-valuetext'](wrap(init({ value: 45 })))).toBe('45 degrees')
+    const p = connect(rootSignal(), vi.fn(), { format: (v) => `${v} degrees` })
+    expect(read(p.root['aria-valuetext'], init({ value: 45 }))).toBe('45 degrees')
   })
 
   it('hiddenInput includes name when provided', () => {
-    const p = connect<Ctx>((s) => s.a, vi.fn(), { name: 'angle' })
+    const p = connect(rootSignal(), vi.fn(), { name: 'angle' })
     expect(p.hiddenInput.name).toBe('angle')
-    expect(p.hiddenInput.value(wrap(init({ value: 30 })))).toBe('30')
+    expect(read(p.hiddenInput.value, init({ value: 30 }))).toBe('30')
   })
 })

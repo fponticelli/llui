@@ -1,9 +1,6 @@
 import { describe, it, expect, vi } from 'vitest'
 import { init, update, connect, itemFill } from '../../src/components/rating-group'
-import type { RatingGroupState } from '../../src/components/rating-group'
-
-type Ctx = { r: RatingGroupState }
-const wrap = (r: RatingGroupState): Ctx => ({ r })
+import { rootSignal, read } from '../_signal'
 
 describe('rating-group reducer', () => {
   it('initializes with value=0', () => {
@@ -79,7 +76,7 @@ describe('itemFill', () => {
 })
 
 describe('rating-group.connect', () => {
-  const parts = connect<Ctx>((s) => s.r, vi.fn())
+  const parts = connect(rootSignal(), vi.fn())
 
   it('root has role=radiogroup', () => {
     expect(parts.root.role).toBe('radiogroup')
@@ -87,27 +84,27 @@ describe('rating-group.connect', () => {
 
   it('item data-fill reflects state', () => {
     const item2 = parts.item(2).root
-    expect(item2['data-fill'](wrap(init({ value: 3 })))).toBe('full')
-    expect(item2['data-fill'](wrap(init({ value: 1 })))).toBe('empty')
+    expect(read(item2['data-fill'], init({ value: 3 }))).toBe('full')
+    expect(read(item2['data-fill'], init({ value: 1 }))).toBe('empty')
   })
 
   it('item onPointerLeave sends hover null', () => {
     const send = vi.fn()
-    const p = connect<Ctx>((s) => s.r, send)
+    const p = connect(rootSignal(), send)
     p.item(0).root.onPointerLeave(new PointerEvent('pointerleave'))
     expect(send).toHaveBeenCalledWith({ type: 'hover', value: null })
   })
 
   it('ArrowRight sends increment', () => {
     const send = vi.fn()
-    const p = connect<Ctx>((s) => s.r, send)
+    const p = connect(rootSignal(), send)
     p.item(0).root.onKeyDown(new KeyboardEvent('keydown', { key: 'ArrowRight', cancelable: true }))
     expect(send).toHaveBeenCalledWith({ type: 'incrementValue' })
   })
 
   it('End sends toEnd', () => {
     const send = vi.fn()
-    const p = connect<Ctx>((s) => s.r, send)
+    const p = connect(rootSignal(), send)
     p.item(0).root.onKeyDown(new KeyboardEvent('keydown', { key: 'End', cancelable: true }))
     expect(send).toHaveBeenCalledWith({ type: 'toEnd' })
   })

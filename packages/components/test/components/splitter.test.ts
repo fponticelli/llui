@@ -1,9 +1,6 @@
 import { describe, it, expect, vi } from 'vitest'
 import { init, update, connect, positionFromPoint } from '../../src/components/splitter'
-import type { SplitterState } from '../../src/components/splitter'
-
-type Ctx = { s: SplitterState }
-const wrap = (s: SplitterState): Ctx => ({ s })
+import { rootSignal, read } from '../_signal'
 
 describe('splitter reducer', () => {
   it('initializes at 50%', () => {
@@ -56,19 +53,19 @@ describe('positionFromPoint', () => {
 })
 
 describe('splitter.connect', () => {
-  const p = connect<Ctx>((s) => s.s, vi.fn())
+  const p = connect(rootSignal(), vi.fn())
 
   it('resizeTrigger role=separator', () => {
     expect(p.resizeTrigger.role).toBe('separator')
   })
 
   it('aria-valuenow tracks position', () => {
-    expect(p.resizeTrigger['aria-valuenow'](wrap(init({ position: 73 })))).toBe(73)
+    expect(read(p.resizeTrigger['aria-valuenow'], init({ position: 73 }))).toBe(73)
   })
 
   it('ArrowRight sends increment', () => {
     const send = vi.fn()
-    const pc = connect<Ctx>((s) => s.s, send)
+    const pc = connect(rootSignal(), send)
     pc.resizeTrigger.onKeyDown(
       new KeyboardEvent('keydown', { key: 'ArrowRight', cancelable: true }),
     )
@@ -76,14 +73,14 @@ describe('splitter.connect', () => {
   })
 
   it('primaryPanel style uses position', () => {
-    expect(p.primaryPanel.style(wrap(init({ position: 40, orientation: 'horizontal' })))).toContain(
+    expect(read(p.primaryPanel.style, init({ position: 40, orientation: 'horizontal' }))).toContain(
       'width:40%',
     )
   })
 
   it('secondaryPanel style uses inverted position', () => {
     expect(
-      p.secondaryPanel.style(wrap(init({ position: 40, orientation: 'horizontal' }))),
+      read(p.secondaryPanel.style, init({ position: 40, orientation: 'horizontal' })),
     ).toContain('width:60%')
   })
 })
