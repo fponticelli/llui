@@ -24,4 +24,7 @@ export {
   mountSignalComponent,
   type SignalComponentDef,
   type SignalComponentHandle,
+  type ComponentBag,
+  type EffectApi,
+  type StateHandle,
 } from './component.js'

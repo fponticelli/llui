@@ -13,7 +13,7 @@ describe('mountSignalComponent — TEA loop over signals', () => {
     const h = mountSignalComponent<S, M>(container, {
       init: () => ({ count: 0 }),
       update: (s, m) => (m.type === 'inc' ? { count: s.count + 1 } : { count: s.count - 1 }),
-      view: (send) => [
+      view: ({ send }) => [
         el('button', { onClick: () => send({ type: 'dec' }) }, []),
         el('span', {}, [signalText((s) => (s as S).count, ['count'])]),
         el('button', { onClick: () => send({ type: 'inc' }) }, []),
