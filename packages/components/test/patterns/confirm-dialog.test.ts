@@ -1,6 +1,5 @@
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
-import { mountApp, button, text } from '@llui/dom'
-import type { ComponentDef } from '@llui/dom'
+import { describe, it, expect, beforeEach, afterEach } from 'vitest'
+import { component, mountApp, button, text } from '@llui/dom/signals'
 import { init, update, view, openWith } from '../../src/patterns/confirm-dialog'
 import type { ConfirmDialogState, ConfirmDialogMsg } from '../../src/patterns/confirm-dialog'
 
@@ -105,7 +104,7 @@ describe('confirmDialog integration', () => {
     let sendRef!: (m: AppMsg) => void
     let stateRef!: Ctx
 
-    const def: ComponentDef<Ctx, AppMsg, never> = {
+    const def = component<Ctx, AppMsg, never>({
       name: 'Test',
       init: () => [{ cd: init(), lastAction: null }, []],
       update: (state, msg) => {
@@ -133,20 +132,20 @@ describe('confirmDialog integration', () => {
         }
         return [state, []]
       },
-      view: ({ send }) => {
+      view: ({ state, send }) => {
         sendRef = send
         return [
           button({ type: 'button', onClick: () => send({ type: 'triggerConfirm' }) }, [
             text('Delete'),
           ]),
-          ...view<Ctx>({
-            get: (s) => s.cd,
+          view({
+            state: state.at('cd'),
             send: (m) => send({ type: 'cd', msg: m }),
             id: 'confirm',
           }),
         ]
       },
-    }
+    })
     const container = document.createElement('div')
     document.body.appendChild(container)
     currentApp = mountApp(container, def)

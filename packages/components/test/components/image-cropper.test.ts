@@ -1,9 +1,7 @@
 import { describe, it, expect, vi } from 'vitest'
 import { init, update, connect, centerFill } from '../../src/components/image-cropper'
 import type { ImageCropperState } from '../../src/components/image-cropper'
-
-type Ctx = { c: ImageCropperState }
-const wrap = (c: ImageCropperState): Ctx => ({ c })
+import { rootSignal, read } from '../_signal'
 
 describe('centerFill', () => {
   it('with no aspect returns full image', () => {
@@ -161,12 +159,12 @@ describe('image-cropper reducer', () => {
 
 describe('image-cropper.connect', () => {
   it('cropBox style expresses crop as percentages', () => {
-    const p = connect<Ctx>((s) => s.c, vi.fn())
+    const p = connect(rootSignal<ImageCropperState>(), vi.fn())
     const s = init({
       image: { width: 400, height: 200 },
       crop: { x: 100, y: 50, width: 200, height: 100 },
     })
-    const style = p.cropBox.style(wrap(s))
+    const style = read(p.cropBox.style, s)
     expect(style).toContain('left:25%')
     expect(style).toContain('top:25%')
     expect(style).toContain('width:50%')
@@ -174,13 +172,13 @@ describe('image-cropper.connect', () => {
   })
 
   it('cropBox hidden (display:none) when no image', () => {
-    const p = connect<Ctx>((s) => s.c, vi.fn())
-    expect(p.cropBox.style(wrap(init()))).toContain('display:none')
+    const p = connect(rootSignal<ImageCropperState>(), vi.fn())
+    expect(read(p.cropBox.style, init())).toContain('display:none')
   })
 
   it('image onLoad dispatches setImage with natural dims', () => {
     const send = vi.fn()
-    const p = connect<Ctx>((s) => s.c, send)
+    const p = connect(rootSignal<ImageCropperState>(), send)
     const img = document.createElement('img')
     Object.defineProperties(img, {
       naturalWidth: { value: 800 },
@@ -192,7 +190,7 @@ describe('image-cropper.connect', () => {
 
   it('resetTrigger dispatches reset', () => {
     const send = vi.fn()
-    const p = connect<Ctx>((s) => s.c, send)
+    const p = connect(rootSignal<ImageCropperState>(), send)
     p.resetTrigger.onClick(new MouseEvent('click'))
     expect(send).toHaveBeenCalledWith({ type: 'reset' })
   })

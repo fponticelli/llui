@@ -3,6 +3,7 @@ import { en, LocaleContext } from '../src/locale'
 import type { Locale } from '../src/locale'
 import { connect } from '../src/components/dialog'
 import type { DialogState } from '../src/components/dialog'
+import { rootSignal } from './_signal'
 
 describe('locale', () => {
   it('en covers every Locale key', () => {
@@ -33,18 +34,14 @@ describe('locale', () => {
 })
 
 describe('locale integration', () => {
-  type S = { dlg: DialogState }
-
   it('connect() uses English default when no locale option given', () => {
-    const parts = connect<S>((s) => s.dlg, vi.fn(), { id: 'd1' })
-    const ariaLabel = parts.closeTrigger['aria-label']
-    // No render context → falls back to en defaults via useContext
-    expect(typeof ariaLabel).toBe('function')
-    expect((ariaLabel as (s: S) => string)({ dlg: { open: false } })).toBe('Close')
+    const parts = connect(rootSignal<DialogState>(), vi.fn(), { id: 'd1' })
+    // No render context → useContext returns the LocaleContext default (en)
+    expect(parts.closeTrigger['aria-label']).toBe('Close')
   })
 
   it('explicit closeLabel overrides locale', () => {
-    const parts = connect<S>((s) => s.dlg, vi.fn(), { id: 'd2', closeLabel: 'Cerrar' })
+    const parts = connect(rootSignal<DialogState>(), vi.fn(), { id: 'd2', closeLabel: 'Cerrar' })
     expect(parts.closeTrigger['aria-label']).toBe('Cerrar')
   })
 })

@@ -9,9 +9,7 @@ import {
   formatMs,
 } from '../../src/components/timer'
 import type { TimerState } from '../../src/components/timer'
-
-type Ctx = { t: TimerState }
-const wrap = (t: TimerState): Ctx => ({ t })
+import { rootSignal, read } from '../_signal'
 
 describe('timer reducer', () => {
   it('init defaults to stopped count-up timer at 0', () => {
@@ -123,22 +121,22 @@ describe('parts / formatMs', () => {
 
 describe('timer.connect', () => {
   it('startTrigger disabled while running', () => {
-    const p = connect<Ctx>((s) => s.t, vi.fn())
-    expect(p.startTrigger.disabled(wrap(init()))).toBe(false)
+    const p = connect(rootSignal<TimerState>(), vi.fn())
+    expect(read(p.startTrigger.disabled, init())).toBe(false)
     const started: TimerState = { ...init(), running: true, startedAt: 1000 }
-    expect(p.startTrigger.disabled(wrap(started))).toBe(true)
+    expect(read(p.startTrigger.disabled, started)).toBe(true)
   })
 
   it('pauseTrigger disabled while stopped', () => {
-    const p = connect<Ctx>((s) => s.t, vi.fn())
-    expect(p.pauseTrigger.disabled(wrap(init()))).toBe(true)
+    const p = connect(rootSignal<TimerState>(), vi.fn())
+    expect(read(p.pauseTrigger.disabled, init())).toBe(true)
     const started: TimerState = { ...init(), running: true, startedAt: 1000 }
-    expect(p.pauseTrigger.disabled(wrap(started))).toBe(false)
+    expect(read(p.pauseTrigger.disabled, started)).toBe(false)
   })
 
   it('triggers dispatch correct messages', () => {
     const send = vi.fn()
-    const p = connect<Ctx>((s) => s.t, send)
+    const p = connect(rootSignal<TimerState>(), send)
     p.startTrigger.onClick(new MouseEvent('click'))
     expect(send).toHaveBeenCalledWith(expect.objectContaining({ type: 'start' }))
     p.pauseTrigger.onClick(new MouseEvent('click'))
@@ -148,21 +146,21 @@ describe('timer.connect', () => {
   })
 
   it('display has role=timer', () => {
-    const p = connect<Ctx>((s) => s.t, vi.fn())
+    const p = connect(rootSignal<TimerState>(), vi.fn())
     expect(p.display.role).toBe('timer')
     expect(p.display['aria-live']).toBe('off')
   })
 
   it('ariaLive: polite is honoured', () => {
-    const p = connect<Ctx>((s) => s.t, vi.fn(), { ariaLive: 'polite' })
+    const p = connect(rootSignal<TimerState>(), vi.fn(), { ariaLive: 'polite' })
     expect(p.display['aria-live']).toBe('polite')
   })
 
   it('root exposes data-running + data-direction', () => {
-    const p = connect<Ctx>((s) => s.t, vi.fn())
-    expect(p.root['data-running'](wrap(init()))).toBeUndefined()
+    const p = connect(rootSignal<TimerState>(), vi.fn())
+    expect(read(p.root['data-running'], init())).toBeUndefined()
     const running: TimerState = { ...init(), running: true, startedAt: 0 }
-    expect(p.root['data-running'](wrap(running))).toBe('')
-    expect(p.root['data-direction'](wrap(init({ direction: 'down' })))).toBe('down')
+    expect(read(p.root['data-running'], running)).toBe('')
+    expect(read(p.root['data-direction'], init({ direction: 'down' }))).toBe('down')
   })
 })

@@ -9,9 +9,7 @@ import {
   progress,
 } from '../../src/components/tour'
 import type { TourState, TourStep } from '../../src/components/tour'
-
-type Ctx = { t: TourState }
-const wrap = (t: TourState): Ctx => ({ t })
+import { rootSignal, read } from '../_signal'
 
 const steps: TourStep[] = [
   { id: 'a', title: 'Step A', description: 'First', target: '#a' },
@@ -118,39 +116,39 @@ describe('tour helpers', () => {
 
 describe('tour.connect', () => {
   it('root hidden mirrors open=false', () => {
-    const p = connect<Ctx>((s) => s.t, vi.fn(), { id: 't' })
-    expect(p.root.hidden(wrap(init({ steps })))).toBe(true)
-    expect(p.root.hidden(wrap({ ...init({ steps }), open: true } as TourState))).toBe(false)
+    const p = connect(rootSignal<TourState>(), vi.fn(), { id: 't' })
+    expect(read(p.root.hidden, init({ steps }))).toBe(true)
+    expect(read(p.root.hidden, { ...init({ steps }), open: true } as TourState)).toBe(false)
   })
 
   it('prevTrigger disabled at first step', () => {
-    const p = connect<Ctx>((s) => s.t, vi.fn(), { id: 't' })
-    expect(p.prevTrigger.disabled(wrap(init({ steps })))).toBe(true)
-    expect(p.prevTrigger.disabled(wrap(init({ steps, index: 1 })))).toBe(false)
+    const p = connect(rootSignal<TourState>(), vi.fn(), { id: 't' })
+    expect(read(p.prevTrigger.disabled, init({ steps }))).toBe(true)
+    expect(read(p.prevTrigger.disabled, init({ steps, index: 1 }))).toBe(false)
   })
 
   it('nextTrigger data-last marks final step', () => {
-    const p = connect<Ctx>((s) => s.t, vi.fn(), { id: 't' })
-    expect(p.nextTrigger['data-last'](wrap(init({ steps })))).toBeUndefined()
-    expect(p.nextTrigger['data-last'](wrap(init({ steps, index: 2 })))).toBe('')
+    const p = connect(rootSignal<TourState>(), vi.fn(), { id: 't' })
+    expect(read(p.nextTrigger['data-last'], init({ steps }))).toBeUndefined()
+    expect(read(p.nextTrigger['data-last'], init({ steps, index: 2 }))).toBe('')
   })
 
   it('closeOnBackdropClick: false (default) — click is ignored', () => {
     const send = vi.fn()
-    const p = connect<Ctx>((s) => s.t, send, { id: 't' })
+    const p = connect(rootSignal<TourState>(), send, { id: 't' })
     p.backdrop.onClick(new MouseEvent('click'))
     expect(send).not.toHaveBeenCalled()
   })
 
   it('closeOnBackdropClick: true — click dispatches stop', () => {
     const send = vi.fn()
-    const p = connect<Ctx>((s) => s.t, send, { id: 't', closeOnBackdropClick: true })
+    const p = connect(rootSignal<TourState>(), send, { id: 't', closeOnBackdropClick: true })
     p.backdrop.onClick(new MouseEvent('click'))
     expect(send).toHaveBeenCalledWith({ type: 'stop' })
   })
 
   it('title/description have ids linked via aria-labelledby/describedby', () => {
-    const p = connect<Ctx>((s) => s.t, vi.fn(), { id: 'my-tour' })
+    const p = connect(rootSignal<TourState>(), vi.fn(), { id: 'my-tour' })
     expect(p.title.id).toBe('my-tour:title')
     expect(p.description.id).toBe('my-tour:description')
     expect(p.root['aria-labelledby']).toBe('my-tour:title')
@@ -159,7 +157,7 @@ describe('tour.connect', () => {
 
   it('triggers dispatch correct messages', () => {
     const send = vi.fn()
-    const p = connect<Ctx>((s) => s.t, send, { id: 't' })
+    const p = connect(rootSignal<TourState>(), send, { id: 't' })
     p.nextTrigger.onClick(new MouseEvent('click'))
     expect(send).toHaveBeenCalledWith({ type: 'next' })
     p.prevTrigger.onClick(new MouseEvent('click'))

@@ -3,6 +3,7 @@ import { connect as radioConnect } from '../../src/components/radio-group'
 import type { RadioGroupState } from '../../src/components/radio-group'
 import { connect as sliderConnect } from '../../src/components/slider'
 import type { SliderState } from '../../src/components/slider'
+import { rootSignal } from '../_signal'
 
 describe('RTL keyboard navigation', () => {
   let rtlRoot: HTMLElement
@@ -19,8 +20,7 @@ describe('RTL keyboard navigation', () => {
 
   it('radio-group: ArrowRight in LTR sends selectNext', () => {
     const send = vi.fn()
-    type S = { r: RadioGroupState }
-    const parts = radioConnect<S>((s) => s.r, send, { id: 'rg1' })
+    const parts = radioConnect(rootSignal<RadioGroupState>(), send, { id: 'rg1' })
     // LTR: ArrowRight → selectNext (normal)
     parts
       .item('a')
@@ -30,8 +30,7 @@ describe('RTL keyboard navigation', () => {
 
   it('radio-group: ArrowRight in RTL sends selectPrev (reversed)', () => {
     const send = vi.fn()
-    type S = { r: RadioGroupState }
-    const parts = radioConnect<S>((s) => s.r, send, { id: 'rg2' })
+    const parts = radioConnect(rootSignal<RadioGroupState>(), send, { id: 'rg2' })
 
     // Create a button inside RTL root and dispatch event through DOM
     const btn = document.createElement('button')
@@ -46,8 +45,7 @@ describe('RTL keyboard navigation', () => {
 
   it('radio-group: ArrowLeft in RTL sends selectNext (reversed)', () => {
     const send = vi.fn()
-    type S = { r: RadioGroupState }
-    const parts = radioConnect<S>((s) => s.r, send, { id: 'rg3' })
+    const parts = radioConnect(rootSignal<RadioGroupState>(), send, { id: 'rg3' })
 
     const btn = document.createElement('button')
     rtlRoot.appendChild(btn)
@@ -60,8 +58,7 @@ describe('RTL keyboard navigation', () => {
 
   it('radio-group: ArrowUp/Down are NOT flipped in RTL', () => {
     const send = vi.fn()
-    type S = { r: RadioGroupState }
-    const parts = radioConnect<S>((s) => s.r, send, { id: 'rg4' })
+    const parts = radioConnect(rootSignal<RadioGroupState>(), send, { id: 'rg4' })
 
     // Put in a vertical group so ArrowDown fires
     const group = document.createElement('div')
@@ -78,8 +75,7 @@ describe('RTL keyboard navigation', () => {
 
   it('slider: ArrowLeft in RTL sends increment (reversed)', () => {
     const send = vi.fn()
-    type S = { s: SliderState }
-    const parts = sliderConnect<S>((s) => s.s, send)
+    const parts = sliderConnect(rootSignal<SliderState>(), send)
 
     const btn = document.createElement('div')
     rtlRoot.appendChild(btn)
@@ -92,8 +88,7 @@ describe('RTL keyboard navigation', () => {
 
   it('slider: ArrowUp is NOT flipped in RTL', () => {
     const send = vi.fn()
-    type S = { s: SliderState }
-    const parts = sliderConnect<S>((s) => s.s, send)
+    const parts = sliderConnect(rootSignal<SliderState>(), send)
 
     const btn = document.createElement('div')
     rtlRoot.appendChild(btn)
