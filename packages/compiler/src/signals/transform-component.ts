@@ -22,6 +22,7 @@ const RUNTIME_HELPERS = [
   'signalEach',
   'signalShow',
   'signalBranch',
+  'signalForeign',
 ]
 
 interface Edit {

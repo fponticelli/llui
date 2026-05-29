@@ -70,6 +70,7 @@ export {
   each,
   show,
   branch,
+  foreign,
   type Send,
   type Reactive,
   type AttrValue,

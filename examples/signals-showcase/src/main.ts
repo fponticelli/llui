@@ -2,6 +2,8 @@
 import { mountApp } from '@llui/dom/signals'
 import { Counter } from './counter'
 import { Todos } from './todos'
+import { Editor } from './editor'
 
 mountApp(document.getElementById('counter')!, Counter)
 mountApp(document.getElementById('todos')!, Todos)
+mountApp(document.getElementById('editor')!, Editor)

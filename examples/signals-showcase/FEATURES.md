@@ -16,17 +16,16 @@ canonical reference for authoring LLui with signals.
 | `show(cond, render)` conditional mount                          | counter Reset region                                                        |
 | `branch(disc, arms)` discriminated union                        | todos `empty` / `list`                                                      |
 | `each(items, { key, render })` keyed list + per-row item signal | todos list                                                                  |
+| `foreign()` imperative boundary + `LiveSignal.bind`             | editor                                                                      |
 | effects-as-data (`update` returns effects) + `onEffect`         | counter `beep`, todos `load`                                                |
 | effect → `send` back into the loop                              | counter (`beep` → `beeped`), todos (`load` → `loaded`)                      |
 | initial effects from `init`                                     | todos (`[{ type: 'load' }]`)                                                |
 | msg `@intent` agent annotations                                 | both                                                                        |
 
-## Not shown here (covered elsewhere)
+## Notes
 
-- `foreign()` / `LiveSignal` (imperative-library boundary): runtime-tested in
-  `packages/dom/test/signals/foreign.test.ts`. Authored-`foreign` lowering in the
-  view transform is a follow-up; until then use `signalForeign` from
-  `@llui/dom/signals` directly.
+- `foreign()` is authored in `editor.ts` (a contenteditable widget) and also
+  runtime-tested in `packages/dom/test/signals/foreign.test.ts`.
 
 ## How it runs
 

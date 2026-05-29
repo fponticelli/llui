@@ -107,6 +107,15 @@ describe('transformNodeExpr — structural primitives', () => {
     )
   })
 
+  it('lowers foreign: state record -> SignalSpecs, mount/unmount verbatim', () => {
+    const out = tx(
+      "foreign({ state: { content: state.at('doc'), theme: state.at('ui.theme') }, mount: ({ el, state }) => new Editor(el, state), unmount: (i) => i.destroy() })",
+    )
+    expect(out).toBe(
+      "signalForeign({ state: { content: { produce: (s) => s.doc, deps: ['doc'] }, theme: { produce: (s) => s.ui.theme, deps: ['ui.theme'] } }, mount: ({ el, state }) => new Editor(el, state), unmount: (i) => i.destroy() })",
+    )
+  })
+
   it('lowers a mapped cond in show', () => {
     const out = tx("show(state.at('count').map((c) => c > 0), () => [text('positive')])")
     expect(out).toBe(

@@ -8,7 +8,7 @@
 // lowered runtime names (signalText/el/…); the transform replaces the former
 // with the latter.
 
-import type { Signal } from './types.js'
+import type { Signal, LiveSignal } from './types.js'
 import {
   mountSignalComponent,
   type SignalComponentDef,
@@ -86,6 +86,21 @@ export function branch<K extends string>(
   _arms: Partial<Record<K, () => readonly Node[]>>,
 ): Node {
   return compiledAway('branch')
+}
+
+// ── Foreign (imperative-library boundary) ──────────────────────────
+/** Embed an imperative library. Declared `state` signals are materialized to
+ * LiveSignals for `mount`. Rewritten by the compiler to `signalForeign`. */
+export function foreign<Inst, State extends Record<string, Signal<unknown>>>(_spec: {
+  tag?: string
+  state?: State
+  mount: (args: {
+    el: Element
+    state: { [K in keyof State]: LiveSignal<State[K] extends Signal<infer T> ? T : unknown> }
+  }) => Inst
+  unmount?: (instance: Inst) => void
+}): Node {
+  return compiledAway('foreign')
 }
 
 // ── Component + mount (kept by the transform; real runtime behavior) ──

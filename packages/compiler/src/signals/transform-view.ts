@@ -180,6 +180,31 @@ export function transformNodeExpr(
       }
     }
 
+    if (callee === 'foreign') {
+      // foreign({ tag?, state: { k: <signal> }, mount, unmount })
+      const spec = node.arguments[0]
+      if (spec && ts.isObjectLiteralExpression(spec)) {
+        const props = spec.properties.map((p) => {
+          if (
+            ts.isPropertyAssignment(p) &&
+            p.name.getText(sf) === 'state' &&
+            ts.isObjectLiteralExpression(p.initializer)
+          ) {
+            // lower each declared input signal to a { produce, deps } SignalSpec
+            const entries = p.initializer.properties.map((e) =>
+              ts.isPropertyAssignment(e)
+                ? `${e.name.getText(sf)}: ${specSrc(e.initializer, sf, roots)}`
+                : e.getText(sf),
+            )
+            return `state: { ${entries.join(', ')} }`
+          }
+          // tag / mount / unmount are imperative — kept verbatim
+          return p.getText(sf)
+        })
+        return `signalForeign({ ${props.join(', ')} })`
+      }
+    }
+
     if (ELEMENT_HELPERS.has(callee)) {
       const a0 = node.arguments[0]
       const a1 = node.arguments[1]
