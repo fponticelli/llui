@@ -143,6 +143,7 @@ export {
   polyline,
   polygon,
   ellipse,
+  svgText,
   each,
   show,
   branch,

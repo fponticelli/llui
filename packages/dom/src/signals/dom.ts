@@ -900,15 +900,17 @@ export function renderSignalTree(
 }
 
 // ── lazy (async component loading) ──────────────────────────────────
-export interface SignalLazyOptions<T = undefined> {
-  /** async loader — typically `() => import('./Chart').then(m => m.default)` */
-  loader: () => Promise<SignalComponentDef<unknown, unknown, unknown>>
+export interface SignalLazyOptions<LS = unknown, LM = unknown, LE = unknown> {
+  /** async loader — typically `() => import('./Chart').then(m => m.default)`. The
+   * loaded component's S/M/E are inferred, so `initialState` is typed and no cast
+   * is needed at the call site. */
+  loader: () => Promise<SignalComponentDef<LS, LM, LE>>
   /** nodes rendered (reactively, in the current build) while loading */
   fallback: () => readonly Node[]
   /** nodes rendered if the loader rejects (nothing if omitted) */
   error?: (err: Error) => readonly Node[]
   /** seed state for the loaded component, overriding its `init()` result */
-  initialState?: T
+  initialState?: LS
 }
 
 /**
@@ -923,7 +925,9 @@ export interface SignalLazyOptions<T = undefined> {
  * If the surrounding build is torn down before the loader settles, a cancelled
  * flag skips the deferred mount; any already-mounted child handle is disposed.
  */
-export function signalLazy<T = undefined>(opts: SignalLazyOptions<T>): Node {
+export function signalLazy<LS = unknown, LM = unknown, LE = unknown>(
+  opts: SignalLazyOptions<LS, LM, LE>,
+): Node {
   const c = requireCtx()
   const doc = c.doc
   const anchor = doc.createComment('lazy')
@@ -935,7 +939,7 @@ export function signalLazy<T = undefined>(opts: SignalLazyOptions<T>): Node {
   const fallbackNodes = opts.fallback()
 
   let cancelled = false
-  let mounted: SignalComponentHandle<unknown, unknown> | null = null
+  let mounted: SignalComponentHandle<LS, LM> | null = null
   // error-arm nodes (built in a nested build inheriting this ctx) + their scope,
   // so an error swap is reactive and torn down on dispose.
   let errorScope: SignalScope | null = null
@@ -954,7 +958,7 @@ export function signalLazy<T = undefined>(opts: SignalLazyOptions<T>): Node {
     .then((def) => {
       if (cancelled) return
       removeFallback()
-      mounted = mountSignalComponent<unknown, unknown, unknown>(
+      mounted = mountSignalComponent<LS, LM, LE>(
         { anchor: anchor as Comment, mode: 'append' },
         def,
         opts.initialState !== undefined ? { initialState: opts.initialState } : undefined,

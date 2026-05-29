@@ -134,6 +134,8 @@ export const line = svgHelper('line')
 export const polyline = svgHelper('polyline')
 export const polygon = svgHelper('polygon')
 export const ellipse = svgHelper('ellipse')
+// SVG <text> — named `svgText` to avoid colliding with the `text()` node helper.
+export const svgText = svgHelper('text')
 
 // ── Structural primitives ───────────────────────────────────────────
 export function each<T>(
@@ -203,7 +205,9 @@ export function branch(value: Signal<unknown>, arg1: unknown, arms?: unknown): N
  * swap in the loaded component when `loader()` resolves (or `error(err)` on
  * reject). Identity at runtime — a real runtime helper (not compiled away), so
  * view-helper composition and uncompiled tests can call it directly. */
-export function lazy<T = undefined>(opts: SignalLazyOptions<T>): Node {
+export function lazy<LS = unknown, LM = unknown, LE = unknown>(
+  opts: SignalLazyOptions<LS, LM, LE>,
+): Node {
   return signalLazy(opts)
 }
 
