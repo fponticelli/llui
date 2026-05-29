@@ -213,6 +213,12 @@ export function signalEach<T>(
     if (!parent) return
     const items = source.items(state)
     const seen = new Set<string>()
+    // Minimal-move reconcile: walk the desired order keeping a cursor `pos` at
+    // the DOM node the current row should start at. Rows already in position are
+    // not touched (zero DOM moves for the common in-place-update case); only
+    // displaced or new rows are inserted before `pos`. O(n) work, but DOM
+    // mutations proportional to the number of MOVED rows, not total rows.
+    let pos: Node = start.nextSibling ?? end
     for (const item of items) {
       const k = String(key(item))
       seen.add(k)
@@ -224,11 +230,20 @@ export function signalEach<T>(
         scope.mount(ctx) // row scope's "state" is the combined ctx
         row = { scope, nodes: built.nodes, ctx }
         rows.set(k, row)
-      } else {
-        row.scope.update(row.ctx, ctx) // per-row, per-binding gating (item + state)
-        row.ctx = ctx
+        for (const n of row.nodes) parent.insertBefore(n, pos) // new row, in order before pos
+        continue
       }
-      for (const n of row.nodes) parent.insertBefore(n, end) // place/reorder
+      // existing row: re-run only the bindings whose part of the ctx changed
+      row.scope.update(row.ctx, ctx)
+      row.ctx = ctx
+      const first = row.nodes[0]
+      if (first === pos) {
+        // already in place — no DOM move; advance the cursor past this row
+        pos = row.nodes[row.nodes.length - 1]!.nextSibling ?? end
+      } else {
+        // displaced — move this row's nodes before pos (pos stays)
+        for (const n of row.nodes) parent.insertBefore(n, pos)
+      }
     }
     for (const [k, row] of rows) {
       if (!seen.has(k)) {
