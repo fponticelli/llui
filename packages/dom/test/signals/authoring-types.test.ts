@@ -22,11 +22,12 @@ interface Todo {
   title: string
   done: boolean
 }
+type View = { type: 'empty' } | { type: 'list'; visible: Todo[] }
 interface State {
   count: number
   user: { name: string; email?: string }
   todos: Todo[]
-  view: 'empty' | 'list'
+  view: View
   busy: boolean
 }
 type Msg = { type: 'inc' } | { type: 'set'; todos: Todo[] } | { type: 'save'; v: string }
@@ -35,7 +36,13 @@ describe('authoring surface types', () => {
   it('compiles a full-coverage component', () => {
     const _ = () =>
       component<State, Msg>({
-        init: () => ({ count: 0, user: { name: '' }, todos: [], view: 'empty', busy: false }),
+        init: () => ({
+          count: 0,
+          user: { name: '' },
+          todos: [],
+          view: { type: 'empty' },
+          busy: false,
+        }),
         update: (s, m) => {
           if (m.type === 'inc') return [{ ...s, count: s.count + 1 }, []]
           if (m.type === 'set') return [{ ...s, todos: m.todos }, []]
@@ -59,6 +66,12 @@ describe('authoring surface types', () => {
             state.at('count').map((c) => c > 0),
             () => [text('positive')],
           ),
+          // show with a narrowed then-arm + an else arm (binary)
+          show(
+            state.at('user.email'),
+            (email) => [text(email)], // email: Signal<string> (NonNullable)
+            () => [text('no email')],
+          ),
           // each keyed rows reading the item signal
           ul({}, [
             each(state.at('todos'), {
@@ -66,10 +79,15 @@ describe('authoring surface types', () => {
               render: (item) => [li({}, [text(item.at('title'))])],
             }),
           ]),
-          // branch over a discriminant
-          branch(state.at('view'), {
+          // branch over a discriminated union: each arm gets the NARROWED variant
+          branch(state.at('view'), (v) => v.type, {
             empty: () => [text('no todos')],
-            list: () => [text('has todos')],
+            // v: Signal<{ type: 'list'; visible: Todo[] }> — variant-only field reads
+            list: (v) => [text(v.at('visible').map((vs) => `${vs.length} todos`))],
+          }),
+          // branch (2-arg plain form): key by a string signal's value, no narrowing
+          branch(state.at('user.name'), {
+            '': () => [text('anonymous')],
           }),
         ],
       })
@@ -91,7 +109,13 @@ describe('authoring surface types', () => {
   it('rejects an invalid .at path', () => {
     const _ = () =>
       component<State, Msg>({
-        init: () => ({ count: 0, user: { name: '' }, todos: [], view: 'empty', busy: false }),
+        init: () => ({
+          count: 0,
+          user: { name: '' },
+          todos: [],
+          view: { type: 'empty' },
+          busy: false,
+        }),
         update: (s) => s,
         // @ts-expect-error — 'nope' is not a key of State
         view: ({ state }) => [text(state.at('nope'))],

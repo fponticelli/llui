@@ -110,12 +110,30 @@ describe('transformNodeExpr — structural primitives', () => {
     )
   })
 
-  it('lowers branch to signalBranch (disc spec, arms)', () => {
+  it('lowers the 2-arg plain form (string signal as discriminant, no narrowing)', () => {
     const out = tx(
-      "branch(state.at('view'), { loading: () => [text('…')], loaded: () => [text(state.at('title'))] })",
+      "branch(state.at('filter'), { all: () => [text('a')], done: () => [text('d')] })",
     )
     expect(out).toBe(
-      "signalBranch({ produce: (s) => s.view, deps: ['view'] }, { loading: () => [staticText('…')], loaded: () => [signalText((s) => s.title, ['title'])] })",
+      "signalBranch({ produce: (s) => s.filter, deps: ['filter'] }, { all: () => [staticText('a')], done: () => [staticText('d')] })",
+    )
+  })
+
+  it('lowers branch to signalBranch (key fn -> value.disc spec, key-only arms)', () => {
+    const out = tx(
+      "branch(state.at('view'), (v) => v.kind, { loading: () => [text('…')], loaded: () => [text(state.at('title'))] })",
+    )
+    expect(out).toBe(
+      "signalBranch({ produce: (s) => (s.view).kind, deps: ['view.kind'] }, { loading: () => [staticText('…')], loaded: () => [signalText((s) => s.title, ['title'])] })",
+    )
+  })
+
+  it('lowers a branch arm that reads its NARROWED variant signal (v -> value path)', () => {
+    const out = tx(
+      "branch(state.at('view'), (x) => x.type, { loaded: (v) => [text(v.at('data'))] })",
+    )
+    expect(out).toBe(
+      "signalBranch({ produce: (s) => (s.view).type, deps: ['view.type'] }, { loaded: () => [signalText((s) => s.view.data, ['view.data'])] })",
     )
   })
 
@@ -125,6 +143,20 @@ describe('transformNodeExpr — structural primitives', () => {
     )
     expect(out).toBe(
       "signalForeign({ state: { content: { produce: (s) => s.doc, deps: ['doc'] }, theme: { produce: (s) => s.ui.theme, deps: ['ui.theme'] } }, mount: ({ el, state }) => new Editor(el, state), unmount: (i) => i.destroy() })",
+    )
+  })
+
+  it('lowers a show arm that reads its NARROWED param (rebased onto cond path)', () => {
+    const out = tx("show(state.at('user'), (u) => [text(u.at('name'))])")
+    expect(out).toBe(
+      "signalShow({ produce: (s) => s.user, deps: ['user'] }, () => [signalText((s) => s.user.name, ['user.name'])])",
+    )
+  })
+
+  it('lowers show with an else arm (3rd argument)', () => {
+    const out = tx("show(state.at('open'), () => [text('on')], () => [text('off')])")
+    expect(out).toBe(
+      "signalShow({ produce: (s) => s.open, deps: ['open'] }, () => [staticText('on')], () => [staticText('off')])",
     )
   })
 

@@ -16,7 +16,7 @@
 
 import ts from 'typescript'
 import { signalToProduce } from './lower.js'
-import { isSignalExpr, STATE_ROOTS, type Roots } from './extract-deps.js'
+import { isSignalExpr, signalPathOf, STATE_ROOTS, type Roots } from './extract-deps.js'
 
 /** The produce-wrapper parameter name for a roots map: `s` for the component
  * view, `ctx` inside an each row (where value prefixes are `ctx.item`/`ctx.state`). */
@@ -96,6 +96,32 @@ function depsArr(deps: readonly string[]): string {
 
 function unwrap(expr: ts.Expression): ts.Expression {
   return ts.isParenthesizedExpression(expr) ? unwrap(expr.expression) : expr
+}
+
+/** The first parameter name of a callback, or null (used to root a render arm's
+ * narrowed signal, e.g. show/branch). */
+function firstParam(fn: ts.Expression): string | null {
+  if (
+    (ts.isArrowFunction(fn) || ts.isFunctionExpression(fn)) &&
+    fn.parameters[0] &&
+    ts.isIdentifier(fn.parameters[0].name)
+  ) {
+    return fn.parameters[0].name.text
+  }
+  return null
+}
+
+/** The discriminant property name from a key arrow `(u) => u.kind`, or null if
+ * the arg isn't a single top-level property access on the parameter. */
+function discriminantProp(fn: ts.Expression): string | null {
+  if (!ts.isArrowFunction(fn) && !ts.isFunctionExpression(fn)) return null
+  let body: ts.Node | undefined = fn.body
+  if (body && ts.isBlock(body)) body = body.statements.find(ts.isReturnStatement)?.expression
+  while (body && ts.isParenthesizedExpression(body)) body = body.expression
+  if (body && ts.isPropertyAccessExpression(body) && ts.isIdentifier(body.expression)) {
+    return body.name.text
+  }
+  return null
 }
 
 /** Source for a `{ produce, deps }` SignalSpec from a signal expression. */
@@ -188,28 +214,79 @@ export function transformNodeExpr(
     }
 
     if (callee === 'show') {
-      // show(cond, () => [...])
+      // show(cond, (narrowed) => [...], orElse?) — the then-arm's param is the
+      // NARROWED signal (rebased onto the cond's path, like a branch arm); the
+      // optional 3rd arm renders when the cond is falsy.
       const cond = node.arguments[0]
       const render = node.arguments[1]
+      const orElse = node.arguments[2]
       if (cond && render) {
-        return `signalShow(${specSrc(cond, sf, roots)}, () => ${renderArraySrc(render, sf, roots)})`
+        const condLowered = signalToProduce(cond, sf, roots)
+        const condPath = signalPathOf(cond, roots)
+        const narrowed = firstParam(render)
+        const thenRoots =
+          narrowed !== null && condPath !== null
+            ? (new Map([
+                ...roots,
+                [narrowed, { value: condLowered.produce, dep: condPath }],
+              ]) as Roots)
+            : roots
+        const thenSrc = `() => ${renderArraySrc(render, sf, thenRoots)}`
+        const elseSrc = orElse ? `, () => ${renderArraySrc(orElse, sf, roots)}` : ''
+        return `signalShow(${specSrc(cond, sf, roots)}, ${thenSrc}${elseSrc})`
       }
     }
 
     if (callee === 'branch') {
-      // branch(disc, { arm: () => [...], ... })
-      const disc = node.arguments[0]
-      const arms = node.arguments[1]
-      if (disc && arms && ts.isObjectLiteralExpression(arms)) {
+      // branch(value, 'disc', { arm: (v) => [...], ... }) — each arm receives the
+      // NARROWED variant signal `v`, rebased onto the value's path (v.at('x') ->
+      // <value>.x). The discriminant spec reads value.<disc> to pick the arm.
+      const value = node.arguments[0]
+      const discArg = node.arguments[1]
+      const arms = node.arguments[2]
+      const disc = discArg ? discriminantProp(discArg) : null
+      if (value && disc !== null && arms && ts.isObjectLiteralExpression(arms)) {
+        const valueLowered = signalToProduce(value, sf, roots)
+        const valuePath = signalPathOf(value, roots) // 'view', '' (whole), or null
+        const discDep = valuePath === null ? null : valuePath === '' ? disc : `${valuePath}.${disc}`
+        const discSpec = `{ produce: (${paramOf(roots)}) => (${valueLowered.produce}).${disc}, deps: ${depsArr(
+          discDep !== null ? [discDep] : valueLowered.deps,
+        )} }`
         const armsSrc = arms.properties
           .map((p) => {
-            if (ts.isPropertyAssignment(p)) {
-              return `${p.name.getText(sf)}: () => ${renderArraySrc(p.initializer, sf, roots)}`
-            }
-            return p.getText(sf)
+            if (!ts.isPropertyAssignment(p)) return p.getText(sf)
+            const fn = p.initializer
+            const vParam =
+              (ts.isArrowFunction(fn) || ts.isFunctionExpression(fn)) &&
+              fn.parameters[0] &&
+              ts.isIdentifier(fn.parameters[0].name)
+                ? fn.parameters[0].name.text
+                : null
+            // narrow only when the value is a simple path; otherwise the arm
+            // body falls back to the component roots (no `v` narrowing).
+            const armRoots =
+              vParam !== null && valuePath !== null
+                ? (new Map([
+                    ...roots,
+                    [vParam, { value: valueLowered.produce, dep: valuePath }],
+                  ]) as Roots)
+                : roots
+            return `${p.name.getText(sf)}: () => ${renderArraySrc(fn, sf, armRoots)}`
           })
           .join(', ')
-        return `signalBranch(${specSrc(disc, sf, roots)}, { ${armsSrc} })`
+        return `signalBranch(${discSpec}, { ${armsSrc} })`
+      }
+      // 2-arg plain form: branch(stringSignal, { arm: () => [...] }) — the value
+      // IS the discriminant; arms are keyed by its value, no narrowed param.
+      if (value && discArg && ts.isObjectLiteralExpression(discArg)) {
+        const armsSrc = discArg.properties
+          .map((p) =>
+            ts.isPropertyAssignment(p)
+              ? `${p.name.getText(sf)}: () => ${renderArraySrc(p.initializer, sf, roots)}`
+              : p.getText(sf),
+          )
+          .join(', ')
+        return `signalBranch(${specSrc(value, sf, roots)}, { ${armsSrc} })`
       }
     }
 

@@ -85,14 +85,28 @@ export function each<T>(
 export function show<T>(
   _cond: Signal<T>,
   _render: (narrowed: Signal<NonNullable<T>>) => readonly Node[],
+  _orElse?: () => readonly Node[],
 ): Node {
   return compiledAway('show')
 }
 
-export function branch<K extends string>(
-  _discriminant: Signal<K>,
-  _arms: Partial<Record<K, () => readonly Node[]>>,
-): Node {
+/** Discriminated-union render. `discriminant` selects the union's tag field
+ * (`v => v.kind`, `v => v.type`, …); each arm receives the NARROWED variant
+ * signal, so it can read variant-only fields with full types (`v.at('data')`).
+ * Mirrors `show`'s narrowing. Rewritten by the compiler to `signalBranch`. */
+export function branch<U extends object, D extends keyof U>(
+  value: Signal<U>,
+  discriminant: (u: U) => U[D],
+  arms: {
+    [K in U[D] & (string | number)]: (v: Signal<Extract<U, Record<D, K>>>) => readonly Node[]
+  },
+): Node
+/** Render keyed by a plain string/number signal's value (no narrowing). */
+export function branch<K extends string | number>(
+  value: Signal<K>,
+  arms: Partial<Record<K, () => readonly Node[]>>,
+): Node
+export function branch(_value: Signal<unknown>, _arg1: unknown, _arms?: unknown): Node {
   return compiledAway('branch')
 }
 

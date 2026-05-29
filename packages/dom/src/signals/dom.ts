@@ -279,13 +279,18 @@ export interface ShowCond {
 }
 
 /**
- * Conditional render. Mounts `render`'s content when the condition is truthy,
- * unmounts when falsy. The content is its OWN scope that reads the owning
- * component's state, registered as a child of the owning scope — so while shown
- * it receives state updates (its bindings re-run when THEIR deps change, not
- * just when the condition changes).
+ * Conditional render. Mounts `render`'s content when the condition is truthy; if
+ * an `orElse` arm is given, mounts it when falsy (otherwise nothing). The mounted
+ * arm is its OWN scope that reads the owning component's state, registered as a
+ * child of the owning scope — so while mounted it receives state updates (its
+ * bindings re-run when THEIR deps change, not just when the condition flips).
+ * Toggling the condition swaps arms; a same-truthiness update does NOT remount.
  */
-export function signalShow(cond: ShowCond, render: () => readonly Node[]): Node {
+export function signalShow(
+  cond: ShowCond,
+  render: () => readonly Node[],
+  orElse?: () => readonly Node[],
+): Node {
   const c = requireCtx()
   const doc = c.doc
   const ownerHost = c.host
@@ -295,23 +300,28 @@ export function signalShow(cond: ShowCond, render: () => readonly Node[]): Node 
   frag.appendChild(start)
   frag.appendChild(end)
 
-  let mounted: { scope: SignalScope; nodes: readonly Node[] } | null = null
+  let mounted: { on: boolean; scope: SignalScope; nodes: readonly Node[] } | null = null
 
   const reconcile = (state: unknown): void => {
     const parent = end.parentNode
     if (!parent) return
     const on = Boolean(cond.produce(state))
-    if (on && !mounted) {
-      const built = runBuild(doc, render)
-      const scope = buildAndPublishScope(built)
-      scope.mount(state) // content reads the component state
-      for (const n of built.nodes) parent.insertBefore(n, end)
-      ownerHost.scope?.addChild(scope) // receive future state updates while shown
-      mounted = { scope, nodes: built.nodes }
-    } else if (!on && mounted) {
+    if (mounted && mounted.on === on) return // same arm — inner scope handles updates
+
+    if (mounted) {
       ownerHost.scope?.removeChild(mounted.scope)
       for (const n of mounted.nodes) if (n.parentNode === parent) parent.removeChild(n)
       mounted = null
+    }
+
+    const arm = on ? render : orElse
+    if (arm) {
+      const built = runBuild(doc, arm)
+      const scope = buildAndPublishScope(built)
+      scope.mount(state) // content reads the component state
+      for (const n of built.nodes) parent.insertBefore(n, end)
+      ownerHost.scope?.addChild(scope) // receive future state updates while mounted
+      mounted = { on, scope, nodes: built.nodes }
     }
   }
 

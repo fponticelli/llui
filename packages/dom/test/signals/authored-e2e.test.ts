@@ -148,4 +148,88 @@ describe('authored signal source — end-to-end (transform -> transpile -> mount
     expect(titles()).toEqual(['A!', 'b'])
     expect(container.querySelector('li')).toBe(firstLi) // row reused, updated in place
   })
+
+  it('Panel: branch(value, disc, arms) narrows per arm; same-arm update is in place', () => {
+    const SRC = `
+      import { component } from '@llui/dom'
+      import { text, div, branch } from '@llui/dom/signals'
+      export const Panel = component({
+        init: () => [{ view: { type: 'loading' } }, []],
+        update: (s, m) => {
+          if (m.type === 'load') return [{ view: { type: 'loaded', data: m.data } }, []]
+          if (m.type === 'fail') return [{ view: { type: 'error', message: m.msg } }, []]
+          return [s, []]
+        },
+        view: ({ state }) => [
+          branch(state.at('view'), (v) => v.type, {
+            loading: () => [div({ id: 'l' }, [text('loading…')])],
+            loaded: (v) => [div({ id: 'd' }, [text(v.at('data'))])],
+            error: (v) => [div({ id: 'e' }, [text(v.at('message'))])],
+          }),
+        ],
+      })
+    `
+    const Panel = compileAndLoad(SRC, ['Panel']).Panel!
+    const container = document.createElement('div')
+    const h = mountSignalComponent(container, Panel)
+
+    // loading arm
+    expect(container.querySelector('#l')?.textContent).toBe('loading…')
+    expect(container.querySelector('#d')).toBeNull()
+
+    // -> loaded: narrowed v.at('data') renders the variant-only field
+    h.send({ type: 'load', data: 'hello' } as never)
+    expect(container.querySelector('#l')).toBeNull()
+    const loadedEl = container.querySelector('#d')!
+    expect(loadedEl.textContent).toBe('hello')
+
+    // same arm (loaded -> loaded): no remount, narrowed field updates in place
+    h.send({ type: 'load', data: 'world' } as never)
+    expect(container.querySelector('#d')).toBe(loadedEl)
+    expect(loadedEl.textContent).toBe('world')
+
+    // -> error arm: swaps, reads its own variant-only field
+    h.send({ type: 'fail', msg: 'boom' } as never)
+    expect(container.querySelector('#d')).toBeNull()
+    expect(container.querySelector('#e')?.textContent).toBe('boom')
+  })
+
+  it('Profile: show narrowed then-arm + else arm (reacts in place, toggles)', () => {
+    const SRC = `
+      import { component } from '@llui/dom'
+      import { text, div, show } from '@llui/dom/signals'
+      export const Profile = component({
+        init: () => [{ user: { name: 'ada' } }, []],
+        update: (s, m) => {
+          if (m.type === 'clear') return [{ user: null }, []]
+          if (m.type === 'set') return [{ user: { name: m.name } }, []]
+          return [s, []]
+        },
+        view: ({ state }) => [
+          show(
+            state.at('user'),
+            (u) => [div({ id: 'has' }, [text(u.at('name'))])],
+            () => [div({ id: 'none' }, [text('no user')])],
+          ),
+        ],
+      })
+    `
+    const Profile = compileAndLoad(SRC, ['Profile']).Profile!
+    const container = document.createElement('div')
+    const h = mountSignalComponent(container, Profile)
+
+    // then-arm with the narrowed signal read
+    const hasEl = container.querySelector('#has')!
+    expect(hasEl.textContent).toBe('ada')
+
+    // same-arm update: narrowed v.at('name') refreshes in place, no remount
+    h.send({ type: 'set', name: 'lin' } as never)
+    expect(container.querySelector('#has')).toBe(hasEl)
+    expect(hasEl.textContent).toBe('lin')
+
+    // falsy -> else arm
+    h.send({ type: 'clear' } as never)
+    expect(container.querySelector('#has')).toBeNull()
+    expect(container.querySelector('#none')?.textContent).toBe('no user')
+  })
 })

@@ -21,6 +21,15 @@ describe('operator-on-signal', () => {
     expect(rules("state.at('n').map((v) => v + 1)")).not.toContain('operator-on-signal')
     expect(rules("state.at('s').map((v) => `hi ${v}`)")).not.toContain('operator-on-signal')
   })
+  it('does NOT flag operators on a .peek() snapshot (peek yields a plain value)', () => {
+    // common in event handlers: read current value, then compute/compare
+    expect(
+      rules("button({ onClick: () => { if (state.at('n').peek() > 0) send({type:'x'}) } }, [])"),
+    ).not.toContain('operator-on-signal')
+    expect(
+      rules("button({ onClick: () => send({ n: state.at('n').peek() + 1 }) }, [])"),
+    ).not.toContain('operator-on-signal')
+  })
 })
 
 describe('pure-derive-body', () => {
@@ -72,6 +81,85 @@ describe('whole-state-to-call', () => {
   })
   it('does NOT flag passing a slice', () => {
     expect(rules("text(formError(state.at('form')))")).not.toContain('whole-state-to-call')
+  })
+})
+
+describe('row-scoped signals are checked inside each/show/branch bodies', () => {
+  it('flags operators on an each row item/index signal', () => {
+    expect(
+      rules(
+        "each(state.at('todos'), { key: (t) => t.id, render: (item) => [text(item.at('done') ? 'x' : 'y')] })",
+      ),
+    ).toContain('operator-on-signal')
+    expect(
+      rules(
+        "each(state.at('todos'), { key: (t) => t.id, render: (item, index) => [text(index + 1)] })",
+      ),
+    ).toContain('operator-on-signal')
+    expect(
+      rules(
+        "each(state.at('rows'), { key: (r) => r.id, render: (item) => [text(item.at('price') * 2)] })",
+      ),
+    ).toContain('operator-on-signal')
+  })
+
+  it('flags operators on a show narrowed signal', () => {
+    expect(
+      rules("show(state.at('user'), (u) => [text(u.at('age') >= 18 ? 'adult' : 'minor')])"),
+    ).toContain('operator-on-signal')
+  })
+
+  it('flags operators on a branch narrowed arm signal', () => {
+    expect(
+      rules("branch(state.at('view'), 'type', { loaded: (v) => [text(v.at('count') + 1)] })"),
+    ).toContain('operator-on-signal')
+  })
+
+  it('does NOT flag arithmetic on the key fn plain param (item is a value there)', () => {
+    expect(
+      rules(
+        "each(state.at('todos'), { key: (t) => t.id + 1, render: (item) => [text(item.at('title'))] })",
+      ),
+    ).not.toContain('operator-on-signal')
+  })
+
+  it('does NOT flag idiomatic row bodies', () => {
+    expect(
+      lint(
+        "each(state.at('todos'), { key: (t) => t.id, render: (item) => [text(item.at('title'))] })",
+      ),
+    ).toEqual([])
+    expect(lint("show(state.at('user'), (u) => [text(u.at('name'))])")).toEqual([])
+  })
+})
+
+describe('peek-in-slot', () => {
+  it('flags a .peek() snapshot used directly in a reactive slot', () => {
+    expect(rules("text(state.at('x').peek())")).toContain('peek-in-slot')
+    expect(rules("div({ class: state.at('x').peek() }, [])")).toContain('peek-in-slot')
+  })
+
+  it('flags a .peek() in a row slot (item signal)', () => {
+    expect(
+      rules("each(state.at('todos'), { key: (t) => t.id, render: (item) => [text(item.peek())] })"),
+    ).toContain('peek-in-slot')
+  })
+
+  it('does NOT flag .peek() inside an event handler', () => {
+    expect(rules("button({ onClick: () => send(state.at('x').peek()) }, [])")).not.toContain(
+      'peek-in-slot',
+    )
+    expect(
+      rules(
+        "each(state.at('todos'), { key: (t) => t.id, render: (item) => [button({ onClick: () => send(item.peek()) }, [])] })",
+      ),
+    ).not.toContain('peek-in-slot')
+  })
+
+  it('does NOT flag .peek() inside a .map/derived body (pure-derive-body owns that)', () => {
+    const r = rules("state.at('n').map((v) => v + state.at('m').peek())")
+    expect(r).not.toContain('peek-in-slot')
+    expect(r).toContain('pure-derive-body')
   })
 })
 
