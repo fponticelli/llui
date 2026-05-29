@@ -33,6 +33,9 @@ interface BuildCtx {
   /** onMount callbacks — run (with the mounted parent element) after the built
    * nodes are inserted; their returned cleanups join the teardown list. */
   mounts: Array<(root: Element) => void | (() => void)>
+  /** context values in scope during this build (provide/useContext). Inherited
+   * into nested builds (each rows, show/branch arms). */
+  contexts: Map<symbol, unknown>
 }
 let ctx: BuildCtx | null = null
 
@@ -79,7 +82,17 @@ export function staticText(value: string): Text {
 export type EventHandler = (ev: Event) => void
 export type PropValue = string | number | boolean | null | Reactive | EventHandler
 
+const toKebab = (s: string): string => s.replace(/[A-Z]/g, (m) => '-' + m.toLowerCase())
+
 function applyAttr(node: Element, name: string, value: unknown): void {
+  // `style.transform` / `style.zIndex` -> individual style properties
+  if (name.startsWith('style.')) {
+    const style = (node as HTMLElement).style
+    const prop = toKebab(name.slice(6))
+    if (value == null || value === false) style.removeProperty(prop)
+    else style.setProperty(prop, String(value))
+    return
+  }
   if (value == null || value === false) node.removeAttribute(name)
   else node.setAttribute(name, value === true ? '' : String(value))
 }
@@ -133,7 +146,10 @@ function runBuild(
   const host: { scope: SignalScope | null } = { scope: null }
   const teardowns: Array<() => void> = []
   const mounts: Array<(root: Element) => void | (() => void)> = []
-  ctx = { specs, doc, host, teardowns, mounts }
+  // inherit in-scope context values so provide() above an each/show is visible
+  // inside its rows/arms (which build in this nested context).
+  const contexts = new Map(prev?.contexts)
+  ctx = { specs, doc, host, teardowns, mounts, contexts }
   let nodes: readonly Node[]
   try {
     nodes = build()
@@ -163,6 +179,42 @@ export function onMount(cb: (root: Element) => void | (() => void)): Node {
   const c = requireCtx()
   c.mounts.push(cb)
   return c.doc.createComment('onMount')
+}
+
+// ── Context ─────────────────────────────────────────────────────────
+// Build-time dependency injection: `provide` sets a value for the subtree it
+// wraps; `useContext` reads the nearest provided value (or the default). Values
+// may be plain or signals (a reactive context is just a Signal value).
+
+export interface Context<T> {
+  readonly id: symbol
+  readonly default: T
+}
+
+export function createContext<T>(defaultValue: T): Context<T> {
+  return { id: Symbol('llui.context'), default: defaultValue }
+}
+
+/** Provide `value` for `context` to everything `render` builds, then restore. */
+export function provide<T>(context: Context<T>, value: T, render: () => readonly Node[]): Node {
+  const c = requireCtx()
+  const had = c.contexts.has(context.id)
+  const prev = c.contexts.get(context.id)
+  c.contexts.set(context.id, value)
+  const frag = c.doc.createDocumentFragment()
+  try {
+    for (const n of render()) frag.appendChild(n)
+  } finally {
+    if (had) c.contexts.set(context.id, prev)
+    else c.contexts.delete(context.id)
+  }
+  return frag
+}
+
+/** Read the nearest provided value for `context`, or its default. */
+export function useContext<T>(context: Context<T>): T {
+  const c = requireCtx()
+  return c.contexts.has(context.id) ? (c.contexts.get(context.id) as T) : context.default
 }
 
 /** Build a scope from collected specs and publish it to its build host (so
