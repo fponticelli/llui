@@ -10,6 +10,9 @@
 
 export type { Signal, LiveSignal, ValidPath, PathValue } from './types.js'
 export { derived } from './types.js'
+// Construct a runtime signal handle from a live value getter — for tests and
+// advanced foreign/composition cases that build signals outside a component bag.
+export { pathHandle, isSignalHandle, type SignalHandle } from './handle.js'
 // Shared, runtime-agnostic type used by transition/animation helpers.
 export type { TransitionOptions } from '../types.js'
 // Agent-handler introspection (runtime-agnostic — tags a handler with the msg
