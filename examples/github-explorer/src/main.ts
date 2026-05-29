@@ -2,7 +2,7 @@
  * Client entry point.
  * Hydrates server-rendered HTML when present, otherwise mounts fresh.
  */
-import { mountApp, hydrateApp } from '@llui/dom'
+import { mountApp } from '@llui/dom/signals'
 import {
   createAgentClient,
   agentConnect,
@@ -15,15 +15,7 @@ import { appDef, initialState, setAgentClient } from './app'
 
 const container = document.getElementById('app')!
 
-// Check if server rendered HTML exists (SSR hydration path)
-const serverStateEl = document.getElementById('__llui_state')
-let handle
-if (serverStateEl && container.children.length > 0) {
-  const serverState = JSON.parse(serverStateEl.textContent!) as State
-  handle = hydrateApp(container, appDef, serverState)
-} else {
-  handle = mountApp(container, appDef)
-}
+const handle = mountApp(container, appDef)
 
 // Agent client — browser only, created after mount so the handle exists
 if (typeof window !== 'undefined') {

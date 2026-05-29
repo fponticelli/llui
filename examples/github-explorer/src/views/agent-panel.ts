@@ -1,6 +1,8 @@
-import { div, button, span, p, text, branch, each } from '@llui/dom'
+import { div, button, span, p, text, branch, each } from '@llui/dom/signals'
 import type { State, Msg } from '../types'
-import type { Send, ItemAccessor } from '@llui/dom'
+import type { Send, Signal } from '@llui/dom/signals'
+
+type AgentState = State['agent']
 import { agentConfirm, summarizeDiff } from '@llui/agent/client'
 import type { LogEntry } from '@llui/agent/protocol'
 
@@ -198,13 +200,15 @@ function statusLabel(status: string): string {
 
 // ── View ───────────────────────────────────────────────────────────────────────
 
-export function agentPanel(send: Send<Msg>): HTMLElement {
+export function agentPanel(agent: Signal<AgentState>, send: Send<Msg>): Node {
   return div({ style: CARD_STYLE }, [
     // ── Header ──────────────────────────────────────────────────────────────
     div({ style: HEADER_STYLE }, [
       span({
-        style: (s: State) =>
-          `width: 10px; height: 10px; border-radius: 50%; background: ${statusDotColor(s.agent.connect.status)}; flex-shrink: 0`,
+        style: agent.map(
+          (a) =>
+            `width: 10px; height: 10px; border-radius: 50%; background: ${statusDotColor(a.connect.status)}; flex-shrink: 0`,
+        ),
       }),
       span(
         {
@@ -214,19 +218,21 @@ export function agentPanel(send: Send<Msg>): HTMLElement {
       ),
       span(
         {
-          style: (s: State) =>
-            `font-size: 12px; color: ${s.agent.connect.status === 'active' ? '#059669' : s.agent.connect.status === 'error' ? '#dc2626' : '#64748b'}`,
+          style: agent.map(
+            (a) =>
+              `font-size: 12px; color: ${a.connect.status === 'active' ? '#059669' : a.connect.status === 'error' ? '#dc2626' : '#64748b'}`,
+          ),
         },
-        [text((s: State) => statusLabel(s.agent.connect.status))],
+        [text(agent.map((a) => statusLabel(a.connect.status)))],
       ),
     ]),
 
     // ── Body ────────────────────────────────────────────────────────────────
     div({ style: BODY_STYLE }, [
       // ── Idle: connect button ──────────────────────────────────────────────
-      ...branch<State, Msg>({
-        on: (s) => s.agent.connect.status,
-        cases: {
+      branch(
+        agent.map((a) => a.connect.status),
+        {
           idle: () => [
             button(
               {
@@ -246,17 +252,16 @@ export function agentPanel(send: Send<Msg>): HTMLElement {
             div({ style: SNIPPET_BOX }, [
               p({ style: SNIPPET_LABEL }, [text('Connect snippet')]),
               span({ style: SNIPPET_CODE }, [
-                text((s: State) => s.agent.connect.pendingToken?.connectSnippet ?? ''),
+                text(agent.map((a) => a.connect.pendingToken?.connectSnippet ?? '')),
               ]),
               button(
                 {
-                  style: (s: State) =>
-                    s.agent.ui.copied
-                      ? BTN_COPY + '; background: #dcfce7; color: #166534'
-                      : BTN_COPY,
+                  style: agent.map((a) =>
+                    a.ui.copied ? BTN_COPY + '; background: #dcfce7; color: #166534' : BTN_COPY,
+                  ),
                   onClick: () => send({ type: 'agent', sub: 'ui', msg: { type: 'Copy' } }),
                 },
-                [text((s: State) => (s.agent.ui.copied ? 'Copied!' : 'Copy'))],
+                [text(agent.map((a) => (a.ui.copied ? 'Copied!' : 'Copy')))],
               ),
             ]),
             p(
@@ -271,9 +276,9 @@ export function agentPanel(send: Send<Msg>): HTMLElement {
             ),
           ],
           active: () => [
-            ...branch<State, Msg>({
-              on: (s) => (s.agent.log.entries.length > 0 ? 'hidden' : 'visible'),
-              cases: {
+            branch(
+              agent.map((a) => (a.log.entries.length > 0 ? 'hidden' : 'visible')),
+              {
                 visible: () => [
                   div(
                     {
@@ -297,7 +302,7 @@ export function agentPanel(send: Send<Msg>): HTMLElement {
                 ],
                 hidden: () => [],
               },
-            }),
+            ),
           ],
           error: () => [
             div(
@@ -316,10 +321,9 @@ export function agentPanel(send: Send<Msg>): HTMLElement {
                 ]),
                 p({ style: 'margin: 0; font-size: 12px; color: #b91c1c' }, [
                   text(
-                    (s: State) =>
-                      s.agent.connect.error?.detail ??
-                      s.agent.connect.error?.code ??
-                      'Unknown error',
+                    agent.map(
+                      (a) => a.connect.error?.detail ?? a.connect.error?.code ?? 'Unknown error',
+                    ),
                   ),
                 ]),
               ],
@@ -335,13 +339,14 @@ export function agentPanel(send: Send<Msg>): HTMLElement {
             ),
           ],
         },
-      }),
+      ),
 
       // ── Pending confirmations ─────────────────────────────────────────────
-      ...branch<State, Msg>({
-        on: (s) =>
-          s.agent.confirm.pending.some((e) => e.status === 'pending') ? 'has-pending' : 'none',
-        cases: {
+      branch(
+        agent.map((a) =>
+          a.confirm.pending.some((e) => e.status === 'pending') ? 'has-pending' : 'none',
+        ),
+        {
           'has-pending': () => [
             div({ style: 'margin-top: 14px' }, [
               p(
@@ -351,48 +356,53 @@ export function agentPanel(send: Send<Msg>): HTMLElement {
                 },
                 [text('Pending confirmations')],
               ),
-              ...each<State, ConfirmEntry, Msg>({
-                items: (s) => s.agent.confirm.pending.filter((e) => e.status === 'pending'),
-                key: (e) => e.id,
-                render: ({ item, send: innerSend }) => [confirmCard(item, innerSend)],
-              }),
+              each(
+                agent.map((a) => a.confirm.pending.filter((e) => e.status === 'pending')),
+                {
+                  key: (e) => e.id,
+                  render: (item) => [confirmCard(item, send)],
+                },
+              ),
             ]),
           ],
           none: () => [],
         },
-      }),
+      ),
 
       // ── Recent activity ───────────────────────────────────────────────────
-      ...branch<State, Msg>({
-        on: (s) => (s.agent.log.entries.length > 0 ? 'has-activity' : 'none'),
-        cases: {
+      branch(
+        agent.map((a) => (a.log.entries.length > 0 ? 'has-activity' : 'none')),
+        {
           'has-activity': () => [
             p({ style: SECTION_LABEL }, [text('Recent activity')]),
-            ...each<State, LogEntry, Msg>({
-              items: (s) => s.agent.log.entries.slice(-ACTIVITY_WINDOW).slice().reverse(),
-              key: (e) => e.id,
-              render: ({ item }) => [activityRow(item)],
-            }),
+            each(
+              agent.map((a) => a.log.entries.slice(-ACTIVITY_WINDOW).slice().reverse()),
+              {
+                key: (e) => e.id,
+                render: (item) => [activityRow(item)],
+              },
+            ),
           ],
           none: () => [],
         },
-      }),
+      ),
     ]),
   ])
 }
 
-function activityRow(item: ItemAccessor<LogEntry>): HTMLElement {
-  const kind = item((e) => e.kind)()
-  const at = item((e) => e.at)()
-  const detail = item((e) => e.detail)()
-  const diffSummary = summarizeDiff(item((e) => e.stateDiff)())
+function activityRow(item: Signal<LogEntry>): Node {
+  const entry = item.peek()
+  const kind = entry.kind
+  const at = entry.at
+  const detail = entry.detail
+  const diffSummary = summarizeDiff(entry.stateDiff)
   // The diff line only shows for dispatched entries that actually mutated
   // state — surfacing "no changes" for read entries would be noise.
   const showDiff = kind === 'dispatched' && diffSummary !== 'no changes'
   return div({ style: 'padding: 6px 0; border-top: 1px solid #f1f5f9' }, [
     div({ style: 'display: flex; align-items: baseline; gap: 8px; font-size: 12px' }, [
       span({ style: activityChipStyle(kind) }, [text(kind)]),
-      span({ style: ACTIVITY_TEXT }, [text(item((e) => e.intent ?? e.variant ?? '—'))]),
+      span({ style: ACTIVITY_TEXT }, [text(item.map((e) => e.intent ?? e.variant ?? '—'))]),
       span({ style: ACTIVITY_TIME }, [text(relativeTime(Date.now(), at))]),
     ]),
     ...(detail ? [span({ style: ACTIVITY_DETAIL }, [text(detail)])] : []),
@@ -400,14 +410,14 @@ function activityRow(item: ItemAccessor<LogEntry>): HTMLElement {
   ])
 }
 
-function confirmCard(item: ItemAccessor<ConfirmEntry>, send: Send<Msg>): HTMLElement {
-  const id = item((e) => e.id)()
+function confirmCard(item: Signal<ConfirmEntry>, send: Send<Msg>): Node {
+  const id = item.peek().id
   return div({ style: CONFIRM_CARD }, [
     p({ style: 'margin: 0 0 4px; font-size: 13px; font-weight: 500; color: #92400e' }, [
-      text(item((e) => e.intent)),
+      text(item.at('intent')),
     ]),
     p({ style: 'margin: 0 0 10px; font-size: 12px; color: #78350f' }, [
-      text(item((e) => e.reason ?? '')),
+      text(item.map((e) => e.reason ?? '')),
     ]),
     div({ style: 'display: flex; gap: 8px' }, [
       button(

@@ -1,44 +1,53 @@
-import { foreign } from '@llui/dom'
-import type { State, Msg } from '../types'
+import { foreign } from '@llui/dom/signals'
+import type { Signal } from '@llui/dom/signals'
+import type { Route } from '../types'
+
+interface ReadmeInstance {
+  root: ShadowRoot
+}
 
 /**
  * README rendered via foreign() — the GitHub API returns pre-rendered HTML.
- * foreign() manages the container lifecycle: mount creates the shadow root,
- * sync updates innerHTML when content changes, destroy cleans up.
+ * foreign() manages the container lifecycle: mount creates the shadow root
+ * and binds the declared `html` signal to update innerHTML when it changes.
  *
  * This demonstrates the foreign() pattern for rendering raw HTML safely
  * inside a managed container with style isolation.
  */
-export function readmeView(): Node[] {
-  return foreign<State, Msg, { html: string }, { root: ShadowRoot }>({
-    mount: ({ container }) => {
-      // Use shadow DOM for style isolation — GitHub's rendered HTML
-      // includes class names that could conflict with the app's CSS
-      const root = container.attachShadow({ mode: 'open' })
-      const style = document.createElement('style')
-      style.textContent = readmeStyles()
-      root.appendChild(style)
-      const content = document.createElement('div')
-      content.className = 'readme-body'
-      root.appendChild(content)
-      return { root }
-    },
-    props: (s) => {
-      const r = s.route
-      if (r.page === 'repo' && r.tab === 'code' && r.data.type === 'success') {
-        return { html: r.data.data.readme }
-      }
-      return { html: '' }
-    },
-    sync: ({ instance, props }) => {
-      const content = instance.root.querySelector('.readme-body')
-      if (content) content.innerHTML = props.html
-    },
-    destroy: () => {
-      // Shadow root is cleaned up with the container
-    },
-    container: { tag: 'div', attrs: { class: 'readme' } },
-  })
+export function readmeView(routeSig: Signal<Route>): Node[] {
+  return [
+    foreign<ReadmeInstance, { html: Signal<string> }>({
+      tag: 'div',
+      state: {
+        html: routeSig.map((r) => {
+          if (r.page === 'repo' && r.tab === 'code' && r.data.type === 'success') {
+            return r.data.data.readme
+          }
+          return ''
+        }),
+      },
+      mount: ({ el, state: sig }) => {
+        el.className = 'readme'
+        // Use shadow DOM for style isolation — GitHub's rendered HTML
+        // includes class names that could conflict with the app's CSS
+        const root = el.attachShadow({ mode: 'open' })
+        const style = document.createElement('style')
+        style.textContent = readmeStyles()
+        root.appendChild(style)
+        const content = document.createElement('div')
+        content.className = 'readme-body'
+        root.appendChild(content)
+        // bind fires immediately with the current value, then on every change
+        sig.html.bind((html) => {
+          content.innerHTML = html
+        })
+        return { root }
+      },
+      unmount: () => {
+        // Shadow root is cleaned up with the container
+      },
+    }),
+  ]
 }
 
 function readmeStyles(): string {

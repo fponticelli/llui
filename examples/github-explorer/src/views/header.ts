@@ -1,9 +1,9 @@
-import { div, input, form, text } from '@llui/dom'
-import type { State, Msg } from '../types'
-import type { Send } from '@llui/dom'
+import { div, input, form, text } from '@llui/dom/signals'
+import type { Msg } from '../types'
+import type { Send, Signal } from '@llui/dom/signals'
 import { routing } from '../router'
 
-export function header(send: Send<Msg>): HTMLElement {
+export function header(query: Signal<string>, send: Send<Msg>): Node {
   return div({ class: 'header' }, [
     routing.link(send, { page: 'search', q: '', p: 1, data: { type: 'idle' } }, {}, [
       text('GitHub Explorer'),
@@ -21,7 +21,7 @@ export function header(send: Send<Msg>): HTMLElement {
             type: 'text',
             placeholder: 'Search repositories...',
             'data-agent': 'search-input',
-            value: (s: State) => s.query,
+            value: query,
             onInput: (e: Event) =>
               send({ type: 'setQuery', value: (e.target as HTMLInputElement).value }),
           }),

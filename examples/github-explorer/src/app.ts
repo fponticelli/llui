@@ -1,7 +1,7 @@
 /**
  * Shared app definition — used by both client and server entry points.
  */
-import { component } from '@llui/dom'
+import { component, branch } from '@llui/dom/signals'
 import { handleEffects } from '@llui/effects'
 import type { State, Msg, Effect } from './types'
 import { agentConnect, agentConfirm, agentLog, agentAttention } from './types'
@@ -31,43 +31,48 @@ function isAgentEffect(e: Effect): boolean {
 export const appDef = component<State, Msg, Effect>({
   name: 'GitHubExplorer',
   init: () => {
-    const state = initialState()
-    const [s, effects] = update(state, { type: 'navigate', route: state.route })
+    const initial = initialState()
+    const [s, effects] = update(initial, { type: 'navigate', route: initial.route })
     return [s, effects]
   },
   update,
-  view: (h) => {
-    const { send, branch } = h
-    return [
-      header(send),
-      agentPanel(send),
+  view: ({ state, send }) => [
+    header(state.at('query'), send),
+    agentPanel(state.at('agent'), send),
 
-      ...routing.listener(send),
+    ...routing.listener(send),
 
-      ...branch({
-        on: (s) => s.route.page,
-        cases: {
-          search: ({ send }) => searchView(send),
-          // routing.link needs literal owner/name for href. Read from
-          // location.pathname which is current when the branch re-enters
-          // (routing.handleEffect pushes state before navigate resolves).
-          repo: ({ send }) => repoPage(h, router.match(location.pathname), send),
-          tree: ({ send }) => repoPage(h, router.match(location.pathname), send),
-        },
-      }),
-    ]
-  },
-  onEffect: handleEffects<Effect, Msg>()
-    .use(routing.handleEffect)
-    .else(({ effect }) => {
-      if (isAgentEffect(effect)) {
-        if (agentClient) {
-          void agentClient.effectHandler(effect as Parameters<typeof agentClient.effectHandler>[0])
-        }
-        return
-      }
-      console.warn('[github-explorer] unhandled effect:', effect)
+    branch(state.at('route').at('page'), {
+      search: () => searchView(state.at('route'), send),
+      // routing.link needs literal owner/name for href. Read from
+      // location.pathname which is current when the branch re-enters
+      // (routing.handleEffect pushes state before navigate resolves).
+      repo: () => repoPage(state.at('route'), router.match(location.pathname), send),
+      tree: () => repoPage(state.at('route'), router.match(location.pathname), send),
     }),
+  ],
+  onEffect: (() => {
+    // handleEffects yields a ctx-style handler ({ effect, send, signal }); the
+    // signal runtime calls onEffect as (effect, api). Bridge the two, supplying
+    // a long-lived AbortSignal (cancel/debounce manage their own controllers).
+    const handler = handleEffects<Effect, Msg>()
+      .use(routing.handleEffect)
+      .else(({ effect }) => {
+        if (isAgentEffect(effect)) {
+          if (agentClient) {
+            void agentClient.effectHandler(
+              effect as Parameters<typeof agentClient.effectHandler>[0],
+            )
+          }
+          return
+        }
+        console.warn('[github-explorer] unhandled effect:', effect)
+      })
+    const lifecycle = new AbortController()
+    return (effect: Effect, api: { send: (msg: Msg) => void }) => {
+      handler({ effect, send: api.send, signal: lifecycle.signal })
+    }
+  })(),
 })
 
 // ── Agent metadata (manual) ───────────────────────────────────────────────────
