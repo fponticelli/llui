@@ -1,5 +1,5 @@
 import { mountSignalComponent, hydrateSignalApp } from '@llui/dom/signals'
-import type { SignalComponentDef, SignalComponentHandle, MountTarget } from '@llui/dom/signals'
+import type { SignalComponentHandle, MountTarget } from '@llui/dom/signals'
 import type { TransitionOptions } from '@llui/dom/signals'
 import { _consumePendingSlot, _resetPendingSlot } from './page-slot.js'
 import type { VikePageContextData } from './vike-namespace.js'
@@ -9,8 +9,16 @@ import type { VikePageContextData } from './vike-namespace.js'
 export { pageSlot } from './page-slot.js'
 
 /** A type-erased signal component as the adapter handles it (type params unused
- * at runtime). Layouts and pages are concrete `SignalComponentDef<S, M, E>`. */
-export type AnyLayer = SignalComponentDef<unknown, unknown, unknown>
+ * at runtime). Method syntax + a single `unknown` view-bag param so any concrete
+ * `SignalComponentDef<S,M,E>` assigns in (see on-render-html's AnyLayer note —
+ * ComponentBag's state/send variance rules out the `<unknown,…>` erasure). */
+export interface AnyLayer {
+  readonly name?: string
+  init(): unknown
+  update(state: unknown, msg: unknown): unknown
+  view(bag: unknown): readonly Node[]
+  onEffect?(effect: unknown, api: unknown): void | (() => void)
+}
 /** The live handle a mounted/hydrated layer exposes (send/getState/subscribe). */
 export type LayerHandle = SignalComponentHandle<unknown, unknown>
 

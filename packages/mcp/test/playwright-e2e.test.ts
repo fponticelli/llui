@@ -282,13 +282,15 @@ describe.skipIf(!playwright)('MCP auto-connect — real browser + real Vite', ()
     expect(list.active).toBe('VirtualLogViewer')
   })
 
-  it('llui_decode_mask returns field names from the compiled mask legend', async () => {
-    // The compiler injects __maskLegend per component. The mask 1 should
-    // map to the first reactive field (any non-empty string is a pass).
-    const fields = (await h.mcp.handleToolCall('llui_decode_mask', {
-      mask: 1,
-    })) as string[]
-    expect(Array.isArray(fields)).toBe(true)
+  it('llui_decode_mask is unavailable for signal components (degrades, not crashes)', async () => {
+    // decodeMask/getMaskLegend are legacy mask-legend introspection. The signal
+    // runtime uses chunked masks and does not expose that surface — the debug API
+    // leaves the method optional, so the relay rejects with an unknown-method
+    // error rather than fabricating field names. Same graceful-degradation
+    // contract the jsdom MCP tests assert for getBindings/inspectElement/etc.
+    await expect(h.mcp.handleToolCall('llui_decode_mask', { mask: 1 })).rejects.toThrow(
+      /unknown method|decodeMask/i,
+    )
   })
 
   it('does not produce WebSocket retry spam (≤1 error)', () => {

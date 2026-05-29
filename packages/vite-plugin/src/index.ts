@@ -1351,17 +1351,14 @@ export default function llui(options: LluiPluginOptions = {}): Plugin {
       // the `@llui/dom/signals` runtime and SKIP the legacy accessor compiler.
       // A file is either signal-flavored or legacy (per-file-flip migration).
       // Cheap string pre-check avoids the extra parse on non-signal files.
-      // A SIGNAL FILE: imports the @llui/dom/signals surface, has a component, and
-      // uses `.at()`. The transform LOWERS the direct view (an optimization);
-      // anything it can't lower (view-helper functions, block bodies) runs via the
-      // runtime authoring helpers (text/el/each/… consume runtime signal handles).
-      // We always: enforce lint, lower-what-we-can, inject the relay, and SKIP the
-      // legacy compiler.
-      if (
-        /component\s*[<(]/.test(code) &&
-        code.includes('.at(') &&
-        /from\s*['"]@llui\/dom\/signals['"]/.test(code)
-      ) {
+      // A SIGNAL FILE: imports the @llui/dom/signals surface and has a component.
+      // (No `.at()` requirement — a signal component may use only `.map()` or a
+      // static view; importing the signals surface + `component(` is unambiguous.)
+      // The transform LOWERS the direct view (an optimization); anything it can't
+      // lower (view-helper functions, block bodies) runs via the runtime authoring
+      // helpers (text/el/each/… consume runtime signal handles). We always: enforce
+      // lint, lower-what-we-can, inject the relay, and SKIP the legacy compiler.
+      if (/component\s*[<(]/.test(code) && /from\s*['"]@llui\/dom\/signals['"]/.test(code)) {
         sawSignalComponent = true
         // Enforce signal lint rules as build errors (the only effective channel —
         // see CLAUDE.md). Lint the AUTHORED source; `this.error` throws → halts.

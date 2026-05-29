@@ -1,5 +1,4 @@
 import { renderNodes, serializeNodes } from '@llui/dom/signals'
-import type { SignalComponentDef } from '@llui/dom/signals'
 import type { DomEnv } from '@llui/dom/ssr'
 import { _consumePendingSlot, _resetPendingSlot } from './page-slot.js'
 import type { VikePageContextData } from './vike-namespace.js'
@@ -11,7 +10,23 @@ import type { VikePageContextData } from './vike-namespace.js'
  * the legacy `ComponentDef`, the signal `init()` takes NO data argument, so
  * per-layer data flows in as a seed-STATE override (see `renderPage`).
  */
-export type AnyLayer = SignalComponentDef<unknown, unknown, unknown>
+/**
+ * Type-erased layer def at the adapter boundary. Declared with METHOD syntax and
+ * a single `unknown` view-bag param so a concrete `SignalComponentDef<S,M,E>`
+ * assigns in for ANY S/M/E — `SignalComponentDef<unknown,unknown,unknown>` can't
+ * be that erasure, because `view(bag: ComponentBag<S,M>)` couples covariant
+ * `state` with contravariant `send` and neither variance direction admits a
+ * heterogeneous chain. This interface is itself assignable to
+ * `SignalComponentDef<unknown,unknown,unknown>`, so `renderNodes(layer)` type-
+ * checks. Mirrors the legacy `AnyComponentDef`.
+ */
+export interface AnyLayer {
+  readonly name?: string
+  init(): unknown
+  update(state: unknown, msg: unknown): unknown
+  view(bag: unknown): readonly Node[]
+  onEffect?(effect: unknown, api: unknown): void | (() => void)
+}
 
 type LayoutChain = ReadonlyArray<AnyLayer>
 
