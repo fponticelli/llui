@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { replayTrace, type LluiTrace } from '../src/replay-trace'
-import { component } from '@llui/dom'
+import { component } from '@llui/dom/signals'
 
 type State = { count: number }
 type Msg = { type: 'inc' } | { type: 'dec' }

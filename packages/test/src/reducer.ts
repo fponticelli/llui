@@ -1,7 +1,7 @@
-import { component, type ComponentDef } from '@llui/dom'
+import { component, type SignalComponentDef } from '@llui/dom/signals'
 
-export interface ReducerOptions<S, M, E = never, D = void> {
-  init: (data: D) => [S, E[]]
+export interface ReducerOptions<S, M, E = never> {
+  init: () => [S, E[]]
   update: (state: S, msg: M) => [S, E[]]
   name?: string
 }
@@ -17,10 +17,10 @@ export interface ReducerOptions<S, M, E = never, D = void> {
  * mount, flagging the mistake. Override via `name` when you want the
  * history trail to match your module.
  */
-export function reducer<S, M, E = never, D = void>(
-  opts: ReducerOptions<S, M, E, D>,
-): ComponentDef<S, M, E, D> {
-  return component<S, M, E, D>({
+export function reducer<S, M, E = never>(
+  opts: ReducerOptions<S, M, E>,
+): SignalComponentDef<S, M, E> {
+  return component<S, M, E>({
     name: opts.name ?? '__reducer__',
     init: opts.init,
     update: opts.update,

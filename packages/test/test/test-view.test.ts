@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { testView } from '../src/test-view'
-import { component, div, ul, li, span, h1, text, each, button, input } from '@llui/dom'
+import { component, div, ul, li, span, h1, text, each, button, input } from '@llui/dom/signals'
 
 type State = { items: string[]; title: string }
 
@@ -8,17 +8,18 @@ const ListComponent = component<State, never, never>({
   name: 'List',
   init: () => [{ items: ['one', 'two', 'three'], title: 'My List' }, []],
   update: (s) => [s, []],
-  view: () => [
+  view: ({ state }) => [
     div({ class: 'container' }, [
-      h1({}, [text((s: State) => s.title)]),
-      ul(
-        { class: 'list' },
-        each<State, string>({
-          items: (s) => s.items,
-          key: (item) => item,
-          render: ({ item }) => [li({ 'data-testid': 'item' }, [text(item((t) => t))])],
-        }),
-      ),
+      h1({}, [text(state.map((s) => s.title))]),
+      ul({ class: 'list' }, [
+        each(
+          state.map((s) => s.items),
+          {
+            key: (item) => item,
+            render: (item) => [li({ 'data-testid': 'item' }, [text(item.map((t) => t))])],
+          },
+        ),
+      ]),
     ]),
   ],
 })
@@ -70,10 +71,10 @@ describe('testView — interactive', () => {
       if (m.type === 'setLabel') return [{ ...s, label: m.value }, []]
       return [s, []]
     },
-    view: ({ send }) => [
+    view: ({ state, send }) => [
       div({ class: 'root' }, [
-        span({ class: 'count' }, [text((s: State) => String(s.count))]),
-        span({ class: 'label' }, [text((s: State) => s.label)]),
+        span({ class: 'count' }, [text(state.map((s) => String(s.count)))]),
+        span({ class: 'label' }, [text(state.map((s) => s.label))]),
         button({ class: 'bump', onClick: () => send({ type: 'inc' }) }, [text('+')]),
         input({
           class: 'name',

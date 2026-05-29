@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { component, type ComponentDef } from '@llui/dom'
+import { component, type SignalComponentDef } from '@llui/dom/signals'
 import { testComponent } from '../src/test-component'
 
 type CounterState = { count: number }
@@ -21,11 +21,10 @@ const Counter = component<CounterState, CounterMsg, never>({
 
 type GreetingState = { name: string; count: number }
 type GreetingMsg = { type: 'tick' }
-type GreetingData = { initialName: string; startAt: number }
 
-const Greeting = component<GreetingState, GreetingMsg, never, GreetingData>({
+const Greeting = component<GreetingState, GreetingMsg, never>({
   name: 'Greeting',
-  init: (data) => [{ name: data.initialName, count: data.startAt }, []],
+  init: () => [{ name: 'Ada', count: 10 }, []],
   update: (state, _msg) => [{ ...state, count: state.count + 1 }, []],
   view: () => [],
 })
@@ -48,16 +47,14 @@ describe('testComponent', () => {
     expect(t.history[0]?.nextState).toEqual({ count: 1 })
   })
 
-  it('forwards typed initial data to init(data) without requiring a cast', () => {
-    const t = testComponent(Greeting, { initialName: 'Ada', startAt: 10 })
+  it('exposes the init-seeded state', () => {
+    const t = testComponent(Greeting)
     expect(t.state).toEqual({ name: 'Ada', count: 10 })
   })
 
-  it('preserves the D generic at the call site (no cast required)', () => {
-    // Without a D generic on testComponent, assigning a typed ComponentDef
-    // would require `as unknown as ComponentDef<S, M, E>` at the call site.
-    const def: ComponentDef<GreetingState, GreetingMsg, never, GreetingData> = Greeting
-    const t = testComponent(def, { initialName: 'Grace', startAt: 0 })
-    expect(t.state.name).toBe('Grace')
+  it('preserves the typed ComponentDef at the call site (no cast required)', () => {
+    const def: SignalComponentDef<GreetingState, GreetingMsg, never> = Greeting
+    const t = testComponent(def)
+    expect(t.state.name).toBe('Ada')
   })
 })

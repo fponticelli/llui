@@ -1,4 +1,12 @@
-import type { ComponentDef } from '@llui/dom'
+import type { SignalComponentDef } from '@llui/dom/signals'
+
+/** Signal `init`/`update` may return a bare `S` or a `[S, E[]]` tuple. */
+function normalize<S, E>(r: [S, E[]] | S): [S, E[]] {
+  if (Array.isArray(r) && r.length === 2 && Array.isArray((r as [S, E[]])[1])) {
+    return r as [S, E[]]
+  }
+  return [r as S, []]
+}
 
 export interface LluiTrace<S, M, E> {
   lluiTrace: 1
@@ -12,13 +20,16 @@ export interface LluiTrace<S, M, E> {
   }>
 }
 
-export function replayTrace<S, M, E>(def: ComponentDef<S, M, E>, trace: LluiTrace<S, M, E>): void {
-  const [initState] = def.init()
+export function replayTrace<S, M, E>(
+  def: SignalComponentDef<S, M, E>,
+  trace: LluiTrace<S, M, E>,
+): void {
+  const [initState] = normalize(def.init())
   let state = initState
 
   for (let i = 0; i < trace.entries.length; i++) {
     const entry = trace.entries[i]!
-    const [newState, effects] = def.update(state, entry.msg)
+    const [newState, effects] = normalize(def.update(state, entry.msg))
 
     // Compare state
     if (!deepEqual(newState, entry.expectedState)) {

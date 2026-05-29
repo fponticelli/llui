@@ -304,7 +304,7 @@ export interface ConnectedRouter<R> {
     attrs: Record<string, unknown>,
     children: Node[],
     msgFactory?: (route: R) => M,
-  ): HTMLElement
+  ): Node
 
   /**
    * Create an update handler for mergeHandlers.

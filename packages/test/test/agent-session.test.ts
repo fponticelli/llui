@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { mountApp } from '@llui/dom'
+import { mountApp } from '@llui/dom/signals'
 import { defineTestComponent } from '../src/defineTestComponent.js'
 import { recordAgentSession, replayAgentSession } from '../src/agent-session.js'
 

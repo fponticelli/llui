@@ -1,4 +1,7 @@
-import type { AppHandle } from '@llui/dom'
+import type { SignalComponentHandle } from '@llui/dom/signals'
+
+/** Agent-session msgs are JSON objects with a `type` discriminant. */
+type AgentMsg = { type: string; [k: string]: unknown }
 
 /**
  * Captured trace of an agent-driven session: the sequence of
@@ -66,7 +69,9 @@ export interface AgentSessionRecorder {
  * sleep before `stop()`, or wrap individual sends in
  * `await new Promise(r => setTimeout(r, 0))` between them.
  */
-export function recordAgentSession(handle: AppHandle): AgentSessionRecorder {
+export function recordAgentSession(
+  handle: SignalComponentHandle<unknown, AgentMsg>,
+): AgentSessionRecorder {
   const initialState = handle.getState()
   const msgs: AgentSessionFixture['msgs'] = []
   let stopped = false
@@ -130,7 +135,7 @@ export interface ReplayOptions {
 }
 
 export function replayAgentSession(
-  handle: AppHandle,
+  handle: SignalComponentHandle<unknown, AgentMsg>,
   fixture: AgentSessionFixture,
   options: ReplayOptions = {},
 ): ReplayResult {

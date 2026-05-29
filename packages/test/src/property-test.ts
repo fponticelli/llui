@@ -1,5 +1,13 @@
-import type { ComponentDef } from '@llui/dom'
-import { mountApp } from '@llui/dom'
+import type { SignalComponentDef } from '@llui/dom/signals'
+import { mountApp } from '@llui/dom/signals'
+
+/** Signal `init`/`update` may return a bare `S` or a `[S, E[]]` tuple. */
+function normalize<S, E>(r: [S, E[]] | S): [S, E[]] {
+  if (Array.isArray(r) && r.length === 2 && Array.isArray((r as [S, E[]])[1])) {
+    return r as [S, E[]]
+  }
+  return [r as S, []]
+}
 
 export interface PropertyTestConfig<S, M, E> {
   invariants: Array<(state: S, effects: E[]) => boolean>
@@ -32,7 +40,7 @@ export interface PropertyTestConfig<S, M, E> {
 }
 
 export function propertyTest<S, M, E>(
-  def: ComponentDef<S, M, E>,
+  def: SignalComponentDef<S, M, E>,
   config: PropertyTestConfig<S, M, E>,
 ): void {
   const runs = config.runs ?? 1000
@@ -44,7 +52,7 @@ export function propertyTest<S, M, E>(
   }
 
   for (let run = 0; run < runs; run++) {
-    const [initState, initEffects] = def.init()
+    const [initState, initEffects] = normalize(def.init())
     let state = initState
     const sequence: { name: string; msg: M }[] = []
 
@@ -86,7 +94,7 @@ export function propertyTest<S, M, E>(
             )
           }
 
-          const [newState, effects] = def.update(state, msg)
+          const [newState, effects] = normalize(def.update(state, msg))
           state = newState
           checkInvariants(config.invariants, state, effects, sequence)
 
@@ -134,7 +142,7 @@ export function propertyTest<S, M, E>(
       const msg = gen.length === 0 ? (gen as () => M)() : (gen as (s: S) => M)(state)
       sequence.push({ name: genName, msg })
 
-      const [newState, effects] = def.update(state, msg)
+      const [newState, effects] = normalize(def.update(state, msg))
       state = newState
 
       checkInvariants(config.invariants, state, effects, sequence)

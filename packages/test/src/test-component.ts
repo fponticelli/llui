@@ -1,4 +1,13 @@
-import type { ComponentDef } from '@llui/dom'
+import type { SignalComponentDef } from '@llui/dom/signals'
+
+/** Signal `init`/`update` may return a bare `S` or a `[S, E[]]` tuple; collapse
+ * to the tuple form using the same heuristic as the signal runtime. */
+function normalize<S, E>(r: [S, E[]] | S): [S, E[]] {
+  if (Array.isArray(r) && r.length === 2 && Array.isArray((r as [S, E[]])[1])) {
+    return r as [S, E[]]
+  }
+  return [r as S, []]
+}
 
 export interface TestHarness<S, M, E> {
   state: S
@@ -9,16 +18,8 @@ export interface TestHarness<S, M, E> {
   sendAll: (msgs: M[]) => S
 }
 
-export function testComponent<S, M, E>(def: ComponentDef<S, M, E>): TestHarness<S, M, E>
-export function testComponent<S, M, E, D>(
-  def: ComponentDef<S, M, E, D>,
-  initialData: D,
-): TestHarness<S, M, E>
-export function testComponent<S, M, E, D>(
-  def: ComponentDef<S, M, E, D>,
-  initialData?: D,
-): TestHarness<S, M, E> {
-  const [initState, initEffects] = def.init(initialData as D)
+export function testComponent<S, M, E>(def: SignalComponentDef<S, M, E>): TestHarness<S, M, E> {
+  const [initState, initEffects] = normalize(def.init())
 
   const harness: TestHarness<S, M, E> = {
     state: initState,
@@ -28,7 +29,7 @@ export function testComponent<S, M, E, D>(
 
     send(msg: M) {
       const prevState = harness.state
-      const [nextState, effects] = def.update(prevState, msg)
+      const [nextState, effects] = normalize(def.update(prevState, msg))
       harness.history.push({ prevState, msg, nextState, effects })
       harness.state = nextState
       harness.effects = effects

@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { propertyTest } from '../src/property-test'
 import { defineTestComponent } from '../src/defineTestComponent'
-import { component, each, li, ol, text } from '@llui/dom'
+import { component, each, li, ol, text } from '@llui/dom/signals'
 
 describe('propertyTest', () => {
   it('passes when all invariants hold', () => {
@@ -79,15 +79,16 @@ describe('propertyTest', () => {
             return [{ ...state, rows: [] }, []]
         }
       },
-      view: () => [
-        ol(
-          {},
-          each<ListState, Row, ListMsg>({
-            items: (s) => s.rows,
-            key: (r) => r.id,
-            render: ({ item }) => [li([text(() => item.current().label)])],
-          }),
-        ),
+      view: ({ state }) => [
+        ol({}, [
+          each(
+            state.map((s) => s.rows),
+            {
+              key: (r) => r.id,
+              render: (item) => [li([text(item.map((r) => r.label))])],
+            },
+          ),
+        ]),
       ],
     })
 

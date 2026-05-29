@@ -1,12 +1,11 @@
-import type { ComponentDef, AppHandle } from '@llui/dom'
-import { mountApp } from '@llui/dom'
-import { stampTestVersion } from '@llui/dom/internal'
+import type { SignalComponentDef, SignalComponentHandle } from '@llui/dom/signals'
+import { mountApp } from '@llui/dom/signals'
 
-export interface ViewHarness<M> {
+export interface ViewHarness<S, M> {
   /** Mounted container — useful for advanced cases. */
   readonly container: HTMLElement
-  /** The AppHandle returned by mountApp — expose dispose/flush. */
-  readonly handle: AppHandle
+  /** The handle returned by mountApp — expose dispose/flush. */
+  readonly handle: SignalComponentHandle<S, M>
   /** Query a single element. */
   query(selector: string): Element | null
   /** Query all matching elements. */
@@ -31,28 +30,14 @@ export interface ViewHarness<M> {
  * Mount a component against a fresh container and return an interactive harness.
  * Simulates events + auto-flushes so tests can chain assertions naturally.
  */
-export function testView<S, M, E, D = void>(
-  def: ComponentDef<S, M, E, D>,
-  state: S,
-): ViewHarness<M> {
+export function testView<S, M, E>(def: SignalComponentDef<S, M, E>, state: S): ViewHarness<S, M> {
   const container = document.createElement('div')
 
-  // The inner mount uses a D=void init override — testView runs the
-  // component against the provided `state`, not init data — so the
-  // local testDef re-declares D as void. `stampTestVersion` stamps
-  // `__compilerVersion: '__test__'` idempotently so raw `ComponentDef`
-  // literals passed by callers don't trigger `warnUncompiledOnce`.
-  const testDef: ComponentDef<S, M, E> = stampTestVersion({
+  // testView runs the component against the provided `state`, not its
+  // own init data — so the inner def overrides `init` to seed it.
+  const testDef: SignalComponentDef<S, M, E> = {
     ...def,
     init: () => [state, []],
-  })
-
-  // Capture the component's send via a view interceptor.
-  let sendFn: ((msg: M) => void) | null = null
-  const originalView = testDef.view
-  testDef.view = (h) => {
-    sendFn = h.send
-    return originalView(h)
   }
 
   const handle = mountApp(container, testDef)
@@ -72,8 +57,7 @@ export function testView<S, M, E, D = void>(
     text: (s) => container.querySelector(s)?.textContent ?? '',
     attr: (s, name) => container.querySelector(s)?.getAttribute(name) ?? null,
     send(msg) {
-      if (!sendFn) throw new Error('[testView] send unavailable (mount failed?)')
-      sendFn(msg)
+      handle.send(msg)
       handle.flush()
     },
     click(selector) {
@@ -95,7 +79,11 @@ export function testView<S, M, E, D = void>(
     unmount() {
       if (disposed) return
       disposed = true
+      // The signal runtime's dispose() runs teardowns (foreign unmount,
+      // subscriptions) but leaves the rendered nodes in place; the harness
+      // owns the container, so it clears the DOM it appended.
       handle.dispose()
+      container.replaceChildren()
     },
   }
 }

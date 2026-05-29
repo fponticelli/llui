@@ -25,14 +25,13 @@ describe('reducer()', () => {
     expect(t.state.count).toBe(4)
   })
 
-  it('threads typed init data', () => {
-    type D = { startAt: number }
-    const Counter = reducer<State, Msg, never, D>({
-      init: (data) => [{ count: data.startAt }, []],
+  it('seeds initial state from init()', () => {
+    const Counter = reducer<State, Msg>({
+      init: () => [{ count: 10 }, []],
       update: (s, m) => (m.type === 'inc' ? [{ count: s.count + 1 }, []] : [s, []]),
     })
 
-    const t = testComponent(Counter, { startAt: 10 })
+    const t = testComponent(Counter)
     t.send({ type: 'inc' })
     expect(t.state.count).toBe(11)
   })
