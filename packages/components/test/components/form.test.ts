@@ -8,6 +8,7 @@ import {
   validateSchemaAsync,
 } from '../../src/components/form'
 import type { FormState } from '../../src/components/form'
+import { rootSignal, read } from '../_signal'
 
 // ── Test schemas ────────────────────────────────────────────────
 // Mock Standard Schema implementations — avoids requiring Zod/Valibot
@@ -109,46 +110,40 @@ describe('form reducer', () => {
 // ── Connect tests ───────────────────────────────────────────────
 
 describe('form.connect', () => {
-  type Ctx = { form: FormState }
-
   it('returns root with aria-busy during submit', () => {
-    const parts = connect<Ctx>((s) => s.form, vi.fn(), { id: 'f1' })
+    const parts = connect(rootSignal<FormState>(), vi.fn(), { id: 'f1' })
     expect(
-      parts.root['aria-busy']({
-        form: { status: 'submitting', touched: {}, submitError: null },
-      }),
+      read(parts.root['aria-busy'], { status: 'submitting', touched: {}, submitError: null }),
     ).toBe('true')
     expect(
-      parts.root['aria-busy']({ form: { status: 'idle', touched: {}, submitError: null } }),
+      read(parts.root['aria-busy'], { status: 'idle', touched: {}, submitError: null }),
     ).toBeUndefined()
   })
 
   it('field returns touched accessor', () => {
-    const parts = connect<Ctx>((s) => s.form, vi.fn(), { id: 'f1' })
+    const parts = connect(rootSignal<FormState>(), vi.fn(), { id: 'f1' })
     const field = parts.field('email')
     expect(
-      field.touched({ form: { status: 'idle', touched: { email: true }, submitError: null } }),
+      read(field.touched, { status: 'idle', touched: { email: true }, submitError: null }),
     ).toBe(true)
-    expect(field.touched({ form: { status: 'idle', touched: {}, submitError: null } })).toBe(false)
+    expect(read(field.touched, { status: 'idle', touched: {}, submitError: null })).toBe(false)
   })
 
   it('field onBlur sends touch', () => {
     const send = vi.fn()
-    const parts = connect<Ctx>((s) => s.form, send, { id: 'f1' })
+    const parts = connect(rootSignal<FormState>(), send, { id: 'f1' })
     parts.field('email').onBlur({} as FocusEvent)
     expect(send).toHaveBeenCalledWith({ type: 'touch', field: 'email' })
   })
 
   it('submit is disabled during submit', () => {
-    const parts = connect<Ctx>((s) => s.form, vi.fn(), { id: 'f1' })
+    const parts = connect(rootSignal<FormState>(), vi.fn(), { id: 'f1' })
     expect(
-      parts.submit.disabled({
-        form: { status: 'submitting', touched: {}, submitError: null },
-      }),
+      read(parts.submit.disabled, { status: 'submitting', touched: {}, submitError: null }),
     ).toBe(true)
-    expect(
-      parts.submit.disabled({ form: { status: 'idle', touched: {}, submitError: null } }),
-    ).toBe(false)
+    expect(read(parts.submit.disabled, { status: 'idle', touched: {}, submitError: null })).toBe(
+      false,
+    )
   })
 })
 

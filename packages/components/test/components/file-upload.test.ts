@@ -8,9 +8,7 @@ import {
   fileMatchesAccept,
   validateFiles,
 } from '../../src/components/file-upload'
-import type { FileUploadState } from '../../src/components/file-upload'
-
-type Ctx = { u: FileUploadState }
+import { rootSignal, read } from '../_signal'
 
 function makeFile(name: string, size: number): File {
   return new File(['x'.repeat(size)], name, { type: 'text/plain' })
@@ -80,14 +78,14 @@ describe('totalSize', () => {
 
 describe('file-upload.connect', () => {
   it('hiddenInput has id from options', () => {
-    const p = connect<Ctx>((s) => s.u, vi.fn(), { id: 'up1' })
+    const p = connect(rootSignal(), vi.fn(), { id: 'up1' })
     expect(p.hiddenInput.id).toBe('up1:input')
     expect(p.label.for).toBe('up1:input')
   })
 
   it('onDrop sends drop + addFiles', () => {
     const send = vi.fn()
-    const pc = connect<Ctx>((s) => s.u, send, { id: 'x' })
+    const pc = connect(rootSignal(), send, { id: 'x' })
     const ev = {
       preventDefault: vi.fn(),
       dataTransfer: { files: [] as File[] },
@@ -99,7 +97,7 @@ describe('file-upload.connect', () => {
 
   it('clearTrigger sends clear', () => {
     const send = vi.fn()
-    const pc = connect<Ctx>((s) => s.u, send, { id: 'x' })
+    const pc = connect(rootSignal(), send, { id: 'x' })
     pc.clearTrigger.onClick(new MouseEvent('click'))
     expect(send).toHaveBeenCalledWith({ type: 'clear' })
   })
@@ -228,29 +226,29 @@ describe('readOnly + invalid', () => {
 
 describe('connect: new parts + attrs', () => {
   it('hiddenInput forwards required + aria-invalid', () => {
-    const p = connect<Ctx>((s) => s.u, vi.fn(), { id: 'x' })
-    expect(p.hiddenInput.required({ u: init({ required: true }) })).toBe(true)
-    expect(p.hiddenInput['aria-invalid']({ u: init({ invalid: true }) })).toBe('true')
-    expect(p.hiddenInput['aria-invalid']({ u: init() })).toBeUndefined()
+    const p = connect(rootSignal(), vi.fn(), { id: 'x' })
+    expect(read(p.hiddenInput.required, init({ required: true }))).toBe(true)
+    expect(read(p.hiddenInput['aria-invalid'], init({ invalid: true }))).toBe('true')
+    expect(read(p.hiddenInput['aria-invalid'], init())).toBeUndefined()
   })
 
   it('root exposes data-invalid + data-readonly', () => {
-    const p = connect<Ctx>((s) => s.u, vi.fn(), { id: 'x' })
-    expect(p.root['data-invalid']({ u: init({ invalid: true }) })).toBe('')
-    expect(p.root['data-readonly']({ u: init({ readOnly: true }) })).toBe('')
+    const p = connect(rootSignal(), vi.fn(), { id: 'x' })
+    expect(read(p.root['data-invalid'], init({ invalid: true }))).toBe('')
+    expect(read(p.root['data-readonly'], init({ readOnly: true }))).toBe('')
   })
 
   it('capture + directory options set hidden input attrs', () => {
-    const p1 = connect<Ctx>((s) => s.u, vi.fn(), { id: 'x', capture: 'environment' })
+    const p1 = connect(rootSignal(), vi.fn(), { id: 'x', capture: 'environment' })
     expect(p1.hiddenInput.capture).toBe('environment')
 
-    const p2 = connect<Ctx>((s) => s.u, vi.fn(), { id: 'x', directory: true })
+    const p2 = connect(rootSignal(), vi.fn(), { id: 'x', directory: true })
     expect(p2.hiddenInput.webkitdirectory).toBe('')
   })
 
   it('custom validate adds to rejectedFiles via the pipeline', async () => {
     const send = vi.fn()
-    const pc = connect<Ctx>((s) => s.u, send, {
+    const pc = connect(rootSignal(), send, {
       id: 'x',
       validate: (file) =>
         file.name.endsWith('.bad') ? [{ code: 'CUSTOM', message: 'banned name' }] : null,
@@ -275,7 +273,7 @@ describe('connect: new parts + attrs', () => {
 
   it('transformFiles runs before validation', async () => {
     const send = vi.fn()
-    const pc = connect<Ctx>((s) => s.u, send, {
+    const pc = connect(rootSignal(), send, {
       id: 'x',
       transformFiles: (files) =>
         files.map((f) => new File([f], f.name.toUpperCase(), { type: f.type })),
@@ -291,7 +289,7 @@ describe('connect: new parts + attrs', () => {
 
   it('no validate/transform: dispatches addFiles synchronously without customRejected', () => {
     const send = vi.fn()
-    const pc = connect<Ctx>((s) => s.u, send, { id: 'x' })
+    const pc = connect(rootSignal(), send, { id: 'x' })
     const input = document.createElement('input')
     Object.defineProperty(input, 'files', { value: [makeFile('a.txt', 5)] })
     pc.hiddenInput.onChange({ target: input } as unknown as Event)
@@ -305,7 +303,7 @@ describe('connect: new parts + attrs', () => {
 
   it('itemDeleteTrigger is a zag-aligned alias for removeTrigger', () => {
     const send = vi.fn()
-    const p = connect<Ctx>((s) => s.u, send, { id: 'x' })
+    const p = connect(rootSignal(), send, { id: 'x' })
     p.item(2).itemDeleteTrigger.onClick(new MouseEvent('click'))
     expect(send).toHaveBeenCalledWith({ type: 'removeFile', index: 2 })
   })

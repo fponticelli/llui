@@ -1,9 +1,6 @@
 import { describe, it, expect, vi } from 'vitest'
 import { init, update, connect, totalPages, pageItems } from '../../src/components/pagination'
-import type { PaginationState } from '../../src/components/pagination'
-
-type Ctx = { p: PaginationState }
-const wrap = (p: PaginationState): Ctx => ({ p })
+import { rootSignal, read } from '../_signal'
 
 describe('pagination reducer', () => {
   it('initializes on page 1', () => {
@@ -90,30 +87,30 @@ describe('pageItems', () => {
 })
 
 describe('pagination.connect', () => {
-  const parts = connect<Ctx>((s) => s.p, vi.fn())
+  const parts = connect(rootSignal(), vi.fn())
 
   it('root has role=navigation', () => {
     expect(parts.root.role).toBe('navigation')
   })
 
   it('prev disabled on first page', () => {
-    expect(parts.prevTrigger.disabled(wrap(init({ page: 1, total: 50 })))).toBe(true)
-    expect(parts.prevTrigger.disabled(wrap(init({ page: 2, total: 50 })))).toBe(false)
+    expect(read(parts.prevTrigger.disabled, init({ page: 1, total: 50 }))).toBe(true)
+    expect(read(parts.prevTrigger.disabled, init({ page: 2, total: 50 }))).toBe(false)
   })
 
   it('next disabled on last page', () => {
-    expect(parts.nextTrigger.disabled(wrap(init({ page: 5, total: 50, pageSize: 10 })))).toBe(true)
-    expect(parts.nextTrigger.disabled(wrap(init({ page: 3, total: 50, pageSize: 10 })))).toBe(false)
+    expect(read(parts.nextTrigger.disabled, init({ page: 5, total: 50, pageSize: 10 }))).toBe(true)
+    expect(read(parts.nextTrigger.disabled, init({ page: 3, total: 50, pageSize: 10 }))).toBe(false)
   })
 
   it('item aria-current=page when selected', () => {
-    expect(parts.item(3)['aria-current'](wrap(init({ page: 3 })))).toBe('page')
-    expect(parts.item(3)['aria-current'](wrap(init({ page: 5 })))).toBeUndefined()
+    expect(read(parts.item(3)['aria-current'], init({ page: 3 }))).toBe('page')
+    expect(read(parts.item(3)['aria-current'], init({ page: 5 }))).toBeUndefined()
   })
 
   it('item click sends goTo', () => {
     const send = vi.fn()
-    const p = connect<Ctx>((s) => s.p, send)
+    const p = connect(rootSignal(), send)
     p.item(4).onClick(new MouseEvent('click'))
     expect(send).toHaveBeenCalledWith({ type: 'goTo', page: 4 })
   })

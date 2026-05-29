@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from 'vitest'
 import { init, update, connect, reorder } from '../../src/components/sortable'
 import type { SortableState } from '../../src/components/sortable'
+import { rootSignal, read } from '../_signal'
 
 describe('reorder utility', () => {
   it('moves item forward', () => {
@@ -126,70 +127,62 @@ describe('sortable reducer', () => {
 })
 
 describe('sortable.connect', () => {
-  type Ctx = { sort: SortableState }
-
   it('root has data-scope and data-part', () => {
-    const parts = connect<Ctx>((s) => s.sort, vi.fn(), { id: 'list1' })
+    const parts = connect(rootSignal(), vi.fn(), { id: 'list1' })
     expect(parts.root['data-scope']).toBe('sortable')
     expect(parts.root['data-part']).toBe('root')
   })
 
   it('root data-dragging reflects state', () => {
-    const parts = connect<Ctx>((s) => s.sort, vi.fn(), { id: 'list1' })
-    expect(parts.root['data-dragging']({ sort: { dragging: null } })).toBeUndefined()
+    const parts = connect(rootSignal(), vi.fn(), { id: 'list1' })
+    expect(read(parts.root['data-dragging'], { dragging: null })).toBeUndefined()
     expect(
-      parts.root['data-dragging']({
-        sort: {
-          dragging: {
-            id: 'x',
-            startIndex: 0,
-            currentIndex: 1,
-            fromContainer: 'list1',
-            toContainer: 'list1',
-            startX: 0,
-            startY: 0,
-            currentX: 0,
-            currentY: 0,
-          },
+      read(parts.root['data-dragging'], {
+        dragging: {
+          id: 'x',
+          startIndex: 0,
+          currentIndex: 1,
+          fromContainer: 'list1',
+          toContainer: 'list1',
+          startX: 0,
+          startY: 0,
+          currentX: 0,
+          currentY: 0,
         },
       }),
     ).toBe('')
   })
 
   it('item data-dragging flags the currently-dragged item', () => {
-    const parts = connect<Ctx>((s) => s.sort, vi.fn(), { id: 'list1' })
+    const parts = connect(rootSignal(), vi.fn(), { id: 'list1' })
     const item = parts.item('apple', 0)
     expect(
-      item['data-dragging']({
-        sort: {
-          dragging: {
-            id: 'apple',
-            startIndex: 0,
-            currentIndex: 0,
-            fromContainer: 'list1',
-            toContainer: 'list1',
-            startX: 0,
-            startY: 0,
-            currentX: 0,
-            currentY: 0,
-          },
+      read(item['data-dragging'], {
+        dragging: {
+          id: 'apple',
+          startIndex: 0,
+          currentIndex: 0,
+          fromContainer: 'list1',
+          toContainer: 'list1',
+          startX: 0,
+          startY: 0,
+          currentX: 0,
+          currentY: 0,
         },
       }),
     ).toBe('')
     expect(
-      item['data-dragging']({
-        sort: {
-          dragging: {
-            id: 'banana',
-            startIndex: 1,
-            currentIndex: 0,
-            fromContainer: 'list1',
-            toContainer: 'list1',
-            startX: 0,
-            startY: 0,
-            currentX: 0,
-            currentY: 0,
-          },
+      read(item['data-dragging'], {
+        dragging: {
+          id: 'banana',
+          startIndex: 1,
+          currentIndex: 0,
+          fromContainer: 'list1',
+          toContainer: 'list1',
+          startX: 0,
+          startY: 0,
+          currentX: 0,
+          currentY: 0,
         },
       }),
     ).toBeUndefined()
@@ -197,7 +190,7 @@ describe('sortable.connect', () => {
 
   it('handle onPointerDown sends start message', () => {
     const send = vi.fn()
-    const parts = connect<Ctx>((s) => s.sort, send, { id: 'list1' })
+    const parts = connect(rootSignal(), send, { id: 'list1' })
     parts.handle('apple', 2).onPointerDown({
       pointerId: 1,
       currentTarget: null,
@@ -214,54 +207,50 @@ describe('sortable.connect', () => {
   })
 
   it('item[data-index] carries the index', () => {
-    const parts = connect<Ctx>((s) => s.sort, vi.fn(), { id: 'list1' })
+    const parts = connect(rootSignal(), vi.fn(), { id: 'list1' })
     expect(parts.item('x', 3)['data-index']).toBe('3')
   })
 
   it('handle has aria-grabbed reflecting drag state', () => {
-    const parts = connect<Ctx>((s) => s.sort, vi.fn(), { id: 'list1' })
+    const parts = connect(rootSignal(), vi.fn(), { id: 'list1' })
     const h = parts.handle('apple', 2)
-    expect(h['aria-grabbed']({ sort: { dragging: null } })).toBe(false)
+    expect(read(h['aria-grabbed'], { dragging: null })).toBe(false)
     expect(
-      h['aria-grabbed']({
-        sort: {
-          dragging: {
-            id: 'apple',
-            startIndex: 2,
-            currentIndex: 2,
-            fromContainer: 'list1',
-            toContainer: 'list1',
-            startX: 0,
-            startY: 0,
-            currentX: 0,
-            currentY: 0,
-          },
+      read(h['aria-grabbed'], {
+        dragging: {
+          id: 'apple',
+          startIndex: 2,
+          currentIndex: 2,
+          fromContainer: 'list1',
+          toContainer: 'list1',
+          startX: 0,
+          startY: 0,
+          currentX: 0,
+          currentY: 0,
         },
       }),
     ).toBe(true)
   })
 
   it('handle has tabIndex=0 for keyboard focus', () => {
-    const parts = connect<Ctx>((s) => s.sort, vi.fn(), { id: 'list1' })
+    const parts = connect(rootSignal(), vi.fn(), { id: 'list1' })
     expect(parts.handle('apple', 2).tabIndex).toBe(0)
   })
 
   it('handle role is button', () => {
-    const parts = connect<Ctx>((s) => s.sort, vi.fn(), { id: 'list1' })
+    const parts = connect(rootSignal(), vi.fn(), { id: 'list1' })
     expect(parts.handle('apple', 2).role).toBe('button')
   })
 })
 
 describe('sortable keyboard events', () => {
-  type Ctx = { sort: SortableState }
-
   function makeKey(key: string): KeyboardEvent {
     return new KeyboardEvent('keydown', { key, cancelable: true, bubbles: true })
   }
 
   it('Space sends toggleGrab', () => {
     const send = vi.fn()
-    const parts = connect<Ctx>((s) => s.sort, send, { id: 'list1' })
+    const parts = connect(rootSignal(), send, { id: 'list1' })
     const e = makeKey(' ')
     parts.handle('apple', 1).onKeyDown(e)
     expect(send).toHaveBeenCalledWith({
@@ -275,7 +264,7 @@ describe('sortable keyboard events', () => {
 
   it('Enter sends toggleGrab', () => {
     const send = vi.fn()
-    const parts = connect<Ctx>((s) => s.sort, send, { id: 'list1' })
+    const parts = connect(rootSignal(), send, { id: 'list1' })
     parts.handle('apple', 1).onKeyDown(makeKey('Enter'))
     expect(send).toHaveBeenCalledWith({
       type: 'toggleGrab',
@@ -287,14 +276,14 @@ describe('sortable keyboard events', () => {
 
   it('Escape sends cancel', () => {
     const send = vi.fn()
-    const parts = connect<Ctx>((s) => s.sort, send, { id: 'list1' })
+    const parts = connect(rootSignal(), send, { id: 'list1' })
     parts.handle('apple', 1).onKeyDown(makeKey('Escape'))
     expect(send).toHaveBeenCalledWith({ type: 'cancel' })
   })
 
   it('ArrowDown sends moveBy +1', () => {
     const send = vi.fn()
-    const parts = connect<Ctx>((s) => s.sort, send, { id: 'list1' })
+    const parts = connect(rootSignal(), send, { id: 'list1' })
     const e = makeKey('ArrowDown')
     parts.handle('apple', 0).onKeyDown(e)
     expect(send).toHaveBeenCalledWith({ type: 'moveBy', delta: 1 })
@@ -303,14 +292,14 @@ describe('sortable keyboard events', () => {
 
   it('ArrowUp sends moveBy -1', () => {
     const send = vi.fn()
-    const parts = connect<Ctx>((s) => s.sort, send, { id: 'list1' })
+    const parts = connect(rootSignal(), send, { id: 'list1' })
     parts.handle('apple', 2).onKeyDown(makeKey('ArrowUp'))
     expect(send).toHaveBeenCalledWith({ type: 'moveBy', delta: -1 })
   })
 
   it('unrelated keys are ignored', () => {
     const send = vi.fn()
-    const parts = connect<Ctx>((s) => s.sort, send, { id: 'list1' })
+    const parts = connect(rootSignal(), send, { id: 'list1' })
     parts.handle('apple', 0).onKeyDown(makeKey('a'))
     expect(send).not.toHaveBeenCalled()
   })
@@ -448,17 +437,16 @@ describe('sortable cross-container', () => {
   })
 
   it('connect roots have data-container-id matching their connect id', () => {
-    type Ctx = { sort: SortableState }
-    const list1 = connect<Ctx>((s) => s.sort, vi.fn(), { id: 'todo' })
-    const list2 = connect<Ctx>((s) => s.sort, vi.fn(), { id: 'done' })
+    const list1 = connect(rootSignal(), vi.fn(), { id: 'todo' })
+    const list2 = connect(rootSignal(), vi.fn(), { id: 'done' })
     expect(list1.root['data-container-id']).toBe('todo')
     expect(list2.root['data-container-id']).toBe('done')
   })
 
   it('item data-dragging only flags items in the source container', () => {
     type Ctx = { sort: SortableState }
-    const todoParts = connect<Ctx>((s) => s.sort, vi.fn(), { id: 'todo' })
-    const doneParts = connect<Ctx>((s) => s.sort, vi.fn(), { id: 'done' })
+    const todoParts = connect(rootSignal(), vi.fn(), { id: 'todo' })
+    const doneParts = connect(rootSignal(), vi.fn(), { id: 'done' })
     const state: Ctx = {
       sort: {
         dragging: {
@@ -474,9 +462,9 @@ describe('sortable cross-container', () => {
         },
       },
     }
-    expect(todoParts.item('task-1', 0)['data-dragging'](state)).toBe('')
+    expect(read(todoParts.item('task-1', 0)['data-dragging'], state.sort)).toBe('')
     // Same id but in different container — not dragging from done
-    expect(doneParts.item('task-1', 0)['data-dragging'](state)).toBeUndefined()
+    expect(read(doneParts.item('task-1', 0)['data-dragging'], state.sort)).toBeUndefined()
   })
 
   it('onPointerDown computes live DOM index, not the captured render-time index', () => {
@@ -484,9 +472,8 @@ describe('sortable cross-container', () => {
     // but each() reorders by moving keyed DOM nodes without re-running render,
     // so after a reorder the captured index is stale. Sequential drags must
     // send the item's CURRENT DOM position as startIndex.
-    type Ctx = { sort: SortableState }
     const send = vi.fn()
-    const parts = connect<Ctx>((s) => s.sort, send, { id: 'list1' })
+    const parts = connect(rootSignal(), send, { id: 'list1' })
 
     // Build a DOM that reflects post-reorder state: item 'p1' was originally
     // at index 0 (captured index=0 in the handle's closure) but now sits at
@@ -537,7 +524,7 @@ describe('sortable cross-container', () => {
     // shift after a reorder.
     type Ctx = { sort: SortableState }
     const send = vi.fn()
-    const parts = connect<Ctx>((s) => s.sort, send, { id: 'list1' })
+    const parts = connect(rootSignal(), send, { id: 'list1' })
 
     // Post-reorder DOM: p1 (orig index 0) now at DOM position 2
     const root = document.createElement('ul')
@@ -589,15 +576,15 @@ describe('sortable cross-container', () => {
     // Its captured render-time index was 3 in this mock, but even if stale
     // the snapshot lookup by id must return 3.
     const p4Item = parts.item('p4', 999) // deliberately stale captured index
-    expect(p4Item['data-shift'](state)).toBe('up')
+    expect(read(p4Item['data-shift'], state.sort)).toBe('up')
 
     // p5 is at live DOM index 4 → should also shift 'up'
     const p5Item = parts.item('p5', 999)
-    expect(p5Item['data-shift'](state)).toBe('up')
+    expect(read(p5Item['data-shift'], state.sort)).toBe('up')
 
     // p2 is at live DOM index 0 → outside the range, no shift
     const p2Item = parts.item('p2', 999)
-    expect(p2Item['data-shift'](state)).toBeUndefined()
+    expect(read(p2Item['data-shift'], state.sort)).toBeUndefined()
 
     document.body.removeChild(root)
   })
@@ -605,7 +592,7 @@ describe('sortable cross-container', () => {
   it('data-over uses live DOM index from snapshot', () => {
     type Ctx = { sort: SortableState }
     const send = vi.fn()
-    const parts = connect<Ctx>((s) => s.sort, send, { id: 'list1' })
+    const parts = connect(rootSignal(), send, { id: 'list1' })
 
     const root = document.createElement('ul')
     root.setAttribute('data-scope', 'sortable')
@@ -652,17 +639,17 @@ describe('sortable cross-container', () => {
     }
 
     // p2 is at live DOM index 0 = currentIndex → data-over should be ''
-    expect(parts.item('p2', 999)['data-over'](state)).toBe('')
+    expect(read(parts.item('p2', 999)['data-over'], state.sort)).toBe('')
     // p3 is at live DOM index 1 ≠ 0 → undefined
-    expect(parts.item('p3', 999)['data-over'](state)).toBeUndefined()
+    expect(read(parts.item('p3', 999)['data-over'], state.sort)).toBeUndefined()
 
     document.body.removeChild(root)
   })
 
   it('item data-over only flags items in the target container', () => {
     type Ctx = { sort: SortableState }
-    const todoParts = connect<Ctx>((s) => s.sort, vi.fn(), { id: 'todo' })
-    const doneParts = connect<Ctx>((s) => s.sort, vi.fn(), { id: 'done' })
+    const todoParts = connect(rootSignal(), vi.fn(), { id: 'todo' })
+    const doneParts = connect(rootSignal(), vi.fn(), { id: 'done' })
     const state: Ctx = {
       sort: {
         dragging: {
@@ -679,8 +666,8 @@ describe('sortable cross-container', () => {
       },
     }
     // currentIndex 2 is in the target container 'done'
-    expect(doneParts.item('task-x', 2)['data-over'](state)).toBe('')
+    expect(read(doneParts.item('task-x', 2)['data-over'], state.sort)).toBe('')
     // Same index but wrong container
-    expect(todoParts.item('task-y', 2)['data-over'](state)).toBeUndefined()
+    expect(read(todoParts.item('task-y', 2)['data-over'], state.sort)).toBeUndefined()
   })
 })

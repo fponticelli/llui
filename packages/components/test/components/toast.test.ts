@@ -1,8 +1,7 @@
 import { describe, it, expect, vi } from 'vitest'
 import { init, update, connect, nextToastId } from '../../src/components/toast'
-import type { Toast, ToasterState } from '../../src/components/toast'
-
-type Ctx = { t: ToasterState }
+import type { Toast } from '../../src/components/toast'
+import { rootSignal, read } from '../_signal'
 
 function makeToast(overrides: Partial<Toast> = {}): Toast {
   return {
@@ -82,12 +81,11 @@ describe('toast reducer', () => {
 })
 
 describe('toast.connect', () => {
-  const parts = connect<Ctx>((s) => s.t, vi.fn())
+  const parts = connect(rootSignal(), vi.fn())
 
   it('region role=region', () => {
     expect(parts.region.role).toBe('region')
-    const label = parts.region['aria-label']
-    expect(typeof label === 'function' ? label({} as Ctx) : label).toBe('Notifications')
+    expect(read(parts.region['aria-label'], init())).toBe('Notifications')
   })
 
   it('toast root uses assertive for error type', () => {
@@ -99,7 +97,7 @@ describe('toast.connect', () => {
 
   it('closeTrigger dismisses', () => {
     const send = vi.fn()
-    const p = connect<Ctx>((s) => s.t, send)
+    const p = connect(rootSignal(), send)
     const t = makeToast({ id: 'x' })
     p.toast(t).closeTrigger.onClick(new MouseEvent('click'))
     expect(send).toHaveBeenCalledWith({ type: 'dismiss', id: 'x' })
@@ -107,7 +105,7 @@ describe('toast.connect', () => {
 
   it('pointerEnter pauses, pointerLeave resumes', () => {
     const send = vi.fn()
-    const p = connect<Ctx>((s) => s.t, send)
+    const p = connect(rootSignal(), send)
     const t = makeToast({ id: 'x' })
     p.toast(t).root.onPointerEnter(new PointerEvent('pointerenter'))
     p.toast(t).root.onPointerLeave(new PointerEvent('pointerleave'))

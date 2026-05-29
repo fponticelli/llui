@@ -6,9 +6,7 @@ import {
   valueFromPoint,
   closestThumbIndex,
 } from '../../src/components/slider'
-
-type Ctx = { sl: ReturnType<typeof init> }
-const wrap = (sl: ReturnType<typeof init>): Ctx => ({ sl })
+import { rootSignal, read } from '../_signal'
 
 describe('slider reducer', () => {
   it('initializes with defaults', () => {
@@ -110,19 +108,19 @@ describe('closestThumbIndex', () => {
 })
 
 describe('slider.connect', () => {
-  const parts = connect<Ctx>((s) => s.sl, vi.fn())
+  const parts = connect(rootSignal(), vi.fn())
 
   it('thumb aria values reflect state', () => {
     const t = parts.thumb(0).thumb
-    const s = wrap(init({ min: 0, max: 200, value: [50] }))
-    expect(t['aria-valuemin'](s)).toBe(0)
-    expect(t['aria-valuemax'](s)).toBe(200)
-    expect(t['aria-valuenow'](s)).toBe(50)
+    const s = init({ min: 0, max: 200, value: [50] })
+    expect(read(t['aria-valuemin'], s)).toBe(0)
+    expect(read(t['aria-valuemax'], s)).toBe(200)
+    expect(read(t['aria-valuenow'], s)).toBe(50)
   })
 
   it('ArrowRight sends increment', () => {
     const send = vi.fn()
-    const p = connect<Ctx>((s) => s.sl, send)
+    const p = connect(rootSignal(), send)
     const ev = new KeyboardEvent('keydown', { key: 'ArrowRight', cancelable: true })
     p.thumb(0).thumb.onKeyDown(ev)
     expect(ev.defaultPrevented).toBe(true)
@@ -131,14 +129,14 @@ describe('slider.connect', () => {
 
   it('PageUp sends increment with multiplier 10', () => {
     const send = vi.fn()
-    const p = connect<Ctx>((s) => s.sl, send)
+    const p = connect(rootSignal(), send)
     p.thumb(1).thumb.onKeyDown(new KeyboardEvent('keydown', { key: 'PageUp', cancelable: true }))
     expect(send).toHaveBeenCalledWith({ type: 'increment', index: 1, multiplier: 10 })
   })
 
   it('Home/End jump to min/max', () => {
     const send = vi.fn()
-    const p = connect<Ctx>((s) => s.sl, send)
+    const p = connect(rootSignal(), send)
     p.thumb(0).thumb.onKeyDown(new KeyboardEvent('keydown', { key: 'Home', cancelable: true }))
     p.thumb(0).thumb.onKeyDown(new KeyboardEvent('keydown', { key: 'End', cancelable: true }))
     expect(send).toHaveBeenNthCalledWith(1, { type: 'toMin', index: 0 })
@@ -146,21 +144,21 @@ describe('slider.connect', () => {
   })
 
   it('thumb style positions horizontally by percent', () => {
-    const p = connect<Ctx>((s) => s.sl, vi.fn())
-    const style = p.thumb(0).thumb.style(wrap(init({ value: [50], min: 0, max: 100 })))
+    const p = connect(rootSignal(), vi.fn())
+    const style = read(p.thumb(0).thumb.style, init({ value: [50], min: 0, max: 100 }))
     expect(style).toContain('left:50%')
   })
 
   it('range style spans between thumbs', () => {
-    const p = connect<Ctx>((s) => s.sl, vi.fn())
-    const style = p.range.style(wrap(init({ value: [20, 80], min: 0, max: 100 })))
+    const p = connect(rootSignal(), vi.fn())
+    const style = read(p.range.style, init({ value: [20, 80], min: 0, max: 100 }))
     expect(style).toContain('left:20%')
     expect(style).toContain('right:20%')
   })
 
   it('tabIndex=-1 when disabled', () => {
-    const p = connect<Ctx>((s) => s.sl, vi.fn())
-    expect(p.thumb(0).thumb.tabIndex(wrap(init({ disabled: true })))).toBe(-1)
-    expect(p.thumb(0).thumb.tabIndex(wrap(init({ disabled: false })))).toBe(0)
+    const p = connect(rootSignal(), vi.fn())
+    expect(read(p.thumb(0).thumb.tabIndex, init({ disabled: true }))).toBe(-1)
+    expect(read(p.thumb(0).thumb.tabIndex, init({ disabled: false }))).toBe(0)
   })
 })

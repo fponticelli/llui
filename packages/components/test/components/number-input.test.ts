@@ -1,9 +1,6 @@
 import { describe, it, expect, vi } from 'vitest'
 import { init, update, connect } from '../../src/components/number-input'
-import type { NumberInputState } from '../../src/components/number-input'
-
-type Ctx = { n: NumberInputState }
-const wrap = (n: NumberInputState): Ctx => ({ n })
+import { rootSignal, read } from '../_signal'
 
 describe('number-input reducer', () => {
   it('initializes with null value by default', () => {
@@ -87,33 +84,33 @@ describe('number-input reducer', () => {
 })
 
 describe('number-input.connect', () => {
-  const p = connect<Ctx>((s) => s.n, vi.fn())
+  const p = connect(rootSignal(), vi.fn())
 
   it('input role=spinbutton', () => {
     expect(p.input.role).toBe('spinbutton')
   })
 
   it('aria-valuenow tracks value', () => {
-    expect(p.input['aria-valuenow'](wrap(init({ value: 42 })))).toBe(42)
-    expect(p.input['aria-valuenow'](wrap(init({ value: null })))).toBeUndefined()
+    expect(read(p.input['aria-valuenow'], init({ value: 42 }))).toBe(42)
+    expect(read(p.input['aria-valuenow'], init({ value: null }))).toBeUndefined()
   })
 
   it('ArrowUp sends increment', () => {
     const send = vi.fn()
-    const pc = connect<Ctx>((s) => s.n, send)
+    const pc = connect(rootSignal(), send)
     pc.input.onKeyDown(new KeyboardEvent('keydown', { key: 'ArrowUp', cancelable: true }))
     expect(send).toHaveBeenCalledWith({ type: 'increment' })
   })
 
   it('increment disabled at max', () => {
-    const p = connect<Ctx>((s) => s.n, vi.fn())
-    expect(p.increment.disabled(wrap(init({ value: 10, max: 10 })))).toBe(true)
-    expect(p.increment.disabled(wrap(init({ value: 5, max: 10 })))).toBe(false)
+    const p = connect(rootSignal(), vi.fn())
+    expect(read(p.increment.disabled, init({ value: 10, max: 10 }))).toBe(true)
+    expect(read(p.increment.disabled, init({ value: 5, max: 10 }))).toBe(false)
   })
 
   it('validate blocks setValue on invalid input', () => {
     const send = vi.fn()
-    const pc = connect<Ctx>((s) => s.n, send, {
+    const pc = connect(rootSignal(), send, {
       validate: (v) => (v < 0 ? ['must be non-negative'] : null),
     })
     const input = document.createElement('input')

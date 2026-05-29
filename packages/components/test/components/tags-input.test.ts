@@ -1,8 +1,6 @@
 import { describe, it, expect, vi } from 'vitest'
 import { init, update, connect } from '../../src/components/tags-input'
-import type { TagsInputState } from '../../src/components/tags-input'
-
-type Ctx = { t: TagsInputState }
+import { rootSignal } from '../_signal'
 
 describe('tags-input reducer', () => {
   it('initializes empty', () => {
@@ -76,11 +74,11 @@ describe('tags-input reducer', () => {
 })
 
 describe('tags-input.connect', () => {
-  const p = connect<Ctx>((s) => s.t, vi.fn())
+  const p = connect(rootSignal(), vi.fn())
 
   it('input onKeyDown Enter adds tag', () => {
     const send = vi.fn()
-    const pc = connect<Ctx>((s) => s.t, send)
+    const pc = connect(rootSignal(), send)
     const ev = new KeyboardEvent('keydown', { key: 'Enter', cancelable: true })
     pc.input.onKeyDown(ev)
     expect(ev.defaultPrevented).toBe(true)
@@ -89,7 +87,7 @@ describe('tags-input.connect', () => {
 
   it('comma delimiter adds tag', () => {
     const send = vi.fn()
-    const pc = connect<Ctx>((s) => s.t, send)
+    const pc = connect(rootSignal(), send)
     const ev = new KeyboardEvent('keydown', { key: ',', cancelable: true })
     pc.input.onKeyDown(ev)
     expect(send).toHaveBeenCalledWith({ type: 'addTag' })
@@ -97,7 +95,7 @@ describe('tags-input.connect', () => {
 
   it('Backspace with empty input sends removeLast', () => {
     const send = vi.fn()
-    const pc = connect<Ctx>((s) => s.t, send)
+    const pc = connect(rootSignal(), send)
     const input = document.createElement('input')
     input.value = ''
     const ev = new KeyboardEvent('keydown', { key: 'Backspace' })
@@ -108,14 +106,14 @@ describe('tags-input.connect', () => {
 
   it('tag.remove sends removeTag', () => {
     const send = vi.fn()
-    const pc = connect<Ctx>((s) => s.t, send)
+    const pc = connect(rootSignal(), send)
     pc.tag('apple', 3).remove.onClick(new MouseEvent('click'))
     expect(send).toHaveBeenCalledWith({ type: 'removeTag', index: 3 })
   })
 
   it('validate blocks addTag when returning errors', () => {
     const send = vi.fn()
-    const pc = connect<Ctx>((s) => s.t, send, {
+    const pc = connect(rootSignal(), send, {
       validate: (v) => (v.length < 2 ? ['too short'] : null),
     })
     // Simulate typing a short tag

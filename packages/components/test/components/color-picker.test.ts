@@ -1,9 +1,6 @@
 import { describe, it, expect, vi } from 'vitest'
 import { init, update, connect, toHex, hexToHsl, hslToRgb } from '../../src/components/color-picker'
-import type { ColorPickerState } from '../../src/components/color-picker'
-
-type Ctx = { c: ColorPickerState }
-const wrap = (c: ColorPickerState): Ctx => ({ c })
+import { rootSignal, read } from '../_signal'
 
 describe('color-picker reducer', () => {
   it('initializes red', () => {
@@ -69,19 +66,19 @@ describe('color conversion', () => {
 })
 
 describe('color-picker.connect', () => {
-  const p = connect<Ctx>((s) => s.c, vi.fn())
+  const p = connect(rootSignal(), vi.fn())
 
   it('hueSlider value tracks hue', () => {
-    expect(p.hueSlider.value(wrap(init({ hsl: { h: 180, s: 50, l: 50 } })))).toBe('180')
+    expect(read(p.hueSlider.value, init({ hsl: { h: 180, s: 50, l: 50 } }))).toBe('180')
   })
 
   it('hexInput value renders current color', () => {
-    expect(p.hexInput.value(wrap(init({ hsl: { h: 0, s: 100, l: 50 } })))).toBe('#ff0000')
+    expect(read(p.hexInput.value, init({ hsl: { h: 0, s: 100, l: 50 } }))).toBe('#ff0000')
   })
 
   it('hueSlider onInput dispatches setHue', () => {
     const send = vi.fn()
-    const pc = connect<Ctx>((s) => s.c, send)
+    const pc = connect(rootSignal(), send)
     const target = document.createElement('input')
     target.value = '60'
     const ev = new Event('input')
@@ -91,6 +88,6 @@ describe('color-picker.connect', () => {
   })
 
   it('swatch style contains current hex', () => {
-    expect(p.swatch.style(wrap(init({ hsl: { h: 120, s: 100, l: 50 } })))).toContain('#00ff00')
+    expect(read(p.swatch.style, init({ hsl: { h: 120, s: 100, l: 50 } }))).toContain('#00ff00')
   })
 })

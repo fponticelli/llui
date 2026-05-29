@@ -1,9 +1,6 @@
 import { describe, it, expect, vi } from 'vitest'
 import { init, update, connect } from '../../src/components/clipboard'
-import type { ClipboardState } from '../../src/components/clipboard'
-
-type Ctx = { c: ClipboardState }
-const wrap = (c: ClipboardState): Ctx => ({ c })
+import { rootSignal, read } from '../_signal'
 
 describe('clipboard reducer', () => {
   it('initializes empty', () => {
@@ -26,18 +23,18 @@ describe('clipboard reducer', () => {
 })
 
 describe('clipboard.connect', () => {
-  const p = connect<Ctx>((s) => s.c, vi.fn())
+  const p = connect(rootSignal(), vi.fn())
 
   it('trigger onClick sends copy', () => {
     const send = vi.fn()
-    const pc = connect<Ctx>((s) => s.c, send)
+    const pc = connect(rootSignal(), send)
     pc.trigger.onClick(new MouseEvent('click'))
     expect(send).toHaveBeenCalledWith({ type: 'copy' })
   })
 
   it('data-copied reflects state', () => {
-    expect(p.root['data-copied'](wrap({ value: '', copied: true }))).toBe('')
-    expect(p.root['data-copied'](wrap({ value: '', copied: false }))).toBeUndefined()
+    expect(read(p.root['data-copied'], { value: '', copied: true })).toBe('')
+    expect(read(p.root['data-copied'], { value: '', copied: false })).toBeUndefined()
   })
 
   it('indicator has aria-live=polite', () => {
@@ -45,6 +42,6 @@ describe('clipboard.connect', () => {
   })
 
   it('input value tracks state', () => {
-    expect(p.input.value(wrap({ value: 'hello', copied: false }))).toBe('hello')
+    expect(read(p.input.value, { value: 'hello', copied: false })).toBe('hello')
   })
 })

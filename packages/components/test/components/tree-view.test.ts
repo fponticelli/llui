@@ -1,9 +1,6 @@
 import { describe, it, expect, vi } from 'vitest'
 import { init, update, connect, isExpanded, isSelected } from '../../src/components/tree-view'
-import type { TreeViewState } from '../../src/components/tree-view'
-
-type Ctx = { t: TreeViewState }
-const wrap = (t: TreeViewState): Ctx => ({ t })
+import { rootSignal, read } from '../_signal'
 
 describe('tree-view reducer', () => {
   it('initializes empty', () => {
@@ -86,7 +83,7 @@ describe('helpers', () => {
 })
 
 describe('tree-view.connect', () => {
-  const p = connect<Ctx>((s) => s.t, vi.fn(), { id: 'tv1' })
+  const p = connect(rootSignal(), vi.fn(), { id: 'tv1' })
 
   it('root role=tree', () => {
     expect(p.root.role).toBe('tree')
@@ -94,13 +91,13 @@ describe('tree-view.connect', () => {
 
   it('branch item aria-expanded tracks state', () => {
     const branch = p.item('b', 0, true).item
-    expect(branch['aria-expanded'](wrap(init({ expanded: ['b'] })))).toBe(true)
-    expect(branch['aria-expanded'](wrap(init({ expanded: [] })))).toBe(false)
+    expect(read(branch['aria-expanded'], init({ expanded: ['b'] }))).toBe(true)
+    expect(read(branch['aria-expanded'], init({ expanded: [] }))).toBe(false)
   })
 
   it('leaf item aria-expanded undefined', () => {
     const leaf = p.item('l', 1, false).item
-    expect(leaf['aria-expanded'](wrap(init()))).toBeUndefined()
+    expect(read(leaf['aria-expanded'], init())).toBeUndefined()
   })
 
   it('aria-level is depth+1', () => {
@@ -110,7 +107,7 @@ describe('tree-view.connect', () => {
 
   it('ArrowRight sends arrowRightFrom for branch', () => {
     const send = vi.fn()
-    const pc = connect<Ctx>((s) => s.t, send, { id: 'x' })
+    const pc = connect(rootSignal(), send, { id: 'x' })
     pc.item('a', 0, true).item.onKeyDown(
       new KeyboardEvent('keydown', { key: 'ArrowRight', cancelable: true }),
     )
@@ -119,7 +116,7 @@ describe('tree-view.connect', () => {
 
   it('ArrowRight does nothing on leaf', () => {
     const send = vi.fn()
-    const pc = connect<Ctx>((s) => s.t, send, { id: 'x' })
+    const pc = connect(rootSignal(), send, { id: 'x' })
     pc.item('a', 0, false).item.onKeyDown(
       new KeyboardEvent('keydown', { key: 'ArrowRight', cancelable: true }),
     )
@@ -128,7 +125,7 @@ describe('tree-view.connect', () => {
 
   it('ArrowLeft sends arrowLeftFrom with parentId', () => {
     const send = vi.fn()
-    const pc = connect<Ctx>((s) => s.t, send, { id: 'x' })
+    const pc = connect(rootSignal(), send, { id: 'x' })
     pc.item('a', 1, false, 'root').item.onKeyDown(
       new KeyboardEvent('keydown', { key: 'ArrowLeft', cancelable: true }),
     )
@@ -194,11 +191,11 @@ describe('tree-view.connect', () => {
   })
 
   it('checkbox aria-checked reflects checked/indeterminate', () => {
-    const pc = connect<Ctx>((s) => s.t, vi.fn(), { id: 'x' })
+    const pc = connect(rootSignal(), vi.fn(), { id: 'x' })
     const cb = pc.item('a', 0, false).checkbox
-    expect(cb['aria-checked'](wrap(init({ checked: ['a'] })))).toBe('true')
-    expect(cb['aria-checked'](wrap(init({ indeterminate: ['a'] })))).toBe('mixed')
-    expect(cb['aria-checked'](wrap(init()))).toBe('false')
+    expect(read(cb['aria-checked'], init({ checked: ['a'] }))).toBe('true')
+    expect(read(cb['aria-checked'], init({ indeterminate: ['a'] }))).toBe('mixed')
+    expect(read(cb['aria-checked'], init())).toBe('false')
   })
 
   it('toggleChecked propagates to descendants', () => {
@@ -260,13 +257,13 @@ describe('tree-view.connect', () => {
   })
 
   it('item aria-busy reflects loading state', () => {
-    const pc = connect<Ctx>((s) => s.t, vi.fn(), { id: 'x' })
+    const pc = connect(rootSignal(), vi.fn(), { id: 'x' })
     const item = pc.item('a', 0, true).item
-    expect(item['aria-busy'](wrap(init({})))).toBeUndefined()
+    expect(read(item['aria-busy'], init({}))).toBeUndefined()
     // Force loading via explicit state construction
     const loaded = { ...init(), loading: ['a'] }
-    expect(item['aria-busy']({ t: loaded })).toBe('true')
-    expect(item['data-loading']({ t: loaded })).toBe('')
+    expect(read(item['aria-busy'], loaded)).toBe('true')
+    expect(read(item['data-loading'], loaded)).toBe('')
   })
 
   it('renameCancel clears rename state', () => {
@@ -277,17 +274,17 @@ describe('tree-view.connect', () => {
   })
 
   it('root aria-owns lists visible item IDs', () => {
-    const pc = connect<Ctx>((s) => s.t, vi.fn(), { id: 'tv' })
+    const pc = connect(rootSignal(), vi.fn(), { id: 'tv' })
     // Empty visibleItems → undefined
-    expect(pc.root['aria-owns'](wrap(init()))).toBeUndefined()
+    expect(read(pc.root['aria-owns'], init())).toBeUndefined()
     // With visible items → space-separated ids
     const s = init({ visibleItems: ['a', 'b', 'c'] })
-    expect(pc.root['aria-owns'](wrap(s))).toBe('tv:item:a tv:item:b tv:item:c')
+    expect(read(pc.root['aria-owns'], s)).toBe('tv:item:a tv:item:b tv:item:c')
   })
 
   it('branchTrigger click sends toggleBranch', () => {
     const send = vi.fn()
-    const pc = connect<Ctx>((s) => s.t, send, { id: 'x' })
+    const pc = connect(rootSignal(), send, { id: 'x' })
     pc.item('a', 0, true).branchTrigger.onClick(new MouseEvent('click'))
     expect(send).toHaveBeenCalledWith({ type: 'toggleBranch', id: 'a' })
   })

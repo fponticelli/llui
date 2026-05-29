@@ -1,9 +1,6 @@
 import { describe, it, expect, vi } from 'vitest'
 import { init, update, connect, size, toSvgPath, toDataUrl } from '../../src/components/qr-code'
-import type { QrCodeState } from '../../src/components/qr-code'
-
-type Ctx = { q: QrCodeState }
-const wrap = (q: QrCodeState): Ctx => ({ q })
+import { rootSignal, read } from '../_signal'
 
 // Helper: a simple 3x3 checkerboard matrix
 const checker: boolean[][] = [
@@ -76,24 +73,24 @@ describe('toDataUrl', () => {
 
 describe('qr-code.connect', () => {
   it('svg viewBox tracks matrix size', () => {
-    const p = connect<Ctx>((s) => s.q, vi.fn())
-    expect(p.svg.viewBox(wrap(init({ matrix: checker })))).toBe('0 0 3 3')
-    expect(p.svg.viewBox(wrap(init()))).toBe('0 0 1 1')
+    const p = connect(rootSignal(), vi.fn())
+    expect(read(p.svg.viewBox, init({ matrix: checker }))).toBe('0 0 3 3')
+    expect(read(p.svg.viewBox, init())).toBe('0 0 1 1')
   })
 
   it('foreground d is the svg path', () => {
-    const p = connect<Ctx>((s) => s.q, vi.fn())
-    const d = p.foreground.d(wrap(init({ matrix: checker })))
+    const p = connect(rootSignal(), vi.fn())
+    const d = read(p.foreground.d, init({ matrix: checker }))
     expect(d).toBe(toSvgPath(checker))
   })
 
   it('root has aria-label', () => {
-    const p = connect<Ctx>((s) => s.q, vi.fn(), { label: 'Payment QR' })
+    const p = connect(rootSignal(), vi.fn(), { label: 'Payment QR' })
     expect(p.root['aria-label']).toBe('Payment QR')
   })
 
   it('svg has role=img + crisp-edges rendering', () => {
-    const p = connect<Ctx>((s) => s.q, vi.fn())
+    const p = connect(rootSignal(), vi.fn())
     expect(p.svg.role).toBe('img')
     expect(p.svg['shape-rendering']).toBe('crispEdges')
   })
