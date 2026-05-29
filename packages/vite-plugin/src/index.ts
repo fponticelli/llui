@@ -16,6 +16,7 @@ import { fileURLToPath } from 'node:url'
 import { spawn, type ChildProcess } from 'node:child_process'
 import {
   transformLlui,
+  transformSignalComponentSource,
   crossFileAccessorPaths,
   registerIntrospectionFactory,
   registerDevtoolsFactory,
@@ -1337,6 +1338,18 @@ export default function llui(options: LluiPluginOptions = {}): Plugin {
             this.warn(`${display}: ${warning}`)
           }
           return { code: result.output, map: { mappings: '' } }
+        }
+      }
+
+      // Signal components: if this file uses the signal authoring surface
+      // (a `view: ({ state, … }) => [...]` bag with `state.at(…)`), lower it to
+      // the `@llui/dom/signals` runtime and SKIP the legacy accessor compiler.
+      // A file is either signal-flavored or legacy (per-file-flip migration).
+      // Cheap string pre-check avoids the extra parse on non-signal files.
+      if (code.includes('component(') && code.includes('.at(')) {
+        const signalOut = transformSignalComponentSource(code)
+        if (signalOut !== code) {
+          return { code: signalOut, map: { mappings: '' } }
         }
       }
 
