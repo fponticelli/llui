@@ -163,6 +163,30 @@ describe('peek-in-slot', () => {
   })
 })
 
+describe('bag alias — lint uses the view’s actual state alias', () => {
+  it('flags a violation under an aliased state bag ({ state: s })', () => {
+    const src =
+      "component({ init: () => ({ n: 0 }), update: (s) => s, view: ({ state: s }) => [text(s.at('n') + 1)] })"
+    expect(rules(src)).toContain('operator-on-signal')
+  })
+
+  it('flags under the default { state } alias inside a component', () => {
+    const src = "component({ view: ({ state }) => [text(state.at('n') + 1)] })"
+    expect(rules(src)).toContain('operator-on-signal')
+  })
+
+  it('clean aliased component produces no diagnostics', () => {
+    const src = "component({ view: ({ state: s }) => [text(s.at('name'))] })"
+    expect(lint(src)).toEqual([])
+  })
+
+  it('does not flag plain values in init/update (no signal root there)', () => {
+    const src =
+      "component({ init: () => ({ n: 0 }), update: (s, m) => ({ n: s.n + 1 }), view: ({ state }) => [text(state.at('n'))] })"
+    expect(lint(src)).toEqual([])
+  })
+})
+
 describe('clean signal code produces no diagnostics', () => {
   it('idiomatic usage', () => {
     const src = [

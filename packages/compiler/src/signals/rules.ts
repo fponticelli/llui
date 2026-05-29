@@ -17,7 +17,7 @@
 // Each diagnostic has a message and a source position (start offset + length).
 
 import ts from 'typescript'
-import { isSignalExpr, signalPathOf, STATE_ROOTS, type Roots } from './extract-deps.js'
+import { isSignalExpr, signalPathOf, singleRoot, STATE_ROOTS, type Roots } from './extract-deps.js'
 
 export interface SignalDiagnostic {
   rule: string
@@ -75,6 +75,22 @@ function fnParamNames(fn: ts.Node): string[] {
 
 function fnBody(fn: ts.Node): ts.Node | undefined {
   return ts.isArrowFunction(fn) || ts.isFunctionExpression(fn) ? fn.body : undefined
+}
+
+/** The local alias a view binds its bag's `state` field to (`({ state })` -> 'state',
+ * `({ state: s })` -> 's'), or null if the bag doesn't destructure `state`. Mirrors
+ * transform-component's signalRoots so the lint uses the SAME root as the lowering. */
+function viewStateAlias(fn: ts.Node): string | null {
+  if (!ts.isArrowFunction(fn) && !ts.isFunctionExpression(fn)) return null
+  const param = fn.parameters[0]
+  if (!param || !ts.isObjectBindingPattern(param.name)) return null
+  for (const el of param.name.elements) {
+    if (!ts.isIdentifier(el.name)) continue
+    const key =
+      el.propertyName && ts.isIdentifier(el.propertyName) ? el.propertyName.text : el.name.text
+    if (key === 'state') return el.name.text
+  }
+  return null
 }
 
 /** Augment a roots map with row-scoped signal params (item/index/narrowed/arm).
@@ -245,6 +261,34 @@ export function lintSignals(sf: ts.SourceFile): SignalDiagnostic[] {
     isSignalExpr(node.expression.expression, roots)
 
   function visit(node: ts.Node, roots: Roots, peekOk: boolean): void {
+    // component({ … view: (bag) => [...] }) — lint the view body under the SAME
+    // root the lowering uses (the bag's `state` alias), so an aliased bag like
+    // `({ state: s }) => [text(s.at('n') + 1)]` is checked, not silently passed.
+    if (
+      ts.isCallExpression(node) &&
+      ts.isIdentifier(node.expression) &&
+      node.expression.text === 'component' &&
+      node.arguments[0] &&
+      ts.isObjectLiteralExpression(node.arguments[0])
+    ) {
+      for (const prop of node.arguments[0].properties) {
+        if (
+          ts.isPropertyAssignment(prop) &&
+          prop.name.getText(sf) === 'view' &&
+          (ts.isArrowFunction(prop.initializer) || ts.isFunctionExpression(prop.initializer))
+        ) {
+          const alias = viewStateAlias(prop.initializer)
+          const body = fnBody(prop.initializer)
+          if (alias && body) {
+            visit(body, singleRoot(alias), false)
+            continue
+          }
+        }
+        visit(prop, roots, false) // init/update/onEffect etc.: plain values
+      }
+      return
+    }
+
     // structural primitives augment roots inside their render callbacks
     if (ts.isCallExpression(node) && ts.isIdentifier(node.expression)) {
       const callee = node.expression.text
