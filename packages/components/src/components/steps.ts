@@ -1,7 +1,6 @@
-import type { Send } from '@llui/dom'
-import { useContext, tagSend } from '@llui/dom'
+import type { Send, Signal } from '@llui/dom/signals'
+import { useContext, tagSend } from '@llui/dom/signals'
 import { LocaleContext } from '../locale.js'
-import type { Locale } from '../locale.js'
 
 /**
  * Steps — progress indicator for multi-step flows (wizards, checkouts).
@@ -112,116 +111,110 @@ export function stepStatus(state: StepsState, step: number): StepStatus {
   return 'pending'
 }
 
-export interface StepsItemParts<S> {
+export interface StepsItemParts {
   item: {
     'data-scope': 'steps'
     'data-part': 'item'
-    'data-status': (s: S) => StepStatus
+    'data-status': Signal<StepStatus>
     'data-index': string
-    'aria-current': (s: S) => 'step' | undefined
+    'aria-current': Signal<'step' | undefined>
   }
   trigger: {
     type: 'button'
     'aria-label': string
-    disabled: (s: S) => boolean
+    disabled: Signal<boolean>
     'data-scope': 'steps'
     'data-part': 'trigger'
-    'data-status': (s: S) => StepStatus
+    'data-status': Signal<StepStatus>
     onClick: (e: MouseEvent) => void
   }
   separator: {
     'data-scope': 'steps'
     'data-part': 'separator'
-    'data-status': (s: S) => StepStatus
+    'data-status': Signal<StepStatus>
     'aria-hidden': 'true'
   }
 }
 
-export interface StepsParts<S> {
+export interface StepsParts {
   root: {
     role: 'group'
-    'aria-label': string | ((s: S) => string)
+    'aria-label': string
     'data-scope': 'steps'
     'data-part': 'root'
-    'data-disabled': (s: S) => '' | undefined
+    'data-disabled': Signal<'' | undefined>
   }
   nextTrigger: {
     type: 'button'
-    disabled: (s: S) => boolean
+    disabled: Signal<boolean>
     'data-scope': 'steps'
     'data-part': 'next-trigger'
     onClick: (e: MouseEvent) => void
   }
   prevTrigger: {
     type: 'button'
-    disabled: (s: S) => boolean
+    disabled: Signal<boolean>
     'data-scope': 'steps'
     'data-part': 'prev-trigger'
     onClick: (e: MouseEvent) => void
   }
-  item: (index: number) => StepsItemParts<S>
+  item: (index: number) => StepsItemParts
 }
 
 export interface ConnectOptions {
   label?: string
 }
 
-export function connect<S>(
-  get: (s: S) => StepsState,
+export function connect(
+  state: Signal<StepsState>,
   send: Send<StepsMsg>,
   opts: ConnectOptions = {},
-): StepsParts<S> {
-  const locale = useContext<S, Locale>(LocaleContext)
-  const label: string | ((s: S) => string) = opts.label ?? ((s: S) => locale(s).steps.label)
+): StepsParts {
+  const locale = useContext(LocaleContext)
+  const label = opts.label ?? locale.steps.label
   return {
     root: {
       role: 'group',
       'aria-label': label,
       'data-scope': 'steps',
       'data-part': 'root',
-      'data-disabled': (s) => (get(s).disabled ? '' : undefined),
+      'data-disabled': state.map((s) => (s.disabled ? '' : undefined)),
     },
     nextTrigger: {
       type: 'button',
-      disabled: (s) => {
-        const st = get(s)
-        return st.disabled || st.current >= st.steps.length - 1
-      },
+      disabled: state.map((st) => st.disabled || st.current >= st.steps.length - 1),
       'data-scope': 'steps',
       'data-part': 'next-trigger',
       onClick: tagSend(send, ['next'], () => send({ type: 'next' })),
     },
     prevTrigger: {
       type: 'button',
-      disabled: (s) => {
-        const st = get(s)
-        return st.disabled || st.current === 0
-      },
+      disabled: state.map((st) => st.disabled || st.current === 0),
       'data-scope': 'steps',
       'data-part': 'prev-trigger',
       onClick: tagSend(send, ['prev'], () => send({ type: 'prev' })),
     },
-    item: (index: number): StepsItemParts<S> => ({
+    item: (index: number): StepsItemParts => ({
       item: {
         'data-scope': 'steps',
         'data-part': 'item',
-        'data-status': (s) => stepStatus(get(s), index),
+        'data-status': state.map((s) => stepStatus(s, index)),
         'data-index': String(index),
-        'aria-current': (s) => (get(s).current === index ? 'step' : undefined),
+        'aria-current': state.map((s) => (s.current === index ? 'step' : undefined)),
       },
       trigger: {
         type: 'button',
         'aria-label': `Step ${index + 1}`,
-        disabled: (s) => !canGoTo(get(s), index),
+        disabled: state.map((s) => !canGoTo(s, index)),
         'data-scope': 'steps',
         'data-part': 'trigger',
-        'data-status': (s) => stepStatus(get(s), index),
+        'data-status': state.map((s) => stepStatus(s, index)),
         onClick: tagSend(send, ['goTo'], () => send({ type: 'goTo', step: index })),
       },
       separator: {
         'data-scope': 'steps',
         'data-part': 'separator',
-        'data-status': (s) => stepStatus(get(s), index),
+        'data-status': state.map((s) => stepStatus(s, index)),
         'aria-hidden': 'true',
       },
     }),

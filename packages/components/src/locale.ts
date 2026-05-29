@@ -1,4 +1,4 @@
-import { createContext } from '@llui/dom'
+import { createContext } from '@llui/dom/signals'
 
 /** Per-component locale strings. Only components with user-facing text have entries. */
 export interface Locale {

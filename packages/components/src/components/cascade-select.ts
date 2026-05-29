@@ -1,7 +1,6 @@
-import type { Send } from '@llui/dom'
-import { useContext, tagSend } from '@llui/dom'
+import type { Send, Signal } from '@llui/dom/signals'
+import { useContext, tagSend } from '@llui/dom/signals'
 import { LocaleContext } from '../locale.js'
-import type { Locale } from '../locale.js'
 
 /**
  * Cascade select — a series of dependent selects where each level's
@@ -99,7 +98,7 @@ export function completeValues(state: CascadeSelectState): string[] | null {
   return state.values as string[]
 }
 
-export interface CascadeLevelParts<S> {
+export interface CascadeLevelParts {
   label: {
     for: string
     'data-scope': 'cascade-select'
@@ -107,32 +106,32 @@ export interface CascadeLevelParts<S> {
   }
   select: {
     id: string
-    disabled: (s: S) => boolean
-    value: (s: S) => string
+    disabled: Signal<boolean>
+    value: Signal<string>
     'data-scope': 'cascade-select'
     'data-part': 'level-select'
     'data-level': string
-    'data-ready': (s: S) => '' | undefined
+    'data-ready': Signal<'' | undefined>
     onChange: (e: Event) => void
   }
 }
 
-export interface CascadeSelectParts<S> {
+export interface CascadeSelectParts {
   root: {
     'data-scope': 'cascade-select'
     'data-part': 'root'
-    'data-disabled': (s: S) => '' | undefined
-    'data-complete': (s: S) => '' | undefined
+    'data-disabled': Signal<'' | undefined>
+    'data-complete': Signal<'' | undefined>
   }
   clearTrigger: {
     type: 'button'
-    'aria-label': string | ((s: S) => string)
-    disabled: (s: S) => boolean
+    'aria-label': string
+    disabled: Signal<boolean>
     'data-scope': 'cascade-select'
     'data-part': 'clear-trigger'
     onClick: (e: MouseEvent) => void
   }
-  level: (index: number) => CascadeLevelParts<S>
+  level: (index: number) => CascadeLevelParts
 }
 
 export interface ConnectOptions {
@@ -140,30 +139,30 @@ export interface ConnectOptions {
   clearLabel?: string
 }
 
-export function connect<S>(
-  get: (s: S) => CascadeSelectState,
+export function connect(
+  state: Signal<CascadeSelectState>,
   send: Send<CascadeSelectMsg>,
   opts: ConnectOptions,
-): CascadeSelectParts<S> {
-  const locale = useContext<S, Locale>(LocaleContext)
+): CascadeSelectParts {
+  const locale = useContext(LocaleContext)
   const levelId = (i: number): string => `${opts.id}:level:${i}`
 
   return {
     root: {
       'data-scope': 'cascade-select',
       'data-part': 'root',
-      'data-disabled': (s) => (get(s).disabled ? '' : undefined),
-      'data-complete': (s) => (isComplete(get(s)) ? '' : undefined),
+      'data-disabled': state.map((s) => (s.disabled ? '' : undefined)),
+      'data-complete': state.map((s) => (isComplete(s) ? '' : undefined)),
     },
     clearTrigger: {
       type: 'button',
-      'aria-label': opts.clearLabel ?? ((s: S) => locale(s).cascadeSelect.clear),
-      disabled: (s) => get(s).values.every((v) => v === null),
+      'aria-label': opts.clearLabel ?? locale.cascadeSelect.clear,
+      disabled: state.map((s) => s.values.every((v) => v === null)),
       'data-scope': 'cascade-select',
       'data-part': 'clear-trigger',
       onClick: tagSend(send, ['clear'], () => send({ type: 'clear' })),
     },
-    level: (index: number): CascadeLevelParts<S> => ({
+    level: (index: number): CascadeLevelParts => ({
       label: {
         for: levelId(index),
         'data-scope': 'cascade-select',
@@ -171,12 +170,12 @@ export function connect<S>(
       },
       select: {
         id: levelId(index),
-        disabled: (s) => get(s).disabled || !isLevelReady(get(s), index),
-        value: (s) => get(s).values[index] ?? '',
+        disabled: state.map((s) => s.disabled || !isLevelReady(s, index)),
+        value: state.map((s) => s.values[index] ?? ''),
         'data-scope': 'cascade-select',
         'data-part': 'level-select',
         'data-level': String(index),
-        'data-ready': (s) => (isLevelReady(get(s), index) ? '' : undefined),
+        'data-ready': state.map((s) => (isLevelReady(s, index) ? '' : undefined)),
         onChange: tagSend(send, ['setValue'], (e) => {
           const el = e.target as HTMLSelectElement
           send({ type: 'setValue', levelIndex: index, value: el.value || null })

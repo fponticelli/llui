@@ -1,7 +1,6 @@
-import type { Send } from '@llui/dom'
-import { useContext, tagSend } from '@llui/dom'
+import type { Send, Signal } from '@llui/dom/signals'
+import { useContext, tagSend } from '@llui/dom/signals'
 import { LocaleContext } from '../locale.js'
-import type { Locale } from '../locale.js'
 
 /**
  * Navigation menu — multi-level menu bar with hover/focus-triggered
@@ -96,18 +95,18 @@ export function isOpen(state: NavMenuState, id: string): boolean {
   return state.open.includes(id)
 }
 
-export interface NavItemParts<S> {
+export interface NavItemParts {
   trigger: {
     type: 'button'
     role: 'menuitem'
     id: string
     'aria-haspopup': 'menu' | undefined
-    'aria-expanded': (s: S) => boolean | undefined
+    'aria-expanded': Signal<boolean | undefined>
     'data-scope': 'navigation-menu'
     'data-part': 'trigger'
-    'data-state': (s: S) => 'open' | 'closed'
+    'data-state': Signal<'open' | 'closed'>
     'data-value': string
-    tabIndex: (s: S) => number
+    tabIndex: Signal<number>
     onClick: (e: MouseEvent) => void
     onPointerEnter: (e: PointerEvent) => void
     onFocus: (e: FocusEvent) => void
@@ -118,23 +117,23 @@ export interface NavItemParts<S> {
     'aria-labelledby': string
     'data-scope': 'navigation-menu'
     'data-part': 'content'
-    'data-state': (s: S) => 'open' | 'closed'
-    hidden: (s: S) => boolean
+    'data-state': Signal<'open' | 'closed'>
+    hidden: Signal<boolean>
     onPointerEnter: (e: PointerEvent) => void
   }
 }
 
-export interface NavMenuParts<S> {
+export interface NavMenuParts {
   root: {
     role: 'menubar'
-    'aria-label': string | ((s: S) => string)
+    'aria-label': string
     'data-scope': 'navigation-menu'
     'data-part': 'root'
-    'data-disabled': (s: S) => '' | undefined
+    'data-disabled': Signal<'' | undefined>
     onPointerLeave: (e: PointerEvent) => void
     onPointerEnter: (e: PointerEvent) => void
   }
-  item: (id: string, options: { isBranch: boolean; ancestorIds?: string[] }) => NavItemParts<S>
+  item: (id: string, options: { isBranch: boolean; ancestorIds?: string[] }) => NavItemParts
 }
 
 export interface ConnectOptions {
@@ -148,12 +147,12 @@ export interface ConnectOptions {
   closeOnLeave?: boolean
 }
 
-export function connect<S>(
-  get: (s: S) => NavMenuState,
+export function connect(
+  state: Signal<NavMenuState>,
   send: Send<NavMenuMsg>,
   opts: ConnectOptions,
-): NavMenuParts<S> {
-  const locale = useContext<S, Locale>(LocaleContext)
+): NavMenuParts {
+  const locale = useContext(LocaleContext)
   const triggerId = (v: string): string => `${opts.id}:trigger:${v}`
   const contentId = (v: string): string => `${opts.id}:content:${v}`
   const closeOnLeave = opts.closeOnLeave !== false
@@ -178,14 +177,14 @@ export function connect<S>(
   return {
     root: {
       role: 'menubar',
-      'aria-label': opts.label ?? ((s: S) => locale(s).navigationMenu.label),
+      'aria-label': opts.label ?? locale.navigationMenu.label,
       'data-scope': 'navigation-menu',
       'data-part': 'root',
-      'data-disabled': (s) => (get(s).disabled ? '' : undefined),
+      'data-disabled': state.map((st) => (st.disabled ? '' : undefined)),
       onPointerLeave: () => scheduleClose(),
       onPointerEnter: () => cancelClose(),
     },
-    item: (id: string, options: { isBranch: boolean; ancestorIds?: string[] }): NavItemParts<S> => {
+    item: (id: string, options: { isBranch: boolean; ancestorIds?: string[] }): NavItemParts => {
       const ancestorIds = options.ancestorIds ?? []
       return {
         trigger: {
@@ -193,12 +192,12 @@ export function connect<S>(
           role: 'menuitem',
           id: triggerId(id),
           'aria-haspopup': options.isBranch ? 'menu' : undefined,
-          'aria-expanded': (s) => (options.isBranch ? isOpen(get(s), id) : undefined),
+          'aria-expanded': state.map((st) => (options.isBranch ? isOpen(st, id) : undefined)),
           'data-scope': 'navigation-menu',
           'data-part': 'trigger',
-          'data-state': (s) => (isOpen(get(s), id) ? 'open' : 'closed'),
+          'data-state': state.map((st) => (isOpen(st, id) ? 'open' : 'closed')),
           'data-value': id,
-          tabIndex: (s) => (get(s).focused === id ? 0 : -1),
+          tabIndex: state.map((st) => (st.focused === id ? 0 : -1)),
           onClick: tagSend(send, ['toggleBranch'], () => {
             if (options.isBranch) {
               send({ type: 'toggleBranch', id, ancestorIds })
@@ -218,8 +217,8 @@ export function connect<S>(
           'aria-labelledby': triggerId(id),
           'data-scope': 'navigation-menu',
           'data-part': 'content',
-          'data-state': (s) => (isOpen(get(s), id) ? 'open' : 'closed'),
-          hidden: (s) => !isOpen(get(s), id),
+          'data-state': state.map((st) => (isOpen(st, id) ? 'open' : 'closed')),
+          hidden: state.map((st) => !isOpen(st, id)),
           onPointerEnter: tagSend(send, ['openBranch'], () => {
             cancelClose()
             if (options.isBranch) {

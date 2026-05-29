@@ -1,7 +1,6 @@
-import type { Send } from '@llui/dom'
-import { useContext, tagSend } from '@llui/dom'
+import type { Send, Signal } from '@llui/dom/signals'
+import { useContext, tagSend } from '@llui/dom/signals'
 import { LocaleContext } from '../locale.js'
-import type { Locale } from '../locale.js'
 
 /**
  * Toast — ephemeral non-modal notifications rendered in a fixed region.
@@ -123,7 +122,7 @@ export function nextToastId(): string {
   return `toast-${++toastIdCounter}`
 }
 
-export interface ToastItemParts<S> {
+export interface ToastItemParts {
   root: {
     role: 'status'
     'aria-atomic': 'true'
@@ -150,23 +149,23 @@ export interface ToastItemParts<S> {
   }
   closeTrigger: {
     type: 'button'
-    'aria-label': string | ((s: S) => string)
+    'aria-label': string
     'data-scope': 'toast'
     'data-part': 'close-trigger'
     onClick: (e: MouseEvent) => void
   }
 }
 
-export interface ToasterParts<S> {
+export interface ToasterParts {
   region: {
     role: 'region'
-    'aria-label': string | ((s: S) => string)
+    'aria-label': string
     tabIndex: -1
     'data-scope': 'toast'
     'data-part': 'region'
-    'data-placement': (s: S) => ToastPlacement
+    'data-placement': Signal<ToastPlacement>
   }
-  toast: (toast: Toast) => ToastItemParts<S>
+  toast: (toast: Toast) => ToastItemParts
 }
 
 export interface ConnectOptions {
@@ -174,16 +173,14 @@ export interface ConnectOptions {
   closeLabel?: string
 }
 
-export function connect<S>(
-  _get: (s: S) => ToasterState,
+export function connect(
+  state: Signal<ToasterState>,
   send: Send<ToasterMsg>,
   opts: ConnectOptions = {},
-): ToasterParts<S> {
-  const locale = useContext<S, Locale>(LocaleContext)
-  const regionLabel: string | ((s: S) => string) =
-    opts.regionLabel ?? ((s: S) => locale(s).toast.region)
-  const closeLabel: string | ((s: S) => string) =
-    opts.closeLabel ?? ((s: S) => locale(s).toast.dismiss)
+): ToasterParts {
+  const locale = useContext(LocaleContext)
+  const regionLabel = opts.regionLabel ?? locale.toast.region
+  const closeLabel = opts.closeLabel ?? locale.toast.dismiss
 
   return {
     region: {
@@ -192,9 +189,9 @@ export function connect<S>(
       tabIndex: -1,
       'data-scope': 'toast',
       'data-part': 'region',
-      'data-placement': (s) => _get(s).placement,
+      'data-placement': state.map((s) => s.placement),
     },
-    toast: (toast: Toast): ToastItemParts<S> => ({
+    toast: (toast: Toast): ToastItemParts => ({
       root: {
         role: 'status',
         'aria-atomic': 'true',

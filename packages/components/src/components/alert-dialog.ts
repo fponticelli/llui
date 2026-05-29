@@ -1,4 +1,4 @@
-import type { Send, TransitionOptions } from '@llui/dom/signals'
+import type { Send, Signal, TransitionOptions } from '@llui/dom/signals'
 import {
   init,
   update,
@@ -31,21 +31,21 @@ export interface AlertDialogConnectOptions extends Omit<DialogConnectOptions, 'r
   confirmLabel?: string
 }
 
-export type AlertDialogParts<S> = DialogParts<S>
+export type AlertDialogParts = DialogParts
 
-export function connect<S>(
-  get: (s: S) => DialogState,
+export function connect(
+  state: Signal<DialogState>,
   send: Send<DialogMsg>,
   opts: AlertDialogConnectOptions,
-): AlertDialogParts<S> {
-  return dialogConnect(get, send, { ...opts, role: 'alertdialog' })
+): AlertDialogParts {
+  return dialogConnect(state, send, { ...opts, role: 'alertdialog' })
 }
 
-export interface AlertDialogOverlayOptions<S> {
-  get: (s: S) => DialogState
+export interface AlertDialogOverlayOptions {
+  state: Signal<DialogState>
   send: Send<DialogMsg>
-  parts: AlertDialogParts<S>
-  content: () => Node[]
+  parts: AlertDialogParts
+  content: () => readonly Node[]
   transition?: TransitionOptions
   closeOnEscape?: boolean
   /** Whether outside-click should dismiss (default: false for alert dialogs). */
@@ -58,7 +58,7 @@ export interface AlertDialogOverlayOptions<S> {
   restoreFocus?: boolean
 }
 
-export function overlay<S>(opts: AlertDialogOverlayOptions<S>): Node[] {
+export function overlay(opts: AlertDialogOverlayOptions): Node {
   return dialogOverlay({
     ...opts,
     closeOnOutsideClick: opts.closeOnOutsideClick ?? false,

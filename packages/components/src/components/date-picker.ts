@@ -1,8 +1,7 @@
-import type { Send } from '@llui/dom'
-import { useContext, tagSend } from '@llui/dom'
+import type { Send, Signal } from '@llui/dom/signals'
+import { useContext, tagSend } from '@llui/dom/signals'
 import { flipArrow } from '../utils/direction.js'
 import { LocaleContext, en } from '../locale.js'
-import type { Locale } from '../locale.js'
 
 /**
  * Date picker — calendar with month navigation and date selection. Works
@@ -274,7 +273,7 @@ export function weekRows(cells: DayCell[]): DayCell[][] {
   return rows
 }
 
-export interface DayCellParts<_S> {
+export interface DayCellParts {
   cell: {
     role: 'gridcell'
     'aria-selected': boolean
@@ -294,15 +293,15 @@ export interface DayCellParts<_S> {
   }
 }
 
-export interface DatePickerParts<S> {
+export interface DatePickerParts {
   root: {
     'data-scope': 'date-picker'
     'data-part': 'root'
-    'data-disabled': (s: S) => '' | undefined
+    'data-disabled': Signal<'' | undefined>
   }
   grid: {
     role: 'grid'
-    'aria-label': (s: S) => string
+    'aria-label': Signal<string>
     'data-scope': 'date-picker'
     'data-part': 'grid'
   }
@@ -313,21 +312,21 @@ export interface DatePickerParts<S> {
   }
   prevMonthTrigger: {
     type: 'button'
-    'aria-label': string | ((s: S) => string)
-    disabled: (s: S) => boolean
+    'aria-label': string
+    disabled: Signal<boolean>
     'data-scope': 'date-picker'
     'data-part': 'prev-month-trigger'
     onClick: (e: MouseEvent) => void
   }
   nextMonthTrigger: {
     type: 'button'
-    'aria-label': string | ((s: S) => string)
-    disabled: (s: S) => boolean
+    'aria-label': string
+    disabled: Signal<boolean>
     'data-scope': 'date-picker'
     'data-part': 'next-month-trigger'
     onClick: (e: MouseEvent) => void
   }
-  dayCell: (cell: DayCell) => DayCellParts<S>
+  dayCell: (cell: DayCell) => DayCellParts
 }
 
 export interface ConnectOptions {
@@ -336,27 +335,25 @@ export interface ConnectOptions {
   gridLabel?: (year: number, month: number) => string
 }
 
-export function connect<S>(
-  get: (s: S) => DatePickerState,
+export function connect(
+  state: Signal<DatePickerState>,
   send: Send<DatePickerMsg>,
   opts: ConnectOptions = {},
-): DatePickerParts<S> {
-  const locale = useContext<S, Locale>(LocaleContext)
-  const prevLabel: string | ((s: S) => string) =
-    opts.prevLabel ?? ((s: S) => locale(s).datePicker.prev)
-  const nextLabel: string | ((s: S) => string) =
-    opts.nextLabel ?? ((s: S) => locale(s).datePicker.next)
+): DatePickerParts {
+  const locale = useContext(LocaleContext)
+  const prevLabel = opts.prevLabel ?? locale.datePicker.prev
+  const nextLabel = opts.nextLabel ?? locale.datePicker.next
   const gridLabel = opts.gridLabel ?? en.datePicker.grid
 
   return {
     root: {
       'data-scope': 'date-picker',
       'data-part': 'root',
-      'data-disabled': (s) => (get(s).disabled ? '' : undefined),
+      'data-disabled': state.map((s) => (s.disabled ? '' : undefined)),
     },
     grid: {
       role: 'grid',
-      'aria-label': (s) => gridLabel(get(s).visibleYear, get(s).visibleMonth),
+      'aria-label': state.map((s) => gridLabel(s.visibleYear, s.visibleMonth)),
       'data-scope': 'date-picker',
       'data-part': 'grid',
     },
@@ -368,7 +365,7 @@ export function connect<S>(
     prevMonthTrigger: {
       type: 'button',
       'aria-label': prevLabel,
-      disabled: (s) => get(s).disabled,
+      disabled: state.map((s) => s.disabled),
       'data-scope': 'date-picker',
       'data-part': 'prev-month-trigger',
       onClick: tagSend(send, ['prevMonth'], () => send({ type: 'prevMonth' })),
@@ -376,12 +373,12 @@ export function connect<S>(
     nextMonthTrigger: {
       type: 'button',
       'aria-label': nextLabel,
-      disabled: (s) => get(s).disabled,
+      disabled: state.map((s) => s.disabled),
       'data-scope': 'date-picker',
       'data-part': 'next-month-trigger',
       onClick: tagSend(send, ['nextMonth'], () => send({ type: 'nextMonth' })),
     },
-    dayCell: (cell: DayCell): DayCellParts<S> => ({
+    dayCell: (cell: DayCell): DayCellParts => ({
       cell: {
         role: 'gridcell',
         'aria-selected': cell.isSelected,

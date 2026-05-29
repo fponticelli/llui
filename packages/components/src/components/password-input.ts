@@ -1,7 +1,6 @@
-import type { Send } from '@llui/dom'
-import { useContext, tagSend } from '@llui/dom'
+import type { Send, Signal } from '@llui/dom/signals'
+import { useContext, tagSend } from '@llui/dom/signals'
 import { LocaleContext } from '../locale.js'
-import type { Locale } from '../locale.js'
 
 /**
  * Password input — text input with show/hide visibility toggle.
@@ -50,27 +49,27 @@ export function update(
   }
 }
 
-export interface PasswordInputParts<S> {
+export interface PasswordInputParts {
   root: {
     'data-scope': 'password-input'
     'data-part': 'root'
-    'data-visible': (s: S) => '' | undefined
-    'data-disabled': (s: S) => '' | undefined
+    'data-visible': Signal<'' | undefined>
+    'data-disabled': Signal<'' | undefined>
   }
   input: {
-    type: (s: S) => 'text' | 'password'
+    type: Signal<'text' | 'password'>
     autoComplete: string
-    disabled: (s: S) => boolean
-    value: (s: S) => string
+    disabled: Signal<boolean>
+    value: Signal<string>
     'data-scope': 'password-input'
     'data-part': 'input'
     onInput: (e: Event) => void
   }
   visibilityTrigger: {
     type: 'button'
-    'aria-label': (s: S) => string
-    'aria-pressed': (s: S) => boolean
-    disabled: (s: S) => boolean
+    'aria-label': Signal<string>
+    'aria-pressed': Signal<boolean>
+    disabled: Signal<boolean>
     tabIndex: -1
     'data-scope': 'password-input'
     'data-part': 'visibility-trigger'
@@ -84,12 +83,12 @@ export interface ConnectOptions {
   hideLabel?: string
 }
 
-export function connect<S>(
-  get: (s: S) => PasswordInputState,
+export function connect(
+  state: Signal<PasswordInputState>,
   send: Send<PasswordInputMsg>,
   opts: ConnectOptions = {},
-): PasswordInputParts<S> {
-  const locale = useContext<S, Locale>(LocaleContext)
+): PasswordInputParts {
+  const locale = useContext(LocaleContext)
   const autoComplete = opts.autoComplete ?? 'current-password'
   const showLabel = opts.showLabel
   const hideLabel = opts.hideLabel
@@ -98,14 +97,14 @@ export function connect<S>(
     root: {
       'data-scope': 'password-input',
       'data-part': 'root',
-      'data-visible': (s) => (get(s).visible ? '' : undefined),
-      'data-disabled': (s) => (get(s).disabled ? '' : undefined),
+      'data-visible': state.map((st) => (st.visible ? '' : undefined)),
+      'data-disabled': state.map((st) => (st.disabled ? '' : undefined)),
     },
     input: {
-      type: (s) => (get(s).visible ? 'text' : 'password'),
+      type: state.map((st) => (st.visible ? 'text' : 'password')),
       autoComplete,
-      disabled: (s) => get(s).disabled,
-      value: (s) => get(s).value,
+      disabled: state.map((st) => st.disabled),
+      value: state.map((st) => st.value),
       'data-scope': 'password-input',
       'data-part': 'input',
       onInput: tagSend(send, ['setValue'], (e) =>
@@ -114,12 +113,13 @@ export function connect<S>(
     },
     visibilityTrigger: {
       type: 'button',
-      'aria-label': (s) =>
-        get(s).visible
-          ? (hideLabel ?? locale(s).passwordInput.hide)
-          : (showLabel ?? locale(s).passwordInput.show),
-      'aria-pressed': (s) => get(s).visible,
-      disabled: (s) => get(s).disabled,
+      'aria-label': state.map((st) =>
+        st.visible
+          ? (hideLabel ?? locale.passwordInput.hide)
+          : (showLabel ?? locale.passwordInput.show),
+      ),
+      'aria-pressed': state.map((st) => st.visible),
+      disabled: state.map((st) => st.disabled),
       tabIndex: -1,
       'data-scope': 'password-input',
       'data-part': 'visibility-trigger',

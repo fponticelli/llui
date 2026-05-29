@@ -1,7 +1,6 @@
-import type { Send } from '@llui/dom'
-import { useContext, tagSend } from '@llui/dom'
+import type { Send, Signal } from '@llui/dom/signals'
+import { useContext, tagSend } from '@llui/dom/signals'
 import { LocaleContext, en } from '../locale.js'
-import type { Locale } from '../locale.js'
 
 /**
  * Pagination — page navigation with ellipses for large ranges.
@@ -126,28 +125,28 @@ export function pageItems(state: PaginationState): PageItem[] {
   return items
 }
 
-export interface PaginationParts<S> {
+export interface PaginationParts {
   root: {
     role: 'navigation'
-    'aria-label': string | ((s: S) => string)
+    'aria-label': string
     'data-scope': 'pagination'
     'data-part': 'root'
-    'data-disabled': (s: S) => '' | undefined
+    'data-disabled': Signal<'' | undefined>
   }
   prevTrigger: {
     type: 'button'
-    'aria-label': string | ((s: S) => string)
-    'aria-disabled': (s: S) => 'true' | undefined
-    disabled: (s: S) => boolean
+    'aria-label': string
+    'aria-disabled': Signal<'true' | undefined>
+    disabled: Signal<boolean>
     'data-scope': 'pagination'
     'data-part': 'prev-trigger'
     onClick: (e: MouseEvent) => void
   }
   nextTrigger: {
     type: 'button'
-    'aria-label': string | ((s: S) => string)
-    'aria-disabled': (s: S) => 'true' | undefined
-    disabled: (s: S) => boolean
+    'aria-label': string
+    'aria-disabled': Signal<'true' | undefined>
+    disabled: Signal<boolean>
     'data-scope': 'pagination'
     'data-part': 'next-trigger'
     onClick: (e: MouseEvent) => void
@@ -155,8 +154,8 @@ export interface PaginationParts<S> {
   item: (page: number) => {
     type: 'button'
     'aria-label': string
-    'aria-current': (s: S) => 'page' | undefined
-    'data-selected': (s: S) => '' | undefined
+    'aria-current': Signal<'page' | undefined>
+    'data-selected': Signal<'' | undefined>
     'data-scope': 'pagination'
     'data-part': 'item'
     'data-value': string
@@ -177,17 +176,15 @@ export interface ConnectOptions {
   pageLabel?: (page: number) => string
 }
 
-export function connect<S>(
-  get: (s: S) => PaginationState,
+export function connect(
+  state: Signal<PaginationState>,
   send: Send<PaginationMsg>,
   opts: ConnectOptions = {},
-): PaginationParts<S> {
-  const locale = useContext<S, Locale>(LocaleContext)
-  const label: string | ((s: S) => string) = opts.label ?? ((s: S) => locale(s).pagination.label)
-  const prevLabel: string | ((s: S) => string) =
-    opts.prevLabel ?? ((s: S) => locale(s).pagination.prev)
-  const nextLabel: string | ((s: S) => string) =
-    opts.nextLabel ?? ((s: S) => locale(s).pagination.next)
+): PaginationParts {
+  const locale = useContext(LocaleContext)
+  const label = opts.label ?? locale.pagination.label
+  const prevLabel = opts.prevLabel ?? locale.pagination.prev
+  const nextLabel = opts.nextLabel ?? locale.pagination.next
   const pageLabel = opts.pageLabel ?? en.pagination.page
 
   return {
@@ -196,13 +193,13 @@ export function connect<S>(
       'aria-label': label,
       'data-scope': 'pagination',
       'data-part': 'root',
-      'data-disabled': (s) => (get(s).disabled ? '' : undefined),
+      'data-disabled': state.map((st) => (st.disabled ? '' : undefined)),
     },
     prevTrigger: {
       type: 'button',
       'aria-label': prevLabel,
-      'aria-disabled': (s) => (get(s).page <= 1 || get(s).disabled ? 'true' : undefined),
-      disabled: (s) => get(s).page <= 1 || get(s).disabled,
+      'aria-disabled': state.map((st) => (st.page <= 1 || st.disabled ? 'true' : undefined)),
+      disabled: state.map((st) => st.page <= 1 || st.disabled),
       'data-scope': 'pagination',
       'data-part': 'prev-trigger',
       onClick: tagSend(send, ['prev'], () => send({ type: 'prev' })),
@@ -210,14 +207,10 @@ export function connect<S>(
     nextTrigger: {
       type: 'button',
       'aria-label': nextLabel,
-      'aria-disabled': (s) => {
-        const st = get(s)
-        return st.page >= totalPages(st) || st.disabled ? 'true' : undefined
-      },
-      disabled: (s) => {
-        const st = get(s)
-        return st.page >= totalPages(st) || st.disabled
-      },
+      'aria-disabled': state.map((st) =>
+        st.page >= totalPages(st) || st.disabled ? 'true' : undefined,
+      ),
+      disabled: state.map((st) => st.page >= totalPages(st) || st.disabled),
       'data-scope': 'pagination',
       'data-part': 'next-trigger',
       onClick: tagSend(send, ['next'], () => send({ type: 'next' })),
@@ -225,8 +218,8 @@ export function connect<S>(
     item: (page: number) => ({
       type: 'button',
       'aria-label': pageLabel(page),
-      'aria-current': (s) => (get(s).page === page ? 'page' : undefined),
-      'data-selected': (s) => (get(s).page === page ? '' : undefined),
+      'aria-current': state.map((st) => (st.page === page ? 'page' : undefined)),
+      'data-selected': state.map((st) => (st.page === page ? '' : undefined)),
       'data-scope': 'pagination',
       'data-part': 'item',
       'data-value': String(page),

@@ -1,7 +1,6 @@
-import type { Send } from '@llui/dom'
-import { useContext, tagSend } from '@llui/dom'
+import type { Send, Signal } from '@llui/dom/signals'
+import { useContext, tagSend } from '@llui/dom/signals'
 import { LocaleContext } from '../locale.js'
-import type { Locale } from '../locale.js'
 
 /**
  * Table of contents — a navigation list that tracks which heading is
@@ -91,36 +90,36 @@ export function isExpanded(state: TocState, id: string): boolean {
   return state.expanded.includes(id)
 }
 
-export interface TocItemParts<S> {
+export interface TocItemParts {
   item: {
     'data-scope': 'toc'
     'data-part': 'item'
     'data-level': string
-    'data-active': (s: S) => '' | undefined
+    'data-active': Signal<'' | undefined>
     'data-value': string
   }
   link: {
     href: string
-    'aria-current': (s: S) => 'location' | undefined
+    'aria-current': Signal<'location' | undefined>
     'data-scope': 'toc'
     'data-part': 'link'
-    'data-active': (s: S) => '' | undefined
+    'data-active': Signal<'' | undefined>
   }
   expandTrigger: {
     type: 'button'
-    'aria-expanded': (s: S) => boolean
-    'aria-label': string | ((s: S) => string)
+    'aria-expanded': Signal<boolean>
+    'aria-label': string
     'data-scope': 'toc'
     'data-part': 'expand-trigger'
-    'data-state': (s: S) => 'open' | 'closed'
+    'data-state': Signal<'open' | 'closed'>
     onClick: (e: MouseEvent) => void
   }
 }
 
-export interface TocParts<S> {
+export interface TocParts {
   root: {
     role: 'navigation'
-    'aria-label': string | ((s: S) => string)
+    'aria-label': string
     'data-scope': 'toc'
     'data-part': 'root'
   }
@@ -129,7 +128,7 @@ export interface TocParts<S> {
     'data-scope': 'toc'
     'data-part': 'list'
   }
-  item: (entry: TocEntry) => TocItemParts<S>
+  item: (entry: TocEntry) => TocItemParts
 }
 
 export interface ConnectOptions {
@@ -139,20 +138,19 @@ export interface ConnectOptions {
   expandLabel?: string
 }
 
-export function connect<S>(
-  get: (s: S) => TocState,
+export function connect(
+  state: Signal<TocState>,
   send: Send<TocMsg>,
   opts: ConnectOptions = {},
-): TocParts<S> {
-  const locale = useContext<S, Locale>(LocaleContext)
+): TocParts {
+  const locale = useContext(LocaleContext)
   const prefix = opts.hrefPrefix ?? '#'
-  const expandLabel: string | ((s: S) => string) =
-    opts.expandLabel ?? ((s: S) => locale(s).toc.expand)
+  const expandLabel = opts.expandLabel ?? locale.toc.expand
 
   return {
     root: {
       role: 'navigation',
-      'aria-label': opts.label ?? ((s: S) => locale(s).toc.label),
+      'aria-label': opts.label ?? locale.toc.label,
       'data-scope': 'toc',
       'data-part': 'root',
     },
@@ -161,28 +159,28 @@ export function connect<S>(
       'data-scope': 'toc',
       'data-part': 'list',
     },
-    item: (entry: TocEntry): TocItemParts<S> => ({
+    item: (entry: TocEntry): TocItemParts => ({
       item: {
         'data-scope': 'toc',
         'data-part': 'item',
         'data-level': String(entry.level),
-        'data-active': (s) => (isActive(get(s), entry.id) ? '' : undefined),
+        'data-active': state.map((s) => (isActive(s, entry.id) ? '' : undefined)),
         'data-value': entry.id,
       },
       link: {
         href: `${prefix}${entry.id}`,
-        'aria-current': (s) => (isActive(get(s), entry.id) ? 'location' : undefined),
+        'aria-current': state.map((s) => (isActive(s, entry.id) ? 'location' : undefined)),
         'data-scope': 'toc',
         'data-part': 'link',
-        'data-active': (s) => (isActive(get(s), entry.id) ? '' : undefined),
+        'data-active': state.map((s) => (isActive(s, entry.id) ? '' : undefined)),
       },
       expandTrigger: {
         type: 'button',
-        'aria-expanded': (s) => isExpanded(get(s), entry.id),
+        'aria-expanded': state.map((s) => isExpanded(s, entry.id)),
         'aria-label': expandLabel,
         'data-scope': 'toc',
         'data-part': 'expand-trigger',
-        'data-state': (s) => (isExpanded(get(s), entry.id) ? 'open' : 'closed'),
+        'data-state': state.map((s) => (isExpanded(s, entry.id) ? 'open' : 'closed')),
         onClick: tagSend(send, ['toggleExpanded'], () =>
           send({ type: 'toggleExpanded', id: entry.id }),
         ),

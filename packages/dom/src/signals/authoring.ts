@@ -44,7 +44,7 @@ export function text(value: Reactive<string | number>): Node {
 }
 
 // ── Elements ────────────────────────────────────────────────────────
-export type AttrValue = Reactive<string | number | boolean | null>
+export type AttrValue = Reactive<string | number | boolean | null | undefined>
 export type ElProps = Record<string, AttrValue | ((ev: Event) => void)>
 
 /** An element helper accepts `tag(children)`, `tag(props, children)`, `tag(props)`,

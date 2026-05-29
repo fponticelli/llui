@@ -1,7 +1,6 @@
-import type { Send } from '@llui/dom'
-import { useContext, tagSend } from '@llui/dom'
+import type { Send, Signal } from '@llui/dom/signals'
+import { useContext, tagSend } from '@llui/dom/signals'
 import { LocaleContext } from '../locale.js'
-import type { Locale } from '../locale.js'
 
 /**
  * Color picker — HSL/HSV color selection. Tracks hue (0-360), saturation
@@ -141,20 +140,20 @@ export function hexToHsl(hex: string): Hsl | null {
   }
 }
 
-export interface ColorPickerParts<S> {
+export interface ColorPickerParts {
   root: {
     'data-scope': 'color-picker'
     'data-part': 'root'
-    'data-disabled': (s: S) => '' | undefined
+    'data-disabled': Signal<'' | undefined>
   }
   hueSlider: {
     type: 'range'
     min: 0
     max: 360
     step: 1
-    'aria-label': string | ((s: S) => string)
-    disabled: (s: S) => boolean
-    value: (s: S) => string
+    'aria-label': string
+    disabled: Signal<boolean>
+    value: Signal<string>
     'data-scope': 'color-picker'
     'data-part': 'hue-slider'
     onInput: (e: Event) => void
@@ -164,10 +163,10 @@ export interface ColorPickerParts<S> {
     min: 0
     max: 100
     step: 1
-    'aria-label': string | ((s: S) => string)
-    disabled: (s: S) => boolean
-    value: (s: S) => string
-    style: (s: S) => string
+    'aria-label': string
+    disabled: Signal<boolean>
+    value: Signal<string>
+    style: Signal<string>
     'data-scope': 'color-picker'
     'data-part': 'saturation-slider'
     onInput: (e: Event) => void
@@ -177,10 +176,10 @@ export interface ColorPickerParts<S> {
     min: 0
     max: 100
     step: 1
-    'aria-label': string | ((s: S) => string)
-    disabled: (s: S) => boolean
-    value: (s: S) => string
-    style: (s: S) => string
+    'aria-label': string
+    disabled: Signal<boolean>
+    value: Signal<string>
+    style: Signal<string>
     'data-scope': 'color-picker'
     'data-part': 'lightness-slider'
     onInput: (e: Event) => void
@@ -188,9 +187,9 @@ export interface ColorPickerParts<S> {
   hexInput: {
     type: 'text'
     autoComplete: 'off'
-    'aria-label': string | ((s: S) => string)
-    disabled: (s: S) => boolean
-    value: (s: S) => string
+    'aria-label': string
+    disabled: Signal<boolean>
+    value: Signal<string>
     'data-scope': 'color-picker'
     'data-part': 'hex-input'
     onInput: (e: Event) => void
@@ -199,7 +198,7 @@ export interface ColorPickerParts<S> {
     'data-scope': 'color-picker'
     'data-part': 'swatch'
     'aria-hidden': 'true'
-    style: (s: S) => string
+    style: Signal<string>
   }
 }
 
@@ -210,26 +209,26 @@ export interface ConnectOptions {
   hexLabel?: string
 }
 
-export function connect<S>(
-  get: (s: S) => ColorPickerState,
+export function connect(
+  state: Signal<ColorPickerState>,
   send: Send<ColorPickerMsg>,
   opts: ConnectOptions = {},
-): ColorPickerParts<S> {
-  const locale = useContext<S, Locale>(LocaleContext)
+): ColorPickerParts {
+  const locale = useContext(LocaleContext)
   return {
     root: {
       'data-scope': 'color-picker',
       'data-part': 'root',
-      'data-disabled': (s) => (get(s).disabled ? '' : undefined),
+      'data-disabled': state.map((s) => (s.disabled ? '' : undefined)),
     },
     hueSlider: {
       type: 'range',
       min: 0,
       max: 360,
       step: 1,
-      'aria-label': opts.hueLabel ?? ((s: S) => locale(s).colorPicker.hue),
-      disabled: (s) => get(s).disabled,
-      value: (s) => String(get(s).hsl.h),
+      'aria-label': opts.hueLabel ?? locale.colorPicker.hue,
+      disabled: state.map((s) => s.disabled),
+      value: state.map((s) => String(s.hsl.h)),
       'data-scope': 'color-picker',
       'data-part': 'hue-slider',
       onInput: tagSend(send, ['setHue'], (e) =>
@@ -241,13 +240,13 @@ export function connect<S>(
       min: 0,
       max: 100,
       step: 1,
-      'aria-label': opts.saturationLabel ?? ((s: S) => locale(s).colorPicker.saturation),
-      disabled: (s) => get(s).disabled,
-      value: (s) => String(get(s).hsl.s),
-      style: (s) => {
-        const { h, l } = get(s).hsl
+      'aria-label': opts.saturationLabel ?? locale.colorPicker.saturation,
+      disabled: state.map((s) => s.disabled),
+      value: state.map((s) => String(s.hsl.s)),
+      style: state.map((s) => {
+        const { h, l } = s.hsl
         return `background: linear-gradient(to right, hsl(${h} 0% ${l}%), hsl(${h} 100% ${l}%))`
-      },
+      }),
       'data-scope': 'color-picker',
       'data-part': 'saturation-slider',
       onInput: tagSend(send, ['setSaturation'], (e) =>
@@ -259,13 +258,13 @@ export function connect<S>(
       min: 0,
       max: 100,
       step: 1,
-      'aria-label': opts.lightnessLabel ?? ((s: S) => locale(s).colorPicker.lightness),
-      disabled: (s) => get(s).disabled,
-      value: (s) => String(get(s).hsl.l),
-      style: (s) => {
-        const { h, s: sat } = get(s).hsl
+      'aria-label': opts.lightnessLabel ?? locale.colorPicker.lightness,
+      disabled: state.map((s) => s.disabled),
+      value: state.map((s) => String(s.hsl.l)),
+      style: state.map((s) => {
+        const { h, s: sat } = s.hsl
         return `background: linear-gradient(to right, hsl(${h} ${sat}% 0%), hsl(${h} ${sat}% 50%), hsl(${h} ${sat}% 100%))`
-      },
+      }),
       'data-scope': 'color-picker',
       'data-part': 'lightness-slider',
       onInput: tagSend(send, ['setLightness'], (e) =>
@@ -275,9 +274,9 @@ export function connect<S>(
     hexInput: {
       type: 'text',
       autoComplete: 'off',
-      'aria-label': opts.hexLabel ?? ((s: S) => locale(s).colorPicker.hex),
-      disabled: (s) => get(s).disabled,
-      value: (s) => toHex(get(s).hsl),
+      'aria-label': opts.hexLabel ?? locale.colorPicker.hex,
+      disabled: state.map((s) => s.disabled),
+      value: state.map((s) => toHex(s.hsl)),
       'data-scope': 'color-picker',
       'data-part': 'hex-input',
       onInput: tagSend(send, ['setHex'], (e) =>
@@ -288,7 +287,7 @@ export function connect<S>(
       'data-scope': 'color-picker',
       'data-part': 'swatch',
       'aria-hidden': 'true',
-      style: (s) => `background-color:${toHex(get(s).hsl)};`,
+      style: state.map((s) => `background-color:${toHex(s.hsl)};`),
     },
   }
 }

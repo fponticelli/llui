@@ -1,7 +1,6 @@
-import type { Send } from '@llui/dom'
-import { useContext, tagSend } from '@llui/dom'
+import type { Send, Signal } from '@llui/dom/signals'
+import { useContext, tagSend } from '@llui/dom/signals'
 import { LocaleContext } from '../locale.js'
-import type { Locale } from '../locale.js'
 
 /**
  * Image cropper — select a rectangular crop region over an image,
@@ -230,13 +229,13 @@ export function update(
   }
 }
 
-export interface ImageCropperParts<S> {
+export interface ImageCropperParts {
   root: {
     'data-scope': 'image-cropper'
     'data-part': 'root'
-    'data-dragging': (s: S) => '' | undefined
-    'data-resizing': (s: S) => '' | undefined
-    'data-disabled': (s: S) => '' | undefined
+    'data-dragging': Signal<'' | undefined>
+    'data-resizing': Signal<'' | undefined>
+    'data-disabled': Signal<'' | undefined>
   }
   image: {
     'data-scope': 'image-cropper'
@@ -247,7 +246,7 @@ export interface ImageCropperParts<S> {
   cropBox: {
     'data-scope': 'image-cropper'
     'data-part': 'crop-box'
-    style: (s: S) => string
+    style: Signal<string>
     onPointerDown: (e: PointerEvent) => void
   }
   resizeHandle: (handle: ResizeHandle) => {
@@ -258,7 +257,7 @@ export interface ImageCropperParts<S> {
   }
   resetTrigger: {
     type: 'button'
-    'aria-label': string | ((s: S) => string)
+    'aria-label': string
     'data-scope': 'image-cropper'
     'data-part': 'reset-trigger'
     onClick: (e: MouseEvent) => void
@@ -269,19 +268,19 @@ export interface ConnectOptions {
   resetLabel?: string
 }
 
-export function connect<S>(
-  get: (s: S) => ImageCropperState,
+export function connect(
+  state: Signal<ImageCropperState>,
   send: Send<ImageCropperMsg>,
   opts: ConnectOptions = {},
-): ImageCropperParts<S> {
-  const locale = useContext<S, Locale>(LocaleContext)
+): ImageCropperParts {
+  const locale = useContext(LocaleContext)
   return {
     root: {
       'data-scope': 'image-cropper',
       'data-part': 'root',
-      'data-dragging': (s) => (get(s).dragging ? '' : undefined),
-      'data-resizing': (s) => (get(s).resizing !== null ? '' : undefined),
-      'data-disabled': (s) => (get(s).disabled ? '' : undefined),
+      'data-dragging': state.map((st) => (st.dragging ? '' : undefined)),
+      'data-resizing': state.map((st) => (st.resizing !== null ? '' : undefined)),
+      'data-disabled': state.map((st) => (st.disabled ? '' : undefined)),
     },
     image: {
       'data-scope': 'image-cropper',
@@ -295,8 +294,7 @@ export function connect<S>(
     cropBox: {
       'data-scope': 'image-cropper',
       'data-part': 'crop-box',
-      style: (s) => {
-        const st = get(s)
+      style: state.map((st) => {
         if (st.image.width === 0 || st.image.height === 0) return 'display:none;'
         // Express as percentages so the crop box scales with the rendered image.
         const xp = (st.crop.x / st.image.width) * 100
@@ -304,7 +302,7 @@ export function connect<S>(
         const wp = (st.crop.width / st.image.width) * 100
         const hp = (st.crop.height / st.image.height) * 100
         return `left:${xp}%;top:${yp}%;width:${wp}%;height:${hp}%;`
-      },
+      }),
       onPointerDown: tagSend(send, ['dragStart'], () => send({ type: 'dragStart' })),
     },
     resizeHandle: (handle: ResizeHandle) => ({
@@ -315,7 +313,7 @@ export function connect<S>(
     }),
     resetTrigger: {
       type: 'button',
-      'aria-label': opts.resetLabel ?? ((s: S) => locale(s).imageCropper.reset),
+      'aria-label': opts.resetLabel ?? locale.imageCropper.reset,
       'data-scope': 'image-cropper',
       'data-part': 'reset-trigger',
       onClick: tagSend(send, ['reset'], () => send({ type: 'reset' })),

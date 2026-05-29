@@ -1,7 +1,6 @@
-import type { Send } from '@llui/dom'
-import { useContext } from '@llui/dom'
+import type { Send, Signal } from '@llui/dom/signals'
+import { useContext } from '@llui/dom/signals'
 import { LocaleContext } from '../locale.js'
-import type { Locale } from '../locale.js'
 
 /**
  * QR code — renders a QR matrix as SVG. llui does not bundle a QR
@@ -117,17 +116,17 @@ export function toDataUrl(
   return `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`
 }
 
-export interface QrCodeParts<S> {
+export interface QrCodeParts {
   root: {
     'data-scope': 'qr-code'
     'data-part': 'root'
-    'aria-label': string | ((s: S) => string)
+    'aria-label': string
   }
   svg: {
     'data-scope': 'qr-code'
     'data-part': 'svg'
     role: 'img'
-    viewBox: (s: S) => string
+    viewBox: Signal<string>
     'shape-rendering': 'crispEdges'
   }
   background: {
@@ -137,11 +136,11 @@ export interface QrCodeParts<S> {
   foreground: {
     'data-scope': 'qr-code'
     'data-part': 'foreground'
-    d: (s: S) => string
+    d: Signal<string>
   }
   downloadTrigger: {
     type: 'button'
-    'aria-label': string | ((s: S) => string)
+    'aria-label': string
     'data-scope': 'qr-code'
     'data-part': 'download-trigger'
     onClick: (e: MouseEvent) => void
@@ -155,13 +154,13 @@ export interface ConnectOptions {
   downloadFilename?: string
 }
 
-export function connect<S>(
-  get: (s: S) => QrCodeState,
+export function connect(
+  state: Signal<QrCodeState>,
   send: Send<QrCodeMsg>,
   opts: ConnectOptions = {},
-): QrCodeParts<S> {
-  const locale = useContext<S, Locale>(LocaleContext)
-  const label: string | ((s: S) => string) = opts.label ?? ((s: S) => locale(s).qrCode.label)
+): QrCodeParts {
+  const locale = useContext(LocaleContext)
+  const label = opts.label ?? locale.qrCode.label
   const filename = opts.downloadFilename ?? 'qrcode.svg'
 
   return {
@@ -174,10 +173,10 @@ export function connect<S>(
       'data-scope': 'qr-code',
       'data-part': 'svg',
       role: 'img',
-      viewBox: (s) => {
-        const n = size(get(s))
+      viewBox: state.map((st) => {
+        const n = size(st)
         return n > 0 ? `0 0 ${n} ${n}` : '0 0 1 1'
-      },
+      }),
       'shape-rendering': 'crispEdges',
     },
     background: {
@@ -187,11 +186,11 @@ export function connect<S>(
     foreground: {
       'data-scope': 'qr-code',
       'data-part': 'foreground',
-      d: (s) => toSvgPath(get(s).matrix),
+      d: state.map((st) => toSvgPath(st.matrix)),
     },
     downloadTrigger: {
       type: 'button',
-      'aria-label': opts.downloadLabel ?? ((s: S) => locale(s).qrCode.download),
+      'aria-label': opts.downloadLabel ?? locale.qrCode.download,
       'data-scope': 'qr-code',
       'data-part': 'download-trigger',
       onClick: () => {

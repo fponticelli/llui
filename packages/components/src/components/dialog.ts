@@ -1,7 +1,6 @@
-import type { Send, TransitionOptions } from '@llui/dom'
-import { show, portal, onMount, div, useContext, tagSend } from '@llui/dom'
+import type { Send, Signal, TransitionOptions } from '@llui/dom/signals'
+import { show, portal, onMount, div, useContext, tagSend } from '@llui/dom/signals'
 import { LocaleContext } from '../locale.js'
-import type { Locale } from '../locale.js'
 import { pushFocusTrap } from '../utils/focus-trap.js'
 import { pushDismissable } from '../utils/dismissable.js'
 import { setAriaHiddenOutside } from '../utils/aria-hidden.js'
@@ -74,20 +73,20 @@ export function update(state: DialogState, msg: DialogMsg): [DialogState, never[
   }
 }
 
-export interface DialogParts<S> {
+export interface DialogParts {
   trigger: {
     type: 'button'
     'aria-haspopup': 'dialog'
-    'aria-expanded': (s: S) => boolean
+    'aria-expanded': Signal<boolean>
     'aria-controls': string
     id: string
-    'data-state': (s: S) => 'open' | 'closed'
+    'data-state': Signal<'open' | 'closed'>
     'data-scope': 'dialog'
     'data-part': 'trigger'
     onClick: (e: MouseEvent) => void
   }
   backdrop: {
-    'data-state': (s: S) => 'open' | 'closed'
+    'data-state': Signal<'open' | 'closed'>
     'data-scope': 'dialog'
     'data-part': 'backdrop'
     'aria-hidden': 'true'
@@ -103,7 +102,7 @@ export interface DialogParts<S> {
     'aria-labelledby': string
     'aria-describedby': string
     tabIndex: -1
-    'data-state': (s: S) => 'open' | 'closed'
+    'data-state': Signal<'open' | 'closed'>
     'data-scope': 'dialog'
     'data-part': 'content'
   }
@@ -119,7 +118,7 @@ export interface DialogParts<S> {
   }
   closeTrigger: {
     type: 'button'
-    'aria-label': string | ((s: S) => string)
+    'aria-label': string
     'data-scope': 'dialog'
     'data-part': 'close-trigger'
     onClick: (e: MouseEvent) => void
@@ -137,11 +136,11 @@ export interface ConnectOptions {
   closeLabel?: string
 }
 
-export function connect<S>(
-  get: (s: S) => DialogState,
+export function connect(
+  state: Signal<DialogState>,
   send: Send<DialogMsg>,
   opts: ConnectOptions,
-): DialogParts<S> {
+): DialogParts {
   const base = opts.id
   const contentId = `${base}:content`
   const titleId = `${base}:title`
@@ -149,24 +148,23 @@ export function connect<S>(
   const triggerId = `${base}:trigger`
   const role = opts.role ?? 'dialog'
   const modal = opts.modal !== false
-  const locale = useContext<S, Locale>(LocaleContext)
-  const closeLabel: string | ((s: S) => string) =
-    opts.closeLabel ?? ((s: S) => locale(s).dialog.close)
+  const locale = useContext(LocaleContext)
+  const closeLabel = opts.closeLabel ?? locale.dialog.close
 
   return {
     trigger: {
       type: 'button',
       'aria-haspopup': 'dialog',
-      'aria-expanded': (s) => get(s).open,
+      'aria-expanded': state.map((s) => s.open),
       'aria-controls': contentId,
       id: triggerId,
-      'data-state': (s) => (get(s).open ? 'open' : 'closed'),
+      'data-state': state.map((s) => (s.open ? 'open' : 'closed')),
       'data-scope': 'dialog',
       'data-part': 'trigger',
       onClick: tagSend(send, ['open'], () => send({ type: 'open' })),
     },
     backdrop: {
-      'data-state': (s) => (get(s).open ? 'open' : 'closed'),
+      'data-state': state.map((s) => (s.open ? 'open' : 'closed')),
       'data-scope': 'dialog',
       'data-part': 'backdrop',
       'aria-hidden': 'true',
@@ -182,7 +180,7 @@ export function connect<S>(
       'aria-labelledby': titleId,
       'aria-describedby': descId,
       tabIndex: -1,
-      'data-state': (s) => (get(s).open ? 'open' : 'closed'),
+      'data-state': state.map((s) => (s.open ? 'open' : 'closed')),
       'data-scope': 'dialog',
       'data-part': 'content',
     },
@@ -206,15 +204,15 @@ export function connect<S>(
   }
 }
 
-export interface OverlayOptions<S> {
-  /** State accessor. */
-  get: (s: S) => DialogState
+export interface OverlayOptions {
+  /** Dialog state slice as a Signal. */
+  state: Signal<DialogState>
   /** Send dispatcher for dialog messages. */
   send: Send<DialogMsg>
   /** Parts from `connect()` — used to locate the content element by id. */
-  parts: DialogParts<S>
+  parts: DialogParts
   /** Content rendering. */
-  content: () => Node[]
+  content: () => readonly Node[]
   /** Optional transition to apply on open/close (from `@llui/transitions`). */
   transition?: TransitionOptions
   /** Close on Escape key (default: true). */
@@ -237,10 +235,10 @@ export interface OverlayOptions<S> {
 
 /**
  * Build the dialog's DOM tree and wire up all accessibility utilities.
- * Returns a `show()` structural block that tracks `get(state).open`.
+ * Returns a `show()` structural block that tracks `state.open`.
  */
-export function overlay<S>(opts: OverlayOptions<S>): Node[] {
-  const target = opts.target ?? 'body'
+export function overlay(opts: OverlayOptions): Node {
+  const targetOpt = opts.target ?? 'body'
   const closeOnEscape = opts.closeOnEscape !== false
   const closeOnOutsideClick = opts.closeOnOutsideClick !== false
   const trapFocus = opts.trapFocus !== false
@@ -250,53 +248,51 @@ export function overlay<S>(opts: OverlayOptions<S>): Node[] {
   const parts = opts.parts
   const contentId = parts.content.id
   const triggerId = parts.trigger.id
+  const host =
+    typeof targetOpt === 'string' ? (document.querySelector(targetOpt) ?? document.body) : targetOpt
 
-  return show<S, DialogMsg>({
-    when: (s) => opts.get(s).open,
-    render: () =>
-      portal({
-        target,
-        render: () => {
-          onMount(() => {
-            const contentEl = document.getElementById(contentId)
-            if (!contentEl) return
-            const triggerEl = document.getElementById(triggerId)
+  return show(
+    opts.state.map((s) => s.open),
+    () => [
+      portal(() => {
+        onMount(() => {
+          const contentEl = document.getElementById(contentId)
+          if (!contentEl) return
+          const triggerEl = document.getElementById(triggerId)
 
-            const cleanups: Array<() => void> = []
+          const cleanups: Array<() => void> = []
 
-            if (lockScroll) cleanups.push(lockBodyScroll())
-            if (hideSiblings) cleanups.push(setAriaHiddenOutside(contentEl))
-            if (trapFocus) {
-              cleanups.push(
-                pushFocusTrap({
-                  container: contentEl,
-                  initialFocus: opts.initialFocus,
-                  restoreFocus,
-                }),
-              )
-            }
-            if (closeOnEscape || closeOnOutsideClick) {
-              cleanups.push(
-                pushDismissable({
-                  element: contentEl,
-                  ignore: () => (triggerEl ? [triggerEl] : []),
-                  disableEscape: !closeOnEscape,
-                  disableOutside: !closeOnOutsideClick,
-                  onDismiss: () => opts.send({ type: 'close' }),
-                }),
-              )
-            }
+          if (lockScroll) cleanups.push(lockBodyScroll())
+          if (hideSiblings) cleanups.push(setAriaHiddenOutside(contentEl))
+          if (trapFocus) {
+            cleanups.push(
+              pushFocusTrap({
+                container: contentEl,
+                initialFocus: opts.initialFocus,
+                restoreFocus,
+              }),
+            )
+          }
+          if (closeOnEscape || closeOnOutsideClick) {
+            cleanups.push(
+              pushDismissable({
+                element: contentEl,
+                ignore: () => (triggerEl ? [triggerEl] : []),
+                disableEscape: !closeOnEscape,
+                disableOutside: !closeOnOutsideClick,
+                onDismiss: () => opts.send({ type: 'close' }),
+              }),
+            )
+          }
 
-            return () => {
-              for (let i = cleanups.length - 1; i >= 0; i--) cleanups[i]!()
-            }
-          })
-          return [div(parts.positioner, opts.content())]
-        },
-      }),
-    enter: opts.transition?.enter,
-    leave: opts.transition?.leave,
-  })
+          return () => {
+            for (let i = cleanups.length - 1; i >= 0; i--) cleanups[i]!()
+          }
+        })
+        return [div(parts.positioner, opts.content())]
+      }, host),
+    ],
+  )
 }
 
 export const dialog = { init, update, connect, overlay }

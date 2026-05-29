@@ -1,7 +1,6 @@
-import type { Send } from '@llui/dom'
-import { useContext, tagSend } from '@llui/dom'
+import type { Send, Signal } from '@llui/dom/signals'
+import { useContext, tagSend } from '@llui/dom/signals'
 import { LocaleContext } from '../locale.js'
-import type { Locale } from '../locale.js'
 
 /**
  * Date input — keyboard-only date field with masked parsing. Unlike
@@ -155,23 +154,23 @@ export function update(
   }
 }
 
-export interface DateInputParts<S> {
+export interface DateInputParts {
   root: {
     'data-scope': 'date-input'
     'data-part': 'root'
-    'data-disabled': (s: S) => '' | undefined
-    'data-invalid': (s: S) => '' | undefined
+    'data-disabled': Signal<'' | undefined>
+    'data-invalid': Signal<'' | undefined>
   }
   input: {
     type: 'text'
     inputMode: 'numeric'
     autoComplete: 'off'
     spellCheck: false
-    value: (s: S) => string
-    disabled: (s: S) => boolean
-    readOnly: (s: S) => boolean
-    required: (s: S) => boolean
-    'aria-invalid': (s: S) => 'true' | undefined
+    value: Signal<string>
+    disabled: Signal<boolean>
+    readOnly: Signal<boolean>
+    required: Signal<boolean>
+    'aria-invalid': Signal<'true' | undefined>
     placeholder?: string
     'data-scope': 'date-input'
     'data-part': 'input'
@@ -180,8 +179,8 @@ export interface DateInputParts<S> {
   }
   clearTrigger: {
     type: 'button'
-    'aria-label': string | ((s: S) => string)
-    disabled: (s: S) => boolean
+    'aria-label': string
+    disabled: Signal<boolean>
     'data-scope': 'date-input'
     'data-part': 'clear-trigger'
     onClick: (e: MouseEvent) => void
@@ -191,7 +190,7 @@ export interface DateInputParts<S> {
     'aria-live': 'polite'
     'data-scope': 'date-input'
     'data-part': 'error-text'
-    hidden: (s: S) => boolean
+    hidden: Signal<boolean>
   }
 }
 
@@ -200,29 +199,29 @@ export interface ConnectOptions {
   clearLabel?: string
 }
 
-export function connect<S>(
-  get: (s: S) => DateInputState,
+export function connect(
+  state: Signal<DateInputState>,
   send: Send<DateInputMsg>,
   opts: ConnectOptions = {},
-): DateInputParts<S> {
-  const locale = useContext<S, Locale>(LocaleContext)
+): DateInputParts {
+  const locale = useContext(LocaleContext)
   return {
     root: {
       'data-scope': 'date-input',
       'data-part': 'root',
-      'data-disabled': (s) => (get(s).disabled ? '' : undefined),
-      'data-invalid': (s) => (get(s).error ? '' : undefined),
+      'data-disabled': state.map((s) => (s.disabled ? '' : undefined)),
+      'data-invalid': state.map((s) => (s.error ? '' : undefined)),
     },
     input: {
       type: 'text',
       inputMode: 'numeric',
       autoComplete: 'off',
       spellCheck: false,
-      value: (s) => get(s).input,
-      disabled: (s) => get(s).disabled,
-      readOnly: (s) => get(s).readOnly,
-      required: (s) => get(s).required,
-      'aria-invalid': (s) => (get(s).error ? 'true' : undefined),
+      value: state.map((s) => s.input),
+      disabled: state.map((s) => s.disabled),
+      readOnly: state.map((s) => s.readOnly),
+      required: state.map((s) => s.required),
+      'aria-invalid': state.map((s) => (s.error ? 'true' : undefined)),
       ...(opts.placeholder !== undefined ? { placeholder: opts.placeholder } : {}),
       'data-scope': 'date-input',
       'data-part': 'input',
@@ -236,8 +235,8 @@ export function connect<S>(
     },
     clearTrigger: {
       type: 'button',
-      'aria-label': opts.clearLabel ?? ((s: S) => locale(s).dateInput.clear),
-      disabled: (s) => get(s).input === '',
+      'aria-label': opts.clearLabel ?? locale.dateInput.clear,
+      disabled: state.map((s) => s.input === ''),
       'data-scope': 'date-input',
       'data-part': 'clear-trigger',
       onClick: tagSend(send, ['clear'], () => send({ type: 'clear' })),
@@ -247,7 +246,7 @@ export function connect<S>(
       'aria-live': 'polite',
       'data-scope': 'date-input',
       'data-part': 'error-text',
-      hidden: (s) => get(s).error === null,
+      hidden: state.map((s) => s.error === null),
     },
   }
 }

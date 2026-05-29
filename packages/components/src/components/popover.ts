@@ -1,7 +1,6 @@
-import type { Send, TransitionOptions } from '@llui/dom'
-import { show, portal, onMount, div, useContext, tagSend } from '@llui/dom'
+import type { Send, Signal, TransitionOptions } from '@llui/dom/signals'
+import { show, portal, onMount, div, useContext, tagSend } from '@llui/dom/signals'
 import { LocaleContext } from '../locale.js'
-import type { Locale } from '../locale.js'
 import { pushDismissable } from '../utils/dismissable.js'
 import { pushFocusTrap } from '../utils/focus-trap.js'
 import { attachFloating, type Placement } from '../utils/floating.js'
@@ -49,14 +48,14 @@ export function update(state: PopoverState, msg: PopoverMsg): [PopoverState, nev
   }
 }
 
-export interface PopoverParts<S> {
+export interface PopoverParts {
   trigger: {
     type: 'button'
     'aria-haspopup': 'dialog'
-    'aria-expanded': (s: S) => boolean
+    'aria-expanded': Signal<boolean>
     'aria-controls': string
     id: string
-    'data-state': (s: S) => 'open' | 'closed'
+    'data-state': Signal<'open' | 'closed'>
     'data-scope': 'popover'
     'data-part': 'trigger'
     onClick: (e: MouseEvent) => void
@@ -71,7 +70,7 @@ export interface PopoverParts<S> {
     id: string
     'aria-labelledby': string
     tabIndex: -1
-    'data-state': (s: S) => 'open' | 'closed'
+    'data-state': Signal<'open' | 'closed'>
     'data-scope': 'popover'
     'data-part': 'content'
   }
@@ -91,7 +90,7 @@ export interface PopoverParts<S> {
   }
   closeTrigger: {
     type: 'button'
-    'aria-label': string | ((s: S) => string)
+    'aria-label': string
     'data-scope': 'popover'
     'data-part': 'close-trigger'
     onClick: (e: MouseEvent) => void
@@ -103,28 +102,27 @@ export interface ConnectOptions {
   closeLabel?: string
 }
 
-export function connect<S>(
-  get: (s: S) => PopoverState,
+export function connect(
+  state: Signal<PopoverState>,
   send: Send<PopoverMsg>,
   opts: ConnectOptions,
-): PopoverParts<S> {
-  const locale = useContext<S, Locale>(LocaleContext)
+): PopoverParts {
+  const locale = useContext(LocaleContext)
   const base = opts.id
   const triggerId = `${base}:trigger`
   const contentId = `${base}:content`
   const titleId = `${base}:title`
   const descId = `${base}:description`
-  const closeLabel: string | ((s: S) => string) =
-    opts.closeLabel ?? ((s: S) => locale(s).popover.close)
+  const closeLabel = opts.closeLabel ?? locale.popover.close
 
   return {
     trigger: {
       type: 'button',
       'aria-haspopup': 'dialog',
-      'aria-expanded': (s) => get(s).open,
+      'aria-expanded': state.map((st) => st.open),
       'aria-controls': contentId,
       id: triggerId,
-      'data-state': (s) => (get(s).open ? 'open' : 'closed'),
+      'data-state': state.map((st) => (st.open ? 'open' : 'closed')),
       'data-scope': 'popover',
       'data-part': 'trigger',
       onClick: tagSend(send, ['toggle'], () => send({ type: 'toggle' })),
@@ -139,7 +137,7 @@ export function connect<S>(
       id: contentId,
       'aria-labelledby': titleId,
       tabIndex: -1,
-      'data-state': (s) => (get(s).open ? 'open' : 'closed'),
+      'data-state': state.map((st) => (st.open ? 'open' : 'closed')),
       'data-scope': 'popover',
       'data-part': 'content',
     },
@@ -167,10 +165,10 @@ export function connect<S>(
   }
 }
 
-export interface OverlayOptions<S> {
-  get: (s: S) => PopoverState
+export interface OverlayOptions {
+  state: Signal<PopoverState>
   send: Send<PopoverMsg>
-  parts: PopoverParts<S>
+  parts: PopoverParts
   content: () => Node[]
   /** Placement preference — bottom | top | right | left with -start/-end variants. */
   placement?: Placement
@@ -196,8 +194,8 @@ export interface OverlayOptions<S> {
   arrowSelector?: string
 }
 
-export function overlay<S>(opts: OverlayOptions<S>): Node[] {
-  const target = opts.target ?? 'body'
+export function overlay(opts: OverlayOptions): Node[] {
+  const rawTarget = opts.target ?? 'body'
   const placement = opts.placement ?? 'bottom'
   const offset = opts.offset ?? 8
   const flip = opts.flip !== false
@@ -210,71 +208,75 @@ export function overlay<S>(opts: OverlayOptions<S>): Node[] {
   const contentId = parts.content.id
   const triggerId = parts.trigger.id
 
-  return show<S, PopoverMsg>({
-    when: (s) => opts.get(s).open,
-    render: () =>
-      portal({
-        target,
-        render: () => {
-          onMount(() => {
-            const contentEl = document.getElementById(contentId)
-            const triggerEl = document.getElementById(triggerId)
-            if (!contentEl || !triggerEl) return
+  return [
+    show(
+      opts.state.map((st) => st.open),
+      () => {
+        const targetEl =
+          typeof rawTarget === 'string'
+            ? (document.querySelector(rawTarget) ?? document.body)
+            : rawTarget
+        return [
+          portal(() => {
+            onMount(() => {
+              const contentEl = document.getElementById(contentId)
+              const triggerEl = document.getElementById(triggerId)
+              if (!contentEl || !triggerEl) return
 
-            const cleanups: Array<() => void> = []
+              const cleanups: Array<() => void> = []
 
-            // Position content relative to trigger
-            const positioner = contentEl.closest('[data-part="positioner"]') as HTMLElement | null
-            const floatingEl = positioner ?? contentEl
-            const arrow = opts.arrowSelector
-              ? (contentEl.querySelector(opts.arrowSelector) as HTMLElement | null)
-              : null
-            cleanups.push(
-              attachFloating({
-                anchor: triggerEl,
-                floating: floatingEl,
-                placement,
-                offset,
-                flip,
-                shift,
-                arrow: arrow ?? undefined,
-              }),
-            )
-
-            if (trapFocus) {
+              // Position content relative to trigger
+              const positioner = contentEl.closest('[data-part="positioner"]') as HTMLElement | null
+              const floatingEl = positioner ?? contentEl
+              const arrow = opts.arrowSelector
+                ? (contentEl.querySelector(opts.arrowSelector) as HTMLElement | null)
+                : null
               cleanups.push(
-                pushFocusTrap({
-                  container: contentEl,
-                  restoreFocus,
+                attachFloating({
+                  anchor: triggerEl,
+                  floating: floatingEl,
+                  placement,
+                  offset,
+                  flip,
+                  shift,
+                  arrow: arrow ?? undefined,
                 }),
               )
-            }
 
-            if (closeOnEscape || closeOnOutsideClick) {
-              cleanups.push(
-                pushDismissable({
-                  element: contentEl,
-                  ignore: () => [triggerEl],
-                  disableEscape: !closeOnEscape,
-                  disableOutside: !closeOnOutsideClick,
-                  onDismiss: () => {
-                    opts.send({ type: 'close' })
-                    if (restoreFocus) triggerEl.focus()
-                  },
-                }),
-              )
-            }
+              if (trapFocus) {
+                cleanups.push(
+                  pushFocusTrap({
+                    container: contentEl,
+                    restoreFocus,
+                  }),
+                )
+              }
 
-            return () => {
-              for (let i = cleanups.length - 1; i >= 0; i--) cleanups[i]!()
-            }
-          })
-          return [div(parts.positioner, opts.content())]
-        },
-      }),
-    enter: opts.transition?.enter,
-    leave: opts.transition?.leave,
-  })
+              if (closeOnEscape || closeOnOutsideClick) {
+                cleanups.push(
+                  pushDismissable({
+                    element: contentEl,
+                    ignore: () => [triggerEl],
+                    disableEscape: !closeOnEscape,
+                    disableOutside: !closeOnOutsideClick,
+                    onDismiss: () => {
+                      opts.send({ type: 'close' })
+                      if (restoreFocus) triggerEl.focus()
+                    },
+                  }),
+                )
+              }
+
+              return () => {
+                for (let i = cleanups.length - 1; i >= 0; i--) cleanups[i]!()
+              }
+            })
+            return [div(parts.positioner, opts.content())]
+          }, targetEl),
+        ]
+      },
+    ),
+  ]
 }
 
 export const popover = { init, update, connect, overlay }

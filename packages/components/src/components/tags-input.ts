@@ -1,8 +1,7 @@
-import type { Send } from '@llui/dom'
-import { useContext, tagSend } from '@llui/dom'
+import type { Send, Signal } from '@llui/dom/signals'
+import { useContext, tagSend } from '@llui/dom/signals'
 import { flipArrow } from '../utils/direction.js'
 import { LocaleContext } from '../locale.js'
-import type { Locale } from '../locale.js'
 
 /**
  * Tags input — text input that creates chips (tags) on commit keys
@@ -103,20 +102,20 @@ export function update(state: TagsInputState, msg: TagsInputMsg): [TagsInputStat
   }
 }
 
-export interface TagItemParts<S> {
+export interface TagItemParts {
   root: {
-    tabIndex: (s: S) => number
+    tabIndex: Signal<number>
     'data-scope': 'tags-input'
     'data-part': 'tag'
     'data-value': string
     'data-index': string
-    'data-focused': (s: S) => '' | undefined
+    'data-focused': Signal<'' | undefined>
     onKeyDown: (e: KeyboardEvent) => void
     onFocus: (e: FocusEvent) => void
   }
   remove: {
     type: 'button'
-    'aria-label': string | ((s: S) => string)
+    'aria-label': string
     tabIndex: -1
     'data-scope': 'tags-input'
     'data-part': 'tag-remove'
@@ -124,30 +123,30 @@ export interface TagItemParts<S> {
   }
 }
 
-export interface TagsInputParts<S> {
+export interface TagsInputParts {
   root: {
     role: 'group'
-    'aria-disabled': (s: S) => 'true' | undefined
+    'aria-disabled': Signal<'true' | undefined>
     'data-scope': 'tags-input'
     'data-part': 'root'
-    'data-disabled': (s: S) => '' | undefined
+    'data-disabled': Signal<'' | undefined>
   }
   input: {
     type: 'text'
     autoComplete: 'off'
-    'aria-label': string | ((s: S) => string)
-    disabled: (s: S) => boolean
-    value: (s: S) => string
+    'aria-label': string
+    disabled: Signal<boolean>
+    value: Signal<string>
     'data-scope': 'tags-input'
     'data-part': 'input'
     onInput: (e: Event) => void
     onKeyDown: (e: KeyboardEvent) => void
     onBlur: (e: FocusEvent) => void
   }
-  tag: (value: string, index: number) => TagItemParts<S>
+  tag: (value: string, index: number) => TagItemParts
   clearTrigger: {
     type: 'button'
-    'aria-label': string | ((s: S) => string)
+    'aria-label': string
     'data-scope': 'tags-input'
     'data-part': 'clear-trigger'
     onClick: (e: MouseEvent) => void
@@ -166,18 +165,15 @@ export interface ConnectOptions {
   validate?: (value: string) => string[] | null
 }
 
-export function connect<S>(
-  get: (s: S) => TagsInputState,
+export function connect(
+  state: Signal<TagsInputState>,
   send: Send<TagsInputMsg>,
   opts: ConnectOptions = {},
-): TagsInputParts<S> {
-  const locale = useContext<S, Locale>(LocaleContext)
-  const inputLabel: string | ((s: S) => string) =
-    opts.inputLabel ?? ((s: S) => locale(s).tagsInput.input)
-  const removeLabel: string | ((s: S) => string) =
-    opts.removeLabel ?? ((s: S) => locale(s).tagsInput.remove)
-  const clearLabel: string | ((s: S) => string) =
-    opts.clearLabel ?? ((s: S) => locale(s).tagsInput.clear)
+): TagsInputParts {
+  const locale = useContext(LocaleContext)
+  const inputLabel = opts.inputLabel ?? locale.tagsInput.input
+  const removeLabel = opts.removeLabel ?? locale.tagsInput.remove
+  const clearLabel = opts.clearLabel ?? locale.tagsInput.clear
   const delimiters = opts.delimiters ?? [',']
   const commitOnBlur = opts.commitOnBlur !== false
   const validate = opts.validate
@@ -195,17 +191,17 @@ export function connect<S>(
   return {
     root: {
       role: 'group',
-      'aria-disabled': (s) => (get(s).disabled ? 'true' : undefined),
+      'aria-disabled': state.map((s) => (s.disabled ? 'true' : undefined)),
       'data-scope': 'tags-input',
       'data-part': 'root',
-      'data-disabled': (s) => (get(s).disabled ? '' : undefined),
+      'data-disabled': state.map((s) => (s.disabled ? '' : undefined)),
     },
     input: {
       type: 'text',
       autoComplete: 'off',
       'aria-label': inputLabel,
-      disabled: (s) => get(s).disabled,
-      value: (s) => get(s).inputValue,
+      disabled: state.map((s) => s.disabled),
+      value: state.map((s) => s.inputValue),
       'data-scope': 'tags-input',
       'data-part': 'input',
       onInput: tagSend(send, ['setInput'], (e) => {
@@ -237,14 +233,14 @@ export function connect<S>(
         if (commitOnBlur) tryAddTag()
       },
     },
-    tag: (value: string, index: number): TagItemParts<S> => ({
+    tag: (value: string, index: number): TagItemParts => ({
       root: {
-        tabIndex: (s) => (get(s).focusedIndex === index ? 0 : -1),
+        tabIndex: state.map((s) => (s.focusedIndex === index ? 0 : -1)),
         'data-scope': 'tags-input',
         'data-part': 'tag',
         'data-value': value,
         'data-index': String(index),
-        'data-focused': (s) => (get(s).focusedIndex === index ? '' : undefined),
+        'data-focused': state.map((s) => (s.focusedIndex === index ? '' : undefined)),
         onFocus: tagSend(send, ['focusTag'], () => send({ type: 'focusTag', index })),
         onKeyDown: tagSend(send, ['focusTagPrev', 'focusTagNext', 'removeTag'], (e) => {
           const key = flipArrow(e.key, e.currentTarget as Element)

@@ -1,7 +1,6 @@
-import type { Send, TransitionOptions } from '@llui/dom'
-import { show, portal, onMount, div, useContext, tagSend } from '@llui/dom'
+import type { Send, Signal, TransitionOptions } from '@llui/dom/signals'
+import { show, portal, onMount, div, useContext, tagSend } from '@llui/dom/signals'
 import { LocaleContext } from '../locale.js'
-import type { Locale } from '../locale.js'
 import { pushDismissable } from '../utils/dismissable.js'
 import { attachFloating, type Placement } from '../utils/floating.js'
 
@@ -248,15 +247,15 @@ export function update(state: ComboboxState, msg: ComboboxMsg): [ComboboxState, 
   }
 }
 
-export interface ComboboxItemParts<S> {
+export interface ComboboxItemParts {
   item: {
     role: 'option'
     id: string
-    'aria-selected': (s: S) => boolean
-    'aria-disabled': (s: S) => 'true' | undefined
-    'data-state': (s: S) => 'selected' | undefined
-    'data-highlighted': (s: S) => '' | undefined
-    'data-disabled': (s: S) => '' | undefined
+    'aria-selected': Signal<boolean>
+    'aria-disabled': Signal<'true' | undefined>
+    'data-state': Signal<'selected' | undefined>
+    'data-highlighted': Signal<'' | undefined>
+    'data-disabled': Signal<'' | undefined>
     'data-scope': 'combobox'
     'data-part': 'item'
     'data-value': string
@@ -266,28 +265,28 @@ export interface ComboboxItemParts<S> {
   }
 }
 
-export interface ComboboxParts<S> {
+export interface ComboboxParts {
   root: {
     role: 'combobox'
-    'aria-expanded': (s: S) => boolean
+    'aria-expanded': Signal<boolean>
     'aria-controls': string
     'aria-haspopup': 'listbox'
     'data-scope': 'combobox'
     'data-part': 'root'
-    'data-state': (s: S) => 'open' | 'closed'
+    'data-state': Signal<'open' | 'closed'>
   }
   input: {
     type: 'text'
     role: 'combobox'
     autoComplete: 'off'
     'aria-autocomplete': 'list'
-    'aria-expanded': (s: S) => boolean
+    'aria-expanded': Signal<boolean>
     'aria-controls': string
-    'aria-activedescendant': (s: S) => string | undefined
-    'aria-disabled': (s: S) => 'true' | undefined
+    'aria-activedescendant': Signal<string | undefined>
+    'aria-disabled': Signal<'true' | undefined>
     id: string
-    disabled: (s: S) => boolean
-    value: (s: S) => string
+    disabled: Signal<boolean>
+    value: Signal<string>
     'data-scope': 'combobox'
     'data-part': 'input'
     onInput: (e: Event) => void
@@ -296,8 +295,8 @@ export interface ComboboxParts<S> {
   }
   trigger: {
     type: 'button'
-    'aria-label': string | ((s: S) => string)
-    'aria-expanded': (s: S) => boolean
+    'aria-label': string
+    'aria-expanded': Signal<boolean>
     'aria-controls': string
     tabIndex: -1
     'data-scope': 'combobox'
@@ -314,11 +313,11 @@ export interface ComboboxParts<S> {
     id: string
     'aria-labelledby': string
     tabIndex: -1
-    'data-state': (s: S) => 'open' | 'closed'
+    'data-state': Signal<'open' | 'closed'>
     'data-scope': 'combobox'
     'data-part': 'content'
   }
-  item: (value: string, index: number) => ComboboxItemParts<S>
+  item: (value: string, index: number) => ComboboxItemParts
   empty: {
     'data-scope': 'combobox'
     'data-part': 'empty'
@@ -330,44 +329,43 @@ export interface ConnectOptions {
   triggerLabel?: string
 }
 
-export function connect<S>(
-  get: (s: S) => ComboboxState,
+export function connect(
+  state: Signal<ComboboxState>,
   send: Send<ComboboxMsg>,
   opts: ConnectOptions,
-): ComboboxParts<S> {
-  const locale = useContext<S, Locale>(LocaleContext)
+): ComboboxParts {
+  const locale = useContext(LocaleContext)
   const base = opts.id
   const inputId = `${base}:input`
   const contentId = `${base}:content`
   const itemId = (index: number): string => `${base}:item:${index}`
-  const triggerLabel: string | ((s: S) => string) =
-    opts.triggerLabel ?? ((s: S) => locale(s).combobox.toggle)
+  const triggerLabel = opts.triggerLabel ?? locale.combobox.toggle
 
   return {
     root: {
       role: 'combobox',
-      'aria-expanded': (s) => get(s).open,
+      'aria-expanded': state.map((s) => s.open),
       'aria-controls': contentId,
       'aria-haspopup': 'listbox',
       'data-scope': 'combobox',
       'data-part': 'root',
-      'data-state': (s) => (get(s).open ? 'open' : 'closed'),
+      'data-state': state.map((s) => (s.open ? 'open' : 'closed')),
     },
     input: {
       type: 'text',
       role: 'combobox',
       autoComplete: 'off',
       'aria-autocomplete': 'list',
-      'aria-expanded': (s) => get(s).open,
+      'aria-expanded': state.map((s) => s.open),
       'aria-controls': contentId,
-      'aria-activedescendant': (s) => {
-        const idx = get(s).highlightedIndex
+      'aria-activedescendant': state.map((s) => {
+        const idx = s.highlightedIndex
         return idx === null ? undefined : itemId(idx)
-      },
-      'aria-disabled': (s) => (get(s).disabled ? 'true' : undefined),
+      }),
+      'aria-disabled': state.map((s) => (s.disabled ? 'true' : undefined)),
       id: inputId,
-      disabled: (s) => get(s).disabled,
-      value: (s) => get(s).inputValue,
+      disabled: state.map((s) => s.disabled),
+      value: state.map((s) => s.inputValue),
       'data-scope': 'combobox',
       'data-part': 'input',
       onInput: tagSend(send, ['setInputValue'], (e) => {
@@ -421,7 +419,7 @@ export function connect<S>(
     trigger: {
       type: 'button',
       'aria-label': triggerLabel,
-      'aria-expanded': (s) => get(s).open,
+      'aria-expanded': state.map((s) => s.open),
       'aria-controls': contentId,
       tabIndex: -1,
       'data-scope': 'combobox',
@@ -438,19 +436,19 @@ export function connect<S>(
       id: contentId,
       'aria-labelledby': inputId,
       tabIndex: -1,
-      'data-state': (s) => (get(s).open ? 'open' : 'closed'),
+      'data-state': state.map((s) => (s.open ? 'open' : 'closed')),
       'data-scope': 'combobox',
       'data-part': 'content',
     },
-    item: (value: string, index: number): ComboboxItemParts<S> => ({
+    item: (value: string, index: number): ComboboxItemParts => ({
       item: {
         role: 'option',
         id: itemId(index),
-        'aria-selected': (s) => get(s).value.includes(value),
-        'aria-disabled': (s) => (get(s).disabledItems.includes(value) ? 'true' : undefined),
-        'data-state': (s) => (get(s).value.includes(value) ? 'selected' : undefined),
-        'data-highlighted': (s) => (get(s).highlightedIndex === index ? '' : undefined),
-        'data-disabled': (s) => (get(s).disabledItems.includes(value) ? '' : undefined),
+        'aria-selected': state.map((s) => s.value.includes(value)),
+        'aria-disabled': state.map((s) => (s.disabledItems.includes(value) ? 'true' : undefined)),
+        'data-state': state.map((s) => (s.value.includes(value) ? 'selected' : undefined)),
+        'data-highlighted': state.map((s) => (s.highlightedIndex === index ? '' : undefined)),
+        'data-disabled': state.map((s) => (s.disabledItems.includes(value) ? '' : undefined)),
         'data-scope': 'combobox',
         'data-part': 'item',
         'data-value': value,
@@ -466,11 +464,11 @@ export function connect<S>(
   }
 }
 
-export interface OverlayOptions<S> {
-  get: (s: S) => ComboboxState
+export interface OverlayOptions {
+  state: Signal<ComboboxState>
   send: Send<ComboboxMsg>
-  parts: ComboboxParts<S>
-  content: () => Node[]
+  parts: ComboboxParts
+  content: () => readonly Node[]
   placement?: Placement
   offset?: number
   flip?: boolean
@@ -480,8 +478,8 @@ export interface OverlayOptions<S> {
   target?: string | HTMLElement
 }
 
-export function overlay<S>(opts: OverlayOptions<S>): Node[] {
-  const target = opts.target ?? 'body'
+export function overlay(opts: OverlayOptions): Node {
+  const targetOpt = opts.target ?? 'body'
   const placement = opts.placement ?? 'bottom-start'
   const offset = opts.offset ?? 4
   const flip = opts.flip !== false
@@ -490,51 +488,49 @@ export function overlay<S>(opts: OverlayOptions<S>): Node[] {
   const parts = opts.parts
   const contentId = parts.content.id
   const inputId = parts.input.id
+  const host =
+    typeof targetOpt === 'string' ? (document.querySelector(targetOpt) ?? document.body) : targetOpt
 
-  return show<S, ComboboxMsg>({
-    when: (s) => opts.get(s).open,
-    render: () =>
-      portal({
-        target,
-        render: () => {
-          onMount(() => {
-            const contentEl = document.getElementById(contentId)
-            const inputEl = document.getElementById(inputId)
-            if (!contentEl || !inputEl) return
+  return show(
+    opts.state.map((s) => s.open),
+    () => [
+      portal(() => {
+        onMount(() => {
+          const contentEl = document.getElementById(contentId)
+          const inputEl = document.getElementById(inputId)
+          if (!contentEl || !inputEl) return
 
-            const cleanups: Array<() => void> = []
-            const positioner = contentEl.closest('[data-part="positioner"]') as HTMLElement | null
-            const floatingEl = positioner ?? contentEl
-            if (sameWidth) {
-              floatingEl.style.minWidth = `${inputEl.offsetWidth}px`
-            }
-            cleanups.push(
-              attachFloating({
-                anchor: inputEl,
-                floating: floatingEl,
-                placement,
-                offset,
-                flip,
-                shift,
-              }),
-            )
-            cleanups.push(
-              pushDismissable({
-                element: contentEl,
-                ignore: () => [inputEl],
-                onDismiss: () => opts.send({ type: 'close' }),
-              }),
-            )
-            return () => {
-              for (let i = cleanups.length - 1; i >= 0; i--) cleanups[i]!()
-            }
-          })
-          return [div(parts.positioner, opts.content())]
-        },
-      }),
-    enter: opts.transition?.enter,
-    leave: opts.transition?.leave,
-  })
+          const cleanups: Array<() => void> = []
+          const positioner = contentEl.closest('[data-part="positioner"]') as HTMLElement | null
+          const floatingEl = positioner ?? contentEl
+          if (sameWidth) {
+            floatingEl.style.minWidth = `${inputEl.offsetWidth}px`
+          }
+          cleanups.push(
+            attachFloating({
+              anchor: inputEl,
+              floating: floatingEl,
+              placement,
+              offset,
+              flip,
+              shift,
+            }),
+          )
+          cleanups.push(
+            pushDismissable({
+              element: contentEl,
+              ignore: () => [inputEl],
+              onDismiss: () => opts.send({ type: 'close' }),
+            }),
+          )
+          return () => {
+            for (let i = cleanups.length - 1; i >= 0; i--) cleanups[i]!()
+          }
+        })
+        return [div(parts.positioner, opts.content())]
+      }, host),
+    ],
+  )
 }
 
 export const combobox = { init, update, connect, overlay }

@@ -1,7 +1,6 @@
-import type { Send } from '@llui/dom'
-import { useContext, tagSend } from '@llui/dom'
+import type { Send, Signal } from '@llui/dom/signals'
+import { useContext, tagSend } from '@llui/dom/signals'
 import { LocaleContext } from '../locale.js'
-import type { Locale } from '../locale.js'
 
 /**
  * Timer — counts elapsed time up from zero, or down from a configured
@@ -132,12 +131,12 @@ export function formatMs(ms: number, template: string): string {
     .replace(/S/g, String(p.ms))
 }
 
-export interface TimerParts<S> {
+export interface TimerParts {
   root: {
     'data-scope': 'timer'
     'data-part': 'root'
-    'data-running': (s: S) => '' | undefined
-    'data-direction': (s: S) => Direction
+    'data-running': Signal<'' | undefined>
+    'data-direction': Signal<Direction>
   }
   display: {
     role: 'timer'
@@ -147,23 +146,23 @@ export interface TimerParts<S> {
   }
   startTrigger: {
     type: 'button'
-    'aria-label': string | ((s: S) => string)
+    'aria-label': string
     'data-scope': 'timer'
     'data-part': 'start-trigger'
-    disabled: (s: S) => boolean
+    disabled: Signal<boolean>
     onClick: (e: MouseEvent) => void
   }
   pauseTrigger: {
     type: 'button'
-    'aria-label': string | ((s: S) => string)
+    'aria-label': string
     'data-scope': 'timer'
     'data-part': 'pause-trigger'
-    disabled: (s: S) => boolean
+    disabled: Signal<boolean>
     onClick: (e: MouseEvent) => void
   }
   resetTrigger: {
     type: 'button'
-    'aria-label': string | ((s: S) => string)
+    'aria-label': string
     'data-scope': 'timer'
     'data-part': 'reset-trigger'
     onClick: (e: MouseEvent) => void
@@ -183,18 +182,18 @@ export interface ConnectOptions {
   ariaLive?: 'off' | 'polite'
 }
 
-export function connect<S>(
-  get: (s: S) => TimerState,
+export function connect(
+  state: Signal<TimerState>,
   send: Send<TimerMsg>,
   opts: ConnectOptions = {},
-): TimerParts<S> {
-  const locale = useContext<S, Locale>(LocaleContext)
+): TimerParts {
+  const locale = useContext(LocaleContext)
   return {
     root: {
       'data-scope': 'timer',
       'data-part': 'root',
-      'data-running': (s) => (get(s).running ? '' : undefined),
-      'data-direction': (s) => get(s).direction,
+      'data-running': state.map((s) => (s.running ? '' : undefined)),
+      'data-direction': state.map((s) => s.direction),
     },
     display: {
       role: 'timer',
@@ -204,23 +203,23 @@ export function connect<S>(
     },
     startTrigger: {
       type: 'button',
-      'aria-label': opts.startLabel ?? ((s: S) => locale(s).timer.start),
+      'aria-label': opts.startLabel ?? locale.timer.start,
       'data-scope': 'timer',
       'data-part': 'start-trigger',
-      disabled: (s) => get(s).running,
+      disabled: state.map((s) => s.running),
       onClick: tagSend(send, ['start'], () => send({ type: 'start', now: Date.now() })),
     },
     pauseTrigger: {
       type: 'button',
-      'aria-label': opts.pauseLabel ?? ((s: S) => locale(s).timer.pause),
+      'aria-label': opts.pauseLabel ?? locale.timer.pause,
       'data-scope': 'timer',
       'data-part': 'pause-trigger',
-      disabled: (s) => !get(s).running,
+      disabled: state.map((s) => !s.running),
       onClick: tagSend(send, ['pause'], () => send({ type: 'pause', now: Date.now() })),
     },
     resetTrigger: {
       type: 'button',
-      'aria-label': opts.resetLabel ?? ((s: S) => locale(s).timer.reset),
+      'aria-label': opts.resetLabel ?? locale.timer.reset,
       'data-scope': 'timer',
       'data-part': 'reset-trigger',
       onClick: tagSend(send, ['reset'], () => send({ type: 'reset' })),

@@ -1,5 +1,5 @@
-import type { Send, TransitionOptions } from '@llui/dom'
-import { button, text, div, h2, p } from '@llui/dom'
+import type { Send, Signal, TransitionOptions } from '@llui/dom/signals'
+import { button, text, div, h2, p } from '@llui/dom/signals'
 import {
   init as dialogInit,
   update as dialogUpdate,
@@ -110,8 +110,8 @@ export function update(
  * the dialog is open, renders default content (title/description/buttons).
  * Uses role="alertdialog" for destructive confirms.
  */
-export interface ConfirmDialogViewOptions<S> {
-  get: (s: S) => ConfirmDialogState
+export interface ConfirmDialogViewOptions {
+  state: Signal<ConfirmDialogState>
   send: Send<ConfirmDialogMsg>
   id: string
   transition?: TransitionOptions
@@ -121,20 +121,20 @@ export interface ConfirmDialogViewOptions<S> {
   destructiveClass?: string
 }
 
-export function view<S>(opts: ConfirmDialogViewOptions<S>): Node[] {
+export function view(opts: ConfirmDialogViewOptions): Node {
   // Build dialog parts — role='alertdialog' for proper modal semantics.
   // Trigger + closeTrigger parts are unused (we provide our own buttons);
   // their send is a no-op.
-  const parts: DialogParts<S> = dialogConnect<S>(
-    (s) => ({ open: opts.get(s).open }),
+  const parts: DialogParts = dialogConnect(
+    opts.state.map((s) => ({ open: s.open })),
     () => {
       /* unused — our buttons dispatch directly via opts.send */
     },
     { id: opts.id, role: 'alertdialog', closeLabel: 'Cancel' },
   )
 
-  return dialogOverlay<S>({
-    get: (s) => ({ open: opts.get(s).open }),
+  return dialogOverlay({
+    state: opts.state.map((s) => ({ open: s.open })),
     // Dismissable (Esc/outside-click) dispatches dialog.close, which we
     // translate into confirm-dialog.cancel.
     send: (m) => {
@@ -143,8 +143,8 @@ export function view<S>(opts: ConfirmDialogViewOptions<S>): Node[] {
     parts,
     content: () => [
       div({ ...parts.content, class: opts.contentClass ?? 'confirm-dialog' }, [
-        h2({ ...parts.title }, [text((s: S) => opts.get(s).title)]),
-        p({ ...parts.description }, [text((s: S) => opts.get(s).description)]),
+        h2({ ...parts.title }, [text(opts.state.map((s) => s.title))]),
+        p({ ...parts.description }, [text(opts.state.map((s) => s.description))]),
         div({ class: 'confirm-dialog__actions' }, [
           button(
             {
@@ -152,18 +152,17 @@ export function view<S>(opts: ConfirmDialogViewOptions<S>): Node[] {
               class: 'btn btn-secondary',
               onClick: () => opts.send({ type: 'cancel' }),
             },
-            [text((s: S) => opts.get(s).cancelLabel)],
+            [text(opts.state.map((s) => s.cancelLabel))],
           ),
           button(
             {
               type: 'button',
-              class: (s: S) =>
-                opts.get(s).destructive
-                  ? (opts.destructiveClass ?? 'btn btn-danger')
-                  : 'btn btn-primary',
+              class: opts.state.map((s) =>
+                s.destructive ? (opts.destructiveClass ?? 'btn btn-danger') : 'btn btn-primary',
+              ),
               onClick: () => opts.send({ type: 'confirm' }),
             },
-            [text((s: S) => opts.get(s).confirmLabel)],
+            [text(opts.state.map((s) => s.confirmLabel))],
           ),
         ]),
       ]),

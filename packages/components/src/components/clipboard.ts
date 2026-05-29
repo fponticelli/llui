@@ -1,7 +1,6 @@
-import type { Send } from '@llui/dom'
-import { useContext, tagSend } from '@llui/dom'
+import type { Send, Signal } from '@llui/dom/signals'
+import { useContext, tagSend } from '@llui/dom/signals'
 import { LocaleContext } from '../locale.js'
-import type { Locale } from '../locale.js'
 
 /**
  * Clipboard — copy-to-clipboard with transient "copied" feedback. The
@@ -68,24 +67,24 @@ export async function copyToClipboard(value: string): Promise<void> {
   }
 }
 
-export interface ClipboardParts<S> {
+export interface ClipboardParts {
   root: {
     'data-scope': 'clipboard'
     'data-part': 'root'
-    'data-copied': (s: S) => '' | undefined
+    'data-copied': Signal<'' | undefined>
   }
   trigger: {
     type: 'button'
-    'aria-label': string | ((s: S) => string)
+    'aria-label': string
     'data-scope': 'clipboard'
     'data-part': 'trigger'
-    'data-copied': (s: S) => '' | undefined
+    'data-copied': Signal<'' | undefined>
     onClick: (e: MouseEvent) => void
   }
   input: {
     type: 'text'
     readOnly: true
-    value: (s: S) => string
+    value: Signal<string>
     'data-scope': 'clipboard'
     'data-part': 'input'
     onFocus: (e: FocusEvent) => void
@@ -93,7 +92,7 @@ export interface ClipboardParts<S> {
   indicator: {
     'data-scope': 'clipboard'
     'data-part': 'indicator'
-    'data-copied': (s: S) => '' | undefined
+    'data-copied': Signal<'' | undefined>
     'aria-live': 'polite'
   }
 }
@@ -103,26 +102,25 @@ export interface ConnectOptions {
   onCopy?: (value: string) => void
 }
 
-export function connect<S>(
-  get: (s: S) => ClipboardState,
+export function connect(
+  state: Signal<ClipboardState>,
   send: Send<ClipboardMsg>,
   opts: ConnectOptions = {},
-): ClipboardParts<S> {
-  const locale = useContext<S, Locale>(LocaleContext)
-  const copyLabel: string | ((s: S) => string) =
-    opts.copyLabel ?? ((s: S) => locale(s).clipboard.copy)
+): ClipboardParts {
+  const locale = useContext(LocaleContext)
+  const copyLabel = opts.copyLabel ?? locale.clipboard.copy
   return {
     root: {
       'data-scope': 'clipboard',
       'data-part': 'root',
-      'data-copied': (s) => (get(s).copied ? '' : undefined),
+      'data-copied': state.map((s) => (s.copied ? '' : undefined)),
     },
     trigger: {
       type: 'button',
       'aria-label': copyLabel,
       'data-scope': 'clipboard',
       'data-part': 'trigger',
-      'data-copied': (s) => (get(s).copied ? '' : undefined),
+      'data-copied': state.map((s) => (s.copied ? '' : undefined)),
       onClick: tagSend(send, ['copy'], () => {
         send({ type: 'copy' })
         opts.onCopy?.('')
@@ -131,7 +129,7 @@ export function connect<S>(
     input: {
       type: 'text',
       readOnly: true,
-      value: (s) => get(s).value,
+      value: state.map((s) => s.value),
       'data-scope': 'clipboard',
       'data-part': 'input',
       onFocus: (e) => (e.currentTarget as HTMLInputElement).select(),
@@ -139,7 +137,7 @@ export function connect<S>(
     indicator: {
       'data-scope': 'clipboard',
       'data-part': 'indicator',
-      'data-copied': (s) => (get(s).copied ? '' : undefined),
+      'data-copied': state.map((s) => (s.copied ? '' : undefined)),
       'aria-live': 'polite',
     },
   }

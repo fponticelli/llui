@@ -1,7 +1,6 @@
-import type { Send } from '@llui/dom'
-import { useContext, tagSend } from '@llui/dom'
+import type { Send, Signal } from '@llui/dom/signals'
+import { useContext, tagSend } from '@llui/dom/signals'
 import { LocaleContext } from '../locale.js'
-import type { Locale } from '../locale.js'
 
 /**
  * Number input — numeric field with increment/decrement buttons. Clamps
@@ -127,24 +126,24 @@ export function update(state: NumberInputState, msg: NumberInputMsg): [NumberInp
   }
 }
 
-export interface NumberInputParts<S> {
+export interface NumberInputParts {
   root: {
     'data-scope': 'number-input'
     'data-part': 'root'
-    'data-disabled': (s: S) => '' | undefined
+    'data-disabled': Signal<'' | undefined>
   }
   input: {
     type: 'text'
     role: 'spinbutton'
     inputMode: 'decimal'
-    'aria-valuemin': (s: S) => number | undefined
-    'aria-valuemax': (s: S) => number | undefined
-    'aria-valuenow': (s: S) => number | undefined
-    'aria-disabled': (s: S) => 'true' | undefined
-    'aria-readonly': (s: S) => 'true' | undefined
-    disabled: (s: S) => boolean
-    readOnly: (s: S) => boolean
-    value: (s: S) => string
+    'aria-valuemin': Signal<number | undefined>
+    'aria-valuemax': Signal<number | undefined>
+    'aria-valuenow': Signal<number | undefined>
+    'aria-disabled': Signal<'true' | undefined>
+    'aria-readonly': Signal<'true' | undefined>
+    disabled: Signal<boolean>
+    readOnly: Signal<boolean>
+    value: Signal<string>
     'data-scope': 'number-input'
     'data-part': 'input'
     onInput: (e: Event) => void
@@ -153,9 +152,9 @@ export interface NumberInputParts<S> {
   }
   increment: {
     type: 'button'
-    'aria-label': string | ((s: S) => string)
-    'aria-disabled': (s: S) => 'true' | undefined
-    disabled: (s: S) => boolean
+    'aria-label': string
+    'aria-disabled': Signal<'true' | undefined>
+    disabled: Signal<boolean>
     'data-scope': 'number-input'
     'data-part': 'increment'
     tabIndex: -1
@@ -163,9 +162,9 @@ export interface NumberInputParts<S> {
   }
   decrement: {
     type: 'button'
-    'aria-label': string | ((s: S) => string)
-    'aria-disabled': (s: S) => 'true' | undefined
-    disabled: (s: S) => boolean
+    'aria-label': string
+    'aria-disabled': Signal<'true' | undefined>
+    disabled: Signal<boolean>
     'data-scope': 'number-input'
     'data-part': 'decrement'
     tabIndex: -1
@@ -180,16 +179,14 @@ export interface ConnectOptions {
   validate?: (value: number) => string[] | null
 }
 
-export function connect<S>(
-  get: (s: S) => NumberInputState,
+export function connect(
+  state: Signal<NumberInputState>,
   send: Send<NumberInputMsg>,
   opts: ConnectOptions = {},
-): NumberInputParts<S> {
-  const locale = useContext<S, Locale>(LocaleContext)
-  const incrementLabel: string | ((s: S) => string) =
-    opts.incrementLabel ?? ((s: S) => locale(s).numberInput.increment)
-  const decrementLabel: string | ((s: S) => string) =
-    opts.decrementLabel ?? ((s: S) => locale(s).numberInput.decrement)
+): NumberInputParts {
+  const locale = useContext(LocaleContext)
+  const incrementLabel = opts.incrementLabel ?? locale.numberInput.increment
+  const decrementLabel = opts.decrementLabel ?? locale.numberInput.decrement
   const validate = opts.validate
 
   const trySetValue = (value: number) => {
@@ -204,20 +201,20 @@ export function connect<S>(
     root: {
       'data-scope': 'number-input',
       'data-part': 'root',
-      'data-disabled': (s) => (get(s).disabled ? '' : undefined),
+      'data-disabled': state.map((st) => (st.disabled ? '' : undefined)),
     },
     input: {
       type: 'text',
       role: 'spinbutton',
       inputMode: 'decimal',
-      'aria-valuemin': (s) => (isFinite(get(s).min) ? get(s).min : undefined),
-      'aria-valuemax': (s) => (isFinite(get(s).max) ? get(s).max : undefined),
-      'aria-valuenow': (s) => get(s).value ?? undefined,
-      'aria-disabled': (s) => (get(s).disabled ? 'true' : undefined),
-      'aria-readonly': (s) => (get(s).readOnly ? 'true' : undefined),
-      disabled: (s) => get(s).disabled,
-      readOnly: (s) => get(s).readOnly,
-      value: (s) => get(s).rawText,
+      'aria-valuemin': state.map((st) => (isFinite(st.min) ? st.min : undefined)),
+      'aria-valuemax': state.map((st) => (isFinite(st.max) ? st.max : undefined)),
+      'aria-valuenow': state.map((st) => st.value ?? undefined),
+      'aria-disabled': state.map((st) => (st.disabled ? 'true' : undefined)),
+      'aria-readonly': state.map((st) => (st.readOnly ? 'true' : undefined)),
+      disabled: state.map((st) => st.disabled),
+      readOnly: state.map((st) => st.readOnly),
+      value: state.map((st) => st.rawText),
       'data-scope': 'number-input',
       'data-part': 'input',
       onInput: tagSend(send, ['setRawText'], (e) => {
@@ -263,11 +260,10 @@ export function connect<S>(
     increment: {
       type: 'button',
       'aria-label': incrementLabel,
-      'aria-disabled': (s) =>
-        get(s).disabled || get(s).readOnly || (get(s).value ?? 0) >= get(s).max
-          ? 'true'
-          : undefined,
-      disabled: (s) => get(s).disabled || get(s).readOnly || (get(s).value ?? 0) >= get(s).max,
+      'aria-disabled': state.map((st) =>
+        st.disabled || st.readOnly || (st.value ?? 0) >= st.max ? 'true' : undefined,
+      ),
+      disabled: state.map((st) => st.disabled || st.readOnly || (st.value ?? 0) >= st.max),
       'data-scope': 'number-input',
       'data-part': 'increment',
       tabIndex: -1,
@@ -276,11 +272,10 @@ export function connect<S>(
     decrement: {
       type: 'button',
       'aria-label': decrementLabel,
-      'aria-disabled': (s) =>
-        get(s).disabled || get(s).readOnly || (get(s).value ?? 0) <= get(s).min
-          ? 'true'
-          : undefined,
-      disabled: (s) => get(s).disabled || get(s).readOnly || (get(s).value ?? 0) <= get(s).min,
+      'aria-disabled': state.map((st) =>
+        st.disabled || st.readOnly || (st.value ?? 0) <= st.min ? 'true' : undefined,
+      ),
+      disabled: state.map((st) => st.disabled || st.readOnly || (st.value ?? 0) <= st.min),
       'data-scope': 'number-input',
       'data-part': 'decrement',
       tabIndex: -1,

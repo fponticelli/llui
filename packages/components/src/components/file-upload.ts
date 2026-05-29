@@ -1,7 +1,6 @@
-import type { Send } from '@llui/dom'
-import { useContext, tagSend } from '@llui/dom'
+import type { Send, Signal } from '@llui/dom/signals'
+import { useContext, tagSend } from '@llui/dom/signals'
 import { LocaleContext } from '../locale.js'
-import type { Locale } from '../locale.js'
 
 /**
  * File upload — input element + drag-and-drop zone. Tracks selected files,
@@ -247,7 +246,7 @@ export function preventDocumentDrop(): () => void {
   }
 }
 
-export interface FileUploadItemParts<S> {
+export interface FileUploadItemParts {
   item: {
     'data-scope': 'file-upload'
     'data-part': 'item'
@@ -267,7 +266,7 @@ export interface FileUploadItemParts<S> {
   }
   removeTrigger: {
     type: 'button'
-    'aria-label': string | ((s: S) => string)
+    'aria-label': string
     'data-scope': 'file-upload'
     'data-part': 'item-remove'
     onClick: (e: MouseEvent) => void
@@ -275,26 +274,26 @@ export interface FileUploadItemParts<S> {
   /** Zag-aligned alias for removeTrigger. Same wiring. */
   itemDeleteTrigger: {
     type: 'button'
-    'aria-label': string | ((s: S) => string)
+    'aria-label': string
     'data-scope': 'file-upload'
     'data-part': 'item-delete-trigger'
     onClick: (e: MouseEvent) => void
   }
 }
 
-export interface FileUploadParts<S> {
+export interface FileUploadParts {
   root: {
     'data-scope': 'file-upload'
     'data-part': 'root'
-    'data-disabled': (s: S) => '' | undefined
-    'data-dragging': (s: S) => '' | undefined
-    'data-invalid': (s: S) => '' | undefined
-    'data-readonly': (s: S) => '' | undefined
+    'data-disabled': Signal<'' | undefined>
+    'data-dragging': Signal<'' | undefined>
+    'data-invalid': Signal<'' | undefined>
+    'data-readonly': Signal<'' | undefined>
   }
   dropzone: {
     'data-scope': 'file-upload'
     'data-part': 'dropzone'
-    'data-dragging': (s: S) => '' | undefined
+    'data-dragging': Signal<'' | undefined>
     onClick: (e: MouseEvent) => void
     onDragEnter: (e: DragEvent) => void
     onDragOver: (e: DragEvent) => void
@@ -305,7 +304,7 @@ export interface FileUploadParts<S> {
     type: 'button'
     'data-scope': 'file-upload'
     'data-part': 'trigger'
-    disabled: (s: S) => boolean
+    disabled: Signal<boolean>
     onClick: (e: MouseEvent) => void
   }
   hiddenInput: {
@@ -313,11 +312,11 @@ export interface FileUploadParts<S> {
     tabIndex: -1
     'aria-hidden': 'true'
     style: string
-    disabled: (s: S) => boolean
-    multiple: (s: S) => boolean
-    accept: (s: S) => string
-    required: (s: S) => boolean
-    'aria-invalid': (s: S) => 'true' | undefined
+    disabled: Signal<boolean>
+    multiple: Signal<boolean>
+    accept: Signal<string>
+    required: Signal<boolean>
+    'aria-invalid': Signal<'true' | undefined>
     capture?: string | boolean
     webkitdirectory?: '' | undefined
     'data-scope': 'file-upload'
@@ -332,7 +331,7 @@ export interface FileUploadParts<S> {
   }
   clearTrigger: {
     type: 'button'
-    'aria-label': string | ((s: S) => string)
+    'aria-label': string
     'data-scope': 'file-upload'
     'data-part': 'clear-trigger'
     onClick: (e: MouseEvent) => void
@@ -341,7 +340,7 @@ export interface FileUploadParts<S> {
     'data-scope': 'file-upload'
     'data-part': 'item-group'
   }
-  item: (index: number) => FileUploadItemParts<S>
+  item: (index: number) => FileUploadItemParts
 }
 
 export interface ConnectOptions {
@@ -374,17 +373,15 @@ export interface ConnectOptions {
 const HIDDEN_STYLE =
   'position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;border:0;'
 
-export function connect<S>(
-  get: (s: S) => FileUploadState,
+export function connect(
+  state: Signal<FileUploadState>,
   send: Send<FileUploadMsg>,
   opts: ConnectOptions,
-): FileUploadParts<S> {
-  const locale = useContext<S, Locale>(LocaleContext)
+): FileUploadParts {
+  const locale = useContext(LocaleContext)
   const inputId = `${opts.id}:input`
-  const removeLabel: string | ((s: S) => string) =
-    opts.removeLabel ?? ((s: S) => locale(s).fileUpload.remove)
-  const clearLabel: string | ((s: S) => string) =
-    opts.clearLabel ?? ((s: S) => locale(s).fileUpload.clear)
+  const removeLabel = opts.removeLabel ?? locale.fileUpload.remove
+  const clearLabel = opts.clearLabel ?? locale.fileUpload.clear
 
   const runPipeline = async (
     raw: File[],
@@ -431,15 +428,15 @@ export function connect<S>(
     root: {
       'data-scope': 'file-upload',
       'data-part': 'root',
-      'data-disabled': (s) => (get(s).disabled ? '' : undefined),
-      'data-dragging': (s) => (get(s).dragging ? '' : undefined),
-      'data-invalid': (s) => (get(s).invalid ? '' : undefined),
-      'data-readonly': (s) => (get(s).readOnly ? '' : undefined),
+      'data-disabled': state.map((st) => (st.disabled ? '' : undefined)),
+      'data-dragging': state.map((st) => (st.dragging ? '' : undefined)),
+      'data-invalid': state.map((st) => (st.invalid ? '' : undefined)),
+      'data-readonly': state.map((st) => (st.readOnly ? '' : undefined)),
     },
     dropzone: {
       'data-scope': 'file-upload',
       'data-part': 'dropzone',
-      'data-dragging': (s) => (get(s).dragging ? '' : undefined),
+      'data-dragging': state.map((st) => (st.dragging ? '' : undefined)),
       onClick: openPicker,
       onDragEnter: tagSend(send, ['dragEnter'], (e) => {
         e.preventDefault()
@@ -461,7 +458,7 @@ export function connect<S>(
       type: 'button',
       'data-scope': 'file-upload',
       'data-part': 'trigger',
-      disabled: (s) => get(s).disabled,
+      disabled: state.map((st) => st.disabled),
       onClick: openPicker,
     },
     hiddenInput: {
@@ -469,11 +466,11 @@ export function connect<S>(
       tabIndex: -1,
       'aria-hidden': 'true',
       style: HIDDEN_STYLE,
-      disabled: (s) => get(s).disabled,
-      multiple: (s) => get(s).multiple,
-      accept: (s) => acceptToString(get(s).accept),
-      required: (s) => get(s).required,
-      'aria-invalid': (s) => (get(s).invalid ? 'true' : undefined),
+      disabled: state.map((st) => st.disabled),
+      multiple: state.map((st) => st.multiple),
+      accept: state.map((st) => acceptToString(st.accept)),
+      required: state.map((st) => st.required),
+      'aria-invalid': state.map((st) => (st.invalid ? 'true' : undefined)),
       ...(opts.capture !== undefined ? { capture: opts.capture } : {}),
       ...(opts.directory === true ? { webkitdirectory: '' as const } : {}),
       'data-scope': 'file-upload',
@@ -502,7 +499,7 @@ export function connect<S>(
       'data-scope': 'file-upload',
       'data-part': 'item-group',
     },
-    item: (index: number): FileUploadItemParts<S> => ({
+    item: (index: number): FileUploadItemParts => ({
       item: {
         'data-scope': 'file-upload',
         'data-part': 'item',

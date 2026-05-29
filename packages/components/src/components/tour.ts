@@ -1,7 +1,6 @@
-import type { Send } from '@llui/dom'
-import { useContext, tagSend } from '@llui/dom'
+import type { Send, Signal } from '@llui/dom/signals'
+import { useContext, tagSend } from '@llui/dom/signals'
 import { LocaleContext } from '../locale.js'
-import type { Locale } from '../locale.js'
 
 /**
  * Tour — guided walkthrough over a sequence of steps, each targeting
@@ -127,7 +126,7 @@ export function progress(state: TourState): { current: number; total: number } {
   return { current: state.index + 1, total: state.steps.length }
 }
 
-export interface TourParts<S> {
+export interface TourParts {
   root: {
     role: 'dialog'
     'aria-modal': 'false'
@@ -135,7 +134,7 @@ export interface TourParts<S> {
     'aria-describedby': string
     'data-scope': 'tour'
     'data-part': 'root'
-    hidden: (s: S) => boolean
+    hidden: Signal<boolean>
   }
   backdrop: {
     'data-scope': 'tour'
@@ -164,7 +163,7 @@ export interface TourParts<S> {
   }
   prevTrigger: {
     type: 'button'
-    disabled: (s: S) => boolean
+    disabled: Signal<boolean>
     'data-scope': 'tour'
     'data-part': 'prev-trigger'
     onClick: (e: MouseEvent) => void
@@ -173,12 +172,12 @@ export interface TourParts<S> {
     type: 'button'
     'data-scope': 'tour'
     'data-part': 'next-trigger'
-    'data-last': (s: S) => '' | undefined
+    'data-last': Signal<'' | undefined>
     onClick: (e: MouseEvent) => void
   }
   closeTrigger: {
     type: 'button'
-    'aria-label': string | ((s: S) => string)
+    'aria-label': string
     'data-scope': 'tour'
     'data-part': 'close-trigger'
     onClick: (e: MouseEvent) => void
@@ -193,12 +192,12 @@ export interface ConnectOptions {
   closeOnBackdropClick?: boolean
 }
 
-export function connect<S>(
-  get: (s: S) => TourState,
+export function connect(
+  state: Signal<TourState>,
   send: Send<TourMsg>,
   opts: ConnectOptions,
-): TourParts<S> {
-  const locale = useContext<S, Locale>(LocaleContext)
+): TourParts {
+  const locale = useContext(LocaleContext)
   const titleId = `${opts.id}:title`
   const descId = `${opts.id}:description`
   const closeOnBackdrop = opts.closeOnBackdropClick === true
@@ -211,7 +210,7 @@ export function connect<S>(
       'aria-describedby': descId,
       'data-scope': 'tour',
       'data-part': 'root',
-      hidden: (s) => !get(s).open,
+      hidden: state.map((s) => !s.open),
     },
     backdrop: {
       'data-scope': 'tour',
@@ -242,7 +241,7 @@ export function connect<S>(
     },
     prevTrigger: {
       type: 'button',
-      disabled: (s) => isFirst(get(s)),
+      disabled: state.map((s) => isFirst(s)),
       'data-scope': 'tour',
       'data-part': 'prev-trigger',
       onClick: tagSend(send, ['prev'], () => send({ type: 'prev' })),
@@ -251,12 +250,12 @@ export function connect<S>(
       type: 'button',
       'data-scope': 'tour',
       'data-part': 'next-trigger',
-      'data-last': (s) => (isLast(get(s)) ? '' : undefined),
+      'data-last': state.map((s) => (isLast(s) ? '' : undefined)),
       onClick: tagSend(send, ['next'], () => send({ type: 'next' })),
     },
     closeTrigger: {
       type: 'button',
-      'aria-label': opts.closeLabel ?? ((s: S) => locale(s).tour.close),
+      'aria-label': opts.closeLabel ?? locale.tour.close,
       'data-scope': 'tour',
       'data-part': 'close-trigger',
       onClick: tagSend(send, ['stop'], () => send({ type: 'stop' })),

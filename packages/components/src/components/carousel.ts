@@ -1,7 +1,6 @@
-import type { Send } from '@llui/dom'
-import { useContext, tagSend } from '@llui/dom'
+import type { Send, Signal } from '@llui/dom/signals'
+import { useContext, tagSend } from '@llui/dom/signals'
 import { LocaleContext, en } from '../locale.js'
-import type { Locale } from '../locale.js'
 
 /**
  * Carousel — sliding content viewer with pagination. Tracks active slide
@@ -101,40 +100,40 @@ export function canGoPrev(state: CarouselState): boolean {
   return state.current > 0
 }
 
-export interface CarouselSlideParts<S> {
+export interface CarouselSlideParts {
   slide: {
     role: 'tabpanel'
     id: string
     'aria-roledescription': 'slide'
-    'aria-label': string | ((s: S) => string)
+    'aria-label': string
     'data-scope': 'carousel'
     'data-part': 'slide'
     'data-index': string
-    'data-active': (s: S) => '' | undefined
-    hidden: (s: S) => boolean
+    'data-active': Signal<'' | undefined>
+    hidden: Signal<boolean>
   }
   indicator: {
     type: 'button'
     role: 'tab'
-    'aria-label': string | ((s: S) => string)
-    'aria-selected': (s: S) => boolean
+    'aria-label': string
+    'aria-selected': Signal<boolean>
     'aria-controls': string
     'data-scope': 'carousel'
     'data-part': 'indicator'
     'data-index': string
-    'data-active': (s: S) => '' | undefined
+    'data-active': Signal<'' | undefined>
     onClick: (e: MouseEvent) => void
   }
 }
 
-export interface CarouselParts<S> {
+export interface CarouselParts {
   root: {
     role: 'region'
     'aria-roledescription': 'carousel'
-    'aria-label': string | ((s: S) => string)
+    'aria-label': string
     'data-scope': 'carousel'
     'data-part': 'root'
-    'data-paused': (s: S) => '' | undefined
+    'data-paused': Signal<'' | undefined>
     onPointerEnter: (e: PointerEvent) => void
     onPointerLeave: (e: PointerEvent) => void
     onFocus: (e: FocusEvent) => void
@@ -146,27 +145,27 @@ export interface CarouselParts<S> {
   }
   indicatorGroup: {
     role: 'tablist'
-    'aria-label': string | ((s: S) => string)
+    'aria-label': string
     'data-scope': 'carousel'
     'data-part': 'indicator-group'
   }
   nextTrigger: {
     type: 'button'
-    'aria-label': string | ((s: S) => string)
-    disabled: (s: S) => boolean
+    'aria-label': string
+    disabled: Signal<boolean>
     'data-scope': 'carousel'
     'data-part': 'next-trigger'
     onClick: (e: MouseEvent) => void
   }
   prevTrigger: {
     type: 'button'
-    'aria-label': string | ((s: S) => string)
-    disabled: (s: S) => boolean
+    'aria-label': string
+    disabled: Signal<boolean>
     'data-scope': 'carousel'
     'data-part': 'prev-trigger'
     onClick: (e: MouseEvent) => void
   }
-  slide: (index: number) => CarouselSlideParts<S>
+  slide: (index: number) => CarouselSlideParts
 }
 
 export interface ConnectOptions {
@@ -179,19 +178,16 @@ export interface ConnectOptions {
   slideLabel?: (index: number, count: number) => string
 }
 
-export function connect<S>(
-  get: (s: S) => CarouselState,
+export function connect(
+  state: Signal<CarouselState>,
   send: Send<CarouselMsg>,
   opts: ConnectOptions,
-): CarouselParts<S> {
-  const locale = useContext<S, Locale>(LocaleContext)
-  const label: string | ((s: S) => string) = opts.label ?? ((s: S) => locale(s).carousel.label)
-  const indicatorLabel: string | ((s: S) => string) =
-    opts.indicatorLabel ?? ((s: S) => locale(s).carousel.indicators)
-  const nextLabel: string | ((s: S) => string) =
-    opts.nextLabel ?? ((s: S) => locale(s).carousel.next)
-  const prevLabel: string | ((s: S) => string) =
-    opts.prevLabel ?? ((s: S) => locale(s).carousel.prev)
+): CarouselParts {
+  const locale = useContext(LocaleContext)
+  const label = opts.label ?? locale.carousel.label
+  const indicatorLabel = opts.indicatorLabel ?? locale.carousel.indicators
+  const nextLabel = opts.nextLabel ?? locale.carousel.next
+  const prevLabel = opts.prevLabel ?? locale.carousel.prev
   const slideLabelFn = opts.slideLabel ?? en.carousel.slide
   const slideId = (i: number): string => `${opts.id}:slide:${i}`
 
@@ -202,7 +198,7 @@ export function connect<S>(
       'aria-label': label,
       'data-scope': 'carousel',
       'data-part': 'root',
-      'data-paused': (s) => (get(s).paused ? '' : undefined),
+      'data-paused': state.map((s) => (s.paused ? '' : undefined)),
       onPointerEnter: tagSend(send, ['pause'], () => send({ type: 'pause' })),
       onPointerLeave: tagSend(send, ['resume'], () => send({ type: 'resume' })),
       onFocus: tagSend(send, ['pause'], () => send({ type: 'pause' })),
@@ -221,7 +217,7 @@ export function connect<S>(
     nextTrigger: {
       type: 'button',
       'aria-label': nextLabel,
-      disabled: (s) => !canGoNext(get(s)),
+      disabled: state.map((s) => !canGoNext(s)),
       'data-scope': 'carousel',
       'data-part': 'next-trigger',
       onClick: tagSend(send, ['next'], () => send({ type: 'next' })),
@@ -229,12 +225,12 @@ export function connect<S>(
     prevTrigger: {
       type: 'button',
       'aria-label': prevLabel,
-      disabled: (s) => !canGoPrev(get(s)),
+      disabled: state.map((s) => !canGoPrev(s)),
       'data-scope': 'carousel',
       'data-part': 'prev-trigger',
       onClick: tagSend(send, ['prev'], () => send({ type: 'prev' })),
     },
-    slide: (index: number): CarouselSlideParts<S> => ({
+    slide: (index: number): CarouselSlideParts => ({
       slide: {
         role: 'tabpanel',
         id: slideId(index),
@@ -243,19 +239,19 @@ export function connect<S>(
         'data-scope': 'carousel',
         'data-part': 'slide',
         'data-index': String(index),
-        'data-active': (s) => (get(s).current === index ? '' : undefined),
-        hidden: (s) => get(s).current !== index,
+        'data-active': state.map((s) => (s.current === index ? '' : undefined)),
+        hidden: state.map((s) => s.current !== index),
       },
       indicator: {
         type: 'button',
         role: 'tab',
         'aria-label': en.carousel.goToSlide(index),
-        'aria-selected': (s) => get(s).current === index,
+        'aria-selected': state.map((s) => s.current === index),
         'aria-controls': slideId(index),
         'data-scope': 'carousel',
         'data-part': 'indicator',
         'data-index': String(index),
-        'data-active': (s) => (get(s).current === index ? '' : undefined),
+        'data-active': state.map((s) => (s.current === index ? '' : undefined)),
         onClick: tagSend(send, ['goTo'], () => send({ type: 'goTo', index })),
       },
     }),

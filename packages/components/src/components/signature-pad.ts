@@ -1,7 +1,6 @@
-import type { Send } from '@llui/dom'
-import { useContext, tagSend } from '@llui/dom'
+import type { Send, Signal } from '@llui/dom/signals'
+import { useContext, tagSend } from '@llui/dom/signals'
 import { LocaleContext } from '../locale.js'
-import type { Locale } from '../locale.js'
 
 /**
  * Signature pad — capture free-form strokes on a canvas. The state
@@ -154,15 +153,15 @@ export function getBounds(
   return { x: minX, y: minY, width: maxX - minX, height: maxY - minY }
 }
 
-export interface SignaturePadParts<S> {
+export interface SignaturePadParts {
   root: {
     role: 'application'
-    'aria-label': string | ((s: S) => string)
+    'aria-label': string
     'data-scope': 'signature-pad'
     'data-part': 'root'
-    'data-disabled': (s: S) => '' | undefined
-    'data-readonly': (s: S) => '' | undefined
-    'data-drawing': (s: S) => '' | undefined
+    'data-disabled': Signal<'' | undefined>
+    'data-readonly': Signal<'' | undefined>
+    'data-drawing': Signal<'' | undefined>
   }
   control: {
     'data-scope': 'signature-pad'
@@ -170,16 +169,16 @@ export interface SignaturePadParts<S> {
   }
   clearTrigger: {
     type: 'button'
-    'aria-label': string | ((s: S) => string)
-    disabled: (s: S) => boolean
+    'aria-label': string
+    disabled: Signal<boolean>
     'data-scope': 'signature-pad'
     'data-part': 'clear-trigger'
     onClick: (e: MouseEvent) => void
   }
   undoTrigger: {
     type: 'button'
-    'aria-label': string | ((s: S) => string)
-    disabled: (s: S) => boolean
+    'aria-label': string
+    disabled: Signal<boolean>
     'data-scope': 'signature-pad'
     'data-part': 'undo-trigger'
     onClick: (e: MouseEvent) => void
@@ -191,7 +190,7 @@ export interface SignaturePadParts<S> {
   }
   hiddenInput: {
     type: 'hidden'
-    value: (s: S) => string
+    value: Signal<string>
     name?: string
     'data-scope': 'signature-pad'
     'data-part': 'hidden-input'
@@ -205,21 +204,21 @@ export interface ConnectOptions {
   name?: string
 }
 
-export function connect<S>(
-  get: (s: S) => SignaturePadState,
+export function connect(
+  state: Signal<SignaturePadState>,
   send: Send<SignaturePadMsg>,
   opts: ConnectOptions = {},
-): SignaturePadParts<S> {
-  const locale = useContext<S, Locale>(LocaleContext)
+): SignaturePadParts {
+  const locale = useContext(LocaleContext)
   return {
     root: {
       role: 'application',
-      'aria-label': opts.label ?? ((s: S) => locale(s).signaturePad.label),
+      'aria-label': opts.label ?? locale.signaturePad.label,
       'data-scope': 'signature-pad',
       'data-part': 'root',
-      'data-disabled': (s) => (get(s).disabled ? '' : undefined),
-      'data-readonly': (s) => (get(s).readOnly ? '' : undefined),
-      'data-drawing': (s) => (get(s).drawing ? '' : undefined),
+      'data-disabled': state.map((s) => (s.disabled ? '' : undefined)),
+      'data-readonly': state.map((s) => (s.readOnly ? '' : undefined)),
+      'data-drawing': state.map((s) => (s.drawing ? '' : undefined)),
     },
     control: {
       'data-scope': 'signature-pad',
@@ -227,16 +226,16 @@ export function connect<S>(
     },
     clearTrigger: {
       type: 'button',
-      'aria-label': opts.clearLabel ?? ((s: S) => locale(s).signaturePad.clear),
-      disabled: (s) => isEmpty(get(s)),
+      'aria-label': opts.clearLabel ?? locale.signaturePad.clear,
+      disabled: state.map((s) => isEmpty(s)),
       'data-scope': 'signature-pad',
       'data-part': 'clear-trigger',
       onClick: tagSend(send, ['clear'], () => send({ type: 'clear' })),
     },
     undoTrigger: {
       type: 'button',
-      'aria-label': opts.undoLabel ?? ((s: S) => locale(s).signaturePad.undo),
-      disabled: (s) => get(s).strokes.length === 0,
+      'aria-label': opts.undoLabel ?? locale.signaturePad.undo,
+      disabled: state.map((s) => s.strokes.length === 0),
       'data-scope': 'signature-pad',
       'data-part': 'undo-trigger',
       onClick: tagSend(send, ['undo'], () => send({ type: 'undo' })),
@@ -249,7 +248,7 @@ export function connect<S>(
     hiddenInput: {
       type: 'hidden',
       // Serialize strokes as JSON for form submission.
-      value: (s) => JSON.stringify(get(s).strokes),
+      value: state.map((s) => JSON.stringify(s.strokes)),
       ...(opts.name !== undefined ? { name: opts.name } : {}),
       'data-scope': 'signature-pad',
       'data-part': 'hidden-input',

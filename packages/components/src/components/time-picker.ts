@@ -1,7 +1,6 @@
-import type { Send } from '@llui/dom'
-import { useContext, tagSend } from '@llui/dom'
+import type { Send, Signal } from '@llui/dom/signals'
+import { useContext, tagSend } from '@llui/dom/signals'
 import { LocaleContext } from '../locale.js'
-import type { Locale } from '../locale.js'
 
 /**
  * Time picker — hours and minutes input with increment/decrement buttons.
@@ -128,23 +127,23 @@ export function formatTime(state: TimePickerState): string {
   return `${h}:${m}`
 }
 
-export interface TimePickerParts<S> {
+export interface TimePickerParts {
   root: {
     role: 'group'
-    'aria-label': string | ((s: S) => string)
+    'aria-label': string
     'data-scope': 'time-picker'
     'data-part': 'root'
-    'data-format': (s: S) => TimeFormat
+    'data-format': Signal<TimeFormat>
   }
   hoursInput: {
     type: 'number'
     role: 'spinbutton'
-    'aria-label': string | ((s: S) => string)
-    'aria-valuemin': (s: S) => number
-    'aria-valuemax': (s: S) => number
-    'aria-valuenow': (s: S) => number
-    disabled: (s: S) => boolean
-    value: (s: S) => string
+    'aria-label': string
+    'aria-valuemin': Signal<number>
+    'aria-valuemax': Signal<number>
+    'aria-valuenow': Signal<number>
+    disabled: Signal<boolean>
+    value: Signal<string>
     'data-scope': 'time-picker'
     'data-part': 'hours-input'
     onInput: (e: Event) => void
@@ -153,12 +152,12 @@ export interface TimePickerParts<S> {
   minutesInput: {
     type: 'number'
     role: 'spinbutton'
-    'aria-label': string | ((s: S) => string)
+    'aria-label': string
     'aria-valuemin': 0
     'aria-valuemax': 59
-    'aria-valuenow': (s: S) => number
-    disabled: (s: S) => boolean
-    value: (s: S) => string
+    'aria-valuenow': Signal<number>
+    disabled: Signal<boolean>
+    value: Signal<string>
     'data-scope': 'time-picker'
     'data-part': 'minutes-input'
     onInput: (e: Event) => void
@@ -166,13 +165,13 @@ export interface TimePickerParts<S> {
   }
   periodTrigger: {
     type: 'button'
-    'aria-label': string | ((s: S) => string)
-    disabled: (s: S) => boolean
+    'aria-label': string
+    disabled: Signal<boolean>
     'data-scope': 'time-picker'
     'data-part': 'period-trigger'
-    'data-period': (s: S) => 'AM' | 'PM'
+    'data-period': Signal<'AM' | 'PM'>
     onClick: (e: MouseEvent) => void
-    hidden: (s: S) => boolean
+    hidden: Signal<boolean>
   }
 }
 
@@ -183,29 +182,29 @@ export interface ConnectOptions {
   periodLabel?: string
 }
 
-export function connect<S>(
-  get: (s: S) => TimePickerState,
+export function connect(
+  state: Signal<TimePickerState>,
   send: Send<TimePickerMsg>,
   opts: ConnectOptions = {},
-): TimePickerParts<S> {
-  const locale = useContext<S, Locale>(LocaleContext)
+): TimePickerParts {
+  const locale = useContext(LocaleContext)
   return {
     root: {
       role: 'group',
-      'aria-label': opts.label ?? ((s: S) => locale(s).timePicker.label),
+      'aria-label': opts.label ?? locale.timePicker.label,
       'data-scope': 'time-picker',
       'data-part': 'root',
-      'data-format': (s) => get(s).format,
+      'data-format': state.map((s) => s.format),
     },
     hoursInput: {
       type: 'number',
       role: 'spinbutton',
-      'aria-label': opts.hoursLabel ?? ((s: S) => locale(s).timePicker.hours),
-      'aria-valuemin': (s) => (get(s).format === '12' ? 1 : 0),
-      'aria-valuemax': (s) => (get(s).format === '12' ? 12 : 23),
-      'aria-valuenow': (s) => displayHours(get(s)),
-      disabled: (s) => get(s).disabled,
-      value: (s) => String(displayHours(get(s))).padStart(2, '0'),
+      'aria-label': opts.hoursLabel ?? locale.timePicker.hours,
+      'aria-valuemin': state.map((s) => (s.format === '12' ? 1 : 0)),
+      'aria-valuemax': state.map((s) => (s.format === '12' ? 12 : 23)),
+      'aria-valuenow': state.map((s) => displayHours(s)),
+      disabled: state.map((s) => s.disabled),
+      value: state.map((s) => String(displayHours(s)).padStart(2, '0')),
       'data-scope': 'time-picker',
       'data-part': 'hours-input',
       onInput: tagSend(send, ['setHours'], (e) => {
@@ -225,12 +224,12 @@ export function connect<S>(
     minutesInput: {
       type: 'number',
       role: 'spinbutton',
-      'aria-label': opts.minutesLabel ?? ((s: S) => locale(s).timePicker.minutes),
+      'aria-label': opts.minutesLabel ?? locale.timePicker.minutes,
       'aria-valuemin': 0,
       'aria-valuemax': 59,
-      'aria-valuenow': (s) => get(s).value.minutes,
-      disabled: (s) => get(s).disabled,
-      value: (s) => String(get(s).value.minutes).padStart(2, '0'),
+      'aria-valuenow': state.map((s) => s.value.minutes),
+      disabled: state.map((s) => s.disabled),
+      value: state.map((s) => String(s.value.minutes).padStart(2, '0')),
       'data-scope': 'time-picker',
       'data-part': 'minutes-input',
       onInput: tagSend(send, ['setMinutes'], (e) => {
@@ -249,13 +248,13 @@ export function connect<S>(
     },
     periodTrigger: {
       type: 'button',
-      'aria-label': opts.periodLabel ?? ((s: S) => locale(s).timePicker.period),
-      disabled: (s) => get(s).disabled,
+      'aria-label': opts.periodLabel ?? locale.timePicker.period,
+      disabled: state.map((s) => s.disabled),
       'data-scope': 'time-picker',
       'data-part': 'period-trigger',
-      'data-period': (s) => period(get(s)),
+      'data-period': state.map((s) => period(s)),
       onClick: tagSend(send, ['toggleAmPm'], () => send({ type: 'toggleAmPm' })),
-      hidden: (s) => get(s).format === '24',
+      hidden: state.map((s) => s.format === '24'),
     },
   }
 }
