@@ -1,5 +1,5 @@
-import type { Send, TransitionOptions } from '@llui/dom'
-import { show, portal, onMount, div, tagSend } from '@llui/dom'
+import type { Send, Signal, TransitionOptions } from '@llui/dom/signals'
+import { show, portal, onMount, div, tagSend } from '@llui/dom/signals'
 import { pushDismissable } from '../utils/dismissable.js'
 
 /**
@@ -123,13 +123,13 @@ export function update(state: ContextMenuState, msg: ContextMenuMsg): [ContextMe
   }
 }
 
-export interface ContextMenuItemParts<S> {
+export interface ContextMenuItemParts {
   item: {
     role: 'menuitem'
     id: string
-    'aria-disabled': (s: S) => 'true' | undefined
-    'data-state': (s: S) => 'highlighted' | undefined
-    'data-disabled': (s: S) => '' | undefined
+    'aria-disabled': Signal<'true' | undefined>
+    'data-state': Signal<'highlighted' | undefined>
+    'data-disabled': Signal<'' | undefined>
     'data-scope': 'context-menu'
     'data-part': 'item'
     'data-value': string
@@ -139,7 +139,7 @@ export interface ContextMenuItemParts<S> {
   }
 }
 
-export interface ContextMenuParts<S> {
+export interface ContextMenuParts {
   /** The element users right-click to open the menu. */
   trigger: {
     'data-scope': 'context-menu'
@@ -149,18 +149,18 @@ export interface ContextMenuParts<S> {
   positioner: {
     'data-scope': 'context-menu'
     'data-part': 'positioner'
-    style: (s: S) => string
+    style: Signal<string>
   }
   content: {
     role: 'menu'
     id: string
     tabIndex: -1
-    'data-state': (s: S) => 'open' | 'closed'
+    'data-state': Signal<'open' | 'closed'>
     'data-scope': 'context-menu'
     'data-part': 'content'
     onKeyDown: (e: KeyboardEvent) => void
   }
-  item: (value: string) => ContextMenuItemParts<S>
+  item: (value: string) => ContextMenuItemParts
 }
 
 export interface ConnectOptions {
@@ -168,11 +168,11 @@ export interface ConnectOptions {
   onSelect?: (value: string) => void
 }
 
-export function connect<S>(
-  get: (s: S) => ContextMenuState,
+export function connect(
+  state: Signal<ContextMenuState>,
   send: Send<ContextMenuMsg>,
   opts: ConnectOptions,
-): ContextMenuParts<S> {
+): ContextMenuParts {
   const contentId = `${opts.id}:content`
   const itemId = (v: string): string => `${opts.id}:item:${v}`
 
@@ -188,16 +188,13 @@ export function connect<S>(
     positioner: {
       'data-scope': 'context-menu',
       'data-part': 'positioner',
-      style: (s) => {
-        const st = get(s)
-        return `position:fixed;top:${st.y}px;left:${st.x}px;`
-      },
+      style: state.map((st) => `position:fixed;top:${st.y}px;left:${st.x}px;`),
     },
     content: {
       role: 'menu',
       id: contentId,
       tabIndex: -1,
-      'data-state': (s) => (get(s).open ? 'open' : 'closed'),
+      'data-state': state.map((s) => (s.open ? 'open' : 'closed')),
       'data-scope': 'context-menu',
       'data-part': 'content',
       onKeyDown: tagSend(
@@ -226,13 +223,13 @@ export function connect<S>(
         },
       ),
     },
-    item: (value: string): ContextMenuItemParts<S> => ({
+    item: (value: string): ContextMenuItemParts => ({
       item: {
         role: 'menuitem',
         id: itemId(value),
-        'aria-disabled': (s) => (get(s).disabledItems.includes(value) ? 'true' : undefined),
-        'data-state': (s) => (get(s).highlighted === value ? 'highlighted' : undefined),
-        'data-disabled': (s) => (get(s).disabledItems.includes(value) ? '' : undefined),
+        'aria-disabled': state.map((s) => (s.disabledItems.includes(value) ? 'true' : undefined)),
+        'data-state': state.map((s) => (s.highlighted === value ? 'highlighted' : undefined)),
+        'data-disabled': state.map((s) => (s.disabledItems.includes(value) ? '' : undefined)),
         'data-scope': 'context-menu',
         'data-part': 'item',
         'data-value': value,
@@ -247,26 +244,29 @@ export function connect<S>(
   }
 }
 
-export interface OverlayOptions<S> {
-  get: (s: S) => ContextMenuState
+export interface OverlayOptions {
+  state: Signal<ContextMenuState>
   send: Send<ContextMenuMsg>
-  parts: ContextMenuParts<S>
+  parts: ContextMenuParts
   content: () => Node[]
   transition?: TransitionOptions
   target?: string | HTMLElement
 }
 
-export function overlay<S>(opts: OverlayOptions<S>): Node[] {
-  const target = opts.target ?? 'body'
+export function overlay(opts: OverlayOptions): Node {
+  const rawTarget = opts.target ?? 'body'
   const parts = opts.parts
   const contentId = parts.content.id
 
-  return show<S, ContextMenuMsg>({
-    when: (s) => opts.get(s).open,
-    render: () =>
-      portal({
-        target,
-        render: () => {
+  return show(
+    opts.state.map((s) => s.open),
+    () => {
+      const targetEl =
+        typeof rawTarget === 'string'
+          ? (document.querySelector(rawTarget) ?? document.body)
+          : rawTarget
+      return [
+        portal(() => {
           onMount(() => {
             const contentEl = document.getElementById(contentId)
             if (!contentEl) return
@@ -278,11 +278,10 @@ export function overlay<S>(opts: OverlayOptions<S>): Node[] {
             return cleanup
           })
           return [div(parts.positioner, opts.content())]
-        },
-      }),
-    enter: opts.transition?.enter,
-    leave: opts.transition?.leave,
-  })
+        }, targetEl),
+      ]
+    },
+  )
 }
 
 export const contextMenu = { init, update, connect, overlay }

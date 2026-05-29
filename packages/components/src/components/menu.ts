@@ -1,5 +1,5 @@
-import type { Send, TransitionOptions } from '@llui/dom'
-import { show, portal, onMount, div, tagSend } from '@llui/dom'
+import type { Send, Signal, TransitionOptions } from '@llui/dom/signals'
+import { show, portal, onMount, div, tagSend } from '@llui/dom/signals'
 import { pushDismissable } from '../utils/dismissable.js'
 import { attachFloating, type Placement } from '../utils/floating.js'
 import {
@@ -173,13 +173,13 @@ export function update(state: MenuState, msg: MenuMsg): [MenuState, never[]] {
   }
 }
 
-export interface MenuItemParts<S> {
+export interface MenuItemParts {
   item: {
     role: 'menuitem'
     id: string
-    'aria-disabled': (s: S) => 'true' | undefined
-    'data-state': (s: S) => 'highlighted' | undefined
-    'data-disabled': (s: S) => '' | undefined
+    'aria-disabled': Signal<'true' | undefined>
+    'data-state': Signal<'highlighted' | undefined>
+    'data-disabled': Signal<'' | undefined>
     'data-scope': 'menu'
     'data-part': 'item'
     'data-value': string
@@ -189,14 +189,14 @@ export interface MenuItemParts<S> {
   }
 }
 
-export interface MenuParts<S> {
+export interface MenuParts {
   trigger: {
     type: 'button'
     'aria-haspopup': 'menu'
-    'aria-expanded': (s: S) => boolean
+    'aria-expanded': Signal<boolean>
     'aria-controls': string
     id: string
-    'data-state': (s: S) => 'open' | 'closed'
+    'data-state': Signal<'open' | 'closed'>
     'data-scope': 'menu'
     'data-part': 'trigger'
     onClick: (e: MouseEvent) => void
@@ -212,12 +212,12 @@ export interface MenuParts<S> {
     id: string
     'aria-labelledby': string
     tabIndex: -1
-    'data-state': (s: S) => 'open' | 'closed'
+    'data-state': Signal<'open' | 'closed'>
     'data-scope': 'menu'
     'data-part': 'content'
     onKeyDown: (e: KeyboardEvent) => void
   }
-  item: (value: string) => MenuItemParts<S>
+  item: (value: string) => MenuItemParts
 }
 
 export interface ConnectOptions {
@@ -226,11 +226,11 @@ export interface ConnectOptions {
   onSelect?: (value: string) => void
 }
 
-export function connect<S>(
-  get: (s: S) => MenuState,
+export function connect(
+  state: Signal<MenuState>,
   send: Send<MenuMsg>,
   opts: ConnectOptions,
-): MenuParts<S> {
+): MenuParts {
   const base = opts.id
   const triggerId = `${base}:trigger`
   const contentId = `${base}:content`
@@ -292,10 +292,10 @@ export function connect<S>(
     trigger: {
       type: 'button',
       'aria-haspopup': 'menu',
-      'aria-expanded': (s) => get(s).open,
+      'aria-expanded': state.map((s) => s.open),
       'aria-controls': contentId,
       id: triggerId,
-      'data-state': (s) => (get(s).open ? 'open' : 'closed'),
+      'data-state': state.map((s) => (s.open ? 'open' : 'closed')),
       'data-scope': 'menu',
       'data-part': 'trigger',
       onClick: tagSend(send, ['toggle'], () => send({ type: 'toggle' })),
@@ -320,18 +320,18 @@ export function connect<S>(
       id: contentId,
       'aria-labelledby': triggerId,
       tabIndex: -1,
-      'data-state': (s) => (get(s).open ? 'open' : 'closed'),
+      'data-state': state.map((s) => (s.open ? 'open' : 'closed')),
       'data-scope': 'menu',
       'data-part': 'content',
       onKeyDown: handleMenuKey,
     },
-    item: (value: string): MenuItemParts<S> => ({
+    item: (value: string): MenuItemParts => ({
       item: {
         role: 'menuitem',
         id: itemId(value),
-        'aria-disabled': (s) => (get(s).disabledItems.includes(value) ? 'true' : undefined),
-        'data-state': (s) => (get(s).highlighted === value ? 'highlighted' : undefined),
-        'data-disabled': (s) => (get(s).disabledItems.includes(value) ? '' : undefined),
+        'aria-disabled': state.map((s) => (s.disabledItems.includes(value) ? 'true' : undefined)),
+        'data-state': state.map((s) => (s.highlighted === value ? 'highlighted' : undefined)),
+        'data-disabled': state.map((s) => (s.disabledItems.includes(value) ? '' : undefined)),
         'data-scope': 'menu',
         'data-part': 'item',
         'data-value': value,
@@ -346,10 +346,10 @@ export function connect<S>(
   }
 }
 
-export interface OverlayOptions<S> {
-  get: (s: S) => MenuState
+export interface OverlayOptions {
+  state: Signal<MenuState>
   send: Send<MenuMsg>
-  parts: MenuParts<S>
+  parts: MenuParts
   content: () => Node[]
   placement?: Placement
   offset?: number
@@ -359,8 +359,8 @@ export interface OverlayOptions<S> {
   target?: string | HTMLElement
 }
 
-export function overlay<S>(opts: OverlayOptions<S>): Node[] {
-  const target = opts.target ?? 'body'
+export function overlay(opts: OverlayOptions): Node {
+  const rawTarget = opts.target ?? 'body'
   const placement = opts.placement ?? 'bottom-start'
   const offset = opts.offset ?? 4
   const flip = opts.flip !== false
@@ -369,12 +369,15 @@ export function overlay<S>(opts: OverlayOptions<S>): Node[] {
   const contentId = parts.content.id
   const triggerId = parts.trigger.id
 
-  return show<S, MenuMsg>({
-    when: (s) => opts.get(s).open,
-    render: () =>
-      portal({
-        target,
-        render: () => {
+  return show(
+    opts.state.map((s) => s.open),
+    () => {
+      const targetEl =
+        typeof rawTarget === 'string'
+          ? (document.querySelector(rawTarget) ?? document.body)
+          : rawTarget
+      return [
+        portal(() => {
           onMount(() => {
             const contentEl = document.getElementById(contentId)
             const triggerEl = document.getElementById(triggerId)
@@ -416,11 +419,10 @@ export function overlay<S>(opts: OverlayOptions<S>): Node[] {
             }
           })
           return [div(parts.positioner, opts.content())]
-        },
-      }),
-    enter: opts.transition?.enter,
-    leave: opts.transition?.leave,
-  })
+        }, targetEl),
+      ]
+    },
+  )
 }
 
 export const menu = { init, update, connect, overlay }

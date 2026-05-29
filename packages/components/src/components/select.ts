@@ -1,5 +1,5 @@
-import type { Send, TransitionOptions } from '@llui/dom'
-import { show, portal, onMount, div, tagSend } from '@llui/dom'
+import type { Send, Signal, TransitionOptions } from '@llui/dom/signals'
+import { show, portal, onMount, div, tagSend } from '@llui/dom/signals'
 import { pushDismissable } from '../utils/dismissable.js'
 import { attachFloating, type Placement } from '../utils/floating.js'
 import {
@@ -233,15 +233,15 @@ export function update(state: SelectState, msg: SelectMsg): [SelectState, never[
   }
 }
 
-export interface SelectItemParts<S> {
+export interface SelectItemParts {
   item: {
     role: 'option'
     id: string
-    'aria-selected': (s: S) => boolean
-    'aria-disabled': (s: S) => 'true' | undefined
-    'data-state': (s: S) => 'selected' | undefined
-    'data-highlighted': (s: S) => '' | undefined
-    'data-disabled': (s: S) => '' | undefined
+    'aria-selected': Signal<boolean>
+    'aria-disabled': Signal<'true' | undefined>
+    'data-state': Signal<'selected' | undefined>
+    'data-highlighted': Signal<'' | undefined>
+    'data-disabled': Signal<'' | undefined>
     'data-scope': 'select'
     'data-part': 'item'
     'data-value': string
@@ -251,19 +251,19 @@ export interface SelectItemParts<S> {
   }
 }
 
-export interface SelectParts<S> {
+export interface SelectParts {
   trigger: {
     type: 'button'
     role: 'combobox'
     'aria-haspopup': 'listbox'
-    'aria-expanded': (s: S) => boolean
+    'aria-expanded': Signal<boolean>
     'aria-controls': string
-    'aria-activedescendant': (s: S) => string | undefined
-    'aria-disabled': (s: S) => 'true' | undefined
-    'aria-required': (s: S) => 'true' | undefined
+    'aria-activedescendant': Signal<string | undefined>
+    'aria-disabled': Signal<'true' | undefined>
+    'aria-required': Signal<'true' | undefined>
     id: string
-    disabled: (s: S) => boolean
-    'data-state': (s: S) => 'open' | 'closed'
+    disabled: Signal<boolean>
+    'data-state': Signal<'open' | 'closed'>
     'data-scope': 'select'
     'data-part': 'trigger'
     onClick: (e: MouseEvent) => void
@@ -277,10 +277,10 @@ export interface SelectParts<S> {
   content: {
     role: 'listbox'
     id: string
-    'aria-multiselectable': (s: S) => 'true' | undefined
+    'aria-multiselectable': Signal<'true' | undefined>
     'aria-labelledby': string
     tabIndex: -1
-    'data-state': (s: S) => 'open' | 'closed'
+    'data-state': Signal<'open' | 'closed'>
     'data-scope': 'select'
     'data-part': 'content'
     onKeyDown: (e: KeyboardEvent) => void
@@ -289,15 +289,15 @@ export interface SelectParts<S> {
     'aria-hidden': 'true'
     tabIndex: -1
     style: string
-    disabled: (s: S) => boolean
-    multiple: (s: S) => boolean
-    required: (s: S) => boolean
+    disabled: Signal<boolean>
+    multiple: Signal<boolean>
+    required: Signal<boolean>
     'data-scope': 'select'
     'data-part': 'hidden-select'
   }
-  item: (value: string, index: number) => SelectItemParts<S>
+  item: (value: string, index: number) => SelectItemParts
   /** Selected value(s) — use for rendering the trigger label. */
-  valueText: (s: S) => string
+  valueText: Signal<string>
 }
 
 export interface ConnectOptions {
@@ -311,11 +311,11 @@ export interface ConnectOptions {
 const HIDDEN_STYLE =
   'position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;border:0;'
 
-export function connect<S>(
-  get: (s: S) => SelectState,
+export function connect(
+  state: Signal<SelectState>,
   send: Send<SelectMsg>,
   opts: ConnectOptions,
-): SelectParts<S> {
+): SelectParts {
   const base = opts.id
   const triggerId = `${base}:trigger`
   const contentId = `${base}:content`
@@ -378,17 +378,16 @@ export function connect<S>(
       type: 'button',
       role: 'combobox',
       'aria-haspopup': 'listbox',
-      'aria-expanded': (s) => get(s).open,
+      'aria-expanded': state.map((s) => s.open),
       'aria-controls': contentId,
-      'aria-activedescendant': (s) => {
-        const idx = get(s).highlightedIndex
-        return idx === null ? undefined : itemId(idx)
-      },
-      'aria-disabled': (s) => (get(s).disabled ? 'true' : undefined),
-      'aria-required': (s) => (get(s).required ? 'true' : undefined),
+      'aria-activedescendant': state.map((s) =>
+        s.highlightedIndex === null ? undefined : itemId(s.highlightedIndex),
+      ),
+      'aria-disabled': state.map((s) => (s.disabled ? 'true' : undefined)),
+      'aria-required': state.map((s) => (s.required ? 'true' : undefined)),
       id: triggerId,
-      disabled: (s) => get(s).disabled,
-      'data-state': (s) => (get(s).open ? 'open' : 'closed'),
+      disabled: state.map((s) => s.disabled),
+      'data-state': state.map((s) => (s.open ? 'open' : 'closed')),
       'data-scope': 'select',
       'data-part': 'trigger',
       onClick: tagSend(send, ['toggle'], () => send({ type: 'toggle' })),
@@ -402,10 +401,12 @@ export function connect<S>(
     content: {
       role: 'listbox',
       id: contentId,
-      'aria-multiselectable': (s) => (get(s).selectionMode === 'multiple' ? 'true' : undefined),
+      'aria-multiselectable': state.map((s) =>
+        s.selectionMode === 'multiple' ? 'true' : undefined,
+      ),
       'aria-labelledby': triggerId,
       tabIndex: -1,
-      'data-state': (s) => (get(s).open ? 'open' : 'closed'),
+      'data-state': state.map((s) => (s.open ? 'open' : 'closed')),
       'data-scope': 'select',
       'data-part': 'content',
       onKeyDown: handleContentKey,
@@ -414,21 +415,21 @@ export function connect<S>(
       'aria-hidden': 'true',
       tabIndex: -1,
       style: HIDDEN_STYLE,
-      disabled: (s) => get(s).disabled,
-      multiple: (s) => get(s).selectionMode === 'multiple',
-      required: (s) => get(s).required,
+      disabled: state.map((s) => s.disabled),
+      multiple: state.map((s) => s.selectionMode === 'multiple'),
+      required: state.map((s) => s.required),
       'data-scope': 'select',
       'data-part': 'hidden-select',
     },
-    item: (value: string, index: number): SelectItemParts<S> => ({
+    item: (value: string, index: number): SelectItemParts => ({
       item: {
         role: 'option',
         id: itemId(index),
-        'aria-selected': (s) => get(s).value.includes(value),
-        'aria-disabled': (s) => (get(s).disabledItems.includes(value) ? 'true' : undefined),
-        'data-state': (s) => (get(s).value.includes(value) ? 'selected' : undefined),
-        'data-highlighted': (s) => (get(s).highlightedIndex === index ? '' : undefined),
-        'data-disabled': (s) => (get(s).disabledItems.includes(value) ? '' : undefined),
+        'aria-selected': state.map((s) => s.value.includes(value)),
+        'aria-disabled': state.map((s) => (s.disabledItems.includes(value) ? 'true' : undefined)),
+        'data-state': state.map((s) => (s.value.includes(value) ? 'selected' : undefined)),
+        'data-highlighted': state.map((s) => (s.highlightedIndex === index ? '' : undefined)),
+        'data-disabled': state.map((s) => (s.disabledItems.includes(value) ? '' : undefined)),
         'data-scope': 'select',
         'data-part': 'item',
         'data-value': value,
@@ -437,18 +438,18 @@ export function connect<S>(
         onPointerMove: tagSend(send, ['highlight'], () => send({ type: 'highlight', index })),
       },
     }),
-    valueText: (s) => {
-      const v = get(s).value
+    valueText: state.map((s) => {
+      const v = s.value
       if (v.length === 0) return placeholder
       return v.join(separator)
-    },
+    }),
   }
 }
 
-export interface OverlayOptions<S> {
-  get: (s: S) => SelectState
+export interface OverlayOptions {
+  state: Signal<SelectState>
   send: Send<SelectMsg>
-  parts: SelectParts<S>
+  parts: SelectParts
   content: () => Node[]
   placement?: Placement
   offset?: number
@@ -460,8 +461,8 @@ export interface OverlayOptions<S> {
   target?: string | HTMLElement
 }
 
-export function overlay<S>(opts: OverlayOptions<S>): Node[] {
-  const target = opts.target ?? 'body'
+export function overlay(opts: OverlayOptions): Node {
+  const rawTarget = opts.target ?? 'body'
   const placement = opts.placement ?? 'bottom-start'
   const offset = opts.offset ?? 4
   const flip = opts.flip !== false
@@ -471,12 +472,15 @@ export function overlay<S>(opts: OverlayOptions<S>): Node[] {
   const contentId = parts.content.id
   const triggerId = parts.trigger.id
 
-  return show<S, SelectMsg>({
-    when: (s) => opts.get(s).open,
-    render: () =>
-      portal({
-        target,
-        render: () => {
+  return show(
+    opts.state.map((s) => s.open),
+    () => {
+      const targetEl =
+        typeof rawTarget === 'string'
+          ? (document.querySelector(rawTarget) ?? document.body)
+          : rawTarget
+      return [
+        portal(() => {
           onMount(() => {
             const contentEl = document.getElementById(contentId)
             const triggerEl = document.getElementById(triggerId)
@@ -514,11 +518,10 @@ export function overlay<S>(opts: OverlayOptions<S>): Node[] {
             }
           })
           return [div(parts.positioner, opts.content())]
-        },
-      }),
-    enter: opts.transition?.enter,
-    leave: opts.transition?.leave,
-  })
+        }, targetEl),
+      ]
+    },
+  )
 }
 
 export const select = { init, update, connect, overlay }

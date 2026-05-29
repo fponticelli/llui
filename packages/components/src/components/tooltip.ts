@@ -1,5 +1,5 @@
-import type { Send, TransitionOptions } from '@llui/dom'
-import { show, portal, onMount, div, tagSend } from '@llui/dom'
+import type { Send, Signal, TransitionOptions } from '@llui/dom/signals'
+import { show, portal, onMount, div, tagSend } from '@llui/dom/signals'
 import { attachFloating, type Placement } from '../utils/floating.js'
 
 /**
@@ -47,11 +47,11 @@ export function update(state: TooltipState, msg: TooltipMsg): [TooltipState, nev
   }
 }
 
-export interface TooltipParts<S> {
+export interface TooltipParts {
   trigger: {
     id: string
-    'aria-describedby': (s: S) => string | undefined
-    'data-state': (s: S) => 'open' | 'closed'
+    'aria-describedby': Signal<string | undefined>
+    'data-state': Signal<'open' | 'closed'>
     'data-scope': 'tooltip'
     'data-part': 'trigger'
     onPointerEnter: (e: PointerEvent) => void
@@ -68,7 +68,7 @@ export interface TooltipParts<S> {
   content: {
     role: 'tooltip'
     id: string
-    'data-state': (s: S) => 'open' | 'closed'
+    'data-state': Signal<'open' | 'closed'>
     'data-scope': 'tooltip'
     'data-part': 'content'
     onPointerEnter: (e: PointerEvent) => void
@@ -90,11 +90,11 @@ export interface ConnectOptions {
   openOnFocus?: boolean
 }
 
-export function connect<S>(
-  get: (s: S) => TooltipState,
+export function connect(
+  state: Signal<TooltipState>,
   send: Send<TooltipMsg>,
   opts: ConnectOptions,
-): TooltipParts<S> {
+): TooltipParts {
   const base = opts.id
   const triggerId = `${base}:trigger`
   const contentId = `${base}:content`
@@ -143,8 +143,8 @@ export function connect<S>(
   return {
     trigger: {
       id: triggerId,
-      'aria-describedby': (s) => (get(s).open ? contentId : undefined),
-      'data-state': (s) => (get(s).open ? 'open' : 'closed'),
+      'aria-describedby': state.map((s) => (s.open ? contentId : undefined)),
+      'data-state': state.map((s) => (s.open ? 'open' : 'closed')),
       'data-scope': 'tooltip',
       'data-part': 'trigger',
       onPointerEnter: () => scheduleShow(delayOpen),
@@ -168,7 +168,7 @@ export function connect<S>(
     content: {
       role: 'tooltip',
       id: contentId,
-      'data-state': (s) => (get(s).open ? 'open' : 'closed'),
+      'data-state': state.map((s) => (s.open ? 'open' : 'closed')),
       'data-scope': 'tooltip',
       'data-part': 'content',
       // Allow pointer to enter content without closing (for interactive tooltips)
@@ -187,10 +187,10 @@ export function connect<S>(
   }
 }
 
-export interface OverlayOptions<S> {
-  get: (s: S) => TooltipState
+export interface OverlayOptions {
+  state: Signal<TooltipState>
   send: Send<TooltipMsg>
-  parts: TooltipParts<S>
+  parts: TooltipParts
   content: () => Node[]
   placement?: Placement
   offset?: number
@@ -201,8 +201,8 @@ export interface OverlayOptions<S> {
   arrowSelector?: string
 }
 
-export function overlay<S>(opts: OverlayOptions<S>): Node[] {
-  const target = opts.target ?? 'body'
+export function overlay(opts: OverlayOptions): Node {
+  const rawTarget = opts.target ?? 'body'
   const placement = opts.placement ?? 'top'
   const offset = opts.offset ?? 6
   const flip = opts.flip !== false
@@ -211,12 +211,15 @@ export function overlay<S>(opts: OverlayOptions<S>): Node[] {
   const contentId = parts.content.id
   const triggerId = parts.trigger.id
 
-  return show<S, TooltipMsg>({
-    when: (s) => opts.get(s).open,
-    render: () =>
-      portal({
-        target,
-        render: () => {
+  return show(
+    opts.state.map((s) => s.open),
+    () => {
+      const targetEl =
+        typeof rawTarget === 'string'
+          ? (document.querySelector(rawTarget) ?? document.body)
+          : rawTarget
+      return [
+        portal(() => {
           onMount(() => {
             const contentEl = document.getElementById(contentId)
             const triggerEl = document.getElementById(triggerId)
@@ -238,11 +241,10 @@ export function overlay<S>(opts: OverlayOptions<S>): Node[] {
             })
           })
           return [div(parts.positioner, opts.content())]
-        },
-      }),
-    enter: opts.transition?.enter,
-    leave: opts.transition?.leave,
-  })
+        }, targetEl),
+      ]
+    },
+  )
 }
 
 export const tooltip = { init, update, connect, overlay }

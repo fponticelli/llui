@@ -1,5 +1,5 @@
-import type { Send, TransitionOptions } from '@llui/dom'
-import { show, portal, onMount, div } from '@llui/dom'
+import type { Send, Signal, TransitionOptions } from '@llui/dom/signals'
+import { show, portal, onMount, div } from '@llui/dom/signals'
 import { attachFloating, type Placement } from '../utils/floating.js'
 
 /**
@@ -33,12 +33,12 @@ export function update(state: HoverCardState, msg: HoverCardMsg): [HoverCardStat
   }
 }
 
-export interface HoverCardParts<S> {
+export interface HoverCardParts {
   trigger: {
     id: string
     'aria-haspopup': 'dialog'
     'aria-controls': string
-    'data-state': (s: S) => 'open' | 'closed'
+    'data-state': Signal<'open' | 'closed'>
     'data-scope': 'hover-card'
     'data-part': 'trigger'
     onPointerEnter: (e: PointerEvent) => void
@@ -54,7 +54,7 @@ export interface HoverCardParts<S> {
   content: {
     role: 'dialog'
     id: string
-    'data-state': (s: S) => 'open' | 'closed'
+    'data-state': Signal<'open' | 'closed'>
     'data-scope': 'hover-card'
     'data-part': 'content'
     onPointerEnter: (e: PointerEvent) => void
@@ -74,11 +74,11 @@ export interface ConnectOptions {
   closeDelay?: number
 }
 
-export function connect<S>(
-  get: (s: S) => HoverCardState,
+export function connect(
+  state: Signal<HoverCardState>,
   send: Send<HoverCardMsg>,
   opts: ConnectOptions,
-): HoverCardParts<S> {
+): HoverCardParts {
   const base = opts.id
   const triggerId = `${base}:trigger`
   const contentId = `${base}:content`
@@ -120,7 +120,7 @@ export function connect<S>(
       id: triggerId,
       'aria-haspopup': 'dialog',
       'aria-controls': contentId,
-      'data-state': (s) => (get(s).open ? 'open' : 'closed'),
+      'data-state': state.map((s) => (s.open ? 'open' : 'closed')),
       'data-scope': 'hover-card',
       'data-part': 'trigger',
       onPointerEnter: scheduleOpen,
@@ -136,7 +136,7 @@ export function connect<S>(
     content: {
       role: 'dialog',
       id: contentId,
-      'data-state': (s) => (get(s).open ? 'open' : 'closed'),
+      'data-state': state.map((s) => (s.open ? 'open' : 'closed')),
       'data-scope': 'hover-card',
       'data-part': 'content',
       onPointerEnter: () => {
@@ -154,10 +154,10 @@ export function connect<S>(
   }
 }
 
-export interface OverlayOptions<S> {
-  get: (s: S) => HoverCardState
+export interface OverlayOptions {
+  state: Signal<HoverCardState>
   send: Send<HoverCardMsg>
-  parts: HoverCardParts<S>
+  parts: HoverCardParts
   content: () => Node[]
   placement?: Placement
   offset?: number
@@ -168,8 +168,8 @@ export interface OverlayOptions<S> {
   arrowSelector?: string
 }
 
-export function overlay<S>(opts: OverlayOptions<S>): Node[] {
-  const target = opts.target ?? 'body'
+export function overlay(opts: OverlayOptions): Node {
+  const rawTarget = opts.target ?? 'body'
   const placement = opts.placement ?? 'bottom'
   const offset = opts.offset ?? 8
   const flip = opts.flip !== false
@@ -178,12 +178,15 @@ export function overlay<S>(opts: OverlayOptions<S>): Node[] {
   const contentId = parts.content.id
   const triggerId = parts.trigger.id
 
-  return show<S, HoverCardMsg>({
-    when: (s) => opts.get(s).open,
-    render: () =>
-      portal({
-        target,
-        render: () => {
+  return show(
+    opts.state.map((s) => s.open),
+    () => {
+      const targetEl =
+        typeof rawTarget === 'string'
+          ? (document.querySelector(rawTarget) ?? document.body)
+          : rawTarget
+      return [
+        portal(() => {
           onMount(() => {
             const contentEl = document.getElementById(contentId)
             const triggerEl = document.getElementById(triggerId)
@@ -204,11 +207,10 @@ export function overlay<S>(opts: OverlayOptions<S>): Node[] {
             })
           })
           return [div(parts.positioner, opts.content())]
-        },
-      }),
-    enter: opts.transition?.enter,
-    leave: opts.transition?.leave,
-  })
+        }, targetEl),
+      ]
+    },
+  )
 }
 
 export const hoverCard = { init, update, connect, overlay }
