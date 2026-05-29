@@ -824,6 +824,10 @@ const HUD_VMOD_RESOLVED_ID = '\0' + HUD_VMOD_ID
 
 export default function llui(options: LluiPluginOptions = {}): Plugin {
   let devMode = false
+  // Set when the transform hook lowers a signal component (which routes around
+  // the legacy compiler, so it never carries the `__lluiCompilerEmitted` marker).
+  // The build-time integrity check uses this so a pure-signal bundle passes.
+  let sawSignalComponent = false
   // `mcpPort` + `mcpMode` are resolved lazily in `configResolved` so we
   // can check for @llui/mcp in the consuming project's node_modules.
   //   - `options.mcpPort === false`  → disabled
@@ -1346,9 +1350,11 @@ export default function llui(options: LluiPluginOptions = {}): Plugin {
       // the `@llui/dom/signals` runtime and SKIP the legacy accessor compiler.
       // A file is either signal-flavored or legacy (per-file-flip migration).
       // Cheap string pre-check avoids the extra parse on non-signal files.
-      if (code.includes('component(') && code.includes('.at(')) {
+      // cheap pre-check: `component(` or `component<…>(` (type args) + `.at(`
+      if (/component\s*[<(]/.test(code) && code.includes('.at(')) {
         const signalOut = transformSignalComponentSource(code)
         if (signalOut !== code) {
+          sawSignalComponent = true
           return { code: signalOut, map: { mappings: '' } }
         }
       }
@@ -1553,7 +1559,7 @@ export default function llui(options: LluiPluginOptions = {}): Plugin {
           from = i + '__view:'.length
         }
       }
-      if (markerCount === 0) {
+      if (markerCount === 0 && !sawSignalComponent) {
         // `this.error` throws — no statements below this line execute.
         this.error(
           '[llui] integrity check failed: no compiled `component()` calls found in ' +
