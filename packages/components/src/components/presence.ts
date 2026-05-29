@@ -1,4 +1,4 @@
-import type { Send } from '@llui/dom/signals'
+import type { Send, Signal } from '@llui/dom/signals'
 
 /**
  * Presence — track mount/unmount lifecycle with exit-delay support.
@@ -90,28 +90,27 @@ export function isAnimating(state: PresenceState): boolean {
   return state.status === 'opening' || state.status === 'closing'
 }
 
-export interface PresenceParts<S> {
+export interface PresenceParts {
   root: {
     'data-scope': 'presence'
     'data-part': 'root'
-    'data-state': (s: S) => PresenceStatus
-    hidden: (s: S) => boolean
+    'data-state': Signal<PresenceStatus>
+    hidden: Signal<boolean>
     onAnimationEnd: (e: AnimationEvent) => void
     onTransitionEnd: (e: TransitionEvent) => void
   }
 }
 
-export function connect<S>(
-  get: (s: S) => PresenceState,
-  send: Send<PresenceMsg>,
-): PresenceParts<S> {
+/** Signal-surface connect: takes the component's `presence` state slice as a
+ * Signal and returns reactive (handle-based) props for spreading into a view. */
+export function connect(state: Signal<PresenceState>, send: Send<PresenceMsg>): PresenceParts {
   const onEnd = (): void => send({ type: 'animationEnd' })
   return {
     root: {
       'data-scope': 'presence',
       'data-part': 'root',
-      'data-state': (s) => get(s).status,
-      hidden: (s) => (get(s).status === 'closed' && !get(s).unmountOnExit ? true : false),
+      'data-state': state.map((s) => s.status),
+      hidden: state.map((s) => s.status === 'closed' && !s.unmountOnExit),
       onAnimationEnd: onEnd,
       onTransitionEnd: onEnd,
     },
