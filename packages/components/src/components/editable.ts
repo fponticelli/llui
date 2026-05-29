@@ -1,5 +1,5 @@
 import { tagSend } from '@llui/dom/signals'
-import type { Send } from '@llui/dom/signals'
+import type { Send, Signal } from '@llui/dom/signals'
 
 /**
  * Editable — inline text editor. Click preview to enter edit mode, Enter
@@ -57,19 +57,19 @@ export function update(state: EditableState, msg: EditableMsg): [EditableState, 
   }
 }
 
-export interface EditableParts<S> {
+export interface EditableParts {
   root: {
     'data-scope': 'editable'
     'data-part': 'root'
-    'data-editing': (s: S) => '' | undefined
-    'data-disabled': (s: S) => '' | undefined
+    'data-editing': Signal<'' | undefined>
+    'data-disabled': Signal<'' | undefined>
   }
   preview: {
-    tabIndex: (s: S) => number
-    'aria-disabled': (s: S) => 'true' | undefined
+    tabIndex: Signal<number>
+    'aria-disabled': Signal<'true' | undefined>
     'data-scope': 'editable'
     'data-part': 'preview'
-    hidden: (s: S) => boolean
+    hidden: Signal<boolean>
     onClick: (e: MouseEvent) => void
     onFocus: (e: FocusEvent) => void
     onKeyDown: (e: KeyboardEvent) => void
@@ -77,9 +77,9 @@ export interface EditableParts<S> {
   input: {
     'data-scope': 'editable'
     'data-part': 'input'
-    hidden: (s: S) => boolean
-    value: (s: S) => string
-    disabled: (s: S) => boolean
+    hidden: Signal<boolean>
+    value: Signal<string>
+    disabled: Signal<boolean>
     onInput: (e: Event) => void
     onKeyDown: (e: KeyboardEvent) => void
     onBlur: (e: FocusEvent) => void
@@ -113,11 +113,11 @@ export interface ConnectOptions {
   validate?: (value: string) => string[] | null
 }
 
-export function connect<S>(
-  get: (s: S) => EditableState,
+export function connect(
+  state: Signal<EditableState>,
   send: Send<EditableMsg>,
   opts: ConnectOptions = {},
-): EditableParts<S> {
+): EditableParts {
   const activateOnFocus = opts.activateOnFocus === true
   const submitOnBlur = opts.submitOnBlur !== false
   const validate = opts.validate
@@ -135,15 +135,15 @@ export function connect<S>(
     root: {
       'data-scope': 'editable',
       'data-part': 'root',
-      'data-editing': (s) => (get(s).editing ? '' : undefined),
-      'data-disabled': (s) => (get(s).disabled ? '' : undefined),
+      'data-editing': state.map((s) => (s.editing ? '' : undefined)),
+      'data-disabled': state.map((s) => (s.disabled ? '' : undefined)),
     },
     preview: {
-      tabIndex: (s) => (get(s).disabled ? -1 : 0),
-      'aria-disabled': (s) => (get(s).disabled ? 'true' : undefined),
+      tabIndex: state.map((s) => (s.disabled ? -1 : 0)),
+      'aria-disabled': state.map((s) => (s.disabled ? 'true' : undefined)),
       'data-scope': 'editable',
       'data-part': 'preview',
-      hidden: (s) => get(s).editing,
+      hidden: state.map((s) => s.editing),
       onClick: tagSend(send, ['edit'], () => send({ type: 'edit' })),
       onFocus: tagSend(send, ['edit'], () => {
         if (activateOnFocus) send({ type: 'edit' })
@@ -158,9 +158,9 @@ export function connect<S>(
     input: {
       'data-scope': 'editable',
       'data-part': 'input',
-      hidden: (s) => !get(s).editing,
-      value: (s) => get(s).draft,
-      disabled: (s) => get(s).disabled,
+      hidden: state.map((s) => !s.editing),
+      value: state.map((s) => s.draft),
+      disabled: state.map((s) => s.disabled),
       onInput: tagSend(send, ['setDraft'], (e) => {
         const draft = (e.target as HTMLInputElement).value
         currentDraft = draft

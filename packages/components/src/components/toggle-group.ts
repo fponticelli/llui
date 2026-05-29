@@ -1,5 +1,5 @@
 import { tagSend } from '@llui/dom/signals'
-import type { Send } from '@llui/dom/signals'
+import type { Send, Signal } from '@llui/dom/signals'
 import { flipArrow } from '../utils/direction.js'
 
 /**
@@ -87,15 +87,15 @@ export function update(state: ToggleGroupState, msg: ToggleGroupMsg): [ToggleGro
   }
 }
 
-export interface ToggleGroupItemParts<S> {
+export interface ToggleGroupItemParts {
   root: {
     type: 'button'
     role: 'button'
-    'aria-pressed': (s: S) => boolean
-    'aria-disabled': (s: S) => 'true' | undefined
-    disabled: (s: S) => boolean
-    'data-state': (s: S) => 'on' | 'off'
-    'data-disabled': (s: S) => '' | undefined
+    'aria-pressed': Signal<boolean>
+    'aria-disabled': Signal<'true' | undefined>
+    disabled: Signal<boolean>
+    'data-state': Signal<'on' | 'off'>
+    'data-disabled': Signal<'' | undefined>
     'data-scope': 'toggle-group'
     'data-part': 'item'
     'data-value': string
@@ -104,42 +104,44 @@ export interface ToggleGroupItemParts<S> {
   }
 }
 
-export interface ToggleGroupParts<S> {
+export interface ToggleGroupParts {
   root: {
     role: 'group'
-    'aria-disabled': (s: S) => 'true' | undefined
+    'aria-disabled': Signal<'true' | undefined>
     'data-scope': 'toggle-group'
     'data-part': 'root'
-    'data-orientation': (s: S) => Orientation
-    'data-disabled': (s: S) => '' | undefined
+    'data-orientation': Signal<Orientation>
+    'data-disabled': Signal<'' | undefined>
   }
-  item: (value: string) => ToggleGroupItemParts<S>
+  item: (value: string) => ToggleGroupItemParts
 }
 
-export function connect<S>(
-  get: (s: S) => ToggleGroupState,
+export function connect(
+  state: Signal<ToggleGroupState>,
   send: Send<ToggleGroupMsg>,
-): ToggleGroupParts<S> {
+): ToggleGroupParts {
   return {
     root: {
       role: 'group',
-      'aria-disabled': (s) => (get(s).disabled ? 'true' : undefined),
+      'aria-disabled': state.map((s) => (s.disabled ? 'true' : undefined)),
       'data-scope': 'toggle-group',
       'data-part': 'root',
-      'data-orientation': (s) => get(s).orientation,
-      'data-disabled': (s) => (get(s).disabled ? '' : undefined),
+      'data-orientation': state.map((s) => s.orientation),
+      'data-disabled': state.map((s) => (s.disabled ? '' : undefined)),
     },
-    item: (value: string): ToggleGroupItemParts<S> => ({
+    item: (value: string): ToggleGroupItemParts => ({
       root: {
         type: 'button',
         role: 'button',
-        'aria-pressed': (s) => get(s).value.includes(value),
-        'aria-disabled': (s) =>
-          get(s).disabled || get(s).disabledItems.includes(value) ? 'true' : undefined,
-        disabled: (s) => get(s).disabled || get(s).disabledItems.includes(value),
-        'data-state': (s) => (get(s).value.includes(value) ? 'on' : 'off'),
-        'data-disabled': (s) =>
-          get(s).disabled || get(s).disabledItems.includes(value) ? '' : undefined,
+        'aria-pressed': state.map((s) => s.value.includes(value)),
+        'aria-disabled': state.map((s) =>
+          s.disabled || s.disabledItems.includes(value) ? 'true' : undefined,
+        ),
+        disabled: state.map((s) => s.disabled || s.disabledItems.includes(value)),
+        'data-state': state.map((s) => (s.value.includes(value) ? 'on' : 'off')),
+        'data-disabled': state.map((s) =>
+          s.disabled || s.disabledItems.includes(value) ? '' : undefined,
+        ),
         'data-scope': 'toggle-group',
         'data-part': 'item',
         'data-value': value,

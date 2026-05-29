@@ -1,5 +1,5 @@
 import { tagSend } from '@llui/dom/signals'
-import type { Send } from '@llui/dom/signals'
+import type { Send, Signal } from '@llui/dom/signals'
 import { flipArrow } from '../utils/direction.js'
 
 /**
@@ -112,18 +112,18 @@ export function update(state: RadioGroupState, msg: RadioGroupMsg): [RadioGroupS
   }
 }
 
-export interface RadioItemParts<S> {
+export interface RadioItemParts {
   root: {
     role: 'radio'
     id: string
-    'aria-checked': (s: S) => boolean
-    'aria-disabled': (s: S) => 'true' | undefined
-    'data-state': (s: S) => 'checked' | 'unchecked'
-    'data-disabled': (s: S) => '' | undefined
+    'aria-checked': Signal<boolean>
+    'aria-disabled': Signal<'true' | undefined>
+    'data-state': Signal<'checked' | 'unchecked'>
+    'data-disabled': Signal<'' | undefined>
     'data-scope': 'radio-group'
     'data-part': 'item'
     'data-value': string
-    tabIndex: (s: S) => number
+    tabIndex: Signal<number>
     onClick: (e: MouseEvent) => void
     onKeyDown: (e: KeyboardEvent) => void
   }
@@ -134,62 +134,63 @@ export interface RadioItemParts<S> {
     for: string
   }
   indicator: {
-    'data-state': (s: S) => 'checked' | 'unchecked'
+    'data-state': Signal<'checked' | 'unchecked'>
     'data-scope': 'radio-group'
     'data-part': 'indicator'
   }
 }
 
-export interface RadioGroupParts<S> {
+export interface RadioGroupParts {
   root: {
     role: 'radiogroup'
-    'aria-orientation': (s: S) => Orientation
-    'aria-disabled': (s: S) => 'true' | undefined
+    'aria-orientation': Signal<Orientation>
+    'aria-disabled': Signal<'true' | undefined>
     'data-scope': 'radio-group'
     'data-part': 'root'
-    'data-orientation': (s: S) => Orientation
-    'data-disabled': (s: S) => '' | undefined
+    'data-orientation': Signal<Orientation>
+    'data-disabled': Signal<'' | undefined>
   }
-  item: (value: string) => RadioItemParts<S>
+  item: (value: string) => RadioItemParts
 }
 
 export interface ConnectOptions {
   id: string
 }
 
-export function connect<S>(
-  get: (s: S) => RadioGroupState,
+export function connect(
+  state: Signal<RadioGroupState>,
   send: Send<RadioGroupMsg>,
   opts: ConnectOptions,
-): RadioGroupParts<S> {
+): RadioGroupParts {
   const itemId = (v: string): string => `${opts.id}:item:${v}`
 
   return {
     root: {
       role: 'radiogroup',
-      'aria-orientation': (s) => get(s).orientation,
-      'aria-disabled': (s) => (get(s).disabled ? 'true' : undefined),
+      'aria-orientation': state.map((s) => s.orientation),
+      'aria-disabled': state.map((s) => (s.disabled ? 'true' : undefined)),
       'data-scope': 'radio-group',
       'data-part': 'root',
-      'data-orientation': (s) => get(s).orientation,
-      'data-disabled': (s) => (get(s).disabled ? '' : undefined),
+      'data-orientation': state.map((s) => s.orientation),
+      'data-disabled': state.map((s) => (s.disabled ? '' : undefined)),
     },
-    item: (value: string): RadioItemParts<S> => ({
+    item: (value: string): RadioItemParts => ({
       root: {
         role: 'radio',
         id: itemId(value),
-        'aria-checked': (s) => get(s).value === value,
-        'aria-disabled': (s) =>
-          get(s).disabledItems.includes(value) || get(s).disabled ? 'true' : undefined,
-        'data-state': (s) => (get(s).value === value ? 'checked' : 'unchecked'),
-        'data-disabled': (s) =>
-          get(s).disabledItems.includes(value) || get(s).disabled ? '' : undefined,
+        'aria-checked': state.map((s) => s.value === value),
+        'aria-disabled': state.map((s) =>
+          s.disabledItems.includes(value) || s.disabled ? 'true' : undefined,
+        ),
+        'data-state': state.map((s) => (s.value === value ? 'checked' : 'unchecked')),
+        'data-disabled': state.map((s) =>
+          s.disabledItems.includes(value) || s.disabled ? '' : undefined,
+        ),
         'data-scope': 'radio-group',
         'data-part': 'item',
         'data-value': value,
         // Only currently-selected (or first if none selected) is tab-stop
-        tabIndex: (s) => {
-          const st = get(s)
+        tabIndex: state.map((st) => {
           if (st.disabled || st.disabledItems.includes(value)) return -1
           if (st.value === value) return 0
           if (st.value === null) {
@@ -197,7 +198,7 @@ export function connect<S>(
             return first === value ? 0 : -1
           }
           return -1
-        },
+        }),
         onClick: tagSend(send, ['setValue'], () => send({ type: 'setValue', value })),
         onKeyDown: tagSend(
           send,
@@ -251,7 +252,7 @@ export function connect<S>(
         for: itemId(value),
       },
       indicator: {
-        'data-state': (s) => (get(s).value === value ? 'checked' : 'unchecked'),
+        'data-state': state.map((s) => (s.value === value ? 'checked' : 'unchecked')),
         'data-scope': 'radio-group',
         'data-part': 'indicator',
       },

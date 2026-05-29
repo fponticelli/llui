@@ -1,5 +1,5 @@
 import { tagSend } from '@llui/dom/signals'
-import type { Send } from '@llui/dom/signals'
+import type { Send, Signal } from '@llui/dom/signals'
 import { flipArrow } from '../utils/direction.js'
 
 /**
@@ -99,47 +99,44 @@ export function positionFromPoint(
   return clamp(pct, state.min, state.max)
 }
 
-export interface SplitterParts<S> {
+export interface SplitterParts {
   root: {
     'data-scope': 'splitter'
     'data-part': 'root'
-    'data-orientation': (s: S) => Orientation
-    'data-disabled': (s: S) => '' | undefined
-    'data-dragging': (s: S) => '' | undefined
+    'data-orientation': Signal<Orientation>
+    'data-disabled': Signal<'' | undefined>
+    'data-dragging': Signal<'' | undefined>
   }
   primaryPanel: {
     'data-scope': 'splitter'
     'data-part': 'primary-panel'
-    style: (s: S) => string
+    style: Signal<string>
   }
   secondaryPanel: {
     'data-scope': 'splitter'
     'data-part': 'secondary-panel'
-    style: (s: S) => string
+    style: Signal<string>
   }
   resizeTrigger: {
     role: 'separator'
-    'aria-orientation': (s: S) => Orientation
-    'aria-valuemin': (s: S) => number
-    'aria-valuemax': (s: S) => number
-    'aria-valuenow': (s: S) => number
-    'aria-disabled': (s: S) => 'true' | undefined
+    'aria-orientation': Signal<Orientation>
+    'aria-valuemin': Signal<number>
+    'aria-valuemax': Signal<number>
+    'aria-valuenow': Signal<number>
+    'aria-disabled': Signal<'true' | undefined>
     'data-scope': 'splitter'
     'data-part': 'resize-trigger'
-    'data-orientation': (s: S) => Orientation
-    tabIndex: (s: S) => number
+    'data-orientation': Signal<Orientation>
+    tabIndex: Signal<number>
     onKeyDown: (e: KeyboardEvent) => void
     onPointerDown: (e: PointerEvent) => void
   }
 }
 
-export function connect<S>(
-  get: (s: S) => SplitterState,
-  send: Send<SplitterMsg>,
-): SplitterParts<S> {
-  const sizeProp = (s: S, inverted: boolean): string => {
-    const pos = get(s).position
-    const axis = get(s).orientation === 'horizontal' ? 'width' : 'height'
+export function connect(state: Signal<SplitterState>, send: Send<SplitterMsg>): SplitterParts {
+  const sizeProp = (s: SplitterState, inverted: boolean): string => {
+    const pos = s.position
+    const axis = s.orientation === 'horizontal' ? 'width' : 'height'
     const pct = inverted ? 100 - pos : pos
     return `${axis}:${pct}%;`
   }
@@ -148,31 +145,31 @@ export function connect<S>(
     root: {
       'data-scope': 'splitter',
       'data-part': 'root',
-      'data-orientation': (s) => get(s).orientation,
-      'data-disabled': (s) => (get(s).disabled ? '' : undefined),
-      'data-dragging': (s) => (get(s).dragging ? '' : undefined),
+      'data-orientation': state.map((s) => s.orientation),
+      'data-disabled': state.map((s) => (s.disabled ? '' : undefined)),
+      'data-dragging': state.map((s) => (s.dragging ? '' : undefined)),
     },
     primaryPanel: {
       'data-scope': 'splitter',
       'data-part': 'primary-panel',
-      style: (s) => sizeProp(s, false),
+      style: state.map((s) => sizeProp(s, false)),
     },
     secondaryPanel: {
       'data-scope': 'splitter',
       'data-part': 'secondary-panel',
-      style: (s) => sizeProp(s, true),
+      style: state.map((s) => sizeProp(s, true)),
     },
     resizeTrigger: {
       role: 'separator',
-      'aria-orientation': (s) => get(s).orientation,
-      'aria-valuemin': (s) => get(s).min,
-      'aria-valuemax': (s) => get(s).max,
-      'aria-valuenow': (s) => get(s).position,
-      'aria-disabled': (s) => (get(s).disabled ? 'true' : undefined),
+      'aria-orientation': state.map((s) => s.orientation),
+      'aria-valuemin': state.map((s) => s.min),
+      'aria-valuemax': state.map((s) => s.max),
+      'aria-valuenow': state.map((s) => s.position),
+      'aria-disabled': state.map((s) => (s.disabled ? 'true' : undefined)),
       'data-scope': 'splitter',
       'data-part': 'resize-trigger',
-      'data-orientation': (s) => get(s).orientation,
-      tabIndex: (s) => (get(s).disabled ? -1 : 0),
+      'data-orientation': state.map((s) => s.orientation),
+      tabIndex: state.map((s) => (s.disabled ? -1 : 0)),
       onKeyDown: tagSend(send, ['increment', 'decrement', 'toMin', 'toMax'], (e) => {
         const key = flipArrow(e.key, e.currentTarget as Element)
         switch (key) {

@@ -1,5 +1,5 @@
 import { tagSend } from '@llui/dom/signals'
-import type { Send } from '@llui/dom/signals'
+import type { Send, Signal } from '@llui/dom/signals'
 
 /**
  * Async list — paginated/infinite-scroll list that accumulates pages.
@@ -111,11 +111,11 @@ export function isEmpty<T>(state: AsyncListState<T>): boolean {
   return state.items.length === 0
 }
 
-export interface AsyncListParts<S, _T> {
+export interface AsyncListParts {
   root: {
     'data-scope': 'async-list'
     'data-part': 'root'
-    'data-status': (s: S) => AsyncStatus
+    'data-status': Signal<AsyncStatus>
   }
   sentinel: {
     'data-scope': 'async-list'
@@ -124,7 +124,7 @@ export interface AsyncListParts<S, _T> {
   }
   loadMoreTrigger: {
     type: 'button'
-    disabled: (s: S) => boolean
+    disabled: Signal<boolean>
     'data-scope': 'async-list'
     'data-part': 'load-more-trigger'
     onClick: (e: MouseEvent) => void
@@ -133,7 +133,7 @@ export interface AsyncListParts<S, _T> {
     type: 'button'
     'data-scope': 'async-list'
     'data-part': 'retry-trigger'
-    hidden: (s: S) => boolean
+    hidden: Signal<boolean>
     onClick: (e: MouseEvent) => void
   }
   errorText: {
@@ -141,19 +141,19 @@ export interface AsyncListParts<S, _T> {
     'aria-live': 'polite'
     'data-scope': 'async-list'
     'data-part': 'error-text'
-    hidden: (s: S) => boolean
+    hidden: Signal<boolean>
   }
 }
 
-export function connect<S, T>(
-  get: (s: S) => AsyncListState<T>,
+export function connect<T>(
+  state: Signal<AsyncListState<T>>,
   send: Send<AsyncListMsg<T>>,
-): AsyncListParts<S, T> {
+): AsyncListParts {
   return {
     root: {
       'data-scope': 'async-list',
       'data-part': 'root',
-      'data-status': (s) => get(s).status,
+      'data-status': state.map((st) => st.status),
     },
     sentinel: {
       'data-scope': 'async-list',
@@ -162,10 +162,7 @@ export function connect<S, T>(
     },
     loadMoreTrigger: {
       type: 'button',
-      disabled: (s) => {
-        const st = get(s)
-        return st.status === 'loading' || !st.hasMore
-      },
+      disabled: state.map((st) => st.status === 'loading' || !st.hasMore),
       'data-scope': 'async-list',
       'data-part': 'load-more-trigger',
       onClick: tagSend(send, ['loadMore'], () => send({ type: 'loadMore' })),
@@ -174,7 +171,7 @@ export function connect<S, T>(
       type: 'button',
       'data-scope': 'async-list',
       'data-part': 'retry-trigger',
-      hidden: (s) => get(s).status !== 'error',
+      hidden: state.map((st) => st.status !== 'error'),
       onClick: tagSend(send, ['retry'], () => send({ type: 'retry' })),
     },
     errorText: {
@@ -182,7 +179,7 @@ export function connect<S, T>(
       'aria-live': 'polite',
       'data-scope': 'async-list',
       'data-part': 'error-text',
-      hidden: (s) => get(s).status !== 'error',
+      hidden: state.map((st) => st.status !== 'error'),
     },
   }
 }

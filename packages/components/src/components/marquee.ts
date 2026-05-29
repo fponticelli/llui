@@ -1,5 +1,5 @@
 import { tagSend } from '@llui/dom/signals'
-import type { Send } from '@llui/dom/signals'
+import type { Send, Signal } from '@llui/dom/signals'
 
 /**
  * Marquee — continuously-scrolling content. The state machine tracks
@@ -100,15 +100,15 @@ export function axis(direction: MarqueeDirection): 'horizontal' | 'vertical' {
   return direction === 'up' || direction === 'down' ? 'vertical' : 'horizontal'
 }
 
-export interface MarqueeParts<S> {
+export interface MarqueeParts {
   root: {
     'data-scope': 'marquee'
     'data-part': 'root'
-    'data-running': (s: S) => '' | undefined
-    'data-direction': (s: S) => MarqueeDirection
-    'data-axis': (s: S) => 'horizontal' | 'vertical'
-    'data-disabled': (s: S) => '' | undefined
-    style: (s: S) => string
+    'data-running': Signal<'' | undefined>
+    'data-direction': Signal<MarqueeDirection>
+    'data-axis': Signal<'horizontal' | 'vertical'>
+    'data-disabled': Signal<'' | undefined>
+    style: Signal<string>
     onMouseEnter: (e: MouseEvent) => void
     onMouseLeave: (e: MouseEvent) => void
   }
@@ -118,23 +118,21 @@ export interface MarqueeParts<S> {
   }
 }
 
-export function connect<S>(get: (s: S) => MarqueeState, send: Send<MarqueeMsg>): MarqueeParts<S> {
+export function connect(state: Signal<MarqueeState>, send: Send<MarqueeMsg>): MarqueeParts {
   return {
     root: {
       'data-scope': 'marquee',
       'data-part': 'root',
-      'data-running': (s) => (isRunning(get(s)) ? '' : undefined),
-      'data-direction': (s) => get(s).direction,
-      'data-axis': (s) => axis(get(s).direction),
-      'data-disabled': (s) => (get(s).disabled ? '' : undefined),
-      style: (s) => {
-        const st = get(s)
-        return (
+      'data-running': state.map((s) => (isRunning(s) ? '' : undefined)),
+      'data-direction': state.map((s) => s.direction),
+      'data-axis': state.map((s) => axis(s.direction)),
+      'data-disabled': state.map((s) => (s.disabled ? '' : undefined)),
+      style: state.map(
+        (st) =>
           `--marquee-duration:${st.durationSec}s;` +
           `--marquee-direction:${cssAnimationDirection(st.direction)};` +
-          `--marquee-playstate:${isRunning(st) ? 'running' : 'paused'};`
-        )
-      },
+          `--marquee-playstate:${isRunning(st) ? 'running' : 'paused'};`,
+      ),
       // Always fire hover messages; the reducer no-ops unless
       // state.pauseOnHover is true.
       onMouseEnter: tagSend(send, ['hoverPause'], () => send({ type: 'hoverPause' })),

@@ -1,5 +1,5 @@
 import { tagSend } from '@llui/dom/signals'
-import type { Send } from '@llui/dom/signals'
+import type { Send, Signal } from '@llui/dom/signals'
 
 /**
  * Checkbox — a tri-state form control (checked / unchecked / indeterminate).
@@ -65,18 +65,18 @@ function dataState(c: CheckedState): 'checked' | 'unchecked' | 'indeterminate' {
   return c ? 'checked' : 'unchecked'
 }
 
-export interface CheckboxParts<S> {
+export interface CheckboxParts {
   /** The visual box/container — `role="checkbox"` for accessibility. */
   root: {
     role: 'checkbox'
-    'aria-checked': (s: S) => 'true' | 'false' | 'mixed'
-    'aria-disabled': (s: S) => 'true' | undefined
-    'aria-required': (s: S) => 'true' | undefined
-    'data-state': (s: S) => 'checked' | 'unchecked' | 'indeterminate'
-    'data-disabled': (s: S) => '' | undefined
+    'aria-checked': Signal<'true' | 'false' | 'mixed'>
+    'aria-disabled': Signal<'true' | undefined>
+    'aria-required': Signal<'true' | undefined>
+    'data-state': Signal<'checked' | 'unchecked' | 'indeterminate'>
+    'data-disabled': Signal<'' | undefined>
     'data-scope': 'checkbox'
     'data-part': 'root'
-    tabIndex: (s: S) => number
+    tabIndex: Signal<number>
     onClick: (e: MouseEvent) => void
     onKeyDown: (e: KeyboardEvent) => void
   }
@@ -86,16 +86,16 @@ export interface CheckboxParts<S> {
     'aria-hidden': 'true'
     tabIndex: -1
     style: string
-    checked: (s: S) => boolean
-    indeterminate: (s: S) => boolean
-    disabled: (s: S) => boolean
-    required: (s: S) => boolean
+    checked: Signal<boolean>
+    indeterminate: Signal<boolean>
+    disabled: Signal<boolean>
+    required: Signal<boolean>
     'data-scope': 'checkbox'
     'data-part': 'hidden-input'
   }
   /** Optional indicator child (the checkmark). */
   indicator: {
-    'data-state': (s: S) => 'checked' | 'unchecked' | 'indeterminate'
+    'data-state': Signal<'checked' | 'unchecked' | 'indeterminate'>
     'data-scope': 'checkbox'
     'data-part': 'indicator'
   }
@@ -104,21 +104,18 @@ export interface CheckboxParts<S> {
 const HIDDEN_STYLE =
   'position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;border:0;'
 
-export function connect<S>(
-  get: (s: S) => CheckboxState,
-  send: Send<CheckboxMsg>,
-): CheckboxParts<S> {
+export function connect(state: Signal<CheckboxState>, send: Send<CheckboxMsg>): CheckboxParts {
   return {
     root: {
       role: 'checkbox',
-      'aria-checked': (s) => ariaChecked(get(s).checked),
-      'aria-disabled': (s) => (get(s).disabled ? 'true' : undefined),
-      'aria-required': (s) => (get(s).required ? 'true' : undefined),
-      'data-state': (s) => dataState(get(s).checked),
-      'data-disabled': (s) => (get(s).disabled ? '' : undefined),
+      'aria-checked': state.map((s) => ariaChecked(s.checked)),
+      'aria-disabled': state.map((s) => (s.disabled ? 'true' : undefined)),
+      'aria-required': state.map((s) => (s.required ? 'true' : undefined)),
+      'data-state': state.map((s) => dataState(s.checked)),
+      'data-disabled': state.map((s) => (s.disabled ? '' : undefined)),
       'data-scope': 'checkbox',
       'data-part': 'root',
-      tabIndex: (s) => (get(s).disabled ? -1 : 0),
+      tabIndex: state.map((s) => (s.disabled ? -1 : 0)),
       onClick: tagSend(send, ['toggle'], () => send({ type: 'toggle' })),
       onKeyDown: tagSend(send, ['toggle'], (e: KeyboardEvent) => {
         if (e.key === ' ') {
@@ -132,15 +129,15 @@ export function connect<S>(
       'aria-hidden': 'true',
       tabIndex: -1,
       style: HIDDEN_STYLE,
-      checked: (s) => get(s).checked === true,
-      indeterminate: (s) => get(s).checked === 'indeterminate',
-      disabled: (s) => get(s).disabled,
-      required: (s) => get(s).required,
+      checked: state.map((s) => s.checked === true),
+      indeterminate: state.map((s) => s.checked === 'indeterminate'),
+      disabled: state.map((s) => s.disabled),
+      required: state.map((s) => s.required),
       'data-scope': 'checkbox',
       'data-part': 'hidden-input',
     },
     indicator: {
-      'data-state': (s) => dataState(get(s).checked),
+      'data-state': state.map((s) => dataState(s.checked)),
       'data-scope': 'checkbox',
       'data-part': 'indicator',
     },

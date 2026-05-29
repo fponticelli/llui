@@ -1,5 +1,5 @@
 import { tagSend } from '@llui/dom/signals'
-import type { Send } from '@llui/dom/signals'
+import type { Send, Signal } from '@llui/dom/signals'
 import { flipArrow } from '../utils/direction.js'
 
 /**
@@ -99,16 +99,16 @@ export function itemFill(state: RatingGroupState, index: number): ItemFill {
   return 'empty'
 }
 
-export interface RatingItemParts<S> {
+export interface RatingItemParts {
   root: {
     role: 'radio'
-    'aria-checked': (s: S) => boolean
-    'data-fill': (s: S) => ItemFill
+    'aria-checked': Signal<boolean>
+    'data-fill': Signal<ItemFill>
     'data-scope': 'rating-group'
     'data-part': 'item'
     'data-value': string
-    'data-disabled': (s: S) => '' | undefined
-    tabIndex: (s: S) => number
+    'data-disabled': Signal<'' | undefined>
+    tabIndex: Signal<number>
     onClick: (e: MouseEvent) => void
     onPointerMove: (e: PointerEvent) => void
     onPointerLeave: (e: PointerEvent) => void
@@ -116,56 +116,55 @@ export interface RatingItemParts<S> {
   }
 }
 
-export interface RatingGroupParts<S> {
+export interface RatingGroupParts {
   root: {
     role: 'radiogroup'
     'aria-label': string | undefined
-    'aria-disabled': (s: S) => 'true' | undefined
-    'aria-readonly': (s: S) => 'true' | undefined
+    'aria-disabled': Signal<'true' | undefined>
+    'aria-readonly': Signal<'true' | undefined>
     'data-scope': 'rating-group'
     'data-part': 'root'
-    'data-disabled': (s: S) => '' | undefined
-    'data-readonly': (s: S) => '' | undefined
+    'data-disabled': Signal<'' | undefined>
+    'data-readonly': Signal<'' | undefined>
   }
-  item: (index: number) => RatingItemParts<S>
+  item: (index: number) => RatingItemParts
 }
 
 export interface ConnectOptions {
   label?: string
 }
 
-export function connect<S>(
-  get: (s: S) => RatingGroupState,
+export function connect(
+  state: Signal<RatingGroupState>,
   send: Send<RatingGroupMsg>,
   opts: ConnectOptions = {},
-): RatingGroupParts<S> {
+): RatingGroupParts {
   return {
     root: {
       role: 'radiogroup',
       'aria-label': opts.label,
-      'aria-disabled': (s) => (get(s).disabled ? 'true' : undefined),
-      'aria-readonly': (s) => (get(s).readOnly ? 'true' : undefined),
+      'aria-disabled': state.map((s) => (s.disabled ? 'true' : undefined)),
+      'aria-readonly': state.map((s) => (s.readOnly ? 'true' : undefined)),
       'data-scope': 'rating-group',
       'data-part': 'root',
-      'data-disabled': (s) => (get(s).disabled ? '' : undefined),
-      'data-readonly': (s) => (get(s).readOnly ? '' : undefined),
+      'data-disabled': state.map((s) => (s.disabled ? '' : undefined)),
+      'data-readonly': state.map((s) => (s.readOnly ? '' : undefined)),
     },
-    item: (index: number): RatingItemParts<S> => ({
+    item: (index: number): RatingItemParts => ({
       root: {
         role: 'radio',
-        'aria-checked': (s) => Math.ceil(get(s).value) === index + 1,
-        'data-fill': (s) => itemFill(get(s), index),
+        'aria-checked': state.map((s) => Math.ceil(s.value) === index + 1),
+        'data-fill': state.map((s) => itemFill(s, index)),
         'data-scope': 'rating-group',
         'data-part': 'item',
         'data-value': String(index + 1),
-        'data-disabled': (s) => (get(s).disabled ? '' : undefined),
-        tabIndex: (s) => {
-          const st = get(s)
+        'data-disabled': state.map((s) => (s.disabled ? '' : undefined)),
+        tabIndex: state.map((st) => {
           if (st.disabled || st.readOnly) return -1
           // Only current active item is tab stop
           const active = Math.ceil(st.value) || 1
           return active === index + 1 ? 0 : -1
-        },
+        }),
         onClick: tagSend(send, ['clickItem'], (e) => {
           const rect = (e.currentTarget as HTMLElement).getBoundingClientRect()
           const isLeftHalf = e.clientX - rect.left < rect.width / 2

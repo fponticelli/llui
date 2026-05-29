@@ -1,5 +1,5 @@
 import { tagSend } from '@llui/dom/signals'
-import type { Send } from '@llui/dom/signals'
+import type { Send, Signal } from '@llui/dom/signals'
 
 /**
  * Scroll area — custom-styled scroll container with scrollbars that
@@ -138,12 +138,12 @@ export function thumbSize(state: ScrollAreaState, axis: 'x' | 'y'): number {
   return state.scrollHeight > 0 ? Math.max(0.05, state.clientHeight / state.scrollHeight) : 0
 }
 
-export interface ScrollAreaParts<S> {
+export interface ScrollAreaParts {
   root: {
     'data-scope': 'scroll-area'
     'data-part': 'root'
-    'data-scrolling': (s: S) => '' | undefined
-    'data-hovered': (s: S) => '' | undefined
+    'data-scrolling': Signal<'' | undefined>
+    'data-hovered': Signal<'' | undefined>
     onMouseEnter: (e: MouseEvent) => void
     onMouseLeave: (e: MouseEvent) => void
   }
@@ -161,43 +161,43 @@ export interface ScrollAreaParts<S> {
     'data-scope': 'scroll-area'
     'data-part': 'scrollbar'
     'data-axis': 'x'
-    'data-visible': (s: S) => '' | undefined
+    'data-visible': Signal<'' | undefined>
   }
   scrollbarY: {
     'data-scope': 'scroll-area'
     'data-part': 'scrollbar'
     'data-axis': 'y'
-    'data-visible': (s: S) => '' | undefined
+    'data-visible': Signal<'' | undefined>
   }
   thumbX: {
     'data-scope': 'scroll-area'
     'data-part': 'thumb'
     'data-axis': 'x'
-    style: (s: S) => string
+    style: Signal<string>
   }
   thumbY: {
     'data-scope': 'scroll-area'
     'data-part': 'thumb'
     'data-axis': 'y'
-    style: (s: S) => string
+    style: Signal<string>
   }
   corner: {
     'data-scope': 'scroll-area'
     'data-part': 'corner'
-    'data-visible': (s: S) => '' | undefined
+    'data-visible': Signal<'' | undefined>
   }
 }
 
-export function connect<S>(
-  get: (s: S) => ScrollAreaState,
+export function connect(
+  state: Signal<ScrollAreaState>,
   send: Send<ScrollAreaMsg>,
-): ScrollAreaParts<S> {
+): ScrollAreaParts {
   return {
     root: {
       'data-scope': 'scroll-area',
       'data-part': 'root',
-      'data-scrolling': (s) => (get(s).scrolling ? '' : undefined),
-      'data-hovered': (s) => (get(s).hovered ? '' : undefined),
+      'data-scrolling': state.map((s) => (s.scrolling ? '' : undefined)),
+      'data-hovered': state.map((s) => (s.hovered ? '' : undefined)),
       onMouseEnter: tagSend(send, ['setHovered'], () =>
         send({ type: 'setHovered', hovered: true }),
       ),
@@ -230,43 +230,40 @@ export function connect<S>(
       'data-scope': 'scroll-area',
       'data-part': 'scrollbar',
       'data-axis': 'x',
-      'data-visible': (s) => (showScrollbars(get(s), 'x') ? '' : undefined),
+      'data-visible': state.map((s) => (showScrollbars(s, 'x') ? '' : undefined)),
     },
     scrollbarY: {
       'data-scope': 'scroll-area',
       'data-part': 'scrollbar',
       'data-axis': 'y',
-      'data-visible': (s) => (showScrollbars(get(s), 'y') ? '' : undefined),
+      'data-visible': state.map((s) => (showScrollbars(s, 'y') ? '' : undefined)),
     },
     thumbX: {
       'data-scope': 'scroll-area',
       'data-part': 'thumb',
       'data-axis': 'x',
-      style: (s) => {
-        const st = get(s)
+      style: state.map((st) => {
         const pos = thumbPosition(st, 'x')
         const size = thumbSize(st, 'x')
         return `left:${(pos * (1 - size) * 100).toFixed(2)}%;width:${(size * 100).toFixed(2)}%;`
-      },
+      }),
     },
     thumbY: {
       'data-scope': 'scroll-area',
       'data-part': 'thumb',
       'data-axis': 'y',
-      style: (s) => {
-        const st = get(s)
+      style: state.map((st) => {
         const pos = thumbPosition(st, 'y')
         const size = thumbSize(st, 'y')
         return `top:${(pos * (1 - size) * 100).toFixed(2)}%;height:${(size * 100).toFixed(2)}%;`
-      },
+      }),
     },
     corner: {
       'data-scope': 'scroll-area',
       'data-part': 'corner',
-      'data-visible': (s) => {
-        const st = get(s)
-        return showScrollbars(st, 'x') && showScrollbars(st, 'y') ? '' : undefined
-      },
+      'data-visible': state.map((st) =>
+        showScrollbars(st, 'x') && showScrollbars(st, 'y') ? '' : undefined,
+      ),
     },
   }
 }

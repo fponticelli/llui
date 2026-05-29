@@ -1,5 +1,5 @@
 import { tagSend } from '@llui/dom/signals'
-import type { Send } from '@llui/dom/signals'
+import type { Send, Signal } from '@llui/dom/signals'
 
 /**
  * Accordion — a stack of expandable panels. Items are identified by a string
@@ -97,15 +97,15 @@ export function update(state: AccordionState, msg: AccordionMsg): [AccordionStat
   }
 }
 
-export interface AccordionItemParts<S> {
+export interface AccordionItemParts {
   trigger: {
     type: 'button'
-    'aria-expanded': (s: S) => boolean
+    'aria-expanded': Signal<boolean>
     'aria-controls': string
     id: string
-    'data-state': (s: S) => 'open' | 'closed'
-    'data-disabled': (s: S) => '' | undefined
-    disabled: (s: S) => boolean
+    'data-state': Signal<'open' | 'closed'>
+    'data-disabled': Signal<'' | undefined>
+    disabled: Signal<boolean>
     'data-scope': 'accordion'
     'data-part': 'trigger'
     'data-value': string
@@ -116,28 +116,28 @@ export interface AccordionItemParts<S> {
     role: 'region'
     id: string
     'aria-labelledby': string
-    'data-state': (s: S) => 'open' | 'closed'
+    'data-state': Signal<'open' | 'closed'>
     'data-scope': 'accordion'
     'data-part': 'content'
-    hidden: (s: S) => boolean
+    hidden: Signal<boolean>
   }
   item: {
-    'data-state': (s: S) => 'open' | 'closed'
-    'data-disabled': (s: S) => '' | undefined
+    'data-state': Signal<'open' | 'closed'>
+    'data-disabled': Signal<'' | undefined>
     'data-scope': 'accordion'
     'data-part': 'item'
     'data-value': string
   }
 }
 
-export interface AccordionParts<S> {
+export interface AccordionParts {
   root: {
     role: 'region'
     'data-scope': 'accordion'
     'data-part': 'root'
     'data-orientation': 'vertical'
   }
-  item: (value: string) => AccordionItemParts<S>
+  item: (value: string) => AccordionItemParts
 }
 
 export interface ConnectOptions {
@@ -145,11 +145,11 @@ export interface ConnectOptions {
   id: string
 }
 
-export function connect<S>(
-  get: (s: S) => AccordionState,
+export function connect(
+  state: Signal<AccordionState>,
   send: Send<AccordionMsg>,
   opts: ConnectOptions,
-): AccordionParts<S> {
+): AccordionParts {
   const base = opts.id
   const triggerId = (v: string): string => `${base}:trigger:${v}`
   const contentId = (v: string): string => `${base}:content:${v}`
@@ -161,15 +161,15 @@ export function connect<S>(
       'data-part': 'root',
       'data-orientation': 'vertical',
     },
-    item: (value: string): AccordionItemParts<S> => ({
+    item: (value: string): AccordionItemParts => ({
       trigger: {
         type: 'button',
-        'aria-expanded': (s) => get(s).value.includes(value),
+        'aria-expanded': state.map((st) => st.value.includes(value)),
         'aria-controls': contentId(value),
         id: triggerId(value),
-        'data-state': (s) => (get(s).value.includes(value) ? 'open' : 'closed'),
-        'data-disabled': (s) => (get(s).disabled ? '' : undefined),
-        disabled: (s) => get(s).disabled,
+        'data-state': state.map((st) => (st.value.includes(value) ? 'open' : 'closed')),
+        'data-disabled': state.map((st) => (st.disabled ? '' : undefined)),
+        disabled: state.map((st) => st.disabled),
         'data-scope': 'accordion',
         'data-part': 'trigger',
         'data-value': value,
@@ -208,14 +208,14 @@ export function connect<S>(
         role: 'region',
         id: contentId(value),
         'aria-labelledby': triggerId(value),
-        'data-state': (s) => (get(s).value.includes(value) ? 'open' : 'closed'),
+        'data-state': state.map((st) => (st.value.includes(value) ? 'open' : 'closed')),
         'data-scope': 'accordion',
         'data-part': 'content',
-        hidden: (s) => !get(s).value.includes(value),
+        hidden: state.map((st) => !st.value.includes(value)),
       },
       item: {
-        'data-state': (s) => (get(s).value.includes(value) ? 'open' : 'closed'),
-        'data-disabled': (s) => (get(s).disabled ? '' : undefined),
+        'data-state': state.map((st) => (st.value.includes(value) ? 'open' : 'closed')),
+        'data-disabled': state.map((st) => (st.disabled ? '' : undefined)),
         'data-scope': 'accordion',
         'data-part': 'item',
         'data-value': value,

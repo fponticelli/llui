@@ -1,4 +1,4 @@
-import type { Send } from '@llui/dom/signals'
+import type { Send, Signal } from '@llui/dom/signals'
 import { flipArrow } from '../utils/direction.js'
 
 /**
@@ -126,66 +126,66 @@ function thumbPercent(state: SliderState, index: number): number {
   return ((v - state.min) / range) * 100
 }
 
-export interface SliderThumbParts<S> {
+export interface SliderThumbParts {
   thumb: {
     role: 'slider'
-    'aria-valuemin': (s: S) => number
-    'aria-valuemax': (s: S) => number
-    'aria-valuenow': (s: S) => number
-    'aria-orientation': (s: S) => Orientation
-    'aria-disabled': (s: S) => 'true' | undefined
-    'data-orientation': (s: S) => Orientation
-    'data-disabled': (s: S) => '' | undefined
+    'aria-valuemin': Signal<number>
+    'aria-valuemax': Signal<number>
+    'aria-valuenow': Signal<number>
+    'aria-orientation': Signal<Orientation>
+    'aria-disabled': Signal<'true' | undefined>
+    'data-orientation': Signal<Orientation>
+    'data-disabled': Signal<'' | undefined>
     'data-scope': 'slider'
     'data-part': 'thumb'
     'data-index': string
-    tabIndex: (s: S) => number
+    tabIndex: Signal<number>
     onKeyDown: (e: KeyboardEvent) => void
-    style: (s: S) => string
+    style: Signal<string>
   }
 }
 
-export interface SliderParts<S> {
+export interface SliderParts {
   root: {
     'data-scope': 'slider'
     'data-part': 'root'
-    'data-orientation': (s: S) => Orientation
-    'data-disabled': (s: S) => '' | undefined
+    'data-orientation': Signal<Orientation>
+    'data-disabled': Signal<'' | undefined>
   }
   control: {
     'data-scope': 'slider'
     'data-part': 'control'
-    'data-orientation': (s: S) => Orientation
+    'data-orientation': Signal<Orientation>
     onPointerDown: (e: PointerEvent) => void
   }
   track: {
     'data-scope': 'slider'
     'data-part': 'track'
-    'data-orientation': (s: S) => Orientation
+    'data-orientation': Signal<Orientation>
   }
   range: {
     'data-scope': 'slider'
     'data-part': 'range'
-    'data-orientation': (s: S) => Orientation
-    style: (s: S) => string
+    'data-orientation': Signal<Orientation>
+    style: Signal<string>
   }
-  thumb: (index: number) => SliderThumbParts<S>
-  /** Current raw values — accessor convenience. */
-  value: (s: S) => number[]
+  thumb: (index: number) => SliderThumbParts
+  /** Current raw values — reactive convenience. */
+  value: Signal<number[]>
 }
 
-export function connect<S>(get: (s: S) => SliderState, send: Send<SliderMsg>): SliderParts<S> {
+export function connect(state: Signal<SliderState>, send: Send<SliderMsg>): SliderParts {
   return {
     root: {
       'data-scope': 'slider',
       'data-part': 'root',
-      'data-orientation': (s) => get(s).orientation,
-      'data-disabled': (s) => (get(s).disabled ? '' : undefined),
+      'data-orientation': state.map((s) => s.orientation),
+      'data-disabled': state.map((s) => (s.disabled ? '' : undefined)),
     },
     control: {
       'data-scope': 'slider',
       'data-part': 'control',
-      'data-orientation': (s) => get(s).orientation,
+      'data-orientation': state.map((s) => s.orientation),
       // Consumers attach their own pointer drag logic via onMount, using
       // `valueFromPoint` + `closestThumbIndex` helpers. The connect layer
       // preventDefault's to suppress text selection while dragging.
@@ -194,33 +194,33 @@ export function connect<S>(get: (s: S) => SliderState, send: Send<SliderMsg>): S
     track: {
       'data-scope': 'slider',
       'data-part': 'track',
-      'data-orientation': (s) => get(s).orientation,
+      'data-orientation': state.map((s) => s.orientation),
     },
     range: {
       'data-scope': 'slider',
       'data-part': 'range',
-      'data-orientation': (s) => get(s).orientation,
-      style: (s) => rangeStyle(get(s)),
+      'data-orientation': state.map((s) => s.orientation),
+      style: state.map((s) => rangeStyle(s)),
     },
-    thumb: (index: number): SliderThumbParts<S> => ({
+    thumb: (index: number): SliderThumbParts => ({
       thumb: {
         role: 'slider',
-        'aria-valuemin': (s) => get(s).min,
-        'aria-valuemax': (s) => get(s).max,
-        'aria-valuenow': (s) => get(s).value[index] ?? get(s).min,
-        'aria-orientation': (s) => get(s).orientation,
-        'aria-disabled': (s) => (get(s).disabled ? 'true' : undefined),
-        'data-orientation': (s) => get(s).orientation,
-        'data-disabled': (s) => (get(s).disabled ? '' : undefined),
+        'aria-valuemin': state.map((s) => s.min),
+        'aria-valuemax': state.map((s) => s.max),
+        'aria-valuenow': state.map((s) => s.value[index] ?? s.min),
+        'aria-orientation': state.map((s) => s.orientation),
+        'aria-disabled': state.map((s) => (s.disabled ? 'true' : undefined)),
+        'data-orientation': state.map((s) => s.orientation),
+        'data-disabled': state.map((s) => (s.disabled ? '' : undefined)),
         'data-scope': 'slider',
         'data-part': 'thumb',
         'data-index': String(index),
-        tabIndex: (s) => (get(s).disabled ? -1 : 0),
-        style: (s) => thumbStyle(get(s), index),
+        tabIndex: state.map((s) => (s.disabled ? -1 : 0)),
+        style: state.map((s) => thumbStyle(s, index)),
         onKeyDown: (e: KeyboardEvent) => handleThumbKey(e, index, send),
       },
     }),
-    value: (s) => get(s).value,
+    value: state.map((s) => s.value),
   }
 }
 

@@ -1,5 +1,5 @@
 import { tagSend } from '@llui/dom/signals'
-import type { Send } from '@llui/dom/signals'
+import type { Send, Signal } from '@llui/dom/signals'
 import { flipArrow } from '../utils/direction.js'
 
 /**
@@ -125,20 +125,20 @@ export function pointFromAngle(angleDeg: number): { x: number; y: number } {
   return { x: Math.cos(rad), y: Math.sin(rad) }
 }
 
-export interface AngleSliderParts<S> {
+export interface AngleSliderParts {
   root: {
     role: 'slider'
-    'aria-valuemin': (s: S) => number
-    'aria-valuemax': (s: S) => number
-    'aria-valuenow': (s: S) => number
-    'aria-valuetext': (s: S) => string
+    'aria-valuemin': Signal<number>
+    'aria-valuemax': Signal<number>
+    'aria-valuenow': Signal<number>
+    'aria-valuetext': Signal<string>
     'aria-orientation': 'horizontal'
-    'aria-disabled': (s: S) => 'true' | undefined
-    'aria-readonly': (s: S) => 'true' | undefined
-    tabIndex: (s: S) => number
+    'aria-disabled': Signal<'true' | undefined>
+    'aria-readonly': Signal<'true' | undefined>
+    tabIndex: Signal<number>
     'data-scope': 'angle-slider'
     'data-part': 'root'
-    'data-disabled': (s: S) => '' | undefined
+    'data-disabled': Signal<'' | undefined>
     onKeyDown: (e: KeyboardEvent) => void
   }
   control: {
@@ -153,7 +153,7 @@ export interface AngleSliderParts<S> {
   thumb: {
     'data-scope': 'angle-slider'
     'data-part': 'thumb'
-    'data-value': (s: S) => string
+    'data-value': Signal<string>
   }
   valueText: {
     'data-scope': 'angle-slider'
@@ -162,7 +162,7 @@ export interface AngleSliderParts<S> {
   /** A hidden input for form participation. */
   hiddenInput: {
     type: 'hidden'
-    value: (s: S) => string
+    value: Signal<string>
     name?: string
     'data-scope': 'angle-slider'
     'data-part': 'hidden-input'
@@ -176,27 +176,27 @@ export interface ConnectOptions {
   format?: (value: number) => string
 }
 
-export function connect<S>(
-  get: (s: S) => AngleSliderState,
+export function connect(
+  state: Signal<AngleSliderState>,
   send: Send<AngleSliderMsg>,
   opts: ConnectOptions = {},
-): AngleSliderParts<S> {
+): AngleSliderParts {
   const fmt = opts.format ?? ((v: number) => `${Math.round(v)}°`)
 
   return {
     root: {
       role: 'slider',
-      'aria-valuemin': (s) => get(s).min,
-      'aria-valuemax': (s) => get(s).max,
-      'aria-valuenow': (s) => get(s).value,
-      'aria-valuetext': (s) => fmt(get(s).value),
+      'aria-valuemin': state.map((s) => s.min),
+      'aria-valuemax': state.map((s) => s.max),
+      'aria-valuenow': state.map((s) => s.value),
+      'aria-valuetext': state.map((s) => fmt(s.value)),
       'aria-orientation': 'horizontal',
-      'aria-disabled': (s) => (get(s).disabled ? 'true' : undefined),
-      'aria-readonly': (s) => (get(s).readOnly ? 'true' : undefined),
-      tabIndex: (s) => (get(s).disabled ? -1 : 0),
+      'aria-disabled': state.map((s) => (s.disabled ? 'true' : undefined)),
+      'aria-readonly': state.map((s) => (s.readOnly ? 'true' : undefined)),
+      tabIndex: state.map((s) => (s.disabled ? -1 : 0)),
       'data-scope': 'angle-slider',
       'data-part': 'root',
-      'data-disabled': (s) => (get(s).disabled ? '' : undefined),
+      'data-disabled': state.map((s) => (s.disabled ? '' : undefined)),
       onKeyDown: tagSend(send, ['increment', 'decrement', 'setValue'], (e) => {
         const key = flipArrow(e.key, e.currentTarget as Element)
         switch (key) {
@@ -236,7 +236,7 @@ export function connect<S>(
     thumb: {
       'data-scope': 'angle-slider',
       'data-part': 'thumb',
-      'data-value': (s) => String(get(s).value),
+      'data-value': state.map((s) => String(s.value)),
     },
     valueText: {
       'data-scope': 'angle-slider',
@@ -244,7 +244,7 @@ export function connect<S>(
     },
     hiddenInput: {
       type: 'hidden',
-      value: (s) => String(get(s).value),
+      value: state.map((s) => String(s.value)),
       ...(opts.name !== undefined ? { name: opts.name } : {}),
       'data-scope': 'angle-slider',
       'data-part': 'hidden-input',

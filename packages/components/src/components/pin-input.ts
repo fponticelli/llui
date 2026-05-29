@@ -1,5 +1,5 @@
 import { tagSend } from '@llui/dom/signals'
-import type { Send } from '@llui/dom/signals'
+import type { Send, Signal } from '@llui/dom/signals'
 import { flipArrow } from '../utils/direction.js'
 import { en } from '../locale.js'
 
@@ -108,13 +108,13 @@ export function getValue(state: PinInputState): string {
   return state.values.join('')
 }
 
-export interface PinInputParts<S> {
+export interface PinInputParts {
   root: {
     role: 'group'
     'aria-labelledby': string
     'data-scope': 'pin-input'
     'data-part': 'root'
-    'data-disabled': (s: S) => '' | undefined
+    'data-disabled': Signal<'' | undefined>
   }
   label: {
     id: string
@@ -123,14 +123,14 @@ export interface PinInputParts<S> {
   }
   /** Props for the input at a given index. */
   input: (index: number) => {
-    type: (s: S) => 'text' | 'password'
-    inputMode: (s: S) => 'numeric' | 'text'
-    pattern: (s: S) => string
+    type: Signal<'text' | 'password'>
+    inputMode: Signal<'numeric' | 'text'>
+    pattern: Signal<string>
     maxLength: 1
     autoComplete: 'off'
     'aria-label': string
-    disabled: (s: S) => boolean
-    value: (s: S) => string
+    disabled: Signal<boolean>
+    value: Signal<string>
     'data-scope': 'pin-input'
     'data-part': 'input'
     'data-index': string
@@ -148,11 +148,11 @@ export interface ConnectOptions {
   validate?: (value: string) => string[] | null
 }
 
-export function connect<S>(
-  get: (s: S) => PinInputState,
+export function connect(
+  state: Signal<PinInputState>,
   send: Send<PinInputMsg>,
   opts: ConnectOptions,
-): PinInputParts<S> {
+): PinInputParts {
   const labelId = `${opts.id}:label`
   const inputLabel = opts.inputLabel ?? en.pinInput.input
   const validate = opts.validate
@@ -163,7 +163,7 @@ export function connect<S>(
       'aria-labelledby': labelId,
       'data-scope': 'pin-input',
       'data-part': 'root',
-      'data-disabled': (s) => (get(s).disabled ? '' : undefined),
+      'data-disabled': state.map((s) => (s.disabled ? '' : undefined)),
     },
     label: {
       id: labelId,
@@ -171,10 +171,10 @@ export function connect<S>(
       'data-part': 'label',
     },
     input: (index: number) => ({
-      type: (s) => (get(s).mask ? 'password' : 'text'),
-      inputMode: (s) => (get(s).type === 'numeric' ? 'numeric' : 'text'),
-      pattern: (s) => {
-        switch (get(s).type) {
+      type: state.map((s) => (s.mask ? 'password' : 'text')),
+      inputMode: state.map((s) => (s.type === 'numeric' ? 'numeric' : 'text')),
+      pattern: state.map((s) => {
+        switch (s.type) {
           case 'numeric':
             return '[0-9]*'
           case 'alphabetic':
@@ -182,12 +182,12 @@ export function connect<S>(
           case 'alphanumeric':
             return '[a-zA-Z0-9]*'
         }
-      },
+      }),
       maxLength: 1,
       autoComplete: 'off',
       'aria-label': inputLabel(index),
-      disabled: (s) => get(s).disabled,
-      value: (s) => get(s).values[index] ?? '',
+      disabled: state.map((s) => s.disabled),
+      value: state.map((s) => s.values[index] ?? ''),
       'data-scope': 'pin-input',
       'data-part': 'input',
       'data-index': String(index),

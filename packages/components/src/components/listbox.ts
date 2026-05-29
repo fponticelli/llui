@@ -1,5 +1,5 @@
 import { tagSend } from '@llui/dom/signals'
-import type { Send } from '@llui/dom/signals'
+import type { Send, Signal } from '@llui/dom/signals'
 import {
   typeaheadAccumulate,
   typeaheadMatchByItems,
@@ -171,15 +171,15 @@ export function update(state: ListboxState, msg: ListboxMsg): [ListboxState, nev
   }
 }
 
-export interface ListboxItemParts<S> {
+export interface ListboxItemParts {
   root: {
     role: 'option'
     id: string
-    'aria-selected': (s: S) => boolean
-    'aria-disabled': (s: S) => 'true' | undefined
-    'data-state': (s: S) => 'selected' | undefined
-    'data-highlighted': (s: S) => '' | undefined
-    'data-disabled': (s: S) => '' | undefined
+    'aria-selected': Signal<boolean>
+    'aria-disabled': Signal<'true' | undefined>
+    'data-state': Signal<'selected' | undefined>
+    'data-highlighted': Signal<'' | undefined>
+    'data-disabled': Signal<'' | undefined>
     'data-scope': 'listbox'
     'data-part': 'item'
     'data-value': string
@@ -189,54 +189,56 @@ export interface ListboxItemParts<S> {
   }
 }
 
-export interface ListboxParts<S> {
+export interface ListboxParts {
   root: {
     role: 'listbox'
-    'aria-owns': (s: S) => string | undefined
-    'aria-multiselectable': (s: S) => 'true' | undefined
-    'aria-disabled': (s: S) => 'true' | undefined
-    'aria-activedescendant': (s: S) => string | undefined
-    tabIndex: (s: S) => number
+    'aria-owns': Signal<string | undefined>
+    'aria-multiselectable': Signal<'true' | undefined>
+    'aria-disabled': Signal<'true' | undefined>
+    'aria-activedescendant': Signal<string | undefined>
+    tabIndex: Signal<number>
     id: string
     'data-scope': 'listbox'
     'data-part': 'root'
-    'data-disabled': (s: S) => '' | undefined
+    'data-disabled': Signal<'' | undefined>
     onKeyDown: (e: KeyboardEvent) => void
   }
-  item: (value: string, index: number) => ListboxItemParts<S>
+  item: (value: string, index: number) => ListboxItemParts
 }
 
 export interface ConnectOptions {
   id: string
 }
 
-export function connect<S>(
-  get: (s: S) => ListboxState,
+export function connect(
+  state: Signal<ListboxState>,
   send: Send<ListboxMsg>,
   opts: ConnectOptions,
-): ListboxParts<S> {
+): ListboxParts {
   const rootId = `${opts.id}:root`
   const itemId = (index: number): string => `${opts.id}:item:${index}`
 
   return {
     root: {
       role: 'listbox',
-      'aria-owns': (s) => {
-        const items = get(s).items
+      'aria-owns': state.map((s) => {
+        const items = s.items
         if (items.length === 0) return undefined
         return items.map((_, i) => itemId(i)).join(' ')
-      },
-      'aria-multiselectable': (s) => (get(s).selectionMode === 'multiple' ? 'true' : undefined),
-      'aria-disabled': (s) => (get(s).disabled ? 'true' : undefined),
-      'aria-activedescendant': (s) => {
-        const idx = get(s).highlightedIndex
+      }),
+      'aria-multiselectable': state.map((s) =>
+        s.selectionMode === 'multiple' ? 'true' : undefined,
+      ),
+      'aria-disabled': state.map((s) => (s.disabled ? 'true' : undefined)),
+      'aria-activedescendant': state.map((s) => {
+        const idx = s.highlightedIndex
         return idx === null ? undefined : itemId(idx)
-      },
-      tabIndex: (s) => (get(s).disabled ? -1 : 0),
+      }),
+      tabIndex: state.map((s) => (s.disabled ? -1 : 0)),
       id: rootId,
       'data-scope': 'listbox',
       'data-part': 'root',
-      'data-disabled': (s) => (get(s).disabled ? '' : undefined),
+      'data-disabled': state.map((s) => (s.disabled ? '' : undefined)),
       onKeyDown: tagSend(
         send,
         [
@@ -278,15 +280,15 @@ export function connect<S>(
         },
       ),
     },
-    item: (value: string, index: number): ListboxItemParts<S> => ({
+    item: (value: string, index: number): ListboxItemParts => ({
       root: {
         role: 'option',
         id: itemId(index),
-        'aria-selected': (s) => get(s).value.includes(value),
-        'aria-disabled': (s) => (get(s).disabledItems.includes(value) ? 'true' : undefined),
-        'data-state': (s) => (get(s).value.includes(value) ? 'selected' : undefined),
-        'data-highlighted': (s) => (get(s).highlightedIndex === index ? '' : undefined),
-        'data-disabled': (s) => (get(s).disabledItems.includes(value) ? '' : undefined),
+        'aria-selected': state.map((s) => s.value.includes(value)),
+        'aria-disabled': state.map((s) => (s.disabledItems.includes(value) ? 'true' : undefined)),
+        'data-state': state.map((s) => (s.value.includes(value) ? 'selected' : undefined)),
+        'data-highlighted': state.map((s) => (s.highlightedIndex === index ? '' : undefined)),
+        'data-disabled': state.map((s) => (s.disabledItems.includes(value) ? '' : undefined)),
         'data-scope': 'listbox',
         'data-part': 'item',
         'data-value': value,
