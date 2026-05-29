@@ -22,7 +22,7 @@ async function runTransform(
 }
 
 const SIGNAL_COMPONENT = [
-  "import { component } from '@llui/dom'",
+  "import { component, text, button } from '@llui/dom/signals'",
   'export const Counter = component({',
   '  init: () => ({ count: 0 }),',
   '  update: (s) => ({ count: s.count + 1 }),',
@@ -45,7 +45,7 @@ describe('vite-plugin — signal component routing', () => {
   it('halts the build (this.error) when a signal component violates a lint rule', async () => {
     // operator on a signal in a reactive slot — operator-on-signal
     const bad = [
-      "import { component } from '@llui/dom'",
+      "import { component, text } from '@llui/dom/signals'",
       'export const Bad = component({',
       '  init: () => ({ n: 0 }),',
       '  update: (s) => s,',
@@ -69,30 +69,23 @@ describe('vite-plugin — signal component routing', () => {
     expect(msg).toContain('operator-on-signal')
   })
 
-  it('fails the build when a signal view cannot be lowered (block body)', async () => {
+  it('accepts a block-body signal view (runtime helpers handle the un-lowered view)', async () => {
+    // block bodies aren't lowered by the transform, but the runtime authoring
+    // helpers run them — so it's a valid signal file, not a build error.
     const blockBody = [
-      "import { component } from '@llui/dom'",
-      "import { text } from '@llui/dom/signals'",
+      "import { component, text } from '@llui/dom/signals'",
       'export const C = component({',
       '  init: () => ({ n: 0 }),',
       '  update: (s) => s,',
       '  view: ({ state }) => { const x = 1; return [text(state.at("n"))] },',
       '})',
     ].join('\n')
-    const errors: unknown[] = []
-    const error = vi.fn((e: unknown) => {
-      errors.push(e)
-      throw new Error('this.error')
-    })
-    const ctx = {
-      warn: vi.fn(),
-      error,
-      resolve: vi.fn(async () => null),
-    } as unknown as ThisParameterType<Extract<Plugin['transform'], (...a: never) => unknown>>
-    const transform = llui().transform as (this: unknown, c: string, i: string) => unknown
-    await expect(transform.call(ctx, blockBody, '/tmp/block.ts')).rejects.toThrow('this.error')
-    const msg = String(errors[0])
-    expect(msg).toContain('was not lowered')
+    const out = await runTransform(llui(), blockBody, '/tmp/block.ts')
+    expect(out).toBeDefined()
+    // not handed to the legacy compiler (no elSplit / mask emission)
+    expect(out!.code).not.toContain('elSplit')
+    // the signal authoring import is preserved so the runtime helpers resolve
+    expect(out!.code).toContain('@llui/dom/signals')
   })
 
   it('injects the MCP relay startup into signal files in dev (guarded once)', async () => {

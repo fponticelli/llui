@@ -1351,11 +1351,37 @@ export default function llui(options: LluiPluginOptions = {}): Plugin {
       // the `@llui/dom/signals` runtime and SKIP the legacy accessor compiler.
       // A file is either signal-flavored or legacy (per-file-flip migration).
       // Cheap string pre-check avoids the extra parse on non-signal files.
-      // cheap pre-check: `component(` or `component<…>(` (type args) + `.at(`
-      if (/component\s*[<(]/.test(code) && code.includes('.at(')) {
+      // A SIGNAL FILE: imports the @llui/dom/signals surface, has a component, and
+      // uses `.at()`. The transform LOWERS the direct view (an optimization);
+      // anything it can't lower (view-helper functions, block bodies) runs via the
+      // runtime authoring helpers (text/el/each/… consume runtime signal handles).
+      // We always: enforce lint, lower-what-we-can, inject the relay, and SKIP the
+      // legacy compiler.
+      if (
+        /component\s*[<(]/.test(code) &&
+        code.includes('.at(') &&
+        /from\s*['"]@llui\/dom\/signals['"]/.test(code)
+      ) {
+        sawSignalComponent = true
+        // Enforce signal lint rules as build errors (the only effective channel —
+        // see CLAUDE.md). Lint the AUTHORED source; `this.error` throws → halts.
+        const lintMsgs = lintSignalSource(code, id)
+        if (lintMsgs.length > 0) {
+          const rel = relative(crossFileRoot ?? process.cwd(), id)
+          const display = rel.length > 0 && !rel.startsWith('..') ? rel : id
+          const first = lintMsgs[0]!
+          const body = lintMsgs
+            .map((m) => `  ${display}:${m.line}:${m.column}  [${m.rule}] ${m.message}`)
+            .join('\n')
+          this.error({
+            message: `[llui] signal lint failed (${lintMsgs.length} error${
+              lintMsgs.length > 1 ? 's' : ''
+            }):\n${body}`,
+            loc: { file: id, line: first.line, column: first.column },
+          })
+        }
         // Resolve cross-file Msg/State/Effect types (same machinery the legacy
-        // path uses) so signal components defining types in sibling files still
-        // emit full agent metadata. Only when metadata is actually emitted.
+        // path uses) so types in sibling files still produce full agent metadata.
         const wantMeta = Boolean(agent) || devMode
         let signalTypeSources: ExternalTypeSources | undefined
         let signalPreExtracted: PreExtractedSchemas | undefined
@@ -1366,63 +1392,23 @@ export default function llui(options: LluiPluginOptions = {}): Plugin {
             preExtractCompositional(code, id, rr),
           ])
         }
-        const signalOut = transformSignalComponentSource(code, {
+        let out = transformSignalComponentSource(code, {
           emitAgentMetadata: Boolean(agent),
           devMode,
           fileName: id,
           preExtracted: signalPreExtracted,
           typeSources: signalTypeSources?.state ? { state: signalTypeSources.state } : undefined,
         })
-        if (signalOut !== code) {
-          sawSignalComponent = true
-          // Enforce the signal lint rules as build errors (the only effective
-          // channel — see CLAUDE.md). Lint the AUTHORED source, not the lowered
-          // output. `this.error` throws, so this halts the build on any violation.
-          const lintMsgs = lintSignalSource(code, id)
-          if (lintMsgs.length > 0) {
-            const rel = relative(crossFileRoot ?? process.cwd(), id)
-            const display = rel.length > 0 && !rel.startsWith('..') ? rel : id
-            const first = lintMsgs[0]!
-            const body = lintMsgs
-              .map((m) => `  ${display}:${m.line}:${m.column}  [${m.rule}] ${m.message}`)
-              .join('\n')
-            this.error({
-              message: `[llui] signal lint failed (${lintMsgs.length} error${
-                lintMsgs.length > 1 ? 's' : ''
-              }):\n${body}`,
-              loc: { file: id, line: first.line, column: first.column },
-            })
-          }
-          // Dev + MCP: signal files bypass the legacy compiler that injects the
-          // relay, so a pure-signal app would never connect to the MCP server.
-          // Inject startRelay (guarded to fire once) + the HMR port handshake so
-          // signal components registered in the global registry are reachable.
-          let out = signalOut
-          if (devMode && mcpPort !== null) {
-            out =
-              `import { startRelay as __llui_startRelay } from '@llui/dom/devtools'\n` +
-              `if (!globalThis.__lluiRelayStarted) { globalThis.__lluiRelayStarted = true; __llui_startRelay(${mcpPort})\n` +
-              `  if (import.meta.hot) import.meta.hot.on('llui:mcp-ready', (d) => { if (typeof globalThis.__lluiConnect === 'function') globalThis.__lluiConnect(d?.port) }) }\n` +
-              out
-          }
-          return { code: out, map: { mappings: '' } }
+        // Dev + MCP: signal files bypass the legacy compiler that injects the
+        // relay, so inject startRelay (guarded to fire once) + the HMR handshake.
+        if (devMode && mcpPort !== null) {
+          out =
+            `import { startRelay as __llui_startRelay } from '@llui/dom/devtools'\n` +
+            `if (!globalThis.__lluiRelayStarted) { globalThis.__lluiRelayStarted = true; __llui_startRelay(${mcpPort})\n` +
+            `  if (import.meta.hot) import.meta.hot.on('llui:mcp-ready', (d) => { if (typeof globalThis.__lluiConnect === 'function') globalThis.__lluiConnect(d?.port) }) }\n` +
+            out
         }
-        // The transform did NOT fire but the file imports the signal authoring
-        // surface and uses `.at()` in a component — i.e. it IS a signal component
-        // whose view shape the lowering doesn't recognize (block body, or a bag
-        // that doesn't destructure `state`). Without this guard it falls through
-        // to the legacy compiler and ships throwing authoring stubs that fail at
-        // RUNTIME with a confusing message. Fail loudly at build instead.
-        if (/from\s*['"]@llui\/dom\/signals['"]/.test(code)) {
-          const rel = relative(crossFileRoot ?? process.cwd(), id)
-          const display = rel.length > 0 && !rel.startsWith('..') ? rel : id
-          this.error(
-            `[llui] ${display}: signal component view was not lowered. Only a concise ` +
-              'array-body view is supported — `view: ({ state }) => [ … ]`. Block bodies ' +
-              '(`=> { … return [ … ] }`) and bags that do not destructure `state` are not ' +
-              'yet supported; refactor the view to a concise array body.',
-          )
-        }
+        return { code: out, map: { mappings: '' } }
       }
 
       // Pre-resolve cross-file type sources for any `component<S, M, E>()`

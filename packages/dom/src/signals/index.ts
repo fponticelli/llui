@@ -10,6 +10,9 @@
 
 export type { Signal, LiveSignal, ValidPath, PathValue } from './types.js'
 export { derived } from './types.js'
+// Agent-handler introspection (runtime-agnostic — tags a handler with the msg
+// variants it can send for the agent protocol).
+export { tagSend } from '../binding-descriptors.js'
 
 // ── Runtime (compiler-emitted) ──────────────────────────────────────
 export {
