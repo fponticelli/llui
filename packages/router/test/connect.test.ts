@@ -1,7 +1,7 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
+import { describe, it, expect, vi } from 'vitest'
 import { createRouter, route, param } from '../src/index'
 import { connectRouter } from '../src/connect'
-import { mountApp, component, text } from '@llui/dom'
+import { mountApp, component, text } from '@llui/dom/signals'
 
 type Route = { page: 'home' } | { page: 'article'; slug: string } | { page: 'search'; q: string }
 
@@ -134,7 +134,7 @@ describe('connectRouter', () => {
           { page: 'article', slug: 'hello' },
           { class: 'my-link' },
           [],
-        )
+        ) as HTMLAnchorElement
         expect(el.tagName).toBe('A')
         expect(el.getAttribute('href')).toBe('#/article/hello')
         expect(el.className).toBe('my-link')
@@ -261,7 +261,7 @@ describe('connectRouter', () => {
         update: (s) => [s, []],
         view: () => {
           const el = historyRouting.link(vi.fn(), { page: 'search', q: 'test' }, {}, [])
-          href = el.getAttribute('href') ?? ''
+          href = (el as HTMLAnchorElement).getAttribute('href') ?? ''
           return [el]
         },
       })
