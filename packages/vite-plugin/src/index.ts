@@ -1353,7 +1353,11 @@ export default function llui(options: LluiPluginOptions = {}): Plugin {
       // Cheap string pre-check avoids the extra parse on non-signal files.
       // cheap pre-check: `component(` or `component<…>(` (type args) + `.at(`
       if (/component\s*[<(]/.test(code) && code.includes('.at(')) {
-        const signalOut = transformSignalComponentSource(code)
+        const signalOut = transformSignalComponentSource(code, {
+          emitAgentMetadata: Boolean(agent),
+          devMode,
+          fileName: id,
+        })
         if (signalOut !== code) {
           sawSignalComponent = true
           // Enforce the signal lint rules as build errors (the only effective

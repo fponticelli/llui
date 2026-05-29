@@ -58,6 +58,48 @@ describe('transformSignalComponentSource', () => {
     expect(transformSignalComponentSource(src)).toBe(src)
   })
 
+  describe('introspection metadata', () => {
+    const SRC = [
+      "import { component } from '@llui/dom'",
+      "type Msg = { type: 'inc' } | { type: 'set'; v: number }",
+      'type State = { count: number }',
+      'export const Counter = component({',
+      '  init: () => ({ count: 0 }),',
+      '  update: (s) => ({ count: s.count + 1 }),',
+      "  view: ({ state }) => [text(state.at('count'))],",
+      '})',
+    ].join('\n')
+
+    it('emits no metadata without opts (prod-no-agent stays lean)', () => {
+      const out = transformSignalComponentSource(SRC)
+      expect(out).not.toContain('__msgSchema')
+      expect(out).not.toContain('__schemaHash')
+    })
+
+    it('emits agent schemas + hash when emitAgentMetadata is set', () => {
+      const out = transformSignalComponentSource(SRC, { emitAgentMetadata: true })
+      expect(out).toContain('__msgSchema:')
+      expect(out).toContain('"discriminant":"type"')
+      expect(out).toContain('__stateSchema:')
+      expect(out).toContain('__schemaHash:')
+      // still a valid lowered view
+      expect(out).toContain("signalText((s) => s.count, ['count'])")
+    })
+
+    it('emits __componentMeta { file, line } in devMode', () => {
+      const out = transformSignalComponentSource(SRC, { devMode: true, fileName: 'src/counter.ts' })
+      expect(out).toContain('__componentMeta:')
+      expect(out).toContain('"file":"src/counter.ts"')
+    })
+
+    it('does not duplicate a metadata field the author already wrote', () => {
+      const withOwn = SRC.replace('view:', "__schemaHash: 'mine', view:")
+      const out = transformSignalComponentSource(withOwn, { emitAgentMetadata: true })
+      expect((out.match(/__schemaHash:/g) ?? []).length).toBe(1)
+      expect(out).toContain("__schemaHash: 'mine'")
+    })
+  })
+
   it('handles multiple signal components in one file', () => {
     const src = [
       "import { component } from '@llui/dom'",

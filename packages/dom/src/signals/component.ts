@@ -52,6 +52,22 @@ export interface SignalComponentDef<S, M, E = never> {
   view: (bag: ComponentBag<S, M>) => readonly Node[]
   /** handle an effect; may return a cleanup function */
   onEffect?: (effect: E, api: EffectApi<S, M>) => void | (() => void)
+
+  // ── Compiler-injected introspection metadata (see @llui/compiler signals
+  // transform). Optional — present only in dev / agent builds. Read by the
+  // agent-client pairing path and the (signal) debug surface. ──
+  /** discriminated-union schema of Msg ({ discriminant, variants }) */
+  readonly __msgSchema?: object
+  /** discriminated-union schema of Effect */
+  readonly __effectSchema?: object
+  /** state shape schema */
+  readonly __stateSchema?: object
+  /** per-message JSDoc annotations (intent, affordability, …) */
+  readonly __msgAnnotations?: Record<string, unknown>
+  /** stable hash of the schemas, for hot-reload schema-change detection */
+  readonly __schemaHash?: string
+  /** dev-only source location */
+  readonly __componentMeta?: { file: string; line: number }
 }
 
 export interface SignalComponentHandle<S, M> {
