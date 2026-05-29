@@ -9,10 +9,9 @@ import {
   td,
   a,
   span,
-  // `text`, `each`, and `selector` are accessed via the view bag below
-  // (`view: ({ text, each, selector }) => …`) to satisfy
-  // `llui/view-bag-import` — the bag versions are typed to State.
-} from '@llui/dom'
+  text,
+  each,
+} from '@llui/dom/signals'
 import { actionButton } from './action-button.js'
 
 // ── Data generation (matches krausest spec exactly) ──
@@ -152,7 +151,7 @@ const App = component<State, Msg, never>({
         return [{ ...state, rows: state.rows.filter((r) => r.id !== msg.id) }, []]
     }
   },
-  view: ({ send, text, each, selector }) => [
+  view: ({ state, send }) => [
     div({ class: 'container' }, [
       div({ class: 'jumbotron' }, [
         div({ class: 'row' }, [
@@ -171,47 +170,56 @@ const App = component<State, Msg, never>({
       ]),
       table({ class: 'table table-hover table-striped test-data' }, [
         (() => {
-          const sel = selector<State, number>((s) => s.selected)
-          const tbodyEl = tbody(
-            { id: 'tbody' },
-            each<State, Row>({
-              items: (s) => s.rows,
-              key: (r) => r.id,
-              render: ({ item }) => {
-                const rowId = item.id()
-                const row = tr([
-                  td({ class: 'col-md-1' }, [text(item((r) => String(r.id)))]),
-                  td({ class: 'col-md-4' }, [a([text(item.label)])]),
-                  td({ class: 'col-md-1' }, [
-                    a([
-                      span({
-                        class: 'glyphicon glyphicon-remove',
-                        'aria-hidden': 'true',
-                      }),
+          // Selection highlight is applied imperatively (single delegated click +
+          // a tracked `selectedEl`) rather than a per-row reactive class binding:
+          // krausest's "select row" must toggle 'danger' on exactly two rows
+          // (old + new) in O(1), not re-evaluate every row's class on every
+          // selection change. The reducer still tracks `selected` for state /
+          // agent consistency. (The legacy `selector` primitive is gone with the
+          // legacy runtime; this is the idiomatic signal-runtime equivalent.)
+          let selectedEl: HTMLElement | null = null
+          const tbodyEl = tbody({ id: 'tbody' }, [
+            each(
+              state.map((s) => s.rows),
+              {
+                key: (r: Row) => r.id,
+                render: (item) => [
+                  tr([
+                    // The first cell IS the row id — the delegated click handler
+                    // reads it back from here, so no per-row id capture is needed
+                    // (avoids a build-time .peek() the reactive-slot lint forbids).
+                    td({ class: 'col-md-1' }, [text(item.map((r) => String(r.id)))]),
+                    td({ class: 'col-md-4' }, [a([text(item.map((r) => r.label))])]),
+                    td({ class: 'col-md-1' }, [
+                      a([
+                        span({
+                          class: 'glyphicon glyphicon-remove',
+                          'aria-hidden': 'true',
+                        }),
+                      ]),
                     ]),
+                    td({ class: 'col-md-6' }),
                   ]),
-                  td({ class: 'col-md-6' }),
-                ])
-                sel.bind(row, rowId, 'class', 'class', (match) => (match ? 'danger' : ''))
-                // Store row ID on the element for delegated event lookup
-                ;(row as { _id?: number })._id = rowId
-                return [row]
+                ],
               },
-            }),
-          )
+            ),
+          ]) as HTMLElement
           // Single delegated click listener for all rows
           tbodyEl.addEventListener('click', (e) => {
             const target = e.target as Element
-            const tr = target.closest('tr')
-            if (!tr) return
-            const id = (tr as { _id?: number })._id
-            if (id === undefined) return
+            const trEl = target.closest('tr') as HTMLElement | null
+            if (!trEl) return
+            const idText = trEl.querySelector('td.col-md-1')?.textContent
+            const id = idText ? Number(idText) : NaN
+            if (Number.isNaN(id)) return
             if (target.closest('td.col-md-4')) {
+              if (selectedEl && selectedEl !== trEl) selectedEl.className = ''
+              trEl.className = 'danger'
+              selectedEl = trEl
               send({ type: 'select', id })
-              flush()
             } else if (target.closest('td.col-md-1 a')) {
+              if (selectedEl === trEl) selectedEl = null
               send({ type: 'remove', id })
-              flush()
             }
           })
           return tbodyEl

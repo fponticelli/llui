@@ -3,7 +3,9 @@
 // behind the view bag — satisfying `llui/view-bag-import` without
 // adding ceremony to the bench's hot path.
 
-import { div, button, text, flush } from '@llui/dom'
+// A helper function (no `component()` call), so it's not compiled — the signal
+// authoring helpers (div/button/text) run as real runtime functions here.
+import { div, button, text } from '@llui/dom/signals'
 
 // Inline subset of main.ts's Msg union — just the variants the button
 // dispatches. Named `ButtonMsg` (not `Msg`) so the agent-rule matchers
@@ -17,11 +19,7 @@ type ButtonMsg =
   | { type: 'clear' }
   | { type: 'swaprows' }
 
-export function actionButton(
-  id: string,
-  label: string,
-  send: (msg: ButtonMsg) => void,
-): HTMLElement {
+export function actionButton(id: string, label: string, send: (msg: ButtonMsg) => void): Node {
   const msg: ButtonMsg =
     id === 'swaprows' ? { type: 'swaprows' } : { type: id as ButtonMsg['type'] }
   return div({ class: 'col-sm-6 smallpad' }, [
@@ -30,10 +28,7 @@ export function actionButton(
         type: 'button',
         class: 'btn btn-primary btn-block',
         id,
-        onClick: () => {
-          send(msg)
-          flush()
-        },
+        onClick: () => send(msg), // signal send applies synchronously — no flush
       },
       [text(label)],
     ),
