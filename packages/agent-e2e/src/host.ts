@@ -1,4 +1,4 @@
-import { component, mountApp, div, button, text } from '@llui/dom'
+import { component, mountApp, div, button, text } from '@llui/dom/signals'
 import type { AgentDocs, AgentContext } from '@llui/agent/protocol'
 import {
   createAgentClient,
@@ -124,13 +124,13 @@ const App = component<State, Msg, AgentEffect>({
     }
   },
 
-  onEffect: async ({ effect }) => {
-    if (client) await client.effectHandler(effect)
+  onEffect: (effect) => {
+    if (client) void client.effectHandler(effect)
   },
 
-  view: ({ send, text: t }) => [
+  view: ({ state, send }) => [
     div({ 'data-agent': 'root' }, [
-      div({ 'data-agent': 'count-display' }, [t((s) => `count: ${String(s.count)}`)]),
+      div({ 'data-agent': 'count-display' }, [text(state.map((s) => `count: ${String(s.count)}`))]),
       button({ 'data-agent': 'inc', onClick: () => send({ type: 'inc' }) }, [text('+')]),
       button({ 'data-agent': 'dec', onClick: () => send({ type: 'dec' }) }, [text('-')]),
       button({ 'data-agent': 'reset', onClick: () => send({ type: 'reset' }) }, [text('reset')]),
@@ -159,6 +159,10 @@ const App = component<State, Msg, AgentEffect>({
 // the core ComponentDef), so we cast through unknown to attach them.
 
 type AgentMeta = {
+  // The signal `SignalComponentSpec.name` is optional, but the agent
+  // `ComponentMetadata` requires a concrete `name`. The component below
+  // always sets one, so narrow it here for the `createAgentClient` call.
+  name: string
   agentAffordances?: (state: unknown) => Array<{ type: string; [k: string]: unknown }>
   agentDocs?: AgentDocs
   agentContext?: (state: unknown) => AgentContext

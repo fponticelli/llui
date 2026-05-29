@@ -1,4 +1,4 @@
-import type { AppHandle } from '@llui/dom'
+import type { SignalComponentHandle } from '@llui/dom/signals'
 import type { AgentEffect } from './effects.js'
 import type { AgentConfirmState } from './agentConfirm.js'
 import type {
@@ -77,7 +77,7 @@ type ComponentMetadata = {
 }
 
 export type CreateAgentClientOpts<State, Msg> = {
-  handle: AppHandle
+  handle: SignalComponentHandle<State, unknown>
   def: ComponentMetadata
   appVersion?: string
   rootElement: Element | null

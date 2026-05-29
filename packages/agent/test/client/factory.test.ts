@@ -66,7 +66,7 @@ type FakeState = { connect: unknown; confirm: AgentConfirmState }
 
 function makeHandle(initialState: FakeState) {
   let state = initialState
-  const listeners = new Set<(s: unknown) => void>()
+  const listeners = new Set<(s: FakeState) => void>()
   const handle = {
     getState: () => state,
     send: vi.fn((msg: unknown) => {
@@ -75,7 +75,7 @@ function makeHandle(initialState: FakeState) {
     }),
     flush: vi.fn(),
     dispose: vi.fn(),
-    subscribe: (listener: (s: unknown) => void) => {
+    subscribe: (listener: (s: FakeState) => void) => {
       listeners.add(listener)
       return () => {
         listeners.delete(listener)
