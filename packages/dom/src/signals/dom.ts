@@ -206,8 +206,8 @@ export interface Context<T> {
   readonly default: T
 }
 
-export function createContext<T>(defaultValue: T): Context<T> {
-  return { id: Symbol('llui.context'), default: defaultValue }
+export function createContext<T>(defaultValue: T, name = 'context'): Context<T> {
+  return { id: Symbol(`llui.${name}`), default: defaultValue }
 }
 
 /** Provide `value` for `context` to everything `render` builds, then restore. */
