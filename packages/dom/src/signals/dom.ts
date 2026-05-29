@@ -409,6 +409,15 @@ export function signalEach<T>(
     commit: (s) => reconcile(s),
   })
 
+  // On host dispose, tear down every live row (onMount cleanups, foreign
+  // unmounts) — otherwise per-row side effects leak when the list unmounts.
+  c.teardowns.push(() => {
+    for (const [k, row] of rows) {
+      for (const t of row.teardowns.splice(0)) t()
+      rows.delete(k)
+    }
+  })
+
   return frag
 }
 
@@ -476,6 +485,17 @@ export function signalShow(
   // produce returns the state so reconcile can mount content against it.
   c.specs.push({ deps: cond.deps, produce: (s) => s, commit: (s) => reconcile(s) })
 
+  // On host dispose, tear down the currently-mounted arm (onMount cleanups,
+  // foreign unmounts) — otherwise reference-counted side effects (scroll lock,
+  // focus trap, dismissable) leak when the component unmounts while open.
+  c.teardowns.push(() => {
+    if (mounted) {
+      ownerHost.scope?.removeChild(mounted.scope)
+      for (const t of mounted.teardowns.splice(0)) t()
+      mounted = null
+    }
+  })
+
   return frag
 }
 
@@ -531,6 +551,16 @@ export function signalBranch(
   }
 
   c.specs.push({ deps: disc.deps, produce: (s) => s, commit: (s) => reconcile(s) })
+
+  // On host dispose, tear down the mounted arm (see signalShow for rationale).
+  c.teardowns.push(() => {
+    if (mounted) {
+      ownerHost.scope?.removeChild(mounted.scope)
+      for (const t of mounted.teardowns.splice(0)) t()
+      mounted = null
+    }
+  })
+
   return frag
 }
 

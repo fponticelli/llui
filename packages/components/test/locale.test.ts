@@ -29,7 +29,7 @@ describe('locale', () => {
   })
 
   it('LocaleContext has en as default', () => {
-    expect(LocaleContext._default).toBe(en)
+    expect(LocaleContext.default).toBe(en)
   })
 })
 

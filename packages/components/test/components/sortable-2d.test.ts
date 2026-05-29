@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from 'vitest'
 import { init, update, connect } from '../../src/components/sortable'
 import type { SortableState } from '../../src/components/sortable'
+import { rootSignal, read } from '../_signal'
 
 // 2D layout support — for flex-wrap, grid, and any layout where items
 // in the same visual "row" share a Y coordinate. The bug 2D fixes:
@@ -8,12 +9,6 @@ import type { SortableState } from '../../src/components/sortable'
 // so findTargetAt's "closest Y" heuristic always picks the first
 // match. Switching `layout: '2d'` uses Euclidean distance against
 // {x, y} midpoints and emits per-item shift transforms.
-
-type Ctx = { sort: SortableState }
-
-function driving(state: SortableState): Ctx {
-  return { sort: state }
-}
 
 describe('sortable 2D — DragState carries both X and Y', () => {
   it('start message with x is stored in dragging.startX / currentX', () => {
@@ -78,9 +73,9 @@ describe('sortable 2D — DragState carries both X and Y', () => {
 
 describe('sortable 2D — dragged item transform carries both axes', () => {
   it("dragged item's style.transform is translate(dx, dy) in 2D", () => {
-    const parts = connect<Ctx>((s) => s.sort, vi.fn(), { id: 'grid', layout: '2d' })
+    const parts = connect(rootSignal<SortableState>(), vi.fn(), { id: 'grid', layout: '2d' })
     const item = parts.item('a', 0)
-    const state = driving({
+    const state: SortableState = {
       dragging: {
         id: 'a',
         startIndex: 0,
@@ -92,14 +87,14 @@ describe('sortable 2D — dragged item transform carries both axes', () => {
         currentX: 150,
         currentY: 80,
       },
-    })
-    expect(item['style.transform'](state)).toBe('translate(50px, 30px)')
+    }
+    expect(read(item['style.transform'], state)).toBe('translate(50px, 30px)')
   })
 
   it('dragged item in 1D keeps translateY(deltaY) only (regression)', () => {
-    const parts = connect<Ctx>((s) => s.sort, vi.fn(), { id: 'list', layout: '1d' })
+    const parts = connect(rootSignal<SortableState>(), vi.fn(), { id: 'list', layout: '1d' })
     const item = parts.item('a', 0)
-    const state = driving({
+    const state: SortableState = {
       dragging: {
         id: 'a',
         startIndex: 0,
@@ -111,14 +106,14 @@ describe('sortable 2D — dragged item transform carries both axes', () => {
         currentX: 150,
         currentY: 80,
       },
-    })
-    expect(item['style.transform'](state)).toBe('translateY(30px)')
+    }
+    expect(read(item['style.transform'], state)).toBe('translateY(30px)')
   })
 
   it("layout default ('1d') matches explicit 1d behavior", () => {
-    const parts = connect<Ctx>((s) => s.sort, vi.fn(), { id: 'list' })
+    const parts = connect(rootSignal<SortableState>(), vi.fn(), { id: 'list' })
     const item = parts.item('a', 0)
-    const state = driving({
+    const state: SortableState = {
       dragging: {
         id: 'a',
         startIndex: 0,
@@ -130,16 +125,16 @@ describe('sortable 2D — dragged item transform carries both axes', () => {
         currentX: 150,
         currentY: 80,
       },
-    })
-    expect(item['style.transform'](state)).toBe('translateY(30px)')
+    }
+    expect(read(item['style.transform'], state)).toBe('translateY(30px)')
   })
 })
 
 describe('sortable 2D — data-shift is suppressed in 2D', () => {
   it('data-shift returns undefined under layout: 2d (CSS mechanism disabled)', () => {
-    const parts = connect<Ctx>((s) => s.sort, vi.fn(), { id: 'grid', layout: '2d' })
+    const parts = connect(rootSignal<SortableState>(), vi.fn(), { id: 'grid', layout: '2d' })
     const item = parts.item('b', 1)
-    const state = driving({
+    const state: SortableState = {
       dragging: {
         id: 'a',
         startIndex: 0,
@@ -151,14 +146,14 @@ describe('sortable 2D — data-shift is suppressed in 2D', () => {
         currentX: 0,
         currentY: 0,
       },
-    })
-    expect(item['data-shift'](state)).toBeUndefined()
+    }
+    expect(read(item['data-shift'], state)).toBeUndefined()
   })
 
   it('data-shift still emits in 1D for items between source and target (regression)', () => {
-    const parts = connect<Ctx>((s) => s.sort, vi.fn(), { id: 'list', layout: '1d' })
+    const parts = connect(rootSignal<SortableState>(), vi.fn(), { id: 'list', layout: '1d' })
     const item = parts.item('b', 1)
-    const state = driving({
+    const state: SortableState = {
       dragging: {
         id: 'a',
         startIndex: 0,
@@ -170,11 +165,11 @@ describe('sortable 2D — data-shift is suppressed in 2D', () => {
         currentX: 0,
         currentY: 0,
       },
-    })
+    }
     // Item at liveIndex=1 with drag 0→2 shifts up. The connect closure
     // uses a snapshots map keyed by containerId; without a snapshot the
     // liveIndex falls back to the render-time index captured above (1).
-    expect(item['data-shift'](state)).toBe('up')
+    expect(read(item['data-shift'], state)).toBe('up')
   })
 })
 
@@ -188,7 +183,7 @@ describe('sortable 2D — connect uses Euclidean target selection', () => {
     // 0, so we assert the structural flag path is reachable via the
     // send call receiving a fresh msg with an `x` field.
     const send = vi.fn()
-    const parts = connect<Ctx>((s) => s.sort, send, { id: 'grid', layout: '2d' })
+    const parts = connect(rootSignal<SortableState>(), send, { id: 'grid', layout: '2d' })
     // Fake a buttons-pressed move event.
     parts.root.onPointerMove({
       buttons: 1,
@@ -219,7 +214,7 @@ describe('sortable 2D — connect uses Euclidean target selection', () => {
     document.body.appendChild(host)
     try {
       const send = vi.fn()
-      const parts = connect<Ctx>((s) => s.sort, send, { id: 'grid', layout: '2d' })
+      const parts = connect(rootSignal<SortableState>(), send, { id: 'grid', layout: '2d' })
       parts.root.onPointerMove({
         buttons: 1,
         clientX: 42,
@@ -281,7 +276,7 @@ describe('sortable 2D — non-dragged item per-item transform', () => {
     document.body.appendChild(host)
     try {
       const send = vi.fn()
-      const parts = connect<Ctx>((s) => s.sort, send, { id: 'grid', layout: '2d' })
+      const parts = connect(rootSignal<SortableState>(), send, { id: 'grid', layout: '2d' })
       // Fire onPointerDown for item 'a' at index 0 — snapshotAll()
       // captures midpoints for every `[data-scope="sortable"][data-part="root"]`
       // root in the document, so our jsdom host is picked up.
@@ -298,7 +293,7 @@ describe('sortable 2D — non-dragged item per-item transform', () => {
       // to item c (index 2). Item b (liveIndex=1) and item c
       // (liveIndex=2) should shift left-by-one in array order —
       // visually, each takes the position its predecessor held.
-      const state = driving({
+      const state: SortableState = {
         dragging: {
           id: 'a',
           startIndex: 0,
@@ -310,19 +305,19 @@ describe('sortable 2D — non-dragged item per-item transform', () => {
           currentX: 50,
           currentY: 130,
         },
-      })
+      }
       // Item b (liveIndex=1, center {x: 160, y: 40}) should move to
       // item a's slot (center {x: 50, y: 40}). Vector: (-110, 0).
       const itemB = parts.item('b', 1)
-      expect(itemB['style.transform'](state)).toBe('translate(-110px, 0px)')
+      expect(read(itemB['style.transform'], state)).toBe('translate(-110px, 0px)')
       // Item c (liveIndex=2, center {x: 50, y: 130}) should move to
       // item b's slot (center {x: 160, y: 40}). Vector: (110, -90).
       const itemC = parts.item('c', 2)
-      expect(itemC['style.transform'](state)).toBe('translate(110px, -90px)')
+      expect(read(itemC['style.transform'], state)).toBe('translate(110px, -90px)')
       // Item d (liveIndex=3) is outside the drag range [start, current],
       // no transform.
       const itemD = parts.item('d', 3)
-      expect(itemD['style.transform'](state)).toBeUndefined()
+      expect(read(itemD['style.transform'], state)).toBeUndefined()
     } finally {
       host.remove()
     }
@@ -334,9 +329,9 @@ describe('sortable 2D — non-dragged item per-item transform', () => {
     // gracefully return undefined rather than throw. The real
     // snapshot flow is covered by the onPointerDown integration
     // tests; here we pin the no-snapshot path.
-    const parts = connect<Ctx>((s) => s.sort, vi.fn(), { id: 'grid', layout: '2d' })
+    const parts = connect(rootSignal<SortableState>(), vi.fn(), { id: 'grid', layout: '2d' })
     const item = parts.item('b', 1)
-    const state = driving({
+    const state: SortableState = {
       dragging: {
         id: 'a',
         startIndex: 0,
@@ -348,7 +343,7 @@ describe('sortable 2D — non-dragged item per-item transform', () => {
         currentX: 0,
         currentY: 0,
       },
-    })
-    expect(item['style.transform'](state)).toBeUndefined()
+    }
+    expect(read(item['style.transform'], state)).toBeUndefined()
   })
 })
