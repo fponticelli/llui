@@ -88,5 +88,8 @@
   "bugs": {
     "url": "https://github.com/fponticelli/llui/issues"
   },
-  "homepage": "https://github.com/fponticelli/llui/tree/main/packages/dom#readme"
+  "homepage": "https://github.com/fponticelli/llui/tree/main/packages/dom#readme",
+  "devDependencies": {
+    "@llui/compiler": "workspace:*"
+  }
 }
