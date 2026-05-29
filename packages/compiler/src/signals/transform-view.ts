@@ -83,6 +83,30 @@ function unwrap(expr: ts.Expression): ts.Expression {
   return ts.isParenthesizedExpression(expr) ? unwrap(expr.expression) : expr
 }
 
+/** Source for a `{ produce, deps }` SignalSpec from a signal expression. */
+function specSrc(expr: ts.Expression, sf: ts.SourceFile, roots: ReadonlySet<string>): string {
+  const { produce, deps } = signalToProduce(expr, sf, roots)
+  return `{ produce: (s) => ${produce}, deps: ${depsArr(deps)} }`
+}
+
+/** The returned node array of a concise arrow body (`() => [...]`), or null. */
+function arrowReturnArray(fn: ts.Expression): ts.ArrayLiteralExpression | null {
+  if (!ts.isArrowFunction(fn) && !ts.isFunctionExpression(fn)) return null
+  const body = fn.body
+  if (body && ts.isArrayLiteralExpression(body)) return body
+  if (body && ts.isParenthesizedExpression(body) && ts.isArrayLiteralExpression(body.expression)) {
+    return body.expression
+  }
+  return null
+}
+
+/** Transform a render arrow's returned node array under the given roots. */
+function renderArraySrc(fn: ts.Expression, sf: ts.SourceFile, roots: ReadonlySet<string>): string {
+  const arr = arrowReturnArray(fn)
+  if (!arr) return fn.getText(sf) // non-array body — leave verbatim
+  return `[${arr.elements.map((e) => transformNodeExpr(e, sf, roots)).join(', ')}]`
+}
+
 /** Rewrite a node-producing expression to its signal-runtime source. */
 export function transformNodeExpr(
   expr: ts.Expression,
@@ -102,6 +126,58 @@ export function transformNodeExpr(
       }
       const { produce, deps } = signalToProduce(arg, sf, roots)
       return `signalText((s) => ${produce}, ${depsArr(deps)})`
+    }
+
+    if (callee === 'each') {
+      // each(items, { key, render: (item) => [...] })
+      const items = node.arguments[0]
+      const opts = node.arguments[1]
+      if (items && opts && ts.isObjectLiteralExpression(opts)) {
+        let keySrc = '(x) => x'
+        let renderSrc = '() => []'
+        for (const p of opts.properties) {
+          if (!ts.isPropertyAssignment(p)) continue
+          const name = p.name.getText(sf)
+          if (name === 'key') keySrc = p.initializer.getText(sf)
+          else if (name === 'render') {
+            const fn = p.initializer
+            const itemParam =
+              (ts.isArrowFunction(fn) || ts.isFunctionExpression(fn)) &&
+              fn.parameters[0] &&
+              ts.isIdentifier(fn.parameters[0].name)
+                ? fn.parameters[0].name.text
+                : 'item'
+            renderSrc = `() => ${renderArraySrc(fn, sf, new Set([itemParam]))}`
+          }
+        }
+        return `signalEach(${specSrc(items, sf, roots)}, ${keySrc}, ${renderSrc})`
+      }
+    }
+
+    if (callee === 'show') {
+      // show(cond, () => [...])
+      const cond = node.arguments[0]
+      const render = node.arguments[1]
+      if (cond && render) {
+        return `signalShow(${specSrc(cond, sf, roots)}, () => ${renderArraySrc(render, sf, roots)})`
+      }
+    }
+
+    if (callee === 'branch') {
+      // branch(disc, { arm: () => [...], ... })
+      const disc = node.arguments[0]
+      const arms = node.arguments[1]
+      if (disc && arms && ts.isObjectLiteralExpression(arms)) {
+        const armsSrc = arms.properties
+          .map((p) => {
+            if (ts.isPropertyAssignment(p)) {
+              return `${p.name.getText(sf)}: () => ${renderArraySrc(p.initializer, sf, roots)}`
+            }
+            return p.getText(sf)
+          })
+          .join(', ')
+        return `signalBranch(${specSrc(disc, sf, roots)}, { ${armsSrc} })`
+      }
     }
 
     if (ELEMENT_HELPERS.has(callee)) {

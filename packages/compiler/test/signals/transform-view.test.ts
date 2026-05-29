@@ -81,6 +81,40 @@ describe('transformNodeExpr — elements', () => {
   })
 })
 
+describe('transformNodeExpr — structural primitives', () => {
+  it('lowers each to signalEach (items spec, key verbatim, render under item root)', () => {
+    const out = tx(
+      "each(state.at('todos'), { key: (t) => t.id, render: (item) => [text(item.at('title'))] })",
+    )
+    expect(out).toBe(
+      "signalEach({ produce: (s) => s.todos, deps: ['todos'] }, (t) => t.id, () => [signalText((s) => s.title, ['title'])])",
+    )
+  })
+
+  it('lowers show to signalShow (cond spec, content under state root)', () => {
+    const out = tx("show(state.at('open'), () => [text(state.at('name'))])")
+    expect(out).toBe(
+      "signalShow({ produce: (s) => s.open, deps: ['open'] }, () => [signalText((s) => s.name, ['name'])])",
+    )
+  })
+
+  it('lowers branch to signalBranch (disc spec, arms)', () => {
+    const out = tx(
+      "branch(state.at('view'), { loading: () => [text('…')], loaded: () => [text(state.at('title'))] })",
+    )
+    expect(out).toBe(
+      "signalBranch({ produce: (s) => s.view, deps: ['view'] }, { loading: () => [staticText('…')], loaded: () => [signalText((s) => s.title, ['title'])] })",
+    )
+  })
+
+  it('lowers a mapped cond in show', () => {
+    const out = tx("show(state.at('count').map((c) => c > 0), () => [text('positive')])")
+    expect(out).toBe(
+      "signalShow({ produce: (s) => ((c) => c > 0)(s.count), deps: ['count'] }, () => [staticText('positive')])",
+    )
+  })
+})
+
 describe('transformNodeExpr — unrecognized forms left verbatim', () => {
   it('structural / helper calls are not rewritten (yet)', () => {
     expect(tx('each(state.at("items"), opts)')).toBe('each(state.at("items"), opts)')
