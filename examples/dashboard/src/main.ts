@@ -1,5 +1,20 @@
-import { component, mountApp, div, h1, h2, h3, span, button, p, ul, li, onMount } from '@llui/dom'
-import type { Send, View } from '@llui/dom'
+import {
+  component,
+  mountApp,
+  div,
+  h1,
+  h2,
+  h3,
+  span,
+  button,
+  p,
+  ul,
+  li,
+  onMount,
+  text,
+  each,
+} from '@llui/dom/signals'
+import type { Send, Signal } from '@llui/dom/signals'
 import {
   formatNumber,
   formatRelativeTime,
@@ -37,7 +52,7 @@ type Msg =
   | { type: 'setLocale'; locale: string }
   /**
    * @intent("Handle charts intersection observer updates")
-   * @example({"type":"charts","msg":{"type":"observe","key":"sales"}})
+   * @example({"type":"charts","msg":{"type":"enter"}})
    */
   | { type: 'charts'; msg: InViewMsg }
   /**
@@ -108,17 +123,15 @@ const Dashboard = component<State, Msg, never>({
         return [{ ...state, theme: msg.theme }, []]
     }
   },
-  view: (h) => {
-    const { send, text, each } = h
-
+  view: ({ state, send }) => {
     // Apply current theme on mount + wire up inView observer for chart animation
     onMount((container) => {
       themeSwitch.applyTheme(themeSwitch.resolveTheme('system'))
-      // Wait a frame so innerHTML bindings settle, then locate the charts section
+      // Wait a frame so bindings settle, then locate the charts section
       requestAnimationFrame(() => {
         const section = container.querySelector('.charts-section') as HTMLElement | null
         if (!section) return
-        return inView.createObserver(section, (m) => send({ type: 'charts', msg: m }), {
+        inView.createObserver(section, (m) => send({ type: 'charts', msg: m }), {
           threshold: 0.1,
           once: true,
         })
@@ -132,20 +145,27 @@ const Dashboard = component<State, Msg, never>({
           div([
             h1([text('Dashboard')]),
             p({ class: 'subtitle' }, [
-              text((s) => formatDate(new Date(), { locale: s.locale, dateStyle: 'full' })),
+              text(
+                state
+                  .at('locale')
+                  .map((locale) => formatDate(new Date(), { locale, dateStyle: 'full' })),
+              ),
             ]),
           ]),
-          div({ class: 'header-controls' }, [themeToggle(text, send), localeSwitch(text, send)]),
+          div({ class: 'header-controls' }, [
+            themeToggle(state.at('theme'), send),
+            localeSwitch(state.at('locale'), send),
+          ]),
         ]),
 
         // KPI cards
         div({ class: 'kpi-grid' }, [
           kpiCard(
-            text,
+            state.at('locale'),
             'Total Revenue',
-            (s) =>
+            (locale) =>
               formatNumber(717800, {
-                locale: s.locale,
+                locale,
                 style: 'currency',
                 currency: 'USD',
                 maximumFractionDigits: 0,
@@ -154,23 +174,23 @@ const Dashboard = component<State, Msg, never>({
             true,
           ),
           kpiCard(
-            text,
+            state.at('locale'),
             'Active Users',
-            (s) => formatNumber(2580, { locale: s.locale }),
+            (locale) => formatNumber(2580, { locale }),
             '+28.4%',
             true,
           ),
           kpiCard(
-            text,
+            state.at('locale'),
             'Deployments',
-            (s) => formatNumber(847, { locale: s.locale }),
+            (locale) => formatNumber(847, { locale }),
             '+5.1%',
             true,
           ),
           kpiCard(
-            text,
+            state.at('locale'),
             'Avg Response',
-            (s) => formatNumber(142, { locale: s.locale, style: 'unit', unit: 'millisecond' }),
+            (locale) => formatNumber(142, { locale, style: 'unit', unit: 'millisecond' }),
             '-8.2%',
             false,
           ),
@@ -179,21 +199,25 @@ const Dashboard = component<State, Msg, never>({
         // Charts
         div(
           {
-            class: (s: State) => `charts-section${s.charts.visible ? ' visible' : ''}`,
+            class: state
+              .at('charts')
+              .map((charts) => `charts-section${charts.visible ? ' visible' : ''}`),
           },
           [
             div({ class: 'chart-card' }, [
               h2([text('Monthly Revenue')]),
               p({ class: 'chart-subtitle' }, [
-                text((s) => {
-                  const total = MONTHLY_REVENUE.reduce((a, b) => a + b.value, 0)
-                  return formatNumber(total, {
-                    locale: s.locale,
-                    style: 'currency',
-                    currency: 'USD',
-                    maximumFractionDigits: 0,
-                  })
-                }),
+                text(
+                  state.at('locale').map((locale) => {
+                    const total = MONTHLY_REVENUE.reduce((a, b) => a + b.value, 0)
+                    return formatNumber(total, {
+                      locale,
+                      style: 'currency',
+                      currency: 'USD',
+                      maximumFractionDigits: 0,
+                    })
+                  }),
+                ),
                 span({ class: 'badge green' }, [text('+12.3%')]),
               ]),
               barChart(MONTHLY_REVENUE.map((d) => ({ label: d.month, value: d.value }))),
@@ -201,14 +225,15 @@ const Dashboard = component<State, Msg, never>({
             div({ class: 'chart-card' }, [
               h2([text('Daily Active Users')]),
               p({ class: 'chart-subtitle' }, [
-                text((s) =>
-                  formatList(
-                    [
-                      formatNumber(DAILY_USERS[DAILY_USERS.length - 1], { locale: s.locale }),
-                      'today',
-                    ],
-                    { locale: s.locale, type: 'unit', style: 'short' },
-                  ),
+                text(
+                  state
+                    .at('locale')
+                    .map((locale) =>
+                      formatList(
+                        [formatNumber(DAILY_USERS[DAILY_USERS.length - 1]!, { locale }), 'today'],
+                        { locale, type: 'unit', style: 'short' },
+                      ),
+                    ),
                 ),
                 span({ class: 'badge green' }, [text('+28.4%')]),
               ]),
@@ -218,57 +243,18 @@ const Dashboard = component<State, Msg, never>({
         ),
 
         // Priorities (sortable)
-        prioritiesSection(h, send),
+        prioritiesSection(state.at('priorities'), state.at('sort'), send),
 
         // Activity feed
         div({ class: 'activity-card' }, [
           h2([text('Recent Activity')]),
-          ...each({
-            items: () => ACTIVITY,
-            key: (item) => item.user,
-            render: ({ item }) => [
-              div({ class: 'activity-item' }, [
-                div({ class: 'activity-avatar' }, [
-                  text(
-                    item((i) =>
-                      i.user
-                        .split(' ')
-                        .map((n) => n[0])
-                        .join(''),
-                    ),
-                  ),
-                ]),
-                div({ class: 'activity-content' }, [
-                  h3([text(item((i) => i.user))]),
-                  p([text(item((i) => i.action))]),
-                  span({ class: 'activity-time' }, [
-                    text((s) => {
-                      const seconds = item((i) => i.ago)()
-                      if (seconds < 60)
-                        return formatRelativeTime(-seconds, 'second', {
-                          locale: s.locale,
-                          numeric: 'auto',
-                        })
-                      if (seconds < 3600)
-                        return formatRelativeTime(-Math.round(seconds / 60), 'minute', {
-                          locale: s.locale,
-                          numeric: 'auto',
-                        })
-                      if (seconds < 86400)
-                        return formatRelativeTime(-Math.round(seconds / 3600), 'hour', {
-                          locale: s.locale,
-                          numeric: 'auto',
-                        })
-                      return formatRelativeTime(-Math.round(seconds / 86400), 'day', {
-                        locale: s.locale,
-                        numeric: 'auto',
-                      })
-                    }),
-                  ]),
-                ]),
-              ]),
-            ],
-          }),
+          each(
+            state.map(() => ACTIVITY),
+            {
+              key: (item) => item.user,
+              render: (item) => [activityItem(item, state.at('locale'))],
+            },
+          ),
         ]),
       ]),
     ]
@@ -277,12 +263,49 @@ const Dashboard = component<State, Msg, never>({
 
 // ── View helpers ─────────────────────────────────────────────────
 
-type TextFn = View<State, Msg>['text']
+interface ActivityDatum {
+  user: string
+  action: string
+  ago: number
+}
 
-function prioritiesSection(h: View<State, Msg>, send: Send<Msg>): HTMLElement {
-  const { text, each } = h
+function activityItem(item: Signal<ActivityDatum>, locale: Signal<string>): Node {
+  // ACTIVITY is static, so the per-row value is fixed for its lifetime — read
+  // it once (plain value) and close over it in the locale-derived slot.
+  const entry = item.peek()
+  return div({ class: 'activity-item' }, [
+    div({ class: 'activity-avatar' }, [
+      text(
+        entry.user
+          .split(' ')
+          .map((n) => n[0])
+          .join(''),
+      ),
+    ]),
+    div({ class: 'activity-content' }, [
+      h3([text(entry.user)]),
+      p([text(entry.action)]),
+      span({ class: 'activity-time' }, [text(locale.map((l) => relativeAgo(entry.ago, l)))]),
+    ]),
+  ])
+}
+
+function relativeAgo(seconds: number, locale: string): string {
+  if (seconds < 60) return formatRelativeTime(-seconds, 'second', { locale, numeric: 'auto' })
+  if (seconds < 3600)
+    return formatRelativeTime(-Math.round(seconds / 60), 'minute', { locale, numeric: 'auto' })
+  if (seconds < 86400)
+    return formatRelativeTime(-Math.round(seconds / 3600), 'hour', { locale, numeric: 'auto' })
+  return formatRelativeTime(-Math.round(seconds / 86400), 'day', { locale, numeric: 'auto' })
+}
+
+function prioritiesSection(
+  priorities: Signal<Priority[]>,
+  sort: Signal<SortableState>,
+  send: Send<Msg>,
+): Node {
   const sortSend = (m: SortableMsg): void => send({ type: 'sort', msg: m })
-  const parts = sortable.connect<State>((s) => s.sort, sortSend, { id: 'priorities' })
+  const parts = sortable.connect(sort, sortSend, { id: 'priorities' })
 
   return div({ class: 'priorities-card' }, [
     h2([text('Priorities')]),
@@ -293,91 +316,94 @@ function prioritiesSection(h: View<State, Msg>, send: Send<Msg>): HTMLElement {
         class: 'priority-list',
       },
       [
-        ...each({
-          items: (s: State) => s.priorities,
+        each(priorities, {
           key: (p: Priority) => p.id,
-          render: ({ item, index }) => {
-            const id = item((p) => p.id)
-            return [
-              li(
-                {
-                  ...parts.item(id(), index()),
-                  class: 'priority-item',
-                },
-                [
-                  div({ ...parts.handle(id(), index()), class: 'priority-handle' }, [
-                    text('\u2630'),
-                  ]),
-                  div({ class: 'priority-body' }, [
-                    span({ class: 'priority-title' }, [text(item((p) => p.title))]),
-                    span(
-                      {
-                        class: (_s) => `priority-impact priority-${item((p) => p.impact)()}`,
-                      },
-                      [text(item((p) => p.impact))],
-                    ),
-                  ]),
-                ],
-              ),
-            ]
-          },
+          render: (item, index) => [priorityItem(item, index, parts)],
         }),
       ],
     ),
   ])
 }
 
-function themeBtn(text: TextFn, send: Send<Msg>, t: Theme, icon: string): HTMLElement {
+function priorityItem(
+  item: Signal<Priority>,
+  index: Signal<number>,
+  parts: ReturnType<typeof sortable.connect>,
+): Node {
+  const id = item.peek().id
+  const idx = index.peek()
+  return li(
+    {
+      ...parts.item(id, idx),
+      class: 'priority-item',
+    },
+    [
+      div({ ...parts.handle(id, idx), class: 'priority-handle' }, [text('☰')]),
+      div({ class: 'priority-body' }, [
+        span({ class: 'priority-title' }, [text(item.at('title'))]),
+        span(
+          {
+            class: item.at('impact').map((impact) => `priority-impact priority-${impact}`),
+          },
+          [text(item.at('impact'))],
+        ),
+      ]),
+    ],
+  )
+}
+
+function themeBtn(theme: Signal<Theme>, send: Send<Msg>, t: Theme, icon: string): Node {
   return button(
     {
-      class: (s: State) => `theme-btn${s.theme === t ? ' active' : ''}`,
+      class: theme.map((cur) => `theme-btn${cur === t ? ' active' : ''}`),
       onClick: () => send({ type: 'setTheme', theme: t }),
       'aria-label': `Theme: ${t}`,
-      'aria-pressed': (s: State) => s.theme === t,
+      'aria-pressed': theme.map((cur) => cur === t),
     },
     [text(icon)],
   )
 }
 
-function themeToggle(text: TextFn, send: Send<Msg>): HTMLElement {
+function themeToggle(theme: Signal<Theme>, send: Send<Msg>): Node {
   return div({ class: 'theme-switch', role: 'group', 'aria-label': 'Theme' }, [
-    themeBtn(text, send, 'light', '\u2600'),
-    themeBtn(text, send, 'dark', '\u263D'),
-    themeBtn(text, send, 'system', '\u25D0'),
+    themeBtn(theme, send, 'light', '☀'),
+    themeBtn(theme, send, 'dark', '☽'),
+    themeBtn(theme, send, 'system', '◐'),
   ])
 }
 
-function localeSwitch(text: TextFn, send: Send<Msg>): HTMLElement {
-  const locales = [
-    { code: 'en-US', label: 'EN' },
-    { code: 'es-ES', label: 'ES' },
-    { code: 'ja-JP', label: 'JA' },
-  ]
-  return div(
-    { class: 'locale-switch', role: 'group', 'aria-label': 'Language' },
-    locales.map((l) =>
-      button(
-        {
-          class: (s: State) => `locale-btn${s.locale === l.code ? ' active' : ''}`,
-          onClick: () => send({ type: 'setLocale', locale: l.code }),
-          'aria-pressed': (s: State) => s.locale === l.code,
-        },
-        [text(l.label)],
-      ),
-    ),
+function localeBtn(locale: Signal<string>, send: Send<Msg>, code: string, label: string): Node {
+  return button(
+    {
+      class: locale.map((cur) => `locale-btn${cur === code ? ' active' : ''}`),
+      onClick: () => send({ type: 'setLocale', locale: code }),
+      'aria-pressed': locale.map((cur) => cur === code),
+    },
+    [text(label)],
   )
 }
 
+function localeSwitch(locale: Signal<string>, send: Send<Msg>): Node {
+  // Build buttons explicitly (not via locales.map) — a plain Array.map building
+  // DOM is indistinguishable to the compiler from a signal .map, which forbids
+  // node construction in its body.
+  return div({ class: 'locale-switch', role: 'group', 'aria-label': 'Language' }, [
+    localeBtn(locale, send, 'en-US', 'EN'),
+    localeBtn(locale, send, 'es-ES', 'ES'),
+    localeBtn(locale, send, 'ja-JP', 'JA'),
+  ])
+}
+
 function kpiCard(
-  text: TextFn,
+  locale: Signal<string>,
   title: string,
-  valueFn: (s: State) => string,
+  valueFn: (locale: string) => string,
   change: string,
   positive: boolean,
-): HTMLElement {
+): Node {
   return div({ class: 'kpi-card' }, [
     span({ class: 'kpi-title' }, [text(title)]),
-    div({ class: 'kpi-value' }, [span([text(valueFn)])]),
+    div({ class: 'kpi-value' }, [span([text(locale.map(valueFn))])]),
     span({ class: `kpi-change ${positive ? 'green' : 'red'}` }, [text(change)]),
   ])
 }

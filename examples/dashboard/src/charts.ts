@@ -1,4 +1,13 @@
-import { svg, rect, line, path, circle, svgText } from '@llui/dom'
+import { svg, rect, line, path, circle, text, svgText as svgTextEl } from '@llui/dom/signals'
+
+// Small convenience over the framework's `svgText` element helper: accept plain
+// string children (charts are static presentation — no reactive bindings).
+function svgText(props: Record<string, string>, children: readonly string[]): Node {
+  return svgTextEl(
+    props,
+    children.map((c) => text(c)),
+  )
+}
 
 interface BarDatum {
   label: string
@@ -11,7 +20,7 @@ interface BarDatum {
 export function barChart(
   data: BarDatum[],
   opts: { width?: number; barHeight?: number; color?: string } = {},
-): SVGElement {
+): Node {
   const w = opts.width ?? 500
   const barH = opts.barHeight ?? 24
   const gap = 8
@@ -64,7 +73,7 @@ export function barChart(
 export function lineChart(
   data: number[],
   opts: { width?: number; height?: number; color?: string } = {},
-): SVGElement {
+): Node {
   const w = opts.width ?? 500
   const h = opts.height ?? 200
   const color = opts.color ?? '#22c55e'
@@ -87,7 +96,7 @@ export function lineChart(
     .join(' ')
 
   // Gradient fill area
-  const areaD = `${pathD} L${points[points.length - 1].x.toFixed(1)},${h - padY} L${padX},${h - padY} Z`
+  const areaD = `${pathD} L${points[points.length - 1]!.x.toFixed(1)},${h - padY} L${padX},${h - padY} Z`
 
   const gridLines = Array.from({ length: 5 }, (_, i) => {
     const y = padY + (i / 4) * plotH
