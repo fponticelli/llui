@@ -1,5 +1,5 @@
-import { tagSend } from '@llui/dom'
-import type { Send } from '@llui/dom'
+import { tagSend } from '@llui/dom/signals'
+import type { Send } from '@llui/dom/signals'
 
 /**
  * Theme Switch — light/dark/system theme toggle.

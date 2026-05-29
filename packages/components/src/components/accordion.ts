@@ -1,5 +1,5 @@
-import { tagSend } from '@llui/dom'
-import type { Send } from '@llui/dom'
+import { tagSend } from '@llui/dom/signals'
+import type { Send } from '@llui/dom/signals'
 
 /**
  * Accordion — a stack of expandable panels. Items are identified by a string

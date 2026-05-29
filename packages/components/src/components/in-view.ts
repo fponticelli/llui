@@ -1,4 +1,4 @@
-import type { Send } from '@llui/dom'
+import type { Send } from '@llui/dom/signals'
 
 /**
  * In View — tracks whether an element is visible in the viewport

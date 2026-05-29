@@ -1,5 +1,5 @@
-import { tagSend } from '@llui/dom'
-import type { Send } from '@llui/dom'
+import { tagSend } from '@llui/dom/signals'
+import type { Send } from '@llui/dom/signals'
 
 /**
  * Toggle button — a button that can be pressed or not. Unlike a checkbox,
