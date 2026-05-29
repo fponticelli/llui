@@ -10,7 +10,7 @@
 // handle; only event handlers / effects use it (the `state.at('x').peek()` form
 // is left verbatim by the transform and satisfied here at runtime).
 
-import { mountSignal, type SignalMount } from './dom.js'
+import { mountSignal, type SignalMount, type MountTarget } from './dom.js'
 import { withBindingErrors, type BindingError } from './runtime.js'
 import { pathHandle } from './handle.js'
 import { installSignalDebug, type SignalMessageRecord } from './devtools.js'
@@ -115,12 +115,24 @@ export interface MountSignalOptions<S> {
    * by default (the server pass already ran them) — opt back in with
    * `runInitEffects` for init()s gated to no-op on the server. */
   hydrate?: { serverState: S; runInitEffects?: boolean }
+  /** Seed state to mount with instead of `init()`'s result (adapters that derive
+   * the seed externally, e.g. per-route data). init() still runs so its effects
+   * are captured; only the returned state is overridden. Ignored when hydrating
+   * (use `hydrate.serverState` there). */
+  initialState?: S
+  /** Context values to expose at the root of this build (see `runBuild`'s
+   * `seedContexts`). `@llui/vike` replays a layout's in-scope contexts here so a
+   * nested page reads providers that live above its slot in a SEPARATE build. */
+  contexts?: ReadonlyMap<symbol, unknown>
 }
 
-/** Mount a signal component into `container` and drive its update loop. With
- * `opts.hydrate`, takes over server-rendered HTML (see MountSignalOptions). */
+/** Mount a signal component and drive its update loop. The target is a container
+ * `Element` (fresh mount appends; hydration replaces) OR a `MountTarget`
+ * descriptor — including `{ anchor }` for adapters mounting a nested layer as
+ * siblings of a slot anchor. With `opts.hydrate`, takes over server-rendered
+ * HTML (see MountSignalOptions). */
 export function mountSignalComponent<S, M, E = never>(
-  container: Element,
+  target: Element | MountTarget,
   def: SignalComponentDef<S, M, E>,
   opts?: MountSignalOptions<S>,
 ): SignalComponentHandle<S, M> {
@@ -128,7 +140,7 @@ export function mountSignalComponent<S, M, E = never>(
   // state is discarded in favour of serverState.
   const [seedState, initialEffects] = normalize<S, E>(def.init())
   const hy = opts?.hydrate
-  let state = hy ? hy.serverState : seedState
+  let state = hy ? hy.serverState : (opts?.initialState ?? seedState)
   let mount: SignalMount | null = null
   let disposed = false
   // Swappable via swapUpdate (HMR); runReducer/send read these, not def.* .
@@ -173,12 +185,14 @@ export function mountSignalComponent<S, M, E = never>(
   }
 
   withBindingErrors(onBindingError, () => {
-    mount = mountSignal(
-      container,
-      state,
-      () => def.view({ state: handle, send }),
-      hy ? 'replace' : 'append',
-    )
+    // Resolve the attach target: a bare Element (the common case) becomes a
+    // container target (replace on hydrate, append on fresh mount); a MountTarget
+    // descriptor (e.g. `{ anchor }`) passes through.
+    const mt: MountTarget =
+      target instanceof Object && ('container' in target || 'anchor' in target)
+        ? (target as MountTarget)
+        : { container: target as Element, mode: hy ? 'replace' : 'append' }
+    mount = mountSignal(mt, state, () => def.view({ state: handle, send }), opts?.contexts)
   })
   // Fresh mount always dispatches init effects; hydration skips them unless asked.
   if (hy ? (hy.runInitEffects ?? false) : true) {
@@ -248,12 +262,13 @@ export function mountSignalComponent<S, M, E = never>(
  * `runInitEffects: true` for init()s that no-op on the server.
  */
 export function hydrateSignalApp<S, M, E = never>(
-  container: Element,
+  target: Element | MountTarget,
   def: SignalComponentDef<S, M, E>,
   serverState: S,
-  options?: { runInitEffects?: boolean },
+  options?: { runInitEffects?: boolean; contexts?: ReadonlyMap<symbol, unknown> },
 ): SignalComponentHandle<S, M> {
-  return mountSignalComponent(container, def, {
+  return mountSignalComponent(target, def, {
     hydrate: { serverState, runInitEffects: options?.runInitEffects },
+    contexts: options?.contexts,
   })
 }

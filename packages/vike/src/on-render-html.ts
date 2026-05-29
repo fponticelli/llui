@@ -1,9 +1,19 @@
-import { renderNodes, serializeNodes } from '@llui/dom'
-import type { AnyComponentDef, Binding, Lifetime, DomEnv } from '@llui/dom'
+import { renderNodes, serializeNodes } from '@llui/dom/signals'
+import type { SignalComponentDef } from '@llui/dom/signals'
+import type { DomEnv } from '@llui/dom/ssr'
 import { _consumePendingSlot, _resetPendingSlot } from './page-slot.js'
 import type { VikePageContextData } from './vike-namespace.js'
 
-type LayoutChain = ReadonlyArray<AnyComponentDef>
+/**
+ * A type-erased signal component as the adapter sees it. Layouts and pages are
+ * `SignalComponentDef<S, M, E>` for concrete S/M/E; the adapter handles them
+ * uniformly with the type params erased — the runtime doesn't use them. Unlike
+ * the legacy `ComponentDef`, the signal `init()` takes NO data argument, so
+ * per-layer data flows in as a seed-STATE override (see `renderPage`).
+ */
+export type AnyLayer = SignalComponentDef<unknown, unknown, unknown>
+
+type LayoutChain = ReadonlyArray<AnyLayer>
 
 /**
  * Page context shape as seen by `@llui/vike`'s server hook. `Page` and
@@ -15,9 +25,13 @@ type LayoutChain = ReadonlyArray<AnyComponentDef>
  * consumer-side augmentations (the Vike convention for typing data) flow
  * into this hook's callbacks without any cast. When the consumer hasn't
  * augmented the namespace, `data` falls back to `unknown`.
+ *
+ * In the signal runtime a component's `init()` takes no data argument, so
+ * each layer's `data` slice is used directly as that layer's seed STATE
+ * when present; when absent, the layer's own `init()` provides the seed.
  */
 export interface PageContext {
-  Page: AnyComponentDef
+  Page: AnyLayer
   data?: VikePageContextData
   lluiLayoutData?: readonly unknown[]
   head?: string
@@ -63,8 +77,8 @@ export interface RenderHtmlOptions {
   /**
    * Persistent layout chain. One of:
    *
-   * - A single `ComponentDef` — becomes a one-layout chain.
-   * - An array of `ComponentDef`s — outermost first, innermost last.
+   * - A single `SignalComponentDef` — becomes a one-layout chain.
+   * - An array of `SignalComponentDef`s — outermost first, innermost last.
    *   Every layer except the innermost must call `pageSlot()` in its view.
    * - A function that returns a chain from the current `pageContext` —
    *   enables per-route chains (e.g. reading Vike's `urlPathname`).
@@ -73,7 +87,7 @@ export interface RenderHtmlOptions {
    * hydration reads the matching envelope and reconstructs the chain
    * layer-by-layer.
    */
-  Layout?: AnyComponentDef | LayoutChain | ((pageContext: PageContext) => LayoutChain)
+  Layout?: AnyLayer | LayoutChain | ((pageContext: PageContext) => LayoutChain)
 
   /**
    * Factory that returns the `DomEnv` backing SSR render. Call with
@@ -103,7 +117,7 @@ function resolveLayoutChain(
     return layoutOption(pageContext) ?? []
   }
   if (Array.isArray(layoutOption)) return layoutOption
-  return [layoutOption as AnyComponentDef]
+  return [layoutOption as AnyLayer]
 }
 
 /**
@@ -188,13 +202,20 @@ async function renderPage(
   }
 }
 
+/** Resolve a layer's seed state. In the signal runtime `init()` takes no data,
+ * so a present data slice IS the seed state; an absent slice falls back to the
+ * layer's own `init()` (renderNodes does this when given `undefined`). */
+function seedFor(data: unknown): unknown | undefined {
+  return data === undefined ? undefined : data
+}
+
 /**
  * Render every layer of the chain into one composed DOM tree, then
  * serialize. At each non-innermost layer, consume the pending
  * `pageSlot()` registration and insert the next layer's nodes as
  * siblings after the anchor comment, bracketed by an end sentinel.
- * Scopes are threaded so inner layers inherit the outer layer's scope
- * tree for context lookups.
+ * Contexts provided above a slot are replayed into the nested layer's
+ * build so they reach the nested page.
  *
  * @internal — exported for unit testing only (`_renderChain`).
  */
@@ -210,47 +231,28 @@ export function _renderChain(
   // Defensive: ensure no stale slot leaks in from a prior failed render.
   _resetPendingSlot()
 
-  // Accumulate bindings from every layer — serializeNodes needs the
-  // full set so hydrate markers are correctly placed across the
-  // composed tree.
-  const allBindings: Binding[] = []
   const envelopeLayouts: HydrationEnvelope['layouts'] = []
   let envelopePage: HydrationEnvelope['page'] | null = null
 
-  let outermostNodes: Node[] = []
+  let outermostNodes: readonly Node[] = []
+  const disposers: Array<() => void> = []
   let currentSlotAnchor: Comment | null = null
-  let currentSlotScope: Lifetime | undefined = undefined
+  let currentSlotContexts: ReadonlyMap<symbol, unknown> | undefined = undefined
 
   for (let i = 0; i < chain.length; i++) {
     const def = chain[i]!
     const layerData = chainData[i]
     const isInnermost = i === chain.length - 1
 
-    // Resolve the initial state from the layer's own init() applied to
-    // its data slice, same as client-side mountApp(). renderNodes takes
-    // the state post-init so that the view sees the right fields.
-    const [initialState] = def.init(layerData)
-
-    // Cross from type-erased AnyComponentDef into the concrete signature
-    // renderNodes expects. Same pattern as the client mount path —
-    // renderNodes is generic but the runtime doesn't use the type params.
-    const { nodes, inst } = renderNodes(
-      def as unknown as Parameters<typeof renderNodes>[0],
-      initialState,
-      env,
-      currentSlotScope,
-    )
-    allBindings.push(...inst.allBindings)
+    // Build this layer's tree against the server DomEnv. Per-layer data is the
+    // seed state (signal init() takes no data); contexts captured at the parent
+    // layer's pageSlot() are replayed so providers above the slot reach here.
+    const { nodes, dispose } = renderNodes(def, seedFor(layerData), env, currentSlotContexts)
+    disposers.push(dispose)
 
     if (i === 0) {
       outermostNodes = nodes
     } else {
-      // Insert this layer's nodes as siblings immediately after the
-      // anchor comment, then place an end sentinel after them.
-      // The anchor is already attached to the composed DOM tree (it was
-      // produced by the previous layer's pageSlot() call). We insert
-      // before the anchor's next sibling so nodes land right after the
-      // anchor, preserving any trailing siblings that may exist.
       if (!currentSlotAnchor) {
         // Unreachable given the error checks below, but defensive.
         throw new Error(`[llui/vike] internal: chain layer ${i} (<${def.name}>) has no slot anchor`)
@@ -261,23 +263,23 @@ export function _renderChain(
           `[llui/vike] internal: slot anchor for layer ${i} (<${def.name}>) is detached`,
         )
       }
-      // insertPoint is the node currently after the anchor; inserting
-      // before it keeps all new nodes in order immediately after anchor.
+      // Insert this layer's nodes immediately after the anchor, then an end
+      // sentinel — preserving any trailing siblings of the anchor.
       const insertPoint = currentSlotAnchor.nextSibling
       for (const node of nodes) {
         parentNode.insertBefore(node, insertPoint)
       }
-      // Synthesize an end sentinel that brackets the owned region.
       const endSentinel = env.createComment('llui-mount-end')
       parentNode.insertBefore(endSentinel, insertPoint)
     }
 
-    // Record this layer's state in the envelope. Page goes under
-    // `page`, everything else under `layouts[]` ordered outer-to-inner.
+    // Record this layer's seed state in the envelope. Page goes under `page`,
+    // everything else under `layouts[]` ordered outer-to-inner.
+    const layerState = seedFor(layerData) ?? normalizeInitState(def)
     if (isInnermost) {
-      envelopePage = { name: def.name, state: initialState }
+      envelopePage = { name: def.name ?? 'Page', state: layerState }
     } else {
-      envelopeLayouts.push({ name: def.name, state: initialState })
+      envelopeLayouts.push({ name: def.name ?? 'Layout', state: layerState })
     }
 
     // Consume this layer's pending slot registration (if any). Every
@@ -298,10 +300,13 @@ export function _renderChain(
     }
 
     currentSlotAnchor = slot?.anchor ?? null
-    currentSlotScope = slot?.slotLifetime
+    currentSlotContexts = slot?.contexts
   }
 
-  const html = serializeNodes(outermostNodes, allBindings)
+  const html = serializeNodes(outermostNodes)
+
+  // Dispose every layer's build now that the composed tree is serialized.
+  for (const d of disposers) d()
 
   if (envelopePage === null) {
     // Unreachable — chain is non-empty so the last iteration sets this.
@@ -315,4 +320,14 @@ export function _renderChain(
       page: envelopePage,
     },
   }
+}
+
+/** The seed state a layer's `init()` produces (used for the envelope when no
+ * data slice overrides it). `init()` may return `S` or `[S, E[]]`. */
+function normalizeInitState(def: AnyLayer): unknown {
+  const r = def.init()
+  if (Array.isArray(r) && r.length === 2 && Array.isArray((r as [unknown, unknown[]])[1])) {
+    return (r as [unknown, unknown[]])[0]
+  }
+  return r
 }

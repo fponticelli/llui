@@ -85,11 +85,18 @@ export function renderNodes<S, M, E>(
   def: SignalComponentDef<S, M, E>,
   initialState: S | undefined,
   env: ServerDoc,
+  // Adapter seed: context values to expose at the root of this build (see
+  // `renderSignalTree`). `@llui/vike` replays a layout's in-scope contexts here
+  // so a nested page renders against providers that live above its slot.
+  contexts?: ReadonlyMap<symbol, unknown>,
 ): { nodes: readonly Node[]; dispose: () => void } {
   const [seed] = normalizeInit(def, initialState)
   const handle = pathHandle<S>(() => seed, '')
   const noopSend = (): void => {}
-  const tree = renderSignalTree(env, seed, () => def.view({ state: handle, send: noopSend }))
+  const tree = renderSignalTree(env, () => def.view({ state: handle, send: noopSend }), contexts)
+  // Mount on the detached tree to bake initial values into the serialized HTML
+  // (SSR has no live document; onMount/portal effects are intentionally skipped).
+  tree.mount(seed)
   return {
     nodes: tree.nodes,
     dispose: () => {

@@ -79,6 +79,20 @@ function requireCtx(): BuildCtx {
   return ctx
 }
 
+/** Adapter hook (`@llui/vike`): the build currently in progress, or null when
+ * called outside a signal build. Exposes the build's `doc` (to create anchor
+ * nodes that belong to the same document as the surrounding tree) and a SNAPSHOT
+ * of the context values in scope at the call site (so an adapter that mounts a
+ * NESTED build in a separate pass can replay them via `runBuild`'s `seedContexts`
+ * / the `contexts` mount option). Returns a fresh snapshot map — safe to retain. */
+export function __currentBuildInfo(): {
+  doc: SignalDoc
+  contexts: ReadonlyMap<symbol, unknown>
+} | null {
+  if (!ctx) return null
+  return { doc: ctx.doc, contexts: new Map(ctx.contexts) }
+}
+
 /** A reactive text node bound to a signal accessor. */
 export function signalText(produce: Producer, deps: readonly string[]): Text {
   const c = requireCtx()
@@ -184,6 +198,11 @@ function runBuild(
   // module `ctx` is null), so they pass their captured build-time ctx here to
   // keep context values and the descriptor registry flowing into nested builds.
   inherit?: BuildCtx,
+  // Adapter seed: context values to make visible at the ROOT of this build, even
+  // though no parent build is on the stack. `@llui/vike` captures the layout's
+  // in-scope contexts at a `pageSlot()` and replays them here so contexts
+  // provided ABOVE a slot reach the nested page's SEPARATE build/mount pass.
+  seedContexts?: ReadonlyMap<symbol, unknown>,
 ): {
   nodes: readonly Node[]
   specs: BindingSpec[]
@@ -199,8 +218,9 @@ function runBuild(
   const teardowns: Array<() => void> = []
   const mounts: Array<(root: Element) => void | (() => void)> = []
   // inherit in-scope context values so provide() above an each/show is visible
-  // inside its rows/arms (which build in this nested context).
-  const contexts = new Map(parent?.contexts)
+  // inside its rows/arms (which build in this nested context). Seeded adapter
+  // contexts apply only when there's no parent build to inherit from.
+  const contexts = new Map(parent?.contexts ?? seedContexts)
   // SHARE the descriptor registry by reference (root one if present) so row/arm
   // registrations and decrements land in the component's single registry.
   const descriptors = parent?.descriptors ?? new Map<string, number>()
@@ -726,22 +746,101 @@ export interface SignalMount {
   getDescriptors(): Array<{ variant: string }>
 }
 
+/** Where a `mountSignal` call attaches its built nodes. A `container` element
+ * (the common case — append, or replace its children on hydration) OR an
+ * `anchor` comment, for adapters like `@llui/vike` that mount a nested layer as
+ * siblings of a slot anchor without owning the parent element. The owned region
+ * is bracketed by the anchor and a synthesized end sentinel; `dispose()` removes
+ * exactly that region (leaving the anchor + outer siblings intact). */
+export type MountTarget =
+  | { container: Element; mode?: 'append' | 'replace' }
+  // `mode: 'replace'` (hydration) first removes any existing server region
+  // between the anchor and the next `llui-mount-end` sentinel, then mounts fresh
+  // — mirroring container hydration's atomic swap (no claim of server nodes).
+  | { anchor: Comment; mode?: 'append' | 'replace' }
+
 /**
- * Mount a signal view into `container`: build the nodes (collecting bindings),
- * append them, and wire a chunked-mask reconciler over the collected bindings.
+ * Mount a signal view: build the nodes (collecting bindings), attach them at the
+ * target, and wire a chunked-mask reconciler over the collected bindings.
+ *
+ * For a `container` target, 'append' (fresh mount) leaves existing children and
+ * 'replace' swaps server HTML out atomically (hydration). For an `anchor` target,
+ * the nodes are inserted immediately after the anchor comment and bracketed by a
+ * synthesized end sentinel — `dispose()` removes that bracketed region.
+ *
+ * `seedContexts` seeds the build's root context values (see `runBuild`); used by
+ * adapters mounting a nested build whose providers live in a different pass.
  */
 export function mountSignal(
-  container: Element,
+  target: Element | MountTarget,
   initial: unknown,
   build: () => readonly Node[],
-  // 'append' (fresh mount) leaves any existing children; 'replace' swaps server
-  // HTML out atomically (hydration — build client DOM, then one replaceChildren).
-  mode: 'append' | 'replace' = 'append',
+  modeOrSeed?: 'append' | 'replace' | ReadonlyMap<symbol, unknown>,
+  seedContexts?: ReadonlyMap<symbol, unknown>,
 ): SignalMount {
-  const built = renderSignalTree(container.ownerDocument, initial, build)
-  if (mode === 'replace') container.replaceChildren(...built.nodes)
+  // Back-compat positional form: mountSignal(container, initial, build, mode).
+  const t: MountTarget =
+    target instanceof Object && 'container' in target
+      ? target
+      : target instanceof Object && 'anchor' in target
+        ? target
+        : { container: target as Element, mode: (modeOrSeed as 'append' | 'replace') ?? 'append' }
+  const seed = modeOrSeed instanceof Map ? modeOrSeed : seedContexts
+
+  if ('anchor' in t) {
+    const anchor = t.anchor
+    const doc = anchor.ownerDocument as unknown as SignalDoc
+    const built = renderSignalTree(doc, build, seed)
+    const parent = anchor.parentNode
+    if (!parent) throw new Error('mountSignal: anchor comment is not attached to a parent')
+    // Hydration: drop the server-rendered region (anchor → existing end sentinel)
+    // before inserting the fresh client tree — same no-claim swap as containers.
+    if (t.mode === 'replace') {
+      let n = anchor.nextSibling
+      while (n && !(n.nodeType === 8 && (n as Comment).data === 'llui-mount-end')) {
+        const next = n.nextSibling
+        parent.removeChild(n)
+        n = next
+      }
+      if (n) parent.removeChild(n) // the stale end sentinel
+    }
+    const end = doc.createComment('llui-mount-end')
+    const insertPoint = anchor.nextSibling
+    for (const n of built.nodes) parent.insertBefore(n, insertPoint)
+    parent.insertBefore(end, insertPoint)
+    // Insert FIRST, then mount (structural reconcile + binding commits) so onMount
+    // / portal / focus work see attached nodes; then run onMount callbacks.
+    built.mount(initial)
+    runMounts(built.mounts, parent as Element, built.teardowns)
+    let cur = initial
+    return {
+      update(next: unknown): void {
+        built.scope.update(cur, next)
+        cur = next
+      },
+      dispose(): void {
+        for (const tdn of built.teardowns.splice(0)) tdn()
+        // remove the owned region: every node between anchor and end (exclusive).
+        let n = anchor.nextSibling
+        while (n && n !== end) {
+          const next = n.nextSibling
+          parent.removeChild(n)
+          n = next
+        }
+        if (end.parentNode === parent) parent.removeChild(end)
+      },
+      getDescriptors: built.getDescriptors,
+    }
+  }
+
+  const container = t.container
+  const built = renderSignalTree(container.ownerDocument, build, seed)
+  if (t.mode === 'replace') container.replaceChildren(...built.nodes)
   else for (const n of built.nodes) container.appendChild(n)
 
+  // Insert FIRST, then mount (binding commits + first structural reconcile) so
+  // show/each content + onMount focus/portal see attached nodes; then onMount.
+  built.mount(initial)
   runMounts(built.mounts, container, built.teardowns) // onMount(root) after insert
   let cur = initial
   return {
@@ -750,34 +849,39 @@ export function mountSignal(
       cur = next
     },
     dispose(): void {
-      for (const t of built.teardowns.splice(0)) t()
+      for (const tdn of built.teardowns.splice(0)) tdn()
     },
     getDescriptors: built.getDescriptors,
   }
 }
 
-/** The shared build core: run the view build against `doc`, wire the scope, and
- * apply the initial state — WITHOUT attaching to any container. `mountSignal`
- * inserts the nodes into the live DOM; SSR serializes them; hydration swaps them
- * in. The returned nodes are detached; `mounts` still need `runMounts` once the
- * nodes are in a document (mountSignal/hydration do this; SSR skips it). */
+/** The shared build core: run the view build against `doc` and wire the scope —
+ * WITHOUT attaching to any container or applying the initial state. The returned
+ * `mount(state)` runs the binding commits (and the first structural reconcile,
+ * which inserts `show`/`each` content and registers onMount work); callers MUST
+ * insert `nodes` into the live document BEFORE calling `mount` so onMount focus /
+ * portal / dismissable behavior sees attached nodes — except SSR, which mounts a
+ * detached tree purely to bake initial values into the serialized HTML. */
 export function renderSignalTree(
   doc: SignalDoc,
-  initial: unknown,
   build: () => readonly Node[],
+  // Adapter seed (see `runBuild`): context values to expose at the root of this
+  // build when no surrounding build provides them (`@llui/vike` slot replay).
+  seedContexts?: ReadonlyMap<symbol, unknown>,
 ): {
   nodes: readonly Node[]
   scope: SignalScope
+  mount: (state: unknown) => void
   teardowns: Array<() => void>
   mounts: Array<(root: Element) => void | (() => void)>
   getDescriptors: () => Array<{ variant: string }>
 } {
-  const built = runBuild(doc, build)
+  const built = runBuild(doc, build, undefined, seedContexts)
   const scope = buildAndPublishScope(built)
-  scope.mount(initial)
   return {
     nodes: built.nodes,
     scope,
+    mount: (state: unknown) => scope.mount(state),
     teardowns: built.teardowns,
     mounts: built.mounts,
     getDescriptors: () => {

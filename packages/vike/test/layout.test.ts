@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest'
+import { browserEnv } from '@llui/dom/ssr'
 import {
   component,
   div,
@@ -8,9 +9,8 @@ import {
   provide,
   useContext,
   createContext,
-  browserEnv,
-} from '@llui/dom'
-import type { ComponentDef } from '@llui/dom'
+} from '@llui/dom/signals'
+import type { SignalComponentDef } from '@llui/dom/signals'
 import { createOnRenderClient, pageSlot, _resetChainForTest } from '../src/on-render-client'
 import { createOnRenderHtml } from '../src/on-render-html'
 
@@ -47,30 +47,33 @@ interface AuthDispatchers {
   getSession: () => string
 }
 
-const AuthContext = createContext<AuthDispatchers>(undefined, 'AuthContext')
+const AuthContext = createContext<AuthDispatchers | null>(null, 'AuthContext')
 
-function makeAppLayout(): ComponentDef<LayoutState, LayoutMsg, never> {
+function makeAppLayout(): SignalComponentDef<LayoutState, LayoutMsg, never> {
   return {
     name: 'AppLayout',
-    init: () => [{ session: 'anonymous' }, []],
+    init: () => ({ session: 'anonymous' }),
     update: (state, msg) => {
       switch (msg.type) {
         case 'login':
-          return [{ session: 'alice' }, []]
+          return { session: 'alice' }
         case 'logout':
-          return [{ session: 'anonymous' }, []]
+          return { session: 'anonymous' }
       }
     },
+    // The provided value is the dispatcher object directly — it closes over the
+    // layout's `send` from the bag. Signal `provide` takes a static value (not a
+    // function of state).
     view: ({ send }) => [
       div({ class: 'app-shell' }, [
         header({ class: 'app-header' }, [text('Header')]),
-        ...provide(
+        provide(
           AuthContext,
-          (_s: LayoutState): AuthDispatchers => ({
+          {
             login: () => send({ type: 'login' }),
             logout: () => send({ type: 'logout' }),
             getSession: () => 'DELIVERED-BY-CONTEXT',
-          }),
+          },
           () => [main({ class: 'app-main' }, [pageSlot()])],
         ),
       ]),
@@ -80,11 +83,11 @@ function makeAppLayout(): ComponentDef<LayoutState, LayoutMsg, never> {
 
 // Inner layout for the 3-layer nested test. Wraps a page with its own
 // shell, declares a slot of its own.
-function makeDashboardLayout(): ComponentDef<{ active: string }, never, never> {
+function makeDashboardLayout(): SignalComponentDef<{ active: string }, never, never> {
   return {
     name: 'DashboardLayout',
-    init: () => [{ active: 'reports' }, []],
-    update: (s) => [s, []],
+    init: () => ({ active: 'reports' }),
+    update: (s) => s,
     view: () => [
       div({ class: 'dashboard' }, [
         div({ class: 'dashboard-sidebar' }, [text('Sidebar')]),
@@ -96,16 +99,16 @@ function makeDashboardLayout(): ComponentDef<{ active: string }, never, never> {
 
 // Page A — reads the AuthContext and emits its resolved value into the
 // DOM so tests can assert the context value reached the page.
-function makeReportsPage(): ComponentDef<{ view: string }, never, never> {
+function makeReportsPage(): SignalComponentDef<{ view: string }, never, never> {
   return {
     name: 'ReportsPage',
-    init: () => [{ view: 'summary' }, []],
-    update: (s) => [s, []],
+    init: () => ({ view: 'summary' }),
+    update: (s) => s,
     view: () => {
       const auth = useContext(AuthContext)
       return [
         div({ class: 'reports-page' }, [
-          div({ class: 'ctx-probe' }, [text(() => auth({} as LayoutState).getSession())]),
+          div({ class: 'ctx-probe' }, [text(auth ? auth.getSession() : 'NO-CONTEXT')]),
           div({ class: 'page-name' }, [text('Reports')]),
         ]),
       ]
@@ -114,11 +117,11 @@ function makeReportsPage(): ComponentDef<{ view: string }, never, never> {
 }
 
 // Page B — distinct from ReportsPage so nav between them is a real swap.
-function makeSettingsPage(): ComponentDef<{ tab: string }, never, never> {
+function makeSettingsPage(): SignalComponentDef<{ tab: string }, never, never> {
   return {
     name: 'SettingsPage',
-    init: () => [{ tab: 'general' }, []],
-    update: (s) => [s, []],
+    init: () => ({ tab: 'general' }),
+    update: (s) => s,
     view: () => [
       div({ class: 'settings-page' }, [div({ class: 'page-name' }, [text('Settings')])]),
     ],
@@ -346,10 +349,10 @@ describe('persistent layouts — SSR chain render', () => {
   })
 
   it('throws when a non-innermost layer forgets to call pageSlot()', async () => {
-    const BadLayout: ComponentDef<{}, never, never> = {
+    const BadLayout: SignalComponentDef<Record<string, never>, never, never> = {
       name: 'BadLayout',
-      init: () => [{}, []],
-      update: (s) => [s, []],
+      init: () => ({}),
+      update: (s) => s,
       view: () => [div({ class: 'bad' }, [text('no slot here')])],
     }
     const ReportsPage = makeReportsPage()
@@ -359,10 +362,10 @@ describe('persistent layouts — SSR chain render', () => {
   })
 
   it('throws when the innermost page calls pageSlot()', async () => {
-    const BadPage: ComponentDef<{}, never, never> = {
+    const BadPage: SignalComponentDef<Record<string, never>, never, never> = {
       name: 'BadPage',
-      init: () => [{}, []],
-      update: (s) => [s, []],
+      init: () => ({}),
+      update: (s) => s,
       view: () => [div({ class: 'bad-page' }, [pageSlot()])],
     }
     const AppLayout = makeAppLayout()

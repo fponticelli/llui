@@ -38,6 +38,8 @@ export {
   type Context,
   mountSignal,
   __registerScopeVariants,
+  __currentBuildInfo,
+  type MountTarget,
   type PropValue,
   type EventHandler,
   type EachSource,

@@ -7,8 +7,9 @@ import {
   fromTransition,
   _resetChainForTest,
 } from '../src/on-render-client'
-import type { TransitionOptions } from '@llui/dom'
-import { component, div, text, browserEnv } from '@llui/dom'
+import { browserEnv } from '@llui/dom/ssr'
+import type { TransitionOptions } from '@llui/dom/signals'
+import { component, div, text } from '@llui/dom/signals'
 
 const env = browserEnv()
 const domEnv = () => env
@@ -17,21 +18,21 @@ type State = { greeting: string }
 
 const TestPage = component<State, never, never>({
   name: 'TestPage',
-  init: () => [{ greeting: 'hello' }, []],
-  update: (s) => [s, []],
-  view: () => [div({ class: 'page' }, [text((s: State) => s.greeting)])],
+  init: () => ({ greeting: 'hello' }),
+  update: (s) => s,
+  view: ({ state }) => [div({ class: 'page' }, [text(state.map((s) => s.greeting))])],
 })
 
 // Distinct second page for nav-lifecycle tests. The page always
 // disposes and remounts on navigation regardless of def identity, but
 // using a different def here makes the lifecycle assertions unambiguous
 // — observed DOM changes and state transitions are clearly attributable
-// to the swap rather than to a chance match of `ComponentDef` refs.
+// to the swap rather than to a chance match of def refs.
 const OtherPage = component<State, never, never>({
   name: 'OtherPage',
-  init: () => [{ greeting: 'hello again' }, []],
-  update: (s) => [s, []],
-  view: () => [div({ class: 'page' }, [text((s: State) => s.greeting)])],
+  init: () => ({ greeting: 'hello again' }),
+  update: (s) => s,
+  view: ({ state }) => [div({ class: 'page' }, [text(state.map((s) => s.greeting))])],
 })
 
 /** Extract the HTML string from the result (handles dangerouslySkipEscape format) */
@@ -71,12 +72,15 @@ describe('onRenderHtml', () => {
     })
   })
 
-  it('passes data to init', async () => {
+  it('uses the per-layer data slice as the seed state', async () => {
+    // In the signal runtime init() takes no data; the adapter uses the data
+    // slice directly as the seed STATE when present. So `data` flows in as the
+    // page's initial state and renders accordingly.
     const WithData = component<{ name: string }, never, never>({
       name: 'WithData',
-      init: (data) => [{ name: (data as { name: string })?.name ?? 'default' }, []],
-      update: (s) => [s, []],
-      view: () => [text((s: { name: string }) => s.name)],
+      init: () => ({ name: 'default' }),
+      update: (s) => s,
+      view: ({ state }) => [text(state.map((s) => s.name))],
     })
 
     const result = await onRenderHtml({ Page: WithData, data: { name: 'Franco' } })
@@ -384,14 +388,14 @@ describe('createOnRenderClient — same Page def across routes', () => {
 
   type DocState = { title: string; body: string }
 
-  const DocPage = component<DocState, never, never, DocState>({
+  const DocPage = component<DocState, never, never>({
     name: 'DocPage',
-    init: (data) => [data, []],
-    update: (s) => [s, []],
-    view: ({ text }) => [
+    init: () => ({ title: '', body: '' }),
+    update: (s) => s,
+    view: ({ state }) => [
       div({ class: 'doc' }, [
-        div({ class: 'title' }, [text((s: DocState) => s.title)]),
-        div({ class: 'body' }, [text((s: DocState) => s.body)]),
+        div({ class: 'title' }, [text(state.map((s) => s.title))]),
+        div({ class: 'body' }, [text(state.map((s) => s.body))]),
       ]),
     ],
   })

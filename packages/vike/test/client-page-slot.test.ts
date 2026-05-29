@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, beforeEach } from 'vitest'
-import { component, div, text } from '@llui/dom'
+import { component, div, text } from '@llui/dom/signals'
 import { pageSlot } from '../src/page-slot.js'
 import {
   createOnRenderClient,
@@ -14,27 +14,27 @@ type LayoutS = { count: number }
 type LayoutM = { type: 'lc' }
 const Layout = component<LayoutS, LayoutM, never>({
   name: 'TestLayout',
-  init: () => [{ count: 0 }, []],
-  update: (s) => [s, []],
-  view: ({ text: t }) => [
-    div({ class: 'shell' }, [t((s: LayoutS) => 'L:' + s.count), ...pageSlot()]),
+  init: () => ({ count: 0 }),
+  update: (s) => s,
+  view: ({ state }) => [
+    div({ class: 'shell' }, [text(state.map((s) => 'L:' + s.count)), pageSlot()]),
   ],
 })
 
 type PageAS = { title: string }
 const PageA = component<PageAS, never, never>({
   name: 'PageA',
-  init: () => [{ title: 'a' }, []],
-  update: (s) => [s, []],
-  view: ({ text: t }) => [div({ class: 'page-a' }, [t((s: PageAS) => s.title)])],
+  init: () => ({ title: 'a' }),
+  update: (s) => s,
+  view: ({ state }) => [div({ class: 'page-a' }, [text(state.map((s) => s.title))])],
 })
 
 type PageBS = { title: string }
 const PageB = component<PageBS, never, never>({
   name: 'PageB',
-  init: () => [{ title: 'b' }, []],
-  update: (s) => [s, []],
-  view: ({ text: t }) => [div({ class: 'page-b' }, [t((s: PageBS) => s.title)])],
+  init: () => ({ title: 'b' }),
+  update: (s) => s,
+  view: ({ state }) => [div({ class: 'page-b' }, [text(state.map((s) => s.title))])],
 })
 
 // Helper: find a Comment node by its nodeValue anywhere in a subtree.

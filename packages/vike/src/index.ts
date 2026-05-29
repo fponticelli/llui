@@ -4,9 +4,15 @@ export type {
   DocumentContext,
   RenderHtmlResult,
   RenderHtmlOptions,
+  AnyLayer,
 } from './on-render-html.js'
 
-export { onRenderClient, createOnRenderClient, fromTransition } from './on-render-client.js'
-export type { ClientPageContext, RenderClientOptions } from './on-render-client.js'
+export {
+  onRenderClient,
+  createOnRenderClient,
+  fromTransition,
+  getLayoutChain,
+} from './on-render-client.js'
+export type { ClientPageContext, RenderClientOptions, LayerHandle } from './on-render-client.js'
 
 export { pageSlot } from './page-slot.js'

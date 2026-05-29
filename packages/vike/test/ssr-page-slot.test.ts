@@ -1,7 +1,8 @@
 // @vitest-environment jsdom
 import { describe, it, expect } from 'vitest'
-import { component, div, text, renderNodes, browserEnv } from '@llui/dom'
-import type { ComponentDef } from '@llui/dom'
+import { browserEnv } from '@llui/dom/ssr'
+import { component, div, text, renderNodes } from '@llui/dom/signals'
+import type { SignalComponentDef } from '@llui/dom/signals'
 import { pageSlot } from '../src/page-slot.js'
 import { _renderChain } from '../src/on-render-html.js'
 
@@ -10,38 +11,38 @@ const env = browserEnv()
 // ──── Fixtures ────
 
 type LayoutState = { title: string }
-function makeSimpleLayout(): ComponentDef<LayoutState, never, never> {
+function makeSimpleLayout(): SignalComponentDef<LayoutState, never, never> {
   return {
     name: 'SimpleLayout',
-    init: () => [{ title: 'My Site' }, []],
-    update: (s) => [s, []],
-    view: () => [
+    init: () => ({ title: 'My Site' }),
+    update: (s) => s,
+    view: ({ state }) => [
       div({ class: 'layout' }, [
-        div({ class: 'header' }, [text((s: LayoutState) => s.title)]),
-        div({ class: 'content' }, [...pageSlot()]),
+        div({ class: 'header' }, [text(state.map((s) => s.title))]),
+        div({ class: 'content' }, [pageSlot()]),
       ]),
     ],
   }
 }
 
 type PageState = { label: string }
-function makeSimplePage(): ComponentDef<PageState, never, never> {
+function makeSimplePage(): SignalComponentDef<PageState, never, never> {
   return {
     name: 'SimplePage',
-    init: () => [{ label: 'hello' }, []],
-    update: (s) => [s, []],
-    view: () => [div({ class: 'page' }, [text((s: PageState) => s.label)])],
+    init: () => ({ label: 'hello' }),
+    update: (s) => s,
+    view: ({ state }) => [div({ class: 'page' }, [text(state.map((s) => s.label))])],
   }
 }
 
 // Minimal layout that only emits the slot (no wrapping element), so we
 // can inspect sibling structure directly.
-function makeSlotOnlyLayout(): ComponentDef<{}, never, never> {
+function makeSlotOnlyLayout(): SignalComponentDef<Record<string, never>, never, never> {
   return {
     name: 'SlotOnlyLayout',
-    init: () => [{}, []],
-    update: (s) => [s, []],
-    view: () => [...pageSlot()],
+    init: () => ({}),
+    update: (s) => s,
+    view: () => [pageSlot()],
   }
 }
 
@@ -50,12 +51,10 @@ function makeSlotOnlyLayout(): ComponentDef<{}, never, never> {
 describe('pageSlot() node shape', () => {
   it('returns a Comment node with nodeValue "llui-page-slot"', () => {
     const Layout = makeSlotOnlyLayout()
-    const [initialState] = Layout.init(undefined)
-    const { nodes } = renderNodes(
-      Layout as unknown as Parameters<typeof renderNodes>[0],
-      initialState,
-      env,
-    )
+    // renderNodes runs the layout's view inside a signal build, so pageSlot()
+    // can read the in-progress build via __currentBuildInfo() and emit its
+    // anchor comment. Pass undefined for state → init() provides the seed.
+    const { nodes } = renderNodes(Layout, undefined, env)
 
     // The slot-only layout's view returns exactly the pageSlot() result.
     // We expect a single Comment node.
@@ -87,18 +86,21 @@ describe('_renderChain — two-layer render', () => {
     expect(pagePos).toBeLessThan(endPos)
   })
 
-  it('places data-llui-hydrate on binding-carrying elements across the composed tree', () => {
+  it('serializes both layers dynamic content into the composed tree (no hydrate markers)', () => {
+    // Signal hydration rebuilds the deterministic tree client-side and swaps it
+    // in atomically — it does NOT claim server nodes, so the serializer emits
+    // PLAIN HTML with no `data-llui-hydrate` markers (the legacy claim-marker
+    // approach is gone). The composed tree must still carry both layers'
+    // dynamically-bound text, rendered against their seed state.
     const Layout = makeSimpleLayout()
     const Page = makeSimplePage()
 
     const { html } = _renderChain([Layout, Page], [undefined, undefined], env)
 
-    // Both the layout header (has a dynamic text binding) and the page
-    // div (has a dynamic text binding) should carry the hydrate marker.
-    const headerHydrate = html.match(/<div[^>]*class="header"[^>]*data-llui-hydrate[^>]*>/)
-    const pageHydrate = html.match(/<div[^>]*class="page"[^>]*data-llui-hydrate[^>]*>/)
-
-    expect(headerHydrate, 'layout header should have data-llui-hydrate').not.toBeNull()
-    expect(pageHydrate, 'page div should have data-llui-hydrate').not.toBeNull()
+    // Layout header dynamic text and page div dynamic text both appear.
+    expect(html).toContain('<div class="header">My Site</div>')
+    expect(html).toContain('<div class="page">hello</div>')
+    // No claim markers in the signal serializer output.
+    expect(html).not.toContain('data-llui-hydrate')
   })
 })

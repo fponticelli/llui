@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest'
-import { component, div } from '@llui/dom'
-import type { ComponentDef } from '@llui/dom'
+import { component, div, text } from '@llui/dom/signals'
+import type { SignalComponentDef } from '@llui/dom/signals'
 import { createOnRenderClient, _resetChainForTest } from '../src/on-render-client'
 import { pageSlot } from '../src/page-slot'
 
@@ -12,43 +12,40 @@ import { pageSlot } from '../src/page-slot'
 // with on first mount — pathname, breadcrumbs, session, nav-highlight
 // state all stale.
 
-interface NavData {
-  pathname: string
-  user: string | null
-}
-
-type LayoutState = {
+// In the signal runtime a layer's state IS its seed: the adapter uses the
+// `lluiLayoutData[i]` slice directly as the layout's initial state, so the data
+// carries the full state shape (including navUpdates). State updates on surviving
+// layers flow in via the adapter's `onLayerDataChange` callback (wired below),
+// which dispatches a `navChanged` message; the reducer increments navUpdates.
+type NavData = {
   pathname: string
   user: string | null
   navUpdates: number
 }
 
+type LayoutState = NavData
+
 type LayoutMsg = { type: 'navChanged'; data: NavData }
 
-// Layout def. State updates flow in via the adapter's
-// `onLayerDataChange` callback, which the test wires below.
-const NavAwareLayout: ComponentDef<LayoutState, LayoutMsg, never, NavData> = {
+const NavAwareLayout: SignalComponentDef<LayoutState, LayoutMsg, never> = {
   name: 'NavAwareLayout',
-  init: (data) => [{ pathname: data.pathname, user: data.user, navUpdates: 0 }, []],
+  init: () => ({ pathname: '', user: null, navUpdates: 0 }),
   update: (state, msg) => {
     switch (msg.type) {
       case 'navChanged':
-        return [
-          {
-            pathname: msg.data.pathname,
-            user: msg.data.user,
-            navUpdates: state.navUpdates + 1,
-          },
-          [],
-        ]
+        return {
+          pathname: msg.data.pathname,
+          user: msg.data.user,
+          navUpdates: state.navUpdates + 1,
+        }
     }
   },
-  view: ({ text }) => [
+  view: ({ state }) => [
     div({ class: 'layout' }, [
-      div({ class: 'layout-pathname' }, [text((s) => s.pathname)]),
-      div({ class: 'layout-user' }, [text((s) => s.user ?? 'guest')]),
-      div({ class: 'layout-update-count' }, [text((s) => String(s.navUpdates))]),
-      div({ class: 'page-slot' }, [...pageSlot()]),
+      div({ class: 'layout-pathname' }, [text(state.map((s) => s.pathname))]),
+      div({ class: 'layout-user' }, [text(state.map((s) => s.user ?? 'guest'))]),
+      div({ class: 'layout-update-count' }, [text(state.map((s) => String(s.navUpdates)))]),
+      div({ class: 'page-slot' }, [pageSlot()]),
     ]),
   ],
 }
@@ -56,12 +53,12 @@ const NavAwareLayout: ComponentDef<LayoutState, LayoutMsg, never, NavData> = {
 // Layout for the "no callback registered" case — proves the
 // surviving-layer update path silently skips when the adapter has no
 // onLayerDataChange option configured.
-const StaticLayout: ComponentDef<{ value: string }, never, never, { value: string }> = {
+const StaticLayout: SignalComponentDef<{ value: string }, never, never> = {
   name: 'StaticLayout',
-  init: (data) => [{ value: data.value }, []],
-  update: (s) => [s, []],
-  view: ({ text }) => [
-    div({ class: 'static-layout' }, [text((s) => s.value), div([...pageSlot()])]),
+  init: () => ({ value: '' }),
+  update: (s) => s,
+  view: ({ state }) => [
+    div({ class: 'static-layout' }, [text(state.map((s) => s.value)), div([pageSlot()])]),
   ],
 }
 
@@ -81,16 +78,16 @@ const navAwareDispatch = ({
 
 const PageA = component<{ tag: string }, never, never>({
   name: 'PageA',
-  init: () => [{ tag: 'A' }, []],
-  update: (s) => [s, []],
-  view: ({ text }) => [div({ class: 'page-a' }, [text((s) => s.tag)])],
+  init: () => ({ tag: 'A' }),
+  update: (s) => s,
+  view: ({ state }) => [div({ class: 'page-a' }, [text(state.map((s) => s.tag))])],
 })
 
 const PageB = component<{ tag: string }, never, never>({
   name: 'PageB',
-  init: () => [{ tag: 'B' }, []],
-  update: (s) => [s, []],
-  view: ({ text }) => [div({ class: 'page-b' }, [text((s) => s.tag)])],
+  init: () => ({ tag: 'B' }),
+  update: (s) => s,
+  view: ({ state }) => [div({ class: 'page-b' }, [text(state.map((s) => s.tag))])],
 })
 
 describe('persistent layouts — surviving-layer prop updates', () => {
@@ -113,7 +110,7 @@ describe('persistent layouts — surviving-layer prop updates', () => {
     // to diff against; init() handles the initial population.
     await render({
       Page: PageA,
-      lluiLayoutData: [{ pathname: '/home', user: null }],
+      lluiLayoutData: [{ pathname: '/home', user: null, navUpdates: 0 }],
       isHydration: false,
     })
     expect(document.querySelector('.layout-pathname')!.textContent).toBe('/home')
@@ -128,7 +125,7 @@ describe('persistent layouts — surviving-layer prop updates', () => {
     // through the layout's send.
     await render({
       Page: PageB,
-      lluiLayoutData: [{ pathname: '/studio', user: 'alice' }],
+      lluiLayoutData: [{ pathname: '/studio', user: 'alice', navUpdates: 0 }],
       isHydration: false,
     })
 
@@ -149,7 +146,7 @@ describe('persistent layouts — surviving-layer prop updates', () => {
 
     await render({
       Page: PageA,
-      lluiLayoutData: [{ pathname: '/home', user: null }],
+      lluiLayoutData: [{ pathname: '/home', user: null, navUpdates: 0 }],
       isHydration: false,
     })
     expect(document.querySelector('.layout-update-count')!.textContent).toBe('0')
@@ -159,7 +156,7 @@ describe('persistent layouts — surviving-layer prop updates', () => {
     // because pathname and user both match.
     await render({
       Page: PageB,
-      lluiLayoutData: [{ pathname: '/home', user: null }],
+      lluiLayoutData: [{ pathname: '/home', user: null, navUpdates: 0 }],
       isHydration: false,
     })
 
@@ -178,12 +175,12 @@ describe('persistent layouts — surviving-layer prop updates', () => {
 
     await render({
       Page: PageA,
-      lluiLayoutData: [{ pathname: '/a', user: null }],
+      lluiLayoutData: [{ pathname: '/a', user: null, navUpdates: 0 }],
       isHydration: false,
     })
     await render({
       Page: PageB,
-      lluiLayoutData: [{ pathname: '/b', user: null }],
+      lluiLayoutData: [{ pathname: '/b', user: null, navUpdates: 0 }],
       isHydration: false,
     })
     // Update count is 1 after the first nav (a → b)
@@ -194,7 +191,7 @@ describe('persistent layouts — surviving-layer prop updates', () => {
     // updated to /b on the second nav.
     await render({
       Page: PageA,
-      lluiLayoutData: [{ pathname: '/b', user: null }],
+      lluiLayoutData: [{ pathname: '/b', user: null, navUpdates: 0 }],
       isHydration: false,
     })
     expect(document.querySelector('.layout-update-count')!.textContent).toBe('1')
@@ -202,7 +199,7 @@ describe('persistent layouts — surviving-layer prop updates', () => {
     // Fourth nav: data goes /b → /c. Should fire.
     await render({
       Page: PageB,
-      lluiLayoutData: [{ pathname: '/c', user: null }],
+      lluiLayoutData: [{ pathname: '/c', user: null, navUpdates: 0 }],
       isHydration: false,
     })
     expect(document.querySelector('.layout-update-count')!.textContent).toBe('2')
@@ -249,7 +246,7 @@ describe('persistent layouts — surviving-layer prop updates', () => {
 
     await render({
       Page: PageA,
-      lluiLayoutData: [{ pathname: '/x', user: null }],
+      lluiLayoutData: [{ pathname: '/x', user: null, navUpdates: 0 }],
       isHydration: false,
     })
     expect(document.querySelector('.layout-pathname')!.textContent).toBe('/x')
@@ -258,7 +255,7 @@ describe('persistent layouts — surviving-layer prop updates', () => {
 
     await render({
       Page: PageA, // ← same page def
-      lluiLayoutData: [{ pathname: '/y', user: null }], // ← but data changed
+      lluiLayoutData: [{ pathname: '/y', user: null, navUpdates: 0 }], // ← but data changed
       isHydration: false,
     })
 
