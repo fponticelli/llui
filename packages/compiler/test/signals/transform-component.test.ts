@@ -86,6 +86,22 @@ describe('transformSignalComponentSource', () => {
       expect(out).toContain("signalText((s) => s.count, ['count'])")
     })
 
+    it('infers the component name from the binding (under metadata)', () => {
+      const out = transformSignalComponentSource(SRC, { emitAgentMetadata: true })
+      expect(out).toContain('name: "Counter"')
+    })
+
+    it('does not infer a name without opts', () => {
+      expect(transformSignalComponentSource(SRC)).not.toContain('name:')
+    })
+
+    it('does not override an author-provided name', () => {
+      const withName = SRC.replace('init:', "name: 'MyCounter', init:")
+      const out = transformSignalComponentSource(withName, { emitAgentMetadata: true })
+      expect(out).toContain("name: 'MyCounter'") // author's, verbatim
+      expect(out).not.toContain('name: "Counter"') // not the inferred one
+    })
+
     it('emits __componentMeta { file, line } in devMode', () => {
       const out = transformSignalComponentSource(SRC, { devMode: true, fileName: 'src/counter.ts' })
       expect(out).toContain('__componentMeta:')

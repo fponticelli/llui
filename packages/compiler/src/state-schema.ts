@@ -76,45 +76,64 @@ export interface StateSchema {
  *
  * Returns null if the named type isn't found or isn't a type literal.
  */
+/** Local type declarations available for reference resolution: `type X = …`
+ * aliases and `interface X { … }` member lists. */
+interface TypeScope {
+  aliases: Map<string, ts.TypeNode>
+  interfaces: Map<string, ts.NodeArray<ts.TypeElement>>
+}
+
 export function extractStateSchema(source: string, typeName = 'State'): StateSchema | null {
   const sf = ts.createSourceFile('input.ts', source, ts.ScriptTarget.Latest, true)
 
-  // Build a map of local type aliases so references like `Todo[]` resolve to
-  // the inline shape of `type Todo = { … }`.
-  const aliases = new Map<string, ts.TypeNode>()
+  // Collect local type aliases AND interfaces so references like `Todo[]` /
+  // `user: User` resolve to their inline shape, whether declared as a `type` or
+  // an `interface`.
+  const scope: TypeScope = { aliases: new Map(), interfaces: new Map() }
   for (const stmt of sf.statements) {
-    if (ts.isTypeAliasDeclaration(stmt)) {
-      aliases.set(stmt.name.text, stmt.type)
-    }
+    if (ts.isTypeAliasDeclaration(stmt)) scope.aliases.set(stmt.name.text, stmt.type)
+    else if (ts.isInterfaceDeclaration(stmt)) scope.interfaces.set(stmt.name.text, stmt.members)
   }
 
-  const stateType = aliases.get(typeName)
-  if (!stateType) return null
-  if (!ts.isTypeLiteralNode(stateType)) return null
+  // State may be a `type State = { … }` alias OR an `interface State { … }`.
+  const aliasType = scope.aliases.get(typeName)
+  const members =
+    aliasType && ts.isTypeLiteralNode(aliasType)
+      ? aliasType.members
+      : (scope.interfaces.get(typeName) ?? null)
+  if (!members) return null
 
+  return { fields: buildFields(members, scope) }
+}
+
+/** Build a field map from object-type members — shared by the top-level State,
+ * nested object literals, and interfaces. */
+function buildFields(
+  members: readonly ts.TypeElement[],
+  scope: TypeScope,
+): Record<string, StateType> {
   const fields: Record<string, StateType> = {}
-  for (const member of stateType.members) {
+  for (const member of members) {
     if (!ts.isPropertySignature(member) || !member.name || !ts.isIdentifier(member.name)) continue
     if (!member.type) {
       fields[member.name.text] = 'unknown'
       continue
     }
-    let t = resolve(member.type, aliases)
+    let t = resolve(member.type, scope)
     if (member.questionToken) t = { kind: 'optional', of: t }
     fields[member.name.text] = t
   }
-
-  return { fields }
+  return fields
 }
 
-function resolve(type: ts.TypeNode, aliases: Map<string, ts.TypeNode>): StateType {
+function resolve(type: ts.TypeNode, scope: TypeScope): StateType {
   if (type.kind === ts.SyntaxKind.StringKeyword) return 'string'
   if (type.kind === ts.SyntaxKind.NumberKeyword) return 'number'
   if (type.kind === ts.SyntaxKind.BooleanKeyword) return 'boolean'
 
   // T[]
   if (ts.isArrayTypeNode(type)) {
-    return { kind: 'array', of: resolve(type.elementType, aliases) }
+    return { kind: 'array', of: resolve(type.elementType, scope) }
   }
   // Array<T>
   if (
@@ -123,23 +142,12 @@ function resolve(type: ts.TypeNode, aliases: Map<string, ts.TypeNode>): StateTyp
     type.typeName.text === 'Array'
   ) {
     const arg = type.typeArguments?.[0]
-    return { kind: 'array', of: arg ? resolve(arg, aliases) : 'unknown' }
+    return { kind: 'array', of: arg ? resolve(arg, scope) : 'unknown' }
   }
 
   // Object literal: { foo: bar }
   if (ts.isTypeLiteralNode(type)) {
-    const fields: Record<string, StateType> = {}
-    for (const m of type.members) {
-      if (!ts.isPropertySignature(m) || !m.name || !ts.isIdentifier(m.name)) continue
-      if (!m.type) {
-        fields[m.name.text] = 'unknown'
-        continue
-      }
-      let t = resolve(m.type, aliases)
-      if (m.questionToken) t = { kind: 'optional', of: t }
-      fields[m.name.text] = t
-    }
-    return { kind: 'object', fields }
+    return { kind: 'object', fields: buildFields(type.members, scope) }
   }
 
   // Union: enum-of-strings, or general union, or T | undefined
@@ -153,7 +161,7 @@ function resolve(type: ts.TypeNode, aliases: Map<string, ts.TypeNode>): StateTyp
         ),
     )
     if (nonUndefined.length === type.types.length - 1 && nonUndefined.length === 1) {
-      return { kind: 'optional', of: resolve(nonUndefined[0]!, aliases) }
+      return { kind: 'optional', of: resolve(nonUndefined[0]!, scope) }
     }
 
     // String-literal union
@@ -172,13 +180,15 @@ function resolve(type: ts.TypeNode, aliases: Map<string, ts.TypeNode>): StateTyp
     }
 
     // General union
-    return { kind: 'union', of: type.types.map((t) => resolve(t, aliases)) }
+    return { kind: 'union', of: type.types.map((t) => resolve(t, scope)) }
   }
 
-  // Type reference: resolve via alias map if possible
+  // Type reference: resolve via the alias map OR an interface declaration.
   if (ts.isTypeReferenceNode(type) && ts.isIdentifier(type.typeName)) {
-    const aliased = aliases.get(type.typeName.text)
-    if (aliased) return resolve(aliased, aliases)
+    const aliased = scope.aliases.get(type.typeName.text)
+    if (aliased) return resolve(aliased, scope)
+    const iface = scope.interfaces.get(type.typeName.text)
+    if (iface) return { kind: 'object', fields: buildFields(iface, scope) }
   }
 
   return 'unknown'

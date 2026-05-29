@@ -118,7 +118,16 @@ export function transformSignalComponentSource(
     const existing = new Set(
       config.properties.flatMap((p) => (ts.isPropertyAssignment(p) ? [p.name.getText(sf)] : [])),
     )
-    const props = sharedMetaProps().filter((p) => !existing.has(p.split(':')[0]!.trim()))
+    const props: string[] = []
+    // infer `name` from the binding (`const Counter = component({...})`) for the
+    // debug registry / agent identity — unless the author set one.
+    if (!existing.has('name')) {
+      const decl = callNode.parent
+      if (decl && ts.isVariableDeclaration(decl) && ts.isIdentifier(decl.name)) {
+        props.push(`name: ${JSON.stringify(decl.name.text)}`)
+      }
+    }
+    props.push(...sharedMetaProps().filter((p) => !existing.has(p.split(':')[0]!.trim())))
     if (opts.devMode && opts.fileName && !existing.has('__componentMeta')) {
       const line = sf.getLineAndCharacterOfPosition(callNode.getStart(sf)).line + 1
       props.push(`__componentMeta: ${JSON.stringify({ file: opts.fileName, line })}`)
