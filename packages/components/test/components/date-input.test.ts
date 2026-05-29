@@ -1,9 +1,7 @@
 import { describe, it, expect, vi } from 'vitest'
 import { init, update, connect, parseDate, formatDate } from '../../src/components/date-input'
 import type { DateInputState } from '../../src/components/date-input'
-
-type Ctx = { d: DateInputState }
-const wrap = (d: DateInputState): Ctx => ({ d })
+import { rootSignal, read } from '../_signal'
 
 describe('parseDate', () => {
   it('parses ISO YYYY-MM-DD', () => {
@@ -111,29 +109,29 @@ describe('date-input reducer', () => {
 
 describe('date-input.connect', () => {
   it('aria-invalid reflects error', () => {
-    const p = connect<Ctx>((s) => s.d, vi.fn())
+    const p = connect(rootSignal(), vi.fn())
     const bad: DateInputState = { ...init(), error: 'invalid' }
-    expect(p.input['aria-invalid'](wrap(bad))).toBe('true')
-    expect(p.input['aria-invalid'](wrap(init()))).toBeUndefined()
+    expect(read(p.input['aria-invalid'], bad)).toBe('true')
+    expect(read(p.input['aria-invalid'], init())).toBeUndefined()
   })
 
   it('clearTrigger disabled when empty', () => {
-    const p = connect<Ctx>((s) => s.d, vi.fn())
-    expect(p.clearTrigger.disabled(wrap(init()))).toBe(true)
+    const p = connect(rootSignal(), vi.fn())
+    expect(read(p.clearTrigger.disabled, init())).toBe(true)
     const withInput: DateInputState = { ...init(), input: '2024-01-01' }
-    expect(p.clearTrigger.disabled(wrap(withInput))).toBe(false)
+    expect(read(p.clearTrigger.disabled, withInput)).toBe(false)
   })
 
   it('errorText hidden when no error', () => {
-    const p = connect<Ctx>((s) => s.d, vi.fn())
-    expect(p.errorText.hidden(wrap(init()))).toBe(true)
+    const p = connect(rootSignal(), vi.fn())
+    expect(read(p.errorText.hidden, init())).toBe(true)
     const bad: DateInputState = { ...init(), error: 'invalid' }
-    expect(p.errorText.hidden(wrap(bad))).toBe(false)
+    expect(read(p.errorText.hidden, bad)).toBe(false)
   })
 
   it('input onInput dispatches setInput', () => {
     const send = vi.fn()
-    const p = connect<Ctx>((s) => s.d, send)
+    const p = connect(rootSignal(), send)
     const el = document.createElement('input')
     el.value = '2024-01-01'
     p.input.onInput({ target: el } as unknown as Event)
@@ -141,7 +139,7 @@ describe('date-input.connect', () => {
   })
 
   it('placeholder flows from options', () => {
-    const p = connect<Ctx>((s) => s.d, vi.fn(), { placeholder: 'YYYY-MM-DD' })
+    const p = connect(rootSignal(), vi.fn(), { placeholder: 'YYYY-MM-DD' })
     expect(p.input.placeholder).toBe('YYYY-MM-DD')
   })
 })

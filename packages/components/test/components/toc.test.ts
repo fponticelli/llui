@@ -1,9 +1,7 @@
 import { describe, it, expect, vi } from 'vitest'
 import { init, update, connect, isActive, isExpanded } from '../../src/components/toc'
-import type { TocState, TocEntry } from '../../src/components/toc'
-
-type Ctx = { t: TocState }
-const wrap = (t: TocState): Ctx => ({ t })
+import type { TocEntry } from '../../src/components/toc'
+import { rootSignal, read } from '../_signal'
 
 const entries: TocEntry[] = [
   { id: 'intro', label: 'Introduction', level: 1 },
@@ -51,34 +49,34 @@ describe('toc reducer', () => {
 
 describe('toc.connect', () => {
   it('link aria-current=location when active', () => {
-    const p = connect<Ctx>((s) => s.t, vi.fn())
+    const p = connect(rootSignal(), vi.fn())
     const link = p.item(entries[0]!).link
-    expect(link['aria-current'](wrap(init({ activeId: 'intro' })))).toBe('location')
-    expect(link['aria-current'](wrap(init()))).toBeUndefined()
+    expect(read(link['aria-current'], init({ activeId: 'intro' }))).toBe('location')
+    expect(read(link['aria-current'], init())).toBeUndefined()
   })
 
   it('link href uses prefix', () => {
-    const p1 = connect<Ctx>((s) => s.t, vi.fn())
+    const p1 = connect(rootSignal(), vi.fn())
     expect(p1.item(entries[0]!).link.href).toBe('#intro')
-    const p2 = connect<Ctx>((s) => s.t, vi.fn(), { hrefPrefix: '/docs#' })
+    const p2 = connect(rootSignal(), vi.fn(), { hrefPrefix: '/docs#' })
     expect(p2.item(entries[0]!).link.href).toBe('/docs#intro')
   })
 
   it('item data-level reflects nesting', () => {
-    const p = connect<Ctx>((s) => s.t, vi.fn())
+    const p = connect(rootSignal(), vi.fn())
     expect(p.item(entries[0]!).item['data-level']).toBe('1')
     expect(p.item(entries[2]!).item['data-level']).toBe('2')
   })
 
   it('expandTrigger dispatches toggleExpanded', () => {
     const send = vi.fn()
-    const p = connect<Ctx>((s) => s.t, send)
+    const p = connect(rootSignal(), send)
     p.item(entries[1]!).expandTrigger.onClick(new MouseEvent('click'))
     expect(send).toHaveBeenCalledWith({ type: 'toggleExpanded', id: 'install' })
   })
 
   it('root has navigation role', () => {
-    const p = connect<Ctx>((s) => s.t, vi.fn(), { label: 'Contents' })
+    const p = connect(rootSignal(), vi.fn(), { label: 'Contents' })
     expect(p.root.role).toBe('navigation')
     expect(p.root['aria-label']).toBe('Contents')
   })

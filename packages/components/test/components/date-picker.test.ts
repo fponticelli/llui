@@ -1,8 +1,6 @@
 import { describe, it, expect, vi } from 'vitest'
 import { init, update, connect, monthGrid } from '../../src/components/date-picker'
-import type { DatePickerState } from '../../src/components/date-picker'
-
-type Ctx = { d: DatePickerState }
+import { rootSignal } from '../_signal'
 
 describe('date-picker reducer', () => {
   it('initializes with visible month/year from value or today', () => {
@@ -112,7 +110,7 @@ describe('monthGrid', () => {
 })
 
 describe('date-picker.connect', () => {
-  const p = connect<Ctx>((s) => s.d, vi.fn())
+  const p = connect(rootSignal(), vi.fn())
 
   it('grid role=grid', () => {
     expect(p.grid.role).toBe('grid')
@@ -120,14 +118,14 @@ describe('date-picker.connect', () => {
 
   it('prevMonthTrigger click sends prevMonth', () => {
     const send = vi.fn()
-    const pc = connect<Ctx>((s) => s.d, send)
+    const pc = connect(rootSignal(), send)
     pc.prevMonthTrigger.onClick(new MouseEvent('click'))
     expect(send).toHaveBeenCalledWith({ type: 'prevMonth' })
   })
 
   it('dayCell ArrowRight sends moveFocus', () => {
     const send = vi.fn()
-    const pc = connect<Ctx>((s) => s.d, send)
+    const pc = connect(rootSignal(), send)
     const cell = {
       iso: '2024-06-15',
       day: 15,
@@ -145,7 +143,7 @@ describe('date-picker.connect', () => {
 
   it('dayCell click on disabled day does nothing', () => {
     const send = vi.fn()
-    const pc = connect<Ctx>((s) => s.d, send)
+    const pc = connect(rootSignal(), send)
     const cell = {
       iso: '2024-06-05',
       day: 5,

@@ -1,9 +1,7 @@
 import { describe, it, expect, vi } from 'vitest'
 import { init, update, connect, isOpen } from '../../src/components/navigation-menu'
 import type { NavMenuState } from '../../src/components/navigation-menu'
-
-type Ctx = { n: NavMenuState }
-const wrap = (n: NavMenuState): Ctx => ({ n })
+import { rootSignal, read } from '../_signal'
 
 describe('navigation-menu reducer', () => {
   it('starts with nothing open', () => {
@@ -87,38 +85,38 @@ describe('isOpen helper', () => {
 
 describe('navigation-menu.connect', () => {
   it('trigger aria-expanded reflects open state (branch only)', () => {
-    const p = connect<Ctx>((s) => s.n, vi.fn(), { id: 'nav' })
+    const p = connect(rootSignal(), vi.fn(), { id: 'nav' })
     const branch = p.item('file', { isBranch: true }).trigger
-    expect(branch['aria-expanded'](wrap(init()))).toBe(false)
-    expect(branch['aria-expanded'](wrap(init({ open: ['file'] })))).toBe(true)
+    expect(read(branch['aria-expanded'], init())).toBe(false)
+    expect(read(branch['aria-expanded'], init({ open: ['file'] }))).toBe(true)
     // Leaf items have no aria-expanded
     const leaf = p.item('home', { isBranch: false }).trigger
-    expect(leaf['aria-expanded'](wrap(init()))).toBeUndefined()
+    expect(read(leaf['aria-expanded'], init())).toBeUndefined()
   })
 
   it('trigger aria-haspopup set only for branches', () => {
-    const p = connect<Ctx>((s) => s.n, vi.fn(), { id: 'nav' })
+    const p = connect(rootSignal(), vi.fn(), { id: 'nav' })
     expect(p.item('file', { isBranch: true }).trigger['aria-haspopup']).toBe('menu')
     expect(p.item('home', { isBranch: false }).trigger['aria-haspopup']).toBeUndefined()
   })
 
   it('pointerEnter opens branch', () => {
     const send = vi.fn()
-    const p = connect<Ctx>((s) => s.n, send, { id: 'nav' })
+    const p = connect(rootSignal(), send, { id: 'nav' })
     p.item('file', { isBranch: true }).trigger.onPointerEnter({} as PointerEvent)
     expect(send).toHaveBeenCalledWith({ type: 'openBranch', id: 'file', ancestorIds: [] })
   })
 
   it('pointerEnter on leaf is a no-op', () => {
     const send = vi.fn()
-    const p = connect<Ctx>((s) => s.n, send, { id: 'nav' })
+    const p = connect(rootSignal(), send, { id: 'nav' })
     p.item('home', { isBranch: false }).trigger.onPointerEnter({} as PointerEvent)
     expect(send).not.toHaveBeenCalled()
   })
 
   it('click on branch toggles it; click on leaf is a no-op', () => {
     const send = vi.fn()
-    const p = connect<Ctx>((s) => s.n, send, { id: 'nav' })
+    const p = connect(rootSignal(), send, { id: 'nav' })
     p.item('file', { isBranch: true, ancestorIds: ['root'] }).trigger.onClick(
       new MouseEvent('click'),
     )
@@ -135,7 +133,7 @@ describe('navigation-menu.connect', () => {
   it('root pointerLeave dispatches closeAll after delay when closeOnLeave=true', () => {
     vi.useFakeTimers()
     const send = vi.fn()
-    const p = connect<Ctx>((s) => s.n, send, { id: 'nav' })
+    const p = connect(rootSignal(), send, { id: 'nav' })
     p.root.onPointerLeave({} as PointerEvent)
     expect(send).not.toHaveBeenCalled()
     vi.advanceTimersByTime(150)
@@ -146,7 +144,7 @@ describe('navigation-menu.connect', () => {
   it('pointerEnter on root cancels pending close', () => {
     vi.useFakeTimers()
     const send = vi.fn()
-    const p = connect<Ctx>((s) => s.n, send, { id: 'nav' })
+    const p = connect(rootSignal(), send, { id: 'nav' })
     p.root.onPointerLeave({} as PointerEvent)
     p.root.onPointerEnter({} as PointerEvent)
     vi.advanceTimersByTime(200)
@@ -157,7 +155,7 @@ describe('navigation-menu.connect', () => {
   it('closeOnLeave:false prevents auto-close', () => {
     vi.useFakeTimers()
     const send = vi.fn()
-    const p = connect<Ctx>((s) => s.n, send, { id: 'nav', closeOnLeave: false })
+    const p = connect(rootSignal(), send, { id: 'nav', closeOnLeave: false })
     p.root.onPointerLeave({} as PointerEvent)
     vi.advanceTimersByTime(200)
     expect(send).not.toHaveBeenCalled()
@@ -165,9 +163,9 @@ describe('navigation-menu.connect', () => {
   })
 
   it('content hidden when not open', () => {
-    const p = connect<Ctx>((s) => s.n, vi.fn(), { id: 'nav' })
+    const p = connect(rootSignal(), vi.fn(), { id: 'nav' })
     const content = p.item('file', { isBranch: true }).content
-    expect(content.hidden(wrap(init()))).toBe(true)
-    expect(content.hidden(wrap(init({ open: ['file'] })))).toBe(false)
+    expect(read(content.hidden, init())).toBe(true)
+    expect(read(content.hidden, init({ open: ['file'] }))).toBe(false)
   })
 })

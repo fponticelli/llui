@@ -7,10 +7,7 @@ import {
   period,
   formatTime,
 } from '../../src/components/time-picker'
-import type { TimePickerState } from '../../src/components/time-picker'
-
-type Ctx = { t: TimePickerState }
-const wrap = (t: TimePickerState): Ctx => ({ t })
+import { rootSignal, read } from '../_signal'
 
 describe('time-picker reducer', () => {
   it('initializes at 00:00:00', () => {
@@ -74,24 +71,25 @@ describe('helpers', () => {
 })
 
 describe('time-picker.connect', () => {
-  const p = connect<Ctx>((s) => s.t, vi.fn())
+  const p = connect(rootSignal(), vi.fn())
 
   it('hoursInput ArrowUp sends incrementHours', () => {
     const send = vi.fn()
-    const pc = connect<Ctx>((s) => s.t, send)
+    const pc = connect(rootSignal(), send)
     pc.hoursInput.onKeyDown(new KeyboardEvent('keydown', { key: 'ArrowUp', cancelable: true }))
     expect(send).toHaveBeenCalledWith({ type: 'incrementHours' })
   })
 
   it('periodTrigger hidden for 24-hr format', () => {
-    expect(p.periodTrigger.hidden(wrap(init({ format: '24' })))).toBe(true)
-    expect(p.periodTrigger.hidden(wrap(init({ format: '12' })))).toBe(false)
+    expect(read(p.periodTrigger.hidden, init({ format: '24' }))).toBe(true)
+    expect(read(p.periodTrigger.hidden, init({ format: '12' }))).toBe(false)
   })
 
   it('periodTrigger data-period', () => {
     expect(
-      p.periodTrigger['data-period'](
-        wrap(init({ format: '12', value: { hours: 13, minutes: 0, seconds: 0 } })),
+      read(
+        p.periodTrigger['data-period'],
+        init({ format: '12', value: { hours: 13, minutes: 0, seconds: 0 } }),
       ),
     ).toBe('PM')
   })

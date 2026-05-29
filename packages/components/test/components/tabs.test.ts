@@ -1,8 +1,6 @@
 import { describe, it, expect, vi } from 'vitest'
 import { init, update, connect, watchTabIndicator } from '../../src/components/tabs'
-
-type Ctx = { tabs: ReturnType<typeof init> }
-const wrap = (t: ReturnType<typeof init>): Ctx => ({ tabs: t })
+import { rootSignal, read } from '../_signal'
 
 describe('tabs reducer', () => {
   it('init picks first item as default value', () => {
@@ -77,12 +75,12 @@ describe('tabs reducer', () => {
 })
 
 describe('tabs.connect', () => {
-  const parts = connect<Ctx>((s) => s.tabs, vi.fn(), { id: 'tabs1' })
+  const parts = connect(rootSignal(), vi.fn(), { id: 'tabs1' })
 
   it('trigger aria-selected reflects active tab', () => {
     const t = parts.item('a').trigger
-    expect(t['aria-selected'](wrap(init({ items: ['a', 'b'], value: 'a' })))).toBe(true)
-    expect(t['aria-selected'](wrap(init({ items: ['a', 'b'], value: 'b' })))).toBe(false)
+    expect(read(t['aria-selected'], init({ items: ['a', 'b'], value: 'a' }))).toBe(true)
+    expect(read(t['aria-selected'], init({ items: ['a', 'b'], value: 'b' }))).toBe(false)
   })
 
   it('trigger aria-controls points to panel id', () => {
@@ -95,19 +93,19 @@ describe('tabs.connect', () => {
 
   it('trigger tabIndex is 0 only for selected', () => {
     const t = parts.item('a').trigger
-    expect(t.tabIndex(wrap(init({ items: ['a', 'b'], value: 'a' })))).toBe(0)
-    expect(t.tabIndex(wrap(init({ items: ['a', 'b'], value: 'b' })))).toBe(-1)
+    expect(read(t.tabIndex, init({ items: ['a', 'b'], value: 'a' }))).toBe(0)
+    expect(read(t.tabIndex, init({ items: ['a', 'b'], value: 'b' }))).toBe(-1)
   })
 
   it('panel.hidden reflects inactive', () => {
     const p = parts.item('a').panel
-    expect(p.hidden(wrap(init({ items: ['a', 'b'], value: 'a' })))).toBe(false)
-    expect(p.hidden(wrap(init({ items: ['a', 'b'], value: 'b' })))).toBe(true)
+    expect(read(p.hidden, init({ items: ['a', 'b'], value: 'a' }))).toBe(false)
+    expect(read(p.hidden, init({ items: ['a', 'b'], value: 'b' }))).toBe(true)
   })
 
   it('ArrowRight dispatches focusNext', () => {
     const send = vi.fn()
-    const p = connect<Ctx>((s) => s.tabs, send, { id: 'x' })
+    const p = connect(rootSignal(), send, { id: 'x' })
     const ev = new KeyboardEvent('keydown', { key: 'ArrowRight', cancelable: true })
     p.item('a').trigger.onKeyDown(ev)
     expect(ev.defaultPrevented).toBe(true)
@@ -116,7 +114,7 @@ describe('tabs.connect', () => {
 
   it('Enter activates focused', () => {
     const send = vi.fn()
-    const p = connect<Ctx>((s) => s.tabs, send, { id: 'x' })
+    const p = connect(rootSignal(), send, { id: 'x' })
     const ev = new KeyboardEvent('keydown', { key: 'Enter', cancelable: true })
     p.item('a').trigger.onKeyDown(ev)
     expect(send).toHaveBeenCalledWith({ type: 'activateFocused' })
@@ -132,7 +130,7 @@ describe('tabs.connect', () => {
     `
     document.body.appendChild(root)
     const send = vi.fn()
-    const p = connect<Ctx>((s) => s.tabs, send, { id: 'x' })
+    const p = connect(rootSignal(), send, { id: 'x' })
     const trigger = root.querySelector('#t') as HTMLButtonElement
     // ArrowDown should navigate, ArrowRight should not.
     const ev1 = new KeyboardEvent('keydown', { key: 'ArrowDown', cancelable: true })
@@ -174,10 +172,10 @@ describe('tabs.connect', () => {
   })
 
   it('indicator part exposes data attrs', () => {
-    const p = connect<Ctx>((s) => s.tabs, vi.fn(), { id: 'x' })
+    const p = connect(rootSignal(), vi.fn(), { id: 'x' })
     expect(p.indicator['data-scope']).toBe('tabs')
     expect(p.indicator['data-part']).toBe('indicator')
-    expect(p.indicator['data-orientation'](wrap(init({ items: ['a'] })))).toBe('horizontal')
+    expect(read(p.indicator['data-orientation'], init({ items: ['a'] }))).toBe('horizontal')
   })
 
   it('watchTabIndicator writes CSS custom properties from active trigger', () => {
@@ -216,7 +214,7 @@ describe('tabs.connect', () => {
   it('onNavigate fires on click', () => {
     const send = vi.fn()
     const onNavigate = vi.fn()
-    const p = connect<Ctx>((s) => s.tabs, send, { id: 'x', onNavigate })
+    const p = connect(rootSignal(), send, { id: 'x', onNavigate })
     p.item('b').trigger.onClick(new MouseEvent('click'))
     expect(onNavigate).toHaveBeenCalledWith('b')
   })

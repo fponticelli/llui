@@ -8,9 +8,7 @@ import {
   getBounds,
 } from '../../src/components/signature-pad'
 import type { SignaturePadState } from '../../src/components/signature-pad'
-
-type Ctx = { p: SignaturePadState }
-const wrap = (p: SignaturePadState): Ctx => ({ p })
+import { rootSignal, read } from '../_signal'
 
 describe('signature-pad reducer', () => {
   it('starts empty + not drawing', () => {
@@ -161,8 +159,8 @@ describe('signature-pad helpers', () => {
 
 describe('signature-pad.connect', () => {
   it('clearTrigger disabled when empty', () => {
-    const p = connect<Ctx>((s) => s.p, vi.fn())
-    expect(p.clearTrigger.disabled(wrap(init()))).toBe(true)
+    const p = connect(rootSignal(), vi.fn())
+    expect(read(p.clearTrigger.disabled, init())).toBe(true)
     const nonEmpty = init({
       strokes: [
         [
@@ -171,30 +169,30 @@ describe('signature-pad.connect', () => {
         ],
       ],
     })
-    expect(p.clearTrigger.disabled(wrap(nonEmpty))).toBe(false)
+    expect(read(p.clearTrigger.disabled, nonEmpty)).toBe(false)
   })
 
   it('undoTrigger disabled when no strokes', () => {
-    const p = connect<Ctx>((s) => s.p, vi.fn())
-    expect(p.undoTrigger.disabled(wrap(init()))).toBe(true)
+    const p = connect(rootSignal(), vi.fn())
+    expect(read(p.undoTrigger.disabled, init())).toBe(true)
   })
 
   it('root data-drawing tracks state', () => {
-    const p = connect<Ctx>((s) => s.p, vi.fn())
+    const p = connect(rootSignal(), vi.fn())
     const drawing: SignaturePadState = { ...init(), drawing: true }
-    expect(p.root['data-drawing'](wrap(drawing))).toBe('')
+    expect(read(p.root['data-drawing'], drawing)).toBe('')
   })
 
   it('hiddenInput serializes strokes as JSON', () => {
-    const p = connect<Ctx>((s) => s.p, vi.fn(), { name: 'sig' })
+    const p = connect(rootSignal(), vi.fn(), { name: 'sig' })
     const s = init({ strokes: [[{ x: 0, y: 0 }]] })
-    expect(p.hiddenInput.value(wrap(s))).toBe('[[{"x":0,"y":0}]]')
+    expect(read(p.hiddenInput.value, s)).toBe('[[{"x":0,"y":0}]]')
     expect(p.hiddenInput.name).toBe('sig')
   })
 
   it('triggers dispatch correct messages', () => {
     const send = vi.fn()
-    const p = connect<Ctx>((s) => s.p, send)
+    const p = connect(rootSignal(), send)
     p.clearTrigger.onClick(new MouseEvent('click'))
     expect(send).toHaveBeenCalledWith({ type: 'clear' })
     p.undoTrigger.onClick(new MouseEvent('click'))

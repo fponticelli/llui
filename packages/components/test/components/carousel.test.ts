@@ -1,9 +1,6 @@
 import { describe, it, expect, vi } from 'vitest'
 import { init, update, connect, canGoNext, canGoPrev } from '../../src/components/carousel'
-import type { CarouselState } from '../../src/components/carousel'
-
-type Ctx = { c: CarouselState }
-const wrap = (c: CarouselState): Ctx => ({ c })
+import { rootSignal, read } from '../_signal'
 
 describe('carousel reducer', () => {
   it('initializes at index 0', () => {
@@ -74,29 +71,29 @@ describe('navigation helpers', () => {
 })
 
 describe('carousel.connect', () => {
-  const p = connect<Ctx>((s) => s.c, vi.fn(), { id: 'c1' })
+  const p = connect(rootSignal(), vi.fn(), { id: 'c1' })
 
   it('root pointerEnter sends pause', () => {
     const send = vi.fn()
-    const pc = connect<Ctx>((s) => s.c, send, { id: 'x' })
+    const pc = connect(rootSignal(), send, { id: 'x' })
     pc.root.onPointerEnter(new PointerEvent('pointerenter'))
     expect(send).toHaveBeenCalledWith({ type: 'pause' })
   })
 
   it('nextTrigger disabled when cannot go next', () => {
-    expect(p.nextTrigger.disabled(wrap(init({ count: 3, current: 2, loop: false })))).toBe(true)
-    expect(p.nextTrigger.disabled(wrap(init({ count: 3, current: 2, loop: true })))).toBe(false)
+    expect(read(p.nextTrigger.disabled, init({ count: 3, current: 2, loop: false }))).toBe(true)
+    expect(read(p.nextTrigger.disabled, init({ count: 3, current: 2, loop: true }))).toBe(false)
   })
 
   it('slide hidden when not active', () => {
     const slide1 = p.slide(1).slide
-    expect(slide1.hidden(wrap(init({ count: 3, current: 1 })))).toBe(false)
-    expect(slide1.hidden(wrap(init({ count: 3, current: 0 })))).toBe(true)
+    expect(read(slide1.hidden, init({ count: 3, current: 1 }))).toBe(false)
+    expect(read(slide1.hidden, init({ count: 3, current: 0 }))).toBe(true)
   })
 
   it('indicator click goes to slide', () => {
     const send = vi.fn()
-    const pc = connect<Ctx>((s) => s.c, send, { id: 'x' })
+    const pc = connect(rootSignal(), send, { id: 'x' })
     pc.slide(2).indicator.onClick(new MouseEvent('click'))
     expect(send).toHaveBeenCalledWith({ type: 'goTo', index: 2 })
   })

@@ -7,10 +7,8 @@ import {
   isComplete,
   completeValues,
 } from '../../src/components/cascade-select'
-import type { CascadeSelectState, CascadeLevel } from '../../src/components/cascade-select'
-
-type Ctx = { c: CascadeSelectState }
-const wrap = (c: CascadeSelectState): Ctx => ({ c })
+import type { CascadeLevel } from '../../src/components/cascade-select'
+import { rootSignal, read } from '../_signal'
 
 const levels: CascadeLevel[] = [
   {
@@ -98,22 +96,22 @@ describe('helpers', () => {
 
 describe('cascade-select.connect', () => {
   it('level select disabled until prior level is set', () => {
-    const p = connect<Ctx>((s) => s.c, vi.fn(), { id: 'x' })
-    expect(p.level(1).select.disabled(wrap(init({ levels })))).toBe(true)
-    expect(p.level(1).select.disabled(wrap(init({ levels, values: ['US', null, null] })))).toBe(
+    const p = connect(rootSignal(), vi.fn(), { id: 'x' })
+    expect(read(p.level(1).select.disabled, init({ levels }))).toBe(true)
+    expect(read(p.level(1).select.disabled, init({ levels, values: ['US', null, null] }))).toBe(
       false,
     )
   })
 
   it('level select value reflects state', () => {
-    const p = connect<Ctx>((s) => s.c, vi.fn(), { id: 'x' })
-    expect(p.level(0).select.value(wrap(init({ levels })))).toBe('')
-    expect(p.level(0).select.value(wrap(init({ levels, values: ['US', null, null] })))).toBe('US')
+    const p = connect(rootSignal(), vi.fn(), { id: 'x' })
+    expect(read(p.level(0).select.value, init({ levels }))).toBe('')
+    expect(read(p.level(0).select.value, init({ levels, values: ['US', null, null] }))).toBe('US')
   })
 
   it('onChange dispatches setValue', () => {
     const send = vi.fn()
-    const p = connect<Ctx>((s) => s.c, send, { id: 'x' })
+    const p = connect(rootSignal(), send, { id: 'x' })
     const el = { value: 'US' } as HTMLSelectElement
     p.level(0).select.onChange({ target: el } as unknown as Event)
     expect(send).toHaveBeenCalledWith({ type: 'setValue', levelIndex: 0, value: 'US' })
@@ -121,21 +119,21 @@ describe('cascade-select.connect', () => {
 
   it('onChange dispatches null for empty value', () => {
     const send = vi.fn()
-    const p = connect<Ctx>((s) => s.c, send, { id: 'x' })
+    const p = connect(rootSignal(), send, { id: 'x' })
     const el = { value: '' } as HTMLSelectElement
     p.level(0).select.onChange({ target: el } as unknown as Event)
     expect(send).toHaveBeenCalledWith({ type: 'setValue', levelIndex: 0, value: null })
   })
 
   it('clearTrigger disabled when nothing selected', () => {
-    const p = connect<Ctx>((s) => s.c, vi.fn(), { id: 'x' })
-    expect(p.clearTrigger.disabled(wrap(init({ levels })))).toBe(true)
-    expect(p.clearTrigger.disabled(wrap(init({ levels, values: ['US', null, null] })))).toBe(false)
+    const p = connect(rootSignal(), vi.fn(), { id: 'x' })
+    expect(read(p.clearTrigger.disabled, init({ levels }))).toBe(true)
+    expect(read(p.clearTrigger.disabled, init({ levels, values: ['US', null, null] }))).toBe(false)
   })
 
   it('root data-complete reflects isComplete', () => {
-    const p = connect<Ctx>((s) => s.c, vi.fn(), { id: 'x' })
-    expect(p.root['data-complete'](wrap(init({ levels })))).toBeUndefined()
-    expect(p.root['data-complete'](wrap(init({ levels, values: ['US', 'CA', 'SF'] })))).toBe('')
+    const p = connect(rootSignal(), vi.fn(), { id: 'x' })
+    expect(read(p.root['data-complete'], init({ levels }))).toBeUndefined()
+    expect(read(p.root['data-complete'], init({ levels, values: ['US', 'CA', 'SF'] }))).toBe('')
   })
 })

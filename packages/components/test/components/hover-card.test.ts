@@ -1,9 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { init, update, connect } from '../../src/components/hover-card'
-import type { HoverCardState } from '../../src/components/hover-card'
-
-type Ctx = { h: HoverCardState }
-const wrap = (h: HoverCardState): Ctx => ({ h })
+import { rootSignal, read } from '../_signal'
 
 describe('hover-card reducer', () => {
   it('initializes closed', () => {
@@ -23,7 +20,7 @@ describe('hover-card.connect', () => {
 
   it('pointerEnter schedules open after delay', () => {
     const send = vi.fn()
-    const p = connect<Ctx>((s) => s.h, send, { id: 'x', openDelay: 500 })
+    const p = connect(rootSignal(), send, { id: 'x', openDelay: 500 })
     p.trigger.onPointerEnter(new PointerEvent('pointerenter'))
     expect(send).not.toHaveBeenCalled()
     vi.advanceTimersByTime(500)
@@ -32,7 +29,7 @@ describe('hover-card.connect', () => {
 
   it('pointerLeave schedules close after delay', () => {
     const send = vi.fn()
-    const p = connect<Ctx>((s) => s.h, send, { id: 'x', closeDelay: 200 })
+    const p = connect(rootSignal(), send, { id: 'x', closeDelay: 200 })
     p.trigger.onPointerLeave(new PointerEvent('pointerleave'))
     vi.advanceTimersByTime(200)
     expect(send).toHaveBeenCalledWith({ type: 'hide' })
@@ -40,7 +37,7 @@ describe('hover-card.connect', () => {
 
   it('content pointerEnter cancels pending close', () => {
     const send = vi.fn()
-    const p = connect<Ctx>((s) => s.h, send, { id: 'x', closeDelay: 100 })
+    const p = connect(rootSignal(), send, { id: 'x', closeDelay: 100 })
     p.trigger.onPointerLeave(new PointerEvent('pointerleave'))
     vi.advanceTimersByTime(50)
     p.content.onPointerEnter(new PointerEvent('pointerenter'))
@@ -49,13 +46,13 @@ describe('hover-card.connect', () => {
   })
 
   it('data-state tracks open state', () => {
-    const p = connect<Ctx>((s) => s.h, vi.fn(), { id: 'x' })
-    expect(p.trigger['data-state'](wrap({ open: true }))).toBe('open')
-    expect(p.trigger['data-state'](wrap({ open: false }))).toBe('closed')
+    const p = connect(rootSignal(), vi.fn(), { id: 'x' })
+    expect(read(p.trigger['data-state'], { open: true })).toBe('open')
+    expect(read(p.trigger['data-state'], { open: false })).toBe('closed')
   })
 
   it('trigger aria-controls points at content id', () => {
-    const p = connect<Ctx>((s) => s.h, vi.fn(), { id: 'hc1' })
+    const p = connect(rootSignal(), vi.fn(), { id: 'hc1' })
     expect(p.trigger['aria-controls']).toBe('hc1:content')
   })
 })
