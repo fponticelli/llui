@@ -35,8 +35,15 @@ export function text(_value: Reactive<string | number>): Node {
 export type AttrValue = Reactive<string | number | boolean | null>
 export type ElProps = Record<string, AttrValue | ((ev: Event) => void)>
 
-function elementHelper(tag: string): (props?: ElProps, children?: readonly Node[]) => Node {
-  return () => compiledAway(tag)
+/** An element helper accepts `tag(children)`, `tag(props, children)`, `tag(props)`,
+ * or `tag()` — the compiler routes each form (a leading array literal = children). */
+export interface ElementHelper {
+  (children: readonly Node[]): Node
+  (props?: ElProps, children?: readonly Node[]): Node
+}
+
+function elementHelper(tag: string): ElementHelper {
+  return (() => compiledAway(tag)) as ElementHelper
 }
 
 export const div = elementHelper('div')

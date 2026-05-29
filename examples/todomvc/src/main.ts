@@ -12,7 +12,12 @@ import {
   footer,
   section,
   header,
-} from '@llui/dom'
+  text,
+  show,
+  each,
+  type Signal,
+  type Send,
+} from '@llui/dom/signals'
 
 type Todo = { id: number; text: string; completed: boolean }
 type Filter = 'all' | 'active' | 'completed'
@@ -87,126 +92,118 @@ const App = component<State, Msg, never>({
         return [{ ...state, todos: state.todos.filter((t) => !t.completed) }, []]
     }
   },
-  view: ({ send, text, show, each, memo }) => {
-    const filteredTodos = memo((s) => {
-      switch (s.filter) {
-        case 'all':
-          return s.todos
-        case 'active':
-          return s.todos.filter((t) => !t.completed)
-        case 'completed':
-          return s.todos.filter((t) => t.completed)
-      }
-    })
+  view: ({ state, send }) => [
+    section({ class: 'todoapp' }, [
+      header({}, [
+        h1({}, [text('todos')]),
+        input({
+          class: 'new-todo',
+          placeholder: 'What needs to be done?',
+          onKeyDown: (e: Event) => {
+            const ke = e as KeyboardEvent
+            if (ke.key === 'Enter') {
+              const inp = ke.target as HTMLInputElement
+              send({ type: 'add', text: inp.value })
+              inp.value = ''
+            }
+          },
+        }),
+      ]),
 
-    const activeCount = memo((s) => s.todos.filter((t) => !t.completed).length)
-    const hasCompleted = memo((s) => s.todos.some((t) => t.completed))
-
-    return [
-      section({ class: 'todoapp' }, [
-        header([
-          h1([text('todos')]),
-          input({
-            class: 'new-todo',
-            placeholder: 'What needs to be done?',
-            onKeyDown: (e: KeyboardEvent) => {
-              if (e.key === 'Enter') {
-                const inp = e.target as HTMLInputElement
-                send({ type: 'add', text: inp.value })
-                inp.value = ''
-              }
-            },
-          }),
-        ]),
-
-        ...show({
-          when: (s) => s.todos.length > 0,
-          render: () => [
-            section({ class: 'main' }, [
-              input({
-                class: 'toggle-all',
-                id: 'toggle-all',
-                type: 'checkbox',
-                checked: (s: State) => s.todos.every((t) => t.completed),
-                onClick: () => send({ type: 'toggleAll' }),
-              }),
-              label({ for: 'toggle-all', class: 'toggle-all-label' }, [
-                text('Mark all as complete'),
-              ]),
-              ul(
-                { class: 'todo-list' },
-                each({
-                  items: filteredTodos,
+      show(
+        state.at('todos').map((ts) => ts.length > 0),
+        () => [
+          section({ class: 'main' }, [
+            input({
+              class: 'toggle-all',
+              id: 'toggle-all',
+              type: 'checkbox',
+              checked: state.at('todos').map((ts) => ts.every((t) => t.completed)),
+              onClick: () => send({ type: 'toggleAll' }),
+            }),
+            label({ for: 'toggle-all', class: 'toggle-all-label' }, [text('Mark all as complete')]),
+            ul({ class: 'todo-list' }, [
+              each(
+                state.map((s) =>
+                  s.filter === 'active'
+                    ? s.todos.filter((t) => !t.completed)
+                    : s.filter === 'completed'
+                      ? s.todos.filter((t) => t.completed)
+                      : s.todos,
+                ),
+                {
                   key: (t) => t.id,
-                  render: ({ item }) => [
+                  render: (item) => [
                     li(
                       {
-                        class: item((t) => (t.completed ? 'completed' : '')),
+                        class: item.at('completed').map((c) => (c ? 'completed' : '')),
                       },
                       [
                         input({
                           class: 'toggle',
                           type: 'checkbox',
-                          checked: item((t) => t.completed),
-                          onClick: () => send({ type: 'toggle', id: item((t) => t.id)() }),
+                          checked: item.at('completed'),
+                          onClick: () => send({ type: 'toggle', id: item.at('id').peek() }),
                         }),
-                        label([text(item.text)]),
+                        label({}, [text(item.at('text'))]),
                         button(
                           {
                             class: 'destroy',
-                            onClick: () => send({ type: 'remove', id: item((t) => t.id)() }),
+                            onClick: () => send({ type: 'remove', id: item.at('id').peek() }),
                           },
                           [text('×')],
                         ),
                       ],
                     ),
                   ],
+                },
+              ),
+            ]),
+          ]),
+
+          footer({ class: 'footer' }, [
+            span({ class: 'todo-count' }, [
+              text(
+                state.at('todos').map((ts) => {
+                  const n = ts.filter((t) => !t.completed).length
+                  return `${n} item${n === 1 ? '' : 's'} left`
                 }),
               ),
             ]),
-
-            footer({ class: 'footer' }, [
-              span({ class: 'todo-count' }, [
-                text((s) => {
-                  const n = activeCount(s)
-                  return `${n} item${n === 1 ? '' : 's'} left`
-                }),
-              ]),
-              ul({ class: 'filters' }, [
-                filterLink('all', 'All', text, send),
-                filterLink('active', 'Active', text, send),
-                filterLink('completed', 'Completed', text, send),
-              ]),
-              ...show({
-                when: hasCompleted,
-                render: () => [
-                  button(
-                    {
-                      class: 'clear-completed',
-                      onClick: () => send({ type: 'clearCompleted' }),
-                    },
-                    [text('Clear completed')],
-                  ),
-                ],
-              }),
+            ul({ class: 'filters' }, [
+              filterLink('all', 'All', state.at('filter'), send),
+              filterLink('active', 'Active', state.at('filter'), send),
+              filterLink('completed', 'Completed', state.at('filter'), send),
             ]),
-          ],
-        }),
-      ]),
-    ]
-  },
+            show(
+              state.at('todos').map((ts) => ts.some((t) => t.completed)),
+              () => [
+                button(
+                  {
+                    class: 'clear-completed',
+                    onClick: () => send({ type: 'clearCompleted' }),
+                  },
+                  [text('Clear completed')],
+                ),
+              ],
+            ),
+          ]),
+        ],
+      ),
+    ]),
+  ],
 })
 
 function filterLink(
   filter: Filter,
   linkLabel: string,
-  text: (v: string) => Text,
-  send: (msg: Msg) => void,
-): HTMLElement {
-  return li([
+  currentFilter: Signal<Filter>,
+  send: Send<Msg>,
+): Node {
+  return li({}, [
     a(
       {
-        class: (s: State) => (s.filter === filter ? 'selected' : ''),
+        class: currentFilter.map((f) => (f === filter ? 'selected' : '')),
         onClick: (e: Event) => {
           e.preventDefault()
           send({ type: 'setFilter', filter })

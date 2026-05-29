@@ -10,8 +10,11 @@ import {
   button,
   span,
   pre,
-} from '@llui/dom'
-import type { View } from '@llui/dom'
+  text,
+  show,
+  derived,
+} from '@llui/dom/signals'
+import type { Signal, Send } from '@llui/dom/signals'
 import { form, validateSchema } from '@llui/components'
 import type { FormState } from '@llui/components'
 import { z } from 'zod'
@@ -59,6 +62,18 @@ type Msg =
    * @example({"type":"fieldBlur","field":"email"})
    */
   | { type: 'fieldBlur'; field: string }
+
+// ── Validation helpers (pure) ───────────────────────────────────
+
+type FieldName = keyof State['values']
+type FieldValues = State['values']
+
+function errorFor(values: FieldValues, touched: boolean, name: FieldName): string {
+  if (!touched) return ''
+  const result = validateSchema(SignupSchema, values)
+  if (result.isValid) return ''
+  return result.errors[name as keyof Values] ?? ''
+}
 
 // ── Component ───────────────────────────────────────────────────
 
@@ -115,63 +130,66 @@ const App = component<State, Msg, never>({
         ]
     }
   },
-  view: (h) => {
-    const { send, text, show } = h
-    const formParts = form.connect<State>(
-      (s) => s.form,
-      (m) => send(m as never),
-      { id: 'signup' },
-    )
+  view: ({ state, send }) => [
+    h1([text('Sign up')]),
+    p({ class: 'subtitle' }, [
+      text('Form validation powered by Zod + Standard Schema + @llui/components'),
+    ]),
 
-    // Compute current validation result for display
-    const errors = (s: State): Partial<Record<keyof Values, string>> => {
-      const result = validateSchema(SignupSchema, s.values)
-      return result.errors
-    }
+    show(
+      state.at('form.status').map((status) => status === 'submitted'),
+      () => [div({ class: 'success-banner' }, [text('✓ Account created successfully')])],
+    ),
 
-    return [
-      h1([text('Sign up')]),
-      p({ class: 'subtitle' }, [
-        text('Form validation powered by Zod + Standard Schema + @llui/components'),
-      ]),
-
-      ...show({
-        when: (s) => s.form.status === 'submitted',
-        render: (h) => [
-          div({ class: 'success-banner' }, [h.text('✓ Account created successfully')]),
-        ],
-      }),
-
-      formEl(
-        {
-          ...formParts.root,
-          onSubmit: (e: Event) => {
-            e.preventDefault()
-            send({ type: 'submit' })
-          },
+    formEl(
+      {
+        'data-scope': 'form',
+        'data-part': 'root',
+        'data-state': state.at('form.status'),
+        'aria-busy': state.at('form.status').map((status) => status === 'submitting'),
+        onSubmit: (e: Event) => {
+          e.preventDefault()
+          send({ type: 'submit' })
         },
-        [
-          field(h, formParts, 'email', 'Email', 'email', errors),
-          field(h, formParts, 'username', 'Username', 'text', errors),
-          field(h, formParts, 'password', 'Password', 'password', errors),
-          field(h, formParts, 'age', 'Age', 'number', errors),
+      },
+      [
+        field(state.at('values'), state.at('form.touched'), send, 'email', 'Email', 'email'),
+        field(state.at('values'), state.at('form.touched'), send, 'username', 'Username', 'text'),
+        field(
+          state.at('values'),
+          state.at('form.touched'),
+          send,
+          'password',
+          'Password',
+          'password',
+        ),
+        field(state.at('values'), state.at('form.touched'), send, 'age', 'Age', 'number'),
 
-          div({ class: 'actions' }, [
-            button({ ...formParts.submit }, [text('Create account')]),
-            button(
-              {
-                type: 'button',
-                class: 'secondary',
-                onClick: () => send({ type: 'reset' }),
-              },
-              [text('Reset')],
-            ),
-          ]),
-        ],
-      ),
+        div({ class: 'actions' }, [
+          button(
+            {
+              type: 'submit',
+              'data-scope': 'form',
+              'data-part': 'submit',
+              'data-state': state.at('form.status'),
+              disabled: state.at('form.status').map((status) => status === 'submitting'),
+            },
+            [text('Create account')],
+          ),
+          button(
+            {
+              type: 'button',
+              class: 'secondary',
+              onClick: () => send({ type: 'reset' }),
+            },
+            [text('Reset')],
+          ),
+        ]),
+      ],
+    ),
 
-      pre({ class: 'schema-block' }, [
-        text(`const schema = z.object({
+    pre({ class: 'schema-block' }, [
+      text(`const schema = z.object({
   email: z.string().email(),
   username: z.string().min(3).max(20).regex(/^[a-zA-Z0-9_]+$/),
   password: z.string().min(8).regex(/[A-Z]/).regex(/[0-9]/),
@@ -180,53 +198,47 @@ const App = component<State, Msg, never>({
 
 const result = validateSchema(schema, values)
 // → { isValid, errors: { email: '...' }, issues: [...] }`),
-      ]),
-    ]
-  },
+    ]),
+  ],
 })
 
 // ── Field helper ────────────────────────────────────────────────
 
-type FieldName = keyof State['values']
-
 function field(
-  h: View<State, Msg>,
-  formParts: ReturnType<typeof form.connect<State>>,
+  values: Signal<FieldValues>,
+  touched: Signal<Record<string, boolean>>,
+  send: Send<Msg>,
   name: FieldName,
   labelText: string,
   inputType: string,
-  errors: (s: State) => Partial<Record<keyof Values, string>>,
-): HTMLElement {
-  const { text, send } = h
-  const fieldParts = formParts.field(name)
-
-  // Show error only when touched AND has an error
-  const errorMsg = (s: State): string => {
-    if (!s.form.touched[name]) return ''
-    return errors(s)[name as keyof Values] ?? ''
-  }
+): Node {
+  const fieldTouched = touched.at(name).map(Boolean)
+  const error = derived([values, fieldTouched], (vals, isTouched) =>
+    errorFor(vals, isTouched, name),
+  )
 
   return div(
     {
-      ...fieldParts,
-      class: (s: State) => `field${errorMsg(s) ? ' has-error' : ''}`,
+      'data-scope': 'form',
+      'data-part': 'field',
+      'data-touched': fieldTouched.map((t) => (t ? '' : null)),
+      class: error.map((msg) => `field${msg ? ' has-error' : ''}`),
     },
     [
       label({ for: `field-${name}` }, [text(labelText)]),
       input({
-        ...fieldParts,
         id: `field-${name}`,
         type: inputType,
-        value: (s: State) => s.values[name],
+        value: values.at(name),
         onInput: (e: Event) => {
           const target = e.currentTarget as HTMLInputElement
           send({ type: 'setField', field: name, value: target.value })
         },
         onBlur: () => send({ type: 'fieldBlur', field: name }),
-        'aria-invalid': (s: State) => (errorMsg(s) ? 'true' : undefined),
+        'aria-invalid': error.map((msg) => (msg ? 'true' : null)),
         'aria-describedby': `error-${name}`,
       }),
-      span({ id: `error-${name}`, class: 'field-error', role: 'alert' }, [text(errorMsg)]),
+      span({ id: `error-${name}`, class: 'field-error', role: 'alert' }, [text(error)]),
     ],
   )
 }
