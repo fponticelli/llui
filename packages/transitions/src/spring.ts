@@ -1,4 +1,4 @@
-import type { TransitionOptions } from '@llui/dom'
+import type { TransitionOptions } from '@llui/dom/signals'
 import { asElements } from './style-utils.js'
 
 export interface SpringOptions {

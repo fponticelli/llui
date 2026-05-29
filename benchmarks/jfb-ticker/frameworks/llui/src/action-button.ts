@@ -4,7 +4,6 @@
 // helpers (el / staticText) directly rather than the authoring ones.
 
 import { el, staticText } from '@llui/dom/signals'
-import { flush } from '@llui/dom'
 
 type ButtonMsg =
   | { type: 'mount' }
@@ -31,8 +30,7 @@ export function actionButton(
         id,
         onClick: () => {
           for (let i = 0; i < iters; i++) {
-            send(msg)
-            flush()
+            send(msg) // signal send is synchronous — DOM updates immediately
           }
         },
       },

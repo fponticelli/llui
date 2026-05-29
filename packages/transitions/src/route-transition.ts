@@ -1,4 +1,4 @@
-import type { TransitionOptions } from '@llui/dom'
+import type { TransitionOptions } from '@llui/dom/signals'
 import { fade } from './presets.js'
 import { slide } from './presets.js'
 import { mergeTransitions } from './flip.js'
