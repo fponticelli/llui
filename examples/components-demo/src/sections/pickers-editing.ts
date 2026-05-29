@@ -1,15 +1,5 @@
-import {
-  component,
-  mergeHandlers,
-  composeModules,
-  div,
-  button,
-  span,
-  label,
-  input,
-  onMount,
-} from '@llui/dom'
-import type { ModulesState, ModulesMsg } from '@llui/dom'
+import { div, button, span, label, input, each, onMount, text } from '@llui/dom/signals'
+import type { Send, Signal } from '@llui/dom/signals'
 import { datePicker, type DayCell, monthGrid, weekRows } from '@llui/components/date-picker'
 import { timePicker, formatTime } from '@llui/components/time-picker'
 import { colorPicker } from '@llui/components/color-picker'
@@ -18,6 +8,12 @@ import { clipboard, copyToClipboard } from '@llui/components/clipboard'
 import { fileUpload } from '@llui/components/file-upload'
 import { splitter } from '@llui/components/splitter'
 import { sectionGroup, card } from '../shared/ui'
+import {
+  composeModules,
+  mergeHandlers,
+  type ModulesState,
+  type ModulesMsg,
+} from '../shared/modules'
 
 const children = {
   datePicker,
@@ -29,8 +25,8 @@ const children = {
   splitter,
 } as const
 
-type State = ModulesState<typeof children>
-type Msg =
+export type State = ModulesState<typeof children>
+export type Msg =
   | ModulesMsg<typeof children>
   /**
    * @intent("Copy the given text to the clipboard")
@@ -42,7 +38,7 @@ let localSend: (m: Msg) => void = () => {
   throw new Error('send not initialized')
 }
 
-const init = (): [State, never[]] => [
+export const init = (): [State, never[]] => [
   {
     datePicker: datePicker.init({ value: '2026-04-15' }),
     timePicker: timePicker.init({ value: { hours: 14, minutes: 30, seconds: 0 }, format: '12' }),
@@ -55,7 +51,7 @@ const init = (): [State, never[]] => [
   [],
 ]
 
-const update = mergeHandlers<State, Msg, never>(
+export const update = mergeHandlers<State, Msg, never>(
   composeModules<State, Msg, never>(children),
   (state, msg) => {
     if (msg.type !== 'copyText') return null
@@ -72,119 +68,102 @@ function todayIsoString(): string {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
 }
 
-export const App = component<State, Msg, never>({
-  name: 'PickersEditingSection',
-  init,
-  update,
-  view: ({ send, text, each }) => {
-    localSend = send
-    const dp = datePicker.connect<State>(
-      (s) => s.datePicker,
-      (m) => send({ type: 'datePicker', msg: m }),
-    )
-    const tp = timePicker.connect<State>(
-      (s) => s.timePicker,
-      (m) => send({ type: 'timePicker', msg: m }),
-    )
-    const cp = colorPicker.connect<State>(
-      (s) => s.colorPicker,
-      (m) => send({ type: 'colorPicker', msg: m }),
-    )
-    const ed = editable.connect<State>(
-      (s) => s.editable,
-      (m) => send({ type: 'editable', msg: m }),
-    )
-    const cb = clipboard.connect<State>(
-      (s) => s.clipboard,
-      (m) => send({ type: 'clipboard', msg: m }),
-    )
-    const fu = fileUpload.connect<State>(
-      (s) => s.fileUpload,
-      (m) => send({ type: 'fileUpload', msg: m }),
-      { id: 'upload-demo' },
-    )
-    const sp = splitter.connect<State>(
-      (s) => s.splitter,
-      (m) => send({ type: 'splitter', msg: m }),
-    )
+export function view(state: Signal<State>, send: Send<Msg>): Node[] {
+  localSend = send
+  const dp = datePicker.connect(state.at('datePicker'), (m) => send({ type: 'datePicker', msg: m }))
+  const tp = timePicker.connect(state.at('timePicker'), (m) => send({ type: 'timePicker', msg: m }))
+  const cp = colorPicker.connect(state.at('colorPicker'), (m) =>
+    send({ type: 'colorPicker', msg: m }),
+  )
+  const ed = editable.connect(state.at('editable'), (m) => send({ type: 'editable', msg: m }))
+  const cb = clipboard.connect(state.at('clipboard'), (m) => send({ type: 'clipboard', msg: m }))
+  const fu = fileUpload.connect(
+    state.at('fileUpload'),
+    (m) => send({ type: 'fileUpload', msg: m }),
+    {
+      id: 'upload-demo',
+    },
+  )
+  const sp = splitter.connect(state.at('splitter'), (m) => send({ type: 'splitter', msg: m }))
 
-    // Editable focus on edit
-    const previewParts = { ...ed.preview }
-    const origClick = previewParts.onClick
-    previewParts.onClick = (e: MouseEvent): void => {
-      origClick(e)
-      queueMicrotask(() => {
-        const inp = document.querySelector<HTMLInputElement>(
-          '[data-scope="editable"][data-part="input"]',
-        )
-        inp?.focus()
-        inp?.select()
-      })
-    }
-
-    // Splitter drag
-    onMount(() => {
-      const root = document.querySelector<HTMLElement>('[data-scope="splitter"][data-part="root"]')
-      const handle = document.querySelector<HTMLElement>(
-        '[data-scope="splitter"][data-part="resize-trigger"]',
+  // Editable focus on edit
+  const previewParts = { ...ed.preview }
+  const origClick = previewParts.onClick
+  previewParts.onClick = (e: MouseEvent): void => {
+    origClick(e)
+    queueMicrotask(() => {
+      const inp = document.querySelector<HTMLInputElement>(
+        '[data-scope="editable"][data-part="input"]',
       )
-      if (!root || !handle) return
-      let dragging = false
-      const pct = (x: number): number => {
-        const r = root.getBoundingClientRect()
-        return Math.round(Math.max(0, Math.min(100, ((x - r.left) / r.width) * 100)))
-      }
-      const onDown = (e: PointerEvent): void => {
-        dragging = true
-        handle.setPointerCapture(e.pointerId)
-        send({ type: 'splitter', msg: { type: 'startDrag' } })
-        send({ type: 'splitter', msg: { type: 'setPosition', position: pct(e.clientX) } })
-      }
-      const onMove = (e: PointerEvent): void => {
-        if (dragging)
-          send({ type: 'splitter', msg: { type: 'setPosition', position: pct(e.clientX) } })
-      }
-      const onUp = (e: PointerEvent): void => {
-        if (!dragging) return
-        dragging = false
-        if (handle.hasPointerCapture(e.pointerId)) handle.releasePointerCapture(e.pointerId)
-        send({ type: 'splitter', msg: { type: 'endDrag' } })
-      }
-      handle.addEventListener('pointerdown', onDown)
-      handle.addEventListener('pointermove', onMove)
-      handle.addEventListener('pointerup', onUp)
-      handle.addEventListener('pointercancel', onUp)
-      return () => {
-        handle.removeEventListener('pointerdown', onDown)
-        handle.removeEventListener('pointermove', onMove)
-        handle.removeEventListener('pointerup', onUp)
-        handle.removeEventListener('pointercancel', onUp)
-      }
+      inp?.focus()
+      inp?.select()
     })
+  }
 
-    const dpGrid = (): Node[] => {
-      const dowLabels = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
-      // The baked theme applies `display: grid; grid-template-columns: repeat(7, 1fr)`
-      // to dp.grid via attribute selector. Flatten rows with `display: contents`
-      // so cells become direct grid children and wrap every 7 (one week per row).
-      const rowClass = 'contents'
-      const dowRow = div(
-        { ...dp.row, class: rowClass },
-        dowLabels.map((d) =>
-          span(
-            {
-              role: 'columnheader',
-              class: 'text-center text-[0.625rem] uppercase text-text-muted py-1',
-            },
-            [text(d)],
-          ),
+  // Splitter drag
+  onMount(() => {
+    const root = document.querySelector<HTMLElement>('[data-scope="splitter"][data-part="root"]')
+    const handle = document.querySelector<HTMLElement>(
+      '[data-scope="splitter"][data-part="resize-trigger"]',
+    )
+    if (!root || !handle) return
+    let dragging = false
+    const pct = (x: number): number => {
+      const r = root.getBoundingClientRect()
+      return Math.round(Math.max(0, Math.min(100, ((x - r.left) / r.width) * 100)))
+    }
+    const onDown = (e: PointerEvent): void => {
+      dragging = true
+      handle.setPointerCapture(e.pointerId)
+      send({ type: 'splitter', msg: { type: 'startDrag' } })
+      send({ type: 'splitter', msg: { type: 'setPosition', position: pct(e.clientX) } })
+    }
+    const onMove = (e: PointerEvent): void => {
+      if (dragging)
+        send({ type: 'splitter', msg: { type: 'setPosition', position: pct(e.clientX) } })
+    }
+    const onUp = (e: PointerEvent): void => {
+      if (!dragging) return
+      dragging = false
+      if (handle.hasPointerCapture(e.pointerId)) handle.releasePointerCapture(e.pointerId)
+      send({ type: 'splitter', msg: { type: 'endDrag' } })
+    }
+    handle.addEventListener('pointerdown', onDown)
+    handle.addEventListener('pointermove', onMove)
+    handle.addEventListener('pointerup', onUp)
+    handle.addEventListener('pointercancel', onUp)
+    return () => {
+      handle.removeEventListener('pointerdown', onDown)
+      handle.removeEventListener('pointermove', onMove)
+      handle.removeEventListener('pointerup', onUp)
+      handle.removeEventListener('pointercancel', onUp)
+    }
+  })
+
+  const dpGrid = (): Node[] => {
+    const dowLabels = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
+    // The baked theme applies `display: grid; grid-template-columns: repeat(7, 1fr)`
+    // to dp.grid via attribute selector. Flatten rows with `display: contents`
+    // so cells become direct grid children and wrap every 7 (one week per row).
+    const rowClass = 'contents'
+    const dowRow = div(
+      { ...dp.row, class: rowClass },
+      dowLabels.map((d) =>
+        span(
+          {
+            role: 'columnheader',
+            class: 'text-center text-[0.625rem] uppercase text-text-muted py-1',
+          },
+          [text(d)],
         ),
-      )
-      const rows = each({
-        items: (s) => weekRows(monthGrid(s.datePicker)),
+      ),
+    )
+    const rows = each(
+      state.at('datePicker').map((dpState) => weekRows(monthGrid(dpState))),
+      {
         key: (row) => row[0].iso,
-        render: ({ item }) => {
-          const week = item((r: DayCell[]) => r)()
+        render: (item) => {
+          const week = item.peek()
           return [
             div(
               { ...dp.row, class: rowClass },
@@ -196,12 +175,14 @@ export const App = component<State, Msg, never>({
                       'inline-flex items-center justify-center w-9 h-9 rounded-md text-sm cursor-pointer bg-transparent border-none text-text hover:bg-surface-hover transition-colors duration-fast data-[selected]:bg-primary data-[selected]:text-text-inverted data-[today]:font-bold data-[in-month=false]:opacity-40',
                     'data-date': cell.iso,
                     'data-in-month': cell.inMonth ? 'true' : 'false',
-                    'data-today': () => (cell.iso === todayIsoString() ? '' : undefined),
-                    'data-selected': (s: State) =>
-                      s.datePicker.value === cell.iso ? '' : undefined,
-                    'data-focused': (s: State) =>
-                      s.datePicker.focused === cell.iso ? '' : undefined,
-                    tabIndex: (s: State) => (s.datePicker.focused === cell.iso ? 0 : -1),
+                    'data-today': cell.iso === todayIsoString() ? '' : undefined,
+                    'data-selected': state
+                      .at('datePicker')
+                      .map((s) => (s.value === cell.iso ? '' : undefined)),
+                    'data-focused': state
+                      .at('datePicker')
+                      .map((s) => (s.focused === cell.iso ? '' : undefined)),
+                    tabIndex: state.at('datePicker').map((s) => (s.focused === cell.iso ? 0 : -1)),
                     onClick: () => {
                       send({ type: 'datePicker', msg: { type: 'setFocused', date: cell.iso } })
                       send({ type: 'datePicker', msg: { type: 'selectFocused' } })
@@ -213,144 +194,146 @@ export const App = component<State, Msg, never>({
             ),
           ]
         },
-      })
-      return [dowRow, ...rows]
-    }
+      },
+    )
+    return [dowRow, rows]
+  }
 
-    return [
-      sectionGroup('Pickers', [
-        card('Date Picker', [
-          div({ ...dp.root }, [
-            div({ class: 'flex items-center justify-between mb-2' }, [
-              button({ ...dp.prevMonthTrigger }, [text('‹')]),
-              span({ class: 'text-sm font-semibold' }, [
-                text((s: State) => {
-                  const months = [
-                    'Jan',
-                    'Feb',
-                    'Mar',
-                    'Apr',
-                    'May',
-                    'Jun',
-                    'Jul',
-                    'Aug',
-                    'Sep',
-                    'Oct',
-                    'Nov',
-                    'Dec',
-                  ]
-                  return `${months[s.datePicker.visibleMonth - 1]} ${s.datePicker.visibleYear}`
-                }),
-              ]),
-              button({ ...dp.nextMonthTrigger }, [text('›')]),
+  const months = [
+    'Jan',
+    'Feb',
+    'Mar',
+    'Apr',
+    'May',
+    'Jun',
+    'Jul',
+    'Aug',
+    'Sep',
+    'Oct',
+    'Nov',
+    'Dec',
+  ]
+
+  return [
+    sectionGroup('Pickers', [
+      card('Date Picker', [
+        div({ ...dp.root }, [
+          div({ class: 'flex items-center justify-between mb-2' }, [
+            button({ ...dp.prevMonthTrigger }, [text('‹')]),
+            span({ class: 'text-sm font-semibold' }, [
+              text(
+                state.at('datePicker').map((s) => `${months[s.visibleMonth - 1]} ${s.visibleYear}`),
+              ),
             ]),
-            div({ ...dp.grid }, dpGrid()),
+            button({ ...dp.nextMonthTrigger }, [text('›')]),
           ]),
-          div({ class: 'mt-3 text-sm text-text-muted' }, [
-            text('Selected: '),
-            text((s: State) => s.datePicker.value ?? 'none'),
+          div({ ...dp.grid }, dpGrid()),
+        ]),
+        div({ class: 'mt-3 text-sm text-text-muted' }, [
+          text('Selected: '),
+          text(state.at('datePicker').map((s) => s.value ?? 'none')),
+        ]),
+      ]),
+      card('Time Picker', [
+        div({ ...tp.root }, [
+          input({ ...tp.hoursInput }),
+          span({ class: 'font-semibold text-text-muted' }, [text(':')]),
+          input({ ...tp.minutesInput }),
+          button({ ...tp.periodTrigger }, [
+            text(state.at('timePicker').map((s) => (s.value.hours >= 12 ? 'PM' : 'AM'))),
           ]),
         ]),
-        card('Time Picker', [
-          div({ ...tp.root }, [
-            input({ ...tp.hoursInput }),
-            span({ class: 'font-semibold text-text-muted' }, [text(':')]),
-            input({ ...tp.minutesInput }),
-            button({ ...tp.periodTrigger }, [
-              text((s: State) => (s.timePicker.value.hours >= 12 ? 'PM' : 'AM')),
-            ]),
-          ]),
-          div({ class: 'mt-3 text-sm text-text-muted' }, [
-            text('Time: '),
-            text((s: State) => formatTime(s.timePicker)),
-          ]),
+        div({ class: 'mt-3 text-sm text-text-muted' }, [
+          text('Time: '),
+          text(state.at('timePicker').map((s) => formatTime(s))),
         ]),
-        card('Color Picker', [
-          div({ ...cp.root }, [
-            div({ class: 'flex items-center gap-2' }, [
-              div({ ...cp.swatch }, []),
-              input({ ...cp.hexInput }),
+      ]),
+      card('Color Picker', [
+        div({ ...cp.root }, [
+          div({ class: 'flex items-center gap-2' }, [
+            div({ ...cp.swatch }, []),
+            input({ ...cp.hexInput }),
+          ]),
+          div({ class: 'flex flex-col gap-1.5' }, [
+            label({ class: 'flex items-center gap-2 text-xs text-text-muted font-semibold' }, [
+              span([text('H')]),
+              input({ ...cp.hueSlider }),
             ]),
-            div({ class: 'flex flex-col gap-1.5' }, [
-              label({ class: 'flex items-center gap-2 text-xs text-text-muted font-semibold' }, [
-                span([text('H')]),
-                input({ ...cp.hueSlider }),
-              ]),
-              label({ class: 'flex items-center gap-2 text-xs text-text-muted font-semibold' }, [
-                span([text('S')]),
-                input({ ...cp.saturationSlider }),
-              ]),
-              label({ class: 'flex items-center gap-2 text-xs text-text-muted font-semibold' }, [
-                span([text('L')]),
-                input({ ...cp.lightnessSlider }),
-              ]),
+            label({ class: 'flex items-center gap-2 text-xs text-text-muted font-semibold' }, [
+              span([text('S')]),
+              input({ ...cp.saturationSlider }),
+            ]),
+            label({ class: 'flex items-center gap-2 text-xs text-text-muted font-semibold' }, [
+              span([text('L')]),
+              input({ ...cp.lightnessSlider }),
             ]),
           ]),
         ]),
       ]),
-      sectionGroup('Inline editing', [
-        card('Editable', [
-          div({ ...ed.root }, [
-            span({ ...previewParts }, [text((s: State) => s.editable.value || 'Click to edit')]),
-            input({ ...ed.input }),
+    ]),
+    sectionGroup('Inline editing', [
+      card('Editable', [
+        div({ ...ed.root }, [
+          span({ ...previewParts }, [
+            text(state.at('editable').map((e) => e.value || 'Click to edit')),
           ]),
-          div({ class: 'mt-2 text-xs text-text-muted' }, [
-            text('Click, edit, Enter to commit, Esc to cancel'),
-          ]),
+          input({ ...ed.input }),
         ]),
-        card('Clipboard', [
-          div({ ...cb.root }, [
-            input({ ...cb.input, 'aria-label': 'Text to copy' }),
-            button(
-              {
-                ...cb.trigger,
-                class: 'btn btn-secondary text-xs',
-                onClick: (e: MouseEvent) => {
-                  const root = (e.currentTarget as HTMLElement).closest(
-                    '[data-scope="clipboard"][data-part="root"]',
-                  )
-                  const inp = root?.querySelector<HTMLInputElement>('[data-part="input"]')
-                  send({ type: 'copyText', value: inp?.value ?? '' })
-                },
+        div({ class: 'mt-2 text-xs text-text-muted' }, [
+          text('Click, edit, Enter to commit, Esc to cancel'),
+        ]),
+      ]),
+      card('Clipboard', [
+        div({ ...cb.root }, [
+          input({ ...cb.input, 'aria-label': 'Text to copy' }),
+          button(
+            {
+              ...cb.trigger,
+              class: 'btn btn-secondary text-xs',
+              onClick: (e: MouseEvent) => {
+                const root = (e.currentTarget as HTMLElement).closest(
+                  '[data-scope="clipboard"][data-part="root"]',
+                )
+                const inp = root?.querySelector<HTMLInputElement>('[data-part="input"]')
+                send({ type: 'copyText', value: inp?.value ?? '' })
               },
-              [text((s: State) => (s.clipboard.copied ? 'Copied!' : 'Copy'))],
-            ),
-          ]),
+            },
+            [text(state.at('clipboard').map((c) => (c.copied ? 'Copied!' : 'Copy')))],
+          ),
         ]),
-        card('File Upload', [
-          div({ ...fu.root }, [
-            div({ ...fu.dropzone }, [
-              text('Drag files here or click to browse'),
-              input({ ...fu.hiddenInput }),
-            ]),
-            div({ class: 'text-xs text-text-muted' }, [
-              ...each({
-                items: (s) => s.fileUpload.files,
-                key: (f) => f.name,
-                render: ({ item }) => [
-                  div({ class: 'py-1' }, [
-                    text(() => item.name()),
-                    text(' ('),
-                    text(() => `${Math.round(item.size() / 1024)}kb`),
-                    text(')'),
-                  ]),
-                ],
-              }),
-            ]),
+      ]),
+      card('File Upload', [
+        div({ ...fu.root }, [
+          div({ ...fu.dropzone }, [
+            text('Drag files here or click to browse'),
+            input({ ...fu.hiddenInput }),
           ]),
-        ]),
-        card('Splitter', [
-          div({ ...sp.root }, [
-            div({ ...sp.primaryPanel }, [text('Left pane')]),
-            div({ ...sp.resizeTrigger }, []),
-            div({ ...sp.secondaryPanel }, [text('Right pane')]),
-          ]),
-          div({ class: 'mt-2 text-xs text-text-muted' }, [
-            text('Drag handle or arrow keys — split at '),
-            text((s: State) => `${s.splitter.position}%`),
+          div({ class: 'text-xs text-text-muted' }, [
+            each(state.at('fileUpload.files'), {
+              key: (f) => f.name,
+              render: (item) => [
+                div({ class: 'py-1' }, [
+                  text(item.at('name')),
+                  text(' ('),
+                  text(item.map((f) => `${Math.round(f.size / 1024)}kb`)),
+                  text(')'),
+                ]),
+              ],
+            }),
           ]),
         ]),
       ]),
-    ]
-  },
-})
+      card('Splitter', [
+        div({ ...sp.root }, [
+          div({ ...sp.primaryPanel }, [text('Left pane')]),
+          div({ ...sp.resizeTrigger }, []),
+          div({ ...sp.secondaryPanel }, [text('Right pane')]),
+        ]),
+        div({ class: 'mt-2 text-xs text-text-muted' }, [
+          text('Drag handle or arrow keys — split at '),
+          text(state.at('splitter').map((s) => `${s.position}%`)),
+        ]),
+      ]),
+    ]),
+  ]
+}

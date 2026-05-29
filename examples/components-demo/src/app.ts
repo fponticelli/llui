@@ -1,55 +1,117 @@
 /**
- * Root component for the LLui components demo.
+ * Root component for the LLui components demo (signal surface).
  *
- * Hosts each section as a `subApp()` boundary — these are textbook
- * top-level section partitioning cases for the unified composition
- * model: each section has its own independent state + reducer + effect
- * pipeline + lifecycle, and the host doesn't share state with or route
- * messages between sections. That's exactly what `subApp` is for.
+ * The signal surface has a single update loop per mounted component — there is
+ * no `subApp()`/`child()` boundary. Each demo section is therefore a module
+ * (init + update + view) operating on its own slice of the root state, composed
+ * here exactly like the dashboard example: the root reducer routes
+ * `{ type: <section>, msg }` into each section's slice reducer, and each
+ * section's view receives its slice as a `state.at(<section>)` signal handle.
  *
- * Previously these were `child()` calls used as a bitmask escape valve
- * (merging all sections flat would have triggered the FULL_MASK
- * fallback). With path-keyed reactivity now in place, the bitmask
- * argument is no longer the reason — sections stay isolated because
- * their state and lifecycles are genuinely independent, which `subApp`
- * names explicitly via its required `reason` field.
+ * Sections stay isolated because their state and lifecycles are genuinely
+ * independent; the root simply owns the combined state tree.
  *
- * Overlays renders first so its view() registers the bus handlers
- * (registerToastHandler / registerConfirmHandler) before any other
- * section's view() runs and potentially calls showToast / askConfirm.
- *
- * See docs/proposals/unified-composition-model.md.
+ * Overlays' view runs first so its bus handlers (registerToastHandler /
+ * registerConfirmHandler) are registered before any other section's view runs
+ * and potentially calls showToast / askConfirm.
  */
-import { component, div, main } from '@llui/dom'
-import { subApp } from '@llui/dom/escape-hatch'
-import { App as OverlaysApp } from './sections/overlays'
-import { App as InputsApp } from './sections/inputs'
-import { App as DataApp } from './sections/data'
-import { App as PickersEditingApp } from './sections/pickers-editing'
-import { App as TimeInputsApp } from './sections/time-inputs'
-import { App as ContentApp } from './sections/content'
-import { App as SurfacesApp } from './sections/surfaces'
-import { App as CanvasApp } from './sections/canvas'
+import { component, div, main } from '@llui/dom/signals'
+import * as overlays from './sections/overlays'
+import * as inputs from './sections/inputs'
+import * as data from './sections/data'
+import * as pickersEditing from './sections/pickers-editing'
+import * as timeInputs from './sections/time-inputs'
+import * as content from './sections/content'
+import * as surfaces from './sections/surfaces'
+import * as canvas from './sections/canvas'
 
-type State = Record<string, never>
-type Msg = never
+type State = {
+  overlays: overlays.State
+  inputs: inputs.State
+  data: data.State
+  pickersEditing: pickersEditing.State
+  timeInputs: timeInputs.State
+  content: content.State
+  surfaces: surfaces.State
+  canvas: canvas.State
+}
 
-const REASON = 'Top-level demo section — own state, reducer, lifecycle; host shares nothing.'
+type Msg =
+  | { type: 'overlays'; msg: overlays.Msg }
+  | { type: 'inputs'; msg: inputs.Msg }
+  | { type: 'data'; msg: data.Msg }
+  | { type: 'pickersEditing'; msg: pickersEditing.Msg }
+  | { type: 'timeInputs'; msg: timeInputs.Msg }
+  | { type: 'content'; msg: content.Msg }
+  | { type: 'surfaces'; msg: surfaces.Msg }
+  | { type: 'canvas'; msg: canvas.Msg }
 
 export const App = component<State, Msg, never>({
   name: 'ComponentsDemo',
-  init: () => [{}, []],
-  update: (state) => [state, []],
-  view: () => [
+  init: () => [
+    {
+      overlays: overlays.init()[0],
+      inputs: inputs.init()[0],
+      data: data.init()[0],
+      pickersEditing: pickersEditing.init()[0],
+      timeInputs: timeInputs.init()[0],
+      content: content.init()[0],
+      surfaces: surfaces.init()[0],
+      canvas: canvas.init()[0],
+    },
+    [],
+  ],
+  update: (state, msg) => {
+    switch (msg.type) {
+      case 'overlays': {
+        const [s] = overlays.update(state.overlays, msg.msg)
+        return [{ ...state, overlays: s }, []]
+      }
+      case 'inputs': {
+        const [s] = inputs.update(state.inputs, msg.msg)
+        return [{ ...state, inputs: s }, []]
+      }
+      case 'data': {
+        const [s] = data.update(state.data, msg.msg)
+        return [{ ...state, data: s }, []]
+      }
+      case 'pickersEditing': {
+        const [s] = pickersEditing.update(state.pickersEditing, msg.msg)
+        return [{ ...state, pickersEditing: s }, []]
+      }
+      case 'timeInputs': {
+        const [s] = timeInputs.update(state.timeInputs, msg.msg)
+        return [{ ...state, timeInputs: s }, []]
+      }
+      case 'content': {
+        const [s] = content.update(state.content, msg.msg)
+        return [{ ...state, content: s }, []]
+      }
+      case 'surfaces': {
+        const [s] = surfaces.update(state.surfaces, msg.msg)
+        return [{ ...state, surfaces: s }, []]
+      }
+      case 'canvas': {
+        const [s] = canvas.update(state.canvas, msg.msg)
+        return [{ ...state, canvas: s }, []]
+      }
+    }
+  },
+  view: ({ state, send }) => [
     main([
-      div(subApp({ reason: REASON, def: OverlaysApp })),
-      div(subApp({ reason: REASON, def: InputsApp })),
-      div(subApp({ reason: REASON, def: DataApp })),
-      div(subApp({ reason: REASON, def: PickersEditingApp })),
-      div(subApp({ reason: REASON, def: TimeInputsApp })),
-      div(subApp({ reason: REASON, def: ContentApp })),
-      div(subApp({ reason: REASON, def: SurfacesApp })),
-      div(subApp({ reason: REASON, def: CanvasApp })),
+      // Overlays first — its view registers the cross-section bus handlers.
+      div(overlays.view(state.at('overlays'), (m) => send({ type: 'overlays', msg: m }))),
+      div(inputs.view(state.at('inputs'), (m) => send({ type: 'inputs', msg: m }))),
+      div(data.view(state.at('data'), (m) => send({ type: 'data', msg: m }))),
+      div(
+        pickersEditing.view(state.at('pickersEditing'), (m) =>
+          send({ type: 'pickersEditing', msg: m }),
+        ),
+      ),
+      div(timeInputs.view(state.at('timeInputs'), (m) => send({ type: 'timeInputs', msg: m }))),
+      div(content.view(state.at('content'), (m) => send({ type: 'content', msg: m }))),
+      div(surfaces.view(state.at('surfaces'), (m) => send({ type: 'surfaces', msg: m }))),
+      div(canvas.view(state.at('canvas'), (m) => send({ type: 'canvas', msg: m }))),
     ]),
   ],
 })

@@ -7,9 +7,10 @@ import {
   input,
   label,
   span,
+  text,
   virtualEach,
   onMount,
-} from '@llui/dom'
+} from '@llui/dom/signals'
 
 // ── Data ────────────────────────────────────────────────────────
 
@@ -90,7 +91,7 @@ const App = component<State, Msg, never>({
         return [{ ...state, visible: msg.n }, []]
     }
   },
-  view: ({ send, text }) => {
+  view: ({ state, send }) => {
     // Observe the virtual scroll container: childList mutations happen
     // whenever virtualEach adds/removes rows on scroll or state change.
     // Sending `visibleChanged` keeps the stat reactive without polling.
@@ -124,40 +125,40 @@ const App = component<State, Msg, never>({
           min: '100',
           max: '100000',
           step: '100',
-          value: (s: State) => String(s.count),
+          value: state.at('count').map(String),
           onInput: (e: Event) => {
             const target = e.currentTarget as HTMLInputElement
             send({ type: 'setCount', count: Number(target.value) })
           },
         }),
-        span({ class: 'count' }, [text((s: State) => s.count.toLocaleString())]),
+        span({ class: 'count' }, [text(state.at('count').map((c) => c.toLocaleString()))]),
       ]),
 
-      ...virtualEach<State, LogEntry, Msg>({
-        items: (s) => s.logs,
+      virtualEach<LogEntry>({
+        items: state.at('logs'),
         key: (log) => log.id,
         itemHeight: 32,
         containerHeight: 560,
         class: 'log-table',
-        render: ({ item }) => [
+        render: (item) => [
           div(
             {
               class: 'log-row',
-              'data-level': item((l) => l.level),
+              'data-level': item.at('level'),
             },
             [
-              span({ class: 'timestamp' }, [text(item((l) => l.timestamp))]),
-              span({ class: 'level' }, [text(item((l) => l.level))]),
-              span({ class: 'source' }, [text(item((l) => l.source))]),
-              span({ class: 'message' }, [text(item((l) => l.message))]),
+              span({ class: 'timestamp' }, [text(item.at('timestamp'))]),
+              span({ class: 'level' }, [text(item.at('level'))]),
+              span({ class: 'source' }, [text(item.at('source'))]),
+              span({ class: 'message' }, [text(item.at('message'))]),
             ],
           ),
         ],
       }),
 
       div({ class: 'stats' }, [
-        span([text('Visible DOM nodes: '), span([text((s: State) => String(s.visible))])]),
-        span([text('Total entries: '), span([text((s: State) => String(s.logs.length))])]),
+        span([text('Visible DOM nodes: '), span([text(state.at('visible').map(String))])]),
+        span([text('Total entries: '), span([text(state.at('logs.length').map(String))])]),
       ]),
     ]
   },

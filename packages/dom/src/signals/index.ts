@@ -134,6 +134,7 @@ export {
   th,
   pre,
   code,
+  canvas,
   svg,
   path,
   g,

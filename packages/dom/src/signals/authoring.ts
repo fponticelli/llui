@@ -123,6 +123,7 @@ export const td = elementHelper('td')
 export const th = elementHelper('th')
 export const pre = elementHelper('pre')
 export const code = elementHelper('code')
+export const canvas = elementHelper('canvas')
 
 // ── SVG elements (namespaced) ───────────────────────────────────────
 export const svg = svgHelper('svg')
