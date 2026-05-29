@@ -98,6 +98,7 @@ export function mountSignalComponent<S, M, E = never>(
     send,
     getState: () => state,
     dispose: () => {
+      mount?.dispose() // foreign unmounts, subscriptions
       for (const c of cleanups.splice(0)) c()
     },
   }

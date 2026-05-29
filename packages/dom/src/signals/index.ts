@@ -12,12 +12,15 @@ export {
   signalEach,
   signalShow,
   signalBranch,
+  signalForeign,
   mountSignal,
   type Reactive,
   type PropValue,
   type EventHandler,
   type EachItems,
   type ShowCond,
+  type SignalSpec,
+  type ForeignSpec,
   type SignalMount,
 } from './dom.js'
 export {
