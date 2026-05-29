@@ -1,4 +1,4 @@
-import { component, mountApp, div, button } from '@llui/dom'
+import { component, mountApp, div, button, text, show } from '@llui/dom/signals'
 import './styles.css'
 
 type State = { count: number }
@@ -10,7 +10,7 @@ type Msg =
   /** @intent("Reset the counter to 0") */
   | { type: 'reset' }
 
-const Counter = component<State, Msg, never>({
+const Counter = component<State, Msg>({
   name: 'Counter',
   init: () => [{ count: 0 }, []],
   update: (state, msg) => {
@@ -23,18 +23,16 @@ const Counter = component<State, Msg, never>({
         return [{ count: 0 }, []]
     }
   },
-  view: ({ send, text, show }) => [
+  view: ({ state, send }) => [
     div({ class: 'counter' }, [
       button({ onClick: () => send({ type: 'dec' }) }, [text('-')]),
-      text((s) => String(s.count)),
+      text(state.at('count').map(String)),
       button({ onClick: () => send({ type: 'inc' }) }, [text('+')]),
     ]),
-    ...show({
-      when: (s) => s.count > 0,
-      render: () => [
-        button({ class: 'reset', onClick: () => send({ type: 'reset' }) }, [text('Reset')]),
-      ],
-    }),
+    show(
+      state.at('count').map((c) => c > 0),
+      () => [button({ class: 'reset', onClick: () => send({ type: 'reset' }) }, [text('Reset')])],
+    ),
   ],
 })
 

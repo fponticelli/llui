@@ -132,6 +132,8 @@ export interface SignalViewBag<S, M> {
 }
 
 export interface SignalComponentSpec<S, M, E = never> {
+  /** optional component name (debug registry / agent identity) */
+  name?: string
   init: () => S | [S, E[]]
   update: (state: S, msg: M) => [S, E[]] | S
   view: (bag: SignalViewBag<S, M>) => readonly Node[]
