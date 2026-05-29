@@ -12,6 +12,7 @@
 
 import { mountSignal, type SignalMount } from './dom.js'
 import { resolvePath } from './mask.js'
+import { installSignalDebug, type SignalMessageRecord } from './devtools.js'
 import type { Signal } from './types.js'
 
 /** The bag's `state` is a `Signal<S>` so authored handler code reads it the same
@@ -42,6 +43,8 @@ export interface EffectApi<S, M> {
 }
 
 export interface SignalComponentDef<S, M, E = never> {
+  /** optional component name (for the debug registry / agent identity) */
+  readonly name?: string
   /** initial state, optionally with initial effects */
   init: () => S | [S, E[]]
   /** pure reducer; returns the next state, optionally with effects. A bare `S`
@@ -95,6 +98,11 @@ export function mountSignalComponent<S, M, E = never>(
   const cleanups: Array<() => void> = []
 
   const handle = makeHandle<S>(() => state)
+  // Dev: capture a message log and register a debug API for the MCP/agent relay.
+  const dev = import.meta.env?.DEV === true
+  const history: SignalMessageRecord[] = []
+  let msgIndex = 0
+  let uninstallDebug: (() => void) | null = null
 
   const runEffect = (effect: E): void => {
     const cleanup = def.onEffect?.(effect, { send, state: handle })
@@ -102,10 +110,22 @@ export function mountSignalComponent<S, M, E = never>(
   }
 
   function send(msg: M): void {
+    const before = state
     const [next, effects] = normalize<S, E>(def.update(state, msg))
     if (!Object.is(next, state)) {
       state = next
       mount?.update(next)
+    }
+    if (dev) {
+      history.push({
+        index: msgIndex++,
+        timestamp: Date.now(),
+        msg,
+        stateBefore: before,
+        stateAfter: state,
+        effects,
+      })
+      if (history.length > 1000) history.shift()
     }
     for (const e of effects) runEffect(e)
   }
@@ -113,12 +133,34 @@ export function mountSignalComponent<S, M, E = never>(
   mount = mountSignal(container, state, () => def.view({ state: handle, send }))
   for (const e of initialEffects) runEffect(e)
 
+  if (dev) {
+    uninstallDebug = installSignalDebug({
+      name: def.name ?? 'SignalComponent',
+      getState: () => state,
+      setState: (s) => {
+        state = s as S
+        mount?.update(state)
+      },
+      send: (m) => send(m as M),
+      pureUpdate: (s, m) => normalize<S, E>(def.update(s as S, m as M)),
+      history,
+      clearHistory: () => {
+        history.length = 0
+      },
+      msgSchema: def.__msgSchema,
+      stateSchema: def.__stateSchema,
+      effectSchema: def.__effectSchema,
+      componentMeta: def.__componentMeta,
+    })
+  }
+
   return {
     send,
     getState: () => state,
     dispose: () => {
       mount?.dispose() // foreign unmounts, subscriptions
       for (const c of cleanups.splice(0)) c()
+      uninstallDebug?.()
     },
   }
 }
