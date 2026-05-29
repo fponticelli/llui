@@ -1,11 +1,25 @@
-// LLui implementation of the jfb-ticker benchmark. See ../../SPEC.md for
-// the operation list and why this component is shaped this way. The
-// 32-cell dashboard is written inline (not via a `cell(label, getter)`
-// helper) on purpose: the compiler's path tracker reads getter bodies
-// at their AST location, so helpers hide state access behind a parameter
-// and force a FULL_MASK fallback. Verbose but correct.
+// LLui SIGNALS implementation of the jfb-ticker benchmark. See ../../SPEC.md.
+// A 32-cell dashboard (32 distinct reactive paths — exercises chunked masks past
+// the old 31-bit limit) plus a 200-row keyed table whose rows read BOTH their
+// item AND the component's displayMode (multi-root each → the `wide-toggle`
+// per-row fan-out the SPEC measures).
+//
+// init/update/Msg are plain TEA (unchanged from the legacy impl). The view uses
+// the signal authoring surface; the compiler lowers it.
 
-import { component, mountApp, div, span, table, tbody, tr, td, h1 } from '@llui/dom'
+import {
+  component,
+  mountApp,
+  div,
+  span,
+  table,
+  tbody,
+  tr,
+  td,
+  h1,
+  text,
+  each,
+} from '@llui/dom/signals'
 import { initialState, initialDashboard } from '../../../shared/data.js'
 import {
   generateTick,
@@ -37,7 +51,6 @@ type Msg =
   | { type: 'clear' }
 
 const App = component<State, Msg, never>({
-  name: 'Ticker',
   init: () => [initialState(), []],
   update: (state: State, msg: Msg): [State, never[]] => {
     switch (msg.type) {
@@ -106,149 +119,163 @@ const App = component<State, Msg, never>({
         ]
     }
   },
-  view: ({ send, text, each }) => [
+  view: ({ state, send }) => [
     div({ id: 'ticker' }, [
-      h1([text(() => 'LLui ticker')]),
+      h1({}, [text('LLui ticker')]),
 
-      // ── Dashboard: 32 cells × 32 reactive bindings, each pinned to one path ──
+      // ── Dashboard: 32 cells, each pinned to one state path (chunked masks) ──
       div({ class: 'ticker-grid' }, [
         // Headline (4)
         div({ class: 'ticker-cell' }, [
-          span({ class: 'k' }, [text(() => 'Index')]),
-          span({ class: 'v' }, [text((s: State) => s.dashboard.indexValue.toFixed(2))]),
+          span({ class: 'k' }, [text('Index')]),
+          span({ class: 'v' }, [text(state.at('dashboard.indexValue').map((v) => v.toFixed(2)))]),
         ]),
         div({ class: 'ticker-cell' }, [
-          span({ class: 'k' }, [text(() => 'Δ')]),
-          span({ class: 'v' }, [text((s: State) => s.dashboard.indexChange.toFixed(2))]),
+          span({ class: 'k' }, [text('Δ')]),
+          span({ class: 'v' }, [text(state.at('dashboard.indexChange').map((v) => v.toFixed(2)))]),
         ]),
         div({ class: 'ticker-cell' }, [
-          span({ class: 'k' }, [text(() => 'Δ%')]),
-          span({ class: 'v' }, [text((s: State) => s.dashboard.indexChangePct.toFixed(2))]),
+          span({ class: 'k' }, [text('Δ%')]),
+          span({ class: 'v' }, [
+            text(state.at('dashboard.indexChangePct').map((v) => v.toFixed(2))),
+          ]),
         ]),
         div({ class: 'ticker-cell' }, [
-          span({ class: 'k' }, [text(() => 'Tick')]),
-          span({ class: 'v' }, [text((s: State) => String(s.dashboard.lastTick))]),
+          span({ class: 'k' }, [text('Tick')]),
+          span({ class: 'v' }, [text(state.at('dashboard.lastTick').map(String))]),
         ]),
         // Breadth (4)
         div({ class: 'ticker-cell' }, [
-          span({ class: 'k' }, [text(() => 'Adv')]),
-          span({ class: 'v' }, [text((s: State) => String(s.dashboard.advancers))]),
+          span({ class: 'k' }, [text('Adv')]),
+          span({ class: 'v' }, [text(state.at('dashboard.advancers').map(String))]),
         ]),
         div({ class: 'ticker-cell' }, [
-          span({ class: 'k' }, [text(() => 'Dec')]),
-          span({ class: 'v' }, [text((s: State) => String(s.dashboard.decliners))]),
+          span({ class: 'k' }, [text('Dec')]),
+          span({ class: 'v' }, [text(state.at('dashboard.decliners').map(String))]),
         ]),
         div({ class: 'ticker-cell' }, [
-          span({ class: 'k' }, [text(() => 'Unch')]),
-          span({ class: 'v' }, [text((s: State) => String(s.dashboard.unchanged))]),
+          span({ class: 'k' }, [text('Unch')]),
+          span({ class: 'v' }, [text(state.at('dashboard.unchanged').map(String))]),
         ]),
         div({ class: 'ticker-cell' }, [
-          span({ class: 'k' }, [text(() => 'NH')]),
-          span({ class: 'v' }, [text((s: State) => String(s.dashboard.newHighs))]),
+          span({ class: 'k' }, [text('NH')]),
+          span({ class: 'v' }, [text(state.at('dashboard.newHighs').map(String))]),
         ]),
         // Sectors (11)
         div({ class: 'ticker-cell' }, [
-          span({ class: 'k' }, [text(() => 'Tech')]),
-          span({ class: 'v' }, [text((s: State) => s.dashboard.sectorTech.toFixed(2))]),
+          span({ class: 'k' }, [text('Tech')]),
+          span({ class: 'v' }, [text(state.at('dashboard.sectorTech').map((v) => v.toFixed(2)))]),
         ]),
         div({ class: 'ticker-cell' }, [
-          span({ class: 'k' }, [text(() => 'Fin')]),
-          span({ class: 'v' }, [text((s: State) => s.dashboard.sectorFin.toFixed(2))]),
+          span({ class: 'k' }, [text('Fin')]),
+          span({ class: 'v' }, [text(state.at('dashboard.sectorFin').map((v) => v.toFixed(2)))]),
         ]),
         div({ class: 'ticker-cell' }, [
-          span({ class: 'k' }, [text(() => 'Health')]),
-          span({ class: 'v' }, [text((s: State) => s.dashboard.sectorHealth.toFixed(2))]),
+          span({ class: 'k' }, [text('Health')]),
+          span({ class: 'v' }, [text(state.at('dashboard.sectorHealth').map((v) => v.toFixed(2)))]),
         ]),
         div({ class: 'ticker-cell' }, [
-          span({ class: 'k' }, [text(() => 'Energy')]),
-          span({ class: 'v' }, [text((s: State) => s.dashboard.sectorEnergy.toFixed(2))]),
+          span({ class: 'k' }, [text('Energy')]),
+          span({ class: 'v' }, [text(state.at('dashboard.sectorEnergy').map((v) => v.toFixed(2)))]),
         ]),
         div({ class: 'ticker-cell' }, [
-          span({ class: 'k' }, [text(() => 'Cons')]),
-          span({ class: 'v' }, [text((s: State) => s.dashboard.sectorConsumer.toFixed(2))]),
+          span({ class: 'k' }, [text('Cons')]),
+          span({ class: 'v' }, [
+            text(state.at('dashboard.sectorConsumer').map((v) => v.toFixed(2))),
+          ]),
         ]),
         div({ class: 'ticker-cell' }, [
-          span({ class: 'k' }, [text(() => 'Ind')]),
-          span({ class: 'v' }, [text((s: State) => s.dashboard.sectorIndustrial.toFixed(2))]),
+          span({ class: 'k' }, [text('Ind')]),
+          span({ class: 'v' }, [
+            text(state.at('dashboard.sectorIndustrial').map((v) => v.toFixed(2))),
+          ]),
         ]),
         div({ class: 'ticker-cell' }, [
-          span({ class: 'k' }, [text(() => 'Util')]),
-          span({ class: 'v' }, [text((s: State) => s.dashboard.sectorUtilities.toFixed(2))]),
+          span({ class: 'k' }, [text('Util')]),
+          span({ class: 'v' }, [
+            text(state.at('dashboard.sectorUtilities').map((v) => v.toFixed(2))),
+          ]),
         ]),
         div({ class: 'ticker-cell' }, [
-          span({ class: 'k' }, [text(() => 'Mat')]),
-          span({ class: 'v' }, [text((s: State) => s.dashboard.sectorMaterials.toFixed(2))]),
+          span({ class: 'k' }, [text('Mat')]),
+          span({ class: 'v' }, [
+            text(state.at('dashboard.sectorMaterials').map((v) => v.toFixed(2))),
+          ]),
         ]),
         div({ class: 'ticker-cell' }, [
-          span({ class: 'k' }, [text(() => 'RE')]),
-          span({ class: 'v' }, [text((s: State) => s.dashboard.sectorRealestate.toFixed(2))]),
+          span({ class: 'k' }, [text('RE')]),
+          span({ class: 'v' }, [
+            text(state.at('dashboard.sectorRealestate').map((v) => v.toFixed(2))),
+          ]),
         ]),
         div({ class: 'ticker-cell' }, [
-          span({ class: 'k' }, [text(() => 'Comm')]),
-          span({ class: 'v' }, [text((s: State) => s.dashboard.sectorComm.toFixed(2))]),
+          span({ class: 'k' }, [text('Comm')]),
+          span({ class: 'v' }, [text(state.at('dashboard.sectorComm').map((v) => v.toFixed(2)))]),
         ]),
         div({ class: 'ticker-cell' }, [
-          span({ class: 'k' }, [text(() => 'Stap')]),
-          span({ class: 'v' }, [text((s: State) => s.dashboard.sectorStaples.toFixed(2))]),
+          span({ class: 'k' }, [text('Stap')]),
+          span({ class: 'v' }, [
+            text(state.at('dashboard.sectorStaples').map((v) => v.toFixed(2))),
+          ]),
         ]),
         // Currencies (4)
         div({ class: 'ticker-cell' }, [
-          span({ class: 'k' }, [text(() => 'EUR')]),
-          span({ class: 'v' }, [text((s: State) => s.dashboard.usdEur.toFixed(4))]),
+          span({ class: 'k' }, [text('EUR')]),
+          span({ class: 'v' }, [text(state.at('dashboard.usdEur').map((v) => v.toFixed(4)))]),
         ]),
         div({ class: 'ticker-cell' }, [
-          span({ class: 'k' }, [text(() => 'JPY')]),
-          span({ class: 'v' }, [text((s: State) => s.dashboard.usdJpy.toFixed(2))]),
+          span({ class: 'k' }, [text('JPY')]),
+          span({ class: 'v' }, [text(state.at('dashboard.usdJpy').map((v) => v.toFixed(2)))]),
         ]),
         div({ class: 'ticker-cell' }, [
-          span({ class: 'k' }, [text(() => 'GBP')]),
-          span({ class: 'v' }, [text((s: State) => s.dashboard.usdGbp.toFixed(4))]),
+          span({ class: 'k' }, [text('GBP')]),
+          span({ class: 'v' }, [text(state.at('dashboard.usdGbp').map((v) => v.toFixed(4)))]),
         ]),
         div({ class: 'ticker-cell' }, [
-          span({ class: 'k' }, [text(() => 'CNY')]),
-          span({ class: 'v' }, [text((s: State) => s.dashboard.usdCny.toFixed(4))]),
+          span({ class: 'k' }, [text('CNY')]),
+          span({ class: 'v' }, [text(state.at('dashboard.usdCny').map((v) => v.toFixed(4)))]),
         ]),
         // Commodities (4)
         div({ class: 'ticker-cell' }, [
-          span({ class: 'k' }, [text(() => 'Oil')]),
-          span({ class: 'v' }, [text((s: State) => s.dashboard.oil.toFixed(2))]),
+          span({ class: 'k' }, [text('Oil')]),
+          span({ class: 'v' }, [text(state.at('dashboard.oil').map((v) => v.toFixed(2)))]),
         ]),
         div({ class: 'ticker-cell' }, [
-          span({ class: 'k' }, [text(() => 'Gold')]),
-          span({ class: 'v' }, [text((s: State) => s.dashboard.gold.toFixed(2))]),
+          span({ class: 'k' }, [text('Gold')]),
+          span({ class: 'v' }, [text(state.at('dashboard.gold').map((v) => v.toFixed(2)))]),
         ]),
         div({ class: 'ticker-cell' }, [
-          span({ class: 'k' }, [text(() => 'Slv')]),
-          span({ class: 'v' }, [text((s: State) => s.dashboard.silver.toFixed(2))]),
+          span({ class: 'k' }, [text('Slv')]),
+          span({ class: 'v' }, [text(state.at('dashboard.silver').map((v) => v.toFixed(2)))]),
         ]),
         div({ class: 'ticker-cell' }, [
-          span({ class: 'k' }, [text(() => 'Cu')]),
-          span({ class: 'v' }, [text((s: State) => s.dashboard.copper.toFixed(2))]),
+          span({ class: 'k' }, [text('Cu')]),
+          span({ class: 'v' }, [text(state.at('dashboard.copper').map((v) => v.toFixed(2)))]),
         ]),
-        // Mode (1) — drives the row class binding below; visible here too
+        // Mode (1)
         div({ class: 'ticker-cell' }, [
-          span({ class: 'k' }, [text(() => 'Mode')]),
-          span({ class: 'v' }, [text((s: State) => s.dashboard.displayMode)]),
+          span({ class: 'k' }, [text('Mode')]),
+          span({ class: 'v' }, [text(state.at('dashboard.displayMode'))]),
         ]),
-        // Tick counter (1) — also the universal sync signal for jfb's harness.
+        // Tick counter (1) — jfb's universal sync signal
         div({ class: 'ticker-cell' }, [
-          span({ class: 'k' }, [text(() => '#')]),
+          span({ class: 'k' }, [text('#')]),
           span({ class: 'v', id: 'ticker-counter' }, [
-            text((s: State) => String(s.dashboard.tickCount)),
+            text(state.at('dashboard.tickCount').map(String)),
           ]),
         ]),
         // Status (3)
         div({ class: 'ticker-cell' }, [
-          span({ class: 'k' }, [text(() => 'Mkt')]),
-          span({ class: 'v' }, [text((s: State) => s.dashboard.marketState)]),
+          span({ class: 'k' }, [text('Mkt')]),
+          span({ class: 'v' }, [text(state.at('dashboard.marketState'))]),
         ]),
         div({ class: 'ticker-cell' }, [
-          span({ class: 'k' }, [text(() => 'Lat')]),
-          span({ class: 'v' }, [text((s: State) => String(s.dashboard.latencyMs))]),
+          span({ class: 'k' }, [text('Lat')]),
+          span({ class: 'v' }, [text(state.at('dashboard.latencyMs').map(String))]),
         ]),
         div({ class: 'ticker-cell' }, [
-          span({ class: 'k' }, [text(() => 'Feeds')]),
-          span({ class: 'v' }, [text((s: State) => String(s.dashboard.connectedFeeds))]),
+          span({ class: 'k' }, [text('Feeds')]),
+          span({ class: 'v' }, [text(state.at('dashboard.connectedFeeds').map(String))]),
         ]),
       ]),
 
@@ -264,26 +291,24 @@ const App = component<State, Msg, never>({
         actionButton('clear', 'Clear', 'clear', 1, send),
       ]),
 
-      // ── Symbol list ──
+      // ── Symbol list: multi-root each — rows read item fields AND the shared
+      // displayMode (the wide-toggle fan-out the SPEC measures) ──
       table({ id: 'symbols', class: 'ticker' }, [
-        tbody(
-          each<SymbolRow>({
-            items: (s: State) => s.symbols,
-            key: (sy: SymbolRow) => sy.id,
-            render: ({ item }) => [
-              tr({ class: (s: State) => `mode-${s.dashboard.displayMode}` }, [
-                td([text(item.ticker)]),
-                td({ class: 'col-price' }, [text(item((sy: SymbolRow) => sy.price.toFixed(2)))]),
-                td({ class: 'col-change' }, [text(item((sy: SymbolRow) => sy.change.toFixed(2)))]),
-                td({ class: 'col-change' }, [
-                  text(item((sy: SymbolRow) => sy.changePct.toFixed(2))),
-                ]),
-                td({ class: 'col-volume' }, [text(item((sy: SymbolRow) => String(sy.volume)))]),
-                td([text(item((sy: SymbolRow) => String(sy.lastTickAt)))]),
+        tbody({}, [
+          each<SymbolRow>(state.at('symbols'), {
+            key: (sy) => sy.id,
+            render: (item) => [
+              tr({ class: state.at('dashboard.displayMode').map((m) => `mode-${m}`) }, [
+                td({}, [text(item.at('ticker'))]),
+                td({ class: 'col-price' }, [text(item.at('price').map((p) => p.toFixed(2)))]),
+                td({ class: 'col-change' }, [text(item.at('change').map((c) => c.toFixed(2)))]),
+                td({ class: 'col-change' }, [text(item.at('changePct').map((c) => c.toFixed(2)))]),
+                td({ class: 'col-volume' }, [text(item.at('volume').map(String))]),
+                td({}, [text(item.at('lastTickAt').map(String))]),
               ]),
             ],
           }),
-        ),
+        ]),
       ]),
     ]),
   ],

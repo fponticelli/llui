@@ -62,6 +62,14 @@ export const img = elementHelper('img')
 export const small = elementHelper('small')
 export const strong = elementHelper('strong')
 export const em = elementHelper('em')
+export const table = elementHelper('table')
+export const thead = elementHelper('thead')
+export const tbody = elementHelper('tbody')
+export const tr = elementHelper('tr')
+export const td = elementHelper('td')
+export const th = elementHelper('th')
+export const pre = elementHelper('pre')
+export const code = elementHelper('code')
 
 // ── Structural primitives ───────────────────────────────────────────
 export function each<T>(

@@ -1,9 +1,10 @@
-// Per-button helper. Lives in its own file so the bench's main.ts can keep
-// view-bag primitives behind the view bag (satisfies llui/view-bag-import).
-// Buttons are not reactive — they're imperative dispatchers — so static
-// analysis on closures here is irrelevant.
+// Per-button helper. Buttons are imperative dispatchers (not reactive), and this
+// is a HELPER function — the compiler's view transform only rewrites slots inside
+// a component `view`, not helper bodies — so it builds DOM with the RUNTIME signal
+// helpers (el / staticText) directly rather than the authoring ones.
 
-import { div, button, text, flush } from '@llui/dom'
+import { el, staticText } from '@llui/dom/signals'
+import { flush } from '@llui/dom'
 
 type ButtonMsg =
   | { type: 'mount' }
@@ -19,10 +20,11 @@ export function actionButton(
   msgType: ButtonMsg['type'],
   iters: number,
   send: (msg: ButtonMsg) => void,
-): HTMLElement {
+): Node {
   const msg = { type: msgType } as ButtonMsg
-  return div({ class: 'btn-wrap' }, [
-    button(
+  return el('div', { class: 'btn-wrap' }, [
+    el(
+      'button',
       {
         type: 'button',
         class: 'btn btn-primary',
@@ -34,7 +36,7 @@ export function actionButton(
           }
         },
       },
-      [text(label)],
+      [staticText(label)],
     ),
   ])
 }
