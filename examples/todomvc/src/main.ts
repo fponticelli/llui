@@ -15,8 +15,6 @@ import {
   text,
   show,
   each,
-  type Signal,
-  type Send,
 } from '@llui/dom/signals'
 
 type Todo = { id: number; text: string; completed: boolean }
@@ -171,9 +169,45 @@ const App = component<State, Msg, never>({
               ),
             ]),
             ul({ class: 'filters' }, [
-              filterLink('all', 'All', state.at('filter'), send),
-              filterLink('active', 'Active', state.at('filter'), send),
-              filterLink('completed', 'Completed', state.at('filter'), send),
+              li({}, [
+                a(
+                  {
+                    class: state.at('filter').map((f) => (f === 'all' ? 'selected' : '')),
+                    href: '#',
+                    onClick: (e: Event) => {
+                      e.preventDefault()
+                      send({ type: 'setFilter', filter: 'all' })
+                    },
+                  },
+                  [text('All')],
+                ),
+              ]),
+              li({}, [
+                a(
+                  {
+                    class: state.at('filter').map((f) => (f === 'active' ? 'selected' : '')),
+                    href: '#',
+                    onClick: (e: Event) => {
+                      e.preventDefault()
+                      send({ type: 'setFilter', filter: 'active' })
+                    },
+                  },
+                  [text('Active')],
+                ),
+              ]),
+              li({}, [
+                a(
+                  {
+                    class: state.at('filter').map((f) => (f === 'completed' ? 'selected' : '')),
+                    href: '#',
+                    onClick: (e: Event) => {
+                      e.preventDefault()
+                      send({ type: 'setFilter', filter: 'completed' })
+                    },
+                  },
+                  [text('Completed')],
+                ),
+              ]),
             ]),
             show(
               state.at('todos').map((ts) => ts.some((t) => t.completed)),
@@ -193,26 +227,5 @@ const App = component<State, Msg, never>({
     ]),
   ],
 })
-
-function filterLink(
-  filter: Filter,
-  linkLabel: string,
-  currentFilter: Signal<Filter>,
-  send: Send<Msg>,
-): Node {
-  return li({}, [
-    a(
-      {
-        class: currentFilter.map((f) => (f === filter ? 'selected' : '')),
-        onClick: (e: Event) => {
-          e.preventDefault()
-          send({ type: 'setFilter', filter })
-        },
-        href: '#',
-      },
-      [text(linkLabel)],
-    ),
-  ])
-}
 
 mountApp(document.getElementById('app')!, App)
