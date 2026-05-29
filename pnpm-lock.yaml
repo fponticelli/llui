@@ -265,6 +265,19 @@ importers:
         specifier: ^8.0.0
         version: 8.0.3(@emnapi/core@1.9.1)(@emnapi/runtime@1.9.1)(@types/node@22.19.15)(esbuild@0.27.5)(jiti@2.6.1)(tsx@4.21.0)(yaml@2.9.0)
 
+  examples/signals-showcase:
+    dependencies:
+      '@llui/dom':
+        specifier: workspace:*
+        version: link:../../packages/dom
+    devDependencies:
+      '@llui/vite-plugin':
+        specifier: workspace:*
+        version: link:../../packages/vite-plugin
+      vite:
+        specifier: ^8.0.0
+        version: 8.0.3(@emnapi/core@1.9.1)(@emnapi/runtime@1.9.1)(@types/node@22.19.15)(esbuild@0.27.5)(jiti@2.6.1)(tsx@4.21.0)(yaml@2.9.0)
+
   examples/todomvc:
     dependencies:
       '@llui/dom':
@@ -502,6 +515,10 @@ importers:
       linkedom:
         specifier: '*'
         version: 0.18.12
+    devDependencies:
+      '@llui/compiler':
+        specifier: workspace:*
+        version: link:../compiler
 
   packages/effects: {}
 
