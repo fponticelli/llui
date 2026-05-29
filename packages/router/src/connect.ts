@@ -1,5 +1,5 @@
 import type { Router } from './index.js'
-import { a, onMount } from '@llui/dom'
+import { a, onMount } from '@llui/dom/signals'
 
 // ── Router Effects ───────────────────────────────────────────────
 
@@ -92,7 +92,7 @@ export interface ConnectedRouter<R> {
     attrs: Record<string, unknown>,
     children: Node[],
     msgFactory?: (route: R) => M,
-  ): HTMLElement
+  ): Node
 
   /**
    * Create an update handler for mergeHandlers.
@@ -278,7 +278,7 @@ export function connectRouter<R>(
       attrs: Record<string, unknown>,
       children: Node[],
       msgFactory?: (route: R) => M,
-    ): HTMLElement {
+    ): Node {
       const factory = msgFactory ?? ((r: R) => ({ type: 'navigate', route: r }) as M)
       return a(
         {
