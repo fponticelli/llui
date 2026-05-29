@@ -1,4 +1,4 @@
-import { component, div, h1, p, ul, li, button } from '@llui/dom'
+import { component, div, h1, p, ul, li, button, text, each } from '@llui/dom/signals'
 
 type OverviewState = { widgets: readonly string[] }
 type OverviewMsg =
@@ -30,7 +30,7 @@ export const Page = component<OverviewState, OverviewMsg, never>({
         return [{ widgets: state.widgets.filter((_, i) => i !== msg.idx) }, []]
     }
   },
-  view: ({ send, text, each }) => [
+  view: ({ state, send }) => [
     div({ class: 'page page-dashboard-overview' }, [
       h1([text('Overview')]),
       p([
@@ -39,22 +39,24 @@ export const Page = component<OverviewState, OverviewMsg, never>({
         ),
       ]),
       ul({ class: 'widget-list' }, [
-        ...each({
-          items: (s) => s.widgets,
-          key: (w) => w,
-          render: ({ item, index }) => [
-            li([
-              text(item),
-              button(
-                {
-                  class: 'remove',
-                  onClick: () => send({ type: 'remove', idx: index() }),
-                },
-                [text('remove')],
-              ),
-            ]),
-          ],
-        }),
+        each(
+          state.map((s) => s.widgets),
+          {
+            key: (w) => w,
+            render: (item, index) => [
+              li([
+                text(item),
+                button(
+                  {
+                    class: 'remove',
+                    onClick: () => send({ type: 'remove', idx: index.peek() }),
+                  },
+                  [text('remove')],
+                ),
+              ]),
+            ],
+          },
+        ),
       ]),
       button({ class: 'primary', onClick: () => send({ type: 'add' }) }, [text('Add widget')]),
     ]),

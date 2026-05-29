@@ -7,7 +7,7 @@
 // Together those four imports are the exact set that broke production
 // builds before issue #5's follow-up fix. The fixture's only purpose
 // is to keep them in the emitted server bundle.
-import { component, div, button } from '@llui/dom'
+import { component, div, button, text } from '@llui/dom/signals'
 
 type State = { count: number }
 type Msg =
@@ -27,10 +27,10 @@ const Counter = component<State, Msg, never>({
         return [{ ...state, count: state.count - 1 }, []]
     }
   },
-  view: ({ send, text }) => [
+  view: ({ state, send }) => [
     div({ class: 'counter' }, [
       button({ onClick: () => send({ type: 'dec' }) }, [text('-')]),
-      text((s) => String(s.count)),
+      text(state.at('count').map((c) => String(c))),
       button({ onClick: () => send({ type: 'inc' }) }, [text('+')]),
     ]),
   ],

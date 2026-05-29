@@ -1,4 +1,4 @@
-import { component, div, aside, section, nav, a } from '@llui/dom'
+import { component, div, aside, section, nav, a, text } from '@llui/dom/signals'
 import { pageSlot } from '@llui/vike/client'
 
 type DashboardState = { lastVisited: string | null }
@@ -24,13 +24,13 @@ type DashboardMsg = { type: 'visit'; route: string }
 export const DashboardLayout = component<DashboardState, DashboardMsg, never>({
   name: 'DashboardLayout',
   init: () => [{ lastVisited: null }, []],
-  update: (state, msg) => {
+  update: (_state, msg) => {
     switch (msg.type) {
       case 'visit':
         return [{ lastVisited: msg.route }, []]
     }
   },
-  view: ({ text }) => [
+  view: ({ state }) => [
     div({ class: 'dashboard' }, [
       aside({ class: 'dashboard-sidebar' }, [
         div({ class: 'dashboard-title' }, [text('Dashboard')]),
@@ -40,7 +40,9 @@ export const DashboardLayout = component<DashboardState, DashboardMsg, never>({
         ]),
         div({ class: 'dashboard-footer' }, [
           div({ class: 'dashboard-footer-label' }, [text('Last visited:')]),
-          div({ class: 'dashboard-footer-value' }, [text((s) => s.lastVisited ?? '(none yet)')]),
+          div({ class: 'dashboard-footer-value' }, [
+            text(state.map((s) => s.lastVisited ?? '(none yet)')),
+          ]),
         ]),
       ]),
       section({ class: 'dashboard-content' }, [pageSlot()]),

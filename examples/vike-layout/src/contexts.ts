@@ -1,4 +1,4 @@
-import { createContext } from '@llui/dom'
+import { createContext } from '@llui/dom/signals'
 
 /**
  * Dispatchers the AppLayout provides to every page below the slot.
@@ -12,7 +12,12 @@ export interface ToastDispatcher {
   dismiss: (id: number) => void
 }
 
-export const ToastContext = createContext<ToastDispatcher>(undefined, 'Toast')
+// No-op default: used only if a page reads the context with no layout provider
+// above it (shouldn't happen in this app — every page renders inside AppLayout).
+export const ToastContext = createContext<ToastDispatcher>(
+  { show: () => {}, dismiss: () => {} },
+  'Toast',
+)
 
 /**
  * Session dispatchers — any page can trigger login/logout via context
@@ -30,4 +35,7 @@ export interface SessionDispatcher {
   logout: () => void
 }
 
-export const SessionContext = createContext<SessionDispatcher>(undefined, 'Session')
+export const SessionContext = createContext<SessionDispatcher>(
+  { login: () => {}, logout: () => {} },
+  'Session',
+)

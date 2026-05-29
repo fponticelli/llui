@@ -1,4 +1,16 @@
-import { component, div, header, main, nav, a, span, button, provideValue } from '@llui/dom'
+import {
+  component,
+  div,
+  header,
+  main,
+  nav,
+  a,
+  span,
+  button,
+  text,
+  each,
+  provide,
+} from '@llui/dom/signals'
 import { pageSlot } from '@llui/vike/client'
 import { ToastContext, SessionContext } from '../src/contexts'
 
@@ -70,7 +82,7 @@ export const AppLayout = component<AppLayoutState, AppLayoutMsg, never>({
         return [{ ...state, toasts: state.toasts.filter((t) => t.id !== msg.id) }, []]
     }
   },
-  view: ({ send, text, each }) => [
+  view: ({ state, send }) => [
     div({ class: 'app-shell' }, [
       header({ class: 'app-header' }, [
         div({ class: 'app-logo' }, [text('llui/vike layout demo')]),
@@ -82,7 +94,7 @@ export const AppLayout = component<AppLayoutState, AppLayoutMsg, never>({
         ]),
         div({ class: 'app-session' }, [
           span({ class: 'session-user' }, [
-            text((s) => (s.user ? `Logged in as ${s.user}` : 'Not logged in')),
+            text(state.map((s) => (s.user ? `Logged in as ${s.user}` : 'Not logged in'))),
           ]),
         ]),
       ]),
@@ -91,40 +103,41 @@ export const AppLayout = component<AppLayoutState, AppLayoutMsg, never>({
       // stack via ToastContext.show() below — the notifications appear
       // in persistent chrome and survive client navigation.
       div({ class: 'toast-stack' }, [
-        ...each({
-          items: (s) => s.toasts,
-          key: (toast) => toast.id,
-          render: ({ item }) => [
-            div({ class: 'toast' }, [
-              span({ class: 'toast-msg' }, [text(item.msg)]),
-              button(
-                {
-                  class: 'toast-dismiss',
-                  'aria-label': 'Dismiss notification',
-                  onClick: () => send({ type: 'toast/dismiss', id: item.id() }),
-                },
-                [text('×')],
-              ),
-            ]),
-          ],
-        }),
+        each(
+          state.map((s) => s.toasts),
+          {
+            key: (toast) => toast.id,
+            render: (item) => [
+              div({ class: 'toast' }, [
+                span({ class: 'toast-msg' }, [text(item.map((t) => t.msg))]),
+                button(
+                  {
+                    class: 'toast-dismiss',
+                    'aria-label': 'Dismiss notification',
+                    onClick: () => send({ type: 'toast/dismiss', id: item.peek().id }),
+                  },
+                  [text('×')],
+                ),
+              ]),
+            ],
+          },
+        ),
       ]),
 
       // Two stable dispatcher bags wrap the main content region. Each
-      // exposes methods that close over `send`, so any page below the
-      // slot can read them via `useContextValue` and trigger layout
-      // state changes without direct coupling. Both contexts are
-      // state-independent — `provideValue` is the right primitive,
-      // and consumers read with `useContextValue(ctx)` (one call,
-      // not the `useContext(ctx)(undefined as never).method()` dance).
-      ...provideValue(
+      // exposes methods that close over `send`, so any page below the slot
+      // can read them via `useContext` and trigger layout state changes
+      // without direct coupling. Both contexts are state-independent, so a
+      // build-time `provide` value is exactly right. `provide` returns a
+      // single Node; `pageSlot()` likewise.
+      provide(
         ToastContext,
         {
           show: (msg: string) => send({ type: 'toast/show', msg }),
           dismiss: (id: number) => send({ type: 'toast/dismiss', id }),
         },
         () => [
-          ...provideValue(
+          provide(
             SessionContext,
             {
               login: (user: string) => send({ type: 'session/login', user }),

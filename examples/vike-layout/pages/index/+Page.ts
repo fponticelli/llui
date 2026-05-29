@@ -1,4 +1,4 @@
-import { component, div, h1, p, button, useContextValue } from '@llui/dom'
+import { component, div, h1, p, button, text, useContext } from '@llui/dom/signals'
 import { ToastContext, SessionContext } from '../../src/contexts'
 
 type HomeState = { clicks: number }
@@ -23,14 +23,12 @@ export const Page = component<HomeState, HomeMsg, never>({
         return [{ clicks: state.clicks + 1 }, []]
     }
   },
-  view: ({ send, text }) => {
-    // useContextValue reads the layout-provided dispatcher bag in
-    // one call. The reactive useContext(ctx) form would return an
-    // accessor and force `useContext(ToastContext)(undefined as never).show(...)`
-    // at every call site — useContextValue gives us toast.show('...')
-    // directly because the ToastContext value doesn't depend on state.
-    const toast = useContextValue(ToastContext)
-    const session = useContextValue(SessionContext)
+  view: ({ state, send }) => {
+    // useContext returns the layout-provided dispatcher bag directly (signal
+    // context values are resolved at build time). The values close over the
+    // layout's send, so calls land in the layout's update loop.
+    const toast = useContext(ToastContext)
+    const session = useContext(SessionContext)
     return [
       div({ class: 'page page-home' }, [
         h1([text('Welcome')]),
@@ -40,7 +38,7 @@ export const Page = component<HomeState, HomeMsg, never>({
           ),
         ]),
 
-        p([text('Click count on this page: '), text((s) => String(s.clicks))]),
+        p([text('Click count on this page: '), text(state.map((s) => String(s.clicks)))]),
         button(
           {
             class: 'primary',

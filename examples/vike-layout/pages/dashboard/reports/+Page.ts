@@ -1,4 +1,17 @@
-import { component, div, h1, p, table, thead, tbody, tr, th, td } from '@llui/dom'
+import {
+  component,
+  div,
+  h1,
+  p,
+  table,
+  thead,
+  tbody,
+  tr,
+  th,
+  td,
+  text,
+  each,
+} from '@llui/dom/signals'
 
 interface Report {
   month: string
@@ -28,24 +41,26 @@ export const Page = component<ReportsState, never, never>({
     [],
   ],
   update: (state) => [state, []],
-  view: ({ text, each }) => [
+  view: ({ state }) => [
     div({ class: 'page page-dashboard-reports' }, [
       h1([text('Reports')]),
       p([text('Quarterly snapshot. DashboardLayout wraps me on the left.')]),
       table({ class: 'reports-table' }, [
         thead([tr([th([text('Month')]), th([text('Revenue')]), th([text('Growth')])])]),
         tbody([
-          ...each({
-            items: (s) => s.rows,
-            key: (r) => r.month,
-            render: ({ item }) => [
-              tr([
-                td([text(item.month)]),
-                td([text((_s) => `$${item.revenue().toLocaleString()}`)]),
-                td([text(item.growth)]),
-              ]),
-            ],
-          }),
+          each(
+            state.map((s) => s.rows),
+            {
+              key: (r) => r.month,
+              render: (item) => [
+                tr([
+                  td([text(item.map((r) => r.month))]),
+                  td([text(item.map((r) => `$${r.revenue.toLocaleString()}`))]),
+                  td([text(item.map((r) => r.growth))]),
+                ]),
+              ],
+            },
+          ),
         ]),
       ]),
     ]),

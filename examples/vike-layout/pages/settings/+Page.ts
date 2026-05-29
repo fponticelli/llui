@@ -1,4 +1,4 @@
-import { component, div, h1, p, label, input, button, useContextValue } from '@llui/dom'
+import { component, div, h1, p, label, input, button, text, useContext } from '@llui/dom/signals'
 import { ToastContext } from '../../src/contexts'
 
 type SettingsState = {
@@ -39,8 +39,8 @@ export const Page = component<SettingsState, SettingsMsg, never>({
         return [state, []]
     }
   },
-  view: ({ send, text }) => {
-    const toast = useContextValue(ToastContext)
+  view: ({ state, send }) => {
+    const toast = useContext(ToastContext)
     return [
       div({ class: 'page page-settings' }, [
         h1([text('Settings')]),
@@ -54,7 +54,7 @@ export const Page = component<SettingsState, SettingsMsg, never>({
           label([
             input({
               type: 'checkbox',
-              checked: (s) => s.notifications,
+              checked: state.map((s) => s.notifications),
               onChange: () => send({ type: 'toggleNotifications' }),
             }),
             text(' Enable notifications'),
@@ -64,7 +64,7 @@ export const Page = component<SettingsState, SettingsMsg, never>({
           label([
             input({
               type: 'checkbox',
-              checked: (s) => s.autoSave,
+              checked: state.map((s) => s.autoSave),
               onChange: () => send({ type: 'toggleAutoSave' }),
             }),
             text(' Auto-save'),
@@ -75,7 +75,7 @@ export const Page = component<SettingsState, SettingsMsg, never>({
             text('Display name: '),
             input({
               type: 'text',
-              value: (s) => s.displayName,
+              value: state.map((s) => s.displayName),
               onInput: (e) =>
                 send({
                   type: 'setDisplayName',
