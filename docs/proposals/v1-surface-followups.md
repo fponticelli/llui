@@ -3,6 +3,45 @@
 Topics discussed and explicitly deferred, or noticed and not yet dug into, while
 designing signals. All are part of the v1 picture.
 
+## BLOCKER for the benchmark app: multi-root `each` rows
+
+Converting `benchmarks/jfb-ticker/frameworks/llui` to signals surfaced a real gap.
+The benchmark's signature operation `wide-toggle` is **defined by SPEC.md as
+"fan-out to every row"**: each row's class is `mode-${state.dashboard.displayMode}`
+— i.e. a row reads **component state**, not just its item. (Hoisting the class to
+`tbody` would be one binding instead of 200 and would _falsify_ the operation the
+benchmark exists to measure, so it's not an option.)
+
+Signal `each` today mounts each row scope on the **item only** — a row can read
+`item.at('x')` but not `state.at('dashboard.displayMode')`. This is the
+multi-root-row case the proposal promised ("nested scopes coexist with full
+precision") but the implementation is single-root. Real apps hit it too (lance,
+dicerun have rows reading outer state).
+
+**Scoped design — combined-ctx rows:**
+
+- `signalEach(source, key, render)` where `source = { items: (state) => T[];
+deps: [...itemsPaths, ...rowStatePaths] }` — deps cover BOTH the items path and
+  any component-state paths the rows read.
+- A row scope mounts on a combined `{ item, state }`; render bindings read
+  `ctx.item.x` (dep `item.x`) or `ctx.state.dashboard.displayMode` (dep
+  `state.dashboard.displayMode`).
+- The structural binding's `produce` returns the whole component state; it fires
+  when items OR a row-state path changes. `reconcile(componentState)` keys rows
+  as today and feeds each the new combined ctx; per-row `scope.update(oldCtx,
+newCtx)` then re-runs ONLY the bindings whose part changed — so a `displayMode`
+  toggle re-runs every row's class binding (the fan-out) while item bindings stay
+  put. Item add/remove/reorder still works as now.
+
+**Touches (coordinated):** runtime `signalEach` (combined-ctx rows), codegen
+(per-root prefixing: item-root -> `ctx.item`, state-root -> `ctx.state`; deps
+namespaced), transform-view `each` lowering (emit the combined-ctx render +
+`source` with merged deps), and the each / authored-e2e / showcase-todos tests
+(lowered form changes from item-only to combined-ctx). Build as one focused unit.
+
+Until this lands, the benchmark app cannot be converted faithfully; the showcase
+`todos` each (item-only rows) is unaffected and works.
+
 ## Composition — RESOLVED
 
 Signals adopt the `unified-composition-model` wholesale (it's already on `main`):
