@@ -29,19 +29,25 @@ export interface SignalBinding<V = unknown> {
 export interface SignalScope {
   /** mount: run every binding once against the initial state */
   mount(state: unknown): void
-  /** update: gate by dirty bits, commit only changed values */
+  /** update: gate by dirty bits, commit only changed values, then propagate to
+   * child scopes (mounted content of conditional/structural primitives). */
   update(oldState: unknown, newState: unknown): void
+  /** register a child scope that should receive the same state updates (e.g.
+   * `show`/`branch` content that reads the owning component's state). */
+  addChild(child: SignalScope): void
+  removeChild(child: SignalScope): void
 }
 
 /**
  * Create a Phase-2 reconciler over a flat binding array gated by a chunked-mask
- * path table.
+ * path table, plus a set of child scopes that receive propagated updates.
  */
 export function createSignalScope(
   table: PathTable,
   bindings: readonly SignalBinding[],
 ): SignalScope {
   const last = new Map<SignalBinding, unknown>()
+  const children = new Set<SignalScope>()
 
   return {
     mount(state: unknown): void {
@@ -62,6 +68,17 @@ export function createSignalScope(
           last.set(b, v)
         }
       }
+      // propagate to mounted child scopes (own bindings above may have
+      // added/removed children; newly-mounted children are already current and
+      // no-op here via output-equality).
+      for (const c of children) c.update(oldState, newState)
+    },
+
+    addChild(child: SignalScope): void {
+      children.add(child)
+    },
+    removeChild(child: SignalScope): void {
+      children.delete(child)
     },
   }
 }

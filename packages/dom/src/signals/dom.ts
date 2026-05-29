@@ -24,6 +24,9 @@ interface BindingSpec {
 interface BuildCtx {
   specs: BindingSpec[]
   doc: Document
+  /** the scope that will own the bindings collected in this build — set after
+   * buildScope. Structural primitives register their mounted child scopes here. */
+  host: { scope: SignalScope | null }
 }
 let ctx: BuildCtx | null = null
 
@@ -117,17 +120,29 @@ export interface SignalMount {
 function runBuild(
   doc: Document,
   build: () => readonly Node[],
-): { nodes: readonly Node[]; specs: BindingSpec[] } {
+): { nodes: readonly Node[]; specs: BindingSpec[]; host: { scope: SignalScope | null } } {
   const prev = ctx
   const specs: BindingSpec[] = []
-  ctx = { specs, doc }
+  const host: { scope: SignalScope | null } = { scope: null }
+  ctx = { specs, doc, host }
   let nodes: readonly Node[]
   try {
     nodes = build()
   } finally {
     ctx = prev
   }
-  return { nodes, specs }
+  return { nodes, specs, host }
+}
+
+/** Build a scope from collected specs and publish it to its build host (so
+ * structural primitives created in that build can register child scopes). */
+function buildAndPublishScope(built: {
+  specs: BindingSpec[]
+  host: { scope: SignalScope | null }
+}): SignalScope {
+  const scope = buildScope(built.specs)
+  built.host.scope = scope
+  return scope
 }
 
 /** Build a chunked-mask reconciler scope over a set of collected bindings. */
@@ -187,7 +202,7 @@ export function signalEach<T>(
       let row = rows.get(k)
       if (!row) {
         const built = runBuild(doc, renderRow)
-        const scope = buildScope(built.specs)
+        const scope = buildAndPublishScope(built)
         scope.mount(item) // row scope's "state" is the item value
         row = { scope, nodes: built.nodes, item }
         rows.set(k, row)
@@ -214,6 +229,56 @@ export function signalEach<T>(
   return frag
 }
 
+/** Condition source for `signalShow`: an accessor plus its dep paths. */
+export interface ShowCond {
+  produce: (state: unknown) => unknown
+  deps: readonly string[]
+}
+
+/**
+ * Conditional render. Mounts `render`'s content when the condition is truthy,
+ * unmounts when falsy. The content is its OWN scope that reads the owning
+ * component's state, registered as a child of the owning scope — so while shown
+ * it receives state updates (its bindings re-run when THEIR deps change, not
+ * just when the condition changes).
+ */
+export function signalShow(cond: ShowCond, render: () => readonly Node[]): Node {
+  const c = requireCtx()
+  const doc = c.doc
+  const ownerHost = c.host
+  const start = doc.createComment('show')
+  const end = doc.createComment('/show')
+  const frag = doc.createDocumentFragment()
+  frag.appendChild(start)
+  frag.appendChild(end)
+
+  let mounted: { scope: SignalScope; nodes: readonly Node[] } | null = null
+
+  const reconcile = (state: unknown): void => {
+    const parent = end.parentNode
+    if (!parent) return
+    const on = Boolean(cond.produce(state))
+    if (on && !mounted) {
+      const built = runBuild(doc, render)
+      const scope = buildAndPublishScope(built)
+      scope.mount(state) // content reads the component state
+      for (const n of built.nodes) parent.insertBefore(n, end)
+      ownerHost.scope?.addChild(scope) // receive future state updates while shown
+      mounted = { scope, nodes: built.nodes }
+    } else if (!on && mounted) {
+      ownerHost.scope?.removeChild(mounted.scope)
+      for (const n of mounted.nodes) if (n.parentNode === parent) parent.removeChild(n)
+      mounted = null
+    }
+  }
+
+  // Gated by the condition's deps (reconcile only when the condition may change);
+  // produce returns the state so reconcile can mount content against it.
+  c.specs.push({ deps: cond.deps, produce: (s) => s, commit: (s) => reconcile(s) })
+
+  return frag
+}
+
 /**
  * Mount a signal view into `container`: build the nodes (collecting bindings),
  * append them, and wire a chunked-mask reconciler over the collected bindings.
@@ -223,10 +288,10 @@ export function mountSignal(
   initial: unknown,
   build: () => readonly Node[],
 ): SignalMount {
-  const { nodes, specs } = runBuild(container.ownerDocument, build)
-  for (const n of nodes) container.appendChild(n)
+  const built = runBuild(container.ownerDocument, build)
+  for (const n of built.nodes) container.appendChild(n)
 
-  const scope = buildScope(specs)
+  const scope = buildAndPublishScope(built)
   let cur = initial
   scope.mount(cur)
   return {
