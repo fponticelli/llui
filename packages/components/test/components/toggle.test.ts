@@ -1,5 +1,6 @@
 import { describe, it, expect, vi } from 'vitest'
 import { init, update, connect } from '../../src/components/toggle'
+import { rootSignal, read } from '../_signal'
 
 describe('toggle reducer', () => {
   it('initializes with defaults', () => {
@@ -36,28 +37,28 @@ describe('toggle reducer', () => {
 describe('toggle.connect', () => {
   it('root aria-pressed reflects state', () => {
     const send = vi.fn()
-    const p = connect<ToggleCtx>((s) => s.toggle, send)
-    expect(p.root['aria-pressed']({ toggle: { pressed: true, disabled: false } })).toBe(true)
-    expect(p.root['aria-pressed']({ toggle: { pressed: false, disabled: false } })).toBe(false)
+    const p = connect(rootSignal(), send)
+    expect(read(p.root['aria-pressed'], { pressed: true, disabled: false })).toBe(true)
+    expect(read(p.root['aria-pressed'], { pressed: false, disabled: false })).toBe(false)
   })
 
   it('root data-state is on/off', () => {
     const send = vi.fn()
-    const p = connect<ToggleCtx>((s) => s.toggle, send)
-    expect(p.root['data-state']({ toggle: { pressed: true, disabled: false } })).toBe('on')
-    expect(p.root['data-state']({ toggle: { pressed: false, disabled: false } })).toBe('off')
+    const p = connect(rootSignal(), send)
+    expect(read(p.root['data-state'], { pressed: true, disabled: false })).toBe('on')
+    expect(read(p.root['data-state'], { pressed: false, disabled: false })).toBe('off')
   })
 
   it('root onClick dispatches toggle', () => {
     const send = vi.fn()
-    const p = connect<ToggleCtx>((s) => s.toggle, send)
+    const p = connect(rootSignal(), send)
     p.root.onClick(new MouseEvent('click'))
     expect(send).toHaveBeenCalledWith({ type: 'toggle' })
   })
 
   it('keyDown Space+Enter toggles and prevents default', () => {
     const send = vi.fn()
-    const p = connect<ToggleCtx>((s) => s.toggle, send)
+    const p = connect(rootSignal(), send)
     const space = new KeyboardEvent('keydown', { key: ' ', cancelable: true })
     p.root.onKeyDown(space)
     expect(space.defaultPrevented).toBe(true)
@@ -70,17 +71,15 @@ describe('toggle.connect', () => {
 
   it('other keys are ignored', () => {
     const send = vi.fn()
-    const p = connect<ToggleCtx>((s) => s.toggle, send)
+    const p = connect(rootSignal(), send)
     p.root.onKeyDown(new KeyboardEvent('keydown', { key: 'a' }))
     expect(send).not.toHaveBeenCalled()
   })
 
   it('disabled state exposes aria-disabled=true', () => {
     const send = vi.fn()
-    const p = connect<ToggleCtx>((s) => s.toggle, send)
-    expect(p.root['aria-disabled']({ toggle: { pressed: false, disabled: true } })).toBe('true')
-    expect(p.root['aria-disabled']({ toggle: { pressed: false, disabled: false } })).toBeUndefined()
+    const p = connect(rootSignal(), send)
+    expect(read(p.root['aria-disabled'], { pressed: false, disabled: true })).toBe('true')
+    expect(read(p.root['aria-disabled'], { pressed: false, disabled: false })).toBeUndefined()
   })
 })
-
-type ToggleCtx = { toggle: { pressed: boolean; disabled: boolean } }
