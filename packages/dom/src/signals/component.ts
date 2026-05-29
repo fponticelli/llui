@@ -107,13 +107,28 @@ function normalize<S, E>(r: [S, E[]] | S): [S, E[]] {
   return [r as S, []]
 }
 
-/** Mount a signal component into `container` and drive its update loop. */
+/** Options for `mountSignalComponent`. */
+export interface MountSignalOptions<S> {
+  /** Hydrate over server-rendered DOM instead of a fresh mount: seed the loop
+   * with `serverState` (what the server rendered with) and atomically REPLACE the
+   * server HTML with the freshly-built client tree. init()'s effects are skipped
+   * by default (the server pass already ran them) — opt back in with
+   * `runInitEffects` for init()s gated to no-op on the server. */
+  hydrate?: { serverState: S; runInitEffects?: boolean }
+}
+
+/** Mount a signal component into `container` and drive its update loop. With
+ * `opts.hydrate`, takes over server-rendered HTML (see MountSignalOptions). */
 export function mountSignalComponent<S, M, E = never>(
   container: Element,
   def: SignalComponentDef<S, M, E>,
+  opts?: MountSignalOptions<S>,
 ): SignalComponentHandle<S, M> {
-  const [initialState, initialEffects] = normalize<S, E>(def.init())
-  let state = initialState
+  // init() runs either way so its effects are captured; on hydrate the returned
+  // state is discarded in favour of serverState.
+  const [seedState, initialEffects] = normalize<S, E>(def.init())
+  const hy = opts?.hydrate
+  let state = hy ? hy.serverState : seedState
   let mount: SignalMount | null = null
   let disposed = false
   // Swappable via swapUpdate (HMR); runReducer/send read these, not def.* .
@@ -158,9 +173,17 @@ export function mountSignalComponent<S, M, E = never>(
   }
 
   withBindingErrors(onBindingError, () => {
-    mount = mountSignal(container, state, () => def.view({ state: handle, send }))
+    mount = mountSignal(
+      container,
+      state,
+      () => def.view({ state: handle, send }),
+      hy ? 'replace' : 'append',
+    )
   })
-  for (const e of initialEffects) runEffect(e)
+  // Fresh mount always dispatches init effects; hydration skips them unless asked.
+  if (hy ? (hy.runInitEffects ?? false) : true) {
+    for (const e of initialEffects) runEffect(e)
+  }
 
   if (dev) {
     uninstallDebug = installSignalDebug({
@@ -215,4 +238,22 @@ export function mountSignalComponent<S, M, E = never>(
       onBindingError = hook
     },
   }
+}
+
+/**
+ * Hydrate a signal component over server-rendered HTML in `container`. Builds the
+ * client tree against `serverState` (matching the SSR render) and atomically
+ * swaps it in — server HTML stays visible until the swap, so no flash. init()'s
+ * effects are skipped by default (already run on the server); pass
+ * `runInitEffects: true` for init()s that no-op on the server.
+ */
+export function hydrateSignalApp<S, M, E = never>(
+  container: Element,
+  def: SignalComponentDef<S, M, E>,
+  serverState: S,
+  options?: { runInitEffects?: boolean },
+): SignalComponentHandle<S, M> {
+  return mountSignalComponent(container, def, {
+    hydrate: { serverState, runInitEffects: options?.runInitEffects },
+  })
 }

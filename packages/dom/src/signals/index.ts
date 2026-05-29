@@ -49,13 +49,17 @@ export {
 } from './dom.js'
 export {
   mountSignalComponent,
+  hydrateSignalApp,
   type SignalComponentDef,
   type SignalComponentHandle,
+  type MountSignalOptions,
   type ComponentBag,
   type EffectApi,
   type StateHandle,
 } from './component.js'
 export type { BindingError } from './runtime.js'
+// ── SSR (server render → string; client hydrates via hydrateSignalApp) ──
+export { renderToString, renderNodes, serializeNodes, type ServerDoc } from './ssr.js'
 
 // ── Debug API (relay/agent surface) ─────────────────────────────────
 // Canonical home of the MCP/agent-relay contract. Lives in the signal runtime

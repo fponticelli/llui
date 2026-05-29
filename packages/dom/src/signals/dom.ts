@@ -14,6 +14,20 @@ import { createSignalScope, type SignalBinding, type SignalScope } from './runti
 import { buildPathTable, bindingMask } from './mask.js'
 import type { LiveSignal } from './types.js'
 
+/** The minimal node-factory surface the signal build needs from its document.
+ * Satisfied by a real `Document` (client) AND by a server `DomEnv` (SSR) — so a
+ * single build path renders both in-browser and on the server without casts. */
+export interface SignalDoc {
+  createElement(tag: string): Element
+  createElementNS(ns: string, tag: string): Element
+  createTextNode(text: string): Text
+  createComment(text: string): Comment
+  createDocumentFragment(): DocumentFragment
+  /** Present on a real client `Document`; absent on a server `DomEnv` (portals
+   * default to it, so a portal with no explicit target is client-only). */
+  readonly body?: HTMLElement | null
+}
+
 type Producer = (state: unknown) => unknown
 
 interface BindingSpec {
@@ -24,7 +38,7 @@ interface BindingSpec {
 
 interface BuildCtx {
   specs: BindingSpec[]
-  doc: Document
+  doc: SignalDoc
   /** the scope that will own the bindings collected in this build — set after
    * buildScope. Structural primitives register their mounted child scopes here. */
   host: { scope: SignalScope | null }
@@ -164,7 +178,7 @@ export function elNS(
  * nodes and the bindings created during it. Nests safely (restores the previous
  * context), so structural primitives can build rows mid-reconcile. */
 function runBuild(
-  doc: Document,
+  doc: SignalDoc,
   build: () => readonly Node[],
   // The structural primitives build rows/arms REACTIVELY (after mount, when the
   // module `ctx` is null), so they pass their captured build-time ctx here to
@@ -249,6 +263,11 @@ export function onMount(cb: (root: Element) => void | (() => void)): Node {
 export function portal(content: () => readonly Node[], target?: Element): Node {
   const c = requireCtx()
   const host = target ?? c.doc.body
+  if (!host) {
+    throw new Error(
+      'portal() needs an explicit target during SSR — the server DomEnv has no document.body',
+    )
+  }
   const nodes = content() // specs collected into the current build → reactive
   for (const n of nodes) host.appendChild(n)
   c.teardowns.push(() => {
@@ -715,23 +734,53 @@ export function mountSignal(
   container: Element,
   initial: unknown,
   build: () => readonly Node[],
+  // 'append' (fresh mount) leaves any existing children; 'replace' swaps server
+  // HTML out atomically (hydration — build client DOM, then one replaceChildren).
+  mode: 'append' | 'replace' = 'append',
 ): SignalMount {
-  const built = runBuild(container.ownerDocument, build)
-  for (const n of built.nodes) container.appendChild(n)
+  const built = renderSignalTree(container.ownerDocument, initial, build)
+  if (mode === 'replace') container.replaceChildren(...built.nodes)
+  else for (const n of built.nodes) container.appendChild(n)
 
-  const scope = buildAndPublishScope(built)
-  let cur = initial
-  scope.mount(cur)
   runMounts(built.mounts, container, built.teardowns) // onMount(root) after insert
+  let cur = initial
   return {
     update(next: unknown): void {
-      scope.update(cur, next)
+      built.scope.update(cur, next)
       cur = next
     },
     dispose(): void {
       for (const t of built.teardowns.splice(0)) t()
     },
-    getDescriptors(): Array<{ variant: string }> {
+    getDescriptors: built.getDescriptors,
+  }
+}
+
+/** The shared build core: run the view build against `doc`, wire the scope, and
+ * apply the initial state — WITHOUT attaching to any container. `mountSignal`
+ * inserts the nodes into the live DOM; SSR serializes them; hydration swaps them
+ * in. The returned nodes are detached; `mounts` still need `runMounts` once the
+ * nodes are in a document (mountSignal/hydration do this; SSR skips it). */
+export function renderSignalTree(
+  doc: SignalDoc,
+  initial: unknown,
+  build: () => readonly Node[],
+): {
+  nodes: readonly Node[]
+  scope: SignalScope
+  teardowns: Array<() => void>
+  mounts: Array<(root: Element) => void | (() => void)>
+  getDescriptors: () => Array<{ variant: string }>
+} {
+  const built = runBuild(doc, build)
+  const scope = buildAndPublishScope(built)
+  scope.mount(initial)
+  return {
+    nodes: built.nodes,
+    scope,
+    teardowns: built.teardowns,
+    mounts: built.mounts,
+    getDescriptors: () => {
       const out: Array<{ variant: string }> = []
       for (const variant of built.descriptors.keys()) out.push({ variant })
       return out
