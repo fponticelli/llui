@@ -1,8 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it } from 'vitest'
-import { component, div, button, mountApp } from '@llui/dom'
-import type { LluiDebugAPI } from '@llui/dom'
-import { enableDevTools } from '@llui/dom/devtools'
+import { mountSignalComponent, el } from '@llui/dom/signals'
+import type { LluiDebugAPI } from '@llui/dom/signals'
 import { LluiMcpServer } from '../src/index'
 
 afterEach(() => {
@@ -15,46 +14,52 @@ afterEach(() => {
   document.body.innerHTML = ''
 })
 
-// ── Test component ──────────────────────────────────────────────
+// ── Test component (signal runtime) ─────────────────────────────
 
 type CState = { n: number }
 type CMsg = { type: 'inc' }
 
-const Counter = component<CState, CMsg, never>({
-  name: 'Counter',
-  init: () => [{ n: 0 }, []],
-  update: (state, _msg) => [{ n: state.n + 1 }, []],
-  view: ({ send }) => [div({}, [button({ id: 'b', onClick: () => send({ type: 'inc' }) }, [])])],
-})
+function mountCounter(): { api: LluiDebugAPI; button: HTMLButtonElement } {
+  const container = document.createElement('div')
+  document.body.appendChild(container)
+  mountSignalComponent<CState, CMsg>(container, {
+    name: 'Counter',
+    init: () => ({ n: 0 }),
+    update: (s) => ({ n: s.n + 1 }),
+    view: ({ send }) => [
+      el('div', {}, [el('button', { id: 'b', onClick: () => send({ type: 'inc' }) }, [])]),
+    ],
+  })
+  const api = (globalThis as unknown as { __lluiDebug: LluiDebugAPI }).__lluiDebug
+  const button = container.querySelector('#b') as HTMLButtonElement
+  return { api, button }
+}
 
 // ── Tests ───────────────────────────────────────────────────────
 
-describe('llui_dispatch_event jsdom e2e', () => {
-  it('dispatches a click, records message history index, and returns resulting state', async () => {
-    enableDevTools()
+describe('signal component — DOM interaction drives the update loop', () => {
+  it('a real DOM click runs update() and the relay sees the new state', async () => {
+    const { api, button } = mountCounter()
+    const server = new LluiMcpServer()
+    server.connectDirect(api)
 
-    const container = document.createElement('div')
-    document.body.appendChild(container)
-    mountApp(container, Counter)
+    button.click()
 
-    const api = (globalThis as unknown as { __lluiDebug: LluiDebugAPI }).__lluiDebug
-    expect(api).toBeDefined()
+    const state = (await server.handleToolCall('llui_get_state', {})) as { n: number }
+    expect(state.n).toBe(1)
+  })
+})
+
+describe('llui_dispatch_event degrades gracefully for signal components', () => {
+  it('dispatchDomEvent is unavailable on the signal runtime', async () => {
+    const { api } = mountCounter()
+    expect(api.dispatchDomEvent).toBeUndefined()
 
     const server = new LluiMcpServer()
     server.connectDirect(api)
 
-    const result = (await server.handleToolCall('llui_dispatch_event', {
-      selector: '#b',
-      type: 'click',
-    })) as {
-      dispatched: boolean
-      messagesProducedIndices: number[]
-      resultingState: { n: number } | null
-    }
-
-    expect(result.dispatched).toBe(true)
-    expect(result.messagesProducedIndices).toHaveLength(1)
-    expect(result.resultingState).not.toBeNull()
-    expect(result.resultingState!.n).toBe(1)
+    await expect(
+      server.handleToolCall('llui_dispatch_event', { selector: '#b', type: 'click' }),
+    ).rejects.toThrow(/unknown method: dispatchDomEvent/)
   })
 })

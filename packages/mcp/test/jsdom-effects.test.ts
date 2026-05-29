@@ -1,8 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it } from 'vitest'
-import { component, div, mountApp } from '@llui/dom'
-import type { LluiDebugAPI } from '@llui/dom'
-import { enableDevTools } from '@llui/dom/devtools'
+import { mountSignalComponent, el, signalText } from '@llui/dom/signals'
+import type { LluiDebugAPI } from '@llui/dom/signals'
 import { LluiMcpServer } from '../src/index'
 
 afterEach(() => {
@@ -15,67 +14,61 @@ afterEach(() => {
   document.body.innerHTML = ''
 })
 
-// ── Test component ──────────────────────────────────────────────
+// ── Test component (signal runtime, with an effect) ─────────────
 
 type AState = { data: string | null }
 type AMsg = { type: 'fetch' } | { type: 'loaded'; data: string }
-type AEffect = { type: 'http'; url: string; onSuccess: (data: unknown) => AMsg }
+type AEffect = { type: 'http'; url: string }
 
-const App = component<AState, AMsg, AEffect>({
-  name: 'App',
-  init: () => [{ data: null }, []],
-  update: (state, msg) => {
-    if (msg.type === 'fetch') {
-      const effect: AEffect = {
-        type: 'http',
-        url: '/api/data',
-        onSuccess: (data) => ({ type: 'loaded', data: String(data) }),
-      }
-      return [state, [effect]]
-    }
-    if (msg.type === 'loaded') {
-      return [{ data: msg.data }, []]
-    }
-    return [state, []]
-  },
-  view: ({ text: textFn }) => [div({ id: 'app' }, [textFn((s: AState) => s.data ?? 'none')])],
-})
+function mountApp(): LluiDebugAPI {
+  const container = document.createElement('div')
+  document.body.appendChild(container)
+  mountSignalComponent<AState, AMsg, AEffect>(container, {
+    name: 'App',
+    init: () => [{ data: null }, []],
+    update: (state, msg) => {
+      if (msg.type === 'fetch') return [state, [{ type: 'http', url: '/api/data' }]]
+      if (msg.type === 'loaded') return [{ data: msg.data }, []]
+      return [state, []]
+    },
+    onEffect: (effect, { send }) => {
+      if (effect.type === 'http') send({ type: 'loaded', data: 'real-payload' })
+    },
+    view: () => [
+      el('div', { id: 'app' }, [signalText((s) => (s as AState).data ?? 'none', ['data'])]),
+    ],
+  })
+  return (globalThis as unknown as { __lluiDebug: LluiDebugAPI }).__lluiDebug
+}
 
 // ── Tests ───────────────────────────────────────────────────────
 
-describe('llui_mock_effect jsdom e2e', () => {
-  it('intercepts http effect and delivers mocked response to state', async () => {
-    enableDevTools()
+describe('signal component — effects flow through onEffect', () => {
+  it('dispatching fetch runs the http effect and delivers the loaded message', async () => {
+    const api = mountApp()
+    const server = new LluiMcpServer()
+    server.connectDirect(api)
 
-    const container = document.createElement('div')
-    document.body.appendChild(container)
-    mountApp(container, App)
+    // Signal send is synchronous: the http effect's onEffect handler sends
+    // `loaded` immediately, which applies before the call returns.
+    await server.handleToolCall('llui_send_message', { msg: { type: 'fetch' } })
 
-    const api = (globalThis as unknown as { __lluiDebug: LluiDebugAPI }).__lluiDebug
-    expect(api).toBeDefined()
+    const state = (await server.handleToolCall('llui_get_state', {})) as { data: string | null }
+    expect(state.data).toBe('real-payload')
+  })
+})
+
+describe('effect mocking degrades gracefully for signal components', () => {
+  it('llui_mock_effect is unavailable on the signal runtime', async () => {
+    const api = mountApp()
+    // The signal runtime does not record/mocking effects — no effect timeline.
+    expect(api.mockEffect).toBeUndefined()
 
     const server = new LluiMcpServer()
     server.connectDirect(api)
 
-    // Register a one-shot mock for any http effect
-    const mockResult = (await server.handleToolCall('llui_mock_effect', {
-      match: { type: 'http' },
-      response: 'mocked-payload',
-    })) as { mockId: string }
-    expect(mockResult.mockId).toBeTruthy()
-
-    // Send the fetch message — update() returns an http effect, which the
-    // mock intercepts synchronously. The mocked response is delivered via
-    // onSuccess as a microtask.
-    await server.handleToolCall('llui_send_message', { msg: { type: 'fetch' } })
-
-    // Wait for the microtask that delivers the mocked response
-    await Promise.resolve()
-
-    // The loaded message was sent; flush to apply it
-    api.flush()
-
-    const state = (await server.handleToolCall('llui_get_state', {})) as { data: string | null }
-    expect(state.data).toBe('mocked-payload')
+    await expect(
+      server.handleToolCall('llui_mock_effect', { match: { type: 'http' }, response: 'x' }),
+    ).rejects.toThrow(/unknown method: mockEffect/)
   })
 })

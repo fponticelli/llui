@@ -2,7 +2,7 @@ import { WebSocketServer, type WebSocket } from 'ws'
 import type { Server as HttpServer } from 'node:http'
 import { existsSync, readFileSync } from 'node:fs'
 import { randomUUID } from 'node:crypto'
-import type { LluiDebugAPI } from '@llui/dom'
+import type { LluiDebugAPI } from '@llui/dom/signals'
 import type { RelayTransport } from '../tool-registry.js'
 
 /**
@@ -128,6 +128,36 @@ export class WebSocketRelayTransport implements RelayTransport {
     this.directApi = api
   }
 
+  /**
+   * Resolve the component-registry pseudo-methods in direct (in-process)
+   * mode against the global registry the runtime populates. Mirrors the
+   * browser-side relay's `handleMessage` handling for `__listComponents`
+   * / `__selectComponent`, so multi-mount listing and active-component
+   * switching work without a WebSocket round-trip.
+   */
+  private callRegistry(method: string, args: unknown[]): unknown {
+    const g = globalThis as {
+      __lluiComponents?: Record<string, LluiDebugAPI>
+      __lluiDebug?: LluiDebugAPI
+    }
+    const registry = g.__lluiComponents
+    if (method === '__listComponents') {
+      const components = registry ? Object.keys(registry) : []
+      const active =
+        registry && this.directApi
+          ? (Object.entries(registry).find(([, v]) => v === this.directApi)?.[0] ?? null)
+          : null
+      return { components, active }
+    }
+    // __selectComponent
+    const key = (args[0] as string | undefined) ?? ''
+    const entry = registry?.[key]
+    if (!entry) throw new Error(`unknown component: ${key}`)
+    this.directApi = entry
+    g.__lluiDebug = entry
+    return { active: key }
+  }
+
   start(): void {
     if (this.wsServer) return
     // Two modes:
@@ -224,6 +254,14 @@ export class WebSocketRelayTransport implements RelayTransport {
 
   async call(method: string, args: unknown[]): Promise<unknown> {
     if (this.directApi) {
+      // The component-registry pseudo-methods are not API methods — they
+      // operate on the global registry the runtime populates
+      // (globalThis.__lluiComponents / __lluiDebug). In WS mode the
+      // browser-side relay handles these; in direct mode we resolve them
+      // here against the same global registry.
+      if (method === '__listComponents' || method === '__selectComponent') {
+        return this.callRegistry(method, args)
+      }
       const fn = (this.directApi as unknown as Record<string, unknown>)[method]
       if (typeof fn !== 'function') throw new Error(`unknown method: ${method}`)
       return (fn as (...a: unknown[]) => unknown).apply(this.directApi, args)

@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from 'vitest'
 import { readFileSync, existsSync } from 'node:fs'
 import { LluiMcpServer, mcpActiveFilePath } from '../src/index'
-import type { LluiDebugAPI } from '@llui/dom'
+import type { LluiDebugAPI } from '@llui/dom/signals'
 
 function mockDebugApi(state: Record<string, unknown> = { count: 0 }): LluiDebugAPI {
   let currentState = { ...state }
@@ -24,8 +24,6 @@ function mockDebugApi(state: Record<string, unknown> = { count: 0 }): LluiDebugA
     }),
     clearLog: vi.fn(),
     validateMessage: () => null,
-    getBindings: () => [],
-    whyDidUpdate: () => ({ mask: 0, dirty: 0, evaluated: false, value: undefined }),
     searchState: (path) => {
       const parts = path.split('.')
       let val: unknown = currentState

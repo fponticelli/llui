@@ -57,6 +57,37 @@ export {
 } from './component.js'
 export type { BindingError } from './runtime.js'
 
+// ── Debug API (relay/agent surface) ─────────────────────────────────
+// Canonical home of the MCP/agent-relay contract. Lives in the signal runtime
+// so it survives legacy-runtime deletion. installSignalDebug registers the
+// required subset; binding/scope/effect introspection methods are optional.
+export {
+  installSignalDebug,
+  type LluiDebugAPI,
+  type SignalDebugHooks,
+  type SignalMessageRecord,
+  type MessageRecord,
+  type StateDiff,
+  type ValidationError,
+  type BindingDebugInfo,
+  type UpdateExplanation,
+  type ComponentInfo,
+  type MessageSchemaInfo,
+  type BindingLocation,
+  type ElementReport,
+  type HydrationDivergence,
+} from './devtools.js'
+// Runtime-agnostic data shapes used by the debug API / MCP tools.
+export type { CoverageSnapshot } from '../tracking/coverage.js'
+export type { EachDiff } from '../tracking/each-diff.js'
+export type { DisposerEvent } from '../tracking/disposer-log.js'
+export type {
+  PendingEffect,
+  EffectTimelineEntry,
+  EffectMatch,
+} from '../tracking/effect-timeline.js'
+export type { LifetimeNode } from '../types.js'
+
 // ── Authoring (human-written; compiler-rewritten) ───────────────────
 export {
   component,

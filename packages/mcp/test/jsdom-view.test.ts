@@ -1,8 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it } from 'vitest'
-import { component, div, mountApp } from '@llui/dom'
-import type { ElementReport, LluiDebugAPI } from '@llui/dom'
-import { enableDevTools } from '@llui/dom/devtools'
+import { mountSignalComponent, el, signalText } from '@llui/dom/signals'
+import type { LluiDebugAPI } from '@llui/dom/signals'
 import { LluiMcpServer } from '../src/index'
 
 afterEach(() => {
@@ -15,89 +14,70 @@ afterEach(() => {
   document.body.innerHTML = ''
 })
 
-// ── Test component ──────────────────────────────────────────────
+// ── Test component (signal runtime) ─────────────────────────────
+//
+// Mounted via the signal runtime, which registers a SIGNAL debug API
+// (installSignalDebug) onto globalThis.__lluiDebug. That API implements
+// the core state/history/schema surface but NOT the legacy binding-
+// introspection / DOM-inspection methods (inspectElement, getRenderedHtml).
+// MCP tools backed by those methods must therefore degrade gracefully —
+// the relay reports "unknown method".
 
 type CState = { count: number }
 type CMsg = { type: 'inc' }
 
-const Counter = component<CState, CMsg, never>({
-  name: 'Counter',
-  init: () => [{ count: 0 }, []],
-  update: (state, _msg) => [{ count: state.count + 1 }, []],
-  view: ({ text: textFn }) => [div({ id: 'c' }, [textFn((s: CState) => String(s.count))])],
-})
+function mountCounter(): LluiDebugAPI {
+  const container = document.createElement('div')
+  document.body.appendChild(container)
+  mountSignalComponent<CState, CMsg>(container, {
+    name: 'Counter',
+    init: () => ({ count: 0 }),
+    update: (s) => ({ count: s.count + 1 }),
+    view: () => [
+      el('div', { id: 'c' }, [signalText((s) => String((s as CState).count), ['count'])]),
+    ],
+  })
+  return (globalThis as unknown as { __lluiDebug: LluiDebugAPI }).__lluiDebug
+}
 
 // ── Tests ───────────────────────────────────────────────────────
 
-describe('llui_inspect_element jsdom e2e', () => {
-  it('returns a non-null report with correct tagName and bindings', async () => {
-    // Install devtools before mounting so the hook is in place
-    enableDevTools()
-
-    // Mount into the live document so querySelector works
-    const container = document.createElement('div')
-    document.body.appendChild(container)
-    mountApp(container, Counter)
-
-    // Grab the debug API populated by enableDevTools + mountApp
-    const api = (globalThis as unknown as { __lluiDebug: LluiDebugAPI }).__lluiDebug
+describe('signal component — core debug surface', () => {
+  it('exposes live state through the relay', async () => {
+    const api = mountCounter()
     expect(api).toBeDefined()
 
-    // Wire the MCP server to the in-process API
     const server = new LluiMcpServer()
     server.connectDirect(api)
 
-    // Call the tool
-    const result = (await server.handleToolCall('llui_inspect_element', {
-      selector: '#c',
-    })) as ElementReport | null
-
-    expect(result).not.toBeNull()
-    expect(result!.tagName).toBe('div')
-    expect(result!.selector).toBe('#c')
-    expect(result!.bindings.length).toBeGreaterThan(0)
-    expect(result!.bindings[0]!.relation).toBe('text-child')
-    expect(result!.attributes['id']).toBe('c')
-  })
-
-  it('returns null when no element matches the selector', async () => {
-    enableDevTools()
-    const container = document.createElement('div')
-    document.body.appendChild(container)
-    mountApp(container, Counter)
-
-    const api = (globalThis as unknown as { __lluiDebug: LluiDebugAPI }).__lluiDebug
-    const server = new LluiMcpServer()
-    server.connectDirect(api)
-
-    const result = await server.handleToolCall('llui_inspect_element', {
-      selector: '#does-not-exist',
-    })
-
-    expect(result).toBeNull()
+    const state = await server.handleToolCall('llui_get_state', {})
+    expect(state).toEqual({ count: 0 })
   })
 })
 
-describe('llui_get_rendered_html jsdom e2e', () => {
-  it('returns the outerHTML of the element matching the selector', async () => {
-    enableDevTools()
-
-    const container = document.createElement('div')
-    document.body.appendChild(container)
-    mountApp(container, Counter)
-
-    const api = (globalThis as unknown as { __lluiDebug: LluiDebugAPI }).__lluiDebug
-    expect(api).toBeDefined()
+describe('binding/DOM introspection degrades gracefully for signal components', () => {
+  it('llui_inspect_element is unavailable on the signal runtime', async () => {
+    const api = mountCounter()
+    // The signal debug API does not implement inspectElement.
+    expect(api.inspectElement).toBeUndefined()
 
     const server = new LluiMcpServer()
     server.connectDirect(api)
 
-    const result = (await server.handleToolCall('llui_get_rendered_html', {
-      selector: '#c',
-    })) as string
+    await expect(server.handleToolCall('llui_inspect_element', { selector: '#c' })).rejects.toThrow(
+      /unknown method: inspectElement/,
+    )
+  })
 
-    expect(result).toBeTruthy()
-    expect(result.startsWith('<div')).toBe(true)
-    expect(result).toContain('id="c"')
+  it('llui_get_rendered_html is unavailable on the signal runtime', async () => {
+    const api = mountCounter()
+    expect(api.getRenderedHtml).toBeUndefined()
+
+    const server = new LluiMcpServer()
+    server.connectDirect(api)
+
+    await expect(
+      server.handleToolCall('llui_get_rendered_html', { selector: '#c' }),
+    ).rejects.toThrow(/unknown method: getRenderedHtml/)
   })
 })

@@ -8,6 +8,15 @@
 // implemented here, so MCP tools degrade gracefully per-component.
 
 import { resolvePath } from './mask.js'
+import type { LifetimeNode } from '../types.js'
+import type { EachDiff } from '../tracking/each-diff.js'
+import type { DisposerEvent } from '../tracking/disposer-log.js'
+import type { CoverageSnapshot } from '../tracking/coverage.js'
+import type {
+  PendingEffect,
+  EffectTimelineEntry,
+  EffectMatch,
+} from '../tracking/effect-timeline.js'
 
 export interface SignalMessageRecord {
   index: number
@@ -16,6 +25,201 @@ export interface SignalMessageRecord {
   stateBefore: unknown
   stateAfter: unknown
   effects: unknown[]
+}
+
+// ── Canonical debug-API contract ────────────────────────────────────
+//
+// `LluiDebugAPI` is the single source of truth for what an MCP/agent relay
+// may call on a mounted component. It survives the legacy-runtime deletion by
+// living here, in the signal runtime.
+//
+// The REQUIRED methods are exactly what `installSignalDebug` registers — every
+// signal component implements them. The OPTIONAL methods (`?`) are
+// binding/scope/effect-introspection surfaces that are LEGACY-RUNTIME concepts
+// (per-binding masks, scope-tree walks, effect timelines). The signal runtime
+// does not implement them yet, so they are optional: tools probe for the method
+// and degrade gracefully when it is absent (the relay reports "unknown method").
+
+export interface StateDiff {
+  added: Record<string, unknown>
+  removed: Record<string, unknown>
+  changed: Record<string, { from: unknown; to: unknown }>
+}
+
+export interface MessageRecord {
+  index: number
+  timestamp: number
+  msg: unknown
+  stateBefore: unknown
+  stateAfter: unknown
+  effects: unknown[]
+  /** Present only on the legacy runtime, which computes a dirty mask per update. */
+  dirtyMask?: number
+}
+
+export interface BindingDebugInfo {
+  index: number
+  mask: number
+  lastValue: unknown
+  kind: string
+  key: string | undefined
+  dead: boolean
+  perItem: boolean
+}
+
+export interface UpdateExplanation {
+  bindingIndex: number
+  bindingMask: number
+  lastDirtyMask: number
+  matched: boolean
+  accessorResult: unknown
+  lastValue: unknown
+  changed: boolean
+}
+
+export interface ComponentInfo {
+  name: string
+  file: string | null
+  line: number | null
+  /** Identifies which runtime mounted the component. */
+  runtime?: 'signal' | 'legacy'
+}
+
+export interface MessageSchemaInfo {
+  discriminant: string
+  variants: Record<string, Record<string, unknown>>
+}
+
+export interface BindingLocation {
+  bindingIndex: number
+  kind: string
+  key: string | undefined
+  mask: number
+  lastValue: unknown
+  /** How the binding's node relates to the matched element. */
+  relation: 'self' | 'text-child' | 'comment-child'
+}
+
+export interface ElementReport {
+  selector: string
+  tagName: string
+  attributes: Record<string, string>
+  classes: string[]
+  dataset: Record<string, string>
+  text: string
+  computed: {
+    display: string
+    visibility: string
+    position: string
+    width: number
+    height: number
+  }
+  boundingBox: { x: number; y: number; width: number; height: number }
+  bindings: Array<{
+    bindingIndex: number
+    kind: string
+    mask: number
+    lastValue: unknown
+    relation: 'self' | 'text-child' | 'comment-child'
+  }>
+}
+
+export interface HydrationDivergence {
+  path: string
+  kind: 'attribute' | 'text' | 'structural'
+  server: unknown
+  client: unknown
+}
+
+/**
+ * The relay-callable debug surface of a mounted LLui component.
+ *
+ * Required methods are implemented by every runtime (and by
+ * `installSignalDebug`). Optional methods are binding/scope/effect
+ * introspection that only the legacy runtime provides — callers must
+ * feature-detect and degrade when they are absent.
+ */
+export interface LluiDebugAPI {
+  // ── Core (always implemented) ──────────────────────────────────
+  getState(): unknown
+  send(msg: unknown): void
+  flush(): void
+  getMessageHistory(opts?: { since?: number; limit?: number }): MessageRecord[]
+  evalUpdate(msg: unknown): { state: unknown; effects: unknown[] }
+  exportTrace(): {
+    lluiTrace: 1
+    component: string
+    generatedBy: string
+    timestamp: string
+    entries: Array<{ msg: unknown; expectedState: unknown; expectedEffects: unknown[] }>
+  }
+  clearLog(): void
+  validateMessage(msg: unknown): ValidationError[] | null
+  searchState(query: string): unknown
+  getMessageSchema(): MessageSchemaInfo | object | null
+  getStateSchema(): object | null
+  getEffectSchema(): object | null
+  getComponentInfo(): ComponentInfo
+  snapshotState(): unknown
+  restoreState(snap: unknown): void
+
+  // ── Binding / scope introspection (legacy-only; optional) ──────
+  getBindings?(): BindingDebugInfo[]
+  whyDidUpdate?(bindingIndex: number): UpdateExplanation
+  getMaskLegend?(): Record<string, number> | null
+  decodeMask?(mask: number): string[]
+  getBindingsFor?(selector: string): BindingLocation[]
+  getBindingGraph?(): Array<{ statePath: string; bindingIndices: number[] }>
+  getBindingSource?(bindingIndex: number): { file: string; line: number; column: number } | null
+  forceRerender?(): { changedBindings: number[] }
+  getEachDiff?(sinceIndex?: number): EachDiff[]
+  getScopeTree?(opts?: { depth?: number; scopeId?: string }): LifetimeNode
+  getDisposerLog?(limit?: number): DisposerEvent[]
+
+  // ── DOM inspection (legacy-only; optional) ─────────────────────
+  inspectElement?(selector: string): ElementReport | null
+  getRenderedHtml?(selector?: string, maxLength?: number): string
+  dispatchDomEvent?(
+    selector: string,
+    type: string,
+    init?: EventInit,
+  ): {
+    dispatched: boolean
+    messagesProducedIndices: number[]
+    resultingState: unknown | null
+  }
+  getFocus?(): {
+    selector: string | null
+    tagName: string | null
+    selectionStart: number | null
+    selectionEnd: number | null
+  }
+  getHydrationReport?(): HydrationDivergence[]
+
+  // ── Effect introspection (legacy-only; optional) ───────────────
+  getPendingEffects?(): PendingEffect[]
+  getEffectTimeline?(limit?: number): EffectTimelineEntry[]
+  mockEffect?(
+    match: EffectMatch,
+    response: unknown,
+    opts?: { persist?: boolean },
+  ): { mockId: string }
+  resolveEffect?(effectId: string, response: unknown): { resolved: boolean }
+
+  // ── Time-travel / coverage / eval (legacy-only; optional) ──────
+  stepBack?(n: number, mode: 'pure' | 'live'): { state: unknown; rewindDepth: number }
+  getCoverage?(): CoverageSnapshot
+  getCompiledSource?(viewFn?: string): { pre: string; post: string } | null
+  getMsgMaskMap?(): Record<string, number> | null
+  evalInPage?(code: string): {
+    result: unknown | { error: string }
+    sideEffects: {
+      stateChanged: StateDiff | null
+      newHistoryEntries: number
+      newPendingEffects: PendingEffect[]
+      dirtyBindingIndices: number[]
+    }
+  }
 }
 
 /** Everything the signal debug API needs from a mounted component. Supplied by
@@ -37,9 +241,12 @@ export interface SignalDebugHooks {
   componentMeta?: { file: string; line: number }
 }
 
-interface ValidationError {
+export interface ValidationError {
   path: string
   message: string
+  /** Set by the legacy validator; the signal validator omits these. */
+  expected?: string
+  received?: string
 }
 
 interface MsgSchemaShape {
@@ -87,7 +294,7 @@ function uniqueName(reg: Record<string, unknown>, base: string): string {
 
 /** Build the signal debug API and register it. Returns an unregister function. */
 export function installSignalDebug(hooks: SignalDebugHooks): () => void {
-  const api = {
+  const api: LluiDebugAPI = {
     getState: () => hooks.getState(),
     send: (msg: unknown) => hooks.send(msg),
     flush: () => {}, // signal send is synchronous — nothing pending
