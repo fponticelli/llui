@@ -1,5 +1,5 @@
 import { tagSend } from '@llui/dom/signals'
-import type { Send } from '@llui/dom/signals'
+import type { Send, Signal } from '@llui/dom/signals'
 import { flipArrow } from '../utils/direction.js'
 
 /**
@@ -161,20 +161,20 @@ export function update(state: TabsState, msg: TabsMsg): [TabsState, never[]] {
   }
 }
 
-export interface TabsItemParts<S> {
+export interface TabsItemParts {
   trigger: {
     type: 'button'
     role: 'tab'
-    'aria-selected': (s: S) => boolean
+    'aria-selected': Signal<boolean>
     'aria-controls': string
-    'aria-disabled': (s: S) => 'true' | undefined
+    'aria-disabled': Signal<'true' | undefined>
     id: string
-    'data-state': (s: S) => 'active' | 'inactive'
-    'data-disabled': (s: S) => '' | undefined
+    'data-state': Signal<'active' | 'inactive'>
+    'data-disabled': Signal<'' | undefined>
     'data-scope': 'tabs'
     'data-part': 'trigger'
     'data-value': string
-    tabIndex: (s: S) => number
+    tabIndex: Signal<number>
     onClick: (e: MouseEvent) => void
     onKeyDown: (e: KeyboardEvent) => void
     onFocus: (e: FocusEvent) => void
@@ -184,19 +184,19 @@ export interface TabsItemParts<S> {
     id: string
     'aria-labelledby': string
     tabIndex: 0
-    hidden: (s: S) => boolean
-    'data-state': (s: S) => 'active' | 'inactive'
+    hidden: Signal<boolean>
+    'data-state': Signal<'active' | 'inactive'>
     'data-scope': 'tabs'
     'data-part': 'panel'
     'data-value': string
   }
 }
 
-export interface TabsParts<S> {
+export interface TabsParts {
   root: {
     'data-scope': 'tabs'
     'data-part': 'root'
-    'data-orientation': (s: S) => Orientation
+    'data-orientation': Signal<Orientation>
   }
   /**
    * A movable underline/highlight element. Position tracks the active
@@ -209,15 +209,15 @@ export interface TabsParts<S> {
   indicator: {
     'data-scope': 'tabs'
     'data-part': 'indicator'
-    'data-orientation': (s: S) => Orientation
+    'data-orientation': Signal<Orientation>
   }
   list: {
     role: 'tablist'
-    'aria-orientation': (s: S) => Orientation
+    'aria-orientation': Signal<Orientation>
     'data-scope': 'tabs'
     'data-part': 'list'
   }
-  item: (value: string) => TabsItemParts<S>
+  item: (value: string) => TabsItemParts
 }
 
 export interface ConnectOptions {
@@ -230,11 +230,11 @@ export interface ConnectOptions {
   onNavigate?: (value: string) => void
 }
 
-export function connect<S>(
-  get: (s: S) => TabsState,
+export function connect(
+  state: Signal<TabsState>,
   send: Send<TabsMsg>,
   opts: ConnectOptions,
-): TabsParts<S> {
+): TabsParts {
   const base = opts.id
   const triggerId = (v: string): string => `${base}:trigger:${v}`
   const panelId = (v: string): string => `${base}:panel:${v}`
@@ -243,33 +243,33 @@ export function connect<S>(
     root: {
       'data-scope': 'tabs',
       'data-part': 'root',
-      'data-orientation': (s) => get(s).orientation,
+      'data-orientation': state.map((s) => s.orientation),
     },
     list: {
       role: 'tablist',
-      'aria-orientation': (s) => get(s).orientation,
+      'aria-orientation': state.map((s) => s.orientation),
       'data-scope': 'tabs',
       'data-part': 'list',
     },
     indicator: {
       'data-scope': 'tabs',
       'data-part': 'indicator',
-      'data-orientation': (s) => get(s).orientation,
+      'data-orientation': state.map((s) => s.orientation),
     },
-    item: (value: string): TabsItemParts<S> => ({
+    item: (value: string): TabsItemParts => ({
       trigger: {
         type: 'button',
         role: 'tab',
-        'aria-selected': (s) => get(s).value === value,
+        'aria-selected': state.map((s) => s.value === value),
         'aria-controls': panelId(value),
-        'aria-disabled': (s) => (get(s).disabledItems.includes(value) ? 'true' : undefined),
+        'aria-disabled': state.map((s) => (s.disabledItems.includes(value) ? 'true' : undefined)),
         id: triggerId(value),
-        'data-state': (s) => (get(s).value === value ? 'active' : 'inactive'),
-        'data-disabled': (s) => (get(s).disabledItems.includes(value) ? '' : undefined),
+        'data-state': state.map((s) => (s.value === value ? 'active' : 'inactive')),
+        'data-disabled': state.map((s) => (s.disabledItems.includes(value) ? '' : undefined)),
         'data-scope': 'tabs',
         'data-part': 'trigger',
         'data-value': value,
-        tabIndex: (s) => (get(s).value === value ? 0 : -1),
+        tabIndex: state.map((s) => (s.value === value ? 0 : -1)),
         onClick: tagSend(send, ['focusTab'], () => {
           send({ type: 'focusTab', value })
           opts.onNavigate?.(value)
@@ -325,8 +325,8 @@ export function connect<S>(
         id: panelId(value),
         'aria-labelledby': triggerId(value),
         tabIndex: 0,
-        hidden: (s) => get(s).value !== value,
-        'data-state': (s) => (get(s).value === value ? 'active' : 'inactive'),
+        hidden: state.map((s) => s.value !== value),
+        'data-state': state.map((s) => (s.value === value ? 'active' : 'inactive')),
         'data-scope': 'tabs',
         'data-part': 'panel',
         'data-value': value,

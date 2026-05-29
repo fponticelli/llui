@@ -1,5 +1,5 @@
 import { tagSend } from '@llui/dom/signals'
-import type { Send } from '@llui/dom/signals'
+import type { Send, Signal } from '@llui/dom/signals'
 import { flipArrow } from '../utils/direction.js'
 import {
   typeaheadAccumulate,
@@ -293,22 +293,22 @@ export function isLoading(state: TreeViewState, id: string): boolean {
   return state.loading.includes(id)
 }
 
-export interface TreeItemParts<S> {
+export interface TreeItemParts {
   item: {
     role: 'treeitem'
     id: string
-    'aria-expanded': (s: S) => boolean | undefined
-    'aria-selected': (s: S) => boolean | undefined
+    'aria-expanded': Signal<boolean | undefined>
+    'aria-selected': Signal<boolean | undefined>
     'aria-level': number
-    'aria-busy': (s: S) => 'true' | undefined
-    tabIndex: (s: S) => number
+    'aria-busy': Signal<'true' | undefined>
+    tabIndex: Signal<number>
     'data-scope': 'tree-view'
     'data-part': 'item'
     'data-value': string
     'data-depth': string
-    'data-selected': (s: S) => '' | undefined
-    'data-focused': (s: S) => '' | undefined
-    'data-loading': (s: S) => '' | undefined
+    'data-selected': Signal<'' | undefined>
+    'data-focused': Signal<'' | undefined>
+    'data-loading': Signal<'' | undefined>
     onClick: (e: MouseEvent) => void
     onKeyDown: (e: KeyboardEvent) => void
     onFocus: (e: FocusEvent) => void
@@ -317,7 +317,7 @@ export interface TreeItemParts<S> {
   branchTrigger: {
     'data-scope': 'tree-view'
     'data-part': 'branch-trigger'
-    'data-state': (s: S) => 'open' | 'closed'
+    'data-state': Signal<'open' | 'closed'>
     onClick: (e: MouseEvent) => void
   }
   /**
@@ -330,24 +330,24 @@ export interface TreeItemParts<S> {
    */
   checkbox: {
     role: 'checkbox'
-    'aria-checked': (s: S) => 'true' | 'false' | 'mixed'
+    'aria-checked': Signal<'true' | 'false' | 'mixed'>
     'data-scope': 'tree-view'
     'data-part': 'checkbox'
-    'data-state': (s: S) => 'checked' | 'unchecked' | 'indeterminate'
+    'data-state': Signal<'checked' | 'unchecked' | 'indeterminate'>
   }
 }
 
-export interface TreeViewParts<S> {
+export interface TreeViewParts {
   root: {
     role: 'tree'
-    'aria-owns': (s: S) => string | undefined
-    'aria-multiselectable': (s: S) => 'true' | undefined
-    'aria-disabled': (s: S) => 'true' | undefined
+    'aria-owns': Signal<string | undefined>
+    'aria-multiselectable': Signal<'true' | undefined>
+    'aria-disabled': Signal<'true' | undefined>
     'data-scope': 'tree-view'
     'data-part': 'root'
-    'data-disabled': (s: S) => '' | undefined
+    'data-disabled': Signal<'' | undefined>
   }
-  item: (id: string, depth: number, isBranch: boolean, parentId?: string | null) => TreeItemParts<S>
+  item: (id: string, depth: number, isBranch: boolean, parentId?: string | null) => TreeItemParts
 }
 
 export interface ConnectOptions {
@@ -360,50 +360,53 @@ export interface ConnectOptions {
   expandOnClick?: boolean
 }
 
-export function connect<S>(
-  get: (s: S) => TreeViewState,
+export function connect(
+  state: Signal<TreeViewState>,
   send: Send<TreeViewMsg>,
   opts: ConnectOptions,
-): TreeViewParts<S> {
+): TreeViewParts {
   const itemId = (v: string): string => `${opts.id}:item:${v}`
   const expandOnClick = opts.expandOnClick === true
 
   return {
     root: {
       role: 'tree',
-      'aria-owns': (s) => {
-        const items = get(s).visibleItems
+      'aria-owns': state.map((s) => {
+        const items = s.visibleItems
         if (items.length === 0) return undefined
         return items.map((id) => itemId(id)).join(' ')
-      },
-      'aria-multiselectable': (s) => (get(s).selectionMode === 'multiple' ? 'true' : undefined),
-      'aria-disabled': (s) => (get(s).disabled ? 'true' : undefined),
+      }),
+      'aria-multiselectable': state.map((s) =>
+        s.selectionMode === 'multiple' ? 'true' : undefined,
+      ),
+      'aria-disabled': state.map((s) => (s.disabled ? 'true' : undefined)),
       'data-scope': 'tree-view',
       'data-part': 'root',
-      'data-disabled': (s) => (get(s).disabled ? '' : undefined),
+      'data-disabled': state.map((s) => (s.disabled ? '' : undefined)),
     },
     item: (
       id: string,
       depth: number,
       isBranch: boolean,
       parentId: string | null = null,
-    ): TreeItemParts<S> => ({
+    ): TreeItemParts => ({
       item: {
         role: 'treeitem',
         id: itemId(id),
-        'aria-expanded': (s) => (isBranch ? isExpanded(get(s), id) : undefined),
-        'aria-selected': (s) =>
-          get(s).selectionMode === 'single' ? isSelected(get(s), id) : undefined,
+        'aria-expanded': state.map((s) => (isBranch ? isExpanded(s, id) : undefined)),
+        'aria-selected': state.map((s) =>
+          s.selectionMode === 'single' ? isSelected(s, id) : undefined,
+        ),
         'aria-level': depth + 1,
-        'aria-busy': (s) => (isLoading(get(s), id) ? 'true' : undefined),
-        tabIndex: (s) => (get(s).focused === id ? 0 : -1),
+        'aria-busy': state.map((s) => (isLoading(s, id) ? 'true' : undefined)),
+        tabIndex: state.map((s) => (s.focused === id ? 0 : -1)),
         'data-scope': 'tree-view',
         'data-part': 'item',
         'data-value': id,
         'data-depth': String(depth),
-        'data-selected': (s) => (isSelected(get(s), id) ? '' : undefined),
-        'data-focused': (s) => (get(s).focused === id ? '' : undefined),
-        'data-loading': (s) => (isLoading(get(s), id) ? '' : undefined),
+        'data-selected': state.map((s) => (isSelected(s, id) ? '' : undefined)),
+        'data-focused': state.map((s) => (s.focused === id ? '' : undefined)),
+        'data-loading': state.map((s) => (isLoading(s, id) ? '' : undefined)),
         onClick: tagSend(send, ['select', 'toggleBranch'], (e) => {
           send({ type: 'select', id, additive: e.metaKey || e.ctrlKey })
           if (expandOnClick && isBranch) send({ type: 'toggleBranch', id })
@@ -472,7 +475,7 @@ export function connect<S>(
       branchTrigger: {
         'data-scope': 'tree-view',
         'data-part': 'branch-trigger',
-        'data-state': (s) => (isExpanded(get(s), id) ? 'open' : 'closed'),
+        'data-state': state.map((s) => (isExpanded(s, id) ? 'open' : 'closed')),
         onClick: tagSend(send, ['toggleBranch'], (e) => {
           e.stopPropagation()
           send({ type: 'toggleBranch', id })
@@ -480,16 +483,16 @@ export function connect<S>(
       },
       checkbox: {
         role: 'checkbox',
-        'aria-checked': (s) => {
-          if (isIndeterminate(get(s), id)) return 'mixed'
-          return isChecked(get(s), id) ? 'true' : 'false'
-        },
+        'aria-checked': state.map((s) => {
+          if (isIndeterminate(s, id)) return 'mixed'
+          return isChecked(s, id) ? 'true' : 'false'
+        }),
         'data-scope': 'tree-view',
         'data-part': 'checkbox',
-        'data-state': (s) => {
-          if (isIndeterminate(get(s), id)) return 'indeterminate'
-          return isChecked(get(s), id) ? 'checked' : 'unchecked'
-        },
+        'data-state': state.map((s) => {
+          if (isIndeterminate(s, id)) return 'indeterminate'
+          return isChecked(s, id) ? 'checked' : 'unchecked'
+        }),
       },
     }),
   }

@@ -1,5 +1,5 @@
 import { tagSend } from '@llui/dom/signals'
-import type { Send } from '@llui/dom/signals'
+import type { Send, Signal } from '@llui/dom/signals'
 import type { StandardSchemaV1 } from '@standard-schema/spec'
 
 /**
@@ -85,26 +85,26 @@ export function update(state: FormState, msg: FormMsg): [FormState, never[]] {
   }
 }
 
-export interface FormParts<S> {
+export interface FormParts {
   root: {
     'data-scope': 'form'
     'data-part': 'root'
-    'data-state': (s: S) => FormStatus
-    'aria-busy': (s: S) => 'true' | undefined
+    'data-state': Signal<FormStatus>
+    'aria-busy': Signal<'true' | undefined>
   }
   field: (name: string) => {
     'data-scope': 'form'
     'data-part': 'field'
-    'data-touched': (s: S) => '' | undefined
-    touched: (s: S) => boolean
+    'data-touched': Signal<'' | undefined>
+    touched: Signal<boolean>
     onBlur: (e: FocusEvent) => void
   }
   submit: {
     type: 'submit'
     'data-scope': 'form'
     'data-part': 'submit'
-    'data-state': (s: S) => FormStatus
-    disabled: (s: S) => boolean
+    'data-state': Signal<FormStatus>
+    disabled: Signal<boolean>
   }
 }
 
@@ -112,31 +112,31 @@ export interface ConnectOptions {
   id: string
 }
 
-export function connect<S>(
-  get: (s: S) => FormState,
+export function connect(
+  state: Signal<FormState>,
   send: Send<FormMsg>,
   _opts: ConnectOptions,
-): FormParts<S> {
+): FormParts {
   return {
     root: {
       'data-scope': 'form',
       'data-part': 'root',
-      'data-state': (s) => get(s).status,
-      'aria-busy': (s) => (get(s).status === 'submitting' ? 'true' : undefined),
+      'data-state': state.map((s) => s.status),
+      'aria-busy': state.map((s) => (s.status === 'submitting' ? 'true' : undefined)),
     },
     field: (name) => ({
       'data-scope': 'form',
       'data-part': 'field',
-      'data-touched': (s) => (get(s).touched[name] ? '' : undefined),
-      touched: (s) => !!get(s).touched[name],
+      'data-touched': state.map((s) => (s.touched[name] ? '' : undefined)),
+      touched: state.map((s) => !!s.touched[name]),
       onBlur: tagSend(send, ['touch'], () => send({ type: 'touch', field: name })),
     }),
     submit: {
       type: 'submit',
       'data-scope': 'form',
       'data-part': 'submit',
-      'data-state': (s) => get(s).status,
-      disabled: (s) => get(s).status === 'submitting',
+      'data-state': state.map((s) => s.status),
+      disabled: state.map((s) => s.status === 'submitting'),
     },
   }
 }

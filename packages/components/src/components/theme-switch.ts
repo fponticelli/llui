@@ -1,5 +1,5 @@
 import { tagSend } from '@llui/dom/signals'
-import type { Send } from '@llui/dom/signals'
+import type { Send, Signal } from '@llui/dom/signals'
 
 /**
  * Theme Switch — light/dark/system theme toggle.
@@ -85,7 +85,7 @@ export function watchSystemTheme(callback: (theme: ResolvedTheme) => void): () =
   return () => mq.removeEventListener('change', handler)
 }
 
-export interface ThemeSwitchParts<S> {
+export interface ThemeSwitchParts {
   root: {
     'data-scope': 'theme-switch'
     'data-part': 'root'
@@ -97,7 +97,7 @@ export interface ThemeSwitchParts<S> {
     'data-scope': 'theme-switch'
     'data-part': 'option'
     'data-theme': Theme
-    'aria-pressed': (s: S) => boolean
+    'aria-pressed': Signal<boolean>
     'aria-label': string
     onClick: (e: MouseEvent) => void
   }
@@ -105,7 +105,7 @@ export interface ThemeSwitchParts<S> {
     type: 'button'
     'data-scope': 'theme-switch'
     'data-part': 'toggle'
-    'data-theme': (s: S) => Theme
+    'data-theme': Signal<Theme>
     'aria-label': string
     onClick: (e: MouseEvent) => void
   }
@@ -123,11 +123,11 @@ const LABELS: Record<Theme, string> = {
   system: 'Use system theme',
 }
 
-export function connect<S>(
-  get: (s: S) => ThemeSwitchState,
+export function connect(
+  state: Signal<ThemeSwitchState>,
   send: Send<ThemeSwitchMsg>,
   opts: ConnectOptions,
-): ThemeSwitchParts<S> {
+): ThemeSwitchParts {
   const label = opts.label ?? 'Theme'
   return {
     root: {
@@ -141,7 +141,7 @@ export function connect<S>(
       'data-scope': 'theme-switch',
       'data-part': 'option',
       'data-theme': theme,
-      'aria-pressed': (s) => get(s).theme === theme,
+      'aria-pressed': state.map((s) => s.theme === theme),
       'aria-label': LABELS[theme],
       onClick: tagSend(send, ['setTheme'], () => send({ type: 'setTheme', theme })),
     }),
@@ -149,7 +149,7 @@ export function connect<S>(
       type: 'button',
       'data-scope': 'theme-switch',
       'data-part': 'toggle',
-      'data-theme': (s) => get(s).theme,
+      'data-theme': state.map((s) => s.theme),
       'aria-label': 'Toggle theme',
       onClick: tagSend(send, ['toggle'], () => send({ type: 'toggle' })),
     },

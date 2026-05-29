@@ -1,4 +1,4 @@
-import type { Send } from '@llui/dom/signals'
+import type { Send, Signal } from '@llui/dom/signals'
 
 /**
  * In View — tracks whether an element is visible in the viewport
@@ -11,10 +11,10 @@ import type { Send } from '@llui/dom/signals'
  * scroll-triggered animations.
  *
  * ```ts
- * const parts = inView.connect<State>(s => s.iv, sendIv, { id: 'hero' })
+ * const parts = inView.connect(state.map((s) => s.iv), sendIv, { id: 'hero' })
  *
  * view: () => [
- *   div({ ...parts.root, class: (s) => s.iv.visible ? 'fade-in' : '' }, [
+ *   div({ ...parts.root, class: state.map((s) => (s.iv.visible ? 'fade-in' : '')) }, [
  *     // content that animates on scroll
  *   ]),
  * ]
@@ -45,11 +45,11 @@ export function update(state: InViewState, msg: InViewMsg): [InViewState, never[
   }
 }
 
-export interface InViewParts<S> {
+export interface InViewParts {
   root: {
     'data-scope': 'in-view'
     'data-part': 'root'
-    'data-state': (s: S) => 'visible' | 'hidden'
+    'data-state': Signal<'visible' | 'hidden'>
   }
 }
 
@@ -57,16 +57,16 @@ export interface ConnectOptions {
   id: string
 }
 
-export function connect<S>(
-  get: (s: S) => InViewState,
+export function connect(
+  state: Signal<InViewState>,
   _send: Send<InViewMsg>,
   _opts: ConnectOptions,
-): InViewParts<S> {
+): InViewParts {
   return {
     root: {
       'data-scope': 'in-view',
       'data-part': 'root',
-      'data-state': (s) => (get(s).visible ? 'visible' : 'hidden'),
+      'data-state': state.map((s) => (s.visible ? 'visible' : 'hidden')),
     },
   }
 }

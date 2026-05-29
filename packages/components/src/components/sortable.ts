@@ -1,5 +1,5 @@
 import { tagSend } from '@llui/dom/signals'
-import type { Send } from '@llui/dom/signals'
+import type { Send, Signal } from '@llui/dom/signals'
 
 /**
  * Sortable — pointer-based reorderable list.
@@ -24,7 +24,7 @@ import type { Send } from '@llui/dom/signals'
  * }
  *
  * view: ({ send, each, text }) => {
- *   const s = sortable.connect<State>(s => s.sort, m => send({ type: 'sort', msg: m }), { id: 'list' })
+ *   const s = sortable.connect(state.map((s) => s.sort), m => send({ type: 'sort', msg: m }), { id: 'list' })
  *   return [
  *     ul({ ...s.root, class: 'list' }, [
  *       ...each({
@@ -181,12 +181,12 @@ export function update(state: SortableState, msg: SortableMsg): [SortableState, 
   }
 }
 
-export interface SortableParts<S> {
+export interface SortableParts {
   root: {
     'data-scope': 'sortable'
     'data-part': 'root'
     'data-container-id': string
-    'data-dragging': (s: S) => '' | undefined
+    'data-dragging': Signal<'' | undefined>
     onPointerMove: (e: PointerEvent) => void
     onPointerUp: (e: PointerEvent) => void
     onPointerCancel: (e: PointerEvent) => void
@@ -199,11 +199,11 @@ export interface SortableParts<S> {
     'data-part': 'item'
     'data-index': string
     'data-id': string
-    'data-dragging': (s: S) => '' | undefined
-    'data-over': (s: S) => '' | undefined
-    'data-shift': (s: S) => 'up' | 'down' | undefined
-    'style.transform': (s: S) => string | undefined
-    'style.zIndex': (s: S) => string | undefined
+    'data-dragging': Signal<'' | undefined>
+    'data-over': Signal<'' | undefined>
+    'data-shift': Signal<'up' | 'down' | undefined>
+    'style.transform': Signal<string | undefined>
+    'style.zIndex': Signal<string | undefined>
   }
   handle: (
     id: string,
@@ -213,7 +213,7 @@ export interface SortableParts<S> {
     'data-part': 'handle'
     role: 'button'
     tabIndex: 0
-    'aria-grabbed': (s: S) => boolean
+    'aria-grabbed': Signal<boolean>
     'aria-label': string
     onPointerDown: (e: PointerEvent) => void
     onKeyDown: (e: KeyboardEvent) => void
@@ -250,11 +250,11 @@ export interface ConnectOptions {
   layout?: '1d' | '2d'
 }
 
-export function connect<S>(
-  get: (s: S) => SortableState,
+export function connect(
+  state: Signal<SortableState>,
   send: Send<SortableMsg>,
   opts: ConnectOptions,
-): SortableParts<S> {
+): SortableParts {
   // The connect's `id` doubles as the cross-container identifier
   const containerId = opts.id
   const layout = opts.layout ?? '1d'
@@ -355,7 +355,7 @@ export function connect<S>(
       'data-scope': 'sortable',
       'data-part': 'root',
       'data-container-id': containerId,
-      'data-dragging': (s) => (get(s).dragging ? '' : undefined),
+      'data-dragging': state.map((s) => (s.dragging ? '' : undefined)),
       onPointerMove: tagSend(send, ['move'], (e) => {
         if (!e.buttons) return
         const hit = findTargetAt(e)
@@ -382,12 +382,12 @@ export function connect<S>(
       'data-part': 'item',
       'data-index': String(index),
       'data-id': id,
-      'data-dragging': (s) => {
-        const d = get(s).dragging
+      'data-dragging': state.map((s) => {
+        const d = s.dragging
         return d?.id === id && d?.fromContainer === containerId ? '' : undefined
-      },
-      'data-over': (s) => {
-        const d = get(s).dragging
+      }),
+      'data-over': state.map((s) => {
+        const d = s.dragging
         if (!d || d.toContainer !== containerId) return undefined
         // Look up this item's CURRENT DOM index via the drag-start snapshot.
         // The `index` closed over here is frozen at initial render and goes
@@ -395,7 +395,7 @@ export function connect<S>(
         const snap = snapshots.get(containerId)
         const liveIndex = snap?.idToIndex.get(id) ?? index
         return d.currentIndex === liveIndex ? '' : undefined
-      },
+      }),
       // Shift direction for items BETWEEN the source and target (excluding the
       // dragged item itself). 'down' = item should translate down to make room;
       // 'up' = item should translate up. CSS controls the actual displacement.
@@ -405,9 +405,9 @@ export function connect<S>(
       // `data-shift` out of the 2D path prevents any author-provided
       // CSS rule like `[data-shift] { translate: 0 var(--sortable-shift) }`
       // from fighting with the computed transform.
-      'data-shift': (s) => {
+      'data-shift': state.map((s) => {
         if (layout === '2d') return undefined
-        const d = get(s).dragging
+        const d = s.dragging
         if (!d || d.fromContainer !== containerId || d.toContainer !== containerId) return undefined
         if (d.id === id) return undefined
         if (d.startIndex === d.currentIndex) return undefined
@@ -422,7 +422,7 @@ export function connect<S>(
           if (liveIndex >= d.currentIndex && liveIndex < d.startIndex) return 'down'
         }
         return undefined
-      },
+      }),
       // The dragged item follows the pointer. In 1D, translateY only; in
       // 2D, both axes. Non-dragged items in 2D between source and target
       // get a per-item translate computed from the snapshot — each item's
@@ -430,8 +430,8 @@ export function connect<S>(
       // opens correctly regardless of row wrap. In 1D, non-dragged items
       // emit `undefined` here and rely on the consumer's CSS `data-shift`
       // rule.
-      'style.transform': (s) => {
-        const d = get(s).dragging
+      'style.transform': state.map((s) => {
+        const d = s.dragging
         if (!d) return undefined
         const isDragged = d.id === id && d.fromContainer === containerId
         if (isDragged) {
@@ -472,22 +472,22 @@ export function connect<S>(
         const dx = target.x - own.x
         const dy = target.y - own.y
         return `translate(${dx}px, ${dy}px)`
-      },
-      'style.zIndex': (s) => {
-        const d = get(s).dragging
+      }),
+      'style.zIndex': state.map((s) => {
+        const d = s.dragging
         if (!d || d.id !== id || d.fromContainer !== containerId) return undefined
         return '10'
-      },
+      }),
     }),
     handle: (id, index) => ({
       'data-scope': 'sortable',
       'data-part': 'handle',
       role: 'button',
       tabIndex: 0,
-      'aria-grabbed': (s) => {
-        const d = get(s).dragging
+      'aria-grabbed': state.map((s) => {
+        const d = s.dragging
         return d?.id === id && d?.fromContainer === containerId
-      },
+      }),
       'aria-label':
         'Drag handle. Press space to pick up, arrow keys to move, space again to drop, escape to cancel.',
       onPointerDown: tagSend(send, ['start'], (e) => {
