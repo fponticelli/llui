@@ -11,6 +11,7 @@
 // is left verbatim by the transform and satisfied here at runtime).
 
 import { mountSignal, type SignalMount } from './dom.js'
+import { withBindingErrors, type BindingError } from './runtime.js'
 import { pathHandle } from './handle.js'
 import { installSignalDebug, type SignalMessageRecord } from './devtools.js'
 import type { Signal } from './types.js'
@@ -76,6 +77,27 @@ export interface SignalComponentHandle<S, M> {
   flush(): void
   /** run all pending effect cleanups (subscriptions etc.) */
   dispose(): void
+  /** Register a listener called synchronously after every update cycle that
+   * changes state, with the new state. Returns an unsubscribe. No-op after
+   * dispose. Backs the agent protocol's state-update frames. */
+  subscribe(listener: (state: S) => void): () => void
+  /** Run the reducer in isolation against the current state — `{state, effects}`
+   * with no commit/flush/effect dispatch. Backs the agent's `would_dispatch`. */
+  runReducer(msg: M): { state: S; effects: unknown[] } | null
+  /** Snapshot the Msg variants dispatchable from currently-rendered UI (live
+   * `tagSend` registrations). Backs the agent's `list_actions`. */
+  getBindingDescriptors(): Array<{ variant: string }>
+  /** Hot-swap the reducer (and optionally onEffect) without rebuilding the DOM —
+   * the HMR escape hatch for pure update.ts edits. State-type erased at this
+   * boundary (`unknown`) so the handle stays assignable across state types. */
+  swapUpdate(
+    newUpdate: (state: unknown, msg: unknown) => [unknown, unknown[]] | unknown,
+    newOnEffect?: unknown,
+  ): void
+  /** Install a hook called when a binding accessor throws during the update
+   * cycle; the runtime leaves the binding's DOM at its prior value and continues
+   * with siblings. Backs the agent's dispatch-envelope `drain.errors`. */
+  setOnBindingError(hook: ((e: BindingError) => void) | null): void
 }
 
 function normalize<S, E>(r: [S, E[]] | S): [S, E[]] {
@@ -93,7 +115,13 @@ export function mountSignalComponent<S, M, E = never>(
   const [initialState, initialEffects] = normalize<S, E>(def.init())
   let state = initialState
   let mount: SignalMount | null = null
+  let disposed = false
+  // Swappable via swapUpdate (HMR); runReducer/send read these, not def.* .
+  let updateFn = def.update
+  let onEffectFn = def.onEffect
+  let onBindingError: ((e: BindingError) => void) | null = null
   const cleanups: Array<() => void> = []
+  const subscribers = new Set<(state: S) => void>()
 
   const handle = makeHandle<S>(() => state)
   // Dev: capture a message log and register a debug API for the MCP/agent relay.
@@ -103,16 +131,17 @@ export function mountSignalComponent<S, M, E = never>(
   let uninstallDebug: (() => void) | null = null
 
   const runEffect = (effect: E): void => {
-    const cleanup = def.onEffect?.(effect, { send, state: handle })
+    const cleanup = onEffectFn?.(effect, { send, state: handle })
     if (typeof cleanup === 'function') cleanups.push(cleanup)
   }
 
   function send(msg: M): void {
     const before = state
-    const [next, effects] = normalize<S, E>(def.update(state, msg))
+    const [next, effects] = normalize<S, E>(updateFn(state, msg))
     if (!Object.is(next, state)) {
       state = next
-      mount?.update(next)
+      withBindingErrors(onBindingError, () => mount?.update(next))
+      for (const listener of subscribers) listener(state)
     }
     if (dev) {
       history.push({
@@ -128,7 +157,9 @@ export function mountSignalComponent<S, M, E = never>(
     for (const e of effects) runEffect(e)
   }
 
-  mount = mountSignal(container, state, () => def.view({ state: handle, send }))
+  withBindingErrors(onBindingError, () => {
+    mount = mountSignal(container, state, () => def.view({ state: handle, send }))
+  })
   for (const e of initialEffects) runEffect(e)
 
   if (dev) {
@@ -157,9 +188,31 @@ export function mountSignalComponent<S, M, E = never>(
     getState: () => state,
     flush: () => {}, // send is synchronous — nothing to flush
     dispose: () => {
+      disposed = true
+      subscribers.clear()
       mount?.dispose() // foreign unmounts, subscriptions
       for (const c of cleanups.splice(0)) c()
       uninstallDebug?.()
+    },
+    subscribe: (listener: (state: S) => void): (() => void) => {
+      if (disposed) return () => {}
+      subscribers.add(listener)
+      return () => subscribers.delete(listener)
+    },
+    runReducer: (msg: M): { state: S; effects: unknown[] } | null => {
+      const [next, effects] = normalize<S, E>(updateFn(state, msg))
+      return { state: next, effects }
+    },
+    getBindingDescriptors: (): Array<{ variant: string }> => mount?.getDescriptors() ?? [],
+    swapUpdate: (
+      newUpdate: (state: unknown, msg: unknown) => [unknown, unknown[]] | unknown,
+      newOnEffect?: unknown,
+    ): void => {
+      updateFn = newUpdate as typeof updateFn
+      if (newOnEffect !== undefined) onEffectFn = newOnEffect as typeof onEffectFn
+    },
+    setOnBindingError: (hook: ((e: BindingError) => void) | null): void => {
+      onBindingError = hook
     },
   }
 }

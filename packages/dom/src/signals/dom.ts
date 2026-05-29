@@ -36,6 +36,11 @@ interface BuildCtx {
   /** context values in scope during this build (provide/useContext). Inherited
    * into nested builds (each rows, show/branch arms). */
   contexts: Map<symbol, unknown>
+  /** live agent-affordance registry: tagged-send variant → refcount. SHARED by
+   * reference across the whole component (root + every reactive row/arm build),
+   * so `each`/`show`/`branch` registrations and their teardowns all affect the
+   * one registry the handle's `getBindingDescriptors` reads. */
+  descriptors: Map<string, number>
 }
 let ctx: BuildCtx | null = null
 
@@ -119,6 +124,9 @@ function populate(
       })
     } else if (typeof value === 'function' && /^on[A-Z]/.test(name)) {
       node.addEventListener(eventName(name), value as EventListener)
+      // tagSend-tagged handler → register the agent-dispatchable variants live.
+      const variants = (value as { __lluiVariants?: readonly string[] }).__lluiVariants
+      if (variants) registerVariants(c, variants)
     } else {
       applyAttr(node, name, value)
     }
@@ -158,29 +166,58 @@ export function elNS(
 function runBuild(
   doc: Document,
   build: () => readonly Node[],
+  // The structural primitives build rows/arms REACTIVELY (after mount, when the
+  // module `ctx` is null), so they pass their captured build-time ctx here to
+  // keep context values and the descriptor registry flowing into nested builds.
+  inherit?: BuildCtx,
 ): {
   nodes: readonly Node[]
   specs: BindingSpec[]
   host: { scope: SignalScope | null }
   teardowns: Array<() => void>
   mounts: Array<(root: Element) => void | (() => void)>
+  descriptors: Map<string, number>
 } {
   const prev = ctx
+  const parent = inherit ?? prev
   const specs: BindingSpec[] = []
   const host: { scope: SignalScope | null } = { scope: null }
   const teardowns: Array<() => void> = []
   const mounts: Array<(root: Element) => void | (() => void)> = []
   // inherit in-scope context values so provide() above an each/show is visible
   // inside its rows/arms (which build in this nested context).
-  const contexts = new Map(prev?.contexts)
-  ctx = { specs, doc, host, teardowns, mounts, contexts }
+  const contexts = new Map(parent?.contexts)
+  // SHARE the descriptor registry by reference (root one if present) so row/arm
+  // registrations and decrements land in the component's single registry.
+  const descriptors = parent?.descriptors ?? new Map<string, number>()
+  ctx = { specs, doc, host, teardowns, mounts, contexts, descriptors }
   let nodes: readonly Node[]
   try {
     nodes = build()
   } finally {
     ctx = prev
   }
-  return { nodes, specs, host, teardowns, mounts }
+  return { nodes, specs, host, teardowns, mounts, descriptors }
+}
+
+/** Register the agent-affordance variants a tagged event handler dispatches, into
+ * the active build's descriptor registry, with a teardown that decrements. */
+function registerVariants(c: BuildCtx, variants: readonly string[]): void {
+  if (variants.length === 0) return
+  for (const v of variants) c.descriptors.set(v, (c.descriptors.get(v) ?? 0) + 1)
+  c.teardowns.push(() => {
+    for (const v of variants) {
+      const next = (c.descriptors.get(v) ?? 0) - 1
+      if (next <= 0) c.descriptors.delete(v)
+      else c.descriptors.set(v, next)
+    }
+  })
+}
+
+/** Compiler-emitted (signal connect-translator path) + library helper: register
+ * the variants for the active build scope. No-op outside a build. */
+export function __registerScopeVariants(variants: readonly string[]): void {
+  if (ctx) registerVariants(ctx, variants)
 }
 
 /** Run the onMount callbacks collected during a build, passing the mounted
@@ -355,7 +392,7 @@ export function signalEach<T>(
       if (!row) {
         const ctx: RowCtx<T> = { item, state, index }
         const holder = { ctx }
-        const built = runBuild(doc, () => renderRow(() => holder.ctx))
+        const built = runBuild(doc, () => renderRow(() => holder.ctx), c)
         const scope = buildAndPublishScope(built)
         scope.mount(ctx) // row scope's "state" is the combined ctx
         row = {
@@ -471,7 +508,7 @@ export function signalShow(
 
     const arm = on ? render : orElse
     if (arm) {
-      const built = runBuild(doc, arm)
+      const built = runBuild(doc, arm, c)
       const scope = buildAndPublishScope(built)
       scope.mount(state) // content reads the component state
       for (const n of built.nodes) parent.insertBefore(n, end)
@@ -540,7 +577,7 @@ export function signalBranch(
 
     const render = arms[key]
     if (render) {
-      const built = runBuild(doc, render)
+      const built = runBuild(doc, render, c)
       const scope = buildAndPublishScope(built)
       scope.mount(state)
       for (const n of built.nodes) parent.insertBefore(n, end)
@@ -666,6 +703,8 @@ export interface SignalMount {
   update(next: unknown): void
   /** run teardowns (foreign unmount, subscriptions). */
   dispose(): void
+  /** live agent-affordance variants (tagged-send handlers currently mounted). */
+  getDescriptors(): Array<{ variant: string }>
 }
 
 /**
@@ -691,6 +730,11 @@ export function mountSignal(
     },
     dispose(): void {
       for (const t of built.teardowns.splice(0)) t()
+    },
+    getDescriptors(): Array<{ variant: string }> {
+      const out: Array<{ variant: string }> = []
+      for (const variant of built.descriptors.keys()) out.push({ variant })
+      return out
     },
   }
 }

@@ -17,6 +17,49 @@
 
 import { type PathTable, type SparseMask, computeDirtyInto, intersects } from './mask.js'
 
+/** A binding-evaluation failure surfaced to a `setOnBindingError` hook. Shape
+ * matches the agent's dispatch-envelope `drain.errors` entries. */
+export interface BindingError {
+  kind: string
+  key?: string
+  message: string
+  stack?: string
+}
+
+// Active binding-error handler stack. A component installs its handler around
+// its synchronous mount + every send (both of which run all binding produce/
+// commit work), so the stack top always attributes a throw to the right
+// component — updates are synchronous and non-reentrant under TEA.
+const errorHandlers: Array<(e: BindingError) => void> = []
+
+/** Run `fn` with `handler` active for any binding throw it triggers. */
+export function withBindingErrors(
+  handler: ((e: BindingError) => void) | null,
+  fn: () => void,
+): void {
+  if (!handler) {
+    fn()
+    return
+  }
+  errorHandlers.push(handler)
+  try {
+    fn()
+  } finally {
+    errorHandlers.pop()
+  }
+}
+
+function reportBindingError(err: unknown): void {
+  const handler = errorHandlers[errorHandlers.length - 1]
+  if (!handler) return
+  const e = err as { message?: unknown; stack?: unknown }
+  handler({
+    kind: 'binding',
+    message: typeof e?.message === 'string' ? e.message : String(err),
+    stack: typeof e?.stack === 'string' ? e.stack : undefined,
+  })
+}
+
 export interface SignalBinding<V = unknown> {
   /** the chunks/bits this binding depends on */
   readonly mask: SparseMask
@@ -55,9 +98,17 @@ export function createSignalScope(
   return {
     mount(state: unknown): void {
       for (const b of bindings) {
-        const v = b.produce(state)
-        b.commit(v)
-        last.set(b, v)
+        try {
+          const v = b.produce(state)
+          b.commit(v)
+          last.set(b, v)
+        } catch (err) {
+          // With a binding-error hook installed: report and continue siblings,
+          // leaving this binding's last value untouched (DOM keeps its prior
+          // value). With no hook: preserve the default — propagate the throw.
+          if (errorHandlers.length === 0) throw err
+          reportBindingError(err)
+        }
       }
     },
 
@@ -67,10 +118,15 @@ export function createSignalScope(
       if (computeDirtyInto(table, oldState, newState, dirty)) {
         for (const b of bindings) {
           if (!intersects(b.mask, dirty)) continue // gate: irrelevant binding
-          const v = b.produce(newState)
-          if (!Object.is(v, last.get(b))) {
-            b.commit(v) // output-equality: only commit real changes
-            last.set(b, v)
+          try {
+            const v = b.produce(newState)
+            if (!Object.is(v, last.get(b))) {
+              b.commit(v) // output-equality: only commit real changes
+              last.set(b, v)
+            }
+          } catch (err) {
+            if (errorHandlers.length === 0) throw err
+            reportBindingError(err)
           }
         }
       }

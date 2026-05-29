@@ -37,6 +37,7 @@ export {
   useContext,
   type Context,
   mountSignal,
+  __registerScopeVariants,
   type PropValue,
   type EventHandler,
   type EachSource,
@@ -54,6 +55,7 @@ export {
   type EffectApi,
   type StateHandle,
 } from './component.js'
+export type { BindingError } from './runtime.js'
 
 // ── Authoring (human-written; compiler-rewritten) ───────────────────
 export {
