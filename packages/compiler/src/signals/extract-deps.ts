@@ -61,6 +61,34 @@ export function signalPathOf(expr: ts.Expression, rootNames: ReadonlySet<string>
 }
 
 /**
+ * Is `expr` STRUCTURALLY a signal expression (a `state`/`.at`/`.map`/`.peek`
+ * chain or `derived(...)`)? Strict on shape — does NOT return true merely because
+ * a signal appears somewhere inside (e.g. an event handler `() => send(state.at(
+ * 'x').peek())` is NOT a signal expression). Used to distinguish reactive slots
+ * from handlers/static values in the view transform.
+ */
+export function isSignalExpr(
+  expr: ts.Expression,
+  rootNames: ReadonlySet<string> = new Set(['state']),
+): boolean {
+  if (ts.isParenthesizedExpression(expr)) return isSignalExpr(expr.expression, rootNames)
+  if (signalPathOf(expr, rootNames) !== null) return true
+  if (ts.isCallExpression(expr) && ts.isPropertyAccessExpression(expr.expression)) {
+    const m = expr.expression.name.text
+    if (m === 'map' || m === 'at' || m === 'peek')
+      return isSignalExpr(expr.expression.expression, rootNames)
+  }
+  if (
+    ts.isCallExpression(expr) &&
+    ts.isIdentifier(expr.expression) &&
+    expr.expression.text === 'derived'
+  ) {
+    return true
+  }
+  return false
+}
+
+/**
  * The set of absolute dependency paths a signal-valued expression reads.
  */
 export function analyzeSignalExpr(
