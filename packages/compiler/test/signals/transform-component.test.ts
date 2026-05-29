@@ -102,6 +102,29 @@ describe('transformSignalComponentSource', () => {
       expect(out).not.toContain('name: "Counter"') // not the inferred one
     })
 
+    it('uses cross-file preExtracted schemas + external state source', () => {
+      // Msg/State declared in sibling files (not locally) — the adapter resolves
+      // them and passes preExtracted + typeSources.
+      const src = [
+        "import { component } from '@llui/dom'",
+        "import type { Msg } from './msgs'",
+        "import type { State } from './state'",
+        'export const C = component<State, Msg>({',
+        '  init: () => ({ n: 0 }),',
+        '  update: (s) => s,',
+        "  view: ({ state }) => [text(state.at('n'))],",
+        '})',
+      ].join('\n')
+      const out = transformSignalComponentSource(src, {
+        emitAgentMetadata: true,
+        preExtracted: { msgSchema: { discriminant: 'type', variants: { tick: {} } } },
+        typeSources: { state: { source: 'type S = { n: number }', typeName: 'S' } },
+      })
+      expect(out).toContain('"variants":{"tick":{}}') // from preExtracted (cross-file)
+      expect(out).toContain('__stateSchema:') // from external state source
+      expect(out).toContain('"n":"number"')
+    })
+
     it('emits __componentMeta { file, line } in devMode', () => {
       const out = transformSignalComponentSource(SRC, { devMode: true, fileName: 'src/counter.ts' })
       expect(out).toContain('__componentMeta:')

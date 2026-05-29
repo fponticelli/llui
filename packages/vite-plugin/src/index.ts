@@ -1353,10 +1353,25 @@ export default function llui(options: LluiPluginOptions = {}): Plugin {
       // Cheap string pre-check avoids the extra parse on non-signal files.
       // cheap pre-check: `component(` or `component<…>(` (type args) + `.at(`
       if (/component\s*[<(]/.test(code) && code.includes('.at(')) {
+        // Resolve cross-file Msg/State/Effect types (same machinery the legacy
+        // path uses) so signal components defining types in sibling files still
+        // emit full agent metadata. Only when metadata is actually emitted.
+        const wantMeta = Boolean(agent) || devMode
+        let signalTypeSources: ExternalTypeSources | undefined
+        let signalPreExtracted: PreExtractedSchemas | undefined
+        if (wantMeta && typeof this.resolve === 'function') {
+          const rr = this.resolve.bind(this)
+          ;[signalTypeSources, signalPreExtracted] = await Promise.all([
+            preResolveTypeSources(code, id, rr),
+            preExtractCompositional(code, id, rr),
+          ])
+        }
         const signalOut = transformSignalComponentSource(code, {
           emitAgentMetadata: Boolean(agent),
           devMode,
           fileName: id,
+          preExtracted: signalPreExtracted,
+          typeSources: signalTypeSources?.state ? { state: signalTypeSources.state } : undefined,
         })
         if (signalOut !== code) {
           sawSignalComponent = true

@@ -1,10 +1,11 @@
 import { createHash } from 'node:crypto'
-import type { MessageAnnotations } from './msg-annotations.js'
 
 export type SchemaHashInput = {
   msgSchema: unknown
   stateSchema: unknown
-  msgAnnotations: Record<string, MessageAnnotations> | null | undefined
+  // structurally serialized into the hash — accepts the typed annotations map
+  // (Record<string, MessageAnnotations>) or a cross-file-resolved equivalent.
+  msgAnnotations: Record<string, unknown> | null | undefined
 }
 
 /**

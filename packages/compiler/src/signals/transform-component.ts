@@ -28,6 +28,18 @@ export interface SignalTransformOptions {
   devMode?: boolean
   /** source file path, for `__componentMeta.file` */
   fileName?: string
+  /** cross-file pre-extracted, composition-aware schemas (msg/effect/annotations)
+   * resolved by the adapter; takes precedence over file-local extraction. */
+  preExtracted?: {
+    msgSchema?: unknown
+    effectSchema?: unknown
+    msgAnnotations?: Record<string, unknown> | null
+  }
+  /** cross-file resolved external type sources (for `State`, which isn't a union
+   * so composition doesn't apply — extract from its declaring file). */
+  typeSources?: {
+    state?: { source: string; typeName: string }
+  }
 }
 
 const RUNTIME_HELPERS = [
@@ -93,10 +105,17 @@ export function transformSignalComponentSource(
   let sharedMeta: string[] | null = null
   const sharedMetaProps = (): string[] => {
     if (sharedMeta) return sharedMeta
-    const msgSchema = extractMsgSchema(source, 'Msg')
-    const effectSchema = extractEffectSchema(source, 'Effect')
-    const stateSchema = extractStateSchema(source, 'State')
-    const msgAnnotations = extractMsgAnnotations(source, 'Msg')
+    const pre = opts.preExtracted
+    const stateSrc = opts.typeSources?.state
+    // Cross-file pre-extracted schemas take precedence; else extract file-locally.
+    const msgSchema = pre?.msgSchema !== undefined ? pre.msgSchema : extractMsgSchema(source, 'Msg')
+    const effectSchema =
+      pre?.effectSchema !== undefined ? pre.effectSchema : extractEffectSchema(source, 'Effect')
+    const msgAnnotations =
+      pre?.msgAnnotations !== undefined ? pre.msgAnnotations : extractMsgAnnotations(source, 'Msg')
+    const stateSchema = stateSrc
+      ? extractStateSchema(stateSrc.source, stateSrc.typeName)
+      : extractStateSchema(source, 'State')
     const props: string[] = []
     if (msgSchema) props.push(`__msgSchema: ${JSON.stringify(msgSchema)}`)
     if (effectSchema) props.push(`__effectSchema: ${JSON.stringify(effectSchema)}`)
@@ -105,7 +124,9 @@ export function transformSignalComponentSource(
       props.push(`__msgAnnotations: ${JSON.stringify(msgAnnotations)}`)
     }
     props.push(
-      `__schemaHash: ${JSON.stringify(computeSchemaHash({ msgSchema, stateSchema, msgAnnotations }))}`,
+      `__schemaHash: ${JSON.stringify(
+        computeSchemaHash({ msgSchema, stateSchema, msgAnnotations: msgAnnotations ?? null }),
+      )}`,
     )
     sharedMeta = props
     return props
