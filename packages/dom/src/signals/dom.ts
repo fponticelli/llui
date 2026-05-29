@@ -10,7 +10,7 @@
 // (`text(state.at('count'))`) is rewritten into these calls. Built ALONGSIDE the
 // legacy element helpers (per-file-flip migration).
 
-import { createSignalScope, type SignalBinding } from './runtime.js'
+import { createSignalScope, type SignalBinding, type SignalScope } from './runtime.js'
 import { buildPathTable, bindingMask } from './mask.js'
 
 type Producer = (state: unknown) => unknown
@@ -111,6 +111,109 @@ export interface SignalMount {
   update(next: unknown): void
 }
 
+/** Run a build function with a fresh collecting context, returning the produced
+ * nodes and the bindings created during it. Nests safely (restores the previous
+ * context), so structural primitives can build rows mid-reconcile. */
+function runBuild(
+  doc: Document,
+  build: () => readonly Node[],
+): { nodes: readonly Node[]; specs: BindingSpec[] } {
+  const prev = ctx
+  const specs: BindingSpec[] = []
+  ctx = { specs, doc }
+  let nodes: readonly Node[]
+  try {
+    nodes = build()
+  } finally {
+    ctx = prev
+  }
+  return { nodes, specs }
+}
+
+/** Build a chunked-mask reconciler scope over a set of collected bindings. */
+function buildScope(specs: readonly BindingSpec[]): SignalScope {
+  const table = buildPathTable(specs.flatMap((s) => [...s.deps]))
+  const bindings: SignalBinding[] = specs.map((s) => ({
+    mask: bindingMask(s.deps, table),
+    produce: s.produce,
+    commit: s.commit,
+  }))
+  return createSignalScope(table, bindings)
+}
+
+/** Items source for `signalEach`: an accessor for the array plus its dep paths. */
+export interface EachItems<T> {
+  produce: (state: unknown) => readonly T[]
+  deps: readonly string[]
+}
+
+/**
+ * Keyed list primitive. The items source is a structural binding on the array's
+ * path; on change it reconciles by key. Each row is its OWN signal scope mounted
+ * on the item value — so a change to one item re-runs only that row's bindings
+ * (and only the ones whose item-relative deps changed). Kept rows are mutated in
+ * place, never recreated.
+ *
+ * Index accessor and move-minimizing reorder are deferred (correct-but-simple
+ * reorder: rows are re-inserted in order before the end anchor).
+ */
+export function signalEach<T>(
+  items: EachItems<T>,
+  key: (item: T) => string | number,
+  renderRow: () => readonly Node[],
+): Node {
+  const c = requireCtx()
+  const doc = c.doc
+  const start = doc.createComment('each')
+  const end = doc.createComment('/each')
+  const frag = doc.createDocumentFragment()
+  frag.appendChild(start)
+  frag.appendChild(end)
+
+  interface Row {
+    scope: SignalScope
+    nodes: readonly Node[]
+    item: T
+  }
+  const rows = new Map<string, Row>()
+
+  const reconcile = (next: readonly T[]): void => {
+    const parent = end.parentNode
+    if (!parent) return
+    const seen = new Set<string>()
+    for (const item of next) {
+      const k = String(key(item))
+      seen.add(k)
+      let row = rows.get(k)
+      if (!row) {
+        const built = runBuild(doc, renderRow)
+        const scope = buildScope(built.specs)
+        scope.mount(item) // row scope's "state" is the item value
+        row = { scope, nodes: built.nodes, item }
+        rows.set(k, row)
+      } else {
+        row.scope.update(row.item, item) // per-row gating
+        row.item = item
+      }
+      for (const n of row.nodes) parent.insertBefore(n, end) // place/reorder
+    }
+    for (const [k, row] of rows) {
+      if (!seen.has(k)) {
+        for (const n of row.nodes) if (n.parentNode === parent) parent.removeChild(n)
+        rows.delete(k)
+      }
+    }
+  }
+
+  c.specs.push({
+    deps: items.deps,
+    produce: items.produce,
+    commit: (arr) => reconcile(arr as readonly T[]),
+  })
+
+  return frag
+}
+
 /**
  * Mount a signal view into `container`: build the nodes (collecting bindings),
  * append them, and wire a chunked-mask reconciler over the collected bindings.
@@ -120,24 +223,10 @@ export function mountSignal(
   initial: unknown,
   build: () => readonly Node[],
 ): SignalMount {
-  const specs: BindingSpec[] = []
-  const doc = container.ownerDocument
-  ctx = { specs, doc }
-  let nodes: readonly Node[]
-  try {
-    nodes = build()
-  } finally {
-    ctx = null
-  }
+  const { nodes, specs } = runBuild(container.ownerDocument, build)
   for (const n of nodes) container.appendChild(n)
 
-  const table = buildPathTable(specs.flatMap((s) => [...s.deps]))
-  const bindings: SignalBinding[] = specs.map((s) => ({
-    mask: bindingMask(s.deps, table),
-    produce: s.produce,
-    commit: s.commit,
-  }))
-  const scope = createSignalScope(table, bindings)
+  const scope = buildScope(specs)
   let cur = initial
   scope.mount(cur)
   return {
