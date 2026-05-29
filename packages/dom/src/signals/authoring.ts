@@ -1,14 +1,25 @@
-// Signal authoring surface — what humans/LLMs write. These typed helpers are
-// REWRITTEN by @llui/vite-plugin (text -> signalText, div -> el, each ->
-// signalEach, …) before they ever run, so their runtime bodies are stubs that
-// throw if reached uncompiled. `component` and `mountApp` are kept by the
-// transform and have real runtime behavior (they route to the signal runtime).
+// Signal authoring surface — what humans/LLMs write.
 //
-// Importing from `@llui/dom/signals` gives both these authoring names and the
-// lowered runtime names (signalText/el/…); the transform replaces the former
-// with the latter.
+// These are REAL runtime functions: they accept runtime signal handles (carrying
+// produce+deps) or plain values and build DOM + mask-gated bindings. So views
+// factored into helper functions compose naturally. As an OPTIMIZATION, the Vite
+// transform lowers signal expressions in a component's DIRECT view to static
+// `signalText`/`el`/… calls (erasing handle allocation); both forms coexist.
+//
+// `component` and `mountApp` route to the signal runtime.
 
 import type { Signal, LiveSignal } from './types.js'
+import { isSignalHandle, pathHandle } from './handle.js'
+import {
+  signalText,
+  staticText,
+  el,
+  react,
+  signalEach,
+  signalShow,
+  signalBranch,
+  type PropValue,
+} from './dom.js'
 import {
   mountSignalComponent,
   type SignalComponentDef,
@@ -27,8 +38,9 @@ const compiledAway = (name: string): never => {
 }
 
 // ── Text ────────────────────────────────────────────────────────────
-export function text(_value: Reactive<string | number>): Node {
-  return compiledAway('text')
+export function text(value: Reactive<string | number>): Node {
+  if (isSignalHandle(value)) return signalText(value.produce, value.deps)
+  return staticText(value == null ? '' : String(value))
 }
 
 // ── Elements ────────────────────────────────────────────────────────
@@ -36,14 +48,26 @@ export type AttrValue = Reactive<string | number | boolean | null>
 export type ElProps = Record<string, AttrValue | ((ev: Event) => void)>
 
 /** An element helper accepts `tag(children)`, `tag(props, children)`, `tag(props)`,
- * or `tag()` — the compiler routes each form (a leading array literal = children). */
+ * or `tag()` — a leading array literal is children. */
 export interface ElementHelper {
   (children: readonly Node[]): Node
   (props?: ElProps, children?: readonly Node[]): Node
 }
 
 function elementHelper(tag: string): ElementHelper {
-  return (() => compiledAway(tag)) as ElementHelper
+  return ((a0?: ElProps | readonly Node[], a1?: readonly Node[]): Node => {
+    const props = Array.isArray(a0) ? undefined : (a0 as ElProps | undefined)
+    const children = (Array.isArray(a0) ? a0 : a1) ?? []
+    const lowered: Record<string, PropValue> = {}
+    if (props) {
+      for (const k of Object.keys(props)) {
+        const v = props[k]
+        // a signal handle -> reactive binding; handler/static value pass through
+        lowered[k] = isSignalHandle(v) ? react(v.produce, v.deps) : (v as PropValue)
+      }
+    }
+    return el(tag, lowered, children)
+  }) as ElementHelper
 }
 
 export const div = elementHelper('div')
@@ -80,21 +104,32 @@ export const code = elementHelper('code')
 
 // ── Structural primitives ───────────────────────────────────────────
 export function each<T>(
-  _items: Signal<readonly T[]>,
-  _opts: {
+  items: Signal<readonly T[]>,
+  opts: {
     key: (item: T) => string | number
     render: (item: Signal<T>, index: Signal<number>) => readonly Node[]
   },
 ): Node {
-  return compiledAway('each')
+  if (!isSignalHandle(items)) return compiledAway('each')
+  const produce = items.produce as (s: unknown) => readonly T[]
+  return signalEach({ items: produce, deps: items.deps }, opts.key, (getCtx) => {
+    // item/index handles read the row's live combined ctx ({ item, state })
+    const itemH = pathHandle<T>(getCtx, 'item')
+    const indexH = pathHandle<number>(getCtx, 'index')
+    return opts.render(itemH, indexH)
+  })
 }
 
 export function show<T>(
-  _cond: Signal<T>,
-  _render: (narrowed: Signal<NonNullable<T>>) => readonly Node[],
-  _orElse?: () => readonly Node[],
+  cond: Signal<T>,
+  render: (narrowed: Signal<NonNullable<T>>) => readonly Node[],
+  orElse?: () => readonly Node[],
 ): Node {
-  return compiledAway('show')
+  if (!isSignalHandle(cond)) return compiledAway('show')
+  // the arm reads component state; the cond handle (path-rooted) IS the narrowed
+  // signal — its `.at()` resolves against the same state the arm scope receives.
+  const narrowed = cond as Signal<NonNullable<T>>
+  return signalShow({ produce: cond.produce, deps: cond.deps }, () => render(narrowed), orElse)
 }
 
 /** Discriminated-union render. `discriminant` selects the union's tag field
@@ -113,8 +148,21 @@ export function branch<K extends string | number>(
   value: Signal<K>,
   arms: Partial<Record<K, () => readonly Node[]>>,
 ): Node
-export function branch(_value: Signal<unknown>, _arg1: unknown, _arms?: unknown): Node {
-  return compiledAway('branch')
+export function branch(value: Signal<unknown>, arg1: unknown, arms?: unknown): Node {
+  if (!isSignalHandle(value)) return compiledAway('branch')
+  if (typeof arg1 === 'function') {
+    // 3-arg: discriminant fn + narrowed arms
+    const discFn = arg1 as (u: unknown) => string | number
+    const armMap = arms as Record<string, (v: Signal<unknown>) => readonly Node[]>
+    const lowered: Record<string, () => readonly Node[]> = {}
+    for (const k of Object.keys(armMap)) lowered[k] = () => armMap[k]!(value)
+    return signalBranch({ produce: (s) => discFn(value.produce(s)), deps: value.deps }, lowered)
+  }
+  // 2-arg: the value IS the discriminant (string/number)
+  const armMap = arg1 as Record<string, () => readonly Node[]>
+  const lowered: Record<string, () => readonly Node[]> = {}
+  for (const k of Object.keys(armMap)) lowered[k] = () => armMap[k]!()
+  return signalBranch({ produce: value.produce, deps: value.deps }, lowered)
 }
 
 // ── Foreign (imperative-library boundary) ──────────────────────────

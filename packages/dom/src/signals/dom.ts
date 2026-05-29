@@ -202,6 +202,8 @@ export interface EachSource<T> {
 export interface RowCtx<T> {
   item: T
   state: unknown
+  /** the row's current position (dep `index`) — for runtime `each` index handles */
+  index: number
 }
 
 /**
@@ -218,7 +220,10 @@ export interface RowCtx<T> {
 export function signalEach<T>(
   source: EachSource<T>,
   key: (item: T) => string | number,
-  renderRow: () => readonly Node[],
+  // `getCtx` exposes the row's LIVE combined ctx so authoring `each` can build
+  // item handles whose `.peek()` reads the current row. The transform emits
+  // `() => [...]` which simply ignores the argument.
+  renderRow: (getCtx: () => RowCtx<T>) => readonly Node[],
 ): Node {
   const c = requireCtx()
   const doc = c.doc
@@ -234,6 +239,7 @@ export function signalEach<T>(
     ctx: RowCtx<T> // current ctx (holds the last-applied item + state)
     spare: RowCtx<T> // scratch ctx, swapped in on the next update (no per-tick alloc)
     teardowns: Array<() => void> // onMount cleanups + foreign unmount for this row
+    holder: { ctx: RowCtx<T> } // live-ctx box for runtime item handles (.peek)
   }
   const rows = new Map<string, Row>()
 
@@ -248,16 +254,25 @@ export function signalEach<T>(
     // displaced or new rows are inserted before `pos`. O(n) work, but DOM
     // mutations proportional to the number of MOVED rows, not total rows.
     let pos: Node = start.nextSibling ?? end
-    for (const item of items) {
+    for (let index = 0; index < items.length; index++) {
+      const item = items[index]!
       const k = String(key(item))
       seen.add(k)
       let row = rows.get(k)
       if (!row) {
-        const ctx: RowCtx<T> = { item, state }
-        const built = runBuild(doc, renderRow)
+        const ctx: RowCtx<T> = { item, state, index }
+        const holder = { ctx }
+        const built = runBuild(doc, () => renderRow(() => holder.ctx))
         const scope = buildAndPublishScope(built)
         scope.mount(ctx) // row scope's "state" is the combined ctx
-        row = { scope, nodes: built.nodes, ctx, spare: { item, state }, teardowns: built.teardowns }
+        row = {
+          scope,
+          nodes: built.nodes,
+          ctx,
+          spare: { item, state, index },
+          teardowns: built.teardowns,
+          holder,
+        }
         rows.set(k, row)
         for (const n of row.nodes) parent.insertBefore(n, pos) // new row, in order before pos
         runMounts(built.mounts, parent as Element, built.teardowns)
@@ -270,9 +285,11 @@ export function signalEach<T>(
       const next = row.spare
       next.item = item
       next.state = state
+      next.index = index
       row.scope.update(row.ctx, next)
       row.spare = row.ctx
       row.ctx = next
+      row.holder.ctx = next // keep runtime item handles' .peek() current
       const first = row.nodes[0]
       if (first === pos) {
         // already in place — no DOM move; advance the cursor past this row

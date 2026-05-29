@@ -11,7 +11,7 @@
 // is left verbatim by the transform and satisfied here at runtime).
 
 import { mountSignal, type SignalMount } from './dom.js'
-import { resolvePath } from './mask.js'
+import { pathHandle } from './handle.js'
 import { installSignalDebug, type SignalMessageRecord } from './devtools.js'
 import type { Signal } from './types.js'
 
@@ -22,14 +22,9 @@ import type { Signal } from './types.js'
 export type StateHandle<S> = Signal<S>
 
 function makeHandle<S>(get: () => unknown, base = ''): Signal<S> {
-  // The runtime realization of the Signal read-surface for handlers/effects.
-  return {
-    peek: () => resolvePath(get(), base) as S,
-    at: (path: string) => makeHandle(get, base === '' ? path : `${base}.${path}`),
-    map: () => {
-      throw new Error('.map() is a view-build-time signal op; use .peek() in handlers/effects')
-    },
-  } as Signal<S>
+  // Runtime realization of the Signal surface — carries produce+deps so it can
+  // be passed to view helpers (which build bindings from it at runtime).
+  return pathHandle<S>(get, base)
 }
 
 export interface ComponentBag<S, M> {
