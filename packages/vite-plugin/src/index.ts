@@ -1378,7 +1378,19 @@ export default function llui(options: LluiPluginOptions = {}): Plugin {
               loc: { file: id, line: first.line, column: first.column },
             })
           }
-          return { code: signalOut, map: { mappings: '' } }
+          // Dev + MCP: signal files bypass the legacy compiler that injects the
+          // relay, so a pure-signal app would never connect to the MCP server.
+          // Inject startRelay (guarded to fire once) + the HMR port handshake so
+          // signal components registered in the global registry are reachable.
+          let out = signalOut
+          if (devMode && mcpPort !== null) {
+            out =
+              `import { startRelay as __llui_startRelay } from '@llui/dom/devtools'\n` +
+              `if (!globalThis.__lluiRelayStarted) { globalThis.__lluiRelayStarted = true; __llui_startRelay(${mcpPort})\n` +
+              `  if (import.meta.hot) import.meta.hot.on('llui:mcp-ready', (d) => { if (typeof globalThis.__lluiConnect === 'function') globalThis.__lluiConnect(d?.port) }) }\n` +
+              out
+          }
+          return { code: out, map: { mappings: '' } }
         }
         // The transform did NOT fire but the file imports the signal authoring
         // surface and uses `.at()` in a component — i.e. it IS a signal component

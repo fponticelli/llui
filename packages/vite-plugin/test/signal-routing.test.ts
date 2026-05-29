@@ -95,6 +95,20 @@ describe('vite-plugin — signal component routing', () => {
     expect(msg).toContain('was not lowered')
   })
 
+  it('injects the MCP relay startup into signal files in dev (guarded once)', async () => {
+    const plugin = llui({ mcpPort: 5200 })
+    // simulate Vite dev resolution so devMode + mcpPort are set
+    await (plugin.configResolved as (c: unknown) => unknown).call(plugin, {
+      command: 'serve',
+      mode: 'development',
+      root: '/tmp',
+    })
+    const out = await runTransform(plugin, SIGNAL_COMPONENT, '/tmp/counter.ts')
+    expect(out!.code).toContain('__llui_startRelay(5200)')
+    expect(out!.code).toContain('__lluiRelayStarted') // start-once guard
+    expect(out!.code).toContain("from '@llui/dom/signals'") // still lowered
+  })
+
   it('does not touch a file with no .at( signal usage', async () => {
     const legacy = [
       "import { component } from '@llui/dom'",
