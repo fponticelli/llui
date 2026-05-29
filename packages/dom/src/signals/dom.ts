@@ -102,15 +102,14 @@ function eventName(prop: string): string {
   return prop.slice(2).toLowerCase()
 }
 
-/** Build an element. `on*` function props become event listeners; `react(...)`
- * props become reactive bindings; everything else is a static attribute. */
-export function el(
-  tag: string,
-  props: Readonly<Record<string, PropValue>> = {},
-  children: readonly Node[] = [],
-): Element {
+/** Apply props (reactive `react(...)` → binding; `on*` fn → listener; else attr)
+ * and append children to an already-created element. */
+function populate(
+  node: Element,
+  props: Readonly<Record<string, PropValue>>,
+  children: readonly Node[],
+): void {
   const c = requireCtx()
-  const node = c.doc.createElement(tag)
   for (const [name, value] of Object.entries(props)) {
     if (isReactive(value)) {
       c.specs.push({
@@ -125,6 +124,31 @@ export function el(
     }
   }
   for (const child of children) node.appendChild(child)
+}
+
+/** Build an element. `on*` function props become event listeners; `react(...)`
+ * props become reactive bindings; everything else is a static attribute. */
+export function el(
+  tag: string,
+  props: Readonly<Record<string, PropValue>> = {},
+  children: readonly Node[] = [],
+): Element {
+  const node = requireCtx().doc.createElement(tag)
+  populate(node, props, children)
+  return node
+}
+
+const SVG_NS = 'http://www.w3.org/2000/svg'
+
+/** Build an SVG-namespaced element (svg/path/g/circle/…). Same prop/child
+ * semantics as `el`, via createElementNS. */
+export function elNS(
+  tag: string,
+  props: Readonly<Record<string, PropValue>> = {},
+  children: readonly Node[] = [],
+): Element {
+  const node = requireCtx().doc.createElementNS(SVG_NS, tag)
+  populate(node, props, children)
   return node
 }
 

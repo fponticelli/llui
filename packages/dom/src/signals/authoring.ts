@@ -14,6 +14,7 @@ import {
   signalText,
   staticText,
   el,
+  elNS,
   react,
   signalEach,
   signalShow,
@@ -54,19 +55,32 @@ export interface ElementHelper {
   (props?: ElProps, children?: readonly Node[]): Node
 }
 
+function lowerProps(props: ElProps | undefined): Record<string, PropValue> {
+  const lowered: Record<string, PropValue> = {}
+  if (props) {
+    for (const k of Object.keys(props)) {
+      const v = props[k]
+      // a signal handle -> reactive binding; handler/static value pass through
+      lowered[k] = isSignalHandle(v) ? react(v.produce, v.deps) : (v as PropValue)
+    }
+  }
+  return lowered
+}
+
 function elementHelper(tag: string): ElementHelper {
   return ((a0?: ElProps | readonly Node[], a1?: readonly Node[]): Node => {
     const props = Array.isArray(a0) ? undefined : (a0 as ElProps | undefined)
     const children = (Array.isArray(a0) ? a0 : a1) ?? []
-    const lowered: Record<string, PropValue> = {}
-    if (props) {
-      for (const k of Object.keys(props)) {
-        const v = props[k]
-        // a signal handle -> reactive binding; handler/static value pass through
-        lowered[k] = isSignalHandle(v) ? react(v.produce, v.deps) : (v as PropValue)
-      }
-    }
-    return el(tag, lowered, children)
+    return el(tag, lowerProps(props), children)
+  }) as ElementHelper
+}
+
+/** SVG element helper (namespaced) — same call forms as HTML helpers. */
+function svgHelper(tag: string): ElementHelper {
+  return ((a0?: ElProps | readonly Node[], a1?: readonly Node[]): Node => {
+    const props = Array.isArray(a0) ? undefined : (a0 as ElProps | undefined)
+    const children = (Array.isArray(a0) ? a0 : a1) ?? []
+    return elNS(tag, lowerProps(props), children)
   }) as ElementHelper
 }
 
@@ -101,6 +115,17 @@ export const td = elementHelper('td')
 export const th = elementHelper('th')
 export const pre = elementHelper('pre')
 export const code = elementHelper('code')
+
+// ── SVG elements (namespaced) ───────────────────────────────────────
+export const svg = svgHelper('svg')
+export const path = svgHelper('path')
+export const g = svgHelper('g')
+export const circle = svgHelper('circle')
+export const rect = svgHelper('rect')
+export const line = svgHelper('line')
+export const polyline = svgHelper('polyline')
+export const polygon = svgHelper('polygon')
+export const ellipse = svgHelper('ellipse')
 
 // ── Structural primitives ───────────────────────────────────────────
 export function each<T>(
