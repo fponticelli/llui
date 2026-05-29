@@ -69,6 +69,32 @@ describe('vite-plugin — signal component routing', () => {
     expect(msg).toContain('operator-on-signal')
   })
 
+  it('fails the build when a signal view cannot be lowered (block body)', async () => {
+    const blockBody = [
+      "import { component } from '@llui/dom'",
+      "import { text } from '@llui/dom/signals'",
+      'export const C = component({',
+      '  init: () => ({ n: 0 }),',
+      '  update: (s) => s,',
+      '  view: ({ state }) => { const x = 1; return [text(state.at("n"))] },',
+      '})',
+    ].join('\n')
+    const errors: unknown[] = []
+    const error = vi.fn((e: unknown) => {
+      errors.push(e)
+      throw new Error('this.error')
+    })
+    const ctx = {
+      warn: vi.fn(),
+      error,
+      resolve: vi.fn(async () => null),
+    } as unknown as ThisParameterType<Extract<Plugin['transform'], (...a: never) => unknown>>
+    const transform = llui().transform as (this: unknown, c: string, i: string) => unknown
+    await expect(transform.call(ctx, blockBody, '/tmp/block.ts')).rejects.toThrow('this.error')
+    const msg = String(errors[0])
+    expect(msg).toContain('was not lowered')
+  })
+
   it('does not touch a file with no .at( signal usage', async () => {
     const legacy = [
       "import { component } from '@llui/dom'",

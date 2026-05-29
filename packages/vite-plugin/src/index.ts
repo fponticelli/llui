@@ -1376,6 +1376,22 @@ export default function llui(options: LluiPluginOptions = {}): Plugin {
           }
           return { code: signalOut, map: { mappings: '' } }
         }
+        // The transform did NOT fire but the file imports the signal authoring
+        // surface and uses `.at()` in a component — i.e. it IS a signal component
+        // whose view shape the lowering doesn't recognize (block body, or a bag
+        // that doesn't destructure `state`). Without this guard it falls through
+        // to the legacy compiler and ships throwing authoring stubs that fail at
+        // RUNTIME with a confusing message. Fail loudly at build instead.
+        if (/from\s*['"]@llui\/dom\/signals['"]/.test(code)) {
+          const rel = relative(crossFileRoot ?? process.cwd(), id)
+          const display = rel.length > 0 && !rel.startsWith('..') ? rel : id
+          this.error(
+            `[llui] ${display}: signal component view was not lowered. Only a concise ` +
+              'array-body view is supported — `view: ({ state }) => [ … ]`. Block bodies ' +
+              '(`=> { … return [ … ] }`) and bags that do not destructure `state` are not ' +
+              'yet supported; refactor the view to a concise array body.',
+          )
+        }
       }
 
       // Pre-resolve cross-file type sources for any `component<S, M, E>()`
