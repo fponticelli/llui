@@ -327,3 +327,31 @@ export function lintSignals(sf: ts.SourceFile): SignalDiagnostic[] {
   visit(sf, STATE_ROOTS, false)
   return diags
 }
+
+/** A lint diagnostic with source position resolved (1-based line, 0-based col). */
+export interface SignalLintMessage {
+  rule: string
+  message: string
+  start: number
+  line: number
+  column: number
+}
+
+/**
+ * Parse `source` and run the signal lint rules, returning diagnostics with
+ * resolved line/column. The adapter (vite plugin) surfaces these as build
+ * errors. Call only on confirmed signal components.
+ */
+export function lintSignalSource(source: string, fileName = 'm.tsx'): SignalLintMessage[] {
+  const sf = ts.createSourceFile(fileName, source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX)
+  return lintSignals(sf).map((d) => {
+    const lc = sf.getLineAndCharacterOfPosition(d.start)
+    return {
+      rule: d.rule,
+      message: d.message,
+      start: d.start,
+      line: lc.line + 1,
+      column: lc.character,
+    }
+  })
+}

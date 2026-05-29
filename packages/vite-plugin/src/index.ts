@@ -17,6 +17,7 @@ import { spawn, type ChildProcess } from 'node:child_process'
 import {
   transformLlui,
   transformSignalComponentSource,
+  lintSignalSource,
   crossFileAccessorPaths,
   registerIntrospectionFactory,
   registerDevtoolsFactory,
@@ -1355,6 +1356,24 @@ export default function llui(options: LluiPluginOptions = {}): Plugin {
         const signalOut = transformSignalComponentSource(code)
         if (signalOut !== code) {
           sawSignalComponent = true
+          // Enforce the signal lint rules as build errors (the only effective
+          // channel — see CLAUDE.md). Lint the AUTHORED source, not the lowered
+          // output. `this.error` throws, so this halts the build on any violation.
+          const lintMsgs = lintSignalSource(code, id)
+          if (lintMsgs.length > 0) {
+            const rel = relative(crossFileRoot ?? process.cwd(), id)
+            const display = rel.length > 0 && !rel.startsWith('..') ? rel : id
+            const first = lintMsgs[0]!
+            const body = lintMsgs
+              .map((m) => `  ${display}:${m.line}:${m.column}  [${m.rule}] ${m.message}`)
+              .join('\n')
+            this.error({
+              message: `[llui] signal lint failed (${lintMsgs.length} error${
+                lintMsgs.length > 1 ? 's' : ''
+              }):\n${body}`,
+              loc: { file: id, line: first.line, column: first.column },
+            })
+          }
           return { code: signalOut, map: { mappings: '' } }
         }
       }

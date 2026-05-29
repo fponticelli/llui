@@ -42,6 +42,33 @@ describe('vite-plugin — signal component routing', () => {
     expect(out!.code).not.toContain('__dirty')
   })
 
+  it('halts the build (this.error) when a signal component violates a lint rule', async () => {
+    // operator on a signal in a reactive slot — operator-on-signal
+    const bad = [
+      "import { component } from '@llui/dom'",
+      'export const Bad = component({',
+      '  init: () => ({ n: 0 }),',
+      '  update: (s) => s,',
+      "  view: ({ state }) => [text(state.at('n') + 1)],",
+      '})',
+    ].join('\n')
+    const warn = vi.fn()
+    const errorMessages: unknown[] = []
+    const error = vi.fn((e: unknown) => {
+      errorMessages.push(e)
+      throw new Error('this.error')
+    })
+    const ctx = { warn, error, resolve: vi.fn(async () => null) } as unknown as ThisParameterType<
+      Extract<Plugin['transform'], (...a: never) => unknown>
+    >
+    const transform = llui().transform as (this: unknown, c: string, i: string) => unknown
+    await expect(transform.call(ctx, bad, '/tmp/bad.ts')).rejects.toThrow('this.error')
+    expect(error).toHaveBeenCalledOnce()
+    const msg = (errorMessages[0] as { message: string }).message
+    expect(msg).toContain('signal lint failed')
+    expect(msg).toContain('operator-on-signal')
+  })
+
   it('does not touch a file with no .at( signal usage', async () => {
     const legacy = [
       "import { component } from '@llui/dom'",
