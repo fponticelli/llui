@@ -8,6 +8,7 @@ import {
   createContext,
   provide,
   useContext,
+  portal,
 } from '../../src/signals/dom'
 
 describe('context (provide/useContext)', () => {
@@ -62,5 +63,24 @@ describe('dotted style props', () => {
     expect(box.style.transform).toBe('translateX(10px)')
     h.send({ type: 'move', x: 42 })
     expect(box.style.transform).toBe('translateX(42px)')
+  })
+})
+
+describe('portal', () => {
+  it('renders content into a target element and removes it on dispose', () => {
+    const target = document.createElement('div')
+    target.id = 'portal-target'
+    const container = document.createElement('div')
+    const h = mountSignalComponent<Record<string, never>, { type: 'x' }>(container, {
+      init: () => ({}),
+      update: (s) => s,
+      view: () => [
+        el('main', {}, [portal(() => [el('div', { id: 'modal' }, [staticText('hi')])], target)]),
+      ],
+    })
+    expect(container.querySelector('#modal')).toBeNull() // not inline
+    expect(target.querySelector('#modal')?.textContent).toBe('hi') // in target
+    h.dispose()
+    expect(target.querySelector('#modal')).toBeNull() // removed on dispose
   })
 })

@@ -22,6 +22,7 @@ export {
   signalBranch,
   signalForeign,
   onMount,
+  portal,
   createContext,
   provide,
   useContext,

@@ -181,6 +181,21 @@ export function onMount(cb: (root: Element) => void | (() => void)): Node {
   return c.doc.createComment('onMount')
 }
 
+/** Render `content` into `target` (default `document.body`) instead of inline —
+ * for overlays (dialog/popover/toast). The content's bindings join the current
+ * scope (so it stays reactive); a teardown removes the nodes on unmount/dispose.
+ * Returns an inline placeholder comment. */
+export function portal(content: () => readonly Node[], target?: Element): Node {
+  const c = requireCtx()
+  const host = target ?? c.doc.body
+  const nodes = content() // specs collected into the current build → reactive
+  for (const n of nodes) host.appendChild(n)
+  c.teardowns.push(() => {
+    for (const n of nodes) if (n.parentNode === host) host.removeChild(n)
+  })
+  return c.doc.createComment('portal')
+}
+
 // ── Context ─────────────────────────────────────────────────────────
 // Build-time dependency injection: `provide` sets a value for the subtree it
 // wraps; `useContext` reads the nearest provided value (or the default). Values
