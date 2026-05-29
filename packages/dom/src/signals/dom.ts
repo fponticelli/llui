@@ -67,15 +67,21 @@ export function staticText(value: string): Text {
   return requireCtx().doc.createTextNode(value)
 }
 
-export type PropValue = string | number | boolean | null | Reactive
+export type EventHandler = (ev: Event) => void
+export type PropValue = string | number | boolean | null | Reactive | EventHandler
 
 function applyAttr(node: Element, name: string, value: unknown): void {
   if (value == null || value === false) node.removeAttribute(name)
   else node.setAttribute(name, value === true ? '' : String(value))
 }
 
-/** Build an element. Static props are applied immediately; `react(...)` props
- * become reactive bindings. */
+/** `onClick` -> `click`, `onInput` -> `input`. */
+function eventName(prop: string): string {
+  return prop.slice(2).toLowerCase()
+}
+
+/** Build an element. `on*` function props become event listeners; `react(...)`
+ * props become reactive bindings; everything else is a static attribute. */
 export function el(
   tag: string,
   props: Readonly<Record<string, PropValue>> = {},
@@ -90,6 +96,8 @@ export function el(
         produce: value.produce,
         commit: (out) => applyAttr(node, name, out),
       })
+    } else if (typeof value === 'function' && /^on[A-Z]/.test(name)) {
+      node.addEventListener(eventName(name), value as EventListener)
     } else {
       applyAttr(node, name, value)
     }
