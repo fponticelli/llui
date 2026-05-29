@@ -280,6 +280,54 @@ export function signalShow(cond: ShowCond, render: () => readonly Node[]): Node 
 }
 
 /**
+ * Discriminated-union render. Mounts the arm matching the discriminant's current
+ * value; swaps arms when it changes (the old arm unmounts, the new one mounts as
+ * a child scope). Same-value updates do NOT remount — the mounted arm's child
+ * scope handles its own inner reactivity. An absent arm renders nothing.
+ */
+export function signalBranch(
+  disc: ShowCond,
+  arms: Readonly<Record<string, () => readonly Node[]>>,
+): Node {
+  const c = requireCtx()
+  const doc = c.doc
+  const ownerHost = c.host
+  const start = doc.createComment('branch')
+  const end = doc.createComment('/branch')
+  const frag = doc.createDocumentFragment()
+  frag.appendChild(start)
+  frag.appendChild(end)
+
+  let mounted: { key: string; scope: SignalScope; nodes: readonly Node[] } | null = null
+
+  const reconcile = (state: unknown): void => {
+    const parent = end.parentNode
+    if (!parent) return
+    const key = String(disc.produce(state))
+    if (mounted && mounted.key === key) return // same arm — inner scope handles updates
+
+    if (mounted) {
+      ownerHost.scope?.removeChild(mounted.scope)
+      for (const n of mounted.nodes) if (n.parentNode === parent) parent.removeChild(n)
+      mounted = null
+    }
+
+    const render = arms[key]
+    if (render) {
+      const built = runBuild(doc, render)
+      const scope = buildAndPublishScope(built)
+      scope.mount(state)
+      for (const n of built.nodes) parent.insertBefore(n, end)
+      ownerHost.scope?.addChild(scope)
+      mounted = { key, scope, nodes: built.nodes }
+    }
+  }
+
+  c.specs.push({ deps: disc.deps, produce: (s) => s, commit: (s) => reconcile(s) })
+  return frag
+}
+
+/**
  * Mount a signal view into `container`: build the nodes (collecting bindings),
  * append them, and wire a chunked-mask reconciler over the collected bindings.
  */
