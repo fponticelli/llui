@@ -1,9 +1,17 @@
 // Public entry for the signals reactive surface (opt-in; see
-// docs/proposals/signals). Imported by signal-compiled modules as
-// `@llui/dom/signals`. Runtime internals (mask, runtime driver) stay private.
+// docs/proposals/signals). Imported by signal modules as `@llui/dom/signals`.
+//
+// Two layers share this entry:
+//  - AUTHORING (what humans write): component, mountApp, text, div/span/…, each,
+//    show, branch — rewritten by the compiler.
+//  - RUNTIME (what the compiler emits): signalText, el, react, signalEach, … —
+//    plus mountSignalComponent. The transform replaces authoring calls with these.
+// Runtime internals (mask, runtime driver) stay private.
 
 export type { Signal, LiveSignal, ValidPath, PathValue } from './types.js'
 export { derived } from './types.js'
+
+// ── Runtime (compiler-emitted) ──────────────────────────────────────
 export {
   signalText,
   staticText,
@@ -14,7 +22,6 @@ export {
   signalBranch,
   signalForeign,
   mountSignal,
-  type Reactive,
   type PropValue,
   type EventHandler,
   type EachItems,
@@ -31,3 +38,42 @@ export {
   type EffectApi,
   type StateHandle,
 } from './component.js'
+
+// ── Authoring (human-written; compiler-rewritten) ───────────────────
+export {
+  component,
+  mountApp,
+  text,
+  div,
+  span,
+  p,
+  a,
+  button,
+  input,
+  label,
+  form,
+  ul,
+  ol,
+  li,
+  section,
+  header,
+  footer,
+  nav,
+  main,
+  h1,
+  h2,
+  h3,
+  img,
+  small,
+  strong,
+  em,
+  each,
+  show,
+  branch,
+  type Send,
+  type Reactive,
+  type AttrValue,
+  type ElProps,
+  type SignalViewBag,
+  type SignalComponentSpec,
+} from './authoring.js'

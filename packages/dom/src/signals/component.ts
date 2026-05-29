@@ -12,30 +12,33 @@
 
 import { mountSignal, type SignalMount } from './dom.js'
 import { resolvePath } from './mask.js'
+import type { Signal } from './types.js'
 
-/** Read handle for current state, exposed to handlers/effects via the bag. */
-export interface StateHandle<S> {
-  /** current value at this handle's path */
-  peek(): S
-  /** narrow to a sub-path (dotted); `.at('a.b')` or `.at('a').at('b')` */
-  at(path: string): StateHandle<unknown>
-}
+/** The bag's `state` is a `Signal<S>` so authored handler code reads it the same
+ * way as the view (`state.at('x').peek()`). At runtime it's a read handle: `.at`
+ * narrows, `.peek` reads the current value; `.map` is a view-build-time concept
+ * and throws if reached on the handle. */
+export type StateHandle<S> = Signal<S>
 
-function makeHandle<S>(get: () => unknown, base = ''): StateHandle<S> {
+function makeHandle<S>(get: () => unknown, base = ''): Signal<S> {
+  // The runtime realization of the Signal read-surface for handlers/effects.
   return {
     peek: () => resolvePath(get(), base) as S,
-    at: (path) => makeHandle(get, base === '' ? path : `${base}.${path}`),
-  }
+    at: (path: string) => makeHandle(get, base === '' ? path : `${base}.${path}`),
+    map: () => {
+      throw new Error('.map() is a view-build-time signal op; use .peek() in handlers/effects')
+    },
+  } as Signal<S>
 }
 
 export interface ComponentBag<S, M> {
-  state: StateHandle<S>
+  state: Signal<S>
   send: (msg: M) => void
 }
 
 export interface EffectApi<S, M> {
   send: (msg: M) => void
-  state: StateHandle<S>
+  state: Signal<S>
 }
 
 export interface SignalComponentDef<S, M, E = never> {
