@@ -76,11 +76,31 @@ describe('no-node-construction-in-body', () => {
 })
 
 describe('whole-state-to-call', () => {
-  it('flags passing the whole state to a call in a reactive position', () => {
+  it('flags whole state in a reactive VALUE slot (text arg, reactive prop)', () => {
     expect(rules('text(formError(state))')).toContain('whole-state-to-call')
+    expect(rules('text(state)')).toContain('whole-state-to-call')
+    expect(rules('div({ class: badgeClass(state) }, [])')).toContain('whole-state-to-call')
   })
   it('does NOT flag passing a slice', () => {
     expect(rules("text(formError(state.at('form')))")).not.toContain('whole-state-to-call')
+  })
+  // A view-helper call narrows internally (its own bindings carry their own mask),
+  // so passing whole state DOWN to it is composition, not a coarse dependency. The
+  // canonical top-level `view: ({ state }) => [shell(state)]` must not be flagged.
+  it('does NOT flag whole state passed to a composition (node-producing) call', () => {
+    expect(rules('shell(state)')).not.toContain('whole-state-to-call')
+    expect(rules('div({}, [shell(state)])')).not.toContain('whole-state-to-call')
+    expect(
+      rules('each(state.at("rows"), { key: (r) => r.id, render: (item) => [rowView(state)] })'),
+    ).not.toContain('whole-state-to-call')
+  })
+  // Non-view code (a reducer/helper) where `state` is a plain param is not a
+  // reactive slot at all — must not be flagged (was a shadow false-positive).
+  it('does NOT flag whole state passed to a plain call outside any reactive slot', () => {
+    expect(rules('const [next, fx] = update(state, msg)')).not.toContain('whole-state-to-call')
+    expect(rules('const changed = cloudLinkChanged(state, next)')).not.toContain(
+      'whole-state-to-call',
+    )
   })
 })
 

@@ -253,6 +253,52 @@ export function lintSignals(sf: ts.SourceFile): SignalDiagnostic[] {
     }
   }
 
+  // True when `start` sits in a reactive VALUE position — i.e. its value flows
+  // into a slot that consumes a value (a `text`/`react` argument, a reactive
+  // element prop, or an operator/template/ternary operand). Walks UP through plain
+  // calls (e.g. `formError(state)` inside `text(...)`) and transparent
+  // array/paren/spread nodes, but stops at a composition call's node position, a
+  // function/arm body, or a statement — those are NODE/non-reactive slots. This is
+  // what separates `text(formError(state))` (flag — coarse value dep) from
+  // `shell(state)` / `[rowView(state)]` (fine — the callee narrows internally) and
+  // from `update(state, msg)` in a reducer (not a reactive slot at all).
+  const VALUE_CONSUMERS = new Set(['text', 'react', 'signalText'])
+  const inValueSlot = (start: ts.Node): boolean => {
+    let child: ts.Node = start
+    let n: ts.Node | undefined = start.parent
+    while (n) {
+      if (ts.isCallExpression(n)) {
+        if (n.arguments.indexOf(child as ts.Expression) < 0) return false // child is the callee
+        const callee = ts.isIdentifier(n.expression) ? n.expression.text : ''
+        if (VALUE_CONSUMERS.has(callee)) return true
+        // unknown call: its result may itself flow into a value slot — keep walking
+      } else if (ts.isPropertyAssignment(n)) {
+        // a reactive element prop value is a value slot; an event handler is not
+        return !/^on[A-Z]/.test(n.name.getText(sf))
+      } else if (
+        ts.isBinaryExpression(n) ||
+        ts.isConditionalExpression(n) ||
+        ts.isTemplateSpan(n) ||
+        ts.isPrefixUnaryExpression(n)
+      ) {
+        return true
+      } else if (
+        ts.isArrayLiteralExpression(n) ||
+        ts.isParenthesizedExpression(n) ||
+        ts.isSpreadElement(n) ||
+        ts.isAsExpression(n) ||
+        ts.isNonNullExpression(n)
+      ) {
+        // transparent — keep walking up
+      } else {
+        return false // function/arm body, statement, declaration, etc.
+      }
+      child = n
+      n = n.parent
+    }
+    return false
+  }
+
   // a `sig.peek()` call on a signal-rooted receiver
   const isSignalPeek = (node: ts.Node, roots: Roots): boolean =>
     ts.isCallExpression(node) &&
@@ -334,13 +380,20 @@ export function lintSignals(sf: ts.SourceFile): SignalDiagnostic[] {
         const fn = node.arguments[1]
         if (fn && (ts.isArrowFunction(fn) || ts.isFunctionExpression(fn))) lintDeriveBody(fn, roots)
       }
-      // whole-state-to-call: a bare root with empty dep (the component state)
-      // passed straight to a call in a reactive position (coarse dep).
+      // whole-state-to-call: the bare component-state root (empty dep) consumed by
+      // a reactive VALUE slot (coarse dep). Composition — passing whole state down
+      // to a view-helper that narrows internally (e.g. `shell(state)`) — is fine,
+      // as is a plain `state` arg in non-view code; `inValueSlot` excludes those.
       for (const arg of node.arguments) {
-        if (ts.isIdentifier(arg) && roots.has(arg.text) && signalPathOf(arg, roots) === '') {
+        if (
+          ts.isIdentifier(arg) &&
+          roots.has(arg.text) &&
+          signalPathOf(arg, roots) === '' &&
+          inValueSlot(arg)
+        ) {
           push(
             'whole-state-to-call',
-            "Whole `state` passed to a call in a reactive position; pass a slice (state.at('…')) to keep the dependency narrow.",
+            "Whole `state` used in a reactive value slot; pass a slice (state.at('…')) to keep the dependency narrow.",
             arg,
           )
         }
