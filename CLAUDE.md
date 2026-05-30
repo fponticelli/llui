@@ -4,9 +4,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What is LLui
 
-LLui is a compile-time-optimized web framework built on The Elm Architecture (TEA), designed for LLM-first authoring. There is no virtual DOM — `view()` runs once at mount, building real DOM nodes with reactive bindings. State changes drive a two-phase update: Phase 1 reconciles structural primitives (`branch`, `each`, `show`), Phase 2 iterates a flat binding array with bitmask gating (`(binding.mask & dirty) === 0`) to skip irrelevant updates.
+LLui is a compile-time-optimized web framework built on The Elm Architecture (TEA), designed for LLM-first authoring. It runs on a **signal** runtime (`@llui/dom` — a single import surface; there is no legacy runtime and no `/signals` subpath). There is no virtual DOM — `view()` runs once at mount, building real DOM nodes with reactive bindings. State changes drive a **chunked-mask reconciler**: each binding carries a sparse mask of the dependency-path chunks it reads; on update the runtime computes the dirty chunk-set from old→new state (reference-equality per path), gates out bindings whose mask doesn't intersect it, then commits only values that actually changed (output-equality). Structural primitives (`branch`, `each`, `show`) are specs that reconcile arms/keyed rows and own child scopes.
 
-The Vite plugin compiler performs 3 passes: (1) static/dynamic prop split, (2) dependency analysis + bitmask injection via TypeScript Compiler API, (3) import cleanup. It rewrites element helper calls to `elSplit()` and synthesizes `__dirty(oldState, newState)` functions per component.
+The Vite plugin runs a **single signal transform** (`@llui/compiler`) via the TypeScript Compiler API: it lowers signal expressions in a component's DIRECT view to runtime helpers (`signalText`/`el`/`react`/`signalEach`/…) as an optimization, emits introspection metadata, and runs the signal lint rules as non-bypassable build errors. Anything it can't lower (view-helper functions, block-body views) runs via the real runtime authoring helpers (which consume signal handles), so both forms coexist.
 
 ## Commands
 
@@ -53,50 +53,50 @@ pnpm bench:build              # Build jfb app only (no benchmark run)
 
 Sixteen packages under `packages/`, managed by pnpm workspaces + Turborepo:
 
-| Package                        | Purpose                                                                                 | Dependencies   |
-| ------------------------------ | --------------------------------------------------------------------------------------- | -------------- |
-| `@llui/dom`                    | Runtime: component, mount, scope tree, bindings, element helpers, structural primitives | —              |
-| `@llui/compiler`               | Engine: 3-pass TypeScript transform + 44 compile-time lint rules (all severity: error)  | typescript     |
-| `@llui/compiler-introspection` | Opt-in introspection: agent schemas, msg annotations, schema hash                       | @llui/compiler |
-| `@llui/compiler-devtools`      | Opt-in devtools: `__componentMeta` emission                                             | @llui/compiler |
-| `@llui/compiler-ssr`           | Opt-in: 'use client' directive transforms                                               | @llui/compiler |
-| `@llui/vite-plugin`            | Vite adapter: wires compiler into Vite, surfaces diagnostics via this.error()           | peer: vite     |
-| `@llui/components`             | Headless components: accordion, dialog, tabs, select, tree-view, timer, tour, etc.      | @llui/dom      |
-| `@llui/test`                   | Test harness: testComponent, assertEffects, testView, propertyTest, replayTrace         | @llui/dom      |
-| `@llui/effects`                | Effect builders: http, cancel, debounce, sequence, race + handleEffects chain           | —              |
-| `@llui/router`                 | Client router with route-matching helpers and link components                           | @llui/dom      |
-| `@llui/transitions`            | Animation/transition wrapper helpers                                                    | @llui/dom      |
-| `@llui/mcp`                    | MCP server exposing LLui debug API to LLMs                                              | @llui/dom      |
-| `@llui/vike`                   | Vike SSR adapter: onRenderHtml, onRenderClient                                          | @llui/dom      |
-| `llui-agent`                   | Agent runtime / SDK for programmatic control                                            | @llui/dom      |
-| `@llui/agent-bridge`           | Browser bridge that connects a running app to the agent host                            | @llui/dom      |
-| `@llui/agent-e2e`              | End-to-end fixtures and tests for the agent surface                                     | @llui/dom      |
+| Package                        | Purpose                                                                                                             | Dependencies   |
+| ------------------------------ | ------------------------------------------------------------------------------------------------------------------- | -------------- |
+| `@llui/dom`                    | Runtime: component, mount, scope tree, bindings, element helpers, structural primitives                             | —              |
+| `@llui/compiler`               | Engine: signal TypeScript transform (view lowering + introspection) + compile-time lint rules (all severity: error) | typescript     |
+| `@llui/compiler-introspection` | Opt-in introspection: agent schemas, msg annotations, schema hash                                                   | @llui/compiler |
+| `@llui/compiler-devtools`      | Opt-in devtools: `__componentMeta` emission                                                                         | @llui/compiler |
+| `@llui/compiler-ssr`           | Opt-in: 'use client' directive transforms                                                                           | @llui/compiler |
+| `@llui/vite-plugin`            | Vite adapter: wires compiler into Vite, surfaces diagnostics via this.error()                                       | peer: vite     |
+| `@llui/components`             | Headless components: accordion, dialog, tabs, select, tree-view, timer, tour, etc.                                  | @llui/dom      |
+| `@llui/test`                   | Test harness: testComponent, assertEffects, testView, propertyTest, replayTrace                                     | @llui/dom      |
+| `@llui/effects`                | Effect builders: http, cancel, debounce, sequence, race + handleEffects chain                                       | —              |
+| `@llui/router`                 | Client router with route-matching helpers and link components                                                       | @llui/dom      |
+| `@llui/transitions`            | Animation/transition wrapper helpers                                                                                | @llui/dom      |
+| `@llui/mcp`                    | MCP server exposing LLui debug API to LLMs                                                                          | @llui/dom      |
+| `@llui/vike`                   | Vike SSR adapter: onRenderHtml, onRenderClient                                                                      | @llui/dom      |
+| `llui-agent`                   | Agent runtime / SDK for programmatic control                                                                        | @llui/dom      |
+| `@llui/agent-bridge`           | Browser bridge that connects a running app to the agent host                                                        | @llui/dom      |
+| `@llui/agent-e2e`              | End-to-end fixtures and tests for the agent surface                                                                 | @llui/dom      |
 
-**Note for future LLMs:** all framework lint rules (correctness, agent-protocol, conventions — 44 total) are compile-time errors in `@llui/compiler`. Do NOT reintroduce `@llui/eslint-plugin` or recreate the rules as ESLint rules. The migration was deliberate: LLMs ignore lint warnings, so non-bypassable compiler errors are the only effective channel. The plugin was deleted in the lint→compiler migration.
+**Note for future LLMs:** framework lint rules are compile-time ERRORS in `@llui/compiler` (run by `@llui/vite-plugin`), never ESLint rules. The signal lint set (`packages/compiler/src/signals/rules.ts`) covers `peek-in-slot`, `operator-on-signal`, `pure-derive-body`, `no-node-construction-in-body`, `whole-state-to-call`, plus the shared cross-file/agent/convention checks. Do NOT reintroduce `@llui/eslint-plugin` or recreate rules as ESLint rules: LLMs ignore lint warnings, so non-bypassable compiler errors are the only effective channel.
 
 Build order is computed by Turbo via `"dependsOn": ["^build"]`. Roots: `@llui/dom` and `@llui/effects` (no deps); everything else layers on top.
 
 ## Architecture Concepts
 
-**Component shape:** `component<State, Msg, Effect>({ name, init, update, view, onEffect? })`. State must be JSON-serializable. Msg and Effect are discriminated unions with a `type` field. `view` receives a single `View<S, M>` bag — destructure `{ send, text, show, each, branch, memo, ... }` from it. Element helpers (`div`, `button`, etc.) stay as imports.
+**Component shape:** `component<State, Msg, Effect>({ name, init, update, view, onEffect? })`. State must be JSON-serializable. Msg and Effect are discriminated unions with a `type` field. `init()` takes NO arguments. `view` receives a `{ state, send }` bag where `state` is a `Signal<State>` — read it with `state.map(s => …)` (derive a reactive value), `state.at('field')` (narrow to a sub-path signal), or `state.peek()` (one-shot read in handlers/effects). Element + structural helpers (`div`, `button`, `text`, `each`, `show`, `branch`, …) are module imports from `@llui/dom`, NOT bag members.
 
-**Two composition levels:**
+**Composition:**
 
-- **Level 1 (default):** View functions — modules exporting `update()` and `view()` functions. Parent owns state; child operates on a slice. Use `(props, send)` convention.
-- **Level 2 (opt-in):** `child()` — full component boundary with own bitmask, update cycle, and scope tree. Only for 63+ state paths (past the two-word mask limit), library components, or independent effect lifecycle.
+- **View functions (default):** factor sub-views as plain functions that take signal handles — `header(state.at('header'), send)` or `header(state.map(s => s.header), send)`. They run via the real runtime authoring helpers (which consume handles), so they compose without compilation.
+- **Library components:** the `connect(state: Signal<Slice>, send, opts?)` + `overlay({ state, send, parts, content })` pattern (see `@llui/components`) returns Signal-handle part bags the consumer spreads onto elements. A full child-component boundary (own update cycle + scope tree) is for independent effect lifecycle / library packaging.
 
-**Bitmask:** two 31-bit `number` words — `mask` (lo, paths 0–30) plus optional `maskHi` (paths 31–61), for up to 62 paths total. The compiler decides per component at build time whether the high word is emitted: ≤31 paths stay on a single-word fast path; 32–62 paths get `maskHi` emitted. Paths past 62 collapse to `FULL_MASK` (-1) with a compiler diagnostic naming fields to extract.
+**Reactivity (chunked mask):** there is no path ceiling. Each binding carries a sparse mask of the dependency-path chunks it reads; on update the runtime builds the dirty chunk-set from old→new state (reference-equality per path), gates out non-intersecting bindings, and commits only changed values (output-equality). Structural primitives reconcile and own child scopes. (This replaces the deleted two-word-bitmask / `elSplit` / `__dirty` model.)
 
 **Effects as data:** `update()` returns `[newState, effects]`. Core runtime handles `delay` and `log`. The `@llui/effects` package provides `handleEffects<E>().else(handler)` for http/cancel/debounce/sequence/race.
 
-**`send()` batching:** Messages queue into a microtask. Multiple `send()` calls coalesce into one update cycle. `flush()` forces synchronous execution.
+**`send()` is synchronous:** in the signal runtime each `send()` runs the reducer and applies the update immediately (no microtask batching). `handle.flush()` is a no-op kept for harness/agent parity.
 
 ## Design Docs
 
 Comprehensive specs live in `docs/designs/`. These are the authoritative reference:
 
 - `01 Architecture.md` — mental model, composition, effects, expressibility catalogue
-- `02 Compiler.md` — the 3-pass Vite plugin, TypeScript Compiler API, correctness invariants
+- `02 Compiler.md` — the signal transform (view lowering), TypeScript Compiler API, correctness invariants
 - `03 Runtime DOM.md` — two-phase update, message queue, binding system, scope lifecycle
 - `04 Test Strategy.md` — testComponent, propertyTest, replayTrace, testing philosophy
 - `05 Performance.md` — benchmarking via js-framework-benchmark (krausest)
@@ -112,4 +112,4 @@ Comprehensive specs live in `docs/designs/`. These are the authoritative referen
 
 Major architectural changes in flight. Read before touching the relevant packages:
 
-- **v2 Compiler Architecture** (`docs/proposals/v2-compiler/`) — splits `@llui/compiler` out of `@llui/vite-plugin`; introduces cross-file analysis, library manifests (`__llui_deps.json`), the `track()` primitive, and a `__compilerVersion` runtime gate. Phased as v2a (extraction), v2b (cross-file + runtime contract), v2c (module system). Each phase has its own sequenced implementation roadmap with measurement gates and failure paths. **Anyone working in `packages/vite-plugin/`, `packages/eslint-plugin-llui/`, `packages/dom/src/update-loop.ts`, `packages/dom/src/types.ts`, or `packages/dom/test/` should read `docs/proposals/v2-compiler/README.md` first** — the proposal commits to specific test-migration, runtime-contract, and adapter-shape changes that ad-hoc refactoring will conflict with.
+- **v2 Compiler Architecture** (`docs/proposals/v2-compiler/`) — largely realized by the signals migration: `@llui/compiler` is already a standalone package (extracted from `@llui/vite-plugin`), cross-file Msg/State/Effect analysis is live, and manifest/`__compilerVersion` machinery exists (`packages/compiler/src/manifest.ts`, `emit-names.ts`). Still open from the proposal: the library module system and the `track()` primitive (NOT implemented). The proposal predates the signal runtime, so its references to the legacy runtime (`update-loop.ts`), the deleted `@llui/eslint-plugin`, and the two-word bitmask are historical — read it for the module-system direction, not the runtime model.
