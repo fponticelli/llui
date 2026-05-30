@@ -352,6 +352,35 @@ function buildAndPublishScope(built: {
   return scope
 }
 
+/** A row binding is "row-local" when every dep is rooted in the row ctx — its own
+ * `item`/`index`, or the component `state` (compiled rows pre-namespace component
+ * reads as `state.*`). Anything else is a handle from the ENCLOSING view (e.g. a
+ * `connect()` part rooted at the bare component state) that was placed inside a
+ * row by an UNCOMPILED `each`; its produce expects the component state, not the
+ * combined row ctx. */
+function isRowLocalDep(d: string): boolean {
+  return (
+    d === 'item' ||
+    d.startsWith('item.') ||
+    d === 'index' ||
+    d === 'state' ||
+    d.startsWith('state.')
+  )
+}
+
+/** Re-root a component-state-rooted row spec so it reads `ctx.state` (the
+ * component state) instead of the combined row ctx — the fix that lets a
+ * `connect()` part (or any enclosing-view signal) compose inside an authoring
+ * `each` row. Row-local specs (and all compiled rows) pass through untouched. */
+function rebaseRowSpec(spec: BindingSpec): BindingSpec {
+  if (spec.deps.every(isRowLocalDep)) return spec
+  return {
+    deps: spec.deps.map((d) => (isRowLocalDep(d) ? d : d === '' ? 'state' : `state.${d}`)),
+    produce: (ctx) => spec.produce((ctx as { state: unknown }).state),
+    commit: spec.commit,
+  }
+}
+
 /** Build a chunked-mask reconciler scope over a set of collected bindings. */
 function buildScope(specs: readonly BindingSpec[]): SignalScope {
   const table = buildPathTable(specs.flatMap((s) => [...s.deps]))
@@ -439,6 +468,9 @@ export function signalEach<T>(
         const ctx: RowCtx<T> = { item, state, index }
         const holder = { ctx }
         const built = runBuild(doc, () => renderRow(() => holder.ctx), c)
+        // Re-root any component-state-rooted bindings (e.g. connect() parts placed
+        // in the row by an uncompiled each) to read ctx.state.
+        built.specs = built.specs.map(rebaseRowSpec)
         const scope = buildAndPublishScope(built)
         scope.mount(ctx) // row scope's "state" is the combined ctx
         row = {
